@@ -66,12 +66,13 @@ fields, ranges and names fail with the entry named):
 | --- | --- |
 | `wait {s}` | waits |
 | `key {code, down}`, `hold {code, s}` | presses/releases a key (`KeyboardEvent.code`), or holds it for `s` |
-| `look {yaw, pitch}` | turns the player's look (degrees; yaw 0 = +Z, 90 = +X) |
+| `look {yaw, pitch}` | turns the player's look (degrees; yaw 0 = +Z, 90 = +X, as `camera` and `goto`) |
 | `fly {on}`, `flySpeed {level}` | creative flight and its speed level (L flies at ≥ 11 × 2^(L/2) m/s: 6 ≈ 88, 8 ≈ 176) |
 | `puppets {count, at?, face?, held?}` | stand-in players (`__dwell.puppets`): `count` full bodies (≤ 256) in rows ahead of the player's feet offset by `at`, on `face` (1, or −1 for face B), each walking a small circle with a clip of its own (walk, sprint, slide, crouch, idle, jump, swim, climb), holding the hotbar's block with `held`; 0 removes them. For the frame cost of N bodies and screenshots of every clip without N clients ([`CHARACTERS.md`](./CHARACTERS.md)) |
 | `arms {on}` | your first-person arms shown or hidden (the Show your arms setting, this page only) |
 | `spyglass {on, step?}` | the spyglass zoomed to a step (0 the least, `shared/look/spyglass.json`) or out ([`SPYGLASS.md`](./SPYGLASS.md)); `spyglass-far` shoots far terrain unzoomed and at each step |
-| `camera {position, yaw, pitch, aroundPlayer?, aboveFeet?}`, `releaseCamera` | places the camera (the player stays), or returns it; with `aroundPlayer`, x and z are offsets from the player's feet (y absolute, or with `aboveFeet` an offset too: a height over the spawn's ground): a view wherever a flight ended, where the chunks are streamed |
+| `camera {position, yaw, pitch, aroundPlayer?, aboveFeet?, aroundFound?}`, `releaseCamera` | places the camera (the player stays), or returns it; with `aroundPlayer`, x and z are offsets from the player's feet (y absolute, or with `aboveFeet` an offset too: a height over the spawn's ground): a view wherever a flight ended, where the chunks are streamed; with `aroundFound`, x and z are offsets from the last `goto`'s place and y a height over its surface along its face's up |
+| `goto {find, radius?, surface?, minDepth?, minArea?, minCurrent?, face?, height?, aim? \| yaw? \| toward? \| lookAt?, turn?, pitch?, move?, scope?, water?, maxS?}` | finds a place by what is there and puts the camera over it (`__dwell.goto`, [Finding places](#finding-places)): e.g. `{ "find": "water", "scope": "world", "water": "sea", "minDepth": 2, "minArea": 1000, "height": 2, "lookAt": "land", "turn": 180, "pitch": -3, "maxS": 120 }` (the nearest sea at least 2 m deep on the world map, the player moved there, the camera 2 m up with its back to the shore) or `{ "find": "water", "minCurrent": 0.1, "aim": "downstream", "pitch": -15 }`. Prints what it found and saves it in `report.json`'s `gotos`; **finding nothing within `maxS` fails the run** with what it looked for and where, so a scenario never measures the wrong scene. `water-views`, `water-shore`, `water-reflections` and `water-river` find their water this way |
 | `edit {action}`, `select {slot}` | break/place at the crosshair; picks a hotbar slot |
 | `region {op, from, to, up?}` | a region edit (the region tools, `__dwell.tool('cornerA@x,y,z')`) of the box between `from` and `to`, offsets in metres from the player's feet (`up` −1 on face B): `fill` with the selected hotbar block or `clear` to air — to build a scene, e.g. `tunnel-a`/`tunnel-b`'s hill and tunnel (DAY_NIGHT.md §11), and `torch-cave-a`/`torch-cave-b`'s tunnel and room at midnight with the torch held and placed (LIGHTS.md; `torch-night-puppets` records 8 torch-bearing stand-ins against none; `torch-scale-a` shoots the 1 m torch beside a stand-in at noon and midnight and the held flame by day and night); `torch-shadows-a`/`torch-shadows-b` place a torch before a stone pillar in the room and hold one too, recording the Torch shadows' cost with `--configs torch-shadows-off,torch-shadows-high`; `felling` builds a tree on the flat world and breaks its trunk, shooting the fall and the settled logs, FELLING.md) |
 | `brush {command}` | drives the brush tool as its keys and clicks do (`__dwell.brush`: `toggle`, `preset:<name>`, `size:<n>`, `apply`, …; [`BRUSHES.md`](./BRUSHES.md)), in worlds that allow brushes (sandbox: a `--compare` config with `params: {"world": "sandbox"}`) |
@@ -262,6 +263,51 @@ first, each one's `tick` (the server's, 60 a second), `cell`, `from` and `to` (c
 strings) and `reason`. The local world's water report carries it as `edits`, so the block dump has
 it at `water.edits`: what was done near a reported spot, in order, to replay in a native probe.
 
+## Finding places
+
+Tests and benchmarks find their scene by what is there, not by coordinates that go stale when the
+terrain changes (0.49.10; the water scenarios used to fly to a coast that a terrain change moved).
+`crates/dwell-client/src/find.rs` does the search; the page exposes it as hooks and the bench as
+the `goto` step.
+
+- `__dwell.find(query, options?)`: the nearest loaded cell matching `query`, searched outward from
+  the player's feet (or `from`) among the chunks the client holds, within `radius` m (256). A
+  query is a block by name through the registry (`dwell:sand`; a name without a namespace is
+  `dwell:`'s, so `water` is `dwell:water`, which matches its cells at any fill and flooded cells),
+  a state (`dwell:ladder[facing=north]`), `fluid` (any fluid) or `land` (any solid block: with
+  `surface`, dry ground, the shore seen from the water); an unknown name throws. Filters:
+  `surface` (default true: open above — a fluid's top under air, a block's top in the open air,
+  so `dwell:sand` is the beach, not the sea bed; a cell under a chunk not streamed in yet is not
+  one), `minDepth` (m of matching cells under its
+  surface), `minArea` (matching surface cells joined to it at its row: a pool, not a puddle),
+  `minCurrent` (m/s: running water), `face` (`a`, `b`, `any`; default the start's). It returns
+  `{ cell, at, surfaceY, face, block, depth, area, distance, current, flow }` (`at` the surface
+  over the cell's centre, `flow` the mean moving current within 3 columns) or null. All of it is
+  face-local: on face B "above" is −y and the surface is mirrored as it is drawn.
+- `__dwell.goto(query, options?)` (a promise): finds it as `find` does and places the camera
+  `height` m (1.6; negative: under the surface) over it, looking `aim` (`downstream`, `upstream`
+  or `across` its flow; still water has none, and it keeps trying while the currents arrive),
+  at a `yaw`, `toward` a point, or at the nearest `lookAt` from it among the loaded chunks (e.g.
+  `land`: the shore; it keeps trying while the chunks there stream in), turned `turn` degrees more, at `pitch` (0, or toward the point). `move` moves the player
+  there too, flying (a local world), so the full-detail chunks stream round it. `scope: 'world'`
+  first searches the world map (the generator's columns, loaded or not: `water` any, `sea`,
+  `river`, `lake`, at least `minDepth` deep, within `radius`, 30 km) outward from the player in
+  rings, moves the player there and searches its cells once they stream in. `maxS` keeps trying
+  (0; 60 for the world scope). It rejects with what it looked for when nothing is found.
+- `__dwell.teleport(feet)`: moves the local player's feet there, at rest (a local world, on the
+  face it is on; the local core's `teleport_local_player`, through the worker, not a network
+  message). The client follows: a player the server moved while the prediction waits for terrain
+  takes the server's place (`game.rs`), so it waits for the terrain there.
+- `__dwell.camera()`: the placed camera (`placeCamera`, `goto`) or null; `view()` is the player's
+  look, not a placed camera's.
+
+Yaw is the same everywhere (`look`, `view`, `placeCamera`, `camera`, `goto`, `FaceFrame::look`):
+degrees, 0 = +Z, 90 = +X; pitch is degrees toward the face's up. A placed camera doesn't turn the
+player, so `view()` after `placeCamera` still reads the player's own look.
+
+Seed 0's river at `?local=1&seed=0&fresh=1&at=2364.5,142,7443.5` is a known river by link (the
+player there with yaw 0 looks down it); `goto` finds water wherever the terrain puts it.
+
 ## Adding to it
 
 - A metric: `telemetry::span("name", || …)` / `add` / `sample` / `count` where it happens; add it
@@ -272,6 +318,8 @@ it at `water.edits`: what was done near a reported spot, in order, to replay in 
   `scripts/bench.ts`, a row in the steps table.
 - A hook the steps need: a method on `__dwell` (`client/src/main.ts`) over a `Client` export
   (`crates/dwell-client/src/web/app.rs`).
+- A kind of place to find: a filter on `find.rs`'s `Query` (with a both-faces test), its option
+  in `client/src/debug/find.ts` and the `goto` step's parser.
 
 ## Comparing builds
 

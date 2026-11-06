@@ -1146,7 +1146,12 @@ impl<S: Scene> Game<S> {
                     self.eye = EyeCamera::new();
                     self.eye
                         .tick(&self.current.eye_state(), 1.0 / SIM_HZ as f64);
-                } else if !self.terrain_ready() && self.moved_by_server() {
+                } else if !prediction_may_run(
+                    self.current.active,
+                    self.current.state,
+                    self.terrain_ready(),
+                ) && self.moved_by_server()
+                {
                     // Moved by the server while the prediction waits for terrain (the dev tools'
                     // teleport, docs/DEV_TOOLS.md): the player is where the server has it, so
                     // the terrain the prediction waits for is the terrain there, not where the

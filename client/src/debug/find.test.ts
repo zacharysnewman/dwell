@@ -141,6 +141,20 @@ describe('goto', () => {
     t.restore();
   });
 
+  it('waits for a lookAt to stream in, and fails naming it when it never does', async () => {
+    const sand = place({ at: [40.5, 41, 20.5], block: 'dwell:sand' });
+    // The place, no land yet, the place again, then the land.
+    const t = host([place(), null, place(), sand]);
+    await gotoPlace(t.h, 'water', { lookAt: 'land', maxS: 5 });
+    expect(t.views).toEqual([[1.6, 'toward', 0, [40.5, 41, 20.5], NaN, 0]]);
+    t.restore();
+    const never = host([place(), null, place(), null]);
+    await expect(gotoPlace(never.h, 'water', { lookAt: 'land', maxS: 1 })).rejects.toThrow(
+      /no "land" to look at among the loaded chunks near \[10\.5, 40\.5, 20\.5\]/,
+    );
+    never.restore();
+  });
+
   it('with scope world goes to the map water first, holds the player there and moves it over', async () => {
     const hit = { at: [500.5, 32, 900.5], kind: 'sea', face: 'a', ground: 28, distance: 1000 };
     const asked: unknown[] = [];

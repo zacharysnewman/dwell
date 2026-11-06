@@ -45,12 +45,13 @@ export type Step =
     }
   /**
    * Finds a place by what is there (`__dwell.goto`, docs/DEV_TOOLS.md "Finding places"): the
-   * nearest loaded `find` (a block or fluid by name, `water`, or `fluid`) within `radius` m of the
-   * player, at least `minDepth` m deep, `minArea` cells wide and running `minCurrent` m/s, on
-   * `face`; with `scope: "world"` the world map's nearest `water` (`sea`, `river`, `lake`) first,
-   * the player moved there. Places the camera `height` m over it looking `aim` (`downstream`,
-   * `upstream`, `across` the current), at `yaw` or `toward` a point, at `pitch`; with `move` the
-   * player goes there too (flying). Tries for `maxS`; finding nothing fails the run.
+   * nearest loaded `find` (a block or fluid by name, `water`, `fluid` or `land`) within `radius`
+   * m of the player, at least `minDepth` m deep, `minArea` cells wide and running `minCurrent`
+   * m/s, on `face`; with `scope: "world"` the world map's nearest `water` (`sea`, `river`, `lake`)
+   * first, the player moved there. Places the camera `height` m over it looking `aim`
+   * (`downstream`, `upstream`, `across` the current), at `yaw`, `toward` a point or at the nearest
+   * `lookAt` (e.g. `land`: the shore), turned `turn` more, at `pitch`; with `move` the player goes
+   * there too (flying). Tries for `maxS`; finding nothing fails the run.
    */
   | {
       do: 'goto';

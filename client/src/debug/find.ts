@@ -62,7 +62,7 @@ export interface GotoOptions extends FindOptions {
   toward?: Vec3;
   /**
    * Or toward the nearest place matching this query from the place found (e.g. `dwell:sand`: the
-   * shore from the sea), within `radius` (default 256 m), pitched toward it unless `pitch` is given.
+   * beach from the sea) among the loaded chunks, pitched toward it unless `pitch` is given.
    */
   lookAt?: string;
   /** Degrees added to the heading however it was chosen (180: away from `lookAt`'s shore). */
@@ -147,6 +147,8 @@ export interface FindHost {
 }
 
 const DEFAULT_RADIUS = 256;
+/** How far a `lookAt` is searched (m): as far as the client holds chunks. */
+const LOOK_RADIUS = 1024;
 const DEFAULT_HEIGHT = 1.6;
 const MAP_RADIUS = 30_000;
 const WORLD_MAX_S = 60;
@@ -266,26 +268,25 @@ export async function gotoPlace(
     }
   }
   // What to look at: a point, or the nearest `lookAt` from the place (not kept: the place is).
-  const target = (): Vec3 | undefined => {
-    if (!o.lookAt || !found) return o.toward;
+  const target = (place: FoundPlace): Vec3 | undefined => {
+    if (!o.lookAt) return o.toward;
     const t = findPlace(
       host,
       o.lookAt,
-      { from: found.at, radius: DEFAULT_RADIUS, face: 'any' },
+      { from: place.at, radius: LOOK_RADIUS, face: 'any' },
       false,
     );
     if (!t) {
-      throw new Error(
-        `goto: no "${o.lookAt}" to look at within ${String(DEFAULT_RADIUS)} m of ${fmt(found.at)}`,
-      );
+      throw new Error(`no "${o.lookAt}" to look at among the loaded chunks near ${fmt(place.at)}`);
     }
     return t.at;
   };
-  const toward = target();
-  const pitch = o.pitch ?? (toward ? NaN : 0);
-  const aim = o.aim ?? (toward ? 'toward' : 'yaw');
+  const looking = o.lookAt !== undefined || o.toward !== undefined;
+  const pitch = o.pitch ?? (looking ? NaN : 0);
+  const aim = o.aim ?? (looking ? 'toward' : 'yaw');
   for (;;) {
     try {
+      const toward = target(found);
       const camera = host.viewFound(
         height,
         aim,
@@ -296,7 +297,8 @@ export async function gotoPlace(
       );
       return map ? { found, camera, map } : { found, camera };
     } catch (e) {
-      // Currents arrive a few seconds into a session: keep trying until the deadline.
+      // Currents arrive a few seconds into a session, and the chunks round a place just moved
+      // to stream in: keep trying until the deadline.
       if (Date.now() >= deadline) {
         throw new Error(`goto: ${e instanceof Error ? e.message : String(e)}`, { cause: e });
       }

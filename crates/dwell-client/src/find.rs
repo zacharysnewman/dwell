@@ -24,6 +24,9 @@ use std::collections::HashSet;
 pub enum Matcher {
     /// Any fluid (flooded shaped cells included).
     AnyFluid,
+    /// Any solid block (ground, a wall): with `surface`, dry ground in the open, the shore seen
+    /// from the water.
+    Land,
     /// One fluid: a fluid block's name (`dwell:water`) matches its cells at any fill and flooded
     /// cells of it.
     Fluid(FluidId),
@@ -34,7 +37,7 @@ pub enum Matcher {
 }
 
 impl Matcher {
-    /// `fluid` (any fluid), a block id (`dwell:sand`; a name without a namespace is `dwell:`'s,
+    /// `fluid` (any fluid), `land` (any solid block), a block id (`dwell:sand`; a name without a namespace is `dwell:`'s,
     /// so `water` is `dwell:water`) or a state (`dwell:ladder[facing=north]`). An unknown name is
     /// an error that names it.
     pub fn parse(query: &str) -> Result<Self, String> {
@@ -45,6 +48,9 @@ impl Matcher {
         if q == "fluid" {
             return Ok(Self::AnyFluid);
         }
+        if q == "land" {
+            return Ok(Self::Land);
+        }
         let name = if q.contains(':') {
             q.to_owned()
         } else {
@@ -54,7 +60,9 @@ impl Matcher {
             return dwell_blocks::parse_state(&name).map(Self::State);
         }
         let block = dwell_blocks::find_block(&name)
-            .ok_or_else(|| format!("no block named \"{name}\" (or \"fluid\" for any fluid)"))?;
+            .ok_or_else(|| {
+                format!("no block named \"{name}\" (or \"fluid\" for any fluid, \"land\" for any solid block)")
+            })?;
         let first = block.first_state;
         Ok(match info(first).fluid {
             Some(f) => Self::Fluid(f),
@@ -65,6 +73,7 @@ impl Matcher {
     pub fn matches(self, s: StateId) -> bool {
         match self {
             Self::AnyFluid => fluid_of(s).is_some(),
+            Self::Land => dwell_blocks::try_info(s).is_some_and(|i| i.solid && !i.flooded),
             Self::Fluid(f) => fluid_of(s) == Some(f),
             Self::Block(b) => dwell_blocks::try_info(s).is_some_and(|i| i.block == b),
             Self::State(id) => s == id,
@@ -83,7 +92,8 @@ pub struct Query {
     /// How far from the start (m) a cell may be.
     pub radius_m: f64,
     /// The cell must be a surface: the cell above it (toward its face's up) neither matches nor
-    /// is solid (a fluid's top under air or a plant, a block's top in the open).
+    /// is solid, nor for a block a fluid (a fluid's top under air or a plant, a block's top in the
+    /// open air: the beach's sand, not the sea bed's).
     pub surface: bool,
     /// Matching cells under it, itself included, down to at least this depth (m below its
     /// surface): water deep enough to swim in or float a camera over.
@@ -272,8 +282,19 @@ fn above(cell: [i32; 3]) -> [i32; 3] {
 }
 
 fn open_above(world: &VoxelWorld, what: Matcher, cell: [i32; 3]) -> bool {
-    let s = world.get_voxel_if_loaded(above(cell));
-    !what.matches(s) && !dwell_blocks::try_info(s).is_some_and(|i| i.solid)
+    // A chunk not streamed in yet is unknown, not open: a sea bed under it isn't a beach.
+    let up = above(cell);
+    if world
+        .find(dwell_world::chunk_of(up[0], up[1], up[2]))
+        .is_none()
+    {
+        return false;
+    }
+    let s = world.get_voxel_if_loaded(up);
+    !what.matches(s)
+        && !dwell_blocks::try_info(s).is_some_and(|i| i.solid)
+        // A block's top under water is a bed, not a surface in the open.
+        && (what.is_fluid() || fluid_of(s).is_none())
 }
 
 /// The face-local height (m) of `cell`'s surface: a fluid's drawn surface, a block's top.
@@ -516,6 +537,10 @@ mod tests {
     #[test]
     fn queries_name_blocks_and_fluids_by_name() {
         assert_eq!(Matcher::parse("fluid"), Ok(Matcher::AnyFluid));
+        assert_eq!(Matcher::parse("land"), Ok(Matcher::Land));
+        assert!(Matcher::Land.matches(require("dwell:stone")));
+        assert!(!Matcher::Land.matches(require("dwell:water")));
+        assert!(!Matcher::Land.matches(dwell_blocks::AIR));
         let water = dwell_blocks::fluid("dwell:water").unwrap();
         assert_eq!(Matcher::parse("dwell:water"), Ok(Matcher::Fluid(water)));
         assert_eq!(Matcher::parse("water"), Ok(Matcher::Fluid(water)));
@@ -629,8 +654,23 @@ mod tests {
 
     dwell_world::both_faces!(
         fn a_surface_is_open_above_and_a_block_query_finds_its_top(f: FaceFrame) {
-            // Water under a stone roof is no surface; sand under air is, at its top cell.
+            // Water under a stone roof is no surface; sand under air is, at its top cell; sand
+            // under water is a bed, not a surface.
             let mut cells = Vec::new();
+            slab(
+                &mut cells,
+                "dwell:sand",
+                [4, 5],
+                [GROUND - 1, GROUND],
+                [0, 1],
+            );
+            slab(
+                &mut cells,
+                "dwell:water",
+                [4, 5],
+                [GROUND, GROUND + 1],
+                [0, 1],
+            );
             slab(
                 &mut cells,
                 "dwell:water",
@@ -663,7 +703,7 @@ mod tests {
             let start = from(f, [0.5, m_of_row(GROUND), 0.5]);
             assert_eq!(
                 find(&w, start, &water()).unwrap().cell,
-                f.cell([8, GROUND, 0])
+                f.cell([4, GROUND, 0])
             );
             let buried = find(
                 &w,
@@ -682,6 +722,9 @@ mod tests {
             )
             .unwrap();
             assert_eq!(sand.cell, f.cell([-6, GROUND, 0]));
+            // Dry land: the roof's top, not the sand under the water.
+            let land = find(&w, start, &Query::new(Matcher::Land)).unwrap();
+            assert_eq!(land.cell, f.cell([2, GROUND + 1, 0]));
             assert!((f.y(sand.surface_y) - m_of_row(GROUND + 1)).abs() < 1e-9);
             assert!((sand.depth_m - m_of_row(4)).abs() < 1e-9);
             // On the other face only: nothing.
@@ -757,6 +800,24 @@ mod tests {
             let (yaw, pitch) = aim(&river, eye, Aim::Toward(target)).unwrap();
             assert!(yaw.abs() < 1e-6);
             assert!((pitch.unwrap() + 45.0).abs() < 1e-6);
+        }
+    );
+
+    dwell_world::both_faces!(
+        fn a_cell_under_a_chunk_not_yet_streamed_is_no_surface(f: FaceFrame) {
+            // Water in a chunk's top row, the chunk above not held yet (all-air chunks are held
+            // once streamed).
+            let top = CHUNK_SIZE - 1;
+            let w0 = world(f, &[([0, top, 0], "dwell:water")]);
+            let start = from(f, [0.5, m_of_row(top), 0.5]);
+            assert!(find(&w0, start, &water()).is_none());
+            let mut w = w0;
+            let [x, y, z] = f.cell([0, top + 1, 0]);
+            w.put(
+                dwell_world::chunk_of(x, y, z),
+                dwell_world::Chunk::default(),
+            );
+            assert_eq!(find(&w, start, &water()).unwrap().cell, f.cell([0, top, 0]));
         }
     );
 
