@@ -2431,6 +2431,20 @@ in 0.48.2.
   no longer pours water onto the dam's top; its neighbours keep their rest flows across its faces,
   so a dam still backs the river up and drains the reach below. Read from the state each substep, so
   saved worlds heal on load.
+  **The reach below a dam leaves the rest** (0.49.25, BUGS.md #41): the rest layer's divergence is
+  springs and sinks all along a river (the law's θ-weighting spreads each drawn step's pour up its
+  pool), which refilled the reach below a dam for ever and drained the lake at its mouth. A free
+  column's rest divergence counts only while its rest inflow (the rest's flow in, by face) comes at
+  least `restCut` (0.25) from columns still in the rest (`Water::share`, latched: back over
+  `restBack`, 0.75); a column out of its generated water is out of it. So the cut runs down the
+  rest's own flow from the dam to a junction whose other river brings most of the flow, or into the
+  lake it ran into, and that reach moves by the law and the carried flow alone: it drains, and a
+  hollow in its bed keeps its water still. A column out of the rest keeps its river's flow out past
+  the grid (`runs_on`: where the rest has no face, the loaded world's edge). The carried flow is
+  upwind (the sending column's water over the face), so it lifts nothing out of a hollow; a sleeping
+  chunk's account counts the rest's flow by its column's share; what it owes past the water it has
+  is dropped; and a column out of the rest is calm only once it moves less than a tenth of its
+  water (a film still draining isn't). Read from the state, so saved worlds dry on load.
 - **Sleep.** A chunk whose free levels held within `sleepBandM` (5 mm) for `calmS` (10 s) sleeps
   and isn't stepped; what awake neighbours send it is kept exactly (`owed`) and it wakes when that
   would move its water half `wakeBandM` (5 cm) or a shared face jumps (`jumpM2s`); woken, it takes what

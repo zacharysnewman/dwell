@@ -685,3 +685,80 @@ dwell_world::both_faces!(
         );
     }
 );
+
+/// Owner, 2026-11-06 (BUGS.md #41): "Water never dries up below a dam." … "Like completely." Seed
+/// 0's river at the bench's dam site, walled across at z 7452 as in #38's test: the river below
+/// the wall, down its course (south-east) to where a creek joins it by (2457, 7541) and backs its
+/// water up to z 7526, is dry within ten water minutes, no water cell left in its channel, and its
+/// water chunks asleep. Red before: the reach kept its water (its rest layer's springs refilled
+/// it), awake.
+#[test]
+fn the_river_below_a_dam_across_seed0s_river_dries_to_the_next_inflow() {
+    // face-a-only: the generated world's face A; both faces in `water::tests`
+    // (`the_river_below_a_dam_dries_completely`, `a_hollow_below_a_dam_keeps_its_water_still`).
+    use dwell_world::{FaceFrame, GENERATOR_TERRAIN, VoxelWorld};
+    let mut w = VoxelWorld::new(
+        dwell_worldgen::generator_for(GENERATOR_TERRAIN, 0),
+        Some(dwell_worldgen::air_test_for(GENERATOR_TERRAIN, 0)),
+    );
+    let (x0, x1, z0, z1) = (2349, 2380, 7452, 7453);
+    for x in (x0 - 100..=x1 + 100).step_by(8) {
+        for z in (z0 - 120..=z1 + 160).step_by(8) {
+            for y in (240..=320).step_by(8) {
+                w.get_voxel(x, y, z);
+            }
+        }
+    }
+    let mut water = dwell_sim::water::Water::for_world(GENERATOR_TERRAIN, 0, true);
+    water.tick(&mut w, &[], 0.1);
+    let liquid = |m: u16| dwell_blocks::try_info(m).is_some_and(|i| i.liquid);
+    // The channel below the wall to the creek's backwater (z 7454..7525), and its columns.
+    let below = |w: &VoxelWorld| -> (usize, usize) {
+        let (mut cells, mut cols) = (0, 0);
+        for z in z1 + 1..7526 {
+            for x in x0 - 100..=x1 + 100 {
+                let n = (240..=320)
+                    .filter(|&y| liquid(w.get_voxel_if_loaded([x, y, z])))
+                    .count();
+                cells += n;
+                cols += usize::from(n > 0);
+            }
+        }
+        (cells, cols)
+    };
+    let (cells0, cols0) = below(&w);
+    assert!(
+        cols0 > 400,
+        "the river below the site: {cells0} cells in {cols0} columns"
+    );
+    let stone = dwell_blocks::require("dwell:stone");
+    let mut old = Vec::new();
+    for x in x0..=x1 {
+        for y in 262..=293 {
+            for z in z0..=z1 {
+                old.push(([x, y, z], w.get_voxel(x, y, z)));
+                w.set_voxel(x, y, z, stone);
+            }
+        }
+    }
+    water.touch(old);
+    let player = [2364.5, 142.0, 7443.5];
+    for _ in 0..600 {
+        water.tick(&mut w, &[player], 1.0);
+    }
+    let (cells, cols) = below(&w);
+    let awake: usize = (x0 - 100..=x1 + 100)
+        .step_by(16)
+        .flat_map(|x| (7456..7520).step_by(16).map(move |z| (x, z)))
+        .filter(|&(x, z)| water.awake_at(FaceFrame::A, x, z))
+        .count();
+    eprintln!(
+        "below the wall: {cells0} water cells in {cols0} columns → {cells} in {cols}; {awake} chunks awake there; {}",
+        water.report([2400, 278, 7490], 2)
+    );
+    assert_eq!(
+        cells, 0,
+        "{cells} water cells left below the wall ({cols} columns)"
+    );
+    assert_eq!(awake, 0, "the dry river's chunks sleep");
+}

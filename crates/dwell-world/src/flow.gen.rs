@@ -18,6 +18,8 @@ pub const FLOW: FlowData = FlowData {
     release_s: 5.0,
     jump_m2s: 0.1,
     release_m: 0.025,
+    rest_cut: 0.25,
+    rest_back: 0.75,
     edit_reach: 3,
     fill_hysteresis: 0.25,
     current_still_ms: 0.02,
