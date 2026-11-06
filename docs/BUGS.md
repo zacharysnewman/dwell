@@ -6,39 +6,44 @@ pins it.
 
 ## Open
 
-### 30. A held Place stops building at a few frames a second
-
-*Found 2026-11-05 (0.48.2), from CI.* Under the e2e suite's software renderer (CI ~5 fps, a Mac's
-SwiftShader ~3 fps) every held-Place build in `e2e/buildDrag.spec.ts` builds its first piece and no
-more: towering (feet stay at 33 after four jumps), walking back in Line mode, bridging help, held
-ladders, crouch-jump towers. All pass on a real GPU. Main's e2e shards 1 and 4 have failed on these
-since at least 0.47 (#320). Repro: `npx playwright test e2e/buildDrag.spec.ts -g towering` with the
-SwiftShader config. Suspect: the held stroke's next piece is decided per frame (`game.rs`
-`edit_held`, `build_drag` waiting for a jump to clear the body), and at 200–300 ms frames the jump's
-window is missed between frames.
-
 ### 23. A block can't be placed against the downhill side of a ramp
 
 *Reported 2026-11-03 (0.44.2).* "I can't place a block against the outer edge of (downhill) side of a
 shallow ramp, maybe same problem with steep ramps too?" Not investigated yet: targeting a ramp's low
 face, or the placement check against its shape.
 
-### 27. On a steep diagonal cascade a lip can still pour into a cell too many or too few
+
+## Fixed
+
+### 30. A held Place stopped building at a few frames a second (fixed in 0.49.2)
+
+*Found 2026-11-05 (0.48.2), from CI.* Under the e2e suite's software renderer (CI ~5 fps, a Mac's
+SwiftShader ~3 fps) a held-Place build in `e2e/buildDrag.spec.ts` built its first piece and no more
+(towering, walking back in Line mode, bridging help, held ladders, crouch-jump towers); those tests
+had failed on CI since they were written (0.38.5). Two causes. The server checked each piece against
+its view of the player's body, which lags the client's by the inputs still queued, a whole slow
+frame of them: a piece the client placed once its body was clear went into the server's body and was
+refused (a region fill's cell skipped). And the client looked for the moment a jump cleared the next
+piece once a frame, and at 200–300 ms frames that ~0.25 s moment fell between frames. Fixed: a
+place into a player, or a region edit entirely into one, waits up to `EDIT_HOLD_TICKS` (30) checked
+each tick (`server.rs`), and the held stroke is checked at every predicted tick (`game.rs`
+`drag_tick`). `game_local.rs` `towering_builds_a_metre_a_jump_at_five_and_three_frames_a_second`
+(red before: 0 m of 4 at 5 fps). At 2 fps a tower still misses some jumps.
+
+### 28. A junction at the top of a chute can leave a lip a cell short (gone in 0.49.0)
+
+*Found 2026-11-04 (G1, the graph checker).* Seed 0, river 17 at (16555, 2142): a tributary joins
+where river 17 drops into a chute, so the step's band is split between the two rivers and river 17's
+lip has room for 3 of its 4 cells. One lip in 44,401 on seeds 0–5; the checker allows one in ten
+thousand. Fix: plan a junction step's band across both rivers. Gone with the lips (Phase 53 G1a): the generator draws none.
+
+### 27. On a steep diagonal cascade a lip can still pour into a cell too many or too few (gone in 0.49.0)
 
 *Found 2026-11-04 (0.47.0 work, the strict sweep at eight pools a seed).* Seed 0 near (−15250,
 91, 1840): pools a couple of cells long, a step every 2 m on a diagonal; a lip's band runs into
 the next lip's, and a two-cell pool perched beside the river drains once found. The sweep checks
 four pools a seed (it passes); at eight this site fails. Suspects: the next lip's crest not under
-this lip's, bank columns lower than a crest's water beside it.
-
-### 28. A junction at the top of a chute can leave a lip a cell short
-
-*Found 2026-11-04 (G1, the graph checker).* Seed 0, river 17 at (16555, 2142): a tributary joins
-where river 17 drops into a chute, so the step's band is split between the two rivers and river 17's
-lip has room for 3 of its 4 cells. One lip in 44,401 on seeds 0–5; the checker allows one in ten
-thousand. Fix: plan a junction step's band across both rivers.
-
-## Fixed
+this lip's, bank columns lower than a crest's water beside it. Gone with the lips (Phase 53 G1a): the generator draws none.
 
 ### 29. Dirt walls stuck out into rivers at their step-downs (fixed in 0.49.0)
 

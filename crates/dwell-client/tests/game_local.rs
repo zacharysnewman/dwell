@@ -1921,3 +1921,75 @@ fn placing_a_block_into_your_own_body_is_not_predicted() {
         );
     }
 }
+
+/// Towering (docs/ITEMS.md §5) on a device whose frames each cover `steps` of the server's ticks:
+/// Place held looking straight down, four jumps of a 150 ms press and 750 ms after. The feet rise
+/// by the blocks built under them.
+fn towering_rise(steps: usize) -> f64 {
+    use dwell_game::build_drag::Holder;
+    let mut rig = Rig::with_generator(GENERATOR_SANDBOX);
+    assert!(rig.run_until(60 * 30, |r| {
+        r.game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)
+    }));
+    let SessionState::Joined {
+        region_edits,
+        brushes,
+        generator_version,
+        ..
+    } = rig.session.state().clone()
+    else {
+        panic!("joined")
+    };
+    rig.game
+        .as_mut()
+        .unwrap()
+        .set_capabilities(region_edits, brushes, generator_version);
+    target_at(&mut rig, 0.0, -89.0);
+    rig.run_until(60, |_| false);
+    let feet0 = rig.game.as_ref().unwrap().debug_state().feet[1];
+    let now = rig.now;
+    rig.game
+        .as_mut()
+        .unwrap()
+        .edit_held(EditAction::Place, Holder::Mouse, now);
+    // Frames of `steps` ticks covering at least `ms`.
+    let frames = |ms: f64| ((ms * 60.0 / 1000.0) / steps as f64).ceil() as usize;
+    for _ in 0..4 {
+        rig.input.set_key("Space", true);
+        for _ in 0..frames(150.0) {
+            rig.slow_frame(steps);
+        }
+        rig.input.set_key("Space", false);
+        for _ in 0..frames(750.0) {
+            rig.slow_frame(steps);
+        }
+    }
+    rig.game.as_mut().unwrap().release_place(Holder::Mouse);
+    for _ in 0..frames(1000.0) {
+        rig.slow_frame(steps);
+    }
+    rig.game.as_ref().unwrap().debug_state().feet[1] - feet0
+}
+
+#[test]
+fn towering_builds_a_metre_a_jump_at_sixty_frames_a_second() {
+    let rise = towering_rise(1);
+    assert!((rise - 4.0).abs() < 0.01, "rose {rise} m in four jumps");
+}
+
+#[test]
+fn towering_builds_a_metre_a_jump_at_five_and_three_frames_a_second() {
+    // docs/BUGS.md 30: under the software renderer (CI ~5 fps, a Mac's ~3 fps) a held Place built
+    // the first piece and no more: the server checked each piece against its view of the body, a
+    // slow frame of inputs behind (refused), and the client looked for the jump's moment clear of
+    // the next piece once a frame, which fell between frames.
+    for steps in [12, 20] {
+        let rise = towering_rise(steps);
+        assert!(
+            (rise - 4.0).abs() < 0.01,
+            "rose {rise} m in four jumps at {steps} ticks a frame"
+        );
+    }
+}

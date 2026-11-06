@@ -3433,7 +3433,11 @@ drivers) get the "unsupported" message (§5).
 - **[built, Phase 3d]** Block edits are checked for reach, line of sight, rate (token bucket),
   and permissions (`ServerConfig::edits`); indestructible states cannot be broken or replaced, only palette materials can be
   placed, and placements into blocks, outside the world, or overlapping any player capsule are
-  rejected (§6.5). At most 8 requests per session queue per tick; `ChunkResync` answers only chunks
+  rejected (§6.5). A placement into a player capsule, and a region edit all of whose cells are,
+  waits up to `EDIT_HOLD_TICKS` (30) before it is refused, checked again each tick: the server's
+  view of a body lags the client's by the inputs still queued, a whole frame of them on a slow
+  device, and the client placed once its own body was clear (BUGS.md 30). An edit's ack waits
+  for the edits held before it. At most 8 requests per session queue per tick; `ChunkResync` answers only chunks
   the client is streamed, at most `MAX_RESYNC_CHUNKS` per request.
 - **[built, Phase 4]** `ChunkRequest`s are bounded to `RENDER_RADIUS_CHUNKS` of the player,
   rate-limited (`CHUNK_REQUESTS_PER_SECOND`, a token bucket; at most 1,024 queued) and share the

@@ -68,6 +68,11 @@ const KEEP_CHUNKS: i32 = 3; // unmodified chunks kept around players; farther: e
 const EVICT_EVERY_TICKS: u32 = 64;
 const MAX_EXPLICIT_WANTED: usize = 64; // full-mode chunks queued for generation per tick
 const MAX_QUEUED_EDITS: usize = 8; // per session per tick; more are dropped
+/// Ticks a place into a player's body waits before it is refused (docs/BUGS.md 30): the server's
+/// view of a body lags the client's by the inputs still queued, a whole frame of them on a slow
+/// device (a 2 fps frame's 30 ticks), so a place the client made once its body was clear goes in
+/// when the server's body has moved clear too.
+const EDIT_HOLD_TICKS: u8 = 30;
 /// Block edit rate (§6.5, §11): a token bucket refilled once per BLOCK_EDIT_INTERVAL_MS, holding a
 /// small burst so edits bunched by the network are not rejected.
 const EDITS_PER_TICK: f64 = 1000.0 / (pc::BLOCK_EDIT_INTERVAL_MS as f64 * SIM_HZ as f64);
@@ -436,12 +441,16 @@ struct Session {
     last_knockback_seq: u32,
     rate_window_tick: u32,
     rate_window_count: u32,
-    edits: Vec<(u32, BlockEditRequest)>, // applied at the start of the next step, by edit number
+    /// Applied at the start of the next step, by edit number: (edit number, edit, ticks held while
+    /// it would go into a player, EDIT_HOLD_TICKS).
+    edits: Vec<(u32, BlockEditRequest, u8)>,
     /// Body edits (docs/BUILT_BODIES.md §4), applied after the block edits.
     body_edits: Vec<BodyEditRequest>,
     edit_credit: f64,
-    region_edits: Vec<(u32, RegionEdit)>, // applied after the block edits, in order
-    region_credit: f64,                   // cells
+    /// Applied after the block edits, in order: (edit number, edit, ticks held while all of it
+    /// would go into a player, EDIT_HOLD_TICKS).
+    region_edits: Vec<(u32, RegionEdit, u8)>,
+    region_credit: f64, // cells
     /// Edit requests (block and region) that have arrived, numbered from 1 (`EditAck`).
     edit_seq: u32,
     /// The last edit number acknowledged, and those refused since.
@@ -1149,7 +1158,7 @@ impl Server {
                 s.swing = next_swing(s.swing, edit.action == BlockEditAction::Break);
                 s.edit_seq += 1;
                 if s.edits.len() < MAX_QUEUED_EDITS {
-                    s.edits.push((s.edit_seq, edit));
+                    s.edits.push((s.edit_seq, edit, 0));
                 } else {
                     s.stats.edits_rejected += 1;
                     s.edit_refused.push(s.edit_seq);
@@ -1167,7 +1176,7 @@ impl Server {
                 s.swing = next_swing(s.swing, false);
                 s.edit_seq += 1;
                 if s.region_edits.len() < region_edit::MAX_QUEUED {
-                    s.region_edits.push((s.edit_seq, edit));
+                    s.region_edits.push((s.edit_seq, edit, 0));
                 } else {
                     s.stats.region_edits_rejected += 1;
                     s.edit_refused.push(s.edit_seq);
@@ -1941,7 +1950,8 @@ impl Server {
             let eye = handle.map(|h| self.eye_of(h));
             let s = self.sessions.get_mut(&id).expect("session");
             s.edit_credit = (s.edit_credit + EDITS_PER_TICK).min(EDIT_BURST);
-            for (seq, edit) in std::mem::take(&mut s.edits) {
+            let mut held = Vec::new();
+            for (seq, edit, ticks) in std::mem::take(&mut s.edits) {
                 let Some(eye) = eye.filter(|_| may_edit && s.edit_credit >= 1.0) else {
                     s.stats.edits_rejected += 1;
                     s.edit_refused.push(seq);
@@ -1950,6 +1960,11 @@ impl Server {
                 let outcome =
                     check_block_edit(&mut self.world, &edit, eye, &capsules, DEFAULT_REACH);
                 s.stats.last_edit_check = outcome.check;
+                // Into a body: it waits for the body's queued inputs to move it (EDIT_HOLD_TICKS).
+                if outcome.check == EditCheck::IntoPlayer && ticks < EDIT_HOLD_TICKS {
+                    held.push((seq, edit, ticks + 1));
+                    continue;
+                }
                 if outcome.check != EditCheck::Ok {
                     s.stats.edits_rejected += 1;
                     s.edit_refused.push(seq);
@@ -1983,10 +1998,12 @@ impl Server {
                     changes.set(&mut self.world, at, m);
                 }
             }
+            s.edits = held;
             // Region edits (§6.5), after the block edits, in the order they arrived; each costs
             // its box's volume in cells, valid or not (validation reads the whole box).
             s.region_credit = (s.region_credit + REGION_CELLS_PER_TICK).min(REGION_BURST_CELLS);
-            for (seq, edit) in std::mem::take(&mut s.region_edits) {
+            let mut held = Vec::new();
+            for (seq, edit, ticks) in std::mem::take(&mut s.region_edits) {
                 let cost = edit.volume() as f64;
                 let Some(eye) = eye.filter(|_| may_edit && s.region_credit >= cost) else {
                     s.stats.region_edits_rejected += 1;
@@ -1999,6 +2016,14 @@ impl Server {
                 if outcome.check != RegionCheck::Ok {
                     s.stats.region_edits_rejected += 1;
                     s.edit_refused.push(seq);
+                    continue;
+                }
+                // All of it into a body (a drag's piece under a rising player): it waits, as a
+                // block edit does (EDIT_HOLD_TICKS), and costs nothing until it goes.
+                if outcome.changes.is_empty() && outcome.into_player > 0 && ticks < EDIT_HOLD_TICKS
+                {
+                    s.region_credit += cost;
+                    held.push((seq, edit, ticks + 1));
                     continue;
                 }
                 s.stats.region_edits_applied += 1;
@@ -2030,6 +2055,7 @@ impl Server {
                     }
                 }
             }
+            s.region_edits = held;
         }
         let edited = changes.cells();
         self.broadcast_changes(changes, VoxelModificationReason::Edit);
@@ -2485,9 +2511,23 @@ impl Server {
             .collect();
         for id in ids {
             let s = self.sessions.get_mut(&id).expect("session");
-            let mut refused = std::mem::take(&mut s.edit_refused);
+            // Through the edit before the first still held (EDIT_HOLD_TICKS); refusals after it
+            // wait for that ack.
+            let through = s
+                .edits
+                .iter()
+                .map(|e| e.0)
+                .chain(s.region_edits.iter().map(|e| e.0))
+                .min()
+                .map_or(s.edit_seq, |first| first - 1);
+            if through <= s.edit_acked {
+                continue;
+            }
+            let (mut refused, later): (Vec<u32>, Vec<u32>) = std::mem::take(&mut s.edit_refused)
+                .into_iter()
+                .partition(|&r| r <= through);
+            s.edit_refused = later;
             refused.sort_unstable();
-            let through = s.edit_seq;
             s.edit_acked = through;
             let mut acks: Vec<EditAck> = refused
                 .chunks(limits::MAX_EDIT_ACK_REJECTED)

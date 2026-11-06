@@ -2206,6 +2206,7 @@ impl<S: Scene> Game<S> {
         while self.accumulator >= TICK_MS {
             self.accumulator -= TICK_MS;
             self.tick(input, touch);
+            self.drag_tick(input, now_ms - self.accumulator / self.tick_rate);
             telemetry::add("ticks.count", 1.0);
         }
         telemetry::add("ticks", telemetry::now_ms() - t0);
@@ -2263,6 +2264,23 @@ impl<S: Scene> Game<S> {
         input.look.face = self.current.face;
         // The camera turns with rotating ground (PPC yawDelta).
         input.look.yaw += self.current.platform_yaw_delta;
+    }
+
+    /// A held Place's stroke at this tick's body and eye, at `tick_ms` (docs/BUGS.md 30): a slow
+    /// device's frame covers many ticks, and a jump's moment clear of the next piece (towering) can
+    /// fall between two frames; the frame's own `drag_build` goes on at the drawn eye.
+    fn drag_tick(&mut self, input: &KeyboardMouseInput, tick_ms: f64) {
+        let c = self.current;
+        if !(self.drag.active() || self.drag.waiting().is_some())
+            || !c.active
+            || self.dead
+            || !self.terrain_ready()
+        {
+            return;
+        }
+        let eye = [c.position[0], self.eye.draw(1.0), c.position[2]];
+        let dir = view_direction(input.look.yaw, input.look.pitch, c.face);
+        self.drag_build(Some(eye), dir, tick_ms);
     }
 
     fn draw(&mut self, now_ms: f64, input: &KeyboardMouseInput, now: &mut dyn FnMut() -> f64) {
