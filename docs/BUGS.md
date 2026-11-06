@@ -6,27 +6,6 @@ pins it.
 
 ## Open
 
-### 41. A dammed river never falls asleep
-
-*Found 2026-11-06, measuring #40.* Natively at seed 0's river (`dwell-sim` `tests/water.rs`
-`measure_a_raised_dams_churn`, ignored), a wall raised across it keeps 17–30 water chunks awake for
-as long as it runs (170 water minutes), before and after #40's fix. For the first ~2 water hours
-that is the river filling its valley behind the wall at its discharge (~28 m³ a minute, 300–1,000
-cells written a minute in 6–10 terrain chunks, each of whose LOD sections is computed again: the
-LOD churn another agent saw in the browser); once it spills, the volume holds (±10 m³) but the
-water never settles: 20–300 cells a minute in 1–7 chunks. Two causes found in a fixture (a flat
-river dammed, `water::tests`): (1) the reach drained below a dam keeps its rest flow, a steady
-difference of the two layers across its chunks' edges; a sleeping chunk owes that difference in
-full each substep, so it wakes, takes what films of water it has and sleeps again, for ever;
-(2) a deep still reach stirred by an edit sloshes ±1 cm for 10–25 water minutes, past the 5 mm
-sleep band, and the large reservoir behind seed 0's dam ±3 cm at its spill level. Tried and
-dropped: owing only the change from an edge's flow when the chunk fell asleep (a filling lake
-slower than the sleep band then stopped filling); with the chunk's rate of change carried on asleep
-(sleep-time noise then woke rivers that should rest exactly); the rest flow owed in proportion to
-the column's water left (broke `a_block_set_in_a_generated_rivers_bed_changes_nothing_else`, seed
-1). Next: per-face accounting of a sleeper's frozen inner faces, or a damped sleep test on the
-water's mean level rather than each column's.
-
 ### 34. e2e play.spec's two-client test times out on CI since 0.49.4
 
 *Found 2026-11-06, from CI.* "two clients on a native server see each other move": page B (on a
@@ -70,6 +49,42 @@ face, or the placement check against its shape.
 
 
 ## Fixed
+
+### 41. Water never dried up below a dam (fixed in 0.49.25)
+
+*Found 2026-11-06, measuring #40; reported by the owner the same day:* "Water never dries up below a
+dam." … "Like completely." Natively at seed 0's river (`measure_a_raised_dams_churn`, ignored), a wall
+raised across it kept 17–30 water chunks awake for as long as it ran, and the river below the wall kept
+its water. Cause: free water changes by the difference of the two layers' flows (WATER_SURFACE_GRID.md
+§2b), and the rest layer's divergence is a spring or sink at every column of a river, not only at a
+drawn step's lip (the law's θ-weighting spreads each step's pour up its pool: 0.14 m/s mid-pool, 0.99 at
+a lip in the fixture), and a sink at the lake a river runs into. Below a dam those springs refilled the
+reach for ever and the lake's sink drained it, and a sleeping chunk beside them owed the rest's flow in
+full each substep, so it woke, took what films it had and slept again. Three earlier attempts (owing only
+an edge's change since sleep; carrying the chunk's rate of change asleep; the rest flow in proportion to
+the water left) were dropped (they broke a filling lake, woke resting rivers, and seed 1's untouched
+river). Fixed: a free column's rest divergence counts only while it is in the rest (`Water::share`,
+latched: out once less than `restCut`, 0.25, of the rest's flow into it comes from columns in the rest;
+back over `restBack`, 0.75; `flow.json`), so the cut runs down the rest's own flow from the dam to the
+next inflow or the lake, and that reach drains by the law and the carried flow; such a column keeps its
+river's flow out past the grid (`runs_on`); the carried flow is upwind (so a hollow keeps its water); a
+sleeper owes the rest's flow by its column's share, and drops what it owes past the water it has; and a
+column out of the rest is calm only below a tenth of its water's motion. Pinned by `water::tests`
+`the_river_below_a_dam_dries_completely` (both faces; red 180 water cells below the dam, 1.05 m deep;
+green none, its chunks asleep), `a_hollow_below_a_dam_keeps_its_water_still` (red: at the river's level;
+green: under its lip, level, asleep, writing nothing), `a_world_saved_below_a_dam_dries_on_load` (red 180
+cells), and `tests/water.rs` `the_river_below_a_dam_across_seed0s_river_dries_to_the_next_inflow` (the
+wall at z 7452: red 575 water columns left from the wall to the creek's backwater at z 7526 after ten
+water minutes, 8 chunks awake there; green none, none awake). Untouched rivers still rest exactly
+(`a_block_set_in_a_generated_rivers_bed_changes_nothing_else`, seeds 0–2), a dam still backs a river up
+(#38's tests) and nothing stands on a raised dam (#40's). `a_dam_across_a_drawn_river_backs_it_up` now
+reads the pool below after two water minutes: its fixture's reach below is closed, and its water stays
+in it now that the rest's sinks don't take it. **Remaining:** the reservoir behind the dam doesn't fall
+asleep once it spills (`measure_a_raised_dams_churn`, 170 water minutes: at z 7452 6–18 chunks awake,
+19–30 before, and 0–1,269 cells written a minute, 22–1,264 before, the reservoir spilling on from minute
+150; at z 7380 21–32 awake, 20–30 before, and 0–991 written, 7–1,024 before, down to 1 a minute over its
+last 20 minutes, 20–46 before); that is the filled reservoir's spill and its ±1–3 cm slosh past the 5 mm
+sleep band, not the river below.
 
 ### 42. A river stopped flowing below a fast reach, and further out (fixed in 0.49.24)
 

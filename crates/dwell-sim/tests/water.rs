@@ -727,7 +727,10 @@ fn the_river_below_a_dam_across_seed0s_river_dries_to_the_next_inflow() {
         (cells, cols)
     };
     let (cells0, cols0) = below(&w);
-    assert!(cols0 > 400, "the river below the site: {cells0} cells in {cols0} columns");
+    assert!(
+        cols0 > 400,
+        "the river below the site: {cells0} cells in {cols0} columns"
+    );
     let stone = dwell_blocks::require("dwell:stone");
     let mut old = Vec::new();
     for x in x0..=x1 {
@@ -753,6 +756,9 @@ fn the_river_below_a_dam_across_seed0s_river_dries_to_the_next_inflow() {
         "below the wall: {cells0} water cells in {cols0} columns → {cells} in {cols}; {awake} chunks awake there; {}",
         water.report([2400, 278, 7490], 2)
     );
-    assert_eq!(cells, 0, "{cells} water cells left below the wall ({cols} columns)");
+    assert_eq!(
+        cells, 0,
+        "{cells} water cells left below the wall ({cols} columns)"
+    );
     assert_eq!(awake, 0, "the dry river's chunks sleep");
 }

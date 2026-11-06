@@ -1038,7 +1038,7 @@ impl Scene {
     }
     /// The river's liquid cells from column `x0` down to the lake (x ≤ 31), skipping columns
     /// `skip`, and the deepest water among those columns (m).
-    fn wet_below(&self, x0: i32, skip: std::ops::RangeInclusive<i32>) -> (usize, f64) {
+    fn wet_below(&self, x0: i32, skip: &[i32]) -> (usize, f64) {
         let mut cells = 0;
         let mut deepest = 0.0f64;
         for x in (x0..=31).filter(|x| !skip.contains(x)) {
@@ -1080,11 +1080,11 @@ dwell_world::both_faces!(
         // and its chunks sleep; the lake takes what ran into it, no more and no less.
         let mut s = Scene::new(f);
         s.river_into_a_lake(false);
-        assert!(s.wet_below(2, 0..=-1).0 > 100, "the river as generated");
+        assert!(s.wet_below(2, &[]).0 > 100, "the river as generated");
         s.dam(0, 6);
         s.dam(1, 6);
         s.run(DRY_S);
-        let (cells, deepest) = s.wet_below(2, 0..=-1);
+        let (cells, deepest) = s.wet_below(2, &[]);
         assert!(
             cells == 0 && deepest < f64::from(STEP) * 0.5,
             "below the dam: {cells} water cells, the deepest {deepest:.4} m"
@@ -1119,7 +1119,7 @@ dwell_world::both_faces!(
             lo > -0.6 && hi < -0.5 + f64::from(STEP) * 0.5 && hi - lo < 0.005,
             "the hollow holds its water, level: {levels:.3?}"
         );
-        let (cells, deepest) = s.wet_below(2, 20..=21);
+        let (cells, deepest) = s.wet_below(2, &[20, 21]);
         assert!(
             cells == 0 && deepest < f64::from(STEP) * 0.5,
             "outside the hollow: {cells} water cells, the deepest {deepest:.4} m"
@@ -1129,7 +1129,25 @@ dwell_world::both_faces!(
     }
 );
 
-
-
-
-
+dwell_world::both_faces!(
+    fn a_world_saved_below_a_dam_dries_on_load(f: FaceFrame) {
+        // Existing worlds dry on load (BUGS.md #41): a record saved just after the dam (DWG1, as
+        // before) is restored as it is, and the reach below leaves the rest from the dam down.
+        let mut s = Scene::new(f);
+        s.river_into_a_lake(false);
+        s.dam(0, 6);
+        s.dam(1, 6);
+        s.run(2);
+        let bytes = s.water.save(|_| 0);
+        let mut back = Water::new()
+            .with_river_flow(std::sync::Arc::new(|_, x, _| (x <= 31).then_some([Q, 0.0])));
+        assert!(back.restore(&bytes, |_| 0).is_some(), "the record reads");
+        s.water = back;
+        s.run(DRY_S);
+        let (cells, deepest) = s.wet_below(2, &[]);
+        assert!(
+            cells == 0 && deepest < f64::from(STEP) * 0.5,
+            "below the dam after loading: {cells} water cells, the deepest {deepest:.4} m"
+        );
+    }
+);

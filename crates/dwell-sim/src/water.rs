@@ -108,8 +108,8 @@ impl Settings {
             release_s: d.release_s.max(1e-6),
             jump: d.jump_m2s as f32,
             release: d.release_m as f32,
-            rest_cut: 0.25,
-            rest_back: 0.75,
+            rest_cut: d.rest_cut as f32,
+            rest_back: d.rest_back as f32,
             edit_reach: d.edit_reach as i32,
             hyst: d.fill_hysteresis as f32 * STEP,
             still: d.current_still_ms as f32,
@@ -531,7 +531,8 @@ impl Water {
 
     /// Whether the water chunk holding face-local column (x, z) is awake (diagnostics, tests).
     pub fn awake_at(&self, f: FaceFrame, x: i32, z: i32) -> bool {
-        self.find(f, x, z).is_some_and(|(c, _)| self.chunks[c].awake)
+        self.find(f, x, z)
+            .is_some_and(|(c, _)| self.chunks[c].awake)
     }
 
     /// Chunks awake (diagnostics, tests).
