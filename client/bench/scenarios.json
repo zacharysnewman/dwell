@@ -756,7 +756,7 @@
     },
     {
       "name": "water-river",
-      "notes": "A river's flow visuals (docs/WATER_SURFACE_GRID.md §2c): goes to the world map's nearest river from the seed-7 spawn and finds water running at least 0.1 m/s there, then views it from 2 m up downstream and upstream, across it from 8 m up, and from 12 m up looking down on it. Records the frame looking downstream. Finding no running river fails the run.",
+      "notes": "A river's flow visuals (docs/WATER_SURFACE_GRID.md §2c): goes to the world map's nearest river from the seed-7 spawn and finds water running at least 0.1 m/s there, then views it from 2 m up downstream and upstream, across it from 6 m up (steeply: a narrow river's banks rise close), and from 12 m up looking down on it. Records the frame looking downstream. Finding no running river fails the run.",
       "settings": {
         "timeOfDay": 0.45
       },
@@ -822,8 +822,8 @@
           "find": "water",
           "minCurrent": 0.1,
           "aim": "across",
-          "height": 8,
-          "pitch": -40,
+          "height": 6,
+          "pitch": -65,
           "maxS": 10
         },
         {
