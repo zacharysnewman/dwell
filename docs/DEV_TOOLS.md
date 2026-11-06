@@ -266,7 +266,9 @@ call's wall time over the ticks it ran), `advanceMaxMs` (the worst call), `water
 `maxOwedS`), `busyMs` and `maxBusyMs` (a run's wall time, the longest), `waterTimeS` (its clock),
 `awakeChunks`, `waterChunks`, `cellBytes` and `cellChunks` (its copy of the world), `overtaken`
 (writes dropped because an edit got there first). Natively `Server::water_stats()`. `?water=inline`
-runs the water on the server's thread instead of its worker.
+runs the water on the server's thread instead of its worker, and `?serverjobs=inline` the server's
+chunk generation and LOD sections on its tick instead of the server-jobs worker (WATER_SURFACE_GRID.md
+§2d).
 
 **The edit log** (0.46.1, owner 2026-11-04): the local server keeps its last 256 block changes that
 aren't the water's own (edits, region fills, collapses, settles; `Server::edit_log_json`), oldest

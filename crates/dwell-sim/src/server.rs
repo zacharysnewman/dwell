@@ -202,6 +202,9 @@ struct WaterLink {
 
 /// How long before an autosave the server asks the water for its record (ticks).
 const WATER_RECORD_LEAD_TICKS: u32 = 30;
+/// How long the LOD section of a chunk the water rewrites waits from its first change before it is
+/// computed (ticks): the water keeps rewriting it, and the LOD is seen from afar.
+const WATER_LOD_HOLD_TICKS: u32 = 2 * SIM_HZ;
 /// How long closing a world waits for the water's record.
 const WATER_CLOSE_WAIT: Duration = Duration::from_secs(1);
 
@@ -243,6 +246,10 @@ pub struct ServerConfig {
     /// Level of detail (§6.6): propagation threads (`None`: one when worldgen has threads, else
     /// none — then it runs on the tick within `lod_budget`), and the per-client stream budget.
     pub lod_threads: Option<usize>,
+    /// The LOD's jobs and the chunks to generate are done elsewhere (the browser's server-jobs
+    /// worker: `take_job`, `deliver_job`), not on the tick; `lod_threads` and `worldgen_threads`
+    /// are then ignored.
+    pub jobs_remote: bool,
     pub lod_budget: Duration,
     pub lod_bytes_per_second: u32,
     /// Block edits (§6.5) and flight: who may; the players (device public keys) who are ops.
@@ -303,6 +310,7 @@ impl Default for ServerConfig {
             chunk_bytes_per_second: wc::CHUNK_BYTES_PER_SECOND as u32,
             respawn_preload_radius_chunks: RESPAWN_PRELOAD_RADIUS_CHUNKS,
             lod_threads: None,
+            jobs_remote: false,
             lod_budget: Duration::from_micros(2000),
             lod_bytes_per_second: lod::BYTES_PER_SECOND as u32,
             edits: EditPolicy::Everyone,
@@ -821,7 +829,11 @@ impl Server {
             settings_fields: SettingsFields::default().with(default_settings(config.water_speed)),
             tick: 0,
             next_player_id: 1,
-            worldgen: WorldgenPool::new(generator.clone(), config.worldgen_threads),
+            worldgen: if config.jobs_remote {
+                WorldgenPool::new_remote(generator.clone())
+            } else {
+                WorldgenPool::new(generator.clone(), config.worldgen_threads)
+            },
             generator,
             // The chunk of the cell under the feet.
             verification_chunk: chunk_at(spawn[0], spawn[1] - dwell_world::CELL_H, spawn[2]),
@@ -838,10 +850,17 @@ impl Server {
             departed: Vec::new(),
             next_save_tick: 0,
             save_stats: SaveStats::default(),
-            lod: LodPropagation::new(
-                dwell_worldgen::lod_generator_for(config.generator_version, config.world_seed),
-                lod_threads,
-            ),
+            lod: if config.jobs_remote {
+                LodPropagation::new_remote(dwell_worldgen::lod_generator_for(
+                    config.generator_version,
+                    config.world_seed,
+                ))
+            } else {
+                LodPropagation::new(
+                    dwell_worldgen::lod_generator_for(config.generator_version, config.world_seed),
+                    lod_threads,
+                )
+            },
             index_updates: BTreeMap::new(),
             next_index_update_tick: 0,
             lod_unsaved: HashSet::default(),
@@ -2204,7 +2223,14 @@ impl Server {
         for c in &changed {
             let coord = ChunkCoord::from_array(c.coord);
             self.dirty.insert(coord);
-            self.lod.mark_chunk(coord);
+            // The water's writes go on changing a chunk while it moves: its LOD section is computed
+            // a while after the first (once a hold, not every water tick); an edit's at once.
+            if water {
+                self.lod
+                    .mark_chunk_settling(coord, u64::from(WATER_LOD_HOLD_TICKS));
+            } else {
+                self.lod.mark_chunk(coord);
+            }
         }
         // One revision per chunk per modification, then each client gets the chunks it streams.
         for c in &mut changed {
@@ -3358,6 +3384,23 @@ impl Server {
     }
     pub fn lod(&self) -> &LodPropagation {
         &self.lod
+    }
+    /// The next job for the server-jobs worker (`jobs_remote`), as bytes for
+    /// `dwell_sim::jobs::JobRunner::run`: a chunk to generate first, else a LOD section.
+    pub fn take_job(&mut self) -> Option<Vec<u8>> {
+        if let Some(c) = self.worldgen.take_job() {
+            return Some(crate::jobs::encode_chunk_job(c));
+        }
+        self.lod.take_job()
+    }
+    /// The server-jobs worker's answer to a job; applied at the next tick. False if it can't be
+    /// read.
+    pub fn deliver_job(&mut self, bytes: &[u8]) -> bool {
+        if let Some((c, chunk)) = crate::jobs::decode_chunk_done(bytes) {
+            self.worldgen.deliver(c, chunk);
+            return true;
+        }
+        self.lod.deliver(bytes)
     }
     pub fn verification_chunk(&self) -> ChunkCoord {
         self.verification_chunk

@@ -8,6 +8,18 @@
 //! gives it the next lodRevision and marks its parent dirty, up to the root. With no threads (the
 //! browser's local mode) the jobs run on the calling thread within a time budget. The same pool
 //! generates unmodified sections for full-chunk-mode clients.
+//!
+//! Two things keep a flood's LOD work small (the water rewrites its chunks every water tick,
+//! docs/WATER_SURFACE_GRID.md §2d): a section's **generated base** (the generator's cells, a pure
+//! function of its coordinate and most of a job's cost) is kept once computed (`MAX_BASES`), so
+//! computing a section again is its downsample only; and a chunk changed by **settling** writes
+//! (`mark_chunk_settling`: the water's) holds its section that many steps from its first such
+//! change before it is computed, so a section the water keeps rewriting is computed at most once a
+//! hold, not every water tick. An edit computes it at once.
+//!
+//! **Remote** (`new_remote`: the browser's local mode): the jobs run in a worker of their own, not
+//! on the tick. The embedder takes each job's bytes (`take_job`), runs them there
+//! ([`LodRunner`], which keeps its own generated bases) and hands the answer back (`deliver`).
 
 use dwell_world::hash::{HashMap, HashSet};
 use std::collections::VecDeque;
@@ -27,6 +39,9 @@ use dwell_world::{Chunk, ChunkCoord, local_index};
 use crate::clock::Deadline;
 
 const MAX_GENERATED: usize = 256; // full-chunk-mode sections kept for answering
+/// Modified sections' generated bases kept (34³ cells each, 78 KB): computing one again is its
+/// downsample only.
+pub const MAX_BASES: usize = 96;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct LodSection {
@@ -38,6 +53,8 @@ pub struct LodSection {
 struct Job {
     coord: LodCoord,
     generate_only: bool,
+    /// The section's generated cells, if kept (`LodPropagation::bases`).
+    base: Option<Arc<LodCells>>,
     /// Modified children (octant order): chunk voxels (level 1) or section cells (level ≥ 2).
     children: [Vec<u16>; 8],
 }
@@ -46,6 +63,10 @@ struct Done {
     coord: LodCoord,
     generate_only: bool,
     encoded: Vec<u8>,
+    /// The generated cells it computed (none if it was given them), to keep.
+    base: Option<Arc<LodCells>>,
+    /// It ran the generator (diagnostics).
+    generated: bool,
 }
 
 #[derive(Default)]
@@ -76,6 +97,17 @@ pub struct LodPropagation {
     generated: HashMap<LodCoord, Vec<u8>>,
     generated_order: VecDeque<LodCoord>,
     generating: HashSet<LodCoord>,
+    /// Modified sections' generated cells, oldest first out (`MAX_BASES`).
+    bases: HashMap<LodCoord, Arc<LodCells>>,
+    bases_order: VecDeque<LodCoord>,
+    /// Dirty sections held until this step (`mark_chunk_settling`).
+    hold: HashMap<LodCoord, u64>,
+    steps: u64,
+    /// Generator runs and kept bases used (diagnostics, tests).
+    pub generator_runs: u64,
+    pub base_hits: u64,
+    /// Jobs run elsewhere (`take_job`, `deliver`), never on the calling thread but to drain.
+    remote: bool,
 }
 
 fn decode(encoded: &[u8]) -> LodCells {
@@ -102,8 +134,15 @@ fn distance_sq(c: LodCoord, centers: &[[f64; 3]]) -> f64 {
 }
 
 fn run(generator: &LodGenerator, job: &Job) -> Done {
-    let mut cells: LodCells = vec![require("dwell:air"); VOLUME];
-    generator(job.coord, &mut cells);
+    let (mut cells, base, generated) = match &job.base {
+        Some(b) => ((**b).clone(), None, false),
+        None => {
+            let mut cells: LodCells = vec![require("dwell:air"); VOLUME];
+            generator(job.coord, &mut cells);
+            let base = (!job.generate_only).then(|| Arc::new(cells.clone()));
+            (cells, base, true)
+        }
+    };
     if !job.generate_only {
         for (o, kid) in job.children.iter().enumerate() {
             if kid.is_empty() {
@@ -125,6 +164,8 @@ fn run(generator: &LodGenerator, job: &Job) -> Done {
         coord: job.coord,
         generate_only: job.generate_only,
         encoded: encode_lod_cells(&cells),
+        base,
+        generated,
     }
 }
 
@@ -153,6 +194,45 @@ impl LodPropagation {
             generated: HashMap::default(),
             generated_order: VecDeque::new(),
             generating: HashSet::default(),
+            bases: HashMap::default(),
+            bases_order: VecDeque::new(),
+            hold: HashMap::default(),
+            steps: 0,
+            generator_runs: 0,
+            base_hits: 0,
+            remote: false,
+        }
+    }
+
+    /// Propagation whose jobs run elsewhere (the browser's LOD worker): `take_job`, `deliver`.
+    pub fn new_remote(generator: LodGenerator) -> Self {
+        let mut p = Self::new(generator, 0);
+        p.remote = true;
+        p
+    }
+
+    pub fn is_remote(&self) -> bool {
+        self.remote
+    }
+
+    /// The next job to run elsewhere (a remote propagation's), as bytes for [`LodRunner::run`].
+    pub fn take_job(&mut self) -> Option<Vec<u8>> {
+        if !self.remote {
+            return None;
+        }
+        let job = self.shared.q.lock().expect("lod lock").jobs.pop_front()?;
+        Some(encode_job(&job))
+    }
+
+    /// A job's answer from elsewhere ([`LodRunner::run`]'s bytes), applied at the next step. False
+    /// if it can't be read.
+    pub fn deliver(&mut self, bytes: &[u8]) -> bool {
+        match decode_done(bytes) {
+            Some(d) => {
+                self.shared.q.lock().expect("lod lock").done.push(d);
+                true
+            }
+            None => false,
         }
     }
 
@@ -188,7 +268,21 @@ impl LodPropagation {
     pub fn mark_dirty(&mut self, c: LodCoord) {
         if in_world(c) {
             self.dirty.insert(c);
+            self.hold.remove(&c);
         }
+    }
+    /// A chunk's voxels changed by writes that go on changing it (the water's): its section is
+    /// computed `hold` steps after the first such change (not again for each), unless something
+    /// marks it dirty at once meanwhile.
+    pub fn mark_chunk_settling(&mut self, c: ChunkCoord, hold: u64) {
+        let s = parent(lod_of_chunk(c));
+        if in_world(s) && self.dirty.insert(s) {
+            self.hold.insert(s, self.steps + hold);
+        }
+    }
+    /// Dirty sections held (`mark_chunk_settling`) and not yet due.
+    pub fn held(&self) -> usize {
+        self.hold.values().filter(|&&d| d > self.steps).count()
     }
     /// Loading a saved world: a section's cached content.
     pub fn restore(&mut self, c: LodCoord, section: LodSection) {
@@ -214,7 +308,19 @@ impl LodPropagation {
         Job {
             coord: c,
             generate_only: false,
+            base: self.bases.get(&c).cloned(),
             children,
+        }
+    }
+
+    fn keep_base(&mut self, c: LodCoord, base: Arc<LodCells>) {
+        if self.bases.insert(c, base).is_none() {
+            self.bases_order.push_back(c);
+            if self.bases_order.len() > MAX_BASES
+                && let Some(old) = self.bases_order.pop_front()
+            {
+                self.bases.remove(&old);
+            }
         }
     }
 
@@ -231,6 +337,14 @@ impl LodPropagation {
             return;
         }
         self.in_flight.remove(&d.coord);
+        if d.generated {
+            self.generator_runs += 1;
+        } else {
+            self.base_hits += 1;
+        }
+        if let Some(base) = d.base {
+            self.keep_base(d.coord, base);
+        }
         self.sections.insert(
             d.coord,
             LodSection {
@@ -264,12 +378,16 @@ impl LodPropagation {
         inline_budget: Duration,
     ) {
         self.collect();
+        self.steps += 1;
         // Lowest level first (children before parents), then nearest to a player.
         if !self.dirty.is_empty() && budget > 0 {
+            let steps = self.steps;
+            let hold = &self.hold;
             let mut ready: Vec<((i32, f64), LodCoord)> = self
                 .dirty
                 .iter()
                 .filter(|c| !self.in_flight.contains(c))
+                .filter(|c| hold.get(c).is_none_or(|&d| d <= steps))
                 .map(|&c| ((c.level, distance_sq(c, centers)), c))
                 .collect();
             ready.sort_by(|a, b| {
@@ -281,13 +399,18 @@ impl LodPropagation {
             let mut jobs = Vec::with_capacity(ready.len());
             for (_, c) in ready {
                 self.dirty.remove(&c);
+                self.hold.remove(&c);
                 self.in_flight.insert(c);
                 jobs.push(self.snapshot(c, modified));
             }
             self.shared.q.lock().expect("lod lock").jobs.extend(jobs);
             self.shared.work.notify_all();
         }
-        if self.workers.is_empty() {
+        self.run_inline(inline_budget);
+    }
+
+    fn run_inline(&mut self, inline_budget: Duration) {
+        if self.workers.is_empty() && !self.remote {
             let deadline = Deadline::after(inline_budget);
             loop {
                 let Some(job) = self.shared.q.lock().expect("lod lock").jobs.pop_front() else {
@@ -309,6 +432,16 @@ impl LodPropagation {
         centers: &[[f64; 3]],
         modified: &mut dyn FnMut(ChunkCoord) -> Option<Vec<u16>>,
     ) {
+        self.hold.clear();
+        // A remote propagation's jobs, here.
+        let remote = std::mem::replace(&mut self.remote, false);
+        if remote {
+            // jobs out at the worker are run again here (a late answer writes the same content)
+            let out: Vec<LodCoord> = self.in_flight.drain().collect();
+            self.dirty.extend(out);
+            self.generating.clear();
+            self.shared.q.lock().expect("lod lock").jobs.clear();
+        }
         while !self.dirty.is_empty() || !self.in_flight.is_empty() || !self.generating.is_empty() {
             self.step(centers, modified, usize::MAX, Duration::from_secs(3600));
             if !self.workers.is_empty() {
@@ -322,6 +455,7 @@ impl LodPropagation {
                     .expect("lod lock");
             }
         }
+        self.remote = remote;
     }
 
     /// Sections written since the last call, in order.
@@ -339,6 +473,7 @@ impl LodPropagation {
             self.shared.q.lock().expect("lod lock").jobs.push_back(Job {
                 coord: c,
                 generate_only: true,
+                base: None,
                 children: Default::default(),
             });
             self.shared.work.notify_all();
@@ -413,6 +548,138 @@ impl Drop for LodPropagation {
             let _ = w.join();
         }
     }
+}
+
+/// Runs a remote propagation's jobs (the browser's LOD worker): a job's bytes in, its answer's out,
+/// keeping the generated bases of the sections it computed (`MAX_BASES`).
+pub struct LodRunner {
+    generator: LodGenerator,
+    bases: HashMap<LodCoord, Arc<LodCells>>,
+    order: VecDeque<LodCoord>,
+}
+
+impl LodRunner {
+    pub fn new(generator: LodGenerator) -> Self {
+        Self {
+            generator,
+            bases: HashMap::default(),
+            order: VecDeque::new(),
+        }
+    }
+
+    /// A job's bytes (`LodPropagation::take_job`) run; its answer for `deliver` (None if the job
+    /// can't be read).
+    pub fn run(&mut self, bytes: &[u8]) -> Option<Vec<u8>> {
+        let mut job = decode_job(bytes)?;
+        if !job.generate_only {
+            job.base = self.bases.get(&job.coord).cloned();
+        }
+        let mut done = run(&self.generator, &job);
+        if let Some(base) = done.base.take()
+            && self.bases.insert(job.coord, base).is_none()
+        {
+            self.order.push_back(job.coord);
+            if self.order.len() > MAX_BASES
+                && let Some(old) = self.order.pop_front()
+            {
+                self.bases.remove(&old);
+            }
+        }
+        Some(encode_done(&done))
+    }
+}
+
+// A job's bytes: "LJ1", the coordinate (level, i, j, k: i32), generate-only (u8), then each of the
+// 8 children as a u32 count and its u16 cells, little-endian. An answer's: "LD1", the coordinate,
+// generate-only and generated (u8 each), then the encoded cells (u32 length and bytes).
+
+fn put_coord(out: &mut Vec<u8>, c: LodCoord) {
+    for v in [c.level, c.i, c.j, c.k] {
+        out.extend_from_slice(&v.to_le_bytes());
+    }
+}
+
+fn take<'a>(b: &'a [u8], at: &mut usize, n: usize) -> Option<&'a [u8]> {
+    let s = b.get(*at..at.checked_add(n)?)?;
+    *at += n;
+    Some(s)
+}
+
+fn take_u32(b: &[u8], at: &mut usize) -> Option<u32> {
+    Some(u32::from_le_bytes(take(b, at, 4)?.try_into().ok()?))
+}
+
+fn take_coord(b: &[u8], at: &mut usize) -> Option<LodCoord> {
+    let mut v = [0i32; 4];
+    for x in &mut v {
+        *x = take_u32(b, at)? as i32;
+    }
+    Some(LodCoord::new(v[0], v[1], v[2], v[3]))
+}
+
+fn encode_job(job: &Job) -> Vec<u8> {
+    let mut out = b"LJ1".to_vec();
+    put_coord(&mut out, job.coord);
+    out.push(u8::from(job.generate_only));
+    for kid in &job.children {
+        out.extend_from_slice(&(kid.len() as u32).to_le_bytes());
+        for v in kid {
+            out.extend_from_slice(&v.to_le_bytes());
+        }
+    }
+    out
+}
+
+fn decode_job(b: &[u8]) -> Option<Job> {
+    let mut at = 0;
+    if take(b, &mut at, 3)? != b"LJ1" {
+        return None;
+    }
+    let coord = take_coord(b, &mut at)?;
+    let generate_only = take(b, &mut at, 1)?[0] != 0;
+    let mut children: [Vec<u16>; 8] = Default::default();
+    for kid in &mut children {
+        let n = take_u32(b, &mut at)? as usize;
+        let s = take(b, &mut at, n.checked_mul(2)?)?;
+        *kid = s
+            .chunks_exact(2)
+            .map(|p| u16::from_le_bytes([p[0], p[1]]))
+            .collect();
+    }
+    (at == b.len()).then_some(Job {
+        coord,
+        generate_only,
+        base: None,
+        children,
+    })
+}
+
+fn encode_done(d: &Done) -> Vec<u8> {
+    let mut out = b"LD1".to_vec();
+    put_coord(&mut out, d.coord);
+    out.push(u8::from(d.generate_only));
+    out.push(u8::from(d.generated));
+    out.extend_from_slice(&(d.encoded.len() as u32).to_le_bytes());
+    out.extend_from_slice(&d.encoded);
+    out
+}
+
+fn decode_done(b: &[u8]) -> Option<Done> {
+    let mut at = 0;
+    if take(b, &mut at, 3)? != b"LD1" {
+        return None;
+    }
+    let coord = take_coord(b, &mut at)?;
+    let flags = take(b, &mut at, 2)?;
+    let n = take_u32(b, &mut at)? as usize;
+    let encoded = take(b, &mut at, n)?.to_vec();
+    (at == b.len()).then_some(Done {
+        coord,
+        generate_only: flags[0] != 0,
+        encoded,
+        base: None,
+        generated: flags[1] != 0,
+    })
 }
 
 /// A modified chunk's voxels for `step`: the content of a chunk with revision > 0.

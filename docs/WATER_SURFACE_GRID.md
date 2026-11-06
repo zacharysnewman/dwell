@@ -228,6 +228,44 @@ the server's thread during a flood is mostly the LOD's: each chunk the water rew
 again (`update_lod`, on the tick in the browser and the tests' servers, `lod_threads` 0), a cost of
 the water's writes, not its simulation.
 
+**The flood's LOD and terrain off the tick (the follow-up, owner 2026-11-06):** with the water on its
+own thread, what was left on the browser server's tick in a flood was the LOD: every water tick
+rewrote the flooding chunks, and each one's LOD section was computed again (the generator's 2–10 ms a
+section natively, more in WASM), on the tick (`update_lod`; a native profile of the dam site had 77 %
+of the tick there, 57 % in `generate_lod`). Weighed: a per-tick budget alone (a section is one job:
+a tick still takes a whole one), coalescing alone (the first computation of each section is still
+the generator's, on the tick), and moving the work off the tick. Built, all three kinds:
+
+- **Coalesced:** a chunk changed by the water's writes holds its section 2 s from the first such
+  change (`LodPropagation::mark_chunk_settling`, `WATER_LOD_HOLD_TICKS`), so a section the water
+  keeps rewriting is computed once a hold, not ten times a second; an edit computes at once.
+- **Kept bases:** a modified section's generated cells are kept (`MAX_BASES`), so computing it again
+  is its downsample only. Over a 10 s flood on the flat world, 51 sections ran the generator 51
+  times (2,740 times before) (`a_floods_lod_is_computed_once_a_hold_from_kept_bases`, red before).
+- **Off the tick in the browser:** the local server's LOD sections and the chunks it wants generated
+  (the water's wanted chunks among them, a chunk's generation 10 ms natively) are jobs for the
+  **server-jobs worker** (`jobs.rs`, `ServerConfig::jobs_remote`), a third worker beside the water's;
+  `?serverjobs=inline` keeps them on the tick for comparison.
+- **The same LOD:** after a flood the sections, on the tick or from the worker, are those computed
+  from scratch from the world (`the_lod_after_a_flood_matches_a_recompute_on_the_tick_and_in_its_worker`).
+
+Measured at seed 0's dam site, natively (`water_lod.rs` `measure_the_dam_sites_flood_ticks`, the
+wall and pit, 60 Hz paced): the LOD on the tick, ticks up to 30 ms in the flood's first 3 s (the
+edits' own tick 26 ms) and ~5 ms on average before the hold and kept bases, 0.2–0.4 ms after; with the
+jobs off the tick, no tick over 3.9 ms (the edits' own). In the browser (the bench, `--unthrottled`):
+
+| | Ticks: mean, worst (first seconds; then) |
+| --- | --- |
+| The wall alone (`dam-only`, 30 s), 0.49.12 (#348) | 4.2 ms, 58 ms (first second; 8–15 after) |
+| … the jobs on the tick, held, kept bases (`?serverjobs=inline`) | 0.46 ms, 54, 26, 31 ms (first 4 s; ≤ 7 after) |
+| … the server-jobs worker | 0.30 ms, 7 ms (13 once at 5 s; ≤ 6 after) |
+| The wall and the pit (`dam-flood`, 40 s), 0.49.12 (#348) | 7.5 ms, 130, 40, 42, 36 ms (first 4 s; 15–26 after) |
+| … the server-jobs worker | 1.5 ms, 45 ms (first second), 27, 29 (2–7 s; ≤ 19 after) |
+
+What is left over 25 ms with the pit is the pit's own collapse: its cut undercuts the bank and the
+pieces that fall are bodies stepped on the tick (a trace of the first 4 s: of the server's 1,118 ms,
+764 ms in the physics step, the water and LOD none of it). Without the pit no tick passes 13 ms.
+
 **Deviations:** the browser's water worker is started by the local-mode worker (nested), not by
 `connect.ts`, so a friend world's host carries it too; the water's report is asynchronous there
 (`takeWaterReport`). The inline host keeps the step budget and loses the rest, as before (a fallback,
