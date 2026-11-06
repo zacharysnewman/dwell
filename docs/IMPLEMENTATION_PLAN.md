@@ -3941,7 +3941,7 @@ pressed into a wall as sprint was let go kept its speed), so a crouched landing 
 sprint is held or not; a crouched steep slide hands its momentum to
 the sprint slide, so it slides on where the face ends; and the ground is a floor
 (PLAYER_CONTROLLER.md §6.11): grounded vertical speed is momentum, and following the ground may
-take away or add at most `movement.ground_stick_speed` (4.5 m/s) a tick, so a slide or any
+take away or add at most `movement.ground_stick_speed` (5 m/s) a tick, so a slide or any
 momentum flies off a crest, a ramp's lip, the step-up at a crest's top or a downhill edge, while
 walking and running keep the ground. Deviation: downhill is not glued (the owner, to try; maybe
 later). Outstanding: the owner's feel review.

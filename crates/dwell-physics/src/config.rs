@@ -41,8 +41,10 @@ pub struct Movement {
     /// special cases"): grounded, the body keeps its vertical speed as momentum. Following the
     /// ground may take away at most this much of its rise in a tick, and pull it down by at most
     /// this much more than gravity does; more either way and it leaves the ground (over a crest, a
-    /// ramp's lip, a step-up onto a flat top, a downslope's edge). 4.5: above a run's rise up a
-    /// ½ m ramp (8 m/s × ½), like Source's 140 units/s against its run speed.
+    /// ramp's lip, a step-up onto a flat top, a downslope's edge). 5: above a run's rise up a
+    /// ½ m ramp (8 m/s × ½) and a walk's pull onto a 45° face (5 m/s, less gravity's 0.33), so
+    /// walking keeps the ground everywhere (owner, 2026-11-06; 4.5 hopped a walker off a stair
+    /// top onto a 45° face for a tick); a slide at 11–12 m/s up ½ m ramps still flies off a crest.
     pub ground_stick_speed: f32,
 }
 
@@ -283,7 +285,7 @@ impl Default for PlayerControllerConfig {
                 edge_guard: false,
                 max_push_force: 3050.0,
                 pushable_mass_limit: 400.0,
-                ground_stick_speed: 4.5,
+                ground_stick_speed: 5.0,
             },
             probes: Probes {
                 ground_probe_margin: 0.15,

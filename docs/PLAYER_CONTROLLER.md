@@ -801,7 +801,7 @@ air held the body over its lip; a run over a downhill edge was held to the face 
   step's edge lifts it by up to ~1.5 m/s that is no motion of the player's (the launch check, which
   reads the body, keeps catching real kicks, as before).
 - **The floor.** Following the slope (`along_slope`, from the ground's normal and the horizontal
-  drive) may take away at most `movement.ground_stick_speed` (4.5 m/s) of the body's rise
+  drive) may take away at most `movement.ground_stick_speed` (5 m/s) of the body's rise
   (`max(b, 0) − max(slope, 0)`), and pull it down by at most that much more than gravity does
   (`min(b, 0) − min(slope, 0)`). More either way, and the body leaves the ground with its
   ballistic speed; otherwise it follows the ground as before, closing any gap below (stepping down
@@ -812,18 +812,22 @@ air held the body over its lip; a run over a downhill edge was held to the face 
   the ramp's rise, and against the flat top that is lost rise: above the limit the body flies on
   from the lifted spot, the ramp's arc ½ m higher. Without the step-up a slide would hit the step's
   ½ m face, so it stays.
-- **The limit.** 4.5 m/s, above a run's rise up a ½ m ramp (8 m/s × ½): Source's movement leaves
-  the ground above 140 units/s (~3.6 m/s, about half its run speed; Quake 180, ~5.5 m/s at its
-  scale), scaled to Dwell's run.
+- **The limit.** 5 m/s: above a run's rise up a ½ m ramp (8 m/s × ½) and a walk's pull onto a
+  45° face (4.67 m/s), so walking keeps the ground everywhere. 4.5 (Source's 140 units/s, ~3.6 m/s
+  and about half its run speed, scaled to Dwell's run; Quake 180, ~5.5 m/s at its scale) hopped a
+  walker off a stair top onto a 45° face for a tick, landing it sliding (`dwell-sim`
+  `sliding_on_steep_stairs`; owner, 2026-11-06: raised to 5). A slide at 11–12 m/s up ½ m ramps
+  still flies off a crest (~5.1 m/s lost); slower than ~11.5 m/s it follows the crest.
 
 | Case | Rise lost / extra pull | Result |
 |---|---|---|
 | Walk (5 m/s) or run (8 m/s) up ½ m ramps to a crest or a step, over a ridge | 2.2 / 3.7 m/s | Keeps the ground (no hops), as before |
+| Walk off a stair top onto a 45° face | 4.67 m/s | Keeps the ground |
 | Walk or run down ½ m ramps, down ½ m steps | ≤ 3.7 m/s (steps not counted) | Keeps the ground, as before |
 | A slide or a kick at 11–12 m/s up ½ m ramps into a crest | ~5 m/s | Flies the arc: 1.5 m top cleared to 2.17 m |
 | Up a ramp ending in the air (a placed lip, 1 m) at 12 m/s | ~5.5 m/s | Flies: to 1.89 m |
 | Run (8 m/s) over a 3 m platform's edge onto a 45° face | 7.7 m/s | Flies, never rising, over the whole face: lands on the floor beyond (~11 m/s, harmless) |
-| A slide past ~10 m/s down terraces (a flat cell and a ½ m ramp) | > 4.5 m/s | Flies over each ramp, slides on where it lands (crouch held); keeps its speed |
+| A slide past ~10.5 m/s down terraces (a flat cell and a ½ m ramp) | > 5 m/s | Flies over each ramp, slides on where it lands (crouch held); keeps its speed |
 | A knockback, an explosion | — | The launch check, unchanged |
 
 - **Tests:** `ramps.rs` `a_slide_up_ramps_carries_its_rise_over_the_crest` (red before: 1.5 m),
@@ -863,7 +867,7 @@ PPC default for voxels.
 | | `edge_guard` ◆ | false | — | Dwell addition |
 | | `max_push_force` ◆ | 3,050 N | — | The push pass's force at a standstill, falling to nothing at the player's speed: a 700 kg log slides on terrain at ~0.5 m/s (0.41.6; 800 N in 0.41.5; BUILT_BODIES.md §6) |
 | | `pushable_mass_limit` ◆ | 400 kg | — | Heavier clusters are immovable by players (Phase 20) |
-| | `ground_stick_speed` ◆ | 4.5 m/s | — | The ground is a floor (§6.11): the most of the body's rise following the ground takes away in a tick, and the most it pulls the body down beyond gravity; more either way and it leaves the ground |
+| | `ground_stick_speed` ◆ | 5 m/s | — | The ground is a floor (§6.11): the most of the body's rise following the ground takes away in a tick, and the most it pulls the body down beyond gravity; more either way and it leaves the ground |
 | `probes` | `ground_probe_margin` / `ceiling_probe_margin` | 0.15 / 0.10 m | same | |
 | | `max_slope_angle` | 56° ◆ (the steepest ground: above the 45° ramps; steeper than `slide.min_angle` slides) | same | |
 | `jump` | `height` | 1.25 m | same | Clears one block |
