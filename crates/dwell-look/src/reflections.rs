@@ -19,6 +19,9 @@ pub struct SsrTunables {
     pub distance_fade: f64,
     /// How much of the ripples' slope steers the land's reflected ray (the sky takes all of it).
     pub ripple_scale: f64,
+    /// The land is marched only where the surface reflects more than this share (Schlick's
+    /// Fresnel), its reflection faded in up to twice it.
+    pub min_reflectance: f64,
 }
 
 /// One water quality's reflections.
@@ -41,12 +44,23 @@ pub struct ReflectionTunables {
     pub ssr: SsrTunables,
     /// Low, Medium, High.
     pub tiers: [ReflectionTier; 3],
+    /// The same on a phone (the data's `phone` overrides over each tier).
+    pub phone_tiers: [ReflectionTier; 3],
 }
 
 impl ReflectionTunables {
     /// The tier for a water quality level (0 Low, 1 Medium, 2 High; higher is High).
     pub fn tier(&self, level: usize) -> &ReflectionTier {
         &self.tiers[level.min(self.tiers.len() - 1)]
+    }
+
+    /// The tier as a device draws it: a phone's own (`phone_tiers`), else `tier`'s.
+    pub fn tier_for(&self, level: usize, phone: bool) -> &ReflectionTier {
+        if phone {
+            &self.phone_tiers[level.min(self.phone_tiers.len() - 1)]
+        } else {
+            self.tier(level)
+        }
     }
 }
 
@@ -59,8 +73,9 @@ pub fn reflection_uniforms(
     level: usize,
     sky_octaves: u32,
     sky_shadow: bool,
+    phone: bool,
 ) -> [[f32; 4]; 2] {
-    let tier = t.tier(level);
+    let tier = t.tier_for(level, phone);
     let reach = tier.max_distance_m;
     [
         [
@@ -98,15 +113,15 @@ mod tests {
 
     #[test]
     fn the_reflection_never_draws_more_of_the_deck_than_the_sky() {
-        let u = reflection_uniforms(&REFLECTIONS, 2, 3, false);
+        let u = reflection_uniforms(&REFLECTIONS, 2, 3, false, false);
         assert_eq!(
             u[1][0],
             3.0_f32.min(REFLECTIONS.tier(2).cloud_octaves as f32)
         );
         assert_eq!(u[1][1], 0.0, "no self-shadow while the sky draws none");
-        let off = reflection_uniforms(&REFLECTIONS, 2, 0, true);
+        let off = reflection_uniforms(&REFLECTIONS, 2, 0, true, false);
         assert_eq!(off[1][0], 0.0, "Clouds off: none reflected");
-        let m = reflection_uniforms(&REFLECTIONS, 1, 8, true);
+        let m = reflection_uniforms(&REFLECTIONS, 1, 8, true, false);
         assert_eq!(m[0][0], REFLECTIONS.tier(1).ssr_steps as f32);
         assert!(
             m[0][3] < m[0][2] && m[0][3] > 0.0,
@@ -119,7 +134,23 @@ mod tests {
         let mut t = REFLECTIONS;
         t.tiers[1].ssr_steps = 5;
         t.ssr.edge_fade = 0.3;
-        let u = reflection_uniforms(&t, 1, 8, true);
+        let u = reflection_uniforms(&t, 1, 8, true, false);
         assert_eq!((u[0][0], u[1][2]), (5.0, 0.3));
+    }
+
+    /// A phone's Medium marches fewer steps and reflects fewer cloud octaves (owner, 2026-11-06:
+    /// Medium slowed a phone close to the water); a desktop's is the tier's.
+    #[test]
+    fn a_phone_draws_a_cheaper_medium() {
+        let (desk, phone) = (
+            REFLECTIONS.tier_for(1, false),
+            REFLECTIONS.tier_for(1, true),
+        );
+        assert_eq!(desk, REFLECTIONS.tier(1));
+        assert!(phone.ssr_steps < desk.ssr_steps && phone.cloud_octaves < desk.cloud_octaves);
+        assert_eq!(REFLECTIONS.tier_for(0, true), REFLECTIONS.tier(0));
+        let u = reflection_uniforms(&REFLECTIONS, 1, 8, true, true);
+        assert_eq!(u[0][0], phone.ssr_steps as f32);
+        assert_eq!(u[1][0], phone.cloud_octaves as f32);
     }
 }

@@ -364,7 +364,9 @@ sky alone. W5's screen-space reflections came forward, and so did the cloud deck
   | High | 28 | 10 | 48 km | 5 | yes (with the Clouds setting's) |
 
   The values reach the shader in the frame uniform's `reflect` and `reflect_sky` (dwell-look
-  `reflection_uniforms`). The thickness, edge fade, distance fade and `rippleScale` are shared by the tiers.
+  `reflection_uniforms`). The thickness, edge fade, distance fade, `rippleScale` and `minReflectance` are
+  shared by the tiers; `phone` overrides a tier's entries on a phone (Medium: 8 + 5 steps, 2 octaves;
+  "Cost close to the water", below).
   - **`rippleScale` (0.3):** the land's ray is steered by a third of the ripples' slope. With the full
     slope, rays scattered from pixel to pixel and broke the treeline's reflection into dark speckle
     across the near water (seen in Chrome). The sky and clouds take the full ripple.
@@ -430,8 +432,9 @@ surface: Low 1.60, Medium 5.03, High 6.12. The breakdown on Medium's shore view:
 2. **Water tiles** (`render/water_tiles.rs`): gradient noise with derivatives over 32 cells at 16 texels per
    cell (512², drawn once), and per fluid this frame's two caustic layers over 16 cells at 32 texels per cell
    (512² `rg16float`, drawn each Medium or High frame with water, `gpu.water.tiles` ≈ 0.35 ms). Ripples,
-   sparkle and foam sample the noise tile; caustics sample theirs where a pixel covers a texel or more and are
-   evaluated per pixel nearer (blended between), so close up they stay exact. Periods round to whole tiles
+   sparkle and foam sample the noise tile; caustics sample theirs where a pixel covers a texel or more and were
+   evaluated per pixel nearer (blended between), so close up they stayed exact (since 2026-11-06 they sample
+   the tile at every distance: "Cost close to the water", below). Periods round to whole tiles
    (`tile_cells`), so the wrap at 1,024 m stays exact; the ripples' largest layer repeats every 64 m, the
    caustics every 22 m, under the other layers' turned lattices. A further −1.7 ms on the shore view.
 3. **Overdraw** was checked and is not a cost: chunk and LOD water don't overlap, water under the surface is
@@ -456,6 +459,49 @@ come with W5a). A CPU adapter (SwiftShader in CI) draws Low whatever is chosen (
 
 **Look:** the shore, edge and under-the-surface views were compared before and after: the same look, with
 the caustic and ripple patterns in other places (new hashes and periods).
+
+### Cost close to the water (2026-11-06)
+
+Owner, 2026-11-06: the water ran fine far off but "starts chugging on mobile hard when you get close to the
+water surface", where the floor shows through it. Measured on seed 0's river (the dam site), the eye 1.6 m
+over the water, a 2880×1324 canvas on an Apple GPU, `gpu.frame` least of 2.5 s, two rounds:
+
+| Looking 35° down, Medium | ms | Saves |
+|---|---|---|
+| Everything on | 33.4 | |
+| Caustics off | 29.3 | 4.1 |
+| Reflections of land (`ssr`) off | 28.0 | 5.4 |
+| Reflected clouds off | (after the first two fixes) | 3.7 |
+| Refraction, absorption or shoreline foam off | ~33.2 | ≤ 0.2 |
+| The three ripple layers' last two off | | ~0.5 |
+| `flat` (a constant colour: the split pass and the copy alone) | 13.8 | 19.6 |
+| Low | 16.2 | |
+| High | 39.7 | |
+
+The GPU was the limit (the CPU's frame was ~2 ms). Refraction itself costs nothing; what costs is what
+close-up water does per pixel. **Caustics** were evaluated per pixel wherever a pixel covered less than a
+texel of their tile (two layers of Worley cells, 18 hashed points), which close to the water is every
+floor pixel. **The land's reflection** marched every pixel's ray, and looking down nearly every ray goes to
+the sky and takes all its steps, where the water reflects 2–4 %. **The reflected clouds** were drawn there
+too. The flow's ripples and foam streaks (§2c) cost nothing measurable in the water pass.
+
+**Fixes:**
+
+1. **Reflections only where they show:** the land is marched, and the clouds drawn in the reflected sky,
+   only where Schlick's Fresnel at the pixel is over `ssr.minReflectance` (0.05, data in
+   `reflections.json`), faded in up to twice it (`render/reflection.rs` `land_share`, WGSL
+   `reflect_share`). Looking down at water past ~30° neither is drawn; under ~22° both are, in full.
+2. **Caustics from the tile at every distance** (`water::CAUSTIC_EXACT_TEXELS` 0): magnified, a texel is
+   1/32 of a cell (~4 cm for water) against lines ~13 cm wide; the close-up look was compared before and
+   after and reads the same.
+3. **A phone's tiers** (`reflections.json` `phone`, overrides of a tier's entries; the renderer's
+   `set_phone`, from the shell's `prefersTouch`): a phone's Medium marches 8 + 5 steps and reflects two
+   cloud octaves.
+
+**After**, the same view: Medium 24.3 ms (a phone's Medium 22.7), High 27.5. Along the water at 4° down
+(where reflections show and are kept): Medium 25.6 → 22.9, High → 26.9. The rest of Medium over Low is
+the split pass and copy (`flat`) and the ripples and lighting per pixel; half-resolution water on phones
+(W5's half-res copies) is the next step if a phone still needs it.
 
 ## 9. Shores: water meets the land (2026-10-20)
 
