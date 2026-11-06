@@ -8,6 +8,12 @@
       ]
     },
     {
+      "version": "0.49.1",
+      "changes": [
+        "Water's behaviour (how rough riverbeds are, how fast water calms and sleeps, how far an edit wakes it) now comes from one settings file, ready for tuning"
+      ]
+    },
+    {
       "version": "0.49.0",
       "changes": [
         "Rivers no longer have dirt walls sticking out into them where they step down: the water simply falls to the next pool",
