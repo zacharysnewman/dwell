@@ -134,6 +134,20 @@ export class LocalCore {
   waterReport(at: [number, number, number], radius: number): string | undefined {
     return this.world.waterReport(at[0], at[1], at[2], radius);
   }
+  /** Moves the local player's feet to `at` (the dev tools' `goto`); false otherwise. */
+  teleport(at: [number, number, number]): boolean {
+    return this.world.teleport(at[0], at[1], at[2]);
+  }
+  /** The world map's nearest water (JSON or `null`; local.rs `find_on_map`). */
+  findOnMap(
+    kind: string,
+    at: [number, number, number],
+    radius: number,
+    face: number,
+    minDepth: number,
+  ): string {
+    return this.world.findOnMap(kind, at[0], at[1], at[2], radius, face, minDepth);
+  }
   /** A report the water worker sent back. */
   takeWaterReport(): string | undefined {
     return this.world.takeWaterReport();

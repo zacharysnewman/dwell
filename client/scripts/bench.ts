@@ -32,6 +32,7 @@ import {
   type Vec3,
 } from './scenarios.ts';
 import { viewStorage } from './views.ts';
+import type { GotoResult } from '../src/debug/find.ts';
 
 interface Options {
   names: string[];
@@ -203,6 +204,8 @@ interface Run {
   up: number;
   /** Where the last `camera` step placed the camera (a drifting burst moves on from it). */
   camera?: { position: [number, number, number]; yaw: number; pitch: number };
+  /** Each `goto` step's result (`__dwell.goto`): what it found and where it put the camera. */
+  gotos: GotoResult[];
 }
 
 /** The local server's figures (`__dwell.serverStats`, a second each) for `seconds`, saved as `name`. */
@@ -427,11 +430,18 @@ async function step(run: Run, s: Step): Promise<void> {
       return;
     case 'camera': {
       // aroundPlayer: x and z from the player's feet, y absolute (or with aboveFeet a height over
-      // the feet along the scenario's face's up).
+      // the feet along the scenario's face's up); aroundFound: from the last goto's place, y a
+      // height over its surface along its face's up.
       const [x, y, z] = s.position;
-      const at = s.aroundPlayer
-        ? `(() => { const f = d.state().feet; return [f[0] + ${String(x)}, ${s.aboveFeet ? `f[1] + ${String(y * run.up)}` : String(y)}, f[2] + ${String(z)}]; })()`
-        : JSON.stringify(s.position);
+      const found = run.gotos.at(-1)?.found;
+      if (s.aroundFound && !found)
+        throw new Error('camera: aroundFound needs a goto step before it');
+      const at =
+        s.aroundFound && found
+          ? JSON.stringify([found.at[0] + x, found.at[1] + y * found.face, found.at[2] + z])
+          : s.aroundPlayer
+            ? `(() => { const f = d.state().feet; return [f[0] + ${String(x)}, ${s.aboveFeet ? `f[1] + ${String(y * run.up)}` : String(y)}, f[2] + ${String(z)}]; })()`
+            : JSON.stringify(s.position);
       await until(page, `d.placeCamera(${at}, ${String(s.yaw)}, ${String(s.pitch)})`, 30_000);
       run.camera = {
         position: await call<[number, number, number]>(page, at),
@@ -443,6 +453,25 @@ async function step(run: Run, s: Step): Promise<void> {
     case 'releaseCamera':
       await call(page, 'd.releaseCamera()');
       return;
+    case 'goto': {
+      const find = s.find;
+      const options = Object.fromEntries(
+        Object.entries(s).filter(([k]) => k !== 'do' && k !== 'find'),
+      );
+      const r = await call<{ ok?: GotoResult; error?: string } | null>(
+        page,
+        `d.goto(${JSON.stringify(find)}, ${JSON.stringify(options)}).then((ok) => ({ ok }), (e) => ({ error: String(e?.message ?? e) }))`,
+      );
+      if (!r?.ok) throw new Error(`goto ${find}: ${r?.error ?? 'not playing'}`);
+      const { found, camera, map } = r.ok;
+      run.gotos.push(r.ok);
+      run.camera = camera;
+      const v = (p: number[]): string => `[${p.map((c) => f(c)).join(', ')}]`;
+      console.log(
+        `  goto ${find}: ${found.block} at ${v(found.at)} (${f(found.distance)} m off, ${f(found.depth)} m deep, ${String(found.area)} cells, current ${v(found.current)} m/s${map ? `; the map's ${map.kind} ${f(map.distance)} m away` : ''}), camera ${v(camera.position)} yaw ${f(camera.yaw)} pitch ${f(camera.pitch)}`,
+      );
+      return;
+    }
     case 'shadows':
       await call(page, `d.setShadows(${JSON.stringify(s.quality)})`);
       return;
@@ -678,6 +707,7 @@ async function runScenario(
     bursts: {},
     servers: {},
     up: sc.face === 'b' ? -1 : 1,
+    gotos: [],
   };
   for (const s of sc.steps) await step(run, s);
   const report: ScenarioReport = {
@@ -690,6 +720,7 @@ async function runScenario(
     untils: run.untils,
     respawns: run.respawns,
     bursts: run.bursts,
+    gotos: run.gotos,
     servers: run.servers,
     url,
   };

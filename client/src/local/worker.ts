@@ -166,6 +166,15 @@ function handle(msg: ToWorker): void {
       else reportsDue++;
       break;
     }
+    case 'teleport':
+      core.teleport(msg.at);
+      break;
+    case 'findOnMap':
+      scope.postMessage({
+        t: 'findOnMap',
+        result: core.findOnMap(msg.kind, msg.at, msg.radius, msg.face, msg.minDepth),
+      });
+      break;
     case 'respawnPreload':
       core.setRespawnPreload(msg.on);
       break;

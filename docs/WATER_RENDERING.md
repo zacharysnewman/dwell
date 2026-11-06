@@ -192,9 +192,10 @@ public API: fluids are rendering data, and the 0.875 surface stays where it is.
   water's own (red absorbed first, green a little, blue least), so the underwater view reads a
   clear cyan-blue and, once W3 grades the colour by depth, shallows read turquoise and deep water
   blue.
-- **Bench:** the `water-views` scenario flies from the seed-7 spawn to the coast about 20 km
-  east-south-east, down into the sea, and shoots four views: across the sea, the shallows toward the
-  shore, 1 km up, and with the eye just under the surface. The `camera` step gained `aroundPlayer`
+- **Bench:** the `water-views` scenario goes from the seed-7 spawn to the world map's nearest deep
+  sea (0.49.15: `goto`, DEV_TOOLS.md "Finding places"; it flew to a coast about 20 km
+  east-south-east until a terrain change moved it) and shoots four views: across the sea, toward
+  the shore, 1 km up, and with the eye just under the surface. The `camera` step gained `aroundPlayer`
   (x and z offsets from the player's feet), and views and scenarios gained `settings.water`.
 - **Cost** (Apple M1, 1280×720, 4× MSAA): measured while other agents' builds loaded the machine, so treat it as noisy. Over the sea (`water-views` `sea`, `--unthrottled`), GPU frame p50 was 2.06 → 2.76 ms (+0.7). The near pass, where the water draws, was 1.02 → 1.94 ms. Frame interval p50 was 9.7 → 10.2 ms (CPU-bound). On `fly-low-fast` (inland, no water) there was no change within noise: GPU frame p50 2.31 → 2.10 ms, interval 8.8 → 8.3 ms.
 - **Known, not W1b's:** vertical water faces at sea-floor steps show as faint dashed bands from
@@ -278,7 +279,7 @@ colour by depth, which is what makes the shallows work.
 - **Distant water:** LOD water draws with the same pipeline over the LOD floor, so the colour
   grades the same way and near and far meet without a seam (`water-shore` `far-1000`). The faint
   dashed bands at sea-floor steps from W1b are gone, because the steps now show through as depth.
-- **Bench:** the `water-shore` scenario flies to the `water-views` coast. It shoots the beach edge
+- **Bench:** the `water-shore` scenario goes to the `water-views` sea and its nearest beach. It shoots the beach edge
   at a low angle, straight down into the shallows, the deep-to-shallow gradient from 20 m, under
   the surface (the floor, along it, and up), and the far water from 1 km.
 - **Cost** (Apple M1, 1280×720, 4× MSAA, `--unthrottled`). The machine was shared with other
@@ -385,7 +386,7 @@ sky alone. W5's screen-space reflections came forward, and so did the cloud deck
   - `shaders::tests::the_water_reflects_land_from_the_scene_and_the_sky_with_its_clouds`, and naga
     validation.
   - `shared/look/reflections.test.mjs`.
-- **Bench:** the `water-reflections` scenario (Medium) flies to the `water-views` coast. From 1.5 m
+- **Bench:** the `water-reflections` scenario (Medium) goes to the `water-views` sea. From 1.5 m
   over a lagoon it shoots a sand bank and the treeline behind it at a low angle (recorded, for the
   cost), turned and steeper. Then the beach across open water at several pitches and from the side
   (the edge fades), the clouds in the sea, and the bank at dusk and at night with the low sun over the

@@ -537,6 +537,9 @@ layer — so a player can rise from the ground to see the whole world (ARCHITECT
 - **Prediction.** The client normally waits for the terrain around the player before predicting
   (collision needs it); a flying player keeps predicting, since flight outruns chunk streaming and
   the server's collision corrects any difference (`dwell-game`'s `gate::prediction_may_run`).
+  While it waits, a player the server moved more than the snap distance (a local world's dev
+  teleport, DEV_TOOLS.md) takes the server's place at once (`game.rs` `moved_by_server`), so the
+  terrain it waits for is the terrain there, not where it was (which the server stops streaming).
 
 ---
 

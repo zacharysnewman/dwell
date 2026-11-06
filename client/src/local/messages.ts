@@ -52,7 +52,22 @@ export type ToWorker =
   /** The respawn preload (ARCHITECTURE.md §6.3) on or off (`?respawnPreload=off`). */
   | { t: 'respawnPreload'; on: boolean }
   /** The water near a cell (a diagnostic for the block dump); answered with `waterReport`. */
-  | { t: 'waterReport'; at: [number, number, number]; radius: number };
+  | { t: 'waterReport'; at: [number, number, number]; radius: number }
+  /** Moves the local player's feet there (the dev tools' `goto`, docs/DEV_TOOLS.md). */
+  | { t: 'teleport'; at: [number, number, number] }
+  /**
+   * The world map's nearest water of `kind` (`water`, `sea`, `river`, `lake`) from `at` within
+   * `radius` m on `face` (1 A, −1 B, 0 the point's), `minDepth` m deep at least; answered with
+   * `findOnMap`.
+   */
+  | {
+      t: 'findOnMap';
+      kind: string;
+      at: [number, number, number];
+      radius: number;
+      face: number;
+      minDepth: number;
+    };
 
 export type FromWorker =
   /** `persisted`: the world is saved in the browser (OPFS, §6.4). */
@@ -69,6 +84,8 @@ export type FromWorker =
   | { t: 'perf'; ticks: number; busyMs: number }
   /** The water near a cell as JSON (in reply to `waterReport`). */
   | { t: 'waterReport'; report: string }
+  /** The map's nearest water as JSON, or `null` (in reply to `findOnMap`). */
+  | { t: 'findOnMap'; result: string }
   /** The server's figures, every second (docs/DEV_TOOLS.md `__dwell.serverStats`). */
   | { t: 'stats'; stats: ServerStats };
 

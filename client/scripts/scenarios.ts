@@ -3,6 +3,7 @@
 // through `window.__dwell` and record what it reports. scripts/bench.ts runs them in a real browser;
 // adding a benchmark or a repro is a new entry in the data file. Pure: no Node or browser imports.
 
+import { AIMS, MAP_WATERS, type Aim, type FaceChoice, type MapWater } from '../src/debug/find.ts';
 import { ViewError, viewUrl, type View } from './views.ts';
 
 export type Vec3 = [number, number, number];
@@ -38,6 +39,42 @@ export type Step =
       aroundPlayer?: boolean;
       /** With `aroundPlayer`, y too is an offset from the feet (a height over the spawn's ground). */
       aboveFeet?: boolean;
+      /**
+       * x and z are offsets from the last `goto`'s found place and y a height over its surface
+       * (along its face's up): views around the water a `goto` found.
+       */
+      aroundFound?: boolean;
+    }
+  /**
+   * Finds a place by what is there (`__dwell.goto`, docs/DEV_TOOLS.md "Finding places"): the
+   * nearest loaded `find` (a block or fluid by name, `water`, `fluid` or `land`) within `radius`
+   * m of the player, at least `minDepth` m deep, `minArea` cells wide and running `minCurrent`
+   * m/s, on `face`; with `scope: "world"` the world map's nearest `water` (`sea`, `river`, `lake`)
+   * first, the player moved there. Places the camera `height` m over it looking `aim`
+   * (`downstream`, `upstream`, `across` the current), at `yaw`, `toward` a point or at the nearest
+   * `lookAt` (e.g. `land`: the shore), turned `turn` more, at `pitch`; with `move` the player goes
+   * there too (flying). Tries for `maxS`; finding nothing fails the run.
+   */
+  | {
+      do: 'goto';
+      find: string;
+      radius?: number;
+      surface?: boolean;
+      minDepth?: number;
+      minArea?: number;
+      minCurrent?: number;
+      face?: FaceChoice;
+      height?: number;
+      aim?: Aim;
+      yaw?: number;
+      toward?: Vec3;
+      lookAt?: string;
+      turn?: number;
+      pitch?: number;
+      move?: boolean;
+      scope?: 'loaded' | 'world';
+      water?: MapWater;
+      maxS?: number;
     }
   | { do: 'releaseCamera' }
   /** The water quality, and/or its cost-isolation switches (`?waterdbg=` names; "" for none). */
@@ -237,7 +274,27 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   lod: ['on'],
   flySpeed: ['level'],
   spyglass: ['on', 'step'],
-  camera: ['position', 'yaw', 'pitch', 'aroundPlayer', 'aboveFeet'],
+  camera: ['position', 'yaw', 'pitch', 'aroundPlayer', 'aboveFeet', 'aroundFound'],
+  goto: [
+    'find',
+    'radius',
+    'surface',
+    'minDepth',
+    'minArea',
+    'minCurrent',
+    'face',
+    'height',
+    'aim',
+    'yaw',
+    'toward',
+    'lookAt',
+    'turn',
+    'pitch',
+    'move',
+    'scope',
+    'water',
+    'maxS',
+  ],
   releaseCamera: [],
   water: ['quality', 'debug'],
   shadows: ['quality'],
@@ -312,6 +369,9 @@ export function parseStep(where: string, v: unknown): Step {
         ...(o.step === undefined ? {} : { step: num(at('step'), o.step, 0, 7) }),
       };
     case 'camera':
+      if (o.aroundFound === true && (o.aroundPlayer !== undefined || o.aboveFeet !== undefined)) {
+        throw new ViewError(`${at('aroundFound')}: not with aroundPlayer or aboveFeet`);
+      }
       return {
         do: d,
         position: vec3(at('position'), o.position),
@@ -321,7 +381,12 @@ export function parseStep(where: string, v: unknown): Step {
           ? {}
           : { aroundPlayer: bool(at('aroundPlayer'), o.aroundPlayer) }),
         ...(o.aboveFeet === undefined ? {} : { aboveFeet: bool(at('aboveFeet'), o.aboveFeet) }),
+        ...(o.aroundFound === undefined
+          ? {}
+          : { aroundFound: bool(at('aroundFound'), o.aroundFound) }),
       };
+    case 'goto':
+      return parseGoto(where, o);
     case 'shadows': {
       const q = o.quality;
       if (q !== 'off' && q !== 'low' && q !== 'high') {
@@ -452,6 +517,76 @@ export function parseStep(where: string, v: unknown): Step {
           : { maxHueFlips: num(at('maxHueFlips'), o.maxHueFlips, 0, 1) }),
       };
   }
+}
+
+const FACES: readonly FaceChoice[] = ['a', 'b', 'any'];
+
+/** A place query: a block or state name (`dwell:sand`, `water`) or `fluid`. */
+function query(where: string, v: unknown): string {
+  const q = str(where, v);
+  if (!/^[a-z0-9_:-]+(\[[a-z0-9_=,]*\])?$/.test(q)) {
+    throw new ViewError(`${where}: expected a block name ("dwell:sand"), "water" or "fluid"`);
+  }
+  return q;
+}
+const SCOPES = ['loaded', 'world'] as const;
+
+/** A `goto` step's fields (checked: one way to aim, known kinds, ranges). */
+function parseGoto(where: string, o: Obj): Extract<Step, { do: 'goto' }> {
+  const at = (k: string): string => `${where}.${k}`;
+  const find = query(at('find'), o.find);
+  if (o.face !== undefined && o.face !== 'a' && o.face !== 'b' && o.face !== 'any') {
+    throw new ViewError(`${at('face')}: expected "a", "b" or "any"`);
+  }
+  if (o.aim !== undefined && !AIMS.includes(o.aim as Aim)) {
+    throw new ViewError(`${at('aim')}: expected one of ${AIMS.join(', ')}`);
+  }
+  const ways = ['aim', 'yaw', 'toward', 'lookAt'].filter((k) => o[k] !== undefined);
+  if (ways.length > 1) throw new ViewError(`${where}: aim one way (${ways.join(' or ')})`);
+  if (o.scope !== undefined && o.scope !== 'loaded' && o.scope !== 'world') {
+    throw new ViewError(`${at('scope')}: expected "loaded" or "world"`);
+  }
+  if (o.water !== undefined) {
+    if (o.scope !== 'world') throw new ViewError(`${at('water')}: only with scope "world"`);
+    if (!MAP_WATERS.includes(o.water as MapWater)) {
+      throw new ViewError(`${at('water')}: expected one of ${MAP_WATERS.join(', ')}`);
+    }
+  }
+  const opt = <K extends string, V>(k: K, v: V | undefined): Partial<Record<K, V>> =>
+    v === undefined ? {} : ({ [k]: v } as Record<K, V>);
+  const n = (k: string, min: number, max: number): number | undefined =>
+    o[k] === undefined ? undefined : num(at(k), o[k], min, max);
+  const minArea = n('minArea', 1, 4096);
+  if (minArea !== undefined && !Number.isInteger(minArea)) {
+    throw new ViewError(`${at('minArea')}: expected a whole number`);
+  }
+  return {
+    do: 'goto',
+    find,
+    ...opt('radius', n('radius', 1, 100_000)),
+    ...opt('surface', o.surface === undefined ? undefined : bool(at('surface'), o.surface)),
+    ...opt('minDepth', n('minDepth', 0, 256)),
+    ...opt('minArea', minArea),
+    ...opt('minCurrent', n('minCurrent', 0, 100)),
+    ...opt(
+      'face',
+      FACES.find((x) => x === o.face),
+    ),
+    ...opt('height', n('height', -64, 4096)),
+    ...opt('aim', o.aim as Aim | undefined),
+    ...opt('yaw', n('yaw', -360, 360)),
+    ...opt('toward', o.toward === undefined ? undefined : vec3(at('toward'), o.toward)),
+    ...opt('lookAt', o.lookAt === undefined ? undefined : query(at('lookAt'), o.lookAt)),
+    ...opt('turn', n('turn', -360, 360)),
+    ...opt('pitch', n('pitch', -90, 90)),
+    ...opt('move', o.move === undefined ? undefined : bool(at('move'), o.move)),
+    ...opt(
+      'scope',
+      SCOPES.find((x) => x === o.scope),
+    ),
+    ...opt('water', o.water as MapWater | undefined),
+    ...opt('maxS', n('maxS', 0, 3600)),
+  };
 }
 
 function split(where: string, v: unknown): Split | null {

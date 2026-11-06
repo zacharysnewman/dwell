@@ -1146,6 +1146,22 @@ impl<S: Scene> Game<S> {
                     self.eye = EyeCamera::new();
                     self.eye
                         .tick(&self.current.eye_state(), 1.0 / SIM_HZ as f64);
+                } else if !prediction_may_run(
+                    self.current.active,
+                    self.current.state,
+                    self.terrain_ready(),
+                ) && self.moved_by_server()
+                {
+                    // Moved by the server while the prediction waits for terrain (the dev tools'
+                    // teleport, docs/DEV_TOOLS.md): the player is where the server has it, so
+                    // the terrain the prediction waits for is the terrain there, not where the
+                    // player was (which the server stops streaming, so it never arrives).
+                    self.current = ClientState::of(&self.predictor);
+                    self.flip.reset(self.current.face);
+                    self.previous = None;
+                    self.eye = EyeCamera::new();
+                    self.eye
+                        .tick(&self.current.eye_state(), 1.0 / SIM_HZ as f64);
                 }
             }
             Message::EntitySpawn(e) => {
@@ -2195,6 +2211,17 @@ impl<S: Scene> Game<S> {
             })
             .collect();
         self.scene.borrow_mut().set_region_boxes(&boxes);
+    }
+
+    /// The predictor's player (the server's, while no tick runs) is more than a snap away from
+    /// the state the game shows.
+    fn moved_by_server(&self) -> bool {
+        let p = self.predictor.position();
+        let d = (0..3)
+            .map(|k| (p[k] - self.current.position[k]).powi(2))
+            .sum::<f64>()
+            .sqrt();
+        d > f64::from(dwell_protocol::players::RECONCILE_SNAP_DISTANCE)
     }
 
     /// Prediction waits until the terrain around the player has arrived (collision needs it), and

@@ -2049,3 +2049,69 @@ fn the_waters_currents_near_the_player_reach_the_client_and_clear() {
     rig.run_until(60, |_| false);
     assert_eq!(rig.game.as_mut().unwrap().current_at(feet), [0.0, 0.0]);
 }
+
+/// The dev tools' `goto` (docs/DEV_TOOLS.md "Finding places"): the world map's nearest water found
+/// by the local core, the local player moved over it (the client's prediction follows the server's
+/// body), and the water's cells found among the chunks that stream in there. Regression: the
+/// client waited for the terrain round where the player had been, which the server stopped
+/// streaming once it had moved the player, so it never followed.
+// face-a-only: the generated world's face A spawn; the search and the move are face-local
+// (find.rs's both-faces tests).
+#[test]
+fn the_map_finds_water_the_player_is_moved_over_it_and_its_cells_are_found() {
+    use dwell_client::find::{Matcher, Query, find};
+    let mut rig = Rig::new();
+    assert!(rig.run_until(60 * 30, |r| {
+        r.game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)
+    }));
+    let feet = rig.game.as_ref().unwrap().debug_state().feet;
+    let json = rig.core.find_on_map("water", feet, 20_000.0, None, 0.5);
+    assert!(json.starts_with("{\"at\":["), "{json}");
+    assert!(
+        rig.core
+            .find_on_map("lava", feet, 100.0, None, 0.0)
+            .contains("unknown water kind")
+    );
+    let nums: Vec<f64> = json["{\"at\":[".len()..]
+        .split(']')
+        .next()
+        .unwrap()
+        .split(',')
+        .map(|v| v.parse().unwrap())
+        .collect();
+    let over = [nums[0], nums[1] + 3.0, nums[2]];
+    // Not across the faces.
+    assert!(!rig.core.teleport_local_player([over[0], -50.0, over[2]]));
+    // Held there (a fall would take it under) while the client follows and the chunks stream.
+    let mut found = None;
+    for _ in 0..60 * 20 {
+        assert!(rig.core.teleport_local_player(over));
+        rig.frame();
+        let g = rig.game.as_mut().unwrap();
+        let at = g.debug_state().feet;
+        if (at[0] - over[0]).hypot(at[2] - over[2]) < 1.0 {
+            let q = Query {
+                min_depth_m: 0.5,
+                ..Query::new(Matcher::parse("water").unwrap())
+            };
+            found = find(g.world(), at, &q);
+            if found.is_some() {
+                break;
+            }
+        }
+    }
+    let g = rig.game.as_mut().unwrap();
+    let at = g.debug_state().feet;
+    let found = found.unwrap_or_else(|| {
+        panic!(
+            "the client follows to the water and finds its cells: {json}, at {at:?}, {} chunks",
+            g.world().loaded_chunks()
+        )
+    });
+    assert!(
+        (f64::from(found.cell[0]) - over[0]).hypot(f64::from(found.cell[2]) - over[2]) < 64.0,
+        "{found:?} near {over:?}"
+    );
+}
