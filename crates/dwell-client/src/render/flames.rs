@@ -119,6 +119,83 @@ const KIND_GLOW: u32 = 1;
 const KIND_EMBER: u32 = 2;
 /// A portal's mote (dwell-look `motes`): its look's index in `MOTES` in the low byte.
 const KIND_MOTE: u32 = 3;
+/// A fleck on moving water (crate::flecks; docs/WATER_SURFACE_GRID.md §2c): its liquid's index in
+/// `dwell_look::waterflow::LIQUID_FLOWS` in the low byte; lit as the water's foam is, not self-lit.
+const KIND_FLECK: u32 = 4;
+
+/// The flecks' quads (relative to `eye`), each a disc lying on the water's surface, its liquid's
+/// size, at its opacity; at most `max`. Returns the vertices and the flecks drawn.
+pub fn fleck_quads(
+    flecks: &[crate::flecks::Fleck],
+    eye: [f64; 3],
+    seconds: f64,
+    max: usize,
+) -> (Vec<f32>, usize) {
+    let mut out = Vec::new();
+    let mut n = 0;
+    let t = wrapped(seconds);
+    for p in flecks.iter().take(max) {
+        let a = p.alpha();
+        if a <= 0.01 {
+            continue;
+        }
+        let size = dwell_look::waterflow::LIQUID_FLOWS[p.look].particle_size_m;
+        // Its own lift over the drawn surface, so the water's half-transparent body doesn't hide it.
+        let rel: [f64; 3] = [p.at[0] - eye[0], p.at[1] - eye[1], p.at[2] - eye[2]];
+        let up = FaceFrame::at_height(p.at[1]).sign_f64() * 0.01;
+        // Level (the pipeline draws both sides: seen from above or below, on either face).
+        quad(
+            &mut out,
+            |x, y| {
+                [
+                    rel[0] + (2.0 * x - 1.0) * size,
+                    rel[1] + up,
+                    rel[2] + (2.0 * y - 1.0) * size,
+                ]
+            },
+            |x, y| [(2.0 * x - 1.0) as f32, (2.0 * y - 1.0) as f32],
+            [t, a, 0.0],
+            p.look as u32 | KIND_FLECK << 8,
+            0,
+        );
+        n += 1;
+    }
+    (out, n)
+}
+
+/// The flecks' colours (linear), by `LIQUID_FLOWS` index, in WGSL.
+fn fleck_wgsl() -> String {
+    let looks = dwell_look::waterflow::LIQUID_FLOWS;
+    let colours: Vec<String> = looks
+        .iter()
+        .map(|l| {
+            let [r, g, b] = [16, 8, 0].map(|k| {
+                dwell_look::srgb_to_linear(f64::from((l.particle_color >> k) & 0xff) / 255.0) as f32
+            });
+            format!("vec3f({r:?}, {g:?}, {b:?})")
+        })
+        .collect();
+    format!(
+        "const FLECK_COLOURS = array<vec3f, {}>({});
+// A fleck (crate::flecks): a soft disc of its liquid's colour, lit by the sky as the water's foam
+// is, premultiplied by its opacity.
+fn fleck_colour(look: u32, uv: vec2f, alpha: f32, rel: vec3f) -> vec4f {{
+    let a = (1.0 - smoothstep(0.55, 1.0, length(uv))) * alpha;
+    let y = frame.eye.x + rel.y;
+    let up = face_up(face_at(y));
+    let c = lambert_lit(FLECK_COLOURS[min(look, {}u)], up, y, terrain_light(1.0, vec2f(1.0, 0.0)));
+    return vec4f(c * a, a);
+}}
+",
+        looks.len().max(1),
+        if colours.is_empty() {
+            "vec3f(1.0)".to_string()
+        } else {
+            colours.join(", ")
+        },
+        looks.len().max(1) - 1,
+    )
+}
 
 /// A portal near the eye whose motes draw this frame (BIFACIAL_WORLD.md §12.1): its shaft's axis
 /// (world x, z), its mote look (index in `dwell_look::motes::MOTES`) and its seed.
@@ -311,10 +388,11 @@ pub fn quads(flames: &[Flame], basis: &Basis, seconds: f64) -> (Vec<f32>, usize,
 /// dwell-look's flame shading.
 pub fn source(animated: bool) -> String {
     format!(
-        "{}\n{}\n{}\nconst FLAME_PEAK: f32 = {:?};\n{WGSL}",
+        "{}\n{}\n{}\n{}\nconst FLAME_PEAK: f32 = {:?};\n{WGSL}",
         super::shaders::lighting_source(),
         dwell_look::flames::wgsl(animated),
         dwell_look::motes::wgsl(),
+        fleck_wgsl(),
         FLAME_TUNABLES.peak as f32,
     )
 }
@@ -403,6 +481,14 @@ fn flame_colour(i: FlameVary) -> vec4f {
         }
         return vec4f(flame_light(c), 0.0);
     }
+    if (kind == 4u) {
+        // A fleck on moving water (crate::flecks): lit, over what is behind.
+        let c = fleck_colour(i.info & 0xffu, i.uv, i.rest.y, i.rel);
+        if (c.a < 0.01) {
+            discard;
+        }
+        return c;
+    }
     if (kind == 3u) {
         // A portal's mote (dwell-look motes.rs): added, self-lit, its look's index the low byte.
         let c = mote_shade(mote_look(i.info & 0xffu), i.uv, i.rest.y);
@@ -459,6 +545,9 @@ fn flame_lit_fs(i: FlameVary) -> SceneOut {
 @fragment
 fn flame_mask_fs(i: FlameVary) -> SceneOut {
     let look = flame_look(i.info & 0xffu);
+    if ((i.info >> 8u) == 4u) {
+        discard;
+    }
     if ((i.info >> 8u) == 3u) {
         let c = mote_shade(mote_look(i.info & 0xffu), i.uv, i.rest.y);
         if (max(max(c.r, c.g), c.b) < 0.1) {
@@ -499,6 +588,8 @@ pub struct FlameRenderer {
     pub drawn: usize,
     /// Portal motes drawn this frame (telemetry).
     pub motes_drawn: usize,
+    /// Flecks on moving water drawn this frame.
+    pub flecks_drawn: usize,
     /// Whether the motes move (a CPU adapter draws its few, still: `cpu_count`).
     animated: bool,
 }
@@ -645,6 +736,7 @@ impl FlameRenderer {
             ranges: [(0..0, 0..0), (0..0, 0..0)],
             drawn: 0,
             motes_drawn: 0,
+            flecks_drawn: 0,
             animated,
         }
     }
@@ -660,6 +752,7 @@ impl FlameRenderer {
         scene: &[Flame],
         arms: Option<Flame>,
         portals: &[PortalMotes],
+        flecks: &[crate::flecks::Fleck],
         eye: [f64; 3],
         seconds: f64,
     ) {
@@ -672,6 +765,20 @@ impl FlameRenderer {
         let (motes, n) = mote_quads(portals, eye, basis, seconds, self.animated);
         data.extend(motes);
         self.motes_drawn = n;
+        // The flecks on moving water, a CPU adapter's few (`particle_cpu_count`).
+        let max = dwell_look::waterflow::LIQUID_FLOWS
+            .iter()
+            .map(|l| {
+                if self.animated {
+                    l.particle_count
+                } else {
+                    l.particle_cpu_count
+                }
+            })
+            .sum::<u32>() as usize;
+        let (fl, fn_) = fleck_quads(flecks, eye, seconds, max);
+        data.extend(fl);
+        self.flecks_drawn = fn_;
         let scene_end = (data.len() / VERTEX_FLOATS) as u32;
         let (arms_data, arms_glows, _) = quads(arms.as_slice(), basis, seconds);
         data.extend(arms_data);
@@ -795,6 +902,35 @@ mod tests {
         assert!(colour.contains("if (kind == 3u)") && colour.contains("mote_shade(mote_look("));
         let mask = WGSL.split("fn flame_mask_fs").nth(1).expect("the mask");
         assert!(mask.contains("== 3u") && mask.contains("mote_shade("));
+    }
+
+    #[test]
+    fn a_fleck_draws_one_flat_quad_on_the_water() {
+        // docs/WATER_SURFACE_GRID.md §2c: a fleck lies on the surface (its quad level, a centimetre
+        // over it), its liquid's size, faded in by its age.
+        let f = crate::flecks::Fleck {
+            at: [10.0, 50.0, -4.0],
+            age: 1.0,
+            look: 0,
+        };
+        let (v, n) = fleck_quads(&[f], [0.0, 48.0, 0.0], 3.0, 16);
+        assert_eq!((n, v.len()), (1, QUAD_VERTICES * VERTEX_FLOATS));
+        let size = dwell_look::waterflow::LIQUID_FLOWS[0].particle_size_m;
+        for c in v.chunks_exact(VERTEX_FLOATS) {
+            assert!((f64::from(c[1]) - 2.01).abs() < 1e-4, "level: {}", c[1]);
+            assert!((f64::from(c[0]) - 10.0).abs() <= size + 1e-4);
+        }
+        let young = crate::flecks::Fleck { age: 0.0, ..f };
+        assert_eq!(
+            fleck_quads(&[young], [0.0; 3], 3.0, 16).1,
+            0,
+            "not yet faded in"
+        );
+        assert_eq!(
+            fleck_quads(&[f], [0.0; 3], 3.0, 0).1,
+            0,
+            "none past the cap"
+        );
     }
 
     #[test]

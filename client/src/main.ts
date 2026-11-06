@@ -223,6 +223,8 @@ interface DwellDebug {
   telemetry(): Telemetry;
   /** The kept frames' raw values: `frames[i]` is `[atMs, ...values in names' order]`. */
   telemetryFrames(): { names: string[]; frames: number[][] };
+  /** The client's water current at a world point (m/s x, z) and the flecks near the eye. */
+  waterFlowAt(x: number, y: number, z: number): number[];
   /** The kept player controller ticks, oldest first. */
   ticks(): TickSample[];
   /** The latest sounds played (ids, newest last; docs/AUDIO.md). */
@@ -811,6 +813,7 @@ async function start(): Promise<App | null> {
     blockDump: () => blockDumpOf(app),
     telemetry: () => client.telemetry() as Telemetry,
     telemetryFrames: () => client.telemetryFrames() as { names: string[]; frames: number[][] },
+    waterFlowAt: (x: number, y: number, z: number) => Array.from(client.waterFlowAt(x, y, z)),
     ticks: () => client.telemetryTicks() as TickSample[],
     telemetryReset: () => {
       client.telemetryReset();

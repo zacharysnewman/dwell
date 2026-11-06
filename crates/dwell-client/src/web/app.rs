@@ -615,6 +615,20 @@ impl Client {
         })
     }
 
+    /// The water's current (m/s along x and z) at a world point as this client has it, and how many
+    /// flecks drift near the eye (docs/WATER_SURFACE_GRID.md §2c; DEV_TOOLS.md).
+    #[wasm_bindgen(js_name = waterFlowAt)]
+    pub fn water_flow_at(&self, x: f64, y: f64, z: f64) -> Vec<f64> {
+        let mut s = self.inner.borrow_mut();
+        let Some(g) = &mut s.game else {
+            return Vec::new();
+        };
+        let [u, v] = g.current_at([x, y, z]);
+        let mut out = vec![f64::from(u), f64::from(v), g.fleck_count() as f64];
+        out.extend(g.fleck_positions().into_iter().take(3).flatten());
+        out
+    }
+
     /// The kept frames: `{ names, frames: [[atMs, ...values in names' order]] }`.
     #[wasm_bindgen(js_name = telemetryFrames)]
     pub fn telemetry_frames(&self) -> JsValue {

@@ -1996,16 +1996,17 @@ fn flow_streaks(i: FluidOut, f: Fluid, footprint: f32) -> f32 {
         + flow_streak(i.wrapped - carry * p1, dir, f) * (1.0 - w0));
 }
 
-// One copy of the streaks: fine noise (a streak's width) averaged over taps back along the flow
-// over a streak's length, so it is drawn out along the current (no turned frame: turning world
+// One copy of the streaks: fine noise (a streak's width) averaged over six taps back along the flow
+// over a streak's length (taps about a width apart, so a streak is unbroken), drawn out along the
+// current; only the noise's highest ridges show, so streaks are few (no turned frame: turning world
 // coordinates by the local direction swings the pattern where the direction bends).
 fn flow_streak(xz: vec2f, dir: vec2f, f: Fluid) -> f32 {
-    let step = dir * (f.flow_shape.x / 3.0);
+    let step = dir * (f.flow_shape.x / 6.0);
     var n = 0.0;
-    for (var k = 0; k < 4; k++) {
+    for (var k = 0; k < 6; k++) {
         n += noise_t((xz - step * f32(k)) / f.flow_shape.y).x;
     }
-    return smoothstep(0.12, 0.32, n * 0.25);
+    return smoothstep(0.16, 0.3, n / 6.0 * 2.0);
 }
 
 // The streaks' colour, lit as the shoreline foam is.

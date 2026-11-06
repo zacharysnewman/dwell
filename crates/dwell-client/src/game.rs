@@ -125,6 +125,8 @@ pub trait Scene: TerrainRenderer {
     /// The water's currents around the eye (render/flow.rs; `Currents::window`'s texels), when they
     /// changed.
     fn set_water_flow(&mut self, _texels: Vec<i8>) {}
+    /// The flecks drifting on moving water this frame (crate::flecks).
+    fn set_flecks(&mut self, _flecks: Vec<crate::flecks::Fleck>) {}
     /// The portals near the eye whose motes draw this frame (BIFACIAL_WORLD.md §12.1).
     fn set_portal_motes(&mut self, _portals: Vec<crate::render::flames::PortalMotes>) {}
     /// A falling piece's meshes (docs/FELLING.md §3), relative to its reference cell's centre,
@@ -538,6 +540,7 @@ pub struct Game<S: Scene> {
     flow_sent: Option<(u64, bool, i32, i32)>,
     /// The Drifting flecks setting: particles on moving water (render/flames.rs's flecks).
     flow_particles: bool,
+    flecks: crate::flecks::Flecks,
     /// Box select, fill, copy/paste, undo (§6.5); `enabled` once the server announces region edits.
     pub region: RegionTools,
     /// VoxelSniper-style brushes (BRUSHES.md); `available` where the server announces them.
@@ -709,6 +712,7 @@ impl<S: Scene> Game<S> {
             currents_seen: Default::default(),
             flow_sent: None,
             flow_particles: true,
+            flecks: crate::flecks::Flecks::default(),
             region: RegionTools::new(),
             brush: BrushTool::new(),
             portals: (Vec::new(), ""),
@@ -2313,6 +2317,16 @@ impl<S: Scene> Game<S> {
         self.streamer.store_mut().currents.at(p)
     }
 
+    /// The flecks drifting near the eye now.
+    pub fn fleck_count(&self) -> usize {
+        self.flecks.list.len()
+    }
+
+    /// Where the flecks near the eye are (world m).
+    pub fn fleck_positions(&self) -> Vec<[f64; 3]> {
+        self.flecks.list.iter().map(|p| p.at).collect()
+    }
+
     /// The Drifting flecks setting (docs/WATER_SURFACE_GRID.md §2c).
     pub fn set_flow_particles(&mut self, on: bool) {
         self.flow_particles = on;
@@ -2618,6 +2632,10 @@ impl<S: Scene> Game<S> {
         );
         self.scene.borrow_mut().set_placed_lights(placed);
         self.update_flow(camera_eye);
+        // The flecks on moving water (the Drifting flecks setting).
+        self.flecks
+            .update(self.streamer.store(), camera_eye, dt, self.flow_particles);
+        self.scene.borrow_mut().set_flecks(self.flecks.list.clone());
 
         self.hud.health = self.health;
         if self.debug_visible {

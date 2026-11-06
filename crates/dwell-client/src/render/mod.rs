@@ -975,6 +975,8 @@ pub struct Renderer {
     placed_flames: Vec<flames::PlacedFlame>,
     /// The portals near the eye whose motes draw this frame (`set_portal_motes`).
     portal_motes: Vec<flames::PortalMotes>,
+    /// The flecks on moving water this frame (`Scene::set_flecks`; crate::flecks).
+    flecks: Vec<crate::flecks::Fleck>,
     outline: Option<V3>,
     /// The outline's box in its cell, and its lines.
     outline_box: ([f32; 3], [f32; 3]),
@@ -1660,6 +1662,7 @@ impl Renderer {
             flames,
             placed_flames: Vec::new(),
             portal_motes: Vec::new(),
+            flecks: Vec::new(),
             outline: None,
             outline_box,
             outline_quat: IDENTITY_QUAT,
@@ -3160,11 +3163,13 @@ impl Renderer {
             &scene_flames,
             arms_flame,
             &self.portal_motes,
+            &self.flecks,
             self.eye,
             seconds,
         );
         crate::telemetry::add("flames.drawn", self.flames.drawn as f64);
         crate::telemetry::add("motes.drawn", self.flames.motes_drawn as f64);
+        crate::telemetry::add("flecks.drawn", self.flames.flecks_drawn as f64);
         let arms = self.characters.has_arms();
         if arms {
             let fov = dwell_characters::player()
@@ -4771,6 +4776,9 @@ impl crate::game::Scene for Renderer {
     }
     fn set_placed_lights(&mut self, lights: Vec<lights::PlacedLight>) {
         Renderer::set_placed_lights(self, lights);
+    }
+    fn set_flecks(&mut self, flecks: Vec<crate::flecks::Fleck>) {
+        self.flecks = flecks;
     }
     fn set_water_flow(&mut self, texels: Vec<i8>) {
         self.frame_bindings.flow.write(&self.queue, &texels);
