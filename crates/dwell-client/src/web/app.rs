@@ -1377,8 +1377,8 @@ impl Client {
     #[wasm_bindgen(js_name = setWaterFlow)]
     pub fn set_water_flow(&self, ripples: bool, foam: bool, particles: bool) {
         let s = self.inner.borrow();
-        let switches = u32::from(ripples) * crate::render::flow::FLOW_RIPPLES
-            | u32::from(foam) * crate::render::flow::FLOW_FOAM;
+        let switches = (u32::from(ripples) * crate::render::flow::FLOW_RIPPLES)
+            | (u32::from(foam) * crate::render::flow::FLOW_FOAM);
         s.renderer.borrow_mut().set_flow_switches(switches);
         drop(s);
         let mut s = self.inner.borrow_mut();

@@ -3,8 +3,10 @@
 //! (`shared/look/waterflow.json`, generated into `waterflow.gen.rs`). The current is the client's
 //! current table's (`dwell_world::currents`); the renderer and the game read these looks.
 
-#[path = "waterflow.gen.rs"]
-mod generated;
+// Included (not a `#[path]` module) so rustfmt leaves the generated file as written.
+mod generated {
+    include!("waterflow.gen.rs");
+}
 pub use generated::{LIQUID_FLOWS, WATER_FLOW};
 
 /// `shared/look/waterflow.json`'s tunables.
