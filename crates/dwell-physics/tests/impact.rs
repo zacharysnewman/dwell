@@ -1,8 +1,9 @@
-//! Impact damage (PLAYER_CONTROLLER.md §6.10, ARCHITECTURE.md §9.6): a hit hurts by the speed into
-//! the surface, `max(0, −v · n)`, with `v` the body's velocity going into the physics step that
-//! met it and `n` the surface's normal (face-local) — on the ground only (`impact_surfaces`): a
-//! flat ground only (owner, 2026-11-05: ramps of either pitch never hurt); walls, steep faces and
-//! ceilings never hurt. Once per
+//! Impact damage (PLAYER_CONTROLLER.md §6.10, ARCHITECTURE.md §9.6): a hit hurts by the downward
+//! speed × the surface's cos θ, face-local `max(0, −v.y) · n.y` (owner, 2026-11-06;
+//! `impact_measure`), with `v` the
+//! body's velocity going into the physics step that met the surface — on the ground only
+//! (`impact_surfaces`): a walkable normal, floors and ramps; walls, steep faces and ceilings never
+//! hurt. Once per
 //! contact, the largest of a tick's. Flight, swimming and climbing are
 //! exempt, as falls were. Runs in the local frame like every suite (far from the origin and on face
 //! B too).
@@ -19,7 +20,7 @@ use common::*;
 use dwell_blocks::StateId;
 use dwell_blocks::require;
 use dwell_physics::Vec3;
-use dwell_physics::config::{ImpactSurfaces, PlayerControllerConfig};
+use dwell_physics::config::{ImpactMeasure, ImpactSurfaces, PlayerControllerConfig};
 use dwell_physics::controller::{Input, PlayerHandle, events};
 use dwell_world::ramps::{gentle_cell, steep_cells};
 use dwell_world::rows_for_m;
@@ -142,6 +143,10 @@ fn hillside(w: &mut PlayerTestWorld) -> fn(i32, i32) -> i32 {
 /// What a launch onto the hillside dealt.
 struct Landing {
     dealt: Vec<i32>,
+    /// The fastest impact raised (m/s).
+    fastest: f32,
+    /// The body's velocity the tick before it landed.
+    before: Vec3,
 }
 
 /// Spawns 0.6 m over the hillside at z = 40 and launches the player at `speed` m/s, `angle`° below
@@ -153,14 +158,23 @@ fn launch_onto_hillside(speed: f32, angle: f32) -> Landing {
     let e = w.spawn(Vec3::new(0.5, ground + 0.6, 40.5));
     let a = angle.to_radians();
     w.kick(0, e, Vec3::new(0.0, -speed * a.sin(), -speed * a.cos()));
-    let mut out = Landing { dealt: Vec::new() };
+    let mut out = Landing {
+        dealt: Vec::new(),
+        fastest: 0.0,
+        before: Vec3::ZERO,
+    };
     for _ in 0..ticks(1.0) {
+        let before = w.vel(e);
         w.step(1);
         let d = hurt(&w, e);
         if d > 0 {
             out.dealt.push(d);
         }
+        if w.c(e).events & events::IMPACTED != 0 {
+            out.fastest = out.fastest.max(w.c(e).impact_speed);
+        }
         if w.count(e, events::LANDED) > 0 {
+            out.before = before;
             // And nothing more while it settles on the slope.
             out.dealt.extend(hits(&mut w, e, 10));
             break;
@@ -171,21 +185,29 @@ fn launch_onto_hillside(speed: f32, angle: f32) -> Landing {
 }
 
 #[test]
-fn landing_on_a_half_metre_ramp_never_hurts() {
-    // Owner (2026-11-05): "Fall damage was supposed to only impact you when you hit the ground
-    // vertically fast, but currently if you hit a half slope or steep slope really fast you take
-    // some up to lethal fall damage … it should be 0." Before, 25 m/s straight down onto 26.57°
-    // dealt (25 × 0.894 − 12) × 8 ≈ 83 points. Now a ramp never hurts, at any angle.
+fn landing_on_a_ramp_hurts_by_its_downward_speed_into_it() {
+    // Owner (2026-11-06): "fall damage should only be applied based on Y (vertical downward
+    // velocity)", and "the angle of the downward hit reduces fall damage too, so landing straight
+    // down on a steep ramp would mitigate some damage": the downward speed × the surface's cos θ
+    // (face-local n.y). On a ½ m ramp (26.57°) × 0.894, whatever the angle the body comes in at;
+    // its horizontal speed never counts (until 0.49.1 the speed into the normal counted it: 60°
+    // below the horizontal dealt 21, along the slope 0; in 0.49.2 ramps dealt nothing).
+    let cos = Vec3::new(0.0, 2.0, -1.0).normalize().y;
     for angle in [90.0, 60.0, 26.565] {
         let l = launch_onto_hillside(25.0, angle);
-        assert_eq!(l.dealt, Vec::<i32>::new(), "{angle}° below the horizontal");
+        let down = -l.before.y * cos;
+        assert!(
+            (l.fastest - down).abs() < 0.05,
+            "{angle}°: {} vs {down} m/s down into the ramp",
+            l.fastest
+        );
+        let damage = PlayerControllerConfig::default().damage.impact_damage(down);
+        assert!(
+            damage > 0 && l.dealt == vec![damage],
+            "{angle}°: {:?} vs {damage}",
+            l.dealt
+        );
     }
-    // The same landing on the flat still hurts.
-    let mut w = PlayerTestWorld::new();
-    w.floor();
-    let e = w.spawn(Vec3::new(0.5, 0.6, 0.5));
-    w.kick(0, e, Vec3::new(0.0, -25.0, 0.0));
-    assert_eq!(hits(&mut w, e, ticks(1.0)).len(), 1, "flat ground hurts");
 }
 
 /// A hillside of 1 m ramps (45°) rising toward +z, two rows per metre.
@@ -214,19 +236,56 @@ fn steep_hillside(w: &mut PlayerTestWorld) -> f32 {
 }
 
 #[test]
-fn landing_on_a_steep_ramp_never_hurts() {
-    // A 45° ramp is walkable ground to the impact rule (under `probes.max_slope_angle`, 56°): 25 m/s
-    // straight down onto it dealt (25 × 0.707 − 12) × 8 ≈ 45 points. Now nothing.
+fn landing_on_a_steep_ramp_hurts_less_than_on_the_flat() {
+    // 25 m/s straight down onto a 45° ramp: the downward speed × cos 45°, so less than the same fall
+    // onto the flat (owner, 2026-11-06: "landing straight down on a steep ramp would mitigate some
+    // damage"; 0.49.2: nothing).
     let mut w = PlayerTestWorld::new();
     let ground = steep_hillside(&mut w);
     let e = w.spawn(Vec3::new(0.5, ground + 0.8, 20.5));
     w.kick(0, e, Vec3::new(0.0, -25.0, 0.0));
-    let fastest = fastest_impact(&mut w, e, ticks(1.0));
+    let mut before = Vec3::ZERO;
+    let mut fastest = 0.0f32;
+    for _ in 0..ticks(1.0) {
+        let v = w.vel(e);
+        w.step(1);
+        if w.c(e).events & events::IMPACTED != 0 && w.c(e).impact_speed > fastest {
+            fastest = w.c(e).impact_speed;
+            before = v;
+        }
+    }
     assert!(w.count(e, events::LANDED) >= 1, "landed on the slope");
+    let down = -before.y;
+    let into = down * std::f32::consts::FRAC_1_SQRT_2;
+    assert!(
+        (fastest - into).abs() < 0.05,
+        "{fastest} vs {into} ({down} down)"
+    );
+    let damage = &w.config.damage;
+    assert!(
+        damage.impact_damage(fastest) > 0
+            && damage.impact_damage(fastest) < damage.impact_damage(down),
+        "{} on the ramp vs {} on the flat",
+        damage.impact_damage(fastest),
+        damage.impact_damage(down)
+    );
+}
+
+#[test]
+fn a_fast_horizontal_hit_into_a_slope_does_not_hurt() {
+    // The owner's report (2026-11-05): hitting "a half slope or steep slope really fast" dealt "up
+    // to lethal fall damage": the speed into the slope's normal counted the horizontal speed. Only
+    // the downward speed counts: launched along the ground at 25 m/s into a 45° slope, ~0.
+    let mut w = PlayerTestWorld::new();
+    steep_hillside(&mut w); // 1 m of ground for z < 0, the slope rising from z = 0
+    let e = w.spawn(Vec3::new(0.5, 1.05, -4.0));
+    w.kick(0, e, Vec3::new(0.0, 0.0, 25.0));
+    let fastest = fastest_impact(&mut w, e, ticks(1.0));
+    assert!(w.pos(e).z > -0.5, "reached the slope: {}", w.pos(e));
     assert_eq!(
         w.config.damage.impact_damage(fastest),
         0,
-        "{fastest} m/s into the ramp"
+        "{fastest} m/s counted"
     );
 }
 
@@ -258,9 +317,11 @@ fn launched_into_a_wall_at_25_m_s_does_not_hurt() {
 
 #[test]
 fn walls_and_ceilings_hurt_again_when_the_config_says_so() {
-    // The rule is data: `impact_surfaces: All` counts every contact, as before.
+    // The rule is data: `impact_surfaces: All` with `impact_measure: IntoSurface` counts every
+    // contact by the speed into it, as before.
     let mut cfg = PlayerControllerConfig::default();
     cfg.damage.impact_surfaces = ImpactSurfaces::All;
+    cfg.damage.impact_measure = ImpactMeasure::IntoSurface;
     let mut w = PlayerTestWorld::with_config(cfg);
     w.floor_at(0, 32);
     w.fill(-8, 0, 6, 8, 9, 6, cube_block());

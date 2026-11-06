@@ -602,11 +602,13 @@ fn a_slide_on_flat_ground_lasts_about_one_and_a_half_seconds() {
 }
 
 #[test]
-fn a_slide_keeps_its_speed_down_terraces_of_a_flat_cell_and_a_slope() {
+fn a_slide_nearly_keeps_its_speed_down_terraces_of_a_flat_cell_and_a_slope() {
     // Owner, 2026-11-02: "slide doesn't continue very well … flat->shallow->flat->shallow
     // downhills": friction (6 m/s²) outweighed a ½ m slope's pull (+3 m/s² net on it), so the
-    // slide faded (9.4 → ~5 m/s in 2 s: red). Now friction 5 and `slope_gravity` 1.5: a slope
-    // gives back more than a flat cell takes. Terraces 1 m flat + one ½ m ramp, down toward +z.
+    // slide faded (9.4 → ~5 m/s in 2 s: red). Friction became 5 and `slope_gravity` 1.5, and a
+    // slope gave back more than a flat cell took. Then (owner, 2026-11-06: slides "feel like pure
+    // physics") `slope_gravity` is 1 again: down the terraces a slide loses ~0.6 m/s over 2 s, where
+    // on flat ground friction alone stops it in ~1.5 s. Terraces 1 m flat + one ½ m ramp, down +z.
     let stone = dwell_blocks::require("dwell:stone");
     let ramp = dwell_world::ramps::ramp_state(
         "dwell:stone",
@@ -648,8 +650,8 @@ fn a_slide_keeps_its_speed_down_terraces_of_a_flat_cell_and_a_slope() {
     assert_eq!(walking, 0, "slid on every landing");
     let after = w.horizontal_speed(e);
     assert!(
-        after > on - 0.5,
-        "kept its speed down the terraces: {on} → {after} m/s"
+        after > on - 1.0,
+        "nearly kept its speed down the terraces: {on} → {after} m/s"
     );
 }
 

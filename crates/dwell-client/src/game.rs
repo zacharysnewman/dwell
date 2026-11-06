@@ -2521,21 +2521,17 @@ impl<S: Scene> Game<S> {
         self.send_held(held);
         if self.dead {
             // Third person over the body.
-            let mut view = self.bodies.own_dead(self.death_feet, yaw, face, dt);
+            // On the face the body lies on, not the controller's (it has no body while dead).
+            let cam = death_camera(self.death_feet, yaw);
+            let mut view = self.bodies.own_dead(self.death_feet, yaw, cam.face, dt);
             view.light = self.body_light(u32::from(self.player_id), view.feet, view.face, dt);
             let mut scene = self.scene.borrow_mut();
             scene.set_player(u32::from(self.player_id), Some(view));
             scene.set_arms(None);
             scene.set_own_shadow(None);
             scene.set_own_body(None);
-            let r = yaw.to_radians();
-            let [x, y, z] = self.death_feet;
-            camera_eye = [
-                x - r.sin() * 4.0,
-                face.y(face.y(y) + 2.5),
-                z - r.cos() * 4.0,
-            ];
-            scene.set_camera(camera_eye, yaw, -25.0, face, 0.0);
+            camera_eye = cam.eye;
+            scene.set_camera(cam.eye, yaw, cam.pitch, cam.face, 0.0);
             drop(scene);
             self.show_hud_text();
             self.target(None, input, now_ms);
@@ -3148,6 +3144,28 @@ fn sound_event(kind: SoundKind) -> SoundEvent {
 }
 
 /// The audio listener at an eye looking along yaw/pitch on `face`: eye, forward, up.
+/// The third-person camera over your dead body.
+struct DeathCamera {
+    eye: [f64; 3],
+    pitch: f64,
+    face: FaceFrame,
+}
+
+/// The camera over a dead body at `feet`, looking along `yaw`: on the face the body lies on (the
+/// predictor's controller has no body while dead and falls back to face A's frame: owner,
+/// 2026-11-06, the camera was upside down on face B), 4 m behind it along that face's look and
+/// 2.5 m along its up, 25° down.
+fn death_camera(feet: [f64; 3], yaw: f64) -> DeathCamera {
+    let face = FaceFrame::at_height(feet[1]);
+    let ahead = face.look(yaw, 0.0);
+    let up = face.up();
+    DeathCamera {
+        eye: std::array::from_fn(|k| feet[k] - ahead[k] * 4.0 + up[k] * 2.5),
+        pitch: -25.0,
+        face,
+    }
+}
+
 fn listener(eye: [f64; 3], yaw: f64, pitch: f64, face: FaceFrame) -> [f64; 9] {
     // The camera's axes (its up perpendicular to forward, toward the face's up).
     let b = crate::render::camera::aim(yaw, pitch, face, 0.0);
@@ -3279,6 +3297,27 @@ fn probe_lines(center: [f64; 3], c: &ClientState) -> Vec<Line> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    dwell_world::both_faces!(
+        /// Owner (2026-11-06): dead on face B, the third-person camera was upside down. The body
+        /// leaves the physics world when it dies and the predictor's controller falls back to face
+        /// A's frame, which the camera used; the camera takes the face the body lies on, sits over
+        /// it along that face's up and looks down at it.
+        fn the_death_camera_is_upright_on_the_face_the_body_lies_on(f: FaceFrame) {
+            let feet = f.point([3.5, 40.0, 7.5]);
+            let cam = death_camera(feet, 30.0);
+            assert_eq!(cam.face, f, "the face the body lies on");
+            let up = f.up();
+            let rise: f64 = (0..3).map(|k| (cam.eye[k] - feet[k]) * up[k]).sum();
+            assert!(
+                (rise - 2.5).abs() < 1e-9,
+                "2.5 m over the body along its up: {rise}"
+            );
+            let look = f.look(30.0, cam.pitch);
+            let toward: f64 = (0..3).map(|k| (feet[k] - cam.eye[k]) * look[k]).sum();
+            assert!(toward > 3.0, "looking at the body: {toward}");
+        }
+    );
 
     #[test]
     fn the_stream_budgets_are_4_ms_or_a_tenth_of_a_slow_frame() {

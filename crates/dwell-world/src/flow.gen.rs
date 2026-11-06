@@ -9,6 +9,7 @@ pub const FLOW: FlowData = FlowData {
     theta: 0.95,
     cfl: 0.7,
     max_substeps: 400,
+    step_budget: 40000,
     sleep_band_m: 0.005,
     wake_band_m: 0.05,
     calm_s: 10.0,

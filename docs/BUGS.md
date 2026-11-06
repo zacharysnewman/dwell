@@ -6,6 +6,16 @@ pins it.
 
 ## Open
 
+### 34. e2e play.spec's two-client test times out on CI since 0.49.4
+
+*Found 2026-11-06, from CI.* "two clients on a native server see each other move": page B (on a
+150 ms, 5 %-loss link, `?netsim=150,20,5`) never reports its terrain ready within 20 s. It passes
+locally on a real GPU (14 s). Main passed it at #336 and #337 (each twice, a re-run today included)
+and has failed it on every run since: main at #340, PRs #338, #341 and #342 (three runs), main
+with #338 reverted, and main with #340 reverted (both of those include #339). Cutting the water
+currents' datagrams to a quarter didn't help, and there is no water near the native server's spawn
+(seed 0, (2128, 7544)). Next: re-run main at #340 and bisect #338's pieces on a branch from #336.
+
 ### 30. A held Place builds too little at a few frames a second (partly fixed in 0.49.2)
 
 *Found 2026-11-05 (0.48.2), from CI.* Under the e2e suite's software renderer (CI ~5 fps, a Mac's
@@ -39,6 +49,29 @@ face, or the placement check against its shape.
 
 
 ## Fixed
+
+### 33. Damming a river stalled the game (fixed in 0.49.7)
+
+*Reported 2026-11-05 (0.49.5).* "Water definitely seems to be hanging my game thread … my frame rate
+is fine, but I get stopped while moving … This is when I dam a river usually." The frame rate held
+while the server fell behind, so the client held its prediction until it caught up. Water runs on
+game time (72 × real at the default day): a water tick, every six server ticks, was 7.2 s of water,
+about 45 substeps over every awake chunk. In a native server with a cut lake flooding out, those
+ticks took 12–34 ms and grew as chunks woke (the grid's other work under 1 ms). Fixed: a tick does at
+most `stepBudget` column-substeps (`flow.json`, 40,000; ~2.5 ms natively with 60 chunks awake) and
+the rest of its water time is lost, not counted toward calm. `water::tests`
+`a_water_tick_keeps_to_its_step_budget_however_much_water_is_awake` (red before: 50 substeps over
+10 awake chunks).
+
+### 32. Dead on face B, the third-person camera was upside down (fixed in 0.49.6)
+
+*Reported 2026-11-06.* "When you die on the upside half of the world, the 3rd person camera is
+flipped upside down (again)." When the player dies its body leaves the physics world and the
+predictor's controller falls back to face A's frame; the death camera (and the drawn body) used
+that face, so on face B the view was face A's: upside down. Fixed: the death camera takes the face
+the body lies on (`FaceFrame::at_height` of the death position) and sits 4 m behind it along that
+face's look and 2.5 m along its up (`game.rs` `death_camera`). `game.rs`
+`the_death_camera_is_upright_on_the_face_the_body_lies_on` (both faces; face B red before).
 
 ### 31. Flat blue sheets on rivers behind their steps (fixed in 0.49.5)
 
