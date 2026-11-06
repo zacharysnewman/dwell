@@ -439,19 +439,21 @@ fn press_into_ramp_foot(angle: f32, run: bool, start: f32) -> (i32, f32, State) 
 }
 
 #[test]
-fn pressing_into_a_45_degree_ramps_foot_does_not_flicker_between_sliding_and_walking() {
-    // Playtest (2026-10-20): walking into a 45° face from below, the player rested on its toe
-    // ~0.24 m up and its state switched between sliding and walking every tick.
+fn pressing_into_a_45_degree_ramps_foot_climbs_its_toe_and_slides_back() {
+    // Owner (2026-11-06): "you should be able to walk into them instead of them acting like a
+    // wall. You walk up become ungrounded or whatever and slide back." The foot was a wall to
+    // walking from 2026-10-20 (a playtest saw the state switch between sliding and walking every
+    // tick on the toe); now the walker climbs the toe until the slide carries it back, and keeps
+    // doing so while it presses on: never up the 1 m face to its top (1.5 m).
     let mut fails = Vec::new();
-    let mut total = 0;
+    let mut climbed = 0.0f32;
     for run in [false, true] {
         for angle in [0.0, 15.0, 30.0, 45.0, 60.0] {
             for start in [0.4, 0.43, 0.46, 0.49] {
-                total += 1;
                 let (switches, highest, state) = press_into_ramp_foot(angle, run, start);
-                // The capsule's round bottom rests on the toe at most: 0.3 m over the lower level
-                // (0.5 m), never far up the face.
-                if switches > 2 || highest > 0.85 || state == State::Sliding {
+                climbed = climbed.max(highest);
+                // Running in gets ~0.8 m up (feet to ~1.27), walking ~0.45 m: never the top.
+                if highest > 1.45 {
                     fails.push(format!(
                         "run {run} {angle}° from {start}: {switches} switches, feet up to {highest:.2}, ends {state:?}"
                     ));
@@ -459,8 +461,9 @@ fn pressing_into_a_45_degree_ramps_foot_does_not_flicker_between_sliding_and_wal
             }
         }
     }
-    eprintln!("ramp foot: {} of {total} flickered", fails.len());
     assert!(fails.is_empty(), "{}", fails.join("\n"));
+    // Not held at the foot: the wall kept the feet within 0.85 m (the toe, 0.35 m up).
+    assert!(climbed > 0.85, "up the toe: feet to {climbed}");
 }
 
 /// What a walker across a hillside did: ticks it was held up (grounded and moving slower than
@@ -707,4 +710,42 @@ fn any_momentum_up_a_crest_flies_not_only_a_slide() {
         highest > 1.9,
         "flew over the crest: feet at most {highest} m (top 1.5 m)"
     );
+}
+
+/// The owner's course (2026-11-06): a steep hill 12 m high (45° ramps, 1 m a cell) down to three
+/// flat cells, then a single steep (1 m) ramp up to a flat top 1 m high.
+fn steep_kicker(_: i32, z: i32) -> i32 {
+    if z < 0 {
+        (-2 * z).min(24)
+    } else if z < 3 {
+        0
+    } else if z < 8 {
+        2
+    } else {
+        0
+    }
+}
+
+#[test]
+fn a_slide_down_a_steep_hill_carries_up_a_single_steep_ramp() {
+    // Owner (2026-11-06): "I slid down a 20+ block high steep ramp slope, into 3 flat pieces and
+    // lastly a single steep ramp and couldn't even clear it." The ramp's foot held the slide like
+    // a wall, and on the face 60 m/s² of extra braking (`slide.uphill_deceleration`) took the rest:
+    // it stopped 0.9 m up the 1 m ramp and slid back. Now only gravity and the slide's friction
+    // slow it on the face: it clears the ramp onto its top.
+    for run in [true, false] {
+        let mut w = PlayerTestWorld::new();
+        terrain(&mut w, (-4, -16, 4, 14), &steep_kicker);
+        let e = w.spawn(Vec3::new(0.5, 12.0, -11.5));
+        w.set_input(move |_, _| input(0.0, 1.0, run, false, true, 0.0, 0.0));
+        let mut furthest = f32::MIN;
+        for _ in 0..ticks(5.0) {
+            w.step(1);
+            furthest = furthest.max(w.pos(e).z);
+        }
+        assert!(
+            furthest > 4.5,
+            "run {run}: got to z {furthest} (the ramp's top from z 4)"
+        );
+    }
 }

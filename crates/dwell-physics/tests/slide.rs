@@ -266,8 +266,10 @@ fn braking_slows_the_slide_but_never_stops_it_or_climbs() {
     assert!(climbed < 0.01, "braking never climbs: {climbed}");
     assert_eq!(stopped, 0, "braking never stops the slide");
     assert!(slower, "the braker slides slower");
+    // Back at the foot (5.29), where holding up the slope walks it a little up the toe and the
+    // slide carries it back (the foot is no wall since 2026-11-06), never back onto the face.
     assert!(
-        w.pos(braker).z < 5.3,
+        w.pos(braker).z < 5.6,
         "but still reaches the bottom: {}",
         w.pos(braker)
     );

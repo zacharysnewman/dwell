@@ -2563,13 +2563,13 @@ in the code yet.
 | `probes.max_slope_angle` (`config.rs`) | 56° | The steepest ground (above the 45° ramps); steeper faces are walls (PLAYER_CONTROLLER.md §6.2) |
 | `slide.min_angle` / `friction` / `terminal_speed` (`config.rs`) | 44° / 0.3 / 14 m/s | Ground under the player steeper than this slides (owner, 2026-10-15), pulled by `g (sin θ − friction cos θ)` up to the terminal speed along the slope (PLAYER_CONTROLLER.md §6.8) |
 | `slide.steering` / `steer_speed` / `brake` / `brake_deceleration` / `uphill_deceleration` (`config.rs`) | 0.4 / 5 m/s / 0.6 / 10 m/s² / 60 m/s² | Control on a slide: steering across it at 0.4 × the walking acceleration; holding up-slope lowers the terminal speed by up to 60 % (never stops, never climbs); momentum carried up a steep face dies fast |
-| `slide.crouch_terminal_factor` / `crouch_friction` (`config.rs`) | 1.15 / 0.2 | A crouched slide: faster and lower |
+| `slide.crouch_terminal_factor` / `crouch_friction` / `crouch_uphill_deceleration` (`config.rs`) | 1.15 / 0.2 / 0 m/s² | A crouched slide: faster and lower, and its momentum carries up a steep face against gravity and friction alone (owner, 2026-11-06: slides "feel like pure physics"); walking and running die at `uphill_deceleration`. A steep ramp's foot is no wall (PLAYER_CONTROLLER.md §6.8) |
 | `sprint_slide.min_start_speed` / `start_boost` / `max_speed` (`config.rs`) | 6.5 m/s / 1.5 m/s / 14 m/s | The sprint slide (owner, 2026-10-19; PLAYER_CONTROLLER.md §6.9): crouch pressed at this horizontal speed or more (a sprint, not a walk) slides, with the boost; downhill speeds it up to the maximum |
-| `sprint_slide.friction` / `slope_gravity` (`config.rs`) | 6 m/s² / 1 | Its deceleration, and the fraction of gravity the ground's tilt along the slide adds (downhill) or takes (uphill): 1.3 s / ~7 m on flat ground from a sprint |
+| `sprint_slide.friction` / `slope_gravity` (`config.rs`) | 5 m/s² / 1 | Its deceleration, and the fraction of gravity the ground's tilt along the slide adds (downhill) or takes (uphill): ~1.6 s on flat ground from a sprint; `slope_gravity` 1 (plain gravity, owner 2026-11-06; 1.5 from 2026-11-02 to 0.49.5) |
 | `sprint_slide.steer_rate` / `cooldown_ticks` (`config.rs`) | 90 °/s / 30 ticks (0.5 s) | Limited steering toward the move input; the wait after a slide before the next (≤ 255: a `u8` on the wire) |
 | `movement.ground_stick_speed` (`config.rs`) | 5 m/s | The ground is a floor (owner, 2026-11-05; PLAYER_CONTROLLER.md §6.11): grounded vertical speed is momentum; following the ground may take away at most this much of the rise in a tick, and pull the body down at most this much beyond gravity; more and it leaves the ground (crests, lips, step-ups onto a flat top, downhill edges at speed). One limit for every movement; walking and running keep the ground |
 | `damage.impact_damage_min_speed` / `impact_damage_per_speed` (`config.rs`) | 12 m/s / 8 per m/s | Impact damage (owner, 2026-10-21; PLAYER_CONTROLLER.md §6.10): a hit hurts by its speed into the surface, `max(0, −v · n)`, above the minimum, this many points per m/s |
-| `damage.impact_surfaces` / `impact_max_slope_angle` (`config.rs`) | `Ground` / 10° | The contacts an impact hurts on (owner, 2026-10-21: "just ground"; 2026-11-05: ramps "should be 0"; PLAYER_CONTROLLER.md §6.10): `Ground`, a normal no steeper than `impact_max_slope_angle`, flat ground; ramps, walls, steep faces and ceilings never hurt. `All`: every contact. Server damage only |
+| `damage.impact_surfaces` / `impact_measure` (`config.rs`) | `Ground` / `DownwardIntoSurface` | Impacts (PLAYER_CONTROLLER.md §6.10): `Ground` counts a normal no steeper than `probes.max_slope_angle`, floors and ramps (owner, 2026-10-21: "just ground"), walls, steep faces and ceilings never; `All` every contact. `DownwardIntoSurface` hurts by the downward speed × the surface's cos θ, `max(0, −v.y) · n.y` (owner, 2026-11-06: "only … based on Y", and the angle "reduces fall damage too"), so a fast hit into a slope never hurts and a steep ramp softens a fall; `IntoSurface` by `max(0, −v · n)`. Server damage only |
 | `SLIDE_HOLD` / `SLIDE_UPDATE_EVERY` (*client*, `dwell-game` `sound.rs`) | 0.15 s / 50 ms | A slide's sound: a pause shorter than the hold keeps the same voice; speed updates at most this often (AUDIO.md §5) |
 | `IMPACT_HOLD` / `IMPACT_KEEPS` / `IMPACT_PROBE_M` (*client*, `dwell-game` `sound.rs`) | 70 ms / 0.35 / 0.06 m | An impact sound: the speed toward a surface touching the body (within the probe) dropping in a sample to at most `KEEPS` of its fastest in the last `HOLD`; then quiet that long (AUDIO.md §5) |
 | Impact, hurt (*client*, `shared/sounds` `events`) | `impact` 2 → 25 m/s; `hurt` 0 → 80 health points | Where the impact sound starts and is full; the hurt's intensity by the damage (AUDIO.md §5) |
@@ -3129,7 +3129,7 @@ architectural summary.
 | Other players | Both dynamic: they block and push each other; standing on heads is grounded but not carried by default | Server; remote players are kinematic on the client |
 | Tier 2 debris | Bounces off the local player; never affects player movement | Client only |
 | Explosions | Radial velocity change with falloff and upward bias (PPC `AddExplosion`), plus damage | Server; client replays at event tick (§9.3) |
-| Impacts | Damage from the controller's `IMPACTED` hit: the speed into the surface met, `max(0, −v · n)`, on flat ground only, never ramps, walls or ceilings (`damage.impact_surfaces`, PLAYER_CONTROLLER.md §6.10); flight exempt | Server |
+| Impacts | Damage from the controller's `IMPACTED` hit: the downward speed × the surface's cos θ, `max(0, −v.y) · n.y`, on the ground (floors and ramps), never walls or ceilings (`damage.impact_surfaces`, `impact_measure`, PLAYER_CONTROLLER.md §6.10); flight exempt | Server |
 | Voxel edits | Block removed under feet → normal walk-off; placement into any player capsule is rejected | Server |
 
 ### 9.3 Prediction & reconciliation **[built]**
@@ -3185,10 +3185,10 @@ animated from `State` and flags in snapshots.
 
 ### 9.6 Health, death & respawn **[built: impact damage, death, respawn]**
 - Health (`MAX_HEALTH` 100) is server-authoritative; damage sources are impacts (built, owner
-  2026-10-21: the controller's `IMPACTED` hit, the body's pre-contact velocity into the surface's
-  normal, `max(0, −v · n)`, so a glancing landing counts less and a skim nothing; on the ground
-  only (`damage.impact_surfaces`: a normal no steeper than `damage.impact_max_slope_angle`, 10°),
-  flat floors, never ramps (owner, 2026-11-05), walls, steep faces or ceilings (the wall and ceiling impact
+  2026-10-21; 2026-11-06: the controller's `IMPACTED` hit, the body's pre-contact downward speed ×
+  the surface's cos θ, `max(0, −v.y) · n.y` (`damage.impact_measure`), so a steep ramp softens a
+  fall and a fast hit into a slope does not hurt at all; on the ground only (`damage.impact_surfaces`: a normal no
+  steeper than `probes.max_slope_angle`), floors and ramps, never walls, steep faces or ceilings (the wall and ceiling impact
   sounds stay: they are read from motion), once per contact, the largest of a tick's; above
   `damage.impact_damage_min_speed` 12 m/s, `impact_damage_per_speed` 8 points per m/s; flight,
   swimming and climbing exempt; sent with cause `Fall`; PLAYER_CONTROLLER.md §6.10; and falling out
@@ -3196,7 +3196,9 @@ animated from `State` and flags in snapshots.
   (Phase 20), explosion (Phase 21). `Damage`, `Death`, and `Respawn` are `PlayerEvent`s to every
   client; a dead player's body leaves the physics world, and snapshots mark it `dead` where it
   died. The server respawns the player at the spawn point after `RESPAWN_SECONDS`.
-- On death clients currently draw the body lying down (a cosmetic pose). The **cosmetic ragdoll**
+- On death clients currently draw the body lying down (a cosmetic pose), seen from a third-person
+  camera on the face the body lies on (`game.rs` `death_camera`, 0.49.6: the controller has no
+  body while dead and its face is not the body's). The **cosmetic ragdoll**
   (in the client's local Rapier world, Tier 2 rules — local, unsynchronized, despawned on respawn)
   arrives with the client debris world in Phase 21.
 

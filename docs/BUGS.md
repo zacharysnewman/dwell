@@ -40,6 +40,16 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 32. Dead on face B, the third-person camera was upside down (fixed in 0.49.6)
+
+*Reported 2026-11-06.* "When you die on the upside half of the world, the 3rd person camera is
+flipped upside down (again)." When the player dies its body leaves the physics world and the
+predictor's controller falls back to face A's frame; the death camera (and the drawn body) used
+that face, so on face B the view was face A's: upside down. Fixed: the death camera takes the face
+the body lies on (`FaceFrame::at_height` of the death position) and sits 4 m behind it along that
+face's look and 2.5 m along its up (`game.rs` `death_camera`). `game.rs`
+`the_death_camera_is_upright_on_the_face_the_body_lies_on` (both faces; face B red before).
+
 ### 31. Flat blue sheets on rivers behind their steps (fixed in 0.49.5)
 
 *Reported 2026-11-05 (0.49.x).* "Flat darker colored blue faces" on rivers, seen looking upstream:

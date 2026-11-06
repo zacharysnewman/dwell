@@ -10,7 +10,7 @@ use dwell_world::{
 };
 use rapier3d_f64::prelude::*;
 
-use crate::config::{ImpactSurfaces, PlayerControllerConfig};
+use crate::config::{ImpactMeasure, ImpactSurfaces, PlayerControllerConfig};
 use crate::frame::{FaceQuery, Frame};
 use crate::physics::{BodyHandle, DVec3, Layer, Physics, Vec3, groups};
 use crate::query::{Capsule, GroundRef, ProbeHit, VoxelQuery};
@@ -141,9 +141,6 @@ pub struct GroundInfo {
     pub ceiling_blocked: bool,
     pub touching_wall: bool,
     pub wall_normal: Vec3,
-    /// At a steep ramp's foot (§6.8): the ramp's normal, which the ground ring touches while the
-    /// centre stands on gentle ground; else zero. Walking treats the ramp as a wall.
-    pub foot_normal: Vec3,
 }
 
 impl Default for GroundInfo {
@@ -160,7 +157,6 @@ impl Default for GroundInfo {
             ceiling_blocked: false,
             touching_wall: false,
             wall_normal: Vec3::ZERO,
-            foot_normal: Vec3::ZERO,
         }
     }
 }
@@ -1053,36 +1049,14 @@ impl Players {
             g.slope_angle = slope_angle(hit.normal);
             // Sliding reads the ground under the centre: the ring's highest hit can lie across a
             // crest, whose face would push the player back onto it.
-            let centre = under;
             let under = under.unwrap_or(hit);
             g.under_normal = under.normal;
             g.under_angle = slope_angle(under.normal);
             g.ground = hit.ground;
-            g.foot_normal = Vec3::ZERO;
-            // At a steep ramp's foot the ring's highest hit is the ramp (ground that slides) while
-            // the centre stands on gentle ground: the player stands on the ground under its centre.
-            // Following the ramp's face instead walked the player up onto its toe until the centre
-            // crossed onto it and slid back down, switching between sliding and walking every few
-            // ticks (the "flicker at the foot", §6.8).
-            // Only while driving into the ramp: standing still beside it the ring's ramp holds the
-            // capsule's round bottom where it rests.
-            // (The player's own velocity and momentum, which the clip below leaves alone.)
-            let away = safe_normalized(flat(hit.normal));
-            let own = c.horizontal.current + c.horizontal.external - flat(c.platform.base_velocity);
-            let into_ramp = -own.dot(away) > MIN_DIRECTION
-                || -move_direction(&c.input).dot(away) > INPUT_DEADZONE;
-            if let Some(c0) = centre
-                && g.slope_angle > cfg.slide.min_angle
-                && g.under_angle <= cfg.slide.min_angle
-                && into_ramp
-                && !matches!(c0.ground, GroundRef::Player(_))
-            {
-                g.foot_normal = g.normal;
-                g.normal = c0.normal;
-                g.gap = c0.distance - half_height;
-                g.slope_angle = g.under_angle;
-                g.ground = c0.ground;
-            }
+            // A steep ramp's foot is no wall (owner, 2026-11-06: "you should be able to walk into
+            // them instead of them acting like a wall. You walk up become ungrounded or whatever
+            // and slide back"): the ring's ramp is followed up its toe until the centre crosses
+            // onto it and the slide (§6.8) takes over, as any slope is.
             let walkable = g.slope_angle <= cfg.probes.max_slope_angle;
             // Rising faster than the ground below keeps the previous answer until the rise ends.
             let ground_vy = if c.platform.ground == hit.ground {
@@ -1101,7 +1075,6 @@ impl Players {
             g.grounded = walkable && (!rising || g.was_grounded);
         } else {
             g.grounded = false;
-            g.foot_normal = Vec3::ZERO;
             g.normal = Vec3::Y;
             g.slope_angle = 0.0;
             g.under_normal = Vec3::Y;
@@ -2237,16 +2210,6 @@ impl Players {
         let change = move_towards(Vec3::ZERO, relative_delta, rate * DT);
         c.horizontal.current = relative + change + base;
         c.horizontal.contribution = c.horizontal.current + c.horizontal.external;
-        // At a steep ramp's foot the ramp is a wall to walking: driving into it climbed its toe
-        // until the centre crossed onto it and slid back (§6.8).
-        let foot = flat(c.ground.foot_normal);
-        if grounded && foot.length() > MIN_DIRECTION {
-            let away = normalized(foot);
-            let into = (c.horizontal.contribution - base).dot(away);
-            if into < 0.0 {
-                c.horizontal.contribution -= away * into;
-            }
-        }
         if grounded {
             let motion = c.horizontal.contribution - base;
             let shift = Self::try_step(world, physics, p, motion, move_dir);
@@ -2357,20 +2320,21 @@ impl Players {
         let relative = c.horizontal.current + c.horizontal.external - base;
         let mut along = relative.dot(down);
         let mut across = relative - down * along;
-        let (friction, terminal) = if c.crouching {
+        let (friction, terminal, uphill) = if c.crouching {
             (
                 s.crouch_friction,
                 s.terminal_speed * s.crouch_terminal_factor,
+                s.crouch_uphill_deceleration,
             )
         } else {
-            (s.friction, s.terminal_speed)
+            (s.friction, s.terminal_speed, s.uphill_deceleration)
         };
         let g = cfg.body.gravity;
         let brake = (-move_dir.dot(down)).clamp(0.0, 1.0);
         let terminal = terminal * (1.0 - s.brake * brake) * cos;
         if along < 0.0 {
             // Moving up the face: friction and the slope both pull down it.
-            let decel = (s.uphill_deceleration + g * (sin + friction * cos)) * cos;
+            let decel = (uphill + g * (sin + friction * cos)) * cos;
             along = (along + decel * DT).min(0.0);
         } else if along <= terminal {
             let pull = (g * (sin - friction * cos)).max(0.0) * cos;
@@ -2488,12 +2452,14 @@ impl Players {
         p.ceiling_stop = ceiling_stop;
     }
 
-    /// Dwell (§6.10): this tick's hit, `max(0, −v · n)` for the body's velocity `v` going into the
-    /// step that met the surface and its normal `n`, the largest over the tick's new contacts,
-    /// its landing (the ground's normal) and a rise the ceiling probe stopped. Flight, swimming and
-    /// climbing are exempt, as they always were from falls. Only the surfaces
-    /// `damage.impact_surfaces` names count: by default flat ground, a normal no steeper than
-    /// `damage.impact_max_slope_angle` (ramps, walls, steep faces and ceilings never hit).
+    /// Dwell (§6.10): this tick's hit for the body's velocity `v` going into the step that met the
+    /// surface: by default its downward speed into the surface, face-local `max(0, −v.y) · n.y` for
+    /// the surface's normal `n` (`damage.impact_measure`; or the whole speed into it,
+    /// `max(0, −v · n)`), the
+    /// largest over the tick's new contacts, its landing (the ground's normal) and a rise the
+    /// ceiling probe stopped. Flight, swimming and climbing are exempt, as they always were from
+    /// falls. Only the surfaces `damage.impact_surfaces` names count: by default the ground, a
+    /// normal no steeper than `probes.max_slope_angle` (walls, steep faces and ceilings never hit).
     fn step_impact(&mut self, i: usize, _: &mut VoxelWorld, _: &mut Physics) {
         let p = self.players[i].as_mut().expect("live");
         let frame = Self::frame(p);
@@ -2501,13 +2467,19 @@ impl Players {
         let c = &p.c;
         let exempt = c.fly.flying || c.swim.swimming || c.climb.climbing;
         let surfaces = p.cfg.damage.impact_surfaces;
-        let max_slope = p.cfg.damage.impact_max_slope_angle;
+        let max_slope = p.cfg.probes.max_slope_angle;
+        let measure = p.cfg.damage.impact_measure;
         let mut hit = (0.0f32, Vec3::ZERO);
         let mut meet = |n: Vec3| {
             if surfaces == ImpactSurfaces::Ground && slope_angle(n) > max_slope {
-                return; // a ramp, a wall, a steep face or a ceiling: not flat ground
+                return; // a wall, a steep face or a ceiling: not the ground
             }
-            let speed = (-v.dot(n)).max(0.0);
+            let speed = match measure {
+                // Downward speed only, into a surface facing up (a wall's or a ceiling's is none).
+                ImpactMeasure::DownwardIntoSurface => (-v.y).max(0.0) * n.y.max(0.0),
+                ImpactMeasure::IntoSurface => -v.dot(n),
+            }
+            .max(0.0);
             if speed > hit.0 {
                 hit = (speed, n);
             }
