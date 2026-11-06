@@ -5,7 +5,12 @@
       "version": "0.49.6",
       "changes": [
         "You can see which way water flows: ripples are carried along with the current, pale foam streaks run with fast water, and small flecks drift downstream",
-        "Each one can be turned off under Settings, Water",
+        "Each one can be turned off under Settings, Water"
+      ]
+    },
+    {
+      "version": "0.49.5",
+      "changes": [
         "Rivers no longer show flat blue sheets behind their steps when you look upstream"
       ]
     },

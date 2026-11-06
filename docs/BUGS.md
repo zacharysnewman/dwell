@@ -40,6 +40,18 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 31. Flat blue sheets on rivers behind their steps (fixed in 0.49.5)
+
+*Reported 2026-11-05 (0.49.x).* "Flat darker colored blue faces" on rivers, seen looking upstream:
+from below a stepped river's upper pool, the eye saw that pool's surface from underneath through
+the step's riser, and the water shader drew a surface's underside as seen from inside the water
+(the body's flat colour) though the eye was in the air. Not culling, and no air or unflooded
+slope: the cells were water over sand and flooded ramps. Fixed: an underside seen from outside the
+water isn't drawn (`underside_from_outside`, WATER_RENDERING.md); the thin risers stay until
+rivers aren't drawn in steps (Phase 53 G1b). `shaders.rs`
+`a_water_surfaces_underside_is_drawn_only_from_inside_the_water` (red before); checked in the
+browser at seed 0's river (6744, 9643): the sheets are gone.
+
 ### 28. A junction at the top of a chute can leave a lip a cell short (gone in 0.49.0)
 
 *Found 2026-11-04 (G1, the graph checker).* Seed 0, river 17 at (16555, 2142): a tributary joins
