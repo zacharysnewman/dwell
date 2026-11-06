@@ -302,3 +302,31 @@ fn the_report_is_json() {
         "{v}"
     );
 }
+
+dwell_world::both_faces!(
+    fn a_lake_cut_open_has_a_current_toward_the_cut_until_it_settles(f: FaceFrame) {
+        // Phase 53 G3a (docs/WATER_SURFACE_GRID.md §2c): the grid writes its awake water's
+        // velocity into the world's currents, read by swimmers and floating bodies.
+        let mut s = Scene::new(f);
+        s.basin(0, 7, 0, 7, 3);
+        s.run(5);
+        let at = |s: &Scene, x: i32| {
+            s.world
+                .currents
+                .at(s.f.point([f64::from(x) + 0.5, m_of_row(BASE) + 0.75, 3.5]))
+        };
+        assert_eq!(at(&s, 6), [0.0; 2], "a lake at rest is still");
+        // open its +x wall onto the ground beyond, down to the lake's floor
+        let cut: Vec<(i32, i32, i32)> = (8..=9)
+            .flat_map(|x| (2..=5).flat_map(move |z| (0..=4).map(move |r| (x, r, z))))
+            .collect();
+        s.edit(&cut, M.air);
+        s.run(2);
+        let [u, v] = at(&s, 6);
+        assert!(
+            u > 0.1,
+            "the water by the cut runs toward it: {u:.3}, {v:.3} m/s"
+        );
+        assert!(v.abs() < u, "mostly toward the cut: {u:.3}, {v:.3} m/s");
+    }
+);

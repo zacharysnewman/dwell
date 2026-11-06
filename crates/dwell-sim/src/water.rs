@@ -25,6 +25,7 @@
 use std::sync::Arc;
 
 use dwell_blocks::{StateId, info};
+use dwell_world::currents::ChunkCurrents;
 use dwell_world::hash::{HashMap, HashSet};
 use dwell_world::{CELL_H, ChunkCoord, FaceFrame, M, VoxelWorld, chunk_of, m_of_row, row_of_m};
 
@@ -66,6 +67,10 @@ pub const EDIT_REACH: i32 = 3;
 pub const MAX_SUBSTEPS: usize = 400;
 /// A cell's water is drawn in eighths.
 const STEP: f32 = CELL_H as f32 / 8.0;
+/// Slower water than this (m/s) is still: no current (docs/WATER_SURFACE_GRID.md §2c).
+const STILL_MS: f32 = 0.02;
+/// Water shallower than this (m) has no current: a wet film's flow over its depth is noise.
+const CURRENT_DEPTH: f32 = 0.05;
 /// How far a level moves past a drawn step before the cells are written again (m).
 const HYST: f32 = 0.25 * STEP;
 /// Rows a column's floor is looked for at most, either way.
@@ -481,7 +486,48 @@ impl Water {
             self.t += left; // the rest of this tick's time is lost: the water ran slow
         }
         self.grow_ring(world);
+        self.publish_currents(world);
         self.draw(world)
+    }
+
+    /// The awake chunks' currents into the world (`VoxelWorld::currents`, docs/WATER_SURFACE_GRID.md
+    /// §2c), for swimmers and floating bodies; a sleeping chunk keeps the currents it fell asleep
+    /// with (its flows are kept too).
+    fn publish_currents(&self, world: &mut VoxelWorld) {
+        for (c, k) in self.chunks.iter().enumerate() {
+            if k.awake {
+                world
+                    .currents
+                    .set((k.f.is_b(), k.cx, k.cz), self.currents_of(c));
+            }
+        }
+    }
+
+    /// Chunk `c`'s currents: each free column's velocity (m/s), the mean of its faces' discharges
+    /// over its depth; none if all are still (under `STILL_MS`).
+    fn currents_of(&self, c: usize) -> Option<ChunkCurrents> {
+        let k = &self.chunks[c];
+        let mut out: ChunkCurrents = Box::new([[0.0; 2]; CA]);
+        let mut any = false;
+        for l in 0..CA {
+            let h = k.w.depth[l];
+            if k.held[l] || k.w.floor[l].is_nan() || h < CURRENT_DEPTH {
+                continue;
+            }
+            let behind = |d: usize, z: bool| {
+                self.step_col(c, l, d).map_or(0.0, |(c2, l2)| {
+                    let n = &self.chunks[c2].w;
+                    if z { n.qz[l2] } else { n.qx[l2] }
+                })
+            };
+            let u = 0.5 * (k.w.qx[l] + behind(1, false)) / h;
+            let v = 0.5 * (k.w.qz[l] + behind(3, true)) / h;
+            if u.hypot(v) >= STILL_MS {
+                out[l] = [u, v];
+                any = true;
+            }
+        }
+        any.then_some(out)
     }
 
     /// Reads newly loaded chunks: their water joins the grid held at the level found (unless the

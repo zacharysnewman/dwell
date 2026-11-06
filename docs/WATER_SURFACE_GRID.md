@@ -83,8 +83,41 @@ now, or later allow a few stacked water layers in the columns that have overhang
   lifts its water by its volume.
 - **Water spreads only into loaded world**; the chunks of moving water and those beside it are kept
   loaded, so it goes on with no player near.
-- **Not yet:** pools and the held sea (G2b), the water layer's own storage and the wire (G3), data (G4).
-  Settings are constants in `water.rs` until G4.
+- **Not yet:** pools and the held sea (G2b), currents in held rivers (G3b), data (G4). Settings are
+  constants in `water.rs` until G4.
+
+## 2c. The owner's answers on G1 and G3 (2026-11-05), and currents as built (G3a)
+
+The owner approved these recommendations (2026-11-05):
+
+- **Clients keep water as blocks for now** (a deviation from §2a's own layer on clients): the server
+  already draws the grid as water blocks in eighths, so clients see water move without a new mesh or
+  message. The water's own layer on clients (its mesh, LOD and wire) waits until something needs it,
+  such as smoother surfaces than eighths.
+- **G3 starts with currents**: the flow per column for swimmers and floating bodies, in a small
+  optional datagram for awake chunks, so no new compatibility line.
+- **Caves and overhangs stay dry** (§2a's open question): one surface per column.
+- **Rivers keep their dug beds (now without lips) until erosion**: G1b ships with G1c, not before
+  (rivers without beds and without erosion are sheets over the valley floors).
+
+**As built (G3a):**
+
+- **The current table.** `dwell-world` `currents.rs`: each water chunk's columns' velocity (m/s along
+  x and z), per face; the faces mirror only up and down, so a current is the same vector in the world
+  and face-locally. The server's grid writes its awake chunks' (`Water::publish_currents`: a column's
+  faces' discharges averaged over its depth; none under `STILL_MS` 2 cm/s or `CURRENT_DEPTH` 5 cm); a
+  sleeping chunk keeps the currents it fell asleep with, as it keeps its flows.
+- **Swimmers** swim in the water's frame: the swim layer's wish velocity has the current added, so an
+  idle swimmer drifts at the current's speed and swimming adds to it (PLAYER_CONTROLLER.md §6.4).
+- **Floating bodies**: water's drag acts on the velocity relative to the current, so a raft let be
+  comes up to it (slowly, by the area it shows and the speed squared).
+- **On the wire**: `WaterCurrents` datagrams (ARCHITECTURE.md §8.3), the chunks within 3 of a player's,
+  each sent when its currents change or a second after it was last sent, a chunk gone still once as
+  zeros; a client forgets one not sent again within 3 s. The client's prediction and stand-ins read
+  the same table, so a swimmer in a current predicts as the server moves it.
+- **Not yet (G3b):** held water (generated and never freed) has no current, so an untouched river
+  doesn't push yet; its current will come from the map's river (its direction and discharge), on the
+  server and clients alike.
 
 ## 3. Generation
 

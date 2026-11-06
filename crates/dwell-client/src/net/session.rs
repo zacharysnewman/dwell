@@ -581,6 +581,13 @@ impl Session {
                         .push_back((Message::PhysicsSnapshot(s), bytes.to_vec()));
                 }
             }
+            // The water's currents (Phase 53 G3a): an optional datagram.
+            Some(Message::WaterCurrents(c)) => {
+                if self.joined() {
+                    self.game
+                        .push_back((Message::WaterCurrents(c), bytes.to_vec()));
+                }
+            }
             Some(Message::DatagramPong(p)) => {
                 self.stats.datagram_rtt_ms =
                     smooth(self.stats.datagram_rtt_ms, now - p.client_time_ms);

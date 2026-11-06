@@ -497,6 +497,9 @@ pub struct VoxelWorld {
     /// The held chunks' placed light sources (docs/LIGHTS.md §4): the cells whose blocks give off a
     /// light source and block light (a torch's flame), kept with the flood light.
     sources: HashMap<ChunkCoord, Vec<[i32; 3]>>,
+    /// The water's currents (docs/WATER_SURFACE_GRID.md §2c): the server's water grid writes them,
+    /// a client keeps the server's; swimmers and floating bodies read them.
+    pub currents: crate::currents::Currents,
 }
 
 /// Whether a state is a placed light source: it gives off a light (`light`) and block light (the
@@ -518,6 +521,7 @@ impl VoxelWorld {
             loaded_saved: 0,
             light: None,
             sources: HashMap::default(),
+            currents: Default::default(),
         }
     }
 

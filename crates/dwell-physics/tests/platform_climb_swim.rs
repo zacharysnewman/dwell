@@ -614,3 +614,55 @@ fn from_a_ladders_top_looking_down_and_walking_forward_climbs_down() {
     );
     assert!(fastest_fall < 4.0, "climbed, not fell: {fastest_fall}");
 }
+
+/// Gives the pool's columns (x −3..3, z 0..8) a current of `u` m/s along x and `v` along z
+/// (docs/WATER_SURFACE_GRID.md §2c), as the server's water grid would.
+fn pool_current(w: &mut PlayerTestWorld, u: f32, v: f32) {
+    let face = dwell_world::FaceFrame::at_height(to_world(Vec3::ZERO).y - 1.0);
+    for x in -3..3 {
+        for z in 0..8 {
+            let (key, i) = dwell_world::currents::current_key(face, world_cell_x(x), z);
+            let mut cells = w
+                .world
+                .currents
+                .get(key)
+                .cloned()
+                .unwrap_or_else(|| Box::new([[0.0; 2]; dwell_world::currents::CA]));
+            cells[i] = [u, v];
+            w.world.currents.set(key, Some(cells));
+        }
+    }
+}
+
+#[test]
+fn a_swimmer_drifts_with_the_current_and_swims_in_the_waters_frame() {
+    // Still water: an idle swimmer stays put.
+    let drift = |current: f32, forward: f32| {
+        let mut w = PlayerTestWorld::new();
+        pool(&mut w);
+        pool_current(&mut w, 0.0, current);
+        let e = w.spawn(v(0.5, -1.2, 1.0));
+        // Facing +Z along the pool (yaw 0), swimming forward by `forward`.
+        w.set_input(move |_, _| look(0.0, forward, 0.0, 0.0));
+        w.step(ticks(1.0));
+        assert!(w.c(e).swim.swimming);
+        let z = w.pos(e).z;
+        w.step(ticks(1.0));
+        w.pos(e).z - z
+    };
+    let still = drift(0.0, 0.0);
+    assert!(
+        still.abs() < 0.05,
+        "still water moved the swimmer {still} m"
+    );
+    // A 0.6 m/s current carries an idle swimmer about 0.6 m a second.
+    let carried = drift(0.6, 0.0);
+    assert!(approx(carried, 0.6, 0.1), "carried {carried} m in a second");
+    // Swimming with it adds the swimmer's own speed on top.
+    let own = drift(0.0, 0.5);
+    let with = drift(0.6, 0.5);
+    assert!(
+        approx(with - own, 0.6, 0.1),
+        "{with} with the current, {own} without"
+    );
+}

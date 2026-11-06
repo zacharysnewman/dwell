@@ -70,7 +70,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 50 — Terrain volumes (the cliffs) | 🚧 In progress — the cliffs are the terrain's default since 0.35.0 (WORLD_GENERATION.md §5): a density node graph as data (`shared/worldgen/volume.json`, `strength` 0–1 the slider for biomes later), shaped first then the surface, kept off the water. 0.35.1: the LOD draws the undersides. 0.38.0 (owner: "redesign to look more like real cliffs"): terraces along the hill (the `terrace` node), stepped country and escarpments by region, more in the mountains, slight overhangs; built and tested, the owner's look outstanding. 0.38.1: 1.9–2.3× faster, the same cells. Outstanding: a coarse lattice; waterfalls (with moving water); caves and floating islands not started |
 | 51 — Built bodies | 🚧 In progress — B1 built (0.41.0, a new compatibility line: protocol v21; editing moving pieces, splits, body kinds as data); B2 built (0.41.1: the build platform, built bodies taking blocks and never settling, saved with the world, sent to joiners); B3 built (0.41.2: floating by buoyancy per cell); 0.41.3 corrects the platform (the ground a held object is built on, not its first block; owner, 2026-11-02). 0.41.4–0.41.5 playtest fixes: floating rafts pushable, never frozen, steady underfoot, true outlines; the push predicted (the controller's push pass, stand-ins carried to the present, near bodies drawn at the present); pieces settle once. 0.41.6 tuning: weight as in life (a person's push less the ground's friction, a 1 m log sliding at ~0.5 m/s; water drag by area and speed squared, rafts gliding; a rider presses a raft down; the stand-ins slowed alike). Outstanding: the owner's look at a raft in a lake; later: driving. Designed (ADR 0052, [`BUILT_BODIES.md`](./BUILT_BODIES.md), the owner's answers 2026-11-02): editing moving pieces (B1), the build platform and built bodies saved with the world (B2), floating (B3). B1 opens a new compatibility line (0.41.0, the owner raises it). Open questions for the owner: hollow hulls, `maxBodies`, edit prediction, interest |
 | 52 — Water flow | ✖ Replaced by Phase 53 (ADR 0060): its basins, outlets and pool graph were removed from the game in 0.48.2, when the water surface grid's runtime (G2a) took their place; what was built is in its section below, and its outstanding items (G4–G6, W3–W5) are carried by Phase 53 |
-| 53 — Water surface grid | 🚧 In progress — G2a built (0.48.2): the runtime grid in `dwell-sim` replaces the basins; generated water held at rest as found, edits free it, a rest layer keeps drawn rivers exactly at rest under the law, sleeping chunks with a 5 mm sleep and 5 cm wake band and smooth waking, written as blocks, saved as `DWG1`; both faces tested; a dam across seed 0's river backs it up 0.5 m in the browser. G0's prototype done but for the owner's look at the eroded rivers. G1a built (0.49.0): no river lips (BUGS.md #29 fixed), the pool graph removed. Outstanding: G1b (the water computed from the map where the world loads: no beds or stepped levels; replaces the design's whole-world fill, measured too slow), G1c (erosion), G2b (pools, the held sea, the water layer's own storage), G3 (clients), G4 (data) |
+| 53 — Water surface grid | 🚧 In progress — G2a built (0.48.2): the runtime grid in `dwell-sim` replaces the basins; generated water held at rest as found, edits free it, a rest layer keeps drawn rivers exactly at rest under the law, sleeping chunks with a 5 mm sleep and 5 cm wake band and smooth waking, written as blocks, saved as `DWG1`; both faces tested; a dam across seed 0's river backs it up 0.5 m in the browser. G0's prototype done but for the owner's look at the eroded rivers. G1a built (0.49.0): no river lips (BUGS.md #29 fixed), the pool graph removed. G3a built: currents for swimmers and floating bodies, sent as optional `WaterCurrents` datagrams. Outstanding: G1b (the water computed from the map where the world loads: no beds or stepped levels; replaces the design's whole-world fill, measured too slow), G1c (erosion), G2b (pools, the held sea, the water layer's own storage), G3b (currents in held rivers), G3c (the water's own client layer, deferred), G4 (data) |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -5311,11 +5311,25 @@ from the map's hydrology (its fill-and-spill lakes and river discharges), as ter
   pool graph removed.
 - [ ] G2b — The rest of the runtime: pools for still water and the held sea (as in the prototype),
   the water layer's own storage per chunk, saving only chunks changed from the fill (after G1).
-- [ ] G3 — Clients: awake water chunks' changes on the wire, the surface drawn from depth as its own
-  mesh (the water renderer, LOD), currents on bodies and swimmers.
+- [x] G3a — Currents (WATER_SURFACE_GRID.md §2c): the world's current table from the grid's awake
+  water, swimmers drifting in the water's frame and floating bodies pulled toward it (server,
+  prediction and stand-ins), `WaterCurrents` datagrams near each player (optional, no new line)
+  (`a_lake_cut_open_has_a_current_toward_the_cut_until_it_settles`,
+  `a_swimmer_drifts_with_the_current_and_swims_in_the_waters_frame`,
+  `a_floating_raft_drifts_with_the_current`,
+  `the_waters_currents_near_the_player_reach_the_client_and_clear`).
+- [ ] G3b — Currents in held rivers: an untouched river's current from the map (its direction and
+  discharge), on the server and clients alike.
+- [ ] G3c — The water as its own layer on clients: its chunks' changes on the wire, the surface drawn
+  from depth as its own mesh (the water renderer, LOD). Deferred by the owner (2026-11-05): clients
+  keep water as blocks until something needs it.
 - [ ] G4 — Data: `shared/water/*.json` (sleep and band, flow physics, pools, sources) with a generator,
   validation, a fixture test, and per-world values in WorldSettings.
 - [ ] Later — Rain as a source layer; block-scale carving by the same flow.
+
+**Deviation (G3, owner, 2026-11-05):** G3 is split. Clients keep the water as blocks, which the
+server draws from the grid, and G3 starts with currents (G3a). The water's own client layer (G3c) is
+deferred until something needs it. G1b ships together with G1c (erosion) rather than before it.
 
 **Deviation (G2a):** the generator still draws rivers as flat pools in steps until G1, which no
 steady flow matches; rather than free them as they are (every step pours, and a stone in a river's
