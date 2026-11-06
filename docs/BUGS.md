@@ -50,6 +50,24 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 39. Triangle-shaped holes in the water at a river's steps (fixed in 0.49.20)
+
+*Reported 2026-11-06.* "Diamond-ish shaped visual cuts appear in water slopes in rivers": from a
+river pool's surface looking upstream at a step, triangles of the bank behind showed through the
+water at the step. Cause: a pool's edge over a step is drawn as a slope down across the open cell
+beyond it (`mesher.rs` `slope_over`), and the wedge of water under each slope had open ends. Where a
+river crosses the grid on the diagonal, its steps are a staircase, so most slopes have an open
+cell beside them that pours no such slope; from the lower pool's level the eye looked in through
+the open end at the slope's back, and since 0.49.5 (#31) a surface's back seen from outside the
+water isn't drawn, so the ground behind showed through (before 0.49.5 these were flat blue
+triangles). Not the shader rule: #31's sheets were behind a drawn riser, these had nothing in front.
+Fixed: the wedge is closed with a triangle at each end whose neighbour is open and doesn't pour the
+same slope (`slope_over`), so the eye meets water from its front there. `mesher_tests.rs`
+`a_diagonal_river_step_shows_no_slopes_back_from_the_lower_pool` (both faces: rays from the air over
+the lower pool of a diagonal staircase step; red 71 of 1872 rays met a slope's back first, green
+none). Checked in the browser at seed 0's river (camera at 6743.2, 94.49, 9641.1, yaw 221.86 from
+`goto('water', {minCurrent: 0.05, aim: 'upstream'})` near 6744, 9643): the holes are water.
+
 ### 38. A dam didn't raise a level river, and level and shallow rivers had no current (fixed in 0.49.19)
 
 *Reported 2026-11-06.* "Damming should raise the water and does", "I feel like I saw this when the

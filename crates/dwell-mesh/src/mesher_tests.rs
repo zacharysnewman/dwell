@@ -1819,3 +1819,116 @@ fn water_pouring_over_a_half_block_step_is_drawn_as_a_slope() {
     assert!(slope, "no slope from {high} down to {low} over the step");
     assert!(!sheet, "a vertical sheet at the step");
 }
+
+/// The first triangle of `m` a ray from `eye` along `dir` meets (Möller–Trumbore), as its
+/// distance and the triangle's winding normal (the face its front faces), in cells.
+fn first_hit(m: &MeshArrays, eye: [f64; 3], dir: [f64; 3]) -> Option<(f64, [f64; 3])> {
+    let sub = |a: [f64; 3], b: [f64; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    let cross = |a: [f64; 3], b: [f64; 3]| {
+        [
+            a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0],
+        ]
+    };
+    let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    let mut best: Option<(f64, [f64; 3])> = None;
+    for t in m.indices.chunks_exact(3) {
+        let [a, b, c] = [t[0], t[1], t[2]].map(|i| vertex(&m.positions, i));
+        let (e1, e2) = (sub(b, a), sub(c, a));
+        let p = cross(dir, e2);
+        let det = dot(e1, p);
+        if det.abs() < 1e-12 {
+            continue;
+        }
+        let s = sub(eye, a);
+        let u = dot(s, p) / det;
+        let q = cross(s, e1);
+        let v = dot(dir, q) / det;
+        let d = dot(e2, q) / det;
+        if u < 0.0 || v < 0.0 || u + v > 1.0 || d <= 1e-6 {
+            continue;
+        }
+        if best.is_none_or(|(bd, _)| d < bd) {
+            best = Some((d, cross(e1, e2)));
+        }
+    }
+    best
+}
+
+dwell_world::both_faces!(
+    /// Owner, 2026-11-06: "diamond-ish shaped visual cuts appear in water slopes in rivers." A
+    /// river crossing the grid on the diagonal steps down in a staircase, and each pool's edge is
+    /// drawn as a slope down across the open cell beyond it (`slope_over`). Under each slope is a
+    /// wedge of water whose side was left open where the cell beside it holds no such slope, so
+    /// from the lower pool's level the eye looked in through the open side at the slope's back.
+    /// The water shader discards a surface's back seen from outside the water (BUGS.md #31), so a
+    /// triangle of the bank behind showed through. Every ray from the air over the lower pool
+    /// toward the step must first meet a water face from its front, never a surface's back.
+    fn a_diagonal_river_step_shows_no_slopes_back_from_the_lower_pool(f: FaceFrame) {
+        let n = CHUNK_SIZE;
+        let c = ChunkCoord::new(0, 2, 0);
+        let o = [c.x * n, c.y * n, c.z * n];
+        let mut source = dwell_world::VoxelWorld::new(dwell_world::empty_generator(), None);
+        // Stone at row 4, the lower pool at row 5, the upper pool at row 6 where x + z ≤ 18.
+        for z in 2..=26 {
+            for x in 2..=26 {
+                source.set_voxel(o[0] + x, o[1] + 4, o[2] + z, stone());
+                source.set_voxel(o[0] + x, o[1] + 5, o[2] + z, water());
+                if x + z <= 18 {
+                    source.set_voxel(o[0] + x, o[1] + 6, o[2] + z, water());
+                }
+            }
+        }
+        let m = local_mesh(f, mesh_on_face(&mut source, c, f).transparent);
+        let full = 1.0 - dwell_blocks::require_fluid("dwell:water").surface_drop;
+        let (low, high) = (5.0 + full, 6.0 + full);
+        let eye_y = low + 0.08;
+        let mut rays = 0;
+        let mut holes = Vec::new();
+        for eye in [
+            [16.5, eye_y, 12.5],
+            [12.5, eye_y, 16.5],
+            [15.2, eye_y, 15.7],
+            [20.5, eye_y, 9.5],
+        ] {
+            // Toward the open cells of the step (x + z = 19), across them and up their slopes.
+            for x in 4..=16 {
+                let z = 19 - x;
+                for (du, dv) in [
+                    (0.1, 0.5),
+                    (0.5, 0.1),
+                    (0.5, 0.5),
+                    (0.9, 0.3),
+                    (0.3, 0.9),
+                    (0.7, 0.7),
+                ] {
+                    for k in 1..=6 {
+                        let h = low + (high - low) * f64::from(k) / 7.0;
+                        let target = [f64::from(x) + du, h, f64::from(z) + dv];
+                        let d = [target[0] - eye[0], target[1] - eye[1], target[2] - eye[2]];
+                        let Some((_, nrm)) = first_hit(&m, eye, d) else {
+                            continue;
+                        };
+                        rays += 1;
+                        // In metres, as the shader reads the normal.
+                        let nm = [nrm[0], nrm[1] / dwell_world::CELL_H, nrm[2]];
+                        let len = (nm[0] * nm[0] + nm[1] * nm[1] + nm[2] * nm[2]).sqrt();
+                        let back = nrm[0] * d[0] + nrm[1] * d[1] + nrm[2] * d[2] > 0.0;
+                        if back && (nm[1] / len).abs() > 0.5 {
+                            holes.push((eye, target));
+                        }
+                    }
+                }
+            }
+        }
+        assert!(rays > 1000, "{rays} rays met the water");
+        assert!(
+            holes.is_empty(),
+            "{:?}: {} of {rays} rays from the lower pool met a surface's back first, e.g. {:?}",
+            f.face,
+            holes.len(),
+            &holes[..holes.len().min(4)]
+        );
+    }
+);
