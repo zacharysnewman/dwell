@@ -157,8 +157,8 @@ The owner approved these recommendations (2026-11-05):
   over the depth keeps them running (`every_reach_of_a_river_runs_level_ones_too`; seed 0's dam
   site 0.11 m/s at 1 m deep), and once freed they run by the flow they carry (§2b,
   `a_shallow_flat_reach_runs_downstream_held_and_freed`, both faces). A slow creek's current (0.1
-  m/s) is under the flecks' `fromMs` (0.3) and the streaks' (0.4): its ripples move, but it shows
-  no flecks or foam. It goes to clients as any other chunk's currents.
+  m/s) was under the flecks' `fromMs` (0.3) and the streaks' (0.4), so it showed no flecks or foam;
+  since 0.49.21 both begin at 0.05 m/s (owner, 2026-11-06), faint at a creek's pace. It goes to clients as any other chunk's currents.
 - **The flow shown (G3d):** from the client's current table, so generated and player-moved water
   look alike: ripples carried by the current (a flow map), foam streaks along it, flecks drifting
   on it, each a setting and per liquid as data (`shared/look/waterflow.json`; ARCHITECTURE.md §6.7).

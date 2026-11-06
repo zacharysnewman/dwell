@@ -51,7 +51,7 @@ test('bad entries fail with their path', () => {
   };
   bad((d) => (d.windowColumns = 100), /power of two/);
   bad((d) => (d.fadeToM = 90), /within half the window/);
-  bad((d) => (d.liquids['dwell:water'].foam.toMs = 0.1), /foam\.toMs must be above/);
+  bad((d) => (d.liquids['dwell:water'].foam.toMs = 0.04), /foam\.toMs must be above/);
   bad((d) => (d.liquids['dwell:water'].foam.lengthM = 2), /foam\.lengthM must be at most 4\.5/);
   bad((d) => (d.liquids['dwell:water'].ripples.speed = 1), /unknown entry liquids\.dwell:water\.ripples\.speed/);
   bad((d) => delete d.liquids['dwell:water'].particles.color, /missing entry liquids\.dwell:water\.particles\.color/);
@@ -75,8 +75,16 @@ test("the flecks read as foam, not white discs (owner, 2026-11-06)", () => {
   assert.ok(p.sizeM < 0.1 && p.opacity < 1 && p.stretch > 1 && p.ragged > 0, JSON.stringify(p));
   const [r, g, b] = [1, 3, 5].map((k) => parseInt(p.color.slice(k, k + 2), 16));
   assert.ok(Math.max(r, g, b) < 0xe0 && b >= r, p.color);
-  // Spawned only on water clearly moving, and faded in and out over seconds, not popped.
-  assert.ok(p.fromMs >= 0.25 && p.fadeInS >= 1 && p.fadeOutS >= 1, JSON.stringify(p));
+  // Faded in and out over seconds, not popped.
+  assert.ok(p.fadeInS >= 1 && p.fadeOutS >= 1, JSON.stringify(p));
+});
+
+test('slow creeks show their flow (owner, 2026-11-06)', () => {
+  // A creek of ~0.1 m/s (seed 0's dam site) showed no flecks (from 0.3 m/s) or foam (0.4 m/s);
+  // both begin under 0.1 m/s, still above water that isn't moving.
+  const w = validateWaterFlow(data()).liquids['dwell:water'];
+  assert.ok(w.particles.fromMs < 0.1 && w.particles.fromMs > 0, JSON.stringify(w.particles));
+  assert.ok(w.foam.fromMs < 0.1 && w.foam.fromMs > 0, JSON.stringify(w.foam));
   // The foam streaks were the largest discs: 2 m of taps over 0.3 m noise broke into round white
   // blobs. Now thin dashes along the flow (at least three times as long as wide, the taps joined),
   // and not pure white.
