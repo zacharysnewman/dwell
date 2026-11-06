@@ -79,6 +79,17 @@ pub fn open_cell(m: StateId) -> bool {
     })
 }
 
+/// A drag fill's piece is in the world, `at` reading a cell's state: each of its cells holds the
+/// fill's block, flooded or not. The server writes a block put into water in its flooded state
+/// (`flooded_for`, a stone's `flooded=true`): regression (docs/BUGS.md 37), that was read as the
+/// piece left out, and a line went back to it and waited on its own block for good.
+pub fn fill_placed(fill: &RegionEdit, mut at: impl FnMut([i32; 3]) -> StateId) -> bool {
+    let dry = |m: StateId| dwell_world::edit::flooded_for(m, dwell_world::M.air);
+    let want = dry(fill.material);
+    (0..i32::from(fill.size[1]))
+        .all(|r| dry(at([fill.min[0], fill.min[1] + r, fill.min[2]])) == want)
+}
+
 /// [`DragWorld::free`]'s rule: `material` may go in `cell`, which holds `there`, with the player's
 /// body as `bodies` (where it is and where the server may still see it): the cell open, or a slope
 /// the block molds (`molds_into`: building with a slope's own material replaces it), and the
@@ -541,6 +552,28 @@ impl BuildDrag {
             return true;
         }
         false
+    }
+
+    /// The server answered `fill`, sent after `tries` refusals: `refused`, or taken and `placed`
+    /// ([`fill_placed`]) or not (it skips a cell its view of the body is in without refusing). A
+    /// piece not placed: a line goes back to it ([`refused`](Self::refused)); any other goes again
+    /// while its cells are still free.
+    pub fn answered(
+        &mut self,
+        fill: RegionEdit,
+        tries: u8,
+        refused: bool,
+        placed: bool,
+        world: &mut impl DragWorld,
+    ) {
+        if (placed && !refused) || self.refused(&fill) {
+            return;
+        }
+        let free = (0..i32::from(fill.size[1]))
+            .all(|r| world.free([fill.min[0], fill.min[1] + r, fill.min[2]], fill.material));
+        if free {
+            self.retry(fill, tries + 1);
+        }
     }
 
     /// A fill the server refused, `tries` times now: it goes again first, up to [`RETRIES`] times.
@@ -1129,6 +1162,81 @@ mod tests {
             assert_eq!(cells(f, &sent(&mut d)), vec![[0, 3, 0], [0, 4, 0]]);
         }
     );
+
+    dwell_world::both_faces!(
+        /// docs/BUGS.md 37 (owner, 2026-11-06): drag building into water built its first piece
+        /// and no more, standing in the water or beside it. The server writes a block put into
+        /// water in its flooded state (`flooded_for`); the answer read that as the piece left out,
+        /// a line went back to it and waited on its own block for good. Each stroke here builds
+        /// into water, the server answering every fill as it writes it. Red before: one piece
+        /// after the first for each line.
+        fn a_stroke_builds_on_into_water(f: FaceFrame) {
+            let stone = require("dwell:stone");
+            let flooded = dwell_world::edit::flooded_for(stone, dwell_world::M.water);
+            assert_ne!(flooded, stone, "stone has a flooded state");
+            let eye = [3.0, 1.6, 0.5];
+            for (kind, dir, aim, want) in [
+                // Up out of the bed through the water.
+                (DragKind::Line, [0, 1, 0], [0.5, 4.5, 0.5], 3),
+                // Across, out of the side of a block.
+                (DragKind::Line, [0, 0, 1], [0.5, 1.0, 3.5], 3),
+                // A floor swept along the bed.
+                (DragKind::Level, [0, 1, 0], [0.5, 1.0, 3.5], 3),
+            ] {
+                let mut d = started(f, kind, [0, 1, 0], dir);
+                // Water everywhere but the cells built (`Fake`'s free: water is open).
+                let mut w = Fake::default();
+                let mut built = 0;
+                for _ in 0..12 {
+                    d.aim(f.point(eye), towards(f, eye, aim), 5.0, &mut w);
+                    for fill in sent(&mut d) {
+                        let rows: Vec<[i32; 3]> = (0..i32::from(fill.size[1]))
+                            .map(|r| [fill.min[0], fill.min[1] + r, fill.min[2]])
+                            .collect();
+                        w.0.extend(rows.iter().copied());
+                        let placed = fill_placed(&fill, |c| {
+                            if rows.contains(&c) {
+                                flooded
+                            } else {
+                                dwell_world::M.water
+                            }
+                        });
+                        d.answered(fill, 0, false, placed, &mut w);
+                        built += 1;
+                    }
+                }
+                assert_eq!(
+                    built, want,
+                    "{kind:?} along {dir:?}: pieces after the first"
+                );
+            }
+        }
+    );
+
+    #[test]
+    fn a_fill_into_water_is_placed_in_either_flooded_state_and_not_as_water() {
+        let stone = require("dwell:stone");
+        let flooded = dwell_world::edit::flooded_for(stone, dwell_world::M.water);
+        let fill = RegionEdit {
+            op: RegionEditOp::Fill,
+            min: [0, 4, 0],
+            size: [1, 2, 1],
+            material: stone,
+            from: 0,
+            cells: Vec::new(),
+        };
+        assert!(fill_placed(&fill, |_| stone));
+        assert!(fill_placed(&fill, |_| flooded));
+        let half = |c: [i32; 3]| {
+            if c[1] == 5 {
+                dwell_world::M.water
+            } else {
+                flooded
+            }
+        };
+        assert!(!fill_placed(&fill, half));
+        assert!(!fill_placed(&fill, |_| require("dwell:dirt")));
+    }
 
     dwell_world::both_faces!(
         /// Regression (owner, 2026-10-28): towering, the body clear of the cells over its head
