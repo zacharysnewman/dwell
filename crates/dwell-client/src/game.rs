@@ -1939,8 +1939,12 @@ impl<S: Scene> Game<S> {
         }
     }
 
-    /// Our body as drag building keeps clear of it: where it is, and where the server may still
-    /// see it (`build_drag::lagged_offset`, for our velocity and round trip; docs/ITEMS.md §5).
+    /// Our body as drag building keeps clear of it (docs/ITEMS.md §5): where it is, and back
+    /// along its motion by `buildModes.clearance` and its input buffer's two ticks
+    /// (`build_drag::lagged_offset`), not the round trip: the server holds a piece its own view of
+    /// the body is still in until that view catches up (`EDIT_HOLD_TICKS`), and keeping clear of
+    /// where it may see the body narrowed a jump's moment clear of the next piece to nothing at a
+    /// few frames a second (BUGS.md 30).
     fn drag_body(&self) -> Vec<dwell_world::edit::EditCapsule> {
         let Some(c) = self.own_capsule() else {
             return Vec::new();
@@ -1948,7 +1952,7 @@ impl<S: Scene> Game<S> {
         let v = self.predictor.velocity();
         let back = dwell_game::build_drag::lagged_offset(
             [f64::from(v.x), f64::from(v.y), f64::from(v.z)],
-            self.rtt_ms,
+            None,
         );
         let lagged = dwell_world::edit::EditCapsule {
             center: std::array::from_fn(|i| c.center[i] + back[i]),
