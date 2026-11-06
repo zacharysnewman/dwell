@@ -65,6 +65,7 @@ fields, ranges and names fail with the entry named):
 | Step | Does |
 | --- | --- |
 | `wait {s}` | waits |
+| `server {name, s}` | samples the local server's figures (`__dwell.serverStats()`) once a second for `s` seconds: its ticks' mean time, the worst `advance` call, and the water's (where it runs, its clock, owed and dropped time, its longest run, the batches queued, awake chunks, its copy of the world's size); printed, and saved in `report.json`'s `servers` under `name`. With a `--compare` configuration of `params: {"water": "inline"}` it measures the water on the server's thread against its own worker (WATER_SURFACE_GRID.md §2d) |
 | `key {code, down}`, `hold {code, s}` | presses/releases a key (`KeyboardEvent.code`), or holds it for `s` |
 | `look {yaw, pitch}` | turns the player's look (degrees; yaw 0 = +Z, 90 = +X) |
 | `fly {on}`, `flySpeed {level}` | creative flight and its speed level (L flies at ≥ 11 × 2^(L/2) m/s: 6 ≈ 88, 8 ≈ 176) |
@@ -253,8 +254,19 @@ and its ways out that run (each one's `from` cell, `flow`, `kind` — face, floo
 a pool of the graph nobody measured (`"pool river:row"`) or `lost`, `natural`, `contact`), and the
 world's totals (`brought`, `lost`, `virtuals`: pools of the graph off their rest, ADR 0059). In a local world the block
 dump (F6, or the debug overlay's button) carries it as `water` (the player's feet, 48 cells; the
-worker asked, a second at most), and `__dwell.waterReport(x, y, z, radius?)` returns it; a native
-test or probe calls `server.water().report(...)`. A diagnostic only: nothing in the game reads it.
+worker asked, a second at most), and `__dwell.waterReport(x, y, z, radius?)` returns it (asked of
+the water worker, ADR 0062); a native test or probe calls `server.water_report(...)` (or, inline,
+`server.water().report(...)`). A diagnostic only: nothing in the game reads it.
+
+**The server's figures** (G5, ADR 0062): `__dwell.serverStats()` gives the local server's last
+second, as the local-mode worker reports it each second: `ticks`, `tickMeanMs` (each `advance`
+call's wall time over the ticks it ran), `advanceMaxMs` (the worst call), `water` (`worker` or
+`inline`) and `waterStats` — `queue` (batches sent to the water and not yet answered), `runs`,
+`ranS`, `owedS`, `droppedS` (water s: the last run's time run, what it still owes, all dropped past
+`maxOwedS`), `busyMs` and `maxBusyMs` (a run's wall time, the longest), `waterTimeS` (its clock),
+`awakeChunks`, `waterChunks`, `cellBytes` and `cellChunks` (its copy of the world), `overtaken`
+(writes dropped because an edit got there first). Natively `Server::water_stats()`. `?water=inline`
+runs the water on the server's thread instead of its worker.
 
 **The edit log** (0.46.1, owner 2026-11-04): the local server keeps its last 256 block changes that
 aren't the water's own (edits, region fills, collapses, settles; `Server::edit_log_json`), oldest

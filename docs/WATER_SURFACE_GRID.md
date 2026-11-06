@@ -138,7 +138,7 @@ behaves and looks the same by the same law whether the generator or a player put
 river's current is the map's, a freed one's the law's; both are drawn alike from the one current
 table). As built: G3d below.
 
-## 2d. The water's own thread (ADR 0062, the owner 2026-11-06; planned, G5)
+## 2d. The water's own thread (ADR 0062, the owner 2026-11-06; built, G5)
 
 The owner: slowing the water whenever much of it moves "is not really acceptable"; "use message passing
 for now, make a note about future possibly using shared memory threads"; the water stays saved.
@@ -166,6 +166,70 @@ for now, make a note about future possibly using shared memory threads"; the wat
 - **Later** (not built): shared memory (WASM threads; needs cross-origin isolation, which GitHub Pages
   can't set, a service-worker shim there, native in Electron and Capacitor), and the grid split across
   threads by chunk if one thread isn't enough.
+
+**As built (G5):**
+
+- **The copy** (`water/cells.rs`): `Cells`, a `ChunkCells` per loaded chunk (`Uniform(byte)` or a
+  32 KiB `Mixed` array); bytes 0 solid, 1 open, 2–9 liquid in eighths (`byte_of` from the registry's
+  `liquid`, `fill`, `replaceable` and `solid`). The grid's reads (`floor_at`, `found`, the scan, what
+  an edit trapped, `draw`) all go through it; `draw` writes its own copy as it writes water. On the
+  wire a mixed chunk is runs (a byte and a u16 length), a few hundred bytes for a terrain chunk.
+- **What changed** (`cells::Mirror`): each loaded chunk's `Chunk::stamp` and revision as last told.
+  At each water tick, chunks new to it go as fresh loads (their water read, as `scan` did), chunks
+  stored again or changed outside a modification go whole (not read again), gone ones as unloads.
+  Edits and the water's own writes bump a chunk's revision in `broadcast_changes`, where the mirror
+  is told (`told`), so they don't send the chunk again: an edit goes as its cells (`In::Edit`).
+- **The host** (`water/host.rs`): `WaterHost` with `Placement::{Inline, Thread, Remote}`
+  (`ServerConfig::water`; the dedicated server's default is `Thread`, tests' and the fallback
+  `Inline`); `WaterCore` the water's side (receive a batch, `work`: run what is owed, answer); batches
+  `WI1`/`WO1` with a sequence number, the answer carrying the last one seen (so the server knows what
+  is still queued); malformed batches refused. Inline keeps 0.49.7's behaviour (`stepBudget`, the
+  rest lost); the thread and the worker run `threadStepBudget` a run and owe the rest up to
+  `maxOwedS` (`flow.json`); the native thread merges batches that queued while it ran (their time
+  owed together).
+- **The browser** (`client/src/local/waterWorker.ts`, `web/water_worker.rs`): the local-mode worker
+  starts the water worker (a nested module worker; the world's maps passed to it so its rivers need
+  not compute them) and carries the batches both ways, transferred; the first batch is `In::Init`
+  (the world's generator and seed). Without nested workers, or with `?water=inline` (the bench's
+  comparison), the water runs inline. A save (the page hidden or closed) asks for the record, carries
+  it back and waits for it, a second at most, before it commits; autosaves ask 30 ticks ahead.
+- **Telemetry:** `Server::water_stats` (the host's `HostStats`: batches unanswered, runs, the last
+  run's water time run, owed and dropped and its wall time, the longest run, the water's clock, awake
+  chunks, the copy's bytes; writes dropped as overtaken); in the browser `__dwell.serverStats()` (and
+  the bench's `server` step) with the server's tick time a second.
+- **Tests:** `water::tests` `the_water_on_its_own_thread_runs_as_inline` (both faces: the same cells
+  and record through the inline and threaded hosts, each tick waited on), `the_record_survives_the_host`,
+  `a_threaded_water_owes_what_it_hasnt_run_and_drops_past_the_cap`; `host::tests` (batches round
+  trip, malformed refused); `cells::tests`; `tests/water_thread.rs`: the same water from a server
+  inline and threaded, `a_water_write_overtaken_by_an_edit_is_dropped` (red without the check: the
+  write turned the placed stone to water), `the_physics_tick_does_not_wait_for_the_water` (a host
+  held 250 ms a run: inline a tick takes it, threaded none over 125 ms),
+  `the_waters_record_is_saved_and_restored_across_its_thread`; the measurement below
+  (`measure_a_flood_on_and_off_the_tick_thread`, ignored).
+
+**Measured (2026-11-06, an M-series Mac):**
+
+| | Server tick p50 / p95 / max | The water's clock over 20 s (1,440 water s given) |
+| --- | --- | --- |
+| Native, a 61 × 57 lake cut 20 wide on the flat world, 60 Hz paced: inline, no budget (before 0.49.7) | 2.3 / 44.8 / 146.7 ms | 1,440 s |
+| … inline, `stepBudget` (0.49.7–G5) | 2.7 / 14.0 / 18.8 ms | 80 s (1,360 dropped) |
+| … its own thread (G5) | 2.1 / 3.5 / 4.9 ms | 1,437 s (2.7 owed; runs up to 29 ms on the water thread) |
+
+In the browser (the bench, `?local=1&seed=0&fresh=1&at=2364.5,142,7443.5`, a stone wall 31 m across
+the river and a pit 31 × 29 m dug beside it, 40 s, `--unthrottled`): with the water worker the local
+server's ticks averaged 7.0 ms, its worst `advance` 111 ms in the first 3 s (the edits' own chunk
+work) and 15–20 ms after, and the water ran 2,808 of 2,880 water s (owed none, dropped none; its runs
+8–18 ms); inline (`?water=inline`) the ticks averaged 9.4 ms, worst 237–252 ms over the first 9 s,
+and the water ran 916 s (1,859 dropped). The copy of the world held 1.7–1.8 MB there. What is left on
+the server's thread during a flood is mostly the LOD's: each chunk the water rewrites is downsampled
+again (`update_lod`, on the tick in the browser and the tests' servers, `lod_threads` 0), a cost of
+the water's writes, not its simulation.
+
+**Deviations:** the browser's water worker is started by the local-mode worker (nested), not by
+`connect.ts`, so a friend world's host carries it too; the water's report is asynchronous there
+(`takeWaterReport`). The inline host keeps the step budget and loses the rest, as before (a fallback,
+and what the tests' servers run). The players' positions are sent but not used yet. `Water::tick` on a
+world stays for tests and tools, its copy kept by a mirror of that world.
 
 ## 3. Generation
 

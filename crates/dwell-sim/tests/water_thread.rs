@@ -243,3 +243,98 @@ fn the_waters_record_is_saved_and_restored_across_its_thread() {
         "the free water came back: {before} → {after}"
     );
 }
+
+/// A big flood on the flat world: a lake 61 × 57 four rows deep, its near wall cut 20 wide.
+fn flood(f: &mut Fixture) {
+    join_streaming(f, 1);
+    f.server.step();
+    f.take_all();
+    let stone = dwell_blocks::require("dwell:stone");
+    let w = f.server.world();
+    for x in -31..=31 {
+        for z in 3..=61 {
+            for y in G..G + 4 {
+                let wall = x == -31 || x == 31 || z == 3 || z == 61;
+                w.set_voxel(x, y, z, if wall { stone } else { M.water });
+            }
+        }
+    }
+    f.server.step();
+    f.take_all();
+    f.send(
+        1,
+        Message::RegionEdit(RegionEdit {
+            op: RegionEditOp::Fill,
+            min: [-10, G, 3],
+            size: [20, 4, 1],
+            material: M.air,
+            from: 0,
+            cells: Vec::new(),
+        }),
+    );
+}
+
+#[test]
+#[ignore = "a measurement (docs/WATER_SURFACE_GRID.md §2d): cargo test --release -p dwell-sim --test water_thread measure -- --ignored --nocapture"]
+fn measure_a_flood_on_and_off_the_tick_thread() {
+    // face-a-only: a measurement on the server's flat world.
+    let game_water_per_tick = 72.0 / 60.0; // water s per server tick at the default day
+    let run = |name: &str, host: Option<WaterHost>| {
+        let mut f = Fixture::new(flat());
+        if let Some(h) = host {
+            f.server.set_water_host(h);
+        }
+        flood(&mut f);
+        let mut ms = Vec::new();
+        let start = Instant::now();
+        // paced at 60 Hz, as a server runs (a tick late runs at once)
+        for i in 0..1200u32 {
+            let t = Instant::now();
+            f.server.step();
+            ms.push(t.elapsed().as_secs_f64() * 1000.0);
+            f.take_all();
+            let due = start + Duration::from_secs_f64(f64::from(i + 1) / 60.0);
+            std::thread::sleep(due.saturating_duration_since(Instant::now()));
+        }
+        let wall = start.elapsed().as_secs_f64();
+        let (stats, _) = f.server.water_stats();
+        let clock = match f.server.water_placement() {
+            Placement::Inline => f.server.water().time(),
+            _ => stats.last.t,
+        };
+        ms.sort_by(f64::total_cmp);
+        let q = |p: f64| ms[((ms.len() - 1) as f64 * p) as usize];
+        println!(
+            "{name}: tick p50 {:.2} ms, p95 {:.2}, p99 {:.2}, max {:.2}; 1200 ticks in {wall:.2} s; water clock {clock:.0} s of {:.0} s given; owed {:.1} s, dropped {:.0} s; awake chunks {}, longest run {:.1} ms",
+            q(0.5),
+            q(0.95),
+            q(0.99),
+            q(1.0),
+            1200.0 * game_water_per_tick,
+            stats.last.owed_s,
+            stats.last.dropped_s,
+            stats.last.awake,
+            stats.max_busy_ms,
+        );
+    };
+    run(
+        "inline, unbudgeted (before 0.49.7)",
+        Some(WaterHost::with_config(
+            Placement::Inline,
+            dwell_sim::water::Water::new(),
+            CoreConfig {
+                budget: usize::MAX,
+                max_owed: 0.0,
+                slow: Duration::ZERO,
+            },
+        )),
+    );
+    run("inline, stepBudget (0.49.7 on)", None);
+    run(
+        "own thread (G5)",
+        Some(WaterHost::new(
+            Placement::Thread,
+            dwell_sim::water::Water::new(),
+        )),
+    );
+}

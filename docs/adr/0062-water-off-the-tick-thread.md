@@ -1,7 +1,7 @@
 # 0062. The water runs off the server's tick thread, by message passing
 
 - Status: Accepted (the owner, 2026-11-06: "Use message passing for now, make a note about future possibly
-  using shared memory threads"; the water stays saved with the world); planned, Phase 53 G5
+  using shared memory threads"; the water stays saved with the world); built, Phase 53 G5 (WATER_SURFACE_GRID.md §2d, as built)
 - Date: 2026-11-06
 - Design: [`WATER_SURFACE_GRID.md`](../WATER_SURFACE_GRID.md) §2d
 - Amends: ADR 0060 (where the grid runs)
