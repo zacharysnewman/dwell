@@ -318,6 +318,8 @@ pub struct BrushTool {
     preview_key: Option<(Aim, BrushSpec, Materials, bool)>,
     preview_ms: f64,
     version: u64,
+    /// The last [`BrushTool::read_extent`]: its brush, its face (B) and the extent.
+    extent: std::cell::Cell<Option<(BrushSpec, bool, Option<([i32; 3], [i32; 3])>)>>,
 }
 
 impl Default for BrushTool {
@@ -355,6 +357,7 @@ impl BrushTool {
             preview_key: None,
             preview_ms: f64::NEG_INFINITY,
             version: 0,
+            extent: std::cell::Cell::new(None),
         }
     }
 
@@ -534,6 +537,36 @@ impl BrushTool {
         // Layer order (x fastest, then z, then y) in the world, as `perform` gives it.
         changes.sort_by_key(|&([x, y, z], _)| (y, z, x));
         Some((changes, grid))
+    }
+
+    /// The box a stroke centred at `at` reads, as offsets from its centre (its min, its size), its
+    /// clicks aside: what must be loaded for a stroke there, so the aim can stop short of where it
+    /// isn't ([`clamp_aim`]). A brush's cells move with its centre; only the face (A or B) turns
+    /// them, so this is the same all along a view ray on one face.
+    pub fn read_extent(&self, at: [i32; 3]) -> Option<([i32; 3], [i32; 3])> {
+        let f = FaceFrame::at_row(at[1]);
+        if let Some((spec, b, extent)) = self.extent.get()
+            && spec == self.spec
+            && b == f.is_b()
+        {
+            return extent;
+        }
+        let aim = local_aim(
+            f,
+            Aim {
+                center: at,
+                face: f.cell_face(2) as u8,
+                from: None,
+                before: None,
+            },
+        );
+        let cells = brush_cells(&self.spec, aim);
+        let extent = read_bounds(&self.spec, &cells).map(|(min, size)| {
+            let wmin = f.box_min(min, size);
+            (std::array::from_fn(|i| wmin[i] - at[i]), size)
+        });
+        self.extent.set(Some((self.spec, f.is_b(), extent)));
+        extent
     }
 
     /// The cells the brush covers at `c`, in the world.
@@ -1359,6 +1392,21 @@ mod tests {
             tool.aim_clamped(clamp_aim(eye, dir, 256.0, None, loaded));
             assert_eq!(tool.center(false), tool.center(true));
             assert_eq!(tool.center(false).map(|c| c[0]), Some(99));
+            // What must be loaded for a stroke at a cell (the game's editable test): a box about
+            // it holding every cell the brush covers there, the same along the ray.
+            for name in ["ball", "cylinder", "ellipsoid"] {
+                select(&mut tool, name);
+                for x in [10, 200] {
+                    let at = along(x as f32);
+                    let (lo, size) = tool.read_extent(at).expect("an extent");
+                    for c in tool.covered_at(at) {
+                        assert!(
+                            (0..3).all(|i| c[i] >= at[i] + lo[i] && c[i] < at[i] + lo[i] + size[i]),
+                            "{name}: {c:?} outside {lo:?} {size:?} at {at:?}"
+                        );
+                    }
+                }
+            }
         }
     );
 }

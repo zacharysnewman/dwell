@@ -157,8 +157,8 @@ The **presets** players pick, and which **game modes** allow brushes, are data:
   2026-11-06: "Increase the reach to 256m"), not just the 5 m block reach.
   - **It always shows where it acts** (owner, 2026-11-06: *"If it doesn't reach it should ensure
     it always shows where it will place or destroy"*). When the ray meets no block in reach, meets
-    one past it, or runs into terrain the client hasn't loaded (or out of the build volume or the
-    world's disc) first, the aim is the **farthest editable cell along the ray**: short of the
+    one past it, or runs into a cell where a stroke would read terrain the client hasn't loaded (`read_extent`, `ChunkStreamer::box_loaded`) or out of the build volume or the
+    world's disc first, the aim is the **farthest editable cell along the ray**: short of the
     first uneditable cell and of the reach (`brush_tool::clamp_aim`, a pure function, tested on
     both faces). Such a free aim is aimed at from its face's up, and both clicks centre the stroke
     on it, so the stroke lands exactly where the preview is. A stroke there that would change

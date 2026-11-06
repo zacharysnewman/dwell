@@ -2987,10 +2987,14 @@ impl<S: Scene> Game<S> {
                     dir,
                     reach,
                 );
+                // Editable: in the world, with every chunk a stroke there reads loaded.
+                let extent = self.brush.read_extent(dwell_world::cell_of_pos(e));
                 let streamer = &self.streamer;
                 dwell_game::brush_tool::clamp_aim(e, dir, reach, hit, |c| {
-                    streamer.is_loaded(dwell_world::chunk_of(c[0], c[1], c[2]).to_array())
-                        && dwell_world::region::box_in_world(c, [1, 1, 1])
+                    dwell_world::region::box_in_world(c, [1, 1, 1])
+                        && extent.is_none_or(|(lo, size)| {
+                            streamer.box_loaded(std::array::from_fn(|i| c[i] + lo[i]), size)
+                        })
                 })
             });
             self.brush.aim_clamped(aim);

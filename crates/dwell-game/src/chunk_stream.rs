@@ -53,18 +53,8 @@ where
         if size.iter().any(|&n| n < 1) {
             return Some(Vec::new());
         }
-        let lo = min.map(|v| v.div_euclid(CHUNK_SIZE));
-        let hi: [i32; 3] = std::array::from_fn(|i| (min[i] + size[i] - 1).div_euclid(CHUNK_SIZE));
-        for y in lo[1]..=hi[1] {
-            for z in lo[2]..=hi[2] {
-                for x in lo[0]..=hi[0] {
-                    if !self.is_loaded([x, y, z])
-                        && BUILD_VOLUME.chunk_may_hold(ChunkCoord::new(x, y, z))
-                    {
-                        return None;
-                    }
-                }
-            }
+        if !self.box_loaded(min, size) {
+            return None;
         }
         let world = self.store_mut();
         let mut out = Vec::with_capacity(size.iter().map(|&n| n as usize).product());
@@ -700,6 +690,26 @@ where
 
     pub fn is_loaded(&self, coord: Coord) -> bool {
         self.loaded.contains_key(&coord)
+    }
+
+    /// Whether every chunk a box of cells covers is loaded (Air chunks included; chunks wholly
+    /// outside the build volume are never streamed and count as loaded): the region tools and
+    /// brushes can read it.
+    pub fn box_loaded(&self, min: [i32; 3], size: [i32; 3]) -> bool {
+        let lo = min.map(|v| v.div_euclid(CHUNK_SIZE));
+        let hi: [i32; 3] = std::array::from_fn(|i| (min[i] + size[i] - 1).div_euclid(CHUNK_SIZE));
+        for y in lo[1]..=hi[1] {
+            for z in lo[2]..=hi[2] {
+                for x in lo[0]..=hi[0] {
+                    if !self.is_loaded([x, y, z])
+                        && BUILD_VOLUME.chunk_may_hold(ChunkCoord::new(x, y, z))
+                    {
+                        return false;
+                    }
+                }
+            }
+        }
+        true
     }
 
     /// Loaded and drawable (meshed, or all air): it can stand in for level 0 of the LOD (§6.6).
