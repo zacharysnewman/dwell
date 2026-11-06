@@ -1796,16 +1796,17 @@ impl<S: Scene> Game<S> {
         }
     }
 
-    /// What the server announced it takes (Welcome flags) in a world of this generator: region
-    /// edits, and brush strokes with the world type's brush reach (BRUSHES.md).
     /// The world's portals (BIFACIAL_WORLD.md §12): their axes and mote look, from the generator
     /// and seed the server announced, for the motes drawn in their shafts.
     pub fn set_world(&mut self, generator_version: u32, world_seed: u64) {
         self.portals = dwell_worldgen::portal_axes_for(generator_version, world_seed);
     }
 
-    pub fn set_capabilities(&mut self, region_edits: bool, brushes: bool, generator_version: u32) {
-        let policy = dwell_world::brush::brush_policy(generator_version).filter(|_| brushes);
+    /// What the server announced it takes (Welcome flags): region edits, and brush strokes with
+    /// the game mode's brush reach (BRUSHES.md; every world is creative for now).
+    pub fn set_capabilities(&mut self, region_edits: bool, brushes: bool) {
+        let policy =
+            dwell_world::brush::brush_policy(dwell_world::brush::world_mode()).filter(|_| brushes);
         self.region.enabled = region_edits;
         self.region.keep = brushes;
         self.region.reach = policy.map_or(dwell_protocol::region_edit::REACH, |p| {

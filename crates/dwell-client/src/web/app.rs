@@ -2395,7 +2395,7 @@ impl Inner {
         let ratio = self.renderer.borrow().stats().pixel_ratio.max(0.01);
         game.viewport_css = (f64::from(size.0) / ratio, f64::from(size.1) / ratio);
         game.debug_visible = self.debug_visible;
-        game.set_capabilities(region_edits, brushes, generator_version);
+        game.set_capabilities(region_edits, brushes);
         game.set_world(generator_version, world_seed);
         game.day_override = self.options.day;
         if let Some(w) = self.session.as_ref().and_then(|s| s.world_settings()) {

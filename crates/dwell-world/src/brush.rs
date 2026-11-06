@@ -20,7 +20,7 @@ use crate::edit::{FACE_DIRS, flooded_for, placeable, unbreakable};
 #[rustfmt::skip]
 #[path = "brushes.gen.rs"]
 mod table;
-pub use table::{FORMAT_VERSION, MAX_SIZE, MIN_SIZE, PRESETS, WORLD_POLICIES};
+pub use table::{DEFAULT_MODE, FORMAT_VERSION, MAX_SIZE, MIN_SIZE, MODES, PRESETS};
 
 /// A cell and the state a stroke puts there.
 pub type Change = ([i32; 3], StateId);
@@ -356,10 +356,12 @@ impl Preset {
     }
 }
 
-/// Whether a world type allows brushes, and how far a brush's region edits may be from the eye.
+/// A game mode's brush policy (`shared/brushes/brushes.json` `modes`): whether it allows brushes,
+/// and how far a brush's region edits may be from the eye. Every world plays `DEFAULT_MODE`
+/// (creative) until a world picks its mode (BRUSHES.md §2).
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct WorldPolicy {
-    pub world_type: &'static str,
+pub struct ModePolicy {
+    pub mode: &'static str,
     pub brushes: bool,
     /// Metres from the eye to a region edit's nearest cell.
     pub reach: f32,
@@ -370,12 +372,20 @@ pub fn preset(name: &str) -> Option<&'static Preset> {
     PRESETS.iter().find(|p| p.name == name)
 }
 
-/// The brush policy of a world (by its generator, §6.3), if its type allows brushes.
-pub fn brush_policy(generator_version: u32) -> Option<&'static WorldPolicy> {
-    let t = crate::world_type(generator_version);
-    WORLD_POLICIES
-        .iter()
-        .find(|p| p.world_type == t && p.brushes)
+/// The game mode a world plays in. Every world is creative for now (owner, 2026-11-06): no world
+/// picks its mode yet. When one can (a world setting, ADR 0054), it is read here.
+pub fn world_mode() -> &'static str {
+    DEFAULT_MODE
+}
+
+/// The brush policy of a game mode, if it allows brushes.
+pub fn brush_policy(mode: &str) -> Option<&'static ModePolicy> {
+    brush_policy_in(MODES, mode)
+}
+
+/// [`brush_policy`] over a table of modes (the data's, or a test's fixture).
+pub fn brush_policy_in<'a>(modes: &'a [ModePolicy], mode: &str) -> Option<&'a ModePolicy> {
+    modes.iter().find(|p| p.mode == mode && p.brushes)
 }
 
 /// What a stroke is: the brush, the performer, the radius and the parameters.
@@ -2211,11 +2221,26 @@ mod tests {
     }
 
     #[test]
-    fn brushes_are_for_the_world_types_the_data_names() {
-        let sandbox = brush_policy(crate::GENERATOR_SANDBOX).expect("the sandbox allows brushes");
-        assert_eq!(sandbox.world_type, "sandbox");
-        assert!(sandbox.reach >= 128.0);
-        assert_eq!(brush_policy(crate::GENERATOR_TERRAIN), None);
-        assert_eq!(brush_policy(crate::GENERATOR_FLAT), None);
+    fn brushes_are_for_the_modes_the_data_names() {
+        // Owner, 2026-11-06: brushes in every world, not just the sandbox; every world is creative.
+        let creative = brush_policy(world_mode()).expect("every world's mode allows brushes");
+        assert_eq!(creative.mode, "creative");
+        assert_eq!(creative.reach, 256.0);
+        assert_eq!(brush_policy("adventure"), None, "no such mode in the data yet");
+        // A mode added by data alone, with brushes off (the coming adventure mode).
+        let fixture = [
+            ModePolicy {
+                mode: "creative",
+                brushes: true,
+                reach: 256.0,
+            },
+            ModePolicy {
+                mode: "adventure",
+                brushes: false,
+                reach: 5.0,
+            },
+        ];
+        assert_eq!(brush_policy_in(&fixture, "creative"), Some(&fixture[0]));
+        assert_eq!(brush_policy_in(&fixture, "adventure"), None);
     }
 }
