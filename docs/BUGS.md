@@ -50,6 +50,16 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 35. The status line read 60 fps on a phone drawing 30 (fixed in 0.49.10)
+
+*Reported 2026-11-06 (0.49.9).* "It's saying I'm running at 60FPS but I'm clearly running at 30 or even
+lower, just moving the camera is stuttering." The meter counted every animation frame the browser
+offered, but while the GPU is still behind on two frames the game skips drawing one (render/pacing.rs,
+`draw.skipped`), so a phone whose GPU took ~33 ms a frame (the water close up, WATER_RENDERING.md §8
+"Cost close to the water") drew every other one and still read 60. Fixed: `Client::frame` says whether it
+drew, and the meter counts only those (`ui/fps.test.ts`, red: 60 for a page drawing every other of 60
+frames, green: 30). The stutter itself is the GPU's: the frame rate now shows it.
+
 ### 33. Damming a river stalled the game (fixed in 0.49.7)
 
 *Reported 2026-11-05 (0.49.5).* "Water definitely seems to be hanging my game thread … my frame rate

@@ -519,8 +519,11 @@ impl Client {
         s.session = Some(session);
     }
 
-    /// One animation frame: network, the game's ticks, and drawing.
-    pub fn frame(&self, now_ms: f64) {
+    /// One animation frame: network, the game's ticks, and drawing. Whether it drew: a frame is
+    /// skipped while the GPU is behind (render/pacing.rs), and the status line's frame rate counts
+    /// only the drawn ones (it counted every animation frame, so a phone drawing 30 a second read
+    /// 60, owner 2026-11-06).
+    pub fn frame(&self, now_ms: f64) -> bool {
         let t0 = telemetry::now_ms();
         telemetry::with(|t| t.begin_frame(now_ms));
         let mut s = self.inner.borrow_mut();
@@ -577,8 +580,9 @@ impl Client {
         s.renderer
             .borrow_mut()
             .set_cloud_time(world.unwrap_or(now_ms / 1000.0));
-        s.draw();
+        let drew = s.draw();
         telemetry::add("frame.cpu", telemetry::now_ms() - t0);
+        drew
     }
 
     /// Dev telemetry (docs/DEV_TOOLS.md): `{ frames: {name: stats}, samples: {name: stats},
@@ -2363,7 +2367,8 @@ impl Inner {
         self.game.is_none() && matches!(self.shaping, Shaping::Waiting(_))
     }
 
-    fn draw(&mut self) {
+    /// Draws the frame; whether it did (not while the GPU is behind, nor without a surface).
+    fn draw(&mut self) -> bool {
         // Not while the GPU is still behind on earlier frames (render/pacing.rs): recording now
         // would block this thread until it caught up.
         if !self
@@ -2372,7 +2377,7 @@ impl Inner {
             .ready_to_draw(telemetry::now_ms())
         {
             telemetry::count("draw.skipped", 1.0);
-            return;
+            return false;
         }
         let acquire = telemetry::now_ms();
         let current = self.surface.get_current_texture();
@@ -2384,7 +2389,7 @@ impl Inner {
                 let renderer = self.renderer.clone();
                 self.surface
                     .configure(renderer.borrow().device(), &self.config);
-                return;
+                return false;
             }
         };
         let view = frame.texture.create_view(&Default::default());
@@ -2396,6 +2401,7 @@ impl Inner {
         });
         let queue = self.renderer.borrow().queue().clone();
         telemetry::span("draw.present", || queue.present(frame));
+        true
     }
 }
 
