@@ -81,7 +81,7 @@ now, or later allow a few stacked water layers in the columns that have overhang
   divergence is an implicit spring per column; after G1 those springs are the map's river sources.
 - **A block set over water** traps what is below it (left as blocks, out of the grid); one set in it
   lifts its water by its volume.
-- **A tick keeps to a budget** (0.49.6, BUGS.md #32): water runs on game time, so a water tick is
+- **A tick keeps to a budget** (0.49.7, BUGS.md #33): water runs on game time, so a water tick is
   seconds of water; with much water awake (a dammed river) its substeps took 50 ms of the server's
   thread a tick and the game stopped and started. A tick now takes at most `stepBudget`
   column-substeps (`flow.json`); past it the water runs slower than game time, and its own clock

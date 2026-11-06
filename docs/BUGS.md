@@ -40,7 +40,7 @@ face, or the placement check against its shape.
 
 ## Fixed
 
-### 32. Damming a river stalled the game (fixed in 0.49.6)
+### 33. Damming a river stalled the game (fixed in 0.49.7)
 
 *Reported 2026-11-05 (0.49.5).* "Water definitely seems to be hanging my game thread … my frame rate
 is fine, but I get stopped while moving … This is when I dam a river usually." The frame rate held
@@ -52,6 +52,16 @@ most `stepBudget` column-substeps (`flow.json`, 40,000; ~2.5 ms natively with 60
 the rest of its water time is lost, not counted toward calm. `water::tests`
 `a_water_tick_keeps_to_its_step_budget_however_much_water_is_awake` (red before: 50 substeps over
 10 awake chunks).
+
+### 32. Dead on face B, the third-person camera was upside down (fixed in 0.49.6)
+
+*Reported 2026-11-06.* "When you die on the upside half of the world, the 3rd person camera is
+flipped upside down (again)." When the player dies its body leaves the physics world and the
+predictor's controller falls back to face A's frame; the death camera (and the drawn body) used
+that face, so on face B the view was face A's: upside down. Fixed: the death camera takes the face
+the body lies on (`FaceFrame::at_height` of the death position) and sits 4 m behind it along that
+face's look and 2.5 m along its up (`game.rs` `death_camera`). `game.rs`
+`the_death_camera_is_upright_on_the_face_the_body_lies_on` (both faces; face B red before).
 
 ### 31. Flat blue sheets on rivers behind their steps (fixed in 0.49.5)
 

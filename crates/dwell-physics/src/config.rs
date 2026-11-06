@@ -144,8 +144,13 @@ pub struct Slide {
     /// m/s² along the slope: how fast braking (or a lower terminal speed) slows the slide.
     pub brake_deceleration: f32,
     /// m/s² along the slope: momentum carried up a steep face dies at this rate (with the slope's
-    /// pull), so walking or running at one never climbs it.
+    /// pull), so walking or running at one never climbs it: a few tenths of a metre up its toe,
+    /// then the slide carries the player back.
     pub uphill_deceleration: f32,
+    /// m/s² along the slope, crouched (a slide): the same, 0 by default (owner, 2026-11-06: slides
+    /// "feel like pure physics"): a slide's momentum carries up a steep face against gravity and
+    /// the slide's friction alone, so a fast slide clears a 1 m steep ramp.
+    pub crouch_uphill_deceleration: f32,
     /// Crouched: the terminal speed × this, and `crouch_friction` instead of `friction`.
     pub crouch_terminal_factor: f32,
     pub crouch_friction: f32,
@@ -177,28 +182,41 @@ pub struct SprintSlide {
 /// ◆ Which contacts an impact can hurt on (§6.10, `damage.impact_surfaces`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ImpactSurfaces {
-    /// Flat ground only (owner, 2026-10-21: "just ground"; 2026-11-05: a hit on "a half slope or
-    /// steep slope … should be 0"): a contact whose face-local slope is no steeper than
-    /// `damage.impact_max_slope_angle`; ramps, walls, steep faces and ceilings never hurt.
+    /// The ground only (owner, 2026-10-21: "just ground"): a contact whose face-local slope is
+    /// walkable (`probes.max_slope_angle`), floors and ramps; walls, steep faces and ceilings never
+    /// hurt.
     Ground,
     /// Every contact: floors, ramps, walls and ceilings.
     All,
 }
 
+/// ◆ What speed an impact hurts by (§6.10, `damage.impact_measure`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ImpactMeasure {
+    /// The downward speed × the surface's cos θ, face-local `max(0, −v.y) · n.y` (owner,
+    /// 2026-11-06: "fall damage should only be applied based on Y (vertical downward velocity)",
+    /// and "the angle of the downward hit reduces fall damage too"): flat ground counts the fall in
+    /// full, a ½ m ramp × 0.894, a 45° one × 0.707; horizontal speed never counts, so a fast run or
+    /// slide into a slope never hurts.
+    DownwardIntoSurface,
+    /// The speed into the surface, `max(0, −v · n)` (the rule from 2026-10-21 to 0.49.1), which a
+    /// mode with `ImpactSurfaces::All` (walls and ceilings) needs.
+    IntoSurface,
+}
+
 /// ◆ Dwell addition.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Damage {
-    /// m/s into a surface (`max(0, −v · n)`, the controller's `impact_speed`) a hit must exceed to
-    /// hurt, on the surfaces `impact_surfaces` names (§6.10).
+    /// m/s (the controller's `impact_speed`, by `impact_measure`) a hit must exceed to hurt, on the
+    /// surfaces `impact_surfaces` names (§6.10).
     pub impact_damage_min_speed: f32,
     /// Health points per m/s above the minimum.
     pub impact_damage_per_speed: f32,
     /// The contacts an impact can hurt on: the ground (default) or every surface.
     pub impact_surfaces: ImpactSurfaces,
-    /// ° (face-local): the steepest surface that is ground to `ImpactSurfaces::Ground`. Under the
-    /// ½ m ramp's 26.57°, so only flat ground (and near-flat bodies) hurts: a landing on a ramp of
-    /// either pitch slides on instead.
-    pub impact_max_slope_angle: f32,
+    /// The speed a hit hurts by: the downward speed into the surface (default) or the whole speed
+    /// into it.
+    pub impact_measure: ImpactMeasure,
     pub crush_speed: f32,
     pub crush_ticks: u16,
 }
@@ -336,6 +354,7 @@ impl Default for PlayerControllerConfig {
                 brake: 0.5,
                 brake_deceleration: 10.0,
                 uphill_deceleration: 60.0,
+                crouch_uphill_deceleration: 0.0,
                 crouch_terminal_factor: 1.15,
                 crouch_friction: 0.2,
             },
@@ -344,7 +363,7 @@ impl Default for PlayerControllerConfig {
                 start_boost: 1.5,
                 max_speed: 14.0,
                 friction: 5.0,
-                slope_gravity: 1.5,
+                slope_gravity: 1.0,
                 steer_rate: 90.0,
                 cooldown_ticks: 30,
             },
@@ -352,7 +371,7 @@ impl Default for PlayerControllerConfig {
                 impact_damage_min_speed: 12.0,
                 impact_damage_per_speed: 8.0,
                 impact_surfaces: ImpactSurfaces::Ground,
-                impact_max_slope_angle: 10.0,
+                impact_measure: ImpactMeasure::DownwardIntoSurface,
                 crush_speed: 4.0,
                 crush_ticks: 6,
             },
