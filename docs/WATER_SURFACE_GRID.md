@@ -256,10 +256,10 @@ jobs off the tick, no tick over 3.9 ms (the edits' own). In the browser (the ben
 
 | | Ticks: mean, worst (first seconds; then) |
 | --- | --- |
-| The wall alone (`dam-only`, 30 s), 0.49.12 (#348) | 4.2 ms, 58 ms (first second; 8–15 after) |
+| The wall alone (`dam-only`, 30 s), 0.49.13 (#348) | 4.2 ms, 58 ms (first second; 8–15 after) |
 | … the jobs on the tick, held, kept bases (`?serverjobs=inline`) | 0.46 ms, 54, 26, 31 ms (first 4 s; ≤ 7 after) |
 | … the server-jobs worker | 0.30 ms, 7 ms (13 once at 5 s; ≤ 6 after) |
-| The wall and the pit (`dam-flood`, 40 s), 0.49.12 (#348) | 7.5 ms, 130, 40, 42, 36 ms (first 4 s; 15–26 after) |
+| The wall and the pit (`dam-flood`, 40 s), 0.49.13 (#348) | 7.5 ms, 130, 40, 42, 36 ms (first 4 s; 15–26 after) |
 | … the server-jobs worker | 1.5 ms, 45 ms (first second), 27, 29 (2–7 s; ≤ 19 after) |
 
 What is left over 25 ms with the pit is the pit's own collapse: its cut undercuts the bank and the
