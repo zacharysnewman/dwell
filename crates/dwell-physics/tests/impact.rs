@@ -64,7 +64,7 @@ fn fastest_impact(w: &mut PlayerTestWorld, h: PlayerHandle, n: i32) -> f32 {
 #[test]
 fn a_perpendicular_landing_on_flat_ground_hits_once_and_a_22_m_fall_kills() {
     // 22 m of free fall at 20 m/s²: ~29.7 m/s, one hit on the floor's normal, past the lethal 20 m
-    // (0.49.21; a 20 m fall killed under the 12 m lethal height before, and the linear rule's 131
+    // (0.49.22; a 20 m fall killed under the 12 m lethal height before, and the linear rule's 131
     // points before 0.49.18).
     let mut w = PlayerTestWorld::new();
     w.floor();
@@ -89,7 +89,7 @@ fn drops_up_to_10_m_never_hurt_and_damage_climbs_steeply_to_lethal_at_20_m() {
     // Owner (2026-11-06): "I don't want to get nickeled and dimed all the time for small drops",
     // then "Scale it so approximately safe is 10m and lethal is 20m". The thresholds are landing
     // speeds written as the drop that reaches them (`v² ÷ 2g`): safe 10 m is 20 m/s, lethal 20 m is
-    // 28.3 m/s; horizontal speed never counts. Until 0.49.21 safe was 5 m and lethal 12 m (8 m took
+    // 28.3 m/s; horizontal speed never counts. Until 0.49.22 safe was 5 m and lethal 12 m (8 m took
     // 18 points, 12 m killed); before 0.49.18 it hurt from 3.6 m.
     for (height, least, most) in [
         (5.0, 0, 0),
@@ -206,7 +206,7 @@ fn landing_on_a_ramp_hurts_by_its_downward_speed_into_it() {
     // its horizontal speed never counts (until 0.49.1 the speed into the normal counted it: 60°
     // below the horizontal dealt 21, along the slope 0; in 0.49.2 ramps dealt nothing).
     let cos = Vec3::new(0.0, 2.0, -1.0).normalize().y;
-    // (35 m/s since 0.49.21's 10 m safe height: 25 m/s straight down was under it on the ramp.)
+    // (35 m/s since 0.49.22's 10 m safe height: 25 m/s straight down was under it on the ramp.)
     for angle in [90.0, 60.0, 26.565] {
         let l = launch_onto_hillside(35.0, angle);
         let down = -l.before.y * cos;

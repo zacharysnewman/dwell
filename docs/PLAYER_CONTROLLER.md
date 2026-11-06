@@ -769,7 +769,7 @@ Owner (2026-10-21): fall damage became **impact damage**, by the angle of the su
   of the speed, read as the free-fall height that lands at it (`h = v² ÷ 2g`; a landing speed
   written as a drop, never the distance fallen: horizontal speed and time in the air never
   count): nothing up to `damage.impact_safe_height` (10 m, 20 m/s), all of `MAX_HEALTH` (100) at
-  `impact_lethal_height` (20 m, 28.3 m/s; owner, 2026-11-06, 0.49.21: *"Scale it so approximately
+  `impact_lethal_height` (20 m, 28.3 m/s; owner, 2026-11-06, 0.49.22: *"Scale it so approximately
   safe is 10m and lethal is 20m"*; 5 m and 12 m in 0.49.18–0.49.20),
   and between them `MAX_HEALTH × t ^ impact_curve_exponent` (2) for `t` the height's share of the
   way, at least 1 point (owner, 2026-11-06, 0.49.18: *"I don't want to get nickeled and dimed all

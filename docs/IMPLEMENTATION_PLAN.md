@@ -258,7 +258,7 @@ Then (owner, 2026-11-06, built, 0.49.18: no "nickel and diming" for small drops)
 is three data numbers, `damage.impact_safe_height` (5 m), `impact_lethal_height` (12 m) and
 `impact_curve_exponent` (2), the hit's speed read as a fall height; it replaces
 `impact_damage_min_speed` / `impact_damage_per_speed` (linear from 3.6 m, lethal at ~15 m).
-Then (owner, 2026-11-06, built, 0.49.21): safe 10 m (a 20 m/s landing) and lethal 20 m (28.3 m/s).
+Then (owner, 2026-11-06, built, 0.49.22): safe 10 m (a 20 m/s landing) and lethal 20 m (28.3 m/s).
 Later finding: jumping onto a block while holding forward gave a
 burst of speed as the player came down on the edge — the step-up's forward nudge was added on top
 of the tick's movement (also on every slab step, and on slopes every tick); it is now taken out of
