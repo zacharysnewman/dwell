@@ -3196,7 +3196,9 @@ animated from `State` and flags in snapshots.
   (Phase 20), explosion (Phase 21). `Damage`, `Death`, and `Respawn` are `PlayerEvent`s to every
   client; a dead player's body leaves the physics world, and snapshots mark it `dead` where it
   died. The server respawns the player at the spawn point after `RESPAWN_SECONDS`.
-- On death clients currently draw the body lying down (a cosmetic pose). The **cosmetic ragdoll**
+- On death clients currently draw the body lying down (a cosmetic pose), seen from a third-person
+  camera on the face the body lies on (`game.rs` `death_camera`, 0.49.6: the controller has no
+  body while dead and its face is not the body's). The **cosmetic ragdoll**
   (in the client's local Rapier world, Tier 2 rules — local, unsynchronized, despawned on respawn)
   arrives with the client debris world in Phase 21.
 
