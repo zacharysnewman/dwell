@@ -2,36 +2,22 @@
 
 use crate::flow::{FlowData, LiquidFlow};
 
-/// The water flow data (shared/fluids/flow.json).
+/// The water grid's data (shared/fluids/flow.json).
 pub const FLOW: FlowData = FlowData {
     speed: 1.0,
     tick_every: 6,
-    live_radius_m: 160.0,
-    max_basin_cells: 65536,
-    max_row_cells: 16384,
-    stream_reach: 4,
-    stream_min_flow: 0.05,
-    merge_seconds: 0.5,
-    catch_up_steps: 512,
-    settle_mm_per_hour: 10.0,
-    river_speed: 1.0,
-    river_change_min: 0.02,
-    river_change_share: 0.05,
-    river_change_hold_s: 120.0,
-    lake_outlet_head: 1.0,
+    theta: 0.95,
+    cfl: 0.7,
+    max_substeps: 400,
+    sleep_band_m: 0.005,
+    wake_band_m: 0.05,
+    calm_s: 10.0,
+    release_s: 5.0,
+    jump_m2s: 0.1,
+    release_m: 0.025,
+    edit_reach: 3,
     fill_hysteresis: 0.25,
-    found_snap_m: 0.04,
-    spill_min_flow: 0.001,
-    sheet_reach: 2,
     liquids: &[
-        LiquidFlow { block: "dwell:water", weir: 1.7, running: "dwell:running_water" },
-    ],
-    leaks: &[
-        ("dwell:sand", 0.0001),
-        ("dwell:dirt", 0.000001),
-        ("dwell:grass", 0.000001),
-        ("dwell:snowy_grass", 0.000001),
-        ("dwell:leaves", 0.05),
-        ("dwell:snowy_leaves", 0.05),
+        LiquidFlow { block: "dwell:water", manning: 0.03, weir: 1.7, running: "dwell:running_water" },
     ],
 };
