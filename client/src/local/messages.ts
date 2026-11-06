@@ -1,6 +1,6 @@
 // Messages between the main thread and the local-mode worker (LoopbackTransport ↔ worker.ts).
 import type { Channel, HostState, TransportKind } from '../protocol/constants.gen';
-import type { HostPolicy } from './wasmCore';
+import type { HostPolicy, WaterStats } from './wasmCore';
 
 export type ToWorker =
   | {
@@ -18,6 +18,11 @@ export type ToWorker =
       upgrade?: boolean;
       /** The world's maps (faces A and B, ADR 0049), installed before the world starts. */
       maps?: Uint8Array[];
+      /**
+       * Dev link `?water=inline`: the water runs on the server's thread, not in its own worker
+       * (ADR 0062; the bench's before/after).
+       */
+      waterInline?: boolean;
     }
   | { t: 'connect'; session: number; kind: TransportKind; binding: Uint8Array }
   | { t: 'reliable'; session: number; channel: Channel; bytes: Uint8Array }
@@ -56,4 +61,18 @@ export type FromWorker =
   /** The server core's WebAssembly memory (bytes), every second. */
   | { t: 'memory'; bytes: number }
   /** The water near a cell as JSON (in reply to `waterReport`). */
-  | { t: 'waterReport'; report: string };
+  | { t: 'waterReport'; report: string }
+  /** The server's figures, every second (docs/DEV_TOOLS.md `__dwell.serverStats`). */
+  | { t: 'stats'; stats: ServerStats };
+
+/**
+ * The local server's figures over the last second: its ticks, their mean wall time, the worst
+ * `advance` call (one or more ticks), where the water runs, and the water's own figures.
+ */
+export interface ServerStats {
+  ticks: number;
+  tickMeanMs: number;
+  advanceMaxMs: number;
+  water: 'worker' | 'inline';
+  waterStats: WaterStats;
+}

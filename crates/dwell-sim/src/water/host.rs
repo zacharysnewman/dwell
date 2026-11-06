@@ -455,6 +455,18 @@ impl WaterHost {
         }
     }
 
+    /// The writes come back and not yet polled (tests).
+    pub fn pending_writes(&mut self) -> Vec<Write> {
+        self.pump();
+        self.outs
+            .iter()
+            .flat_map(|o| match o {
+                Out::Ran { writes, .. } => writes.clone(),
+                _ => Vec::new(),
+            })
+            .collect()
+    }
+
     /// What came back since the last poll.
     pub fn poll(&mut self) -> Vec<Out> {
         self.pump();
@@ -882,4 +894,106 @@ pub fn decode_out(b: &[u8]) -> Option<(u32, Vec<Out>)> {
         });
     }
     (r.at == b.len()).then_some((seq, outs))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::water::cells::{FULL, OPEN};
+
+    #[test]
+    fn batches_round_trip() {
+        // face-a-only: an encoding; cells are world cells, the same on both faces.
+        let mut mixed = dwell_world::Chunk::default();
+        mixed.set_at(5, dwell_world::M.water);
+        let items = vec![
+            In::Init {
+                generator_version: 8,
+                world_seed: u64::MAX - 3,
+                map: true,
+            },
+            In::Restore(vec![1, 2, 3]),
+            In::Load {
+                at: ChunkCoord::new(-1, 2, 3),
+                cells: ChunkCells::Uniform(OPEN),
+                fresh: true,
+            },
+            In::Load {
+                at: ChunkCoord::new(4, -5, 6),
+                cells: ChunkCells::of(&mixed),
+                fresh: false,
+            },
+            In::Unload(ChunkCoord::new(7, 8, -9)),
+            In::Edit {
+                cell: [1, -2, 3],
+                byte: FULL,
+            },
+            In::Players(vec![[1.5, 2.5, -3.5]]),
+            In::Run(7.2),
+            In::Record,
+            In::Report {
+                at: [4, 5, 6],
+                radius: 48,
+            },
+        ];
+        let b = encode_in(42, &items);
+        assert_eq!(decode_in(&b), Some((42, items)));
+        let mut c: ChunkCurrents = Box::new([[0.0; 2]; CA]);
+        c[3] = [0.25, -1.5];
+        let outs = vec![
+            Out::Ran {
+                writes: vec![Write {
+                    cell: [1, 2, 3],
+                    state: dwell_world::M.water,
+                    was: OPEN,
+                }],
+                currents: vec![((true, -1, 2), Some(c)), ((false, 3, 4), None)],
+                wanted: vec![ChunkCoord::new(1, 1, 1)],
+                stats: Stats {
+                    ran_s: 7.2,
+                    owed_s: 1.0,
+                    dropped_s: 0.5,
+                    busy_ms: 3.25,
+                    t: 100.0,
+                    awake: 3,
+                    chunks: 9,
+                    cell_bytes: 1 << 33,
+                    cell_chunks: 12,
+                },
+            },
+            Out::Record(vec![9, 8]),
+            Out::Report("{\"x\":1}".into()),
+            Out::Restored(Some(4)),
+            Out::Restored(None),
+        ];
+        let b = encode_out(7, &outs);
+        assert_eq!(decode_out(&b), Some((7, outs)));
+    }
+
+    #[test]
+    fn a_malformed_batch_is_refused() {
+        // face-a-only: an encoding.
+        let b = encode_in(1, &[In::Run(1.0)]);
+        assert_eq!(decode_in(&b[..b.len() - 1]), None, "cut short");
+        let mut long = b.clone();
+        long.push(0);
+        assert_eq!(decode_in(&long), None, "trailing bytes");
+        assert_eq!(decode_out(&b), None, "not an answer");
+        let mut huge = encode_out(1, &[]);
+        huge[7..11].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert_eq!(decode_out(&huge), None, "a count past its bytes");
+    }
+
+    #[test]
+    fn an_edit_is_told_compactly() {
+        // face-a-only: an encoding.
+        let b = encode_in(
+            1,
+            &[In::Edit {
+                cell: [0, 0, 0],
+                byte: OPEN,
+            }],
+        );
+        assert_eq!(b.len(), 3 + 8 + 14, "an edit is 14 bytes");
+    }
 }

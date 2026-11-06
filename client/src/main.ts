@@ -71,6 +71,7 @@ import { type LoadingHud, LoadingScreen, loadingScreenEnabled } from './ui/loadi
 import { START_HINT, TOUCH_START_HINT } from './ui/controls';
 import { formatMemory, jsHeapBytes, type MemoryReport } from './ui/memory';
 import type { LoopbackTransport } from './net/loopback';
+import type { ServerStats } from './local/messages';
 import { audio } from './audio/engine';
 import { decodeSounds, EventPlayer } from './audio/events';
 import { installPageSounds } from './audio/page';
@@ -194,6 +195,11 @@ interface DwellDebug {
   memory(): MemoryReport | null;
   /** The block dump around the target (debug/blockDump.ts), or null before playing. */
   blockDump(): BlockDump | null;
+  /**
+   * The local server's figures over the last second (its ticks' time; the water's thread: run
+   * time, owed time, queue; docs/DEV_TOOLS.md); null outside a local world or before the first.
+   */
+  serverStats(): ServerStats | null;
   /** The local server's water around a cell (JSON, `Water::report`); null outside a local world. */
   waterReport(x: number, y: number, z: number, radius?: number): Promise<string | null>;
   /**
@@ -823,6 +829,7 @@ async function start(): Promise<App | null> {
       client.telemetryReset();
     },
     sounds: () => [...sfx.recent],
+    serverStats: () => app.loopback?.serverStats ?? null,
     waterReport: (x, y, z, radius) =>
       app.loopback?.waterReport([x, y, z], radius ?? WATER_REPORT_RADIUS) ?? Promise.resolve(null),
     die: () => {

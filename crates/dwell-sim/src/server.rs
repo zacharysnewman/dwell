@@ -179,6 +179,32 @@ impl TickChanges {
     }
 }
 
+use crate::water::host::{In as WaterIn, Out as WaterOut};
+
+/// The server's side of the water host (ADR 0062, docs/WATER_SURFACE_GRID.md §2d).
+#[derive(Default)]
+struct WaterLink {
+    /// What the water's copy of the world was told of each chunk.
+    mirror: crate::water::cells::Mirror,
+    /// The next batch, sent at the tick's end.
+    pending: Vec<WaterIn>,
+    /// The chunks the water last said it wants loaded.
+    wanted: Vec<ChunkCoord>,
+    /// The newest record it sent, not yet saved.
+    record: Option<Vec<u8>>,
+    /// A record asked for and not yet come.
+    record_asked: bool,
+    /// Reports come back (`Server::take_water_report`).
+    reports: std::collections::VecDeque<String>,
+    /// Writes dropped because the world had overtaken them (a diagnostic).
+    overtaken: u64,
+}
+
+/// How long before an autosave the server asks the water for its record (ticks).
+const WATER_RECORD_LEAD_TICKS: u32 = 30;
+/// How long closing a world waits for the water's record.
+const WATER_CLOSE_WAIT: Duration = Duration::from_secs(1);
+
 /// Who may break and place blocks (§6.5, §11), and who may fly (creative flight, §8.3).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EditPolicy {
@@ -240,6 +266,10 @@ pub struct ServerConfig {
     /// A new world's water speed (docs/WATER_FLOW.md §4.1): × game time; `shared/fluids/flow.json`'s
     /// `speed` by default. A saved world keeps its own (its settings, DAY_NIGHT.md §2).
     pub water_speed: f64,
+    /// Where the water grid runs (ADR 0062, docs/WATER_SURFACE_GRID.md §2d): inline on the tick's
+    /// thread (the default: tests, a fallback), on its own native thread (the dedicated server), or
+    /// remote (the browser's water worker, its messages carried by the embedder).
+    pub water: crate::water::host::Placement,
 }
 
 /// A new world's settings: this build's clock (`shared/look/daynight.json`) and `water_speed`.
@@ -286,6 +316,7 @@ impl Default for ServerConfig {
             air_test_override: None,
             player_config: PlayerControllerConfig::default(),
             water_speed: crate::water::FLOW.speed,
+            water: crate::water::host::Placement::Inline,
         }
     }
 }
@@ -669,7 +700,10 @@ pub struct Server {
     /// The falling pieces (docs/FELLING.md).
     felling: crate::felling::Felling,
     /// The water surface grid (docs/WATER_SURFACE_GRID.md): the world's water, held as found until edits free it.
-    water: crate::water::Water,
+    water: crate::water::host::WaterHost,
+    /// The water's side of the world (ADR 0062): what its copy was told, what to send it next, the
+    /// chunks it wants loaded, its newest record and reports.
+    water_link: WaterLink,
     /// The last block changes not the water's own (edits, collapses, settles): a diagnostic for
     /// the block dump (docs/DEV_TOOLS.md), oldest first, at most `EDIT_LOG_LEN`.
     edit_log: std::collections::VecDeque<EditLogEntry>,
@@ -758,27 +792,30 @@ impl Server {
             // The water surface grid (Phase 53, docs/WATER_SURFACE_GRID.md): the world's water read
             // from its blocks, held at rest until edits free it; the world map's flow kept for
             // the sources to come.
-            water: match (
-                &config.generator_override,
-                dwell_worldgen::BifacialTerrain::for_generator(
-                    config.generator_version,
-                    config.world_seed,
-                ),
-            ) {
-                (None, Some(terrain)) => {
-                    let map = std::sync::Arc::new(terrain);
-                    let rivers = map.clone();
-                    crate::water::Water::with_runoff(std::sync::Arc::new(
-                        move |f: dwell_world::FaceFrame, x, z| map.local(f.face).discharge_at(x, z),
-                    ))
-                    // Untouched rivers' currents (Phase 53 G3b).
-                    .with_rivers(std::sync::Arc::new(
-                        move |f: dwell_world::FaceFrame, x, z, depth| {
-                            rivers.local(f.face).river_current(x, z, depth)
-                        },
-                    ))
-                }
-                _ => crate::water::Water::new(),
+            water: crate::water::host::WaterHost::new(
+                config.water,
+                if config.water == crate::water::host::Placement::Remote {
+                    // its worker makes its own (`In::Init`)
+                    crate::water::Water::new()
+                } else {
+                    crate::water::Water::for_world(
+                        config.generator_version,
+                        config.world_seed,
+                        config.generator_override.is_none(),
+                    )
+                },
+            ),
+            water_link: WaterLink {
+                pending: if config.water == crate::water::host::Placement::Remote {
+                    vec![WaterIn::Init {
+                        generator_version: config.generator_version,
+                        world_seed: config.world_seed,
+                        map: config.generator_override.is_none(),
+                    }]
+                } else {
+                    Vec::new()
+                },
+                ..WaterLink::default()
             },
             settings: default_settings(config.water_speed),
             settings_fields: SettingsFields::default().with(default_settings(config.water_speed)),
@@ -1352,6 +1389,8 @@ impl Server {
             }
         }
         self.collect_saves();
+        // What the water sent since (its writes, currents, wanted chunks, record).
+        self.apply_water();
 
         // 1. Block edits queued since the last tick (§6.5); collision syncs in the controller pass.
         self.apply_edits();
@@ -1480,9 +1519,20 @@ impl Server {
         self.update_lod();
 
         // 7. Autosave (§6.4): prepared here, committed off the tick.
-        if self.config.store.is_some() && self.tick >= self.next_save_tick {
-            self.save_now();
+        if self.config.store.is_some() {
+            // The water's record asked for a moment before (it comes back by the save).
+            if !self.water_link.record_asked
+                && self.tick + WATER_RECORD_LEAD_TICKS >= self.next_save_tick
+            {
+                self.water_link.pending.push(WaterIn::Record);
+                self.water_link.record_asked = true;
+            }
+            if self.tick >= self.next_save_tick {
+                self.autosave();
+            }
         }
+        // 8. What the water is told this tick goes as one batch.
+        self.flush_water();
     }
 
     fn view_center(&self, s: &Session) -> Option<ChunkCoord> {
@@ -1551,7 +1601,7 @@ impl Server {
         wanted.extend_from_slice(&self.explicit_wanted);
         // Then those of moving water and beside it, with no player near (WATER_SURFACE_GRID.md §2b):
         // it flows on until it sleeps.
-        let water = self.water.wanted_chunks();
+        let water = self.water_link.wanted.clone();
         for &c in &water {
             if !BUILD_VOLUME.chunk_may_hold(c) || self.world.find(c).is_some() {
                 continue;
@@ -2142,7 +2192,11 @@ impl Server {
                     reason,
                 });
             }
-            self.water.touch(before);
+            // The water's copy of the edited cells (their columns touched).
+            for &(cell, _) in &before {
+                let byte = crate::water::cells::byte_of(self.world.get_voxel_if_loaded(cell));
+                self.water_link.pending.push(WaterIn::Edit { cell, byte });
+            }
         }
         if changed.is_empty() {
             return;
@@ -2154,9 +2208,15 @@ impl Server {
         }
         // One revision per chunk per modification, then each client gets the chunks it streams.
         for c in &mut changed {
-            let chunk = self.world.get_or_create(ChunkCoord::from_array(c.coord));
+            let coord = ChunkCoord::from_array(c.coord);
+            let chunk = self.world.get_or_create(coord);
+            let (stamp, before) = (chunk.stamp(), chunk.revision());
             chunk.bump_revision();
             c.revision = chunk.revision();
+            // told to the water cell by cell (edits above, its own writes it made)
+            self.water_link
+                .mirror
+                .told(coord, stamp, before, c.revision);
         }
         let ids: Vec<SessionId> = self
             .sessions
@@ -2463,18 +2523,79 @@ impl Server {
             .filter_map(|s| s.handle)
             .map(|h| self.players.position(&self.physics, h).to_array())
             .collect();
-        let writes = self.water.tick(&mut self.world, &players, dt);
-        if writes.is_empty() {
-            return;
+        // The world's chunks as the water's copy should have them, then the run.
+        let changes = self.water_link.mirror.sync(&self.world);
+        let link = &mut self.water_link;
+        for ch in changes {
+            link.pending.push(match ch {
+                crate::water::cells::Change::Load { at, cells, fresh } => {
+                    WaterIn::Load { at, cells, fresh }
+                }
+                crate::water::cells::Change::Unload(at) => WaterIn::Unload(at),
+            });
         }
+        link.pending.push(WaterIn::Players(players));
+        link.pending.push(WaterIn::Run(dt));
+    }
+
+    /// Sends the water what it was told this tick, as one batch.
+    fn flush_water(&mut self) {
+        let items = std::mem::take(&mut self.water_link.pending);
+        self.water.send(items);
+    }
+
+    /// What the water sent back: its writes (a write the world has since overtaken, its cell made
+    /// anything but open or water, is dropped: the edit that did it is on its way to the water)
+    /// as one modification, its currents, the chunks it wants loaded, its record and reports.
+    fn apply_water(&mut self) {
         let mut changes = TickChanges {
             water: true,
             ..TickChanges::default()
         };
-        for (c, m) in writes {
-            changes.set(&mut self.world, c, m);
+        for out in self.water.poll() {
+            match out {
+                WaterOut::Ran {
+                    writes,
+                    currents,
+                    wanted,
+                    ..
+                } => {
+                    for w in writes {
+                        if !self.water_write_stands(w.cell) {
+                            self.water_link.overtaken += 1;
+                            continue;
+                        }
+                        changes.set(&mut self.world, w.cell, w.state);
+                    }
+                    for (key, c) in currents {
+                        self.world.currents.set(key, c);
+                    }
+                    self.water_link.wanted = wanted;
+                }
+                WaterOut::Record(b) => {
+                    self.water_link.record = Some(b);
+                    self.water_link.record_asked = false;
+                }
+                WaterOut::Report(r) => self.water_link.reports.push_back(r),
+                WaterOut::Restored(None) => eprintln!(
+                    "dwell: the world's saved water can't be read; it is found again by its edits"
+                ),
+                WaterOut::Restored(Some(_)) => {}
+            }
         }
-        self.broadcast_changes(changes, VoxelModificationReason::Rebake);
+        if !changes.chunks.is_empty() {
+            self.broadcast_changes(changes, VoxelModificationReason::Rebake);
+        }
+    }
+
+    /// Whether a water write to `cell` still stands: its chunk loaded and the cell open or water.
+    fn water_write_stands(&self, cell: [i32; 3]) -> bool {
+        self.world
+            .find(chunk_of(cell[0], cell[1], cell[2]))
+            .is_some()
+            && crate::water::cells::kind_of(crate::water::cells::byte_of(
+                self.world.get_voxel_if_loaded(cell),
+            )) != crate::water::cells::Kind::Solid
     }
 
     /// The world's settings (its clock, its water speed).
@@ -2504,9 +2625,91 @@ impl Server {
         format!("[{}]", rows.join(","))
     }
 
-    /// The water, for tests and tools (docs/WATER_SURFACE_GRID.md).
+    /// The water, for tests and tools (docs/WATER_SURFACE_GRID.md), where it runs inline.
     pub fn water(&self) -> &crate::water::Water {
-        &self.water
+        self.water
+            .water()
+            .expect("the water runs inline (Server::water): its own thread's isn't here")
+    }
+
+    /// The water's writes come back and not yet applied (applied at the next tick's start; tests).
+    pub fn pending_water_writes(&mut self) -> Vec<crate::water::Write> {
+        self.water.pending_writes()
+    }
+
+    /// Puts the water on `host` (tests: a host slower than any tick). What the old one held is
+    /// dropped; the new one's copy of the world is sent whole at the next water tick.
+    pub fn set_water_host(&mut self, host: crate::water::host::WaterHost) {
+        self.water = host;
+        self.water_link.mirror = Default::default();
+    }
+
+    /// Where the water runs (ADR 0062).
+    pub fn water_placement(&self) -> crate::water::host::Placement {
+        self.water.placement()
+    }
+
+    /// The water host's figures (its thread's run time, the time it owes, the batches not yet
+    /// answered: docs/DEV_TOOLS.md) and the writes dropped as overtaken.
+    pub fn water_stats(&self) -> (crate::water::host::HostStats, u64) {
+        (self.water.stats(), self.water_link.overtaken)
+    }
+
+    /// Waits (at most `timeout`) until the water has answered all it was sent, then applies its
+    /// answers (tests; closing a world). False if it hadn't by then (a remote host never waits).
+    pub fn wait_water(&mut self, timeout: Duration) -> bool {
+        self.flush_water();
+        let done = self.water.wait(timeout);
+        self.apply_water();
+        done
+    }
+
+    /// The water near `at` (`Water::report`): at once where the water runs inline or on a native
+    /// thread (waiting a second at most); a remote host's comes later (`take_water_report`).
+    pub fn water_report(&mut self, at: [i32; 3], radius: i32) -> Option<String> {
+        if let Some(w) = self.water.water() {
+            return Some(w.report(at, radius));
+        }
+        self.water_link.pending.push(WaterIn::Report { at, radius });
+        if self.water.placement() == crate::water::host::Placement::Remote {
+            self.flush_water();
+            return None;
+        }
+        self.wait_water(WATER_CLOSE_WAIT);
+        self.take_water_report()
+    }
+
+    /// A report the water sent back, oldest first.
+    pub fn take_water_report(&mut self) -> Option<String> {
+        self.apply_water();
+        self.water_link.reports.pop_front()
+    }
+
+    /// Asks the water for its record now (a remote host's embedder then carries the answer back
+    /// before the world is saved: closing a world in the browser).
+    pub fn request_water_record(&mut self) {
+        if !self.water_link.record_asked {
+            self.water_link.pending.push(WaterIn::Record);
+            self.water_link.record_asked = true;
+        }
+        self.flush_water();
+    }
+
+    /// Whether the record asked for (`request_water_record`) has come, applying what came.
+    pub fn water_record_ready(&mut self) -> bool {
+        self.apply_water();
+        !self.water_link.record_asked
+    }
+
+    /// The water host's next batch, for a remote host's embedder to carry to the water worker.
+    pub fn take_water_outgoing(&mut self) -> Option<Vec<u8>> {
+        self.water.take_outgoing()
+    }
+
+    /// An answer from the water worker (a remote host's embedder); applied at the next tick's
+    /// start. False if it can't be read.
+    pub fn deliver_water(&mut self, bytes: &[u8]) -> bool {
+        self.water.deliver(bytes)
     }
 
     /// The players' capsules (cells overlapping one are taken).
@@ -2940,15 +3143,10 @@ impl Server {
         }
         // The free water as saved (WATER_SURFACE_GRID.md §2b); held water is found again from the
         // blocks, and an older world's basin record is ignored.
-        if let Some(bytes) = db.water()
-            && self
-                .water
-                .restore(&bytes, |c| saved.get(&c).copied().unwrap_or(0))
-                .is_none()
-        {
-            eprintln!(
-                "dwell: the world's saved water can't be read; it is found again by its edits"
-            );
+        // (Through the host, before any chunk: `Out::Restored` says if it couldn't be read.)
+        if let Some(bytes) = db.water() {
+            self.water_link.pending.push(WaterIn::Restore(bytes));
+            self.flush_water();
         }
         *self.saved.lock().expect("saved index") = saved;
         let bodies = db.bodies();
@@ -2985,8 +3183,25 @@ impl Server {
     }
 
     /// Saves dirty chunks, players and meta now (committed off the tick natively). No-op without
-    /// a store. Hosts call it before shutting down, then `flush_store`.
+    /// a store. Hosts call it before shutting down, then `flush_store`. The water's record is a
+    /// fresh one: asked for and waited on (a second at most; a remote host's is the newest its
+    /// embedder brought back, `request_water_record`).
     pub fn save_now(&mut self) {
+        if self.config.store.is_none() {
+            return;
+        }
+        if self.water.placement() != crate::water::host::Placement::Remote {
+            self.water_link.record_asked = false;
+            self.request_water_record();
+            self.wait_water(WATER_CLOSE_WAIT);
+        } else {
+            self.apply_water();
+        }
+        self.autosave();
+    }
+
+    /// Saves as `save_now`, with the water's newest record (asked for a moment before).
+    fn autosave(&mut self) {
         if self.config.store.is_none() {
             return;
         }
@@ -3023,16 +3238,9 @@ impl Server {
         batch.players = std::mem::take(&mut self.departed);
         // The world's moving bodies, all of them each save (docs/BUILT_BODIES.md §7).
         batch.bodies = Some(self.felling.saved(&self.physics));
-        // The free water (WATER_SURFACE_GRID.md §2b).
-        {
-            let saved = self.saved.lock().expect("saved index");
-            let world = &self.world;
-            batch.water = Some(self.water.save(|c| {
-                world
-                    .find(c)
-                    .map_or_else(|| saved.get(&c).copied().unwrap_or(0), |ch| ch.revision())
-            }));
-        }
+        // The free water (WATER_SURFACE_GRID.md §2b): the newest record the water sent (none
+        // yet: the one saved before stays).
+        batch.water = self.water_link.record.take();
         // LOD sections written since the last save; sections still to compute (dirty, or computing
         // now) are saved dirty, to recompute on load.
         let mut lod_saved = Vec::new();
