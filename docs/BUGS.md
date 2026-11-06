@@ -40,6 +40,19 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 32. Damming a river stalled the game (fixed in 0.49.6)
+
+*Reported 2026-11-05 (0.49.5).* "Water definitely seems to be hanging my game thread … my frame rate
+is fine, but I get stopped while moving … This is when I dam a river usually." The frame rate held
+while the server fell behind, so the client held its prediction until it caught up. Water runs on
+game time (72 × real at the default day): a water tick, every six server ticks, was 7.2 s of water,
+about 45 substeps over every awake chunk. In a native server with a cut lake flooding out, those
+ticks took 12–34 ms and grew as chunks woke (the grid's other work under 1 ms). Fixed: a tick does at
+most `stepBudget` column-substeps (`flow.json`, 40,000; ~2.5 ms natively with 60 chunks awake) and
+the rest of its water time is lost, not counted toward calm. `water::tests`
+`a_water_tick_keeps_to_its_step_budget_however_much_water_is_awake` (red before: 50 substeps over
+10 awake chunks).
+
 ### 31. Flat blue sheets on rivers behind their steps (fixed in 0.49.5)
 
 *Reported 2026-11-05 (0.49.x).* "Flat darker colored blue faces" on rivers, seen looking upstream:
