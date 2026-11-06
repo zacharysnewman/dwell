@@ -108,7 +108,7 @@ test('the loading screen is up before anything of the game, then fades in from w
     localStorage.removeItem('dwell.loading');
     const samples: CoverSample[] = [];
     (globalThis as unknown as { __cover: CoverSample[] }).__cover = samples;
-    const ids = ['hud', 'hotbar', 'touch-controls', 'flight-speed', 'net-status'];
+    const ids = ['hud', 'hotbar', 'touch-controls', 'flight-speed', 'net-status', 'perf-status'];
     const sample = () => {
       const el = document.getElementById('loading-screen');
       samples.push({

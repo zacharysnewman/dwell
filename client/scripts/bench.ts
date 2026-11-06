@@ -198,12 +198,46 @@ interface Run {
   respawns: { s: number | null; loading: Record<string, unknown> | null }[];
   /** Each `burst` step's flicker, by name. */
   bursts: Record<string, Flicker>;
+  /** Each `server` step's samples of the local server's figures, by name. */
+  servers: Record<string, unknown[]>;
   /** The scenario's face's up along y (1 face A, −1 face B): `aboveFeet` heights are along it. */
   up: number;
   /** Where the last `camera` step placed the camera (a drifting burst moves on from it). */
   camera?: { position: [number, number, number]; yaw: number; pitch: number };
   /** Each `goto` step's result (`__dwell.goto`): what it found and where it put the camera. */
   gotos: GotoResult[];
+}
+
+/** The local server's figures (`__dwell.serverStats`, a second each) for `seconds`, saved as `name`. */
+async function serverSamples(run: Run, name: string, seconds: number): Promise<void> {
+  type Sample = {
+    ticks: number;
+    tickMeanMs: number;
+    advanceMaxMs: number;
+    water: string;
+    waterStats: Record<string, number>;
+  };
+  const samples: Sample[] = [];
+  for (let i = 0; i < seconds; i++) {
+    await sleep(run.page, 1);
+    const s = await call<Sample | null>(run.page, 'd.serverStats()');
+    if (s) samples.push(s);
+  }
+  run.servers[name] = samples;
+  if (!samples.length) {
+    console.log(`  [${name}] no server figures (not a local world?)`);
+    return;
+  }
+  const w = (k: string) => samples.map((s) => s.waterStats[k] ?? 0);
+  const max = (v: number[]) => Math.max(...v);
+  const first = samples[0];
+  const last = samples[samples.length - 1];
+  console.log(
+    `  [${name}] water ${last.water}: ${String(samples.reduce((a, s) => a + s.ticks, 0))} ticks in ${String(samples.length)} s, ` +
+      `tick mean ${f(samples.reduce((a, s) => a + s.tickMeanMs, 0) / samples.length)} ms, worst advance ${f(max(samples.map((s) => s.advanceMaxMs)))} ms; ` +
+      `water clock ${f(last.waterStats.waterTimeS - first.waterStats.waterTimeS)} s, owed max ${f(max(w('owedS')))} s, ` +
+      `dropped ${f(last.waterStats.droppedS)} s, longest run ${f(max(w('maxBusyMs')))} ms, queue max ${String(max(w('queue')))}, awake max ${String(max(w('awakeChunks')))}, copy ${f(max(w('cellBytes')) / 1e6)} MB`,
+  );
 }
 
 async function record(run: Run, name: string): Promise<void> {
@@ -372,6 +406,8 @@ async function step(run: Run, s: Step): Promise<void> {
   switch (s.do) {
     case 'wait':
       return sleep(page, s.s);
+    case 'server':
+      return serverSamples(run, s.name, s.s);
     case 'key':
       await call(page, `d.press(${JSON.stringify(s.code)}, ${String(s.down)})`);
       return;
@@ -669,6 +705,7 @@ async function runScenario(
     untils: [],
     respawns: [],
     bursts: {},
+    servers: {},
     up: sc.face === 'b' ? -1 : 1,
     gotos: [],
   };
@@ -684,6 +721,7 @@ async function runScenario(
     respawns: run.respawns,
     bursts: run.bursts,
     gotos: run.gotos,
+    servers: run.servers,
     url,
   };
   writeFileSync(join(dir, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);

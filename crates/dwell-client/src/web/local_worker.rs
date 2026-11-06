@@ -135,7 +135,11 @@ impl LocalWorld {
     /// `spawn_on_open` (a spawn link) a saved world's player starts at that spawn too, not where it
     /// left the world. With `spawn_at` (x, y, z: the dev link `?at=`) the spawn is that point, and
     /// the player starts there. With `upgrade` (the player confirmed the warning, owner 2026-11-06)
-    /// a file from an older version line opens too.
+    /// a file from an older version line opens too. With `water_worker` the water runs in the
+    /// water worker this worker's script starts (ADR 0062: `takeWaterOut`, `waterIn`); without,
+    /// on this worker's thread. With `jobs_worker` the chunks to generate and the LOD's
+    /// sections are done in the server-jobs worker this worker's script starts (`takeJob`,
+    /// `jobIn`); without, on the tick within its budgets.
     // Positional, as JS passes them (wasm-bindgen constructor), like `LocalCore::create_spawning`.
     #[allow(clippy::too_many_arguments)]
     #[wasm_bindgen(constructor)]
@@ -148,6 +152,8 @@ impl LocalWorld {
         spawn_on_open: Option<bool>,
         spawn_at: Option<Vec<f64>>,
         upgrade: Option<bool>,
+        water_worker: Option<bool>,
+        jobs_worker: Option<bool>,
     ) -> Result<LocalWorld, JsError> {
         let backend = file.map(OpfsBackend::register);
         let face = if spawn_face_b == Some(true) {
@@ -165,6 +171,12 @@ impl LocalWorld {
             generator_version,
             backend,
             Box::new(WebEntropy),
+            if water_worker == Some(true) {
+                dwell_sim::water::host::Placement::Remote
+            } else {
+                dwell_sim::water::host::Placement::Inline
+            },
+            jobs_worker == Some(true),
         ) {
             Ok(core) => Ok(Self { core }),
             Err(LocalError::VersionLocked(m)) => Err(JsError::new(&m)),
@@ -246,10 +258,80 @@ impl LocalWorld {
         self.core
             .find_on_map(kind, [x, y, z], radius, face, min_depth)
     }
-    /// The water near a cell as this server has it (JSON; the block dump's `water`, a diagnostic).
+    /// The water near a cell as this server has it (JSON; the block dump's `water`, a diagnostic);
+    /// undefined while the water worker's is on its way (`takeWaterReport`).
     #[wasm_bindgen(js_name = waterReport)]
-    pub fn water_report(&mut self, x: i32, y: i32, z: i32, radius: i32) -> String {
+    pub fn water_report(&mut self, x: i32, y: i32, z: i32, radius: i32) -> Option<String> {
         self.core.water_report([x, y, z], radius)
+    }
+    /// A report the water worker sent back.
+    #[wasm_bindgen(js_name = takeWaterReport)]
+    pub fn take_water_report(&mut self) -> Option<String> {
+        self.core.take_water_report()
+    }
+    /// The next batch for the water worker (ADR 0062), if any.
+    #[wasm_bindgen(js_name = takeWaterOut)]
+    pub fn take_water_out(&mut self) -> Option<Vec<u8>> {
+        self.core.server().take_water_outgoing()
+    }
+    /// The water worker's answer (applied at the next tick's start); false if unreadable.
+    #[wasm_bindgen(js_name = waterIn)]
+    pub fn water_in(&mut self, bytes: &[u8]) -> bool {
+        self.core.server().deliver_water(bytes)
+    }
+    /// The world's generator (a saved world's own), for the server-jobs worker.
+    #[wasm_bindgen(getter, js_name = generatorVersion)]
+    pub fn generator_version(&mut self) -> u32 {
+        self.core.server().config().generator_version
+    }
+    /// The world's seed (a saved world's own), for the server-jobs worker.
+    #[wasm_bindgen(getter, js_name = worldSeed)]
+    pub fn world_seed(&mut self) -> u64 {
+        self.core.server().config().world_seed
+    }
+    /// The next job for the server-jobs worker, if any.
+    #[wasm_bindgen(js_name = takeJob)]
+    pub fn take_job(&mut self) -> Option<Vec<u8>> {
+        self.core.server().take_job()
+    }
+    /// The server-jobs worker's answer to a job; false if unreadable.
+    #[wasm_bindgen(js_name = jobIn)]
+    pub fn job_in(&mut self, bytes: &[u8]) -> bool {
+        self.core.server().deliver_job(bytes)
+    }
+    /// Asks the water for its record (before `save`, when the world closes).
+    #[wasm_bindgen(js_name = requestWaterRecord)]
+    pub fn request_water_record(&mut self) {
+        self.core.server().request_water_record();
+    }
+    /// Whether the record asked for has come (or none was asked).
+    #[wasm_bindgen(js_name = waterRecordReady)]
+    pub fn water_record_ready(&mut self) -> bool {
+        self.core.server().water_record_ready()
+    }
+    /// The water's figures (docs/DEV_TOOLS.md): batches not yet answered, runs, the last run's
+    /// water time run, owed and dropped (s) and wall time (ms), the longest run (ms), the water's
+    /// clock (s), awake and all water chunks, its copy of the world (bytes, chunks), writes
+    /// dropped as overtaken.
+    #[wasm_bindgen(js_name = waterStats)]
+    pub fn water_stats(&mut self) -> Vec<f64> {
+        let (h, overtaken) = self.core.server().water_stats();
+        let l = h.last;
+        vec![
+            f64::from(h.queue),
+            h.runs as f64,
+            l.ran_s,
+            l.owed_s,
+            l.dropped_s,
+            l.busy_ms,
+            h.max_busy_ms,
+            l.t,
+            f64::from(l.awake),
+            f64::from(l.chunks),
+            l.cell_bytes as f64,
+            f64::from(l.cell_chunks),
+            overtaken as f64,
+        ]
     }
     /// The respawn preload on or off (`?respawnPreload=off`).
     #[wasm_bindgen(js_name = setRespawnPreload)]

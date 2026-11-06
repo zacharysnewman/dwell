@@ -29,6 +29,10 @@ pub struct FlowData {
     pub max_substeps: u32,
     /// The most column-substeps a water tick may take.
     pub step_budget: u32,
+    /// The most column-substeps a run of the water's own thread takes (ADR 0062).
+    pub thread_step_budget: u32,
+    /// The most water time (s) the water's own thread owes before the rest is dropped.
+    pub max_owed_s: f64,
     /// A chunk sleeps once its levels held within this (m) for `calm_s`.
     pub sleep_band_m: f64,
     /// A sleeping chunk wakes when its account would move its water this far (m).

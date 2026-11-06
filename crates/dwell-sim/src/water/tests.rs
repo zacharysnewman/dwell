@@ -2,7 +2,7 @@
 //! run on both faces.
 
 use super::*;
-use dwell_blocks::require;
+use dwell_blocks::{info, require};
 use dwell_world::{FLAT_TOP_Y, empty_generator};
 
 /// A scene in face `f`'s local frame: x, a row offset from `BASE`, z. Stone below `BASE`, air above.
@@ -424,5 +424,301 @@ dwell_world::both_faces!(
             );
         }
         assert!(s.water.awake_chunks() > 0, "the cut lake drains");
+    }
+);
+
+/// A scene driven through a water host as the server drives it (ADR 0062): its chunks by the
+/// mirror, its edits as `In::Edit`, a run a tick, the writes applied at the next tick's start
+/// (dropped where the world has since made the cell solid).
+struct Hosted {
+    s: Scene,
+    host: host::WaterHost,
+    mirror: Mirror,
+    pending: Vec<host::In>,
+}
+
+impl Hosted {
+    fn new(f: FaceFrame, placement: host::Placement) -> Self {
+        let s = Scene::new(f);
+        Self {
+            host: host::WaterHost::new(placement, Water::new()),
+            s,
+            mirror: Mirror::default(),
+            pending: Vec::new(),
+        }
+    }
+    fn apply(&mut self) {
+        for o in self.host.poll() {
+            if let host::Out::Ran { writes, .. } = o {
+                for w in writes {
+                    let loaded = self
+                        .s
+                        .world
+                        .find(chunk_of(w.cell[0], w.cell[1], w.cell[2]))
+                        .is_some();
+                    if let Some(m) = w.apply_to(self.s.world.get_voxel_if_loaded(w.cell))
+                        && loaded
+                    {
+                        self.s.world.write_voxel(w.cell[0], w.cell[1], w.cell[2], m);
+                    }
+                }
+            }
+        }
+    }
+    fn edit(&mut self, cells: &[(i32, i32, i32)], m: StateId) {
+        for &(x, r, z) in cells {
+            self.s.set(x, r, z, m);
+            self.pending.push(host::In::Edit {
+                cell: self.s.cell(x, r, z),
+                byte: cells::byte_of(m),
+            });
+        }
+    }
+    /// `n` ticks of `dt` water s, each waited on (so the threaded host runs exactly as inline).
+    fn run(&mut self, n: usize, dt: f64) {
+        for _ in 0..n {
+            self.apply();
+            for ch in self.mirror.sync(&self.s.world) {
+                self.pending.push(as_in(ch));
+            }
+            self.pending.push(host::In::Run(dt));
+            self.host.send(std::mem::take(&mut self.pending));
+            assert!(
+                self.host.wait(std::time::Duration::from_secs(20)),
+                "the water answers"
+            );
+        }
+        self.apply();
+    }
+    fn record(&mut self) -> Vec<u8> {
+        self.host.send(vec![host::In::Record]);
+        assert!(self.host.wait(std::time::Duration::from_secs(20)));
+        self.host
+            .poll()
+            .into_iter()
+            .find_map(|o| match o {
+                host::Out::Record(b) => Some(b),
+                _ => None,
+            })
+            .expect("a record")
+    }
+    /// The scene's cells (rows -4..=6 over x, z in -2..=20).
+    fn cells(&self) -> Vec<StateId> {
+        let mut out = Vec::new();
+        for x in -2..=20 {
+            for r in -4..=6 {
+                for z in -2..=20 {
+                    out.push(self.s.get(x, r, z));
+                }
+            }
+        }
+        out
+    }
+}
+
+fn as_in(ch: cells::Change) -> host::In {
+    match ch {
+        cells::Change::Load { at, cells, fresh } => host::In::Load { at, cells, fresh },
+        cells::Change::Unload(at) => host::In::Unload(at),
+    }
+}
+
+/// The pit scene of `a_lake_cut_open_drains_into_a_pit_to_one_level`, cut open, through a host.
+fn pit_through(f: FaceFrame, placement: host::Placement) -> Hosted {
+    let mut h = Hosted::new(f, placement);
+    h.s.basin(0, 7, 0, 7, 3);
+    let stone = require("dwell:stone");
+    h.s.fill([10, -3, 0], [17, -1, 7], M.air);
+    for r in -3..=4 {
+        for z in -1..=8 {
+            h.s.set(18, r, z, stone);
+        }
+        for x in 9..=18 {
+            h.s.set(x, r, -1, stone);
+            h.s.set(x, r, 8, stone);
+        }
+    }
+    h.run(3, 1.0);
+    let cut: Vec<(i32, i32, i32)> = (2..=5)
+        .flat_map(|z| (0..=4).flat_map(move |r| [(8, r, z), (9, r, z)]))
+        .collect();
+    h.edit(&cut, M.air);
+    h.run(60, 1.0);
+    h
+}
+
+dwell_world::both_faces!(
+    fn the_water_on_its_own_thread_runs_as_inline(f: FaceFrame) {
+        // ADR 0062: the grid behind the host runs the same whether inline or on its thread (each
+        // tick waited on here: the thread then sees exactly the batches inline does), and the cut
+        // lake drains into the pit through either.
+        let mut inline = pit_through(f, host::Placement::Inline);
+        let mut thread = pit_through(f, host::Placement::Thread);
+        assert!(
+            info(inline.s.get(14, -3, 3)).liquid,
+            "the lake ran into the pit"
+        );
+        assert!(
+            inline.cells() == thread.cells(),
+            "the same water in the world"
+        );
+        assert_eq!(inline.record(), thread.record(), "the same record");
+    }
+);
+
+dwell_world::both_faces!(
+    fn the_record_survives_the_host(f: FaceFrame) {
+        // ADR 0062: the record asked of a threaded host restores into a new one.
+        let mut a = pit_through(f, host::Placement::Thread);
+        let record = a.record();
+        let mut b = Hosted::new(f, host::Placement::Thread);
+        b.s.world = std::mem::replace(
+            &mut a.s.world,
+            VoxelWorld::new(dwell_world::empty_generator(), None),
+        );
+        b.host.send(vec![host::In::Restore(record.clone())]);
+        assert!(b.host.wait(std::time::Duration::from_secs(20)));
+        assert!(
+            b.host
+                .poll()
+                .iter()
+                .any(|o| matches!(o, host::Out::Restored(Some(n)) if *n > 0)),
+            "restored"
+        );
+        b.run(1, 0.0);
+        assert_eq!(
+            b.record()[..16],
+            record[..16],
+            "the same clock and chunk count"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    fn a_threaded_water_owes_what_it_hasnt_run_and_drops_past_the_cap(f: FaceFrame) {
+        // ADR 0062: off the server's thread the water falls behind instead of losing time: what a
+        // run's budget didn't reach is owed and run next, up to `max_owed`; past it, dropped.
+        let mut s = Scene::new(f);
+        s.basin(0, 30, 0, 30, 4);
+        let mut core = host::WaterCore::new(
+            Water::new(),
+            host::CoreConfig {
+                budget: 256,
+                max_owed: 20.0,
+                slow: std::time::Duration::ZERO,
+            },
+        );
+        let mut mirror = Mirror::default();
+        let mut items: Vec<host::In> = mirror.sync(&s.world).into_iter().map(as_in).collect();
+        core.receive(1, items);
+        core.work();
+        // an edit frees the lake, then a long run: the budget (one substep a run) can't keep up
+        let stone = require("dwell:stone");
+        s.set(15, 0, 15, stone);
+        items = vec![
+            host::In::Edit {
+                cell: s.cell(15, 0, 15),
+                byte: cells::byte_of(stone),
+            },
+            host::In::Run(30.0),
+        ];
+        core.receive(2, items);
+        let stats = |outs: Vec<host::Out>| {
+            outs.into_iter()
+                .find_map(|o| match o {
+                    host::Out::Ran { stats, .. } => Some(stats),
+                    _ => None,
+                })
+                .expect("a run")
+        };
+        let first = stats(core.work());
+        assert!(
+            first.ran_s < 30.0,
+            "the budget stopped it short: {}",
+            first.ran_s
+        );
+        assert!(core.busy(), "the rest is owed");
+        assert!(
+            (first.owed_s - 20.0).abs() < 1e-6 && first.dropped_s > 0.0,
+            "owed up to the cap, the rest dropped: {first:?}"
+        );
+        let second = stats(core.work());
+        assert!(
+            second.ran_s > 0.0 && second.owed_s < first.owed_s,
+            "it runs what it owes: {second:?}"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    fn water_risen_over_a_steep_slope_floods_its_ramps_and_dries_them_when_it_goes(f: FaceFrame) {
+        // Owner, 2026-11-06 (BUGS.md #36): "the bottom half of steep slopes is still either not
+        // flooded or visually not flooded". A ramp (a shaped block with a `flooded` state) was solid
+        // to the grid, so water rising over it never flooded its open part. The pit scene of
+        // `a_lake_cut_open_drains_into_a_pit_to_one_level`, a steep slope (two ramps) standing in
+        // the pit and a single ramp on its floor.
+        let mut s = Scene::new(f);
+        s.basin(0, 7, 0, 7, 3);
+        let stone = require("dwell:stone");
+        s.fill([10, -3, 0], [17, -1, 7], M.air);
+        for r in -3..=4 {
+            for z in -1..=8 {
+                s.set(18, r, z, stone);
+            }
+            for x in 9..=18 {
+                s.set(x, r, -1, stone);
+                s.set(x, r, 8, stone);
+            }
+        }
+        let ramp = |shape: &str| {
+            f.state(require(&format!(
+                "dwell:stone_ramp[facing=east,flooded=false,half=bottom,shape={shape}]"
+            )))
+        };
+        s.set(14, -3, 3, ramp("steep_lower"));
+        s.set(14, -2, 3, ramp("steep_upper"));
+        s.set(12, -3, 5, ramp("ramp"));
+        // a ramp on a pedestal in the lake, its top at the lake's level, flooded as the sea's are
+        // generated
+        s.set(3, 0, 3, stone);
+        s.set(3, 1, 3, stone);
+        s.set(
+            3,
+            2,
+            3,
+            f.state(require(
+                "dwell:stone_ramp[facing=east,flooded=true,half=bottom,shape=ramp]",
+            )),
+        );
+        s.run(5);
+        let flooded = |s: &Scene, x: i32, r: i32, z: i32| info(s.get(x, r, z)).flooded;
+        assert!(!flooded(&s, 14, -3, 3), "dry before the water comes");
+        let cut: Vec<(i32, i32, i32)> = (2..=5)
+            .flat_map(|z| (0..=4).flat_map(move |r| [(8, r, z), (9, r, z)]))
+            .collect();
+        s.edit(&cut, M.air);
+        s.run(600);
+        let pit = s.level(15, 3).expect("the pit holds water");
+        assert!(pit > -0.5, "the water stands over the slope: {pit:.3}");
+        assert!(
+            flooded(&s, 14, -3, 3),
+            "the steep slope's lower ramp is flooded"
+        );
+        assert!(flooded(&s, 14, -2, 3), "and its upper");
+        assert!(flooded(&s, 12, -3, 5), "the ramp on the floor is flooded");
+        assert!(
+            s.get(14, -3, 3)
+                == f.state(require(
+                    "dwell:stone_ramp[facing=east,flooded=true,half=bottom,shape=steep_lower]"
+                )),
+            "the same ramp, flooded"
+        );
+        // the lake's ramp, flooded as found, stands out of the lake now drained below it
+        let lake = s.level(2, 3).expect("the lake");
+        assert!(
+            lake < 1.0,
+            "the lake fell below its ramp's open part: {lake:.3}"
+        );
+        assert!(!flooded(&s, 3, 2, 3), "dried when the water left");
     }
 );
