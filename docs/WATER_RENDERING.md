@@ -498,10 +498,6 @@ flat, unlit blue walls stand at the banks. Measured on `main` (1 m cells, adapti
 3. **A side face's back seen from the air takes the outside look** (`seen_from_inside` in the
    water shader). Only a surface's back (a top or a bottom), or any back face while the eye is
    under a fluid, is drawn as seen from inside.
-4. **(0.49.5) A surface's back is drawn only from inside the water** (`underside_from_outside`):
-   seen from the air, through a stepped river's riser from below the upper pool's level, the
-   upper pool's surface from underneath was a flat sheet of the body's colour (owner, 2026-11-05).
-   From outside the water that underside isn't drawn; the riser shows the bed behind it.
 
 Tests: `crates/dwell-worldgen/tests/terrain.rs`
 (`the_sea_floods_the_open_part_of_every_natural_top_block_below_sea_level`,

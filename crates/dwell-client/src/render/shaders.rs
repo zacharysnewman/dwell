@@ -1883,14 +1883,6 @@ fn seen_from_inside(i: FluidOut, front: bool) -> bool {
     return !front && (abs(i.normal.y) > 0.5 || frame.water.x > 0.5);
 }
 
-// A surface's underside seen from outside the water (owner, 2026-11-05: flat blue sheets on
-// rivers): through a step's riser, from below the upper pool's level, the eye sees the underside
-// of that pool's surface. Drawn as seen from inside it was a flat sheet of the body's colour; from
-// outside the water it isn't drawn, and the riser shows the bed behind it through the water.
-fn underside_from_outside(i: FluidOut, front: bool) -> bool {
-    return !front && abs(i.normal.y) > 0.5 && frame.water.x < 0.5;
-}
-
 // A fluid's surface seen from inside (the W4 stub): the body's colour, out through Snell's window,
 // else totally reflected.
 fn from_below(s: Surface, f: Fluid) -> vec4f {
@@ -1924,9 +1916,6 @@ fn water_fs(i: FluidOut, @builtin(front_facing) front: bool) -> SceneOut {
         let n = normalize(i.normal);
         o.color = vec4f(lambert_lit(i.color * draw.tint.rgb, select(-n, n, front), frame.eye.x + i.rel.y, see_through_light(i, n)), 0.5);
         return o;
-    }
-    if (underside_from_outside(i, front)) {
-        discard;
     }
     let f = fluids[i.fluid];
     let s = water_surface(i, front, footprint, f, draw);
@@ -1972,9 +1961,6 @@ fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(
     }
     if (water_off(DBG_FLAT)) {
         return vec4f(0.02, 0.1, 0.2, 1.0);
-    }
-    if (underside_from_outside(i, front)) {
-        discard;
     }
     let f = fluids[i.fluid];
     let s = water_surface(i, front, footprint, f, draw);
@@ -2372,30 +2358,6 @@ mod tests {
         assert!(b.contains("return mix(mix(c, other_clear, far), clear, own);"));
         let at = src.find("fn composited_scene(").expect("composited_scene");
         assert!(src[at..].contains("fogged(scene_display(c, self_lit), s.ray * depth, s.clear)"));
-    }
-
-    #[test]
-    fn a_water_surfaces_underside_is_drawn_only_from_inside_the_water() {
-        // Owner, 2026-11-05: flat blue sheets on rivers. From below a stepped river's upper pool,
-        // the eye saw that pool's surface from underneath through the step's riser, and it was drawn
-        // as seen from inside (the body's flat colour). Both fluid shaders discard an underside seen
-        // from outside the water before shading it.
-        let src = super::source(1);
-        let at = src.find("fn underside_from_outside(").expect("the rule");
-        let rule = &src[at..at + src[at..].find("\n}\n").expect("end")];
-        assert!(rule.contains("!front && abs(i.normal.y) > 0.5 && frame.water.x < 0.5"));
-        for entry in ["fn water_fs(", "fn water_scene_fs("] {
-            let at = src.find(entry).expect(entry);
-            let b = &src[at..at + src[at..].find("\n}\n").expect("end")];
-            let skip = b
-                .find("if (underside_from_outside(i, front)) {\n        discard;")
-                .expect(entry);
-            let shade = b.find("water_surface(i, front").expect(entry);
-            assert!(
-                skip < shade,
-                "{entry} discards the underside before shading"
-            );
-        }
     }
 
     #[test]
