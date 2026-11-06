@@ -1,6 +1,7 @@
 // The settings menu (ui/settingsMenu.ts, local mode): the top-left button opens the sliders (sound,
 // detail, look; the fog is fixed look data, not a setting), clear of the connection status; a moved
 // slider applies and is kept after a reload, and the settings copy to the clipboard as JSON.
+import { HUD_ELEMENTS } from '../src/ui/hud.gen';
 import { expect, test } from '@playwright/test';
 
 test('settings menu: opens from the corner, without fog sliders, and is kept', async ({ page }) => {
@@ -72,5 +73,7 @@ test('settings menu: opens from the corner, without fog sliders, and is kept', a
     motion: { speedEffects: true, fovBoost: 1, plantSway: true },
     fovDeg: 75,
     showArms: true,
+    // Every part of the screen shows by default (shared/ui/hud.json).
+    hud: { shown: Object.fromEntries(HUD_ELEMENTS.map((e) => [e.id, e.shown])) },
   });
 });

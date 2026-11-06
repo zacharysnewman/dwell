@@ -25,6 +25,9 @@ export class LoopbackTransport implements Transport {
   heapBytes = 0;
   /** The local server's figures, as the worker last reported them (every second). */
   serverStats: ServerStats | null = null;
+  /** The local server's last second: its ticks, and their mean time (ms; null before a tick). */
+  serverTicks: number | null = null;
+  serverTickMs: number | null = null;
   /** Callers waiting for a save to finish, oldest first (the worker answers in order). */
   private readonly saving: ((ok: boolean) => void)[] = [];
   private readonly reports: ((report: string | null) => void)[] = [];
@@ -150,6 +153,10 @@ export class LoopbackTransport implements Transport {
         break;
       case 'stats':
         this.serverStats = msg.stats;
+        break;
+      case 'perf':
+        this.serverTicks = msg.ticks;
+        this.serverTickMs = msg.ticks > 0 ? msg.busyMs / msg.ticks : null;
         break;
       case 'ready':
         break;

@@ -50,7 +50,7 @@ face, or the placement check against its shape.
 
 ## Fixed
 
-### 36. The bottom half of steep slopes under moving water stayed dry (fixed in 0.49.12)
+### 36. The bottom half of steep slopes under moving water stayed dry (fixed in 0.49.13)
 
 *Reported 2026-11-06.* "The bottom half of steep slopes is still either not flooded or visually not
 flooded, creating more water visual artifacts." BUGS.md #26 again, on the surface grid: a ramp (a

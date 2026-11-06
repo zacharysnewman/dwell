@@ -250,9 +250,14 @@ async function start(
 
   // Fixed-step simulation clock (the core accumulates real time into 60 Hz steps).
   let last = performance.now();
+  // The server's ticks and their time over each second, for the status line's server figures.
+  let ticks = 0;
+  let busyMs = 0;
+  let tick: number | null = null;
   setInterval(() => {
     if (!core) return;
     scope.postMessage({ t: 'memory', bytes: core.heapBytes() });
+    scope.postMessage({ t: 'perf', ticks, busyMs });
     scope.postMessage({
       t: 'stats',
       stats: {
@@ -263,20 +268,24 @@ async function start(
         waterStats: core.waterStats(),
       },
     });
+    ticks = 0;
+    busyMs = 0;
     Object.assign(tickStats, { ticks: 0, ms: 0, maxMs: 0 });
   }, 1000);
-  let tick = 0;
   setInterval(() => {
     const now = performance.now();
     if (!paused && core) {
+      // `advance` returns the server's tick: the ticks run are its difference.
       const t = core.advance((now - last) / 1000);
       const ms = performance.now() - now;
-      if (t !== tick) {
+      busyMs += ms;
+      if (tick !== null && t !== tick) {
+        ticks += t - tick;
         tickStats.ticks += t - tick;
         tickStats.ms += ms;
         tickStats.maxMs = Math.max(tickStats.maxMs, ms);
-        tick = t;
       }
+      tick = t;
     }
     last = now;
     flush();
