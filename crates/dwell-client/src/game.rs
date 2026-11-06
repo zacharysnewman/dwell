@@ -2019,18 +2019,15 @@ impl<S: Scene> Game<S> {
         }
         // A drag fill the server refused, or took but left as it was (it skips a cell its view of
         // the body is in without refusing; the prediction then shows the server's state): a line
-        // goes back to it; any other goes again while its cells are still free (docs/ITEMS.md §5).
+        // goes back to it; any other goes again while its cells are still free (docs/ITEMS.md §5,
+        // `BuildDrag::answered`). One put into water comes back flooded (BUGS.md 37).
         for &(id, refused) in results {
             let Some((fill, tries)) = self.drag_sent.remove(&id) else {
                 continue;
             };
-            let missing = (0..i32::from(fill.size[1])).any(|r| {
-                let [x, y, z] = [fill.min[0], fill.min[1] + r, fill.min[2]];
-                self.streamer.store_mut().get_voxel(x, y, z) != fill.material
-            });
-            if !(refused || missing) || self.drag.refused(&fill) {
-                continue;
-            }
+            let store = self.streamer.store_mut();
+            let placed =
+                dwell_game::build_drag::fill_placed(&fill, |[x, y, z]| store.get_voxel(x, y, z));
             let me = self.drag_body();
             let settled = self.drag_sent.is_empty();
             let mut world = DragCells {
@@ -2038,16 +2035,7 @@ impl<S: Scene> Game<S> {
                 me,
                 settled,
             };
-            let free = (0..i32::from(fill.size[1])).all(|r| {
-                dwell_game::build_drag::DragWorld::free(
-                    &mut world,
-                    [fill.min[0], fill.min[1] + r, fill.min[2]],
-                    fill.material,
-                )
-            });
-            if free {
-                self.drag.retry(fill, tries + 1);
-            }
+            self.drag.answered(fill, tries, refused, placed, &mut world);
         }
     }
 

@@ -138,8 +138,11 @@ controller button and a touch button switch the modes; mouse, controller and tou
   above the head): a line builds its next piece only once the server has answered for the last
   (`DragWorld::settled`), and goes back to a piece it refused or skipped (`BuildDrag::refused`; a
   region fill skips a cell its view of the body is in without refusing, so the client checks the
-  cells after the answer). A tower's next piece goes only under the feet (`TOWER_FEET`, 1 m under
-  the eye), never above the head.
+  cells after the answer, `BuildDrag::answered`). A piece counts as built when its cells hold the
+  block flooded or not (`build_drag::fill_placed`): a block put into water is written in its
+  flooded state (`flooded_for`), so a stroke builds on into water as on land (since 0.49.16,
+  BUGS.md #37). A tower's next piece goes only under the feet (`TOWER_FEET`, 1 m under the eye),
+  never above the head.
 - **The body**: a cell is free only clear of the player's body where it is and where the server may
   still see it, back along its motion by `buildModes.clearance` (0.15 m, data) plus its speed × two
   ticks of the server's input buffer (`build_drag::lagged_offset`). Not the round trip (since 0.49.2,
