@@ -2049,3 +2049,211 @@ fn the_waters_currents_near_the_player_reach_the_client_and_clear() {
     rig.run_until(60, |_| false);
     assert_eq!(rig.game.as_mut().unwrap().current_at(feet), [0.0, 0.0]);
 }
+
+/// The dev tools' `goto` (docs/DEV_TOOLS.md "Finding places"): the world map's nearest water found
+/// by the local core, the local player moved over it (the client's prediction follows the server's
+/// body), and the water's cells found among the chunks that stream in there. Regression: the
+/// client waited for the terrain round where the player had been, which the server stopped
+/// streaming once it had moved the player, so it never followed.
+// face-a-only: the generated world's face A spawn; the search and the move are face-local
+// (find.rs's both-faces tests).
+#[test]
+fn the_map_finds_water_the_player_is_moved_over_it_and_its_cells_are_found() {
+    use dwell_client::find::{Matcher, Query, find};
+    let mut rig = Rig::new();
+    assert!(rig.run_until(60 * 30, |r| {
+        r.game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)
+    }));
+    let feet = rig.game.as_ref().unwrap().debug_state().feet;
+    let json = rig.core.find_on_map("water", feet, 20_000.0, None, 0.5);
+    assert!(json.starts_with("{\"at\":["), "{json}");
+    assert!(
+        rig.core
+            .find_on_map("lava", feet, 100.0, None, 0.0)
+            .contains("unknown water kind")
+    );
+    let nums: Vec<f64> = json["{\"at\":[".len()..]
+        .split(']')
+        .next()
+        .unwrap()
+        .split(',')
+        .map(|v| v.parse().unwrap())
+        .collect();
+    let over = [nums[0], nums[1] + 3.0, nums[2]];
+    // Not across the faces.
+    assert!(!rig.core.teleport_local_player([over[0], -50.0, over[2]]));
+    // Held there (a fall would take it under) while the client follows and the chunks stream.
+    let mut found = None;
+    for _ in 0..60 * 20 {
+        assert!(rig.core.teleport_local_player(over));
+        rig.frame();
+        let g = rig.game.as_mut().unwrap();
+        let at = g.debug_state().feet;
+        if (at[0] - over[0]).hypot(at[2] - over[2]) < 1.0 {
+            let q = Query {
+                min_depth_m: 0.5,
+                ..Query::new(Matcher::parse("water").unwrap())
+            };
+            found = find(g.world(), at, &q);
+            if found.is_some() {
+                break;
+            }
+        }
+    }
+    let g = rig.game.as_mut().unwrap();
+    let at = g.debug_state().feet;
+    let found = found.unwrap_or_else(|| {
+        panic!(
+            "the client follows to the water and finds its cells: {json}, at {at:?}, {} chunks",
+            g.world().loaded_chunks()
+        )
+    });
+    assert!(
+        (f64::from(found.cell[0]) - over[0]).hypot(f64::from(found.cell[2]) - over[2]) < 64.0,
+        "{found:?} near {over:?}"
+    );
+}
+
+/// A sandbox world with a pool beside the spawn: water 3 m deep (rows `FLAT_TOP_Y` − 6 to − 1)
+/// over x −2..=2, z 2..=6, its top level with the ground, and the player standing on the shore at
+/// (0.5, 1.5), or `in_water` on the pool's bed at (0.5, 4.5).
+fn pool_rig(in_water: bool) -> Rig {
+    let mut rig = Rig::with_generator(GENERATOR_SANDBOX);
+    let g = dwell_world::FLAT_TOP_Y;
+    for x in -2..=2 {
+        for z in 2..=6 {
+            for y in g - 6..g {
+                let w = rig.core.server().world();
+                w.set_voxel(x, y, z, dwell_world::M.water);
+            }
+        }
+    }
+    assert!(rig.run_until(60 * 30, |r| {
+        r.game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)
+    }));
+    let SessionState::Joined {
+        region_edits,
+        brushes,
+        generator_version,
+        ..
+    } = rig.session.state().clone()
+    else {
+        panic!("joined")
+    };
+    rig.game
+        .as_mut()
+        .unwrap()
+        .set_capabilities(region_edits, brushes, generator_version);
+    let feet = if in_water {
+        [0.5, f64::from(g - 6) * dwell_world::CELL_H, 4.5]
+    } else {
+        [0.5, f64::from(g) * dwell_world::CELL_H, 1.5]
+    };
+    for _ in 0..60 {
+        assert!(rig.core.teleport_local_player(feet));
+        rig.frame();
+    }
+    rig.run_until(30, |_| false);
+    assert_eq!(host_voxel(&mut rig, [0, g - 3, 4]), dwell_world::M.water);
+    rig
+}
+
+/// The block in a cell, its `flooded` property aside (a block put into water is written flooded).
+fn dry(m: u16) -> u16 {
+    dwell_world::edit::flooded_for(m, dwell_world::M.air)
+}
+
+/// Drag building into water (docs/BUGS.md 37): Place held on the pool's bed, aimed at `yaw` and
+/// `pitch`, in build mode `mode` (the modes' index), with the look set by `aim` each of 150 frames
+/// after: the bed's cell placed on, and the pool's cells holding a block after (the server and
+/// this client agreeing).
+fn drag_into_pool(
+    in_water: bool,
+    mode: usize,
+    (yaw, pitch): (f64, f64),
+    mut aim: impl FnMut(usize, &mut KeyboardMouseInput),
+) -> ([i32; 3], Vec<[i32; 3]>) {
+    use dwell_game::build_drag::Holder;
+    let mut rig = pool_rig(in_water);
+    for _ in 0..mode {
+        rig.game.as_mut().unwrap().cycle_build_mode();
+    }
+    let g = dwell_world::FLAT_TOP_Y;
+    let bed = target_at(&mut rig, yaw, pitch);
+    assert_eq!(bed[1], g - 7, "aimed at the pool's bed: {bed:?}");
+    let now = rig.now;
+    assert!(
+        rig.game
+            .as_mut()
+            .unwrap()
+            .edit_held(EditAction::Place, Holder::Mouse, now)
+    );
+    for i in 0..150 {
+        aim(i, &mut rig.input);
+        rig.frame();
+    }
+    rig.game.as_mut().unwrap().release_place(Holder::Mouse);
+    rig.run_until(60, |_| false);
+    let stone = dwell_blocks::require("dwell:stone");
+    let mut out = Vec::new();
+    for x in -2..=2 {
+        for z in 2..=6 {
+            for y in g - 6..g {
+                let c = [x, y, z];
+                let (client, server) = (host_voxel(&mut rig, c), server_voxel(&mut rig, c));
+                assert_eq!(client, server, "the client and the server agree at {c:?}");
+                if !dwell_blocks::info(server).liquid {
+                    assert_eq!(dry(server), stone, "at {c:?}");
+                    out.push(c);
+                }
+            }
+        }
+    }
+    (bed, out)
+}
+
+// face-a-only: the sandbox's spawn is on face A and a rig's player can't cross; drag building's
+// answers for fills into water on both faces: `build_drag`'s `a_stroke_builds_on_into_water`.
+#[test]
+fn a_line_drags_up_through_water_from_the_shore_and_from_in_it() {
+    // docs/BUGS.md 37 (owner, 2026-11-06): a held Place built one piece into water and no more.
+    // The server writes a block put into water flooded (`flooded_for`); the client took a fill
+    // that came back flooded for one the server had left out, sent the line back to it, and the
+    // line waited on its own block for good.
+    for in_water in [false, true] {
+        let start = if in_water { -55.0 } else { -70.0 };
+        let (bed, built) = drag_into_pool(in_water, 0, (0.0, start), |i, input| {
+            input.look.pitch = (start + i as f64).min(20.0);
+        });
+        let [x, y, z] = bed;
+        assert_eq!(
+            built,
+            (1..=6).map(|r| [x, y + r, z]).collect::<Vec<_>>(),
+            "six ½ m pieces up through the water (in the water: {in_water})"
+        );
+    }
+}
+
+// face-a-only: as `a_line_drags_up_through_water_from_the_shore_and_from_in_it`.
+#[test]
+fn a_flat_drags_a_floor_across_a_pools_bed_from_the_shore_and_from_in_it() {
+    // docs/BUGS.md 37: Flat, the aim swept to and fro across the bed.
+    for in_water in [false, true] {
+        let pitch = if in_water { -55.0 } else { -70.0 };
+        let (bed, built) = drag_into_pool(in_water, 1, (0.0, pitch), |i, input| {
+            input.look.yaw = 40.0 * (i as f64 / 12.0).sin();
+        });
+        assert!(
+            built.iter().all(|c| c[1] == bed[1] + 1),
+            "a floor on the bed: {built:?}"
+        );
+        assert!(
+            built.len() >= 3,
+            "the floor is built on past its first piece (in the water: {in_water}): {built:?}"
+        );
+    }
+}

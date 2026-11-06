@@ -661,7 +661,7 @@ fn a_slide_up_ramps_carries_its_rise_over_the_crest() {
     // 12 m/s up ½ m ramps the slide rises at ~5.4 m/s; the step-up onto the crest's flat column
     // (1.5 m) stood the player on it with no rise, and the slide ran off its far side flat
     // (highest 1.5 m). Now the rise carries on from the step: an arc over the top.
-    // (13.6: the 12 m/s kick plus the crouch speed that air control added on top until 0.49.11.)
+    // (13.6: the 12 m/s kick plus the crouch speed that air control added on top until 0.49.17.)
     let (highest, slid) = over_the_kicker(crest, 2.0, 13.6, true);
     assert!(slid, "slid up the ramps");
     assert!(
@@ -696,7 +696,7 @@ fn any_momentum_up_a_crest_flies_not_only_a_slide() {
     let mut w = PlayerTestWorld::new();
     kicker(&mut w, crest);
     let e = w.spawn(Vec3::new(0.5, 0.3, -3.0));
-    // (17: until 0.49.11 air control added the walk speed on top of a 12 m/s kick.)
+    // (17: until 0.49.17 air control added the walk speed on top of a 12 m/s kick.)
     w.kick(0, e, Vec3::new(0.0, 0.0, 17.0));
     w.set_input(|_, _| input(0.0, 1.0, true, false, false, 0.0, 0.0));
     let (mut highest, mut slid) = (f32::MIN, false);
@@ -753,7 +753,7 @@ fn a_slide_down_a_steep_hill_carries_up_a_single_steep_ramp() {
 }
 
 /// A slide at `speed` along +z: dropped in moving just above `rows`' ground at z = −9 with
-/// crouch held (until 0.49.11 air control added the crouch speed, 1.6 m/s, on top of the kick; the
+/// crouch held (until 0.49.17 air control added the crouch speed, 1.6 m/s, on top of the kick; the
 /// cases' speeds are what the slides ran at then), so it lands into a slide (§6.9) and slides along +z. Over the slide's 2.5 s
 /// across z ∈ [−1, 28]: whether it slid, the ticks off the ground, and the velocity (rise, along)
 /// the first tick it left the ground.

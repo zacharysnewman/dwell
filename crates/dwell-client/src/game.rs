@@ -1146,6 +1146,22 @@ impl<S: Scene> Game<S> {
                     self.eye = EyeCamera::new();
                     self.eye
                         .tick(&self.current.eye_state(), 1.0 / SIM_HZ as f64);
+                } else if !prediction_may_run(
+                    self.current.active,
+                    self.current.state,
+                    self.terrain_ready(),
+                ) && self.moved_by_server()
+                {
+                    // Moved by the server while the prediction waits for terrain (the dev tools'
+                    // teleport, docs/DEV_TOOLS.md): the player is where the server has it, so
+                    // the terrain the prediction waits for is the terrain there, not where the
+                    // player was (which the server stops streaming, so it never arrives).
+                    self.current = ClientState::of(&self.predictor);
+                    self.flip.reset(self.current.face);
+                    self.previous = None;
+                    self.eye = EyeCamera::new();
+                    self.eye
+                        .tick(&self.current.eye_state(), 1.0 / SIM_HZ as f64);
                 }
             }
             Message::EntitySpawn(e) => {
@@ -2003,18 +2019,15 @@ impl<S: Scene> Game<S> {
         }
         // A drag fill the server refused, or took but left as it was (it skips a cell its view of
         // the body is in without refusing; the prediction then shows the server's state): a line
-        // goes back to it; any other goes again while its cells are still free (docs/ITEMS.md §5).
+        // goes back to it; any other goes again while its cells are still free (docs/ITEMS.md §5,
+        // `BuildDrag::answered`). One put into water comes back flooded (BUGS.md 37).
         for &(id, refused) in results {
             let Some((fill, tries)) = self.drag_sent.remove(&id) else {
                 continue;
             };
-            let missing = (0..i32::from(fill.size[1])).any(|r| {
-                let [x, y, z] = [fill.min[0], fill.min[1] + r, fill.min[2]];
-                self.streamer.store_mut().get_voxel(x, y, z) != fill.material
-            });
-            if !(refused || missing) || self.drag.refused(&fill) {
-                continue;
-            }
+            let store = self.streamer.store_mut();
+            let placed =
+                dwell_game::build_drag::fill_placed(&fill, |[x, y, z]| store.get_voxel(x, y, z));
             let me = self.drag_body();
             let settled = self.drag_sent.is_empty();
             let mut world = DragCells {
@@ -2022,16 +2035,7 @@ impl<S: Scene> Game<S> {
                 me,
                 settled,
             };
-            let free = (0..i32::from(fill.size[1])).all(|r| {
-                dwell_game::build_drag::DragWorld::free(
-                    &mut world,
-                    [fill.min[0], fill.min[1] + r, fill.min[2]],
-                    fill.material,
-                )
-            });
-            if free {
-                self.drag.retry(fill, tries + 1);
-            }
+            self.drag.answered(fill, tries, refused, placed, &mut world);
         }
     }
 
@@ -2195,6 +2199,17 @@ impl<S: Scene> Game<S> {
             })
             .collect();
         self.scene.borrow_mut().set_region_boxes(&boxes);
+    }
+
+    /// The predictor's player (the server's, while no tick runs) is more than a snap away from
+    /// the state the game shows.
+    fn moved_by_server(&self) -> bool {
+        let p = self.predictor.position();
+        let d = (0..3)
+            .map(|k| (p[k] - self.current.position[k]).powi(2))
+            .sum::<f64>()
+            .sqrt();
+        d > f64::from(dwell_protocol::players::RECONCILE_SNAP_DISTANCE)
     }
 
     /// Prediction waits until the terrain around the player has arrived (collision needs it), and

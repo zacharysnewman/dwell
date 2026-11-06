@@ -3,7 +3,9 @@
 pub mod app;
 pub mod jobs;
 pub mod local_worker;
+pub mod server_jobs;
 pub mod transport;
+pub mod water_worker;
 
 use wasm_bindgen::prelude::*;
 

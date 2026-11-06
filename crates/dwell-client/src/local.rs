@@ -25,6 +25,8 @@ pub enum LocalError {
 
 pub struct LocalCore {
     server: Server,
+    /// The world's terrain for searches over its map (`find_on_map`), made on the first one.
+    map: Option<Option<dwell_worldgen::BifacialTerrain>>,
     fixed: FixedStep,
     /// The world is saved to a file (§6.4).
     pub persisted: bool,
@@ -69,6 +71,8 @@ impl LocalCore {
             generator_version,
             storage,
             entropy,
+            dwell_sim::water::host::Placement::Inline,
+            false,
         )
     }
 
@@ -77,7 +81,11 @@ impl LocalCore {
     /// at that world point (feet, m; the dev link `?at=x,y,z`, its player starting there however
     /// the world was left), and with `at_spawn` a saved world's player starting at that spawn, not
     /// where it left (a spawn link). With `upgrade` (the player confirmed the warning, owner
-    /// 2026-11-06) a world file from an older version line opens too.
+    /// 2026-11-06) a world file from an older version line opens too. `water`: where the water
+    /// grid runs (ADR 0062; the browser's water worker is `Remote`, its messages carried by the
+    /// worker script: `take_water_outgoing`, `deliver_water`). With `jobs_worker` the chunks to
+    /// generate and the LOD's sections are done in the server-jobs worker (`Server::take_job`,
+    /// `deliver_job`), not on the tick.
     #[allow(clippy::too_many_arguments)]
     pub fn create_spawning(
         face: dwell_world::Face,
@@ -89,6 +97,8 @@ impl LocalCore {
         generator_version: u32,
         storage: Option<impl StorageBackend>,
         entropy: Box<dyn Entropy>,
+        water: dwell_sim::water::host::Placement,
+        jobs_worker: bool,
     ) -> Result<Self, LocalError> {
         // The local player (player 1) lands on the point itself: its spawn spread taken back.
         let at_portal = portal
@@ -117,8 +127,10 @@ impl LocalCore {
             // Single-threaded in the browser: generation and LOD run on the tick within budgets.
             worldgen_threads: 0,
             lod_threads: Some(0),
+            jobs_remote: jobs_worker,
             // A browser tab can close at any moment: save often (and on hide or close, §6.4).
             autosave_seconds: LOCAL_AUTOSAVE_SECONDS,
+            water,
             ..ServerConfig::default()
         };
         let (mut persisted, mut storage_error) = (false, String::new());
@@ -139,6 +151,7 @@ impl LocalCore {
         }
         Ok(Self {
             server: Server::new(config, entropy),
+            map: None,
             fixed: FixedStep::new(dwell_protocol::SIM_HZ),
             persisted,
             storage_error,
@@ -210,6 +223,96 @@ impl LocalCore {
         }
     }
 
+    /// Moves the local player's feet to world point `feet` (m), at rest (the dev tools' `goto`,
+    /// docs/DEV_TOOLS.md): the server moves the body, the client's prediction snaps to it and the
+    /// chunks stream around it. Only on the face the player is on (crossing has its own path,
+    /// BIFACIAL_WORLD.md §6). False without a living local player or across the faces.
+    pub fn teleport_local_player(&mut self, feet: [f64; 3]) -> bool {
+        let Some(p) = self.server.player_of_session(LOCAL_SESSION) else {
+            return false;
+        };
+        let (Some(h), Some(now)) = (self.server.player_handle_of(p), self.server.feet_of(p)) else {
+            return false;
+        };
+        let f = dwell_world::FaceFrame::at_height(feet[1]);
+        if dwell_world::FaceFrame::at_height(now[1]) != f || !feet.iter().all(|v| v.is_finite()) {
+            return false;
+        }
+        let (_, physics, players) = self.server.sim();
+        let half = f64::from(players.half_height(h));
+        let centre = [feet[0], f.y(f.y(feet[1]) + half), feet[2]];
+        players.teleport(
+            physics,
+            h,
+            dwell_physics::DVec3::from_array(centre),
+            dwell_physics::Vec3::ZERO,
+        );
+        true
+    }
+
+    /// The nearest water of `kind` (`water` any, `sea`, `river`, `lake`) on the world map (the
+    /// generator's columns, loaded or not) from world point `from` (m), within `radius_m`, on
+    /// `face` (None: `from`'s), at least `min_depth_m` deep (the map's level over its ground; a
+    /// sea's first column off the beach is a few centimetres): JSON `{"at":[x,y,z],"kind","face","ground","distance"}` with `at`
+    /// its column's centre at the water's level (world m), or `null`; an unknown kind is an error
+    /// (`{"error":…}`). For the dev tools' `goto` (docs/DEV_TOOLS.md): a coarse search to move the
+    /// player near, then a search of the cells (`find`).
+    pub fn find_on_map(
+        &mut self,
+        kind: &str,
+        from: [f64; 3],
+        radius_m: f64,
+        face: Option<dwell_world::FaceFrame>,
+        min_depth_m: f64,
+    ) -> String {
+        use dwell_worldgen::terrain::Water;
+        let want: &[Water] = match kind {
+            "water" => &[Water::Sea, Water::River, Water::Lake],
+            "sea" => &[Water::Sea],
+            "river" => &[Water::River],
+            "lake" => &[Water::Lake],
+            _ => {
+                return format!(
+                    "{{\"error\":\"unknown water kind {kind:?} (water, sea, river or lake)\"}}"
+                );
+            }
+        };
+        let (version, seed) = {
+            let c = self.server.config();
+            (c.generator_version, c.world_seed)
+        };
+        let terrain = self
+            .map
+            .get_or_insert_with(|| dwell_worldgen::BifacialTerrain::for_generator(version, seed));
+        let Some(terrain) = terrain else {
+            return "{\"error\":\"this world has no map (not the terrain generator)\"}".into();
+        };
+        let f = face.unwrap_or_else(|| dwell_world::FaceFrame::at_height(from[1]));
+        let local = terrain.local(f.face);
+        let hit = crate::find::nearest_column([from[0], from[2]], radius_m, |x, z| {
+            let c = local.column_at(x, z);
+            (!c.outside && want.contains(&c.water) && f64::from(c.level - c.height) >= min_depth_m)
+                .then_some(c)
+        });
+        let Some(([x, z], c)) = hit else {
+            return "null".into();
+        };
+        let name = match c.water {
+            Water::Sea => "sea",
+            Water::River => "river",
+            Water::Lake => "lake",
+            Water::None => "none",
+        };
+        let (cx, cz) = (f64::from(x) + 0.5, f64::from(z) + 0.5);
+        let distance = (cx - from[0]).hypot(cz - from[2]);
+        format!(
+            "{{\"at\":[{cx},{},{cz}],\"kind\":\"{name}\",\"face\":\"{}\",\"ground\":{},\"distance\":{distance:.1}}}",
+            f.y(f64::from(c.level)),
+            if f.is_b() { "b" } else { "a" },
+            f.y(f64::from(c.height)),
+        )
+    }
+
     /// The respawn preload (ARCHITECTURE.md §6.3) on (its radius from `shared/look/loading.json`)
     /// or off (`?respawnPreload=off`, the bench's comparison).
     pub fn set_respawn_preload(&mut self, on: bool) {
@@ -219,9 +322,20 @@ impl LocalCore {
 
     /// The water near cell `at` as the local server has it (a diagnostic, `Water::report`), with
     /// the last block edits (`edits`, `Server::edit_log_json`) so a dump can be replayed.
-    pub fn water_report(&mut self, at: [i32; 3], radius: i32) -> String {
-        let water = self.server().water().report(at, radius);
-        let edits = self.server().edit_log_json();
+    /// None while a remote water's report is on its way (`take_water_report`).
+    pub fn water_report(&mut self, at: [i32; 3], radius: i32) -> Option<String> {
+        let water = self.server.water_report(at, radius)?;
+        Some(self.with_edits(water))
+    }
+
+    /// A remote water's report come back (with the edits, as `water_report`).
+    pub fn take_water_report(&mut self) -> Option<String> {
+        let water = self.server.take_water_report()?;
+        Some(self.with_edits(water))
+    }
+
+    fn with_edits(&self, water: String) -> String {
+        let edits = self.server.edit_log_json();
         match water.strip_suffix('}') {
             Some(body) => format!("{body},\"edits\":{edits}}}"),
             None => water,

@@ -36,6 +36,8 @@ export interface ScenarioReport {
   settles: number[];
   /** Each `burst` step's flicker, by name. */
   bursts?: Record<string, Flicker>;
+  /** Each `server` step's samples of the local server's figures, by name. */
+  servers?: Record<string, unknown[]>;
   /** Page opened → playing (s), and the loading screen's state then (ARCHITECTURE.md §6.3). */
   join?: { playingS: number; loading: Record<string, unknown> | null };
   /** Each `until` step's seconds since the page was opened (null: not reached). */
@@ -43,6 +45,8 @@ export interface ScenarioReport {
   /** Each `die` step's respawn → playing seconds (null: not within its maxS), with the loading
    * screen's state then. */
   respawns?: { s: number | null; loading: Record<string, unknown> | null }[];
+  /** Each `goto` step's result: what it found and where it put the camera (docs/DEV_TOOLS.md). */
+  gotos?: unknown[];
   /** The page address it ran at. */
   url: string;
 }

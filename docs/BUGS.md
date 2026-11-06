@@ -50,6 +50,38 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 37. Drag building into water built one piece and no more (fixed in 0.49.16)
+
+*Reported 2026-11-06.* "Make it so I can drag-build underwater, I notice it doesn't work underwater
+for some reason", then "you don't have to be underwater … 2+ dragged out always failed for me." A
+held Place whose pieces went into water cells, standing in the water or beside it, built the first
+piece or two and then nothing. The server writes a block put into water in its flooded state
+(`flooded_for`: stone becomes `stone[flooded=true]`); the client's answer to each drag fill checked
+that the cells held exactly the block sent, so a flooded piece read as one the server had left out
+(as it skips a cell its view of the body is in). A line then went back to that piece, found its own
+block there and waited on it for good. Fixed: a piece counts as built flooded or not
+(`build_drag::fill_placed`), with the answer's handling moved out of the game loop into
+`BuildDrag::answered`. Pinned by `build_drag`'s `a_stroke_builds_on_into_water` (both faces: a Line
+up, a Line across and a Flat into water; red before: one piece after the first for each line) and
+`game_local`'s `a_line_drags_up_through_water_from_the_shore_and_from_in_it` (a pool in the
+sandbox, the Line from the shore and from the bed; red before: two of the six pieces) and
+`a_flat_drags_a_floor_across_a_pools_bed_from_the_shore_and_from_in_it` (a Flat stroke, which
+passed before as well: a refused Flat column is not gone back to).
+
+### 36. The bottom half of steep slopes under moving water stayed dry (fixed in 0.49.13)
+
+*Reported 2026-11-06.* "The bottom half of steep slopes is still either not flooded or visually not
+flooded, creating more water visual artifacts." BUGS.md #26 again, on the surface grid: a ramp (a
+shaped block with a `flooded` state; steep slopes are two, `steep_lower` under `steep_upper`) was solid
+to the grid (0.48.2), and the grid's drawing never wrote over a solid cell, so water rising over a
+ramp never set its `flooded` state and its open part showed air (nor did it dry when the water went).
+Fixed: the grid's copy of the world marks such blocks (`cells::HOLDS_DRY`, `HOLDS_WET`), and drawing a
+column floods the ones in its rows and its neighbours' while the water beside or over them stands
+half a fill step into their cell, dry otherwise (`Water::flood_near`; written as the `flooded`
+property by name, `Write::flood`, checked against the world as other writes are). Pinned by
+`water_risen_over_a_steep_slope_floods_its_ramps_and_dries_them_when_it_goes` (both faces; red before:
+the steep slope's lower ramp stayed dry under the flooded pit).
+
 ### 35. The status line read 60 fps on a phone drawing 30 (fixed in 0.49.10)
 
 *Reported 2026-11-06 (0.49.9).* "It's saying I'm running at 60FPS but I'm clearly running at 30 or even

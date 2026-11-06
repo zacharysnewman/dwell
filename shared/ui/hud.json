@@ -1,0 +1,15 @@
+{
+  "$comment": "The on-screen interface's parts that Settings, On screen, can show or hide (owner, 2026-11-06: 'any UI on screen … should be toggle-able from Settings menu and saved across sessions'). Each: id (lowercase words joined by dashes; the stored setting's key), label and hint (the Settings row), selector (the CSS selector of the element(s) it hides), shown (the default), and phone (false: always shown on a touch device, where it is the only way to it: the menu button, whose Esc stands in on a keyboard). Run `node shared/ui/gen.mjs` after editing; CI fails if client/src/ui/hud.gen.ts is stale. A new part of the HUD is one entry here.",
+  "elements": [
+    { "id": "menu-button", "label": "Menu button", "hint": "The ☰ button in the corner (Esc opens the menu)", "selector": "#menu-button", "shown": true, "phone": false },
+    { "id": "status-line", "label": "Status line", "hint": "The world, the connection and its round trip", "selector": "#net-status", "shown": true, "phone": true },
+    { "id": "performance", "label": "Performance", "hint": "Frames drawn a second, the CPU's and GPU's time per frame, and the server's ticks", "selector": "#perf-status", "shown": true, "phone": true },
+    { "id": "flight-speed", "label": "Flight speed", "hint": "The flight speed slider while flying", "selector": "#flight-speed", "shown": true, "phone": true },
+    { "id": "hotbar", "label": "Hotbar", "hint": "The items, the one held and the build mode", "selector": "#hotbar", "shown": true, "phone": true },
+    { "id": "crosshair", "label": "Crosshair", "hint": "The dot in the middle of the view", "selector": "#crosshair", "shown": true, "phone": true },
+    { "id": "health", "label": "Health bar", "hint": "Your health, under the hotbar", "selector": "#health", "shown": true, "phone": true },
+    { "id": "controls-hint", "label": "Controls hint", "hint": "The keys shown when a game starts", "selector": "#start-hint", "shown": true, "phone": true },
+    { "id": "notices", "label": "Notices", "hint": "Short notes under the crosshair (what can't be placed, and why)", "selector": "#hud-note", "shown": true, "phone": true },
+    { "id": "loading-chip", "label": "Loading chip", "hint": "The terrain still loading, in the bottom corner", "selector": "#status-chip", "shown": true, "phone": true }
+  ]
+}

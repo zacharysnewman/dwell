@@ -537,6 +537,9 @@ layer — so a player can rise from the ground to see the whole world (ARCHITECT
 - **Prediction.** The client normally waits for the terrain around the player before predicting
   (collision needs it); a flying player keeps predicting, since flight outruns chunk streaming and
   the server's collision corrects any difference (`dwell-game`'s `gate::prediction_may_run`).
+  While it waits, a player the server moved more than the snap distance (a local world's dev
+  teleport, DEV_TOOLS.md) takes the server's place at once (`game.rs` `moved_by_server`), so the
+  terrain it waits for is the terrain there, not where it was (which the server stops streaming).
 
 ---
 
@@ -766,10 +769,10 @@ Owner (2026-10-21): fall damage became **impact damage**, by the angle of the su
   of the speed, read as the free-fall height that lands at it (`h = v² ÷ 2g`): nothing up to
   `damage.impact_safe_height` (5 m), all of `MAX_HEALTH` (100) at `impact_lethal_height` (12 m),
   and between them `MAX_HEALTH × t ^ impact_curve_exponent` (2) for `t` the height's share of the
-  way, at least 1 point (owner, 2026-11-06, 0.49.11: *"I don't want to get nickeled and dimed all
+  way, at least 1 point (owner, 2026-11-06, 0.49.17: *"I don't want to get nickeled and dimed all
   the time for small drops"*, *"a higher threshold for taking damage and a smaller area between
   taking damage and lethal"*; a convex curve, not a logarithmic one, which would hurt most just
-  past the threshold). Until 0.49.11 it was linear in speed, `(speed − 12 m/s) × 8`: from a 3.6 m
+  past the threshold). Until 0.49.17 it was linear in speed, `(speed − 12 m/s) × 8`: from a 3.6 m
   drop (5 points at 4 m, 28 at 6 m) to death at ~15 m. Sent as a `Damage` `PlayerEvent` with
   cause `Fall` (the wire's cause for every impact).
   The client predicts the event too but nothing reads it there; landing sounds still come from
@@ -777,9 +780,9 @@ Owner (2026-10-21): fall damage became **impact damage**, by the angle of the su
 
 | Case | Speed counted | Damage |
 |---|---|---|
-| 3 m / 5 m drop, flat | 10.7 / 14.0 m/s | 0 / 0 (until 0.49.11: 0 / 16) |
+| 3 m / 5 m drop, flat | 10.7 / 14.0 m/s | 0 / 0 (until 0.49.17: 0 / 16) |
 | 6 m / 7 m / 8 m / 9 m / 10 m / 11 m drop, flat | 15.5 – 21.0 m/s | 2 / 8 / 18 / 33 / 51 / 73 (`tests/impact.rs`) |
-| 12 m drop or more, flat | 21.9 m/s | 100: lethal from full health (until 0.49.11 ~15 m) |
+| 12 m drop or more, flat | 21.9 m/s | 100: lethal from full health (until 0.49.17 ~15 m) |
 | 25 m/s straight down, at 60° or along a ½ m ramp (from 0.6 m over it) | the downward speed × 0.894 | less than the same hit on the flat (the whole speed into the ramp until 0.49.1; 0 in 0.49.2) |
 | 25 m/s straight down onto a 1 m ramp (45°) | 26.0 m/s down × 0.707 | 51 (112 on the flat; 0 in 0.49.2) |
 | Launched along the ground at 25 m/s into a 45° slope | ~0 m/s down | 0 (into the slope: ~46 until 0.49.1) |
@@ -808,7 +811,7 @@ Owner (2026-10-21): fall damage became **impact damage**, by the angle of the su
   into a ½ m step at up to 25 m/s steps up with no hit. `dwell-sim` `tests/netcode.rs` damages and
   kills by falls through the server.
 
-### 6.11 The ground is a floor (Dwell addition) **[built, 0.49.2; a slide's limits 0.49.11]**
+### 6.11 The ground is a floor (Dwell addition) **[built, 0.49.2; a slide's limits 0.49.17]**
 
 Owner (2026-11-05): *"Step movement is ruining momentum off of slope 'jumps' … I can see where my
 character tries to 'step' forward at the top of the ramp"*, then, of treating the ground as a
@@ -870,7 +873,7 @@ air held the body over its lip; a run over a downhill edge was held to the face 
 | A kick at 11–12 m/s up ½ m ramps into a crest (not sliding) | ~5 m/s | Flies the arc: 1.5 m top cleared to 2.17 m |
 | Up a ramp ending in the air (a placed lip, 1 m) at 12 m/s | ~5.5 m/s | Flies: to 1.89 m |
 | Run (8 m/s) over a 3 m platform's edge onto a 45° face | 7.7 m/s | Flies, never rising, over the whole face: lands on the floor beyond (~11 m/s, harmless) |
-| A slide down a hill: ½ m or 45° ramps, mixed, terraces (8–12 m/s) | any | Follows every ramp down, never in the air (until 0.49.11 it flew off each edge above a steeper face) |
+| A slide down a hill: ½ m or 45° ramps, mixed, terraces (8–12 m/s) | any | Follows every ramp down, never in the air (until 0.49.17 it flew off each edge above a steeper face) |
 | A knockback, an explosion | — | The launch check, unchanged |
 
 - **Tests:** `ramps.rs` `a_slide_up_ramps_carries_its_rise_over_the_crest` (red before: 1.5 m),
@@ -880,12 +883,12 @@ air held the body over its lip; a run over a downhill edge was held to the face 
   before: held to the face, ≤ 3 ticks in the air); `sprint_slide.rs`
   `a_slide_keeps_its_speed_down_terraces_of_a_flat_cell_and_a_slope` (slides on every landing);
   `step_up.rs`'s approach matrix (ramp then step at every gait) unchanged. The golden trace is
-  unchanged. Both faces. A slide's limits (0.49.11): `ramps.rs`
+  unchanged. Both faces. A slide's limits (0.49.17): `ramps.rs`
   `a_slide_up_a_ramp_flies_off_its_top_at_the_ramps_angle` (red before: one ½ m ramp at 8 m/s never
   left the ground) and `a_slide_down_a_hill_keeps_to_its_ramps` (red before: off ½ m ramps' top at
   12 m/s).
 
-### 6.12 The walking rule: input only adds (Dwell addition) **[built, 0.49.11]**
+### 6.12 The walking rule: input only adds (Dwell addition) **[built, 0.49.17]**
 
 Owner (2026-11-06): input *"should add force up to the target speed, but if speed is already at or
 greater than that speed it doesn't add more speed in that direction, but it shouldn't slow you down
@@ -951,8 +954,8 @@ PPC default for voxels.
 | | `gravity` | 20 m/s² | ×2 of 10 | Absolute value instead of a scale |
 | | `eye_height` / `crouch_eye_height` ◆ | 1.62 m / 0.8 m | (view) | Client camera |
 | `movement` | `walk_speed` / `run_speed` | 5 / 8 m/s | same | |
-| | `acceleration` / `deceleration` / `reverse_deceleration` | 50 / 15 / 60 m/s² | 50 / 12 / 60 | Stopping 25 % stronger (owner, 2026-11-02): a walk stops in 1/3 s. `deceleration` is the ground's friction for all speed: above the walking speed and with nothing held (§6.12, 0.49.11; it was the player's own part only, with `ground_external_friction` for the rest) |
-| | `air_control` | 0.2 | same | Dwell: the air's push is `acceleration × air_control`; it only adds up to the walk speed and turns a faster body, never slowing it (§6.12, 0.49.11) |
+| | `acceleration` / `deceleration` / `reverse_deceleration` | 50 / 15 / 60 m/s² | 50 / 12 / 60 | Stopping 25 % stronger (owner, 2026-11-02): a walk stops in 1/3 s. `deceleration` is the ground's friction for all speed: above the walking speed and with nothing held (§6.12, 0.49.17; it was the player's own part only, with `ground_external_friction` for the rest) |
+| | `air_control` | 0.2 | same | Dwell: the air's push is `acceleration × air_control`; it only adds up to the walk speed and turns a faster body, never slowing it (§6.12, 0.49.17) |
 | | `max_step_height` ◆ | 0.55 m | 0.45 | Half steps step up; full blocks need a jump |
 | | `air_external_drag` | 0 /s | same | Drag on the whole velocity in the air (§6.12) |
 | | `carried_by_characters` | false | same | |
@@ -961,7 +964,7 @@ PPC default for voxels.
 | | `max_push_force` ◆ | 3,050 N | — | The push pass's force at a standstill, falling to nothing at the player's speed: a 700 kg log slides on terrain at ~0.5 m/s (0.41.6; 800 N in 0.41.5; BUILT_BODIES.md §6) |
 | | `pushable_mass_limit` ◆ | 400 kg | — | Heavier clusters are immovable by players (Phase 20) |
 | | `ground_stick_speed` ◆ | 5 m/s | — | The ground is a floor (§6.11): the most of the body's rise following the ground takes away in a tick, and the most it pulls the body down beyond gravity; more either way and it leaves the ground. Walking, running and momentum |
-| | `slide_stick_rise_speed` / `slide_stick_drop_speed` ◆ | 0 / ∞ m/s | — | The same two limits for a slide (a sprint slide, a crouched steep slide; §6.11, 0.49.11): it flies off a ramp's top on its own rise, at the ramp's angle, and follows every ramp down |
+| | `slide_stick_rise_speed` / `slide_stick_drop_speed` ◆ | 0 / ∞ m/s | — | The same two limits for a slide (a sprint slide, a crouched steep slide; §6.11, 0.49.17): it flies off a ramp's top on its own rise, at the ramp's angle, and follows every ramp down |
 | `probes` | `ground_probe_margin` / `ceiling_probe_margin` | 0.15 / 0.10 m | same | |
 | | `max_slope_angle` | 56° ◆ (the steepest ground: above the 45° ramps; steeper than `slide.min_angle` slides) | same | |
 | `jump` | `height` | 1.25 m | same | Clears one block |
@@ -984,7 +987,7 @@ PPC default for voxels.
 | `sprint_slide` ◆ | `min_start_speed` / `start_boost` / `max_speed` | 6.5 m/s / 1.5 m/s / 14 m/s | — | Dwell addition (§6.9): crouch while sprinting; horizontal speeds |
 | | `friction` / `slope_gravity` | 5 m/s² / 1 | — | Deceleration; `gravity × slope_gravity × tilt` along the slide (6 / 1 until 2026-11-02; 1.5 from then to 0.49.5; 1 again, owner 2026-11-06: plain gravity) |
 | | `steer_rate` / `cooldown_ticks` | 90 °/s / 30 ticks (0.5 s, at most 255: the wire's `u8`) | — | Turning toward the move input; before another slide |
-| `damage` ◆ | `impact_safe_height` / `impact_lethal_height` / `impact_curve_exponent` | 5 m / 12 m / 2 | — | From the `IMPACTED` event's speed into the surface, read as a fall height (§6.10, 0.49.11; until then 12 m/s and 8 points per m/s, linear) |
+| `damage` ◆ | `impact_safe_height` / `impact_lethal_height` / `impact_curve_exponent` | 5 m / 12 m / 2 | — | From the `IMPACTED` event's speed into the surface, read as a fall height (§6.10, 0.49.17; until then 12 m/s and 8 points per m/s, linear) |
 | | `impact_surfaces` / `impact_measure` | `Ground` / `DownwardIntoSurface` | — | The contacts that hit (§6.10): `Ground`, a normal no steeper than `probes.max_slope_angle` (floors and ramps); `All`, every contact. The speed: `DownwardIntoSurface`, the downward speed × the surface's cos θ (owner, 2026-11-06); `IntoSurface`, the whole speed into the normal |
 | | `crush_speed` / `crush_ticks` | 4 m/s / 6 | — | Phase 20 |
 | `step_view` ◆ | `slope` / `max_slope` / `min_speed` | 0.5 / 1.0 / 1 m/s | (PPC `SmoothSteps`: 4 m/s) | Client camera only (§9, Steps): the virtual ramp the eye follows over a step; never read by the sim |

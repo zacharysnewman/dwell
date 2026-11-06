@@ -673,7 +673,7 @@ fn running_jump_then(air: Input, seconds: f32) -> (Vec3, bool) {
 
 #[test]
 fn letting_go_in_the_air_keeps_the_speed() {
-    // Owner (2026-11-06): input "shouldn't slow you down to reach the target speed". Until 0.49.11
+    // Owner (2026-11-06): input "shouldn't slow you down to reach the target speed". Until 0.49.17
     // air control braked a running jump with nothing held: 8 → 6.5 m/s in 0.5 s.
     let (vel, airborne) = running_jump_then(Input::default(), 0.5);
     assert!(airborne);
@@ -682,7 +682,7 @@ fn letting_go_in_the_air_keeps_the_speed() {
 
 #[test]
 fn holding_sideways_in_the_air_turns_without_slowing_or_speeding() {
-    // Until 0.49.11 air control steered toward the held direction's velocity, taking the rest away:
+    // Until 0.49.17 air control steered toward the held direction's velocity, taking the rest away:
     // a running jump with right held lost half its forward speed in 0.5 s (8 → 4.0 m/s). Now the
     // held direction gains speed, the total stays 8 m/s (the cap: no strafe-jumping), and the
     // forward part gives way only as the velocity turns.
@@ -734,7 +734,7 @@ fn input_never_builds_speed_past_the_target_whatever_its_direction() {
 
 #[test]
 fn a_kick_and_walking_do_not_stack() {
-    // Until 0.49.11 the player's own speed was added on top of a knockback's: kicked at 12 m/s
+    // Until 0.49.17 the player's own speed was added on top of a knockback's: kicked at 12 m/s
     // with run held, the body went 17 m/s on the ground and 15 (10 + 5) in the air. Now holding
     // forward adds nothing to a body already faster than the target.
     let mut w = PlayerTestWorld::new();
@@ -770,7 +770,7 @@ fn a_kick_and_walking_do_not_stack() {
     w.step(ticks(1.0));
     assert!(
         kicked < 10.2 && approx(w.horizontal_speed(e), kicked, 1e-4),
-        "air: {kicked} → {} (until 0.49.11: 15)",
+        "air: {kicked} → {} (until 0.49.17: 15)",
         w.horizontal_speed(e)
     );
 }

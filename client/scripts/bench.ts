@@ -32,6 +32,7 @@ import {
   type Vec3,
 } from './scenarios.ts';
 import { viewStorage } from './views.ts';
+import type { GotoResult } from '../src/debug/find.ts';
 
 interface Options {
   names: string[];
@@ -197,10 +198,46 @@ interface Run {
   respawns: { s: number | null; loading: Record<string, unknown> | null }[];
   /** Each `burst` step's flicker, by name. */
   bursts: Record<string, Flicker>;
+  /** Each `server` step's samples of the local server's figures, by name. */
+  servers: Record<string, unknown[]>;
   /** The scenario's face's up along y (1 face A, −1 face B): `aboveFeet` heights are along it. */
   up: number;
   /** Where the last `camera` step placed the camera (a drifting burst moves on from it). */
   camera?: { position: [number, number, number]; yaw: number; pitch: number };
+  /** Each `goto` step's result (`__dwell.goto`): what it found and where it put the camera. */
+  gotos: GotoResult[];
+}
+
+/** The local server's figures (`__dwell.serverStats`, a second each) for `seconds`, saved as `name`. */
+async function serverSamples(run: Run, name: string, seconds: number): Promise<void> {
+  type Sample = {
+    ticks: number;
+    tickMeanMs: number;
+    advanceMaxMs: number;
+    water: string;
+    waterStats: Record<string, number>;
+  };
+  const samples: Sample[] = [];
+  for (let i = 0; i < seconds; i++) {
+    await sleep(run.page, 1);
+    const s = await call<Sample | null>(run.page, 'd.serverStats()');
+    if (s) samples.push(s);
+  }
+  run.servers[name] = samples;
+  if (!samples.length) {
+    console.log(`  [${name}] no server figures (not a local world?)`);
+    return;
+  }
+  const w = (k: string) => samples.map((s) => s.waterStats[k] ?? 0);
+  const max = (v: number[]) => Math.max(...v);
+  const first = samples[0];
+  const last = samples[samples.length - 1];
+  console.log(
+    `  [${name}] water ${last.water}: ${String(samples.reduce((a, s) => a + s.ticks, 0))} ticks in ${String(samples.length)} s, ` +
+      `tick mean ${f(samples.reduce((a, s) => a + s.tickMeanMs, 0) / samples.length)} ms, worst advance ${f(max(samples.map((s) => s.advanceMaxMs)))} ms; ` +
+      `water clock ${f(last.waterStats.waterTimeS - first.waterStats.waterTimeS)} s, owed max ${f(max(w('owedS')))} s, ` +
+      `dropped ${f(last.waterStats.droppedS)} s, longest run ${f(max(w('maxBusyMs')))} ms, queue max ${String(max(w('queue')))}, awake max ${String(max(w('awakeChunks')))}, copy ${f(max(w('cellBytes')) / 1e6)} MB`,
+  );
 }
 
 async function record(run: Run, name: string): Promise<void> {
@@ -369,6 +406,8 @@ async function step(run: Run, s: Step): Promise<void> {
   switch (s.do) {
     case 'wait':
       return sleep(page, s.s);
+    case 'server':
+      return serverSamples(run, s.name, s.s);
     case 'key':
       await call(page, `d.press(${JSON.stringify(s.code)}, ${String(s.down)})`);
       return;
@@ -391,11 +430,18 @@ async function step(run: Run, s: Step): Promise<void> {
       return;
     case 'camera': {
       // aroundPlayer: x and z from the player's feet, y absolute (or with aboveFeet a height over
-      // the feet along the scenario's face's up).
+      // the feet along the scenario's face's up); aroundFound: from the last goto's place, y a
+      // height over its surface along its face's up.
       const [x, y, z] = s.position;
-      const at = s.aroundPlayer
-        ? `(() => { const f = d.state().feet; return [f[0] + ${String(x)}, ${s.aboveFeet ? `f[1] + ${String(y * run.up)}` : String(y)}, f[2] + ${String(z)}]; })()`
-        : JSON.stringify(s.position);
+      const found = run.gotos.at(-1)?.found;
+      if (s.aroundFound && !found)
+        throw new Error('camera: aroundFound needs a goto step before it');
+      const at =
+        s.aroundFound && found
+          ? JSON.stringify([found.at[0] + x, found.at[1] + y * found.face, found.at[2] + z])
+          : s.aroundPlayer
+            ? `(() => { const f = d.state().feet; return [f[0] + ${String(x)}, ${s.aboveFeet ? `f[1] + ${String(y * run.up)}` : String(y)}, f[2] + ${String(z)}]; })()`
+            : JSON.stringify(s.position);
       await until(page, `d.placeCamera(${at}, ${String(s.yaw)}, ${String(s.pitch)})`, 30_000);
       run.camera = {
         position: await call<[number, number, number]>(page, at),
@@ -407,6 +453,25 @@ async function step(run: Run, s: Step): Promise<void> {
     case 'releaseCamera':
       await call(page, 'd.releaseCamera()');
       return;
+    case 'goto': {
+      const find = s.find;
+      const options = Object.fromEntries(
+        Object.entries(s).filter(([k]) => k !== 'do' && k !== 'find'),
+      );
+      const r = await call<{ ok?: GotoResult; error?: string } | null>(
+        page,
+        `d.goto(${JSON.stringify(find)}, ${JSON.stringify(options)}).then((ok) => ({ ok }), (e) => ({ error: String(e?.message ?? e) }))`,
+      );
+      if (!r?.ok) throw new Error(`goto ${find}: ${r?.error ?? 'not playing'}`);
+      const { found, camera, map } = r.ok;
+      run.gotos.push(r.ok);
+      run.camera = camera;
+      const v = (p: number[]): string => `[${p.map((c) => f(c)).join(', ')}]`;
+      console.log(
+        `  goto ${find}: ${found.block} at ${v(found.at)} (${f(found.distance)} m off, ${f(found.depth)} m deep, ${String(found.area)} cells, current ${v(found.current)} m/s${map ? `; the map's ${map.kind} ${f(map.distance)} m away` : ''}), camera ${v(camera.position)} yaw ${f(camera.yaw)} pitch ${f(camera.pitch)}`,
+      );
+      return;
+    }
     case 'shadows':
       await call(page, `d.setShadows(${JSON.stringify(s.quality)})`);
       return;
@@ -640,7 +705,9 @@ async function runScenario(
     untils: [],
     respawns: [],
     bursts: {},
+    servers: {},
     up: sc.face === 'b' ? -1 : 1,
+    gotos: [],
   };
   for (const s of sc.steps) await step(run, s);
   const report: ScenarioReport = {
@@ -653,6 +720,8 @@ async function runScenario(
     untils: run.untils,
     respawns: run.respawns,
     bursts: run.bursts,
+    gotos: run.gotos,
+    servers: run.servers,
     url,
   };
   writeFileSync(join(dir, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);

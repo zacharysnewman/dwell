@@ -138,6 +138,140 @@ behaves and looks the same by the same law whether the generator or a player put
 river's current is the map's, a freed one's the law's; both are drawn alike from the one current
 table). As built: G3d below.
 
+## 2d. The water's own thread (ADR 0062, the owner 2026-11-06; built, G5)
+
+The owner: slowing the water whenever much of it moves "is not really acceptable"; "use message passing
+for now, make a note about future possibly using shared memory threads"; the water stays saved.
+
+- **A water host** (`dwell-sim` `water/host.rs`): the grid behind one interface, placed **inline** (the
+  calling thread: tests, the world-creation fill, a fallback), on a **native thread** (the dedicated
+  server and native tools, `std::thread` and channels), or in a **browser worker** (a second worker the
+  local-mode worker starts, by `postMessage` with transferred buffers).
+- **What the grid reads becomes its own** (`water/cells.rs`): a byte a cell, solid, open, or water and its
+  fill in eighths, per loaded chunk (a uniform chunk as one value). The grid's reads (`cell_kind`,
+  `floor_at`, `found`, the scan for water) go through it instead of the `VoxelWorld`.
+- **In** (the server, each tick, batched): chunks loaded (their cells) and unloaded; cells edited (their
+  new kinds; the edit's columns touched, as `touch` does now); the players' positions; at a water tick,
+  the water time to run; asks for the record (before a save) and for a report (`waterReport`).
+- **Out** (read at the server's next tick start): water cells written (each with the kind it replaced),
+  the awake chunks' currents, the chunks it wants loaded, the record, reports. A write whose cell the
+  world has since made solid, or anything but open or water, is dropped: the edit that did it is already
+  on its way in. The server broadcasts the writes as one modification, as now.
+- **Falling behind instead of slowing physics:** a water tick not yet run when the next is due adds its
+  time to it; the worker runs what it is owed as fast as it can, with the per-step guard (`stepBudget`)
+  raised so a tick still ends; past `maxOwedS` (data) the rest is dropped and the water's clock slows, as
+  now.
+- **Saving:** the server asks for the record a moment before each save and writes the newest it has;
+  closing a world (and a native server's shutdown) waits for a fresh one, at most a second.
+- **Later** (not built): shared memory (WASM threads; needs cross-origin isolation, which GitHub Pages
+  can't set, a service-worker shim there, native in Electron and Capacitor), and the grid split across
+  threads by chunk if one thread isn't enough.
+
+**As built (G5):**
+
+- **The copy** (`water/cells.rs`): `Cells`, a `ChunkCells` per loaded chunk (`Uniform(byte)` or a
+  32 KiB `Mixed` array); bytes 0 solid, 1 open, 2–9 liquid in eighths, 10 and 11 a block holding
+  water in its open part (a ramp: shaped, with a `flooded` property), dry or flooded (`byte_of` from
+  the registry's `liquid`, `fill`, `replaceable`, `solid`, shape and properties). A ramp is solid to
+  the flow; drawing a column floods the ramps in its rows and its neighbours' while the water beside
+  or over them stands half a fill step into their cell, and dries them when it goes (BUGS.md #36). The grid's reads (`floor_at`, `found`, the scan, what
+  an edit trapped, `draw`) all go through it; `draw` writes its own copy as it writes water. On the
+  wire a mixed chunk is runs (a byte and a u16 length), a few hundred bytes for a terrain chunk.
+- **What changed** (`cells::Mirror`): each loaded chunk's `Chunk::stamp` and revision as last told.
+  At each water tick, chunks new to it go as fresh loads (their water read, as `scan` did), chunks
+  stored again or changed outside a modification go whole (not read again), gone ones as unloads.
+  Edits and the water's own writes bump a chunk's revision in `broadcast_changes`, where the mirror
+  is told (`told`), so they don't send the chunk again: an edit goes as its cells (`In::Edit`).
+- **The host** (`water/host.rs`): `WaterHost` with `Placement::{Inline, Thread, Remote}`
+  (`ServerConfig::water`; the dedicated server's default is `Thread`, tests' and the fallback
+  `Inline`); `WaterCore` the water's side (receive a batch, `work`: run what is owed, answer); batches
+  `WI1`/`WO1` with a sequence number, the answer carrying the last one seen (so the server knows what
+  is still queued); malformed batches refused. Inline keeps 0.49.7's behaviour (`stepBudget`, the
+  rest lost); the thread and the worker run `threadStepBudget` a run and owe the rest up to
+  `maxOwedS` (`flow.json`); the native thread merges batches that queued while it ran (their time
+  owed together).
+- **The browser** (`client/src/local/waterWorker.ts`, `web/water_worker.rs`): the local-mode worker
+  starts the water worker (a nested module worker; the world's maps passed to it so its rivers need
+  not compute them) and carries the batches both ways, transferred; the first batch is `In::Init`
+  (the world's generator and seed). Without nested workers, or with `?water=inline` (the bench's
+  comparison), the water runs inline. A save (the page hidden or closed) asks for the record, carries
+  it back and waits for it, a second at most, before it commits; autosaves ask 30 ticks ahead.
+- **Telemetry:** `Server::water_stats` (the host's `HostStats`: batches unanswered, runs, the last
+  run's water time run, owed and dropped and its wall time, the longest run, the water's clock, awake
+  chunks, the copy's bytes; writes dropped as overtaken); in the browser `__dwell.serverStats()` (and
+  the bench's `server` step) with the server's tick time a second.
+- **Tests:** `water::tests` `the_water_on_its_own_thread_runs_as_inline` (both faces: the same cells
+  and record through the inline and threaded hosts, each tick waited on), `the_record_survives_the_host`,
+  `a_threaded_water_owes_what_it_hasnt_run_and_drops_past_the_cap`; `host::tests` (batches round
+  trip, malformed refused); `cells::tests`; `tests/water_thread.rs`: the same water from a server
+  inline and threaded, `a_water_write_overtaken_by_an_edit_is_dropped` (red without the check: the
+  write turned the placed stone to water), `the_physics_tick_does_not_wait_for_the_water` (a host
+  held 250 ms a run: inline a tick takes it, threaded none over 125 ms),
+  `the_waters_record_is_saved_and_restored_across_its_thread`; the measurement below
+  (`measure_a_flood_on_and_off_the_tick_thread`, ignored).
+
+**Measured (2026-11-06, an M-series Mac):**
+
+| | Server tick p50 / p95 / max | The water's clock over 20 s (1,440 water s given) |
+| --- | --- | --- |
+| Native, a 61 × 57 lake cut 20 wide on the flat world, 60 Hz paced: inline, no budget (before 0.49.7) | 2.3 / 44.8 / 146.7 ms | 1,440 s |
+| … inline, `stepBudget` (0.49.7–G5) | 2.7 / 14.0 / 18.8 ms | 80 s (1,360 dropped) |
+| … its own thread (G5) | 2.1 / 3.5 / 4.9 ms | 1,437 s (2.7 owed; runs up to 29 ms on the water thread) |
+
+In the browser (the bench, `?local=1&seed=0&fresh=1&at=2364.5,142,7443.5`, a stone wall 31 m across
+the river and a pit 31 × 29 m dug beside it, 40 s, `--unthrottled`): with the water worker the local
+server's ticks averaged 7.0 ms, its worst `advance` 111 ms in the first 3 s (the edits' own chunk
+work) and 15–20 ms after, and the water ran 2,808 of 2,880 water s (owed none, dropped none; its runs
+8–18 ms); inline (`?water=inline`) the ticks averaged 9.4 ms, worst 237–252 ms over the first 9 s,
+and the water ran 916 s (1,859 dropped). The copy of the world held 1.7–1.8 MB there. What is left on
+the server's thread during a flood is mostly the LOD's: each chunk the water rewrites is downsampled
+again (`update_lod`, on the tick in the browser and the tests' servers, `lod_threads` 0), a cost of
+the water's writes, not its simulation.
+
+**The flood's LOD and terrain off the tick (the follow-up, owner 2026-11-06):** with the water on its
+own thread, what was left on the browser server's tick in a flood was the LOD: every water tick
+rewrote the flooding chunks, and each one's LOD section was computed again (the generator's 2–10 ms a
+section natively, more in WASM), on the tick (`update_lod`; a native profile of the dam site had 77 %
+of the tick there, 57 % in `generate_lod`). Weighed: a per-tick budget alone (a section is one job:
+a tick still takes a whole one), coalescing alone (the first computation of each section is still
+the generator's, on the tick), and moving the work off the tick. Built, all three kinds:
+
+- **Coalesced:** a chunk changed by the water's writes holds its section 2 s from the first such
+  change (`LodPropagation::mark_chunk_settling`, `WATER_LOD_HOLD_TICKS`), so a section the water
+  keeps rewriting is computed once a hold, not ten times a second; an edit computes at once.
+- **Kept bases:** a modified section's generated cells are kept (`MAX_BASES`), so computing it again
+  is its downsample only. Over a 10 s flood on the flat world, 51 sections ran the generator 51
+  times (2,740 times before) (`a_floods_lod_is_computed_once_a_hold_from_kept_bases`, red before).
+- **Off the tick in the browser:** the local server's LOD sections and the chunks it wants generated
+  (the water's wanted chunks among them, a chunk's generation 10 ms natively) are jobs for the
+  **server-jobs worker** (`jobs.rs`, `ServerConfig::jobs_remote`), a third worker beside the water's;
+  `?serverjobs=inline` keeps them on the tick for comparison.
+- **The same LOD:** after a flood the sections, on the tick or from the worker, are those computed
+  from scratch from the world (`the_lod_after_a_flood_matches_a_recompute_on_the_tick_and_in_its_worker`).
+
+Measured at seed 0's dam site, natively (`water_lod.rs` `measure_the_dam_sites_flood_ticks`, the
+wall and pit, 60 Hz paced): the LOD on the tick, ticks up to 30 ms in the flood's first 3 s (the
+edits' own tick 26 ms) and ~5 ms on average before the hold and kept bases, 0.2–0.4 ms after; with the
+jobs off the tick, no tick over 3.9 ms (the edits' own). In the browser (the bench, `--unthrottled`):
+
+| | Ticks: mean, worst (first seconds; then) |
+| --- | --- |
+| The wall alone (`dam-only`, 30 s), 0.49.13 (#348) | 4.2 ms, 58 ms (first second; 8–15 after) |
+| … the jobs on the tick, held, kept bases (`?serverjobs=inline`) | 0.46 ms, 54, 26, 31 ms (first 4 s; ≤ 7 after) |
+| … the server-jobs worker | 0.30 ms, 7 ms (13 once at 5 s; ≤ 6 after) |
+| The wall and the pit (`dam-flood`, 40 s), 0.49.13 (#348) | 7.5 ms, 130, 40, 42, 36 ms (first 4 s; 15–26 after) |
+| … the server-jobs worker | 1.5 ms, 45 ms (first second), 27, 29 (2–7 s; ≤ 19 after) |
+
+What is left over 25 ms with the pit is the pit's own collapse: its cut undercuts the bank and the
+pieces that fall are bodies stepped on the tick (a trace of the first 4 s: of the server's 1,118 ms,
+764 ms in the physics step, the water and LOD none of it). Without the pit no tick passes 13 ms.
+
+**Deviations:** the browser's water worker is started by the local-mode worker (nested), not by
+`connect.ts`, so a friend world's host carries it too; the water's report is asynchronous there
+(`takeWaterReport`). The inline host keeps the step budget and loses the rest, as before (a fallback,
+and what the tests' servers run). The players' positions are sent but not used yet. `Water::tick` on a
+world stays for tests and tools, its copy kept by a mirror of that world.
+
 ## 3. Generation
 
 - **Kept:** the world map (ADR 0049): uplift, stream-power erosion (the valleys), fill-and-spill lakes,

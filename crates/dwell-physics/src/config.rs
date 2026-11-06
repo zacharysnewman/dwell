@@ -224,10 +224,10 @@ pub struct Damage {
     /// hit's speed (the controller's `impact_speed`, by `impact_measure`) is read as the free-fall
     /// height that lands at it, `v² ÷ 2g`, so a hit straight down on flat ground hurts by the drop.
     /// 5 (owner, 2026-11-06: "I don't want to get nickeled and dimed all the time for small
-    /// drops"; until 0.49.11 a hit hurt past 12 m/s, a 3.6 m drop, 5 points at 4 m).
+    /// drops"; until 0.49.17 a hit hurt past 12 m/s, a 3.6 m drop, 5 points at 4 m).
     pub impact_safe_height: f32,
     /// m: the fall that kills from full health (`players.MAX_HEALTH`). 12 (owner, 2026-11-06: "a
-    /// smaller area between taking damage and lethal damage"; until 0.49.11 ~15 m).
+    /// smaller area between taking damage and lethal damage"; until 0.49.17 ~15 m).
     pub impact_lethal_height: f32,
     /// The curve between them: the share of full health lost is `t ^ exponent` for `t` the
     /// height's share of the way from safe to lethal. 2: past the safe height a hit first takes
