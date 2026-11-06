@@ -14,6 +14,8 @@ export type ToWorker =
       spawnOnOpen?: boolean;
       /** Dev link `?at=x,y,z`: the spawn is that point, and the player starts there. */
       spawnAt?: [number, number, number];
+      /** The player confirmed opening an older version line's world (local/world.ts). */
+      upgrade?: boolean;
       /** The world's maps (faces A and B, ADR 0049), installed before the world starts. */
       maps?: Uint8Array[];
     }

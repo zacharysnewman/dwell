@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   canOpenWorld,
+  canUpgradeWorld,
   compareVersionText,
   compareVersions,
   compatibilityLine,
@@ -41,6 +42,10 @@ describe('version vectors (shared with C++)', () => {
 
   it.each(ofKind('open'))('open %s %s = %s', (build, world, answer) => {
     expect(canOpenWorld(build, world)).toBe(answer === 'YES');
+  });
+
+  it.each(ofKind('upgrade'))('upgrade %s %s = %s', (build, world, answer) => {
+    expect(canUpgradeWorld(build, world)).toBe(answer === 'YES');
   });
 
   it('rejects invalid versions', () => {

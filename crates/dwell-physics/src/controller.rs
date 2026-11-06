@@ -1243,19 +1243,25 @@ impl Players {
     /// slide), from a fall, a bounce or a jump out of a slide alike. A continuation: no start
     /// boost, no run needed, and the cooldown doesn't hold it back.
     fn land_into_slide(p: &mut Player) {
-        let s = p.cfg.sprint_slide;
         let c = &mut p.c;
-        if !c.crouching
-            || !c.input.crouch
-            || !c.ground.grounded
-            || c.ground.was_grounded
-            || c.sprint_slide.active
-        {
+        if c.ground.was_grounded {
+            return;
+        }
+        Self::slide_on(c, &p.cfg);
+    }
+
+    /// A slide's continuation (◆ Dwell, §6.9): crouched with crouch held, grounded, moving at least
+    /// `min_start_speed` across the ground, the sprint slide takes over the momentum, with no start
+    /// boost, no run needed and no cooldown. Called on landing (`land_into_slide`) and during a
+    /// crouched steep slide (§6.8), so it slides on where the ground is gentle again (owner,
+    /// 2026-11-05: "regardless of sprint being held").
+    fn slide_on(c: &mut PlayerController, cfg: &PlayerControllerConfig) {
+        if !c.crouching || !c.input.crouch || !c.ground.grounded || c.sprint_slide.active {
             return;
         }
         let base = flat(c.platform.base_velocity);
         let v = c.horizontal.current + c.horizontal.external - base;
-        if v.length() < s.min_start_speed {
+        if v.length() < cfg.sprint_slide.min_start_speed {
             return;
         }
         c.horizontal.current = v + base;
@@ -2166,6 +2172,12 @@ impl Players {
             // Steep ground slides as always; a sprint slide carries on from it on gentler ground.
             let speed = Self::walk_speed(c, &cfg);
             Self::slide(c, &cfg, move_direction(&c.input), speed);
+            // Crouched and fast, the slide goes on as a sprint slide where the face ends. Its
+            // split of the velocity is kept for this tick (the steep slide's walk speed `current`,
+            // the rest `external`); the sprint slide reads their sum from the next.
+            let split = c.horizontal;
+            Self::slide_on(c, &cfg);
+            c.horizontal = split;
             return;
         }
         if c.sprint_slide.active {
@@ -2186,13 +2198,19 @@ impl Players {
         // Accelerate in the platform's frame so standing on a moving body needs no input.
         let base = flat(c.platform.base_velocity);
         let relative = c.horizontal.current - base;
-        let speed = if !grounded && c.crouching {
-            // Crouching in the air doesn't slow the player (owner, 2026-10-30): the speed they
-            // have, between the crouch speed and the uncrouched one.
-            let standing = if input.run { m.run_speed } else { m.walk_speed };
-            relative
-                .length()
-                .clamp(cfg.crouch.speed, standing.max(cfg.crouch.speed))
+        let speed = if !grounded {
+            // In the air neither sprint nor crouch changes the speed (owner, 2026-11-05: "Sprint
+            // shouldn't change in air control or speed … we want a true physics controller";
+            // 2026-10-30: crouching doesn't slow the player): air control steers toward the speed
+            // the player has, between the walk (or crouch) speed and the run speed. Before, the
+            // target was the tick's walking speed, so letting go of sprint mid-air pulled 8 m/s
+            // down to 5 and pressing it sped a walk up to 8.
+            let floor = if c.crouching {
+                cfg.crouch.speed
+            } else {
+                m.walk_speed
+            };
+            relative.length().clamp(floor, m.run_speed.max(floor))
         } else {
             Self::walk_speed(c, &cfg)
         };
@@ -2430,7 +2448,26 @@ impl Players {
                 } else {
                     c.ground.gap.max(0.0)
                 };
-                v.accumulated_y = v.platform_y + along_slope - gap / DT;
+                // The ground is a floor (◆ Dwell, §6.11, owner 2026-11-05): the body's vertical speed
+                // is momentum, the speed the layer drove last tick (`target_y`; not the body's,
+                // which the solver rolling the capsule over a step's edge lifts, and which the
+                // launch check above reads for real kicks), relative to the ground's carry.
+                // Following the slope may take away at most `ground_stick_speed` of its rise (a
+                // crest, a ramp's lip, a step-up onto a flat top, which lifts the body but keeps
+                // its speed), and pull it down by at most that much more than gravity does (a
+                // downslope's edge); more either way, and it leaves the ground with its momentum.
+                // Closing a gap below (stepping down) is not counted.
+                let limit = cfg.movement.ground_stick_speed;
+                let ballistic = v.target_y - v.last_platform_y + gravity * DT;
+                let slope = along_slope;
+                let lost_rise = ballistic.max(0.0) - slope.max(0.0);
+                let pulled_down = ballistic.min(0.0) - slope.min(0.0);
+                if lost_rise > limit || pulled_down > limit {
+                    v.accumulated_y = v.platform_y + ballistic;
+                    c.ground.grounded = false;
+                } else {
+                    v.accumulated_y = v.platform_y + along_slope - gap / DT;
+                }
             }
         } else {
             // Airborne: absorb external vertical forces (not the lift from driving into a block's
@@ -2455,8 +2492,8 @@ impl Players {
     /// step that met the surface and its normal `n`, the largest over the tick's new contacts,
     /// its landing (the ground's normal) and a rise the ceiling probe stopped. Flight, swimming and
     /// climbing are exempt, as they always were from falls. Only the surfaces
-    /// `damage.impact_surfaces` names count: by default the ground, a normal no steeper than
-    /// `probes.max_slope_angle` (walls, steep faces and ceilings never hit).
+    /// `damage.impact_surfaces` names count: by default flat ground, a normal no steeper than
+    /// `damage.impact_max_slope_angle` (ramps, walls, steep faces and ceilings never hit).
     fn step_impact(&mut self, i: usize, _: &mut VoxelWorld, _: &mut Physics) {
         let p = self.players[i].as_mut().expect("live");
         let frame = Self::frame(p);
@@ -2464,11 +2501,11 @@ impl Players {
         let c = &p.c;
         let exempt = c.fly.flying || c.swim.swimming || c.climb.climbing;
         let surfaces = p.cfg.damage.impact_surfaces;
-        let max_slope = p.cfg.probes.max_slope_angle;
+        let max_slope = p.cfg.damage.impact_max_slope_angle;
         let mut hit = (0.0f32, Vec3::ZERO);
         let mut meet = |n: Vec3| {
             if surfaces == ImpactSurfaces::Ground && slope_angle(n) > max_slope {
-                return; // a wall, a steep face or a ceiling: not the ground
+                return; // a ramp, a wall, a steep face or a ceiling: not flat ground
             }
             let speed = (-v.dot(n)).max(0.0);
             if speed > hit.0 {

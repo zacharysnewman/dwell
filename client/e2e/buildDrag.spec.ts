@@ -85,12 +85,40 @@ test('in Flat mode held Place paints the cells the aim sweeps over at the first 
   await call(page, 'd.holdPlace(false)');
 });
 
-/** A jump: Space held briefly, then the time to rise and land. */
+interface Tick {
+  seq: number;
+  jump: boolean;
+  grounded: boolean;
+}
+const lastTick = async (page: Page) =>
+  (await call<Tick[] | null>(page, 'd.ticks()'))?.at(-1)?.seq ?? 0;
+
+/**
+ * A jump: Space held for 9 of the controller's ticks (150 ms of game time), then until it has
+ * landed. Timed by the tick trace (`__dwell.ticks()`), not the clock: under the software renderer a
+ * page predicts far fewer than 60 ticks a second, and a press timed by the clock can cover one
+ * tick, a hop too low to build under (BUGS.md 30).
+ */
 async function jump(page: Page): Promise<void> {
+  const from = await lastTick(page);
+  const after = async () =>
+    ((await call<Tick[] | null>(page, 'd.ticks()')) ?? []).filter((t) => t.seq > from);
   await call(page, 'd.press("Space", true)');
-  await page.waitForTimeout(150);
+  await expect
+    .poll(async () => (await after()).filter((t) => t.jump).length, { timeout: 15_000 })
+    .toBeGreaterThanOrEqual(9);
   await call(page, 'd.press("Space", false)');
-  await page.waitForTimeout(750);
+  // Off the ground, then down on it again (a tick after the last one with jump held).
+  await expect
+    .poll(
+      async () => {
+        const ticks = await after();
+        const off = ticks.findIndex((t) => !t.grounded);
+        return off >= 0 && ticks.slice(off).some((t) => t.grounded && !t.jump);
+      },
+      { timeout: 15_000 },
+    )
+    .toBe(true);
 }
 
 test('towering: held Place while standing on the spot builds a block under the feet each jump', async ({

@@ -125,6 +125,28 @@ pub fn can_open_world(build: &str, world_last: &str) -> bool {
         && compare_versions(&b, &w) != Ordering::Less
 }
 
+/// Whether a build may open a world from an older compatibility line once the player confirms a
+/// warning (owner, 2026-11-06; RELEASES.md §6): both stable releases, the build newer and on another
+/// line. Not `can_open_world`: the world then moves to the build's line.
+pub fn can_upgrade_world(build: &str, world_last: &str) -> bool {
+    let (Some(b), Some(w)) = (parse_version(build), parse_version(world_last)) else {
+        return false;
+    };
+    b.pre.is_empty()
+        && w.pre.is_empty()
+        && compare_versions(&b, &w) == Ordering::Greater
+        && compatibility_line(build) != compatibility_line(world_last)
+}
+
+/// [`world_version_error`], except that with `upgrade` (the player confirmed the warning, owner
+/// 2026-11-06) a world from an older line opens too ([`can_upgrade_world`]).
+pub fn world_open_error(build: &str, world_last: &str, upgrade: bool) -> String {
+    if upgrade && can_upgrade_world(build, world_last) {
+        return String::new();
+    }
+    world_version_error(build, world_last)
+}
+
 /// Why `build` may not open a world last saved by `world_last` ("" if it may): a message for the
 /// player naming the version to use. An empty `world_last` is a world saved before versioned
 /// releases, which no build opens.
@@ -155,6 +177,27 @@ mod tests {
     use super::*;
 
     #[test]
+    fn an_older_lines_world_opens_only_once_the_player_confirms() {
+        // Owner (2026-11-06): the browser's server refuses another line's file unless the page
+        // passes the player's confirmation (`upgrade`), and then only an older line's.
+        assert!(world_open_error("0.48.2", "0.47.3", false).contains("0.47.3"));
+        assert_eq!(world_open_error("0.48.2", "0.47.3", true), "");
+        assert_eq!(world_open_error("0.48.2", "0.48.1", false), "");
+        assert!(
+            !world_open_error("0.48.2", "0.49.0", true).is_empty(),
+            "never a newer one"
+        );
+        assert!(
+            !world_open_error("0.48.2-dev.4", "0.47.3", true).is_empty(),
+            "nor in a dev build"
+        );
+        assert!(
+            !world_open_error("0.48.2", "", true).is_empty(),
+            "nor a legacy save"
+        );
+    }
+
+    #[test]
     fn the_shared_vectors_hold() {
         let text = include_str!("../../../shared/version/vectors.txt");
         let mut checked = 0;
@@ -179,6 +222,7 @@ mod tests {
                     "{line}"
                 ),
                 "open" => assert_eq!(can_open_world(f[1], f[2]), f[3] == "YES", "{line}"),
+                "upgrade" => assert_eq!(can_upgrade_world(f[1], f[2]), f[3] == "YES", "{line}"),
                 "invalid" => assert!(
                     parse_version(f.get(1).copied().unwrap_or("")).is_none(),
                     "{line}"

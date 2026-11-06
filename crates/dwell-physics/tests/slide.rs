@@ -355,7 +355,12 @@ fn reaching_the_floor_keeps_the_momentum_without_a_hop_then_friction_stops_it() 
 }
 
 #[test]
-fn running_over_a_crest_onto_a_45_degree_ramp_slides_down_without_a_launch() {
+fn running_off_a_crest_above_a_45_degree_ramp_flies_over_it() {
+    // The ground is a floor (owner, 2026-11-05: "I'd like to try without" gluing downhill): at a
+    // run (8 m/s) following the 45° face would pull the body down 8 m/s at once, more than
+    // `ground_stick_speed`, so it leaves the edge on its own momentum, never rising, and flies
+    // the arc a ball would. Until 0.49.2 the ground held it to the face from the edge (≤ 3 ticks
+    // in the air).
     let mut w = PlayerTestWorld::new();
     w.floor_at(0, 24);
     // A platform 3 m high for z ≤ 2, and from its edge a 45° ramp down toward +z to the floor at
@@ -375,27 +380,32 @@ fn running_over_a_crest_onto_a_45_degree_ramp_slides_down_without_a_launch() {
     let mut rise = Rise::default();
     let mut airborne_run = 0;
     let mut longest_airborne = 0;
-    let mut peak = 0.0f32;
+    let mut landed_at = None;
     for _ in 0..ticks(2.0) {
         w.step(1);
         rise.watch(&w, e);
         if w.c(e).ground.grounded {
+            if airborne_run > 3 {
+                landed_at.get_or_insert(w.pos(e).z);
+            }
             airborne_run = 0;
         } else {
             airborne_run += 1;
             longest_airborne = longest_airborne.max(airborne_run);
         }
-        peak = peak.max(w.horizontal_speed(e));
     }
     assert!(w.pos(e).z > 6.0, "down the ramp: {}", w.pos(e));
     assert_eq!(rise.rising_airborne, 0, "{rise:?}");
     assert!(rise.max_up < 0.5, "{rise:?}");
     assert!(
-        longest_airborne <= 3,
-        "follows the ramp: {longest_airborne}"
+        longest_airborne > 3,
+        "flew off the edge: {longest_airborne} ticks"
     );
-    let run = w.config.movement.run_speed;
-    assert!(peak > run + 0.5, "the slide gained speed: {peak}");
+    // At 8 m/s the arc falls 3 m over ~4.4 m, the face over 3 m: it clears the face (its foot at
+    // z ≈ 5) and lands on the floor beyond, a 3 m drop's ~11 m/s, under the 12 m/s that hurts.
+    let landed_at = landed_at.expect("landed");
+    assert!(landed_at > 5.0, "cleared the face: landed at z {landed_at}");
+    assert!(approx(w.feet(e), 0.0, 0.05), "on the floor: {}", w.feet(e));
     assert_eq!(w.count(e, events::JUMPED), 0);
 }
 
@@ -587,4 +597,45 @@ fn a_face_b_player_slides_down_single_block_stairs_toward_the_midplane() {
     assert!(slid > 10, "slid for {slid} ticks");
     assert!(w.players.position(&w.physics, e).x < 0.0);
     assert!(feet.abs() < 0.02, "on the floor: {feet}");
+}
+
+#[test]
+fn a_crouched_steep_slide_slides_on_where_the_ground_flattens() {
+    // Owner (2026-11-05): crouch held and moving fast enough, the player slides on "regardless of
+    // sprint being held". Down a 45° face with crouch held (no sprint), where the face meets the
+    // floor the slide goes on with its momentum (the sprint slide, §6.9), as a landing crouched
+    // does. Before, ground friction took the momentum away in ~0.3 s while the player crouch-walked.
+    let mut w = PlayerTestWorld::new();
+    long_ramp(&mut w);
+    let e = w.spawn(v(0.5, long_ramp_y(19.0) + 0.05, 19.0));
+    w.set_input(|_, _| input(0.0, 0.0, false, false, true, 0.0, 0.0));
+    let mut slid_steep = false;
+    for _ in 0..ticks(4.0) {
+        w.step(1);
+        slid_steep |= w.c(e).sliding(44.0);
+        if slid_steep && !w.c(e).sliding(44.0) && w.c(e).ground.grounded {
+            break;
+        }
+    }
+    assert!(slid_steep, "slid down the face");
+    let off = w.horizontal_speed(e);
+    assert!(off > 6.5, "fast off the face: {off}");
+    w.step(2);
+    let c = w.c(e);
+    assert!(c.sprint_slide.active, "slides on at {off} m/s");
+    assert_eq!(c.state, State::Sliding);
+    w.step(ticks(0.5));
+    assert!(
+        w.horizontal_speed(e) > 4.0,
+        "still sliding: {} m/s",
+        w.horizontal_speed(e)
+    );
+    // Not crouching: friction stops it as before (`reaching_the_floor_keeps_the_momentum_…`).
+    let mut w = PlayerTestWorld::new();
+    long_ramp(&mut w);
+    let e = w.spawn(v(0.5, long_ramp_y(19.0) + 0.05, 19.0));
+    w.set_input(|_, _| mv(0.0, 0.0));
+    w.step(ticks(4.0));
+    assert!(!w.c(e).sprint_slide.active);
+    assert!(w.horizontal_speed(e) < 0.01);
 }

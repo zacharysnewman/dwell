@@ -1,7 +1,8 @@
 //! Impact damage (PLAYER_CONTROLLER.md §6.10, ARCHITECTURE.md §9.6): a hit hurts by the speed into
 //! the surface, `max(0, −v · n)`, with `v` the body's velocity going into the physics step that
 //! met it and `n` the surface's normal (face-local) — on the ground only (`impact_surfaces`): a
-//! walkable normal, landings and ramps; walls, steep faces and ceilings never hurt. Once per
+//! flat ground only (owner, 2026-11-05: ramps of either pitch never hurt); walls, steep faces and
+//! ceilings never hurt. Once per
 //! contact, the largest of a tick's. Flight, swimming and climbing are
 //! exempt, as falls were. Runs in the local frame like every suite (far from the origin and on face
 //! B too).
@@ -20,7 +21,7 @@ use dwell_blocks::require;
 use dwell_physics::Vec3;
 use dwell_physics::config::{ImpactSurfaces, PlayerControllerConfig};
 use dwell_physics::controller::{Input, PlayerHandle, events};
-use dwell_world::ramps::gentle_cell;
+use dwell_world::ramps::{gentle_cell, steep_cells};
 use dwell_world::rows_for_m;
 use dwell_worldgen::ramps::{Around, Top, top_of};
 
@@ -138,18 +139,9 @@ fn hillside(w: &mut PlayerTestWorld) -> fn(i32, i32) -> i32 {
     height
 }
 
-/// The ½ m ramps' normal (face-local): up, leaning downhill (−z).
-fn ramp_normal() -> Vec3 {
-    Vec3::new(0.0, 2.0, -1.0).normalize()
-}
-
 /// What a launch onto the hillside dealt.
 struct Landing {
     dealt: Vec<i32>,
-    /// The fastest impact raised (m/s).
-    fastest: f32,
-    /// The body's velocity the tick before it landed.
-    before: Vec3,
 }
 
 /// Spawns 0.6 m over the hillside at z = 40 and launches the player at `speed` m/s, `angle`° below
@@ -161,23 +153,14 @@ fn launch_onto_hillside(speed: f32, angle: f32) -> Landing {
     let e = w.spawn(Vec3::new(0.5, ground + 0.6, 40.5));
     let a = angle.to_radians();
     w.kick(0, e, Vec3::new(0.0, -speed * a.sin(), -speed * a.cos()));
-    let mut out = Landing {
-        dealt: Vec::new(),
-        fastest: 0.0,
-        before: Vec3::ZERO,
-    };
+    let mut out = Landing { dealt: Vec::new() };
     for _ in 0..ticks(1.0) {
-        let before = w.vel(e);
         w.step(1);
         let d = hurt(&w, e);
         if d > 0 {
             out.dealt.push(d);
         }
-        if w.c(e).events & events::IMPACTED != 0 {
-            out.fastest = out.fastest.max(w.c(e).impact_speed);
-        }
         if w.count(e, events::LANDED) > 0 {
-            out.before = before;
             // And nothing more while it settles on the slope.
             out.dealt.extend(hits(&mut w, e, 10));
             break;
@@ -188,44 +171,63 @@ fn launch_onto_hillside(speed: f32, angle: f32) -> Landing {
 }
 
 #[test]
-fn a_vertical_landing_on_a_ramp_counts_the_ramps_normal() {
-    // 25 m/s straight down onto 26.57°: × cos 26.57° ≈ 0.894 of it into the ramp, so less than the
-    // same landing on the flat.
-    let l = launch_onto_hillside(25.0, 90.0);
-    assert_eq!(l.dealt.len(), 1, "{:?}", l.dealt);
-    let into = -l.before.dot(ramp_normal());
-    let flat = PlayerControllerConfig::default()
-        .damage
-        .impact_damage(l.before.length());
-    assert!(
-        l.dealt[0] > 0 && l.dealt[0] < flat,
-        "{:?} vs {flat}",
-        l.dealt
-    );
-    assert!((l.fastest - into).abs() < 0.05, "{} vs {into}", l.fastest);
+fn landing_on_a_half_metre_ramp_never_hurts() {
+    // Owner (2026-11-05): "Fall damage was supposed to only impact you when you hit the ground
+    // vertically fast, but currently if you hit a half slope or steep slope really fast you take
+    // some up to lethal fall damage … it should be 0." Before, 25 m/s straight down onto 26.57°
+    // dealt (25 × 0.894 − 12) × 8 ≈ 83 points. Now a ramp never hurts, at any angle.
+    for angle in [90.0, 60.0, 26.565] {
+        let l = launch_onto_hillside(25.0, angle);
+        assert_eq!(l.dealt, Vec::<i32>::new(), "{angle}° below the horizontal");
+    }
+    // The same landing on the flat still hurts.
+    let mut w = PlayerTestWorld::new();
+    w.floor();
+    let e = w.spawn(Vec3::new(0.5, 0.6, 0.5));
+    w.kick(0, e, Vec3::new(0.0, -25.0, 0.0));
+    assert_eq!(hits(&mut w, e, ticks(1.0)).len(), 1, "flat ground hurts");
+}
+
+/// A hillside of 1 m ramps (45°) rising toward +z, two rows per metre.
+fn steep_hillside(w: &mut PlayerTestWorld) -> f32 {
+    let height = |_: i32, z: i32| 2 * z.clamp(0, 40) + 2;
+    let grass: StateId = require("dwell:grass");
+    w.fill(-6, -1, -8, 5, -1, 44, cube_block());
+    for z in -6..=42 {
+        for x in -4..=3 {
+            let around: Around = std::array::from_fn(|r| {
+                std::array::from_fn(|c| height(x + c as i32 - 1, z + r as i32 - 1))
+            });
+            let h = height(x, z);
+            for row in 0..h {
+                w.set_cell(x, row, z, grass);
+            }
+            if let Top::Steep(f) = top_of(&around, rows_for_m(1.0)) {
+                let cells = steep_cells("dwell:grass", f, false).expect("steep ramp");
+                for (k, &c) in cells.iter().enumerate() {
+                    w.set_cell(x, h - cells.len() as i32 + k as i32, z, c);
+                }
+            }
+        }
+    }
+    height(0, 20) as f32 * 0.5
 }
 
 #[test]
-fn a_glancing_landing_on_a_ramp_hurts_less_and_a_skim_not_at_all() {
-    let vertical = launch_onto_hillside(25.0, 90.0);
-    // 60° below the horizontal, downhill: ~33° to the ramp's surface.
-    let glancing = launch_onto_hillside(25.0, 60.0);
-    assert!(
-        !glancing.dealt.is_empty()
-            && glancing.dealt.iter().sum::<i32>() < vertical.dealt.iter().sum::<i32>(),
-        "{:?} vs {:?}",
-        glancing.dealt,
-        vertical.dealt
-    );
-    // Along the ramp's own slope: a skim, only gravity's few m/s into it.
-    let skim = launch_onto_hillside(25.0, 26.565);
+fn landing_on_a_steep_ramp_never_hurts() {
+    // A 45° ramp is walkable ground to the impact rule (under `probes.max_slope_angle`, 56°): 25 m/s
+    // straight down onto it dealt (25 × 0.707 − 12) × 8 ≈ 45 points. Now nothing.
+    let mut w = PlayerTestWorld::new();
+    let ground = steep_hillside(&mut w);
+    let e = w.spawn(Vec3::new(0.5, ground + 0.8, 20.5));
+    w.kick(0, e, Vec3::new(0.0, -25.0, 0.0));
+    let fastest = fastest_impact(&mut w, e, ticks(1.0));
+    assert!(w.count(e, events::LANDED) >= 1, "landed on the slope");
     assert_eq!(
-        skim.dealt,
-        Vec::<i32>::new(),
-        "{} m/s into the ramp",
-        skim.fastest
+        w.config.damage.impact_damage(fastest),
+        0,
+        "{fastest} m/s into the ramp"
     );
-    assert!(skim.fastest < 6.0, "{}", skim.fastest);
 }
 
 // --- walls --------------------------------------------------------------------------------------

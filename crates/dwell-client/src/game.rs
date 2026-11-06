@@ -1944,8 +1944,12 @@ impl<S: Scene> Game<S> {
         }
     }
 
-    /// Our body as drag building keeps clear of it: where it is, and where the server may still
-    /// see it (`build_drag::lagged_offset`, for our velocity and round trip; docs/ITEMS.md §5).
+    /// Our body as drag building keeps clear of it (docs/ITEMS.md §5): where it is, and back
+    /// along its motion by `buildModes.clearance` and its input buffer's two ticks
+    /// (`build_drag::lagged_offset`), not the round trip: the server holds a piece its own view of
+    /// the body is still in until that view catches up (`EDIT_HOLD_TICKS`), and keeping clear of
+    /// where it may see the body narrowed a jump's moment clear of the next piece to nothing at a
+    /// few frames a second (BUGS.md 30).
     fn drag_body(&self) -> Vec<dwell_world::edit::EditCapsule> {
         let Some(c) = self.own_capsule() else {
             return Vec::new();
@@ -1953,7 +1957,7 @@ impl<S: Scene> Game<S> {
         let v = self.predictor.velocity();
         let back = dwell_game::build_drag::lagged_offset(
             [f64::from(v.x), f64::from(v.y), f64::from(v.z)],
-            self.rtt_ms,
+            None,
         );
         let lagged = dwell_world::edit::EditCapsule {
             center: std::array::from_fn(|i| c.center[i] + back[i]),
@@ -2212,6 +2216,7 @@ impl<S: Scene> Game<S> {
         while self.accumulator >= TICK_MS {
             self.accumulator -= TICK_MS;
             self.tick(input, touch);
+            self.drag_tick(input, now_ms - self.accumulator / self.tick_rate);
             telemetry::add("ticks.count", 1.0);
         }
         telemetry::add("ticks", telemetry::now_ms() - t0);
@@ -2233,6 +2238,7 @@ impl<S: Scene> Game<S> {
             return;
         }
         let frame = quantize_input(&input.sample(touch), self.predictor.next_seq());
+        input.took();
         self.predictor.tick(self.streamer.store_mut(), &frame);
         self.recent.push_back(frame);
         while self.recent.len() > MAX_INPUTS_PER_DATAGRAM {
@@ -2309,6 +2315,23 @@ impl<S: Scene> Game<S> {
             self.currents_seen.remove(&k);
             self.streamer.store_mut().currents.set(k, None);
         }
+    }
+
+    /// A held Place's stroke at this tick's body and eye, at `tick_ms` (docs/BUGS.md 30): a slow
+    /// device's frame covers many ticks, and a jump's moment clear of the next piece (towering) can
+    /// fall between two frames; the frame's own `drag_build` goes on at the drawn eye.
+    fn drag_tick(&mut self, input: &KeyboardMouseInput, tick_ms: f64) {
+        let c = self.current;
+        if !(self.drag.active() || self.drag.waiting().is_some())
+            || !c.active
+            || self.dead
+            || !self.terrain_ready()
+        {
+            return;
+        }
+        let eye = [c.position[0], self.eye.draw(1.0), c.position[2]];
+        let dir = view_direction(input.look.yaw, input.look.pitch, c.face);
+        self.drag_build(Some(eye), dir, tick_ms);
     }
 
     fn draw(&mut self, now_ms: f64, input: &KeyboardMouseInput, now: &mut dyn FnMut() -> f64) {
