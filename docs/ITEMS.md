@@ -141,9 +141,11 @@ controller button and a touch button switch the modes; mouse, controller and tou
   cells after the answer). A tower's next piece goes only under the feet (`TOWER_FEET`, 1 m under
   the eye), never above the head.
 - **The body**: a cell is free only clear of the player's body where it is and where the server may
-  still see it, back along its motion by `buildModes.clearance` (0.15 m, data) plus its speed × the
-  server's lag (half the round trip and two ticks of its input buffer; `build_drag::lagged_offset`):
-  the server leaves a cell its view of the body is in. At rest, just where it is (a bridge's next
+  still see it, back along its motion by `buildModes.clearance` (0.15 m, data) plus its speed × two
+  ticks of the server's input buffer (`build_drag::lagged_offset`). Not the round trip (since 0.49.2,
+  BUGS.md 30): the server holds a piece its view of the body is still in until that view catches up
+  (`EDIT_HOLD_TICKS`), and keeping clear of the whole lag left a jump no moment to build in at a few
+  frames a second. At rest, just where it is (a bridge's next
   block, beside the feet, is free). A block that doesn't block a body (a ladder) may go where it
   is, as the server takes it (`build_drag::cell_free`; owner, 2026-10-28: ladders didn't build up
   from the ladder the player stood on). A slope the block molds (its own material's group,
