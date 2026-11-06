@@ -149,7 +149,7 @@ now, or later allow a few stacked water layers in the columns that have overhang
   lip, level and asleep); seed 0's dam site (`tests/water.rs`
   `the_river_below_a_dam_across_seed0s_river_dries_to_the_next_inflow`, the wall at z 7452: red 575
   water columns from the wall down to the creek's backwater at z 7526 after ten water minutes and 8
-  chunks awake there, green none and none awake, dry within five minutes). The creek that joins
+  chunks awake there, green none and none awake, dry within five minutes); in the browser (the same wall, `?local=1&seed=0&fresh=1&at=2364.5,142,7443.5`) the 1,150 water cells from the wall to z 7525 were gone within 10 s real, the bed dry sand. The creek that joins
   by (2457, 7541) backs the river up to z 7526 and runs on below. A freed column's current is the
   law's and the carried flow's over its depth (a level reach's ~0.1 m/s), not the map's mean-fall
   current a held one has (BUGS.md #42: 1.28 m/s): unchanged here. Read from the state each substep,

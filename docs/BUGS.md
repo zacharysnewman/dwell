@@ -75,7 +75,7 @@ green none, its chunks asleep), `a_hollow_below_a_dam_keeps_its_water_still` (re
 green: under its lip, level, asleep, writing nothing), `a_world_saved_below_a_dam_dries_on_load` (red 180
 cells), and `tests/water.rs` `the_river_below_a_dam_across_seed0s_river_dries_to_the_next_inflow` (the
 wall at z 7452: red 575 water columns left from the wall to the creek's backwater at z 7526 after ten
-water minutes, 8 chunks awake there; green none, none awake). Untouched rivers still rest exactly
+water minutes, 8 chunks awake there; green none, none awake). In the browser at the same site (`?local=1&seed=0&fresh=1&at=2364.5,142,7443.5`, the wall by `__dwell.tool`) the 1,150 water cells below it were gone within 10 s real, the bed dry. Untouched rivers still rest exactly
 (`a_block_set_in_a_generated_rivers_bed_changes_nothing_else`, seeds 0–2), a dam still backs a river up
 (#38's tests) and nothing stands on a raised dam (#40's). `a_dam_across_a_drawn_river_backs_it_up` now
 reads the pool below after two water minutes: its fixture's reach below is closed, and its water stays
