@@ -527,9 +527,6 @@ pub struct Game<S: Scene> {
     view_dir: [f64; 3],
     /// Drag fills sent and not yet answered (prediction id → the fill and its tries so far).
     drag_sent: std::collections::HashMap<u32, (dwell_protocol::RegionEdit, u8)>,
-    /// When each water chunk's currents last came (docs/WATER_SURFACE_GRID.md §2c): forgotten
-    /// `CURRENTS_KEEP_MS` after.
-    currents_seen: dwell_world::hash::HashMap<dwell_world::currents::CurrentKey, f64>,
     /// Box select, fill, copy/paste, undo (§6.5); `enabled` once the server announces region edits.
     pub region: RegionTools,
     /// VoxelSniper-style brushes (BRUSHES.md); `available` where the server announces them.
@@ -698,7 +695,6 @@ impl<S: Scene> Game<S> {
             drag: dwell_game::build_drag::BuildDrag::new(),
             view_dir: [0.0, 0.0, 1.0],
             drag_sent: std::collections::HashMap::new(),
-            currents_seen: Default::default(),
             region: RegionTools::new(),
             brush: BrushTool::new(),
             portals: (Vec::new(), ""),
@@ -1008,7 +1004,6 @@ impl<S: Scene> Game<S> {
     /// Handles a snapshot, player event, chunk or LOD message from the session.
     pub fn on_game_message(&mut self, m: Message, byte_len: usize, now_ms: f64) {
         match m {
-            Message::WaterCurrents(c) => self.on_currents(&c, now_ms),
             Message::ChunkData(d) => {
                 // The server's data for the chunk: predictions in it are its business now.
                 self.prediction.forget_chunk(d.coord);
@@ -2203,7 +2198,6 @@ impl<S: Scene> Game<S> {
         input.brush_active = self.brush.active();
         // Queued region edits (a brush stroke) as the server's cell rate allows.
         self.pump_region(now_ms);
-        self.expire_currents(now_ms);
         let done = telemetry::span("jobs.poll", || self.pool.borrow_mut().poll());
         telemetry::add("jobs.done", done.len() as f64);
         telemetry::span("jobs.apply", || self.on_jobs(done));
@@ -2275,46 +2269,6 @@ impl<S: Scene> Game<S> {
         input.look.face = self.current.face;
         // The camera turns with rotating ground (PPC yawDelta).
         input.look.yaw += self.current.platform_yaw_delta;
-    }
-
-    /// A water chunk's currents from the server (docs/WATER_SURFACE_GRID.md §2c): the swimmers'
-    /// prediction and the floating bodies' stand-ins read them from the world.
-    fn on_currents(&mut self, c: &dwell_protocol::WaterCurrents, now_ms: f64) {
-        let key = (c.face_b, c.cx, c.cz);
-        let still = c.cells.iter().all(|q| *q == [0, 0]);
-        let cells = (!still).then(|| {
-            let mut out: dwell_world::currents::ChunkCurrents =
-                Box::new([[0.0; 2]; dwell_world::currents::CA]);
-            for (i, v) in out.iter_mut().enumerate() {
-                *v = c.current(i);
-            }
-            out
-        });
-        self.streamer.store_mut().currents.set(key, cells);
-        if still {
-            self.currents_seen.remove(&key);
-        } else {
-            self.currents_seen.insert(key, now_ms);
-        }
-    }
-
-    /// The water's current (m/s along x and z) at world point `p`, as this client has it.
-    pub fn current_at(&mut self, p: [f64; 3]) -> [f32; 2] {
-        self.streamer.store_mut().currents.at(p)
-    }
-
-    /// Forgets the currents of water chunks the server stopped sending (`CURRENTS_KEEP_MS`).
-    fn expire_currents(&mut self, now_ms: f64) {
-        let old: Vec<_> = self
-            .currents_seen
-            .iter()
-            .filter(|&(_, &t)| now_ms - t > dwell_protocol::CURRENTS_KEEP_MS)
-            .map(|(&k, _)| k)
-            .collect();
-        for k in old {
-            self.currents_seen.remove(&k);
-            self.streamer.store_mut().currents.set(k, None);
-        }
     }
 
     /// A held Place's stroke at this tick's body and eye, at `tick_ms` (docs/BUGS.md 30): a slow

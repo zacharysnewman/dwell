@@ -1642,9 +1642,6 @@ impl Players {
             };
             p.c.swim.submerged = q.submerged_fraction(position, cfg.half_height(p.c.crouching));
         }
-        // The water's current where the body is (docs/WATER_SURFACE_GRID.md §2c): the same vector
-        // face-locally (the faces mirror only up and down).
-        let [cu, cv] = world.currents.at(Self::frame(p).p(position).to_array());
         let c = &mut p.c;
         if c.climb.climbing || c.fly.flying {
             return;
@@ -1700,12 +1697,6 @@ impl Players {
         let steer = !band || !dry || c.input.jump || c.input.crouch;
         if band && dry && !steer {
             wish.y = body_velocity.y;
-        }
-        // In the water the body swims in the water's frame: it drifts with the current, and the
-        // player's own swimming is on top of it.
-        if !dry {
-            wish.x += cu;
-            wish.z += cv;
         }
         let mut velocity =
             body_velocity + (wish - body_velocity) * (1.0 - libm::expf(-cfg.swim.drag * DT));

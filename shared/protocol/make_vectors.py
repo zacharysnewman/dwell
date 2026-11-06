@@ -295,9 +295,6 @@ BINDING = bytes(range(0x10, 0x30))
 vectors = {
     "datagram_ping": struct.pack("<BId", T["DatagramPing"], 0x01020304, 1234.5),
     "datagram_pong": struct.pack("<BIdI", T["DatagramPong"], 7, 0.25, 600),
-    # WaterCurrents (Phase 53 G3a): u8 face, i32 cx, i32 cz, 256 columns of (i8 x, i8 z) in 0.05 m/s.
-    "water_currents": struct.pack("<BBii", T["WaterCurrents"], 1, -3, 7)
-    + b"".join(struct.pack("<bb", (i % 11) - 5, -(i % 7)) for i in range(256)),
     "status_request": struct.pack("<B", T["StatusRequest"]),
     "status_response": struct.pack("<BH", T["StatusResponse"], 1)
     + s("Dwell Test")
@@ -521,8 +518,6 @@ malformed = {
     "!chunk_request_empty": struct.pack("<BH", T["ChunkRequest"], 0),
     "!resync_too_many": struct.pack("<BH", T["ChunkResync"], c["limits"]["maxResyncChunks"] + 1)
     + struct.pack("<iii", 0, 0, 0) * (c["limits"]["maxResyncChunks"] + 1),
-    "!water_currents_bad_face": struct.pack("<BBii", T["WaterCurrents"], 2, 0, 0) + bytes(512),
-    "!water_currents_truncated": struct.pack("<BBii", T["WaterCurrents"], 0, 0, 0) + bytes(511),
     "!world_settings_truncated": world_settings([(0x01, f32s(800.0, 400.0, 7.0))])[:-1],
     "!world_settings_tag_twice": world_settings([(0x81, f32s(1.0)), (0x81, f32s(2.0))]),
     "!block_registry_zero_parts": block_registry(0, 0, b""),

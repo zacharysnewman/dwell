@@ -73,15 +73,12 @@ struct PieceProxy {
 
 /// How water slows a body sideways (the sim's `felling::water_drag`, docs/BUILT_BODIES.md §6),
 /// for the prediction's stand-ins: a speed-squared drag of `kx`/`kz` (1/m) moving along x/z
-/// (`k · speed²` m/s², blended by the direction) and a linear `linear` (/s), relative to the
-/// water's `current` (m/s along world x and z, docs/WATER_SURFACE_GRID.md §2c): a body drifts with
-/// it.
+/// (`k · speed²` m/s², blended by the direction) and a linear `linear` (/s).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct WaterDrag {
     pub kx: f64,
     pub kz: f64,
     pub linear: f64,
-    pub current: [f64; 2],
 }
 
 /// Where a body is in water and how that slows it (the sim's, which `dwell-physics` can't see).
@@ -90,15 +87,14 @@ pub type WaterDragFn = fn(&mut VoxelWorld, &Physics, BodyHandle) -> WaterDrag;
 impl WaterDrag {
     /// A sideways velocity (world x, z) after a tick of it.
     pub fn slow(self, v: DVec3, dt: f64) -> DVec3 {
-        let [cx, cz] = self.current;
-        let (rx, rz) = (v.x - cx, v.z - cz);
-        let speed = rx.hypot(rz);
+        let side = DVec3::new(v.x, 0.0, v.z);
+        let speed = side.length();
         if speed < 1e-9 {
             return v;
         }
-        let k = (rx.abs() * self.kx + rz.abs() * self.kz) / speed;
+        let k = (v.x.abs() * self.kx + v.z.abs() * self.kz) / speed;
         let keep = (-self.linear * dt).exp() / (1.0 + k * speed * dt);
-        DVec3::new(cx + rx * keep, v.y, cz + rz * keep)
+        DVec3::new(v.x * keep, v.y, v.z * keep)
     }
 }
 

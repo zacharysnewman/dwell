@@ -2019,32 +2019,3 @@ fn a_jump_pressed_and_let_go_between_two_ticks_still_jumps() {
     });
     assert!(peak - ground > 1.0, "jumped {} m", peak - ground);
 }
-
-#[test]
-fn the_waters_currents_near_the_player_reach_the_client_and_clear() {
-    // Phase 53 G3a (docs/WATER_SURFACE_GRID.md §2c): the server sends the currents of the water
-    // chunks near a player (`WaterCurrents`), which the client's prediction reads; a chunk gone
-    // still is sent as zeros.
-    let mut rig = Rig::with_generator(GENERATOR_SANDBOX);
-    assert!(rig.run_until(60 * 30, |r| {
-        r.game
-            .as_ref()
-            .is_some_and(|g| g.debug_state().terrain_ready)
-    }));
-    let feet = rig.game.as_ref().unwrap().debug_state().feet;
-    let face = dwell_world::FaceFrame::at_height(feet[1]);
-    let (key, i) =
-        dwell_world::currents::current_key(face, feet[0].floor() as i32, feet[2].floor() as i32);
-    let mut cells = Box::new([[0.0f32; 2]; dwell_world::currents::CA]);
-    cells[i] = [0.6, -0.3];
-    rig.core.server().world().currents.set(key, Some(cells));
-    rig.run_until(60, |_| false);
-    let at = rig.game.as_mut().unwrap().current_at(feet);
-    assert!(
-        (at[0] - 0.6).abs() < 0.03 && (at[1] + 0.3).abs() < 0.03,
-        "the client has {at:?}"
-    );
-    rig.core.server().world().currents.set(key, None);
-    rig.run_until(60, |_| false);
-    assert_eq!(rig.game.as_mut().unwrap().current_at(feet), [0.0, 0.0]);
-}

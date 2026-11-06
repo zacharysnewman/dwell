@@ -450,10 +450,6 @@ openings), **crouch height 0.9** (fits 1-tall crawlspaces with skin to spare).
   current velocity; holding jump at that moment jumps out (onto a bank). The layer holds the other
   layers exactly like the climb layer does, so leaving the water is not read as an external force.
   Water 1 m deep (≤ 0.55 of the capsule) is walked through.
-- **Currents** (Phase 53 G3a, WATER_SURFACE_GRID.md §2c): out of the flip band's dry part the swim
-  layer's wish velocity has the water's current where the body is added (`VoxelWorld::currents`,
-  the same vector face-locally), so an idle swimmer drifts with it and swimming is in the water's
-  frame (`a_swimmer_drifts_with_the_current_and_swims_in_the_waters_frame`, both faces).
 
 ### 6.5 Terrain changing under or into the player
 - **Block removed under the feet:** the next probe finds no ground → walk-off rules apply (keep

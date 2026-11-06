@@ -6,7 +6,6 @@ pub mod affinity;
 pub mod bounds;
 pub mod brush;
 mod cell;
-pub mod currents;
 pub mod edit;
 mod face;
 pub mod flow;
