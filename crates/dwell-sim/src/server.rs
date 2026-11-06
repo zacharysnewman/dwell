@@ -705,6 +705,9 @@ impl Server {
                 config.spawn = meta.spawn;
             }
         }
+        // A world from an older line (or a launch naming a retired version) opens on this build's
+        // generator of its kind.
+        config.generator_version = dwell_world::current_generator(config.generator_version);
         let (generator, air_test) = match &config.generator_override {
             Some(g) => (g.clone(), config.air_test_override.clone()),
             None => (

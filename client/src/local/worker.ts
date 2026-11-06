@@ -95,6 +95,7 @@ async function start(
   spawnOnOpen = false,
   maps: Uint8Array[] = [],
   spawnAt?: [number, number, number],
+  upgrade = false,
 ): Promise<void> {
   // The world file (§6.4): the chosen world's (by default one per generator and seed), in OPFS.
   // Without it the world lives in memory only (no OPFS, or the world is open in another tab).
@@ -118,6 +119,7 @@ async function start(
       spawnPortal,
       spawnOnOpen,
       spawnAt,
+      upgrade,
     );
   } catch (err) {
     scope.postMessage({
@@ -157,6 +159,7 @@ scope.onmessage = (e) => {
       msg.spawnOnOpen,
       msg.maps,
       msg.spawnAt,
+      msg.upgrade,
     );
   else handle(msg);
 };

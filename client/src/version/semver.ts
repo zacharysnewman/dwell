@@ -106,6 +106,18 @@ export function canOpenWorld(build: string, worldLast: string): boolean {
   return compatibilityLine(build) === compatibilityLine(worldLast) && compareVersions(b, w) >= 0;
 }
 
+/**
+ * Whether a build may open a world from an older compatibility line once the player confirms a
+ * warning (owner, 2026-11-06; RELEASES.md §6): both stable releases, the build newer and on another
+ * line. Not `canOpenWorld`: the world then moves to the build's line.
+ */
+export function canUpgradeWorld(build: string, worldLast: string): boolean {
+  const b = parseVersion(build);
+  const w = parseVersion(worldLast);
+  if (!b || !w || !isStable(b) || !isStable(w)) return false;
+  return compareVersions(b, w) > 0 && compatibilityLine(build) !== compatibilityLine(worldLast);
+}
+
 /** Whether two versions are on one compatibility line (can talk to each other, RELEASES.md §7). */
 export function sameLine(a: string, b: string): boolean {
   const line = compatibilityLine(a);

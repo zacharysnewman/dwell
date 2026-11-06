@@ -37,6 +37,15 @@ pub struct Movement {
     /// 700 kg log (a 1 m log block) slides on terrain (friction 0.4) at about 0.5 m/s walking.
     pub max_push_force: f32,
     pub pushable_mass_limit: f32,
+    /// ◆ m/s: the ground is a floor (PLAYER_CONTROLLER.md §6.11, owner 2026-11-05: "without any
+    /// special cases"): grounded, the body keeps its vertical speed as momentum. Following the
+    /// ground may take away at most this much of its rise in a tick, and pull it down by at most
+    /// this much more than gravity does; more either way and it leaves the ground (over a crest, a
+    /// ramp's lip, a step-up onto a flat top, a downslope's edge). 5: above a run's rise up a
+    /// ½ m ramp (8 m/s × ½) and a walk's pull onto a 45° face (5 m/s, less gravity's 0.33), so
+    /// walking keeps the ground everywhere (owner, 2026-11-06; 4.5 hopped a walker off a stair
+    /// top onto a 45° face for a tick); a slide at 11–12 m/s up ½ m ramps still flies off a crest.
+    pub ground_stick_speed: f32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -168,8 +177,9 @@ pub struct SprintSlide {
 /// ◆ Which contacts an impact can hurt on (§6.10, `damage.impact_surfaces`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ImpactSurfaces {
-    /// Ground only (owner, 2026-10-21): a contact whose face-local slope is walkable
-    /// (`probes.max_slope_angle`), landings and ramps; walls, steep faces and ceilings never hurt.
+    /// Flat ground only (owner, 2026-10-21: "just ground"; 2026-11-05: a hit on "a half slope or
+    /// steep slope … should be 0"): a contact whose face-local slope is no steeper than
+    /// `damage.impact_max_slope_angle`; ramps, walls, steep faces and ceilings never hurt.
     Ground,
     /// Every contact: floors, ramps, walls and ceilings.
     All,
@@ -185,6 +195,10 @@ pub struct Damage {
     pub impact_damage_per_speed: f32,
     /// The contacts an impact can hurt on: the ground (default) or every surface.
     pub impact_surfaces: ImpactSurfaces,
+    /// ° (face-local): the steepest surface that is ground to `ImpactSurfaces::Ground`. Under the
+    /// ½ m ramp's 26.57°, so only flat ground (and near-flat bodies) hurts: a landing on a ramp of
+    /// either pitch slides on instead.
+    pub impact_max_slope_angle: f32,
     pub crush_speed: f32,
     pub crush_ticks: u16,
 }
@@ -271,6 +285,7 @@ impl Default for PlayerControllerConfig {
                 edge_guard: false,
                 max_push_force: 3050.0,
                 pushable_mass_limit: 400.0,
+                ground_stick_speed: 5.0,
             },
             probes: Probes {
                 ground_probe_margin: 0.15,
@@ -337,6 +352,7 @@ impl Default for PlayerControllerConfig {
                 impact_damage_min_speed: 12.0,
                 impact_damage_per_speed: 8.0,
                 impact_surfaces: ImpactSurfaces::Ground,
+                impact_max_slope_angle: 10.0,
                 crush_speed: 4.0,
                 crush_ticks: 6,
             },

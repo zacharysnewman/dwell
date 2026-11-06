@@ -2,9 +2,20 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions card. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
-      "version": "0.49.2",
+      "version": "0.49.3",
       "changes": [
         "On slow devices, a quick tap of jump is no longer lost, and holding Place builds on more reliably when walking back or crouch-jumping a tower"
+      ]
+    },
+    {
+      "version": "0.49.2",
+      "changes": [
+        "Landing on a slope never hurts: only hard landings on flat ground do",
+        "Letting go of sprint in the air no longer slows you down: sprint and crouch don't change your speed mid-air",
+        "Hold crouch as you land while moving fast and you slide, with or without sprint",
+        "Sliding down a steep slope with crouch held carries on as a slide where the ground levels out",
+        "Ramps make real jumps: fast enough, you fly off a ramp's top or a downhill edge instead of sticking to the ground",
+        "Play worlds from older versions: pick a newer version on the Versions page and confirm the warning to play a copy or upgrade"
       ]
     },
     {
@@ -438,15 +449,11 @@
     },
     {
       "version": "0.38.5",
-      "changes": [
-        "Towering: hold Place and jump to build under your feet"
-      ]
+      "changes": ["Towering: hold Place and jump to build under your feet"]
     },
     {
       "version": "0.38.4",
-      "changes": [
-        "Drag building (line and flat) and one-cell breaks"
-      ]
+      "changes": ["Drag building (line and flat) and one-cell breaks"]
     },
     {
       "version": "0.38.3",
@@ -462,9 +469,7 @@
     },
     {
       "version": "0.38.1",
-      "changes": [
-        "Cliffs 1.9–2.3× faster to generate, cell for cell the same"
-      ]
+      "changes": ["Cliffs 1.9–2.3× faster to generate, cell for cell the same"]
     },
     {
       "version": "0.38.0",
@@ -486,9 +491,7 @@
     },
     {
       "version": "0.37.1",
-      "changes": [
-        "Felling F3: falling trees push, hurt and carry players"
-      ]
+      "changes": ["Felling F3: falling trees push, hurt and carry players"]
     },
     {
       "version": "0.37.0",
@@ -498,15 +501,11 @@
     },
     {
       "version": "0.36.0",
-      "changes": [
-        "Felling F1: support roles, passable leaves, the log's axis"
-      ]
+      "changes": ["Felling F1: support roles, passable leaves, the log's axis"]
     },
     {
       "version": "0.35.1",
-      "changes": [
-        "The LOD draws the cliffs' undersides"
-      ]
+      "changes": ["The LOD draws the cliffs' undersides"]
     },
     {
       "version": "0.35.0",
@@ -516,9 +515,7 @@
     },
     {
       "version": "0.34.0",
-      "changes": [
-        "Cliffs as walls that lean, not tunnels"
-      ]
+      "changes": ["Cliffs as walls that lean, not tunnels"]
     },
     {
       "version": "0.33.0",
@@ -528,15 +525,11 @@
     },
     {
       "version": "0.32.0",
-      "changes": [
-        "No step where two river valleys meet (generator 26, 0.32.0)"
-      ]
+      "changes": ["No step where two river valleys meet (generator 26, 0.32.0)"]
     },
     {
       "version": "0.31.4",
-      "changes": [
-        "Cliffs (prototype): opt-in world type with a terrain volume"
-      ]
+      "changes": ["Cliffs (prototype): opt-in world type with a terrain volume"]
     },
     {
       "version": "0.31.3",
@@ -552,9 +545,7 @@
     },
     {
       "version": "0.31.1",
-      "changes": [
-        "Release 0.31.1: a gradual sky past the rim, no hard band"
-      ]
+      "changes": ["Release 0.31.1: a gradual sky past the rim, no hard band"]
     },
     {
       "version": "0.31.0",
@@ -564,15 +555,11 @@
     },
     {
       "version": "0.30.0",
-      "changes": [
-        "Rock in whole faces, not splotches (generator 24, 0.30.0)"
-      ]
+      "changes": ["Rock in whole faces, not splotches (generator 24, 0.30.0)"]
     },
     {
       "version": "0.29.1",
-      "changes": [
-        "Water ripples move visibly (flowSpeed 0.3 m/s)"
-      ]
+      "changes": ["Water ripples move visibly (flowSpeed 0.3 m/s)"]
     },
     {
       "version": "0.29.0",
@@ -595,9 +582,7 @@
     },
     {
       "version": "0.28.2",
-      "changes": [
-        "Dev spawn links open a world on their own (?spawn=portal)"
-      ]
+      "changes": ["Dev spawn links open a world on their own (?spawn=portal)"]
     },
     {
       "version": "0.28.1",
@@ -613,9 +598,7 @@
     },
     {
       "version": "0.27.7",
-      "changes": [
-        "Docs: restore BUGS.md's Fixed header and bug 2's entry"
-      ]
+      "changes": ["Docs: restore BUGS.md's Fixed header and bug 2's entry"]
     },
     {
       "version": "0.27.6",
@@ -625,21 +608,15 @@
     },
     {
       "version": "0.27.5",
-      "changes": [
-        "Water reflections: no streaks at the screen's sides"
-      ]
+      "changes": ["Water reflections: no streaks at the screen's sides"]
     },
     {
       "version": "0.27.4",
-      "changes": [
-        "Distant shadows hold the highest mountains (BUGS.md 3)"
-      ]
+      "changes": ["Distant shadows hold the highest mountains (BUGS.md 3)"]
     },
     {
       "version": "0.27.3",
-      "changes": [
-        "Far mountains in water reflections (BUGS.md 6, the rest)"
-      ]
+      "changes": ["Far mountains in water reflections (BUGS.md 6, the rest)"]
     },
     {
       "version": "0.27.2",
@@ -661,39 +638,27 @@
     },
     {
       "version": "0.26.7",
-      "changes": [
-        "Water: no gaps at river steps (BUGS.md 4)"
-      ]
+      "changes": ["Water: no gaps at river steps (BUGS.md 4)"]
     },
     {
       "version": "0.26.6",
-      "changes": [
-        "No flicker placing a block into yourself (BUGS.md 7)"
-      ]
+      "changes": ["No flicker placing a block into yourself (BUGS.md 7)"]
     },
     {
       "version": "0.26.5",
-      "changes": [
-        "Terrain colliders carry no mass (server stall at speed)"
-      ]
+      "changes": ["Terrain colliders carry no mass (server stall at speed)"]
     },
     {
       "version": "0.26.4",
-      "changes": [
-        "Fix rubber-banding after fast flight (BUGS.md 1)"
-      ]
+      "changes": ["Fix rubber-banding after fast flight (BUGS.md 1)"]
     },
     {
       "version": "0.26.3",
-      "changes": [
-        "E2e: streaming test walks until a direction is open"
-      ]
+      "changes": ["E2e: streaming test walks until a direction is open"]
     },
     {
       "version": "0.26.2",
-      "changes": [
-        "Fix main's CI on 0.26.0 and the checks skipped to ship it"
-      ]
+      "changes": ["Fix main's CI on 0.26.0 and the checks skipped to ship it"]
     },
     {
       "version": "0.26.1",
@@ -709,33 +674,23 @@
     },
     {
       "version": "0.25.3",
-      "changes": [
-        "Fix main CI on 0.25.0"
-      ]
+      "changes": ["Fix main CI on 0.25.0"]
     },
     {
       "version": "0.25.2",
-      "changes": [
-        "Impact damage on the ground only"
-      ]
+      "changes": ["Impact damage on the ground only"]
     },
     {
       "version": "0.25.1",
-      "changes": [
-        "Remove the cel texture style"
-      ]
+      "changes": ["Remove the cel texture style"]
     },
     {
       "version": "0.25.0",
-      "changes": [
-        "Bedrock between the faces, and portals through it"
-      ]
+      "changes": ["Bedrock between the faces, and portals through it"]
     },
     {
       "version": "0.24.8",
-      "changes": [
-        "Impact: ½ m steps hit as ramps, not walls"
-      ]
+      "changes": ["Impact: ½ m steps hit as ramps, not walls"]
     },
     {
       "version": "0.24.7",
@@ -751,9 +706,7 @@
     },
     {
       "version": "0.24.5",
-      "changes": [
-        "Music: Starry Sunshine as the ambient track"
-      ]
+      "changes": ["Music: Starry Sunshine as the ambient track"]
     },
     {
       "version": "0.24.4",
@@ -763,9 +716,7 @@
     },
     {
       "version": "0.24.3",
-      "changes": [
-        "Crossing roll experiment: ?crossingroll=<s>|snap"
-      ]
+      "changes": ["Crossing roll experiment: ?crossingroll=<s>|snap"]
     },
     {
       "version": "0.24.2",
@@ -776,9 +727,7 @@
     },
     {
       "version": "0.24.0",
-      "changes": [
-        "Ladder fixes: plate-sized target box, jump remounts"
-      ]
+      "changes": ["Ladder fixes: plate-sized target box, jump remounts"]
     },
     {
       "version": "0.23.14",
@@ -806,9 +755,7 @@
     },
     {
       "version": "0.23.10",
-      "changes": [
-        "Clouds from high above cover the whole flat world"
-      ]
+      "changes": ["Clouds from high above cover the whole flat world"]
     },
     {
       "version": "0.23.9",
@@ -826,9 +773,7 @@
     },
     {
       "version": "0.23.6",
-      "changes": [
-        "Pixel-art look preview (?pixelart=<preset>)"
-      ]
+      "changes": ["Pixel-art look preview (?pixelart=<preset>)"]
     },
     {
       "version": "0.23.5",
@@ -838,15 +783,11 @@
     },
     {
       "version": "0.23.4",
-      "changes": [
-        "Torch flames: animated painterly fire on billboards"
-      ]
+      "changes": ["Torch flames: animated painterly fire on billboards"]
     },
     {
       "version": "0.23.3",
-      "changes": [
-        "Texture phase independent of face merging"
-      ]
+      "changes": ["Texture phase independent of face merging"]
     },
     {
       "version": "0.23.2",
@@ -856,21 +797,15 @@
     },
     {
       "version": "0.23.1",
-      "changes": [
-        "Warmer torch light"
-      ]
+      "changes": ["Warmer torch light"]
     },
     {
       "version": "0.23.0",
-      "changes": [
-        "Torches T1b: the 1 m torch over two cells, a self-lit flame"
-      ]
+      "changes": ["Torches T1b: the 1 m torch over two cells, a self-lit flame"]
     },
     {
       "version": "0.22.27",
-      "changes": [
-        "Character and held-item outlines off for now"
-      ]
+      "changes": ["Character and held-item outlines off for now"]
     },
     {
       "version": "0.22.26",
@@ -886,9 +821,7 @@
     },
     {
       "version": "0.22.24",
-      "changes": [
-        "Launcher: keep iOS Safari out of Reader mode"
-      ]
+      "changes": ["Launcher: keep iOS Safari out of Reader mode"]
     },
     {
       "version": "0.22.23",
@@ -898,15 +831,11 @@
     },
     {
       "version": "0.22.22",
-      "changes": [
-        "Shadows: eye-centred cached cascades (much cheaper High)"
-      ]
+      "changes": ["Shadows: eye-centred cached cascades (much cheaper High)"]
     },
     {
       "version": "0.22.21",
-      "changes": [
-        "Format bench/scenarios.json"
-      ]
+      "changes": ["Format bench/scenarios.json"]
     },
     {
       "version": "0.22.20",
@@ -916,9 +845,7 @@
     },
     {
       "version": "0.22.19",
-      "changes": [
-        "Distant terrain shadows (lighting layer 3)"
-      ]
+      "changes": ["Distant terrain shadows (lighting layer 3)"]
     },
     {
       "version": "0.22.18",
@@ -928,15 +855,11 @@
     },
     {
       "version": "0.22.17",
-      "changes": [
-        "First person: your own body from the neck down"
-      ]
+      "changes": ["First person: your own body from the neck down"]
     },
     {
       "version": "0.22.16",
-      "changes": [
-        "First-person hand a little bigger (~0.55 of the screen)"
-      ]
+      "changes": ["First-person hand a little bigger (~0.55 of the screen)"]
     },
     {
       "version": "0.22.15",
@@ -946,9 +869,7 @@
     },
     {
       "version": "0.22.14",
-      "changes": [
-        "E2e: characters.spec runs on a flat world of its own server"
-      ]
+      "changes": ["E2e: characters.spec runs on a flat world of its own server"]
     },
     {
       "version": "0.22.13",
@@ -964,15 +885,11 @@
     },
     {
       "version": "0.22.11",
-      "changes": [
-        "Main CI: fog test face marker, prettier"
-      ]
+      "changes": ["Main CI: fog test face marker, prettier"]
     },
     {
       "version": "0.22.10",
-      "changes": [
-        "Fixed fog: remove the fog sliders; the fog is look data"
-      ]
+      "changes": ["Fixed fog: remove the fog sliders; the fog is look data"]
     },
     {
       "version": "0.22.9",
@@ -988,9 +905,7 @@
     },
     {
       "version": "0.22.7",
-      "changes": [
-        "Fog defaults: a clear day's air"
-      ]
+      "changes": ["Fog defaults: a clear day's air"]
     },
     {
       "version": "0.22.6",
@@ -1006,9 +921,7 @@
     },
     {
       "version": "0.22.4",
-      "changes": [
-        "Remove the classic texture set"
-      ]
+      "changes": ["Remove the classic texture set"]
     },
     {
       "version": "0.22.3",
@@ -1018,9 +931,7 @@
     },
     {
       "version": "0.22.2",
-      "changes": [
-        "Docs: archived approaches (branch cleanup)"
-      ]
+      "changes": ["Docs: archived approaches (branch cleanup)"]
     },
     {
       "version": "0.22.1",
@@ -1030,9 +941,7 @@
     },
     {
       "version": "0.22.0",
-      "changes": [
-        "Adopt half-height cells"
-      ]
+      "changes": ["Adopt half-height cells"]
     },
     {
       "version": "0.21.4",
@@ -1048,9 +957,7 @@
     },
     {
       "version": "0.21.2",
-      "changes": [
-        "Keep distant cutout tiles drawn in both texture sets"
-      ]
+      "changes": ["Keep distant cutout tiles drawn in both texture sets"]
     },
     {
       "version": "0.21.1",
@@ -1066,21 +973,15 @@
     },
     {
       "version": "0.20.7",
-      "changes": [
-        "Face parity: FaceFrame, both-faces tests, face-B fixes"
-      ]
+      "changes": ["Face parity: FaceFrame, both-faces tests, face-B fixes"]
     },
     {
       "version": "0.20.6",
-      "changes": [
-        "Painterly textures are the default"
-      ]
+      "changes": ["Painterly textures are the default"]
     },
     {
       "version": "0.20.5",
-      "changes": [
-        "Remove the ray-marched renderer (Phase 25 dropped at A7)"
-      ]
+      "changes": ["Remove the ray-marched renderer (Phase 25 dropped at A7)"]
     },
     {
       "version": "0.20.4",
@@ -1090,9 +991,7 @@
     },
     {
       "version": "0.20.3",
-      "changes": [
-        "Plants sit on their support's drawn surface (sitOnSupport)"
-      ]
+      "changes": ["Plants sit on their support's drawn surface (sitOnSupport)"]
     },
     {
       "version": "0.20.2",
@@ -1102,9 +1001,7 @@
     },
     {
       "version": "0.20.1",
-      "changes": [
-        "Ink outline preview (?outline=silhouette|creases|blocks)"
-      ]
+      "changes": ["Ink outline preview (?outline=silhouette|creases|blocks)"]
     },
     {
       "version": "0.20.0",
@@ -1120,9 +1017,7 @@
     },
     {
       "version": "0.19.1",
-      "changes": [
-        "Step-up: consistent at every approach angle and speed"
-      ]
+      "changes": ["Step-up: consistent at every approach angle and speed"]
     },
     {
       "version": "0.19.0",
@@ -1132,15 +1027,11 @@
     },
     {
       "version": "0.18.11",
-      "changes": [
-        "BlocksGen test copies faces.mjs (main CI red after 0.18.10)"
-      ]
+      "changes": ["BlocksGen test copies faces.mjs (main CI red after 0.18.10)"]
     },
     {
       "version": "0.18.10",
-      "changes": [
-        "Dirt sides under grass show the turf skirt"
-      ]
+      "changes": ["Dirt sides under grass show the turf skirt"]
     },
     {
       "version": "0.18.9",
@@ -1168,27 +1059,19 @@
     },
     {
       "version": "0.18.5",
-      "changes": [
-        "Ray marcher A4c far cases: docs and the lod8 switch"
-      ]
+      "changes": ["Ray marcher A4c far cases: docs and the lod8 switch"]
     },
     {
       "version": "0.18.4",
-      "changes": [
-        "Release workflow: a dev build of any branch by hand"
-      ]
+      "changes": ["Release workflow: a dev build of any branch by hand"]
     },
     {
       "version": "0.18.3",
-      "changes": [
-        "Fix views.spec on the v16 terrain"
-      ]
+      "changes": ["Fix views.spec on the v16 terrain"]
     },
     {
       "version": "0.18.2",
-      "changes": [
-        "Fix the cloud tunnel above the deck at speed"
-      ]
+      "changes": ["Fix the cloud tunnel above the deck at speed"]
     },
     {
       "version": "0.18.1",
@@ -1198,9 +1081,7 @@
     },
     {
       "version": "0.18.0",
-      "changes": [
-        "Steep terrain: hillsides that slide (generator v16)"
-      ]
+      "changes": ["Steep terrain: hillsides that slide (generator v16)"]
     },
     {
       "version": "0.17.2",
@@ -1216,15 +1097,11 @@
     },
     {
       "version": "0.17.0",
-      "changes": [
-        "Brushes part 3: predicted edits (protocol 16) — 0.17.0"
-      ]
+      "changes": ["Brushes part 3: predicted edits (protocol 16) — 0.17.0"]
     },
     {
       "version": "0.16.5",
-      "changes": [
-        "Preview key sound + prettier (main CI red after 0.16.2)"
-      ]
+      "changes": ["Preview key sound + prettier (main CI red after 0.16.2)"]
     },
     {
       "version": "0.16.4",
@@ -1234,21 +1111,15 @@
     },
     {
       "version": "0.16.3",
-      "changes": [
-        "Fix 0.16.2 crash: brush ghost Kind missing its arena stride"
-      ]
+      "changes": ["Fix 0.16.2 crash: brush ghost Kind missing its arena stride"]
     },
     {
       "version": "0.16.2",
-      "changes": [
-        "Brushes part 2: exact-cell preview"
-      ]
+      "changes": ["Brushes part 2: exact-cell preview"]
     },
     {
       "version": "0.16.1",
-      "changes": [
-        "Spyglass zoom (Phase 38, ADR 0039)"
-      ]
+      "changes": ["Spyglass zoom (Phase 38, ADR 0039)"]
     },
     {
       "version": "0.16.0",
@@ -1258,9 +1129,7 @@
     },
     {
       "version": "0.15.4",
-      "changes": [
-        "Brushes part 1: VoxelSniper's remaining brushes"
-      ]
+      "changes": ["Brushes part 1: VoxelSniper's remaining brushes"]
     },
     {
       "version": "0.15.3",
@@ -1276,9 +1145,7 @@
     },
     {
       "version": "0.15.1",
-      "changes": [
-        "Fragment test: compare the 1 MiB message without toEqual"
-      ]
+      "changes": ["Fragment test: compare the 1 MiB message without toEqual"]
     },
     {
       "version": "0.15.0",
@@ -1288,15 +1155,11 @@
     },
     {
       "version": "0.14.9",
-      "changes": [
-        "WebRTC: fragment reliable messages over 64 KiB"
-      ]
+      "changes": ["WebRTC: fragment reliable messages over 64 KiB"]
     },
     {
       "version": "0.14.8",
-      "changes": [
-        "Phase 25 A4b: the beam prepass and the temporal start"
-      ]
+      "changes": ["Phase 25 A4b: the beam prepass and the temporal start"]
     },
     {
       "version": "0.14.7",
@@ -1330,9 +1193,7 @@
     },
     {
       "version": "0.14.2",
-      "changes": [
-        "Fix the Client lint job: dead null check in configs.ts"
-      ]
+      "changes": ["Fix the Client lint job: dead null check in configs.ts"]
     },
     {
       "version": "0.14.1",
@@ -1342,9 +1203,7 @@
     },
     {
       "version": "0.14.0",
-      "changes": [
-        "Block registry sync"
-      ]
+      "changes": ["Block registry sync"]
     },
     {
       "version": "0.13.3",
@@ -1374,9 +1233,7 @@
     },
     {
       "version": "0.12.1",
-      "changes": [
-        "Water reflects land (SSR) and clouds"
-      ]
+      "changes": ["Water reflects land (SSR) and clouds"]
     },
     {
       "version": "0.12.0",
@@ -1401,9 +1258,7 @@
     },
     {
       "version": "0.11.19",
-      "changes": [
-        "Clouds no longer tunnel into a circle at speed"
-      ]
+      "changes": ["Clouds no longer tunnel into a circle at speed"]
     },
     {
       "version": "0.11.18",
@@ -1427,57 +1282,39 @@
     },
     {
       "version": "0.11.15",
-      "changes": [
-        "Docs: align with the Rust/wgpu codebase"
-      ]
+      "changes": ["Docs: align with the Rust/wgpu codebase"]
     },
     {
       "version": "0.11.14",
-      "changes": [
-        "G0: tree-growth prototype page (Phase 30)"
-      ]
+      "changes": ["G0: tree-growth prototype page (Phase 30)"]
     },
     {
       "version": "0.11.13",
-      "changes": [
-        "Flight toggles with F, not a double-tapped Space"
-      ]
+      "changes": ["Flight toggles with F, not a double-tapped Space"]
     },
     {
       "version": "0.11.12",
-      "changes": [
-        "Phase 28: procedural, data-driven sound effects"
-      ]
+      "changes": ["Phase 28: procedural, data-driven sound effects"]
     },
     {
       "version": "0.11.11",
-      "changes": [
-        "S2b: structures store, save, load, export and import"
-      ]
+      "changes": ["S2b: structures store, save, load, export and import"]
     },
     {
       "version": "0.11.10",
-      "changes": [
-        "Sky clouds: a procedural cloud deck in the sky (Phase 31)"
-      ]
+      "changes": ["Sky clouds: a procedural cloud deck in the sky (Phase 31)"]
     },
     {
       "version": "0.11.9",
-      "changes": [
-        "Phase 26 W1b: the water shader"
-      ]
+      "changes": ["Phase 26 W1b: the water shader"]
     },
     {
       "version": "0.11.8",
-      "changes": [
-        "A2: the renderer seam and compare mode"
-      ]
+      "changes": ["A2: the renderer seam and compare mode"]
     },
     {
       "version": "0.11.7",
-      "changes": [
-        "Phase 29: motion effects (speed FOV and wind streaks)"
-      ]
+      "changes": ["Phase 29: motion effects (speed FOV and wind streaks)"]
     },
     {
       "version": "0.11.6",
@@ -1487,9 +1324,7 @@
     },
     {
       "version": "0.11.5",
-      "changes": [
-        "S3: region edits (RegionEdit) and the region tools"
-      ]
+      "changes": ["S3: region edits (RegionEdit) and the region tools"]
     },
     {
       "version": "0.11.4",

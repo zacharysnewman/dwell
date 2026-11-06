@@ -495,3 +495,55 @@ fn the_waters_free_water_survives_a_server_restart() {
         .expect("the lake's water again");
     assert!((back - level).abs() < 1e-4, "at {back} (saved at {level})");
 }
+
+#[test]
+fn a_world_from_an_older_line_opens_on_this_builds_terrain() {
+    // Owner (2026-11-06): older-line worlds open in newer builds after a warning. A build knows
+    // only its own terrain generator: a world saved under an older terrain generator number (21
+    // here) generates its unexplored land with this build's terrain, not flat ground (generator_for
+    // fell back to flat for any number it didn't know). Flat, sandbox and the retired playground
+    // keep their own.
+    for (saved, opened) in [
+        (21, dwell_world::GENERATOR_TERRAIN),
+        (
+            dwell_world::GENERATOR_TERRAIN,
+            dwell_world::GENERATOR_TERRAIN,
+        ),
+        (GENERATOR_FLAT, GENERATOR_FLAT),
+        (
+            dwell_world::GENERATOR_SANDBOX,
+            dwell_world::GENERATOR_SANDBOX,
+        ),
+        (1, 1),
+    ] {
+        let scratch = Scratch::new("older-line");
+        let path = scratch.world("older-line");
+        {
+            let db = WorldDb::open(&path).expect("opens");
+            db.save(&SaveBatch {
+                meta: Some(dwell_storage::WorldMeta {
+                    world_seed: 5,
+                    generator_version: saved,
+                    world_tick: 0,
+                    created_at: 0,
+                    saved_at: 0,
+                    spawn: Some([0.5, 40.0, 0.5]),
+                    app_version_created: "0.40.0".into(),
+                    app_version_last: "0.40.0".into(),
+                    settings: None,
+                }),
+                ..SaveBatch::default()
+            })
+            .expect("saves");
+        }
+        let f = Fixture::new(ServerConfig {
+            store: Some(open_store(&path)),
+            ..flat()
+        });
+        assert_eq!(
+            f.server.config().generator_version,
+            opened,
+            "saved under {saved}"
+        );
+    }
+}

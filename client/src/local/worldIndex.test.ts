@@ -149,6 +149,33 @@ describe('world index', () => {
     expect(index.get(w.id)?.appVersion).toBe(recordedVersion());
   });
 
+  it('copies a world for another version: a new id and name, the same seed and spawn', () => {
+    // Owner (2026-11-06): an older line's world can be played as a copy in a newer build; the
+    // copy's file is the original's, so it records the original's version until it is played.
+    const index = new WorldIndex(memoryStore());
+    const original = index.create({ name: 'Hills', type: 'terrain', seed: 7, spawn: 'b' }, 100);
+    index.put({ ...original, appVersion: '0.47.3', generatorVersion: 21 });
+    const copy = index.copy(index.get(original.id) ?? original, 200, sequence(0.5, 0.25));
+    expect(copy.id).not.toBe(original.id);
+    expect(copy.name).toBe('Hills (from 0.47.3)');
+    expect(copy).toMatchObject({ seed: 7, spawn: 'b', type: 'terrain', appVersion: '0.47.3' });
+    expect(copy.createdAt).toBe(200);
+    expect(index.get(original.id)?.appVersion).toBe('0.47.3');
+    expect(index.list().map((w) => w.id)).toContain(copy.id);
+  });
+
+  it("records this build's generator of the world's type when it plays one", () => {
+    // A world from an older line opens on this build's terrain (dwell_world::current_generator).
+    const index = new WorldIndex(memoryStore());
+    const w = index.create({ name: 'Old', type: 'terrain', seed: 1 }, 1);
+    index.put({ ...w, generatorVersion: 21, appVersion: '0.47.3' });
+    index.touch(w.id, 2);
+    expect(index.get(w.id)).toMatchObject({
+      generatorVersion: GENERATORS.terrain,
+      appVersion: recordedVersion(),
+    });
+  });
+
   it('sets worlds saved before versioned releases apart, to be deleted but never opened', () => {
     const old = {
       id: 'wold',

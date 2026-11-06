@@ -11,10 +11,10 @@
 1. **Every build stays playable.** Each build is a **git tag** (with a GitHub Release holding the
    built files), and the app — even the web app — **loads its versions dynamically from those
    tags**.
-2. **Worlds record the app version that saved them** and are, for now, **locked to its
-   compatibility line** (§6): they open in that version or any later compatible one (SemVer,
-   §3), never in an incompatible one. Upgrading worlds across breaking changes is a later option
-   ([`FUTURE.md`](./FUTURE.md)).
+2. **Worlds record the app version that saved them** and open by default in their
+   **compatibility line** (§6): that version or any later compatible one (SemVer, §3). A newer
+   line opens one only after a warning the player confirms (owner, 2026-11-06, ADR 0061; §5
+   "Older worlds in newer builds"); an older build never does.
 3. **The source stays public, under a restrictive license.** A split into a private source repo
    and a public deploy repo was considered and dropped (§2): a license covers what the split was
    for, while the split would have cost the free CI pipeline.
@@ -265,3 +265,27 @@ that build for the visit (`/dwell/?version=…`). The server browser pings with 
 networking, loaded from its fixed-name `tools.js`. Older builds (0.1.0, 0.10.0–0.10.2) already
 start from these routes and return to `/dwell/` on Quit; their own menus are never shown. No new
 infrastructure: everything is served from Pages, same origin.
+
+### Older worlds in newer builds **[built, 0.49.2]** ([ADR 0061](./adr/0061-older-worlds-in-newer-builds.md))
+
+Owner (2026-11-06): *"make it so I can still play older version worlds with newer versions it just
+shows a warning you have to confirm so it's obvious when it's happening."*
+
+- **Choosing the build:** Play on the main menu still opens a world in the newest build of its own
+  line. To play it in a newer line, pick that build on the version page (`?versions`); its row lists
+  the older line's worlds it opens "with a warning" (builds from `UPGRADE_SINCE`, 0.49.2), and its
+  pinned menu (`?version=`) sends Play to it.
+- **The rule:** both stable releases, the build newer and on another line (`canUpgradeWorld`,
+  `can_upgrade_world`, the vectors' `upgrade` lines). Never a newer world, a dev build's, or a save
+  from before versioned releases.
+- **The warning** (`ui/upgradePrompt.ts`), before anything opens: the two versions and lines,
+  that unexplored land generates with this build's terrain (seams where it meets saved land), that
+  blocks this build lacks show as placeholders, and that once saved the world can't go back.
+  **Play a copy** (a new world "<name> (from <version>)", the file copied in OPFS, the original
+  untouched), **Upgrade this world**, or **Cancel** (focused, back to the menu).
+- **Opening:** the page passes `upgrade` to the local core (`LocalWorld`), which otherwise still
+  refuses another line's file (`world_open_error`); a retired or unknown terrain generator opens on
+  this build's (`dwell_world::current_generator`). Saving records this build's version, so the
+  world is on the new line from then on.
+- **Not covered:** dedicated servers and joining a host on another line (the protocols differ).
+
