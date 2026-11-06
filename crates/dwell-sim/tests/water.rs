@@ -631,3 +631,57 @@ fn measure_a_raised_dams_churn() {
         });
     }
 }
+
+dwell_world::both_faces!(
+    /// BUGS.md #42 (owner, 2026-11-06: "in this spot the river stops flowing too"): a client is
+    /// sent the currents of every water chunk as far out as it draws the flow (`waterflow.json`
+    /// `fadeToM`), so a river doesn't stop running where the currents stopped being sent. Red
+    /// before: 2 chunks, 33 m out from a chunk's edge, inside the 40 m the flow shows fully.
+    fn a_player_is_sent_the_currents_as_far_as_the_flow_is_drawn(f: dwell_world::FaceFrame) {
+        use dwell_world::currents::{CS, current_key};
+        let mut fx = Fixture::new(flat());
+        join_streaming(&mut fx, 1);
+        let feet = f.point([1.5, dwell_world::FLAT_TOP_M, 1.5]);
+        let reach = dwell_look::waterflow::WATER_FLOW.fade_to_m;
+        // Every water chunk with a column within the flow's reach of the player runs.
+        let ((fb, pcx, pcz), _) = current_key(f, 1, 1);
+        let mut want = std::collections::BTreeSet::new();
+        for cx in pcx - 8..=pcx + 8 {
+            for cz in pcz - 8..=pcz + 8 {
+                let near = |p: f64, c: i32| {
+                    let (lo, hi) = (f64::from(c * CS), f64::from((c + 1) * CS));
+                    (lo - p).max(p - hi).max(0.0)
+                };
+                if near(1.5, cx).hypot(near(1.5, cz)) <= reach {
+                    want.insert((fb, cx, cz));
+                }
+            }
+        }
+        let w = fx.server.world();
+        for &k in &want {
+            w.currents
+                .set(k, Some(Box::new([[0.5, 0.0]; dwell_world::currents::CA])));
+        }
+        let mut got = std::collections::BTreeSet::new();
+        for _ in 0..900 {
+            fx.move_to(1, feet[0], feet[1], feet[2]);
+            fx.server.step();
+            for o in fx.server.take_outbox() {
+                if o.session == 1
+                    && matches!(o.kind, dwell_sim::server::OutKind::Datagram)
+                    && let Some(Message::WaterCurrents(c)) = Message::decode(&o.bytes)
+                    && c.cells.iter().any(|q| *q != [0, 0])
+                {
+                    got.insert((c.face_b, c.cx, c.cz));
+                }
+            }
+        }
+        let missed: Vec<_> = want.difference(&got).collect();
+        assert!(
+            missed.is_empty(),
+            "{} of {} chunks within {reach} m never sent: {missed:?}",
+            missed.len(),
+            want.len()
+        );
+    }
+);

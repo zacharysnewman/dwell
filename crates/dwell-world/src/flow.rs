@@ -55,6 +55,8 @@ pub struct FlowData {
     pub current_depth_m: f64,
     /// The fastest an untouched river's current runs (m/s).
     pub river_current_max_ms: f64,
+    /// How far up and down its course (m) an untouched river's fall is averaged for its current.
+    pub river_fall_reach_m: f64,
     /// The liquids the grid moves; the first is the one it draws.
     pub liquids: &'static [LiquidFlow],
 }

@@ -2489,7 +2489,8 @@ in 0.48.2.
 - **[built, G4a, 0.49.1]** Its settings are data: `shared/fluids/flow.json` (→ `flow.gen.rs`,
   `FlowData`): the speed, the tick period, θ, the CFL, the substep cap, the step budget (and its own
   thread's, `threadStepBudget`, with the most it may owe, `maxOwedS`, G5), the sleep and wake bands, the
-  calm and release times, the jump, the release distance, the edit reach, the draw margin, and the
+  calm and release times, the jump, the release distance, the edit reach, the draw margin, the
+  currents' still speed and depth, the river current's cap and fall reach, and the
   liquids (block, Manning's roughness, the weir the generator sizes chute streams by, the running
   block; the first is the one drawn); `water::Settings::of` reads it, `Water::with_settings` runs other
   settings.
@@ -2499,15 +2500,18 @@ in 0.48.2.
   chunk keeps the currents it fell asleep with). A swimmer swims in the water's frame (the swim
   layer's wish velocity plus the current, PLAYER_CONTROLLER.md §6.4) and a floating body's water drag
   pulls it toward the current (`felling::water_drag`, `WaterDrag::current`), on the server and in the
-  client's prediction and stand-ins alike. The server sends each player the chunks within 2 of theirs
-  as `WaterCurrents` datagrams (§8.3: an i8 per axis per column in 5 cm/s steps), looked at every 15
-  ticks, a chunk sent when its currents changed or 3 s after it was last sent, 4 at most a time,
+  client's prediction and stand-ins alike. The server sends each player the chunks as far out as its
+  flow is drawn (`waterflow.json` `fadeToM` from anywhere in its chunk: 4 chunks; `server::currents_radius`,
+  0.49.24, BUGS.md #42) as `WaterCurrents` datagrams (§8.3: an i8 per axis per column in 5 cm/s steps), looked at every 15
+  ticks, a chunk sent when its currents changed or 3 s after it was last sent, 8 at most a time,
   none in a session's first 5 s (its terrain first), a chunk gone still once as zeros; a client
   forgets a chunk not sent again within 8 s.
   **[built, G3b]** Held water (generated, never freed) runs as the world map's river does
   (`Water::with_rivers`, `TerrainGenerator::river_current`, computed once as a chunk's water is
   found): downstream along the channel as the column sees it (the map's direction through the
-  meander warp's inverse), at Manning's speed for the column's depth on the river's fall or its flow
+  meander warp's inverse), at Manning's speed for the column's depth on the river's fall (its segment's,
+  or its course's mean over `riverFallReachM` 256 m up and down stream where steeper: a reach held level
+  where the land dips runs as the river round it, 0.49.24, BUGS.md #42) or its flow
   over its depth where faster (so level and shallow reaches run, 0.49.18), at most
   `riverCurrentMaxMs` (1.5 m/s: a swimmer, at 3 m/s, still makes headway); a lake is still.
 - **[built, G3d] The flow shown** (owner, 2026-11-05: all three, each a setting; data
