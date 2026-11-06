@@ -713,13 +713,16 @@ Owner (2026-10-21): fall damage became **impact damage**, by the angle of the su
 (2026-10-21, *"Let's throw out wall and ceiling damage too, just ground"*) only the ground hurts.
 `step_impact` (pass 10a) raises `IMPACTED` with the tick's hit:
 
-- **The speed** is the downward speed alone, face-local `max(0, −v.y)` (`damage.impact_measure`,
-  default `Vertical`; owner, 2026-11-06: *"fall damage should only be applied based on Y (vertical
-  downward velocity)"*): the body's velocity `v` going into the physics step that met the surface
-  (`Player::pre_step`: the velocity `step_aggregate` gave the body, plus any instant change after
-  it, such as a knockback; not what the collide-and-slide left, nor the layers' wish). A landing on
-  a ramp hurts as one on the flat at the same downward speed; a run, slide or launch along the
-  ground into a slope, however fast, never does. `ImpactMeasure::IntoSurface` is the speed into the
+- **The speed** is the downward speed into the surface, face-local `max(0, −v.y) · max(0, n.y)`
+  (`damage.impact_measure`, default `DownwardIntoSurface`; owner, 2026-11-06: *"fall damage should
+  only be applied based on Y (vertical downward velocity)"* and *"the angle of the downward hit
+  reduces fall damage too, so landing straight down on a steep ramp would mitigate some damage"*):
+  the body's velocity `v` going into the physics step that met the surface (`Player::pre_step`: the
+  velocity `step_aggregate` gave the body, plus any instant change after it, such as a knockback;
+  not what the collide-and-slide left, nor the layers' wish), and the surface's normal `n`
+  (face-local, `n.y` its cos θ). The flat counts a fall in full, a ½ m ramp × 0.894, a 45° ramp
+  × 0.707; horizontal speed never counts, so a run, slide or launch along the ground into a slope,
+  however fast, never hurts. `ImpactMeasure::IntoSurface` is the speed into the
   surface's normal `n`, `max(0, −v · n)`: the rule from 2026-10-21 to 0.49.1 (a ½ m ramp × 0.894 of
   a vertical fall, and a fast horizontal hit into a slope by its normal's share: the owner's report
   of "up to lethal fall damage" on slopes), kept as data for a mode that hurts on walls.
@@ -759,8 +762,8 @@ Owner (2026-10-21): fall damage became **impact damage**, by the angle of the su
 |---|---|---|
 | 3 m drop, flat | 10.7 m/s | 0 |
 | 5 m / 10 m / 20 m / 30 m drop, flat | 14.0 / 20.0 / 28.3 / 34.7 m/s | 16 / 64 / 131 / 181 (as before) |
-| 25 m/s straight down, at 60° or along a ½ m ramp (from 0.6 m over it) | 25.7 / 22.7 / 15.8 m/s down | 109 / 85 / 31 (into the ramp: 88 / 21 / 0 until 0.49.1; 0 in 0.49.2) |
-| 25 m/s straight down onto a 1 m ramp (45°) | 26.0 m/s down | 112 (51 until 0.49.1; 0 in 0.49.2) |
+| 25 m/s straight down, at 60° or along a ½ m ramp (from 0.6 m over it) | 25.7 / 22.7 / 15.8 m/s down × 0.894 | 88 / 66 / 17 (the whole speed into the ramp: 88 / 21 / 0 until 0.49.1; 0 in 0.49.2) |
+| 25 m/s straight down onto a 1 m ramp (45°) | 26.0 m/s down × 0.707 | 51 (112 on the flat; 0 in 0.49.2) |
 | Launched along the ground at 25 m/s into a 45° slope | ~0 m/s down | 0 (into the slope: ~46 until 0.49.1) |
 | Launched at 25 m/s into a wall | 25 m/s (a wall) | 0 (104 when walls hurt) |
 | Launched at 25 m/s along a wall, 1 m/s into it | < 2 m/s | 0 |
@@ -775,9 +778,10 @@ Owner (2026-10-21): fall damage became **impact damage**, by the angle of the su
 
 - **Tests:** `tests/impact.rs` (17, both faces and far from the origin): 5, 10, 20 and 30 m falls
   onto the flat deal the 16 / 64 / 131 / 181 they did before; a short drop nothing; landings at
-  25 m/s onto the ½ m ramp hillside (straight down, 60°, along it) and onto a 45° hillside hurt by
-  their downward speed (`landing_on_a_ramp_hurts_by_the_vertical_speed_alone`,
-  `landing_on_a_steep_ramp_…`: nothing in 0.49.2); a 25 m/s launch along the ground into a 45°
+  25 m/s onto the ½ m ramp hillside (straight down, 60°, along it) hurt by their downward speed
+  × 0.894 (`landing_on_a_ramp_hurts_by_its_downward_speed_into_it`), straight down onto a 45°
+  hillside × 0.707, less than on the flat (`landing_on_a_steep_ramp_hurts_less_than_on_the_flat`;
+  both nothing in 0.49.2); a 25 m/s launch along the ground into a 45°
   slope nothing (`a_fast_horizontal_hit_into_a_slope_does_not_hurt`); a
   25 m/s launch into a wall nothing (and with `impact_surfaces: All`, `IntoSurface` the 104 it did), one brushing
   along it and flying into it nothing; a hard ceiling hit nothing; walking and sprinting into a
@@ -895,7 +899,7 @@ PPC default for voxels.
 | | `friction` / `slope_gravity` | 5 m/s² / 1.5 | — | Deceleration; `gravity × slope_gravity × tilt` along the slide (6 / 1 until 2026-11-02: slides faded down stepped hills) |
 | | `steer_rate` / `cooldown_ticks` | 90 °/s / 30 ticks (0.5 s, at most 255: the wire's `u8`) | — | Turning toward the move input; before another slide |
 | `damage` ◆ | `impact_damage_min_speed` / `impact_damage_per_speed` | 12 m/s / 8 per m/s | — | From the `IMPACTED` event's speed into the surface (§6.10) |
-| | `impact_surfaces` / `impact_measure` | `Ground` / `Vertical` | — | The contacts that hit (§6.10): `Ground`, a normal no steeper than `probes.max_slope_angle` (floors and ramps); `All`, every contact. The speed: `Vertical`, the downward speed alone (owner, 2026-11-06); `IntoSurface`, the speed into the normal |
+| | `impact_surfaces` / `impact_measure` | `Ground` / `DownwardIntoSurface` | — | The contacts that hit (§6.10): `Ground`, a normal no steeper than `probes.max_slope_angle` (floors and ramps); `All`, every contact. The speed: `DownwardIntoSurface`, the downward speed × the surface's cos θ (owner, 2026-11-06); `IntoSurface`, the whole speed into the normal |
 | | `crush_speed` / `crush_ticks` | 4 m/s / 6 | — | Phase 20 |
 | `step_view` ◆ | `slope` / `max_slope` / `min_speed` | 0.5 / 1.0 / 1 m/s | (PPC `SmoothSteps`: 4 m/s) | Client camera only (§9, Steps): the virtual ramp the eye follows over a step; never read by the sim |
 | `advanced` | `step_probe_distance` ◆ / `probe_ring_radius` / `wall_check_distance` | 0.05 m / 0.9 / 0.16 m | 0.01 / same / same | The step's top is read this far past its face (§4) |

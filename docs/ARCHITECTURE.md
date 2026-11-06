@@ -2554,7 +2554,7 @@ in the code yet.
 | `sprint_slide.steer_rate` / `cooldown_ticks` (`config.rs`) | 90 °/s / 30 ticks (0.5 s) | Limited steering toward the move input; the wait after a slide before the next (≤ 255: a `u8` on the wire) |
 | `movement.ground_stick_speed` (`config.rs`) | 5 m/s | The ground is a floor (owner, 2026-11-05; PLAYER_CONTROLLER.md §6.11): grounded vertical speed is momentum; following the ground may take away at most this much of the rise in a tick, and pull the body down at most this much beyond gravity; more and it leaves the ground (crests, lips, step-ups onto a flat top, downhill edges at speed). One limit for every movement; walking and running keep the ground |
 | `damage.impact_damage_min_speed` / `impact_damage_per_speed` (`config.rs`) | 12 m/s / 8 per m/s | Impact damage (owner, 2026-10-21; PLAYER_CONTROLLER.md §6.10): a hit hurts by its speed into the surface, `max(0, −v · n)`, above the minimum, this many points per m/s |
-| `damage.impact_surfaces` / `impact_measure` (`config.rs`) | `Ground` / `Vertical` | Impacts (PLAYER_CONTROLLER.md §6.10): `Ground` counts a normal no steeper than `probes.max_slope_angle`, floors and ramps (owner, 2026-10-21: "just ground"), walls, steep faces and ceilings never; `All` every contact. `Vertical` hurts by the downward speed alone, `max(0, −v.y)` (owner, 2026-11-06: "only … based on Y"), so a fast hit into a slope never hurts; `IntoSurface` by `max(0, −v · n)`. Server damage only |
+| `damage.impact_surfaces` / `impact_measure` (`config.rs`) | `Ground` / `DownwardIntoSurface` | Impacts (PLAYER_CONTROLLER.md §6.10): `Ground` counts a normal no steeper than `probes.max_slope_angle`, floors and ramps (owner, 2026-10-21: "just ground"), walls, steep faces and ceilings never; `All` every contact. `DownwardIntoSurface` hurts by the downward speed × the surface's cos θ, `max(0, −v.y) · n.y` (owner, 2026-11-06: "only … based on Y", and the angle "reduces fall damage too"), so a fast hit into a slope never hurts and a steep ramp softens a fall; `IntoSurface` by `max(0, −v · n)`. Server damage only |
 | `SLIDE_HOLD` / `SLIDE_UPDATE_EVERY` (*client*, `dwell-game` `sound.rs`) | 0.15 s / 50 ms | A slide's sound: a pause shorter than the hold keeps the same voice; speed updates at most this often (AUDIO.md §5) |
 | `IMPACT_HOLD` / `IMPACT_KEEPS` / `IMPACT_PROBE_M` (*client*, `dwell-game` `sound.rs`) | 70 ms / 0.35 / 0.06 m | An impact sound: the speed toward a surface touching the body (within the probe) dropping in a sample to at most `KEEPS` of its fastest in the last `HOLD`; then quiet that long (AUDIO.md §5) |
 | Impact, hurt (*client*, `shared/sounds` `events`) | `impact` 2 → 25 m/s; `hurt` 0 → 80 health points | Where the impact sound starts and is full; the hurt's intensity by the damage (AUDIO.md §5) |
@@ -3106,7 +3106,7 @@ architectural summary.
 | Other players | Both dynamic: they block and push each other; standing on heads is grounded but not carried by default | Server; remote players are kinematic on the client |
 | Tier 2 debris | Bounces off the local player; never affects player movement | Client only |
 | Explosions | Radial velocity change with falloff and upward bias (PPC `AddExplosion`), plus damage | Server; client replays at event tick (§9.3) |
-| Impacts | Damage from the controller's `IMPACTED` hit: the downward speed alone, `max(0, −v.y)`, on the ground (floors and ramps), never walls or ceilings (`damage.impact_surfaces`, `impact_measure`, PLAYER_CONTROLLER.md §6.10); flight exempt | Server |
+| Impacts | Damage from the controller's `IMPACTED` hit: the downward speed × the surface's cos θ, `max(0, −v.y) · n.y`, on the ground (floors and ramps), never walls or ceilings (`damage.impact_surfaces`, `impact_measure`, PLAYER_CONTROLLER.md §6.10); flight exempt | Server |
 | Voxel edits | Block removed under feet → normal walk-off; placement into any player capsule is rejected | Server |
 
 ### 9.3 Prediction & reconciliation **[built]**
@@ -3162,9 +3162,9 @@ animated from `State` and flags in snapshots.
 
 ### 9.6 Health, death & respawn **[built: impact damage, death, respawn]**
 - Health (`MAX_HEALTH` 100) is server-authoritative; damage sources are impacts (built, owner
-  2026-10-21; 2026-11-06: the controller's `IMPACTED` hit, the body's pre-contact downward speed
-  alone, `max(0, −v.y)` (`damage.impact_measure`), so a landing on a ramp hurts as on the flat and a
-  fast hit into a slope not at all; on the ground only (`damage.impact_surfaces`: a normal no
+  2026-10-21; 2026-11-06: the controller's `IMPACTED` hit, the body's pre-contact downward speed ×
+  the surface's cos θ, `max(0, −v.y) · n.y` (`damage.impact_measure`), so a steep ramp softens a
+  fall and a fast hit into a slope does not hurt at all; on the ground only (`damage.impact_surfaces`: a normal no
   steeper than `probes.max_slope_angle`), floors and ramps, never walls, steep faces or ceilings (the wall and ceiling impact
   sounds stay: they are read from motion), once per contact, the largest of a tick's; above
   `damage.impact_damage_min_speed` 12 m/s, `impact_damage_per_speed` 8 points per m/s; flight,

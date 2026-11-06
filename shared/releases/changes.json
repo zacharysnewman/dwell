@@ -4,7 +4,8 @@
     {
       "version": "0.49.3",
       "changes": [
-        "Fall damage now counts only how fast you're falling: a hard landing on a slope hurts like one on flat ground, and running or sliding fast into a slope never hurts"
+        "Fall damage now counts only how fast you're falling: running or sliding fast into a slope never hurts",
+        "Landing on a slope softens a fall: the steeper the slope, the less it hurts"
       ]
     },
     {

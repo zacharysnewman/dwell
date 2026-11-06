@@ -2480,8 +2480,9 @@ impl Players {
     }
 
     /// Dwell (§6.10): this tick's hit for the body's velocity `v` going into the step that met the
-    /// surface: by default its downward speed alone, face-local `max(0, −v.y)`
-    /// (`damage.impact_measure`; or the speed into the surface's normal `n`, `max(0, −v · n)`), the
+    /// surface: by default its downward speed into the surface, face-local `max(0, −v.y) · n.y` for
+    /// the surface's normal `n` (`damage.impact_measure`; or the whole speed into it,
+    /// `max(0, −v · n)`), the
     /// largest over the tick's new contacts, its landing (the ground's normal) and a rise the
     /// ceiling probe stopped. Flight, swimming and climbing are exempt, as they always were from
     /// falls. Only the surfaces `damage.impact_surfaces` names count: by default the ground, a
@@ -2501,7 +2502,8 @@ impl Players {
                 return; // a wall, a steep face or a ceiling: not the ground
             }
             let speed = match measure {
-                ImpactMeasure::Vertical => -v.y,
+                // Downward speed only, into a surface facing up (a wall's or a ceiling's is none).
+                ImpactMeasure::DownwardIntoSurface => (-v.y).max(0.0) * n.y.max(0.0),
                 ImpactMeasure::IntoSurface => -v.dot(n),
             }
             .max(0.0);

@@ -1,5 +1,6 @@
 //! Impact damage (PLAYER_CONTROLLER.md §6.10, ARCHITECTURE.md §9.6): a hit hurts by the downward
-//! speed alone, face-local `max(0, −v.y)` (owner, 2026-11-06; `impact_measure`), with `v` the
+//! speed × the surface's cos θ, face-local `max(0, −v.y) · n.y` (owner, 2026-11-06;
+//! `impact_measure`), with `v` the
 //! body's velocity going into the physics step that met the surface — on the ground only
 //! (`impact_surfaces`): a walkable normal, floors and ramps; walls, steep faces and ceilings never
 //! hurt. Once per
@@ -184,19 +185,20 @@ fn launch_onto_hillside(speed: f32, angle: f32) -> Landing {
 }
 
 #[test]
-fn landing_on_a_ramp_hurts_by_the_vertical_speed_alone() {
+fn landing_on_a_ramp_hurts_by_its_downward_speed_into_it() {
     // Owner (2026-11-06): "fall damage should only be applied based on Y (vertical downward
-    // velocity)." A landing on a ½ m ramp hurts as a landing on the flat at the same downward speed
-    // (before 0.49.2, by the speed into the ramp's normal, × 0.894 straight down; in 0.49.2 not at
-    // all), whatever the angle it comes in at: straight down, 60° below the horizontal, or along the
-    // ramp's own slope (its ~11 m/s down plus gravity's over the 0.6 m drop: ~16 m/s, which the speed
-    // into the ramp, ~4 m/s, never counted).
+    // velocity)", and "the angle of the downward hit reduces fall damage too, so landing straight
+    // down on a steep ramp would mitigate some damage": the downward speed × the surface's cos θ
+    // (face-local n.y). On a ½ m ramp (26.57°) × 0.894, whatever the angle the body comes in at;
+    // its horizontal speed never counts (until 0.49.1 the speed into the normal counted it: 60°
+    // below the horizontal dealt 21, along the slope 0; in 0.49.2 ramps dealt nothing).
+    let cos = Vec3::new(0.0, 2.0, -1.0).normalize().y;
     for angle in [90.0, 60.0, 26.565] {
         let l = launch_onto_hillside(25.0, angle);
-        let down = -l.before.y;
+        let down = -l.before.y * cos;
         assert!(
             (l.fastest - down).abs() < 0.05,
-            "{angle}°: {} vs {down} m/s down",
+            "{angle}°: {} vs {down} m/s down into the ramp",
             l.fastest
         );
         let damage = PlayerControllerConfig::default().damage.impact_damage(down);
@@ -234,16 +236,39 @@ fn steep_hillside(w: &mut PlayerTestWorld) -> f32 {
 }
 
 #[test]
-fn landing_on_a_steep_ramp_hurts_by_the_vertical_speed_alone() {
-    // 25 m/s straight down onto a 45° ramp hurts as onto the flat (0.49.2: nothing).
+fn landing_on_a_steep_ramp_hurts_less_than_on_the_flat() {
+    // 25 m/s straight down onto a 45° ramp: the downward speed × cos 45°, so less than the same fall
+    // onto the flat (owner, 2026-11-06: "landing straight down on a steep ramp would mitigate some
+    // damage"; 0.49.2: nothing).
     let mut w = PlayerTestWorld::new();
     let ground = steep_hillside(&mut w);
     let e = w.spawn(Vec3::new(0.5, ground + 0.8, 20.5));
     w.kick(0, e, Vec3::new(0.0, -25.0, 0.0));
-    let fastest = fastest_impact(&mut w, e, ticks(1.0));
+    let mut before = Vec3::ZERO;
+    let mut fastest = 0.0f32;
+    for _ in 0..ticks(1.0) {
+        let v = w.vel(e);
+        w.step(1);
+        if w.c(e).events & events::IMPACTED != 0 && w.c(e).impact_speed > fastest {
+            fastest = w.c(e).impact_speed;
+            before = v;
+        }
+    }
     assert!(w.count(e, events::LANDED) >= 1, "landed on the slope");
-    assert!(fastest > 24.5, "{fastest} m/s down");
-    assert!(w.config.damage.impact_damage(fastest) > 0);
+    let down = -before.y;
+    let into = down * std::f32::consts::FRAC_1_SQRT_2;
+    assert!(
+        (fastest - into).abs() < 0.05,
+        "{fastest} vs {into} ({down} down)"
+    );
+    let damage = &w.config.damage;
+    assert!(
+        damage.impact_damage(fastest) > 0
+            && damage.impact_damage(fastest) < damage.impact_damage(down),
+        "{} on the ramp vs {} on the flat",
+        damage.impact_damage(fastest),
+        damage.impact_damage(down)
+    );
 }
 
 #[test]

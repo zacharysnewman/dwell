@@ -188,10 +188,12 @@ pub enum ImpactSurfaces {
 /// ◆ What speed an impact hurts by (§6.10, `damage.impact_measure`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ImpactMeasure {
-    /// The downward speed alone, face-local `max(0, −v.y)` (owner, 2026-11-06: "fall damage should
-    /// only be applied based on Y (vertical downward velocity)"): a landing on a ramp hurts as one
-    /// on the flat at the same downward speed, and a fast run or slide into a slope never hurts.
-    Vertical,
+    /// The downward speed × the surface's cos θ, face-local `max(0, −v.y) · n.y` (owner,
+    /// 2026-11-06: "fall damage should only be applied based on Y (vertical downward velocity)",
+    /// and "the angle of the downward hit reduces fall damage too"): flat ground counts the fall in
+    /// full, a ½ m ramp × 0.894, a 45° one × 0.707; horizontal speed never counts, so a fast run or
+    /// slide into a slope never hurts.
+    DownwardIntoSurface,
     /// The speed into the surface, `max(0, −v · n)` (the rule from 2026-10-21 to 0.49.1), which a
     /// mode with `ImpactSurfaces::All` (walls and ceilings) needs.
     IntoSurface,
@@ -207,7 +209,8 @@ pub struct Damage {
     pub impact_damage_per_speed: f32,
     /// The contacts an impact can hurt on: the ground (default) or every surface.
     pub impact_surfaces: ImpactSurfaces,
-    /// The speed a hit hurts by: the downward speed (default) or the speed into the surface.
+    /// The speed a hit hurts by: the downward speed into the surface (default) or the whole speed
+    /// into it.
     pub impact_measure: ImpactMeasure,
     pub crush_speed: f32,
     pub crush_ticks: u16,
@@ -362,7 +365,7 @@ impl Default for PlayerControllerConfig {
                 impact_damage_min_speed: 12.0,
                 impact_damage_per_speed: 8.0,
                 impact_surfaces: ImpactSurfaces::Ground,
-                impact_measure: ImpactMeasure::Vertical,
+                impact_measure: ImpactMeasure::DownwardIntoSurface,
                 crush_speed: 4.0,
                 crush_ticks: 6,
             },
