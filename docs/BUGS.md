@@ -20,15 +20,20 @@ face, or the placement check against its shape.
 *Found 2026-11-05 (0.48.2), from CI.* Under the e2e suite's software renderer (CI ~5 fps, a Mac's
 SwiftShader ~3 fps) a held-Place build in `e2e/buildDrag.spec.ts` built its first piece and no more
 (towering, walking back in Line mode, bridging help, held ladders, crouch-jump towers); those tests
-had failed on CI since they were written (0.38.5). Two causes. The server checked each piece against
+had failed on CI since they were written (0.38.5). Three causes. A key pressed and let go before a
+tick took the input (a slow frame, or the prediction held while the server caught up) was never
+sampled: the jump was lost. The server checked each piece against
 its view of the player's body, which lags the client's by the inputs still queued, a whole slow
 frame of them: a piece the client placed once its body was clear went into the server's body and was
 refused (a region fill's cell skipped). And the client looked for the moment a jump cleared the next
-piece once a frame, and at 200–300 ms frames that ~0.25 s moment fell between frames. Fixed: a
+piece once a frame, and at 200–300 ms frames that ~0.25 s moment fell between frames. Fixed: a key tapped between ticks counts for the next tick (`input.rs` `tapped`); a
 place into a player, or a region edit entirely into one, waits up to `EDIT_HOLD_TICKS` (30) checked
 each tick (`server.rs`), and the held stroke is checked at every predicted tick (`game.rs`
 `drag_tick`). `game_local.rs` `towering_builds_a_metre_a_jump_at_five_and_three_frames_a_second`
-(red before: 0 m of 4 at 5 fps). At 2 fps a tower still misses some jumps.
+(red before: 0 m of 4 at 5 fps) and `a_jump_pressed_and_let_go_between_two_ticks_still_jumps` (red
+before: 0 m). The e2e spec now holds each jump for 9 of the controller's ticks by its tick trace, not
+150 ms of the clock, which at a few frames a second can be one tick (a hop too low to build under).
+At 2 fps a tower still misses some jumps.
 
 ### 28. A junction at the top of a chute can leave a lip a cell short (gone in 0.49.0)
 

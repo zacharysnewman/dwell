@@ -2228,6 +2228,7 @@ impl<S: Scene> Game<S> {
             return;
         }
         let frame = quantize_input(&input.sample(touch), self.predictor.next_seq());
+        input.took();
         self.predictor.tick(self.streamer.store_mut(), &frame);
         self.recent.push_back(frame);
         while self.recent.len() > MAX_INPUTS_PER_DATAGRAM {

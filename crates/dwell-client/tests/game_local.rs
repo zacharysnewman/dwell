@@ -1993,3 +1993,29 @@ fn towering_builds_a_metre_a_jump_at_five_and_three_frames_a_second() {
         );
     }
 }
+
+#[test]
+fn a_jump_pressed_and_let_go_between_two_ticks_still_jumps() {
+    // docs/BUGS.md 30: under the e2e software renderer, a jump press shorter than the gap between
+    // ticks the client predicts (a slow frame, or the prediction held while the server catches up)
+    // was never sampled, and the jump was lost; a tower then built nothing that jump.
+    let mut rig = Rig::with_generator(GENERATOR_SANDBOX);
+    assert!(rig.run_until(60 * 30, |r| {
+        r.game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)
+    }));
+    rig.run_until(60, |_| false);
+    let ground = rig.game.as_ref().unwrap().debug_state().feet[1];
+    let last = telemetry::with(|t| t.ticks().last().map_or(0, |s| s.seq));
+    rig.input.set_key("Space", true);
+    rig.input.set_key("Space", false);
+    rig.run_until(60, |_| false);
+    let peak = telemetry::with(|t| {
+        t.ticks()
+            .filter(|s| s.seq > last)
+            .map(|s| s.feet[1])
+            .fold(ground, f64::max)
+    });
+    assert!(peak - ground > 1.0, "jumped {} m", peak - ground);
+}
