@@ -105,7 +105,7 @@ The owner approved these recommendations (2026-11-05):
 - **The current table.** `dwell-world` `currents.rs`: each water chunk's columns' velocity (m/s along
   x and z), per face; the faces mirror only up and down, so a current is the same vector in the world
   and face-locally. The server's grid writes its awake chunks' (`Water::publish_currents`: a column's
-  faces' discharges averaged over its depth; none under `STILL_MS` 2 cm/s or `CURRENT_DEPTH` 5 cm); a
+  faces' discharges averaged over its depth; none under `currentStillMs` 2 cm/s or `currentDepthM` 5 cm, `flow.json`); a
   sleeping chunk keeps the currents it fell asleep with, as it keeps its flows.
 - **Swimmers** swim in the water's frame: the swim layer's wish velocity has the current added, so an
   idle swimmer drifts at the current's speed and swimming adds to it (PLAYER_CONTROLLER.md §6.4).
@@ -187,6 +187,16 @@ The owner approved these recommendations (2026-11-05):
 
 One generator emits the Rust constants and the TS shell's copy; a bad entry fails with a message; a
 test adds a fixture by data alone. Per-world values travel in WorldSettings (ADR 0054).
+
+**As built (G4a, 0.49.1):** the runtime's settings live in `shared/fluids/flow.json` (the file the
+basins used, reshaped, so its generator and CI check carry on): `speed`, `tickEvery`, `theta`, `cfl`,
+`maxSubsteps`, `sleepBandM`, `wakeBandM`, `calmS`, `releaseS`, `jumpM2s`, `releaseM`, `editReach`,
+`fillHysteresis`, and `liquids` (each liquid's block, Manning's roughness, weir for the generator's
+chute streams, running block; the first is the one drawn). `shared/fluids/gen.mjs` validates it
+(ranges, registry blocks, the wake band at least the sleep band) and emits `flow.gen.rs`;
+`dwell_sim::water::Settings::of` turns it into the engine's settings and `Water::with_settings` runs
+any (`a_liquid_given_by_data_alone_runs_by_its_own_roughness`). The TS shell reads none of it. Pools
+and sources join the file with G2b and G1b; per world, only the speed so far (WorldSettings).
 
 ## 5. Phases (a draft for the implementation plan)
 

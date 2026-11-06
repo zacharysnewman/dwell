@@ -7,17 +7,19 @@
 //! - **The world as generated is at rest:** a generated river's or lake's column joins the grid
 //!   *held* at the level it was found at (it feeds and drains what's free beside it, as the river
 //!   beyond would), costing nothing. An edit frees the water around it; a free column whose level
-//!   differs from a held neighbour's by more than `RELEASE` frees that neighbour too, so a dam's
+//!   differs from its rest by more than `releaseM` frees that neighbour too, so a dam's
 //!   backwater spreads upstream and its drop downstream as far as they reach.
-//! - **Sleep:** a chunk whose free levels held within `SLEEP_BAND` for `CALM_S` sleeps and isn't
+//! - **Sleep:** a chunk whose free levels held within the sleep band for its calm time sleeps and isn't
 //!   stepped; what its awake neighbours send it is kept exactly (`owed`), and it wakes when that
-//!   would move its wet columns half of `WAKE_BAND`, or when a shared face jumps (an edit, a flood
-//!   front). Waking, it takes what it owes over `RELEASE_S`, in proportion to its columns' depth.
+//!   would move its wet columns half the wake band, or when a shared face jumps (an edit, a flood
+//!   front). Waking, it takes what it owes over `releaseS`, in proportion to its columns' depth.
 //! - **Blocks:** a free column's water is written as water blocks (full cells, its top cell in
 //!   eighths) when its level crosses a step, as clients draw water today (G3 gives water its own
 //!   layer and mesh).
 //! - **Conserved** among free columns exactly; held columns and the loaded world's edge are where
 //!   water enters and leaves.
+//!
+//! - **Data:** its settings and liquids from `shared/fluids/flow.json` (`Settings`, G4).
 //!
 //! Face-local throughout: a column is (face, x, z) with heights in its face's frame
 //! (`FaceFrame::row`), so face B is face A's mirror.
@@ -41,38 +43,68 @@ const CA: usize = (CS * CS) as usize;
 const NONE: u32 = u32::MAX;
 
 const G: f32 = 9.81;
-/// Manning's roughness (s/m^⅓).
-pub const MANNING: f32 = 0.03;
-/// θ-weighting (de Almeida et al. 2012): 1 the plain scheme, below 1 damped.
-pub const THETA: f32 = 0.95;
-/// The substep's share of the time a wave takes to cross a column.
-pub const CFL: f32 = 0.7;
 const DRY: f32 = 1e-4;
-/// A free chunk sleeps once no level in it moved more than this over `CALM_S` (m): tight, or a
-/// chunk asleep off its level gives it back as a wave when it wakes (Phase 53 G0).
-pub const SLEEP_BAND: f32 = 0.005;
-/// How much a sleeping chunk's account may drift before it wakes (m): the visible scale.
-pub const WAKE_BAND: f32 = 0.05;
-/// The calm window (water s).
-pub const CALM_S: f64 = 10.0;
-/// A woken chunk takes what it owes over this long (water s).
-pub const RELEASE_S: f64 = 5.0;
-/// A shared face's jump in a substep that wakes a sleeping chunk (m²/s).
-pub const JUMP: f32 = 0.1;
-/// A free column this far from a held neighbour's level frees it (m).
-pub const RELEASE: f32 = 0.025;
-/// Edits free the water within this many columns of them.
-pub const EDIT_REACH: i32 = 3;
-/// Substeps a water tick takes at most (more, and the water runs slow that tick).
-pub const MAX_SUBSTEPS: usize = 400;
+
+/// The grid's settings, from its data (`shared/fluids/flow.json`, `dwell_world::flow::FlowData`;
+/// what each means is in the file's `$comment`).
+#[derive(Clone, Copy, Debug)]
+pub struct Settings {
+    pub manning: f32,
+    pub theta: f32,
+    pub cfl: f32,
+    pub max_substeps: usize,
+    pub sleep_band: f32,
+    pub wake_band: f32,
+    pub calm_s: f64,
+    pub release_s: f64,
+    pub jump: f32,
+    pub release: f32,
+    pub edit_reach: i32,
+    /// How far a level moves past a drawn step before its cells are written again (m).
+    pub hyst: f32,
+    /// Slower water than this (m/s) has no current, nor water shallower than `current_depth` (m)
+    /// (docs/WATER_SURFACE_GRID.md §2c).
+    pub still: f32,
+    pub current_depth: f32,
+    /// The liquid it draws (the data's first).
+    pub liquid: StateId,
+}
+
+impl Settings {
+    /// The settings of flow data `d`.
+    pub fn of(d: &FlowData) -> Self {
+        let first = d
+            .liquids
+            .first()
+            .expect("flow data lists a liquid (validated)");
+        Settings {
+            manning: first.manning as f32,
+            theta: d.theta as f32,
+            cfl: d.cfl as f32,
+            max_substeps: d.max_substeps as usize,
+            sleep_band: d.sleep_band_m as f32,
+            wake_band: d.wake_band_m as f32,
+            calm_s: d.calm_s,
+            release_s: d.release_s.max(1e-6),
+            jump: d.jump_m2s as f32,
+            release: d.release_m as f32,
+            edit_reach: d.edit_reach as i32,
+            hyst: d.fill_hysteresis as f32 * STEP,
+            still: d.current_still_ms as f32,
+            current_depth: d.current_depth_m as f32,
+            liquid: dwell_blocks::require(first.block),
+        }
+    }
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self::of(&FLOW)
+    }
+}
+
 /// A cell's water is drawn in eighths.
 const STEP: f32 = CELL_H as f32 / 8.0;
-/// Slower water than this (m/s) is still: no current (docs/WATER_SURFACE_GRID.md §2c).
-const STILL_MS: f32 = 0.02;
-/// Water shallower than this (m) has no current: a wet film's flow over its depth is noise.
-const CURRENT_DEPTH: f32 = 0.05;
-/// How far a level moves past a drawn step before the cells are written again (m).
-const HYST: f32 = 0.25 * STEP;
 /// Rows a column's floor is looked for at most, either way.
 const SCAN_ROWS: i32 = 96;
 
@@ -144,15 +176,26 @@ fn floor_at(world: &VoxelWorld, f: FaceFrame, x: i32, z: i32, at: f64) -> Option
 /// The face law across a face from column a to b: the next discharge (m²/s, + from a to b).
 #[allow(clippy::too_many_arguments)]
 #[inline]
-fn face(ga: f32, da: f32, gb: f32, db: f32, q: f32, qa: f32, qb: f32, qp: f32, dt: f32) -> f32 {
+fn face(
+    s: &Settings,
+    ga: f32,
+    da: f32,
+    gb: f32,
+    db: f32,
+    q: f32,
+    qa: f32,
+    qb: f32,
+    qp: f32,
+    dt: f32,
+) -> f32 {
     let (ea, eb) = (ga + da, gb + db);
     let h = ea.max(eb) - ga.max(gb);
     if h <= DRY || !(h.is_finite()) {
         return 0.0;
     }
     let speed = (q * q + qp * qp).sqrt();
-    let friction = 1.0 + G * dt * MANNING * MANNING * speed / (h * h * h.cbrt());
-    let qt = THETA * q + (1.0 - THETA) * 0.5 * (qa + qb);
+    let friction = 1.0 + G * dt * s.manning * s.manning * speed / (h * h * h.cbrt());
+    let qt = s.theta * q + (1.0 - s.theta) * 0.5 * (qa + qb);
     let nq = (qt - G * h * dt * (eb - ea)) / friction;
     let limit = h * (G * h).sqrt();
     nq.clamp(-limit, limit)
@@ -256,6 +299,8 @@ impl Chunk {
 /// The water of a world (both faces).
 #[derive(Default)]
 pub struct Water {
+    /// Its settings (`Settings::default()`: the data's).
+    cfg: Settings,
     chunks: Vec<Box<Chunk>>,
     index: HashMap<(FaceFrame, i32, i32), u32>,
     /// Cells edits changed since the last tick.
@@ -283,6 +328,14 @@ impl std::fmt::Debug for Water {
 impl Water {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Water with settings other than the data's (a fixture, a tool).
+    pub fn with_settings(cfg: Settings) -> Self {
+        Self {
+            cfg,
+            ..Self::default()
+        }
     }
 
     /// Water with the world map's flow (kept for sources to come).
@@ -464,7 +517,7 @@ impl Water {
         // substeps, each as long as the deepest awake water allows
         let mut left = dt;
         let mut n = 0;
-        while left > 1e-9 && n < MAX_SUBSTEPS {
+        while left > 1e-9 && n < self.cfg.max_substeps {
             let deepest = self
                 .chunks
                 .iter()
@@ -475,7 +528,7 @@ impl Water {
                 self.t += left;
                 break;
             }
-            let cfl = f64::from(CFL / (G * deepest).sqrt());
+            let cfl = f64::from(self.cfg.cfl / (G * deepest).sqrt());
             let steps = (left / cfl).ceil().max(1.0);
             let sub = left / steps;
             self.substep(sub as f32);
@@ -504,14 +557,14 @@ impl Water {
     }
 
     /// Chunk `c`'s currents: each free column's velocity (m/s), the mean of its faces' discharges
-    /// over its depth; none if all are still (under `STILL_MS`).
+    /// over its depth; none if all are still (`Settings::still`).
     fn currents_of(&self, c: usize) -> Option<ChunkCurrents> {
         let k = &self.chunks[c];
         let mut out: ChunkCurrents = Box::new([[0.0; 2]; CA]);
         let mut any = false;
         for l in 0..CA {
             let h = k.w.depth[l];
-            if k.held[l] || k.w.floor[l].is_nan() || h < CURRENT_DEPTH {
+            if k.held[l] || k.w.floor[l].is_nan() || h < self.cfg.current_depth {
                 continue;
             }
             let behind = |d: usize, z: bool| {
@@ -522,7 +575,7 @@ impl Water {
             };
             let u = 0.5 * (k.w.qx[l] + behind(1, false)) / h;
             let v = 0.5 * (k.w.qz[l] + behind(3, true)) / h;
-            if u.hypot(v) >= STILL_MS {
+            if u.hypot(v) >= self.cfg.still {
                 out[l] = [u, v];
                 any = true;
             }
@@ -665,8 +718,9 @@ impl Water {
                 }
             }
             k.drawn[l] = f32::NAN;
-            for dz in -EDIT_REACH..=EDIT_REACH {
-                for dx in -EDIT_REACH..=EDIT_REACH {
+            let reach = self.cfg.edit_reach;
+            for dz in -reach..=reach {
+                for dx in -reach..=reach {
                     if let Some((c2, l2)) = self.find(f, x + dx, z + dz) {
                         self.free(c2, l2);
                     }
@@ -694,7 +748,7 @@ impl Water {
         }
         k.awake = true;
         k.calm_t = -1.0;
-        k.rel_rate = k.owed / RELEASE_S;
+        k.rel_rate = k.owed / self.cfg.release_s;
         let _ = t;
         self.wakes += 1;
     }
@@ -817,7 +871,18 @@ impl Water {
                                         0.5 * (own + before)
                                     };
                                     let qp = 0.5 * (perp(c, l) + perp(c2, l2));
-                                    face(ga, ka.depth[l], gb, kb.depth[l2], q, qa, qb, qp, dt)
+                                    face(
+                                        &self.cfg,
+                                        ga,
+                                        ka.depth[l],
+                                        gb,
+                                        kb.depth[l2],
+                                        q,
+                                        qa,
+                                        qb,
+                                        qp,
+                                        dt,
+                                    )
                                 }
                             }
                             None => 0.0,
@@ -866,6 +931,7 @@ impl Water {
     /// Settles one layer's faces (the limiter applied); returns, for faces between an awake and a
     /// sleeping chunk, (sleeper, the flow into it, sleeper's column, whether the face jumped).
     fn settle(&mut self, rest: bool) -> Vec<(usize, usize, bool, f32, bool)> {
+        let jump = self.cfg.jump;
         let mut edges = Vec::new();
         for c in 0..self.chunks.len() {
             let a = self.chunks[c].active;
@@ -901,7 +967,7 @@ impl Water {
                         k.qx[l] = nq
                     }
                     if c != c2 && wa != wb {
-                        edges.push((c, l, zf, nq, (nq - old).abs() > JUMP));
+                        edges.push((c, l, zf, nq, (nq - old).abs() > jump));
                     }
                 }
             }
@@ -967,6 +1033,7 @@ impl Water {
         }
         // the water balance, for awake free columns (held ones keep their level)
         let t = f64::from(dt) + self.t;
+        let cfg = self.cfg;
         for c in 0..n {
             if !self.chunks[c].awake {
                 continue;
@@ -1015,10 +1082,10 @@ impl Water {
                 }
             }
             // the calm window: asleep once still within the band for CALM_S
-            if k.calm_t < 0.0 || moved > SLEEP_BAND {
+            if k.calm_t < 0.0 || moved > cfg.sleep_band {
                 k.calm_t = t;
                 k.win = k.w.depth;
-            } else if t - k.calm_t >= CALM_S && k.owed == 0.0 {
+            } else if t - k.calm_t >= cfg.calm_s && k.owed == 0.0 {
                 k.awake = false;
                 k.w.scale = [1.0; CA];
                 k.r.scale = [1.0; CA];
@@ -1048,7 +1115,7 @@ impl Water {
                 } else {
                     k.r.floor[l] + k.r.depth[l]
                 };
-                if (lv - rest).abs() <= RELEASE {
+                if (lv - rest).abs() <= self.cfg.release {
                     continue;
                 }
                 for d in 0..4 {
@@ -1071,7 +1138,7 @@ impl Water {
                 continue;
             }
             let wet = k.wet().max(1) as f64;
-            if k.owed.abs() / wet > f64::from(WAKE_BAND) * 0.5 {
+            if k.owed.abs() / wet > f64::from(self.cfg.wake_band) * 0.5 {
                 self.wake(c);
             }
         }
@@ -1081,6 +1148,7 @@ impl Water {
     /// Writes changed free columns as blocks: full cells to the level, the top cell in eighths,
     /// emptied cells cleared (never a solid, never what isn't water or open).
     fn draw(&mut self, world: &mut VoxelWorld) -> Vec<([i32; 3], StateId)> {
+        let liquid = self.cfg.liquid;
         let mut writes = Vec::new();
         for c in 0..self.chunks.len() {
             for l in 0..CA {
@@ -1095,7 +1163,7 @@ impl Water {
                 };
                 let drawn = k.drawn[l];
                 if !drawn.is_nan()
-                    && (level - drawn).abs() < STEP * 0.5 + HYST
+                    && (level - drawn).abs() < STEP * 0.5 + self.cfg.hyst
                     && !(drawn > k.w.floor[l] && level <= k.w.floor[l])
                 {
                     continue;
@@ -1115,9 +1183,9 @@ impl Water {
                     }
                     let h = level - m_of_row(r) as f32;
                     let want = if h >= CELL_H as f32 - STEP * 0.5 {
-                        M.water
+                        liquid
                     } else if h >= STEP * 0.5 {
-                        dwell_blocks::liquid_at_fill(M.water, f64::from(h) / CELL_H)
+                        dwell_blocks::liquid_at_fill(liquid, f64::from(h) / CELL_H)
                     } else if kd == Kind::Liquid {
                         M.air
                     } else {
@@ -1222,7 +1290,7 @@ impl Water {
             k.owed = owed;
             k.awake = true;
             k.calm_t = -1.0;
-            k.rel_rate = owed / RELEASE_S;
+            k.rel_rate = owed / self.cfg.release_s;
         }
         Some(n)
     }
