@@ -246,3 +246,23 @@ fn fixed_positions_round_and_clamp() {
     assert_eq!(to_fixed_position(1e12), i32::MAX);
     assert_eq!(from_fixed_position(512), 2.0);
 }
+
+#[test]
+fn water_currents_decode_to_their_columns() {
+    let get = |n: &str| {
+        vectors()
+            .into_iter()
+            .find(|(k, _)| *k == n)
+            .map(|(_, b)| b)
+            .expect("vector")
+    };
+    let Some(Message::WaterCurrents(c)) = Message::decode(&get("water_currents")) else {
+        panic!("water_currents")
+    };
+    assert_eq!((c.face_b, c.cx, c.cz), (true, -3, 7));
+    // Column i: ((i % 11) − 5, −(i % 7)) steps of 0.05 m/s.
+    assert_eq!(c.cells[13], [-3, -6]);
+    assert_eq!(c.current(13), [-0.15, -0.3]);
+    assert_eq!(WaterCurrents::quantize(0.6), 12);
+    assert_eq!(WaterCurrents::quantize(-9.0), -127);
+}

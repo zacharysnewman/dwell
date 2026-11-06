@@ -132,6 +132,7 @@ pub enum MessageType {
     PlayerInput = 1,
     DatagramPing = 2,
     DatagramPong = 130,
+    WaterCurrents = 131,
     StatusRequest = 64,
     StatusResponse = 65,
     ClientHello = 66,
@@ -167,13 +168,14 @@ pub enum MessageType {
 }
 
 impl MessageType {
-    pub const MAX: u8 = 130;
+    pub const MAX: u8 = 131;
 
     pub const fn from_u8(v: u8) -> Option<Self> {
         match v {
             1 => Some(Self::PlayerInput),
             2 => Some(Self::DatagramPing),
             130 => Some(Self::DatagramPong),
+            131 => Some(Self::WaterCurrents),
             64 => Some(Self::StatusRequest),
             65 => Some(Self::StatusResponse),
             66 => Some(Self::ClientHello),

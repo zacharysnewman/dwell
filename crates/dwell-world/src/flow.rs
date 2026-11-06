@@ -43,6 +43,12 @@ pub struct FlowData {
     pub edit_reach: u32,
     /// How far past half a drawn step (fill steps) a level moves before it is drawn again.
     pub fill_hysteresis: f64,
+    /// Water slower than this (m/s) has no current.
+    pub current_still_ms: f64,
+    /// Water shallower than this (m) has no current.
+    pub current_depth_m: f64,
+    /// The fastest an untouched river's current runs (m/s).
+    pub river_current_max_ms: f64,
     /// The liquids the grid moves; the first is the one it draws.
     pub liquids: &'static [LiquidFlow],
 }
