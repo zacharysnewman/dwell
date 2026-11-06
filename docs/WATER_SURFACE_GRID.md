@@ -127,6 +127,16 @@ The owner approved these recommendations (2026-11-05):
   Manning's law gives the column's depth on the river's fall with the liquid's roughness (the grid's
   own law), at most `riverCurrentMaxMs` (1.5 m/s: a steep chute's would be a torrent, and a swimmer at 3 m/s still makes headway); a level reach
   and a lake are still. It goes to clients as any other chunk's currents.
+- **The flow shown (G3d):** from the client's current table, so generated and player-moved water
+  look alike: ripples carried by the current (a flow map), foam streaks along it, flecks drifting
+  on it, each a setting and per liquid as data (`shared/look/waterflow.json`; ARCHITECTURE.md §6.7).
+  Seen from above seed 0's river at (6745, 9644), the streaks run downstream and the flecks drift.
+
+**Showing the flow (owner, 2026-11-05):** all three of: ripples that move with the current, foam
+streaks along it, and particles drifting on it; each can be turned off in Settings. All water
+behaves and looks the same by the same law whether the generator or a player put it there (a held
+river's current is the map's, a freed one's the law's; both are drawn alike from the one current
+table). As built: G3d below.
 
 ## 3. Generation
 

@@ -90,7 +90,7 @@ describe('the settings store with shadows (append-only)', () => {
     expect(loadSettings(false).shadows.torch).toBe('high');
     expect(loadSettings(false).shadows.quality).toBe('off');
     // The water's record is untouched by it.
-    expect(JSON.parse(store.get('dwell.water') ?? '')).toEqual({ quality: 'medium' });
+    expect(JSON.parse(store.get('dwell.water') ?? '')).toMatchObject({ quality: 'medium' });
   });
 
   it('shares the shadows in the settings JSON', () => {

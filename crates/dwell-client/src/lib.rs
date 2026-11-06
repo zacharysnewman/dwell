@@ -4,6 +4,7 @@
 //! the renderer's smoke scene, which `client/e2e-webgpu` checks in headless Chromium.
 
 pub mod bodies;
+pub mod flecks;
 pub mod game;
 pub mod jobs;
 pub mod local;

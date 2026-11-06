@@ -27,6 +27,7 @@ pub mod shadows;
 #[path = "shadows.gen.rs"]
 mod shadows_gen;
 pub mod spyglass;
+pub mod waterflow;
 
 use daynight::{DAY_NIGHT, DayState, Sample};
 use dwell_world::FaceFrame;

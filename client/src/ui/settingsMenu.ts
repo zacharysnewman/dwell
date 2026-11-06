@@ -123,7 +123,12 @@ export function settingsJson(s: Settings): string {
       music: Math.round(s.audio.music * 100) / 100,
     },
     clouds: s.clouds,
-    water: { quality: s.water.quality },
+    water: {
+      quality: s.water.quality,
+      flowRipples: s.water.flowRipples,
+      flowFoam: s.water.flowFoam,
+      flowParticles: s.water.flowParticles,
+    },
     shadows: { quality: s.shadows.quality, torch: s.shadows.torch },
     motion: {
       speedEffects: s.motion.speedEffects,
@@ -361,6 +366,28 @@ const WATER_CHOICE: ChoiceSpec<WaterQuality> = {
   get: (s) => s.water.quality,
   with: (s, v) => ({ ...s, water: { ...s.water, quality: v } }),
 };
+
+/** How moving water shows its flow (docs/WATER_SURFACE_GRID.md §2c; owner: each one a setting). */
+const WATER_FLOW_TOGGLES: ToggleSpec[] = [
+  {
+    label: 'Flowing ripples',
+    hint: 'Ripples on rivers and moving water are carried along with the current',
+    get: (s) => s.water.flowRipples,
+    with: (s, v) => ({ ...s, water: { ...s.water, flowRipples: v } }),
+  },
+  {
+    label: 'Foam streaks',
+    hint: 'Pale streaks along fast water, showing which way it runs',
+    get: (s) => s.water.flowFoam,
+    with: (s, v) => ({ ...s, water: { ...s.water, flowFoam: v } }),
+  },
+  {
+    label: 'Drifting flecks',
+    hint: 'Small flecks floating downstream on moving water',
+    get: (s) => s.water.flowParticles,
+    with: (s, v) => ({ ...s, water: { ...s.water, flowParticles: v } }),
+  },
+];
 
 const SHADOW_CHOICE: ChoiceSpec<ShadowQuality> = {
   label: 'Sun & moon shadows',
@@ -713,6 +740,7 @@ export class SettingsMenu {
     const water = el('div', 'gm-group');
     water.append(el('h2', undefined, 'Water'));
     const waterGrid = el('div', 'gm-grid');
+    for (const spec of WATER_FLOW_TOGGLES) waterGrid.append(this.toggle(spec));
     waterGrid.append(this.choice(WATER_CHOICE));
     water.append(waterGrid);
     page.append(water);

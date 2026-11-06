@@ -191,6 +191,7 @@ What is recorded now:
 | `lod` | the whole-world view's update (`LodSystem`): selection, job requests, stand-ins |
 | `torchshadow.drawn` (count) | Lights whose torch shadow maps were drawn this frame (six passes each; kept maps aren't counted; `render/point_shadows.rs`, [`LIGHTS.md`](./LIGHTS.md) §4) |
 | `lights.drawn` (count) | Dynamic lights drawn this frame: held torches, yours and other players', the nearest `maxLights` (`render/lights.rs`, [`LIGHTS.md`](./LIGHTS.md) §3) |
+| `flecks.drawn` (count) | Flecks drifting on moving water drawn this frame (`flecks.rs`, `render/flames.rs` `fleck_quads`; docs/WATER_SURFACE_GRID.md §2c), at most each liquid's `particles.count` (`cpuCount` on a CPU adapter) |
 | `flames.drawn` (count) | Flames drawn this frame: placed light sources' and held torches' (yours in the arms view), at most `maxFlames` within `drawM` (`render/flames.rs`, [`LIGHTS.md`](./LIGHTS.md) §6) |
 | `lod.fading`, `lod.retiring` (counts) | LOD swaps cross-fading this frame and the outgoing draws they add (`dwell-lod` `fade.rs`, ARCHITECTURE.md §6.6 Swaps) |
 | `draw.acquire`, `draw.render`, `draw.present` | the surface texture, encoding and submitting the frame, presenting |
@@ -217,6 +218,8 @@ still continues across and the eye still swings across over `crossingRollS`.
 
 Plants (docs/TRANSPARENT_BLOCKS.md): `__dwell.plants(wind, shown)` scales their wind and hides or
 shows every cutout mesh, for an A/B of their cost at one camera pose.
+
+Water flow (docs/WATER_SURFACE_GRID.md §2c): `__dwell.waterFlowAt(x, y, z)` gives the client's current there (m/s along x and z), the flecks near the eye, and the first few flecks' places.
 
 From the console: `__dwell.telemetry()`, `__dwell.telemetryFrames()`, `__dwell.ticks()`,
 `__dwell.telemetryReset()` (types in `client/src/main.ts`).

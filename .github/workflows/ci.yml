@@ -68,6 +68,8 @@ jobs:
           node --test shared/look/flames.test.mjs
           node shared/look/motes.mjs
           node --test shared/look/motes.test.mjs
+          node shared/look/waterflow.mjs
+          node --test shared/look/waterflow.test.mjs
           node shared/look/daynight.mjs
           node --test shared/look/daynight.test.mjs
           node shared/textures/gen.mjs

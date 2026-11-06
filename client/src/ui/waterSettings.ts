@@ -11,6 +11,14 @@ export type WaterQuality = (typeof WATER_QUALITIES)[number];
 
 export interface WaterSettings {
   quality: WaterQuality;
+  /**
+   * How moving water shows its flow (docs/WATER_SURFACE_GRID.md §2c, G3d; owner, 2026-11-05: each
+   * one a setting): ripples carried by the current, foam streaks along it, particles drifting on it.
+   * Optional fields of the record (0.49.5): a record without them takes the defaults.
+   */
+  flowRipples: boolean;
+  flowFoam: boolean;
+  flowParticles: boolean;
 }
 
 export const WATER_QUALITY_LABELS: Record<WaterQuality, string> = {
@@ -20,7 +28,12 @@ export const WATER_QUALITY_LABELS: Record<WaterQuality, string> = {
 };
 
 export function defaultWater(mobile: boolean): WaterSettings {
-  return { quality: mobile ? 'low' : 'medium' };
+  return {
+    quality: mobile ? 'low' : 'medium',
+    flowRipples: true,
+    flowFoam: true,
+    flowParticles: true,
+  };
 }
 
 function isQuality(v: unknown): v is WaterQuality {
@@ -29,8 +42,15 @@ function isQuality(v: unknown): v is WaterQuality {
 
 /** The stored record as settings; anything missing or unknown takes the default. */
 export function sanitizeWater(value: unknown, fallback: WaterSettings): WaterSettings {
-  const stored = value as { quality?: unknown } | null;
-  return { quality: isQuality(stored?.quality) ? stored.quality : fallback.quality };
+  const stored = value as Partial<Record<keyof WaterSettings, unknown>> | null;
+  const flag = (k: 'flowRipples' | 'flowFoam' | 'flowParticles') =>
+    typeof stored?.[k] === 'boolean' ? stored[k] : fallback[k];
+  return {
+    quality: isQuality(stored?.quality) ? stored.quality : fallback.quality,
+    flowRipples: flag('flowRipples'),
+    flowFoam: flag('flowFoam'),
+    flowParticles: flag('flowParticles'),
+  };
 }
 
 /** What the renderer takes (`setWaterQuality`): 0 Low, 1 Medium, 2 High. */
@@ -47,5 +67,11 @@ export function waterRecord(stored: unknown, settings: WaterSettings): Record<st
     typeof stored === 'object' && stored !== null && !Array.isArray(stored)
       ? (stored as Record<string, unknown>)
       : {};
-  return { ...kept, quality: settings.quality };
+  return {
+    ...kept,
+    quality: settings.quality,
+    flowRipples: settings.flowRipples,
+    flowFoam: settings.flowFoam,
+    flowParticles: settings.flowParticles,
+  };
 }

@@ -6,6 +6,16 @@ pins it.
 
 ## Open
 
+### 34. e2e play.spec's two-client test times out on CI since 0.49.4
+
+*Found 2026-11-06, from CI.* "two clients on a native server see each other move": page B (on a
+150 ms, 5 %-loss link, `?netsim=150,20,5`) never reports its terrain ready within 20 s. It passes
+locally on a real GPU (14 s). Main passed it at #336 and #337 (each twice, a re-run today included)
+and has failed it on every run since: main at #340, PRs #338, #341 and #342 (three runs), main
+with #338 reverted, and main with #340 reverted (both of those include #339). Cutting the water
+currents' datagrams to a quarter didn't help, and there is no water near the native server's spawn
+(seed 0, (2128, 7544)). Next: re-run main at #340 and bisect #338's pieces on a branch from #336.
+
 ### 30. A held Place builds too little at a few frames a second (partly fixed in 0.49.2)
 
 *Found 2026-11-05 (0.48.2), from CI.* Under the e2e suite's software renderer (CI ~5 fps, a Mac's
