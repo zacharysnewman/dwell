@@ -44,6 +44,10 @@ pub type Runoff = Arc<dyn Fn(FaceFrame, i32, i32) -> f64 + Send + Sync>;
 /// An untouched river's current (m/s along x and z) at face `f`'s column (x, z) whose water is
 /// `depth` m deep, by the world map (Phase 53 G3b; `TerrainGenerator::river_current`).
 pub type RiverCurrent = Arc<dyn Fn(FaceFrame, i32, i32, f64) -> Option<[f64; 2]> + Send + Sync>;
+/// An untouched river's flow (m²/s along x and z, per metre of width) through face `f`'s column
+/// (x, z), by the world map (`TerrainGenerator::river_flow`): carried through the water as
+/// generated, so a dam backs the river up by it (docs/WATER_SURFACE_GRID.md §2b).
+pub type RiverFlow = Arc<dyn Fn(FaceFrame, i32, i32) -> Option<[f64; 2]> + Send + Sync>;
 
 /// Columns a water chunk spans each way.
 pub const CS: i32 = 16;
@@ -200,6 +204,13 @@ struct Layer {
     qz: [f32; CA],
     nqx: [f32; CA],
     nqz: [f32; CA],
+    /// The river's flow carried across each column's +x and +z face (m²/s; the map's, through
+    /// the faces open to it), and this substep's: kept apart from the law's, which its friction
+    /// would otherwise take back.
+    px: [f32; CA],
+    pz: [f32; CA],
+    npx: [f32; CA],
+    npz: [f32; CA],
     scale: [f32; CA],
 }
 
@@ -212,6 +223,10 @@ impl Layer {
             qz: [0.0; CA],
             nqx: [0.0; CA],
             nqz: [0.0; CA],
+            px: [0.0; CA],
+            pz: [0.0; CA],
+            npx: [0.0; CA],
+            npz: [0.0; CA],
             scale: [1.0; CA],
         }
     }
@@ -236,6 +251,8 @@ struct Chunk {
     held: [bool; CA],
     /// A held column's current by the world map's river (G3b; m/s along x and z).
     river: [[f32; 2]; CA],
+    /// A generated column's river flow by the world map (m²/s along x and z; `RiverFlow`).
+    flow: [[f32; 2]; CA],
     /// The level last written as blocks (NaN: none, or to write).
     drawn: [f32; CA],
     /// The calm window's depths and start.
@@ -260,6 +277,7 @@ impl Chunk {
             r: Layer::new(),
             held: [false; CA],
             river: [[0.0; 2]; CA],
+            flow: [[0.0; 2]; CA],
             drawn: [f32::NAN; CA],
             win: [0.0; CA],
             calm_t: -1.0,
@@ -333,6 +351,8 @@ pub struct Water {
     runoff: Option<Runoff>,
     /// Held water's currents by the world map's rivers (G3b); none: held water is still.
     rivers: Option<RiverCurrent>,
+    /// Generated rivers' flow, carried through the water as generated (§2b); none: still.
+    flows: Option<RiverFlow>,
     /// Chunks whose held water joined since their currents were last published.
     fresh: HashSet<usize>,
     /// Water time (s).
@@ -383,12 +403,17 @@ impl Water {
         };
         let map = Arc::new(terrain);
         let rivers = map.clone();
+        let flows = map.clone();
         Self::with_runoff(Arc::new(move |f: FaceFrame, x, z| {
             map.local(f.face).discharge_at(x, z)
         }))
         // Untouched rivers' currents (Phase 53 G3b).
         .with_rivers(Arc::new(move |f: FaceFrame, x, z, depth| {
             rivers.local(f.face).river_current(x, z, depth)
+        }))
+        // ... and the flow they carry, which a dam backs up.
+        .with_river_flow(Arc::new(move |f: FaceFrame, x, z| {
+            flows.local(f.face).river_flow(x, z)
         }))
     }
 
@@ -403,6 +428,14 @@ impl Water {
     /// Held water runs as the world map's rivers say (G3b): its currents, for swimmers and bodies.
     pub fn with_rivers(mut self, rivers: RiverCurrent) -> Self {
         self.rivers = Some(rivers);
+        self
+    }
+
+    /// Generated rivers carry the world map's flow (§2b): through the water as generated and the
+    /// water as it is alike, so an untouched river stays as it is, and what a dam stops of it
+    /// backs up behind it.
+    pub fn with_river_flow(mut self, flows: RiverFlow) -> Self {
+        self.flows = Some(flows);
         self
     }
 
@@ -715,11 +748,15 @@ impl Water {
             let behind = |d: usize, z: bool| {
                 self.step_col(c, l, d).map_or(0.0, |(c2, l2)| {
                     let n = &self.chunks[c2].w;
-                    if z { n.qz[l2] } else { n.qx[l2] }
+                    if z {
+                        n.qz[l2] + n.pz[l2]
+                    } else {
+                        n.qx[l2] + n.px[l2]
+                    }
                 })
             };
-            let u = 0.5 * (k.w.qx[l] + behind(1, false)) / h;
-            let v = 0.5 * (k.w.qz[l] + behind(3, true)) / h;
+            let u = 0.5 * (k.w.qx[l] + k.w.px[l] + behind(1, false)) / h;
+            let v = 0.5 * (k.w.qz[l] + k.w.pz[l] + behind(3, true)) / h;
             if u.hypot(v) >= self.cfg.still {
                 out[l] = [u, v];
                 any = true;
@@ -769,6 +806,7 @@ impl Water {
                 k.r.floor[l] = floor;
                 k.r.depth[l] = k.w.depth[l];
                 k.river[l] = [0.0; 2];
+                k.flow[l] = Self::flow_of(self.flows.as_ref(), f, x, z, k.r.depth[l]);
                 if let Some(rivers) = &self.rivers
                     && let Some([u, v]) = rivers(f, x, z, f64::from(k.w.depth[l]))
                 {
@@ -776,6 +814,16 @@ impl Water {
                     self.fresh.insert(c);
                 }
             }
+        }
+    }
+
+    /// A generated column's river flow (none where it holds no water).
+    fn flow_of(flows: Option<&RiverFlow>, f: FaceFrame, x: i32, z: i32, depth: f32) -> [f32; 2] {
+        match flows {
+            Some(flows) if depth > DRY => {
+                flows(f, x, z).map_or([0.0; 2], |[u, v]| [u as f32, v as f32])
+            }
+            _ => [0.0; 2],
         }
     }
 
@@ -980,6 +1028,7 @@ impl Water {
                     if !Self::computes(a, l, zf) {
                         continue;
                     }
+                    let np = self.carried(c, l, d, zf, rest);
                     let nq = {
                         let q_of = |cc: usize, ll: usize, z: bool| -> f32 {
                             let k = lay(&self.chunks[cc], rest);
@@ -1030,7 +1079,13 @@ impl Water {
                     };
                     let k = &mut self.chunks[c];
                     let k = if rest { &mut k.r } else { &mut k.w };
-                    if zf { k.nqz[l] = nq } else { k.nqx[l] = nq }
+                    if zf {
+                        k.nqz[l] = nq;
+                        k.npz[l] = np;
+                    } else {
+                        k.nqx[l] = nq;
+                        k.npx[l] = np;
+                    }
                 }
             }
         }
@@ -1048,17 +1103,19 @@ impl Water {
                     (
                         k.floor[l],
                         k.depth[l],
-                        k.nqx[l].max(0.0) + k.nqz[l].max(0.0),
+                        (k.nqx[l] + k.npx[l]).max(0.0) + (k.nqz[l] + k.npz[l]).max(0.0),
                     )
                 };
                 if floor.is_nan() {
                     continue;
                 }
                 if let Some((c2, l2)) = self.step_col(c, l, 1) {
-                    out += (-lay(&self.chunks[c2], rest).nqx[l2]).max(0.0);
+                    let n = lay(&self.chunks[c2], rest);
+                    out += (-(n.nqx[l2] + n.npx[l2])).max(0.0);
                 }
                 if let Some((c2, l2)) = self.step_col(c, l, 3) {
-                    out += (-lay(&self.chunks[c2], rest).nqz[l2]).max(0.0);
+                    let n = lay(&self.chunks[c2], rest);
+                    out += (-(n.nqz[l2] + n.npz[l2])).max(0.0);
                 }
                 let out = out * dt;
                 let k = &mut self.chunks[c];
@@ -1066,6 +1123,37 @@ impl Water {
                 k.scale[l] = if out > d { d / out } else { 1.0 };
             }
         }
+    }
+
+    /// The river's flow carried across the face of column (c, l) toward `d` (E or S) in one layer
+    /// (m²/s, + toward `d`), before the limiter: the map's (`Chunk::flow`, the two columns'
+    /// averaged), through the face as deep as the water as generated has it; in the water as it is,
+    /// in proportion to how much of that depth it still has there (none through a wall or a block
+    /// risen over the water, less where the water fell), never more. Untouched, the two layers
+    /// carry the same, so the river stays as it is; a dam stops it in the water as it is alone.
+    fn carried(&self, c: usize, l: usize, d: usize, zf: bool, rest: bool) -> f32 {
+        let Some((c2, l2)) = self.step_col(c, l, d) else {
+            return 0.0;
+        };
+        let (ka, kb) = (&self.chunks[c], &self.chunks[c2]);
+        let ax = usize::from(zf);
+        let p = 0.5 * (ka.flow[l][ax] + kb.flow[l2][ax]);
+        if p == 0.0 {
+            return 0.0;
+        }
+        let through = |la: &Layer, lb: &Layer| -> f32 {
+            let (ga, gb) = (la.floor[l], lb.floor[l2]);
+            let h = (ga + la.depth[l]).max(gb + lb.depth[l2]) - ga.max(gb);
+            if h.is_finite() { h.max(0.0) } else { 0.0 }
+        };
+        let hr = through(&ka.r, &kb.r);
+        if hr <= DRY {
+            return 0.0;
+        }
+        if rest {
+            return p;
+        }
+        p * (through(&ka.w, &kb.w) / hr).min(1.0)
     }
 
     /// Settles one layer's faces (the limiter applied); returns, for faces between an awake and a
@@ -1089,25 +1177,33 @@ impl Water {
                     let (ka, kb) = (&self.chunks[c], &self.chunks[c2]);
                     let (la, lb) = if rest { (&ka.r, &kb.r) } else { (&ka.w, &kb.w) };
                     let raw = if zf { la.nqz[l] } else { la.nqx[l] };
-                    let s = if raw > 0.0 {
+                    let rawp = if zf { la.npz[l] } else { la.npx[l] };
+                    let s = if raw + rawp > 0.0 {
                         if ka.awake { la.scale[l] } else { 1.0 }
                     } else if kb.awake {
                         lb.scale[l2]
                     } else {
                         1.0
                     };
-                    let nq = raw * s;
-                    let old = if zf { la.qz[l] } else { la.qx[l] };
+                    let (nq, np) = (raw * s, rawp * s);
+                    let old = if zf {
+                        la.qz[l] + la.pz[l]
+                    } else {
+                        la.qx[l] + la.px[l]
+                    };
                     let (wa, wb) = (ka.awake, kb.awake);
                     let k = &mut self.chunks[c];
                     let k = if rest { &mut k.r } else { &mut k.w };
                     if zf {
-                        k.qz[l] = nq
+                        k.qz[l] = nq;
+                        k.pz[l] = np;
                     } else {
-                        k.qx[l] = nq
+                        k.qx[l] = nq;
+                        k.px[l] = np;
                     }
                     if c != c2 && wa != wb {
-                        edges.push((c, l, zf, nq, (nq - old).abs() > jump));
+                        let total = nq + np;
+                        edges.push((c, l, zf, total, (total - old).abs() > jump));
                     }
                 }
             }
@@ -1118,12 +1214,14 @@ impl Water {
     /// A layer's net flow into column (c, l) (m/s).
     fn net(&self, c: usize, l: usize, rest: bool) -> f32 {
         let k = lay(&self.chunks[c], rest);
-        let mut net = -k.qx[l] - k.qz[l];
+        let mut net = -k.qx[l] - k.px[l] - k.qz[l] - k.pz[l];
         if let Some((c2, l2)) = self.step_col(c, l, 1) {
-            net += lay(&self.chunks[c2], rest).qx[l2];
+            let n = lay(&self.chunks[c2], rest);
+            net += n.qx[l2] + n.px[l2];
         }
         if let Some((c2, l2)) = self.step_col(c, l, 3) {
-            net += lay(&self.chunks[c2], rest).qz[l2];
+            let n = lay(&self.chunks[c2], rest);
+            net += n.qz[l2] + n.pz[l2];
         }
         net
     }
@@ -1485,6 +1583,10 @@ impl Water {
                     k.r.qx[l] = v[6];
                     k.r.qz[l] = v[7];
                     k.held[l] = false;
+                    if !v[4].is_nan() {
+                        let (x, z) = k.xz(l);
+                        k.flow[l] = Self::flow_of(self.flows.as_ref(), f, x, z, v[5]);
+                    }
                     k.drawn[l] = f32::NAN;
                 }
             }

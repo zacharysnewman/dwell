@@ -244,7 +244,6 @@ fn a_block_set_in_a_generated_rivers_bed_changes_nothing_else() {
     let liquid = |m: u16| dwell_blocks::try_info(m).is_some_and(|i| i.liquid);
     let mut checked = 0;
     for seed in [0u64, 1, 2] {
-        let runoff = dwell_worldgen::runoff_for(GENERATOR_TERRAIN, seed).expect("a world map");
         let rivers = std::sync::Arc::new(
             dwell_worldgen::BifacialTerrain::for_generator(GENERATOR_TERRAIN, seed)
                 .expect("terrain"),
@@ -323,11 +322,9 @@ fn a_block_set_in_a_generated_rivers_bed_changes_nothing_else() {
             let was = w.get_voxel(bed[0], bed[1], bed[2]);
             w.set_voxel(bed[0], bed[1], bed[2], stone);
             let before = snapshot(&w);
-            let runoff = runoff.clone();
-            // With the map's rivers too, as the server's: a river at rest sends nothing down them.
-            let mut water = dwell_sim::water::Water::with_runoff(std::sync::Arc::new(
-                move |f: dwell_world::FaceFrame, x, z| runoff(f.face, x, z),
-            ));
+            // With the map's rivers too, as the server's (their currents and the flow they carry,
+            // §2b): a river at rest sends nothing down them.
+            let mut water = dwell_sim::water::Water::for_world(GENERATOR_TERRAIN, seed, true);
             water.touch([(bed, was)]);
             let player = [
                 f64::from(bed[0]) + 0.5,
@@ -458,4 +455,69 @@ fn an_untouched_rivers_water_has_its_maps_current() {
         checked += 1;
     }
     assert!(checked >= 2, "{checked} rivers checked");
+}
+
+/// Owner, 2026-11-06: "damming should raise the water and does" (BUGS.md #38). Seed 0's river at
+/// the bench's dam site (`?at=2364.5,142,7443.5`), a stone wall 32 m across it at z 7452 (the
+/// browser's measurement: 2 cm in ~1.7 h of water time). The river is drawn flat between its
+/// steps, so the water as generated carried none of the river's flow and a dam had nothing to back
+/// up; with the map's river driving it (WATER_SURFACE_GRID.md §2b), the water behind the wall
+/// rises by the river's discharge.
+#[test]
+fn a_dam_across_a_generated_flat_reach_backs_the_river_up() {
+    // face-a-only: the generated world's face A; the water's both faces are tested in
+    // `water::tests` (`a_dam_across_a_flat_river_backs_it_up_by_the_maps_flow`).
+    use dwell_world::{Face, FaceFrame, GENERATOR_TERRAIN, VoxelWorld};
+    let terrain = std::sync::Arc::new(
+        dwell_worldgen::BifacialTerrain::for_generator(GENERATOR_TERRAIN, 0).expect("terrain"),
+    );
+    let mut w = VoxelWorld::new(
+        dwell_worldgen::generator_for(GENERATOR_TERRAIN, 0),
+        Some(dwell_worldgen::air_test_for(GENERATOR_TERRAIN, 0)),
+    );
+    let (x0, x1, z0, z1) = (2349, 2380, 7452, 7453);
+    // Loaded well around the site: the backwater runs up the river.
+    for x in (x0 - 160..=x1 + 160).step_by(8) {
+        for z in (z0 - 200..=z1 + 120).step_by(8) {
+            for y in (240..=320).step_by(8) {
+                w.get_voxel(x, y, z);
+            }
+        }
+    }
+    // As the server's: the map's rivers' currents and flow.
+    let mut water = dwell_sim::water::Water::for_world(GENERATOR_TERRAIN, 0, true);
+    water.tick(&mut w, &[], 0.1);
+    let f = FaceFrame::A;
+    let probe = (2364, 7448);
+    let level0 = water
+        .level_at(f, probe.0, probe.1)
+        .expect("the river at the site");
+    let want = terrain.local(Face::A).river_current(probe.0, probe.1, 1.0);
+    let stone = dwell_blocks::require("dwell:stone");
+    let mut old = Vec::new();
+    for x in x0..=x1 {
+        for y in 262..=293 {
+            for z in z0..=z1 {
+                old.push(([x, y, z], w.get_voxel(x, y, z)));
+                w.set_voxel(x, y, z, stone);
+            }
+        }
+    }
+    water.touch(old);
+    let player = [2364.5, 142.0, 7443.5];
+    // Twenty minutes of water time in ticks of 1 s.
+    for _ in 0..1200 {
+        water.tick(&mut w, &[player], 1.0);
+    }
+    let level = water
+        .level_at(f, probe.0, probe.1)
+        .expect("the river behind the wall");
+    eprintln!(
+        "dam site: {level0:.3} → {level:.3} m (map current {want:?}); {}",
+        water.report([probe.0, 280, probe.1], 3)
+    );
+    assert!(
+        level > level0 + 0.25,
+        "the river behind the wall rose: {level0:.3} → {level:.3}"
+    );
 }

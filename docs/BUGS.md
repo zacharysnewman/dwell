@@ -50,6 +50,29 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 38. A dam didn't raise a level river, and level and shallow rivers had no current (fixed in 0.49.19)
+
+*Reported 2026-11-06.* "Damming should raise the water and does", "I feel like I saw this when the
+river was only 1 voxel deep, it didn't seem to have a flow either", then "dead rivers ... the
+shallow ones missing currents". At seed 0's dam site (`?local=1&seed=0&fresh=1&at=2364.5,142,7443.5`,
+a 32 × 32 × 2 stone wall across the river at z 7452) the water behind the wall rose 2 cm in ~1.7 h
+of water time. Cause: since 0.49.0 (G1a, no lips) a drawn river is flat between its steps, and the
+grid's rest layer (the water as generated, stepped by the law with its depths fixed) carried the
+river's flow only over its steps; on a level reach it carried none, so a dam stopped nothing. The
+map's current had the same gap: Manning's speed on a reach with no fall is zero, so about half of
+the rivers' channel columns (seed 0: 109 of 209 sampled) were still. Fixed: each generated column
+carries the map's river flow (`TerrainGenerator::river_flow`) across its faces in both the water as
+generated and as it is, so an untouched river stays put and a dam stops the flow in the water as it
+is alone; a held river's current is its flow over its depth where faster than Manning's
+(WATER_SURFACE_GRID.md §2b, §2c). Saved worlds are fixed on load (no record change). Pinned by
+`a_dam_across_a_generated_flat_reach_backs_the_river_up` (the dam site natively: red 139.50 →
+139.51 m in 20 water minutes, green → 140.07), `a_dam_across_a_flat_river_backs_it_up_by_the_maps_flow`,
+`a_shallow_flat_reach_runs_downstream_held_and_freed` and
+`a_world_saved_before_the_rivers_flow_backs_up_when_dammed` (both faces; red with the flow off: 1.7
+cm, a freed reach still, a restored reach still), `a_flowing_flat_river_rests_when_an_edit_frees_it`
+(both faces: the flow moves nothing untouched) and `every_reach_of_a_river_runs_level_ones_too` (red:
+a level reach still). In the browser the wall raised the water 0.58 m to the banks within 30 s real.
+
 ### 37. Drag building into water built one piece and no more (fixed in 0.49.16)
 
 *Reported 2026-11-06.* "Make it so I can drag-build underwater, I notice it doesn't work underwater

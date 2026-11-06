@@ -2418,6 +2418,13 @@ in 0.48.2.
   from the rest's. The generated state is then exactly at rest, and a dam, a cut or a flood still
   moves water (they change the water's flows, not the rest's): a dammed river backs up by the flow it
   was drawn with. G1's steady fill replaces these implicit springs with the map's river sources.
+  **The river's flow is carried** (0.49.18): a level reach carries no flow by the law, so each
+  generated column also has the map's river flow (`Water::with_river_flow`,
+  `TerrainGenerator::river_flow`: discharge across the channel's width, m²/s), carried across its
+  faces in both layers beside the law's flows (through the limiter; in the water as it is in
+  proportion to the face depth left of the rest's). Untouched, both carry the same; a dam stops it
+  in the water as it is, so the river backs up by its discharge (WATER_SURFACE_GRID.md §2b). A
+  restored record's free columns find their flow again from the map (no record change).
 - **Sleep.** A chunk whose free levels held within `sleepBandM` (5 mm) for `calmS` (10 s) sleeps
   and isn't stepped; what awake neighbours send it is kept exactly (`owed`) and it wakes when that
   would move its water half `wakeBandM` (5 cm) or a shared face jumps (`jumpM2s`); woken, it takes what
@@ -2494,8 +2501,9 @@ in 0.48.2.
   **[built, G3b]** Held water (generated, never freed) runs as the world map's river does
   (`Water::with_rivers`, `TerrainGenerator::river_current`, computed once as a chunk's water is
   found): downstream along the channel as the column sees it (the map's direction through the
-  meander warp's inverse), at Manning's speed for the column's depth on the river's fall, at most
-  `riverCurrentMaxMs` (1.5 m/s: a swimmer, at 3 m/s, still makes headway); a level reach or a lake is still.
+  meander warp's inverse), at Manning's speed for the column's depth on the river's fall or its flow
+  over its depth where faster (so level and shallow reaches run, 0.49.18), at most
+  `riverCurrentMaxMs` (1.5 m/s: a swimmer, at 3 m/s, still makes headway); a lake is still.
 - **[built, G3d] The flow shown** (owner, 2026-11-05: all three, each a setting; data
   `shared/look/waterflow.json` → `dwell-look` `waterflow.gen.rs` by `shared/look/waterflow.mjs`,
   validated, a fixture liquid by data alone, CI stale check; per liquid by its fluid's name). The

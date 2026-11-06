@@ -79,6 +79,30 @@ now, or later allow a few stacked water layers in the columns that have overhang
   a flood still move water by the law: a dammed river backs up by the flow it was drawn with (in the
   browser, seed 0's river rose 0.5 m above a dam and fell 0.25 m below it). The rest layer's
   divergence is an implicit spring per column; after G1 those springs are the map's river sources.
+- **The river's flow is carried** (0.49.19, BUGS.md #38; owner, 2026-11-06: "damming should raise
+  the water and does"). Since G1a (no lips) a drawn river is flat between its steps, and a level
+  reach carries no flow by the law, so the rest layer held none there and a dam had nothing to back
+  up: at seed 0's dam site (a level reach of a 0.6 m³/s creek) a wall raised the water 2 cm in
+  ~1.7 h of water time (natively, 0.8 cm in 20 minutes). Each generated column now has the map's
+  **river flow** (`TerrainGenerator::river_flow`: the river's discharge across its channel's width,
+  m²/s, downstream as the column sees it; `Water::with_river_flow`, found at scan). Every face
+  between two such columns carries their mean, in both layers, beside the law's flows and kept
+  apart from them (the law's friction would take it back), through the outflow limiter: in the
+  water as generated as deep as that has it, in the water as it is in proportion to how much of
+  that face depth is left (none through a wall or a block risen over the water, less where the
+  water fell, never more). Untouched, the two layers carry the same, so a river stays exactly as
+  drawn (`a_block_set_in_a_generated_rivers_bed_changes_nothing_else`, now with the flow: no cell
+  changed over six hours on seeds 0–2); a dam stops it in the water as it is alone, so the reach
+  above fills by the river's discharge and the one below drains. The flow carried counts in a
+  freed column's current, so freed river water runs as the held river does. **Measured:** natively
+  at the dam site 139.50 → 140.07 m in 20 water minutes (red: 139.51,
+  `a_dam_across_a_generated_flat_reach_backs_the_river_up`); in the browser (the same wall,
+  `?local=1&seed=0&fresh=1&at=2364.5,142,7443.5`) +0.28 m within 1.5 s real and 140.08 m by 30 s,
+  where it reaches the banks (their floors 140.0–140.5 m) and spreads over them. **Existing
+  worlds** are fixed on load, with no new record: held water is found again at scan, and a restored
+  free column's flow is the map's for its generated depth (`r.depth` in `DWG1`), so a world saved
+  with the old rest flows runs and backs up
+  (`a_world_saved_before_the_rivers_flow_backs_up_when_dammed`, both faces).
 - **A block set over water** traps what is below it (left as blocks, out of the grid); one set in it
   lifts its water by its volume.
 - **A tick keeps to a budget** (0.49.7, BUGS.md #33): water runs on game time, so a water tick is
@@ -125,8 +149,16 @@ The owner approved these recommendations (2026-11-05):
   (`TerrainGenerator::river_current`, found once as the chunk's water joins the grid): downstream as
   the column sees the channel (the map's direction through the meander warp's inverse), at the speed
   Manning's law gives the column's depth on the river's fall with the liquid's roughness (the grid's
-  own law), at most `riverCurrentMaxMs` (1.5 m/s: a steep chute's would be a torrent, and a swimmer at 3 m/s still makes headway); a level reach
-  and a lake are still. It goes to clients as any other chunk's currents.
+  own law), or at its flow over the column's depth (`river_flow / depth`) where that is faster, at most
+  `riverCurrentMaxMs` (1.5 m/s: a steep chute's would be a torrent, and a swimmer at 3 m/s still makes headway); a lake is still.
+  **Level and shallow reaches run** (0.49.19, BUGS.md #38; owner, 2026-11-06: "dead rivers ... the
+  shallow ones missing currents"): Manning's speed on no fall is none, and about half of seed 0's
+  sampled channel columns (109 of 209) lie in level reaches, so those reaches were still; the flow
+  over the depth keeps them running (`every_reach_of_a_river_runs_level_ones_too`; seed 0's dam
+  site 0.11 m/s at 1 m deep), and once freed they run by the flow they carry (§2b,
+  `a_shallow_flat_reach_runs_downstream_held_and_freed`, both faces). A slow creek's current (0.1
+  m/s) is under the flecks' `fromMs` (0.3) and the streaks' (0.4): its ripples move, but it shows
+  no flecks or foam. It goes to clients as any other chunk's currents.
 - **The flow shown (G3d):** from the client's current table, so generated and player-moved water
   look alike: ripples carried by the current (a flow map), foam streaks along it, flecks drifting
   on it, each a setting and per liquid as data (`shared/look/waterflow.json`; ARCHITECTURE.md §6.7).

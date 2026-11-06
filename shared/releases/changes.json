@@ -2,6 +2,14 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions card. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.49.19",
+      "changes": [
+        "A dam across a river raises the water behind it again, on level stretches too, and the river below it drops",
+        "Rivers run on their level and shallow stretches: swimmers and boats drift downstream there",
+        "Worlds saved before are fixed when loaded"
+      ]
+    },
+    {
       "version": "0.49.18",
       "changes": [
         "Sliding up a ramp launches you off its top on your own momentum, at the ramp's angle, instead of holding you to the top and sending you off its far edge flat",
