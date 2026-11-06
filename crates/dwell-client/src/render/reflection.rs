@@ -223,13 +223,26 @@ pub fn reflected(
     [0, 1, 2].map(|k| sky[k] + (c[k] / c[3] - sky[k]) * w)
 }
 
+/// How much of the land's reflection a surface that reflects `fresnel` of the light shows, for
+/// the data's `min_reflectance`: none at or under it (and the ray is not marched: looking down at
+/// water, which reflects 2–4 %, the march was the largest cost, owner 2026-11-06), all of it from
+/// twice it, faded between so the reflection doesn't pop. A `min` of 0 marches everywhere. The
+/// WGSL twin is `reflect_share` in shaders.rs.
+pub fn land_share(fresnel: f32, min: f32) -> f32 {
+    if min <= 0.0 {
+        return 1.0;
+    }
+    smoothstep(min, 2.0 * min, fresnel)
+}
+
 /// The constants the WGSL twin takes from the data (the per-tier values ride in the frame
 /// uniform's `reflect` and `reflect_sky`).
 pub fn wgsl() -> String {
     format!(
-        "const SSR_THICKNESS_REL: f32 = {:?};\nconst SSR_RIPPLE: f32 = {:?};\n",
+        "const SSR_THICKNESS_REL: f32 = {:?};\nconst SSR_RIPPLE: f32 = {:?};\nconst SSR_MIN_REFLECTANCE: f32 = {:?};\n",
         dwell_look::reflections::REFLECTIONS.ssr.thickness_rel as f32,
-        dwell_look::reflections::REFLECTIONS.ssr.ripple_scale as f32
+        dwell_look::reflections::REFLECTIONS.ssr.ripple_scale as f32,
+        dwell_look::reflections::REFLECTIONS.ssr.min_reflectance as f32
     )
 }
 
@@ -420,7 +433,7 @@ mod tests {
     /// A tier's march from the data (as `reflection_uniforms` gives the shader).
     fn tier_ssr(level: usize) -> Ssr {
         let t = &dwell_look::reflections::REFLECTIONS;
-        let [m, s] = dwell_look::reflections::reflection_uniforms(t, level, 8, true);
+        let [m, s] = dwell_look::reflections::reflection_uniforms(t, level, 8, true, false);
         Ssr {
             steps: m[0] as u32,
             refine: m[1] as u32,
@@ -459,5 +472,35 @@ mod tests {
     fn the_shaders_side_margin_is_this_one() {
         let wgsl = crate::render::shaders::source(1);
         assert!(wgsl.contains(&format!("const SIDE_LAND_M: f32 = {SIDE_LAND_M:?};")));
+    }
+
+    /// Looking down at water the land isn't marched (it reflects too little to see, and the march
+    /// cost a phone its frame rate close to the water, owner 2026-11-06); at a low angle it is, in
+    /// full; between, it fades in. Fails on the old shader, which marched every pixel.
+    #[test]
+    fn the_land_is_marched_only_where_the_water_reflects_enough_to_see_it() {
+        use crate::render::water::{f0_from_ior, schlick};
+        let min = dwell_look::reflections::REFLECTIONS.ssr.min_reflectance as f32;
+        assert!(min > 0.0, "the data marches everywhere");
+        let f0 = f0_from_ior(1.333);
+        // Straight down, and 40° down: skipped.
+        assert_eq!(land_share(schlick(1.0, f0), min), 0.0);
+        assert_eq!(land_share(schlick(40f32.to_radians().sin(), f0), min), 0.0);
+        // 10° and 3° down: all of it.
+        assert_eq!(land_share(schlick(10f32.to_radians().sin(), f0), min), 1.0);
+        assert_eq!(land_share(schlick(3f32.to_radians().sin(), f0), min), 1.0);
+        // Between, it fades in as the view flattens.
+        let s = |deg: f32| land_share(schlick(deg.to_radians().sin(), f0), min);
+        assert!(s(25.0) < s(20.0) && s(20.0) <= s(15.0));
+        // 0 marches everywhere.
+        assert_eq!(land_share(schlick(1.0, f0), 0.0), 1.0);
+    }
+
+    #[test]
+    fn the_shader_skips_the_march_by_the_same_rule() {
+        let wgsl = crate::render::shaders::source(1);
+        let min = dwell_look::reflections::REFLECTIONS.ssr.min_reflectance as f32;
+        assert!(wgsl.contains(&format!("const SSR_MIN_REFLECTANCE: f32 = {min:?};")));
+        assert!(wgsl.contains("fn reflect_share("));
     }
 }

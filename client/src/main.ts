@@ -199,8 +199,9 @@ interface DwellDebug {
   /**
    * The water quality (as the settings menu sets it, not stored) and/or its cost-isolation
    * switches (`?waterdbg=` names, comma-separated; "" for none); null leaves either as it is.
+   * `phone` draws the phone's reflection tiers (or a desktop's) whatever the device is.
    */
-  setWater(quality: WaterQuality | null, debug: string | null): void;
+  setWater(quality: WaterQuality | null, debug: string | null, phone?: boolean): void;
   /** The Shadows setting (as the settings menu sets it, not stored; docs/DAY_NIGHT.md §10). */
   setShadows(quality: ShadowQuality): void;
   /** The ink outline's mode (`shared/look/outline.json`, as `?outline=` names it), or `off`. */
@@ -626,6 +627,8 @@ async function start(): Promise<App | null> {
     sfx.setVolumes(s.audio);
     client.setExposure(s.exposure);
     client.setWaterQuality(waterQualityLevel(s.water.quality));
+    // A phone draws the water's cheaper reflection tiers (shared/look/reflections.json `phone`).
+    client.setPhone(mobile);
     client.setWaterFlow(s.water.flowRipples, s.water.flowFoam, s.water.flowParticles);
     // ?waterdbg=caustics,foam,… turns pieces of the water's shading off (a dev tool, DEV_TOOLS.md).
     const waterDebug = new URLSearchParams(location.search).get('waterdbg');
@@ -794,9 +797,10 @@ async function start(): Promise<App | null> {
       client.setPlants(wind, shown);
     },
     renderStats: () => client.renderStats() as RenderStats,
-    setWater: (quality, debug) => {
+    setWater: (quality, debug, phone) => {
       if (quality !== null) client.setWaterQuality(waterQualityLevel(quality));
       if (debug !== null) client.setWaterDebug(debug);
+      if (phone !== undefined) client.setPhone(phone);
     },
     setShadows: (quality) => {
       client.setShadows(shadowLevel(quality));

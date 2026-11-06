@@ -1007,6 +1007,9 @@ pub struct Renderer {
     eye_fluid: Option<EyeFluid>,
     /// The water quality setting (`set_water_quality`).
     water_quality: WaterQuality,
+    /// Whether this is a phone (the shell's `prefersTouch`): its own, cheaper reflection tiers
+    /// (dwell-look `phone_tiers`).
+    phone: bool,
     /// The water's cost-isolation switches (`water::debug_mask`, `?waterdbg=`; 0 in play).
     water_debug: u32,
     /// The water's flow shown (flow.rs `FLOW_RIPPLES`, `FLOW_FOAM`; the Water flow settings).
@@ -1681,6 +1684,7 @@ impl Renderer {
             roll: 0.0,
             eye_fluid: None,
             water_quality: WaterQuality::default(),
+            phone: false,
             water_debug: 0,
             flow_switches: 0,
             water_tiles,
@@ -1965,6 +1969,11 @@ impl Renderer {
     /// The water quality setting (the settings menu; WATER_RENDERING.md §4).
     pub fn set_water_quality(&mut self, quality: WaterQuality) {
         self.water_quality = quality;
+    }
+    /// Whether this device is a phone: its reflections draw the phone's tiers (dwell-look
+    /// `phone_tiers`, `shared/look/reflections.json` `phone`).
+    pub fn set_phone(&mut self, phone: bool) {
+        self.phone = phone;
     }
     /// Whether this adapter draws the LOD colour map (not a CPU adapter: the cheapest tier of
     /// everything there).
@@ -2427,6 +2436,7 @@ impl Renderer {
             self.water().level() as usize,
             self.clouds.octaves(&CLOUDS),
             self.clouds.self_shadow(),
+            self.phone,
         ) {
             put(&v);
         }

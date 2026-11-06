@@ -1701,11 +1701,13 @@ fn surface_light(i: FluidOut, s: Surface, f: Fluid, fres: f32, footprint: f32, r
 // the tiers that reflect clouds (WATER_RENDERING.md §8; the composite's own sky and clouds, so
 // the day, night and dusk follow), in the scene's linear light. `fw` is the deck's footprint
 // (`reflected_deck_fw`).
-fn reflected_env(r: vec3f, rel: vec3f, fw: f32) -> vec3f {
+// `clouds`: how much of the deck shows (`reflect_share`: none where the surface reflects too little to
+// see it, and the deck isn't drawn, which cost a 33 ms frame ~3.7 ms looking down at the water).
+fn reflected_env(r: vec3f, rel: vec3f, fw: f32, clouds: f32) -> vec3f {
     let clear = sky(r);
     var c = clear;
     let octaves = frame.reflect_sky.x;
-    if (octaves > 0.5 && !water_off(DBG_CLOUDS)) {
+    if (octaves > 0.5 && clouds > 0.0 && !water_off(DBG_CLOUDS)) {
         let face = frame.eye.y;
         // The deck seen from the surface point, not the eye: its height above it, and the noise
         // point under it.
@@ -1713,7 +1715,7 @@ fn reflected_env(r: vec3f, rel: vec3f, fw: f32) -> vec3f {
         let offsets = vec4f(frame.clouds.xy + rel.xz / CLOUD_SCALE, frame.clouds.zw);
         let deck = dwell_cloud_deck(r, face, offsets, height);
         let cfg = vec4f(frame.cloud_cfg.x, octaves, frame.reflect_sky.y, height);
-        c = dwell_clouds(clear, clear, r, face, deck, fw, offsets, cfg, cloud_lighting());
+        c = mix(clear, dwell_clouds(clear, clear, r, face, deck, fw, offsets, cfg, cloud_lighting()), clouds);
     }
     return inverse_display(c);
 }
@@ -1841,6 +1843,18 @@ fn ssr_trace(p: vec3f, r: vec3f, size: vec2f) -> vec3f {
     return vec3f(0.0);
 }
 
+// How much of the land's reflection a surface reflecting `fresnel` shows (render/reflection.rs
+// `land_share`): none at or under SSR_MIN_REFLECTANCE (no march), all from twice it.
+fn reflect_share(fresnel: f32) -> f32 {
+    if (SSR_MIN_REFLECTANCE <= 0.0) {
+        return 1.0;
+    }
+    // Kept apart: Chrome's compiler rejects a smoothstep whose constant edges are equal (a min
+    // of 0), even in a branch that never runs.
+    let m = max(SSR_MIN_REFLECTANCE, 1e-4);
+    return smoothstep(m, 2.0 * m, fresnel);
+}
+
 // The share of a screen segment from `a` along `delta` that stays on screen.
 fn screen_clip(a: vec2f, delta: vec2f, size: vec2f) -> f32 {
     var t_end = 1.0;
@@ -1960,7 +1974,7 @@ fn water_fs(i: FluidOut, @builtin(front_facing) front: bool) -> SceneOut {
     let fres = schlick(s.ndv, f.extra.x);
     let t = 1.0 - f.absorption.a;
     let alpha = 1.0 - (1.0 - fres) * t;
-    let refl = vec4f(reflected_env(reflected_dir(s), i.rel, deck_fw) * s.sky, 0.0);
+    let refl = vec4f(reflected_env(reflected_dir(s), i.rel, deck_fw, reflect_share(fres)) * s.sky, 0.0);
     o.color = vec4f((surface_light(i, s, f, fres, footprint, refl) + (1.0 - fres) * (1.0 - t) * s.body) / alpha, alpha);
     // Foam streaks along the current (docs/WATER_SURFACE_GRID.md §2c), opaque where they are.
     let streaks = flow_streaks(i, f, footprint);
@@ -2100,8 +2114,16 @@ fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(
     // reflection stays coherent where the ripples change from pixel to pixel.
     var calm = s;
     calm.n = normalize(mix(vec3f(0.0, sign(s.n.y), 0.0), s.n, SSR_RIPPLE));
-    let hit = ssr_trace(i.rel, reflected_dir(calm), size);
-    let refl = ssr_reflected(reflected_env(reflected_dir(s), i.rel, deck_fw) * s.sky, hit, size);
+    // Only where the surface reflects enough to see the land (`reflect_share`): looking down at water
+    // the march is skipped, which was its largest cost close to the water (and the reflected
+    // clouds, below, are too).
+    let land = reflect_share(fres);
+    var hit = vec3f(0.0);
+    if (land > 0.0) {
+        hit = ssr_trace(i.rel, reflected_dir(calm), size);
+        hit.z *= land;
+    }
+    let refl = ssr_reflected(reflected_env(reflected_dir(s), i.rel, deck_fw, land) * s.sky, hit, size);
     var color = surface_light(i, s, f, fres, footprint, refl) + (1.0 - fres) * through;
     // Shoreline foam where the water is thin.
     var foam = 0.0;
@@ -2199,11 +2221,18 @@ fn caustic_times(f: Fluid) -> vec2f {
 }
 
 // One caustic layer's cell-edge distance at cell coordinate `p` (the pattern repeats every
-// CAUSTIC_TILE cells, which divide the wrap): from the tile (channel `ch` of
-// the fluid's layer) where a pixel covers at least a texel (`texels`: texels per pixel), else
-// evaluated (`cell_edge`), blended between. Coherent per region: near water evaluates, far samples.
+// CAUSTIC_TILE cells, which divide the wrap): from the tile (channel `ch` of the fluid's layer),
+// or, where a pixel covers fewer than CAUSTIC_EXACT_TEXELS texels (`texels`: texels per pixel),
+// evaluated (`cell_edge`), blended between. CAUSTIC_EXACT_TEXELS is 0: always the tile
+// (render/water.rs).
 fn caustic_edge(p: vec2f, t: f32, texels: f32, fluid: u32, ch: i32) -> f32 {
-    let k = smoothstep(0.6, 1.0, texels);
+    var k = 1.0;
+    if (CAUSTIC_EXACT_TEXELS > 0.0) {
+        // Kept apart: Chrome's compiler rejects a smoothstep whose constant edges are equal
+        // (CAUSTIC_EXACT_TEXELS 0), even in a branch that never runs.
+        let e = max(CAUSTIC_EXACT_TEXELS, 1e-3);
+        k = smoothstep(0.6 * e, e, texels);
+    }
     var a = 0.0;
     if (k > 0.0) {
         let c = textureSampleLevel(caustic_tile, tile_sampler, p / f32(CAUSTIC_TILE), fluid, 0.0);
@@ -2555,7 +2584,7 @@ mod tests {
         for entry in ["water_fs", "water_scene_fs"] {
             let fs = body(entry);
             assert!(
-                fs.contains("deck_fw) * s.sky"),
+                fs.contains("deck_fw, ") && fs.contains(") * s.sky"),
                 "{entry}: the sky reflection"
             );
             assert!(fs.contains("see_through_light(i, n)"), "{entry}: glass");

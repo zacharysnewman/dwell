@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { reflectionsRust, validateReflections } from './reflections.mjs';
+import { phoneTier, reflectionsRust, validateReflections } from './reflections.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const data = () => JSON.parse(readFileSync(join(here, 'reflections.json'), 'utf8'));
@@ -29,6 +29,11 @@ test('a tunable changed by data changes the output', () => {
 
 test('bad entries fail with their path named', () => {
   const cases = [
+    [(d) => (d.phone.low = { ssrSteps: 2 }), /phone\.low: Low marches nothing/],
+    [(d) => (d.phone.ultra = {}), /unknown entry phone\.ultra/],
+    [(d) => (d.phone.medium.speed = 1), /unknown entry phone\.medium\.speed/],
+    [(d) => (d.phone.medium.ssrSteps = 100), /phone\.medium\.ssrSteps must be a number in \[0, 64\]/],
+    [(d) => (d.ssr.minReflectance = 0.9), /ssr\.minReflectance must be a number in \[0, 0\.5\]/],
     [(d) => (d.ssr.edgeFade = 2), /ssr\.edgeFade must be a number in \[0\.001, 0\.5\]/],
     [(d) => delete d.ssr.thicknessM, /missing entry ssr\.thicknessM/],
     [(d) => (d.tiers.ultra = d.tiers.high), /unknown entry tiers\.ultra/],
@@ -44,4 +49,16 @@ test('bad entries fail with their path named', () => {
     edit(d);
     assert.throws(() => validateReflections(d), message);
   }
+});
+
+test("a phone draws a tier under the phone's overrides, the rest the tier's", () => {
+  const d = validateReflections(data());
+  const m = phoneTier(d, 'medium');
+  assert.ok(m.ssrSteps < d.tiers.medium.ssrSteps, 'a phone marches fewer steps on Medium');
+  assert.equal(m.maxDistanceM, d.tiers.medium.maxDistanceM);
+  assert.deepEqual(phoneTier(d, 'low'), d.tiers.low);
+  // A fixture override by data alone reaches the Rust.
+  d.phone.high = { cloudShadow: false, ssrSteps: 9 };
+  const rs = reflectionsRust(validateReflections(d));
+  assert.match(rs.split('phone_tiers')[1], /ssr_steps: 9,/);
 });
