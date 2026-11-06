@@ -64,7 +64,7 @@ fn fastest_impact(w: &mut PlayerTestWorld, h: PlayerHandle, n: i32) -> f32 {
 #[test]
 fn a_perpendicular_landing_on_flat_ground_hits_once_and_a_20_m_fall_kills() {
     // 20 m of free fall at 20 m/s²: ~28.3 m/s, one hit on the floor's normal, past the lethal 12 m
-    // (until 0.49.17 the linear rule's 131 points, which also killed).
+    // (until 0.49.18 the linear rule's 131 points, which also killed).
     let mut w = PlayerTestWorld::new();
     w.floor();
     let e = w.spawn(Vec3::new(0.5, 20.0, 0.5));
@@ -88,7 +88,7 @@ fn small_drops_never_hurt_and_damage_climbs_steeply_to_lethal_at_12_m() {
     // Owner (2026-11-06): "You also still take fall damage at most heights even if it's a small
     // amount … I don't want to get nickeled and dimed all the time for small drops", wanting "a
     // higher threshold for taking damage and a smaller area between taking damage and lethal".
-    // Until 0.49.17 a hit hurt linearly past 12 m/s (a 3.6 m drop): 4.5 m took 11 points, 6 m
+    // Until 0.49.18 a hit hurt linearly past 12 m/s (a 3.6 m drop): 4.5 m took 11 points, 6 m
     // 28, and death came at ~15 m. Now nothing up to 5 m, then the quadratic curve to 12 m.
     for (height, least, most) in [
         (3.0, 0, 0),

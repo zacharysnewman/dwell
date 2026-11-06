@@ -396,7 +396,7 @@ fn scenario_world() -> PlayerTestWorld {
     // Crawlspace roof, 1 m thick from 1.5 m (a cell above the old 1 m): at 1 m a crouched
     // player's ceiling probe (0.1 m over the 0.9 m capsule) ended exactly on it, where float noise
     // far from the origin decided a jump.
-    // It reaches x = 10 (x = 2 until 0.49.17): air control no longer brakes a jump's sideways speed,
+    // It reaches x = 10 (x = 2 until 0.49.18): air control no longer brakes a jump's sideways speed,
     // so player 1, jumping against its side, slid on past the old corner, where whether the capsule
     // still touched the corner on the tick it cleared it (inside Rapier's contact margin) differed
     // far from the origin.

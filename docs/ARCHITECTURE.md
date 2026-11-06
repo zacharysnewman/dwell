@@ -2507,10 +2507,18 @@ in 0.48.2.
   **Foam streaks:** isotropic noise a streak's width, averaged over six taps back along the flow
   over its length, its ridges drawn in the streaks' colour lit as the shoreline foam is, from
   `foam.fromMs` to `toMs` of current, carried as the ripples are, faded where a pixel covers more
-  than a width. **Drifting flecks** (`dwell-client` `flecks.rs`): spawned on water moving at least
-  `particles.fromMs` within `radiusM` of the eye, carried by the current table, kept on the drawn
-  surface, faded in and out over `lifeS`, drawn as level discs in the flames' billboard pass
-  (`KIND_FLECK`, lit by the sky; `cpuCount` on a CPU adapter). The switches are the Water section's
+  than a width; `lengthM` is at most 4.5 `widthM` (validated: taps further apart than about three
+  quarters of a width no longer join, and a streak breaks into round blobs, the owner's "perfect
+  white circles" of 2026-11-06; now 0.5 by 0.12 m, tinted, strength 0.4). **Drifting flecks**
+  (`dwell-client` `flecks.rs`; owner 2026-11-06: bits of foam, not discs): spawned within `radiusM`
+  of the eye on water faster than `particles.fromMs`, kept as often as `speed_share` (eased from
+  `fromMs` to `fullMs`: few in slow water, none in still), carried by the current table, kept on
+  the drawn surface, eased in over `fadeInS` and out over `fadeOutS` of `lifeS` to at most
+  `opacity`, times `speed_share`. Drawn in the flames' billboard pass (`KIND_FLECK`) as a level quad
+  `sizeM` half-wide, up to `stretch` times as long along its (eased) current; the shader breaks its
+  outline into `lumps` lobes and finer tears by its seed (`ragged`), mottles it, fades it under
+  `minPixels` wide on screen (`fwidth`, no shimmer far off), and lights it as the water's surface
+  is (the sky, the sun and moon through the shadow maps). `cpuCount` (0) on a CPU adapter. The switches are the Water section's
   **Flowing ripples**, **Foam streaks** and **Drifting flecks** settings (`dwell.water`'s optional
   `flowRipples`, `flowFoam`, `flowParticles`; on by default), the first two in the frame's `wrap.w`.
   Water a player set moving and generated water show alike: both read the one table.
@@ -2638,8 +2646,8 @@ in the code yet.
 | `sprint_slide.steer_rate` / `cooldown_ticks` (`config.rs`) | 90 °/s / 30 ticks (0.5 s) | Limited steering toward the move input; the wait after a slide before the next (≤ 255: a `u8` on the wire) |
 | `movement.ground_stick_speed` (`config.rs`) | 5 m/s | The ground is a floor (owner, 2026-11-05; PLAYER_CONTROLLER.md §6.11): grounded vertical speed is momentum; following the ground may take away at most this much of the rise in a tick, and pull the body down at most this much beyond gravity; more and it leaves the ground (crests, lips, step-ups onto a flat top, downhill edges at speed). Walking, running and momentum; walking and running keep the ground |
 | `movement.slide_stick_rise_speed` / `slide_stick_drop_speed` (`config.rs`) | 0 / ∞ m/s | The same limits for a slide (a sprint slide, a crouched steep slide; owner, 2026-11-06; PLAYER_CONTROLLER.md §6.11): none of its rise is taken, so it flies off a ramp's top at the ramp's angle on its own momentum, and it follows every ramp down (glued) |
-| `movement.acceleration` / `deceleration` / `reverse_deceleration` / `air_control` (`config.rs`) | 50 / 15 / 60 m/s², 0.2 | The walking rule (owner, 2026-11-06, 0.49.17; PLAYER_CONTROLLER.md §6.12): the horizontal layer works on the whole velocity; input adds up to the walking speed and never stacks on momentum; `deceleration` is the ground's friction for any speed above that or with nothing held; in the air the push (`acceleration × air_control`) never slows the body or builds speed past `max(walk speed, |v|)`, only turning a faster body (no strafe-jumping) |
-| `damage.impact_safe_height` / `impact_lethal_height` / `impact_curve_exponent` (`config.rs`) | 5 m / 12 m / 2 | Impact damage (owner, 2026-10-21; 2026-11-06, 0.49.17; PLAYER_CONTROLLER.md §6.10): a hit's speed into the surface, read as the fall that lands at it (`v² ÷ 2g`), hurts nothing up to the safe height and `MAX_HEALTH × t ^ exponent` past it, lethal at the lethal height |
+| `movement.acceleration` / `deceleration` / `reverse_deceleration` / `air_control` (`config.rs`) | 50 / 15 / 60 m/s², 0.2 | The walking rule (owner, 2026-11-06, 0.49.18; PLAYER_CONTROLLER.md §6.12): the horizontal layer works on the whole velocity; input adds up to the walking speed and never stacks on momentum; `deceleration` is the ground's friction for any speed above that or with nothing held; in the air the push (`acceleration × air_control`) never slows the body or builds speed past `max(walk speed, |v|)`, only turning a faster body (no strafe-jumping) |
+| `damage.impact_safe_height` / `impact_lethal_height` / `impact_curve_exponent` (`config.rs`) | 5 m / 12 m / 2 | Impact damage (owner, 2026-10-21; 2026-11-06, 0.49.18; PLAYER_CONTROLLER.md §6.10): a hit's speed into the surface, read as the fall that lands at it (`v² ÷ 2g`), hurts nothing up to the safe height and `MAX_HEALTH × t ^ exponent` past it, lethal at the lethal height |
 | `damage.impact_surfaces` / `impact_measure` (`config.rs`) | `Ground` / `DownwardIntoSurface` | Impacts (PLAYER_CONTROLLER.md §6.10): `Ground` counts a normal no steeper than `probes.max_slope_angle`, floors and ramps (owner, 2026-10-21: "just ground"), walls, steep faces and ceilings never; `All` every contact. `DownwardIntoSurface` hurts by the downward speed × the surface's cos θ, `max(0, −v.y) · n.y` (owner, 2026-11-06: "only … based on Y", and the angle "reduces fall damage too"), so a fast hit into a slope never hurts and a steep ramp softens a fall; `IntoSurface` by `max(0, −v · n)`. Server damage only |
 | `SLIDE_HOLD` / `SLIDE_UPDATE_EVERY` (*client*, `dwell-game` `sound.rs`) | 0.15 s / 50 ms | A slide's sound: a pause shorter than the hold keeps the same voice; speed updates at most this often (AUDIO.md §5) |
 | `IMPACT_HOLD` / `IMPACT_KEEPS` / `IMPACT_PROBE_M` (*client*, `dwell-game` `sound.rs`) | 70 ms / 0.35 / 0.06 m | An impact sound: the speed toward a surface touching the body (within the probe) dropping in a sample to at most `KEEPS` of its fastest in the last `HOLD`; then quiet that long (AUDIO.md §5) |
