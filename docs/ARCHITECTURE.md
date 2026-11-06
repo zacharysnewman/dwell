@@ -2408,7 +2408,11 @@ in 0.48.2.
   and isn't stepped; what awake neighbours send it is kept exactly (`owed`) and it wakes when that
   would move its water half `wakeBandM` (5 cm) or a shared face jumps (`jumpM2s`); woken, it takes what
   it owes over `releaseS` (5 s) in proportion to depth. Substeps by the CFL of the deepest awake
-  water (0.7), at most `maxSubsteps` a water tick.
+  water (0.7), at most `maxSubsteps` a water tick and at most `stepBudget` (40,000) column-substeps
+  over the awake columns (at least one substep): water runs on game time (a water tick of 0.1 s is
+  7.2 s of water at the default day), and much water awake took the server's thread longer than a
+  tick (BUGS.md #33); past the budget the rest of the tick's water time is lost, its clock with it
+  (the calm windows count only the time simulated, so slowed water isn't taken for calm).
 - **Conserved** among free columns exactly (springs aside); held columns are where water enters and
   leaves.
 - **Drawn as blocks** until G3: a free column's water is written as water blocks (full cells, its top
@@ -2425,7 +2429,7 @@ in 0.48.2.
 - **Diagnostics:** `Water::report` (JSON: totals, and each column near a cell with its floor, level,
   rest, held and awake), in the block dump and `__dwell.waterReport` (DEV_TOOLS.md).
 - **[built, G4a, 0.49.1]** Its settings are data: `shared/fluids/flow.json` (→ `flow.gen.rs`,
-  `FlowData`): the speed, the tick period, θ, the CFL, the substep cap, the sleep and wake bands, the
+  `FlowData`): the speed, the tick period, θ, the CFL, the substep cap, the step budget, the sleep and wake bands, the
   calm and release times, the jump, the release distance, the edit reach, the draw margin, and the
   liquids (block, Manning's roughness, the weir the generator sizes chute streams by, the running
   block; the first is the one drawn); `water::Settings::of` reads it, `Water::with_settings` runs other
@@ -2436,10 +2440,11 @@ in 0.48.2.
   chunk keeps the currents it fell asleep with). A swimmer swims in the water's frame (the swim
   layer's wish velocity plus the current, PLAYER_CONTROLLER.md §6.4) and a floating body's water drag
   pulls it toward the current (`felling::water_drag`, `WaterDrag::current`), on the server and in the
-  client's prediction and stand-ins alike. The server sends each player the chunks within 3 of theirs
+  client's prediction and stand-ins alike. The server sends each player the chunks within 2 of theirs
   as `WaterCurrents` datagrams (§8.3: an i8 per axis per column in 5 cm/s steps), looked at every 15
-  ticks, a chunk sent when its currents changed or a second after it was last sent, 16 at most a
-  time, a chunk gone still once as zeros; a client forgets a chunk not sent again within 3 s.
+  ticks, a chunk sent when its currents changed or 3 s after it was last sent, 4 at most a time,
+  none in a session's first 5 s (its terrain first), a chunk gone still once as zeros; a client
+  forgets a chunk not sent again within 8 s.
   **[built, G3b]** Held water (generated, never freed) runs as the world map's river does
   (`Water::with_rivers`, `TerrainGenerator::river_current`, computed once as a chunk's water is
   found): downstream along the channel as the column sees it (the map's direction through the

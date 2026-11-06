@@ -81,6 +81,11 @@ now, or later allow a few stacked water layers in the columns that have overhang
   divergence is an implicit spring per column; after G1 those springs are the map's river sources.
 - **A block set over water** traps what is below it (left as blocks, out of the grid); one set in it
   lifts its water by its volume.
+- **A tick keeps to a budget** (0.49.7, BUGS.md #33): water runs on game time, so a water tick is
+  seconds of water; with much water awake (a dammed river) its substeps took 50 ms of the server's
+  thread a tick and the game stopped and started. A tick now takes at most `stepBudget`
+  column-substeps (`flow.json`); past it the water runs slower than game time, and its own clock
+  slows with it so it isn't taken for calm.
 - **Water spreads only into loaded world**; the chunks of moving water and those beside it are kept
   loaded, so it goes on with no player near.
 - **Not yet:** pools and the held sea (G2b), currents in held rivers (G3b), data (G4). Settings are
@@ -111,9 +116,10 @@ The owner approved these recommendations (2026-11-05):
   idle swimmer drifts at the current's speed and swimming adds to it (PLAYER_CONTROLLER.md §6.4).
 - **Floating bodies**: water's drag acts on the velocity relative to the current, so a raft let be
   comes up to it (slowly, by the area it shows and the speed squared).
-- **On the wire**: `WaterCurrents` datagrams (ARCHITECTURE.md §8.3), the chunks within 3 of a player's,
-  each sent when its currents change or a second after it was last sent, a chunk gone still once as
-  zeros; a client forgets one not sent again within 3 s. The client's prediction and stand-ins read
+- **On the wire**: `WaterCurrents` datagrams (ARCHITECTURE.md §8.3), the chunks within 2 of a player's,
+  each sent when its currents change or 3 s after it was last sent, 4 at most a time and none in a
+  session's first 5 s, a chunk gone still once as zeros; a client forgets one not sent again within
+  8 s. The client's prediction and stand-ins read
   the same table, so a swimmer in a current predicts as the server moves it.
 - **Untouched rivers (G3b):** held water's current is the world map's river's
   (`TerrainGenerator::river_current`, found once as the chunk's water joins the grid): downstream as

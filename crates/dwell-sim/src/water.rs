@@ -56,6 +56,9 @@ pub struct Settings {
     pub theta: f32,
     pub cfl: f32,
     pub max_substeps: usize,
+    /// The most column-substeps a tick may take (at least one substep): past it the rest of the
+    /// tick's water time is lost (docs/WATER_SURFACE_GRID.md §2b).
+    pub step_budget: usize,
     pub sleep_band: f32,
     pub wake_band: f32,
     pub calm_s: f64,
@@ -85,6 +88,7 @@ impl Settings {
             theta: d.theta as f32,
             cfl: d.cfl as f32,
             max_substeps: d.max_substeps as usize,
+            step_budget: d.step_budget as usize,
             sleep_band: d.sleep_band_m as f32,
             wake_band: d.wake_band_m as f32,
             calm_s: d.calm_s,
@@ -530,10 +534,17 @@ impl Water {
         self.scan(world);
         self.apply_touched(world);
         self.grow_ring(world);
-        // substeps, each as long as the deepest awake water allows
+        // substeps, each as long as the deepest awake water allows; at most the step budget's
+        // worth over the awake columns (water runs on game time: a tick is seconds of water, and
+        // much water awake must not take the server's thread longer than a tick)
         let mut left = dt;
         let mut n = 0;
-        while left > 1e-9 && n < self.cfg.max_substeps {
+        let awake = self.awake_chunks().max(1) * CA;
+        let cap = self
+            .cfg
+            .max_substeps
+            .min((self.cfg.step_budget / awake).max(1));
+        while left > 1e-9 && n < cap {
             let deepest = self
                 .chunks
                 .iter()
@@ -551,9 +562,9 @@ impl Water {
             left -= sub;
             n += 1;
         }
-        if left > 1e-9 {
-            self.t += left; // the rest of this tick's time is lost: the water ran slow
-        }
+        // The rest of this tick's time, past the budget, is lost: the water ran slow, and its clock
+        // (the calm windows, the release of what a sleeping chunk owes) with it, so slowed water
+        // isn't taken for calm.
         self.grow_ring(world);
         self.publish_currents(world);
         self.draw(world)

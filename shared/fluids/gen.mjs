@@ -18,6 +18,7 @@ export const FLOW_RANGES = {
   theta: [0.5, 1, false],
   cfl: [0.05, 1, false],
   maxSubsteps: [1, 100000, true],
+  stepBudget: [256, 100000000, true],
   sleepBandM: [0.0001, 0.5, false],
   wakeBandM: [0.001, 5, false],
   calmS: [0.1, 3600, false],

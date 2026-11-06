@@ -75,9 +75,11 @@ const MAX_QUEUED_EDITS: usize = 8; // per session per tick; more are dropped
 const CURRENTS_EVERY: u32 = 15;
 /// A water chunk's currents as sent (`WaterCurrents::cells`).
 type SentCurrents = Box<[[i8; 2]; 256]>;
-const CURRENTS_REFRESH: u32 = 60;
-const CURRENTS_RADIUS: i32 = 3;
-const CURRENTS_PER_SEND: usize = 16;
+const CURRENTS_REFRESH: u32 = 180;
+const CURRENTS_RADIUS: i32 = 2;
+const CURRENTS_PER_SEND: usize = 4;
+/// Ticks after a session joins before its currents are sent: its terrain first.
+const CURRENTS_AFTER_JOIN: u32 = 300;
 /// Ticks a place into a player's body waits before it is refused (docs/BUGS.md 30): the server's
 /// view of a body lags the client's by the inputs still queued, a whole frame of them on a slow
 /// device (a 2 fps frame's 30 ticks), so a place the client made once its body was clear goes in
@@ -453,6 +455,8 @@ struct Session {
     rate_window_count: u32,
     /// The water chunks' currents last sent (`send_currents`) and when.
     currents_sent: HashMap<dwell_world::currents::CurrentKey, (SentCurrents, u32)>,
+    /// Ticks still to wait before this session's currents are sent (`CURRENTS_AFTER_JOIN`).
+    currents_wait: u32,
     /// Applied at the start of the next step, by edit number: (edit number, edit, ticks held while
     /// it would go into a player, EDIT_HOLD_TICKS).
     edits: Vec<(u32, BlockEditRequest, u8)>,
@@ -513,6 +517,7 @@ impl Session {
             handle: None,
             inputs: VecDeque::new(),
             currents_sent: HashMap::default(),
+            currents_wait: CURRENTS_AFTER_JOIN,
             primed: false,
             low_water: usize::MAX,
             window_ticks: 0,
@@ -3236,6 +3241,11 @@ impl Server {
             let Some(h) = s.handle.filter(|_| s.joined()) else {
                 continue;
             };
+            if s.currents_wait > 0 {
+                let s = self.sessions.get_mut(&id).expect("session");
+                s.currents_wait = s.currents_wait.saturating_sub(CURRENTS_EVERY);
+                continue;
+            }
             let p = self.players.position(&self.physics, h);
             let ((fb, cx, cz), _) = current_key(
                 FaceFrame::at_height(p.y),

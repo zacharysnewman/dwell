@@ -2038,7 +2038,8 @@ fn the_waters_currents_near_the_player_reach_the_client_and_clear() {
     let mut cells = Box::new([[0.0f32; 2]; dwell_world::currents::CA]);
     cells[i] = [0.6, -0.3];
     rig.core.server().world().currents.set(key, Some(cells));
-    rig.run_until(60, |_| false);
+    // None go out in a session's first 5 s (its terrain first): past that, within a pass.
+    rig.run_until(360, |_| false);
     let at = rig.game.as_mut().unwrap().current_at(feet);
     assert!(
         (at[0] - 0.6).abs() < 0.03 && (at[1] + 0.3).abs() < 0.03,

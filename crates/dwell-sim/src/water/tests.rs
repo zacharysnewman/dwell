@@ -398,3 +398,31 @@ dwell_world::both_faces!(
         );
     }
 );
+
+dwell_world::both_faces!(
+    fn a_water_tick_keeps_to_its_step_budget_however_much_water_is_awake(f: FaceFrame) {
+        // Owner, 2026-11-05: damming a river stalled the game (the player stopped and started).
+        // Water runs on game time (72 x real by the day's length): a water tick of 0.1 s was 7.2 s
+        // of water, about 45 substeps over every awake chunk, 50 ms a tick on the server's thread.
+        // A tick now does at most `stepBudget` column-substeps (at least one substep); the rest of
+        // its water time is lost (the water runs slow), not the game.
+        let mut s = Scene::new(f);
+        s.basin(0, 30, 0, 30, 4);
+        s.run(2);
+        let cut: Vec<(i32, i32, i32)> = (31..=32)
+            .flat_map(|x| (10..=20).flat_map(move |z| (0..=5).map(move |r| (x, r, z))))
+            .collect();
+        s.edit(&cut, M.air);
+        let budget = s.water.cfg.step_budget;
+        for _ in 0..20 {
+            let (before, awake) = (s.water.substeps, s.water.awake_chunks());
+            s.water.tick(&mut s.world, &[], 7.2);
+            let steps = (s.water.substeps - before) as usize;
+            assert!(
+                steps <= (budget / (awake.max(1) * CA)).max(1),
+                "{steps} substeps over {awake} awake chunks: past the budget of {budget} column-steps"
+            );
+        }
+        assert!(s.water.awake_chunks() > 0, "the cut lake drains");
+    }
+);
