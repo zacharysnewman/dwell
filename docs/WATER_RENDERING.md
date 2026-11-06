@@ -193,7 +193,7 @@ public API: fluids are rendering data, and the 0.875 surface stays where it is.
   clear cyan-blue and, once W3 grades the colour by depth, shallows read turquoise and deep water
   blue.
 - **Bench:** the `water-views` scenario goes from the seed-7 spawn to the world map's nearest deep
-  sea (0.49.10: `goto`, DEV_TOOLS.md "Finding places"; it flew to a coast about 20 km
+  sea (0.49.11: `goto`, DEV_TOOLS.md "Finding places"; it flew to a coast about 20 km
   east-south-east until a terrain change moved it) and shoots four views: across the sea, toward
   the shore, 1 km up, and with the eye just under the surface. The `camera` step gained `aroundPlayer`
   (x and z offsets from the player's feet), and views and scenarios gained `settings.water`.

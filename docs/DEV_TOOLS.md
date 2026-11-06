@@ -266,7 +266,7 @@ it at `water.edits`: what was done near a reported spot, in order, to replay in 
 ## Finding places
 
 Tests and benchmarks find their scene by what is there, not by coordinates that go stale when the
-terrain changes (0.49.10; the water scenarios used to fly to a coast that a terrain change moved).
+terrain changes (0.49.11; the water scenarios used to fly to a coast that a terrain change moved).
 `crates/dwell-client/src/find.rs` does the search; the page exposes it as hooks and the bench as
 the `goto` step.
 
