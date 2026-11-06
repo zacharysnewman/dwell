@@ -3269,14 +3269,15 @@ impl Server {
         // The free water (WATER_SURFACE_GRID.md §2b): the newest record the water sent (none
         // yet: the one saved before stays).
         batch.water = self.water_link.record.take();
-        // LOD sections written since the last save; sections still to compute (dirty, or computing
-        // now) are saved dirty, to recompute on load.
+        // LOD sections written since the last save; sections still to compute (dirty, held, or
+        // computing now, at the server-jobs worker too) are saved dirty, to recompute on load: a
+        // page closed before the next save would otherwise keep the old content (BUGS.md #44).
         let mut lod_saved = Vec::new();
         for &c in &self.lod_unsaved {
             let Some(section) = self.lod.find(c) else {
                 continue;
             };
-            let dirty = self.lod.dirty().contains(&c);
+            let dirty = self.lod.recomputing(c);
             batch.lod_sections.push(SavedLodSection {
                 coord: c,
                 revision: section.revision,

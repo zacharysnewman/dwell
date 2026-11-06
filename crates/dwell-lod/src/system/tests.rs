@@ -166,6 +166,13 @@ struct MeshRecord {
     /// With `record_cells`: whether the cells hold face A's material, and stone.
     has_face_a: bool,
     has_stone: bool,
+    /// The cells hold `EXPLICIT_MARK` (a modified section's, as the test server sends them).
+    explicit: bool,
+}
+
+/// A state only the test server's modified sections hold.
+fn explicit_mark() -> u16 {
+    dwell_blocks::require("dwell:bedrock")
 }
 
 /// Worker pools whose jobs finish when the test says, in any order; the renderer; the streamed
@@ -252,6 +259,7 @@ impl SectionMesher for Host {
             surface_head: job.surface.as_ref().map(|s| [s[0], s[1], s[2], s[3]]),
             has_face_a,
             has_stone,
+            explicit: job.cells.contains(&explicit_mark()),
         });
         self.pending.push(Job::Mesh(token, self.mesh_bytes));
     }
@@ -1157,6 +1165,8 @@ struct Server {
     path: HashSet<LodId>,
     revision: u32,
     asked: Vec<LodSectionRequest>,
+    /// Explicit sections carry `explicit_mark` in their first cell.
+    mark: bool,
 }
 
 impl Server {
@@ -1168,6 +1178,7 @@ impl Server {
                 .collect(),
             revision: 5,
             asked: Vec::new(),
+            mark: false,
         }
     }
     fn on_path(&self, r: &LodSectionRequest) -> bool {
@@ -1192,7 +1203,11 @@ impl Server {
                 section: q.section,
                 revision: if on_path { self.revision } else { 0 },
                 cells: if form == LodForm::Explicit {
-                    flat_section(c).cells
+                    let mut cells = flat_section(c).cells;
+                    if self.mark {
+                        cells[0] = explicit_mark();
+                    }
+                    cells
                 } else {
                     Vec::new()
                 },
@@ -1973,4 +1988,36 @@ fn a_section_fading_out_keeps_its_mesh_until_its_fade_ends() {
     lod.update(&low, now, &mut host);
     assert!(host.shown.iter().all(|s| s.2 == Fade::Full));
     assert_eq!(lod.debug_stats().fades.retiring, 0);
+}
+
+#[test]
+fn a_modified_section_is_meshed_with_its_generated_surface() {
+    // face-a-only: the request harness views face A; a face-B section's surface takes the same
+    // path (`on_generated` keeps `surface_b` for it, `surface_in_cells` mirrors it).
+    // BUGS.md #43 (owner, 2026-11-06): an edited area's distant view was a coarse, blocky plateau.
+    // A modified section (the server's content) was meshed with no surface, its columns drawn at
+    // their cells' tops: kilometre-wide terraces at coarse levels, at any distance. It now asks
+    // the generator for its surface (a pure function of where it is) and the mesher draws each
+    // column its content still tops at the exact height. Red before: every modified section's
+    // mesh had no surface.
+    let mut r = Requests::new();
+    r.host.river = true; // generated sections carry a surface
+    let site = [100.0, 0.0, 100.0];
+    let mut s = Server::new(site);
+    s.mark = true;
+    s.index(&mut r, 5);
+    s.exchange(&mut r, 120);
+    let modified: Vec<&MeshRecord> = r.host.meshes.iter().filter(|m| m.explicit).collect();
+    assert!(!modified.is_empty(), "modified sections were meshed");
+    assert!(
+        modified.iter().any(|m| m.surface_head.is_some()),
+        "a modified section is meshed with its generated surface"
+    );
+    // every modified section's latest mesh has it: after the first (blocky) mesh, none without
+    let with = modified.iter().filter(|m| m.surface_head.is_some()).count();
+    let without = modified.iter().filter(|m| m.surface_head.is_none()).count();
+    assert!(
+        with >= without,
+        "{with} modified meshes with a surface, {without} without (the first, while it is asked)"
+    );
 }

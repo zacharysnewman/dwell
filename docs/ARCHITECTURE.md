@@ -1940,8 +1940,10 @@ generated cells are kept once computed (`MAX_BASES` 96, oldest out; the worker k
 computing it again is its downsample only. A chunk changed by the water's writes, which go on
 changing it while it moves, holds its section `WATER_LOD_HOLD_TICKS` (2 s) from the first such
 change before it is computed (`mark_chunk_settling`: once a hold, not every water tick; an edit
-computes it at once; a held section is saved dirty). Sections held or computed this way are those
-computed from scratch from the world (`water_lod.rs`).
+computes it at once). A section still to compute when the world saves (dirty, held, or out at the
+server-jobs worker) is saved dirty and computed again on load (`LodPropagation::recomputing`), so a
+page closed before the next save loses no recompute (BUGS.md #44). Sections held or computed this
+way are those computed from scratch from the world (`water_lod.rs`).
 A modified section's stored apron is generated; the server fills it from its modified same-level
 neighbours' borders when it sends the section. Sections are cached in `lod_sections` (§6.4). In a
 test, an edit reaches the root within 19 ticks and a far client's index 8 ticks after the edit.
@@ -2337,7 +2339,10 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   each column's exact surface (`dwell_world::lod::LodSurface`: height, material, wet — a sea floor — and the
   water's level; the biome tints it carried until Phase 15 went with the tints), unbiased
   to a few metres at every level (`lod: column surfaces`); the client's generation worker passes it
-  on, and the mesher draws the top of the column's surface cell at that height, in half-cell
+  on (for a modified section, whose cells are the server's, the client generates the surface
+  alone, a pure function of where it is, and the mesher uses it for each column whose content
+  still tops where generation did; an edited column is drawn at its cells, BUGS.md #43), and the
+  mesher draws the top of the column's surface cell at that height, in half-cell
   steps (at most 1/4 cell — a pixel or two — off; finer steps cost several times the triangles),
   except on **shores**: a dry column beside a wet one (by the wet flag, or a liquid topmost cell —
   the sea in the apron row of a section whose bottom is sea level) is drawn at its exact height

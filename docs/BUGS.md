@@ -50,6 +50,34 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 44. A LOD section computing at the server-jobs worker when the world saved was never recomputed (fixed in 0.49.26)
+
+*Found 2026-11-06, reading the save path for #43.* Since 0.49.14 the browser's local server computes
+its modified LOD sections in the server-jobs worker. A section written since the last save whose
+recompute was out at the worker when the world saved was saved with its old content and marked clean
+(the save flagged only sections waiting to be dispatched), so if the page closed before the next save
+the reopened world kept the old content and never computed it again. Fixed: every section still to
+compute (dirty, held, or computing, at the worker too: `LodPropagation::recomputing`) is saved dirty
+and recomputed on load. Pinned by `tests/lod_server.rs`
+`a_section_whose_recompute_is_out_at_the_worker_is_saved_dirty_and_recomputed_on_load` (red: the
+reopened world's section not dirty; green: dirty, and recomputed on load with the edit made while
+its job was out).
+
+### 43. An edited area looked terraced from far away (fixed in 0.49.26)
+
+*Reported by the owner, 2026-11-06:* an edited area's distant view was a coarse, blocky plateau next
+to smooth ground. A modified LOD section (the server's content) was meshed with no column surface
+(`surface_in_cells` returned none for any section the server sent), so its columns were drawn at
+their cells' tops, whole-cell terraces kilometres wide at coarse levels, beside generated neighbours
+drawn at their exact heights. Fixed: a modified section asks the generator for its surface alone (a
+pure function of where it is; its cells stay the server's), and the mesher draws each column its
+content still tops where generation did at the exact height, an edited column at its cells. Pinned
+by `dwell-lod` `a_modified_section_is_meshed_with_its_generated_surface` (red: no modified section's
+mesh had a surface; green re-checked after merging main) and `dwell-mesh`
+`a_column_whose_top_no_longer_holds_the_surface_is_drawn_at_its_cells`. In the browser at seed 0's
+dam site (`?local=1&seed=0&fresh=1&at=2364.5,142,7443.5`, a 32 × 8 × 32 m stone block filled by
+`__dwell.tool`, seen from ~300 m up) the ground round the block drew smooth, as its neighbours did.
+
 ### 41. Water never dried up below a dam (fixed in 0.49.25)
 
 *Found 2026-11-06, measuring #40; reported by the owner the same day:* "Water never dries up below a

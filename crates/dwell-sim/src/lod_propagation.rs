@@ -497,6 +497,10 @@ impl LodPropagation {
     pub fn in_flight(&self) -> &HashSet<LodCoord> {
         &self.in_flight
     }
+    /// To be computed again: dirty (held ones too) or being computed (at a remote worker too).
+    pub fn recomputing(&self, c: LodCoord) -> bool {
+        self.dirty.contains(&c) || self.in_flight.contains(&c)
+    }
     pub fn pending(&self) -> usize {
         self.dirty.len() + self.in_flight.len()
     }
