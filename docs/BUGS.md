@@ -50,6 +50,24 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 37. Drag building into water built one piece and no more (fixed in 0.49.16)
+
+*Reported 2026-11-06.* "Make it so I can drag-build underwater, I notice it doesn't work underwater
+for some reason", then "you don't have to be underwater … 2+ dragged out always failed for me." A
+held Place whose pieces went into water cells, standing in the water or beside it, built the first
+piece or two and then nothing. The server writes a block put into water in its flooded state
+(`flooded_for`: stone becomes `stone[flooded=true]`); the client's answer to each drag fill checked
+that the cells held exactly the block sent, so a flooded piece read as one the server had left out
+(as it skips a cell its view of the body is in). A line then went back to that piece, found its own
+block there and waited on it for good. Fixed: a piece counts as built flooded or not
+(`build_drag::fill_placed`), with the answer's handling moved out of the game loop into
+`BuildDrag::answered`. Pinned by `build_drag`'s `a_stroke_builds_on_into_water` (both faces: a Line
+up, a Line across and a Flat into water; red before: one piece after the first for each line) and
+`game_local`'s `a_line_drags_up_through_water_from_the_shore_and_from_in_it` (a pool in the
+sandbox, the Line from the shore and from the bed; red before: two of the six pieces) and
+`a_flat_drags_a_floor_across_a_pools_bed_from_the_shore_and_from_in_it` (a Flat stroke, which
+passed before as well: a refused Flat column is not gone back to).
+
 ### 36. The bottom half of steep slopes under moving water stayed dry (fixed in 0.49.13)
 
 *Reported 2026-11-06.* "The bottom half of steep slopes is still either not flooded or visually not
