@@ -27,7 +27,6 @@ pub struct Movement {
     /// ◆ slabs (0.5 m) step up; full blocks need a jump
     pub max_step_height: f32,
     pub air_external_drag: f32,
-    pub ground_external_friction: f32,
     pub carried_by_characters: bool,
     /// ◆ Dwell addition (touch preset: true)
     pub auto_jump: bool,
@@ -44,8 +43,22 @@ pub struct Movement {
     /// ramp's lip, a step-up onto a flat top, a downslope's edge). 5: above a run's rise up a
     /// ½ m ramp (8 m/s × ½) and a walk's pull onto a 45° face (5 m/s, less gravity's 0.33), so
     /// walking keeps the ground everywhere (owner, 2026-11-06; 4.5 hopped a walker off a stair
-    /// top onto a 45° face for a tick); a slide at 11–12 m/s up ½ m ramps still flies off a crest.
+    /// top onto a 45° face for a tick). Walking and running only: a slide has its own limits.
     pub ground_stick_speed: f32,
+    /// ◆ m/s: `ground_stick_speed` for a slide (a sprint slide, or a crouched slide down a steep
+    /// face): the most of its rise following the ground takes away in a tick, beyond gravity's
+    /// own pull that tick. 0 (owner, 2026-11-06: "when sliding up off a ramp you should be
+    /// launched … by your own momentum"): a slide has no stride to soak up a crest, so over a
+    /// ramp's top, a lip or a step-up onto a flat top it flies on with the ramp's rise, at the
+    /// ramp's angle. Before, the 5 m/s limit held any slide under ~10 m/s to the top of ½ m ramps
+    /// and it ran off the far edge flat.
+    pub slide_stick_rise_speed: f32,
+    /// ◆ m/s: how much more than gravity following the ground may pull a slide down in a tick. ∞
+    /// (owner, 2026-11-06: "I do like you being sort of 'glued' to ramps when sliding down"): a
+    /// slide follows every ramp and face down; only a drop with no ramp (a step, a cliff) leaves
+    /// the ground. Before, the 5 m/s limit flew a slide off every flat top's edge above a 45° face
+    /// (and above a ½ m ramp past 10 m/s): it bounced its way down a hill.
+    pub slide_stick_drop_speed: f32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -207,11 +220,19 @@ pub enum ImpactMeasure {
 /// ◆ Dwell addition.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Damage {
-    /// m/s (the controller's `impact_speed`, by `impact_measure`) a hit must exceed to hurt, on the
-    /// surfaces `impact_surfaces` names (§6.10).
-    pub impact_damage_min_speed: f32,
-    /// Health points per m/s above the minimum.
-    pub impact_damage_per_speed: f32,
+    /// m: the fall a hit must exceed to hurt, on the surfaces `impact_surfaces` names (§6.10). A
+    /// hit's speed (the controller's `impact_speed`, by `impact_measure`) is read as the free-fall
+    /// height that lands at it, `v² ÷ 2g`, so a hit straight down on flat ground hurts by the drop.
+    /// 5 (owner, 2026-11-06: "I don't want to get nickeled and dimed all the time for small
+    /// drops"; until 0.49.18 a hit hurt past 12 m/s, a 3.6 m drop, 5 points at 4 m).
+    pub impact_safe_height: f32,
+    /// m: the fall that kills from full health (`players.MAX_HEALTH`). 12 (owner, 2026-11-06: "a
+    /// smaller area between taking damage and lethal damage"; until 0.49.18 ~15 m).
+    pub impact_lethal_height: f32,
+    /// The curve between them: the share of full health lost is `t ^ exponent` for `t` the
+    /// height's share of the way from safe to lethal. 2: past the safe height a hit first takes
+    /// little (6 m: 2 points) and then fast (10 m: 51, 11 m: 73); 1 is a straight line.
+    pub impact_curve_exponent: f32,
     /// The contacts an impact can hurt on: the ground (default) or every surface.
     pub impact_surfaces: ImpactSurfaces,
     /// The speed a hit hurts by: the downward speed into the surface (default) or the whole speed
@@ -297,13 +318,14 @@ impl Default for PlayerControllerConfig {
                 air_control: 0.2,
                 max_step_height: 0.55,
                 air_external_drag: 0.0,
-                ground_external_friction: 15.0,
                 carried_by_characters: false,
                 auto_jump: false,
                 edge_guard: false,
                 max_push_force: 3050.0,
                 pushable_mass_limit: 400.0,
                 ground_stick_speed: 5.0,
+                slide_stick_rise_speed: 0.0,
+                slide_stick_drop_speed: f32::INFINITY,
             },
             probes: Probes {
                 ground_probe_margin: 0.15,
@@ -368,8 +390,9 @@ impl Default for PlayerControllerConfig {
                 cooldown_ticks: 30,
             },
             damage: Damage {
-                impact_damage_min_speed: 12.0,
-                impact_damage_per_speed: 8.0,
+                impact_safe_height: 5.0,
+                impact_lethal_height: 12.0,
+                impact_curve_exponent: 2.0,
                 impact_surfaces: ImpactSurfaces::Ground,
                 impact_measure: ImpactMeasure::DownwardIntoSurface,
                 crush_speed: 4.0,
@@ -395,17 +418,29 @@ impl Default for PlayerControllerConfig {
 }
 
 impl Damage {
-    /// Health points an impact at `speed` m/s into a surface takes (0 at or under the minimum).
-    pub fn impact_damage(&self, speed: f32) -> i32 {
-        if speed > self.impact_damage_min_speed {
-            ((speed - self.impact_damage_min_speed) * self.impact_damage_per_speed).round() as i32
-        } else {
-            0
+    /// Health points an impact at `speed` m/s into a surface takes under `gravity` (m/s²): 0 up to
+    /// `impact_safe_height`, all of `MAX_HEALTH` from `impact_lethal_height`, on the curve between.
+    /// A tick's hit can take more than full health (a long fall), as before.
+    pub fn impact_damage(&self, speed: f32, gravity: f32) -> i32 {
+        let height = speed * speed / (2.0 * gravity);
+        if height <= self.impact_safe_height {
+            return 0;
         }
+        let band = (self.impact_lethal_height - self.impact_safe_height).max(f32::EPSILON);
+        let t = (height - self.impact_safe_height) / band;
+        let full = dwell_protocol::players::MAX_HEALTH as f32;
+        let points = (full * libm::powf(t, self.impact_curve_exponent)).round() as i32;
+        // Past the safe height a hit always takes at least a point.
+        points.max(1)
     }
 }
 
 impl PlayerControllerConfig {
+    /// [`Damage::impact_damage`] under this config's gravity: what the server deals for a hit.
+    pub fn impact_damage(&self, speed: f32) -> i32 {
+        self.damage.impact_damage(speed, self.body.gravity)
+    }
+
     /// Touch preset: auto-jump on (PLAYER_CONTROLLER.md §6.2).
     pub fn touch() -> Self {
         let mut c = Self::default();
@@ -426,7 +461,6 @@ impl PlayerControllerConfig {
         c.movement.air_control = 1.0;
         c.movement.max_step_height = 0.5;
         c.movement.air_external_drag = 0.5;
-        c.movement.ground_external_friction = 15.0;
         c.jump.height = 5.0;
         c.crouch.speed = 2.0;
         c

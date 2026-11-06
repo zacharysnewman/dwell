@@ -79,7 +79,7 @@ now, or later allow a few stacked water layers in the columns that have overhang
   a flood still move water by the law: a dammed river backs up by the flow it was drawn with (in the
   browser, seed 0's river rose 0.5 m above a dam and fell 0.25 m below it). The rest layer's
   divergence is an implicit spring per column; after G1 those springs are the map's river sources.
-- **The river's flow is carried** (0.49.18, BUGS.md #38; owner, 2026-11-06: "damming should raise
+- **The river's flow is carried** (0.49.19, BUGS.md #38; owner, 2026-11-06: "damming should raise
   the water and does"). Since G1a (no lips) a drawn river is flat between its steps, and a level
   reach carries no flow by the law, so the rest layer held none there and a dam had nothing to back
   up: at seed 0's dam site (a level reach of a 0.6 m³/s creek) a wall raised the water 2 cm in
@@ -151,7 +151,7 @@ The owner approved these recommendations (2026-11-05):
   Manning's law gives the column's depth on the river's fall with the liquid's roughness (the grid's
   own law), or at its flow over the column's depth (`river_flow / depth`) where that is faster, at most
   `riverCurrentMaxMs` (1.5 m/s: a steep chute's would be a torrent, and a swimmer at 3 m/s still makes headway); a lake is still.
-  **Level and shallow reaches run** (0.49.18, BUGS.md #38; owner, 2026-11-06: "dead rivers ... the
+  **Level and shallow reaches run** (0.49.19, BUGS.md #38; owner, 2026-11-06: "dead rivers ... the
   shallow ones missing currents"): Manning's speed on no fall is none, and about half of seed 0's
   sampled channel columns (109 of 209) lie in level reaches, so those reaches were still; the flow
   over the depth keeps them running (`every_reach_of_a_river_runs_level_ones_too`; seed 0's dam

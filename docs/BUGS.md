@@ -50,7 +50,7 @@ face, or the placement check against its shape.
 
 ## Fixed
 
-### 38. A dam didn't raise a level river, and level and shallow rivers had no current (fixed in 0.49.18)
+### 38. A dam didn't raise a level river, and level and shallow rivers had no current (fixed in 0.49.19)
 
 *Reported 2026-11-06.* "Damming should raise the water and does", "I feel like I saw this when the
 river was only 1 voxel deep, it didn't seem to have a flow either", then "dead rivers ... the
