@@ -275,12 +275,12 @@ fn out_of_reach_or_not_permitted_changes_nothing() {
     let mut f = Fixture::new(flat());
     join_streaming(&mut f, 1);
     f.server.step();
-    f.send(1, fill([200, G, 0], [2, 2, 2], M.stone));
+    f.send(1, fill([300, G, 0], [2, 2, 2], M.stone)); // past creative's 256 m
     f.server.step();
     let s = f.server.stats_of(1).unwrap();
     assert_eq!(s.last_region_check, RegionCheck::OutOfReach);
     assert_eq!(s.region_edits_rejected, 1);
-    assert_eq!(f.server.world().get_voxel(200, G, 0), M.air);
+    assert_eq!(f.server.world().get_voxel(300, G, 0), M.air);
 
     let mut f = Fixture::new(ServerConfig {
         edits: EditPolicy::Nobody,
@@ -331,40 +331,97 @@ fn join_sandbox(f: &mut Fixture, id: SessionId) -> Welcome {
 }
 
 #[test]
-fn only_a_brush_world_announces_brushes() {
+fn every_world_announces_brushes() {
+    // Owner, 2026-11-06: brushes in every world, not just the sandbox (every world is creative).
     let mut f = Fixture::new(flat());
-    assert_eq!(join_streaming(&mut f, 1).flags & welcome_flags::BRUSHES, 0);
+    let w = join_streaming(&mut f, 1);
+    assert_ne!(w.flags & welcome_flags::BRUSHES, 0);
+    assert_ne!(w.flags & welcome_flags::REGION_EDITS, 0);
     let mut f = Fixture::new(sandbox());
     let w = join_sandbox(&mut f, 1);
     assert_ne!(w.flags & welcome_flags::BRUSHES, 0);
-    assert_ne!(w.flags & welcome_flags::REGION_EDITS, 0);
 }
 
 #[test]
-fn brush_strokes_reach_far_in_the_sandbox_only() {
-    // 100 m from the spawn: beyond the region reach (64 m), within the sandbox's brush reach.
-    let far = fill([100, G + 3, 0], [2, 2, 2], M.stone);
-    let mut f = Fixture::new(flat());
-    join_streaming(&mut f, 1);
-    f.server.step();
-    f.send(1, far.clone());
-    f.server.step();
-    let stats = f.server.stats_of(1).unwrap();
-    assert_eq!(stats.last_region_check, RegionCheck::OutOfReach);
-    assert_eq!(f.server.world().get_voxel(100, G + 3, 0), M.air);
+fn brush_strokes_reach_256_m_in_every_world() {
+    // 200 m from the spawn: beyond the old region reach (64 m) and the sandbox's old 128 m, within
+    // creative's 256 m (owner, 2026-11-06).
+    for sandboxed in [false, true] {
+        let mut f = Fixture::new(if sandboxed { sandbox() } else { flat() });
+        if sandboxed {
+            join_sandbox(&mut f, 1);
+        } else {
+            join_streaming(&mut f, 1);
+        }
+        f.server.step();
+        f.send(1, fill([200, G + 3, 0], [2, 2, 2], M.stone));
+        f.server.step();
+        let stats = f.server.stats_of(1).unwrap();
+        assert_eq!(stats.last_region_check, RegionCheck::Ok, "sandbox {sandboxed}");
+        assert_eq!(f.server.world().get_voxel(200, G + 3, 0), M.stone);
+        // Still bounded: 300 m is out of reach.
+        f.send(1, fill([300, G + 3, 0], [1, 1, 1], M.stone));
+        f.server.step();
+        let stats = f.server.stats_of(1).unwrap();
+        assert_eq!(stats.last_region_check, RegionCheck::OutOfReach);
+        assert_eq!(f.server.world().get_voxel(300, G + 3, 0), M.air);
+    }
+}
 
-    let mut f = Fixture::new(sandbox());
-    join_sandbox(&mut f, 1);
-    f.server.step();
-    f.send(1, far);
-    f.server.step();
-    assert_eq!(f.server.stats_of(1).unwrap().region_edits_applied, 1);
-    assert_eq!(f.server.world().get_voxel(100, G + 3, 0), M.stone);
-    // Still bounded: 200 m is out of reach.
-    f.send(1, fill([200, G + 3, 0], [1, 1, 1], M.stone));
+/// Seed 0's generated terrain at the bench's dam site (`?at=2364.5,142,7443.5`), as the browser's
+/// local server runs it.
+fn terrain() -> ServerConfig {
+    ServerConfig {
+        world_seed: 0,
+        generator_version: dwell_world::GENERATOR_TERRAIN,
+        spawn: Some([2364.5, 142.0, 7443.5]),
+        worldgen_threads: 0,
+        lod_threads: Some(0),
+        pregen_radius_chunks: 1,
+        ..ServerConfig::default()
+    }
+}
+
+#[test]
+fn a_creative_brush_stroke_lands_200_m_off_in_a_terrain_world_and_undoes() {
+    // face-a-only: the server's reach and KEEP cells don't depend on the face; the dam site is A's.
+    // Before brushes came to every world, a terrain world announced none and refused a region
+    // edit past 65 m.
+    let mut f = Fixture::new(terrain());
+    let w = f.join(1, &Client::new(1));
+    assert_ne!(w.flags & welcome_flags::BRUSHES, 0, "terrain worlds take brushes");
+    for _ in 0..10 {
+        f.server.step();
+        f.take_all();
+    }
+    // A brush paste (KEEP around one stone cell) 200 m east, 10 m over the spawn: air there.
+    let (x, y, z) = (2364 + 200, 284 + 20, 7443);
+    let before: Vec<u16> = (0..3)
+        .map(|i| f.server.world().get_voxel(x + i, y, z))
+        .collect();
+    let keep = region_edit::KEEP as u16;
+    f.send(
+        1,
+        Message::RegionEdit(RegionEdit {
+            cells: vec![keep, M.stone, keep],
+            ..region(RegionEditOp::Paste, [x, y, z], [3, 1, 1], 0)
+        }),
+    );
     f.server.step();
     let stats = f.server.stats_of(1).unwrap();
-    assert_eq!(stats.last_region_check, RegionCheck::OutOfReach);
+    assert_eq!(stats.last_region_check, RegionCheck::Ok);
+    assert_eq!(f.server.world().get_voxel(x + 1, y, z), M.stone);
+    assert_eq!(f.server.world().get_voxel(x, y, z), before[0]);
+    // The undo: the earlier state pasted back over the same box.
+    f.send(
+        1,
+        Message::RegionEdit(RegionEdit {
+            cells: vec![keep, before[1], keep],
+            ..region(RegionEditOp::Paste, [x, y, z], [3, 1, 1], 0)
+        }),
+    );
+    f.server.step();
+    assert_eq!(f.server.world().get_voxel(x + 1, y, z), before[1]);
 }
 
 #[test]
