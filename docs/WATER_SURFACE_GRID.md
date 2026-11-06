@@ -138,6 +138,35 @@ behaves and looks the same by the same law whether the generator or a player put
 river's current is the map's, a freed one's the law's; both are drawn alike from the one current
 table). As built: G3d below.
 
+## 2d. The water's own thread (ADR 0062, the owner 2026-11-06; planned, G5)
+
+The owner: slowing the water whenever much of it moves "is not really acceptable"; "use message passing
+for now, make a note about future possibly using shared memory threads"; the water stays saved.
+
+- **A water host** (`dwell-sim` `water/host.rs`): the grid behind one interface, placed **inline** (the
+  calling thread: tests, the world-creation fill, a fallback), on a **native thread** (the dedicated
+  server and native tools, `std::thread` and channels), or in a **browser worker** (a second worker the
+  local-mode worker starts, by `postMessage` with transferred buffers).
+- **What the grid reads becomes its own** (`water/cells.rs`): a byte a cell, solid, open, or water and its
+  fill in eighths, per loaded chunk (a uniform chunk as one value). The grid's reads (`cell_kind`,
+  `floor_at`, `found`, the scan for water) go through it instead of the `VoxelWorld`.
+- **In** (the server, each tick, batched): chunks loaded (their cells) and unloaded; cells edited (their
+  new kinds; the edit's columns touched, as `touch` does now); the players' positions; at a water tick,
+  the water time to run; asks for the record (before a save) and for a report (`waterReport`).
+- **Out** (read at the server's next tick start): water cells written (each with the kind it replaced),
+  the awake chunks' currents, the chunks it wants loaded, the record, reports. A write whose cell the
+  world has since made solid, or anything but open or water, is dropped: the edit that did it is already
+  on its way in. The server broadcasts the writes as one modification, as now.
+- **Falling behind instead of slowing physics:** a water tick not yet run when the next is due adds its
+  time to it; the worker runs what it is owed as fast as it can, with the per-step guard (`stepBudget`)
+  raised so a tick still ends; past `maxOwedS` (data) the rest is dropped and the water's clock slows, as
+  now.
+- **Saving:** the server asks for the record a moment before each save and writes the newest it has;
+  closing a world (and a native server's shutdown) waits for a fresh one, at most a second.
+- **Later** (not built): shared memory (WASM threads; needs cross-origin isolation, which GitHub Pages
+  can't set, a service-worker shim there, native in Electron and Capacitor), and the grid split across
+  threads by chunk if one thread isn't enough.
+
 ## 3. Generation
 
 - **Kept:** the world map (ADR 0049): uplift, stream-power erosion (the valleys), fill-and-spill lakes,
