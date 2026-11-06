@@ -123,8 +123,10 @@ const KIND_MOTE: u32 = 3;
 /// `dwell_look::waterflow::LIQUID_FLOWS` in the low byte; lit as the water's foam is, not self-lit.
 const KIND_FLECK: u32 = 4;
 
-/// The flecks' quads (relative to `eye`), each a disc lying on the water's surface, its liquid's
-/// size, at its opacity; at most `max`. Returns the vertices and the flecks drawn.
+/// The flecks' quads (relative to `eye`), each lying level on the water's surface, drawn out
+/// along its current (`crate::flecks::fleck_shape`: its quad coordinates x along the flow, y
+/// across, −1 to 1), at its opacity, its seed for its ragged outline; at most `max`, none faded
+/// out (an old or young one, or one in slow water). Returns the vertices and the flecks drawn.
 pub fn fleck_quads(
     flecks: &[crate::flecks::Fleck],
     eye: [f64; 3],
@@ -134,12 +136,17 @@ pub fn fleck_quads(
     let mut out = Vec::new();
     let mut n = 0;
     let t = wrapped(seconds);
-    for p in flecks.iter().take(max) {
+    for p in flecks {
+        if n >= max {
+            break;
+        }
         let a = p.alpha();
         if a <= 0.01 {
             continue;
         }
-        let size = dwell_look::waterflow::LIQUID_FLOWS[p.look].particle_size_m;
+        let look = &dwell_look::waterflow::LIQUID_FLOWS[p.look];
+        let (along, half_len, half_wid) = crate::flecks::fleck_shape(look, p.vel);
+        let across = [-along[1], along[0]];
         // Its own lift over the drawn surface, so the water's half-transparent body doesn't hide it.
         let rel: [f64; 3] = [p.at[0] - eye[0], p.at[1] - eye[1], p.at[2] - eye[2]];
         let up = FaceFrame::at_height(p.at[1]).sign_f64() * 0.01;
@@ -147,23 +154,25 @@ pub fn fleck_quads(
         quad(
             &mut out,
             |x, y| {
+                let (u, v) = ((2.0 * x - 1.0) * half_len, (2.0 * y - 1.0) * half_wid);
                 [
-                    rel[0] + (2.0 * x - 1.0) * size,
+                    rel[0] + along[0] * u + across[0] * v,
                     rel[1] + up,
-                    rel[2] + (2.0 * y - 1.0) * size,
+                    rel[2] + along[1] * u + across[1] * v,
                 ]
             },
             |x, y| [(2.0 * x - 1.0) as f32, (2.0 * y - 1.0) as f32],
             [t, a, 0.0],
             p.look as u32 | KIND_FLECK << 8,
-            0,
+            p.seed,
         );
         n += 1;
     }
     (out, n)
 }
 
-/// The flecks' colours (linear), by `LIQUID_FLOWS` index, in WGSL.
+/// The flecks' colours (linear) and outlines (`ragged`, `lumps`, `minPixels`), by `LIQUID_FLOWS`
+/// index, in WGSL.
 fn fleck_wgsl() -> String {
     let looks = dwell_look::waterflow::LIQUID_FLOWS;
     let colours: Vec<String> = looks
@@ -175,25 +184,63 @@ fn fleck_wgsl() -> String {
             format!("vec3f({r:?}, {g:?}, {b:?})")
         })
         .collect();
+    let shapes: Vec<String> = looks
+        .iter()
+        .map(|l| {
+            format!(
+                "vec4f({:?}, {:?}, {:?}, 0.0)",
+                l.particle_ragged as f32, l.particle_lumps as f32, l.particle_min_pixels as f32
+            )
+        })
+        .collect();
+    let list = |v: Vec<String>, none: &str| {
+        if v.is_empty() {
+            none.to_string()
+        } else {
+            v.join(", ")
+        }
+    };
     format!(
-        "const FLECK_COLOURS = array<vec3f, {}>({});
-// A fleck (crate::flecks): a soft disc of its liquid's colour, lit by the sky as the water's foam
-// is, premultiplied by its opacity.
-fn fleck_colour(look: u32, uv: vec2f, alpha: f32, rel: vec3f) -> vec4f {{
-    let a = (1.0 - smoothstep(0.55, 1.0, length(uv))) * alpha;
+        "const FLECK_COLOURS = array<vec3f, {n}>({});
+const FLECK_SHAPES = array<vec4f, {n}>({});
+fn fleck_hash(seed: u32, k: u32) -> f32 {{
+    var h = seed * 747796405u + k * 2891336453u;
+    h = (h ^ (h >> 16u)) * 0x7feb352du;
+    h = h ^ (h >> 15u);
+    return f32(h & 0xffffu) / 65535.0;
+}}
+// A fleck (crate::flecks): a scrap of foam, not a disc. Its quad is already drawn out along the
+// flow; here its edge is broken into `lumps` lobes and finer tears (`ragged`, phases from its
+// seed) and its inside mottled, at its opacity `alpha`; faded out where it is under `minPixels`
+// wide on screen (`width_px`; gone at half: no shimmer far off). Lit as the water's surface is
+// (the sky, the sun and moon by the shadow maps), premultiplied, never glowing.
+fn fleck_colour(look: u32, uv: vec2f, alpha: f32, rel: vec3f, seed: u32, width_px: f32) -> vec4f {{
+    let k = min(look, {last}u);
+    let s = FLECK_SHAPES[k];
+    let fine = smoothstep(0.5 * s.z, s.z, width_px);
+    let ph = vec3f(fleck_hash(seed, 0u), fleck_hash(seed, 1u), fleck_hash(seed, 2u)) * 6.2831853;
+    let th = atan2(uv.y, uv.x);
+    let lobes = 0.55 * sin(s.y * th + ph.x) + 0.3 * sin((2.0 * s.y + 1.0) * th + ph.y)
+        + 0.15 * sin(11.0 * th + ph.z);
+    let edge = 1.0 - 0.4 * s.x * (0.5 + 0.5 * lobes);
+    let d = length(uv) / edge;
+    let mottle = 1.0 - 0.4 * s.x * (0.5 + 0.5 * sin(4.0 * uv.x + ph.y) * sin(5.0 * uv.y + ph.z));
+    let a = (1.0 - smoothstep(0.55, 1.0, d)) * mottle * alpha * fine;
+    if (a < 0.01) {{
+        return vec4f(0.0);
+    }}
     let y = frame.eye.x + rel.y;
     let up = face_up(face_at(y));
-    let c = lambert_lit(FLECK_COLOURS[min(look, {}u)], up, y, terrain_light(1.0, vec2f(1.0, 0.0)));
+    var l = terrain_light(1.0, vec2f(1.0, 0.0));
+    l.direct = shadow_light(rel, up, l.direct);
+    let c = lambert_lit(FLECK_COLOURS[k], up, y, l);
     return vec4f(c * a, a);
 }}
 ",
-        looks.len().max(1),
-        if colours.is_empty() {
-            "vec3f(1.0)".to_string()
-        } else {
-            colours.join(", ")
-        },
-        looks.len().max(1) - 1,
+        list(colours, "vec3f(1.0)"),
+        list(shapes, "vec4f(0.0)"),
+        n = looks.len().max(1),
+        last = looks.len().max(1) - 1,
     )
 }
 
@@ -465,6 +512,10 @@ fn flame_light(c: vec3f) -> vec3f {
 // the glow and the embers added (alpha 0). All give off their colour whatever the light
 // (`flame_light`, docs/LIGHTS.md §2).
 fn flame_colour(i: FlameVary) -> vec4f {
+    // A fleck's narrowest width on screen (px): its quad coordinates span 2 each way. Taken here,
+    // before any branch, where derivatives are defined.
+    let fw = fwidth(i.uv);
+    let width_px = 2.0 / max(max(fw.x, fw.y), 1e-6);
     let look = flame_look(i.info & 0xffu);
     let kind = i.info >> 8u;
     if (kind == 1u) {
@@ -483,7 +534,7 @@ fn flame_colour(i: FlameVary) -> vec4f {
     }
     if (kind == 4u) {
         // A fleck on moving water (crate::flecks): lit, over what is behind.
-        let c = fleck_colour(i.info & 0xffu, i.uv, i.rest.y, i.rel);
+        let c = fleck_colour(i.info & 0xffu, i.uv, i.rest.y, i.rel, i.seed, width_px);
         if (c.a < 0.01) {
             discard;
         }
@@ -908,17 +959,22 @@ mod tests {
     fn a_fleck_draws_one_flat_quad_on_the_water() {
         // docs/WATER_SURFACE_GRID.md §2c: a fleck lies on the surface (its quad level, a centimetre
         // over it), its liquid's size, faded in by its age.
+        let look = &dwell_look::waterflow::LIQUID_FLOWS[0];
         let f = crate::flecks::Fleck {
             at: [10.0, 50.0, -4.0],
-            age: 1.0,
+            age: look.particle_fade_in_s + 0.5,
             look: 0,
+            vel: [1.5, 0.0],
+            seed: 7,
         };
         let (v, n) = fleck_quads(&[f], [0.0, 48.0, 0.0], 3.0, 16);
         assert_eq!((n, v.len()), (1, QUAD_VERTICES * VERTEX_FLOATS));
-        let size = dwell_look::waterflow::LIQUID_FLOWS[0].particle_size_m;
+        let (_, half_len, half_wid) = crate::flecks::fleck_shape(look, f.vel);
         for c in v.chunks_exact(VERTEX_FLOATS) {
             assert!((f64::from(c[1]) - 2.01).abs() < 1e-4, "level: {}", c[1]);
-            assert!((f64::from(c[0]) - 10.0).abs() <= size + 1e-4);
+            assert!((f64::from(c[0]) - 10.0).abs() <= half_len + 1e-4);
+            assert!((f64::from(c[2]) + 4.0).abs() <= half_wid + 1e-4);
+            assert_eq!(c[9].to_bits(), 7, "its seed, for its outline");
         }
         let young = crate::flecks::Fleck { age: 0.0, ..f };
         assert_eq!(
@@ -931,6 +987,51 @@ mod tests {
             0,
             "none past the cap"
         );
+    }
+
+    #[test]
+    fn a_fleck_is_drawn_out_along_its_current_and_not_in_slow_water() {
+        // Owner, 2026-11-06: "perfect white circles on top of flowing water". A fleck's quad lies
+        // along its current, longer along than across in fast water (round in slow), smaller than
+        // the 0.1 m discs; one in water at or under `particle_from_ms` is not drawn.
+        let look = &dwell_look::waterflow::LIQUID_FLOWS[0];
+        let fleck = |vel: [f32; 2]| crate::flecks::Fleck {
+            at: [0.0, 50.0, 0.0],
+            age: 0.5 * look.particle_life_s,
+            look: 0,
+            vel,
+            seed: 1,
+        };
+        // Flowing +z (along) at full speed: the quad spans more in z than in x.
+        let (v, n) = fleck_quads(&[fleck([0.0, 1.5])], [0.0; 3], 0.0, 16);
+        assert_eq!(n, 1);
+        let span = |k: usize| {
+            let c: Vec<f32> = v.chunks_exact(VERTEX_FLOATS).map(|c| c[k]).collect();
+            f64::from(c.iter().cloned().fold(f32::MIN, f32::max) - c.iter().cloned().fold(f32::MAX, f32::min))
+        };
+        let (along, across) = (span(2), span(0));
+        assert!(across < 0.2 - 1e-3, "smaller than the old discs: {across} m across");
+        assert!(along >= 2.0 * across, "drawn out along the flow: {along} by {across}");
+        // Just over the threshold: barely stretched; at it or under: not drawn.
+        let (_, l, w) = crate::flecks::fleck_shape(look, [0.0, (look.particle_from_ms + 0.01) as f32]);
+        assert!(l / w < 1.05, "slow water's are not stretched: {}", l / w);
+        for s in [0.0, 0.5 * look.particle_from_ms, look.particle_from_ms] {
+            assert_eq!(fleck_quads(&[fleck([s as f32, 0.0])], [0.0; 3], 0.0, 16).1, 0, "{s} m/s");
+        }
+    }
+
+    #[test]
+    fn the_fleck_shader_breaks_its_outline_lights_it_and_fades_it_by_footprint() {
+        // Not a smooth disc: the outline by the seed's lobes; lit with the shadow maps as the
+        // water's surface is; faded by its width on screen, taken where derivatives are defined.
+        let src = fleck_wgsl();
+        let body = src.split("fn fleck_colour").nth(1).expect("fleck_colour");
+        assert!(body.contains("atan2(uv.y, uv.x)") && body.contains("fleck_hash(seed"));
+        assert!(body.contains("shadow_light(rel, up"));
+        assert!(body.contains("smoothstep(0.5 * s.z, s.z, width_px)"));
+        let colour = WGSL.split("fn flame_colour").nth(1).expect("the colour");
+        let first_if = colour.find("if (").expect("a branch");
+        assert!(colour.find("fwidth(i.uv)").expect("the footprint") < first_if);
     }
 
     #[test]

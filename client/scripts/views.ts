@@ -27,8 +27,13 @@ export interface View {
     exposure?: number;
     /** The Clouds setting. */
     clouds?: 'off' | 'low' | 'high';
-    /** The water quality (ui/waterSettings.ts). */
-    water?: { quality: 'low' | 'medium' | 'high' };
+    /** The water quality and the flow's switches (ui/waterSettings.ts; a switch left out is on). */
+    water?: {
+      quality: 'low' | 'medium' | 'high';
+      flowRipples?: boolean;
+      flowFoam?: boolean;
+      flowParticles?: boolean;
+    };
     /** The Shadows setting (ui/shadowSettings.ts). */
     shadows?: { quality: 'off' | 'low' | 'high' };
     /** Speed effects (ui/motionSettings.ts): on or off and the FOV boost's strength 0–1. */
@@ -175,11 +180,19 @@ function parseView(index: string, raw: unknown): View {
     settings.clouds = s.clouds;
   }
   if (s.water !== undefined) {
-    const w = fields(`${at}.settings.water`, s.water, ['quality']);
+    const flows = ['flowRipples', 'flowFoam', 'flowParticles'] as const;
+    const w = fields(`${at}.settings.water`, s.water, ['quality', ...flows]);
     if (w.quality !== 'low' && w.quality !== 'medium' && w.quality !== 'high') {
       throw new ViewError(`${at}.settings.water.quality: expected "low", "medium" or "high"`);
     }
-    settings.water = { quality: w.quality };
+    const water: NonNullable<View['settings']['water']> = { quality: w.quality };
+    for (const k of flows) {
+      const v = w[k];
+      if (v === undefined) continue;
+      if (typeof v !== 'boolean') throw new ViewError(`${at}.settings.water.${k}: expected true or false`);
+      water[k] = v;
+    }
+    settings.water = water;
   }
   if (s.shadows !== undefined) {
     const w = fields(`${at}.settings.shadows`, s.shadows, ['quality']);
