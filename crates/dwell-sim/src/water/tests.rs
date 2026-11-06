@@ -715,7 +715,10 @@ dwell_world::both_faces!(
         );
         // the lake's ramp, flooded as found, stands out of the lake now drained below it
         let lake = s.level(2, 3).expect("the lake");
-        assert!(lake < 1.0, "the lake fell below its ramp's open part: {lake:.3}");
+        assert!(
+            lake < 1.0,
+            "the lake fell below its ramp's open part: {lake:.3}"
+        );
         assert!(!flooded(&s, 3, 2, 3), "dried when the water left");
     }
 );
