@@ -2440,7 +2440,7 @@ in 0.48.2.
   (`Water::with_rivers`, `TerrainGenerator::river_current`, computed once as a chunk's water is
   found): downstream along the channel as the column sees it (the map's direction through the
   meander warp's inverse), at Manning's speed for the column's depth on the river's fall, at most
-  `riverCurrentMaxMs` (2.5 m/s); a level reach or a lake is still.
+  `riverCurrentMaxMs` (1.5 m/s: a swimmer, at 3 m/s, still makes headway); a level reach or a lake is still.
 
 **Still from earlier phases, unchanged:** water's `fill` property (registry `fillProperty`,
 `StateInfo::fill`, look tag `0x92`; 0.44.0) and the mesher drawing a surface at it; a coarse LOD water
