@@ -1,4 +1,4 @@
-# Explosives: dynamite **[built, 0.49.32; cost, 0.49.33–0.49.34]**
+# Explosives: dynamite **[built, 0.49.32; cost, 0.49.33–0.49.34; 5 m with a destroyed core, 0.49.38]**
 
 Owner (2026-11-06): "dynamite block that explodes after a short time when placed, it causes blocks in a
 radius to be affected by physics and appropriate force applied." The first use of the explosion
@@ -11,8 +11,9 @@ data.
 | Question | Answer |
 |---|---|
 | Lighting | Placed **unlit**; lit by a **torch or a use action**; then the fuse runs (its time data), fizzing with a sputtering flame. |
-| Blocks | **Every block in the radius becomes a flung physics piece**, nothing destroyed outright; unbreakable (`indestructible`) blocks stay. Force falls off with distance (heavy blocks barely move at the edge). |
-| Players and bodies | **Knockback and damage**, scaled by distance (standing on it can kill). |
+| Blocks | **Radius 5 m** (owner, later the same day; was 4). Blocks **within 2 m are destroyed outright**; from 2 to 5 m **every block becomes a flung, real physics piece** (no visual-only debris); unbreakable (`indestructible`) blocks stay. Force falls off with distance (heavy blocks barely move at the edge). Was: every block in the radius a piece, nothing destroyed. |
+| Players and bodies | **Knockback** scaled by distance out to its reach; **damage only within the destroy radius** (2 m; standing on it kills): a player 3–5 m off is pushed but unhurt. Walls don't shield the blast. |
+| Saved fuses | A world saved with a fuse burning restarts it in full when it loads (the simplest; kept). |
 | Chain reactions | Dynamite caught in a blast **goes off after a short random delay**. |
 | Data | An **explosives table**, dynamite its first entry, a fixture entry by data alone in tests. |
 | Effects | Flash, smoke and dust, a boom whose volume falls with distance, a small screen shake nearby: data, each a setting, with a CPU-adapter tier. |
@@ -34,7 +35,7 @@ Each explosive: `block` (placed, unlit; `dwell:dynamite`, a hotbar item) and `li
 `dwell:lit_dynamite`, not placeable, `indestructible` so no break or region edit pulls its fuse; its
 `light` is `dwell:fuse`, a small sputtering flame, `shared/look/flames.json`, and its sound set's `burn`
 the fizz). Both one state (no properties): the generator refuses one with properties. `ignitedBy`,
-`fuseSeconds`, `radiusM`, `impulse`, `falloff`, `lift`, `maxSpeedMs`, `reachM`, `knockbackMs`,
+`fuseSeconds`, `radiusM`, `destroyRadiusM` (0 to `radiusM`, the generator refuses more), `impulse`, `falloff`, `lift`, `maxSpeedMs`, `reachM`, `knockbackMs`,
 `damage`, `waterRadiusM`, `chainDelaySeconds` and `effects` (§4); `limits` (`blastsPerTick`,
 `maxPieces`). The `$comment` says what each means.
 
@@ -50,8 +51,9 @@ it as usual. The server starts the fuse for every lit explosive an edit writes.
   at most `blastsPerTick` blow a tick (more wait a tick). A world saved with a fuse burning lights it again
   (in full) when its chunk loads (`StoreChunks` finds lit explosives).
 - **What it does** (`Server::blast`): the explosive's cell and every cell whose centre is within `radiusM`
-  (nearest first, at most `maxPieces`) are cleared in one `Explosion` modification (its own cell first),
-  then each block becomes a one-cell natural piece (felling's bodies, `Felling::spawn_body`, an
+  (nearest first, at most `maxPieces` pieces) are cleared in one `Explosion` modification (its own cell
+  first). A block within `destroyRadiusM` (`explosives::destroys`) is gone, no piece; each one beyond
+  becomes a one-cell natural piece (felling's bodies, `Felling::spawn_body`, an
   `EntitySpawn` each) flung along the line from the blast lifted toward the face's up by `lift`, at
   `impulse` × (1 − d / radiusM)^`falloff` over its mass (½ m³ × density), at most `maxSpeedMs`. Liquids
   within `waterRadiusM` are blown out (cleared; the water host refills the crater from round it),
@@ -59,11 +61,15 @@ it as usual. The server starts the fuse for every lit explosive an edit writes.
   with a fuse drawn from `chainDelaySeconds` (a lit one's cut to it). Bodies within `reachM` are pushed
   by `impulse` × the share over their mass. What it leaves unsupported falls (felling's rule).
 - **Players** within `reachM` (to the nearest point of their capsule): a speed change of `knockbackMs`
-  and `damage` points (cause `Explosion`), both × (1 − d / reachM)^`falloff`: standing on it kills,
-  5 m off hurts a little.
-- **Cost** (native release, `tests/explosives.rs`, a 4 m ball buried in the flat world): 512 pieces, the
-  blast's tick 9.5 ms (physics 4.9), the worst tick after it 8.4 ms, every piece blocks again in ~18 s,
-  70,076 body-ticks. The terrain collision under the pieces is felling's, at most `terrainChunksPerTick` a
+  × (1 − d / reachM)^`falloff`; `damage` points (cause `Explosion`) × (1 − d / destroyRadiusM)^`falloff`
+  only within `destroyRadiusM` (`explosives::blast_damage`): standing on it kills, 1.2 m off hurts
+  (~40), 2 m and beyond pushed but unhurt. Walls don't shield (no occlusion, §6).
+- **Cost** (native release, `tests/explosives.rs`, the 5 m ball buried in the flat world, 0.49.38): 1,013
+  cells, 61 in the 2 m core destroyed and **952 pieces** from the shell (the 4 m blast's: 512), the
+  blast's tick 12.2 ms (physics 7.6), the worst tick after it 11.3 ms, every piece blocks again in ~12 s,
+  172,078 body-ticks (4 m: 9.5 ms, 8.4 ms, 70,076). Half-height cells make the shell ~950 cells, not
+  the ~490 m³ of its volume. At seed 0's dam site 571 pieces (4 m: 306), the blast's tick 11.7 ms
+  (physics 6.1), then ~6 ms a tick for the first second, 107,735 body-ticks. The terrain collision under the pieces is felling's, at most `terrainChunksPerTick` a
   tick. At seed 0's dam site (`tests/collapse.rs` `measure_dynamite_at_the_dam`, the player watching
   from 10 m): 306 pieces, most landing in the river; the blast's tick ~10 ms (players' terrain collision
   5.8, physics 4.0), the first second 4.2 ms a tick, 50–70 terrain-collision builds a second. Floating
@@ -80,6 +86,9 @@ it as usual. The server starts the fuse for every lit explosive an edit writes.
   2 m past that; none while the player is dead), re-judged at each snapshot from each piece's latest
   pose; the rest are drawn from the snapshots, interpolated, and never stepped. Each had been posed,
   stepped and replayed in every predicted tick: ~300 cost 20–25 ms a frame.
+- **In Chrome, 5 m** (0.49.38, with SIMD, same scene and method as below): physics 6,048 and 6,207 ms
+  of the worker's 12 s from lighting (the 4 m blast's with SIMD: 2,785–4,379); 32–48 ticks a second for
+  4–7 s before it catches up (4 m: 45–62); the worst frame 50 ms, p95 19 ms (4 m: 33–35, 18).
 - **In Chrome** (0.49.34, `__dwell.serverStats()`; the player 10 m off and 3 m up, flying, the world's
   LOD settled first): 58, 40, 48, 52, 57, 58, 59 ticks a second from the blast on (0.49.33: 16–45 for
   3–5 s), `terrain` 14–52 ms a second (0.49.33's `players`, which held it: 150–600), `physics` 560–900,
@@ -113,14 +122,15 @@ Dev hook: `__dwell.blasts()` (each blast's place and age), telemetry `blasts.puf
 
 - Data: `shared/explosives/gen.test.mjs` (the checked-in output, an explosive by data alone, bad entries
   named). `dwell-world` `explosives.rs` (the table's blocks exist, a torch lights and nothing else, a
-  fixture entry's igniter, the falloff and mass, the radius's cells, the lift on both faces, chain delays,
+  fixture entry's igniter, the falloff and mass, the radius's cells (5 m: 1,013; the 2 m core: 61), damage
+only within the destroy radius and knockback past it, the lift on both faces, chain delays,
   the boom's level); `tests/placement.rs` (both faces: a torch against dynamite lights it in its cell,
   stone goes against it, lit it can't be broken).
 - Server (`dwell-sim` `tests/explosives.rs`, both faces on an empty world's stone ground): lighting starts
-  a 3 s fuse, nothing before it, then every breakable cell in the radius is a piece flung outward, the
-  near ones faster, bedrock stays; a player beside it dies and one 5 m off is hurt less and pushed out
-  and up; a second dynamite 3 m off is lit with a chain delay and blows after it; water within 3 m is
-  blown out and farther water stays; a fixture explosive by data alone (2 m, 0.5 s); the cost bound
+  a 3 s fuse, nothing before it, then every breakable cell within 2 m is gone with no piece, and every
+  one from 2 to 5 m is a piece flung outward (each starting past 2 m), the near ones faster, bedrock
+  stays; a player 0.5 m off dies, one 1.2 m off is hurt, one 4 m off is pushed out and up but unhurt; a second dynamite 3 m off is lit with a chain delay and blows after it; water within 3 m is
+  blown out and farther water stays; a fixture explosive by data alone (2 m, its 1 m core destroyed, 0.5 s); the cost bound
   (above); a world saved with a fuse burning lights it again (red: no fuse after reloading, then the
   blast found its chunk evicted far from every player).
 - Client: `blasts.rs` (smoke rises and dust falls on both faces, each setting, the CPU's fewer puffs, the
