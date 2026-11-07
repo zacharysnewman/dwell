@@ -150,9 +150,10 @@ now, or later allow a few stacked water layers in the columns that have overhang
   `the_river_below_a_dam_across_seed0s_river_dries_to_the_next_inflow`, the wall at z 7452: red 575
   water columns from the wall down to the creek's backwater at z 7526 after ten water minutes and 8
   chunks awake there, green none and none awake, dry within five minutes); in the browser (the same wall, `?local=1&seed=0&fresh=1&at=2364.5,142,7443.5`) the 1,150 water cells from the wall to z 7525 were gone within 10 s real, the bed dry sand. The creek that joins
-  by (2457, 7541) backs the river up to z 7526 and runs on below. A freed column's current is the
-  law's and the carried flow's over its depth (a level reach's ~0.1 m/s), not the map's mean-fall
-  current a held one has (BUGS.md #42: 1.28 m/s): unchanged here. Read from the state each substep,
+  by (2457, 7541) backs the river up to z 7526 and runs on below. A freed column's current was
+  the law's and the carried flow's over its depth (a level reach's ~0.1 m/s), not the map's mean-fall
+  current a held one has (BUGS.md #42: 1.28 m/s); since 0.49.43 one still in the rest shows the
+  map's (§2c, BUGS.md #47). Read from the state each substep,
   so a saved world's reach below a dam dries on load.
 - **Open: a full reservoir behind a dam never sleeps** (BUGS.md #41b, measured 0.49.40): the
   water is steady when every chunk is awake, but a chunk asleep is taken to carry no flow and what
@@ -229,6 +230,26 @@ The owner approved these recommendations (2026-11-05):
   current changes: the map's levels, the terrain and the flow carried (`river_flow`) are as they were,
   so no world changes. A held chunk's current is found as its water joins the grid, so a saved world
   runs on load.
+- **A freed river runs as the river round it** (0.49.43, BUGS.md #47). A held column's current is
+  the map's (Manning's on the course's mean fall, ~1.3 m/s on a typical creek), a freed one's its own
+  velocity (the carried flow over its depth, ~0.1 m/s on a level reach), so right beside an edit the
+  river visibly slowed (flecks, foam, ripples, a swimmer's and a raft's drift) and sped up again
+  where it was still held. Now a freed column that is still its river's (`Water::as_river`: a map
+  current found at scan or on restore, in the rest by `share`, and a rest velocity of at least
+  `currentStillMs`) shows the map's current times `along`, how much of the rest's own speed it
+  still runs downstream (its velocity along the rest's over the rest's, 0..=1), blended to its own
+  velocity by `near`, 1 at its generated depth and 0 once it is `riverCurrentBandM` (0.2 m,
+  `flow.json`) off it. So the river beside an edit runs at the map's current; a pool risen behind a
+  dam (deeper, and running little of the rest's speed), a drained or diverted reach (out of the rest,
+  or shallower), a lake (no rest speed) and placed water (no map current) keep their own. Only the
+  current reported changes, not the water's movement: the grid moves water by its own law and the
+  carried flow, which keep a river exactly at rest as drawn; the map's speed is what a swimmer and
+  the flow shown should see. Existing worlds: a restored free column's map current is found again
+  at its generated depth (`r.depth` in `DWG1`), no new record. **Measured:** the fixture
+  (`water::tests` `a_freed_river_column_runs_as_its_held_neighbours`, both faces: a level reach
+  carrying 0.1 m²/s under a 1 m/s map current, a wall beside it cut and set again; red 0.100 m/s
+  freed beside 1.000 held, green within 20%, and so after a save and restore;
+  `a_dammed_reachs_pool_keeps_its_own_still_current`: under 0.1 m/s).
 - **The flow shown (G3d):** from the client's current table, so generated and player-moved water
   look alike: ripples carried by the current (a flow map), foam streaks along it, flecks drifting
   on it, each a setting and per liquid as data (`shared/look/waterflow.json`; ARCHITECTURE.md §6.7).

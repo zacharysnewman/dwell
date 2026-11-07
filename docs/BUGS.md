@@ -82,6 +82,20 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 47. A river slowed right beside an edit (fixed in 0.49.43)
+
+*Found 2026-11-06 by two agents, at the owner's creek (seed 3974502447 by 12850, 330, -3330).* A held
+river column's current is the map's (`river_current`: Manning's on the course's mean fall, ~1.28
+m/s there), a freed one's its own velocity (its carried flow over its depth, ~0.1 m/s), so a block
+set on the bank freed the river within three columns of it and the river visibly slowed there
+(flecks, foam, ripples, a swimmer's drift), speeding up again where it was still held. Fixed: a
+freed column still its river's (in the rest, with a rest speed) shows the map's current, scaled by
+how much of the rest's speed it still runs and blended to its own velocity as its depth leaves its
+generated depth (`riverCurrentBandM`; docs/WATER_SURFACE_GRID.md §2c). A dam's pool, a drained bed and
+placed water keep their own. Pinned by `water::tests` `a_freed_river_column_runs_as_its_held_neighbours`
+(both faces; red 0.100 m/s beside 1.000 held, green within 20%) and
+`a_dammed_reachs_pool_keeps_its_own_still_current`.
+
 ### 46. A ramp in a chunk otherwise solid under solid ground panicked its collision build (fixed in 0.49.29)
 
 *Found 2026-11-06, writing the terrain-collision rebuild tests for #45.* A chunk all solid under a
