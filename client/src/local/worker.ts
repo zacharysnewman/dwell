@@ -28,6 +28,11 @@ const tickStats = { ticks: 0, ms: 0, maxMs: 0 };
 let paused = false;
 const queued: ToWorker[] = [];
 
+/** A loading stage (shared/look/loading.json `stages`) began or ended, for the page's screen (§6.3). */
+function stage(id: string, phase: 'begin' | 'end'): void {
+  scope.postMessage({ t: 'stage', id, phase, atMs: performance.timeOrigin + performance.now() });
+}
+
 /** Starts the water worker; null where workers can't start workers (the water runs inline). */
 function startWater(maps: Uint8Array[]): Worker | null {
   if (typeof Worker === 'undefined') return null;
@@ -142,6 +147,7 @@ function handle(msg: ToWorker): void {
   }
   switch (msg.t) {
     case 'start':
+    case 'maps':
       break;
     case 'connect':
       core.connected(msg.session, msg.kind, msg.binding);
@@ -203,7 +209,7 @@ async function start(
   spawnFaceB = false,
   spawnPortal = false,
   spawnOnOpen = false,
-  maps: Uint8Array[] = [],
+  given: Uint8Array[] | Promise<Uint8Array[]> = [],
   spawnAt?: [number, number, number],
   upgrade = false,
   waterInline = false,
@@ -211,11 +217,19 @@ async function start(
 ): Promise<void> {
   // The world file (§6.4): the chosen world's (by default one per generator and seed), in OPFS.
   // Without it the world lives in memory only (no OPFS, or the world is open in another tab).
+  stage('worldFile', 'begin');
   const files = await openWorldFile(file ?? localWorldName(generatorVersion, worldSeed));
+  stage('worldFile', 'end');
   if (!files) console.warn('Dwell: this local world will not be saved (no OPFS access).');
   try {
     // The world's maps first (ADR 0049), so the server's generator need not compute them.
-    if (maps.length) await LocalCore.ready();
+    stage('server', 'begin');
+    await LocalCore.ready();
+    stage('server', 'end');
+    // The maps, if the page was still shaping them (`mapsLater`): its `worldMap` stage meanwhile.
+    const maps = await given;
+    // The world made: its maps installed, the spawn found (and its ground made), the file read.
+    stage('spawn', 'begin');
     for (const map of maps) {
       try {
         installWorldMap(map);
@@ -239,6 +253,7 @@ async function start(
       water !== null,
       jobs !== null,
     );
+    stage('spawn', 'end');
     jobs?.postMessage({
       t: 'init',
       generatorVersion: core.generatorVersion,
@@ -301,9 +316,16 @@ async function start(
   }, 4);
 }
 
+/** The maps of a `start` with `mapsLater`, resolved by the `maps` message. */
+let mapsArrived: (maps: Uint8Array[]) => void = () => undefined;
+const laterMaps = new Promise<Uint8Array[]>((resolve) => {
+  mapsArrived = resolve;
+});
+
 scope.onmessage = (e) => {
   const msg = e.data;
-  if (msg.t === 'start')
+  if (msg.t === 'maps') mapsArrived(msg.maps);
+  else if (msg.t === 'start')
     void start(
       msg.worldSeed,
       msg.generatorVersion,
@@ -311,7 +333,7 @@ scope.onmessage = (e) => {
       msg.spawnFaceB,
       msg.spawnPortal,
       msg.spawnOnOpen,
-      msg.maps,
+      msg.mapsLater ? laterMaps : msg.maps,
       msg.spawnAt,
       msg.upgrade,
       msg.waterInline,

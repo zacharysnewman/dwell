@@ -14,5 +14,21 @@
     "easePower": 3,
     "cpuDurationS": 0.2,
     "reducedMotionDurationS": 0
+  },
+  "stages": {
+    "$comment": "What the loading screen lists while the game starts, before and while the terrain counts (owner, 2026-11-06: \"there's often quite a long delay before loading starts counting up … I'd like to quantify whatever is loading before that and show it, so it doesn't just look hung\"; ARCHITECTURE.md §6.3). Each stage is reported by code by its id (`StageTracker.begin/progress/end`, client/src/ui/loadingStages.ts; the local world's worker posts its own, and the Rust client's readout names its stage: 'worldMap', 'join', 'terrain'). The screen lists the stages begun so far in the order they began: the label, the progress where the stage has one ('bytes': downloaded, of the total when known; 'count': done / total, which also fills the bar) and its time, the running one counting up. id: lowerCamel, unique; label: what the player reads, at most 32 characters (phones), no trailing ellipsis (the screen adds one while it runs). A stage nobody reports is never shown. slowS: a stage running longer than this is marked slow.",
+    "slowS": 3,
+    "list": [
+      { "id": "page", "label": "Loading the page" },
+      { "id": "game", "label": "Loading the game", "progress": "bytes" },
+      { "id": "graphics", "label": "Starting the graphics" },
+      { "id": "worldFile", "label": "Opening the world file" },
+      { "id": "worldMap", "label": "Shaping the world map", "progress": "count" },
+      { "id": "server", "label": "Starting the world's server" },
+      { "id": "spawn", "label": "Finding a place to stand" },
+      { "id": "connect", "label": "Connecting to the server" },
+      { "id": "join", "label": "Joining the world" },
+      { "id": "terrain", "label": "Loading the terrain", "progress": "count" }
+    ]
   }
 }

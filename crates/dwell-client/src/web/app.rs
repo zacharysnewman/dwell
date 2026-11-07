@@ -1870,6 +1870,8 @@ impl Client {
                 Some(sc) => {
                     let l = Object::new();
                     set(&l, "text", dwell_game::loading::loading_text(&sc).as_str());
+                    // Its stage for the shell's list (shared/look/loading.json `stages`).
+                    set(&l, "stage", dwell_game::loading::loading_stage(&sc));
                     set(
                         &l,
                         "ready",
@@ -1905,6 +1907,7 @@ impl Client {
             // Joined, the world's maps on the way (ADR 0049): the loading screen says so.
             let l = Object::new();
             set(&l, "text", "Shaping the world…");
+            set(&l, "stage", "worldMap");
             set(&l, "ready", 0u32);
             set(&l, "needed", 1u32);
             set(&o, "loading", l);

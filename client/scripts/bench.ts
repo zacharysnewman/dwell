@@ -651,6 +651,25 @@ async function step(run: Run, s: Step): Promise<void> {
 }
 
 /** Runs `sc` in a fresh context into `dir`; `params` add to its page address (`--compare`). */
+/** A loading stage's times (ms on the page's clock; `firstMs`: its first count). */
+interface StageTime {
+  id: string;
+  beganMs: number;
+  endedMs: number | null;
+  firstMs: number | null;
+}
+
+/** "game 0.03–0.08 s, worldMap 0.16–2.2 s (first count 1.8 s), …": each stage's span from opening. */
+function formatStageTimes(stages: StageTime[]): string {
+  const s = (ms: number | null): string => (ms === null ? '…' : f(ms / 1000));
+  return stages
+    .map(
+      (t) =>
+        `${t.id} ${s(t.beganMs)}–${s(t.endedMs)} s${t.firstMs !== null ? ` (first count ${s(t.firstMs)} s)` : ''}`,
+    )
+    .join(', ');
+}
+
 async function runScenario(
   browser: Browser,
   base: string,
@@ -690,7 +709,12 @@ async function runScenario(
   const joined = {
     playingS: (Date.now() - openedAt) / 1000,
     loading: await call<Record<string, unknown> | null>(page, 'd.state()?.loading ?? null'),
+    // The loading screen's stages (§6.3, `__dwellStages`): when each began and ended (ms).
+    stages: await page.evaluate<StageTime[]>(
+      '(globalThis.__dwellStages?.() ?? []).map((s) => ({ id: s.id, beganMs: s.beganMs, endedMs: s.endedMs, firstMs: s.firstMs }))',
+    ),
   };
+  if (joined.stages.length) console.log(`  stages: ${formatStageTimes(joined.stages)}`);
   console.log(
     `  playing ${f(joined.playingS)} s after opening the page${typeof joined.loading?.openedS === 'number' ? ` (loading screen ${f(joined.loading.openedS)} s${joined.loading.timedOut ? ', timed out' : ''})` : ''}`,
   );
