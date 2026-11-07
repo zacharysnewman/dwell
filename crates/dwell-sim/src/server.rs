@@ -675,6 +675,8 @@ fn encode(m: &Message) -> Vec<u8> {
 struct StoreChunks {
     db: Arc<dwell_storage::WorldDb>,
     saved: Arc<Mutex<HashMap<ChunkCoord, u32>>>,
+    /// Lit explosives found in the chunks loaded (docs/EXPLOSIVES.md §3): their fuses start again.
+    lit: Arc<Mutex<Vec<[i32; 3]>>>,
 }
 
 impl SavedChunks for StoreChunks {
@@ -683,6 +685,24 @@ impl SavedChunks for StoreChunks {
     }
     fn load(&mut self, c: ChunkCoord) -> Option<Chunk> {
         let saved = self.db.load_chunk(c)?;
+        let lit: Vec<dwell_blocks::StateId> = dwell_world::explosives::EXPLOSIVES
+            .iter()
+            .filter_map(dwell_world::explosives::lit_state)
+            .collect();
+        if saved.voxels.iter().any(|m| lit.contains(m)) {
+            let n = CHUNK_SIZE;
+            let mut found = self.lit.lock().expect("lit explosives");
+            for (i, m) in saved.voxels.iter().enumerate() {
+                if lit.contains(m) {
+                    let i = i as i32;
+                    found.push([
+                        c.x * n + (i & 31),
+                        c.y * n + ((i >> 5) & 31),
+                        c.z * n + (i >> 10),
+                    ]);
+                }
+            }
+        }
         Chunk::from_voxels(&saved.voxels, saved.revision)
     }
 }
@@ -732,6 +752,8 @@ pub struct Server {
     felling: crate::felling::Felling,
     /// The explosives' fuses burning and their table (docs/EXPLOSIVES.md §3).
     fuses: crate::blasts::Fuses,
+    /// Lit explosives the saved chunks loaded held (their fuses start again, in full).
+    relit: Arc<Mutex<Vec<[i32; 3]>>>,
     /// Each tick phase's wall time (ms) summed since the last `tick_phases` (native only).
     phase_ms: [f64; TICK_PHASES.len()],
     /// The water surface grid (docs/WATER_SURFACE_GRID.md): the world's water, held as found until edits free it.
@@ -825,6 +847,7 @@ impl Server {
             knockbacks: Vec::new(),
             felling: crate::felling::Felling::default(),
             fuses: crate::blasts::Fuses::default(),
+            relit: Arc::default(),
             phase_ms: [0.0; TICK_PHASES.len()],
             // The water surface grid (Phase 53, docs/WATER_SURFACE_GRID.md): the world's water read
             // from its blocks, held at rest until edits free it; the world map's flow kept for
@@ -1444,6 +1467,16 @@ impl Server {
         self.apply_body_edits();
         // Fuses burn; the ones out blow (docs/EXPLOSIVES.md §3): their knockbacks go with this
         // tick's, their pieces into this tick's physics step.
+        // A world saved with a fuse burning: the lit explosives its chunks held burn again.
+        let relit = std::mem::take(&mut *self.relit.lock().expect("lit explosives"));
+        for c in relit {
+            if let Some((i, true)) =
+                explosive_of(&self.fuses.table, self.world.get_voxel_if_loaded(c))
+            {
+                let seconds = self.fuses.table[i].fuse_seconds;
+                self.fuses.light(c, i, seconds);
+            }
+        }
         for fuse in self.fuses.tick() {
             self.blast(fuse);
         }
@@ -2367,7 +2400,7 @@ impl Server {
             return;
         };
         let at = fuse.cell;
-        if explosive_of(&self.fuses.table, self.world.get_voxel_if_loaded(at))
+        if explosive_of(&self.fuses.table, self.world.get_voxel(at[0], at[1], at[2]))
             != Some((fuse.explosive, true))
         {
             return;
@@ -2378,7 +2411,7 @@ impl Server {
         let mut flung = Vec::new();
         for o in cells_within(e.radius_m).into_iter().skip(1) {
             let c = [at[0] + o[0], at[1] + o[1], at[2] + o[2]];
-            let m = self.world.get_voxel_if_loaded(c);
+            let m = self.world.get_voxel(c[0], c[1], c[2]);
             if m == M.air {
                 continue;
             }
@@ -3374,6 +3407,7 @@ impl Server {
         self.world.set_saved(Box::new(StoreChunks {
             db,
             saved: self.saved.clone(),
+            lit: self.relit.clone(),
         }));
         // The moving bodies saved with it (docs/BUILT_BODIES.md §7), as they were: after the saved
         // chunks are the world's source, so one resting on its build platform is held again.

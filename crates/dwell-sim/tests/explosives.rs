@@ -441,3 +441,64 @@ fn a_blast_in_solid_ground_costs_a_bounded_tick_and_its_pieces_settle() {
     );
     assert!(body_ticks <= 100_000, "{body_ticks} body-ticks");
 }
+
+#[test]
+fn a_world_saved_with_a_fuse_burning_lights_it_again_when_it_loads() {
+    // face-a-only: saving is face-free; the flat test world is face A's.
+    let dir = std::env::temp_dir().join(format!("dwell-explosives-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("scratch dir");
+    let path = dir.join(format!("fuse{}", dwell_storage::WORLD_EXTENSION));
+    let g = FLAT_TOP_Y;
+    let place = |cell: [i32; 3], m: StateId| {
+        Message::BlockEditRequest(BlockEditRequest {
+            action: BlockEditAction::Place,
+            cell,
+            face: 2,
+            material: m,
+            rows: 1,
+            down: false,
+        })
+    };
+    {
+        let store = dwell_storage::WorldStore::open_file(&path).expect("opens");
+        let mut f = Fixture::new(ServerConfig {
+            store: Some(store),
+            ..flat()
+        });
+        f.join(1, &Client::new(1));
+        f.server.step();
+        f.send(1, place([-1, g - 1, 2], require("dwell:dynamite")));
+        f.server.step();
+        f.send(1, place([-1, g, 2], require("dwell:torch")));
+        for _ in 0..4 {
+            f.server.step();
+        }
+        assert_eq!(
+            f.server.world().get_voxel(-1, g, 2),
+            require("dwell:lit_dynamite")
+        );
+        f.server.save_now();
+        f.server.flush_store();
+    }
+    let store = dwell_storage::WorldStore::open_file(&path).expect("reopens");
+    let mut f = Fixture::new(ServerConfig {
+        store: Some(store),
+        ..flat()
+    });
+    assert_eq!(
+        f.server.world().get_voxel(-1, g, 2),
+        require("dwell:lit_dynamite"),
+        "saved lit"
+    );
+    f.server.step();
+    for _ in 0..200 {
+        f.server.step();
+    }
+    assert_eq!(
+        f.server.world().get_voxel(-1, g, 2),
+        M.air,
+        "its fuse ran again"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
