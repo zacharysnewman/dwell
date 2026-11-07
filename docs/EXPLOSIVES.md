@@ -262,11 +262,13 @@ liquid) cells round the charge are read before any cell clears; a shell cell cra
 neighbours was open then, or, with `crackOverCleared`, if its cell below (the face's down, through
 `FaceFrame`, so face B's roof is mirrored) is one the core destroys — a cave roof over the blast drops.
 A cracked (exposed) cell breaks loose and takes the blast's push whatever lies in its way, even when
-pushed into rock and moving little; every other shell cell is judged by the open-side path test as a
-fling shell's is — it flies with the push if it has a way out, else stays as terrain (0.50.1; owner,
-2026-11-07: "I want the wall check for everything not exposed to air"; before, cracked pieces got no
-push and every other shell cell stayed, so on flat ground yellow looked like blue: supported cracked
-pieces settled back where they were). Test: `tests/explosives.rs`
+pushed into rock and moving little; every other shell cell stays as terrain. The exposure is judged on
+the world before the blast, so nothing goes live through the cleared core or behind other flying cells
+(0.50.10; owner, 2026-11-07: cells beside the destroyed core "aren't supposed to go live"; "the air check
+is supposed to happen before"). From 0.50.1 to 0.50.9 the rest of the shell was wall-checked as a fling
+shell's, so flush on flat ground 266 buried cells flew out through the crater and behind the surface
+(now only the 100 surface cells crack; `yellow_does_not_free_cells_beside_its_destroyed_core`, red on
+0.50.9). Before 0.50.1 cracked pieces got no push, so yellow looked like blue. Test: `tests/explosives.rs`
 `yellow_flings_every_exposed_cell_and_wall_checks_the_rest` (both faces: a charge in rock with a cliff
 open from 5 m; every exposed cell cracks loose, the roof cell 4.5 m over the core among them, the one
 facing the open cliff is flung > 5 m/s (red on 0.50.0: 0.33 m/s, no push), cells pushed into rock with
