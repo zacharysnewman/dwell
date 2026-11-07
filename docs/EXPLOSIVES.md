@@ -1,4 +1,4 @@
-# Explosives: dynamite **[built, 0.49.32; cost, 0.49.33–0.49.34; 5 m with a destroyed core, 0.49.38; 4 m ×1.5, loosen and no-contact options, 0.49.41; out through the open side, 0.49.45]**
+# Explosives: dynamite **[built, 0.49.32; cost, 0.49.33–0.49.34; 5 m with a destroyed core, 0.49.38; 4 m ×1.5, loosen and no-contact options, 0.49.41; out through the open side, 0.49.45; 5 m, debris thrown clear of a flush charge, 0.49.46]**
 
 Owner (2026-11-06): "dynamite block that explodes after a short time when placed, it causes blocks in a
 radius to be affected by physics and appropriate force applied." The first use of the explosion
@@ -37,8 +37,8 @@ Each explosive: `block` (placed, unlit; `dwell:dynamite`, a hotbar item) and `li
 `light` is `dwell:fuse`, a small sputtering flame, `shared/look/flames.json`, and its sound set's `burn`
 the fizz). Both one state (no properties): the generator refuses one with properties. `ignitedBy`,
 `fuseSeconds`, `radiusM`, `destroyRadiusM` (0 to `radiusM`, the generator refuses more), `loosenRadiusM`
-(at least `radiusM`, the generator refuses less), `impulse`, `falloff`, `lift`, `maxSpeedMs`, `reachM`, `knockbackMs`,
-`damage`, `waterRadiusM`, `noPieceContactS` (0–10 s), `chainDelaySeconds` and `effects` (§4); `limits` (`blastsPerTick`,
+(at least `radiusM`, the generator refuses less), `impulse`, `falloff`, `flingFalloff`, `lift`, `maxSpeedMs`, `reachM`, `knockbackMs`,
+`damage`, `waterRadiusM`, `noPieceContactS` (0–10 s), `openSenseM`, `openBlend`, `openPathM`, `openSpreadMin` (0–1), `chainDelaySeconds` and `effects` (§4); `limits` (`blastsPerTick`,
 `maxPieces`). The `$comment` says what each means.
 
 **Lighting** (the existing input model, no new action): **Place with a torch held, aimed at dynamite,
@@ -57,7 +57,8 @@ it as usual. The server starts the fuse for every lit explosive an edit writes.
   first). A block within `destroyRadiusM` (`explosives::destroys`) is gone, no piece; each one beyond
   becomes a one-cell natural piece (felling's bodies, `Felling::spawn_body`, an
   `EntitySpawn` each) flung along the line from the blast lifted toward the face's up by `lift`, at
-  `impulse` × (1 − d / radiusM)^`falloff` over its mass (½ m³ × density), at most `maxSpeedMs`. Liquids
+  `impulse` × (1 − d / radiusM)^`flingFalloff` over its mass (½ m³ × density), at most `maxSpeedMs`
+  (0.49.46: `flingFalloff` 0, every piece alike; players and bodies keep `falloff`). Liquids
   within `waterRadiusM` are blown out (cleared; the water host refills the crater from round it),
   flooded blocks beyond it leave water; `indestructible` blocks stay; an explosive caught in it is lit
   with a fuse drawn from `chainDelaySeconds` (a lit one's cut to it). Bodies within `reachM` are pushed
@@ -94,7 +95,9 @@ it as usual. The server starts the fuse for every lit explosive an edit writes.
   a cave roof down (each length 1), buried about 0. Computed from world cells, so face B's mirrored ground gives
   the mirrored way out with no frame code. Each flung piece goes along its line from the blast (no `lift`: that
   is the players' and bodies' push now) turned toward the way out by `openBlend` (0.6) × the openness
-  (`piece_dir`); buried, radial. **What can't move stays** (`launching`): a shell cell flies only if its push,
+  (`piece_dir`); buried, radial. A push going out keeps at least `openSpreadMin` (0.7, 0.49.46) of it
+  sideways, along its line's own sideways part, so a flush charge's debris flies out in a cone rather than
+  straight up and back into the crater (a piece straight over the charge keeps its push). **What can't move stays** (`launching`): a shell cell flies only if its push,
   out to `openPathM` (1 m) or until it reaches open space (air, liquid, the cleared core), meets no rock and
   every shell cell it passes flies too; decided as a spread from the opening until nothing changes (owner's
   correction: the rock in the way "would need to exclude the pieces that are about to be thrown"), so the order
@@ -104,7 +107,7 @@ it as usual. The server starts the fuse for every lit explosive an edit writes.
 ### 3.2 The open side, measured (0.49.45)
 
 Native release (`tests/explosives.rs`, the scene's stone, both faces): pieces' mean velocity, face-local, against
-the open side's normal: flat ground 112 pieces, cos 1.00 (0.62 m/s mean, up); a cliff face 34, cos 0.94–0.95
+the open side's normal (at 4 m): flat ground 112 pieces, cos 1.00 (0.62 m/s mean, up); a cliff face 34, cos 0.94–0.95
 (out); a cave roof 112, cos 1.00 (down); buried, none (a cavity). On the flat world, a charge on the ground:
 
 | | Pieces | Body-ticks | Settled | Worst tick |
@@ -114,9 +117,53 @@ the open side's normal: flat ground 112 pieces, cos 1.00 (0.62 m/s mean, up); a 
 
 About half the pieces, the same body-ticks: natively the pieces once driven into the flat ground came to rest
 at once, where now they fly up out of the crater and land. The jam the owner saw (10–30 s) was in Chrome at
-seed 0's dam site; **the Chrome measurement there (pieces, ticks a second, frames, settle time against A's 452
-pieces, 48 ticks slowest second, ~9 s) and the 5 m radius under the new rules were not measured in this change**
-(time box): next. The surface test pins fewer than 3/5 of the old pieces and at most 20,000 body-ticks.
+seed 0's dam site; the Chrome measurement there and the 5 m radius under the new rules are §3.3 (0.49.46). The surface test pins fewer than 3/5 of the old pieces and at most 20,000 body-ticks.
+
+### 3.3 The 5 m radius and the flush charge (0.49.46)
+
+**Chrome at the dam** (§3.1's scene, method and view; `?local=1&seed=0&fresh=1&at=2364.5,142,7443.5&time=0.45`,
+settled 20 s; ticks from `__dwell.serverStats()` each second, frames over the 15 s from the blast, settled = the
+worker's `physics` back near idle). Native: `dwell-sim` `tests/collapse.rs` `measure_dynamite_at_the_dam`.
+
+| | Config | Pieces (native, dam) | Slowest second | Seconds below 55 | Physics (Chrome, 23 s) | Worst frame / p95 | Settled (Chrome / native) |
+|---|---|---|---|---|---|---|---|
+| A (§3.1) | 4 m, ×1.5, radial | 452 (flat) | 48 | 1 | ~1.6 s | 50 / 18 ms | ~9 s / 12 s |
+| 0.49.45 | 4 m, open side | 116 | 60 | 0 | 0.43 s | 33 / 19 ms | ~7 s / ~8 s |
+| 0.49.45 at 5 m | 5 m, open side | 261 | 56 | 0 | 1.1 s | 34 / 18 ms | ~9 s / ~11 s |
+| **0.49.46** | 5 m, impulse ×2, `flingFalloff` 0, `openSpreadMin` 0.7 | 214 (flush, flat) | 52 | 1 | 2.0 s | 19 / 19 ms | ~13 s / ~10 s |
+
+At 4 m the open-side blast barely showed at the dam (the shell's push meets the bank's rock and stays);
+5 m under the new rules cost about what 4 m did, so the radius went back to 5 m. 0.49.46's dam blast throws
+visibly more (a 1–2 s dip to 52 ticks, `advance` up to ~200 ms in the worst second while the terrain collision
+rebuilds under the pieces, ~13 s to settle against A's ~9).
+
+**The flush charge** (owner, 2026-11-06: "blowing it up level with the surface of a flat area, just cracks the
+surface with little to no changes"; "most of the debris does fall right back in"). Natively (`tests/explosives.rs`
+`flush_blast`, the charge's top level with the flat world's ground; clear = pieces that came to rest more than
+`radiusM` across the ground from it; crater = air cells under the surface within `radiusM`):
+
+| Config (5 m) | Pieces | Clear of the rim | Crater (cells) | Settled | Body-ticks |
+|---|---|---|---|---|---|
+| 0.49.45 (13,500 N·s, falloff 1.5, no floor) | 250 | 10 | 43 | 10.5 s | 44,408 |
+| ×2, falloff 1, floor 0.7 | 214 | 12 | 69 | 20 s+ | 58,776 |
+| ×4, falloff 1, floor 0.7 | 214 | 62 | 110 | 9.6 s | 54,002 |
+| ×2, falloff 1, floor 0.7, no contact 0.5 s | 214 | 63 | 115 | 20 s+ | 53,568 |
+| ×1.5, fling falloff 0, floor 0.7 | 214 | 86 | 121 | 9.2 s | 48,944 |
+| **×2, fling falloff 0, floor 0.7 (shipped)** | 214 | **101** | **136** | 9.8 s | 54,350 |
+| ×2, fling falloff 0, no floor | 250 | 107 | 139 | 10.7 s | 75,740 |
+| ×2, fling falloff 0, blend 0.35, floor 0.7 | 72 | 52 | 84 | 8.8 s | 19,944 |
+| ×3, fling falloff 0, floor 0.7 | 214 | 113 | 145 | 14.7 s | 76,754 |
+
+What held the debris in was not the force alone: in the first ticks the packed pieces ram one another (an inner
+piece, faster under the falloff, into the slower one outside it) and the stationary rim, and lose most of their
+speed (0.49.45's mean 1.5 m/s two ticks after the blast; ×4 at falloff 1 only 6 m/s). Flinging every piece alike
+(`flingFalloff` 0) lets neighbours fly together; the sideways floor turns those near the axis outward but
+matters less than the falloff (the packed start re-mixes directions). In Chrome on the flat world
+(`?world=flat`, a block broken and the dynamite placed in its hole): an obvious crater with debris strewn round it,
+60 ticks every second, the worst frame 19 ms, settled ~10 s. Still not "most" clear (47%): the pieces from deep
+in the crater's walls hit the rock beside them. The test `a_flush_charge_throws_its_debris_clear_and_leaves_a_crater`
+pins at least 35% clear, 4× 0.49.45's, a crater 2.5× as large, settled within 15 s. Screenshots (scratch, not
+kept): the dam mid-flight and after, the flush crater before, mid and after.
 
 ### 3.1 The owner's four, compared (0.49.41)
 
@@ -197,7 +244,7 @@ Dev hook: `__dwell.blasts()` (each blast's place and age), telemetry `blasts.puf
 
 - Data: `shared/explosives/gen.test.mjs` (the checked-in output, an explosive by data alone, bad entries
   named). `dwell-world` `explosives.rs` (the table's blocks exist, a torch lights and nothing else, a
-  fixture entry's igniter, the falloff and mass, the radius's cells (4 m: 513; the 2 m core: 61; 5 m: 1,013), damage
+  fixture entry's igniter, the falloff and mass, the radius's cells (5 m: 1,013; the 2 m core: 61; 4 m: 513), damage
 only within the destroy radius and knockback past it, the lift on both faces, chain delays,
   the boom's level); `tests/placement.rs` (both faces: a torch against dynamite lights it in its cell,
   stone goes against it, lit it can't be broken).

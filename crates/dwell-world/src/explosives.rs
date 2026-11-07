@@ -536,11 +536,14 @@ mod tests {
         ]
     }
 
+    /// A named face-local fixture (which cells are solid) and the way out it should give.
+    type Case = (&'static str, fn([i32; 3]) -> bool, [f64; 3]);
+
     crate::both_faces!(
         fn the_way_out_is_the_open_sides_normal(f: FaceFrame) {
             let e = dynamite();
             // Face-local fixtures: the solid cells round the charge's (air) cell.
-            let cases: [(&str, fn([i32; 3]) -> bool, [f64; 3]); 3] = [
+            let cases: [Case; 3] = [
                 ("flat ground", |l| l[1] < 0, [0.0, 1.0, 0.0]),
                 ("a cliff face", |l| l[0] < 0, [1.0, 0.0, 0.0]),
                 ("a cave roof", |l| l[1] > 0, [0.0, -1.0, 0.0]),
@@ -558,7 +561,10 @@ mod tests {
             let down = up.map(|c| -c);
             let ground = open_dir(e.open_sense_m, |o| local(f, o)[1] < 0);
             assert!(dot(piece_dir(down, ground, e.open_blend, e.open_spread_min), up) > 0.99);
-            assert_eq!(piece_dir(down, buried, e.open_blend, e.open_spread_min), down);
+            assert_eq!(
+                piece_dir(down, buried, e.open_blend, e.open_spread_min),
+                down
+            );
         }
     );
 
@@ -571,7 +577,11 @@ mod tests {
             .filter(|&o| length(offset_m(o)) > e.destroy_radius_m && local(f, o)[1] < 0)
             .map(|o| {
                 let r = radial_dir([0.0; 3], offset_m(o));
-                (o, piece_dir(r, open, e.open_blend, e.open_spread_min), false)
+                (
+                    o,
+                    piece_dir(r, open, e.open_blend, e.open_spread_min),
+                    false,
+                )
             })
             .collect()
     }

@@ -563,9 +563,15 @@ fn surface_settle(e: ExplosiveData) -> (usize, usize, u32, f64) {
         body_ticks += s.fx.server.body_count();
         ticks += 1;
     }
-    let hs: Vec<_> = ids.iter().filter_map(|&id| s.fx.server.body_handle(id)).collect();
+    let hs: Vec<_> = ids
+        .iter()
+        .filter_map(|&id| s.fx.server.body_handle(id))
+        .collect();
     let ph = s.fx.server.physics();
-    let left: Vec<(DVec3, DVec3)> = hs.iter().map(|&h| (ph.position(h), ph.velocity(h))).collect();
+    let left: Vec<(DVec3, DVec3)> = hs
+        .iter()
+        .map(|&h| (ph.position(h), ph.velocity(h)))
+        .collect();
     assert_eq!(
         s.fx.server.body_count(),
         0,
@@ -627,11 +633,14 @@ fn blast_mean(f: FaceFrame, shape: fn([i32; 3]) -> bool) -> ([f64; 3], usize) {
     (f.vector(mean.to_array()), pieces.len())
 }
 
+/// A named face-local fixture (which cells are solid) and the way its pieces should leave.
+type Case = (&'static str, fn([i32; 3]) -> bool, [f64; 3]);
+
 dwell_world::both_faces!(
     fn the_pieces_leave_through_the_open_side(f: FaceFrame) {
         // Owner (2026-11-06): "putting dynamite on the side of a cliff or the underside of a cave
         // roof would blast out or down".
-        let cases: [(&str, fn([i32; 3]) -> bool, [f64; 3]); 3] = [
+        let cases: [Case; 3] = [
             ("flat ground", |o| o[1] < 0, [0.0, 1.0, 0.0]),
             ("a cliff face", |o| o[0] < 0, [1.0, 0.0, 0.0]),
             ("a cave roof", |o| o[1] > 0, [0.0, -1.0, 0.0]),
@@ -880,6 +889,7 @@ fn a_flush_charge_throws_its_debris_clear_and_leaves_a_crater() {
     assert!(now.clear >= before.clear * 4, "{now:?} vs {before:?}");
     assert!(now.crater * 2 >= before.crater * 5, "{now:?} vs {before:?}");
     assert!(now.settled_s <= 15.0, "{now:?}");
+    assert!(now.body_ticks <= 80_000, "{now:?}");
 }
 
 #[test]
@@ -908,7 +918,8 @@ fn measure_flush_charge() {
             no_piece_contact_s: nc,
             ..d
         };
-        let name = format!("x{k} fling falloff {falloff} blend {blend} spread {spread} no-contact {nc}");
+        let name =
+            format!("x{k} fling falloff {falloff} blend {blend} spread {spread} no-contact {nc}");
         configs.push((name, e));
     }
     for (name, e) in configs {
