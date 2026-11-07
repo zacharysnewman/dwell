@@ -68,7 +68,8 @@ import { loadFlySpeedLevel, saveFlySpeedLevel } from './predict/flightSpeed';
 import { formatStatus } from './ui/statusOverlay';
 import { formatPerf, TickRate } from './ui/perfLine';
 import { applyHud } from './ui/hudSettings';
-import { startupMessage } from './ui/startupError';
+import { hasWasmSimd } from './engine/simd';
+import { NEEDS_SIMD, startupMessage } from './ui/startupError';
 import { FpsMeter } from './ui/fps';
 import { type LoadingHud, LoadingScreen, loadingScreenEnabled } from './ui/loadingScreen';
 import type { LoadingStageId } from './ui/loading.gen';
@@ -586,6 +587,13 @@ async function start(): Promise<App | null> {
   // The ?scale= drawing-buffer scale.
   const scale = displayScale(location.search);
   const mobile = prefersTouch();
+  // The module is built with WebAssembly SIMD: a browser without it is told it is too old, before
+  // the download (engine/simd.ts).
+  if (!hasWasmSimd()) {
+    loading.abort();
+    showFatal(NEEDS_SIMD);
+    return null;
+  }
   let client: Client;
   try {
     // The stages the loading screen lists (§6.3): the module's download, then the graphics.
@@ -1520,7 +1528,8 @@ async function routeMadeWorld(): Promise<boolean> {
 if (launchOf(location.search).kind === 'menu') {
   element('build-info', HTMLDivElement).textContent = formatBuildInfo(buildInfo);
   openMainMenu(null, new URLSearchParams(location.search).get('say') ?? undefined);
-  void loadTools();
+  // The tools need the module, which needs WebAssembly SIMD (engine/simd.ts); the menu works without.
+  if (hasWasmSimd()) void loadTools();
 } else {
   // The loading screen first, before the client starts or anything of the game shows (§6.3).
   bootLoading = new LoadingScreen(

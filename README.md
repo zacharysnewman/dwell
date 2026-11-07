@@ -35,7 +35,8 @@ cargo run --release -p dwell-server             # prints an invite link, and its
 ### Client (`client/`)
 
 Requires Node 22+ and the Rust setup above. Browsers need WebGPU (Chrome and Edge; Safari 26 and
-Firefox where enabled).
+Firefox where enabled) and WebAssembly SIMD (every browser with WebGPU has it; the module is built
+with `+simd128`, `.cargo/config.toml`).
 
 ```sh
 cd client
