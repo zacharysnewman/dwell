@@ -87,8 +87,10 @@ pub struct WaterDrag {
     pub face: dwell_world::FaceFrame,
 }
 
-/// Where a body is in water and how that slows it (the sim's, which `dwell-physics` can't see).
-pub type WaterDragFn = fn(&mut VoxelWorld, &Physics, BodyHandle) -> WaterDrag;
+/// Where a body is in water and how that slows it (the sim's, which `dwell-physics` can't see);
+/// the waterfalls' reads kept in the memo across one tick's stand-ins (the world unchanged).
+pub type WaterDragFn =
+    fn(&mut VoxelWorld, &Physics, BodyHandle, &mut dwell_world::falls::FallMemo) -> WaterDrag;
 
 impl WaterDrag {
     /// A velocity (world) after a tick of it: sideways slowed toward the current, and a fall's push.
@@ -272,6 +274,7 @@ impl Predictor {
         self.players.tick(world, &mut self.physics);
         // The stand-ins, replays too: where each is after this tick, this tick's push included.
         let seq = input.seq;
+        let mut falls = dwell_world::falls::FallMemo::default();
         for p in self.pieces.values_mut() {
             p.pushes.retain(|&(s, _)| s != seq);
             p.pushes.extend(
@@ -285,7 +288,7 @@ impl Predictor {
                 p.pushes.remove(0);
             }
             if let Some(water) = self.water_drag {
-                p.water = water(world, &self.physics, p.body);
+                p.water = water(world, &self.physics, p.body, &mut falls);
             }
             let frame = crate::frame::Frame {
                 face: FaceFrame::at_height(self.physics.position(p.body).y),

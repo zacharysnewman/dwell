@@ -688,7 +688,7 @@ impl<S: Scene> Game<S> {
         };
         let mut predictor = Predictor::new(config);
         // Its stand-ins slow in water as the server's bodies do (docs/BUILT_BODIES.md §6).
-        predictor.set_water_drag(dwell_sim::felling::water_drag);
+        predictor.set_water_drag(dwell_sim::felling::water_drag_with);
         let current = ClientState::of(&predictor);
         let mut flip = FaceFlip::new();
         flip.reset(current.face); // joining on face B does not turn the player
