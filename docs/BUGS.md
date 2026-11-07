@@ -84,6 +84,18 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 48. Neighbouring chunks falling asleep at different moments of a slosh made or lost water (fixed in 0.49.52)
+
+*Found 2026-11-07 in the work on #41b (the stirred basin's slosh).* Falling asleep, a chunk keeps
+the flow across each of its edges as it stands at that moment (0.49.44's `kept`). Two neighbours
+that fell asleep at different moments of a swing each kept a different flow across their shared
+edge, and with no one stepping that edge the difference was made or lost every second: a stirred
+40 m basin 3.5 m deep gained 1.07 m³ in 900 water s (2.5 m³ in 25 minutes). Fixed: a chunk falling
+asleep beside a sleeper keeps that sleeper's flow for their shared edge (its balance takes the
+difference), so both sides agree (docs/WATER_SURFACE_GRID.md §2). Pinned by `water::tests`
+`neighbours_falling_asleep_at_different_moments_of_a_swing_conserve_the_water` (both faces; red
+1119.100 → 1120.170 m³, green within 1 L).
+
 ### 47. A river slowed right beside an edit (fixed in 0.49.43)
 
 *Found 2026-11-06 by two agents, at the owner's creek (seed 3974502447 by 12850, 330, -3330).* A held

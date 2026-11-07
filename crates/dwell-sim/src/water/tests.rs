@@ -1251,6 +1251,31 @@ fn stirred_deep_water_settles() {
     }
 }
 
+dwell_world::both_faces!(
+    fn neighbours_falling_asleep_at_different_moments_of_a_swing_conserve_the_water(f: FaceFrame) {
+        // BUGS.md #48: the stirred 3.5 m basin's three chunks fall asleep and wake through its
+        // slosh, each at its own moment. Each kept the flow across a shared edge as it stood when
+        // it fell asleep, so two sleepers kept different flows over one edge and made water (red:
+        // +1.07 m³ in 900 s). A chunk falling asleep beside a sleeper now keeps that one's flow.
+        let mut s = Scene::new(f);
+        s.fill([0, -5, 0], [39, -1, 7], M.water);
+        s.basin(0, 39, 0, 7, 2);
+        s.run(2);
+        let col: Vec<(i32, i32, i32)> = (1..=3)
+            .flat_map(|x| (2..=4).flat_map(move |z| (-5..=1).map(move |r| (x, r, z))))
+            .collect();
+        s.edit(&col, require("dwell:stone"));
+        s.run(10);
+        let v0 = s.water.free_volume();
+        s.run(900);
+        let v1 = s.water.free_volume();
+        assert!(
+            (v1 - v0).abs() < 0.002,
+            "the stirred basin keeps its water: {v0:.4} → {v1:.4} m³"
+        );
+    }
+);
+
 /// The fixture river with a map current faster than its flow over its depth, as a real river's
 /// (Manning's on its course's mean fall, BUGS.md #42): 1 m/s along +x, carrying `Q`.
 fn fast_river_map(w: Water) -> Water {

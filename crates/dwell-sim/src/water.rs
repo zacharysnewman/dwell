@@ -1523,7 +1523,7 @@ impl Water {
 
     /// Falling asleep: keeps the flow each edge face brings into its column (the water's less the
     /// rest's by the column's share, as the account counts it) and its balance (BUGS.md #41b).
-    fn keep_edges(&mut self, c: usize, bal: f64) {
+    fn keep_edges(&mut self, c: usize, mut bal: f64) {
         let mut kept = [[0.0f32; 4]; CA];
         for (l, kl) in kept.iter_mut().enumerate() {
             let k = &self.chunks[c];
@@ -1546,6 +1546,14 @@ impl Water {
                     _ => (n.w.qz[l2] + n.w.pz[l2], n.r.qz[l2] + n.r.pz[l2]),
                 };
                 *kd = w - share * r;
+                // An edge toward a chunk already asleep carries what that one kept across it
+                // from now on (no one steps it): its flow is this chunk's too, or a swing caught
+                // at different moments on the two sides would make or lose water (BUGS.md #48).
+                if !n.awake && !n.held[l2] && !n.w.floor[l2].is_nan() {
+                    let theirs = -n.kept[l2][d ^ 1];
+                    bal += f64::from(theirs - *kd);
+                    *kd = theirs;
+                }
             }
         }
         let k = &mut self.chunks[c];
