@@ -1,4 +1,4 @@
-# Explosives: dynamite **[built, 0.49.32]**
+# Explosives: dynamite **[built, 0.49.32; cost, 0.49.33]**
 
 Owner (2026-11-06): "dynamite block that explodes after a short time when placed, it causes blocks in a
 radius to be affected by physics and appropriate force applied." The first use of the explosion
@@ -64,7 +64,13 @@ it as usual. The server starts the fuse for every lit explosive an edit writes.
 - **Cost** (native release, `tests/explosives.rs`, a 4 m ball buried in the flat world): 512 pieces, the
   blast's tick 9.5 ms (physics 4.9), the worst tick after it 8.4 ms, every piece blocks again in ~18 s,
   70,076 body-ticks. The terrain collision under the pieces is felling's, at most `terrainChunksPerTick` a
-  tick. In Chrome the local server runs the blast's seconds at 16–50 ticks a second (it catches up).
+  tick. At seed 0's dam site (`tests/collapse.rs` `measure_dynamite_at_the_dam`, the player watching
+  from 10 m): 306 pieces, most landing in the river; the blast's tick ~10 ms (players' terrain collision
+  5.8, physics 4.0), the first second 4.2 ms a tick, 50–70 terrain-collision builds a second. Floating
+  pieces read the waterfalls' columns once per pass (`falls::FallMemo`, 0.49.33): each wet piece had
+  scanned 49 columns up and down their water, the pieces phase 100 → 37 ms of that second. In Chrome
+  (0.49.33, `__dwell.serverStats().phasesMs`) the local server runs the blast's first seconds at 16–45
+  ticks a second, 20–60 ms a tick, nearly all physics and players (terrain collision); it catches up.
 
 Wire: nothing new. `VoxelModificationReason::Explosion` and `DamageCause::Explosion` existed; the
 blocks are synced by name (ADR 0038), so adding them is not a compatibility break.
@@ -105,7 +111,12 @@ Dev hook: `__dwell.blasts()` (each blast's place and age), telemetry `blasts.puf
 - Client: `blasts.rs` (smoke rises and dust falls on both faces, each setting, the CPU's fewer puffs, the
   flash dying, the shake by distance); `render/blasts.rs` (quads farthest first); `pieces.rs` (a one-cell
   piece meshes one block: red in Chrome, the blast's ~500 pieces meshed eight chunk-sized blocks each,
-  one 3.8 s frame, 0.63 s after); Vitest (the settings record).
+  one 3.8 s frame, 0.63 s after; `a_blasts_512_one_cell_pieces_arrive_within_a_frame`, 0.49.33: each
+  piece still meshed a chunk-sized block, 512 blocks and 273 ms natively, red; now each state's cell is
+  meshed once and kept, 3 blocks, 3 ms; `a_one_cell_piece_meshes_as_its_cell_alone_wherever_its_offset`
+  on both faces); Vitest (the settings record).
+- Falls: `falls/tests.rs` `many_bodies_pushed_through_one_memo_are_pushed_as_each_alone` (both faces:
+  480 bodies through one `FallMemo` pushed exactly as each alone, the columns read once a height).
 - Browser (seed 0's dam site, `?local=1&seed=0&fresh=1&at=2364.5,142,7443.5`): placed, lit (the fuse's
   flame), the blast (smoke and flying pieces; the player standing on it died), the crater after with the
   pieces settled and the river refilling it.
@@ -113,5 +124,11 @@ Dev hook: `__dwell.blasts()` (each blast's place and age), telemetry `blasts.puf
 ## 6. Not yet
 
 A use key (the torch is the igniter); fire spreading; blast occlusion (a wall doesn't shield); Tier 2
-debris (Phase 21); a client frame of ~0.6 s still at a 500-piece blast (the pieces' meshes and spawns
-in one frame; spreading them over frames is the next step).
+debris (Phase 21). **The browser's cost of a big blast** (0.49.33, seed 0's dam site): the one-cell
+meshes are gone from the frame (its 0.63 s frame), but frames still reach 60–220 ms for a moment (p95
+33 ms over the blast's 8 s; the prediction's ticks with ~300 stand-ins, 20–25 ms a frame, and catching
+up after a slow frame), and the local server drops to 16–45 ticks a second for 3–5 s (physics 300–700
+ms and terrain collision 150–600 ms of each second). Natively the same blast is 4 ms a tick, under
+WASI ~2× that: the browser's worker runs it several times slower again. What would cut it: fewer
+bodies (a blast's far cells as one body, or Tier 2 debris), terrain collision not rebuilt for water-only
+changes, the stand-ins' prediction only near the player.

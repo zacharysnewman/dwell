@@ -40,6 +40,8 @@ struct Cost {
     ms: Vec<f64>,
     phases: Vec<[(&'static str, f64); TICK_PHASES.len()]>,
     bodies: Vec<usize>,
+    /// The terrain collision's chunk builds after each tick (summed since the start).
+    builds: Vec<u64>,
 }
 
 /// Steps until no body is left (at most `limit` ticks), counting the cost; the server-jobs
@@ -59,6 +61,9 @@ fn run_out(
         cost.ticks += 1;
         cost.body_ticks += f.server.body_count();
         cost.bodies.push(f.server.body_count());
+        let (_, _, players) = f.server.sim();
+        cost.builds
+            .push(players.terrain().map_or(0, dwell_physics::terrain::TerrainCollision::loads));
         cost.pair_ticks += f
             .server
             .physics()
@@ -103,8 +108,9 @@ fn report(cost: &Cost) {
             .filter(|(_, v)| **v >= 1.0)
             .map(|(k, v)| format!("{} {v:.0}", TICK_PHASES[k]))
             .collect();
+        let builds = cost.builds[s * 60 + sec.len() - 1] - cost.builds[(s * 60).max(1) - 1];
         println!(
-            "second {s}: tick mean {mean:.2} max {max:.2} ms, bodies {}; {}",
+            "second {s}: tick mean {mean:.2} max {max:.2} ms, bodies {}, {builds} collision builds; {}",
             cost.bodies[s * 60],
             phases.join(", ")
         );

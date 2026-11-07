@@ -355,13 +355,15 @@ pub fn push_at(world: &VoxelWorld, p: [f64; 3], half_height: f64, radius: f64) -
     push_at_with(world, p, half_height, radius, &mut FallMemo::default())
 }
 
+/// A column read for falls: its water and its four faces' falls (`DIRS` order), none if dry.
+type MemoColumn = Option<(Column, [Option<FallFace>; 4])>;
+
 /// The columns and fall faces [`push_at`] has read, kept while the world stands still (one pass
 /// over many bodies, docs/EXPLOSIVES.md §3: a blast's pieces floating in a river read the same
 /// columns, each column scanned up and down its water and its four faces down their drops).
 #[derive(Default)]
 pub struct FallMemo {
-    columns:
-        crate::hash::HashMap<(FaceFrame, i32, i32, i32), Option<(Column, [Option<FallFace>; 4])>>,
+    columns: crate::hash::HashMap<(FaceFrame, i32, i32, i32), MemoColumn>,
 }
 
 impl FallMemo {
@@ -377,7 +379,7 @@ impl FallMemo {
         z: i32,
         near: i32,
         rows: i32,
-    ) -> Option<(Column, [Option<FallFace>; 4])> {
+    ) -> MemoColumn {
         *self.columns.entry((f, x, z, near)).or_insert_with(|| {
             let col = column(world, f, x, z, near, rows)?;
             Some((
