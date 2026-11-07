@@ -1053,3 +1053,38 @@ dwell_world::both_faces!(
         assert!(!pieces.is_empty(), "dry: it blows");
     }
 );
+
+dwell_world::both_faces!(
+    fn water_shields_the_rock_behind_it(f: FaceFrame) {
+        // Owner (2026-11-07): "it shouldn't destroy blocks or move them through water, so on the
+        // other side of water blocks". Dynamite in rock with a wall of water 2 m to its +x (not
+        // touching it): the rock behind the water stays; the other side is cleared. Blue (it
+        // destroys everything within 4 m), so without the shield the rock 3 m out behind the water
+        // would be destroyed.
+        let stone = require("dwell:stone");
+        let e = *dwell_world::explosives::EXPLOSIVES
+            .iter()
+            .find(|e| e.name == "dwell:dynamite_blue")
+            .expect("blue dynamite");
+        assert!(e.water_shields);
+        let mut s = Scene::new(f, 1);
+        s.fx.server.set_explosives(vec![e]);
+        s.put(1, 0.5, -12.5);
+        s.run(2);
+        for o in cells_within(7.0) {
+            s.set(o, if o[0] == 2 { M.water } else { stone });
+        }
+        let lit = dwell_world::explosives::lit_state(&e).expect("lit");
+        s.set([0, 0, 0], lit);
+        let at = s.cell([0, 0, 0]);
+        s.fx.server.light_fuse(at, 0, 0.0);
+        s.run(2);
+        for o in [[3, 0, 0], [3, 1, 1], [3, -2, 0]] {
+            assert_eq!(s.get(o), stone, "{o:?} behind the water stays");
+        }
+        // The other side: within the 4 m core, gone.
+        for o in [[-1, 0, 0], [-3, 0, 0], [0, 0, -3]] {
+            assert_ne!(s.get(o), stone, "{o:?} on the dry side is cleared");
+        }
+    }
+);
