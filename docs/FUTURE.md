@@ -101,3 +101,32 @@ VoxelSniper-style brushes (`docs/BRUSHES.md` §5, question 2) in terrain worlds,
 sandbox allows. Allowing brushes for everyone in creative is acceptable if a finer permission is
 logically complicated. Needs an ADR (modes as data, per world or per player, what each gates)
 before it is built.
+
+## Baked physics for big explosions and interactions (owner, 2026-11-07)
+
+Owner: "can we precalculate what the physics forces would do ahead of time? Let's say we had a really
+big bomb … like how 3D animation slowly renders out something then don't run the physics for it,
+just play it out?" — recorded as a future possibility for big explosions or physics interactions.
+
+A blast's pieces today are all live Rapier bodies (at most `limits.maxPieces`, 1200; the M1 Air cost
+profile in `docs/DEV_TOOLS.md`: physics 94–236 ms/s and terrain collision 45–149 ms/s of server time
+while they fly). Player-shaped terrain means a blast can't be baked before its charge is placed, but
+these versions fit:
+
+1. **Analytic flight:** a piece with nothing in its way follows a parabola. At the blast the server
+   traces each arc against the terrain, finds where and when it lands, plays the flight without physics
+   and deposits the block there as rubble; only pieces that meet a player, a body or each other become
+   live bodies. Probably the biggest win.
+2. **Bake during the fuse:** simulate the blast faster than real time on a spare thread while the fuse
+   burns (~3 s), then stream the recording; clients only play it back. A change in the area before the
+   blast (a player walking in, a block placed) re-bakes or falls back to live physics.
+3. **Show-only debris:** small fragments and chips generated on each client from a shared seed and drawn
+   as particles: no server physics, nothing on the wire; only real blocks are bodies.
+4. **Pre-baked set pieces:** a designed collapse fully baked ahead, as films do; not for player bombs.
+
+Open questions for the owner before an ADR: whether landed pieces may deposit as rubble rather than
+tumbling to rest; how a playing piece reacts mid-flight (hand back to live physics, or not at all); the
+size of blast it should allow past today's piece cap; and whether it applies to other mass physics
+(collapses, felled trees, falling ceilings). 1 and 3 together would let blasts grow far past the cap
+at a fraction of the cost; the first step would be prototyping 1 on the yellow blast and measuring
+server time before and after.
