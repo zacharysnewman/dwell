@@ -113,15 +113,15 @@
       }
     },
     {
-      "$comment": "Yellow dynamite (owner, 2026-11-07: \"destroys 4m radius, and cracks anything touching air\"; \"it's anything touching air in 5m not queued for destruction\"; and \"to make cave collapses cooler where the ceiling drops\"): the inner 4 m destroyed; of the 4–5 m shell only the cells that touched air before the blast, or (crackOverCleared) whose cell below is in the destroyed core, crack loose and take the blast's push whatever lies in their way; the rest of the shell is wall-checked as red's (owner, 2026-11-07: \"I want the wall check for everything not exposed to air\"): it flies if its push has a way out, else stays. Damage within its 4 m destroy radius (the table's rule). Prototype content.",
+      "$comment": "Yellow dynamite (owner, 2026-11-07: \"destroys 4m radius, and cracks anything touching air\"; \"it's anything touching air in 5m not queued for destruction\"; and \"to make cave collapses cooler where the ceiling drops\"): the inner 4 m destroyed; of the 4–7 m shell (owner, 2026-11-07: \"increase the radius of the yellow dynamite by 2 meters, for cracking range only\") only the cells that touched air before the blast, or (crackOverCleared) whose cell below is in the destroyed core, crack loose and take the blast's push whatever lies in their way; the rest of the shell is wall-checked as red's (owner, 2026-11-07: \"I want the wall check for everything not exposed to air\"): it flies if its push has a way out, else stays. Damage within its 4 m destroy radius (the table's rule). Prototype content.",
       "name": "dwell:dynamite_yellow",
       "block": "dwell:dynamite_yellow",
       "lit": "dwell:lit_dynamite_yellow", "waterSparesBlocks": true, "waterShields": true,
       "ignitedBy": ["dwell:torch"],
       "fuseSeconds": 3,
-      "radiusM": 5,
+      "radiusM": 7,
       "destroyRadiusM": 4,
-      "loosenRadiusM": 5,
+      "loosenRadiusM": 7,
       "shell": "crack",
       "crackOverCleared": true,
       "impulse": 27000,

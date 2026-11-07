@@ -255,7 +255,7 @@ like red's, `shared/textures/materials.json`):
 | `dwell:dynamite` (red) | 2 m | 2–5 m flung (`shell` `fling`), along the open side | 2026-11-06 |
 | `dwell:dynamite_blue` | 4 m | none (`radiusM` = `destroyRadiusM` = 4) | 2026-11-06: "just blows up 4m" |
 | `dwell:dynamite_green` | 4 m | 4–5 m flung as red's | 2026-11-06: "destroys 4m and adds force like red on 4-5m" |
-| `dwell:dynamite_yellow` | 4 m | 4–5 m cracked (`shell` `crack`, `crackOverCleared`) | 2026-11-07: "destroys 4m radius, and cracks anything touching air"; "anything touching air in 5m not queued for destruction"; "to make cave collapses cooler where the ceiling drops" |
+| `dwell:dynamite_yellow` | 4 m | 4–7 m cracked (`shell` `crack`, `crackOverCleared`; 4–5 m until 0.50.8) | 2026-11-07: "destroys 4m radius, and cracks anything touching air"; "anything touching air in 5m not queued for destruction"; "increase the radius … by 2 meters, for cracking range only" (flush on flat ground: 280 destroyed, pieces 114 → 366, surface cells 32 → 100); "to make cave collapses cooler where the ceiling drops" |
 
 **Crack** (`ShellRule::Crack`, `Server::blast`, `dwell_world::explosives::cracking`): the open (air,
 liquid) cells round the charge are read before any cell clears; a shell cell cracks if one of its six
