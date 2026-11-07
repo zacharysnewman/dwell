@@ -493,6 +493,50 @@
       "light": "dwell:fuse",
       "color": "#b9473f",
       "textures": { "top": "dynamiteTop", "side": "dynamite", "bottom": "dynamiteTop" }
+    },
+    {
+      "$comment": "Prototype content (docs/EXPLOSIVES.md §variants, owner 2026-11-06): blue dynamite, a 4 m blast that destroys everything in it and flings nothing (shared/explosives). Lit with a torch as red's.",
+      "name": "dynamite_blue",
+      "sound": "dwell:dynamite",
+      "density": 1200,
+      "shape": "full",
+      "placeable": true,
+      "color": "#4166ad",
+      "textures": { "top": "dynamiteBlueTop", "side": "dynamiteBlue", "bottom": "dynamiteBlueTop" }
+    },
+    {
+      "$comment": "Blue dynamite with its fuse burning (as dwell:lit_dynamite).",
+      "name": "lit_dynamite_blue",
+      "sound": "dwell:lit_dynamite",
+      "density": 1200,
+      "shape": "full",
+      "indestructible": true,
+      "emits": 6,
+      "light": "dwell:fuse",
+      "color": "#4166ad",
+      "textures": { "top": "dynamiteBlueTop", "side": "dynamiteBlue", "bottom": "dynamiteBlueTop" }
+    },
+    {
+      "$comment": "Prototype content (docs/EXPLOSIVES.md §variants, owner 2026-11-06): green dynamite, destroys 4 m and flings the 4–5 m shell as red's (shared/explosives). Lit with a torch as red's.",
+      "name": "dynamite_green",
+      "sound": "dwell:dynamite",
+      "density": 1200,
+      "shape": "full",
+      "placeable": true,
+      "color": "#4f8a4a",
+      "textures": { "top": "dynamiteGreenTop", "side": "dynamiteGreen", "bottom": "dynamiteGreenTop" }
+    },
+    {
+      "$comment": "Green dynamite with its fuse burning (as dwell:lit_dynamite).",
+      "name": "lit_dynamite_green",
+      "sound": "dwell:lit_dynamite",
+      "density": 1200,
+      "shape": "full",
+      "indestructible": true,
+      "emits": 6,
+      "light": "dwell:fuse",
+      "color": "#4f8a4a",
+      "textures": { "top": "dynamiteGreenTop", "side": "dynamiteGreen", "bottom": "dynamiteGreenTop" }
     }
   ]
 }

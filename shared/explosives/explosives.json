@@ -36,6 +36,72 @@
         "boom": { "fullM": 10, "hearM": 180 },
         "shake": { "radiusM": 30, "degrees": 1.6, "seconds": 0.7, "hz": 17 }
       }
+    },
+    {
+      "$comment": "Blue dynamite (owner, 2026-11-06: \"just blows up 4m (destroying the blocks entirely)\"): every block within 4 m destroyed and no shell (radiusM = destroyRadiusM = loosenRadiusM), so no pieces and no force on blocks; players and bodies knocked back as red's; damage within its 4 m destroy radius (the table's rule). Prototype content.",
+      "name": "dwell:dynamite_blue",
+      "block": "dwell:dynamite_blue",
+      "lit": "dwell:lit_dynamite_blue",
+      "ignitedBy": ["dwell:torch"],
+      "fuseSeconds": 3,
+      "radiusM": 4,
+      "destroyRadiusM": 4,
+      "loosenRadiusM": 4,
+      "impulse": 27000,
+      "falloff": 1.5,
+      "flingFalloff": 0,
+      "lift": 0.5,
+      "maxSpeedMs": 33,
+      "reachM": 7,
+      "knockbackMs": 33,
+      "damage": 160,
+      "waterRadiusM": 3,
+      "noPieceContactS": 0,
+      "openSenseM": 3,
+      "openBlend": 0.6,
+      "openPathM": 1,
+      "openSpreadMin": 0.7,
+      "chainDelaySeconds": [0.15, 0.6],
+      "effects": {
+        "flash": { "color": "#ffd9a0", "strength": 6, "lightRadiusM": 18, "seconds": 0.3, "sizeM": 4 },
+        "smoke": { "count": 22, "cpuCount": 6, "color": "#8a837b", "sizeM": [1.6, 3.2], "seconds": [3.5, 6], "spreadM": 3.5, "riseMs": 1.1, "opacity": 0.75 },
+        "dust": { "count": 36, "cpuCount": 8, "color": "#a48c6c", "sizeM": [0.25, 0.6], "seconds": [0.8, 1.8], "speedMs": [4, 11], "opacity": 0.85 },
+        "boom": { "fullM": 10, "hearM": 180 },
+        "shake": { "radiusM": 30, "degrees": 1.6, "seconds": 0.7, "hz": 17 }
+      }
+    },
+    {
+      "$comment": "Green dynamite (owner, 2026-11-06: \"destroys 4m and adds force like red on 4-5m radius\"): the inner 4 m destroyed, the 4–5 m shell flung with red's force settings (impulse, open side, fling falloff); damage within its 4 m destroy radius (the table's rule). Prototype content.",
+      "name": "dwell:dynamite_green",
+      "block": "dwell:dynamite_green",
+      "lit": "dwell:lit_dynamite_green",
+      "ignitedBy": ["dwell:torch"],
+      "fuseSeconds": 3,
+      "radiusM": 5,
+      "destroyRadiusM": 4,
+      "loosenRadiusM": 5,
+      "impulse": 27000,
+      "falloff": 1.5,
+      "flingFalloff": 0,
+      "lift": 0.5,
+      "maxSpeedMs": 33,
+      "reachM": 7,
+      "knockbackMs": 33,
+      "damage": 160,
+      "waterRadiusM": 3,
+      "noPieceContactS": 0,
+      "openSenseM": 3,
+      "openBlend": 0.6,
+      "openPathM": 1,
+      "openSpreadMin": 0.7,
+      "chainDelaySeconds": [0.15, 0.6],
+      "effects": {
+        "flash": { "color": "#ffd9a0", "strength": 6, "lightRadiusM": 18, "seconds": 0.3, "sizeM": 4 },
+        "smoke": { "count": 22, "cpuCount": 6, "color": "#8a837b", "sizeM": [1.6, 3.2], "seconds": [3.5, 6], "spreadM": 3.5, "riseMs": 1.1, "opacity": 0.75 },
+        "dust": { "count": 36, "cpuCount": 8, "color": "#a48c6c", "sizeM": [0.25, 0.6], "seconds": [0.8, 1.8], "speedMs": [4, 11], "opacity": 0.85 },
+        "boom": { "fullM": 10, "hearM": 180 },
+        "shake": { "radiusM": 30, "degrees": 1.6, "seconds": 0.7, "hz": 17 }
+      }
     }
   ]
 }
