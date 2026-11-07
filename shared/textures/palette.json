@@ -16,6 +16,7 @@
     "wool_red":   { "shadow": "#73304a", "base": "#b9473f", "light": "#ea8a5e" },
     "wool_blue":   { "shadow": "#2c3a70", "base": "#4166ad", "light": "#86aee0" },
     "wool_green":  { "shadow": "#2f5a4e", "base": "#4f8a4a", "light": "#93c070" },
+    "wool_yellow": { "shadow": "#9a6a2c", "base": "#d8b03a", "light": "#f4dc78" },
     "leather":     { "shadow": "#4a2c2c", "base": "#8c5636", "light": "#c78d55" },
     "iron":        { "shadow": "#4b536c", "base": "#8f9aae", "light": "#e8eff4" },
     "brass":       { "shadow": "#7a5530", "base": "#c99a40", "light": "#f6dc8c" },

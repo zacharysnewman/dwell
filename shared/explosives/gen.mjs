@@ -45,6 +45,9 @@ export const EFFECT_RANGES = {
   shake: { radiusM: [0, 1000], degrees: [0, 30], seconds: [0, 10], hz: [0, 120] },
 };
 const COLOURED = ['flash', 'smoke', 'dust'];
+/** What a blast's shell does (crates/dwell-world/src/explosives.rs `ShellRule`): `fling` flings it out
+ * (the open side, the path test); `crack` loosens only its cells that touched air, given no push. */
+export const SHELL_RULES = { fling: 'Fling', crack: 'Crack' };
 const COUNTS = ['count', 'cpuCount'];
 
 /** The registry's block names (`dwell:stone`) with whether each is placeable, from shared/blocks/dwell.json. */
@@ -91,7 +94,7 @@ export function validateExplosives(data, blocks = registryBlocks()) {
   data.explosives.forEach((e, i) => {
     const at = `explosives[${i}]`;
     object(e, at);
-    keys(e, at, ['name', 'block', 'lit', 'ignitedBy', 'chainDelaySeconds', 'effects', ...Object.keys(EXPLOSIVE_RANGES)]);
+    keys(e, at, ['name', 'block', 'lit', 'ignitedBy', 'chainDelaySeconds', 'effects', 'shell', 'crackOverCleared', ...Object.keys(EXPLOSIVE_RANGES)]);
     if (typeof e.name !== 'string' || !/^[a-z][a-z0-9_]*:[a-z][a-z0-9_]*$/.test(e.name)) bad(`${at}.name must be a namespaced name`);
     if (names.has(e.name)) bad(`${at}.name ${e.name} is listed twice`);
     names.add(e.name);
@@ -111,6 +114,9 @@ export function validateExplosives(data, blocks = registryBlocks()) {
     if (e.destroyRadiusM > e.radiusM) bad(`${at}.destroyRadiusM must be at most its radiusM`);
     if (e.loosenRadiusM < e.radiusM) bad(`${at}.loosenRadiusM must be at least its radiusM`);
     pair(e.chainDelaySeconds, `${at}.chainDelaySeconds`, 0, 60);
+    if (e.shell !== undefined && !Object.hasOwn(SHELL_RULES, e.shell)) bad(`${at}.shell ${JSON.stringify(e.shell)} must be one of ${Object.keys(SHELL_RULES).join(', ')}`);
+    if (e.crackOverCleared !== undefined && typeof e.crackOverCleared !== 'boolean') bad(`${at}.crackOverCleared must be true or false`);
+    if (e.crackOverCleared && (e.shell ?? 'fling') !== 'crack') bad(`${at}.crackOverCleared is only for shell "crack"`);
     object(e.effects, `${at}.effects`);
     keys(e.effects, `${at}.effects`, Object.keys(EFFECT_RANGES));
     for (const [fx, ranges] of Object.entries(EFFECT_RANGES)) {
@@ -152,6 +158,8 @@ export function explosivesRust(data) {
     lines.push(`        lit: ${JSON.stringify(e.lit)},`);
     lines.push(`        ignited_by: &[${e.ignitedBy.map((b) => JSON.stringify(b)).join(', ')}],`);
     for (const k of Object.keys(EXPLOSIVE_RANGES)) lines.push(`        ${snake(k)}: ${rf(e[k])},`);
+    lines.push(`        shell: ShellRule::${SHELL_RULES[e.shell ?? 'fling']},`);
+    lines.push(`        crack_over_cleared: ${e.crackOverCleared ? 'true' : 'false'},`);
     lines.push(`        chain_delay_seconds: [${e.chainDelaySeconds.map(rf).join(', ')}],`);
     lines.push('        effects: BlastEffects {');
     for (const [fx, ranges] of Object.entries(EFFECT_RANGES)) {

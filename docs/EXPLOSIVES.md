@@ -38,7 +38,7 @@ Each explosive: `block` (placed, unlit; `dwell:dynamite`, a hotbar item) and `li
 the fizz). Both one state (no properties): the generator refuses one with properties. `ignitedBy`,
 `fuseSeconds`, `radiusM`, `destroyRadiusM` (0 to `radiusM`, the generator refuses more), `loosenRadiusM`
 (at least `radiusM`, the generator refuses less), `impulse`, `falloff`, `flingFalloff`, `lift`, `maxSpeedMs`, `reachM`, `knockbackMs`,
-`damage`, `waterRadiusM`, `noPieceContactS` (0–10 s), `openSenseM`, `openBlend`, `openPathM`, `openSpreadMin` (0–1), `chainDelaySeconds` and `effects` (§4); `limits` (`blastsPerTick`,
+`damage`, `waterRadiusM`, `noPieceContactS` (0–10 s), `openSenseM`, `openBlend`, `openPathM`, `openSpreadMin` (0–1), `shell` (optional: `fling`, the default, or `crack`) and `crackOverCleared` (optional, only with `crack`; §3.6), `chainDelaySeconds` and `effects` (§4); `limits` (`blastsPerTick`,
 `maxPieces`). The `$comment` says what each means.
 
 **Lighting** (the existing input model, no new action): **Place with a torch held, aimed at dynamite,
@@ -244,6 +244,29 @@ grid's own law does the rest (it carries the wave, reflects it off banks and wal
   crest reaches the far bank (22 m) in 5.2 water s at +0.32 m, comes back to it at 16.8 s, sloshes
   on as a seiche losing about a tenth of its height a crossing, and the pond sleeps again at about
   2,100 water s (about 30 real s at the 72× day).
+
+### 3.6 Variants (0.49.47, yellow 0.49.50)
+
+Four explosives, all by data (`shared/explosives/explosives.json`; blocks, items and painterly tints
+like red's, `shared/textures/materials.json`):
+
+| Explosive | Destroys | Shell (to `radiusM`) | Owner |
+|---|---|---|---|
+| `dwell:dynamite` (red) | 2 m | 2–5 m flung (`shell` `fling`), along the open side | 2026-11-06 |
+| `dwell:dynamite_blue` | 4 m | none (`radiusM` = `destroyRadiusM` = 4) | 2026-11-06: "just blows up 4m" |
+| `dwell:dynamite_green` | 4 m | 4–5 m flung as red's | 2026-11-06: "destroys 4m and adds force like red on 4-5m" |
+| `dwell:dynamite_yellow` | 4 m | 4–5 m cracked (`shell` `crack`, `crackOverCleared`) | 2026-11-07: "destroys 4m radius, and cracks anything touching air"; "anything touching air in 5m not queued for destruction"; "to make cave collapses cooler where the ceiling drops" |
+
+**Crack** (`ShellRule::Crack`, `Server::blast`, `dwell_world::explosives::cracking`): the open (air,
+liquid) cells round the charge are read before any cell clears; a shell cell cracks if one of its six
+neighbours was open then, or, with `crackOverCleared`, if its cell below (the face's down, through
+`FaceFrame`, so face B's roof is mirrored) is one the core destroys — a cave roof over the blast drops.
+A cracked cell becomes a natural piece given no velocity (it crumbles and falls); every other shell
+cell stays as terrain (no open-side path test). Test: `tests/explosives.rs`
+`yellow_cracks_only_the_shell_that_touched_air_or_sits_on_the_core` (both faces: a charge in rock
+with a cliff open from 5 m; the cracked set is exactly the rule's, the pieces still but for gravity,
+the roof cell 4.5 m over the core cracks and stays without `crackOverCleared`, cells beside and under
+the core stay).
 
 ## 4. Effects (clients)
 
