@@ -828,7 +828,8 @@ impl Water {
         }
         let [u, v] = self.velocity(c, l, false);
         let along = ((u * ru + v * rv) / (rest * rest)).clamp(0.0, 1.0);
-        let near = (1.0 - (k.w.depth[l] - k.r.depth[l]).abs() / self.cfg.river_band).clamp(0.0, 1.0);
+        let near =
+            (1.0 - (k.w.depth[l] - k.r.depth[l]).abs() / self.cfg.river_band).clamp(0.0, 1.0);
         Some((along, near))
     }
 

@@ -249,7 +249,10 @@ The owner approved these recommendations (2026-11-05):
   (`water::tests` `a_freed_river_column_runs_as_its_held_neighbours`, both faces: a level reach
   carrying 0.1 m²/s under a 1 m/s map current, a wall beside it cut and set again; red 0.100 m/s
   freed beside 1.000 held, green within 20%, and so after a save and restore;
-  `a_dammed_reachs_pool_keeps_its_own_still_current`: under 0.1 m/s).
+  `a_dammed_reachs_pool_keeps_its_own_still_current`: under 0.1 m/s); in the browser at the owner's
+  creek (`?local=1&seed=3974502447&fresh=1&at=12834,348,-3298`, a block set on the bank at (12854,
+  331.5, -3323)), the columns beside it read 1.16–1.27 m/s, the held river round them 1.27 (the
+  freed columns' own velocity, the carried flow over the depth, is ~0.1).
 - **The flow shown (G3d):** from the client's current table, so generated and player-moved water
   look alike: ripples carried by the current (a flow map), foam streaks along it, flecks drifting
   on it, each a setting and per liquid as data (`shared/look/waterflow.json`; ARCHITECTURE.md §6.7).

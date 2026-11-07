@@ -1291,7 +1291,10 @@ dwell_world::both_faces!(
         s.water = back;
         s.run(5);
         let [u, _] = s.current(10, 1);
-        assert!((u - held).abs() < 0.2 * held, "restored, it runs so: {u:.3} m/s");
+        assert!(
+            (u - held).abs() < 0.2 * held,
+            "restored, it runs so: {u:.3} m/s"
+        );
     }
 );
 
