@@ -20,7 +20,9 @@ pub struct FellingData {
     pub topple_tip_speed: f64,
     pub sleep_linear: f64,
     pub sleep_angular: f64,
+    pub rest_drift: f64,
     pub sleep_seconds: f64,
+    pub settle_every_ticks: u32,
     pub max_seconds: f64,
     pub max_settles: u8,
     pub hit_speed: f64,
@@ -252,7 +254,12 @@ pub struct FellingRules {
     /// A piece slower than these (m/s, rad/s) for `sleep_ticks` settles.
     pub sleep_linear: f64,
     pub sleep_angular: f64,
+    /// Or within this (m, at its farthest point) of where it began counting.
+    pub rest_drift: f64,
     pub sleep_ticks: u32,
+    /// Pieces due settle together on every this many ticks (one modification, one terrain
+    /// collision rebuild a chunk, for all of them).
+    pub settle_every_ticks: u32,
     /// A piece still moving after this long settles where it is.
     pub max_ticks: u32,
     /// A piece that settles unanchored this many times stays where it is.
@@ -295,7 +302,9 @@ impl From<FellingData> for FellingRules {
             },
             sleep_linear: d.sleep_linear,
             sleep_angular: d.sleep_angular,
+            rest_drift: d.rest_drift,
             sleep_ticks: ticks(d.sleep_seconds),
+            settle_every_ticks: d.settle_every_ticks,
             max_ticks: ticks(d.max_seconds),
             max_settles: d.max_settles,
             max_piece_cells: d.max_piece_cells,
@@ -328,6 +337,8 @@ pub struct Falling {
     /// How many times its cells have settled without an anchor before.
     pub settles: u8,
     still: u32,
+    /// Where it was (its origin and rotation) when its still ticks began counting.
+    rest: Option<(DVec3, DQuat)>,
     age: u32,
     /// Its kind (an index into [`BODY_KINDS`]; 0 natural).
     pub kind: u8,
@@ -366,6 +377,8 @@ pub struct Settled {
 pub struct Felling {
     pub pieces: Vec<Falling>,
     next_id: u32,
+    /// The steps counted (`step`), for `settle_every_ticks`.
+    steps: u32,
     pub rules: FellingRules,
 }
 
@@ -544,6 +557,7 @@ impl Felling {
                 kind: 0,
                 settles,
                 still: 0,
+                rest: None,
                 age: 0,
                 hurt: Vec::new(),
                 held: false,
@@ -627,6 +641,7 @@ impl Felling {
                 kind: old.kind,
                 settles: old.settles,
                 still: 0,
+                rest: None,
                 age: old.age,
                 hurt: old.hurt.clone(),
                 held: false,
@@ -646,6 +661,7 @@ impl Felling {
         p.cells = cells;
         p.carriers = carriers;
         p.still = 0;
+        p.rest = None;
         Some(out)
     }
 
@@ -694,6 +710,7 @@ impl Felling {
         p.cells = cells;
         p.carriers = carriers;
         p.still = 0;
+        p.rest = None;
     }
 
     /// The world cell each cell of piece `i` is in now.
@@ -835,6 +852,7 @@ impl Felling {
             kind,
             settles,
             still: 0,
+            rest: None,
             age: 0,
             hurt: Vec::new(),
             held: false,
@@ -1052,6 +1070,8 @@ impl Felling {
     pub fn step(&mut self, physics: &mut Physics) -> Vec<usize> {
         let r = self.rules;
         let mut due = Vec::new();
+        self.steps = self.steps.wrapping_add(1);
+        let settling = self.steps.is_multiple_of(r.settle_every_ticks.max(1));
         for (i, p) in self.pieces.iter_mut().enumerate() {
             p.age += 1;
             let v = physics.velocity(p.body).length();
@@ -1062,9 +1082,18 @@ impl Felling {
                 physics.set_dominant(p.body, held);
                 p.held = held;
             }
-            if v < r.sleep_linear && w < r.sleep_angular {
+            // Still: slow, or (jostled by its neighbours in a heap, rocked by water) not gone
+            // anywhere since it began counting: within `rest_drift` at its farthest point.
+            let (at, turn) = (physics.position(p.body), physics.rotation(p.body));
+            let calm = v < r.sleep_linear && w < r.sleep_angular;
+            let stayed = p.rest.is_some_and(|(a, q)| {
+                (at - a).length() + q.angle_between(turn) * p.reach <= r.rest_drift
+            });
+            if calm || stayed {
+                p.rest.get_or_insert((at, turn));
                 p.still += 1;
             } else {
+                p.rest = Some((at, turn));
                 p.still = 0;
             }
             // Anything past the world's rows is lost; the rest settles at rest or out of time
@@ -1073,7 +1102,7 @@ impl Felling {
             let lost = !in_world_rows(y);
             // A kind that doesn't settle (a built body) stays a body; lost past the rows, it goes.
             let settles = body_kind(p.kind).settles;
-            if lost || (settles && (p.still >= r.sleep_ticks || p.age >= r.max_ticks)) {
+            if lost || (settling && settles && (p.still >= r.sleep_ticks || p.age >= r.max_ticks)) {
                 due.push(i);
             }
         }
@@ -1375,6 +1404,7 @@ mod tests {
             kind: 0,
             settles: 0,
             still: 0,
+            rest: None,
             age: 0,
             hurt: Vec::new(),
             held: false,
@@ -1668,6 +1698,7 @@ mod tests {
             kind: 0,
             settles: 0,
             still: 0,
+            rest: None,
             age: 0,
             hurt: Vec::new(),
             held: false,

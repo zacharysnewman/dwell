@@ -50,6 +50,35 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 46. A ramp in a chunk otherwise solid under solid ground panicked its collision build (fixed in 0.49.29)
+
+*Found 2026-11-06, writing the terrain-collision rebuild tests for #45.* A chunk all solid under a
+solid chunk was built as cubes without reading its neighbours, but a shaped cell in it (a ramp
+placed in a dug cell deep down) read them to cull its faces: an index out of bounds, the tick
+panicking. Fixed: such a chunk counts as buried only if every cell is a full cube. Pinned by
+`dwell-physics` `terrain.rs` `a_ramp_in_a_chunk_otherwise_solid_under_solid_ground_builds` (red: the
+panic; green).
+
+### 45. A collapse's falling sand stalled the server's tick for 30 s (fixed in 0.49.29)
+
+*Found 2026-11-06 at seed 0's dam site (#350's bench):* the pit dug beside the wall dropped the
+river bank's sand, and the ticks over 25 ms were its falling pieces (764 of the server's 1,118 ms in
+the first 4 s; ticks 45 ms, then 27–29). Natively (`dwell-sim` `tests/collapse.rs`
+`measure_the_dam_sites_pit_collapse`) 177 sand columns lay packed edge to edge against the cut's
+walls; their boxes touched exactly and the solver held the whole raft by the walls' friction, so it
+crept down at ~0.2 m/s and every column stayed a body for the 30 s until `maxSeconds` settled it
+where it hung (4.5–6 ms a tick natively, 4 of it the physics step). Fixed: each piece cell's box is
+drawn in 1 cm a face (`PIECE_SKIN`), its cells merged into fewer boxes (`merged_boxes`), a piece that
+hasn't gone anywhere counts as still (`restDrift`), pieces settle after 1 s and together every
+6 ticks, and a settle rebuilds only its chunk's terrain collision and the shaped chunks round it
+(ARCHITECTURE.md §7.3). Now 5 s of bodies at ≤ 1.4 ms a tick natively; in Chrome the cut's seconds
+read 5.1, 4.3, 1.7 ms mean, then ~1.2. Pinned by `tests/collapse.rs`
+`sand_packed_in_a_well_falls_down_it_and_settles_in_seconds` (red: 256 columns still bodies at 6 s,
+92,160 body-ticks, 18.6 ms mean tick; green: settled in 4.6 s, ~43,000) and
+`a_blasts_pieces_land_in_a_heap_and_settle_in_seconds` (red: 108 of 513 left at 10 s; green: none at
+12 s), and `terrain.rs` `a_cell_changed_rebuilds_its_chunk_not_the_full_cube_chunks_round_it` (red:
+18 builds; green: 1).
+
 ### 44. A LOD section computing at the server-jobs worker when the world saved was never recomputed (fixed in 0.49.26)
 
 *Found 2026-11-06, reading the save path for #43.* Since 0.49.14 the browser's local server computes
