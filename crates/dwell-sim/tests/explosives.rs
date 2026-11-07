@@ -232,21 +232,18 @@ dwell_world::both_faces!(
             require("dwell:bedrock"),
             "the bedrock stays"
         );
-        // Each flung out of the crater (face-locally up), the near ones faster.
+        // Flung out of the crater (face-locally up), near and far alike (`flingFalloff` 0). A few
+        // are knocked down by their packed neighbours in the step they spawned in.
         let up = DVec3::from(f.vector([0.0, 1.0, 0.0]));
         let mut by_d: Vec<(f64, f64)> = Vec::new();
+        let mut upward = 0;
         for p in &pieces {
             let h = s.fx.server.body_handle(p.id).expect("a body");
             let v = s.fx.server.physics().velocity(h);
             let pos = DVec3::from(p.origin);
             let d = (pos - centre).length();
-            // A slow one at the edge is jostled by its packed neighbours in the step it spawned in.
-            if v.length() > 1.0 {
-                assert!(
-                    v.dot(up) > 0.0,
-                    "{:?} flung up and out: {v:?}",
-                    p.cells[0].state
-                );
+            if v.dot(up) > 0.0 {
+                upward += 1;
             }
             if dwell_blocks::info(p.cells[0].state)
                 .name
@@ -260,8 +257,13 @@ dwell_world::both_faces!(
         let near: f64 = by_d[..n / 4].iter().map(|x| x.1).sum::<f64>() / (n / 4) as f64;
         let far: f64 = by_d[3 * n / 4..].iter().map(|x| x.1).sum::<f64>() / (n - 3 * n / 4) as f64;
         assert!(
-            near > 3.0 * far,
-            "faster near it: {near:.2} vs {far:.2} m/s"
+            upward * 10 >= pieces.len() * 9,
+            "{upward} of {} flung up and out",
+            pieces.len()
+        );
+        assert!(
+            far > 0.4 * near && far > 5.0,
+            "the far ones fly too: {near:.2} vs {far:.2} m/s"
         );
         // The log over the radius fell (the blast cut it) or flew.
         let log = f.state(require("dwell:log[axis=y]"));
@@ -551,7 +553,8 @@ fn surface_settle(e: ExplosiveData) -> (usize, usize, u32, f64) {
     s.put(1, 0.5, -13.0);
     let fuse = s.fx.server.fuses()[0].1 as usize;
     s.run(fuse - 1);
-    let n = spawns(&s.run(1)).len();
+    let ids: Vec<u32> = spawns(&s.run(1)).iter().map(|p| p.id).collect();
+    let n = ids.len();
     let (mut body_ticks, mut ticks, mut worst) = (0, 0u32, 0.0f64);
     while s.fx.server.body_count() > 0 && ticks < 20 * 60 {
         let t = std::time::Instant::now();
@@ -560,10 +563,19 @@ fn surface_settle(e: ExplosiveData) -> (usize, usize, u32, f64) {
         body_ticks += s.fx.server.body_count();
         ticks += 1;
     }
+    let hs: Vec<_> = ids
+        .iter()
+        .filter_map(|&id| s.fx.server.body_handle(id))
+        .collect();
+    let ph = s.fx.server.physics();
+    let left: Vec<(DVec3, DVec3)> = hs
+        .iter()
+        .map(|&h| (ph.position(h), ph.velocity(h)))
+        .collect();
     assert_eq!(
         s.fx.server.body_count(),
         0,
-        "every piece settled within 20 s"
+        "every piece settled within 20 s: left {left:?}"
     );
     (n, body_ticks, ticks, worst)
 }
@@ -578,15 +590,16 @@ fn a_surface_blast_flings_about_half_the_pieces_out_of_its_crater_and_they_settl
     let before = surface_settle(ExplosiveData {
         open_path_m: 0.0,
         open_blend: 0.0,
-        ..dynamite()
+        ..before_the_flush_fix()
     });
     println!("now {now:?}, before {before:?} (pieces, body-ticks, ticks, worst ms)");
-    // Natively on the flat ground the pieces once driven into it came to rest at once (1.4 s,
-    // ~13,400 body-ticks); flung up out of the crater they fly and land (~5.7 s, ~14,100 from
-    // about half as many pieces): fewer bodies, not fewer body-ticks (docs/EXPLOSIVES.md §3.2).
+    // Natively on the flat ground the pieces once driven into it came to rest at once; flung up
+    // out of the crater they fly and land: fewer bodies, not fewer body-ticks (docs/EXPLOSIVES.md
+    // §3.2). At 5 m, every piece flung alike at twice the impulse (§3.3): ~186 pieces against
+    // ~442, ~49,000 body-ticks (~11 s).
     assert!(now.0 < before.0 * 3 / 5, "pieces {} vs {}", now.0, before.0);
     assert!(
-        now.1 <= 20_000,
+        now.1 <= 60_000,
         "body-ticks {} (before {})",
         now.1,
         before.1
@@ -620,11 +633,14 @@ fn blast_mean(f: FaceFrame, shape: fn([i32; 3]) -> bool) -> ([f64; 3], usize) {
     (f.vector(mean.to_array()), pieces.len())
 }
 
+/// A named face-local fixture (which cells are solid) and the way its pieces should leave.
+type Case = (&'static str, fn([i32; 3]) -> bool, [f64; 3]);
+
 dwell_world::both_faces!(
     fn the_pieces_leave_through_the_open_side(f: FaceFrame) {
         // Owner (2026-11-06): "putting dynamite on the side of a cliff or the underside of a cave
         // roof would blast out or down".
-        let cases: [(&str, fn([i32; 3]) -> bool, [f64; 3]); 3] = [
+        let cases: [Case; 3] = [
             ("flat ground", |o| o[1] < 0, [0.0, 1.0, 0.0]),
             ("a cliff face", |o| o[0] < 0, [1.0, 0.0, 0.0]),
             ("a cave roof", |o| o[1] > 0, [0.0, -1.0, 0.0]),
@@ -779,4 +795,134 @@ fn a_world_saved_with_a_fuse_burning_lights_it_again_when_it_loads() {
         "its fuse ran again"
     );
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// What a charge set flush in the flat world's ground (its top level with the surface) does.
+#[derive(Debug)]
+struct Flush {
+    /// The pieces it flung.
+    pieces: usize,
+    /// Of them, those that came to rest (their last pose) farther than `radiusM` across the ground
+    /// from the charge: clear of the crater's rim.
+    clear: usize,
+    /// Seconds until every piece was a block again (at most 20).
+    settled_s: f64,
+    /// Air cells under the surface within `radiusM` of the charge once settled: the crater.
+    crater: usize,
+    /// Body-ticks until settled.
+    body_ticks: usize,
+}
+
+/// Blows `e` set flush in the flat world's ground (face A's, endless: what flies far lands).
+fn flush_blast(e: ExplosiveData) -> Flush {
+    let mut s = Scene::flat(1);
+    s.fx.server.set_explosives(vec![e]);
+    s.put(1, 0.5, -24.0);
+    s.run(2);
+    // The charge's cell is the ground's top row (row −1): its top flush with the surface.
+    let lit = dwell_world::explosives::lit_state(&e).expect("lit");
+    s.set([0, -1, 0], lit);
+    let at = s.cell([0, -1, 0]);
+    s.fx.server.light_fuse(at, 0, 0.0);
+    let ids: Vec<u32> = spawns(&s.run(2)).iter().map(|p| p.id).collect();
+    let centre = DVec3::new(0.5, m_of_row(s.base - 1) + CELL_H / 2.0, 0.5);
+    let mut last = vec![centre; ids.len()];
+    let (mut ticks, mut body_ticks) = (0u32, 0);
+    loop {
+        for (k, &id) in ids.iter().enumerate() {
+            if let Some(h) = s.fx.server.body_handle(id) {
+                last[k] = s.fx.server.physics().position(h);
+            }
+        }
+        if s.fx.server.body_count() == 0 || ticks >= 20 * 60 {
+            break;
+        }
+        s.run(1);
+        body_ticks += s.fx.server.body_count();
+        ticks += 1;
+    }
+    let clear = last
+        .iter()
+        .filter(|p| (p.x - centre.x).hypot(p.z - centre.z) > e.radius_m)
+        .count();
+    let mut crater = 0;
+    let w = e.radius_m.ceil() as i32 + 1;
+    for x in -w..=w {
+        for z in -w..=w {
+            for r in -12..0 {
+                if dist([x, r + 1, z]) <= e.radius_m && s.get([x, r, z]) == M.air {
+                    crater += 1;
+                }
+            }
+        }
+    }
+    Flush {
+        pieces: ids.len(),
+        clear,
+        settled_s: f64::from(ticks) / 60.0,
+        crater,
+        body_ticks,
+    }
+}
+
+/// 0.49.45's numbers at a 5 m radius: the blast the owner found "just cracks the surface".
+fn before_the_flush_fix() -> ExplosiveData {
+    ExplosiveData {
+        impulse: 13_500.0,
+        fling_falloff: 1.5,
+        open_spread_min: 0.0,
+        ..dynamite()
+    }
+}
+
+#[test]
+fn a_flush_charge_throws_its_debris_clear_and_leaves_a_crater() {
+    // face-a-only: a measurement on the flat world (face A's); the pushes' directions are tested
+    // on both faces above. Owner (2026-11-06): a charge level with flat ground "just cracks the
+    // surface with little to no changes", and "most of the debris does fall right back in".
+    let now = flush_blast(dynamite());
+    let before = flush_blast(before_the_flush_fix());
+    println!("now {now:?}\nbefore {before:?}");
+    // Before: 250 pieces, 10 clear of the rim, a 43-cell crater (the 2 m core, part refilled).
+    // Now (natively): ~214 pieces, ~90 clear, a ~125-cell crater, settled in ~10 s.
+    assert!(now.clear * 100 >= now.pieces * 35, "{now:?}");
+    assert!(now.clear >= before.clear * 4, "{now:?} vs {before:?}");
+    assert!(now.crater * 2 >= before.crater * 5, "{now:?} vs {before:?}");
+    assert!(now.settled_s <= 15.0, "{now:?}");
+    assert!(now.body_ticks <= 80_000, "{now:?}");
+}
+
+#[test]
+#[ignore = "a measurement: cargo test --release -p dwell-sim --test explosives measure_flush_charge -- --ignored --nocapture"]
+fn measure_flush_charge() {
+    // face-a-only: a measurement on the flat world, the configurations compared in
+    // docs/EXPLOSIVES.md §3.3: impulse ×k, fling falloff, open blend, sideways floor, no-contact s.
+    let d = dynamite();
+    let old = before_the_flush_fix();
+    let mut configs = vec![("0.49.45 at 5 m".to_string(), old), ("now".to_string(), d)];
+    for (k, falloff, blend, spread, nc) in [
+        (2.0, 1.0, 0.6, 0.7, 0.0),
+        (4.0, 1.0, 0.6, 0.7, 0.0),
+        (2.0, 1.0, 0.6, 0.7, 0.5),
+        (1.5, 0.0, 0.6, 0.7, 0.0),
+        (2.0, 0.0, 0.6, 0.0, 0.0),
+        (2.0, 0.0, 0.35, 0.7, 0.0),
+        (3.0, 0.0, 0.6, 0.7, 0.0),
+    ] {
+        let e = ExplosiveData {
+            impulse: old.impulse * k,
+            max_speed_ms: old.max_speed_ms * k.min(2.0),
+            fling_falloff: falloff,
+            open_blend: blend,
+            open_spread_min: spread,
+            no_piece_contact_s: nc,
+            ..d
+        };
+        let name =
+            format!("x{k} fling falloff {falloff} blend {blend} spread {spread} no-contact {nc}");
+        configs.push((name, e));
+    }
+    for (name, e) in configs {
+        println!("{name}: {:?}", flush_blast(e));
+    }
 }
