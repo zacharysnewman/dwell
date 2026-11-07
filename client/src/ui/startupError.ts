@@ -1,6 +1,11 @@
 // The message shown when the game cannot start (the "unsupported" screen, ADR 0028): WebGPU missing
 // altogether, or present without a usable adapter or device (e.g. a blocklisted GPU), reads as
-// "needs WebGPU"; anything else names the error.
+// "needs WebGPU"; anything else names the error. A browser without WebAssembly SIMD is told it is
+// too old before the module is loaded (NEEDS_SIMD).
+
+/** A browser whose WebAssembly has no SIMD (engine/simd.ts), which the game's module needs. */
+export const NEEDS_SIMD =
+  'This browser is too old for Dwell, which needs WebAssembly SIMD: try Safari 16.4 or later, Chrome 91 or later, or Firefox 89 or later.';
 
 export const NEEDS_WEBGPU =
   'Dwell needs WebGPU, which this browser does not have (or has turned off). Try a current Chrome, Edge or Safari.';

@@ -126,7 +126,14 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
 5. **One Rust codebase, one WASM module.** `npm run build:wasm` builds `dwell-client` for
    `wasm32-unknown-unknown` (release) and runs `wasm-bindgen --target web` into `client/src/pkg`
    (not committed); Vite bundles that one module, and the page (the game client), every job worker
-   and the local-mode worker each instantiate it (`client/src/engine/wasm.ts`). Every piece of
+   and the local-mode worker each instantiate it (`client/src/engine/wasm.ts`). It is built with
+   **WebAssembly SIMD** (`-C target-feature=+simd128` in `.cargo/config.toml`'s
+   `wasm32-unknown-unknown` rustflags, owner 2026-11-06): rapier's and the meshers' 4-wide math is
+   otherwise emulated lane by lane (a dynamite blast's local server: 40–60 → 48–65 ticks a second;
+   EXPLOSIVES.md §6). The shell checks for SIMD before loading it (`engine/simd.ts`: `WebAssembly.validate`
+   on a 40-byte module with a `v128.const`) and, without it, says the browser is too old (Safari
+   16.4+, Chrome 91+, Firefox 89+; `ui/startupError.ts` `NEEDS_SIMD`) instead of failing blankly.
+   The check is in each build's own shell, so the launcher still opens older builds. Every piece of
    simulation logic (player controller, worldgen, physics setup, protocol codec) has exactly one
    implementation, shared by the native server and the browser.
 
@@ -3721,7 +3728,8 @@ Direct invite links (`?join=host:port&cert=<sha256>`) work without the master se
 No platform needs a trusted certificate to join any server (ADR 0008).
 Every client platform also needs WebGPU to play (ADR 0028): browsers and WebViews without it
 (Firefox on some platforms, iOS before 26, Android WebView before Chrome 121, some Linux GPU
-drivers) get the "unsupported" message (§5).
+drivers) get the "unsupported" message (§5). WebAssembly SIMD (§2.1) is older than WebGPU everywhere (Safari 16.4, Chrome 91, Firefox 89):
+a browser without it gets a "too old" message before the module loads.
 
 ---
 
