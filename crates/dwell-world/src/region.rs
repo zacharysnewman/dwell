@@ -18,10 +18,10 @@ pub const DEFAULT_REGION_REACH: f32 = region_edit::REACH + REACH_SLACK;
 /// `welcome_flags::BRUSHES`; older ones reject it as an unknown state).
 pub const KEEP: StateId = region_edit::KEEP as StateId;
 
-/// How far a region edit may reach in a world (by its generator, §6.3): where the world type's
+/// How far a region edit may reach in a game mode (`crate::brush::world_mode`): where the mode's
 /// brush policy allows brushes (`shared/brushes/brushes.json`) its reach, else the default.
-pub fn region_reach(generator_version: u32) -> f32 {
-    crate::brush::brush_policy(generator_version).map_or(DEFAULT_REGION_REACH, |p| {
+pub fn region_reach(mode: &str) -> f32 {
+    crate::brush::brush_policy(mode).map_or(DEFAULT_REGION_REACH, |p| {
         p.reach.max(region_edit::REACH) + REACH_SLACK
     })
 }
@@ -527,11 +527,11 @@ mod tests {
     }
 
     #[test]
-    fn region_edits_reach_further_where_the_world_type_allows_brushes() {
-        assert_eq!(region_reach(crate::GENERATOR_TERRAIN), DEFAULT_REGION_REACH);
-        assert_eq!(region_reach(crate::GENERATOR_FLAT), DEFAULT_REGION_REACH);
-        let sandbox = region_reach(crate::GENERATOR_SANDBOX);
-        assert!(sandbox >= 128.0, "{sandbox}");
+    fn region_edits_reach_further_where_the_mode_allows_brushes() {
+        assert_eq!(region_reach("no_such_mode"), DEFAULT_REGION_REACH);
+        // Creative (every world's mode): the brush reach, 256 m, and the usual slack.
+        let sandbox = region_reach(crate::brush::world_mode());
+        assert_eq!(sandbox, 256.0 + REACH_SLACK);
         let mut w = world();
         let far = fill([100, 1, 0], [1, 1, 1], require("dwell:stone"));
         assert_eq!(

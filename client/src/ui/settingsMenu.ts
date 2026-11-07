@@ -6,6 +6,7 @@
 // and touch control, ui/controls.ts), Debug (the debug tools as buttons, with their keys) and Host
 // (a local world's hosting, ui/hostPanel.ts) — and Resume and Quit to main menu (Phase 5a). The
 // settings are kept in this browser.
+import { defaultHud, hideableParts, hudRecord, sanitizeHud, type HudSettings } from './hudSettings';
 import { defaultDetail, detailLimits, sanitizeDetail, type DetailSettings } from './detailSettings';
 import { DEFAULT_EXPOSURE, EXPOSURE_LIMITS, sanitizeExposure } from './viewSettings';
 import { CLOUD_QUALITIES, defaultClouds, sanitizeClouds, type CloudQuality } from './viewSettings';
@@ -91,6 +92,8 @@ export interface Settings {
   fovDeg: number;
   /** Your first-person arms and what they hold (docs/CHARACTERS.md §5). */
   showArms: boolean;
+  /** What the on-screen interface shows (ui/hudSettings.ts, shared/ui/hud.json). */
+  hud: HudSettings;
 }
 
 export function defaultSettings(mobile: boolean, reducedMotion = false): Settings {
@@ -104,6 +107,7 @@ export function defaultSettings(mobile: boolean, reducedMotion = false): Setting
     motion: defaultMotion(reducedMotion),
     fovDeg: DEFAULT_FOV,
     showArms: true,
+    hud: defaultHud(),
   };
 }
 
@@ -137,6 +141,7 @@ export function settingsJson(s: Settings): string {
     },
     fovDeg: Math.round(s.fovDeg),
     showArms: s.showArms,
+    hud: { shown: { ...s.hud.shown } },
   };
   return JSON.stringify(rounded, null, 2);
 }
@@ -153,6 +158,8 @@ const CLOUDS_KEY = 'dwell.clouds';
 const WATER_KEY = 'dwell.water';
 /** A record, append-only: unknown fields are kept on rewrite (ui/shadowSettings.ts). */
 const SHADOWS_KEY = 'dwell.shadows';
+/** A record, append-only: parts and fields a newer build stored are kept (ui/hudSettings.ts). */
+const HUD_KEY = 'dwell.hud';
 
 function load(key: string): unknown {
   try {
@@ -176,6 +183,7 @@ export function loadSettings(mobile: boolean): Settings {
     motion: sanitizeMotion(load(MOTION_KEY), prefersReducedMotion()),
     fovDeg: sanitizeFovSetting(load(VIEW_KEY)),
     showArms: sanitizeShowArms(load(VIEW_KEY)),
+    hud: sanitizeHud(load(HUD_KEY)),
   };
 }
 
@@ -192,6 +200,7 @@ export function saveSettings(s: Settings): void {
       VIEW_KEY,
       JSON.stringify(viewRecord(load(VIEW_KEY), s.fovDeg, s.showArms)),
     );
+    localStorage.setItem(HUD_KEY, JSON.stringify(hudRecord(load(HUD_KEY), s.hud)));
   } catch {
     // Not kept: the settings still apply for this visit.
   }
@@ -744,6 +753,22 @@ export class SettingsMenu {
     waterGrid.append(this.choice(WATER_CHOICE));
     water.append(waterGrid);
     page.append(water);
+    // What the screen shows, one row per part listed as data (shared/ui/hud.json).
+    const screen = el('div', 'gm-group');
+    screen.append(el('h2', undefined, 'On screen'));
+    const screenGrid = el('div', 'gm-grid');
+    for (const part of hideableParts(this.mobile)) {
+      screenGrid.append(
+        this.toggle({
+          label: part.label,
+          hint: part.hint,
+          get: (st) => st.hud.shown[part.id] ?? part.shown,
+          with: (st, v) => ({ ...st, hud: { shown: { ...st.hud.shown, [part.id]: v } } }),
+        }),
+      );
+    }
+    screen.append(screenGrid);
+    page.append(screen);
     const reset = el('button', 'quiet-button settings-reset', 'Reset');
     reset.type = 'button';
     reset.title = 'Back to the defaults';

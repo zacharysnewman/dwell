@@ -60,7 +60,7 @@ fn into_the_wall(f: FaceFrame, kick: f32, input: Option<Input>, seconds: f32) ->
         w.step(1);
         let c = *w.c(h);
         if c.events & events::IMPACTED != 0 {
-            run.dealt += config.damage.impact_damage(c.impact_speed);
+            run.dealt += config.impact_damage(c.impact_speed);
             run.impact = run.impact.max(c.impact_speed);
         }
         let p = w.players.position(&w.physics, h);

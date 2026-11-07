@@ -67,6 +67,7 @@ one's status line. Resolving an item in `ARCHITECTURE.md` Open Decisions require
 | [0059](0059-water-graph.md) | Water as data: the pool graph from the world map, virtual pools, no hidden walls, one model for all water | Accepted (G1–G3 built, 0.48.0); superseded by 0060 (basins removed 0.48.2, lips 0.49.0) |
 | [0060](0060-water-surface-grid.md) | Water as a simulated surface grid (sleeping chunks, pools, held sea); generated water filled by it at world creation, no drawn beds, levels or lips | Accepted (2026-11-05; planned, Phase 53) |
 | [0061](0061-older-worlds-in-newer-builds.md) | Older worlds open in newer builds after a warning: a copy or an upgrade, unexplored land on the new terrain | Accepted (built, 0.49.2; amends 0014) |
+| [0062](0062-water-off-the-tick-thread.md) | The water runs off the server's tick thread, by message passing (a thread natively, a worker in the browser); shared memory later | Accepted (2026-11-06; built, Phase 53 G5; amends 0060) |
 
 Phase numbers in ADRs follow the implementation plan as it was then. In ADRs 0001–0010, Phases
 4–7 became 5–8 when the world-LOD phase (Phase 4) was added on 2026-09-29, and then 6–9 when the

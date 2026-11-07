@@ -2,6 +2,140 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions card. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.49.30",
+      "changes": [
+        "The loading screen lists what it is doing as the game starts, each step with its time, so a slow one shows",
+        "The game's download shows in MB, and shaping a new world's map counts its faces",
+        "A new world starts a little sooner: its file opens while the world map is still being shaped"
+      ]
+    },
+    {
+      "version": "0.49.29",
+      "changes": [
+        "Sand undercut in a dig falls down at once and is blocks again in a few seconds, instead of hanging in the air for half a minute",
+        "Collapses and heaps of falling pieces cost the world far less time, so the game stays smooth while they fall",
+        "Fixed a crash when a ramp was placed deep underground"
+      ]
+    },
+    {
+      "version": "0.49.28",
+      "changes": [
+        "Brushes work in every world now, not just the sandbox (V turns them on)",
+        "Brushes reach 256 m, and always show where they will act, even aimed at the sky or at unloaded ground",
+        "Block, selection and brush outlines stay the same width on screen, so far ones are easy to see"
+      ]
+    },
+    {
+      "version": "0.49.27",
+      "changes": [
+        "Behind the scenes: faster turnaround on fixes (the project's working rules)"
+      ]
+    },
+    {
+      "version": "0.49.26",
+      "changes": [
+        "Ground you have built on or dug no longer looks terraced from far away",
+        "Distant terrain still being updated when the world saves is updated when you return"
+      ]
+    },
+    {
+      "version": "0.49.25",
+      "changes": [
+        "The river below a dam now dries up completely, down to where the next stream joins it, in saved worlds too",
+        "Water left in a dip of the dry riverbed stays there, still"
+      ]
+    },
+    {
+      "version": "0.49.24",
+      "changes": [
+        "Rivers no longer seem to stop on their level stretches: a reach that lies flat runs as fast as the river around it",
+        "The flow on rivers now shows as far out as it is drawn, not stopping 30 to 50 m away"
+      ]
+    },
+    {
+      "version": "0.49.23",
+      "changes": [
+        "Water no longer stands on top of a dam and pours off it for ever: once the dam is higher than the river, what covered it drains away, in saved worlds too"
+      ]
+    },
+    {
+      "version": "0.49.22",
+      "changes": [
+        "Falls of up to 10 m never hurt; past that the damage climbs quickly, and a 20 m fall is lethal"
+      ]
+    },
+    {
+      "version": "0.49.21",
+      "changes": [
+        "Slow creeks show their flow too: faint foam and drifting flecks start on water moving at a walking crawl, not only on fast rivers"
+      ]
+    },
+    {
+      "version": "0.49.20",
+      "changes": [
+        "No more triangle-shaped holes in the water where a river steps up to its next pool"
+      ]
+    },
+    {
+      "version": "0.49.19",
+      "changes": [
+        "A dam across a river raises the water behind it again, on level stretches too, and the river below it drops",
+        "Rivers run on their level and shallow stretches: swimmers and boats drift downstream there",
+        "Worlds saved before are fixed when loaded"
+      ]
+    },
+    {
+      "version": "0.49.18",
+      "changes": [
+        "Sliding up a ramp launches you off its top on your own momentum, at the ramp's angle, instead of holding you to the top and sending you off its far edge flat",
+        "Sliding down a hill keeps you on the ramps instead of bouncing you off each edge",
+        "Falls of 5 m or less never hurt; past that the damage climbs quickly, and a 12 m fall is lethal",
+        "In the air you keep your speed: letting go or steering no longer slows you, and holding a direction turns you instead",
+        "Walking no longer adds on top of a knockback's speed"
+      ]
+    },
+    {
+      "version": "0.49.17",
+      "changes": [
+        "Foam on running water no longer shows as white circles: the streaks are thin dashes along the current",
+        "Drifting flecks are small ragged scraps of foam, drawn out along the flow, fading in and out, fewer in slow water and lit like the water at dusk"
+      ]
+    },
+    {
+      "version": "0.49.16",
+      "changes": [
+        "Holding Place builds on into water: a line or a floor dragged under water, or out from the shore, no longer stops after its first block"
+      ]
+    },
+    {
+      "version": "0.49.15",
+      "changes": [
+        "Testing tools can find places by what is there: the nearest sea, river, deep water or dry land, and look down a river along its current",
+        "The water benchmarks find the sea and a river wherever the terrain puts them"
+      ]
+    },
+    {
+      "version": "0.49.14",
+      "changes": [
+        "Damming a river no longer makes the game hitch in its first seconds: distant views of the flooded land update a little later, and new terrain is made on its own thread in your own worlds"
+      ]
+    },
+    {
+      "version": "0.49.13",
+      "changes": [
+        "Water runs on a thread of its own: damming a river or flooding a pit no longer makes the game stop and start",
+        "Floods and drains run at full speed again instead of slowing down when much water moves",
+        "Water that rises over a steep slope fills the bottom half of the slope too, and leaves it when the water goes"
+      ]
+    },
+    {
+      "version": "0.49.12",
+      "changes": [
+        "A performance line under the status line shows what holds a frame back: frames drawn a second, the CPU's and the GPU's time per frame, and the server's ticks",
+        "Every part of the screen (the status line, hotbar, crosshair, health, flight speed and more) can be hidden under Settings, On screen, and stays as you left it; on a phone the menu button always shows"
+      ]
+    },
+    {
       "version": "0.49.10",
       "changes": [
         "The frame rate in the status line counts only the frames actually drawn: a phone whose graphics fall behind showed 60 while it drew 30"

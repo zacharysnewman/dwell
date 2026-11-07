@@ -79,8 +79,81 @@ now, or later allow a few stacked water layers in the columns that have overhang
   a flood still move water by the law: a dammed river backs up by the flow it was drawn with (in the
   browser, seed 0's river rose 0.5 m above a dam and fell 0.25 m below it). The rest layer's
   divergence is an implicit spring per column; after G1 those springs are the map's river sources.
+- **The river's flow is carried** (0.49.19, BUGS.md #38; owner, 2026-11-06: "damming should raise
+  the water and does"). Since G1a (no lips) a drawn river is flat between its steps, and a level
+  reach carries no flow by the law, so the rest layer held none there and a dam had nothing to back
+  up: at seed 0's dam site (a level reach of a 0.6 m³/s creek) a wall raised the water 2 cm in
+  ~1.7 h of water time (natively, 0.8 cm in 20 minutes). Each generated column now has the map's
+  **river flow** (`TerrainGenerator::river_flow`: the river's discharge across its channel's width,
+  m²/s, downstream as the column sees it; `Water::with_river_flow`, found at scan). Every face
+  between two such columns carries their mean, in both layers, beside the law's flows and kept
+  apart from them (the law's friction would take it back), through the outflow limiter: in the
+  water as generated as deep as that has it, in the water as it is in proportion to how much of
+  that face depth is left (none through a wall or a block risen over the water, less where the
+  water fell, never more). Untouched, the two layers carry the same, so a river stays exactly as
+  drawn (`a_block_set_in_a_generated_rivers_bed_changes_nothing_else`, now with the flow: no cell
+  changed over six hours on seeds 0–2); a dam stops it in the water as it is alone, so the reach
+  above fills by the river's discharge and the one below drains. The flow carried counts in a
+  freed column's current, so freed river water runs as the held river does. **Measured:** natively
+  at the dam site 139.50 → 140.07 m in 20 water minutes (red: 139.51,
+  `a_dam_across_a_generated_flat_reach_backs_the_river_up`); in the browser (the same wall,
+  `?local=1&seed=0&fresh=1&at=2364.5,142,7443.5`) +0.28 m within 1.5 s real and 140.08 m by 30 s,
+  where it reaches the banks (their floors 140.0–140.5 m) and spreads over them. **Existing
+  worlds** are fixed on load, with no new record: held water is found again at scan, and a restored
+  free column's flow is the map's for its generated depth (`r.depth` in `DWG1`), so a world saved
+  with the old rest flows runs and backs up
+  (`a_world_saved_before_the_rivers_flow_backs_up_when_dammed`, both faces).
 - **A block set over water** traps what is below it (left as blocks, out of the grid); one set in it
   lifts its water by its volume.
+- **A column built out of its generated water** (0.49.23, BUGS.md #40; owner, 2026-11-06: water
+  that covered a dam "will never drain away even if you raise the height of the dam"): the rest
+  layer's divergence is an implicit spring or sink per column, wherever the drawn river's flow
+  changes (a step's lip pours, a narrowing or a junction carries more out than in). A dam built on
+  such a column kept its spring, so water was poured onto its top for ever, whatever its height,
+  and spilled off both sides. A column whose floor is at or over the level its water stood at as
+  generated (`out_of_rest`) now changes by its own flows alone, as one an edit opened does; its
+  neighbours keep their rest flows across its faces, so the reach above still backs up and the one
+  below still drains. **Measured:** natively, seed 0's river by z 7380 (below a step), a wall
+  overtopped for 20 water minutes and raised 2 m: 20 cells of water stood on its top for the next
+  2.5 hours (red), none after (`water_on_a_raised_dam_across_seed0s_river_drains`; both faces in
+  `water_on_a_raised_dam_drains_off_it`). Read from the state each substep, so a world saved with
+  water on a dam heals on load (`a_world_saved_with_water_on_a_dam_drains_it_on_load`).
+- **The reach below a dam leaves the rest** (0.49.25, BUGS.md #41; owner, 2026-11-06: "Water never
+  dries up below a dam." … "Like completely."). Held water "keeps its level and trades with free
+  water beside it, at no cost", and free water changes by the difference of the two layers' flows;
+  but the rest layer's divergence is not only at a drawn step's lip: the law's θ-weighting spreads
+  each step's pour up its pool, so every column of a river has a small spring or sink (seed 0's
+  fixture: 0.14 m/s mid-pool, 0.99 at a lip, and the lake at a river's mouth a sink of the river's
+  inflow and the pour). Below a dam those springs kept the reach full (natively at seed 0's dam site,
+  575 water columns left below the wall after ten water minutes), and its chunks never slept. Now a
+  free column's rest divergence counts only while it is **in the rest**: `Water::share`, latched,
+  out once less than `restCut` (0.25, `flow.json`) of its rest inflow (the rest's flow into it, by
+  face) comes from columns in the rest, back once more than `restBack` (0.75) does; a column out of
+  its generated water (`out_of_rest`) is out. So the cut runs down the rest's own flow from the dam,
+  to a junction whose other river brings most of the flow, or into the lake the river ran into, and
+  that reach moves by the law and the carried flow alone. A wave, a stone in the bed or an edit's
+  slosh moves no column out (the rule reads the rest's flow and the neighbours' state, not the
+  water's flows), so an untouched river still stays exactly as drawn
+  (`a_block_set_in_a_generated_rivers_bed_changes_nothing_else`, seeds 0–2). Built with it: a column
+  out of the rest keeps its map river's flow out past the grid (`runs_on`: across faces the rest has
+  no flow by, the loaded world's edge or a wall it was drawn into), so a cut reach still runs on out of
+  the world; the carried flow is upwind (the sending column's water over the face, not the deeper
+  side's), so it lifts nothing over a hollow's lip; a sleeping chunk owes its edges' flows less the
+  rest's by its column's share (a dry reach asleep owes nothing for the river no longer in it), and
+  what it owes past the water it has is dropped (as an awake column's depth stops at none); a column
+  out of the rest is calm only once it moves less than a tenth of its water (at least a tenth of the
+  sleep band), so a film still draining off a bed doesn't fall asleep on it. **Measured:** the
+  fixture (`water::tests` `the_river_below_a_dam_dries_completely`, both faces: a level reach, a
+  step and a lake below; red 180 water cells, 1.05 m deep, green none, its chunks asleep;
+  `a_hollow_below_a_dam_keeps_its_water_still`, red its water the river's level, green under its
+  lip, level and asleep); seed 0's dam site (`tests/water.rs`
+  `the_river_below_a_dam_across_seed0s_river_dries_to_the_next_inflow`, the wall at z 7452: red 575
+  water columns from the wall down to the creek's backwater at z 7526 after ten water minutes and 8
+  chunks awake there, green none and none awake, dry within five minutes); in the browser (the same wall, `?local=1&seed=0&fresh=1&at=2364.5,142,7443.5`) the 1,150 water cells from the wall to z 7525 were gone within 10 s real, the bed dry sand. The creek that joins
+  by (2457, 7541) backs the river up to z 7526 and runs on below. A freed column's current is the
+  law's and the carried flow's over its depth (a level reach's ~0.1 m/s), not the map's mean-fall
+  current a held one has (BUGS.md #42: 1.28 m/s): unchanged here. Read from the state each substep,
+  so a saved world's reach below a dam dries on load.
 - **A tick keeps to a budget** (0.49.7, BUGS.md #33): water runs on game time, so a water tick is
   seconds of water; with much water awake (a dammed river) its substeps took 50 ms of the server's
   thread a tick and the game stopped and started. A tick now takes at most `stepBudget`
@@ -116,27 +189,192 @@ The owner approved these recommendations (2026-11-05):
   idle swimmer drifts at the current's speed and swimming adds to it (PLAYER_CONTROLLER.md §6.4).
 - **Floating bodies**: water's drag acts on the velocity relative to the current, so a raft let be
   comes up to it (slowly, by the area it shows and the speed squared).
-- **On the wire**: `WaterCurrents` datagrams (ARCHITECTURE.md §8.3), the chunks within 2 of a player's,
-  each sent when its currents change or 3 s after it was last sent, 4 at most a time and none in a
+- **On the wire**: `WaterCurrents` datagrams (ARCHITECTURE.md §8.3), the chunks as far out as the flow
+  is drawn (`waterflow.json` `fadeToM`, 60 m, from anywhere in the player's chunk: 4 chunks; 2 before
+  0.49.24, when a river's flow stopped 33–48 m out, BUGS.md #42),
+  each sent when its currents change or 3 s after it was last sent, 8 at most a time and none in a
   session's first 5 s, a chunk gone still once as zeros; a client forgets one not sent again within
   8 s. The client's prediction and stand-ins read
   the same table, so a swimmer in a current predicts as the server moves it.
 - **Untouched rivers (G3b):** held water's current is the world map's river's
   (`TerrainGenerator::river_current`, found once as the chunk's water joins the grid): downstream as
   the column sees the channel (the map's direction through the meander warp's inverse), at the speed
-  Manning's law gives the column's depth on the river's fall with the liquid's roughness (the grid's
-  own law), at most `riverCurrentMaxMs` (1.5 m/s: a steep chute's would be a torrent, and a swimmer at 3 m/s still makes headway); a level reach
-  and a lake are still. It goes to clients as any other chunk's currents.
+  Manning's law gives the column's depth on the river's fall (its segment's, or its course's mean over
+  `riverFallReachM`, 256 m, up and down stream where steeper; below) with the liquid's roughness (the grid's
+  own law), or at its flow over the column's depth (`river_flow / depth`) where that is faster, at most
+  `riverCurrentMaxMs` (1.5 m/s: a steep chute's would be a torrent, and a swimmer at 3 m/s still makes headway); a lake is still.
+  **Level and shallow reaches run** (0.49.19, BUGS.md #38; owner, 2026-11-06: "dead rivers ... the
+  shallow ones missing currents"): Manning's speed on no fall is none, and about half of seed 0's
+  sampled channel columns (109 of 209) lie in level reaches, so those reaches were still; the flow
+  over the depth keeps them running (`every_reach_of_a_river_runs_level_ones_too`; seed 0's dam
+  site 0.11 m/s at 1 m deep), and once freed they run by the flow they carry (§2b,
+  `a_shallow_flat_reach_runs_downstream_held_and_freed`, both faces). A slow creek's current (0.1
+  m/s) was under the flecks' `fromMs` (0.3) and the streaks' (0.4), so it showed no flecks or foam;
+  since 0.49.21 both begin at 0.05 m/s (owner, 2026-11-06), faint at a creek's pace. It goes to clients as any other chunk's currents.
+  **A reach held level runs as the river round it** (0.49.24, BUGS.md #42; owner, 2026-11-06: "in
+  this spot the river stops flowing too"): the map's courses never rise, so where the land dips a
+  course is held level, often for 100–200 m, and drops what it held back after it. On its own fall
+  such a reach ran at its flow over its depth alone: seed 3974502447's creek by (12855, -3330), a
+  0.6 m³/s creek 5.4 m wide and 1 m deep, at 0.11 m/s, just below a reach at the 1.5 m/s cap, so the
+  river seemed to stop. Its current's fall is now the larger of its segment's and its course's mean
+  over `riverFallReachM` (`flow.json`) up and down stream (`Seg::mean_fall`, `channels::mean_falls`):
+  that creek runs at 1.28 m/s, as the reaches round it do
+  (`the_owners_level_creek_runs_as_the_river_round_it`; on both faces' maps
+  `a_level_reach_runs_on_its_courses_fall`, red: ~100 level reaches a face under 0.4 m/s). Only the
+  current changes: the map's levels, the terrain and the flow carried (`river_flow`) are as they were,
+  so no world changes. A held chunk's current is found as its water joins the grid, so a saved world
+  runs on load.
 - **The flow shown (G3d):** from the client's current table, so generated and player-moved water
   look alike: ripples carried by the current (a flow map), foam streaks along it, flecks drifting
   on it, each a setting and per liquid as data (`shared/look/waterflow.json`; ARCHITECTURE.md §6.7).
   Seen from above seed 0's river at (6745, 9644), the streaks run downstream and the flecks drift.
+  **The look (owner, 2026-11-06: "perfect white circles on top of flowing water"):** the circles
+  were mostly the foam streaks (2 m of taps over 0.3 m noise broke into round blobs) and partly the
+  flecks (0.2 m white discs). The streaks are now thin dashes along the flow (0.5 × 0.12 m, tinted;
+  validated `lengthM` ≤ 4.5 `widthM`); the flecks are small ragged scraps drawn out along the current,
+  translucent and tinted, lit as the surface is (shadows, dusk), eased in and out, kept as often and
+  shown as strongly as the current between `fromMs` and `fullMs` allows, and faded where under a few
+  pixels wide (ARCHITECTURE.md §6.7 lists the tunables).
 
 **Showing the flow (owner, 2026-11-05):** all three of: ripples that move with the current, foam
 streaks along it, and particles drifting on it; each can be turned off in Settings. All water
 behaves and looks the same by the same law whether the generator or a player put it there (a held
 river's current is the map's, a freed one's the law's; both are drawn alike from the one current
 table). As built: G3d below.
+
+## 2d. The water's own thread (ADR 0062, the owner 2026-11-06; built, G5)
+
+The owner: slowing the water whenever much of it moves "is not really acceptable"; "use message passing
+for now, make a note about future possibly using shared memory threads"; the water stays saved.
+
+- **A water host** (`dwell-sim` `water/host.rs`): the grid behind one interface, placed **inline** (the
+  calling thread: tests, the world-creation fill, a fallback), on a **native thread** (the dedicated
+  server and native tools, `std::thread` and channels), or in a **browser worker** (a second worker the
+  local-mode worker starts, by `postMessage` with transferred buffers).
+- **What the grid reads becomes its own** (`water/cells.rs`): a byte a cell, solid, open, or water and its
+  fill in eighths, per loaded chunk (a uniform chunk as one value). The grid's reads (`cell_kind`,
+  `floor_at`, `found`, the scan for water) go through it instead of the `VoxelWorld`.
+- **In** (the server, each tick, batched): chunks loaded (their cells) and unloaded; cells edited (their
+  new kinds; the edit's columns touched, as `touch` does now); the players' positions; at a water tick,
+  the water time to run; asks for the record (before a save) and for a report (`waterReport`).
+- **Out** (read at the server's next tick start): water cells written (each with the kind it replaced),
+  the awake chunks' currents, the chunks it wants loaded, the record, reports. A write whose cell the
+  world has since made solid, or anything but open or water, is dropped: the edit that did it is already
+  on its way in. The server broadcasts the writes as one modification, as now.
+- **Falling behind instead of slowing physics:** a water tick not yet run when the next is due adds its
+  time to it; the worker runs what it is owed as fast as it can, with the per-step guard (`stepBudget`)
+  raised so a tick still ends; past `maxOwedS` (data) the rest is dropped and the water's clock slows, as
+  now.
+- **Saving:** the server asks for the record a moment before each save and writes the newest it has;
+  closing a world (and a native server's shutdown) waits for a fresh one, at most a second.
+- **Later** (not built): shared memory (WASM threads; needs cross-origin isolation, which GitHub Pages
+  can't set, a service-worker shim there, native in Electron and Capacitor), and the grid split across
+  threads by chunk if one thread isn't enough.
+
+**As built (G5):**
+
+- **The copy** (`water/cells.rs`): `Cells`, a `ChunkCells` per loaded chunk (`Uniform(byte)` or a
+  32 KiB `Mixed` array); bytes 0 solid, 1 open, 2–9 liquid in eighths, 10 and 11 a block holding
+  water in its open part (a ramp: shaped, with a `flooded` property), dry or flooded (`byte_of` from
+  the registry's `liquid`, `fill`, `replaceable`, `solid`, shape and properties). A ramp is solid to
+  the flow; drawing a column floods the ramps in its rows and its neighbours' while the water beside
+  or over them stands half a fill step into their cell, and dries them when it goes (BUGS.md #36). The grid's reads (`floor_at`, `found`, the scan, what
+  an edit trapped, `draw`) all go through it; `draw` writes its own copy as it writes water. On the
+  wire a mixed chunk is runs (a byte and a u16 length), a few hundred bytes for a terrain chunk.
+- **What changed** (`cells::Mirror`): each loaded chunk's `Chunk::stamp` and revision as last told.
+  At each water tick, chunks new to it go as fresh loads (their water read, as `scan` did), chunks
+  stored again or changed outside a modification go whole (not read again), gone ones as unloads.
+  Edits and the water's own writes bump a chunk's revision in `broadcast_changes`, where the mirror
+  is told (`told`), so they don't send the chunk again: an edit goes as its cells (`In::Edit`).
+- **The host** (`water/host.rs`): `WaterHost` with `Placement::{Inline, Thread, Remote}`
+  (`ServerConfig::water`; the dedicated server's default is `Thread`, tests' and the fallback
+  `Inline`); `WaterCore` the water's side (receive a batch, `work`: run what is owed, answer); batches
+  `WI1`/`WO1` with a sequence number, the answer carrying the last one seen (so the server knows what
+  is still queued); malformed batches refused. Inline keeps 0.49.7's behaviour (`stepBudget`, the
+  rest lost); the thread and the worker run `threadStepBudget` a run and owe the rest up to
+  `maxOwedS` (`flow.json`); the native thread merges batches that queued while it ran (their time
+  owed together).
+- **The browser** (`client/src/local/waterWorker.ts`, `web/water_worker.rs`): the local-mode worker
+  starts the water worker (a nested module worker; the world's maps passed to it so its rivers need
+  not compute them) and carries the batches both ways, transferred; the first batch is `In::Init`
+  (the world's generator and seed). Without nested workers, or with `?water=inline` (the bench's
+  comparison), the water runs inline. A save (the page hidden or closed) asks for the record, carries
+  it back and waits for it, a second at most, before it commits; autosaves ask 30 ticks ahead.
+- **Telemetry:** `Server::water_stats` (the host's `HostStats`: batches unanswered, runs, the last
+  run's water time run, owed and dropped and its wall time, the longest run, the water's clock, awake
+  chunks, the copy's bytes; writes dropped as overtaken); in the browser `__dwell.serverStats()` (and
+  the bench's `server` step) with the server's tick time a second.
+- **Tests:** `water::tests` `the_water_on_its_own_thread_runs_as_inline` (both faces: the same cells
+  and record through the inline and threaded hosts, each tick waited on), `the_record_survives_the_host`,
+  `a_threaded_water_owes_what_it_hasnt_run_and_drops_past_the_cap`; `host::tests` (batches round
+  trip, malformed refused); `cells::tests`; `tests/water_thread.rs`: the same water from a server
+  inline and threaded, `a_water_write_overtaken_by_an_edit_is_dropped` (red without the check: the
+  write turned the placed stone to water), `the_physics_tick_does_not_wait_for_the_water` (a host
+  held 250 ms a run: inline a tick takes it, threaded none over 125 ms),
+  `the_waters_record_is_saved_and_restored_across_its_thread`; the measurement below
+  (`measure_a_flood_on_and_off_the_tick_thread`, ignored).
+
+**Measured (2026-11-06, an M-series Mac):**
+
+| | Server tick p50 / p95 / max | The water's clock over 20 s (1,440 water s given) |
+| --- | --- | --- |
+| Native, a 61 × 57 lake cut 20 wide on the flat world, 60 Hz paced: inline, no budget (before 0.49.7) | 2.3 / 44.8 / 146.7 ms | 1,440 s |
+| … inline, `stepBudget` (0.49.7–G5) | 2.7 / 14.0 / 18.8 ms | 80 s (1,360 dropped) |
+| … its own thread (G5) | 2.1 / 3.5 / 4.9 ms | 1,437 s (2.7 owed; runs up to 29 ms on the water thread) |
+
+In the browser (the bench, `?local=1&seed=0&fresh=1&at=2364.5,142,7443.5`, a stone wall 31 m across
+the river and a pit 31 × 29 m dug beside it, 40 s, `--unthrottled`): with the water worker the local
+server's ticks averaged 7.0 ms, its worst `advance` 111 ms in the first 3 s (the edits' own chunk
+work) and 15–20 ms after, and the water ran 2,808 of 2,880 water s (owed none, dropped none; its runs
+8–18 ms); inline (`?water=inline`) the ticks averaged 9.4 ms, worst 237–252 ms over the first 9 s,
+and the water ran 916 s (1,859 dropped). The copy of the world held 1.7–1.8 MB there. What is left on
+the server's thread during a flood is mostly the LOD's: each chunk the water rewrites is downsampled
+again (`update_lod`, on the tick in the browser and the tests' servers, `lod_threads` 0), a cost of
+the water's writes, not its simulation.
+
+**The flood's LOD and terrain off the tick (the follow-up, owner 2026-11-06):** with the water on its
+own thread, what was left on the browser server's tick in a flood was the LOD: every water tick
+rewrote the flooding chunks, and each one's LOD section was computed again (the generator's 2–10 ms a
+section natively, more in WASM), on the tick (`update_lod`; a native profile of the dam site had 77 %
+of the tick there, 57 % in `generate_lod`). Weighed: a per-tick budget alone (a section is one job:
+a tick still takes a whole one), coalescing alone (the first computation of each section is still
+the generator's, on the tick), and moving the work off the tick. Built, all three kinds:
+
+- **Coalesced:** a chunk changed by the water's writes holds its section 2 s from the first such
+  change (`LodPropagation::mark_chunk_settling`, `WATER_LOD_HOLD_TICKS`), so a section the water
+  keeps rewriting is computed once a hold, not ten times a second; an edit computes at once.
+- **Kept bases:** a modified section's generated cells are kept (`MAX_BASES`), so computing it again
+  is its downsample only. Over a 10 s flood on the flat world, 51 sections ran the generator 51
+  times (2,740 times before) (`a_floods_lod_is_computed_once_a_hold_from_kept_bases`, red before).
+- **Off the tick in the browser:** the local server's LOD sections and the chunks it wants generated
+  (the water's wanted chunks among them, a chunk's generation 10 ms natively) are jobs for the
+  **server-jobs worker** (`jobs.rs`, `ServerConfig::jobs_remote`), a third worker beside the water's;
+  `?serverjobs=inline` keeps them on the tick for comparison.
+- **The same LOD:** after a flood the sections, on the tick or from the worker, are those computed
+  from scratch from the world (`the_lod_after_a_flood_matches_a_recompute_on_the_tick_and_in_its_worker`).
+
+Measured at seed 0's dam site, natively (`water_lod.rs` `measure_the_dam_sites_flood_ticks`, the
+wall and pit, 60 Hz paced): the LOD on the tick, ticks up to 30 ms in the flood's first 3 s (the
+edits' own tick 26 ms) and ~5 ms on average before the hold and kept bases, 0.2–0.4 ms after; with the
+jobs off the tick, no tick over 3.9 ms (the edits' own). In the browser (the bench, `--unthrottled`):
+
+| | Ticks: mean, worst (first seconds; then) |
+| --- | --- |
+| The wall alone (`dam-only`, 30 s), 0.49.13 (#348) | 4.2 ms, 58 ms (first second; 8–15 after) |
+| … the jobs on the tick, held, kept bases (`?serverjobs=inline`) | 0.46 ms, 54, 26, 31 ms (first 4 s; ≤ 7 after) |
+| … the server-jobs worker | 0.30 ms, 7 ms (13 once at 5 s; ≤ 6 after) |
+| The wall and the pit (`dam-flood`, 40 s), 0.49.13 (#348) | 7.5 ms, 130, 40, 42, 36 ms (first 4 s; 15–26 after) |
+| … the server-jobs worker | 1.5 ms, 45 ms (first second), 27, 29 (2–7 s; ≤ 19 after) |
+
+What is left over 25 ms with the pit is the pit's own collapse: its cut undercuts the bank and the
+pieces that fall are bodies stepped on the tick (a trace of the first 4 s: of the server's 1,118 ms,
+764 ms in the physics step, the water and LOD none of it). Without the pit no tick passes 13 ms. Fixed in 0.49.29 (BUGS.md #45, ARCHITECTURE.md §7.3): the sand had jammed against the cut's walls, a body for 30 s; it now falls and is blocks again within ~5 s, the cut's worst second 5.1 ms mean in Chrome.
+
+**Deviations:** the browser's water worker is started by the local-mode worker (nested), not by
+`connect.ts`, so a friend world's host carries it too; the water's report is asynchronous there
+(`takeWaterReport`). The inline host keeps the step budget and loses the rest, as before (a fallback,
+and what the tests' servers run). The players' positions are sent but not used yet. `Water::tick` on a
+world stays for tests and tools, its copy kept by a mirror of that world.
 
 ## 2e. Waterfalls (the owner, 2026-11-06; planned, G6)
 

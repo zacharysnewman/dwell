@@ -7,6 +7,7 @@ import {
   pingServer,
   setWorldFileVersion,
   swatchSize,
+  type WasmBytes,
   worldFileVersion,
   worldMapKeys,
 } from './engine/wasm';
@@ -65,12 +66,27 @@ import { displayScale } from './ui/displayScale';
 import { FlightSpeedControl } from './ui/flightSpeedControl';
 import { loadFlySpeedLevel, saveFlySpeedLevel } from './predict/flightSpeed';
 import { formatStatus } from './ui/statusOverlay';
+import { formatPerf, TickRate } from './ui/perfLine';
+import { applyHud } from './ui/hudSettings';
 import { startupMessage } from './ui/startupError';
 import { FpsMeter } from './ui/fps';
 import { type LoadingHud, LoadingScreen, loadingScreenEnabled } from './ui/loadingScreen';
+import type { LoadingStageId } from './ui/loading.gen';
+import type { StageRun } from './ui/loadingStages';
 import { START_HINT, TOUCH_START_HINT } from './ui/controls';
 import { formatMemory, jsHeapBytes, type MemoryReport } from './ui/memory';
 import type { LoopbackTransport } from './net/loopback';
+import {
+  findPlace,
+  gotoPlace,
+  type Camera,
+  type FindHost,
+  type FindOptions,
+  type FoundPlace,
+  type GotoOptions,
+  type GotoResult,
+} from './debug/find';
+import type { ServerStats } from './local/messages';
 import { audio } from './audio/engine';
 import { decodeSounds, EventPlayer } from './audio/events';
 import { installPageSounds } from './audio/page';
@@ -186,6 +202,25 @@ interface DwellDebug {
   showArms(on: boolean): void;
   /** Back to the player's eyes. */
   releaseCamera(): void;
+  /**
+   * The placed camera (`placeCamera`, `goto`), or null while the view is the player's eyes
+   * (`view()` is the player's look, not a placed camera's).
+   */
+  camera(): Camera | null;
+  /**
+   * The nearest loaded place matching `query` (docs/DEV_TOOLS.md "Finding places"): a block or
+   * fluid by name (`dwell:sand`, `water`) or `fluid`, from the player's feet (or `from`) within
+   * `radius` m, with filters. Null when there is none; throws for a name no block has.
+   */
+  find(query: string, options?: FindOptions): FoundPlace | null;
+  /**
+   * Finds `query` (the world map's water first with `scope: 'world'`), moves the player there
+   * with `move`, and places the camera `height` m over it aimed `downstream`, at a `yaw`, or
+   * `toward` a point. Rejects with what it looked for when nothing is found.
+   */
+  goto(query: string, options?: GotoOptions): Promise<GotoResult>;
+  /** Moves the local player's feet there (a local world, on its face); false otherwise. */
+  teleport(feet: Vec3): boolean;
   /** Plants' wind scale (0 still, 1 the data's) and whether cutout meshes draw (cost A/B). */
   plants(wind: number, shown: boolean): void;
   /** The last frame's draw calls and triangles. */
@@ -194,6 +229,11 @@ interface DwellDebug {
   memory(): MemoryReport | null;
   /** The block dump around the target (debug/blockDump.ts), or null before playing. */
   blockDump(): BlockDump | null;
+  /**
+   * The local server's figures over the last second (its ticks' time; the water's thread: run
+   * time, owed time, queue; docs/DEV_TOOLS.md); null outside a local world or before the first.
+   */
+  serverStats(): ServerStats | null;
   /** The local server's water around a cell (JSON, `Water::report`); null outside a local world. */
   waterReport(x: number, y: number, z: number, radius?: number): Promise<string | null>;
   /**
@@ -294,12 +334,14 @@ declare global {
   interface Window {
     __dwell?: DwellDebug;
     __dwellTools?: DwellTools;
+    /** The loading screen's stages so far (§6.3; docs/DEV_TOOLS.md): when each began and ended. */
+    __dwellStages?: () => StageRun[];
   }
 }
 
 /** Loads the WASM module and offers its world-file tools (window.__dwellTools). */
-async function loadTools(): Promise<void> {
-  wasmMemory = ((await loadWasm()) as { memory?: WebAssembly.Memory }).memory ?? null;
+async function loadTools(onBytes?: WasmBytes): Promise<void> {
+  wasmMemory = ((await loadWasm(onBytes)) as { memory?: WebAssembly.Memory }).memory ?? null;
   window.__dwellTools = {
     worldFileVersion: (bytes) => worldFileVersion(bytes),
     setWorldFileVersion: (bytes, version) => setWorldFileVersion(bytes, version),
@@ -511,7 +553,10 @@ function mapDeps(): MapDeps {
     build: workerBuilder(makeJobWorker),
     store: typeof indexedDB === 'undefined' ? null : new IndexedDbMapStore(),
     onProgress: (ready, needed) => {
-      if (ready < needed) bootLoading?.note('Shaping the world…');
+      const stages = bootLoading?.stages;
+      const now = performance.now();
+      stages?.progress('worldMap', ready, needed, now);
+      if (ready >= needed) stages?.end('worldMap', now);
     },
   };
   return maps;
@@ -527,7 +572,14 @@ async function start(): Promise<App | null> {
   const mobile = prefersTouch();
   let client: Client;
   try {
-    await loadTools();
+    // The stages the loading screen lists (§6.3): the module's download, then the graphics.
+    const stages = loading.stages;
+    stages.begin('game', performance.now());
+    await loadTools((done, total) => {
+      stages.progress('game', done, total, performance.now());
+    });
+    stages.end('game', performance.now());
+    stages.begin('graphics', performance.now());
     client = await Client.create(canvas, {
       displayName: displayName(),
       clientVersion: recordedVersion(),
@@ -546,6 +598,7 @@ async function start(): Promise<App | null> {
       // The loading screen on joining; ?loading=off or the dwell.loading store "off" skip it.
       loadingScreen: loadingScreenEnabled(location.search, storage()),
     });
+    stages.end('graphics', performance.now());
   } catch (err) {
     loading.abort();
     showFatal(startupMessage(err, 'gpu' in navigator));
@@ -626,6 +679,8 @@ async function start(): Promise<App | null> {
   const settings = new SettingsMenu(document.body, mobile, (s) => {
     sfx.setVolumes(s.audio);
     client.setExposure(s.exposure);
+    // What the screen shows (Settings, On screen; shared/ui/hud.json).
+    applyHud(document, s.hud, mobile);
     client.setWaterQuality(waterQualityLevel(s.water.quality));
     // A phone draws the water's cheaper reflection tiers (shared/look/reflections.json `phone`).
     client.setPhone(mobile);
@@ -793,6 +848,10 @@ async function start(): Promise<App | null> {
     releaseCamera: () => {
       client.releaseCamera();
     },
+    camera: () => client.camera() as Camera | null,
+    find: (query, options) => findPlace(findHost(app), query, options),
+    goto: (query, options) => gotoPlace(findHost(app), query, options),
+    teleport: (feet) => teleport(app, feet),
     plants: (wind, shown) => {
       client.setPlants(wind, shown);
     },
@@ -823,6 +882,7 @@ async function start(): Promise<App | null> {
       client.telemetryReset();
     },
     sounds: () => [...sfx.recent],
+    serverStats: () => app.loopback?.serverStats ?? null,
     waterReport: (x, y, z, radius) =>
       app.loopback?.waterReport([x, y, z], radius ?? WATER_REPORT_RADIUS) ?? Promise.resolve(null),
     die: () => {
@@ -849,6 +909,43 @@ async function start(): Promise<App | null> {
   };
   requestAnimationFrame(frame);
   return app;
+}
+
+/** Moves the local player's feet (a local world; the dev tools' `goto`). */
+function teleport(app: App, feet: Vec3): boolean {
+  app.loopback?.postToWorker({ t: 'teleport', at: feet });
+  return app.loopback !== null;
+}
+
+/** The page's side of the dev tools' place search (debug/find.ts). */
+function findHost(app: App): FindHost {
+  const { client } = app;
+  return {
+    feet: () => (client.debugState() as GameDebugState | null)?.feet ?? null,
+    find: (query, [x, y, z], radius, surface, minDepth, minArea, minCurrent, face, keep) =>
+      client.find(
+        query,
+        x,
+        y,
+        z,
+        radius,
+        surface,
+        minDepth,
+        minArea,
+        minCurrent,
+        face,
+        keep,
+      ) as FoundPlace | null,
+    viewFound: (height, aim, yaw, [x, y, z], pitch, turn) =>
+      client.viewFound(height, aim, yaw, x, y, z, pitch, turn) as Camera,
+    fly: (on) => {
+      client.fly(on);
+    },
+    teleport: (feet) => teleport(app, feet),
+    findOnMap: (kind, at, radius, face, minDepth) =>
+      app.loopback?.findOnMap(kind, at, radius, face, minDepth) ?? Promise.resolve(null),
+    wait: (ms) => new Promise((r) => setTimeout(r, ms)),
+  };
 }
 
 /** The WebAssembly memories and GPU estimates (F3's memory line), once playing. */
@@ -1183,6 +1280,8 @@ async function connect(app: App): Promise<void> {
       openMainMenu(app, access.message);
       return;
     }
+    // The world file is opened from here to the local world's worker (which ends the stage).
+    app.loading.stages.begin('worldFile', performance.now());
     // The world's chosen spawn is its first one: read only when its file is created.
     localWorld = {
       worldSeed: playing.seed,
@@ -1194,6 +1293,7 @@ async function connect(app: App): Promise<void> {
     worldName = playing.name;
     index.touch(playing.id, Date.now());
   } else if (launch.kind === 'link') {
+    app.loading.stages.begin('worldFile', performance.now());
     localWorld = parseLocalWorld(location.search);
     // A link to a world file that is already there opens a world saved before versioned releases
     // (ignored); a new one is this build's.
@@ -1240,6 +1340,13 @@ async function connect(app: App): Promise<void> {
     transport: preference,
     ...(localWorld ? { localWorld } : {}),
     worldMaps: (seed, version) => worldMaps(seed, version, mapDeps()),
+    // The local world's worker's stages (the world file, its server, the spawn), on this clock.
+    onStage: (id, phase, atMs) => {
+      // By id from the worker: an unknown one is ignored (the tracker checks it against the data).
+      const stage = id as LoadingStageId;
+      if (phase === 'begin') app.loading.stages.begin(stage, atMs);
+      else app.loading.stages.end(stage, atMs);
+    },
   };
   status.textContent = localWorld ? `Starting ${target}…` : `Connecting to ${target}…`;
   const client = app.client;
@@ -1250,6 +1357,8 @@ async function connect(app: App): Promise<void> {
     // "Don't ask again" for this server's blocks (ADR 0038), keyed by how it was reached.
     const serverKey = code ? `code:${code}` : invite ? `invite:${target}` : `local:${target}`;
     client.trustRegistry(trustedHash(storage(), serverKey) ?? undefined);
+    const stages = app.loading.stages;
+    if (code || invite) stages.begin('connect', performance.now());
     if (code) {
       const base = configuredMasterUrl();
       if (!base) throw new Error('this build has no master server configured');
@@ -1264,12 +1373,17 @@ async function connect(app: App): Promise<void> {
         local.loopback.postToWorker({ t: 'respawnPreload', on: false });
       }
     }
+    // Connected: the join's handshake until the client places the player (its readout then says).
+    stages.end('connect', performance.now());
+    stages.begin('join', performance.now());
     enableGameMenu(app, local?.save ?? null);
     app.settings?.setSubtitle(localWorld ? `${target} · this device` : target);
     // A local world can be opened to friends (Host…, Phase 5c).
     if (local && app.settings) enableHosting(app.settings, local, prefersTouch(), worldName);
     let started = false;
     let asking = false;
+    const perf = element('perf-status', HTMLDivElement);
+    const tickRate = new TickRate();
     const showStatus = () => {
       const s = client.sessionState() as SessionReport;
       const stats = s.stats ?? {
@@ -1278,7 +1392,22 @@ async function connect(app: App): Promise<void> {
         serverTick: 0,
         hostPaused: false,
       };
-      status.textContent = formatStatus(target, s.transport, s, stats, app.fps.fps);
+      status.textContent = formatStatus(target, s.transport, s, stats);
+      // What holds the frame back (owner, 2026-11-06): the frames drawn, the CPU's and the GPU's
+      // time, the server's ticks (and a local server's time per tick).
+      if (s.phase === 'joined') {
+        tickRate.sample(performance.now(), stats.serverTick);
+        const [cpuMs = null, gpuMs = null] = client.perf();
+        perf.textContent = formatPerf({
+          fps: app.fps.fps,
+          cpuMs,
+          gpuMs,
+          serverTicks: app.loopback?.serverTicks ?? tickRate.rate,
+          serverTickMs: app.loopback?.serverTickMs ?? null,
+        });
+      } else {
+        perf.textContent = '';
+      }
       // Turned away or cut off: the status line says why, not a loading screen that never opens.
       if (s.phase === 'rejected' || s.phase === 'closed') app.loading.abort();
       if (s.phase === 'confirming' && !asking) {
@@ -1350,6 +1479,11 @@ if (launchOf(location.search).kind === 'menu') {
     loadingScreenEnabled(location.search, storage()),
     prefersReducedMotion(),
   );
+  // The page itself, from opening it to this script running (the HTML and the script's download).
+  bootLoading.stages.begin('page', 0);
+  bootLoading.stages.end('page', performance.now());
+  const bootStages = bootLoading.stages;
+  window.__dwellStages = () => bootStages.timeline();
   void routeMadeWorld().then(async (ok) => {
     if (!ok) return;
     const app = await start();

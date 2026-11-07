@@ -39,6 +39,33 @@ pub trait TargetSource {
     }
 }
 
+/// The block along a view ray and its distance (m): [`TargetSource::target`]'s, for the brush's
+/// aim, which clamps to where the ray stops being editable (`brush_tool::clamp_aim`).
+pub fn target_hit(
+    world: &mut VoxelWorld,
+    origin: [f64; 3],
+    dir: [f32; 3],
+    max_distance: f32,
+) -> Option<(BlockTarget, f32)> {
+    raycast_block(world, origin, dir, max_distance).map(|h| {
+        let y = origin[1] + f64::from(dir[1]) * f64::from(h.distance);
+        let rows = y / dwell_world::CELL_H - f64::from(h.cell[1]);
+        let up = if FaceFrame::at_row(h.cell[1]).is_b() {
+            1.0 - rows
+        } else {
+            rows
+        };
+        (
+            BlockTarget {
+                cell: h.cell,
+                face: h.face,
+                aim_up: up.clamp(0.0, 1.0) as f32,
+            },
+            h.distance,
+        )
+    })
+}
+
 impl TargetSource for VoxelWorld {
     fn target(
         &mut self,
@@ -46,20 +73,7 @@ impl TargetSource for VoxelWorld {
         dir: [f32; 3],
         max_distance: f32,
     ) -> Option<BlockTarget> {
-        raycast_block(self, origin, dir, max_distance).map(|h| {
-            let y = origin[1] + f64::from(dir[1]) * f64::from(h.distance);
-            let rows = y / dwell_world::CELL_H - f64::from(h.cell[1]);
-            let up = if FaceFrame::at_row(h.cell[1]).is_b() {
-                1.0 - rows
-            } else {
-                rows
-            };
-            BlockTarget {
-                cell: h.cell,
-                face: h.face,
-                aim_up: up.clamp(0.0, 1.0) as f32,
-            }
-        })
+        target_hit(self, origin, dir, max_distance).map(|h| h.0)
     }
     fn replaceable(&mut self, [x, y, z]: [i32; 3]) -> bool {
         let m = self.get_voxel(x, y, z);

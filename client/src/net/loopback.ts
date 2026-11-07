@@ -1,4 +1,4 @@
-import type { FromWorker, ToWorker } from '../local/messages';
+import type { FromWorker, ServerStats, ToWorker } from '../local/messages';
 import type { LocalWorld } from '../local/world';
 import { Channel, TransportKind } from '../protocol/constants.gen';
 import type { Transport, TransportHandlers } from './Transport';
@@ -9,6 +9,9 @@ const SESSION = LOCAL_SESSION;
 
 /** Worker output for a session other than the local player's (a friend-world guest). */
 export type GuestOutput = Extract<FromWorker, { session: number }>;
+
+/** A loading stage of the local world's start began or ended (`atMs` on the page's clock). */
+export type StageReport = (id: string, phase: 'begin' | 'end', atMs: number) => void;
 
 /**
  * Transport to the integrated server running in a local-mode worker (ARCHITECTURE.md §8.1).
@@ -23,9 +26,15 @@ export class LoopbackTransport implements Transport {
   onGuestOutput: ((msg: GuestOutput) => void) | null = null;
   /** The local server core's WebAssembly memory (bytes), as the worker last reported it. */
   heapBytes = 0;
+  /** The local server's figures, as the worker last reported them (every second). */
+  serverStats: ServerStats | null = null;
+  /** The local server's last second: its ticks, and their mean time (ms; null before a tick). */
+  serverTicks: number | null = null;
+  serverTickMs: number | null = null;
   /** Callers waiting for a save to finish, oldest first (the worker answers in order). */
   private readonly saving: ((ok: boolean) => void)[] = [];
   private readonly reports: ((report: string | null) => void)[] = [];
+  private readonly mapFinds: ((result: string | null) => void)[] = [];
 
   private constructor(private readonly worker: Worker) {
     worker.onmessage = (e: MessageEvent<FromWorker>) => {
@@ -33,14 +42,22 @@ export class LoopbackTransport implements Transport {
     };
   }
 
-  /** Starts the worker and resolves once the WASM core is loaded. */
+  /**
+   * Starts the worker and resolves once the WASM core is loaded. `onStage`: the start's loading
+   * stages as the worker reports them (§6.3), `atMs` on this page's clock. `maps`: the world's
+   * maps still on the way; the worker starts at once (its world file, its WASM) and waits for them.
+   */
   static start(
     worker: Worker,
-    world: LocalWorld & { maps?: Uint8Array[] },
+    world: LocalWorld & { maps?: Uint8Array[]; waterInline?: boolean; jobsInline?: boolean },
+    onStage?: StageReport,
+    maps?: Promise<Uint8Array[] | undefined>,
   ): Promise<LoopbackTransport> {
     return new Promise((resolve, reject) => {
       worker.onmessage = (e: MessageEvent<FromWorker>) => {
-        if (e.data.t === 'ready') {
+        if (e.data.t === 'stage') {
+          onStage?.(e.data.id, e.data.phase, e.data.atMs - performance.timeOrigin);
+        } else if (e.data.t === 'ready') {
           const transport = new LoopbackTransport(worker);
           transport.post({
             t: 'connect',
@@ -56,7 +73,14 @@ export class LoopbackTransport implements Transport {
       worker.onerror = (e) => {
         reject(new Error(e.message || 'local world worker failed'));
       };
-      worker.postMessage({ t: 'start', ...world } satisfies ToWorker);
+      worker.postMessage({
+        t: 'start',
+        ...world,
+        ...(maps ? { mapsLater: true } : {}),
+      } satisfies ToWorker);
+      void maps?.then((m) => {
+        worker.postMessage({ t: 'maps', maps: m ?? [] } satisfies ToWorker);
+      });
     });
   }
 
@@ -96,6 +120,24 @@ export class LoopbackTransport implements Transport {
     });
   }
 
+  /**
+   * The world map's nearest water as the local server finds it (JSON or `null`, local.rs
+   * `find_on_map`; the dev tools' `goto`); null once the transport is closed.
+   */
+  findOnMap(
+    kind: string,
+    at: [number, number, number],
+    radius: number,
+    face: number,
+    minDepth: number,
+  ): Promise<string | null> {
+    if (this.closed) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      this.mapFinds.push(resolve);
+      this.post({ t: 'findOnMap', kind, at, radius, face, minDepth });
+    });
+  }
+
   close(): void {
     if (this.closed) return;
     this.post({ t: 'disconnect', session: SESSION });
@@ -115,6 +157,7 @@ export class LoopbackTransport implements Transport {
     this.closed = true;
     for (const resolve of this.saving.splice(0)) resolve(false);
     for (const resolve of this.reports.splice(0)) resolve(null);
+    for (const resolve of this.mapFinds.splice(0)) resolve(null);
     this.handlers?.onClose({ message });
     this.handlers = null;
   }
@@ -143,10 +186,21 @@ export class LoopbackTransport implements Transport {
       case 'waterReport':
         this.reports.shift()?.(msg.report);
         break;
+      case 'findOnMap':
+        this.mapFinds.shift()?.(msg.result);
+        break;
       case 'memory':
         this.heapBytes = msg.bytes;
         break;
+      case 'stats':
+        this.serverStats = msg.stats;
+        break;
+      case 'perf':
+        this.serverTicks = msg.ticks;
+        this.serverTickMs = msg.ticks > 0 ? msg.busyMs / msg.ticks : null;
+        break;
       case 'ready':
+      case 'stage':
         break;
     }
   }

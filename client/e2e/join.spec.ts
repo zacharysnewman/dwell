@@ -77,6 +77,15 @@ test('the loading screen covers the join until the terrain around the player is 
   await expect
     .poll(async () => (await loadingOf(page))?.terrainReady, { timeout: 30_000 })
     .toBe(true);
+  // It listed the start's stages as they ran (shared/look/loading.json `stages`), each now ended:
+  // the page's, the local world's worker's and the client's readout's (a flat world has no map).
+  const stages = await page.evaluate<{ id: string; endedMs: number | null }[]>(
+    '(globalThis.__dwellStages?.() ?? []).map((s) => ({ id: s.id, endedMs: s.endedMs }))',
+  );
+  expect(stages.map((s) => s.id).sort()).toEqual(
+    ['game', 'graphics', 'join', 'page', 'server', 'spawn', 'terrain', 'worldFile'].sort(),
+  );
+  expect(stages.every((s) => s.endedMs !== null)).toBe(true);
 });
 
 test('?loading=off skips the loading screen', async ({ page }) => {
@@ -108,7 +117,7 @@ test('the loading screen is up before anything of the game, then fades in from w
     localStorage.removeItem('dwell.loading');
     const samples: CoverSample[] = [];
     (globalThis as unknown as { __cover: CoverSample[] }).__cover = samples;
-    const ids = ['hud', 'hotbar', 'touch-controls', 'flight-speed', 'net-status'];
+    const ids = ['hud', 'hotbar', 'touch-controls', 'flight-speed', 'net-status', 'perf-status'];
     const sample = () => {
       const el = document.getElementById('loading-screen');
       samples.push({

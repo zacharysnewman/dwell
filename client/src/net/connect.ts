@@ -11,7 +11,7 @@ import { PeerTransport, type SignalData, type Signaler } from './peer';
 import { RoomSocket } from './roomSocket';
 import { GENERATORS, type LocalWorld } from '../local/world';
 import { sameLine } from '../version/semver';
-import { LoopbackTransport } from './loopback';
+import { LoopbackTransport, type StageReport } from './loopback';
 import type { Transport } from './Transport';
 
 export type TransportPreference = 'auto' | 'webtransport' | 'webrtc';
@@ -26,6 +26,8 @@ export interface ConnectOptions {
    * them rather than computing its own on its thread.
    */
   worldMaps?: (seed: bigint, generatorVersion: number) => Promise<Uint8Array[]> | null;
+  /** The local world's worker's loading stages (§6.3) as it reports them. */
+  onStage?: StageReport;
 }
 
 export class TransportUnavailableError extends Error {
@@ -95,15 +97,35 @@ export async function connectLocal(
 ): Promise<LocalSession> {
   const worker = new Worker(new URL('../local/worker.ts', import.meta.url), { type: 'module' });
   const world = options.localWorld ?? { worldSeed: 0, generatorVersion: GENERATORS.terrain };
-  let maps: Uint8Array[] | undefined;
-  try {
-    maps =
-      (await options.worldMaps?.(BigInt(world.worldSeed), world.generatorVersion)) ?? undefined;
-  } catch (err) {
-    // The server computes its own (slower to start, the same terrain).
-    console.warn('Dwell: the world maps are unavailable', err);
-  }
-  const loopback = await LoopbackTransport.start(worker, maps ? { ...world, maps } : world);
+  // The maps are not waited for here: the worker opens the world file and loads its WASM while
+  // they are shaped, then waits for them (§6.3: on a new seed it saved the ~0.1 s of its start).
+  const maps = (async (): Promise<Uint8Array[] | undefined> => {
+    try {
+      return (
+        (await options.worldMaps?.(BigInt(world.worldSeed), world.generatorVersion)) ?? undefined
+      );
+    } catch (err) {
+      // The server computes its own (slower to start, the same terrain).
+      console.warn('Dwell: the world maps are unavailable', err);
+      return undefined;
+    }
+  })();
+  // `?water=inline`: the water on the server's thread (ADR 0062; the bench's before/after).
+  const waterInline =
+    typeof location !== 'undefined' && /[?&]water=inline(&|$)/.test(location.search);
+  // `?serverjobs=inline`: the server's generation and LOD on its tick (the bench's before/after).
+  const jobsInline =
+    typeof location !== 'undefined' && /[?&]serverjobs=inline(&|$)/.test(location.search);
+  const loopback = await LoopbackTransport.start(
+    worker,
+    {
+      ...world,
+      ...(waterInline ? { waterInline } : {}),
+      ...(jobsInline ? { jobsInline } : {}),
+    },
+    options.onStage,
+    maps,
+  );
   // The world saves every few seconds, and at once when the page is hidden or closed (§6.4).
   const save = () => {
     void loopback.save();

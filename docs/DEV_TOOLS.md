@@ -45,6 +45,14 @@ Output per scenario, in `OUT/<scenario>/`:
   p95, p99 and max, totals (jobs done, chunks and sections uploaded, bytes, ticks), each job kind's
   run and queue times, the GPU pass times (`gpu.*`), and long tasks.
 
+## In the game: the performance line
+
+Under the status line (Settings, On screen, Performance; `ui/perfLine.ts`): frames drawn a second, the CPU's
+time per frame (`frame.cpu`, the last 60 frames), the GPU's (`gpu.frame`, the last 30 timed frames; `–` where
+the browser has no `timestamp-query`, as many phones), the server's ticks a second (from the tick it sends)
+and, in a local world, its time per tick. At 60 fps each has 16.7 ms: the one over it holds the frame back
+(a GPU over it with the CPU under: draw less; the server under 60/s: the server, e.g. its water).
+
 ## Scenarios (`client/bench/scenarios.json`)
 
 ```json
@@ -54,7 +62,7 @@ Output per scenario, in `OUT/<scenario>/`:
 ```
 
 `seed` (default 7), `window`, `settings` (the settings menu's stored values, as in named views:
-`detail`, `exposure`, `clouds`, `water`, `motion` and `timeOfDay` (0–1, 0 midnight: `?time=`; the fog is fixed look data, not a setting) —
+`detail`, `exposure`, `clouds`, `water` (`quality`, and optionally the flow's `flowRipples`, `flowFoam`, `flowParticles` switches, e.g. `false` to see one without the others), `motion` and `timeOfDay` (0–1, 0 midnight: `?time=`; the fog is fixed look data, not a setting) —
 `{ "speedEffects": false }` turns the motion effects off, for a before/after of their cost in one
 build),
 `debug` (`?debug=1`), `scale`, `split` (`near` or `far`: which part of the view it measures, for
@@ -65,18 +73,20 @@ fields, ranges and names fail with the entry named):
 | Step | Does |
 | --- | --- |
 | `wait {s}` | waits |
+| `server {name, s}` | samples the local server's figures (`__dwell.serverStats()`) once a second for `s` seconds: its ticks' mean time, the worst `advance` call, and the water's (where it runs, its clock, owed and dropped time, its longest run, the batches queued, awake chunks, its copy of the world's size); printed, and saved in `report.json`'s `servers` under `name`. With a `--compare` configuration of `params: {"water": "inline"}` it measures the water on the server's thread against its own worker (WATER_SURFACE_GRID.md §2d) |
 | `key {code, down}`, `hold {code, s}` | presses/releases a key (`KeyboardEvent.code`), or holds it for `s` |
-| `look {yaw, pitch}` | turns the player's look (degrees; yaw 0 = +Z, 90 = +X) |
+| `look {yaw, pitch}` | turns the player's look (degrees; yaw 0 = +Z, 90 = +X, as `camera` and `goto`) |
 | `fly {on}`, `flySpeed {level}` | creative flight and its speed level (L flies at ≥ 11 × 2^(L/2) m/s: 6 ≈ 88, 8 ≈ 176) |
 | `puppets {count, at?, face?, held?}` | stand-in players (`__dwell.puppets`): `count` full bodies (≤ 256) in rows ahead of the player's feet offset by `at`, on `face` (1, or −1 for face B), each walking a small circle with a clip of its own (walk, sprint, slide, crouch, idle, jump, swim, climb), holding the hotbar's block with `held`; 0 removes them. For the frame cost of N bodies and screenshots of every clip without N clients ([`CHARACTERS.md`](./CHARACTERS.md)) |
 | `arms {on}` | your first-person arms shown or hidden (the Show your arms setting, this page only) |
 | `spyglass {on, step?}` | the spyglass zoomed to a step (0 the least, `shared/look/spyglass.json`) or out ([`SPYGLASS.md`](./SPYGLASS.md)); `spyglass-far` shoots far terrain unzoomed and at each step |
-| `camera {position, yaw, pitch, aroundPlayer?, aboveFeet?}`, `releaseCamera` | places the camera (the player stays), or returns it; with `aroundPlayer`, x and z are offsets from the player's feet (y absolute, or with `aboveFeet` an offset too: a height over the spawn's ground): a view wherever a flight ended, where the chunks are streamed |
+| `camera {position, yaw, pitch, aroundPlayer?, aboveFeet?, aroundFound?}`, `releaseCamera` | places the camera (the player stays), or returns it; with `aroundPlayer`, x and z are offsets from the player's feet (y absolute, or with `aboveFeet` an offset too: a height over the spawn's ground): a view wherever a flight ended, where the chunks are streamed; with `aroundFound`, x and z are offsets from the last `goto`'s place and y a height over its surface along its face's up |
+| `goto {find, radius?, surface?, minDepth?, minArea?, minCurrent?, face?, height?, aim? \| yaw? \| toward? \| lookAt?, turn?, pitch?, move?, scope?, water?, maxS?}` | finds a place by what is there and puts the camera over it (`__dwell.goto`, [Finding places](#finding-places)): e.g. `{ "find": "water", "scope": "world", "water": "sea", "minDepth": 2, "minArea": 1000, "height": 2, "lookAt": "land", "turn": 180, "pitch": -3, "maxS": 120 }` (the nearest sea at least 2 m deep on the world map, the player moved there, the camera 2 m up with its back to the shore) or `{ "find": "water", "minCurrent": 0.1, "aim": "downstream", "pitch": -15 }`. Prints what it found and saves it in `report.json`'s `gotos`; **finding nothing within `maxS` fails the run** with what it looked for and where, so a scenario never measures the wrong scene. `water-views`, `water-shore`, `water-reflections` and `water-river` find their water this way |
 | `edit {action}`, `select {slot}` | break/place at the crosshair; picks a hotbar slot |
 | `region {op, from, to, up?}` | a region edit (the region tools, `__dwell.tool('cornerA@x,y,z')`) of the box between `from` and `to`, offsets in metres from the player's feet (`up` −1 on face B): `fill` with the selected hotbar block or `clear` to air — to build a scene, e.g. `tunnel-a`/`tunnel-b`'s hill and tunnel (DAY_NIGHT.md §11), and `torch-cave-a`/`torch-cave-b`'s tunnel and room at midnight with the torch held and placed (LIGHTS.md; `torch-night-puppets` records 8 torch-bearing stand-ins against none; `torch-scale-a` shoots the 1 m torch beside a stand-in at noon and midnight and the held flame by day and night); `torch-shadows-a`/`torch-shadows-b` place a torch before a stone pillar in the room and hold one too, recording the Torch shadows' cost with `--configs torch-shadows-off,torch-shadows-high`; `felling` builds a tree on the flat world and breaks its trunk, shooting the fall and the settled logs, FELLING.md) |
-| `brush {command}` | drives the brush tool as its keys and clicks do (`__dwell.brush`: `toggle`, `preset:<name>`, `size:<n>`, `apply`, …; [`BRUSHES.md`](./BRUSHES.md)), in worlds that allow brushes (sandbox: a `--compare` config with `params: {"world": "sandbox"}`) |
+| `brush {command}` | drives the brush tool as its keys and clicks do (`__dwell.brush`: `toggle`, `preset:<name>`, `size:<n>`, `apply`, …; [`BRUSHES.md`](./BRUSHES.md)), in every world (creative; the sandbox with a `--compare` config `params: {"world": "sandbox"}`) |
 | `settle {maxS}` | waits until the LOD has had nothing to generate, mesh or ask for, for 1 s |
-| `until {what, maxS}` | waits until the view waits for nothing `behind` the camera (out of its frustum: `__dwell.state().lod.waitingOffView` 0), nothing `nearBehind` it within the full-detail distance (`waitingNearOffView` 0: the full detail behind is there) or nothing `ahead` (`waitingInView` 0), and saves the seconds since the page was opened in `report.json`'s `untils`; every run also saves `join` (page opened → playing, and the loading screen's wait, ARCHITECTURE.md §6.3). `join-behind` times the join's timeline and shoots behind the camera at the start and once settled; `--compare --configs raster,loading-off` runs it with and without the loading screen |
+| `until {what, maxS}` | waits until the view waits for nothing `behind` the camera (out of its frustum: `__dwell.state().lod.waitingOffView` 0), nothing `nearBehind` it within the full-detail distance (`waitingNearOffView` 0: the full detail behind is there) or nothing `ahead` (`waitingInView` 0), and saves the seconds since the page was opened in `report.json`'s `untils`; every run also saves `join` (page opened → playing, the loading screen's wait and its stages, ARCHITECTURE.md §6.3). `join-behind` times the join's timeline and shoots behind the camera at the start and once settled; `--compare --configs raster,loading-off` runs it with and without the loading screen |
 | `die {maxS}` | kills the local player (`__dwell.die()`, a local world only), waits for its respawn, then (at most `maxS`) until it is playing again, and saves the respawn → playing seconds with the loading screen's wait in `report.json`'s `respawns` (ARCHITECTURE.md §6.3). `respawn-far` flies 700 m from the spawn and dies there; `--compare --configs raster,respawn-preload-off` runs it with and without the respawn preload (`?respawnPreload=off`) |
 | `mark` | forgets the telemetry so far: the next `record` measures from here |
 | `record {name}` | saves everything above under `name` |
@@ -224,6 +234,13 @@ Water flow (docs/WATER_SURFACE_GRID.md §2c): `__dwell.waterFlowAt(x, y, z)` giv
 From the console: `__dwell.telemetry()`, `__dwell.telemetryFrames()`, `__dwell.ticks()`,
 `__dwell.telemetryReset()` (types in `client/src/main.ts`).
 
+The start's stages (ARCHITECTURE.md §6.3, *The start's stages*): `__dwellStages()` (on `window`, from the
+page's first moment, before `__dwell`) gives each loading stage that ran — `id`, `beganMs`, `endedMs` (null:
+running) and `firstMs` (when its count first moved: the wait before the terrain counts) on the page's clock —
+and every stage is a User Timing measure `dwell:stage:<id>` in a Chrome trace's Timings track. Every bench run
+prints them after the join (`stages: page 0.00–0.03 s, game 0.03–0.08 s, …`) and saves them in
+`report.json`'s `join.stages`.
+
 ## Interactive use
 
 The same hooks work in any browser session: open `http://localhost:4173/dwell/?local=1&seed=7`
@@ -253,14 +270,72 @@ and its ways out that run (each one's `from` cell, `flow`, `kind` — face, floo
 a pool of the graph nobody measured (`"pool river:row"`) or `lost`, `natural`, `contact`), and the
 world's totals (`brought`, `lost`, `virtuals`: pools of the graph off their rest, ADR 0059). In a local world the block
 dump (F6, or the debug overlay's button) carries it as `water` (the player's feet, 48 cells; the
-worker asked, a second at most), and `__dwell.waterReport(x, y, z, radius?)` returns it; a native
-test or probe calls `server.water().report(...)`. A diagnostic only: nothing in the game reads it.
+worker asked, a second at most), and `__dwell.waterReport(x, y, z, radius?)` returns it (asked of
+the water worker, ADR 0062); a native test or probe calls `server.water_report(...)` (or, inline,
+`server.water().report(...)`). A diagnostic only: nothing in the game reads it.
+
+**The server's figures** (G5, ADR 0062): `__dwell.serverStats()` gives the local server's last
+second, as the local-mode worker reports it each second: `ticks`, `tickMeanMs` (each `advance`
+call's wall time over the ticks it ran), `advanceMaxMs` (the worst call), `water` (`worker` or
+`inline`) and `waterStats` — `queue` (batches sent to the water and not yet answered), `runs`,
+`ranS`, `owedS`, `droppedS` (water s: the last run's time run, what it still owes, all dropped past
+`maxOwedS`), `busyMs` and `maxBusyMs` (a run's wall time, the longest), `waterTimeS` (its clock),
+`awakeChunks`, `waterChunks`, `cellBytes` and `cellChunks` (its copy of the world), `overtaken`
+(writes dropped because an edit got there first). Natively `Server::water_stats()`. Natively `Server::tick_phases()` gives each phase of the tick's wall time (ms, summed since the last call: `collect`, `edits`, `players`, `pieces`, `physics`, `settle`, …; `TICK_PHASES`) and `Server::body_count()` the bodies; `dwell-sim` `tests/collapse.rs`'s measurements print them for a collapse and a blast. `?water=inline`
+runs the water on the server's thread instead of its worker, and `?serverjobs=inline` the server's
+chunk generation and LOD sections on its tick instead of the server-jobs worker (WATER_SURFACE_GRID.md
+§2d).
 
 **The edit log** (0.46.1, owner 2026-11-04): the local server keeps its last 256 block changes that
 aren't the water's own (edits, region fills, collapses, settles; `Server::edit_log_json`), oldest
 first, each one's `tick` (the server's, 60 a second), `cell`, `from` and `to` (canonical state
 strings) and `reason`. The local world's water report carries it as `edits`, so the block dump has
 it at `water.edits`: what was done near a reported spot, in order, to replay in a native probe.
+
+## Finding places
+
+Tests and benchmarks find their scene by what is there, not by coordinates that go stale when the
+terrain changes (0.49.15; the water scenarios used to fly to a coast that a terrain change moved).
+`crates/dwell-client/src/find.rs` does the search; the page exposes it as hooks and the bench as
+the `goto` step.
+
+- `__dwell.find(query, options?)`: the nearest loaded cell matching `query`, searched outward from
+  the player's feet (or `from`) among the chunks the client holds, within `radius` m (256). A
+  query is a block by name through the registry (`dwell:sand`; a name without a namespace is
+  `dwell:`'s, so `water` is `dwell:water`, which matches its cells at any fill and flooded cells),
+  a state (`dwell:ladder[facing=north]`), `fluid` (any fluid) or `land` (any solid block: with
+  `surface`, dry ground, the shore seen from the water); an unknown name throws. Filters:
+  `surface` (default true: open above — a fluid's top under air, a block's top in the open air,
+  so `dwell:sand` is the beach, not the sea bed; a cell under a chunk not streamed in yet is not
+  one), `minDepth` (m of matching cells under its
+  surface), `minArea` (matching surface cells joined to it at its row: a pool, not a puddle),
+  `minCurrent` (m/s: running water), `face` (`a`, `b`, `any`; default the start's). It returns
+  `{ cell, at, surfaceY, face, block, depth, area, distance, current, flow }` (`at` the surface
+  over the cell's centre, `flow` the mean moving current within 3 columns) or null. All of it is
+  face-local: on face B "above" is −y and the surface is mirrored as it is drawn.
+- `__dwell.goto(query, options?)` (a promise): finds it as `find` does and places the camera
+  `height` m (1.6; negative: under the surface) over it, looking `aim` (`downstream`, `upstream`
+  or `across` its flow; still water has none, and it keeps trying while the currents arrive),
+  at a `yaw`, `toward` a point, or at the nearest `lookAt` from it among the loaded chunks (e.g.
+  `land`: the shore; it keeps trying while the chunks there stream in), turned `turn` degrees more, at `pitch` (0, or toward the point). `move` moves the player
+  there too, flying (a local world), so the full-detail chunks stream round it. `scope: 'world'`
+  first searches the world map (the generator's columns, loaded or not: `water` any, `sea`,
+  `river`, `lake`, at least `minDepth` deep, within `radius`, 30 km) outward from the player in
+  rings, moves the player there and searches its cells once they stream in. `maxS` keeps trying
+  (0; 60 for the world scope). It rejects with what it looked for when nothing is found.
+- `__dwell.teleport(feet)`: moves the local player's feet there, at rest (a local world, on the
+  face it is on; the local core's `teleport_local_player`, through the worker, not a network
+  message). The client follows: a player the server moved while the prediction waits for terrain
+  takes the server's place (`game.rs`), so it waits for the terrain there.
+- `__dwell.camera()`: the placed camera (`placeCamera`, `goto`) or null; `view()` is the player's
+  look, not a placed camera's.
+
+Yaw is the same everywhere (`look`, `view`, `placeCamera`, `camera`, `goto`, `FaceFrame::look`):
+degrees, 0 = +Z, 90 = +X; pitch is degrees toward the face's up. A placed camera doesn't turn the
+player, so `view()` after `placeCamera` still reads the player's own look.
+
+Seed 0's river at `?local=1&seed=0&fresh=1&at=2364.5,142,7443.5` is a known river by link (the
+player there with yaw 0 looks down it); `goto` finds water wherever the terrain puts it.
 
 ## Adding to it
 
@@ -272,6 +347,8 @@ it at `water.edits`: what was done near a reported spot, in order, to replay in 
   `scripts/bench.ts`, a row in the steps table.
 - A hook the steps need: a method on `__dwell` (`client/src/main.ts`) over a `Client` export
   (`crates/dwell-client/src/web/app.rs`).
+- A kind of place to find: a filter on `find.rs`'s `Query` (with a both-faces test), its option
+  in `client/src/debug/find.ts` and the `goto` step's parser.
 
 ## Comparing builds
 

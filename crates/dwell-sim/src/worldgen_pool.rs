@@ -3,6 +3,10 @@
 //! taking the chunks of its own blocks of columns first (`dwell_world::affinity`).
 //! With zero threads (the browser's single-threaded local mode) `collect` generates on the calling
 //! thread instead, within a time budget, so a tick never stalls on a burst of new terrain.
+//! **Remote** (`new_remote`: the browser's local mode with its server-jobs worker): the chunks are
+//! generated elsewhere; the embedder takes each one to generate (`take_job`, a few at a time so the
+//! queue's order stays current) and hands it back (`deliver`). Startup's `drain` still generates
+//! here.
 
 use std::collections::{HashSet, VecDeque};
 use std::sync::{Arc, Condvar, Mutex};
@@ -33,7 +37,11 @@ pub struct WorldgenPool {
     generator: ChunkGenerator,
     shared: Arc<Shared>,
     workers: Vec<JoinHandle<()>>,
+    remote: bool,
 }
+
+/// The most chunks a remote pool has out at its worker at once.
+pub const REMOTE_IN_FLIGHT: usize = 4;
 
 fn generate(generator: &ChunkGenerator, c: ChunkCoord) -> Box<Chunk> {
     let mut chunk = Box::<Chunk>::default();
@@ -59,6 +67,37 @@ impl WorldgenPool {
             generator,
             shared,
             workers,
+            remote: false,
+        }
+    }
+
+    /// A pool whose chunks are generated elsewhere (`take_job`, `deliver`).
+    pub fn new_remote(generator: ChunkGenerator) -> Self {
+        let mut p = Self::new(generator, 0);
+        p.remote = true;
+        p
+    }
+
+    /// The next chunk to generate elsewhere (a remote pool's), at most `REMOTE_IN_FLIGHT` out.
+    pub fn take_job(&self) -> Option<ChunkCoord> {
+        if !self.remote {
+            return None;
+        }
+        let mut s = self.shared.state.lock().expect("worldgen lock");
+        if s.in_flight.len() >= REMOTE_IN_FLIGHT {
+            return None;
+        }
+        let c = s.queue.pop_front()?;
+        s.in_flight.insert(c);
+        Some(c)
+    }
+
+    /// A chunk generated elsewhere, collected at the next `collect`.
+    pub fn deliver(&self, c: ChunkCoord, mut chunk: Box<Chunk>) {
+        chunk.reset_revision();
+        let mut s = self.shared.state.lock().expect("worldgen lock");
+        if s.in_flight.remove(&c) {
+            s.done.push((c, chunk));
         }
     }
 
@@ -89,7 +128,7 @@ impl WorldgenPool {
     /// `budget` has elapsed (at least one when any is queued).
     pub fn collect(&self, out: &mut Vec<Generated>, budget: Duration) {
         let mut s = self.shared.state.lock().expect("worldgen lock");
-        if self.workers.is_empty() {
+        if self.workers.is_empty() && !self.remote {
             let deadline = Deadline::after(budget);
             while let Some(c) = s.queue.pop_front() {
                 out.push((c, generate(&self.generator, c)));
@@ -105,19 +144,13 @@ impl WorldgenPool {
     /// Blocks until every queued chunk is generated, then collects them (startup pre-generation).
     pub fn drain(&self, out: &mut Vec<Generated>) {
         if self.workers.is_empty() {
-            loop {
-                let empty = self
-                    .shared
-                    .state
-                    .lock()
-                    .expect("worldgen lock")
-                    .queue
-                    .is_empty();
-                if empty {
-                    return;
-                }
-                self.collect(out, Duration::from_secs(3600));
+            // here, remote or not (startup: nothing is out at a worker yet)
+            let mut s = self.shared.state.lock().expect("worldgen lock");
+            out.append(&mut s.done);
+            while let Some(c) = s.queue.pop_front() {
+                out.push((c, generate(&self.generator, c)));
             }
+            return;
         }
         let s = self.shared.state.lock().expect("worldgen lock");
         let mut s = self
@@ -161,5 +194,38 @@ impl Drop for WorldgenPool {
         for w in self.workers.drain(..) {
             let _ = w.join();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_remote_pool_hands_out_a_few_chunks_and_takes_them_back() {
+        // face-a-only: chunks are world volumes; no up or down in a queue.
+        let pool = WorldgenPool::new_remote(dwell_world::flat_generator());
+        let wanted: Vec<ChunkCoord> = (0..6).map(|x| ChunkCoord::new(x, 1, 0)).collect();
+        pool.set_wanted(&wanted);
+        let mut out = Vec::new();
+        pool.collect(&mut out, Duration::from_secs(1));
+        assert!(out.is_empty(), "nothing generated on the calling thread");
+        let jobs: Vec<ChunkCoord> = std::iter::from_fn(|| pool.take_job()).collect();
+        assert_eq!(
+            jobs,
+            wanted[..REMOTE_IN_FLIGHT],
+            "the queue's first, a few at a time"
+        );
+        for &c in &jobs {
+            pool.deliver(c, generate(&dwell_world::flat_generator(), c));
+        }
+        pool.collect(&mut out, Duration::from_secs(1));
+        assert_eq!(out.len(), REMOTE_IN_FLIGHT);
+        pool.set_wanted(&wanted);
+        assert_eq!(pool.take_job(), Some(wanted[0]));
+        // startup's drain generates here what isn't out at the worker
+        let mut rest = Vec::new();
+        pool.drain(&mut rest);
+        assert_eq!(rest.len(), wanted.len() - 1);
     }
 }

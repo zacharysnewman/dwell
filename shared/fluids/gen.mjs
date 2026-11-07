@@ -19,17 +19,22 @@ export const FLOW_RANGES = {
   cfl: [0.05, 1, false],
   maxSubsteps: [1, 100000, true],
   stepBudget: [256, 100000000, true],
+  threadStepBudget: [256, 1000000000, true],
+  maxOwedS: [0, 36000, false],
   sleepBandM: [0.0001, 0.5, false],
   wakeBandM: [0.001, 5, false],
   calmS: [0.1, 3600, false],
   releaseS: [0, 3600, false],
   jumpM2s: [0.001, 100, false],
   releaseM: [0.001, 5, false],
+  restCut: [0, 1, false],
+  restBack: [0, 1, false],
   editReach: [0, 64, true],
   fillHysteresis: [0, 0.5, false],
   currentStillMs: [0, 10, false],
   currentDepthM: [0, 10, false],
   riverCurrentMaxMs: [0, 20, false],
+  riverFallReachM: [0, 4096, false],
 };
 
 /** The registry's blocks (name → liquid?), from shared/blocks/dwell.json. */
@@ -71,6 +76,8 @@ export function validateFlow(data, blocks = registryBlocks()) {
     }
   });
   if (data.wakeBandM < data.sleepBandM) bad('wakeBandM must be at least sleepBandM');
+  if (data.threadStepBudget < data.stepBudget) bad('threadStepBudget must be at least stepBudget');
+  if (data.restBack < data.restCut) bad('restBack must be at least restCut');
   return data;
 }
 

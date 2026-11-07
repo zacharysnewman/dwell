@@ -244,67 +244,31 @@
     },
     {
       "name": "water-views",
-      "notes": "The sea seen four ways (Phase 26 W1b, the water shader): flies from the seed-7 spawn to the coast about 20 km east-south-east (yaw 112.5) and down into the sea, then places the camera around the player, where the chunks are streamed: across the sea at a low angle, down into the shallows toward the coast, from 1 km up, and with the eye just under the surface (the underwater stub). Records the frame over the sea.",
+      "notes": "The sea seen four ways (Phase 26 W1b, the water shader): goes to the world map's nearest deep sea from the seed-7 spawn (`goto` with scope world: at least 2 m deep and 1000 cells wide, the player moved there), then views it from 2 m up across the sea, its back to the nearest beach, at a low angle; toward the beach from 5 m up; with the eye just under the surface; and from 1 km up. Records the frame over the sea. Finding no such sea fails the run.",
+      "settings": {
+        "timeOfDay": 0.45
+      },
       "steps": [
         {
           "do": "settle",
           "maxS": 120
         },
         {
-          "do": "fly",
-          "on": true
-        },
-        {
-          "do": "flySpeed",
-          "level": 11
-        },
-        {
-          "do": "hold",
-          "code": "Space",
-          "s": 1.0
-        },
-        {
-          "do": "look",
-          "yaw": 112.5,
-          "pitch": 0
-        },
-        {
-          "do": "key",
-          "code": "KeyW",
-          "down": true
-        },
-        {
-          "do": "wait",
-          "s": 28.3
-        },
-        {
-          "do": "key",
-          "code": "KeyW",
-          "down": false
-        },
-        {
-          "do": "wait",
-          "s": 1
-        },
-        {
-          "do": "flySpeed",
-          "level": 6
-        },
-        {
-          "do": "hold",
-          "code": "KeyC",
-          "s": 10
+          "do": "goto",
+          "find": "water",
+          "scope": "world",
+          "water": "sea",
+          "minDepth": 2,
+          "minArea": 1000,
+          "height": 2,
+          "lookAt": "land",
+          "turn": 180,
+          "pitch": -3,
+          "maxS": 120
         },
         {
           "do": "settle",
           "maxS": 120
-        },
-        {
-          "do": "camera",
-          "position": [0, 2, 0],
-          "yaw": 112.5,
-          "pitch": -3,
-          "aroundPlayer": true
         },
         {
           "do": "wait",
@@ -326,11 +290,12 @@
           "name": "sea-low"
         },
         {
-          "do": "camera",
-          "position": [-55, 5, 0],
-          "yaw": 292.5,
-          "pitch": -35,
-          "aroundPlayer": true
+          "do": "goto",
+          "find": "water",
+          "minDepth": 2,
+          "height": 5,
+          "lookAt": "land",
+          "pitch": -35
         },
         {
           "do": "wait",
@@ -341,11 +306,13 @@
           "name": "shallow-down"
         },
         {
-          "do": "camera",
-          "position": [0, -0.6, 0],
-          "yaw": 112.5,
-          "pitch": 8,
-          "aroundPlayer": true
+          "do": "goto",
+          "find": "water",
+          "minDepth": 2,
+          "height": -0.6,
+          "lookAt": "land",
+          "turn": 180,
+          "pitch": 8
         },
         {
           "do": "wait",
@@ -356,11 +323,13 @@
           "name": "underwater"
         },
         {
-          "do": "camera",
-          "position": [0, 1000, 0],
-          "yaw": 112.5,
-          "pitch": -25,
-          "aroundPlayer": true
+          "do": "goto",
+          "find": "water",
+          "minDepth": 2,
+          "height": 1000,
+          "lookAt": "land",
+          "turn": 180,
+          "pitch": -25
         },
         {
           "do": "settle",
@@ -374,66 +343,38 @@
     },
     {
       "name": "water-shore",
-      "notes": "The shore in the water's depth views (Phase 26 W3): flies to the water-views coast, then shoots the beach edge at a low angle, straight down into the shallows over sand, the deep-to-shallow gradient from 20 m up, under the surface in the shallows (the floor and its caustics, along it, up toward the surface) and the far water from 1 km.",
+      "notes": "The shore in the water's depth views (Phase 26 W3): goes to the world map's nearest deep sea from the seed-7 spawn as water-views does, then to the beach nearest it (`goto land`: the nearest dry ground; the player moved there) and shoots the beach edge at a low angle toward the water, straight down into the shallows by the beach, the deep-to-shallow gradient from 20 m up over the sea toward the beach, under the surface in the shallows (the floor and its caustics, along it, up toward the surface) and the far water from 1 km. Finding no sea or beach fails the run.",
+      "settings": {
+        "timeOfDay": 0.45
+      },
       "steps": [
         {
           "do": "settle",
           "maxS": 120
         },
         {
-          "do": "fly",
-          "on": true
-        },
-        {
-          "do": "flySpeed",
-          "level": 11
-        },
-        {
-          "do": "hold",
-          "code": "Space",
-          "s": 1.0
-        },
-        {
-          "do": "look",
-          "yaw": 112.5,
-          "pitch": 0
-        },
-        {
-          "do": "key",
-          "code": "KeyW",
-          "down": true
-        },
-        {
-          "do": "wait",
-          "s": 28.3
-        },
-        {
-          "do": "key",
-          "code": "KeyW",
-          "down": false
-        },
-        {
-          "do": "wait",
-          "s": 1
-        },
-        {
-          "do": "flySpeed",
-          "level": 6
-        },
-        {
-          "do": "hold",
-          "code": "KeyC",
-          "s": 10
+          "do": "goto",
+          "find": "water",
+          "scope": "world",
+          "water": "sea",
+          "minDepth": 2,
+          "minArea": 1000,
+          "height": 2,
+          "pitch": 0,
+          "maxS": 120
         },
         {
           "do": "settle",
           "maxS": 120
         },
         {
-          "do": "camera",
-          "position": [18326, 1.5, -7621],
-          "yaw": 292.5,
-          "pitch": -10
+          "do": "goto",
+          "find": "land",
+          "height": 1.5,
+          "lookAt": "water",
+          "pitch": -10,
+          "move": true,
+          "maxS": 30
         },
         {
           "do": "settle",
@@ -448,11 +389,12 @@
           "name": "beach-edge"
         },
         {
-          "do": "camera",
-          "position": [-100, 10, 0],
-          "yaw": 292.5,
-          "pitch": -89,
-          "aroundPlayer": true
+          "do": "goto",
+          "find": "water",
+          "minDepth": 0.5,
+          "height": 10,
+          "lookAt": "land",
+          "pitch": -89
         },
         {
           "do": "wait",
@@ -463,11 +405,12 @@
           "name": "shallows-down"
         },
         {
-          "do": "camera",
-          "position": [-60, 20, 0],
-          "yaw": 292.5,
-          "pitch": -30,
-          "aroundPlayer": true
+          "do": "goto",
+          "find": "water",
+          "minDepth": 2,
+          "height": 20,
+          "lookAt": "land",
+          "pitch": -30
         },
         {
           "do": "wait",
@@ -478,11 +421,12 @@
           "name": "deep-to-shallow"
         },
         {
-          "do": "camera",
-          "position": [-95, -0.4, 0],
-          "yaw": 292.5,
-          "pitch": -50,
-          "aroundPlayer": true
+          "do": "goto",
+          "find": "water",
+          "minDepth": 1,
+          "height": -0.4,
+          "lookAt": "land",
+          "pitch": -50
         },
         {
           "do": "wait",
@@ -493,11 +437,12 @@
           "name": "under-floor"
         },
         {
-          "do": "camera",
-          "position": [-95, -0.4, 0],
-          "yaw": 292.5,
-          "pitch": -8,
-          "aroundPlayer": true
+          "do": "goto",
+          "find": "water",
+          "minDepth": 1,
+          "height": -0.4,
+          "lookAt": "land",
+          "pitch": -8
         },
         {
           "do": "wait",
@@ -508,11 +453,12 @@
           "name": "under-along"
         },
         {
-          "do": "camera",
-          "position": [-95, -0.4, 0],
-          "yaw": 292.5,
-          "pitch": 50,
-          "aroundPlayer": true
+          "do": "goto",
+          "find": "water",
+          "minDepth": 1,
+          "height": -0.4,
+          "lookAt": "land",
+          "pitch": 50
         },
         {
           "do": "wait",
@@ -523,11 +469,13 @@
           "name": "under-up"
         },
         {
-          "do": "camera",
-          "position": [0, 1000, 0],
-          "yaw": 112.5,
-          "pitch": -25,
-          "aroundPlayer": true
+          "do": "goto",
+          "find": "water",
+          "minDepth": 2,
+          "height": 1000,
+          "lookAt": "land",
+          "turn": 180,
+          "pitch": -25
         },
         {
           "do": "settle",
@@ -541,7 +489,7 @@
     },
     {
       "name": "water-reflections",
-      "notes": "The water's reflections (Phase 26 W5a: land by screen-space reflection, clouds along the reflected ray) on Medium: flies to the water-views coast, then from 1.5 m over a lagoon shoots a sand bank and the treeline behind it at a low angle (recorded: the cost), turned and steeper, the beach across open water at several pitches and from the side (the screen-edge fades), the clouds in the sea, then the bank at dusk and at night and the low sun over the water.",
+      "notes": "The water's reflections (Phase 26 W5a: land by screen-space reflection, clouds along the reflected ray) on Medium: goes to the world map's nearest deep sea from the seed-7 spawn as water-views does, then from 1.5 m over the water shoots the nearest beach and the land behind it at a low angle (recorded: the cost), turned and steeper; then, the player moved to the beach, from the water nearest it at several pitches and from the side (the screen-edge fades); the clouds in the sea; then the beach at dusk and at night and the low sun over the water. Finding no sea or beach fails the run.",
       "settings": {
         "water": {
           "quality": "medium"
@@ -555,60 +503,20 @@
           "maxS": 120
         },
         {
-          "do": "fly",
-          "on": true
-        },
-        {
-          "do": "flySpeed",
-          "level": 11
-        },
-        {
-          "do": "hold",
-          "code": "Space",
-          "s": 1.0
-        },
-        {
-          "do": "look",
-          "yaw": 112.5,
-          "pitch": 0
-        },
-        {
-          "do": "key",
-          "code": "KeyW",
-          "down": true
-        },
-        {
-          "do": "wait",
-          "s": 28.3
-        },
-        {
-          "do": "key",
-          "code": "KeyW",
-          "down": false
-        },
-        {
-          "do": "wait",
-          "s": 1
-        },
-        {
-          "do": "flySpeed",
-          "level": 6
-        },
-        {
-          "do": "hold",
-          "code": "KeyC",
-          "s": 10
+          "do": "goto",
+          "find": "water",
+          "scope": "world",
+          "water": "sea",
+          "minDepth": 2,
+          "minArea": 1000,
+          "height": 1.5,
+          "lookAt": "land",
+          "pitch": -3,
+          "maxS": 120
         },
         {
           "do": "settle",
           "maxS": 120
-        },
-        {
-          "do": "camera",
-          "position": [-200, 1.5, -350],
-          "yaw": 292.5,
-          "pitch": -3,
-          "aroundPlayer": true
         },
         {
           "do": "wait",
@@ -630,11 +538,13 @@
           "name": "bank"
         },
         {
-          "do": "camera",
-          "position": [-200, 1.5, -350],
-          "yaw": 300,
-          "pitch": -3,
-          "aroundPlayer": true
+          "do": "goto",
+          "find": "water",
+          "minDepth": 2,
+          "height": 1.5,
+          "lookAt": "land",
+          "turn": 7.5,
+          "pitch": -3
         },
         {
           "do": "wait",
@@ -645,11 +555,12 @@
           "name": "bank-turned"
         },
         {
-          "do": "camera",
-          "position": [-200, 1.5, -350],
-          "yaw": 292.5,
-          "pitch": -12,
-          "aroundPlayer": true
+          "do": "goto",
+          "find": "water",
+          "minDepth": 2,
+          "height": 1.5,
+          "lookAt": "land",
+          "pitch": -12
         },
         {
           "do": "wait",
@@ -660,11 +571,23 @@
           "name": "bank-down"
         },
         {
-          "do": "camera",
-          "position": [-40, 1.5, 0],
-          "yaw": 292.5,
-          "pitch": -4,
-          "aroundPlayer": true
+          "do": "goto",
+          "find": "land",
+          "height": 2,
+          "move": true,
+          "maxS": 30
+        },
+        {
+          "do": "settle",
+          "maxS": 60
+        },
+        {
+          "do": "goto",
+          "find": "water",
+          "minDepth": 1,
+          "height": 1.5,
+          "lookAt": "land",
+          "pitch": -4
         },
         {
           "do": "wait",
@@ -675,11 +598,12 @@
           "name": "shore-low"
         },
         {
-          "do": "camera",
-          "position": [-20, 0.6, 0],
-          "yaw": 292.5,
-          "pitch": -1.5,
-          "aroundPlayer": true
+          "do": "goto",
+          "find": "water",
+          "minDepth": 1,
+          "height": 0.6,
+          "lookAt": "land",
+          "pitch": -1.5
         },
         {
           "do": "wait",
@@ -690,11 +614,12 @@
           "name": "shore-grazing"
         },
         {
-          "do": "camera",
-          "position": [-40, 1.5, 0],
-          "yaw": 292.5,
-          "pitch": -1,
-          "aroundPlayer": true
+          "do": "goto",
+          "find": "water",
+          "minDepth": 1,
+          "height": 1.5,
+          "lookAt": "land",
+          "pitch": -1
         },
         {
           "do": "wait",
@@ -705,11 +630,12 @@
           "name": "shore-pitch-up"
         },
         {
-          "do": "camera",
-          "position": [-40, 1.5, 0],
-          "yaw": 292.5,
-          "pitch": -9,
-          "aroundPlayer": true
+          "do": "goto",
+          "find": "water",
+          "minDepth": 1,
+          "height": 1.5,
+          "lookAt": "land",
+          "pitch": -9
         },
         {
           "do": "wait",
@@ -720,11 +646,13 @@
           "name": "shore-pitch-down"
         },
         {
-          "do": "camera",
-          "position": [-40, 1.5, 0],
-          "yaw": 250,
-          "pitch": -5,
-          "aroundPlayer": true
+          "do": "goto",
+          "find": "water",
+          "minDepth": 1,
+          "height": 1.5,
+          "lookAt": "land",
+          "turn": -42.5,
+          "pitch": -5
         },
         {
           "do": "wait",
@@ -735,11 +663,13 @@
           "name": "shore-side"
         },
         {
-          "do": "camera",
-          "position": [0, 3, 0],
-          "yaw": 112.5,
-          "pitch": -14,
-          "aroundPlayer": true
+          "do": "goto",
+          "find": "water",
+          "minDepth": 2,
+          "height": 3,
+          "lookAt": "land",
+          "turn": 180,
+          "pitch": -14
         },
         {
           "do": "wait",
@@ -750,11 +680,13 @@
           "name": "clouds-sea"
         },
         {
-          "do": "camera",
-          "position": [0, 3, 0],
-          "yaw": 30,
-          "pitch": -20,
-          "aroundPlayer": true
+          "do": "goto",
+          "find": "water",
+          "minDepth": 2,
+          "height": 3,
+          "lookAt": "land",
+          "turn": 97.5,
+          "pitch": -20
         },
         {
           "do": "wait",
@@ -769,11 +701,12 @@
           "t": 0.82
         },
         {
-          "do": "camera",
-          "position": [0, 3, 0],
+          "do": "goto",
+          "find": "water",
+          "minDepth": 2,
+          "height": 3,
           "yaw": 208,
-          "pitch": -6,
-          "aroundPlayer": true
+          "pitch": -6
         },
         {
           "do": "wait",
@@ -784,11 +717,12 @@
           "name": "dusk-sun"
         },
         {
-          "do": "camera",
-          "position": [-200, 1.5, -350],
-          "yaw": 292.5,
-          "pitch": -3,
-          "aroundPlayer": true
+          "do": "goto",
+          "find": "water",
+          "minDepth": 2,
+          "height": 1.5,
+          "lookAt": "land",
+          "pitch": -3
         },
         {
           "do": "wait",
@@ -803,11 +737,12 @@
           "t": 0.0
         },
         {
-          "do": "camera",
-          "position": [-200, 1.5, -350],
-          "yaw": 292.5,
-          "pitch": -3,
-          "aroundPlayer": true
+          "do": "goto",
+          "find": "water",
+          "minDepth": 2,
+          "height": 1.5,
+          "lookAt": "land",
+          "pitch": -3
         },
         {
           "do": "wait",
@@ -816,6 +751,105 @@
         {
           "do": "shot",
           "name": "night-bank"
+        }
+      ]
+    },
+    {
+      "name": "water-river",
+      "notes": "A river's flow visuals (docs/WATER_SURFACE_GRID.md §2c): goes to the world map's nearest river from the seed-7 spawn and finds water running at least 0.1 m/s there, then views it from 2 m up downstream and upstream, across it from 6 m up (steeply: a narrow river's banks rise close), and from 12 m up looking down on it. Records the frame looking downstream. Finding no running river fails the run.",
+      "settings": {
+        "timeOfDay": 0.45
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "goto",
+          "find": "water",
+          "scope": "world",
+          "water": "river",
+          "minDepth": 0.5,
+          "minCurrent": 0.1,
+          "aim": "downstream",
+          "height": 2,
+          "pitch": -15,
+          "maxS": 120
+        },
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 5
+        },
+        {
+          "do": "record",
+          "name": "river"
+        },
+        {
+          "do": "shot",
+          "name": "downstream"
+        },
+        {
+          "do": "goto",
+          "find": "water",
+          "minCurrent": 0.1,
+          "aim": "upstream",
+          "height": 2,
+          "pitch": -15,
+          "maxS": 10
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "upstream"
+        },
+        {
+          "do": "goto",
+          "find": "water",
+          "minCurrent": 0.1,
+          "aim": "across",
+          "height": 6,
+          "pitch": -65,
+          "maxS": 10
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "across"
+        },
+        {
+          "do": "goto",
+          "find": "water",
+          "minCurrent": 0.1,
+          "aim": "downstream",
+          "height": 12,
+          "pitch": -70,
+          "maxS": 10
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "down-on"
         }
       ]
     },

@@ -69,7 +69,11 @@ impl Default for Options {
             heartbeat_s: 30,
             tags: Vec::new(),
             server_key: [0; 32],
-            server: ServerConfig::default(),
+            // The water on its own thread (ADR 0062): a flood never holds the players' tick.
+            server: ServerConfig {
+                water: dwell_sim::water::host::Placement::Thread,
+                ..ServerConfig::default()
+            },
             client_url: "http://localhost:5173/dwell/".into(),
             world: "world.dwellworld".into(),
             settings: Vec::new(),

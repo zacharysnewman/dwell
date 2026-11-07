@@ -47,9 +47,17 @@ const PARTS = {
     count: [0, 1024, { whole: true }],
     cpuCount: [0, 1024, { whole: true }],
     fromMs: [0, 20],
+    fullMs: [0, 20, { open: true }],
     sizeM: [0.005, 1],
+    stretch: [1, 8],
+    opacity: [0, 1, { open: true }],
     lifeS: [0.1, 120],
+    fadeInS: [0, 60],
+    fadeOutS: [0, 60],
     radiusM: [1, 128],
+    ragged: [0, 1],
+    lumps: [0, 8, { whole: true }],
+    minPixels: [0, 64],
   },
 };
 const COLORS = { foam: ['color'], particles: ['color'] };
@@ -66,7 +74,17 @@ export function checkLiquid(name, l) {
     for (const k of COLORS[part] ?? []) checkColor(`${at}.${part}.${k}`, p[k]);
   }
   if (l.foam.toMs <= l.foam.fromMs) fail(`${at}.foam.toMs must be above foam.fromMs`);
+  // The shader averages six taps along a streak's length over noise a width across: taps further
+  // apart than about three quarters of a width no longer join, and a streak breaks into round
+  // blobs (owner, 2026-11-06: "perfect white circles").
+  if (l.foam.lengthM > 4.5 * l.foam.widthM) {
+    fail(`${at}.foam.lengthM must be at most 4.5 × foam.widthM (longer breaks into blobs)`);
+  }
   if (l.particles.cpuCount > l.particles.count) fail(`${at}.particles.cpuCount must be at most count`);
+  if (l.particles.fullMs <= l.particles.fromMs) fail(`${at}.particles.fullMs must be above particles.fromMs`);
+  if (l.particles.fadeInS + l.particles.fadeOutS > l.particles.lifeS) {
+    fail(`${at}.particles.fadeInS + fadeOutS must be at most lifeS`);
+  }
   return l;
 }
 
@@ -112,10 +130,18 @@ export function waterFlowRust(data) {
       `        particle_count: ${p.count},`,
       `        particle_cpu_count: ${p.cpuCount},`,
       `        particle_from_ms: ${rf(p.fromMs)},`,
+      `        particle_full_ms: ${rf(p.fullMs)},`,
       `        particle_size_m: ${rf(p.sizeM)},`,
+      `        particle_stretch: ${rf(p.stretch)},`,
       `        particle_color: ${hex(p.color)},`,
+      `        particle_opacity: ${rf(p.opacity)},`,
       `        particle_life_s: ${rf(p.lifeS)},`,
+      `        particle_fade_in_s: ${rf(p.fadeInS)},`,
+      `        particle_fade_out_s: ${rf(p.fadeOutS)},`,
       `        particle_radius_m: ${rf(p.radiusM)},`,
+      `        particle_ragged: ${rf(p.ragged)},`,
+      `        particle_lumps: ${p.lumps},`,
+      `        particle_min_pixels: ${rf(p.minPixels)},`,
       '    },',
     ].join('\n');
   });

@@ -66,6 +66,13 @@ fn file_bytes(path: &str) -> Vec<u8> {
 }
 
 #[test]
+fn the_dedicated_servers_water_runs_on_its_own_thread() {
+    // face-a-only: a launch default, no up or down in it. ADR 0062.
+    let o = parse_options(&args(&[])).unwrap();
+    assert_eq!(o.server.water, dwell_sim::water::host::Placement::Thread);
+}
+
+#[test]
 fn options_parse_and_reject_what_they_should() {
     let o = parse_options(&args(&[
         "--port",

@@ -10,7 +10,7 @@ use std::collections::VecDeque;
 use std::rc::Rc;
 
 use dwell_blocks::StateId;
-use dwell_game::block_interaction::{BlockInteraction, BlockTarget, TargetSource, view_direction};
+use dwell_game::block_interaction::{BlockInteraction, BlockTarget, view_direction};
 use dwell_game::brush_tool::{BrushAction, BrushOutline, BrushPanel, BrushTool};
 use dwell_game::chunk_stream::{
     ChunkMessage, ChunkStreamer, Coord, SecondCentre, StreamStats, TerrainView,
@@ -1146,6 +1146,22 @@ impl<S: Scene> Game<S> {
                     self.eye = EyeCamera::new();
                     self.eye
                         .tick(&self.current.eye_state(), 1.0 / SIM_HZ as f64);
+                } else if !prediction_may_run(
+                    self.current.active,
+                    self.current.state,
+                    self.terrain_ready(),
+                ) && self.moved_by_server()
+                {
+                    // Moved by the server while the prediction waits for terrain (the dev tools'
+                    // teleport, docs/DEV_TOOLS.md): the player is where the server has it, so
+                    // the terrain the prediction waits for is the terrain there, not where the
+                    // player was (which the server stops streaming, so it never arrives).
+                    self.current = ClientState::of(&self.predictor);
+                    self.flip.reset(self.current.face);
+                    self.previous = None;
+                    self.eye = EyeCamera::new();
+                    self.eye
+                        .tick(&self.current.eye_state(), 1.0 / SIM_HZ as f64);
                 }
             }
             Message::EntitySpawn(e) => {
@@ -1780,16 +1796,17 @@ impl<S: Scene> Game<S> {
         }
     }
 
-    /// What the server announced it takes (Welcome flags) in a world of this generator: region
-    /// edits, and brush strokes with the world type's brush reach (BRUSHES.md).
     /// The world's portals (BIFACIAL_WORLD.md §12): their axes and mote look, from the generator
     /// and seed the server announced, for the motes drawn in their shafts.
     pub fn set_world(&mut self, generator_version: u32, world_seed: u64) {
         self.portals = dwell_worldgen::portal_axes_for(generator_version, world_seed);
     }
 
-    pub fn set_capabilities(&mut self, region_edits: bool, brushes: bool, generator_version: u32) {
-        let policy = dwell_world::brush::brush_policy(generator_version).filter(|_| brushes);
+    /// What the server announced it takes (Welcome flags): region edits, and brush strokes with
+    /// the game mode's brush reach (BRUSHES.md; every world is creative for now).
+    pub fn set_capabilities(&mut self, region_edits: bool, brushes: bool) {
+        let policy =
+            dwell_world::brush::brush_policy(dwell_world::brush::world_mode()).filter(|_| brushes);
         self.region.enabled = region_edits;
         self.region.keep = brushes;
         self.region.reach = policy.map_or(dwell_protocol::region_edit::REACH, |p| {
@@ -2003,18 +2020,15 @@ impl<S: Scene> Game<S> {
         }
         // A drag fill the server refused, or took but left as it was (it skips a cell its view of
         // the body is in without refusing; the prediction then shows the server's state): a line
-        // goes back to it; any other goes again while its cells are still free (docs/ITEMS.md §5).
+        // goes back to it; any other goes again while its cells are still free (docs/ITEMS.md §5,
+        // `BuildDrag::answered`). One put into water comes back flooded (BUGS.md 37).
         for &(id, refused) in results {
             let Some((fill, tries)) = self.drag_sent.remove(&id) else {
                 continue;
             };
-            let missing = (0..i32::from(fill.size[1])).any(|r| {
-                let [x, y, z] = [fill.min[0], fill.min[1] + r, fill.min[2]];
-                self.streamer.store_mut().get_voxel(x, y, z) != fill.material
-            });
-            if !(refused || missing) || self.drag.refused(&fill) {
-                continue;
-            }
+            let store = self.streamer.store_mut();
+            let placed =
+                dwell_game::build_drag::fill_placed(&fill, |[x, y, z]| store.get_voxel(x, y, z));
             let me = self.drag_body();
             let settled = self.drag_sent.is_empty();
             let mut world = DragCells {
@@ -2022,16 +2036,7 @@ impl<S: Scene> Game<S> {
                 me,
                 settled,
             };
-            let free = (0..i32::from(fill.size[1])).all(|r| {
-                dwell_game::build_drag::DragWorld::free(
-                    &mut world,
-                    [fill.min[0], fill.min[1] + r, fill.min[2]],
-                    fill.material,
-                )
-            });
-            if free {
-                self.drag.retry(fill, tries + 1);
-            }
+            self.drag.answered(fill, tries, refused, placed, &mut world);
         }
     }
 
@@ -2195,6 +2200,17 @@ impl<S: Scene> Game<S> {
             })
             .collect();
         self.scene.borrow_mut().set_region_boxes(&boxes);
+    }
+
+    /// The predictor's player (the server's, while no tick runs) is more than a snap away from
+    /// the state the game shows.
+    fn moved_by_server(&self) -> bool {
+        let p = self.predictor.position();
+        let d = (0..3)
+            .map(|k| (p[k] - self.current.position[k]).powi(2))
+            .sum::<f64>()
+            .sqrt();
+        d > f64::from(dwell_protocol::players::RECONCILE_SNAP_DISTANCE)
     }
 
     /// Prediction waits until the terrain around the player has arrived (collision needs it), and
@@ -2958,12 +2974,31 @@ impl<S: Scene> Game<S> {
         self.region
             .aim(self.interaction.placement().map(|(c, _)| c));
         self.show_region_boxes();
-        // The brush aims much further along the same ray (its world's brush reach).
+        // The brush aims much further along the same ray (its mode's brush reach), and where the
+        // ray meets nothing editable in reach, at the farthest editable cell along it: it always
+        // shows where it acts (BRUSHES.md §3).
         let t = if self.brush.active() {
             let dir = view_direction(input.look.yaw, input.look.pitch, face).map(|v| v as f32);
-            let far = eye.and_then(|e| self.streamer.store_mut().target(e, dir, self.brush.reach));
-            self.brush.aim(far);
-            far
+            let reach = self.brush.reach;
+            let aim = eye.and_then(|e| {
+                let hit = dwell_game::block_interaction::target_hit(
+                    self.streamer.store_mut(),
+                    e,
+                    dir,
+                    reach,
+                );
+                // Editable: in the world, with every chunk a stroke there reads loaded.
+                let extent = self.brush.read_extent(dwell_world::cell_of_pos(e));
+                let streamer = &self.streamer;
+                dwell_game::brush_tool::clamp_aim(e, dir, reach, hit, |c| {
+                    dwell_world::region::box_in_world(c, [1, 1, 1])
+                        && extent.is_none_or(|(lo, size)| {
+                            streamer.box_loaded(std::array::from_fn(|i| c[i] + lo[i]), size)
+                        })
+                })
+            });
+            self.brush.aim_clamped(aim);
+            aim.map(|a| a.0)
         } else {
             t
         };

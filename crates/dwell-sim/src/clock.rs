@@ -41,3 +41,33 @@ impl Deadline {
         }
     }
 }
+
+/// A stopwatch for the tick's phase times (`Server::tick_phases`): wall time natively, nothing
+/// on wasm32 (no clock there; the browser's figures come from the worker's own clock).
+pub struct Stopwatch {
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    at: std::time::Instant,
+}
+
+impl Stopwatch {
+    pub fn start() -> Self {
+        Self {
+            #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+            at: std::time::Instant::now(),
+        }
+    }
+    /// Milliseconds since the last lap (or the start), and starts the next lap.
+    pub fn lap_ms(&mut self) -> f64 {
+        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+        {
+            let now = std::time::Instant::now();
+            let ms = (now - self.at).as_secs_f64() * 1000.0;
+            self.at = now;
+            ms
+        }
+        #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+        {
+            0.0
+        }
+    }
+}

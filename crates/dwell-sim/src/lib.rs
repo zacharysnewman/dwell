@@ -7,6 +7,7 @@ pub mod clock;
 pub mod entropy;
 pub mod felling;
 pub mod fixed_step;
+pub mod jobs;
 pub mod lod_propagation;
 pub mod server;
 pub mod water;

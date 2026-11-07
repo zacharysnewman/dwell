@@ -256,6 +256,23 @@ that touches the public API, a release or the workflows:
 - **Licence notices:** adding or upgrading a dependency that ships in a build updates
   `shared/licenses` and `THIRD_PARTY_NOTICES` (`python3 shared/licenses/gen.py`; CI checks it).
 
+## Requirement: keep work fast (the 5-minute rule)
+
+Owner, 2026-11-06: "Anything longer than 5 minutes is fairly long." Treat any single process (a build,
+test, benchmark, browser session) or quiet stretch over 5 minutes as a signal to re-evaluate: cut it,
+change approach, or say why it is worth it. Watch for it while work runs, and keep looking for ways to be
+faster.
+
+- **One heavy job at a time** on the owner's machine (one agent building and testing), with the most CPU
+  for it; CI's own runs don't count.
+- **A shared warm build directory** for sequential agents (`CARGO_TARGET_DIR` pointed at the main
+  checkout's `target/`), not a cold `target/` per worktree; the disk is tight.
+- **Reproduce natively first;** the browser for the final check, once.
+- **The shortest simulated time that proves the point** (water minutes, not hours); long measurements at
+  most once before and once after.
+- **Narrow tests locally;** CI runs the full suite. Merge once local checks pass (the owner's standing
+  rule), and fix what CI finds after.
+
 ## Known CI failures (e2e, not caused by feature work)
 
 Check these before chasing an e2e failure:
