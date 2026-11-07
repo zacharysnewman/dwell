@@ -165,3 +165,23 @@ fn kept_while_within_the_render_radius_unloaded_beyond_it() {
     f.chunks(1, 5, Some(&mut unloads));
     assert!(unloaded(&unloads, [6, GC - 1, 0]));
 }
+
+/// An empty ChunkRequest is not a request for nothing: the wire carries 1..MAX_RESYNC_CHUNKS
+/// coordinates (ARCHITECTURE.md, the ChunkRequest layout; `!chunk_request_empty` in
+/// shared/protocol/vectors.txt), so it doesn't decode and the session is rejected as Malformed, as
+/// for any undecodable control message. No client sends one: the LOD system sends a batch only
+/// when it holds a chunk (`send_chunk_requests`), and the streamer's resync always names one.
+#[test]
+fn an_empty_request_is_a_malformed_message() {
+    let mut f = Fixture::new(flat());
+    join_streaming(&mut f, 1);
+    stream_view(&mut f);
+    f.send(1, Message::ChunkRequest(Vec::new()));
+    let out = f.take_all().remove(&1).unwrap_or_default();
+    assert!(
+        out.iter()
+            .any(|m| matches!(m, Message::Reject(r) if r.reason == RejectReason::Malformed)),
+        "{out:?}"
+    );
+    assert!(f.server.stream_stats_of(1).is_none());
+}
