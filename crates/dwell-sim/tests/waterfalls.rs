@@ -173,3 +173,26 @@ dwell_world::both_faces!(
         assert!(foot > down + 0.05, "the foot rose: {down:.3} → {foot:.3}");
     }
 );
+
+dwell_world::both_faces!(
+    fn the_notchs_spill_is_found_as_a_fall_from_the_cells_and_the_currents(f: FaceFrame) {
+        // docs/WATER_SURFACE_GRID.md §2e: the falls are found from what clients have too (the water
+        // cells and the current table), here the server's own after the grid ran.
+        let mut s = Scene::new(f);
+        s.dam();
+        s.run(2);
+        let notch: Vec<(i32, i32, i32)> = (3..=4)
+            .flat_map(|z| (6..=10).map(move |r| (8, r, z)))
+            .collect();
+        s.edit(&notch, M.air);
+        s.run(20);
+        let eye = f.point([10.0, m_of_row(BASE) + 3.0, 4.0]);
+        let falls = dwell_world::falls::falls_near(&s.world, eye, 32.0);
+        let fall = falls
+            .iter()
+            .find(|fl| fl.x == 8 && fl.dir == 0)
+            .unwrap_or_else(|| panic!("the notch falls: {falls:?}"));
+        assert_eq!((fall.z, fall.width), (3, 2), "{fall:?}");
+        assert!(fall.lip - fall.land > 2.0, "{fall:?}");
+    }
+);

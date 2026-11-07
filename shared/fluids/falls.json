@@ -1,0 +1,13 @@
+{
+  "$comment": "Waterfalls (docs/WATER_SURFACE_GRID.md §2e, Phase 53 G6): where water falls and how a fall pushes what is in it. A fall is a face between two columns where the water's current at the high column crosses the face at minSpeedMs or more, carrying minFlowM2s or more per metre of width (its depth × that speed), and the far column's surface (its water, or its floor if dry) lies more than minDropM below the near water's level (looked for at most maxDropM down), the cell beside the lip open. Faces side by side along one lip, their lips and landings within mergeM of each other, are one fall. The sheet's volume: beyond the face, reachM out, from the landing up to the lip, across the fall's width. In it, players and floating bodies are pushed toward the falling water's velocity, pushOutMs out over the lip and pushDownMs down, at pushRate per second (an exponential approach), each scaled by the fall's strength: its flow per metre over fullFlowM2s, at most 1; a body there can't rise (no swimming up a fall). Run `node shared/fluids/falls.mjs` after editing; CI fails if crates/dwell-world/src/falls.gen.rs is stale.",
+  "minSpeedMs": 0.05,
+  "minFlowM2s": 0.005,
+  "minDropM": 0.75,
+  "maxDropM": 48,
+  "mergeM": 0.3,
+  "reachM": 1.0,
+  "fullFlowM2s": 0.5,
+  "pushOutMs": 2.5,
+  "pushDownMs": 6,
+  "pushRate": 3
+}
