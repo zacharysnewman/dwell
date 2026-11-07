@@ -169,7 +169,10 @@ now, or later allow a few stacked water layers in the columns that have overhang
   the sleep band deep) that fell at all in its calm window (`FILM_FALL`, 0.1 mm) is not calm, and a
   sleeper owing half the free water it has (and having more than 0.01 m³) wakes to pay it.
   **Measured:** the fixture reservoir (`water::tests` `a_reservoir_filled_to_its_spill_falls_asleep`,
-  both faces) red awake all of its last 5 minutes and 45 cells written, green asleep and none.
+  both faces) red awake all of its last 5 minutes and 45 cells written, green asleep and none. Seed
+  0's dam sites (`measure_a_raised_dams_churn`) barely changed: z 7452 14–21 chunks awake, 18–546
+  cells a minute late on; z 7380 11–29 awake, 3–113 cells a minute (0.49.39: 13–18 and 22–32
+  awake). The deep reservoirs' own slosh (below) is the rest of it.
 - **Open: deep still water's slosh is barely damped** (BUGS.md #41b): a stirred 3.5 m basin sloshes
   ±1 cm, past the 5 mm sleep band, for 30 water minutes (`stirred_deep_water_settles`, ignored).
 - **A tick keeps to a budget** (0.49.7, BUGS.md #33): water runs on game time, so a water tick is

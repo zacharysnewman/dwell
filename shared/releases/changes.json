@@ -4,7 +4,7 @@
     {
       "version": "0.49.44",
       "changes": [
-        "Water held behind a dam settles and goes still instead of rippling on for ever"
+        "A river running through still water no longer sends ripples back through it, so a filled pond behind a dam can go still"
       ]
     },
     {
