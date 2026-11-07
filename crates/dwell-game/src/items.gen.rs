@@ -24,6 +24,16 @@ pub const ITEMS: [ItemDef; 17] = [
     ItemDef { name: "dwell:snowy_leaves", label: "Snowy leaves", block: "dwell:snowy_leaves", rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
 ];
 
+/// The keys that step the hotbar one slot left / right (`KeyboardEvent.code`).
+pub const HOTBAR_PREV_KEY: &str = "ArrowLeft";
+pub const HOTBAR_NEXT_KEY: &str = "ArrowRight";
+
+/// The wheel's travel (px) in one gesture that steps the hotbar one more slot.
+pub const WHEEL_NOTCH_PX: f64 = 120.0;
+
+/// The quiet (ms) after which a wheel event starts a new gesture, stepping at once.
+pub const WHEEL_GAP_MS: f64 = 200.0;
+
 /// The key that cycles the build modes (`KeyboardEvent.code`).
 pub const BUILD_MODE_KEY: &str = "KeyL";
 
