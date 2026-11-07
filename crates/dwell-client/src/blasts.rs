@@ -292,12 +292,12 @@ impl Blasts {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 /// `n` puffs at `share`: rounded up, so a blast draws at least one of each kind it has.
 fn shared(n: usize, share: f64) -> usize {
     ((n as f64 * share).ceil() as usize).min(n)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn puffs_of(
     out: &mut Vec<Puff>,
     b: &Blast,
