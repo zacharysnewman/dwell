@@ -100,6 +100,40 @@ impl LocalCore {
         water: dwell_sim::water::host::Placement,
         jobs_worker: bool,
     ) -> Result<Self, LocalError> {
+        Self::create_tuned(
+            face,
+            portal,
+            at,
+            at_spawn,
+            upgrade,
+            world_seed,
+            generator_version,
+            storage,
+            entropy,
+            water,
+            jobs_worker,
+            |_| {},
+        )
+    }
+
+    /// [`LocalCore::create_spawning`] with `tune` given the server's configuration last: the
+    /// native harness (`dwell-native`, docs/DEV_TOOLS.md "Native harness") gives generation and
+    /// the LOD native threads where the browser has its server-jobs worker.
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_tuned(
+        face: dwell_world::Face,
+        portal: bool,
+        at: Option<[f64; 3]>,
+        at_spawn: bool,
+        upgrade: bool,
+        world_seed: u64,
+        generator_version: u32,
+        storage: Option<impl StorageBackend>,
+        entropy: Box<dyn Entropy>,
+        water: dwell_sim::water::host::Placement,
+        jobs_worker: bool,
+        tune: impl FnOnce(&mut ServerConfig),
+    ) -> Result<Self, LocalError> {
         // The local player (player 1) lands on the point itself: its spawn spread taken back.
         let at_portal = portal
             .then(|| dwell_worldgen::portal_spawn_for(generator_version, world_seed, face))
@@ -133,6 +167,7 @@ impl LocalCore {
             water,
             ..ServerConfig::default()
         };
+        tune(&mut config);
         let (mut persisted, mut storage_error) = (false, String::new());
         if let Some(backend) = storage {
             match WorldDb::open_backend(backend) {
