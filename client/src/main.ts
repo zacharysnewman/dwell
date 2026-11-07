@@ -7,6 +7,7 @@ import {
   pingServer,
   setWorldFileVersion,
   swatchSize,
+  type WasmBytes,
   worldFileVersion,
   worldMapKeys,
 } from './engine/wasm';
@@ -70,6 +71,8 @@ import { applyHud } from './ui/hudSettings';
 import { startupMessage } from './ui/startupError';
 import { FpsMeter } from './ui/fps';
 import { type LoadingHud, LoadingScreen, loadingScreenEnabled } from './ui/loadingScreen';
+import type { LoadingStageId } from './ui/loading.gen';
+import type { StageRun } from './ui/loadingStages';
 import { START_HINT, TOUCH_START_HINT } from './ui/controls';
 import { formatMemory, jsHeapBytes, type MemoryReport } from './ui/memory';
 import type { LoopbackTransport } from './net/loopback';
@@ -331,12 +334,14 @@ declare global {
   interface Window {
     __dwell?: DwellDebug;
     __dwellTools?: DwellTools;
+    /** The loading screen's stages so far (§6.3; docs/DEV_TOOLS.md): when each began and ended. */
+    __dwellStages?: () => StageRun[];
   }
 }
 
 /** Loads the WASM module and offers its world-file tools (window.__dwellTools). */
-async function loadTools(): Promise<void> {
-  wasmMemory = ((await loadWasm()) as { memory?: WebAssembly.Memory }).memory ?? null;
+async function loadTools(onBytes?: WasmBytes): Promise<void> {
+  wasmMemory = ((await loadWasm(onBytes)) as { memory?: WebAssembly.Memory }).memory ?? null;
   window.__dwellTools = {
     worldFileVersion: (bytes) => worldFileVersion(bytes),
     setWorldFileVersion: (bytes, version) => setWorldFileVersion(bytes, version),
@@ -548,7 +553,10 @@ function mapDeps(): MapDeps {
     build: workerBuilder(makeJobWorker),
     store: typeof indexedDB === 'undefined' ? null : new IndexedDbMapStore(),
     onProgress: (ready, needed) => {
-      if (ready < needed) bootLoading?.note('Shaping the world…');
+      const stages = bootLoading?.stages;
+      const now = performance.now();
+      stages?.progress('worldMap', ready, needed, now);
+      if (ready >= needed) stages?.end('worldMap', now);
     },
   };
   return maps;
@@ -564,7 +572,14 @@ async function start(): Promise<App | null> {
   const mobile = prefersTouch();
   let client: Client;
   try {
-    await loadTools();
+    // The stages the loading screen lists (§6.3): the module's download, then the graphics.
+    const stages = loading.stages;
+    stages.begin('game', performance.now());
+    await loadTools((done, total) => {
+      stages.progress('game', done, total, performance.now());
+    });
+    stages.end('game', performance.now());
+    stages.begin('graphics', performance.now());
     client = await Client.create(canvas, {
       displayName: displayName(),
       clientVersion: recordedVersion(),
@@ -583,6 +598,7 @@ async function start(): Promise<App | null> {
       // The loading screen on joining; ?loading=off or the dwell.loading store "off" skip it.
       loadingScreen: loadingScreenEnabled(location.search, storage()),
     });
+    stages.end('graphics', performance.now());
   } catch (err) {
     loading.abort();
     showFatal(startupMessage(err, 'gpu' in navigator));
@@ -1264,6 +1280,8 @@ async function connect(app: App): Promise<void> {
       openMainMenu(app, access.message);
       return;
     }
+    // The world file is opened from here to the local world's worker (which ends the stage).
+    app.loading.stages.begin('worldFile', performance.now());
     // The world's chosen spawn is its first one: read only when its file is created.
     localWorld = {
       worldSeed: playing.seed,
@@ -1275,6 +1293,7 @@ async function connect(app: App): Promise<void> {
     worldName = playing.name;
     index.touch(playing.id, Date.now());
   } else if (launch.kind === 'link') {
+    app.loading.stages.begin('worldFile', performance.now());
     localWorld = parseLocalWorld(location.search);
     // A link to a world file that is already there opens a world saved before versioned releases
     // (ignored); a new one is this build's.
@@ -1321,6 +1340,13 @@ async function connect(app: App): Promise<void> {
     transport: preference,
     ...(localWorld ? { localWorld } : {}),
     worldMaps: (seed, version) => worldMaps(seed, version, mapDeps()),
+    // The local world's worker's stages (the world file, its server, the spawn), on this clock.
+    onStage: (id, phase, atMs) => {
+      // By id from the worker: an unknown one is ignored (the tracker checks it against the data).
+      const stage = id as LoadingStageId;
+      if (phase === 'begin') app.loading.stages.begin(stage, atMs);
+      else app.loading.stages.end(stage, atMs);
+    },
   };
   status.textContent = localWorld ? `Starting ${target}…` : `Connecting to ${target}…`;
   const client = app.client;
@@ -1331,6 +1357,8 @@ async function connect(app: App): Promise<void> {
     // "Don't ask again" for this server's blocks (ADR 0038), keyed by how it was reached.
     const serverKey = code ? `code:${code}` : invite ? `invite:${target}` : `local:${target}`;
     client.trustRegistry(trustedHash(storage(), serverKey) ?? undefined);
+    const stages = app.loading.stages;
+    if (code || invite) stages.begin('connect', performance.now());
     if (code) {
       const base = configuredMasterUrl();
       if (!base) throw new Error('this build has no master server configured');
@@ -1345,6 +1373,9 @@ async function connect(app: App): Promise<void> {
         local.loopback.postToWorker({ t: 'respawnPreload', on: false });
       }
     }
+    // Connected: the join's handshake until the client places the player (its readout then says).
+    stages.end('connect', performance.now());
+    stages.begin('join', performance.now());
     enableGameMenu(app, local?.save ?? null);
     app.settings?.setSubtitle(localWorld ? `${target} · this device` : target);
     // A local world can be opened to friends (Host…, Phase 5c).
@@ -1448,6 +1479,11 @@ if (launchOf(location.search).kind === 'menu') {
     loadingScreenEnabled(location.search, storage()),
     prefersReducedMotion(),
   );
+  // The page itself, from opening it to this script running (the HTML and the script's download).
+  bootLoading.stages.begin('page', 0);
+  bootLoading.stages.end('page', performance.now());
+  const bootStages = bootLoading.stages;
+  window.__dwellStages = () => bootStages.timeline();
   void routeMadeWorld().then(async (ok) => {
     if (!ok) return;
     const app = await start();

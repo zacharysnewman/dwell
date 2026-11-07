@@ -2327,3 +2327,83 @@ body.loading-wait #brush-panel {
   background: linear-gradient(90deg, var(--grass-dark), var(--grass-light));
   transition: width 120ms linear;
 }
+
+/* A stage without a known total: a band sweeping the bar, so the screen never looks stopped. */
+.ls-bar.ls-indeterminate .ls-fill {
+  width: 30%;
+  transition: none;
+  animation: ls-sweep 1.4s ease-in-out infinite;
+}
+
+@keyframes ls-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(340%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ls-bar.ls-indeterminate .ls-fill {
+    width: 100%;
+    opacity: 0.35;
+    animation: none;
+  }
+}
+
+/* The start's stages so far (ui/loadingStages.ts): name, progress, time; the running one in ink. */
+.ls-stages {
+  display: grid;
+  gap: 2px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--ink-soft);
+  font: 500 12px/1.35 var(--font-body);
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+}
+
+.ls-stages li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 10px;
+  opacity: 0.72;
+}
+
+.ls-stages li.ls-running {
+  color: var(--ink);
+  font-weight: 700;
+  opacity: 1;
+}
+
+.ls-stages li.ls-slow .ls-stage-time {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.ls-stage-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ls-stage-time {
+  min-width: 3.6em;
+  text-align: right;
+}
+
+/* A short phone screen: the list in smaller type so the sheet fits. */
+@media (max-height: 480px) {
+  .ls-stages {
+    margin-top: 8px;
+    font-size: 11px;
+    line-height: 1.25;
+  }
+
+  .ls-title {
+    font-size: 22px;
+  }
+}

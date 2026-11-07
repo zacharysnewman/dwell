@@ -2,7 +2,8 @@
 // Generates the loading screen's tunables (ARCHITECTURE.md §6.3) for Rust
 // (crates/dwell-game/src/loading.gen.rs: the near ring, the timeout and the respawn preload),
 // for the server (crates/dwell-sim/src/respawn_preload.gen.rs: the respawn preload) and for the
-// shell (client/src/ui/loading.gen.ts: the fade in from white) from shared/look/loading.json,
+// shell (client/src/ui/loading.gen.ts: the fade in from white and the start's stages) from
+// shared/look/loading.json,
 // after validating them: an
 // unknown, missing or out-of-range entry fails with its path named, and the near ring may not reach
 // past the server's streamed view (shared/protocol/constants.json's viewRadiusChunks). The output is
@@ -27,7 +28,7 @@ const fail = (m) => {
 /** Checks the tunables; returns them. Throws naming the entry. */
 export function validateLoading(data, viewRadius = VIEW_RADIUS_CHUNKS) {
   if (typeof data !== 'object' || data === null || Array.isArray(data)) fail('(root) must be an object');
-  const keys = ['radiusChunks', 'timeoutS', 'respawnPreload', 'fade'];
+  const keys = ['radiusChunks', 'timeoutS', 'respawnPreload', 'fade', 'stages'];
   for (const k of Object.keys(data)) if (k !== '$comment' && !keys.includes(k)) fail(`unknown entry ${k}`);
   for (const k of keys) if (!(k in data)) fail(`missing entry ${k}`);
   const r = data.radiusChunks;
@@ -42,6 +43,7 @@ export function validateLoading(data, viewRadius = VIEW_RADIUS_CHUNKS) {
   }
   validateRespawnPreload(data.respawnPreload, viewRadius);
   validateFade(data.fade);
+  validateStages(data.stages);
   return data;
 }
 
@@ -87,6 +89,44 @@ function validateFade(f) {
   if (f.cpuDurationS > f.durationS || f.reducedMotionDurationS > f.durationS) {
     fail('fade.cpuDurationS and fade.reducedMotionDurationS must be at most fade.durationS (they are the quick fades)');
   }
+}
+
+/** A stage's progress kinds: none (absent), bytes downloaded, or a count of things done. */
+export const STAGE_PROGRESS = ['bytes', 'count'];
+/** The longest label (characters): one line on a phone's loading sheet. */
+export const STAGE_LABEL_MAX = 32;
+
+/** Checks the start's stages (`stages`). Throws naming the entry. */
+function validateStages(st) {
+  if (typeof st !== 'object' || st === null || Array.isArray(st)) fail('stages must be an object');
+  const keys = ['slowS', 'list'];
+  for (const k of Object.keys(st)) if (k !== '$comment' && !keys.includes(k)) fail(`unknown entry stages.${k}`);
+  for (const k of keys) if (!(k in st)) fail(`missing entry stages.${k}`);
+  if (typeof st.slowS !== 'number' || !Number.isFinite(st.slowS) || st.slowS < 0.5 || st.slowS > 60) {
+    fail(`stages.slowS must be a number in [0.5, 60], got ${JSON.stringify(st.slowS)}`);
+  }
+  if (!Array.isArray(st.list) || st.list.length === 0) fail('stages.list must be a non-empty array');
+  const seen = new Set();
+  st.list.forEach((e, i) => {
+    const at = `stages.list[${i}]`;
+    if (typeof e !== 'object' || e === null || Array.isArray(e)) fail(`${at} must be an object`);
+    for (const k of Object.keys(e)) {
+      if (!['id', 'label', 'progress'].includes(k)) fail(`unknown entry ${at}.${k}`);
+    }
+    if (typeof e.id !== 'string' || !/^[a-z][A-Za-z0-9]*$/.test(e.id)) {
+      fail(`${at}.id must be a lowerCamel name, got ${JSON.stringify(e.id)}`);
+    }
+    if (seen.has(e.id)) fail(`${at}.id ${e.id} is listed twice`);
+    seen.add(e.id);
+    const named = `stages.list ${e.id}`;
+    if (typeof e.label !== 'string' || e.label.trim() === '' || e.label.length > STAGE_LABEL_MAX) {
+      fail(`${named}: label must be 1–${STAGE_LABEL_MAX} characters, got ${JSON.stringify(e.label)}`);
+    }
+    if (/(…|\.\.\.)$/.test(e.label)) fail(`${named}: label must not end in an ellipsis (the screen adds one)`);
+    if ('progress' in e && !STAGE_PROGRESS.includes(e.progress)) {
+      fail(`${named}: progress must be one of ${STAGE_PROGRESS.join(', ')} (or absent), got ${JSON.stringify(e.progress)}`);
+    }
+  });
 }
 
 const rf = (v) => (Number.isInteger(v) ? `${v}.0` : `${v}`);
@@ -139,6 +179,27 @@ export function loadingTs(data) {
     `  cpuDurationS: ${f.cpuDurationS},`,
     `  reducedMotionDurationS: ${f.reducedMotionDurationS},`,
     '} as const;',
+    '',
+    "/** A start stage's id (shared/look/loading.json `stages.list`): what code reports it by. */",
+    `export type LoadingStageId = ${data.stages.list.map((e) => `'${e.id}'`).join(' | ')};`,
+    '',
+    "/** One stage's definition. */",
+    'export interface LoadingStageDef {',
+    '  id: LoadingStageId;',
+    '  label: string;',
+    "  progress?: 'bytes' | 'count';",
+    '}',
+    '',
+    "/** The loading screen's stages while the game starts, in their usual order (ARCHITECTURE.md §6.3). */",
+    'export const LOADING_STAGES: readonly LoadingStageDef[] = [',
+    ...data.stages.list.map(
+      (e) =>
+        `  { id: '${e.id}', label: ${JSON.stringify(e.label)}${e.progress ? `, progress: '${e.progress}'` : ''} },`,
+    ),
+    '];',
+    '',
+    '/** A stage running longer than this (s) is marked slow. */',
+    `export const LOADING_STAGE_SLOW_S = ${data.stages.slowS};`,
     '',
   ].join('\n');
 }

@@ -11,6 +11,7 @@ src/audio/music.gen.ts
 src/input/gamepad.gen.ts
 src/ui/playOverrides.gen.ts
 src/ui/hud.gen.ts
+src/ui/loading.gen.ts
 ../docs/
 bench/out/
 src/ui/hud.gen.css

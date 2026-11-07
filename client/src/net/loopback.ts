@@ -10,6 +10,9 @@ const SESSION = LOCAL_SESSION;
 /** Worker output for a session other than the local player's (a friend-world guest). */
 export type GuestOutput = Extract<FromWorker, { session: number }>;
 
+/** A loading stage of the local world's start began or ended (`atMs` on the page's clock). */
+export type StageReport = (id: string, phase: 'begin' | 'end', atMs: number) => void;
+
 /**
  * Transport to the integrated server running in a local-mode worker (ARCHITECTURE.md §8.1).
  * Carries the same protocol bytes as the network transports.
@@ -39,14 +42,22 @@ export class LoopbackTransport implements Transport {
     };
   }
 
-  /** Starts the worker and resolves once the WASM core is loaded. */
+  /**
+   * Starts the worker and resolves once the WASM core is loaded. `onStage`: the start's loading
+   * stages as the worker reports them (§6.3), `atMs` on this page's clock. `maps`: the world's
+   * maps still on the way; the worker starts at once (its world file, its WASM) and waits for them.
+   */
   static start(
     worker: Worker,
     world: LocalWorld & { maps?: Uint8Array[]; waterInline?: boolean; jobsInline?: boolean },
+    onStage?: StageReport,
+    maps?: Promise<Uint8Array[] | undefined>,
   ): Promise<LoopbackTransport> {
     return new Promise((resolve, reject) => {
       worker.onmessage = (e: MessageEvent<FromWorker>) => {
-        if (e.data.t === 'ready') {
+        if (e.data.t === 'stage') {
+          onStage?.(e.data.id, e.data.phase, e.data.atMs - performance.timeOrigin);
+        } else if (e.data.t === 'ready') {
           const transport = new LoopbackTransport(worker);
           transport.post({
             t: 'connect',
@@ -62,7 +73,14 @@ export class LoopbackTransport implements Transport {
       worker.onerror = (e) => {
         reject(new Error(e.message || 'local world worker failed'));
       };
-      worker.postMessage({ t: 'start', ...world } satisfies ToWorker);
+      worker.postMessage({
+        t: 'start',
+        ...world,
+        ...(maps ? { mapsLater: true } : {}),
+      } satisfies ToWorker);
+      void maps?.then((m) => {
+        worker.postMessage({ t: 'maps', maps: m ?? [] } satisfies ToWorker);
+      });
     });
   }
 
@@ -182,6 +200,7 @@ export class LoopbackTransport implements Transport {
         this.serverTickMs = msg.ticks > 0 ? msg.busyMs / msg.ticks : null;
         break;
       case 'ready':
+      case 'stage':
         break;
     }
   }
