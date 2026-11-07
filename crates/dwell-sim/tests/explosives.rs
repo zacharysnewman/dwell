@@ -200,15 +200,24 @@ dwell_world::both_faces!(
             .iter()
             .partition(|&&(o, _)| dist(o) <= e.destroy_radius_m);
         assert!(core.len() > 20, "a core of ground: {}", core.len());
-        assert_eq!(
+        // Only the shell cells with a way out fly (docs/EXPLOSIVES.md §3): those pushed into the
+        // ground below stay as terrain.
+        assert!(
+            pieces.len() < shell.len() && pieces.len() > 80,
+            "{} pieces of a {}-cell shell",
             pieces.len(),
-            shell.len(),
-            "every breakable block from the destroy radius out to the radius is a piece, none within"
+            shell.len()
         );
         assert!(shell.len() > 150, "a crater's worth: {}", shell.len());
-        for &(o, _) in &what {
-            assert_eq!(s.get(o), M.air, "{o:?} cleared");
+        for &(o, _) in &core {
+            assert_eq!(s.get(*o), M.air, "{o:?} cleared");
         }
+        let left = shell.iter().filter(|&&&(o, m)| s.get(o) == m).count();
+        assert_eq!(
+            left + pieces.len(),
+            shell.len(),
+            "the rest stay as they were"
+        );
         // No piece came from the core: each starts at its cell's centre, past the destroy radius.
         let centre = DVec3::from(dwell_sim::felling::cell_centre(s.cell(at)));
         for p in &pieces {
@@ -223,7 +232,8 @@ dwell_world::both_faces!(
             require("dwell:bedrock"),
             "the bedrock stays"
         );
-        // Each flung out from the blast (face-locally up and away), the near ones faster.
+        // Each flung out of the crater (face-locally up), the near ones faster.
+        let up = DVec3::from(f.vector([0.0, 1.0, 0.0]));
         let mut by_d: Vec<(f64, f64)> = Vec::new();
         for p in &pieces {
             let h = s.fx.server.body_handle(p.id).expect("a body");
@@ -233,8 +243,8 @@ dwell_world::both_faces!(
             // A slow one at the edge is jostled by its packed neighbours in the step it spawned in.
             if v.length() > 1.0 {
                 assert!(
-                    v.dot(pos - centre) > 0.0,
-                    "{:?} flung outward: {v:?}",
+                    v.dot(up) > 0.0,
+                    "{:?} flung up and out: {v:?}",
                     p.cells[0].state
                 );
             }
@@ -254,8 +264,8 @@ dwell_world::both_faces!(
             "faster near it: {near:.2} vs {far:.2} m/s"
         );
         // The log over the radius fell (the blast cut it) or flew.
-        let up = f.state(require("dwell:log[axis=y]"));
-        assert!((1..=3).all(|r| s.get([2, r, 0]) != up));
+        let log = f.state(require("dwell:log[axis=y]"));
+        assert!((1..=3).all(|r| s.get([2, r, 0]) != log));
     }
 );
 
@@ -382,6 +392,8 @@ fn a_fixture_explosive_by_data_alone_blasts_by_its_own_numbers() {
         radius_m: 2.0,
         destroy_radius_m: 1.0,
         loosen_radius_m: 2.0,
+        // Every shell cell flies (no path test): the count below is the shell's.
+        open_path_m: 0.0,
         ..dynamite()
     }]);
     s.put(1, 0.5, -3.5);
@@ -441,6 +453,8 @@ fn the_loosen_shell_past_the_radius_becomes_pieces_given_no_impulse() {
         radius_m: 2.0,
         destroy_radius_m: 1.0,
         loosen_radius_m: 3.0,
+        // Buried, nothing would fly: every cell does (no path test).
+        open_path_m: 0.0,
         ..dynamite()
     };
     let mut s = Scene::flat(1);
@@ -477,6 +491,8 @@ fn a_blasts_pieces_touch_no_other_piece_in_its_window_and_do_after_it() {
     // docs/EXPLOSIVES.md §3), but available by data.
     let e = ExplosiveData {
         no_piece_contact_s: 1.0,
+        // Buried, nothing would fly: every cell does (no path test).
+        open_path_m: 0.0,
         ..dynamite()
     };
     // Without the window the packed pieces touch at once (the check below would see it).
@@ -521,81 +537,114 @@ fn a_blasts_pieces_touch_no_other_piece_in_its_window_and_do_after_it() {
     );
 }
 
-#[test]
-fn a_blast_in_solid_ground_costs_a_bounded_tick_and_its_pieces_settle() {
-    // face-a-only: a cost bound on the flat world (face A's); the blast's frames are tested on both
-    // faces above.
+/// A charge on the flat world's ground (face A's, endless: what flies far lands), blown by `e`:
+/// its pieces, the body-ticks and ticks until every piece is a block again (at most 20 s), the
+/// worst tick (ms).
+fn surface_settle(e: ExplosiveData) -> (usize, usize, u32, f64) {
     let mut s = Scene::flat(1);
+    s.fx.server.set_explosives(vec![e]);
     s.put(1, 0.5, -3.5);
     s.run(2);
     s.set([0, 0, 0], require("dwell:dynamite"));
     s.light([0, 0, 0]);
     s.run(1);
     s.put(1, 0.5, -13.0);
-    // Buried in stone: the whole 4 m ball is ground (its cells but its own; those past its 2 m
-    // core fly).
-    for o in cells_within(dynamite().radius_m)
-        .into_iter()
-        .skip(1)
-        .filter(|o| o[1] >= 0)
-    {
-        s.set(o, require("dwell:stone"));
-    }
     let fuse = s.fx.server.fuses()[0].1 as usize;
     s.run(fuse - 1);
-    s.fx.server.tick_phases();
-    let t = std::time::Instant::now();
-    let out = s.run(1);
-    let blast_ms = t.elapsed().as_secs_f64() * 1000.0;
-    let phases: Vec<String> =
-        s.fx.server
-            .tick_phases()
-            .iter()
-            .filter(|(_, v)| *v >= 0.1)
-            .map(|(n, v)| format!("{n} {v:.1}"))
-            .collect();
-    println!("the blast's tick: {}", phases.join(", "));
-    let n = spawns(&out).len();
-    let mut body_ticks = 0;
-    let mut worst = 0.0f64;
-    let mut ticks = 0;
+    let n = spawns(&s.run(1)).len();
+    let (mut body_ticks, mut ticks, mut worst) = (0, 0u32, 0.0f64);
     while s.fx.server.body_count() > 0 && ticks < 20 * 60 {
         let t = std::time::Instant::now();
         s.run(1);
-        let ms = t.elapsed().as_secs_f64() * 1000.0;
-        let phases = s.fx.server.tick_phases();
-        if ms > 4.0 {
-            let p: Vec<String> = phases
-                .iter()
-                .filter(|(_, v)| *v >= 0.5)
-                .map(|(n, v)| format!("{n} {v:.1}"))
-                .collect();
-            println!("  tick {ticks}: {ms:.1} ms: {}", p.join(", "));
-        }
-        worst = worst.max(ms);
+        worst = worst.max(t.elapsed().as_secs_f64() * 1000.0);
         body_ticks += s.fx.server.body_count();
         ticks += 1;
-        if ticks % 120 == 0 {
-            println!("  {} s: {} bodies", ticks / 60, s.fx.server.body_count());
-        }
     }
-    println!(
-        "{n} pieces; the blast's tick {blast_ms:.1} ms; {ticks} ticks to settle, worst {worst:.1} ms, {body_ticks} body-ticks"
-    );
-    let shell = cells_within(dynamite().radius_m)
-        .into_iter()
-        .filter(|&o| dist(o) > dynamite().destroy_radius_m)
-        .count();
-    assert_eq!(n, shell, "every cell of the 2–4 m shell flies");
     assert_eq!(
         s.fx.server.body_count(),
         0,
         "every piece settled within 20 s"
     );
-    // 0.49.41: the 2–4 m shell's pieces, kept apart 1 s (0.49.38: 952 from the 2–5 m shell,
-    // ~172,000 body-ticks).
-    assert!(body_ticks <= 120_000, "{body_ticks} body-ticks");
+    (n, body_ticks, ticks, worst)
 }
+
+#[test]
+fn a_surface_blast_flings_about_half_the_pieces_out_of_its_crater_and_they_settle() {
+    // face-a-only: a cost bound on the flat world (face A's); the blast's directions are tested on
+    // both faces below. Owner (2026-11-06): pushed radially, half the shell was driven into the
+    // ground, "where it jams and takes 10–30 s to settle". Before: every shell cell flew along its
+    // line from the blast (path 0, no blend).
+    let now = surface_settle(dynamite());
+    let before = surface_settle(ExplosiveData {
+        open_path_m: 0.0,
+        open_blend: 0.0,
+        ..dynamite()
+    });
+    println!("now {now:?}, before {before:?} (pieces, body-ticks, ticks, worst ms)");
+    // Natively on the flat ground the pieces once driven into it came to rest at once (1.4 s,
+    // ~13,400 body-ticks); flung up out of the crater they fly and land (~5.7 s, ~14,100 from
+    // about half as many pieces): fewer bodies, not fewer body-ticks (docs/EXPLOSIVES.md §3.2).
+    assert!(now.0 < before.0 * 3 / 5, "pieces {} vs {}", now.0, before.0);
+    assert!(
+        now.1 <= 20_000,
+        "body-ticks {} (before {})",
+        now.1,
+        before.1
+    );
+}
+
+/// Blows dynamite in face `f`'s scene after `shape` has laid out the rock round it (face-local
+/// cells; the charge's at the origin): the mean of its pieces' velocities, face-local, and their
+/// count.
+fn blast_mean(f: FaceFrame, shape: fn([i32; 3]) -> bool) -> ([f64; 3], usize) {
+    let mut s = Scene::new(f, 1);
+    s.put(1, 0.5, -12.5);
+    s.run(2);
+    let stone = require("dwell:stone");
+    for o in cells_within(6.0) {
+        let m = if shape(o) { stone } else { M.air };
+        s.set(o, m);
+    }
+    let lit = dwell_world::explosives::lit_state(&dynamite()).expect("lit");
+    s.set([0, 0, 0], lit);
+    let at = s.cell([0, 0, 0]);
+    s.fx.server.light_fuse(at, 0, 0.0);
+    let out = s.run(2);
+    let pieces = spawns(&out);
+    let mut sum = DVec3::ZERO;
+    for p in &pieces {
+        let h = s.fx.server.body_handle(p.id).expect("a body");
+        sum += s.fx.server.physics().velocity(h);
+    }
+    let mean = sum / pieces.len().max(1) as f64;
+    (f.vector(mean.to_array()), pieces.len())
+}
+
+dwell_world::both_faces!(
+    fn the_pieces_leave_through_the_open_side(f: FaceFrame) {
+        // Owner (2026-11-06): "putting dynamite on the side of a cliff or the underside of a cave
+        // roof would blast out or down".
+        let cases: [(&str, fn([i32; 3]) -> bool, [f64; 3]); 3] = [
+            ("flat ground", |o| o[1] < 0, [0.0, 1.0, 0.0]),
+            ("a cliff face", |o| o[0] < 0, [1.0, 0.0, 0.0]),
+            ("a cave roof", |o| o[1] > 0, [0.0, -1.0, 0.0]),
+        ];
+        for (name, shape, want) in cases {
+            let (mean, n) = blast_mean(f, shape);
+            let v = DVec3::from(mean);
+            let cos = v.normalize_or_zero().dot(DVec3::from(want));
+            println!("{name}: {n} pieces, mean {v:.2?}, cos {cos:.2}");
+            assert!(n > 30, "{name}: {n} pieces");
+            assert!(cos > 0.7, "{name}: mean velocity {v:.2?} (cos {cos:.2})");
+        }
+        // Buried: no way out, so the shell stays (a cavity), nothing pushed one way.
+        let (mean, n) = blast_mean(f, |o| o != [0, 0, 0]);
+        assert!(
+            n == 0 || DVec3::from(mean).length() < 1.0,
+            "buried: {n}, {mean:?}"
+        );
+    }
+);
 
 #[test]
 #[ignore = "a measurement: cargo test --release -p dwell-sim --test explosives measure_dynamite_configs -- --ignored --nocapture"]

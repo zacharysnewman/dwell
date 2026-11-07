@@ -21,13 +21,15 @@ test('an explosive added by data alone is in the output', () => {
   const blocks = registryBlocks();
   blocks.set('test:charge', { placeable: true, properties: {} });
   blocks.set('test:lit_charge', { placeable: false, properties: {} });
-  d.explosives.push({ ...structuredClone(d.explosives[0]), name: 'test:charge', block: 'test:charge', lit: 'test:lit_charge', radiusM: 2.5, destroyRadiusM: 1, loosenRadiusM: 3.5, noPieceContactS: 0.25 });
+  d.explosives.push({ ...structuredClone(d.explosives[0]), name: 'test:charge', block: 'test:charge', lit: 'test:lit_charge', radiusM: 2.5, destroyRadiusM: 1, loosenRadiusM: 3.5, noPieceContactS: 0.25, openSenseM: 2, openBlend: 0.3, openPathM: 0.5 });
   const rust = explosivesRust(validateExplosives(d, blocks));
   assert.match(rust, /name: "test:charge",/);
   assert.match(rust, /radius_m: 2\.5,/);
   assert.match(rust, /destroy_radius_m: 1\.0,/);
   assert.match(rust, /loosen_radius_m: 3\.5,/);
   assert.match(rust, /no_piece_contact_s: 0\.25,/);
+  assert.match(rust, /open_blend: 0\.3,/);
+  assert.match(rust, /open_path_m: 0\.5,/);
 });
 
 test('bad entries fail with their path named', () => {
@@ -40,6 +42,8 @@ test('bad entries fail with their path named', () => {
     [(d) => (d.explosives[0].loosenRadiusM = 3), /loosenRadiusM must be at least its radiusM/],
     [(d) => delete d.explosives[0].loosenRadiusM, /loosenRadiusM must be a number/],
     [(d) => (d.explosives[0].noPieceContactS = -1), /noPieceContactS must be a number in \[0, 10\]/],
+    [(d) => (d.explosives[0].openBlend = 1.5), /openBlend must be a number in \[0, 1\]/],
+    [(d) => delete d.explosives[0].openPathM, /openPathM must be a number/],
     [(d) => (d.explosives[0].block = 'dwell:nope'), /block: "dwell:nope" is not a block/],
     [(d) => (d.explosives[0].lit = 'dwell:stone'), /must not be placeable/],
     [(d) => (d.explosives[0].ignitedBy = ['dwell:nope']), /ignitedBy\[0\]/],

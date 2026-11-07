@@ -1,4 +1,4 @@
-# Explosives: dynamite **[built, 0.49.32; cost, 0.49.33–0.49.34; 5 m with a destroyed core, 0.49.38; 4 m ×1.5, loosen and no-contact options, 0.49.41]**
+# Explosives: dynamite **[built, 0.49.32; cost, 0.49.33–0.49.34; 5 m with a destroyed core, 0.49.38; 4 m ×1.5, loosen and no-contact options, 0.49.41; out through the open side, 0.49.45]**
 
 Owner (2026-11-06): "dynamite block that explodes after a short time when placed, it causes blocks in a
 radius to be affected by physics and appropriate force applied." The first use of the explosion
@@ -86,6 +86,38 @@ it as usual. The server starts the fuse for every lit explosive an edit writes.
   5.8, physics 4.0), the first second 4.2 ms a tick, 50–70 terrain-collision builds a second. Floating
   pieces read the waterfalls' columns once per pass (`falls::FallMemo`, 0.49.33): each wet piece had
   scanned 49 columns up and down their water, the pieces phase 100 → 37 ms of that second.
+- **Out through the open side** (0.49.45; owner, 2026-11-06: pushed radially, "at least half the shell is pushed
+  into the ground, where it jams and takes 10–30 s to settle"; "putting dynamite on the side of a cliff or the
+  underside of a cave roof would blast out or down"). Before the blast clears anything, the cells within
+  `openSenseM` (3 m) give the way out (`explosives::open_dir`): the mean of the unit directions to the open
+  cells (air, liquid) less those to the solid ones, doubled and at most 1 long: flat ground up, a cliff face out,
+  a cave roof down (each length 1), buried about 0. Computed from world cells, so face B's mirrored ground gives
+  the mirrored way out with no frame code. Each flung piece goes along its line from the blast (no `lift`: that
+  is the players' and bodies' push now) turned toward the way out by `openBlend` (0.6) × the openness
+  (`piece_dir`); buried, radial. **What can't move stays** (`launching`): a shell cell flies only if its push,
+  out to `openPathM` (1 m) or until it reaches open space (air, liquid, the cleared core), meets no rock and
+  every shell cell it passes flies too; decided as a spread from the opening until nothing changes (owner's
+  correction: the rock in the way "would need to exclude the pieces that are about to be thrown"), so the order
+  does not matter. The rest stay as terrain. Loosened cells (past `radiusM`) fly whatever. `openPathM` 0: every
+  cell flies, as before.
+
+### 3.2 The open side, measured (0.49.45)
+
+Native release (`tests/explosives.rs`, the scene's stone, both faces): pieces' mean velocity, face-local, against
+the open side's normal: flat ground 112 pieces, cos 1.00 (0.62 m/s mean, up); a cliff face 34, cos 0.94–0.95
+(out); a cave roof 112, cos 1.00 (down); buried, none (a cavity). On the flat world, a charge on the ground:
+
+| | Pieces | Body-ticks | Settled | Worst tick |
+|---|---|---|---|---|
+| Before (radial, every shell cell; `openPathM` 0, `openBlend` 0) | 208 | 13,420 | 1.4 s | 3.9 ms |
+| Now (open side, 3 m sense, 0.6 blend, 1 m path) | 112 | 14,086 | 5.7 s | 5.1 ms |
+
+About half the pieces, the same body-ticks: natively the pieces once driven into the flat ground came to rest
+at once, where now they fly up out of the crater and land. The jam the owner saw (10–30 s) was in Chrome at
+seed 0's dam site; **the Chrome measurement there (pieces, ticks a second, frames, settle time against A's 452
+pieces, 48 ticks slowest second, ~9 s) and the 5 m radius under the new rules were not measured in this change**
+(time box): next. The surface test pins fewer than 3/5 of the old pieces and at most 20,000 body-ticks.
+
 ### 3.1 The owner's four, compared (0.49.41)
 
 Chrome on the GPU (`?local=1&seed=0&fresh=1&at=2364.5,142,7443.5&time=0.45`, the LOD settled 20 s; the
