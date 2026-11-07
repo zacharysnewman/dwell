@@ -1245,7 +1245,10 @@ fn measure_blast_cost() {
             ticks += 1;
         }
         tick_ms.sort_by(f64::total_cmp);
-        let p95 = tick_ms.get(tick_ms.len() * 95 / 100).copied().unwrap_or(0.0);
+        let p95 = tick_ms
+            .get(tick_ms.len() * 95 / 100)
+            .copied()
+            .unwrap_or(0.0);
         println!(
             "{name}: {n} pieces, tick mean {:.2} p95 {p95:.2} worst {worst:.1} ms, first second {first_s:.0} ms, physics {physics:.0} ms, terrain {terrain:.0} ms, settled in {:.1} s ({} left)",
             total / f64::from(ticks.max(1)),

@@ -325,7 +325,7 @@ maps, `SHADOW_WGSL`), `dwell-look` `shadows.rs` (the setting, the light that cas
   must be drawn again: the eye has left the slack, the light has turned `lightTurnDeg` (0.25°; the
   sun turns about 0.15° a second), the casters in its box changed (an order-free signature of their
   mesh identities, skirts and whether they fade: a chunk meshed, replaced or dropped, an LOD swap
-  begun or ended), or other players are about (once every `refreshFrames`). At most `farPerFrame`
+  begun or ended), or moving casters are about: other players, or falling pieces (once every `refreshFrames`; a piece's caster identity is its id and part, not its pose, since 0.50.15: with the pose every flying piece redrew a far cascade every frame, DEV_TOOLS.md "Blasts and floods (M1 Air)"). At most `farPerFrame`
   (1) far cascades are drawn in a frame, the most urgent first and then the longest kept, so a
   frame never draws them all, whatever changed (no spikes); one not drawn yet for this light holds
   nothing (`NO_CASCADE`), and its fragments take the next cascade or the far shadows. Standing or

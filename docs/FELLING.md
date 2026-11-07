@@ -195,8 +195,9 @@ snapshots, at most every 250 ms).
   not — red without the dominance, on both faces); hit damage (unit tests, and a server test: a
   trunk falling on a second player hurts them once, not the cutter, and leaves them alive on the
   floor); riding (a player on a sliding piece goes with it, both faces; the prediction rides a
-  piece's stand-in); falling pieces cast shadows (their pose in their caster identity, so a kept
-  cascade is drawn again as they move; unit test, checked in Chrome); sounds (`fell`, `piece_land`,
+  piece's stand-in); falling pieces cast shadows (moving casters: a kept cascade is drawn again
+  every `refreshFrames` while they move, their caster identity their id and part since 0.50.15; unit
+  test, checked in Chrome); sounds (`fell`, `piece_land`,
   unit test); the bench scenario `felling`. Deviation: no e2e spec — main's e2e has failed since
   before this work (PR #236), and the server tests cover the loop end to end.
 

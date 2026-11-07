@@ -4,7 +4,7 @@
     {
       "version": "0.50.15",
       "changes": [
-        "No gameplay changes: dynamite blasts and floods were measured on a MacBook Air (they hold 60 fps; a chain of four charges dips to 58)."
+        "Smoother dynamite: flying debris no longer makes the distant shadows redraw every frame, so a chain of blasts drops far fewer frames."
       ]
     },
     {

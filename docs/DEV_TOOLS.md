@@ -1031,8 +1031,10 @@ a tick are not in `serverStats()` yet (not measured).
   chain of four: 58.1 fps, 22 `GPU-wait` skips. Those are the GPU's, not the CPU's: the frame before each
   skip took 4.4 ms of `frame.cpu` (p50 4.1), `gpu.frame` p95 18.3 ms and `pacing.done` p95 30.6. What the
   pieces add on the GPU is their shadows: blue (no pieces) draws `gpu.frame` 11.5 ms and `gpu.shadows` 0.5,
-  red and yellow 14.0 and 2.5 (p95 5.2–5.7): ~2.5 ms of shadow casters while they fly (where in the shadow passes was not
-  isolated), four times the pieces in the chain. The smoke and dust (176 billboards at
+  red and yellow 14.0 and 2.5 (p95 5.2–5.7), with 1.85 cascades drawn a frame against blue's 1.0: a
+  falling piece's shadow-caster identity held its pose, so every flying piece changed the signature of the
+  kept far cascades and one was drawn again every frame (`farPerFrame`), all its terrain with it (555
+  thousand triangles a frame against 43). Fixed below. The smoke and dust (176 billboards at
   the chain's peak) did not show in a pass of their own (`gpu.near` 7.9 in every blast).
 - **The main thread is not the limit in a blast or a flood**: `frame.cpu` p95 5.4–7.9 ms, max ≤ 12.8, well
   under the ~12 ms where the pacing skips start ([Flight loading](#flight-loading-m1-air)). The crater's
@@ -1047,6 +1049,22 @@ a tick are not in `serverStats()` yet (not measured).
   frame time; a worst tick of 47 ms delays a snapshot by ~3 ticks, which the clients' interpolation absorbs.
 - **The flood is cheap**: the water worker's longest run is 42 ms (17 at the breach) but on its own worker,
   owing nothing; the server's tick is unchanged (0.2–0.5 ms).
+
+**Built in 0.50.15: falling pieces are moving shadow casters.** A piece's caster identity is its id and
+part, not its pose (`render/mod.rs` `piece_shadow_tag`), so a kept far cascade holding flying pieces is
+drawn again every `refreshFrames` (4 on High), as for other players (`Want::Moving`), not every frame; the
+nearest cascade, drawn every frame, shows them exactly. A piece that comes or goes still changes the
+signature. After (one run each, same scenarios):
+
+| Scenario | Drawn fps | Over 25 ms / max | GPU-wait skips | `gpu.frame` mean / p95 | `gpu.shadows` mean / p95 | Cascades drawn a frame | Shadow triangles a frame | `pacing.done` p95 | `frame.cpu` mean / p95 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Red, before → after | 59.8 → 59.8 | 0 → 0 / 18.8 → 18.7 | 0 → 0 | 14.0 / 16.7 → 13.2 / 16.6 | 2.5 / 5.2 → 1.9 / 5.4 | 1.85 → 1.58 | 555k → 391k | 19.9 → 19.5 | 4.33 / 6.7 → 4.21 / 6.5 |
+| Yellow | 59.9 → 59.8 | 0 → 0 / 18.6 → 18.7 | 0 → 0 | 14.1 / 17.2 → 12.8 / 16.2 | 2.6 / 5.7 → 1.7 / 4.9 | 1.85 → 1.52 | 555k → 354k | 20.2 → 19.7 | 3.99 / 6.3 → 4.00 / 6.0 |
+| Chain of 4 red | **58.1 → 59.3** | **22 → 7** / 35.2 → 35.3 | **22 → 7** | 14.3 / 18.3 → 13.3 / 17.1 | 2.7 / 5.6 → 1.9 / 5.4 | 1.87 → 1.60 | 568k → 400k | **30.6 → 25.4** | 4.05 / 7.2 → 4.39 / 7.4 |
+
+The server is the same build either way (red: worst tick 35.5 → 33.6 ms, physics 831 → 939 ms over the 10 s;
+chain 46.6 → 34.3, 1,063 → 1,013: run-to-run spread). The chain's 7 skips left are the GPU's still
+(`gpu.frame` p95 17.1, `pacing.done` p95 25.4); which pass was not isolated.
 
 **The pieces' physics, three levers** (owner, 2026-11-07: "they're not touching anything … Box2D demos do
 1000s"; "Yes do those 3 optimizations"). Natively, release, `tests/explosives.rs` `measure_blast_cost` (the
@@ -1086,8 +1104,8 @@ again, and that time:
 
 **Next** (not built; ranked by what they would save on the Air):
 
-1. **The pieces' shadows** (the chain's 22 skips, ~2.5 ms of GPU per blast while pieces fly): draw the pieces
-   into one instanced shadow draw (and main draw), or leave pieces under ~½ m out of the shadow maps.
+1. **The chain's last skips** (7, GPU): `gpu.frame` p95 17.1 ms at the blasts; the pieces' draws (one each,
+   in the scene and the nearest cascade) as one instanced draw would be the next thing to measure.
 2. **The blast's own tick** (27–47 ms worst, the same with every lever): spread it — the cells cleared in one
    tick but the pieces' bodies made over the next few ticks (nearest the charge first), and the terrain
    collision builds round them capped per tick (`terrainChunksPerTick` holds only new chunks).
