@@ -391,6 +391,93 @@ then without `--base` into `B`, and compare the two `report.json` files' `teleme
 (and the screenshots, pixel by pixel). A worktree needs its own `target/`: cargo names a path
 crate's artifacts the same wherever it is, so sharing one directory mixes the two builds.
 
+## Native harness (`crates/dwell-native`)
+
+A perf harness, not the native app (owner, 2026-11-07: "build a native app version and compare, if
+you don't have the same debug tools as in browser, port them to work there too"): the same Rust
+client, renderer and local-mode server as the browser build, in a native window (winit, wgpu on
+Metal), so native and Chrome can be compared on one machine. No menus, HUD or audio; a dev tool,
+never shipped or released (not in `shared/licenses`' shipped set). ARCHITECTURE.md §3 and §5.1.
+
+```sh
+export CARGO_TARGET_DIR=target-native        # its own target dir, if another build is running
+cargo build --release -p dwell-native
+target-native/release/dwell-native --seed 0 --at 2364.5,142,7443.5 --fresh
+target-native/release/dwell-native --scenario pace-fly --scenarios FILE --out DIR
+```
+
+Options (`--help`): `--seed` (default 7, the bench's), `--at x,y,z` (the dev link `?at=`), `--world FILE`
+(a redb file on disk; default the temp directory's `dwell-native-<seed>.redb`), `--fresh`, `--flat`,
+`--size WxH` (points; default 1280×720), `--pixel-ratio` (default 1, the bench's Chrome at DPR 1),
+`--present fifo|mailbox|immediate` (immediate is the bench's `--unthrottled`), `--workers N` (client
+job threads of each kind; default min(4, cores − 2), as the page), `--server-threads N` (the server's
+generation and LOD threads; default 1, as the one server-jobs worker).
+
+Play: click the window to capture the mouse, Esc releases it; keys are the browser's (winit's key
+codes are the DOM's `KeyboardEvent.code` names, fed to the same `KeyboardMouseInput`): WASD, Space,
+Shift, F flies, digits pick, left and right click break and place. Once a second the perf line
+(frames drawn, the frame's CPU time without the vsync wait, `gpu.frame`, the server's ticks a second
+and mean tick time) is printed and shown in the window's title.
+
+Telemetry: the same `telemetry` module records the same names (frame phases, `gpu.*` pass times
+from Metal's timestamp queries, job waits and runs, the controller's ticks). Two differ by nature:
+`draw.acquire` natively includes the vsync wait (wgpu's `get_current_texture` blocks until a
+drawable is free; Chrome's does not, its compositor presents), so `frame.cpu` there reads ~16 ms at
+60 Hz; `frame.busy` (native only) is `frame.cpu` without that wait, the figure to compare with
+Chrome's `frame.cpu`. And `draw.render` natively includes wgpu's validation and Metal encoding on the
+main thread, which Chrome does in its GPU process. The server thread reports what the local-mode
+worker posts each second (ticks, mean tick, worst advance, the tick's phases and counts), saved per
+record in the report's `servers`.
+
+`--scenario NAME` runs a scenario from `client/bench/scenarios.json` (or `--scenarios FILE`) in a fresh
+world and writes `OUT/NAME/report.json` in the bench's shape (`records` with `telemetry`, `frames`,
+`ticks`, `state`; `settles`; `join.playingS`; `servers`), plus `native` (the skipped steps and the
+settings). Steps done: `wait`, `key`, `hold`, `look`, `fly`, `flySpeed`, `mark`, `record`, `settle`,
+`camera`, `releaseCamera`, `time`; skipped (browser-only so far): `shot`, `traceStart`/`traceStop`,
+`goto`, `burst`, `repeat`, `puppets`, `die`, `until` and the rest. The world map is computed per
+process and cached on disk (`$DWELL_MAP_CACHE`, else the temp directory): point `DWELL_MAP_CACHE` at
+an empty directory to time a cold start as the bench's fresh browser context has it.
+
+### Native vs Chrome (M1 MacBook Air, 60 Hz, 2026-11-07)
+
+The same commit (0.50.0 plus the harness) both ways: Chrome by `npm run bench` (headed, DPR 1,
+1280×720, vsync), native by `--scenario` (1280×720, pixel ratio 1, Fifo), on AC power. Each pair ran
+back to back, after waiting for the 1-minute load to fall under 2.5 (it read 1.6–2.5 at each start; the
+machine was shared with other builds), twice; the cells are run 1 / run 2. Scenarios (seed 0, fresh
+world): `pace-idle` (8 s standing at the spawn once settled), `pace-fly` (10 s flying at level 4,
+yaw 90, pitch −5) and `dam-view` (8 s at the dam site, `?at=2364.5,142,7443.5` / `--at`). The native
+cold start had an empty `DWELL_MAP_CACHE`. Chrome's server tick figures are not in its report
+(its records have no `server` step); its perf line read ~0.1–0.2 ms a tick in play.
+
+| | Chrome idle | Native idle | Chrome flight | Native flight | Chrome dam | Native dam |
+| --- | --- | --- | --- | --- | --- | --- |
+| Frames drawn a second | 59.8 / 59.8 | 59.9 / 60.0 | 59.8 / 59.9 | 60.1 / 59.9 | 59.9 / 59.8 | 61.2 / 61.0 |
+| Frame interval p50 (ms) | 16.7 / 16.7 | 16.65 / 16.63 | 16.7 / 16.7 | 16.69 / 16.66 | 16.7 / 16.7 | 16.56 / 16.60 |
+| Frame interval p95 (ms) | 18.6 / 18.7 | 17.2 / 18.0 | 18.6 / 18.6 | 18.0 / 17.9 | 18.6 / 18.6 | 17.7 / 17.7 |
+| CPU per frame, mean (ms) ¹ | 3.65 / 3.55 | 2.42 / 4.61 | 4.29 / 4.33 | 4.52 / 4.70 | 3.74 / 3.91 | 4.70 / 4.58 |
+| CPU per frame, p95 (ms) ¹ | 4.1 / 4.0 | 2.9 / 5.5 | 11.1 / 10.9 | 7.7 / 8.1 | 4.3 / 4.4 | 5.5 / 5.5 |
+| `draw.render` mean (ms) | 2.14 / 2.05 | 1.64 / 3.38 | 1.90 / 1.92 | 2.78 / 2.96 | 2.11 / 2.18 | 3.38 / 3.27 |
+| `gpu.frame` mean (p95) (ms) | 9.8 (11.2) / 9.8 (11.0) | 10.8 (11.9) / 10.3 (11.4) | 9.5 (13.4) / 9.5 (13.5) | 10.3 (14.4) / 10.2 (14.1) | 11.8 (12.5) / 11.8 (12.9) | 12.6 (13.4) / 12.5 (13.3) |
+| Server tick mean (ms), ticks/s | – | 0.17 / 0.10, 60 | – | 0.14 / 0.12, 60 | – | 0.12 / 0.13, 60 |
+| Start to playing (s) ² | 7.11 / 7.24 | 7.06 / 5.64 | 7.40 / 7.19 | 5.70 / 5.75 | 9.05 / 6.32 | 4.70 / 4.69 |
+| Settle (s) | 15.0 / 15.3 | 17.0 / 12.9 | 15.5 / 15.2 | 12.6 / 12.4 | 17.0 / 15.0 | 12.3 / 13.1 |
+
+¹ Chrome's `frame.cpu`; native `frame.busy` (without the vsync wait). ² Chrome: page opened to
+`terrainReady`; native: process start to the same.
+
+What it says (M1 Air at 60 Hz): both hold 60 fps on these views, and the frame is the GPU's
+(9.5–12.5 ms of 16.7), which native does not change: it is the same WGSL on the same Metal GPU,
+and natively it reads 0.5–0.8 ms more (Chrome's Dawn may schedule passes differently; not looked
+into). The CPU per frame is about the same: native skips WASM and the JS boundary but does wgpu's
+validation and Metal encoding on the main thread (`draw.render` 2.8–3.4 ms against Chrome's ~2 ms,
+whose GPU process does that work), so the means come out even; the flight's spikes are lower
+natively (p95 ~8 against ~11 ms: chunk uploads and job results applied faster). Native frame pacing
+is a little tighter (interval p95 17.7–18.0 against 18.6) and the start and settle are faster
+(4.7–5.8 s to playing against 6.3–9.1 s; the world map and the server's generation on native
+threads). A gain in drawn frames would need a GPU-bound case where native is cheaper, which these
+views do not show; a heavier view (a larger window, High water, a CPU-bound flight at level 6) is
+the next comparison.
+
 ## Play advanced (the main menu)
 
 The main menu's **Play advanced** (beside New world) opens a local world by link with
