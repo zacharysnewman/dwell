@@ -304,6 +304,8 @@ fn shell_event(kind: &str, value: impl Into<JsValue>) -> JsValue {
 #[wasm_bindgen]
 pub struct Client {
     inner: Rc<RefCell<Inner>>,
+    /// When the last `frame` ended (telemetry's `frame.gap`).
+    last_end: std::cell::Cell<Option<f64>>,
 }
 
 #[wasm_bindgen]
@@ -434,6 +436,7 @@ impl Client {
             shaping: Shaping::NotAsked,
         };
         Ok(Client {
+            last_end: std::cell::Cell::new(None),
             inner: Rc::new(RefCell::new(inner)),
         })
     }
@@ -535,6 +538,13 @@ impl Client {
     pub fn frame(&self, now_ms: f64) -> bool {
         let t0 = telemetry::now_ms();
         telemetry::with(|t| t.begin_frame(now_ms));
+        // How late the animation frame's callback ran after its timestamp (`frame.late`), and the
+        // time from the end of the last `frame` to this one's start (`frame.gap`: other script on
+        // the main thread, and idle) (docs/DEV_TOOLS.md).
+        telemetry::add("frame.late", (t0 - now_ms).max(0.0));
+        if let Some(end) = self.last_end.get() {
+            telemetry::add("frame.gap", t0 - end);
+        }
         let mut s = self.inner.borrow_mut();
         let s = &mut *s;
         telemetry::span("net", || s.pump_network(now_ms));
@@ -590,18 +600,27 @@ impl Client {
             .borrow_mut()
             .set_cloud_time(world.unwrap_or(now_ms / 1000.0));
         let drew = s.draw();
-        telemetry::add("frame.cpu", telemetry::now_ms() - t0);
+        let end = telemetry::now_ms();
+        telemetry::add("frame.cpu", end - t0);
+        self.last_end.set(Some(end));
         drew
     }
 
     /// The status line's performance figures (owner, 2026-11-06: what is chugging, not one number):
     /// the CPU's time per frame (`frame.cpu`, the last 60 frames' mean) and the GPU's (`gpu.frame`,
-    /// the last 30 timed frames' mean; NaN where the browser can't time the GPU) in ms.
+    /// the last 30 timed frames' mean; NaN where the browser can't time the GPU) in ms; then the
+    /// share of animation frames skipped because the GPU was behind and for want of a surface, and
+    /// the GPU's submit-to-done answer time (`pacing.done`, ms).
     pub fn perf(&self) -> Vec<f64> {
         telemetry::with(|t| {
             let cpu = t.recent_frame_mean("frame.cpu", 60).unwrap_or(f64::NAN);
             let gpu = t.recent_sample_mean("gpu.frame", 30).unwrap_or(f64::NAN);
-            vec![cpu, gpu]
+            // The share of the last 60 animation frames skipped, by reason: the GPU behind
+            // (pacing) and no surface texture; and the submit-to-done latency (ms).
+            let paced = t.recent_frame_mean("draw.paced", 60).unwrap_or(0.0);
+            let no_surface = t.recent_frame_mean("draw.no_surface", 60).unwrap_or(0.0);
+            let done = t.recent_sample_mean("pacing.done", 30).unwrap_or(f64::NAN);
+            vec![cpu, gpu, paced, no_surface, done]
         })
     }
 
@@ -2613,6 +2632,7 @@ impl Inner {
             .ready_to_draw(telemetry::now_ms())
         {
             telemetry::count("draw.skipped", 1.0);
+            telemetry::add("draw.paced", 1.0);
             return false;
         }
         let acquire = telemetry::now_ms();
@@ -2625,6 +2645,7 @@ impl Inner {
                 let renderer = self.renderer.clone();
                 self.surface
                     .configure(renderer.borrow().device(), &self.config);
+                telemetry::add("draw.no_surface", 1.0);
                 return false;
             }
         };

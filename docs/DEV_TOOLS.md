@@ -53,6 +53,22 @@ the browser has no `timestamp-query`, as many phones), the server's ticks a seco
 and, in a local world, its time per tick. At 60 fps each has 16.7 ms: the one over it holds the frame back
 (a GPU over it with the CPU under: draw less; the server under 60/s: the server, e.g. its water).
 
+The frame rate reads **drawn of the browser's animation frames**, e.g. `38/60 fps (22 GPU-wait)` (0.50.2,
+owner 2026-11-07: frames lost with every figure under 10 ms). The second number is the animation frames a
+second (the display's refresh when the page keeps up: 60, or 120 on a ProMotion screen); the brackets
+count the skipped ones by reason over the last 60 frames: `GPU-wait`, two frames still on the GPU
+(`render/pacing.rs`), and `no-surface`. So: drawn equal to the animation frames but under the display's
+rate, the main thread or the browser (`frame.late`, `frame.gap`, long tasks); `GPU-wait` skips with
+`gpu.frame` low, the GPU's answers arriving late (`pacing.done`) or GPU work outside the timed passes.
+
+Measured on an M1 (60 Hz, Chrome, seed 0, 2026-11-07): at 1700×1000 the idle spawn and a level-4 flight
+drew 60/60 and 59/60 (`gpu.frame` 11.7 ms, `pacing.done` 16 ms p50, in flight ≤ 1 nearly always, 8 skips
+in 10 s of flight). `pacing.done` runs 4–6 ms past `gpu.frame` (Chrome's delivery and the untimed
+compositing). With `--unthrottled` (rAF ~100/s) the pacer skips 39 % and draws 61–66 a second, with
+`pacing.done` 18–20 ms; three in flight drew 64–70 but doubled `pacing.done` to 31–34 ms (a frame more of
+latency, the frames queueing), so the limit there is the GPU's real cost per frame (~14–15 ms with the
+untimed work), not late answers, and `MAX_IN_FLIGHT` stays 2.
+
 ## Scenarios (`client/bench/scenarios.json`)
 
 ```json
@@ -193,6 +209,11 @@ What is recorded now:
 | Name | What |
 | --- | --- |
 | `frame.cpu` | the WASM `frame()` call, start to end |
+| `frame.late` | how late the animation frame's callback started after its timestamp (other script, or the browser, holding the main thread) |
+| `frame.gap` | from the end of the last `frame()` to this one's start: the page's other script and idle time (at 60 Hz with a 4 ms frame, ~12 ms) |
+| `pacing.in_flight` | frames submitted and not yet answered by `on_submitted_work_done` when the frame asked to draw (`render/pacing.rs`) |
+| `draw.paced`, `draw.no_surface` | 1 on a frame skipped because `MAX_IN_FLIGHT` were in flight, or for want of a surface texture |
+| `pacing.done` (samples) | each frame's time from submit to the GPU's `on_submitted_work_done` answer (ms): the GPU's time plus Chrome's delivery; with two in flight a draw is skipped once this passes two animation frames |
 | `net` | the session's network pumping (twice a frame) |
 | `jobs.poll`, `jobs.apply`, `jobs.done` | collecting finished jobs; applying them (chunks into the world, meshes to the GPU); how many |
 | `ticks`, `ticks.count` | the fixed-rate prediction ticks (controller + physics) and how many ran |
@@ -208,7 +229,7 @@ What is recorded now:
 | `flames.drawn` (count) | Flames drawn this frame: placed light sources' and held torches' (yours in the arms view), at most `maxFlames` within `drawM` (`render/flames.rs`, [`LIGHTS.md`](./LIGHTS.md) §6) |
 | `lod.fading`, `lod.retiring` (counts) | LOD swaps cross-fading this frame and the outgoing draws they add (`dwell-lod` `fade.rs`, ARCHITECTURE.md §6.6 Swaps) |
 | `draw.acquire`, `draw.render`, `draw.present` | the surface texture, encoding and submitting the frame, presenting |
-| `draw.skipped` (counter) | frames not drawn because two were still on the GPU (`render/pacing.rs`) |
+| `draw.skipped` (counter) | frames not drawn because two were still on the GPU (`render/pacing.rs`); per frame as `draw.paced` |
 | `gpu.water.tiles` (samples) | the water's noise tile (once) and caustic layers (each Medium/High frame with water; `render/water_tiles.rs`) |
 | `upload.chunk`, `upload.section`, `upload.chunks`, `upload.sections`, `upload.bytes` | creating GPU buffers for chunk and LOD section meshes, how many, and their bytes |
 | `job.<kind>.wait`, `job.<kind>.run` (samples) | per job kind (`chunk`, `chunk_mesh`, `bounds`, `section`, `section_mesh`, `verify`, `map`, `diff`): time queued in the pool before a worker had room; time from posting it to a worker until its result came back (the worker's run and the transfers; the pool collects results between frames) |
