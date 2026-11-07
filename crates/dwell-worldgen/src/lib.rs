@@ -2,6 +2,7 @@
 //! height-field generator of Phase 15 and the bifacial world built from two of them, plus the
 //! generator lookup by version that the server, the client and the tools share.
 
+pub mod air_columns;
 pub mod base;
 pub mod bifacial;
 pub mod decorations;
@@ -15,16 +16,14 @@ pub mod terrain;
 pub mod volume;
 pub mod worldmap;
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use dwell_world::lod::{self, LodBoundsFn, LodGenerator};
 use dwell_world::{
-    AirChunkTest, CHUNK_SIZE, ChunkCoord, ChunkGenerator, DiscOverlap, FlatLayers,
-    GENERATOR_SANDBOX, SEA_LEVEL, chunk_disc_overlap, face_local_chunk, face_of_chunk_y,
-    flat_generator, flat_generator_of, flat_is_air,
+    AirChunkTest, ChunkGenerator, FlatLayers, GENERATOR_SANDBOX, flat_generator, flat_generator_of,
 };
 
+pub use air_columns::{AirColumns, SkyColumn};
 pub use bifacial::BifacialTerrain;
 pub use terrain::TerrainGenerator;
 
@@ -51,30 +50,9 @@ pub fn generator_for(version: u32, world_seed: u64) -> ChunkGenerator {
 }
 
 /// The generator's all-air test. The terrain's caches its sky floors per chunk column and face
-/// (bounded: cleared when large).
+/// (bounded: cleared when large); `AirColumns` gives the server its costly part apart.
 pub fn air_test_for(version: u32, world_seed: u64) -> AirChunkTest {
-    let Some(terrain) = BifacialTerrain::for_generator(version, world_seed) else {
-        return Arc::new(flat_is_air);
-    };
-    let cache: Mutex<HashMap<(i32, i32, u8), f32>> = Mutex::new(HashMap::new());
-    Arc::new(move |coord: ChunkCoord| {
-        let face = face_of_chunk_y(coord.y);
-        let y0 = face_local_chunk(coord).y * CHUNK_SIZE;
-        if !(SEA_LEVEL..terrain::FACE_MAX_Y).contains(&y0)
-            || chunk_disc_overlap(coord.x, coord.z) == DiscOverlap::Outside
-        {
-            return terrain.is_air_chunk(coord);
-        }
-        let key = (coord.x, coord.z, face as u8);
-        let mut cache = cache.lock().expect("air cache");
-        if cache.len() >= 4096 && !cache.contains_key(&key) {
-            cache.clear();
-        }
-        let floor = *cache
-            .entry(key)
-            .or_insert_with(|| terrain.sky_floor_at(coord.x, coord.z, face));
-        BifacialTerrain::is_air_chunk_with(coord, floor)
-    })
+    AirColumns::for_generator(version, world_seed).test()
 }
 
 /// Face B's spawn point for the terrain generator (`BifacialTerrain::spawn_point_b`); the face-A

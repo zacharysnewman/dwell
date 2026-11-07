@@ -102,6 +102,11 @@ const EDIT_BURST: f64 = 3.0;
 const REGION_CELLS_PER_TICK: f64 = region_edit::CELLS_PER_SECOND as f64 / SIM_HZ as f64;
 const REGION_BURST_CELLS: f64 = region_edit::BURST_CELLS as f64;
 const MAX_SAVED_LOADS_PER_TICK: i32 = 16; // saved chunks read from the world file per tick
+/// Inline, the sky floors (`sky_columns.rs`) computed per tick: at least one, then until this is
+/// spent (one is ~1 ms natively, a few in the browser; on wasm32 the budget is one).
+const SKY_FLOOR_BUDGET: Duration = Duration::from_micros(1000);
+/// The chunk requests looked at past the first waiting for its sky floor, to want theirs too.
+const REQUEST_LOOKAHEAD: usize = 32;
 const INDEX_UPDATE_EVERY_TICKS: u32 = (lod::INDEX_UPDATE_MS as u32) * SIM_HZ / 1000;
 const MAX_QUEUED_LOD_REQUESTS: usize = 256; // per session; more are dropped
 const LOD_REQUESTS_PER_TICK: f64 = lod::REQUESTS_PER_SECOND as f64 / SIM_HZ as f64;
@@ -750,6 +755,9 @@ pub struct Server {
     entropy: Box<dyn Entropy>,
     physics: Physics,
     air_test: Option<AirChunkTest>,
+    /// The air test's sky floors, computed off the tick (`sky_columns.rs`; none for a generator
+    /// override, whose air test computes on the tick).
+    sky: Option<crate::sky_columns::SkyColumns>,
     world: VoxelWorld,
     players: Players,
     sessions: BTreeMap<SessionId, Session>,
@@ -826,15 +834,23 @@ impl Server {
         // A world from an older line (or a launch naming a retired version) opens on this build's
         // generator of its kind.
         config.generator_version = dwell_world::current_generator(config.generator_version);
-        let (generator, air_test) = match &config.generator_override {
-            Some(g) => (g.clone(), config.air_test_override.clone()),
-            None => (
-                dwell_worldgen::generator_for(config.generator_version, config.world_seed),
-                Some(dwell_worldgen::air_test_for(
+        let (generator, air_test, sky) = match &config.generator_override {
+            Some(g) => (g.clone(), config.air_test_override.clone(), None),
+            None => {
+                let air = dwell_worldgen::AirColumns::for_generator(
                     config.generator_version,
                     config.world_seed,
-                )),
-            ),
+                );
+                (
+                    dwell_worldgen::generator_for(config.generator_version, config.world_seed),
+                    Some(air.test()),
+                    Some(crate::sky_columns::SkyColumns::new(
+                        air,
+                        config.worldgen_threads > 0,
+                        config.jobs_remote,
+                    )),
+                )
+            }
         };
         let mut physics = Physics::default();
         let players = Players::new(&mut physics, true);
@@ -850,6 +866,7 @@ impl Server {
             physics,
             world: VoxelWorld::new(generator.clone(), air_test.clone()),
             air_test,
+            sky,
             players,
             sessions: BTreeMap::new(),
             outbox: Vec::new(),
@@ -1615,6 +1632,9 @@ impl Server {
 
         // 6. Terrain streaming, then what to generate next and what to forget.
         self.explicit_wanted.clear();
+        if let Some(sky) = &mut self.sky {
+            sky.begin();
+        }
         for &id in &ids {
             if self.sessions.contains_key(&id) {
                 self.stream_chunks(id);
@@ -1714,9 +1734,9 @@ impl Server {
         // Saved chunks are read from the world file instead (a few per tick).
         let mut wanted = Vec::new();
         let mut loads = 0;
-        for o in &self.prefetch_offsets {
+        for k in 0..self.prefetch_offsets.len() {
             for &center in &centers {
-                let c = add(center, *o);
+                let c = add(center, self.prefetch_offsets[k]);
                 if !BUILD_VOLUME.chunk_may_hold(c) || self.world.find(c).is_some() {
                     continue;
                 }
@@ -1725,7 +1745,7 @@ impl Server {
                         self.world.get_or_create(c);
                     }
                     loads += 1;
-                } else if !self.is_air(c) {
+                } else if self.air_known(c) == Some(false) {
                     wanted.push(c);
                 }
             }
@@ -1737,13 +1757,13 @@ impl Server {
             .filter_map(|s| s.preload_center)
             .collect();
         if !preloads.is_empty() {
-            for o in &self.preload_offsets {
+            for k in 0..self.preload_offsets.len() {
                 for &center in &preloads {
-                    let c = add(center, *o);
+                    let c = add(center, self.preload_offsets[k]);
                     if BUILD_VOLUME.chunk_may_hold(c)
                         && self.world.find(c).is_none()
                         && !self.is_saved(c)
-                        && !self.is_air(c)
+                        && self.air_known(c) == Some(false)
                     {
                         wanted.push(c);
                     }
@@ -1763,13 +1783,21 @@ impl Server {
                     self.world.get_or_create(c);
                 }
                 loads += 1;
-            } else if !self.is_air(c) {
-                wanted.push(c);
             } else {
-                self.world.get_or_create(c);
+                match self.air_known(c) {
+                    Some(false) => wanted.push(c),
+                    Some(true) => {
+                        self.world.get_or_create(c);
+                    }
+                    None => {} // its sky floor first
+                }
             }
         }
         self.worldgen.set_wanted(&wanted);
+        // Inline (no thread or worker): the sky floors wanted this tick, within a budget.
+        if let Some(sky) = &mut self.sky {
+            sky.run_inline(SKY_FLOOR_BUDGET);
+        }
 
         if self.tick.is_multiple_of(EVICT_EVERY_TICKS) {
             // Unmodified chunks can be generated again, and saved ones read again; modified chunks
@@ -1918,8 +1946,10 @@ impl Server {
     }
 
     fn stream_view(&mut self, id: SessionId, center: ChunkCoord, sent: &mut i64) {
-        // Nearest first, within the bandwidth budget (§6.3).
+        // Nearest first, within the bandwidth budget (§6.3). A chunk whose sky floor is not known
+        // yet stops the sending (the order kept); those after it only want theirs.
         let mut complete = true;
+        let mut waiting = false;
         for i in 0..self.view_offsets.len() {
             let c = add(center, self.view_offsets[i]);
             let s = &self.sessions[&id];
@@ -1930,6 +1960,10 @@ impl Server {
             complete = false;
             if s.chunk_credit <= 0.0 || *sent >= wc::MAX_CHUNKS_PER_TICK {
                 break;
+            }
+            if !self.air_ready(c) || waiting {
+                waiting = true;
+                continue;
             }
             let Some(m) = self.chunk_message(id, c, false) else {
                 // Full mode: generate it first (a later tick sends it).
@@ -1958,6 +1992,7 @@ impl Server {
     /// streaming left of the budgets: the server's view sphere of `respawn_preload_radius_chunks`.
     fn stream_preload(&mut self, id: SessionId, center: ChunkCoord, sent: &mut i64) {
         let mut complete = true;
+        let mut waiting = false;
         for i in 0..self.preload_offsets.len() {
             let c = add(center, self.preload_offsets[i]);
             let s = &self.sessions[&id];
@@ -1967,6 +2002,10 @@ impl Server {
             complete = false;
             if s.chunk_credit <= 0.0 || *sent >= wc::MAX_CHUNKS_PER_TICK {
                 break;
+            }
+            if !self.air_ready(c) || waiting {
+                waiting = true;
+                continue;
             }
             let Some(m) = self.chunk_message(id, c, false) else {
                 // Full mode: generated first (update_worldgen wants the ring).
@@ -1993,19 +2032,41 @@ impl Server {
     }
 
     fn stream_requested(&mut self, id: SessionId, center: ChunkCoord, sent: &mut i64) {
-        // In the order asked (the client asks nearest first, §6.6), within what the budget leaves.
-        for _ in 0..self.sessions[&id].chunk_requests.len() {
+        // In the order asked (the client asks nearest first, §6.6), within what the budget leaves;
+        // one waiting for its sky floor stops the sending, and those just after want theirs.
+        loop {
             let s = self.sessions.get_mut(&id).expect("session");
             if s.chunk_credit <= 0.0 || *sent >= wc::MAX_CHUNKS_PER_TICK {
                 break;
             }
-            let c = s.chunk_requests.pop_front().expect("queued");
+            let Some(&c) = s.chunk_requests.front() else {
+                break;
+            };
             if s.streamed.contains(&c) {
+                s.chunk_requests.pop_front();
                 continue; // the view reached it first
             }
+            let requestable = self.requestable(&self.sessions[&id], c, center);
+            if requestable && !self.air_ready(c) {
+                let ahead: Vec<ChunkCoord> = self.sessions[&id]
+                    .chunk_requests
+                    .iter()
+                    .skip(1)
+                    .take(REQUEST_LOOKAHEAD)
+                    .copied()
+                    .collect();
+                for a in ahead {
+                    self.air_ready(a);
+                }
+                break;
+            }
+            self.sessions
+                .get_mut(&id)
+                .expect("session")
+                .chunk_requests
+                .pop_front();
             // Full mode would generate on the server for rendering alone: only what is stored.
-            let message = self
-                .requestable(&self.sessions[&id], c, center)
+            let message = requestable
                 .then(|| self.chunk_message(id, c, false))
                 .flatten();
             let s = self.sessions.get_mut(&id).expect("session");
@@ -3395,6 +3456,28 @@ impl Server {
             .as_ref()
             .is_some_and(|air| !self.is_saved(c) && air(c))
     }
+    /// `is_air` without computing a sky floor on the tick: None while chunk `c`'s column's is not
+    /// known (it is wanted, `sky_columns.rs`).
+    fn air_known(&mut self, c: ChunkCoord) -> Option<bool> {
+        if self.is_saved(c) {
+            return Some(false);
+        }
+        let Some(sky) = &mut self.sky else {
+            return Some(self.is_air(c));
+        };
+        match sky.air().known(c) {
+            Ok(air) => Some(air),
+            Err(col) => {
+                sky.want(col);
+                None
+            }
+        }
+    }
+    /// Whether `chunk_message(c)` is answered without computing a sky floor on the tick (else the
+    /// column is wanted).
+    fn air_ready(&mut self, c: ChunkCoord) -> bool {
+        self.world.find(c).is_some_and(|ch| ch.revision() > 0) || self.air_known(c).is_some()
+    }
 
     fn init_storage(&mut self) {
         let Some(store) = &self.config.store else {
@@ -3678,6 +3761,10 @@ impl Server {
     /// The next job for the server-jobs worker (`jobs_remote`), as bytes for
     /// `dwell_sim::jobs::JobRunner::run`: a chunk to generate first, else a LOD section.
     pub fn take_job(&mut self) -> Option<Vec<u8>> {
+        // Sky floors first: streaming waits for them.
+        if let Some(col) = self.sky.as_mut().and_then(|s| s.take_job()) {
+            return Some(crate::sky_columns::encode_job(col));
+        }
         if let Some(c) = self.worldgen.take_job() {
             return Some(crate::jobs::encode_chunk_job(c));
         }
@@ -3688,6 +3775,12 @@ impl Server {
     pub fn deliver_job(&mut self, bytes: &[u8]) -> bool {
         if let Some((c, chunk)) = crate::jobs::decode_chunk_done(bytes) {
             self.worldgen.deliver(c, chunk);
+            return true;
+        }
+        if let Some((col, floor)) = crate::sky_columns::decode_done(bytes) {
+            if let Some(sky) = &mut self.sky {
+                sky.deliver(col, floor);
+            }
             return true;
         }
         self.lod.deliver(bytes)

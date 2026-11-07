@@ -35,8 +35,9 @@ struct Flight {
 /// Joins a player at the browser's test point (`?seed=0&at=2364.5,142,7443.5`) on face `f` and
 /// flies it +x at 20 m/s for 6 s, asking for the chunks round it within 5 chunks (a few a tick,
 /// nearest first), then holds it still; asserts the whole view round where it stops arrived.
-/// `remote`: the server's jobs run elsewhere (the browser's server-jobs worker), else inline.
-fn fly(f: FaceFrame, remote: bool) -> Flight {
+/// `remote`: the server's jobs run elsewhere (the browser's server-jobs worker), else on
+/// `threads` worldgen threads (the dedicated server's), or inline with none.
+fn fly(f: FaceFrame, remote: bool, threads: usize) -> Flight {
     let seed = 0;
     let at = f.point([2364.5, 142.0, 7443.5]);
     let mut fx = Fixture::new(ServerConfig {
@@ -47,6 +48,7 @@ fn fly(f: FaceFrame, remote: bool) -> Flight {
         max_players: 1,
         lod_threads: Some(0),
         jobs_remote: remote,
+        worldgen_threads: threads,
         store: Some(WorldStore::new(WorldDb::in_memory().expect("opens"), false)),
         ..ServerConfig::default()
     });
@@ -94,6 +96,10 @@ fn fly(f: FaceFrame, remote: bool) -> Flight {
             fx.send(1, Message::ChunkRequest(ask));
         }
         fx.server.step();
+        if threads > 0 {
+            // The threads keep time with the ticks, as at 60 Hz they would (a few ms apart here).
+            std::thread::sleep(std::time::Duration::from_millis(4));
+        }
         if remote {
             while let Some(job) = fx.server.take_job() {
                 let done = runner.run(&job).expect("a job");
@@ -131,7 +137,7 @@ fn fly(f: FaceFrame, remote: bool) -> Flight {
     }
     let stats = fx.server.stream_stats_of(1).expect("a session");
     assert!(stats.requested_sent > 100, "{stats:?}");
-    println!("{f:?} remote {remote}: {flight:?}, {stats:?}");
+    println!("{f:?} remote {remote}, threads {threads}: {flight:?}, {stats:?}");
     flight
 }
 
@@ -139,7 +145,7 @@ dwell_world::both_faces!(
     fn flying_across_chunk_boundaries_streams_within_a_few_ms_a_tick(f: FaceFrame) {
         // Inline (no thread or worker): the sky floors are computed in the generation phase
         // within its budget, the streaming only asks.
-        let inline = fly(f, false);
+        let inline = fly(f, false, 0);
         assert!(
             inline.stream < 2.0,
             "a tick streamed for {:.1} ms",
@@ -151,11 +157,17 @@ dwell_world::both_faces!(
             inline.worldgen
         );
         // As the browser runs it (the server-jobs worker): none of it on the tick.
-        let remote = fly(f, true);
+        let remote = fly(f, true, 0);
         assert!(
             remote.stream < 2.0,
             "a tick streamed for {:.1} ms",
             remote.stream
+        );
+        // As the dedicated server runs it (worldgen threads): a thread of its own.
+        let threads = fly(f, false, 1);
+        assert!(
+            threads.stream < 2.0 && threads.worldgen < 2.0,
+            "{threads:?}"
         );
     }
 );
