@@ -18,22 +18,30 @@ pub const OPEN: u8 = 1;
 pub const LIQUID: u8 = 2;
 /// A full liquid cell.
 pub const FULL: u8 = LIQUID + 7;
-/// A block whose open part holds water (a ramp: a shaped block with a `flooded` property), dry or
-/// flooded: solid to the grid's flow, its `flooded` state drawn by the water beside it (BUGS.md #36).
+/// A block whose open part holds water (a ramp: a shaped block with a `flooded` property; leaves),
+/// dry or flooded: solid to the grid's flow, its `flooded` state drawn by the water beside it (BUGS.md #36).
 pub const HOLDS_DRY: u8 = 10;
 pub const HOLDS_WET: u8 = 11;
 
-/// Whether state `m` holds water in its open part: a shaped block with a `flooded` state.
+/// Whether state `m` holds water in its open part: a block with a `flooded` state that has an
+/// open part, shaped (a ramp) or a see-through full block (leaves, drawn cutout: the water stands in their
+/// gaps). An alias (ADR 0063) as its base.
 fn holds_water(m: StateId) -> bool {
     static HOLDS: std::sync::LazyLock<Vec<bool>> = std::sync::LazyLock::new(|| {
         (0..dwell_blocks::STATES.len())
             .map(|m| {
-                dwell_blocks::STATES[m].shape == dwell_blocks::VoxelShape::Shaped
+                let s = &dwell_blocks::STATES[m];
+                (s.shape == dwell_blocks::VoxelShape::Shaped
+                    || (s.shape == dwell_blocks::VoxelShape::Full
+                        && s.render != dwell_blocks::RenderMode::Opaque))
                     && dwell_blocks::with_property(m as StateId, "flooded", "true").is_some()
             })
             .collect()
     });
-    HOLDS.get(usize::from(m)).copied().unwrap_or(false)
+    HOLDS
+        .get(usize::from(dwell_blocks::base_state(m)))
+        .copied()
+        .unwrap_or(false)
 }
 
 /// What a cell is to water.

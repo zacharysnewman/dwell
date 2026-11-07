@@ -891,6 +891,45 @@ dwell_world::both_faces!(
     }
 );
 
+dwell_world::both_faces!(
+    fn water_risen_over_leaves_floods_them_and_leaves_above_it_stay_dry(f: FaceFrame) {
+        // Owner, 2026-11-07: "underwater leaves z fighting, I think they should be 'flooded'".
+        // Leaves (a see-through full block with a `flooded` state) hold water in their gaps: the
+        // pit scene of the ramp test, a leaf on its floor and one high over the water.
+        let mut s = Scene::new(f);
+        s.basin(0, 7, 0, 7, 3);
+        let stone = require("dwell:stone");
+        s.fill([10, -3, 0], [17, -1, 7], M.air);
+        for r in -3..=4 {
+            for z in -1..=8 {
+                s.set(18, r, z, stone);
+            }
+            for x in 9..=18 {
+                s.set(x, r, -1, stone);
+                s.set(x, r, 8, stone);
+            }
+        }
+        let leaves = f.state(require("dwell:leaves"));
+        s.set(12, -3, 5, leaves);
+        s.set(15, 4, 3, leaves);
+        s.run(5);
+        let flooded = |s: &Scene, x: i32, r: i32, z: i32| info(s.get(x, r, z)).flooded;
+        assert!(!flooded(&s, 12, -3, 5), "dry before the water comes");
+        let cut: Vec<(i32, i32, i32)> = (2..=5)
+            .flat_map(|z| (0..=4).flat_map(move |r| [(8, r, z), (9, r, z)]))
+            .collect();
+        s.edit(&cut, M.air);
+        s.run(600);
+        let pit = s.level(15, 3).expect("the pit holds water");
+        assert!(pit > -2.0, "the water stands over the floor's leaf: {pit:.3}");
+        assert!(
+            s.get(12, -3, 5) == f.state(require("dwell:leaves[flooded=true]")),
+            "the leaf under the water is flooded"
+        );
+        assert!(!flooded(&s, 15, 4, 3), "the leaf over the water stays dry");
+    }
+);
+
 impl Scene {
     /// A stone dam across the fixture river (z 0..=2) at column `x`, from the bed to row `top`.
     fn dam(&mut self, x: i32, top: i32) {
