@@ -192,6 +192,10 @@ dwell_world::both_faces!(
                     .all(|m| !matches!(m, Message::VoxelModification(_)))
         );
         let pieces = spawns(&out);
+        assert_eq!(
+            e.loosen_radius_m, e.radius_m,
+            "the shipped dynamite loosens nothing past its force"
+        );
         let (core, shell): (Vec<&([i32; 3], StateId)>, Vec<_>) = what
             .iter()
             .partition(|&&(o, _)| dist(o) <= e.destroy_radius_m);
@@ -469,11 +473,21 @@ fn a_blasts_pieces_touch_no_other_piece_in_its_window_and_do_after_it() {
     // face-a-only: contacts between pieces are face-free; the blast's frames are tested on both
     // faces above. Owner (2026-11-06): "what if all the physics blocks couldn't collide with each
     // other for the first 1-2s? ... keep it down to 1s".
-    let e = dynamite();
-    assert_eq!(e.no_piece_contact_s, 1.0, "the shipped window");
+    // Not the shipped default (0: measured in Chrome, the window cost more than it saved,
+    // docs/EXPLOSIVES.md §3), but available by data.
+    let e = ExplosiveData {
+        no_piece_contact_s: 1.0,
+        ..dynamite()
+    };
     // Without the window the packed pieces touch at once (the check below would see it).
     let mut s = Scene::flat(1);
-    buried_blast(&mut s, ExplosiveData { no_piece_contact_s: 0.0, ..e });
+    buried_blast(
+        &mut s,
+        ExplosiveData {
+            no_piece_contact_s: 0.0,
+            ..e
+        },
+    );
     s.run(1);
     let touching = s.fx.server.physics().piece_contact_pairs();
     assert!(touching > 50, "no window: {touching} piece pairs touch");
@@ -485,7 +499,10 @@ fn a_blasts_pieces_touch_no_other_piece_in_its_window_and_do_after_it() {
     for t in 0..58 {
         s.run(1);
         let touching = s.fx.server.physics().piece_contact_pairs();
-        assert_eq!(touching, 0, "tick {t} of the window: {touching} piece pairs touch");
+        assert_eq!(
+            touching, 0,
+            "tick {t} of the window: {touching} piece pairs touch"
+        );
     }
     // After it, the pieces rejoin as they come apart, and touch again: the piles they land in.
     let mut most = 0;
@@ -493,7 +510,10 @@ fn a_blasts_pieces_touch_no_other_piece_in_its_window_and_do_after_it() {
         s.run(1);
         most = most.max(s.fx.server.physics().piece_contact_pairs());
     }
-    assert!(most > 10, "after the window pieces touch again: {most} pairs at most");
+    assert!(
+        most > 10,
+        "after the window pieces touch again: {most} pairs at most"
+    );
     assert!(
         s.fx.server.apart_pieces() < pieces.len() / 4,
         "most rejoined: {} still apart",
@@ -582,12 +602,35 @@ fn a_blast_in_solid_ground_costs_a_bounded_tick_and_its_pieces_settle() {
 fn measure_dynamite_configs() {
     // face-a-only: a measurement on the flat world. The owner's four (2026-11-06): A 4 m ×1.5,
     // B A + no contact 1 s, C loosened to 5 m, D C + no contact 1 s.
-    let a = ExplosiveData { no_piece_contact_s: 0.0, loosen_radius_m: 4.0, ..dynamite() };
+    let a = ExplosiveData {
+        no_piece_contact_s: 0.0,
+        loosen_radius_m: 4.0,
+        ..dynamite()
+    };
     for (name, e) in [
         ("A", a),
-        ("B", ExplosiveData { no_piece_contact_s: 1.0, ..a }),
-        ("C", ExplosiveData { loosen_radius_m: 5.0, ..a }),
-        ("D", ExplosiveData { loosen_radius_m: 5.0, no_piece_contact_s: 1.0, ..a }),
+        (
+            "B",
+            ExplosiveData {
+                no_piece_contact_s: 1.0,
+                ..a
+            },
+        ),
+        (
+            "C",
+            ExplosiveData {
+                loosen_radius_m: 5.0,
+                ..a
+            },
+        ),
+        (
+            "D",
+            ExplosiveData {
+                loosen_radius_m: 5.0,
+                no_piece_contact_s: 1.0,
+                ..a
+            },
+        ),
     ] {
         let mut s = Scene::flat(1);
         let n = buried_blast(&mut s, e).len();
@@ -599,9 +642,19 @@ fn measure_dynamite_configs() {
             s.run(1);
             let ms = t.elapsed().as_secs_f64() * 1000.0;
             let ph = s.fx.server.tick_phases();
-            physics += ph.iter().find(|(n, _)| *n == "physics").map_or(0.0, |p| p.1);
+            physics += ph
+                .iter()
+                .find(|(n, _)| *n == "physics")
+                .map_or(0.0, |p| p.1);
             if ticks % 120 == 60 {
-                println!("  {name} {} s: {} bodies, {} apart, {} piece pairs, {ms:.1} ms: {:?}", ticks / 60, s.fx.server.body_count(), s.fx.server.apart_pieces(), s.fx.server.physics().piece_contact_pairs(), ph.iter().filter(|p| p.1 > 0.3).collect::<Vec<_>>());
+                println!(
+                    "  {name} {} s: {} bodies, {} apart, {} piece pairs, {ms:.1} ms: {:?}",
+                    ticks / 60,
+                    s.fx.server.body_count(),
+                    s.fx.server.apart_pieces(),
+                    s.fx.server.physics().piece_contact_pairs(),
+                    ph.iter().filter(|p| p.1 > 0.3).collect::<Vec<_>>()
+                );
             }
             worst = worst.max(ms);
             if ticks < 60 {

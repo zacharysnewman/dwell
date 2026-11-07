@@ -2754,7 +2754,12 @@ its radius (nearest first, at most `maxPieces` pieces): a block within `destroyR
 outright, each one beyond a one-cell natural piece flung out by `impulse` × (1 − d / r)^`falloff` over
 its mass; players are knocked back out to `reachM` and hurt only within `destroyRadiusM`; liquids within `waterRadiusM` are blown out (the water
 host refills the crater), `indestructible` blocks stay, explosives caught in it are lit with a short
-random fuse; bodies are pushed by their distance (players' damage is `DamageCause::Explosion`); what it leaves unsupported falls. Saved worlds re-light lit explosives when their chunks
+random fuse; bodies are pushed by their distance (players' damage is `DamageCause::Explosion`); what it leaves unsupported falls. **[built, 0.49.41]** Two options as data, both off in the
+shipped dynamite (4 m, its force ×1.5): `loosenRadiusM` (cells from `radiusM` out to it become pieces
+with no impulse) and `noPieceContactS` (a blast's pieces kept apart from one another for that long:
+`dwell_physics` `Physics::set_apart` moves their colliders from the Tier 1 group to a fourth group,
+`APART`, that every layer's filter takes but its own; past the window `Server::rejoin_apart` returns each
+once `overlaps_pieces` finds it overlapping no other piece). Saved worlds re-light lit explosives when their chunks
 load. Clients start a blast's effects when an `Explosion` modification turns a lit explosive's cell to
 air (`dwell-client` `blasts.rs`): a flash (a point light and a fireball), smoke and dust billboards
 (`render/blasts.rs`, the flames' pass; a CPU adapter's `cpuCount`), the `explode` sound by distance and

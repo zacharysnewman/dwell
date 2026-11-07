@@ -331,11 +331,14 @@ mod tests {
         assert_eq!(cells.len(), 513);
         assert!(cells.contains(&[4, 0, 0]) && cells.contains(&[0, 8, 0]));
         assert!(!cells.contains(&[3, 6, 3]));
-        // Dynamite's 5 m ball and its 2 m core: 1,013 cells, 61 of them destroyed outright, the
-        // 952 between flung.
+        // Dynamite's 4 m ball and its 2 m core (owner, 2026-11-06; was 5 m, 1,013 cells): 513
+        // cells, 61 of them destroyed outright, the 452 between flung; nothing loosened past it.
         let e = dynamite();
-        assert_eq!((e.radius_m, e.destroy_radius_m), (5.0, 2.0));
-        assert_eq!(cells_within(e.radius_m).len(), 1013);
+        assert_eq!((e.radius_m, e.destroy_radius_m), (4.0, 2.0));
+        assert_eq!(e.loosen_radius_m, e.radius_m);
+        assert_eq!(cells_within(e.radius_m).len(), 513);
+        // The loosen radius's 5 m ball (option C, by data): 1,013 cells.
+        assert_eq!(cells_within(5.0).len(), 1013);
         assert_eq!(cells_within(e.destroy_radius_m).len(), 61);
         for o in cells_within(e.radius_m) {
             let d = length(offset_m(o));

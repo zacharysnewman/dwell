@@ -50,7 +50,11 @@ pub(crate) fn groups(layer: Layer) -> InteractionGroups {
 
 /// The groups a probe of moving bodies matches (Tier 1 and characters).
 pub(crate) fn moving_groups() -> InteractionGroups {
-    InteractionGroups::new(Group::ALL, TIER1 | CHARACTER | APART, InteractionTestMode::And)
+    InteractionGroups::new(
+        Group::ALL,
+        TIER1 | CHARACTER | APART,
+        InteractionTestMode::And,
+    )
 }
 
 pub(crate) fn layer_of(collider: &Collider) -> Layer {

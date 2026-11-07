@@ -1,4 +1,4 @@
-# Explosives: dynamite **[built, 0.49.32; cost, 0.49.33–0.49.34; 5 m with a destroyed core, 0.49.38]**
+# Explosives: dynamite **[built, 0.49.32; cost, 0.49.33–0.49.34; 5 m with a destroyed core, 0.49.38; 4 m ×1.5, loosen and no-contact options, 0.49.41]**
 
 Owner (2026-11-06): "dynamite block that explodes after a short time when placed, it causes blocks in a
 radius to be affected by physics and appropriate force applied." The first use of the explosion
@@ -11,7 +11,8 @@ data.
 | Question | Answer |
 |---|---|
 | Lighting | Placed **unlit**; lit by a **torch or a use action**; then the fuse runs (its time data), fizzing with a sputtering flame. |
-| Blocks | **Radius 5 m** (owner, later the same day; was 4). Blocks **within 2 m are destroyed outright**; from 2 to 5 m **every block becomes a flung, real physics piece** (no visual-only debris); unbreakable (`indestructible`) blocks stay. Force falls off with distance (heavy blocks barely move at the edge). Was: every block in the radius a piece, nothing destroyed. |
+| Retune (later the same day) | "maybe keep it at 4m but increase the force?": **radius 4 m**, the 2 m core destroyed, damage only within 2 m, the impulse, its speed cap and the knockback **×1.5** (13,500 N·s, 33 m/s, 33 m/s). Two more ideas as data, measured side by side (§3.1): "dislodge (make physical) blocks in a 5m radius, but only exert force on 4m" (`loosenRadiusM`) and "what if all the physics blocks couldn't collide with each other for the first 1-2s? … keep it down to 1s" (`noPieceContactS`). |
+| Blocks | **Radius 5 m** (owner, later the same day; was 4; back to 4 m in 0.49.41, above). Blocks **within 2 m are destroyed outright**; from 2 to 5 m **every block becomes a flung, real physics piece** (no visual-only debris); unbreakable (`indestructible`) blocks stay. Force falls off with distance (heavy blocks barely move at the edge). Was: every block in the radius a piece, nothing destroyed. |
 | Players and bodies | **Knockback** scaled by distance out to its reach; **damage only within the destroy radius** (2 m; standing on it kills): a player 3–5 m off is pushed but unhurt. Walls don't shield the blast. |
 | Saved fuses | A world saved with a fuse burning restarts it in full when it loads (the simplest; kept). |
 | Chain reactions | Dynamite caught in a blast **goes off after a short random delay**. |
@@ -35,8 +36,9 @@ Each explosive: `block` (placed, unlit; `dwell:dynamite`, a hotbar item) and `li
 `dwell:lit_dynamite`, not placeable, `indestructible` so no break or region edit pulls its fuse; its
 `light` is `dwell:fuse`, a small sputtering flame, `shared/look/flames.json`, and its sound set's `burn`
 the fizz). Both one state (no properties): the generator refuses one with properties. `ignitedBy`,
-`fuseSeconds`, `radiusM`, `destroyRadiusM` (0 to `radiusM`, the generator refuses more), `impulse`, `falloff`, `lift`, `maxSpeedMs`, `reachM`, `knockbackMs`,
-`damage`, `waterRadiusM`, `chainDelaySeconds` and `effects` (§4); `limits` (`blastsPerTick`,
+`fuseSeconds`, `radiusM`, `destroyRadiusM` (0 to `radiusM`, the generator refuses more), `loosenRadiusM`
+(at least `radiusM`, the generator refuses less), `impulse`, `falloff`, `lift`, `maxSpeedMs`, `reachM`, `knockbackMs`,
+`damage`, `waterRadiusM`, `noPieceContactS` (0–10 s), `chainDelaySeconds` and `effects` (§4); `limits` (`blastsPerTick`,
 `maxPieces`). The `$comment` says what each means.
 
 **Lighting** (the existing input model, no new action): **Place with a torch held, aimed at dynamite,
@@ -60,6 +62,15 @@ it as usual. The server starts the fuse for every lit explosive an edit writes.
   flooded blocks beyond it leave water; `indestructible` blocks stay; an explosive caught in it is lit
   with a fuse drawn from `chainDelaySeconds` (a lit one's cut to it). Bodies within `reachM` are pushed
   by `impulse` × the share over their mass. What it leaves unsupported falls (felling's rule).
+- **Loosened, not flung** (`loosenRadiusM`, 0.49.41): the cells from `radiusM` out to it become pieces too,
+  with no impulse (the falloff's share is nothing past `radiusM`): they slump and fall. Equal to
+  `radiusM` (the shipped dynamite), none.
+- **Pieces kept apart** (`noPieceContactS`, 0.49.41): for that long a blast's pieces touch only the
+  terrain, players and other bodies, not one another (`dwell_physics::Physics::set_apart`: their
+  colliders move to the `APART` collision group, which every layer's filter takes but its own). Past it
+  each touches the others again only once it overlaps none (`overlaps_pieces`, `Server::rejoin_apart`
+  each tick after the step), so pieces that landed in one another aren't pushed apart. 0 (the shipped
+  dynamite): always touching. Pieces of two blasts in their windows don't touch either.
 - **Players** within `reachM` (to the nearest point of their capsule): a speed change of `knockbackMs`
   × (1 − d / reachM)^`falloff`; `damage` points (cause `Explosion`) × (1 − d / destroyRadiusM)^`falloff`
   only within `destroyRadiusM` (`explosives::blast_damage`): standing on it kills, 1.2 m off hurts
@@ -75,6 +86,38 @@ it as usual. The server starts the fuse for every lit explosive an edit writes.
   5.8, physics 4.0), the first second 4.2 ms a tick, 50–70 terrain-collision builds a second. Floating
   pieces read the waterfalls' columns once per pass (`falls::FallMemo`, 0.49.33): each wet piece had
   scanned 49 columns up and down their water, the pieces phase 100 → 37 ms of that second.
+### 3.1 The owner's four, compared (0.49.41)
+
+Chrome on the GPU (`?local=1&seed=0&fresh=1&at=2364.5,142,7443.5&time=0.45`, the LOD settled 20 s; the
+player flying, dynamite placed and lit by `__dwell.select`/`edit('place')` from (2364.5, 141, 7441.5)
+looking down 60°, its cell (2364, 281, 7442) on the bank; then the view from (2364.5, 144, 7432.5), yaw
+0, pitch −15). Ticks a second from `__dwell.serverStats()` (it reports every 1–2 s), `physics` the
+worker's step summed over the 23 s after the blast, frames from `requestAnimationFrame` over the 15 s
+from the blast. Native (`tests/explosives.rs` `measure_dynamite_configs`, buried in the flat world's
+stone, release): pieces, physics summed, time until every piece is a block again.
+
+| | Config | Pieces (native) | Slowest second | Seconds below 55 | Physics (Chrome) | Worst frame / p95 | Settled (Chrome / native) |
+|---|---|---|---|---|---|---|---|
+| A | 4 m, ×1.5 (**shipped**) | 452 | 48 | 1 | ~1.6 s | 50 / 18 ms | ~9 s / 12 s |
+| B | A + no contact 1 s | 452 | 16 | ≥ 20 (still 16–24 at 23 s) | ~36 s | 34 / 18 ms | not in 23 s / 27 s |
+| C | loosen 5 m, force 4 m, ×1.5 | 952 | 16 | ~10 | ~8.6 s | 51 / 33 ms | ~15 s / 30 s |
+| D | C + no contact 1 s | 952 | 16 | ≥ 20 (16 at 23 s) | ~44 s | 67 / 33 ms | not in 23 s / 30 s+ |
+
+(The 5 m blast of 0.49.38 for comparison: 32–48 ticks a second for 4–7 s.) Natively: A 397 ms of
+physics, B 4,516, C 1,939, D 15,882; the first second's ticks 172, 196, 451, 320 ms.
+
+**The no-contact window costs more than it saves**, so dynamite ships as **A** (`noPieceContactS` 0,
+`loosenRadiusM` = `radiusM`), B–D a data change away. In the window the step is no cheaper (natively
+3.2 ms a tick against A's 1.9: packed pieces that touch are held by their neighbours and stop, while
+pieces that don't all fly at full speed, spread wider, and build more terrain collision); after it the
+pieces lie in heaps inside one another, those that overlap stay apart (293 of 452 at 3 s), and the heaps
+of interpenetrating bodies resting on the ground and on rejoined pieces keep the solver busy for 10–20 s
+(natively 6–11 ms ticks at 3–9 s). No popping was seen (the re-enable waits until a piece overlaps
+none), but the cost is the reason. Making it pay would need the apart pieces to settle while still
+overlapping (or to rejoin at once with capped depenetration) — not tried. Screenshots
+(`docs/explosives/`): `A-mid.jpeg`, `A-after.jpeg`, `B-mid.jpeg`, `B-after.jpeg`, `C-mid.jpeg`,
+`C-after.jpeg`, `D-mid.jpeg`, `D-after.jpeg` (mid: ~0.1–0.5 s after the blast; after: 23 s on).
+
 - **Terrain collision** (0.49.34) is rebuilt only for writes that change what a cell is to collision
   (`Chunk::collision_revision`, bumped when `dwell_blocks::collision_class` — nothing, or the shape —
   changes): the water the host lets into the crater had rebuilt the chunks round it, 54 of the first
@@ -122,15 +165,18 @@ Dev hook: `__dwell.blasts()` (each blast's place and age), telemetry `blasts.puf
 
 - Data: `shared/explosives/gen.test.mjs` (the checked-in output, an explosive by data alone, bad entries
   named). `dwell-world` `explosives.rs` (the table's blocks exist, a torch lights and nothing else, a
-  fixture entry's igniter, the falloff and mass, the radius's cells (5 m: 1,013; the 2 m core: 61), damage
+  fixture entry's igniter, the falloff and mass, the radius's cells (4 m: 513; the 2 m core: 61; 5 m: 1,013), damage
 only within the destroy radius and knockback past it, the lift on both faces, chain delays,
   the boom's level); `tests/placement.rs` (both faces: a torch against dynamite lights it in its cell,
   stone goes against it, lit it can't be broken).
 - Server (`dwell-sim` `tests/explosives.rs`, both faces on an empty world's stone ground): lighting starts
   a 3 s fuse, nothing before it, then every breakable cell within 2 m is gone with no piece, and every
-  one from 2 to 5 m is a piece flung outward (each starting past 2 m), the near ones faster, bedrock
+  one from 2 to 4 m is a piece flung outward (each starting past 2 m), the near ones faster, bedrock
   stays; a player 0.5 m off dies, one 1.2 m off is hurt, one 4 m off is pushed out and up but unhurt; a second dynamite 3 m off is lit with a chain delay and blows after it; water within 3 m is
-  blown out and farther water stays; a fixture explosive by data alone (2 m, its 1 m core destroyed, 0.5 s); the cost bound
+  blown out and farther water stays; a loosen shell by data (force to 2 m, loosened to 3 m: every cell
+  1–3 m a piece, those past 2 m given no impulse, the near ones flung); a blast's pieces with a 1 s
+  window make no piece-piece contact for its 58 ticks (without it, over 50 pairs the tick after), touch
+  again after it and mostly rejoin; a fixture explosive by data alone (2 m, its 1 m core destroyed, 0.5 s); the cost bound
   (above); a world saved with a fuse burning lights it again (red: no fuse after reloading, then the
   blast found its chunk evicted far from every player).
 - Client: `blasts.rs` (smoke rises and dust falls on both faces, each setting, the CPU's fewer puffs, the

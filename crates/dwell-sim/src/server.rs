@@ -2522,7 +2522,10 @@ impl Server {
         let mut flung = Vec::new();
         // Out to the loosen radius: past `radius_m` the pieces get no impulse (`fling_speed`'s
         // share is nothing there), so they slump and fall.
-        for o in cells_within(e.loosen_radius_m.max(e.radius_m)).into_iter().skip(1) {
+        for o in cells_within(e.loosen_radius_m.max(e.radius_m))
+            .into_iter()
+            .skip(1)
+        {
             let c = [at[0] + o[0], at[1] + o[1], at[2] + o[2]];
             let m = self.world.get_voxel(c[0], c[1], c[2]);
             if m == M.air {
