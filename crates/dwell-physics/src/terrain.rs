@@ -6,8 +6,8 @@
 //! the generated ramps (HALF_HEIGHT_GRID.md §3) — go into one
 //! triangle mesh per chunk (`TriMeshFlags::FIX_INTERNAL_EDGES`) of their faces that no neighbour
 //! covers. With f64 positions it is exact anywhere in the world, so it needs no regions or anchors.
-//! Chunks are added on demand, rebuilt when the world changes them or any chunk their shapes read
-//! (same tick), and dropped when far from every player.
+//! Chunks are added on demand, rebuilt when the world changes them (a chunk with shaped cells also
+//! when any chunk its shapes read changes; same tick), and dropped when far from every player.
 
 use dwell_world::hash::HashMap;
 
@@ -36,6 +36,9 @@ struct Loaded {
     /// It has solid cells, so its collision reads the chunks around it (they are watched); an
     /// empty chunk's collision is empty whatever its neighbours, so only it is watched.
     wide: bool,
+    /// It has shaped cells, whose faces are culled against the chunks around it: only such a
+    /// chunk is rebuilt when a neighbour changes (its full cubes are its own cells alone).
+    shaped: bool,
 }
 
 type Mask = Box<[u64; CHUNK_VOLUME / 64]>;
@@ -55,6 +58,8 @@ pub struct TerrainCollision {
     /// Every chunk a loaded chunk's collision reads (`deps`: a shape reads up to two cells
     /// across its chunk's border).
     watched: HashMap<ChunkCoord, Watch>,
+    /// Chunk builds so far (tests).
+    loads: u64,
 }
 
 /// The apron a chunk's collision reads: a cell's shape reads its neighbours one cell out, and its
@@ -93,6 +98,8 @@ fn around(c: ChunkCoord) -> impl Iterator<Item = ChunkCoord> {
 /// (vertices relative to the chunk's minimum corner).
 struct Built {
     solid: Option<Mask>,
+    /// Any colliding cell is shaped (not a full cube), its faces culled against its neighbours.
+    shaped: bool,
     vertices: Vec<DVec3>,
     triangles: Vec<[u32; 3]>,
 }
@@ -129,6 +136,7 @@ fn build(world: &mut VoxelWorld, c: ChunkCoord) -> Built {
     let n = CHUNK_SIZE;
     let mut out = Built {
         solid: None,
+        shaped: false,
         vertices: Vec::new(),
         triangles: Vec::new(),
     };
@@ -138,7 +146,10 @@ fn build(world: &mut VoxelWorld, c: ChunkCoord) -> Built {
         let v = world.read(c).voxels();
         (
             v.iter().any(|&m| collides(m)),
-            v.iter().all(|&m| collides(m)),
+            // Full cubes only: a shaped cell's faces are culled against its neighbours, which a
+            // buried chunk doesn't read (a ramp placed in a dug cell deep down panicked here).
+            v.iter()
+                .all(|&m| collides(m) && is_cube(dwell_blocks::shape::shape_of(m))),
         )
     };
     if !any_solid {
@@ -178,6 +189,7 @@ fn build(world: &mut VoxelWorld, c: ChunkCoord) -> Built {
                 1 << (i % 64);
             continue;
         }
+        out.shaped = true;
         for f in faces_of(shape) {
             if f.tag < SURFACE_TAG {
                 let d = dwell_world::edit::FACE_DIRS[usize::from(f.tag)];
@@ -237,6 +249,7 @@ impl TerrainCollision {
             collider,
             chunks: HashMap::default(),
             watched: HashMap::default(),
+            loads: 0,
         }
     }
 
@@ -299,7 +312,9 @@ impl TerrainCollision {
     fn load(&mut self, physics: &mut Physics, world: &mut VoxelWorld, c: ChunkCoord) {
         let built = build(world, c);
         let mesh_hash = built.mesh_hash();
+        self.loads += 1;
         let wide = built.solid.is_some() || !built.triangles.is_empty();
+        let shaped = built.shaped;
         let old = self.chunks.remove(&c);
         let fresh = old.is_none();
         let old_wide = old.as_ref().map(|o| o.wide);
@@ -322,6 +337,7 @@ impl TerrainCollision {
                 mesh,
                 mesh_hash,
                 wide,
+                shaped,
             },
         );
         if old_wide != Some(wide) {
@@ -431,9 +447,13 @@ impl TerrainCollision {
         built
     }
 
-    /// Rebuilds the loaded chunks whose collision the world has changed: the chunk itself or any
-    /// chunk around it (edits, streamed or replaced chunks). An unmodified chunk the world evicted
-    /// reads the same when regenerated; rebuilding anyway is the simple, safe path.
+    /// Rebuilds the loaded chunks whose collision the world has changed: the chunk itself, and the
+    /// shaped chunks around it, whose faces are culled against it (edits, streamed or replaced
+    /// chunks). A chunk of full cubes only is its own cells alone (Parry joins voxels across chunk
+    /// borders itself), so it isn't rebuilt for a neighbour: a settling piece's cells rebuilt the
+    /// 27 chunks round them, ~10 ms of a tick natively for a blast's pieces (2026-11-06). An
+    /// unmodified chunk the world evicted reads the same when regenerated; rebuilding anyway is
+    /// the simple, safe path.
     pub fn sync(&mut self, physics: &mut Physics, world: &mut VoxelWorld) {
         let mut changed: Vec<ChunkCoord> = Vec::new();
         for (&c, w) in &mut self.watched {
@@ -448,8 +468,9 @@ impl TerrainCollision {
         }
         let mut rebuild: Vec<ChunkCoord> = changed
             .iter()
-            .flat_map(|&c| around(c))
-            .filter(|c| self.chunks.contains_key(c))
+            .flat_map(|&c| around(c).map(move |n| (c, n)))
+            .filter(|&(c, n)| self.chunks.get(&n).is_some_and(|l| n == c || l.shaped))
+            .map(|(_, n)| n)
             .collect();
         // In a fixed order, so every run (and the client's prediction) builds the same colliders.
         rebuild.sort_by_key(|c| (c.y, c.z, c.x));
@@ -470,6 +491,11 @@ impl TerrainCollision {
         for c in drop {
             self.unload(physics, c);
         }
+    }
+
+    /// How many chunk builds there have been (tests).
+    pub fn loads(&self) -> u64 {
+        self.loads
     }
 
     pub fn loaded_chunks(&self) -> usize {
@@ -523,5 +549,101 @@ mod mass_tests {
             "the terrain collider has mass {}",
             collider.mass()
         );
+    }
+}
+
+#[cfg(test)]
+mod rebuild_tests {
+    use super::*;
+    use dwell_world::{Chunk, ChunkCoord, VoxelWorld};
+
+    /// Stone below y = 0 and air above, the 3 × 3 × 3 chunks round the chunk at the origin loaded.
+    fn loaded() -> (VoxelWorld, Physics, TerrainCollision) {
+        let stone = dwell_blocks::require("dwell:stone");
+        let generator: dwell_world::ChunkGenerator =
+            std::sync::Arc::new(move |c: ChunkCoord, chunk: &mut Chunk| {
+                if c.y < 0 {
+                    chunk.voxels_mut().fill(stone);
+                }
+            });
+        let mut world = VoxelWorld::new(generator, None);
+        let mut physics = Physics::default();
+        let mut terrain = TerrainCollision::new(&mut physics);
+        let lo = DVec3::from_array(chunk_origin_m(ChunkCoord::new(-1, -1, -1)));
+        let hi = DVec3::from_array(chunk_origin_m(ChunkCoord::new(2, 2, 2)));
+        terrain.ensure_box(
+            &mut physics,
+            &mut world,
+            lo + DVec3::splat(0.1),
+            hi - DVec3::splat(0.1),
+        );
+        assert_eq!(terrain.loaded_chunks(), 27);
+        // The chunks the loads generated round the block are watched from now.
+        terrain.sync(&mut physics, &mut world);
+        (world, physics, terrain)
+    }
+
+    // face-a-only: which chunks are rebuilt has no up; one block of chunks round the origin.
+    #[test]
+    fn a_cell_changed_rebuilds_its_chunk_not_the_full_cube_chunks_round_it() {
+        // 2026-11-06: each settling piece's cells rebuilt the 27 chunks round them (a blast's
+        // pieces settling spiked the tick ~10 ms natively); a chunk of full cubes reads only its
+        // own cells. Red before: 27 builds.
+        let (mut world, mut physics, mut terrain) = loaded();
+        let before = terrain.loads();
+        world.set_voxel(5, -1, 5, dwell_world::M.air);
+        terrain.sync(&mut physics, &mut world);
+        assert_eq!(
+            terrain.loads() - before,
+            1,
+            "only the edited chunk is built again"
+        );
+    }
+
+    // face-a-only: as above.
+    #[test]
+    fn a_shaped_chunk_beside_an_edit_is_rebuilt_as_its_faces_may_uncover() {
+        // A ramp on the border of the chunk at x = -1, its east face against the stone at x = 0
+        // (the next chunk): digging that stone uncovers the face, so the ramp's chunk is rebuilt.
+        let ramp = dwell_blocks::parse_state(
+            "dwell:grass_ramp[facing=west,flooded=false,half=bottom,shape=ramp]",
+        )
+        .expect("a ramp");
+        let (mut world, mut physics, mut terrain) = loaded();
+        world.set_voxel(-1, -1, 5, ramp);
+        terrain.sync(&mut physics, &mut world);
+        let mesh = |t: &TerrainCollision| t.chunks[&ChunkCoord::new(-1, -1, 0)].mesh_hash;
+        let covered = mesh(&terrain);
+        let before = terrain.loads();
+        world.set_voxel(0, -1, 5, dwell_world::M.air);
+        terrain.sync(&mut physics, &mut world);
+        assert_eq!(
+            terrain.loads() - before,
+            2,
+            "the edited chunk and the ramp's"
+        );
+        assert_ne!(
+            mesh(&terrain),
+            covered,
+            "the ramp's face by the dug cell collides"
+        );
+    }
+
+    // face-a-only: a buried chunk is one under solid ground; the rule has no up of its own.
+    #[test]
+    fn a_ramp_in_a_chunk_otherwise_solid_under_solid_ground_builds() {
+        // Found 2026-11-06: a chunk all solid under a solid chunk was built as cubes without
+        // reading its neighbours, and a ramp in it (placed in a dug cell deep down) read them
+        // to cull its faces: an index out of bounds, the server's tick panicking.
+        let ramp = dwell_blocks::parse_state(
+            "dwell:grass_ramp[facing=east,flooded=false,half=bottom,shape=ramp]",
+        )
+        .expect("a ramp");
+        let (mut world, mut physics, mut terrain) = loaded();
+        world.set_voxel(5, -40, 5, ramp); // in the chunk under (0, -1, 0)
+        let at = DVec3::new(5.5, -19.9, 5.5);
+        terrain.ensure_box(&mut physics, &mut world, at, at);
+        assert!(terrain.is_loaded(ChunkCoord::new(0, -2, 0)));
+        assert!(terrain.chunks[&ChunkCoord::new(0, -2, 0)].shaped);
     }
 }

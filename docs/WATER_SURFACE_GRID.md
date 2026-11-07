@@ -368,7 +368,7 @@ jobs off the tick, no tick over 3.9 ms (the edits' own). In the browser (the ben
 
 What is left over 25 ms with the pit is the pit's own collapse: its cut undercuts the bank and the
 pieces that fall are bodies stepped on the tick (a trace of the first 4 s: of the server's 1,118 ms,
-764 ms in the physics step, the water and LOD none of it). Without the pit no tick passes 13 ms.
+764 ms in the physics step, the water and LOD none of it). Without the pit no tick passes 13 ms. Fixed in 0.49.29 (BUGS.md #45, ARCHITECTURE.md §7.3): the sand had jammed against the cut's walls, a body for 30 s; it now falls and is blocks again within ~5 s, the cut's worst second 5.1 ms mean in Chrome.
 
 **Deviations:** the browser's water worker is started by the local-mode worker (nested), not by
 `connect.ts`, so a friend world's host carries it too; the water's report is asynchronous there

@@ -703,6 +703,20 @@ struct EditLogEntry {
     reason: VoxelModificationReason,
 }
 
+/// The tick's phases, in order, as `Server::tick_phases` names them.
+pub const TICK_PHASES: [&str; 10] = [
+    "collect",
+    "edits",
+    "players",
+    "pushes+damage",
+    "pieces",
+    "physics",
+    "settle",
+    "water+respawn",
+    "snapshots",
+    "stream+lod+save",
+];
+
 pub struct Server {
     config: ServerConfig,
     entropy: Box<dyn Entropy>,
@@ -715,6 +729,8 @@ pub struct Server {
     knockbacks: Vec<(u16, Vec3)>, // applied in the next step
     /// The falling pieces (docs/FELLING.md).
     felling: crate::felling::Felling,
+    /// Each tick phase's wall time (ms) summed since the last `tick_phases` (native only).
+    phase_ms: [f64; TICK_PHASES.len()],
     /// The water surface grid (docs/WATER_SURFACE_GRID.md): the world's water, held as found until edits free it.
     water: crate::water::host::WaterHost,
     /// The water's side of the world (ADR 0062): what its copy was told, what to send it next, the
@@ -805,6 +821,7 @@ impl Server {
             outbox: Vec::new(),
             knockbacks: Vec::new(),
             felling: crate::felling::Felling::default(),
+            phase_ms: [0.0; TICK_PHASES.len()],
             // The water surface grid (Phase 53, docs/WATER_SURFACE_GRID.md): the world's water read
             // from its blocks, held at rest until edits free it; the world map's flow kept for
             // the sources to come.
@@ -1402,6 +1419,7 @@ impl Server {
 
     /// Advances the simulation by one 1/SIM_HZ step.
     pub fn step(&mut self) {
+        let mut watch = crate::clock::Stopwatch::start();
         // 0. Chunks generated since the last tick (off-thread, or here within the budget), and
         // saves the I/O thread finished.
         let mut ready = Vec::new();
@@ -1415,10 +1433,12 @@ impl Server {
         self.collect_saves();
         // What the water sent since (its writes, currents, wanted chunks, record).
         self.apply_water();
+        self.phase_ms[0] += watch.lap_ms();
 
         // 1. Block edits queued since the last tick (§6.5); collision syncs in the controller pass.
         self.apply_edits();
         self.apply_body_edits();
+        self.phase_ms[1] += watch.lap_ms();
 
         // 2. One input per player per tick, in sequence order (§9.3). Starved: repeat the last one.
         for s in self.sessions.values_mut() {
@@ -1470,6 +1490,7 @@ impl Server {
         self.players
             .set_terrain_boxes(boxes, self.felling.rules.terrain_chunks_per_tick);
         self.players.tick(&mut self.world, &mut self.physics);
+        self.phase_ms[2] += watch.lap_ms();
         // Pieces pushed are held from contacts while pushed (docs/BUILT_BODIES.md §6).
         let pushes = self.players.pushes().to_vec();
         self.felling.pushed(&mut self.physics, &pushes);
@@ -1496,15 +1517,19 @@ impl Server {
 
         // 4. The falling pieces' hard hits hurt (before the step resolves them), physics, then the
         // pieces at rest settle (docs/FELLING.md §4).
+        self.phase_ms[3] += watch.lap_ms();
         self.piece_hits();
         // Held bodies whose build platform is gone move (docs/BUILT_BODIES.md §3); bodies in water
         // float (§6).
         self.felling
             .release_unheld(&mut self.world, &mut self.physics);
         self.felling.float(&mut self.world, &mut self.physics);
+        self.phase_ms[4] += watch.lap_ms();
         self.physics.step(1.0 / f64::from(SIM_HZ));
+        self.phase_ms[5] += watch.lap_ms();
         self.tick += 1;
         self.settle_pieces();
+        self.phase_ms[6] += watch.lap_ms();
         self.flow_water();
 
         // 5. Respawns, then snapshots at SNAPSHOT_HZ.
@@ -1523,12 +1548,14 @@ impl Server {
             e.position = [p.x, p.y - f64::from(self.players.half_height(h)), p.z];
             self.broadcast_world(&Message::PlayerEvent(e));
         }
+        self.phase_ms[7] += watch.lap_ms();
         if self.tick.is_multiple_of(SNAPSHOT_EVERY) {
             self.send_snapshots();
         }
         if self.tick.is_multiple_of(CURRENTS_EVERY) {
             self.send_currents();
         }
+        self.phase_ms[8] += watch.lap_ms();
 
         // 6. Terrain streaming, then what to generate next and what to forget.
         self.explicit_wanted.clear();
@@ -1557,6 +1584,19 @@ impl Server {
         }
         // 8. What the water is told this tick goes as one batch.
         self.flush_water();
+        self.phase_ms[9] += watch.lap_ms();
+    }
+
+    /// Each tick phase's wall time (ms, natively; zeros on wasm32) summed since the last call,
+    /// named by [`TICK_PHASES`]: where a slow tick's time goes (tests, probes, tools).
+    pub fn tick_phases(&mut self) -> [(&'static str, f64); TICK_PHASES.len()] {
+        let ms = std::mem::take(&mut self.phase_ms);
+        std::array::from_fn(|k| (TICK_PHASES[k], ms[k]))
+    }
+
+    /// How many bodies (falling pieces and built bodies) there are now.
+    pub fn body_count(&self) -> usize {
+        self.felling.pieces.len()
     }
 
     fn view_center(&self, s: &Session) -> Option<ChunkCoord> {
