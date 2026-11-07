@@ -177,11 +177,7 @@ pub fn push_dir(centre: [f64; 3], at: [f64; 3], lift: f64) -> [f64; 3] {
     let up = FaceFrame::at_height(centre[1]).vector([0.0, 1.0, 0.0]);
     let d = [at[0] - centre[0], at[1] - centre[1], at[2] - centre[2]];
     let n = length(d);
-    let out = if n > 1e-6 {
-        d.map(|v| v / n)
-    } else {
-        up
-    };
+    let out = if n > 1e-6 { d.map(|v| v / n) } else { up };
     let v = [
         out[0] + up[0] * lift,
         out[1] + up[1] * lift,
