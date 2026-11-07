@@ -35,8 +35,6 @@ pub struct FlowData {
     pub max_owed_s: f64,
     /// A chunk sleeps once its levels held within this (m) for `calm_s`.
     pub sleep_band_m: f64,
-    /// ... and its levels swung no more than this (m) in it (BUGS.md #41).
-    pub sleep_swing_m: f64,
     /// A sleeping chunk wakes when its account would move its water this far (m).
     pub wake_band_m: f64,
     /// The calm window (water s).
@@ -52,13 +50,6 @@ pub struct FlowData {
     pub rest_cut: f64,
     /// ... and one whose comes more than this share from them returns.
     pub rest_back: f64,
-    /// A chunk falls asleep with an edge face's mean flow kept if its calm window's two halves'
-    /// means agree within this share of the larger (BUGS.md #41).
-    pub kept_steady: f64,
-    /// Water slower than `still_damp_ms` (m/s) loses its flow over this long (s) besides its
-    /// friction (BUGS.md #41).
-    pub still_damp_s: f64,
-    pub still_damp_ms: f64,
     /// An edit frees the water within this many columns.
     pub edit_reach: u32,
     /// How far past half a drawn step (fill steps) a level moves before it is drawn again.

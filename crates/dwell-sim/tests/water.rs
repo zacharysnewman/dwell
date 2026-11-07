@@ -576,11 +576,7 @@ fn dam_seed0_river(
             build(&mut w, &mut water, top + 4);
         }
         let (mut writes, mut chunks) = (0, std::collections::HashSet::new());
-        let dbg_m: usize = std::env::var("DBG_TICK").ok().and_then(|v| v.parse().ok()).unwrap_or(usize::MAX);
-        for s in 0..60 {
-            if m == dbg_m {
-                tick_dbg(s, &water);
-            }
+        for _ in 0..60 {
             for (c, _) in water.tick(&mut w, &[player], 1.0) {
                 writes += 1;
                 chunks.insert(dwell_world::chunk_of(c[0], c[1], c[2]));
@@ -765,70 +761,4 @@ fn the_river_below_a_dam_across_seed0s_river_dries_to_the_next_inflow() {
         "{cells} water cells left below the wall ({cols} columns)"
     );
     assert_eq!(awake, 0, "the dry river's chunks sleep");
-}
-
-#[test]
-#[ignore]
-fn explore_seed0_awake() {
-    let z0: i32 = std::env::var("Z0").ok().and_then(|v| v.parse().ok()).unwrap_or(7380);
-    let mins: usize = std::env::var("MINS").ok().and_then(|v| v.parse().ok()).unwrap_or(100);
-    let mut w10 = 0;
-    dam_seed0_river(z0, 20, mins, |m, _, writes, _, water| {
-        w10 += writes;
-        if m % 10 == 9 {
-            eprintln!("z {z0} minute {} writes/10min {w10} awake {} free {:.0} dbg {:?} wakes {} clamped {} of {}", m + 1, water.awake_chunks(), water.free_volume(), water.dbg, water.wakes, dwell_sim::water::CLAMPED.swap(0, std::sync::atomic::Ordering::Relaxed), dwell_sim::water::FACES.swap(0, std::sync::atomic::Ordering::Relaxed));
-            w10 = 0;
-        }
-        if m + 1 == 20 + mins {
-            for l in water.log.iter().take(60) {
-                eprintln!("{l}");
-            }
-            for d in water.debug_awake() {
-                eprintln!("  {d:?}");
-            }
-        }
-    });
-}
-
-thread_local! {
-    static SW: std::cell::RefCell<std::collections::HashMap<(i32, i32, usize), (f32, f32, f32, f32, f32, f32)>> = Default::default();
-}
-fn tick_dbg(s: usize, water: &dwell_sim::water::Water) {
-    SW.with(|sw| {
-        let mut sw = sw.borrow_mut();
-        for d in water.debug_awake() {
-            for l in 0..256 {
-                if let Some(c) = water.debug_col(d.0, d.1, l) {
-                    if c.0.is_nan() || c.4 || c.1 <= 0.001 { continue; }
-                    let lv = c.0 + c.1;
-                    let e = sw.entry((d.0, d.1, l)).or_insert((lv, lv, 0.0, c.1, c.3, 0.0));
-                    e.0 = e.0.min(lv);
-                    e.1 = e.1.max(lv);
-                    e.2 = e.2.max(c.5);
-                    e.3 = c.1;
-                    e.4 = c.3;
-                }
-            }
-        }
-        {
-            let mut row = format!("s{s:>2}");
-            for l in [75usize, 91, 107, 90, 92] {
-                if let Some(c) = water.debug_col(143, 465, l) {
-                    row += &format!(" | l{l} f{:.2} d{:.3} q{:.3} s{}", c.0, c.1, c.5, c.3);
-                }
-            }
-            eprintln!("{row}");
-        }
-        if s == 59 {
-            let mut v: Vec<_> = sw.iter().map(|(k, e)| (*k, *e)).collect();
-            v.sort_by(|a, b| (b.1.1 - b.1.0).total_cmp(&(a.1.1 - a.1.0)));
-            for (k, e) in v.iter().take(25) {
-                let fr = e.2 / e.3 / (9.8 * e.3).sqrt();
-                eprintln!("swing {:.4} at {:?} depth {:.3} qmax {:.3} Fr {:.2} share {}", e.1 - e.0, k, e.3, e.2, fr, e.4);
-            }
-            let n = v.len();
-            let big = v.iter().filter(|x| x.1.1 - x.1.0 > 0.005).count();
-            eprintln!("{big} of {n} awake wet columns swing > 5 mm over the minute");
-        }
-    });
 }

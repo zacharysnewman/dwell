@@ -154,6 +154,11 @@ now, or later allow a few stacked water layers in the columns that have overhang
   law's and the carried flow's over its depth (a level reach's ~0.1 m/s), not the map's mean-fall
   current a held one has (BUGS.md #42: 1.28 m/s): unchanged here. Read from the state each substep,
   so a saved world's reach below a dam dries on load.
+- **Open: a full reservoir behind a dam never sleeps** (BUGS.md #41b, measured 0.49.40): the
+  water is steady when every chunk is awake, but a chunk asleep is taken to carry no flow and what
+  it owes comes back on waking as a wave, so a dammed reservoir that spills, and the reaches beside
+  it, keep waking each other; deep still water's slosh is barely damped. The fixtures are ignored
+  tests in `water::tests`.
 - **A tick keeps to a budget** (0.49.7, BUGS.md #33): water runs on game time, so a water tick is
   seconds of water; with much water awake (a dammed river) its substeps took 50 ms of the server's
   thread a tick and the game stopped and started. A tick now takes at most `stepBudget`
