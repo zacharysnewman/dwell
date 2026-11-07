@@ -2693,9 +2693,10 @@ mod tests {
         assert!(!surface.contains("reflected * s.shadow"));
         // The lookup's result is direct light's: past the maps (or with the light faded) it is
         // the stand-in, which the first layer's sky light replaces.
-        let look = body("shadow_light");
+        assert!(body("shadow_light").contains("shadow_light_taps(rel, n, stand_in, i32(shadows.pcf.x))"));
+        let look = body("shadow_light_taps");
         assert!(look.contains(
-            "let inside = mix(stand_in, shadow_pcf(c, p) * lod_shadow(rel), shadows.cfg.y);"
+            "let inside = mix(stand_in, shadow_pcf_taps(c, p, taps) * lod_shadow(rel), shadows.cfg.y);"
         ));
         assert!(look.contains("return stand_in * cloud_shadow(rel);"));
         // Past the cascades, the stand-in shaded by the distant terrain (the third layer), and a
