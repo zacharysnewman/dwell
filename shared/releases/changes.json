@@ -2,6 +2,12 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions card. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.49.36",
+      "changes": [
+        "Moving around the world no longer hitches as new terrain comes into view: the work that decides which chunks are empty sky now runs in the background"
+      ]
+    },
+    {
       "version": "0.49.35",
       "changes": [
         "Your world's autosave no longer causes a hitch: it is written a little at a time between moments of play"
