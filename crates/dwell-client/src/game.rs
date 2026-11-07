@@ -3272,6 +3272,9 @@ impl<S: Scene> dwell_lod::ChunkReadiness for LodHost<'_, S> {
     fn chunk_loaded(&self, coord: ChunkCoord) -> bool {
         self.streamer.is_loaded([coord.x, coord.y, coord.z])
     }
+    fn drawable_revision(&self) -> Option<u64> {
+        Some(self.streamer.drawable_revision())
+    }
 }
 impl<S: Scene> dwell_lod::LodNetwork for LodHost<'_, S> {
     fn request_sections(&mut self, sections: Vec<dwell_protocol::LodSectionRequest>) {

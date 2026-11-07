@@ -212,6 +212,8 @@ struct Host {
     requests: Vec<Vec<LodSectionRequest>>,
     chunk_requests: Vec<Vec<ChunkCoordNet>>,
     arriving: Vec<ChunkCoord>,
+    /// The chunks' revision (None: unknown, the LOD selects every frame).
+    drawn_rev: Option<u64>,
 }
 
 impl Host {
@@ -290,6 +292,9 @@ impl LodView for Host {
 impl ChunkReadiness for Host {
     fn chunk_drawable(&self, c: ChunkCoord) -> bool {
         self.drawable.as_ref().is_some_and(|f| f(c)) || self.held.contains(&c)
+    }
+    fn drawable_revision(&self) -> Option<u64> {
+        self.drawn_rev
     }
 }
 
@@ -2020,4 +2025,55 @@ fn a_modified_section_is_meshed_with_its_generated_surface() {
         with >= without,
         "{with} modified meshes with a surface, {without} without (the first, while it is asked)"
     );
+}
+
+#[test]
+fn a_still_camera_with_nothing_loading_selects_nothing_new_a_moved_one_does() {
+    // Standing still with everything loaded the selection cost ~1 ms a frame on the M1 Air
+    // (docs/DEV_TOOLS.md "Flight loading"): it skips while it cannot change.
+    let mut host = Host::with_chunks(|_| false);
+    host.drawn_rev = Some(0);
+    let mut lod = system(4.0, 256, 64, 64);
+    let mut now = 0.0;
+    let cam = camera([0.0, 40.0, 0.0], 0.0, -10.0);
+    run_for(&mut lod, &mut host, &mut now, &cam, 30_000.0);
+    let drawn = lod.last_selection().drawn.clone();
+    assert!(!drawn.is_empty());
+    let (selected, _) = lod.selections();
+    run_for(&mut lod, &mut host, &mut now, &cam, 1_000.0);
+    assert_eq!(lod.selections().0, selected, "a still camera reselected");
+    assert_eq!(lod.last_selection().drawn, drawn);
+    // A sub-cell sway and a hundredth of a degree are the same view.
+    let sway = camera([0.1, 40.1, 0.1], 0.004, -10.0);
+    run_for(&mut lod, &mut host, &mut now, &sway, 100.0);
+    assert_eq!(lod.selections().0, selected);
+    // Moved, turned, a chunk's change or a setting: selects again.
+    let moved = camera([3.0, 40.0, 0.0], 0.0, -10.0);
+    lod.update(&moved, now, &mut host);
+    assert_eq!(lod.selections().0, selected + 1, "moved");
+    run_for(&mut lod, &mut host, &mut now, &moved, 30_000.0);
+    let (selected, _) = lod.selections();
+    let turned = camera([3.0, 40.0, 0.0], 30.0, -10.0);
+    lod.update(&turned, now, &mut host);
+    assert_eq!(lod.selections().0, selected + 1, "turned");
+    run_for(&mut lod, &mut host, &mut now, &turned, 30_000.0);
+    let (selected, _) = lod.selections();
+    host.drawn_rev = Some(1);
+    lod.update(&turned, now, &mut host);
+    assert_eq!(lod.selections().0, selected + 1, "a chunk changed");
+    run_for(&mut lod, &mut host, &mut now, &turned, 30_000.0);
+    let (selected, _) = lod.selections();
+    lod.set_detail_distance(Some(64.0));
+    lod.update(&turned, now, &mut host);
+    assert_eq!(lod.selections().0, selected + 1, "a setting changed");
+}
+
+#[test]
+fn without_a_chunk_revision_the_lod_selects_every_frame() {
+    let mut host = Host::with_chunks(|_| false);
+    let mut lod = system(4.0, 256, 64, 64);
+    let mut now = 0.0;
+    let cam = camera([0.0, 40.0, 0.0], 0.0, -10.0);
+    run_for(&mut lod, &mut host, &mut now, &cam, 30_000.0);
+    assert_eq!(lod.selections().1, 0);
 }

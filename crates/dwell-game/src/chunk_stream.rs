@@ -517,6 +517,8 @@ pub struct ChunkStreamer<S, G, M: Mesher, V> {
     /// within `mesh_dirty`'s budget, and no chunk is meshed while it or a neighbour waits here.
     unlit: std::collections::VecDeque<Coord>,
     unlit_set: HashSet<Coord>,
+    /// Bumped whenever what is loaded, Air or meshed may have changed ([`Self::drawable_revision`]).
+    drawn_revision: u64,
     /// Running estimates of a chunk's light and a mesh start (ms), to stop before the deadline.
     light_cost: ItemCost,
     mesh_cost: ItemCost,
@@ -569,6 +571,7 @@ where
             token: 0,
             unlit: Default::default(),
             unlit_set: HashSet::default(),
+            drawn_revision: 0,
             light_cost: ItemCost::default(),
             mesh_cost: ItemCost::default(),
             second: None,
@@ -660,6 +663,7 @@ where
             self.forget(key);
             self.resyncing.remove(&key);
             self.unlit_set.remove(&key);
+            self.drawn_revision += 1;
             if self.loaded.remove(&key).is_some() {
                 if self.air.remove(&key) {
                     air.push(key);
@@ -720,6 +724,12 @@ where
     }
 
     /// Loaded and drawable (meshed, or all air): it can stand in for level 0 of the LOD (§6.6).
+    /// A counter that changes whenever [`Self::drawable`] or [`Self::is_loaded`] may answer
+    /// differently for some chunk: the LOD skips its selection while it and the camera hold.
+    pub fn drawable_revision(&self) -> u64 {
+        self.drawn_revision
+    }
+
     pub fn drawable(&self, coord: Coord) -> bool {
         self.loaded.contains_key(&coord)
             && (self.air.contains(&coord) || self.meshed.contains(&coord))
@@ -902,6 +912,7 @@ where
         }
         self.view
             .set_terrain_chunk(coord, coord.map(|c| c * CHUNK_SIZE), Some(meshes));
+        self.drawn_revision += 1;
         self.meshed.insert(coord);
     }
 
@@ -951,6 +962,7 @@ where
 
     fn put(&mut self, key: Coord, revision: u32, voxels: &[u16]) {
         self.store.set_chunk(key, revision, voxels);
+        self.drawn_revision += 1;
         self.air.remove(&key);
         self.loaded.insert(key, revision);
         self.dirty.mark(key);
@@ -981,6 +993,7 @@ where
         if replaced {
             self.store.remove_chunk(key);
         }
+        self.drawn_revision += 1;
         self.loaded.insert(key, 0);
         if self.air.insert(key) {
             self.queue_light(key);
@@ -1053,6 +1066,7 @@ where
     /// Writes a loaded chunk's changes (it takes their revision) and marks it and the neighbours
     /// they touch for meshing.
     fn write(&mut self, key: Coord, changes: &ChunkChanges) {
+        self.drawn_revision += 1;
         if self.air.remove(&key) {
             self.store.set_chunk(changes.coord, 0, &[0; CHUNK_VOLUME]);
         }
