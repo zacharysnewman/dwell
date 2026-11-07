@@ -1184,8 +1184,9 @@ fn reservoir_body(f: FaceFrame) {
     // BUGS.md #41's remaining part: the full reservoir behind a dam never slept. Its river
     // runs steadily over the crest and down to the loaded world's edge, and a sleeping chunk
     // was taken to carry no flow, so a chunk asleep beside an awake one owed the whole river
-    // and woke at once, and the chain never slept together. Open: the reservoir's chunks are
-    // awake for all of the last 5 minutes (BUGS.md #41 lists what was tried).
+    // and woke at once, and the chain never slept together (red: awake all of the last 300 s,
+    // 45 cells written). A sleeping chunk now keeps its edges' flows and owes only how far they
+    // drift (BUGS.md #41b).
     let mut s = Scene::new(f);
     s.with_river_map();
     s.flat_river(2);
@@ -1206,10 +1207,8 @@ fn reservoir_body(f: FaceFrame) {
     );
 }
 
-/// BUGS.md #41, still open (the reservoir's chunks awake for all of the last 5 minutes); run by
-/// hand with `-- --ignored`.
+/// BUGS.md #41b.
 #[test]
-#[ignore = "BUGS.md #41, open: a reservoir spilling over its dam never falls asleep"]
 fn a_reservoir_filled_to_its_spill_falls_asleep() {
     // both-faces: runs the body on each face itself
     for f in [FaceFrame::A, FaceFrame::B] {
