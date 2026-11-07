@@ -29,9 +29,10 @@ planned, nothing built in the game yet. Evidence: [`WATER_MODEL_EVALUATION.md`](
   damped as straight flow is), no faster than critical, and an outflow limiter (a column never sends
   more than it holds). Each substep as long as the deepest active water allows (CFL).
 - **Chunks of 16 × 16 columns,** stepped in parallel; only chunks with water exist in the water layer.
-- **Sleep:** a chunk sleeps once no level in it moved more than the band (5 cm) over a calm window
-  (10 s), with its faces at their recent averages; a sleeping chunk keeps its imbalance as one number
-  and the water it owes. It wakes when its neighbours' flow drifts enough to move it half the band in
+- **Sleep:** a chunk sleeps once no level in it moved more than the band (5 mm, `sleepBandM`) over a
+  calm window (10 s), with its edge faces' flows kept as they were; a sleeping chunk passes those
+  flows on, keeps its imbalance as one number, and owes what its awake neighbours' flows drift from
+  them (as built, §2b). It wakes when its neighbours' flow drifts enough to move it half the band in
   10 s, when what it owes would, when a shared face jumps (an edit, a flood front), or on an edit; woken,
   it takes what it owes over 5 s, in proportion to its columns' depth. Springs count as a steady inflow
   and the sea as a held level, so their chunks sleep too.
@@ -155,11 +156,22 @@ now, or later allow a few stacked water layers in the columns that have overhang
   current a held one has (BUGS.md #42: 1.28 m/s); since 0.49.43 one still in the rest shows the
   map's (§2c, BUGS.md #47). Read from the state each substep,
   so a saved world's reach below a dam dries on load.
-- **Open: a full reservoir behind a dam never sleeps** (BUGS.md #41b, measured 0.49.40): the
-  water is steady when every chunk is awake, but a chunk asleep is taken to carry no flow and what
-  it owes comes back on waking as a wave, so a dammed reservoir that spills, and the reaches beside
-  it, keep waking each other; deep still water's slosh is barely damped. The fixtures are ignored
-  tests in `water::tests`.
+- **A sleeping chunk passes its flow on** (0.49.44, BUGS.md #41b; owner, 2026-11-06: "if a chunk
+  is sleeping, it should be treated as if all the water flows into it"). A chunk asleep was taken
+  to carry no flow, so asleep beside a running reach it owed the river, woke, and gave it back as
+  a wave that woke its neighbours: a dammed reservoir that spills, and the reaches beside it, never
+  slept. Falling asleep a chunk now keeps the flow each edge face brings into its column (the
+  water's less the rest's by the column's share, as its account counts it; `kept`) and its free
+  columns' whole balance (`drift`). Asleep it owes its drift, and across each edge toward an awake
+  chunk only how far the flow there drifts from what it kept; between two sleepers nothing is
+  owed (each keeps its side, so the accounts agree). A steady river runs through sleeping chunks
+  owing nothing. Two rules keep a draining bed from sleeping wet: a film out of the rest (under
+  the sleep band deep) that fell at all in its calm window (`FILM_FALL`, 0.1 mm) is not calm, and a
+  sleeper owing half the free water it has (and having more than 0.01 m³) wakes to pay it.
+  **Measured:** the fixture reservoir (`water::tests` `a_reservoir_filled_to_its_spill_falls_asleep`,
+  both faces) red awake all of its last 5 minutes and 45 cells written, green asleep and none.
+- **Open: deep still water's slosh is barely damped** (BUGS.md #41b): a stirred 3.5 m basin sloshes
+  ±1 cm, past the 5 mm sleep band, for 30 water minutes (`stirred_deep_water_settles`, ignored).
 - **A tick keeps to a budget** (0.49.7, BUGS.md #33): water runs on game time, so a water tick is
   seconds of water; with much water awake (a dammed river) its substeps took 50 ms of the server's
   thread a tick and the game stopped and started. A tick now takes at most `stepBudget`

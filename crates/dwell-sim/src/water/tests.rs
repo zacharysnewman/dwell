@@ -1241,9 +1241,9 @@ fn stirred_body(f: FaceFrame) {
     assert!((v1 - v0).abs() < 0.01, "conserved: {v0:.4} → {v1:.4}");
 }
 
-/// BUGS.md #41, still open: run by hand with `-- --ignored`.
+/// BUGS.md #41b, still open: run by hand with `-- --ignored`.
 #[test]
-#[ignore = "BUGS.md #41, open: stirred deep water sloshes on, awake"]
+#[ignore = "BUGS.md #41b, open: stirred deep water sloshes on, awake"]
 fn stirred_deep_water_settles() {
     // both-faces: runs the body on each face itself
     for f in [FaceFrame::A, FaceFrame::B] {

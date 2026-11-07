@@ -10,9 +10,12 @@
 //!   differs from its rest by more than `releaseM` frees that neighbour too, so a dam's
 //!   backwater spreads upstream and its drop downstream as far as they reach.
 //! - **Sleep:** a chunk whose free levels held within the sleep band for its calm time sleeps and isn't
-//!   stepped; what its awake neighbours send it is kept exactly (`owed`), and it wakes when that
-//!   would move its wet columns half the wake band, or when a shared face jumps (an edit, a flood
-//!   front). Waking, it takes what it owes over `releaseS`, in proportion to its columns' depth.
+//!   stepped; it keeps passing on the flow its edges carried as it fell asleep (`kept`) and its
+//!   imbalance then (`drift`), so a river runs through sleeping chunks; what its awake neighbours
+//!   send it past what they sent then is kept exactly (`owed`), and it wakes when that would move
+//!   its wet columns half the wake band, when it owes half the water it has, or when a shared face
+//!   jumps (an edit, a flood front). Waking, it takes what it owes over `releaseS`, in proportion
+//!   to its columns' depth. A film out of the rest still running off is never calm (BUGS.md #41b).
 //! - **Blocks:** a free column's water is written as water blocks (full cells, its top cell in
 //!   eighths) when its level crosses a step, as clients draw water today (G3 gives water its own
 //!   layer and mesh).
