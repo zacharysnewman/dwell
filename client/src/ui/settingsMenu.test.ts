@@ -68,6 +68,7 @@ describe('settings JSON', () => {
       fovDeg: 82.4,
       showArms: false,
       hud: { shown: { hotbar: false } },
+      renderScale: { scale: 0.67, upscaler: 'sharpen' },
     });
     const parsed = JSON.parse(json) as { detail: unknown };
     expect(parsed).toEqual({
@@ -88,6 +89,7 @@ describe('settings JSON', () => {
       fovDeg: 82,
       showArms: false,
       hud: { shown: { hotbar: false } },
+      renderScale: { scale: 0.67, upscaler: 'sharpen' },
     });
     expect(sanitizeDetail(parsed.detail, defaultDetail(false))).toEqual({
       distanceM: 200,

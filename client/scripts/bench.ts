@@ -682,7 +682,11 @@ async function runScenario(
   params: Record<string, string> = {},
 ): Promise<ScenarioReport> {
   mkdirSync(dir, { recursive: true });
-  const context = await browser.newContext({ viewport: sc.window });
+  const { pixelRatio, ...viewport } = sc.window;
+  const context = await browser.newContext({
+    viewport,
+    ...(pixelRatio === undefined ? {} : { deviceScaleFactor: pixelRatio }),
+  });
   const page = await context.newPage();
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));

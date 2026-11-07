@@ -77,7 +77,7 @@ untimed work), not late answers, and `MAX_IN_FLIGHT` stays 2.
   "steps": [ { "do": "settle", "maxS": 120 }, { "do": "fly", "on": true }, … ] }
 ```
 
-`seed` (default 7), `window`, `settings` (the settings menu's stored values, as in named views:
+`seed` (default 7), `window` (`width`, `height` in CSS pixels, and optionally `pixelRatio`, the device's: 2 draws and shoots a Retina page's pixels, 1 by default), `settings` (the settings menu's stored values, as in named views:
 `detail`, `exposure`, `clouds`, `water` (`quality`, and optionally the flow's `flowRipples`, `flowFoam`, `flowParticles` switches, e.g. `false` to see one without the others), `motion` and `timeOfDay` (0–1, 0 midnight: `?time=`; the fog is fixed look data, not a setting) —
 `{ "speedEffects": false }` turns the motion effects off, for a before/after of their cost in one
 build),
@@ -595,7 +595,11 @@ Meant as a level-6 flight; **the bench's flight stalled in every attempt** (thre
 in every later record, `gpu.motion` drawn only in the first), so this is a view from ~20 m over the valley at
 the dam, looking along it to the far terrain, not a flight; nothing streamed (no jobs, no uploads) except when
 the LOD came back. The 0.50.6 GPU-bound comparison's `gpu-fly` used the same steps (look pitch −10), so its
-"flight" may have been the same stall. Why the held key stops after a `record` was not looked into. The
+"flight" may have been the same stall. **Why (found 0.50.12):** not the bench nor the held key: the tick
+trace kept `move [0, 1]` held while `touchingWall` and `grounded` were true, at 162 m: the climb at level 0
+(3 s of Space, ~20 m) left the player below the valley's side, and the flight ran into it. Raising the fly
+speed *before* the climb (level 6, 3 s: ~200 m up) flies freely (254 m in a 4 s record; [Render scale and
+upscaling](#render-scale-and-upscaling)). The
 earlier flights in [the performance line](#in-the-game-the-performance-line) (1700×1000, level 4: 59/60 fps)
 moved.
 
@@ -725,6 +729,115 @@ when still. The blast's cost is the server's (ticks of 4–6.5 ms, a 68 ms worst
 Not covered here: a moving flight (the bench's held key stalled, above), a flood after a breach, the
 first-person arms and the stand-in characters on their own, night (stars, torches). Re-run the same
 scratch scenarios after each fix to read its gain.
+
+## Render scale and upscaling
+
+The owner's "try the upscaling options and compare performance and screenshots" (2026-11-07), after the
+[cost profile](#cost-profile-m1-air) found ~74 % of the dam's GPU frame scaling with the pixel count. Built as
+a setting (ARCHITECTURE.md §6, the `render/` row; data `shared/render/upscale.json`): **Render scale**
+100 / 75 / 67 / 50 % per axis and **Upscaler** Stretch or Sharpen, Settings → Graphics, kept in
+`dwell.renderScale`; 100 % by default until the owner picks. `?renderscale=0.67&upscaler=sharpen` overrides
+it for a visit (the bench's configurations), and `?upscaler=stretch-pass` draws the plain stretch as a pass
+on a full-size canvas, to compare the browser's stretch with an internal one.
+
+- **Stretch**: the canvas's drawing buffer is smaller (`upscale::sizes`) and the browser stretches it
+  (CSS, bilinear). Every pass runs at the low size, the post passes too (the composite, fog, clouds, ink,
+  wind, lines), and Chrome composites a smaller canvas. The DOM HUD stays sharp.
+- **Sharpen**: a full-size canvas; the frame draws into a low-res picture, then two passes port AMD FSR 1:
+  EASU (edge-adaptive upscale) to full size and RCAS (contrast-adaptive sharpen, `sharpenStops` 0.25) onto
+  the canvas, timed together as `gpu.upscale`.
+- A CPU adapter ignores the scale (its own half-size buffer); the pixel-art preview takes precedence.
+- Not built: temporal upscaling (FSR 2/3 or DLSS style: needs motion vectors, jitter and history, and
+  ghosting work on water and leaves) and MetalFX (native Metal only, not in a browser).
+
+**Method.** M1 MacBook Air on AC power, Chrome on the GPU, a 1280×800 page at device pixel ratio 2 (a scenario
+window's new `pixelRatio`: the shots are 2560×1600, the Retina screen's pixels; the cost profile used
+`?scale=2` at ratio 1, whose shots were downscaled), seed 0 at the dam's spawn (`?at=2364.5,142,7443.5`),
+noon, the desktop defaults (water Medium, shadows High, clouds High). One page per configuration, one
+scratch scenario (`up`): the spawn's own view along the river, the dam camera (6 m over the river looking down
+40°), then a **flight** (fly on, speed level 6, 3 s of Space, W held: ~255 m in each 4 s record over the
+valley, the LOD streaming). Each record 4 s after 1.5 s to settle; `--unthrottled`, so a frame shows its
+cost; 100 % run first and again last. The 1-minute load was 2.9 at the start (an `ANECompilerService` process
+held about one core throughout) and 2.1 at the end.
+
+`gpu.frame` mean / p95 (ms), and drawn frames a second (unthrottled):
+
+| Config | Spawn GPU | Spawn fps | Dam GPU | Dam fps | Flight GPU | Flight fps |
+| --- | --- | --- | --- | --- | --- | --- |
+| 100 % | 26.33 / 27.45 | 34.4 | 20.00 / 20.66 | 44.4 | 18.63 / 24.38 | 46.2 |
+| 100 % again | 26.56 / 27.23 | 33.9 | 20.02 / 20.39 | 44.1 | 18.46 / 24.47 | 46.4 |
+| Stretch 75 % | 19.07 / 20.31 | 47.4 | 14.44 / 15.62 | 57.7 | 12.65 / 16.60 | 62.3 |
+| Stretch 67 % | 16.26 / 17.53 | 53.9 | 11.87 / 12.48 | 64.1 | 11.16 / 14.95 | 66.4 |
+| Stretch 50 % | 12.44 / 13.49 | 63.9 | 8.91 / 9.48 | 82.9 | 7.71 / 10.20 | 80.8 |
+| Sharpen 75 % | 20.43 / 21.28 | 43.4 | 15.85 / 16.50 | 53.7 | 14.33 / 18.08 | 56.4 |
+| Sharpen 67 % | 18.16 / 18.94 | 47.6 | 14.03 / 14.33 | 58.4 | 12.81 / 16.35 | 59.4 |
+| Sharpen 50 % | 14.32 / 14.96 | 57.6 | 10.83 / 11.36 | 65.9 | 9.60 / 12.03 | 72.1 |
+| Stretch as a pass, 67 % | 16.39 / 16.96 | 52.1 | 12.06 / 12.59 | 63.6 | 10.79 / 13.42 | 67.6 |
+
+With vsync (no `--unthrottled`; 100 % and the two stretches that came closest, one page each, right after;
+load 1.9 → 5.1 over the run): drawn fps, `gpu.frame` mean / p95, and the share of drawn frames that came one
+refresh after the one before (interval ≤ 18 ms):
+
+| Config | Spawn | Dam | Flight |
+| --- | --- | --- | --- |
+| 100 % | 33.9 fps, 26.44 / 27.38, 22 % | 43.9 fps, 19.97 / 20.74, 55 % | 46.4 fps, 18.53 / 24.37, 64 % |
+| Stretch 67 % | 54.6 fps, 15.89 / 16.73, 81 % | 59.8 fps, 12.16 / 12.40, 88 % | 59.4 fps, 10.93 / 14.83, 85 % |
+| Stretch 50 % | 59.6 fps, 12.20 / 12.82, 87 % | 59.6 fps, 9.10 / 9.50, 97 % | 59.4 fps, 8.10 / 11.75, 97 % |
+
+**Reading it.**
+
+- **The GPU time falls with the pixels**, a little less than in proportion: at 67 % (45 % of the pixels) the
+  dam's 20.0 ms is 11.9 (−41 %), the spawn's 26.3 is 16.3 (−38 %); at 50 % (25 %) 8.9 and 12.4. The cost
+  profile's estimate for ⅔ (−8.2 ms at the dam) was right.
+- **Sharpen costs ~2 ms** on top of the stretch at every scale (EASU and RCAS at 2560×1600: 1.4–2.2 ms by
+  the `gpu.frame` difference; the `gpu.upscale` span reads 6–14 ms because the M1's passes overlap and a
+  span includes the wait for the scene, as the cost profile found). So Sharpen at 67 % costs about what
+  Stretch at 75 % does.
+- **The browser's stretch vs an internal pass**: at 67 % the bilinear pass on a full-size canvas costs
+  0.1–0.2 ms more GPU (`gpu.frame`) than the CSS stretch at the dam and the spawn (−0.4 in the flight, within
+  its noise), and the drawn rate moves −1.8 (spawn), −0.5 (dam) and +1.2 fps (flight); Chrome's compositing of the smaller canvas is not in `gpu.frame`,
+  so the drawn rate is its only trace here, and it barely moves. The CSS route is the cheapest, by little.
+- **The CPU is not the limit** in any record (2.1–2.9 ms a frame).
+
+**How it looks** (compare.html; the shots at 2560×1600, read at 1:1 crops; the 100 % run again differs from
+the first in 24 % of the spawn's pixels by ΔE > 2.3 from the water's and clouds' motion alone, so the ΔE
+figures, 30–42 % at the spawn, mostly measure animation):
+
+- **Stretch 75 %**: slightly soft; grass tufts and texture detail lose their crispness, edges still clean.
+- **Stretch 67 %**: visibly soft at 1:1: the block edges against the sky and the grass blades blur, the
+  water's caustic lines widen and fade; at normal viewing distance on the Air's screen it reads as a soft
+  focus rather than as blocks.
+- **Stretch 50 %**: blurry: block silhouettes smear over two screen pixels, distant blocks merge, the
+  water's sparkle and caustics lose their contrast.
+- **Sharpen** (any scale): the edges and the texture's pixel steps come back close to 100 % at 75 % and
+  67 %; the caustic lines keep their contrast. At 50 % the sharpening shows: silhouettes against the sky
+  are stair-stepped (jaggies two pixels wide) and the far grass tufts look crunchy. No halos (RCAS's limit
+  and EASU's clamp hold).
+- **Text**: the HUD, the hotbar and menus are DOM at full resolution in every configuration: unchanged.
+  Nothing textual is drawn in the canvas (the outline and lines are drawn at the scene's resolution, at their
+  CSS width).
+- **Shimmer** on block edges was not measured (stills only; the bench's `burst` step could). Expect more
+  crawl on far edges at 50 % in both upscalers (fewer samples per edge; the sharpen accents it), little at
+  75 %.
+
+**Which holds 60 fps where** (on the Air at 2560×1600, the defaults otherwise):
+
+- **100 %** holds it nowhere measured (34–46 fps).
+- **Stretch 75 % / Sharpen 75 %** reach 60 only in the flight (Stretch, 62 unthrottled); the dam is at 54–58
+  and the spawn at 43–47.
+- **Stretch 67 %** holds 60 at the dam and in the flight (59.8 and 59.4 with vsync); the river spawn,
+  the heaviest view (water filling the lower half), is at 55 (its GPU frame 15.9 ms, p95 16.7: on the edge).
+  **Sharpen 67 %** costs ~2 ms more: 58–59 unthrottled at the dam and in the flight, 48 at the spawn.
+- **Stretch 50 %** holds 60 in every view (59.4–59.6 with vsync, GPU 8–12 ms, room to spare), and so
+  would **Sharpen 50 %** at the dam and in flight (66–72 unthrottled) but not quite at the spawn (14.3 ms GPU,
+  57.6 unthrottled).
+
+So 67 % is the threshold where 60 begins to hold; the spawn view needs 50 %, or 67 % with one of the cost
+profile's other fixes (water Medium's per-pixel cost at reduced resolution, a real Shadows Low: −2 to −3 ms).
+The owner's pick between the soft Stretch and the ~2 ms Sharpen is a look question.
+
+Scratch files (not checked in): the scenario and configurations in the session's scratchpad `up/`
+(`scenarios.json`, `configs.json`, `summ.py`), the report at `up/un/compare.html`.
 
 ## Play advanced (the main menu)
 

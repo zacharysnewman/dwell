@@ -250,6 +250,10 @@ struct Inner {
     _adapter: wgpu::Adapter,
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
+    /// Render scale and its upscaler (render/upscale.rs; shared/render/upscale.json): the scale
+    /// per axis, the kind and RCAS's sharpness; and the last `resize`'s CSS size and pixel ratio.
+    render_scale: (f64, crate::render::upscale::Upscaler, f32),
+    last_resize: Option<(f64, f64, f64)>,
     renderer: Rc<RefCell<Renderer>>,
     input: KeyboardMouseInput,
     touch: TouchControls,
@@ -402,6 +406,8 @@ impl Client {
             _adapter: adapter,
             surface,
             config,
+            render_scale: (1.0, crate::render::upscale::Upscaler::Stretch, 1.0),
+            last_resize: None,
             renderer: Rc::new(RefCell::new(renderer)),
             input: KeyboardMouseInput::new(),
             touch: TouchControls::new(),
@@ -906,24 +912,58 @@ impl Client {
 
     /// The drawing buffer's size: CSS pixels × the pixel ratio (a share of it on a CPU adapter,
     /// `render::pixel_ratio_for`).
+    /// With a render scale under 100 % the browser's stretch draws a smaller buffer, and an
+    /// upscale pass a full-size one over a smaller scene (`render::upscale::sizes`).
     pub fn resize(&self, css_width: f64, css_height: f64, pixel_ratio: f64) {
         let mut s = self.inner.borrow_mut();
+        s.last_resize = Some((css_width, css_height, pixel_ratio));
         let adapter = s.renderer.borrow().adapter();
-        let pixel_ratio = crate::render::pixel_ratio_for(adapter, pixel_ratio);
-        let (w, h) = (
-            ((css_width * pixel_ratio).round() as u32).max(1),
-            ((css_height * pixel_ratio).round() as u32).max(1),
+        let ratio = crate::render::pixel_ratio_for(adapter, pixel_ratio);
+        let (scale, upscaler, sharpness) = s.render_scale;
+        let sizes = crate::render::upscale::sizes(
+            (css_width, css_height),
+            ratio,
+            scale,
+            upscaler,
+            crate::render::is_cpu(adapter),
         );
+        let (w, h) = sizes.canvas;
         if (w, h) != (s.config.width, s.config.height) {
             s.config.width = w;
             s.config.height = h;
             let renderer = s.renderer.clone();
             s.surface.configure(renderer.borrow().device(), &s.config);
         }
-        s.renderer.borrow_mut().resize(w, h, pixel_ratio);
+        let mut r = s.renderer.borrow_mut();
+        r.resize(w, h, sizes.canvas_ratio);
+        r.set_upscale(upscaler, sizes.render, sharpness);
+        drop(r);
         if let Some(g) = &mut s.game {
             g.viewport_css = (css_width, css_height);
         }
+    }
+
+    /// Render scale (0.5–1 per axis) and its upscaler by name (shared/render/upscale.json's ids,
+    /// or `stretch-pass`), RCAS's strength in stops; resizes with the last size. False (and
+    /// nothing changed) for an unknown upscaler.
+    #[wasm_bindgen(js_name = setRenderScale)]
+    pub fn set_render_scale(&self, scale: f64, upscaler: &str, sharpen_stops: f64) -> bool {
+        let Some(kind) = crate::render::upscale::Upscaler::from_name(upscaler) else {
+            return false;
+        };
+        let last = {
+            let mut s = self.inner.borrow_mut();
+            s.render_scale = (
+                crate::render::upscale::clamp_scale(scale),
+                kind,
+                crate::render::upscale::sharpness(sharpen_stops),
+            );
+            s.last_resize
+        };
+        if let Some((w, h, r)) = last {
+            self.resize(w, h, r);
+        }
+        true
     }
 
     // ----- Input (the shell forwards DOM events) -----

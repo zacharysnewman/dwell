@@ -8,6 +8,14 @@
       "license": "MIT",
       "text": "qrcode-generator.txt",
       "used_in": "web client"
+    },
+    {
+      "name": "AMD FidelityFX Super Resolution 1 (EASU and RCAS, ported to WGSL)",
+      "version": "1.0",
+      "url": "https://github.com/GPUOpen-Effects/FidelityFX-FSR",
+      "license": "MIT",
+      "text": "fidelityfx-fsr.txt",
+      "used_in": "web client (crates/dwell-client/src/render/upscale.wgsl)"
     }
   ]
 }

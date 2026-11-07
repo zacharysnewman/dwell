@@ -27,6 +27,7 @@ pub mod seam;
 pub mod shaders;
 pub mod shadows;
 pub mod timing;
+pub mod upscale;
 pub mod water;
 pub mod water_tiles;
 pub mod waterfalls;
@@ -72,7 +73,7 @@ pub const SAMPLES: u32 = 4;
 // the game and its workers, and a frame of the full look takes whole seconds (CI's e2e suite timed
 // out). The functions below are that policy, one per cost; a GPU keeps the settings.
 
-fn is_cpu(device_type: wgpu::DeviceType) -> bool {
+pub fn is_cpu(device_type: wgpu::DeviceType) -> bool {
     device_type == wgpu::DeviceType::Cpu
 }
 
@@ -950,6 +951,13 @@ pub struct Renderer {
     pixel_grid: Option<dwell_look::pixel_art::Grid>,
     pixel_shift: [f64; 2],
     pixel_pass: Option<pixel_art::PixelPass>,
+    /// Render scale's upscale pass (render/upscale.rs): the kind, the scene's size while a pass
+    /// upscales it onto the canvas (none at 100 % or with the browser's stretch), RCAS's sharpness
+    /// and the passes (made on first use).
+    upscaler: upscale::Upscaler,
+    upscale_render: Option<(u32, u32)>,
+    upscale_sharpness: f32,
+    upscale_pass: Option<upscale::UpscalePass>,
     groups_atlas: Option<AtlasFilter>,
     /// The ink outline's mode (`?outline=`; docs/ART_DIRECTION.md §7), none by default.
     ink_outline: Option<&'static OutlineMode>,
@@ -1678,6 +1686,10 @@ impl Renderer {
             pixel_grid: None,
             pixel_shift: [0.0; 2],
             pixel_pass: None,
+            upscaler: upscale::Upscaler::Stretch,
+            upscale_render: None,
+            upscale_sharpness: 1.0,
+            upscale_pass: None,
             groups_atlas: None,
             ink_outline: None,
             magnification: 1.0,
@@ -1863,9 +1875,14 @@ impl Renderer {
         let grid = self
             .pixel_preset()
             .map(|p| dwell_look::pixel_art::grid(self.canvas, p.height, p.fit));
-        let (size, ratio) = match &grid {
-            Some(g) => (g.low, self.canvas_ratio / f64::from(g.scale)),
-            None => (self.canvas, self.canvas_ratio),
+        let upscaled = self.upscale_size().filter(|_| grid.is_none());
+        let (size, ratio) = match (&grid, upscaled) {
+            (Some(g), _) => (g.low, self.canvas_ratio / f64::from(g.scale)),
+            (None, Some(r)) => (
+                r,
+                self.canvas_ratio * f64::from(r.1) / f64::from(self.canvas.1),
+            ),
+            (None, None) => (self.canvas, self.canvas_ratio),
         };
         if size != self.size || grid != self.pixel_grid {
             self.targets = None;
@@ -1877,6 +1894,25 @@ impl Renderer {
         {
             p.release();
         }
+        if upscaled.is_none()
+            && let Some(p) = &mut self.upscale_pass
+        {
+            p.release();
+        }
+    }
+    /// Render scale's upscale (render/upscale.rs `sizes`): `upscaler` and the scene's `render`
+    /// size, drawn onto the canvas by a pass when the upscaler is one and the size is smaller than
+    /// the canvas's (`resize` first); `sharpness` is RCAS's (`upscale::sharpness`).
+    pub fn set_upscale(&mut self, upscaler: upscale::Upscaler, render: (u32, u32), sharpness: f32) {
+        self.upscaler = upscaler;
+        self.upscale_render = Some((render.0.max(1), render.1.max(1)));
+        self.upscale_sharpness = sharpness;
+        self.apply_size();
+    }
+    /// The scene's size while a pass upscales it (no CPU adapter: its buffer is its own tier).
+    fn upscale_size(&self) -> Option<(u32, u32)> {
+        self.upscale_render
+            .filter(|r| self.upscaler.is_pass() && !is_cpu(self.adapter) && *r != self.canvas)
     }
     /// The canvas's size (`resize`).
     pub fn canvas_size(&self) -> (u32, u32) {
@@ -3042,7 +3078,21 @@ impl Renderer {
             }
             _ => None,
         };
-        let composite_target = low_view.as_ref().unwrap_or(target);
+        // With render scale's upscale pass, they draw into its low-res picture (render/upscale.rs).
+        let upscale_view = match self.upscale_size() {
+            Some(r) if low_view.is_none() => {
+                let (device, format, out) = (self.device.clone(), self.format, self.canvas);
+                let pass = self
+                    .upscale_pass
+                    .get_or_insert_with(|| upscale::UpscalePass::new(&device, format));
+                Some(pass.low(&device, format, r, out).view.clone())
+            }
+            _ => None,
+        };
+        let composite_target = low_view
+            .as_ref()
+            .or(upscale_view.as_ref())
+            .unwrap_or(target);
         // GPU pass times of earlier frames the GPU has finished; then whether this one is timed.
         if let Some(timer) = &mut self.timer {
             for (name, ms) in timer.collect() {
@@ -3633,6 +3683,20 @@ impl Renderer {
             let query = self.timer.as_mut().and_then(|t| t.pass(timing::PIXEL_ART));
             let writes = self.timer.as_ref().and_then(|t| t.writes(query));
             pass.draw(&self.queue, &mut encoder, target, &u, writes);
+            calls += 1;
+        }
+        if let (Some(_), Some(pass)) = (&upscale_view, &self.upscale_pass) {
+            let query = self.timer.as_mut().and_then(|t| t.pass(timing::UPSCALE));
+            let writes = self.timer.as_ref().and_then(|t| t.writes(query));
+            let kind = self.upscaler;
+            pass.draw(
+                &self.queue,
+                &mut encoder,
+                target,
+                kind,
+                self.upscale_sharpness,
+                writes,
+            );
             calls += 1;
         }
         if let Some(timer) = &self.timer {
@@ -5543,6 +5607,36 @@ mod tests {
             assert!(r.set_pixel_art(preset));
             draws_cleanly(r);
         }
+    }
+
+    #[test]
+    fn frames_draw_cleanly_with_an_upscale_pass() {
+        // The low-res scene, EASU into the full-size picture and RCAS onto the canvas (or the
+        // bilinear pass), timed, across resizes.
+        for kind in [upscale::Upscaler::Sharpen, upscale::Upscaler::StretchPass] {
+            let mut r = noop_renderer_with(4, wgpu::Features::TIMESTAMP_QUERY);
+            r.resize(64, 64, 1.0);
+            r.set_upscale(kind, (40, 40), upscale::sharpness(0.25));
+            draws_cleanly(r);
+        }
+    }
+
+    #[test]
+    fn an_upscale_pass_draws_the_scene_at_the_render_size() {
+        let mut r = noop_renderer_with(1, wgpu::Features::empty());
+        r.resize(2560, 1600, 2.0);
+        assert_eq!(r.size, (2560, 1600), "off by default");
+        r.set_upscale(upscale::Upscaler::Sharpen, (1280, 800), 1.0);
+        assert_eq!((r.size, r.canvas_size()), ((1280, 800), (2560, 1600)));
+        assert!(
+            (r.pixel_ratio - 1.0).abs() < 1e-12,
+            "half the pixels per CSS pixel"
+        );
+        // The browser's stretch: the canvas itself is smaller, no pass.
+        r.resize(1280, 800, 1.0);
+        r.set_upscale(upscale::Upscaler::Stretch, (1280, 800), 1.0);
+        assert_eq!(r.size, (1280, 800));
+        assert!(r.upscale_size().is_none());
     }
 
     #[test]

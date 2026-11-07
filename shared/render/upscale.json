@@ -1,0 +1,23 @@
+{
+  "$comment": "Render scale and upscaling (docs/DEV_TOOLS.md, Render scale and upscaling; ARCHITECTURE.md §6.10). The scene is drawn at one of `scales` of the screen's pixels per axis and upscaled by one of `upscalers`, a fixed vocabulary the renderer knows (dwell-client render/upscale.rs `Upscaler`). Settings → Graphics offers them; ?renderscale= and ?upscaler= override them for a visit (the bench). `sharpenStops` is the sharpen's strength in stops (0 the strongest, FSR 1's RCAS).",
+  "scales": [
+    { "value": 1, "label": "100 %" },
+    { "value": 0.75, "label": "75 %" },
+    { "value": 0.67, "label": "67 %" },
+    { "value": 0.5, "label": "50 %" }
+  ],
+  "upscalers": [
+    {
+      "id": "stretch",
+      "label": "Stretch",
+      "hint": "The browser stretches a smaller canvas (bilinear): the cheapest, softer"
+    },
+    {
+      "id": "sharpen",
+      "label": "Sharpen",
+      "hint": "An edge-adaptive upscale and a sharpen (FSR 1 style) on a full-size canvas: crisper, one more pass"
+    }
+  ],
+  "default": { "scale": 1, "upscaler": "stretch" },
+  "sharpenStops": 0.25
+}
