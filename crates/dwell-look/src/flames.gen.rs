@@ -10,7 +10,7 @@ pub const FLAME_TUNABLES: FlameTunables = FlameTunables {
 };
 
 /// The flame looks, in the file's order (a look's index is its id in the shader).
-pub static FLAMES: [FlameLook; 1] = [
+pub static FLAMES: [FlameLook; 2] = [
     FlameLook {
         name: "dwell:torch",
         ramp: &[0xb8241a, 0xe8401a, 0xff7424, 0xffab2e, 0xffd862],
@@ -28,5 +28,23 @@ pub static FLAMES: [FlameLook; 1] = [
         size_flicker: 0.6,
         glow: FlameGlow { color: 0xff7a33, radius_m: 0.45, strength: 0.3 },
         embers: FlameEmbers { count: 3, color: 0xffb04a, size_m: 0.007, rise_m: 0.4, speed: 0.7 },
+    },
+    FlameLook {
+        name: "dwell:fuse",
+        ramp: &[0xc8301a, 0xff6a1c, 0xffb030, 0xfff0a0],
+        bands: 3,
+        height_m: 0.16,
+        width_m: 0.12,
+        base_m: 0.5,
+        held_scale: 0.42,
+        base_width_m: 0.04,
+        speed: 3.2,
+        noise_scale: 3.0,
+        distort: 0.9,
+        tongues: 1.6,
+        sway: 0.35,
+        size_flicker: 1.0,
+        glow: FlameGlow { color: 0xffb040, radius_m: 0.3, strength: 0.45 },
+        embers: FlameEmbers { count: 6, color: 0xffe08a, size_m: 0.006, rise_m: 0.25, speed: 2.2 },
     },
 ];

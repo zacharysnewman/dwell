@@ -23,6 +23,8 @@
     "snowyLeavesSide": "snowy_leaves_side",
     "torch": "torch",
     "torchTop": "torch_top",
+    "dynamite": "dynamite_side",
+    "dynamiteTop": "dynamite_top",
     "plain": "plain",
     "grid": "grid",
     "missing": "missing"
@@ -215,6 +217,146 @@
         { "kind": "slab", "at": [[16, 16, 34]], "colors": ["@base"], "width": 3.5, "length": 1, "angle": 90, "softness": 0.5 },
         { "kind": "slab", "at": [[15.2, 16, 34]], "colors": ["@light"], "width": 1, "length": 1, "angle": 90, "opacity": 0.6, "clip": true },
         { "kind": "slab", "at": [[17.2, 16, 34]], "colors": ["@shadow"], "width": 1, "length": 1, "angle": 90, "opacity": 0.7, "clip": true }
+      ]
+    },
+    "dynamite_side": {
+      "$comment": "Dynamite's side (docs/EXPLOSIVES.md; prototype content): red paper sticks, their seams shadowed, a pale paper band round them.",
+      "use": "block",
+      "ramp": "wool_red",
+      "overlay": 1,
+      "layers": [
+        {
+          "kind": "fill",
+          "color": "@base"
+        },
+        {
+          "kind": "slab",
+          "at": [
+            [
+              8,
+              16,
+              40
+            ],
+            [
+              16,
+              16,
+              40
+            ],
+            [
+              24,
+              16,
+              40
+            ],
+            [
+              32,
+              16,
+              40
+            ]
+          ],
+          "colors": [
+            "@shadow"
+          ],
+          "width": 0.8,
+          "length": 1,
+          "angle": 90,
+          "opacity": 0.55,
+          "clip": true
+        },
+        {
+          "kind": "streak",
+          "count": 6,
+          "colors": [
+            "@light"
+          ],
+          "width": [
+            1,
+            1.6
+          ],
+          "length": [
+            10,
+            20
+          ],
+          "angle": 90,
+          "angleJitter": 4,
+          "opacity": 0.3
+        },
+        {
+          "kind": "slab",
+          "at": [
+            [
+              16,
+              12,
+              40
+            ],
+            [
+              16,
+              20,
+              40
+            ]
+          ],
+          "colors": [
+            "linen.base"
+          ],
+          "width": 2.2,
+          "length": 1,
+          "angle": 0,
+          "opacity": 0.9,
+          "clip": true
+        }
+      ]
+    },
+    "dynamite_top": {
+      "$comment": "Dynamite's ends (docs/EXPLOSIVES.md; prototype content): the sticks' red ends with a dark fuse hole.",
+      "use": "block",
+      "ramp": "wool_red",
+      "overlay": 1,
+      "layers": [
+        {
+          "kind": "fill",
+          "color": "@base"
+        },
+        {
+          "kind": "dab",
+          "at": [
+            [
+              8,
+              8
+            ],
+            [
+              24,
+              8
+            ],
+            [
+              8,
+              24
+            ],
+            [
+              24,
+              24
+            ]
+          ],
+          "colors": [
+            "@shadow"
+          ],
+          "width": 6,
+          "length": 6,
+          "opacity": 0.45
+        },
+        {
+          "kind": "dab",
+          "at": [
+            [
+              16,
+              16
+            ]
+          ],
+          "colors": [
+            "bark.shadow"
+          ],
+          "width": 3.5,
+          "length": 3.5,
+          "opacity": 0.9
+        }
       ]
     },
     "torch_top": {

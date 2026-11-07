@@ -1,0 +1,33 @@
+{
+  "$comment": "Explosives (docs/EXPLOSIVES.md; owner, 2026-11-06: \"dynamite block that explodes after a short time when placed, it causes blocks in a radius to be affected by physics and appropriate force applied\"). Each entry is a placed block (`block`, placed unlit) and the block it becomes while its fuse burns (`lit`). `ignitedBy`: the held items' blocks (shared/blocks) whose Place aimed at the unlit block lights it instead of placing (a torch held against it). fuseSeconds: the fuse once lit. radiusM: every block within it (its cell centre) becomes a flung natural piece, but liquids and `indestructible` blocks; impulse (N·s): what a block at the centre is given, along the line from the blast (lifted by `lift`, a share of the face's up added before normalising), times the falloff share (1 − d / radiusM)^falloff, so its speed is that over its mass (½ m³ × density) and a heavy block at the edge barely moves; maxSpeedMs caps it. Players and bodies within reachM: a speed change of knockbackMs and damage points (health 100), times (1 − d / reachM)^falloff (standing on it kills). Bodies get impulse × that share. waterRadiusM: liquid cells within it are blown out (cleared; the water host refills the crater from round it). chainDelaySeconds: an unlit explosive caught in a blast is lit with a fuse drawn from this range, and a lit one's fuse is cut to it if longer. The effects are the clients' (Settings → Explosions): flash (a short point light and a fireball billboard), smoke and dust (billboard puffs; cpuCount on a CPU adapter), the boom (the event `explode` of the block's sound set: full within fullM, gone at hearM), a camera shake within radiusM. `limits`: the most blasts the server sets off a tick (more wait a tick) and the most pieces one blast flings (the farthest cells beyond go as they are). Prototype content (ARCHITECTURE.md §6.1). Run `node shared/explosives/gen.mjs` after editing; CI fails if crates/dwell-world/src/explosives.gen.rs is stale.",
+  "limits": {
+    "blastsPerTick": 1,
+    "maxPieces": 1200
+  },
+  "explosives": [
+    {
+      "name": "dwell:dynamite",
+      "block": "dwell:dynamite",
+      "lit": "dwell:lit_dynamite",
+      "ignitedBy": ["dwell:torch"],
+      "fuseSeconds": 3,
+      "radiusM": 4,
+      "impulse": 9000,
+      "falloff": 1.5,
+      "lift": 0.5,
+      "maxSpeedMs": 22,
+      "reachM": 7,
+      "knockbackMs": 22,
+      "damage": 160,
+      "waterRadiusM": 3,
+      "chainDelaySeconds": [0.15, 0.6],
+      "effects": {
+        "flash": { "color": "#ffd9a0", "strength": 40, "lightRadiusM": 28, "seconds": 0.35, "sizeM": 4.5 },
+        "smoke": { "count": 22, "cpuCount": 6, "color": "#6d655d", "sizeM": [1.4, 2.8], "seconds": [2.5, 4.5], "spreadM": 3.5, "riseMs": 1.1, "opacity": 0.75 },
+        "dust": { "count": 36, "cpuCount": 8, "color": "#a48c6c", "sizeM": [0.25, 0.6], "seconds": [0.8, 1.8], "speedMs": [4, 11], "opacity": 0.85 },
+        "boom": { "fullM": 10, "hearM": 180 },
+        "shake": { "radiusM": 30, "degrees": 1.6, "seconds": 0.7, "hz": 17 }
+      }
+    }
+  ]
+}
