@@ -1599,8 +1599,8 @@ impl Server {
         self.felling.float(&mut self.world, &mut self.physics);
         self.phase_ms[5] += watch.lap_ms();
         self.physics.step(1.0 / f64::from(SIM_HZ));
-        self.rejoin_apart();
         self.phase_ms[6] += watch.lap_ms();
+        self.rejoin_apart();
         self.tick += 1;
         self.settle_pieces();
         self.phase_ms[7] += watch.lap_ms();

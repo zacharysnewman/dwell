@@ -201,7 +201,7 @@ dwell_world::both_faces!(
             shell.len(),
             "every breakable block from the destroy radius out to the radius is a piece, none within"
         );
-        assert!(shell.len() > 300, "a crater's worth: {}", shell.len());
+        assert!(shell.len() > 150, "a crater's worth: {}", shell.len());
         for &(o, _) in &what {
             assert_eq!(s.get(o), M.air, "{o:?} cleared");
         }
@@ -377,6 +377,7 @@ fn a_fixture_explosive_by_data_alone_blasts_by_its_own_numbers() {
         fuse_seconds: 0.5,
         radius_m: 2.0,
         destroy_radius_m: 1.0,
+        loosen_radius_m: 2.0,
         ..dynamite()
     }]);
     s.put(1, 0.5, -3.5);
@@ -405,6 +406,101 @@ fn a_fixture_explosive_by_data_alone_blasts_by_its_own_numbers() {
     );
 }
 
+/// A fixture blast on the flat world, buried in stone: lights it, runs to the blast, returns the
+/// blast tick's spawns (the scene is left just after it).
+fn buried_blast(s: &mut Scene, e: ExplosiveData) -> Vec<EntitySpawn> {
+    s.fx.server.set_explosives(vec![e]);
+    s.put(1, 0.5, -3.5);
+    s.run(2);
+    s.set([0, 0, 0], require("dwell:dynamite"));
+    s.light([0, 0, 0]);
+    s.run(1);
+    s.put(1, 0.5, -13.0);
+    for o in cells_within(e.loosen_radius_m)
+        .into_iter()
+        .skip(1)
+        .filter(|o| o[1] >= 0)
+    {
+        s.set(o, require("dwell:stone"));
+    }
+    let fuse = s.fx.server.fuses()[0].1 as usize;
+    s.run(fuse - 1);
+    spawns(&s.run(1)).into_iter().cloned().collect()
+}
+
+#[test]
+fn the_loosen_shell_past_the_radius_becomes_pieces_given_no_impulse() {
+    // face-a-only: the data's radii are face-free; the push's frame is tested on both faces above.
+    // Owner (2026-11-06): "dislodge (make physical) blocks in a 5m radius, but only exert force
+    // on 4m". A fixture: force to 2 m, its 1 m core destroyed, loosened to 3 m.
+    let e = ExplosiveData {
+        radius_m: 2.0,
+        destroy_radius_m: 1.0,
+        loosen_radius_m: 3.0,
+        ..dynamite()
+    };
+    let mut s = Scene::flat(1);
+    let pieces = buried_blast(&mut s, e);
+    let shell = cells_within(3.0)
+        .into_iter()
+        .filter(|&o| dist(o) > 1.0)
+        .count();
+    assert_eq!(pieces.len(), shell, "every cell from 1 to 3 m is a piece");
+    let centre = DVec3::from(dwell_sim::felling::cell_centre(s.cell([0, 0, 0])));
+    let (mut loose, mut flung) = (0, 0);
+    for p in &pieces {
+        let d = (DVec3::from(p.origin) - centre).length();
+        let h = s.fx.server.body_handle(p.id).expect("a body");
+        let v = s.fx.server.physics().velocity(h).length();
+        if d > e.radius_m + 1e-6 {
+            // One step of gravity at most: no impulse.
+            assert!(v < 0.5, "a loosened piece {d:.2} m out moves at {v:.2} m/s");
+            loose += 1;
+        } else if d < 1.6 {
+            assert!(v > 1.0, "a piece {d:.2} m out is flung: {v:.2} m/s");
+            flung += 1;
+        }
+    }
+    assert!(loose > 100 && flung > 10, "{loose} loosened, {flung} flung");
+}
+
+#[test]
+fn a_blasts_pieces_touch_no_other_piece_in_its_window_and_do_after_it() {
+    // face-a-only: contacts between pieces are face-free; the blast's frames are tested on both
+    // faces above. Owner (2026-11-06): "what if all the physics blocks couldn't collide with each
+    // other for the first 1-2s? ... keep it down to 1s".
+    let e = dynamite();
+    assert_eq!(e.no_piece_contact_s, 1.0, "the shipped window");
+    // Without the window the packed pieces touch at once (the check below would see it).
+    let mut s = Scene::flat(1);
+    buried_blast(&mut s, ExplosiveData { no_piece_contact_s: 0.0, ..e });
+    s.run(1);
+    let touching = s.fx.server.physics().piece_contact_pairs();
+    assert!(touching > 50, "no window: {touching} piece pairs touch");
+    assert_eq!(s.fx.server.apart_pieces(), 0);
+
+    let mut s = Scene::flat(1);
+    let pieces = buried_blast(&mut s, e);
+    assert_eq!(s.fx.server.apart_pieces(), pieces.len());
+    for t in 0..58 {
+        s.run(1);
+        let touching = s.fx.server.physics().piece_contact_pairs();
+        assert_eq!(touching, 0, "tick {t} of the window: {touching} piece pairs touch");
+    }
+    // After it, the pieces rejoin as they come apart, and touch again: the piles they land in.
+    let mut most = 0;
+    for _ in 0..6 * 60 {
+        s.run(1);
+        most = most.max(s.fx.server.physics().piece_contact_pairs());
+    }
+    assert!(most > 10, "after the window pieces touch again: {most} pairs at most");
+    assert!(
+        s.fx.server.apart_pieces() < pieces.len() / 4,
+        "most rejoined: {} still apart",
+        s.fx.server.apart_pieces()
+    );
+}
+
 #[test]
 fn a_blast_in_solid_ground_costs_a_bounded_tick_and_its_pieces_settle() {
     // face-a-only: a cost bound on the flat world (face A's); the blast's frames are tested on both
@@ -416,7 +512,7 @@ fn a_blast_in_solid_ground_costs_a_bounded_tick_and_its_pieces_settle() {
     s.light([0, 0, 0]);
     s.run(1);
     s.put(1, 0.5, -13.0);
-    // Buried in stone: the whole 5 m ball is ground (1,013 cells but its own; the 952 past its 2 m
+    // Buried in stone: the whole 4 m ball is ground (its cells but its own; those past its 2 m
     // core fly).
     for o in cells_within(dynamite().radius_m)
         .into_iter()
@@ -466,15 +562,60 @@ fn a_blast_in_solid_ground_costs_a_bounded_tick_and_its_pieces_settle() {
     println!(
         "{n} pieces; the blast's tick {blast_ms:.1} ms; {ticks} ticks to settle, worst {worst:.1} ms, {body_ticks} body-ticks"
     );
-    assert!(n > 900, "{n}");
+    let shell = cells_within(dynamite().radius_m)
+        .into_iter()
+        .filter(|&o| dist(o) > dynamite().destroy_radius_m)
+        .count();
+    assert_eq!(n, shell, "every cell of the 2–4 m shell flies");
     assert_eq!(
         s.fx.server.body_count(),
         0,
         "every piece settled within 20 s"
     );
-    // 0.49.38: 952 pieces from the 2–5 m shell (0.49.37: 512 from the 4 m ball, 70,076 body-ticks);
-    // measured ~172,000.
-    assert!(body_ticks <= 200_000, "{body_ticks} body-ticks");
+    // 0.49.41: the 2–4 m shell's pieces, kept apart 1 s (0.49.38: 952 from the 2–5 m shell,
+    // ~172,000 body-ticks).
+    assert!(body_ticks <= 120_000, "{body_ticks} body-ticks");
+}
+
+#[test]
+#[ignore = "a measurement: cargo test --release -p dwell-sim --test explosives measure_dynamite_configs -- --ignored --nocapture"]
+fn measure_dynamite_configs() {
+    // face-a-only: a measurement on the flat world. The owner's four (2026-11-06): A 4 m ×1.5,
+    // B A + no contact 1 s, C loosened to 5 m, D C + no contact 1 s.
+    let a = ExplosiveData { no_piece_contact_s: 0.0, loosen_radius_m: 4.0, ..dynamite() };
+    for (name, e) in [
+        ("A", a),
+        ("B", ExplosiveData { no_piece_contact_s: 1.0, ..a }),
+        ("C", ExplosiveData { loosen_radius_m: 5.0, ..a }),
+        ("D", ExplosiveData { loosen_radius_m: 5.0, no_piece_contact_s: 1.0, ..a }),
+    ] {
+        let mut s = Scene::flat(1);
+        let n = buried_blast(&mut s, e).len();
+        let (mut body_ticks, mut ticks, mut worst, mut first_s) = (0, 0, 0.0f64, 0.0);
+        let mut physics = 0.0;
+        while s.fx.server.body_count() > 0 && ticks < 30 * 60 {
+            s.fx.server.tick_phases();
+            let t = std::time::Instant::now();
+            s.run(1);
+            let ms = t.elapsed().as_secs_f64() * 1000.0;
+            let ph = s.fx.server.tick_phases();
+            physics += ph.iter().find(|(n, _)| *n == "physics").map_or(0.0, |p| p.1);
+            if ticks % 120 == 60 {
+                println!("  {name} {} s: {} bodies, {} apart, {} piece pairs, {ms:.1} ms: {:?}", ticks / 60, s.fx.server.body_count(), s.fx.server.apart_pieces(), s.fx.server.physics().piece_contact_pairs(), ph.iter().filter(|p| p.1 > 0.3).collect::<Vec<_>>());
+            }
+            worst = worst.max(ms);
+            if ticks < 60 {
+                first_s += ms;
+            }
+            body_ticks += s.fx.server.body_count();
+            ticks += 1;
+        }
+        println!(
+            "{name}: {n} pieces, first second {first_s:.0} ms, worst tick {worst:.1} ms, physics {physics:.0} ms, settled in {:.1} s ({} left), {body_ticks} body-ticks",
+            f64::from(ticks) / 60.0,
+            s.fx.server.body_count()
+        );
+    }
 }
 
 #[test]
