@@ -9,7 +9,7 @@
 
 use dwell_look::lights::PointLight;
 use dwell_world::FaceFrame;
-use dwell_world::explosives::{EXPLOSIVES, ExplosiveData, PuffLook, shake_level};
+use dwell_world::explosives::{EXPLOSIVES, ExplosiveData, LIMITS, PuffLook, shake_level};
 
 /// A blast going off: where (world m), its explosive (index in `EXPLOSIVES`), when (s), its seed.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -21,6 +21,10 @@ pub struct Blast {
     /// Its way out (world, `dwell_world::explosives::open_dir`, at most 1 long; about 0 buried),
     /// read from the client's cells round it before they cleared: the puffs follow it.
     pub open: [f64; 3],
+    /// The share (0–1) of its smoke and dust it draws: what the puffs budget
+    /// (`limits.maxPuffs`) had left when it went off, at least `limits.minPuffShare`. Fixed at
+    /// its start, so no puff pops when another blast goes off.
+    pub share: f64,
 }
 
 /// What a puff is.
@@ -125,13 +129,49 @@ impl Blasts {
             ^ (at[1] as i32 as u32).wrapping_mul(19_349_663)
             ^ (at[2] as i32 as u32).wrapping_mul(83_492_791)
             ^ (now_s * 1000.0) as u32;
+        let share = EXPLOSIVES.get(explosive).map_or(1.0, |e| {
+            let n = self.puff_count(e, 1.0);
+            let left = f64::from(LIMITS.max_puffs) - self.puffs_in_flight(now_s) as f64;
+            if n == 0 {
+                1.0
+            } else {
+                (left / n as f64).clamp(LIMITS.min_puff_share, 1.0)
+            }
+        });
         self.list.push(Blast {
             at,
             explosive,
             start_s: now_s,
             seed,
             open,
+            share,
         });
+    }
+
+    /// Blast `e`'s smoke and dust puffs at `share` (the CPU's counts on a CPU adapter).
+    fn puff_count(&self, e: &ExplosiveData, share: f64) -> usize {
+        let fx = e.effects;
+        let (s, d) = if self.settings.cpu {
+            (fx.smoke.cpu_count, fx.dust.cpu_count)
+        } else {
+            (fx.smoke.count, fx.dust.count)
+        };
+        shared(s as usize, share) + shared(d as usize, share)
+    }
+
+    /// The smoke and dust puffs the blasts in flight draw at most, at `now_s` (each blast's whole
+    /// share until its longest puff is gone).
+    fn puffs_in_flight(&self, now_s: f64) -> usize {
+        self.list
+            .iter()
+            .filter_map(|b| {
+                let e = EXPLOSIVES.get(b.explosive)?;
+                let fx = e.effects;
+                let t = now_s - b.start_s;
+                (t < fx.smoke.seconds[1].max(fx.dust.seconds[1]))
+                    .then(|| self.puff_count(e, b.share))
+            })
+            .sum()
     }
 
     /// Forgets the blasts whose effects are over.
@@ -252,6 +292,11 @@ impl Blasts {
     }
 }
 
+/// `n` puffs at `share`: rounded up, so a blast draws at least one of each kind it has.
+fn shared(n: usize, share: f64) -> usize {
+    ((n as f64 * share).ceil() as usize).min(n)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn puffs_of(
     out: &mut Vec<Puff>,
@@ -263,7 +308,12 @@ fn puffs_of(
     t: f64,
     cpu: bool,
 ) {
-    let n = if cpu { look.cpu_count } else { look.count };
+    // The first `share` of them: each puff's way out is its own hash, so any first few are an
+    // even sample of the blast's.
+    let n = shared(
+        (if cpu { look.cpu_count } else { look.count }) as usize,
+        b.share,
+    ) as u32;
     let salt = if kind == PuffKind::Smoke { 100 } else { 10_000 };
     for i in 0..n {
         let k = salt + 8 * i;
@@ -431,6 +481,60 @@ mod tests {
             assert_eq!(m, even, "buried: as before");
         }
     );
+
+    #[test]
+    fn blasts_in_flight_share_the_puffs_budget_and_none_pops() {
+        // Owner, 2026-11-07: eight charges by a river dropped the Air to 49 fps on the puffs.
+        let e = &EXPLOSIVES[dynamite()];
+        let (smoke, dust) = (
+            e.effects.smoke.count as usize,
+            e.effects.dust.count as usize,
+        );
+        let max = LIMITS.max_puffs as usize;
+        let smoke_dust = |b: &Blasts, t: f64| {
+            b.puffs(t)
+                .iter()
+                .filter(|p| p.kind != PuffKind::Fire)
+                .count()
+        };
+        let mut b = Blasts::default();
+        b.start([0.5, 40.25, 0.5], dynamite(), 0.0, [0.0; 3]);
+        assert_eq!(b.list[0].share, 1.0, "one blast draws all its puffs");
+        assert_eq!(smoke_dust(&b, 0.05), smoke + dust);
+        // A chain of eight 0.3 s apart.
+        for k in 1..8 {
+            b.start(
+                [0.5 + 3.0 * f64::from(k), 40.25, 0.5],
+                dynamite(),
+                0.3 * f64::from(k),
+                [0.0; 3],
+            );
+        }
+        let least = shared(smoke, LIMITS.min_puff_share) + shared(dust, LIMITS.min_puff_share);
+        assert!(b.list.iter().all(|x| x.share >= LIMITS.min_puff_share));
+        let peak = (0..40)
+            .map(|k| smoke_dust(&b, 2.1 + 0.01 * f64::from(k)))
+            .max()
+            .unwrap();
+        assert!(
+            peak <= max + 8 * least,
+            "{peak} puffs at once, the budget {max} (+ the least shares {least} each)"
+        );
+        assert!(
+            peak < 8 * (smoke + dust) / 2,
+            "{peak}: the chain draws far fewer than eight blasts' worth"
+        );
+        // A blast's puffs are fixed at its start: the next one takes none of them.
+        let before = b.puffs(2.2);
+        let mut c = b.clone();
+        c.start([40.5, 40.25, 0.5], dynamite(), 2.2, [0.0; 3]);
+        let after = c.puffs(2.2);
+        assert!(before.iter().all(|p| after.contains(p)), "no puff pops");
+        // Long after, a blast draws all of them again.
+        c.prune(60.0);
+        c.start([0.5, 40.25, 0.5], dynamite(), 60.0, [0.0; 3]);
+        assert_eq!(c.list.last().unwrap().share, 1.0);
+    }
 
     #[test]
     fn each_effect_follows_its_setting_and_a_cpu_draws_fewer() {

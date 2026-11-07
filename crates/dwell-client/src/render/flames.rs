@@ -654,6 +654,11 @@ pub struct FlameRenderer {
     capacity: u64,
     /// Per group, its glows' and its embers' and flames' vertex ranges.
     ranges: [(Range<u32>, Range<u32>); 2],
+    /// Per group, where its mask's vertices end: the flames, embers and motes only. The flecks,
+    /// waterfalls and blast puffs after them never flag the view depth (`flame_mask_fs` would
+    /// discard every fragment of theirs), so the mask leaves them out: a chain of blasts' hundreds
+    /// of big puffs were rasterised again only to be discarded (docs/DEV_TOOLS.md, Worst-case blasts).
+    mask_ends: [u32; 2],
     /// Flames drawn this frame (telemetry).
     pub drawn: usize,
     /// Portal motes drawn this frame (telemetry).
@@ -808,6 +813,7 @@ impl FlameRenderer {
             vertices: vertex_buffer(device, capacity),
             capacity,
             ranges: [(0..0, 0..0), (0..0, 0..0)],
+            mask_ends: [0, 0],
             drawn: 0,
             motes_drawn: 0,
             flecks_drawn: 0,
@@ -843,6 +849,7 @@ impl FlameRenderer {
         let (motes, n) = mote_quads(portals, eye, basis, seconds, self.animated);
         data.extend(motes);
         self.motes_drawn = n;
+        let scene_mask_end = (data.len() / VERTEX_FLOATS) as u32;
         // The flecks on moving water, a CPU adapter's few (`particle_cpu_count`).
         let max = dwell_look::waterflow::LIQUID_FLOWS
             .iter()
@@ -872,6 +879,7 @@ impl FlameRenderer {
         let g = scene_glows as u32;
         let a = scene_end + arms_glows as u32;
         self.ranges = [(0..g, g..scene_end), (scene_end..a, a..end)];
+        self.mask_ends = [scene_mask_end, end];
         self.drawn = scene.len() + usize::from(arms.is_some());
         let count = u64::from(end);
         if count > self.capacity {
@@ -884,6 +892,12 @@ impl FlameRenderer {
         }
     }
 
+    /// A group's vertices the mask draws: its embers, flames and motes (`mask_ends`).
+    pub(super) fn mask_range(&self, group: Group) -> Range<u32> {
+        let lit = &self.ranges[group as usize].1;
+        lit.start..self.mask_ends[group as usize].clamp(lit.start, lit.end)
+    }
+
     /// Whether a group has flames this frame.
     pub fn has(&self, group: Group) -> bool {
         !self.ranges[group as usize].1.is_empty()
@@ -892,7 +906,7 @@ impl FlameRenderer {
     /// The mask (into a scene pass with see-through water, after its opaque draws): the view
     /// depth flagged self-lit where the flames and their embers cover.
     pub fn draw_mask(&self, pass: &mut wgpu::RenderPass<'_>, group: Group, calls: &mut u32) {
-        let (_, lit) = self.ranges[group as usize].clone();
+        let lit = self.mask_range(group);
         if lit.is_empty() {
             return;
         }

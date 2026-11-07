@@ -39,7 +39,7 @@ the fizz). Both one state (no properties): the generator refuses one with proper
 `fuseSeconds`, `radiusM`, `destroyRadiusM` (0 to `radiusM`, the generator refuses more), `loosenRadiusM`
 (at least `radiusM`, the generator refuses less), `impulse`, `falloff`, `flingFalloff`, `lift`, `maxSpeedMs`, `reachM`, `knockbackMs`,
 `damage`, `waterRadiusM`, `noPieceContactS` (0–10 s), `openSenseM`, `openBlend`, `openPathM`, `openSpreadMin` (0–1), `shell` (optional: `fling`, the default, or `crack`) and `crackOverCleared` (optional, only with `crack`; §3.6), `chainDelaySeconds` and `effects` (§4); `limits` (`blastsPerTick`,
-`maxPieces`). The `$comment` says what each means.
+`maxPieces`, and the clients' `maxPuffs` and `minPuffShare`, §4). The `$comment` says what each means.
 
 **Lighting** (the existing input model, no new action): **Place with a torch held, aimed at dynamite,
 lights it** instead of placing the torch — `dwell_world::edit::check_block_edit` turns the target cell
@@ -348,6 +348,16 @@ A client sees a blast where an `Explosion` modification turns a lit explosive's 
   Test: `blasts.rs` `the_smoke_follows_the_blasts_open_side_and_a_buried_one_spreads_evenly` (both
   faces: the smoke's mean offset along the cliff's and the roof's open side, cos > 0.8, red with
   `openBias` 0 at cos −0.31; the CPU's count unchanged; buried as before).
+  **Blasts in flight share a puffs budget** (0.50.16; owner, 2026-11-07: "a lot lower than 60FPS for
+  blasts, did you try more than 1 piece of dynamite?"): `limits.maxPuffs` (64) smoke and dust puffs at
+  once; a blast set off while others' puffs are in the air draws the share of its counts left, at least
+  `limits.minPuffShare` (0.15), fixed when it starts so none pops (`Blasts::start`, `Blast::share`); one
+  blast alone draws all of them. With see-through water the flames' mask (drawn before the water) leaves
+  the puffs, flecks and waterfalls out (`FlameRenderer::mask_range`): its shader discarded every fragment
+  of theirs, so it only rasterised them again. Eight charges by the dam site's river drew 459 puffs and held
+  the Air at 49 fps (docs/DEV_TOOLS.md "Worst-case blasts (M1 Air)"). Tests: `blasts.rs`
+  `blasts_in_flight_share_the_puffs_budget_and_none_pops` (342 puffs at once in a chain of eight
+  without it), `render/mod.rs` `the_flames_mask_leaves_the_blast_puffs_out`.
 - **Boom**: the sound event `explode` of the block's sound set (`dynamite_boom`), at the listener, its
   level full within `boom.fullM` and gone at `boom.hearM` (`boom_level`), so a far blast is heard past
   the panner's reach.

@@ -1116,6 +1116,78 @@ again, and that time:
    the server's piece world need not match the client's bit for bit; a larger change (two `Physics` builds).
 5. **Baked physics** (docs/FUTURE.md): out of scope.
 
+## Worst-case blasts (M1 Air)
+
+The owner (2026-11-07, 0.50.15): "I'm getting a lot lower than 60FPS for blasts, did you try more than 1
+piece of dynamite? And if you blow up next to water it's probably worst case." Same method as [Blasts and
+floods](#blasts-and-floods-m1-air) (the Air, vsync, 2560×1600 at 50 % Stretch, default settings, noon, one
+run each), but load 5–11 (a build had just run: the numbers are a little pessimistic). Scratch: the
+session's scratchpad `wc/` (`gen.py` the scenarios, `an.py` and `srv.py` the reading). The charges are set
+by `region fill` with the dynamite slot (offsets from the feet), the middle one lit with the torch, then the
+player flies up and back over the water and looks at them; 12 s recorded.
+
+- **By the river** (`?at=2364.5,142,7443.5`, the dam site; the player on the west bank, the river at +x):
+  one red 2 m in from the water (`wc-bank1`), one 1 m in (`wc-edge1`), 4 red 3 m apart along the bank
+  (`wc-bank4`), 8 red along it (`wc-bank8`), and 8 mixed (4 red, 4 yellow) in two rows
+  with the player only ~8 m back (`wc-bank8mix-close`).
+- **Dry land** (the spawn): the same 8 mixed in two rows (`wc-dry8mix`).
+
+**Before (0.50.15):**
+
+| Scenario | Drawn fps | Over 25 ms / max | GPU-wait skips | `frame.cpu` mean / p95 / max | `mesh_dirty` p95 | `jobs.apply` p95 | `gpu.frame` mean / p95 | `gpu.near.water` mean / p95 | `gpu.shadows` mean / p95 | `pacing.done` p95 | Puffs max |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| One red, 2 m from the river | 58.0 | 23 / 35.3 | 23 | 3.64 / 6.6 / 11.2 | 1.2 | 2.7 | 14.6 / 18.0 | 6.4 / 7.7 | 1.1 / 5.1 | 29.8 | 59 |
+| One red, 1 m from it | 58.4 | 18 / 34.9 | 18 | 3.76 / 7.1 / 12.0 | 1.7 | 3.0 | 14.2 / 17.1 | 6.4 / 7.8 | 0.8 / 1.5 | 29.2 | 59 |
+| 4 red along the bank | 53.3 | 79 / 35.3 | 79 | 3.75 / 7.9 / 13.2 | 2.0 | 3.8 | 15.8 / 21.0 | 8.0 / 12.8 | 0.9 / 4.9 | 37.5 | 229 |
+| 8 red along the bank | **49.5** | 125 / 49.9 | 126 | 4.15 / 8.9 / 12.8 | 4.0 | 4.3 | 17.3 / 25.8 | 9.4 / 17.9 | 1.1 / 5.3 | 47.5 | 432 |
+| 8 mixed on the bank, close | **48.9** | 132 / 51.9 | 133 | 4.15 / 9.8 / 12.1 | 4.8 | 4.0 | 17.4 / 27.2 | 9.7 / 19.5 | 0.9 / 5.0 | 49.9 | 459 |
+| the same, Smoke and dust off | 58.5 | 18 / 33.5 | 18 | 4.06 / 9.0 / 12.4 | 4.6 | 3.6 | 13.7 / 17.5 | 6.1 / 7.8 | 0.9 / 5.0 | 27.5 | 5 |
+| 8 mixed, dry land | 54.9 | 60 / 35.3 | 60 | 5.14 / 8.5 / 12.0 | 3.2 | 3.5 | 14.9 / 20.8 | 4.9 / 9.2 | 2.5 / 5.8 | 35.3 | 467 |
+
+No long task in any record. The water worker's longest run (its own thread) was 26–47 ms by the river (7–11
+before the blasts), owing nothing; the server's ticks by the river stayed under 10 ms (the bank charges fling
+few pieces: the water spares and shields the cells, EXPLOSIVES.md §3.7–3.8). On dry land the 8 charges' pieces
+cost the server 7–11 ms a tick on average for 8 s (physics 2.6 s and terrain collision 1.3 s over the 12 s;
+worst tick 66–257 ms, in one run 52 ticks in its worst second) — a worker, not the page's frames.
+
+**Reading it.** The frame drops are the GPU's, and they follow the blasts' **smoke and dust puffs**: 59 for one
+blast, 229 for four, 432–467 for eight (22 smoke 1.6–3.2 m wide and 36 dust a red charge, each lit with the
+soft shadow lookup a pixel and blended over the others). The main thread stays under the pacing's ~12 ms
+(`frame.cpu` p95 ≤ 9.8 ms; the craters' re-meshing in the stream budget, `mesh_dirty` p95 ≤ 4.8). With
+Smoke and dust off the close 8 by the river drew 58.5 fps against 48.9. By the river the puffs cost about
+twice: with see-through water the flames' mask (before the water) rasterised every puff again only to
+discard it (`flame_mask_fs` keeps only flames, embers and motes), and the colour went after the water.
+
+**Built in 0.50.16:**
+
+- **A puffs budget shared by the blasts in flight** (data: `limits.maxPuffs` 64, `limits.minPuffShare` 0.15,
+  `shared/explosives/explosives.json`; `dwell-client` `blasts.rs` `Blasts::start`): a blast set off while
+  others' puffs are in the air draws the share of its counts left, at least 0.15; fixed at its start, so
+  nothing pops; a lone blast draws all of them. Test `blasts_in_flight_share_the_puffs_budget_and_none_pops`
+  (red without the budget: 342 puffs at once in a chain of eight).
+- **The flames' mask leaves the puffs out** (`render/flames.rs` `mask_ends`, also the flecks and waterfalls,
+  which it discarded too). Test `render::tests::the_flames_mask_leaves_the_blast_puffs_out` (red with the old
+  range).
+- Tried and dropped: one shadow compare a puff pixel instead of the soft grid — within noise (bank 8 53.2 →
+  53.6 fps).
+
+**After** (the budget at 120 / 0.2 first, then the final 64 / 0.15 with the mask):
+
+| Scenario | Drawn fps: before → 120 → final | GPU-wait skips | `gpu.frame` mean / p95 (final) | `gpu.near.water` p95 (final) | `pacing.done` p95 (final) | Puffs max (final) |
+| --- | --- | --- | --- | --- | --- | --- |
+| 4 red along the bank | 53.3 → 55.2 → **57.7** | 79 → 57 → 27 | 14.5 / 17.8 | 8.4 | 31.1 | 89 |
+| 8 red along the bank | 49.5 → 53.2 → **56.1** | 126 → 82 → 47 | 14.6 / 17.9 | 9.3 | 34.4 | 111 |
+| 8 mixed on the bank, close | 48.9 → 53.4 → **55.8** | 133 → 78 → 49 | 14.7 / 18.9 | 9.2 | 33.7 | 130 |
+| 8 mixed, dry land | 54.9 → 58.4 → **58.9** | 60 → 18 → 11 | 13.3 / 16.8 | 4.5 | 26.0 | 132 |
+
+`frame.cpu` was unchanged (p95 8–11 ms). **Not 60 yet by the river**: a single blast there draws 58.0–58.4
+(18–23 skips) and the close eight with no smoke at all 58.5, so by the water ~1.5–2 fps of the remaining
+gap is the river view itself (`gpu.near.water` ~6.4 ms, `gpu.frame` p95 ~17.5 at rest there) and the rest
+the 90–130 puffs still drawn. **Next** (not built): the puffs' lighting per puff rather than per pixel (the
+frame's shadow map is fragment-only now), fewer, larger smoke puffs at the same cover; on the server, the 8
+dry charges' pieces (worst tick 66–257 ms; the levers in [Blasts and floods](#blasts-and-floods-m1-air)'s
+Next, 2–4).
+
 ## Play advanced (the main menu)
 
 The main menu's **Play advanced** (beside New world) opens a local world by link with
