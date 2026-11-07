@@ -476,8 +476,7 @@ async function step(run: Run, s: Step): Promise<void> {
       await call(page, `d.setShadows(${JSON.stringify(s.quality)})`);
       return;
     case 'view': {
-      const { do: _, ...view } = s;
-      await call(page, `d.setView(${JSON.stringify(view)})`);
+      await call(page, `d.setView(${JSON.stringify({ ...s, do: undefined })})`);
       return;
     }
     case 'water':
