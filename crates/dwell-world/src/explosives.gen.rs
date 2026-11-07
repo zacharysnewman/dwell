@@ -21,8 +21,8 @@ pub const EXPLOSIVES: &[ExplosiveData] = &[
         water_radius_m: 3.0,
         chain_delay_seconds: [0.15, 0.6],
         effects: BlastEffects {
-            flash: FlashLook { color: [1.0, 0.85098, 0.627451], strength: 40.0, light_radius_m: 28.0, seconds: 0.35, size_m: 4.5 },
-            smoke: PuffLook { color: [0.427451, 0.396078, 0.364706], count: 22, cpu_count: 6, size_m: [1.4, 2.8], seconds: [2.5, 4.5], spread_m: 3.5, rise_ms: 1.1, opacity: 0.75, speed_ms: [0.0, 0.0] },
+            flash: FlashLook { color: [1.0, 0.85098, 0.627451], strength: 6.0, light_radius_m: 18.0, seconds: 0.3, size_m: 4.0 },
+            smoke: PuffLook { color: [0.541176, 0.513725, 0.482353], count: 22, cpu_count: 6, size_m: [1.6, 3.2], seconds: [3.5, 6.0], spread_m: 3.5, rise_ms: 1.1, opacity: 0.75, speed_ms: [0.0, 0.0] },
             dust: PuffLook { color: [0.643137, 0.54902, 0.423529], count: 36, cpu_count: 8, size_m: [0.25, 0.6], seconds: [0.8, 1.8], speed_ms: [4.0, 11.0], opacity: 0.85, spread_m: 0.0, rise_ms: 0.0 },
             boom: BoomLook { full_m: 10.0, hear_m: 180.0 },
             shake: ShakeLook { radius_m: 30.0, degrees: 1.6, seconds: 0.7, hz: 17.0 },

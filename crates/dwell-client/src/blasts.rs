@@ -267,7 +267,7 @@ fn puffs_of(
         };
         let size = 0.5 * lerp(look.size_m, hash(b.seed, k + 4)) * (0.5 + 0.5 * u.sqrt());
         let fade_in = (t / 0.12).min(1.0);
-        let alpha = look.opacity * fade_in * (1.0 - u).powf(1.3);
+        let alpha = look.opacity * fade_in * (1.0 - u * u);
         out.push(Puff {
             at: face.point(p),
             size,
@@ -315,7 +315,7 @@ mod tests {
                 "smoke rises"
             );
             assert!(
-                early.iter().any(|p| p.kind == PuffKind::Fire),
+                b.puffs(0.1).iter().any(|p| p.kind == PuffKind::Fire),
                 "the fireball"
             );
             assert!(

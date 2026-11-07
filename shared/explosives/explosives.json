@@ -22,8 +22,8 @@
       "waterRadiusM": 3,
       "chainDelaySeconds": [0.15, 0.6],
       "effects": {
-        "flash": { "color": "#ffd9a0", "strength": 40, "lightRadiusM": 28, "seconds": 0.35, "sizeM": 4.5 },
-        "smoke": { "count": 22, "cpuCount": 6, "color": "#6d655d", "sizeM": [1.4, 2.8], "seconds": [2.5, 4.5], "spreadM": 3.5, "riseMs": 1.1, "opacity": 0.75 },
+        "flash": { "color": "#ffd9a0", "strength": 6, "lightRadiusM": 18, "seconds": 0.3, "sizeM": 4 },
+        "smoke": { "count": 22, "cpuCount": 6, "color": "#8a837b", "sizeM": [1.6, 3.2], "seconds": [3.5, 6], "spreadM": 3.5, "riseMs": 1.1, "opacity": 0.75 },
         "dust": { "count": 36, "cpuCount": 8, "color": "#a48c6c", "sizeM": [0.25, 0.6], "seconds": [0.8, 1.8], "speedMs": [4, 11], "opacity": 0.85 },
         "boom": { "fullM": 10, "hearM": 180 },
         "shake": { "radiusM": 30, "degrees": 1.6, "seconds": 0.7, "hz": 17 }
