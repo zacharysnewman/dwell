@@ -794,14 +794,10 @@ struct Shadows {
 // The map's visibility of an eye-relative point in cascade `c` (1 lit, 0 shadowed): a grid of
 // `taps`² hardware 2×2 compares over the filter's radius, a soft PCF.
 fn shadow_pcf(c: i32, p: vec3f) -> f32 {
-    return shadow_pcf_taps(c, p, i32(shadows.pcf.x));
-}
-
-// `shadow_pcf` with `taps`² compares (1: one hardware 2×2 compare).
-fn shadow_pcf_taps(c: i32, p: vec3f, taps: i32) -> f32 {
     let size = shadows.pcf.y;
     let uv = vec2f(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5);
     let z = p.z - shadows.texel[c].z;
+    let taps = i32(shadows.pcf.x);
     let radius = shadows.texel[c].w / size;
     if (taps <= 1) {
         return textureSampleCompareLevel(shadow_map, shadow_sampler, uv, c, z);
@@ -848,12 +844,6 @@ fn shadow_past(rel: vec3f, n: vec3f, stand_in: f32) -> f32 {
 // edge shows (dwell-look `lod_shadows::combine` is this in f64, tested). The time of day's fade
 // weakens both alike.
 fn shadow_light(rel: vec3f, n: vec3f, stand_in: f32) -> f32 {
-    return shadow_light_taps(rel, n, stand_in, i32(shadows.pcf.x));
-}
-
-// `shadow_light` with `taps`² compares a lookup: 1 for what is soft and drawn many times over, such
-// as a blast's smoke and dust (docs/DEV_TOOLS.md, Worst-case blasts).
-fn shadow_light_taps(rel: vec3f, n: vec3f, stand_in: f32, taps: i32) -> f32 {
     if (shadows.cfg.x < 0.5) {
         return stand_in * cloud_shadow(rel);
     }
@@ -868,7 +858,7 @@ fn shadow_light_taps(rel: vec3f, n: vec3f, stand_in: f32, taps: i32) -> f32 {
     let p = (shadows.cascades[c] * vec4f(at, 1.0)).xyz;
     // Times the distant terrain's: a hill beyond the casters' reach shades here only through it
     // (docs/BUGS.md 2).
-    let inside = mix(stand_in, shadow_pcf_taps(c, p, taps) * lod_shadow(rel), shadows.cfg.y);
+    let inside = mix(stand_in, shadow_pcf(c, p) * lod_shadow(rel), shadows.cfg.y);
     if (near >= 1.0) {
         return inside * cloud_shadow(rel);
     }

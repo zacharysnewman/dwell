@@ -104,9 +104,7 @@ fn blast_colour(kind: u32, look: u32, uv: vec2f, rest: vec3f, rel: vec3f, seed: 
     let y = frame.eye.x + rel.y;
     let up = face_up(face_at(y));
     var l = terrain_light(1.0, vec2f(1.0, 0.0));
-    // One compare, not the scene's soft grid: the puffs are soft and overlap many deep, and per
-    // pixel the grid was most of their cost (docs/DEV_TOOLS.md, Worst-case blasts).
-    l.direct = shadow_light_taps(rel, up, l.direct, 1);
+    l.direct = shadow_light(rel, up, l.direct);
     let lit = lambert_lit(c * (0.85 + 0.3 * blast_noise(uv * 3.0 + s)), up, y, l);
     return vec4f(lit * a, a);
 }}
@@ -118,15 +116,6 @@ fn blast_colour(kind: u32, look: u32, uv: vec2f, rest: vec3f, rel: vec3f, seed: 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn the_puffs_take_one_shadow_compare_a_pixel() {
-        // Eight charges by a river: the puffs' soft shadow grid per pixel, many deep, held the Air
-        // under 60 fps (docs/DEV_TOOLS.md, Worst-case blasts).
-        let src = wgsl();
-        assert!(src.contains("shadow_light_taps(rel, up, l.direct, 1)"), "{src}");
-        assert!(!src.contains("shadow_light(rel"), "no soft grid");
-    }
 
     #[test]
     fn puffs_are_quads_farthest_first_with_their_kind() {
