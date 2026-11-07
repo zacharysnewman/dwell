@@ -62,6 +62,9 @@ and friend worlds), with a small master server for discovery; there are no offic
 - `docs/BUILT_BODIES.md` — design for Phase 51 (ADR 0052): moving pieces edited while they move
   (natural ones break only, built ones break and place, splits), the build platform block whose builds
   are bodies that never settle, bodies saved with the world and floating in water.
+- `docs/EXPLOSIVES.md` — dynamite (0.49.32): the explosives table (`shared/explosives/explosives.json`),
+  lighting with a torch, the server's fuse and blast (every block in the radius a flung piece, players
+  knocked back and hurt, chain reactions, water blown out), the clients' flash, smoke, boom and shake.
 - `docs/WATER_FLOW.md` — design for Phase 52 (ADR 0053), replaced in 0.48.2 by Phase 53's grid: water flow as basins with one level joined by
   outlets (weir law, block leaks), rivers as chains of pools fed by the world map's runoff; damming,
   draining, diverting; currents on bodies and swimmers; near players, fast-forwarded elsewhere.

@@ -45,7 +45,7 @@ test("a light added by data alone reaches the Rust table (the fixture lantern)",
     rs,
     /LightInfo \{ name: "test:lantern", color: 0xa0c8ff, strength: 1\.5, radius_m: 6\.0, flicker: 0\.0, flicker_speed: 1\.0, shadows: false, flame: None \}/,
   );
-  assert.match(rs, /pub static LIGHTS: \[LightInfo; 2\]/);
+  assert.match(rs, /pub static LIGHTS: \[LightInfo; 3\]/);
 });
 
 test("bad entries fail with their field named", () => {

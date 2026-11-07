@@ -231,7 +231,7 @@ still continues across and the eye still swings across over `crossingRollS`.
 Plants (docs/TRANSPARENT_BLOCKS.md): `__dwell.plants(wind, shown)` scales their wind and hides or
 shows every cutout mesh, for an A/B of their cost at one camera pose.
 
-Water flow (docs/WATER_SURFACE_GRID.md §2c): `__dwell.waterFlowAt(x, y, z)` gives the client's current there (m/s along x and z), the flecks near the eye, and the first few flecks' places. Waterfalls (§2e): `__dwell.waterFalls()` lists the falls the client found near the eye (each one's high column, way, width, lip and landing heights, flow per metre and lip speed).
+Water flow (docs/WATER_SURFACE_GRID.md §2c): `__dwell.waterFlowAt(x, y, z)` gives the client's current there (m/s along x and z), the flecks near the eye, and the first few flecks' places. Waterfalls (§2e): `__dwell.waterFalls()` lists the falls the client found near the eye (each one's high column, way, width, lip and landing heights, flow per metre and lip speed). Blasts (docs/EXPLOSIVES.md §4): `__dwell.blasts()` lists the blasts whose effects are still going (each one's place and age, s); telemetry `blasts.puffs` counts the smoke, dust and fireball billboards drawn a frame.
 
 From the console: `__dwell.telemetry()`, `__dwell.telemetryFrames()`, `__dwell.ticks()`,
 `__dwell.telemetryReset()` (types in `client/src/main.ts`).
