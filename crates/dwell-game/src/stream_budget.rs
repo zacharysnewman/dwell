@@ -12,7 +12,7 @@
 
 /// The loading's deadline, ms after the frame's start: about 9 ms of `frame.cpu` less the ~2 ms
 /// of LOD selection and drawing that follow it.
-pub const STREAM_DEADLINE_MS: f64 = 7.0;
+pub const STREAM_DEADLINE_MS: f64 = 8.0;
 /// The least a frame's loading gets (ms), however late the frame is.
 pub const STREAM_MIN_MS: f64 = 2.0;
 /// ... or this share of the last frame's interval on a slow page, ...
