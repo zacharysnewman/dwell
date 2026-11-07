@@ -839,6 +839,82 @@ The owner's pick between the soft Stretch and the ~2 ms Sharpen is a look questi
 Scratch files (not checked in): the scenario and configurations in the session's scratchpad `up/`
 (`scenarios.json`, `configs.json`, `summ.py`), the report at `up/un/compare.html`.
 
+## Flight loading (M1 Air)
+
+The owner (2026-11-07, 0.50.12): "Just flying around loading chunks, still getting 45fps even with default
+settings + 50% scaling"; their performance line read 41–59/60 fps with 1–16 `GPU-wait` skips, CPU 9.3–11.7 ms
+and GPU 18.6 → 7.8 ms over 15 s, at a slider speed of ~36 m/s.
+
+**Method.** The M1 Air on AC power, the bench's Chrome with vsync (what the owner sees), a 1280×800 page at
+ratio 2 (2560×1600), `?renderscale=0.5&upscaler=stretch`, the default settings (no `settings`), a fresh
+seed-0 world at its own spawn. Per run: 6 s recorded just after the join (`start`), `settle`, fly on, the
+speed level set before the climb, Space for a climb, W held, 1 s, then 15 s recorded (`flight`) in a straight
+line over unloaded terrain. Levels fly at 8 × 2^(L/2) m/s: 4 (32 m/s, the owner's), 6 (64), 9 (181) and 11
+(362, the slider's top). The 1-minute load was 2.1 at the start and 5–8 while the bench ran (the bench's own
+workers). Scratch: the session's scratchpad `fl/` (`gen.py`, `an.py` for the per-frame reading, `thr.py`).
+
+| Level | Flown | Drawn fps | Drawn interval p50 / p95 / max | Over 18 ms | GPU-wait skips | `frame.cpu` mean / p95 | `mesh_dirty` | `jobs.apply` | `lod` | Uploads a frame | `gpu.frame` mean / p95 | `pacing.done` p50 / p95 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 4 | 434 m (then a hill) | 52.4 | 16.7 / 33.3 / 49.9 | 198 of 785 | 112 | 10.96 / 16.9 | 6.08 / 11.0 | 1.80 / 4.1 | 0.97 | 1.12 MB, 4.7 chunks | 12.23 / 15.27 | 18.5 / 36.9 |
+| 6 | 960 m | 57.9 | 16.7 / 17.7 / 34.2 | 30 of 869 | 30 | 10.53 / 14.9 | 6.50 / 10.3 | 1.79 / 3.4 | 0.64 | 1.53 MB, 6.3 chunks | 10.25 / 12.08 | 18.0 / 24.8 |
+| 9 | 1520 m | 56.0 | 16.7 / 33.3 / 34.3 | 59 of 841 | 59 | 11.55 / 15.8 | 7.53 / 10.9 | 1.86 / 3.9 | 0.69 | 1.32 MB, 5.3 chunks | 8.18 / 10.83 | 18.2 / 33.4 |
+| 11 | 4510 m | 57.1 | 16.7 / 17.7 / 51.0 | 37 of 859 | 34 | 9.22 / 15.9 | 5.85 / 9.9 | 1.09 / 3.2 | 0.61 | 0.74 MB, 2.1 chunks + 1.3 sections | 7.70 / 10.65 | 14.7 / 34.1 |
+| 4, still (nothing loading) | 0 | 59.9 | 16.7 / 18.0 / 18.7 | 43 (≤ 18.7) | 0 | 3.32 / 4.0 | 0 | 0 | 1.08 | 0 | 9.16 / 9.50 | 11.7 / 12.7 |
+
+The `start` records (the 6 s after joining, every level): 54.8–58.8 fps, `frame.cpu` 9.4–10.7, `gpu.frame`
+9.6–10.5 (p95 12–14; `gpu.shadows` 4.0–4.3 against 1–2.6 in flight, the kept shadow maps redrawn as chunks
+arrive). No long task over 50 ms in any record; `ticks` 0.1 ms except at level 11 (mean 0.7, up to 11 ms: the
+prediction's terrain collision loading at 360 m/s). Workers: `job.chunk` queued p50 33–150 ms, p95 170–320 ms
+(the generation pool always full while flying), run p50 17–28 ms; `chunk_mesh` queued p50 3–7, run p50 17;
+`section` run p50 33–75 ms.
+
+**Reading it.**
+
+- **The bench reproduces the owner's CPU**: `frame.cpu` 9–11.5 ms a frame in every flight (their 9.3–11.7),
+  against 3.3 ms once nothing loads. Speed hardly matters: the stream always has more to do than its budget, so
+  level 4 costs what level 11 does. It is **all loading work on the main thread**: `mesh_dirty` 5.9–7.5 ms
+  (p95 10–11, max 14), `jobs.apply` (taking finished meshes in and uploading them) 1.1–1.9, `lod` 0.6–1.0, the
+  draw ~1. The Chrome trace of level 11 (8 s, `fl11t`) gives the main thread 4.4 s busy (55 %): **the flood
+  light `LightMap::load` 2.05 s, 47 % of it** (`run_from` 1.65 s self, `rules` 0.23, `set_level` 0.08),
+  `padded_box` (copying a chunk out for its mesh job) 0.30, `encode_job` 0.24, `interleave` + `writeBuffer`
+  (uploads) 0.28, `LodSystem::update` 0.35, GC 0.09.
+- **Why `mesh_dirty` is ~6 ms with a "4 ms" budget**: `stream_budget_ms` gives the light **and** the mesh
+  starts 4 ms each (`game.rs`, `chunk_stream.rs` `mesh_dirty`), so up to 8 ms a frame, plus the last chunk's
+  overshoot past each deadline (the worst frames reach 14 ms against the 8).
+- **The `GPU-wait` skips are the CPU's**, not the GPU's: `gpu.frame` is 7.7–12 ms. A frame skips when two are
+  still unanswered (`render/pacing.rs`), and `pacing.done` (submit → Chrome's answer) runs ~18 ms, 6–10 ms past
+  `gpu.frame`. Over all 11 records, a frame after one of ≤ 12 ms `frame.cpu` was skipped 22 times in 4,500
+  (14 of them at level 4); after one over 15 ms, 45–70 % of the time; over 16 ms, 45–100 %. A frame that ends late submits late, its answer
+  comes late, and the next-but-one frame finds two in flight.
+- **The owner's lower rate** (41–53 against the bench's 52–58): the same CPU, but at level 4 low over the
+  ground the bench also drew only 52.4 (112 skips, plus 123 late animation frames). The cut-off is
+  sharp (skips start at ~12 ms of CPU when `pacing.done` is 18 ms), so a slightly longer answer on their
+  Chrome (their own profile, other tabs, a larger window) moves it a lot. DevTools were not open. Their GPU
+  18.6 / 14.4 ms in the first 5 s was not reproduced (the bench's join reads 9.6–10.5, p95 ≤ 14); a trace
+  of theirs, or their `pacing.done`, would show it.
+- **The machine is full while loading**: in the trace the job workers ran 42 s in 8 s (about 5.2 of the
+  M1's 8 cores: four at ~92 %, five more at 7–54 %), Chrome's GPU process 2.2 s and the main thread 4.4.
+  Generation and meshing get 4 workers each (`workerCount`, cores − 2 capped at 4, per pool), so the main thread
+  and the GPU process share the efficiency cores with them. `?workers=N` (1–8, a pool) sets it for a visit;
+  WORKERS_RESULT
+
+**Fixes proposed** (not built; ranked by the main-thread time they save while loading):
+
+1. **One stream budget, not two, and a frame-aware one**: the light and the mesh starts share
+   `stream_budget_ms`, and the budget shrinks with the frame's time so far (e.g. spend only up to ~9 ms of
+   `frame.cpu`). Saves ~2–4 ms a frame on average and caps the p95 near 10 ms, under the ~12 ms where the
+   skips start: most of the 30–110 `GPU-wait` skips in 15 s go. The light then lags further behind the
+   generation; check the time to settle (the bench's `settle`) and the join's `terrain` stage.
+2. **The flood light off the main thread** (`LightMap::load`, 47 % of it while loading): in the mesh worker
+   with the chunk's padded neighbours, or its own worker. ~3.5–4 ms a frame; larger work (the light map is the
+   main thread's state; edits relight it).
+3. **Fewer workers a pool on 8-core Macs** (see above): frees cores for the main thread and the GPU process.
+4. **Smaller main-thread pieces of the uploads and the job posts**: interleave the vertices in the mesh worker
+   (`interleave` 0.17 s in 8 s), transfer the padded chunk rather than encoding it (`encode_job` 0.24 s): ~0.5 ms
+   a frame together.
+5. **Skip the LOD selection while it cannot change** (`LodSystem::update` 0.35 s in 8 s, ~0.6 ms a frame,
+   still 1.1 ms with nothing loading): the cost profile's finding again.
+
 ## Play advanced (the main menu)
 
 The main menu's **Play advanced** (beside New world) opens a local world by link with
