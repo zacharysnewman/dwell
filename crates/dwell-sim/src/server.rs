@@ -2636,9 +2636,7 @@ impl Server {
             }
         }
         // A cracking shell's exposed cells (they touched open space before the blast, or sit on
-        // the cleared core) fly whatever lies in their way; the rest of the shell is judged by the
-        // wall check as any blast's (owner, 2026-11-07: "I want the wall check for everything not
-        // exposed to air"). All take the blast's push.
+        // the cleared core) fly whatever lies in their way, with the blast's push.
         let mut exposed = vec![false; shell.len()];
         if crack {
             let f = FaceFrame::at_row(at[1]);
@@ -2671,11 +2669,15 @@ impl Server {
             .zip(&dirs)
             .map(|(&(_, _, _, d, o), &dir)| (o, dir, d > e.radius_m))
             .collect();
-        let flies: Vec<bool> = launching(&judged, e.open_path_m, |o| solid_at(&mut self.world, o))
-            .into_iter()
-            .zip(&exposed)
-            .map(|(f, &x)| f || x)
-            .collect();
+        // A cracking shell frees only its exposed cells, judged on the world before the blast
+        // (owner, 2026-11-07: cells beside the destroyed core "aren't supposed to go live"; "the air
+        // check is supposed to happen before"): nothing flies out through the cleared core or behind
+        // other flying cells. Any other shell is wall-checked (`launching`).
+        let flies: Vec<bool> = if crack {
+            exposed.clone()
+        } else {
+            launching(&judged, e.open_path_m, |o| solid_at(&mut self.world, o))
+        };
         let mut flung = Vec::new();
         for ((&(c, m, p, d, _), &dir), fly) in shell.iter().zip(&dirs).zip(flies) {
             if !fly || flung.len() >= self.fuses.max_pieces {
