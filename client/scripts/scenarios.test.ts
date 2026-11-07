@@ -25,6 +25,35 @@ describe('scenarios', () => {
     expect(without).toEqual([]);
   });
 
+  it('sets other settings mid-run with a view step (the cost profile ablations)', () => {
+    const [s] = parseScenarios(
+      file([
+        {
+          name: 'v',
+          steps: [
+            { do: 'view', clouds: 'off', speedEffects: false },
+            { do: 'view', distanceM: 128, pixelError: 8, smoke: false, flowParticles: false },
+          ],
+        },
+      ]),
+    );
+    expect(s.steps[0]).toEqual({ do: 'view', clouds: 'off', speedEffects: false });
+    expect(s.steps[1]).toEqual({
+      do: 'view',
+      distanceM: 128,
+      pixelError: 8,
+      smoke: false,
+      flowParticles: false,
+    });
+    const bad =
+      (step: unknown): (() => unknown) =>
+      () =>
+        parseScenarios(file([{ name: 'a', steps: [step] }]));
+    expect(bad({ do: 'view', clouds: 'medium' })).toThrow(/"off", "low" or "high"/);
+    expect(bad({ do: 'view', pixelError: 40 })).toThrow(/pixelError/);
+    expect(bad({ do: 'view', fog: false })).toThrow(/fog/);
+  });
+
   it('fills defaults and makes a local-world address', () => {
     const [s] = parseScenarios(file([minimal]));
     expect(s.seed).toBe(7);
