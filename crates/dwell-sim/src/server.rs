@@ -214,6 +214,9 @@ const WATER_RECORD_LEAD_TICKS: u32 = 30;
 /// How long the LOD section of a chunk the water rewrites waits from its first change before it is
 /// computed (ticks): the water keeps rewriting it, and the LOD is seen from afar.
 const WATER_LOD_HOLD_TICKS: u32 = 2 * SIM_HZ;
+/// How long a tick spends at most encoding a save on an inline store (no I/O thread: the
+/// browser's, §6.4), ms; its commit is a tick's of its own.
+const SAVE_STEP_MS: f64 = 2.0;
 /// How long closing a world waits for the water's record.
 const WATER_CLOSE_WAIT: Duration = Duration::from_secs(1);
 
@@ -725,7 +728,7 @@ struct EditLogEntry {
 }
 
 /// The tick's phases, in order, as `Server::tick_phases` names them.
-pub const TICK_PHASES: [&str; 11] = [
+pub const TICK_PHASES: [&str; 14] = [
     "collect",
     "edits",
     "terrain",
@@ -736,7 +739,10 @@ pub const TICK_PHASES: [&str; 11] = [
     "settle",
     "water+respawn",
     "snapshots",
-    "stream+lod+save",
+    "stream",
+    "worldgen",
+    "lod",
+    "save",
 ];
 
 pub struct Server {
@@ -1614,12 +1620,16 @@ impl Server {
                 self.stream_chunks(id);
             }
         }
+        self.phase_ms[10] += watch.lap_ms();
         self.update_worldgen();
+        self.phase_ms[11] += watch.lap_ms();
 
         // 6b. Level of detail: propagation off the tick, index updates, answers (§6.6).
         self.update_lod();
+        self.phase_ms[12] += watch.lap_ms();
 
-        // 7. Autosave (§6.4): prepared here, committed off the tick.
+        // 7. Autosave (§6.4): the batch built here; committed by the I/O thread natively, and
+        // without one (the browser) encoded a little a tick and committed on a tick of its own.
         if self.config.store.is_some() {
             // The water's record asked for a moment before (it comes back by the save).
             if !self.water_link.record_asked
@@ -1628,13 +1638,26 @@ impl Server {
                 self.water_link.pending.push(WaterIn::Record);
                 self.water_link.record_asked = true;
             }
-            if self.tick >= self.next_save_tick {
+            // One save at a time: a save still encoding holds the next back (its chunks stay
+            // dirty, and the next takes them all).
+            let budget = crate::clock::Stopwatch::start();
+            let encoding = self.config.store.as_ref().is_some_and(WorldStore::pending);
+            if self.tick >= self.next_save_tick && !encoding {
                 self.autosave();
             }
+            // An inline store's save, a little a tick (natively the I/O thread's), the batch's
+            // building counted in.
+            if let Some(store) = &self.config.store
+                && store.pending()
+            {
+                store.step(|| budget.elapsed_ms() < SAVE_STEP_MS);
+                self.collect_saves();
+            }
         }
+        self.phase_ms[13] += watch.lap_ms();
         // 8. What the water is told this tick goes as one batch.
         self.flush_water();
-        self.phase_ms[10] += watch.lap_ms();
+        self.phase_ms[8] += watch.lap_ms();
     }
 
     /// What the ticks did since the last call, by name: the terrain collision's chunk builds
@@ -3476,6 +3499,13 @@ impl Server {
             self.apply_water();
         }
         self.autosave();
+        // Now, as said: an inline store's save is not left to the ticks.
+        if let Some(store) = &self.config.store
+            && !store.threaded()
+        {
+            store.flush();
+            self.collect_saves();
+        }
     }
 
     /// Saves as `save_now`, with the water's newest record (asked for a moment before).
@@ -3556,7 +3586,6 @@ impl Server {
         let save_id = self.config.store.as_mut().expect("store").save(batch);
         self.in_flight.insert(save_id, revisions);
         self.lod_in_flight.insert(save_id, lod_saved);
-        self.collect_saves(); // saves commit inline without an I/O thread
     }
 
     fn collect_saves(&mut self) {
@@ -3585,6 +3614,12 @@ impl Server {
                 self.dirty.extend(revisions.into_iter().map(|(c, _)| c)); // try again
             }
         }
+    }
+
+    /// Marks a chunk changed outside the edit path (tools, tests that write `world()` directly):
+    /// the next save writes it.
+    pub fn mark_dirty(&mut self, c: ChunkCoord) {
+        self.dirty.insert(c);
     }
 
     /// Waits for saves in flight to commit (hosts, before shutting down).
