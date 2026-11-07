@@ -172,6 +172,8 @@ pub struct Harness {
     /// Frames drawn since the perf line was last printed.
     drawn: u32,
     perf_at: f64,
+    /// This frame's wait for the surface (ms): the vsync wait, natively.
+    acquire_ms: f64,
     pub failed: Option<String>,
 }
 
@@ -287,6 +289,7 @@ impl Harness {
             server_seconds: Vec::new(),
             drawn: 0,
             perf_at: started_ms,
+            acquire_ms: 0.0,
             failed: None,
         })
     }
@@ -421,8 +424,13 @@ impl Harness {
             .renderer
             .borrow_mut()
             .set_cloud_time(world.unwrap_or(now_ms / 1000.0));
+        self.acquire_ms = 0.0;
         let drew = self.draw();
-        telemetry::add("frame.cpu", telemetry::now_ms() - t0);
+        let cpu = telemetry::now_ms() - t0;
+        telemetry::add("frame.cpu", cpu);
+        // With vsync the surface's acquire waits here for the display (the browser's does not:
+        // its compositor presents), so the frame's own work is `frame.cpu` without that wait.
+        telemetry::add("frame.busy", cpu - self.acquire_ms);
         // Natively the GPU's callbacks (the pacer's completions, the timestamp readbacks) run
         // when the device is polled; the browser runs them from its event loop.
         let _ = self
@@ -451,7 +459,8 @@ impl Harness {
         }
         let acquire = telemetry::now_ms();
         let current = self.gfx.surface.get_current_texture();
-        telemetry::add("draw.acquire", telemetry::now_ms() - acquire);
+        self.acquire_ms = telemetry::now_ms() - acquire;
+        telemetry::add("draw.acquire", self.acquire_ms);
         let frame = match current {
             wgpu::CurrentSurfaceTexture::Success(t)
             | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
@@ -486,7 +495,7 @@ impl Harness {
         self.perf_at = now_ms;
         let (cpu, gpu) = telemetry::with(|t| {
             (
-                t.recent_frame_mean("frame.cpu", 60).unwrap_or(f64::NAN),
+                t.recent_frame_mean("frame.busy", 60).unwrap_or(f64::NAN),
                 t.recent_sample_mean("gpu.frame", 30).unwrap_or(f64::NAN),
             )
         });

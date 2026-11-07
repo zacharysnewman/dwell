@@ -419,6 +419,7 @@ fn summarise(name: &str, rec: &Value, server: &[Value], seconds: f64) {
     );
     for k in [
         "frame.cpu",
+        "frame.busy",
         "game.draw",
         "draw.render",
         "draw.acquire",
