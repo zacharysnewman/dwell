@@ -452,7 +452,8 @@ dwell_world::both_faces!(
                         let m = ch.voxels()[local_index(x, y, z)];
                         // The ground: rock, soil and water, not a tree's canopy over the air.
                         let ground = (solid(m)
-                            && !(named(m).starts_with("dwell:log") || named(m).starts_with("dwell:leaves")))
+                            && !(named(m).starts_with("dwell:log")
+                                || named(m).starts_with("dwell:leaves")))
                             || m == M.water;
                         s.push((c.y * CHUNK_SIZE + y, ground));
                     }
@@ -648,8 +649,8 @@ dwell_world::both_faces!(
                             for y in 1..SECTION_CELLS {
                                 let m = cells[cell_index(x, y, z)];
                                 let below = cells[cell_index(x, y - 1, z)];
-                                let tree =
-                                    named(m).starts_with("dwell:log") || named(m).starts_with("dwell:leaves");
+                                let tree = named(m).starts_with("dwell:log")
+                                    || named(m).starts_with("dwell:leaves");
                                 if solid(m) && !tree && below == M.air {
                                     under[k] += 1;
                                 }

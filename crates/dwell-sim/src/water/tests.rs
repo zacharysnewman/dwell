@@ -921,7 +921,10 @@ dwell_world::both_faces!(
         s.edit(&cut, M.air);
         s.run(600);
         let pit = s.level(15, 3).expect("the pit holds water");
-        assert!(pit > -2.0, "the water stands over the floor's leaf: {pit:.3}");
+        assert!(
+            pit > -2.0,
+            "the water stands over the floor's leaf: {pit:.3}"
+        );
         assert!(
             s.get(12, -3, 5) == f.state(require("dwell:leaves[flooded=true]")),
             "the leaf under the water is flooded"

@@ -416,11 +416,21 @@ fn a_state_with_an_unknown_property_loads_as_its_base_and_saves_back_unchanged()
     let mut c = db.load_chunk(ChunkCoord::new(0, 0, 0)).expect("kept");
     let a = c.voxels[0];
     let base = require("dwell:leaves[flooded=true]");
-    assert_eq!(dwell_blocks::alias_base(a), Some(base), "an alias of the leaves");
+    assert_eq!(
+        dwell_blocks::alias_base(a),
+        Some(base),
+        "an alias of the leaves"
+    );
     let row = dwell_blocks::info(a);
     assert_eq!(row.name, text);
     assert_eq!(
-        (row.solid, row.passable, row.flooded, row.render, row.shape_index),
+        (
+            row.solid,
+            row.passable,
+            row.flooded,
+            row.render,
+            row.shape_index
+        ),
         {
             let b = dwell_blocks::info(base);
             (b.solid, b.passable, b.flooded, b.render, b.shape_index)
@@ -438,7 +448,11 @@ fn a_state_with_an_unknown_property_loads_as_its_base_and_saves_back_unchanged()
     let db = WorldDb::open(&path).expect("reopens");
     assert!(db.block_states().contains(&text.to_string()));
     let c = db.load_chunk(ChunkCoord::new(0, 0, 0)).expect("chunk");
-    assert_eq!(dwell_blocks::info(c.voxels[0]).name, text, "saved back unchanged");
+    assert_eq!(
+        dwell_blocks::info(c.voxels[0]).name,
+        text,
+        "saved back unchanged"
+    );
     assert_eq!(c.voxels[2], a);
     let _ = std::fs::remove_file(&path);
 }
