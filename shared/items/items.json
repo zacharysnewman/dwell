@@ -99,6 +99,20 @@
       "drag": "none"
     },
     {
+      "name": "dwell:dynamite_blue",
+      "label": "Blue dynamite",
+      "block": "dwell:dynamite_blue",
+      "rows": 1,
+      "drag": "none"
+    },
+    {
+      "name": "dwell:dynamite_green",
+      "label": "Green dynamite",
+      "block": "dwell:dynamite_green",
+      "rows": 1,
+      "drag": "none"
+    },
+    {
       "name": "dwell:snowy_grass",
       "label": "Snowy grass",
       "block": "dwell:snowy_grass",

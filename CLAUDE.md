@@ -319,7 +319,7 @@ Check these before chasing an e2e failure:
   real GPU; not caused by other work.
 - `e2e/play.spec.ts`'s "two clients on a native server see each other move" (shard 3) times out
   waiting for page B's terrain on CI since 0.49.4 (BUGS.md #34, open); it passes locally on a GPU.
-- The hotbar slot count in `e2e/edit.spec.ts` is the items' count (15, `shared/items/items.json`);
+- The hotbar slot count in `e2e/edit.spec.ts` is the items' count (17, `shared/items/items.json`);
   update it when the items change.
 - Main's e2e failed from 0.28.x to 0.37.1 (fixed 0.37.2). Part was specs left behind by features:
   1 m hotbar blocks (two cells), leaves falling when no log holds them, flight capped at level
