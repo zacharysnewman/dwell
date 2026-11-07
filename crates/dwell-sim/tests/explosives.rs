@@ -972,10 +972,12 @@ fn cliff_blast(f: FaceFrame, e: ExplosiveData) -> (Vec<([i32; 3], f64)>, Scene) 
 }
 
 dwell_world::both_faces!(
-    fn yellow_cracks_only_the_shell_that_touched_air_or_sits_on_the_core(f: FaceFrame) {
+    fn yellow_flings_every_exposed_cell_and_wall_checks_the_rest(f: FaceFrame) {
         // Owner (2026-11-07): "destroys 4m radius, and cracks anything touching air"; "anything
-        // touching air in 5m not queued for destruction"; and the roof over the cleared core drops
-        // ("cave collapses ... where the ceiling drops").
+        // touching air in 5m not queued for destruction"; the roof over the cleared core drops; and
+        // "I want the wall check for everything not exposed to air" — exposed cells fly with the
+        // blast's push whatever is in their way, the rest of the shell flies only if the wall
+        // check lets it, as red's does.
         let e = yellow();
         assert_eq!(e.shell, dwell_world::explosives::ShellRule::Crack);
         let (pieces, mut s) = cliff_blast(f, e);
@@ -990,7 +992,7 @@ dwell_world::both_faces!(
             [0, 0, -1],
         ];
         let add = |a: [i32; 3], b: [i32; 3]| [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
-        let want: std::collections::HashSet<[i32; 3]> = cells_within(e.radius_m)
+        let exposed: std::collections::HashSet<[i32; 3]> = cells_within(e.radius_m)
             .into_iter()
             .filter(|&o| !open(o) && dist(o) > e.destroy_radius_m)
             .filter(|&o| {
@@ -998,36 +1000,24 @@ dwell_world::both_faces!(
                     || dist(add(o, [0, -1, 0])) <= e.destroy_radius_m
             })
             .collect();
-        let got: std::collections::HashSet<[i32; 3]> = pieces.iter().map(|p| p.0).collect();
-        assert_eq!(got, want, "the cracked cells");
-        for &(o, v) in &pieces {
-            // Two ticks of gravity (0.33 m/s); the roof cell, boxed in by rock on four sides,
-            // is eased out of it a little more (1.4 m/s). A flung piece goes 10–33 m/s.
-            assert!(
-                v < 2.0,
-                "a cracked piece at {o:?} moves at {v:.2} m/s (no push)"
-            );
+        let got: std::collections::HashMap<[i32; 3], f64> = pieces.iter().copied().collect();
+        // Every exposed cell cracks loose, even one pushed into rock that barely moves.
+        for o in &exposed {
+            assert!(got.contains_key(o), "the exposed cell {o:?} cracks loose");
         }
-        // Within 4 m: gone; the roof over the core cracked; beside and below it: stone.
-        assert_eq!(s.get([0, 7, 2]), M.air, "3.6 m: destroyed");
+        // The roof over the core and a cell beside the open cliff are among them; the one facing
+        // the open cliff takes the blast's push (was no push: 2 ticks of gravity, 0.33 m/s).
+        assert!(exposed.contains(&[0, 9, 0]) && exposed.contains(&[4, 0, 2]));
+        let v = got[&[4, 0, 2]];
         assert!(
-            got.contains(&[0, 9, 0]),
-            "the roof cell 4.5 m over the core"
+            v > 5.0,
+            "the cell beside the open cliff is flung ({v:.2} m/s)"
         );
-        assert!(got.contains(&[4, 0, 2]), "a cell beside the open cliff");
-        for o in [[-4, 0, 2], [0, -9, 0], [0, 0, -5], [1, 9, 0]] {
-            assert!(!got.contains(&o), "{o:?} cracked");
+        // Within 4 m: gone. Cells pushed into rock with no way out: stay, as red's would.
+        assert_eq!(s.get([0, 7, 2]), M.air, "3.6 m: destroyed");
+        for o in [[0, -9, 0], [0, 0, -5]] {
+            assert!(!got.contains_key(&o), "{o:?} is wall-checked: it stays");
             assert_eq!(s.get(o), stone, "{o:?}: stays");
         }
-        // Without crackOverCleared the roof stays.
-        let (pieces, _) = cliff_blast(
-            f,
-            ExplosiveData {
-                crack_over_cleared: false,
-                ..e
-            },
-        );
-        assert!(pieces.iter().all(|p| p.0 != [0, 9, 0]), "the roof cracked");
-        assert!(pieces.iter().any(|p| p.0 == [4, 0, 2]));
     }
 );

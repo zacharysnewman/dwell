@@ -305,7 +305,7 @@ function summarise(name: string, t: Telemetry, longTasks: number[][], seconds: n
     );
   }
   for (const [k, s] of Object.entries(t.samples)) {
-    if (s && k.startsWith('gpu.')) {
+    if (s && (k.startsWith('gpu.') || k === 'pacing.done')) {
       console.log(
         `    ${k.padEnd(22)} n ${String(s.n).padStart(5)}  ms mean ${f(s.mean)} p50 ${f(s.p50)} p95 ${f(s.p95)} p99 ${f(s.p99)}`,
       );

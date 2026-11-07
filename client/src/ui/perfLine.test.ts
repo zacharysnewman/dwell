@@ -14,6 +14,31 @@ describe('performance line', () => {
     ).toBe('– fps · CPU 3.0 ms · GPU – · server 38/s');
   });
 
+  it('shows drawn of the animation frames and the skips by reason', () => {
+    expect(
+      formatPerf({
+        fps: 38,
+        animationFps: 60,
+        pacedShare: 22 / 60,
+        noSurfaceShare: 0,
+        cpuMs: 4,
+        gpuMs: 6,
+        serverTicks: 60,
+        serverTickMs: null,
+      }),
+    ).toBe('38/60 fps (22 GPU-wait) · CPU 4.0 ms · GPU 6.0 ms · server 60/s');
+    expect(
+      formatPerf({
+        fps: 60,
+        animationFps: 60,
+        cpuMs: 4,
+        gpuMs: 6,
+        serverTicks: 60,
+        serverTickMs: null,
+      }),
+    ).toBe('60/60 fps · CPU 4.0 ms · GPU 6.0 ms · server 60/s');
+  });
+
   it("measures a server's ticks a second from the tick it sends", () => {
     const r = new TickRate();
     expect(r.rate).toBeNull();

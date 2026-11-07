@@ -2144,6 +2144,7 @@ impl Renderer {
     /// Whether a frame may be drawn at `now_ms` (pacing.rs): not while `pacing::MAX_IN_FLIGHT`
     /// frames are still on the GPU.
     pub fn ready_to_draw(&mut self, now_ms: f64) -> bool {
+        crate::telemetry::add("pacing.in_flight", f64::from(self.pacer.in_flight()));
         self.pacer.ready(now_ms)
     }
     /// The water's cost-isolation switches (a dev tool: `water::debug_mask`).
@@ -3638,7 +3639,14 @@ impl Renderer {
             timer.resolve(&mut encoder);
         }
         self.queue.submit([encoder.finish()]);
-        self.queue.on_submitted_work_done(self.pacer.submitted());
+        // The time from submit to the GPU's answer (`pacing.done`, ms; docs/DEV_TOOLS.md): when it
+        // is a frame or more, the pacer skips draws for a GPU that is not behind.
+        let done = self.pacer.submitted();
+        let at = crate::telemetry::now_ms();
+        self.queue.on_submitted_work_done(move || {
+            done();
+            crate::telemetry::sample("pacing.done", crate::telemetry::now_ms() - at);
+        });
         if let Some(timer) = &mut self.timer {
             timer.submitted();
         }
