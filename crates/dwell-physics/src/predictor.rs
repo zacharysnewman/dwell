@@ -24,6 +24,36 @@ const KNOCKBACK_SNAP_FACTOR: f32 = 4.0;
 const HISTORY: u32 = 256; // ticks (> 4 s)
 const MAX_DEAD_RECKONING: f32 = 0.5; // s
 
+/// A piece is stood in for in the prediction only while it could touch the local player soon
+/// (docs/FELLING.md §3): within its cells' reach plus `STAND_IN_M`, plus how far it closes on the
+/// player in `STAND_IN_LOOKAHEAD_S` at their relative speed; once stood in, until it is
+/// `STAND_IN_KEEP_M` past that. The rest are drawn from the snapshots alone: a blast's ~300 pieces
+/// stood in for cost the browser's frame 20–25 ms of prediction (2026-11-06).
+pub const STAND_IN_M: f64 = 4.0;
+pub const STAND_IN_KEEP_M: f64 = 2.0;
+pub const STAND_IN_LOOKAHEAD_S: f64 = 0.5;
+
+/// Whether a piece (its cells' reach `extent` from its origin, at `position` moving at `velocity`)
+/// is stood in for, by the player at `me` moving at `mine`; `kept`: it is now.
+pub fn stands_in(
+    extent: f64,
+    position: DVec3,
+    velocity: DVec3,
+    me: DVec3,
+    mine: DVec3,
+    kept: bool,
+) -> bool {
+    let off = me - position;
+    let d = off.length();
+    let closing = if d > 1e-6 {
+        (velocity - mine).dot(off / d).max(0.0)
+    } else {
+        0.0
+    };
+    let keep = if kept { STAND_IN_KEEP_M } else { 0.0 };
+    d < extent + STAND_IN_M + keep + closing * STAND_IN_LOOKAHEAD_S
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct PredictorStats {
     pub ticks: u32,
@@ -75,30 +105,44 @@ struct PieceProxy {
 /// for the prediction's stand-ins: a speed-squared drag of `kx`/`kz` (1/m) moving along x/z
 /// (`k · speed²` m/s², blended by the direction) and a linear `linear` (/s), relative to the
 /// water's `current` (m/s along world x and z, docs/WATER_SURFACE_GRID.md §2c): a body drifts with
-/// it.
+/// it. In a waterfall's sheet (`fall`, on face `face`; docs/WATER_SURFACE_GRID.md §2e) it is also
+/// pushed down and out, and can't rise.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct WaterDrag {
     pub kx: f64,
     pub kz: f64,
     pub linear: f64,
     pub current: [f64; 2],
+    pub fall: Option<dwell_world::falls::FallPush>,
+    pub face: dwell_world::FaceFrame,
 }
 
-/// Where a body is in water and how that slows it (the sim's, which `dwell-physics` can't see).
-pub type WaterDragFn = fn(&mut VoxelWorld, &Physics, BodyHandle) -> WaterDrag;
+/// Where a body is in water and how that slows it (the sim's, which `dwell-physics` can't see);
+/// the waterfalls' reads kept in the memo across one tick's stand-ins (the world unchanged).
+pub type WaterDragFn =
+    fn(&mut VoxelWorld, &Physics, BodyHandle, &mut dwell_world::falls::FallMemo) -> WaterDrag;
 
 impl WaterDrag {
-    /// A sideways velocity (world x, z) after a tick of it.
+    /// A velocity (world) after a tick of it: sideways slowed toward the current, and a fall's push.
     pub fn slow(self, v: DVec3, dt: f64) -> DVec3 {
         let [cx, cz] = self.current;
         let (rx, rz) = (v.x - cx, v.z - cz);
         let speed = rx.hypot(rz);
-        if speed < 1e-9 {
-            return v;
+        let v = if speed < 1e-9 {
+            v
+        } else {
+            let k = (rx.abs() * self.kx + rz.abs() * self.kz) / speed;
+            let keep = (-self.linear * dt).exp() / (1.0 + k * speed * dt);
+            DVec3::new(cx + rx * keep, v.y, cz + rz * keep)
+        };
+        match self.fall {
+            Some(push) => {
+                let f = self.face;
+                let local = f.vector(v.to_array());
+                DVec3::from_array(f.vector(dwell_world::falls::push_velocity(local, push, dt)))
+            }
+            None => v,
         }
-        let k = (rx.abs() * self.kx + rz.abs() * self.kz) / speed;
-        let keep = (-self.linear * dt).exp() / (1.0 + k * speed * dt);
-        DVec3::new(cx + rx * keep, v.y, cz + rz * keep)
     }
 }
 
@@ -260,6 +304,7 @@ impl Predictor {
         self.players.tick(world, &mut self.physics);
         // The stand-ins, replays too: where each is after this tick, this tick's push included.
         let seq = input.seq;
+        let mut falls = dwell_world::falls::FallMemo::default();
         for p in self.pieces.values_mut() {
             p.pushes.retain(|&(s, _)| s != seq);
             p.pushes.extend(
@@ -273,7 +318,7 @@ impl Predictor {
                 p.pushes.remove(0);
             }
             if let Some(water) = self.water_drag {
-                p.water = water(world, &self.physics, p.body);
+                p.water = water(world, &self.physics, p.body, &mut falls);
             }
             let frame = crate::frame::Frame {
                 face: FaceFrame::at_height(self.physics.position(p.body).y),
@@ -581,7 +626,9 @@ impl Predictor {
     /// A falling piece's stand-in (docs/FELLING.md §3), at the server's latest pose and moving on
     /// by its velocity (dead reckoning, as remote players): created on first sight with `cells`.
     /// A piece's pose and velocity as of the input `seq` its snapshot acknowledged (call before
-    /// [`Predictor::on_snapshot`], so a replay meets it where the server had it).
+    /// [`Predictor::on_snapshot`], so a replay meets it where the server had it). Only a piece that
+    /// could touch the local player soon is stood in for ([`stands_in`]); a far one's stand-in is
+    /// dropped, and none is made while the player is dead.
     pub fn set_piece(
         &mut self,
         id: u32,
@@ -591,6 +638,27 @@ impl Predictor {
         velocity: Vec3,
         seq: u32,
     ) {
+        let kept = self.pieces.contains_key(&id);
+        let near = self.handle.is_some_and(|h| {
+            let extent = cells
+                .iter()
+                .map(|c| c.center.length() + c.half.length())
+                .fold(0.0, f64::max);
+            stands_in(
+                extent,
+                position,
+                velocity.as_dvec3(),
+                self.players.position(&self.physics, h),
+                self.players.velocity(&self.physics, h).as_dvec3(),
+                kept,
+            )
+        });
+        if !near {
+            if kept && self.handle.is_some() {
+                self.remove_piece(id);
+            }
+            return;
+        }
         let p = self.pieces.entry(id).or_insert_with(|| PieceProxy {
             body: self.physics.add_kinematic_piece(position, rotation, cells),
             position,
@@ -616,6 +684,11 @@ impl Predictor {
         self.water_drag = Some(f);
     }
 
+    /// How many pieces are stood in for now (telemetry `predict.standIns`).
+    pub fn stand_ins(&self) -> usize {
+        self.pieces.len()
+    }
+
     /// A piece's stand-in's pose now (the predicted present), if it has one.
     pub fn piece_pose(&self, id: u32) -> Option<(DVec3, crate::DQuat)> {
         let p = self.pieces.get(&id)?;
@@ -639,4 +712,36 @@ impl Predictor {
             .get(&player_id)
             .map(|r| self.physics.position(r.body))
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dwell_world::falls::FallPush;
+
+    dwell_world::both_faces!(
+        fn a_floating_body_under_a_fall_is_pushed_down_and_out(f: FaceFrame) {
+            // docs/WATER_SURFACE_GRID.md §2e: the server's bodies and the clients' stand-ins alike.
+            let drag = WaterDrag {
+                linear: 0.5,
+                fall: Some(FallPush {
+                    dir: 2,
+                    strength: 1.0,
+                }),
+                face: f,
+                ..WaterDrag::default()
+            };
+            // rising (face-locally) and still: after a second it falls and moves along +z
+            let mut v = DVec3::from_array(f.vector([0.0, 1.0, 0.0]));
+            for _ in 0..60 {
+                v = drag.slow(v, 1.0 / 60.0);
+            }
+            let local = f.vector(v.to_array());
+            assert!(local[1] < -1.0 && local[2] > 0.5, "{local:?}");
+            // out of a fall, nothing pushes it
+            let calm = WaterDrag { fall: None, ..drag };
+            let up = DVec3::from_array(f.vector([0.0, 1.0, 0.0]));
+            assert_eq!(calm.slow(up, 1.0 / 60.0), up);
+        }
+    );
 }

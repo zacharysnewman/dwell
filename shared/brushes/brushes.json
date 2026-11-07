@@ -4,12 +4,13 @@
     "min": 1,
     "max": 16
   },
-  "worldTypes": {
-    "sandbox": {
+  "modes": {
+    "creative": {
       "brushes": true,
-      "reach": 128
+      "reachM": 256
     }
   },
+  "defaultMode": "creative",
   "presets": [
     {
       "name": "ball",

@@ -48,6 +48,9 @@ pub struct Seg {
     pub b: Point,
     /// How far from its centreline it shapes the ground (m).
     pub radius: f64,
+    /// Its course's mean fall over `riverFallReachM` up and down stream of its middle (m per m):
+    /// the fall an untouched river's current runs on where its own is less (`mean_fall`).
+    pub mean_fall: f64,
     pub river: u32,
 }
 
@@ -68,6 +71,9 @@ pub struct Hit {
     pub dir: (f64, f64),
     /// How fast the water's surface falls downstream (m per m).
     pub fall: f64,
+    /// How fast it falls on average over `riverFallReachM` up and down its course (m per m): a
+    /// reach held level where the land dips falls by the course's drops round it.
+    pub mean_fall: f64,
     /// The river's discharge here (m³/s).
     pub q: f64,
     pub river: u32,
@@ -320,8 +326,10 @@ impl Channels {
             }
         }
         let mut segs = Vec::new();
+        let reach = dwell_world::flow::FLOW.river_fall_reach_m;
         for (k, c) in courses.iter().enumerate() {
-            for w in c.windows(2) {
+            let falls = mean_falls(c, reach);
+            for (w, &mean_fall) in c.windows(2).zip(&falls) {
                 let (a, b) = (w[0], w[1]);
                 if a.x == b.x && a.z == b.z {
                     continue;
@@ -331,6 +339,7 @@ impl Channels {
                     a,
                     b,
                     radius: 0.5 * wmax + S.river_reach + S.river_reach_per_width * wmax,
+                    mean_fall,
                     river: river_of[k],
                 });
             }
@@ -429,6 +438,7 @@ impl Channels {
                             valley,
                             dir: (ex / l, ez / l),
                             fall: (s.a.s - s.b.s) / l,
+                            mean_fall: s.mean_fall,
                             q: p.q,
                             river: s.river,
                         },
@@ -437,6 +447,47 @@ impl Channels {
             }
         }
     }
+}
+
+/// Each segment of `course`'s mean fall (m per m) over `reach` m up and down the course from its
+/// middle (clipped to the course's ends): the fall its water runs on, round the reaches held level
+/// where the land dips (`lower_into_land`; BUGS.md #42). Its own fall with `reach` 0.
+pub fn mean_falls(course: &[Point], reach: f64) -> Vec<f64> {
+    let mut along = Vec::with_capacity(course.len());
+    let mut total = 0.0;
+    for (i, p) in course.iter().enumerate() {
+        if i > 0 {
+            total += (p.x - course[i - 1].x).hypot(p.z - course[i - 1].z);
+        }
+        along.push(total);
+    }
+    // The surface `t` m along the course.
+    let surface = |t: f64| {
+        let i = along
+            .partition_point(|&a| a <= t)
+            .clamp(1, course.len().max(2) - 1);
+        let (a, b) = (along[i - 1], along[i]);
+        let u = if b > a {
+            ((t - a) / (b - a)).clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        course[i - 1].s + (course[i].s - course[i - 1].s) * u
+    };
+    course
+        .windows(2)
+        .enumerate()
+        .map(|(i, w)| {
+            let l = along[i + 1] - along[i];
+            let own = if l > 0.0 { (w[0].s - w[1].s) / l } else { 0.0 };
+            let mid = 0.5 * (along[i] + along[i + 1]);
+            let (lo, hi) = ((mid - reach).max(0.0), (mid + reach).min(total));
+            if hi - lo <= l {
+                return own;
+            }
+            (surface(lo) - surface(hi)) / (hi - lo)
+        })
+        .collect()
 }
 
 /// Holds a course's levels at least `RIVER_SINK` m below the map's height along it (outside lakes,
@@ -568,4 +619,54 @@ fn delta_branches(map: &WorldMap, course: &[Point]) -> Vec<Vec<Point>> {
         out.push(smooth(&pts, 1));
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// BUGS.md #42: a course falling 1 m per km, held level for 200 m and then dropping what it
+    /// owes: the level reach's mean fall is the course's round it, the drop's gentler than its
+    /// own, and a reach of 0 leaves each segment its own fall.
+    #[test]
+    fn a_level_reach_takes_its_courses_mean_fall() {
+        // face-a-only: a course is face-local; the faces' maps are tested in `terrain.rs`
+        // (`a_level_reach_runs_on_its_courses_fall`).
+        let p = |x: f64, s: f64| Point {
+            x,
+            z: 0.0,
+            s,
+            w: 4.0,
+            d: 1.0,
+            q: 1.0,
+        };
+        let mut c = Vec::new();
+        for i in 0..=40 {
+            let x = f64::from(i) * 20.0;
+            // level from 300 to 500 m, then a 20 m drop of the 0.2 m held back
+            let s = if (300.0..=500.0).contains(&x) {
+                10.0 - 0.3
+            } else if x > 500.0 && x <= 520.0 {
+                10.0 - 0.52
+            } else {
+                10.0 - x * 0.001
+            };
+            c.push(p(x, s));
+        }
+        let own = mean_falls(&c, 0.0);
+        let mean = mean_falls(&c, 256.0);
+        let level = 20; // the segment 400–420 m
+        assert_eq!(own[level], 0.0);
+        assert!(
+            (mean[level] - 0.001).abs() < 2e-4,
+            "the level reach falls {} m per m on average",
+            mean[level]
+        );
+        assert!(
+            mean[25] < own[25],
+            "the drop's mean is gentler than its own"
+        );
+        assert!((own[0] - 0.001).abs() < 1e-9);
+        assert!(mean.iter().all(|&f| f >= 0.0), "{mean:?}");
+    }
 }

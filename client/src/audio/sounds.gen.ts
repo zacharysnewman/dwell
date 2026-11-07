@@ -192,6 +192,24 @@ export const SOUND_DATA: SoundData = {
     {
       "name": "burn_end",
       "loop": "stop"
+    },
+    {
+      "name": "fall",
+      "sound": "dwell:waterfall",
+      "loop": "start"
+    },
+    {
+      "name": "fall_level",
+      "loop": "update"
+    },
+    {
+      "name": "fall_end",
+      "loop": "stop"
+    },
+    {
+      "name": "explode",
+      "set": "explode",
+      "sound": "dwell:dynamite_boom"
     }
   ],
   "sets": {
@@ -254,6 +272,23 @@ export const SOUND_DATA: SoundData = {
       "place": "dwell:torch_place",
       "hit": "dwell:wood_hit",
       "burn": "dwell:torch_fire"
+    },
+    "dwell:dynamite": {
+      "step": "dwell:wood_step",
+      "land": "dwell:wood_land",
+      "break": "dwell:torch_break",
+      "place": "dwell:wood_place",
+      "hit": "dwell:wood_hit",
+      "explode": "dwell:dynamite_boom"
+    },
+    "dwell:lit_dynamite": {
+      "step": "dwell:wood_step",
+      "land": "dwell:wood_land",
+      "break": "dwell:torch_break",
+      "place": "dwell:fuse_light",
+      "hit": "dwell:wood_hit",
+      "burn": "dwell:fuse_fizz",
+      "explode": "dwell:dynamite_boom"
     },
     "dwell:water": {
       "step": "dwell:water_step",
@@ -477,6 +512,11 @@ export const SOUND_DATA: SoundData = {
     "fire": {
       "radiusM": 10,
       "max": 4
+    },
+    "falls": {
+      "radiusM": 40,
+      "max": 3,
+      "fullM3s": 2
     }
   },
   "sounds": {
@@ -5187,6 +5227,72 @@ export const SOUND_DATA: SoundData = {
         }
       ]
     },
+    "dwell:waterfall": {
+      "gain": 1,
+      "reverb": 0.08,
+      "loop": true,
+      "variation": {
+        "pitch": 1,
+        "gain": 1,
+        "cutoff": 0.08
+      },
+      "intensity": {
+        "gain": [
+          0,
+          1
+        ],
+        "cutoff": [
+          0.6,
+          1.2
+        ]
+      },
+      "layers": [
+        {
+          "source": "noise",
+          "color": "pink",
+          "gain": 0.55,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 900,
+              "q": 0.6
+            }
+          ],
+          "tremolo": {
+            "rate": 3,
+            "depth": 0.15
+          }
+        },
+        {
+          "source": "noise",
+          "color": "brown",
+          "gain": 0.6,
+          "filters": [
+            {
+              "type": "lowpass",
+              "freq": 320,
+              "q": 0.7
+            }
+          ]
+        },
+        {
+          "source": "noise",
+          "color": "white",
+          "gain": 0.1,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 3800,
+              "q": 0.8
+            }
+          ],
+          "tremolo": {
+            "rate": 9,
+            "depth": 0.3
+          }
+        }
+      ]
+    },
     "dwell:torch_fire": {
       "gain": 1,
       "reverb": 0.05,
@@ -5222,6 +5328,198 @@ export const SOUND_DATA: SoundData = {
               "freq": 900
             }
           ]
+        }
+      ]
+    },
+    "dwell:fuse_fizz": {
+      "gain": 1.1,
+      "reverb": 0.05,
+      "loop": true,
+      "variation": {
+        "pitch": 2,
+        "gain": 1,
+        "cutoff": 0.15
+      },
+      "intensity": {
+        "gain": [
+          0,
+          1
+        ],
+        "cutoff": [
+          0.6,
+          1
+        ]
+      },
+      "layers": [
+        {
+          "source": "noise",
+          "color": "white",
+          "gain": 0.32,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 5200,
+              "q": 0.9
+            },
+            {
+              "type": "highpass",
+              "freq": 2500
+            }
+          ]
+        },
+        {
+          "source": "noise",
+          "color": "crackle",
+          "gain": 0.4,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 3600,
+              "q": 1.2
+            }
+          ]
+        }
+      ]
+    },
+    "dwell:fuse_light": {
+      "gain": 1.4,
+      "reverb": 0.08,
+      "variation": {
+        "pitch": 1.5,
+        "gain": 1,
+        "cutoff": 0.1,
+        "time": 0.1
+      },
+      "layers": [
+        {
+          "source": "noise",
+          "color": "white",
+          "gain": 0.4,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 3000,
+              "q": 1,
+              "to": 5200
+            }
+          ],
+          "env": {
+            "attack": 0.004,
+            "decay": 0.25
+          }
+        },
+        {
+          "source": "noise",
+          "color": "crackle",
+          "gain": 0.45,
+          "at": 0.03,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 2600,
+              "q": 0.9
+            }
+          ],
+          "env": {
+            "attack": 0.02,
+            "decay": 0.35
+          }
+        }
+      ]
+    },
+    "dwell:dynamite_boom": {
+      "gain": 2.4,
+      "reverb": 0.45,
+      "variation": {
+        "pitch": 1.5,
+        "gain": 1,
+        "cutoff": 0.1,
+        "time": 0.1
+      },
+      "intensity": {
+        "gain": [
+          0,
+          1
+        ],
+        "cutoff": [
+          0.35,
+          1
+        ]
+      },
+      "layers": [
+        {
+          "source": "noise",
+          "color": "white",
+          "gain": 0.6,
+          "filters": [
+            {
+              "type": "lowpass",
+              "freq": 6000,
+              "q": 0.7,
+              "to": 900
+            }
+          ],
+          "env": {
+            "attack": 0.0005,
+            "decay": 0.18
+          }
+        },
+        {
+          "source": "noise",
+          "color": "brown",
+          "gain": 0.9,
+          "filters": [
+            {
+              "type": "lowpass",
+              "freq": 420,
+              "q": 0.9,
+              "to": 90
+            }
+          ],
+          "env": {
+            "attack": 0.004,
+            "hold": 0.12,
+            "decay": 1.6
+          }
+        },
+        {
+          "source": "modal",
+          "freq": 46,
+          "gain": 0.7,
+          "partials": [
+            [
+              1,
+              1,
+              1.1
+            ],
+            [
+              1.6,
+              0.5,
+              0.7
+            ],
+            [
+              2.7,
+              0.25,
+              0.4
+            ]
+          ]
+        },
+        {
+          "source": "noise",
+          "color": "crackle",
+          "gain": 0.35,
+          "at": 0.08,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 1400,
+              "q": 0.7
+            }
+          ],
+          "env": {
+            "attack": 0.03,
+            "decay": 1.2
+          }
         }
       ]
     }

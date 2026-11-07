@@ -120,6 +120,10 @@ pub struct Chunk {
     /// Set by the world each time it stores a chunk object (0: never stored, e.g. the shared air
     /// chunk): with the revision, it tells caches (terrain collision) the content may have changed.
     stamp: u64,
+    /// Bumped by each write that changes a cell's collision class (`dwell_blocks::collision_class`):
+    /// a block placed, broken or reshaped, not water rising or falling in a cell. Terrain collision
+    /// rebuilds a chunk only when it changes, so the water a blast lets in rebuilds nothing.
+    collision_revision: u32,
 }
 
 impl Default for Chunk {
@@ -128,6 +132,7 @@ impl Default for Chunk {
             voxels: Box::new([0; CHUNK_VOLUME]),
             revision: 0,
             stamp: 0,
+            collision_revision: 0,
         }
     }
 }
@@ -141,15 +146,23 @@ impl Chunk {
         self.voxels[local_index(lx, ly, lz)]
     }
     pub fn set(&mut self, lx: i32, ly: i32, lz: i32, m: StateId) {
-        self.voxels[local_index(lx, ly, lz)] = m;
+        self.set_at(local_index(lx, ly, lz), m);
         self.revision += 1;
     }
     pub fn revision(&self) -> u32 {
         self.revision
     }
+    /// Counts the writes that changed what a cell is to collision (see the field); with the stamp,
+    /// it tells terrain collision the chunk's collision may have changed.
+    pub fn collision_revision(&self) -> u32 {
+        self.collision_revision
+    }
     /// Edits (§6.5): voxels changed without per-voxel bumps, then one bump per modification.
     pub fn set_at(&mut self, index: usize, m: StateId) {
-        self.voxels[index] = m;
+        let old = std::mem::replace(&mut self.voxels[index], m);
+        if old != m && dwell_blocks::collision_class(old) != dwell_blocks::collision_class(m) {
+            self.collision_revision = self.collision_revision.wrapping_add(1);
+        }
     }
     pub fn bump_revision(&mut self) {
         self.revision += 1;
@@ -164,8 +177,10 @@ impl Chunk {
     pub fn voxels(&self) -> &[StateId; CHUNK_VOLUME] {
         &self.voxels
     }
-    /// Generators write here directly (no revision bumps).
+    /// Generators write here directly (no revision bumps; the collision revision is bumped, as
+    /// what is written isn't seen).
     pub fn voxels_mut(&mut self) -> &mut [StateId; CHUNK_VOLUME] {
+        self.collision_revision = self.collision_revision.wrapping_add(1);
         &mut self.voxels
     }
     pub fn from_voxels(voxels: &[StateId], revision: u32) -> Option<Self> {

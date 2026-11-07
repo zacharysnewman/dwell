@@ -23,7 +23,7 @@ use dwell_protocol::{
     players as pc, welcome_flags, world as wc,
 };
 use dwell_storage::{PlayerRecord, SaveBatch, SavedLodSection, WorldMeta, WorldStore};
-use dwell_world::brush::brush_policy;
+use dwell_world::brush::{brush_policy, world_mode};
 use dwell_world::edit::{
     DEFAULT_REACH, EditCapsule, EditCheck, check_block_edit, edit_writes, held_in_place,
     medium_kept, overlaps_player,
@@ -41,6 +41,7 @@ use crate::app_version::APP_VERSION;
 use crate::entropy::Entropy;
 use crate::lod_propagation::{LodPropagation, LodSection};
 use crate::worldgen_pool::WorldgenPool;
+use dwell_world::explosives::explosive_of;
 
 pub type SessionId = u32;
 pub type TransportBinding = [u8; 32];
@@ -69,15 +70,23 @@ const EVICT_EVERY_TICKS: u32 = 64;
 const MAX_EXPLICIT_WANTED: usize = 64; // full-mode chunks queued for generation per tick
 const MAX_QUEUED_EDITS: usize = 8; // per session per tick; more are dropped
 /// Water currents to the players (docs/WATER_SURFACE_GRID.md §2c): looked at every
-/// `CURRENTS_EVERY` ticks, a water chunk within `CURRENTS_RADIUS` chunks of a player sent when its
-/// currents changed or `CURRENTS_REFRESH` ticks after it was last sent (a lost datagram made good),
-/// the nearest `CURRENTS_PER_SEND` at most; a chunk gone still is sent once as all zero.
+/// `CURRENTS_EVERY` ticks, a water chunk within `currents_radius()` chunks of a player sent when
+/// its currents changed or `CURRENTS_REFRESH` ticks after it was last sent (a lost datagram made
+/// good), the nearest `CURRENTS_PER_SEND` at most; a chunk gone still is sent once as all zero.
 const CURRENTS_EVERY: u32 = 15;
 /// A water chunk's currents as sent (`WaterCurrents::cells`).
 type SentCurrents = Box<[[i8; 2]; 256]>;
 const CURRENTS_REFRESH: u32 = 180;
-const CURRENTS_RADIUS: i32 = 2;
-const CURRENTS_PER_SEND: usize = 4;
+const CURRENTS_PER_SEND: usize = 8;
+
+/// The water chunks round a player's whose currents it is sent: as far as its flow is drawn
+/// (`waterflow.json` `fadeToM`) from anywhere in its own chunk, so the river it sees runs all the
+/// way out (BUGS.md #42: at 2 chunks the flow stopped 33–48 m out, inside the 40 m it is drawn
+/// fully).
+pub fn currents_radius() -> i32 {
+    let cs = f64::from(dwell_world::currents::CS);
+    (dwell_look::waterflow::WATER_FLOW.fade_to_m / cs).ceil() as i32
+}
 /// Ticks after a session joins before its currents are sent: its terrain first.
 const CURRENTS_AFTER_JOIN: u32 = 300;
 /// Ticks a place into a player's body waits before it is refused (docs/BUGS.md 30): the server's
@@ -93,6 +102,11 @@ const EDIT_BURST: f64 = 3.0;
 const REGION_CELLS_PER_TICK: f64 = region_edit::CELLS_PER_SECOND as f64 / SIM_HZ as f64;
 const REGION_BURST_CELLS: f64 = region_edit::BURST_CELLS as f64;
 const MAX_SAVED_LOADS_PER_TICK: i32 = 16; // saved chunks read from the world file per tick
+/// Inline, the sky floors (`sky_columns.rs`) computed per tick: at least one, then until this is
+/// spent (one is ~1 ms natively, a few in the browser; on wasm32 the budget is one).
+const SKY_FLOOR_BUDGET: Duration = Duration::from_micros(1000);
+/// The chunk requests looked at past the first waiting for its sky floor, to want theirs too.
+const REQUEST_LOOKAHEAD: usize = 32;
 const INDEX_UPDATE_EVERY_TICKS: u32 = (lod::INDEX_UPDATE_MS as u32) * SIM_HZ / 1000;
 const MAX_QUEUED_LOD_REQUESTS: usize = 256; // per session; more are dropped
 const LOD_REQUESTS_PER_TICK: f64 = lod::REQUESTS_PER_SECOND as f64 / SIM_HZ as f64;
@@ -205,6 +219,9 @@ const WATER_RECORD_LEAD_TICKS: u32 = 30;
 /// How long the LOD section of a chunk the water rewrites waits from its first change before it is
 /// computed (ticks): the water keeps rewriting it, and the LOD is seen from afar.
 const WATER_LOD_HOLD_TICKS: u32 = 2 * SIM_HZ;
+/// How long a tick spends at most encoding a save on an inline store (no I/O thread: the
+/// browser's, §6.4), ms; its commit is a tick's of its own.
+const SAVE_STEP_MS: f64 = 2.0;
 /// How long closing a world waits for the water's record.
 const WATER_CLOSE_WAIT: Duration = Duration::from_secs(1);
 
@@ -666,6 +683,8 @@ fn encode(m: &Message) -> Vec<u8> {
 struct StoreChunks {
     db: Arc<dwell_storage::WorldDb>,
     saved: Arc<Mutex<HashMap<ChunkCoord, u32>>>,
+    /// Lit explosives found in the chunks loaded (docs/EXPLOSIVES.md §3): their fuses start again.
+    lit: Arc<Mutex<Vec<[i32; 3]>>>,
 }
 
 impl SavedChunks for StoreChunks {
@@ -674,6 +693,24 @@ impl SavedChunks for StoreChunks {
     }
     fn load(&mut self, c: ChunkCoord) -> Option<Chunk> {
         let saved = self.db.load_chunk(c)?;
+        let lit: Vec<dwell_blocks::StateId> = dwell_world::explosives::EXPLOSIVES
+            .iter()
+            .filter_map(dwell_world::explosives::lit_state)
+            .collect();
+        if saved.voxels.iter().any(|m| lit.contains(m)) {
+            let n = CHUNK_SIZE;
+            let mut found = self.lit.lock().expect("lit explosives");
+            for (i, m) in saved.voxels.iter().enumerate() {
+                if lit.contains(m) {
+                    let i = i as i32;
+                    found.push([
+                        c.x * n + (i & 31),
+                        c.y * n + ((i >> 5) & 31),
+                        c.z * n + (i >> 10),
+                    ]);
+                }
+            }
+        }
         Chunk::from_voxels(&saved.voxels, saved.revision)
     }
 }
@@ -695,11 +732,32 @@ struct EditLogEntry {
     reason: VoxelModificationReason,
 }
 
+/// The tick's phases, in order, as `Server::tick_phases` names them.
+pub const TICK_PHASES: [&str; 14] = [
+    "collect",
+    "edits",
+    "terrain",
+    "players",
+    "pushes+damage",
+    "pieces",
+    "physics",
+    "settle",
+    "water+respawn",
+    "snapshots",
+    "stream",
+    "worldgen",
+    "lod",
+    "save",
+];
+
 pub struct Server {
     config: ServerConfig,
     entropy: Box<dyn Entropy>,
     physics: Physics,
     air_test: Option<AirChunkTest>,
+    /// The air test's sky floors, computed off the tick (`sky_columns.rs`; none for a generator
+    /// override, whose air test computes on the tick).
+    sky: Option<crate::sky_columns::SkyColumns>,
     world: VoxelWorld,
     players: Players,
     sessions: BTreeMap<SessionId, Session>,
@@ -707,6 +765,14 @@ pub struct Server {
     knockbacks: Vec<(u16, Vec3)>, // applied in the next step
     /// The falling pieces (docs/FELLING.md).
     felling: crate::felling::Felling,
+    /// The explosives' fuses burning and their table (docs/EXPLOSIVES.md §3).
+    fuses: crate::blasts::Fuses,
+    /// Lit explosives the saved chunks loaded held (their fuses start again, in full).
+    relit: Arc<Mutex<Vec<[i32; 3]>>>,
+    /// Each tick phase's wall time (ms) summed since the last `tick_phases` (native only).
+    phase_ms: [f64; TICK_PHASES.len()],
+    /// The counts `tick_counts` last read (collision builds, chunks generated on the tick).
+    counts_at: [u64; 3],
     /// The water surface grid (docs/WATER_SURFACE_GRID.md): the world's water, held as found until edits free it.
     water: crate::water::host::WaterHost,
     /// The water's side of the world (ADR 0062): what its copy was told, what to send it next, the
@@ -768,15 +834,23 @@ impl Server {
         // A world from an older line (or a launch naming a retired version) opens on this build's
         // generator of its kind.
         config.generator_version = dwell_world::current_generator(config.generator_version);
-        let (generator, air_test) = match &config.generator_override {
-            Some(g) => (g.clone(), config.air_test_override.clone()),
-            None => (
-                dwell_worldgen::generator_for(config.generator_version, config.world_seed),
-                Some(dwell_worldgen::air_test_for(
+        let (generator, air_test, sky) = match &config.generator_override {
+            Some(g) => (g.clone(), config.air_test_override.clone(), None),
+            None => {
+                let air = dwell_worldgen::AirColumns::for_generator(
                     config.generator_version,
                     config.world_seed,
-                )),
-            ),
+                );
+                (
+                    dwell_worldgen::generator_for(config.generator_version, config.world_seed),
+                    Some(air.test()),
+                    Some(crate::sky_columns::SkyColumns::new(
+                        air,
+                        config.worldgen_threads > 0,
+                        config.jobs_remote,
+                    )),
+                )
+            }
         };
         let mut physics = Physics::default();
         let players = Players::new(&mut physics, true);
@@ -792,11 +866,16 @@ impl Server {
             physics,
             world: VoxelWorld::new(generator.clone(), air_test.clone()),
             air_test,
+            sky,
             players,
             sessions: BTreeMap::new(),
             outbox: Vec::new(),
             knockbacks: Vec::new(),
             felling: crate::felling::Felling::default(),
+            fuses: crate::blasts::Fuses::default(),
+            relit: Arc::default(),
+            phase_ms: [0.0; TICK_PHASES.len()],
+            counts_at: [0; 3],
             // The water surface grid (Phase 53, docs/WATER_SURFACE_GRID.md): the world's water read
             // from its blocks, held at rest until edits free it; the world map's flow kept for
             // the sources to come.
@@ -1122,10 +1201,11 @@ impl Server {
             // REGION_EDITS: this server understands RegionEdit (older builds of the line reject an
             // unknown message, so clients send one only when this is set).
             // BRUSHES (BRUSHES.md): pastes may hold KEEP cells and region edits reach as far as
-            // the world type's brush policy says; set only in world types that allow brushes.
+            // the game mode's brush policy says; set only in modes that allow brushes (every world
+            // is creative for now, which does).
             flags: welcome_flags::REGION_EDITS
                 | if flight { welcome_flags::FLIGHT } else { 0 }
-                | if brush_policy(self.config.generator_version).is_some() {
+                | if brush_policy(world_mode()).is_some() {
                     welcome_flags::BRUSHES
                 } else {
                     0
@@ -1393,6 +1473,7 @@ impl Server {
 
     /// Advances the simulation by one 1/SIM_HZ step.
     pub fn step(&mut self) {
+        let mut watch = crate::clock::Stopwatch::start();
         // 0. Chunks generated since the last tick (off-thread, or here within the budget), and
         // saves the I/O thread finished.
         let mut ready = Vec::new();
@@ -1406,10 +1487,27 @@ impl Server {
         self.collect_saves();
         // What the water sent since (its writes, currents, wanted chunks, record).
         self.apply_water();
+        self.phase_ms[0] += watch.lap_ms();
 
         // 1. Block edits queued since the last tick (§6.5); collision syncs in the controller pass.
         self.apply_edits();
         self.apply_body_edits();
+        // Fuses burn; the ones out blow (docs/EXPLOSIVES.md §3): their knockbacks go with this
+        // tick's, their pieces into this tick's physics step.
+        // A world saved with a fuse burning: the lit explosives its chunks held burn again.
+        let relit = std::mem::take(&mut *self.relit.lock().expect("lit explosives"));
+        for c in relit {
+            if let Some((i, true)) =
+                explosive_of(&self.fuses.table, self.world.get_voxel_if_loaded(c))
+            {
+                let seconds = self.fuses.table[i].fuse_seconds;
+                self.fuses.light(c, i, seconds);
+            }
+        }
+        for fuse in self.fuses.tick() {
+            self.blast(fuse);
+        }
+        self.phase_ms[1] += watch.lap_ms();
 
         // 2. One input per player per tick, in sequence order (§9.3). Starved: repeat the last one.
         for s in self.sessions.values_mut() {
@@ -1460,7 +1558,12 @@ impl Server {
         let boxes = self.felling.terrain_boxes(&self.physics);
         self.players
             .set_terrain_boxes(boxes, self.felling.rules.terrain_chunks_per_tick);
-        self.players.tick(&mut self.world, &mut self.physics);
+        self.players
+            .tick_terrain(&mut self.world, &mut self.physics);
+        self.phase_ms[2] += watch.lap_ms();
+        self.players
+            .tick_controllers(&mut self.world, &mut self.physics);
+        self.phase_ms[3] += watch.lap_ms();
         // Pieces pushed are held from contacts while pushed (docs/BUILT_BODIES.md §6).
         let pushes = self.players.pushes().to_vec();
         self.felling.pushed(&mut self.physics, &pushes);
@@ -1487,15 +1590,20 @@ impl Server {
 
         // 4. The falling pieces' hard hits hurt (before the step resolves them), physics, then the
         // pieces at rest settle (docs/FELLING.md §4).
+        self.phase_ms[4] += watch.lap_ms();
         self.piece_hits();
         // Held bodies whose build platform is gone move (docs/BUILT_BODIES.md §3); bodies in water
         // float (§6).
         self.felling
             .release_unheld(&mut self.world, &mut self.physics);
         self.felling.float(&mut self.world, &mut self.physics);
+        self.phase_ms[5] += watch.lap_ms();
         self.physics.step(1.0 / f64::from(SIM_HZ));
+        self.phase_ms[6] += watch.lap_ms();
+        self.rejoin_apart();
         self.tick += 1;
         self.settle_pieces();
+        self.phase_ms[7] += watch.lap_ms();
         self.flow_water();
 
         // 5. Respawns, then snapshots at SNAPSHOT_HZ.
@@ -1514,26 +1622,35 @@ impl Server {
             e.position = [p.x, p.y - f64::from(self.players.half_height(h)), p.z];
             self.broadcast_world(&Message::PlayerEvent(e));
         }
+        self.phase_ms[8] += watch.lap_ms();
         if self.tick.is_multiple_of(SNAPSHOT_EVERY) {
             self.send_snapshots();
         }
         if self.tick.is_multiple_of(CURRENTS_EVERY) {
             self.send_currents();
         }
+        self.phase_ms[9] += watch.lap_ms();
 
         // 6. Terrain streaming, then what to generate next and what to forget.
         self.explicit_wanted.clear();
+        if let Some(sky) = &mut self.sky {
+            sky.begin();
+        }
         for &id in &ids {
             if self.sessions.contains_key(&id) {
                 self.stream_chunks(id);
             }
         }
+        self.phase_ms[10] += watch.lap_ms();
         self.update_worldgen();
+        self.phase_ms[11] += watch.lap_ms();
 
         // 6b. Level of detail: propagation off the tick, index updates, answers (§6.6).
         self.update_lod();
+        self.phase_ms[12] += watch.lap_ms();
 
-        // 7. Autosave (§6.4): prepared here, committed off the tick.
+        // 7. Autosave (§6.4): the batch built here; committed by the I/O thread natively, and
+        // without one (the browser) encoded a little a tick and committed on a tick of its own.
         if self.config.store.is_some() {
             // The water's record asked for a moment before (it comes back by the save).
             if !self.water_link.record_asked
@@ -1542,12 +1659,57 @@ impl Server {
                 self.water_link.pending.push(WaterIn::Record);
                 self.water_link.record_asked = true;
             }
-            if self.tick >= self.next_save_tick {
+            // One save at a time: a save still encoding holds the next back (its chunks stay
+            // dirty, and the next takes them all).
+            let budget = crate::clock::Stopwatch::start();
+            let encoding = self.config.store.as_ref().is_some_and(WorldStore::pending);
+            if self.tick >= self.next_save_tick && !encoding {
                 self.autosave();
             }
+            // An inline store's save, a little a tick (natively the I/O thread's), the batch's
+            // building counted in.
+            if let Some(store) = &self.config.store
+                && store.pending()
+            {
+                store.step(|| budget.elapsed_ms() < SAVE_STEP_MS);
+                self.collect_saves();
+            }
         }
+        self.phase_ms[13] += watch.lap_ms();
         // 8. What the water is told this tick goes as one batch.
         self.flush_water();
+        self.phase_ms[8] += watch.lap_ms();
+    }
+
+    /// What the ticks did since the last call, by name: the terrain collision's chunk builds
+    /// (`collisionBuilds`) and the chunks the tick generated itself, not the jobs
+    /// (`generatedOnTick`), and the full-cube cells put into or taken out of the terrain collider
+    /// (`collisionCells`, a little a tick but those near players and pieces): where a slow
+    /// `terrain` phase's time goes (docs/DEV_TOOLS.md).
+    pub fn tick_counts(&mut self) -> [(&'static str, u64); 3] {
+        let now = [
+            self.players.terrain().map_or(0, |t| t.loads()),
+            self.world.generated_on_access(),
+            self.players.terrain().map_or(0, |t| t.cells()),
+        ];
+        let before = std::mem::replace(&mut self.counts_at, now);
+        [
+            ("collisionBuilds", now[0].saturating_sub(before[0])),
+            ("generatedOnTick", now[1].saturating_sub(before[1])),
+            ("collisionCells", now[2].saturating_sub(before[2])),
+        ]
+    }
+
+    /// Each tick phase's wall time (ms, natively; zeros on wasm32) summed since the last call,
+    /// named by [`TICK_PHASES`]: where a slow tick's time goes (tests, probes, tools).
+    pub fn tick_phases(&mut self) -> [(&'static str, f64); TICK_PHASES.len()] {
+        let ms = std::mem::take(&mut self.phase_ms);
+        std::array::from_fn(|k| (TICK_PHASES[k], ms[k]))
+    }
+
+    /// How many bodies (falling pieces and built bodies) there are now.
+    pub fn body_count(&self) -> usize {
+        self.felling.pieces.len()
     }
 
     fn view_center(&self, s: &Session) -> Option<ChunkCoord> {
@@ -1577,9 +1739,9 @@ impl Server {
         // Saved chunks are read from the world file instead (a few per tick).
         let mut wanted = Vec::new();
         let mut loads = 0;
-        for o in &self.prefetch_offsets {
+        for k in 0..self.prefetch_offsets.len() {
             for &center in &centers {
-                let c = add(center, *o);
+                let c = add(center, self.prefetch_offsets[k]);
                 if !BUILD_VOLUME.chunk_may_hold(c) || self.world.find(c).is_some() {
                     continue;
                 }
@@ -1588,7 +1750,7 @@ impl Server {
                         self.world.get_or_create(c);
                     }
                     loads += 1;
-                } else if !self.is_air(c) {
+                } else if self.air_known(c) == Some(false) {
                     wanted.push(c);
                 }
             }
@@ -1600,13 +1762,13 @@ impl Server {
             .filter_map(|s| s.preload_center)
             .collect();
         if !preloads.is_empty() {
-            for o in &self.preload_offsets {
+            for k in 0..self.preload_offsets.len() {
                 for &center in &preloads {
-                    let c = add(center, *o);
+                    let c = add(center, self.preload_offsets[k]);
                     if BUILD_VOLUME.chunk_may_hold(c)
                         && self.world.find(c).is_none()
                         && !self.is_saved(c)
-                        && !self.is_air(c)
+                        && self.air_known(c) == Some(false)
                     {
                         wanted.push(c);
                     }
@@ -1626,13 +1788,21 @@ impl Server {
                     self.world.get_or_create(c);
                 }
                 loads += 1;
-            } else if !self.is_air(c) {
-                wanted.push(c);
             } else {
-                self.world.get_or_create(c);
+                match self.air_known(c) {
+                    Some(false) => wanted.push(c),
+                    Some(true) => {
+                        self.world.get_or_create(c);
+                    }
+                    None => {} // its sky floor first
+                }
             }
         }
         self.worldgen.set_wanted(&wanted);
+        // Inline (no thread or worker): the sky floors wanted this tick, within a budget.
+        if let Some(sky) = &mut self.sky {
+            sky.run_inline(SKY_FLOOR_BUDGET);
+        }
 
         if self.tick.is_multiple_of(EVICT_EVERY_TICKS) {
             // Unmodified chunks can be generated again, and saved ones read again; modified chunks
@@ -1781,8 +1951,10 @@ impl Server {
     }
 
     fn stream_view(&mut self, id: SessionId, center: ChunkCoord, sent: &mut i64) {
-        // Nearest first, within the bandwidth budget (§6.3).
+        // Nearest first, within the bandwidth budget (§6.3). A chunk whose sky floor is not known
+        // yet stops the sending (the order kept); those after it only want theirs.
         let mut complete = true;
+        let mut waiting = false;
         for i in 0..self.view_offsets.len() {
             let c = add(center, self.view_offsets[i]);
             let s = &self.sessions[&id];
@@ -1793,6 +1965,10 @@ impl Server {
             complete = false;
             if s.chunk_credit <= 0.0 || *sent >= wc::MAX_CHUNKS_PER_TICK {
                 break;
+            }
+            if !self.air_ready(c) || waiting {
+                waiting = true;
+                continue;
             }
             let Some(m) = self.chunk_message(id, c, false) else {
                 // Full mode: generate it first (a later tick sends it).
@@ -1821,6 +1997,7 @@ impl Server {
     /// streaming left of the budgets: the server's view sphere of `respawn_preload_radius_chunks`.
     fn stream_preload(&mut self, id: SessionId, center: ChunkCoord, sent: &mut i64) {
         let mut complete = true;
+        let mut waiting = false;
         for i in 0..self.preload_offsets.len() {
             let c = add(center, self.preload_offsets[i]);
             let s = &self.sessions[&id];
@@ -1830,6 +2007,10 @@ impl Server {
             complete = false;
             if s.chunk_credit <= 0.0 || *sent >= wc::MAX_CHUNKS_PER_TICK {
                 break;
+            }
+            if !self.air_ready(c) || waiting {
+                waiting = true;
+                continue;
             }
             let Some(m) = self.chunk_message(id, c, false) else {
                 // Full mode: generated first (update_worldgen wants the ring).
@@ -1856,19 +2037,41 @@ impl Server {
     }
 
     fn stream_requested(&mut self, id: SessionId, center: ChunkCoord, sent: &mut i64) {
-        // In the order asked (the client asks nearest first, §6.6), within what the budget leaves.
-        for _ in 0..self.sessions[&id].chunk_requests.len() {
+        // In the order asked (the client asks nearest first, §6.6), within what the budget leaves;
+        // one waiting for its sky floor stops the sending, and those just after want theirs.
+        loop {
             let s = self.sessions.get_mut(&id).expect("session");
             if s.chunk_credit <= 0.0 || *sent >= wc::MAX_CHUNKS_PER_TICK {
                 break;
             }
-            let c = s.chunk_requests.pop_front().expect("queued");
+            let Some(&c) = s.chunk_requests.front() else {
+                break;
+            };
             if s.streamed.contains(&c) {
+                s.chunk_requests.pop_front();
                 continue; // the view reached it first
             }
+            let requestable = self.requestable(&self.sessions[&id], c, center);
+            if requestable && !self.air_ready(c) {
+                let ahead: Vec<ChunkCoord> = self.sessions[&id]
+                    .chunk_requests
+                    .iter()
+                    .skip(1)
+                    .take(REQUEST_LOOKAHEAD)
+                    .copied()
+                    .collect();
+                for a in ahead {
+                    self.air_ready(a);
+                }
+                break;
+            }
+            self.sessions
+                .get_mut(&id)
+                .expect("session")
+                .chunk_requests
+                .pop_front();
             // Full mode would generate on the server for rendering alone: only what is stored.
-            let message = self
-                .requestable(&self.sessions[&id], c, center)
+            let message = requestable
                 .then(|| self.chunk_message(id, c, false))
                 .flatten();
             let s = self.sessions.get_mut(&id).expect("session");
@@ -2035,7 +2238,7 @@ impl Server {
         // Bodies placed blocks start (cell, block, kind).
         // Blocks gone into bodies this tick: (body, its new cell; none: a new body), the block.
         let mut bodies_built: Vec<BodyBuilt> = Vec::new();
-        let reach = region_reach(self.config.generator_version);
+        let reach = region_reach(world_mode());
         let ids: Vec<SessionId> = self.sessions.keys().copied().collect();
         for id in ids {
             let s = &self.sessions[&id];
@@ -2155,6 +2358,14 @@ impl Server {
         }
         let edited = changes.cells();
         self.broadcast_changes(changes, VoxelModificationReason::Edit);
+        // An explosive lit by an edit (a torch held against it) starts its fuse (docs/EXPLOSIVES.md).
+        for &c in &edited {
+            let m = self.world.get_voxel_if_loaded(c);
+            if let Some((i, true)) = explosive_of(&self.fuses.table, m) {
+                let seconds = self.fuses.table[i].fuse_seconds;
+                self.fuses.light(c, i, seconds);
+            }
+        }
         for ((id, joined), m) in bodies_built {
             match joined {
                 Some(cell) => self.broadcast_world(&Message::BodyEdit(BodyEdit {
@@ -2285,6 +2496,298 @@ impl Server {
             let m = self.spawn_message(i);
             self.broadcast_world(&m);
         }
+    }
+
+    /// Sets off the blast of `fuse` (docs/EXPLOSIVES.md §3), if its explosive is still there, lit.
+    /// Every other block whose cell centre is within its radius is destroyed outright within
+    /// `destroyRadiusM`, and beyond it becomes a natural piece flung out from it (nearest first, at
+    /// most `limits.maxPieces`), but liquids, which within `waterRadiusM` are blown out, and
+    /// `indestructible` blocks, which stay; an explosive caught in it is lit with a short random
+    /// fuse (`chainDelaySeconds`). The cells go in one `Explosion` modification (its own cell first:
+    /// the clients' effects start from it), then the pieces' spawns. Players within `reachM` are
+    /// knocked back by the falloff share, and hurt only within `destroyRadiusM`; bodies are pushed;
+    /// what the blast left without support falls.
+    fn blast(&mut self, fuse: crate::blasts::Fuse) {
+        use dwell_world::explosives::{
+            ShellRule, blast_damage, cells_within, cracking, destroys, fling_speed, launching,
+            open_dir, piece_dir, push_dir, radial_dir, share,
+        };
+        let Some(e) = self.fuses.table.get(fuse.explosive).copied() else {
+            return;
+        };
+        let at = fuse.cell;
+        if explosive_of(&self.fuses.table, self.world.get_voxel(at[0], at[1], at[2]))
+            != Some((fuse.explosive, true))
+        {
+            return;
+        }
+        let centre = crate::felling::cell_centre(at);
+        let centre_a = centre.to_array();
+        // The way out (docs/EXPLOSIVES.md §3): sensed from the cells round it before it clears any.
+        let solid_at = |world: &mut VoxelWorld, o: [i32; 3]| {
+            let m = world.get_voxel(at[0] + o[0], at[1] + o[1], at[2] + o[2]);
+            m != M.air && !info(m).liquid
+        };
+        let open = open_dir(e.open_sense_m, |o| solid_at(&mut self.world, o));
+        let crack = e.shell == ShellRule::Crack;
+        // A cracking shell is judged by what touched open space before the blast: the open cells
+        // round it, read before any clears (docs/EXPLOSIVES.md §3.6).
+        let open_before: std::collections::HashSet<[i32; 3]> = if crack {
+            cells_within(e.radius_m + 1.0)
+                .into_iter()
+                .filter(|&o| !solid_at(&mut self.world, o))
+                .map(|o| [at[0] + o[0], at[1] + o[1], at[2] + o[2]])
+                .collect()
+        } else {
+            Default::default()
+        };
+        // The cells the core destroys (a cracking shell's roof over them drops).
+        let mut destroyed = std::collections::HashSet::new();
+        let mut changes = TickChanges::default();
+        changes.set(&mut self.world, at, M.air);
+        // The shell's breakable cells (cell, state, centre, distance, offset), judged below.
+        let mut shell = Vec::new();
+        // Out to the loosen radius: past `radius_m` the pieces get no impulse (`fling_speed`'s
+        // share is nothing there), so they slump and fall.
+        for o in cells_within(e.loosen_radius_m.max(e.radius_m))
+            .into_iter()
+            .skip(1)
+        {
+            let c = [at[0] + o[0], at[1] + o[1], at[2] + o[2]];
+            let m = self.world.get_voxel(c[0], c[1], c[2]);
+            if m == M.air {
+                continue;
+            }
+            let p = crate::felling::cell_centre(c);
+            let d = (p - centre).length();
+            let s = info(m);
+            if s.liquid {
+                if d <= e.water_radius_m {
+                    changes.set(&mut self.world, c, M.air);
+                }
+                continue;
+            }
+            if let Some((i, lit)) = explosive_of(&self.fuses.table, m) {
+                // Caught in the blast: lit, or its fuse cut short.
+                let delay =
+                    dwell_world::explosives::chain_delay(&self.fuses.table[i], c, self.tick);
+                if !lit && let Some(l) = dwell_world::explosives::lit_state(&self.fuses.table[i]) {
+                    changes.set(&mut self.world, c, l);
+                }
+                self.fuses.light(c, i, delay);
+                continue;
+            }
+            if s.indestructible {
+                continue;
+            }
+            if destroys(&e, d) {
+                let left = if s.flooded && d > e.water_radius_m {
+                    M.water
+                } else {
+                    M.air
+                };
+                changes.set(&mut self.world, c, left);
+                destroyed.insert(c);
+            } else {
+                shell.push((c, m, p, d, o));
+            }
+        }
+        if crack {
+            // Only the shell's cells that touched open space, or sit on the cleared core, crack:
+            // loose pieces given no push, which crumble and fall; the rest stays.
+            let f = FaceFrame::at_row(at[1]);
+            let (here, below) = (f.cell([0, 0, 0]), f.cell([0, -1, 0]));
+            let down: [i32; 3] = std::array::from_fn(|k| below[k] - here[k]);
+            let cells: Vec<[i32; 3]> = shell.iter().map(|s| s.0).collect();
+            let cracks = cracking(
+                &cells,
+                down,
+                e.crack_over_cleared,
+                |c| open_before.contains(&c),
+                |c| destroyed.contains(&c),
+            );
+            shell = shell
+                .into_iter()
+                .zip(cracks)
+                .filter_map(|(s, k)| (k && s.3 <= e.radius_m + 1e-9).then_some(s))
+                .collect();
+        }
+        // Each shell cell's push: its line from the blast turned toward the way out. Those whose
+        // push meets rock (the core cleared, the cells that fly not rock) stay as terrain.
+        let dirs: Vec<[f64; 3]> = shell
+            .iter()
+            .map(|&(_, _, p, _, _)| {
+                piece_dir(
+                    radial_dir(centre_a, p.to_array()),
+                    open,
+                    e.open_blend,
+                    e.open_spread_min,
+                )
+            })
+            .collect();
+        let judged: Vec<([i32; 3], [f64; 3], bool)> = shell
+            .iter()
+            .zip(&dirs)
+            .map(|(&(_, _, _, d, o), &dir)| (o, dir, d > e.radius_m))
+            .collect();
+        let flies = if crack {
+            vec![true; judged.len()]
+        } else {
+            launching(&judged, e.open_path_m, |o| solid_at(&mut self.world, o))
+        };
+        let mut flung = Vec::new();
+        for ((&(c, m, p, d, _), &dir), fly) in shell.iter().zip(&dirs).zip(flies) {
+            if !fly || flung.len() >= self.fuses.max_pieces {
+                continue;
+            }
+            let left = if info(m).flooded && d > e.water_radius_m {
+                M.water
+            } else {
+                M.air
+            };
+            changes.set(&mut self.world, c, left);
+            flung.push((c, m, p, d, dir));
+        }
+        let cleared = changes.cells();
+        self.broadcast_changes(changes, VoxelModificationReason::Explosion);
+        // The water round it kicked outward (docs/EXPLOSIVES.md §3.5), after the cells it cleared,
+        // in the same batch: the grid's own law carries the wave to the banks and back.
+        if e.wave_impulse > 0.0 && e.wave_reach_m > 0.0 {
+            self.water_link
+                .pending
+                .push(WaterIn::Wave(crate::water::Wave {
+                    at: centre_a,
+                    reach: e.wave_reach_m,
+                    speed: e.wave_impulse,
+                    free: e.wave_free_m,
+                }));
+        }
+        for &(c, m, _, d, dir) in &flung {
+            let dir = DVec3::from(dir);
+            let i = self.felling.spawn_body(
+                &mut self.physics,
+                None,
+                0,
+                0,
+                vec![([0, 0, 0], m)],
+                crate::felling::cell_centre(c),
+                dwell_physics::DQuat::IDENTITY,
+                if crack {
+                    DVec3::ZERO
+                } else {
+                    dir * fling_speed(&e, m, d)
+                },
+                DVec3::ZERO,
+            );
+            if e.no_piece_contact_s > 0.0 {
+                // Its pieces fly out packed: kept apart from one another for the window, they
+                // touch only the terrain, players and other bodies (docs/EXPLOSIVES.md §3).
+                let body = self.felling.pieces[i].body;
+                self.physics.set_apart(body, true);
+                self.fuses
+                    .apart
+                    .push((body, crate::blasts::ticks_of(e.no_piece_contact_s)));
+            }
+            let spawn = self.spawn_message(i);
+            self.broadcast_world(&spawn);
+        }
+        // Bodies already moving are pushed by the same falloff (their mass resists).
+        let new_from = self.felling.pieces.len() - flung.len();
+        for k in 0..new_from {
+            let body = self.felling.pieces[k].body;
+            let p = self.physics.position(body);
+            let sh = share((p - centre).length(), e.reach_m, e.falloff);
+            if sh <= 0.0 {
+                continue;
+            }
+            let dir = DVec3::from(push_dir(centre_a, p.to_array(), e.lift));
+            let dv = (e.impulse * sh / self.physics.mass(body).max(1.0)).min(e.max_speed_ms);
+            let v = self.physics.velocity(body);
+            self.physics.set_velocity(body, v + dir * dv);
+        }
+        // Players: knocked back and hurt by their distance from it (to the nearest point of the
+        // body's capsule).
+        let ids: Vec<SessionId> = self.sessions.keys().copied().collect();
+        let radius = f64::from(self.config.player_config.body.radius);
+        for id in ids {
+            let s = &self.sessions[&id];
+            let Some(h) = s.handle.filter(|_| s.joined()) else {
+                continue;
+            };
+            let player_id = s.player_id;
+            let c = self.players.position(&self.physics, h);
+            let half = (f64::from(self.players.half_height(h)) - radius).max(0.0);
+            let y = centre.y.clamp(c.y - half, c.y + half);
+            let nearest = DVec3::new(c.x, y, c.z);
+            let d = ((nearest - centre).length() - radius).max(0.0);
+            let sh = share(d, e.reach_m, e.falloff);
+            if sh <= 0.0 {
+                continue;
+            }
+            let dir = push_dir(centre_a, c.to_array(), e.lift);
+            let dv = Vec3::new(dir[0] as f32, dir[1] as f32, dir[2] as f32)
+                * (e.knockback_ms * sh) as f32;
+            self.knockback(player_id, dv);
+            // Hurt only within the destroy radius (none past it).
+            self.damage(
+                id,
+                blast_damage(&e, d).round() as i32,
+                DamageCause::Explosion,
+            );
+        }
+        // What the blast left without support falls (a trunk cut through, sand undermined).
+        self.fell(&cleared, 0, Some(centre));
+    }
+
+    /// Counts down the blasts' pieces kept apart (`noPieceContactS`): past its window each lets
+    /// the other pieces touch it again once it overlaps none of them, so pieces that landed in
+    /// one another don't pop apart; a piece gone (settled, split) is dropped.
+    fn rejoin_apart(&mut self) {
+        if self.fuses.apart.is_empty() {
+            return;
+        }
+        let live: std::collections::HashSet<dwell_physics::BodyHandle> =
+            self.felling.pieces.iter().map(|p| p.body).collect();
+        let physics = &mut self.physics;
+        self.fuses.apart.retain_mut(|(body, ticks)| {
+            if !live.contains(body) {
+                return false;
+            }
+            if *ticks > 0 {
+                *ticks -= 1;
+                return true;
+            }
+            if physics.overlaps_pieces(*body) {
+                return true;
+            }
+            physics.set_apart(*body, false);
+            false
+        });
+    }
+
+    /// Lights the explosive `explosive` of the table at `cell` (already its lit state) with a fuse
+    /// of `seconds` (tests and tools).
+    pub fn light_fuse(&mut self, cell: [i32; 3], explosive: usize, seconds: f64) {
+        self.fuses.light(cell, explosive, seconds);
+    }
+
+    /// The blasts' pieces still kept apart from one another (tests).
+    pub fn apart_pieces(&self) -> usize {
+        self.fuses.apart.len()
+    }
+
+    /// The explosives' table the server blasts by (tests: a fixture table by data alone).
+    pub fn set_explosives(&mut self, table: Vec<dwell_world::explosives::ExplosiveData>) {
+        self.fuses.table = table;
+    }
+
+    /// The fuses burning: each one's cell and ticks left.
+    pub fn fuses(&self) -> Vec<([i32; 3], u32)> {
+        self.fuses
+            .burning
+            .iter()
+            .map(|f| (f.cell, f.ticks))
+            .collect()
     }
 
     /// Adds a moving body of `kind` from `cells` (offsets in its grid), its reference cell's centre
@@ -3115,6 +3618,28 @@ impl Server {
             .as_ref()
             .is_some_and(|air| !self.is_saved(c) && air(c))
     }
+    /// `is_air` without computing a sky floor on the tick: None while chunk `c`'s column's is not
+    /// known (it is wanted, `sky_columns.rs`).
+    fn air_known(&mut self, c: ChunkCoord) -> Option<bool> {
+        if self.is_saved(c) {
+            return Some(false);
+        }
+        let Some(sky) = &mut self.sky else {
+            return Some(self.is_air(c));
+        };
+        match sky.air().known(c) {
+            Ok(air) => Some(air),
+            Err(col) => {
+                sky.want(col);
+                None
+            }
+        }
+    }
+    /// Whether `chunk_message(c)` is answered without computing a sky floor on the tick (else the
+    /// column is wanted).
+    fn air_ready(&mut self, c: ChunkCoord) -> bool {
+        self.world.find(c).is_some_and(|ch| ch.revision() > 0) || self.air_known(c).is_some()
+    }
 
     fn init_storage(&mut self) {
         let Some(store) = &self.config.store else {
@@ -3173,6 +3698,7 @@ impl Server {
         self.world.set_saved(Box::new(StoreChunks {
             db,
             saved: self.saved.clone(),
+            lit: self.relit.clone(),
         }));
         // The moving bodies saved with it (docs/BUILT_BODIES.md §7), as they were: after the saved
         // chunks are the world's source, so one resting on its build platform is held again.
@@ -3218,6 +3744,13 @@ impl Server {
             self.apply_water();
         }
         self.autosave();
+        // Now, as said: an inline store's save is not left to the ticks.
+        if let Some(store) = &self.config.store
+            && !store.threaded()
+        {
+            store.flush();
+            self.collect_saves();
+        }
     }
 
     /// Saves as `save_now`, with the water's newest record (asked for a moment before).
@@ -3261,14 +3794,15 @@ impl Server {
         // The free water (WATER_SURFACE_GRID.md §2b): the newest record the water sent (none
         // yet: the one saved before stays).
         batch.water = self.water_link.record.take();
-        // LOD sections written since the last save; sections still to compute (dirty, or computing
-        // now) are saved dirty, to recompute on load.
+        // LOD sections written since the last save; sections still to compute (dirty, held, or
+        // computing now, at the server-jobs worker too) are saved dirty, to recompute on load: a
+        // page closed before the next save would otherwise keep the old content (BUGS.md #44).
         let mut lod_saved = Vec::new();
         for &c in &self.lod_unsaved {
             let Some(section) = self.lod.find(c) else {
                 continue;
             };
-            let dirty = self.lod.dirty().contains(&c);
+            let dirty = self.lod.recomputing(c);
             batch.lod_sections.push(SavedLodSection {
                 coord: c,
                 revision: section.revision,
@@ -3297,7 +3831,6 @@ impl Server {
         let save_id = self.config.store.as_mut().expect("store").save(batch);
         self.in_flight.insert(save_id, revisions);
         self.lod_in_flight.insert(save_id, lod_saved);
-        self.collect_saves(); // saves commit inline without an I/O thread
     }
 
     fn collect_saves(&mut self) {
@@ -3326,6 +3859,12 @@ impl Server {
                 self.dirty.extend(revisions.into_iter().map(|(c, _)| c)); // try again
             }
         }
+    }
+
+    /// Marks a chunk changed outside the edit path (tools, tests that write `world()` directly):
+    /// the next save writes it.
+    pub fn mark_dirty(&mut self, c: ChunkCoord) {
+        self.dirty.insert(c);
     }
 
     /// Waits for saves in flight to commit (hosts, before shutting down).
@@ -3384,6 +3923,10 @@ impl Server {
     /// The next job for the server-jobs worker (`jobs_remote`), as bytes for
     /// `dwell_sim::jobs::JobRunner::run`: a chunk to generate first, else a LOD section.
     pub fn take_job(&mut self) -> Option<Vec<u8>> {
+        // Sky floors first: streaming waits for them.
+        if let Some(col) = self.sky.as_mut().and_then(|s| s.take_job()) {
+            return Some(crate::sky_columns::encode_job(col));
+        }
         if let Some(c) = self.worldgen.take_job() {
             return Some(crate::jobs::encode_chunk_job(c));
         }
@@ -3394,6 +3937,12 @@ impl Server {
     pub fn deliver_job(&mut self, bytes: &[u8]) -> bool {
         if let Some((c, chunk)) = crate::jobs::decode_chunk_done(bytes) {
             self.worldgen.deliver(c, chunk);
+            return true;
+        }
+        if let Some((col, floor)) = crate::sky_columns::decode_done(bytes) {
+            if let Some(sky) = &mut self.sky {
+                sky.deliver(col, floor);
+            }
             return true;
         }
         self.lod.deliver(bytes)
@@ -3497,7 +4046,7 @@ impl Server {
                 p.x.floor() as i32,
                 p.z.floor() as i32,
             );
-            let r = CURRENTS_RADIUS;
+            let r = currents_radius();
             let mut near: Vec<(i32, i32)> = (-r..=r)
                 .flat_map(|dx| (-r..=r).map(move |dz| (dx, dz)))
                 .collect();

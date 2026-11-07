@@ -34,6 +34,9 @@ struct Frame {
     // tint (linear, luminance 1).
     pixel_art: vec4f,
     pixel_tint: vec4f,
+    // The lines (`line_vs`): x, y the drawing size (px), z a line's width (px: CSS px × the pixel
+    // ratio, render/mod.rs `line_width_px`), so outlines read the same near and far.
+    lines: vec4f,
     // x eye height (world y), y face (±1), z exposure (× the eye's adaptation's), w the eye's face's
     // fog density (× its time of day's; the other face's is day.other_stars.y)
     eye: vec4f,
@@ -835,6 +838,9 @@ fn shadow_cutout_fs(i: CutoutOut) {
 struct LineIn {
     @location(0) position: vec3f,
     @location(1) color: vec3f,
+    // The segment's other end (the mesh's space), and which side of it this corner is (±1).
+    @location(2) other: vec3f,
+    @location(3) side: f32,
 };
 struct LineOut {
     @builtin(position) clip: vec4f,
@@ -843,11 +849,51 @@ struct LineOut {
     @location(2) depth: f32,
 };
 
-// Lines (the block outline, debug lines): unlit sRGB colours, drawn over the composite (so neither
-// tone-mapped nor fogged) with the near pass's projection. Turned by the draw's own rotation about
-// its offset, as meshes are: the outline of a moving body's cell turns with the body.
+// Lines (the block outline, the region tools' boxes, the brush preview, debug lines): unlit sRGB
+// colours, drawn over the composite (so neither tone-mapped nor fogged) with the near pass's
+// projection. Each segment is a quad a constant `frame.lines.z` pixels wide on screen, whatever its
+// distance (owner, 2026-11-06: far outlines stay readable), with square caps half a width out so a
+// box's corners close; its ends are cut at the near plane first. The math is `line_corner` in
+// render/mod.rs, unit-tested there. Turned by the draw's own rotation about its offset, as meshes
+// are: the outline of a moving body's cell turns with the body.
 @vertex
 fn line_vs(v: LineIn, @builtin(instance_index) k: u32) -> LineOut {
+    let draw = draws[k];
+    var o: LineOut;
+    o.draw = k;
+    var rel = draw.offset.xyz + qrot(draw.quat, v.position * draw.offset.w);
+    let rel_o = draw.offset.xyz + qrot(draw.quat, v.other * draw.offset.w);
+    var a = frame.view_proj * vec4f(rel, 1.0);
+    let b = frame.view_proj * vec4f(rel_o, 1.0);
+    // Behind the near plane (w ≤ 0 for this projection): slide the end toward the other.
+    let near = 1e-4;
+    if (a.w < near && b.w >= near) {
+        let t = (near - a.w) / (b.w - a.w);
+        a = mix(a, b, t);
+        rel = mix(rel, rel_o, t);
+    }
+    let size = max(frame.lines.xy, vec2f(1.0));
+    let pa = a.xy / max(a.w, near) * size;
+    let pb = b.xy / max(b.w, near) * size;
+    var d = pb - pa;
+    let len = length(d);
+    d = select(vec2f(1.0, 0.0), d / len, len > 1e-6);
+    let half = 0.5 * frame.lines.z;
+    let px = (vec2f(-d.y, d.x) * v.side - d) * half;
+    // Pixels to NDC (2 / size), back to clip by w.
+    a = vec4f(a.xy + px * 2.0 / size * a.w, a.zw);
+    if (a.w < near) {
+        a = vec4f(0.0, 0.0, -1.0, 1.0); // both ends behind: dropped
+    }
+    o.clip = a;
+    o.color = v.color;
+    o.depth = view_depth(rel);
+    return o;
+}
+
+// A brush preview's ghost: its faces in the world, no widening.
+@vertex
+fn ghost_vs(v: GhostIn, @builtin(instance_index) k: u32) -> LineOut {
     let draw = draws[k];
     var o: LineOut;
     o.draw = k;
@@ -857,6 +903,10 @@ fn line_vs(v: LineIn, @builtin(instance_index) k: u32) -> LineOut {
     o.depth = view_depth(rel);
     return o;
 }
+struct GhostIn {
+    @location(0) position: vec3f,
+    @location(1) color: vec3f,
+};
 
 // Depth-tested against the scene's stored depth sample by sample: the share of the pixel's samples
 // the line is in front of (or that show the sky) is its coverage, as the depth buffer's per-sample
@@ -2525,6 +2575,7 @@ mod tests {
                 "flat_vs",
                 "flat_fs",
                 "line_vs",
+                "ghost_vs",
                 "line_fs",
                 "line_top_fs",
                 "sky_vs",

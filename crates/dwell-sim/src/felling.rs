@@ -20,7 +20,9 @@ pub struct FellingData {
     pub topple_tip_speed: f64,
     pub sleep_linear: f64,
     pub sleep_angular: f64,
+    pub rest_drift: f64,
     pub sleep_seconds: f64,
+    pub settle_every_ticks: u32,
     pub max_seconds: f64,
     pub max_settles: u8,
     pub hit_speed: f64,
@@ -108,6 +110,22 @@ pub use bodies_generated::{BODY_KINDS, WATER};
 /// under water facing the motion (its bounds' sides, as deep as the share of it under) · speed²,
 /// and `WATER.drag` by that share, relative to the water's current. Nothing out of the water.
 pub fn water_drag(world: &mut VoxelWorld, physics: &Physics, body: BodyHandle) -> WaterDrag {
+    water_drag_with(
+        world,
+        physics,
+        body,
+        &mut dwell_world::falls::FallMemo::default(),
+    )
+}
+
+/// [`water_drag`], the waterfalls' reads kept in `falls` across bodies (one pass, the world
+/// unchanged).
+pub fn water_drag_with(
+    world: &mut VoxelWorld,
+    physics: &Physics,
+    body: BodyHandle,
+    falls: &mut dwell_world::falls::FallMemo,
+) -> WaterDrag {
     let mut centres = Vec::new();
     physics.collider_centres(body, &mut centres);
     let rotation = physics.rotation(body);
@@ -126,11 +144,22 @@ pub fn water_drag(world: &mut VoxelWorld, physics: &Physics, body: BodyHandle) -
     let k = 0.5 * (liquid / under) * WATER.drag_coefficient / physics.mass(body).max(1e-6);
     // The water's current where the body is (docs/WATER_SURFACE_GRID.md §2c): it drifts with it.
     let [cu, cv] = world.currents.at(physics.position(body).to_array());
+    // Under a waterfall (docs/WATER_SURFACE_GRID.md §2e): pushed down and out by it, as players are.
+    let centre = ((lo + hi) * 0.5).to_array();
+    let fall = dwell_world::falls::push_at_with(
+        world,
+        centre,
+        0.5 * size.y,
+        0.5 * size.x.max(size.z),
+        falls,
+    );
     WaterDrag {
         kx: k * depth * size.z,
         kz: k * depth * size.x,
         linear: WATER.drag * share,
         current: [f64::from(cu), f64::from(cv)],
+        fall,
+        face: dwell_world::FaceFrame::at_height(centre[1]),
     }
 }
 
@@ -252,7 +281,12 @@ pub struct FellingRules {
     /// A piece slower than these (m/s, rad/s) for `sleep_ticks` settles.
     pub sleep_linear: f64,
     pub sleep_angular: f64,
+    /// Or within this (m, at its farthest point) of where it began counting.
+    pub rest_drift: f64,
     pub sleep_ticks: u32,
+    /// Pieces due settle together on every this many ticks (one modification, one terrain
+    /// collision rebuild a chunk, for all of them).
+    pub settle_every_ticks: u32,
     /// A piece still moving after this long settles where it is.
     pub max_ticks: u32,
     /// A piece that settles unanchored this many times stays where it is.
@@ -295,7 +329,9 @@ impl From<FellingData> for FellingRules {
             },
             sleep_linear: d.sleep_linear,
             sleep_angular: d.sleep_angular,
+            rest_drift: d.rest_drift,
             sleep_ticks: ticks(d.sleep_seconds),
+            settle_every_ticks: d.settle_every_ticks,
             max_ticks: ticks(d.max_seconds),
             max_settles: d.max_settles,
             max_piece_cells: d.max_piece_cells,
@@ -328,6 +364,8 @@ pub struct Falling {
     /// How many times its cells have settled without an anchor before.
     pub settles: u8,
     still: u32,
+    /// Where it was (its origin and rotation) when its still ticks began counting.
+    rest: Option<(DVec3, DQuat)>,
     age: u32,
     /// Its kind (an index into [`BODY_KINDS`]; 0 natural).
     pub kind: u8,
@@ -366,6 +404,8 @@ pub struct Settled {
 pub struct Felling {
     pub pieces: Vec<Falling>,
     next_id: u32,
+    /// The steps counted (`step`), for `settle_every_ticks`.
+    steps: u32,
     pub rules: FellingRules,
 }
 
@@ -544,6 +584,7 @@ impl Felling {
                 kind: 0,
                 settles,
                 still: 0,
+                rest: None,
                 age: 0,
                 hurt: Vec::new(),
                 held: false,
@@ -627,6 +668,7 @@ impl Felling {
                 kind: old.kind,
                 settles: old.settles,
                 still: 0,
+                rest: None,
                 age: old.age,
                 hurt: old.hurt.clone(),
                 held: false,
@@ -646,6 +688,7 @@ impl Felling {
         p.cells = cells;
         p.carriers = carriers;
         p.still = 0;
+        p.rest = None;
         Some(out)
     }
 
@@ -694,6 +737,7 @@ impl Felling {
         p.cells = cells;
         p.carriers = carriers;
         p.still = 0;
+        p.rest = None;
     }
 
     /// The world cell each cell of piece `i` is in now.
@@ -835,6 +879,7 @@ impl Felling {
             kind,
             settles,
             still: 0,
+            rest: None,
             age: 0,
             hurt: Vec::new(),
             held: false,
@@ -914,6 +959,8 @@ impl Felling {
         let g = physics.gravity();
         // A cell is 1 × ½ × 1 m.
         let volume = CELL_H;
+        // The bodies only take impulses here: the world stands still, so the falls' reads hold.
+        let mut falls = dwell_world::falls::FallMemo::default();
         for p in &mut self.pieces {
             let (position, rotation) = (physics.position(p.body), physics.rotation(p.body));
             let mut under = 0.0;
@@ -935,7 +982,8 @@ impl Felling {
                 let share = under / p.cells.len() as f64;
                 // Sideways (the vertical axis is the same on both faces), as the clients'
                 // stand-ins are slowed; the bob is the heave drag's.
-                let v = water_drag(world, physics, p.body).slow(physics.velocity(p.body), dt);
+                let v = water_drag_with(world, physics, p.body, &mut falls)
+                    .slow(physics.velocity(p.body), dt);
                 let heave = (-WATER.heave_drag * share * dt).exp();
                 let v = DVec3::new(v.x, v.y * heave, v.z);
                 let w = physics.angular_velocity(p.body) * (-WATER.angular_drag * share * dt).exp();
@@ -1052,6 +1100,8 @@ impl Felling {
     pub fn step(&mut self, physics: &mut Physics) -> Vec<usize> {
         let r = self.rules;
         let mut due = Vec::new();
+        self.steps = self.steps.wrapping_add(1);
+        let settling = self.steps.is_multiple_of(r.settle_every_ticks.max(1));
         for (i, p) in self.pieces.iter_mut().enumerate() {
             p.age += 1;
             let v = physics.velocity(p.body).length();
@@ -1062,9 +1112,18 @@ impl Felling {
                 physics.set_dominant(p.body, held);
                 p.held = held;
             }
-            if v < r.sleep_linear && w < r.sleep_angular {
+            // Still: slow, or (jostled by its neighbours in a heap, rocked by water) not gone
+            // anywhere since it began counting: within `rest_drift` at its farthest point.
+            let (at, turn) = (physics.position(p.body), physics.rotation(p.body));
+            let calm = v < r.sleep_linear && w < r.sleep_angular;
+            let stayed = p.rest.is_some_and(|(a, q)| {
+                (at - a).length() + q.angle_between(turn) * p.reach <= r.rest_drift
+            });
+            if calm || stayed {
+                p.rest.get_or_insert((at, turn));
                 p.still += 1;
             } else {
+                p.rest = Some((at, turn));
                 p.still = 0;
             }
             // Anything past the world's rows is lost; the rest settles at rest or out of time
@@ -1073,7 +1132,7 @@ impl Felling {
             let lost = !in_world_rows(y);
             // A kind that doesn't settle (a built body) stays a body; lost past the rows, it goes.
             let settles = body_kind(p.kind).settles;
-            if lost || (settles && (p.still >= r.sleep_ticks || p.age >= r.max_ticks)) {
+            if lost || (settling && settles && (p.still >= r.sleep_ticks || p.age >= r.max_ticks)) {
                 due.push(i);
             }
         }
@@ -1375,6 +1434,7 @@ mod tests {
             kind: 0,
             settles: 0,
             still: 0,
+            rest: None,
             age: 0,
             hurt: Vec::new(),
             held: false,
@@ -1668,6 +1728,7 @@ mod tests {
             kind: 0,
             settles: 0,
             still: 0,
+            rest: None,
             age: 0,
             hurt: Vec::new(),
             held: false,

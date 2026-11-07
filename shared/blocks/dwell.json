@@ -51,6 +51,17 @@
       },
       "shadows": true,
       "flame": "dwell:torch"
+    },
+    "dwell:fuse": {
+      "color": "#ffb060",
+      "strength": 2.4,
+      "radiusM": 6,
+      "flicker": {
+        "amount": 0.55,
+        "speed": 14
+      },
+      "shadows": false,
+      "flame": "dwell:fuse"
     }
   },
   "blocks": [
@@ -460,6 +471,94 @@
       "color": "#2f86e0",
       "textures": "water",
       "lightFilter": 1
+    },
+    {
+      "$comment": "Prototype content (docs/EXPLOSIVES.md, owner 2026-11-06): dynamite, placed unlit. Place with a torch held, aimed at it, lights it (shared/explosives: it becomes dwell:lit_dynamite and its fuse runs). Caught in a blast it is lit with a short random fuse.",
+      "name": "dynamite",
+      "sound": "dwell:dynamite",
+      "density": 1200,
+      "shape": "full",
+      "placeable": true,
+      "color": "#b9473f",
+      "textures": { "top": "dynamiteTop", "side": "dynamite", "bottom": "dynamiteTop" }
+    },
+    {
+      "$comment": "Dynamite with its fuse burning (docs/EXPLOSIVES.md): only lighting makes it; nothing breaks or overwrites it (`indestructible`) until it blows. Its light is the sputtering fuse (`dwell:fuse`, a small flame on its top) and its sound set's `burn` the fizz.",
+      "name": "lit_dynamite",
+      "sound": "dwell:lit_dynamite",
+      "density": 1200,
+      "shape": "full",
+      "indestructible": true,
+      "emits": 6,
+      "light": "dwell:fuse",
+      "color": "#b9473f",
+      "textures": { "top": "dynamiteTop", "side": "dynamite", "bottom": "dynamiteTop" }
+    },
+    {
+      "$comment": "Prototype content (docs/EXPLOSIVES.md §variants, owner 2026-11-06): blue dynamite, a 4 m blast that destroys everything in it and flings nothing (shared/explosives). Lit with a torch as red's.",
+      "name": "dynamite_blue",
+      "sound": "dwell:dynamite",
+      "density": 1200,
+      "shape": "full",
+      "placeable": true,
+      "color": "#4166ad",
+      "textures": { "top": "dynamiteBlueTop", "side": "dynamiteBlue", "bottom": "dynamiteBlueTop" }
+    },
+    {
+      "$comment": "Blue dynamite with its fuse burning (as dwell:lit_dynamite).",
+      "name": "lit_dynamite_blue",
+      "sound": "dwell:lit_dynamite",
+      "density": 1200,
+      "shape": "full",
+      "indestructible": true,
+      "emits": 6,
+      "light": "dwell:fuse",
+      "color": "#4166ad",
+      "textures": { "top": "dynamiteBlueTop", "side": "dynamiteBlue", "bottom": "dynamiteBlueTop" }
+    },
+    {
+      "$comment": "Prototype content (docs/EXPLOSIVES.md §variants, owner 2026-11-06): green dynamite, destroys 4 m and flings the 4–5 m shell as red's (shared/explosives). Lit with a torch as red's.",
+      "name": "dynamite_green",
+      "sound": "dwell:dynamite",
+      "density": 1200,
+      "shape": "full",
+      "placeable": true,
+      "color": "#4f8a4a",
+      "textures": { "top": "dynamiteGreenTop", "side": "dynamiteGreen", "bottom": "dynamiteGreenTop" }
+    },
+    {
+      "$comment": "Green dynamite with its fuse burning (as dwell:lit_dynamite).",
+      "name": "lit_dynamite_green",
+      "sound": "dwell:lit_dynamite",
+      "density": 1200,
+      "shape": "full",
+      "indestructible": true,
+      "emits": 6,
+      "light": "dwell:fuse",
+      "color": "#4f8a4a",
+      "textures": { "top": "dynamiteGreenTop", "side": "dynamiteGreen", "bottom": "dynamiteGreenTop" }
+    },
+    {
+      "$comment": "Prototype content (docs/EXPLOSIVES.md §variants, owner 2026-11-07): yellow dynamite, destroys 4 m and cracks the 4–5 m shell's cells that touch air (shared/explosives). Lit with a torch as red's.",
+      "name": "dynamite_yellow",
+      "sound": "dwell:dynamite",
+      "density": 1200,
+      "shape": "full",
+      "placeable": true,
+      "color": "#d8b03a",
+      "textures": { "top": "dynamiteYellowTop", "side": "dynamiteYellow", "bottom": "dynamiteYellowTop" }
+    },
+    {
+      "$comment": "Yellow dynamite with its fuse burning (as dwell:lit_dynamite).",
+      "name": "lit_dynamite_yellow",
+      "sound": "dwell:lit_dynamite",
+      "density": 1200,
+      "shape": "full",
+      "indestructible": true,
+      "emits": 6,
+      "light": "dwell:fuse",
+      "color": "#d8b03a",
+      "textures": { "top": "dynamiteYellowTop", "side": "dynamiteYellow", "bottom": "dynamiteYellowTop" }
     }
   ]
 }

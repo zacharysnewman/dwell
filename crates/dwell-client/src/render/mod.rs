@@ -7,6 +7,7 @@
 //! the origin. It is the Three.js renderer's interface (render/Renderer.ts) in Rust.
 
 pub mod arena;
+pub mod blasts;
 pub mod camera;
 pub mod characters;
 pub mod display;
@@ -28,6 +29,7 @@ pub mod shadows;
 pub mod timing;
 pub mod water;
 pub mod water_tiles;
+pub mod waterfalls;
 
 use dwell_world::hash::HashMap;
 
@@ -260,8 +262,8 @@ struct GpuMesh {
 const STRIDES: [u64; 6] = [
     4 * (3 + 3 + 3 + 2 + 4 + 1 + 2), // Terrain: position, normal, colour, uv, tile, light, flood
     4 * (3 + 3 + 3),                 // Flat: position, normal, colour
-    4 * (3 + 3),                     // Line: position, colour
-    4 * (3 + 3),                     // Ghost: the lines' format (triangles)
+    4 * (3 + 3 + 3 + 1),             // Line: position, colour, the other end, side (a quad corner)
+    4 * (3 + 3),                     // Ghost: position, colour (triangles)
     4 * (3 + 3 + 3 + 1 + 2),         // Fluid: position, normal, colour, fluid id, flood
     4 * (3 + 3 + 3 + 2 + 4 + 4 + 1 + 1 + 2), // Cutout: the terrain's, plant (sway, wind speed, fade), bare, light, flood
 ];
@@ -477,12 +479,11 @@ impl GpuMesh {
         ))
     }
 
+    /// Line segments (`points` in pairs: each end and its colour) as quads `line_vs` widens to a
+    /// constant width on screen: four corners a segment, each with its other end and its side.
     fn lines(arena: &ArenaRef, points: &[([f32; 3], [f32; 3])]) -> Self {
-        let p: Vec<f32> = points.iter().flat_map(|(p, _)| *p).collect();
-        let c: Vec<f32> = points.iter().flat_map(|(_, c)| *c).collect();
-        let idx: Vec<u32> = (0..points.len() as u32).collect();
-        let bytes = 4 * (p.len() + c.len() + idx.len()) as u64;
-        let vertices = interleave(&[(&p, 3), (&c, 3)]);
+        let (vertices, idx) = line_quads(points);
+        let bytes = 4 * (vertices.len() + idx.len()) as u64;
         Self::upload(
             arena,
             Kind::Line,
@@ -493,8 +494,8 @@ impl GpuMesh {
         )
     }
 
-    /// A brush preview's ghost (BRUSHES.md §3): two triangles per face, in the lines' vertex
-    /// format (position, colour), drawn by the ghost pipeline.
+    /// A brush preview's ghost (BRUSHES.md §3): two triangles per face (position, colour), drawn
+    /// by the ghost pipeline.
     fn ghost(arena: &ArenaRef, faces: &[GhostFace]) -> Self {
         let mut p: Vec<f32> = Vec::with_capacity(faces.len() * 12);
         let mut c: Vec<f32> = Vec::with_capacity(faces.len() * 12);
@@ -512,7 +513,7 @@ impl GpuMesh {
         let vertices = interleave(&[(&p, 3), (&c, 3)]);
         Self::upload(
             arena,
-            Kind::Line,
+            Kind::Ghost,
             &vertices,
             &idx,
             std::iter::once(0..idx.len() as u32).collect(),
@@ -854,6 +855,66 @@ enum DrawMesh {
     Brush(bool),
 }
 
+/// A line's width on screen in CSS pixels (the block outline, the region boxes, the brush preview,
+/// debug lines; owner, 2026-11-06: constant on screen, not in the world, so far outlines read).
+const LINE_WIDTH_CSS_PX: f64 = 2.0;
+
+/// A line's width in the drawing buffer's pixels: [`LINE_WIDTH_CSS_PX`] × the pixel ratio, at
+/// least one pixel.
+fn line_width_px(pixel_ratio: f64) -> f64 {
+    (LINE_WIDTH_CSS_PX * pixel_ratio).max(1.0)
+}
+
+/// Line segments as quads (`line_vs`'s format): per segment four corners (position, colour, the
+/// other end, side) and two triangles.
+fn line_quads(points: &[([f32; 3], [f32; 3])]) -> (Vec<f32>, Vec<u32>) {
+    let mut v = Vec::with_capacity(points.len() / 2 * 40);
+    let mut idx = Vec::with_capacity(points.len() / 2 * 6);
+    for (k, pair) in points.chunks_exact(2).enumerate() {
+        let ((a, ca), (b, cb)) = (pair[0], pair[1]);
+        // Seen from b the segment runs the other way, so its sides swap: corners 0 and 3 are one
+        // side of the segment, 1 and 2 the other.
+        for (p, c, o, side) in [
+            (a, ca, b, 1.0),
+            (a, ca, b, -1.0),
+            (b, cb, a, 1.0),
+            (b, cb, a, -1.0),
+        ] {
+            v.extend_from_slice(&p);
+            v.extend_from_slice(&c);
+            v.extend_from_slice(&o);
+            v.push(side);
+        }
+        let i = 4 * k as u32;
+        idx.extend_from_slice(&[i, i + 1, i + 2, i, i + 2, i + 3]);
+    }
+    (v, idx)
+}
+
+/// A line quad's corner in clip space (`line_vs`, the WGSL it mirrors): the end `a` (clip) of a
+/// segment to `b`, moved `side` half a width across the segment on screen and half a width out
+/// past its end, for a drawing `size` (px) and a `width` (px).
+#[cfg(test)]
+fn line_corner(a: [f64; 4], b: [f64; 4], side: f64, size: [f64; 2], width: f64) -> [f64; 4] {
+    let pa = [a[0] / a[3] * size[0], a[1] / a[3] * size[1]];
+    let pb = [b[0] / b[3] * size[0], b[1] / b[3] * size[1]];
+    let mut d = [pb[0] - pa[0], pb[1] - pa[1]];
+    let len = d[0].hypot(d[1]);
+    d = if len > 1e-6 {
+        [d[0] / len, d[1] / len]
+    } else {
+        [1.0, 0.0]
+    };
+    let half = 0.5 * width;
+    let px = [(-d[1] * side - d[0]) * half, (d[0] * side - d[1]) * half];
+    [
+        a[0] + px[0] * 2.0 / size[0] * a[3],
+        a[1] + px[1] * 2.0 / size[1] * a[3],
+        a[2],
+        a[3],
+    ]
+}
+
 /// The brush outline's colour (BRUSHES.md): warm, apart from the region tools' white and blue.
 const BRUSH_COLOR: u32 = 0xffb347;
 /// How far a brush outline reaches from its centre at most (m): a line's length aside, the
@@ -977,6 +1038,11 @@ pub struct Renderer {
     portal_motes: Vec<flames::PortalMotes>,
     /// The flecks on moving water this frame (`Scene::set_flecks`; crate::flecks).
     flecks: Vec<crate::flecks::Fleck>,
+    /// The waterfalls near the eye to draw (`Scene::set_falls`; render/waterfalls.rs).
+    falls: Vec<dwell_world::falls::Fall>,
+    /// The blasts' puffs and flash lights this frame (`Scene::set_blasts`; crate::blasts).
+    puffs: Vec<crate::blasts::Puff>,
+    flash_lights: Vec<dwell_look::lights::PointLight>,
     outline: Option<V3>,
     /// The outline's box in its cell, and its lines.
     outline_box: ([f32; 3], [f32; 3]),
@@ -1208,7 +1274,8 @@ impl Renderer {
             (8, 2),
         ]);
         let flat_attrs = attrs(&[(0, 3), (1, 3), (2, 3)]);
-        let line_attrs = attrs(&[(0, 3), (1, 3)]);
+        let line_attrs = attrs(&[(0, 3), (1, 3), (2, 3), (3, 1)]);
+        let ghost_attrs = attrs(&[(0, 3), (1, 3)]);
         let fluid_attrs = attrs(&[(0, 3), (1, 3), (2, 3), (3, 1), (4, 2)]);
         let mut pipelines = HashMap::default();
         // Opaque terrain, LOD sections and players; lines (depth-tested or over everything); and
@@ -1229,7 +1296,7 @@ impl Renderer {
                 Kind::Flat => ("flat_vs", "flat_fs", &flat_attrs),
                 Kind::Line if no_depth => ("line_vs", "line_top_fs", &line_attrs),
                 Kind::Line => ("line_vs", "line_fs", &line_attrs),
-                Kind::Ghost => ("line_vs", "ghost_fs", &line_attrs),
+                Kind::Ghost => ("ghost_vs", "ghost_fs", &ghost_attrs),
                 Kind::Fluid => ("fluid_vs", "water_fs", &fluid_attrs),
                 Kind::Cutout => ("cutout_vs", "cutout_fs", &cutout_attrs),
             };
@@ -1278,11 +1345,8 @@ impl Renderer {
                     targets: if line { &line_targets } else { &scene_targets },
                 }),
                 primitive: wgpu::PrimitiveState {
-                    topology: if kind == Kind::Line {
-                        wgpu::PrimitiveTopology::LineList
-                    } else {
-                        wgpu::PrimitiveTopology::TriangleList
-                    },
+                    // Lines are quads too (`line_vs` widens them on screen).
+                    topology: wgpu::PrimitiveTopology::TriangleList,
                     front_face: wgpu::FrontFace::Ccw,
                     // Water and cutout faces are seen from both sides; opaque faces are culled
                     // from behind.
@@ -1666,6 +1730,9 @@ impl Renderer {
             placed_flames: Vec::new(),
             portal_motes: Vec::new(),
             flecks: Vec::new(),
+            falls: Vec::new(),
+            puffs: Vec::new(),
+            flash_lights: Vec::new(),
             outline: None,
             outline_box,
             outline_quat: IDENTITY_QUAT,
@@ -2371,6 +2438,13 @@ impl Renderer {
         for v in dwell_look::pixel_art::light_uniforms(pixel) {
             put(&v);
         }
+        // The lines' drawing size and width (px; `line_vs`).
+        put(&[
+            self.size.0 as f32,
+            self.size.1 as f32,
+            line_width_px(self.pixel_ratio) as f32,
+            0.0,
+        ]);
         // The exposure follows the eye's adaptation; the fog is the air's the eye is in (the other
         // face's rides in the day block, for rays that cross the midplane: docs/DAY_NIGHT.md §13).
         let adapted = self.day.viewer(self.adapted_a);
@@ -3174,12 +3248,16 @@ impl Renderer {
             arms_flame,
             &self.portal_motes,
             &self.flecks,
+            &self.falls,
+            &self.puffs,
             self.eye,
             seconds,
         );
+        crate::telemetry::add("blasts.puffs", self.flames.puffs_drawn as f64);
         crate::telemetry::add("flames.drawn", self.flames.drawn as f64);
         crate::telemetry::add("motes.drawn", self.flames.motes_drawn as f64);
         crate::telemetry::add("flecks.drawn", self.flames.flecks_drawn as f64);
+        crate::telemetry::add("falls.drawn", self.flames.falls_drawn as f64);
         let arms = self.characters.has_arms();
         if arms {
             let fov = dwell_characters::player()
@@ -4039,7 +4117,14 @@ impl Renderer {
     fn torch_frame(&mut self, chunk_fade: &dyn Fn(ChunkCoord) -> Option<Fade>) -> TorchFrame {
         let shadows_on = self.torch_tier().is_some();
         let placed: &[lights::PlacedLight] = if shadows_on { &self.placed_lights } else { &[] };
-        let all = lights::frame_lights(self.characters.held_lights(), placed, self.eye);
+        // A blast's flash first (crate::blasts): the brightest light while it lasts.
+        let mut all = self.flash_lights.clone();
+        all.extend(lights::frame_lights(
+            self.characters.held_lights(),
+            placed,
+            self.eye,
+        ));
+        all.truncate(dwell_look::lights::LIGHTS.max_lights);
         let slots = if shadows_on {
             self.point_maps.slots()
         } else {
@@ -4601,13 +4686,13 @@ pub(crate) fn frame_extras(
 const WIND_PERIOD: f64 = 1024.0;
 
 /// Floats in the frame uniform block (`Frame` in shaders.rs): a matrix, the outline's and the
-/// pixel-art preview's vec4s, 21 more (after `tan` the clouds' three and the other face's deck's
+/// pixel-art preview's vec4s, 22 more (the lines', then after `tan` the clouds' three and the other face's deck's
 /// two, then the water's, the wind's six, the wrap and the reflections' two) and the day/night
 /// cycle's block.
 pub(crate) const FRAME_FLOATS: usize = 16
     + dwell_look::outline::OUTLINE_FLOATS
     + dwell_look::pixel_art::LIGHT_FLOATS
-    + 21 * 4
+    + 22 * 4
     + DAY_SKY_FLOATS;
 
 /// The atlas and its mipmaps, each with its side in texels: down to the level where a tile's gutter
@@ -4790,6 +4875,17 @@ impl crate::game::Scene for Renderer {
     fn set_flecks(&mut self, flecks: Vec<crate::flecks::Fleck>) {
         self.flecks = flecks;
     }
+    fn set_falls(&mut self, falls: Vec<dwell_world::falls::Fall>) {
+        self.falls = falls;
+    }
+    fn set_blasts(
+        &mut self,
+        puffs: Vec<crate::blasts::Puff>,
+        lights: Vec<dwell_look::lights::PointLight>,
+    ) {
+        self.puffs = puffs;
+        self.flash_lights = lights;
+    }
     fn set_water_flow(&mut self, texels: Vec<i8>) {
         self.frame_bindings.flow.write(&self.queue, &texels);
     }
@@ -4853,6 +4949,55 @@ mod tests {
     use super::*;
 
     #[test]
+    fn outlines_are_a_constant_number_of_pixels_wide_near_and_far() {
+        // Owner, 2026-11-06: outlines scaled by screen size, not world size, so far ones read.
+        // Before, lines were 1-device-pixel LineLists (half a CSS pixel on a 2x screen).
+        let (w, h, ratio) = (1600.0, 900.0, 2.0);
+        let width = line_width_px(ratio);
+        assert_eq!(width, LINE_WIDTH_CSS_PX * 2.0);
+        assert_eq!(line_width_px(0.25), 1.0, "never under a pixel");
+        let proj = camera::perspective_reversed(70.0, w / h, NEAR_PLANE, NEAR_SPLIT);
+        let clip = |p: [f64; 3]| -> [f64; 4] {
+            std::array::from_fn(|r| {
+                (0..4)
+                    .map(|k| f64::from(proj[k][r]) * [p[0], p[1], p[2], 1.0][k])
+                    .sum()
+            })
+        };
+        let px = |c: [f64; 4]| [c[0] / c[3] * w / 2.0, c[1] / c[3] * h / 2.0];
+        for depth in [2.0, 20.0, 250.0] {
+            for (from, to) in [([-1.0, 0.3], [1.0, 0.3]), ([0.2, -1.0], [0.5, 1.0])] {
+                let a = clip([from[0], from[1], -depth]);
+                let b = clip([to[0], to[1], -depth]);
+                let (l, r) = (
+                    px(line_corner(a, b, 1.0, [w, h], width)),
+                    px(line_corner(a, b, -1.0, [w, h], width)),
+                );
+                let across = (l[0] - r[0]).hypot(l[1] - r[1]);
+                assert!((across - width).abs() < 1e-6, "{depth} m: {across} px");
+                // Half a width out past the end (a square cap): the corners close a box's edges.
+                let (pa, pb) = (px(a), px(b));
+                let mid = [(l[0] + r[0]) / 2.0, (l[1] + r[1]) / 2.0];
+                let out = (mid[0] - pa[0]).hypot(mid[1] - pa[1]);
+                assert!((out - width / 2.0).abs() < 1e-6, "{out}");
+                let ab = (pa[0] - pb[0]).hypot(pa[1] - pb[1]);
+                assert!((mid[0] - pb[0]).hypot(mid[1] - pb[1]) > ab);
+            }
+        }
+    }
+
+    #[test]
+    fn a_line_mesh_is_a_quad_a_segment_with_its_other_ends_and_sides() {
+        let c = [1.0, 0.5, 0.0];
+        let (v, idx) = line_quads(&[([0.0; 3], c), ([1.0, 2.0, 3.0], c)]);
+        assert_eq!(v.len(), 4 * 10, "the Line stride's floats");
+        assert_eq!(STRIDES[Kind::Line as usize], 4 * 10);
+        assert_eq!(idx, vec![0, 1, 2, 0, 2, 3]);
+        assert_eq!(&v[6..10], &[1.0, 2.0, 3.0, 1.0], "a's corner names b");
+        assert_eq!(&v[26..30], &[0.0, 0.0, 0.0, 1.0], "b's corner names a");
+    }
+
+    #[test]
     fn a_falling_pieces_shadow_identity_changes_as_it_moves_or_turns() {
         // docs/FELLING.md §3: a kept shadow map is drawn again when its casters' identities change;
         // a piece's must change with its pose, or its shadow would stay where it began to fall.
@@ -4890,12 +5035,12 @@ mod tests {
 
     #[test]
     fn every_kind_has_its_own_stride() {
-        let line = 4 * (3 + 3);
+        let ghost = 4 * (3 + 3);
         for (kind, stride) in [
             (Kind::Terrain, 4 * (3 + 3 + 3 + 2 + 4 + 1 + 2)),
             (Kind::Flat, 4 * (3 + 3 + 3)),
-            (Kind::Line, line),
-            (Kind::Ghost, line),
+            (Kind::Line, 4 * (3 + 3 + 3 + 1)),
+            (Kind::Ghost, ghost),
             (Kind::Fluid, 4 * (3 + 3 + 3 + 1 + 2)),
             (Kind::Cutout, 4 * (3 + 3 + 3 + 2 + 4 + 4 + 1 + 1 + 2)),
         ] {

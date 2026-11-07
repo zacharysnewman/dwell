@@ -4,7 +4,7 @@ use crate::build_drag::{BuildModeDef, DragKind};
 use crate::items::{ItemDef, ItemDrag, ItemFacing};
 
 /// The creative hotbar's items, in its order (shared/items/items.json).
-pub const ITEMS: [ItemDef; 14] = [
+pub const ITEMS: [ItemDef; 18] = [
     ItemDef { name: "dwell:stone", label: "Stone", block: "dwell:stone", rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
     ItemDef { name: "dwell:stone_slope", label: "Stone slope", block: "dwell:stone_ramp", rows: 1, drag: ItemDrag::Modes, state: &[("flooded", "false"), ("half", "bottom"), ("shape", "ramp")], facing: ItemFacing::Toward, upper: &[] },
     ItemDef { name: "dwell:stone_steep_slope", label: "Stone steep slope", block: "dwell:stone_ramp", rows: 2, drag: ItemDrag::Modes, state: &[("flooded", "false"), ("half", "bottom"), ("shape", "steep_lower")], facing: ItemFacing::Toward, upper: &[("shape", "steep_upper")] },
@@ -17,9 +17,23 @@ pub const ITEMS: [ItemDef; 14] = [
     ItemDef { name: "dwell:tall_grass", label: "Tall grass", block: "dwell:tall_grass", rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
     ItemDef { name: "dwell:build_platform", label: "Build platform", block: "dwell:build_platform", rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
     ItemDef { name: "dwell:torch", label: "Torch", block: "dwell:torch", rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
+    ItemDef { name: "dwell:dynamite", label: "Dynamite", block: "dwell:dynamite", rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
+    ItemDef { name: "dwell:dynamite_blue", label: "Blue dynamite", block: "dwell:dynamite_blue", rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
+    ItemDef { name: "dwell:dynamite_green", label: "Green dynamite", block: "dwell:dynamite_green", rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
+    ItemDef { name: "dwell:dynamite_yellow", label: "Yellow dynamite", block: "dwell:dynamite_yellow", rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
     ItemDef { name: "dwell:snowy_grass", label: "Snowy grass", block: "dwell:snowy_grass", rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
     ItemDef { name: "dwell:snowy_leaves", label: "Snowy leaves", block: "dwell:snowy_leaves", rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
 ];
+
+/// The keys that step the hotbar one slot left / right (`KeyboardEvent.code`).
+pub const HOTBAR_PREV_KEY: &str = "ArrowLeft";
+pub const HOTBAR_NEXT_KEY: &str = "ArrowRight";
+
+/// The wheel's travel (px) in one gesture that steps the hotbar one more slot.
+pub const WHEEL_NOTCH_PX: f64 = 120.0;
+
+/// The quiet (ms) after which a wheel event starts a new gesture, stepping at once.
+pub const WHEEL_GAP_MS: f64 = 200.0;
 
 /// The key that cycles the build modes (`KeyboardEvent.code`).
 pub const BUILD_MODE_KEY: &str = "KeyL";

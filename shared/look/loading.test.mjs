@@ -81,3 +81,37 @@ test('the respawn preload is data: its radius, or off', () => {
   d.respawnPreload.enabled = false;
   assert.match(preloadServerRust(validateLoading(d)), /RESPAWN_PRELOAD_RADIUS_CHUNKS: Option<i32> = None;/);
 });
+
+test('the start stages are data: a stage added by data alone is in the shell', () => {
+  const d = data();
+  d.stages.list.push({ id: 'fixtureStage', label: "Warming the fixture's cache", progress: 'count' });
+  d.stages.slowS = 5;
+  const ts = loadingTs(validateLoading(d));
+  assert.match(ts, /export type LoadingStageId = [^;]*'fixtureStage';/);
+  assert.match(ts, /\{ id: 'fixtureStage', label: "Warming the fixture's cache", progress: 'count' \},/);
+  assert.match(ts, /LOADING_STAGE_SLOW_S = 5;/);
+  // The order is the data's.
+  assert.ok(ts.indexOf("id: 'page'") < ts.indexOf("id: 'terrain'"));
+  assert.ok(ts.indexOf("id: 'terrain'") < ts.indexOf("id: 'fixtureStage'"));
+});
+
+test('bad stages fail with their entry named', () => {
+  const cases = [
+    [(d) => delete d.stages, /missing entry stages/],
+    [(d) => (d.stages.list = []), /stages\.list must be a non-empty array/],
+    [(d) => (d.stages.slowS = 0), /stages\.slowS must be a number in \[0\.5, 60\]/],
+    [(d) => (d.stages.speed = 1), /unknown entry stages\.speed/],
+    [(d) => (d.stages.list[1].id = 'Game'), /stages\.list\[1\]\.id must be a lowerCamel name/],
+    [(d) => (d.stages.list[1].id = 'page'), /stages\.list\[1\]\.id page is listed twice/],
+    [(d) => (d.stages.list[0].label = ''), /stages\.list page: label must be 1–32 characters/],
+    [(d) => (d.stages.list[0].label = 'x'.repeat(33)), /label must be 1–32 characters/],
+    [(d) => (d.stages.list[0].label = 'Loading…'), /label must not end in an ellipsis/],
+    [(d) => (d.stages.list[0].progress = 'percent'), /stages\.list page: progress must be one of bytes, count/],
+    [(d) => (d.stages.list[0].icon = 'x'), /unknown entry stages\.list\[0\]\.icon/],
+  ];
+  for (const [edit, message] of cases) {
+    const d = data();
+    edit(d);
+    assert.throws(() => validateLoading(d), message);
+  }
+});

@@ -46,8 +46,12 @@ jobs:
           node --test shared/look/fog.test.mjs
           node shared/physics/gen.mjs
           node --test shared/physics/gen.test.mjs
+          node shared/explosives/gen.mjs
+          node --test shared/explosives/gen.test.mjs
           node shared/fluids/gen.mjs
           node --test shared/fluids/gen.test.mjs
+          node shared/fluids/falls.mjs
+          node --test shared/fluids/falls.test.mjs
           node shared/look/lodblend.mjs
           node --test shared/look/lodblend.test.mjs
           node shared/look/lodcolour.mjs
@@ -70,6 +74,8 @@ jobs:
           node --test shared/look/motes.test.mjs
           node shared/look/waterflow.mjs
           node --test shared/look/waterflow.test.mjs
+          node shared/look/waterfalls.mjs
+          node --test shared/look/waterfalls.test.mjs
           node shared/look/daynight.mjs
           node --test shared/look/daynight.test.mjs
           node shared/textures/gen.mjs

@@ -12,7 +12,7 @@ const checkedIn = (p) => readFileSync(join(here, '../..', p), 'utf8');
 
 test('the checked-in data validates and generates the checked-in Rust', () => {
   assert.equal(flamesRust(validateFlames(data())), checkedIn('crates/dwell-look/src/flames.gen.rs'));
-  assert.deepEqual(flameNames(data()), ['dwell:torch']);
+  assert.deepEqual(flameNames(data()), ['dwell:torch', 'dwell:fuse']);
 });
 
 test('a flame look added by data alone reaches the Rust table (a fixture candle)', () => {
@@ -36,11 +36,11 @@ test('a flame look added by data alone reaches the Rust table (a fixture candle)
   };
   d.drawM = 32;
   const rs = flamesRust(validateFlames(d));
-  assert.match(rs, /pub static FLAMES: \[FlameLook; 2\]/);
+  assert.match(rs, /pub static FLAMES: \[FlameLook; 3\]/);
   assert.match(rs, /name: "test:candle",\n {8}ramp: &\[0xd0401c, 0xffe2a0\],\n {8}bands: 0,/);
   assert.match(rs, /embers: FlameEmbers \{ count: 0, color: 0xffc070/);
   assert.match(rs, /draw_m: 32\.0,/);
-  assert.deepEqual(flameNames(d), ['dwell:torch', 'test:candle']);
+  assert.deepEqual(flameNames(d), ['dwell:torch', 'dwell:fuse', 'test:candle']);
 });
 
 test('bad entries fail with their path named', () => {

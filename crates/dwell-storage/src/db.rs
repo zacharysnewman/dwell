@@ -198,6 +198,68 @@ pub struct SaveBatch {
     pub water: Option<Vec<u8>>,
 }
 
+/// A [`SaveBatch`] being encoded for its commit (`WorldDb::prepare`): its chunks mapped to the
+/// file's state ids and compressed, its LOD sections compressed, its bodies' records and its water
+/// compressed, one piece each `encode_step`. Nothing is written until `WorldDb::commit`.
+pub struct PreparedSave {
+    /// The batch; a chunk's voxels are dropped once encoded.
+    batch: SaveBatch,
+    /// The file's state ids with those this batch adds (`new_states`), the file's after the commit.
+    states: States,
+    new_states: Vec<(u32, String)>,
+    /// The blobs encoded so far, in the batch's order.
+    chunks: Vec<Vec<u8>>,
+    lod: Vec<Vec<u8>>,
+    bodies: Vec<Vec<u8>>,
+    water: Option<Vec<u8>>,
+}
+
+impl PreparedSave {
+    /// Encodes the next piece (a chunk, a LOD section, a body, the water); false once all are.
+    pub fn encode_step(&mut self) -> bool {
+        let b = &mut self.batch;
+        if let Some(c) = b.chunks.get_mut(self.chunks.len()) {
+            let voxels = std::mem::take(&mut c.voxels);
+            let mut world_voxels = Vec::with_capacity(voxels.len());
+            for v in voxels {
+                // Unknown ids read as air.
+                let v = if dwell_blocks::try_info(v).is_some() {
+                    v
+                } else {
+                    0
+                };
+                let id = match self.states.to_world.get(usize::from(v)).copied().flatten() {
+                    Some(id) => id,
+                    None => {
+                        let id = self.states.strings.len() as u32;
+                        let name = info(v).name;
+                        self.new_states.push((id, name.to_owned()));
+                        self.states.strings.push(name.to_owned());
+                        self.states.to_runtime.push(Some(v));
+                        self.states.set_world(v, id);
+                        id
+                    }
+                };
+                world_voxels.push(id as u16);
+            }
+            self.chunks.push(compress_chunk(&world_voxels));
+        } else if let Some(l) = b.lod_sections.get(self.lod.len()) {
+            self.lod.push(if l.encoded.is_empty() {
+                Vec::new()
+            } else {
+                compress_bytes(&l.encoded)
+            });
+        } else if let Some(body) = b.bodies.as_ref().and_then(|v| v.get(self.bodies.len())) {
+            self.bodies.push(encode_body(body));
+        } else if let (Some(water), None) = (&b.water, &self.water) {
+            self.water = Some(compress_bytes(water));
+        } else {
+            return false;
+        }
+        true
+    }
+}
+
 fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
 }
@@ -682,6 +744,39 @@ impl WorldDb {
 
     /// Writes the batch in one transaction: all of it or (on any failure) none of it.
     pub fn save(&self, batch: &SaveBatch) -> Result<(), String> {
+        let mut prepared = self.prepare(batch.clone());
+        while prepared.encode_step() {}
+        self.commit(prepared)
+    }
+
+    /// The batch, to encode a piece at a time (`PreparedSave::encode_step`) and then `commit`:
+    /// what a save costs a caller that has no thread to give it (the browser's server, §6.4).
+    /// One prepared save at a time: its new block states are numbered from the file's now.
+    pub fn prepare(&self, batch: SaveBatch) -> PreparedSave {
+        PreparedSave {
+            states: self.states.lock().expect("states").clone(),
+            new_states: Vec::new(),
+            chunks: Vec::with_capacity(batch.chunks.len()),
+            lod: Vec::with_capacity(batch.lod_sections.len()),
+            bodies: Vec::new(),
+            water: None,
+            batch,
+        }
+    }
+
+    /// Writes a prepared batch (encoded to the end: the rest is encoded here) in one transaction:
+    /// all of it or (on any failure) none of it.
+    pub fn commit(&self, mut prepared: PreparedSave) -> Result<(), String> {
+        while prepared.encode_step() {}
+        let PreparedSave {
+            batch,
+            states,
+            new_states,
+            chunks: chunk_blobs,
+            lod: lod_blobs,
+            bodies: body_records,
+            water,
+        } = prepared;
         let txn = self.db.begin_write().map_err(err)?;
         let now = now();
         let generator_version;
@@ -738,35 +833,15 @@ impl WorldDb {
                     .map_or(0, |v| u64_of(v.value()) as u32);
             }
         }
-        let mut states = self.states.lock().expect("states").clone();
-        if !batch.chunks.is_empty() {
-            // Runtime ids → world state ids; a state new to the file gets the next id.
+        if !new_states.is_empty() {
             let mut table_states = txn.open_table(BLOCK_STATES).map_err(err)?;
+            for (id, name) in &new_states {
+                table_states.insert(*id, name.as_str()).map_err(err)?;
+            }
+        }
+        if !batch.chunks.is_empty() {
             let mut chunks = txn.open_table(CHUNKS).map_err(err)?;
-            for c in &batch.chunks {
-                let mut world_voxels = Vec::with_capacity(c.voxels.len());
-                for &v in &c.voxels {
-                    // Unknown ids read as air.
-                    let v = if dwell_blocks::try_info(v).is_some() {
-                        v
-                    } else {
-                        0
-                    };
-                    let id = match states.to_world.get(usize::from(v)).copied().flatten() {
-                        Some(id) => id,
-                        None => {
-                            let id = states.strings.len() as u32;
-                            let name = info(v).name;
-                            table_states.insert(id, name).map_err(err)?;
-                            states.strings.push(name.to_owned());
-                            states.to_runtime.push(Some(v));
-                            states.set_world(v, id);
-                            id
-                        }
-                    };
-                    world_voxels.push(id as u16);
-                }
-                let blob = compress_chunk(&world_voxels);
+            for (c, blob) in batch.chunks.iter().zip(&chunk_blobs) {
                 chunks
                     .insert(
                         (c.coord.x, c.coord.y, c.coord.z),
@@ -780,12 +855,7 @@ impl WorldDb {
         }
         if !batch.lod_sections.is_empty() || batch.clear_lod {
             let mut lod = txn.open_table(LOD_SECTIONS).map_err(err)?;
-            for l in &batch.lod_sections {
-                let blob = if l.encoded.is_empty() {
-                    Vec::new()
-                } else {
-                    compress_bytes(&l.encoded)
-                };
+            for (l, blob) in batch.lod_sections.iter().zip(&lod_blobs) {
                 let c = l.coord;
                 lod.insert(
                     (c.level, c.i, c.j, c.k),
@@ -815,13 +885,13 @@ impl WorldDb {
         if let Some(bodies) = &batch.bodies {
             txn.delete_table(BODIES).map_err(err)?;
             let mut t = txn.open_table(BODIES).map_err(err)?;
-            for b in bodies {
-                t.insert(b.id, encode_body(b).as_slice()).map_err(err)?;
+            for (b, record) in bodies.iter().zip(&body_records) {
+                t.insert(b.id, record.as_slice()).map_err(err)?;
             }
         }
-        if let Some(water) = &batch.water {
+        if let Some(water) = &water {
             let mut t = txn.open_table(WATER).map_err(err)?;
-            t.insert(0, compress_bytes(water).as_slice()).map_err(err)?;
+            t.insert(0, water.as_slice()).map_err(err)?;
         }
         if let Some(hook) = &self.before_commit {
             hook()?; // dropping the transaction aborts it

@@ -215,6 +215,12 @@ pub fn loading_text(screen: &LoadingScreen) -> String {
     )
 }
 
+/// The screen's stage for the shell's list (shared/look/loading.json `stages`, by id): "join"
+/// until placed, then "terrain" (the near ring's count).
+pub fn loading_stage(screen: &LoadingScreen) -> &'static str {
+    if screen.placed { "terrain" } else { "join" }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -267,6 +273,7 @@ mod tests {
         let s = g.screen().expect("shown");
         assert_eq!(s.progress, p(10, 50));
         assert_eq!(loading_text(&s), "Loading terrain… 10 / 50");
+        assert_eq!(loading_stage(&s), "terrain");
         assert!(g.update(3000.0, p(50, 50)));
         assert_eq!(g.screen(), None);
         assert_eq!(g.last_opened(), Some((Opened::Ready, 2.0)));
@@ -305,6 +312,7 @@ mod tests {
         let s = g.screen().expect("shown from the start");
         assert!(!s.placed);
         assert_eq!(loading_text(&s), "Joining…");
+        assert_eq!(loading_stage(&s), "join");
         assert!(!g.update(500.0, p(0, 0)), "nothing placed: still joining");
         g.start(1000.0);
         assert!(g.screen().unwrap().placed);

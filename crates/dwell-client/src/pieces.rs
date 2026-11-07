@@ -470,6 +470,21 @@ fn pose_at(poses: &VecDeque<Pose>, at: f64) -> (DVec3, DQuat) {
     )
 }
 
+/// The blocks (of up to a chunk each, from the piece's lowest corner `lo`) holding a cell of the
+/// piece, in order: only these are meshed. A block whose apron alone holds a cell has no faces of
+/// its own, but meshing it cost a whole chunk's mesh: a one-cell piece at a block's corner meshed
+/// eight (a blast's 500 one-cell pieces stalled the frame 3.8 s, docs/EXPLOSIVES.md).
+pub fn own_blocks(cells: &[([i32; 3], StateId)], lo: [i32; 3]) -> Vec<[i32; 3]> {
+    let n = CHUNK_SIZE;
+    let mut keys: Vec<[i32; 3]> = cells
+        .iter()
+        .map(|(o, _)| std::array::from_fn(|k| (o[k] - lo[k]).div_euclid(n)))
+        .collect();
+    keys.sort_unstable();
+    keys.dedup();
+    keys
+}
+
 /// A piece's cells meshed in blocks of up to a chunk each (each with its neighbours' cells in its
 /// apron, so faces between blocks are hidden), the positions moved to be relative to its reference
 /// cell's centre; and how far its cells reach from it (m).
@@ -483,14 +498,68 @@ pub fn piece_meshes_mirrored(
     cells: &[([i32; 3], StateId)],
     mirror: bool,
 ) -> (Vec<ChunkMeshes>, f64) {
+    let radius = cells
+        .iter()
+        .map(|(o, _)| {
+            DVec3::new(f64::from(o[0]), f64::from(o[1]) * CELL_H, f64::from(o[2])).length()
+        })
+        .fold(0.0, f64::max)
+        + 1.0;
+    if let [(o, m)] = *cells {
+        return (one_cell_meshes(o, m, mirror), radius);
+    }
+    (meshed_blocks(cells, mirror), radius)
+}
+
+thread_local! {
+    /// One cell of each state meshed alone, per face (docs/EXPLOSIVES.md §4): a blast's ~500
+    /// one-cell pieces are a few states, each meshed once.
+    static ONE_CELL: std::cell::RefCell<HashMap<(StateId, bool), Vec<ChunkMeshes>>> =
+        std::cell::RefCell::new(HashMap::default());
+    /// How many blocks this thread has meshed for pieces (tests: what a blast's pieces cost).
+    static BLOCKS_MESHED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// How many chunk-sized blocks this thread has meshed for pieces so far.
+pub fn blocks_meshed() -> usize {
+    BLOCKS_MESHED.with(std::cell::Cell::get)
+}
+
+/// A one-cell piece's meshes: its state's, meshed once at offset 0 and kept, moved to offset `o`.
+fn one_cell_meshes(o: [i32; 3], m: StateId, mirror: bool) -> Vec<ChunkMeshes> {
+    let mut meshes = ONE_CELL.with(|c| {
+        c.borrow_mut()
+            .entry((m, mirror))
+            .or_insert_with(|| meshed_blocks(&[([0, 0, 0], m)], mirror))
+            .clone()
+    });
+    if o != [0; 3] {
+        let shift = [f64::from(o[0]), f64::from(o[1]) * CELL_H, f64::from(o[2])];
+        for meshes in &mut meshes {
+            for a in [&mut meshes.opaque, &mut meshes.cutout] {
+                for p in a.positions.chunks_exact_mut(3) {
+                    for k in 0..3 {
+                        p[k] = (f64::from(p[k]) + shift[k]) as f32;
+                    }
+                }
+            }
+        }
+    }
+    meshes
+}
+
+/// A piece's cells meshed in the blocks holding them (`own_blocks`), each with its neighbours'
+/// cells in its apron, in the piece's frame.
+fn meshed_blocks(cells: &[([i32; 3], StateId)], mirror: bool) -> Vec<ChunkMeshes> {
     let n = CHUNK_SIZE;
     let lo = cells.iter().fold([i32::MAX; 3], |a, (o, _)| {
         std::array::from_fn(|k| a[k].min(o[k]))
     });
+    let own = own_blocks(cells, lo);
     let mut blocks: HashMap<[i32; 3], Vec<StateId>> = HashMap::default();
     for &(o, m) in cells {
         let rel: [i32; 3] = std::array::from_fn(|k| o[k] - lo[k]);
-        // Its own block, and any whose apron holds it.
+        // Its own block, and any of the piece's own whose apron holds it (only those are meshed).
         for dz in -1..=1 {
             for dy in -1..=1 {
                 for dx in -1..=1 {
@@ -500,7 +569,8 @@ pub fn piece_meshes_mirrored(
                         rel[2].div_euclid(n) + dz,
                     ];
                     let local: [i32; 3] = std::array::from_fn(|k| rel[k] - b[k] * n);
-                    if local.iter().all(|&v| (-1..=n).contains(&v)) {
+                    if local.iter().all(|&v| (-1..=n).contains(&v)) && own.binary_search(&b).is_ok()
+                    {
                         blocks.entry(b).or_insert_with(|| vec![0; PADDED_VOLUME])
                             [padded_index(local[0], local[1], local[2])] = m;
                     }
@@ -509,9 +579,8 @@ pub fn piece_meshes_mirrored(
         }
     }
     let mut out = Vec::new();
-    let mut keys: Vec<[i32; 3]> = blocks.keys().copied().collect();
-    keys.sort_unstable();
-    for b in keys {
+    for b in own {
+        BLOCKS_MESHED.with(|c| c.set(c.get() + 1));
         let Ok(mut meshes) = mesh_chunk(&blocks[&b], mirror) else {
             continue;
         };
@@ -532,19 +601,26 @@ pub fn piece_meshes_mirrored(
             out.push(meshes);
         }
     }
-    let radius = cells
-        .iter()
-        .map(|(o, _)| {
-            DVec3::new(f64::from(o[0]), f64::from(o[1]) * CELL_H, f64::from(o[2])).length()
-        })
-        .fold(0.0, f64::max)
-        + 1.0;
-    (out, radius)
+    out
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_one_cell_piece_meshes_one_block_not_the_blocks_whose_apron_holds_it() {
+        // docs/EXPLOSIVES.md: a blast's 500 one-cell pieces each meshed eight chunk-sized blocks
+        // (its cell in seven aprons), 3.8 s of one frame in Chrome. Red before: 8 blocks.
+        let stone = dwell_blocks::require("dwell:stone");
+        let cells = vec![([0, 0, 0], stone)];
+        assert_eq!(own_blocks(&cells, [0, 0, 0]), vec![[0, 0, 0]]);
+        let (meshes, _) = piece_meshes(&cells);
+        assert_eq!(meshes.len(), 1);
+        let n = CHUNK_SIZE;
+        let tall: Vec<_> = (0..n + 2).map(|y| ([0, y, 0], stone)).collect();
+        assert_eq!(own_blocks(&tall, [0, 0, 0]), vec![[0, 0, 0], [0, 1, 0]]);
+    }
 
     #[test]
     fn a_piece_taller_than_a_chunk_meshes_in_blocks_round_its_reference_cell() {
@@ -782,5 +858,63 @@ mod tests {
             1
         );
         assert!(sounds[0].intensity > 0.2);
+    }
+
+    #[test]
+    fn a_blasts_512_one_cell_pieces_arrive_within_a_frame() {
+        // docs/EXPLOSIVES.md §3: a blast's ~500 one-cell pieces all arrive in one frame. Each
+        // meshed a chunk-sized block of its own (0.53 ms natively, 273 ms for 512; a 0.63 s frame
+        // in Chrome). Red before: 512 blocks meshed. Now each state's cell is meshed once.
+        let states = ["dwell:stone", "dwell:dirt", "dwell:sand"].map(dwell_blocks::require);
+        let mut pieces = Pieces::default();
+        let mut sounds = Vec::new();
+        let before = blocks_meshed();
+        let t = std::time::Instant::now();
+        for id in 0..512u32 {
+            let (meshes, radius) = pieces.spawn(
+                &EntitySpawn {
+                    id,
+                    kind: 0,
+                    origin: [f64::from(id % 8), 40.25, f64::from(id / 8)],
+                    rotation: [0.0, 0.0, 0.0, 1.0],
+                    carriers: 1,
+                    cells: vec![dwell_protocol::PieceCellNet {
+                        offset: [0, 0, 0],
+                        state: states[id as usize % 3],
+                    }],
+                },
+                0.0,
+                &mut sounds,
+            );
+            assert_eq!(meshes.len(), 1);
+            assert!(!meshes[0].opaque.positions.is_empty());
+            assert!((radius - 1.0).abs() < 1e-9);
+        }
+        let ms = t.elapsed().as_secs_f64() * 1000.0;
+        let meshed = blocks_meshed() - before;
+        println!("512 one-cell pieces: {ms:.1} ms, {meshed} blocks meshed");
+        assert!(meshed <= states.len(), "{meshed} blocks meshed");
+        assert!(ms < 33.0, "{ms:.1} ms for 512 pieces");
+    }
+
+    #[test]
+    fn a_one_cell_piece_meshes_as_its_cell_alone_wherever_its_offset() {
+        // both-faces: the kept one-cell mesh, moved to its offset, is the cell meshed afresh,
+        // face A's and face B's (mirrored) alike.
+        let stone = dwell_blocks::require("dwell:stone");
+        for mirror in [false, true] {
+            for o in [[0, 0, 0], [3, -2, 1], [-40, 70, 5]] {
+                let (kept, _) = piece_meshes_mirrored(&[(o, stone)], mirror);
+                let fresh = meshed_blocks(&[(o, stone)], mirror);
+                assert_eq!(kept.len(), fresh.len());
+                for (a, b) in kept.iter().zip(&fresh) {
+                    assert_eq!(a.opaque.normals, b.opaque.normals);
+                    assert_eq!(a.opaque.uvs, b.opaque.uvs);
+                    for (p, q) in a.opaque.positions.iter().zip(&b.opaque.positions) {
+                        assert!((p - q).abs() < 1e-4, "{o:?} {mirror}: {p} vs {q}");
+                    }
+                }
+            }
+        }
     }
 }

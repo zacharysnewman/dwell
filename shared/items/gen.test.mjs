@@ -13,6 +13,8 @@ test("the build's items validate", () => {
   assert.match(rs, /BUILD_MODE_KEY: &str = "KeyL"/);
   assert.match(rs, /name: "dwell:line", label: "Line", kind: DragKind::Line/);
   assert.match(buildModesTs(loadItems()), /key: 'KeyL'/);
+  assert.match(rs, /HOTBAR_PREV_KEY: &str = "ArrowLeft"/);
+  assert.match(buildModesTs(loadItems()), /HOTBAR_KEYS = \{ prev: 'ArrowLeft', next: 'ArrowRight' \}/);
 });
 
 test('an item added by data alone is emitted', () => {
@@ -56,6 +58,11 @@ test('bad items fail with the entry and the problem', () => {
     [(d) => (item(d, 'dwell:stone_slope').block = 'dwell:dirt_ramp'), new RegExp(`items\\[${slope}\\]\\.block dwell:dirt_ramp is not placeable`)],
     [(d) => (d.buildModes.modes[1].kind = 'wall'), /buildModes\.modes\[1\]\.kind "wall" must be one of line, level/],
     [(d) => (d.buildModes.modes[1].name = 'dwell:line'), /buildModes\.modes\[1\]\.name dwell:line is listed twice/],
+    [(d) => (d.hotbar.prevKey = 'left'), /hotbar\.prevKey must be a KeyboardEvent\.code/],
+    [(d) => (d.hotbar.nextKey = d.hotbar.prevKey), /hotbar\.prevKey and hotbar\.nextKey must differ/],
+    [(d) => (d.hotbar.wheelNotchPx = 0), /hotbar\.wheelNotchPx must be 1\.\.1000/],
+    [(d) => (d.hotbar.wheelGapMs = 1.5), /hotbar\.wheelGapMs must be 0\.\.2000/],
+    [(d) => (d.hotbar.extra = 1), /hotbar: unknown extra/],
     [(d) => (d.buildModes.key = 'l'), /buildModes\.key must be a KeyboardEvent\.code/],
     [(d) => (d.buildModes.modes = []), /buildModes\.modes must be a non-empty list/],
     [(d) => (d.buildModes.clearance = 2), /buildModes\.clearance must be 0\.\.0\.5/],

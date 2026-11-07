@@ -4,7 +4,7 @@
 // this table describes them, one entry per action, so a new binding is a new entry here.
 
 import { BRUSH_PRESETS } from './brushes.gen';
-import { BUILD_MODES } from './buildModes.gen';
+import { BUILD_MODES, HOTBAR_KEYS } from './buildModes.gen';
 import { SPYGLASS } from './spyglass.gen';
 
 export interface Control {
@@ -53,6 +53,11 @@ export const KEYBOARD: ControlGroup[] = [
         when: BUILD_MODES.modes.map((m) => m.label).join(', '),
       },
       { action: 'Choose block', keys: ['1 – 9', 'Wheel'] },
+      {
+        action: 'Previous / next block',
+        keys: [keyLabel(HOTBAR_KEYS.prev), keyLabel(HOTBAR_KEYS.next), 'Swipe sideways'],
+        when: 'a touchpad’s two-finger swipe',
+      },
     ],
   },
   {
@@ -75,10 +80,14 @@ export const KEYBOARD: ControlGroup[] = [
     ],
   },
   {
-    // The brush tool (dwell-game brush_tool.rs `brush_key`; BRUSHES.md), in sandbox worlds.
+    // The brush tool (dwell-game brush_tool.rs `brush_key`; BRUSHES.md), in creative worlds.
     title: 'Brushes',
     controls: [
-      { action: 'Brush tool on or off', keys: ['V'], when: 'in sandbox worlds' },
+      {
+        action: 'Brush tool on or off',
+        keys: ['V'],
+        when: 'in creative worlds (every world for now)',
+      },
       { action: 'Paint at the targeted block', keys: ['Left click'], when: 'up to 128 m away' },
       { action: 'Paint in front of it', keys: ['Right click'] },
       { action: 'Pick the block to replace', keys: ['Middle click', '⌥+Click', 'Alt+Click'] },
@@ -124,6 +133,10 @@ export function keyLabel(code: string): string {
     BracketLeft: '[',
     BracketRight: ']',
     Backquote: '`',
+    ArrowLeft: '←',
+    ArrowRight: '→',
+    ArrowUp: '↑',
+    ArrowDown: '↓',
   };
   return named[code] ?? code.replace(/^Key|^Digit/, '');
 }

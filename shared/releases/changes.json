@@ -2,6 +2,213 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions card. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.49.52",
+      "changes": [
+        "Stirred water no longer slowly gains or loses water as it settles"
+      ]
+    },
+    {
+      "version": "0.49.51",
+      "changes": [
+        "Explosion smoke and dust now billow out the open side: out of a cliff face, down from a cave roof"
+      ]
+    },
+    {
+      "version": "0.49.50",
+      "changes": [
+        "Yellow dynamite: clears 4 m and cracks the rock around it that touches air, which crumbles and falls",
+        "Set under a cave roof, it brings the roof down"
+      ]
+    },
+    {
+      "version": "0.49.49",
+      "changes": [
+        "The left and right arrow keys step the hotbar one slot at a time",
+        "Swiping sideways on a touchpad steps the hotbar too",
+        "Touchpad scrolling no longer skips several slots at once"
+      ]
+    },
+    {
+      "version": "0.49.48",
+      "changes": [
+        "Dynamite set off in or beside water now makes waves that run to the banks and bounce back",
+        "Floating pieces and swimmers ride the waves"
+      ]
+    },
+    {
+      "version": "0.49.47",
+      "changes": [
+        "Blue dynamite: a 4 m blast that clears everything in it and throws nothing",
+        "Green dynamite: clears 4 m and flings the ground round it out to 5 m, like red's"
+      ]
+    },
+    {
+      "version": "0.49.46",
+      "changes": [
+        "Dynamite set flush in the ground blows a real crater and throws its debris clear instead of dropping it back in",
+        "Dynamite's blast is 5 m again, with twice the force"
+      ]
+    },
+    {
+      "version": "0.49.45",
+      "changes": [
+        "Dynamite blasts out through the open side: up from the ground, out of a cliff face, down from a cave roof",
+        "Rock a blast would only drive into more rock stays put, so a blast throws about half as many pieces; buried dynamite leaves a cavity"
+      ]
+    },
+    {
+      "version": "0.49.44",
+      "changes": [
+        "A river running through still water no longer sends ripples back through it, so a filled pond behind a dam can go still"
+      ]
+    },
+    {
+      "version": "0.49.43",
+      "changes": [
+        "A river no longer slows down right next to a block you place on its bank"
+      ]
+    },
+    {
+      "version": "0.49.42",
+      "changes": [
+        "Teleporting or respawning into the hills no longer stalls the game for a moment"
+      ]
+    },
+    {
+      "version": "0.49.41",
+      "changes": [
+        "Dynamite's blast is smaller again (4 m) but throws its pieces and players half again as hard",
+        "Big blasts no longer slow the game for as long"
+      ]
+    },
+    {
+      "version": "0.49.40",
+      "changes": [
+        "Behind the scenes: measured why the full reservoir behind a dam never settles, and added the tests that reproduce it (no change to play yet)"
+      ]
+    },
+    {
+      "version": "0.49.39",
+      "changes": [
+        "Behind the scenes: checked that autosaving in the browser doesn't stall the game (a few milliseconds at most), and pinned how the server treats an empty chunk request"
+      ]
+    },
+    {
+      "version": "0.49.38",
+      "changes": [
+        "Dynamite is bigger: its blast reaches 5 m, destroys the blocks within 2 m outright and throws the rest out as pieces",
+        "A blast now hurts only players within 2 m of it; farther off it just knocks you back"
+      ]
+    },
+    {
+      "version": "0.49.37",
+      "changes": [
+        "The game runs faster in the browser, most of all in a big dynamite blast: it now uses the browser's WebAssembly SIMD",
+        "A browser too old for that now says so, naming the versions that work, instead of showing a blank page"
+      ]
+    },
+    {
+      "version": "0.49.36",
+      "changes": [
+        "Moving around the world no longer hitches as new terrain comes into view: the work that decides which chunks are empty sky now runs in the background"
+      ]
+    },
+    {
+      "version": "0.49.35",
+      "changes": [
+        "Your world's autosave no longer causes a hitch: it is written a little at a time between moments of play"
+      ]
+    },
+    {
+      "version": "0.49.34",
+      "changes": [
+        "A dynamite blast keeps the game smooth: no more stutters while its pieces fly",
+        "Your world keeps running closer to full speed after a big blast, as water refilling the crater no longer rebuilds the ground's collision"
+      ]
+    },
+    {
+      "version": "0.49.33",
+      "changes": [
+        "A big dynamite blast no longer freezes the screen for over half a second as its pieces fly",
+        "Pieces floating in water after a blast cost the world less to simulate"
+      ]
+    },
+    {
+      "version": "0.49.32",
+      "changes": [
+        "Dynamite: place it, then light it with a torch held against it; after its fuse it blows, flinging every block around it",
+        "A blast knocks back and hurts anyone near it (standing on it is fatal), sets off other dynamite nearby and blows water out",
+        "Explosions flash, throw up smoke and dust, boom (quieter far away) and shake the view; each can be turned off in Settings → Explosions",
+        "Many falling pieces at once no longer freeze the screen for seconds"
+      ]
+    },
+    {
+      "version": "0.49.31",
+      "changes": [
+        "Waterfalls: water pouring over a drop, such as a notch cut in a dam, now falls as a sheet with foam and spray where it lands",
+        "A waterfall pushes you down and away from it, and can't be swum or jumped up; floating logs and rafts under one are pushed too",
+        "Each waterfall rushes, louder the more water it carries and the nearer you are",
+        "Settings → Water → Waterfalls turns the falling sheets off"
+      ]
+    },
+    {
+      "version": "0.49.30",
+      "changes": [
+        "The loading screen lists what it is doing as the game starts, each step with its time, so a slow one shows",
+        "The game's download shows in MB, and shaping a new world's map counts its faces",
+        "A new world starts a little sooner: its file opens while the world map is still being shaped"
+      ]
+    },
+    {
+      "version": "0.49.29",
+      "changes": [
+        "Sand undercut in a dig falls down at once and is blocks again in a few seconds, instead of hanging in the air for half a minute",
+        "Collapses and heaps of falling pieces cost the world far less time, so the game stays smooth while they fall",
+        "Fixed a crash when a ramp was placed deep underground"
+      ]
+    },
+    {
+      "version": "0.49.28",
+      "changes": [
+        "Brushes work in every world now, not just the sandbox (V turns them on)",
+        "Brushes reach 256 m, and always show where they will act, even aimed at the sky or at unloaded ground",
+        "Block, selection and brush outlines stay the same width on screen, so far ones are easy to see"
+      ]
+    },
+    {
+      "version": "0.49.27",
+      "changes": [
+        "Behind the scenes: faster turnaround on fixes (the project's working rules)"
+      ]
+    },
+    {
+      "version": "0.49.26",
+      "changes": [
+        "Ground you have built on or dug no longer looks terraced from far away",
+        "Distant terrain still being updated when the world saves is updated when you return"
+      ]
+    },
+    {
+      "version": "0.49.25",
+      "changes": [
+        "The river below a dam now dries up completely, down to where the next stream joins it, in saved worlds too",
+        "Water left in a dip of the dry riverbed stays there, still"
+      ]
+    },
+    {
+      "version": "0.49.24",
+      "changes": [
+        "Rivers no longer seem to stop on their level stretches: a reach that lies flat runs as fast as the river around it",
+        "The flow on rivers now shows as far out as it is drawn, not stopping 30 to 50 m away"
+      ]
+    },
+    {
+      "version": "0.49.23",
+      "changes": [
+        "Water no longer stands on top of a dam and pours off it for ever: once the dam is higher than the river, what covered it drains away, in saved worlds too"
+      ]
+    },
+    {
       "version": "0.49.22",
       "changes": [
         "Falls of up to 10 m never hurt; past that the damage climbs quickly, and a 20 m fall is lethal"

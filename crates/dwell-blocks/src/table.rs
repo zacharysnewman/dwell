@@ -152,6 +152,21 @@ pub fn try_info(id: StateId) -> Option<&'static StateInfo> {
     }
 }
 
+/// What a state is to terrain collision: 0 when nothing stops at it (air, liquids, passable
+/// blocks such as leaves), else its shape's index + 1; `u16::MAX` beyond the table. Two states of
+/// one class collide alike, so a write between them (water filling a crater, a log's axis turned)
+/// changes no collision (`dwell_world::Chunk::collision_revision`).
+#[inline]
+pub fn collision_class(id: StateId) -> u16 {
+    try_info(id).map_or(u16::MAX, |s| {
+        if s.solid && !s.passable {
+            s.shape_index.saturating_add(1)
+        } else {
+            0
+        }
+    })
+}
+
 /// The state's row. Panics beyond the table (ids come from the table or through a session's
 /// checked mapping).
 #[inline]

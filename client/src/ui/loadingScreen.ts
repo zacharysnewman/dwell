@@ -6,9 +6,12 @@
 // it turns white and fades out (`LOADING_FADE`, shared/look/loading.json's fade), uncovering the
 // view and the HUD together: quick on a CPU adapter, and none (or quick) for prefers-reduced-motion.
 // Opted out for testing with `?loading=off` or the `dwell.loading` store set to "off" (the e2e
-// suite's storage does), it never shows.
+// suite's storage does), it never shows. While it waits it lists the start's stages as they run,
+// each with its time (`StageTracker`, loadingStages.ts; shared/look/loading.json `stages`), so a
+// slow one shows rather than the screen looking hung; the headline and the bar follow the latest.
 import type { KeyValueStore } from '../local/worldIndex';
 import { LOADING_FADE } from './loading.gen';
+import { PERFORMANCE_MARKS, StageTracker, stageFraction, stagesFromHud } from './loadingStages';
 
 /** The dev store that turns the screen off ("off"); anything else, or nothing, leaves it on. */
 export const LOADING_KEY = 'dwell.loading';
@@ -16,6 +19,8 @@ export const LOADING_KEY = 'dwell.loading';
 /** `Client.hud().loading`: null once open (undefined before the game starts). */
 export interface LoadingHud {
   text: string;
+  /** Its stage (shared/look/loading.json `stages`): `join`, then `terrain`; `worldMap`. */
+  stage?: string;
   ready: number;
   needed: number;
 }
@@ -137,16 +142,27 @@ export const WAITING_CLASS = 'loading-wait';
 export class LoadingScreen {
   private readonly root: HTMLDivElement;
   private readonly text: HTMLDivElement;
+  private readonly bar: HTMLDivElement;
   private readonly fill: HTMLDivElement;
+  private readonly list: HTMLOListElement;
   private readonly flow: LoadingFlow;
   private readonly reducedMotion: boolean;
   private shown: string | null = null;
   private drawn: LoadingPhase | null = null;
+  private ticker: ReturnType<typeof setInterval> | null = null;
+  /** The start's stages (shared/look/loading.json `stages`): reported by id, listed with times. */
+  readonly stages: StageTracker;
   /** Called once each time the screen opens (the fade begins). */
   onOpen: (() => void) | null = null;
 
   /** Up at once when `enabled`: the first thing the page shows. */
-  constructor(parent: HTMLElement, enabled: boolean, reducedMotion: boolean) {
+  constructor(
+    parent: HTMLElement,
+    enabled: boolean,
+    reducedMotion: boolean,
+    stages: StageTracker = new StageTracker(undefined, undefined, PERFORMANCE_MARKS),
+  ) {
+    this.stages = stages;
     this.flow = new LoadingFlow(
       enabled,
       LOADING_FADE,
@@ -166,16 +182,26 @@ export class LoadingScreen {
     this.text = document.createElement('div');
     this.text.className = 'ls-text';
     this.text.textContent = 'Starting…';
-    const bar = document.createElement('div');
-    bar.className = 'ls-bar';
+    this.bar = document.createElement('div');
+    this.bar.className = 'ls-bar';
     this.fill = document.createElement('div');
     this.fill.className = 'ls-fill';
     this.fill.style.width = '0%';
-    bar.append(this.fill);
-    sheet.append(title, this.text, bar);
+    this.bar.append(this.fill);
+    // The stages so far, each with its time (read by the screen, not announced line by line).
+    this.list = document.createElement('ol');
+    this.list.className = 'ls-stages';
+    this.list.setAttribute('aria-hidden', 'true');
+    sheet.append(title, this.text, this.bar, this.list);
     this.root.append(sheet);
     parent.append(this.root);
     this.draw(1);
+    // The running stage's time counts up even while the page has no frames yet (the WASM load).
+    if (enabled) {
+      this.ticker = setInterval(() => {
+        this.drawStages(performance.now());
+      }, 100);
+    }
   }
 
   /** The adapter is a CPU (software) one: the quick fade. */
@@ -185,24 +211,20 @@ export class LoadingScreen {
 
   /** The latest frame's loading state (`Client.hud()`); `nowMs` the frame's clock. */
   frame(f: LoadingFrame, nowMs: number): void {
+    if (f.loading) stagesFromHud(this.stages, f.loading, nowMs);
     const before = this.flow.openings;
     const opacity = this.flow.update(f, nowMs / 1000);
-    if (this.flow.openings !== before) this.onOpen?.();
+    if (this.flow.openings !== before) {
+      // Opened: this wait's stages end (a respawn's wait lists its own).
+      this.stages.clear(nowMs);
+      this.onOpen?.();
+    }
     this.draw(opacity);
-  }
-
-  /**
-   * What the page is doing before the client has a readout (shaping a local world's maps, ADR
-   * 0049): shown while waiting without one.
-   */
-  note(text: string): void {
-    if (this.flow.phase !== 'waiting' || this.flow.hud) return;
-    this.shown = null;
-    this.text.textContent = text;
   }
 
   /** The game did not start (an error, the menu): the screen goes, the page shows what it says. */
   abort(): void {
+    this.stages.endAll(performance.now());
     this.flow.abort();
     this.draw(0);
   }
@@ -214,15 +236,49 @@ export class LoadingScreen {
       this.root.hidden = phase === 'open';
       this.root.classList.toggle('ls-fading', phase === 'fading');
       document.body.classList.toggle(WAITING_CLASS, phase === 'waiting');
+      if (phase === 'open' && this.ticker !== null) {
+        clearInterval(this.ticker);
+        this.ticker = null;
+      }
     }
     this.root.style.opacity = phase === 'fading' ? opacity.toFixed(3) : '';
-    const h = this.flow.hud;
-    if (phase !== 'waiting' || !h) return;
-    const key = `${h.text}|${String(h.ready)}|${String(h.needed)}`;
+    if (phase === 'waiting') this.drawStages(performance.now());
+  }
+
+  /** The headline (the running stage), the bar (its progress) and the list, at `nowMs`. */
+  private drawStages(nowMs: number): void {
+    if (this.flow.phase !== 'waiting') return;
+    const lines = this.stages.lines(nowMs);
+    const current = this.stages.current();
+    const head = lines.find((l) => l.id === current?.id);
+    const fraction = stageFraction(current);
+    const key = lines.map((l) => `${l.text}|${l.progress}|${l.time}|${String(l.slow)}`).join(';');
     if (key === this.shown) return;
     this.shown = key;
-    this.text.textContent = h.text;
-    this.fill.style.width = `${(loadingFraction(h) * 100).toFixed(1)}%`;
+    if (head) this.text.textContent = head.progress ? `${head.text} ${head.progress}` : head.text;
+    this.bar.classList.toggle('ls-indeterminate', fraction === null);
+    this.fill.style.width = fraction === null ? '' : `${(fraction * 100).toFixed(1)}%`;
+    // The list, its rows kept and updated in place.
+    while (this.list.children.length > lines.length) this.list.lastElementChild?.remove();
+    lines.forEach((l, i) => {
+      let row = this.list.children[i] as HTMLLIElement | undefined;
+      if (!row) {
+        row = document.createElement('li');
+        row.append(
+          Object.assign(document.createElement('span'), { className: 'ls-stage-name' }),
+          Object.assign(document.createElement('span'), { className: 'ls-stage-progress' }),
+          Object.assign(document.createElement('span'), { className: 'ls-stage-time' }),
+        );
+        this.list.append(row);
+      }
+      row.dataset.stage = l.id;
+      row.classList.toggle('ls-running', l.running);
+      row.classList.toggle('ls-slow', l.slow);
+      const [name, progress, time] = row.children;
+      if (name) name.textContent = l.text;
+      if (progress) progress.textContent = l.progress;
+      if (time) time.textContent = l.time;
+    });
   }
 
   /** Waiting or fading: something covers the view. */

@@ -547,7 +547,7 @@ fn a_brush_stroke_in_the_sandbox_comes_back_from_the_server_and_undoes_as_one_st
     let SessionState::Joined {
         region_edits,
         brushes,
-        generator_version,
+        generator_version: _,
         ..
     } = rig.session.state().clone()
     else {
@@ -555,7 +555,7 @@ fn a_brush_stroke_in_the_sandbox_comes_back_from_the_server_and_undoes_as_one_st
     };
     assert!(brushes, "a sandbox server announces brushes");
     let game = rig.game.as_mut().unwrap();
-    game.set_capabilities(region_edits, brushes, generator_version);
+    game.set_capabilities(region_edits, brushes);
     assert!(game.brush.available);
     assert!(game.brush.reach >= 128.0);
     game.brush_key(BrushAction::Toggle);
@@ -1407,7 +1407,7 @@ fn predicting_rig(latency: u32) -> Rig {
     let SessionState::Joined {
         region_edits,
         brushes,
-        generator_version,
+        generator_version: _,
         ..
     } = rig.session.state().clone()
     else {
@@ -1416,7 +1416,7 @@ fn predicting_rig(latency: u32) -> Rig {
     rig.game
         .as_mut()
         .unwrap()
-        .set_capabilities(region_edits, brushes, generator_version);
+        .set_capabilities(region_edits, brushes);
     rig.add_guest();
     // The guest joins (the same registry: no prompt) and asks for explicit chunks.
     assert!(rig.run_until(120, |r| {
@@ -1936,7 +1936,7 @@ fn towering_rise(steps: usize) -> f64 {
     let SessionState::Joined {
         region_edits,
         brushes,
-        generator_version,
+        generator_version: _,
         ..
     } = rig.session.state().clone()
     else {
@@ -1945,7 +1945,7 @@ fn towering_rise(steps: usize) -> f64 {
     rig.game
         .as_mut()
         .unwrap()
-        .set_capabilities(region_edits, brushes, generator_version);
+        .set_capabilities(region_edits, brushes);
     target_at(&mut rig, 0.0, -89.0);
     rig.run_until(60, |_| false);
     let feet0 = rig.game.as_ref().unwrap().debug_state().feet[1];
@@ -2138,7 +2138,7 @@ fn pool_rig(in_water: bool) -> Rig {
     let SessionState::Joined {
         region_edits,
         brushes,
-        generator_version,
+        generator_version: _,
         ..
     } = rig.session.state().clone()
     else {
@@ -2147,7 +2147,7 @@ fn pool_rig(in_water: bool) -> Rig {
     rig.game
         .as_mut()
         .unwrap()
-        .set_capabilities(region_edits, brushes, generator_version);
+        .set_capabilities(region_edits, brushes);
     let feet = if in_water {
         [0.5, f64::from(g - 6) * dwell_world::CELL_H, 4.5]
     } else {

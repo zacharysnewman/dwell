@@ -106,6 +106,64 @@ pub enum InputEvent {
     Brush(BrushAction),
     /// The build mode key (`build_drag::BUILD_MODE_KEY`, data): the next mode.
     BuildMode,
+    /// A hotbar step key (`items::HOTBAR_PREV_KEY` / `HOTBAR_NEXT_KEY`, data): −1 or +1 slot.
+    HotbarStep(i32),
+}
+
+/// Turns a stream of wheel deltas on one axis into hotbar steps (docs/ITEMS.md §6). A mouse sends
+/// one event a notch; a touchpad sends many small ones and keeps sending them as momentum, so one
+/// step an event made a sensitive pad skip several slots. The first event after a quiet gap steps
+/// at once (a notch), then each `notch` of travel in the same direction steps one more.
+#[derive(Clone, Copy, Debug)]
+pub struct WheelAccumulator {
+    /// Travel since the last step, signed (px).
+    travel: f64,
+    /// The gesture's direction (±1; 0 before the first).
+    dir: f64,
+    /// When the last event came (ms); None before the first.
+    last_ms: Option<f64>,
+    pub notch: f64,
+    pub gap_ms: f64,
+}
+
+impl Default for WheelAccumulator {
+    fn default() -> Self {
+        Self::new(crate::items::WHEEL_NOTCH_PX, crate::items::WHEEL_GAP_MS)
+    }
+}
+
+impl WheelAccumulator {
+    pub fn new(notch: f64, gap_ms: f64) -> Self {
+        Self {
+            travel: 0.0,
+            dir: 0.0,
+            last_ms: None,
+            notch,
+            gap_ms,
+        }
+    }
+
+    /// A wheel event's delta on this axis at `now_ms`: the step (+1 or −1), if it makes one.
+    pub fn push(&mut self, delta: f64, now_ms: f64) -> Option<i32> {
+        if delta == 0.0 || !delta.is_finite() {
+            return None;
+        }
+        let fresh = self.last_ms.is_none_or(|t| now_ms - t > self.gap_ms);
+        self.last_ms = Some(now_ms);
+        let sign = delta.signum();
+        if fresh || sign != self.dir {
+            // A new gesture, or the direction reversed: step at once, and count travel from here.
+            self.travel = 0.0;
+            self.dir = sign;
+            return Some(sign as i32);
+        }
+        self.travel += delta;
+        if self.travel.abs() >= self.notch {
+            self.travel -= self.notch * sign;
+            return Some(sign as i32);
+        }
+        None
+    }
 }
 
 /// A key press's results: whether the shell should `preventDefault()` it, and what it asks for.
@@ -158,6 +216,9 @@ pub struct KeyboardMouseInput {
     /// The controller (docs/GAMEPAD.md): its move stick and held buttons join the keys in
     /// [`Self::sample`].
     pub gamepad: Gamepad,
+    /// The wheel's vertical and horizontal travel, stepped by notches ([`Self::wheel`]).
+    pub wheel_y: WheelAccumulator,
+    pub wheel_x: WheelAccumulator,
 }
 
 impl Default for KeyboardMouseInput {
@@ -172,6 +233,8 @@ impl Default for KeyboardMouseInput {
             brushes: false,
             brush_active: false,
             gamepad: Gamepad::new(),
+            wheel_y: WheelAccumulator::default(),
+            wheel_x: WheelAccumulator::default(),
         }
     }
 }
@@ -270,6 +333,22 @@ impl KeyboardMouseInput {
                 },
             };
         }
+        // The hotbar's step keys (docs/ITEMS.md §6), while playing; a held key repeats.
+        if self.pointer_locked && !ctrl && !meta {
+            let step = if code == crate::items::HOTBAR_PREV_KEY {
+                Some(-1)
+            } else if code == crate::items::HOTBAR_NEXT_KEY {
+                Some(1)
+            } else {
+                None
+            };
+            if let Some(step) = step {
+                return KeyDown {
+                    prevent_default: true,
+                    events: vec![InputEvent::HotbarStep(step)],
+                };
+            }
+        }
         if self.pointer_locked
             && let Some(tool) = tool_for_key(code, ctrl || meta, shift)
         {
@@ -343,9 +422,19 @@ impl KeyboardMouseInput {
         }
     }
 
-    /// A `wheel` event: the hotbar step (+1 next slot, −1 previous), if any.
-    pub fn wheel(&self, delta_y: f64) -> Option<i32> {
-        (self.pointer_locked && delta_y != 0.0).then_some(if delta_y > 0.0 { 1 } else { -1 })
+    /// A `wheel` event (`deltaX`, `deltaY` in px, the event's time): the vertical step and the
+    /// horizontal step (+1 next slot, −1 previous), each if any, through the notch accumulators.
+    pub fn wheel(&mut self, delta_x: f64, delta_y: f64, now_ms: f64) -> (Option<i32>, Option<i32>) {
+        if !self.pointer_locked {
+            return (None, None);
+        }
+        // A swipe is never exactly one axis: only the dominant one counts, so a vertical swipe
+        // doesn't step sideways too.
+        if delta_y.abs() >= delta_x.abs() {
+            (self.wheel_y.push(delta_y, now_ms), None)
+        } else {
+            (None, self.wheel_x.push(delta_x, now_ms))
+        }
     }
 
     /// A `mousemove` (`movementX`, `movementY`) while the pointer is locked turns the view.
@@ -639,7 +728,7 @@ mod tests {
         let mut input = KeyboardMouseInput::new();
         input.mouse_move(100.0, 0.0);
         assert_eq!(input.mouse_down(0), None);
-        assert_eq!(input.wheel(3.0), None);
+        assert_eq!(input.wheel(0.0, 3.0, 0.0), (None, None));
         input.pointer_locked = true;
         input.mouse_move(100.0, -1000.0);
         assert!((input.look.yaw - 348.0).abs() < 1e-9); // turning right decreases yaw
@@ -649,7 +738,59 @@ mod tests {
         assert!(input.look.yaw.abs() < 1e-9);
         assert_eq!(input.mouse_down(0), Some(EditAction::Break));
         assert_eq!(input.mouse_down(2), Some(EditAction::Place));
-        assert_eq!(input.wheel(-0.5), Some(-1));
+        assert_eq!(input.wheel(0.0, -0.5, 0.0), (Some(-1), None));
+    }
+
+    #[test]
+    fn a_mouse_notch_steps_once_and_a_touchpad_swipe_steps_by_its_travel() {
+        let mut w = WheelAccumulator::new(120.0, 200.0);
+        // Mouse notches, apart: one step each.
+        assert_eq!(w.push(100.0, 0.0), Some(1));
+        assert_eq!(w.push(100.0, 500.0), Some(1));
+        assert_eq!(w.push(-4.0, 1000.0), Some(-1));
+        // A touchpad swipe: 60 events of 5 px, 8 ms apart (300 px), then momentum dying away.
+        let mut w = WheelAccumulator::new(120.0, 200.0);
+        let mut steps = 0;
+        let mut t = 0.0;
+        for _ in 0..60 {
+            steps += w.push(5.0, t).unwrap_or(0);
+            t += 8.0;
+        }
+        for d in [4.0, 3.0, 2.0, 2.0, 1.0, 1.0, 0.5] {
+            steps += w.push(d, t).unwrap_or(0);
+            t += 16.0;
+        }
+        // One at once, one per 120 px after it: 1 + 2 = 3 over 313.5 px, not one per event (67).
+        assert_eq!(steps, 3);
+        // Reversing in the same gesture steps back at once, then needs a notch's travel again.
+        assert_eq!(w.push(-1.0, t), Some(-1));
+        assert_eq!(w.push(-1.0, t + 8.0), None);
+    }
+
+    #[test]
+    fn a_sideways_swipe_steps_the_hotbar_and_a_vertical_one_does_not_step_it_sideways() {
+        let mut input = KeyboardMouseInput::new();
+        input.pointer_locked = true;
+        assert_eq!(input.wheel(30.0, 2.0, 0.0), (None, Some(1)));
+        assert_eq!(input.wheel(-2.0, -30.0, 1000.0), (Some(-1), None));
+    }
+
+    #[test]
+    fn the_step_keys_step_the_hotbar_while_playing() {
+        let (prev, next) = (crate::items::HOTBAR_PREV_KEY, crate::items::HOTBAR_NEXT_KEY);
+        let mut input = KeyboardMouseInput::new();
+        assert!(input.key_down(next, false, false, false).events.is_empty());
+        input.key_up(next);
+        input.pointer_locked = true;
+        let k = input.key_down(prev, false, false, false);
+        assert!(k.prevent_default);
+        assert_eq!(k.events, vec![InputEvent::HotbarStep(-1)]);
+        // Held, it repeats.
+        assert_eq!(
+            input.key_down(next, true, false, false).events,
+            vec![InputEvent::HotbarStep(1)]
+        );
+        assert!(!input.key_held(next));
     }
 
     #[test]

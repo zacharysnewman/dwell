@@ -48,7 +48,7 @@ nearest lights and (T2) the shadow maps' kinds.
   is the irradiance at the flame (× the linear colour); the light ends smoothly at `radiusM`; `flicker`
   takes up to `amount` of the strength, wavering at `speed` cycles a second; `shadows` says whether
   it may cast shadows (T2); `flame` (optional) names the flame look drawn where it burns (§6, a
-  name in `shared/look/flames.json`; `LightInfo::flame`). The build has `dwell:torch` (#ff8a3d, warmed from #ffa45c by the owner 2026-10-21, 3.8, 14 m, 16 % at 6 Hz, shadows: the flood light's block light at level 14, 1.2 × π, reaching 14 m as a placed torch's does; flame `dwell:torch`);
+  name in `shared/look/flames.json`; `LightInfo::flame`). The build has `dwell:torch` (#ff8a3d, warmed from #ffa45c by the owner 2026-10-21, 3.8, 14 m, 16 % at 6 Hz, shadows: the flood light's block light at level 14, 1.2 × π, reaching 14 m as a placed torch's does; flame `dwell:torch`) and `dwell:fuse` (lit dynamite's sputtering fuse, [`EXPLOSIVES.md`](./EXPLOSIVES.md): #ffb060, 2.4, 6 m, 55 % at 14 Hz, no shadows; flame `dwell:fuse`, a small flickering flame on the block's top);
   the test fixture adds `test:lantern` by data alone, and its `test:lamp` uses it.
 - **Blocks** reference one by name: `"light": "dwell:torch"` (`StateInfo::light`, a reference into
   `LIGHTS`); `emits` (0–15) is the flood light a placed block gives off; `"held": "torch"` names the

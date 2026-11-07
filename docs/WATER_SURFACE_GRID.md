@@ -29,9 +29,10 @@ planned, nothing built in the game yet. Evidence: [`WATER_MODEL_EVALUATION.md`](
   damped as straight flow is), no faster than critical, and an outflow limiter (a column never sends
   more than it holds). Each substep as long as the deepest active water allows (CFL).
 - **Chunks of 16 × 16 columns,** stepped in parallel; only chunks with water exist in the water layer.
-- **Sleep:** a chunk sleeps once no level in it moved more than the band (5 cm) over a calm window
-  (10 s), with its faces at their recent averages; a sleeping chunk keeps its imbalance as one number
-  and the water it owes. It wakes when its neighbours' flow drifts enough to move it half the band in
+- **Sleep:** a chunk sleeps once no level in it moved more than the band (5 mm, `sleepBandM`) over a
+  calm window (10 s), with its edge faces' flows kept as they were; a sleeping chunk passes those
+  flows on, keeps its imbalance as one number, and owes what its awake neighbours' flows drift from
+  them (as built, §2b). It wakes when its neighbours' flow drifts enough to move it half the band in
   10 s, when what it owes would, when a shared face jumps (an edit, a flood front), or on an edit; woken,
   it takes what it owes over 5 s, in proportion to its columns' depth. Springs count as a steady inflow
   and the sea as a held level, so their chunks sleep too.
@@ -105,6 +106,78 @@ now, or later allow a few stacked water layers in the columns that have overhang
   (`a_world_saved_before_the_rivers_flow_backs_up_when_dammed`, both faces).
 - **A block set over water** traps what is below it (left as blocks, out of the grid); one set in it
   lifts its water by its volume.
+- **A column built out of its generated water** (0.49.23, BUGS.md #40; owner, 2026-11-06: water
+  that covered a dam "will never drain away even if you raise the height of the dam"): the rest
+  layer's divergence is an implicit spring or sink per column, wherever the drawn river's flow
+  changes (a step's lip pours, a narrowing or a junction carries more out than in). A dam built on
+  such a column kept its spring, so water was poured onto its top for ever, whatever its height,
+  and spilled off both sides. A column whose floor is at or over the level its water stood at as
+  generated (`out_of_rest`) now changes by its own flows alone, as one an edit opened does; its
+  neighbours keep their rest flows across its faces, so the reach above still backs up and the one
+  below still drains. **Measured:** natively, seed 0's river by z 7380 (below a step), a wall
+  overtopped for 20 water minutes and raised 2 m: 20 cells of water stood on its top for the next
+  2.5 hours (red), none after (`water_on_a_raised_dam_across_seed0s_river_drains`; both faces in
+  `water_on_a_raised_dam_drains_off_it`). Read from the state each substep, so a world saved with
+  water on a dam heals on load (`a_world_saved_with_water_on_a_dam_drains_it_on_load`).
+- **The reach below a dam leaves the rest** (0.49.25, BUGS.md #41; owner, 2026-11-06: "Water never
+  dries up below a dam." … "Like completely."). Held water "keeps its level and trades with free
+  water beside it, at no cost", and free water changes by the difference of the two layers' flows;
+  but the rest layer's divergence is not only at a drawn step's lip: the law's θ-weighting spreads
+  each step's pour up its pool, so every column of a river has a small spring or sink (seed 0's
+  fixture: 0.14 m/s mid-pool, 0.99 at a lip, and the lake at a river's mouth a sink of the river's
+  inflow and the pour). Below a dam those springs kept the reach full (natively at seed 0's dam site,
+  575 water columns left below the wall after ten water minutes), and its chunks never slept. Now a
+  free column's rest divergence counts only while it is **in the rest**: `Water::share`, latched,
+  out once less than `restCut` (0.25, `flow.json`) of its rest inflow (the rest's flow into it, by
+  face) comes from columns in the rest, back once more than `restBack` (0.75) does; a column out of
+  its generated water (`out_of_rest`) is out. So the cut runs down the rest's own flow from the dam,
+  to a junction whose other river brings most of the flow, or into the lake the river ran into, and
+  that reach moves by the law and the carried flow alone. A wave, a stone in the bed or an edit's
+  slosh moves no column out (the rule reads the rest's flow and the neighbours' state, not the
+  water's flows), so an untouched river still stays exactly as drawn
+  (`a_block_set_in_a_generated_rivers_bed_changes_nothing_else`, seeds 0–2). Built with it: a column
+  out of the rest keeps its map river's flow out past the grid (`runs_on`: across faces the rest has
+  no flow by, the loaded world's edge or a wall it was drawn into), so a cut reach still runs on out of
+  the world; the carried flow is upwind (the sending column's water over the face, not the deeper
+  side's), so it lifts nothing over a hollow's lip; a sleeping chunk owes its edges' flows less the
+  rest's by its column's share (a dry reach asleep owes nothing for the river no longer in it), and
+  what it owes past the water it has is dropped (as an awake column's depth stops at none); a column
+  out of the rest is calm only once it moves less than a tenth of its water (at least a tenth of the
+  sleep band), so a film still draining off a bed doesn't fall asleep on it. **Measured:** the
+  fixture (`water::tests` `the_river_below_a_dam_dries_completely`, both faces: a level reach, a
+  step and a lake below; red 180 water cells, 1.05 m deep, green none, its chunks asleep;
+  `a_hollow_below_a_dam_keeps_its_water_still`, red its water the river's level, green under its
+  lip, level and asleep); seed 0's dam site (`tests/water.rs`
+  `the_river_below_a_dam_across_seed0s_river_dries_to_the_next_inflow`, the wall at z 7452: red 575
+  water columns from the wall down to the creek's backwater at z 7526 after ten water minutes and 8
+  chunks awake there, green none and none awake, dry within five minutes); in the browser (the same wall, `?local=1&seed=0&fresh=1&at=2364.5,142,7443.5`) the 1,150 water cells from the wall to z 7525 were gone within 10 s real, the bed dry sand. The creek that joins
+  by (2457, 7541) backs the river up to z 7526 and runs on below. A freed column's current was
+  the law's and the carried flow's over its depth (a level reach's ~0.1 m/s), not the map's mean-fall
+  current a held one has (BUGS.md #42: 1.28 m/s); since 0.49.43 one still in the rest shows the
+  map's (§2c, BUGS.md #47). Read from the state each substep,
+  so a saved world's reach below a dam dries on load.
+- **A sleeping chunk passes its flow on** (0.49.44, BUGS.md #41b; owner, 2026-11-06: "if a chunk
+  is sleeping, it should be treated as if all the water flows into it"). A chunk asleep was taken
+  to carry no flow, so asleep beside a running reach it owed the river, woke, and gave it back as
+  a wave that woke its neighbours: a dammed reservoir that spills, and the reaches beside it, never
+  slept. Falling asleep a chunk now keeps the flow each edge face brings into its column (the
+  water's less the rest's by the column's share, as its account counts it; `kept`) and its free
+  columns' whole balance (`drift`). Asleep it owes its drift, and across each edge toward an awake
+  chunk only how far the flow there drifts from what it kept; between two sleepers nothing is
+  owed (each keeps its side, so the accounts agree). A chunk falling asleep beside a sleeper keeps
+  that sleeper's flow for their shared edge, not its own (0.49.52, BUGS.md #48): two chunks that fell
+  asleep at different moments of a swing would otherwise keep different flows over one edge and make
+  or lose water between them (+1.07 m³ in 900 s of a stirred 3.5 m basin; now within 1 L). A steady river runs through sleeping chunks
+  owing nothing. Two rules keep a draining bed from sleeping wet: a film out of the rest (under
+  the sleep band deep) that fell at all in its calm window (`FILM_FALL`, 0.1 mm) is not calm, and a
+  sleeper owing half the free water it has (and having more than 0.01 m³) wakes to pay it.
+  **Measured:** the fixture reservoir (`water::tests` `a_reservoir_filled_to_its_spill_falls_asleep`,
+  both faces) red awake all of its last 5 minutes and 45 cells written, green asleep and none. Seed
+  0's dam sites (`measure_a_raised_dams_churn`) barely changed: z 7452 14–21 chunks awake, 18–546
+  cells a minute late on; z 7380 11–29 awake, 3–113 cells a minute (0.49.39: 13–18 and 22–32
+  awake). The deep reservoirs' own slosh (below) is the rest of it.
+- **Open: deep still water's slosh is barely damped** (BUGS.md #41b): a stirred 3.5 m basin sloshes
+  ±1 cm, past the 5 mm sleep band, for 30 water minutes (`stirred_deep_water_settles`, ignored).
 - **A tick keeps to a budget** (0.49.7, BUGS.md #33): water runs on game time, so a water tick is
   seconds of water; with much water awake (a dammed river) its substeps took 50 ms of the server's
   thread a tick and the game stopped and started. A tick now takes at most `stepBudget`
@@ -140,15 +213,18 @@ The owner approved these recommendations (2026-11-05):
   idle swimmer drifts at the current's speed and swimming adds to it (PLAYER_CONTROLLER.md §6.4).
 - **Floating bodies**: water's drag acts on the velocity relative to the current, so a raft let be
   comes up to it (slowly, by the area it shows and the speed squared).
-- **On the wire**: `WaterCurrents` datagrams (ARCHITECTURE.md §8.3), the chunks within 2 of a player's,
-  each sent when its currents change or 3 s after it was last sent, 4 at most a time and none in a
+- **On the wire**: `WaterCurrents` datagrams (ARCHITECTURE.md §8.3), the chunks as far out as the flow
+  is drawn (`waterflow.json` `fadeToM`, 60 m, from anywhere in the player's chunk: 4 chunks; 2 before
+  0.49.24, when a river's flow stopped 33–48 m out, BUGS.md #42),
+  each sent when its currents change or 3 s after it was last sent, 8 at most a time and none in a
   session's first 5 s, a chunk gone still once as zeros; a client forgets one not sent again within
   8 s. The client's prediction and stand-ins read
   the same table, so a swimmer in a current predicts as the server moves it.
 - **Untouched rivers (G3b):** held water's current is the world map's river's
   (`TerrainGenerator::river_current`, found once as the chunk's water joins the grid): downstream as
   the column sees the channel (the map's direction through the meander warp's inverse), at the speed
-  Manning's law gives the column's depth on the river's fall with the liquid's roughness (the grid's
+  Manning's law gives the column's depth on the river's fall (its segment's, or its course's mean over
+  `riverFallReachM`, 256 m, up and down stream where steeper; below) with the liquid's roughness (the grid's
   own law), or at its flow over the column's depth (`river_flow / depth`) where that is faster, at most
   `riverCurrentMaxMs` (1.5 m/s: a steep chute's would be a torrent, and a swimmer at 3 m/s still makes headway); a lake is still.
   **Level and shallow reaches run** (0.49.19, BUGS.md #38; owner, 2026-11-06: "dead rivers ... the
@@ -159,6 +235,42 @@ The owner approved these recommendations (2026-11-05):
   `a_shallow_flat_reach_runs_downstream_held_and_freed`, both faces). A slow creek's current (0.1
   m/s) was under the flecks' `fromMs` (0.3) and the streaks' (0.4), so it showed no flecks or foam;
   since 0.49.21 both begin at 0.05 m/s (owner, 2026-11-06), faint at a creek's pace. It goes to clients as any other chunk's currents.
+  **A reach held level runs as the river round it** (0.49.24, BUGS.md #42; owner, 2026-11-06: "in
+  this spot the river stops flowing too"): the map's courses never rise, so where the land dips a
+  course is held level, often for 100–200 m, and drops what it held back after it. On its own fall
+  such a reach ran at its flow over its depth alone: seed 3974502447's creek by (12855, -3330), a
+  0.6 m³/s creek 5.4 m wide and 1 m deep, at 0.11 m/s, just below a reach at the 1.5 m/s cap, so the
+  river seemed to stop. Its current's fall is now the larger of its segment's and its course's mean
+  over `riverFallReachM` (`flow.json`) up and down stream (`Seg::mean_fall`, `channels::mean_falls`):
+  that creek runs at 1.28 m/s, as the reaches round it do
+  (`the_owners_level_creek_runs_as_the_river_round_it`; on both faces' maps
+  `a_level_reach_runs_on_its_courses_fall`, red: ~100 level reaches a face under 0.4 m/s). Only the
+  current changes: the map's levels, the terrain and the flow carried (`river_flow`) are as they were,
+  so no world changes. A held chunk's current is found as its water joins the grid, so a saved world
+  runs on load.
+- **A freed river runs as the river round it** (0.49.43, BUGS.md #47). A held column's current is
+  the map's (Manning's on the course's mean fall, ~1.3 m/s on a typical creek), a freed one's its own
+  velocity (the carried flow over its depth, ~0.1 m/s on a level reach), so right beside an edit the
+  river visibly slowed (flecks, foam, ripples, a swimmer's and a raft's drift) and sped up again
+  where it was still held. Now a freed column that is still its river's (`Water::as_river`: a map
+  current found at scan or on restore, in the rest by `share`, and a rest velocity of at least
+  `currentStillMs`) shows the map's current times `along`, how much of the rest's own speed it
+  still runs downstream (its velocity along the rest's over the rest's, 0..=1), blended to its own
+  velocity by `near`, 1 at its generated depth and 0 once it is `riverCurrentBandM` (0.2 m,
+  `flow.json`) off it. So the river beside an edit runs at the map's current; a pool risen behind a
+  dam (deeper, and running little of the rest's speed), a drained or diverted reach (out of the rest,
+  or shallower), a lake (no rest speed) and placed water (no map current) keep their own. Only the
+  current reported changes, not the water's movement: the grid moves water by its own law and the
+  carried flow, which keep a river exactly at rest as drawn; the map's speed is what a swimmer and
+  the flow shown should see. Existing worlds: a restored free column's map current is found again
+  at its generated depth (`r.depth` in `DWG1`), no new record. **Measured:** the fixture
+  (`water::tests` `a_freed_river_column_runs_as_its_held_neighbours`, both faces: a level reach
+  carrying 0.1 m²/s under a 1 m/s map current, a wall beside it cut and set again; red 0.100 m/s
+  freed beside 1.000 held, green within 20%, and so after a save and restore;
+  `a_dammed_reachs_pool_keeps_its_own_still_current`: under 0.1 m/s); in the browser at the owner's
+  creek (`?local=1&seed=3974502447&fresh=1&at=12834,348,-3298`, a block set on the bank at (12854,
+  331.5, -3323)), the columns beside it read 1.16–1.27 m/s, the held river round them 1.27 (the
+  freed columns' own velocity, the carried flow over the depth, is ~0.1).
 - **The flow shown (G3d):** from the client's current table, so generated and player-moved water
   look alike: ripples carried by the current (a flow map), foam streaks along it, flecks drifting
   on it, each a setting and per liquid as data (`shared/look/waterflow.json`; ARCHITECTURE.md §6.7).
@@ -303,13 +415,81 @@ jobs off the tick, no tick over 3.9 ms (the edits' own). In the browser (the ben
 
 What is left over 25 ms with the pit is the pit's own collapse: its cut undercuts the bank and the
 pieces that fall are bodies stepped on the tick (a trace of the first 4 s: of the server's 1,118 ms,
-764 ms in the physics step, the water and LOD none of it). Without the pit no tick passes 13 ms.
+764 ms in the physics step, the water and LOD none of it). Without the pit no tick passes 13 ms. Fixed in 0.49.29 (BUGS.md #45, ARCHITECTURE.md §7.3): the sand had jammed against the cut's walls, a body for 30 s; it now falls and is blocks again within ~5 s, the cut's worst second 5.1 ms mean in Chrome.
 
 **Deviations:** the browser's water worker is started by the local-mode worker (nested), not by
 `connect.ts`, so a friend world's host carries it too; the water's report is asynchronous there
 (`takeWaterReport`). The inline host keeps the step budget and loses the rest, as before (a fallback,
 and what the tests' servers run). The players' positions are sent but not used yet. `Water::tick` on a
 world stays for tests and tools, its copy kept by a mirror of that world.
+
+## 2e. Waterfalls (the owner, 2026-11-06; built, G6)
+
+The owner, on a dam with a notch, the water standing in the notch and nothing below it: "Do we not do
+waterfalls or flowing water over a certain height?" The grid holds one level per column; water crossing a
+drop goes from the high column to the low one within a step, and only the water standing in columns is
+drawn, so nothing is drawn where it falls. The owner's answers:
+
+- **The look:** a falling sheet from the lip to where it lands, its width and thickness from the flow,
+  with foam and spray where it lands; look values as data.
+- **Physics:** a fall pushes players and floating bodies in it down and out, by how much flows; it can't
+  be swum up.
+- **Sound:** a rushing sound from each fall, louder with more flow and nearer, from the sounds data.
+
+Design (to confirm in building): a **fall** is a face between two columns where water flows (the current
+at the high column points across it, over `minFlow`) and the far side's surface (its water, or its floor
+if dry) lies more than `minDropM` below the near side's level, with the cell over the far side open. Falls
+are found from what both server and clients already have (the world's water cells and the current
+table, `VoxelWorld::currents`), by one shared function in `dwell-world`, so the server's physics and the
+client's prediction and drawing agree with no new message: the lip (the near level at the face), the
+landing (the far surface), the width (1 m per face, merged along a lip) and the flow per metre (depth ×
+speed). Data in `shared/fluids/` (detection) and `shared/look/` (the sheet, foam, spray) and
+`shared/sounds/` (the sound).
+
+**Step 1, does the notch spill (2026-11-06)?** Yes: natively (`crates/dwell-sim/tests/waterfalls.rs`,
+a dam's notch below the reservoir's level and a notch in a dam across a drawn river, both faces) and
+in the browser at seed 0's dam site (a pit dug below a notched dam filled from 135.0 to 138.9 m in about
+25 s). Before 0.49.19 (BUGS.md #38) a level reach carried no river flow, so a dammed reach drained down
+to the notch's floor and stopped: the owner's flat sheet standing in the notch with nothing below. With
+the river's flow carried, the notch keeps spilling; what was missing was drawing it, as below. Not a
+grid bug, so no BUGS.md entry.
+
+**As built (G6, 0.49.31):**
+
+- **Found** (`dwell-world` `falls.rs`, data `shared/fluids/falls.json`): as designed, one function for
+  the server and clients, face-local, from the water cells (a column's water on a floor) and the current
+  table. The far side's cell at the lip's top row must be open; its surface is looked for down to
+  `maxDropM`; a fall needs more than `minDropM` (0.75 m, so a drawn river's 0.5 m steps are not falls),
+  `minSpeedMs` (5 cm/s) across the face and `minFlowM2s` per metre. Faces along a lip within `mergeM`
+  (0.3 m) of each other's lip and landing merge. The client finds them every `refreshS` (0.25 s)
+  within `drawM` (64 m); the physics asks per body (`push_at`, a few columns round it).
+- **Physics:** in a fall's sheet (beyond the face by `reachM`, 1 m; from the landing to the lip) a body is
+  drawn toward the falling water's velocity, `pushOutMs` (2.5 m/s) out and `pushDownMs` (6 m/s) down at
+  `pushRate` (3/s), each by the strength (flow per metre over `fullFlowM2s`, 0.5 m²/s), only further out
+  and down, never up. **Deviation:** a player standing on the ground under a fall is carried out at the
+  water's out speed directly, since an approach never beat the ground's friction (0.12 m in a second).
+- **Look** (`render/waterfalls.rs`, `shared/look/waterfalls.json`): the sheet a curve of quads from the
+  lip (4 cm off its face) to the landing, thrown out at the lip's current (at least 0.3 m/s) and falling
+  under gravity, its opacity 0.35 to 0.8 by the strength, streaks running down at its speed; a foam patch
+  and spray puffs where it lands (tinted, not white: the owner's view of the flecks). **Deviation:** the
+  thickness is shown as opacity, not geometry (a single double-sided sheet). Seen in Chrome at seed 0's
+  dam site: the sheet hangs from a 4-wide notch into the pit below.
+- **Sound:** a `waterfall` loop per fall (`FallSounds`), the loudest 3 within 40 m, louder by flow
+  (square root of its share of `fullM3s`, 2 m³/s) and nearer.
+- **Setting:** Water → **Waterfalls** (as G3d's flow switches: each a setting), the drawing only.
+
+## 2f. An outward kick from outside the grid (blast waves; built, 0.49.48)
+
+The grid takes one push from outside: `Water::wave(Wave { at, reach, speed, free })`, sent through
+the host as `In::Wave` (encoded as tag 9: the point, reach, speed and free radius as f64s), so it runs
+the same inline, on the water's thread and in the browser's worker (a test runs one both ways). It is
+kept and given at the next step, after the edits are applied and the ring grown: every face between
+two columns within `reach` of `at` (the distance taken to the columns' water span) gets
+`speed` × its wet height × (1 − d / reach) × the face's share of the outward direction added to its
+discharge (`qx`, `qz`; the rest layer untouched, so the difference is what moves). Only discharge is
+added: the water is conserved, and the face law carries, reflects and damps it. The columns it
+kicks, and the held columns within `free`, are freed and their chunks woken; held water left beyond
+`free` takes the wave in (it stays at its level). Its user is a blast (docs/EXPLOSIVES.md §3.5).
 
 ## 3. Generation
 

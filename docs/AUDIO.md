@@ -62,7 +62,9 @@ the Rust game). CI regenerates both and fails on a diff, as for the block regist
   (`step`, `land`, `break`, `place`, `hit` required; `enter`, `exit`, `swim` for liquids;
   `slide` — a loop sound — and `slide_stop` for surfaces; `burn` — a loop sound — for a burning
   light source: the torch's `dwell:torch` set has the wood's steps and landing, its own place
-  (a wooden tock and the flame catching) and break (a snuff), and `torch_fire`). A set missing an
+  (a wooden tock and the flame catching) and break (a snuff), and `torch_fire`; `explode` for an
+  explosive's blast, [`EXPLOSIVES.md`](./EXPLOSIVES.md): `dwell:dynamite` and `dwell:lit_dynamite` have
+  `dynamite_boom`, and the lit one's `burn` is the fuse's fizz `fuse_fizz`, its `place` `fuse_light`). A set missing an
   event falls back to the `fallback` set's, which must have every loop event's sound — unless the
   event says `"fallback": false` (`burn`: a set without its own plays nothing; stone does not
   burn).
@@ -75,7 +77,9 @@ the Rust game). CI regenerates both and fails on a diff, as for the block regist
   loop sounds, every other event's are not. For `hurt` the `speed` range is in health points (the
   damage taken).
 - **`ambient`** — the ambient sounds' tunables, emitted into `sound.gen.rs` as `ambient::…`:
-  `fire` (`radiusM`: burning light sources crackle within it; `max`: the nearest this many).
+  `fire` (`radiusM`: burning light sources crackle within it; `max`: the nearest this many);
+  `falls` (`radiusM`: waterfalls rush within it; `max`: the loudest this many; `fullM3s`: the flow
+  at which one is at full level).
   There is no wind loop (removed, owner 2026-10-21: too intense) and no night loop (the crickets,
   removed, owner 2026-10-28: "it's bad").
 - **`gaits`** — `walk`, `run`, `crouch`, `climb`, `swim`: footstep `stride` (m between steps) and
@@ -188,6 +192,7 @@ tick and each remote player's interpolated state each frame, and turns changes i
 | `hurt` | the server's `PlayerEvent` Damage, any player's | — | from the damage (0 → 80 points) |
 | `death` / `respawn` | the server's `PlayerEvent` Death / Respawn, any player's | — | 1 |
 | `burn` / `burn_level` / `burn_end` | a burning light source's loop voice starting, moving, stopping (below) | the source's block (its `burn`) | by distance |
+| `explode` | a blast goes off: an `Explosion` modification turns a lit explosive's cell to air ([`EXPLOSIVES.md`](./EXPLOSIVES.md) §4), at the listener | the explosive's block (its `explode`; else `dynamite_boom`) | full within the explosive's `boom.fullM`, nothing at `boom.hearM` |
 | `night` / `night_level` / `night_end` | the night's voice (below) | — | by the stars |
 
 **Impacts** (`ImpactSounds`, owner 2026-10-21: "hard hits even sliding into a wall is fair game").
@@ -206,6 +211,13 @@ Ours are read from the prediction's ticks; another player's from each snapshot's
 delay (`INTERP_DELAY_MS`) so they sound when its body is drawn at the wall. The hurt is not
 predicted: it comes from the server's Damage event (another player's held by the same delay),
 so it never sounds for a hit the server did not count.
+
+**Waterfalls** (`FallSounds`; WATER_SURFACE_GRID.md §2e, owner 2026-11-06: a rushing sound per
+fall, louder with more flow and nearer): the falls the client found near the eye (`dwell_world::falls`)
+each sound from their sheet's middle; the loudest `ambient.falls.max` within `ambient.falls.radiusM`
+hold a loop voice (`FALL_VOICE` on, the `fall`/`fall_level`/`fall_end` events) at a level
+`√min(1, q / fullM3s) · (1 − (d / r)²)²` (`fall_level`) for a fall carrying `q` m³/s. The loop is
+`waterfall`: pink, brown and a little white noise through filters, its cutoff rising with the level.
 
 **Fires** (`FireSounds`): every frame the burning light sources near the listener — placed ones
 (`VoxelWorld::light_sources_near`, the flame's cell), the torch in our hand (at the listener) and

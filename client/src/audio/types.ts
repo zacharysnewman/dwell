@@ -104,7 +104,8 @@ export type SetEvent =
   | 'swim'
   | 'slide'
   | 'slide_stop'
-  | 'burn';
+  | 'burn'
+  | 'explode';
 /** An event's part in a continuous sound: start the mover's voice, update it, stop it. */
 export type LoopPart = 'start' | 'update' | 'stop';
 export type Gait = 'walk' | 'run' | 'crouch' | 'climb' | 'swim';
@@ -126,6 +127,8 @@ export interface EventDef {
 /** The ambient sounds' tunables (AUDIO.md §2), read by the Rust game. */
 export interface AmbientDef {
   fire: { radiusM: number; max: number };
+  /** Waterfalls (docs/WATER_SURFACE_GRID.md §2e): within `radiusM`, the nearest `max`, full at `fullM3s`. */
+  falls: { radiusM: number; max: number; fullM3s: number };
 }
 
 export type ControlSounds = string[] | { silent: string };

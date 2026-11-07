@@ -10,7 +10,7 @@ use std::collections::VecDeque;
 use std::rc::Rc;
 
 use dwell_blocks::StateId;
-use dwell_game::block_interaction::{BlockInteraction, BlockTarget, TargetSource, view_direction};
+use dwell_game::block_interaction::{BlockInteraction, BlockTarget, view_direction};
 use dwell_game::brush_tool::{BrushAction, BrushOutline, BrushPanel, BrushTool};
 use dwell_game::chunk_stream::{
     ChunkMessage, ChunkStreamer, Coord, SecondCentre, StreamStats, TerrainView,
@@ -127,6 +127,15 @@ pub trait Scene: TerrainRenderer {
     fn set_water_flow(&mut self, _texels: Vec<i8>) {}
     /// The flecks drifting on moving water this frame (crate::flecks).
     fn set_flecks(&mut self, _flecks: Vec<crate::flecks::Fleck>) {}
+    /// The waterfalls near the eye to draw this frame (render/waterfalls.rs).
+    fn set_falls(&mut self, _falls: Vec<dwell_world::falls::Fall>) {}
+    /// The blasts' puffs and flash lights this frame (crate::blasts; docs/EXPLOSIVES.md §4).
+    fn set_blasts(
+        &mut self,
+        _puffs: Vec<crate::blasts::Puff>,
+        _lights: Vec<dwell_look::lights::PointLight>,
+    ) {
+    }
     /// The portals near the eye whose motes draw this frame (BIFACIAL_WORLD.md §12.1).
     fn set_portal_motes(&mut self, _portals: Vec<crate::render::flames::PortalMotes>) {}
     /// A falling piece's meshes (docs/FELLING.md §3), relative to its reference cell's centre,
@@ -541,6 +550,15 @@ pub struct Game<S: Scene> {
     /// The Drifting flecks setting: particles on moving water (render/flames.rs's flecks).
     flow_particles: bool,
     flecks: crate::flecks::Flecks,
+    /// The waterfalls near the eye (docs/WATER_SURFACE_GRID.md §2e; `dwell_world::falls`, found
+    /// again every `WATERFALLS.refresh_s`), drawn while the Waterfalls setting is on and heard always.
+    falls: Vec<dwell_world::falls::Fall>,
+    falls_age: f64,
+    /// The Waterfalls setting: the falls' sheets, foam and spray drawn.
+    falls_shown: bool,
+    /// The blasts going off near us (docs/EXPLOSIVES.md §4): their flash, smoke, dust and shake.
+    blasts: crate::blasts::Blasts,
+    fall_sounds: dwell_game::sound::FallSounds,
     /// Box select, fill, copy/paste, undo (§6.5); `enabled` once the server announces region edits.
     pub region: RegionTools,
     /// VoxelSniper-style brushes (BRUSHES.md); `available` where the server announces them.
@@ -670,7 +688,7 @@ impl<S: Scene> Game<S> {
         };
         let mut predictor = Predictor::new(config);
         // Its stand-ins slow in water as the server's bodies do (docs/BUILT_BODIES.md §6).
-        predictor.set_water_drag(dwell_sim::felling::water_drag);
+        predictor.set_water_drag(dwell_sim::felling::water_drag_with);
         let current = ClientState::of(&predictor);
         let mut flip = FaceFlip::new();
         flip.reset(current.face); // joining on face B does not turn the player
@@ -713,6 +731,11 @@ impl<S: Scene> Game<S> {
             flow_sent: None,
             flow_particles: true,
             flecks: crate::flecks::Flecks::default(),
+            falls: Vec::new(),
+            falls_age: f64::INFINITY,
+            falls_shown: true,
+            blasts: crate::blasts::Blasts::default(),
+            fall_sounds: dwell_game::sound::FallSounds::new(),
             region: RegionTools::new(),
             brush: BrushTool::new(),
             portals: (Vec::new(), ""),
@@ -1041,6 +1064,12 @@ impl<S: Scene> Game<S> {
                     let changes = self.cell_changes(&v.chunks);
                     self.edit_sounds.changes(&changes, now_ms, &mut self.sounds);
                 }
+                // A lit explosive's cell gone in an `Explosion` is its blast going off: its
+                // effects and its boom (docs/EXPLOSIVES.md §4).
+                if v.reason == dwell_protocol::VoxelModificationReason::Explosion {
+                    let changes = self.cell_changes(&v.chunks);
+                    self.blasts_from(&changes, now_ms);
+                }
                 // A settling piece's blocks: hidden from the terrain while its glide draws them.
                 let settled = (v.reason == dwell_protocol::VoxelModificationReason::Rebake)
                     .then(|| self.cell_changes(&v.chunks));
@@ -1078,6 +1107,8 @@ impl<S: Scene> Game<S> {
                         seq,
                     );
                 }
+                // Only the pieces that could touch the player soon are stood in for.
+                telemetry::sample("pieces.standIns", self.predictor.stand_ins() as f64);
                 self.predictor.on_snapshot(self.streamer.store_mut(), &s);
                 self.health = s.local.health;
                 self.dead = s.local.flags & player_flags::DEAD != 0;
@@ -1796,16 +1827,17 @@ impl<S: Scene> Game<S> {
         }
     }
 
-    /// What the server announced it takes (Welcome flags) in a world of this generator: region
-    /// edits, and brush strokes with the world type's brush reach (BRUSHES.md).
     /// The world's portals (BIFACIAL_WORLD.md §12): their axes and mote look, from the generator
     /// and seed the server announced, for the motes drawn in their shafts.
     pub fn set_world(&mut self, generator_version: u32, world_seed: u64) {
         self.portals = dwell_worldgen::portal_axes_for(generator_version, world_seed);
     }
 
-    pub fn set_capabilities(&mut self, region_edits: bool, brushes: bool, generator_version: u32) {
-        let policy = dwell_world::brush::brush_policy(generator_version).filter(|_| brushes);
+    /// What the server announced it takes (Welcome flags): region edits, and brush strokes with
+    /// the game mode's brush reach (BRUSHES.md; every world is creative for now).
+    pub fn set_capabilities(&mut self, region_edits: bool, brushes: bool) {
+        let policy =
+            dwell_world::brush::brush_policy(dwell_world::brush::world_mode()).filter(|_| brushes);
         self.region.enabled = region_edits;
         self.region.keep = brushes;
         self.region.reach = policy.map_or(dwell_protocol::region_edit::REACH, |p| {
@@ -2072,6 +2104,69 @@ impl<S: Scene> Game<S> {
     }
 
     /// A modification's changes with what each cell held before (read before it is applied).
+    /// The blasts among an `Explosion` modification's changes (a lit explosive's cell turned to
+    /// air): each starts its effects, and its boom plays as loud as its distance from the
+    /// listener allows (`boom_level`; at the listener, so a far blast is heard past the panner's
+    /// reach).
+    fn blasts_from(&mut self, changes: &[CellChange], now_ms: f64) {
+        use dwell_world::explosives::{EXPLOSIVES, boom_level, explosive_of};
+        for c in changes {
+            let Some((i, true)) = explosive_of(EXPLOSIVES, c.old) else {
+                continue;
+            };
+            if dwell_blocks::info(c.new).solid {
+                continue;
+            }
+            let at = dwell_world::centre_of_cell(c.cell);
+            // The way out, from the cells round it before the blast clears them (this runs
+            // before the modification is applied): its smoke follows it (§4).
+            let store = self.streamer.store_mut();
+            let open = crate::blasts::open_way(&EXPLOSIVES[i], c.cell, |w| {
+                let m = store.get_voxel(w[0], w[1], w[2]);
+                m != dwell_world::M.air && !dwell_blocks::info(m).liquid
+            });
+            self.blasts.start(at, i, now_ms / 1000.0, open);
+            let d = (0..3)
+                .map(|k| (at[k] - self.listener[k]).powi(2))
+                .sum::<f64>()
+                .sqrt();
+            let level = boom_level(&EXPLOSIVES[i], d);
+            if level > 0.0 {
+                self.sounds
+                    .push(SoundEvent::new(SoundKind::Explode, c.old, level, None));
+            }
+        }
+    }
+
+    /// The blasts' effects this frame (docs/EXPLOSIVES.md §4): their puffs and flash lights to the
+    /// scene, and the camera's shake at `eye` (yaw, pitch degrees).
+    fn update_blasts(&mut self, eye: [f64; 3], now_ms: f64) -> (f64, f64) {
+        let now = now_ms / 1000.0;
+        self.blasts.prune(now);
+        if self.blasts.list.is_empty() {
+            self.scene.borrow_mut().set_blasts(Vec::new(), Vec::new());
+            return (0.0, 0.0);
+        }
+        let puffs = self.blasts.puffs(now);
+        let lights = self.blasts.lights(now);
+        self.scene.borrow_mut().set_blasts(puffs, lights);
+        self.blasts.shake(eye, now)
+    }
+
+    /// Which blast effects show (Settings → Explosions), and whether the adapter is a CPU's.
+    pub fn set_blast_settings(&mut self, s: crate::blasts::BlastSettings) {
+        self.blasts.settings = s;
+    }
+
+    /// The blasts whose effects are still going (the dev hook): each one's place and age (s).
+    pub fn blasts(&self, now_ms: f64) -> Vec<([f64; 3], f64)> {
+        self.blasts
+            .list
+            .iter()
+            .map(|b| (b.at, now_ms / 1000.0 - b.start_s))
+            .collect()
+    }
+
     fn cell_changes(&mut self, chunks: &[dwell_protocol::ChunkChanges]) -> Vec<CellChange> {
         let n = dwell_world::CHUNK_SIZE;
         let mut out = Vec::new();
@@ -2347,6 +2442,16 @@ impl<S: Scene> Game<S> {
         self.flow_particles = on;
     }
 
+    /// The Waterfalls setting (docs/WATER_SURFACE_GRID.md §2e): the falls' sheets, foam and spray.
+    pub fn set_falls_shown(&mut self, on: bool) {
+        self.falls_shown = on;
+    }
+
+    /// The waterfalls near the eye now (as last found).
+    pub fn falls(&self) -> &[dwell_world::falls::Fall] {
+        &self.falls
+    }
+
     /// The renderer's flow window around `eye` (render/flow.rs), built again when the current table
     /// changed or the eye is over another column.
     fn update_flow(&mut self, eye: [f64; 3]) {
@@ -2546,8 +2651,11 @@ impl<S: Scene> Game<S> {
             scene.set_own_shadow(None);
             scene.set_own_body(None);
             camera_eye = cam.eye;
-            scene.set_camera(cam.eye, yaw, cam.pitch, cam.face, 0.0);
             drop(scene);
+            let (sy, sp) = self.update_blasts(cam.eye, now_ms);
+            self.scene
+                .borrow_mut()
+                .set_camera(cam.eye, yaw + sy, cam.pitch + sp, cam.face, 0.0);
             self.show_hud_text();
             self.target(None, input, now_ms);
             self.update_motion(c.position, dt);
@@ -2559,9 +2667,11 @@ impl<S: Scene> Game<S> {
             // Eye height is smoothed per tick (steps, crouching; eye.rs), then interpolated.
             let eye = [center[0], self.eye.draw(alpha), center[2]];
             camera_eye = eye;
+            // A blast's shake turns the view drawn, never the aim.
+            let (sy, sp) = self.update_blasts(eye, now_ms);
             self.scene
                 .borrow_mut()
-                .set_camera(eye, yaw, pitch, face, roll);
+                .set_camera(eye, yaw + sy, pitch + sp, face, roll);
             self.listener = listener(eye, yaw, pitch, face);
             let ready = self.terrain_ready();
             self.target(ready.then_some(eye), input, now_ms);
@@ -2647,6 +2757,24 @@ impl<S: Scene> Game<S> {
         self.flecks
             .update(self.streamer.store(), camera_eye, dt, self.flow_particles);
         self.scene.borrow_mut().set_flecks(self.flecks.list.clone());
+        // The waterfalls near the eye (docs/WATER_SURFACE_GRID.md §2e), found again now and then.
+        self.falls_age += dt;
+        if self.falls_age >= dwell_look::waterfalls::WATERFALLS.refresh_s {
+            self.falls_age = 0.0;
+            self.falls = crate::telemetry::span("falls.find", || {
+                dwell_world::falls::falls_near(
+                    self.streamer.store(),
+                    camera_eye,
+                    dwell_look::waterfalls::WATERFALLS.draw_m,
+                )
+            });
+        }
+        let shown = if self.falls_shown {
+            self.falls.clone()
+        } else {
+            Vec::new()
+        };
+        self.scene.borrow_mut().set_falls(shown);
 
         self.hud.health = self.health;
         if self.debug_visible {
@@ -2790,6 +2918,22 @@ impl<S: Scene> Game<S> {
             });
         }
         self.fire_sounds.update(eye, &fires, dt, &mut self.sounds);
+        // Each waterfall near the listener rushes, louder with more flow and nearer.
+        let falls: Vec<dwell_game::sound::FallSource> = self
+            .falls
+            .iter()
+            .map(|f| dwell_game::sound::FallSource {
+                key: (u64::from(f.x as u32) << 32)
+                    ^ (u64::from(f.z as u32) << 2)
+                    ^ u64::from(f.dir)
+                    ^ (u64::from(f.face.is_b()) << 63),
+                pos: f
+                    .face
+                    .point([f.lip_mid()[0], 0.5 * (f.lip + f.land), f.lip_mid()[2]]),
+                discharge: f.discharge(),
+            })
+            .collect();
+        self.fall_sounds.update(eye, &falls, dt, &mut self.sounds);
     }
 
     /// The day/night cycle's state at the last frame.
@@ -2973,12 +3117,31 @@ impl<S: Scene> Game<S> {
         self.region
             .aim(self.interaction.placement().map(|(c, _)| c));
         self.show_region_boxes();
-        // The brush aims much further along the same ray (its world's brush reach).
+        // The brush aims much further along the same ray (its mode's brush reach), and where the
+        // ray meets nothing editable in reach, at the farthest editable cell along it: it always
+        // shows where it acts (BRUSHES.md §3).
         let t = if self.brush.active() {
             let dir = view_direction(input.look.yaw, input.look.pitch, face).map(|v| v as f32);
-            let far = eye.and_then(|e| self.streamer.store_mut().target(e, dir, self.brush.reach));
-            self.brush.aim(far);
-            far
+            let reach = self.brush.reach;
+            let aim = eye.and_then(|e| {
+                let hit = dwell_game::block_interaction::target_hit(
+                    self.streamer.store_mut(),
+                    e,
+                    dir,
+                    reach,
+                );
+                // Editable: in the world, with every chunk a stroke there reads loaded.
+                let extent = self.brush.read_extent(dwell_world::cell_of_pos(e));
+                let streamer = &self.streamer;
+                dwell_game::brush_tool::clamp_aim(e, dir, reach, hit, |c| {
+                    dwell_world::region::box_in_world(c, [1, 1, 1])
+                        && extent.is_none_or(|(lo, size)| {
+                            streamer.box_loaded(std::array::from_fn(|i| c[i] + lo[i]), size)
+                        })
+                })
+            });
+            self.brush.aim_clamped(aim);
+            aim.map(|a| a.0)
         } else {
             t
         };

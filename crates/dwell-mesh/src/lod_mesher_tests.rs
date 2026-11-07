@@ -1099,3 +1099,32 @@ fn a_part_full_water_cell_is_drawn_at_its_share() {
         "surface at {top}, not 5.5"
     );
 }
+
+#[test]
+fn a_column_whose_top_no_longer_holds_the_surface_is_drawn_at_its_cells() {
+    // BUGS.md #43: a modified section is meshed with its generated surface. An edited column (its
+    // topmost solid cell no longer the one the surface lies in) is drawn as its cells; the rest at
+    // their exact heights.
+    let mut cells = new_cells();
+    let mut surface = new_surface();
+    for z in -1..=32 {
+        for x in -1..=32 {
+            put(&mut cells, x, 0, z, cube_block());
+            let c = surface_at(x, z);
+            surface[c] = 0.5;
+            surface[c + 1] = f32::from(cube_block());
+            surface[c + 2] = 1.0; // valid
+        }
+    }
+    // a tower built in column (5, 5): three cells over the ground
+    for y in 1..=3 {
+        put(&mut cells, 5, y, 5, cube_block());
+    }
+    let m = mesh_with(&cells, &surface, 0.0);
+    let tops = ys(&m.opaque, 1, 1.0);
+    assert_eq!(
+        tops,
+        [0.5, 4.0],
+        "the ground at its surface, the tower at its cells' top"
+    );
+}

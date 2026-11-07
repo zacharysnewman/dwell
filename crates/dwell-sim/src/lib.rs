@@ -3,6 +3,7 @@
 //! outbox. The same core runs in the native server and in the browser's local mode.
 
 pub mod app_version;
+pub mod blasts;
 pub mod clock;
 pub mod entropy;
 pub mod felling;
@@ -10,6 +11,7 @@ pub mod fixed_step;
 pub mod jobs;
 pub mod lod_propagation;
 pub mod server;
+pub mod sky_columns;
 pub mod water;
 pub mod watergrid;
 pub mod worldgen_pool;

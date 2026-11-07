@@ -313,3 +313,62 @@ fn the_local_player_rides_a_falling_pieces_stand_in() {
     assert!(p.position().y > top + 1.5, "on it: {}", p.position());
     p.remove_piece(3);
 }
+
+#[test]
+fn only_the_pieces_that_could_touch_the_player_soon_are_stood_in_for() {
+    // 2026-11-06: every piece had a stand-in, its pose set and the prediction's physics stepping
+    // it each tick and each replayed tick: a dynamite blast's ~300 pieces cost the browser's
+    // frame 20–25 ms. Now only a piece that could reach the player within the lookahead is.
+    // Red before: one stood in for while the player was unplaced (and all 302 after).
+    // face-a-only: the rule is distances and speeds alone, no up; the pieces are placed in world
+    // coordinates round a face-A player.
+    let server = Server::new();
+    let mut world = VoxelWorld::flat();
+    let mut p = Predictor::new(PlayerControllerConfig::default());
+    let one = [dwell_physics::PieceCell {
+        center: DVec3::ZERO,
+        half: DVec3::new(0.5, 0.25, 0.5),
+        mass: 500.0,
+        collide: dwell_physics::Collide::All,
+    }];
+    let q = dwell_physics::DQuat::IDENTITY;
+    // Dead (no snapshot yet): nothing is stood in for.
+    p.set_piece(1, &one, DVec3::ZERO, q, Vec3::ZERO, 0);
+    assert_eq!(p.stand_ins(), 0, "none while the player isn't placed");
+    p.on_snapshot(&mut world, &server.snapshot(0));
+    let me = p.position();
+    // 300 still pieces 8–38 m round the player: none could touch it soon.
+    for k in 0..300u32 {
+        let a = f64::from(k) * 0.37;
+        let r = 8.0 + f64::from(k % 30);
+        let at = me + DVec3::new(a.cos() * r, 0.0, a.sin() * r);
+        p.set_piece(100 + k, &one, at, q, Vec3::ZERO, 0);
+    }
+    // One 14 m off flying at the player at 20 m/s, one 3 m off flying away.
+    let toward = Vec3::new(-20.0, 0.0, 0.0);
+    p.set_piece(2, &one, me + DVec3::X * 14.0, q, toward, 0);
+    p.set_piece(3, &one, me - DVec3::X * 3.0, q, toward, 0);
+    assert_eq!(
+        p.stand_ins(),
+        2,
+        "the one closing in and the one beside the player"
+    );
+    assert!(p.piece_pose(2).is_some() && p.piece_pose(3).is_some());
+    assert!(
+        p.piece_pose(100).is_none(),
+        "a far one is drawn from the snapshots"
+    );
+    for seq in 1..=10u32 {
+        p.tick(&mut world, &quantize_input(&Input::default(), seq));
+    }
+    // The one going away is kept a little past the reach it was stood in at, then dropped.
+    let still = Vec3::ZERO;
+    p.set_piece(3, &one, me - DVec3::X * 6.0, q, still, 10);
+    assert!(p.piece_pose(3).is_some(), "kept within the margin");
+    p.set_piece(3, &one, me - DVec3::X * 7.0, q, still, 10);
+    assert!(p.piece_pose(3).is_none(), "dropped past it");
+    // A far one coming near is stood in for again.
+    p.set_piece(100, &one, me + DVec3::Z * 4.0, q, still, 10);
+    assert!(p.piece_pose(100).is_some());
+    assert_eq!(p.stand_ins(), 2);
+}

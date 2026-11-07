@@ -242,6 +242,64 @@ fn saves_commit_on_the_store_thread() {
 }
 
 #[test]
+fn an_inline_save_is_encoded_a_piece_a_step_and_committed_on_a_step_of_its_own() {
+    // The browser's store (no thread, §6.4): nothing is written until the whole batch is encoded
+    // and committed; a store dropped mid-save (a tab closed) leaves the last complete save, and
+    // flush commits what is left at once.
+    let db = WorldDb::in_memory().expect("opens");
+    let mut store = WorldStore::new(db.clone(), false);
+    let chunk = |x, m| SavedChunk {
+        coord: ChunkCoord::new(x, 0, 0),
+        revision: 1,
+        voxels: chunk_of(require(m)),
+    };
+    let first = store.save(SaveBatch {
+        chunks: vec![chunk(0, "dwell:stone")],
+        ..Default::default()
+    });
+    store.flush();
+    assert_eq!(store.take_completed().first().map(|r| r.id), Some(first));
+    let second = store.save(SaveBatch {
+        chunks: (1..4).map(|x| chunk(x, "dwell:sand")).collect(),
+        water: Some(vec![7; 100]),
+        ..Default::default()
+    });
+    assert!(store.pending());
+    // One piece a step while there is no time, then the commit alone.
+    let mut steps = 0;
+    while store.step(|| false) {
+        steps += 1;
+        assert!(store.take_completed().is_empty(), "committed mid-encoding");
+        assert_eq!(db.chunk_index().len(), 1, "written before the commit");
+        assert!(steps < 10);
+    }
+    assert_eq!(steps, 4, "three chunks and the water, then the commit");
+    let done = store.take_completed();
+    assert_eq!(
+        done.iter().map(|r| (r.id, r.ok)).collect::<Vec<_>>(),
+        [(second, true)]
+    );
+    assert_eq!(db.chunk_index().len(), 4);
+    assert_eq!(db.water(), Some(vec![7; 100]));
+    // Dropped mid-save: a store's drop commits what is queued (closing a world)…
+    store.save(SaveBatch {
+        chunks: vec![chunk(9, "dwell:grass")],
+        ..Default::default()
+    });
+    assert!(store.step(|| false));
+    drop(store);
+    assert_eq!(db.chunk_index().len(), 5);
+    // …and a save prepared but never committed (a crash) leaves the last complete one.
+    let mut prepared = db.prepare(SaveBatch {
+        chunks: vec![chunk(10, "dwell:dirt")],
+        ..Default::default()
+    });
+    while prepared.encode_step() {}
+    drop(prepared);
+    assert_eq!(db.chunk_index().len(), 5);
+}
+
+#[test]
 fn a_chunk_means_its_strings_not_the_runtime_ids() {
     let path = temp_path("strings");
     {

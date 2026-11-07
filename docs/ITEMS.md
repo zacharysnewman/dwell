@@ -181,7 +181,30 @@ controller button and a touch button switch the modes; mouse, controller and tou
   level joining only what it touches — red on 0.38.5, which filled a cell past a skipped one — the
   retries) and the e2e (off a tower's edge: walking ahead in Line, painting the level in Flat).
 
-## 6. Not yet
+## 6. Choosing a slot **[built, 0.49.49]**
+
+The number keys pick a slot; the hotbar's `prevKey` / `nextKey` (`shared/items/items.json` `hotbar`,
+ArrowLeft / ArrowRight) step it one slot left / right, wrapping, a held key repeating (owner, 2026-11-07:
+on a sensitive touchpad with no wheel it was almost impossible to pick a piece). The wheel steps it too,
+and so does a touchpad's sideways two-finger swipe (the wheel event's `deltaX`; only the dominant axis
+counts, and sideways only ever steps the hotbar, never the spyglass or the brush size). Each axis goes
+through a notch accumulator (`dwell-game` `input.rs` `WheelAccumulator`): the first event after
+`wheelGapMs` of quiet steps one slot at once (a mouse notch), then every `wheelNotchPx` of travel in the
+same gesture steps one more, and a reversed direction steps back at once. Before 0.49.49 every wheel
+event stepped a slot, so a touchpad's stream of small deltas and its momentum skipped many. Line and
+page deltas (`deltaMode` 1, 2) count as 40 and 800 px. The controller steps it with LB / RB
+(`shared/input/gamepad.json`), touch by tapping a slot. Tests: `input.rs`
+`a_mouse_notch_steps_once_and_a_touchpad_swipe_steps_by_its_travel`, `the_step_keys_step_the_hotbar_while_playing`,
+`a_sideways_swipe_steps_the_hotbar_…`; `shared/items/gen.test.mjs` (validation).
+
+## 6a. Not yet
 
 The held item in the hand shows a whole block for a ½ m piece; the region tools and brushes still
 work in cells; no survival inventory (creative only).
+
+## 7. Dynamite **[built, 0.49.32]**
+
+`dwell:dynamite` is a hotbar item (`drag: none`, a click at a time; 15 items). Placed it is unlit; **Place
+with the torch held, aimed at it, lights it** instead of placing the torch (the explosives table's
+`ignitedBy`, `dwell_world::explosives::ignites` in `check_block_edit`); lit it can't be broken. Its fuse,
+blast and effects: [`EXPLOSIVES.md`](./EXPLOSIVES.md).

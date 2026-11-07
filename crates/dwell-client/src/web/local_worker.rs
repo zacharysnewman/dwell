@@ -19,6 +19,14 @@ use web_sys::{FileSystemReadWriteOptions, FileSystemSyncAccessHandle};
 
 use crate::local::{LocalCore, LocalError, encode_outbox};
 
+/// `performance.now()` in this worker.
+fn worker_now() -> f64 {
+    js_sys::Reflect::get(&js_sys::global(), &"performance".into())
+        .ok()
+        .and_then(|p| p.dyn_into::<web_sys::Performance>().ok())
+        .map_or(0.0, |p| p.now())
+}
+
 thread_local! {
     static HANDLES: RefCell<HashMap<u32, FileSystemSyncAccessHandle>> = RefCell::new(HashMap::new());
     static NEXT: RefCell<u32> = const { RefCell::new(1) };
@@ -155,6 +163,8 @@ impl LocalWorld {
         water_worker: Option<bool>,
         jobs_worker: Option<bool>,
     ) -> Result<LocalWorld, JsError> {
+        // The tick's phases timed by this worker's clock (`tickPhases`, docs/DEV_TOOLS.md).
+        dwell_sim::clock::set_clock(worker_now);
         let backend = file.map(OpfsBackend::register);
         let face = if spawn_face_b == Some(true) {
             dwell_world::Face::B
@@ -340,6 +350,36 @@ impl LocalWorld {
     }
     pub fn advance(&mut self, elapsed_seconds: f64) -> u32 {
         self.core.advance(elapsed_seconds)
+    }
+    /// Each tick phase's time (ms) summed since the last call, in `TICK_PHASES` order
+    /// (`tickPhaseNames`).
+    #[wasm_bindgen(js_name = tickPhases)]
+    pub fn tick_phases(&mut self) -> Vec<f64> {
+        self.core
+            .server()
+            .tick_phases()
+            .iter()
+            .map(|(_, ms)| *ms)
+            .collect()
+    }
+    /// What the ticks did since the last call (`Server::tick_counts`), as `[name, count]` pairs
+    /// flattened: names at even places, counts at odd ones.
+    #[wasm_bindgen(js_name = tickCounts)]
+    pub fn tick_counts(&mut self) -> Vec<JsValue> {
+        self.core
+            .server()
+            .tick_counts()
+            .iter()
+            .flat_map(|&(n, c)| [JsValue::from_str(n), JsValue::from_f64(c as f64)])
+            .collect()
+    }
+    /// The tick phases' names (`dwell_sim::server::TICK_PHASES`).
+    #[wasm_bindgen(js_name = tickPhaseNames)]
+    pub fn tick_phase_names() -> Vec<String> {
+        dwell_sim::server::TICK_PHASES
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect()
     }
     /// The outbox, encoded as `local::encode_outbox` describes.
     #[wasm_bindgen(js_name = takeOutbox)]

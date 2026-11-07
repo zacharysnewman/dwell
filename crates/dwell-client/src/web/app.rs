@@ -266,6 +266,10 @@ struct Inner {
     lod_settings: LodSettings,
     /// The Drifting flecks setting (docs/WATER_SURFACE_GRID.md §2c), for each game made.
     flow_particles: bool,
+    /// The Waterfalls setting (docs/WATER_SURFACE_GRID.md §2e), for each game made.
+    falls_shown: bool,
+    /// The Explosions settings (docs/EXPLOSIVES.md §4): flash, smoke and dust, screen shake.
+    blast_settings: crate::blasts::BlastSettings,
     /// Input events for the shell (toggles, hotbar changes, flight), drained by `takeEvents`.
     shell_events: Vec<JsValue>,
     /// The F3 overlay is on: kept here so it holds for a game started later (`?debug=1`).
@@ -409,6 +413,8 @@ impl Client {
             signature: Rc::default(),
             game: None,
             flow_particles: true,
+            falls_shown: true,
+            blast_settings: crate::blasts::BlastSettings::default(),
             lod_settings: LodSettings {
                 pixel_error: 2.0,
                 cache_bytes: 256 << 20,
@@ -631,6 +637,32 @@ impl Client {
             set(&o, "frameCount", t.frames().count() as u32);
             o.into()
         })
+    }
+
+    /// The waterfalls near the eye as this client found them (docs/WATER_SURFACE_GRID.md §2e;
+    /// DEV_TOOLS.md): 8 numbers each, its high column's x and z, its way (0 +x, 1 −x, 2 +z, 3 −z),
+    /// width (columns), lip and landing (world y), flow per metre (m²/s) and current over the lip (m/s).
+    #[wasm_bindgen(js_name = waterFalls)]
+    pub fn water_falls(&self) -> Vec<f64> {
+        let s = self.inner.borrow();
+        let Some(g) = &s.game else {
+            return Vec::new();
+        };
+        g.falls()
+            .iter()
+            .flat_map(|f| {
+                [
+                    f64::from(f.x),
+                    f64::from(f.z),
+                    f64::from(f.dir),
+                    f64::from(f.width),
+                    f.face.y(f.lip),
+                    f.face.y(f.land),
+                    f.flow,
+                    f.speed,
+                ]
+            })
+            .collect()
     }
 
     /// The water's current (m/s along x and z) at a world point as this client has it, and how many
@@ -979,29 +1011,29 @@ impl Client {
     }
     /// A `wheel` event: the hotbar, or with Alt held and the brush tool on, the brush's size, or
     /// while the spyglass is zoomed its steps (up zooms in; docs/SPYGLASS.md).
-    pub fn wheel(&self, delta_y: f64, alt: bool) {
+    pub fn wheel(&self, delta_x: f64, delta_y: f64, alt: bool, now_ms: f64) {
         let mut s = self.inner.borrow_mut();
-        if !alt
-            && let Some(step) = s.input.wheel(delta_y)
-            && let Some(g) = &mut s.game
-            && g.spyglass.on()
-        {
-            if g.spyglass.cycle(-step, &dwell_look::spyglass::SPYGLASS) {
-                g.sound(dwell_game::sound::SoundKind::Tool);
+        let s = &mut *s;
+        let (step_y, step_x) = s.input.wheel(delta_x, delta_y, now_ms);
+        let Some(g) = &mut s.game else { return };
+        // A sideways swipe (a touchpad's `deltaX`) only steps the hotbar (docs/ITEMS.md §6).
+        let step = match (step_y, step_x) {
+            (Some(step), _) => {
+                if !alt && g.spyglass.on() {
+                    if g.spyglass.cycle(-step, &dwell_look::spyglass::SPYGLASS) {
+                        g.sound(dwell_game::sound::SoundKind::Tool);
+                    }
+                    return;
+                }
+                if alt && g.brush_wheel(step) {
+                    return;
+                }
+                step
             }
-            return;
-        }
-        if let Some(step) = s.input.wheel(delta_y)
-            && alt
-            && let Some(g) = &mut s.game
-            && g.brush_wheel(step)
-        {
-            return;
-        }
-        if let Some(step) = s.input.wheel(delta_y)
-            && let Some(g) = &mut s.game
-            && let Some(slot) = g.interaction.scroll(step)
-        {
+            (None, Some(step)) => step,
+            (None, None) => return,
+        };
+        if let Some(slot) = g.interaction.scroll(step) {
             s.shell_events.push(shell_event("slot", slot as u32));
         }
     }
@@ -1535,10 +1567,10 @@ impl Client {
     pub fn set_phone(&self, phone: bool) {
         self.inner.borrow().renderer.borrow_mut().set_phone(phone);
     }
-    /// How moving water shows its flow (docs/WATER_SURFACE_GRID.md §2c, the Water settings):
-    /// ripples carried by the current, foam streaks, drifting particles.
+    /// How moving water shows its flow (docs/WATER_SURFACE_GRID.md §2c, §2e, the Water settings):
+    /// ripples carried by the current, foam streaks, drifting particles, waterfalls.
     #[wasm_bindgen(js_name = setWaterFlow)]
-    pub fn set_water_flow(&self, ripples: bool, foam: bool, particles: bool) {
+    pub fn set_water_flow(&self, ripples: bool, foam: bool, particles: bool, falls: bool) {
         let s = self.inner.borrow();
         let switches = (u32::from(ripples) * crate::render::flow::FLOW_RIPPLES)
             | (u32::from(foam) * crate::render::flow::FLOW_FOAM);
@@ -1547,8 +1579,39 @@ impl Client {
         let mut s = self.inner.borrow_mut();
         if let Some(g) = &mut s.game {
             g.set_flow_particles(particles);
+            g.set_falls_shown(falls);
         }
         s.flow_particles = particles;
+        s.falls_shown = falls;
+    }
+    /// Which blast effects show (docs/EXPLOSIVES.md §4, the Explosions settings): the flash, smoke
+    /// and dust, the screen shake.
+    #[wasm_bindgen(js_name = setExplosions)]
+    pub fn set_explosions(&self, flash: bool, smoke: bool, shake: bool) {
+        let mut s = self.inner.borrow_mut();
+        s.blast_settings = crate::blasts::BlastSettings {
+            flash,
+            smoke,
+            shake,
+            cpu: false,
+        };
+        let now = s.blast_settings_now();
+        if let Some(g) = &mut s.game {
+            g.set_blast_settings(now);
+        }
+    }
+    /// The blasts whose effects are still going (docs/EXPLOSIVES.md; DEV_TOOLS.md): 4 numbers each,
+    /// its place (world x, y, z) and its age (s).
+    #[wasm_bindgen(js_name = blasts)]
+    pub fn blasts(&self) -> Vec<f64> {
+        let s = self.inner.borrow();
+        let Some(g) = &s.game else {
+            return Vec::new();
+        };
+        g.blasts(telemetry::now_ms())
+            .into_iter()
+            .flat_map(|(p, age)| [p[0], p[1], p[2], age])
+            .collect()
     }
     /// The distant terrain (LOD) drawn or not, a debug switch (`?lod=off`, `__dwell.setLod`): the
     /// full-detail chunks alone show what they hold. True when in a world.
@@ -1870,6 +1933,8 @@ impl Client {
                 Some(sc) => {
                     let l = Object::new();
                     set(&l, "text", dwell_game::loading::loading_text(&sc).as_str());
+                    // Its stage for the shell's list (shared/look/loading.json `stages`).
+                    set(&l, "stage", dwell_game::loading::loading_stage(&sc));
                     set(
                         &l,
                         "ready",
@@ -1905,6 +1970,7 @@ impl Client {
             // Joined, the world's maps on the way (ADR 0049): the loading screen says so.
             let l = Object::new();
             set(&l, "text", "Shaping the world…");
+            set(&l, "stage", "worldMap");
             set(&l, "ready", 0u32);
             set(&l, "needed", 1u32);
             set(&o, "loading", l);
@@ -2212,6 +2278,13 @@ impl Inner {
                     self.shell_events.push(shell_event("slot", slot as u32));
                 }
             }
+            InputEvent::HotbarStep(step) => {
+                if let Some(g) = &mut self.game
+                    && let Some(slot) = g.interaction.scroll(step)
+                {
+                    self.shell_events.push(shell_event("slot", slot as u32));
+                }
+            }
             InputEvent::FlightChanged(on) => self.shell_events.push(shell_event("flight", on)),
             InputEvent::Tool(tool) => {
                 if let Some(g) = &mut self.game {
@@ -2395,7 +2468,7 @@ impl Inner {
         let ratio = self.renderer.borrow().stats().pixel_ratio.max(0.01);
         game.viewport_css = (f64::from(size.0) / ratio, f64::from(size.1) / ratio);
         game.debug_visible = self.debug_visible;
-        game.set_capabilities(region_edits, brushes, generator_version);
+        game.set_capabilities(region_edits, brushes);
         game.set_world(generator_version, world_seed);
         game.day_override = self.options.day;
         if let Some(w) = self.session.as_ref().and_then(|s| s.world_settings()) {
@@ -2440,7 +2513,17 @@ impl Inner {
             game.set_lod_map(true);
         }
         game.set_flow_particles(self.flow_particles);
+        game.set_falls_shown(self.falls_shown);
+        game.set_blast_settings(self.blast_settings_now());
         self.game = Some(game);
+    }
+
+    /// The Explosions settings with the adapter's tier (a CPU adapter draws fewer puffs).
+    fn blast_settings_now(&self) -> crate::blasts::BlastSettings {
+        crate::blasts::BlastSettings {
+            cpu: self.renderer.borrow().cpu_adapter(),
+            ..self.blast_settings
+        }
     }
 
     /// Whether this adapter draws the LOD colour map (not a CPU adapter: the cheapest tier there).

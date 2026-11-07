@@ -35,26 +35,33 @@ pub enum Layer {
 const TERRAIN: Group = Group::GROUP_1;
 const TIER1: Group = Group::GROUP_2;
 const CHARACTER: Group = Group::GROUP_3;
+/// Pieces kept apart (a blast's, for its `noPieceContactS`; docs/EXPLOSIVES.md §3): Tier 1 bodies
+/// that touch everything but one another. Every other layer's filter takes them.
+const APART: Group = Group::GROUP_4;
 
 pub(crate) fn groups(layer: Layer) -> InteractionGroups {
     let (member, filter) = match layer {
-        Layer::Terrain => (TERRAIN, TIER1 | CHARACTER),
-        Layer::Tier1 => (TIER1, TERRAIN | TIER1 | CHARACTER),
-        Layer::Character => (CHARACTER, TERRAIN | TIER1 | CHARACTER),
+        Layer::Terrain => (TERRAIN, TIER1 | CHARACTER | APART),
+        Layer::Tier1 => (TIER1, TERRAIN | TIER1 | CHARACTER | APART),
+        Layer::Character => (CHARACTER, TERRAIN | TIER1 | CHARACTER | APART),
     };
     InteractionGroups::new(member, filter, InteractionTestMode::And)
 }
 
 /// The groups a probe of moving bodies matches (Tier 1 and characters).
 pub(crate) fn moving_groups() -> InteractionGroups {
-    InteractionGroups::new(Group::ALL, TIER1 | CHARACTER, InteractionTestMode::And)
+    InteractionGroups::new(
+        Group::ALL,
+        TIER1 | CHARACTER | APART,
+        InteractionTestMode::And,
+    )
 }
 
 pub(crate) fn layer_of(collider: &Collider) -> Layer {
     let m = collider.collision_groups().memberships;
     if m.contains(CHARACTER) {
         Layer::Character
-    } else if m.contains(TIER1) {
+    } else if m.intersects(TIER1 | APART) {
         Layer::Tier1
     } else {
         Layer::Terrain
@@ -152,8 +159,9 @@ impl BoxBody {
 pub struct Physics {
     pub(crate) w: PhysicsWorld,
     config: PhysicsConfig,
-    /// The pieces' bodies (`add_piece`, `add_kinematic_piece`): what players push.
-    pieces: dwell_world::hash::HashSet<RigidBodyHandle>,
+    /// The pieces' bodies (`add_piece`, `add_kinematic_piece`): what players push; each with its
+    /// cells' centres in its frame (its colliders are the cells merged into boxes).
+    pieces: dwell_world::hash::HashMap<RigidBodyHandle, Vec<DVec3>>,
 }
 
 impl Physics {
@@ -250,13 +258,19 @@ impl Physics {
             .user_data(TIER1_BODY)
             .build();
         let h = self.w.bodies.insert(body);
-        self.pieces.insert(h);
-        for c in cells {
+        self.insert_piece_cells(h, cells);
+        BodyHandle(h)
+    }
+
+    /// Piece `h`'s colliders from `cells` (merged into boxes) and its cells' centres.
+    fn insert_piece_cells(&mut self, h: RigidBodyHandle, cells: &[PieceCell]) {
+        self.pieces
+            .insert(h, cells.iter().map(|c| c.center).collect());
+        for c in merged_boxes(cells) {
             self.w
                 .colliders
-                .insert_with_parent(piece_collider(c), h, &mut self.w.bodies);
+                .insert_with_parent(piece_collider(&c), h, &mut self.w.bodies);
         }
-        BodyHandle(h)
     }
 
     /// A piece's cells changed (docs/BUILT_BODIES.md §4: a cell broken off it, or one placed on it):
@@ -270,11 +284,7 @@ impl Physics {
         for c in old {
             self.w.remove_collider(c);
         }
-        for c in cells {
-            self.w
-                .colliders
-                .insert_with_parent(piece_collider(c), h.0, &mut self.w.bodies);
-        }
+        self.insert_piece_cells(h.0, cells);
         if let Some(b) = self.w.bodies.get_mut(h.0) {
             b.wake_up(true);
         }
@@ -296,14 +306,9 @@ impl Physics {
             .user_data(TIER1_BODY)
             .build();
         let h = self.w.bodies.insert(body);
-        self.pieces.insert(h);
         // Every cell, as the server's piece has them: the colliding ones touch the player, and
         // all of them give it the piece's mass (a player's push is predicted by it).
-        for c in cells {
-            self.w
-                .colliders
-                .insert_with_parent(piece_collider(c), h, &mut self.w.bodies);
-        }
+        self.insert_piece_cells(h, cells);
         BodyHandle(h)
     }
 
@@ -327,9 +332,14 @@ impl Physics {
         out
     }
 
-    /// The world centres of a body's colliders (a piece's cells), into `out`.
+    /// The world centres of a piece's cells (or another body's colliders), into `out`.
     pub fn collider_centres(&self, h: BodyHandle, out: &mut Vec<DVec3>) {
         out.clear();
+        if let (Some(cells), Some(b)) = (self.pieces.get(&h.0), self.w.bodies.get(h.0)) {
+            let pose = b.position();
+            out.extend(cells.iter().map(|&c| pose.translation + pose.rotation * c));
+            return;
+        }
         if let Some(b) = self.w.bodies.get(h.0) {
             out.extend(
                 b.colliders()
@@ -345,6 +355,87 @@ impl Physics {
         self.w.bodies.get(h.0).map_or(0.0, |b| b.mass())
     }
 
+    /// Keeps piece `body` apart from the other apart pieces (`apart`: it still touches the terrain,
+    /// players and every other body), or lets it touch them again (docs/EXPLOSIVES.md §3,
+    /// `noPieceContactS`). Its colliders that touch nothing stay so.
+    pub fn set_apart(&mut self, body: BodyHandle, apart: bool) {
+        let Some(b) = self.w.bodies.get(body.0) else {
+            return;
+        };
+        for &c in b.colliders() {
+            let Some(col) = self.w.colliders.get_mut(c) else {
+                continue;
+            };
+            let g = col.collision_groups();
+            if g.filter.is_empty() {
+                continue;
+            }
+            let (memberships, filter) = if apart {
+                ((g.memberships - TIER1) | APART, g.filter - APART)
+            } else {
+                ((g.memberships - APART) | TIER1, g.filter | APART)
+            };
+            col.set_collision_groups(InteractionGroups::new(memberships, filter, g.test_mode));
+        }
+    }
+
+    /// Whether piece `body` is kept apart (`set_apart`).
+    pub fn is_apart(&self, body: BodyHandle) -> bool {
+        self.w.bodies.get(body.0).is_some_and(|b| {
+            b.colliders().iter().any(|&c| {
+                self.w
+                    .colliders
+                    .get(c)
+                    .is_some_and(|col| col.collision_groups().memberships.contains(APART))
+            })
+        })
+    }
+
+    /// Whether any of `body`'s colliders overlaps another body's (a piece, apart or not; not a
+    /// player or the terrain): an apart piece lets the others touch it again only once this is
+    /// false, so pieces that landed in one another don't pop apart.
+    pub fn overlaps_pieces(&self, body: BodyHandle) -> bool {
+        let Some(b) = self.w.bodies.get(body.0) else {
+            return false;
+        };
+        let mut filter = QueryFilter::default().groups(InteractionGroups::new(
+            Group::ALL,
+            TIER1 | APART,
+            InteractionTestMode::And,
+        ));
+        filter.exclude_rigid_body = Some(body.0);
+        let q = self.w.broad_phase.as_query_pipeline(
+            self.w.narrow_phase.query_dispatcher(),
+            &self.w.bodies,
+            &self.w.colliders,
+            filter,
+        );
+        b.colliders().iter().any(|&c| {
+            self.w.colliders.get(c).is_some_and(|col| {
+                !col.collision_groups().filter.is_empty()
+                    && q.intersect_shape(*col.position(), col.shape())
+                        .next()
+                        .is_some()
+            })
+        })
+    }
+
+    /// The contact pairs with touching contacts between two pieces (Tier 1 bodies, apart or
+    /// not), the terrain and players left out (tests: an apart blast's pieces make none).
+    pub fn piece_contact_pairs(&self) -> usize {
+        let piece = |c: ColliderHandle| {
+            self.w
+                .colliders
+                .get(c)
+                .is_some_and(|c| c.collision_groups().memberships.intersects(TIER1 | APART))
+        };
+        self.w
+            .narrow_phase
+            .contact_pairs()
+            .filter(|p| p.has_any_active_contact() && piece(p.collider1) && piece(p.collider2))
+            .count()
+    }
+
     /// An impulse (N·s) on the body at its centre of mass.
     pub fn apply_impulse(&mut self, h: BodyHandle, impulse: DVec3) {
         if let Some(b) = self.w.bodies.get_mut(h.0) {
@@ -356,7 +447,7 @@ impl Physics {
     /// their contacts: a dominant piece (the server holds a slow piece so) or a kinematic
     /// stand-in (the client's prediction of one). Other bodies (a moving platform) are not.
     pub fn pushed_by_players(&self, h: BodyHandle) -> bool {
-        self.pieces.contains(&h.0)
+        self.pieces.contains_key(&h.0)
             && self
                 .w
                 .bodies
@@ -593,18 +684,169 @@ pub const PIECE_FRICTION: f64 = 0.8;
 /// Terrain's friction coefficient (`terrain.rs`).
 pub const TERRAIN_FRICTION: f64 = 0.0;
 
+/// A piece's cells as fewer boxes (ARCHITECTURE.md §7.1): runs of cells alike (the same size, mass
+/// and collision) merged greedily along x, then z, then y into one box each, its mass their sum.
+/// The same mass, centre of mass and inertia as the cells' boxes (each box uniform), and the same
+/// surface outside; a 1.5 m sand column is one box, not three, and its contacts a third.
+pub fn merged_boxes(cells: &[PieceCell]) -> Vec<PieceCell> {
+    use dwell_world::hash::HashMap;
+    // A cell's place in its piece's grid (its size apart), with its kind.
+    type Kind = ([u64; 3], u64, u8);
+    let kind = |c: &PieceCell| -> Kind {
+        (
+            [c.half.x.to_bits(), c.half.y.to_bits(), c.half.z.to_bits()],
+            c.mass.to_bits(),
+            c.collide as u8,
+        )
+    };
+    let index = |c: &PieceCell| -> [i64; 3] {
+        let size = c.half * 2.0;
+        [
+            (c.center.x / size.x).round() as i64,
+            (c.center.y / size.y).round() as i64,
+            (c.center.z / size.z).round() as i64,
+        ]
+    };
+    let mut grid: HashMap<(Kind, [i64; 3]), usize> = HashMap::default();
+    for (k, c) in cells.iter().enumerate() {
+        grid.insert((kind(c), index(c)), k);
+    }
+    let mut used = vec![false; cells.len()];
+    let mut out = Vec::new();
+    for (k, c) in cells.iter().enumerate() {
+        if used[k] {
+            continue;
+        }
+        let (kd, [x0, y0, z0]) = (kind(c), index(c));
+        let free = |used: &[bool], x: i64, y: i64, z: i64| {
+            grid.get(&(kd, [x, y, z])).is_some_and(|&j| !used[j])
+        };
+        let mut nx = 1;
+        while free(&used, x0 + nx, y0, z0) {
+            nx += 1;
+        }
+        let mut nz = 1;
+        while (0..nx).all(|i| free(&used, x0 + i, y0, z0 + nz)) {
+            nz += 1;
+        }
+        let mut ny = 1;
+        while (0..nx).all(|i| (0..nz).all(|j| free(&used, x0 + i, y0 + ny, z0 + j))) {
+            ny += 1;
+        }
+        for y in 0..ny {
+            for z in 0..nz {
+                for x in 0..nx {
+                    used[grid[&(kd, [x0 + x, y0 + y, z0 + z])]] = true;
+                }
+            }
+        }
+        let n = DVec3::new(nx as f64, ny as f64, nz as f64);
+        out.push(PieceCell {
+            center: c.center + c.half * (n - DVec3::ONE),
+            half: c.half * n,
+            mass: c.mass * n.x * n.y * n.z,
+            collide: c.collide,
+        });
+    }
+    out
+}
+
+/// How far (m) each face of a piece cell's box is drawn in from the cell's. Cells detached together
+/// lie face to face with their neighbours and the walls round them: boxes the cells' size touch
+/// exactly, and the solver held a packed raft of falling sand by its walls' friction, creeping
+/// down at ~0.2 m/s for the 30 s until it timed out (seed 0's dam site, 2026-11-06). A centimetre
+/// apart they fall freely; nothing draws a piece by its colliders.
+pub const PIECE_SKIN: f64 = 0.01;
+
 /// The cell `c` of a piece as its collider: a box of its mass, colliding as its `collide` says.
 fn piece_collider(c: &PieceCell) -> Collider {
     let groups = match c.collide {
         Collide::All => groups(Layer::Tier1),
-        Collide::World => InteractionGroups::new(TIER1, TERRAIN | TIER1, InteractionTestMode::And),
+        Collide::World => {
+            InteractionGroups::new(TIER1, TERRAIN | TIER1 | APART, InteractionTestMode::And)
+        }
         Collide::None => InteractionGroups::new(TIER1, Group::NONE, InteractionTestMode::And),
     };
-    ColliderBuilder::cuboid(c.half.x, c.half.y, c.half.z)
+    // Each face drawn in by PIECE_SKIN, so pieces side by side (and a piece beside a wall) don't
+    // touch until they move together.
+    let half = (c.half - DVec3::splat(PIECE_SKIN)).max(c.half * 0.5);
+    ColliderBuilder::cuboid(half.x, half.y, half.z)
         .translation(c.center)
         .mass(c.mass)
         .friction(PIECE_FRICTION)
         .restitution(0.05)
         .collision_groups(groups)
         .build()
+}
+
+#[cfg(test)]
+mod piece_box_tests {
+    use super::*;
+
+    fn cell(x: f64, row: f64, z: f64, mass: f64, collide: Collide) -> PieceCell {
+        PieceCell {
+            center: DVec3::new(x, row * 0.5, z),
+            half: DVec3::new(0.5, 0.25, 0.5),
+            mass,
+            collide,
+        }
+    }
+
+    // face-a-only: the boxes are in the piece's own frame, which has no up.
+    #[test]
+    fn a_pieces_cells_merge_into_fewer_boxes_of_the_same_mass_and_extent() {
+        // 2026-11-06: a box per cell made a 1.5 m sand column three colliders, each touching the
+        // terrain and its neighbours: a pit's 177 columns cost the server's physics 2.5 ms a
+        // tick natively. Merged, a column is one box.
+        let column: Vec<PieceCell> = (0..3)
+            .map(|r| cell(0.0, f64::from(r), 0.0, 400.0, Collide::World))
+            .collect();
+        let boxes = merged_boxes(&column);
+        assert_eq!(boxes.len(), 1, "a column is one box");
+        assert_eq!(boxes[0].center, DVec3::new(0.0, 0.5, 0.0));
+        assert_eq!(boxes[0].half, DVec3::new(0.5, 0.75, 0.5));
+        assert_eq!(boxes[0].mass, 1200.0);
+        // An L of logs with a leaf riding it: logs merge, the leaf (another mass and collision)
+        // stays its own; the mass and its centre are the cells'.
+        let mut l: Vec<PieceCell> = (0..4)
+            .map(|x| cell(f64::from(x), 0.0, 0.0, 300.0, Collide::All))
+            .collect();
+        l.push(cell(0.0, 1.0, 0.0, 300.0, Collide::All));
+        l.push(cell(1.0, 1.0, 0.0, 20.0, Collide::None));
+        let boxes = merged_boxes(&l);
+        assert_eq!(boxes.len(), 3, "the run of logs, the log over it, the leaf");
+        let mass = |b: &[PieceCell]| b.iter().map(|c| c.mass).sum::<f64>();
+        let centre = |b: &[PieceCell]| b.iter().map(|c| c.center * c.mass).sum::<DVec3>() / mass(b);
+        let volume = |b: &[PieceCell]| {
+            b.iter()
+                .map(|c| 8.0 * c.half.x * c.half.y * c.half.z)
+                .sum::<f64>()
+        };
+        assert_eq!(mass(&boxes), mass(&l));
+        assert!((centre(&boxes) - centre(&l)).length() < 1e-12);
+        assert!((volume(&boxes) - volume(&l)).abs() < 1e-12);
+    }
+
+    // face-a-only: as above.
+    #[test]
+    fn a_merged_piece_still_reports_each_cells_centre() {
+        // The water (`felling::water_drag`, `float`) reads a piece's cells, not its colliders.
+        let mut physics = Physics::default();
+        let column: Vec<PieceCell> = (0..3)
+            .map(|r| cell(0.0, f64::from(r), 0.0, 400.0, Collide::World))
+            .collect();
+        let h = physics.add_piece(DVec3::new(10.0, 20.0, 30.0), &column, false);
+        assert_eq!(physics.w.bodies[h.0].colliders().len(), 1);
+        let mut centres = Vec::new();
+        physics.collider_centres(h, &mut centres);
+        assert_eq!(
+            centres,
+            vec![
+                DVec3::new(10.0, 20.0, 30.0),
+                DVec3::new(10.0, 20.5, 30.0),
+                DVec3::new(10.0, 21.0, 30.0)
+            ]
+        );
+        assert!((physics.mass(h) - 1200.0).abs() < 1e-9);
+    }
 }

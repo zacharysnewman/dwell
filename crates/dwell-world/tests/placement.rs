@@ -289,3 +289,37 @@ dwell_world::both_faces!(
         assert!(overlaps_player(s("dwell:stone"), cell, &[body]));
     }
 );
+
+dwell_world::both_faces!(
+    /// Dynamite is lit by a torch held against it (docs/EXPLOSIVES.md §2): a Place of a torch aimed
+    /// at it turns it into its lit state, in its own cell, and places no torch; any other block is
+    /// placed against it as usual; lit, nothing breaks it.
+    fn a_torch_held_against_dynamite_lights_it(f: FaceFrame) {
+        let mut w = ground(f);
+        set(&mut w, f, [0, 0, 2], s("dwell:dynamite"));
+        let o = place(&mut w, f, [0, 0, 2], 5, s("dwell:torch"), 1, false);
+        assert_eq!(o.check, EditCheck::Ok);
+        assert_eq!(cells(f, &o), vec![[0, 0, 2]], "the dynamite's own cell");
+        assert_eq!(o.material, f.state(s("dwell:lit_dynamite")));
+        let writes = o.writes(&mut w, medium_kept);
+        assert_eq!(
+            writes,
+            vec![(f.cell([0, 0, 2]), f.state(s("dwell:lit_dynamite")))]
+        );
+        // Stone goes against it.
+        let o = place(&mut w, f, [0, 0, 2], 5, s("dwell:stone"), 1, false);
+        assert_eq!(cells(f, &o), vec![[0, 0, 1]]);
+        // Lit: a break is refused (its fuse can't be pulled).
+        set(&mut w, f, [0, 0, 2], s("dwell:lit_dynamite"));
+        let r = BlockEditRequest {
+            action: BlockEditAction::Break,
+            cell: f.cell([0, 0, 2]),
+            face: f.cell_face(5) as u8,
+            material: 0,
+            rows: 1,
+            down: false,
+        };
+        let o = check_block_edit(&mut w, &r, f.point([0.5, 1.62, 0.5]), &[], DEFAULT_REACH);
+        assert_eq!(o.check, EditCheck::Unbreakable);
+    }
+);

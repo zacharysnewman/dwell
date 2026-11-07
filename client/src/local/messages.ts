@@ -28,7 +28,14 @@ export type ToWorker =
        * tick, not their own worker.
        */
       jobsInline?: boolean;
+      /**
+       * The maps follow in a `maps` message (the page still shaping them): the worker opens the
+       * world file and loads its WASM meanwhile, then waits for them (§6.3).
+       */
+      mapsLater?: boolean;
     }
+  /** The world's maps after a `start` with `mapsLater` (empty: none, the server computes its own). */
+  | { t: 'maps'; maps: Uint8Array[] }
   | { t: 'connect'; session: number; kind: TransportKind; binding: Uint8Array }
   | { t: 'reliable'; session: number; channel: Channel; bytes: Uint8Array }
   | { t: 'datagram'; session: number; bytes: Uint8Array }
@@ -73,6 +80,11 @@ export type FromWorker =
   /** `persisted`: the world is saved in the browser (OPFS, §6.4). */
   | { t: 'ready'; persisted: boolean }
   | { t: 'error'; message: string }
+  /**
+   * A loading stage of the world's start (shared/look/loading.json `stages`, by id) began or ended;
+   * `atMs` on the shared wall clock (`performance.timeOrigin + performance.now()`).
+   */
+  | { t: 'stage'; id: string; phase: 'begin' | 'end'; atMs: number }
   /** The world was saved (in reply to `save`; `ok` is false if it could not be). */
   | { t: 'saved'; ok: boolean }
   | { t: 'reliable'; session: number; channel: Channel; bytes: Uint8Array }
@@ -99,4 +111,12 @@ export interface ServerStats {
   advanceMaxMs: number;
   water: 'worker' | 'inline';
   waterStats: WaterStats;
+  /** Each tick phase's time over the second (ms, summed; `Server::tick_phases`' names). */
+  phasesMs: Record<string, number>;
+  /**
+   * What the ticks did over the second (`Server::tick_counts`): `collisionBuilds`, the terrain
+   * collision's chunk builds; `generatedOnTick`, chunks the tick generated itself, not the jobs;
+   * `collisionCells`, full-cube cells put into or taken out of the terrain collider.
+   */
+  counts: Record<string, number>;
 }

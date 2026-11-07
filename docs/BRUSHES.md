@@ -1,8 +1,9 @@
-# Brushes: painting and sculpting in the sandbox
+# Brushes: painting and sculpting
 
 Status: **built** (Phase 34, [ADR 0037](./adr/0037-brushes.md)). The owner answered §5 on
 2026-10-19; the follow-ups (the rest of VoxelSniper's brushes, §7) are built. The owner hasn't tried
-the brushes yet.
+the brushes yet. Since 0.49.28 they are in every world, not just the sandbox (owner, 2026-11-06: §2
+modes, §3).
 Architecture: [`ARCHITECTURE.md`](./ARCHITECTURE.md) §6.5 (edits), §10.5 (additions within a line).
 
 The owner's brief (2026-10-15): *"add painting tooling to our playground like Voxel Sniper tools"*
@@ -85,13 +86,14 @@ a pure function of the brush, the aim and a grid of the world's states: `brush_c
 
 ## 2. Data: `shared/brushes/brushes.json`
 
-The **presets** players pick, and which **world types** allow brushes, are data:
+The **presets** players pick, and which **game modes** allow brushes, are data:
 
 ```json
 {
   "formatVersion": 1,
   "sizes": { "min": 1, "max": 16 },
-  "worldTypes": { "sandbox": { "brushes": true, "reach": 128 } },
+  "modes": { "creative": { "brushes": true, "reachM": 256 } },
+  "defaultMode": "creative",
   "presets": [
     { "name": "smooth", "label": "Smooth", "brush": "ball", "performer": "smooth", "size": 4,
       "key": "KeyO", "params": { "iterations": 2 } }
@@ -100,7 +102,7 @@ The **presets** players pick, and which **world types** allow brushes, are data:
 ```
 
 - `shared/brushes/gen.mjs` validates the file and writes two outputs:
-  - `crates/dwell-world/src/brushes.gen.rs`, the presets and the world policies;
+  - `crates/dwell-world/src/brushes.gen.rs`, the presets, the modes and `DEFAULT_MODE`;
   - `client/src/ui/brushes.gen.ts`, for the controls table and the HUD.
 
   CI regenerates both and fails on a diff, in the protocol job.
@@ -110,10 +112,12 @@ The **presets** players pick, and which **world types** allow brushes, are data:
   - an out-of-range value;
   - a duplicate name;
   - a key that isn't free, or that two presets share;
-  - a world type that doesn't exist;
-  - a reach outside 1–256 m.
-- `client/src/ui/brushesGen.test.ts` runs the generator over fixture data, adds a preset by data
-  alone and checks each validation. In `dwell-world` `brush.rs`, a fixture preset strokes, and
+  - a mode's name that isn't lower case, an unknown field in a mode, `brushes` not a boolean;
+  - a reach (`reachM`) outside 1–256 m;
+  - a `defaultMode` that names no mode, no modes at all, an unknown top-level field, and the old
+    `worldTypes` (replaced by `modes`).
+- `client/src/ui/brushesGen.test.ts` runs the generator over fixture data, adds a preset and a mode
+  (an `adventure` without brushes) by data alone and checks each validation. In `dwell-world` `brush.rs`, a fixture preset strokes, and
   every shipped preset strokes.
 - The current presets cover the brief's tools and the rest of VoxelSniper's (§7):
   - shapes: ball, disc, cylinder, cube, ellipsoid, splatter, line, square, disc and square on the
@@ -131,13 +135,34 @@ The **presets** players pick, and which **world types** allow brushes, are data:
 
   They are prototype content (`ARCHITECTURE.md` §6.1) for the owner to tune.
 
+- **Modes** (owner, 2026-11-06): *"I want my bulk change tools in regular worlds not just
+  sandbox"*, and *"we're going to add 'adventure' mode later to complement 'creative' mode (what we
+  have now) where you wouldn't have these tools, but for now everything is 'creative'."* The
+  per-world-type grant became a table of **game modes**, each with `brushes` and `reachM`. Every
+  world plays `defaultMode` (`dwell_world::brush::world_mode`): there is no mode selector and no
+  world setting yet. Adding adventure later is an entry
+  (`"adventure": { "brushes": false, "reachM": 5 }`) and a way for a world to pick its mode: a
+  world setting (ADR 0054, sent at join in `WorldSettings`) read by `world_mode`, which the server
+  (the `brushes` flag, `region_reach`) and the client (`set_capabilities`) already go through.
+  Sandbox-only things that aren't brushes (its unbreakable floor, its generator) stay the
+  sandbox's.
+
 ## 3. In the game
 
-- **Where.** A world type whose policy has `"brushes": true` gets brushes; today that is only
-  `sandbox`. The server announces them with the `brushes` Welcome flag. The client offers the tool
-  only then: V does nothing in other worlds.
-- **Aim.** The brush aims along the view ray up to the world type's `reach` (128 m in the sandbox),
-  not just the 5 m block reach.
+- **Where.** A world whose mode has `"brushes": true` gets brushes; every world is creative, so
+  every world has them. The server announces them with the `brushes` Welcome flag. The client
+  offers the tool only then: V does nothing on a server without the flag (an older one in a terrain
+  world).
+- **Aim.** The brush aims along the view ray up to the mode's `reachM` (256 m in creative; owner,
+  2026-11-06: "Increase the reach to 256m"), not just the 5 m block reach.
+  - **It always shows where it acts** (owner, 2026-11-06: *"If it doesn't reach it should ensure
+    it always shows where it will place or destroy"*). When the ray meets no block in reach, meets
+    one past it, or runs into a cell where a stroke would read terrain the client hasn't loaded (`read_extent`, `ChunkStreamer::box_loaded`) or out of the build volume or the
+    world's disc first, the aim is the **farthest editable cell along the ray**: short of the
+    first uneditable cell and of the reach (`brush_tool::clamp_aim`, a pure function, tested on
+    both faces). Such a free aim is aimed at from its face's up, and both clicks centre the stroke
+    on it, so the stroke lands exactly where the preview is. A stroke there that would change
+    nothing (an erase in the air) shows the box of the brush's cells instead of an empty ghost.
 - **Preview** (owner, 2026-10-19: the exact cells, in place of the wireframe). At the target, a
   see-through **ghost of the exact cells the stroke would change** shows: the performer is run on
   the client's world, so a splatter shows its real cells, a smooth only the cells it would move,
@@ -146,7 +171,13 @@ The **presets** players pick, and which **world types** allow brushes, are data:
   over the composite, at a third of its opacity where the terrain is in front of it, so cells inside
   the ground still show. A line or triangle also shows its clicks so far joined to the aim.
   - **Shown by a toggle**, `\`, on by default. Off, the box of the brush's cells shows instead (in
-    orange lines, over everything). A held key was the alternative; a toggle was chosen because
+    orange lines, over everything).
+  - **Lines a constant width on screen** (owner, 2026-11-06: *"these outlines should probably be
+    scaled by screen size not world size so you can still see far outlines clearly"*). The brush's
+    box and click lines, the region tools' boxes and the block outline are drawn 2 CSS pixels ×
+    the pixel ratio wide at any distance (`render/mod.rs` `LINE_WIDTH_CSS_PX`, `line_vs`). They
+    were 1-device-pixel line lists before, half a CSS pixel on a 2x screen and hard to see far
+    off. The ghost's faces are cells in the world and shrink with distance as before. A held key was the alternative; a toggle was chosen because
     the ghost is what you aim by, and holding a key while clicking and steering is awkward.
   - **Bounded cost.** The ghost has only the changed cells' outer faces (a face between two cells
     of the same colour is left out), a little proud of the cells, at most `GHOST_FACE_CAP` (16,384)
@@ -200,10 +231,13 @@ been an alternative, but it fails twice:
   state, so the paste fails safe. Clients send `KEEP` only to a server whose Welcome sets
   **`welcome_flags::BRUSHES`** (4). Decoders ignore unknown flag bits, as with `regionEdits`
   (§10.5), so 0.11 builds stay compatible both ways.
-- **Ranged reach.** The server's region-edit reach becomes the world type's brush reach plus the
-  usual 1 m slack: 129 m in the sandbox, 65 m elsewhere (`region_reach`). Brush pastes and
-  region tools share it. It is data, per world type, so a dedicated server gets the policy of its
-  generator.
+- **Ranged reach.** The server's region-edit reach is the mode's brush reach plus the usual 1 m
+  slack: 257 m in creative, so in every world (`region_reach`; 129 m in the sandbox and 65 m
+  elsewhere before 0.49.28), and 65 m in a mode without brushes. Brush pastes and region tools
+  share it. It is data, per mode. A 0.49.28 client on an older server of the line sees the
+  `brushes` flag in the sandbox only, and there strokes past that server's 129 m are refused (the
+  prediction rolls them back); the flag carries no reach, and changing that would change the
+  protocol.
 - **Unchanged.** Validation is otherwise the same:
   - box size;
   - unbreakable cells;
@@ -237,8 +271,8 @@ defaults were taken instead (coordinator, 2026-10-15):
   plus a vocabulary entry in `gen.mjs`).
 - **Who adds them:** the owner, by editing `brushes.json`. No editor page yet.
 - **Fixed in code:** the vocabulary of brushes, performers and masks. **Data:** the presets, their
-  parameters and keys, and which world types allow brushes and how far they reach.
-- **Scope:** per build. The world policy follows the world type.
+  parameters and keys, and which game modes allow brushes and how far they reach (per world type until 0.49.28).
+- **Scope:** per build. The policy follows the world's game mode (creative for every world for now).
 
 Questions for the owner:
 
@@ -250,7 +284,8 @@ Questions for the owner:
    creative.** Dwell has no game modes yet; adventure and creative modes are wanted (`FUTURE.md`,
    "Game modes"). Brushes come to terrain worlds in creative mode only. If excluding them by
    finer permission (ops only) is logically complicated, allowing them for everyone in creative is
-   fine. Until game modes exist, brushes stay in the sandbox.
+   fine. **Built (owner, 2026-11-06): every world is creative for now, with brushes for everyone
+   and a 256 m reach (§2, modes).**
 3. Is 128 m the right reach, and is 16 the right maximum radius? A size-16 stroke is about 36,000
    cells, half a second of the server's rate. **Answered (owner, 2026-10-19): yes, both are fine.**
 4. VoxelSniper offers more brushes: blend, linear blend, overlay variants, stencils and tree

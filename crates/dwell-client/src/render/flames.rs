@@ -323,13 +323,13 @@ const QUAD_VERTICES: usize = 6;
 
 /// The time the shader animates with: seconds, wrapped (the noise is not periodic, so it jumps
 /// once every wrap; f32 keeps its precision).
-fn wrapped(seconds: f64) -> f32 {
+pub(super) fn wrapped(seconds: f64) -> f32 {
     seconds.rem_euclid(4096.0) as f32
 }
 
 /// One quad's six vertices: `corner(x, y)` its place for x, y in {0, 1}; `uv(x, y)` its quad
 /// coordinates there.
-fn quad(
+pub(super) fn quad(
     out: &mut Vec<f32>,
     corner: impl Fn(f64, f64) -> [f64; 3],
     uv: impl Fn(f64, f64) -> [f32; 2],
@@ -435,11 +435,13 @@ pub fn quads(flames: &[Flame], basis: &Basis, seconds: f64) -> (Vec<f32>, usize,
 /// dwell-look's flame shading.
 pub fn source(animated: bool) -> String {
     format!(
-        "{}\n{}\n{}\n{}\nconst FLAME_PEAK: f32 = {:?};\n{WGSL}",
+        "{}\n{}\n{}\n{}\n{}\n{}\nconst FLAME_PEAK: f32 = {:?};\n{WGSL}",
         super::shaders::lighting_source(),
         dwell_look::flames::wgsl(animated),
         dwell_look::motes::wgsl(),
         fleck_wgsl(),
+        super::waterfalls::wgsl(),
+        super::blasts::wgsl(),
         FLAME_TUNABLES.peak as f32,
     )
 }
@@ -532,6 +534,23 @@ fn flame_colour(i: FlameVary) -> vec4f {
         }
         return vec4f(flame_light(c), 0.0);
     }
+    if (kind >= 8u) {
+        // A blast's smoke, dust or fireball (render/blasts.rs): smoke and dust lit over what is
+        // behind, the fireball added.
+        let c = blast_colour(kind, i.info & 0xffu, i.uv, i.rest, i.rel, i.seed);
+        if (max(c.a, max(max(c.r, c.g), c.b)) < 0.005) {
+            discard;
+        }
+        return c;
+    }
+    if (kind >= 5u) {
+        // A waterfall's sheet, foam or spray (render/waterfalls.rs): lit, over what is behind.
+        let c = fall_colour(kind, i.info & 0xffu, i.uv, i.rest, i.rel);
+        if (c.a < 0.01) {
+            discard;
+        }
+        return c;
+    }
     if (kind == 4u) {
         // A fleck on moving water (crate::flecks): lit, over what is behind.
         let c = fleck_colour(i.info & 0xffu, i.uv, i.rest.y, i.rel, i.seed, width_px);
@@ -596,7 +615,7 @@ fn flame_lit_fs(i: FlameVary) -> SceneOut {
 @fragment
 fn flame_mask_fs(i: FlameVary) -> SceneOut {
     let look = flame_look(i.info & 0xffu);
-    if ((i.info >> 8u) == 4u) {
+    if ((i.info >> 8u) >= 4u) {
         discard;
     }
     if ((i.info >> 8u) == 3u) {
@@ -641,6 +660,10 @@ pub struct FlameRenderer {
     pub motes_drawn: usize,
     /// Flecks on moving water drawn this frame.
     pub flecks_drawn: usize,
+    /// Waterfalls drawn this frame.
+    pub falls_drawn: usize,
+    /// Blast puffs drawn this frame.
+    pub puffs_drawn: usize,
     /// Whether the motes move (a CPU adapter draws its few, still: `cpu_count`).
     animated: bool,
 }
@@ -788,6 +811,8 @@ impl FlameRenderer {
             drawn: 0,
             motes_drawn: 0,
             flecks_drawn: 0,
+            falls_drawn: 0,
+            puffs_drawn: 0,
             animated,
         }
     }
@@ -804,6 +829,8 @@ impl FlameRenderer {
         arms: Option<Flame>,
         portals: &[PortalMotes],
         flecks: &[crate::flecks::Fleck],
+        falls: &[dwell_world::falls::Fall],
+        puffs: &[crate::blasts::Puff],
         eye: [f64; 3],
         seconds: f64,
     ) {
@@ -830,6 +857,14 @@ impl FlameRenderer {
         let (fl, fn_) = fleck_quads(flecks, eye, seconds, max);
         data.extend(fl);
         self.flecks_drawn = fn_;
+        // The waterfalls near the eye (render/waterfalls.rs): a CPU adapter's still and sprayless.
+        let (fq, nf) = super::waterfalls::fall_quads(falls, eye, basis, seconds, self.animated);
+        data.extend(fq);
+        self.falls_drawn = nf;
+        // The blasts' smoke, dust and fireballs (render/blasts.rs).
+        let (bq, nb) = super::blasts::blast_quads(puffs, eye, basis);
+        data.extend(bq);
+        self.puffs_drawn = nb;
         let scene_end = (data.len() / VERTEX_FLOATS) as u32;
         let (arms_data, arms_glows, _) = quads(arms.as_slice(), basis, seconds);
         data.extend(arms_data);

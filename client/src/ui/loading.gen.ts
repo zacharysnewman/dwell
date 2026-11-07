@@ -9,3 +9,30 @@ export const LOADING_FADE = {
   cpuDurationS: 0.2,
   reducedMotionDurationS: 0,
 } as const;
+
+/** A start stage's id (shared/look/loading.json `stages.list`): what code reports it by. */
+export type LoadingStageId = 'page' | 'game' | 'graphics' | 'worldFile' | 'worldMap' | 'server' | 'spawn' | 'connect' | 'join' | 'terrain';
+
+/** One stage's definition. */
+export interface LoadingStageDef {
+  id: LoadingStageId;
+  label: string;
+  progress?: 'bytes' | 'count';
+}
+
+/** The loading screen's stages while the game starts, in their usual order (ARCHITECTURE.md §6.3). */
+export const LOADING_STAGES: readonly LoadingStageDef[] = [
+  { id: 'page', label: "Loading the page" },
+  { id: 'game', label: "Loading the game", progress: 'bytes' },
+  { id: 'graphics', label: "Starting the graphics" },
+  { id: 'worldFile', label: "Opening the world file" },
+  { id: 'worldMap', label: "Shaping the world map", progress: 'count' },
+  { id: 'server', label: "Starting the world's server" },
+  { id: 'spawn', label: "Finding a place to stand" },
+  { id: 'connect', label: "Connecting to the server" },
+  { id: 'join', label: "Joining the world" },
+  { id: 'terrain', label: "Loading the terrain", progress: 'count' },
+];
+
+/** A stage running longer than this (s) is marked slow. */
+export const LOADING_STAGE_SLOW_S = 3;

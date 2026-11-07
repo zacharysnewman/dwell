@@ -81,3 +81,47 @@ describe('loopback transport', () => {
     expect(await Promise.race([transport.save(), Promise.resolve('open')])).toBe('open');
   });
 });
+
+describe('the local world start (§6.3)', () => {
+  it('starts the worker before the maps are shaped, and sends them when they are', async () => {
+    // Before, the page waited for the maps and only then started the worker: its world file and
+    // WASM waited too. Now it starts at once and the maps follow.
+    const worker = new FakeWorker();
+    let shaped: (m: Uint8Array[] | undefined) => void = () => undefined;
+    const maps = new Promise<Uint8Array[] | undefined>((r) => (shaped = r));
+    const stages: string[] = [];
+    const pending = LoopbackTransport.start(
+      worker as unknown as Worker,
+      { worldSeed: 7, generatorVersion: 8 },
+      (id, phase) => stages.push(`${phase} ${id}`),
+      maps,
+    );
+    expect(worker.sent).toEqual([
+      { t: 'start', worldSeed: 7, generatorVersion: 8, mapsLater: true },
+    ]);
+    worker.reply({ t: 'stage', id: 'worldFile', phase: 'begin', atMs: performance.timeOrigin + 1 });
+    worker.reply({ t: 'stage', id: 'worldFile', phase: 'end', atMs: performance.timeOrigin + 2 });
+    const bytes = [new Uint8Array([1]), new Uint8Array([2])];
+    shaped(bytes);
+    await maps;
+    await Promise.resolve();
+    expect(worker.sent[1]).toEqual({ t: 'maps', maps: bytes });
+    worker.reply({ t: 'ready', persisted: true });
+    await pending;
+    expect(stages).toEqual(['begin worldFile', 'end worldFile']);
+  });
+
+  it('sends no maps (the server computes its own) when there are none', async () => {
+    const worker = new FakeWorker();
+    const none = Promise.resolve(undefined);
+    void LoopbackTransport.start(
+      worker as unknown as Worker,
+      { worldSeed: 1, generatorVersion: 0 },
+      undefined,
+      none,
+    );
+    await none;
+    await Promise.resolve();
+    expect(worker.sent[1]).toEqual({ t: 'maps', maps: [] });
+  });
+});

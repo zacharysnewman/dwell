@@ -68,9 +68,16 @@ test('settings menu: opens from the corner, without fog sliders, and is kept', a
     exposure: 1,
     audio: { master: 0.8, effects: 1, ui: 0.6, music: 0.6 },
     clouds: 'high',
-    water: { quality: 'medium', flowRipples: true, flowFoam: true, flowParticles: true },
+    water: {
+      quality: 'medium',
+      flowRipples: true,
+      flowFoam: true,
+      flowParticles: true,
+      waterfalls: true,
+    },
     shadows: { quality: 'high', torch: 'low' },
     motion: { speedEffects: true, fovBoost: 1, plantSway: true },
+    explosions: { flash: true, smoke: true, shake: true },
     fovDeg: 75,
     showArms: true,
     // Every part of the screen shows by default (shared/ui/hud.json).

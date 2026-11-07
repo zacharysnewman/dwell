@@ -84,9 +84,9 @@ fields, ranges and names fail with the entry named):
 | `goto {find, radius?, surface?, minDepth?, minArea?, minCurrent?, face?, height?, aim? \| yaw? \| toward? \| lookAt?, turn?, pitch?, move?, scope?, water?, maxS?}` | finds a place by what is there and puts the camera over it (`__dwell.goto`, [Finding places](#finding-places)): e.g. `{ "find": "water", "scope": "world", "water": "sea", "minDepth": 2, "minArea": 1000, "height": 2, "lookAt": "land", "turn": 180, "pitch": -3, "maxS": 120 }` (the nearest sea at least 2 m deep on the world map, the player moved there, the camera 2 m up with its back to the shore) or `{ "find": "water", "minCurrent": 0.1, "aim": "downstream", "pitch": -15 }`. Prints what it found and saves it in `report.json`'s `gotos`; **finding nothing within `maxS` fails the run** with what it looked for and where, so a scenario never measures the wrong scene. `water-views`, `water-shore`, `water-reflections` and `water-river` find their water this way |
 | `edit {action}`, `select {slot}` | break/place at the crosshair; picks a hotbar slot |
 | `region {op, from, to, up?}` | a region edit (the region tools, `__dwell.tool('cornerA@x,y,z')`) of the box between `from` and `to`, offsets in metres from the player's feet (`up` −1 on face B): `fill` with the selected hotbar block or `clear` to air — to build a scene, e.g. `tunnel-a`/`tunnel-b`'s hill and tunnel (DAY_NIGHT.md §11), and `torch-cave-a`/`torch-cave-b`'s tunnel and room at midnight with the torch held and placed (LIGHTS.md; `torch-night-puppets` records 8 torch-bearing stand-ins against none; `torch-scale-a` shoots the 1 m torch beside a stand-in at noon and midnight and the held flame by day and night); `torch-shadows-a`/`torch-shadows-b` place a torch before a stone pillar in the room and hold one too, recording the Torch shadows' cost with `--configs torch-shadows-off,torch-shadows-high`; `felling` builds a tree on the flat world and breaks its trunk, shooting the fall and the settled logs, FELLING.md) |
-| `brush {command}` | drives the brush tool as its keys and clicks do (`__dwell.brush`: `toggle`, `preset:<name>`, `size:<n>`, `apply`, …; [`BRUSHES.md`](./BRUSHES.md)), in worlds that allow brushes (sandbox: a `--compare` config with `params: {"world": "sandbox"}`) |
+| `brush {command}` | drives the brush tool as its keys and clicks do (`__dwell.brush`: `toggle`, `preset:<name>`, `size:<n>`, `apply`, …; [`BRUSHES.md`](./BRUSHES.md)), in every world (creative; the sandbox with a `--compare` config `params: {"world": "sandbox"}`) |
 | `settle {maxS}` | waits until the LOD has had nothing to generate, mesh or ask for, for 1 s |
-| `until {what, maxS}` | waits until the view waits for nothing `behind` the camera (out of its frustum: `__dwell.state().lod.waitingOffView` 0), nothing `nearBehind` it within the full-detail distance (`waitingNearOffView` 0: the full detail behind is there) or nothing `ahead` (`waitingInView` 0), and saves the seconds since the page was opened in `report.json`'s `untils`; every run also saves `join` (page opened → playing, and the loading screen's wait, ARCHITECTURE.md §6.3). `join-behind` times the join's timeline and shoots behind the camera at the start and once settled; `--compare --configs raster,loading-off` runs it with and without the loading screen |
+| `until {what, maxS}` | waits until the view waits for nothing `behind` the camera (out of its frustum: `__dwell.state().lod.waitingOffView` 0), nothing `nearBehind` it within the full-detail distance (`waitingNearOffView` 0: the full detail behind is there) or nothing `ahead` (`waitingInView` 0), and saves the seconds since the page was opened in `report.json`'s `untils`; every run also saves `join` (page opened → playing, the loading screen's wait and its stages, ARCHITECTURE.md §6.3). `join-behind` times the join's timeline and shoots behind the camera at the start and once settled; `--compare --configs raster,loading-off` runs it with and without the loading screen |
 | `die {maxS}` | kills the local player (`__dwell.die()`, a local world only), waits for its respawn, then (at most `maxS`) until it is playing again, and saves the respawn → playing seconds with the loading screen's wait in `report.json`'s `respawns` (ARCHITECTURE.md §6.3). `respawn-far` flies 700 m from the spawn and dies there; `--compare --configs raster,respawn-preload-off` runs it with and without the respawn preload (`?respawnPreload=off`) |
 | `mark` | forgets the telemetry so far: the next `record` measures from here |
 | `record {name}` | saves everything above under `name` |
@@ -196,11 +196,14 @@ What is recorded now:
 | `net` | the session's network pumping (twice a frame) |
 | `jobs.poll`, `jobs.apply`, `jobs.done` | collecting finished jobs; applying them (chunks into the world, meshes to the GPU); how many |
 | `ticks`, `ticks.count` | the fixed-rate prediction ticks (controller + physics) and how many ran |
+| `pieces.standIns` (samples) | the pieces stood in for in the prediction at each snapshot: those that could touch the local player soon ([`EXPLOSIVES.md`](./EXPLOSIVES.md) §3) |
 | `game.draw` | the game's draw step: `mesh_dirty` and `lod` inside it |
 | `mesh_dirty` | starting chunk mesh jobs (copying padded chunks), within its 4 ms budget |
 | `lod` | the whole-world view's update (`LodSystem`): selection, job requests, stand-ins |
 | `torchshadow.drawn` (count) | Lights whose torch shadow maps were drawn this frame (six passes each; kept maps aren't counted; `render/point_shadows.rs`, [`LIGHTS.md`](./LIGHTS.md) §4) |
 | `lights.drawn` (count) | Dynamic lights drawn this frame: held torches, yours and other players', the nearest `maxLights` (`render/lights.rs`, [`LIGHTS.md`](./LIGHTS.md) §3) |
+| `falls.drawn` (count) | Waterfalls drawn this frame (`render/waterfalls.rs`; docs/WATER_SURFACE_GRID.md §2e), at most `maxFalls` |
+| `falls.find` (ms) | Finding the falls near the eye (`dwell_world::falls::falls_near`), every `refreshS` (0 on the other frames) |
 | `flecks.drawn` (count) | Flecks drifting on moving water drawn this frame (`flecks.rs`, `render/flames.rs` `fleck_quads`; docs/WATER_SURFACE_GRID.md §2c), at most each liquid's `particles.count` (`cpuCount` on a CPU adapter) |
 | `flames.drawn` (count) | Flames drawn this frame: placed light sources' and held torches' (yours in the arms view), at most `maxFlames` within `drawM` (`render/flames.rs`, [`LIGHTS.md`](./LIGHTS.md) §6) |
 | `lod.fading`, `lod.retiring` (counts) | LOD swaps cross-fading this frame and the outgoing draws they add (`dwell-lod` `fade.rs`, ARCHITECTURE.md §6.6 Swaps) |
@@ -229,10 +232,17 @@ still continues across and the eye still swings across over `crossingRollS`.
 Plants (docs/TRANSPARENT_BLOCKS.md): `__dwell.plants(wind, shown)` scales their wind and hides or
 shows every cutout mesh, for an A/B of their cost at one camera pose.
 
-Water flow (docs/WATER_SURFACE_GRID.md §2c): `__dwell.waterFlowAt(x, y, z)` gives the client's current there (m/s along x and z), the flecks near the eye, and the first few flecks' places.
+Water flow (docs/WATER_SURFACE_GRID.md §2c): `__dwell.waterFlowAt(x, y, z)` gives the client's current there (m/s along x and z), the flecks near the eye, and the first few flecks' places. Waterfalls (§2e): `__dwell.waterFalls()` lists the falls the client found near the eye (each one's high column, way, width, lip and landing heights, flow per metre and lip speed). Blasts (docs/EXPLOSIVES.md §4): `__dwell.blasts()` lists the blasts whose effects are still going (each one's place and age, s); telemetry `blasts.puffs` counts the smoke, dust and fireball billboards drawn a frame.
 
 From the console: `__dwell.telemetry()`, `__dwell.telemetryFrames()`, `__dwell.ticks()`,
 `__dwell.telemetryReset()` (types in `client/src/main.ts`).
+
+The start's stages (ARCHITECTURE.md §6.3, *The start's stages*): `__dwellStages()` (on `window`, from the
+page's first moment, before `__dwell`) gives each loading stage that ran — `id`, `beganMs`, `endedMs` (null:
+running) and `firstMs` (when its count first moved: the wait before the terrain counts) on the page's clock —
+and every stage is a User Timing measure `dwell:stage:<id>` in a Chrome trace's Timings track. Every bench run
+prints them after the join (`stages: page 0.00–0.03 s, game 0.03–0.08 s, …`) and saves them in
+`report.json`'s `join.stages`.
 
 ## Interactive use
 
@@ -270,11 +280,19 @@ the water worker, ADR 0062); a native test or probe calls `server.water_report(.
 **The server's figures** (G5, ADR 0062): `__dwell.serverStats()` gives the local server's last
 second, as the local-mode worker reports it each second: `ticks`, `tickMeanMs` (each `advance`
 call's wall time over the ticks it ran), `advanceMaxMs` (the worst call), `water` (`worker` or
-`inline`) and `waterStats` — `queue` (batches sent to the water and not yet answered), `runs`,
+`inline`), `phasesMs` (each tick phase's time summed over the second, ms, by `TICK_PHASES`' names —
+`terrain`, `players`, `physics`, …; the worker's `performance.now` times them, 0.49.33; `terrain`, the
+terrain collision's loads and rebuilds, apart from `players` since 0.49.34; since 0.49.35 the tick's
+tail is `stream` (chunks sent), `worldgen`, `lod` and `save` (the autosave's batch and its encoding and
+commit, spread over ticks in the browser, ARCHITECTURE.md §6.4), once one `stream+lod+save`), `counts` (what the ticks did
+over the second, `Server::tick_counts`: `collisionBuilds`, terrain-collision chunk builds, and
+`generatedOnTick`, chunks the tick generated itself rather than the server-jobs worker, and since
+0.49.42 `collisionCells`, full-cube cells put into or taken out of the terrain collider, a little a
+tick but those near players) and `waterStats` — `queue` (batches sent to the water and not yet answered), `runs`,
 `ranS`, `owedS`, `droppedS` (water s: the last run's time run, what it still owes, all dropped past
 `maxOwedS`), `busyMs` and `maxBusyMs` (a run's wall time, the longest), `waterTimeS` (its clock),
 `awakeChunks`, `waterChunks`, `cellBytes` and `cellChunks` (its copy of the world), `overtaken`
-(writes dropped because an edit got there first). Natively `Server::water_stats()`. `?water=inline`
+(writes dropped because an edit got there first). Natively `Server::water_stats()`. Natively `Server::tick_phases()` gives each phase of the tick's wall time (ms, summed since the last call: `collect`, `edits`, `terrain`, `players`, `pieces`, `physics`, `settle`, …, `stream`, `worldgen`, `lod`, `save`; `TICK_PHASES`) and `Server::body_count()` the bodies; `dwell-sim` `tests/collapse.rs`'s measurements print them for a collapse and a blast (`measure_dynamite_at_the_dam`: dynamite at seed 0's dam site, each second's tick mean and worst, bodies, terrain-collision builds and phases). `?water=inline`
 runs the water on the server's thread instead of its worker, and `?serverjobs=inline` the server's
 chunk generation and LOD sections on its tick instead of the server-jobs worker (WATER_SURFACE_GRID.md
 §2d).

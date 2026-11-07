@@ -6,6 +6,40 @@ pins it.
 
 ## Open
 
+### 41b. A reservoir filled behind a dam never falls asleep (the rest of #41; partly fixed in 0.49.44)
+
+*Measured 2026-11-06 (0.49.39), the remaining part of #41.* At seed 0's dam sites
+(`tests/water.rs` `measure_a_raised_dams_churn`, release, 170 water minutes; 0.49.39 as built):
+at z 7452 13–18 water chunks awake (mean 15–17) and 21–1,269 cells written a minute (late mean 241),
+the reservoir spreading again from minute 150; at z 7380 22–32 awake (mean 27) and 0–53 cells a
+minute over its last 40 minutes.
+
+**Fixed in 0.49.44: a sleeping chunk passes its flow on** (owner, 2026-11-06: "if a chunk is
+sleeping, it should be treated as if all the water flows into it"). A chunk asleep was taken to
+carry no flow, so asleep beside a running reach it owed the river, woke, and paid it back over 5 s
+as a wave that woke its neighbours. Falling asleep it now keeps each edge face's flow into it and
+its balance (`water.rs` `keep_edges`, `kept`, `drift`); asleep it owes its balance and, across an
+edge toward an awake chunk, only how far the flow there drifts from what it kept (nothing between
+two sleepers). So a draining bed doesn't sleep wet on its kept flow, a film out of the rest
+(shallower than the sleep band) that fell more than 0.1 mm in its calm window is not calm, and a
+sleeper owing half its free water (over 0.01 m³) wakes. The fixture reservoir
+(`water::tests` `a_reservoir_filled_to_its_spill_falls_asleep`, both faces, no longer ignored):
+red awake all of its last 5 minutes, 45 cells written; green within the test's 30 s and none.
+`a_hollow_below_a_dam_keeps_its_water_still`, `a_lake_cut_open_drains_on_after_its_player_leaves`
+and the seed-0 dry-reach test stay green.
+
+**Still open: deep water's slosh, and seed 0's sites.** `measure_a_raised_dams_churn` after the
+fix: z 7452 14–21 awake, 18–546 cells a minute from minute 120; z 7380 11–29 awake, 3–113 cells a
+minute. Little changed: the deep reservoirs slosh past the sleep band, which is 5 mm
+(`sleepBandM`), not 5 cm. The fixture `stirred_deep_water_settles` (a 40 × 8 m basin 3.5 m deep
+stirred by a block column) still sloshes ±1–2 cm and is awake all of 30 water minutes (ignored).
+Tried before, not kept: a drag on slow water (60 s under 5 cm/s) settled the basin in 8 minutes but
+slowed a cut lake's last levelling (`a_lake_cut_open_drains_on_after_its_player_leaves`); a ±3 cm
+calm test. **Next:** damp only deep water whose rest flow is ~0 and whose level is oscillating
+about a steady mean (the calm window's mean, not its start), or a calm test on the window's mean
+level for deep water with the slosh's volume conserved (the chunk sleeps at its mean, the swing's
+volume kept in `owed`).
+
 ### 34. e2e play.spec's two-client test times out on CI since 0.49.4
 
 *Found 2026-11-06, from CI.* "two clients on a native server see each other move": page B (on a
@@ -49,6 +83,167 @@ face, or the placement check against its shape.
 
 
 ## Fixed
+
+### 48. Neighbouring chunks falling asleep at different moments of a slosh made or lost water (fixed in 0.49.52)
+
+*Found 2026-11-07 in the work on #41b (the stirred basin's slosh).* Falling asleep, a chunk keeps
+the flow across each of its edges as it stands at that moment (0.49.44's `kept`). Two neighbours
+that fell asleep at different moments of a swing each kept a different flow across their shared
+edge, and with no one stepping that edge the difference was made or lost every second: a stirred
+40 m basin 3.5 m deep gained 1.07 m³ in 900 water s (2.5 m³ in 25 minutes). Fixed: a chunk falling
+asleep beside a sleeper keeps that sleeper's flow for their shared edge (its balance takes the
+difference), so both sides agree (docs/WATER_SURFACE_GRID.md §2). Pinned by `water::tests`
+`neighbours_falling_asleep_at_different_moments_of_a_swing_conserve_the_water` (both faces; red
+1119.100 → 1120.170 m³, green within 1 L).
+
+### 47. A river slowed right beside an edit (fixed in 0.49.43)
+
+*Found 2026-11-06 by two agents, at the owner's creek (seed 3974502447 by 12850, 330, -3330).* A held
+river column's current is the map's (`river_current`: Manning's on the course's mean fall, ~1.28
+m/s there), a freed one's its own velocity (its carried flow over its depth, ~0.1 m/s), so a block
+set on the bank freed the river within three columns of it and the river visibly slowed there
+(flecks, foam, ripples, a swimmer's drift), speeding up again where it was still held. Fixed: a
+freed column still its river's (in the rest, with a rest speed) shows the map's current, scaled by
+how much of the rest's speed it still runs and blended to its own velocity as its depth leaves its
+generated depth (`riverCurrentBandM`; docs/WATER_SURFACE_GRID.md §2c). A dam's pool, a drained bed and
+placed water keep their own. Pinned by `water::tests` `a_freed_river_column_runs_as_its_held_neighbours`
+(both faces; red 0.100 m/s beside 1.000 held, green within 20%) and
+`a_dammed_reachs_pool_keeps_its_own_still_current`.
+
+### 46. A ramp in a chunk otherwise solid under solid ground panicked its collision build (fixed in 0.49.29)
+
+*Found 2026-11-06, writing the terrain-collision rebuild tests for #45.* A chunk all solid under a
+solid chunk was built as cubes without reading its neighbours, but a shaped cell in it (a ramp
+placed in a dug cell deep down) read them to cull its faces: an index out of bounds, the tick
+panicking. Fixed: such a chunk counts as buried only if every cell is a full cube. Pinned by
+`dwell-physics` `terrain.rs` `a_ramp_in_a_chunk_otherwise_solid_under_solid_ground_builds` (red: the
+panic; green).
+
+### 45. A collapse's falling sand stalled the server's tick for 30 s (fixed in 0.49.29)
+
+*Found 2026-11-06 at seed 0's dam site (#350's bench):* the pit dug beside the wall dropped the
+river bank's sand, and the ticks over 25 ms were its falling pieces (764 of the server's 1,118 ms in
+the first 4 s; ticks 45 ms, then 27–29). Natively (`dwell-sim` `tests/collapse.rs`
+`measure_the_dam_sites_pit_collapse`) 177 sand columns lay packed edge to edge against the cut's
+walls; their boxes touched exactly and the solver held the whole raft by the walls' friction, so it
+crept down at ~0.2 m/s and every column stayed a body for the 30 s until `maxSeconds` settled it
+where it hung (4.5–6 ms a tick natively, 4 of it the physics step). Fixed: each piece cell's box is
+drawn in 1 cm a face (`PIECE_SKIN`), its cells merged into fewer boxes (`merged_boxes`), a piece that
+hasn't gone anywhere counts as still (`restDrift`), pieces settle after 1 s and together every
+6 ticks, and a settle rebuilds only its chunk's terrain collision and the shaped chunks round it
+(ARCHITECTURE.md §7.3). Now 5 s of bodies at ≤ 1.4 ms a tick natively; in Chrome the cut's seconds
+read 5.1, 4.3, 1.7 ms mean, then ~1.2. Pinned by `tests/collapse.rs`
+`sand_packed_in_a_well_falls_down_it_and_settles_in_seconds` (red: 256 columns still bodies at 6 s,
+92,160 body-ticks, 18.6 ms mean tick; green: settled in 4.6 s, ~43,000) and
+`a_blasts_pieces_land_in_a_heap_and_settle_in_seconds` (red: 108 of 513 left at 10 s; green: none at
+12 s), and `terrain.rs` `a_cell_changed_rebuilds_its_chunk_not_the_full_cube_chunks_round_it` (red:
+18 builds; green: 1).
+
+### 44. A LOD section computing at the server-jobs worker when the world saved was never recomputed (fixed in 0.49.26)
+
+*Found 2026-11-06, reading the save path for #43.* Since 0.49.14 the browser's local server computes
+its modified LOD sections in the server-jobs worker. A section written since the last save whose
+recompute was out at the worker when the world saved was saved with its old content and marked clean
+(the save flagged only sections waiting to be dispatched), so if the page closed before the next save
+the reopened world kept the old content and never computed it again. Fixed: every section still to
+compute (dirty, held, or computing, at the worker too: `LodPropagation::recomputing`) is saved dirty
+and recomputed on load. Pinned by `tests/lod_server.rs`
+`a_section_whose_recompute_is_out_at_the_worker_is_saved_dirty_and_recomputed_on_load` (red: the
+reopened world's section not dirty; green: dirty, and recomputed on load with the edit made while
+its job was out).
+
+### 43. An edited area looked terraced from far away (fixed in 0.49.26)
+
+*Reported by the owner, 2026-11-06:* an edited area's distant view was a coarse, blocky plateau next
+to smooth ground. A modified LOD section (the server's content) was meshed with no column surface
+(`surface_in_cells` returned none for any section the server sent), so its columns were drawn at
+their cells' tops, whole-cell terraces kilometres wide at coarse levels, beside generated neighbours
+drawn at their exact heights. Fixed: a modified section asks the generator for its surface alone (a
+pure function of where it is; its cells stay the server's), and the mesher draws each column its
+content still tops where generation did at the exact height, an edited column at its cells. Pinned
+by `dwell-lod` `a_modified_section_is_meshed_with_its_generated_surface` (red: no modified section's
+mesh had a surface; green re-checked after merging main) and `dwell-mesh`
+`a_column_whose_top_no_longer_holds_the_surface_is_drawn_at_its_cells`. In the browser at seed 0's
+dam site (`?local=1&seed=0&fresh=1&at=2364.5,142,7443.5`, a 32 × 8 × 32 m stone block filled by
+`__dwell.tool`, seen from ~300 m up) the ground round the block drew smooth, as its neighbours did.
+
+### 41. Water never dried up below a dam (fixed in 0.49.25)
+
+*Found 2026-11-06, measuring #40; reported by the owner the same day:* "Water never dries up below a
+dam." … "Like completely." Natively at seed 0's river (`measure_a_raised_dams_churn`, ignored), a wall
+raised across it kept 17–30 water chunks awake for as long as it ran, and the river below the wall kept
+its water. Cause: free water changes by the difference of the two layers' flows (WATER_SURFACE_GRID.md
+§2b), and the rest layer's divergence is a spring or sink at every column of a river, not only at a
+drawn step's lip (the law's θ-weighting spreads each step's pour up its pool: 0.14 m/s mid-pool, 0.99 at
+a lip in the fixture), and a sink at the lake a river runs into. Below a dam those springs refilled the
+reach for ever and the lake's sink drained it, and a sleeping chunk beside them owed the rest's flow in
+full each substep, so it woke, took what films it had and slept again. Three earlier attempts (owing only
+an edge's change since sleep; carrying the chunk's rate of change asleep; the rest flow in proportion to
+the water left) were dropped (they broke a filling lake, woke resting rivers, and seed 1's untouched
+river). Fixed: a free column's rest divergence counts only while it is in the rest (`Water::share`,
+latched: out once less than `restCut`, 0.25, of the rest's flow into it comes from columns in the rest;
+back over `restBack`, 0.75; `flow.json`), so the cut runs down the rest's own flow from the dam to the
+next inflow or the lake, and that reach drains by the law and the carried flow; such a column keeps its
+river's flow out past the grid (`runs_on`); the carried flow is upwind (so a hollow keeps its water); a
+sleeper owes the rest's flow by its column's share, and drops what it owes past the water it has; and a
+column out of the rest is calm only below a tenth of its water's motion. Pinned by `water::tests`
+`the_river_below_a_dam_dries_completely` (both faces; red 180 water cells below the dam, 1.05 m deep;
+green none, its chunks asleep), `a_hollow_below_a_dam_keeps_its_water_still` (red: at the river's level;
+green: under its lip, level, asleep, writing nothing), `a_world_saved_below_a_dam_dries_on_load` (red 180
+cells), and `tests/water.rs` `the_river_below_a_dam_across_seed0s_river_dries_to_the_next_inflow` (the
+wall at z 7452: red 575 water columns left from the wall to the creek's backwater at z 7526 after ten
+water minutes, 8 chunks awake there; green none, none awake). In the browser at the same site (`?local=1&seed=0&fresh=1&at=2364.5,142,7443.5`, the wall by `__dwell.tool`) the 1,150 water cells below it were gone within 10 s real, the bed dry. Untouched rivers still rest exactly
+(`a_block_set_in_a_generated_rivers_bed_changes_nothing_else`, seeds 0–2), a dam still backs a river up
+(#38's tests) and nothing stands on a raised dam (#40's). `a_dam_across_a_drawn_river_backs_it_up` now
+reads the pool below after two water minutes: its fixture's reach below is closed, and its water stays
+in it now that the rest's sinks don't take it. **Remaining:** the reservoir behind the dam doesn't fall
+asleep once it spills (`measure_a_raised_dams_churn`, 170 water minutes: at z 7452 6–18 chunks awake,
+19–30 before, and 0–1,269 cells written a minute, 22–1,264 before, the reservoir spilling on from minute
+150; at z 7380 21–32 awake, 20–30 before, and 0–991 written, 7–1,024 before, down to 1 a minute over its
+last 20 minutes, 20–46 before); that is the filled reservoir's spill and its ±1–3 cm slosh past the 5 mm
+sleep band, not the river below. Open as #41b.
+
+### 42. A river stopped flowing below a fast reach, and further out (fixed in 0.49.24)
+
+*Reported 2026-11-06* (build 0.49.22, seed 3974502447, feet (12833.97, 348.16, -3298.34), yaw
+139, pitch -32): "in this spot the river stops flowing too". Every river column of the creek in
+view (x 12844–12865, z -3347…-3316) held, asleep, level with its rest. Two causes, both seen in the
+browser with `__dwell.waterFlowAt` along the creek
+(`?local=1&seed=3974502447&fresh=1&at=12834,348,-3298`): (1) z > -3314 ran at 1.5 m/s and z -3316
+to -3344 at 0.10 m/s: the map's course there is held level for 167 m where the land dips (its levels
+never rise), and on a segment's own fall of 0 a held river's current was its flow over its depth
+alone (0.6 m³/s over 5.4 m × 1 m); (2) past z -3345 nothing: the server sent the currents of the
+chunks within 2 of the player's, so 33–48 m out the flow stopped, inside the 40 m it is drawn fully.
+Fixed: a held river's current runs on the larger of its segment's fall and its course's mean over
+`riverFallReachM` (256 m, `flow.json`) up and down stream (1.28 m/s there), and the currents are sent
+as far as the flow is drawn (`waterflow.json` `fadeToM`: 4 chunks, 8 a send). Pinned by
+`the_owners_level_creek_runs_as_the_river_round_it` (red: 0.11 m/s),
+`a_level_reach_runs_on_its_courses_fall` (both faces' maps; red: 103 and 104 level reaches under
+0.4 m/s), `a_level_reach_takes_its_courses_mean_fall` (a fixture course) and
+`a_player_is_sent_the_currents_as_far_as_the_flow_is_drawn` (both faces; red: 35 of the 60 chunks
+within 60 m never sent). No world or terrain changes: the currents are found as a chunk's water
+joins the grid, so saved worlds run on load. WATER_SURFACE_GRID.md §2c.
+
+### 40. Water on top of a dam never drained, even after it was raised (fixed in 0.49.23)
+
+*Reported 2026-11-06, present "for many versions".* "Once water has entered the column (covered
+the top of the dam with water) that water will never drain away even if you raise the height of
+the dam, you end up with standing water that continues to 'flow over' into the river bed beyond";
+"it just goes up and down, never drains or deletes". Screenshots: a stone wall across a river, a
+pale slab of water along its raised top, water pouring off its downstream edge. Cause: the rest
+layer (WATER_SURFACE_GRID.md §2b) keeps the river as generated beside the water as it is, and a
+free column changes by the difference of their flows; where the drawn river's flow changes (a
+step's lip, a narrowing, a junction) the rest's divergence is an implicit spring. A column built up
+into a dam kept its spring, so the grid kept pouring water onto the dam's top whatever its height;
+raising the dam also lifted what stood on it. Not trapped water, nor flooded blocks. Fixed: a
+column whose floor is at or over its generated water's level changes by its own flows alone
+(`Water::out_of_rest`); its neighbours keep their rest flows, so dams still back rivers up (#38's
+tests pass). Read from the state, so saved worlds heal on load. Tests: `water::tests`
+`water_on_a_raised_dam_drains_off_it` and `a_world_saved_with_water_on_a_dam_drains_it_on_load`
+(both faces; a flat river whose flow begins at the dam; red: 3.9 cm standing on the raised dam, 3
+cells drawn over it, and the same after a save and load; green: dry), `tests/water.rs`
+`water_on_a_raised_dam_across_seed0s_river_drains` (seed 0 by z 7380; red 20 cells on the raised
+top, green none). The river around a dam still never falls asleep (#41).
 
 ### 39. Triangle-shaped holes in the water at a river's steps (fixed in 0.49.20)
 
