@@ -2536,6 +2536,19 @@ impl Server {
         };
         let open = open_dir(e.open_sense_m, |o| solid_at(&mut self.world, o));
         let crack = e.shell == ShellRule::Crack;
+        // The water round the charge as it stood before the blast (offsets), for `water_shields`.
+        let water_before: std::collections::HashSet<[i32; 3]> = if e.water_shields {
+            cells_within(e.loosen_radius_m.max(e.radius_m))
+                .into_iter()
+                .filter(|&o| {
+                    let c = [at[0] + o[0], at[1] + o[1], at[2] + o[2]];
+                    let m = self.world.get_voxel(c[0], c[1], c[2]);
+                    m != M.air && (info(m).liquid || info(m).flooded)
+                })
+                .collect()
+        } else {
+            Default::default()
+        };
         // A charge touching water spares the blocks (owner, 2026-11-07: "not destroy or dislodge
         // (physics) blocks when it's touching water"): its six neighbours, read before any clears.
         let wet = e.water_spares_blocks
@@ -2602,6 +2615,12 @@ impl Server {
                 continue;
             }
             if s.indestructible || wet {
+                continue;
+            }
+            // Water between the charge and this cell shields it (`behind_water`).
+            if e.water_shields
+                && dwell_world::explosives::behind_water(o, |w| water_before.contains(&w))
+            {
                 continue;
             }
             if destroys(&e, d) {

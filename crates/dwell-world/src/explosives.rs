@@ -87,6 +87,37 @@ pub enum ShellRule {
 /// (world cells) cracks if one of its six neighbours was open before the blast (`open`, read before
 /// any cell clears), or, with `over_cleared`, if its cell below (`down`, the face's down in cells)
 /// is one the core destroys (`destroyed`).
+/// Whether the straight line from the charge (offset `[0, 0, 0]`) to the cell at offset `to` passes
+/// through water (`is_water`, by offset) in any cell strictly between them: that cell is shielded by
+/// the water ([`ExplosiveData::water_shields`]). The line runs between cell centres in metres
+/// (rows are ½ m tall), sampled finely enough to visit every cell it crosses.
+pub fn behind_water(to: [i32; 3], mut is_water: impl FnMut([i32; 3]) -> bool) -> bool {
+    let m = [f64::from(to[0]), f64::from(to[1]) * 0.5, f64::from(to[2])];
+    let len = (m[0] * m[0] + m[1] * m[1] + m[2] * m[2]).sqrt();
+    if len < 1e-9 {
+        return false;
+    }
+    // Four samples a cell's smallest side (½ m) along the line.
+    let steps = (len / 0.125).ceil() as i32;
+    let mut last = [0, 0, 0];
+    for i in 1..steps {
+        let t = f64::from(i) / f64::from(steps);
+        let c = [
+            (m[0] * t + 0.5).floor() as i32,
+            (m[1] * t / 0.5 + 0.5).floor() as i32,
+            (m[2] * t + 0.5).floor() as i32,
+        ];
+        if c == last || c == to || c == [0, 0, 0] {
+            continue;
+        }
+        last = c;
+        if is_water(c) {
+            return true;
+        }
+    }
+    false
+}
+
 pub fn cracking(
     shell: &[[i32; 3]],
     down: [i32; 3],
@@ -166,6 +197,10 @@ pub struct ExplosiveData {
     /// dislodges no blocks: its wave, knockback, damage and chain reactions still happen (owner,
     /// 2026-11-07: "not destroy or dislodge (physics) blocks when it's touching water").
     pub water_spares_blocks: bool,
+    /// Water shields what is behind it: a cell whose straight line from the charge passes through
+    /// water (as the world stood before the blast) is neither destroyed nor dislodged (owner,
+    /// 2026-11-07: "it shouldn't destroy blocks or move them through water"). See [`behind_water`].
+    pub water_shields: bool,
     pub chain_delay_seconds: [f64; 2],
     pub effects: BlastEffects,
 }
@@ -748,5 +783,21 @@ mod tests {
         assert!(a > b && b > 0.0, "{a} {b}");
         assert_eq!(boom_level(e, e.effects.boom.hear_m), 0.0);
         assert!(shake_level(e, 1.0) > shake_level(e, 20.0));
+    }
+    #[test]
+    fn a_cell_behind_water_is_shielded_and_one_beside_it_is_not() {
+        // A wall of water at x == 2: the cell at x 4 straight behind it is shielded; one at x -3
+        // (the other way), one above the charge and the water cell itself are not.
+        let water = |c: [i32; 3]| c[0] == 2;
+        assert!(behind_water([4, 0, 0], water));
+        assert!(behind_water([3, 2, 1], water));
+        assert!(!behind_water([-3, 0, 0], water));
+        assert!(!behind_water([0, 6, 0], water));
+        assert!(
+            !behind_water([2, 0, 0], water),
+            "the end cell itself does not count"
+        );
+        assert!(!behind_water([1, 0, 0], water));
+        assert!(!behind_water([0, 0, 0], water));
     }
 }

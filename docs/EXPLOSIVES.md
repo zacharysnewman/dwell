@@ -281,6 +281,16 @@ cleared, no shell pieces. Its wave (§3.5), the players' and bodies' knockback a
 reactions still happen. Test: `tests/explosives.rs` `a_charge_touching_water_spares_the_blocks` (both
 faces, every explosive; red on 0.50.2: red dynamite flung pieces beside water).
 
+### 3.8 Water shields what is behind it (0.50.4)
+
+Owner, 2026-11-07: "it shouldn't destroy blocks or move them through water, so on the other side of water
+blocks". `waterShields` (data, on every explosive): a cell whose straight line from the charge passes
+through water (or a flooded block) in any cell between them, as the world stood before the blast, is
+neither destroyed nor dislodged (`dwell_world::explosives::behind_water`: cell centres in metres, rows
+½ m, sampled every 12.5 cm). Tests: the unit test `a_cell_behind_water_is_shielded_and_one_beside_it_is_not`
+and `tests/explosives.rs` `water_shields_the_rock_behind_it` (both faces: blue in rock with a water wall
+2 m out; red on 0.50.3: the rock 3 m out behind the water was destroyed).
+
 ## 4. Effects (clients)
 
 A client sees a blast where an `Explosion` modification turns a lit explosive's cell to air
