@@ -2598,25 +2598,23 @@ impl Server {
                 shell.push((c, m, p, d, o));
             }
         }
+        // A cracking shell's exposed cells (they touched open space before the blast, or sit on
+        // the cleared core) fly whatever lies in their way; the rest of the shell is judged by the
+        // wall check as any blast's (owner, 2026-11-07: "I want the wall check for everything not
+        // exposed to air"). All take the blast's push.
+        let mut exposed = vec![false; shell.len()];
         if crack {
-            // Only the shell's cells that touched open space, or sit on the cleared core, crack:
-            // loose pieces given no push, which crumble and fall; the rest stays.
             let f = FaceFrame::at_row(at[1]);
             let (here, below) = (f.cell([0, 0, 0]), f.cell([0, -1, 0]));
             let down: [i32; 3] = std::array::from_fn(|k| below[k] - here[k]);
             let cells: Vec<[i32; 3]> = shell.iter().map(|s| s.0).collect();
-            let cracks = cracking(
+            exposed = cracking(
                 &cells,
                 down,
                 e.crack_over_cleared,
                 |c| open_before.contains(&c),
                 |c| destroyed.contains(&c),
             );
-            shell = shell
-                .into_iter()
-                .zip(cracks)
-                .filter_map(|(s, k)| (k && s.3 <= e.radius_m + 1e-9).then_some(s))
-                .collect();
         }
         // Each shell cell's push: its line from the blast turned toward the way out. Those whose
         // push meets rock (the core cleared, the cells that fly not rock) stay as terrain.
@@ -2636,11 +2634,11 @@ impl Server {
             .zip(&dirs)
             .map(|(&(_, _, _, d, o), &dir)| (o, dir, d > e.radius_m))
             .collect();
-        let flies = if crack {
-            vec![true; judged.len()]
-        } else {
-            launching(&judged, e.open_path_m, |o| solid_at(&mut self.world, o))
-        };
+        let flies: Vec<bool> = launching(&judged, e.open_path_m, |o| solid_at(&mut self.world, o))
+            .into_iter()
+            .zip(&exposed)
+            .map(|(f, &x)| f || x)
+            .collect();
         let mut flung = Vec::new();
         for ((&(c, m, p, d, _), &dir), fly) in shell.iter().zip(&dirs).zip(flies) {
             if !fly || flung.len() >= self.fuses.max_pieces {
@@ -2678,11 +2676,7 @@ impl Server {
                 vec![([0, 0, 0], m)],
                 crate::felling::cell_centre(c),
                 dwell_physics::DQuat::IDENTITY,
-                if crack {
-                    DVec3::ZERO
-                } else {
-                    dir * fling_speed(&e, m, d)
-                },
+                dir * fling_speed(&e, m, d),
                 DVec3::ZERO,
             );
             if e.no_piece_contact_s > 0.0 {
