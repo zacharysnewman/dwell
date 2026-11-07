@@ -2509,8 +2509,8 @@ impl Server {
     /// what the blast left without support falls.
     fn blast(&mut self, fuse: crate::blasts::Fuse) {
         use dwell_world::explosives::{
-            blast_damage, cells_within, destroys, fling_speed, launching, open_dir, piece_dir,
-            push_dir, radial_dir, share,
+            ShellRule, blast_damage, cells_within, cracking, destroys, fling_speed, launching,
+            open_dir, piece_dir, push_dir, radial_dir, share,
         };
         let Some(e) = self.fuses.table.get(fuse.explosive).copied() else {
             return;
@@ -2529,6 +2529,20 @@ impl Server {
             m != M.air && !info(m).liquid
         };
         let open = open_dir(e.open_sense_m, |o| solid_at(&mut self.world, o));
+        let crack = e.shell == ShellRule::Crack;
+        // A cracking shell is judged by what touched open space before the blast: the open cells
+        // round it, read before any clears (docs/EXPLOSIVES.md §3.6).
+        let open_before: std::collections::HashSet<[i32; 3]> = if crack {
+            cells_within(e.radius_m + 1.0)
+                .into_iter()
+                .filter(|&o| !solid_at(&mut self.world, o))
+                .map(|o| [at[0] + o[0], at[1] + o[1], at[2] + o[2]])
+                .collect()
+        } else {
+            Default::default()
+        };
+        // The cells the core destroys (a cracking shell's roof over them drops).
+        let mut destroyed = std::collections::HashSet::new();
         let mut changes = TickChanges::default();
         changes.set(&mut self.world, at, M.air);
         // The shell's breakable cells (cell, state, centre, distance, offset), judged below.
@@ -2573,9 +2587,30 @@ impl Server {
                     M.air
                 };
                 changes.set(&mut self.world, c, left);
+                destroyed.insert(c);
             } else {
                 shell.push((c, m, p, d, o));
             }
+        }
+        if crack {
+            // Only the shell's cells that touched open space, or sit on the cleared core, crack:
+            // loose pieces given no push, which crumble and fall; the rest stays.
+            let f = FaceFrame::at_row(at[1]);
+            let (here, below) = (f.cell([0, 0, 0]), f.cell([0, -1, 0]));
+            let down: [i32; 3] = std::array::from_fn(|k| below[k] - here[k]);
+            let cells: Vec<[i32; 3]> = shell.iter().map(|s| s.0).collect();
+            let cracks = cracking(
+                &cells,
+                down,
+                e.crack_over_cleared,
+                |c| open_before.contains(&c),
+                |c| destroyed.contains(&c),
+            );
+            shell = shell
+                .into_iter()
+                .zip(cracks)
+                .filter_map(|(s, k)| (k && s.3 <= e.radius_m + 1e-9).then_some(s))
+                .collect();
         }
         // Each shell cell's push: its line from the blast turned toward the way out. Those whose
         // push meets rock (the core cleared, the cells that fly not rock) stay as terrain.
@@ -2595,7 +2630,11 @@ impl Server {
             .zip(&dirs)
             .map(|(&(_, _, _, d, o), &dir)| (o, dir, d > e.radius_m))
             .collect();
-        let flies = launching(&judged, e.open_path_m, |o| solid_at(&mut self.world, o));
+        let flies = if crack {
+            vec![true; judged.len()]
+        } else {
+            launching(&judged, e.open_path_m, |o| solid_at(&mut self.world, o))
+        };
         let mut flung = Vec::new();
         for ((&(c, m, p, d, _), &dir), fly) in shell.iter().zip(&dirs).zip(flies) {
             if !fly || flung.len() >= self.fuses.max_pieces {
@@ -2633,7 +2672,11 @@ impl Server {
                 vec![([0, 0, 0], m)],
                 crate::felling::cell_centre(c),
                 dwell_physics::DQuat::IDENTITY,
-                dir * fling_speed(&e, m, d),
+                if crack {
+                    DVec3::ZERO
+                } else {
+                    dir * fling_speed(&e, m, d)
+                },
                 DVec3::ZERO,
             );
             if e.no_piece_contact_s > 0.0 {

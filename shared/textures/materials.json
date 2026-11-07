@@ -29,6 +29,8 @@
     "dynamiteBlueTop": "dynamite_blue_top",
     "dynamiteGreen": "dynamite_green_side",
     "dynamiteGreenTop": "dynamite_green_top",
+    "dynamiteYellow": "dynamite_yellow_side",
+    "dynamiteYellowTop": "dynamite_yellow_top",
     "plain": "plain",
     "grid": "grid",
     "missing": "missing"
@@ -227,6 +229,8 @@
     "dynamite_blue_top": { "$comment": "Blue dynamite's ends (prototype content): red's in blue.", "like": "dynamite_top", "ramp": "wool_blue" },
     "dynamite_green_side": { "$comment": "Green dynamite's side (prototype content): red's in green.", "like": "dynamite_side", "ramp": "wool_green" },
     "dynamite_green_top": { "$comment": "Green dynamite's ends (prototype content): red's in green.", "like": "dynamite_top", "ramp": "wool_green" },
+    "dynamite_yellow_side": { "$comment": "Yellow dynamite's side (prototype content): red's in yellow.", "like": "dynamite_side", "ramp": "wool_yellow" },
+    "dynamite_yellow_top": { "$comment": "Yellow dynamite's ends (prototype content): red's in yellow.", "like": "dynamite_top", "ramp": "wool_yellow" },
     "dynamite_side": {
       "$comment": "Dynamite's side (docs/EXPLOSIVES.md; prototype content): red paper sticks, their seams shadowed, a pale paper band round them.",
       "use": "block",

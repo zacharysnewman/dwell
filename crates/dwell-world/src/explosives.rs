@@ -70,6 +70,44 @@ pub struct BlastEffects {
     pub shake: ShakeLook,
 }
 
+/// What a blast does to its shell (`shell` in the table; docs/EXPLOSIVES.md §3.6).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ShellRule {
+    /// Flung out as pieces, along the open side, those whose path meets rock staying (`launching`).
+    Fling,
+    /// Only the cells that touched open space (air, liquid) before the blast become pieces, given no
+    /// push: they crumble and fall; the rest stays (owner, 2026-11-07).
+    Crack,
+}
+
+/// Which of a `Crack` blast's shell cells crack (docs/EXPLOSIVES.md §3.6): each of `shell`'s cells
+/// (world cells) cracks if one of its six neighbours was open before the blast (`open`, read before
+/// any cell clears), or, with `over_cleared`, if its cell below (`down`, the face's down in cells)
+/// is one the core destroys (`destroyed`).
+pub fn cracking(
+    shell: &[[i32; 3]],
+    down: [i32; 3],
+    over_cleared: bool,
+    mut open: impl FnMut([i32; 3]) -> bool,
+    destroyed: impl Fn([i32; 3]) -> bool,
+) -> Vec<bool> {
+    const SIDES: [[i32; 3]; 6] = [
+        [1, 0, 0],
+        [-1, 0, 0],
+        [0, 1, 0],
+        [0, -1, 0],
+        [0, 0, 1],
+        [0, 0, -1],
+    ];
+    shell
+        .iter()
+        .map(|&c| {
+            let at = |o: [i32; 3]| [c[0] + o[0], c[1] + o[1], c[2] + o[2]];
+            (over_cleared && destroyed(at(down))) || SIDES.iter().any(|&o| open(at(o)))
+        })
+        .collect()
+}
+
 /// An explosive (`explosives` in the table; what each field means is in the data's `$comment`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ExplosiveData {
@@ -116,6 +154,11 @@ pub struct ExplosiveData {
     /// line's sideways part (`piece_dir`): a flush charge's pieces fly out in a cone, clear of the
     /// crater, not straight up and back in (0: as blended).
     pub open_spread_min: f64,
+    /// What the shell (`destroy_radius_m` to `radius_m`) does.
+    pub shell: ShellRule,
+    /// With [`ShellRule::Crack`]: a shell cell whose cell below (the face's down) the core destroys
+    /// cracks too, so a roof over the blast drops.
+    pub crack_over_cleared: bool,
     pub chain_delay_seconds: [f64; 2],
     pub effects: BlastEffects,
 }

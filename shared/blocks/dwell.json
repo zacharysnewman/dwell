@@ -537,6 +537,28 @@
       "light": "dwell:fuse",
       "color": "#4f8a4a",
       "textures": { "top": "dynamiteGreenTop", "side": "dynamiteGreen", "bottom": "dynamiteGreenTop" }
+    },
+    {
+      "$comment": "Prototype content (docs/EXPLOSIVES.md §variants, owner 2026-11-07): yellow dynamite, destroys 4 m and cracks the 4–5 m shell's cells that touch air (shared/explosives). Lit with a torch as red's.",
+      "name": "dynamite_yellow",
+      "sound": "dwell:dynamite",
+      "density": 1200,
+      "shape": "full",
+      "placeable": true,
+      "color": "#d8b03a",
+      "textures": { "top": "dynamiteYellowTop", "side": "dynamiteYellow", "bottom": "dynamiteYellowTop" }
+    },
+    {
+      "$comment": "Yellow dynamite with its fuse burning (as dwell:lit_dynamite).",
+      "name": "lit_dynamite_yellow",
+      "sound": "dwell:lit_dynamite",
+      "density": 1200,
+      "shape": "full",
+      "indestructible": true,
+      "emits": 6,
+      "light": "dwell:fuse",
+      "color": "#d8b03a",
+      "textures": { "top": "dynamiteYellowTop", "side": "dynamiteYellow", "bottom": "dynamiteYellowTop" }
     }
   ]
 }

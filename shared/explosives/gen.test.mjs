@@ -21,7 +21,7 @@ test('an explosive added by data alone is in the output', () => {
   const blocks = registryBlocks();
   blocks.set('test:charge', { placeable: true, properties: {} });
   blocks.set('test:lit_charge', { placeable: false, properties: {} });
-  d.explosives.push({ ...structuredClone(d.explosives[0]), name: 'test:charge', block: 'test:charge', lit: 'test:lit_charge', radiusM: 2.5, destroyRadiusM: 1, loosenRadiusM: 3.5, noPieceContactS: 0.25, openSenseM: 2, openBlend: 0.3, openPathM: 0.5, waveReachM: 9, waveImpulse: 0, waveFreeM: 12 });
+  d.explosives.push({ ...structuredClone(d.explosives[0]), name: 'test:charge', block: 'test:charge', lit: 'test:lit_charge', radiusM: 2.5, destroyRadiusM: 1, loosenRadiusM: 3.5, noPieceContactS: 0.25, openSenseM: 2, openBlend: 0.3, openPathM: 0.5, waveReachM: 9, waveImpulse: 0, waveFreeM: 12, shell: 'crack', crackOverCleared: true });
   const rust = explosivesRust(validateExplosives(d, blocks));
   assert.match(rust, /name: "test:charge",/);
   assert.match(rust, /radius_m: 2\.5,/);
@@ -33,6 +33,7 @@ test('an explosive added by data alone is in the output', () => {
   assert.match(rust, /wave_reach_m: 9\.0,/);
   assert.match(rust, /wave_impulse: 0\.0,/);
   assert.match(rust, /wave_free_m: 12\.0,/);
+  assert.match(rust, /name: "test:charge",[\s\S]*shell: ShellRule::Crack,\n        crack_over_cleared: true,/);
 });
 
 test('bad entries fail with their path named', () => {
@@ -55,6 +56,9 @@ test('bad entries fail with their path named', () => {
     [(d) => (d.explosives[0].chainDelaySeconds = [1, 0.5]), /high below low/],
     [(d) => (d.explosives[0].effects.smoke.cpuCount = 999), /cpuCount must be/],
     [(d) => (d.explosives[0].effects.flash.color = 'red'), /flash\.color must be #rrggbb/],
+    [(d) => (d.explosives[0].shell = 'shatter'), /explosives\[0\]\.shell "shatter" must be one of fling, crack/],
+    [(d) => (d.explosives[0].crackOverCleared = 1), /crackOverCleared must be true or false/],
+    [(d) => (d.explosives[0].crackOverCleared = true), /explosives\[0\]\.crackOverCleared is only for shell "crack"/],
     [(d) => (d.explosives[0].bang = 1), /unknown entry explosives\[0\]\.bang/],
     [(d) => (d.limits.blastsPerTick = 0), /limits\.blastsPerTick/],
     [(d) => d.explosives.push(structuredClone(d.explosives[0])), /listed twice/],

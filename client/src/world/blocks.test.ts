@@ -102,7 +102,7 @@ describe('block registry (docs/BLOCK_REGISTRY.md)', () => {
     // generator 21, after that; the build platform of built bodies, 2026-11-02, after those; the
     // running water of the water flow, 2026-11-03; dynamite and its lit state, 2026-11-06, last).
     expect(data.blocks.findIndex((b) => b.name === 'sandbox_floor')).toBe(7);
-    expect(data.blocks.map((b) => b.name).slice(-14)).toEqual([
+    expect(data.blocks.map((b) => b.name).slice(-16)).toEqual([
       'torch',
       'torch_upper',
       'bedrock',
@@ -117,8 +117,10 @@ describe('block registry (docs/BLOCK_REGISTRY.md)', () => {
       'lit_dynamite_blue',
       'dynamite_green',
       'lit_dynamite_green',
+      'dynamite_yellow',
+      'lit_dynamite_yellow',
     ]);
-    expect(STATE_DEFS.at(-1)?.state).toBe('dwell:lit_dynamite_green');
+    expect(STATE_DEFS.at(-1)?.state).toBe('dwell:lit_dynamite_yellow');
     const floor = STATE_DEFS[stateId('dwell:sandbox_floor')];
     expect(floor).toMatchObject({ look: 'cube', color: 0xffffff, placeable: false });
     expect(floor?.textures).toEqual({ top: 'grid', side: 'grid', bottom: 'grid' });
