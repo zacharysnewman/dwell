@@ -5443,6 +5443,51 @@ mod tests {
         assert!(!view.holds([5000.0, 0.0, 500.0], 32.0, NEAR_PLANE, NEAR_SPLIT));
     }
 
+    #[test]
+    fn the_flames_mask_leaves_the_blast_puffs_out() {
+        // With see-through water the flames' mask draws before the water; the puffs never flag
+        // the view depth, so drawing them there only rasterised hundreds of big quads to discard
+        // (eight charges by a river, docs/DEV_TOOLS.md "Worst-case blasts (M1 Air)").
+        let mut r = noop_renderer();
+        let basis = camera::Basis {
+            right: [1.0, 0.0, 0.0],
+            up: [0.0, 1.0, 0.0],
+            back: [0.0, 0.0, 1.0],
+        };
+        let puff = crate::blasts::Puff {
+            at: [0.0, 0.0, -5.0],
+            size: 1.0,
+            alpha: 0.5,
+            kind: crate::blasts::PuffKind::Smoke,
+            explosive: 0,
+            seed: 1,
+        };
+        let device = r.device.clone();
+        let queue = r.queue.clone();
+        r.flames.prepare(
+            &device,
+            &queue,
+            &basis,
+            &[],
+            None,
+            &[],
+            &[],
+            &[],
+            &[puff; 40],
+            [0.0; 3],
+            0.0,
+        );
+        assert_eq!(r.flames.puffs_drawn, 40);
+        assert!(
+            r.flames.has(flames::Group::Scene),
+            "the puffs draw in the colour"
+        );
+        assert!(
+            r.flames.mask_range(flames::Group::Scene).is_empty(),
+            "and not in the mask"
+        );
+    }
+
     fn noop_renderer() -> Renderer {
         noop_renderer_with(1, wgpu::Features::empty())
     }

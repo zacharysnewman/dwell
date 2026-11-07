@@ -486,7 +486,10 @@ mod tests {
     fn blasts_in_flight_share_the_puffs_budget_and_none_pops() {
         // Owner, 2026-11-07: eight charges by a river dropped the Air to 49 fps on the puffs.
         let e = &EXPLOSIVES[dynamite()];
-        let (smoke, dust) = (e.effects.smoke.count as usize, e.effects.dust.count as usize);
+        let (smoke, dust) = (
+            e.effects.smoke.count as usize,
+            e.effects.dust.count as usize,
+        );
         let max = LIMITS.max_puffs as usize;
         let smoke_dust = |b: &Blasts, t: f64| {
             b.puffs(t)
@@ -500,16 +503,27 @@ mod tests {
         assert_eq!(smoke_dust(&b, 0.05), smoke + dust);
         // A chain of eight 0.3 s apart.
         for k in 1..8 {
-            b.start([0.5 + 3.0 * f64::from(k), 40.25, 0.5], dynamite(), 0.3 * f64::from(k), [0.0; 3]);
+            b.start(
+                [0.5 + 3.0 * f64::from(k), 40.25, 0.5],
+                dynamite(),
+                0.3 * f64::from(k),
+                [0.0; 3],
+            );
         }
         let least = shared(smoke, LIMITS.min_puff_share) + shared(dust, LIMITS.min_puff_share);
         assert!(b.list.iter().all(|x| x.share >= LIMITS.min_puff_share));
-        let peak = (0..40).map(|k| smoke_dust(&b, 2.1 + 0.01 * f64::from(k))).max().unwrap();
+        let peak = (0..40)
+            .map(|k| smoke_dust(&b, 2.1 + 0.01 * f64::from(k)))
+            .max()
+            .unwrap();
         assert!(
             peak <= max + 8 * least,
             "{peak} puffs at once, the budget {max} (+ the least shares {least} each)"
         );
-        assert!(peak < 8 * (smoke + dust) / 2, "{peak}: the chain draws far fewer than eight blasts' worth");
+        assert!(
+            peak < 8 * (smoke + dust) / 2,
+            "{peak}: the chain draws far fewer than eight blasts' worth"
+        );
         // A blast's puffs are fixed at its start: the next one takes none of them.
         let before = b.puffs(2.2);
         let mut c = b.clone();
