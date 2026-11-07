@@ -28,9 +28,9 @@ describe('render scale settings', () => {
   });
 
   it('keeps fields a newer build stored on rewrite (append-only)', () => {
-    expect(renderScaleRecord({ future: 3, scale: 1 }, { scale: 0.75, upscaler: 'sharpen' })).toEqual(
-      { future: 3, scale: 0.75, upscaler: 'sharpen' },
-    );
+    expect(
+      renderScaleRecord({ future: 3, scale: 1 }, { scale: 0.75, upscaler: 'sharpen' }),
+    ).toEqual({ future: 3, scale: 0.75, upscaler: 'sharpen' });
     expect(renderScaleRecord([1], { scale: 1, upscaler: 'stretch' })).toEqual({
       scale: 1,
       upscaler: 'stretch',

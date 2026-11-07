@@ -44,7 +44,8 @@ export function validateUpscale(raw: unknown): UpscaleData {
     if (typeof s.label !== 'string') fail(`scales[${String(i)}].label must be text`);
   }
   if (!d.scales.some((s) => s.value === 1)) fail('scales must include 1 (full resolution)');
-  if (!Array.isArray(d.upscalers) || d.upscalers.length === 0) return fail('upscalers must be a list');
+  if (!Array.isArray(d.upscalers) || d.upscalers.length === 0)
+    return fail('upscalers must be a list');
   for (const [i, u] of d.upscalers.entries()) {
     if (!(UPSCALER_KINDS as readonly string[]).includes(u.id))
       fail(`upscalers[${String(i)}].id ${JSON.stringify(u.id)} is not one the renderer knows`);
@@ -69,15 +70,17 @@ export function defaultRenderScale(d: UpscaleData = UPSCALE): RenderScaleSetting
 
 /** A stored record; a scale or upscaler the data doesn't list takes the default. */
 export function sanitizeRenderScale(value: unknown, d: UpscaleData = UPSCALE): RenderScaleSettings {
-  const v =
-    typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
+  const v = typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
   const scale = d.scales.find((s) => s.value === v.scale)?.value ?? d.default.scale;
   const upscaler = d.upscalers.find((u) => u.id === v.upscaler)?.id ?? d.default.upscaler;
   return { scale, upscaler };
 }
 
 /** The record to store: the stored one's other fields kept (newer builds' fields survive). */
-export function renderScaleRecord(stored: unknown, s: RenderScaleSettings): Record<string, unknown> {
+export function renderScaleRecord(
+  stored: unknown,
+  s: RenderScaleSettings,
+): Record<string, unknown> {
   const base =
     typeof stored === 'object' && stored !== null && !Array.isArray(stored)
       ? (stored as Record<string, unknown>)

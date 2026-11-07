@@ -58,7 +58,11 @@ pub fn clamp_scale(scale: f64) -> f64 {
 
 /// RCAS's sharpness from its stops (0 the strongest), as FSR's `FsrRcasCon`: 2^-stops.
 pub fn sharpness(stops: f64) -> f32 {
-    let s = if stops.is_finite() { stops.clamp(0.0, 4.0) } else { 0.25 };
+    let s = if stops.is_finite() {
+        stops.clamp(0.0, 4.0)
+    } else {
+        0.25
+    };
     (-s).exp2() as f32
 }
 
@@ -331,7 +335,13 @@ impl UpscalePass {
                 pass(encoder, &low.mid, &self.easu, &low.groups[0], start);
                 pass(encoder, target, &self.rcas, &low.groups[1], end);
             }
-            _ => pass(encoder, target, &self.bilinear, &low.groups[0], timestamp_writes),
+            _ => pass(
+                encoder,
+                target,
+                &self.bilinear,
+                &low.groups[0],
+                timestamp_writes,
+            ),
         }
     }
 }
@@ -369,7 +379,10 @@ mod tests {
         for id in ids {
             assert!(Upscaler::from_name(id).is_some(), "{id} is an upscaler");
         }
-        assert_eq!(Upscaler::from_name("stretch-pass"), Some(Upscaler::StretchPass));
+        assert_eq!(
+            Upscaler::from_name("stretch-pass"),
+            Some(Upscaler::StretchPass)
+        );
         assert_eq!(Upscaler::from_name("fsr2"), None);
     }
 
@@ -387,13 +400,26 @@ mod tests {
             assert_eq!((s.canvas, s.render), ((w, h), (w, h)), "stretch at {scale}");
             assert!((s.canvas_ratio - 2.0 * scale).abs() < 1e-12);
             let s = sizes(css, 2.0, scale, Upscaler::Sharpen, false);
-            assert_eq!((s.canvas, s.render), ((2560, 1600), (w, h)), "sharpen at {scale}");
+            assert_eq!(
+                (s.canvas, s.render),
+                ((2560, 1600), (w, h)),
+                "sharpen at {scale}"
+            );
             assert_eq!(s.canvas_ratio, 2.0);
         }
         // Out of range: clamped to 50–100 %.
-        assert_eq!(sizes(css, 2.0, 0.1, Upscaler::Stretch, false).canvas, (1280, 800));
-        assert_eq!(sizes(css, 2.0, 3.0, Upscaler::Stretch, false).canvas, (2560, 1600));
-        assert_eq!(sizes(css, 2.0, f64::NAN, Upscaler::Sharpen, false).render, (2560, 1600));
+        assert_eq!(
+            sizes(css, 2.0, 0.1, Upscaler::Stretch, false).canvas,
+            (1280, 800)
+        );
+        assert_eq!(
+            sizes(css, 2.0, 3.0, Upscaler::Stretch, false).canvas,
+            (2560, 1600)
+        );
+        assert_eq!(
+            sizes(css, 2.0, f64::NAN, Upscaler::Sharpen, false).render,
+            (2560, 1600)
+        );
         // A CPU adapter keeps its own buffer (already in the ratio) and ignores the scale.
         let s = sizes(css, 1.0, 0.5, Upscaler::Sharpen, true);
         assert_eq!((s.canvas, s.render), ((1280, 800), (1280, 800)));

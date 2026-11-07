@@ -657,7 +657,10 @@ function parseScenario(where: string, v: unknown): Scenario {
     throw new ViewError(`${where}.face: expected "a" or "b"`);
   }
   const n = name(`${where}.name`, o.name);
-  const w = o.window === undefined ? {} : obj(`${where}.window`, o.window, ['width', 'height', 'pixelRatio']);
+  const w =
+    o.window === undefined
+      ? {}
+      : obj(`${where}.window`, o.window, ['width', 'height', 'pixelRatio']);
   const settings = (
     o.settings === undefined
       ? {}

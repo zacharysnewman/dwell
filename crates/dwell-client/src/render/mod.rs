@@ -1911,9 +1911,8 @@ impl Renderer {
     }
     /// The scene's size while a pass upscales it (no CPU adapter: its buffer is its own tier).
     fn upscale_size(&self) -> Option<(u32, u32)> {
-        self.upscale_render.filter(|r| {
-            self.upscaler.is_pass() && !is_cpu(self.adapter) && *r != self.canvas
-        })
+        self.upscale_render
+            .filter(|r| self.upscaler.is_pass() && !is_cpu(self.adapter) && *r != self.canvas)
     }
     /// The canvas's size (`resize`).
     pub fn canvas_size(&self) -> (u32, u32) {
@@ -3690,7 +3689,14 @@ impl Renderer {
             let query = self.timer.as_mut().and_then(|t| t.pass(timing::UPSCALE));
             let writes = self.timer.as_ref().and_then(|t| t.writes(query));
             let kind = self.upscaler;
-            pass.draw(&self.queue, &mut encoder, target, kind, self.upscale_sharpness, writes);
+            pass.draw(
+                &self.queue,
+                &mut encoder,
+                target,
+                kind,
+                self.upscale_sharpness,
+                writes,
+            );
             calls += 1;
         }
         if let Some(timer) = &self.timer {
@@ -5622,7 +5628,10 @@ mod tests {
         assert_eq!(r.size, (2560, 1600), "off by default");
         r.set_upscale(upscale::Upscaler::Sharpen, (1280, 800), 1.0);
         assert_eq!((r.size, r.canvas_size()), ((1280, 800), (2560, 1600)));
-        assert!((r.pixel_ratio - 1.0).abs() < 1e-12, "half the pixels per CSS pixel");
+        assert!(
+            (r.pixel_ratio - 1.0).abs() < 1e-12,
+            "half the pixels per CSS pixel"
+        );
         // The browser's stretch: the canvas itself is smaller, no pass.
         r.resize(1280, 800, 1.0);
         r.set_upscale(upscale::Upscaler::Stretch, (1280, 800), 1.0);
