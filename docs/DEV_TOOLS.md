@@ -282,13 +282,15 @@ second, as the local-mode worker reports it each second: `ticks`, `tickMeanMs` (
 call's wall time over the ticks it ran), `advanceMaxMs` (the worst call), `water` (`worker` or
 `inline`), `phasesMs` (each tick phase's time summed over the second, ms, by `TICK_PHASES`' names —
 `terrain`, `players`, `physics`, …; the worker's `performance.now` times them, 0.49.33; `terrain`, the
-terrain collision's loads and rebuilds, apart from `players` since 0.49.34), `counts` (what the ticks did
+terrain collision's loads and rebuilds, apart from `players` since 0.49.34; since 0.49.35 the tick's
+tail is `stream` (chunks sent), `worldgen`, `lod` and `save` (the autosave's batch and its encoding and
+commit, spread over ticks in the browser, ARCHITECTURE.md §6.4), once one `stream+lod+save`), `counts` (what the ticks did
 over the second, `Server::tick_counts`: `collisionBuilds`, terrain-collision chunk builds, and
 `generatedOnTick`, chunks the tick generated itself rather than the server-jobs worker) and `waterStats` — `queue` (batches sent to the water and not yet answered), `runs`,
 `ranS`, `owedS`, `droppedS` (water s: the last run's time run, what it still owes, all dropped past
 `maxOwedS`), `busyMs` and `maxBusyMs` (a run's wall time, the longest), `waterTimeS` (its clock),
 `awakeChunks`, `waterChunks`, `cellBytes` and `cellChunks` (its copy of the world), `overtaken`
-(writes dropped because an edit got there first). Natively `Server::water_stats()`. Natively `Server::tick_phases()` gives each phase of the tick's wall time (ms, summed since the last call: `collect`, `edits`, `terrain`, `players`, `pieces`, `physics`, `settle`, …; `TICK_PHASES`) and `Server::body_count()` the bodies; `dwell-sim` `tests/collapse.rs`'s measurements print them for a collapse and a blast (`measure_dynamite_at_the_dam`: dynamite at seed 0's dam site, each second's tick mean and worst, bodies, terrain-collision builds and phases). `?water=inline`
+(writes dropped because an edit got there first). Natively `Server::water_stats()`. Natively `Server::tick_phases()` gives each phase of the tick's wall time (ms, summed since the last call: `collect`, `edits`, `terrain`, `players`, `pieces`, `physics`, `settle`, …, `stream`, `worldgen`, `lod`, `save`; `TICK_PHASES`) and `Server::body_count()` the bodies; `dwell-sim` `tests/collapse.rs`'s measurements print them for a collapse and a blast (`measure_dynamite_at_the_dam`: dynamite at seed 0's dam site, each second's tick mean and worst, bodies, terrain-collision builds and phases). `?water=inline`
 runs the water on the server's thread instead of its worker, and `?serverjobs=inline` the server's
 chunk generation and LOD sections on its tick instead of the server-jobs worker (WATER_SURFACE_GRID.md
 §2d).

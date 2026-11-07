@@ -155,5 +155,9 @@ changes how the debris behaves, so it is the owner's: fewer bodies (a blast's fa
 or Tier 2 debris); fewer solver iterations (rapier's 4; the players' and the prediction's too); no
 contacts between pieces. Not gameplay but the build: `+simd128` for the wasm build (rapier's solver runs
 on emulated 4-wide f64 in wasm) measured the step ~⅓ faster in one run (65, 48, 50, 59, 60 ticks a
-second) — a build change for every wasm target, not made here. Separately, the browser's autosave
-(every 5 s, `stream+lod+save`) takes 100–860 ms of a tick at times with no blast at all.
+second) — a build change for every wasm target, not made here. Separately, the browser's
+`stream+lod+save` phase took 100–860 ms of a tick at times with no blast at all. Split (0.49.35), the
+time was the chunk streaming's (`stream`, 50–640 ms a second at a join and after the player moves,
+calls up to 400 ms), not the autosave's: the save was 3–25 ms of one tick every 5 s, and is now
+spread over ticks at ≤ 2 ms of encoding a tick plus a commit tick of its own (ARCHITECTURE.md §6.4).
+The streaming's cost is not yet looked into.

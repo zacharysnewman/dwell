@@ -52,7 +52,7 @@ fn dirty_chunks(f: &mut Fixture, n: i32) -> Vec<(ChunkCoord, Vec<u16>)> {
 fn a_save_of_many_dirty_chunks_costs_no_tick_more_than_a_few_ms() {
     // face-a-only: the save path has no up; the chunks are written straight to the world.
     // As the browser's server saves (an inline store, no I/O thread): 300 dirty chunks were one
-    // tick of encoding and committing (red: ~40 ms in a dev build); now a few ms of encoding a
+    // tick of encoding and committing (red: 106 ms in a dev build); now ≤ 2 ms of encoding a
     // tick, then the commit on a tick of its own.
     let db = WorldDb::in_memory().expect("opens");
     let mut f = Fixture::new(ServerConfig {

@@ -1708,9 +1708,19 @@ deferred to world upgrades, `FUTURE.md`). `bodies` and `water` are optional tabl
 - **Saving:** every `AUTOSAVE_SECONDS` (30 s; the world's `autosave_seconds` setting), the dirty
   chunks (copied), every joined player, the players who left since, and meta are prepared on the
   tick and committed in one write transaction — natively by the `WorldStore`'s save thread (redb's
-  readers never wait for the writer, so the tick keeps reading), in the browser inline (no
-  threads). A chunk counts as saved at the revision that committed; a failed save leaves its
-  chunks dirty for the next. Also on shutdown (`dwell-server` saves on SIGINT/SIGTERM and waits for
+  readers never wait for the writer, so the tick keeps reading), in the browser (every 5 s,
+  `LOCAL_AUTOSAVE_SECONDS`; no threads) on the server's own thread but spread over ticks
+  **[built, 0.49.35]**: `WorldDb::prepare` takes the batch and `PreparedSave::encode_step` encodes
+  one piece at a time (a chunk mapped to world state ids and compressed, a LOD section, a body's
+  record, the water), as many as `SAVE_STEP_MS` (2 ms a tick, the batch's building counted in)
+  allows, and `WorldDb::commit` writes it all in one transaction on a tick of its own
+  (`WorldStore::step`); one save at a time (a save still encoding holds the next back, its chunks
+  staying dirty). Before, an autosave was one tick's work: 300 dirty chunks took 106 ms of a tick
+  natively (dev build), the browser's 8 chunks, 16 LOD sections and 75 KB of water 11–25 ms; now
+  ≤ 4 ms a tick (`dwell-sim` `tests/save_cost.rs`), and the browser's worst tick in a save's second
+  4–6 ms. A chunk counts as saved at the revision that committed; a failed save leaves its
+  chunks dirty for the next. `save_now` (closing, hiding the page) and dropping the store commit at
+  once. Also on shutdown (`dwell-server` saves on SIGINT/SIGTERM and waits for
   the commit) and when the local-mode page is hidden or closed. A new world's meta is written at
   once. Unix times come from `std::time` natively and from JS (`Date.now`) in the browser.
 - **Crash safety:** a save is one redb write transaction: all of it commits or none of it (a test
@@ -2819,6 +2829,7 @@ in the code yet.
 | `MAX_TIER1_BODIES` | 512 | Server cap; oldest/smallest force-re-baked when exceeded |
 | `INTEGRITY_BUDGET_VOXELS` | 32 768 / tick | Flood-fill budget per tick |
 | `AUTOSAVE_SECONDS` | 30 s | World autosave interval (per-world `autosave_seconds` setting); local mode saves every 5 s (`LOCAL_AUTOSAVE_SECONDS`, `dwell-client` local.rs), and when the page is hidden or closed |
+| `SAVE_STEP_MS` (`dwell-sim` `server.rs`) | 2 ms | **[built, 0.49.35]** The most a tick spends encoding a save on a store without an I/O thread (the browser's, §6.4), the batch's building counted in; the commit is a tick's of its own |
 | `CHUNK_SIZE` | 32 | Voxels per chunk edge |
 | `CELL_HEIGHT` | 0.5 m (Phase 41, ADR 0042) | A cell is 1 m × `CELL_HEIGHT` × 1 m (§6.1): the vertical world values below are rows of cells, with metre twins (`MIDPLANE_M`, `CORE_M`, `SEA_LEVEL_M`, `FLAT_TOP_M`) generated beside them; every metre↔cell conversion goes through `dwell-world` `cell.rs` |
 | **Players (§9)** | | |
