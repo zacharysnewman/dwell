@@ -261,12 +261,16 @@ like red's, `shared/textures/materials.json`):
 liquid) cells round the charge are read before any cell clears; a shell cell cracks if one of its six
 neighbours was open then, or, with `crackOverCleared`, if its cell below (the face's down, through
 `FaceFrame`, so face B's roof is mirrored) is one the core destroys — a cave roof over the blast drops.
-A cracked cell becomes a natural piece given no velocity (it crumbles and falls); every other shell
-cell stays as terrain (no open-side path test). Test: `tests/explosives.rs`
-`yellow_cracks_only_the_shell_that_touched_air_or_sits_on_the_core` (both faces: a charge in rock
-with a cliff open from 5 m; the cracked set is exactly the rule's, the pieces still but for gravity,
-the roof cell 4.5 m over the core cracks and stays without `crackOverCleared`, cells beside and under
-the core stay).
+A cracked (exposed) cell breaks loose and takes the blast's push whatever lies in its way, even when
+pushed into rock and moving little; every other shell cell is judged by the open-side path test as a
+fling shell's is — it flies with the push if it has a way out, else stays as terrain (0.50.1; owner,
+2026-11-07: "I want the wall check for everything not exposed to air"; before, cracked pieces got no
+push and every other shell cell stayed, so on flat ground yellow looked like blue: supported cracked
+pieces settled back where they were). Test: `tests/explosives.rs`
+`yellow_flings_every_exposed_cell_and_wall_checks_the_rest` (both faces: a charge in rock with a cliff
+open from 5 m; every exposed cell cracks loose, the roof cell 4.5 m over the core among them, the one
+facing the open cliff is flung > 5 m/s (red on 0.50.0: 0.33 m/s, no push), cells pushed into rock with
+no way out stay).
 
 ## 4. Effects (clients)
 
