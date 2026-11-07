@@ -63,6 +63,7 @@ test('bad entries fail with their path named', () => {
     [(d) => (d.explosives[0].crackOverCleared = true), /explosives\[0\]\.crackOverCleared is only for shell "crack"/],
     [(d) => (d.explosives[0].bang = 1), /unknown entry explosives\[0\]\.bang/],
     [(d) => (d.limits.blastsPerTick = 0), /limits\.blastsPerTick/],
+    [(d) => (d.limits.minPuffShare = 1.5), /limits\.minPuffShare/],
     [(d) => d.explosives.push(structuredClone(d.explosives[0])), /listed twice/],
   ]) {
     const d = data();
