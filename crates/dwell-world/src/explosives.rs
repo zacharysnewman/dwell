@@ -79,6 +79,9 @@ pub struct ExplosiveData {
     pub ignited_by: &'static [&'static str],
     pub fuse_seconds: f64,
     pub radius_m: f64,
+    /// Within it (at most `radius_m`) a blast destroys blocks outright; beyond, to `radius_m`,
+    /// they fly as pieces. Players are hurt only within it.
+    pub destroy_radius_m: f64,
     pub impulse: f64,
     pub falloff: f64,
     pub lift: f64,
@@ -140,6 +143,18 @@ pub fn share(d: f64, reach: f64, falloff: f64) -> f64 {
         return 0.0;
     }
     (1.0 - d.max(0.0) / reach).powf(falloff)
+}
+
+/// Whether blast `e` destroys a block `d` m from it outright (within `destroy_radius_m`) rather
+/// than flinging it as a piece.
+pub fn destroys(e: &ExplosiveData, d: f64) -> bool {
+    d <= e.destroy_radius_m
+}
+
+/// The damage blast `e` does a player `d` m from it (to its body's nearest point): `damage` ×
+/// (1 − d / `destroy_radius_m`)^`falloff`, nothing past the destroy radius (owner, 2026-11-06).
+pub fn blast_damage(e: &ExplosiveData, d: f64) -> f64 {
+    e.damage * share(d, e.destroy_radius_m, e.falloff)
 }
 
 /// The cell offsets (x, rows, z) whose centres lie within `radius` m of a cell's centre (rows are
@@ -294,7 +309,7 @@ mod tests {
         );
         let near = fling_speed(e, stone, 0.5);
         let mid = fling_speed(e, stone, 2.0);
-        let edge = fling_speed(e, stone, 3.9);
+        let edge = fling_speed(e, stone, 4.9);
         assert!(near > mid && mid > edge, "{near} {mid} {edge}");
         assert!(edge < 0.2, "a stone at the edge barely moves: {edge} m/s");
         assert!(fling_speed(e, leaves, 2.0) > mid, "lighter goes faster");
@@ -310,6 +325,34 @@ mod tests {
         assert_eq!(cells.len(), 513);
         assert!(cells.contains(&[4, 0, 0]) && cells.contains(&[0, 8, 0]));
         assert!(!cells.contains(&[3, 6, 3]));
+        // Dynamite's 5 m ball and its 2 m core: 1,013 cells, 61 of them destroyed outright, the
+        // 952 between flung.
+        let e = dynamite();
+        assert_eq!((e.radius_m, e.destroy_radius_m), (5.0, 2.0));
+        assert_eq!(cells_within(e.radius_m).len(), 1013);
+        assert_eq!(cells_within(e.destroy_radius_m).len(), 61);
+        for o in cells_within(e.radius_m) {
+            let d = length(offset_m(o));
+            assert_eq!(destroys(e, d), d <= 2.0, "{o:?}");
+        }
+    }
+
+    #[test]
+    fn players_are_hurt_only_within_the_destroy_radius_and_pushed_to_the_reach() {
+        let e = dynamite();
+        assert_eq!(blast_damage(e, 0.0), e.damage, "standing on it");
+        let (a, b) = (blast_damage(e, 0.5), blast_damage(e, 1.5));
+        assert!(a > b && b > 0.0, "{a} {b}");
+        for d in [2.0, 3.0, 5.0] {
+            assert_eq!(blast_damage(e, d), 0.0, "{d} m: unhurt");
+            assert!(share(d, e.reach_m, e.falloff) > 0.0, "{d} m: still pushed");
+        }
+        // A fixture by data alone: a wider core hurts farther.
+        let wide = ExplosiveData {
+            destroy_radius_m: 4.0,
+            ..*e
+        };
+        assert!(blast_damage(&wide, 3.0) > 0.0);
     }
 
     crate::both_faces!(

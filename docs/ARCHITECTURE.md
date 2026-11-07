@@ -2738,17 +2738,17 @@ Triggered when the server registers an explosion, a block removal, or a structur
 **Built for explosives** **[built, 0.49.32]** ([`EXPLOSIVES.md`](./EXPLOSIVES.md)): explosions as Tier 1 only, on
 felling's bodies. An explosives table as data (`shared/explosives/explosives.json` → `shared/explosives/gen.mjs`
 → `dwell-world` `explosives.gen.rs`, validated against the registry, CI stale check): each explosive's
-placed and lit blocks (`dwell:dynamite`, `dwell:lit_dynamite`), what lights it, its fuse, radius, impulse,
-falloff, lift, speed cap, players' reach, knockback and damage, water radius, chain delay range and
+placed and lit blocks (`dwell:dynamite`, `dwell:lit_dynamite`), what lights it, its fuse, radius, destroy radius
+(**[built, 0.49.38]**), impulse, falloff, lift, speed cap, players' reach, knockback and damage, water radius, chain delay range and
 the clients' effects; `limits` (blasts a tick, pieces a blast). A Place with a torch held, aimed at
 dynamite, lights it (`check_block_edit` → `explosives::ignites`, shared with the prediction). The server
 (`dwell-sim` `blasts.rs` `Fuses`, `Server::blast`) burns fuses after the tick's edits and blows the
 ones out (at most `blastsPerTick`): one `Explosion` modification clears the explosive and every cell in
-its radius (nearest first, at most `maxPieces`), each block a one-cell natural piece flung out by
-`impulse` × (1 − d / r)^`falloff` over its mass; liquids within `waterRadiusM` are blown out (the water
+its radius (nearest first, at most `maxPieces` pieces): a block within `destroyRadiusM` is destroyed
+outright, each one beyond a one-cell natural piece flung out by `impulse` × (1 − d / r)^`falloff` over
+its mass; players are knocked back out to `reachM` and hurt only within `destroyRadiusM`; liquids within `waterRadiusM` are blown out (the water
 host refills the crater), `indestructible` blocks stay, explosives caught in it are lit with a short
-random fuse; bodies are pushed and players knocked back and hurt (`DamageCause::Explosion`) by their
-distance; what it leaves unsupported falls. Saved worlds re-light lit explosives when their chunks
+random fuse; bodies are pushed by their distance (players' damage is `DamageCause::Explosion`); what it leaves unsupported falls. Saved worlds re-light lit explosives when their chunks
 load. Clients start a blast's effects when an `Explosion` modification turns a lit explosive's cell to
 air (`dwell-client` `blasts.rs`): a flash (a point light and a fireball), smoke and dust billboards
 (`render/blasts.rs`, the flames' pass; a CPU adapter's `cpuCount`), the `explode` sound by distance and
@@ -2822,7 +2822,7 @@ in the code yet.
 | Constant | Default | Meaning |
 |---|---|---|
 | `SIM_HZ` | 60 | Physics steps per second (server and client prediction) |
-| explosives (`shared/explosives/explosives.json`) | see [`EXPLOSIVES.md`](./EXPLOSIVES.md) §2 | Dynamite: a 3 s fuse, 4 m radius, impulse 9,000 N·s, falloff 1.5, lift 0.5, at most 22 m/s; players within 7 m: 22 m/s knockback, 160 damage, by (1 − d / 7)^1.5; water blown out within 3 m; chained fuses 0.15–0.6 s; at most 1 blast a tick and 1,200 pieces a blast; the effects' numbers **[built, 0.49.32]** |
+| explosives (`shared/explosives/explosives.json`) | see [`EXPLOSIVES.md`](./EXPLOSIVES.md) §2 | Dynamite: a 3 s fuse, 5 m radius, the inner 2 m destroyed outright (0.49.38; 4 m and no core before), impulse 9,000 N·s, falloff 1.5, lift 0.5, at most 22 m/s; players within 7 m: 22 m/s knockback by (1 − d / 7)^1.5; 160 damage by (1 − d / 2)^1.5, none past 2 m; water blown out within 3 m; chained fuses 0.15–0.6 s; at most 1 blast a tick and 1,200 pieces a blast; the effects' numbers **[built, 0.49.32]** |
 | felling tunables (`shared/physics/felling.json`) | see [`FELLING.md`](./FELLING.md) §5 | The support search's reach and bounds, a falling piece's topple spin (about its foot, its farthest point at most `toppleTipSpeed` 4 m/s, 0.40.6), sleep (`sleepSeconds` 1 s, `restDrift` 0.1 m, 0.49.29) and timeouts, settles batched every `settleEveryTicks` (6), hit damage (`hitSpeed` 4 m/s, `hitDamagePerSpeed` 6), held from players' contacts while slower than `holdSpeed` (1 m/s) or pushed in the last `pushHoldSeconds` (0.25 s), moved by their push (0.41.5); a piece settles once and stays (`maxSettles` 1, 0.41.5) **[built, 0.37.1]**; the clients' settle glide (`settleGlideSeconds` 0.3 s, `settleBounce` 0.12) **[built, 0.40.3]**; terrain collision built round pieces at most `terrainChunksPerTick` (4) chunks a tick **[built, 0.40.5]** |
 | `SNAPSHOT_HZ` | 20 | Snapshot broadcast rate |
 | `probes.max_slope_angle` (`config.rs`) | 56° | The steepest ground (above the 45° ramps); steeper faces are walls (PLAYER_CONTROLLER.md §6.2) |

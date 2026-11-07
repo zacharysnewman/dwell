@@ -2494,15 +2494,18 @@ impl Server {
     }
 
     /// Sets off the blast of `fuse` (docs/EXPLOSIVES.md §3), if its explosive is still there, lit.
-    /// Every other block whose cell centre is within its radius becomes a natural piece flung out
-    /// from it (nearest first, at most `limits.maxPieces`), but liquids, which within
-    /// `waterRadiusM` are blown out, and `indestructible` blocks, which stay; an explosive caught in
-    /// it is lit with a short random fuse (`chainDelaySeconds`). The cells go in one `Explosion`
-    /// modification (its own cell first: the clients' effects start from it), then the pieces'
-    /// spawns. Players within `reachM` are knocked back and hurt by the falloff share, and bodies
-    /// pushed; what the blast left without support falls.
+    /// Every other block whose cell centre is within its radius is destroyed outright within
+    /// `destroyRadiusM`, and beyond it becomes a natural piece flung out from it (nearest first, at
+    /// most `limits.maxPieces`), but liquids, which within `waterRadiusM` are blown out, and
+    /// `indestructible` blocks, which stay; an explosive caught in it is lit with a short random
+    /// fuse (`chainDelaySeconds`). The cells go in one `Explosion` modification (its own cell first:
+    /// the clients' effects start from it), then the pieces' spawns. Players within `reachM` are
+    /// knocked back by the falloff share, and hurt only within `destroyRadiusM`; bodies are pushed;
+    /// what the blast left without support falls.
     fn blast(&mut self, fuse: crate::blasts::Fuse) {
-        use dwell_world::explosives::{cells_within, fling_speed, push_dir, share};
+        use dwell_world::explosives::{
+            blast_damage, cells_within, destroys, fling_speed, push_dir, share,
+        };
         let Some(e) = self.fuses.table.get(fuse.explosive).copied() else {
             return;
         };
@@ -2541,7 +2544,8 @@ impl Server {
                 self.fuses.light(c, i, delay);
                 continue;
             }
-            if s.indestructible || flung.len() >= self.fuses.max_pieces {
+            let destroyed = destroys(&e, d);
+            if s.indestructible || (!destroyed && flung.len() >= self.fuses.max_pieces) {
                 continue;
             }
             let left = if s.flooded && d > e.water_radius_m {
@@ -2550,7 +2554,9 @@ impl Server {
                 M.air
             };
             changes.set(&mut self.world, c, left);
-            flung.push((c, m, p, d));
+            if !destroyed {
+                flung.push((c, m, p, d));
+            }
         }
         let cleared = changes.cells();
         self.broadcast_changes(changes, VoxelModificationReason::Explosion);
@@ -2608,7 +2614,12 @@ impl Server {
             let dv = Vec3::new(dir[0] as f32, dir[1] as f32, dir[2] as f32)
                 * (e.knockback_ms * sh) as f32;
             self.knockback(player_id, dv);
-            self.damage(id, (e.damage * sh).round() as i32, DamageCause::Explosion);
+            // Hurt only within the destroy radius (none past it).
+            self.damage(
+                id,
+                blast_damage(&e, d).round() as i32,
+                DamageCause::Explosion,
+            );
         }
         // What the blast left without support falls (a trunk cut through, sand undermined).
         self.fell(&cleared, 0, Some(centre));
