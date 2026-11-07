@@ -1021,3 +1021,35 @@ dwell_world::both_faces!(
         }
     }
 );
+
+dwell_world::both_faces!(
+    fn a_charge_touching_water_spares_the_blocks(f: FaceFrame) {
+        // Owner (2026-11-07): "Make dynamite not destroy or dislodge (physics) blocks when it's
+        // touching water." A charge in rock with one water cell beside it: no cell cleared, no
+        // piece; the same charge dry blows its crater (the cliff fixture's pieces).
+        let stone = require("dwell:stone");
+        for e in dwell_world::explosives::EXPLOSIVES {
+            assert!(e.water_spares_blocks, "{}: spares blocks by water", e.name);
+            let mut s = Scene::new(f, 1);
+            s.fx.server.set_explosives(vec![*e]);
+            s.put(1, 0.5, -12.5);
+            s.run(2);
+            for o in cells_within(7.0) {
+                s.set(o, if o[0] >= 5 { M.air } else { stone });
+            }
+            s.set([1, 0, 0], M.water);
+            let lit = dwell_world::explosives::lit_state(e).expect("lit");
+            s.set([0, 0, 0], lit);
+            let at = s.cell([0, 0, 0]);
+            s.fx.server.light_fuse(at, 0, 0.0);
+            let out = s.run(2);
+            assert!(spawns(&out).is_empty(), "{}: no piece by water", e.name);
+            for o in [[2, 0, 0], [-1, 0, 0], [0, 3, 0], [0, -3, 0], [3, 0, 2]] {
+                assert_eq!(s.get(o), stone, "{}: {o:?} stays by water", e.name);
+            }
+        }
+        // Dry, the same charge blows (red's cliff blast flings pieces).
+        let (pieces, _) = cliff_blast(f, dynamite());
+        assert!(!pieces.is_empty(), "dry: it blows");
+    }
+);
