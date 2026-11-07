@@ -595,7 +595,11 @@ Meant as a level-6 flight; **the bench's flight stalled in every attempt** (thre
 in every later record, `gpu.motion` drawn only in the first), so this is a view from ~20 m over the valley at
 the dam, looking along it to the far terrain, not a flight; nothing streamed (no jobs, no uploads) except when
 the LOD came back. The 0.50.6 GPU-bound comparison's `gpu-fly` used the same steps (look pitch −10), so its
-"flight" may have been the same stall. Why the held key stops after a `record` was not looked into. The
+"flight" may have been the same stall. **Why (found 0.50.10):** not the bench nor the held key: the tick
+trace kept `move [0, 1]` held while `touchingWall` and `grounded` were true, at 162 m: the climb at level 0
+(3 s of Space, ~20 m) left the player below the valley's side, and the flight ran into it. Raising the fly
+speed *before* the climb (level 6, 3 s: ~200 m up) flies freely (254 m in a 4 s record; [Render scale and
+upscaling](#render-scale-and-upscaling)). The
 earlier flights in [the performance line](#in-the-game-the-performance-line) (1700×1000, level 4: 59/60 fps)
 moved.
 

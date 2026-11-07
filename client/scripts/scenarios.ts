@@ -188,7 +188,8 @@ export interface Scenario {
   name: string;
   notes: string;
   seed: number;
-  window: { width: number; height: number };
+  /** The page's CSS size; `pixelRatio` the device's (1 by default; 2 a Retina screen, shots at its pixels). */
+  window: { width: number; height: number; pixelRatio?: number };
   settings: View['settings'];
   debug: boolean;
   scale: number;
@@ -656,7 +657,7 @@ function parseScenario(where: string, v: unknown): Scenario {
     throw new ViewError(`${where}.face: expected "a" or "b"`);
   }
   const n = name(`${where}.name`, o.name);
-  const w = o.window === undefined ? {} : obj(`${where}.window`, o.window, ['width', 'height']);
+  const w = o.window === undefined ? {} : obj(`${where}.window`, o.window, ['width', 'height', 'pixelRatio']);
   const settings = (
     o.settings === undefined
       ? {}
@@ -690,6 +691,9 @@ function parseScenario(where: string, v: unknown): Scenario {
     window: {
       width: num(`${where}.window.width`, w.width, 320, 4096, 1280),
       height: num(`${where}.window.height`, w.height, 240, 4096, 720),
+      ...(w.pixelRatio === undefined
+        ? {}
+        : { pixelRatio: num(`${where}.window.pixelRatio`, w.pixelRatio, 1, 4, 1) }),
     },
     settings,
     debug: bool(`${where}.debug`, o.debug, false),

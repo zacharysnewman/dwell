@@ -58,6 +58,11 @@ describe('scenarios', () => {
     const [s] = parseScenarios(file([minimal]));
     expect(s.seed).toBe(7);
     expect(s.window).toEqual({ width: 1280, height: 720 });
+    // A Retina page: the device's pixel ratio (shots at its pixels), in [1, 4].
+    const retina = parseScenarios(
+      file([{ ...minimal, window: { width: 1280, height: 800, pixelRatio: 2 } }]),
+    );
+    expect(retina[0]?.window).toEqual({ width: 1280, height: 800, pixelRatio: 2 });
     expect(viewUrl('./', scenarioView(s))).toBe('./?local=1&seed=7');
   });
 
