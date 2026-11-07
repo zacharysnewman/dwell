@@ -220,7 +220,7 @@ pub fn push_dir(centre: [f64; 3], at: [f64; 3], lift: f64) -> [f64; 3] {
 /// half space open (flat ground, a cliff face, a cave roof) gives its normal at length 1 and a
 /// buried charge about nothing. Computed from cells, so it is face-free: on face B the ground's
 /// cells are mirrored and so is the way out.
-pub fn open_dir(sense_m: f64, solid: impl Fn([i32; 3]) -> bool) -> [f64; 3] {
+pub fn open_dir(sense_m: f64, mut solid: impl FnMut([i32; 3]) -> bool) -> [f64; 3] {
     let mut sum = [0.0; 3];
     let mut n = 0.0;
     for o in cells_within(sense_m).into_iter().skip(1) {
@@ -251,7 +251,11 @@ pub fn piece_dir(radial: [f64; 3], open: [f64; 3], blend: f64) -> [f64; 3] {
     let b = (blend * openness).clamp(0.0, 1.0);
     let v: [f64; 3] = std::array::from_fn(|k| (1.0 - b) * radial[k] + b * open[k] / openness);
     let l = length(v);
-    if l > 1e-9 { v.map(|c| c / l) } else { open.map(|c| c / openness) }
+    if l > 1e-9 {
+        v.map(|c| c / l)
+    } else {
+        open.map(|c| c / openness)
+    }
 }
 
 /// Which of a blast's shell cells fly (docs/EXPLOSIVES.md §3; owner, 2026-11-06: "don't simulate
@@ -265,7 +269,7 @@ pub fn piece_dir(radial: [f64; 3], open: [f64; 3], blend: f64) -> [f64; 3] {
 pub fn launching(
     shell: &[([i32; 3], [f64; 3], bool)],
     path_m: f64,
-    solid: impl Fn([i32; 3]) -> bool,
+    mut solid: impl FnMut([i32; 3]) -> bool,
 ) -> Vec<bool> {
     if path_m <= 0.0 {
         return vec![true; shell.len()];
@@ -490,7 +494,11 @@ mod tests {
     /// World cell offset `o`'s face-local offset (x, rows, z) in face `f`.
     fn local(f: FaceFrame, o: [i32; 3]) -> [i32; 3] {
         let v = f.vector(offset_m(o));
-        [v[0].round() as i32, (v[1] / CELL_H).round() as i32, v[2].round() as i32]
+        [
+            v[0].round() as i32,
+            (v[1] / CELL_H).round() as i32,
+            v[2].round() as i32,
+        ]
     }
 
     fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
@@ -562,7 +570,11 @@ mod tests {
                 let l = local(f, s.0);
                 let wide = f64::from(l[0] * l[0] + l[2] * l[2]).sqrt();
                 let upper = l[1] >= -2 && wide <= 2.5;
-                assert!(b || !(upper || wide <= 1.5), "{:?} (local {l:?}) stayed", s.0);
+                assert!(
+                    b || !(upper || wide <= 1.5),
+                    "{:?} (local {l:?}) stayed",
+                    s.0
+                );
             }
             // Some ground is left standing: the cells whose push runs into the ground past the ball.
             assert!(n < shell.len(), "{n} of {} fly", shell.len());

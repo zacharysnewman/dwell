@@ -2768,7 +2768,9 @@ dynamite, lights it (`check_block_edit` → `explosives::ignites`, shared with t
 ones out (at most `blastsPerTick`): one `Explosion` modification clears the explosive and every cell in
 its radius (nearest first, at most `maxPieces` pieces): a block within `destroyRadiusM` is destroyed
 outright, each one beyond a one-cell natural piece flung out by `impulse` × (1 − d / r)^`falloff` over
-its mass; players are knocked back out to `reachM` and hurt only within `destroyRadiusM`; liquids within `waterRadiusM` are blown out (the water
+its mass, **[built, 0.49.45]** along its line from the blast turned toward the open side sensed from the
+cells within `openSenseM` (`openBlend` × how open), and only if that push meets no rock within
+`openPathM` (the core and the cells that fly count as open; the rest stay as terrain, EXPLOSIVES.md §3); players are knocked back out to `reachM` and hurt only within `destroyRadiusM`; liquids within `waterRadiusM` are blown out (the water
 host refills the crater), `indestructible` blocks stay, explosives caught in it are lit with a short
 random fuse; bodies are pushed by their distance (players' damage is `DamageCause::Explosion`); what it leaves unsupported falls. **[built, 0.49.41]** Two options as data, both off in the
 shipped dynamite (4 m, its force ×1.5): `loosenRadiusM` (cells from `radiusM` out to it become pieces

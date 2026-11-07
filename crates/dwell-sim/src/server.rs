@@ -2509,7 +2509,8 @@ impl Server {
     /// what the blast left without support falls.
     fn blast(&mut self, fuse: crate::blasts::Fuse) {
         use dwell_world::explosives::{
-            blast_damage, cells_within, destroys, fling_speed, push_dir, share,
+            blast_damage, cells_within, destroys, fling_speed, launching, open_dir, piece_dir,
+            push_dir, radial_dir, share,
         };
         let Some(e) = self.fuses.table.get(fuse.explosive).copied() else {
             return;
@@ -2521,9 +2522,17 @@ impl Server {
             return;
         }
         let centre = crate::felling::cell_centre(at);
+        let centre_a = centre.to_array();
+        // The way out (docs/EXPLOSIVES.md §3): sensed from the cells round it before it clears any.
+        let solid_at = |world: &mut VoxelWorld, o: [i32; 3]| {
+            let m = world.get_voxel(at[0] + o[0], at[1] + o[1], at[2] + o[2]);
+            m != M.air && !info(m).liquid
+        };
+        let open = open_dir(e.open_sense_m, |o| solid_at(&mut self.world, o));
         let mut changes = TickChanges::default();
         changes.set(&mut self.world, at, M.air);
-        let mut flung = Vec::new();
+        // The shell's breakable cells (cell, state, centre, distance, offset), judged below.
+        let mut shell = Vec::new();
         // Out to the loosen radius: past `radius_m` the pieces get no impulse (`fling_speed`'s
         // share is nothing there), so they slump and fall.
         for o in cells_within(e.loosen_radius_m.max(e.radius_m))
@@ -2554,25 +2563,51 @@ impl Server {
                 self.fuses.light(c, i, delay);
                 continue;
             }
-            let destroyed = destroys(&e, d);
-            if s.indestructible || (!destroyed && flung.len() >= self.fuses.max_pieces) {
+            if s.indestructible {
                 continue;
             }
-            let left = if s.flooded && d > e.water_radius_m {
+            if destroys(&e, d) {
+                let left = if s.flooded && d > e.water_radius_m {
+                    M.water
+                } else {
+                    M.air
+                };
+                changes.set(&mut self.world, c, left);
+            } else {
+                shell.push((c, m, p, d, o));
+            }
+        }
+        // Each shell cell's push: its line from the blast turned toward the way out. Those whose
+        // push meets rock (the core cleared, the cells that fly not rock) stay as terrain.
+        let dirs: Vec<[f64; 3]> = shell
+            .iter()
+            .map(|&(_, _, p, _, _)| {
+                piece_dir(radial_dir(centre_a, p.to_array()), open, e.open_blend)
+            })
+            .collect();
+        let judged: Vec<([i32; 3], [f64; 3], bool)> = shell
+            .iter()
+            .zip(&dirs)
+            .map(|(&(_, _, _, d, o), &dir)| (o, dir, d > e.radius_m))
+            .collect();
+        let flies = launching(&judged, e.open_path_m, |o| solid_at(&mut self.world, o));
+        let mut flung = Vec::new();
+        for ((&(c, m, p, d, _), &dir), fly) in shell.iter().zip(&dirs).zip(flies) {
+            if !fly || flung.len() >= self.fuses.max_pieces {
+                continue;
+            }
+            let left = if info(m).flooded && d > e.water_radius_m {
                 M.water
             } else {
                 M.air
             };
             changes.set(&mut self.world, c, left);
-            if !destroyed {
-                flung.push((c, m, p, d));
-            }
+            flung.push((c, m, p, d, dir));
         }
         let cleared = changes.cells();
         self.broadcast_changes(changes, VoxelModificationReason::Explosion);
-        let centre_a = centre.to_array();
-        for &(c, m, p, d) in &flung {
-            let dir = DVec3::from(push_dir(centre_a, p.to_array(), e.lift));
+        for &(c, m, _, d, dir) in &flung {
+            let dir = DVec3::from(dir);
             let i = self.felling.spawn_body(
                 &mut self.physics,
                 None,
@@ -2668,6 +2703,12 @@ impl Server {
             physics.set_apart(*body, false);
             false
         });
+    }
+
+    /// Lights the explosive `explosive` of the table at `cell` (already its lit state) with a fuse
+    /// of `seconds` (tests and tools).
+    pub fn light_fuse(&mut self, cell: [i32; 3], explosive: usize, seconds: f64) {
+        self.fuses.light(cell, explosive, seconds);
     }
 
     /// The blasts' pieces still kept apart from one another (tests).
