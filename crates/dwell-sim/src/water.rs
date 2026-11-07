@@ -95,6 +95,12 @@ pub struct Settings {
     /// A freed column still in the rest shows the map's current, blended to its own as its depth
     /// leaves its generated depth by up to this (m; `riverCurrentBandM`).
     pub river_band: f32,
+    /// The slosh's drag (BUGS.md #41b): a face's swing off its running mean (over `slosh_mean`
+    /// water s) is pulled back to it over `slosh_damp` s (0: none), less as the swing runs faster
+    /// than `slosh_speed` (m/s).
+    pub slosh_damp: f32,
+    pub slosh_mean: f32,
+    pub slosh_speed: f32,
     /// The liquid it draws (the data's first).
     pub liquid: StateId,
 }
@@ -125,6 +131,9 @@ impl Settings {
             still: d.current_still_ms as f32,
             current_depth: d.current_depth_m as f32,
             river_band: d.river_current_band_m.max(1e-6) as f32,
+            slosh_damp: d.slosh_damp_s.max(0.0) as f32,
+            slosh_mean: d.slosh_mean_s.max(1e-3) as f32,
+            slosh_speed: d.slosh_speed_ms.max(1e-6) as f32,
             liquid: dwell_blocks::require(first.block),
         }
     }
@@ -190,6 +199,7 @@ fn face(
     qa: f32,
     qb: f32,
     qp: f32,
+    mean: f32,
     dt: f32,
 ) -> f32 {
     let (ea, eb) = (ga + da, gb + db);
@@ -200,7 +210,15 @@ fn face(
     let speed = (q * q + qp * qp).sqrt();
     let friction = 1.0 + G * dt * s.manning * s.manning * speed / (h * h * h.cbrt());
     let qt = s.theta * q + (1.0 - s.theta) * 0.5 * (qa + qb);
-    let nq = (qt - G * h * dt * (eb - ea)) / friction;
+    let mut nq = (qt - G * h * dt * (eb - ea)) / friction;
+    // The slosh's drag: the swing off the face's running mean is pulled back to it, the more the
+    // slower it runs, so a steady flow is never dragged and a big wave hardly (BUGS.md #41b).
+    if s.slosh_damp > 0.0 && mean.is_finite() {
+        let swing = nq - mean;
+        let u = swing.abs() / h / s.slosh_speed;
+        let w = 1.0 / (1.0 + u * u);
+        nq = mean + swing / (1.0 + w * dt / s.slosh_damp);
+    }
     let limit = h * (G * h).sqrt();
     nq.clamp(-limit, limit)
 }
@@ -229,6 +247,10 @@ struct Layer {
     npx: [f32; CA],
     npz: [f32; CA],
     scale: [f32; CA],
+    /// Each face's running mean discharge (m²/s; NaN: none yet, its flow taken), for the slosh's
+    /// drag; not saved (a loaded world takes its flows as their means).
+    mqx: [f32; CA],
+    mqz: [f32; CA],
 }
 
 impl Layer {
@@ -245,6 +267,8 @@ impl Layer {
             npx: [0.0; CA],
             npz: [0.0; CA],
             scale: [1.0; CA],
+            mqx: [f32::NAN; CA],
+            mqz: [f32::NAN; CA],
         }
     }
 }
@@ -1226,6 +1250,7 @@ impl Water {
                         continue;
                     }
                     let np = self.carried(c, l, d, zf, rest);
+                    let mut mean = f32::NAN;
                     let nq = {
                         let q_of = |cc: usize, ll: usize, z: bool| -> f32 {
                             let k = lay(&self.chunks[cc], rest);
@@ -1257,6 +1282,10 @@ impl Water {
                                         0.5 * (own + before)
                                     };
                                     let qp = 0.5 * (perp(c, l) + perp(c2, l2));
+                                    if !rest {
+                                        let m = if zf { ka.mqz[l] } else { ka.mqx[l] };
+                                        mean = if m.is_finite() { m } else { q };
+                                    }
                                     face(
                                         &self.cfg,
                                         ga,
@@ -1267,6 +1296,7 @@ impl Water {
                                         qa,
                                         qb,
                                         qp,
+                                        mean,
                                         dt,
                                     )
                                 }
@@ -1276,12 +1306,19 @@ impl Water {
                     };
                     let k = &mut self.chunks[c];
                     let k = if rest { &mut k.r } else { &mut k.w };
+                    let mean = if mean.is_finite() {
+                        mean + (nq - mean) * (dt / self.cfg.slosh_mean).min(1.0)
+                    } else {
+                        f32::NAN
+                    };
                     if zf {
                         k.nqz[l] = nq;
                         k.npz[l] = np;
+                        k.mqz[l] = mean;
                     } else {
                         k.nqx[l] = nq;
                         k.npx[l] = np;
+                        k.mqx[l] = mean;
                     }
                 }
             }
@@ -1523,7 +1560,7 @@ impl Water {
 
     /// Falling asleep: keeps the flow each edge face brings into its column (the water's less the
     /// rest's by the column's share, as the account counts it) and its balance (BUGS.md #41b).
-    fn keep_edges(&mut self, c: usize, bal: f64) {
+    fn keep_edges(&mut self, c: usize, mut bal: f64) {
         let mut kept = [[0.0f32; 4]; CA];
         for (l, kl) in kept.iter_mut().enumerate() {
             let k = &self.chunks[c];
@@ -1546,6 +1583,14 @@ impl Water {
                     _ => (n.w.qz[l2] + n.w.pz[l2], n.r.qz[l2] + n.r.pz[l2]),
                 };
                 *kd = w - share * r;
+                // An edge toward a chunk already asleep carries what that one kept across it
+                // from now on (no one steps it): its flow is this chunk's too, or a swing caught
+                // at different moments on the two sides would make or lose water (BUGS.md #41b).
+                if !n.awake && !n.held[l2] && !n.w.floor[l2].is_nan() {
+                    let theirs = -n.kept[l2][d ^ 1];
+                    bal += f64::from(theirs - *kd);
+                    *kd = theirs;
+                }
             }
         }
         let k = &mut self.chunks[c];

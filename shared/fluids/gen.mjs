@@ -36,6 +36,9 @@ export const FLOW_RANGES = {
   riverCurrentMaxMs: [0, 20, false],
   riverFallReachM: [0, 4096, false],
   riverCurrentBandM: [0.001, 10, false],
+  sloshDampS: [0, 36000, false],
+  sloshMeanS: [0.1, 36000, false],
+  sloshSpeedMs: [0.0001, 10, false],
 };
 
 /** The registry's blocks (name → liquid?), from shared/blocks/dwell.json. */
