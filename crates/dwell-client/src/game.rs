@@ -30,6 +30,7 @@ use dwell_game::sound::{
     CellChange, EditSounds, FireSounds, FireSource, ImpactSounds, MoverSample, MoverSounds,
     SoundEvent, SoundKind, Surroundings, ambient, player_event_sound,
 };
+use dwell_game::stream_budget::StreamBudget;
 use dwell_game::touch::TouchState;
 use dwell_lod::fade::Fade;
 use dwell_lod::{LodCamera, LodSystem, LodView, StandInBox, format_lod_stats};
@@ -68,21 +69,6 @@ const ARMS_LIGHT: u32 = u32::MAX;
 /// input queue and latency window (dwell-sim `MAX_QUEUED_INPUTS`, `LATENCY_WINDOW_TICKS`) hold a
 /// frame of this many inputs.
 const MAX_TICKS_PER_FRAME: f64 = 60.0;
-/// Main-thread time per frame for starting mesh jobs (copying chunks' voxels out of the world)
-/// and, apart from it, for lighting chunks that arrived (the flood light, docs/DAY_NIGHT.md §11):
-/// each at least `STREAM_BUDGET_MS`, or `STREAM_FRAME_SHARE` of the last frame's interval on a
-/// slow page, up to the cap. A slow page's frames are long anyway, and a fixed 4 ms there started
-/// one or two jobs a frame: at CI's ~5 fps the view took 20 s to mesh (e2e/play.spec.ts). The
-/// shares feed back into the next frame's interval, at most by 1/(1 − 2 × share).
-const STREAM_BUDGET_MS: f64 = 4.0;
-const STREAM_FRAME_SHARE: f64 = 0.1;
-const STREAM_BUDGET_MAX_MS: f64 = 25.0;
-
-/// This frame's light budget, and its mesh budget (ms each), after a frame interval of
-/// `frame_ms`.
-pub fn stream_budget_ms(frame_ms: f64) -> f64 {
-    (frame_ms * STREAM_FRAME_SHARE).clamp(STREAM_BUDGET_MS, STREAM_BUDGET_MAX_MS)
-}
 /// Server input buffer outside [LOW, HIGH] nudges the local tick rate by ±RATE_NUDGE.
 const BUFFER_LOW: u8 = 1;
 const BUFFER_HIGH: u8 = 4;
@@ -518,6 +504,9 @@ pub struct Game<S: Scene> {
     recent: VecDeque<InputFrame>,
     accumulator: f64,
     last_frame_ms: Option<f64>,
+    /// When this frame started, on the budgets' clock: the stream's budget is what is left of
+    /// the frame's (`dwell_game::stream_budget`).
+    frame_start_ms: f64,
     last_snapshot_tick: u32,
     /// The server's clock, from its snapshots: world time for the day/night cycle and the clouds'
     /// drift.
@@ -710,6 +699,7 @@ impl<S: Scene> Game<S> {
             recent: VecDeque::new(),
             accumulator: 0.0,
             last_frame_ms: None,
+            frame_start_ms: 0.0,
             last_snapshot_tick: 0,
             clock: Default::default(),
             input_buffer: 0,
@@ -2323,6 +2313,7 @@ impl<S: Scene> Game<S> {
         touch: Option<&TouchState>,
         now: &mut dyn FnMut() -> f64,
     ) {
+        self.frame_start_ms = now();
         input.brushes = self.brush.available;
         input.brush_active = self.brush.active();
         // Queued region edits (a brush stroke) as the server's cell rate allows.
@@ -2519,13 +2510,10 @@ impl<S: Scene> Game<S> {
         } else {
             [0.5, 64.0, 0.5]
         };
+        // What is left of the frame's loading budget after the jobs taken in and the ticks.
+        let budget = StreamBudget::for_frame(now() - self.frame_start_ms, dt * 1000.0);
         telemetry::span("mesh_dirty", || {
-            self.streamer.mesh_dirty(
-                around,
-                stream_budget_ms(dt * 1000.0),
-                stream_budget_ms(dt * 1000.0),
-                &mut *now,
-            );
+            self.streamer.mesh_dirty(around, budget, &mut *now);
         });
 
         // Remote players, interpolated.
@@ -3496,17 +3484,6 @@ mod tests {
             assert!(toward > 3.0, "looking at the body: {toward}");
         }
     );
-
-    #[test]
-    fn the_stream_budgets_are_4_ms_or_a_tenth_of_a_slow_frame() {
-        assert_eq!(stream_budget_ms(16.7), 4.0);
-        assert_eq!(stream_budget_ms(0.0), 4.0);
-        assert!(
-            (stream_budget_ms(200.0) - 20.0).abs() < 1e-9,
-            "CI's ~5 fps page"
-        );
-        assert_eq!(stream_budget_ms(1000.0), 25.0);
-    }
 
     #[test]
     fn the_debug_overlay_shows_state_layers_and_prediction_stats() {

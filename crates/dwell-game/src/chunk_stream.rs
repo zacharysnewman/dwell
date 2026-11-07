@@ -19,6 +19,8 @@ use dwell_world::{
 pub use dwell_world::{MAX_CHUNK_Y, MIN_CHUNK_Y};
 
 use crate::chunk_diff::{PADDED_VOLUME, padded_index};
+use crate::stream_budget::ItemCost;
+pub use crate::stream_budget::StreamBudget;
 
 /// A chunk coordinate as on the wire.
 pub type Coord = [i32; 3];
@@ -515,6 +517,9 @@ pub struct ChunkStreamer<S, G, M: Mesher, V> {
     /// within `mesh_dirty`'s budget, and no chunk is meshed while it or a neighbour waits here.
     unlit: std::collections::VecDeque<Coord>,
     unlit_set: HashSet<Coord>,
+    /// Running estimates of a chunk's light and a mesh start (ms), to stop before the deadline.
+    light_cost: ItemCost,
+    mesh_cost: ItemCost,
     /// Lit and meshed after the near ring, before the rest (`set_second_centre`).
     second: Option<SecondCentre>,
     /// World cells meshed as air while held here (`hide_cells`): a settling piece's blocks while
@@ -564,6 +569,8 @@ where
             token: 0,
             unlit: Default::default(),
             unlit_set: HashSet::default(),
+            light_cost: ItemCost::default(),
+            mesh_cost: ItemCost::default(),
             second: None,
             hidden: HashSet::default(),
             stale: HashSet::default(),
@@ -768,20 +775,23 @@ where
         p
     }
 
-    /// Lights chunks that arrived (`ChunkStore::light_chunk`), nearest to `center` first, for up
-    /// to `light_ms` of `now()` (at least one), then starts mesh jobs for changed chunks, nearest
-    /// first, while the mesher has room and for up to `mesh_ms` more (at least one): the light
-    /// has a budget of its own, so lighting doesn't starve the meshing (0.22.9 started 2–4 mesh
-    /// jobs a frame at load where 0.22.8 kept 16 running). A chunk waits while a neighbour is
-    /// still being generated or lit, so it is meshed once with its borders known rather than
-    /// again when each neighbour arrives. Returns the number of jobs started.
+    /// Lights chunks that arrived (`ChunkStore::light_chunk`), nearest to `center` first, then
+    /// starts mesh jobs for changed chunks, nearest first, while the mesher has room: both within
+    /// one `budget` of `now()` (`stream_budget.rs`), the light stopping short of the part kept for
+    /// the mesh starts while there are chunks to mesh, so lighting doesn't starve the meshing
+    /// (0.22.9 started 2–4 mesh jobs a frame at load where 0.22.8 kept 16 running). Each stops
+    /// before an item its running cost estimate says would pass the deadline, and runs at least
+    /// one. A chunk waits while a neighbour is still being generated or lit, so it is meshed once
+    /// with its borders known rather than again when each neighbour arrives. Returns the number of
+    /// jobs started.
     pub fn mesh_dirty(
         &mut self,
         center: [f64; 3],
-        light_ms: f64,
-        mesh_ms: f64,
+        budget: StreamBudget,
         mut now: impl FnMut() -> f64,
     ) -> usize {
+        let start = now();
+        let deadline = start + budget.ms;
         let distance_to = |c: &Coord, to: [f64; 3]| -> f64 {
             let m = dwell_world::chunk_centre_m(ChunkCoord::from_array(*c));
             (0..3).map(|i| (m[i] - to[i]).powi(2)).sum()
@@ -802,7 +812,14 @@ where
         };
         let order_of = |a: &(u8, f64), b: &(u8, f64)| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1));
         if !self.unlit.is_empty() {
-            let deadline = now() + light_ms;
+            let to_mesh = self.dirty.len() > 0 && self.mesher.capacity() > self.meshing.len();
+            let light_deadline = if to_mesh {
+                deadline - budget.mesh_ms
+            } else {
+                deadline
+            };
+            let mut t = start;
+            let mut ran = 0;
             let order: Vec<Coord> = std::mem::take(&mut self.unlit)
                 .into_iter()
                 .filter(|c| self.unlit_set.contains(c))
@@ -811,13 +828,16 @@ where
             let mut keyed: Vec<((u8, f64), Coord)> =
                 order.into_iter().map(|c| (key(&c), c)).collect();
             keyed.sort_by(|a, b| order_of(&a.0, &b.0));
-            let mut rest = keyed.into_iter().map(|(_, c)| c);
-            for c in rest.by_ref() {
+            let rest = keyed.into_iter().map(|(_, c)| c);
+            let mut rest = rest.peekable();
+            while rest.peek().is_some() && self.light_cost.fits(ran, t, light_deadline) {
+                let c = rest.next().expect("peeked");
                 self.unlit_set.remove(&c);
                 self.store.light_chunk(c);
-                if now() >= deadline {
-                    break;
-                }
+                let t1 = now();
+                self.light_cost.took(t1 - t);
+                t = t1;
+                ran += 1;
             }
             self.unlit = rest.collect();
             self.relit();
@@ -826,7 +846,7 @@ where
         if self.dirty.len() == 0 || room == 0 {
             return 0;
         }
-        let deadline = now() + mesh_ms;
+        let mut t = now();
         let ready: Vec<Coord> = self
             .dirty
             .in_order()
@@ -845,7 +865,7 @@ where
         keyed.sort_by(|a, b| order_of(&a.0, &b.0));
         let mut count = 0;
         for (_, c) in keyed {
-            if count >= room {
+            if count >= room || !self.mesh_cost.fits(count, t, deadline) {
                 break;
             }
             self.dirty.remove(&c);
@@ -861,9 +881,9 @@ where
                 mirror: face_of_chunk_y(c[1]) == Face::B,
             });
             count += 1;
-            if now() >= deadline {
-                break;
-            }
+            let t1 = now();
+            self.mesh_cost.took(t1 - t);
+            t = t1;
         }
         count
     }
@@ -1435,7 +1455,7 @@ mod tests {
                 voxels: Some(voxels),
             });
             s.on_chunk_data(air(sky));
-            s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
             let floor = f.cell([16, row * CHUNK_SIZE + 8, 16]);
             let light_at = |job: &MeshJob, c: [i32; 3]| {
                 let l = [0, 1, 2].map(|a| c[a] - job.coord[a] * CHUNK_SIZE);
@@ -1460,7 +1480,7 @@ mod tests {
                 })
                 .collect();
             assert_eq!(s.set_local(&roof), roof.len());
-            s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
             let job = s
                 .mesher()
                 .jobs
@@ -1475,7 +1495,7 @@ mod tests {
             }
             let gone: Vec<([i32; 3], u16)> = roof.iter().map(|&(c, _)| (c, 0)).collect();
             s.set_local(&gone);
-            s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
             let job = s
                 .mesher()
                 .jobs
@@ -1518,12 +1538,15 @@ mod tests {
         assert_eq!(s.source().pending(), 0);
         assert_eq!(s.store().chunks.len(), 0);
         assert!(s.ready_around([16.0, dwell_world::m_of_row(16), 16.0]));
-        assert_eq!(s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock), 0);
+        assert_eq!(
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock),
+            0
+        );
         assert_eq!(s.view().chunks.len(), 0);
         // Unloading an Air chunk removes nothing from the store; a stored chunk replaced by Air is
         // dropped from the store and the view.
         s.on_chunk_data(explicit([5, 0, 0], 1, 2));
-        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
         flush(&mut s);
         assert!(s.view().chunks.contains_key(&[5, 0, 0]));
         s.on_chunk_data(air([5, 0, 0]));
@@ -1553,7 +1576,7 @@ mod tests {
         let (mut s, _) = setup();
         s.on_chunk_data(generated([0, 0, 0]));
         finish(&mut s, [0, 0, 0]);
-        s.mesh_dirty([0.0; 3], 10.0, 10.0, no_clock);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(20.0, 10.0), no_clock);
         flush(&mut s);
         assert!(s.view().chunks.contains_key(&[0, 0, 0]));
         s.on_chunk_data(generated([3, 0, 0]));
@@ -1581,9 +1604,12 @@ mod tests {
     }
 
     #[test]
-    fn lighting_has_its_own_budget_goes_nearest_first_and_doesnt_starve_the_meshing() {
+    fn lighting_leaves_the_mesh_starts_their_share_goes_nearest_first_and_stops_before_overrunning()
+    {
         // 0.22.9: the light took the mesh budget (in arrival order), and a frame that lit one
-        // chunk started one mesh job: 2–4 jobs ran at load where 16 had.
+        // chunk started one mesh job: 2–4 jobs ran at load where 16 had. Since 0.50.14 the two
+        // share one budget, the light stopping short of the mesh starts' part, and before a chunk
+        // its estimate says would pass its deadline.
         let (mut s, _) = setup();
         let clock = Rc::new(std::cell::Cell::new(0.0));
         s.store_mut().light_clock = Some(clock.clone());
@@ -1593,13 +1619,22 @@ mod tests {
             finish(&mut s, c);
         }
         let t = clock.clone();
-        let started = s.mesh_dirty([16.0, 16.0, 16.0], 15.0, 5.0, move || t.get());
-        // Two lit in 15 ms (10 each, at least one), the nearest; both meshed, in the mesh's own
-        // budget (the others wait to be lit).
+        let started = s.mesh_dirty(
+            [16.0, 16.0, 16.0],
+            StreamBudget::new(25.0, 5.0),
+            move || t.get(),
+        );
+        // Two lit (10 ms each) in the light's 20 ms, the nearest, and the third not begun (it would
+        // end at 30); both meshed in the rest (the others wait to be lit).
         assert_eq!(s.store().lit, vec![[0, 0, 0], [4, 0, 0]]);
+        assert_eq!(clock.get(), 20.0);
         assert_eq!(started, 2);
         let t = clock.clone();
-        s.mesh_dirty([16.0, 16.0, 16.0], 100.0, 5.0, move || t.get());
+        s.mesh_dirty(
+            [16.0, 16.0, 16.0],
+            StreamBudget::new(105.0, 5.0),
+            move || t.get(),
+        );
         assert_eq!(s.store().lit.len(), 4);
         assert_eq!(sorted(s.store().meshed_from.clone()).len(), 4);
     }
@@ -1638,15 +1673,24 @@ mod tests {
             t += 10.0;
             t
         };
-        assert_eq!(s.mesh_dirty(center, 5.0, 5.0, &mut clock), 1);
+        assert_eq!(
+            s.mesh_dirty(center, StreamBudget::new(10.0, 5.0), &mut clock),
+            1
+        );
         assert_eq!(s.store().meshed_from, vec![[8, 0, 0]]);
-        assert_eq!(s.mesh_dirty(center, 5.0, 5.0, &mut clock), 1);
+        assert_eq!(
+            s.mesh_dirty(center, StreamBudget::new(10.0, 5.0), &mut clock),
+            1
+        );
         // [4, 0, 0] waits for [5, 0, 0].
         assert_eq!(s.store().meshed_from, vec![[8, 0, 0], [0, 0, 0]]);
-        assert_eq!(s.mesh_dirty(center, 5.0, 5.0, &mut clock), 0);
+        assert_eq!(
+            s.mesh_dirty(center, StreamBudget::new(10.0, 5.0), &mut clock),
+            0
+        );
         finish(&mut s, [5, 0, 0]);
         flush(&mut s);
-        s.mesh_dirty(center, 100.0, 100.0, no_clock);
+        s.mesh_dirty(center, StreamBudget::new(200.0, 100.0), no_clock);
         assert_eq!(
             sorted(s.store().meshed_from[2..].to_vec()),
             vec![[4, 0, 0], [5, 0, 0]]
@@ -1671,7 +1715,7 @@ mod tests {
                 t += 10.0;
                 t
             };
-            while s.mesh_dirty([16.0, 16.0, 16.0], 5.0, 5.0, &mut clock) > 0 {}
+            while s.mesh_dirty([16.0, 16.0, 16.0], StreamBudget::new(10.0, 5.0), &mut clock) > 0 {}
             s.store().meshed_from.clone()
         };
         let second = SecondCentre {
@@ -1694,11 +1738,11 @@ mod tests {
         let (mut s, _) = setup();
         s.on_chunk_data(generated([0, 0, 0]));
         finish(&mut s, [0, 0, 0]);
-        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
         s.on_chunk_data(generated([0, 1, 0]));
         finish(&mut s, [0, 1, 0]);
         flush(&mut s);
-        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
         assert_eq!(
             sorted(s.store().meshed_from.clone()),
             vec![[0, 0, 0], [0, 0, 0], [0, 1, 0]]
@@ -1713,12 +1757,12 @@ mod tests {
         let (mut s, _) = setup();
         s.on_chunk_data(explicit([0, 0, 0], 3, 0));
         s.on_chunk_data(explicit([0, 1, 0], 0, 0));
-        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
         flush(&mut s);
         s.store_mut().meshed_from.clear();
         let beside_support = 6 | (31 << 5) | (5 << 10);
         s.on_voxel_modification(&[modification([0, 0, 0], 4, &[beside_support, 2])]);
-        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
         assert_eq!(
             sorted(s.store().meshed_from.clone()),
             vec![[0, 0, 0], [0, 1, 0]]
@@ -1740,11 +1784,20 @@ mod tests {
         for x in [0, 2, 4] {
             s.on_chunk_data(explicit([x, 0, 0], 0, 0));
         }
-        assert_eq!(s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock), 2);
-        assert_eq!(s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock), 0);
+        assert_eq!(
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock),
+            2
+        );
+        assert_eq!(
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock),
+            0
+        );
         flush(&mut s);
         assert_eq!(s.view().chunks.len(), 2);
-        assert_eq!(s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock), 1);
+        assert_eq!(
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock),
+            1
+        );
     }
 
     #[test]
@@ -1753,7 +1806,7 @@ mod tests {
         s.on_chunk_data(explicit([0, 0, 0], 3, 0));
         s.on_chunk_data(explicit([1, 0, 0], 0, 0));
         s.on_chunk_data(explicit([0, 1, 0], 0, 0));
-        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
         flush(&mut s);
         s.store_mut().meshed_from.clear();
         // A voxel on the +X border (x = 31): the chunk and its +X neighbour re-mesh.
@@ -1761,7 +1814,7 @@ mod tests {
         s.on_voxel_modification(&[modification([0, 0, 0], 4, &[border, 2])]);
         assert_eq!(s.store().edits, vec![([0, 0, 0], 4, vec![border, 2])]);
         assert_eq!(s.revision([0, 0, 0]), Some(4));
-        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
         assert_eq!(
             sorted(s.store().meshed_from.clone()),
             vec![[0, 0, 0], [1, 0, 0]]
@@ -1789,11 +1842,11 @@ mod tests {
         let (mut s, _) = setup();
         s.store_mut().fill = 7;
         s.on_chunk_data(explicit([0, 0, 0], 0, 0));
-        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
         // A job in flight when a cell is hidden: its result (unmasked) is dropped.
         s.on_voxel_modification(&[modification([0, 0, 0], 1, &[0, 2])]);
         flush(&mut s);
-        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
         assert_eq!(s.mesher_mut().jobs.len(), 1);
         let cell = [3, 4, 5];
         s.hide_cells(&[cell], true);
@@ -1803,7 +1856,7 @@ mod tests {
             !s.cells_drawn(&[cell]),
             "the dropped job's chunk meshes again"
         );
-        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
         let job = s.mesher_mut().jobs.pop().expect("a job");
         assert_eq!(job.padded[padded_index(3, 4, 5)], 0, "hidden: air");
         assert_eq!(job.padded[padded_index(3, 4, 6)], 7, "the rest as stored");
@@ -1812,7 +1865,7 @@ mod tests {
         // Shown again: meshed with it.
         s.hide_cells(&[cell], false);
         assert!(!s.cells_drawn(&[cell]));
-        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
         let job = s.mesher_mut().jobs.pop().expect("a job");
         assert_eq!(job.padded[padded_index(3, 4, 5)], 7);
         s.on_meshed(job.coord, job.token, ());
@@ -1828,14 +1881,14 @@ mod tests {
         for c in [[0, 0, 0], [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0]] {
             s.on_chunk_data(explicit(c, 0, 0));
         }
-        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
         flush(&mut s);
         s.store_mut().meshed_from.clear();
         // Inside the +X apron (not touching the border), low in the chunk: the +X and −Y
         // neighbours' rays reach it, the others' do not.
         let (x, y) = (CHUNK_SIZE - ax, ay - 1);
         s.on_voxel_modification(&[modification([0, 0, 0], 1, &[(x | (y << 5)) as u16, 2])]);
-        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
         assert_eq!(
             sorted(s.store().meshed_from.clone()),
             vec![[0, -1, 0], [0, 0, 0], [1, 0, 0]]
@@ -1846,7 +1899,7 @@ mod tests {
         s.store_mut().meshed_from.clear();
         let (x, y) = (CHUNK_SIZE - ax - 1, ay);
         s.on_voxel_modification(&[modification([0, 0, 0], 2, &[(x | (y << 5)) as u16, 2])]);
-        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
         assert_eq!(
             sorted(s.store().meshed_from.clone()),
             vec![[0, 0, 0], [0, 1, 0]]
@@ -1868,7 +1921,7 @@ mod tests {
         s.on_chunk_data(air([0, 5, 0]));
         s.on_voxel_modification(&[modification([0, 5, 0], 1, &[0, 2])]);
         assert_eq!(s.store().chunks.get(&[0, 5, 0]), Some(&(1, 0)));
-        s.mesh_dirty([0.0, 160.0, 0.0], 100.0, 100.0, no_clock);
+        s.mesh_dirty([0.0, 160.0, 0.0], StreamBudget::new(200.0, 100.0), no_clock);
         assert!(s.store().meshed_from.contains(&[0, 5, 0]));
     }
 
@@ -1904,7 +1957,7 @@ mod tests {
             // Loaded but not meshed: only the air is drawable.
             let loaded = s.near_progress(at, &ring, all);
             assert!(loaded.ready > 0 && !loaded.complete());
-            while s.mesh_dirty(at, 100.0, 100.0, no_clock) > 0 {
+            while s.mesh_dirty(at, StreamBudget::new(200.0, 100.0), no_clock) > 0 {
                 flush(&mut s);
             }
             let done = s.near_progress(at, &ring, all);
@@ -1959,10 +2012,16 @@ mod tests {
             FakeView::default(),
         );
         s.on_chunk_data(explicit([3, 0, 4], 1, 2));
-        assert_eq!(s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock), 1);
+        assert_eq!(
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock),
+            1
+        );
         // A chunk row below the midplane (face B).
         s.on_chunk_data(explicit([3, dwell_world::MIDPLANE_CHUNK_Y - 6, 4], 1, 2));
-        assert_eq!(s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock), 1);
+        assert_eq!(
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock),
+            1
+        );
         assert_eq!(s.mesher().received, vec![false, true]);
     }
 

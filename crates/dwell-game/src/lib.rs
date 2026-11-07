@@ -24,6 +24,7 @@ pub mod loading;
 pub mod region_tools;
 pub mod remotes;
 pub mod sound;
+pub mod stream_budget;
 pub mod touch;
 
 /// Rounds half up, like JavaScript's `Math.round`.
