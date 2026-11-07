@@ -8,6 +8,14 @@
 // settings are kept in this browser.
 import { defaultHud, hideableParts, hudRecord, sanitizeHud, type HudSettings } from './hudSettings';
 import { defaultDetail, detailLimits, sanitizeDetail, type DetailSettings } from './detailSettings';
+import {
+  RENDER_SCALE_KEY,
+  UPSCALE,
+  defaultRenderScale,
+  renderScaleRecord,
+  sanitizeRenderScale,
+  type RenderScaleSettings,
+} from './renderScaleSettings';
 import { DEFAULT_EXPOSURE, EXPOSURE_LIMITS, sanitizeExposure } from './viewSettings';
 import { CLOUD_QUALITIES, defaultClouds, sanitizeClouds, type CloudQuality } from './viewSettings';
 import {
@@ -103,6 +111,8 @@ export interface Settings {
   showArms: boolean;
   /** What the on-screen interface shows (ui/hudSettings.ts, shared/ui/hud.json). */
   hud: HudSettings;
+  /** Render scale and its upscaler (ui/renderScaleSettings.ts, shared/render/upscale.json). */
+  renderScale: RenderScaleSettings;
 }
 
 export function defaultSettings(mobile: boolean, reducedMotion = false): Settings {
@@ -118,6 +128,7 @@ export function defaultSettings(mobile: boolean, reducedMotion = false): Setting
     fovDeg: DEFAULT_FOV,
     showArms: true,
     hud: defaultHud(),
+    renderScale: defaultRenderScale(),
   };
 }
 
@@ -154,6 +165,7 @@ export function settingsJson(s: Settings): string {
     fovDeg: Math.round(s.fovDeg),
     showArms: s.showArms,
     hud: { shown: { ...s.hud.shown } },
+    renderScale: { ...s.renderScale },
   };
   return JSON.stringify(rounded, null, 2);
 }
@@ -197,6 +209,7 @@ export function loadSettings(mobile: boolean): Settings {
     fovDeg: sanitizeFovSetting(load(VIEW_KEY)),
     showArms: sanitizeShowArms(load(VIEW_KEY)),
     hud: sanitizeHud(load(HUD_KEY)),
+    renderScale: sanitizeRenderScale(load(RENDER_SCALE_KEY)),
   };
 }
 
@@ -214,6 +227,10 @@ export function saveSettings(s: Settings): void {
       JSON.stringify(viewRecord(load(VIEW_KEY), s.fovDeg, s.showArms)),
     );
     localStorage.setItem(HUD_KEY, JSON.stringify(hudRecord(load(HUD_KEY), s.hud)));
+    localStorage.setItem(
+      RENDER_SCALE_KEY,
+      JSON.stringify(renderScaleRecord(load(RENDER_SCALE_KEY), s.renderScale)),
+    );
     localStorage.setItem(
       EXPLOSIONS_KEY,
       JSON.stringify(explosionRecord(load(EXPLOSIONS_KEY), s.explosions)),
@@ -244,6 +261,26 @@ const CHOICES: ChoiceSpec<CloudQuality>[] = [
     labels: { off: 'Off', low: 'Low', high: 'High' },
     get: (s) => s.clouds,
     with: (s, v) => ({ ...s, clouds: v }),
+  },
+];
+
+/** The Graphics section's choices, from the data (shared/render/upscale.json). */
+const RENDER_SCALE_CHOICES: ChoiceSpec<string>[] = [
+  {
+    label: 'Render scale',
+    hint: 'The share of the screen drawn, then upscaled; lower is lighter on the GPU',
+    choices: UPSCALE.scales.map((c) => String(c.value)),
+    labels: Object.fromEntries(UPSCALE.scales.map((c) => [String(c.value), c.label])),
+    get: (s) => String(s.renderScale.scale),
+    with: (s, v) => ({ ...s, renderScale: { ...s.renderScale, scale: Number(v) } }),
+  },
+  {
+    label: 'Upscaler',
+    hint: UPSCALE.upscalers.map((u) => `${u.label}: ${u.hint}`).join('. '),
+    choices: UPSCALE.upscalers.map((u) => u.id),
+    labels: Object.fromEntries(UPSCALE.upscalers.map((u) => [u.id, u.label])),
+    get: (s) => s.renderScale.upscaler,
+    with: (s, v) => ({ ...s, renderScale: { ...s.renderScale, upscaler: v } }),
   },
 ];
 
@@ -791,6 +828,12 @@ export class SettingsMenu {
       group.append(grid);
       page.append(group);
     }
+    const graphics = el('div', 'gm-group');
+    graphics.append(el('h2', undefined, 'Graphics'));
+    const graphicsGrid = el('div', 'gm-grid');
+    for (const spec of RENDER_SCALE_CHOICES) graphicsGrid.append(this.choice(spec));
+    graphics.append(graphicsGrid);
+    page.append(graphics);
     const water = el('div', 'gm-group');
     water.append(el('h2', undefined, 'Water'));
     const waterGrid = el('div', 'gm-grid');

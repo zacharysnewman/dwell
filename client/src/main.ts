@@ -64,6 +64,7 @@ import {
 } from './ui/shadowSettings';
 import { displayScale } from './ui/displayScale';
 import type { CloudQuality } from './ui/viewSettings';
+import { UPSCALE, renderScaleFromQuery } from './ui/renderScaleSettings';
 import { FlightSpeedControl } from './ui/flightSpeedControl';
 import { loadFlySpeedLevel, saveFlySpeedLevel } from './predict/flightSpeed';
 import { formatStatus } from './ui/statusOverlay';
@@ -735,6 +736,9 @@ async function start(): Promise<App | null> {
     const waterDebug = new URLSearchParams(location.search).get('waterdbg');
     if (waterDebug) client.setWaterDebug(waterDebug);
     client.setClouds(s.clouds);
+    // Render scale and its upscaler; ?renderscale= and ?upscaler= override them (the bench).
+    const rs = renderScaleFromQuery(location.search, s.renderScale);
+    client.setRenderScale(rs.scale, rs.upscaler, UPSCALE.sharpenStops);
     // ?shadows=off|low|high overrides the stored setting (the bench's configurations).
     client.setShadows(shadowLevel(shadowsFromQuery(location.search) ?? s.shadows.quality));
     // ?torchshadows=off|low|high likewise (docs/LIGHTS.md §4).
