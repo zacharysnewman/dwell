@@ -1315,3 +1315,131 @@ dwell_world::both_faces!(
         );
     }
 );
+
+/// A long walled pond (x 0..=23, z 0..=5, 1.5 m deep) at rest, kicked outward at its west end by
+/// a wave of `speed` m/s (`Water::wave`, as a blast gives it); the level at the far bank (x 22)
+/// and the near one (x 1) every 0.1 s for `secs`, the water's volume before and after, and the
+/// chunks awake at the end.
+fn kicked_pond(f: FaceFrame, speed: f64, secs: usize) -> (Vec<f64>, Vec<f64>, f64, f64, usize) {
+    kicked_pond_for(f, speed, secs, 40.0).0
+}
+
+/// [`kicked_pond`], and then up to `sleep_s` more water s: when (s after the kick) its chunks
+/// were all asleep, if they were.
+#[allow(clippy::type_complexity)]
+fn kicked_pond_for(
+    f: FaceFrame,
+    speed: f64,
+    secs: usize,
+    sleep_s: f64,
+) -> ((Vec<f64>, Vec<f64>, f64, f64, usize), Option<f64>) {
+    let mut s = Scene::new(f);
+    s.basin(0, 23, 0, 5, 3);
+    s.run(3);
+    let total = |w: &Water| w.free_volume() + w.held().1;
+    let before = total(&s.water);
+    let base = m_of_row(BASE);
+    s.water.wave(Wave {
+        at: f.point([0.5, base + 1.5, 3.0]),
+        reach: 6.0,
+        speed,
+        free: 32.0,
+    });
+    let (mut far, mut near) = (Vec::new(), Vec::new());
+    for _ in 0..secs * 10 {
+        s.water.tick(&mut s.world, &[], 0.1);
+        far.push(s.level(22, 3).unwrap_or(0.0));
+        near.push(s.level(1, 3).unwrap_or(0.0));
+    }
+    let after = total(&s.water);
+    let awake = s.water.awake_chunks();
+    let mut asleep = None;
+    let mut t = secs as f64;
+    while t < secs as f64 + sleep_s {
+        if s.water.awake_chunks() == 0 {
+            asleep = Some(t);
+            break;
+        }
+        s.water.tick(&mut s.world, &[], 1.0);
+        t += 1.0;
+    }
+    ((far, near, before, after, awake), asleep)
+}
+
+/// The peaks (local maxima above `over`) of a series: (index, value).
+fn peaks(v: &[f64], over: f64) -> Vec<(usize, f64)> {
+    let mut out: Vec<(usize, f64)> = Vec::new();
+    let mut i = 1;
+    while i + 1 < v.len() {
+        if v[i] > over && v[i] >= v[i - 1] && v[i] > v[i + 1] {
+            // one peak per crest: the next must come after the level fell back below `over`
+            if out
+                .last()
+                .is_none_or(|&(j, _)| v[j..i].iter().any(|&x| x < over))
+            {
+                out.push((i, v[i]));
+            }
+        }
+        i += 1;
+    }
+    out
+}
+
+dwell_world::both_faces!(
+    fn a_kick_makes_a_wave_that_reaches_the_far_bank_and_comes_back(f: FaceFrame) {
+        // T2: 3000 water s (about 40 real s at the 72x day); it slept at 2082 when written
+        let ((far, near, before, after, _), asleep) = kicked_pond_for(f, 3.0, 40, 3000.0);
+        let rest = 1.5;
+        let crest = rest + 0.02;
+        let p = peaks(&far, crest);
+        assert!(
+            peaks(&near, crest).first().is_some_and(|&(i, _)| i < 30),
+            "the kick raises a crest by the blast at once"
+        );
+        assert!(
+            p.first().is_some_and(|&(i, v)| i < 100 && v > rest + 0.1),
+            "the wave reaches the far bank (22 m) within 10 s: {p:?}"
+        );
+        assert!(p.len() >= 2, "and comes back to it (reflected): {p:?}");
+        assert!(
+            (after - before).abs() < 1e-3 * before,
+            "the kick moves water, it makes none: {before} → {after}"
+        );
+        assert!(asleep.is_some(), "the pond falls asleep again");
+    }
+);
+
+dwell_world::both_faces!(
+    fn a_wave_sent_through_the_host_runs_as_inline(f: FaceFrame) {
+        // The kick is a message (`In::Wave`): on the water's own thread it makes the same wave.
+        let kicked = |placement| {
+            let mut h = Hosted::new(f, placement);
+            h.s.basin(0, 15, 0, 5, 3);
+            h.run(3, 1.0);
+            let still = h.cells();
+            h.pending.push(host::In::Wave(Wave {
+                at: f.point([0.5, m_of_row(BASE) + 1.5, 3.0]),
+                reach: 6.0,
+                speed: 3.0,
+                free: 32.0,
+            }));
+            h.run(30, 0.1);
+            (still, h.cells())
+        };
+        let (still, inline) = kicked(host::Placement::Inline);
+        let (_, thread) = kicked(host::Placement::Thread);
+        assert!(still != inline, "the wave moved the water's cells");
+        assert!(inline == thread, "the same wave on the thread");
+    }
+);
+
+dwell_world::both_faces!(
+    fn no_kick_no_wave(f: FaceFrame) {
+        let (far, _, before, after, _) = kicked_pond(f, 0.0, 5);
+        assert!(
+            far.iter().all(|&l| (l - 1.5).abs() < 1e-3),
+            "still: {far:?}"
+        );
+        assert!((after - before).abs() < 1e-6);
+    }
+);

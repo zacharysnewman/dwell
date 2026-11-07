@@ -97,6 +97,12 @@ pub struct ExplosiveData {
     pub knockback_ms: f64,
     pub damage: f64,
     pub water_radius_m: f64,
+    /// Waves (docs/EXPLOSIVES.md §3.5): water within `wave_reach_m` is kicked outward,
+    /// `wave_impulse` (m/s) × its depth × (1 − d / reach) of discharge (0: no wave); held water
+    /// within `wave_free_m` is freed so the wave runs to the banks.
+    pub wave_reach_m: f64,
+    pub wave_impulse: f64,
+    pub wave_free_m: f64,
     /// For this long (s) a blast's pieces don't touch one another; after it each touches the
     /// others again once it overlaps none.
     pub no_piece_contact_s: f64,

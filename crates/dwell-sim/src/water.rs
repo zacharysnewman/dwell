@@ -358,6 +358,22 @@ impl Write {
     }
 }
 
+/// An outward kick to the water round a point (a blast, docs/EXPLOSIVES.md §3; §2e of
+/// docs/WATER_SURFACE_GRID.md): every face between two columns within `reach` (m) of `at` gets
+/// discharge away from it, `speed` (m/s) × its depth × (1 − d / reach), d its distance (the
+/// columns' water span's, vertically); the columns within it are freed and their chunks woken.
+/// Only discharge is added, so it moves water and conserves it; the law then carries the wave on.
+/// Held water within `free` (m, across) is freed too: held water stays at its level and would take
+/// the wave in, so freed it reflects off the banks.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Wave {
+    /// The point (world m).
+    pub at: [f64; 3],
+    pub reach: f64,
+    pub speed: f64,
+    pub free: f64,
+}
+
 /// A water chunk's key in `VoxelWorld::currents`: (face B, chunk x, chunk z).
 pub type CurrentsKey = (bool, i32, i32);
 
@@ -395,6 +411,8 @@ pub struct Water {
     loaded: Vec<ChunkCoord>,
     /// What [`Water::tick`] told the copy of a world it reads itself.
     mirror: Mirror,
+    /// Kicks given since the last step (`Water::wave`), applied at the next.
+    waves: Vec<Wave>,
     /// Counters (diagnostics, tests).
     pub substeps: u64,
     pub wakes: u64,
@@ -693,6 +711,100 @@ impl Water {
         self.touched.push(cell);
     }
 
+    /// A kick to the water round a point, given at the next step ([`Wave`]).
+    pub fn wave(&mut self, w: Wave) {
+        if w.reach > 0.0 && w.speed != 0.0 && w.at.iter().all(|v| v.is_finite()) {
+            self.waves.push(w);
+        }
+    }
+
+    fn apply_waves(&mut self) {
+        for w in std::mem::take(&mut self.waves) {
+            let f = FaceFrame::at_height(w.at[1]);
+            let ly = f.y(w.at[1]);
+            let (cx, cz) = (w.at[0], w.at[2]);
+            let r = w.reach.ceil() as i32 + 1;
+            let (x0, z0) = (cx.floor() as i32, cz.floor() as i32);
+            // the distance (m) from the point to a face-local spot over a water span
+            let dist = |px: f64, pz: f64, lo: f32, hi: f32| {
+                let dy = (f64::from(lo) - ly).max(ly - f64::from(hi)).max(0.0);
+                ((px - cx).powi(2) + (pz - cz).powi(2) + dy * dy).sqrt()
+            };
+            let mut kicks: Vec<(usize, usize, bool, f32)> = Vec::new();
+            for z in z0 - r..=z0 + r {
+                for x in x0 - r..=x0 + r {
+                    let Some((c, l)) = self.find(f, x, z) else {
+                        continue;
+                    };
+                    let (ga, da) = {
+                        let k = &self.chunks[c];
+                        (k.w.floor[l], k.w.depth[l])
+                    };
+                    if ga.is_nan() {
+                        continue;
+                    }
+                    for (d, zf) in [(0usize, false), (2usize, true)] {
+                        let Some((c2, l2)) = self.step_col(c, l, d) else {
+                            continue;
+                        };
+                        let (gb, db) = {
+                            let k = &self.chunks[c2];
+                            (k.w.floor[l2], k.w.depth[l2])
+                        };
+                        if gb.is_nan() {
+                            continue;
+                        }
+                        // the face's wet height, as the law takes it
+                        let h = (ga + da).max(gb + db) - ga.max(gb);
+                        if h <= DRY {
+                            continue;
+                        }
+                        let (px, pz) = if zf {
+                            (f64::from(x) + 0.5, f64::from(z) + 1.0)
+                        } else {
+                            (f64::from(x) + 1.0, f64::from(z) + 0.5)
+                        };
+                        let dd = dist(px, pz, ga.max(gb), ga.max(gb) + h);
+                        let flat = ((px - cx).powi(2) + (pz - cz).powi(2)).sqrt();
+                        if dd >= w.reach || flat < 1e-6 {
+                            continue;
+                        }
+                        let along = if zf { pz - cz } else { px - cx } / flat;
+                        let q = w.speed * (1.0 - dd / w.reach) * along * f64::from(h);
+                        kicks.push((c, l, zf, q as f32));
+                        kicks.push((c2, l2, zf, 0.0));
+                    }
+                }
+            }
+            for (c, l, zf, q) in kicks {
+                self.free(c, l);
+                if q == 0.0 {
+                    continue;
+                }
+                let k = &mut self.chunks[c].w;
+                *if zf { &mut k.qz[l] } else { &mut k.qx[l] } += q;
+            }
+            // the water round it freed (held water takes a wave in), so the wave runs to the banks
+            let rf = w.free.max(w.reach).ceil() as i32;
+            for z in z0 - rf..=z0 + rf {
+                for x in x0 - rf..=x0 + rf {
+                    let flat = ((f64::from(x) + 0.5 - cx).powi(2)
+                        + (f64::from(z) + 0.5 - cz).powi(2))
+                    .sqrt();
+                    if flat > w.free.max(w.reach) {
+                        continue;
+                    }
+                    if let Some((c, l)) = self.find(f, x, z)
+                        && self.chunks[c].held[l]
+                        && !self.chunks[c].w.floor[l].is_nan()
+                    {
+                        self.free(c, l);
+                    }
+                }
+            }
+        }
+    }
+
     /// The grid's copy of the world (diagnostics, tests).
     pub fn cells(&self) -> &Cells {
         &self.cells
@@ -710,6 +822,7 @@ impl Water {
         self.scan();
         self.apply_touched();
         self.grow_ring();
+        self.apply_waves();
         // substeps, each as long as the deepest awake water allows; at most the step budget's
         // worth over the awake columns (water runs on game time: a tick is seconds of water, and
         // much water awake must not take a thread longer than a tick)

@@ -21,7 +21,7 @@ test('an explosive added by data alone is in the output', () => {
   const blocks = registryBlocks();
   blocks.set('test:charge', { placeable: true, properties: {} });
   blocks.set('test:lit_charge', { placeable: false, properties: {} });
-  d.explosives.push({ ...structuredClone(d.explosives[0]), name: 'test:charge', block: 'test:charge', lit: 'test:lit_charge', radiusM: 2.5, destroyRadiusM: 1, loosenRadiusM: 3.5, noPieceContactS: 0.25, openSenseM: 2, openBlend: 0.3, openPathM: 0.5 });
+  d.explosives.push({ ...structuredClone(d.explosives[0]), name: 'test:charge', block: 'test:charge', lit: 'test:lit_charge', radiusM: 2.5, destroyRadiusM: 1, loosenRadiusM: 3.5, noPieceContactS: 0.25, openSenseM: 2, openBlend: 0.3, openPathM: 0.5, waveReachM: 9, waveImpulse: 0, waveFreeM: 12 });
   const rust = explosivesRust(validateExplosives(d, blocks));
   assert.match(rust, /name: "test:charge",/);
   assert.match(rust, /radius_m: 2\.5,/);
@@ -30,6 +30,9 @@ test('an explosive added by data alone is in the output', () => {
   assert.match(rust, /no_piece_contact_s: 0\.25,/);
   assert.match(rust, /open_blend: 0\.3,/);
   assert.match(rust, /open_path_m: 0\.5,/);
+  assert.match(rust, /wave_reach_m: 9\.0,/);
+  assert.match(rust, /wave_impulse: 0\.0,/);
+  assert.match(rust, /wave_free_m: 12\.0,/);
 });
 
 test('bad entries fail with their path named', () => {
@@ -44,6 +47,8 @@ test('bad entries fail with their path named', () => {
     [(d) => (d.explosives[0].noPieceContactS = -1), /noPieceContactS must be a number in \[0, 10\]/],
     [(d) => (d.explosives[0].openBlend = 1.5), /openBlend must be a number in \[0, 1\]/],
     [(d) => delete d.explosives[0].openPathM, /openPathM must be a number/],
+    [(d) => (d.explosives[0].waveImpulse = -1), /waveImpulse must be a number in \[0, 20\]/],
+    [(d) => delete d.explosives[0].waveReachM, /waveReachM must be a number/],
     [(d) => (d.explosives[0].block = 'dwell:nope'), /block: "dwell:nope" is not a block/],
     [(d) => (d.explosives[0].lit = 'dwell:stone'), /must not be placeable/],
     [(d) => (d.explosives[0].ignitedBy = ['dwell:nope']), /ignitedBy\[0\]/],
