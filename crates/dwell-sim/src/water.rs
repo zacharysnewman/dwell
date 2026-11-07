@@ -85,6 +85,9 @@ pub struct Settings {
     /// (docs/WATER_SURFACE_GRID.md §2c).
     pub still: f32,
     pub current_depth: f32,
+    /// A freed column still in the rest shows the map's current, blended to its own as its depth
+    /// leaves its generated depth by up to this (m; `riverCurrentBandM`).
+    pub river_band: f32,
     /// The liquid it draws (the data's first).
     pub liquid: StateId,
 }
@@ -114,6 +117,7 @@ impl Settings {
             hyst: d.fill_hysteresis as f32 * STEP,
             still: d.current_still_ms as f32,
             current_depth: d.current_depth_m as f32,
+            river_band: d.river_current_band_m.max(1e-6) as f32,
             liquid: dwell_blocks::require(first.block),
         }
     }
@@ -763,24 +767,69 @@ impl Water {
             if k.w.floor[l].is_nan() || h < self.cfg.current_depth {
                 continue;
             }
-            let behind = |d: usize, z: bool| {
-                self.step_col(c, l, d).map_or(0.0, |(c2, l2)| {
-                    let n = &self.chunks[c2].w;
-                    if z {
-                        n.qz[l2] + n.pz[l2]
-                    } else {
-                        n.qx[l2] + n.px[l2]
-                    }
-                })
-            };
-            let u = 0.5 * (k.w.qx[l] + k.w.px[l] + behind(1, false)) / h;
-            let v = 0.5 * (k.w.qz[l] + k.w.pz[l] + behind(3, true)) / h;
+            let [mut u, mut v] = self.velocity(c, l, false);
+            if let Some((along, near)) = self.as_river(c, l) {
+                // still the river: the map's current, as much of it as the water still runs,
+                // blended to its own as it leaves its generated depth
+                let [ru, rv] = k.river[l];
+                u += near * (along * ru - u);
+                v += near * (along * rv - v);
+            }
             if u.hypot(v) >= self.cfg.still {
                 out[l] = [u, v];
                 any = true;
             }
         }
         any.then_some(out)
+    }
+
+    /// Free column (c, l)'s velocity (m/s along x and z) in the water as it is, or as generated
+    /// (`rest`): the mean of its faces' discharges, the law's and the carried, over its depth.
+    fn velocity(&self, c: usize, l: usize, rest: bool) -> [f32; 2] {
+        let k = lay(&self.chunks[c], rest);
+        let h = k.depth[l];
+        if h <= DRY {
+            return [0.0; 2];
+        }
+        let behind = |d: usize, z: bool| {
+            self.step_col(c, l, d).map_or(0.0, |(c2, l2)| {
+                let n = lay(&self.chunks[c2], rest);
+                if z {
+                    n.qz[l2] + n.pz[l2]
+                } else {
+                    n.qx[l2] + n.px[l2]
+                }
+            })
+        };
+        [
+            0.5 * (k.qx[l] + k.px[l] + behind(1, false)) / h,
+            0.5 * (k.qz[l] + k.pz[l] + behind(3, true)) / h,
+        ]
+    }
+
+    /// Whether free column (c, l) is still its generated river's, and how much: an edit frees the
+    /// water near it, but the river there runs on as drawn, and its current should be the map's
+    /// as its held neighbours' is, not the carried flow over its depth (often a tenth of it: the
+    /// map's is Manning's on the course's mean fall, BUGS.md #42). Some((along, near)): `along`,
+    /// how much of the rest's own speed the water still runs at downstream (0..=1: a dam's pool
+    /// filling runs less of it); `near`, how near its depth still is its generated depth (1 as
+    /// drawn, 0 by `riverCurrentBandM` off it: a pool risen behind a dam, a drained bed). None for
+    /// water that isn't a river's: no map current, out of the rest (`share`: the reach below a
+    /// dam), or a rest that runs no speed (a lake).
+    fn as_river(&self, c: usize, l: usize) -> Option<(f32, f32)> {
+        let k = &self.chunks[c];
+        if k.river[l] == [0.0; 2] || k.share[l] <= 0.0 || Self::out_of_rest(k, l) {
+            return None;
+        }
+        let [ru, rv] = self.velocity(c, l, true);
+        let rest = ru.hypot(rv);
+        if rest < self.cfg.still {
+            return None;
+        }
+        let [u, v] = self.velocity(c, l, false);
+        let along = ((u * ru + v * rv) / (rest * rest)).clamp(0.0, 1.0);
+        let near = (1.0 - (k.w.depth[l] - k.r.depth[l]).abs() / self.cfg.river_band).clamp(0.0, 1.0);
+        Some((along, near))
     }
 
     /// Reads newly loaded chunks: their water joins the grid held at the level found (unless the
@@ -1743,6 +1792,13 @@ impl Water {
                     if !v[4].is_nan() {
                         let (x, z) = k.xz(l);
                         k.flow[l] = Self::flow_of(self.flows.as_ref(), f, x, z, v[5]);
+                        // its river's current at its generated depth, as when it was held, so
+                        // a saved world's freed river runs as the river round it on load
+                        k.river[l] = match &self.rivers {
+                            Some(rivers) if v[5] > DRY => rivers(f, x, z, f64::from(v[5]))
+                                .map_or([0.0; 2], |[u, w]| [u as f32, w as f32]),
+                            _ => [0.0; 2],
+                        };
                     }
                     k.drawn[l] = f32::NAN;
                 }

@@ -1284,6 +1284,14 @@ dwell_world::both_faces!(
             (u - held).abs() < 0.2 * held && v.abs() < 0.2 * held,
             "freed, it runs as the river round it: {u:.3}, {v:.3} m/s (held {held:.3})"
         );
+        // A world saved so runs so on load (the map's current found again for its columns).
+        let bytes = s.water.save(|_| 0);
+        let mut back = fast_river_map(Water::new());
+        assert!(back.restore(&bytes, |_| 0).is_some(), "the record reads");
+        s.water = back;
+        s.run(5);
+        let [u, _] = s.current(10, 1);
+        assert!((u - held).abs() < 0.2 * held, "restored, it runs so: {u:.3} m/s");
     }
 );
 

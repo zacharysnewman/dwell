@@ -62,6 +62,9 @@ pub struct FlowData {
     pub river_current_max_ms: f64,
     /// How far up and down its course (m) an untouched river's fall is averaged for its current.
     pub river_fall_reach_m: f64,
+    /// A freed column still in the rest shows the map's current, blended to its own as its depth
+    /// leaves its generated depth by up to this (m).
+    pub river_current_band_m: f64,
     /// The liquids the grid moves; the first is the one it draws.
     pub liquids: &'static [LiquidFlow],
 }
