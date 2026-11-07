@@ -556,6 +556,20 @@ flat, unlit blue walls stand at the banks. Measured on `main` (1 m cells, adapti
    (`slope_over`) is closed at each end whose neighbour is open and pours no such slope, so rule 4
    never leaves a hole: from outside the water the eye meets an end's front before the slope's back
    (owner, 2026-11-06: triangle holes at a diagonal river's staircase steps; BUGS.md #39).
+6. **(0.50.0) Leaves are flooded under water.** Owner, 2026-11-07: "underwater leaves z fighting,
+   I think they should be 'flooded' so shouldn't get foam and stuff". Leaves were solid to the water
+   and drew no water of their own, so the water beside them drew side faces on the leaves' own
+   faces (z-fighting with them) and a surface round them. The leaf blocks have a `flooded` property
+   now; a see-through full block with one (leaves, drawn cutout) holds water in its gaps as a ramp
+   does in its open part: the water grid floods it while the water stands half a step into its
+   cell and dries it when the water goes (`holds_water`, `water/cells.rs`), placement into water
+   floods it (`flooded_for`), and the mesher draws its cell's water as the water beside it
+   (`Kind::flooded`): no water face toward it, none on its faces inside the water body, the leaf
+   drawn inside. Generated trees never stand leaves in water (`stamp_trees` writes over air and
+   replaceable cells only), so worldgen is unchanged. Tests:
+   `a_flooded_leaf_in_a_pond_draws_no_water_faces_round_it` (`mesher_tests.rs`) and
+   `water_risen_over_leaves_floods_them_and_leaves_above_it_stay_dry` (`water/tests.rs`), both
+   faces; both failed before.
 
 Tests: `crates/dwell-worldgen/tests/terrain.rs`
 (`the_sea_floods_the_open_part_of_every_natural_top_block_below_sea_level`,

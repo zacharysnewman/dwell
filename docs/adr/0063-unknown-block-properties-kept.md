@@ -1,8 +1,8 @@
 # 0063. Unknown block properties stay on the block: adding a property or value is not breaking
 
-- Status: Proposed (the owner, 2026-11-06: "shouldn't builds that don't recognize a block property just
-  ignore it, leave it alone, let it stay on the block?"); planned for the 0.50.0 line, with flooded
-  leaves as its first user
+- Status: Accepted (the owner, 2026-11-06: "shouldn't builds that don't recognize a block property just
+  ignore it, leave it alone, let it stay on the block?" — yes); built in 0.50.0, with flooded leaves
+  as its first user
 - Date: 2026-11-06
 - Amends: ADR 0038 (block registry sync), ADR 0014 / `docs/RELEASES.md` §3 (what is breaking)
 
@@ -55,3 +55,23 @@ Option 2.
 - An older build shows an alias as its base: flooded leaves look like plain leaves there, and keep
   their `flooded=true` when saved.
 - Reversing it: stop registering aliases (unknown states fail to parse again).
+
+## As built (0.50.0)
+
+- `dwell_blocks::parse_state` registers the alias (`register_alias`, `Origin::Alias`): a one-state
+  block entry under the full string (so payloads and the workers' extension carry it by name), whose
+  row is its base's under that name and points at the base's block, so `block_of`, `state_property`
+  and the rules read the base. `alias_base` / `base_state` give the base. `with_property` on an alias
+  changes its base (the unknown part dropped: a rule rewriting the block replaces it).
+  `parse_known_state` (and `state`, `require`) stay strict, for the build's own content, where an
+  unknown property is a typo.
+- World files: a palette string that parses is the build's state (missing properties at their
+  defaults) or an alias; only an unknown whole block is a placeholder (ADR 0038 decision 8).
+- Registry sync: the server serves its aliases; the client maps a server state its build names
+  differently to an alias of its known part (or, missing a property, to its build state) when the
+  server's rules are the base's, with no difference listed, and its own base state places the first
+  such server state (the new property at its default). A server state whose rules differ is adopted as
+  before (a synced copy).
+- **Deviation:** aliases are not cleared per world or session: like the other registered states they
+  live for the process, and the same string keeps its id (a reconnect or a second world registers
+  nothing new).

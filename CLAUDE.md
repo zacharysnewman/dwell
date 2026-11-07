@@ -243,10 +243,12 @@ that touches the public API, a release or the workflows:
   `1.0.0`, the next MINOR). Say so in the PR and let the owner raise `package.json`; do not leave
   such a change shipping under the old line, whose players' worlds it would break.
 - **Blocks and registry sync (ADR 0038):** the server sends its block registry at join and clients
-  map ids by name, so **adding** blocks or states, or changing looks, is not breaking. Still
-  breaking: removing or renaming a state (or adding/removing a property), changing an existing
-  state's shape or rules, changing the shapes or the adaptive shape rules, and changing worldgen
-  (`docs/RELEASES.md` §3).
+  map ids by name, so **adding** blocks or states, or changing looks, is not breaking. From 0.50
+  (ADR 0063) a state with a property or value a build doesn't know is kept as an **alias** of its
+  known part, so **adding a property** (default meaning "as before") **or a value** is not breaking
+  either; mods namespace properties they add (`mymod:wet`). Still breaking: removing or renaming a
+  property, a value or a state, unknown whole blocks, changing an existing state's shape or rules,
+  changing the shapes, and changing worldgen (`docs/RELEASES.md` §3).
 - **World settings (ADR 0054)** — the clock, the water speed — are the world's, sent at join
   (`WorldSettings`) and saved with it: changing a build's default changes new worlds only. A new
   setting an older build on the line can do without is an **optional** tag (top bit set), not a

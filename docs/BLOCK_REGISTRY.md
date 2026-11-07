@@ -241,6 +241,15 @@ collision paths before adopting; it is a deliverable gated on that measurement.
   placeholder for unknown states (keeping the original string so saving writes it back) is
   **built** with registry sync (§8, ADR 0038): a one-state placeholder block named by the exact
   string, solid and indestructible. String palettes on disk are what made it possible.
+- **Alias states [built, 0.50.0, ADR 0063]:** a palette string naming a known block with a property
+  or value this build doesn't know (`dwell:leaves[flooded=true,mymod:wet=7]`) loads as an **alias**:
+  `parse_state` registers a state under the exact string (`register_alias`, `Origin::Alias`, ids past
+  the generated ones, the same string one id for the process) whose row is its **base**'s, the known
+  part (unknown keys dropped, unknown values at the property's default; `alias_base`, `base_state`).
+  It plays as the base and saves back unchanged; a rule rewriting it (`with_property`) replaces it
+  with a base state. A string missing a property reads as the build's state at its default. The
+  build's own content uses the strict `parse_known_state` (`state`, `require`), where an unknown
+  property is a typo. Mods namespace the properties they add to others' blocks (`mymod:wet`).
 - The **LOD cache** (`lod_sections`) is a cache: it is dropped when the registry hash changes,
   instead of being migrated.
 
@@ -324,6 +333,10 @@ authoritative, so the client adopts its definitions and asks the player first.
 - **Server blocks.** `Server::register_block` adds a block from data to that server's registry (a
   mod; the tests' `test:glow`); a world file naming a state the server lacks loads it as a
   **placeholder** (§4) kept under its exact string, so it is synced, played (a solid,
-  indestructible cube) and saved back unchanged.
+  indestructible cube) and saved back unchanged. **Aliases (ADR 0063):** a server serves its alias
+  states (one-state blocks under their full strings); a client maps a server state its build names
+  differently (an unknown property or value, or one fewer property) to an alias of its known part,
+  or to its build state, when the server's rules are the base's, listing no difference, and its own
+  base state places the first such server state (the new property at its default).
 - **Follow-up:** server-sent looks and textures (Phase 19's textures as data), shapes from the
   server, a palette fed by the synced registry.
