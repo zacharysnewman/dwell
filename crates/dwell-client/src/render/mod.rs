@@ -7,6 +7,7 @@
 //! the origin. It is the Three.js renderer's interface (render/Renderer.ts) in Rust.
 
 pub mod arena;
+pub mod blasts;
 pub mod camera;
 pub mod characters;
 pub mod display;
@@ -1039,6 +1040,9 @@ pub struct Renderer {
     flecks: Vec<crate::flecks::Fleck>,
     /// The waterfalls near the eye to draw (`Scene::set_falls`; render/waterfalls.rs).
     falls: Vec<dwell_world::falls::Fall>,
+    /// The blasts' puffs and flash lights this frame (`Scene::set_blasts`; crate::blasts).
+    puffs: Vec<crate::blasts::Puff>,
+    flash_lights: Vec<dwell_look::lights::PointLight>,
     outline: Option<V3>,
     /// The outline's box in its cell, and its lines.
     outline_box: ([f32; 3], [f32; 3]),
@@ -1727,6 +1731,8 @@ impl Renderer {
             portal_motes: Vec::new(),
             flecks: Vec::new(),
             falls: Vec::new(),
+            puffs: Vec::new(),
+            flash_lights: Vec::new(),
             outline: None,
             outline_box,
             outline_quat: IDENTITY_QUAT,
@@ -3243,9 +3249,11 @@ impl Renderer {
             &self.portal_motes,
             &self.flecks,
             &self.falls,
+            &self.puffs,
             self.eye,
             seconds,
         );
+        crate::telemetry::add("blasts.puffs", self.flames.puffs_drawn as f64);
         crate::telemetry::add("flames.drawn", self.flames.drawn as f64);
         crate::telemetry::add("motes.drawn", self.flames.motes_drawn as f64);
         crate::telemetry::add("flecks.drawn", self.flames.flecks_drawn as f64);
@@ -4109,7 +4117,14 @@ impl Renderer {
     fn torch_frame(&mut self, chunk_fade: &dyn Fn(ChunkCoord) -> Option<Fade>) -> TorchFrame {
         let shadows_on = self.torch_tier().is_some();
         let placed: &[lights::PlacedLight] = if shadows_on { &self.placed_lights } else { &[] };
-        let all = lights::frame_lights(self.characters.held_lights(), placed, self.eye);
+        // A blast's flash first (crate::blasts): the brightest light while it lasts.
+        let mut all = self.flash_lights.clone();
+        all.extend(lights::frame_lights(
+            self.characters.held_lights(),
+            placed,
+            self.eye,
+        ));
+        all.truncate(dwell_look::lights::LIGHTS.max_lights);
         let slots = if shadows_on {
             self.point_maps.slots()
         } else {
@@ -4862,6 +4877,14 @@ impl crate::game::Scene for Renderer {
     }
     fn set_falls(&mut self, falls: Vec<dwell_world::falls::Fall>) {
         self.falls = falls;
+    }
+    fn set_blasts(
+        &mut self,
+        puffs: Vec<crate::blasts::Puff>,
+        lights: Vec<dwell_look::lights::PointLight>,
+    ) {
+        self.puffs = puffs;
+        self.flash_lights = lights;
     }
     fn set_water_flow(&mut self, texels: Vec<i8>) {
         self.frame_bindings.flow.write(&self.queue, &texels);

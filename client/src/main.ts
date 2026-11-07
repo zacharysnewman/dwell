@@ -280,6 +280,8 @@ interface DwellDebug {
     flow: number;
     speed: number;
   }[];
+  /** The blasts whose effects are still going (docs/EXPLOSIVES.md): each one's place and age (s). */
+  blasts(): { x: number; y: number; z: number; age: number }[];
   /** The kept player controller ticks, oldest first. */
   ticks(): TickSample[];
   /** The latest sounds played (ids, newest last; docs/AUDIO.md). */
@@ -704,6 +706,7 @@ async function start(): Promise<App | null> {
       s.water.flowParticles,
       s.water.waterfalls,
     );
+    client.setExplosions(s.explosions.flash, s.explosions.smoke, s.explosions.shake);
     // ?waterdbg=caustics,foam,… turns pieces of the water's shading off (a dev tool, DEV_TOOLS.md).
     const waterDebug = new URLSearchParams(location.search).get('waterdbg');
     if (waterDebug) client.setWaterDebug(waterDebug);
@@ -911,6 +914,15 @@ async function start(): Promise<App | null> {
           flow: at(i + 6),
           speed: at(i + 7),
         });
+      }
+      return out;
+    },
+    blasts: () => {
+      const v = Array.from(client.blasts());
+      const at = (k: number) => v[k] ?? 0;
+      const out = [];
+      for (let i = 0; i + 4 <= v.length; i += 4) {
+        out.push({ x: at(i), y: at(i + 1), z: at(i + 2), age: at(i + 3) });
       }
       return out;
     },

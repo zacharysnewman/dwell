@@ -129,6 +129,13 @@ pub trait Scene: TerrainRenderer {
     fn set_flecks(&mut self, _flecks: Vec<crate::flecks::Fleck>) {}
     /// The waterfalls near the eye to draw this frame (render/waterfalls.rs).
     fn set_falls(&mut self, _falls: Vec<dwell_world::falls::Fall>) {}
+    /// The blasts' puffs and flash lights this frame (crate::blasts; docs/EXPLOSIVES.md §4).
+    fn set_blasts(
+        &mut self,
+        _puffs: Vec<crate::blasts::Puff>,
+        _lights: Vec<dwell_look::lights::PointLight>,
+    ) {
+    }
     /// The portals near the eye whose motes draw this frame (BIFACIAL_WORLD.md §12.1).
     fn set_portal_motes(&mut self, _portals: Vec<crate::render::flames::PortalMotes>) {}
     /// A falling piece's meshes (docs/FELLING.md §3), relative to its reference cell's centre,
@@ -549,6 +556,8 @@ pub struct Game<S: Scene> {
     falls_age: f64,
     /// The Waterfalls setting: the falls' sheets, foam and spray drawn.
     falls_shown: bool,
+    /// The blasts going off near us (docs/EXPLOSIVES.md §4): their flash, smoke, dust and shake.
+    blasts: crate::blasts::Blasts,
     fall_sounds: dwell_game::sound::FallSounds,
     /// Box select, fill, copy/paste, undo (§6.5); `enabled` once the server announces region edits.
     pub region: RegionTools,
@@ -725,6 +734,7 @@ impl<S: Scene> Game<S> {
             falls: Vec::new(),
             falls_age: f64::INFINITY,
             falls_shown: true,
+            blasts: crate::blasts::Blasts::default(),
             fall_sounds: dwell_game::sound::FallSounds::new(),
             region: RegionTools::new(),
             brush: BrushTool::new(),
@@ -1053,6 +1063,12 @@ impl<S: Scene> Game<S> {
                 if v.reason == dwell_protocol::VoxelModificationReason::Edit {
                     let changes = self.cell_changes(&v.chunks);
                     self.edit_sounds.changes(&changes, now_ms, &mut self.sounds);
+                }
+                // A lit explosive's cell gone in an `Explosion` is its blast going off: its
+                // effects and its boom (docs/EXPLOSIVES.md §4).
+                if v.reason == dwell_protocol::VoxelModificationReason::Explosion {
+                    let changes = self.cell_changes(&v.chunks);
+                    self.blasts_from(&changes, now_ms);
                 }
                 // A settling piece's blocks: hidden from the terrain while its glide draws them.
                 let settled = (v.reason == dwell_protocol::VoxelModificationReason::Rebake)
@@ -2086,6 +2102,62 @@ impl<S: Scene> Game<S> {
     }
 
     /// A modification's changes with what each cell held before (read before it is applied).
+    /// The blasts among an `Explosion` modification's changes (a lit explosive's cell turned to
+    /// air): each starts its effects, and its boom plays as loud as its distance from the
+    /// listener allows (`boom_level`; at the listener, so a far blast is heard past the panner's
+    /// reach).
+    fn blasts_from(&mut self, changes: &[CellChange], now_ms: f64) {
+        use dwell_world::explosives::{EXPLOSIVES, boom_level, explosive_of};
+        for c in changes {
+            let Some((i, true)) = explosive_of(EXPLOSIVES, c.old) else {
+                continue;
+            };
+            if dwell_blocks::info(c.new).solid {
+                continue;
+            }
+            let at = dwell_world::centre_of_cell(c.cell);
+            self.blasts.start(at, i, now_ms / 1000.0);
+            let d = (0..3)
+                .map(|k| (at[k] - self.listener[k]).powi(2))
+                .sum::<f64>()
+                .sqrt();
+            let level = boom_level(&EXPLOSIVES[i], d);
+            if level > 0.0 {
+                self.sounds
+                    .push(SoundEvent::new(SoundKind::Explode, c.old, level, None));
+            }
+        }
+    }
+
+    /// The blasts' effects this frame (docs/EXPLOSIVES.md §4): their puffs and flash lights to the
+    /// scene, and the camera's shake at `eye` (yaw, pitch degrees).
+    fn update_blasts(&mut self, eye: [f64; 3], now_ms: f64) -> (f64, f64) {
+        let now = now_ms / 1000.0;
+        self.blasts.prune(now);
+        if self.blasts.list.is_empty() {
+            self.scene.borrow_mut().set_blasts(Vec::new(), Vec::new());
+            return (0.0, 0.0);
+        }
+        let puffs = self.blasts.puffs(now);
+        let lights = self.blasts.lights(now);
+        self.scene.borrow_mut().set_blasts(puffs, lights);
+        self.blasts.shake(eye, now)
+    }
+
+    /// Which blast effects show (Settings → Explosions), and whether the adapter is a CPU's.
+    pub fn set_blast_settings(&mut self, s: crate::blasts::BlastSettings) {
+        self.blasts.settings = s;
+    }
+
+    /// The blasts whose effects are still going (the dev hook): each one's place and age (s).
+    pub fn blasts(&self, now_ms: f64) -> Vec<([f64; 3], f64)> {
+        self.blasts
+            .list
+            .iter()
+            .map(|b| (b.at, now_ms / 1000.0 - b.start_s))
+            .collect()
+    }
+
     fn cell_changes(&mut self, chunks: &[dwell_protocol::ChunkChanges]) -> Vec<CellChange> {
         let n = dwell_world::CHUNK_SIZE;
         let mut out = Vec::new();
@@ -2570,8 +2642,11 @@ impl<S: Scene> Game<S> {
             scene.set_own_shadow(None);
             scene.set_own_body(None);
             camera_eye = cam.eye;
-            scene.set_camera(cam.eye, yaw, cam.pitch, cam.face, 0.0);
             drop(scene);
+            let (sy, sp) = self.update_blasts(cam.eye, now_ms);
+            self.scene
+                .borrow_mut()
+                .set_camera(cam.eye, yaw + sy, cam.pitch + sp, cam.face, 0.0);
             self.show_hud_text();
             self.target(None, input, now_ms);
             self.update_motion(c.position, dt);
@@ -2583,9 +2658,11 @@ impl<S: Scene> Game<S> {
             // Eye height is smoothed per tick (steps, crouching; eye.rs), then interpolated.
             let eye = [center[0], self.eye.draw(alpha), center[2]];
             camera_eye = eye;
+            // A blast's shake turns the view drawn, never the aim.
+            let (sy, sp) = self.update_blasts(eye, now_ms);
             self.scene
                 .borrow_mut()
-                .set_camera(eye, yaw, pitch, face, roll);
+                .set_camera(eye, yaw + sy, pitch + sp, face, roll);
             self.listener = listener(eye, yaw, pitch, face);
             let ready = self.terrain_ready();
             self.target(ready.then_some(eye), input, now_ms);

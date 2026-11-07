@@ -268,6 +268,8 @@ struct Inner {
     flow_particles: bool,
     /// The Waterfalls setting (docs/WATER_SURFACE_GRID.md §2e), for each game made.
     falls_shown: bool,
+    /// The Explosions settings (docs/EXPLOSIVES.md §4): flash, smoke and dust, screen shake.
+    blast_settings: crate::blasts::BlastSettings,
     /// Input events for the shell (toggles, hotbar changes, flight), drained by `takeEvents`.
     shell_events: Vec<JsValue>,
     /// The F3 overlay is on: kept here so it holds for a game started later (`?debug=1`).
@@ -412,6 +414,7 @@ impl Client {
             game: None,
             flow_particles: true,
             falls_shown: true,
+            blast_settings: crate::blasts::BlastSettings::default(),
             lod_settings: LodSettings {
                 pixel_error: 2.0,
                 cache_bytes: 256 << 20,
@@ -1581,6 +1584,35 @@ impl Client {
         s.flow_particles = particles;
         s.falls_shown = falls;
     }
+    /// Which blast effects show (docs/EXPLOSIVES.md §4, the Explosions settings): the flash, smoke
+    /// and dust, the screen shake.
+    #[wasm_bindgen(js_name = setExplosions)]
+    pub fn set_explosions(&self, flash: bool, smoke: bool, shake: bool) {
+        let mut s = self.inner.borrow_mut();
+        s.blast_settings = crate::blasts::BlastSettings {
+            flash,
+            smoke,
+            shake,
+            cpu: false,
+        };
+        let now = s.blast_settings_now();
+        if let Some(g) = &mut s.game {
+            g.set_blast_settings(now);
+        }
+    }
+    /// The blasts whose effects are still going (docs/EXPLOSIVES.md; DEV_TOOLS.md): 4 numbers each,
+    /// its place (world x, y, z) and its age (s).
+    #[wasm_bindgen(js_name = blasts)]
+    pub fn blasts(&self) -> Vec<f64> {
+        let s = self.inner.borrow();
+        let Some(g) = &s.game else {
+            return Vec::new();
+        };
+        g.blasts(telemetry::now_ms())
+            .into_iter()
+            .flat_map(|(p, age)| [p[0], p[1], p[2], age])
+            .collect()
+    }
     /// The distant terrain (LOD) drawn or not, a debug switch (`?lod=off`, `__dwell.setLod`): the
     /// full-detail chunks alone show what they hold. True when in a world.
     #[wasm_bindgen(js_name = setLod)]
@@ -2475,7 +2507,16 @@ impl Inner {
         }
         game.set_flow_particles(self.flow_particles);
         game.set_falls_shown(self.falls_shown);
+        game.set_blast_settings(self.blast_settings_now());
         self.game = Some(game);
+    }
+
+    /// The Explosions settings with the adapter's tier (a CPU adapter draws fewer puffs).
+    fn blast_settings_now(&self) -> crate::blasts::BlastSettings {
+        crate::blasts::BlastSettings {
+            cpu: self.renderer.borrow().cpu_adapter(),
+            ..self.blast_settings
+        }
     }
 
     /// Whether this adapter draws the LOD colour map (not a CPU adapter: the cheapest tier there).

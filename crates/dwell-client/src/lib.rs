@@ -3,6 +3,7 @@
 //! (`render`), with the JS API in `web` (wasm-bindgen). This file also holds the WebGPU probe and
 //! the renderer's smoke scene, which `client/e2e-webgpu` checks in headless Chromium.
 
+pub mod blasts;
 pub mod bodies;
 pub mod find;
 pub mod flecks;

@@ -104,7 +104,8 @@ export type SetEvent =
   | 'swim'
   | 'slide'
   | 'slide_stop'
-  | 'burn';
+  | 'burn'
+  | 'explode';
 /** An event's part in a continuous sound: start the mover's voice, update it, stop it. */
 export type LoopPart = 'start' | 'update' | 'stop';
 export type Gait = 'walk' | 'run' | 'crouch' | 'climb' | 'swim';
