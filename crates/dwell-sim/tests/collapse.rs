@@ -62,8 +62,11 @@ fn run_out(
         cost.body_ticks += f.server.body_count();
         cost.bodies.push(f.server.body_count());
         let (_, _, players) = f.server.sim();
-        cost.builds
-            .push(players.terrain().map_or(0, dwell_physics::terrain::TerrainCollision::loads));
+        cost.builds.push(
+            players
+                .terrain()
+                .map_or(0, dwell_physics::terrain::TerrainCollision::loads),
+        );
         cost.pair_ticks += f
             .server
             .physics()
@@ -452,5 +455,10 @@ fn measure_dynamite_at_the_dam() {
         "the blast's tick: {ms:.2} ms ({phases}), {} bodies",
         f.server.body_count()
     );
+    let generated = f.server.world().generated_on_access();
     report(&run_out(&mut f, Some(&mut runner), 30 * 60));
+    println!(
+        "chunks generated on the tick (not by the jobs) after the blast: {}",
+        f.server.world().generated_on_access() - generated
+    );
 }

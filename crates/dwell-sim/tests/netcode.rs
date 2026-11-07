@@ -176,11 +176,14 @@ struct SimClient {
     last_render: Vec3,
     max_render_step: f32,
     modifications: Vec<VoxelModification>,
-    /// The bodies spawned (their boxes, as the client's `pieces.rs` makes them).
-    pieces: BTreeMap<u32, Vec<dwell_physics::PieceCell>>,
+    /// The bodies spawned (their boxes, as the client's `pieces.rs` makes them), each with its
+    /// latest pose (position, rotation, velocity, the input seq acknowledged).
+    pieces: BTreeMap<u32, (Vec<dwell_physics::PieceCell>, PiecePose)>,
     /// Each body pose the snapshots carried: the input seq acknowledged and the position.
     piece_seen: Vec<(u32, DVec3)>,
 }
+
+type PiecePose = (DVec3, dwell_physics::DQuat, Vec3, u32);
 
 /// A body's boxes as the client makes them (`dwell-client` `pieces.rs` `piece_boxes`).
 fn piece_boxes(e: &EntitySpawn) -> Vec<dwell_physics::PieceCell> {
@@ -408,21 +411,24 @@ impl NetSim {
                             );
                         }
                     }
-                    // The bodies' poses first, as the client sets them (`game.rs`).
+                    // The bodies' poses first, as the client sets them (`game.rs`): each body's
+                    // latest, the ones this snapshot carried and the rest as last seen.
                     for ps in &snap.pieces {
                         c.piece_seen
                             .push((snap.ack_input_seq, DVec3::from(ps.position)));
-                        if let Some(cells) = c.pieces.get(&ps.id) {
+                        if let Some((_, pose)) = c.pieces.get_mut(&ps.id) {
                             let r = ps.rotation.map(f64::from);
-                            c.predictor.set_piece(
-                                ps.id,
-                                cells,
+                            *pose = (
                                 DVec3::from(ps.position),
                                 dwell_physics::DQuat::from_xyzw(r[0], r[1], r[2], r[3]),
                                 Vec3::from(ps.velocity),
                                 snap.ack_input_seq,
                             );
                         }
+                    }
+                    for (&id, (cells, (at, rotation, velocity, seq))) in &c.pieces {
+                        c.predictor
+                            .set_piece(id, cells, *at, *rotation, *velocity, *seq);
                     }
                     let (replays, snapshots) =
                         (c.predictor.stats().replays, c.predictor.stats().snapshots);
@@ -448,15 +454,15 @@ impl NetSim {
                 Message::EntitySpawn(e) => {
                     let cells = piece_boxes(&e);
                     let r = e.rotation.map(f64::from);
-                    c.predictor.set_piece(
-                        e.id,
-                        &cells,
+                    let pose = (
                         DVec3::from(e.origin),
                         dwell_physics::DQuat::from_xyzw(r[0], r[1], r[2], r[3]),
                         Vec3::ZERO,
                         0,
                     );
-                    c.pieces.insert(e.id, cells);
+                    c.predictor
+                        .set_piece(e.id, &cells, pose.0, pose.1, pose.2, pose.3);
+                    c.pieces.insert(e.id, (cells, pose));
                 }
                 Message::PlayerEvent(e) => {
                     if e.kind == PlayerEventKind::Knockback && e.player_id == c.player_id {

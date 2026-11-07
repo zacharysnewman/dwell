@@ -24,6 +24,36 @@ const KNOCKBACK_SNAP_FACTOR: f32 = 4.0;
 const HISTORY: u32 = 256; // ticks (> 4 s)
 const MAX_DEAD_RECKONING: f32 = 0.5; // s
 
+/// A piece is stood in for in the prediction only while it could touch the local player soon
+/// (docs/FELLING.md §3): within its cells' reach plus `STAND_IN_M`, plus how far it closes on the
+/// player in `STAND_IN_LOOKAHEAD_S` at their relative speed; once stood in, until it is
+/// `STAND_IN_KEEP_M` past that. The rest are drawn from the snapshots alone: a blast's ~300 pieces
+/// stood in for cost the browser's frame 20–25 ms of prediction (2026-11-06).
+pub const STAND_IN_M: f64 = 4.0;
+pub const STAND_IN_KEEP_M: f64 = 2.0;
+pub const STAND_IN_LOOKAHEAD_S: f64 = 0.5;
+
+/// Whether a piece (its cells' reach `extent` from its origin, at `position` moving at `velocity`)
+/// is stood in for, by the player at `me` moving at `mine`; `kept`: it is now.
+pub fn stands_in(
+    extent: f64,
+    position: DVec3,
+    velocity: DVec3,
+    me: DVec3,
+    mine: DVec3,
+    kept: bool,
+) -> bool {
+    let off = me - position;
+    let d = off.length();
+    let closing = if d > 1e-6 {
+        (velocity - mine).dot(off / d).max(0.0)
+    } else {
+        0.0
+    };
+    let keep = if kept { STAND_IN_KEEP_M } else { 0.0 };
+    d < extent + STAND_IN_M + keep + closing * STAND_IN_LOOKAHEAD_S
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct PredictorStats {
     pub ticks: u32,
@@ -596,7 +626,9 @@ impl Predictor {
     /// A falling piece's stand-in (docs/FELLING.md §3), at the server's latest pose and moving on
     /// by its velocity (dead reckoning, as remote players): created on first sight with `cells`.
     /// A piece's pose and velocity as of the input `seq` its snapshot acknowledged (call before
-    /// [`Predictor::on_snapshot`], so a replay meets it where the server had it).
+    /// [`Predictor::on_snapshot`], so a replay meets it where the server had it). Only a piece that
+    /// could touch the local player soon is stood in for ([`stands_in`]); a far one's stand-in is
+    /// dropped, and none is made while the player is dead.
     pub fn set_piece(
         &mut self,
         id: u32,
@@ -606,6 +638,27 @@ impl Predictor {
         velocity: Vec3,
         seq: u32,
     ) {
+        let kept = self.pieces.contains_key(&id);
+        let near = self.handle.is_some_and(|h| {
+            let extent = cells
+                .iter()
+                .map(|c| c.center.length() + c.half.length())
+                .fold(0.0, f64::max);
+            stands_in(
+                extent,
+                position,
+                velocity.as_dvec3(),
+                self.players.position(&self.physics, h),
+                self.players.velocity(&self.physics, h).as_dvec3(),
+                kept,
+            )
+        });
+        if !near {
+            if kept && self.handle.is_some() {
+                self.remove_piece(id);
+            }
+            return;
+        }
         let p = self.pieces.entry(id).or_insert_with(|| PieceProxy {
             body: self.physics.add_kinematic_piece(position, rotation, cells),
             position,
@@ -629,6 +682,11 @@ impl Predictor {
     /// How the stand-ins are slowed in water (the sim's `felling::water_drag`); none: not at all.
     pub fn set_water_drag(&mut self, f: WaterDragFn) {
         self.water_drag = Some(f);
+    }
+
+    /// How many pieces are stood in for now (telemetry `predict.standIns`).
+    pub fn stand_ins(&self) -> usize {
+        self.pieces.len()
     }
 
     /// A piece's stand-in's pose now (the predicted present), if it has one.

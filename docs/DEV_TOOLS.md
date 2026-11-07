@@ -196,6 +196,7 @@ What is recorded now:
 | `net` | the session's network pumping (twice a frame) |
 | `jobs.poll`, `jobs.apply`, `jobs.done` | collecting finished jobs; applying them (chunks into the world, meshes to the GPU); how many |
 | `ticks`, `ticks.count` | the fixed-rate prediction ticks (controller + physics) and how many ran |
+| `pieces.standIns` (samples) | the pieces stood in for in the prediction at each snapshot: those that could touch the local player soon ([`EXPLOSIVES.md`](./EXPLOSIVES.md) §3) |
 | `game.draw` | the game's draw step: `mesh_dirty` and `lod` inside it |
 | `mesh_dirty` | starting chunk mesh jobs (copying padded chunks), within its 4 ms budget |
 | `lod` | the whole-world view's update (`LodSystem`): selection, job requests, stand-ins |
@@ -280,11 +281,14 @@ the water worker, ADR 0062); a native test or probe calls `server.water_report(.
 second, as the local-mode worker reports it each second: `ticks`, `tickMeanMs` (each `advance`
 call's wall time over the ticks it ran), `advanceMaxMs` (the worst call), `water` (`worker` or
 `inline`), `phasesMs` (each tick phase's time summed over the second, ms, by `TICK_PHASES`' names —
-`players`, `physics`, …; the worker's `performance.now` times them, 0.49.33) and `waterStats` — `queue` (batches sent to the water and not yet answered), `runs`,
+`terrain`, `players`, `physics`, …; the worker's `performance.now` times them, 0.49.33; `terrain`, the
+terrain collision's loads and rebuilds, apart from `players` since 0.49.34), `counts` (what the ticks did
+over the second, `Server::tick_counts`: `collisionBuilds`, terrain-collision chunk builds, and
+`generatedOnTick`, chunks the tick generated itself rather than the server-jobs worker) and `waterStats` — `queue` (batches sent to the water and not yet answered), `runs`,
 `ranS`, `owedS`, `droppedS` (water s: the last run's time run, what it still owes, all dropped past
 `maxOwedS`), `busyMs` and `maxBusyMs` (a run's wall time, the longest), `waterTimeS` (its clock),
 `awakeChunks`, `waterChunks`, `cellBytes` and `cellChunks` (its copy of the world), `overtaken`
-(writes dropped because an edit got there first). Natively `Server::water_stats()`. Natively `Server::tick_phases()` gives each phase of the tick's wall time (ms, summed since the last call: `collect`, `edits`, `players`, `pieces`, `physics`, `settle`, …; `TICK_PHASES`) and `Server::body_count()` the bodies; `dwell-sim` `tests/collapse.rs`'s measurements print them for a collapse and a blast (`measure_dynamite_at_the_dam`: dynamite at seed 0's dam site, each second's tick mean and worst, bodies, terrain-collision builds and phases). `?water=inline`
+(writes dropped because an edit got there first). Natively `Server::water_stats()`. Natively `Server::tick_phases()` gives each phase of the tick's wall time (ms, summed since the last call: `collect`, `edits`, `terrain`, `players`, `pieces`, `physics`, `settle`, …; `TICK_PHASES`) and `Server::body_count()` the bodies; `dwell-sim` `tests/collapse.rs`'s measurements print them for a collapse and a blast (`measure_dynamite_at_the_dam`: dynamite at seed 0's dam site, each second's tick mean and worst, bodies, terrain-collision builds and phases). `?water=inline`
 runs the water on the server's thread instead of its worker, and `?serverjobs=inline` the server's
 chunk generation and LOD sections on its tick instead of the server-jobs worker (WATER_SURFACE_GRID.md
 §2d).

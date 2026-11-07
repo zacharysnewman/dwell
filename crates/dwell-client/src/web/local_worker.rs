@@ -362,6 +362,17 @@ impl LocalWorld {
             .map(|(_, ms)| *ms)
             .collect()
     }
+    /// What the ticks did since the last call (`Server::tick_counts`), as `[name, count]` pairs
+    /// flattened: names at even places, counts at odd ones.
+    #[wasm_bindgen(js_name = tickCounts)]
+    pub fn tick_counts(&mut self) -> Vec<JsValue> {
+        self.core
+            .server()
+            .tick_counts()
+            .iter()
+            .flat_map(|&(n, c)| [JsValue::from_str(n), JsValue::from_f64(c as f64)])
+            .collect()
+    }
     /// The tick phases' names (`dwell_sim::server::TICK_PHASES`).
     #[wasm_bindgen(js_name = tickPhaseNames)]
     pub fn tick_phase_names() -> Vec<String> {

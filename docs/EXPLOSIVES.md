@@ -1,4 +1,4 @@
-# Explosives: dynamite **[built, 0.49.32; cost, 0.49.33]**
+# Explosives: dynamite **[built, 0.49.32; cost, 0.49.33–0.49.34]**
 
 Owner (2026-11-06): "dynamite block that explodes after a short time when placed, it causes blocks in a
 radius to be affected by physics and appropriate force applied." The first use of the explosion
@@ -68,9 +68,24 @@ it as usual. The server starts the fuse for every lit explosive an edit writes.
   from 10 m): 306 pieces, most landing in the river; the blast's tick ~10 ms (players' terrain collision
   5.8, physics 4.0), the first second 4.2 ms a tick, 50–70 terrain-collision builds a second. Floating
   pieces read the waterfalls' columns once per pass (`falls::FallMemo`, 0.49.33): each wet piece had
-  scanned 49 columns up and down their water, the pieces phase 100 → 37 ms of that second. In Chrome
-  (0.49.33, `__dwell.serverStats().phasesMs`) the local server runs the blast's first seconds at 16–45
-  ticks a second, 20–60 ms a tick, nearly all physics and players (terrain collision); it catches up.
+  scanned 49 columns up and down their water, the pieces phase 100 → 37 ms of that second.
+- **Terrain collision** (0.49.34) is rebuilt only for writes that change what a cell is to collision
+  (`Chunk::collision_revision`, bumped when `dwell_blocks::collision_class` — nothing, or the shape —
+  changes): the water the host lets into the crater had rebuilt the chunks round it, 54 of the first
+  second's builds; now 0 (terrain and players 10 → 2 ms of that second natively). Builds stay coalesced
+  per chunk per tick and capped at `terrainChunksPerTick` new chunks for the pieces' boxes.
+- **The prediction's stand-ins** (0.49.34): a client stands in only for the pieces that could touch its
+  player soon (`dwell_physics::predictor::stands_in`: within the piece's cells' reach plus `STAND_IN_M`
+  4 m plus its closing speed on the player over `STAND_IN_LOOKAHEAD_S` 0.5 s; kept until `STAND_IN_KEEP_M`
+  2 m past that; none while the player is dead), re-judged at each snapshot from each piece's latest
+  pose; the rest are drawn from the snapshots, interpolated, and never stepped. Each had been posed,
+  stepped and replayed in every predicted tick: ~300 cost 20–25 ms a frame.
+- **In Chrome** (0.49.34, `__dwell.serverStats()`; the player 10 m off and 3 m up, flying, the world's
+  LOD settled first): 58, 40, 48, 52, 57, 58, 59 ticks a second from the blast on (0.49.33: 16–45 for
+  3–5 s), `terrain` 14–52 ms a second (0.49.33's `players`, which held it: 150–600), `physics` 560–900,
+  `pieces` 80–150; no frame over 33 ms, p95 19 ms (0.49.33: 60–220 ms worst). Measured before the LOD
+  settles, the page's mesh and LOD workers hold most of the machine's cores and the server's worker runs
+  its physics at half speed: ~24 ticks a second for 2 s.
 
 Wire: nothing new. `VoxelModificationReason::Explosion` and `DamageCause::Explosion` existed; the
 blocks are synced by name (ADR 0038), so adding them is not a compatibility break.
@@ -120,15 +135,25 @@ Dev hook: `__dwell.blasts()` (each blast's place and age), telemetry `blasts.puf
 - Browser (seed 0's dam site, `?local=1&seed=0&fresh=1&at=2364.5,142,7443.5`): placed, lit (the fuse's
   flame), the blast (smoke and flying pieces; the player standing on it died), the crater after with the
   pieces settled and the river refilling it.
+- Cost (0.49.34): `dwell-physics` `terrain.rs` `water_coming_and_going_rebuilds_no_collision` (water in a
+  dug cell, on the ground and at a chunk corner, a ramp flooding and draining: no build; a block placed:
+  one; red: 5 builds on the chunk's revision); `tests/predictor.rs`
+  `only_the_pieces_that_could_touch_the_player_soon_are_stood_in_for` (300 still pieces 8–38 m off: none;
+  one closing at 20 m/s from 14 m and one beside the player: both; the margin and re-entry; none while
+  unplaced; red: all stood in for); `dwell-sim` `tests/netcode.rs` sets every body's latest pose each
+  snapshot, as `game.rs` does (a log at rest is stood in for once the player nears it).
 
 ## 6. Not yet
 
 A use key (the torch is the igniter); fire spreading; blast occlusion (a wall doesn't shield); Tier 2
-debris (Phase 21). **The browser's cost of a big blast** (0.49.33, seed 0's dam site): the one-cell
-meshes are gone from the frame (its 0.63 s frame), but frames still reach 60–220 ms for a moment (p95
-33 ms over the blast's 8 s; the prediction's ticks with ~300 stand-ins, 20–25 ms a frame, and catching
-up after a slow frame), and the local server drops to 16–45 ticks a second for 3–5 s (physics 300–700
-ms and terrain collision 150–600 ms of each second). Natively the same blast is 4 ms a tick, under
-WASI ~2× that: the browser's worker runs it several times slower again. What would cut it: fewer
-bodies (a blast's far cells as one body, or Tier 2 debris), terrain collision not rebuilt for water-only
-changes, the stand-ins' prediction only near the player.
+debris (Phase 21). **The browser's server at a big blast** (0.49.34, seed 0's dam site): 40–60 ticks a
+second for 2–3 s, nearly all the physics step (560–900 ms of a second in the worker; natively ~2 ms a
+tick). Natively the step is half narrow phase and half solver (rapier's counters: ~3,100 contact pairs,
+1,350 constraints and 4,500 contacts a tick in the first second, ~10 pairs a piece: they fly out
+packed), CCD and islands nothing: CCD off for the pieces measured the same (kept on). What would cut it
+changes how the debris behaves, so it is the owner's: fewer bodies (a blast's far cells as one body,
+or Tier 2 debris); fewer solver iterations (rapier's 4; the players' and the prediction's too); no
+contacts between pieces. Not gameplay but the build: `+simd128` for the wasm build (rapier's solver runs
+on emulated 4-wide f64 in wasm) measured the step ~⅓ faster in one run (65, 48, 50, 59, 60 ticks a
+second) — a build change for every wasm target, not made here. Separately, the browser's autosave
+(every 5 s, `stream+lod+save`) takes 100–860 ms of a tick at times with no blast at all.

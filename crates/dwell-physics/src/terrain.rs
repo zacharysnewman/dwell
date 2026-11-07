@@ -43,8 +43,9 @@ struct Loaded {
 
 type Mask = Box<[u64; CHUNK_VOLUME / 64]>;
 
-/// A chunk some loaded chunk's collision was built from: which stored chunk and revision it was,
-/// and how many loaded chunks read it.
+/// A chunk some loaded chunk's collision was built from: which stored chunk and collision revision
+/// it was (water, and other writes that collide alike, don't count), and how many loaded chunks
+/// read it.
 struct Watch {
     stamp: u64,
     revision: u32,
@@ -78,7 +79,7 @@ fn is_cube(s: &ShapeInfo) -> bool {
 fn signature(world: &VoxelWorld, c: ChunkCoord) -> (u64, u32) {
     world
         .find(c)
-        .map_or((0, 0), |ch| (ch.stamp(), ch.revision()))
+        .map_or((0, 0), |ch| (ch.stamp(), ch.collision_revision()))
 }
 
 /// The chunks a loaded chunk's collision reads: the 27 around it, or (empty) itself.
@@ -598,6 +599,43 @@ mod rebuild_tests {
             1,
             "only the edited chunk is built again"
         );
+    }
+
+    // face-a-only: which chunks are rebuilt has no up; one block of chunks round the origin.
+    #[test]
+    fn water_coming_and_going_rebuilds_no_collision() {
+        // 2026-11-06: every write bumped the chunk's revision, so the water the host let into a
+        // blast's crater rebuilt the chunks round it: 54 of the dam blast's first second's
+        // builds (natively), terrain collision 150–600 ms a second in the browser. Water
+        // collides as air does. Red before: 5 builds.
+        let water = dwell_world::M.water;
+        let ramp = |flooded: bool| {
+            dwell_blocks::parse_state(&format!(
+                "dwell:grass_ramp[facing=west,flooded={flooded},half=bottom,shape=ramp]"
+            ))
+            .expect("a ramp")
+        };
+        let (mut world, mut physics, mut terrain) = loaded();
+        world.set_voxel(-1, -1, 5, ramp(false));
+        world.set_voxel(5, -1, 5, dwell_world::M.air);
+        terrain.sync(&mut physics, &mut world);
+        let before = terrain.loads();
+        // Water fills the dug cell and stands on the ground, in a modification (no bumps) and
+        // cell by cell; the ramp floods; then it drains.
+        world.write_voxel(5, -1, 5, water);
+        world.set_voxel(6, 0, 5, water);
+        world.set_voxel(31, 0, 31, water); // a chunk corner: the 8 chunks round it are read
+        world.set_voxel(-1, -1, 5, ramp(true));
+        terrain.sync(&mut physics, &mut world);
+        world.set_voxel(5, -1, 5, dwell_world::M.air);
+        world.set_voxel(6, 0, 5, dwell_world::M.air);
+        world.set_voxel(-1, -1, 5, ramp(false));
+        terrain.sync(&mut physics, &mut world);
+        assert_eq!(terrain.loads() - before, 0, "water collides as air");
+        // A block placed in the water does.
+        world.set_voxel(40, 0, 40, dwell_world::M.stone); // away from the ramp's chunk
+        terrain.sync(&mut physics, &mut world);
+        assert_eq!(terrain.loads() - before, 1, "the placed block's chunk");
     }
 
     // face-a-only: as above.

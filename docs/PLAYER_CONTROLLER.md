@@ -322,12 +322,14 @@ in the world, so it needs no regions, anchors or seams between bodies. **Shaped 
 collide as one Parry `TriMesh` per chunk (`FIX_INTERNAL_EDGES`, at the chunk's corner) of their
 derived shapes' faces that no neighbour covers; a chunk's collision reads a two-cell apron: a
 chunk is rebuilt when it changes, and a chunk with shaped cells also when any of the 27 chunks
-around it changes stamp or revision (an empty chunk watches only itself; full cubes read only their
-own cells, 0.49.29). Crossing between chunks'
+around it changes stamp or collision revision (an empty chunk watches only itself; full cubes read only their
+own cells, 0.49.29). The collision revision (`Chunk::collision_revision`, 0.49.34) counts only the writes
+that change a cell's collision class (`dwell_blocks::collision_class`: nothing, or its shape): water
+rising or falling in a cell, a ramp flooding, rebuild nothing. Crossing between chunks'
 meshes keeps the ground (`walking_a_grass_field_across_chunk_seams_never_loses_the_ground`).
 - Chunks are added on demand: each tick, `Players::tick` makes sure every chunk within
   `3 m + min(2 ticks of travel, 64 m)` of each player is in the collider. Each loaded chunk keeps
-  its stamp, revision and a bit mask of its solid cells; a chunk with no solid cells keeps no mask,
+  its stamp, collision revision and a bit mask of its solid cells; a chunk with no solid cells keeps no mask,
   so passing through the sky (fast flight) costs no memory per chunk. Every 64 ticks, chunks more
   than 2 chunks from every player are dropped.
 - Rapier caps body speed at 400 m/s by default; spawning a player raises the world's limit to
@@ -335,8 +337,9 @@ meshes keeps the ground (`walking_a_grass_field_across_chunk_seams_never_loses_t
 
 Rules that keep the grid and the physics world consistent:
 - A voxel edit updates the collider **in the same tick** on the server: `TerrainCollision::sync`
-  (run in every `Players::tick`, before the passes) re-reads every loaded chunk whose stamp or
-  revision changed — edits, streamed or replaced chunks — and sets only the cells that differ.
+  (run in every `Players::tick`, before the passes: `Players::tick_terrain`, the server's `terrain`
+  tick phase) re-reads every loaded chunk whose stamp or collision revision changed — edits,
+  streamed or replaced chunks, not water — once a tick each, and sets only the cells that differ.
   Block edits (ARCHITECTURE.md §6.5) apply at the start of the server step, before that pass; the
   client applies a `VoxelModification` to its streamed world and its prediction world syncs the
   same way before its next predicted tick (`a_block_placed_in_front_is_collided_with_in_the_same_tick`
