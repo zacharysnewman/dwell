@@ -22,7 +22,7 @@
       "knockbackMs": 33,
       "damage": 160,
       "waterRadiusM": 3,
-      "noPieceContactS": 1,
+      "noPieceContactS": 0,
       "chainDelaySeconds": [0.15, 0.6],
       "effects": {
         "flash": { "color": "#ffd9a0", "strength": 6, "lightRadiusM": 18, "seconds": 0.3, "sizeM": 4 },
