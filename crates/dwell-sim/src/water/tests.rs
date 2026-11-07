@@ -1373,7 +1373,10 @@ fn peaks(v: &[f64], over: f64) -> Vec<(usize, f64)> {
     while i + 1 < v.len() {
         if v[i] > over && v[i] >= v[i - 1] && v[i] > v[i + 1] {
             // one peak per crest: the next must come after the level fell back below `over`
-            if out.last().is_none_or(|&(j, _)| v[j..i].iter().any(|&x| x < over)) {
+            if out
+                .last()
+                .is_none_or(|&(j, _)| v[j..i].iter().any(|&x| x < over))
+            {
                 out.push((i, v[i]));
             }
         }
@@ -1433,7 +1436,10 @@ dwell_world::both_faces!(
 dwell_world::both_faces!(
     fn no_kick_no_wave(f: FaceFrame) {
         let (far, _, before, after, _) = kicked_pond(f, 0.0, 5);
-        assert!(far.iter().all(|&l| (l - 1.5).abs() < 1e-3), "still: {far:?}");
+        assert!(
+            far.iter().all(|&l| (l - 1.5).abs() < 1e-3),
+            "still: {far:?}"
+        );
         assert!((after - before).abs() < 1e-6);
     }
 );

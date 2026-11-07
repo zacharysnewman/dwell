@@ -2772,7 +2772,9 @@ its mass (0.49.46: 0, every piece alike; players and bodies keep `falloff`), **[
 cells within `openSenseM` (`openBlend` × how open; a push going out keeps at least `openSpreadMin` of it
 sideways, 0.49.46, so a flush charge's debris clears the crater), and only if that push meets no rock within
 `openPathM` (the core and the cells that fly count as open; the rest stay as terrain, EXPLOSIVES.md §3); players are knocked back out to `reachM` and hurt only within `destroyRadiusM`; liquids within `waterRadiusM` are blown out (the water
-host refills the crater), `indestructible` blocks stay, explosives caught in it are lit with a short
+host refills the crater) and the water within `waveReachM` is kicked outward (`waveImpulse`, a
+`Wave` sent to the water host as `In::Wave`; held water within `waveFreeM` freed, so the wave runs to
+the banks and reflects; EXPLOSIVES.md §3.5, WATER_SURFACE_GRID.md §2f; **[built, 0.49.48]**), `indestructible` blocks stay, explosives caught in it are lit with a short
 random fuse; bodies are pushed by their distance (players' damage is `DamageCause::Explosion`); what it leaves unsupported falls. **[built, 0.49.41]** Two options as data, both off in the
 shipped dynamite (5 m since 0.49.46, EXPLOSIVES.md §3.3): `loosenRadiusM` (cells from `radiusM` out to it become pieces
 with no impulse) and `noPieceContactS` (a blast's pieces kept apart from one another for that long:
@@ -2852,7 +2854,7 @@ in the code yet.
 | Constant | Default | Meaning |
 |---|---|---|
 | `SIM_HZ` | 60 | Physics steps per second (server and client prediction) |
-| explosives (`shared/explosives/explosives.json`) | see [`EXPLOSIVES.md`](./EXPLOSIVES.md) §2 | Dynamite: a 3 s fuse, 5 m radius, the inner 2 m destroyed outright (0.49.38; 4 m and no core before), impulse 9,000 N·s, falloff 1.5, lift 0.5, at most 22 m/s; players within 7 m: 22 m/s knockback by (1 − d / 7)^1.5; 160 damage by (1 − d / 2)^1.5, none past 2 m; water blown out within 3 m; chained fuses 0.15–0.6 s; at most 1 blast a tick and 1,200 pieces a blast; the effects' numbers **[built, 0.49.32]** |
+| explosives (`shared/explosives/explosives.json`) | see [`EXPLOSIVES.md`](./EXPLOSIVES.md) §2 | Dynamite: a 3 s fuse, 5 m radius, the inner 2 m destroyed outright (0.49.38; 4 m and no core before), impulse 9,000 N·s, falloff 1.5, lift 0.5, at most 22 m/s; players within 7 m: 22 m/s knockback by (1 − d / 7)^1.5; 160 damage by (1 − d / 2)^1.5, none past 2 m; water blown out within 3 m; a wave of 3 m/s outward within 6 m, held water freed within 24 m (0.49.48); chained fuses 0.15–0.6 s; at most 1 blast a tick and 1,200 pieces a blast; the effects' numbers **[built, 0.49.32]** |
 | felling tunables (`shared/physics/felling.json`) | see [`FELLING.md`](./FELLING.md) §5 | The support search's reach and bounds, a falling piece's topple spin (about its foot, its farthest point at most `toppleTipSpeed` 4 m/s, 0.40.6), sleep (`sleepSeconds` 1 s, `restDrift` 0.1 m, 0.49.29) and timeouts, settles batched every `settleEveryTicks` (6), hit damage (`hitSpeed` 4 m/s, `hitDamagePerSpeed` 6), held from players' contacts while slower than `holdSpeed` (1 m/s) or pushed in the last `pushHoldSeconds` (0.25 s), moved by their push (0.41.5); a piece settles once and stays (`maxSettles` 1, 0.41.5) **[built, 0.37.1]**; the clients' settle glide (`settleGlideSeconds` 0.3 s, `settleBounce` 0.12) **[built, 0.40.3]**; terrain collision built round pieces at most `terrainChunksPerTick` (4) chunks a tick **[built, 0.40.5]** |
 | `SNAPSHOT_HZ` | 20 | Snapshot broadcast rate |
 | `probes.max_slope_angle` (`config.rs`) | 56° | The steepest ground (above the 45° ramps); steeper faces are walls (PLAYER_CONTROLLER.md §6.2) |

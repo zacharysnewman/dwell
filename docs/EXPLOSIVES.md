@@ -221,6 +221,30 @@ overlapping (or to rejoin at once with capped depenetration) — not tried. Scre
 Wire: nothing new. `VoxelModificationReason::Explosion` and `DamageCause::Explosion` existed; the
 blocks are synced by name (ADR 0038), so adding them is not a compatibility break.
 
+### 3.5 Waves (0.49.48)
+
+The owner (2026-11-06): "Those waves were super awesome from the queued up waves reflecting, can we
+make dynamite trigger waves?" A blast in or beside water gives it an outward kick, and the water
+grid's own law does the rest (it carries the wave, reflects it off banks and walls, and damps it):
+
+- **Data, per explosive:** `waveReachM` (the kick's reach, m), `waveImpulse` (the outward speed given
+  to the water at the blast, m/s; 0: no wave), `waveFreeM` (held water within it is freed, so the
+  wave runs to the banks and back instead of being taken in by held water, which stays at its
+  level). Red, blue and green: 6 m, 3 m/s, 24 m. Validated by `gen.mjs` (`gen.test.mjs` adds a
+  fixture's by data alone).
+- **The kick** (`Water::wave`, docs/WATER_SURFACE_GRID.md §2f): every face between two water columns
+  within `waveReachM` of the blast (its distance from the column's water span) gets discharge away
+  from the blast: `waveImpulse` × the face's wet height × (1 − d / reach) × the face's share of the
+  outward direction. Only discharge is added, so the water's volume is conserved; the columns are
+  freed and their chunks woken. The blast sends it after the cells it cleared, in the same batch
+  (`In::Wave`), so it works with the water inline, on its own thread or in the browser's worker.
+- **What rides it:** floating pieces and swimmers take the grid's currents (§2c of the water doc), so
+  they ride the wave with nothing added.
+- **Measured** (`water::tests`, a 24 × 6 m pond 1.5 m deep, kicked at its west end at 3 m/s): the
+  crest reaches the far bank (22 m) in 5.2 water s at +0.32 m, comes back to it at 16.8 s, sloshes
+  on as a seiche losing about a tenth of its height a crossing, and the pond sleeps again at about
+  2,100 water s (about 30 real s at the 72× day).
+
 ## 4. Effects (clients)
 
 A client sees a blast where an `Explosion` modification turns a lit explosive's cell to air

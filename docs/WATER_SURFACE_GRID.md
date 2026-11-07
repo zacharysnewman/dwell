@@ -475,6 +475,19 @@ grid bug, so no BUGS.md entry.
   (square root of its share of `fullM3s`, 2 m³/s) and nearer.
 - **Setting:** Water → **Waterfalls** (as G3d's flow switches: each a setting), the drawing only.
 
+## 2f. An outward kick from outside the grid (blast waves; built, 0.49.48)
+
+The grid takes one push from outside: `Water::wave(Wave { at, reach, speed, free })`, sent through
+the host as `In::Wave` (encoded as tag 9: the point, reach, speed and free radius as f64s), so it runs
+the same inline, on the water's thread and in the browser's worker (a test runs one both ways). It is
+kept and given at the next step, after the edits are applied and the ring grown: every face between
+two columns within `reach` of `at` (the distance taken to the columns' water span) gets
+`speed` × its wet height × (1 − d / reach) × the face's share of the outward direction added to its
+discharge (`qx`, `qz`; the rest layer untouched, so the difference is what moves). Only discharge is
+added: the water is conserved, and the face law carries, reflects and damps it. The columns it
+kicks, and the held columns within `free`, are freed and their chunks woken; held water left beyond
+`free` takes the wave in (it stays at its level). Its user is a blast (docs/EXPLOSIVES.md §3.5).
+
 ## 3. Generation
 
 - **Kept:** the world map (ADR 0049): uplift, stream-power erosion (the valleys), fill-and-spill lakes,
