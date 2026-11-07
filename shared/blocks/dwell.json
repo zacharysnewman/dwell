@@ -246,7 +246,7 @@
       }
     },
     {
-      "$comment": "Drawn cutout: the leaves tile has transparent gaps between the leaves. lightFilter: a canopy dims the sky light under it rather than shutting it out (docs/DAY_NIGHT.md §11). A rider (docs/FELLING.md): held up by the logs it belongs to, holding nothing; passable: players walk through it (owner, 2026-10-27).",
+      "$comment": "Drawn cutout: the leaves tile has transparent gaps between the leaves. lightFilter: a canopy dims the sky light under it rather than shutting it out (docs/DAY_NIGHT.md §11). A rider (docs/FELLING.md): held up by the logs it belongs to, holding nothing; passable: players walk through it (owner, 2026-10-27). flooded (ADR 0063; owner, 2026-11-07: \"underwater leaves z fighting, I think they should be flooded\"): under water the leaves hold it in their gaps, drawn as the water beside them.",
       "name": "leaves",
       "sound": "dwell:grass",
       "density": 200,
@@ -258,7 +258,8 @@
       "render": "cutout",
       "color": "#6fa83a",
       "textures": "leaves",
-      "lightFilter": 2
+      "lightFilter": 2,
+      "properties": { "flooded": ["false", "true"] }
     },
     {
       "$comment": "Prototype content (docs/TRANSPARENT_BLOCKS.md §6): blades of grass, the first plant. No collision; crossed quads drawn cutout, jittered per cell, swaying in the wind and fading out before the LOD; placed by hand only (world generation doesn't grow it), on grass or dirt, replaced by what is placed into it, and gone with the block under it.",
@@ -446,7 +447,8 @@
         "side": "snowyLeavesSide",
         "bottom": "leaves"
       },
-      "lightFilter": 2
+      "lightFilter": 2,
+      "properties": { "flooded": ["false", "true"] }
     },
     {
       "$comment": "Prototype content (docs/BUILT_BODIES.md §3, owner 2026-11-02): the build platform. Placed, it starts a built body (shared/physics/bodies.json `startedBy`) instead of going in the world's grid: blocks placed against it join that body, which never settles back into the world.",

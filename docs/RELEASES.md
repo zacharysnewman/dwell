@@ -76,6 +76,15 @@ by the Vite build and linked from the menu's About screen). Beside the native se
     removing a property renames every state of its block), changing the shapes themselves or the
     adaptive shape rules (code both sides run), changing the terrain a seed generates, and changing
     the registry payload's format.
+  - **Unknown properties stay on the block (ADR 0063, from 0.50.0):** a state named with a
+    property or value a build doesn't know loads, syncs and plays as its known part (an **alias**
+    under the full string, saved and sent back unchanged). So from the 0.50 line on, **adding a
+    property** whose default means "as before", **or a value**, is compatible: older builds on the
+    line show the block as before and keep the new value. Mods namespace the properties they add to
+    others' blocks (`mymod:wet`). Still breaking: removing or renaming a property or a value, unknown
+    whole blocks (a placeholder), and the rest above. 0.50.0 itself is a new line: 0.49.x builds
+    have no aliases (and 0.50.0 adds `flooded` to the leaves), so their worlds and servers can't be
+    shared with 0.50.
   - **The world maps' cache is not part of the contract** (ADR 0049, from 0.26.0): IndexedDB
     `dwell-world-maps` holds recently built terrain maps keyed by the build's map fingerprint, so a
     build only reads its own; any build may drop or rebuild it. 0.26.0 changed the terrain every

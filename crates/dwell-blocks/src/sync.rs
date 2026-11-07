@@ -21,7 +21,8 @@ use dwell_protocol::bytes::{ByteReader, ByteWriter};
 use crate::{
     AIR, Axis, Cross, FLUIDS, Facing, Fade, Grid, Medium, NewBlock, Origin, RenderMode, SHAPES,
     STATES, ShapeInfo, SideUnder, StateId, StateInfo, Support, SupportRole, Textures, VoxelShape,
-    Wind, blocks, build_state, info, intern, register, shape::faces_of, state_count,
+    Wind, blocks, build_state, info, intern, register, same_definition, shape::faces_of,
+    state_count,
 };
 
 /// The payload format this build reads and writes.
@@ -1031,6 +1032,10 @@ pub fn map(payload: &Payload, hash: u64) -> Result<Mapping, String> {
     // Build states whose server definition differs: (build id, server id). Edits naming the
     // build's state (the palette's) still mean the server's state of that name.
     let mut renamed: Vec<(StateId, StateId)> = Vec::new();
+    // Build states the server names differently (ADR 0063: an alias of it, or it without a
+    // property), with the first such server state: the client's own state means that one, unless
+    // the server has it exactly.
+    let mut base_to_server: Vec<(StateId, StateId)> = Vec::new();
 
     for b in &payload.blocks {
         // Each state: the server's rules (with notes on what was degraded), and whether the
@@ -1039,6 +1044,31 @@ pub fn map(payload: &Payload, hash: u64) -> Result<Mapping, String> {
         let mut needs_copy = false;
         for (k, fields) in b.states.iter().enumerate() {
             let name = crate::canonical(&b.name, &b.properties, k);
+            let shape = |i: u16| shape_map.get(usize::from(i)).copied().flatten();
+            // A state the build names differently (ADR 0063): one with a property or value it
+            // doesn't know is an alias of its known part, one missing a property the build has
+            // is the build's state at that property's default; either when the server's rules
+            // are the base's.
+            if build_state(&name).is_none()
+                && let Ok((base, exact)) = crate::parse_base(&name)
+                && crate::is_build_state(base)
+            {
+                let mut row = *info(base);
+                let before = row;
+                let mut notes = Vec::new();
+                apply_rules(fields, &mut row, &shape, &mut notes);
+                if notes.is_empty() && changed_fields(&before, &row).is_empty() {
+                    let id = if exact {
+                        base
+                    } else {
+                        crate::parse_state(&name)?
+                    };
+                    seen_build[usize::from(base)] = true;
+                    base_to_server.push((base, b.first_state + k as StateId));
+                    rows.push((name, row, Some(id), Vec::new()));
+                    continue;
+                }
+            }
             let mut notes = Vec::new();
             let known = build_state(&name);
             let mut row = match known {
@@ -1049,7 +1079,6 @@ pub fn map(payload: &Payload, hash: u64) -> Result<Mapping, String> {
             if known.is_none() {
                 apply_look(fields, &payload.fluids, &mut row);
             }
-            let shape = |i: u16| shape_map.get(usize::from(i)).copied().flatten();
             apply_rules(fields, &mut row, &shape, &mut notes);
             match known {
                 Some(id) => {
@@ -1118,6 +1147,9 @@ pub fn map(payload: &Payload, hash: u64) -> Result<Mapping, String> {
         if let Some(c) = client {
             to_server[usize::from(*c)] = Some(server as StateId);
         }
+    }
+    for (build, server) in base_to_server {
+        to_server[usize::from(build)].get_or_insert(server);
     }
     for (build, server) in renamed {
         to_server[usize::from(build)] = Some(server);
@@ -1301,7 +1333,7 @@ pub fn apply_extension(bytes: &[u8]) -> Result<(), String> {
         if usize::from(b.first_state) > have {
             return Err(format!("{}: ids {have}.. missing", b.name));
         }
-        let rows = b
+        let rows: Vec<StateInfo> = b
             .states
             .iter()
             .enumerate()
@@ -1313,6 +1345,21 @@ pub fn apply_extension(bytes: &[u8]) -> Result<(), String> {
                 )
             })
             .collect();
+        // An alias (ADR 0063): a one-state block under the full string, its row its base's.
+        if b.properties.is_empty()
+            && let Ok((base, false)) = crate::parse_base(&b.name)
+            && let [row] = rows.as_slice()
+        {
+            let mut want = *info(base);
+            want.name = row.name;
+            if same_definition(&want, row) {
+                let id = crate::register_alias(&b.name, base)?;
+                if id != b.first_state {
+                    return Err(format!("{}: alias at {id}, not {}", b.name, b.first_state));
+                }
+                continue;
+            }
+        }
         register(
             Origin::Synced,
             NewBlock {
@@ -1656,6 +1703,69 @@ mod tests {
         let before = state_count();
         let again = map(&p, m.hash).expect("maps");
         assert_eq!(again.to_client, m.to_client);
+        assert_eq!(state_count(), before);
+    }
+
+    #[test]
+    fn a_server_state_with_an_unknown_property_maps_to_an_alias_of_its_base() {
+        // ADR 0063: a newer server's leaves have `mymod:wet`, and it serves an alias of its own.
+        let mut p = Payload::served();
+        let at = p
+            .blocks
+            .iter()
+            .position(|b| b.name == "dwell:leaves")
+            .expect("leaves");
+        let leaves = &mut p.blocks[at];
+        assert_eq!(leaves.properties.len(), 1, "flooded only");
+        leaves
+            .properties
+            .push(("mymod:wet".into(), vec!["0".into(), "7".into()]));
+        let old = std::mem::take(&mut leaves.states);
+        let added = old.len() as u16;
+        leaves.states = old.iter().flat_map(|s| [s.clone(), s.clone()]).collect();
+        for b in &mut p.blocks[at + 1..] {
+            b.first_state += added;
+        }
+        let sand = p
+            .blocks
+            .iter()
+            .find(|b| b.name == "dwell:sand")
+            .expect("sand")
+            .states[0]
+            .clone();
+        let gritty = "dwell:sand[flooded=false,mymod:grit=3]";
+        let next = p.id_end() as u16;
+        p.blocks.push(PayloadBlock {
+            name: gritty.into(),
+            first_state: next,
+            properties: vec![],
+            states: vec![sand],
+        });
+        let m = map(&p, 0).expect("maps");
+        let d = &m.differences;
+        assert!(
+            d.added.is_empty() && d.different.is_empty() && d.client_only.is_empty(),
+            "{d:?}"
+        );
+        let wet = "dwell:leaves[flooded=true,mymod:wet=7]";
+        let here = m.client(server_id(&p, wet)).expect("mapped");
+        assert_eq!(info(here).name, wet);
+        assert_eq!(
+            crate::alias_base(here),
+            Some(require("dwell:leaves[flooded=true]"))
+        );
+        assert_eq!(m.server(here), Some(server_id(&p, wet)));
+        assert_eq!(
+            m.server(require("dwell:leaves[flooded=true]")),
+            Some(server_id(&p, "dwell:leaves[flooded=true,mymod:wet=0]")),
+            "the build's leaves place the server's at the new property's default"
+        );
+        let g = m.client(server_id(&p, gritty)).expect("mapped");
+        assert_eq!(crate::alias_base(g), Some(require("dwell:sand")));
+        assert_eq!(info(g).name, gritty);
+        // the workers' extension carries the aliases as aliases
+        let before = state_count();
+        apply_extension(&extension_payload()).expect("applies");
         assert_eq!(state_count(), before);
     }
 

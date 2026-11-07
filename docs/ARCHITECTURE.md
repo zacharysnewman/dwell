@@ -788,7 +788,14 @@ before `Welcome` (§8.3), and the client maps the server's ids to its own at the
 generated array plus a lock-free run-time extension) for states it lacks or whose rules differ.
 A difference never refuses the join: the client adopts the server's rules and asks the player (the
 join prompt). Unknown looks draw with the fallback checker; job workers receive the synced states
-in a broadcast. Runtime ids stay on the wire (the server's) and in memory (the client's) (a `u16` per voxel: a
+in a broadcast. **Alias states [built, 0.50.0, ADR 0063]:** a state named with a property or value
+the build doesn't know (`dwell:leaves[flooded=true,mymod:wet=7]`), in a world file, a structure or a
+server's registry, is registered at run time as an **alias** (`dwell_blocks::parse_state`,
+`register_alias`): a new id under the exact string whose row is its base's (the known part, unknown
+keys dropped, unknown values at their defaults), so it draws, collides and plays as the base and is
+saved and sent back unchanged; the client maps such a server state to an alias when its rules are
+the base's. Adding a property (default "as before") or a value is therefore compatible from the 0.50
+line on; unknown whole blocks are still placeholders. Runtime ids stay on the wire (the server's) and in memory (the client's) (a `u16` per voxel: a
 bit-packed chunk-local palette would be 7× smaller but 2.7× slower to scan with the current access
 pattern, ADR 0015 — deferred); on disk, chunk palettes hold **world state ids** mapped to strings
 (§6.4).
@@ -1713,9 +1720,10 @@ it does not cover; each autosave writes the sections written since the last save
 to compute (flagged dirty) in the same transaction as the chunks. `WorldDb` translates runtime ids
 to world state ids on save (a state new to the file gets the next id and its string is stored, in
 the save's transaction) and back on load through the canonical strings, so a world outlives
-changes to the code's runtime ids; a chunk holding a string the build's registry does not know is
-unreadable and is generated again (aliases, upgrade rules and an unknown-state placeholder are
-deferred to world upgrades, `FUTURE.md`). `bodies` and `water` are optional tables, added without a format bump: a build on the line that doesn't know one leaves it.
+changes to the code's runtime ids; a string naming a known block with a property or value the build
+doesn't know loads as an alias (ADR 0063), a string missing a property as the build's state at its
+default, and an unknown block as a placeholder under its string (ADR 0038); upgrade rules are deferred
+to world upgrades, `FUTURE.md`. `bodies` and `water` are optional tables, added without a format bump: a build on the line that doesn't know one leaves it.
 
 - **Same code everywhere:** `dwell-storage` (`WorldDb`, the file's tables and records;
   `WorldStore`, the server's handle on it) runs natively on a file and in the browser on a redb

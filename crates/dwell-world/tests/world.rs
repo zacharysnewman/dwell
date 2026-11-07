@@ -99,13 +99,16 @@ fn the_palette_is_the_registrys_placeable_states() {
             "dwell:ladder[facing=west,flooded=false]",
             "dwell:sand[flooded=false]",
             "dwell:log[axis=y]",
-            "dwell:leaves",
+            "dwell:leaves[flooded=false]",
             "dwell:tall_grass",
             "dwell:torch",
             "dwell:snowy_grass[flooded=false]",
-            "dwell:snowy_leaves",
+            "dwell:snowy_leaves[flooded=false]",
             "dwell:build_platform",
-            "dwell:dynamite"
+            "dwell:dynamite",
+            "dwell:dynamite_blue",
+            "dwell:dynamite_green",
+            "dwell:dynamite_yellow"
         ]
     );
     assert!(!placeable(dwell_blocks::STATES.len() as StateId));

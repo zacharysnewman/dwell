@@ -1277,11 +1277,17 @@ impl Server {
                 self.own_blocks.push(p);
             }
         }
-        let count = self.own_blocks.len();
+        // Aliases (ADR 0063: states named with a property or value this build doesn't know,
+        // from the world file or a structure) are served under their full strings.
+        let aliases = dwell_blocks::blocks()
+            .filter(|b| b.origin == dwell_blocks::Origin::Alias)
+            .count();
+        let count = self.own_blocks.len() + aliases;
         if self.registry.0 != count || self.registry.1.is_empty() {
             let own = &self.own_blocks;
             let bytes = dwell_blocks::sync::Payload::served_by(|b| {
                 b.origin == dwell_blocks::Origin::Build
+                    || b.origin == dwell_blocks::Origin::Alias
                     || own.iter().any(|&id| b.states().contains(&usize::from(id)))
             })
             .encode();

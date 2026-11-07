@@ -386,6 +386,78 @@ fn a_chunk_means_its_strings_not_the_runtime_ids() {
 }
 
 #[test]
+fn a_state_with_an_unknown_property_loads_as_its_base_and_saves_back_unchanged() {
+    // ADR 0063: a newer build's (or a mod's) property on a known block stays on the block.
+    let path = temp_path("alias");
+    let text = "dwell:leaves[flooded=true,mymod:wet=7]";
+    {
+        let db = WorldDb::open(&path).expect("creates");
+        db.save(&SaveBatch {
+            chunks: vec![SavedChunk {
+                coord: ChunkCoord::new(0, 0, 0),
+                revision: 1,
+                voxels: chunk_of(require("dwell:sand")),
+            }],
+            ..Default::default()
+        })
+        .expect("save");
+    }
+    {
+        // A newer build wrote id 0 (the dirt) with a property this build doesn't have.
+        let raw = Database::create(&path).expect("raw");
+        let txn = raw.begin_write().expect("write");
+        txn.open_table(BLOCK_STATES)
+            .expect("table")
+            .insert(0, text)
+            .expect("insert");
+        txn.commit().expect("commit");
+    }
+    let db = WorldDb::open(&path).expect("reopens");
+    let mut c = db.load_chunk(ChunkCoord::new(0, 0, 0)).expect("kept");
+    let a = c.voxels[0];
+    let base = require("dwell:leaves[flooded=true]");
+    assert_eq!(
+        dwell_blocks::alias_base(a),
+        Some(base),
+        "an alias of the leaves"
+    );
+    let row = dwell_blocks::info(a);
+    assert_eq!(row.name, text);
+    assert_eq!(
+        (
+            row.solid,
+            row.passable,
+            row.flooded,
+            row.render,
+            row.shape_index
+        ),
+        {
+            let b = dwell_blocks::info(base);
+            (b.solid, b.passable, b.flooded, b.render, b.shape_index)
+        },
+        "it behaves as dwell:leaves"
+    );
+    c.voxels[2] = a;
+    c.revision = 2;
+    db.save(&SaveBatch {
+        chunks: vec![c],
+        ..Default::default()
+    })
+    .expect("save");
+    drop(db);
+    let db = WorldDb::open(&path).expect("reopens");
+    assert!(db.block_states().contains(&text.to_string()));
+    let c = db.load_chunk(ChunkCoord::new(0, 0, 0)).expect("chunk");
+    assert_eq!(
+        dwell_blocks::info(c.voxels[0]).name,
+        text,
+        "saved back unchanged"
+    );
+    assert_eq!(c.voxels[2], a);
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
 fn files_from_a_newer_build_are_refused() {
     let path = temp_path("newer");
     drop(WorldDb::open(&path).expect("creates"));
