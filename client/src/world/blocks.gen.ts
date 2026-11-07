@@ -75,7 +75,7 @@ export interface ShapeDef {
 }
 
 /** FNV-1a 64 over the canonical state strings (each followed by "\n") in id order. */
-export const REGISTRY_HASH = 0x25ff2b5623254f2en;
+export const REGISTRY_HASH = 0xe13383e5fccc04c2n;
 
 export const BLOCK_DEFS: readonly BlockDef[] = [
   { id: 'dwell:air', first: 0, count: 1, properties: [] },
@@ -101,6 +101,8 @@ export const BLOCK_DEFS: readonly BlockDef[] = [
   { id: 'dwell:snowy_leaves', first: 276, count: 1, properties: [], sound: 'dwell:snow' },
   { id: 'dwell:build_platform', first: 277, count: 1, properties: [], sound: 'dwell:wood' },
   { id: 'dwell:running_water', first: 278, count: 1, properties: [], sound: 'dwell:water' },
+  { id: 'dwell:dynamite', first: 279, count: 1, properties: [], sound: 'dwell:dynamite' },
+  { id: 'dwell:lit_dynamite', first: 280, count: 1, properties: [], sound: 'dwell:lit_dynamite' },
 ];
 
 /** The shapes block states use. */
@@ -419,6 +421,8 @@ const STATES_2: readonly StateDef[] = [
   { id: 276, state: 'dwell:snowy_leaves', block: 20, values: {  }, look: 'cube', render: 'cutout', color: 0xc9dccb, opacity: 1, textures: { top: 'snowyLeavesTop', side: 'snowyLeavesSide', bottom: 'leaves' }, shape: 1, flooded: false, placeable: true },
   { id: 277, state: 'dwell:build_platform', block: 21, values: {  }, look: 'cube', render: 'opaque', color: 0xa36b3c, opacity: 1, textures: { top: 'planks', side: 'planks', bottom: 'planks' }, shape: 1, flooded: false, placeable: true },
   { id: 278, state: 'dwell:running_water', block: 22, values: {  }, look: 'fluid', render: 'translucent', color: 0x2f86e0, opacity: 0.72, textures: { top: 'water', side: 'water', bottom: 'water' }, shape: 0, flooded: false, placeable: false },
+  { id: 279, state: 'dwell:dynamite', block: 23, values: {  }, look: 'cube', render: 'opaque', color: 0xb9473f, opacity: 1, textures: { top: 'dynamiteTop', side: 'dynamite', bottom: 'dynamiteTop' }, shape: 1, flooded: false, placeable: true },
+  { id: 280, state: 'dwell:lit_dynamite', block: 24, values: {  }, look: 'cube', render: 'opaque', color: 0xb9473f, opacity: 1, textures: { top: 'dynamiteTop', side: 'dynamite', bottom: 'dynamiteTop' }, shape: 1, flooded: false, placeable: false },
 ];
 
 export const STATE_DEFS: readonly StateDef[] = [

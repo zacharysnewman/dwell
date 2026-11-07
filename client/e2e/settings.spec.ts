@@ -77,6 +77,7 @@ test('settings menu: opens from the corner, without fog sliders, and is kept', a
     },
     shadows: { quality: 'high', torch: 'low' },
     motion: { speedEffects: true, fovBoost: 1, plantSway: true },
+    explosions: { flash: true, smoke: true, shake: true },
     fovDeg: 75,
     showArms: true,
     // Every part of the screen shows by default (shared/ui/hud.json).

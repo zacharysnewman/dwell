@@ -3,7 +3,7 @@
 use crate::types::*;
 
 /// FNV-1a 64 over the canonical state strings (each followed by a newline) in runtime id order.
-pub const REGISTRY_HASH: u64 = 0x25ff2b5623254f2e;
+pub const REGISTRY_HASH: u64 = 0xe13383e5fccc04c2;
 
 pub static PROPERTY_VALUES: [&str; 82] = [
     "false",
@@ -122,7 +122,7 @@ pub static PROPERTIES: [PropertyDef; 29] = [
     PropertyDef { name: "shape", first_value: 79, value_count: 3 },
 ];
 
-pub static BLOCKS: [BlockDef; 23] = [
+pub static BLOCKS: [BlockDef; 25] = [
     BlockDef { name: "dwell:air", first_state: 0, state_count: 1, first_property: 0, property_count: 0 },
     BlockDef { name: "dwell:stone", first_state: 1, state_count: 2, first_property: 0, property_count: 1 },
     BlockDef { name: "dwell:dirt", first_state: 3, state_count: 2, first_property: 1, property_count: 1 },
@@ -146,6 +146,8 @@ pub static BLOCKS: [BlockDef; 23] = [
     BlockDef { name: "dwell:snowy_leaves", first_state: 276, state_count: 1, first_property: 29, property_count: 0 },
     BlockDef { name: "dwell:build_platform", first_state: 277, state_count: 1, first_property: 29, property_count: 0 },
     BlockDef { name: "dwell:running_water", first_state: 278, state_count: 1, first_property: 29, property_count: 0 },
+    BlockDef { name: "dwell:dynamite", first_state: 279, state_count: 1, first_property: 29, property_count: 0 },
+    BlockDef { name: "dwell:lit_dynamite", first_state: 280, state_count: 1, first_property: 29, property_count: 0 },
 ];
 
 pub static SHAPE_FACES: [ShapeFace; 166] = [
@@ -346,7 +348,7 @@ pub static SHAPES: [ShapeInfo; 26] = [
     ShapeInfo { first_face: 160, face_count: 6, corners: [0, 2, 2, 0], points: [[0, 0, 4], [0, 0, 4], [0, 0, 4]], fan: true, inverted: true, diagonal: 0, convex: true, volume: 0.25, sides: [[4, 4, 4], [0, 0, 0], [0, 0, 4], [0, 0, 4]], full_top: false, full_bottom: false, min_y: 0.0, max_y: 1.0 },
 ];
 
-pub static STATES: [StateInfo; 279] = [
+pub static STATES: [StateInfo; 281] = [
     StateInfo { name: "dwell:air", block: 0, density_kg_m3: 0.0, solid: false, indestructible: false, shape: VoxelShape::Empty, shape_index: 0, flooded: false, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, fluid: None, placeable: false, look: "cube", color: 0x000000, opacity: 0.0, textures: None, side_under: &[], grid: None, render: RenderMode::Opaque, cross: None, wind: None, fade: None, outline: true, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, on_slopes: false, moldable: None, medium: Medium::Any, light_filter: 0, emits: 0, light: None, held: None, extends_up: None, part_of: None, support_role: SupportRole::Ground, passable: false, axis: Axis::Y, near_fade: 0.0, fill: 1.0 },
     StateInfo { name: "dwell:stone[flooded=false]", block: 1, density_kg_m3: 2400.0, solid: true, indestructible: false, shape: VoxelShape::Full, shape_index: 1, flooded: false, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, fluid: None, placeable: true, look: "cube", color: 0xbbafa6, opacity: 1.0, textures: Some(Textures { top: "stone", side: "stone", bottom: "stone" }), side_under: &[], grid: None, render: RenderMode::Opaque, cross: None, wind: None, fade: None, outline: true, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, on_slopes: false, moldable: None, medium: Medium::Any, light_filter: 15, emits: 0, light: None, held: None, extends_up: None, part_of: None, support_role: SupportRole::Ground, passable: false, axis: Axis::Y, near_fade: 0.0, fill: 1.0 },
     StateInfo { name: "dwell:stone[flooded=true]", block: 1, density_kg_m3: 2400.0, solid: true, indestructible: false, shape: VoxelShape::Full, shape_index: 1, flooded: true, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, fluid: None, placeable: false, look: "cube", color: 0xbbafa6, opacity: 1.0, textures: Some(Textures { top: "stone", side: "stone", bottom: "stone" }), side_under: &[], grid: None, render: RenderMode::Opaque, cross: None, wind: None, fade: None, outline: true, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, on_slopes: false, moldable: None, medium: Medium::Any, light_filter: 15, emits: 0, light: None, held: None, extends_up: None, part_of: None, support_role: SupportRole::Ground, passable: false, axis: Axis::Y, near_fade: 0.0, fill: 1.0 },
@@ -626,12 +628,15 @@ pub static STATES: [StateInfo; 279] = [
     StateInfo { name: "dwell:snowy_leaves", block: 20, density_kg_m3: 220.0, solid: true, indestructible: false, shape: VoxelShape::Full, shape_index: 1, flooded: false, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, fluid: None, placeable: true, look: "cube", color: 0xc9dccb, opacity: 1.0, textures: Some(Textures { top: "snowyLeavesTop", side: "snowyLeavesSide", bottom: "leaves" }), side_under: &[], grid: None, render: RenderMode::Cutout, cross: None, wind: None, fade: None, outline: true, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, on_slopes: false, moldable: None, medium: Medium::Any, light_filter: 2, emits: 0, light: None, held: None, extends_up: None, part_of: None, support_role: SupportRole::Rider, passable: true, axis: Axis::Y, near_fade: 1.2, fill: 1.0 },
     StateInfo { name: "dwell:build_platform", block: 21, density_kg_m3: 600.0, solid: true, indestructible: false, shape: VoxelShape::Full, shape_index: 1, flooded: false, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, fluid: None, placeable: true, look: "cube", color: 0xa36b3c, opacity: 1.0, textures: Some(Textures { top: "planks", side: "planks", bottom: "planks" }), side_under: &[], grid: None, render: RenderMode::Opaque, cross: None, wind: None, fade: None, outline: true, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, on_slopes: false, moldable: None, medium: Medium::Any, light_filter: 15, emits: 0, light: None, held: None, extends_up: None, part_of: None, support_role: SupportRole::Ground, passable: false, axis: Axis::Y, near_fade: 0.0, fill: 1.0 },
     StateInfo { name: "dwell:running_water", block: 22, density_kg_m3: 1000.0, solid: false, indestructible: false, shape: VoxelShape::Empty, shape_index: 0, flooded: false, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: true, fluid: Some(0), placeable: false, look: "fluid", color: 0x2f86e0, opacity: 0.72, textures: Some(Textures { top: "water", side: "water", bottom: "water" }), side_under: &[], grid: None, render: RenderMode::Translucent, cross: None, wind: None, fade: None, outline: true, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, on_slopes: false, moldable: None, medium: Medium::Any, light_filter: 1, emits: 0, light: None, held: None, extends_up: None, part_of: None, support_role: SupportRole::Ground, passable: false, axis: Axis::Y, near_fade: 0.0, fill: 1.0 },
+    StateInfo { name: "dwell:dynamite", block: 23, density_kg_m3: 1200.0, solid: true, indestructible: false, shape: VoxelShape::Full, shape_index: 1, flooded: false, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, fluid: None, placeable: true, look: "cube", color: 0xb9473f, opacity: 1.0, textures: Some(Textures { top: "dynamiteTop", side: "dynamite", bottom: "dynamiteTop" }), side_under: &[], grid: None, render: RenderMode::Opaque, cross: None, wind: None, fade: None, outline: true, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, on_slopes: false, moldable: None, medium: Medium::Any, light_filter: 15, emits: 0, light: None, held: None, extends_up: None, part_of: None, support_role: SupportRole::Ground, passable: false, axis: Axis::Y, near_fade: 0.0, fill: 1.0 },
+    StateInfo { name: "dwell:lit_dynamite", block: 24, density_kg_m3: 1200.0, solid: true, indestructible: true, shape: VoxelShape::Full, shape_index: 1, flooded: false, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, fluid: None, placeable: false, look: "cube", color: 0xb9473f, opacity: 1.0, textures: Some(Textures { top: "dynamiteTop", side: "dynamite", bottom: "dynamiteTop" }), side_under: &[], grid: None, render: RenderMode::Opaque, cross: None, wind: None, fade: None, outline: true, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, on_slopes: false, moldable: None, medium: Medium::Any, light_filter: 15, emits: 6, light: Some(&LIGHTS[1]), held: None, extends_up: None, part_of: None, support_role: SupportRole::Ground, passable: false, axis: Axis::Y, near_fade: 0.0, fill: 1.0 },
 ];
 
 pub static FLUIDS: [FluidInfo; 1] = [
     FluidInfo { name: "dwell:water", opacity: 0.72, surface_drop: 0.125, absorption: [1.0, 0.16, 0.045], scatter: 0x1496e0, roughness: 0.08, ior: 1.333, normal_scale: 1.0, wave_scale: 2.0, flow_speed: 0.3, foam_depth: 0.5, foam_color: 0xeef6f8, caustics: 1.3, caustic_scale: 1.4, caustic_depth: 4.0, scattering: 0.3, refraction: 0.4, sparkle: 1.5 },
 ];
 
-pub static LIGHTS: [LightInfo; 1] = [
+pub static LIGHTS: [LightInfo; 2] = [
     LightInfo { name: "dwell:torch", color: 0xff8a3d, strength: 3.8, radius_m: 14.0, flicker: 0.16, flicker_speed: 6.0, shadows: true, flame: Some("dwell:torch") },
+    LightInfo { name: "dwell:fuse", color: 0xffb060, strength: 2.4, radius_m: 6.0, flicker: 0.55, flicker_speed: 14.0, shadows: false, flame: Some("dwell:fuse") },
 ];

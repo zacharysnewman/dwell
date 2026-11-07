@@ -51,6 +51,17 @@
       },
       "shadows": true,
       "flame": "dwell:torch"
+    },
+    "dwell:fuse": {
+      "color": "#ffb060",
+      "strength": 2.4,
+      "radiusM": 6,
+      "flicker": {
+        "amount": 0.55,
+        "speed": 14
+      },
+      "shadows": false,
+      "flame": "dwell:fuse"
     }
   },
   "blocks": [
@@ -460,6 +471,28 @@
       "color": "#2f86e0",
       "textures": "water",
       "lightFilter": 1
+    },
+    {
+      "$comment": "Prototype content (docs/EXPLOSIVES.md, owner 2026-11-06): dynamite, placed unlit. Place with a torch held, aimed at it, lights it (shared/explosives: it becomes dwell:lit_dynamite and its fuse runs). Caught in a blast it is lit with a short random fuse.",
+      "name": "dynamite",
+      "sound": "dwell:dynamite",
+      "density": 1200,
+      "shape": "full",
+      "placeable": true,
+      "color": "#b9473f",
+      "textures": { "top": "dynamiteTop", "side": "dynamite", "bottom": "dynamiteTop" }
+    },
+    {
+      "$comment": "Dynamite with its fuse burning (docs/EXPLOSIVES.md): only lighting makes it; nothing breaks or overwrites it (`indestructible`) until it blows. Its light is the sputtering fuse (`dwell:fuse`, a small flame on its top) and its sound set's `burn` the fizz.",
+      "name": "lit_dynamite",
+      "sound": "dwell:lit_dynamite",
+      "density": 1200,
+      "shape": "full",
+      "indestructible": true,
+      "emits": 6,
+      "light": "dwell:fuse",
+      "color": "#b9473f",
+      "textures": { "top": "dynamiteTop", "side": "dynamite", "bottom": "dynamiteTop" }
     }
   ]
 }

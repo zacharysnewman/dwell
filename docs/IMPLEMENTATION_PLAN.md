@@ -39,7 +39,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 18 — Adaptive natural blocks (formerly 9e) | ✅ Superseded — built and tested, then removed by Phase 41 (ADR 0042 supersedes ADR 0024, 2026-10-20): natural ground is shaped once, at generation, on ½ m cells; its outstanding checks (the two-client e2e, the LOD seam check, the owner's walk) are dropped with it |
 | 19 — WebGPU, looks & textures | ⏳ Not started — re-scoped by ADR 0028: WebGPU is done by Phase 24 (wgpu, no fallback); the look registry and textures as data are built on wgpu after it |
 | 20 — Voxel awakening | 🚧 In progress — started with trees (owner, 2026-10-27; [`FELLING.md`](./FELLING.md), ADR 0051): F1 built (0.36.0: support roles, passable leaves, the log's axis as block data); F2 built (0.37.0: integrity, pieces as server bodies, the protocol v20 messages, client drawing and prediction stand-ins, settling); F3 built (0.37.1: push limits, hit damage, riding, the tunables as data in `shared/physics/felling.json`, pieces' shadows, sounds, the `felling` bench scenario). The general Phase 20 (terrain and builds falling, large structures across ticks, crush) follows by data |
-| 21 — Tiered physics | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
+| 21 — Tiered physics | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12). Ahead of it, dynamite (0.49.32, [`EXPLOSIVES.md`](./EXPLOSIVES.md)) built part of the server's explosion: radius, force and falloff into Tier 1 pieces, bodies pushed, players knocked back and hurt; material strength attenuation and Tier 2 debris remain |
 | 22 — Sleep / re-bake | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 23 — Dedicated servers & packaging | ⏳ Not started |
 | 25 — Ray-marched renderer comparison | ✖ Dropped at A7 by the owner (2026-10-20: "Ray marching is massively slower… Mesher / raster is definitely our way forward"; ADR 0044). A0–A4c and A5a were built and measured (at A4c, marching every frame cost 1.5–3× raster's whole GPU frame); the marcher, compare mode and the renderer switch are removed from main, their code kept as the `archive/ray-marcher` tag and branch. Kept: A1's shared frame and GPU timing (water's W2) and `bench --compare` for raster configurations. Follow-up: the face-B "stray dark slabs" bug, deferred in case marching replaced the mesher, now needs fixing in the mesher |
@@ -2790,7 +2790,12 @@ Exit criteria
 **Goal:** Spec Phase 5. Keep CPU and bandwidth bounded during large explosions (§7.2).
 
 **Status:** Not started. Runs after Phases 6–13 (owner's decision, 2026-10-05); previously on hold
-until Phase 5 (multiplayer ready) was complete (2026-09-30).
+until Phase 5 (multiplayer ready) was complete (2026-09-30). Ahead of it (owner, 2026-11-06), dynamite
+([`EXPLOSIVES.md`](./EXPLOSIVES.md), 0.49.32) built part of the first deliverable on felling's Tier 1
+pieces: the explosives table, the radius, force and falloff by distance and mass, impulse to existing
+bodies, players' knockback and damage (`PlayerEvent`s, the knockback replayed as any is), chain
+reactions and water blown out, with native tests on both faces. Not ticked: material strength
+attenuation (a wall doesn't shield) and the Tier 2 path are still to do.
 
 Deliverables
 - [ ] Explosion system on the server: radius/force, material strength attenuation, impulse to

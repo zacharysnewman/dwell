@@ -48,6 +48,13 @@ import {
   sanitizeMotion,
   type MotionSettings,
 } from './motionSettings';
+import {
+  EXPLOSIONS_KEY,
+  defaultExplosions,
+  explosionRecord,
+  sanitizeExplosions,
+  type ExplosionSettings,
+} from './explosionSettings';
 
 /** Slider steps: fine enough that a log-scaled slider moves smoothly. */
 export const SLIDER_STEPS = 1000;
@@ -88,6 +95,8 @@ export interface Settings {
   shadows: ShadowSettings;
   /** Speed effects: the FOV boost and the wind (docs/MOTION_EFFECTS.md). */
   motion: MotionSettings;
+  /** A blast's flash, smoke and dust, and screen shake (ui/explosionSettings.ts). */
+  explosions: ExplosionSettings;
   /** The vertical field of view in degrees (60–100; narrower on wide screens, dwell-lod's base_fov). */
   fovDeg: number;
   /** Your first-person arms and what they hold (docs/CHARACTERS.md §5). */
@@ -105,6 +114,7 @@ export function defaultSettings(mobile: boolean, reducedMotion = false): Setting
     water: defaultWater(mobile),
     shadows: defaultShadows(mobile),
     motion: defaultMotion(reducedMotion),
+    explosions: defaultExplosions(reducedMotion),
     fovDeg: DEFAULT_FOV,
     showArms: true,
     hud: defaultHud(),
@@ -140,6 +150,7 @@ export function settingsJson(s: Settings): string {
       fovBoost: Math.round(s.motion.fovBoost * 100) / 100,
       plantSway: s.motion.plantSway,
     },
+    explosions: { ...s.explosions },
     fovDeg: Math.round(s.fovDeg),
     showArms: s.showArms,
     hud: { shown: { ...s.hud.shown } },
@@ -182,6 +193,7 @@ export function loadSettings(mobile: boolean): Settings {
     water: sanitizeWater(load(WATER_KEY), defaults.water),
     shadows: sanitizeShadows(load(SHADOWS_KEY), defaults.shadows),
     motion: sanitizeMotion(load(MOTION_KEY), prefersReducedMotion()),
+    explosions: sanitizeExplosions(load(EXPLOSIONS_KEY), defaultExplosions(prefersReducedMotion())),
     fovDeg: sanitizeFovSetting(load(VIEW_KEY)),
     showArms: sanitizeShowArms(load(VIEW_KEY)),
     hud: sanitizeHud(load(HUD_KEY)),
@@ -202,6 +214,10 @@ export function saveSettings(s: Settings): void {
       JSON.stringify(viewRecord(load(VIEW_KEY), s.fovDeg, s.showArms)),
     );
     localStorage.setItem(HUD_KEY, JSON.stringify(hudRecord(load(HUD_KEY), s.hud)));
+    localStorage.setItem(
+      EXPLOSIONS_KEY,
+      JSON.stringify(explosionRecord(load(EXPLOSIONS_KEY), s.explosions)),
+    );
   } catch {
     // Not kept: the settings still apply for this visit.
   }
@@ -402,6 +418,28 @@ const WATER_FLOW_TOGGLES: ToggleSpec[] = [
     hint: 'Water falling over a drop shows as a sheet, with foam and spray where it lands',
     get: (s) => s.water.waterfalls,
     with: (s, v) => ({ ...s, water: { ...s.water, waterfalls: v } }),
+  },
+];
+
+/** A blast's effects (docs/EXPLOSIVES.md §4; each one a setting). */
+const EXPLOSION_TOGGLES: ToggleSpec[] = [
+  {
+    label: 'Explosion flash',
+    hint: 'A blast lights up its surroundings for a moment, with a fireball',
+    get: (s) => s.explosions.flash,
+    with: (s, v) => ({ ...s, explosions: { ...s.explosions, flash: v } }),
+  },
+  {
+    label: 'Smoke and dust',
+    hint: 'A blast throws up dust and leaves a cloud of smoke',
+    get: (s) => s.explosions.smoke,
+    with: (s, v) => ({ ...s, explosions: { ...s.explosions, smoke: v } }),
+  },
+  {
+    label: 'Screen shake',
+    hint: 'The view shakes a little when a blast goes off nearby',
+    get: (s) => s.explosions.shake,
+    with: (s, v) => ({ ...s, explosions: { ...s.explosions, shake: v } }),
   },
 ];
 
@@ -760,6 +798,12 @@ export class SettingsMenu {
     waterGrid.append(this.choice(WATER_CHOICE));
     water.append(waterGrid);
     page.append(water);
+    const blasts = el('div', 'gm-group');
+    blasts.append(el('h2', undefined, 'Explosions'));
+    const blastGrid = el('div', 'gm-grid');
+    for (const spec of EXPLOSION_TOGGLES) blastGrid.append(this.toggle(spec));
+    blasts.append(blastGrid);
+    page.append(blasts);
     // What the screen shows, one row per part listed as data (shared/ui/hud.json).
     const screen = el('div', 'gm-group');
     screen.append(el('h2', undefined, 'On screen'));

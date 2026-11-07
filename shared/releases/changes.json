@@ -2,6 +2,15 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions card. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.49.32",
+      "changes": [
+        "Dynamite: place it, then light it with a torch held against it; after its fuse it blows, flinging every block around it",
+        "A blast knocks back and hurts anyone near it (standing on it is fatal), sets off other dynamite nearby and blows water out",
+        "Explosions flash, throw up smoke and dust, boom (quieter far away) and shake the view; each can be turned off in Settings → Explosions",
+        "Many falling pieces at once no longer freeze the screen for seconds"
+      ]
+    },
+    {
       "version": "0.49.31",
       "changes": [
         "Waterfalls: water pouring over a drop, such as a notch cut in a dam, now falls as a sheet with foam and spray where it lands",

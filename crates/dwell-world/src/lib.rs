@@ -8,6 +8,7 @@ pub mod brush;
 mod cell;
 pub mod currents;
 pub mod edit;
+pub mod explosives;
 mod face;
 pub mod falls;
 pub mod flow;

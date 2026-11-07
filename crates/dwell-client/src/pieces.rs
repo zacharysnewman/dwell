@@ -470,6 +470,21 @@ fn pose_at(poses: &VecDeque<Pose>, at: f64) -> (DVec3, DQuat) {
     )
 }
 
+/// The blocks (of up to a chunk each, from the piece's lowest corner `lo`) holding a cell of the
+/// piece, in order: only these are meshed. A block whose apron alone holds a cell has no faces of
+/// its own, but meshing it cost a whole chunk's mesh: a one-cell piece at a block's corner meshed
+/// eight (a blast's 500 one-cell pieces stalled the frame 3.8 s, docs/EXPLOSIVES.md).
+pub fn own_blocks(cells: &[([i32; 3], StateId)], lo: [i32; 3]) -> Vec<[i32; 3]> {
+    let n = CHUNK_SIZE;
+    let mut keys: Vec<[i32; 3]> = cells
+        .iter()
+        .map(|(o, _)| std::array::from_fn(|k| (o[k] - lo[k]).div_euclid(n)))
+        .collect();
+    keys.sort_unstable();
+    keys.dedup();
+    keys
+}
+
 /// A piece's cells meshed in blocks of up to a chunk each (each with its neighbours' cells in its
 /// apron, so faces between blocks are hidden), the positions moved to be relative to its reference
 /// cell's centre; and how far its cells reach from it (m).
@@ -509,9 +524,7 @@ pub fn piece_meshes_mirrored(
         }
     }
     let mut out = Vec::new();
-    let mut keys: Vec<[i32; 3]> = blocks.keys().copied().collect();
-    keys.sort_unstable();
-    for b in keys {
+    for b in own_blocks(cells, lo) {
         let Ok(mut meshes) = mesh_chunk(&blocks[&b], mirror) else {
             continue;
         };
@@ -545,6 +558,20 @@ pub fn piece_meshes_mirrored(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_one_cell_piece_meshes_one_block_not_the_blocks_whose_apron_holds_it() {
+        // docs/EXPLOSIVES.md: a blast's 500 one-cell pieces each meshed eight chunk-sized blocks
+        // (its cell in seven aprons), 3.8 s of one frame in Chrome. Red before: 8 blocks.
+        let stone = dwell_blocks::require("dwell:stone");
+        let cells = vec![([0, 0, 0], stone)];
+        assert_eq!(own_blocks(&cells, [0, 0, 0]), vec![[0, 0, 0]]);
+        let (meshes, _) = piece_meshes(&cells);
+        assert_eq!(meshes.len(), 1);
+        let n = CHUNK_SIZE;
+        let tall: Vec<_> = (0..n + 2).map(|y| ([0, y, 0], stone)).collect();
+        assert_eq!(own_blocks(&tall, [0, 0, 0]), vec![[0, 0, 0], [0, 1, 0]]);
+    }
 
     #[test]
     fn a_piece_taller_than_a_chunk_meshes_in_blocks_round_its_reference_cell() {

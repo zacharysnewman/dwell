@@ -62,6 +62,9 @@ and friend worlds), with a small master server for discovery; there are no offic
 - `docs/BUILT_BODIES.md` — design for Phase 51 (ADR 0052): moving pieces edited while they move
   (natural ones break only, built ones break and place, splits), the build platform block whose builds
   are bodies that never settle, bodies saved with the world and floating in water.
+- `docs/EXPLOSIVES.md` — dynamite (0.49.32): the explosives table (`shared/explosives/explosives.json`),
+  lighting with a torch, the server's fuse and blast (every block in the radius a flung piece, players
+  knocked back and hurt, chain reactions, water blown out), the clients' flash, smoke, boom and shake.
 - `docs/WATER_FLOW.md` — design for Phase 52 (ADR 0053), replaced in 0.48.2 by Phase 53's grid: water flow as basins with one level joined by
   outlets (weir law, block leaks), rivers as chains of pools fed by the world map's runoff; damming,
   draining, diverting; currents on bodies and swimmers; near players, fast-forwarded elsewhere.
@@ -316,7 +319,7 @@ Check these before chasing an e2e failure:
   real GPU; not caused by other work.
 - `e2e/play.spec.ts`'s "two clients on a native server see each other move" (shard 3) times out
   waiting for page B's terrain on CI since 0.49.4 (BUGS.md #34, open); it passes locally on a GPU.
-- The hotbar slot count in `e2e/edit.spec.ts` is the items' count (14, `shared/items/items.json`);
+- The hotbar slot count in `e2e/edit.spec.ts` is the items' count (15, `shared/items/items.json`);
   update it when the items change.
 - Main's e2e failed from 0.28.x to 0.37.1 (fixed 0.37.2). Part was specs left behind by features:
   1 m hotbar blocks (two cells), leaves falling when no log holds them, flight capped at level

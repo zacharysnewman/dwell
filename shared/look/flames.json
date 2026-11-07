@@ -20,6 +20,23 @@
       "sizeFlicker": 0.6,
       "glow": { "color": "#ff7a33", "radiusM": 0.45, "strength": 0.3 },
       "embers": { "count": 3, "color": "#ffb04a", "sizeM": 0.007, "riseM": 0.4, "speed": 0.7 }
+    },
+    "dwell:fuse": {
+      "ramp": ["#c8301a", "#ff6a1c", "#ffb030", "#fff0a0"],
+      "bands": 3,
+      "heightM": 0.16,
+      "widthM": 0.12,
+      "baseWidthM": 0.04,
+      "baseM": 0.5,
+      "heldScale": 0.42,
+      "speed": 3.2,
+      "noiseScale": 3.0,
+      "distort": 0.9,
+      "tongues": 1.6,
+      "sway": 0.35,
+      "sizeFlicker": 1.0,
+      "glow": { "color": "#ffb040", "radiusM": 0.3, "strength": 0.45 },
+      "embers": { "count": 6, "color": "#ffe08a", "sizeM": 0.006, "riseM": 0.25, "speed": 2.2 }
     }
   }
 }

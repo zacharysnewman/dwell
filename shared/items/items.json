@@ -92,6 +92,13 @@
       "drag": "none"
     },
     {
+      "name": "dwell:dynamite",
+      "label": "Dynamite",
+      "block": "dwell:dynamite",
+      "rows": 1,
+      "drag": "none"
+    },
+    {
       "name": "dwell:snowy_grass",
       "label": "Snowy grass",
       "block": "dwell:snowy_grass",

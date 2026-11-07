@@ -3,6 +3,7 @@
 //! outbox. The same core runs in the native server and in the browser's local mode.
 
 pub mod app_version;
+pub mod blasts;
 pub mod clock;
 pub mod entropy;
 pub mod felling;

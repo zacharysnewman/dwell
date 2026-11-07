@@ -1,0 +1,350 @@
+//! Explosives (docs/EXPLOSIVES.md): the table of explosive blocks — what lights them, their fuse,
+//! their blast's radius, force and falloff, what they do to players, and the clients' effects —
+//! and the rules the server and the clients' prediction share: lighting one (a Place with a torch
+//! held, aimed at it, `check_block_edit`), the blast's falloff and the speed it gives a block.
+//!
+//! Face-local: the blast's lift is along the face's up at the blast (`FaceFrame::at_height`).
+//! Data: `shared/explosives/explosives.json` → `explosives.gen.rs` (`node shared/explosives/gen.mjs`).
+
+use dwell_blocks::{StateId, info, try_info};
+
+use crate::{CELL_H, FaceFrame};
+
+/// The server's bounds on blasts (`limits`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ExplosiveLimits {
+    /// The most blasts set off a tick; more wait a tick.
+    pub blasts_per_tick: u32,
+    /// The most cells one blast flings (the nearest first).
+    pub max_pieces: u32,
+}
+
+/// The flash: a short point light and a fireball billboard.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FlashLook {
+    pub color: [f32; 3],
+    pub strength: f64,
+    pub light_radius_m: f64,
+    pub seconds: f64,
+    pub size_m: f64,
+}
+
+/// Puffs of smoke (rising, spreading) or dust (thrown out, falling).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PuffLook {
+    pub color: [f32; 3],
+    pub count: u32,
+    /// How many on a CPU adapter.
+    pub cpu_count: u32,
+    pub size_m: [f64; 2],
+    pub seconds: [f64; 2],
+    pub spread_m: f64,
+    pub rise_ms: f64,
+    pub opacity: f64,
+    pub speed_ms: [f64; 2],
+}
+
+/// The boom's loudness: full within `full_m`, gone at `hear_m`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BoomLook {
+    pub full_m: f64,
+    pub hear_m: f64,
+}
+
+/// The camera's shake within `radius_m` (strongest at the blast).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ShakeLook {
+    pub radius_m: f64,
+    pub degrees: f64,
+    pub seconds: f64,
+    pub hz: f64,
+}
+
+/// A blast's effects on the clients.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BlastEffects {
+    pub flash: FlashLook,
+    pub smoke: PuffLook,
+    pub dust: PuffLook,
+    pub boom: BoomLook,
+    pub shake: ShakeLook,
+}
+
+/// An explosive (`explosives` in the table; what each field means is in the data's `$comment`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ExplosiveData {
+    pub name: &'static str,
+    pub block: &'static str,
+    pub lit: &'static str,
+    pub ignited_by: &'static [&'static str],
+    pub fuse_seconds: f64,
+    pub radius_m: f64,
+    pub impulse: f64,
+    pub falloff: f64,
+    pub lift: f64,
+    pub max_speed_ms: f64,
+    pub reach_m: f64,
+    pub knockback_ms: f64,
+    pub damage: f64,
+    pub water_radius_m: f64,
+    pub chain_delay_seconds: [f64; 2],
+    pub effects: BlastEffects,
+}
+
+// Included (not a `#[path]` module) so rustfmt leaves the generated file as written.
+mod explosives_generated {
+    use super::*;
+    include!("explosives.gen.rs");
+}
+pub use explosives_generated::{EXPLOSIVES, LIMITS};
+
+/// The block a state belongs to (its name without properties).
+fn block_name(m: StateId) -> Option<&'static str> {
+    let name = try_info(m)?.name;
+    Some(name.split('[').next().unwrap_or(name))
+}
+
+/// Which explosive of `table` state `m` is, and whether it is lit.
+pub fn explosive_of(table: &[ExplosiveData], m: StateId) -> Option<(usize, bool)> {
+    let name = block_name(m)?;
+    table.iter().enumerate().find_map(|(i, e)| {
+        if e.block == name {
+            Some((i, false))
+        } else if e.lit == name {
+            Some((i, true))
+        } else {
+            None
+        }
+    })
+}
+
+/// The lit state of explosive `e` (None if the registry lacks it).
+pub fn lit_state(e: &ExplosiveData) -> Option<StateId> {
+    dwell_blocks::state(e.lit)
+}
+
+/// What a Place of `material` aimed at `target` does to an explosive (docs/EXPLOSIVES.md §2): its
+/// lit state when `target` is an unlit explosive and `material`'s block lights it (a torch held
+/// against it), else None (an ordinary place).
+pub fn ignites(table: &[ExplosiveData], target: StateId, material: StateId) -> Option<StateId> {
+    let (i, lit) = explosive_of(table, target)?;
+    let by = block_name(material)?;
+    (!lit && table[i].ignited_by.contains(&by))
+        .then(|| lit_state(&table[i]))
+        .flatten()
+}
+
+/// The share (0–1) of a blast's force at `d` m from it, reaching `reach` m: (1 − d / reach)^falloff.
+pub fn share(d: f64, reach: f64, falloff: f64) -> f64 {
+    if reach <= 0.0 || d >= reach {
+        return 0.0;
+    }
+    (1.0 - d.max(0.0) / reach).powf(falloff)
+}
+
+/// The cell offsets (x, rows, z) whose centres lie within `radius` m of a cell's centre (rows are
+/// `CELL_H` tall), nearest first.
+pub fn cells_within(radius: f64) -> Vec<[i32; 3]> {
+    let r = radius.floor() as i32;
+    let rows = (radius / CELL_H).floor() as i32;
+    let mut out = Vec::new();
+    for dy in -rows..=rows {
+        for dz in -r..=r {
+            for dx in -r..=r {
+                let d = offset_m([dx, dy, dz]);
+                if length(d) <= radius {
+                    out.push([dx, dy, dz]);
+                }
+            }
+        }
+    }
+    out.sort_by(|a, b| length(offset_m(*a)).total_cmp(&length(offset_m(*b))));
+    out
+}
+
+fn offset_m(o: [i32; 3]) -> [f64; 3] {
+    [f64::from(o[0]), f64::from(o[1]) * CELL_H, f64::from(o[2])]
+}
+
+fn length(v: [f64; 3]) -> f64 {
+    (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt()
+}
+
+/// The way a blast at `centre` pushes what is at `at` (world m): out along the line from it, lifted
+/// toward the face's up by `lift` (a block level with the blast still flies up out of the crater),
+/// a unit vector. Straight up where the two meet.
+pub fn push_dir(centre: [f64; 3], at: [f64; 3], lift: f64) -> [f64; 3] {
+    let up = FaceFrame::at_height(centre[1]).vector([0.0, 1.0, 0.0]);
+    let d = [at[0] - centre[0], at[1] - centre[1], at[2] - centre[2]];
+    let n = length(d);
+    let out = if n > 1e-6 { d.map(|v| v / n) } else { up };
+    let v = [
+        out[0] + up[0] * lift,
+        out[1] + up[1] * lift,
+        out[2] + up[2] * lift,
+    ];
+    let n = length(v);
+    if n > 1e-6 { v.map(|c| c / n) } else { up }
+}
+
+/// The speed (m/s) blast `e` gives a block of state `m` at `d` m from it: its impulse times the
+/// falloff share over the cell's mass (½ m³ × its density), at most `max_speed_ms`.
+pub fn fling_speed(e: &ExplosiveData, m: StateId, d: f64) -> f64 {
+    let mass = (f64::from(info(m).density_kg_m3) * CELL_H).max(1.0);
+    (e.impulse * share(d, e.radius_m, e.falloff) / mass).min(e.max_speed_ms)
+}
+
+/// A chained explosive's fuse (s): drawn from `chain_delay_seconds` by a hash of its cell and `salt`
+/// (the tick), so a run is the same every time.
+pub fn chain_delay(e: &ExplosiveData, cell: [i32; 3], salt: u32) -> f64 {
+    let mut h = (cell[0] as u32).wrapping_mul(0x9e37_79b1)
+        ^ (cell[1] as u32).wrapping_mul(0x85eb_ca77)
+        ^ (cell[2] as u32).wrapping_mul(0xc2b2_ae3d)
+        ^ salt.wrapping_mul(0x27d4_eb2f);
+    h ^= h >> 15;
+    h = h.wrapping_mul(0x2c1b_3c6d);
+    h ^= h >> 12;
+    let t = f64::from(h) / f64::from(u32::MAX);
+    let [lo, hi] = e.chain_delay_seconds;
+    lo + (hi - lo) * t
+}
+
+/// How loud blast `e`'s boom is at `d` m (0–1): full within `full_m`, falling to nothing at `hear_m`
+/// (as 1 / distance would, eased to zero at the end).
+pub fn boom_level(e: &ExplosiveData, d: f64) -> f64 {
+    let b = e.effects.boom;
+    if d <= b.full_m {
+        return 1.0;
+    }
+    if d >= b.hear_m {
+        return 0.0;
+    }
+    let t = (d - b.full_m) / (b.hear_m - b.full_m);
+    (b.full_m.max(1.0) / d).sqrt() * (1.0 - t)
+}
+
+/// How hard the camera shakes at `d` m from blast `e` (0–1).
+pub fn shake_level(e: &ExplosiveData, d: f64) -> f64 {
+    share(d, e.effects.shake.radius_m, 2.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dwell_blocks::require;
+
+    fn dynamite() -> &'static ExplosiveData {
+        EXPLOSIVES
+            .iter()
+            .find(|e| e.name == "dwell:dynamite")
+            .expect("dynamite in the table")
+    }
+
+    #[test]
+    fn the_tables_blocks_are_in_the_registry() {
+        for e in EXPLOSIVES {
+            assert!(dwell_blocks::state(e.block).is_some(), "{}", e.block);
+            assert!(lit_state(e).is_some(), "{}", e.lit);
+            for b in e.ignited_by {
+                assert!(dwell_blocks::state(b).is_some(), "{b}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_torch_lights_dynamite_and_nothing_else_does() {
+        let (dyn_, lit, torch) = (
+            require("dwell:dynamite"),
+            require("dwell:lit_dynamite"),
+            require("dwell:torch"),
+        );
+        assert_eq!(ignites(EXPLOSIVES, dyn_, torch), Some(lit));
+        assert_eq!(ignites(EXPLOSIVES, dyn_, require("dwell:stone")), None);
+        assert_eq!(ignites(EXPLOSIVES, lit, torch), None, "already lit");
+        assert_eq!(ignites(EXPLOSIVES, require("dwell:stone"), torch), None);
+        assert_eq!(explosive_of(EXPLOSIVES, lit), Some((0, true)));
+    }
+
+    #[test]
+    fn a_fixture_explosive_by_data_alone_is_lit_by_what_it_names() {
+        // A table entry added by data alone: lit by a log held against it.
+        let fixture = ExplosiveData {
+            name: "test:charge",
+            ignited_by: &["dwell:log"],
+            radius_m: 2.0,
+            ..*dynamite()
+        };
+        let table = [fixture];
+        let log = require("dwell:log[axis=y]");
+        let dyn_ = require("dwell:dynamite");
+        assert_eq!(
+            ignites(&table, dyn_, log),
+            Some(require("dwell:lit_dynamite"))
+        );
+        assert_eq!(ignites(&table, dyn_, require("dwell:torch")), None);
+        assert!(cells_within(table[0].radius_m).len() < cells_within(4.0).len());
+    }
+
+    #[test]
+    fn force_falls_off_with_distance_and_heavy_blocks_move_less() {
+        let e = dynamite();
+        let (stone, leaves) = (
+            require("dwell:stone[flooded=false]"),
+            require("dwell:leaves"),
+        );
+        let near = fling_speed(e, stone, 0.5);
+        let mid = fling_speed(e, stone, 2.0);
+        let edge = fling_speed(e, stone, 3.9);
+        assert!(near > mid && mid > edge, "{near} {mid} {edge}");
+        assert!(edge < 0.2, "a stone at the edge barely moves: {edge} m/s");
+        assert!(fling_speed(e, leaves, 2.0) > mid, "lighter goes faster");
+        assert!(fling_speed(e, leaves, 0.0) <= e.max_speed_ms);
+        assert_eq!(share(e.radius_m, e.radius_m, e.falloff), 0.0);
+    }
+
+    #[test]
+    fn the_cells_of_the_radius_are_the_ball_nearest_first() {
+        let cells = cells_within(4.0);
+        assert_eq!(cells[0], [0, 0, 0]);
+        // A 4 m ball of 1 × ½ × 1 m cells (the felling blast's 513).
+        assert_eq!(cells.len(), 513);
+        assert!(cells.contains(&[4, 0, 0]) && cells.contains(&[0, 8, 0]));
+        assert!(!cells.contains(&[3, 6, 3]));
+    }
+
+    crate::both_faces!(
+        fn the_push_lifts_toward_the_faces_up(f: FaceFrame) {
+            let e = dynamite();
+            let c = f.point([0.5, 40.25, 0.5]);
+            let at = f.point([3.5, 40.25, 0.5]);
+            let d = push_dir(c, at, e.lift);
+            let local = f.vector(d);
+            assert!(local[0] > 0.5 && local[1] > 0.2, "out and up: {local:?}");
+            // Straight above it: straight up.
+            let up = f.vector(push_dir(c, c, e.lift));
+            assert!((up[1] - 1.0).abs() < 1e-9);
+        }
+    );
+
+    #[test]
+    fn chain_delays_lie_in_the_range_and_differ_by_cell() {
+        let e = dynamite();
+        let a = chain_delay(e, [1, 2, 3], 7);
+        let b = chain_delay(e, [4, 2, 3], 7);
+        for t in [a, b] {
+            assert!(t >= e.chain_delay_seconds[0] && t <= e.chain_delay_seconds[1]);
+        }
+        assert_ne!(a, b);
+        assert_eq!(a, chain_delay(e, [1, 2, 3], 7));
+    }
+
+    #[test]
+    fn the_boom_is_quieter_far_away() {
+        let e = dynamite();
+        assert_eq!(boom_level(e, 2.0), 1.0);
+        let (a, b) = (boom_level(e, 30.0), boom_level(e, 120.0));
+        assert!(a > b && b > 0.0, "{a} {b}");
+        assert_eq!(boom_level(e, e.effects.boom.hear_m), 0.0);
+        assert!(shake_level(e, 1.0) > shake_level(e, 20.0));
+    }
+}

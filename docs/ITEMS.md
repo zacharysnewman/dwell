@@ -185,3 +185,10 @@ controller button and a touch button switch the modes; mouse, controller and tou
 
 The held item in the hand shows a whole block for a ½ m piece; the region tools and brushes still
 work in cells; no survival inventory (creative only).
+
+## 7. Dynamite **[built, 0.49.32]**
+
+`dwell:dynamite` is a hotbar item (`drag: none`, a click at a time; 15 items). Placed it is unlit; **Place
+with the torch held, aimed at it, lights it** instead of placing the torch (the explosives table's
+`ignitedBy`, `dwell_world::explosives::ignites` in `check_block_edit`); lit it can't be broken. Its fuse,
+blast and effects: [`EXPLOSIVES.md`](./EXPLOSIVES.md).

@@ -36,10 +36,11 @@ pub enum SoundKind {
     Fall = 29,
     FallLevel = 30,
     FallEnd = 31,
+    Explode = 32,
 }
 
 impl SoundKind {
-    pub const ALL: [SoundKind; 32] = [
+    pub const ALL: [SoundKind; 33] = [
         SoundKind::Step,
         SoundKind::Climb,
         SoundKind::Land,
@@ -72,6 +73,7 @@ impl SoundKind {
         SoundKind::Fall,
         SoundKind::FallLevel,
         SoundKind::FallEnd,
+        SoundKind::Explode,
     ];
 
     /// The event's name in the data.
@@ -109,6 +111,7 @@ impl SoundKind {
             SoundKind::Fall => "fall",
             SoundKind::FallLevel => "fall_level",
             SoundKind::FallEnd => "fall_end",
+            SoundKind::Explode => "explode",
         }
     }
 
@@ -147,6 +150,7 @@ impl SoundKind {
             SoundKind::Fall => None,
             SoundKind::FallLevel => None,
             SoundKind::FallEnd => None,
+            SoundKind::Explode => None,
         }
     }
 }

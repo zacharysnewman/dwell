@@ -711,6 +711,19 @@ pub fn check_block_edit(
     if !visible {
         return EditOutcome::fail(EditCheck::NoLineOfSight);
     }
+    // A Place with what lights an explosive (a torch held against dynamite) lights it instead of
+    // placing (docs/EXPLOSIVES.md §2): the cell aimed at takes the lit state.
+    if request.action == BlockEditAction::Place
+        && let Some(lit) =
+            crate::explosives::ignites(crate::explosives::EXPLOSIVES, target, request.material)
+    {
+        return EditOutcome {
+            check: EditCheck::Ok,
+            cell: c,
+            material: lit,
+            also: None,
+        };
+    }
     if request.action == BlockEditAction::Break {
         if unbreakable(target) {
             return EditOutcome::fail(EditCheck::Unbreakable);

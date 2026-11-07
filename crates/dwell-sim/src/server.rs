@@ -41,6 +41,7 @@ use crate::app_version::APP_VERSION;
 use crate::entropy::Entropy;
 use crate::lod_propagation::{LodPropagation, LodSection};
 use crate::worldgen_pool::WorldgenPool;
+use dwell_world::explosives::explosive_of;
 
 pub type SessionId = u32;
 pub type TransportBinding = [u8; 32];
@@ -674,6 +675,8 @@ fn encode(m: &Message) -> Vec<u8> {
 struct StoreChunks {
     db: Arc<dwell_storage::WorldDb>,
     saved: Arc<Mutex<HashMap<ChunkCoord, u32>>>,
+    /// Lit explosives found in the chunks loaded (docs/EXPLOSIVES.md §3): their fuses start again.
+    lit: Arc<Mutex<Vec<[i32; 3]>>>,
 }
 
 impl SavedChunks for StoreChunks {
@@ -682,6 +685,24 @@ impl SavedChunks for StoreChunks {
     }
     fn load(&mut self, c: ChunkCoord) -> Option<Chunk> {
         let saved = self.db.load_chunk(c)?;
+        let lit: Vec<dwell_blocks::StateId> = dwell_world::explosives::EXPLOSIVES
+            .iter()
+            .filter_map(dwell_world::explosives::lit_state)
+            .collect();
+        if saved.voxels.iter().any(|m| lit.contains(m)) {
+            let n = CHUNK_SIZE;
+            let mut found = self.lit.lock().expect("lit explosives");
+            for (i, m) in saved.voxels.iter().enumerate() {
+                if lit.contains(m) {
+                    let i = i as i32;
+                    found.push([
+                        c.x * n + (i & 31),
+                        c.y * n + ((i >> 5) & 31),
+                        c.z * n + (i >> 10),
+                    ]);
+                }
+            }
+        }
         Chunk::from_voxels(&saved.voxels, saved.revision)
     }
 }
@@ -729,6 +750,10 @@ pub struct Server {
     knockbacks: Vec<(u16, Vec3)>, // applied in the next step
     /// The falling pieces (docs/FELLING.md).
     felling: crate::felling::Felling,
+    /// The explosives' fuses burning and their table (docs/EXPLOSIVES.md §3).
+    fuses: crate::blasts::Fuses,
+    /// Lit explosives the saved chunks loaded held (their fuses start again, in full).
+    relit: Arc<Mutex<Vec<[i32; 3]>>>,
     /// Each tick phase's wall time (ms) summed since the last `tick_phases` (native only).
     phase_ms: [f64; TICK_PHASES.len()],
     /// The water surface grid (docs/WATER_SURFACE_GRID.md): the world's water, held as found until edits free it.
@@ -821,6 +846,8 @@ impl Server {
             outbox: Vec::new(),
             knockbacks: Vec::new(),
             felling: crate::felling::Felling::default(),
+            fuses: crate::blasts::Fuses::default(),
+            relit: Arc::default(),
             phase_ms: [0.0; TICK_PHASES.len()],
             // The water surface grid (Phase 53, docs/WATER_SURFACE_GRID.md): the world's water read
             // from its blocks, held at rest until edits free it; the world map's flow kept for
@@ -1438,6 +1465,21 @@ impl Server {
         // 1. Block edits queued since the last tick (§6.5); collision syncs in the controller pass.
         self.apply_edits();
         self.apply_body_edits();
+        // Fuses burn; the ones out blow (docs/EXPLOSIVES.md §3): their knockbacks go with this
+        // tick's, their pieces into this tick's physics step.
+        // A world saved with a fuse burning: the lit explosives its chunks held burn again.
+        let relit = std::mem::take(&mut *self.relit.lock().expect("lit explosives"));
+        for c in relit {
+            if let Some((i, true)) =
+                explosive_of(&self.fuses.table, self.world.get_voxel_if_loaded(c))
+            {
+                let seconds = self.fuses.table[i].fuse_seconds;
+                self.fuses.light(c, i, seconds);
+            }
+        }
+        for fuse in self.fuses.tick() {
+            self.blast(fuse);
+        }
         self.phase_ms[1] += watch.lap_ms();
 
         // 2. One input per player per tick, in sequence order (§9.3). Starved: repeat the last one.
@@ -2204,6 +2246,14 @@ impl Server {
         }
         let edited = changes.cells();
         self.broadcast_changes(changes, VoxelModificationReason::Edit);
+        // An explosive lit by an edit (a torch held against it) starts its fuse (docs/EXPLOSIVES.md).
+        for &c in &edited {
+            let m = self.world.get_voxel_if_loaded(c);
+            if let Some((i, true)) = explosive_of(&self.fuses.table, m) {
+                let seconds = self.fuses.table[i].fuse_seconds;
+                self.fuses.light(c, i, seconds);
+            }
+        }
         for ((id, joined), m) in bodies_built {
             match joined {
                 Some(cell) => self.broadcast_world(&Message::BodyEdit(BodyEdit {
@@ -2334,6 +2384,141 @@ impl Server {
             let m = self.spawn_message(i);
             self.broadcast_world(&m);
         }
+    }
+
+    /// Sets off the blast of `fuse` (docs/EXPLOSIVES.md §3), if its explosive is still there, lit.
+    /// Every other block whose cell centre is within its radius becomes a natural piece flung out
+    /// from it (nearest first, at most `limits.maxPieces`), but liquids, which within
+    /// `waterRadiusM` are blown out, and `indestructible` blocks, which stay; an explosive caught in
+    /// it is lit with a short random fuse (`chainDelaySeconds`). The cells go in one `Explosion`
+    /// modification (its own cell first: the clients' effects start from it), then the pieces'
+    /// spawns. Players within `reachM` are knocked back and hurt by the falloff share, and bodies
+    /// pushed; what the blast left without support falls.
+    fn blast(&mut self, fuse: crate::blasts::Fuse) {
+        use dwell_world::explosives::{cells_within, fling_speed, push_dir, share};
+        let Some(e) = self.fuses.table.get(fuse.explosive).copied() else {
+            return;
+        };
+        let at = fuse.cell;
+        if explosive_of(&self.fuses.table, self.world.get_voxel(at[0], at[1], at[2]))
+            != Some((fuse.explosive, true))
+        {
+            return;
+        }
+        let centre = crate::felling::cell_centre(at);
+        let mut changes = TickChanges::default();
+        changes.set(&mut self.world, at, M.air);
+        let mut flung = Vec::new();
+        for o in cells_within(e.radius_m).into_iter().skip(1) {
+            let c = [at[0] + o[0], at[1] + o[1], at[2] + o[2]];
+            let m = self.world.get_voxel(c[0], c[1], c[2]);
+            if m == M.air {
+                continue;
+            }
+            let p = crate::felling::cell_centre(c);
+            let d = (p - centre).length();
+            let s = info(m);
+            if s.liquid {
+                if d <= e.water_radius_m {
+                    changes.set(&mut self.world, c, M.air);
+                }
+                continue;
+            }
+            if let Some((i, lit)) = explosive_of(&self.fuses.table, m) {
+                // Caught in the blast: lit, or its fuse cut short.
+                let delay =
+                    dwell_world::explosives::chain_delay(&self.fuses.table[i], c, self.tick);
+                if !lit && let Some(l) = dwell_world::explosives::lit_state(&self.fuses.table[i]) {
+                    changes.set(&mut self.world, c, l);
+                }
+                self.fuses.light(c, i, delay);
+                continue;
+            }
+            if s.indestructible || flung.len() >= self.fuses.max_pieces {
+                continue;
+            }
+            let left = if s.flooded && d > e.water_radius_m {
+                M.water
+            } else {
+                M.air
+            };
+            changes.set(&mut self.world, c, left);
+            flung.push((c, m, p, d));
+        }
+        let cleared = changes.cells();
+        self.broadcast_changes(changes, VoxelModificationReason::Explosion);
+        let centre_a = centre.to_array();
+        for &(c, m, p, d) in &flung {
+            let dir = DVec3::from(push_dir(centre_a, p.to_array(), e.lift));
+            let i = self.felling.spawn_body(
+                &mut self.physics,
+                None,
+                0,
+                0,
+                vec![([0, 0, 0], m)],
+                crate::felling::cell_centre(c),
+                dwell_physics::DQuat::IDENTITY,
+                dir * fling_speed(&e, m, d),
+                DVec3::ZERO,
+            );
+            let spawn = self.spawn_message(i);
+            self.broadcast_world(&spawn);
+        }
+        // Bodies already moving are pushed by the same falloff (their mass resists).
+        let new_from = self.felling.pieces.len() - flung.len();
+        for k in 0..new_from {
+            let body = self.felling.pieces[k].body;
+            let p = self.physics.position(body);
+            let sh = share((p - centre).length(), e.reach_m, e.falloff);
+            if sh <= 0.0 {
+                continue;
+            }
+            let dir = DVec3::from(push_dir(centre_a, p.to_array(), e.lift));
+            let dv = (e.impulse * sh / self.physics.mass(body).max(1.0)).min(e.max_speed_ms);
+            let v = self.physics.velocity(body);
+            self.physics.set_velocity(body, v + dir * dv);
+        }
+        // Players: knocked back and hurt by their distance from it (to the nearest point of the
+        // body's capsule).
+        let ids: Vec<SessionId> = self.sessions.keys().copied().collect();
+        let radius = f64::from(self.config.player_config.body.radius);
+        for id in ids {
+            let s = &self.sessions[&id];
+            let Some(h) = s.handle.filter(|_| s.joined()) else {
+                continue;
+            };
+            let player_id = s.player_id;
+            let c = self.players.position(&self.physics, h);
+            let half = (f64::from(self.players.half_height(h)) - radius).max(0.0);
+            let y = centre.y.clamp(c.y - half, c.y + half);
+            let nearest = DVec3::new(c.x, y, c.z);
+            let d = ((nearest - centre).length() - radius).max(0.0);
+            let sh = share(d, e.reach_m, e.falloff);
+            if sh <= 0.0 {
+                continue;
+            }
+            let dir = push_dir(centre_a, c.to_array(), e.lift);
+            let dv = Vec3::new(dir[0] as f32, dir[1] as f32, dir[2] as f32)
+                * (e.knockback_ms * sh) as f32;
+            self.knockback(player_id, dv);
+            self.damage(id, (e.damage * sh).round() as i32, DamageCause::Explosion);
+        }
+        // What the blast left without support falls (a trunk cut through, sand undermined).
+        self.fell(&cleared, 0, Some(centre));
+    }
+
+    /// The explosives' table the server blasts by (tests: a fixture table by data alone).
+    pub fn set_explosives(&mut self, table: Vec<dwell_world::explosives::ExplosiveData>) {
+        self.fuses.table = table;
+    }
+
+    /// The fuses burning: each one's cell and ticks left.
+    pub fn fuses(&self) -> Vec<([i32; 3], u32)> {
+        self.fuses
+            .burning
+            .iter()
+            .map(|f| (f.cell, f.ticks))
+            .collect()
     }
 
     /// Adds a moving body of `kind` from `cells` (offsets in its grid), its reference cell's centre
@@ -3222,6 +3407,7 @@ impl Server {
         self.world.set_saved(Box::new(StoreChunks {
             db,
             saved: self.saved.clone(),
+            lit: self.relit.clone(),
         }));
         // The moving bodies saved with it (docs/BUILT_BODIES.md §7), as they were: after the saved
         // chunks are the world's source, so one resting on its build platform is held again.

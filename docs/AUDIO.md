@@ -62,7 +62,9 @@ the Rust game). CI regenerates both and fails on a diff, as for the block regist
   (`step`, `land`, `break`, `place`, `hit` required; `enter`, `exit`, `swim` for liquids;
   `slide` — a loop sound — and `slide_stop` for surfaces; `burn` — a loop sound — for a burning
   light source: the torch's `dwell:torch` set has the wood's steps and landing, its own place
-  (a wooden tock and the flame catching) and break (a snuff), and `torch_fire`). A set missing an
+  (a wooden tock and the flame catching) and break (a snuff), and `torch_fire`; `explode` for an
+  explosive's blast, [`EXPLOSIVES.md`](./EXPLOSIVES.md): `dwell:dynamite` and `dwell:lit_dynamite` have
+  `dynamite_boom`, and the lit one's `burn` is the fuse's fizz `fuse_fizz`, its `place` `fuse_light`). A set missing an
   event falls back to the `fallback` set's, which must have every loop event's sound — unless the
   event says `"fallback": false` (`burn`: a set without its own plays nothing; stone does not
   burn).
@@ -190,6 +192,7 @@ tick and each remote player's interpolated state each frame, and turns changes i
 | `hurt` | the server's `PlayerEvent` Damage, any player's | — | from the damage (0 → 80 points) |
 | `death` / `respawn` | the server's `PlayerEvent` Death / Respawn, any player's | — | 1 |
 | `burn` / `burn_level` / `burn_end` | a burning light source's loop voice starting, moving, stopping (below) | the source's block (its `burn`) | by distance |
+| `explode` | a blast goes off: an `Explosion` modification turns a lit explosive's cell to air ([`EXPLOSIVES.md`](./EXPLOSIVES.md) §4), at the listener | the explosive's block (its `explode`; else `dynamite_boom`) | full within the explosive's `boom.fullM`, nothing at `boom.hearM` |
 | `night` / `night_level` / `night_end` | the night's voice (below) | — | by the stars |
 
 **Impacts** (`ImpactSounds`, owner 2026-10-21: "hard hits even sliding into a wall is fair game").
