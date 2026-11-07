@@ -2783,7 +2783,7 @@ with no impulse) and `noPieceContactS` (a blast's pieces kept apart from one ano
 once `overlaps_pieces` finds it overlapping no other piece). A third option, `shell` `crack` (yellow dynamite, **[built, 0.49.50]**): only the shell's cells that touched open space before the blast, or (`crackOverCleared`) sit on the cleared core, become pieces, given no push; the rest stays (`explosives::cracking`, EXPLOSIVES.md §3.6). Saved worlds re-light lit explosives when their chunks
 load. Clients start a blast's effects when an `Explosion` modification turns a lit explosive's cell to
 air (`dwell-client` `blasts.rs`): a flash (a point light and a fireball), smoke and dust billboards
-(`render/blasts.rs`, the flames' pass; a CPU adapter's `cpuCount`), the `explode` sound by distance and
+(`render/blasts.rs`, the flames' pass; a CPU adapter's `cpuCount`) turned toward the blast's open side by `openBias`, read from the client's own cells before they clear (`blasts::open_way`, **[built, 0.49.51]**), the `explode` sound by distance and
 a screen shake of the drawn view, each a setting (Settings → Explosions, `dwell.explosions`). No new
 wire message. A 4 m blast natively: 512 pieces, its tick 9.5 ms, ~18 s until all are blocks again.
 **Its cost** **[built, 0.49.33]**: a client meshes a one-cell piece once per state (and face) and keeps

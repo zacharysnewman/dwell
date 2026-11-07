@@ -56,6 +56,8 @@ test('bad entries fail with their path named', () => {
     [(d) => (d.explosives[0].chainDelaySeconds = [1, 0.5]), /high below low/],
     [(d) => (d.explosives[0].effects.smoke.cpuCount = 999), /cpuCount must be/],
     [(d) => (d.explosives[0].effects.flash.color = 'red'), /flash\.color must be #rrggbb/],
+    [(d) => (d.explosives[0].effects.smoke.openBias = 2), /smoke\.openBias must be a number in \[0, 1\]/],
+    [(d) => delete d.explosives[0].effects.dust.openBias, /dust\.openBias must be a number/],
     [(d) => (d.explosives[0].shell = 'shatter'), /explosives\[0\]\.shell "shatter" must be one of fling, crack/],
     [(d) => (d.explosives[0].crackOverCleared = 1), /crackOverCleared must be true or false/],
     [(d) => (d.explosives[0].crackOverCleared = true), /explosives\[0\]\.crackOverCleared is only for shell "crack"/],
