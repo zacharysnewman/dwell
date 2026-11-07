@@ -163,7 +163,7 @@ dwell_world::both_faces!(
         // a wave: water taken from one end and set at the other changes nothing in sum
         s.run(120);
         let v1 = s.water.free_volume();
-        assert!((v1 - v0).abs() < 0.01, "conserved: {v0:.4} → {v1:.4}");
+    assert!((v1 - v0).abs() < 0.01, "conserved: {v0:.4} → {v1:.4}");
     }
 );
 
