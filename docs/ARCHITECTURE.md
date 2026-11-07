@@ -2638,6 +2638,12 @@ in 0.48.2.
   where the land dips runs as the river round it, 0.49.24, BUGS.md #42) or its flow
   over its depth where faster (so level and shallow reaches run, 0.49.18), at most
   `riverCurrentMaxMs` (1.5 m/s: a swimmer, at 3 m/s, still makes headway); a lake is still.
+  A freed column still its river's (0.49.43, BUGS.md #47: in the rest, `Water::share`, with a rest
+  velocity) shows that map current too, times how much of the rest's speed it still runs
+  downstream (0..=1), blended to its own velocity as its depth leaves its generated depth by up to
+  `riverCurrentBandM` (0.2 m, `flow.json`; `Water::as_river`): the river by an edit runs as the
+  river round it, while a pool behind a dam, a drained or diverted reach and placed water keep
+  their own. Only the current reported changes, not the water's movement.
 - **[built, G3d] The flow shown** (owner, 2026-11-05: all three, each a setting; data
   `shared/look/waterflow.json` → `dwell-look` `waterflow.gen.rs` by `shared/look/waterflow.mjs`,
   validated, a fixture liquid by data alone, CI stale check; per liquid by its fluid's name). The

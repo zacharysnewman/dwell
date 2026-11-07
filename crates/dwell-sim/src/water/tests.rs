@@ -1252,3 +1252,68 @@ fn stirred_deep_water_settles() {
         stirred_body(f);
     }
 }
+
+/// The fixture river with a map current faster than its flow over its depth, as a real river's
+/// (Manning's on its course's mean fall, BUGS.md #42): 1 m/s along +x, carrying `Q`.
+fn fast_river_map(w: Water) -> Water {
+    w.with_rivers(std::sync::Arc::new(|_, _, _, depth| {
+        (depth >= 0.05).then_some([1.0, 0.0])
+    }))
+    .with_river_flow(std::sync::Arc::new(|_, _, _| Some([Q, 0.0])))
+}
+
+dwell_world::both_faces!(
+    fn a_freed_river_column_runs_as_its_held_neighbours(f: FaceFrame) {
+        // 2026-11-06: a held river column runs at the map's current (1.28 m/s at the owner's
+        // creek), a freed one at the flow it carries over its depth (~0.1 m/s), so right by an
+        // edit the river visibly slowed. A column freed by an edit beside the channel (not in
+        // it), still flowing with the river, shows the map's current (red: 0.1 of 1.0).
+        let mut s = Scene::new(f);
+        s.water = fast_river_map(Water::new());
+        s.flat_river(2);
+        s.run(1);
+        let [held, _] = s.current(30, 1);
+        assert!((held - 1.0).abs() < 0.01, "held, the map's: {held:.3} m/s");
+        s.edit(&[(10, 0, 3)], M.air);
+        s.edit(&[(10, 0, 3)], require("dwell:stone"));
+        s.run(5);
+        assert!(!s.water.held_at(f, 10, 1), "freed");
+        assert!(s.water.held_at(f, 30, 1), "still held downstream");
+        let [u, v] = s.current(10, 1);
+        assert!(
+            (u - held).abs() < 0.2 * held && v.abs() < 0.2 * held,
+            "freed, it runs as the river round it: {u:.3}, {v:.3} m/s (held {held:.3})"
+        );
+        // A world saved so runs so on load (the map's current found again for its columns).
+        let bytes = s.water.save(|_| 0);
+        let mut back = fast_river_map(Water::new());
+        assert!(back.restore(&bytes, |_| 0).is_some(), "the record reads");
+        s.water = back;
+        s.run(5);
+        let [u, _] = s.current(10, 1);
+        assert!(
+            (u - held).abs() < 0.2 * held,
+            "restored, it runs so: {u:.3} m/s"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    fn a_dammed_reachs_pool_keeps_its_own_still_current(f: FaceFrame) {
+        // The pool backed up behind a dam is no longer the river: it keeps its own (near still)
+        // current, not the map's.
+        let mut s = Scene::new(f);
+        s.water = fast_river_map(Water::new());
+        s.flat_river(2);
+        s.run(2);
+        s.dam_flat_river();
+        s.run(300);
+        let rise = s.level(20, 1).expect("pool") - 1.0;
+        assert!(rise > 0.25, "the pool rose: {rise:.3} m");
+        let [u, v] = s.current(20, 1);
+        assert!(
+            u.hypot(v) < 0.1,
+            "the pool is near still: {u:.3}, {v:.3} m/s"
+        );
+    }
+);
