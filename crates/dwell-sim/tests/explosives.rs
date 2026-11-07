@@ -1,6 +1,7 @@
 //! Dynamite through the server (docs/EXPLOSIVES.md): a torch held against it lights it, its fuse
-//! runs, and the blast flings every breakable block in its radius as a piece, knocks back and hurts
-//! players by their distance, lights other dynamite, blows out water; on both faces.
+//! runs, and the blast destroys the breakable blocks within its destroy radius and flings the rest
+//! in its radius as pieces, knocks back players by their distance and hurts those within the
+//! destroy radius, lights other dynamite, blows out water; on both faces.
 
 mod common;
 
@@ -10,6 +11,11 @@ use dwell_physics::{DVec3, Vec3};
 use dwell_protocol::*;
 use dwell_sim::server::{ServerConfig, SessionId};
 use dwell_world::explosives::{EXPLOSIVES, ExplosiveData, cells_within};
+
+/// A cell offset's distance (m) from the blast's cell (rows are `CELL_H` tall).
+fn dist(o: [i32; 3]) -> f64 {
+    (f64::from(o[0]).powi(2) + (f64::from(o[1]) * CELL_H).powi(2) + f64::from(o[2]).powi(2)).sqrt()
+}
 use dwell_world::{CELL_H, FLAT_TOP_Y, FaceFrame, M, empty_generator, m_of_row};
 
 /// The scene's ground level (face-local row): stone below it.
@@ -136,7 +142,7 @@ fn spawns(out: &[Message]) -> Vec<&EntitySpawn> {
 }
 
 dwell_world::both_faces!(
-    fn a_torch_lights_it_and_after_its_fuse_the_blast_flings_every_breakable_block(f: FaceFrame) {
+    fn lit_its_blast_destroys_its_core_and_flings_the_rest(f: FaceFrame) {
         let e = dynamite();
         let mut s = Scene::new(f, 1);
         s.put(1, 0.5, -3.5);
@@ -186,14 +192,27 @@ dwell_world::both_faces!(
                     .all(|m| !matches!(m, Message::VoxelModification(_)))
         );
         let pieces = spawns(&out);
+        let (core, shell): (Vec<&([i32; 3], StateId)>, Vec<_>) = what
+            .iter()
+            .partition(|&&(o, _)| dist(o) <= e.destroy_radius_m);
+        assert!(core.len() > 20, "a core of ground: {}", core.len());
         assert_eq!(
             pieces.len(),
-            what.len(),
-            "every breakable block in the radius is a piece"
+            shell.len(),
+            "every breakable block from the destroy radius out to the radius is a piece, none within"
         );
-        assert!(what.len() > 200, "a crater's worth: {}", what.len());
+        assert!(shell.len() > 300, "a crater's worth: {}", shell.len());
         for &(o, _) in &what {
             assert_eq!(s.get(o), M.air, "{o:?} cleared");
+        }
+        // No piece came from the core: each starts at its cell's centre, past the destroy radius.
+        let centre = DVec3::from(dwell_sim::felling::cell_centre(s.cell(at)));
+        for p in &pieces {
+            let d = (DVec3::from(p.origin) - centre).length();
+            assert!(
+                d > e.destroy_radius_m - 1e-6 && d <= e.radius_m + 1e-6,
+                "a piece {d:.2} m out"
+            );
         }
         assert_eq!(
             s.get([1, -1, 1]),
@@ -201,7 +220,6 @@ dwell_world::both_faces!(
             "the bedrock stays"
         );
         // Each flung out from the blast (face-locally up and away), the near ones faster.
-        let centre = DVec3::from(dwell_sim::felling::cell_centre(s.cell(at)));
         let mut by_d: Vec<(f64, f64)> = Vec::new();
         for p in &pieces {
             let h = s.fx.server.body_handle(p.id).expect("a body");
@@ -238,22 +256,28 @@ dwell_world::both_faces!(
 );
 
 dwell_world::both_faces!(
-    fn players_near_it_are_knocked_back_and_hurt_by_their_distance(f: FaceFrame) {
-        let mut s = Scene::new(f, 2);
-        s.put(1, 0.5, -3.5);
-        s.put(2, 0.5, -3.5);
+    fn players_are_hurt_only_within_the_destroy_radius_and_pushed_past_it(f: FaceFrame) {
+        let e = dynamite();
+        let mut s = Scene::new(f, 3);
+        for id in 1..=3 {
+            s.put(id, 0.5 + f64::from(id) - 1.0, -3.5);
+        }
         s.run(2);
         let at = [0, 0, 0];
         s.set(at, require("dwell:dynamite"));
         s.light(at);
         s.run(1);
-        // Player 1 stands beside it, player 2 5 m away.
-        s.put(1, 1.8, 0.5);
-        s.put(2, 5.8, 0.5);
+        // From the blast's centre to the nearest of each body (radius 0.3 m): player 1 0.5 m,
+        // player 2 1.2 m (both within the 2 m destroy radius), player 3 4 m (past it, within the
+        // 7 m reach).
+        s.put(1, 1.3, 0.5);
+        s.put(2, 2.0, 0.5);
+        s.put(3, 4.8, 0.5);
+        assert!(4.0 > e.destroy_radius_m && 4.0 < e.reach_m);
         let out = s.run(181);
-        let mut damage = [0i32; 3];
-        let mut push = [0f32; 3];
-        let mut dead = [false; 3];
+        let mut damage = [0i32; 4];
+        let mut push = [0f32; 4];
+        let mut dead = [false; 4];
         for m in &out {
             if let Message::PlayerEvent(p) = m {
                 let k = usize::from(p.player_id);
@@ -272,11 +296,13 @@ dwell_world::both_faces!(
                 }
             }
         }
-        assert!(dead[1], "standing on it kills: {damage:?}");
-        assert!(!dead[2], "5 m off survives: {damage:?}");
-        assert!(damage[2] > 0 && damage[2] < damage[1], "{damage:?}");
-        // Killed by it, player 1 is gone before its push would land; player 2 is pushed.
-        assert!(push[2] > 0.5, "{push:?}");
+        assert!(dead[1], "beside it kills: {damage:?}");
+        assert!(!dead[2] && damage[2] > 0, "1.2 m off is hurt: {damage:?}");
+        assert!(damage[2] < damage[1], "{damage:?}");
+        assert_eq!(damage[3], 0, "4 m off, past the destroy radius, is unhurt");
+        assert!(!dead[3]);
+        // Killed by it, player 1 is gone before its push would land; the others are pushed.
+        assert!(push[2] > push[3] && push[3] > 0.5, "{push:?}");
     }
 );
 
@@ -336,11 +362,7 @@ dwell_world::both_faces!(
         s.run(180);
         let near = [1, -1, 0];
         let far = [6, -1, 2];
-        let d = |o: [i32; 3]| {
-            (f64::from(o[0]).powi(2) + (f64::from(o[1]) * CELL_H).powi(2) + f64::from(o[2]).powi(2))
-                .sqrt()
-        };
-        assert!(d(near) < e.water_radius_m && d(far) > e.water_radius_m);
+        assert!(dist(near) < e.water_radius_m && dist(far) > e.water_radius_m);
         assert_eq!(s.get(near), M.air, "blown out");
         assert!(info(s.get(far)).liquid, "beyond the water radius it stays");
     }
@@ -354,6 +376,7 @@ fn a_fixture_explosive_by_data_alone_blasts_by_its_own_numbers() {
         name: "test:charge",
         fuse_seconds: 0.5,
         radius_m: 2.0,
+        destroy_radius_m: 1.0,
         ..dynamite()
     }]);
     s.put(1, 0.5, -3.5);
@@ -366,10 +389,15 @@ fn a_fixture_explosive_by_data_alone_blasts_by_its_own_numbers() {
     let n = cells_within(2.0)
         .into_iter()
         .skip(1)
-        .filter(|o| o[1] < 0)
+        .filter(|&o| o[1] < 0 && dist(o) > 1.0)
         .count();
     assert_eq!(s.get([0, 0, 0]), M.air, "a 0.5 s fuse");
-    assert_eq!(spawns(&out).len(), n, "its 2 m ball of the ground");
+    assert_eq!(
+        spawns(&out).len(),
+        n,
+        "its 2 m ball of the ground, but its 1 m core, destroyed"
+    );
+    assert_eq!(s.get([0, -2, 0]), M.air, "1 m down: destroyed");
     assert_eq!(
         s.get([0, -1, 3]),
         require("dwell:stone"),
@@ -388,8 +416,13 @@ fn a_blast_in_solid_ground_costs_a_bounded_tick_and_its_pieces_settle() {
     s.light([0, 0, 0]);
     s.run(1);
     s.put(1, 0.5, -13.0);
-    // Buried in stone: the whole 4 m ball is ground (513 cells but its own).
-    for o in cells_within(4.0).into_iter().skip(1).filter(|o| o[1] >= 0) {
+    // Buried in stone: the whole 5 m ball is ground (1,013 cells but its own; the 952 past its 2 m
+    // core fly).
+    for o in cells_within(dynamite().radius_m)
+        .into_iter()
+        .skip(1)
+        .filter(|o| o[1] >= 0)
+    {
         s.set(o, require("dwell:stone"));
     }
     let fuse = s.fx.server.fuses()[0].1 as usize;
@@ -433,13 +466,15 @@ fn a_blast_in_solid_ground_costs_a_bounded_tick_and_its_pieces_settle() {
     println!(
         "{n} pieces; the blast's tick {blast_ms:.1} ms; {ticks} ticks to settle, worst {worst:.1} ms, {body_ticks} body-ticks"
     );
-    assert!(n > 250, "{n}");
+    assert!(n > 900, "{n}");
     assert_eq!(
         s.fx.server.body_count(),
         0,
         "every piece settled within 20 s"
     );
-    assert!(body_ticks <= 100_000, "{body_ticks} body-ticks");
+    // 0.49.38: 952 pieces from the 2–5 m shell (0.49.37: 512 from the 4 m ball, 70,076 body-ticks);
+    // measured ~172,000.
+    assert!(body_ticks <= 200_000, "{body_ticks} body-ticks");
 }
 
 #[test]

@@ -21,16 +21,20 @@ test('an explosive added by data alone is in the output', () => {
   const blocks = registryBlocks();
   blocks.set('test:charge', { placeable: true, properties: {} });
   blocks.set('test:lit_charge', { placeable: false, properties: {} });
-  d.explosives.push({ ...structuredClone(d.explosives[0]), name: 'test:charge', block: 'test:charge', lit: 'test:lit_charge', radiusM: 2.5 });
+  d.explosives.push({ ...structuredClone(d.explosives[0]), name: 'test:charge', block: 'test:charge', lit: 'test:lit_charge', radiusM: 2.5, destroyRadiusM: 1 });
   const rust = explosivesRust(validateExplosives(d, blocks));
   assert.match(rust, /name: "test:charge",/);
   assert.match(rust, /radius_m: 2\.5,/);
+  assert.match(rust, /destroy_radius_m: 1\.0,/);
 });
 
 test('bad entries fail with their path named', () => {
   for (const [change, message] of [
     [(d) => delete d.explosives[0].fuseSeconds, /explosives\[0\]\.fuseSeconds must be a number/],
     [(d) => (d.explosives[0].radiusM = 100), /radiusM must be a number in \[0\.5, 16\]/],
+    [(d) => (d.explosives[0].destroyRadiusM = 6), /destroyRadiusM must be at most its radiusM/],
+    [(d) => (d.explosives[0].destroyRadiusM = -1), /destroyRadiusM must be a number in \[0, 16\]/],
+    [(d) => delete d.explosives[0].destroyRadiusM, /destroyRadiusM must be a number/],
     [(d) => (d.explosives[0].block = 'dwell:nope'), /block: "dwell:nope" is not a block/],
     [(d) => (d.explosives[0].lit = 'dwell:stone'), /must not be placeable/],
     [(d) => (d.explosives[0].ignitedBy = ['dwell:nope']), /ignitedBy\[0\]/],
