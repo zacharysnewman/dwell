@@ -1599,6 +1599,7 @@ impl Server {
         self.felling.float(&mut self.world, &mut self.physics);
         self.phase_ms[5] += watch.lap_ms();
         self.physics.step(1.0 / f64::from(SIM_HZ));
+        self.rejoin_apart();
         self.phase_ms[6] += watch.lap_ms();
         self.tick += 1;
         self.settle_pieces();
@@ -2519,7 +2520,9 @@ impl Server {
         let mut changes = TickChanges::default();
         changes.set(&mut self.world, at, M.air);
         let mut flung = Vec::new();
-        for o in cells_within(e.radius_m).into_iter().skip(1) {
+        // Out to the loosen radius: past `radius_m` the pieces get no impulse (`fling_speed`'s
+        // share is nothing there), so they slump and fall.
+        for o in cells_within(e.loosen_radius_m.max(e.radius_m)).into_iter().skip(1) {
             let c = [at[0] + o[0], at[1] + o[1], at[2] + o[2]];
             let m = self.world.get_voxel(c[0], c[1], c[2]);
             if m == M.air {
@@ -2574,6 +2577,15 @@ impl Server {
                 dir * fling_speed(&e, m, d),
                 DVec3::ZERO,
             );
+            if e.no_piece_contact_s > 0.0 {
+                // Its pieces fly out packed: kept apart from one another for the window, they
+                // touch only the terrain, players and other bodies (docs/EXPLOSIVES.md §3).
+                let body = self.felling.pieces[i].body;
+                self.physics.set_apart(body, true);
+                self.fuses
+                    .apart
+                    .push((body, crate::blasts::ticks_of(e.no_piece_contact_s)));
+            }
             let spawn = self.spawn_message(i);
             self.broadcast_world(&spawn);
         }
@@ -2623,6 +2635,37 @@ impl Server {
         }
         // What the blast left without support falls (a trunk cut through, sand undermined).
         self.fell(&cleared, 0, Some(centre));
+    }
+
+    /// Counts down the blasts' pieces kept apart (`noPieceContactS`): past its window each lets
+    /// the other pieces touch it again once it overlaps none of them, so pieces that landed in
+    /// one another don't pop apart; a piece gone (settled, split) is dropped.
+    fn rejoin_apart(&mut self) {
+        if self.fuses.apart.is_empty() {
+            return;
+        }
+        let live: std::collections::HashSet<dwell_physics::BodyHandle> =
+            self.felling.pieces.iter().map(|p| p.body).collect();
+        let physics = &mut self.physics;
+        self.fuses.apart.retain_mut(|(body, ticks)| {
+            if !live.contains(body) {
+                return false;
+            }
+            if *ticks > 0 {
+                *ticks -= 1;
+                return true;
+            }
+            if physics.overlaps_pieces(*body) {
+                return true;
+            }
+            physics.set_apart(*body, false);
+            false
+        });
+    }
+
+    /// The blasts' pieces still kept apart from one another (tests).
+    pub fn apart_pieces(&self) -> usize {
+        self.fuses.apart.len()
     }
 
     /// The explosives' table the server blasts by (tests: a fixture table by data alone).

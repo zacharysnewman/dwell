@@ -82,6 +82,9 @@ pub struct ExplosiveData {
     /// Within it (at most `radius_m`) a blast destroys blocks outright; beyond, to `radius_m`,
     /// they fly as pieces. Players are hurt only within it.
     pub destroy_radius_m: f64,
+    /// Out to it (at least `radius_m`) blocks become pieces too; those past `radius_m` are given
+    /// no impulse (they slump and fall).
+    pub loosen_radius_m: f64,
     pub impulse: f64,
     pub falloff: f64,
     pub lift: f64,
@@ -90,6 +93,9 @@ pub struct ExplosiveData {
     pub knockback_ms: f64,
     pub damage: f64,
     pub water_radius_m: f64,
+    /// For this long (s) a blast's pieces don't touch one another; after it each touches the
+    /// others again once it overlaps none.
+    pub no_piece_contact_s: f64,
     pub chain_delay_seconds: [f64; 2],
     pub effects: BlastEffects,
 }

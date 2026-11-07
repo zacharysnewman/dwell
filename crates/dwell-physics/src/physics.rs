@@ -35,26 +35,29 @@ pub enum Layer {
 const TERRAIN: Group = Group::GROUP_1;
 const TIER1: Group = Group::GROUP_2;
 const CHARACTER: Group = Group::GROUP_3;
+/// Pieces kept apart (a blast's, for its `noPieceContactS`; docs/EXPLOSIVES.md §3): Tier 1 bodies
+/// that touch everything but one another. Every other layer's filter takes them.
+const APART: Group = Group::GROUP_4;
 
 pub(crate) fn groups(layer: Layer) -> InteractionGroups {
     let (member, filter) = match layer {
-        Layer::Terrain => (TERRAIN, TIER1 | CHARACTER),
-        Layer::Tier1 => (TIER1, TERRAIN | TIER1 | CHARACTER),
-        Layer::Character => (CHARACTER, TERRAIN | TIER1 | CHARACTER),
+        Layer::Terrain => (TERRAIN, TIER1 | CHARACTER | APART),
+        Layer::Tier1 => (TIER1, TERRAIN | TIER1 | CHARACTER | APART),
+        Layer::Character => (CHARACTER, TERRAIN | TIER1 | CHARACTER | APART),
     };
     InteractionGroups::new(member, filter, InteractionTestMode::And)
 }
 
 /// The groups a probe of moving bodies matches (Tier 1 and characters).
 pub(crate) fn moving_groups() -> InteractionGroups {
-    InteractionGroups::new(Group::ALL, TIER1 | CHARACTER, InteractionTestMode::And)
+    InteractionGroups::new(Group::ALL, TIER1 | CHARACTER | APART, InteractionTestMode::And)
 }
 
 pub(crate) fn layer_of(collider: &Collider) -> Layer {
     let m = collider.collision_groups().memberships;
     if m.contains(CHARACTER) {
         Layer::Character
-    } else if m.contains(TIER1) {
+    } else if m.intersects(TIER1 | APART) {
         Layer::Tier1
     } else {
         Layer::Terrain
@@ -346,6 +349,87 @@ impl Physics {
     /// A body's mass (kg; a kinematic stand-in's too, from its cells).
     pub fn mass(&self, h: BodyHandle) -> f64 {
         self.w.bodies.get(h.0).map_or(0.0, |b| b.mass())
+    }
+
+    /// Keeps piece `body` apart from the other apart pieces (`apart`: it still touches the terrain,
+    /// players and every other body), or lets it touch them again (docs/EXPLOSIVES.md §3,
+    /// `noPieceContactS`). Its colliders that touch nothing stay so.
+    pub fn set_apart(&mut self, body: BodyHandle, apart: bool) {
+        let Some(b) = self.w.bodies.get(body.0) else {
+            return;
+        };
+        for &c in b.colliders() {
+            let Some(col) = self.w.colliders.get_mut(c) else {
+                continue;
+            };
+            let g = col.collision_groups();
+            if g.filter.is_empty() {
+                continue;
+            }
+            let (memberships, filter) = if apart {
+                ((g.memberships - TIER1) | APART, g.filter - APART)
+            } else {
+                ((g.memberships - APART) | TIER1, g.filter | APART)
+            };
+            col.set_collision_groups(InteractionGroups::new(memberships, filter, g.test_mode));
+        }
+    }
+
+    /// Whether piece `body` is kept apart (`set_apart`).
+    pub fn is_apart(&self, body: BodyHandle) -> bool {
+        self.w.bodies.get(body.0).is_some_and(|b| {
+            b.colliders().iter().any(|&c| {
+                self.w
+                    .colliders
+                    .get(c)
+                    .is_some_and(|col| col.collision_groups().memberships.contains(APART))
+            })
+        })
+    }
+
+    /// Whether any of `body`'s colliders overlaps another body's (a piece, apart or not; not a
+    /// player or the terrain): an apart piece lets the others touch it again only once this is
+    /// false, so pieces that landed in one another don't pop apart.
+    pub fn overlaps_pieces(&self, body: BodyHandle) -> bool {
+        let Some(b) = self.w.bodies.get(body.0) else {
+            return false;
+        };
+        let mut filter = QueryFilter::default().groups(InteractionGroups::new(
+            Group::ALL,
+            TIER1 | APART,
+            InteractionTestMode::And,
+        ));
+        filter.exclude_rigid_body = Some(body.0);
+        let q = self.w.broad_phase.as_query_pipeline(
+            self.w.narrow_phase.query_dispatcher(),
+            &self.w.bodies,
+            &self.w.colliders,
+            filter,
+        );
+        b.colliders().iter().any(|&c| {
+            self.w.colliders.get(c).is_some_and(|col| {
+                !col.collision_groups().filter.is_empty()
+                    && q.intersect_shape(*col.position(), col.shape())
+                        .next()
+                        .is_some()
+            })
+        })
+    }
+
+    /// The contact pairs with touching contacts between two pieces (Tier 1 bodies, apart or
+    /// not), the terrain and players left out (tests: an apart blast's pieces make none).
+    pub fn piece_contact_pairs(&self) -> usize {
+        let piece = |c: ColliderHandle| {
+            self.w
+                .colliders
+                .get(c)
+                .is_some_and(|c| c.collision_groups().memberships.intersects(TIER1 | APART))
+        };
+        self.w
+            .narrow_phase
+            .contact_pairs()
+            .filter(|p| p.has_any_active_contact() && piece(p.collider1) && piece(p.collider2))
+            .count()
     }
 
     /// An impulse (N·s) on the body at its centre of mass.
@@ -674,7 +758,9 @@ pub const PIECE_SKIN: f64 = 0.01;
 fn piece_collider(c: &PieceCell) -> Collider {
     let groups = match c.collide {
         Collide::All => groups(Layer::Tier1),
-        Collide::World => InteractionGroups::new(TIER1, TERRAIN | TIER1, InteractionTestMode::And),
+        Collide::World => {
+            InteractionGroups::new(TIER1, TERRAIN | TIER1 | APART, InteractionTestMode::And)
+        }
         Collide::None => InteractionGroups::new(TIER1, Group::NONE, InteractionTestMode::And),
     };
     // Each face drawn in by PIECE_SKIN, so pieces side by side (and a piece beside a wall) don't
