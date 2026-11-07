@@ -1932,3 +1932,51 @@ dwell_world::both_faces!(
         );
     }
 );
+
+dwell_world::both_faces!(
+    /// Owner, 2026-11-07: "underwater leaves z fighting, I think they should be 'flooded' so
+    /// shouldn't get foam and stuff". A flooded leaf inside a pond draws its water as water: the
+    /// pond's mesh is the one it has with water in the leaf's cell (no surface or side faces round
+    /// the leaf, none on the leaf's faces), and the leaf is drawn inside it.
+    fn a_flooded_leaf_in_a_pond_draws_no_water_faces_round_it(f: FaceFrame) {
+        let c = ChunkCoord::new(0, 2, 0);
+        let n = CHUNK_SIZE;
+        let o = [c.x * n, c.y * n, c.z * n];
+        let pond = |middle: u16| {
+            let mut source = dwell_world::VoxelWorld::new(dwell_world::empty_generator(), None);
+            for y in 3..=8 {
+                for z in 3..=9 {
+                    for x in 3..=9 {
+                        let wall = y == 3 || x == 3 || x == 9 || z == 3 || z == 9;
+                        let m = if wall {
+                            stone()
+                        } else if y == 8 {
+                            0
+                        } else if [x, y, z] == [6, 5, 6] {
+                            middle
+                        } else {
+                            water()
+                        };
+                        source.set_voxel(o[0] + x, o[1] + y, o[2] + z, m);
+                    }
+                }
+            }
+            mesh_on_face(&mut source, c, f)
+        };
+        let all_water = pond(water());
+        let flooded = pond(require("dwell:leaves[flooded=true]"));
+        let dry = pond(require("dwell:leaves[flooded=false]"));
+        let water_area = |m: &ChunkMeshes| quad_area(&m.transparent);
+        assert!(
+            (water_area(&flooded) - water_area(&all_water)).abs() < 1e-3,
+            "the flooded leaf's water is the pond's: {} vs {}",
+            water_area(&flooded),
+            water_area(&all_water)
+        );
+        assert!(
+            water_area(&dry) > water_area(&all_water) + 1.0,
+            "a dry leaf has the water's faces round it"
+        );
+        assert_eq!(quads(&flooded.cutout), 6, "the leaf drawn inside the water");
+    }
+);

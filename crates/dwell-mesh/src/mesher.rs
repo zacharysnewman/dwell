@@ -126,7 +126,7 @@ struct Kind {
     /// The solid's geometry (Full: the cube; Shaped: its shape; otherwise none).
     def: Option<&'static ShapeInfo>,
     liquid: bool,
-    /// Shaped blocks with water in their open part.
+    /// Blocks with water in their open part (shaped ones, ladders, plants, leaves).
     flooded: bool,
     /// Ladders: the one face drawn.
     ladder_face: Option<usize>,
@@ -164,9 +164,13 @@ fn make_kind(id: StateId, style: MaterialStyle) -> Kind {
             Some(cube())
         },
         liquid: style.look == Look::Fluid,
-        // Shaped blocks, ladders and plants hold water in a flooded cell (a water plant, block
-        // data `medium: water`, is drawn inside it).
-        flooded: (shaped || style.look == Look::Ladder || style.look == Look::Cross)
+        // Shaped blocks, ladders, plants and see-through full blocks (leaves: the water stands
+        // in their gaps) hold water in a flooded cell (a water plant, block data `medium: water`,
+        // is drawn inside it): the water beside draws no face toward it.
+        flooded: (shaped
+            || style.look == Look::Ladder
+            || style.look == Look::Cross
+            || (!empty && style.render != RenderMode::Opaque))
             && style.flooded,
         occludes: !empty && style.render == RenderMode::Opaque,
         blocks_light: !empty && !shaped && style.render != RenderMode::Translucent,
