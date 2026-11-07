@@ -102,6 +102,7 @@ import {
   type GamepadSettings,
 } from './input/gamepadSettings';
 import { ControllerPanel } from './ui/controllerPanel';
+import { workerCount } from './workerCount';
 
 type Vec3 = [number, number, number];
 
@@ -412,12 +413,6 @@ interface App {
   playing: boolean;
 }
 
-/** Workers per pool: generation and meshing each get this many (fewer on phones). */
-function defaultWorkerCount(mobile: boolean): number {
-  const cores = navigator.hardwareConcurrency || 4;
-  return Math.max(1, Math.min(mobile ? 2 : 4, cores - 2));
-}
-
 function lockPointer(canvas: HTMLCanvasElement): void {
   if ('requestPointerLock' in canvas) {
     Promise.resolve(canvas.requestPointerLock()).catch(() => undefined);
@@ -628,7 +623,8 @@ async function start(): Promise<App | null> {
       // A terrain world's maps (ADR 0049): cached, or built in workers, never on this thread.
       prepareWorld: (seed: bigint, version: number) =>
         worldMaps(seed, version, mapDeps()) ?? Promise.resolve(null),
-      workers: defaultWorkerCount(mobile),
+      // Per pool (generation, meshing); ?workers=N overrides it (docs/DEV_TOOLS.md).
+      workers: workerCount(location.search, navigator.hardwareConcurrency, mobile),
       // ?lod=0 or ?lod=off: no distant terrain at all (a debug switch; __dwell.setLod hides it live).
       lod: params.get('lod') !== '0' && params.get('lod') !== 'off',
       lodColors: params.get('lodcolors') === '1',
