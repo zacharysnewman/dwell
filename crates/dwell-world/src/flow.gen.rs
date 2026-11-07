@@ -27,6 +27,9 @@ pub const FLOW: FlowData = FlowData {
     river_current_max_ms: 1.5,
     river_fall_reach_m: 256.0,
     river_current_band_m: 0.2,
+    slosh_damp_s: 30.0,
+    slosh_mean_s: 120.0,
+    slosh_speed_ms: 0.05,
     liquids: &[
         LiquidFlow { block: "dwell:water", manning: 0.03, weir: 1.7, running: "dwell:running_water" },
     ],
