@@ -1151,3 +1151,104 @@ dwell_world::both_faces!(
         );
     }
 );
+
+impl Scene {
+    /// The water chunks with column x 0..48, z 0 awake (the fixture river's and basin's three).
+    fn chunks_awake(&self) -> usize {
+        (0..3)
+            .filter(|&cx| {
+                self.water
+                    .index
+                    .get(&(self.f, cx, 0))
+                    .is_some_and(|&c| self.water.chunks[c as usize].awake)
+            })
+            .count()
+    }
+    /// Runs `secs` of water time; returns the seconds any of the three chunks was awake, and the
+    /// cells written.
+    fn awake_for(&mut self, secs: usize) -> (usize, usize) {
+        let (mut awake, mut writes) = (0, 0);
+        for _ in 0..secs {
+            writes += self.run(1);
+            awake += usize::from(self.chunks_awake() > 0);
+        }
+        (awake, writes)
+    }
+}
+
+/// Water minutes a reservoir behind a dam has to fill to its spill (the fixture's, 1.1 m over
+/// 72 m² at 0.3 m³/s: about 5) and to settle (BUGS.md #41).
+const SPILL_S: usize = 1200;
+
+fn reservoir_body(f: FaceFrame) {
+    // BUGS.md #41's remaining part: the full reservoir behind a dam never slept. Its river
+    // runs steadily over the crest and down to the loaded world's edge, and a sleeping chunk
+    // was taken to carry no flow, so a chunk asleep beside an awake one owed the whole river
+    // and woke at once, and the chain never slept together. Open: the reservoir's chunks are
+    // awake for all of the last 5 minutes (BUGS.md #41 lists what was tried).
+    let mut s = Scene::new(f);
+    s.with_river_map();
+    s.flat_river(2);
+    s.run(2);
+    s.dam(24, 3);
+    s.run(SPILL_S);
+    let up = s.level(12, 1).expect("the reservoir");
+    assert!(up > 2.0, "filled to its spill (the crest at 2 m): {up:.3}");
+    let (awake, writes) = s.awake_for(300);
+    let now = s.level(12, 1).expect("the reservoir");
+    assert!(
+        awake <= 30 && writes == 0,
+        "the spilling reservoir settles: awake {awake} of the last 300 s, {writes} cells written"
+    );
+    assert!(
+        (now - up).abs() < 0.01,
+        "its level steady: {up:.4} → {now:.4}"
+    );
+}
+
+/// BUGS.md #41, still open (the reservoir's chunks awake for all of the last 5 minutes); run by
+/// hand with `-- --ignored`.
+#[test]
+#[ignore = "BUGS.md #41, open: a reservoir spilling over its dam never falls asleep"]
+fn a_reservoir_filled_to_its_spill_falls_asleep() {
+    // both-faces: runs the body on each face itself
+    for f in [FaceFrame::A, FaceFrame::B] {
+        reservoir_body(f);
+    }
+}
+
+fn stirred_body(f: FaceFrame) {
+    // Deep still water's slosh, which Manning's friction barely damps, keeps a stirred basin
+    // awake: a 40 m basin 3.5 m deep, a block column dropped in at one end, sloshes ±1 cm and
+    // stays awake for all of 30 water minutes. Open (BUGS.md #41): a drag on slow water
+    // (60 s under 5 cm/s) settled it in 8 minutes but slowed a cut lake's last levelling so it
+    // slept off level (`tests/water.rs` `a_lake_cut_open_drains_on_after_its_player_leaves`).
+    let mut s = Scene::new(f);
+    s.fill([0, -5, 0], [39, -1, 7], M.water);
+    s.basin(0, 39, 0, 7, 2);
+    s.run(2);
+    let col: Vec<(i32, i32, i32)> = (1..=3)
+        .flat_map(|x| (2..=4).flat_map(move |z| (-5..=1).map(move |r| (x, r, z))))
+        .collect();
+    s.edit(&col, require("dwell:stone"));
+    s.run(10);
+    let v0 = s.water.free_volume();
+    s.run(600);
+    let (awake, writes) = s.awake_for(300);
+    assert!(
+        awake == 0 && writes == 0,
+        "the stirred basin settles: awake {awake} of 300 s after ten minutes, {writes} cells"
+    );
+    let v1 = s.water.free_volume();
+    assert!((v1 - v0).abs() < 0.01, "conserved: {v0:.4} → {v1:.4}");
+}
+
+/// BUGS.md #41, still open: run by hand with `-- --ignored`.
+#[test]
+#[ignore = "BUGS.md #41, open: stirred deep water sloshes on, awake"]
+fn stirred_deep_water_settles() {
+    // both-faces: runs the body on each face itself
+    for f in [FaceFrame::A, FaceFrame::B] {
+        stirred_body(f);
+    }
+}
