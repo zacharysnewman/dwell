@@ -1151,3 +1151,82 @@ dwell_world::both_faces!(
         );
     }
 );
+
+#[test]
+#[ignore]
+fn explore_reservoir() {
+    let f = FaceFrame::A;
+    let mut s = Scene::new(f);
+    s.with_river_map();
+    s.flat_river(2);
+    s.run(2);
+    s.dam(24, 3);
+    for m in 0..40 {
+        let w = s.run(60);
+        let awake: Vec<bool> = (0..3)
+            .map(|cx| {
+                s.water
+                    .index
+                    .get(&(f, cx, 0))
+                    .is_some_and(|&c| s.water.chunks[c as usize].awake)
+            })
+            .collect();
+        eprintln!(
+            "min {:>2}: writes {w:>4} awake {awake:?} lv12 {:.4} lv23 {:.4} lv30 {:?} lv39 {:?} free {:.2}",
+            m + 1,
+            s.level(12, 1).unwrap_or(-9.0),
+            s.level(23, 1).unwrap_or(-9.0),
+            s.level(30, 1),
+            s.level(39, 1),
+            s.water.free_volume()
+        );
+    }
+}
+
+#[test]
+#[ignore]
+fn explore_stirred() {
+    let f = FaceFrame::A;
+    let mut s = Scene::new(f);
+    s.fill([0, -5, 0], [39, -1, 7], M.water);
+    s.basin(0, 39, 0, 7, 2);
+    s.run(2);
+    let stone = require("dwell:stone");
+    let col: Vec<(i32, i32, i32)> = (1..=3)
+        .flat_map(|x| (2..=4).flat_map(move |z| (-5..=1).map(move |r| (x, r, z))))
+        .collect();
+    s.edit(&col, stone);
+    let mut last = s.water.free_volume();
+    let dbg = std::env::var("DBG").is_ok();
+    for m in 0..30 {
+        let mut w = 0;
+        for sec in 0..60 {
+            w += s.run(1);
+            let v = s.water.free_volume();
+            if dbg && (v - last).abs() > 1e-3 {
+                let st: Vec<String> = (0..3)
+                    .filter_map(|cx| s.water.index.get(&(f, cx, 0)).map(|&c| &s.water.chunks[c as usize]))
+                    .map(|k| format!("[aw {} owed {:.3} rate {:.4} wet {}]", k.awake, k.owed, k.rate, k.wet()))
+                    .collect();
+                eprintln!("  m{m} s{sec}: free {last:.4} -> {v:.4} {}", st.join(" "));
+            }
+            last = v;
+        }
+        let awake: Vec<bool> = (0..3)
+            .map(|cx| {
+                s.water
+                    .index
+                    .get(&(f, cx, 0))
+                    .is_some_and(|&c| s.water.chunks[c as usize].awake)
+            })
+            .collect();
+        eprintln!(
+            "min {:>2}: writes {w:>4} awake {awake:?} lv5 {:.4} lv20 {:.4} lv38 {:.4} free {:.3}",
+            m + 1,
+            s.level(5, 3).unwrap_or(-9.0),
+            s.level(20, 3).unwrap_or(-9.0),
+            s.level(38, 3).unwrap_or(-9.0),
+            s.water.free_volume()
+        );
+    }
+}
