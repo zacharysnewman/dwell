@@ -164,7 +164,10 @@ now, or later allow a few stacked water layers in the columns that have overhang
   water's less the rest's by the column's share, as its account counts it; `kept`) and its free
   columns' whole balance (`drift`). Asleep it owes its drift, and across each edge toward an awake
   chunk only how far the flow there drifts from what it kept; between two sleepers nothing is
-  owed (each keeps its side, so the accounts agree). A steady river runs through sleeping chunks
+  owed (each keeps its side, so the accounts agree). A chunk falling asleep beside a sleeper keeps
+  that sleeper's flow for their shared edge, not its own (0.49.52, BUGS.md #48): two chunks that fell
+  asleep at different moments of a swing would otherwise keep different flows over one edge and make
+  or lose water between them (+1.07 m³ in 900 s of a stirred 3.5 m basin; now within 1 L). A steady river runs through sleeping chunks
   owing nothing. Two rules keep a draining bed from sleeping wet: a film out of the rest (under
   the sleep band deep) that fell at all in its calm window (`FILM_FALL`, 0.1 mm) is not calm, and a
   sleeper owing half the free water it has (and having more than 0.01 m³) wakes to pay it.
