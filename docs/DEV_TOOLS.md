@@ -475,8 +475,72 @@ natively (p95 ~8 against ~11 ms: chunk uploads and job results applied faster). 
 is a little tighter (interval p95 17.7–18.0 against 18.6) and the start and settle are faster
 (4.7–5.8 s to playing against 6.3–9.1 s; the world map and the server's generation on native
 threads). A gain in drawn frames would need a GPU-bound case where native is cheaper, which these
-views do not show; a heavier view (a larger window, High water, a CPU-bound flight at level 6) is
-the next comparison.
+views do not show; the GPU-bound comparison below looks for one.
+
+### Native vs Chrome, GPU-bound (M1 MacBook Air, 2026-11-07)
+
+The owner's "GPU heavy" follow-up: a view where the GPU is the limit, so any native gain in drawn
+frames would show. Same commit (0.50.5) both ways, on AC power, each pair back to back after the
+1-minute load fell under 2.5. The Air's full-screen drawing buffer, 2560×1600: Chrome a 1280×800
+viewport at `?scale=2` (a `--compare` configuration's `scale`; the page's pixel ratio is
+min(DPR, 2) × scale), native `--size 1280x800 --pixel-ratio 2`. Settings High (`settings`: water
+`high`, shadows `high`, clouds `high`), the clock held at noon (`time` 0.5). Two views, seed 0,
+fresh world spawned at the dam (`at` / `--at 2364.5,142,7443.5`): `gpu-dam`, the camera 6 m over
+the river by the dam looking down at 40° (`camera`, the water at its heaviest: refraction,
+caustics, reflections across most of the screen), 8 s; and `gpu-fly`, flying at level 6 for
+10 s (yaw 90, pitch −10; motion blur on). Unthrottled runs twice (cells run 1 / run 2), the
+vsync run once. The scenarios were a scratch file, not in `client/bench/scenarios.json`
+(`goto` is browser-only, so the dam view is a fixed `camera`).
+
+Unthrottled (Chrome `--unthrottled`, native `--present immediate`):
+
+| | Chrome dam | Native dam | Chrome flight | Native flight |
+| --- | --- | --- | --- | --- |
+| Frames drawn a second | 42.8 / 42.4 | 39.7 / 39.7 | 54.8 / 55.1 | 51.0 / 51.4 |
+| Drawn-frame interval p50 (ms) | 22.7 / 22.8 | 24.9 / 25.0 | 21.9 / 21.6 | 18.8 / 18.8 |
+| Drawn-frame interval p95 (ms) | 26.1 / 39.2 | 25.4 / 25.2 | 24.5 / 24.4 | 19.3 / 19.1 |
+| `gpu.frame` mean (ms) | 20.8 / 21.1 | 25.1 / 25.2 | 14.9 / 14.8 | 19.6 / 19.5 |
+| `gpu.frame` p95 (ms) | 21.4 / 22.0 | 25.7 / 25.7 | 19.8 / 20.0 | 24.9 / 24.8 |
+| `gpu.composite` mean (ms) | 16.3 / 16.5 | 19.3 / 19.3 | 7.8 / 7.8 | 11.1 / 11.1 |
+| CPU per drawn frame, mean (ms) ¹ | 3.96 / 4.06 | 2.07 / 2.08 | 3.87 / 3.75 | 2.10 / 2.07 |
+| CPU per drawn frame, p95 (ms) ¹ | 4.80 / 5.00 | 2.16 / 2.16 | 7.50 / 7.60 | 2.28 / 2.13 |
+| Loops skipped a second ² | 45 / 45 | 3149 / 3126 | 42 / 43 | 3015 / 3024 |
+
+Vsync (Chrome default, native `--present fifo`):
+
+| | Chrome dam | Native dam | Chrome flight | Native flight |
+| --- | --- | --- | --- | --- |
+| Frames drawn a second | 42.3 | 40.7 | 57.1 | 52.2 |
+| Drawn-frame interval p50 (ms) | 17.7 | 24.4 | 16.7 | 18.5 |
+| Drawn-frame interval p95 (ms) | 35.2 | 24.7 | 18.8 | 19.2 |
+| `gpu.frame` mean (ms) | 20.8 | 24.5 | 14.8 | 19.0 |
+| `gpu.frame` p95 (ms) | 21.4 | 25.1 | 19.6 | 24.0 |
+| `gpu.composite` mean (ms) | 16.3 | 19.7 | 7.8 | 11.8 |
+| CPU per drawn frame, mean (ms) ¹ | 4.29 | 1.68 | 4.03 | 1.88 |
+| CPU per drawn frame, p95 (ms) ¹ | 5.40 | 1.98 | 8.70 | 2.09 |
+| Loops skipped a second ² | 18 | 1585 | 3 | 1207 |
+
+¹ Chrome's `frame.cpu`, native `frame.busy`, over the frames that drew (the raw frames with a
+`draw.render`). ² `draw.skipped`: loop passes that did not draw because two frames were still on the
+GPU (`render/pacing.rs`). Chrome's loop is `requestAnimationFrame`; the native loop is winit's
+`ControlFlow::Poll`, which spins, so its count is thousands a second and not comparable. Drawn
+frames a second are `gpu.frame`'s sample count (one per drawn frame) over the record's seconds.
+
+What it says: **no, native does not draw more frames when the GPU is the limit; it draws a few
+fewer.** At the dam both are GPU-bound at about 40 fps (Chrome ~42, native ~40, 6% fewer); in the
+flight Chrome ~55, native ~51 (7% fewer). The same WGSL takes 3.5–4.5 ms more GPU time natively (dam ~20.8 against
+~24.5–25 ms), and almost all of it is in the full-screen passes that write the final image:
+`gpu.composite` (+3–3.5 ms) and in flight `gpu.motion` (+3.5 ms), while the scene passes (`near`,
+`near.water`, `far`) cost the same. The CPU per drawn frame is half Chrome's natively (~2 against
+~4 ms, p95 ~2.2 against 5–9 ms) but at 20–25 ms of GPU a frame that does not move the frame rate.
+Under vsync the picture is the same: Chrome ~42 fps at the dam with frames alternating one and two
+refreshes (interval p50 17.7, p95 35 ms), native ~41 fps at an even ~24.4 ms (Fifo in a window
+does not hold it to whole refreshes); in flight Chrome 57, native 52. Neither reaches 60 at the dam. Not looked into: why the
+full-screen passes cost more natively. Leads are the surface
+(native writes straight into the `CAMetalLayer` drawable, Bgra8Unorm; Chrome into its canvas
+texture, which its compositor then draws), and the native loop spinning a core (`ControlFlow::Poll`)
+on a chip whose CPU and GPU share power and memory bandwidth. Whatever native gains, it is not GPU
+time, so the GPU budget is the one to spend work on.
 
 ## Play advanced (the main menu)
 
