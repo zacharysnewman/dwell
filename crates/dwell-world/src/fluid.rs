@@ -14,8 +14,12 @@ use crate::{FaceFrame, cell_of_pos, m_of_row, m_of_rows_f};
 pub struct EyeFluid {
     pub fluid: FluidId,
     /// World y (m) of the drawn surface above the eye (on face B, below it in world y), when it is
-    /// within [`SURFACE_SCAN`] cells; deeper, the top of the last cell scanned.
+    /// within [`SURFACE_SCAN`] cells; deeper, the top of the last cell scanned. With the eye above
+    /// the surface (within the reach asked for), the surface below it.
     pub surface_y: f64,
+    /// Whether the eye itself is under the surface (else it is above it, within the reach: the
+    /// renderer splits the view along the waterline, WATER_RENDERING.md §10).
+    pub under: bool,
 }
 
 /// How many cells above the eye's are searched for the surface.
@@ -34,14 +38,21 @@ pub fn fluid_of(id: StateId) -> Option<FluidId> {
     dwell_blocks::state("dwell:water").and_then(|w| info(w).fluid)
 }
 
-/// The fluid whose drawn surface the eye is under, if any. `voxel` reads the state at a cell.
+/// The fluid whose drawn surface the eye is under, or is above by at most `reach` metres (the
+/// waterline's band: 0 for under only), if any. `voxel` reads the state at a cell.
 pub fn eye_fluid(
     eye: [f64; 3],
+    reach: f64,
     mut voxel: impl FnMut(i32, i32, i32) -> StateId,
 ) -> Option<EyeFluid> {
-    let [x, y, z] = cell_of_pos(eye);
-    let fluid = fluid_of(voxel(x, y, z))?;
-    let up = FaceFrame::at_row(y).sign();
+    let frame = FaceFrame::at_row(cell_of_pos(eye)[1]);
+    let up = frame.sign();
+    // The eye's cell, else (the eye above the water) the cell `reach` below it toward the ground.
+    let low = [eye[0], eye[1] - f64::from(up) * reach, eye[2]];
+    let (fluid, [x, y, z]) = [eye, low].into_iter().find_map(|p| {
+        let c = cell_of_pos(p);
+        fluid_of(voxel(c[0], c[1], c[2])).map(|f| (f, c))
+    })?;
     // The topmost cell of this fluid in the eye's column (toward the face's up).
     let mut top = y;
     while (top - y).abs() < SURFACE_SCAN && fluid_of(voxel(x, top + up, z)) == Some(fluid) {
@@ -56,12 +67,13 @@ pub fn eye_fluid(
         (_, false) => m_of_row(top) + drop,
         (_, true) => m_of_row(top),
     };
-    let under = if up > 0 {
-        eye[1] < surface_y
-    } else {
-        eye[1] > surface_y
-    };
-    under.then_some(EyeFluid { fluid, surface_y })
+    // Face-local heights: the eye's over the surface's.
+    let above = frame.y(eye[1]) - frame.y(surface_y);
+    (above <= reach).then_some(EyeFluid {
+        fluid,
+        surface_y,
+        under: above < 0.0,
+    })
 }
 
 #[cfg(test)]
@@ -83,7 +95,10 @@ mod tests {
             )
         }
         fn at(&self, eye: [f64; 3]) -> Option<EyeFluid> {
-            eye_fluid(eye, |x, y, z| *self.0.get(&(x, y, z)).unwrap_or(&AIR))
+            eye_fluid(eye, 0.0, |x, y, z| *self.0.get(&(x, y, z)).unwrap_or(&AIR))
+        }
+        fn near(&self, eye: [f64; 3], reach: f64) -> Option<EyeFluid> {
+            eye_fluid(eye, reach, |x, y, z| *self.0.get(&(x, y, z)).unwrap_or(&AIR))
         }
     }
 
@@ -106,7 +121,8 @@ mod tests {
             col.at([0.5, up(10, 0.8), 0.5]),
             Some(EyeFluid {
                 fluid: water(),
-                surface_y: up(10, 0.875)
+                surface_y: up(10, 0.875),
+                under: true,
             })
         );
     }
@@ -147,7 +163,8 @@ mod tests {
             col.at([0.5, up(y, 0.2), 0.5]),
             Some(EyeFluid {
                 fluid: water(),
-                surface_y: up(y, 0.125)
+                surface_y: up(y, 0.125),
+                under: true,
             })
         );
         let deep = Column::new(&[(y, "dwell:water"), (y - 1, "dwell:water")]);
@@ -164,4 +181,29 @@ mod tests {
         let at = col.at([0.5, up(0, 0.5), 0.5]).expect("under");
         assert_eq!(at.surface_y, crate::m_of_row(SURFACE_SCAN + 1));
     }
+
+    crate::both_faces!(
+        fn an_eye_just_above_the_surface_finds_it_within_the_reach_for_the_waterline(f: FaceFrame) {
+            // Face-local: stone at row 9, water at row 10 under air; the surface at 0.875 of row 10.
+            let col = Column(
+                [(9, "dwell:stone"), (10, "dwell:water")]
+                    .iter()
+                    .map(|&(y, s)| ((0, f.row(y), 0), require(s)))
+                    .collect(),
+            );
+            let surface = up(10, 0.875);
+            let eye = |h: f64| f.point([0.5, surface + h, 0.5]);
+            // 0.2 m above: under-only finds nothing; a 0.3 m reach finds the surface below.
+            assert_eq!(col.at(eye(0.2)), None);
+            let near = col.near(eye(0.2), 0.3).expect("within the reach");
+            assert!(!near.under);
+            assert!((f.y(near.surface_y) - surface).abs() < 1e-9);
+            // Further than the reach (the eye in the air cell above): none.
+            assert_eq!(col.near(eye(0.4), 0.3), None);
+            // Just under: under, with the same surface.
+            let under = col.near(eye(-0.05), 0.3).expect("under");
+            assert!(under.under);
+            assert!((f.y(under.surface_y) - surface).abs() < 1e-9);
+        }
+    );
 }

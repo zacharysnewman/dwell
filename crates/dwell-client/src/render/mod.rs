@@ -155,11 +155,17 @@ pub fn pixel_art_for(
 }
 
 /// The frame uniform's `water` vec4 (shaders.rs `Frame`): x 1 when the eye is under a fluid's
-/// drawn surface, y its fluid id, z the surface's world y (zeros when it isn't); w the water
-/// quality.
+/// drawn surface, 2 when it is just above it (within the waterline's reach: each pixel is under or
+/// not by its own ray, WATER_RENDERING.md §10), y its fluid id, z the surface's world y (zeros
+/// when there is none); w the water quality.
 fn water_uniform(eye_fluid: Option<EyeFluid>, quality: WaterQuality) -> [f32; 4] {
     match eye_fluid {
-        Some(e) => [1.0, f32::from(e.fluid), e.surface_y as f32, quality.level()],
+        Some(e) => [
+            if e.under { 1.0 } else { 2.0 },
+            f32::from(e.fluid),
+            e.surface_y as f32,
+            quality.level(),
+        ],
         None => [0.0, 0.0, 0.0, quality.level()],
     }
 }
@@ -5140,10 +5146,18 @@ mod tests {
         let e = EyeFluid {
             fluid: 0,
             surface_y: -12.125,
+            under: true,
         };
         assert_eq!(
             water_uniform(Some(e), WaterQuality::High),
             [1.0, 0.0, -12.125, 2.0]
+        );
+        // Just above the surface, within the waterline's reach: 2, so the composite splits the
+        // view per pixel (WATER_RENDERING.md §10).
+        let above = EyeFluid { under: false, ..e };
+        assert_eq!(
+            water_uniform(Some(above), WaterQuality::Low),
+            [2.0, 0.0, -12.125, 0.0]
         );
         assert_eq!(water_uniform(None, WaterQuality::Medium)[3], 1.0);
     }
@@ -5839,6 +5853,7 @@ mod tests {
             r.set_eye_fluid((frame % 2 == 1).then_some(EyeFluid {
                 fluid: 0,
                 surface_y: 5.0,
+                under: true,
             }));
             r.set_water_quality(water::WaterQuality::from_level(frame as u32));
             for x in 0..=frame {

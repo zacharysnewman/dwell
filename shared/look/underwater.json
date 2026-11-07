@@ -1,0 +1,17 @@
+{
+  "$comment": "How the view looks from inside a fluid (docs/WATER_RENDERING.md §10, the waterline; owner, 2026-11-07: 'a clean waterline like this: currently our fog shows up too early and we don't have a clean line', with a photo of a camera half under clear tropical water). Per fluid, by its name in the block registry (a fluid not listed takes `default`). Each pixel is under the fluid when its view ray, lensM metres out from the eye, is below the fluid's surface over the eye's column, raised and lowered by the line's waves: with the eye at the surface the screen splits along a crisp line (the drawn surface is flat, so the line's waves are the lens's, not the mesh's). lensM: how far out the split is decided (m; larger, the eye shows a split over a deeper band around the surface, ±lensM). line.amplitudeM, line.wavelengthM, line.speed: the line's waves (m, m, cycles a second; amplitude 0: a straight line). meniscus: the thin bright band along the line where the surface meets the lens: color (sRGB), strength (0 to 1; 0: none) and widthPx (its half-width on screen, px of the drawing buffer). fog: the fluid's absorption and scattering (the block registry's fluid look) over the distance in the fluid, but only past clearM metres (0: from the eye) and scaled by density (1: the registry's own rates, as from above; lower reads clearer and farther, higher murkier). Run `node shared/look/underwater.mjs` after editing; CI fails if crates/dwell-look/src/underwater.gen.rs is stale. The content is prototype (ARCHITECTURE.md §6.1).",
+  "default": {
+    "lensM": 0.05,
+    "line": { "amplitudeM": 0, "wavelengthM": 1, "speed": 0 },
+    "meniscus": { "color": "#ffffff", "strength": 0, "widthPx": 1 },
+    "fog": { "clearM": 0, "density": 1 }
+  },
+  "fluids": {
+    "dwell:water": {
+      "lensM": 0.3,
+      "line": { "amplitudeM": 0.012, "wavelengthM": 0.9, "speed": 0.35 },
+      "meniscus": { "color": "#f2fbff", "strength": 0.55, "widthPx": 2.5 },
+      "fog": { "clearM": 3, "density": 0.3 }
+    }
+  }
+}

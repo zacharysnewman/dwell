@@ -28,6 +28,7 @@ pub mod shadows;
 mod shadows_gen;
 pub mod spyglass;
 pub mod waterfalls;
+pub mod underwater;
 pub mod waterflow;
 
 use daynight::{DAY_NIGHT, DayState, Sample};
