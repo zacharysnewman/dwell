@@ -62,8 +62,11 @@ fn run_out(
         cost.body_ticks += f.server.body_count();
         cost.bodies.push(f.server.body_count());
         let (_, _, players) = f.server.sim();
-        cost.builds
-            .push(players.terrain().map_or(0, dwell_physics::terrain::TerrainCollision::loads));
+        cost.builds.push(
+            players
+                .terrain()
+                .map_or(0, dwell_physics::terrain::TerrainCollision::loads),
+        );
         cost.pair_ticks += f
             .server
             .physics()

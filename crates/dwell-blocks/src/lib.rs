@@ -25,8 +25,9 @@ pub mod fixture {
 
 pub use registry::*;
 pub use table::{
-    Block, NewBlock, Origin, Property, block, block_count, block_of, blocks, canonical, info,
-    intern, is_build_state, register, same_definition, state_count, try_info,
+    Block, NewBlock, Origin, Property, block, block_count, block_of, blocks, canonical,
+    collision_class, info, intern, is_build_state, register, same_definition, state_count,
+    try_info,
 };
 pub use tables::{
     BLOCKS, FLUIDS, LIGHTS, PROPERTIES, PROPERTY_VALUES, REGISTRY_HASH, SHAPE_FACES, SHAPES, STATES,
