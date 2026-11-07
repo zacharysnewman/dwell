@@ -406,6 +406,16 @@ fn dam_blast() -> (Fixture, dwell_sim::jobs::JobRunner, f64, String) {
     );
     f.server.step();
     f.take_all();
+    // The player steps 10 m back (as the browser check's did) and watches.
+    let h = f.server.player_handle_of(1).expect("a live player");
+    let (_, physics, players) = f.server.sim();
+    let at = players.position(physics, h);
+    players.teleport(
+        physics,
+        h,
+        at - dwell_physics::DVec3::new(0.0, 0.0, 10.0) + dwell_physics::DVec3::Y,
+        dwell_physics::Vec3::ZERO,
+    );
     let fuse = f.server.fuses().first().expect("lit").1;
     for _ in 1..fuse {
         f.server.step();

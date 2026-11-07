@@ -111,4 +111,6 @@ export interface ServerStats {
   advanceMaxMs: number;
   water: 'worker' | 'inline';
   waterStats: WaterStats;
+  /** Each tick phase's time over the second (ms, summed; `Server::tick_phases`' names). */
+  phasesMs: Record<string, number>;
 }
