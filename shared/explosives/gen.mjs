@@ -16,6 +16,7 @@ export const EXPLOSIVE_RANGES = {
   fuseSeconds: [0, 60],
   radiusM: [0.5, 16],
   destroyRadiusM: [0, 16],
+  loosenRadiusM: [0.5, 16],
   impulse: [0, 1e6],
   falloff: [0, 8],
   lift: [0, 4],
@@ -24,6 +25,7 @@ export const EXPLOSIVE_RANGES = {
   knockbackMs: [0, 100],
   damage: [0, 1000],
   waterRadiusM: [0, 16],
+  noPieceContactS: [0, 10],
 };
 
 /** Each effect's numbers (and its colour, if it has one): field → [min, max]; pairs are [lo, hi] ranges. */
@@ -99,6 +101,7 @@ export function validateExplosives(data, blocks = registryBlocks()) {
     e.ignitedBy.forEach((b, k) => block(b, `${at}.ignitedBy[${k}]`));
     for (const [k, [lo, hi]] of Object.entries(EXPLOSIVE_RANGES)) number(e[k], `${at}.${k}`, lo, hi);
     if (e.destroyRadiusM > e.radiusM) bad(`${at}.destroyRadiusM must be at most its radiusM`);
+    if (e.loosenRadiusM < e.radiusM) bad(`${at}.loosenRadiusM must be at least its radiusM`);
     pair(e.chainDelaySeconds, `${at}.chainDelaySeconds`, 0, 60);
     object(e.effects, `${at}.effects`);
     keys(e.effects, `${at}.effects`, Object.keys(EFFECT_RANGES));

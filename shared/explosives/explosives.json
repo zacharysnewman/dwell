@@ -1,5 +1,5 @@
 {
-  "$comment": "Explosives (docs/EXPLOSIVES.md; owner, 2026-11-06: \"dynamite block that explodes after a short time when placed, it causes blocks in a radius to be affected by physics and appropriate force applied\"). Each entry is a placed block (`block`, placed unlit) and the block it becomes while its fuse burns (`lit`). `ignitedBy`: the held items' blocks (shared/blocks) whose Place aimed at the unlit block lights it instead of placing (a torch held against it). fuseSeconds: the fuse once lit. radiusM: every block within it (its cell centre) is affected, but liquids and `indestructible` blocks: within destroyRadiusM (at most radiusM) it is destroyed outright (no piece), and from there out to radiusM it becomes a flung natural piece (owner, 2026-11-06: 5 m, the inner 2 m destroyed); impulse (N·s): what a block at the centre is given, along the line from the blast (lifted by `lift`, a share of the face's up added before normalising), times the falloff share (1 − d / radiusM)^falloff, so its speed is that over its mass (½ m³ × density) and a heavy block at the edge barely moves; maxSpeedMs caps it. Players and bodies within reachM: a speed change of knockbackMs, times (1 − d / reachM)^falloff; bodies get impulse × that share. Damage only within destroyRadiusM (owner, 2026-11-06; walls don't shield): damage points (health 100) × (1 − d / destroyRadiusM)^falloff to a player (standing on it kills; past it, pushed but unhurt). waterRadiusM: liquid cells within it are blown out (cleared; the water host refills the crater from round it). chainDelaySeconds: an unlit explosive caught in a blast is lit with a fuse drawn from this range, and a lit one's fuse is cut to it if longer. The effects are the clients' (Settings → Explosions): flash (a short point light and a fireball billboard), smoke and dust (billboard puffs; cpuCount on a CPU adapter), the boom (the event `explode` of the block's sound set: full within fullM, gone at hearM), a camera shake within radiusM. `limits`: the most blasts the server sets off a tick (more wait a tick) and the most pieces one blast flings (the farthest cells beyond go as they are). Prototype content (ARCHITECTURE.md §6.1). Run `node shared/explosives/gen.mjs` after editing; CI fails if crates/dwell-world/src/explosives.gen.rs is stale.",
+  "$comment": "Explosives (docs/EXPLOSIVES.md; owner, 2026-11-06: \"dynamite block that explodes after a short time when placed, it causes blocks in a radius to be affected by physics and appropriate force applied\"). Each entry is a placed block (`block`, placed unlit) and the block it becomes while its fuse burns (`lit`). `ignitedBy`: the held items' blocks (shared/blocks) whose Place aimed at the unlit block lights it instead of placing (a torch held against it). fuseSeconds: the fuse once lit. radiusM: every block within it (its cell centre) is affected, but liquids and `indestructible` blocks: within destroyRadiusM (at most radiusM) it is destroyed outright (no piece), and from there out to radiusM it becomes a flung natural piece (owner, 2026-11-06: 4 m, the inner 2 m destroyed; was 5 m); loosenRadiusM (at least radiusM): blocks from radiusM out to it become pieces too, given no impulse (they slump and fall; equal to radiusM, none); impulse (N·s): what a block at the centre is given, along the line from the blast (lifted by `lift`, a share of the face's up added before normalising), times the falloff share (1 − d / radiusM)^falloff, so its speed is that over its mass (½ m³ × density) and a heavy block at the edge barely moves; maxSpeedMs caps it (owner, 2026-11-06: the impulse, the cap and the knockback ×1.5 of the 5 m blast's). noPieceContactS: for that long a blast's pieces don't touch one another (only the terrain, players and other bodies); after it each piece touches the others again once it overlaps none (0: always touching). Players and bodies within reachM: a speed change of knockbackMs, times (1 − d / reachM)^falloff; bodies get impulse × that share. Damage only within destroyRadiusM (owner, 2026-11-06; walls don't shield): damage points (health 100) × (1 − d / destroyRadiusM)^falloff to a player (standing on it kills; past it, pushed but unhurt). waterRadiusM: liquid cells within it are blown out (cleared; the water host refills the crater from round it). chainDelaySeconds: an unlit explosive caught in a blast is lit with a fuse drawn from this range, and a lit one's fuse is cut to it if longer. The effects are the clients' (Settings → Explosions): flash (a short point light and a fireball billboard), smoke and dust (billboard puffs; cpuCount on a CPU adapter), the boom (the event `explode` of the block's sound set: full within fullM, gone at hearM), a camera shake within radiusM. `limits`: the most blasts the server sets off a tick (more wait a tick) and the most pieces one blast flings (the farthest cells beyond go as they are). Prototype content (ARCHITECTURE.md §6.1). Run `node shared/explosives/gen.mjs` after editing; CI fails if crates/dwell-world/src/explosives.gen.rs is stale.",
   "limits": {
     "blastsPerTick": 1,
     "maxPieces": 1200
@@ -11,16 +11,18 @@
       "lit": "dwell:lit_dynamite",
       "ignitedBy": ["dwell:torch"],
       "fuseSeconds": 3,
-      "radiusM": 5,
+      "radiusM": 4,
       "destroyRadiusM": 2,
-      "impulse": 9000,
+      "loosenRadiusM": 4,
+      "impulse": 13500,
       "falloff": 1.5,
       "lift": 0.5,
-      "maxSpeedMs": 22,
+      "maxSpeedMs": 33,
       "reachM": 7,
-      "knockbackMs": 22,
+      "knockbackMs": 33,
       "damage": 160,
       "waterRadiusM": 3,
+      "noPieceContactS": 0,
       "chainDelaySeconds": [0.15, 0.6],
       "effects": {
         "flash": { "color": "#ffd9a0", "strength": 6, "lightRadiusM": 18, "seconds": 0.3, "sizeM": 4 },

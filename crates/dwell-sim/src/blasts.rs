@@ -24,6 +24,9 @@ pub struct Fuses {
     pub per_tick: u32,
     /// Cells one blast flings at most (`limits.maxPieces`).
     pub max_pieces: usize,
+    /// Blasts' pieces kept apart from one another (`noPieceContactS`), each with the ticks left
+    /// in its window; past it, each rejoins once it overlaps no other piece.
+    pub apart: Vec<(dwell_physics::BodyHandle, u32)>,
 }
 
 impl Default for Fuses {
@@ -33,6 +36,7 @@ impl Default for Fuses {
             burning: Vec::new(),
             per_tick: LIMITS.blasts_per_tick,
             max_pieces: LIMITS.max_pieces as usize,
+            apart: Vec::new(),
         }
     }
 }
