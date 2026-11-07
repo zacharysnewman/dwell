@@ -2556,9 +2556,12 @@ in 0.48.2.
   is dropped; and a column out of the rest is calm only once it moves less than a tenth of its
   water (a film still draining isn't). Read from the state, so saved worlds dry on load.
 - **Sleep.** A chunk whose free levels held within `sleepBandM` (5 mm) for `calmS` (10 s) sleeps
-  and isn't stepped; what awake neighbours send it is kept exactly (`owed`) and it wakes when that
-  would move its water half `wakeBandM` (5 cm) or a shared face jumps (`jumpM2s`); woken, it takes what
-  it owes over `releaseS` (5 s) in proportion to depth. Substeps by the CFL of the deepest awake
+  and isn't stepped; it passes on the flow its edge faces carried as it fell asleep and keeps its
+  balance then (0.49.44, BUGS.md #41b: a river runs through sleeping chunks), so what it owes
+  (`owed`, kept exactly) is its balance and how far its awake neighbours' flows drift from those; it
+  wakes when that would move its water half `wakeBandM` (5 cm), when it owes half its water, or when
+  a shared face jumps (`jumpM2s`); woken, it takes what it owes over `releaseS` (5 s) in proportion to
+  depth. A film out of the rest still falling is never calm, so a draining bed doesn't sleep wet. Substeps by the CFL of the deepest awake
   water (0.7), at most `maxSubsteps` a water tick. Inline (on the server's thread) at most
   `stepBudget` (40,000) column-substeps over the awake columns (at least one substep): water runs on
   game time (a water tick of 0.1 s is 7.2 s of water at the default day), and much water awake took

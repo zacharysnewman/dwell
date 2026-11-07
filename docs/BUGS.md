@@ -6,37 +6,39 @@ pins it.
 
 ## Open
 
-### 41b. A reservoir filled behind a dam never falls asleep (the rest of #41)
+### 41b. A reservoir filled behind a dam never falls asleep (the rest of #41; partly fixed in 0.49.44)
 
 *Measured 2026-11-06 (0.49.39), the remaining part of #41.* At seed 0's dam sites
 (`tests/water.rs` `measure_a_raised_dams_churn`, release, 170 water minutes; 0.49.39 as built):
 at z 7452 13–18 water chunks awake (mean 15–17) and 21–1,269 cells written a minute (late mean 241),
 the reservoir spreading again from minute 150; at z 7380 22–32 awake (mean 27) and 0–53 cells a
-minute over its last 40 minutes. Fixtures that reproduce it, both ignored until fixed
-(`water::tests`, run with `-- --ignored`, both faces): `a_reservoir_filled_to_its_spill_falls_asleep`
-(the flat fixture river dammed to 2 m, 20 water minutes: its chunks awake for all of the next 5
-minutes, 45 cells written) and `stirred_deep_water_settles` (a 40 × 8 m basin 3.5 m deep stirred by
-a block column: ±1 cm slosh, awake for all of 30 water minutes, 4,301 cells written in the 5
-minutes after ten).
+minute over its last 40 minutes.
 
-**What was found.** (1) With sleeping off (every chunk awake), seed 0's z 7380 reservoir settles by
-water-minute ~120 to within 2 mm a minute and writes nothing: the water itself is steady. Once chunks
-may sleep, it never is: 2,000–2,700 of the ~2,800 awake columns swing more than 5 mm a minute, the
-shallow sheets beside the reservoir 5–16 cm with a 20–30 s period. The churn is made by the sleep
-transitions: a chunk asleep is taken to carry no flow, so asleep beside a running reach it owes the
-river and wakes, and what it owes comes back over 5 s as a wave; a chunk sleeping 5 mm off a slow
-fill does the same. (2) Deep still water's slosh is barely damped by Manning's friction (the stirred
-basin). **Tried, not kept:** sleeping with each edge face's flow kept at its calm-window mean (a
-sleeping neighbour's mirrored, so the accounts agree exactly) let the fixture reservoir sleep from
-minute 17, and from a steady, fully awake seed-0 reservoir all 37 chunks slept together for ~20
-water minutes, but a wake then cascaded, and it broke `a_hollow_below_a_dam_keeps_its_water_still`
-(a film left to sleep on the bed); a drag on slow water (lost over 60 s under 5 cm/s) settled the
-stirred basin in 8 minutes but slowed a cut lake's last levelling so it slept off level
-(`a_lake_cut_open_drains_on_after_its_player_leaves`); a swing-tolerant calm test (±3 cm, the two
-half-windows' means within half the band), a lumped sleeper taking what it owes as it goes, a
-60 s calm window and a gate on calm neighbours each changed the counts little (16–28 awake). **Next:**
-keep the flows asleep (the mirrored kept flows) with a calm test that a draining film can't pass, and
-a release on waking that is not a wave (taken back as a level, slowly).
+**Fixed in 0.49.44: a sleeping chunk passes its flow on** (owner, 2026-11-06: "if a chunk is
+sleeping, it should be treated as if all the water flows into it"). A chunk asleep was taken to
+carry no flow, so asleep beside a running reach it owed the river, woke, and paid it back over 5 s
+as a wave that woke its neighbours. Falling asleep it now keeps each edge face's flow into it and
+its balance (`water.rs` `keep_edges`, `kept`, `drift`); asleep it owes its balance and, across an
+edge toward an awake chunk, only how far the flow there drifts from what it kept (nothing between
+two sleepers). So a draining bed doesn't sleep wet on its kept flow, a film out of the rest
+(shallower than the sleep band) that fell more than 0.1 mm in its calm window is not calm, and a
+sleeper owing half its free water (over 0.01 m³) wakes. The fixture reservoir
+(`water::tests` `a_reservoir_filled_to_its_spill_falls_asleep`, both faces, no longer ignored):
+red awake all of its last 5 minutes, 45 cells written; green within the test's 30 s and none.
+`a_hollow_below_a_dam_keeps_its_water_still`, `a_lake_cut_open_drains_on_after_its_player_leaves`
+and the seed-0 dry-reach test stay green.
+
+**Still open: deep water's slosh, and seed 0's sites.** `measure_a_raised_dams_churn` after the
+fix: z 7452 14–21 awake, 18–546 cells a minute from minute 120; z 7380 11–29 awake, 3–113 cells a
+minute. Little changed: the deep reservoirs slosh past the sleep band, which is 5 mm
+(`sleepBandM`), not 5 cm. The fixture `stirred_deep_water_settles` (a 40 × 8 m basin 3.5 m deep
+stirred by a block column) still sloshes ±1–2 cm and is awake all of 30 water minutes (ignored).
+Tried before, not kept: a drag on slow water (60 s under 5 cm/s) settled the basin in 8 minutes but
+slowed a cut lake's last levelling (`a_lake_cut_open_drains_on_after_its_player_leaves`); a ±3 cm
+calm test. **Next:** damp only deep water whose rest flow is ~0 and whose level is oscillating
+about a steady mean (the calm window's mean, not its start), or a calm test on the window's mean
+level for deep water with the slosh's volume conserved (the chunk sleeps at its mean, the swing's
+volume kept in `owed`).
 
 ### 34. e2e play.spec's two-client test times out on CI since 0.49.4
 
