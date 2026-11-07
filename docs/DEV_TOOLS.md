@@ -859,7 +859,7 @@ workers). Scratch: the session's scratchpad `fl/` (`gen.py`, `an.py` for the per
 | 6 | 960 m | 57.9 | 16.7 / 17.7 / 34.2 | 30 of 869 | 30 | 10.53 / 14.9 | 6.50 / 10.3 | 1.79 / 3.4 | 0.64 | 1.53 MB, 6.3 chunks | 10.25 / 12.08 | 18.0 / 24.8 |
 | 9 | 1520 m | 56.0 | 16.7 / 33.3 / 34.3 | 59 of 841 | 59 | 11.55 / 15.8 | 7.53 / 10.9 | 1.86 / 3.9 | 0.69 | 1.32 MB, 5.3 chunks | 8.18 / 10.83 | 18.2 / 33.4 |
 | 11 | 4510 m | 57.1 | 16.7 / 17.7 / 51.0 | 37 of 859 | 34 | 9.22 / 15.9 | 5.85 / 9.9 | 1.09 / 3.2 | 0.61 | 0.74 MB, 2.1 chunks + 1.3 sections | 7.70 / 10.65 | 14.7 / 34.1 |
-| 4, still (nothing loading) | 0 | 59.9 | 16.7 / 18.0 / 18.7 | 43 (≤ 18.7) | 0 | 3.32 / 4.0 | 0 | 0 | 1.08 | 0 | 9.16 / 9.50 | 11.7 / 12.7 |
+| 4, 2.5 min in (stopped by a hill: nothing loading) | 0 | 59.9 | 16.7 / 18.0 / 18.7 | 43 (≤ 18.7) | 0 | 3.32 / 4.0 | 0 | 0 | 1.08 | 0 | 9.16 / 9.50 | 11.7 / 12.7 |
 
 The `start` records (the 6 s after joining, every level): 54.8–58.8 fps, `frame.cpu` 9.4–10.7, `gpu.frame`
 9.6–10.5 (p95 12–14; `gpu.shadows` 4.0–4.3 against 1–2.6 in flight, the kept shadow maps redrawn as chunks
@@ -895,8 +895,33 @@ prediction's terrain collision loading at 360 m/s). Workers: `job.chunk` queued 
 - **The machine is full while loading**: in the trace the job workers ran 42 s in 8 s (about 5.2 of the
   M1's 8 cores: four at ~92 %, five more at 7–54 %), Chrome's GPU process 2.2 s and the main thread 4.4.
   Generation and meshing get 4 workers each (`workerCount`, cores − 2 capped at 4, per pool), so the main thread
-  and the GPU process share the efficiency cores with them. `?workers=N` (1–8, a pool) sets it for a visit;
-  WORKERS_RESULT
+  and the GPU process compete with them for cores. `?workers=N` (1–8, a pool) sets it for a visit;
+  at level 4, one page each (load 3.9 → 7.3): 4 workers drew 57.6 fps (34 skips, `frame.cpu` 9.98, settled in
+  10.2 s), 3 drew 54.4 (83, 10.14, 15.3 s), 2 drew 51.8 (120, 11.30, 18.4 s). **Fewer workers did not help**:
+  the main thread's loading work is set by its budgets, not by the cores left over, and the view loads slower.
+  The two level-4 pages at 4 workers drew 52.4 and 57.6: one run's noise at this level is ~5 fps.
+- **Server and client** (owner: "joining players wouldn't be running that"). In the level-11 trace, per thread
+  (cores busy over the 8 s; threads told apart by their functions):
+
+  | Side | Thread | Busy | Doing |
+  | --- | --- | --- | --- |
+  | Server (local world) | the local server's worker | 0.07 core (~1.2 ms a frame) | ticks, `on_datagram`, collision loads |
+  | Server | its jobs worker (most likely: a fifth generation thread) | 0.53 | chunk generation for the server |
+  | Server | the water worker | 0.01 | `Water::step` |
+  | Client | the page's main thread | 0.54 (~9 ms a frame) | the flood light, uploads, mesh job starts, LOD, the draw |
+  | Client | 4 generation workers | 3.64 (0.91 each) | `Volume::cell`, `ColumnFbm3` (the client generates its own terrain from the seed) |
+  | Client | 4 meshing workers | 0.97 | `mesh_cells`, `mesh_section_above` |
+  | Browser | Chrome's GPU process, compositor, browser | 0.41 | |
+
+  So the server side is ~0.6 of a core and none of the main thread's time; the client side is ~5.2 cores.
+  **A joining player pays nearly all of it**: level 4 joining a native `dwell-server` on the same Mac (seed 0,
+  `--visibility none`; the page `?local=0&join=…&cert=…&rtc=…&ice=…` from its invite link) drew 55.1 fps with
+  71 `GPU-wait` skips, `frame.cpu` 9.40 / 15.5, `mesh_dirty` 5.11, `jobs.apply` 1.60, 1.26 MB uploaded a
+  frame, `gpu.frame` 12.26 — inside the local runs' spread (51.8–57.6 fps, `frame.cpu` 9.98–11.30). The local
+  server's workers do compete for the M1's 4 performance cores (the 4 client generation workers alone keep 4
+  cores ~91 % busy, and the server's jobs worker adds half a core), but the main thread's time did not grow
+  with it: fewer workers (above) and no local server (this run) left `frame.cpu` at 9.4–11.3 ms. The main
+  thread's extra time is its own loading work.
 
 **Fixes proposed** (not built; ranked by the main-thread time they save while loading):
 
@@ -908,11 +933,10 @@ prediction's terrain collision loading at 360 m/s). Workers: `job.chunk` queued 
 2. **The flood light off the main thread** (`LightMap::load`, 47 % of it while loading): in the mesh worker
    with the chunk's padded neighbours, or its own worker. ~3.5–4 ms a frame; larger work (the light map is the
    main thread's state; edits relight it).
-3. **Fewer workers a pool on 8-core Macs** (see above): frees cores for the main thread and the GPU process.
-4. **Smaller main-thread pieces of the uploads and the job posts**: interleave the vertices in the mesh worker
+3. **Smaller main-thread pieces of the uploads and the job posts**: interleave the vertices in the mesh worker
    (`interleave` 0.17 s in 8 s), transfer the padded chunk rather than encoding it (`encode_job` 0.24 s): ~0.5 ms
    a frame together.
-5. **Skip the LOD selection while it cannot change** (`LodSystem::update` 0.35 s in 8 s, ~0.6 ms a frame,
+4. **Skip the LOD selection while it cannot change** (`LodSystem::update` 0.35 s in 8 s, ~0.6 ms a frame,
    still 1.1 ms with nothing loading): the cost profile's finding again.
 
 ## Play advanced (the main menu)
