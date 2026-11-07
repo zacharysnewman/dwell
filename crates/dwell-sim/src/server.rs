@@ -772,7 +772,7 @@ pub struct Server {
     /// Each tick phase's wall time (ms) summed since the last `tick_phases` (native only).
     phase_ms: [f64; TICK_PHASES.len()],
     /// The counts `tick_counts` last read (collision builds, chunks generated on the tick).
-    counts_at: [u64; 2],
+    counts_at: [u64; 3],
     /// The water surface grid (docs/WATER_SURFACE_GRID.md): the world's water, held as found until edits free it.
     water: crate::water::host::WaterHost,
     /// The water's side of the world (ADR 0062): what its copy was told, what to send it next, the
@@ -875,7 +875,7 @@ impl Server {
             fuses: crate::blasts::Fuses::default(),
             relit: Arc::default(),
             phase_ms: [0.0; TICK_PHASES.len()],
-            counts_at: [0; 2],
+            counts_at: [0; 3],
             // The water surface grid (Phase 53, docs/WATER_SURFACE_GRID.md): the world's water read
             // from its blocks, held at rest until edits free it; the world map's flow kept for
             // the sources to come.
@@ -1683,16 +1683,20 @@ impl Server {
 
     /// What the ticks did since the last call, by name: the terrain collision's chunk builds
     /// (`collisionBuilds`) and the chunks the tick generated itself, not the jobs
-    /// (`generatedOnTick`): where a slow `terrain` phase's time goes (docs/DEV_TOOLS.md).
-    pub fn tick_counts(&mut self) -> [(&'static str, u64); 2] {
+    /// (`generatedOnTick`), and the full-cube cells put into or taken out of the terrain collider
+    /// (`collisionCells`, a little a tick but those near players and pieces): where a slow
+    /// `terrain` phase's time goes (docs/DEV_TOOLS.md).
+    pub fn tick_counts(&mut self) -> [(&'static str, u64); 3] {
         let now = [
             self.players.terrain().map_or(0, |t| t.loads()),
             self.world.generated_on_access(),
+            self.players.terrain().map_or(0, |t| t.cells()),
         ];
         let before = std::mem::replace(&mut self.counts_at, now);
         [
             ("collisionBuilds", now[0].saturating_sub(before[0])),
             ("generatedOnTick", now[1].saturating_sub(before[1])),
+            ("collisionCells", now[2].saturating_sub(before[2])),
         ]
     }
 

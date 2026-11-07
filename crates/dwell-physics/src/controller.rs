@@ -899,6 +899,17 @@ impl Players {
                 });
             }
             terrain.sync(physics, world);
+            // The cells near players and pieces into the collider now (an edit's included), the
+            // rest of new chunks' (and dropped ones') a little a tick: a teleport's buried chunks
+            // were 4 ms each natively on one tick (PLAYER_CONTROLLER.md §5).
+            let mut near: Vec<(DVec3, DVec3)> = self.terrain_boxes.clone();
+            for p in self.players.iter().flatten() {
+                let pos = physics.position(p.body);
+                let speed = physics.velocity(p.body).length() as f32;
+                let reach = f64::from(3.0 + (speed * DT * 2.0).min(64.0));
+                near.push((pos - DVec3::splat(reach), pos + DVec3::splat(reach)));
+            }
+            terrain.catch_up(physics, &near, crate::terrain::COLLISION_CELLS_PER_TICK);
         }
     }
 

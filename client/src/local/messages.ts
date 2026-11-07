@@ -115,7 +115,8 @@ export interface ServerStats {
   phasesMs: Record<string, number>;
   /**
    * What the ticks did over the second (`Server::tick_counts`): `collisionBuilds`, the terrain
-   * collision's chunk builds; `generatedOnTick`, chunks the tick generated itself, not the jobs.
+   * collision's chunk builds; `generatedOnTick`, chunks the tick generated itself, not the jobs;
+   * `collisionCells`, full-cube cells put into or taken out of the terrain collider.
    */
   counts: Record<string, number>;
 }

@@ -332,6 +332,17 @@ meshes keeps the ground (`walking_a_grass_field_across_chunk_seams_never_loses_t
   its stamp, collision revision and a bit mask of its solid cells; a chunk with no solid cells keeps no mask,
   so passing through the sky (fast flight) costs no memory per chunk. Every 64 ticks, chunks more
   than 2 chunks from every player are dropped.
+- **[built, 0.49.42]** A chunk's full cubes go into the `Voxels` collider a little a tick: Parry takes
+  a cell at a time (`set_voxel`, ~130 ns natively, a buried chunk's 32 768 cells 3–4 ms; several
+  times that in the browser), and a 200 m teleport into the hills put two such chunks in on one tick
+  (10–17 ms natively). `TerrainCollision` keeps the cells the collider holds per chunk (`applied`)
+  apart from the cells it should (`solid`), and the chunks behind; each `tick_terrain` ends with
+  `catch_up`: every behind cell within the players' reach (the box above) and the pieces' boxes at
+  once — an edit's near cells the same tick, as before — then up to `COLLISION_CELLS_PER_TICK`
+  (8,192) more, in a fixed order (server and prediction alike); dropped chunks' cells come out the
+  same way. `ensure_box` puts its box's cells in at once. Counted as `collisionCells`
+  (`Server::tick_counts`; `dwell-sim` `tests/teleport_cost.rs`: ≤ 8,829 cells a teleport's tick,
+  65,536 before).
 - Rapier caps body speed at 400 m/s by default; spawning a player raises the world's limit to
   cover creative flight at its top speed (`Physics::raise_max_linear_velocity`, §6.7).
 
