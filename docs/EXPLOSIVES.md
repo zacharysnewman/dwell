@@ -293,6 +293,42 @@ neither destroyed nor dislodged (`dwell_world::explosives::behind_water`: cell c
 and `tests/explosives.rs` `water_shields_the_rock_behind_it` (both faces: blue in rock with a water wall
 2 m out; red on 0.50.3: the rock 3 m out behind the water was destroyed).
 
+### 3.9 Cheaper pieces: three levers measured (0.50.15)
+
+The owner (2026-11-07), on why flying pieces cost so much ("they're not touching anything"), approved three
+levers: CCD only for fast pieces, sleeping pieces, and a short `noPieceContactS` for every explosive. Measured
+natively (`tests/explosives.rs` `measure_blast_cost`, release, the flat world; red flush 186 pieces, red
+buried 510, yellow flush 100; DEV_TOOLS.md "Blasts and floods (M1 Air)" has the whole table):
+
+- **CCD off** (every piece): no change within noise (red buried physics 2,136 → 2,128 ms, worst tick
+  27.6 → 27.6). Rapier's CCD costs only for bodies fast enough to need it, so limiting it to fast pieces
+  saves nothing measurable; not changed (the pieces keep CCD, so none tunnels).
+- **Sleeping pieces**: the same physics total (red flush 213 → 232 ms, red buried 2,136 → 2,168, yellow
+  144 → 143) and worst tick. A piece already turns back into blocks once it has been still for the settle's
+  `sleepTicks` (`felling.rs` `step`), which is when Rapier would put it to sleep, so sleeping saves nothing;
+  the cost is while pieces fly and jostle. One red flush run took 21.6 s instead of 11 to settle: a single
+  piece resting against sleeping ones jittered (0.03–0.8 m/s) until its time ran out. Not changed.
+- **A no-contact window** (0.3 s): natively on the flat ground the worst tick falls (red flush 15 → 5.6 ms,
+  red buried 28 → 17, yellow 48 → 4.5), but red's flung pieces then re-mix and pile inside one another, as
+  §3.1 found at 1 s: red flush settles in 16 s instead of 11 (0.1 s: 19.6 s), physics + terrain 323 → 666 ms,
+  and `a_surface_blast_…` left 4 pieces unsettled at 20 s. Yellow's cracked pieces (given no push) looked
+  like the safe case natively (physics 144 → 84 ms, settled 10.4 → 9.2 s), and a both-faces test pinned it
+  (no piece contact pairs 3 ticks after the blast; 366 without), **but in the game it was worse**: yellow on
+  the seed-0 spawn's hillside in Chrome (two runs with the window against one without) peaked at 162–166 ms
+  of physics in the second after the blast against 82, 491–520 ms over the 10 s against 391, the worst tick
+  unchanged (26–31 ms against 27: that is the blast's own tick). The pieces overlap when the window ends and
+  the solver pushes them apart. **Not adopted** for any explosive (every `noPieceContactS` stays 0).
+- **Solver iterations** (not asked; measured for the record): 2 instead of Rapier's 4 saves 4–30 % of
+  physics, 1 costs more (pieces jitter longer). Not changed.
+- **`enhanced-determinism`** is still required: the player controller's prediction is kept bit-identical natively and
+  in WASM (ARCHITECTURE.md, "Native and WASM physics are kept bit-identical"; the golden trace), and the
+  pieces share its `Physics`. It
+  also turns off Rapier's SIMD paths, and the server could not use its parallel solver anyway in the
+  browser's worker; Rapier's SIMD typically gives ~1.5–2× on the solver, so its cost here is estimated at
+  ~1/3–1/2 of the blast's physics time (not measured: it needs a second build of the physics crate). A
+  server-only build of the physics without it (pieces are server-authoritative) is a larger change, listed
+  in DEV_TOOLS.md.
+
 ## 4. Effects (clients)
 
 A client sees a blast where an `Explosion` modification turns a lit explosive's cell to air

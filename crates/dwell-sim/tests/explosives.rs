@@ -323,55 +323,6 @@ dwell_world::both_faces!(
 );
 
 dwell_world::both_faces!(
-    fn yellow_keeps_its_cracked_pieces_apart_for_a_moment(f: FaceFrame) {
-        // Owner (2026-11-07, "do those 3 optimizations"): a blast's pieces start packed together,
-        // and their contacts with one another made the yellow blast's worst server tick
-        // (natively 48 ms flush on flat ground; 4.5 ms with a 0.3 s window, physics 144 -> 84 ms,
-        // settled 10.4 -> 9.2 s; docs/DEV_TOOLS.md "Blasts and floods (M1 Air)"). Red's and green's
-        // flung pieces re-mix and pile inside one another after any window (red flush: settled
-        // 11 s -> 16-20 s, some not at all), so they keep 0: data per explosive.
-        let e = *EXPLOSIVES
-            .iter()
-            .find(|e| e.name == "dwell:dynamite_yellow")
-            .expect("yellow");
-        assert!(
-            e.no_piece_contact_s > 0.0 && e.no_piece_contact_s <= 0.5,
-            "yellow's noPieceContactS {} (want a short window)",
-            e.no_piece_contact_s
-        );
-        let mut s = Scene::new(f, 1);
-        s.fx.server.set_explosives(vec![e]);
-        s.put(1, 0.5, -3.5);
-        s.run(2);
-        s.set([0, 0, 0], require(e.block));
-        s.light([0, 0, 0]);
-        s.run(1);
-        s.put(1, 0.5, -13.0);
-        let fuse = s.fx.server.fuses()[0].1 as usize;
-        s.run(fuse);
-        assert!(s.fx.server.body_count() > 20, "pieces cracked off");
-        s.run(3);
-        assert_eq!(
-            s.fx.server.physics().piece_contact_pairs(),
-            0,
-            "no piece touches another just after the blast"
-        );
-    }
-);
-
-#[test]
-fn yellow_flush_pieces_still_settle_with_their_window() {
-    // face-a-only: settling on the flat world's endless ground (the both-faces scene's slab has
-    // edges pieces fall off); the window's effect is tested on both faces above.
-    let yellow = *EXPLOSIVES
-        .iter()
-        .find(|e| e.name == "dwell:dynamite_yellow")
-        .expect("yellow");
-    let (pieces, _, ticks, _) = surface_settle(yellow);
-    assert!(pieces > 20 && ticks <= 15 * 60, "{pieces} pieces, {ticks} ticks");
-}
-
-dwell_world::both_faces!(
     fn dynamite_caught_in_a_blast_goes_off_after_a_short_random_delay(f: FaceFrame) {
         let e = dynamite();
         let mut s = Scene::new(f, 1);
@@ -1258,8 +1209,8 @@ fn measure_blast_cost() {
             ..e
         };
         let mut s = Scene::flat(1);
-        let n = if buried {
-            buried_blast(&mut s, e).len()
+        let ids: Vec<u32> = if buried {
+            buried_blast(&mut s, e).iter().map(|p| p.id).collect()
         } else {
             s.fx.server.set_explosives(vec![e]);
             s.put(1, 0.5, -3.5);
@@ -1270,8 +1221,9 @@ fn measure_blast_cost() {
             s.put(1, 0.5, -13.0);
             let fuse = s.fx.server.fuses()[0].1 as usize;
             s.run(fuse - 1);
-            spawns(&s.run(1)).len()
+            spawns(&s.run(1)).iter().map(|p| p.id).collect()
         };
+        let n = ids.len();
         let (mut ticks, mut worst, mut first_s, mut total) = (0u32, 0.0f64, 0.0, 0.0);
         let (mut physics, mut terrain) = (0.0, 0.0);
         let mut tick_ms = Vec::new();

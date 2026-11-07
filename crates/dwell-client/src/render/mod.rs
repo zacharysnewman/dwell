@@ -791,17 +791,13 @@ struct Candidate {
     id: u64,
 }
 
-/// A falling piece's part's shadow-caster identity (`Renderer::shadow_candidates`): its id, part
-/// and pose, so it changes whenever the piece moves or turns.
-fn piece_shadow_tag(id: u32, part: usize, origin: V3, quat: [f32; 4]) -> u64 {
-    let mut t = shadows::mix(u64::from(id) ^ 0x9ec3_0000_0000 ^ (part as u64) << 32);
-    for (k, v) in origin.iter().enumerate() {
-        t ^= shadows::mix(v.to_bits()).rotate_left(k as u32 * 13 + 1);
-    }
-    for (k, q) in quat.iter().enumerate() {
-        t ^= shadows::mix(u64::from(q.to_bits()) ^ (k as u64) << 40).rotate_left(k as u32 * 7 + 3);
-    }
-    t
+/// A falling piece's part's shadow-caster identity (`Renderer::shadow_candidates`): its id and
+/// part, not its pose. A moving piece is a moving caster, as other players are: a kept far cascade
+/// holding it is drawn again every `refreshFrames` (`shadows::Cache::wants`, `Want::Moving`), not
+/// every frame. With its pose in it (until 0.50.15) every flying piece redrew a far cascade every
+/// frame (docs/DEV_TOOLS.md "Blasts and floods (M1 Air)"). A piece that comes or goes changes it.
+fn piece_shadow_tag(id: u32, part: usize) -> u64 {
+    shadows::mix(u64::from(id) ^ 0x9ec3_0000_0000 ^ (part as u64) << 32)
 }
 
 /// Whether a candidate's kind casts into cascade `i` at all: plants into the nearest
@@ -3851,8 +3847,8 @@ impl Renderer {
                 push(item(Kind::Cutout, offset, None, fade, mesh), b, !tag);
             }
         }
-        // The falling pieces, each with its pose in its identity: a kept map holding one is drawn
-        // again as it moves (docs/FELLING.md §3).
+        // The falling pieces: moving casters (`piece_shadow_tag`), a kept map holding one drawn
+        // again every `refreshFrames` while they move (docs/FELLING.md §3).
         for &(id, origin, quat) in &self.piece_poses {
             let Some(p) = self.terrain.pieces.get(&id) else {
                 continue;
@@ -3876,7 +3872,7 @@ impl Renderer {
                     DrawMesh::Piece(id, k, Part::Opaque),
                 );
                 d.quat = quat;
-                push(d, b, piece_shadow_tag(id, k, origin, quat));
+                push(d, b, piece_shadow_tag(id, k));
             }
         }
         for &(id, mask, fade) in &self.terrain.shown {
@@ -5070,19 +5066,15 @@ mod tests {
     }
 
     #[test]
-    fn a_falling_pieces_shadow_identity_changes_as_it_moves_or_turns() {
-        // docs/FELLING.md §3: a kept shadow map is drawn again when its casters' identities change;
-        // a piece's must change with its pose, or its shadow would stay where it began to fall.
-        let q = IDENTITY_QUAT;
-        let a = piece_shadow_tag(4, 0, [10.0, 200.0, -3.0], q);
-        assert_eq!(a, piece_shadow_tag(4, 0, [10.0, 200.0, -3.0], q));
-        assert_ne!(a, piece_shadow_tag(4, 0, [10.0, 199.9, -3.0], q));
-        assert_ne!(
-            a,
-            piece_shadow_tag(4, 0, [10.0, 200.0, -3.0], [0.0, 0.0, 0.1, 0.995])
-        );
-        assert_ne!(a, piece_shadow_tag(4, 1, [10.0, 200.0, -3.0], q));
-        assert_ne!(a, piece_shadow_tag(5, 0, [10.0, 200.0, -3.0], q));
+    fn a_falling_pieces_shadow_identity_is_its_id_and_part_not_its_pose() {
+        // docs/FELLING.md §3, docs/DEV_TOOLS.md "Blasts and floods (M1 Air)": a moving piece is a
+        // moving caster (a kept far cascade refreshed every `refreshFrames`); with its pose in its
+        // identity every flying piece redrew a far cascade every frame. Coming and going still
+        // changes the identities.
+        let a = piece_shadow_tag(4, 0);
+        assert_eq!(a, piece_shadow_tag(4, 0));
+        assert_ne!(a, piece_shadow_tag(4, 1));
+        assert_ne!(a, piece_shadow_tag(5, 0));
     }
 
     /// Every `Kind` indexes `STRIDES` (the arena's formats) with its own format's stride: a kind

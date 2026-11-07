@@ -2808,7 +2808,8 @@ host refills the crater) and the water within `waveReachM` is kicked outward (`w
 `Wave` sent to the water host as `In::Wave`; held water within `waveFreeM` freed, so the wave runs to
 the banks and reflects; EXPLOSIVES.md §3.5, WATER_SURFACE_GRID.md §2f; **[built, 0.49.48]**), `indestructible` blocks stay, explosives caught in it are lit with a short
 random fuse; bodies are pushed by their distance (players' damage is `DamageCause::Explosion`); what it leaves unsupported falls. **[built, 0.49.41]** Two options as data, both off in the
-shipped dynamite (5 m since 0.49.46, EXPLOSIVES.md §3.3): `loosenRadiusM` (cells from `radiusM` out to it become pieces
+shipped explosives (5 m since 0.49.46, EXPLOSIVES.md §3.3; a short `noPieceContactS` measured again in 0.50.15 and
+not adopted, EXPLOSIVES.md §3.9): `loosenRadiusM` (cells from `radiusM` out to it become pieces
 with no impulse) and `noPieceContactS` (a blast's pieces kept apart from one another for that long:
 `dwell_physics` `Physics::set_apart` moves their colliders from the Tier 1 group to a fourth group,
 `APART`, that every layer's filter takes but its own; past the window `Server::rejoin_apart` returns each
