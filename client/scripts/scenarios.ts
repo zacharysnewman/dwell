@@ -81,6 +81,15 @@ export type Step =
   | { do: 'water'; quality?: 'low' | 'medium' | 'high'; debug?: string }
   /** The Shadows setting, for this page only (docs/DAY_NIGHT.md §10). */
   | { do: 'shadows'; quality: 'off' | 'low' | 'high' }
+  | {
+      do: 'view';
+      clouds?: 'off' | 'low' | 'high';
+      speedEffects?: boolean;
+      distanceM?: number;
+      pixelError?: number;
+      smoke?: boolean;
+      flowParticles?: boolean;
+    }
   /** Breaks or places at the crosshair, as a click does; selects a hotbar slot. */
   | { do: 'edit'; action: 'break' | 'place' }
   | { do: 'select'; slot: number }
@@ -298,6 +307,7 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   releaseCamera: [],
   water: ['quality', 'debug'],
   shadows: ['quality'],
+  view: ['clouds', 'speedEffects', 'distanceM', 'pixelError', 'smoke', 'flowParticles'],
   edit: ['action'],
   select: ['slot'],
   brush: ['command'],
@@ -393,6 +403,35 @@ export function parseStep(where: string, v: unknown): Step {
         throw new ViewError(`${at('quality')}: expected "off", "low" or "high"`);
       }
       return { do: d, quality: q };
+    }
+    case 'view': {
+      const c = o.clouds;
+      if (c !== undefined && c !== 'off' && c !== 'low' && c !== 'high') {
+        throw new ViewError(`${at('clouds')}: expected "off", "low" or "high"`);
+      }
+      const opt = <T>(k: string, v: T | undefined): Record<string, T> =>
+        v === undefined ? {} : { [k]: v };
+      return {
+        do: d,
+        ...opt('clouds', c),
+        ...opt(
+          'speedEffects',
+          o.speedEffects === undefined ? undefined : bool(at('speedEffects'), o.speedEffects),
+        ),
+        ...opt(
+          'distanceM',
+          o.distanceM === undefined ? undefined : num(at('distanceM'), o.distanceM, 16, 4096),
+        ),
+        ...opt(
+          'pixelError',
+          o.pixelError === undefined ? undefined : num(at('pixelError'), o.pixelError, 1, 16),
+        ),
+        ...opt('smoke', o.smoke === undefined ? undefined : bool(at('smoke'), o.smoke)),
+        ...opt(
+          'flowParticles',
+          o.flowParticles === undefined ? undefined : bool(at('flowParticles'), o.flowParticles),
+        ),
+      };
     }
     case 'water': {
       const q = o.quality;

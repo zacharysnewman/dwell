@@ -63,6 +63,7 @@ import {
   type ShadowQuality,
 } from './ui/shadowSettings';
 import { displayScale } from './ui/displayScale';
+import type { CloudQuality } from './ui/viewSettings';
 import { FlightSpeedControl } from './ui/flightSpeedControl';
 import { loadFlySpeedLevel, saveFlySpeedLevel } from './predict/flightSpeed';
 import { formatStatus } from './ui/statusOverlay';
@@ -245,6 +246,19 @@ interface DwellDebug {
   setWater(quality: WaterQuality | null, debug: string | null, phone?: boolean): void;
   /** The Shadows setting (as the settings menu sets it, not stored; docs/DAY_NIGHT.md §10). */
   setShadows(quality: ShadowQuality): void;
+  /**
+   * Other settings mid-run, for the bench's `view` step (not stored; docs/DEV_TOOLS.md): the
+   * clouds, the speed effects, the full-detail distance and the LOD's pixel error, the blasts'
+   * smoke, the water's flecks. Each one given replaces the menu's value; the rest stay.
+   */
+  setView(view: {
+    clouds?: CloudQuality;
+    speedEffects?: boolean;
+    distanceM?: number;
+    pixelError?: number;
+    smoke?: boolean;
+    flowParticles?: boolean;
+  }): void;
   /** The ink outline's mode (`shared/look/outline.json`, as `?outline=` names it), or `off`. */
   outline(): string;
   /** Sets the ink outline's mode by name (`off` or an unknown name: off); true when one is on. */
@@ -895,6 +909,30 @@ async function start(): Promise<App | null> {
     },
     setShadows: (quality) => {
       client.setShadows(shadowLevel(quality));
+    },
+    setView: (v) => {
+      const s = app.settings?.current;
+      if (!s) return;
+      if (v.clouds !== undefined) client.setClouds(v.clouds);
+      if (v.speedEffects !== undefined) client.setMotion(v.speedEffects, s.motion.fovBoost);
+      if (v.distanceM !== undefined || v.pixelError !== undefined) {
+        client.setDetail(
+          v.distanceM ?? s.detail.distanceM,
+          v.pixelError ?? s.detail.pixelError,
+          s.detail.memoryMb,
+        );
+      }
+      if (v.smoke !== undefined) {
+        client.setExplosions(s.explosions.flash, v.smoke, s.explosions.shake);
+      }
+      if (v.flowParticles !== undefined) {
+        client.setWaterFlow(
+          s.water.flowRipples,
+          s.water.flowFoam,
+          v.flowParticles,
+          s.water.waterfalls,
+        );
+      }
     },
     outline: () => client.outline(),
     setOutline: (name) => client.setOutline(name),

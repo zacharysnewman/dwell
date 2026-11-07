@@ -111,6 +111,7 @@ fields, ranges and names fail with the entry named):
 | `time {t, moon?}` | shows the time of day `t` (0–1, 0 midnight) and optionally the moon's phase on this client (`?time=`, `?moon=`; DAY_NIGHT.md) |
 | `timelapse {name, frames, from?, to?, waitS?}` | `frames` screenshots `<name>-00.png`… from time of day `from` (0) toward `to` (1), wrapping past midnight, waiting `waitS` (0.3 s) after each |
 | `lod {on}` | draws the distant terrain (LOD) or not, live (`__dwell.setLod`; the sections still stream, so it comes back at once): what the full-detail chunks alone hold. `?lod=off` (or `?lod=0`) runs with no LOD at all |
+| `view {clouds?, speedEffects?, distanceM?, pixelError?, smoke?, flowParticles?}` | sets other settings mid-run, not stored (`__dwell.setView`): the clouds (`off`, `low`, `high`), the speed effects (motion blur and streaks), the full-detail distance (m) and the LOD's pixel error, the blasts' smoke, the water's flecks; each one given replaces the menu's value. With `water` and `shadows`, one page can record every feature on and off in turn ([Cost profile](#cost-profile-m1-air)) |
 | `water {quality?, debug?}` | sets the water quality (`low`, `medium`, `high`) and/or its cost-isolation switches (`?waterdbg=` names, `""` for none) mid-run, through `__dwell.setWater` |
 | `burst {name, frames, clock?, maxFlicker?}` | a still camera's burst: `frames` screenshots `<name>-00.png`… back to back (the HUD hidden) and their **flicker** (`flickerOf`: the share of pixels whose brightness moves more than 3 of 255 from one frame to the next, and the mean move), printed and saved in `report.json`'s `bursts`; over `maxFlicker` (a share) the run fails. With `clock` the time of day runs on from it at the world clock's rate, set every animation frame (the bench's is otherwise held), so the light moves as in play. `shadows-still` reads the shadows' flicker against Off's (DAY_NIGHT.md §10). With `drift {position, yaw, pitch}` (after a `camera` step) the camera moves on by that much each frame (metres and degrees, at most 1 m and 1°): z-fighting shows only while the view moves (it stops with the camera), and a drift of millimetres and thousandths of a degree moves the view under a pixel by a fraction of a pixel, so surfaces swap only where they fight in depth. Such a burst is read by its **hue flips** (`hueFlipsOf`, also in every burst's result: the share of pixels, coloured in both frames, whose hue moves over 40° from one frame to the next — grass becoming dirt); over `maxHueFlips` the run fails. `lod-zfight` holds the LOD's z-fighting under a bar (ARCHITECTURE.md §6.6, "Known bug class") |
 | `repeat {times, steps}` | runs `steps` `times` times (e.g. `edit-burst`'s 300 edits); no `mark`, `record`, `shot`, `timelapse` or trace steps inside |
@@ -234,6 +235,7 @@ What is recorded now:
 | `upload.chunk`, `upload.section`, `upload.chunks`, `upload.sections`, `upload.bytes` | creating GPU buffers for chunk and LOD section meshes, how many, and their bytes |
 | `job.<kind>.wait`, `job.<kind>.run` (samples) | per job kind (`chunk`, `chunk_mesh`, `bounds`, `section`, `section_mesh`, `verify`, `map`, `diff`): time queued in the pool before a worker had room; time from posting it to a worker until its result came back (the worker's run and the transfers; the pool collects results between frames) |
 | `gpu.far`, `gpu.near`, `gpu.far.water`, `gpu.near.water`, `gpu.shadows`, `gpu.torchshadows`, `gpu.arms`, `gpu.composite`, `gpu.motion`, `gpu.frame` (samples) | GPU time of each render pass (the sun's or moon's shadow maps, every cascade's pass timed as one, DAY_NIGHT.md §10; the far and near scene passes, your first-person arms' pass (CHARACTERS.md; it resolves the frame's colour when drawn) — on Medium and High water, their opaque halves, with their water halves as `gpu.*.water`, WATER_RENDERING.md §8 W3 — the composite with the lines over it, or, while the wind is on, the composite into the finished image and the motion pass with the lines, MOTION_EFFECTS.md) and of the whole frame (the far pass's start to the composite's end), from timestamp queries (`render/timing.rs`), one sample per timed frame, read back a frame or two later. Only where the adapter has `timestamp-query`. On tile-based GPUs (Apple, phones) passes overlap, so the passes can add up to more than `gpu.frame` |
+| `gpu.gaps`, `gpu.gaps.copy` (samples) | The timed frame's time between its passes: each pass's start after the previous pass's end, summed (`render/timing.rs` `samples`), the untimed work inside `gpu.frame` (copies, clears, the GPU idle between passes); `.copy` the part just before the water halves, the scene colour's copy that WebGPU cannot time by itself. On Apple GPUs both read ~0: the passes overlap (each begins before the last ends), so the untimed time is outside `gpu.frame` (Chrome's compositing, `pacing.done` − `gpu.frame`) and a pass's cost is its ablation, not its span ([Cost profile](#cost-profile-m1-air)) |
 | `shadow.ktris` (samples) | Thousands of triangles drawn into the shadow maps this frame, every cascade's (DAY_NIGHT.md §10) |
 | `shadow.drawn` (samples) | Shadow cascades drawn this frame: the nearest every frame, plus a far one when its kept map must be drawn again (DAY_NIGHT.md §10, Kept maps) |
 
@@ -541,6 +543,188 @@ full-screen passes cost more natively. Leads are the surface
 texture, which its compositor then draws), and the native loop spinning a core (`ControlFlow::Poll`)
 on a chip whose CPU and GPU share power and memory bandwidth. Whatever native gains, it is not GPU
 time, so the GPU budget is the one to spend work on.
+
+## Cost profile (M1 Air)
+
+The owner's "can you truly benchmark the game to determine our most costly pieces … each feature by CPU and
+GPU" (2026-11-07), on the target machine (M1 MacBook Air, 60 Hz, target a steady 60 fps), before any
+upscaling work. Main at 0.50.6 plus this change's telemetry, Chrome on the GPU, on AC power, `--unthrottled`
+(so a frame shows its cost, not the vsync wait), the full-screen drawing buffer 2560×1600 (a 1280×800 window
+at `?scale=2`), seed 0, the clock at noon. Defaults on a desktop: water Medium, shadows High, clouds High,
+speed effects on, full-detail distance 256 m, LOD pixel error 4; "High" is the same with water High. The
+1-minute load was held under 3.3 (a system process, `ANECompilerService`, held one core during part of the
+session; the dam pair ran under 2.5).
+
+**Method.** The per-pass `gpu.*` spans cannot be added up on the M1: its passes overlap (each begins before
+the one before ends), so `gpu.near.water` or `gpu.composite` reads 13–16 ms at the dam while the whole frame is
+19.8. The new `gpu.gaps` (the time between passes) reads 0.00 in every record: nothing in `gpu.frame` is
+outside a pass. So **a feature's GPU cost here is its ablation**: one page per scene, settled, then every
+feature switched off in turn mid-run (the new `view` step with `water` and `shadows`), 1.5–3 s to settle and
+4 s recorded each, the default recorded again at the end (drift: +0.3 ms at the dam). The scenarios and
+configurations were scratch files (`cp-dam`, `cp-fly`, `cp-idle`, `cp-build`, `cp-blast`, `cp-trace`), not
+checked in.
+
+### The dam, 2560×1600 and 1280×800
+
+The camera 6 m over the river by the dam looking down 40° (the water at its heaviest), `gpu.frame` mean (ms):
+
+| Record | Full 2560×1600 | Δ | fps | Half 1280×800 | Δ |
+| --- | --- | --- | --- | --- | --- |
+| Default | 19.84 | | 44.6 | 8.78 | |
+| High (water High) | 20.73 | +0.89 | 42.9 | 9.24 | +0.46 |
+| Water Low | 14.87 | −4.98 | 56.3 | 7.19 | −1.58 |
+| Water flecks off | 19.62 | −0.23 | 44.7 | 8.74 | −0.04 |
+| Shadows Low | 19.72 | −0.12 | 44.7 | 8.72 | −0.05 |
+| Shadows Off | 16.95 | −2.90 | 50.9 | 7.53 | −1.24 |
+| Clouds Low | 20.07 | +0.23 | 43.9 | 8.77 | 0.00 |
+| Clouds Off | 19.41 | −0.43 | 45.6 | 8.66 | −0.12 |
+| Speed effects off | 19.76 | −0.09 | 44.7 | 8.74 | −0.03 |
+| LOD pixel error ×2 (8) | 19.98 | +0.13 | 44.6 | 8.92 | +0.14 |
+| Full-detail distance ½ (128 m) | 19.05 | −0.80 | 45.9 | 7.92 | −0.86 |
+| Default again | 20.14 | +0.30 | 43.6 | 8.95 | +0.17 |
+
+Half the resolution per axis (a quarter of the pixels) takes the frame from 19.8 to 8.8 ms: with a cost
+fixed per frame F and one per pixel P, F + P = 19.8 and F + P/4 = 8.8, so **P ≈ 14.7 ms scales with the
+pixels and F ≈ 5.1 ms does not**. The water's and the shadows' costs are mostly per pixel (5.0 → 1.6,
+2.9 → 1.2 at a quarter of the pixels); the full-detail distance's is geometry (0.8 both ways).
+
+### Over the valley, 2560×1600
+
+Meant as a level-6 flight; **the bench's flight stalled in every attempt** (three runs: look pitch −10, +2 and
++8, yaw 90 and 0): the player moved 25–50 m in the first record and then hung still (`state().feet` the same
+in every later record, `gpu.motion` drawn only in the first), so this is a view from ~20 m over the valley at
+the dam, looking along it to the far terrain, not a flight; nothing streamed (no jobs, no uploads) except when
+the LOD came back. The 0.50.6 GPU-bound comparison's `gpu-fly` used the same steps (look pitch −10), so its
+"flight" may have been the same stall. Why the held key stops after a `record` was not looked into. The
+earlier flights in [the performance line](#in-the-game-the-performance-line) (1700×1000, level 4: 59/60 fps)
+moved.
+
+| Record | `gpu.frame` | Δ | fps |
+| --- | --- | --- | --- |
+| Default | 16.63 | | 51.4 |
+| High (water High) | 16.38 | −0.25 | 51.9 |
+| Water Low | 15.15 | −1.49 | 55.2 |
+| Water flecks off | 16.25 | −0.39 | 52.2 |
+| Shadows Low | 16.29 | −0.35 | 52.4 |
+| Shadows Off | 14.24 | −2.39 | 57.7 |
+| Clouds Low | 16.02 | −0.62 | 52.6 |
+| Clouds Off | 15.68 | −0.95 | 54.2 |
+| Speed effects off (still) | 16.62 | −0.01 | 51.2 |
+| LOD pixel error ×2 | 16.47 | −0.16 | 51.9 |
+| Full-detail distance ½ | 14.68 | −1.95 | 56.6 |
+| Default again | 16.49 | −0.15 | 51.6 |
+
+The idle spawn at the dam (the player's own view along the river, arms drawn, `cp-idle`): `gpu.frame` 26.3 ms
+at the default and 28.6 at High, 34 and 32 fps: the heaviest view measured (more water on screen than the
+dam close-up). Building (`cp-build`, 40 place-and-break at the spawn): 18.8 ms, 47 fps.
+
+### The CPU
+
+The main thread per loop (`frame.cpu`, mean / p95 ms) is small next to the GPU everywhere measured:
+
+| Scene | `frame.cpu` | `lod` | `draw.render` | `ticks` | `jobs.apply` | `mesh_dirty` | uploads | Long tasks > 16 ms |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Dam, default | 2.51 / 4.1 | 1.16 | 1.05 | 0.08 | 0 | 0 | 0 | 0 |
+| Dam, High | 2.65 / 4.5 | 1.23 | 1.10 | 0.08 | 0 | 0 | 0 | 0 |
+| Build (40 place + break) | 2.89 / 6.1 | 1.01 | 0.86 | 0.11 | 0.51 / 2.6 | 0.21 / 2.0 | 0.50 / 4.0 | 0 |
+| LOD switched back on (sections arriving) | 2.93 / 5.0 | 1.64 | 0.73 | 0.05 | 0.31 / 1.4 | 0 | 0.30 / 1.3 | 0 |
+| Red dynamite blast, 8 s from lighting | 2.83 / 7.3 | 0.98 | 0.79 | 0.08 | 0.33 / 2.2 | 0.39 / 3.2 | 0.32 / 2.6 | 0 |
+| The 12 s after it (pieces settling) | 1.47 / 3.8 | 0.90 | 0.34 | 0.02 | 0.08 / 0.6 | 0.02 | 0.07 / 0.4 | 0 |
+
+A Chrome trace of the dam at High (3 s, `cp-trace`): the page's main thread busy 505 ms (168 ms a second,
+~2.9 ms a loop), of which **`LodSystem::update` 214 ms (42 %)** — `touch_kids` 45 ms self, `visit` 138
+inclusive, run every frame though nothing changed — and `Renderer::render_frame` 180 ms (36 %; its
+`shadow_candidates` 40, `mesh_of` 32, `record` 22, `wasm-to-js` 51 inclusive). The workers: 31 ms in the
+3 s. Turning shadows off takes `draw.render` from 1.05 to 0.85 ms (the shadow casters' selection and draws).
+
+Workers (`job.<kind>.run`, mean ms per job, the worker's run plus transfers): building, `chunk_mesh` 8.4
+(395 jobs in 19 s), `section` 10.7, `section_mesh` 6.8; the LOD's sections arriving, `section` 15
+and `bounds` 15.5. None over a frame on the main thread: they run off it.
+
+The server (local world, its worker; `server` step, per second). In play without pieces: 60 ticks a second,
+the tick's mean 0.15–0.27 ms; `players` 2–5 ms and `physics` 2–4 ms a second, `save` 3 ms every ~5 s (the
+worst `advance` 3 ms). The water worker on the settled river: ~300 runs a second, its longest 6.3 ms, nothing
+owed or dropped. **The red dynamite blast** (`cp-blast`: placed and lit at the seed 0 spawn's feet, the player
+killed by it and respawned, the camera 14 m back): still 60 ticks a second, but the tick's mean rises from 0.2
+to 3.9–6.5 ms for the first 4 s and the worst `advance` to 61–68 ms; per second `physics` 94–236 ms and
+`terrain` (the pieces' collision builds) 45–149 ms, `pieces` 6–9; in the next 12 s physics 31–169 and terrain
+8–128 ms a second, the tick back under 1.3 ms after ~8 s. That is the local server's worker, off the page's
+main thread: the page saw no long task, `frame.cpu` p95 7.3 ms (`mesh_dirty` p95 3.2: the crater's chunks
+re-meshed, 582 `chunk_mesh` jobs at 14 ms on the workers). On the GPU the pieces add shadow casters
+(`gpu.shadows` 0.5 → 2.2–2.5 ms span). **Flooding was not measured**: the dam view's spawn stands in the
+river (the dynamite would not place there), and the blast at the dry spawn has no water to let in; a breach
+scenario needs a `goto` to a bank first (left for a follow-up).
+
+### Memory (`memory()`, the dam spawn at 2560×1600)
+
+1.58 GB in all: GPU meshes 550 MB, the drawing buffers 393 MB (at 2560×1600; a quarter at 1280×800),
+the world-generation workers 350 MB (four at 75–79 MB, four at 9–10), the client core 185 MB, the server
+79 MB, the JS heap 19 MB.
+
+### What is untimed
+
+`pacing.done` (submit to the GPU's answer) runs 11 ms past `gpu.frame` at the dam (31.0 against 19.8) and
+6 ms at half resolution (14.6 against 8.8): with two frames in flight it includes the queued frame, and
+Chrome's own work (the canvas's compositing into the page, the present) is outside our command buffer and
+untimeable from the page; it grows with the drawing buffer. Inside `gpu.frame` nothing is untimed on the M1
+(`gpu.gaps` 0.00). One gap in the timing: with the LOD switched off (`lod {on: false}`) no `gpu.frame` is
+recorded (the frame's far pass is missing, so the frame total is dropped), so the LOD's GPU cost is
+read from `near-half` and `pacing.done` instead.
+
+### Ranked: each feature's cost on the Air
+
+GPU ms are ablation deltas at 2560×1600 (feature on minus off), CPU ms the main thread's per frame unless
+named; share is of the 16.7 ms budget at the default, GPU.
+
+| # | Piece | Runs on | GPU ms, dam / valley (default) | GPU at High | CPU ms | Share of 16.7 ms (GPU, dam) |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | **The pixel count** (every per-pixel pass at 2560×1600) | GPU | ~14.7 of 19.8 (½ resolution: 8.8) | ~15 | Chrome's compositing of the canvas grows with it (`pacing.done` − `gpu.frame` 11 → 6 ms) | 88 % |
+| 2 | Base scene: near chunks, LOD terrain, sky, fog, the composite, arms (no off switch; the rest of the frame) | GPU passes `near`, `far`, `composite`, `arms` | ~10.5 / ~9.4 | same | main thread: `draw.render` 0.8–1.1 (encoding), `lod` 1.0–1.2 (the LOD's selection, every frame) | 63 % |
+| 3 | **Water, Medium** (refraction, caustics, reflections; vs Low) | GPU (`near.water`, `far.water`, `water.tiles`) | **5.0 / 1.5** | +0.9 / −0.25 more (High) | main ~0; the water grid on the server's water worker ~300 runs a second, longest 6.3 ms | 30 % |
+| 4 | **Sun shadows, High** (vs Off) | GPU (`shadows`, `lodshadows`, the receivers' sampling) | **2.9 / 2.4** (Low saves only 0.1–0.35) | same | main 0.2–0.3 (`draw.render` 1.05 → 0.85: casters selected and drawn) | 17 % |
+| 5 | Full-detail distance 256 m (vs 128) | GPU (near pass geometry) | 0.8 / 1.95 | same | ~0 | 5 % |
+| 6 | Bodies: a red dynamite blast's pieces | server worker; GPU shadow casters | `gpu.shadows` span 0.5 → 2.2–2.5 | same | server: physics 94–236 + terrain collision 45–149 ms a second (tick 3.9–6.5 ms mean, worst 68 ms); main: `mesh_dirty` p95 3.2, `frame.cpu` p95 7.3 | ~10 % (while it lasts) |
+| 7 | Clouds, High (vs Off) | GPU (sky in the composite) | 0.4 / 0.95 | same | ~0 | 2 % |
+| 8 | Water flecks (vs off) | GPU | 0.2 / 0.4 | same | ~0 | 1 % |
+| 9 | LOD pixel error 4 (vs 8) | GPU, LOD workers | 0.1–0.2 (noise) | same | ~0 settled | <1 % |
+| 10 | Speed effects (the motion pass) | GPU | 0 still (not drawn); in motion not isolated (the flight stalled) | | ~0 | – |
+| 11 | Chunk meshing and LOD sections (building, streaming) | workers | – | | `chunk_mesh` 8–18 ms a job, `section` 11–23, `section_mesh` 6–10, off the main thread; main: `jobs.apply` 0.3–0.5 (p95 2.6), uploads 0.3–0.5 (p95 ~4) while they arrive | – |
+| 12 | The controller and prediction | main | – | | `ticks` 0.05–0.11 | – |
+| 13 | The server at rest (players, physics, water, save) | server worker | – | | tick 0.15–0.27 ms, 60 a second; `save` 3 ms every ~5 s | – |
+| 14 | Network | main | – | | `net` 0.02 | – |
+| – | Stars | GPU | 0 at noon (night only; not measured) | | | |
+| – | Fog, the HUD, sounds | GPU shaders / DOM / audio | no switch: fog is inside the terrain and composite shaders, the HUD inside Chrome's compositing, audio on its own thread; not measured | | | |
+
+Memory: 1.58 GB (above); the drawing buffers' 393 MB scale with the pixel count too.
+
+### What to fix first to hold 60 fps on the Air
+
+At the default the dam reads 19.8 ms of GPU (44 fps), the valley 16.6 (51 fps), the river spawn 26.3 (34
+fps); the CPU is 2.5–2.9 ms of the 16.7 everywhere, the server under 0.3 ms a tick except in a blast. So the
+GPU's per-pixel work is the frame, and in that order:
+
+1. **Draw fewer pixels** (the queued upscaling): ~74 % of the dam's GPU frame scales with the pixel count.
+   At ¾ per axis (1920×1200, 56 % of the pixels) the estimate is 19.8 → ~13.3 ms (−6.5) at the dam and 26.3 →
+   ~18 at the spawn; at ⅔ (1707×1067) −8.2 ms. The only change that reaches 60 fps in every view measured.
+2. **Water Medium's per-pixel cost**: 5.0 ms at the dam (1.6 at a quarter of the pixels). Draw its
+   refraction, caustics and reflections at half resolution, or drop the scene-colour copy where the water
+   does not refract: estimated −2 to −3 ms where water fills the screen.
+3. **Make Shadows Low a real tier**: High costs 2.4–2.9 ms, Low saves only 0.1–0.35. Fewer or smaller
+   cascades and no distant shadows on Low, and Low as the default on an integrated GPU: estimated −1.5 to
+   −2 ms.
+4. **The full-detail distance**: 128 m saves 0.8–2 ms (the most over far terrain). A default of ~192 m on an
+   integrated GPU: estimated −0.5 to −1 ms.
+5. **The CPU is not the limit on the Air**, but the LOD's selection runs every frame though nothing changes
+   (`lod` 1.0–1.2 ms, 42 % of the main thread in the trace: `touch_kids`, `visit`): skipping it while the
+   camera and the sections are still saves ~0.8 ms a frame (more on phones).
+
+Not worth it for frame rate: clouds (0.4–1 ms), flecks (0.2–0.4), the LOD pixel error, the speed effects
+when still. The blast's cost is the server's (ticks of 4–6.5 ms, a 68 ms worst, still 60 a second) and
++1.7 ms of shadow casters on the GPU while the pieces fly.
+
+Not covered here: a moving flight (the bench's held key stalled, above), a flood after a breach, the
+first-person arms and the stand-in characters on their own, night (stars, torches). Re-run the same
+scratch scenarios after each fix to read its gain.
 
 ## Play advanced (the main menu)
 
