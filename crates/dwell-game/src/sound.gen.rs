@@ -33,10 +33,13 @@ pub enum SoundKind {
     Burn = 26,
     BurnLevel = 27,
     BurnEnd = 28,
+    Fall = 29,
+    FallLevel = 30,
+    FallEnd = 31,
 }
 
 impl SoundKind {
-    pub const ALL: [SoundKind; 29] = [
+    pub const ALL: [SoundKind; 32] = [
         SoundKind::Step,
         SoundKind::Climb,
         SoundKind::Land,
@@ -66,6 +69,9 @@ impl SoundKind {
         SoundKind::Burn,
         SoundKind::BurnLevel,
         SoundKind::BurnEnd,
+        SoundKind::Fall,
+        SoundKind::FallLevel,
+        SoundKind::FallEnd,
     ];
 
     /// The event's name in the data.
@@ -100,6 +106,9 @@ impl SoundKind {
             SoundKind::Burn => "burn",
             SoundKind::BurnLevel => "burn_level",
             SoundKind::BurnEnd => "burn_end",
+            SoundKind::Fall => "fall",
+            SoundKind::FallLevel => "fall_level",
+            SoundKind::FallEnd => "fall_end",
         }
     }
 
@@ -135,6 +144,9 @@ impl SoundKind {
             SoundKind::Burn => None,
             SoundKind::BurnLevel => None,
             SoundKind::BurnEnd => None,
+            SoundKind::Fall => None,
+            SoundKind::FallLevel => None,
+            SoundKind::FallEnd => None,
         }
     }
 }
@@ -169,4 +181,9 @@ pub mod ambient {
     pub const FIRE_RADIUS_M: f64 = 10.0;
     /// ... the nearest this many.
     pub const FIRE_MAX: usize = 4;
+    /// Waterfalls rush within this many metres of the listener, the nearest `FALLS_MAX`, at full
+    /// level by their flow at `FALLS_FULL_M3S` (m³/s; docs/WATER_SURFACE_GRID.md §2e).
+    pub const FALLS_RADIUS_M: f64 = 40.0;
+    pub const FALLS_MAX: usize = 3;
+    pub const FALLS_FULL_M3S: f64 = 2.0;
 }

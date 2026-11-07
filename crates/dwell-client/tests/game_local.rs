@@ -547,7 +547,7 @@ fn a_brush_stroke_in_the_sandbox_comes_back_from_the_server_and_undoes_as_one_st
     let SessionState::Joined {
         region_edits,
         brushes,
-        generator_version,
+        generator_version: _,
         ..
     } = rig.session.state().clone()
     else {
@@ -1407,7 +1407,7 @@ fn predicting_rig(latency: u32) -> Rig {
     let SessionState::Joined {
         region_edits,
         brushes,
-        generator_version,
+        generator_version: _,
         ..
     } = rig.session.state().clone()
     else {
@@ -1936,7 +1936,7 @@ fn towering_rise(steps: usize) -> f64 {
     let SessionState::Joined {
         region_edits,
         brushes,
-        generator_version,
+        generator_version: _,
         ..
     } = rig.session.state().clone()
     else {
@@ -2138,7 +2138,7 @@ fn pool_rig(in_water: bool) -> Rig {
     let SessionState::Joined {
         region_edits,
         brushes,
-        generator_version,
+        generator_version: _,
         ..
     } = rig.session.state().clone()
     else {

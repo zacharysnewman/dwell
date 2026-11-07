@@ -1,0 +1,13 @@
+{
+  "$comment": "How waterfalls look (docs/WATER_SURFACE_GRID.md §2e, Phase 53 G6; owner, 2026-11-06: a falling sheet from the lip to where it lands, its width and thickness from the flow, with foam and spray where it lands; the Waterfalls setting). The falls are found by dwell-world `falls` (shared/fluids/falls.json) from the client's water cells and current table. drawM: falls are drawn within this of the eye (m); maxFalls: the nearest this many; refreshS: how often the falls near the eye are found again (s). liquids: per liquid (its fluid's name in the block registry; a liquid not listed draws no falls): sheet.color (sRGB) and sheet.opacityThin / sheet.opacityFull, its opacity at no flow and at the full flow (falls.json fullFlowM2s), the thickness the flow gives it; sheet.streaksPerM, pale streaks across a metre of its width; sheet.scroll, how fast the streaks run down per m/s the water falls (1: with it); sheet.segments, the pieces its curve (the water thrown out over the lip, falling under gravity) is drawn in. foam: a pale disc where it lands, foam.color, foam.opacity at full flow, foam.radiusM beyond the sheet's width (by the strength). spray: puffs thrown up where it lands, spray.count per metre of width at full flow (spray.cpuCount on a CPU adapter: few or none), spray.sizeM, spray.heightM how high they rise, spray.lifeS, spray.color and spray.opacity. Run `node shared/look/waterfalls.mjs` after editing; CI fails if crates/dwell-look/src/waterfalls.gen.rs is stale.",
+  "drawM": 64,
+  "maxFalls": 32,
+  "refreshS": 0.25,
+  "liquids": {
+    "dwell:water": {
+      "sheet": { "color": "#a9cbd6", "opacityThin": 0.35, "opacityFull": 0.8, "streaksPerM": 5, "scroll": 1, "segments": 6 },
+      "foam": { "color": "#d8e6e8", "opacity": 0.7, "radiusM": 0.6 },
+      "spray": { "count": 10, "cpuCount": 0, "sizeM": 0.12, "heightM": 0.9, "lifeS": 1.1, "color": "#cadde2", "opacity": 0.35 }
+    }
+  }
+}

@@ -75,30 +75,42 @@ struct PieceProxy {
 /// for the prediction's stand-ins: a speed-squared drag of `kx`/`kz` (1/m) moving along x/z
 /// (`k · speed²` m/s², blended by the direction) and a linear `linear` (/s), relative to the
 /// water's `current` (m/s along world x and z, docs/WATER_SURFACE_GRID.md §2c): a body drifts with
-/// it.
+/// it. In a waterfall's sheet (`fall`, on face `face`; docs/WATER_SURFACE_GRID.md §2e) it is also
+/// pushed down and out, and can't rise.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct WaterDrag {
     pub kx: f64,
     pub kz: f64,
     pub linear: f64,
     pub current: [f64; 2],
+    pub fall: Option<dwell_world::falls::FallPush>,
+    pub face: dwell_world::FaceFrame,
 }
 
 /// Where a body is in water and how that slows it (the sim's, which `dwell-physics` can't see).
 pub type WaterDragFn = fn(&mut VoxelWorld, &Physics, BodyHandle) -> WaterDrag;
 
 impl WaterDrag {
-    /// A sideways velocity (world x, z) after a tick of it.
+    /// A velocity (world) after a tick of it: sideways slowed toward the current, and a fall's push.
     pub fn slow(self, v: DVec3, dt: f64) -> DVec3 {
         let [cx, cz] = self.current;
         let (rx, rz) = (v.x - cx, v.z - cz);
         let speed = rx.hypot(rz);
-        if speed < 1e-9 {
-            return v;
+        let v = if speed < 1e-9 {
+            v
+        } else {
+            let k = (rx.abs() * self.kx + rz.abs() * self.kz) / speed;
+            let keep = (-self.linear * dt).exp() / (1.0 + k * speed * dt);
+            DVec3::new(cx + rx * keep, v.y, cz + rz * keep)
+        };
+        match self.fall {
+            Some(push) => {
+                let f = self.face;
+                let local = f.vector(v.to_array());
+                DVec3::from_array(f.vector(dwell_world::falls::push_velocity(local, push, dt)))
+            }
+            None => v,
         }
-        let k = (rx.abs() * self.kx + rz.abs() * self.kz) / speed;
-        let keep = (-self.linear * dt).exp() / (1.0 + k * speed * dt);
-        DVec3::new(cx + rx * keep, v.y, cz + rz * keep)
     }
 }
 
@@ -639,4 +651,36 @@ impl Predictor {
             .get(&player_id)
             .map(|r| self.physics.position(r.body))
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dwell_world::falls::FallPush;
+
+    dwell_world::both_faces!(
+        fn a_floating_body_under_a_fall_is_pushed_down_and_out(f: FaceFrame) {
+            // docs/WATER_SURFACE_GRID.md §2e: the server's bodies and the clients' stand-ins alike.
+            let drag = WaterDrag {
+                linear: 0.5,
+                fall: Some(FallPush {
+                    dir: 2,
+                    strength: 1.0,
+                }),
+                face: f,
+                ..WaterDrag::default()
+            };
+            // rising (face-locally) and still: after a second it falls and moves along +z
+            let mut v = DVec3::from_array(f.vector([0.0, 1.0, 0.0]));
+            for _ in 0..60 {
+                v = drag.slow(v, 1.0 / 60.0);
+            }
+            let local = f.vector(v.to_array());
+            assert!(local[1] < -1.0 && local[2] > 0.5, "{local:?}");
+            // out of a fall, nothing pushes it
+            let calm = WaterDrag { fall: None, ..drag };
+            let up = DVec3::from_array(f.vector([0.0, 1.0, 0.0]));
+            assert_eq!(calm.slow(up, 1.0 / 60.0), up);
+        }
+    );
 }

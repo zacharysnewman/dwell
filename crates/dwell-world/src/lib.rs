@@ -9,6 +9,7 @@ mod cell;
 pub mod currents;
 pub mod edit;
 mod face;
+pub mod falls;
 pub mod flow;
 pub mod fluid;
 pub mod hash;

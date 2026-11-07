@@ -319,8 +319,11 @@ pub struct BrushTool {
     preview_ms: f64,
     version: u64,
     /// The last [`BrushTool::read_extent`]: its brush, its face (B) and the extent.
-    extent: std::cell::Cell<Option<(BrushSpec, bool, Option<([i32; 3], [i32; 3])>)>>,
+    extent: std::cell::Cell<Option<ReadExtent>>,
 }
+
+/// A read extent as kept: its brush, its face (B) and the cells' bounds, if any.
+type ReadExtent = (BrushSpec, bool, Option<([i32; 3], [i32; 3])>);
 
 impl Default for BrushTool {
     fn default() -> Self {

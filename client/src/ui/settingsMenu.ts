@@ -132,6 +132,7 @@ export function settingsJson(s: Settings): string {
       flowRipples: s.water.flowRipples,
       flowFoam: s.water.flowFoam,
       flowParticles: s.water.flowParticles,
+      waterfalls: s.water.waterfalls,
     },
     shadows: { quality: s.shadows.quality, torch: s.shadows.torch },
     motion: {
@@ -395,6 +396,12 @@ const WATER_FLOW_TOGGLES: ToggleSpec[] = [
     hint: 'Small flecks floating downstream on moving water',
     get: (s) => s.water.flowParticles,
     with: (s, v) => ({ ...s, water: { ...s.water, flowParticles: v } }),
+  },
+  {
+    label: 'Waterfalls',
+    hint: 'Water falling over a drop shows as a sheet, with foam and spray where it lands',
+    get: (s) => s.water.waterfalls,
+    with: (s, v) => ({ ...s, water: { ...s.water, waterfalls: v } }),
   },
 ];
 

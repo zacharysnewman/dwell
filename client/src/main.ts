@@ -266,6 +266,20 @@ interface DwellDebug {
   telemetryFrames(): { names: string[]; frames: number[][] };
   /** The client's water current at a world point (m/s x, z) and the flecks near the eye. */
   waterFlowAt(x: number, y: number, z: number): number[];
+  /**
+   * The waterfalls near the eye (docs/WATER_SURFACE_GRID.md §2e): each one's high column x, z, its
+   * way (0 +x, 1 −x, 2 +z, 3 −z), width, lip and landing (world y), flow per metre and lip speed.
+   */
+  waterFalls(): {
+    x: number;
+    z: number;
+    dir: number;
+    width: number;
+    lip: number;
+    land: number;
+    flow: number;
+    speed: number;
+  }[];
   /** The kept player controller ticks, oldest first. */
   ticks(): TickSample[];
   /** The latest sounds played (ids, newest last; docs/AUDIO.md). */
@@ -684,7 +698,12 @@ async function start(): Promise<App | null> {
     client.setWaterQuality(waterQualityLevel(s.water.quality));
     // A phone draws the water's cheaper reflection tiers (shared/look/reflections.json `phone`).
     client.setPhone(mobile);
-    client.setWaterFlow(s.water.flowRipples, s.water.flowFoam, s.water.flowParticles);
+    client.setWaterFlow(
+      s.water.flowRipples,
+      s.water.flowFoam,
+      s.water.flowParticles,
+      s.water.waterfalls,
+    );
     // ?waterdbg=caustics,foam,… turns pieces of the water's shading off (a dev tool, DEV_TOOLS.md).
     const waterDebug = new URLSearchParams(location.search).get('waterdbg');
     if (waterDebug) client.setWaterDebug(waterDebug);
@@ -877,6 +896,24 @@ async function start(): Promise<App | null> {
     telemetry: () => client.telemetry() as Telemetry,
     telemetryFrames: () => client.telemetryFrames() as { names: string[]; frames: number[][] },
     waterFlowAt: (x: number, y: number, z: number) => Array.from(client.waterFlowAt(x, y, z)),
+    waterFalls: () => {
+      const v = Array.from(client.waterFalls());
+      const at = (k: number) => v[k] ?? 0;
+      const out = [];
+      for (let i = 0; i + 8 <= v.length; i += 8) {
+        out.push({
+          x: at(i),
+          z: at(i + 1),
+          dir: at(i + 2),
+          width: at(i + 3),
+          lip: at(i + 4),
+          land: at(i + 5),
+          flow: at(i + 6),
+          speed: at(i + 7),
+        });
+      }
+      return out;
+    },
     ticks: () => client.telemetryTicks() as TickSample[],
     telemetryReset: () => {
       client.telemetryReset();

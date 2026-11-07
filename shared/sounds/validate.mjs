@@ -284,14 +284,19 @@ export function validateSound(where, s) {
 
 /**
  * The ambient sounds' tunables (AUDIO.md §2): `fire` — burning light sources (a placed torch, one
- * in a hand) crackle within `radiusM`, the nearest `max`. (No wind loop: removed, owner
+ * in a hand) crackle within `radiusM`, the nearest `max`; `falls` — waterfalls rush within
+ * `radiusM`, the nearest `max`, at full level by their flow at `fullM3s` (docs/WATER_SURFACE_GRID.md §2e). (No wind loop: removed, owner
  * 2026-10-21; no night crickets: removed, owner 2026-10-28.)
  */
 function validateAmbient(a) {
-  keysIn("ambient", a, ["fire"]);
+  keysIn("ambient", a, ["fire", "falls"]);
   keysIn("ambient.fire", a.fire, ["radiusM", "max"]);
   number("ambient.fire.radiusM", a.fire.radiusM, 1, 48);
   number("ambient.fire.max", a.fire.max, 0, 16, { integer: true });
+  keysIn("ambient.falls", a.falls, ["radiusM", "max", "fullM3s"]);
+  number("ambient.falls.radiusM", a.falls.radiusM, 1, 128);
+  number("ambient.falls.max", a.falls.max, 0, 16, { integer: true });
+  number("ambient.falls.fullM3s", a.falls.fullM3s, 0.01, 1000);
   return a;
 }
 

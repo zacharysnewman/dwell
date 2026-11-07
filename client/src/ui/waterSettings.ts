@@ -19,6 +19,11 @@ export interface WaterSettings {
   flowRipples: boolean;
   flowFoam: boolean;
   flowParticles: boolean;
+  /**
+   * Waterfalls drawn (docs/WATER_SURFACE_GRID.md §2e, G6): falling sheets with foam and spray where
+   * they land. An optional field of the record (0.49.31): a record without it takes the default.
+   */
+  waterfalls: boolean;
 }
 
 export const WATER_QUALITY_LABELS: Record<WaterQuality, string> = {
@@ -33,6 +38,7 @@ export function defaultWater(mobile: boolean): WaterSettings {
     flowRipples: true,
     flowFoam: true,
     flowParticles: true,
+    waterfalls: true,
   };
 }
 
@@ -43,13 +49,14 @@ function isQuality(v: unknown): v is WaterQuality {
 /** The stored record as settings; anything missing or unknown takes the default. */
 export function sanitizeWater(value: unknown, fallback: WaterSettings): WaterSettings {
   const stored = value as Partial<Record<keyof WaterSettings, unknown>> | null;
-  const flag = (k: 'flowRipples' | 'flowFoam' | 'flowParticles') =>
+  const flag = (k: 'flowRipples' | 'flowFoam' | 'flowParticles' | 'waterfalls') =>
     typeof stored?.[k] === 'boolean' ? stored[k] : fallback[k];
   return {
     quality: isQuality(stored?.quality) ? stored.quality : fallback.quality,
     flowRipples: flag('flowRipples'),
     flowFoam: flag('flowFoam'),
     flowParticles: flag('flowParticles'),
+    waterfalls: flag('waterfalls'),
   };
 }
 
@@ -73,5 +80,6 @@ export function waterRecord(stored: unknown, settings: WaterSettings): Record<st
     flowRipples: settings.flowRipples,
     flowFoam: settings.flowFoam,
     flowParticles: settings.flowParticles,
+    waterfalls: settings.waterfalls,
   };
 }
