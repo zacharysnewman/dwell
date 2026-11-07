@@ -1707,6 +1707,69 @@ mod tests {
     }
 
     #[test]
+    fn a_server_state_with_an_unknown_property_maps_to_an_alias_of_its_base() {
+        // ADR 0063: a newer server's leaves have `mymod:wet`, and it serves an alias of its own.
+        let mut p = Payload::served();
+        let at = p
+            .blocks
+            .iter()
+            .position(|b| b.name == "dwell:leaves")
+            .expect("leaves");
+        let leaves = &mut p.blocks[at];
+        assert_eq!(leaves.properties.len(), 1, "flooded only");
+        leaves
+            .properties
+            .push(("mymod:wet".into(), vec!["0".into(), "7".into()]));
+        let old = std::mem::take(&mut leaves.states);
+        let added = old.len() as u16;
+        leaves.states = old.iter().flat_map(|s| [s.clone(), s.clone()]).collect();
+        for b in &mut p.blocks[at + 1..] {
+            b.first_state += added;
+        }
+        let sand = p
+            .blocks
+            .iter()
+            .find(|b| b.name == "dwell:sand")
+            .expect("sand")
+            .states[0]
+            .clone();
+        let gritty = "dwell:sand[flooded=false,mymod:grit=3]";
+        let next = p.id_end() as u16;
+        p.blocks.push(PayloadBlock {
+            name: gritty.into(),
+            first_state: next,
+            properties: vec![],
+            states: vec![sand],
+        });
+        let m = map(&p, 0).expect("maps");
+        let d = &m.differences;
+        assert!(
+            d.added.is_empty() && d.different.is_empty() && d.client_only.is_empty(),
+            "{d:?}"
+        );
+        let wet = "dwell:leaves[flooded=true,mymod:wet=7]";
+        let here = m.client(server_id(&p, wet)).expect("mapped");
+        assert_eq!(info(here).name, wet);
+        assert_eq!(
+            crate::alias_base(here),
+            Some(require("dwell:leaves[flooded=true]"))
+        );
+        assert_eq!(m.server(here), Some(server_id(&p, wet)));
+        assert_eq!(
+            m.server(require("dwell:leaves[flooded=true]")),
+            Some(server_id(&p, "dwell:leaves[flooded=true,mymod:wet=0]")),
+            "the build's leaves place the server's at the new property's default"
+        );
+        let g = m.client(server_id(&p, gritty)).expect("mapped");
+        assert_eq!(crate::alias_base(g), Some(require("dwell:sand")));
+        assert_eq!(info(g).name, gritty);
+        // the workers' extension carries the aliases as aliases
+        let before = state_count();
+        apply_extension(&extension_payload()).expect("applies");
+        assert_eq!(state_count(), before);
+    }
+
+    #[test]
     fn ids_translate_in_place_and_unknown_ids_fail() {
         let p = modded();
         let m = map(&p, 0).expect("maps");
