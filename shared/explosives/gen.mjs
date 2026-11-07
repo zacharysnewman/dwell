@@ -26,6 +26,9 @@ export const EXPLOSIVE_RANGES = {
   damage: [0, 1000],
   waterRadiusM: [0, 16],
   noPieceContactS: [0, 10],
+  openSenseM: [0, 8],
+  openBlend: [0, 1],
+  openPathM: [0, 4],
 };
 
 /** Each effect's numbers (and its colour, if it has one): field → [min, max]; pairs are [lo, hi] ranges. */

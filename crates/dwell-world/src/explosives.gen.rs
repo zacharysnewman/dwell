@@ -22,6 +22,9 @@ pub const EXPLOSIVES: &[ExplosiveData] = &[
         damage: 160.0,
         water_radius_m: 3.0,
         no_piece_contact_s: 0.0,
+        open_sense_m: 3.0,
+        open_blend: 0.6,
+        open_path_m: 1.0,
         chain_delay_seconds: [0.15, 0.6],
         effects: BlastEffects {
             flash: FlashLook { color: [1.0, 0.85098, 0.627451], strength: 6.0, light_radius_m: 18.0, seconds: 0.3, size_m: 4.0 },

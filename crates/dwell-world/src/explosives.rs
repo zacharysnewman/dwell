@@ -96,6 +96,12 @@ pub struct ExplosiveData {
     /// For this long (s) a blast's pieces don't touch one another; after it each touches the
     /// others again once it overlaps none.
     pub no_piece_contact_s: f64,
+    /// The open side is sensed from the cells within it (m) of the charge (`open_dir`).
+    pub open_sense_m: f64,
+    /// How far (0–1, times the openness) a piece's push turns from its line toward the open side.
+    pub open_blend: f64,
+    /// A shell cell whose push meets rock within it (m) stays as terrain (`launching`; 0: all fly).
+    pub open_path_m: f64,
     pub chain_delay_seconds: [f64; 2],
     pub effects: BlastEffects,
 }
@@ -206,6 +212,123 @@ pub fn push_dir(centre: [f64; 3], at: [f64; 3], lift: f64) -> [f64; 3] {
     ];
     let n = length(v);
     if n > 1e-6 { v.map(|c| c / n) } else { up }
+}
+
+/// The way out of a blast (docs/EXPLOSIVES.md §3): the mean, over the cells within `sense_m` of the
+/// charge's cell (offsets, rows `CELL_H` tall; the charge's own left out), of the unit direction to
+/// each open cell less that to each solid one (`solid(offset)`), doubled and at most 1 long, so a
+/// half space open (flat ground, a cliff face, a cave roof) gives its normal at length 1 and a
+/// buried charge about nothing. Computed from cells, so it is face-free: on face B the ground's
+/// cells are mirrored and so is the way out.
+pub fn open_dir(sense_m: f64, solid: impl Fn([i32; 3]) -> bool) -> [f64; 3] {
+    let mut sum = [0.0; 3];
+    let mut n = 0.0;
+    for o in cells_within(sense_m).into_iter().skip(1) {
+        let d = offset_m(o);
+        let l = length(d);
+        let sign = if solid(o) { -1.0 } else { 1.0 };
+        for k in 0..3 {
+            sum[k] += sign * d[k] / l;
+        }
+        n += 1.0;
+    }
+    if n == 0.0 {
+        return [0.0; 3];
+    }
+    let v = sum.map(|c| 2.0 * c / n);
+    let l = length(v);
+    if l > 1.0 { v.map(|c| c / l) } else { v }
+}
+
+/// A flung piece's push: its unit line from the blast `radial` turned toward the way out `open`
+/// (`open_dir`) by `blend` × its openness (its length), a unit vector; a buried charge's stays
+/// radial.
+pub fn piece_dir(radial: [f64; 3], open: [f64; 3], blend: f64) -> [f64; 3] {
+    let openness = length(open);
+    if openness < 1e-9 {
+        return radial;
+    }
+    let b = (blend * openness).clamp(0.0, 1.0);
+    let v: [f64; 3] = std::array::from_fn(|k| (1.0 - b) * radial[k] + b * open[k] / openness);
+    let l = length(v);
+    if l > 1e-9 { v.map(|c| c / l) } else { open.map(|c| c / openness) }
+}
+
+/// Which of a blast's shell cells fly (docs/EXPLOSIVES.md §3; owner, 2026-11-06: "don't simulate
+/// what can't move", and the rock in the way "would need to exclude the pieces that are about to be
+/// thrown"). `shell`: each candidate's offset from the charge's cell, its push (unit), and whether it
+/// flies whatever (a loosened cell). Each cell's path is its push out to `path_m`, ending where it
+/// reaches open space (`solid` false: air, liquid, the cleared core); it flies if the path meets
+/// no rock (`solid`, not a shell cell) and every shell cell it passes flies. Spread from the
+/// opening until nothing changes, so the result does not depend on the order: a cell whose path
+/// meets rock, or a shell cell left standing, stays as terrain. `path_m` 0: all fly.
+pub fn launching(
+    shell: &[([i32; 3], [f64; 3], bool)],
+    path_m: f64,
+    solid: impl Fn([i32; 3]) -> bool,
+) -> Vec<bool> {
+    if path_m <= 0.0 {
+        return vec![true; shell.len()];
+    }
+    let index: std::collections::HashMap<[i32; 3], usize> =
+        shell.iter().enumerate().map(|(i, s)| (s.0, i)).collect();
+    // Each cell's path up to open space: the shell cells it passes (it flies once all of them
+    // do), or None if rock comes first.
+    let step = 0.05;
+    let paths: Vec<Option<Vec<usize>>> = shell
+        .iter()
+        .map(|&(o, dir, always)| {
+            if always {
+                return Some(Vec::new());
+            }
+            let start = offset_m(o);
+            let mut seen = vec![o];
+            let mut via = Vec::new();
+            let mut t = step;
+            while t <= path_m + 1e-9 {
+                let q: [f64; 3] = std::array::from_fn(|k| start[k] + dir[k] * t);
+                let c = [
+                    q[0].round() as i32,
+                    (q[1] / CELL_H).round() as i32,
+                    q[2].round() as i32,
+                ];
+                t += step;
+                if seen.contains(&c) {
+                    continue;
+                }
+                seen.push(c);
+                if let Some(&j) = index.get(&c) {
+                    via.push(j);
+                } else if solid(c) {
+                    return None;
+                } else {
+                    break;
+                }
+            }
+            Some(via)
+        })
+        .collect();
+    let mut flies = vec![false; shell.len()];
+    loop {
+        let mut changed = false;
+        for i in 0..shell.len() {
+            if !flies[i]
+                && let Some(via) = &paths[i]
+                && via.iter().all(|&j| flies[j])
+            {
+                flies[i] = true;
+                changed = true;
+            }
+        }
+        if !changed {
+            return flies;
+        }
+    }
+}
+
+/// The unit line from a blast at `centre` to `at` (world m); the face's up where they meet.
+pub fn radial_dir(centre: [f64; 3], at: [f64; 3]) -> [f64; 3] {
+    push_dir(centre, at, 0.0)
 }
 
 /// The speed (m/s) blast `e` gives a block of state `m` at `d` m from it: its impulse times the
@@ -362,6 +485,114 @@ mod tests {
             ..*e
         };
         assert!(blast_damage(&wide, 3.0) > 0.0);
+    }
+
+    /// World cell offset `o`'s face-local offset (x, rows, z) in face `f`.
+    fn local(f: FaceFrame, o: [i32; 3]) -> [i32; 3] {
+        let v = f.vector(offset_m(o));
+        [v[0].round() as i32, (v[1] / CELL_H).round() as i32, v[2].round() as i32]
+    }
+
+    fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
+        a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+    }
+
+    crate::both_faces!(
+        fn the_way_out_is_the_open_sides_normal(f: FaceFrame) {
+            let e = dynamite();
+            // Face-local fixtures: the solid cells round the charge's (air) cell.
+            let cases: [(&str, fn([i32; 3]) -> bool, [f64; 3]); 3] = [
+                ("flat ground", |l| l[1] < 0, [0.0, 1.0, 0.0]),
+                ("a cliff face", |l| l[0] < 0, [1.0, 0.0, 0.0]),
+                ("a cave roof", |l| l[1] > 0, [0.0, -1.0, 0.0]),
+            ];
+            for (name, solid, want) in cases {
+                let w = open_dir(e.open_sense_m, |o| solid(local(f, o)));
+                let l = f.vector(w);
+                assert!(length(l) > 0.9, "{name}: open {:.2}", length(l));
+                assert!(dot(l, want) > 0.95, "{name}: {l:?}");
+            }
+            let buried = open_dir(e.open_sense_m, |_| true);
+            assert!(length(buried) < 1e-9, "buried: {buried:?}");
+            // A piece right under a charge on the ground goes up, out of the crater; buried, down.
+            let up = f.vector([0.0, 1.0, 0.0]);
+            let down = up.map(|c| -c);
+            let ground = open_dir(e.open_sense_m, |o| local(f, o)[1] < 0);
+            assert!(dot(piece_dir(down, ground, e.open_blend), up) > 0.99);
+            assert_eq!(piece_dir(down, buried, e.open_blend), down);
+        }
+    );
+
+    /// The shell of a charge on flat ground in face `f` (its solid cells 2–4 m out), each with its
+    /// push.
+    fn ground_shell(f: FaceFrame) -> Vec<([i32; 3], [f64; 3], bool)> {
+        let e = dynamite();
+        let open = open_dir(e.open_sense_m, |o| local(f, o)[1] < 0);
+        cells_within(e.radius_m)
+            .into_iter()
+            .filter(|&o| length(offset_m(o)) > e.destroy_radius_m && local(f, o)[1] < 0)
+            .map(|o| {
+                let r = radial_dir([0.0; 3], offset_m(o));
+                (o, piece_dir(r, open, e.open_blend), false)
+            })
+            .collect()
+    }
+
+    crate::both_faces!(
+        fn a_surface_blasts_upper_shell_flies_whole_and_the_deep_ground_stays(f: FaceFrame) {
+            // Owner (2026-11-06): the rock in a piece's way "would need to exclude the pieces that
+            // are about to be thrown".
+            let e = dynamite();
+            let shell = ground_shell(f);
+            // The ground once the core is cleared.
+            let after =
+                |o: [i32; 3]| local(f, o)[1] < 0 && length(offset_m(o)) > e.destroy_radius_m;
+            let flies = launching(&shell, e.open_path_m, after);
+            // Each cell judged alone, the shell's other cells as rock: fewer fly.
+            let alone = shell
+                .iter()
+                .filter(|s| launching(&[**s], e.open_path_m, after)[0])
+                .count();
+            let n = flies.iter().filter(|&&b| b).count();
+            assert!(n > alone, "the flood {n}, each alone {alone}");
+            // The upper shell (within 1 m of the surface, but its rim, whose pushes graze the
+            // ground past the ball) flies whole, and so does every cell under the crater (pushed
+            // up through the cleared core and the cells over it).
+            for (s, &b) in shell.iter().zip(&flies) {
+                let l = local(f, s.0);
+                let wide = f64::from(l[0] * l[0] + l[2] * l[2]).sqrt();
+                let upper = l[1] >= -2 && wide <= 2.5;
+                assert!(b || !(upper || wide <= 1.5), "{:?} (local {l:?}) stayed", s.0);
+            }
+            // Some ground is left standing: the cells whose push runs into the ground past the ball.
+            assert!(n < shell.len(), "{n} of {} fly", shell.len());
+            // The order does not matter.
+            let mut rev = shell.clone();
+            rev.reverse();
+            let mut back = launching(&rev, e.open_path_m, after);
+            back.reverse();
+            assert_eq!(back, flies);
+            // A path of 0 flings every cell, as before.
+            assert!(launching(&shell, 0.0, after).iter().all(|&b| b));
+            println!("{n} of {} fly, {alone} alone", shell.len());
+        }
+    );
+
+    #[test]
+    fn a_buried_charges_shell_stays_as_terrain() {
+        // face-a-only: everything is solid, so the faces are the same.
+        let e = dynamite();
+        let shell: Vec<_> = cells_within(e.radius_m)
+            .into_iter()
+            .filter(|&o| length(offset_m(o)) > e.destroy_radius_m)
+            .map(|o| (o, radial_dir([0.0; 3], offset_m(o)), false))
+            .collect();
+        let rock = |o: [i32; 3]| length(offset_m(o)) > e.destroy_radius_m;
+        assert!(launching(&shell, e.open_path_m, rock).iter().all(|&b| !b));
+        // A loosened cell flies whatever.
+        let mut loose = shell.clone();
+        loose[0].2 = true;
+        assert!(launching(&loose, e.open_path_m, rock)[0]);
     }
 
     crate::both_faces!(
