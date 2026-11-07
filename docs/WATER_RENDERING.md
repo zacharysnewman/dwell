@@ -589,3 +589,16 @@ that left an open strip from the lower surface up to the upper column's next cel
 gap (docs/BUGS.md 4). Now, beside the same fluid whose drawn surface is lower, a cell draws its side
 face over just that strip, from the neighbour's drawn surface up to its own (`fluid_side` takes a
 bottom as well as a top). Test: dwell-mesh `a_river_step_down_closes_the_strip_between_the_two_surfaces`.
+
+## 11. Waterfalls (2026-11-06, Phase 53 G6)
+
+Water crossing a drop moves from the high column to the low one within a step of the grid, so nothing
+was drawn where it falls (WATER_SURFACE_GRID.md §2e). The falls are found from the client's water cells
+and current table (`dwell_world::falls`) and drawn in the flames' billboard pass, not as water blocks
+(`render/waterfalls.rs`): a sheet along the lip, curved as the water is thrown out and falls, half see-
+through by its flow, pale streaks running down it; a foam patch and spray puffs where it lands; lit as
+the water's surface is (the sky, the sun and moon through the shadow maps), premultiplied, writing no
+depth. Looks per liquid in `shared/look/waterfalls.json`. **Cost:** a few quads per fall (6 sheet
+segments, the foam, at most `count` × width puffs), the nearest 32 within 64 m; the fragments are the
+sheets' pixels, each a few noise taps. A CPU adapter draws them still and without spray. The
+**Waterfalls** setting (Water section) turns them off.

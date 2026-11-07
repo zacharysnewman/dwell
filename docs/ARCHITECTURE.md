@@ -2616,6 +2616,31 @@ in 0.48.2.
   **Flowing ripples**, **Foam streaks** and **Drifting flecks** settings (`dwell.water`'s optional
   `flowRipples`, `flowFoam`, `flowParticles`; on by default), the first two in the frame's `wrap.w`.
   Water a player set moving and generated water show alike: both read the one table.
+- **[built, G6] Waterfalls** (WATER_SURFACE_GRID.md §2e; owner 2026-11-06). **Found** by one
+  shared, face-local function, `dwell-world` `falls.rs` (`falls_near`, `push_at`), from what the
+  server and every client already have: the world's water cells and the current table. A fall face
+  is a column face the high column's current crosses at `minSpeedMs` or more carrying `minFlowM2s`
+  per metre, the cell beside its lip open, the far surface (water, or floor) more than `minDropM`
+  (0.75 m: a drawn river's 0.5 m steps are not falls) below the lip; faces along one lip within
+  `mergeM` are one fall (lip, landing, width, flow per metre, the current over the lip). Data
+  `shared/fluids/falls.json` → `falls.gen.rs` by `shared/fluids/falls.mjs` (validated, CI stale
+  check). No message and no protocol change. **Pushed:** players (`Players::step_fall`,
+  PLAYER_CONTROLLER.md §6.4) and floating bodies (`felling::water_drag`'s `WaterDrag::fall`, the
+  server's and the clients' stand-ins alike) in a fall's sheet are drawn down and out by its strength
+  and can't rise. **Drawn** (`render/waterfalls.rs`, through the flames' billboard pass as
+  `KIND_SHEET`, `KIND_FOAM`, `KIND_SPRAY`): the client finds the falls within `drawM` every
+  `refreshS` (`Game::falls`, telemetry `falls.find`; ~0.1 ms mean, 3.5 ms at worst on seed 0's dam
+  site) and draws the nearest `maxFalls`: a sheet along the lip curved as the water is thrown out
+  over it and falls (`segments` quads), its opacity from `opacityThin` to `opacityFull` by the flow,
+  streaks running down at the fall's speed; a foam patch where it lands; spray puffs (`count` per
+  metre at full flow) rising there. Lit as the water's surface is. A CPU adapter draws still sheets
+  and no spray (`cpuCount` 0). Looks per liquid as data (`shared/look/waterfalls.json` →
+  `dwell-look` `waterfalls.gen.rs` by `shared/look/waterfalls.mjs`, a fixture liquid by data alone).
+  The **Waterfalls** setting (Water section; `dwell.water`'s optional `waterfalls`, on by default)
+  turns the drawing off; the sound stays. **Heard** (AUDIO.md §5): `FallSounds`, the loudest
+  `ambient.falls.max` (3) within `radiusM` (40 m) each on a loop voice (`FALL_VOICE` on), its level
+  the square root of its flow's share of `fullM3s` times the distance falloff; the procedural
+  `waterfall` loop (`shared/sounds/dwell.json`).
 
 **Still from earlier phases, unchanged:** water's `fill` property (registry `fillProperty`,
 `StateInfo::fill`, look tag `0x92`; 0.44.0) and the mesher drawing a surface at it; a coarse LOD water

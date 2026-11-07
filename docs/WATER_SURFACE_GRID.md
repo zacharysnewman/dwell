@@ -376,7 +376,7 @@ pieces that fall are bodies stepped on the tick (a trace of the first 4 s: of th
 and what the tests' servers run). The players' positions are sent but not used yet. `Water::tick` on a
 world stays for tests and tools, its copy kept by a mirror of that world.
 
-## 2e. Waterfalls (the owner, 2026-11-06; planned, G6)
+## 2e. Waterfalls (the owner, 2026-11-06; built, G6)
 
 The owner, on a dam with a notch, the water standing in the notch and nothing below it: "Do we not do
 waterfalls or flowing water over a certain height?" The grid holds one level per column; water crossing a
@@ -398,6 +398,38 @@ client's prediction and drawing agree with no new message: the lip (the near lev
 landing (the far surface), the width (1 m per face, merged along a lip) and the flow per metre (depth ×
 speed). Data in `shared/fluids/` (detection) and `shared/look/` (the sheet, foam, spray) and
 `shared/sounds/` (the sound).
+
+**Step 1, does the notch spill (2026-11-06)?** Yes: natively (`crates/dwell-sim/tests/waterfalls.rs`,
+a dam's notch below the reservoir's level and a notch in a dam across a drawn river, both faces) and
+in the browser at seed 0's dam site (a pit dug below a notched dam filled from 135.0 to 138.9 m in about
+25 s). Before 0.49.19 (BUGS.md #38) a level reach carried no river flow, so a dammed reach drained down
+to the notch's floor and stopped: the owner's flat sheet standing in the notch with nothing below. With
+the river's flow carried, the notch keeps spilling; what was missing was drawing it, as below. Not a
+grid bug, so no BUGS.md entry.
+
+**As built (G6, 0.49.31):**
+
+- **Found** (`dwell-world` `falls.rs`, data `shared/fluids/falls.json`): as designed, one function for
+  the server and clients, face-local, from the water cells (a column's water on a floor) and the current
+  table. The far side's cell at the lip's top row must be open; its surface is looked for down to
+  `maxDropM`; a fall needs more than `minDropM` (0.75 m, so a drawn river's 0.5 m steps are not falls),
+  `minSpeedMs` (5 cm/s) across the face and `minFlowM2s` per metre. Faces along a lip within `mergeM`
+  (0.3 m) of each other's lip and landing merge. The client finds them every `refreshS` (0.25 s)
+  within `drawM` (64 m); the physics asks per body (`push_at`, a few columns round it).
+- **Physics:** in a fall's sheet (beyond the face by `reachM`, 1 m; from the landing to the lip) a body is
+  drawn toward the falling water's velocity, `pushOutMs` (2.5 m/s) out and `pushDownMs` (6 m/s) down at
+  `pushRate` (3/s), each by the strength (flow per metre over `fullFlowM2s`, 0.5 m²/s), only further out
+  and down, never up. **Deviation:** a player standing on the ground under a fall is carried out at the
+  water's out speed directly, since an approach never beat the ground's friction (0.12 m in a second).
+- **Look** (`render/waterfalls.rs`, `shared/look/waterfalls.json`): the sheet a curve of quads from the
+  lip (4 cm off its face) to the landing, thrown out at the lip's current (at least 0.3 m/s) and falling
+  under gravity, its opacity 0.35 to 0.8 by the strength, streaks running down at its speed; a foam patch
+  and spray puffs where it lands (tinted, not white: the owner's view of the flecks). **Deviation:** the
+  thickness is shown as opacity, not geometry (a single double-sided sheet). Seen in Chrome at seed 0's
+  dam site: the sheet hangs from a 4-wide notch into the pit below.
+- **Sound:** a `waterfall` loop per fall (`FallSounds`), the loudest 3 within 40 m, louder by flow
+  (square root of its share of `fullM3s`, 2 m³/s) and nearer.
+- **Setting:** Water → **Waterfalls** (as G3d's flow switches: each a setting), the drawing only.
 
 ## 3. Generation
 

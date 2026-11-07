@@ -166,6 +166,7 @@ The server tick (ARCHITECTURE §4.2) runs, for every player, **before** `Physics
 | 8 | `step_swim` | — (Dwell) | Exclusive layer in water voxels (§6.4) and in the flip band (§11); not while climbing or flying |
 | 9 | `step_horizontal` | `PPCMovementLayerSystem` | Absorb external; on ground steeper than 44° the slide (§6.8); else during a sprint slide the sprint slide (§6.9); else the walking rule on the whole velocity in the platform's frame: on the ground accel/reverse along the input up to the walking speed, friction above it and when nothing is held; in the air input only adds, up to `max(walk speed, |v|)`, and turns a faster body (§6.12); step-up; edge guard |
 | 10 | `step_vertical` | `PPCVerticalLayerSystem` | Gravity; walk-off keeps platform Y; ceiling cancel; launch detection; ground following + snap |
+| 10b | `step_fall` | — (Dwell) | In a waterfall's sheet (`dwell_world::falls::push_at`): drawn down and out, never rising; on the ground carried out (§6.4) |
 | 10a | `step_impact` | — (Dwell) | This tick's hit from the new contacts, the landing and a ceiling cancel: `IMPACTED` (§6.10) |
 | 11 | `step_aggregate` | `PPCAggregateSystem` | `target = exclusive ? layer.velocity : horizontal.contribution + (0, vertical.target_y, 0)`; set the body's linear velocity |
 | 12 | `step_state` | `PPCStateSystem` | Priority: Climbing > Swimming > Flying > Sliding (§6.8, §6.9) > Crouching > Jumping/Falling > Running/Walking/Idle |
@@ -455,6 +456,19 @@ openings), **crouch height 0.9** (fits 1-tall crawlspaces with skin to spare).
   layer's wish velocity has the water's current where the body is added (`VoxelWorld::currents`,
   the same vector face-locally), so an idle swimmer drifts with it and swimming is in the water's
   frame (`a_swimmer_drifts_with_the_current_and_swims_in_the_waters_frame`, both faces).
+- **Waterfalls** (Phase 53 G6, WATER_SURFACE_GRID.md §2e; owner 2026-11-06: a fall pushes what is in
+  it down and out by how much flows, and can't be swum up): `step_fall`, after the vertical layer and
+  not while climbing or flying, asks `dwell_world::falls::push_at` (the falls found from the water
+  cells and the current table, the same on the server and in the prediction, so nothing new is on
+  the wire) whether the capsule overlaps a fall's sheet (beyond its lip by `reachM`, from its landing
+  to its lip). In one, swimming, the swim layer's velocity, and in the air, the horizontal
+  `external` and the vertical layer's velocity, are drawn toward the falling water's
+  (`pushOutMs` out, `pushDownMs` down, at `pushRate`, each by the fall's strength: its flow per metre
+  over `fullFlowM2s`, `shared/fluids/falls.json`), only further out and down, and never upward: a
+  jump or a swim up it is cancelled. On the ground, where the ground's friction would win against an
+  approach each tick, the body is carried out at the water's speed. Tests: `waterfall.rs`
+  (`standing_under_a_fall_pushes_the_player_out_from_the_lip`, `a_fall_cant_be_jumped_up`,
+  `a_swimmer_below_a_fall_cant_swim_up_it`; the mirror suite runs them on face B).
 
 ### 6.5 Terrain changing under or into the player
 - **Block removed under the feet:** the next probe finds no ground → walk-off rules apply (keep

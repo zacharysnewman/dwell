@@ -75,7 +75,9 @@ the Rust game). CI regenerates both and fails on a diff, as for the block regist
   loop sounds, every other event's are not. For `hurt` the `speed` range is in health points (the
   damage taken).
 - **`ambient`** — the ambient sounds' tunables, emitted into `sound.gen.rs` as `ambient::…`:
-  `fire` (`radiusM`: burning light sources crackle within it; `max`: the nearest this many).
+  `fire` (`radiusM`: burning light sources crackle within it; `max`: the nearest this many);
+  `falls` (`radiusM`: waterfalls rush within it; `max`: the loudest this many; `fullM3s`: the flow
+  at which one is at full level).
   There is no wind loop (removed, owner 2026-10-21: too intense) and no night loop (the crickets,
   removed, owner 2026-10-28: "it's bad").
 - **`gaits`** — `walk`, `run`, `crouch`, `climb`, `swim`: footstep `stride` (m between steps) and
@@ -206,6 +208,13 @@ Ours are read from the prediction's ticks; another player's from each snapshot's
 delay (`INTERP_DELAY_MS`) so they sound when its body is drawn at the wall. The hurt is not
 predicted: it comes from the server's Damage event (another player's held by the same delay),
 so it never sounds for a hit the server did not count.
+
+**Waterfalls** (`FallSounds`; WATER_SURFACE_GRID.md §2e, owner 2026-11-06: a rushing sound per
+fall, louder with more flow and nearer): the falls the client found near the eye (`dwell_world::falls`)
+each sound from their sheet's middle; the loudest `ambient.falls.max` within `ambient.falls.radiusM`
+hold a loop voice (`FALL_VOICE` on, the `fall`/`fall_level`/`fall_end` events) at a level
+`√min(1, q / fullM3s) · (1 − (d / r)²)²` (`fall_level`) for a fall carrying `q` m³/s. The loop is
+`waterfall`: pink, brown and a little white noise through filters, its cutoff rising with the level.
 
 **Fires** (`FireSounds`): every frame the burning light sources near the listener — placed ones
 (`VoxelWorld::light_sources_near`, the flame's cell), the torch in our hand (at the listener) and

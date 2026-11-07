@@ -7,7 +7,7 @@
     "dwell:water": {
       "sheet": { "color": "#a9cbd6", "opacityThin": 0.35, "opacityFull": 0.8, "streaksPerM": 5, "scroll": 1, "segments": 6 },
       "foam": { "color": "#d8e6e8", "opacity": 0.7, "radiusM": 0.6 },
-      "spray": { "count": 8, "cpuCount": 0, "sizeM": 0.22, "heightM": 1.2, "lifeS": 1.1, "color": "#d4e3e6", "opacity": 0.55 }
+      "spray": { "count": 10, "cpuCount": 0, "sizeM": 0.12, "heightM": 0.9, "lifeS": 1.1, "color": "#cadde2", "opacity": 0.35 }
     }
   }
 }

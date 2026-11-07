@@ -270,7 +270,16 @@ interface DwellDebug {
    * The waterfalls near the eye (docs/WATER_SURFACE_GRID.md §2e): each one's high column x, z, its
    * way (0 +x, 1 −x, 2 +z, 3 −z), width, lip and landing (world y), flow per metre and lip speed.
    */
-  waterFalls(): { x: number; z: number; dir: number; width: number; lip: number; land: number; flow: number; speed: number }[];
+  waterFalls(): {
+    x: number;
+    z: number;
+    dir: number;
+    width: number;
+    lip: number;
+    land: number;
+    flow: number;
+    speed: number;
+  }[];
   /** The kept player controller ticks, oldest first. */
   ticks(): TickSample[];
   /** The latest sounds played (ids, newest last; docs/AUDIO.md). */
@@ -889,10 +898,19 @@ async function start(): Promise<App | null> {
     waterFlowAt: (x: number, y: number, z: number) => Array.from(client.waterFlowAt(x, y, z)),
     waterFalls: () => {
       const v = Array.from(client.waterFalls());
+      const at = (k: number) => v[k] ?? 0;
       const out = [];
       for (let i = 0; i + 8 <= v.length; i += 8) {
-        const [x, z, dir, width, lip, land, flow, speed] = v.slice(i, i + 8);
-        out.push({ x, z, dir, width, lip, land, flow, speed });
+        out.push({
+          x: at(i),
+          z: at(i + 1),
+          dir: at(i + 2),
+          width: at(i + 3),
+          lip: at(i + 4),
+          land: at(i + 5),
+          flow: at(i + 6),
+          speed: at(i + 7),
+        });
       }
       return out;
     },
