@@ -725,7 +725,7 @@ struct EditLogEntry {
 }
 
 /// The tick's phases, in order, as `Server::tick_phases` names them.
-pub const TICK_PHASES: [&str; 11] = [
+pub const TICK_PHASES: [&str; 14] = [
     "collect",
     "edits",
     "terrain",
@@ -736,7 +736,10 @@ pub const TICK_PHASES: [&str; 11] = [
     "settle",
     "water+respawn",
     "snapshots",
-    "stream+lod+save",
+    "stream",
+    "worldgen",
+    "lod",
+    "save",
 ];
 
 pub struct Server {
@@ -1614,10 +1617,13 @@ impl Server {
                 self.stream_chunks(id);
             }
         }
+        self.phase_ms[10] += watch.lap_ms();
         self.update_worldgen();
+        self.phase_ms[11] += watch.lap_ms();
 
         // 6b. Level of detail: propagation off the tick, index updates, answers (§6.6).
         self.update_lod();
+        self.phase_ms[12] += watch.lap_ms();
 
         // 7. Autosave (§6.4): prepared here, committed off the tick.
         if self.config.store.is_some() {
@@ -1632,9 +1638,10 @@ impl Server {
                 self.autosave();
             }
         }
+        self.phase_ms[13] += watch.lap_ms();
         // 8. What the water is told this tick goes as one batch.
         self.flush_water();
-        self.phase_ms[10] += watch.lap_ms();
+        self.phase_ms[8] += watch.lap_ms();
     }
 
     /// What the ticks did since the last call, by name: the terrain collision's chunk builds
@@ -3585,6 +3592,12 @@ impl Server {
                 self.dirty.extend(revisions.into_iter().map(|(c, _)| c)); // try again
             }
         }
+    }
+
+    /// Marks a chunk changed outside the edit path (tools, tests that write `world()` directly):
+    /// the next save writes it.
+    pub fn mark_dirty(&mut self, c: ChunkCoord) {
+        self.dirty.insert(c);
     }
 
     /// Waits for saves in flight to commit (hosts, before shutting down).
