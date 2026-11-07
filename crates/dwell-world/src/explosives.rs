@@ -562,10 +562,9 @@ mod tests {
         }
     );
 
-    /// The shell of a charge on flat ground in face `f` (its solid cells 2–4 m out), each with its
-    /// push.
-    fn ground_shell(f: FaceFrame) -> Vec<([i32; 3], [f64; 3], bool)> {
-        let e = dynamite();
+    /// The shell of a charge `e` on flat ground in face `f` (its solid cells past the core), each
+    /// with its push.
+    fn ground_shell(f: FaceFrame, e: &ExplosiveData) -> Vec<([i32; 3], [f64; 3], bool)> {
         let open = open_dir(e.open_sense_m, |o| local(f, o)[1] < 0);
         cells_within(e.radius_m)
             .into_iter()
@@ -582,7 +581,7 @@ mod tests {
             // Owner (2026-11-06): the rock in a piece's way "would need to exclude the pieces that
             // are about to be thrown".
             let e = dynamite();
-            let shell = ground_shell(f);
+            let shell = ground_shell(f, e);
             // The ground once the core is cleared.
             let after =
                 |o: [i32; 3]| local(f, o)[1] < 0 && length(offset_m(o)) > e.destroy_radius_m;
@@ -595,17 +594,28 @@ mod tests {
             let n = flies.iter().filter(|&&b| b).count();
             assert!(n > alone, "the flood {n}, each alone {alone}");
             // The upper shell (within 1 m of the surface, but its rim, whose pushes graze the
-            // ground past the ball) flies whole, and so does every cell under the crater (pushed
-            // up through the cleared core and the cells over it).
+            // ground past the ball) flies whole.
             for (s, &b) in shell.iter().zip(&flies) {
                 let l = local(f, s.0);
                 let wide = f64::from(l[0] * l[0] + l[2] * l[2]).sqrt();
-                let upper = l[1] >= -2 && wide <= 2.5;
                 assert!(
-                    b || !(upper || wide <= 1.5),
+                    b || !(l[1] >= -2 && wide <= 2.5),
                     "{:?} (local {l:?}) stayed",
                     s.0
                 );
+            }
+            // With no sideways floor (`open_spread_min` 0) every cell under the crater flies too,
+            // pushed up through the cleared core and the cells over it; dynamite's floor turns
+            // those near the axis aside, into the crater's wall, where they stay.
+            let column = ExplosiveData {
+                open_spread_min: 0.0,
+                ..*e
+            };
+            let shell0 = ground_shell(f, &column);
+            for (s, &b) in shell0.iter().zip(&launching(&shell0, e.open_path_m, after)) {
+                let l = local(f, s.0);
+                let wide = f64::from(l[0] * l[0] + l[2] * l[2]).sqrt();
+                assert!(b || wide > 1.5, "{:?} (local {l:?}) stayed", s.0);
             }
             // Some ground is left standing: the cells whose push runs into the ground past the ball.
             assert!(n < shell.len(), "{n} of {} fly", shell.len());
