@@ -1016,7 +1016,10 @@ dwell_world::both_faces!(
         // Within 4 m: gone. Cells pushed into rock with no way out: stay, as red's would.
         assert_eq!(s.get([0, 7, 2]), M.air, "3.6 m: destroyed");
         for o in [[0, -9, 0], [0, 0, -5]] {
-            assert!(!got.contains_key(&o), "{o:?} is wall-checked: it stays");
+            assert!(
+                !got.contains_key(&o),
+                "{o:?} is has no open side before the blast: it stays"
+            );
             assert_eq!(s.get(o), stone, "{o:?}: stays");
         }
     }
@@ -1163,5 +1166,24 @@ dwell_world::both_faces!(
             flung.iter().all(|o| out(o) > 3.0),
             "the core is destroyed, not flung"
         );
+    }
+);
+
+dwell_world::both_faces!(
+    fn yellow_does_not_free_cells_beside_its_destroyed_core(f: FaceFrame) {
+        // Owner (2026-11-07): the cells below and beside the crater "aren't supposed to go live next
+        // to the pieces that are destroyed": the air check is the world before the blast. Flush on
+        // flat ground only the surface (the cells that touched air) cracks loose; 0.50.9 also flung
+        // 266 cells under the ground (through the cleared core and behind the flying surface).
+        let (destroyed, flung) = flat_yellow(f, yellow());
+        assert_eq!(destroyed, 280, "the 4 m core");
+        let under: Vec<_> = flung.iter().filter(|o| o[1] != 0).collect();
+        assert!(
+            under.is_empty(),
+            "{} cells under the surface flung, e.g. {:?}",
+            under.len(),
+            under.first()
+        );
+        assert_eq!(flung.len(), 100, "the surface ring cracks");
     }
 );
