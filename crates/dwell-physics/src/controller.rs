@@ -901,7 +901,7 @@ impl Players {
             terrain.sync(physics, world);
             // The cells near players and pieces into the collider now (an edit's included), the
             // rest of new chunks' (and dropped ones') a little a tick: a teleport's buried chunks
-            // were 4 ms each natively on one tick (ARCHITECTURE.md §6.3).
+            // were 4 ms each natively on one tick (PLAYER_CONTROLLER.md §5).
             let mut near: Vec<(DVec3, DVec3)> = self.terrain_boxes.clone();
             for p in self.players.iter().flatten() {
                 let pos = physics.position(p.body);

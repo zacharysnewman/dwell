@@ -749,6 +749,9 @@ edges; with f64 positions it is exact anywhere (players may fly far outside the 
 anchors and there is no seam under a player (PLAYER_CONTROLLER.md §5). Chunks are added on demand
 around each player (out to 3 m plus twice a tick's travel, capped), re-synced in the same tick as
 an edit or a streamed chunk, and dropped every 64 ticks when more than 2 chunks from every player;
+**[built, 0.49.42]** a chunk's full cubes enter (and leave) the collider a little a tick, those within
+the players' and pieces' reach at once (`TerrainCollision::catch_up`, `COLLISION_CELLS_PER_TICK`;
+PLAYER_CONTROLLER.md §5), so a teleport's buried chunks no longer land on one tick;
 a chunk with no solid cell holds nothing, so open sky costs no collision memory. Cells that collide
 as their full cube go into the `Voxels` collider; **shaped cells** — the generated ramps (below,
 Phase 41) — go into **one triangle mesh per chunk** (Parry `TriMesh`, `FIX_INTERNAL_EDGES`, placed
@@ -1748,8 +1751,12 @@ deferred to world upgrades, `FUTURE.md`). `bodies` and `water` are optional tabl
   phase summed over a save's whole second (its encoding steps and the commit) was 1.4–7.3 ms, and
   the second's worst `advance` 2–4 ms when nothing else ran, so the commit tick stays well under
   10 ms; a 37 ms reading seen once was not reproduced. The `advance` spikes in those runs (50–885
-  ms) came on the teleports, outside every tick phase, not from saving (a follow-up for the
-  streaming work). A chunk counts as saved at the revision that committed; a failed save leaves its
+  ms) came on the teleports, not from saving. Natively (`dwell-sim` `tests/teleport_cost.rs`,
+  0.49.42) a 200 m teleport into the hills cost one tick 10–17 ms, all in the `terrain` phase:
+  Parry's `set_voxel` for every cell of the two buried chunks round the player (65,536 cells,
+  ~4 ms a chunk) and ~3–7 ms generating the 3 chunks it lacked (`generatedOnTick`); the cells now go
+  in a little a tick (§5 above, `collisionCells`), leaving 3–11 ms natively, the generation most
+  of it (not yet re-measured in the browser). A chunk counts as saved at the revision that committed; a failed save leaves its
   chunks dirty for the next. `save_now` (closing, hiding the page) and dropping the store commit at
   once. Also on shutdown (`dwell-server` saves on SIGINT/SIGTERM and waits for
   the commit) and when the local-mode page is hidden or closed. A new world's meta is written at

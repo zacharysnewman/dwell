@@ -314,9 +314,9 @@ impl TerrainCollision {
                 changed &= changed - 1;
                 let i = w * 64 + b;
                 let (x, y, z) = (i & 31, (i >> 5) & 31, i >> 10);
-                if !whole
-                    && !((x0..=x1).contains(&x) && (y0..=y1).contains(&y) && (z0..=z1).contains(&z))
-                {
+                let inside =
+                    (x0..=x1).contains(&x) && (y0..=y1).contains(&y) && (z0..=z1).contains(&z);
+                if !(whole || inside) {
                     continue;
                 }
                 if set.len() >= budget {

@@ -286,7 +286,9 @@ terrain collision's loads and rebuilds, apart from `players` since 0.49.34; sinc
 tail is `stream` (chunks sent), `worldgen`, `lod` and `save` (the autosave's batch and its encoding and
 commit, spread over ticks in the browser, ARCHITECTURE.md §6.4), once one `stream+lod+save`), `counts` (what the ticks did
 over the second, `Server::tick_counts`: `collisionBuilds`, terrain-collision chunk builds, and
-`generatedOnTick`, chunks the tick generated itself rather than the server-jobs worker) and `waterStats` — `queue` (batches sent to the water and not yet answered), `runs`,
+`generatedOnTick`, chunks the tick generated itself rather than the server-jobs worker, and since
+0.49.42 `collisionCells`, full-cube cells put into or taken out of the terrain collider, a little a
+tick but those near players) and `waterStats` — `queue` (batches sent to the water and not yet answered), `runs`,
 `ranS`, `owedS`, `droppedS` (water s: the last run's time run, what it still owes, all dropped past
 `maxOwedS`), `busyMs` and `maxBusyMs` (a run's wall time, the longest), `waterTimeS` (its clock),
 `awakeChunks`, `waterChunks`, `cellBytes` and `cellChunks` (its copy of the world), `overtaken`
