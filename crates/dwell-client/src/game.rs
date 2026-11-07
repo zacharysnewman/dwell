@@ -1107,6 +1107,8 @@ impl<S: Scene> Game<S> {
                         seq,
                     );
                 }
+                // Only the pieces that could touch the player soon are stood in for.
+                telemetry::sample("pieces.standIns", self.predictor.stand_ins() as f64);
                 self.predictor.on_snapshot(self.streamer.store_mut(), &s);
                 self.health = s.local.health;
                 self.dead = s.local.flags & player_flags::DEAD != 0;
