@@ -1743,7 +1743,13 @@ deferred to world upgrades, `FUTURE.md`). `bodies` and `water` are optional tabl
   staying dirty). Before, an autosave was one tick's work: 300 dirty chunks took 106 ms of a tick
   natively (dev build), the browser's 8 chunks, 16 LOD sections and 75 KB of water 11–25 ms; now
   ≤ 4 ms a tick (`dwell-sim` `tests/save_cost.rs`), and the browser's worst tick in a save's second
-  4–6 ms. A chunk counts as saved at the revision that committed; a failed save leaves its
+  4–6 ms. Checked again in 0.49.39 (Chrome on a Mac, seed 0 at 2364.5,142,7443.5; flying at
+  speed 11, breaking blocks, teleporting 200 m every 4 s; ~25 autosaves over 125 s): the `save`
+  phase summed over a save's whole second (its encoding steps and the commit) was 1.4–7.3 ms, and
+  the second's worst `advance` 2–4 ms when nothing else ran, so the commit tick stays well under
+  10 ms; a 37 ms reading seen once was not reproduced. The `advance` spikes in those runs (50–885
+  ms) came on the teleports, outside every tick phase, not from saving (a follow-up for the
+  streaming work). A chunk counts as saved at the revision that committed; a failed save leaves its
   chunks dirty for the next. `save_now` (closing, hiding the page) and dropping the store commit at
   once. Also on shutdown (`dwell-server` saves on SIGINT/SIGTERM and waits for
   the commit) and when the local-mode page is hidden or closed. A new world's meta is written at
@@ -3211,7 +3217,7 @@ repeat count: i32×3 chunkCoord  // answered with ChunkData for those the client
 beyond the view to draw at full detail (§6.3, §6.6)
 ```
 u8   type = 0x4D
-u16  count                      // 1..MAX_RESYNC_CHUNKS (64)
+u16  count                      // 1..MAX_RESYNC_CHUNKS (64); 0 doesn't decode (Malformed)
 repeat count: i32×3 chunkCoord  // streamed as ChunkData within RENDER_RADIUS_CHUNKS, nearest asked first
 ```
 The signature covers `"dwell-auth-v1" ‖ nonce ‖ transport binding ‖ publicKey`; the binding
