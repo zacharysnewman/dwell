@@ -277,6 +277,13 @@ struct Chunk {
     /// Water owed while asleep, then still to come in after waking (m³), and how fast.
     owed: f64,
     rel_rate: f64,
+    /// Asleep, the flow each edge face brought into its column as the chunk fell asleep (m/s,
+    /// the water's less the rest's by its share; E, W, S, N) and its free columns' whole balance
+    /// then (m³/s): a sleeping chunk owes only how far its edges toward awake chunks drift from
+    /// what they carried, and keeps its imbalance, so a river running through sleeping chunks
+    /// is carried through them, not owed (BUGS.md #41b).
+    kept: [[f32; 4]; CA],
+    drift: f64,
     /// Faces computed this substep (this chunk's own, or its edges toward awake neighbours).
     active: u8,
 }
@@ -300,6 +307,8 @@ impl Chunk {
             awake: false,
             owed: 0.0,
             rel_rate: 0.0,
+            kept: [[0.0; 4]; CA],
+            drift: 0.0,
             active: 0,
         })
     }
@@ -1392,6 +1401,38 @@ impl Water {
         out * (wd / rd).min(1.0)
     }
 
+    /// Falling asleep: keeps the flow each edge face brings into its column (the water's less the
+    /// rest's by the column's share, as the account counts it) and its balance (BUGS.md #41b).
+    fn keep_edges(&mut self, c: usize, bal: f64) {
+        let mut kept = [[0.0f32; 4]; CA];
+        for (l, kl) in kept.iter_mut().enumerate() {
+            let k = &self.chunks[c];
+            if k.w.floor[l].is_nan() || k.held[l] {
+                continue;
+            }
+            let share = k.share[l];
+            for (d, kd) in kl.iter_mut().enumerate() {
+                let Some((c2, l2)) = self.step_col(c, l, d) else {
+                    continue;
+                };
+                if c2 == c {
+                    continue;
+                }
+                let n = &self.chunks[c2];
+                let (w, r) = match d {
+                    0 => (-(k.w.qx[l] + k.w.px[l]), -(k.r.qx[l] + k.r.px[l])),
+                    2 => (-(k.w.qz[l] + k.w.pz[l]), -(k.r.qz[l] + k.r.pz[l])),
+                    1 => (n.w.qx[l2] + n.w.px[l2], n.r.qx[l2] + n.r.px[l2]),
+                    _ => (n.w.qz[l2] + n.w.pz[l2], n.r.qz[l2] + n.r.pz[l2]),
+                };
+                *kd = w - share * r;
+            }
+        }
+        let k = &mut self.chunks[c];
+        k.kept = kept;
+        k.drift = bal;
+    }
+
     /// A layer's net flow into column (c, l) (m/s).
     fn net(&self, c: usize, l: usize, rest: bool) -> f32 {
         let k = lay(&self.chunks[c], rest);
@@ -1443,12 +1484,20 @@ impl Water {
             let wa = self.chunks[c].awake;
             let (sleeper, sign) = if wa { (c2, 1.0) } else { (c, -1.0) };
             let col = if wa { (c2, l2) } else { (c, l) };
+            let dir = match (wa, zf) {
+                (true, false) => 1,
+                (true, true) => 3,
+                (false, false) => 0,
+                (false, true) => 2,
+            };
             // the rest's flow counted as far as it still comes in at the sleeper's column (its
             // share, frozen as it fell asleep): a drained reach asleep owes nothing for the river
             // that no longer runs through it (BUGS.md #41)
             if !self.chunks[col.0].held[col.1] {
                 let share = self.chunks[col.0].share[col.1];
-                self.chunks[sleeper].owed += sign * f64::from(nq - share * rq) * f64::from(dt);
+                let kept = self.chunks[col.0].kept[col.1][dir];
+                self.chunks[sleeper].owed +=
+                    f64::from(sign * (nq - share * rq) - kept) * f64::from(dt);
             }
             if jump {
                 self.wake(sleeper);
@@ -1457,11 +1506,13 @@ impl Water {
         // the water balance, for awake free columns (held ones keep their level)
         let t = f64::from(dt) + self.t;
         let cfg = self.cfg;
+        let mut slept: Vec<(usize, f64)> = Vec::new();
         for c in 0..n {
             if !self.chunks[c].awake {
                 continue;
             }
             let mut moved = 0.0f32;
+            let mut bal = 0.0f64;
             for l in 0..CA {
                 let k = &self.chunks[c];
                 if k.w.floor[l].is_nan() || k.held[l] {
@@ -1476,6 +1527,7 @@ impl Water {
                     };
                 let k = &mut self.chunks[c];
                 k.share[l] = share;
+                bal += f64::from(net);
                 k.w.depth[l] = (k.w.depth[l] + net * dt).max(0.0);
                 if k.calm_t >= 0.0 {
                     // as a share of the band; in a reach out of the rest (cut off upstream), of
@@ -1532,6 +1584,7 @@ impl Water {
                 k.win = k.w.depth;
             } else if t - k.calm_t >= cfg.calm_s && k.owed == 0.0 {
                 k.awake = false;
+                slept.push((c, bal));
                 k.w.scale = [1.0; CA];
                 k.r.scale = [1.0; CA];
                 // what rests is drawn as it is (no margin)
@@ -1575,6 +1628,15 @@ impl Water {
         }
         for (c, l) in free {
             self.free(c, l);
+        }
+        for (c, bal) in slept {
+            self.keep_edges(c, bal);
+        }
+        // a sleeping chunk keeps its imbalance
+        for k in self.chunks.iter_mut() {
+            if !k.awake && k.drift != 0.0 {
+                k.owed += k.drift * f64::from(dt);
+            }
         }
         // a sleeping chunk whose account would move its water half the wake band wakes
         for c in 0..n {
