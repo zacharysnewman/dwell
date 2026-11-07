@@ -153,9 +153,12 @@ tick). Natively the step is half narrow phase and half solver (rapier's counters
 packed), CCD and islands nothing: CCD off for the pieces measured the same (kept on). What would cut it
 changes how the debris behaves, so it is the owner's: fewer bodies (a blast's far cells as one body,
 or Tier 2 debris); fewer solver iterations (rapier's 4; the players' and the prediction's too); no
-contacts between pieces. Not gameplay but the build: `+simd128` for the wasm build (rapier's solver runs
-on emulated 4-wide f64 in wasm) measured the step ~⅓ faster in one run (65, 48, 50, 59, 60 ticks a
-second) — a build change for every wasm target, not made here. Separately, the browser's
+contacts between pieces. Not gameplay but the build: the wasm module is built with WebAssembly SIMD
+(`+simd128`, 0.49.37, ARCHITECTURE.md §2.1). Same scene, the LOD settled, 12 s from lighting: the
+worker's `physics` 4,721 and 5,436 ms (main) → 2,785, 4,193 and 4,379 ms (SIMD), about a quarter less;
+the slowest second 40 and 32 ticks (main) → 57, 45 and 46; at rest 8.5–11.4 → 6.3–9.1 ms a second. The
+page's frames were the same (worst 33–35 ms, p95 18 ms, vsync-bound) and the controller's cost did not
+move (`sixty_four`, wasip1 release: 0.80 → 0.79 ms a tick): the gain is the solver's, over many bodies. Separately, the browser's
 `stream+lod+save` phase took 100–860 ms of a tick at times with no blast at all. Split (0.49.35), the
 time was the chunk streaming's (`stream`, 50–640 ms a second at a join and after the player moves,
 calls up to 400 ms), not the autosave's: the save was 3–25 ms of one tick every 5 s, and is now

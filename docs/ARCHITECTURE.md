@@ -129,8 +129,8 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
    and the local-mode worker each instantiate it (`client/src/engine/wasm.ts`). It is built with
    **WebAssembly SIMD** (`-C target-feature=+simd128` in `.cargo/config.toml`'s
    `wasm32-unknown-unknown` rustflags, owner 2026-11-06): rapier's and the meshers' 4-wide math is
-   otherwise emulated lane by lane (a dynamite blast's local server: 40–60 → 48–65 ticks a second;
-   EXPLOSIVES.md §6). The shell checks for SIMD before loading it (`engine/simd.ts`: `WebAssembly.validate`
+   otherwise emulated lane by lane (a dynamite blast's local server: the physics step's time about a
+   quarter less, its slowest second 32–40 → 45–57 ticks; EXPLOSIVES.md §6). The shell checks for SIMD before loading it (`engine/simd.ts`: `WebAssembly.validate`
    on a 40-byte module with a `v128.const`) and, without it, says the browser is too old (Safari
    16.4+, Chrome 91+, Firefox 89+; `ui/startupError.ts` `NEEDS_SIMD`) instead of failing blankly.
    The check is in each build's own shell, so the launcher still opens older builds. Every piece of
@@ -3434,7 +3434,10 @@ Details and measurements: PLAYER_CONTROLLER.md §8.
   another player's proxy are smoothed up to the knockback bound (4 × the snap distance): Rapier's
   player-vs-player bumps mispredict more than Jolt's did.
 - Native and WASM physics are kept bit-identical: Rapier's `enhanced-determinism` feature (which
-  also turns off SIMD) and `libm` for the controller's transcendental functions. CI checks it with
+  also turns off its own SIMD paths) and `libm` for the controller's transcendental functions. The
+  browser module's `+simd128` (§2.1) only lets LLVM vectorise lane-wise IEEE arithmetic (wasm has no
+  fused or relaxed ops in it), which rounds as the scalar code does: the controller's golden trace passed bit-exactly under
+  `wasm32-wasip1` with `+simd128` too (checked once when it was turned on; CI runs wasip1 scalar). CI checks it with
   the controller's golden trace, held bit-exactly natively and under `wasm32-wasip1` (the
   native↔WASM divergence check); reconciliation absorbs any residual mismatch.
 
