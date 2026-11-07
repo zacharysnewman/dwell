@@ -32,6 +32,8 @@ pub const COMPOSITE: &str = "gpu.composite";
 pub const MOTION: &str = "gpu.motion";
 /// The pixel-art preview's post pass (render/pixel_art.rs).
 pub const PIXEL_ART: &str = "gpu.pixelart";
+/// Render scale's upscale pass, or its two (EASU and RCAS, render/upscale.rs), onto the canvas.
+pub const UPSCALE: &str = "gpu.upscale";
 /// The whole frame on the GPU: the first pass's start to the last one's end.
 pub const FRAME: &str = "gpu.frame";
 /// The frame's time between its timed passes (each pass's start after the one before ended,
