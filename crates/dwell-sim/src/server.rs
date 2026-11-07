@@ -2611,6 +2611,18 @@ impl Server {
         }
         let cleared = changes.cells();
         self.broadcast_changes(changes, VoxelModificationReason::Explosion);
+        // The water round it kicked outward (docs/EXPLOSIVES.md §3.5), after the cells it cleared,
+        // in the same batch: the grid's own law carries the wave to the banks and back.
+        if e.wave_impulse > 0.0 && e.wave_reach_m > 0.0 {
+            self.water_link
+                .pending
+                .push(WaterIn::Wave(crate::water::Wave {
+                    at: centre_a,
+                    reach: e.wave_reach_m,
+                    speed: e.wave_impulse,
+                    free: e.wave_free_m,
+                }));
+        }
         for &(c, m, _, d, dir) in &flung {
             let dir = DVec3::from(dir);
             let i = self.felling.spawn_body(

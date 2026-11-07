@@ -45,6 +45,8 @@ pub enum In {
         cell: [i32; 3],
         byte: u8,
     },
+    /// An outward kick to the water round a point (a blast; `Water::wave`).
+    Wave(super::Wave),
     /// The players' positions.
     Players(Vec<[f64; 3]>),
     /// Water time to run (s).
@@ -182,6 +184,7 @@ impl WaterCore {
                 In::Load { at, cells, fresh } => self.water.load(at, cells, fresh),
                 In::Unload(at) => self.water.unload(at),
                 In::Edit { cell, byte } => self.water.edited(cell, byte),
+                In::Wave(w) => self.water.wave(w),
                 In::Players(p) => self.players = p,
                 In::Run(dt) => {
                     self.owed += dt.max(0.0);
@@ -699,6 +702,13 @@ pub fn encode_in(seq: u32, items: &[In]) -> Vec<u8> {
                 w.cell(*at);
                 w.i32(*radius);
             }
+            In::Wave(v) => {
+                w.u8(9);
+                v.at.iter().for_each(|&x| w.f64(x));
+                w.f64(v.reach);
+                w.f64(v.speed);
+                w.f64(v.free);
+            }
         }
     }
     w.0
@@ -748,6 +758,12 @@ pub fn decode_in(b: &[u8]) -> Option<(u32, Vec<In>)> {
                 at: r.cell()?,
                 radius: r.i32()?,
             },
+            9 => In::Wave(super::Wave {
+                at: [r.f64()?, r.f64()?, r.f64()?],
+                reach: r.f64()?,
+                speed: r.f64()?,
+                free: r.f64()?,
+            }),
             _ => return None,
         });
     }
@@ -946,6 +962,12 @@ mod tests {
                 at: [4, 5, 6],
                 radius: 48,
             },
+            In::Wave(crate::water::Wave {
+                at: [1.5, -300.25, 2.0],
+                reach: 6.0,
+                speed: 2.5,
+                free: 24.0,
+            }),
         ];
         let b = encode_in(42, &items);
         assert_eq!(decode_in(&b), Some((42, items)));
