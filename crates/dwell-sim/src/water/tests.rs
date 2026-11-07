@@ -1233,7 +1233,6 @@ fn stirred_body(f: FaceFrame) {
     s.edit(&col, require("dwell:stone"));
     s.run(10);
     let v0 = s.water.free_volume();
-    s.run(600);
     let (awake, writes) = s.awake_for(300);
     assert!(
         awake == 0 && writes == 0,

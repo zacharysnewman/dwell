@@ -58,6 +58,8 @@ const G: f32 = 9.81;
 const DRY: f32 = 1e-4;
 /// A film out of the rest falling this much in a calm window is still running off, not calm (m).
 const FILM_FALL: f32 = 1e-4;
+/// A sleeping chunk with less free water than this (m³) owing it doesn't wake for it.
+const OWED_MIN: f64 = 0.01;
 
 /// The grid's settings, from its data (`shared/fluids/flow.json`, `dwell_world::flow::FlowData`;
 /// what each means is in the file's `$comment`).
@@ -1665,7 +1667,10 @@ impl Water {
                     .sum()
             };
             if k.owed.abs() / wet > f64::from(self.cfg.wake_band) * 0.5
-                || (k.owed < 0.0 && -k.owed > 0.5 * has())
+                || (k.owed < 0.0 && {
+                    let h = has();
+                    h > OWED_MIN && -k.owed > 0.5 * h
+                })
             {
                 self.wake(c);
             }
