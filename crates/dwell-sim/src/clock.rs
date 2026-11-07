@@ -77,6 +77,17 @@ impl Stopwatch {
             at: wasm_now(),
         }
     }
+    /// Milliseconds since the last lap (or the start); the lap goes on.
+    pub fn elapsed_ms(&self) -> f64 {
+        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+        {
+            self.at.elapsed().as_secs_f64() * 1000.0
+        }
+        #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+        {
+            wasm_now() - self.at
+        }
+    }
     /// Milliseconds since the last lap (or the start), and starts the next lap.
     pub fn lap_ms(&mut self) -> f64 {
         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]

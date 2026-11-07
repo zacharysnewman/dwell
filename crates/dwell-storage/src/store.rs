@@ -1,12 +1,13 @@
 //! The server's handle on its world file (§6.4): loads on the tick thread, saves committed on an
-//! I/O thread (natively) or on the caller's thread (the browser, no threads). redb's readers never
-//! wait for the writer, so one database serves both.
+//! I/O thread (natively) or on the caller's thread (the browser, no threads): there a save is
+//! encoded a piece at a time as the caller gives it time (`step`), then committed on a step of its
+//! own. redb's readers never wait for the writer, so one database serves both.
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 
-use crate::{SaveBatch, WorldDb};
+use crate::{PreparedSave, SaveBatch, WorldDb};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SaveResult {
@@ -19,6 +20,8 @@ pub struct SaveResult {
 struct Shared {
     queue: VecDeque<(u64, SaveBatch)>,
     completed: Vec<SaveResult>,
+    /// The save being encoded (inline stores): its id and what is encoded so far.
+    current: Option<(u64, PreparedSave)>,
     busy: bool,
     stop: bool,
 }
@@ -61,23 +64,59 @@ impl WorldStore {
         self.thread.is_some()
     }
 
-    /// Queues (threaded) or commits the batch; returns its id.
+    /// Queues the batch, for the I/O thread or (inline) `step`; returns its id.
     pub fn save(&mut self, batch: SaveBatch) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
         let (lock, cv) = &*self.shared;
+        lock.lock().expect("store").queue.push_back((id, batch));
+        cv.notify_all();
+        id
+    }
+
+    /// Whether an inline store has a save to `step` (a threaded one's are its thread's).
+    pub fn pending(&self) -> bool {
+        let s = self.shared.0.lock().expect("store");
+        self.thread.is_none() && (s.current.is_some() || !s.queue.is_empty())
+    }
+
+    /// Inline stores: works on the oldest save while `more()` says there is time, a piece at a
+    /// time (a chunk, a LOD section, a body, the water encoded), and commits it, once all of it is
+    /// encoded, as a step of its own: only as the first thing a call does, so the commit never
+    /// follows encoding in one call. Returns whether saves are left. Nothing for a threaded store.
+    pub fn step(&self, mut more: impl FnMut() -> bool) -> bool {
         if self.thread.is_some() {
-            lock.lock().expect("store").queue.push_back((id, batch));
-            cv.notify_all();
-        } else {
-            let r = self.db.save(&batch);
-            lock.lock().expect("store").completed.push(SaveResult {
+            return false;
+        }
+        let mut s = self.shared.0.lock().expect("store");
+        let mut first = true;
+        loop {
+            if s.current.is_none() {
+                let Some((id, batch)) = s.queue.pop_front() else {
+                    return false;
+                };
+                s.current = Some((id, self.db.prepare(batch)));
+            }
+            let (_, prepared) = s.current.as_mut().expect("current");
+            if prepared.encode_step() {
+                first = false;
+                if !more() {
+                    return true;
+                }
+                continue;
+            }
+            if !first {
+                return true; // the commit on a step of its own
+            }
+            let (id, prepared) = s.current.take().expect("current");
+            let r = self.db.commit(prepared);
+            s.completed.push(SaveResult {
                 id,
                 ok: r.is_ok(),
                 error: r.err().unwrap_or_default(),
             });
+            return s.current.is_some() || !s.queue.is_empty();
         }
-        id
     }
 
     /// Saves finished since the last call, in order.
@@ -85,8 +124,12 @@ impl WorldStore {
         std::mem::take(&mut self.shared.0.lock().expect("store").completed)
     }
 
-    /// Blocks until every queued save has been committed.
+    /// Blocks until every queued save has been committed (inline: commits them now).
     pub fn flush(&self) {
+        if self.thread.is_none() {
+            while self.step(|| true) {}
+            return;
+        }
         let (lock, cv) = &*self.shared;
         let mut s = lock.lock().expect("store");
         while !s.queue.is_empty() || s.busy {
@@ -109,7 +152,7 @@ fn run(db: &WorldDb, shared: &(Mutex<Shared>, Condvar)) {
             s.busy = true;
             job
         };
-        let r = db.save(&batch);
+        let r = db.commit(db.prepare(batch));
         let mut s = lock.lock().expect("store");
         s.completed.push(SaveResult {
             id,
@@ -124,6 +167,9 @@ fn run(db: &WorldDb, shared: &(Mutex<Shared>, Condvar)) {
 impl Drop for WorldStore {
     /// Commits what is queued, then stops the thread.
     fn drop(&mut self) {
+        if self.thread.is_none() {
+            self.flush();
+        }
         if let Some(t) = self.thread.take() {
             self.shared.0.lock().expect("store").stop = true;
             self.shared.1.notify_all();
