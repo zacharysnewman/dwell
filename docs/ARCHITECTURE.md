@@ -2718,6 +2718,14 @@ air (`dwell-client` `blasts.rs`): a flash (a point light and a fireball), smoke 
 (`render/blasts.rs`, the flames' pass; a CPU adapter's `cpuCount`), the `explode` sound by distance and
 a screen shake of the drawn view, each a setting (Settings → Explosions, `dwell.explosions`). No new
 wire message. A 4 m blast natively: 512 pieces, its tick 9.5 ms, ~18 s until all are blocks again.
+**Its cost** **[built, 0.49.33]**: a client meshes a one-cell piece once per state (and face) and keeps
+it (`pieces.rs` `one_cell_meshes`; a blast's 512 pieces mesh 3 blocks, not 512: 273 ms natively → 3 ms,
+the 0.63 s frame in Chrome gone); bodies in water read the waterfalls' columns once per pass
+(`dwell_world::falls::FallMemo`, through `Felling::float` and the prediction's `WaterDragFn`, exact),
+so a blast's pieces floating in a river cost the server's pieces phase a third of what they did. Left
+in the browser: the local server runs a blast's first seconds at ~20–45 ticks a second, its physics
+step and the terrain-collision builds under the flung pieces (`__dwell.serverStats().phasesMs`; the
+same blast under WASI costs ~2× native, the browser's worker several times more) — EXPLOSIVES.md §6.
 
 **Tier 1 — Authoritative sync**
 - Threshold: `blockCount >= TIER1_MIN_BLOCKS` **or** the cluster contains a material flagged

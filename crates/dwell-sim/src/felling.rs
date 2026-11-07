@@ -110,6 +110,22 @@ pub use bodies_generated::{BODY_KINDS, WATER};
 /// under water facing the motion (its bounds' sides, as deep as the share of it under) · speed²,
 /// and `WATER.drag` by that share, relative to the water's current. Nothing out of the water.
 pub fn water_drag(world: &mut VoxelWorld, physics: &Physics, body: BodyHandle) -> WaterDrag {
+    water_drag_with(
+        world,
+        physics,
+        body,
+        &mut dwell_world::falls::FallMemo::default(),
+    )
+}
+
+/// [`water_drag`], the waterfalls' reads kept in `falls` across bodies (one pass, the world
+/// unchanged).
+pub fn water_drag_with(
+    world: &mut VoxelWorld,
+    physics: &Physics,
+    body: BodyHandle,
+    falls: &mut dwell_world::falls::FallMemo,
+) -> WaterDrag {
     let mut centres = Vec::new();
     physics.collider_centres(body, &mut centres);
     let rotation = physics.rotation(body);
@@ -130,7 +146,13 @@ pub fn water_drag(world: &mut VoxelWorld, physics: &Physics, body: BodyHandle) -
     let [cu, cv] = world.currents.at(physics.position(body).to_array());
     // Under a waterfall (docs/WATER_SURFACE_GRID.md §2e): pushed down and out by it, as players are.
     let centre = ((lo + hi) * 0.5).to_array();
-    let fall = dwell_world::falls::push_at(world, centre, 0.5 * size.y, 0.5 * size.x.max(size.z));
+    let fall = dwell_world::falls::push_at_with(
+        world,
+        centre,
+        0.5 * size.y,
+        0.5 * size.x.max(size.z),
+        falls,
+    );
     WaterDrag {
         kx: k * depth * size.z,
         kz: k * depth * size.x,
@@ -937,6 +959,8 @@ impl Felling {
         let g = physics.gravity();
         // A cell is 1 × ½ × 1 m.
         let volume = CELL_H;
+        // The bodies only take impulses here: the world stands still, so the falls' reads hold.
+        let mut falls = dwell_world::falls::FallMemo::default();
         for p in &mut self.pieces {
             let (position, rotation) = (physics.position(p.body), physics.rotation(p.body));
             let mut under = 0.0;
@@ -958,7 +982,8 @@ impl Felling {
                 let share = under / p.cells.len() as f64;
                 // Sideways (the vertical axis is the same on both faces), as the clients'
                 // stand-ins are slowed; the bob is the heave drag's.
-                let v = water_drag(world, physics, p.body).slow(physics.velocity(p.body), dt);
+                let v = water_drag_with(world, physics, p.body, &mut falls)
+                    .slow(physics.velocity(p.body), dt);
                 let heave = (-WATER.heave_drag * share * dt).exp();
                 let v = DVec3::new(v.x, v.y * heave, v.z);
                 let w = physics.angular_velocity(p.body) * (-WATER.angular_drag * share * dt).exp();

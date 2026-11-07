@@ -203,6 +203,15 @@ export class LocalCore {
       overtaken: at(12),
     };
   }
+  /**
+   * Each tick phase's time (ms) summed since the last call, by name (`Server::tick_phases`,
+   * docs/DEV_TOOLS.md): where the server's ticks went.
+   */
+  tickPhases(): Record<string, number> {
+    const names = LocalWorld.tickPhaseNames();
+    const ms = Array.from(this.world.tickPhases());
+    return Object.fromEntries(names.map((n, i) => [n, Math.round((ms[i] ?? 0) * 10) / 10]));
+  }
   setRespawnPreload(on: boolean): void {
     this.world.setRespawnPreload(on);
   }

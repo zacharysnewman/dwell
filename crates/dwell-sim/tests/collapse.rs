@@ -40,6 +40,8 @@ struct Cost {
     ms: Vec<f64>,
     phases: Vec<[(&'static str, f64); TICK_PHASES.len()]>,
     bodies: Vec<usize>,
+    /// The terrain collision's chunk builds after each tick (summed since the start).
+    builds: Vec<u64>,
 }
 
 /// Steps until no body is left (at most `limit` ticks), counting the cost; the server-jobs
@@ -59,6 +61,9 @@ fn run_out(
         cost.ticks += 1;
         cost.body_ticks += f.server.body_count();
         cost.bodies.push(f.server.body_count());
+        let (_, _, players) = f.server.sim();
+        cost.builds
+            .push(players.terrain().map_or(0, dwell_physics::terrain::TerrainCollision::loads));
         cost.pair_ticks += f
             .server
             .physics()
@@ -103,8 +108,9 @@ fn report(cost: &Cost) {
             .filter(|(_, v)| **v >= 1.0)
             .map(|(k, v)| format!("{} {v:.0}", TICK_PHASES[k]))
             .collect();
+        let builds = cost.builds[s * 60 + sec.len() - 1] - cost.builds[(s * 60).max(1) - 1];
         println!(
-            "second {s}: tick mean {mean:.2} max {max:.2} ms, bodies {}; {}",
+            "second {s}: tick mean {mean:.2} max {max:.2} ms, bodies {}, {builds} collision builds; {}",
             cost.bodies[s * 60],
             phases.join(", ")
         );
@@ -372,4 +378,79 @@ fn measure_a_blast() {
     // face-a-only: a measurement on the flat world (face A's).
     let radius = std::env::var("RADIUS").map_or(4, |v| v.parse().expect("a radius"));
     report(&blast(radius, 8.0, 20 * 60));
+}
+
+/// Dynamite lit at seed 0's dam site (the browser check's), 1.5 m ahead of the spawn: the world
+/// after its blast's tick, and that tick's wall time (ms) and phases.
+fn dam_blast() -> (Fixture, dwell_sim::jobs::JobRunner, f64, String) {
+    let mut f = Fixture::new(dam_site());
+    let mut runner = dwell_sim::jobs::JobRunner::for_world(dwell_world::GENERATOR_TERRAIN, 0);
+    f.join(1, &Client::new(1));
+    for _ in 0..120 {
+        f.server.step();
+        f.take_all();
+        run_jobs(&mut f, &mut runner);
+    }
+    let (x, z) = (2364, 7445);
+    let y = (0..40)
+        .map(|d| 290 - d)
+        .find(|&y| dwell_blocks::info(f.server.world().get_voxel(x, y - 1, z)).solid)
+        .expect("the ground ahead of the spawn");
+    f.server
+        .world()
+        .set_voxel(x, y, z, dwell_blocks::require("dwell:dynamite"));
+    f.send(
+        1,
+        Message::BlockEditRequest(BlockEditRequest {
+            action: BlockEditAction::Place,
+            cell: [x, y, z],
+            face: 5,
+            material: dwell_blocks::require("dwell:torch"),
+            rows: 1,
+            down: false,
+        }),
+    );
+    f.server.step();
+    f.take_all();
+    // The player steps 10 m back (as the browser check's did) and watches.
+    let h = f.server.player_handle_of(1).expect("a live player");
+    let (_, physics, players) = f.server.sim();
+    let at = players.position(physics, h);
+    players.teleport(
+        physics,
+        h,
+        at - dwell_physics::DVec3::new(0.0, 0.0, 10.0) + dwell_physics::DVec3::Y,
+        dwell_physics::Vec3::ZERO,
+    );
+    let fuse = f.server.fuses().first().expect("lit").1;
+    for _ in 1..fuse {
+        f.server.step();
+        f.take_all();
+        run_jobs(&mut f, &mut runner);
+    }
+    f.server.tick_phases();
+    let t = Instant::now();
+    f.server.step();
+    let ms = t.elapsed().as_secs_f64() * 1000.0;
+    let phases: Vec<String> = f
+        .server
+        .tick_phases()
+        .iter()
+        .filter(|(_, v)| *v >= 0.1)
+        .map(|(n, v)| format!("{n} {v:.1}"))
+        .collect();
+    f.take_all();
+    (f, runner, ms, phases.join(", "))
+}
+
+#[test]
+#[ignore = "a measurement: cargo test --release -p dwell-sim --test collapse measure_dynamite_at_the_dam -- --ignored --nocapture"]
+fn measure_dynamite_at_the_dam() {
+    // face-a-only: a measurement at seed 0's dam site, on face A.
+    let (mut f, mut runner, ms, phases) = dam_blast();
+    println!(
+        "the blast's tick: {ms:.2} ms ({phases}), {} bodies",
+        f.server.body_count()
+    );
+    report(&run_out(&mut f, Some(&mut runner), 30 * 60));
 }

@@ -290,6 +290,7 @@ async function start(
         advanceMaxMs: tickStats.maxMs,
         water: water ? 'worker' : 'inline',
         waterStats: core.waterStats(),
+        phasesMs: core.tickPhases(),
       },
     });
     ticks = 0;

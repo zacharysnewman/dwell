@@ -42,11 +42,30 @@ impl Deadline {
     }
 }
 
-/// A stopwatch for the tick's phase times (`Server::tick_phases`): wall time natively, nothing
-/// on wasm32 (no clock there; the browser's figures come from the worker's own clock).
+/// A stopwatch for the tick's phase times (`Server::tick_phases`): wall time natively; on wasm32
+/// the embedder's clock (`set_clock`, the local worker's `performance.now`), nothing without one.
 pub struct Stopwatch {
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     at: std::time::Instant,
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    at: f64,
+}
+
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+thread_local! {
+    static WASM_NOW: std::cell::Cell<Option<fn() -> f64>> = const { std::cell::Cell::new(None) };
+}
+
+/// The clock (ms) the tick's phases are timed by on wasm32 (dwell-sim has no JS): the local
+/// worker's `performance.now`, so `__dwell.serverStats()` shows the browser's phases.
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+pub fn set_clock(f: fn() -> f64) {
+    WASM_NOW.with(|c| c.set(Some(f)));
+}
+
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+fn wasm_now() -> f64 {
+    WASM_NOW.with(|f| f.get().map_or(0.0, |f| f()))
 }
 
 impl Stopwatch {
@@ -54,6 +73,8 @@ impl Stopwatch {
         Self {
             #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
             at: std::time::Instant::now(),
+            #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+            at: wasm_now(),
         }
     }
     /// Milliseconds since the last lap (or the start), and starts the next lap.
@@ -67,7 +88,10 @@ impl Stopwatch {
         }
         #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
         {
-            0.0
+            let now = wasm_now();
+            let ms = now - self.at;
+            self.at = now;
+            ms
         }
     }
 }

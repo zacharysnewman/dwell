@@ -346,7 +346,7 @@ impl NetSim {
             predictor: {
                 // As the client makes it (`game.rs`).
                 let mut p = Predictor::new(*self.server.player_config());
-                p.set_water_drag(dwell_sim::felling::water_drag);
+                p.set_water_drag(dwell_sim::felling::water_drag_with);
                 p
             },
             up: Link::new(self.conditions, seed * 2 + 1),

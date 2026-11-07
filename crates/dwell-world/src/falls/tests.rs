@@ -184,3 +184,28 @@ crate::both_faces!(
         assert_eq!(push_velocity(fast, inside, 1.0 / 60.0), fast);
     }
 );
+
+crate::both_faces!(
+    fn many_bodies_pushed_through_one_memo_are_pushed_as_each_alone(f: FaceFrame) {
+        // docs/EXPLOSIVES.md §3: a blast's pieces floating by a fall share the columns they read.
+        let s = Scene::ledge(f, 3, [0.6, 0.0]);
+        let mut memo = FallMemo::default();
+        let mut pushed = 0;
+        for i in 0..40 {
+            for j in 0..12 {
+                let p = s.point(
+                    -1.0 + 0.25 * f64::from(i),
+                    0.5 * f64::from(j),
+                    -0.5 + 0.3 * f64::from(i % 7),
+                );
+                let (hh, r) = (0.25 + 0.05 * f64::from(j % 3), 0.5);
+                let alone = push_at(&s.w, p, hh, r);
+                assert_eq!(push_at_with(&s.w, p, hh, r, &mut memo), alone, "{p:?}");
+                pushed += usize::from(alone.is_some());
+            }
+        }
+        assert!(pushed > 10, "{pushed} in the sheet");
+        // Each column read once per height, not once per body (480 bodies × 49 columns each).
+        assert!(memo.scanned() <= 700, "{} columns scanned", memo.scanned());
+    }
+);
