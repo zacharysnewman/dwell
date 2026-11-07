@@ -547,7 +547,7 @@ fn surface_settle(e: ExplosiveData) -> (usize, usize, u32, f64) {
     s.fx.server.set_explosives(vec![e]);
     s.put(1, 0.5, -3.5);
     s.run(2);
-    s.set([0, 0, 0], require("dwell:dynamite"));
+    s.set([0, 0, 0], require(e.block));
     s.light([0, 0, 0]);
     s.run(1);
     s.put(1, 0.5, -13.0);
@@ -1187,3 +1187,73 @@ dwell_world::both_faces!(
         assert_eq!(flung.len(), 100, "the surface ring cracks");
     }
 );
+
+#[test]
+#[ignore = "a measurement: cargo test --release -p dwell-sim --test explosives measure_blast_cost -- --ignored --nocapture"]
+fn measure_blast_cost() {
+    // face-a-only: a measurement on the flat world (docs/DEV_TOOLS.md "Blasts and floods").
+    let yellow = *EXPLOSIVES
+        .iter()
+        .find(|e| e.name == "dwell:dynamite_yellow")
+        .expect("yellow");
+    for (name, e, buried) in [
+        ("red flush", dynamite(), false),
+        ("red buried", dynamite(), true),
+        ("yellow flush", yellow, false),
+    ] {
+        let e = ExplosiveData {
+            no_piece_contact_s: std::env::var("DWELL_LEVER_NOCONTACT")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(e.no_piece_contact_s),
+            ..e
+        };
+        let mut s = Scene::flat(1);
+        let ids: Vec<u32> = if buried {
+            buried_blast(&mut s, e).iter().map(|p| p.id).collect()
+        } else {
+            s.fx.server.set_explosives(vec![e]);
+            s.put(1, 0.5, -3.5);
+            s.run(2);
+            s.set([0, 0, 0], require(e.block));
+            s.light([0, 0, 0]);
+            s.run(1);
+            s.put(1, 0.5, -13.0);
+            let fuse = s.fx.server.fuses()[0].1 as usize;
+            s.run(fuse - 1);
+            spawns(&s.run(1)).iter().map(|p| p.id).collect()
+        };
+        let n = ids.len();
+        let (mut ticks, mut worst, mut first_s, mut total) = (0u32, 0.0f64, 0.0, 0.0);
+        let (mut physics, mut terrain) = (0.0, 0.0);
+        let mut tick_ms = Vec::new();
+        s.fx.server.tick_phases();
+        while s.fx.server.body_count() > 0 && ticks < 30 * 60 {
+            let t = std::time::Instant::now();
+            s.run(1);
+            let ms = t.elapsed().as_secs_f64() * 1000.0;
+            let ph = s.fx.server.tick_phases();
+            let get = |k: &str| ph.iter().find(|(n, _)| *n == k).map_or(0.0, |p| p.1);
+            physics += get("physics");
+            terrain += get("terrain");
+            worst = worst.max(ms);
+            total += ms;
+            tick_ms.push(ms);
+            if ticks < 60 {
+                first_s += ms;
+            }
+            ticks += 1;
+        }
+        tick_ms.sort_by(f64::total_cmp);
+        let p95 = tick_ms
+            .get(tick_ms.len() * 95 / 100)
+            .copied()
+            .unwrap_or(0.0);
+        println!(
+            "{name}: {n} pieces, tick mean {:.2} p95 {p95:.2} worst {worst:.1} ms, first second {first_s:.0} ms, physics {physics:.0} ms, terrain {terrain:.0} ms, settled in {:.1} s ({} left)",
+            total / f64::from(ticks.max(1)),
+            f64::from(ticks) / 60.0,
+            s.fx.server.body_count()
+        );
+    }
+}

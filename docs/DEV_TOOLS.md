@@ -980,6 +980,142 @@ unchanged (12.1–12.3 ms at level 4, 8.1–8.7 at level 9).
 vertices interleaved in the mesh worker (fix 3). One chunk's light (`LightMap::load`) is not split into slices:
 the cost estimate stops before a chunk that would pass the deadline, and the worst `mesh_dirty` after is 9 ms.
 
+## Blasts and floods (M1 Air)
+
+The owner (2026-11-07, 0.50.14): "What about our heavy load times dynamite and water floods." Same method as
+[Flight loading](#flight-loading-m1-air): the M1 Air on AC power, the bench's Chrome with vsync, 2560×1600 (a
+1280×800 page at ratio 2), `?renderscale=0.5&upscaler=stretch`, the default settings, a fresh seed-0 world,
+noon; one run each. Load 2–6 (the bench's own workers). Scratch: the session's scratchpad `bf/` (`gen.py`
+the scenarios, `an.py` the reading).
+
+- **Blasts** (`bf-red`, `bf-blue`, `bf-yellow`, `bf-chain`, `bf-cliff`): at the spawn, the charge placed
+  1.5 m ahead looking down 50° and lit with the torch, then the player flies up and ~15 m back and looks at
+  it; 10 s recorded from just after lighting (the blast ~1.5 s in), the server sampled each second. The
+  chain is four red charges ~1 m apart, one lit. The cliff is a 7 × 9 × 10 m stone block built by `region
+  fill`, the charge in a hole 1–1.5 m into its face (fewer pieces: the rock round it holds most cells).
+- **Flood** (`bf-flood`, `?at=2364.5,142,7443.5`, the dam site's river): a `region clear` of a trench 30 m
+  across the river, 3 m wide and from 1.5 m under the bed to 2 m over the banks, then 15 s recorded with the
+  camera 14 m up and 18 m back: the river pours both ways into the dry trench.
+
+**The client (the page's main thread and GPU; a joining player pays only this):**
+
+| Scenario | Drawn fps | Over 18 ms (over 25) / max | GPU-wait skips | `frame.cpu` mean / p95 / max | `mesh_dirty` p95 | `jobs.apply` p95 | Uploads p95 (MB a frame) | `gpu.frame` mean / p95 | `gpu.shadows` mean / p95 | `pacing.done` p95 | Puffs max |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Red, flat | 59.8 | 65 (0) / 18.8 | 0 | 4.33 / 6.7 / 10.9 | 1.4 | 2.3 | 2.3 | 14.0 / 16.7 | 2.5 / 5.2 | 19.9 | 59 |
+| Red in a cliff | 59.8 | 70 (0) / 18.8 | 0 | 3.72 / 5.4 / 9.9 | 0.1 | 1.7 | 1.5 | 11.9 / 15.3 | 1.4 / 4.5 | 18.4 | 59 |
+| Blue (4 m destroyed, no pieces) | 59.8 | 45 (0) / 18.7 | 0 | 3.69 / 4.4 / 7.4 | 0 | 0 | 0 | 11.5 / 12.1 | 0.5 / 0.5 | 17.6 | 59 |
+| Yellow, flat | 59.9 | 27 (0) / 18.6 | 0 | 3.99 / 6.3 / 11.2 | 1.3 | 2.3 | 2.3 | 14.1 / 17.2 | 2.6 / 5.7 | 20.2 | 59 |
+| Chain of 4 red | **58.1** | 112 (**22**) / **35.2** | **22** | 4.05 / 7.2 / 11.0 | 2.1 | 2.6 | 2.6 | 14.3 / **18.3** | 2.7 / 5.6 | **30.6** | 176 |
+| Flood (15 s) | 59.8 | 117 (1) / 33.3 | 1 | 4.00 / 7.9 / 12.8 | 3.6 | 4.2 | 4.2 | 10.7 / 11.9 | 0.6 / 0.6 | 19.9 | – |
+
+No long task in any record. The "over 18 ms" intervals are vsync's 18.6 ms jitter except where counted over
+25.
+
+**The server (the local world's worker; per second from the blast; never on the page's main thread):**
+
+| Scenario | Ticks a second (min) | Tick mean, worst second | Worst tick | Physics peak / sum (ms) | Terrain collision peak / sum | Pieces sum | Water worker longest run |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Red, flat | 59 | 4.64 | 35.5 | 177 / 831 | 126 / 391 | 44 | 2.3 |
+| Red in a cliff | 60 | 1.03 | 12.4 | 41 / 105 | 4 / 19 | 4 | 2.3 |
+| Blue | 60 | 0.34 | 8.7 (a save) | 4 / 31 | 4 / 12 | 1 | 2.3 |
+| Yellow, flat | 60 | 2.06 | 26.9 | 82 / 393 | 23 / 116 | 27 | 2.3 |
+| Chain of 4 red | 60 | 4.69 | 46.6 | 164 / 1,063 | 102 / 704 | 63 | 2.4 |
+| Flood | 60 | 0.46 | 14.3 (a save) | 3 / 38 | 2 / 11 | 1 | **42.2** (nothing owed) |
+
+Snapshots (the broadcasting) took 4–12 ms in the whole 10 s of every blast, `water+respawn` 3–8. Network bytes
+a tick are not in `serverStats()` yet (not measured).
+
+**Reading it.**
+
+- **On the Air at 50 % Stretch the blasts and the flood already hold 60 fps on the client**, except the
+  chain of four: 58.1 fps, 22 `GPU-wait` skips. Those are the GPU's, not the CPU's: the frame before each
+  skip took 4.4 ms of `frame.cpu` (p50 4.1), `gpu.frame` p95 18.3 ms and `pacing.done` p95 30.6. What the
+  pieces add on the GPU is their shadows: blue (no pieces) draws `gpu.frame` 11.5 ms and `gpu.shadows` 0.5,
+  red and yellow 14.0 and 2.5 (p95 5.2–5.7), with 1.85 cascades drawn a frame against blue's 1.0: a
+  falling piece's shadow-caster identity held its pose, so every flying piece changed the signature of the
+  kept far cascades and one was drawn again every frame (`farPerFrame`), all its terrain with it (555
+  thousand triangles a frame against 43). Fixed below. The smoke and dust (176 billboards at
+  the chain's peak) did not show in a pass of their own (`gpu.near` 7.9 in every blast).
+- **The main thread is not the limit in a blast or a flood**: `frame.cpu` p95 5.4–7.9 ms, max ≤ 12.8, well
+  under the ~12 ms where the pacing skips start ([Flight loading](#flight-loading-m1-air)). The crater's
+  re-meshing runs inside the shared stream budget already (`mesh_dirty` p95 ≤ 3.6 ms; the edits mark chunks
+  dirty, `chunk_stream.rs` `write`, and the 0.50.14 deadline starts their jobs), as do the flood's: the
+  flood's water arrives as chunk modifications, re-meshed the same way (`jobs.apply` p95 4.2, uploads p95 4.2
+  MB a frame while the trench fills).
+- **The server keeps 60 ticks a second** in every scenario, but a blast's ticks run 2–5 ms on average for
+  4–8 s and its worst 27–47 ms (the blast's own tick: the cells cleared, hundreds of bodies made, and their
+  first contacts). The cost is physics (Rapier: 90–180 ms a second for red, 1 s of it in the chain's 10 s)
+  and the pieces' terrain collision builds (up to 126 ms a second). On the page this is another core, not
+  frame time; a worst tick of 47 ms delays a snapshot by ~3 ticks, which the clients' interpolation absorbs.
+- **The flood is cheap**: the water worker's longest run is 42 ms (17 at the breach) but on its own worker,
+  owing nothing; the server's tick is unchanged (0.2–0.5 ms).
+
+**Built in 0.50.15: falling pieces are moving shadow casters.** A piece's caster identity is its id and
+part, not its pose (`render/mod.rs` `piece_shadow_tag`), so a kept far cascade holding flying pieces is
+drawn again every `refreshFrames` (4 on High), as for other players (`Want::Moving`), not every frame; the
+nearest cascade, drawn every frame, shows them exactly. A piece that comes or goes still changes the
+signature. After (one run each, same scenarios):
+
+| Scenario | Drawn fps | Over 25 ms / max | GPU-wait skips | `gpu.frame` mean / p95 | `gpu.shadows` mean / p95 | Cascades drawn a frame | Shadow triangles a frame | `pacing.done` p95 | `frame.cpu` mean / p95 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Red, before → after | 59.8 → 59.8 | 0 → 0 / 18.8 → 18.7 | 0 → 0 | 14.0 / 16.7 → 13.2 / 16.6 | 2.5 / 5.2 → 1.9 / 5.4 | 1.85 → 1.58 | 555k → 391k | 19.9 → 19.5 | 4.33 / 6.7 → 4.21 / 6.5 |
+| Yellow | 59.9 → 59.8 | 0 → 0 / 18.6 → 18.7 | 0 → 0 | 14.1 / 17.2 → 12.8 / 16.2 | 2.6 / 5.7 → 1.7 / 4.9 | 1.85 → 1.52 | 555k → 354k | 20.2 → 19.7 | 3.99 / 6.3 → 4.00 / 6.0 |
+| Chain of 4 red | **58.1 → 59.3** | **22 → 7** / 35.2 → 35.3 | **22 → 7** | 14.3 / 18.3 → 13.3 / 17.1 | 2.7 / 5.6 → 1.9 / 5.4 | 1.87 → 1.60 | 568k → 400k | **30.6 → 25.4** | 4.05 / 7.2 → 4.39 / 7.4 |
+
+The server is the same build either way (red: worst tick 35.5 → 33.6 ms, physics 831 → 939 ms over the 10 s;
+chain 46.6 → 34.3, 1,063 → 1,013: run-to-run spread). The chain's 7 skips left are the GPU's still
+(`gpu.frame` p95 17.1, `pacing.done` p95 25.4); which pass was not isolated.
+
+**The pieces' physics, three levers** (owner, 2026-11-07: "they're not touching anything … Box2D demos do
+1000s"; "Yes do those 3 optimizations"). Natively, release, `tests/explosives.rs` `measure_blast_cost` (the
+flat world; red flush 186 pieces, red buried 510, yellow flush 100), each lever alone (the env switches were
+temporary), tick mean / p95 / worst (ms), physics and terrain collision summed until every piece is a block
+again, and that time:
+
+| Lever | Red flush | Red buried | Yellow flush |
+| --- | --- | --- | --- |
+| As shipped | 0.96 / 2.86 / 14.4; 213 + 106 ms; 11.0 s | 5.29 / 13.79 / 27.6; 2,136 + 169; 8.6 s | 0.59 / 1.59 / 47.7; 144 + 16; 10.4 s |
+| CCD off | 0.95 / 2.86 / 13.0; 206 + 107; 11.0 s | 5.30 / 13.80 / 27.6; 2,128 + 171; 8.6 s | – |
+| Sleeping allowed | 0.51 / 2.19 / 12.8; 232 + 107; **21.6 s** | 4.96 / 13.97 / 27.6; 2,168 + 178; 9.3 s | 0.70 / 1.60 / 46.3; 143 + 15; 8.4 s |
+| No piece contact 0.1 s | 0.91 / 3.47 / 10.3; 374 + 378; **19.6 s** | 5.17 / 13.86 / 17.0; 2,325 + 186; 9.1 s | 0.68 / 1.93 / 16.8; 114 + 54; 7.7 s |
+| No piece contact 0.3 s | 1.02 / 3.53 / 5.6; 266 + 400; **16.3 s** | 4.73 / 14.01 / 17.1; 2,343 + 186; 10.0 s | 0.50 / 1.90 / 4.5; 84 + 54; 9.2 s |
+| No piece contact 1 s | 1.33 / 4.64 / 6.9; 558 + 382; **16.6 s** | 4.77 / 13.89 / 17.5; 2,335 + 186; 10.0 s | 0.59 / 2.01 / 3.5; 80 + 53; 7.1 s |
+| Solver iterations 2 (of 4) | 1.02 / 2.56 / 19.0; 180 + 100; 9.5 s | 4.32 / 13.13 / 15.6; 2,039 + 147; 10.1 s | 0.41 / 1.38 / 10.3; 97 + 14; 12.2 s |
+| Solver iterations 1 | 1.30 / 3.86 / 16.2; 332 + 214; 11.2 s | 6.46 / 15.56 / 27.1; 2,554 + 159; 8.1 s | 0.80 / 1.64 / 40.3; 179 + 11; 7.7 s |
+
+- **CCD only for fast pieces: nothing to save.** Turning CCD off for every piece changed nothing within
+  noise: Rapier's CCD only works for bodies moving fast enough to need it, which is what the lever would do.
+  Left on (no piece tunnels).
+- **Sleeping: nothing to save.** A piece turns back into blocks once still for the settle's `sleepTicks`
+  (`felling.rs`), when Rapier would put it to sleep; the physics total is the same, and in one run a piece
+  resting on sleeping ones jittered until its time ran out (21.6 s). Left off.
+- **A short no-contact window: cuts the worst tick natively, costs more in the game.** On the flat ground
+  0.3 s took the worst tick from 15/28/48 to 6/17/4.5 ms, but red's flung pieces then pile inside one another
+  (settled 11 → 16 s; the shipped `a_surface_blast_…` test left 4 unsettled at 20 s), as EXPLOSIVES.md §3.1
+  found at 1 s. Yellow looked safe natively and was tried in the game (0.3 s, yellow only): on the spawn's
+  hillside in Chrome, two runs, physics peaked at 162–166 ms in the second after the blast against 82
+  without, 491–528 ms over the 10 s against 393, the worst tick unchanged (26–31 ms: the blast's own tick),
+  the client the same (59.8–59.9 fps, 0 skips). The pieces overlap when the window ends and the solver pushes
+  them apart. **Not adopted** (EXPLOSIVES.md §3.9).
+- **`enhanced-determinism`** stays: the controller's prediction is held bit-identical natively and in
+  WASM, and the pieces share its `Physics`. It also turns off Rapier's SIMD paths (and the browser's worker
+  cannot run its parallel solver anyway); SIMD typically gives ~1.5–2× on the solver, so it may cost ~⅓–½
+  of a blast's physics time (estimated, not measured).
+
+**Next** (not built; ranked by what they would save on the Air):
+
+1. **The chain's last skips** (7, GPU): `gpu.frame` p95 17.1 ms at the blasts; the pieces' draws (one each,
+   in the scene and the nearest cascade) as one instanced draw would be the next thing to measure.
+2. **The blast's own tick** (27–47 ms worst, the same with every lever): spread it — the cells cleared in one
+   tick but the pieces' bodies made over the next few ticks (nearest the charge first), and the terrain
+   collision builds round them capped per tick (`terrainChunksPerTick` holds only new chunks).
+3. **Fewer, larger pieces**: merge neighbouring shell cells flung the same way into one body (a 2 × 2 × 2
+   piece is one body where eight were); the pieces' count drives both physics and terrain collision.
+4. **A server-only physics build without `enhanced-determinism`** (SIMD; on a native dedicated server also
+   the parallel solver): pieces are server-authoritative and the client stands in only for those near it, so
+   the server's piece world need not match the client's bit for bit; a larger change (two `Physics` builds).
+5. **Baked physics** (docs/FUTURE.md): out of scope.
+
 ## Play advanced (the main menu)
 
 The main menu's **Play advanced** (beside New world) opens a local world by link with
