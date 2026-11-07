@@ -128,11 +128,16 @@ pub fn water_drag(world: &mut VoxelWorld, physics: &Physics, body: BodyHandle) -
     let k = 0.5 * (liquid / under) * WATER.drag_coefficient / physics.mass(body).max(1e-6);
     // The water's current where the body is (docs/WATER_SURFACE_GRID.md §2c): it drifts with it.
     let [cu, cv] = world.currents.at(physics.position(body).to_array());
+    // Under a waterfall (docs/WATER_SURFACE_GRID.md §2e): pushed down and out by it, as players are.
+    let centre = ((lo + hi) * 0.5).to_array();
+    let fall = dwell_world::falls::push_at(world, centre, 0.5 * size.y, 0.5 * size.x.max(size.z));
     WaterDrag {
         kx: k * depth * size.z,
         kz: k * depth * size.x,
         linear: WATER.drag * share,
         current: [f64::from(cu), f64::from(cv)],
+        fall,
+        face: dwell_world::FaceFrame::at_height(centre[1]),
     }
 }
 

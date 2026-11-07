@@ -900,7 +900,7 @@ impl Players {
         self.pushes.clear();
         // Pass-major, like the PPC's Quantum system group.
         type Pass = fn(&mut Players, usize, &mut VoxelWorld, &mut Physics);
-        const PASSES: [Pass; 14] = [
+        const PASSES: [Pass; 15] = [
             Players::step_input,
             Players::step_probe,
             Players::step_platform,
@@ -911,6 +911,7 @@ impl Players {
             Players::step_swim,
             Players::step_horizontal,
             Players::step_vertical,
+            Players::step_fall,
             Players::step_impact,
             Players::step_aggregate,
             Players::step_push,
@@ -1740,6 +1741,64 @@ impl Players {
         c.horizontal.contribution = flat(velocity);
         c.vertical.accumulated_y = 0.0;
         c.vertical.target_y = velocity.y;
+    }
+
+    // Dwell — a waterfall's push (§6.4; docs/WATER_SURFACE_GRID.md §2e): in a fall's sheet (found from
+    // the water cells and the current table by `dwell_world::falls`, the same on the server and in the
+    // prediction), the body is drawn toward the falling water's velocity, out over the lip and down, by
+    // the fall's strength, and can't rise: a fall can't be swum or jumped up. Swimming, the swim
+    // layer's velocity; otherwise sideways as an external push (kept in the air, taken by ground
+    // friction) and down in the air (standing under it, only sideways).
+    fn step_fall(&mut self, i: usize, world: &mut VoxelWorld, physics: &mut Physics) {
+        let p = self.players[i].as_mut().expect("live");
+        if p.c.climb.climbing || p.c.fly.flying {
+            return;
+        }
+        let cfg = p.cfg;
+        let frame = Self::frame(p);
+        let position = Self::pos(physics, p);
+        let Some(push) = dwell_world::falls::push_at(
+            world,
+            frame.p(position).to_array(),
+            f64::from(cfg.half_height(p.c.crouching)),
+            f64::from(cfg.body.radius),
+        ) else {
+            return;
+        };
+        let dt = f64::from(DT);
+        let c = &mut p.c;
+        let pushed = |v: Vec3| {
+            let [x, y, z] = dwell_world::falls::push_velocity(
+                [f64::from(v.x), f64::from(v.y), f64::from(v.z)],
+                push,
+                dt,
+            );
+            Vec3::new(x as f32, y as f32, z as f32)
+        };
+        if c.swim.swimming {
+            c.swim.velocity = pushed(c.swim.velocity);
+            c.horizontal.contribution = flat(c.swim.velocity);
+            c.vertical.target_y = c.swim.velocity.y;
+            return;
+        }
+        let v = c.horizontal.contribution + Vec3::Y * c.vertical.target_y;
+        let n = if c.ground.grounded {
+            // On the ground the falling water carries the body out at its speed: an approach
+            // would never beat the ground's friction, which stops the body each tick.
+            let [dx, dz] = dwell_world::falls::DIRS[usize::from(push.dir)];
+            let d = Vec3::new(dx as f32, 0.0, dz as f32);
+            let want = (dwell_world::falls::FALLS.push_out_ms * push.strength) as f32;
+            v + d * (want - v.dot(d)).max(0.0)
+        } else {
+            pushed(v)
+        };
+        let dh = flat(n) - flat(v);
+        c.horizontal.external += dh;
+        c.horizontal.contribution += dh;
+        if !c.ground.grounded {
+            c.vertical.accumulated_y = n.y;
+            c.vertical.target_y = n.y;
+        }
     }
 
     // Creative flight (◆ Dwell, §6.7): exclusive while the fly input is held.
