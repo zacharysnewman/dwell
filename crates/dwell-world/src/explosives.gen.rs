@@ -142,7 +142,7 @@ pub const EXPLOSIVES: &[ExplosiveData] = &[
         wave_reach_m: 6.0,
         wave_impulse: 3.0,
         wave_free_m: 24.0,
-        no_piece_contact_s: 0.0,
+        no_piece_contact_s: 0.3,
         open_sense_m: 3.0,
         open_blend: 0.6,
         open_path_m: 1.0,

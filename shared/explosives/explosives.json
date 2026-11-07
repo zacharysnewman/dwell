@@ -113,7 +113,7 @@
       }
     },
     {
-      "$comment": "Yellow dynamite (owner, 2026-11-07: \"destroys 4m radius, and cracks anything touching air\"; \"it's anything touching air in 5m not queued for destruction\"; and \"to make cave collapses cooler where the ceiling drops\"): the inner 4 m destroyed; of the 4–7 m shell (owner, 2026-11-07: \"increase the radius of the yellow dynamite by 2 meters, for cracking range only\"; \"reduce the explosion force by half\": impulse, speed cap and knockback half of red's) only the cells that touched air before the blast, or (crackOverCleared) whose cell below is in the destroyed core, crack loose and take the blast's push whatever lies in their way; the rest of the shell stays: exposure is judged on the world before the blast, so nothing goes live through the cleared core or behind flying cells (owner, 2026-11-07). Damage within its 4 m destroy radius (the table's rule). Prototype content.",
+      "$comment": "Yellow dynamite (owner, 2026-11-07: \"destroys 4m radius, and cracks anything touching air\"; \"it's anything touching air in 5m not queued for destruction\"; and \"to make cave collapses cooler where the ceiling drops\"): the inner 4 m destroyed; of the 4–7 m shell (owner, 2026-11-07: \"increase the radius of the yellow dynamite by 2 meters, for cracking range only\"; \"reduce the explosion force by half\": impulse, speed cap and knockback half of red's) only the cells that touched air before the blast, or (crackOverCleared) whose cell below is in the destroyed core, crack loose and take the blast's push whatever lies in their way; the rest of the shell stays: exposure is judged on the world before the blast, so nothing goes live through the cleared core or behind flying cells (owner, 2026-11-07). Damage within its 4 m destroy radius (the table's rule). noPieceContactS 0.3 (owner, 2026-11-07, \"do those 3 optimizations\"): its packed cracked pieces don't touch one another for 0.3 s, which took its worst server tick from 48 to 4.5 ms natively (docs/DEV_TOOLS.md, Blasts and floods); red's and green's flung pieces pile up after any window, so they keep 0. Prototype content.",
       "name": "dwell:dynamite_yellow",
       "block": "dwell:dynamite_yellow",
       "lit": "dwell:lit_dynamite_yellow", "waterSparesBlocks": true, "waterShields": true,
@@ -136,7 +136,7 @@
       "waveReachM": 6,
       "waveImpulse": 3,
       "waveFreeM": 24,
-      "noPieceContactS": 0,
+      "noPieceContactS": 0.3,
       "openSenseM": 3,
       "openBlend": 0.6,
       "openPathM": 1,

@@ -323,6 +323,55 @@ dwell_world::both_faces!(
 );
 
 dwell_world::both_faces!(
+    fn yellow_keeps_its_cracked_pieces_apart_for_a_moment(f: FaceFrame) {
+        // Owner (2026-11-07, "do those 3 optimizations"): a blast's pieces start packed together,
+        // and their contacts with one another made the yellow blast's worst server tick
+        // (natively 48 ms flush on flat ground; 4.5 ms with a 0.3 s window, physics 144 -> 84 ms,
+        // settled 10.4 -> 9.2 s; docs/DEV_TOOLS.md "Blasts and floods (M1 Air)"). Red's and green's
+        // flung pieces re-mix and pile inside one another after any window (red flush: settled
+        // 11 s -> 16-20 s, some not at all), so they keep 0: data per explosive.
+        let e = *EXPLOSIVES
+            .iter()
+            .find(|e| e.name == "dwell:dynamite_yellow")
+            .expect("yellow");
+        assert!(
+            e.no_piece_contact_s > 0.0 && e.no_piece_contact_s <= 0.5,
+            "yellow's noPieceContactS {} (want a short window)",
+            e.no_piece_contact_s
+        );
+        let mut s = Scene::new(f, 1);
+        s.fx.server.set_explosives(vec![e]);
+        s.put(1, 0.5, -3.5);
+        s.run(2);
+        s.set([0, 0, 0], require(e.block));
+        s.light([0, 0, 0]);
+        s.run(1);
+        s.put(1, 0.5, -13.0);
+        let fuse = s.fx.server.fuses()[0].1 as usize;
+        s.run(fuse);
+        assert!(s.fx.server.body_count() > 20, "pieces cracked off");
+        s.run(3);
+        assert_eq!(
+            s.fx.server.physics().piece_contact_pairs(),
+            0,
+            "no piece touches another just after the blast"
+        );
+    }
+);
+
+#[test]
+fn yellow_flush_pieces_still_settle_with_their_window() {
+    // face-a-only: settling on the flat world's endless ground (the both-faces scene's slab has
+    // edges pieces fall off); the window's effect is tested on both faces above.
+    let yellow = *EXPLOSIVES
+        .iter()
+        .find(|e| e.name == "dwell:dynamite_yellow")
+        .expect("yellow");
+    let (pieces, _, ticks, _) = surface_settle(yellow);
+    assert!(pieces > 20 && ticks <= 15 * 60, "{pieces} pieces, {ticks} ticks");
+}
+
+dwell_world::both_faces!(
     fn dynamite_caught_in_a_blast_goes_off_after_a_short_random_delay(f: FaceFrame) {
         let e = dynamite();
         let mut s = Scene::new(f, 1);
@@ -547,7 +596,7 @@ fn surface_settle(e: ExplosiveData) -> (usize, usize, u32, f64) {
     s.fx.server.set_explosives(vec![e]);
     s.put(1, 0.5, -3.5);
     s.run(2);
-    s.set([0, 0, 0], require("dwell:dynamite"));
+    s.set([0, 0, 0], require(e.block));
     s.light([0, 0, 0]);
     s.run(1);
     s.put(1, 0.5, -13.0);
@@ -1187,3 +1236,69 @@ dwell_world::both_faces!(
         assert_eq!(flung.len(), 100, "the surface ring cracks");
     }
 );
+
+#[test]
+#[ignore = "a measurement: cargo test --release -p dwell-sim --test explosives measure_blast_cost -- --ignored --nocapture"]
+fn measure_blast_cost() {
+    // face-a-only: a measurement on the flat world (docs/DEV_TOOLS.md "Blasts and floods").
+    let yellow = *EXPLOSIVES
+        .iter()
+        .find(|e| e.name == "dwell:dynamite_yellow")
+        .expect("yellow");
+    for (name, e, buried) in [
+        ("red flush", dynamite(), false),
+        ("red buried", dynamite(), true),
+        ("yellow flush", yellow, false),
+    ] {
+        let e = ExplosiveData {
+            no_piece_contact_s: std::env::var("DWELL_LEVER_NOCONTACT")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(e.no_piece_contact_s),
+            ..e
+        };
+        let mut s = Scene::flat(1);
+        let n = if buried {
+            buried_blast(&mut s, e).len()
+        } else {
+            s.fx.server.set_explosives(vec![e]);
+            s.put(1, 0.5, -3.5);
+            s.run(2);
+            s.set([0, 0, 0], require(e.block));
+            s.light([0, 0, 0]);
+            s.run(1);
+            s.put(1, 0.5, -13.0);
+            let fuse = s.fx.server.fuses()[0].1 as usize;
+            s.run(fuse - 1);
+            spawns(&s.run(1)).len()
+        };
+        let (mut ticks, mut worst, mut first_s, mut total) = (0u32, 0.0f64, 0.0, 0.0);
+        let (mut physics, mut terrain) = (0.0, 0.0);
+        let mut tick_ms = Vec::new();
+        s.fx.server.tick_phases();
+        while s.fx.server.body_count() > 0 && ticks < 30 * 60 {
+            let t = std::time::Instant::now();
+            s.run(1);
+            let ms = t.elapsed().as_secs_f64() * 1000.0;
+            let ph = s.fx.server.tick_phases();
+            let get = |k: &str| ph.iter().find(|(n, _)| *n == k).map_or(0.0, |p| p.1);
+            physics += get("physics");
+            terrain += get("terrain");
+            worst = worst.max(ms);
+            total += ms;
+            tick_ms.push(ms);
+            if ticks < 60 {
+                first_s += ms;
+            }
+            ticks += 1;
+        }
+        tick_ms.sort_by(f64::total_cmp);
+        let p95 = tick_ms.get(tick_ms.len() * 95 / 100).copied().unwrap_or(0.0);
+        println!(
+            "{name}: {n} pieces, tick mean {:.2} p95 {p95:.2} worst {worst:.1} ms, first second {first_s:.0} ms, physics {physics:.0} ms, terrain {terrain:.0} ms, settled in {:.1} s ({} left)",
+            total / f64::from(ticks.max(1)),
+            f64::from(ticks) / 60.0,
+            s.fx.server.body_count()
+        );
+    }
+}
