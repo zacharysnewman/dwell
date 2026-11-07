@@ -54,7 +54,7 @@ export const stateName = (block, values) => {
 /** Checks the items against `blocks` (id → definition); returns them. */
 export function validateItems(data, blocks, states = registryStates()) {
   if (typeof data !== 'object' || data === null || Array.isArray(data)) fail('must be an object');
-  const extra = Object.keys(data).filter((k) => !['$comment', 'items', 'buildModes'].includes(k));
+  const extra = Object.keys(data).filter((k) => !['$comment', 'items', 'hotbar', 'buildModes'].includes(k));
   if (extra.length) fail(`unknown ${extra.join(', ')}`);
   if (!Array.isArray(data.items) || data.items.length === 0) fail('items must be a non-empty list');
   const names = new Set();
@@ -101,8 +101,22 @@ export function validateItems(data, blocks, states = registryStates()) {
     if (drag === 'modes' && rules.length) fail(`${at}: ${it.block} has place rules (${rules.join(', ')}): drag must be vertical or none`);
     if (drag === 'vertical' && b.needsSupport !== 'behind') fail(`${at}: drag vertical is for a block hung on a wall (needsSupport behind)`);
   });
+  validateHotbar(data.hotbar);
   validateBuildModes(data.buildModes);
   return data;
+}
+
+/** Checks the hotbar's step keys and the wheel's accumulator. */
+function validateHotbar(h) {
+  if (typeof h !== 'object' || h === null || Array.isArray(h)) fail('hotbar must be an object');
+  const extra = Object.keys(h).filter((k) => !['$comment', 'prevKey', 'nextKey', 'wheelNotchPx', 'wheelGapMs'].includes(k));
+  if (extra.length) fail(`hotbar: unknown ${extra.join(', ')}`);
+  for (const k of ['prevKey', 'nextKey']) {
+    if (typeof h[k] !== 'string' || !KEY_CODE.test(h[k])) fail(`hotbar.${k} must be a KeyboardEvent.code, e.g. ArrowLeft`);
+  }
+  if (h.prevKey === h.nextKey) fail('hotbar.prevKey and hotbar.nextKey must differ');
+  if (typeof h.wheelNotchPx !== 'number' || !(h.wheelNotchPx >= 1 && h.wheelNotchPx <= 1000)) fail('hotbar.wheelNotchPx must be 1..1000 (px)');
+  if (!Number.isInteger(h.wheelGapMs) || h.wheelGapMs < 0 || h.wheelGapMs > 2000) fail('hotbar.wheelGapMs must be 0..2000 (ms)');
 }
 
 /** Checks the build modes (what holding Place does). */
@@ -139,6 +153,15 @@ export function itemsRust(data) {
     rs.push(`    ItemDef { name: ${JSON.stringify(it.name)}, label: ${JSON.stringify(it.label)}, block: ${JSON.stringify(it.block)}, rows: ${it.rows}, drag: ItemDrag::${ITEM_DRAGS[it.drag ?? 'modes']}, state: ${pairs(it.state)}, facing: ${facing}, upper: ${pairs(it.upper)} },`);
   }
   rs.push('];', '');
+  const h = data.hotbar;
+  const f = (v) => (Number.isInteger(v) ? `${v}.0` : String(v));
+  rs.push('/// The keys that step the hotbar one slot left / right (`KeyboardEvent.code`).');
+  rs.push(`pub const HOTBAR_PREV_KEY: &str = ${JSON.stringify(h.prevKey)};`);
+  rs.push(`pub const HOTBAR_NEXT_KEY: &str = ${JSON.stringify(h.nextKey)};`, '');
+  rs.push('/// The wheel\'s travel (px) in one gesture that steps the hotbar one more slot.');
+  rs.push(`pub const WHEEL_NOTCH_PX: f64 = ${f(h.wheelNotchPx)};`, '');
+  rs.push('/// The quiet (ms) after which a wheel event starts a new gesture, stepping at once.');
+  rs.push(`pub const WHEEL_GAP_MS: f64 = ${f(h.wheelGapMs)};`, '');
   const m = data.buildModes;
   rs.push('/// The key that cycles the build modes (`KeyboardEvent.code`).');
   rs.push(`pub const BUILD_MODE_KEY: &str = ${JSON.stringify(m.key)};`, '');
@@ -170,6 +193,8 @@ export function buildModesTs(data) {
   for (const x of m.modes) ts.push(`    { name: ${q(x.name)}, label: ${q(x.label)}, kind: ${q(x.kind)} },`);
   ts.push('  ],');
   ts.push('} as const;', '');
+  ts.push('/** The keys that step the hotbar one slot left / right (`KeyboardEvent.code`). */');
+  ts.push(`export const HOTBAR_KEYS = { prev: ${q(data.hotbar.prevKey)}, next: ${q(data.hotbar.nextKey)} } as const;`, '');
   return ts.join('\n');
 }
 

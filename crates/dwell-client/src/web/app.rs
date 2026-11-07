@@ -1011,29 +1011,29 @@ impl Client {
     }
     /// A `wheel` event: the hotbar, or with Alt held and the brush tool on, the brush's size, or
     /// while the spyglass is zoomed its steps (up zooms in; docs/SPYGLASS.md).
-    pub fn wheel(&self, delta_y: f64, alt: bool) {
+    pub fn wheel(&self, delta_x: f64, delta_y: f64, alt: bool, now_ms: f64) {
         let mut s = self.inner.borrow_mut();
-        if !alt
-            && let Some(step) = s.input.wheel(delta_y)
-            && let Some(g) = &mut s.game
-            && g.spyglass.on()
-        {
-            if g.spyglass.cycle(-step, &dwell_look::spyglass::SPYGLASS) {
-                g.sound(dwell_game::sound::SoundKind::Tool);
+        let s = &mut *s;
+        let (step_y, step_x) = s.input.wheel(delta_x, delta_y, now_ms);
+        let Some(g) = &mut s.game else { return };
+        // A sideways swipe (a touchpad's `deltaX`) only steps the hotbar (docs/ITEMS.md §6).
+        let step = match (step_y, step_x) {
+            (Some(step), _) => {
+                if !alt && g.spyglass.on() {
+                    if g.spyglass.cycle(-step, &dwell_look::spyglass::SPYGLASS) {
+                        g.sound(dwell_game::sound::SoundKind::Tool);
+                    }
+                    return;
+                }
+                if alt && g.brush_wheel(step) {
+                    return;
+                }
+                step
             }
-            return;
-        }
-        if let Some(step) = s.input.wheel(delta_y)
-            && alt
-            && let Some(g) = &mut s.game
-            && g.brush_wheel(step)
-        {
-            return;
-        }
-        if let Some(step) = s.input.wheel(delta_y)
-            && let Some(g) = &mut s.game
-            && let Some(slot) = g.interaction.scroll(step)
-        {
+            (None, Some(step)) => step,
+            (None, None) => return,
+        };
+        if let Some(slot) = g.interaction.scroll(step) {
             s.shell_events.push(shell_event("slot", slot as u32));
         }
     }
@@ -2275,6 +2275,13 @@ impl Inner {
                     && (slot as usize) < g.interaction.palette().len()
                 {
                     let slot = g.interaction.select(slot);
+                    self.shell_events.push(shell_event("slot", slot as u32));
+                }
+            }
+            InputEvent::HotbarStep(step) => {
+                if let Some(g) = &mut self.game
+                    && let Some(slot) = g.interaction.scroll(step)
+                {
                     self.shell_events.push(shell_event("slot", slot as u32));
                 }
             }

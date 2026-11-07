@@ -9,3 +9,6 @@ export const BUILD_MODES = {
     { name: 'dwell:flat', label: 'Flat', kind: 'level' },
   ],
 } as const;
+
+/** The keys that step the hotbar one slot left / right (`KeyboardEvent.code`). */
+export const HOTBAR_KEYS = { prev: 'ArrowLeft', next: 'ArrowRight' } as const;

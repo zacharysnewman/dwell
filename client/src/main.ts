@@ -482,7 +482,9 @@ function forwardInput(app: App): void {
   window.addEventListener(
     'wheel',
     (e) => {
-      client.wheel(e.deltaY, e.altKey);
+      // Line or page deltas (Firefox's mouse wheel) as pixels, for the notch accumulator.
+      const px = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? 800 : 1;
+      client.wheel(e.deltaX * px, e.deltaY * px, e.altKey, e.timeStamp);
     },
     { passive: true },
   );

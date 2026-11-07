@@ -4,7 +4,7 @@
 // this table describes them, one entry per action, so a new binding is a new entry here.
 
 import { BRUSH_PRESETS } from './brushes.gen';
-import { BUILD_MODES } from './buildModes.gen';
+import { BUILD_MODES, HOTBAR_KEYS } from './buildModes.gen';
 import { SPYGLASS } from './spyglass.gen';
 
 export interface Control {
@@ -53,6 +53,11 @@ export const KEYBOARD: ControlGroup[] = [
         when: BUILD_MODES.modes.map((m) => m.label).join(', '),
       },
       { action: 'Choose block', keys: ['1 – 9', 'Wheel'] },
+      {
+        action: 'Previous / next block',
+        keys: [keyLabel(HOTBAR_KEYS.prev), keyLabel(HOTBAR_KEYS.next), 'Swipe sideways'],
+        when: 'a touchpad’s two-finger swipe',
+      },
     ],
   },
   {
@@ -128,6 +133,10 @@ export function keyLabel(code: string): string {
     BracketLeft: '[',
     BracketRight: ']',
     Backquote: '`',
+    ArrowLeft: '←',
+    ArrowRight: '→',
+    ArrowUp: '↑',
+    ArrowDown: '↓',
   };
   return named[code] ?? code.replace(/^Key|^Digit/, '');
 }
