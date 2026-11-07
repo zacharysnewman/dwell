@@ -5,6 +5,7 @@
 mod common;
 
 use common::*;
+use dwell_physics::terrain::{COLLISION_CELLS_PER_TICK, TerrainCollision};
 use dwell_protocol::*;
 use dwell_sim::jobs::JobRunner;
 use dwell_sim::server::{ServerConfig, TICK_PHASES};
@@ -12,14 +13,13 @@ use dwell_storage::{WorldDb, WorldStore};
 use dwell_world::{Chunk, ChunkCoord, FaceFrame, GENERATOR_TERRAIN, chunk_hash};
 use dwell_worldgen::generator_for;
 
-/// The worst tick after the teleports: its wall time, its phases' sum and the worst phase.
+/// The worst tick after the teleports: its wall time, the terrain phase's, and the most
+/// collider cells one tick set.
 #[derive(Debug, Default)]
 struct Worst {
     tick_ms: f64,
-    phases_ms: f64,
-    phase: &'static str,
-    phase_ms: f64,
-    tick: u32,
+    terrain_ms: f64,
+    cells: u64,
 }
 
 fn teleports(f: FaceFrame) -> Worst {
@@ -44,18 +44,19 @@ fn teleports(f: FaceFrame) -> Worst {
         &mut v,
     );
     fx.send(1, Message::WorldgenCheck(chunk_hash(&v)));
+    let terrain = TICK_PHASES
+        .iter()
+        .position(|&n| n == "terrain")
+        .expect("a phase");
     let mut worst = Worst::default();
     let mut x = at[0];
-    for t in 0..240 * 4 {
-        // Four teleports of 200 m, 4 s apart, after 4 s at the join.
-        let moved = t >= 240 && t % 240 == 0;
-        if moved {
+    // Four teleports of 200 m along +x (into the hills: buried chunks of full cubes, the
+    // collider's dearest), 4 s apart, after 4 s at the join; then 4 s for the collider to settle.
+    for t in 0..240 * 6 {
+        if (240..240 * 5).contains(&t) && t % 240 == 0 {
             x += 200.0;
         }
-        if let Some(h) = fx.server.player_handle_of(w.player_id) {
-            let _ = h;
-            fx.move_to(w.player_id, x, at[1], at[2]);
-        }
+        fx.move_to(w.player_id, x, at[1], at[2]);
         let clock = std::time::Instant::now();
         fx.server.step();
         let tick_ms = clock.elapsed().as_secs_f64() * 1e3;
@@ -65,31 +66,39 @@ fn teleports(f: FaceFrame) -> Worst {
         }
         let _ = fx.take(1);
         let ms = fx.server.tick_phases();
-        if t >= 240 && tick_ms > worst.tick_ms {
-            let (k, p) = ms
-                .iter()
-                .enumerate()
-                .max_by(|a, b| a.1.1.total_cmp(&b.1.1))
-                .expect("phases");
-            worst = Worst {
-                tick_ms,
-                phases_ms: ms.iter().map(|p| p.1).sum(),
-                phase: TICK_PHASES[k],
-                phase_ms: p.1,
-                tick: t,
-            };
-        }
-        if moved || tick_ms > 8.0 {
-            println!("tick {t}: {tick_ms:.1} ms, counts {:?}, {ms:?}", fx.server.tick_counts());
+        let counts = fx.server.tick_counts();
+        let cells = counts
+            .iter()
+            .find(|c| c.0 == "collisionCells")
+            .expect("a count")
+            .1;
+        if t >= 240 {
+            worst.tick_ms = worst.tick_ms.max(tick_ms);
+            worst.terrain_ms = worst.terrain_ms.max(ms[terrain].1);
+            worst.cells = worst.cells.max(cells);
         }
     }
+    let caught_up = fx
+        .server
+        .sim()
+        .2
+        .terrain()
+        .is_some_and(TerrainCollision::caught_up);
+    assert!(caught_up, "the collider never caught up with its chunks");
     println!("{f:?}: {worst:?}");
     worst
 }
 
 dwell_world::both_faces!(
-    fn a_200_m_teleport_costs_no_tick_over_16_ms(f: FaceFrame) {
+    fn a_200_m_teleport_puts_its_chunks_into_the_collider_over_several_ticks(f: FaceFrame) {
+        // Before: every cell of the chunks round the player went into Parry's voxels on the
+        // teleport's tick, 65 536 for two buried chunks (4 ms each natively, 10-17 ms ticks;
+        // several times that in the browser). Now those near the player at once, the rest a
+        // little a tick.
         let worst = teleports(f);
-        assert!(worst.tick_ms < 16.0, "{worst:?}");
+        assert!(
+            worst.cells <= COLLISION_CELLS_PER_TICK as u64 + 4096,
+            "{worst:?}"
+        );
     }
 );

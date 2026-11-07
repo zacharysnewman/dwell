@@ -61,7 +61,21 @@ pub struct TerrainCollision {
     watched: HashMap<ChunkCoord, Watch>,
     /// Chunk builds so far (tests).
     loads: u64,
+    /// Full-cube cells set in or taken out of the collider so far (`collisionCells`).
+    cells: u64,
+    /// The full-cube cells the `Voxels` collider holds, per chunk: a chunk's `solid` is what it
+    /// should hold, and Parry takes a cell at a time (~130 ns natively, a whole buried chunk
+    /// 3–4 ms; several times that in the browser), so a chunk's cells go in a little a tick
+    /// ([`Self::catch_up`]) — the cells near players and pieces at once.
+    applied: HashMap<ChunkCoord, Mask>,
+    /// The chunks whose `applied` cells differ from their `solid` ones.
+    behind: std::collections::BTreeSet<(i32, i32, i32)>,
 }
+
+/// The full-cube cells a tick puts into (or takes out of) the collider beyond those near players
+/// and pieces ([`TerrainCollision::catch_up`]): a buried chunk's 32 768 cells in four ticks,
+/// ~1 ms a tick natively.
+pub const COLLISION_CELLS_PER_TICK: usize = 8192;
 
 /// The apron a chunk's collision reads: a cell's shape reads its neighbours one cell out, and its
 /// faces are culled against its neighbours' shapes.
@@ -251,6 +265,9 @@ impl TerrainCollision {
             chunks: HashMap::default(),
             watched: HashMap::default(),
             loads: 0,
+            cells: 0,
+            applied: HashMap::default(),
+            behind: std::collections::BTreeSet::new(),
         }
     }
 
@@ -265,22 +282,138 @@ impl TerrainCollision {
             .expect("a voxel shape")
     }
 
-    /// Sets the cells whose bit differs between `old` and `new`.
-    fn apply(&self, physics: &mut Physics, c: ChunkCoord, old: Option<&Mask>, new: Option<&Mask>) {
-        if old.is_none() && new.is_none() {
-            return;
+    /// Puts the cells of chunk `c` whose collider bit differs from its `solid` one in line, those
+    /// within cells `lo..=hi` (global cell keys) only, at most `budget` of them; returns how many.
+    fn apply_cells(
+        &mut self,
+        physics: &mut Physics,
+        c: ChunkCoord,
+        lo: IVector,
+        hi: IVector,
+        budget: usize,
+    ) -> usize {
+        let want = self.chunks.get(&c).and_then(|l| l.solid.as_ref());
+        let have = self.applied.get(&c);
+        if want.is_none() && have.is_none() {
+            self.behind.remove(&(c.y, c.z, c.x));
+            return 0;
         }
-        let voxels = self.voxels(physics);
-        for w in 0..CHUNK_VOLUME / 64 {
-            let bits = new.map_or(0, |n| n[w]);
-            let mut changed = bits ^ old.map_or(0, |o| o[w]);
+        let origin = key(c, 0);
+        let n = i64::from(CHUNK_SIZE);
+        let clamp = |v: i64, o: i64| (v - o).clamp(0, n - 1) as usize;
+        let (x0, x1) = (clamp(lo.x, origin.x), clamp(hi.x, origin.x));
+        let (y0, y1) = (clamp(lo.y, origin.y), clamp(hi.y, origin.y));
+        let (z0, z1) = (clamp(lo.z, origin.z), clamp(hi.z, origin.z));
+        let whole = (x0, y0, z0, x1, y1, z1) == (0, 0, 0, 31, 31, 31);
+        let mut set: Vec<(usize, bool)> = Vec::new();
+        'words: for w in 0..CHUNK_VOLUME / 64 {
+            let bits = want.map_or(0, |m| m[w]);
+            let mut changed = bits ^ have.map_or(0, |m| m[w]);
             while changed != 0 {
                 let b = changed.trailing_zeros() as usize;
                 changed &= changed - 1;
                 let i = w * 64 + b;
-                voxels.set_voxel(key(c, i), bits & (1 << b) != 0);
+                let (x, y, z) = (i & 31, (i >> 5) & 31, i >> 10);
+                if !whole
+                    && !((x0..=x1).contains(&x) && (y0..=y1).contains(&y) && (z0..=z1).contains(&z))
+                {
+                    continue;
+                }
+                if set.len() >= budget {
+                    break 'words;
+                }
+                set.push((i, bits & (1 << b) != 0));
             }
         }
+        let voxels = self.voxels(physics);
+        for &(i, on) in &set {
+            voxels.set_voxel(key(c, i), on);
+        }
+        self.cells += set.len() as u64;
+        let mask = self
+            .applied
+            .entry(c)
+            .or_insert_with(|| Box::new([0u64; CHUNK_VOLUME / 64]));
+        for &(i, on) in &set {
+            if on {
+                mask[i / 64] |= 1 << (i % 64);
+            } else {
+                mask[i / 64] &= !(1 << (i % 64));
+            }
+        }
+        let want = self.chunks.get(&c).and_then(|l| l.solid.as_ref());
+        let done = match want {
+            Some(m) => m[..] == mask[..],
+            None => mask.iter().all(|&w| w == 0),
+        };
+        if done {
+            self.behind.remove(&(c.y, c.z, c.x));
+        } else {
+            self.behind.insert((c.y, c.z, c.x));
+        }
+        if mask.iter().all(|&w| w == 0) {
+            self.applied.remove(&c);
+        }
+        set.len()
+    }
+
+    /// Puts the collider's cells in line with the chunks' (`behind`): all of those inside the
+    /// `boxes` (world metres: the players' and pieces' reach) now, then up to `budget` more,
+    /// in a fixed order (so the client's prediction builds the same). Returns the cells set.
+    pub fn catch_up(
+        &mut self,
+        physics: &mut Physics,
+        boxes: &[(DVec3, DVec3)],
+        budget: usize,
+    ) -> usize {
+        let mut n = 0;
+        for &(lo, hi) in boxes {
+            n += self.catch_up_box(physics, lo, hi);
+        }
+        let behind: Vec<_> = self.behind.iter().copied().collect();
+        let all = (IVector::splat(i64::MIN / 2), IVector::splat(i64::MAX / 2));
+        for (y, z, x) in behind {
+            if n >= budget {
+                break;
+            }
+            n += self.apply_cells(physics, ChunkCoord::new(x, y, z), all.0, all.1, budget - n);
+        }
+        n
+    }
+
+    /// Puts in line every cell of the box (world metres) the collider is behind on.
+    fn catch_up_box(&mut self, physics: &mut Physics, lo: DVec3, hi: DVec3) -> usize {
+        if self.behind.is_empty() {
+            return 0;
+        }
+        let cell = |p: DVec3| {
+            let [x, y, z] = dwell_world::cell_of_pos(p.to_array());
+            IVector::new(i64::from(x), i64::from(y), i64::from(z))
+        };
+        let (a, b) = (chunk_of_pos(lo.to_array()), chunk_of_pos(hi.to_array()));
+        let (klo, khi) = (cell(lo), cell(hi));
+        let mut n = 0;
+        for cy in a.y.max(MIN_CHUNK_Y)..=b.y.min(MAX_CHUNK_Y) {
+            for cz in a.z..=b.z {
+                for cx in a.x..=b.x {
+                    if self.behind.contains(&(cy, cz, cx)) {
+                        n += self.apply_cells(
+                            physics,
+                            ChunkCoord::new(cx, cy, cz),
+                            klo,
+                            khi,
+                            usize::MAX,
+                        );
+                    }
+                }
+            }
+        }
+        n
+    }
+
+    /// Whether every chunk's cells are in the collider (tests).
+    pub fn caught_up(&self) -> bool {
+        self.behind.is_empty()
     }
 
     fn insert_mesh(
@@ -321,7 +454,9 @@ impl TerrainCollision {
         let old_wide = old.as_ref().map(|o| o.wide);
         let (old_solid, old_mesh, old_hash) =
             old.map_or((None, None, 0), |o| (o.solid, o.mesh, o.mesh_hash));
-        self.apply(physics, c, old_solid.as_ref(), built.solid.as_ref());
+        if old_solid != built.solid {
+            self.behind.insert((c.y, c.z, c.x));
+        }
         let solid = built.solid.clone();
         let mesh = if !fresh && old_hash == mesh_hash {
             old_mesh // the same triangles: keep the collider and its contacts
@@ -374,14 +509,17 @@ impl TerrainCollision {
         let Some(old) = self.chunks.remove(&c) else {
             return;
         };
-        self.apply(physics, c, old.solid.as_ref(), None);
+        if old.solid.is_some() || self.applied.contains_key(&c) {
+            self.behind.insert((c.y, c.z, c.x));
+        }
         if let Some(h) = old.mesh {
             physics.w.remove_collider(h);
         }
         self.unwatch(c, old.wide);
     }
 
-    /// Makes sure the chunks overlapping the box (world metres) are in the collider.
+    /// Makes sure the chunks overlapping the box (world metres) are in the collider, and the
+    /// box's cells (the rest of a chunk's go in by [`Self::catch_up`]).
     pub fn ensure_box(
         &mut self,
         physics: &mut Physics,
@@ -401,6 +539,7 @@ impl TerrainCollision {
                 }
             }
         }
+        self.catch_up_box(physics, lo, hi);
     }
 
     /// Loads the chunks the `boxes` (world metres) overlap, at most `budget` new ones, nearest their
@@ -492,6 +631,11 @@ impl TerrainCollision {
         for c in drop {
             self.unload(physics, c);
         }
+    }
+
+    /// How many full-cube cells have been set in or taken out of the collider.
+    pub fn cells(&self) -> u64 {
+        self.cells
     }
 
     /// How many chunk builds there have been (tests).
