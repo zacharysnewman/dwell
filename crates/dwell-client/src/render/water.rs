@@ -541,6 +541,7 @@ mod tests {
     }
 
     use super::*;
+    use dwell_world::FaceFrame;
 
     fn close(a: f32, b: f32, eps: f32) -> bool {
         (a - b).abs() <= eps
@@ -830,7 +831,12 @@ mod tests {
             let v = &buf[id * FLUID_VEC4S * 4..(id + 1) * FLUID_VEC4S * 4];
             let u = underwater_look(f.name);
             let under = [u.lens_m, u.fog_clear_m, u.fog_density, u.meniscus_strength];
-            let line = [u.line_amplitude_m, u.line_wavelength_m, u.line_speed, u.meniscus_width_px];
+            let line = [
+                u.line_amplitude_m,
+                u.line_wavelength_m,
+                u.line_speed,
+                u.meniscus_width_px,
+            ];
             assert_eq!(v[36..40], under.map(|x| x as f32));
             assert_eq!(v[40..44], line.map(|x| x as f32));
         }
@@ -840,15 +846,21 @@ mod tests {
     }
 
     dwell_world::both_faces!(
-        fn the_waterline_splits_a_view_from_the_surface_by_each_pixels_ray(f: dwell_world::FaceFrame) {
+        fn the_waterline_splits_a_view_from_the_surface_by_each_pixels_ray(f: FaceFrame) {
             // Face-local fixture: the surface at 10.875, the eye exactly on it; rays a little up
             // and a little down from level (world y of the face-local direction through `f`).
             let surface = 10.875;
             let (eye, s) = (f.y(surface), f.y(surface));
             let dir_y = |local_y: f64| f.vector([0.0, local_y, 1.0])[1];
             let lens = 0.3;
-            assert!(waterline_m(f, eye, s, dir_y(0.1), lens, 0.0) > 0.0, "a ray above level: above water");
-            assert!(waterline_m(f, eye, s, dir_y(-0.1), lens, 0.0) < 0.0, "a ray below level: under water");
+            assert!(
+                waterline_m(f, eye, s, dir_y(0.1), lens, 0.0) > 0.0,
+                "a ray above level: above water"
+            );
+            assert!(
+                waterline_m(f, eye, s, dir_y(-0.1), lens, 0.0) < 0.0,
+                "a ray below level: under water"
+            );
             // The line's wave lifts it: a ray just above level is under a crest.
             assert!(waterline_m(f, eye, s, dir_y(0.01), lens, 0.01) < 0.0);
             // The eye 0.2 m over the surface: a level ray is above; one steeply down reaches under.
@@ -868,7 +880,7 @@ mod tests {
         assert!(src.contains(
             "return face_y(face, frame.eye.x + lens.y) - face_y(face, frame.water.z) - wave;"
         ));
-        assert!(src.contains("        d = waterline_m(normalize(ray), f);"));
+        assert!(src.contains("let d = waterline_m(normalize(ray), f);"));
         assert!(src.contains("let d = max(dist - f.under.y, 0.0) * f.under.z;"));
     }
 }

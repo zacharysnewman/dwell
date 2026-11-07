@@ -56,7 +56,10 @@ mod tests {
     fn water_has_its_own_look_and_an_unknown_fluid_the_default() {
         let w = underwater_look("dwell:water");
         assert_eq!(w.fluid, "dwell:water");
-        assert!(w.fog_clear_m > 0.0 && w.fog_density < 1.0, "clear water reads far");
+        assert!(
+            w.fog_clear_m > 0.0 && w.fog_density < 1.0,
+            "clear water reads far"
+        );
         assert_eq!(underwater_look("test:nothing"), &DEFAULT_UNDERWATER);
         assert!(line_reach_m() >= w.lens_m + w.line_amplitude_m);
     }

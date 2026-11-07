@@ -154,14 +154,37 @@ pub fn pixel_art_for(
     preset.filter(|_| !is_cpu(device_type))
 }
 
-/// The frame uniform's `water` vec4 (shaders.rs `Frame`): x 1 when the eye is under a fluid's
-/// drawn surface, 2 when it is just above it (within the waterline's reach: each pixel is under or
-/// not by its own ray, WATER_RENDERING.md §10), y its fluid id, z the surface's world y (zeros
-/// when there is none); w the water quality.
-fn water_uniform(eye_fluid: Option<EyeFluid>, quality: WaterQuality) -> [f32; 4] {
+/// How the composite splits the view at the waterline (WATER_RENDERING.md §10; `frame.water.x`):
+/// 1 the eye so deep under the surface that no pixel's lens reaches it (the whole view under, the
+/// cheap path, no per-pixel test); within the line's reach, 2 with the eye under the surface and 3
+/// above it, each pixel under it or not by its own ray.
+fn waterline_state(e: EyeFluid, eye_y: f64, face: FaceFrame) -> f32 {
+    let name = dwell_blocks::FLUIDS
+        .get(usize::from(e.fluid))
+        .map_or("", |f| f.name);
+    let look = dwell_look::underwater::underwater_look(name);
+    let depth = face.y(e.surface_y) - face.y(eye_y);
+    if !e.under {
+        3.0
+    } else if depth > look.lens_m + look.line_amplitude_m {
+        1.0
+    } else {
+        2.0
+    }
+}
+
+/// The frame uniform's `water` vec4 (shaders.rs `Frame`): x [`waterline_state`] (0: the eye
+/// neither under a fluid's drawn surface nor just above it), y its fluid id, z the surface's world
+/// y (zeros when there is none); w the water quality.
+fn water_uniform(
+    eye_fluid: Option<EyeFluid>,
+    eye_y: f64,
+    face: FaceFrame,
+    quality: WaterQuality,
+) -> [f32; 4] {
     match eye_fluid {
         Some(e) => [
-            if e.under { 1.0 } else { 2.0 },
+            waterline_state(e, eye_y, face),
             f32::from(e.fluid),
             e.surface_y as f32,
             quality.level(),
@@ -2534,7 +2557,12 @@ impl Renderer {
         );
         put(&other[0]);
         put(&other[1]);
-        put(&water_uniform(self.eye_fluid, self.water()));
+        put(&water_uniform(
+            self.eye_fluid,
+            self.eye[1],
+            self.face,
+            self.water(),
+        ));
         for v in self.wind_uniforms(basis, aspect, tan_y) {
             put(&v);
         }
@@ -5142,25 +5170,38 @@ mod tests {
 
     #[test]
     fn the_water_uniform_carries_the_eye_fluid_and_the_water_quality() {
-        assert_eq!(water_uniform(None, WaterQuality::Low), [0.0; 4]);
+        let a = FaceFrame::A;
+        assert_eq!(water_uniform(None, 0.0, a, WaterQuality::Low), [0.0; 4]);
         let e = EyeFluid {
             fluid: 0,
             surface_y: -12.125,
             under: true,
         };
+        // 2 m under: the whole view under the surface, the cheap path.
         assert_eq!(
-            water_uniform(Some(e), WaterQuality::High),
+            water_uniform(Some(e), -14.125, a, WaterQuality::High),
             [1.0, 0.0, -12.125, 2.0]
         );
-        // Just above the surface, within the waterline's reach: 2, so the composite splits the
-        // view per pixel (WATER_RENDERING.md §10).
-        let above = EyeFluid { under: false, ..e };
-        assert_eq!(
-            water_uniform(Some(above), WaterQuality::Low),
-            [2.0, 0.0, -12.125, 0.0]
-        );
-        assert_eq!(water_uniform(None, WaterQuality::Medium)[3], 1.0);
+        assert_eq!(water_uniform(None, 0.0, a, WaterQuality::Medium)[3], 1.0);
     }
+
+    dwell_world::both_faces!(
+        fn the_waterline_splits_the_view_only_near_the_surface(f: FaceFrame) {
+            // Face-local: the surface at 10.875; the eye 2 m under, 5 cm under, 5 cm over it.
+            let surface = f.y(10.875);
+            let e = |under: bool| EyeFluid {
+                fluid: dwell_blocks::fluid("dwell:water").expect("water"),
+                surface_y: surface,
+                under,
+            };
+            let x = |under: bool, eye: f64| {
+                water_uniform(Some(e(under)), f.y(eye), f, WaterQuality::Low)[0]
+            };
+            assert_eq!(x(true, 8.875), 1.0, "deep: all under");
+            assert_eq!(x(true, 10.825), 2.0, "just under: split per pixel");
+            assert_eq!(x(false, 10.925), 3.0, "just over: split per pixel");
+        }
+    );
 
     #[test]
     fn draw_order_opaque_near_to_far_by_pipeline_then_water_far_to_near_then_lines() {

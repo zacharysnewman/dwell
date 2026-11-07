@@ -429,9 +429,10 @@ fn eye_fluid() -> Fluid {
     return fluids[min(u32(frame.water.y), arrayLength(&fluids) - 1u)];
 }
 
-// The eye itself under a fluid's surface (`frame.water.x` 1; 2 is just above it, the line's band).
+// The eye itself under a fluid's surface (`frame.water.x` 1 deep, 2 near the surface; 3 just
+// above it; render/mod.rs `waterline_state`).
 fn eye_under() -> bool {
-    return frame.water.x > 0.5 && frame.water.x < 1.5;
+    return frame.water.x > 0.5 && frame.water.x < 2.5;
 }
 
 // The waterline (WATER_RENDERING.md §10; render/water.rs `waterline_m` is its CPU twin): how far
@@ -1179,21 +1180,21 @@ fn composited_of(c: vec4f, depth: f32, ray: vec3f, clear: vec3f, back: vec3f) ->
 fn composite_pixel(p: vec2i, ndc: vec2f) -> vec3f {
     // Near or under a fluid's surface each pixel is under it or not by its own ray (the waterline,
     // WATER_RENDERING.md §10), with the meniscus along the line between.
-    var d = 1e6;
-    var f: Fluid;
-    if (frame.water.x > 0.5) {
-        let ray = view_ray(ndc);
-        f = eye_fluid();
-        d = waterline_m(normalize(ray), f);
-        if (d < 0.0) {
-            return meniscus(composite_underwater(p, ray, textureLoad(scene_color, p, 0)), d, f);
-        }
+    // Deep under it (x 1) the whole view is, as one uniform branch.
+    if (frame.water.x > 0.5 && frame.water.x < 1.5) {
+        return composite_underwater(p, view_ray(ndc), textureLoad(scene_color, p, 0));
     }
     var s = composited(p, ndc);
     if (frame.outline.x > 0.5) {
         s.color = outlined(s, p);
     }
-    if (frame.water.x > 0.5) {
+    if (frame.water.x > 1.5) {
+        let ray = view_ray(ndc);
+        let f = eye_fluid();
+        let d = waterline_m(normalize(ray), f);
+        if (d < 0.0) {
+            s.color = composite_underwater(p, ray, textureLoad(scene_color, p, 0));
+        }
         s.color = meniscus(s.color, d, f);
     }
     return s.color;
@@ -2037,15 +2038,16 @@ fn underside_from_outside(i: FluidOut, front: bool) -> bool {
 // (WATER_RENDERING.md §10): its top seen from above where the pixel looks out from under it, its
 // underside seen from below where the pixel looks out above it. Each half of a split view then
 // shows its own side, and the line between them is the waterline's.
+// Only near the surface (`frame.water.x` 2 or 3: a uniform branch, nothing to test elsewhere);
+// else branch-free, so the fragment's derivatives after it stay in uniform control flow.
 fn waterline_hides(i: FluidOut, front: bool) -> bool {
-    if (frame.water.x < 0.5 || abs(i.normal.y) < 0.5) {
+    if (frame.water.x < 1.5) {
         return false;
     }
     let face = frame.eye.y;
-    if (abs(face_y(face, frame.eye.x + i.rel.y) - face_y(face, frame.water.z)) > 0.05) {
-        return false;
-    }
-    return (waterline_m(normalize(i.rel), eye_fluid()) < 0.0) == front;
+    let own = abs(face_y(face, frame.eye.x + i.rel.y) - face_y(face, frame.water.z)) <= 0.05;
+    let other_side = (waterline_m(normalize(i.rel), eye_fluid()) < 0.0) == front;
+    return (abs(i.normal.y) > 0.5) & own & other_side;
 }
 
 // A fluid's surface seen from inside (the W4 stub): the body's colour, out through Snell's window,
@@ -2071,7 +2073,8 @@ fn water_fs(i: FluidOut, @builtin(front_facing) front: bool) -> SceneOut {
     let footprint = max(length(dpdx(i.wrapped)), length(dpdy(i.wrapped)));
     let deck_fw = reflected_deck_fw(i.rel);
     // A swap's water fades with its level's surface (the same pixels: neither blends twice).
-    if (fade_discard(draw, i.clip.xy) || waterline_hides(i, front)) {
+    let hidden = waterline_hides(i, front);
+    if (fade_discard(draw, i.clip.xy) || hidden) {
         discard;
     }
     let count = arrayLength(&fluids);
@@ -2168,7 +2171,8 @@ fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(
     let draw = draws[i.draw];
     let footprint = max(length(dpdx(i.wrapped)), length(dpdy(i.wrapped)));
     let deck_fw = reflected_deck_fw(i.rel);
-    if (fade_discard(draw, i.clip.xy) || waterline_hides(i, front)) {
+    let hidden = waterline_hides(i, front);
+    if (fade_discard(draw, i.clip.xy) || hidden) {
         discard;
     }
     let count = arrayLength(&fluids);

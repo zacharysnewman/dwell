@@ -98,7 +98,9 @@ mod tests {
             eye_fluid(eye, 0.0, |x, y, z| *self.0.get(&(x, y, z)).unwrap_or(&AIR))
         }
         fn near(&self, eye: [f64; 3], reach: f64) -> Option<EyeFluid> {
-            eye_fluid(eye, reach, |x, y, z| *self.0.get(&(x, y, z)).unwrap_or(&AIR))
+            eye_fluid(eye, reach, |x, y, z| {
+                *self.0.get(&(x, y, z)).unwrap_or(&AIR)
+            })
         }
     }
 

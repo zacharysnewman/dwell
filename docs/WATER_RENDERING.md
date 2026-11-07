@@ -74,7 +74,7 @@ ray-marched reflection through a GPU voxel structure was the planned exact path;
 marcher, ADR 0044.)
 
 **Underwater.** Eye test into a `Frame` uniform (underwater flag, surface height, fluid id).
-Per-pixel split where the near plane crosses the surface (Crest's "water line"). Per-channel
+Per-pixel split where a lens point along each view ray crosses the surface (Crest's "water line"; built, §12). Per-channel
 absorption fog replaces height fog while submerged. The surface from below (the water mesh is
 already double-sided): outside Snell's window (critical angle `asin(1/ior)`, about 48.6°) total
 internal reflection; inside, refract to the scene above. Caustics projected on opaque fragments
@@ -100,7 +100,7 @@ Trivial on desktop; real bandwidth and power on phones' tile GPUs, hence half-re
 | **W1** | Fluid data in the registry (§2), a dedicated `water_fs` (normal maps, Fresnel, GGX, sky reflection), the eye-submerged uniform with the 0.875 rule. No new passes | Fixture-fluid test; **regression test for the cell-vs-surface mismatch, seen failing first**; owner look |
 | **W2** | The frame restructure (built once, as Phase 25's A1, and kept: the shared frame) | As A1 |
 | **W3** | Refraction with the depth check, Beer–Lambert absorption, shoreline foam; caustics (brought forward from W4) | Screenshots of shore views; bench |
-| **W4** | Underwater: fog, the split line, Snell's window and TIR, distortion, god rays | Named views underwater and half in; owner look |
+| **W4** | Underwater: fog, the split line (built, §12), Snell's window and TIR, distortion, god rays | Named views underwater and half in; owner look |
 | **W5** | SSR and the quality tiers, phone defaults (SSR and the reflected clouds came forward as W5a, §8) | Bench on desktop and a phone |
 | ~~**W6**~~ | ~~Under ray marching: reflection and refraction rays replace SSR and the copy on high tiers~~ — dropped with the ray marcher (ADR 0044) | — |
 
@@ -616,3 +616,71 @@ depth. Looks per liquid in `shared/look/waterfalls.json`. **Cost:** a few quads 
 segments, the foam, at most `count` × width puffs), the nearest 32 within 64 m; the fragments are the
 sheets' pixels, each a few noise taps. A CPU adapter draws them still and without spray. The
 **Waterfalls** setting (Water section) turns them off.
+
+## 12. The waterline and the clear underwater view (2026-11-07, 0.50.17)
+
+Owner, 2026-11-07, with a photo of a camera half under clear tropical water (sky and beach above, a
+sunlit sandy floor far off below, a crisp, slightly wavy line with a thin bright band between): "I want
+a clean waterline like this: currently our fog shows up too early and we don't have a clean line."
+
+**What was wrong.** Underwater was one flag for the whole screen: `frame.water.x` was 1 only when the
+eye itself was under the drawn surface (`eye_fluid`), and the composite then fogged every pixel. With
+the eye at the surface there was no line: just above it the view showed the surface edge-on (the sand
+read dry, as if there were no water), just below it everything was fog. The fog was the fluid's
+absorption plus scattering at full rate from the eye (`dwell:water`: about 1.3, 0.46 and 0.35 per
+metre in red, green and blue), so the floor was gone within ~5 m.
+
+**The waterline (per pixel).**
+
+- `dwell_world::fluid::eye_fluid(eye, reach, voxel)` also finds the eye's fluid surface when the eye
+  is **above** it by at most `reach` (`dwell_look::underwater::line_reach_m`: the largest lens plus
+  line wave over the looks), with `under` saying which side the eye is on; face-local through
+  `FaceFrame` (test: `an_eye_just_above_the_surface_finds_it_within_the_reach_for_the_waterline`, both
+  faces).
+- `frame.water.x` (`render/mod.rs` `waterline_state`): 1 when the eye is so deep that no pixel's lens
+  reaches the surface (the whole view under: the old single branch, no per-pixel test), 2 near the
+  surface with the eye under it, 3 near it with the eye above it.
+- In states 2 and 3 the composite decides each pixel by its own ray: `waterline_m` is how far the point
+  `lensM` out along the ray is above the surface, less the line's waves (two sines over world x and z,
+  `line.amplitudeM`, `wavelengthM`, `speed`; the drawn surface stays flat, §3, so the waves are the
+  line's only). Negative: the underwater composite; else the ordinary one. Then the **meniscus**, a band
+  `widthPx` either side of the line in the look's colour at its `strength`, measured in pixels at the
+  lens. The CPU twin is `render/water.rs` `waterline_m` (test:
+  `the_waterline_splits_a_view_from_the_surface_by_each_pixels_ray`, both faces; the shader's line is
+  pinned to it by `the_shader_decides_the_waterline_as_its_cpu_twin_does`).
+- The fluid shaders (`water_fs`, `water_scene_fs`) discard the eye's own surface (within 5 cm of its
+  height) on the far side of the line (`waterline_hides`): its top where the pixel looks out from under
+  it, its underside where it looks out above it, so each half shows its own side. Only in states 2 and
+  3 (a uniform branch); branch-free inside, so the derivatives after it stay in uniform control flow.
+- `seen_from_inside`, `underside_from_outside` and the wind's pass key on `eye_under()` (states 1 and
+  2), as they keyed on the flag before.
+
+**The clearer fog.** `underwater()` applies the fluid's rates only past the look's `fog.clearM` and
+scaled by `fog.density`; the registry's absorption and scattering are unchanged, so the water seen
+from above is too. `dwell:water`: `clearM` 3, `density` 0.3 (blue reaches 1/e at about 13 m instead of
+~3 m). A murky fluid is data: `density` above 1, `clearM` 0. The caustics on the floor were there
+already (Medium and High) and now read far.
+
+**Data** (`shared/look/underwater.json` → `dwell-look` `underwater.gen.rs` by
+`shared/look/underwater.mjs`; validated with the bad entry named, a fixture murky fluid by data alone,
+CI stale check): per fluid by its registry name, a `default` for the rest (`lensM` 0.05, no waves, no
+meniscus, the registry's rates from the eye: the look before). Packed into the fluid table as three
+more vec4s (`FLUID_VEC4S` 12, 192 bytes a fluid). `dwell:water`: `lensM` 0.3, waves 1.2 cm over 0.9 m
+at 0.35 Hz, meniscus `#f2fbff` at 0.55, 2.5 px.
+
+**Cost** (Apple M1 Air, 1280×800 at ratio 2 = 2560×1600, `?renderscale=0.5&upscaler=stretch`, default
+settings (High water), seed 0's nearest sea, `gpu.*` p50 over 4 s, one run before and two after). No
+new pass or target: the test and fog live in the composite and the fluid shaders.
+
+| View | `gpu.frame` before → after | `gpu.composite` | `gpu.near.water` |
+|---|---|---|---|
+| Eye at the surface (split) | 6.72 → 6.32 / 6.46 | 3.95 → 3.71 / 3.72 | 2.14 → 1.86 / 1.87 |
+| 1.5 m deep along the floor | 6.12 → 7.71 / 6.86 | 4.20 → 5.56 / 4.96 | 3.17 → 3.87 / 3.82 |
+
+At the surface the split costs nothing measurable (the above half is the ordinary composite; the
+under half's fog replaces the scene's water). Deep, the code path is the old one plus two ALU ops a
+pixel, yet the runs read 0.7–1.6 ms more; it was not isolated within the time box (the deep record
+comes last in each run, on a passively cooled laptop) and is worth a recheck with `?waterdbg=`.
+Per tier: Low and the CPU adapter draw the same (no caustics there, as before); the test is a
+normalize and two sines per pixel only while the eye is within ~0.3 m of the surface, so phones pay
+it only then.
