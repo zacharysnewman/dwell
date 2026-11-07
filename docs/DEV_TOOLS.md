@@ -923,7 +923,7 @@ prediction's terrain collision loading at 360 m/s). Workers: `job.chunk` queued 
   with it: fewer workers (above) and no local server (this run) left `frame.cpu` at 9.4–11.3 ms. The main
   thread's extra time is its own loading work.
 
-**Fixes proposed** (not built; ranked by the main-thread time they save while loading):
+**Fixes proposed** (ranked by the main-thread time they save while loading; 1 and 4 built in 0.50.14, below):
 
 1. **One stream budget, not two, and a frame-aware one**: the light and the mesh starts share
    `stream_budget_ms`, and the budget shrinks with the frame's time so far (e.g. spend only up to ~9 ms of
@@ -938,6 +938,47 @@ prediction's terrain collision loading at 360 m/s). Workers: `job.chunk` queued 
    a frame together.
 4. **Skip the LOD selection while it cannot change** (`LodSystem::update` 0.35 s in 8 s, ~0.6 ms a frame,
    still 1.1 ms with nothing loading): the cost profile's finding again.
+
+**Built in 0.50.14: one frame-aware stream budget, and the LOD skipping a selection that cannot change.**
+The light and the mesh starts share one budget (`dwell-game` `stream_budget.rs`, ARCHITECTURE.md §7.4): the
+loading stops `STREAM_DEADLINE_MS` (8 ms) after the frame's start, whatever ran before it (`jobs.apply`, the
+ticks), at least `STREAM_MIN_MS` (2 ms, or 0.15 of a slow page's frame); the light leaves `STREAM_MESH_SHARE`
+(0.4) of it to the mesh starts, and each stops before an item its running cost estimate says would pass the
+deadline. `LodSystem::update` keeps the last selection while the camera (to the ½ m cell and 0.1°), the
+settings, the LOD's messages and job results and the chunks (`drawable_revision`) are unchanged and nothing
+waits. Same method as above (vsync, 2560×1600, 50 % Stretch, seed 0), one run each, levels 4 and 9; *before*
+is main at 0.50.13 (two runs; the second one's with the lag steps), *after* the 8 ms deadline (a 7 ms one in
+brackets). Load 3.6–9 during the runs. Scenarios: the scratchpad's `fl/sb.json` (`fl4s`, `fl9s`: the flight
+above, then W released, `until ahead`, `until behind`, `settle`, 1 s recorded standing still).
+
+| Flight (15 s) | Drawn fps | Over 18 ms | GPU-wait skips | `frame.cpu` mean / p95 / max | `mesh_dirty` mean / p95 / max | `jobs.apply` | Chunks uploaded |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Level 4, before | 55.7, 53.9 | 168, 192 | 63, 90 | 9.41 / 15.2 / 19.2, 10.47 / 15.9 / 20.5 | 5.06 / 9.8 / 12.3, 5.73 / 10.5 / 13.2 | 1.59, 1.77 | 4,567, 4,437 |
+| Level 4, after | 59.6 (59.8) | 141 (136) | 5 (1) | 9.62 / 11.8 / 15.0 (8.50 / 10.4 / 12.8) | 5.12 / 7.6 / 9.0 (4.51 / 6.7 / 8.2) | 1.47 (1.27) | 3,921 (3,810) |
+| Level 9, before | 58.4, 57.2 | 144, 159 | 23, 42 | 10.32 / 14.5 / 17.4, 10.91 / 15.0 / 17.5 | 6.65 / 10.2 / 12.6, 7.08 / 10.6 / 12.4 | 1.68, 1.77 | 5,573, 5,197 |
+| Level 9, after | 59.9 (59.9) | 132 (146) | 0 (0) | 9.03 / 10.4 / 14.2 (8.20 / 9.6 / 13.0) | 5.73 / 7.5 / 7.9 (5.16 / 6.6 / 7.8) | 1.26 (1.11) | 3,447 (3,374) |
+
+The "over 18 ms" left after are the rAF's own 18.6 ms intervals (vsync jitter, `raf-late`: 132–141 of them in
+every run, before too); the slow intervals the pacing caused (`gpu-wait`) went from 13–63 to 0–3. `gpu.frame` is
+unchanged (12.1–12.3 ms at level 4, 8.1–8.7 at level 9).
+
+- **Loading lag.** Fewer chunks are uploaded in flight (−12 % at level 4, −34 % at level 9), but the view
+  catches up as soon: after W is released, `until ahead` (no level-1 section in view waiting for chunks) came
+  ~2.0 s (level 4) and ~1.8 s (level 9) after the flight's end before, ~2.4 s and ~1.4 s after (from the steps'
+  times, ±0.5 s). The uploads dropped are most likely re-meshes (a chunk meshed again as its neighbours are lit),
+  which the light's reserve for the mesh starts and the shorter light slices cut; a measured backlog of the
+  streamer (unlit and dirty chunks) would tell, and is not in the bench yet.
+- **Join.** The `terrain` stage 3.53–4.17 s before, 3.47–3.86 s after (3.89–4.09 at 7 ms); the first `settle`
+  (the LOD idle after joining) 8.4–11.0 s before, 8.2–9.6 s after. The `start` record (6 s after joining):
+  `frame.cpu` 9.3–10.8 → 9.1–9.6 ms, GPU-wait skips 0–28 → 0.
+- **Standing still** (the `after` record, nothing loading): `lod` 0.9–1.0 ms a frame before, 0.00 at level 9
+  after (every selection skipped; 0.64 at level 4, still settling there), `frame.cpu` 2.6–3.5 ms.
+- **Why 8 ms, not 7:** 7 ms left `frame.cpu` at 8.2–8.5 with the same frame rate; 8 ms brings it to ~9 (the
+  target) with a few more chunks a second and still almost no skips (they start at ~12 ms of `frame.cpu`).
+
+**Next** (not built): the flood light off the main thread (fix 2; still about half of `mesh_dirty`), and the
+vertices interleaved in the mesh worker (fix 3). One chunk's light (`LightMap::load`) is not split into slices:
+the cost estimate stops before a chunk that would pass the deadline, and the worst `mesh_dirty` after is 9 ms.
 
 ## Play advanced (the main menu)
 

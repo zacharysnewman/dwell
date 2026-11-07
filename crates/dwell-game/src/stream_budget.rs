@@ -10,8 +10,8 @@
 //! and the mesh starts each had their own 4 ms, up to 8 ms a frame plus the last item's overshoot
 //! (`mesh_dirty` 6–7.5 ms, up to 14, in flight on the M1 Air).
 
-/// The loading's deadline, ms after the frame's start: about 9 ms of `frame.cpu` less the ~2 ms
-/// of LOD selection and drawing that follow it.
+/// The loading's deadline, ms after the frame's start: `frame.cpu` comes to ~9 ms with the LOD
+/// selection and the draw after it (9.0–9.6 ms mean in flight on the M1 Air; 7 ms gave 8.2–8.5).
 pub const STREAM_DEADLINE_MS: f64 = 8.0;
 /// The least a frame's loading gets (ms), however late the frame is.
 pub const STREAM_MIN_MS: f64 = 2.0;
