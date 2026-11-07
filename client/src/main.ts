@@ -1456,9 +1456,13 @@ async function connect(app: App): Promise<void> {
       // time, the server's ticks (and a local server's time per tick).
       if (s.phase === 'joined') {
         tickRate.sample(performance.now(), stats.serverTick);
-        const [cpuMs = null, gpuMs = null] = client.perf();
+        const [cpuMs = null, gpuMs = null, pacedShare = null, noSurfaceShare = null] =
+          client.perf();
         perf.textContent = formatPerf({
           fps: app.fps.fps,
+          animationFps: app.fps.animationFps,
+          pacedShare,
+          noSurfaceShare,
           cpuMs,
           gpuMs,
           serverTicks: app.loopback?.serverTicks ?? tickRate.rate,

@@ -19,5 +19,6 @@ describe('FPS meter', () => {
     let n = 0;
     for (let t = 0; t <= 1020; t += 1000 / 60) m.frame(t, n++ % 2 === 0);
     expect(m.fps).toBeCloseTo(30, 0);
+    expect(m.animationFps).toBeCloseTo(60, 0);
   });
 });

@@ -6,6 +6,12 @@
 export interface PerfFigures {
   /** Frames drawn a second (ui/fps.ts). */
   fps: number | null;
+  /** The browser's animation frames a second (ui/fps.ts); drawn below it were skipped. */
+  animationFps?: number | null;
+  /** The share of animation frames skipped while the GPU was behind (render/pacing.rs), 0–1. */
+  pacedShare?: number | null;
+  /** The share skipped for want of a surface texture, 0–1. */
+  noSurfaceShare?: number | null;
   /** The game's time on the main thread per frame (ms). */
   cpuMs: number | null;
   /** The GPU's time per frame (ms); null where the browser can't time it. */
@@ -19,9 +25,23 @@ export interface PerfFigures {
 const ms = (v: number | null): string =>
   v === null || !Number.isFinite(v) ? '–' : `${v.toFixed(1)} ms`;
 
-/** One line, e.g. "30 fps · CPU 4.1 ms · GPU 31.2 ms · server 60/s, 2.8 ms". */
+/**
+ * One line, e.g. "30 fps · CPU 4.1 ms · GPU 31.2 ms · server 60/s, 2.8 ms"; with the animation
+ * frames known, "38/60 fps (22 GPU-wait)": drawn of the browser's frames, and those skipped by
+ * reason ("GPU-wait": the GPU behind on earlier frames, render/pacing.rs; "no-surface").
+ */
 export function formatPerf(p: PerfFigures): string {
-  const fps = p.fps === null ? '– fps' : `${String(Math.round(p.fps))} fps`;
+  let fps = p.fps === null ? '– fps' : `${String(Math.round(p.fps))} fps`;
+  const of = p.animationFps;
+  if (p.fps !== null && of !== null && of !== undefined) {
+    fps = `${String(Math.round(p.fps))}/${String(Math.round(of))} fps`;
+    const skips: string[] = [];
+    const paced = Math.round((p.pacedShare ?? 0) * of);
+    const noSurface = Math.round((p.noSurfaceShare ?? 0) * of);
+    if (paced > 0) skips.push(`${String(paced)} GPU-wait`);
+    if (noSurface > 0) skips.push(`${String(noSurface)} no-surface`);
+    if (skips.length > 0) fps += ` (${skips.join(', ')})`;
+  }
   let server =
     p.serverTicks === null ? 'server –' : `server ${String(Math.round(p.serverTicks))}/s`;
   if (p.serverTickMs !== null && Number.isFinite(p.serverTickMs))
