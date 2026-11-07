@@ -38,10 +38,14 @@
     "respawn": {"sound": "respawn"},
     "burn": {"set": "burn", "loop": "start", "fallback": false},
     "burn_level": {"loop": "update"},
-    "burn_end": {"loop": "stop"}
+    "burn_end": {"loop": "stop"},
+    "fall": {"sound": "waterfall", "loop": "start"},
+    "fall_level": {"loop": "update"},
+    "fall_end": {"loop": "stop"}
   },
   "ambient": {
-    "fire": {"radiusM": 10, "max": 4}
+    "fire": {"radiusM": 10, "max": 4},
+    "falls": {"radiusM": 40, "max": 3, "fullM3s": 2}
   },
   "sets": {
     "stone": {
@@ -1991,6 +1995,16 @@
         {"source": "modal", "freq": 330, "gain": 0.24, "partials": [[1, 1, 0.09], [2.7, 0.5, 0.05], [5.1, 0.25, 0.03]], "alts": [{"freq": 310}, {"freq": 350}, {"freq": 325}]},
         {"source": "noise", "color": "white", "gain": 0.3, "filters": [{"type": "bandpass", "freq": 2400, "q": 1.8}], "env": {"attack": 0.0005, "decay": 0.025}},
         {"source": "noise", "color": "white", "gain": 0.28, "at": 0.02, "filters": [{"type": "highpass", "freq": 1500}, {"type": "bandpass", "freq": 3200, "q": 0.8, "to": 900}], "env": {"attack": 0.006, "decay": 0.22}}
+      ]
+    },
+    "waterfall": {
+      "gain": 1.0, "reverb": 0.08, "loop": true,
+      "variation": {"pitch": 1, "gain": 1, "cutoff": 0.08},
+      "intensity": {"gain": [0, 1], "cutoff": [0.6, 1.2]},
+      "layers": [
+        {"source": "noise", "color": "pink", "gain": 0.55, "filters": [{"type": "bandpass", "freq": 900, "q": 0.6}], "tremolo": {"rate": 3, "depth": 0.15}},
+        {"source": "noise", "color": "brown", "gain": 0.6, "filters": [{"type": "lowpass", "freq": 320, "q": 0.7}]},
+        {"source": "noise", "color": "white", "gain": 0.1, "filters": [{"type": "bandpass", "freq": 3800, "q": 0.8}], "tremolo": {"rate": 9, "depth": 0.3}}
       ]
     },
     "torch_fire": {

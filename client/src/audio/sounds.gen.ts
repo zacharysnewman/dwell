@@ -192,6 +192,19 @@ export const SOUND_DATA: SoundData = {
     {
       "name": "burn_end",
       "loop": "stop"
+    },
+    {
+      "name": "fall",
+      "sound": "dwell:waterfall",
+      "loop": "start"
+    },
+    {
+      "name": "fall_level",
+      "loop": "update"
+    },
+    {
+      "name": "fall_end",
+      "loop": "stop"
     }
   ],
   "sets": {
@@ -477,6 +490,11 @@ export const SOUND_DATA: SoundData = {
     "fire": {
       "radiusM": 10,
       "max": 4
+    },
+    "falls": {
+      "radiusM": 40,
+      "max": 3,
+      "fullM3s": 2
     }
   },
   "sounds": {
@@ -5183,6 +5201,72 @@ export const SOUND_DATA: SoundData = {
           "env": {
             "attack": 0.006,
             "decay": 0.22
+          }
+        }
+      ]
+    },
+    "dwell:waterfall": {
+      "gain": 1,
+      "reverb": 0.08,
+      "loop": true,
+      "variation": {
+        "pitch": 1,
+        "gain": 1,
+        "cutoff": 0.08
+      },
+      "intensity": {
+        "gain": [
+          0,
+          1
+        ],
+        "cutoff": [
+          0.6,
+          1.2
+        ]
+      },
+      "layers": [
+        {
+          "source": "noise",
+          "color": "pink",
+          "gain": 0.55,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 900,
+              "q": 0.6
+            }
+          ],
+          "tremolo": {
+            "rate": 3,
+            "depth": 0.15
+          }
+        },
+        {
+          "source": "noise",
+          "color": "brown",
+          "gain": 0.6,
+          "filters": [
+            {
+              "type": "lowpass",
+              "freq": 320,
+              "q": 0.7
+            }
+          ]
+        },
+        {
+          "source": "noise",
+          "color": "white",
+          "gain": 0.1,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 3800,
+              "q": 0.8
+            }
+          ],
+          "tremolo": {
+            "rate": 9,
+            "depth": 0.3
           }
         }
       ]

@@ -851,6 +851,121 @@ impl FireSounds {
     }
 }
 
+/// The first voice of the waterfalls' loops (one per slot, up to `ambient::FALLS_MAX`); past the
+/// fires' and the night's.
+pub const FALL_VOICE: u32 = 0x3_0000;
+
+/// A waterfall that may rush (docs/WATER_SURFACE_GRID.md §2e): `dwell_world::falls`' near the
+/// listener.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FallSource {
+    /// Stable while it falls (its lip's place and way): it keeps its voice.
+    pub key: u64,
+    /// Where it sounds (world m): its sheet's middle.
+    pub pos: [f64; 3],
+    /// The water it carries over (m³/s).
+    pub discharge: f64,
+}
+
+/// A waterfall's level: by its flow (the square root of its share of `ambient::FALLS_FULL_M3S`, at
+/// most 1) and by distance, full beside it and fading smoothly to nothing at `FALLS_RADIUS_M` (the
+/// shell's distance rolloff comes on top).
+pub fn fall_level(distance: f64, discharge: f64) -> f64 {
+    let x = (distance / ambient::FALLS_RADIUS_M).clamp(0.0, 1.0);
+    let flow = (discharge / ambient::FALLS_FULL_M3S).clamp(0.0, 1.0).sqrt();
+    flow * (1.0 - x * x).powi(2)
+}
+
+/// The rush of the waterfalls near the listener: the loudest `ambient::FALLS_MAX` within
+/// `ambient::FALLS_RADIUS_M`, each on its own voice while it stays among them.
+#[derive(Clone, Debug)]
+pub struct FallSounds {
+    slots: Vec<(Option<u64>, LoopTrack)>,
+}
+
+impl Default for FallSounds {
+    fn default() -> Self {
+        Self {
+            slots: (0..ambient::FALLS_MAX)
+                .map(|i| {
+                    let t = LoopTrack::new(
+                        SoundKind::Fall,
+                        SoundKind::FallLevel,
+                        SoundKind::FallEnd,
+                        FALL_VOICE + i as u32,
+                    );
+                    (None, t)
+                })
+                .collect(),
+        }
+    }
+}
+
+impl FallSounds {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// One frame: the falls `sources` near the listener at `listener` (any order, any number).
+    pub fn update(
+        &mut self,
+        listener: [f64; 3],
+        sources: &[FallSource],
+        dt: f64,
+        out: &mut Vec<SoundEvent>,
+    ) {
+        let dist = |p: [f64; 3]| {
+            (0..3)
+                .map(|k| (p[k] - listener[k]).powi(2))
+                .sum::<f64>()
+                .sqrt()
+        };
+        let mut near: Vec<(f64, &FallSource)> = sources
+            .iter()
+            .map(|f| (fall_level(dist(f.pos), f.discharge), f))
+            .filter(|(l, _)| *l > LOOP_OFF)
+            .collect();
+        near.sort_by(|a, b| b.0.total_cmp(&a.0));
+        near.truncate(ambient::FALLS_MAX);
+        for (key, track) in &mut self.slots {
+            if key.is_some_and(|k| !near.iter().any(|(_, f)| f.key == k)) {
+                track.end(out);
+                *key = None;
+            }
+        }
+        for (level, f) in near {
+            let slot = match self.slots.iter().position(|(k, _)| *k == Some(f.key)) {
+                Some(i) => i,
+                None => {
+                    let Some(i) = self.slots.iter().position(|(k, _)| k.is_none()) else {
+                        continue;
+                    };
+                    self.slots[i].0 = Some(f.key);
+                    i
+                }
+            };
+            self.slots[slot].1.set(level, 0, Some(f.pos), dt, out);
+        }
+    }
+
+    /// Ends every fall's voice (leaving the world).
+    pub fn finish(&mut self, out: &mut Vec<SoundEvent>) {
+        for (key, track) in &mut self.slots {
+            track.end(out);
+            *key = None;
+        }
+    }
+
+    /// The falls sounding now (their keys).
+    pub fn playing(&self) -> Vec<u64> {
+        self.slots
+            .iter()
+            .filter(|(_, t)| t.playing)
+            .filter_map(|(k, _)| *k)
+            .collect()
+    }
+}
+
 /// Events as the JS API hands them over: 7 numbers each (kind, block state, intensity, x, y, z,
 /// flags: bit 0 spatial, bits 1–3 the gait + 1, bits 4 and up the voice + 1).
 pub const FLOATS_PER_EVENT: usize = 7;
@@ -1643,6 +1758,56 @@ mod tests {
             fs.update(listener, sources, 1.0 / 60.0, &mut out);
         }
         out
+    }
+
+    #[test]
+    fn a_waterfall_rushes_louder_with_more_flow_and_nearer_and_only_the_loudest_few() {
+        // docs/WATER_SURFACE_GRID.md §2e (owner, 2026-11-06).
+        let r = ambient::FALLS_RADIUS_M;
+        let full = ambient::FALLS_FULL_M3S;
+        assert!(fall_level(0.0, full) == 1.0 && fall_level(r, full) == 0.0);
+        assert!(
+            fall_level(5.0, full) > fall_level(10.0, full),
+            "nearer is louder"
+        );
+        assert!(
+            fall_level(5.0, full) > fall_level(5.0, 0.1 * full),
+            "more flow is louder"
+        );
+        let fall = |key: u64, x: f64, q: f64| FallSource {
+            key,
+            pos: [x, 10.0, 0.0],
+            discharge: q,
+        };
+        let mut sources: Vec<FallSource> = (0..(ambient::FALLS_MAX as u64 + 2))
+            .map(|i| fall(i, 2.0 + 3.0 * i as f64, full))
+            .collect();
+        sources.push(fall(99, r + 1.0, full));
+        let mut fs = FallSounds::new();
+        let mut out = Vec::new();
+        for _ in 0..60 {
+            fs.update([0.0, 10.0, 0.0], &sources, 1.0 / 60.0, &mut out);
+        }
+        let playing = fs.playing();
+        assert_eq!(playing.len(), ambient::FALLS_MAX);
+        assert!(
+            playing.iter().all(|&k| k < ambient::FALLS_MAX as u64),
+            "{playing:?}"
+        );
+        let starts: Vec<&SoundEvent> = out.iter().filter(|e| e.kind == SoundKind::Fall).collect();
+        assert_eq!(starts.len(), ambient::FALLS_MAX);
+        assert!(
+            starts
+                .iter()
+                .all(|e| e.voice.is_some_and(|v| v >= FALL_VOICE))
+        );
+        // Gone (the falls dried up): their voices stop.
+        fs.update([0.0, 10.0, 0.0], &[], 1.0 / 60.0, &mut out);
+        assert!(fs.playing().is_empty());
+        assert_eq!(
+            out.iter().filter(|e| e.kind == SoundKind::FallEnd).count(),
+            ambient::FALLS_MAX
+        );
     }
 
     #[test]

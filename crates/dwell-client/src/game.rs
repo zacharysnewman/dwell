@@ -127,6 +127,8 @@ pub trait Scene: TerrainRenderer {
     fn set_water_flow(&mut self, _texels: Vec<i8>) {}
     /// The flecks drifting on moving water this frame (crate::flecks).
     fn set_flecks(&mut self, _flecks: Vec<crate::flecks::Fleck>) {}
+    /// The waterfalls near the eye to draw this frame (render/waterfalls.rs).
+    fn set_falls(&mut self, _falls: Vec<dwell_world::falls::Fall>) {}
     /// The portals near the eye whose motes draw this frame (BIFACIAL_WORLD.md §12.1).
     fn set_portal_motes(&mut self, _portals: Vec<crate::render::flames::PortalMotes>) {}
     /// A falling piece's meshes (docs/FELLING.md §3), relative to its reference cell's centre,
@@ -541,6 +543,13 @@ pub struct Game<S: Scene> {
     /// The Drifting flecks setting: particles on moving water (render/flames.rs's flecks).
     flow_particles: bool,
     flecks: crate::flecks::Flecks,
+    /// The waterfalls near the eye (docs/WATER_SURFACE_GRID.md §2e; `dwell_world::falls`, found
+    /// again every `WATERFALLS.refresh_s`), drawn while the Waterfalls setting is on and heard always.
+    falls: Vec<dwell_world::falls::Fall>,
+    falls_age: f64,
+    /// The Waterfalls setting: the falls' sheets, foam and spray drawn.
+    falls_shown: bool,
+    fall_sounds: dwell_game::sound::FallSounds,
     /// Box select, fill, copy/paste, undo (§6.5); `enabled` once the server announces region edits.
     pub region: RegionTools,
     /// VoxelSniper-style brushes (BRUSHES.md); `available` where the server announces them.
@@ -713,6 +722,10 @@ impl<S: Scene> Game<S> {
             flow_sent: None,
             flow_particles: true,
             flecks: crate::flecks::Flecks::default(),
+            falls: Vec::new(),
+            falls_age: f64::INFINITY,
+            falls_shown: true,
+            fall_sounds: dwell_game::sound::FallSounds::new(),
             region: RegionTools::new(),
             brush: BrushTool::new(),
             portals: (Vec::new(), ""),
@@ -2348,6 +2361,16 @@ impl<S: Scene> Game<S> {
         self.flow_particles = on;
     }
 
+    /// The Waterfalls setting (docs/WATER_SURFACE_GRID.md §2e): the falls' sheets, foam and spray.
+    pub fn set_falls_shown(&mut self, on: bool) {
+        self.falls_shown = on;
+    }
+
+    /// The waterfalls near the eye now (as last found).
+    pub fn falls(&self) -> &[dwell_world::falls::Fall] {
+        &self.falls
+    }
+
     /// The renderer's flow window around `eye` (render/flow.rs), built again when the current table
     /// changed or the eye is over another column.
     fn update_flow(&mut self, eye: [f64; 3]) {
@@ -2648,6 +2671,24 @@ impl<S: Scene> Game<S> {
         self.flecks
             .update(self.streamer.store(), camera_eye, dt, self.flow_particles);
         self.scene.borrow_mut().set_flecks(self.flecks.list.clone());
+        // The waterfalls near the eye (docs/WATER_SURFACE_GRID.md §2e), found again now and then.
+        self.falls_age += dt;
+        if self.falls_age >= dwell_look::waterfalls::WATERFALLS.refresh_s {
+            self.falls_age = 0.0;
+            self.falls = crate::telemetry::span("falls.find", || {
+                dwell_world::falls::falls_near(
+                    self.streamer.store(),
+                    camera_eye,
+                    dwell_look::waterfalls::WATERFALLS.draw_m,
+                )
+            });
+        }
+        let shown = if self.falls_shown {
+            self.falls.clone()
+        } else {
+            Vec::new()
+        };
+        self.scene.borrow_mut().set_falls(shown);
 
         self.hud.health = self.health;
         if self.debug_visible {
@@ -2791,6 +2832,22 @@ impl<S: Scene> Game<S> {
             });
         }
         self.fire_sounds.update(eye, &fires, dt, &mut self.sounds);
+        // Each waterfall near the listener rushes, louder with more flow and nearer.
+        let falls: Vec<dwell_game::sound::FallSource> = self
+            .falls
+            .iter()
+            .map(|f| dwell_game::sound::FallSource {
+                key: (u64::from(f.x as u32) << 32)
+                    ^ (u64::from(f.z as u32) << 2)
+                    ^ u64::from(f.dir)
+                    ^ (u64::from(f.face.is_b()) << 63),
+                pos: f
+                    .face
+                    .point([f.lip_mid()[0], 0.5 * (f.lip + f.land), f.lip_mid()[2]]),
+                discharge: f.discharge(),
+            })
+            .collect();
+        self.fall_sounds.update(eye, &falls, dt, &mut self.sounds);
     }
 
     /// The day/night cycle's state at the last frame.

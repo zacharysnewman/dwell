@@ -126,6 +126,8 @@ export interface EventDef {
 /** The ambient sounds' tunables (AUDIO.md §2), read by the Rust game. */
 export interface AmbientDef {
   fire: { radiusM: number; max: number };
+  /** Waterfalls (docs/WATER_SURFACE_GRID.md §2e): within `radiusM`, the nearest `max`, full at `fullM3s`. */
+  falls: { radiusM: number; max: number; fullM3s: number };
 }
 
 export type ControlSounds = string[] | { silent: string };

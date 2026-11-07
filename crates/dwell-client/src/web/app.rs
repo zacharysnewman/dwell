@@ -266,6 +266,8 @@ struct Inner {
     lod_settings: LodSettings,
     /// The Drifting flecks setting (docs/WATER_SURFACE_GRID.md §2c), for each game made.
     flow_particles: bool,
+    /// The Waterfalls setting (docs/WATER_SURFACE_GRID.md §2e), for each game made.
+    falls_shown: bool,
     /// Input events for the shell (toggles, hotbar changes, flight), drained by `takeEvents`.
     shell_events: Vec<JsValue>,
     /// The F3 overlay is on: kept here so it holds for a game started later (`?debug=1`).
@@ -409,6 +411,7 @@ impl Client {
             signature: Rc::default(),
             game: None,
             flow_particles: true,
+            falls_shown: true,
             lod_settings: LodSettings {
                 pixel_error: 2.0,
                 cache_bytes: 256 << 20,
@@ -631,6 +634,32 @@ impl Client {
             set(&o, "frameCount", t.frames().count() as u32);
             o.into()
         })
+    }
+
+    /// The waterfalls near the eye as this client found them (docs/WATER_SURFACE_GRID.md §2e;
+    /// DEV_TOOLS.md): 8 numbers each, its high column's x and z, its way (0 +x, 1 −x, 2 +z, 3 −z),
+    /// width (columns), lip and landing (world y), flow per metre (m²/s) and current over the lip (m/s).
+    #[wasm_bindgen(js_name = waterFalls)]
+    pub fn water_falls(&self) -> Vec<f64> {
+        let s = self.inner.borrow();
+        let Some(g) = &s.game else {
+            return Vec::new();
+        };
+        g.falls()
+            .iter()
+            .flat_map(|f| {
+                [
+                    f64::from(f.x),
+                    f64::from(f.z),
+                    f64::from(f.dir),
+                    f64::from(f.width),
+                    f.face.y(f.lip),
+                    f.face.y(f.land),
+                    f.flow,
+                    f.speed,
+                ]
+            })
+            .collect()
     }
 
     /// The water's current (m/s along x and z) at a world point as this client has it, and how many
@@ -1535,10 +1564,10 @@ impl Client {
     pub fn set_phone(&self, phone: bool) {
         self.inner.borrow().renderer.borrow_mut().set_phone(phone);
     }
-    /// How moving water shows its flow (docs/WATER_SURFACE_GRID.md §2c, the Water settings):
-    /// ripples carried by the current, foam streaks, drifting particles.
+    /// How moving water shows its flow (docs/WATER_SURFACE_GRID.md §2c, §2e, the Water settings):
+    /// ripples carried by the current, foam streaks, drifting particles, waterfalls.
     #[wasm_bindgen(js_name = setWaterFlow)]
-    pub fn set_water_flow(&self, ripples: bool, foam: bool, particles: bool) {
+    pub fn set_water_flow(&self, ripples: bool, foam: bool, particles: bool, falls: bool) {
         let s = self.inner.borrow();
         let switches = (u32::from(ripples) * crate::render::flow::FLOW_RIPPLES)
             | (u32::from(foam) * crate::render::flow::FLOW_FOAM);
@@ -1547,8 +1576,10 @@ impl Client {
         let mut s = self.inner.borrow_mut();
         if let Some(g) = &mut s.game {
             g.set_flow_particles(particles);
+            g.set_falls_shown(falls);
         }
         s.flow_particles = particles;
+        s.falls_shown = falls;
     }
     /// The distant terrain (LOD) drawn or not, a debug switch (`?lod=off`, `__dwell.setLod`): the
     /// full-detail chunks alone show what they hold. True when in a world.
@@ -2443,6 +2474,7 @@ impl Inner {
             game.set_lod_map(true);
         }
         game.set_flow_particles(self.flow_particles);
+        game.set_falls_shown(self.falls_shown);
         self.game = Some(game);
     }
 

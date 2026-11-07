@@ -15,12 +15,14 @@ describe('water settings', () => {
       flowRipples: true,
       flowFoam: true,
       flowParticles: true,
+      waterfalls: true,
     });
     expect(defaultWater(false)).toEqual({
       quality: 'medium',
       flowRipples: true,
       flowFoam: true,
       flowParticles: true,
+      waterfalls: true,
     });
   });
 
@@ -58,9 +60,23 @@ describe('water settings', () => {
         { quality: 'low', flowRipples: false, flowFoam: true, flowParticles: false },
         fallback,
       ),
-    ).toEqual({ quality: 'low', flowRipples: false, flowFoam: true, flowParticles: false });
+    ).toEqual({
+      quality: 'low',
+      flowRipples: false,
+      flowFoam: true,
+      flowParticles: false,
+      waterfalls: true,
+    });
     // Not a boolean: the default.
     expect(sanitizeWater({ flowFoam: 'no' }, fallback).flowFoam).toBe(true);
+  });
+
+  it('read the Waterfalls switch (0.49.31) where stored, and default it on where not', () => {
+    const fallback = defaultWater(false);
+    expect(sanitizeWater({ quality: 'high', flowFoam: false }, fallback).waterfalls).toBe(true);
+    expect(sanitizeWater({ waterfalls: false }, fallback).waterfalls).toBe(false);
+    expect(sanitizeWater({ waterfalls: 'off' }, fallback).waterfalls).toBe(true);
+    expect(waterRecord({}, { ...fallback, waterfalls: false }).waterfalls).toBe(false);
   });
 });
 

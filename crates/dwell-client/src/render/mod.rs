@@ -28,6 +28,7 @@ pub mod shadows;
 pub mod timing;
 pub mod water;
 pub mod water_tiles;
+pub mod waterfalls;
 
 use dwell_world::hash::HashMap;
 
@@ -1036,6 +1037,8 @@ pub struct Renderer {
     portal_motes: Vec<flames::PortalMotes>,
     /// The flecks on moving water this frame (`Scene::set_flecks`; crate::flecks).
     flecks: Vec<crate::flecks::Fleck>,
+    /// The waterfalls near the eye to draw (`Scene::set_falls`; render/waterfalls.rs).
+    falls: Vec<dwell_world::falls::Fall>,
     outline: Option<V3>,
     /// The outline's box in its cell, and its lines.
     outline_box: ([f32; 3], [f32; 3]),
@@ -1723,6 +1726,7 @@ impl Renderer {
             placed_flames: Vec::new(),
             portal_motes: Vec::new(),
             flecks: Vec::new(),
+            falls: Vec::new(),
             outline: None,
             outline_box,
             outline_quat: IDENTITY_QUAT,
@@ -3238,12 +3242,14 @@ impl Renderer {
             arms_flame,
             &self.portal_motes,
             &self.flecks,
+            &self.falls,
             self.eye,
             seconds,
         );
         crate::telemetry::add("flames.drawn", self.flames.drawn as f64);
         crate::telemetry::add("motes.drawn", self.flames.motes_drawn as f64);
         crate::telemetry::add("flecks.drawn", self.flames.flecks_drawn as f64);
+        crate::telemetry::add("falls.drawn", self.flames.falls_drawn as f64);
         let arms = self.characters.has_arms();
         if arms {
             let fov = dwell_characters::player()
@@ -4853,6 +4859,9 @@ impl crate::game::Scene for Renderer {
     }
     fn set_flecks(&mut self, flecks: Vec<crate::flecks::Fleck>) {
         self.flecks = flecks;
+    }
+    fn set_falls(&mut self, falls: Vec<dwell_world::falls::Fall>) {
+        self.falls = falls;
     }
     fn set_water_flow(&mut self, texels: Vec<i8>) {
         self.frame_bindings.flow.write(&self.queue, &texels);

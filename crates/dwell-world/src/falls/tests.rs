@@ -80,9 +80,16 @@ crate::both_faces!(
         let falls = s.falls();
         assert_eq!(falls.len(), 1, "{falls:?}");
         let fall = falls[0];
-        assert_eq!((fall.face, fall.x, fall.z, fall.dir, fall.width), (f, 3, 0, 0, 3));
+        assert_eq!(
+            (fall.face, fall.x, fall.z, fall.dir, fall.width),
+            (f, 3, 0, 0, 3)
+        );
         let base = m_of_row(BASE);
-        assert!((fall.lip - base - 4.0).abs() < 1e-9, "lip {}", fall.lip - base);
+        assert!(
+            (fall.lip - base - 4.0).abs() < 1e-9,
+            "lip {}",
+            fall.lip - base
+        );
         assert!((fall.land - base).abs() < 1e-9, "land {}", fall.land - base);
         // the flow per metre: the depth (the ledge's water, 1 m) × the current over the lip
         assert!((fall.flow - 0.6).abs() < 1e-6, "flow {}", fall.flow);
@@ -95,8 +102,14 @@ crate::both_faces!(
 crate::both_faces!(
     fn still_water_water_running_away_and_a_short_drop_make_no_fall(f: FaceFrame) {
         assert!(Scene::ledge(f, 2, [0.0, 0.0]).falls().is_empty(), "still");
-        assert!(Scene::ledge(f, 2, [-0.6, 0.0]).falls().is_empty(), "running away from the lip");
-        assert!(Scene::ledge(f, 2, [0.0, 0.6]).falls().is_empty(), "along it, into a wall");
+        assert!(
+            Scene::ledge(f, 2, [-0.6, 0.0]).falls().is_empty(),
+            "running away from the lip"
+        );
+        assert!(
+            Scene::ledge(f, 2, [0.0, 0.6]).falls().is_empty(),
+            "along it, into a wall"
+        );
         // the ground beyond raised to 1 row under the lip: a 0.5 m step, under `min_drop_m`
         let mut s = Scene::ledge(f, 2, [0.6, 0.0]);
         let stone = require("dwell:stone");
@@ -143,10 +156,22 @@ crate::both_faces!(
         assert_eq!(inside.dir, 0);
         assert!(inside.strength > 0.9, "{inside:?}");
         // beyond its reach, above its lip, or in the water above it: nothing
-        assert!(push_at(&s.w, s.point(6.5, 2.0, 0.5), 0.9, 0.3).is_none(), "too far out");
-        assert!(push_at(&s.w, s.point(4.4, 6.0, 0.5), 0.9, 0.3).is_none(), "above the lip");
-        assert!(push_at(&s.w, s.point(1.5, 4.5, 0.5), 0.9, 0.3).is_none(), "in the river above");
-        assert!(push_at(&s.w, s.point(4.4, 2.0, 3.5), 0.9, 0.3).is_none(), "beside it");
+        assert!(
+            push_at(&s.w, s.point(6.5, 2.0, 0.5), 0.9, 0.3).is_none(),
+            "too far out"
+        );
+        assert!(
+            push_at(&s.w, s.point(4.4, 6.0, 0.5), 0.9, 0.3).is_none(),
+            "above the lip"
+        );
+        assert!(
+            push_at(&s.w, s.point(1.5, 4.5, 0.5), 0.9, 0.3).is_none(),
+            "in the river above"
+        );
+        assert!(
+            push_at(&s.w, s.point(4.4, 2.0, 3.5), 0.9, 0.3).is_none(),
+            "beside it"
+        );
         // swimming up it: carried down and out instead, never up
         let mut v = [0.0, 3.0, 0.0];
         for _ in 0..60 {
