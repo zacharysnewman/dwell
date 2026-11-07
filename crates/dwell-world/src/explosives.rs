@@ -162,6 +162,10 @@ pub struct ExplosiveData {
     /// With [`ShellRule::Crack`]: a shell cell whose cell below (the face's down) the core destroys
     /// cracks too, so a roof over the blast drops.
     pub crack_over_cleared: bool,
+    /// A charge touching water (any of its six neighbours, or its own cell, a liquid) destroys and
+    /// dislodges no blocks: its wave, knockback, damage and chain reactions still happen (owner,
+    /// 2026-11-07: "not destroy or dislodge (physics) blocks when it's touching water").
+    pub water_spares_blocks: bool,
     pub chain_delay_seconds: [f64; 2],
     pub effects: BlastEffects,
 }

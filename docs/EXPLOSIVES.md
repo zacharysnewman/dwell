@@ -272,6 +272,15 @@ open from 5 m; every exposed cell cracks loose, the roof cell 4.5 m over the cor
 facing the open cliff is flung > 5 m/s (red on 0.50.0: 0.33 m/s, no push), cells pushed into rock with
 no way out stay).
 
+### 3.7 Touching water (0.50.3)
+
+Owner, 2026-11-07: "Make dynamite not destroy or dislodge (physics) blocks when it's touching water."
+`waterSparesBlocks` (data, on every explosive): a charge whose own cell or any of its six neighbours is
+water (or a flooded block, such as dynamite placed into water) destroys and dislodges no blocks — no core
+cleared, no shell pieces. Its wave (§3.5), the players' and bodies' knockback and damage, and chain
+reactions still happen. Test: `tests/explosives.rs` `a_charge_touching_water_spares_the_blocks` (both
+faces, every explosive; red on 0.50.2: red dynamite flung pieces beside water).
+
 ## 4. Effects (clients)
 
 A client sees a blast where an `Explosion` modification turns a lit explosive's cell to air

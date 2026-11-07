@@ -32,6 +32,7 @@ pub const EXPLOSIVES: &[ExplosiveData] = &[
         open_spread_min: 0.7,
         shell: ShellRule::Fling,
         crack_over_cleared: false,
+        water_spares_blocks: true,
         chain_delay_seconds: [0.15, 0.6],
         effects: BlastEffects {
             flash: FlashLook { color: [1.0, 0.85098, 0.627451], strength: 6.0, light_radius_m: 18.0, seconds: 0.3, size_m: 4.0 },
@@ -69,6 +70,7 @@ pub const EXPLOSIVES: &[ExplosiveData] = &[
         open_spread_min: 0.7,
         shell: ShellRule::Fling,
         crack_over_cleared: false,
+        water_spares_blocks: true,
         chain_delay_seconds: [0.15, 0.6],
         effects: BlastEffects {
             flash: FlashLook { color: [1.0, 0.85098, 0.627451], strength: 6.0, light_radius_m: 18.0, seconds: 0.3, size_m: 4.0 },
@@ -106,6 +108,7 @@ pub const EXPLOSIVES: &[ExplosiveData] = &[
         open_spread_min: 0.7,
         shell: ShellRule::Fling,
         crack_over_cleared: false,
+        water_spares_blocks: true,
         chain_delay_seconds: [0.15, 0.6],
         effects: BlastEffects {
             flash: FlashLook { color: [1.0, 0.85098, 0.627451], strength: 6.0, light_radius_m: 18.0, seconds: 0.3, size_m: 4.0 },
@@ -143,6 +146,7 @@ pub const EXPLOSIVES: &[ExplosiveData] = &[
         open_spread_min: 0.7,
         shell: ShellRule::Crack,
         crack_over_cleared: true,
+        water_spares_blocks: true,
         chain_delay_seconds: [0.15, 0.6],
         effects: BlastEffects {
             flash: FlashLook { color: [1.0, 0.85098, 0.627451], strength: 6.0, light_radius_m: 18.0, seconds: 0.3, size_m: 4.0 },

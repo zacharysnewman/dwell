@@ -2536,6 +2536,24 @@ impl Server {
         };
         let open = open_dir(e.open_sense_m, |o| solid_at(&mut self.world, o));
         let crack = e.shell == ShellRule::Crack;
+        // A charge touching water spares the blocks (owner, 2026-11-07: "not destroy or dislodge
+        // (physics) blocks when it's touching water"): its six neighbours, read before any clears.
+        let wet = e.water_spares_blocks
+            && [
+                [0, 0, 0],
+                [1, 0, 0],
+                [-1, 0, 0],
+                [0, 1, 0],
+                [0, -1, 0],
+                [0, 0, 1],
+                [0, 0, -1],
+            ]
+            .iter()
+            .any(|o: &[i32; 3]| {
+                let c = [at[0] + o[0], at[1] + o[1], at[2] + o[2]];
+                let m = self.world.get_voxel(c[0], c[1], c[2]);
+                m != M.air && (info(m).liquid || info(m).flooded)
+            });
         // A cracking shell is judged by what touched open space before the blast: the open cells
         // round it, read before any clears (docs/EXPLOSIVES.md §3.6).
         let open_before: std::collections::HashSet<[i32; 3]> = if crack {
@@ -2583,7 +2601,7 @@ impl Server {
                 self.fuses.light(c, i, delay);
                 continue;
             }
-            if s.indestructible {
+            if s.indestructible || wet {
                 continue;
             }
             if destroys(&e, d) {
