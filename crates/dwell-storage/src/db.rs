@@ -304,8 +304,11 @@ impl States {
         for i in 0..s.strings.len() {
             let text = &s.strings[i];
             let runtime = match parse_state(text) {
-                Ok(runtime) if info(runtime).name == text => Some(runtime),
-                // A state this process lacks (a mod's, ADR 0038): a placeholder under the same
+                // The build's state (a string without a property the build has reads at its
+                // default), or an alias (ADR 0063: a property or value this build doesn't know,
+                // kept under the exact string and saved back unchanged).
+                Ok(runtime) => Some(runtime),
+                // A block this process lacks (a mod's, ADR 0038): a placeholder under the same
                 // string, so the chunk loads and saves it back.
                 _ => dwell_blocks::sync::placeholder(text).ok().inspect(|&p| {
                     if !s.placeholders.contains(&p) {

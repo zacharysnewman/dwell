@@ -53,6 +53,12 @@ pub fn parse_known_state(text: &str) -> Result<StateId, String> {
     }
 }
 
+/// The state the known part of `text` names, and whether `text` names it exactly (no property or
+/// value this process doesn't know), registering nothing: what [`parse_state`] would alias.
+pub fn parse_base(text: &str) -> Result<(StateId, bool), String> {
+    parse(text).map(|(base, unknown)| (base, unknown.is_empty()))
+}
+
 /// The state the known part of `text` names, and the unknown properties and values in it (as
 /// error messages).
 fn parse(text: &str) -> Result<(StateId, Vec<String>), String> {

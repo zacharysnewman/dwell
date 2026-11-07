@@ -21,7 +21,8 @@ use dwell_protocol::bytes::{ByteReader, ByteWriter};
 use crate::{
     AIR, Axis, Cross, FLUIDS, Facing, Fade, Grid, Medium, NewBlock, Origin, RenderMode, SHAPES,
     STATES, ShapeInfo, SideUnder, StateId, StateInfo, Support, SupportRole, Textures, VoxelShape,
-    Wind, blocks, build_state, info, intern, register, shape::faces_of, state_count,
+    Wind, blocks, build_state, info, intern, register, same_definition, shape::faces_of,
+    state_count,
 };
 
 /// The payload format this build reads and writes.
@@ -1031,6 +1032,10 @@ pub fn map(payload: &Payload, hash: u64) -> Result<Mapping, String> {
     // Build states whose server definition differs: (build id, server id). Edits naming the
     // build's state (the palette's) still mean the server's state of that name.
     let mut renamed: Vec<(StateId, StateId)> = Vec::new();
+    // Build states the server names differently (ADR 0063: an alias of it, or it without a
+    // property), with the first such server state: the client's own state means that one, unless
+    // the server has it exactly.
+    let mut base_to_server: Vec<(StateId, StateId)> = Vec::new();
 
     for b in &payload.blocks {
         // Each state: the server's rules (with notes on what was degraded), and whether the
@@ -1039,6 +1044,31 @@ pub fn map(payload: &Payload, hash: u64) -> Result<Mapping, String> {
         let mut needs_copy = false;
         for (k, fields) in b.states.iter().enumerate() {
             let name = crate::canonical(&b.name, &b.properties, k);
+            let shape = |i: u16| shape_map.get(usize::from(i)).copied().flatten();
+            // A state the build names differently (ADR 0063): one with a property or value it
+            // doesn't know is an alias of its known part, one missing a property the build has
+            // is the build's state at that property's default; either when the server's rules
+            // are the base's.
+            if build_state(&name).is_none()
+                && let Ok((base, exact)) = crate::parse_base(&name)
+                && crate::is_build_state(base)
+            {
+                let mut row = *info(base);
+                let before = row;
+                let mut notes = Vec::new();
+                apply_rules(fields, &mut row, &shape, &mut notes);
+                if notes.is_empty() && changed_fields(&before, &row).is_empty() {
+                    let id = if exact {
+                        base
+                    } else {
+                        crate::parse_state(&name)?
+                    };
+                    seen_build[usize::from(base)] = true;
+                    base_to_server.push((base, b.first_state + k as StateId));
+                    rows.push((name, row, Some(id), Vec::new()));
+                    continue;
+                }
+            }
             let mut notes = Vec::new();
             let known = build_state(&name);
             let mut row = match known {
@@ -1049,7 +1079,6 @@ pub fn map(payload: &Payload, hash: u64) -> Result<Mapping, String> {
             if known.is_none() {
                 apply_look(fields, &payload.fluids, &mut row);
             }
-            let shape = |i: u16| shape_map.get(usize::from(i)).copied().flatten();
             apply_rules(fields, &mut row, &shape, &mut notes);
             match known {
                 Some(id) => {
@@ -1118,6 +1147,9 @@ pub fn map(payload: &Payload, hash: u64) -> Result<Mapping, String> {
         if let Some(c) = client {
             to_server[usize::from(*c)] = Some(server as StateId);
         }
+    }
+    for (build, server) in base_to_server {
+        to_server[usize::from(build)].get_or_insert(server);
     }
     for (build, server) in renamed {
         to_server[usize::from(build)] = Some(server);
@@ -1301,7 +1333,7 @@ pub fn apply_extension(bytes: &[u8]) -> Result<(), String> {
         if usize::from(b.first_state) > have {
             return Err(format!("{}: ids {have}.. missing", b.name));
         }
-        let rows = b
+        let rows: Vec<StateInfo> = b
             .states
             .iter()
             .enumerate()
@@ -1313,6 +1345,21 @@ pub fn apply_extension(bytes: &[u8]) -> Result<(), String> {
                 )
             })
             .collect();
+        // An alias (ADR 0063): a one-state block under the full string, its row its base's.
+        if b.properties.is_empty()
+            && let Ok((base, false)) = crate::parse_base(&b.name)
+            && let [row] = rows.as_slice()
+        {
+            let mut want = *info(base);
+            want.name = row.name;
+            if same_definition(&want, row) {
+                let id = crate::register_alias(&b.name, base)?;
+                if id != b.first_state {
+                    return Err(format!("{}: alias at {id}, not {}", b.name, b.first_state));
+                }
+                continue;
+            }
+        }
         register(
             Origin::Synced,
             NewBlock {
