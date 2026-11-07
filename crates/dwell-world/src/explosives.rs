@@ -800,4 +800,21 @@ mod tests {
         assert!(!behind_water([1, 0, 0], water));
         assert!(!behind_water([0, 0, 0], water));
     }
+    #[test]
+    fn yellow_pushes_with_half_of_reds_force() {
+        // Owner (2026-11-07): "Reduce the explosion force by half." Yellow's pieces fly at half the
+        // speed red's would (light and heavy cells, at and under the cap), and players are knocked
+        // back half as hard.
+        let find = |n: &str| EXPLOSIVES.iter().find(|e| e.name == n).expect(n);
+        let (red, yellow) = (find("dwell:dynamite"), find("dwell:dynamite_yellow"));
+        for b in ["dwell:stone", "dwell:dirt", "dwell:sand"] {
+            let m = dwell_blocks::parse_state(b).expect(b);
+            let (r, y) = (fling_speed(red, m, 4.5), fling_speed(yellow, m, 4.5));
+            assert!(
+                (y - r / 2.0).abs() < 1e-9,
+                "{b}: yellow {y:.2} m/s, red {r:.2} m/s"
+            );
+        }
+        assert_eq!(yellow.knockback_ms, red.knockback_ms / 2.0);
+    }
 }
