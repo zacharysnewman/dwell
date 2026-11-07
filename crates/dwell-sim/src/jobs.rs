@@ -5,9 +5,13 @@
 //! and so is its answer (`Server::deliver_job`).
 //!
 //! A chunk job is "CJ1" and the chunk's coordinate (x, y, z: i32, little-endian); its answer "CD1",
-//! the coordinate and the chunk's 32³ states (u16 each). LOD jobs are `lod_propagation`'s.
+//! the coordinate and the chunk's 32³ states (u16 each). A sky-floor job (the air test's costly
+//! part, `sky_columns.rs`) is "SJ1", its answer "SD1". LOD jobs are `lod_propagation`'s.
+
+use std::sync::Arc;
 
 use dwell_world::{CHUNK_VOLUME, Chunk, ChunkCoord, ChunkGenerator};
+use dwell_worldgen::AirColumns;
 
 use crate::lod_propagation::LodRunner;
 
@@ -57,24 +61,31 @@ pub fn decode_chunk_done(b: &[u8]) -> Option<(ChunkCoord, Box<Chunk>)> {
     Some((c, Box::new(Chunk::from_voxels(&voxels, 0)?)))
 }
 
-/// Runs the server's jobs (the server-jobs worker): chunks generated, LOD sections computed.
+/// Runs the server's jobs (the server-jobs worker): chunks generated, sky floors and LOD sections
+/// computed.
 pub struct JobRunner {
     generator: ChunkGenerator,
+    air: Arc<AirColumns>,
     lod: LodRunner,
 }
 
 impl JobRunner {
     /// For the world of generator `generator_version` and `world_seed`.
     pub fn for_world(generator_version: u32, world_seed: u64) -> Self {
-        Self::new(
-            dwell_worldgen::generator_for(generator_version, world_seed),
-            dwell_worldgen::lod_generator_for(generator_version, world_seed),
-        )
+        Self {
+            air: AirColumns::for_generator(generator_version, world_seed),
+            ..Self::new(
+                dwell_worldgen::generator_for(generator_version, world_seed),
+                dwell_worldgen::lod_generator_for(generator_version, world_seed),
+            )
+        }
     }
 
+    /// For a generator of its own (a server with `generator_override`, which wants no sky floors).
     pub fn new(generator: ChunkGenerator, lod: dwell_world::lod::LodGenerator) -> Self {
         Self {
             generator,
+            air: AirColumns::for_generator(dwell_world::GENERATOR_FLAT, 0),
             lod: LodRunner::new(lod),
         }
     }
@@ -85,6 +96,9 @@ impl JobRunner {
             let mut chunk = Chunk::default();
             (self.generator)(c, &mut chunk);
             return Some(encode_chunk_done(c, &chunk));
+        }
+        if let Some(col) = crate::sky_columns::decode_job(job) {
+            return Some(crate::sky_columns::encode_done(col, self.air.compute(col)));
         }
         self.lod.run(job)
     }

@@ -160,4 +160,8 @@ second) — a build change for every wasm target, not made here. Separately, the
 time was the chunk streaming's (`stream`, 50–640 ms a second at a join and after the player moves,
 calls up to 400 ms), not the autosave's: the save was 3–25 ms of one tick every 5 s, and is now
 spread over ticks at ≤ 2 ms of encoding a tick plus a commit tick of its own (ARCHITECTURE.md §6.4).
-The streaming's cost is not yet looked into.
+The streaming's cost (0.49.36) was the air test's: a chunk column's sky floor (its column heights,
+~1.2 ms natively) computed on the tick for each new column the view, the prefetch and the LOD's chunk
+requests reached. It is now computed in the server-jobs worker (a thread natively, or within 1 ms a
+tick without either), the chunks waiting for it (ARCHITECTURE.md §6.3, *Sky floors off the tick*):
+in the browser `stream` went from 25–367 ms a second at a join to at most 1.5 ms.
