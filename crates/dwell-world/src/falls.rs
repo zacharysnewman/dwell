@@ -352,6 +352,50 @@ pub struct FallPush {
 /// The push of the strongest fall whose sheet a body overlaps: centred at world point `p`, reaching
 /// `half_height` m up and down (face-local) and `radius` m along x and z. None out of every sheet.
 pub fn push_at(world: &VoxelWorld, p: [f64; 3], half_height: f64, radius: f64) -> Option<FallPush> {
+    push_at_with(world, p, half_height, radius, &mut FallMemo::default())
+}
+
+/// The columns and fall faces [`push_at`] has read, kept while the world stands still (one pass
+/// over many bodies, docs/EXPLOSIVES.md §3: a blast's pieces floating in a river read the same
+/// columns, each column scanned up and down its water and its four faces down their drops).
+#[derive(Default)]
+pub struct FallMemo {
+    columns:
+        crate::hash::HashMap<(FaceFrame, i32, i32, i32), Option<(Column, [Option<FallFace>; 4])>>,
+}
+
+impl FallMemo {
+    /// How many columns (at a height) it has read.
+    pub fn scanned(&self) -> usize {
+        self.columns.len()
+    }
+    fn column(
+        &mut self,
+        world: &VoxelWorld,
+        f: FaceFrame,
+        x: i32,
+        z: i32,
+        near: i32,
+        rows: i32,
+    ) -> Option<(Column, [Option<FallFace>; 4])> {
+        *self.columns.entry((f, x, z, near)).or_insert_with(|| {
+            let col = column(world, f, x, z, near, rows)?;
+            Some((
+                col,
+                std::array::from_fn(|d| fall_face(world, f, x, z, &col, d as u8)),
+            ))
+        })
+    }
+}
+
+/// [`push_at`], its reads kept in `memo` (the world unchanged since it began).
+pub fn push_at_with(
+    world: &VoxelWorld,
+    p: [f64; 3],
+    half_height: f64,
+    radius: f64,
+    memo: &mut FallMemo,
+) -> Option<FallPush> {
     let f = FaceFrame::at_height(p[1]);
     let l = f.point(p);
     let (lo, hi) = (l[1] - half_height, l[1] + half_height);
@@ -372,14 +416,14 @@ pub fn push_at(world: &VoxelWorld, p: [f64; 3], half_height: f64, radius: f64) -
             if f64::from(c[0].abs().max(c[1].abs())) < FALLS.min_speed_ms {
                 continue;
             }
-            let Some(col) = column(world, f, x, z, near, rows) else {
+            let Some((col, faces)) = memo.column(world, f, x, z, near, rows) else {
                 continue;
             };
             if col.level < lo {
                 continue;
             }
             for dir in 0..4u8 {
-                let Some(ff) = fall_face(world, f, x, z, &col, dir) else {
+                let Some(ff) = faces[usize::from(dir)] else {
                     continue;
                 };
                 if ff.land > hi || ff.lip < lo {
