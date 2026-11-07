@@ -943,7 +943,7 @@ fn cliff_blast(f: FaceFrame, e: ExplosiveData) -> (Vec<([i32; 3], f64)>, Scene) 
     s.put(1, 0.5, -12.5);
     s.run(2);
     let stone = require("dwell:stone");
-    for o in cells_within(7.0) {
+    for o in cells_within(e.radius_m.max(e.loosen_radius_m).max(7.0) + 2.0) {
         s.set(o, if o[0] >= 5 { M.air } else { stone });
     }
     let lit = dwell_world::explosives::lit_state(&e).expect("lit");
@@ -1086,5 +1086,82 @@ dwell_world::both_faces!(
         for o in [[-1, 0, 0], [-3, 0, 0], [0, 0, -3]] {
             assert_ne!(s.get(o), stone, "{o:?} on the dry side is cleared");
         }
+    }
+);
+
+/// Yellow on flat ground, flush with the surface: (cells destroyed, pieces flung, flung pieces by
+/// whether they were surface cells).
+fn flat_yellow(f: FaceFrame, e: ExplosiveData) -> (usize, Vec<[i32; 3]>) {
+    let mut s = Scene::new(f, 1);
+    s.fx.server.set_explosives(vec![e]);
+    s.put(1, 0.5, -14.5);
+    s.run(2);
+    let stone = require("dwell:stone");
+    let reach = e.radius_m.max(e.loosen_radius_m) + 2.0;
+    for o in cells_within(reach) {
+        s.set(o, if o[1] <= 0 { stone } else { M.air });
+    }
+    let lit = dwell_world::explosives::lit_state(&e).expect("lit");
+    s.set([0, 0, 0], lit);
+    let at = s.cell([0, 0, 0]);
+    s.fx.server.light_fuse(at, 0, 0.0);
+    let out = s.run(2);
+    let base = f.cell(s.cell([0, 0, 0]));
+    let flung: Vec<[i32; 3]> = spawns(&out)
+        .into_iter()
+        .map(|p| {
+            let w = [
+                p.origin[0].floor() as i32,
+                (p.origin[1] / CELL_H).floor() as i32,
+                p.origin[2].floor() as i32,
+            ];
+            let l = f.cell(w);
+            [l[0] - base[0], l[1] - base[1], l[2] - base[2]]
+        })
+        .collect();
+    let gone = cells_within(reach)
+        .into_iter()
+        .filter(|&o| o[1] <= 0 && o != [0, 0, 0] && s.get(o) != stone)
+        .count();
+    (gone - flung.len(), flung)
+}
+
+#[test]
+#[ignore = "a measurement: prints yellow's flat-ground counts"]
+fn measure_yellow_on_flat_ground() {
+    // face-a-only: a printout, not an assertion.
+    let (destroyed, flung) = flat_yellow(FaceFrame::A, yellow());
+    let surface = flung.iter().filter(|o| o[1] == 0).count();
+    let far = flung
+        .iter()
+        .map(|o| ((o[0] * o[0] + o[2] * o[2]) as f64).sqrt())
+        .fold(0.0, f64::max);
+    println!(
+        "destroyed {destroyed}, flung {} ({surface} surface cells, farthest {far:.1} m out)",
+        flung.len()
+    );
+}
+
+dwell_world::both_faces!(
+    fn yellow_cracks_the_surface_out_to_seven_metres(f: FaceFrame) {
+        // Owner (2026-11-07): "increase the radius of the yellow dynamite by 2 meters, for cracking
+        // range only". Flush on flat ground: the surface cracks loose out to 7 m (was 5 m), the
+        // destroyed core stays 4 m, and nothing past 7 m moves.
+        let e = yellow();
+        assert_eq!((e.destroy_radius_m, e.loosen_radius_m), (4.0, 7.0));
+        let (_, flung) = flat_yellow(f, e);
+        let out = |o: &[i32; 3]| {
+            let y = f64::from(o[1]) * CELL_H;
+            (f64::from(o[0] * o[0] + o[2] * o[2]) + y * y).sqrt()
+        };
+        assert!(
+            flung.iter().any(|o| o[1] == 0 && out(o) > 6.0),
+            "a surface cell past 6 m cracks loose"
+        );
+        assert!(flung.iter().all(|o| out(o) <= 7.0), "none past 7 m");
+        assert!(
+            flung.iter().all(|o| out(o) > 3.0),
+            "the core is destroyed, not flung"
+        );
     }
 );
