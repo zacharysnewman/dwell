@@ -113,4 +113,9 @@ export interface ServerStats {
   waterStats: WaterStats;
   /** Each tick phase's time over the second (ms, summed; `Server::tick_phases`' names). */
   phasesMs: Record<string, number>;
+  /**
+   * What the ticks did over the second (`Server::tick_counts`): `collisionBuilds`, the terrain
+   * collision's chunk builds; `generatedOnTick`, chunks the tick generated itself, not the jobs.
+   */
+  counts: Record<string, number>;
 }

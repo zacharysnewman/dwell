@@ -850,6 +850,13 @@ impl Players {
 
     /// Runs the pipeline (§4) for every player. Call before the physics step.
     pub fn tick(&mut self, world: &mut VoxelWorld, physics: &mut Physics) {
+        self.tick_terrain(world, physics);
+        self.tick_controllers(world, physics);
+    }
+
+    /// The tick's terrain collision ([`Players::tick`]'s first part): the chunks round the
+    /// players and the boxes asked for loaded, the far ones dropped, the changed ones rebuilt.
+    pub fn tick_terrain(&mut self, world: &mut VoxelWorld, physics: &mut Physics) {
         if let Some(terrain) = &mut self.terrain {
             terrain.ensure_boxes_within(
                 physics,
@@ -893,6 +900,10 @@ impl Players {
             }
             terrain.sync(physics, world);
         }
+    }
+
+    /// The controllers' passes ([`Players::tick`]'s second part, after [`Players::tick_terrain`]).
+    pub fn tick_controllers(&mut self, world: &mut VoxelWorld, physics: &mut Physics) {
         for p in self.players.iter_mut().flatten() {
             physics.contact_normals(p.body, MAX_CONTACTS, &mut p.contacts);
             physics.tier1_contacts(p.body, MAX_CONTACTS, &mut p.tier1);

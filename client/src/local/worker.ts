@@ -291,6 +291,7 @@ async function start(
         water: water ? 'worker' : 'inline',
         waterStats: core.waterStats(),
         phasesMs: core.tickPhases(),
+        counts: core.tickCounts(),
       },
     });
     ticks = 0;
