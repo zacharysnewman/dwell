@@ -278,6 +278,15 @@ A client sees a blast where an `Explosion` modification turns a lit explosive's 
 - **Smoke and dust** (Smoke and dust): `smoke` puffs spreading out and rising (`spreadM`, `riseMs`),
   `dust` thrown out and falling (`speedMs`), each with its colour, sizes, lives and opacity; billboards
   through the flames' pass (`render/blasts.rs`, kinds 8–10), lit. A CPU adapter draws `cpuCount`.
+  **They follow the blast's direction** (0.49.51; owner, 2026-11-07: "Make the smoke particles follow
+  explosion direction"): the client reads the blast's way out from its own cells round the charge,
+  before the modification clears them (`blasts::open_way`, the server's `explosives::open_dir`; no
+  protocol change), and each puff's way out is turned toward it by `openBias` × the openness
+  (`blasts::toward_open`; smoke 0.7, dust 0.6): a cliff charge's smoke billows out of the face, a cave
+  roof's down, flat ground's up as before; a buried blast (openness about 0) keeps the even spread.
+  Test: `blasts.rs` `the_smoke_follows_the_blasts_open_side_and_a_buried_one_spreads_evenly` (both
+  faces: the smoke's mean offset along the cliff's and the roof's open side, cos > 0.8, red with
+  `openBias` 0 at cos −0.31; the CPU's count unchanged; buried as before).
 - **Boom**: the sound event `explode` of the block's sound set (`dynamite_boom`), at the listener, its
   level full within `boom.fullM` and gone at `boom.hearM` (`boom_level`), so a far blast is heard past
   the panner's reach.

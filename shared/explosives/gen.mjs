@@ -39,8 +39,8 @@ export const EXPLOSIVE_RANGES = {
 /** Each effect's numbers (and its colour, if it has one): field → [min, max]; pairs are [lo, hi] ranges. */
 export const EFFECT_RANGES = {
   flash: { strength: [0, 1000], lightRadiusM: [0, 200], seconds: [0, 10], sizeM: [0, 64] },
-  smoke: { count: [0, 256], cpuCount: [0, 256], sizeM: [0, 32, 'pair'], seconds: [0, 60, 'pair'], spreadM: [0, 64], riseMs: [0, 50], opacity: [0, 1] },
-  dust: { count: [0, 256], cpuCount: [0, 256], sizeM: [0, 32, 'pair'], seconds: [0, 60, 'pair'], speedMs: [0, 100, 'pair'], opacity: [0, 1] },
+  smoke: { count: [0, 256], cpuCount: [0, 256], sizeM: [0, 32, 'pair'], seconds: [0, 60, 'pair'], spreadM: [0, 64], riseMs: [0, 50], opacity: [0, 1], openBias: [0, 1] },
+  dust: { count: [0, 256], cpuCount: [0, 256], sizeM: [0, 32, 'pair'], seconds: [0, 60, 'pair'], speedMs: [0, 100, 'pair'], opacity: [0, 1], openBias: [0, 1] },
   boom: { fullM: [0, 1000], hearM: [0, 10000] },
   shake: { radiusM: [0, 1000], degrees: [0, 30], seconds: [0, 10], hz: [0, 120] },
 };

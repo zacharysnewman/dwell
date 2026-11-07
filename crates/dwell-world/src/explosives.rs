@@ -42,6 +42,9 @@ pub struct PuffLook {
     pub rise_ms: f64,
     pub opacity: f64,
     pub speed_ms: [f64; 2],
+    /// How far (0–1, times the blast's openness) each puff's way out turns toward the open side
+    /// (`open_dir`): smoke follows the blast's direction; a buried blast's spreads evenly.
+    pub open_bias: f64,
 }
 
 /// The boom's loudness: full within `full_m`, gone at `hear_m`.

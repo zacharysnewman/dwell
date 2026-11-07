@@ -2118,7 +2118,14 @@ impl<S: Scene> Game<S> {
                 continue;
             }
             let at = dwell_world::centre_of_cell(c.cell);
-            self.blasts.start(at, i, now_ms / 1000.0);
+            // The way out, from the cells round it before the blast clears them (this runs
+            // before the modification is applied): its smoke follows it (§4).
+            let store = self.streamer.store_mut();
+            let open = crate::blasts::open_way(&EXPLOSIVES[i], c.cell, |w| {
+                let m = store.get_voxel(w[0], w[1], w[2]);
+                m != dwell_world::M.air && !dwell_blocks::info(m).liquid
+            });
+            self.blasts.start(at, i, now_ms / 1000.0, open);
             let d = (0..3)
                 .map(|k| (at[k] - self.listener[k]).powi(2))
                 .sum::<f64>()
