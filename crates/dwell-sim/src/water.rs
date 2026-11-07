@@ -56,6 +56,8 @@ const NONE: u32 = u32::MAX;
 
 const G: f32 = 9.81;
 const DRY: f32 = 1e-4;
+/// A film out of the rest falling this much in a calm window is still running off, not calm (m).
+const FILM_FALL: f32 = 1e-4;
 
 /// The grid's settings, from its data (`shared/fluids/flow.json`, `dwell_world::flow::FlowData`;
 /// what each means is in the file's `$comment`).
@@ -1540,6 +1542,15 @@ impl Water {
                         cfg.sleep_band
                     };
                     moved = moved.max((k.w.depth[l] - k.win[l]).abs() / band);
+                    // nor is a film out of the rest still running off at all: asleep it would
+                    // keep its flow and never drain (BUGS.md #41b)
+                    if share == 0.0
+                        && k.w.depth[l] > DRY
+                        && k.w.depth[l] < cfg.sleep_band
+                        && k.win[l] - k.w.depth[l] > FILM_FALL
+                    {
+                        moved = 2.0;
+                    }
                 }
             }
             // what it still owes from its sleep comes in, by depth
@@ -1645,7 +1656,17 @@ impl Water {
                 continue;
             }
             let wet = k.wet().max(1) as f64;
-            if k.owed.abs() / wet > f64::from(self.cfg.wake_band) * 0.5 {
+            // or owes half the water it has (a film running off, asleep on its kept flows,
+            // would otherwise never pay: BUGS.md #41b)
+            let has = || -> f64 {
+                (0..CA)
+                    .filter(|&l| !k.w.floor[l].is_nan() && !k.held[l])
+                    .map(|l| f64::from(k.w.depth[l]))
+                    .sum()
+            };
+            if k.owed.abs() / wet > f64::from(self.cfg.wake_band) * 0.5
+                || (k.owed < 0.0 && -k.owed > 0.5 * has())
+            {
                 self.wake(c);
             }
         }
