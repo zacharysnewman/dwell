@@ -87,6 +87,10 @@ pub struct ExplosiveData {
     pub loosen_radius_m: f64,
     pub impulse: f64,
     pub falloff: f64,
+    /// The flung pieces' own falloff: a piece's speed is `impulse` × (1 − d / `radius_m`)^this over
+    /// its mass (`fling_speed`; 0: every piece the same speed, so neighbours fly together rather
+    /// than the inner ramming the outer). Players and bodies keep `falloff`.
+    pub fling_falloff: f64,
     pub lift: f64,
     pub max_speed_ms: f64,
     pub reach_m: f64,
@@ -102,6 +106,10 @@ pub struct ExplosiveData {
     pub open_blend: f64,
     /// A shell cell whose push meets rock within it (m) stays as terrain (`launching`; 0: all fly).
     pub open_path_m: f64,
+    /// The least share (0–1) of a piece's push that goes sideways across the way out, along its own
+    /// line's sideways part (`piece_dir`): a flush charge's pieces fly out in a cone, clear of the
+    /// crater, not straight up and back in (0: as blended).
+    pub open_spread_min: f64,
     pub chain_delay_seconds: [f64; 2],
     pub effects: BlastEffects,
 }
@@ -193,6 +201,10 @@ fn offset_m(o: [i32; 3]) -> [f64; 3] {
     [f64::from(o[0]), f64::from(o[1]) * CELL_H, f64::from(o[2])]
 }
 
+fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
 fn length(v: [f64; 3]) -> f64 {
     (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt()
 }
@@ -242,20 +254,34 @@ pub fn open_dir(sense_m: f64, mut solid: impl FnMut([i32; 3]) -> bool) -> [f64; 
 
 /// A flung piece's push: its unit line from the blast `radial` turned toward the way out `open`
 /// (`open_dir`) by `blend` × its openness (its length), a unit vector; a buried charge's stays
-/// radial.
-pub fn piece_dir(radial: [f64; 3], open: [f64; 3], blend: f64) -> [f64; 3] {
+/// radial. A push going out (along the way out) keeps at least `spread` of it sideways, along the
+/// radial's part across the way out (owner, 2026-11-06: a flush charge's debris "does fall right
+/// back in"): a cone of ejecta, not a column. A piece straight over the charge (no sideways part)
+/// keeps its push.
+pub fn piece_dir(radial: [f64; 3], open: [f64; 3], blend: f64, spread: f64) -> [f64; 3] {
     let openness = length(open);
     if openness < 1e-9 {
         return radial;
     }
+    let up = open.map(|c| c / openness);
     let b = (blend * openness).clamp(0.0, 1.0);
-    let v: [f64; 3] = std::array::from_fn(|k| (1.0 - b) * radial[k] + b * open[k] / openness);
+    let v: [f64; 3] = std::array::from_fn(|k| (1.0 - b) * radial[k] + b * up[k]);
     let l = length(v);
-    if l > 1e-9 {
-        v.map(|c| c / l)
-    } else {
-        open.map(|c| c / openness)
+    if l <= 1e-9 {
+        return up;
     }
+    let v = v.map(|c| c / l);
+    let along = dot(v, up);
+    let s = spread.clamp(0.0, 1.0);
+    let ra = dot(radial, up);
+    let side: [f64; 3] = std::array::from_fn(|k| radial[k] - ra * up[k]);
+    let sl = length(side);
+    let across = (1.0 - along * along).max(0.0).sqrt();
+    if along <= 0.0 || across >= s || sl < 1e-6 {
+        return v;
+    }
+    let a = (1.0 - s * s).sqrt();
+    std::array::from_fn(|k| s * side[k] / sl + a * up[k])
 }
 
 /// Which of a blast's shell cells fly (docs/EXPLOSIVES.md §3; owner, 2026-11-06: "don't simulate
@@ -339,7 +365,7 @@ pub fn radial_dir(centre: [f64; 3], at: [f64; 3]) -> [f64; 3] {
 /// falloff share over the cell's mass (½ m³ × its density), at most `max_speed_ms`.
 pub fn fling_speed(e: &ExplosiveData, m: StateId, d: f64) -> f64 {
     let mass = (f64::from(info(m).density_kg_m3) * CELL_H).max(1.0);
-    (e.impulse * share(d, e.radius_m, e.falloff) / mass).min(e.max_speed_ms)
+    (e.impulse * share(d, e.radius_m, e.fling_falloff) / mass).min(e.max_speed_ms)
 }
 
 /// A chained explosive's fuse (s): drawn from `chain_delay_seconds` by a hash of its cell and `salt`
@@ -435,7 +461,11 @@ mod tests {
 
     #[test]
     fn force_falls_off_with_distance_and_heavy_blocks_move_less() {
-        let e = dynamite();
+        // A falling-off fling by data (dynamite's own flings every piece alike, below).
+        let e = &ExplosiveData {
+            fling_falloff: 1.5,
+            ..*dynamite()
+        };
         let (stone, leaves) = (
             require("dwell:stone[flooded=false]"),
             require("dwell:leaves"),
@@ -448,6 +478,12 @@ mod tests {
         assert!(fling_speed(e, leaves, 2.0) > mid, "lighter goes faster");
         assert!(fling_speed(e, leaves, 0.0) <= e.max_speed_ms);
         assert_eq!(share(e.radius_m, e.radius_m, e.falloff), 0.0);
+        // Dynamite (owner, 2026-11-06: a flush charge's debris "does fall right back in"): its
+        // pieces fly alike within the radius, a stone at ~22 m/s, so the inner don't ram the outer.
+        let d = dynamite();
+        let (a, b) = (fling_speed(d, stone, 2.1), fling_speed(d, stone, 4.9));
+        assert_eq!(a, b);
+        assert!((15.0..=30.0).contains(&a), "{a} m/s");
     }
 
     #[test]
@@ -458,14 +494,13 @@ mod tests {
         assert_eq!(cells.len(), 513);
         assert!(cells.contains(&[4, 0, 0]) && cells.contains(&[0, 8, 0]));
         assert!(!cells.contains(&[3, 6, 3]));
-        // Dynamite's 4 m ball and its 2 m core (owner, 2026-11-06; was 5 m, 1,013 cells): 513
-        // cells, 61 of them destroyed outright, the 452 between flung; nothing loosened past it.
+        // Dynamite's 5 m ball and its 2 m core (0.49.46, under the open side's rules; was 4 m,
+        // 513 cells): 1,013 cells, 61 of them destroyed outright, the 952 between flung or left by
+        // the open side; nothing loosened past it.
         let e = dynamite();
-        assert_eq!((e.radius_m, e.destroy_radius_m), (4.0, 2.0));
+        assert_eq!((e.radius_m, e.destroy_radius_m), (5.0, 2.0));
         assert_eq!(e.loosen_radius_m, e.radius_m);
-        assert_eq!(cells_within(e.radius_m).len(), 513);
-        // The loosen radius's 5 m ball (option C, by data): 1,013 cells.
-        assert_eq!(cells_within(5.0).len(), 1013);
+        assert_eq!(cells_within(e.radius_m).len(), 1013);
         assert_eq!(cells_within(e.destroy_radius_m).len(), 61);
         for o in cells_within(e.radius_m) {
             let d = length(offset_m(o));
@@ -501,10 +536,6 @@ mod tests {
         ]
     }
 
-    fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
-        a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-    }
-
     crate::both_faces!(
         fn the_way_out_is_the_open_sides_normal(f: FaceFrame) {
             let e = dynamite();
@@ -526,8 +557,8 @@ mod tests {
             let up = f.vector([0.0, 1.0, 0.0]);
             let down = up.map(|c| -c);
             let ground = open_dir(e.open_sense_m, |o| local(f, o)[1] < 0);
-            assert!(dot(piece_dir(down, ground, e.open_blend), up) > 0.99);
-            assert_eq!(piece_dir(down, buried, e.open_blend), down);
+            assert!(dot(piece_dir(down, ground, e.open_blend, e.open_spread_min), up) > 0.99);
+            assert_eq!(piece_dir(down, buried, e.open_blend, e.open_spread_min), down);
         }
     );
 
@@ -541,7 +572,7 @@ mod tests {
             .filter(|&o| length(offset_m(o)) > e.destroy_radius_m && local(f, o)[1] < 0)
             .map(|o| {
                 let r = radial_dir([0.0; 3], offset_m(o));
-                (o, piece_dir(r, open, e.open_blend), false)
+                (o, piece_dir(r, open, e.open_blend, e.open_spread_min), false)
             })
             .collect()
     }

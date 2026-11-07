@@ -19,6 +19,7 @@ export const EXPLOSIVE_RANGES = {
   loosenRadiusM: [0.5, 16],
   impulse: [0, 1e6],
   falloff: [0, 8],
+  flingFalloff: [0, 8],
   lift: [0, 4],
   maxSpeedMs: [0, 100],
   reachM: [0, 32],
@@ -29,6 +30,7 @@ export const EXPLOSIVE_RANGES = {
   openSenseM: [0, 8],
   openBlend: [0, 1],
   openPathM: [0, 4],
+  openSpreadMin: [0, 1],
 };
 
 /** Each effect's numbers (and its colour, if it has one): field → [min, max]; pairs are [lo, hi] ranges. */

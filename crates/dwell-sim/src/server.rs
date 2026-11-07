@@ -2582,7 +2582,12 @@ impl Server {
         let dirs: Vec<[f64; 3]> = shell
             .iter()
             .map(|&(_, _, p, _, _)| {
-                piece_dir(radial_dir(centre_a, p.to_array()), open, e.open_blend)
+                piece_dir(
+                    radial_dir(centre_a, p.to_array()),
+                    open,
+                    e.open_blend,
+                    e.open_spread_min,
+                )
             })
             .collect();
         let judged: Vec<([i32; 3], [f64; 3], bool)> = shell
