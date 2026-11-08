@@ -544,7 +544,7 @@ Looks and sizes in `shared/ui/map.json` (`shared/ui/gen.mjs` → `dwell-game` `m
 `client/src/ui/map.gen.ts`). `dwell-game` `minimap.rs` reads the columns' tops within the disc
 (64 m) from the client's streamed voxels on the player's face (`FaceFrame`; LOD colours, water
 darkened by depth, a hill over the scan followed to its top) into a face-local grid — on each texel
-moved, from the last read's tops, and whole every `refreshSeconds` — and draws the round RGBA disc
+moved only the strip it uncovers, and every column (from its last top) every `refreshSeconds` — and draws the round RGBA disc
 turned to the heading (the player's right on the right on both faces), height-shaded when the
 setting is on, only on a move or a turn; it marks the 8 m cells whose centres it has covered,
 reporting new and changed ones with their colour. The client's `minimapFrame`, `minimapDots`,
@@ -552,8 +552,8 @@ reporting new and changed ones with their colour. The client's `minimapFrame`, `
 `ui/minimap.ts`: the disc top right (a `hud.json` part; the height shading a toggle in Settings →
 On screen), the dots, and the big map (M or a tap; Esc closes): explored cells on fog, zoomed about the
 pointer and panned by a drag, the player's arrow. Explored cells are kept per world in this browser
-(IndexedDB `dwell-explored`, append-only), not on the server. Cost: `minimap.scan` and
-`minimap.draw` samples (DEV_TOOLS.md).
+(IndexedDB `dwell-explored`, append-only), not on the server. Cost (`minimap.scan`, `minimap.draw`
+samples, DEV_TOOLS.md): ~1 ms a read with its draw flying at 8 m/s, the 2 s refresh 5–9 ms.
 
 ### 5.1 Threads and workers
 

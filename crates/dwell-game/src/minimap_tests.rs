@@ -291,7 +291,7 @@ fn a_grid_of_a_hundred_and_twenty_eight_columns_reads_and_draws_quickly() {
     let t = MAP;
     let pos = f.point([0.5, m_of_row(GROUND) + 1.6, 0.5]);
     let start = std::time::Instant::now();
-    let grid = scan_tops(&w, f, f.point(pos), &t, &colour_of, None);
+    let grid = scan_tops(&w, f, f.point(pos), &t, &colour_of, None, false);
     let scan = start.elapsed().as_secs_f64() * 1e3;
     let start = std::time::Instant::now();
     let mut image = Vec::new();
@@ -306,10 +306,13 @@ fn a_grid_of_a_hundred_and_twenty_eight_columns_reads_and_draws_quickly() {
     let draw = start.elapsed().as_secs_f64() * 1e3;
     let start = std::time::Instant::now();
     let p = f.point([1.5, m_of_row(GROUND) + 1.6, 0.5]);
-    scan_tops(&w, f, p, &t, &colour_of, Some(&grid));
+    scan_tops(&w, f, p, &t, &colour_of, Some(&grid), false);
     let hinted = start.elapsed().as_secs_f64() * 1e3;
+    let start = std::time::Instant::now();
+    scan_tops(&w, f, p, &t, &colour_of, Some(&grid), true);
+    let strip = start.elapsed().as_secs_f64() * 1e3;
     println!(
-        "minimap: scan {scan:.2} ms, from the last {hinted:.2} ms, draw {draw:.2} ms (native, this build's profile)"
+        "minimap: scan {scan:.2} ms, from the last tops {hinted:.2} ms, a move's strip {strip:.2} ms, draw {draw:.2} ms (native, this build's profile)"
     );
 }
 
@@ -336,6 +339,7 @@ dwell_world::both_faces!(
             &t,
             &colour_of,
             None,
+            false,
         );
         let i = grid.index(11.5, 1.5).expect("in");
         assert_eq!(grid.colour[i], RED, "the hill's top");
@@ -349,7 +353,7 @@ dwell_world::both_faces!(
         let t = MAP;
         let mut w = floor(f, 80);
         let y = m_of_row(GROUND) + 1.6;
-        let first = scan_tops(&w, f, [0.5, y, 0.5], &t, &colour_of, None);
+        let first = scan_tops(&w, f, [0.5, y, 0.5], &t, &colour_of, None, false);
         for x in -30i32..30 {
             for z in -30..30 {
                 let rows = ((x * 7 + z * 13).rem_euclid(9)) - 2;
@@ -367,8 +371,14 @@ dwell_world::both_faces!(
             let [x, y, z] = f.cell([5, r, 5]);
             w.set_voxel(x, y, z, sand());
         }
-        let hinted = scan_tops(&w, f, [3.5, y, 0.5], &t, &colour_of, Some(&first));
-        let whole = scan_tops(&w, f, [3.5, y, 0.5], &t, &colour_of, None);
+        let hinted = scan_tops(&w, f, [3.5, y, 0.5], &t, &colour_of, Some(&first), false);
+        let whole = scan_tops(&w, f, [3.5, y, 0.5], &t, &colour_of, None, false);
+        // A move's read keeps the columns it had and reads the strip it uncovers: on an
+        // unchanged world, the same as a whole read.
+        let here = scan_tops(&w, f, [0.5, y, 0.5], &t, &colour_of, None, false);
+        let moved = scan_tops(&w, f, [3.5, y, -2.5], &t, &colour_of, Some(&here), true);
+        let fresh = scan_tops(&w, f, [3.5, y, -2.5], &t, &colour_of, None, false);
+        assert_eq!(moved.colour, fresh.colour);
         assert_eq!(hinted.colour, whole.colour);
         assert_eq!(
             hinted

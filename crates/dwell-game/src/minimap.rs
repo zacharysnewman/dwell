@@ -5,7 +5,8 @@
 //!   player, each its topmost cell's colour and height within `scanUpM` above and `scanDownM`
 //!   below the eye (water darkened by its depth), read from the client's streamed voxels: what the
 //!   player's own face shows (face B's ground on face B, through [`FaceFrame`]). Read again when
-//!   the player moves `moveTexels` or every `refreshSeconds` (edits).
+//!   the player moves `moveTexels` (keeping the columns it had, reading the strip it uncovers) and
+//!   every `refreshSeconds` (every column, from its last top: edits).
 //! - **The disc** ([`MapFrame`], [`render_disc`]): the tops sampled into a round RGBA image turned
 //!   so the player's heading is up and their right is right (on face B too, where the mirror makes
 //!   the face-local frame's left the player's right), height-shaded when the setting is on. Drawn
@@ -141,6 +142,7 @@ pub fn scan_tops(
     t: &MapTunables,
     colour_of: &dyn Fn(StateId) -> Option<u32>,
     prev: Option<&TopGrid>,
+    reuse: bool,
 ) -> TopGrid {
     let texel = t.minimap_texel_m;
     let n = (2.0 * t.minimap_radius_m / texel).ceil() as usize;
@@ -153,15 +155,23 @@ pub fn scan_tops(
     let mut height = vec![f32::NAN; n * n];
     for k in 0..n {
         for i in 0..n {
+            let (px, pz) = (x0 + (i as f64 + 0.5) * texel, z0 + (k as f64 + 0.5) * texel);
+            let last = prev.and_then(|p| p.index(px, pz).map(|j| (p, j)));
+            if reuse && let Some((p, j)) = last {
+                // A move keeps the columns the last read covered: only the strip it uncovers is
+                // read (the browser's whole read was ~5 ms; edits come with the refresh).
+                colour[k * n + i] = p.colour[j];
+                height[k * n + i] = p.height[j];
+                continue;
+            }
             let cx = (x0 + (i as f64 + 0.5) * texel).floor() as i32;
             let cz = (z0 + (k as f64 + 0.5) * texel).floor() as i32;
             // A column the last read found starts a little over its top then (`HINT_ROWS`), not
             // at the scan's top: most columns barely change between reads a texel apart (in the
             // browser the whole scan from the top cost ~6 ms a read). Ground that rose past it
             // is followed up below, as a hill over the scan's top is.
-            let start = prev
-                .and_then(|p| p.index(x0 + (i as f64 + 0.5) * texel, z0 + (k as f64 + 0.5) * texel))
-                .map(|j| prev.map_or(f32::NAN, |p| p.height[j]))
+            let start = last
+                .map(|(p, j)| p.height[j])
                 .filter(|h| h.is_finite())
                 .map_or(top_row, |h| {
                     (row_of_m(f64::from(h)) + HINT_ROWS).clamp(bottom_row, top_row)
@@ -369,13 +379,15 @@ impl Minimap {
             }
         };
         if rescan {
-            // A move reads from the last read's tops; the refresh reads every column whole
-            // (an edit high over a column's top, a new face).
+            // The refresh (or a new face) reads every column again, for edits.
             let full = self.grid_at.is_none_or(|(_, when, face)| {
                 face != f || now_s - when >= t.minimap_refresh_seconds
             });
-            let hint = (!full).then_some(&self.grid);
-            self.grid = scan_tops(world, f, local, t, colour_of, hint);
+            // A move keeps what the last read covered (same face, same eye height: else
+            // `rescan` read whole); the refresh reads every column from its last top.
+            let same = self.grid_at.is_some_and(|(_, _, face)| face == f);
+            let hint = same.then_some(&self.grid);
+            self.grid = scan_tops(world, f, local, t, colour_of, hint, !full);
             if full {
                 self.full_at = now_s;
             }

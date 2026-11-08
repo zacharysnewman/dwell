@@ -63,10 +63,12 @@ world; the minimap is per build, its looks the same for every world.
 
 ## Consequences
 
-- The minimap costs a read of the tops on each texel moved: in the browser ~6 ms a whole read (149
-  reads in 12 s of flight at 8 m/s before the read from the last tops; DEV_TOOLS.md
-  `minimap.scan`), less from the last tops, and a draw alone (a turn) under 1 ms. A slower device
-  could read less often by data (`moveTexels`).
+- The minimap's cost, measured in the browser (Chrome, a Mac's GPU; the bench flying at 8 m/s for
+  12 s, DEV_TOOLS.md `minimap.scan`): 152 reads, mean 1.0 ms each with its draw (p50 0.6, p95
+  1.7), ~13 ms a second in all. A move keeps the columns it had and reads only the strip it
+  uncovers; the refresh every 2 s reads every column from its last top, ~5–9 ms on its frame (a whole
+  read from the scan's top was ~6 ms, every texel moved, before). A draw alone (a turn) is under
+  1 ms. A slower device could refresh less often by data (`refreshSeconds`).
 - What the minimap shows is what the client has streamed: unloaded ground is empty, beyond the view
   nothing. The LOD colour map (`?lodmap=on`) could later feed a wider map.
 - A compass, waypoints or more layers are additions to the data and the shell's map; a mode without
