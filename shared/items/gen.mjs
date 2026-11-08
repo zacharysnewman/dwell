@@ -7,6 +7,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { loadNames, loadTools, validateTools } from '../tools/gen.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
@@ -51,8 +52,15 @@ export const stateName = (block, values) => {
   return keys.length ? `${block}[${keys.map((k) => `${k}=${values[k]}`).join(',')}]` : block;
 };
 
-/** Checks the items against `blocks` (id → definition); returns them. */
-export function validateItems(data, blocks, states = registryStates()) {
+/** The tools' item names (shared/tools/tools.json, validated). */
+export function toolNames() {
+  const { items, blocks } = loadNames();
+  return new Set(validateTools(loadTools(), items, blocks).tools.map((t) => t.name));
+}
+
+/** Checks the items against `blocks` (id → definition) and `tools` (the tools' item names); returns
+ * them. */
+export function validateItems(data, blocks, states = registryStates(), tools = toolNames()) {
   if (typeof data !== 'object' || data === null || Array.isArray(data)) fail('must be an object');
   const extra = Object.keys(data).filter((k) => !['$comment', 'items', 'hotbar', 'buildModes'].includes(k));
   if (extra.length) fail(`unknown ${extra.join(', ')}`);
@@ -61,12 +69,21 @@ export function validateItems(data, blocks, states = registryStates()) {
   data.items.forEach((it, i) => {
     const at = `items[${i}]`;
     if (typeof it !== 'object' || it === null) fail(`${at} must be an object`);
-    const e = Object.keys(it).filter((k) => !['$comment', 'name', 'label', 'block', 'rows', 'drag', 'state', 'facing', 'upper'].includes(k));
+    const e = Object.keys(it).filter((k) => !['$comment', 'name', 'label', 'block', 'tool', 'rows', 'drag', 'state', 'facing', 'upper'].includes(k));
     if (e.length) fail(`${at}: unknown ${e.join(', ')}`);
     if (typeof it.name !== 'string' || !NAME.test(it.name)) fail(`${at}.name must be namespace:name`);
     if (names.has(it.name)) fail(`${at}.name ${it.name} is listed twice`);
     names.add(it.name);
     if (typeof it.label !== 'string' || it.label === '') fail(`${at}.label must be a name to show`);
+    // A tool (ADR 0067; owner, 2026-11-08: the axe on the creative hotbar): held, it places
+    // nothing; its item names a tool of shared/tools/tools.json.
+    if (it.tool !== undefined) {
+      if (it.block !== undefined) fail(`${at}: give block or tool (not both)`);
+      const placing = ['rows', 'drag', 'state', 'facing', 'upper'].filter((k) => it[k] !== undefined);
+      if (placing.length) fail(`${at}: a tool places nothing (${placing.join(', ')})`);
+      if (typeof it.tool !== 'string' || !tools.has(it.tool)) fail(`${at}.tool ${JSON.stringify(it.tool)} is not a tool of shared/tools/tools.json`);
+      return;
+    }
     const b = blocks.get(it.block);
     if (!b) fail(`${at}.block ${JSON.stringify(it.block)} is not in the registry`);
     // Placeable: `placeable`, or states listed in its `palette` (a ladder's facings).
@@ -150,7 +167,9 @@ export function itemsRust(data) {
   for (const it of data.items) {
     const pairs = (o) => `&[${Object.entries(o ?? {}).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `(${JSON.stringify(k)}, ${JSON.stringify(v)})`).join(', ')}]`;
     const facing = it.facing ? `ItemFacing::${ITEM_FACINGS[it.facing]}` : 'ItemFacing::None';
-    rs.push(`    ItemDef { name: ${JSON.stringify(it.name)}, label: ${JSON.stringify(it.label)}, block: ${JSON.stringify(it.block)}, rows: ${it.rows}, drag: ItemDrag::${ITEM_DRAGS[it.drag ?? 'modes']}, state: ${pairs(it.state)}, facing: ${facing}, upper: ${pairs(it.upper)} },`);
+    const tool = it.tool ? `Some(${JSON.stringify(it.tool)})` : 'None';
+    const drag = it.tool ? 'None' : ITEM_DRAGS[it.drag ?? 'modes'];
+    rs.push(`    ItemDef { name: ${JSON.stringify(it.name)}, label: ${JSON.stringify(it.label)}, block: ${JSON.stringify(it.block ?? '')}, tool: ${tool}, rows: ${it.rows ?? 1}, drag: ItemDrag::${drag}, state: ${pairs(it.state)}, facing: ${facing}, upper: ${pairs(it.upper)} },`);
   }
   rs.push('];', '');
   const h = data.hotbar;

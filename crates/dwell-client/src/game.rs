@@ -499,6 +499,8 @@ pub struct Game<S: Scene> {
     pub loose: crate::loose_items::LooseItems,
     /// The held axe's swing and the server's cuts (ADR 0067).
     pub chop: crate::chop::Chopping,
+    /// The axe's chips in flight (crate::chips; draw-only).
+    pub chips: crate::chips::Chips,
     pub inventory_slot: usize,
     /// The moving body's cell under the crosshair, when nearer than the block aimed at
     /// (docs/BUILT_BODIES.md §4).
@@ -783,6 +785,7 @@ impl<S: Scene> Game<S> {
             held_sent: None,
             loose: Default::default(),
             chop: Default::default(),
+            chips: Default::default(),
             inventory_slot: 0,
             show_arms: true,
             lod_drawn: true,
@@ -2177,22 +2180,79 @@ impl<S: Scene> Game<S> {
 
     /// The blasts' effects this frame (docs/EXPLOSIVES.md §4): their puffs and flash lights to the
     /// scene, and the camera's shake at `eye` (yaw, pitch degrees).
+    /// The axe's chips and the cut wood's gouges (crate::chips) ride the same billboard pass.
     fn update_blasts(&mut self, eye: [f64; 3], now_ms: f64) -> (f64, f64) {
         let now = now_ms / 1000.0;
         self.blasts.prune(now);
+        self.chips.prune(now);
+        let mut extra = self.chips.puffs(now);
+        extra.extend(self.gouge_puffs(eye));
         if self.blasts.list.is_empty() {
-            self.scene.borrow_mut().set_blasts(Vec::new(), Vec::new());
+            self.scene.borrow_mut().set_blasts(extra, Vec::new());
             return (0.0, 0.0);
         }
-        let puffs = self.blasts.puffs(now);
+        let mut puffs = self.blasts.puffs(now);
+        puffs.extend(extra);
         let lights = self.blasts.lights(now);
         self.scene.borrow_mut().set_blasts(puffs, lights);
         self.blasts.shake(eye, now)
     }
 
+    /// The gouges of the cut wood cells within `GOUGE_DRAW_M` of `eye`, from the server's cuts.
+    fn gouge_puffs(&mut self, eye: [f64; 3]) -> Vec<crate::blasts::Puff> {
+        const GOUGE_DRAW_M: f64 = 48.0;
+        let mut out = Vec::new();
+        let cuts: Vec<([i32; 3], dwell_protocol::chopping::Cut)> =
+            self.chop.cuts.iter().map(|(c, k)| (*c, *k)).collect();
+        for (cell, cut) in cuts {
+            let c = dwell_world::centre_of_cell(cell);
+            if (0..3).map(|k| (c[k] - eye[k]).powi(2)).sum::<f64>() > GOUGE_DRAW_M * GOUGE_DRAW_M {
+                continue;
+            }
+            let m = self.voxel(cell[0], cell[1], cell[2]);
+            let name = dwell_blocks::block_of(m).name;
+            let Some(wood) = dwell_protocol::chopping::WOODS
+                .iter()
+                .position(|w| w.block == name)
+            else {
+                continue;
+            };
+            let grain = match dwell_blocks::state_property(m, "axis") {
+                Some("x") => 0,
+                Some("z") => 2,
+                _ => 1,
+            };
+            let gs = crate::chips::gouges(cell, grain, &cut);
+            let seed = (cell[0] as u32).wrapping_mul(73_856_093)
+                ^ (cell[1] as u32).wrapping_mul(19_349_663)
+                ^ (cell[2] as u32).wrapping_mul(83_492_791);
+            out.extend(crate::chips::gouge_puffs(&gs, wood, seed));
+        }
+        out
+    }
+
+    /// A swing's chips out of `face` at `point` of the wood `block` (the server cuts; these show).
+    fn chips_burst(&mut self, block: StateId, face: u8, point: [f32; 3], now_ms: f64) {
+        let name = dwell_blocks::block_of(block).name;
+        if let Some(wood) = dwell_protocol::chopping::WOODS
+            .iter()
+            .position(|w| w.block == name)
+        {
+            self.chips.burst(
+                wood,
+                face,
+                point.map(f64::from),
+                self.chop.vertical,
+                self.view_dir,
+                now_ms / 1000.0,
+            );
+        }
+    }
+
     /// Which blast effects show (Settings → Explosions), and whether the adapter is a CPU's.
     pub fn set_blast_settings(&mut self, s: crate::blasts::BlastSettings) {
         self.blasts.settings = s;
+        self.chips.cpu = s.cpu;
     }
 
     /// The blasts whose effects are still going (the dev hook): each one's place and age (s).
@@ -3246,6 +3306,9 @@ impl<S: Scene> Game<S> {
     /// What your hand holds: the hotbar's block, or the brush painting with it while the brush tool
     /// is on (an empty slot: an empty hand).
     pub fn held(&self) -> Held {
+        if let Some(t) = self.held_tool() {
+            return Held::Tool(t.held.unwrap_or("block"));
+        }
         let block = self.selected_material();
         if block == 0 {
             Held::Empty
@@ -3274,9 +3337,14 @@ impl<S: Scene> Game<S> {
 
     /// The palette slot that places what the held inventory slot holds (ADR 0066).
     /// The tool in the held inventory slot (ADR 0067), when the server chops.
+    /// In creative, the palette's selected slot when it is a tool (items.json `tool`).
     pub fn held_tool(&self) -> Option<&'static dwell_protocol::chopping::ToolDef> {
         if !self.chop.on {
             return None;
+        }
+        if !self.loose.uses_items() {
+            let slot = self.interaction.palette().get(self.interaction.selected())?;
+            return dwell_protocol::chopping::tool(slot.tool?);
         }
         let (_, inv) = self.loose.inventory.as_ref()?;
         let held = inv.slots.get(self.inventory_slot)?.as_ref()?;
@@ -3316,8 +3384,14 @@ impl<S: Scene> Game<S> {
         };
         self.edit_sounds
             .local_break(target.cell, block, now_ms, &mut self.sounds);
-        self.bodies
-            .swing_arms(dwell_characters::animator::Swing::Break);
+        self.bodies.swing_arms(if self.chop.vertical {
+            dwell_characters::animator::Swing::ChopVertical
+        } else {
+            dwell_characters::animator::Swing::ChopLevel
+        });
+        if let dwell_protocol::ChopAction::Swing { face, point, .. } = &swing {
+            self.chips_burst(block, *face, *point, now_ms);
+        }
         self.outbox
             .borrow_mut()
             .push(Send::Control(Message::Chop(swing)));

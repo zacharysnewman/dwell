@@ -31,8 +31,10 @@ pub struct ItemDef {
     pub name: &'static str,
     /// What the hotbar calls it.
     pub label: &'static str,
-    /// The block it places (namespaced id).
+    /// The block it places (namespaced id; empty for a tool).
     pub block: &'static str,
+    /// The tool it is instead (an item of `shared/tools/tools.json`: held, it places nothing).
+    pub tool: Option<&'static str>,
     /// Its height in ½ m cells.
     pub rows: u8,
     pub drag: ItemDrag,

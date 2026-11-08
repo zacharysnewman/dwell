@@ -1,5 +1,5 @@
 {
-  "$comment": "What the creative hotbar places (docs/ITEMS.md). Each item names the block it places (shared/blocks) and its height in ½ m cells (`rows`, up to 2). Owner, 2026-10-28: the hotbar's blocks are ½ m (the 1 m items are gone; `rows` stays for a taller piece later). `drag`: what holding Place does with it (docs/ITEMS.md §5): `modes` (the default) builds on in the build mode, for a plain block only; `vertical` a line straight up or down only, each piece where it is held (ladders on their wall); `none` one click at a time (a block with other cells or something to stand on). `state`: property values of the state it places (a slope's shape); `facing`: `toward` turns its `facing` property to point back at the player, `away` along the look (a stored ramp's facing is its downhill side: `toward` puts uphill ahead, owner 2026-10-30); `upper`: a 2-row piece's upper cell, its state with these values over the lower's (the steep slope's top half), placed with it. The order is the hotbar's. Prototype content. Run `node shared/items/gen.mjs` after editing; CI fails if crates/dwell-game/src/items.gen.rs is stale.",
+  "$comment": "What the creative hotbar places (docs/ITEMS.md). Each item names the block it places (shared/blocks) and its height in ½ m cells (`rows`, up to 2). Owner, 2026-10-28: the hotbar's blocks are ½ m (the 1 m items are gone; `rows` stays for a taller piece later). `drag`: what holding Place does with it (docs/ITEMS.md §5): `modes` (the default) builds on in the build mode, for a plain block only; `vertical` a line straight up or down only, each piece where it is held (ladders on their wall); `none` one click at a time (a block with other cells or something to stand on). `state`: property values of the state it places (a slope's shape); `facing`: `toward` turns its `facing` property to point back at the player, `away` along the look (a stored ramp's facing is its downhill side: `toward` puts uphill ahead, owner 2026-10-30); `upper`: a 2-row piece's upper cell, its state with these values over the lower's (the steep slope's top half), placed with it. `tool` (instead of `block`): a tool of shared/tools/tools.json by item name, which places nothing (the stone axe: held, it chops; ADR 0067). The order is the hotbar's. Prototype content. Run `node shared/items/gen.mjs` after editing; CI fails if crates/dwell-game/src/items.gen.rs is stale.",
   "items": [
     {
       "name": "dwell:stone",
@@ -64,6 +64,11 @@
       "label": "Log",
       "block": "dwell:log",
       "rows": 1
+    },
+    {
+      "name": "dwell:stone_axe",
+      "label": "Stone axe",
+      "tool": "dwell:stone_axe"
     },
     {
       "name": "dwell:leaves",

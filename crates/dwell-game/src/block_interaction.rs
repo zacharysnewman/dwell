@@ -104,6 +104,8 @@ pub struct PaletteSlot {
     /// How its `facing` follows the look, and a 2-row piece's upper cell (item data).
     pub facing: crate::items::ItemFacing,
     pub upper: &'static [(&'static str, &'static str)],
+    /// A tool (by item name, `shared/tools`): it places nothing (`material` 0).
+    pub tool: Option<&'static str>,
 }
 
 const LOOK_LADDER: &str = "ladder";
@@ -114,6 +116,20 @@ pub fn palette() -> Vec<PaletteSlot> {
     crate::items::ITEMS
         .iter()
         .filter_map(|it| {
+            if let Some(tool) = it.tool {
+                return Some(PaletteSlot {
+                    name: it.label.to_owned(),
+                    item: it.name,
+                    block: "",
+                    material: 0,
+                    ladder: false,
+                    rows: 1,
+                    drag: crate::items::ItemDrag::None,
+                    facing: crate::items::ItemFacing::None,
+                    upper: &[],
+                    tool: Some(tool),
+                });
+            }
             let block = dwell_blocks::find_block(it.block)?;
             let material = if it.state.is_empty() {
                 (block.first_state..block.first_state + block.state_count)
@@ -132,6 +148,7 @@ pub fn palette() -> Vec<PaletteSlot> {
                 drag: it.drag,
                 facing: it.facing,
                 upper: it.upper,
+                tool: None,
             })
         })
         .collect()
