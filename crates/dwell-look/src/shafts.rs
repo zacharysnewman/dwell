@@ -39,13 +39,15 @@ pub struct LightShaftTuning {
     pub near_m: f64,
     /// The farthest a light may be from the eye (fading out over its last half), m.
     pub range_m: f64,
-    /// As the air's: the share of the way to the light sampled, each sample's weight on the last.
+    /// The share of the way to the light sampled; each twelfth of the way's weight on the last.
     pub reach: f64,
     pub decay: f64,
     /// How far past the screen's edge (half screen heights) a light may be, faded.
     pub offscreen: f64,
     /// The share of the strength drawn by full day (all of it at night).
     pub day_share: f64,
+    /// The most a halo spans on the screen (half screen heights).
+    pub max_disc: f64,
 }
 
 /// A light source's shafts by its name (`lights.kinds`, `lights.default`).
@@ -133,7 +135,7 @@ pub fn pick_shaft_lights(tier: ShaftTier, v: &ShaftView) -> Vec<PickedLight> {
                     PickedLight {
                         ndc,
                         depth: z,
-                        disc: kind.disc_m / (z * v.tan[1]),
+                        disc: (kind.disc_m / (z * v.tan[1])).min(t.max_disc),
                         glow: l.color.map(|c| c * weight),
                         dist,
                     },
@@ -154,10 +156,21 @@ pub fn pick_shaft_lights(tier: ShaftTier, v: &ShaftView) -> Vec<PickedLight> {
     out.into_iter().map(|(p, _)| p).collect()
 }
 
+/// Each sample's weight on the one before at `tier`: the data's decay is per twelfth of the way,
+/// so Low's fewer samples weigh the way as High's do.
+pub fn sample_decay(tier: ShaftTier) -> f64 {
+    LIGHT_SHAFTS
+        .decay
+        .powf(12.0 / f64::from(tier.light_steps.max(1)))
+}
+
 /// The frame block's lights' shafts (`frame.torch_shafts`): header x the count (0: none), y the
 /// samples toward each, z the reach, w the decay; per light its NDC point, depth (m) and halo
 /// radius (half screen heights), then its glow (sRGB × weight). `tier` None (Off): none.
-pub fn light_shaft_uniforms(tier: Option<ShaftTier>, v: &ShaftView) -> [[f32; 4]; LIGHT_SHAFT_VEC4S] {
+pub fn light_shaft_uniforms(
+    tier: Option<ShaftTier>,
+    v: &ShaftView,
+) -> [[f32; 4]; LIGHT_SHAFT_VEC4S] {
     let mut u = [[0.0f32; 4]; LIGHT_SHAFT_VEC4S];
     let Some(tier) = tier else {
         return u;
@@ -168,7 +181,7 @@ pub fn light_shaft_uniforms(tier: Option<ShaftTier>, v: &ShaftView) -> [[f32; 4]
         picked.len() as f32,
         tier.light_steps as f32,
         f(LIGHT_SHAFTS.reach),
-        f(LIGHT_SHAFTS.decay),
+        f(sample_decay(tier)),
     ];
     for (i, p) in picked.iter().enumerate() {
         u[1 + 2 * i] = [f(p.ndc[0]), f(p.ndc[1]), f(p.depth), f(p.disc)];
@@ -472,16 +485,19 @@ mod tests {
             let lights = [
                 torch_at(f, [0.0, 1.0, -12.0]),
                 torch_at(f, [0.5, 0.0, -4.0]),
-                torch_at(f, [0.0, 0.0, 6.0]),    // behind
-                torch_at(f, [0.0, 0.0, -30.0]),  // out of range
-                torch_at(f, [40.0, 0.0, -5.0]),  // far off the screen's side
+                torch_at(f, [0.0, 0.0, 6.0]),   // behind
+                torch_at(f, [0.0, 0.0, -30.0]), // out of range
+                torch_at(f, [40.0, 0.0, -5.0]), // far off the screen's side
                 torch_at(f, [-1.0, -0.5, -8.0]),
-                torch_at(f, [0.0, 0.0, -0.3]),   // in your hand: faded out
+                torch_at(f, [0.0, 0.0, -0.3]), // in your hand: faded out
             ];
             let night = [0.0, -0.5, -1.0];
             let v = lights_view(f, &lights, night);
             let high = pick_shaft_lights(HIGH, &v);
-            let dists: Vec<f64> = high.iter().map(|p| (p.dist * 10.0).round() / 10.0).collect();
+            let dists: Vec<f64> = high
+                .iter()
+                .map(|p| (p.dist * 10.0).round() / 10.0)
+                .collect();
             assert_eq!(dists, vec![4.0, 8.1, 12.0], "nearest first: {dists:?}");
             // Face-local up is the screen's up on both faces: the torch 1 m up is above centre.
             assert!(high[2].ndc[1] > 0.0 && high[2].ndc[0].abs() < 1e-9);
@@ -490,7 +506,10 @@ mod tests {
             // Parity: face B's picks are face A's.
             let la: Vec<ShaftLight> = lights
                 .iter()
-                .map(|l| ShaftLight { pos: f.point(l.pos), ..*l })
+                .map(|l| ShaftLight {
+                    pos: f.point(l.pos),
+                    ..*l
+                })
                 .collect();
             let a = pick_shaft_lights(HIGH, &lights_view(FaceFrame::A, &la, night));
             assert_eq!(high, a);
@@ -501,7 +520,10 @@ mod tests {
         /// Each light kind's strength is its data's: a fuse glows less than a torch, a light not
         /// listed not at all; by day a share of the night's.
         fn the_strength_is_the_kinds_by_name_and_fades_by_day(f: FaceFrame) {
-            let at = |light| ShaftLight { light, ..torch_at(f, [0.0, 0.0, -5.0]) };
+            let at = |light| ShaftLight {
+                light,
+                ..torch_at(f, [0.0, 0.0, -5.0])
+            };
             let night = [0.0, -0.5, -1.0];
             let glow = |light, sun| {
                 let ls = [at(light)];
@@ -511,10 +533,16 @@ mod tests {
             };
             let torch = glow("dwell:torch", night);
             let fuse = glow("dwell:fuse", night);
-            assert!(torch > 0.0 && fuse > 0.0 && fuse < torch, "{fuse} < {torch}");
+            assert!(
+                torch > 0.0 && fuse > 0.0 && fuse < torch,
+                "{fuse} < {torch}"
+            );
             assert_eq!(glow("test:unlisted", night), 0.0);
             let day = glow("dwell:torch", [0.0, 0.8, -1.0]);
-            assert!((day / torch - LIGHT_SHAFTS.day_share).abs() < 1e-9, "{day} / {torch}");
+            assert!(
+                (day / torch - LIGHT_SHAFTS.day_share).abs() < 1e-9,
+                "{day} / {torch}"
+            );
             // The weight's ratio between kinds is their data's.
             let k = light_shafts("dwell:fuse").strength / light_shafts("dwell:torch").strength;
             assert!((fuse / torch - k).abs() < 1e-9);
@@ -525,12 +553,32 @@ mod tests {
     fn off_draws_no_light_shafts_and_the_header_counts_them() {
         let lights = [torch_at(FaceFrame::A, [0.0, 0.0, -5.0])];
         let v = lights_view(FaceFrame::A, &lights, [0.0, -0.5, -1.0]);
-        assert_eq!(light_shaft_uniforms(None, &v), [[0.0; 4]; LIGHT_SHAFT_VEC4S]);
+        assert_eq!(
+            light_shaft_uniforms(None, &v),
+            [[0.0; 4]; LIGHT_SHAFT_VEC4S]
+        );
         let u = light_shaft_uniforms(Some(LOW), &v);
         assert_eq!(u[0][0], 1.0);
         assert_eq!(u[0][1], LOW.light_steps as f32);
         assert!((u[1][2] - 5.0).abs() < 1e-6, "its depth");
         assert!(u[2][0] > u[2][2], "a torch's warm glow");
+    }
+
+    #[test]
+    fn low_weighs_the_way_as_high_and_a_close_halo_is_capped() {
+        // The weight left at the light's end is the same on both tiers (Low read brighter when
+        // the decay was per sample).
+        let end = |t: ShaftTier| sample_decay(t).powi(t.light_steps as i32);
+        assert!(
+            (end(LOW) - end(HIGH)).abs() < 1e-9,
+            "{} vs {}",
+            end(LOW),
+            end(HIGH)
+        );
+        let lights = [torch_at(FaceFrame::A, [0.0, 0.0, -1.6])];
+        let v = lights_view(FaceFrame::A, &lights, [0.0, -0.5, -1.0]);
+        let p = pick_shaft_lights(HIGH, &v);
+        assert_eq!(p[0].disc, LIGHT_SHAFTS.max_disc);
     }
 
     #[test]

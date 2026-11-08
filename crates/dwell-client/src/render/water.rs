@@ -1409,7 +1409,12 @@ mod tests {
         // The band's layers faded past Nyquist (band_footprint, band_layers, band_keep).
         assert!(src.contains("let fp = vec2f(4.0 / size.y / s, across.x / depth / (s * s));"));
         assert!(src.contains("return 1.0 - smoothstep(0.25, 0.5, max(k.x * fp.x, k.y * fp.y));"));
-        for k in ["vec2f(0.45, 0.3)", "vec2f(1.0 + 1.2 * b, 0.35)", "vec2f(2.6, 0.9)", "vec2f(4.2, 1.6)"] {
+        for k in [
+            "vec2f(0.45, 0.3)",
+            "vec2f(1.0 + 1.2 * b, 0.35)",
+            "vec2f(2.6, 0.9)",
+            "vec2f(4.2, 1.6)",
+        ] {
             assert!(src.contains(&format!("band_keep({k}, fp)")), "{k}");
         }
         assert!(src.contains("1.0 - bent * bent < 1.0 / (ior * ior)"));

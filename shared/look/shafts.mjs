@@ -59,6 +59,7 @@ const LIGHTS = {
   decay: [0.5, 1],
   offscreen: [0, 4],
   dayShare: [0, 1],
+  maxDisc: [0, 4, 'open'],
 };
 const KIND = { strength: [0, 4], discM: [0, 16, 'open'] };
 const LIGHT = {
@@ -178,6 +179,7 @@ export function shaftsRust(data) {
   rs.push(`    decay: ${rf(L.decay)},`);
   rs.push(`    offscreen: ${rf(L.offscreen)},`);
   rs.push(`    day_share: ${rf(L.dayShare)},`);
+  rs.push(`    max_disc: ${rf(L.maxDisc)},`);
   rs.push('};');
   rs.push('');
   rs.push('/// A light source not listed (`lights.default`), and each listed one (`lights.kinds`).');

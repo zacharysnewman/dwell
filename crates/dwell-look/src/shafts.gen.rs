@@ -45,6 +45,7 @@ pub const LIGHT_SHAFTS: LightShaftTuning = LightShaftTuning {
     decay: 0.96,
     offscreen: 0.3,
     day_share: 0.4,
+    max_disc: 0.5,
 };
 
 /// A light source not listed (`lights.default`), and each listed one (`lights.kinds`).
@@ -57,7 +58,7 @@ pub const LIGHT_KINDS: &[LightShafts] = &[
     LightShafts {
         light: "dwell:torch",
         strength: 0.35,
-        disc_m: 2.5,
+        disc_m: 1.2,
     },
     LightShafts {
         light: "dwell:fuse",

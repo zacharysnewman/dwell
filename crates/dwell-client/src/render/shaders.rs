@@ -3062,7 +3062,9 @@ mod tests {
         use super::{FRAME, SHAFTS, TERRAIN};
         use dwell_look::shafts::{LIGHT_SHAFT_VEC4S, MAX_SHAFT_LIGHTS};
         assert!(FRAME.contains(&format!("torch_shafts: array<vec4f, {LIGHT_SHAFT_VEC4S}>,")));
-        assert!(SHAFTS.contains(&format!("const MAX_SHAFT_LIGHTS: u32 = {MAX_SHAFT_LIGHTS}u;")));
+        assert!(SHAFTS.contains(&format!(
+            "const MAX_SHAFT_LIGHTS: u32 = {MAX_SHAFT_LIGHTS}u;"
+        )));
         // The pass writes the lights' glow in rgb and the sun's, moon's or fluid's in a.
         assert!(SHAFTS.contains("return vec4f(lit, g);"));
         let comp = &TERRAIN[TERRAIN.find("fn with_shafts").unwrap()..];

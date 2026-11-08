@@ -2686,20 +2686,20 @@ impl Renderer {
             }))
             .collect();
         let view = ShaftView {
-                right: basis.right,
-                up: basis.up,
-                forward: basis.forward(),
-                tan: [tan_y * aspect, tan_y],
-                aspect,
-                face: self.face,
-                sun: self.day.sun,
-                moon: self.day.moon,
-                sun_color: lit(v.sun_disc),
-                moon_color: lit(v.moon_light),
-                under,
-                eye,
-                lights: &lights,
-            };
+            right: basis.right,
+            up: basis.up,
+            forward: basis.forward(),
+            tan: [tan_y * aspect, tan_y],
+            aspect,
+            face: self.face,
+            sun: self.day.sun,
+            moon: self.day.moon,
+            sun_color: lit(v.sun_disc),
+            moon_color: lit(v.moon_light),
+            under,
+            eye,
+            lights: &lights,
+        };
         let tier = self.shaft_tier();
         // Under a fluid only its own shafts (a torch under water is left for later).
         let lit_u = if under.is_some() {
