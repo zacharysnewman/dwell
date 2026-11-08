@@ -20,7 +20,7 @@ export const MENU_BACKGROUNDS: readonly MenuBackground[] = [
 ];
 
 // prettier-ignore
-export const DEFAULT_MENU_BACKGROUND = "beach-peaks";
+export const DEFAULT_MENU_BACKGROUND = "random";
 
 /** Seconds for one whole turn of the panorama. */
 export const MENU_BACKGROUND_TURN_S = 150;

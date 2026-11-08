@@ -351,7 +351,8 @@ export function validateMenuBackgrounds(data, hasImage = () => true) {
     names.add(b.name);
     images.add(b.image);
   });
-  if (!names.has(data.default)) bgFail(`default must name a background, got ${JSON.stringify(data.default)}`);
+  // `random` (owner, 2026-11-08): a background picked at random, fading to another after each turn.
+  if (data.default !== 'random' && !names.has(data.default)) bgFail(`default must name a background or be "random", got ${JSON.stringify(data.default)}`);
   return data;
 }
 

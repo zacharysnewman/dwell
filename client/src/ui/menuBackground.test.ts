@@ -6,7 +6,9 @@ import {
   findBackground,
   MENU_BACKGROUNDS,
   menuRecord,
+  nextRandomBackground,
   panoramaStyle,
+  RANDOM_BACKGROUND,
   sanitizeMenuBackground,
 } from './menuBackground';
 import { loadSettingsState, menuBackgroundChoice, saveSettingsState } from './settingsMenu';
@@ -14,16 +16,17 @@ import { MENU_KEY } from './settingsPins';
 import { WORLD_PAGES } from './menuPage';
 
 describe('menu backgrounds', () => {
-  it('are the data: every entry, by name and label, the default the beach', () => {
+  it('are the data: every entry, by name and label, the default random', () => {
     expect(MENU_BACKGROUNDS.map((b) => b.name)).toEqual(data.backgrounds.map((b) => b.name));
     expect(MENU_BACKGROUNDS.map((b) => b.label)).toEqual(data.backgrounds.map((b) => b.label));
-    expect(DEFAULT_MENU_BACKGROUND).toBe('beach-peaks');
+    expect(DEFAULT_MENU_BACKGROUND).toBe('random');
     for (const b of MENU_BACKGROUNDS) expect(b.url).toMatch(/\.webp/);
   });
 
   it('a name this build does not know shows the default', () => {
     expect(findBackground('lake-shore').name).toBe('lake-shore');
-    expect(findBackground('from-a-newer-build').name).toBe(DEFAULT_MENU_BACKGROUND);
+    // Random isn't a view: an unknown name shows the first one.
+    expect(findBackground('from-a-newer-build').name).toBe(MENU_BACKGROUNDS[0]?.name);
   });
 
   it('a fixture entry added by data alone is offered in Settings', () => {
@@ -68,9 +71,9 @@ describe('the menu background setting', () => {
     vi.unstubAllGlobals();
   });
 
-  it('defaults to the beach, and is not stored until chosen', () => {
+  it('defaults to random, and is not stored until chosen', () => {
     const state = loadSettingsState(false);
-    expect(state.settings.menuBackground).toBe('beach-peaks');
+    expect(state.settings.menuBackground).toBe('random');
     saveSettingsState(state);
     expect(store.has(MENU_KEY)).toBe(false);
   });
@@ -107,5 +110,24 @@ describe('Settings from the main menu', () => {
   it('lists the pages that need a world with a note each', () => {
     expect(WORLD_PAGES.map(([page]) => page)).toEqual(['structures', 'debug', 'host']);
     for (const [, note] of WORLD_PAGES) expect(note).toMatch(/^Open (a|one of your) world/);
+  });
+});
+
+describe('a random background (owner, 2026-11-08)', () => {
+  it('is the default, a stored choice, and offered first in Settings', () => {
+    expect(DEFAULT_MENU_BACKGROUND).toBe(RANDOM_BACKGROUND);
+    expect(sanitizeMenuBackground({ background: RANDOM_BACKGROUND })).toBe(RANDOM_BACKGROUND);
+    expect(sanitizeMenuBackground(null)).toBe(RANDOM_BACKGROUND);
+  });
+  it('picks a different view each time it moves on', () => {
+    const names = MENU_BACKGROUNDS.map((b) => b.name);
+    for (const current of names) {
+      for (const r of [0, 0.3, 0.6, 0.999]) {
+        const next = nextRandomBackground(current, () => r);
+        expect(names).toContain(next);
+        expect(next).not.toBe(current);
+      }
+    }
+    expect(names).toContain(nextRandomBackground(null, () => 0.5));
   });
 });
