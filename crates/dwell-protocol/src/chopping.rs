@@ -285,12 +285,22 @@ mod tests {
         assert_eq!(v, axe().along);
         // On a log lying along x, looked at from the side (+z): vertical crosses, horizontal splits.
         let x = [1.0, 0.0, 0.0];
-        assert_eq!(share(axe(), swing_normal(true, [0.0, -0.5, 1.0]), x), axe().across);
-        assert_eq!(share(axe(), swing_normal(false, [0.0, -0.5, 1.0]), x), axe().along);
+        assert_eq!(
+            share(axe(), swing_normal(true, [0.0, -0.5, 1.0]), x),
+            axe().across
+        );
+        assert_eq!(
+            share(axe(), swing_normal(false, [0.0, -0.5, 1.0]), x),
+            axe().along
+        );
         // Looked at along its length, a vertical swing splits it too.
         assert!(share(axe(), swing_normal(true, [1.0, -0.3, 0.0]), x) < 0.2);
         // Leaning at 45°: between.
-        let lean = [0.0, std::f64::consts::FRAC_1_SQRT_2, std::f64::consts::FRAC_1_SQRT_2];
+        let lean = [
+            0.0,
+            std::f64::consts::FRAC_1_SQRT_2,
+            std::f64::consts::FRAC_1_SQRT_2,
+        ];
         let m = share(axe(), swing_normal(false, [1.0, 0.0, 0.0]), lean);
         assert!(m > axe().along && m < axe().across, "{m}");
     }
@@ -301,7 +311,10 @@ mod tests {
         let hack = swings_to_fell(1.0, |_| 0);
         assert!((8..=12).contains(&notch), "notching: {notch} swings");
         let ratio = hack as f64 / notch as f64;
-        assert!((3.0..=4.0).contains(&ratio), "hacking: {hack} swings, {ratio:.2}× notching");
+        assert!(
+            (3.0..=4.0).contains(&ratio),
+            "hacking: {hack} swings, {ratio:.2}× notching"
+        );
         // Vertical swings at a standing trunk barely cut it.
         let split = swings_to_fell(axe().along, |i| i % 2);
         assert!(split >= 5 * notch, "vertical: {split} swings");
@@ -327,7 +340,11 @@ mod tests {
 
     #[test]
     fn sides_are_the_faces_across_the_grain() {
-        assert_eq!(side_of(1, 1, true), None, "a standing trunk's top is end grain");
+        assert_eq!(
+            side_of(1, 1, true),
+            None,
+            "a standing trunk's top is end grain"
+        );
         assert_eq!(side_of(1, 0, false), Some(0));
         assert_eq!(side_normal(1, 3), [0, 0, 1]);
         assert_eq!(side_of(0, 1, true), Some(1), "a log along x: its top");

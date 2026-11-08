@@ -22,11 +22,7 @@ pub struct Chopping {
 /// Where a ray from `eye` along `dir` enters cell `cell`'s box: the face (`axis × 2 + positive`,
 /// world) and the point; none if it misses or starts inside.
 pub fn ray_cell_hit(eye: [f64; 3], dir: [f64; 3], cell: [i32; 3]) -> Option<(u8, [f64; 3])> {
-    let lo = [
-        f64::from(cell[0]),
-        m_of_row(cell[1]),
-        f64::from(cell[2]),
-    ];
+    let lo = [f64::from(cell[0]), m_of_row(cell[1]), f64::from(cell[2])];
     let hi = [lo[0] + 1.0, lo[1] + CELL_H, lo[2] + 1.0];
     let (mut t_in, mut t_out, mut face) = (f64::NEG_INFINITY, f64::INFINITY, None);
     for a in 0..3 {
@@ -113,22 +109,47 @@ mod tests {
         assert_eq!(f, 3);
         assert!((p[1] - CELL_H).abs() < 1e-9);
         // From below (face B's up): the −y face (2).
-        assert_eq!(ray_cell_hit([3.5, -5.0, 0.5], [0.0, 1.0, 0.0], [3, 0, 0]).unwrap().0, 2);
-        assert_eq!(ray_cell_hit([0.5, 0.2, 0.5], [-1.0, 0.0, 0.0], [3, 0, 0]), None);
+        assert_eq!(
+            ray_cell_hit([3.5, -5.0, 0.5], [0.0, 1.0, 0.0], [3, 0, 0])
+                .unwrap()
+                .0,
+            2
+        );
+        assert_eq!(
+            ray_cell_hit([0.5, 0.2, 0.5], [-1.0, 0.0, 0.0], [3, 0, 0]),
+            None
+        );
     }
 
     #[test]
     fn swings_wait_for_the_axe_and_carry_the_direction() {
         let axe = dwell_protocol::chopping::tool("dwell:stone_axe").unwrap();
-        let mut c = Chopping { on: true, ..Default::default() };
+        let mut c = Chopping {
+            on: true,
+            ..Default::default()
+        };
         let eye = [0.5, 0.2, 0.5];
         let s = c.swing(axe, [3, 0, 0], eye, [1.0, 0.0, 0.0], 1000.0);
-        assert!(matches!(s, Some(ChopAction::Swing { vertical: false, face: 0, .. })));
-        assert!(c.swing(axe, [3, 0, 0], eye, [1.0, 0.0, 0.0], 1100.0).is_none());
+        assert!(matches!(
+            s,
+            Some(ChopAction::Swing {
+                vertical: false,
+                face: 0,
+                ..
+            })
+        ));
+        assert!(
+            c.swing(axe, [3, 0, 0], eye, [1.0, 0.0, 0.0], 1100.0)
+                .is_none()
+        );
         assert!(c.toggle());
         let s = c.swing(axe, [3, 0, 0], eye, [1.0, 0.0, 0.0], 1500.0);
         assert!(matches!(s, Some(ChopAction::Swing { vertical: true, .. })));
         let off = &mut Chopping::default();
-        assert!(off.swing(axe, [3, 0, 0], eye, [1.0, 0.0, 0.0], 0.0).is_none(), "no CHOPPING");
+        assert!(
+            off.swing(axe, [3, 0, 0], eye, [1.0, 0.0, 0.0], 0.0)
+                .is_none(),
+            "no CHOPPING"
+        );
     }
 }

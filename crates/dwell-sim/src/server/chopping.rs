@@ -49,7 +49,9 @@ impl Server {
                 let parts: Vec<Vec<_>> = if all.is_empty() {
                     vec![Vec::new()]
                 } else {
-                    all.chunks(MAX_CUTS_PER_MESSAGE).map(<[_]>::to_vec).collect()
+                    all.chunks(MAX_CUTS_PER_MESSAGE)
+                        .map(<[_]>::to_vec)
+                        .collect()
                 };
                 for cuts in parts {
                     let m = Message::Cuts(CutsMessage {
@@ -94,7 +96,10 @@ impl Server {
         };
         if uses_items {
             let held = s.inventory.slots.get(usize::from(s.inventory.held));
-            if held.and_then(|h| h.as_ref()).is_none_or(|st| st.item != tool) {
+            if held
+                .and_then(|h| h.as_ref())
+                .is_none_or(|st| st.item != tool)
+            {
                 return;
             }
         }
@@ -106,11 +111,7 @@ impl Server {
         if to.length() > f64::from(dwell_world::edit::DEFAULT_REACH) + REACH_SLACK_M {
             return;
         }
-        let lo = DVec3::new(
-            f64::from(cell[0]),
-            m_of_row(cell[1]),
-            f64::from(cell[2]),
-        );
+        let lo = DVec3::new(f64::from(cell[0]), m_of_row(cell[1]), f64::from(cell[2]));
         let hi = lo + DVec3::new(1.0, CELL_H, 1.0);
         let slack = DVec3::splat(0.05);
         let p = DVec3::from(point);

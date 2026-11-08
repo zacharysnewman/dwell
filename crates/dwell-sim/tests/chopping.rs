@@ -90,7 +90,14 @@ fn move_to_local(fx: &mut Fixture, f: FaceFrame, x: f64, feet: f64, z: f64) {
 
 /// One swing at face-local cell `cell`'s face with face-local outward normal `normal`, at the
 /// face-local point `at`; then the swing's wait.
-fn swing(fx: &mut Fixture, f: FaceFrame, cell: [i32; 3], normal: [f64; 3], at: [f64; 3], vertical: bool) {
+fn swing(
+    fx: &mut Fixture,
+    f: FaceFrame,
+    cell: [i32; 3],
+    normal: [f64; 3],
+    at: [f64; 3],
+    vertical: bool,
+) {
     let n = f.vector(normal);
     let axis = n.iter().position(|v| v.abs() > 0.5).expect("an axis");
     let p = f.point(at);
@@ -121,7 +128,13 @@ fn cell_is(fx: &mut Fixture, f: FaceFrame, cell: [i32; 3]) -> u16 {
 }
 
 /// Swings `band_of(i)` until the cut cell is gone (at most `limit`); the count.
-fn swings_to_fell(fx: &mut Fixture, f: FaceFrame, vertical: bool, limit: usize, band_of: impl Fn(usize) -> usize) -> Option<usize> {
+fn swings_to_fell(
+    fx: &mut Fixture,
+    f: FaceFrame,
+    vertical: bool,
+    limit: usize,
+    band_of: impl Fn(usize) -> usize,
+) -> Option<usize> {
     for i in 0..limit {
         at_trunk(fx, f, band_of(i), vertical);
         if cell_is(fx, f, [3, AT, 0]) == M.air {
@@ -155,7 +168,10 @@ dwell_world::both_faces!(
         assert!(lean[0] > 0.2, "leans toward +x: {lean:?}");
         // The stump stays; the client heard the cut and then its end.
         assert_ne!(cell_is(&mut fx, f, [3, AT - 1, 0]), M.air);
-        assert!(sent.iter().any(|(m, _)| matches!(m, Message::Cuts(c) if !c.cuts.is_empty())));
+        assert!(
+            sent.iter()
+                .any(|(m, _)| matches!(m, Message::Cuts(c) if !c.cuts.is_empty()))
+        );
         assert!(fx.server.cut_of(f.cell([3, AT, 0])).is_none());
     }
 );
@@ -167,7 +183,10 @@ dwell_world::both_faces!(
         let mut fx = scene(f, "creative", true);
         let hack = swings_to_fell(&mut fx, f, false, 60, |_| 0).expect("hacked");
         let ratio = hack as f64 / notch as f64;
-        assert!((3.0..=4.0).contains(&ratio), "{hack} vs {notch}: {ratio:.2}");
+        assert!(
+            (3.0..=4.0).contains(&ratio),
+            "{hack} vs {notch}: {ratio:.2}"
+        );
     }
 );
 
@@ -179,14 +198,25 @@ dwell_world::both_faces!(
         let mut h = scene(f, "creative", true);
         at_trunk(&mut h, f, 0, false);
         let one = h.server.cut_of(f.cell([3, AT, 0])).unwrap().depth(0);
-        assert!(cut.depth(0) < 2.5 * one, "12 vertical swings {} vs 1 level {one}", cut.depth(0));
+        assert!(
+            cut.depth(0) < 2.5 * one,
+            "12 vertical swings {} vs 1 level {one}",
+            cut.depth(0)
+        );
     }
 );
 
 /// Swings at the lying log's top (face-local up), from the −x side, in band `band` along z.
 fn at_log(fx: &mut Fixture, f: FaceFrame, band: usize, vertical: bool) {
     let z = if band == 0 { 0.3 } else { 0.7 };
-    swing(fx, f, [3, BASE, 0], [0.0, 1.0, 0.0], [3.5, m_of_row(BASE + 1), z], vertical);
+    swing(
+        fx,
+        f,
+        [3, BASE, 0],
+        [0.0, 1.0, 0.0],
+        [3.5, m_of_row(BASE + 1), z],
+        vertical,
+    );
 }
 
 dwell_world::both_faces!(
@@ -196,7 +226,11 @@ dwell_world::both_faces!(
         for i in 0..4 {
             at_log(&mut fx, f, i % 2, false);
         }
-        let level = fx.server.cut_of(f.cell([3, BASE, 0])).expect("cut").depth(1);
+        let level = fx
+            .server
+            .cut_of(f.cell([3, BASE, 0]))
+            .expect("cut")
+            .depth(1);
         let mut fx = scene(f, "adventure", false);
         let mut n = 0;
         while cell_is(&mut fx, f, [3, BASE, 0]) != M.air {
@@ -233,7 +267,10 @@ fn without_the_axe_in_hand_adventure_swings_do_nothing() {
     // face-a-only: a mode rule.
     let f = FaceFrame::A;
     let mut fx = scene(f, "adventure", true);
-    fx.send(1, Message::InventoryAction(InventoryAction::Select { slot: 3 }));
+    fx.send(
+        1,
+        Message::InventoryAction(InventoryAction::Select { slot: 3 }),
+    );
     at_trunk(&mut fx, f, 0, false);
     assert!(fx.server.cut_of(f.cell([3, AT, 0])).is_none());
 }
@@ -262,9 +299,11 @@ fn cuts_are_saved_with_the_world() {
     // A client that says Hello is sent the saved cuts.
     fx.send(1, Message::Chop(ChopAction::Hello));
     fx.server.step();
-    assert!(fx.take(1).iter().any(
-        |(m, _)| matches!(m, Message::Cuts(c) if c.cuts.iter().any(|(_, k)| *k == before))
-    ));
+    assert!(
+        fx.take(1).iter().any(
+            |(m, _)| matches!(m, Message::Cuts(c) if c.cuts.iter().any(|(_, k)| *k == before))
+        )
+    );
 }
 
 #[test]
@@ -273,6 +312,13 @@ fn a_client_that_never_says_hello_is_sent_no_cuts() {
     let f = FaceFrame::A;
     let mut fx = scene_with(f, config(f, "creative"), true, false);
     at_trunk(&mut fx, f, 0, false);
-    assert!(fx.server.cut_of(f.cell([3, AT, 0])).is_some(), "cut all the same");
-    assert!(fx.take(1).iter().all(|(m, _)| !matches!(m, Message::Cuts(_))));
+    assert!(
+        fx.server.cut_of(f.cell([3, AT, 0])).is_some(),
+        "cut all the same"
+    );
+    assert!(
+        fx.take(1)
+            .iter()
+            .all(|(m, _)| !matches!(m, Message::Cuts(_)))
+    );
 }
