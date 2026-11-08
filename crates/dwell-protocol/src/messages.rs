@@ -526,6 +526,57 @@ pub enum Message {
     /// S→C reliable, control channel, before `Welcome` (protocol v22): the world's settings
     /// (`crate::world_settings`: its clock, its water speed) as tagged fields.
     WorldSettings(crate::world_settings::SettingsFields),
+    /// C→S reliable, control channel, only to a server whose Welcome has `welcome_flags::INVENTORY`
+    /// (ADR 0066): `Hello` first, then moves and the held slot.
+    InventoryAction(InventoryAction),
+    /// S→C reliable, control channel, only to a client that sent `InventoryAction::Hello`: the
+    /// player's whole inventory, when it changes (ADR 0066).
+    Inventory(InventoryMessage),
+    /// S→C reliable, world channel, only to a client that sent `InventoryAction::Hello`: loose
+    /// items that appeared or moved, and those gone (ADR 0066).
+    ItemDrops(ItemDrops),
+}
+
+/// What a client asks of its inventory (ADR 0066).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InventoryAction {
+    /// This client understands inventories: send it `Inventory` and `ItemDrops` from now on.
+    Hello,
+    /// Move `count` (0: all) from slot `from` to slot `to` (`Inventory::move_items`).
+    Move { from: u8, to: u8, count: u16 },
+    /// The held hotbar slot.
+    Select { slot: u8 },
+}
+
+/// `Inventory`'s flags.
+pub mod inventory_flags {
+    /// The world's mode uses items (no `unlimitedBlocks`): show the inventory, not the creative items.
+    pub const USES_ITEMS: u8 = 1;
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct InventoryMessage {
+    /// `inventory_flags`.
+    pub flags: u8,
+    pub inventory: crate::inventory::Inventory,
+}
+
+/// A loose item as sent: where it is now (world metres).
+#[derive(Clone, Debug, PartialEq)]
+pub struct ItemDropNet {
+    pub id: u32,
+    pub item: String,
+    pub count: u16,
+    pub position: [f32; 3],
+}
+
+/// The most loose items one `ItemDrops` carries (more go in more messages).
+pub const MAX_ITEM_DROPS_PER_MESSAGE: usize = 512;
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ItemDrops {
+    pub items: Vec<ItemDropNet>,
+    pub gone: Vec<u32>,
 }
 
 impl Message {
@@ -567,6 +618,9 @@ impl Message {
             M::EntityDespawn(_) => MessageType::EntityDespawn,
             M::BodyEditRequest(_) => MessageType::BodyEditRequest,
             M::WorldSettings(_) => MessageType::WorldSettings,
+            M::InventoryAction(_) => MessageType::InventoryAction,
+            M::Inventory(_) => MessageType::Inventory,
+            M::ItemDrops(_) => MessageType::ItemDrops,
             M::BodyEdit(_) => MessageType::BodyEdit,
         }
     }
@@ -1137,6 +1191,40 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
         }
         M::EntityDespawn(id) => w.u32(*id),
         M::WorldSettings(f) => f.write(w),
+        M::InventoryAction(a) => match *a {
+            InventoryAction::Hello => w.u8(0),
+            InventoryAction::Move { from, to, count } => {
+                w.u8(1);
+                w.u8(from);
+                w.u8(to);
+                w.u16(count);
+            }
+            InventoryAction::Select { slot } => {
+                w.u8(2);
+                w.u8(slot);
+            }
+        },
+        M::Inventory(m) => {
+            w.u8(m.flags);
+            m.inventory.write(w);
+        }
+        M::ItemDrops(m) => {
+            let n = m.items.len().min(MAX_ITEM_DROPS_PER_MESSAGE);
+            w.u16(n as u16);
+            for d in &m.items[..n] {
+                w.u32(d.id);
+                w.str(crate::bytes::clamp_str(&d.item, crate::inventory::MAX_ITEM_NAME));
+                w.u16(d.count);
+                for v in d.position {
+                    w.f32(v);
+                }
+            }
+            let n = m.gone.len().min(MAX_ITEM_DROPS_PER_MESSAGE);
+            w.u16(n as u16);
+            for &id in &m.gone[..n] {
+                w.u32(id);
+            }
+        }
         M::BodyEditRequest(m) => {
             w.u32(m.body);
             for v in m.cell {
@@ -1455,6 +1543,52 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
         }
         T::EntityDespawn => M::EntityDespawn(r.u32()),
         T::WorldSettings => M::WorldSettings(crate::world_settings::SettingsFields::read(r)?),
+        T::InventoryAction => M::InventoryAction(match r.u8() {
+            0 => InventoryAction::Hello,
+            1 => InventoryAction::Move {
+                from: r.u8(),
+                to: r.u8(),
+                count: r.u16(),
+            },
+            2 => InventoryAction::Select { slot: r.u8() },
+            _ => return None,
+        }),
+        T::Inventory => {
+            let flags = r.u8();
+            let inventory = crate::inventory::Inventory::read(r)?;
+            M::Inventory(InventoryMessage { flags, inventory })
+        }
+        T::ItemDrops => {
+            let n = usize::from(r.u16());
+            r.check(n <= MAX_ITEM_DROPS_PER_MESSAGE);
+            let mut items = Vec::new();
+            for _ in 0..n {
+                if !r.ok() {
+                    break;
+                }
+                let id = r.u32();
+                let item = r.str(crate::inventory::MAX_ITEM_NAME);
+                let count = r.u16();
+                let position = [r.f32(), r.f32(), r.f32()];
+                r.check(position.iter().all(|v| v.is_finite()));
+                items.push(ItemDropNet {
+                    id,
+                    item,
+                    count,
+                    position,
+                });
+            }
+            let n = usize::from(r.u16());
+            r.check(n <= MAX_ITEM_DROPS_PER_MESSAGE);
+            let mut gone = Vec::new();
+            for _ in 0..n {
+                if !r.ok() {
+                    break;
+                }
+                gone.push(r.u32());
+            }
+            M::ItemDrops(ItemDrops { items, gone })
+        }
         T::BodyEditRequest => {
             let body = r.u32();
             let cell = [r.i16(), r.i16(), r.i16()];

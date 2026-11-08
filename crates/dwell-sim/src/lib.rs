@@ -10,6 +10,7 @@ pub mod felling;
 pub mod fixed_step;
 pub mod jobs;
 pub mod lod_propagation;
+pub mod loose_items;
 pub mod server;
 pub mod sky_columns;
 pub mod water;

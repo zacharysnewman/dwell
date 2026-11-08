@@ -118,7 +118,10 @@
     "EntityDespawn": 23,
     "BodyEdit": 24,
     "BodyEditRequest": 83,
-    "WorldSettings": 84
+    "WorldSettings": 84,
+    "InventoryAction": 85,
+    "Inventory": 86,
+    "ItemDrops": 87
   },
   "rejectReasons": {
     "ProtocolVersion": 1,
@@ -193,7 +196,8 @@
     "flight": 1,
     "regionEdits": 2,
     "brushes": 4,
-    "flightPolicy": 8
+    "flightPolicy": 8,
+    "inventory": 16
   },
   "groundKinds": {
     "None": 0,

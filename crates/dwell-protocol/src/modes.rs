@@ -22,7 +22,8 @@ pub enum Ability {
     Flight,
     /// The brush tools (docs/BRUSHES.md) and their ranged reach.
     Brushes,
-    /// Blocks are not used up by placing them (every mode has it until items and drops exist).
+    /// Blocks are not used up by placing them, and breaking drops nothing (ADR 0066); without
+    /// it, placing takes an item from the player's inventory and breaking drops the block's items.
     UnlimitedBlocks,
 }
 
@@ -99,8 +100,8 @@ mod tests {
         assert!(a.experimental);
         assert!(a.allows(Ability::Damage));
         assert!(!a.allows(Ability::Flight) && !a.allows(Ability::Brushes));
-        // Owner, 2026-11-07: unlimited blocks stay in both until items and drops are designed.
-        assert!(c.allows(Ability::UnlimitedBlocks) && a.allows(Ability::UnlimitedBlocks));
+        // ADR 0066: adventure uses items up and drops them; creative has unlimited blocks.
+        assert!(c.allows(Ability::UnlimitedBlocks) && !a.allows(Ability::UnlimitedBlocks));
         assert_eq!(mode_or_default("a_newer_builds_mode").name, "creative");
     }
 

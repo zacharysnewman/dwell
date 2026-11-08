@@ -165,6 +165,9 @@ pub enum MessageType {
     BodyEdit = 24,
     BodyEditRequest = 83,
     WorldSettings = 84,
+    InventoryAction = 85,
+    Inventory = 86,
+    ItemDrops = 87,
 }
 
 impl MessageType {
@@ -208,6 +211,9 @@ impl MessageType {
             24 => Some(Self::BodyEdit),
             83 => Some(Self::BodyEditRequest),
             84 => Some(Self::WorldSettings),
+            85 => Some(Self::InventoryAction),
+            86 => Some(Self::Inventory),
+            87 => Some(Self::ItemDrops),
             _ => None,
         }
     }
@@ -535,7 +541,8 @@ pub mod welcome_flags {
     pub const REGION_EDITS: u8 = 2;
     pub const BRUSHES: u8 = 4;
     pub const FLIGHT_POLICY: u8 = 8;
-    pub const ALL: u8 = 15;
+    pub const INVENTORY: u8 = 16;
+    pub const ALL: u8 = 31;
 }
 
 pub mod held_item {

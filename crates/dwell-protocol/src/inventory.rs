@@ -531,4 +531,41 @@ mod tests {
         assert_eq!(Inventory::from_bytes(&b), Some(inv));
         assert_eq!(Inventory::from_bytes(&b[..b.len() - 1]), None);
     }
+
+    #[test]
+    fn the_new_messages_round_trip_and_reject_bad_ones() {
+        use crate::{InventoryAction, InventoryMessage, ItemDropNet, ItemDrops, Message};
+        let mut inventory = Inventory::default();
+        inventory.add("dwell:rock", 3);
+        let all = [
+            Message::InventoryAction(InventoryAction::Hello),
+            Message::InventoryAction(InventoryAction::Move {
+                from: 1,
+                to: 30,
+                count: 0,
+            }),
+            Message::InventoryAction(InventoryAction::Select { slot: 4 }),
+            Message::Inventory(InventoryMessage {
+                flags: crate::inventory_flags::USES_ITEMS,
+                inventory,
+            }),
+            Message::ItemDrops(ItemDrops {
+                items: vec![ItemDropNet {
+                    id: 7,
+                    item: "dwell:dirt".into(),
+                    count: 2,
+                    position: [1.5, 64.25, -3.0],
+                }],
+                gone: vec![3, 4],
+            }),
+        ];
+        for m in all {
+            let b = m.encode();
+            assert_eq!(Message::decode(&b), Some(m.clone()));
+            assert_eq!(Message::decode(&b[..b.len() - 1]), None, "{m:?}");
+        }
+        let mut bad = Message::InventoryAction(InventoryAction::Hello).encode();
+        *bad.last_mut().unwrap() = 9;
+        assert_eq!(Message::decode(&bad), None);
+    }
 }
