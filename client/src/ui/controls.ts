@@ -147,6 +147,11 @@ export const DEBUG_KEYS: Control[] = [
   { action: 'Terrain map', keys: ['F4'] },
   { action: 'Map zoom', keys: ['−', '='], when: 'while the map is open' },
   { action: 'Copy block info', keys: ['F6'], when: 'the targeted block, as JSON' },
+  {
+    action: 'Pause the look',
+    keys: ['F7'],
+    when: 'clouds, water, plants and flames stand still; the game runs on',
+  },
 ];
 
 export const TOUCH: Control[] = [

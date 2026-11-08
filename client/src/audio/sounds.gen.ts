@@ -514,6 +514,10 @@ export const SOUND_DATA: SoundData = {
     "Copy block info": [
       "action:copy"
     ],
+    "Pause the look": [
+      "action:overlay_on",
+      "action:overlay_off"
+    ],
     "Break or place": [
       "event:break",
       "event:place",

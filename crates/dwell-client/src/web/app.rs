@@ -617,11 +617,13 @@ impl Client {
             game.on_edit_results(&dropped);
         }
         telemetry::span("net", || s.pump_network(now_ms));
-        // The clouds drift by the world's clock once the server's ticks have arrived.
-        let world = s.game.as_ref().and_then(|g| g.clock.seconds(now_ms));
+        // The clouds drift by the world's clock once the server's ticks have arrived, read at the
+        // render time (frozen while the look is paused, render_clock.rs).
+        let look_ms = crate::render_clock::at(now_ms);
+        let world = s.game.as_ref().and_then(|g| g.clock.seconds(look_ms));
         s.renderer
             .borrow_mut()
-            .set_cloud_time(world.unwrap_or(now_ms / 1000.0));
+            .set_cloud_time(world.unwrap_or(look_ms / 1000.0));
         let drew = s.draw();
         let end = telemetry::now_ms();
         telemetry::add("frame.cpu", end - t0);
@@ -1856,6 +1858,17 @@ impl Client {
         if let Some(g) = &mut s.game {
             g.day_override = day;
         }
+    }
+    /// Pauses or resumes the look (a dev switch: `?pause=1`, `__dwell.pause`, Settings → Debug):
+    /// every drawn animation stands still at one instant (render_clock.rs).
+    #[wasm_bindgen(js_name = setLookPaused)]
+    pub fn set_look_paused(&self, on: bool) {
+        crate::render_clock::set_paused(on);
+    }
+    /// Whether the look is paused.
+    #[wasm_bindgen(js_name = lookPaused)]
+    pub fn look_paused(&self) -> bool {
+        crate::render_clock::paused()
     }
     /// Sets the moon's phase this client shows (0 new, 0.5 full), or the world's with `undefined`.
     #[wasm_bindgen(js_name = setMoonPhase)]

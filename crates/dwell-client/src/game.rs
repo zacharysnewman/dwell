@@ -2961,7 +2961,13 @@ impl<S: Scene> Game<S> {
         poses.extend(self.glides.poses(now_ms));
         poses.extend(self.loose.poses(now_ms));
         self.scene.borrow_mut().show_pieces(poses);
-        self.update_day(now_ms);
+        // The look's time (render_clock.rs): the sky and the flecks stand still while it is paused.
+        let look_dt = if crate::render_clock::paused() {
+            0.0
+        } else {
+            dt
+        };
+        self.update_day(crate::render_clock::at(now_ms));
         self.ambient_sounds(&views, dt);
         // The placed light sources near the eye (docs/LIGHTS.md §4): Torch shadows draws the
         // nearest as shadowed lights.
@@ -2973,8 +2979,12 @@ impl<S: Scene> Game<S> {
         self.scene.borrow_mut().set_placed_lights(placed);
         self.update_flow(camera_eye);
         // The flecks on moving water (the Drifting flecks setting).
-        self.flecks
-            .update(self.streamer.store(), camera_eye, dt, self.flow_particles);
+        self.flecks.update(
+            self.streamer.store(),
+            camera_eye,
+            look_dt,
+            self.flow_particles,
+        );
         self.scene.borrow_mut().set_flecks(self.flecks.list.clone());
         // The waterfalls near the eye (docs/WATER_SURFACE_GRID.md §2e), found again now and then.
         self.falls_age += dt;
