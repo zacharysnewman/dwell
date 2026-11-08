@@ -24,6 +24,8 @@ const TIER = {
   setting: 'bool',
   cpu: 'bool',
   readsScene: 'bool',
+  opacity: [0, 1],
+  surfaceCaustics: 'bool',
   rippleLayers: ['count', 1, MAX_LAYERS],
   flowStreaks: 'bool',
   bankBand: 'bool',
@@ -35,6 +37,11 @@ const BAND = {
   blurPx: [0, 32],
   darken: [0, 1],
   strength: [0, 1],
+};
+
+const CAUSTICS = {
+  depthM: [0, 10],
+  gain: [0, 4],
 };
 
 const snake = (s) => s.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
@@ -72,7 +79,7 @@ function checkValue(where, v, spec) {
 
 /** Checks the tiers against the schema and each other; returns them. Throws naming the entry. */
 export function validateWaterTiers(data) {
-  checkKeys('(root)', data, ['tiers', 'aliases', 'band', 'causticEveryFrames']);
+  checkKeys('(root)', data, ['tiers', 'aliases', 'band', 'caustics', 'causticEveryFrames']);
   if (!Array.isArray(data.tiers) || data.tiers.length === 0) fail('tiers must be a non-empty list');
   if (data.tiers.length > MAX_TIERS) fail(`tiers: at most ${MAX_TIERS}`);
   const ids = new Set();
@@ -83,6 +90,7 @@ export function validateWaterTiers(data) {
     if (ids.has(t.id)) fail(`${where}.id: "${t.id}" is listed twice`);
     ids.add(t.id);
     if (t.cpu && t.readsScene) fail(`${where} (${t.id}): the CPU adapter's tier may not read the scene`);
+    if (t.surfaceCaustics && t.readsScene) fail(`${where} (${t.id}).surfaceCaustics is for a tier that reads no scene (it draws the floor's own)`);
     if (t.bankBand && !t.readsScene) fail(`${where} (${t.id}).bankBand needs readsScene (it samples the scene copy)`);
   });
   const cpu = data.tiers.filter((t) => t.cpu);
@@ -98,6 +106,8 @@ export function validateWaterTiers(data) {
   }
   checkKeys('band', data.band, Object.keys(BAND));
   for (const [k, spec] of Object.entries(BAND)) checkValue(`band.${k}`, data.band[k], spec);
+  checkKeys('caustics', data.caustics, Object.keys(CAUSTICS));
+  for (const [k, spec] of Object.entries(CAUSTICS)) checkValue(`caustics.${k}`, data.caustics[k], spec);
   checkValue('causticEveryFrames', data.causticEveryFrames, ['count', 1, 8]);
   return data;
 }
@@ -128,6 +138,11 @@ export function waterTiersRust(data) {
   rs.push('/// The bank band (a stylized reflection of the bank, no march).');
   rs.push('pub const BANK_BAND: BankBand = BankBand {');
   for (const [k, spec] of Object.entries(BAND)) rs.push(`    ${snake(k)}: ${value(data.band[k], spec)},`);
+  rs.push('};');
+  rs.push('');
+  rs.push("/// The blended pass's caustics (`surface_caustics`).");
+  rs.push('pub const SURFACE_CAUSTICS: SurfaceCaustics = SurfaceCaustics {');
+  for (const [k, spec] of Object.entries(CAUSTICS)) rs.push(`    ${snake(k)}: ${value(data.caustics[k], spec)},`);
   rs.push('};');
   rs.push('');
   rs.push('/// The caustic tile is redrawn every this many frames.');

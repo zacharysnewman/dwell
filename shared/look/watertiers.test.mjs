@@ -23,7 +23,9 @@ test("the owner's tiers (2026-11-07): an opaque CPU tier, a see-through Low, Med
   );
   const [opaque, low, medium] = d.tiers;
   assert.ok(opaque.cpu && !opaque.readsScene && !opaque.setting);
-  assert.ok(low.readsScene && low.bankBand && !low.flowStreaks && low.rippleLayers === 1);
+  // Low sees through without the scene copy (no pass split; owner, 2026-11-07).
+  assert.ok(!low.readsScene && low.opacity < 1 && low.surfaceCaustics);
+  assert.ok(!low.flowStreaks && low.rippleLayers === 1 && !low.cpu && low.setting);
   assert.ok(medium.readsScene && medium.flowStreaks && medium.rippleLayers === 3);
   assert.equal(d.aliases.high, 'medium');
 });
@@ -43,7 +45,10 @@ test('bad entries fail with their path named', () => {
     [(d) => (d.tiers[1].id = 'Low'), /tiers\[1\]\.id must be a lower-case name/],
     [(d) => d.tiers.push({ ...d.tiers[1] }), /"low" is listed twice/],
     [(d) => (d.tiers[0].cpu = false), /exactly one tier must be the CPU adapter's/],
-    [(d) => (d.tiers[1].cpu = true), /the CPU adapter's tier may not read the scene/],
+    [(d) => ((d.tiers[0].cpu = false), (d.tiers[2].cpu = true)), /the CPU adapter's tier may not read the scene/],
+    [(d) => (d.tiers[2].surfaceCaustics = true), /surfaceCaustics is for a tier that reads no scene/],
+    [(d) => (d.tiers[1].opacity = 1.5), /tiers\[1\]\.opacity must be a number in \[0, 1\]/],
+    [(d) => (d.caustics.gain = -1), /caustics\.gain must be a number in \[0, 4\]/],
     [(d) => (d.tiers[0].bankBand = true), /bankBand needs readsScene/],
     [(d) => (d.tiers[2].speed = 1), /unknown entry tiers\[2\]\.speed/],
     [(d) => delete d.tiers[2].flowStreaks, /missing entry tiers\[2\]\.flowStreaks/],

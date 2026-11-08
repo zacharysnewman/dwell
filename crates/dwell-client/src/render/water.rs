@@ -118,6 +118,11 @@ impl WaterQuality {
     pub fn reads_scene(self) -> bool {
         self.tier().reads_scene
     }
+    /// Whether the caustic tile is drawn for it: the scene-reading tiers' floors, or the blended
+    /// pass's lines on the water (`surface_caustics`).
+    pub fn draws_caustics(self) -> bool {
+        self.tier().reads_scene || self.tier().surface_caustics
+    }
     /// Layers of normal detail drawn.
     pub fn layers(self) -> usize {
         (self.tier().ripple_layers as usize).clamp(1, LAYERS.len())
@@ -642,6 +647,11 @@ pub fn wgsl() -> String {
         b.darken as f32,
         b.strength as f32
     ));
+    let c = dwell_look::water_tiers::SURFACE_CAUSTICS;
+    s.push_str(&format!(
+        "const SURFACE_CAUSTICS_M: f32 = {:?};\nconst SURFACE_CAUSTICS_GAIN: f32 = {:?};\n",
+        c.depth_m as f32, c.gain as f32
+    ));
     for (name, bit) in DEBUG_SWITCHES {
         s.push_str(&format!(
             "const DBG_{}: u32 = {bit}u;\n",
@@ -964,9 +974,10 @@ mod tests {
         assert_eq!(WaterQuality::named("high"), Some(medium), "High folded into Medium");
         assert_eq!(WaterQuality::default(), medium, "the desktop default");
         assert_eq!((low.layers(), medium.layers()), (1, 3));
-        // The owner (2026-11-07): Low sees through (the copy), only the CPU's tier is opaque.
-        assert!(low.reads_scene() && medium.reads_scene());
-        assert!(!WaterQuality::cpu().reads_scene());
+        // The owner (2026-11-07): Low sees through without the scene copy (no pass split), with
+        // the caustic tile's lines; Medium reads the scene; the CPU's tier is opaque.
+        assert!(!low.reads_scene() && low.draws_caustics() && medium.reads_scene());
+        assert!(!WaterQuality::cpu().reads_scene() && !WaterQuality::cpu().draws_caustics());
         assert_eq!(low.bits(), dwell_look::water_tiers::tier_bits(low.tier()) as f32);
     }
 

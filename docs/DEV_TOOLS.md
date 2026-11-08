@@ -854,7 +854,7 @@ the exposure and the water's flow switches are outside the presets. `?preset=<id
 
 | Preset | Render scale | Water | Sun & moon shadows | Torch shadows | Light shafts | Clouds | Full detail | Distant detail | Distant memory |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Ultra | 100 % | High | High | High | High | High | 352 m | 2 px | 512 MB |
+| Ultra | 100 % | Medium (High until 0.50.29) | High | High | High | High | 352 m | 2 px | 512 MB |
 | High (desktop default) | 50 % Stretch | Medium | High | Low | High | High | 256 m | 4 px | 256 MB |
 | Medium | 50 % Stretch | Medium | Low | Off | Low | High | 192 m | 6 px | 192 MB |
 | Mobile (phone default) | 50 % Stretch | Low | Low | Off | Low | Low | 128 m | 8 px | 96 MB |
@@ -863,9 +863,10 @@ the exposure and the water's flow switches are outside the presets. `?preset=<id
 **The order of the cuts**, by GPU time saved per beauty lost, from the [cost profile](#cost-profile-m1-air),
 [render scale](#render-scale-and-upscaling) and [water cost](#water-cost-m1-air) measurements: the render
 scale first (~74 % of the frame scales with the pixels; 50 % keeps the look at a distance and is the owner's
-default), then water High → Medium (High is ~0.1 ms over Medium at 50 %, little to see), torch shadows, the
-sun's shadows to Low and the shafts to Low (Medium), then the water to Low (no refraction or caustics: the
-biggest visible step, so it waits for Mobile), the clouds, and the draw distance last. Sharpen is in no
+default), then torch shadows (water High, ~0.1 ms over Medium at 50 %, was folded into Medium in 0.50.29), the
+sun's shadows to Low and the shafts to Low (Medium), then the water to Low (since 0.50.29 the see-through Low:
+refraction, absorption and caustics kept, no land march, one ripple layer, no streaks, the bank band; it waits
+for Mobile), the clouds, and the draw distance last. Sharpen is in no
 preset: at 50 % it costs ~2 ms more than Stretch (the render-scale table), more than the next cut saves; a
 player can still pick it. On a phone the detail sliders clamp to its ranges (Ultra's 512 MB to 192), and the
 preset still reads as Ultra there.

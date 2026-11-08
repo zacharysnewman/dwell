@@ -61,7 +61,7 @@ test("a phone draws a tier under the phone's overrides, the rest the tier's", ()
   assert.deepEqual(phoneTier(d, 'low'), d.tiers.low);
   assert.deepEqual(phoneTier(d, 'opaque'), d.tiers.opaque);
   // A fixture override by data alone reaches the Rust.
-  d.phone.low = { cloudShadow: false, ssrSteps: 9, maxDistanceM: 100 };
+  d.phone.medium = { cloudShadow: false, ssrSteps: 9 };
   const rs = reflectionsRust(validateReflections(d));
   assert.match(rs.split('phone_tiers')[1], /ssr_steps: 9,/);
 });

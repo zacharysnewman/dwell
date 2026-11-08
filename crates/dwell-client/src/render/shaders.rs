@@ -464,6 +464,14 @@ fn water_tier_band() -> bool {
 fn water_tier_layers() -> i32 {
     return clamp(i32((water_tier_bits() >> 3u) & 3u), 1, WAVE_LAYERS);
 }
+// Bit 5: the caustic tile's lines on the water in the blended pass; bits 6-9: the share of the
+// fluid's opacity drawn there, in fifteenths.
+fn water_tier_caustics() -> bool {
+    return (water_tier_bits() & 32u) != 0u;
+}
+fn water_tier_opacity() -> f32 {
+    return f32((water_tier_bits() >> 6u) & 15u) / 15.0;
+}
 
 // The fluid the eye is under or just above (`frame.water`).
 fn eye_fluid() -> Fluid {
@@ -2583,10 +2591,19 @@ fn water_fs(i: FluidOut, @builtin(front_facing) front: bool) -> SceneOut {
         return o;
     }
     let fres = schlick(s.ndv, f.extra.x);
-    let t = 1.0 - f.absorption.a;
-    let alpha = 1.0 - (1.0 - fres) * t;
+    // The tier's share of the fluid's opacity: less lets the floor behind show through (Low: see-
+    // through with no scene copy, so no pass split; owner, 2026-11-07).
+    let t = 1.0 - f.absorption.a * water_tier_opacity();
+    let alpha = max(1.0 - (1.0 - fres) * t, 1e-3);
     let refl = vec4f(reflected_env(reflected_dir(s), i.rel, deck_fw, reflect_share(fres)) * s.sky, 0.0);
-    o.color = vec4f((surface_light(i, s, f, fres, footprint, refl) + (1.0 - fres) * (1.0 - t) * s.body) / alpha, alpha);
+    var lit = surface_light(i, s, f, fres, footprint, refl) + (1.0 - fres) * (1.0 - t) * s.body;
+    // The caustics in the blended pass (watertiers.json `caustics`): the tile's lines as if on a
+    // floor SURFACE_CAUSTICS_M down, added as light seen through the surface (no depth is read).
+    if (water_tier_caustics() && !water_off(DBG_CAUSTICS)) {
+        let m = caustic_light(i.wrapped, SURFACE_CAUSTICS_M, s.frag_y, footprint, 1.0, f, i.fluid);
+        lit += max(m - 1.0, 0.0) * SURFACE_CAUSTICS_GAIN * (1.0 - fres) * s.shadow * mix(s.body, vec3f(1.0), 0.5);
+    }
+    o.color = vec4f(lit / alpha, alpha);
     // Foam streaks along the current (docs/WATER_SURFACE_GRID.md §2c), opaque where they are.
     let streaks = flow_streaks(i, f, footprint);
     if (streaks > 0.0) {

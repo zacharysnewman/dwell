@@ -10,6 +10,8 @@ pub const WATER_TIERS: &[WaterTier] = &[
         setting: false,
         cpu: true,
         reads_scene: false,
+        opacity: 1.0,
+        surface_caustics: false,
         ripple_layers: 1,
         flow_streaks: false,
         bank_band: false,
@@ -19,10 +21,12 @@ pub const WATER_TIERS: &[WaterTier] = &[
         label: "Low",
         setting: true,
         cpu: false,
-        reads_scene: true,
+        reads_scene: false,
+        opacity: 0.55,
+        surface_caustics: true,
         ripple_layers: 1,
         flow_streaks: false,
-        bank_band: true,
+        bank_band: false,
     },
     WaterTier {
         id: "medium",
@@ -30,6 +34,8 @@ pub const WATER_TIERS: &[WaterTier] = &[
         setting: true,
         cpu: false,
         reads_scene: true,
+        opacity: 1.0,
+        surface_caustics: false,
         ripple_layers: 3,
         flow_streaks: true,
         bank_band: false,
@@ -49,6 +55,12 @@ pub const BANK_BAND: BankBand = BankBand {
     blur_px: 4.0,
     darken: 0.25,
     strength: 0.85,
+};
+
+/// The blended pass's caustics (`surface_caustics`).
+pub const SURFACE_CAUSTICS: SurfaceCaustics = SurfaceCaustics {
+    depth_m: 0.6,
+    gain: 0.5,
 };
 
 /// The caustic tile is redrawn every this many frames.

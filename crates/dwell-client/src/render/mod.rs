@@ -3533,7 +3533,7 @@ impl Renderer {
         // The water's tiles first: the noise once, and the caustics where the water reads the
         // scene and some is drawn or the eye is under it, every few frames (`frame_caustics`).
         let caustics = self.water_tiles.frame_caustics(
-            self.water().reads_scene()
+            self.water().draws_caustics()
                 && (self.eye_fluid.is_some() || draws.iter().flatten().any(|d| d.water)),
         );
         if self.water_tiles.pending(caustics) {
@@ -5541,7 +5541,9 @@ mod tests {
             assert!(!water_for(wgpu::DeviceType::Cpu, q).reads_scene());
             assert_eq!(water_for(wgpu::DeviceType::IntegratedGpu, q), q);
         }
-        assert!(water_for(wgpu::DeviceType::IntegratedGpu, WaterQuality::named("low").unwrap()).reads_scene());
+        // Low draws no scene copy on a GPU either (no pass split), but the caustic tile.
+        let low = water_for(wgpu::DeviceType::IntegratedGpu, WaterQuality::named("low").unwrap());
+        assert!(!low.reads_scene() && low.draws_caustics());
     }
 
     #[test]
