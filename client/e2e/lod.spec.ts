@@ -52,8 +52,16 @@ test('local mode: LOD around the player, and the whole disc after flying up', as
   await call(page, 'look(0, -89)');
   await call(page, "press('Space', true)");
   await call(page, "press('ShiftLeft', true)");
+  // Asked again until it holds: a toggle sent while the page draws nothing can be lost.
   await expect
-    .poll(async () => ((await call(page, 'state()?.flying')) as boolean | undefined) ?? false)
+    .poll(
+      async () => {
+        const flying = ((await call(page, 'state()?.flying')) as boolean | undefined) ?? false;
+        if (!flying) await call(page, 'fly(true)');
+        return flying;
+      },
+      { timeout: 60_000 },
+    )
     .toBe(true);
   // Set again until it holds: on CI's slow frames the slider can show before its level is the
   // game's, and the next frame puts it back.
