@@ -111,7 +111,7 @@ fields, ranges and names fail with the entry named):
 | `time {t, moon?}` | shows the time of day `t` (0–1, 0 midnight) and optionally the moon's phase on this client (`?time=`, `?moon=`; DAY_NIGHT.md) |
 | `timelapse {name, frames, from?, to?, waitS?}` | `frames` screenshots `<name>-00.png`… from time of day `from` (0) toward `to` (1), wrapping past midnight, waiting `waitS` (0.3 s) after each |
 | `lod {on}` | draws the distant terrain (LOD) or not, live (`__dwell.setLod`; the sections still stream, so it comes back at once): what the full-detail chunks alone hold. `?lod=off` (or `?lod=0`) runs with no LOD at all |
-| `view {clouds?, speedEffects?, distanceM?, pixelError?, smoke?, flowParticles?}` | sets other settings mid-run, not stored (`__dwell.setView`): the clouds (`off`, `low`, `high`), the speed effects (motion blur and streaks), the full-detail distance (m) and the LOD's pixel error, the blasts' smoke, the water's flecks; each one given replaces the menu's value. With `water` and `shadows`, one page can record every feature on and off in turn ([Cost profile](#cost-profile-m1-air)) |
+| `view {clouds?, speedEffects?, distanceM?, pixelError?, smoke?, flowParticles?, flowRipples?, flowFoam?, waterfalls?}` | sets other settings mid-run, not stored (`__dwell.setView`): the clouds (`off`, `low`, `high`), the speed effects (motion blur and streaks), the full-detail distance (m) and the LOD's pixel error, the blasts' smoke, the water's flecks, flow ripples, flow foam and waterfalls; each one given replaces the menu's value. With `water` and `shadows`, one page can record every feature on and off in turn ([Cost profile](#cost-profile-m1-air)) |
 | `water {quality?, debug?}` | sets the water quality (`low`, `medium`, `high`) and/or its cost-isolation switches (`?waterdbg=` names, `""` for none) mid-run, through `__dwell.setWater` |
 | `burst {name, frames, clock?, maxFlicker?}` | a still camera's burst: `frames` screenshots `<name>-00.png`… back to back (the HUD hidden) and their **flicker** (`flickerOf`: the share of pixels whose brightness moves more than 3 of 255 from one frame to the next, and the mean move), printed and saved in `report.json`'s `bursts`; over `maxFlicker` (a share) the run fails. With `clock` the time of day runs on from it at the world clock's rate, set every animation frame (the bench's is otherwise held), so the light moves as in play. `shadows-still` reads the shadows' flicker against Off's (DAY_NIGHT.md §10). With `drift {position, yaw, pitch}` (after a `camera` step) the camera moves on by that much each frame (metres and degrees, at most 1 m and 1°): z-fighting shows only while the view moves (it stops with the camera), and a drift of millimetres and thousandths of a degree moves the view under a pixel by a fraction of a pixel, so surfaces swap only where they fight in depth. Such a burst is read by its **hue flips** (`hueFlipsOf`, also in every burst's result: the share of pixels, coloured in both frames, whose hue moves over 40° from one frame to the next — grass becoming dirt); over `maxHueFlips` the run fails. `lod-zfight` holds the LOD's z-fighting under a bar (ARCHITECTURE.md §6.6, "Known bug class") |
 | `repeat {times, steps}` | runs `steps` `times` times (e.g. `edit-burst`'s 300 edits); no `mark`, `record`, `shot`, `timelapse` or trace steps inside |
@@ -1219,3 +1219,50 @@ shading off, to attribute `gpu.*.water` and `gpu.frame` to them; a `--compare` c
 `params` (`{ "name": "no-caustics", "params": { "waterdbg": "caustics" } }`), and a
 scenario's `water` step switches it mid-run. On a GPU shared with other processes, compare a pass's `min` (in
 every summary) rather than its p50. WATER_RENDERING.md §8 ("Cost") has the method and the numbers.
+
+## Water cost (M1 Air)
+
+The owner's "cheaper water … break down what's most expensive" (2026-11-07). Main at 0.50.17, Chrome on
+the GPU, `--unthrottled`, a 1280 × 800 window at pixel ratio 2 (2560 × 1600), the owner's
+`?renderscale=0.5&upscaler=stretch` (1280 × 800 drawn) unless named, seed 0, noon, water **High**, load
+2–4.5, on AC. One page per view; each piece switched off in turn mid-run (`water` with `debug`, i.e.
+`?waterdbg=` names; `view` with `flowParticles`, `flowRipples`, `flowFoam`, `waterfalls`), 1.5 s to settle,
+3 s recorded, `gpu.frame` mean. The full analysis, the options and the plan are
+[`proposals/WATER_GPU_SURFACE.md`](./proposals/WATER_GPU_SURFACE.md).
+
+Ranked by the dam close-up (6 m over the river, 40° down; water ~⅓ of the screen), ms saved with the piece
+off:
+
+| # | Piece | Dam, 50 % | Dam, full 2560 × 1600 | Valley (river ~5 % of the screen) |
+|---|---|---|---|---|
+| – | The whole frame at High | 9.07 | 20.71 | 10.42 |
+| 1 | All water shading (`flat`: a constant colour, copy kept) | 2.02 | 6.62 | 0.67 |
+| 2 | Water Low (no copy, no tiles, opaque) | 1.73 | 5.78 | 1.33 |
+| 3 | Land reflections (`ssr`) | 0.45 | 1.24 | 0.24 |
+| 4 | The fixed part: scene copy + tiles (Low − `flat`, valley) | ~0.6 | | 0.66 |
+| 5 | Flow foam streaks | 0.27 | 0.73 | 0.27 |
+| 6 | Ripple layers 2–3 | 0.13 | 0.79 | 0.12 |
+| 7 | Reflected clouds | 0.09 | 0.49 | 0 |
+| 8 | High over Medium | 0.11 | 0.78 | 0.04 |
+| 9 | Caustics | 0.04 | 0.17 | 0 |
+| – | Refraction, absorption, foam, sparkle, glint, sky, `under`, flecks, waterfalls | noise (±0.2) | noise (±0.3) | noise |
+
+**The waterline's deep view** (the 0.50.17 PR's unexplained +0.7–1.6 ms), at [5051.5, 31.9, 22980.5]: the
+deep record (1.5 m under, 8° down) read 5.28, 5.27, 5.23, 5.25 ms across two passes, the surface
+6.84 and 6.83. The deep view is cheaper than the surface; the earlier rise was drift on a warm laptop (the
+deep record was last in each run). Under water the whole water costs 0.5–0.6 ms (Low, `flat`).
+
+**Moving water on the CPU** (a trench cut across the river at the dam, the water pouring in for 12 s):
+923 `chunk_mesh` jobs (77 a second, 12.6 ms each on the workers), main thread `jobs.apply` + `mesh_dirty` +
+`upload.chunk` 1.3 ms a frame, `frame.cpu` p95 7.6 ms (2.15 / 3.3 still); still 47 re-meshes a second 3 s
+later. Each eighth's change re-meshes the whole terrain chunk. Natively (`dwell-mesh`, a 32³ chunk, a lake
+8 cells deep): calm water 2 triangles, a wave across the columns' eighths 4,880 (3,328 of them side faces
+between columns), choppy 6,144; the chunk's water mesh 743–936 KB as built.
+
+Not measured: a tall waterfall (none in view; the flood's trench filled level), network bytes of water edits
+(no per-message counter), a real phone (the proposal's §1.4 estimates it).
+
+Scratch (not checked in): scenarios and configurations in the session scratchpad `wc2/` (`gen.py` writes
+`scenarios.json`: `wc-dam`, `wc-wide`, `wc-wl`, `wc-flood`, `wc-descent`; `dam.json`, `damfull.json`,
+`wl.json`; `an.py` summarises), the selected screenshots in `water-cost-shots/` (each view with each piece
+off, the flood, the waterline, the descent grid).
