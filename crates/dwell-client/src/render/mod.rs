@@ -96,11 +96,11 @@ pub fn clouds_for(device_type: wgpu::DeviceType, quality: CloudQuality) -> Cloud
     }
 }
 
-/// The water a frame draws with the Water setting `quality`: Low on a CPU adapter (one layer of
-/// ripples).
+/// The water a frame draws with the Water setting `quality`: the data's CPU tier on a CPU adapter
+/// (opaque: no scene copy, one layer of ripples; shared/look/watertiers.json `cpu`).
 pub fn water_for(device_type: wgpu::DeviceType, quality: WaterQuality) -> WaterQuality {
     if is_cpu(device_type) {
-        WaterQuality::Low
+        WaterQuality::cpu()
     } else {
         quality
     }
@@ -190,7 +190,7 @@ fn waterline_state(e: EyeFluid, eye_y: f64, face: FaceFrame) -> f32 {
 
 /// The frame uniform's `water` vec4 (shaders.rs `Frame`): x [`waterline_state`] (0: the eye
 /// neither under a fluid's drawn surface nor just above it), y its fluid id, z the surface's world
-/// y (zeros when there is none); w the water quality.
+/// y (zeros when there is none); w the water tier's switches (`WaterQuality::bits`).
 fn water_uniform(
     eye_fluid: Option<EyeFluid>,
     eye_y: f64,
@@ -202,9 +202,9 @@ fn water_uniform(
             waterline_state(e, eye_y, face),
             f32::from(e.fluid),
             e.surface_y as f32,
-            quality.level(),
+            quality.bits(),
         ],
-        None => [0.0, 0.0, 0.0, quality.level()],
+        None => [0.0, 0.0, 0.0, quality.bits()],
     }
 }
 /// Draw uniforms live at this stride (WebGPU's minimum uniform offset alignment).
@@ -2628,7 +2628,7 @@ impl Renderer {
         // The water's reflections for its quality, under the Clouds setting (WATER_RENDERING.md §8).
         for v in reflection_uniforms(
             &REFLECTIONS,
-            self.water().level() as usize,
+            self.water().index(),
             self.clouds.octaves(&CLOUDS),
             self.clouds.self_shadow(),
             self.phone,
@@ -3530,10 +3530,12 @@ impl Renderer {
         ];
         let collect_ms = crate::telemetry::now_ms() - collect_start;
         let mut encoder = self.device.create_command_encoder(&Default::default());
-        // The water's tiles first: the noise once, and this frame's caustics where the water reads
-        // the scene and some is drawn or the eye is under it.
-        let caustics = self.water().reads_scene()
-            && (self.eye_fluid.is_some() || draws.iter().flatten().any(|d| d.water));
+        // The water's tiles first: the noise once, and the caustics where the water reads the
+        // scene and some is drawn or the eye is under it, every few frames (`frame_caustics`).
+        let caustics = self.water_tiles.frame_caustics(
+            self.water().reads_scene()
+                && (self.eye_fluid.is_some() || draws.iter().flatten().any(|d| d.water)),
+        );
         if self.water_tiles.pending(caustics) {
             let query = self
                 .timer
@@ -5333,7 +5335,9 @@ mod tests {
     #[test]
     fn the_water_uniform_carries_the_eye_fluid_and_the_water_quality() {
         let a = FaceFrame::A;
-        assert_eq!(water_uniform(None, 0.0, a, WaterQuality::Low), [0.0; 4]);
+        let cpu = WaterQuality::cpu();
+        assert_eq!(water_uniform(None, 0.0, a, cpu), [0.0, 0.0, 0.0, cpu.bits()]);
+        let medium = WaterQuality::named("medium").unwrap();
         let e = EyeFluid {
             fluid: 0,
             surface_y: -12.125,
@@ -5341,10 +5345,11 @@ mod tests {
         };
         // 2 m under: the whole view under the surface, the cheap path.
         assert_eq!(
-            water_uniform(Some(e), -14.125, a, WaterQuality::High),
-            [1.0, 0.0, -12.125, 2.0]
+            water_uniform(Some(e), -14.125, a, medium),
+            [1.0, 0.0, -12.125, medium.bits()]
         );
-        assert_eq!(water_uniform(None, 0.0, a, WaterQuality::Medium)[3], 1.0);
+        // w: the tier's switches (bit 0 reads the scene).
+        assert_eq!(water_uniform(None, 0.0, a, medium)[3] as u32 & 1, 1);
     }
 
     dwell_world::both_faces!(
@@ -5357,7 +5362,7 @@ mod tests {
                 under,
             };
             let x = |under: bool, eye: f64| {
-                water_uniform(Some(e(under)), f.y(eye), f, WaterQuality::Low)[0]
+                water_uniform(Some(e(under)), f.y(eye), f, WaterQuality::cpu())[0]
             };
             assert_eq!(x(true, 8.875), 1.0, "deep: all under");
             assert_eq!(x(true, 10.825), 2.0, "just under: split per pixel");
@@ -5474,7 +5479,7 @@ mod tests {
         // CI's SwiftShader: with clouds off the two-client and friend-world tests still timed out
         // on slower runners; every per-pixel cost there is the main thread's time.
         let mut r = noop_renderer();
-        r.set_water_quality(WaterQuality::High);
+        r.set_water_quality(WaterQuality::default());
         r.set_wind(WindView {
             intensity: 1.0,
             flight: 1.0,
@@ -5482,16 +5487,25 @@ mod tests {
             time: 1.0,
         });
         let basis = aim(0.0, 0.0, FaceFrame::A, 0.0);
-        // After the water's vec4 (w: the quality) come the wind's six (the last's x: the blur),
+        // After the water's vec4 (w: the tier's switches) come the wind's six (the last's x: the blur),
         // the wrapped eye, the reflections' two and the day sky.
         let water_w = FRAME_FLOATS - DAY_SKY_FLOATS - 8 - 4 - 6 * 4 - 1;
         let blur = FRAME_FLOATS - DAY_SKY_FLOATS - 8 - 4 - 4;
         let u = r.frame_uniforms(&basis, 1.0, 100.0);
-        assert_eq!(u[water_w], 2.0, "the setting's water on a GPU");
+        assert_eq!(
+            u[water_w],
+            WaterQuality::default().bits(),
+            "the setting's water on a GPU"
+        );
         assert!(u[blur] > 0.0, "the edge blur on a GPU");
         r.set_adapter(wgpu::DeviceType::Cpu);
         let u = r.frame_uniforms(&basis, 1.0, 100.0);
-        assert_eq!(u[water_w], 0.0, "Low water on a CPU adapter");
+        assert_eq!(
+            u[water_w],
+            WaterQuality::cpu().bits(),
+            "the opaque tier on a CPU adapter"
+        );
+        assert_eq!(u[water_w] as u32 & 1, 0, "no scene copy read there");
         assert_eq!(u[blur], 0.0, "no edge blur on a CPU adapter");
     }
 
@@ -5519,14 +5533,15 @@ mod tests {
             pixel_ratio_for(wgpu::DeviceType::Cpu, 2.0),
             2.0 * CPU_RESOLUTION
         );
-        assert_eq!(
-            water_for(wgpu::DeviceType::Cpu, WaterQuality::High),
-            WaterQuality::Low
-        );
-        assert_eq!(
-            water_for(wgpu::DeviceType::IntegratedGpu, WaterQuality::Medium),
-            WaterQuality::Medium
-        );
+        // The opaque tier is the CPU adapter's only (owner, 2026-11-07): every chosen tier,
+        // Low included, draws it there; a GPU draws what was chosen.
+        for name in ["low", "medium", "high"] {
+            let q = WaterQuality::named(name).unwrap();
+            assert_eq!(water_for(wgpu::DeviceType::Cpu, q), WaterQuality::cpu());
+            assert!(!water_for(wgpu::DeviceType::Cpu, q).reads_scene());
+            assert_eq!(water_for(wgpu::DeviceType::IntegratedGpu, q), q);
+        }
+        assert!(water_for(wgpu::DeviceType::IntegratedGpu, WaterQuality::named("low").unwrap()).reads_scene());
     }
 
     #[test]
@@ -6217,15 +6232,17 @@ mod tests {
                 [FRAME_FLOATS - DAY_SKY_FLOATS - 8..FRAME_FLOATS - DAY_SKY_FLOATS]
                 .to_vec()
         };
-        r.set_water_quality(WaterQuality::Low);
-        let low = refl(&r);
-        assert_eq!((low[0], low[4]), (0.0, 0.0), "Low: the sky alone");
-        r.set_water_quality(WaterQuality::Medium);
+        r.set_water_quality(WaterQuality::cpu());
+        let opaque = refl(&r);
+        assert_eq!((opaque[0], opaque[4]), (0.0, 0.0), "the CPU's tier: the sky alone");
+        let low = WaterQuality::named("low").unwrap();
+        r.set_water_quality(low);
+        assert_eq!(refl(&r)[0], 0.0, "Low marches no land (the bank band instead)");
+        let medium = WaterQuality::named("medium").unwrap();
+        r.set_water_quality(medium);
         let m = refl(&r);
-        assert_eq!(m[0], REFLECTIONS.tier(1).ssr_steps as f32);
-        assert!(m[4] > 0.0, "Medium reflects clouds");
-        r.set_water_quality(WaterQuality::High);
-        assert_eq!(refl(&r)[0], REFLECTIONS.tier(2).ssr_steps as f32);
+        assert_eq!(m[0], REFLECTIONS.tier(medium.index()).ssr_steps as f32);
+        assert!(m[0] > 0.0 && m[4] > 0.0, "Medium reflects land and clouds");
         r.set_clouds(CloudQuality::Off);
         assert_eq!(refl(&r)[4], 0.0, "no clouds in the sky, none reflected");
     }

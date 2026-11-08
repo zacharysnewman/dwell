@@ -74,7 +74,7 @@ struct Frame {
     clouds_o: vec4f,
     cloud_cfg_o: vec4f,
     // The eye under a fluid's drawn surface: x 1 (else 0), y fluid id, z the surface's world y;
-    // w the water quality (0 Low, 1 Medium, 2 High).
+    // w the water tier's switches (dwell-look `tier_bits`, read by `water_tier_*`).
     water: vec4f,
     // The wind (docs/MOTION_EFFECTS.md; `wind_uniforms` in mod.rs). point: the vanishing point
     // (NDC xy), intensity 0–1, time (s). view: aspect, the flight layer 0–1, drawing height (px),
@@ -445,6 +445,24 @@ fn underwater(lin: vec3f, dist: f32, f: Fluid) -> vec3f {
     let t = exp(-(f.absorption.rgb + f.extra.w) * d);
     let inscatter = lambert(f.scatter.rgb, face_up(frame.eye.y), frame.eye.x);
     return lin * t + inscatter * (1.0 - t);
+}
+
+// The water tier's switches (shared/look/watertiers.json; dwell-look `tier_bits`): bit 0 the scene
+// copy is read, bit 1 flow streaks, bit 2 the bank band, bits 3-4 the ripple layers.
+fn water_tier_bits() -> u32 {
+    return u32(frame.water.w + 0.5);
+}
+fn water_reads_scene() -> bool {
+    return (water_tier_bits() & 1u) != 0u;
+}
+fn water_tier_streaks() -> bool {
+    return (water_tier_bits() & 2u) != 0u;
+}
+fn water_tier_band() -> bool {
+    return (water_tier_bits() & 4u) != 0u;
+}
+fn water_tier_layers() -> i32 {
+    return clamp(i32((water_tier_bits() >> 3u) & 3u), 1, WAVE_LAYERS);
 }
 
 // The fluid the eye is under or just above (`frame.water`).
@@ -1410,7 +1428,7 @@ fn underside_look(xz: vec2f, dir: vec3f, footprint: f32, f: Fluid, fluid: u32) -
         let lit = smoothstep(-0.35, 0.45, noise_t(xz * (0.31 / size) + 5.3).x);
         var c = noise_t(xz / size).x * 1.5;
         c = mix(c, (c + 0.4) * (0.4 + 1.2 * lit) - 0.4, b);
-        if (frame.water.w >= 0.5 && f.extra.y > 0.0) {
+        if (water_reads_scene() && f.extra.y > 0.0) {
             let web = caustic_pattern(xz * scale, f, footprint * scale, fluid);
             let gaps = min(web * CAUSTIC_GAIN * 0.8, 1.0);
             c = mix(web * CAUSTIC_GAIN - CAUSTIC_MEAN, (1.0 - 0.8 * gaps) * (0.2 + 1.3 * lit) - 0.35, b);
@@ -1505,7 +1523,7 @@ fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
     var lit = c.rgb / c.a;
     // Caustics on what the pixel shows under the surface (W3, Medium and High): the seabed, walls,
     // anything opaque, before the fog takes its share over the distance to it.
-    if (frame.water.w >= 0.5 && depth > 0.0 && !water_off(DBG_UNDER)) {
+    if (water_reads_scene() && depth > 0.0 && !water_off(DBG_UNDER)) {
         let rel = ray * depth;
         let under = face_y(frame.eye.y, frame.water.z) - face_y(frame.eye.y, frame.eye.x + rel.y);
         // Lit by light that came down through the fluid, focused into caustics.
@@ -2159,7 +2177,7 @@ fn water_surface(i: FluidOut, front: bool, footprint: f32, f: Fluid, draw: Draw)
     s.w = vec3f(0.0);
     s.n = seen;
     if (abs(face_n.y) > 0.5) {
-        let layers = select(WAVE_LAYERS, 1, frame.water.w < 0.5);
+        let layers = water_tier_layers();
         // Carried by the current (docs/WATER_SURFACE_GRID.md §2c): two copies of the ripples half
         // a cycle apart, each carried downstream over its cycle and faded in and out, so neither
         // is stretched far (a flow map).
@@ -2397,6 +2415,49 @@ fn screen_clip(a: vec2f, delta: vec2f, size: vec2f) -> f32 {
     return max(t_end, 0.0);
 }
 
+// The bank band (shared/look/watertiers.json `band`; owner, 2026-11-07, for phones): the land
+// reflected without a march. The reflected ray's point BANK_REACH_M out from the surface point `p`
+// is looked up on screen once; where the scene there stands in front of it (within BANK_SLACK of
+// its view depth: the bank above the water's edge, not the sky or far land past it), a soft strip
+// of the bank's colour from the scene copy (four taps across and up the screen), darkened, over
+// `env` at BANK_STRENGTH × `land` (the share the surface reflects). xyz the colour, w its weight.
+fn bank_band(env: vec3f, p: vec3f, r: vec3f, size: vec2f, land: f32) -> vec4f {
+    let q = p + r * BANK_REACH_M;
+    let d = dot(q, frame.forward.xyz);
+    if (d <= 1e-3) {
+        return vec4f(env, 0.0);
+    }
+    let ndc = vec2f(dot(q, frame.right.xyz) / (d * frame.tan.x), dot(q, frame.up.xyz) / (d * frame.tan.y));
+    let px = vec2f((ndc.x * 0.5 + 0.5) * size.x, (0.5 - ndc.y * 0.5) * size.y);
+    if (any(px < vec2f(0.5)) || any(px > size - 0.5)) {
+        return vec4f(env, 0.0);
+    }
+    let behind = textureLoad(scene_depth, vec2i(px), 0).r;
+    if (behind <= 0.0 || behind > d * (1.0 + BANK_SLACK)) {
+        return vec4f(env, 0.0);
+    }
+    var c = vec4f(0.0);
+    let taps = array<vec2f, 4>(
+        vec2f(-BANK_SPREAD_PX, 0.0),
+        vec2f(BANK_SPREAD_PX, 0.0),
+        vec2f(-0.5 * BANK_SPREAD_PX, -BANK_BLUR_PX),
+        vec2f(0.5 * BANK_SPREAD_PX, BANK_BLUR_PX),
+    );
+    for (var k = 0; k < 4; k++) {
+        let at = clamp(px + taps[k], vec2f(0.5), size - 0.5);
+        c += textureSampleLevel(scene_color, scene_sampler, at / size, 0.0);
+    }
+    if (c.a <= 0.0) {
+        return vec4f(env, 0.0);
+    }
+    // Fades out toward the slack's end, so the strip has no hard edge where the bank stops.
+    let edge = 1.0 - smoothstep(0.5 * BANK_SLACK, BANK_SLACK, behind / d - 1.0);
+    let w = BANK_STRENGTH * land * edge * min(c.a * 0.25, 1.0);
+    let fog = fog_amount(view_ray(ndc) * behind);
+    let bank = mix(c.rgb / c.a * (1.0 - BANK_DARKEN), env, fog);
+    return vec4f(mix(env, bank, w), w);
+}
+
 // What the surface reflects (render/reflection.rs `reflected`): the scene at a screen-space hit,
 // from the copy and fogged by its distance as the composite would, over `env` (the sky and
 // clouds) by the hit's weight and coverage. a: the share that is the scene.
@@ -2541,7 +2602,7 @@ fn water_fs(i: FluidOut, @builtin(front_facing) front: bool) -> SceneOut {
 // pixel covers more than a streak's width (no shimmer far off). 0 with the Foam streaks setting
 // off, for a liquid without a flow look, or in still water.
 fn flow_streaks(i: FluidOut, f: Fluid, footprint: f32) -> f32 {
-    if (!flow_on(FLOW_FOAM) || f.flow_foam.a <= 0.0 || f.flow.y <= 0.0) {
+    if (!flow_on(FLOW_FOAM) || !water_tier_streaks() || f.flow_foam.a <= 0.0 || f.flow.y <= 0.0) {
         return 0.0;
     }
     let cur = flow_at(i.wrapped, i.rel);
@@ -2674,7 +2735,11 @@ fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(
         hit = ssr_trace(i.rel, reflected_dir(calm), size);
         hit.z *= land;
     }
-    let refl = ssr_reflected(reflected_env(reflected_dir(s), i.rel, deck_fw, land) * s.sky, hit, size);
+    var refl = ssr_reflected(reflected_env(reflected_dir(s), i.rel, deck_fw, land) * s.sky, hit, size);
+    // The tiers that march no land (Low) reflect the bank by the band instead.
+    if (water_tier_band() && land > 0.0 && hit.z <= 0.0) {
+        refl = bank_band(refl.rgb, i.rel, reflected_dir(calm), size, land);
+    }
     var color = surface_light(i, s, f, fres, footprint, refl) + (1.0 - fres) * through;
     // Shoreline foam where the water is thin.
     var foam = 0.0;
@@ -2808,10 +2873,8 @@ fn caustic_pattern(xz: vec2f, f: Fluid, footprint: f32, fluid: u32) -> f32 {
     let texels = footprint / cell * CAUSTIC_TEXELS;
     let a = caustic_edge(p + warp, t.x, texels, fluid, 0);
     var c = exp(-a * 11.0);
-    // The finer layer only near, where a pixel is small against its cells; on High (an extra)
-    // twice as far out.
-    let reach = select(1.0, 2.0, frame.water.w > 1.5);
-    let fine = 1.0 - smoothstep(0.04 * reach, 0.12 * reach, footprint / cell);
+    // The finer layer only near, where a pixel is small against its cells.
+    let fine = 1.0 - smoothstep(0.04, 0.12, footprint / cell);
     if (fine > 0.0) {
         let b = caustic_edge(p * 2.0 + vec2f(0.37, 0.71) - 2.0 * warp, t.y, 2.0 * texels, fluid, 1);
         c += 0.6 * fine * exp(-b * 9.0);

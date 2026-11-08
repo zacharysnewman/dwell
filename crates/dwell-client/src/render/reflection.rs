@@ -450,7 +450,7 @@ mod tests {
         // The owner (2026-10-26): tall mountains farther away didn't show in the water. A range
         // 12 km off, 1.5 km tall, seen over the water 200 m ahead: Medium and High reflect it.
         let v = view(0.12);
-        for level in [1, 2] {
+        for level in [dwell_look::water_tiers::tier_index("medium").unwrap()] {
             let ssr = tier_ssr(level);
             let far = lake(v, 12_000.0, 1_500.0);
             let (p, r) = surface(&v, 200.0);

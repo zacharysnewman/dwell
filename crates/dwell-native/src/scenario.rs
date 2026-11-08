@@ -118,11 +118,8 @@ impl Run {
             }
         }
         if let Some(q) = s["water"]["quality"].as_str() {
-            let level = ["low", "medium", "high"].iter().position(|n| *n == q);
-            if let Some(l) = level {
-                h.renderer().set_water_quality(
-                    dwell_client::render::water::WaterQuality::from_level(l as u32),
-                );
+            if let Some(w) = dwell_client::render::water::WaterQuality::named(q) {
+                h.renderer().set_water_quality(w);
             }
         }
         if let Some(c) = s["clouds"].as_str()

@@ -12,13 +12,21 @@ pub const REFLECTIONS: ReflectionTunables = ReflectionTunables {
         ripple_scale: 0.3,
         min_reflectance: 0.05,
     },
-    tiers: [
-        // low
+    tiers: &[
+        // opaque
         ReflectionTier {
             ssr_steps: 0,
             refine_steps: 0,
             max_distance_m: 0.0,
             cloud_octaves: 0,
+            cloud_shadow: false,
+        },
+        // low
+        ReflectionTier {
+            ssr_steps: 0,
+            refine_steps: 0,
+            max_distance_m: 0.0,
+            cloud_octaves: 1,
             cloud_shadow: false,
         },
         // medium
@@ -29,22 +37,22 @@ pub const REFLECTIONS: ReflectionTunables = ReflectionTunables {
             cloud_octaves: 3,
             cloud_shadow: false,
         },
-        // high
-        ReflectionTier {
-            ssr_steps: 28,
-            refine_steps: 10,
-            max_distance_m: 48000.0,
-            cloud_octaves: 5,
-            cloud_shadow: true,
-        },
     ],
-    phone_tiers: [
-        // low
+    phone_tiers: &[
+        // opaque
         ReflectionTier {
             ssr_steps: 0,
             refine_steps: 0,
             max_distance_m: 0.0,
             cloud_octaves: 0,
+            cloud_shadow: false,
+        },
+        // low
+        ReflectionTier {
+            ssr_steps: 0,
+            refine_steps: 0,
+            max_distance_m: 0.0,
+            cloud_octaves: 1,
             cloud_shadow: false,
         },
         // medium
@@ -54,14 +62,6 @@ pub const REFLECTIONS: ReflectionTunables = ReflectionTunables {
             max_distance_m: 24000.0,
             cloud_octaves: 2,
             cloud_shadow: false,
-        },
-        // high
-        ReflectionTier {
-            ssr_steps: 28,
-            refine_steps: 10,
-            max_distance_m: 48000.0,
-            cloud_octaves: 5,
-            cloud_shadow: true,
         },
     ],
 };
