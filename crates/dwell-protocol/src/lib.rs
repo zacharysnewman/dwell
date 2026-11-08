@@ -5,6 +5,7 @@
 pub mod auth;
 pub mod bytes;
 pub mod fragment;
+pub mod inventory;
 mod messages;
 pub mod modes;
 pub mod world_settings;

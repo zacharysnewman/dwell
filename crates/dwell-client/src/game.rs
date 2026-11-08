@@ -494,6 +494,10 @@ pub struct Game<S: Scene> {
     proxies: HashSet<u16>,
     /// The falling pieces (docs/FELLING.md §3).
     pieces: crate::pieces::Pieces,
+    /// The inventory and loose items the server sent (ADR 0066), and the hotbar slot held when
+    /// the world uses items.
+    pub loose: crate::loose_items::LooseItems,
+    pub inventory_slot: usize,
     /// The moving body's cell under the crosshair, when nearer than the block aimed at
     /// (docs/BUILT_BODIES.md §4).
     body_target: Option<crate::pieces::BodyHit>,
@@ -775,6 +779,8 @@ impl<S: Scene> Game<S> {
             respawn_preload_on: true,
             bodies: Bodies::default(),
             held_sent: None,
+            loose: Default::default(),
+            inventory_slot: 0,
             show_arms: true,
             lod_drawn: true,
             puppets: None,
@@ -1201,6 +1207,27 @@ impl<S: Scene> Game<S> {
                     self.predictor.remove_piece(e.body);
                 }
             }
+            Message::Inventory(i) => {
+                let uses = i.flags & dwell_protocol::inventory_flags::USES_ITEMS != 0;
+                self.loose.inventory = Some((uses, i.inventory));
+                if uses {
+                    self.select_inventory_slot(self.inventory_slot);
+                }
+            }
+            Message::ItemDrops(d) => {
+                let changed = self.loose.apply(d);
+                let mut scene = self.scene.borrow_mut();
+                for id in changed.removed {
+                    scene.set_piece(crate::loose_items::ID_BASE | id, None);
+                }
+                for (id, item, face) in changed.added {
+                    let meshes = crate::loose_items::item_meshes(&item, face);
+                    scene.set_piece(
+                        crate::loose_items::ID_BASE | id,
+                        meshes.as_ref().map(|(m, r)| (m.as_slice(), *r)),
+                    );
+                }
+            }
             Message::EntityDespawn(id) => {
                 let settled = self.pieces.despawn(id, now_ms);
                 self.predictor.remove_piece(id);
@@ -1395,6 +1422,14 @@ impl<S: Scene> Game<S> {
         now_ms: f64,
     ) -> bool {
         if self.dead || !self.terrain_ready() {
+            return false;
+        }
+        // In a world that uses items (ADR 0066) a place needs the held slot to hold a block.
+        if action == EditAction::Place
+            && self.loose.uses_items()
+            && self.held_palette_slot().is_none()
+        {
+            self.sounds.push(sound_event(SoundKind::Deny));
             return false;
         }
         // The brush tool: left click its arrow, right click its gunpowder (BRUSHES.md).
@@ -2734,6 +2769,7 @@ impl<S: Scene> Game<S> {
             .set_present(|id| predictor.piece_pose(id), me, dt);
         let mut poses = self.pieces.poses(now_ms);
         poses.extend(self.glides.poses(now_ms));
+        poses.extend(self.loose.poses(now_ms));
         self.scene.borrow_mut().show_pieces(poses);
         self.update_day(now_ms);
         self.ambient_sounds(&views, dt);
@@ -3223,6 +3259,81 @@ impl<S: Scene> Game<S> {
                 .borrow_mut()
                 .push(Send::Control(Message::HeldItem(wire)));
         }
+    }
+
+    /// The palette slot that places what the held inventory slot holds (ADR 0066).
+    fn held_palette_slot(&self) -> Option<usize> {
+        self.held_palette_slot_at(self.inventory_slot)
+    }
+
+    /// Holds hotbar slot `slot` of the inventory (a world that uses items): the palette follows
+    /// what it holds, and the server is told (it takes placed blocks from it first).
+    pub fn select_inventory_slot(&mut self, slot: usize) -> usize {
+        let slot = slot.min(dwell_protocol::inventory::HOTBAR_SLOTS - 1);
+        if let Some(p) = self.held_palette_slot_at(slot) {
+            self.interaction.select(p as i64);
+        }
+        if self.inventory_slot != slot
+            || self
+                .loose
+                .inventory
+                .as_ref()
+                .is_some_and(|(_, i)| usize::from(i.held) != slot)
+        {
+            if let Some((_, i)) = &mut self.loose.inventory {
+                i.held = slot as u8;
+            }
+            self.outbox
+                .borrow_mut()
+                .push(Send::Control(Message::InventoryAction(
+                    dwell_protocol::InventoryAction::Select { slot: slot as u8 },
+                )));
+        }
+        self.inventory_slot = slot;
+        slot
+    }
+
+    fn held_palette_slot_at(&self, slot: usize) -> Option<usize> {
+        let (_, inv) = self.loose.inventory.as_ref()?;
+        let names: Vec<&'static str> = self.interaction.palette().iter().map(|p| p.item).collect();
+        crate::loose_items::palette_slot_for(inv, slot, &names)
+    }
+
+    /// The hotbar's slots: the inventory's hotbar in a world that uses items, else the palette.
+    pub fn hotbar_len(&self) -> usize {
+        if self.loose.uses_items() {
+            dwell_protocol::inventory::HOTBAR_SLOTS
+        } else {
+            self.interaction.palette().len()
+        }
+    }
+
+    /// Selects hotbar slot `slot` (wrapping): an inventory slot or a palette slot, by the mode.
+    pub fn select_hotbar(&mut self, slot: i64) -> usize {
+        if self.loose.uses_items() {
+            let n = dwell_protocol::inventory::HOTBAR_SLOTS as i64;
+            self.select_inventory_slot(slot.rem_euclid(n) as usize)
+        } else {
+            self.interaction.select(slot)
+        }
+    }
+
+    /// The scroll wheel or a controller's bumper: the next (step > 0) or previous hotbar slot.
+    pub fn scroll_hotbar(&mut self, step: i32) -> Option<usize> {
+        if !self.loose.uses_items() {
+            return self.interaction.scroll(step);
+        }
+        (step != 0)
+            .then(|| self.select_hotbar(self.inventory_slot as i64 + i64::from(step.signum())))
+    }
+
+    /// Moves items between inventory slots (the backpack screen's drag): the server decides.
+    pub fn move_items(&mut self, from: u8, to: u8, count: u16) {
+        self.outbox
+            .borrow_mut()
+            .push(Send::Control(Message::InventoryAction(
+                dwell_protocol::InventoryAction::Move { from, to, count },
+            )));
     }
 
     /// The arms' base role and swing (tests, telemetry).

@@ -37,6 +37,8 @@ use dwell_world::{
 
 use dwell_protocol::auth::verify_ed25519;
 
+mod items;
+
 use crate::app_version::APP_VERSION;
 use crate::entropy::Entropy;
 use crate::lod_propagation::{LodPropagation, LodSection};
@@ -548,6 +550,13 @@ struct Session {
     swing: u8,
     /// Which falling pieces this player's snapshots carry (`felling::PieceBook`).
     piece_book: crate::felling::PieceBook,
+    /// The player's items (ADR 0066), loaded at join and saved with the world; whether its client
+    /// understands inventories (`InventoryAction::Hello`) and is owed an `Inventory`; and whether
+    /// the saved record couldn't be read (a newer build's: it is kept, not overwritten).
+    inventory: dwell_protocol::inventory::Inventory,
+    inventory_hello: bool,
+    inventory_dirty: bool,
+    inventory_unread: bool,
 
     stats: SessionStats,
     // Terrain streaming.
@@ -588,6 +597,10 @@ impl Session {
             inputs: VecDeque::new(),
             currents_sent: HashMap::default(),
             currents_wait: CURRENTS_AFTER_JOIN,
+            inventory: Default::default(),
+            inventory_hello: false,
+            inventory_dirty: false,
+            inventory_unread: false,
             primed: false,
             low_water: usize::MAX,
             window_ticks: 0,
@@ -822,6 +835,11 @@ pub struct Server {
     dirty: HashSet<ChunkCoord>,
     in_flight: HashMap<u64, Vec<(ChunkCoord, u32)>>,
     departed: Vec<PlayerRecord>,
+    /// Inventories of players who left since the last save (ADR 0066).
+    departed_inventories: Vec<([u8; 32], Vec<u8>)>,
+    /// The loose items lying in the world (ADR 0066), and the moved ones not yet sent.
+    loose: crate::loose_items::LooseItems,
+    loose_moved: HashSet<u32>,
     next_save_tick: u32,
     save_stats: SaveStats,
     // Level of detail: sections, index entries changed since the last LodIndexUpdate, sections to
@@ -941,6 +959,9 @@ impl Server {
             dirty: HashSet::default(),
             in_flight: HashMap::default(),
             departed: Vec::new(),
+            departed_inventories: Vec::new(),
+            loose: Default::default(),
+            loose_moved: HashSet::default(),
             next_save_tick: 0,
             save_stats: SaveStats::default(),
             lod: if config.jobs_remote {
@@ -1018,6 +1039,10 @@ impl Server {
         };
         if self.config.store.is_some() && s.joined() {
             self.departed.push(self.record_of(&s));
+            if !s.inventory_unread {
+                self.departed_inventories
+                    .push((s.public_key, s.inventory.to_bytes()));
+            }
         }
         if let Some(h) = s.handle {
             self.players.despawn(&mut self.physics, h);
@@ -1220,7 +1245,11 @@ impl Server {
             // FLIGHT: this player may fly now (the mode and the flight policy); FLIGHT_POLICY:
             // the policy alone, for a client to recompute FLIGHT when the host changes the mode
             // (older clients ignore the bit and keep FLIGHT).
+            // INVENTORY (ADR 0066): this server keeps inventories; a client that understands them
+            // says `InventoryAction::Hello` (older servers reject the message, older clients
+            // ignore the bit).
             flags: welcome_flags::REGION_EDITS
+                | welcome_flags::INVENTORY
                 | if flight { welcome_flags::FLIGHT } else { 0 }
                 | if flight_policy {
                     welcome_flags::FLIGHT_POLICY
@@ -1262,6 +1291,7 @@ impl Server {
             .store
             .as_ref()
             .and_then(|st| st.db().load_player(&key));
+        self.load_inventory(id, &key);
         match saved {
             Some(p) if p.health > 0 => {
                 let feet = (!self.config.join_at_spawn).then_some(p.feet);
@@ -1374,6 +1404,7 @@ impl Server {
                     s.edit_refused.push(s.edit_seq);
                 }
             }
+            Message::InventoryAction(a) => self.inventory_action(id, a),
             Message::ChunkResync(coords) => self.resync(id, &coords),
             Message::ChunkRequest(coords) => self.request_chunks(id, &coords),
             Message::LodRequest(sections) => {
@@ -1478,6 +1509,7 @@ impl Server {
             .config
             .respawn_preload_radius_chunks
             .map(|_| body_centre_chunk(respawn, half));
+        self.drop_inventory(id, death);
         let s = self.sessions.get_mut(&id).expect("session");
         s.death_position = death;
         s.handle = None;
@@ -1638,6 +1670,9 @@ impl Server {
         self.settle_pieces();
         self.phase_ms[7] += watch.lap_ms();
         self.flow_water();
+
+        // Loose items fall, are picked up and despawn (ADR 0066); inventories changed are sent.
+        self.step_items();
 
         // 5. Respawns, then snapshots at SNAPSHOT_HZ.
         for &id in &ids {
@@ -2280,6 +2315,9 @@ impl Server {
         let mut bodies_built: Vec<BodyBuilt> = Vec::new();
         let brushes = self.brushes_allowed();
         let reach = region_reach(brushes);
+        // Without unlimited blocks (ADR 0066): placing takes an item, breaking drops the block's.
+        let uses_items = self.uses_items();
+        let mut broken: Vec<([i32; 3], dwell_blocks::StateId)> = Vec::new();
         let ids: Vec<SessionId> = self.sessions.keys().copied().collect();
         for id in ids {
             let s = &self.sessions[&id];
@@ -2310,6 +2348,21 @@ impl Server {
                     s.edit_refused.push(seq);
                     continue;
                 }
+                // The item asked for must be held; it is used up when it is what goes in (a torch
+                // held against dynamite lights it and stays in the hand).
+                if uses_items && edit.action == BlockEditAction::Place {
+                    let item = items::cost_of(edit.material);
+                    let placed = items::cost_of(outcome.material) == item;
+                    if s.inventory.count_of(&item) == 0 {
+                        s.stats.edits_rejected += 1;
+                        s.edit_refused.push(seq);
+                        continue;
+                    }
+                    if placed {
+                        s.inventory.take_one(&item);
+                        s.inventory_dirty = true;
+                    }
+                }
                 s.edit_credit -= 1.0;
                 s.stats.edits_applied += 1;
                 // On a build platform's top, or touching a held body, a block goes into that body,
@@ -2335,6 +2388,9 @@ impl Server {
                 }
                 // Every cell of the piece (a 1 m block's two; docs/ITEMS.md) in one set of writes.
                 for (at, m) in outcome.writes(&mut self.world, medium_kept) {
+                    if uses_items && edit.action == BlockEditAction::Break {
+                        broken.push((at, self.world.get_voxel(at[0], at[1], at[2])));
+                    }
                     changes.set(&mut self.world, at, m);
                 }
             }
@@ -2361,6 +2417,26 @@ impl Server {
                     check_region_edit(&mut self.world, &edit, eye, &capsules, reach)
                 };
                 s.stats.last_region_check = outcome.check;
+                // Without unlimited blocks, a region places only what the player holds (ADR 0066).
+                let outcome = if uses_items && outcome.check == RegionCheck::Ok {
+                    let need = items::region_costs(&outcome.changes);
+                    if need
+                        .iter()
+                        .all(|(item, n)| s.inventory.count_of(item) >= *n)
+                    {
+                        for (item, n) in &need {
+                            for _ in 0..*n {
+                                s.inventory.take_one(item);
+                            }
+                        }
+                        s.inventory_dirty |= !need.is_empty();
+                        outcome
+                    } else {
+                        dwell_world::region::RegionOutcome::fail(RegionCheck::NotPlaceable)
+                    }
+                } else {
+                    outcome
+                };
                 if outcome.check != RegionCheck::Ok {
                     s.stats.region_edits_rejected += 1;
                     s.edit_refused.push(seq);
@@ -2378,6 +2454,9 @@ impl Server {
                 s.stats.region_cells_changed += outcome.changes.len() as u64;
                 let cells: Vec<[i32; 3]> = outcome.changes.iter().map(|(c, _)| *c).collect();
                 for (cell, m) in outcome.changes {
+                    if uses_items && (m == M.air || info(m).liquid) {
+                        broken.push((cell, self.world.get_voxel(cell[0], cell[1], cell[2])));
+                    }
                     // As a block edit's: into a held body, or a new one on a build platform.
                     let d = (m != M.air && !info(m).liquid)
                         .then(|| self.felling.divert(&mut self.world, &self.physics, cell, m))
@@ -2407,6 +2486,9 @@ impl Server {
         }
         let edited = changes.cells();
         self.broadcast_changes(changes, VoxelModificationReason::Edit);
+        for (cell, was) in broken {
+            self.drop_block(was, dwell_world::centre_of_cell(cell));
+        }
         // An explosive lit by an edit (a torch held against it) starts its fuse (docs/EXPLOSIVES.md).
         for &c in &edited {
             let m = self.world.get_voxel_if_loaded(c);
@@ -2989,6 +3071,12 @@ impl Server {
                             (w - (c + DVec3::new(0.0, y, 0.0))).length() < radius + 0.45
                         })
                     };
+                    let cost = self.uses_items().then(|| items::cost_of(e.material));
+                    if let Some(cost) = &cost
+                        && self.sessions[&id].inventory.count_of(cost) == 0
+                    {
+                        continue;
+                    }
                     let Some(new) = self.felling.place_cell(
                         &mut self.physics,
                         e.body,
@@ -3001,6 +3089,10 @@ impl Server {
                     };
                     if let Some(s) = self.sessions.get_mut(&id) {
                         s.edit_credit -= 1.0;
+                        if let Some(cost) = &cost {
+                            s.inventory.take_one(cost);
+                            s.inventory_dirty = true;
+                        }
                     }
                     self.broadcast_world(&Message::BodyEdit(BodyEdit {
                         body: e.body,
@@ -3022,9 +3114,17 @@ impl Server {
                 if (at - eye).length() > reach {
                     continue;
                 }
+                let was = p
+                    .cells
+                    .iter()
+                    .find(|&&(o, _)| o == cell)
+                    .map_or(0, |&(_, m)| m);
                 let Some(out) = self.felling.break_cell(&mut self.physics, e.body, cell) else {
                     continue;
                 };
+                if self.uses_items() {
+                    self.drop_block(was, at.to_array());
+                }
                 if let Some(s) = self.sessions.get_mut(&id) {
                     s.edit_credit -= 1.0;
                 }
@@ -3221,6 +3321,10 @@ impl Server {
         }
         self.settings.mode = m.name;
         self.settings_fields = self.settings_fields.with(self.settings);
+        // Whether the mode uses items is in each `Inventory` (ADR 0066).
+        for s in self.sessions.values_mut() {
+            s.inventory_dirty = true;
+        }
         let bytes = encode(&Message::WorldSettings(self.settings_fields.clone()));
         for (&id, s) in &self.sessions {
             if s.joined() {
@@ -3806,6 +3910,12 @@ impl Server {
             self.flush_water();
         }
         *self.saved.lock().expect("saved index") = saved;
+        if let Some(saved) = db
+            .loose_items()
+            .and_then(|b| crate::loose_items::LooseItems::from_bytes(&b))
+        {
+            self.loose.restore(saved);
+        }
         let bodies = db.bodies();
         self.world.set_saved(Box::new(StoreChunks {
             db,
@@ -3901,6 +4011,17 @@ impl Server {
             revisions.push((c, chunk.revision()));
         }
         batch.players = std::mem::take(&mut self.departed);
+        batch.inventories = std::mem::take(&mut self.departed_inventories);
+        for s in self
+            .sessions
+            .values()
+            .filter(|s| s.joined() && !s.inventory_unread)
+        {
+            batch
+                .inventories
+                .push((s.public_key, s.inventory.to_bytes()));
+        }
+        batch.loose_items = Some(self.loose.to_bytes());
         // The world's moving bodies, all of them each save (docs/BUILT_BODIES.md §7).
         batch.bodies = Some(self.felling.saved(&self.physics));
         // The free water (WATER_SURFACE_GRID.md §2b): the newest record the water sent (none

@@ -2,6 +2,16 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions card. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.50.33",
+      "changes": [
+        "Adventure: blocks you break drop items; walk near them to pick them up",
+        "Placing a block in Adventure uses one from your hotbar, which now shows how many you have",
+        "Grass drops dirt and sometimes a rock, leaves drop sticks, tall grass drops seeds and now and then a gem",
+        "Gems go to your wallet (up to 99), shown by the hotbar; E opens your backpack to move items around",
+        "Dying in Adventure drops what you carry; loose items vanish after 5 minutes. Creative is unchanged"
+      ]
+    },
+    {
       "version": "0.50.32",
       "changes": [
         "Behind-the-scenes fixes so the automated checks pass again",

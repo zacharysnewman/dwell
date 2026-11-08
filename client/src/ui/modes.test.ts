@@ -9,7 +9,7 @@ describe('game modes', () => {
     expect(DEFAULT_MODE).toBe('creative');
     expect(GAME_MODES.map((m) => modeLabel(m))).toEqual(['Creative', 'Adventure (experimental)']);
     const adventure = GAME_MODES.find((m) => m.name === 'adventure');
-    expect(adventure?.abilities).toEqual(['damage', 'unlimitedBlocks']);
+    expect(adventure?.abilities).toEqual(['damage']);
   });
 
   it('knows its modes by name only', () => {

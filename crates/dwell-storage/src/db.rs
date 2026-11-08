@@ -46,6 +46,12 @@ const BODIES: TableDefinition<u32, &[u8]> = TableDefinition::new("bodies");
 /// bytes compressed (the free water; held water is found again from the blocks). Optional: a build
 /// that doesn't know it leaves it, and a build that doesn't read its format finds the water again.
 const WATER: TableDefinition<u32, &[u8]> = TableDefinition::new("water");
+/// Device public key → the player's inventory (`dwell_protocol::inventory::Inventory::to_bytes`;
+/// ADR 0066). Optional: a build that doesn't know it leaves it.
+const INVENTORIES: TableDefinition<&[u8; 32], &[u8]> = TableDefinition::new("inventories");
+/// The loose items lying in the world (`dwell_sim::loose_items::LooseItems::to_bytes`; ADR 0066):
+/// one record (key 0), rewritten on each save that carries it. Optional, as `inventories`.
+const LOOSE_ITEMS: TableDefinition<u32, &[u8]> = TableDefinition::new("loose_items");
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct WorldMeta {
@@ -196,6 +202,10 @@ pub struct SaveBatch {
     pub bodies: Option<Vec<SavedBody>>,
     /// The water now (`Water::save`), replacing what was saved before (None: leave it).
     pub water: Option<Vec<u8>>,
+    /// Players' inventories (device key, record), each replacing its saved one (ADR 0066).
+    pub inventories: Vec<([u8; 32], Vec<u8>)>,
+    /// The loose items now, replacing those saved before (None: leave them).
+    pub loose_items: Option<Vec<u8>>,
 }
 
 /// A [`SaveBatch`] being encoded for its commit (`WorldDb::prepare`): its chunks mapped to the
@@ -607,6 +617,22 @@ impl WorldDb {
             .collect()
     }
 
+    /// A player's saved inventory record (ADR 0066), if any.
+    pub fn load_inventory(&self, key: &[u8; 32]) -> Option<Vec<u8>> {
+        let txn = self.db.begin_read().ok()?;
+        let t = txn.open_table(INVENTORIES).ok()?;
+        let v = t.get(key).ok()??;
+        Some(v.value().to_vec())
+    }
+
+    /// The loose items as last saved (ADR 0066), if any.
+    pub fn loose_items(&self) -> Option<Vec<u8>> {
+        let txn = self.db.begin_read().ok()?;
+        let t = txn.open_table(LOOSE_ITEMS).ok()?;
+        let v = t.get(0).ok()??;
+        Some(v.value().to_vec())
+    }
+
     /// The water as last saved (`Water::save`'s bytes), if any.
     pub fn water(&self) -> Option<Vec<u8>> {
         let txn = self.db.begin_read().ok()?;
@@ -895,6 +921,16 @@ impl WorldDb {
         if let Some(water) = &water {
             let mut t = txn.open_table(WATER).map_err(err)?;
             t.insert(0, water.as_slice()).map_err(err)?;
+        }
+        if !batch.inventories.is_empty() {
+            let mut t = txn.open_table(INVENTORIES).map_err(err)?;
+            for (key, record) in &batch.inventories {
+                t.insert(key, record.as_slice()).map_err(err)?;
+            }
+        }
+        if let Some(items) = &batch.loose_items {
+            let mut t = txn.open_table(LOOSE_ITEMS).map_err(err)?;
+            t.insert(0, items.as_slice()).map_err(err)?;
         }
         if let Some(hook) = &self.before_commit {
             hook()?; // dropping the transaction aborts it

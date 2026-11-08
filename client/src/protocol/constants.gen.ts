@@ -128,6 +128,9 @@ export const MessageType = {
   BodyEdit: 24,
   BodyEditRequest: 83,
   WorldSettings: 84,
+  InventoryAction: 85,
+  Inventory: 86,
+  ItemDrops: 87,
 } as const;
 export type MessageType = (typeof MessageType)[keyof typeof MessageType];
 
@@ -268,6 +271,7 @@ export const WelcomeFlags = {
   regionEdits: 2,
   brushes: 4,
   flightPolicy: 8,
+  inventory: 16,
 } as const;
 
 export const HeldItem = {

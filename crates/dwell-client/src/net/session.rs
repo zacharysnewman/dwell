@@ -205,6 +205,10 @@ impl Session {
             region_edits: w.flags & welcome_flags::REGION_EDITS != 0,
             brushes: w.flags & welcome_flags::BRUSHES != 0,
         });
+        // A server that keeps inventories (ADR 0066) sends them once told this client understands.
+        if w.flags & welcome_flags::INVENTORY != 0 {
+            self.send(&Message::InventoryAction(InventoryAction::Hello));
+        }
     }
 
     /// The world's settings again while joined: the host changed its game mode (ADR 0065; only a
@@ -569,6 +573,7 @@ impl Session {
                     | Message::LodIndex(_)
                     | Message::LodIndexUpdate(_)
                     | Message::LodData(_)
+                    | Message::ItemDrops(_)
             ) && (self.joined() || matches!(self.state, SessionState::Confirming { .. }))
             {
                 self.game.push_back((m, bytes.to_vec()));
@@ -590,6 +595,9 @@ impl Session {
                 self.world_fields = Some(f);
             }
             Message::WorldSettings(f) if self.joined() => self.on_settings_changed(f),
+            Message::Inventory(i) if self.joined() => {
+                self.game.push_back((Message::Inventory(i), bytes.to_vec()));
+            }
             Message::Welcome(w) if self.state == SessionState::Handshaking => self.on_welcome(w),
             Message::Reject(r) => {
                 self.set_state(SessionState::Rejected {
@@ -1167,6 +1175,47 @@ mod tests {
     /// ADR 0065: the host changes the world's mode while a player is in it; the server sends the
     /// world's settings again, and flight and brushes follow the mode (flight only as far as the
     /// flight policy allows it).
+    /// ADR 0066: a client says `Hello` only to a server whose Welcome has `INVENTORY` (an older
+    /// server rejects the message), and passes the inventory messages on to the game once joined.
+    #[test]
+    fn hello_goes_only_to_a_server_that_keeps_inventories() {
+        let Message::Welcome(w) = welcome(0) else {
+            unreachable!()
+        };
+        for flag in [0, welcome_flags::INVENTORY] {
+            let (_, mut s) = setup();
+            send_registry(&mut s, &build_registry(), 1 << 16);
+            let _ = s.take_out();
+            let flags = w.flags | flag;
+            s.on_reliable(
+                Channel::Control,
+                &Message::Welcome(Welcome { flags, ..w.clone() }).encode(),
+                1000.0,
+            );
+            let hello = sent(&s.take_out())
+                .iter()
+                .any(|m| matches!(m, Message::InventoryAction(InventoryAction::Hello)));
+            assert_eq!(hello, flag != 0, "flags {flags}");
+        }
+        let (_, mut s) = setup();
+        send_registry(&mut s, &build_registry(), 1 << 16);
+        let flags = w.flags | welcome_flags::INVENTORY;
+        s.on_reliable(
+            Channel::Control,
+            &Message::Welcome(Welcome { flags, ..w.clone() }).encode(),
+            1000.0,
+        );
+        let inv = Message::Inventory(InventoryMessage {
+            flags: inventory_flags::USES_ITEMS,
+            inventory: Default::default(),
+        });
+        s.on_reliable(Channel::Control, &inv.encode(), 1000.0);
+        let drops = Message::ItemDrops(ItemDrops::default());
+        s.on_reliable(Channel::World, &drops.encode(), 1000.0);
+        assert!(matches!(s.next_game(), Some((Message::Inventory(_), _))));
+        assert!(matches!(s.next_game(), Some((Message::ItemDrops(_), _))));
+    }
+
     #[test]
     fn a_mode_change_after_join_turns_flight_and_brushes_off_and_on() {
         let Message::Welcome(w) = welcome(0) else {

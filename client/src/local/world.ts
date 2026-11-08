@@ -1,6 +1,8 @@
 // Which world local mode generates (ARCHITECTURE.md §6.3): `?world=terrain|flat|sandbox` picks
 // the generator (procedural terrain by default) and `?seed=N` the world seed.
 
+import { isGameMode } from '../ui/modes';
+
 /**
  * Generator versions by world type, as the Rust side numbers them (`dwell_world::GENERATOR_*`).
  * The sandbox (the flat world in its indestructible white floor block, for building structures) is
@@ -86,13 +88,23 @@ export function parseLocalWorld(search: string): LocalWorld {
   // Seeds are u64 on the wire; local mode accepts integers exactly representable in a double.
   const seed = Number(params.get('seed') ?? '0');
   const worldSeed = Number.isSafeInteger(seed) && seed >= 0 ? seed : 0;
+  // `?mode=adventure`: the world's game mode (a link's test world; ADR 0065, 0066).
+  const m = params.get('mode');
+  const mode = m !== null && isGameMode(m) ? { mode: m } : {};
   const at = parseAt(params.get('at'));
-  if (at) return { worldSeed, generatorVersion, spawnAt: at };
+  if (at) return { worldSeed, generatorVersion, spawnAt: at, ...mode };
   const spawn = params.get('spawn');
   if (spawn !== '' && isSpawn(spawn)) {
     // Each spawn is its own world file, so the others are untouched.
     const file = `${localWorldName(generatorVersion, worldSeed)}-${spawn === 'b' ? 'faceb' : spawn}`;
-    return { worldSeed, generatorVersion, file, ...spawnOptions(spawn), spawnOnOpen: true };
+    return {
+      worldSeed,
+      generatorVersion,
+      file,
+      ...spawnOptions(spawn),
+      spawnOnOpen: true,
+      ...mode,
+    };
   }
-  return { worldSeed, generatorVersion };
+  return { worldSeed, generatorVersion, ...mode };
 }

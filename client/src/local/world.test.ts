@@ -12,6 +12,12 @@ describe('local world options', () => {
     expect(parseLocalWorld('?at=1,x,3').spawnAt).toBeUndefined();
   });
 
+  it('plays a game mode given by ?mode= (a known one only)', () => {
+    expect(parseLocalWorld('?world=flat&mode=adventure').mode).toBe('adventure');
+    expect(parseLocalWorld('?at=1,2,3&mode=adventure').mode).toBe('adventure');
+    expect(parseLocalWorld('?mode=survival').mode).toBeUndefined();
+  });
+
   it('defaults to procedural terrain with seed 0', () => {
     expect(parseLocalWorld('')).toEqual({ worldSeed: 0, generatorVersion: GENERATORS.terrain });
   });

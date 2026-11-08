@@ -59,6 +59,9 @@ impl Scene {
         }
         for id in 1..=players as SessionId {
             s.fx.join(id, &Client::new(id as u8));
+            // Adventure uses items up (ADR 0066): a torch to light with, dynamite to place.
+            s.fx.server.give(id as u16, "dwell:torch", 64);
+            s.fx.server.give(id as u16, "dwell:dynamite", 64);
         }
         for _ in 0..5 {
             s.fx.server.step();

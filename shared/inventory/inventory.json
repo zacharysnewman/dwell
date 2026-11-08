@@ -1,0 +1,21 @@
+{
+  "$comment": "Inventories and loose items (docs/adr/0066-inventory-and-drops.md). Every block is an item of its own name; `items` lists the items that are not blocks (prototype content, ARCHITECTURE.md §6.1): a label, and a simple look for the hotbar and a loose item (`color`, `size` in metres), optionally `value` (currency: picked up into the wallet), and optionally `stack` (at most stackSize). What a block drops is its `drops` in shared/blocks/*.json. Run `node shared/inventory/gen.mjs` after editing (it checks every block's drops too); CI fails if the generated files are stale.",
+  "formatVersion": 1,
+  "hotbarSlots": 9,
+  "backpackSlots": 27,
+  "stackSize": 64,
+  "despawnSeconds": 300,
+  "pickupRadiusM": 1.5,
+  "pickupDelaySeconds": 0.5,
+  "maxDrops": 2048,
+  "items": [
+    { "name": "dwell:rock", "label": "Rock", "color": "#8f8a84", "size": 0.18 },
+    { "name": "dwell:stick", "label": "Stick", "color": "#7a5634", "size": 0.22 },
+    { "name": "dwell:grass_seed", "label": "Grass seed", "color": "#b9b45a", "size": 0.12 },
+    { "name": "dwell:gem", "label": "Gem", "color": "#4fb07a", "size": 0.14, "value": 1 },
+    { "name": "dwell:gem_large", "label": "Large gem", "color": "#4f7fd0", "size": 0.2, "value": 5 }
+  ],
+  "$wallets": "Currency items (with a `value`) go to the wallet, not a slot: a total up to its capacity (owner, 2026-11-08: the starting wallet holds 99; bigger wallets later).",
+  "wallets": [{ "name": "dwell:pouch", "label": "Pouch", "capacity": 99 }],
+  "startingWallet": "dwell:pouch"
+}

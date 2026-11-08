@@ -87,6 +87,40 @@ pub fn hotbar_swatch(slot: usize) -> Vec<u8> {
     })
 }
 
+/// An inventory item's picture (ADR 0066): a block item's swatch, a non-block item's colour; empty
+/// for an item this build doesn't know.
+#[wasm_bindgen(js_name = itemSwatch)]
+pub fn item_swatch(item: &str) -> Vec<u8> {
+    if let Some(b) = dwell_blocks::find_block(item) {
+        let m = (b.first_state..b.first_state + b.state_count)
+            .find(|&m| dwell_world::edit::placeable(m))
+            .unwrap_or(b.first_state);
+        return dwell_mesh::swatch(m);
+    }
+    let Some(def) = dwell_protocol::inventory::item(item) else {
+        return Vec::new();
+    };
+    let n = dwell_mesh::TILE;
+    let mut px = vec![0u8; n * n * 4];
+    // A rounded blob in its colour, so it doesn't read as a block.
+    let r = n as f64 * 0.32;
+    let c = (n as f64 - 1.0) / 2.0;
+    for y in 0..n {
+        for x in 0..n {
+            let d = ((x as f64 - c).powi(2) + (y as f64 - c).powi(2)).sqrt();
+            if d <= r {
+                let shade = 1.0 - 0.35 * (d / r);
+                let i = (y * n + x) * 4;
+                for k in 0..3 {
+                    px[i + k] = (f64::from(def.color[k]) * shade) as u8;
+                }
+                px[i + 3] = 255;
+            }
+        }
+    }
+    px
+}
+
 /// The hotbar pictures' side, pixels.
 #[wasm_bindgen(js_name = swatchSize)]
 pub fn swatch_size() -> usize {
