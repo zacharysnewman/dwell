@@ -12,6 +12,10 @@ export default defineConfig({
   timeout: 30_000,
   fullyParallel: false,
   workers: 1,
+  // On CI's software renderer the page can draw nothing for seconds after a join (BUGS.md #49), so a
+  // test can fail by timing alone; retried twice there, it fails only when it fails every time
+  // (Playwright reports a pass on retry as flaky).
+  retries: process.env.CI ? 2 : 0,
   reporter: [['list']],
   globalSetup: './e2e/global-setup.ts',
   webServer: {

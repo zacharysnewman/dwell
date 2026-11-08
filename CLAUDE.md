@@ -334,6 +334,10 @@ Check these before chasing an e2e failure:
   If a terrain wait times out again, time `generator_for`/`spawn_point_for` natively against the
   last green commit before widening the timeout.
 
+- Since 0.50.32 the e2e suite retries a failed test twice on CI (`retries` in `playwright.config.ts`):
+  the software renderer's stall after a join (BUGS.md #49) made tests fail by timing alone. A test
+  that passes on a retry is reported "flaky"; check those against #49 before chasing a bug.
+
 ## Running the browser in a sandbox
 
 The client renders with WebGPU. Without a GPU, Chromium uses SwiftShader's Vulkan
