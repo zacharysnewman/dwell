@@ -148,7 +148,10 @@ test('touch controls: Break/Place toggle, tapping the view edits, tapping the ho
   // and tap the view.
   const dirt = await center('#hotbar .hotbar-slot[title="Dirt"]:visible');
   await tap(dirt.x, dirt.y, 4);
-  await expect(page.locator('#hotbar .hotbar-slot.selected:visible')).toHaveAttribute('title', 'Dirt');
+  await expect(page.locator('#hotbar .hotbar-slot.selected:visible')).toHaveAttribute(
+    'title',
+    'Dirt',
+  );
   const edit = await center('#touch-edit');
   await tap(edit.x, edit.y, 5);
   await expect(page.locator('#touch-edit')).toHaveText('Place');

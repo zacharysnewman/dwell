@@ -168,7 +168,8 @@ export function toolsTs(d) {
   const ts = [`// ${header}`, ''];
   ts.push('/** A tool: its item name and kind (the swing hint shows for an axe). */');
   ts.push('export const TOOLS: readonly { name: string; kind: string }[] = [');
-  for (const t of d.tools) ts.push(`  { name: ${JSON.stringify(t.name)}, kind: ${JSON.stringify(t.kind)} },`);
+  // Single-quoted, as the client's Prettier writes it.
+  for (const t of d.tools) ts.push(`  { name: '${t.name}', kind: '${t.kind}' },`);
   ts.push('];');
   ts.push('');
   return ts.join('\n');

@@ -163,7 +163,10 @@ test('local mode: every palette block can be picked from the hotbar, placed, and
     // Number keys pick the first ten slots, a tap on the hotbar the rest.
     if (slot < 10) await page.keyboard.press(`Digit${String((slot + 1) % 10)}`);
     else await page.locator(`#hotbar .hotbar-slot[data-slot="${String(slot)}"]:visible`).click();
-    await expect(page.locator('#hotbar .hotbar-slot.selected:visible')).toHaveAttribute('data-slot', String(slot));
+    await expect(page.locator('#hotbar .hotbar-slot.selected:visible')).toHaveAttribute(
+      'data-slot',
+      String(slot),
+    );
     // A ladder hangs on a block's side, never on the ground's top (docs/ITEMS.md; the placement
     // rules' tests, dwell-world tests/placement.rs, hang it).
     const title = await page
