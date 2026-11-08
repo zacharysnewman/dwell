@@ -197,6 +197,31 @@ lookups and the placed light itself (Off draws no placed light). The main thread
 machine got busier (load 9) and reads +0.1–0.9 ms. A first build copied each slot's six matrices
 per fragment in the shader (`let s = slots[slot]`): +5 ms; it reads the fields it needs now.
 
+**[built, 0.50.26] Torch and lamp shafts** ([ADR 0064](./adr/0064-light-shafts.md), the Light
+shafts setting: High, Low, Off; none on a CPU adapter). The nearest placed lights (the same
+`placed_lights` list, whether Torch shadows is on or not) and held ones (other players'; your own
+is within `nearM` and fades out) glow in the air: the shafts pass blurs each light's halo radially
+toward its screen point over what doesn't hide it, so a torch behind a post or through a doorway
+throws soft rays past it. Per light source by its name in `shared/look/shafts.json` `lights.kinds`
+(`dwell:torch` 0.35 with a 1.2 m halo, `dwell:fuse` 0.15 with 1 m; a light not listed has none):
+a lamp is added by adding its light source and an entry there. Faded by distance (none past
+`rangeM` 20 m), off screen, and by day to `dayShare`; High draws 4 lights at 12 samples each, Low 2
+at 6. Selection and data are tested on both faces (`dwell_look::shafts`
+`the_nearest_lights_in_range_on_screen_are_picked`, `the_strength_is_the_kinds_by_name_and_fades_by_day`).
+
+Cost at the owner's setting (`?renderscale=0.5&upscaler=stretch`, M-series Mac, 2560 × 1600,
+`gpu.frame` p95, Off → Low → High; the bench's `torch-night` and `torch-cave` scenarios, kept in the
+PR's scratch file): five torches on open ground at midnight, seen from ~6 m, 11.5 → 11.7 → 12.2 ms;
+a torch placed in the torch-cave room before the stone pillar 10.6 → 11.3 → 11.3 ms. `gpu.shafts`
+reads 3.6–5.2 ms on Apple's tile GPU, where the passes overlap: the frame's change (+0.2–0.7 ms) is
+the cost. **How it looks:** a soft warm halo round each flame, wider and brighter by night, fainter
+on Low; in the cave a faint glow round the torch. No distinct rays in these views: nothing stands
+between the eye and the flames there; the rays show only past an occluder in front of a light (a
+post, a doorway, leaves). A first build sized the halo by `discM` alone, and a torch 2 m away hazed
+the whole view (the screen blend lifts the black corners of a cave); it is capped at `maxDisc`
+(half a screen height), and its decay is per twelfth of the way, since Low's fewer samples read
+brighter than High's when it was per sample.
+
 ## 5. Both faces
 
 Flames have an up: their billboards rise along the face's up (§6), written face-local and crossed

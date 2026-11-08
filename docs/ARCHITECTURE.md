@@ -2907,7 +2907,7 @@ The light shafts' tiers, strengths, reaches, decays and per-fluid looks are data
 `shared/look/shafts.json` (ADR 0064; High: ½ resolution, 24 samples, 4 lights at 12 samples each;
 Low: ¼, 12, 2 lights at 6; the sun 0.6, the moon 0.06, water 2.0; the placed and held lights'
 `lights`: within 20 m, faded out nearer than 1.5 m, 0.4 of the strength by day, the torch 0.35 with
-a 2.5 m halo, the fuse 0.15 with 1 m).
+a 1.2 m halo, the fuse 0.15 with 1 m, a halo at most half a screen height).
 
 The source spec left several thresholds unspecified. The values below are **initial defaults**
 to be tuned. Shared ones live in `shared/protocol/constants.json`, generated into Rust

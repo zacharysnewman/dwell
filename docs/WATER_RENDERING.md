@@ -899,3 +899,25 @@ quarter-scale buffer blurs wider). Cost at the owner's setting (`gpu.frame` p95,
 through the tree 10.45 → 10.82 → 11.97 ms (+1.5, of which ~1 ms a shadow-cascade spike in that run;
 `gpu.shafts` p95 2.7 / 3.7 on Apple's overlapping passes), the cloudy sky 11.30 → 11.63 → 12.53 ms
 (+1.2), as measured in 0.50.24.
+
+### 12.5 Torch and lamp shafts (2026-11-07, 0.50.26)
+
+The third part of ADR 0064: the shafts pass also draws the nearest placed and held lights' glow
+(`shafts.json` `lights`; docs/LIGHTS.md §4), in the buffer's rgb (now `rgba16float`; the sun's,
+moon's or fluid's glow moved to its alpha), each light a radial blur toward its screen point over
+the view depth behind the flame, weighed by its halo. In the air only: under a fluid the lights
+draw none yet. It deviates from the ADR's plan (a march against the torch shadow cube maps, High
+only): see the ADR's Decision for why.
+
+Cost at the owner's setting (`?renderscale=0.5&upscaler=stretch`, M-series Mac, 2560 × 1600,
+`gpu.frame` p95, Off → Low → High; the bench's `torch-night` and `torch-cave` scenarios, kept in the
+PR's scratch file): five torches on open ground at midnight, seen from ~6 m, 11.5 → 11.7 → 12.2 ms;
+a torch placed in the torch-cave room before the stone pillar 10.6 → 11.3 → 11.3 ms. `gpu.shafts`
+reads 3.6–5.2 ms on Apple's tile GPU, where the passes overlap: the frame's change (+0.2–0.7 ms) is
+the cost. **How it looks:** a soft warm halo round each flame, wider and brighter by night, fainter
+on Low; in the cave a faint glow round the torch. No distinct rays in these views: nothing stands
+between the eye and the flames there; the rays show only past an occluder in front of a light (a
+post, a doorway, leaves). A first build sized the halo by `discM` alone, and a torch 2 m away hazed
+the whole view (the screen blend lifts the black corners of a cave); it is capped at `maxDisc`
+(half a screen height), and its decay is per twelfth of the way, since Low's fewer samples read
+brighter than High's when it was per sample.
