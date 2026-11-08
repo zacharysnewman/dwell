@@ -21,6 +21,8 @@ export const ITEMS: readonly ItemDef[] = [
   { name: "dwell:grass_seed", label: "Grass seed", color: "#b9b45a", size: 0.12, stack: 64, value: 0 },
   { name: "dwell:gem", label: "Gem", color: "#4fb07a", size: 0.14, stack: 64, value: 1 },
   { name: "dwell:gem_large", label: "Large gem", color: "#4f7fd0", size: 0.2, stack: 64, value: 5 },
+  { name: "dwell:wood", label: "Wood", color: "#a07446", size: 0.24, stack: 64, value: 0 },
+  { name: "dwell:stone_axe", label: "Stone axe", color: "#7d7468", size: 0.3, stack: 1, value: 0 },
 ];
 
 export const WALLETS: readonly { name: string; label: string; capacity: number }[] = [
