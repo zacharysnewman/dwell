@@ -1,8 +1,8 @@
 {
-  "$comment": "Light shafts, the volumetric glow rays (ADR 0064; docs/ARCHITECTURE.md §6.9; owner, 2026-11-07: 'volumetric lighting which we want ... underwater [and] outside the water'; 'full quality everywhere with a cheaper version as a low setting'; soft and subtle, strength as data per place). tiers: the Settings → Graphics → Light shafts choices (Off draws none): scale the shafts' buffer against the drawing buffer (each axis), steps the samples a pixel takes. air: the sun's shafts through gaps in trees, clouds, cave openings and hills, a radial blur toward the sun's place on the screen over the sky the scene leaves open: strength the glow's brightness (× the light's colour; 0: none), reach the share of the way to the light each pixel samples (0–1), decay how much each sample weighs less than the one before, discRadius the half-screen-height distance round the light whose open sky glows (falling off to none there), elevationDeg the light's height over the horizon where they are full (lower, they fade; at the horizon, none), offscreen how far past the screen's edge (in half screen heights) the light can be with shafts still faded in. moon: the same for the moon at night (strength 0: none). fluids: the shafts under a fluid's surface by its registry name (a fluid not listed takes default): sunlight down from the surface along the sun's refracted direction, broken by the underside's cells so they flicker: strength (0: none), reachM how far along the view ray they gather (m), fadeM the depth below the surface over which they fade out (m), cellM the cells' size on the surface (m), speed the cells' drift (m/s); window: Snell's window seen from below, a glow of colour (sRGB) mixed over the sky through it by glow (0: the sky alone), its edge softened over edge (the share of the window's rim: 0 hard). Run `node shared/look/shafts.mjs` after editing; CI fails if crates/dwell-look/src/shafts.gen.rs is stale. The content is prototype (ARCHITECTURE.md §6.1).",
+  "$comment": "Light shafts, the volumetric glow rays (ADR 0064; docs/ARCHITECTURE.md §6.9; owner, 2026-11-07: 'volumetric lighting which we want ... underwater [and] outside the water'; 'full quality everywhere with a cheaper version as a low setting'; soft and subtle, strength as data per place). tiers: the Settings → Graphics → Light shafts choices (Off draws none): scale the shafts' buffer against the drawing buffer (each axis), steps the samples a pixel takes. air: the sun's shafts through gaps in trees, clouds, cave openings and hills, a radial blur toward the sun's place on the screen over the sky the scene leaves open: strength the glow's brightness (× the light's colour; 0: none), reach the share of the way to the light each pixel samples (0–1), decay how much each sample weighs less than the one before, discRadius the half-screen-height distance round the light whose open sky glows (falling off to none there), elevationDeg the light's height over the horizon where they are full (lower, they fade; at the horizon, none), offscreen how far past the screen's edge (in half screen heights) the light can be with shafts still faded in. moon: the same for the moon at night (strength 0: none). fluids: the shafts under a fluid's surface by its registry name (a fluid not listed takes default): sunlight down from the surface along the sun's refracted direction, broken by the underside's cells so they flicker: strength (0: none), reachM how far along the view ray they gather (m), fadeM the depth below the surface over which they fade out (m), cellM the cells' size on the surface (m), speed the cells' drift (m/s); window: Snell's window seen from below, a glow of colour (sRGB) mixed over the sky through it by glow (0: the sky alone), its edge softened over edge (the share of the window's rim: 0 hard). tiers' lights and lightSteps: the most placed and held lights (torches, lamps) a frame draws shafts from, and the samples a pixel takes toward each. lights: the shafts from those lights (torches and lamps in caves, at night, indoors; ADR 0064), a radial blur from each light's place on the screen over what doesn't hide it (the scene behind the flame, the sky): nearM how near the eye a light fades out within (none within half of it: a torch in your own hand), rangeM the farthest a light may be from the eye (fading out over its last half), reach and decay as the air's, offscreen as the air's (half screen heights past the edge), dayShare the share of the strength drawn by full day (all of it at night; the screen blend leaves bright places nearly untouched anyway), and per light source by its name (shared/blocks `lights`; one not listed takes default): strength (0: none), discM the glowing halo's radius round the flame (m). Run `node shared/look/shafts.mjs` after editing; CI fails if crates/dwell-look/src/shafts.gen.rs is stale. The content is prototype (ARCHITECTURE.md §6.1).",
   "tiers": {
-    "high": { "scale": 0.5, "steps": 24 },
-    "low": { "scale": 0.25, "steps": 12 }
+    "high": { "scale": 0.5, "steps": 24, "lights": 4, "lightSteps": 12 },
+    "low": { "scale": 0.25, "steps": 12, "lights": 2, "lightSteps": 6 }
   },
   "air": {
     "sun": { "strength": 0.6, "reach": 0.85, "decay": 0.975, "discRadius": 0.7, "elevationDeg": 8, "offscreen": 0.6 },
@@ -15,6 +15,19 @@
     "cellM": 1.5,
     "speed": 0.2,
     "window": { "color": "#ffffff", "glow": 0, "edge": 0 }
+  },
+  "lights": {
+    "nearM": 1.5,
+    "rangeM": 20,
+    "reach": 0.8,
+    "decay": 0.96,
+    "offscreen": 0.3,
+    "dayShare": 0.4,
+    "default": { "strength": 0, "discM": 1 },
+    "kinds": {
+      "dwell:torch": { "strength": 0.35, "discM": 2.5 },
+      "dwell:fuse": { "strength": 0.15, "discM": 1 }
+    }
   },
   "fluids": {
     "dwell:water": {
