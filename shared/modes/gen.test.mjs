@@ -9,7 +9,7 @@ test("the build's data validates: creative is the default, adventure is experime
   const creative = d.modes.find((m) => m.name === 'creative');
   const adventure = d.modes.find((m) => m.name === 'adventure');
   assert.deepEqual(creative.abilities, ['flight', 'brushes', 'unlimitedBlocks']);
-  assert.deepEqual(adventure.abilities, ['damage', 'unlimitedBlocks']);
+  assert.deepEqual(adventure.abilities, ['damage']);
   assert.equal(adventure.experimental, true);
   assert.match(modesRust(d), /pub const DEFAULT_MODE: &str = "creative";/);
   assert.match(modesTs(d), /export const GAME_MODES/);

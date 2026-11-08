@@ -25,8 +25,8 @@ export const GAME_MODES: readonly GameMode[] = [
   {
     name: "adventure",
     label: "Adventure",
-    description: "Falls, blasts and crushes hurt; no flight, no brush tools.",
+    description: "Falls, blasts and crushes hurt; no flight, no brush tools; blocks you break drop items, placing uses them.",
     experimental: true,
-    abilities: ["damage", "unlimitedBlocks"],
+    abilities: ["damage"],
   },
 ];

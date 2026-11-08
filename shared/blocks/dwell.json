@@ -111,6 +111,7 @@
     },
     {
       "name": "grass",
+      "drops": [{ "item": "dwell:dirt" }, { "item": "dwell:rock", "chance": 0.5 }],
       "sound": "dwell:grass",
       "density": 1400,
       "shape": "full",
@@ -248,6 +249,7 @@
     {
       "$comment": "Drawn cutout: the leaves tile has transparent gaps between the leaves. lightFilter: a canopy dims the sky light under it rather than shutting it out (docs/DAY_NIGHT.md §11). A rider (docs/FELLING.md): held up by the logs it belongs to, holding nothing; passable: players walk through it (owner, 2026-10-27). flooded (ADR 0063; owner, 2026-11-07: \"underwater leaves z fighting, I think they should be flooded\"): under water the leaves hold it in their gaps, drawn as the water beside them.",
       "name": "leaves",
+      "drops": [{ "item": "dwell:stick", "chance": 0.5 }],
       "sound": "dwell:grass",
       "density": 200,
       "shape": "full",
@@ -264,6 +266,10 @@
     {
       "$comment": "Prototype content (docs/TRANSPARENT_BLOCKS.md §6): blades of grass, the first plant. No collision; crossed quads drawn cutout, jittered per cell, swaying in the wind and fading out before the LOD; placed by hand only (world generation doesn't grow it), on grass or dirt, replaced by what is placed into it, and gone with the block under it.",
       "name": "tall_grass",
+      "drops": [
+        { "item": "dwell:grass_seed", "chance": 0.5 },
+        { "chance": 0.125, "pick": [{ "item": "dwell:gem", "weight": 95 }, { "item": "dwell:gem_large", "weight": 5 }] }
+      ],
       "held": "card",
       "sound": "dwell:grass",
       "density": 200,
@@ -407,6 +413,7 @@
     {
       "$comment": "Snow lying on turf (owner, 2026-10-21: \"add snow 'grass' block\"): grass's counterpart on high ground, which the terrain generator tops columns with above the snow line (shared/worldgen/terrain.json `bands`). A white snow top, a side with the snow's fringe hanging over the dirt (the `hang` tile, as grass's turf), dirt below; dirt under it shows the fringe as its skirt (`sideUnder`). Its ramps are stored like grass's (`rampFamilies`).",
       "name": "snowy_grass",
+      "drops": [{ "item": "dwell:dirt" }, { "item": "dwell:rock", "chance": 0.5 }],
       "sound": "dwell:snow",
       "density": 1300,
       "shape": "full",
@@ -433,6 +440,7 @@
     {
       "$comment": "Leaves under snow (owner, 2026-10-21: \"snow leaves\"): the leaves' cutout canopy and light filter with snow on the top face and caught on the sides. Trees growing high up take it for their leaves (shared/worldgen/placements.json `variants`).",
       "name": "snowy_leaves",
+      "drops": [{ "item": "dwell:stick", "chance": 0.5 }],
       "sound": "dwell:snow",
       "density": 220,
       "shape": "full",

@@ -16,6 +16,6 @@ pub static MODES: &[GameMode] = &[
         name: "adventure",
         label: "Adventure",
         experimental: true,
-        abilities: Ability::Damage.bit() | Ability::UnlimitedBlocks.bit(),
+        abilities: Ability::Damage.bit(),
     },
 ];
