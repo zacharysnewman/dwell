@@ -66,6 +66,12 @@ mod tests {
     #[test]
     fn every_item_places_a_placeable_block_at_a_height_the_protocol_takes() {
         for i in &ITEMS {
+            // A tool places nothing: it names a tool of the tools data (ADR 0067).
+            if let Some(t) = i.tool {
+                assert!(dwell_protocol::chopping::tool(t).is_some(), "{}", i.name);
+                assert!(i.block.is_empty(), "{}", i.name);
+                continue;
+            }
             let block = dwell_blocks::find_block(i.block).unwrap_or_else(|| panic!("{}", i.name));
             assert!(
                 (block.first_state..block.first_state + block.state_count)
@@ -90,5 +96,18 @@ mod tests {
             item("dwell:ladder").map(|i| i.drag),
             Some(ItemDrag::Vertical)
         );
+    }
+
+    #[test]
+    fn the_stone_axe_is_a_creative_hotbar_slot_that_places_nothing() {
+        // Owner, 2026-11-08 (ADR 0067 Q3): the axe on the creative hotbar.
+        let slots = crate::block_interaction::palette();
+        let axe = slots
+            .iter()
+            .find(|s| s.item == "dwell:stone_axe")
+            .expect("the axe's slot");
+        assert_eq!(axe.tool, Some("dwell:stone_axe"));
+        assert_eq!(axe.material, 0, "places nothing");
+        assert_eq!(slots.len(), ITEMS.len(), "every item, tools too, is a slot");
     }
 }

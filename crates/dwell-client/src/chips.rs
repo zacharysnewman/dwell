@@ -173,11 +173,7 @@ pub struct Gouge {
 pub fn gouges(cell: [i32; 3], grain: usize, cut: &Cut) -> Vec<Gouge> {
     let f = FaceFrame::at_row(cell[1]);
     let local = f.cell(cell);
-    let lo = [
-        f64::from(local[0]),
-        m_of_row(local[1]),
-        f64::from(local[2]),
-    ];
+    let lo = [f64::from(local[0]), m_of_row(local[1]), f64::from(local[2])];
     let size = [1.0, CELL_H, 1.0];
     let mut out = Vec::new();
     for side in 0..chop::SIDES {
@@ -273,9 +269,16 @@ mod tests {
                 c.list.iter().map(|ch| f.vector(ch.vel)[k]).sum::<f64>() / c.list.len() as f64
             });
             for ch in &c.list {
-                assert!(dot(f.vector(ch.vel), n) > 0.0, "out of the face: {:?}", ch.vel);
+                assert!(
+                    dot(f.vector(ch.vel), n) > 0.0,
+                    "out of the face: {:?}",
+                    ch.vel
+                );
             }
-            assert!(dot(mean, travel) > 0.5, "along the swing: {mean:?} vs {travel:?}");
+            assert!(
+                dot(mean, travel) > 0.5,
+                "along the swing: {mean:?} vs {travel:?}"
+            );
             // They fall toward the face's ground and are gone after their flight.
             let early = c.puffs(10.05);
             let late = c.puffs(10.6);
@@ -349,7 +352,10 @@ mod tests {
             let gs = gouges(cell, 0, &cut);
             assert_eq!(gs.len(), 1);
             let p = f.point(gs[0].at);
-            assert!((p[1] - (m_of_row(80) + CELL_H + GOUGE_LIFT)).abs() < 1e-9, "{p:?}");
+            assert!(
+                (p[1] - (m_of_row(80) + CELL_H + GOUGE_LIFT)).abs() < 1e-9,
+                "{p:?}"
+            );
             assert!((p[0] - 0.5).abs() < 1e-9, "the middle of its 1 m length");
             assert_eq!(f.vector(gs[0].normal), [0.0, 1.0, 0.0]);
         }

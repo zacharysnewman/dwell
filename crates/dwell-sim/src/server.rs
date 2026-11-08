@@ -2461,8 +2461,7 @@ impl Server {
                     && outcome.changes.iter().any(|&(c, m)| {
                         (m == M.air || info(m).liquid)
                             && !dwell_protocol::chopping::may_break_holding(
-                                dwell_blocks::block_of(self.world.get_voxel(c[0], c[1], c[2]))
-                                    .name,
+                                dwell_blocks::block_of(self.world.get_voxel(c[0], c[1], c[2])).name,
                                 held_item.as_deref(),
                             )
                     }) {

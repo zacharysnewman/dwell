@@ -532,7 +532,10 @@ mod tests {
             hi - lo
         };
         assert!(span(level, 1) > 2.0 * span(level, 0), "level: a yaw sweep");
-        assert!(span(vertical, 0) > 2.0 * span(vertical, 1), "vertical: a pitch sweep");
+        assert!(
+            span(vertical, 0) > 2.0 * span(vertical, 1),
+            "vertical: a pitch sweep"
+        );
         // The body has no chop clips: it plays its break.
         let mut b = Animator::new(&TABLES, player(), Space::Body);
         b.update(&input(PlayerState::Idle, [0.0; 3]), 0.1);

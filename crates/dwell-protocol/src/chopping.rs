@@ -74,7 +74,10 @@ pub struct Chips {
 
 /// The tool kind breaking a block needs where blocks are not unlimited (its `breakWith`), if any.
 pub fn break_with(block: &str) -> Option<ToolKind> {
-    BREAK_WITH.iter().find(|(b, _)| *b == block).map(|(_, k)| *k)
+    BREAK_WITH
+        .iter()
+        .find(|(b, _)| *b == block)
+        .map(|(_, k)| *k)
 }
 
 /// Whether a break of `block` holding `held` (an item name, none: an empty hand) is allowed where

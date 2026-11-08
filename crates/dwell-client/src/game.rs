@@ -3343,7 +3343,10 @@ impl<S: Scene> Game<S> {
             return None;
         }
         if !self.loose.uses_items() {
-            let slot = self.interaction.palette().get(self.interaction.selected())?;
+            let slot = self
+                .interaction
+                .palette()
+                .get(self.interaction.selected())?;
             return dwell_protocol::chopping::tool(slot.tool?);
         }
         let (_, inv) = self.loose.inventory.as_ref()?;

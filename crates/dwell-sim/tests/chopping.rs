@@ -308,7 +308,11 @@ dwell_world::both_faces!(
         assert_ne!(cell_is(&mut fx, f, [3, AT, 0]), M.air, "the log stays");
         assert!(fx.server.loose_items().is_empty(), "and drops nothing");
         hand_break(&mut fx, f, [2, AT, 1]);
-        assert_eq!(cell_is(&mut fx, f, [2, AT, 1]), M.air, "leaves break by hand");
+        assert_eq!(
+            cell_is(&mut fx, f, [2, AT, 1]),
+            M.air,
+            "leaves break by hand"
+        );
     }
 );
 

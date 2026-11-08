@@ -38,7 +38,11 @@ pub enum PuffKind {
     Chip,
     /// A gouge on a cut wood cell's side (crate::chips): not a billboard but a quad spanning `u`
     /// and `v` (half extents, world) about `at`; `size` is its depth (0–1 across the cell).
-    Gouge { u: [f64; 3], v: [f64; 3], kerf: bool },
+    Gouge {
+        u: [f64; 3],
+        v: [f64; 3],
+        kerf: bool,
+    },
 }
 
 /// One billboard to draw: its centre (world m), half size (m), opacity, kind and its explosive.
