@@ -2601,7 +2601,7 @@ fn water_fs(i: FluidOut, @builtin(front_facing) front: bool) -> SceneOut {
     // floor SURFACE_CAUSTICS_M down, added as light seen through the surface (no depth is read).
     if (water_tier_caustics() && !water_off(DBG_CAUSTICS)) {
         let m = caustic_light(i.wrapped, SURFACE_CAUSTICS_M, s.frag_y, footprint, 1.0, f, i.fluid);
-        lit += max(m - 1.0, 0.0) * SURFACE_CAUSTICS_GAIN * (1.0 - fres) * s.shadow * mix(s.body, vec3f(1.0), 0.5);
+        lit += max(m - 1.0, 0.0) * SURFACE_CAUSTICS_GAIN * (1.0 - fres) * s.shadow * mix(s.body, vec3f(1.0), 0.3);
     }
     o.color = vec4f(lit / alpha, alpha);
     // Foam streaks along the current (docs/WATER_SURFACE_GRID.md §2c), opaque where they are.

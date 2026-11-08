@@ -19,7 +19,7 @@
       "setting": true,
       "cpu": false,
       "readsScene": false,
-      "opacity": 0.55,
+      "opacity": 0.9,
       "surfaceCaustics": true,
       "rippleLayers": 1,
       "flowStreaks": false,
@@ -54,7 +54,7 @@
   "caustics": {
     "$comment": "The blended pass's caustics (surfaceCaustics): the caustic tile's lines at the surface point as if lighting a floor depthM down (no depth is read: the pass is not split), added at gain × the light they focus (none at night, as under the surface).",
     "depthM": 0.6,
-    "gain": 0.5
+    "gain": 0.3
   },
   "causticEveryFrames": 2
 }

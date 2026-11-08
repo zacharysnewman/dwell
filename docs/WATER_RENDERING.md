@@ -96,7 +96,7 @@ store keeps the stored value as it was, append-only).
 | Tier | Contents |
 |---|---|
 | Opaque (the CPU adapter only, not in Settings) | Normal maps (one layer), Fresnel, glint, sky-only reflection, absorption at constant depth; underwater fog only. No copies (the old Low) |
-| Low (phone default; Low and Mobile presets) | See-through **without the scene copy**: drawn blended in the scene pass (no split), at `opacity` 0.55 of the fluid's own so the floor shows through, the caustic tile's lines added on the water (`surfaceCaustics`, as if on a floor `caustics.depthM` down); one ripple layer, no flow streaks, no land march, one cloud octave reflected. No refraction distortion, no depth absorption, no shoreline foam |
+| Low (phone default; Low and Mobile presets) | See-through **without the scene copy**: drawn blended in the scene pass (no split), at `opacity` 0.9 of the fluid's own so the floor shows through, the caustic tile's lines added on the water (`surfaceCaustics`, as if on a floor `caustics.depthM` down); one ripple layer, no flow streaks, no land march, one cloud octave reflected. No refraction distortion, no depth absorption, no shoreline foam |
 | Medium (desktop default) | The whole look: three ripple layers, flow streaks, SSR (12 steps; a phone's 8) and the clouds reflected (W5a). High was folded in (0.50.29): it measured within 0.1–0.3 ms of Medium |
 
 **Why Low has no copy** (owner, 2026-11-07): on the owner's iPhone, floating at the surface looking down ran

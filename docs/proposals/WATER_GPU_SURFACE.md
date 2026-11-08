@@ -310,7 +310,7 @@ and keep the new look within that.
 
 | Step | Work | Expected saving (*estimate*) | Risk |
 |---|---|---|---|
-| **C1** ✅ 0.50.29 | The see-through phone tier as data (as built: `shared/look/watertiers.json`; Low blended with no copy, opacity 0.55, surface caustics; High folded into Medium; the opaque tier the CPU's only) (`reflections.json` phone overrides plus the water quality: copy, refraction, absorption, caustic tile; no SSR; one ripple layer; no flow streaks) | ~1 ms at the dam on a phone-sized frame against Medium | low: data and tier switches |
+| **C1** ✅ 0.50.29 | The see-through phone tier as data (as built: `shared/look/watertiers.json`; Low blended with no copy, opacity 0.9, surface caustics; High folded into Medium; the opaque tier the CPU's only) (`reflections.json` phone overrides plus the water quality: copy, refraction, absorption, caustic tile; no SSR; one ripple layer; no flow streaks) | ~1 ms at the dam on a phone-sized frame against Medium | low: data and tier switches |
 | **C2** 🚧 | Copy only the water's screen rectangle (not built; Medium only now, since Low has no copy); tiles every other frame (✅ 0.50.29, `causticEveryFrames`) | 0.3–0.5 ms where little water shows | low |
 | **C3** | Flow streaks and ripple layers from tiles (one advected foam tile, the ripples baked) | ~0.3 ms where water fills the view | low–medium: the look must match |
 | **C4** 🚧 | Half-resolution SSR on desktop (not built); the stylized reflection band on phones (built as `bank_band`, but it reads the scene copy, so Low can't draw it; needs a copy-free form, e.g. a bank colour from the LOD map) | 0.2–0.35 ms | medium: upsample edges |

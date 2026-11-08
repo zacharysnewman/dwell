@@ -22,7 +22,7 @@ pub const WATER_TIERS: &[WaterTier] = &[
         setting: true,
         cpu: false,
         reads_scene: false,
-        opacity: 0.55,
+        opacity: 0.9,
         surface_caustics: true,
         ripple_layers: 1,
         flow_streaks: false,
@@ -60,7 +60,7 @@ pub const BANK_BAND: BankBand = BankBand {
 /// The blended pass's caustics (`surface_caustics`).
 pub const SURFACE_CAUSTICS: SurfaceCaustics = SurfaceCaustics {
     depth_m: 0.6,
-    gain: 0.5,
+    gain: 0.3,
 };
 
 /// The caustic tile is redrawn every this many frames.
