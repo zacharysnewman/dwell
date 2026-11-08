@@ -1,5 +1,5 @@
-//! World settings (docs/DAY_NIGHT.md §2, docs/WATER_FLOW.md §4.1): what a world sets for every
-//! player in it — its clock, its water speed — sent by the server at join (`WorldSettings`, before
+//! World settings (docs/DAY_NIGHT.md §2, docs/WATER_FLOW.md §4.1, ADR 0065): what a world sets for
+//! every player in it — its clock, its water speed, its game mode — sent by the server at join (`WorldSettings`, before
 //! `Welcome`) and kept in the world file's meta in the same form. The clients use the server's,
 //! so changing one is a world's choice, not a compatibility change.
 //!
@@ -24,6 +24,11 @@ pub mod tag {
     pub const CLOCK: u8 = 1;
     /// `f32` water speed: water time is game time × this (docs/WATER_FLOW.md §4.1).
     pub const WATER_SPEED: u8 = 0x81;
+    /// The game mode's name (`crate::modes`, UTF-8; ADR 0065). Optional: a build before modes
+    /// skips it (its world plays as it always did, creative), and a name this build doesn't know
+    /// (a newer build's mode) reads as `modes::DEFAULT_MODE`. The server enforces the mode; a
+    /// client only predicts and hides with it.
+    pub const MODE: u8 = 0x82;
 }
 
 /// The most fields, and the longest field.
@@ -58,6 +63,19 @@ impl WorldClock {
 pub struct WorldSettings {
     pub clock: WorldClock,
     pub water_speed: f32,
+    /// The game mode's name: always one of `crate::modes::MODES`.
+    pub mode: &'static str,
+}
+
+impl WorldSettings {
+    /// The world's game mode (ADR 0065).
+    pub fn game_mode(&self) -> &'static crate::modes::GameMode {
+        crate::modes::mode_or_default(self.mode)
+    }
+    /// Whether the world's mode allows `a`.
+    pub fn allows(&self, a: crate::modes::Ability) -> bool {
+        self.game_mode().allows(a)
+    }
 }
 
 /// Why a world's fields can't be used.
@@ -150,6 +168,11 @@ impl SettingsFields {
                 return Err(SettingsError::Invalid(tag::WATER_SPEED));
             }
         }
+        if let Some(b) = self.get(tag::MODE) {
+            // A mode this build doesn't know (a newer build's) plays as the default one.
+            let name = std::str::from_utf8(b).map_err(|_| SettingsError::Invalid(tag::MODE))?;
+            s.mode = crate::modes::mode_or_default(name).name;
+        }
         Ok(s)
     }
 
@@ -158,7 +181,7 @@ impl SettingsFields {
         let mut out: Vec<(u8, Vec<u8>)> = self
             .0
             .iter()
-            .filter(|(t, _)| *t != tag::CLOCK && *t != tag::WATER_SPEED)
+            .filter(|(t, _)| ![tag::CLOCK, tag::WATER_SPEED, tag::MODE].contains(t))
             .cloned()
             .collect();
         let field = |f: &dyn Fn(&mut ByteWriter)| {
@@ -175,6 +198,7 @@ impl SettingsFields {
             }),
         ));
         out.push((tag::WATER_SPEED, field(&|w| w.f32(s.water_speed))));
+        out.push((tag::MODE, s.game_mode().name.as_bytes().to_vec()));
         out.sort_by_key(|(t, _)| *t);
         Self(out)
     }
@@ -191,6 +215,7 @@ mod tests {
             start_hour: 7.0,
         },
         water_speed: 1.0,
+        mode: "creative",
     };
 
     #[test]
@@ -202,6 +227,7 @@ mod tests {
                 start_hour: 12.0,
             },
             water_speed: 4.0,
+            mode: "adventure",
         };
         let f = SettingsFields::default().with(s);
         let back = SettingsFields::from_bytes(&f.to_bytes()).expect("the tagged form");
@@ -245,5 +271,54 @@ mod tests {
         });
         assert_eq!(bad.settings(D), Err(SettingsError::Invalid(tag::CLOCK)));
         assert_eq!(SettingsFields::from_bytes(&[2, 1, 0, 0]), None, "truncated");
+    }
+
+    #[test]
+    fn the_mode_is_an_optional_field_a_build_before_modes_skips() {
+        let adventure = WorldSettings {
+            mode: "adventure",
+            ..D
+        };
+        let f = SettingsFields::default().with(adventure);
+        assert!(
+            f.0.iter()
+                .any(|(t, b)| *t == tag::MODE && b == b"adventure")
+        );
+        assert_ne!(
+            tag::MODE & tag::OPTIONAL,
+            0,
+            "optional: no new compatibility line"
+        );
+        // A build before modes reads the same fields with its known ones only: the mode field is
+        // skipped as an unknown optional one, and its world plays as before (creative).
+        let older = |f: &SettingsFields| {
+            for (t, _) in &f.0 {
+                if *t & tag::OPTIONAL == 0 && *t != tag::CLOCK {
+                    return Err(SettingsError::Unknown(*t));
+                }
+            }
+            Ok(())
+        };
+        assert_eq!(older(&f), Ok(()));
+        // A world saved before modes has no mode field: the default (creative).
+        let before = SettingsFields(
+            f.0.iter()
+                .filter(|(t, _)| *t != tag::MODE)
+                .cloned()
+                .collect(),
+        );
+        assert_eq!(
+            before.settings(adventure).map(|s| s.mode),
+            Ok("adventure"),
+            "the caller's default"
+        );
+        assert_eq!(before.settings(D).map(|s| s.mode), Ok("creative"));
+        // A newer build's mode, unknown here, plays as the default.
+        let mut newer = before.clone();
+        newer.0.push((tag::MODE, b"hardcore".to_vec()));
+        assert_eq!(newer.settings(adventure).map(|s| s.mode), Ok("creative"));
+        newer.0.retain(|(t, _)| *t != tag::MODE);
+        newer.0.push((tag::MODE, vec![0xff, 0xfe]));
+        assert_eq!(newer.settings(D), Err(SettingsError::Invalid(tag::MODE)));
     }
 }

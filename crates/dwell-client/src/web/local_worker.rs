@@ -147,7 +147,8 @@ impl LocalWorld {
     /// water worker this worker's script starts (ADR 0062: `takeWaterOut`, `waterIn`); without,
     /// on this worker's thread. With `jobs_worker` the chunks to generate and the LOD's
     /// sections are done in the server-jobs worker this worker's script starts (`takeJob`,
-    /// `jobIn`); without, on the tick within its budgets.
+    /// `jobIn`); without, on the tick within its budgets. `mode`: a new world's game mode (ADR
+    /// 0065; the New world form's choice, by name); a saved world keeps its own.
     // Positional, as JS passes them (wasm-bindgen constructor), like `LocalCore::create_spawning`.
     #[allow(clippy::too_many_arguments)]
     #[wasm_bindgen(constructor)]
@@ -162,6 +163,7 @@ impl LocalWorld {
         upgrade: Option<bool>,
         water_worker: Option<bool>,
         jobs_worker: Option<bool>,
+        mode: Option<String>,
     ) -> Result<LocalWorld, JsError> {
         // The tick's phases timed by this worker's clock (`tickPhases`, docs/DEV_TOOLS.md).
         dwell_sim::clock::set_clock(worker_now);
@@ -171,7 +173,7 @@ impl LocalWorld {
         } else {
             dwell_world::Face::A
         };
-        match LocalCore::create_spawning(
+        match LocalCore::create_tuned(
             face,
             spawn_portal == Some(true),
             spawn_at.and_then(|v| <[f64; 3]>::try_from(v).ok()),
@@ -187,6 +189,11 @@ impl LocalWorld {
                 dwell_sim::water::host::Placement::Inline
             },
             jobs_worker == Some(true),
+            |c| {
+                if let Some(m) = mode {
+                    c.mode = m;
+                }
+            },
         ) {
             Ok(core) => Ok(Self { core }),
             Err(LocalError::VersionLocked(m)) => Err(JsError::new(&m)),
@@ -223,6 +230,16 @@ impl LocalWorld {
             policy(flight),
             host_key.try_into().unwrap_or([0; 32]),
         );
+    }
+    /// The host changes the world's game mode by name (ADR 0065); false for an unknown one.
+    #[wasm_bindgen(js_name = setMode)]
+    pub fn set_mode(&mut self, name: &str) -> bool {
+        self.core.set_mode(name)
+    }
+    /// The world's game mode's name.
+    #[wasm_bindgen(getter)]
+    pub fn mode(&self) -> String {
+        self.core.mode().into()
     }
     #[wasm_bindgen(js_name = hostStatus)]
     pub fn host_status(&mut self, state: u8) {

@@ -214,6 +214,7 @@ async function start(
   upgrade = false,
   waterInline = false,
   jobsInline = false,
+  mode?: string,
 ): Promise<void> {
   // The world file (§6.4): the chosen world's (by default one per generator and seed), in OPFS.
   // Without it the world lives in memory only (no OPFS, or the world is open in another tab).
@@ -252,6 +253,7 @@ async function start(
       upgrade,
       water !== null,
       jobs !== null,
+      mode,
     );
     stage('spawn', 'end');
     jobs?.postMessage({
@@ -340,6 +342,7 @@ scope.onmessage = (e) => {
       msg.upgrade,
       msg.waterInline,
       msg.jobsInline,
+      msg.mode,
     );
   else handle(msg);
 };

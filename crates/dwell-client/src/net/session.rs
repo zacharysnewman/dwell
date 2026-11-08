@@ -29,8 +29,12 @@ pub enum SessionState {
         world_seed: u64,
         generator_version: u32,
         verification_chunk: [i32; 3],
-        /// The server lets this player use creative flight (§8.3).
+        /// The server lets this player use creative flight now (§8.3): its flight policy and the
+        /// world's game mode (ADR 0065).
         may_fly: bool,
+        /// The flight policy alone (`welcome_flags::FLIGHT_POLICY`): `may_fly` again when the
+        /// host changes the world's mode.
+        flight_policy: bool,
         /// The server takes `RegionEdit`s (`welcome_flags::REGION_EDITS`; builds before them
         /// reject an unknown message, so the client sends none without it).
         region_edits: bool,
@@ -88,6 +92,8 @@ pub struct Session {
     /// order: reliable ones wait here until the game drains them, so none is lost while it loads.
     game: VecDeque<(Message, Vec<u8>)>,
     changed: bool,
+    /// The host changed the world's mode (`take_abilities_changed`).
+    abilities_changed: bool,
     /// `BlockRegistry` parts received so far, and how many the server announced.
     registry_parts: Vec<u8>,
     registry_next: u16,
@@ -134,6 +140,7 @@ impl Session {
             out: Vec::new(),
             game: VecDeque::new(),
             changed: true,
+            abilities_changed: false,
             registry_parts: Vec::new(),
             registry_next: 0,
             registry_parts_total: 0,
@@ -194,9 +201,40 @@ impl Session {
             generator_version: w.generator_version,
             verification_chunk: w.verification_chunk,
             may_fly: w.flags & welcome_flags::FLIGHT != 0,
+            flight_policy: w.flags & welcome_flags::FLIGHT_POLICY != 0,
             region_edits: w.flags & welcome_flags::REGION_EDITS != 0,
             brushes: w.flags & welcome_flags::BRUSHES != 0,
         });
+    }
+
+    /// The world's settings again while joined: the host changed its game mode (ADR 0065; only a
+    /// server with modes sends them after join). Flight and brushes follow the new mode.
+    fn on_settings_changed(&mut self, f: world_settings::SettingsFields) {
+        let Some(old) = self.world else {
+            return;
+        };
+        let Ok(new) = f.settings(old) else {
+            return; // the server's checks still apply; keep predicting with the old ones
+        };
+        self.world = Some(new);
+        if let SessionState::Joined {
+            may_fly,
+            flight_policy,
+            brushes,
+            ..
+        } = &mut self.state
+        {
+            *may_fly = *flight_policy && new.allows(dwell_protocol::modes::Ability::Flight);
+            *brushes = new.allows(dwell_protocol::modes::Ability::Brushes);
+        }
+        self.abilities_changed = true;
+        self.changed = true;
+    }
+
+    /// Whether the world's mode changed what this player may do since the last call (flight,
+    /// brushes: read them again from `state()`).
+    pub fn take_abilities_changed(&mut self) -> bool {
+        std::mem::take(&mut self.abilities_changed)
     }
 
     fn fail(&mut self, message: String) {
@@ -551,6 +589,7 @@ impl Session {
             Message::WorldSettings(f) if self.state == SessionState::Handshaking => {
                 self.world_fields = Some(f);
             }
+            Message::WorldSettings(f) if self.joined() => self.on_settings_changed(f),
             Message::Welcome(w) if self.state == SessionState::Handshaking => self.on_welcome(w),
             Message::Reject(r) => {
                 self.set_state(SessionState::Rejected {
@@ -652,6 +691,7 @@ mod tests {
                 start_hour: 9.0,
             },
             water_speed: 2.0,
+            mode: "creative",
         }
     }
 
@@ -766,6 +806,7 @@ mod tests {
                 generator_version: 0,
                 verification_chunk: [0, 2, 0],
                 may_fly: true,
+                flight_policy: false,
                 region_edits: false,
                 brushes: false,
             }
@@ -1120,6 +1161,66 @@ mod tests {
                 panic!("{:?}", s.state())
             };
             assert_eq!((*got, *got_brushes), (region_edits, brushes));
+        }
+    }
+
+    /// ADR 0065: the host changes the world's mode while a player is in it; the server sends the
+    /// world's settings again, and flight and brushes follow the mode (flight only as far as the
+    /// flight policy allows it).
+    #[test]
+    fn a_mode_change_after_join_turns_flight_and_brushes_off_and_on() {
+        let Message::Welcome(w) = welcome(0) else {
+            unreachable!()
+        };
+        let abilities = |s: &Session| match s.state() {
+            SessionState::Joined {
+                may_fly, brushes, ..
+            } => (*may_fly, *brushes),
+            other => panic!("{other:?}"),
+        };
+        for (policy, flies) in [(true, true), (false, false)] {
+            let (_, mut s) = setup();
+            let flags = welcome_flags::REGION_EDITS
+                | welcome_flags::BRUSHES
+                | if flies { welcome_flags::FLIGHT } else { 0 }
+                | if policy {
+                    welcome_flags::FLIGHT_POLICY
+                } else {
+                    0
+                };
+            send_registry(&mut s, &build_registry(), 1 << 16);
+            s.on_reliable(
+                Channel::Control,
+                &Message::Welcome(Welcome { flags, ..w.clone() }).encode(),
+                1000.0,
+            );
+            assert_eq!(abilities(&s), (flies, true));
+            let _ = s.take_abilities_changed();
+            let adventure = world_settings::WorldSettings {
+                mode: "adventure",
+                ..settings()
+            };
+            send_settings(
+                &mut s,
+                &world_settings::SettingsFields::default().with(adventure),
+            );
+            assert!(s.take_abilities_changed());
+            assert_eq!(
+                abilities(&s),
+                (false, false),
+                "adventure: no flight, no brushes"
+            );
+            assert_eq!(s.world_settings().map(|w| w.mode), Some("adventure"));
+            send_settings(
+                &mut s,
+                &world_settings::SettingsFields::default().with(settings()),
+            );
+            assert!(s.take_abilities_changed());
+            assert_eq!(
+                abilities(&s),
+                (policy, true),
+                "creative again, as the policy allows"
+            );
         }
     }
 

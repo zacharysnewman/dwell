@@ -14,6 +14,7 @@ use dwell_physics::controller::{Input, PlayerHandle, Players, events};
 use dwell_physics::net::{dequantize_input, player_flags_of, quantize_pitch, quantize_yaw, to_net};
 use dwell_physics::query::GroundRef;
 use dwell_physics::{DVec3, Physics, Vec3};
+use dwell_protocol::modes::Ability;
 use dwell_protocol::world_settings::{SettingsFields, WorldClock, WorldSettings};
 use dwell_protocol::*;
 use dwell_protocol::{
@@ -23,7 +24,6 @@ use dwell_protocol::{
     players as pc, welcome_flags, world as wc,
 };
 use dwell_storage::{PlayerRecord, SaveBatch, SavedLodSection, WorldMeta, WorldStore};
-use dwell_world::brush::{brush_policy, world_mode};
 use dwell_world::edit::{
     DEFAULT_REACH, EditCapsule, EditCheck, check_block_edit, edit_writes, held_in_place,
     medium_kept, overlaps_player,
@@ -294,9 +294,13 @@ pub struct ServerConfig {
     /// thread (the default: tests, a fallback), on its own native thread (the dedicated server), or
     /// remote (the browser's water worker, its messages carried by the embedder).
     pub water: crate::water::host::Placement,
+    /// A new world's game mode (ADR 0065, `shared/modes/modes.json`; a name not there is the
+    /// default, creative). A saved world keeps its own; one saved before modes is creative.
+    pub mode: String,
 }
 
-/// A new world's settings: this build's clock (`shared/look/daynight.json`) and `water_speed`.
+/// A new world's settings: this build's clock (`shared/look/daynight.json`), `water_speed` and the
+/// default game mode (creative).
 pub fn default_settings(water_speed: f64) -> WorldSettings {
     let c = dwell_look::daynight::DAY_NIGHT.clock;
     WorldSettings {
@@ -306,6 +310,15 @@ pub fn default_settings(water_speed: f64) -> WorldSettings {
             start_hour: c.start_hour as f32,
         },
         water_speed: water_speed as f32,
+        mode: dwell_protocol::modes::DEFAULT_MODE,
+    }
+}
+
+/// A new world's settings under `config`: [`default_settings`] with its water speed and mode.
+fn new_world_settings(config: &ServerConfig) -> WorldSettings {
+    WorldSettings {
+        mode: dwell_protocol::modes::mode_or_default(&config.mode).name,
+        ..default_settings(config.water_speed)
     }
 }
 
@@ -342,6 +355,7 @@ impl Default for ServerConfig {
             player_config: PlayerControllerConfig::default(),
             water_speed: crate::water::FLOW.speed,
             water: crate::water::host::Placement::Inline,
+            mode: dwell_protocol::modes::DEFAULT_MODE.into(),
         }
     }
 }
@@ -904,8 +918,8 @@ impl Server {
                 },
                 ..WaterLink::default()
             },
-            settings: default_settings(config.water_speed),
-            settings_fields: SettingsFields::default().with(default_settings(config.water_speed)),
+            settings: new_world_settings(&config),
+            settings_fields: SettingsFields::default().with(new_world_settings(&config)),
             tick: 0,
             next_player_id: 1,
             worldgen: if config.jobs_remote {
@@ -1192,6 +1206,7 @@ impl Server {
         s.edit_credit = EDIT_BURST;
         s.region_credit = REGION_BURST_CELLS;
         let flight = self.may_fly(&self.sessions[&id]);
+        let flight_policy = self.may_fly_by_policy(&self.sessions[&id]);
         let welcome = Welcome {
             player_id,
             world_seed: self.config.world_seed,
@@ -1200,12 +1215,19 @@ impl Server {
             verification_chunk: self.verification_chunk.to_array(),
             // REGION_EDITS: this server understands RegionEdit (older builds of the line reject an
             // unknown message, so clients send one only when this is set).
-            // BRUSHES (BRUSHES.md): pastes may hold KEEP cells and region edits reach as far as
-            // the game mode's brush policy says; set only in modes that allow brushes (every world
-            // is creative for now, which does).
+            // BRUSHES (BRUSHES.md): pastes may hold KEEP cells and region edits reach the brush
+            // reach; set only in game modes that allow brushes (ADR 0065).
+            // FLIGHT: this player may fly now (the mode and the flight policy); FLIGHT_POLICY:
+            // the policy alone, for a client to recompute FLIGHT when the host changes the mode
+            // (older clients ignore the bit and keep FLIGHT).
             flags: welcome_flags::REGION_EDITS
                 | if flight { welcome_flags::FLIGHT } else { 0 }
-                | if brush_policy(world_mode()).is_some() {
+                | if flight_policy {
+                    welcome_flags::FLIGHT_POLICY
+                } else {
+                    0
+                }
+                | if self.brushes_allowed() {
                     welcome_flags::BRUSHES
                 } else {
                     0
@@ -1418,6 +1440,11 @@ impl Server {
     }
 
     fn damage(&mut self, id: SessionId, amount: i32, cause: DamageCause) {
+        // Every cause (falls, blasts, falling pieces) goes through here: a mode without the
+        // `damage` ability (creative) hurts no one (ADR 0065).
+        if !self.settings.allows(Ability::Damage) {
+            return;
+        }
         let s = self.sessions.get_mut(&id).expect("session");
         if s.handle.is_none() || amount <= 0 {
             return;
@@ -2193,8 +2220,15 @@ impl Server {
     fn may_edit(&self, s: &Session) -> bool {
         self.allowed(self.config.edits, s)
     }
+    /// Flight: the world's mode allows it (ADR 0065) and the flight policy lets this player.
     fn may_fly(&self, s: &Session) -> bool {
+        self.settings.allows(Ability::Flight) && self.may_fly_by_policy(s)
+    }
+    fn may_fly_by_policy(&self, s: &Session) -> bool {
         self.allowed(self.config.flight, s)
+    }
+    fn brushes_allowed(&self) -> bool {
+        self.settings.allows(Ability::Brushes)
     }
     fn allowed(&self, policy: EditPolicy, s: &Session) -> bool {
         match policy {
@@ -2244,7 +2278,8 @@ impl Server {
         // Bodies placed blocks start (cell, block, kind).
         // Blocks gone into bodies this tick: (body, its new cell; none: a new body), the block.
         let mut bodies_built: Vec<BodyBuilt> = Vec::new();
-        let reach = region_reach(world_mode());
+        let brushes = self.brushes_allowed();
+        let reach = region_reach(brushes);
         let ids: Vec<SessionId> = self.sessions.keys().copied().collect();
         for id in ids {
             let s = &self.sessions[&id];
@@ -2316,7 +2351,15 @@ impl Server {
                     continue;
                 };
                 s.region_credit -= cost;
-                let outcome = check_region_edit(&mut self.world, &edit, eye, &capsules, reach);
+                // A brush stroke's KEEP cells only in a mode with brushes (ADR 0065).
+                let outcome = if !brushes
+                    && edit.op == dwell_protocol::RegionEditOp::Paste
+                    && edit.cells.contains(&dwell_world::region::KEEP)
+                {
+                    dwell_world::region::RegionOutcome::fail(RegionCheck::NotPlaceable)
+                } else {
+                    check_region_edit(&mut self.world, &edit, eye, &capsules, reach)
+                };
                 s.stats.last_region_check = outcome.check;
                 if outcome.check != RegionCheck::Ok {
                     s.stats.region_edits_rejected += 1;
@@ -3160,9 +3203,35 @@ impl Server {
         w.apply_to(self.world.get_voxel_if_loaded(c))
     }
 
-    /// The world's settings (its clock, its water speed).
+    /// The world's settings (its clock, its water speed, its game mode).
     pub fn world_settings(&self) -> WorldSettings {
         self.settings
+    }
+
+    /// The host changes the world's game mode (ADR 0065; a name not in `shared/modes/modes.json`
+    /// is refused: false). It applies at once to every player in the world: the server's checks
+    /// (damage, flight, brush strokes) read it, the joined clients get the world's settings again
+    /// (older ones ignore them after join), and the world saves it with its next save.
+    pub fn set_mode(&mut self, name: &str) -> bool {
+        let Some(m) = dwell_protocol::modes::mode(name) else {
+            return false;
+        };
+        if m.name == self.settings.mode {
+            return true;
+        }
+        self.settings.mode = m.name;
+        self.settings_fields = self.settings_fields.with(self.settings);
+        let bytes = encode(&Message::WorldSettings(self.settings_fields.clone()));
+        for (&id, s) in &self.sessions {
+            if s.joined() {
+                self.outbox.push(Outgoing {
+                    session: id,
+                    kind: OutKind::Reliable(Channel::Control),
+                    bytes: bytes.clone(),
+                });
+            }
+        }
+        true
     }
 
     /// The last block changes not the water's own, oldest first, as JSON (a diagnostic for the
@@ -3690,7 +3759,11 @@ impl Server {
             self.tick = m.world_tick;
             // A world saved with settings keeps them (a world from before them takes this build's).
             if let Some(f) = m.settings.as_deref().and_then(SettingsFields::from_bytes) {
-                match f.settings(self.settings) {
+                let before = WorldSettings {
+                    mode: dwell_protocol::modes::DEFAULT_MODE,
+                    ..self.settings
+                };
+                match f.settings(before) {
                     Ok(s) => {
                         self.settings = s;
                         self.settings_fields = f;

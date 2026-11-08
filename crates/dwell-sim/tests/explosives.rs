@@ -37,10 +37,15 @@ struct Scene {
 }
 
 impl Scene {
+    /// In adventure, where blasts hurt (ADR 0065).
     fn new(f: FaceFrame, players: usize) -> Self {
+        Self::in_mode(f, players, "adventure")
+    }
+    fn in_mode(f: FaceFrame, players: usize, mode: &str) -> Self {
         let fx = Fixture::new(ServerConfig {
             generator_override: Some(empty_generator()),
             spawn: Some(f.point([0.5, m_of_row(BASE), -10.5])),
+            mode: mode.into(),
             ..flat()
         });
         let mut s = Self { f, fx, base: BASE };
@@ -319,6 +324,39 @@ dwell_world::both_faces!(
         assert!(!dead[3]);
         // Killed by it, player 1 is gone before its push would land; the others are pushed.
         assert!(push[2] > push[3] && push[3] > 0.5, "{push:?}");
+    }
+);
+
+dwell_world::both_faces!(
+    fn in_creative_a_blast_hurts_no_one_but_still_pushes(f: FaceFrame) {
+        // ADR 0065: creative has no `damage` ability; the knockback is not damage.
+        let mut s = Scene::in_mode(f, 2, "creative");
+        for id in 1..=2 {
+            s.put(id, 0.5 + f64::from(id) - 1.0, -3.5);
+        }
+        s.run(2);
+        let at = [0, 0, 0];
+        s.set(at, require("dwell:dynamite"));
+        s.light(at);
+        s.run(1);
+        s.put(1, 1.3, 0.5);
+        s.put(2, 2.0, 0.5);
+        let out = s.run(181);
+        let mut pushed = 0;
+        for m in &out {
+            if let Message::PlayerEvent(p) = m {
+                assert!(
+                    !matches!(p.kind, PlayerEventKind::Damage | PlayerEventKind::Death),
+                    "{p:?}"
+                );
+                if p.kind == PlayerEventKind::Knockback {
+                    pushed += 1;
+                }
+            }
+        }
+        assert_eq!(s.get(at), M.air, "it blew");
+        assert!(pushed > 0, "pushed, not hurt");
+        assert_eq!(s.fx.server.health_of(1), players::MAX_HEALTH as i32);
     }
 );
 

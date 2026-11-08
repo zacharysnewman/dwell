@@ -1,0 +1,19 @@
+{
+  "formatVersion": 1,
+  "defaultMode": "creative",
+  "modes": [
+    {
+      "name": "creative",
+      "label": "Creative",
+      "description": "No damage, flight, brush tools, unlimited blocks.",
+      "abilities": ["flight", "brushes", "unlimitedBlocks"]
+    },
+    {
+      "name": "adventure",
+      "label": "Adventure",
+      "description": "Falls, blasts and crushes hurt; no flight, no brush tools.",
+      "experimental": true,
+      "abilities": ["damage", "unlimitedBlocks"]
+    }
+  ]
+}

@@ -33,6 +33,12 @@ export interface WorldMeta {
    * read only when its file is created. Absent: face A's usual spawn.
    */
   spawn?: Spawn;
+  /**
+   * The game mode the world was created in (the New world form's Mode, ADR 0065, by name):
+   * read only when its file is created; the world file keeps the mode after that. Absent:
+   * creative (`DEFAULT_MODE`).
+   */
+  mode?: string;
 }
 
 /** The part of `Storage` the index uses. */
@@ -214,6 +220,7 @@ export class WorldIndex {
       lastPlayedAt: now,
       ...(world.appVersion ? { appVersion: world.appVersion } : {}),
       ...(world.spawn ? { spawn: world.spawn } : {}),
+      ...(world.mode ? { mode: world.mode } : {}),
     };
     this.put(copy);
     return copy;
@@ -221,7 +228,7 @@ export class WorldIndex {
 
   /** Creates a new world's entry (its file is created when it is first played). */
   create(
-    options: { name: string; type: CreatableType; seed: number; spawn?: Spawn },
+    options: { name: string; type: CreatableType; seed: number; spawn?: Spawn; mode?: string },
     now: number,
     random: () => number = Math.random,
   ): WorldMeta {
@@ -238,6 +245,7 @@ export class WorldIndex {
       lastPlayedAt: now,
       appVersion: recordedVersion(),
       ...(options.spawn ? { spawn: options.spawn } : {}),
+      ...(options.mode ? { mode: options.mode } : {}),
     };
     this.put(world);
     return world;

@@ -161,7 +161,11 @@ fn fell_and_settle(walk_away: bool) {
 #[test]
 fn a_falling_trunk_hurts_a_player_it_lands_on_and_not_the_one_who_cut_it() {
     // face-a-only: as above (the hit test has no up: dwell-sim felling.rs's unit tests).
-    let mut f = Fixture::new(flat());
+    // In adventure: creative hurts no one (ADR 0065).
+    let mut f = Fixture::new(dwell_sim::server::ServerConfig {
+        mode: "adventure".into(),
+        ..flat()
+    });
     join_streaming(&mut f, 1);
     join_streaming(&mut f, 2);
     f.server.step();

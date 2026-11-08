@@ -192,7 +192,8 @@
   "welcomeFlags": {
     "flight": 1,
     "regionEdits": 2,
-    "brushes": 4
+    "brushes": 4,
+    "flightPolicy": 8
   },
   "groundKinds": {
     "None": 0,

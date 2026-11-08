@@ -16,6 +16,8 @@ export type ToWorker =
       spawnAt?: [number, number, number];
       /** The player confirmed opening an older version line's world (local/world.ts). */
       upgrade?: boolean;
+      /** A new world's game mode by name (ADR 0065); a saved world keeps its own. */
+      mode?: string;
       /** The world's maps (faces A and B, ADR 0049), installed before the world starts. */
       maps?: Uint8Array[];
       /**

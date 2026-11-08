@@ -1,4 +1,5 @@
 import { buildInfo, channelOf, formatBuildInfo, recordedVersion } from './buildInfo';
+import { isGameMode } from './ui/modes';
 import { blockDump, formatBlockDump, type BlockDump, type BlockTarget } from './debug/blockDump';
 import {
   Client,
@@ -1247,6 +1248,7 @@ async function makeWorld(
         type,
         seed: parseSeed(launch.seed),
         ...(launch.spawn !== '' && isSpawn(launch.spawn) ? { spawn: launch.spawn } : {}),
+        ...(isGameMode(launch.mode) ? { mode: launch.mode } : {}),
       },
       Date.now(),
     );
@@ -1399,6 +1401,7 @@ async function connect(app: App): Promise<void> {
       file: playing.id,
       ...(isSpawn(playing.spawn) ? spawnOptions(playing.spawn) : {}),
       ...(!access.ok && access.upgrade ? { upgrade: true } : {}),
+      ...(playing.mode && isGameMode(playing.mode) ? { mode: playing.mode } : {}),
     };
     worldName = playing.name;
     index.touch(playing.id, Date.now());

@@ -5,6 +5,8 @@
 // choice is a route the launcher sends to the build that carries it out (ui/launch.ts) — creating
 // and regenerating a world too, so the world is the build's own. A build served at the launcher's
 // path (a local or preview build) shows it itself (ui/menuPage.ts).
+import { DEFAULT_MODE, GAME_MODES } from './modes.gen';
+import { modeLabel } from './modes';
 import { changesFor } from '../version/changes';
 import { changesView } from './changesView';
 import {
@@ -314,6 +316,17 @@ export class MainMenu {
       option.textContent = s.label;
       spawn.append(option);
     }
+    // The world's game mode (ADR 0065, shared/modes/modes.json); experimental ones say so.
+    const mode = document.createElement('select');
+    mode.id = 'world-mode';
+    for (const m of GAME_MODES) {
+      const option = document.createElement('option');
+      option.value = m.name;
+      option.textContent = modeLabel(m);
+      if (m.description) option.title = m.description;
+      if (m.name === DEFAULT_MODE) option.selected = true;
+      mode.append(option);
+    }
     const submit = document.createElement('button');
     submit.type = 'submit';
     submit.className = 'block-button';
@@ -325,6 +338,7 @@ export class MainMenu {
       field('Name', name),
       field('Seed', seed),
       field('Type', type),
+      field('Mode', mode),
       field('Spawn', spawn),
       hint,
       submit,
@@ -338,6 +352,7 @@ export class MainMenu {
         seed: seed.value.trim(),
         type: type.value,
         ...(spawn.value ? { spawn: spawn.value } : {}),
+        ...(mode.value && mode.value !== DEFAULT_MODE ? { mode: mode.value } : {}),
       });
     });
   }

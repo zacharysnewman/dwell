@@ -534,7 +534,8 @@ pub mod welcome_flags {
     pub const FLIGHT: u8 = 1;
     pub const REGION_EDITS: u8 = 2;
     pub const BRUSHES: u8 = 4;
-    pub const ALL: u8 = 7;
+    pub const FLIGHT_POLICY: u8 = 8;
+    pub const ALL: u8 = 15;
 }
 
 pub mod held_item {

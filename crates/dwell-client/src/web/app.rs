@@ -572,6 +572,20 @@ impl Client {
                 }
                 game.on_game_message(m, bytes.len(), now_ms);
             }
+            // The host changed the world's game mode (ADR 0065): flight and brushes follow it.
+            if session.take_abilities_changed()
+                && let SessionState::Joined {
+                    may_fly,
+                    region_edits,
+                    brushes,
+                    ..
+                } = session.state().clone()
+            {
+                game.set_capabilities(region_edits, brushes);
+                if let Some(v) = s.input.flight.set_allowed(may_fly) {
+                    s.shell_events.push(shell_event("flightAllowed", v));
+                }
+            }
             let stats = session.stats();
             game.rtt_ms = stats.datagram_rtt_ms.or(stats.rtt_ms);
             game.motion_settings = s.motion;
@@ -2501,6 +2515,7 @@ impl Inner {
             may_fly,
             region_edits,
             brushes,
+            ..
         }) = self.session.as_ref().map(|s| s.state().clone())
         else {
             return;
