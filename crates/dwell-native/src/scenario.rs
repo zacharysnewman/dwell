@@ -130,6 +130,11 @@ impl Run {
         {
             h.renderer().set_clouds(q);
         }
+        if let Some(c) = s["shafts"].as_str()
+            && let Some(q) = dwell_look::shafts::ShaftQuality::from_name(c)
+        {
+            h.renderer().set_shafts(q);
+        }
         println!(
             "dwell-native: scenario {} (seed {}, {}x{})",
             self.name, h.args.seed, h.args.size.0, h.args.size.1

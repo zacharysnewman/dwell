@@ -1582,6 +1582,16 @@ impl Client {
             .borrow_mut()
             .set_clouds(CloudQuality::from_name(quality).unwrap_or(CloudQuality::High));
     }
+    /// The Light shafts setting: `off`, `low` or `high` (anything else: high; ADR 0064).
+    #[wasm_bindgen(js_name = setShafts)]
+    pub fn set_shafts(&self, quality: &str) {
+        use dwell_look::shafts::ShaftQuality;
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_shafts(ShaftQuality::from_name(quality).unwrap_or(ShaftQuality::High));
+    }
     /// The clouds' coverage, 0 (clear) to 1 (overcast): for a weather system, or by hand.
     #[wasm_bindgen(js_name = setCloudCoverage)]
     pub fn set_cloud_coverage(&self, coverage: f64) {

@@ -8,6 +8,8 @@ import {
   CLOUD_QUALITIES,
   defaultClouds,
   sanitizeClouds,
+  sanitizeShafts,
+  SHAFT_QUALITIES,
   sanitizeFovSetting,
   sanitizeShowArms,
   viewRecord,
@@ -67,5 +69,13 @@ describe('field of view', () => {
     expect(sanitizeShowArms({ showArms: 'no' })).toBe(true);
     expect(sanitizeShowArms({ showArms: false })).toBe(false);
     expect(sanitizeShowArms(viewRecord({}, 75, false))).toBe(false);
+  });
+});
+
+describe('light shafts', () => {
+  it('keeps a stored tier and defaults to High on every device (owner, 2026-11-07)', () => {
+    for (const q of ['off', 'low', 'high'] as const) expect(sanitizeShafts(q)).toBe(q);
+    for (const bad of [null, undefined, 'ultra', 2, { q: 'low' }]) expect(sanitizeShafts(bad)).toBe('high');
+    expect(SHAFT_QUALITIES).toEqual(['off', 'low', 'high']);
   });
 });

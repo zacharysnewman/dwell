@@ -27,6 +27,20 @@ export function sanitizeClouds(value: unknown, mobile: boolean): CloudQuality {
   return CLOUD_QUALITIES.find((q) => q === value) ?? defaultClouds(mobile);
 }
 
+/**
+ * The light shafts, the volumetric glow rays (dwell-look's shafts.rs, ADR 0064): Low draws them at
+ * a quarter of the resolution with fewer samples, High at half. Owner, 2026-11-07: "Full quality
+ * everywhere with a cheaper version as a 'low' setting", so High on phones too.
+ */
+export const SHAFT_QUALITIES = ['off', 'low', 'high'] as const;
+export type ShaftQuality = (typeof SHAFT_QUALITIES)[number];
+export const DEFAULT_SHAFTS: ShaftQuality = 'high';
+
+/** A stored Light shafts setting; anything else (missing, unknown) takes High. */
+export function sanitizeShafts(value: unknown): ShaftQuality {
+  return SHAFT_QUALITIES.find((q) => q === value) ?? DEFAULT_SHAFTS;
+}
+
 /** The Field of view setting: vertical degrees (dwell-lod's `base_fov` narrows it on wide screens). */
 export const DEFAULT_FOV = 75;
 export const FOV_LIMITS = { min: 60, max: 100 } as const;

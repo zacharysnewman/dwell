@@ -1334,7 +1334,7 @@ mod tests {
         // The band as band_t, band_edge, band_uv; Snell's window as sees_out; the underside's
         // texture from below and the body's partial shadow (the blotch).
         assert!(src.contains("let t = -d / depth;"));
-        assert!(src.contains("return waterline_band(p, composite_underwater(p, ray, textureLoad(scene_color, p, 0)), d, f);"));
+        assert!(src.contains("return with_shafts(waterline_band(p, composite_underwater(p, ray, textureLoad(scene_color, p, 0)), d, f), p);"));
         assert!(src.contains("let rim = 1.0 - smoothstep(f.rim.x - 0.75, f.rim.x + 0.25, px);"));
         assert!(src.contains("let uv = vec2f(along * 4.0, 1.0) / (t + 0.08)"));
         assert!(src.contains("1.0 - bent * bent < 1.0 / (ior * ior)"));
@@ -1344,7 +1344,7 @@ mod tests {
         // over its distance (underside_contrast), the sun patch along sun_through.
         assert!(src.contains("rim_above = 1.0 + (band_edge(0.0, f) - 1.0) * clamp(1.0 - d / waterline_across(f).x, 0.0, 1.0);"));
         assert!(src.contains(
-            "back = display(underwater(underwater(vec3f(0.0), 1e6, f) * light, to_surface, f));"
+            "let mirror = display(underwater(underwater(vec3f(0.0), 1e6, f) * light, to_surface, f));"
         ));
         assert!(src.contains("let h = (sun - up * face_rise(face, sun)) / max(ior, 1.0);"));
         assert!(src.contains("return h + up * sqrt(max(1.0 - dot(h, h), 0.0));"));

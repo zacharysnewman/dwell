@@ -735,6 +735,8 @@ async function start(): Promise<App | null> {
     const waterDebug = new URLSearchParams(location.search).get('waterdbg');
     if (waterDebug) client.setWaterDebug(waterDebug);
     client.setClouds(s.clouds);
+    // The light shafts (ADR 0064); ?shafts=off|low|high overrides them (the bench).
+    client.setShafts(new URLSearchParams(location.search).get('shafts') ?? s.shafts);
     // Render scale and its upscaler; ?renderscale= and ?upscaler= override them (the bench).
     const rs = renderScaleFromQuery(location.search, s.renderScale);
     client.setRenderScale(rs.scale, rs.upscaler, UPSCALE.sharpenStops);

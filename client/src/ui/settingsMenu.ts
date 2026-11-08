@@ -17,7 +17,16 @@ import {
   type RenderScaleSettings,
 } from './renderScaleSettings';
 import { DEFAULT_EXPOSURE, EXPOSURE_LIMITS, sanitizeExposure } from './viewSettings';
-import { CLOUD_QUALITIES, defaultClouds, sanitizeClouds, type CloudQuality } from './viewSettings';
+import {
+  CLOUD_QUALITIES,
+  DEFAULT_SHAFTS,
+  SHAFT_QUALITIES,
+  defaultClouds,
+  sanitizeClouds,
+  sanitizeShafts,
+  type CloudQuality,
+  type ShaftQuality,
+} from './viewSettings';
 import {
   DEFAULT_FOV,
   FOV_LIMITS,
@@ -97,6 +106,8 @@ export interface Settings {
   audio: Volumes;
   /** The sky's clouds: off, low or high (dwell-look's clouds.rs). */
   clouds: CloudQuality;
+  /** The light shafts: off, low or high (dwell-look's shafts.rs, ADR 0064). */
+  shafts: ShaftQuality;
   /** The water quality (ui/waterSettings.ts). */
   water: WaterSettings;
   /** The sun's and moon's shadows (ui/shadowSettings.ts). */
@@ -121,6 +132,7 @@ export function defaultSettings(mobile: boolean, reducedMotion = false): Setting
     exposure: DEFAULT_EXPOSURE,
     audio: { ...DEFAULT_VOLUMES },
     clouds: defaultClouds(mobile),
+    shafts: DEFAULT_SHAFTS,
     water: defaultWater(mobile),
     shadows: defaultShadows(mobile),
     motion: defaultMotion(reducedMotion),
@@ -148,6 +160,7 @@ export function settingsJson(s: Settings): string {
       music: Math.round(s.audio.music * 100) / 100,
     },
     clouds: s.clouds,
+    shafts: s.shafts,
     water: {
       quality: s.water.quality,
       flowRipples: s.water.flowRipples,
@@ -178,6 +191,7 @@ const EXPOSURE_KEY = 'dwell.exposure';
 // written: the time of day is the world's. Builds before it still read it; it is left as it is.
 /** Its own key (the stores are append-only: an older build ignores it, a newer one reads it). */
 const CLOUDS_KEY = 'dwell.clouds';
+const SHAFTS_KEY = 'dwell.shafts';
 /** A record, append-only: unknown fields are kept on rewrite (ui/waterSettings.ts). */
 const WATER_KEY = 'dwell.water';
 /** A record, append-only: unknown fields are kept on rewrite (ui/shadowSettings.ts). */
@@ -202,6 +216,7 @@ export function loadSettings(mobile: boolean): Settings {
     exposure: sanitizeExposure(load(EXPOSURE_KEY)),
     audio: loadVolumes(),
     clouds: sanitizeClouds(load(CLOUDS_KEY), mobile),
+    shafts: sanitizeShafts(load(SHAFTS_KEY)),
     water: sanitizeWater(load(WATER_KEY), defaults.water),
     shadows: sanitizeShadows(load(SHADOWS_KEY), defaults.shadows),
     motion: sanitizeMotion(load(MOTION_KEY), prefersReducedMotion()),
@@ -218,6 +233,7 @@ export function saveSettings(s: Settings): void {
     localStorage.setItem(DETAIL_KEY, JSON.stringify(s.detail));
     localStorage.setItem(EXPOSURE_KEY, JSON.stringify(s.exposure));
     localStorage.setItem(CLOUDS_KEY, JSON.stringify(s.clouds));
+    localStorage.setItem(SHAFTS_KEY, JSON.stringify(s.shafts));
     localStorage.setItem(WATER_KEY, JSON.stringify(waterRecord(load(WATER_KEY), s.water)));
     localStorage.setItem(SHADOWS_KEY, JSON.stringify(shadowRecord(load(SHADOWS_KEY), s.shadows)));
     // Append-only: fields a newer build stored are kept.
@@ -261,6 +277,14 @@ const CHOICES: ChoiceSpec<CloudQuality>[] = [
     labels: { off: 'Off', low: 'Low', high: 'High' },
     get: (s) => s.clouds,
     with: (s, v) => ({ ...s, clouds: v }),
+  },
+  {
+    label: 'Light shafts',
+    hint: 'Sun rays through trees, clouds and water; Low is lighter on the GPU',
+    choices: SHAFT_QUALITIES,
+    labels: { off: 'Off', low: 'Low', high: 'High' },
+    get: (s) => s.shafts,
+    with: (s, v) => ({ ...s, shafts: v }),
   },
 ];
 
