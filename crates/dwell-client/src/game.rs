@@ -497,6 +497,8 @@ pub struct Game<S: Scene> {
     /// The inventory and loose items the server sent (ADR 0066), and the hotbar slot held when
     /// the world uses items.
     pub loose: crate::loose_items::LooseItems,
+    /// The held axe's swing and the server's cuts (ADR 0067).
+    pub chop: crate::chop::Chopping,
     pub inventory_slot: usize,
     /// The moving body's cell under the crosshair, when nearer than the block aimed at
     /// (docs/BUILT_BODIES.md §4).
@@ -780,6 +782,7 @@ impl<S: Scene> Game<S> {
             bodies: Bodies::default(),
             held_sent: None,
             loose: Default::default(),
+            chop: Default::default(),
             inventory_slot: 0,
             show_arms: true,
             lod_drawn: true,
@@ -1207,6 +1210,10 @@ impl<S: Scene> Game<S> {
                     self.predictor.remove_piece(e.body);
                 }
             }
+            Message::Cuts(c) => {
+                self.chop.on = true;
+                self.chop.apply(c);
+            }
             Message::Inventory(i) => {
                 let uses = i.flags & dwell_protocol::inventory_flags::USES_ITEMS != 0;
                 self.loose.inventory = Some((uses, i.inventory));
@@ -1423,6 +1430,10 @@ impl<S: Scene> Game<S> {
     ) -> bool {
         if self.dead || !self.terrain_ready() {
             return false;
+        }
+        // The axe held (ADR 0067): Use turns the swing, Break swings at wood aimed at.
+        if let Some(tool) = self.held_tool() {
+            return self.chop_with(tool, action, now_ms);
         }
         // In a world that uses items (ADR 0066) a place needs the held slot to hold a block.
         if action == EditAction::Place
@@ -3262,6 +3273,57 @@ impl<S: Scene> Game<S> {
     }
 
     /// The palette slot that places what the held inventory slot holds (ADR 0066).
+    /// The tool in the held inventory slot (ADR 0067), when the server chops.
+    pub fn held_tool(&self) -> Option<&'static dwell_protocol::chopping::ToolDef> {
+        if !self.chop.on {
+            return None;
+        }
+        let (_, inv) = self.loose.inventory.as_ref()?;
+        let held = inv.slots.get(self.inventory_slot)?.as_ref()?;
+        dwell_protocol::chopping::tool(&held.item)
+    }
+
+    /// The swing hint while an axe is held.
+    pub fn chop_hint(&self) -> Option<&'static str> {
+        self.held_tool().map(|_| self.chop.hint())
+    }
+
+    /// Use with the axe: the swing turns; Break: a swing at the wood aimed at.
+    fn chop_with(
+        &mut self,
+        tool: &'static dwell_protocol::chopping::ToolDef,
+        action: EditAction,
+        now_ms: f64,
+    ) -> bool {
+        if action == EditAction::Place {
+            self.chop.toggle();
+            return true;
+        }
+        let (Some(target), Some(eye)) = (self.interaction.target(), self.target_eye) else {
+            return false;
+        };
+        let [x, y, z] = target.cell;
+        let block = self.voxel(x, y, z);
+        if dwell_protocol::chopping::wood(dwell_blocks::block_of(block).name).is_none() {
+            self.sounds.push(sound_event(SoundKind::Deny));
+            return false;
+        }
+        let Some(swing) = self
+            .chop
+            .swing(tool, target.cell, eye, self.view_dir, now_ms)
+        else {
+            return false;
+        };
+        self.edit_sounds
+            .local_break(target.cell, block, now_ms, &mut self.sounds);
+        self.bodies
+            .swing_arms(dwell_characters::animator::Swing::Break);
+        self.outbox
+            .borrow_mut()
+            .push(Send::Control(Message::Chop(swing)));
+        true
+    }
+
     fn held_palette_slot(&self) -> Option<usize> {
         self.held_palette_slot_at(self.inventory_slot)
     }

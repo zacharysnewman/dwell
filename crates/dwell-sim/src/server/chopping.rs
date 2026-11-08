@@ -44,10 +44,16 @@ impl Server {
             ChopAction::Hello => {
                 let s = self.sessions.get_mut(&id).expect("session");
                 s.chop_hello = true;
+                // At least one (empty when there are none): the client's sign the server chops.
                 let all = self.cuts.sorted();
-                for part in all.chunks(MAX_CUTS_PER_MESSAGE) {
+                let parts: Vec<Vec<_>> = if all.is_empty() {
+                    vec![Vec::new()]
+                } else {
+                    all.chunks(MAX_CUTS_PER_MESSAGE).map(<[_]>::to_vec).collect()
+                };
+                for cuts in parts {
                     let m = Message::Cuts(CutsMessage {
-                        cuts: part.to_vec(),
+                        cuts,
                         gone: Vec::new(),
                     });
                     self.send_reliable(id, &m, Channel::World);

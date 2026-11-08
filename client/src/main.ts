@@ -560,6 +560,8 @@ function showHud(app: App, now: number): void {
     debug?: string | null;
     damaged?: boolean;
     region?: string;
+    /** The held axe's swing hint (ADR 0067), else null. */
+    chop?: string | null;
     brush?: BrushPanelState | null;
     spyglass?: SpyglassHud | null;
     loading?: LoadingHud | null;
@@ -573,7 +575,7 @@ function showHud(app: App, now: number): void {
   app.hud.setHealth(h.health ?? 0, now);
   app.hud.setMessage(h.message);
   app.hud.setStatus(h.status ?? '');
-  app.hotbar?.setRegion(h.region ?? '');
+  app.hotbar?.setRegion(h.chop || h.region || '');
   app.hotbar?.setBrush(h.brush ?? null);
   app.hotbar?.setInventory(h.inventory ?? null, itemPicture);
   app.backpack?.set(h.inventory ?? null);
