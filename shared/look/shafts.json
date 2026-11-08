@@ -5,7 +5,7 @@
     "low": { "scale": 0.25, "steps": 12 }
   },
   "air": {
-    "sun": { "strength": 0.35, "reach": 0.85, "decay": 0.965, "discRadius": 0.55, "elevationDeg": 8, "offscreen": 0.6 },
+    "sun": { "strength": 0.5, "reach": 0.85, "decay": 0.965, "discRadius": 0.55, "elevationDeg": 8, "offscreen": 0.6 },
     "moon": { "strength": 0.06, "reach": 0.7, "decay": 0.96, "discRadius": 0.3, "elevationDeg": 10, "offscreen": 0.3 }
   },
   "default": {

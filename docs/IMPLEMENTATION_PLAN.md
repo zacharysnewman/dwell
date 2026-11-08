@@ -3118,7 +3118,8 @@ Deliverables
   critical angle, the mirror textured by the underside's cells; WATER_RENDERING.md §12.1, 0.50.20).
   Outstanding: the owner's look.
 - [ ] **W4** — The rest of the underwater view: refraction of the scene above through the window,
-  distortion (god rays with W5's High tier). Caustics moved to W3.
+  distortion. Caustics moved to W3. God rays moved out (0.50.24): built as the light shafts, in the
+  air and under water, with their own High/Low/Off setting (ADR 0064); torch and lamp shafts planned.
 - [x] **W5a** — Screen-space reflections of land and the clouds in reflections (brought forward from
   W5, the owner's report of 2026-10-16), per water quality as data (`shared/look/reflections.json`;
   WATER_RENDERING.md §8, W5a).
@@ -3151,7 +3152,7 @@ Deviations (W5a):
 Deviations (W3):
 - Caustics came forward from W4 (the owner asked for them, under the surface most of all): on the
   floor seen through the surface, and in the composite on every opaque pixel under the surface
-  while the eye is submerged. God rays stay in W4.
+  while the eye is submerged. God rays stayed in W4, then were built as the light shafts (ADR 0064, 0.50.24).
 - The copy is full resolution on Medium and High in W3 (no half-res copy yet): Medium and High
   look the same until W5. The copy is colour only; the water reads the view depth directly (the
   water half doesn't attach it), so no depth copy.

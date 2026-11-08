@@ -1327,17 +1327,31 @@ fn waterline_band(p: vec2i, c: vec3f, d: f32, f: Fluid) -> vec3f {
     let base = mix(above, c, 1.0 - m + m * smoothstep(0.0, 1.0, t)) * f.band.rgb;
     // Ripples, broken by `breakup`: warped by the noise's slope and coming and going under a
     // second, finer noise, instead of smooth parallel stripes.
+    // Blurred along the band's rows (three taps BAND_BLUR_PX apart; owner, 2026-11-07: the band
+    // 'looks pixelated. Blurring is fine.'), where the receding plane packs the texture tightest.
     let b = f.band_extra.y;
+    let duv = vec2f(4.0 * BAND_BLUR_PX / size.y / (t + 0.08), 0.0);
+    let r = (band_ripples(uv - duv, b, f) + band_ripples(uv, b, f) + band_ripples(uv + duv, b, f)) / 3.0;
+    var col = base * r.x + vec3f(r.y);
+    // The dark rim along the top edge, then the bright line under it (band_edge).
+    col *= band_edge(px, f);
+    return mix(c, col, 1.0 - smoothstep(0.55, 1.0, t));
+}
+
+// The band's blur along its rows (px of the drawing buffer between taps).
+const BAND_BLUR_PX: f32 = 1.5;
+
+// The band's ripples at texture point `uv` (waterline_band): x the streaks' multiplier, y the
+// glint; broken by `b`, warped by the noise's slope and coming and going under a second, finer
+// noise, instead of smooth parallel stripes.
+fn band_ripples(uv: vec2f, b: f32, f: Fluid) -> vec2f {
     let w = noise_t(uv * vec2f(0.45, 0.3) + 11.0);
     let n0 = noise_t(uv * vec2f(1.0 + 1.2 * b, 0.35) + w.yz * (0.35 * b)).x;
     let n1 = noise_t(uv * vec2f(2.6, 0.9) + 5.0).x;
     let n = mix(n0, n0 * 1.8 * smoothstep(-0.25, 0.45, n1) + 0.25 * w.x, b);
     let streak = clamp(1.0 + f.band.a * 2.5 * n, 0.3, 1.8);
     let glint = smoothstep(0.3, 0.45, noise_t(uv * vec2f(2.1, 0.8) + 7.0).x) * f.band_extra.x;
-    var col = base * streak + vec3f(glint);
-    // The dark rim along the top edge, then the bright line under it (band_edge).
-    col *= band_edge(px, f);
-    return mix(c, col, 1.0 - smoothstep(0.55, 1.0, t));
+    return vec2f(streak, glint);
 }
 
 // How far `waterline_m` changes a pixel across the line (x, m; render/water.rs `meniscus_px_m`:
@@ -1487,6 +1501,9 @@ fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
 /// The light shafts pass (ADR 0064): the glow a pixel of the shafts' buffer (the tier's share of
 /// the drawing buffer) gathers, read by `with_shafts` in the composite.
 const SHAFTS: &str = r"
+// How many air samples share one look-up of the clouds' density.
+const SHAFTS_CLOUD_EVERY: i32 = 6;
+
 // A per-pixel offset (0–1) for the samples, so the steps band into noise, not rings.
 fn shafts_jitter(p: vec2f) -> f32 {
     return fract(52.9829189 * fract(dot(p, vec2f(0.06711056, 0.00583715))));
@@ -1497,8 +1514,24 @@ fn shafts_pixel(ndc: vec2f, size: vec2f) -> vec2i {
     return vec2i(clamp((vec2f(ndc.x, -ndc.y) * 0.5 + 0.5) * size, vec2f(0.0), size - 1.0));
 }
 
+// How much of the sky toward screen point `ndc` the cloud deck hides (0–1): the deck's density as
+// the composite finds it (dwell_cloud_layer), at most three octaves and with no self-shadow, so
+// the gaps between clouds let the shafts through. 0 with the clouds off.
+fn shafts_cloud(ndc: vec2f) -> f32 {
+    let octaves = min(i32(frame.cloud_cfg.y), 3);
+    if (octaves <= 0) {
+        return 0.0;
+    }
+    let deck = dwell_cloud_deck(normalize(view_ray(ndc)), frame.eye.y, frame.clouds, frame.cloud_cfg.w);
+    if (deck.w <= 0.0) {
+        return max(-deck.w, 0.0) * frame.cloud_cfg.x;
+    }
+    let p = cloud_warped(deck.xy, frame.clouds.zw, 0.0);
+    return deck.w * cloud_shape(cloud_fbm(p, octaves, 0.0), frame.cloud_cfg.x);
+}
+
 // In the air: a radial blur toward the light's screen point over the open sky (the scene's
-// coverage: geometry dark, sky bright), each sample weighed by the disc round the light and
+// coverage: geometry dark, sky bright, the clouds' density between), each sample weighed by the disc round the light and
 // decayed along the way, so gaps in trees, clouds' edges, cave mouths and hills cast soft rays.
 fn shafts_air(ndc: vec2f, j: f32, size: vec2f) -> f32 {
     let light = frame.shafts.xy;
@@ -1509,8 +1542,14 @@ fn shafts_air(ndc: vec2f, j: f32, size: vec2f) -> f32 {
     var w = 1.0;
     var sum = 0.0;
     var total = 0.0;
+    // The clouds' density is found every SHAFTS_CLOUD_EVERY samples and held between (the
+    // deck's noise is the pass's dearest part; the per-pixel jitter blends the steps).
+    var cloud = 0.0;
     for (var k = 0; k < steps; k++) {
-        let open = 1.0 - min(textureLoad(scene_color, shafts_pixel(q, size), 0).a, 1.0);
+        if (k % SHAFTS_CLOUD_EVERY == 0) {
+            cloud = shafts_cloud(q + delta * (0.5 * f32(SHAFTS_CLOUD_EVERY - 1)));
+        }
+        let open = (1.0 - min(textureLoad(scene_color, shafts_pixel(q, size), 0).a, 1.0)) * (1.0 - cloud);
         let r = length((q - light) * vec2f(aspect, 1.0)) / max(frame.shafts_cfg.w, 1e-3);
         let disc = max(1.0 - r, 0.0);
         sum += open * disc * disc * w;

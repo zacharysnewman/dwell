@@ -153,7 +153,11 @@ fn smooth(a: f64, b: f64, x: f64) -> f64 {
 pub fn sun_through(sun: [f64; 3], ior: f64) -> [f64; 3] {
     let k = 1.0 / ior.max(1.0);
     let h = [sun[0] * k, sun[2] * k];
-    [h[0], (1.0 - h[0] * h[0] - h[1] * h[1]).max(0.0).sqrt(), h[1]]
+    [
+        h[0],
+        (1.0 - h[0] * h[0] - h[1] * h[1]).max(0.0).sqrt(),
+        h[1],
+    ]
 }
 
 /// What the frame needs to draw the shafts: the camera's axes (world), half-FOV tangents and the
@@ -228,12 +232,7 @@ pub fn shaft_uniforms(tier: Option<ShaftTier>, v: &ShaftView) -> [[f32; 4]; 4] {
     };
     [
         [f(p[0]), f(p[1]), f(weight), 1.0],
-        [
-            tier.steps as f32,
-            f(l.reach),
-            f(l.decay),
-            f(l.disc_radius),
-        ],
+        [tier.steps as f32, f(l.reach), f(l.decay), f(l.disc_radius)],
         [f(color[0]), f(color[1]), f(color[2]), f(window.window_edge)],
         window_vec,
     ]
@@ -257,7 +256,12 @@ mod tests {
     }
 
     /// A view on face `f` looking face-locally along `forward_local` (the sun face-local too).
-    fn view(f: FaceFrame, forward_local: [f64; 3], up_local: [f64; 3], sun_local: [f64; 3]) -> ShaftView<'static> {
+    fn view(
+        f: FaceFrame,
+        forward_local: [f64; 3],
+        up_local: [f64; 3],
+        sun_local: [f64; 3],
+    ) -> ShaftView<'static> {
         let fw = unit(forward_local);
         let up = unit(up_local);
         // right = forward × up (face-local, right-handed), then mirrored by the face's frame.
@@ -283,10 +287,19 @@ mod tests {
 
     #[test]
     fn a_direction_ahead_lands_at_the_screen_centre_and_behind_is_none() {
-        assert_eq!(screen_point(FORWARD, RIGHT, UP, FORWARD, [1.0, 1.0]), Some([0.0, 0.0]));
+        assert_eq!(
+            screen_point(FORWARD, RIGHT, UP, FORWARD, [1.0, 1.0]),
+            Some([0.0, 0.0])
+        );
         let p = screen_point(unit([1.0, 0.5, -1.0]), RIGHT, UP, FORWARD, [1.0, 0.5]).unwrap();
-        assert!((p[0] - 1.0).abs() < 1e-9 && (p[1] - 1.0).abs() < 1e-9, "{p:?}");
-        assert_eq!(screen_point([0.0, 0.0, 1.0], RIGHT, UP, FORWARD, [1.0, 1.0]), None);
+        assert!(
+            (p[0] - 1.0).abs() < 1e-9 && (p[1] - 1.0).abs() < 1e-9,
+            "{p:?}"
+        );
+        assert_eq!(
+            screen_point([0.0, 0.0, 1.0], RIGHT, UP, FORWARD, [1.0, 1.0]),
+            None
+        );
     }
 
     dwell_world::both_faces!(
@@ -302,7 +315,12 @@ mod tests {
             // Parity: face B's uniforms are face A's.
             let a = shaft_uniforms(
                 Some(HIGH),
-                &view(FaceFrame::A, [0.0, 0.0, -1.0], [0.0, 1.0, 0.0], [0.0, 0.3, -1.0]),
+                &view(
+                    FaceFrame::A,
+                    [0.0, 0.0, -1.0],
+                    [0.0, 1.0, 0.0],
+                    [0.0, 0.3, -1.0],
+                ),
             );
             assert_eq!(u, a);
         }
@@ -316,8 +334,14 @@ mod tests {
             // Far past the screen's side: none; just past it: some, less than on screen.
             let far = view(f, [0.0, 0.0, -1.0], [0.0, 1.0, 0.0], [3.0, 0.3, -1.0]);
             assert_eq!(shaft_uniforms(Some(HIGH), &far)[0][2], 0.0);
-            let on = shaft_uniforms(Some(HIGH), &view(f, [0.0, 0.0, -1.0], [0.0, 1.0, 0.0], [0.0, 0.3, -1.0]))[0][2];
-            let near = shaft_uniforms(Some(HIGH), &view(f, [0.0, 0.0, -1.0], [0.0, 1.0, 0.0], [1.1, 0.3, -1.0]))[0][2];
+            let on = shaft_uniforms(
+                Some(HIGH),
+                &view(f, [0.0, 0.0, -1.0], [0.0, 1.0, 0.0], [0.0, 0.3, -1.0]),
+            )[0][2];
+            let near = shaft_uniforms(
+                Some(HIGH),
+                &view(f, [0.0, 0.0, -1.0], [0.0, 1.0, 0.0], [1.1, 0.3, -1.0]),
+            )[0][2];
             assert!(near > 0.0 && near < on, "{near} vs {on}");
             // At the horizon: the sun's weight is none (the moon is under it too).
             let low = view(f, [0.0, 0.0, -1.0], [0.0, 1.0, 0.0], [0.0, 0.0, -1.0]);
@@ -330,7 +354,11 @@ mod tests {
             // The sun under the horizon ahead and down; the moon (opposite) behind and up: look at it.
             let v = view(f, [0.0, 0.3, 1.0], [0.0, 1.0, 0.0], [0.0, -0.3, -1.0]);
             let u = shaft_uniforms(Some(HIGH), &v);
-            assert!(u[0][2] > 0.0 && u[0][2] as f64 <= MOON_SHAFTS.strength + 1e-6, "{}", u[0][2]);
+            assert!(
+                u[0][2] > 0.0 && u[0][2] as f64 <= MOON_SHAFTS.strength + 1e-6,
+                "{}",
+                u[0][2]
+            );
             assert_eq!(u[2][0], 0.6_f32, "the moon's colour");
         }
     );
@@ -343,7 +371,15 @@ mod tests {
             let u = shaft_uniforms(Some(LOW), &v);
             assert_eq!(u[0][3], 2.0, "under mode");
             assert!((u[0][2] as f64 - water.strength).abs() < 1e-6);
-            assert_eq!(u[1], [LOW.steps as f32, water.reach_m as f32, water.fade_m as f32, water.cell_m as f32]);
+            assert_eq!(
+                u[1],
+                [
+                    LOW.steps as f32,
+                    water.reach_m as f32,
+                    water.fade_m as f32,
+                    water.cell_m as f32
+                ]
+            );
             let mut night = view(f, [0.0, 0.0, -1.0], [0.0, 1.0, 0.0], [0.3, -0.8, -0.2]);
             night.under = Some(water);
             assert_eq!(shaft_uniforms(Some(LOW), &night)[0][2], 0.0);
@@ -352,7 +388,12 @@ mod tests {
 
     #[test]
     fn off_draws_none_but_keeps_the_window() {
-        let mut v = view(FaceFrame::A, [0.0, 0.0, -1.0], [0.0, 1.0, 0.0], [0.0, 0.3, -1.0]);
+        let mut v = view(
+            FaceFrame::A,
+            [0.0, 0.0, -1.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.3, -1.0],
+        );
         assert_eq!(shaft_uniforms(None, &v)[0], [0.0; 4]);
         let water = fluid_shafts("dwell:water");
         v.under = Some(water);

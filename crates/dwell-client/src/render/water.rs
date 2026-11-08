@@ -1255,14 +1255,18 @@ mod tests {
                 }
                 let top = band_t(d(split + 1.0), look.band_depth_m).expect("the band's top");
                 assert!(top < 0.05, "the top edge is the surface: {top}");
-                // A slab of real thickness: rows down to its foot (5–8 % of the screen level).
+                // A slab of real thickness: rows down to its foot (2.5–4.5 % of the screen level;
+                // halved in 0.50.23, underwater.test.mjs's 2.5–4 % of the lens plane).
                 let mut foot = split + 1.0;
                 while band_t(d(foot + 1.0), look.band_depth_m).is_some() {
                     foot += 1.0;
                 }
                 let share = (foot - split) / h;
                 if pitch == 0.0 {
-                    assert!(share > 0.05 && share < 0.08, "level: {share} of the screen");
+                    assert!(
+                        share > 0.025 && share < 0.045,
+                        "level: {share} of the screen"
+                    );
                 }
                 // Along the edge: darker first, then lighter, then the band's own colour, in
                 // pixels across the line at any pitch and roll.
