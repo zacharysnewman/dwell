@@ -7,6 +7,7 @@
 //! WGSL from here (`wgsl`), so the shader and these tested twins share their numbers.
 
 use dwell_blocks::FluidInfo;
+use dwell_look::water_tiers::{WATER_TIERS, WaterTier, tier_bits};
 use dwell_look::{hex, srgb_to_linear};
 
 /// vec4s per fluid in the buffer (`Fluid` in the WGSL).
@@ -73,46 +74,58 @@ pub const LAYERS: [WaveLayer; 3] = [
 pub const FADE_LO: f32 = 0.125;
 pub const FADE_HI: f32 = 0.5;
 
-/// The water quality setting (Low, Medium, High; WATER_RENDERING.md §4). W1b: Low draws one layer
-/// of normal detail, Medium and High all three (they part with W3 and W5).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum WaterQuality {
-    Low,
-    /// The desktop default.
-    #[default]
-    Medium,
-    High,
+/// A water quality tier (WATER_RENDERING.md §4): an index into the data's tiers (dwell-look
+/// `WATER_TIERS`, `shared/look/watertiers.json`), cheapest first, which say what it draws: the
+/// scene copy (refraction, absorption, foam, caustics), the ripple layers, the flow streaks and the
+/// bank band. The frame uniform carries its switches (`bits`), not its index.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WaterQuality(usize);
+
+impl Default for WaterQuality {
+    /// The desktop default: Medium.
+    fn default() -> Self {
+        Self::named("medium").expect("watertiers.json has medium")
+    }
 }
 
 impl WaterQuality {
-    /// From the shell's level (0 Low, 1 Medium, 2 High; anything higher is High).
-    pub fn from_level(level: u32) -> Self {
-        match level {
-            0 => Self::Low,
-            1 => Self::Medium,
-            _ => Self::High,
-        }
+    /// The tier named `name` (or a removed tier's alias: High reads as Medium).
+    pub fn named(name: &str) -> Option<Self> {
+        dwell_look::water_tiers::tier_index(name).map(Self)
     }
-    /// What the frame uniform carries (`water.w`).
-    pub fn level(self) -> f32 {
-        match self {
-            Self::Low => 0.0,
-            Self::Medium => 1.0,
-            Self::High => 2.0,
-        }
+    /// From the shell's level: the tier's index in the data (past the last, the last).
+    pub fn from_level(level: u32) -> Self {
+        Self((level as usize).min(WATER_TIERS.len() - 1))
+    }
+    /// The CPU adapter's tier (opaque: no scene copy).
+    pub fn cpu() -> Self {
+        Self(dwell_look::water_tiers::cpu_tier())
+    }
+    /// Its index in the data.
+    pub fn index(self) -> usize {
+        self.0
+    }
+    /// Its data.
+    pub fn tier(self) -> &'static WaterTier {
+        &WATER_TIERS[self.0]
+    }
+    /// What the frame uniform carries (`water.w`): the tier's switches (dwell-look `tier_bits`).
+    pub fn bits(self) -> f32 {
+        tier_bits(self.tier()) as f32
     }
     /// Whether the water reads the scene behind it (W3: refraction, depth absorption, foam and
-    /// caustics, from a copy of the scene colour): Medium and High. Low keeps the W1b look, with
-    /// no copies.
+    /// caustics, from a copy of the scene colour). The CPU's tier doesn't, with no copies.
     pub fn reads_scene(self) -> bool {
-        self != Self::Low
+        self.tier().reads_scene
+    }
+    /// Whether the caustic tile is drawn for it: the scene-reading tiers' floors, or the blended
+    /// pass's lines on the water (`surface_caustics`).
+    pub fn draws_caustics(self) -> bool {
+        self.tier().reads_scene || self.tier().surface_caustics
     }
     /// Layers of normal detail drawn.
     pub fn layers(self) -> usize {
-        match self {
-            Self::Low => 1,
-            Self::Medium | Self::High => LAYERS.len(),
-        }
+        (self.tier().ripple_layers as usize).clamp(1, LAYERS.len())
     }
 }
 
@@ -624,6 +637,21 @@ pub fn wgsl() -> String {
     s.push_str(&format!(
         "const NOISE_TILE: i32 = {NOISE_TILE};\nconst NOISE_TEXELS: f32 = {NOISE_TEXELS}.0;\nconst CAUSTIC_TILE: i32 = {CAUSTIC_TILE};\nconst CAUSTIC_TEXELS: f32 = {CAUSTIC_TEXELS}.0;\nconst CAUSTIC_EXACT_TEXELS: f32 = {CAUSTIC_EXACT_TEXELS:?};\n"
     ));
+    let b = dwell_look::water_tiers::BANK_BAND;
+    s.push_str(&format!(
+        "const BANK_REACH_M: f32 = {:?};\nconst BANK_SLACK: f32 = {:?};\nconst BANK_SPREAD_PX: f32 = {:?};\nconst BANK_BLUR_PX: f32 = {:?};\nconst BANK_DARKEN: f32 = {:?};\nconst BANK_STRENGTH: f32 = {:?};\n",
+        b.reach_m as f32,
+        b.depth_slack as f32,
+        b.spread_px as f32,
+        b.blur_px as f32,
+        b.darken as f32,
+        b.strength as f32
+    ));
+    let c = dwell_look::water_tiers::SURFACE_CAUSTICS;
+    s.push_str(&format!(
+        "const SURFACE_CAUSTICS_M: f32 = {:?};\nconst SURFACE_CAUSTICS_GAIN: f32 = {:?};\n",
+        c.depth_m as f32, c.gain as f32
+    ));
     for (name, bit) in DEBUG_SWITCHES {
         s.push_str(&format!(
             "const DBG_{}: u32 = {bit}u;\n",
@@ -934,21 +962,34 @@ mod tests {
     }
 
     #[test]
-    fn quality_levels_round_trip_and_low_draws_one_layer() {
-        for q in [WaterQuality::Low, WaterQuality::Medium, WaterQuality::High] {
-            assert_eq!(WaterQuality::from_level(q.level() as u32), q);
-        }
-        assert_eq!(WaterQuality::from_level(9), WaterQuality::High);
-        assert_eq!(WaterQuality::Low.layers(), 1);
-        assert_eq!(WaterQuality::High.layers(), 3);
-        assert_eq!(
-            WaterQuality::default(),
-            WaterQuality::Medium,
-            "the desktop default"
+    fn tiers_by_name_and_level_and_low_sees_through_with_one_layer() {
+        let (low, medium) = (
+            WaterQuality::named("low").unwrap(),
+            WaterQuality::named("medium").unwrap(),
         );
-        // W3: Medium and High read the scene behind; Low keeps W1b's look, with no copies.
-        assert!(!WaterQuality::Low.reads_scene());
-        assert!(WaterQuality::Medium.reads_scene() && WaterQuality::High.reads_scene());
+        for q in [low, medium, WaterQuality::cpu()] {
+            assert_eq!(WaterQuality::from_level(q.index() as u32), q);
+        }
+        assert_eq!(
+            WaterQuality::from_level(99),
+            medium,
+            "past the last: the last"
+        );
+        assert_eq!(
+            WaterQuality::named("high"),
+            Some(medium),
+            "High folded into Medium"
+        );
+        assert_eq!(WaterQuality::default(), medium, "the desktop default");
+        assert_eq!((low.layers(), medium.layers()), (1, 3));
+        // The owner (2026-11-07): Low sees through without the scene copy (no pass split), with
+        // the caustic tile's lines; Medium reads the scene; the CPU's tier is opaque.
+        assert!(!low.reads_scene() && low.draws_caustics() && medium.reads_scene());
+        assert!(!WaterQuality::cpu().reads_scene() && !WaterQuality::cpu().draws_caustics());
+        assert_eq!(
+            low.bits(),
+            dwell_look::water_tiers::tier_bits(low.tier()) as f32
+        );
     }
 
     #[test]

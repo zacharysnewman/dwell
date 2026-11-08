@@ -7,8 +7,9 @@
 //!   the tile, `water::tile_cells`).
 //! - **Caustic tile** (`rg16float`, `water::CAUSTIC_RES`², a layer per fluid): the two caustic
 //!   layers' cell-edge distances (Worley F2 − F1) over `water::CAUSTIC_TILE` cells, at this
-//!   frame's time. Drawn each frame the water reads the scene (Medium and High), only for the
-//!   fluids with caustics. Where a pixel covers at least a texel the caustics sample it; nearer,
+//!   frame's time. Drawn every `CAUSTIC_EVERY_FRAMES` frames (shared/look/watertiers.json; the
+//!   first frame with water at once) while the water reads the scene, only for the
+//!   fluids with caustics (`caustics_due`). Where a pixel covers at least a texel the caustics sample it; nearer,
 //!   they are evaluated per pixel (`caustic_pattern`), so close up they stay exact.
 //!
 //! Both are in the frame bind group (bindings 5–7), so every pass that draws water reads them;
@@ -44,6 +45,27 @@ pub struct WaterTiles {
     caustic_pipeline: wgpu::RenderPipeline,
     group: wgpu::BindGroup,
     noise_drawn: bool,
+    /// Frames since the caustic tile was drawn (None: not drawn since the water last read the
+    /// scene, so it is stale).
+    caustic_age: Option<u32>,
+}
+
+/// Whether this frame redraws the caustic tile: the water wants it (`wanted`), and it is stale
+/// (`age` None: not drawn since the water last wanted it) or was drawn `every` − 1 or more frames
+/// ago. The caustics drift slowly, so a frame's lag doesn't show (C2,
+/// proposals/WATER_GPU_SURFACE.md).
+pub fn caustics_due(wanted: bool, age: Option<u32>, every: u32) -> bool {
+    wanted && age.is_none_or(|a| a + 1 >= every.max(1))
+}
+
+/// The caustic tile's age after a frame (`caustics_due`'s `age`): reset where it was drawn, stale
+/// where it was not wanted.
+pub fn caustic_age_after(wanted: bool, drawn: bool, age: Option<u32>) -> Option<u32> {
+    match (wanted, drawn) {
+        (false, _) => None,
+        (true, true) => Some(0),
+        (true, false) => age.map(|a| a + 1),
+    }
 }
 
 impl WaterTiles {
@@ -213,6 +235,7 @@ impl WaterTiles {
             sampler,
             group,
             noise_drawn: false,
+            caustic_age: None,
         }
     }
 
@@ -232,6 +255,18 @@ impl WaterTiles {
                 resource: wgpu::BindingResource::Sampler(&self.sampler),
             },
         ]
+    }
+
+    /// This frame's caustics: whether the tile is redrawn (`caustics_due`), given whether the
+    /// water reads the scene with some drawn (`wanted`). Call once a frame, before `pending`.
+    pub fn frame_caustics(&mut self, wanted: bool) -> bool {
+        let due = caustics_due(
+            wanted,
+            self.caustic_age,
+            dwell_look::water_tiers::CAUSTIC_EVERY_FRAMES,
+        );
+        self.caustic_age = caustic_age_after(wanted, due, self.caustic_age);
+        due
     }
 
     /// Whether `draw` would draw anything.
@@ -314,6 +349,32 @@ impl Drop for WaterTiles {
 
 #[cfg(test)]
 mod tests {
+    use super::{caustic_age_after, caustics_due};
+
+    /// Simulates `frame_caustics` over `wanted` frames: which ones redraw the tile.
+    fn drawn(wanted: &[bool], every: u32) -> Vec<bool> {
+        let mut age = None;
+        wanted
+            .iter()
+            .map(|&w| {
+                let due = caustics_due(w, age, every);
+                age = caustic_age_after(w, due, age);
+                due
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_caustic_tile_is_drawn_every_other_frame_and_at_once_when_water_appears() {
+        let (t, f) = (true, false);
+        assert_eq!(drawn(&[t, t, t, t, t], 2), [t, f, t, f, t]);
+        // Water out of view and back: drawn on its first frame back, whatever the cadence.
+        assert_eq!(drawn(&[t, t, f, t, t, t], 2), [t, f, f, t, f, t]);
+        assert_eq!(drawn(&[t, t, t], 1), [t, t, t], "every frame");
+        assert_eq!(drawn(&[t, t, t, t, t, t, t], 3), [t, f, f, t, f, f, t]);
+        assert_eq!(drawn(&[f, f], 2), [f, f], "never without water");
+    }
+
     #[test]
     fn only_fluids_with_caustics_get_a_layer_drawn() {
         let fluids = &dwell_blocks::FLUIDS[..];

@@ -29,6 +29,9 @@ mod shadows_gen;
 pub mod shafts;
 pub mod spyglass;
 pub mod underwater;
+pub mod water_tiers;
+#[path = "watertiers.gen.rs"]
+mod water_tiers_gen;
 pub mod waterfalls;
 pub mod waterflow;
 

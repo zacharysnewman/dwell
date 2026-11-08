@@ -10,13 +10,13 @@
     "minReflectance": 0.05
   },
   "tiers": {
-    "$comment": "Per water quality. ssrSteps: march steps along the reflected ray on screen (0: no land reflected; Low reads no copy of the scene, so it must be 0 there). refineSteps: binary steps that pin a hit between the last two. maxDistanceM: how far the ray reaches. cloudOctaves: the cloud deck's noise octaves in reflections (0: sky only; also capped by the Clouds setting). cloudShadow: the deck's self-shadow in reflections (while the Clouds setting draws it).",
-    "low": { "ssrSteps": 0, "refineSteps": 0, "maxDistanceM": 0, "cloudOctaves": 0, "cloudShadow": false },
-    "medium": { "ssrSteps": 12, "refineSteps": 8, "maxDistanceM": 24000, "cloudOctaves": 3, "cloudShadow": false },
-    "high": { "ssrSteps": 28, "refineSteps": 10, "maxDistanceM": 48000, "cloudOctaves": 5, "cloudShadow": true }
+    "$comment": "Per water quality, one entry per tier of shared/look/watertiers.json. ssrSteps: march steps along the reflected ray on screen (0: no land marched; a tier that reads no copy of the scene must have 0; Low reflects the bank by the bank band instead, watertiers.json `band`). refineSteps: binary steps that pin a hit between the last two. maxDistanceM: how far the ray reaches. cloudOctaves: the cloud deck's noise octaves in reflections (0: sky only; also capped by the Clouds setting). cloudShadow: the deck's self-shadow in reflections (while the Clouds setting draws it).",
+    "opaque": { "ssrSteps": 0, "refineSteps": 0, "maxDistanceM": 0, "cloudOctaves": 0, "cloudShadow": false },
+    "low": { "ssrSteps": 0, "refineSteps": 0, "maxDistanceM": 0, "cloudOctaves": 1, "cloudShadow": false },
+    "medium": { "ssrSteps": 12, "refineSteps": 8, "maxDistanceM": 24000, "cloudOctaves": 3, "cloudShadow": false }
   },
   "phone": {
-    "$comment": "Overrides of a tier's entries on a phone (a touch-first device: the shell's prefersTouch), whose GPU has a fraction of a desktop's for the same pixels (owner, 2026-11-06: Medium slowed a phone close to the water). Any of a tier's entries; the rest are the tier's. Not Low (it marches nothing).",
+    "$comment": "Overrides of a tier's entries on a phone (a touch-first device: the shell's prefersTouch), whose GPU has a fraction of a desktop's for the same pixels (owner, 2026-11-06: Medium slowed a phone close to the water). Any of a tier's entries; the rest are the tier's. Not a tier that reads no scene (it marches nothing).",
     "medium": { "ssrSteps": 8, "refineSteps": 5, "cloudOctaves": 2 }
   }
 }

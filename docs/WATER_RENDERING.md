@@ -83,12 +83,39 @@ UV wobble in the composite.
 
 ## 4. Quality tiers (settings menu, next to `detailSettings.ts`)
 
+**As built since 0.50.29** (owner, 2026-11-07; proposals/WATER_GPU_SURFACE.md C1): the tiers are data,
+`shared/look/watertiers.json` (cheapest first; `watertiers.mjs` validates it and emits dwell-look
+`watertiers.gen.rs`, CI checks it is current; the shell reads the same JSON in `ui/waterSettings.ts`). Each
+tier names what it draws (`readsScene`, `opacity`, `surfaceCaustics`, `rippleLayers`, `flowStreaks`, `bankBand`), whether Settings offers it
+(`setting`) and whether it is the CPU adapter's (`cpu`, exactly one); its reflections are its entry in
+`reflections.json`. The renderer's `WaterQuality` is an index into the list, and the frame uniform's
+`water.w` carries the tier's switches as bits (dwell-look `tier_bits`; the WGSL's `water_tier_*`), so a new
+tier is a data entry. Removed tiers are `aliases`: a stored or named `"high"` reads as Medium (the settings
+store keeps the stored value as it was, append-only).
+
 | Tier | Contents |
 |---|---|
-| Low (phone default) | Normal maps, Fresnel, glint, sky-only reflection (no clouds), absorption at constant depth; underwater fog only. No copies |
-| Medium | Colour copy (full-res in W3; half-res in W5): refraction, depth absorption, foam, caustics; a cheap SSR (12 steps) and the clouds reflected (W5a) |
-| High | Plus a finer, farther SSR (28 steps, W5a), the reflected clouds' self-shadow, and god rays |
-| Ultra (desktop) | Full-res SSR |
+| Opaque (the CPU adapter only, not in Settings) | Normal maps (one layer), Fresnel, glint, sky-only reflection, absorption at constant depth; underwater fog only. No copies (the old Low) |
+| Low (phone default; Low and Mobile presets) | See-through **without the scene copy**: drawn blended in the scene pass (no split), at `opacity` 0.9 of the fluid's own so the floor shows through, the caustic tile's lines added on the water (`surfaceCaustics`, as if on a floor `caustics.depthM` down); one ripple layer, no flow streaks, no land march, one cloud octave reflected. No refraction distortion, no depth absorption, no shoreline foam |
+| Medium (desktop default) | The whole look: three ripple layers, flow streaks, SSR (12 steps; a phone's 8) and the clouds reflected (W5a). High was folded in (0.50.29): it measured within 0.1–0.3 ms of Medium |
+
+**Why Low has no copy** (owner, 2026-11-07): on the owner's iPhone, floating at the surface looking down ran
+~45 fps and fully under water ~60. The scene copy splits each scene pass with water in two (opaque half,
+copy, water half); on a phone's tile GPU each split stores the whole frame out and loads it back, which the
+M1's bandwidth hides. Low now draws the water in the same pass as the ground, blended: **zero water pass
+splits** (one far and one near scene pass, as with no water), the caustic tile's own small pass before them.
+
+**The bank band** (built, but no tier draws it since Low dropped the copy: it samples the scene copy;
+`watertiers.json` `band`; WGSL `bank_band`; a scene-reading tier may set `bankBand`): the land reflected without a march. The
+reflected ray's point `reachM` (6 m) out is projected on screen once; where the scene's depth there stands in
+front of it (within `depthSlack` of its depth: the bank above the water's edge), four taps of the scene copy
+(`spreadPx` across, `blurPx` up) give a soft strip of the bank's colour, darkened by `darken`, mixed in at
+`strength` × the surface's reflectance and faded toward the slack's end. Sky and far land past it leave the
+sky's reflection. One depth load and four colour taps where the surface reflects enough to see land.
+
+**The caustic tile every other frame** (`causticEveryFrames`, render/water_tiles.rs `caustics_due`): the tile
+is redrawn every second frame while the water reads the scene, at once on the first frame water is back in
+view. The caustics drift slowly; a frame's lag does not show.
 
 Copy cost at 1080p (*estimate*): about 25 MB per frame of colour and depth copies, plus the resolve.
 Trivial on desktop; real bandwidth and power on phones' tile GPUs, hence half-res copies there.
@@ -359,9 +386,11 @@ sky alone. W5's screen-space reflections came forward, and so did the cloud deck
 
   | Tier | March steps | Refine | Reach | Cloud octaves | Cloud self-shadow |
   |---|---|---|---|---|---|
-  | Low | 0 (must be: no copy) | 0 | — | 0 (the sky alone) | no |
+  | Opaque (CPU) | 0 (must be: no copy) | 0 | — | 0 (the sky alone) | no |
+  | Low | 0 (the bank band instead, §4) | 0 | — | 1 | no |
   | Medium | 12 | 8 | 24 km | 3 | no |
-  | High | 28 | 10 | 48 km | 5 | yes (with the Clouds setting's) |
+
+  (High, 28 steps, 48 km, 5 octaves with self-shadow, was folded into Medium in 0.50.29.)
 
   The values reach the shader in the frame uniform's `reflect` and `reflect_sky` (dwell-look
   `reflection_uniforms`). The thickness, edge fade, distance fade, `rippleScale` and `minReflectance` are
@@ -453,9 +482,9 @@ when it did. `render/pacing.rs` now keeps at most two frames in flight (`Queue::
 the app skips a draw while two are (`draw.skipped`), and gives up waiting after 1 s. Under the same load,
 the W3 build's records showed long tasks to 557 ms; this build's frame interval stayed under 36 ms.
 
-**Tiers:** Low (phones): one ripple layer, no scene reads. **Medium is now the desktop default**: the whole
-look. High: Medium plus the fine caustic layer to twice the distance (reflections at their High settings
-come with W5a). A CPU adapter (SwiftShader in CI) draws Low whatever is chosen (`water_for`, #104).
+**Tiers** (then; since 0.50.29 see §4): Low (phones): one ripple layer, no scene reads. **Medium is now the
+desktop default**: the whole look. High (folded into Medium in 0.50.29): Medium plus the fine caustic layer to
+twice the distance. A CPU adapter (SwiftShader in CI) draws the opaque tier whatever is chosen (`water_for`, #104).
 
 **Look:** the shore, edge and under-the-surface views were compared before and after: the same look, with
 the caustic and ripple patterns in other places (new hashes and periods).

@@ -233,7 +233,7 @@ impl Harness {
         // viewSettings, detailSettings): what a player gets in Chrome on a Mac.
         renderer.set_shadow_quality(dwell_look::shadows::ShadowQuality::from_level(2));
         renderer.set_torch_shadows(dwell_look::shadows::ShadowQuality::from_level(1));
-        renderer.set_water_quality(dwell_client::render::water::WaterQuality::from_level(1));
+        renderer.set_water_quality(dwell_client::render::water::WaterQuality::default());
         renderer.set_clouds(dwell_look::clouds::CloudQuality::High);
         let lod_settings = LodSettings {
             pixel_error: dwell_protocol::lod::PIXEL_ERROR_DESKTOP as f64,

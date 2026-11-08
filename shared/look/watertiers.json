@@ -1,0 +1,60 @@
+{
+  "$comment": "The water quality tiers (docs/WATER_RENDERING.md §4; proposals/WATER_GPU_SURFACE.md C1, owner 2026-11-07), cheapest first, in the renderer's order (dwell-client render/water.rs `WaterQuality` indexes this list; the shell's Water setting names them). id: the name the settings store, the presets (shared/settings/graphics-presets.json) and the bench use. label: the Settings button. setting: offered in Settings (false: a device-only tier). cpu: the tier a CPU adapter (software WebGPU) draws whatever is chosen; exactly one tier is the CPU's, and it may not read the scene. readsScene: the water reads a copy of the scene behind it (refraction, depth absorption, shoreline foam, caustics from the caustic tile), which splits each scene pass with water in two around the copy (on a phone's tile GPU the split stores and reloads the whole frame: owner, 2026-11-07, the likely cause of a phone's 45 fps over water against 60 under it); without it the water is drawn blended over what is behind in the same pass, no split. opacity: in the blended pass, the share of the fluid's own opacity drawn (1: as the fluid says; less lets the floor show through). surfaceCaustics: in the blended pass, the caustic tile's lines added on the water (`caustics` below), as if on a floor caustics.depthM down. rippleLayers: layers of normal detail (1–3, render/water.rs `LAYERS`). flowStreaks: the foam streaks along the current are drawn (with the Foam streaks setting on). bankBand: the stylized reflection of the bank (`band` below) where the land is not marched (shared/look/reflections.json's ssrSteps 0); needs readsScene. causticEveryFrames: the caustic tile (render/water_tiles.rs) is redrawn every this many frames while the water reads the scene (1: each frame; the first frame with water draws it at once); the caustics drift slowly, so a frame's lag does not show. Run `node shared/look/watertiers.mjs` after editing; CI fails if crates/dwell-look/src/watertiers.gen.rs is stale.",
+  "tiers": [
+    {
+      "id": "opaque",
+      "label": "Opaque",
+      "setting": false,
+      "cpu": true,
+      "readsScene": false,
+      "opacity": 1,
+      "surfaceCaustics": false,
+      "rippleLayers": 1,
+      "flowStreaks": false,
+      "bankBand": false
+    },
+    {
+      "id": "low",
+      "label": "Low",
+      "setting": true,
+      "cpu": false,
+      "readsScene": false,
+      "opacity": 0.9,
+      "surfaceCaustics": true,
+      "rippleLayers": 1,
+      "flowStreaks": false,
+      "bankBand": false
+    },
+    {
+      "id": "medium",
+      "label": "Medium",
+      "setting": true,
+      "cpu": false,
+      "readsScene": true,
+      "opacity": 1,
+      "surfaceCaustics": false,
+      "rippleLayers": 3,
+      "flowStreaks": true,
+      "bankBand": false
+    }
+  ],
+  "aliases": {
+    "$comment": "Tiers that were removed, read as another (the settings store is append-only: a stored name is kept, and read as its alias). High was folded into Medium in 0.50.29 (owner, 2026-11-07).",
+    "high": "medium"
+  },
+  "band": {
+    "$comment": "The bank band (owner, 2026-11-07, for phones; it samples the scene copy, so only a tier that reads the scene can draw it: none does since Low dropped the copy): the land reflected without a march. The reflected ray's point reachM out from the surface is looked up on screen once; where the scene there stands in front of it (the bank above the water's edge, within depthSlack of its view depth), the bank's colour is taken from the scene copy as a soft strip: the mean of taps spreadPx apart across the screen and blurPx up it, darkened by darken, at strength (× the surface's reflectance, as the marched land). Sky and far land beyond it leave the sky's reflection.",
+    "reachM": 6,
+    "depthSlack": 0.6,
+    "spreadPx": 6,
+    "blurPx": 4,
+    "darken": 0.25,
+    "strength": 0.85
+  },
+  "caustics": {
+    "$comment": "The blended pass's caustics (surfaceCaustics): the caustic tile's lines at the surface point as if lighting a floor depthM down (no depth is read: the pass is not split), added at gain × the light they focus (none at night, as under the surface).",
+    "depthM": 0.6,
+    "gain": 0.3
+  },
+  "causticEveryFrames": 2
+}

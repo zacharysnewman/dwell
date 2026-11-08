@@ -32,6 +32,8 @@ jobs:
           node --test shared/look/gen.test.mjs
           node shared/look/clouds.mjs
           node --test shared/look/clouds.test.mjs
+          node shared/look/watertiers.mjs
+          node --test shared/look/watertiers.test.mjs
           node shared/look/reflections.mjs
           node --test shared/look/reflections.test.mjs
           node shared/look/shadows.mjs

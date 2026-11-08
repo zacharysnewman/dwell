@@ -854,7 +854,7 @@ the exposure and the water's flow switches are outside the presets. `?preset=<id
 
 | Preset | Render scale | Water | Sun & moon shadows | Torch shadows | Light shafts | Clouds | Full detail | Distant detail | Distant memory |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Ultra | 100 % | High | High | High | High | High | 352 m | 2 px | 512 MB |
+| Ultra | 100 % | Medium (High until 0.50.29) | High | High | High | High | 352 m | 2 px | 512 MB |
 | High (desktop default) | 50 % Stretch | Medium | High | Low | High | High | 256 m | 4 px | 256 MB |
 | Medium | 50 % Stretch | Medium | Low | Off | Low | High | 192 m | 6 px | 192 MB |
 | Mobile (phone default) | 50 % Stretch | Low | Low | Off | Low | Low | 128 m | 8 px | 96 MB |
@@ -863,9 +863,10 @@ the exposure and the water's flow switches are outside the presets. `?preset=<id
 **The order of the cuts**, by GPU time saved per beauty lost, from the [cost profile](#cost-profile-m1-air),
 [render scale](#render-scale-and-upscaling) and [water cost](#water-cost-m1-air) measurements: the render
 scale first (~74 % of the frame scales with the pixels; 50 % keeps the look at a distance and is the owner's
-default), then water High → Medium (High is ~0.1 ms over Medium at 50 %, little to see), torch shadows, the
-sun's shadows to Low and the shafts to Low (Medium), then the water to Low (no refraction or caustics: the
-biggest visible step, so it waits for Mobile), the clouds, and the draw distance last. Sharpen is in no
+default), then torch shadows (water High, ~0.1 ms over Medium at 50 %, was folded into Medium in 0.50.29), the
+sun's shadows to Low and the shafts to Low (Medium), then the water to Low (since 0.50.29 the see-through Low:
+blended with no scene copy, caustic lines on the water, no land march, one ripple layer, no streaks; it waits
+for Mobile), the clouds, and the draw distance last. Sharpen is in no
 preset: at 50 % it costs ~2 ms more than Stretch (the render-scale table), more than the next cut saves; a
 player can still pick it. On a phone the detail sliders clamp to its ranges (Ultra's 512 MB to 192), and the
 preset still reads as Ultra there.
@@ -1324,3 +1325,41 @@ Scratch (not checked in): scenarios and configurations in the session scratchpad
 `scenarios.json`: `wc-dam`, `wc-wide`, `wc-wl`, `wc-flood`, `wc-descent`; `dam.json`, `damfull.json`,
 `wl.json`; `an.py` summarises), the selected screenshots in `water-cost-shots/` (each view with each piece
 off, the flood, the waterline, the descent grid).
+
+## Water tiers (M1 Air)
+
+The tiers rework (0.50.29; WATER_RENDERING.md §4, proposals/WATER_GPU_SURFACE.md C1): the same dam close-up
+and valley as "Water cost", 50 % Stretch, `--unthrottled`, one page per view with the tiers switched in turn
+(the `water` step by tier name; Medium first and again last), 1.5 s to settle, 3 s recorded, `gpu.frame`
+mean. **The owner was playing a game on the Mac** (load 11–76 over the runs), so the absolute ms are high and
+need a recheck on a quiet machine; read the differences within one page (each row's run).
+
+| `gpu.frame` mean (ms) | Dam | Valley |
+| --- | --- | --- |
+| *Before* (0.50.28): High / Medium / opaque Low / High again | 9.62 / 9.33 / 7.87 / 9.68 | 10.94 / 10.79 / 9.62 / 10.92 |
+| *After*: Medium / Low / opaque (CPU) / Medium again | 10.05 / 8.98 / 8.52 / 10.61 | 12.54 / 10.92 / 10.54 / 12.41 |
+| Low − Medium (after, mean of the two Medium records) | −1.35 | −1.56 |
+| Low − opaque (after) | +0.46 | +0.38 |
+| With vsync (60 Hz; frames held at 16.7 ms) — before: High / Medium / opaque Low / High again | 9.81 / 9.48 / 8.33 / 9.55 | 11.18 / 10.89 / 9.76 / 11.32 |
+| With vsync — after: Medium / Low / opaque / Medium again | 10.93 / 8.54 / 8.42 / 10.30 | 11.82 / 10.33 / 10.32 / 11.91 |
+| Low − Medium with vsync | −2.08 | −1.54 |
+| A Low with the scene copy (an intermediate build, refraction and absorption kept, no SSR) − Medium | −0.71 | +0.09 (noisy) |
+
+Low draws no scene copy: **no water pass split** (two scene passes, as with no water), and the caustic tile
+(`gpu.water.tiles` ~0.45–0.5 ms on the frames it is drawn, every other frame since 0.50.29). Its cost over the
+opaque tier is the blend and the surface caustics. The intermediate copy-reading Low saved only about half as
+much: the copy and split cost ~0.6 ms even on the M1, and on a phone's tile GPU a split stores and reloads the
+whole frame (not visible on the M1's bandwidth).
+
+**A phone** (*estimate*): the owner's iPhone ran ~45 fps floating over the water looking down and ~60 under
+it, "at the original defaults", so ~5.5 ms a frame over the surface. **Caveat:** a phone's default water was
+Low before this change too, which was then the opaque tier (no copy, no split); if the phone was on it, the
+copy was not the cause, and the cost lies in what the opaque tier and Low share (the blended full-screen water
+shading, the sky reflection per pixel, the near-surface waterline test). If it was on Medium (set by hand, or
+`prefersTouch` false on that device), scaling the M1's Medium − Low (1.35–1.56 ms) by a phone GPU's ~2–3× per
+pixel gives ~3–4.5 ms, plus the split's store and reload that the M1 hides: Low should bring it near 60 fps.
+Which tier the phone ran needs asking; not measured on a phone.
+
+Screenshots (old High, old opaque Low, new Medium, new Low, new opaque) in the session scratchpad
+`water-tiers/shots/`; the runs and `compare.html` per run in `water-tiers/out/` (`before-*`, `final-*`),
+scenarios from `water-tiers/gen.py`, `an.py` summarises.

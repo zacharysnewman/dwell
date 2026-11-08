@@ -33,7 +33,7 @@ describe('graphics presets data', () => {
     expect(findPreset('high')?.settings).toMatchObject({ renderScale: 0.5, upscaler: 'stretch' });
     expect(findPreset('ultra')?.settings).toMatchObject({
       renderScale: 1,
-      water: 'high',
+      water: 'medium',
       shadows: 'high',
       torchShadows: 'high',
       shafts: 'high',
@@ -133,7 +133,7 @@ describe('applying a preset', () => {
     const changed: Settings[] = [
       { ...high, clouds: 'low' },
       { ...high, shafts: 'off' },
-      { ...high, water: { ...high.water, quality: 'high' } },
+      { ...high, water: { ...high.water, quality: 'low' } },
       { ...high, shadows: { ...high.shadows, torch: 'high' } },
       { ...high, renderScale: { ...high.renderScale, upscaler: 'sharpen' } },
       { ...high, detail: { ...high.detail, distanceM: 255 } },
