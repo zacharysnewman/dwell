@@ -2008,6 +2008,12 @@ impl Client {
                 "chop",
                 g.chop_hint().map_or(JsValue::NULL, JsValue::from),
             );
+            // The swing's line through the crosshair (`level`, `vertical`; null: no tool held).
+            set(
+                &o,
+                "swing",
+                g.swing_line().map_or(JsValue::NULL, JsValue::from),
+            );
             // The brush panel (BRUSHES.md): null while the tool is off.
             match g.brush_panel() {
                 Some(p) => {

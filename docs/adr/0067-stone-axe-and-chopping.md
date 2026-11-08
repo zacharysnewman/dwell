@@ -87,7 +87,8 @@ felling (FELLING.md). Scope: tools and woods are per build; cuts are per world, 
    piece, replaced) drops its cut (`Server::cuts_dropped`, in `broadcast_changes`). A felled
    trunk's other cuts are not carried by the piece (Question 4).
 9. **The wire: new, optional messages (no new compatibility line)**, as ADR 0066:
-   - Welcome gains flag **`CHOPPING` (32)**. Older clients ignore it.
+   - Welcome gains flag **`CHOPPING` (32)**. Older clients ignore it; and **`CHOP_SWEEP` (64)**
+     (0.50.39): the swing's path and held tools (`Sweep`, `Held`, `HeldTools`).
    - C→S **`Chop`** (88), only to a server with `CHOPPING`: `Hello`, or `Swing { tool, cell, face,
      point, vertical }`.
    - S→C **`Cuts`** (89), world channel, only to a client that said `Hello`: changed cells' cuts
@@ -172,8 +173,48 @@ Still parked (defaults chosen):
   pass and its shader (`chip_colour`, validated with naga in both tiers), the chop clips and the
   held axe (`shared/characters`), the hotbar picture.
 
-**Next:** cuts on bodies (chopping a felled piece before it settles), a give command, the held tool
-on the wire for remote players.
+## Built in 0.50.39: the swing as weighty melee
+
+The owner (2026-11-08): "This axe is a lot more like Dying Light melee mechanics than Minecraft":
+weighty first-person physical swings (the mechanics only). Built:
+
+- **The swing as data** (`tools.json` `swing`, validated, a fixture tool by data alone):
+  `windupS` 0.12, `activeS` 0.14 (the arc), `hitStopS` 0.08, `recoverHitS` 0.22, `recoverMissS`
+  0.36, `reachM` 2.2, `arcDeg` 110, `samples` 12, `kickDeg` 1.6, `staminaCost` 8 (unused until
+  stamina exists: swinging, swimming and sprinting will draw on it), `swish` and `bounce` sound
+  events. A miss must last at least `swingSeconds` (the server's wait).
+- **The path is what hits; free swings.** A swing goes any time, at nothing too. `dwell_world::swing`
+  sweeps the head's arc face-locally (level: the screen's right to its left; vertical: top to
+  bottom); the first solid cell is hit. The client sends `Chop::Sweep` (look, plane) to a server
+  with `CHOP_SWEEP` (64), which sweeps the same arc from its own eye and cuts a wood it meets, or
+  spends the swing (a bounce off stone, a miss). An older server gets the aimed `Swing` when the
+  path meets a wood. Tests: an arc passing a trunk cuts it though the crosshair misses; a nearer
+  stone post on the path takes the hit; free swings and stone do nothing and spend the swing (both
+  faces). A sweep hit's face is converted to the chopping wire's `axis × 2 + positive` (`SwingHit::axis_face`; red → green in the browser and `tests/chopping.rs`: the notch went on the far side).
+- **The feel** (`chop.rs` `SwingRun`, tested): the arms' clip (timed to a miss) is held at the
+  impact for the hit-stop and played back to the rest after a hit, runs through its follow-through
+  on a miss; the camera winds back, sweeps, jolts against the swing at a hit (harder off stone);
+  the impact shows chips, the hit's sound by the cut (`sounds`: bark thud, wood chunk, creaks from
+  40%), shakes leaves from the tree's leaf blocks (`leaves`), or clanks off stone (no effect).
+- **The axe the right way round, two holds, a flint head**: `stone_axe` and `stone_axe_vertical`
+  (`held`, `heldVertical`) with an `axe_blade` edge; red → green: `dwell-characters`
+  `tests/axe.rs` failed with the blade at (−0.24, −0.30, −0.92) in view space (toward the eye);
+  now it faces away in both holds, the holds differ and the edge leads the strike. The head is the
+  `flint` material (a warm grey-brown ramp), not the ground stone's violet shadow.
+- **Cuts that read as cuts**: the notch is a V, each face lit by its own normal (`Gouge::cut_normals`,
+  packed into the billboard's info bits; both faces tested), fresh tan wood (`#d9b37a`) keeping its
+  hue in shade, end-grain rings, a crease at the apex darkening with depth, a bark lip; it opens
+  wider and deeper as the notch deepens. Chosen over a remesh as the cheapest that reads as depth.
+- **Progress you can feel**: the tree leans toward its notch from 40% of the fell fraction, more
+  toward the fall (`sway`, `TreeLean`, a shiver after each hit; the terrain's vertex shaders), the
+  hit sounds deepen, leaves fall each hit.
+- **The reticle** draws the swing's line (level or vertical) through the crosshair.
+- **Others see the held axe**: `Chop::Held` (tool by name, the hold) and S→C `HeldTools` (90),
+  only to clients that sent a `Held`; tested on the server and the client's drawing.
+
+**Next:** cuts on bodies (chopping a felled piece before it settles), a give command, stamina; the
+falling trunk's fling onto its chopper fixed at its root (BUGS.md #52: 0.50.37's `max_body_kick`
+cap was removed in 0.50.39 on the owner's word, "we shouldn't be capping player kick like that").
 
 ## Consequences
 

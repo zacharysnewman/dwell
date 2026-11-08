@@ -19,6 +19,86 @@ mod table {
 
 pub use table::{BREAK_WITH, TOOLS, WOODS};
 
+/// A tool's swing (`swing` in the data): its feel (the client's) and its path (both sides').
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SwingDef {
+    /// Before the arc (the wind-up).
+    pub windup_s: f64,
+    /// The arc's sweep: the head's path, sampled at `samples` steps.
+    pub active_s: f64,
+    /// The pause on impact (the hit-stop).
+    pub hit_stop_s: f64,
+    /// After a hit, and after a miss (a looser follow-through).
+    pub recover_hit_s: f64,
+    pub recover_miss_s: f64,
+    /// The head's distance from the eye (m) and the arc it sweeps (degrees), centred on the look.
+    pub reach_m: f64,
+    pub arc_deg: f64,
+    pub samples: u32,
+    /// The camera's jolt on a hit (degrees).
+    pub kick_deg: f64,
+    /// What a swing will draw from stamina when stamina exists (unused until then).
+    pub stamina_cost: f64,
+    /// Sound events (shared/sounds): the arc's swish, a bounce off what is not a wood.
+    pub swish: Option<&'static str>,
+    pub bounce: Option<&'static str>,
+}
+
+impl SwingDef {
+    /// When along the swing (s from its start) the head reaches arc step `step`.
+    pub fn time_of_step(&self, step: u32) -> f64 {
+        let n = self.samples.max(2) - 1;
+        self.windup_s + self.active_s * f64::from(step.min(n)) / f64::from(n)
+    }
+    /// How long a swing that hit at arc step `step` lasts, and one that missed.
+    pub fn hit_length(&self, step: u32) -> f64 {
+        self.time_of_step(step) + self.hit_stop_s + self.recover_hit_s
+    }
+    pub fn miss_length(&self) -> f64 {
+        self.windup_s + self.active_s + self.recover_miss_s
+    }
+}
+
+/// Leaves a hit shakes down from a tree (`leaves` in the data; the client's particles).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Leaves {
+    /// The leaf block they fall from (none: no leaves).
+    pub block: Option<&'static str>,
+    pub count: u32,
+    /// sRGB.
+    pub color: [u8; 3],
+    /// Where leaf blocks are looked for: within this of the hit across, this above it.
+    pub radius_m: f64,
+    pub height_m: f64,
+}
+
+/// A standing tree's sway as it is cut (`sway` in the data; drawn by the client).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Sway {
+    /// It begins once this much of the cross-section is cut,
+    pub from_fraction: f64,
+    /// and leans up to this (degrees) at the fell fraction.
+    pub max_deg: f64,
+}
+
+impl WoodDef {
+    /// The sway's lean (degrees) of a standing trunk cut `cross` of the way: none before
+    /// `from_fraction`, rising to `max_deg` at the fell fraction (eased in: more toward the fall).
+    pub fn sway_deg(&self, cross: f64) -> f64 {
+        let span = (self.fell_fraction - self.sway.from_fraction).max(1e-6);
+        let u = ((cross - self.sway.from_fraction) / span).clamp(0.0, 1.0);
+        self.sway.max_deg * u * u
+    }
+    /// A hit's sound event at a cut `cross` of the way through: the last stage begun.
+    pub fn sound_at(&self, cross: f64) -> Option<&'static str> {
+        self.sounds
+            .iter()
+            .rev()
+            .find(|(from, _)| cross >= *from)
+            .map(|(_, e)| *e)
+    }
+}
+
 /// The tool kinds the engine understands (`kind` in the data).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ToolKind {
@@ -44,6 +124,21 @@ pub struct ToolDef {
     pub along: f64,
     /// The share's falloff from across to along: `along + (across − along) |cos θ|^sharpness`.
     pub sharpness: f64,
+    /// The item a hand shows holding it for a vertical swing (the second hold).
+    pub held_vertical: Option<&'static str>,
+    /// The swing: its timing, its arc, its feel.
+    pub swing: SwingDef,
+}
+
+impl ToolDef {
+    /// The held item for the swing's plane.
+    pub fn held_for(&self, vertical: bool) -> Option<&'static str> {
+        if vertical {
+            self.held_vertical.or(self.held)
+        } else {
+            self.held
+        }
+    }
 }
 
 /// A block an axe cuts.
@@ -58,6 +153,10 @@ pub struct WoodDef {
     pub buck_drops: &'static [crate::inventory::DropRule],
     /// The chips a swing knocks out of it (the client's particles).
     pub chips: Chips,
+    /// The leaves a hit shakes down, the standing tree's sway, each hit's sound by the cut.
+    pub leaves: Leaves,
+    pub sway: Sway,
+    pub sounds: &'static [(f64, &'static str)],
 }
 
 /// The chips a swing knocks out of a wood (`chips` in the data).
@@ -296,6 +395,46 @@ mod tests {
     const UP: [f64; 3] = [0.0, 1.0, 0.0];
     const Y: usize = 1;
 
+    #[test]
+    fn a_hit_stops_short_and_a_miss_follows_through_longer() {
+        let s = axe().swing;
+        // A hit early on the arc ends sooner than one at its end, and every hit sooner than a miss.
+        assert!(s.hit_length(0) < s.hit_length(s.samples - 1));
+        assert!(s.hit_length(s.samples - 1) < s.miss_length());
+        assert!(
+            (s.time_of_step(0) - s.windup_s).abs() < 1e-12,
+            "the arc starts after the wind-up"
+        );
+        assert!(s.hit_stop_s > 0.0 && s.recover_miss_s > s.recover_hit_s);
+        // Never sooner than the server's wait.
+        assert!(s.miss_length() >= axe().swing_seconds);
+        assert!(
+            s.stamina_cost > 0.0,
+            "a swing names its stamina cost (unused until stamina)"
+        );
+    }
+
+    #[test]
+    fn the_tree_sways_more_toward_the_fall_and_the_hits_sound_deeper() {
+        let log = wood("dwell:log").unwrap();
+        assert_eq!(log.sway_deg(0.0), 0.0);
+        assert_eq!(
+            log.sway_deg(log.sway.from_fraction),
+            0.0,
+            "still until ~40% through"
+        );
+        let mid = log.sway_deg((log.sway.from_fraction + log.fell_fraction) / 2.0);
+        let end = log.sway_deg(log.fell_fraction);
+        assert!(
+            mid > 0.0 && end > 2.0 * mid,
+            "more toward the fall: {mid} then {end}"
+        );
+        assert!((end - log.sway.max_deg).abs() < 1e-9);
+        assert_eq!(log.sound_at(0.0), Some("chop_bark"));
+        assert_eq!(log.sound_at(0.3), Some("chop_wood"));
+        assert_eq!(log.sound_at(0.5), Some("chop_creak"));
+    }
+
     /// Swings at a standing (grain y) 1 m trunk's −x side, `band_of(i)` for swing i, with
     /// `share` each, until the cut passes the log's fell fraction; the count.
     fn swings_to_fell(s: f64, band_of: impl Fn(usize) -> usize) -> usize {
@@ -409,6 +548,28 @@ mod tests {
                 cuts: vec![([4, -80, 12], c)],
                 gone: vec![[1, 2, 3]],
             }),
+            // The swing's path and the held tool (CHOP_SWEEP).
+            Message::Chop(ChopAction::Sweep {
+                tool: "dwell:stone_axe".into(),
+                look: [0.6, -0.8, 0.0],
+                vertical: false,
+            }),
+            Message::Chop(ChopAction::Held {
+                tool: "dwell:stone_axe".into(),
+                vertical: true,
+            }),
+            Message::HeldTools(vec![
+                crate::HeldTool {
+                    player_id: 3,
+                    tool: "dwell:stone_axe".into(),
+                    vertical: false,
+                },
+                crate::HeldTool {
+                    player_id: 9,
+                    tool: String::new(),
+                    vertical: false,
+                },
+            ]),
         ];
         for m in all {
             let b = m.encode();

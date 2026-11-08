@@ -42,7 +42,12 @@
     "fall": {"sound": "waterfall", "loop": "start"},
     "fall_level": {"loop": "update"},
     "fall_end": {"loop": "stop"},
-    "explode": {"set": "explode", "sound": "dynamite_boom"}
+    "explode": {"set": "explode", "sound": "dynamite_boom"},
+    "chop_bark": {"sound": "chop_bark"},
+    "chop_wood": {"sound": "chop_wood"},
+    "chop_creak": {"sound": "chop_creak"},
+    "axe_clank": {"sound": "axe_clank"},
+    "axe_swish": {"sound": "axe_swish"}
   },
   "ambient": {
     "fire": {"radiusM": 10, "max": 4},
@@ -1946,6 +1951,46 @@
           "at": 0.15,
           "partials": [[1, 1, 0.35], [2, 0.15, 0.12], [3, 0.05, 0.06]]
         }
+      ]
+    },
+    "chop_bark": {
+      "gain": 0.9, "reverb": 0.08,
+      "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.1, "time": 0.1},
+      "layers": [
+        {"source": "modal", "freq": 260, "gain": 0.32, "partials": [[1, 1, 0.07], [2.4, 0.45, 0.04]]},
+        {"source": "noise", "color": "pink", "gain": 0.32, "filters": [{"type": "bandpass", "freq": 1500, "q": 1.2}], "env": {"attack": 0.0005, "decay": 0.03}}
+      ]
+    },
+    "chop_wood": {
+      "gain": 1.0, "reverb": 0.1,
+      "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.1, "time": 0.1},
+      "layers": [
+        {"source": "modal", "freq": 170, "gain": 0.4, "partials": [[1, 1, 0.12], [2.2, 0.5, 0.07], [3.9, 0.2, 0.04]]},
+        {"source": "noise", "color": "brown", "gain": 0.35, "filters": [{"type": "lowpass", "freq": 900, "q": 0.8}], "env": {"attack": 0.0005, "decay": 0.06}}
+      ]
+    },
+    "chop_creak": {
+      "gain": 1.05, "reverb": 0.18,
+      "variation": {"pitch": 2, "gain": 1, "cutoff": 0.1, "time": 0.12},
+      "layers": [
+        {"source": "modal", "freq": 150, "gain": 0.4, "partials": [[1, 1, 0.14], [2.3, 0.5, 0.08]]},
+        {"source": "noise", "color": "brown", "gain": 0.3, "filters": [{"type": "lowpass", "freq": 800, "q": 0.8}], "env": {"attack": 0.0005, "decay": 0.06}},
+        {"source": "modal", "freq": 620, "gain": 0.12, "at": 0.08, "partials": [[1, 1, 0.05], [2.6, 0.5, 0.03]], "grains": {"count": [5, 9], "spread": 0.45, "gain": [0.3, 1], "pitch": 6}}
+      ]
+    },
+    "axe_clank": {
+      "gain": 0.9, "reverb": 0.1,
+      "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.1, "time": 0.1},
+      "layers": [
+        {"source": "modal", "freq": 1400, "gain": 0.22, "partials": [[1, 1, 0.09], [2.76, 0.5, 0.06], [5.4, 0.25, 0.03]]},
+        {"source": "noise", "color": "white", "gain": 0.3, "filters": [{"type": "bandpass", "freq": 3200, "q": 1.4}], "env": {"attack": 0.0005, "decay": 0.015}}
+      ]
+    },
+    "axe_swish": {
+      "gain": 0.5, "reverb": 0.04,
+      "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.15, "time": 0.1},
+      "layers": [
+        {"source": "noise", "color": "pink", "gain": 0.4, "filters": [{"type": "bandpass", "freq": 900, "q": 0.9}], "env": {"attack": 0.05, "decay": 0.12}}
       ]
     },
     "fell_crack": {

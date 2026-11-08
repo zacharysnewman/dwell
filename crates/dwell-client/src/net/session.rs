@@ -213,6 +213,14 @@ impl Session {
         if w.flags & welcome_flags::CHOPPING != 0 {
             self.send(&Message::Chop(dwell_protocol::ChopAction::Hello));
         }
+        // A server that sweeps swings along their path and passes held tools on (ADR 0067) says so
+        // with CHOP_SWEEP; it answers a first `Held` with the others' (`HeldTools`, at least one).
+        if w.flags & welcome_flags::CHOP_SWEEP != 0 {
+            self.send(&Message::Chop(dwell_protocol::ChopAction::Held {
+                tool: String::new(),
+                vertical: false,
+            }));
+        }
     }
 
     /// The world's settings again while joined: the host changed its game mode (ADR 0065; only a
@@ -579,6 +587,7 @@ impl Session {
                     | Message::LodData(_)
                     | Message::ItemDrops(_)
                     | Message::Cuts(_)
+                    | Message::HeldTools(_)
             ) && (self.joined() || matches!(self.state, SessionState::Confirming { .. }))
             {
                 self.game.push_back((m, bytes.to_vec()));

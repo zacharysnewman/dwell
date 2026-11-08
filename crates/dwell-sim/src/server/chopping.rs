@@ -68,7 +68,101 @@ impl Server {
                 point,
                 vertical,
             } => self.swing(id, &tool, cell, face, point.map(f64::from), vertical),
+            ChopAction::Sweep {
+                tool,
+                look,
+                vertical,
+            } => self.sweep(id, &tool, look.map(f64::from), vertical),
+            ChopAction::Held { tool, vertical } => self.held_tool(id, tool, vertical),
         }
+    }
+
+    /// A swing along its path (`ChopAction::Sweep`): the tool's arc swept from this player's eye
+    /// (`dwell_world::swing`), its first solid hit cut as an aimed swing would be; a miss or a hit
+    /// on what is not a wood (a bounce) only spends the swing.
+    fn sweep(&mut self, id: SessionId, tool: &str, look: [f64; 3], vertical: bool) {
+        let Some(t) = chop::tool(tool) else {
+            return;
+        };
+        let s = &self.sessions[&id];
+        let Some(h) = s.handle else {
+            return;
+        };
+        if !s.joined() || self.tick < s.chop_ready {
+            return;
+        }
+        let len = (look[0] * look[0] + look[1] * look[1] + look[2] * look[2]).sqrt();
+        if !(0.5..=1.5).contains(&len) {
+            return;
+        }
+        let look = look.map(|v| v / len);
+        let eye = self.eye_of(h);
+        let arc = dwell_world::swing::Arc::of(t);
+        let hit = dwell_world::swing::sweep(&mut self.world, eye, look, vertical, &arc);
+        let wood = hit.filter(|x| grain_of(self.world.get_voxel_if_loaded(x.hit.cell)).is_some());
+        match wood {
+            Some(x) => self.swing(id, tool, x.hit.cell, x.axis_face(), x.point, vertical),
+            None => {
+                let s = self.sessions.get_mut(&id).expect("session");
+                s.chop_ready =
+                    self.tick + (t.swing_seconds * f64::from(dwell_protocol::SIM_HZ)) as u32;
+            }
+        }
+    }
+
+    /// What a player holds (`ChopAction::Held`): kept, and told to the others that understand it;
+    /// the first one a player sends also brings it everyone else's.
+    fn held_tool(&mut self, id: SessionId, tool: String, vertical: bool) {
+        let tool = if chop::tool(&tool).is_some() {
+            tool
+        } else {
+            String::new()
+        };
+        let Some(s) = self.sessions.get_mut(&id) else {
+            return;
+        };
+        let first = s.held_tool.is_none();
+        s.held_tool = Some((tool.clone(), vertical));
+        let player_id = s.player_id;
+        let entry = dwell_protocol::HeldTool {
+            player_id,
+            tool,
+            vertical,
+        };
+        let others: Vec<SessionId> = self
+            .sessions
+            .iter()
+            .filter(|(o, s)| **o != id && s.held_tool.is_some())
+            .map(|(&o, _)| o)
+            .collect();
+        let m = Message::HeldTools(vec![entry]);
+        for o in &others {
+            self.send_reliable(*o, &m, Channel::World);
+        }
+        if first {
+            let all: Vec<_> = others
+                .iter()
+                .filter_map(|o| {
+                    let s = &self.sessions[o];
+                    let (tool, vertical) = s.held_tool.clone()?;
+                    (!tool.is_empty()).then_some(dwell_protocol::HeldTool {
+                        player_id: s.player_id,
+                        tool,
+                        vertical,
+                    })
+                })
+                .collect();
+            // At least one (empty when nobody holds a tool): the client's sign the server sweeps.
+            self.send_reliable(id, &Message::HeldTools(all), Channel::World);
+        }
+    }
+
+    /// The tool a player holds, by item name (tests).
+    pub fn held_tool_of(&self, player_id: u16) -> Option<(String, bool)> {
+        self.sessions
+            .values()
+            .find(|s| s.player_id == player_id)
+            .and_then(|s| s.held_tool.clone())
     }
 
     /// One swing; refused (silently: the client's chips are its own) when the tool isn't one, the

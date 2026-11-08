@@ -2575,7 +2575,7 @@ capacity. The client draws loose items as small turning copies of their block th
 renderer (`dwell-client` `loose_items.rs`), and in such a world its hotbar is the inventory's first
 nine slots with counts and the wallet, and E opens the backpack screen (`client/src/ui/backpack.ts`).
 
-**Tools and chopping [built, 0.50.34–0.50.36]** (ADR 0067). Tools are items
+**Tools and chopping [built, 0.50.34–0.50.39]** (ADR 0067). Tools are items
 with data in `shared/tools/tools.json` (a `kind` from a fixed vocabulary, `axe`; its swing wait,
 bite, bind and its share across and along the grain), and so are the woods an axe cuts (a block
 by name whose `axis` is its grain, its fell and buck fractions, what a cut-through length drops,
@@ -2599,6 +2599,23 @@ the axe is held from the inventory in adventure or from the creative hotbar (`it
 wedge-shaded quad, each kerf a dark slit) and each swing's wood chips (the wood's count, a CPU
 adapter a third, out of the cut along the swing, falling face-locally), and plays the arms'
 `chop_level`/`chop_vertical` clips with the `stone_axe` item in hand (`shared/characters`).
+**The swing as melee (0.50.39):** a tool's `swing` data (wind-up, the arc's sweep, hit-stop,
+recoveries after a hit and a miss, reach, arc, samples, the camera's kick, a stamina cost unused
+until stamina exists, its swish and bounce sound events) drives both sides. A swing goes at any
+time; its path is what hits: `dwell_world::swing::sweep` turns the look through the arc
+face-locally (a level swing from the screen's right to its left, `FaceFrame::handed`; a vertical
+one top to bottom) and the first solid cell any step's ray meets within the reach is hit. The
+client sends the swing's start (`ChopAction::Sweep`: the look, the plane) and the server sweeps the
+same arc from its own eye, cutting a wood it meets and spending the swing on anything else. The
+client predicts the same sweep for the feel (`chop.rs` `SwingRun`: the arms' clip driven through
+the hit-stop and back, `Animator::drive_action`; the camera's wind-up, sweep and jolt; at the
+impact the chips, the hit's sound by how far the wood is cut (the wood's `sounds`), leaves shaken
+from the tree's leaf blocks (`leaves`), or a clank off stone). The two holds are two characters'
+items (`held`, `heldVertical`). The gouge's notch is lit as a V (each cut face by its own normal,
+packed into the billboard's info bits) in fresh wood keeping its hue in shade. A standing tree cut
+past its `sway.fromFraction` leans toward the notch (`chop.rs` `TreeLean`, the frame uniform's
+`lean_*` vec4s, applied in the terrain and cutout vertex shaders). The reticle draws the swing's
+line through the crosshair. Others see the held tool by name (`HeldTools`).
 
 **Seeing it from above: creative flight** **[built, Phase 4]** (§9.1, PLAYER_CONTROLLER.md §6.7).
 The player flies — the body itself, simulated by the server and predicted like any movement — with
@@ -3350,7 +3367,8 @@ S→C  Welcome       u16 playerId, u64 worldSeed, u32 generatorVersion, u32 serv
                    ADR 0065; 8 = flightPolicy — the flight policy alone, which with the
                    mode's `flight` gives flight again after a mode change; 16 = inventory —
                    the server keeps inventories, ADR 0066; 32 = chopping — the server keeps
-                   cuts and takes axe swings, ADR 0067), u64 registryHash (the
+                   cuts and takes axe swings, ADR 0067; 64 = chopSweep — it sweeps swings
+                   along their path and passes held tools on, ADR 0067), u64 registryHash (the
                    definitions hash: FNV-1a 64 of the registry payload sent before it,
                    §6.1; logs and the join prompt's "don't ask again")
      or Reject     u8 reason (ProtocolVersion, Banned, Full, NotAllowListed, AuthFailed,
@@ -3377,13 +3395,18 @@ S→C  ItemDrops       0x57, world: u16 n, each u32 id, str item, u16 count, f32
                      appeared, changed or moved (moves 20 times a second) and what went
 ```
 
-**Chopping: `Chop`, `Cuts` (reliable) [built, 0.50.34]** (ADR 0067). New message types sent only
-when asked, as the inventory's: a client sends `Chop` only to a server whose Welcome has
-`chopping` (32), and the server sends `Cuts` only to a client that said `Hello`.
+**Chopping: `Chop`, `Cuts`, `HeldTools` (reliable) [built, 0.50.34; Sweep, Held, HeldTools
+0.50.39]** (ADR 0067). New message types sent only when asked, as the inventory's: a client sends
+`Chop` only to a server whose Welcome has `chopping` (32), its kinds 2 and 3 only with `chopSweep`
+(64); the server sends `Cuts` only to a client that said `Hello`, `HeldTools` only to one that sent
+a `Held`.
 ```
 C→S  Chop  0x58: u8 kind — 0 Hello (send me cuts; answered with at least one Cuts); 1 Swing:
            str tool, i32×3 cell, u8 face (axis × 2 + positive, world), f32×3 point (world),
-           u8 vertical (else level)
+           u8 vertical (else level); 2 Sweep: str tool, f32×3 look (world, unit), u8 vertical
+           (the server sweeps the tool's arc from its eye); 3 Held: str tool (empty: none),
+           u8 vertical (the hold; answered with at least one HeldTools)
+S→C  HeldTools 0x5A, world: u16 n, each u16 player id, str tool (empty: none), u8 vertical
 S→C  Cuts  0x59, world: u16 n, each i32×3 cell and its cut (per side f32 notch, f32×2 kerfs);
            then u16 n gone cells (at most 512 each); all of them after Hello, then each change
 ```

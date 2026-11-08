@@ -226,8 +226,13 @@ The arms are a **separate view** of the same character, as first-person games do
 - **The axe's swings** (ADR 0067, 0.50.36): `fp_chop_level` and `fp_chop_vertical`, the arms'
   `chop_level` and `chop_vertical` roles, played on each axe swing by its direction; a character
   without them plays its `break`. The held axe is the `stone_axe` item (a stick handle, a knapped
-  stone head across its tip, a leather lashing), named by the tool's `held` in
-  `shared/tools/tools.json`.
+  flint head across its tip, its edge `axe_blade`, a leather lashing), named by the tool's `held` in
+  `shared/tools/tools.json`; the vertical swing's hold is `stone_axe_vertical` (`heldVertical`: the
+  same parts, another `pose`), so toggling the swing changes the grip (0.50.39). The blade faces away
+  from the eye in both holds and leads the head through each swing (`tests/axe.rs`; it was held
+  backwards before). The clips are timed to a miss (0.62 s: wind-up, arc, follow-through,
+  recovery); a hit drives them (`Animator::drive_action`): held through the hit-stop, then played
+  back to the rest.
 
 ### 5.1 Your own body in first person **[built, C1b]**
 

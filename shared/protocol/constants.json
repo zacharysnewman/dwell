@@ -123,7 +123,8 @@
     "Inventory": 86,
     "ItemDrops": 87,
     "Chop": 88,
-    "Cuts": 89
+    "Cuts": 89,
+    "HeldTools": 90
   },
   "rejectReasons": {
     "ProtocolVersion": 1,
@@ -200,7 +201,8 @@
     "brushes": 4,
     "flightPolicy": 8,
     "inventory": 16,
-    "chopping": 32
+    "chopping": 32,
+    "chopSweep": 64
   },
   "groundKinds": {
     "None": 0,

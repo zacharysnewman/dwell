@@ -2,6 +2,17 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions card. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.50.39",
+      "changes": [
+        "The stone axe swings with weight: a wind-up, a committed arc, a jolt when it bites and a looser follow-through when it misses",
+        "Swing any time; the axe's path is what it hits, and a line through the crosshair shows where it will pass",
+        "It is held the right way round, in two grips for level and vertical swings, with a flint-grey head",
+        "Notches look cut: fresh tan wood inside, deepening as you chop; stone and dirt just clank",
+        "A tree creaks and leans as it nears the fall, and leaves drift down with each hit",
+        "Other players see the axe in your hands"
+      ]
+    },
+    {
       "version": "0.50.38",
       "changes": [
         "Distant terrain is sharper by default: Distant detail starts at 3 in every preset and on phones"

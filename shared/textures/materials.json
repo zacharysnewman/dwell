@@ -435,6 +435,15 @@
     "fur_wolf_belly": { "like": "fur_wolf", "ramp": "wolf_pale", "overlay": 0.5 },
     "fur_deer": { "like": "fur_wolf", "ramp": "deer", "overlay": 0.55 },
     "fur_deer_cream": { "like": "fur_wolf", "ramp": "deer_cream", "overlay": 0.45 },
+    "flint": {
+      "$comment": "Knapped stone (the stone axe's head): a warm grey-brown, not the ground stone's cool violet shadow (owner, 2026-11-08: the head read slate-blue); broad conchoidal facets as a few flat slabs.",
+      "use": "character", "ramp": "flint", "overlay": 0.5,
+      "layers": [
+        { "kind": "fill", "color": "@base" },
+        { "kind": "streak", "count": 4, "colors": ["@shadow"], "width": [3, 5], "length": [10, 16], "angle": 30, "angleJitter": 25, "opacity": 0.4 },
+        { "kind": "streak", "count": 3, "colors": ["@light"], "width": [2, 4], "length": [8, 14], "angle": -40, "angleJitter": 25, "opacity": 0.5, "seed": 1 }
+      ]
+    },
     "antler": {
       "use": "character", "ramp": "antler", "overlay": 0.4,
       "layers": [

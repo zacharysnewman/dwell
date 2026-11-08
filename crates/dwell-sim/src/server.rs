@@ -562,6 +562,9 @@ struct Session {
     /// swing may land.
     chop_hello: bool,
     chop_ready: u32,
+    /// The tool it holds (item name, the hold's plane), from `ChopAction::Held`; having sent one,
+    /// it understands `HeldTools` (ADR 0067).
+    held_tool: Option<(String, bool)>,
 
     stats: SessionStats,
     // Terrain streaming.
@@ -608,6 +611,7 @@ impl Session {
             inventory_unread: false,
             chop_hello: false,
             chop_ready: 0,
+            held_tool: None,
             primed: false,
             low_water: usize::MAX,
             window_ticks: 0,
@@ -1263,6 +1267,7 @@ impl Server {
             flags: welcome_flags::REGION_EDITS
                 | welcome_flags::INVENTORY
                 | welcome_flags::CHOPPING
+                | welcome_flags::CHOP_SWEEP
                 | if flight { welcome_flags::FLIGHT } else { 0 }
                 | if flight_policy {
                     welcome_flags::FLIGHT_POLICY

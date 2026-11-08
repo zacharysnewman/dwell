@@ -66,6 +66,17 @@ pub fn held_from_wire(held: u16, to_client: impl Fn(u16) -> Option<u16>) -> Held
     }
 }
 
+/// What a remote player holds: its held tool by name (`HeldTools`, ADR 0067) over what the
+/// held-item wire says (blocks only), drawn as the tool's held item for its hold.
+pub fn with_tool(held: Held, tool: Option<(&str, bool)>) -> Held {
+    match tool
+        .and_then(|(name, vertical)| dwell_protocol::chopping::tool(name).map(|t| (t, vertical)))
+    {
+        Some((t, vertical)) => Held::Tool(t.held_for(vertical).unwrap_or("block")),
+        None => held,
+    }
+}
+
 /// The wire form of what you hold: `to_server` maps the block.
 pub fn held_to_wire(held: Held, to_server: impl Fn(u16) -> Option<u16>) -> u16 {
     let (brush, block) = match held {
@@ -343,6 +354,12 @@ impl Bodies {
         self.arms.swing(s);
     }
 
+    /// Your arms' swing held at clip time `t` (a melee swing's hit-stop and pull-back), or left to
+    /// play (none).
+    pub fn drive_arms(&mut self, t: Option<f64>) {
+        self.arms.drive_action(t.map(|t| t as f32));
+    }
+
     /// Every remote body's roles, by player id (tests: `__dwell.state().bodies`).
     pub fn roles(&self) -> Vec<BodyState> {
         let mut out: Vec<_> = self
@@ -379,6 +396,20 @@ mod tests {
         }
         // A block the other side doesn't know is an empty hand.
         assert_eq!(held_from_wire(held_item::BRUSH | 7, |_| None), Held::Empty);
+        // Others' held axe (by name, `HeldTools`) is drawn in its hold; no tool: the wire's.
+        assert_eq!(
+            with_tool(Held::Empty, Some(("dwell:stone_axe", false))),
+            Held::Tool("stone_axe")
+        );
+        assert_eq!(
+            with_tool(Held::Empty, Some(("dwell:stone_axe", true))),
+            Held::Tool("stone_axe_vertical")
+        );
+        assert_eq!(with_tool(Held::Block(4), None), Held::Block(4));
+        assert_eq!(
+            with_tool(Held::Block(4), Some(("dwell:nope", false))),
+            Held::Block(4)
+        );
         assert_eq!(held_to_wire(Held::Block(3), |_| None), 0);
     }
 

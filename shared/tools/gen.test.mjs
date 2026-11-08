@@ -54,8 +54,43 @@ test("the axe's held item, the log's chips and its breakWith reach the Rust tabl
   const d = validateTools(...fresh());
   const rs = toolsRust(d);
   assert.match(rs, /name: "dwell:stone_axe", kind: ToolKind::Axe, held: Some\("stone_axe"\)/);
-  assert.match(rs, /block: "dwell:log", .*chips: Chips \{ count: 7, color: \[201, 154, 98\]/);
+  assert.match(rs, /block: "dwell:log", .*chips: Chips \{ count: 7, color: \[217, 179, 122\]/);
   assert.match(rs, /\("dwell:log", ToolKind::Axe\),/);
+});
+
+test("a tool's swing, its two holds and a wood's leaves, sway and sounds are data", () => {
+  const d = validateTools(...fresh());
+  const rs = toolsRust(d);
+  assert.match(rs, /held_vertical: Some\("stone_axe_vertical"\), swing: SwingDef \{ windup_s: 0\.12, active_s: 0\.14, hit_stop_s: 0\.08/);
+  assert.match(rs, /stamina_cost: 8\.0, swish: Some\("axe_swish"\), bounce: Some\("axe_clank"\)/);
+  assert.match(rs, /leaves: Leaves \{ block: Some\("dwell:leaves"\), count: 6/);
+  assert.match(rs, /sway: Sway \{ from_fraction: 0\.4, max_deg: 3\.5 \}, sounds: &\[\(0\.0, "chop_bark"\), \(0\.2, "chop_wood"\), \(0\.4, "chop_creak"\)\]/);
+});
+
+test('a fixture tool with its own swing by data alone; a tool without one takes the defaults', () => {
+  const [data, items, blocks] = fresh();
+  items.add('test:maul');
+  data.tools.push({ name: 'test:maul', kind: 'axe', swingSeconds: 0.9, biteM: 0.3, bindM: 0.1, across: 1, along: 0.2, sharpness: 2, swing: { windupS: 0.3, activeS: 0.2, recoverMissS: 0.6, arcDeg: 70, staminaCost: 20 } });
+  const rs = toolsRust(validateTools(data, items, blocks));
+  assert.match(rs, /name: "test:maul".*swing: SwingDef \{ windup_s: 0\.3, active_s: 0\.2, hit_stop_s: 0\.07, .*arc_deg: 70\.0, .*stamina_cost: 20\.0/);
+});
+
+test('a bad swing, leaves, sway or sound fails naming it', () => {
+  const bad = (edit, re) => {
+    const [data, items, blocks] = fresh();
+    edit(data);
+    assert.throws(() => validateTools(data, items, blocks), re);
+  };
+  bad((d) => (d.tools[0].swing.arcDeg = 400), /tools\.dwell:stone_axe\.swing\.arcDeg must be a number/);
+  bad((d) => (d.tools[0].swing.recoverMissS = 0.1), /recoverMissS \(0\.1\) must not be below recoverHitS/);
+  bad((d) => ((d.tools[0].swing.windupS = 0), (d.tools[0].swing.recoverMissS = 0.25)), /a miss \(0\.390 s\) must last at least swingSeconds/);
+  bad((d) => (d.tools[0].swing.swish = 'nope'), /swing\.swish: no sound event "nope"/);
+  bad((d) => (d.tools[0].swing.spin = 1), /swing: unknown field spin/);
+  bad((d) => (d.tools[0].heldVertical = 'nope'), /heldVertical: no item "nope"/);
+  bad((d) => (d.woods[0].leaves.block = 'dwell:nope'), /leaves\.block: no block named dwell:nope/);
+  bad((d) => (d.woods[0].sway.fromFraction = 0.9), /sway\.fromFraction must be below fellFraction/);
+  bad((d) => (d.woods[0].sounds[1].from = 0), /sounds: from must start at 0 and rise/);
+  bad((d) => (d.woods[0].sounds[0].event = 'nope'), /sounds\[0\]\.event: no sound event "nope"/);
 });
 
 test('a block needing a tool kind by data alone (breakWith) is emitted, an unknown kind fails', () => {

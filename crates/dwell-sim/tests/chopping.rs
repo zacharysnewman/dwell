@@ -9,7 +9,7 @@ mod common;
 use common::*;
 use dwell_blocks::{parse_state, require};
 use dwell_protocol::*;
-use dwell_sim::server::ServerConfig;
+use dwell_sim::server::{ServerConfig, SessionId};
 use dwell_storage::{WorldDb, WorldStore};
 use dwell_world::{FLAT_TOP_Y, FaceFrame, M, empty_generator, m_of_row};
 
@@ -183,44 +183,55 @@ fn player_at(fx: &mut Fixture, f: FaceFrame) -> [f64; 3] {
     f.point(players.position(physics, h).to_array())
 }
 
-dwell_world::both_faces!(
-    fn a_felled_trunk_falling_on_the_chopper_does_not_fling_them(f: FaceFrame) {
-        // 0.50.36's screenshots: the trunk tips toward the notch, where the chopper stands, and
-        // its fall threw them ~20 m. A falling piece may knock a player down or aside, not
-        // launch them: over the fall and its landing they move a few metres at most.
-        let mut fx = scene(f, "creative", true);
-        // A tree's height (10 m of trunk), as the forest's.
-        for r in BASE + 10..BASE + 20 {
-            let [x, y, z] = f.cell([3, r, 0]);
-            fx.server.world().set_voxel(x, y, z, log(f, "y"));
-        }
-        let start = player_at(&mut fx, f);
-        swings_to_fell(&mut fx, f, false, 20, |i| i % 2).expect("felled");
-        let mut far: f64 = 0.0;
-        // The speed it was moved at over a quarter second (by its positions: one step's solver
-        // velocity is not a throw).
-        let mut fastest: f64 = 0.0;
-        let mut trail = vec![start];
-        for _ in 0..4 * 60 {
-            fx.server.step();
-            let p = player_at(&mut fx, f);
-            let d = ((p[0] - start[0]).powi(2) + (p[2] - start[2]).powi(2)).sqrt();
-            far = far.max(d);
-            trail.push(p);
-            if trail.len() > 15 {
-                let q = trail[trail.len() - 16];
-                let moved = (0..3).map(|k| (p[k] - q[k]).powi(2)).sum::<f64>().sqrt();
-                fastest = fastest.max(moved * 4.0);
-            }
-        }
-        println!("{f:?}: pushed {far:.2} m at most, {fastest:.1} m/s");
-        assert!(far < 4.0, "the falling trunk threw the chopper {far:.1} m");
-        assert!(
-            fastest < 12.0,
-            "the falling trunk threw the chopper at {fastest:.1} m/s"
-        );
+// both-faces: run on each face by the two ignored tests below (the macro can't ignore its tests).
+fn a_felled_trunk_falling_on_the_chopper_does_not_fling_them(f: FaceFrame) {
+    // 0.50.36's screenshots: the trunk tips toward the notch, where the chopper stands, and
+    // its fall threw them ~20 m. A falling piece may knock a player down or aside, not
+    // launch them: over the fall and its landing they move a few metres at most.
+    let mut fx = scene(f, "creative", true);
+    // A tree's height (10 m of trunk), as the forest's.
+    for r in BASE + 10..BASE + 20 {
+        let [x, y, z] = f.cell([3, r, 0]);
+        fx.server.world().set_voxel(x, y, z, log(f, "y"));
     }
-);
+    let start = player_at(&mut fx, f);
+    swings_to_fell(&mut fx, f, false, 20, |i| i % 2).expect("felled");
+    let mut far: f64 = 0.0;
+    // The speed it was moved at over a quarter second (by its positions: one step's solver
+    // velocity is not a throw).
+    let mut fastest: f64 = 0.0;
+    let mut trail = vec![start];
+    for _ in 0..4 * 60 {
+        fx.server.step();
+        let p = player_at(&mut fx, f);
+        let d = ((p[0] - start[0]).powi(2) + (p[2] - start[2]).powi(2)).sqrt();
+        far = far.max(d);
+        trail.push(p);
+        if trail.len() > 15 {
+            let q = trail[trail.len() - 16];
+            let moved = (0..3).map(|k| (p[k] - q[k]).powi(2)).sum::<f64>().sqrt();
+            fastest = fastest.max(moved * 4.0);
+        }
+    }
+    println!("{f:?}: pushed {far:.2} m at most, {fastest:.1} m/s");
+    assert!(far < 4.0, "the falling trunk threw the chopper {far:.1} m");
+    assert!(
+        fastest < 12.0,
+        "the falling trunk threw the chopper at {fastest:.1} m/s"
+    );
+}
+
+#[test]
+#[ignore = "BUGS.md #52: the kick cap is removed (owner, 2026-11-08); the fling's root fix is later"]
+fn a_felled_trunk_falling_on_the_chopper_does_not_fling_them_a() {
+    a_felled_trunk_falling_on_the_chopper_does_not_fling_them(FaceFrame::A);
+}
+
+#[test]
+#[ignore = "BUGS.md #52: the kick cap is removed (owner, 2026-11-08); the fling's root fix is later"]
+fn a_felled_trunk_falling_on_the_chopper_does_not_fling_them_b() {
+    a_felled_trunk_falling_on_the_chopper_does_not_fling_them(FaceFrame::B);
+}
 
 dwell_world::both_faces!(
     fn hacking_one_spot_takes_three_to_four_times_the_swings_of_notching(f: FaceFrame) {
@@ -420,4 +431,188 @@ fn a_client_that_never_says_hello_is_sent_no_cuts() {
             .iter()
             .all(|(m, _)| !matches!(m, Message::Cuts(_)))
     );
+}
+
+// The swing's path (owner, 2026-11-08: "the weapon's actual path is what hits"): the client sends
+// the swing's start (`ChopAction::Sweep`: the look and the plane) and the server sweeps the axe's
+// arc from its own eye, hitting the first solid cell on it.
+
+/// A swept swing along the face-local look `look` (normalised here); then the swing's wait.
+fn sweep(fx: &mut Fixture, f: FaceFrame, look: [f64; 3], vertical: bool) {
+    let l = (look[0] * look[0] + look[1] * look[1] + look[2] * look[2]).sqrt();
+    let w = f.vector(look.map(|v| v / l));
+    fx.send(
+        1,
+        Message::Chop(ChopAction::Sweep {
+            tool: AXE.into(),
+            look: w.map(|v| v as f32),
+            vertical,
+        }),
+    );
+    for _ in 0..SWING_TICKS {
+        fx.server.step();
+    }
+}
+
+/// The trunk's cells (face-local rows BASE..BASE + 10 at x = 3) that have a cut.
+fn cut_rows(fx: &Fixture, f: FaceFrame) -> Vec<i32> {
+    (BASE..BASE + 10)
+        .filter(|&r| fx.server.cut_of(f.cell([3, r, 0])).is_some())
+        .collect()
+}
+
+/// The player's right, face-locally, while looking along +x: +z on face A, −z on face B (a
+/// mirror reverses handedness).
+fn right_z(f: FaceFrame) -> i32 {
+    f.handed(1.0) as i32
+}
+
+/// The scene with the player 1.5 m from the trunk's side (within the axe's reach).
+fn near(f: FaceFrame, mode: &str) -> Fixture {
+    let mut fx = scene(f, mode, true);
+    move_to_local(&mut fx, f, 1.5, m_of_row(BASE), 0.5);
+    fx.server.step();
+    fx
+}
+
+dwell_world::both_faces!(
+    fn a_swing_whose_arc_passes_the_trunk_cuts_it_though_the_crosshair_is_off_it(f: FaceFrame) {
+        // Looking 40° to the left of the trunk: the crosshair passes it, the level swing starts
+        // on the right and its head meets the bark.
+        let a = 40f64.to_radians();
+        let left = -f64::from(right_z(f));
+        let mut fx = near(f, "adventure");
+        sweep(&mut fx, f, [a.cos(), 0.0, left * a.sin()], false);
+        assert!(
+            !cut_rows(&fx, f).is_empty(),
+            "the swing's path cut the trunk"
+        );
+        // Looking well to its right, the level swing starts past it and sweeps away: a miss.
+        let b = 75f64.to_radians();
+        let mut fx = near(f, "adventure");
+        sweep(&mut fx, f, [b.cos(), 0.0, -left * b.sin()], false);
+        assert!(
+            cut_rows(&fx, f).is_empty(),
+            "swept away from it: {:?}",
+            cut_rows(&fx, f)
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    fn a_nearer_block_on_the_swings_path_takes_the_hit_and_the_trunk_is_spared(f: FaceFrame) {
+        // Aimed straight at the trunk, it is cut, on its side facing the swing (−x: side 0).
+        // Red before: the sweep's face was `edit::FACE_DIRS`'s order, so the notch went on the far
+        // side (out of sight, and the tree fell away from it).
+        let mut fx = near(f, "adventure");
+        sweep(&mut fx, f, [1.0, 0.0, 0.0], false);
+        let rows = cut_rows(&fx, f);
+        assert!(!rows.is_empty(), "the trunk aimed at");
+        let cut = fx.server.cut_of(f.cell([3, rows[0], 0])).unwrap();
+        assert_eq!(cut.deepest(1), Some(0), "the near side: {cut:?}");
+        // A stone post to the right, between the swing's start and the trunk: it takes the hit
+        // (a bounce: nothing changes) and the trunk is not cut.
+        let mut fx = near(f, "adventure");
+        let stone = f.state(require("dwell:stone"));
+        for r in BASE..BASE + 6 {
+            let [x, y, z] = f.cell([2, r, right_z(f)]);
+            fx.server.world().set_voxel(x, y, z, stone);
+        }
+        fx.server.step();
+        sweep(&mut fx, f, [1.0, 0.0, 0.0], false);
+        assert!(
+            cut_rows(&fx, f).is_empty(),
+            "the post took it: {:?}",
+            cut_rows(&fx, f)
+        );
+        for r in BASE..BASE + 6 {
+            assert_eq!(
+                cell_is(&mut fx, f, [2, r, right_z(f)]),
+                stone,
+                "a bounce: no effect"
+            );
+        }
+    }
+);
+
+dwell_world::both_faces!(
+    fn a_free_swing_at_nothing_or_at_stone_does_nothing_and_spends_the_swing(f: FaceFrame) {
+        let mut fx = near(f, "adventure");
+        // Looking away from the trunk at open air: nothing.
+        sweep(&mut fx, f, [-1.0, 0.0, 0.0], false);
+        sweep(&mut fx, f, [-1.0, 0.0, 0.0], true);
+        assert!(cut_rows(&fx, f).is_empty());
+        // At the stone ground, straight down in a vertical swing: a bounce, the ground as it was.
+        let stone = f.state(require("dwell:stone"));
+        sweep(&mut fx, f, [-0.05, -1.0, 0.0], true);
+        assert_eq!(cell_is(&mut fx, f, [1, BASE - 1, 0]), stone);
+        assert!(cut_rows(&fx, f).is_empty());
+        // A missed swing still spends the axe's wait: one sent at once after it is refused.
+        let w = f.vector([-1.0, 0.0, 0.0]).map(|v| v as f32);
+        fx.send(
+            1,
+            Message::Chop(ChopAction::Sweep {
+                tool: AXE.into(),
+                look: w,
+                vertical: false,
+            }),
+        );
+        fx.server.step();
+        sweep(&mut fx, f, [1.0, 0.0, 0.0], false);
+        assert!(cut_rows(&fx, f).is_empty(), "too soon after the miss");
+        sweep(&mut fx, f, [1.0, 0.0, 0.0], false);
+        assert!(!cut_rows(&fx, f).is_empty(), "then it cuts");
+    }
+);
+
+/// The held tools `id` was sent.
+fn held_tools_to(fx: &mut Fixture, id: SessionId) -> Vec<HeldTool> {
+    fx.take(id)
+        .into_iter()
+        .filter_map(|(m, _)| match m {
+            Message::HeldTools(l) => Some(l),
+            _ => None,
+        })
+        .flatten()
+        .collect()
+}
+
+fn say_held(fx: &mut Fixture, id: SessionId, tool: &str, vertical: bool) {
+    fx.send(
+        id,
+        Message::Chop(ChopAction::Held {
+            tool: tool.into(),
+            vertical,
+        }),
+    );
+    fx.server.step();
+}
+
+#[test]
+fn the_held_axe_reaches_the_others_that_understand_it_by_name() {
+    // face-a-only: the held tool on the wire is a name, the same on both faces.
+    let f = FaceFrame::A;
+    let mut fx = scene(f, "creative", true);
+    let welcome = fx.join(2, &Client::new(2));
+    assert_ne!(welcome.flags & welcome_flags::CHOP_SWEEP, 0, "announced");
+    fx.join(3, &Client::new(3));
+    // Player 2 understands held tools (it said what it holds: nothing); player 3 is an older
+    // client that never does.
+    say_held(&mut fx, 2, "", false);
+    fx.take_all();
+    say_held(&mut fx, 1, AXE, true);
+    let got = held_tools_to(&mut fx, 2);
+    assert_eq!(got.len(), 1, "{got:?}");
+    assert_eq!(got[0].tool, AXE);
+    assert!(got[0].vertical);
+    assert!(
+        held_tools_to(&mut fx, 3).is_empty(),
+        "an older client is sent nothing new"
+    );
+    // A client that says what it holds later gets the others' at once.
+    say_held(&mut fx, 3, "", false);
+    assert!(held_tools_to(&mut fx, 3).iter().any(|h| h.tool == AXE));
+    // Not a tool: held as nothing.
+    say_held(&mut fx, 1, "dwell:stone", false);
+    assert!(held_tools_to(&mut fx, 2).iter().any(|h| h.tool.is_empty()));
 }

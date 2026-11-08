@@ -170,6 +170,7 @@ pub enum MessageType {
     ItemDrops = 87,
     Chop = 88,
     Cuts = 89,
+    HeldTools = 90,
 }
 
 impl MessageType {
@@ -218,6 +219,7 @@ impl MessageType {
             87 => Some(Self::ItemDrops),
             88 => Some(Self::Chop),
             89 => Some(Self::Cuts),
+            90 => Some(Self::HeldTools),
             _ => None,
         }
     }
@@ -547,7 +549,8 @@ pub mod welcome_flags {
     pub const FLIGHT_POLICY: u8 = 8;
     pub const INVENTORY: u8 = 16;
     pub const CHOPPING: u8 = 32;
-    pub const ALL: u8 = 63;
+    pub const CHOP_SWEEP: u8 = 64;
+    pub const ALL: u8 = 127;
 }
 
 pub mod held_item {

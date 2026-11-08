@@ -139,6 +139,8 @@ pub trait Scene: TerrainRenderer {
     );
     /// The fluid whose drawn surface the camera's eye is under (`dwell_world::fluid::eye_fluid`).
     fn set_eye_fluid(&mut self, _eye_fluid: Option<dwell_world::fluid::EyeFluid>) {}
+    /// The tree being chopped leans (crate::chop `TreeLean`; none: nothing leans).
+    fn set_tree_lean(&mut self, _lean: Option<crate::chop::TreeLean>) {}
     /// Outlines the targeted block: its cell's minimum corner and the box in the cell (min, max
     /// corner; `dwell_world::edit::target_box`), or none.
     fn set_block_outline(&mut self, cell: Option<[f64; 3]>, bounds: ([f32; 3], [f32; 3]));
@@ -605,6 +607,12 @@ pub struct Game<S: Scene> {
     sounds: Vec<SoundEvent>,
     mover_sounds: MoverSounds,
     remote_sounds: dwell_world::hash::HashMap<u16, MoverSounds>,
+    /// The tools others hold, by player id (`HeldTools`, ADR 0067): its item name and hold.
+    remote_tools: dwell_world::hash::HashMap<u16, (&'static str, bool)>,
+    /// The tool and hold last told the server (`ChopAction::Held`).
+    held_tool_sent: Option<(&'static str, bool)>,
+    /// The standing tree the axe last bit, and when (s): it sways as it is cut (`TreeLean`).
+    lean_at: Option<([i32; 3], f64)>,
     /// The crackle of torches near the listener, and the wind and the night (docs/AUDIO.md §5).
     fire_sounds: FireSounds,
     /// Other players' health events, held until their bodies are drawn at that moment (the
@@ -757,6 +765,9 @@ impl<S: Scene> Game<S> {
             sounds: Vec::new(),
             mover_sounds: MoverSounds::new(),
             remote_sounds: Default::default(),
+            remote_tools: Default::default(),
+            held_tool_sent: None,
+            lean_at: None,
             fire_sounds: FireSounds::new(),
             pending_player_events: Vec::new(),
             remote_impacts: Default::default(),
@@ -1221,6 +1232,20 @@ impl<S: Scene> Game<S> {
             Message::Cuts(c) => {
                 self.chop.on = true;
                 self.chop.apply(c);
+            }
+            Message::HeldTools(list) => {
+                // The server sweeps swings along their path (its answer to our first `Held`).
+                self.chop.sweep = true;
+                for h in list {
+                    match dwell_protocol::chopping::tool(&h.tool) {
+                        Some(t) => {
+                            self.remote_tools.insert(h.player_id, (t.name, h.vertical));
+                        }
+                        None => {
+                            self.remote_tools.remove(&h.player_id);
+                        }
+                    }
+                }
             }
             Message::Inventory(i) => {
                 let uses = i.flags & dwell_protocol::inventory_flags::USES_ITEMS != 0;
@@ -2187,6 +2212,92 @@ impl<S: Scene> Game<S> {
     /// scene, and the camera's shake at `eye` (yaw, pitch degrees).
     /// The axe's chips and the cut wood's gouges (crate::chips) ride the same billboard pass.
     fn update_blasts(&mut self, eye: [f64; 3], now_ms: f64) -> (f64, f64) {
+        let (swing_yaw, swing_pitch) = self.update_swing(eye, now_ms);
+        let (y, p) = self.update_blast_effects(eye, now_ms);
+        (y + swing_yaw, p + swing_pitch)
+    }
+
+    /// The swing under way this frame (crate::chop `SwingRun`): the arms held through the
+    /// hit-stop and pulled back, the impact's effects at its moment, and the camera's motion
+    /// (yaw, pitch degrees).
+    fn update_swing(&mut self, eye: [f64; 3], now_ms: f64) -> (f64, f64) {
+        let Some(mut run) = self.chop.run else {
+            return (0.0, 0.0);
+        };
+        if run.done(now_ms) {
+            self.chop.run = None;
+            self.bodies.drive_arms(None);
+            return (0.0, 0.0);
+        }
+        let t = run.elapsed(now_ms);
+        self.bodies.drive_arms(Some(run.clip_time(t)));
+        if let Some(hit) = run.take_impact(now_ms) {
+            self.swing_impact(run.tool, hit, now_ms);
+        }
+        self.chop.run = Some(run);
+        let (right, up) = run.camera(t);
+        let f = FaceFrame::at_height(eye[1]);
+        (f.handed(-right), up)
+    }
+
+    /// What a swing's impact shows: into a wood its chips, its hit's sound by how far the wood is
+    /// cut, the tree's leaves shaken down and its sway; off anything else a clank and a jolt, no
+    /// effect (the server cuts; this is the feel).
+    fn swing_impact(
+        &mut self,
+        tool: &'static dwell_protocol::chopping::ToolDef,
+        hit: crate::chop::Impact,
+        now_ms: f64,
+    ) {
+        let [x, y, z] = hit.cell;
+        let block = self.voxel(x, y, z);
+        let name = dwell_blocks::block_of(block).name;
+        let wood = dwell_protocol::chopping::WOODS
+            .iter()
+            .position(|w| w.block == name);
+        let at = Some(hit.point);
+        let event = |n: &str| SoundKind::ALL.into_iter().find(|k| k.name() == n);
+        match wood.filter(|_| hit.wood) {
+            Some(w) => {
+                let def = &dwell_protocol::chopping::WOODS[w];
+                self.chips_burst(block, hit.face, hit.point.map(|v| v as f32), now_ms);
+                let grain = crate::chop::grain_of(block);
+                let cross = self
+                    .chop
+                    .cuts
+                    .get(&hit.cell)
+                    .map_or(0.0, |c| c.cross(grain) / def.fell_fraction);
+                if let Some(k) = def.sound_at(cross).and_then(event) {
+                    self.sounds.push(SoundEvent::new(k, block, 1.0, at));
+                }
+                let store = self.streamer.store_mut();
+                let cells =
+                    crate::chips::leaf_cells(hit.cell, w, |c| store.get_voxel(c[0], c[1], c[2]));
+                self.chips
+                    .shake_leaves(w, &cells, now_ms / 1000.0, now_ms as u32 ^ 0x5bd1_e995);
+                if grain == 1 {
+                    self.lean_at = Some((hit.cell, now_ms / 1000.0));
+                }
+            }
+            None => {
+                if let Some(k) = tool.swing.bounce.and_then(event) {
+                    self.sounds.push(SoundEvent::new(k, block, 1.0, at));
+                }
+            }
+        }
+    }
+
+    /// The tree being cut leans toward its notch as it nears the fall (the wood's `sway`), with
+    /// a shiver after each hit: none when no standing wood near was cut lately.
+    pub fn tree_lean(&mut self, now_ms: f64) -> Option<crate::chop::TreeLean> {
+        let (cell, at) = self.lean_at?;
+        let cut = *self.chop.cuts.get(&cell)?;
+        let m = self.voxel(cell[0], cell[1], cell[2]);
+        let w = dwell_protocol::chopping::wood(dwell_blocks::block_of(m).name)?;
+        crate::chop::TreeLean::of(cell, &cut, w, now_ms / 1000.0 - at)
+    }
+
+    fn update_blast_effects(&mut self, eye: [f64; 3], now_ms: f64) -> (f64, f64) {
         let now = now_ms / 1000.0;
         self.blasts.prune(now);
         self.chips.prune(now);
@@ -2657,6 +2768,7 @@ impl<S: Scene> Game<S> {
                 Some(m) => m.client(b),
                 None => Some(b),
             });
+            let held = crate::bodies::with_tool(held, self.remote_tools.get(&v.player_id).copied());
             let world = self.streamer.store_mut();
             let reach = self.current.max_step_lift;
             let mut view = self.bodies.remote(v, held, dt, &mut |f, p| {
@@ -2815,6 +2927,8 @@ impl<S: Scene> Game<S> {
             |x, y, z| store.get_voxel(x, y, z),
         );
         self.scene.borrow_mut().set_eye_fluid(eye_fluid);
+        let lean = self.tree_lean(now_ms);
+        self.scene.borrow_mut().set_tree_lean(lean);
         telemetry::span("lod", || self.update_lod(&c, now_ms, input));
         if let Some(lod) = &self.lod {
             // The cross-fade's extra draws this frame (dwell-lod fade.rs): the bench reads them.
@@ -3312,7 +3426,7 @@ impl<S: Scene> Game<S> {
     /// is on (an empty slot: an empty hand).
     pub fn held(&self) -> Held {
         if let Some(t) = self.held_tool() {
-            return Held::Tool(t.held.unwrap_or("block"));
+            return Held::Tool(t.held_for(self.chop.vertical).unwrap_or("block"));
         }
         let block = self.selected_material();
         if block == 0 {
@@ -3337,6 +3451,19 @@ impl<S: Scene> Game<S> {
             self.outbox
                 .borrow_mut()
                 .push(Send::Control(Message::HeldItem(wire)));
+        }
+        // The tool by name, to a server that passes it on (ADR 0067: the wire above carries
+        // blocks only).
+        let tool = self.held_tool().map(|t| (t.name, self.chop.vertical));
+        if self.chop.sweep && self.held_tool_sent != Some(tool.unwrap_or(("", false))) {
+            let (name, vertical) = tool.unwrap_or(("", false));
+            self.held_tool_sent = Some((name, vertical));
+            self.outbox.borrow_mut().push(Send::Control(Message::Chop(
+                dwell_protocol::ChopAction::Held {
+                    tool: name.to_owned(),
+                    vertical,
+                },
+            )));
         }
     }
 
@@ -3364,6 +3491,18 @@ impl<S: Scene> Game<S> {
         self.held_tool().map(|_| self.chop.hint())
     }
 
+    /// The swing line the reticle shows while a tool is held: where its path will pass through
+    /// the crosshair, `level` or `vertical`.
+    pub fn swing_line(&self) -> Option<&'static str> {
+        self.held_tool().map(|_| {
+            if self.chop.vertical {
+                "vertical"
+            } else {
+                "level"
+            }
+        })
+    }
+
     /// Use with the axe: the swing turns; Break: a swing at the wood aimed at.
     fn chop_with(
         &mut self,
@@ -3375,34 +3514,43 @@ impl<S: Scene> Game<S> {
             self.chop.toggle();
             return true;
         }
-        let (Some(target), Some(eye)) = (self.interaction.target(), self.target_eye) else {
+        // A swing goes at any time (a free swing at nothing too): its path is what hits.
+        let Some(eye) = self.target_eye else {
             return false;
         };
-        let [x, y, z] = target.cell;
-        let block = self.voxel(x, y, z);
-        if dwell_protocol::chopping::wood(dwell_blocks::block_of(block).name).is_none() {
-            self.sounds.push(sound_event(SoundKind::Deny));
+        if !self.chop.ready(tool, now_ms) {
             return false;
         }
-        let Some(swing) = self
-            .chop
-            .swing(tool, target.cell, eye, self.view_dir, now_ms)
-        else {
+        let look = self.view_dir;
+        let arc = dwell_world::swing::Arc::of(tool);
+        let store = self.streamer.store_mut();
+        let hit = dwell_world::swing::sweep(store, eye, look, self.chop.vertical, &arc).map(|h| {
+            let m = store.get_voxel(h.hit.cell[0], h.hit.cell[1], h.hit.cell[2]);
+            crate::chop::Impact {
+                cell: h.hit.cell,
+                face: h.axis_face(),
+                point: h.point,
+                step: h.step,
+                wood: dwell_protocol::chopping::wood(dwell_blocks::block_of(m).name).is_some(),
+            }
+        });
+        let Some(message) = self.chop.start(tool, look, hit, now_ms) else {
             return false;
         };
-        self.edit_sounds
-            .local_break(target.cell, block, now_ms, &mut self.sounds);
         self.bodies.swing_arms(if self.chop.vertical {
             dwell_characters::animator::Swing::ChopVertical
         } else {
             dwell_characters::animator::Swing::ChopLevel
         });
-        if let dwell_protocol::ChopAction::Swing { face, point, .. } = &swing {
-            self.chips_burst(block, *face, *point, now_ms);
+        let event = |n: &str| SoundKind::ALL.into_iter().find(|k| k.name() == n);
+        if let Some(k) = tool.swing.swish.and_then(event) {
+            self.sounds.push(SoundEvent::new(k, 0, 1.0, None));
         }
-        self.outbox
-            .borrow_mut()
-            .push(Send::Control(Message::Chop(swing)));
+        if let Some(m) = message {
+            self.outbox
+                .borrow_mut()
+                .push(Send::Control(Message::Chop(m)));
+        }
         true
     }
 

@@ -541,6 +541,20 @@ pub enum Message {
     /// S→C reliable, world channel, only to a client that sent `ChopAction::Hello`: wood cells'
     /// cuts that changed, and cells whose cut is gone (ADR 0067).
     Cuts(CutsMessage),
+    /// S→C reliable, world channel, only to a client that sent `ChopAction::Held` (so it
+    /// understands): the tools other players hold, by item name (ADR 0067; the held-item wire
+    /// carries blocks only). Each changed player's entry; an empty tool: none.
+    HeldTools(Vec<HeldTool>),
+}
+
+/// A player's held tool (`Message::HeldTools`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HeldTool {
+    pub player_id: u16,
+    /// The tool's item name, empty for none.
+    pub tool: String,
+    /// Its swing's plane (the hold): vertical, else level.
+    pub vertical: bool,
 }
 
 /// What a client asks of chopping (ADR 0067).
@@ -557,7 +571,21 @@ pub enum ChopAction {
         point: [f32; 3],
         vertical: bool,
     },
+    /// A swing of `tool` started along the look `look` (world, unit) in its plane `vertical` or
+    /// level, only to a server whose Welcome has `welcome_flags::CHOP_SWEEP`: the server sweeps
+    /// the tool's arc from its own eye and hits the first solid cell on the path.
+    Sweep {
+        tool: String,
+        look: [f32; 3],
+        vertical: bool,
+    },
+    /// What tool this player holds (an empty name: none) and its hold, only to a server with
+    /// `CHOP_SWEEP`: it tells the others (`HeldTools`), and this client gets theirs from now on.
+    Held { tool: String, vertical: bool },
 }
+
+/// The most players one `HeldTools` carries.
+pub const MAX_HELD_TOOLS: usize = 1024;
 
 /// The most cells one `Cuts` carries (more go in more messages).
 pub const MAX_CUTS_PER_MESSAGE: usize = 512;
@@ -654,6 +682,7 @@ impl Message {
             M::ItemDrops(_) => MessageType::ItemDrops,
             M::Chop(_) => MessageType::Chop,
             M::Cuts(_) => MessageType::Cuts,
+            M::HeldTools(_) => MessageType::HeldTools,
             M::BodyEdit(_) => MessageType::BodyEdit,
         }
     }
@@ -1284,7 +1313,42 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
                 }
                 w.u8(u8::from(*vertical));
             }
+            ChopAction::Sweep {
+                tool,
+                look,
+                vertical,
+            } => {
+                w.u8(2);
+                w.str(crate::bytes::clamp_str(
+                    tool,
+                    crate::inventory::MAX_ITEM_NAME,
+                ));
+                for &v in look {
+                    w.f32(v);
+                }
+                w.u8(u8::from(*vertical));
+            }
+            ChopAction::Held { tool, vertical } => {
+                w.u8(3);
+                w.str(crate::bytes::clamp_str(
+                    tool,
+                    crate::inventory::MAX_ITEM_NAME,
+                ));
+                w.u8(u8::from(*vertical));
+            }
         },
+        M::HeldTools(list) => {
+            let n = list.len().min(MAX_HELD_TOOLS);
+            w.u16(n as u16);
+            for h in &list[..n] {
+                w.u16(h.player_id);
+                w.str(crate::bytes::clamp_str(
+                    &h.tool,
+                    crate::inventory::MAX_ITEM_NAME,
+                ));
+                w.u8(u8::from(h.vertical));
+            }
+        }
         M::Cuts(m) => {
             let n = m.cuts.len().min(MAX_CUTS_PER_MESSAGE);
             w.u16(n as u16);
@@ -1684,8 +1748,38 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
                     vertical,
                 }
             }
+            2 => {
+                let tool = r.str(crate::inventory::MAX_ITEM_NAME);
+                let look = [r.f32(), r.f32(), r.f32()];
+                r.check(look.iter().all(|v| v.is_finite()));
+                ChopAction::Sweep {
+                    tool,
+                    look,
+                    vertical: r.u8() != 0,
+                }
+            }
+            3 => ChopAction::Held {
+                tool: r.str(crate::inventory::MAX_ITEM_NAME),
+                vertical: r.u8() != 0,
+            },
             _ => return None,
         }),
+        T::HeldTools => {
+            let n = usize::from(r.u16());
+            r.check(n <= MAX_HELD_TOOLS);
+            let mut list = Vec::new();
+            for _ in 0..n {
+                if !r.ok() {
+                    break;
+                }
+                list.push(HeldTool {
+                    player_id: r.u16(),
+                    tool: r.str(crate::inventory::MAX_ITEM_NAME),
+                    vertical: r.u8() != 0,
+                });
+            }
+            M::HeldTools(list)
+        }
         T::Cuts => {
             let n = usize::from(r.u16());
             r.check(n <= MAX_CUTS_PER_MESSAGE);
