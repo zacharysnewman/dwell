@@ -19,8 +19,11 @@ test('a murky fluid added by data alone reaches the output', () => {
   d.fluids['test:mud'] = {
     lensM: 0.1,
     line: { amplitudeM: 0, wavelengthM: 1, speed: 0 },
-    band: { depthM: 0, tint: '#806040', streaks: 0, glints: 0, rimPx: 0, rimShade: 1, linePx: 0, lineGlow: 1 },
-    underside: { texture: 0 },
+    band: {
+      depthM: 0, tint: '#806040', streaks: 0, glints: 0, rimPx: 0, rimShade: 1, linePx: 0, lineGlow: 1,
+      breakup: 0, mirror: 0.6, mirrorWarpPx: 0,
+    },
+    underside: { texture: 0, breakup: 0, sunPatch: 0, sunPower: 8 },
     fog: { clearM: 0, density: 4 },
   };
   const rs = underwaterRust(validateUnderwater(d));
@@ -36,6 +39,8 @@ test('bad entries fail with their path named', () => {
     [(d) => (d.fluids[w].band.tint = 'white'), /band\.tint must be #rrggbb/],
     [(d) => (d.fluids[w].band.lineGlow = 0.5), /band\.lineGlow must be a number in \[1, 4\]/],
     [(d) => (d.fluids[w].underside.texture = -1), /underside\.texture must be a number/],
+    [(d) => (d.fluids[w].underside.sunPower = 0), /underside\.sunPower must be a number in \[1, 256\]/],
+    [(d) => (d.fluids[w].band.mirrorWarpPx = 40), /band\.mirrorWarpPx must be a number in \[0, 32\]/],
     [(d) => ((d.fluids[w].lensM = 0.05), (d.fluids[w].line.amplitudeM = 0.1)), /line\.amplitudeM must be under lensM/],
     [(d) => (d.fluids[w].lensM = 0), /lensM must be a number in \[0\.01, 2\]/],
     [(d) => (d.fluids.Water = d.fluids[w]), /fluids\.Water: the name must be/],
@@ -56,4 +61,8 @@ test("water's waterline is a band of real thickness, a dark line over a light on
   assert.ok(share >= 0.05 && share <= 0.08, `${share}`);
   assert.ok(w.band.rimShade < 1 && w.band.lineGlow > 1, 'darker over lighter');
   assert.ok(w.underside.texture > 0, 'the underside has a texture');
+  // Owner's references (2026-11-07): broken bright cells, brightest toward the sun; the band's
+  // ripples broken and its mirror of the land not literal.
+  assert.ok(w.underside.breakup > 0.5 && w.underside.sunPatch > 0, 'broken cells, a sun patch');
+  assert.ok(w.band.breakup > 0.5 && w.band.mirrorWarpPx > 0 && w.band.mirror < 0.6, 'a rippled mirror');
 });
