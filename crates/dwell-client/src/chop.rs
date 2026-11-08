@@ -492,9 +492,7 @@ mod tests {
     }
 
     dwell_world::both_faces!(
-        fn a_tree_leans_toward_its_notch_from_about_forty_percent_more_toward_the_fall(
-            f: dwell_world::FaceFrame,
-        ) {
+        fn a_tree_leans_toward_its_notch_more_toward_the_fall(f: FaceFrame) {
             let log = dwell_protocol::chopping::wood("dwell:log").unwrap();
             let cell = f.cell([3, 80, 0]);
             // Notched on its −x side (side 0).

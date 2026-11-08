@@ -213,7 +213,8 @@ weighty first-person physical swings (the mechanics only). Built:
   only to clients that sent a `Held`; tested on the server and the client's drawing.
 
 **Next:** cuts on bodies (chopping a felled piece before it settles), a give command, stamina; the
-falling piece's kick cap (`max_body_kick`, 0.50.37) replaced by a proper fix (BUGS.md #52).
+falling trunk's fling onto its chopper fixed at its root (BUGS.md #52: 0.50.37's `max_body_kick`
+cap was removed in 0.50.38 on the owner's word, "we shouldn't be capping player kick like that").
 
 ## Consequences
 

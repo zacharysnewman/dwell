@@ -202,8 +202,8 @@ fn chip_colour(kind: u32, k: u32, uv: vec2f, rest: vec3f, rel: vec3f, seed: u32,
         }}
     }} else {{
         let fi = bits & 7u;
-        let side = gouge_axis(fi / 2u) * select(-1.0, 1.0, (fi & 1u) == 1u);
-        let along = gouge_axis((bits >> 3u) & 3u) * select(1.0, -1.0, ((bits >> 5u) & 1u) == 1u);
+        let side = gouge_axis(fi / 2u) * (2.0 * f32(fi & 1u) - 1.0);
+        let along = gouge_axis((bits >> 3u) & 3u) * (1.0 - 2.0 * f32((bits >> 5u) & 1u));
         n = side;
         if (rest.z > 0.5) {{
             // The slit: dark at its middle, fading to the face at its lips.
@@ -213,7 +213,7 @@ fn chip_colour(kind: u32, k: u32, uv: vec2f, rest: vec3f, rel: vec3f, seed: u32,
         }} else {{
             // The V: each half is a cut face sloping in to the apex along the middle (the notch
             // opens 1.25× its depth each way), lit by its own normal.
-            let toward = select(-1.0, 1.0, uv.y > 0.0);
+            let toward = 2.0 * step(0.0, uv.y) - 1.0;
             n = normalize(side * 1.25 - along * toward);
             let into = 1.0 - abs(uv.y);
             // End grain: the growth rings' arcs across the cut, and fine fibre.
