@@ -137,7 +137,7 @@ export function validatePresets(raw: unknown): PresetData {
     if (ids.has(p.id)) fail(`${at}.id ${JSON.stringify(p.id)} is listed twice`);
     ids.add(p.id);
     if (typeof p.label !== 'string' || p.label === '') fail(`${at}.label must be text`);
-    const settings = p.settings as Record<string, unknown> | undefined;
+    const settings = p.settings as unknown as Record<string, unknown> | null | undefined;
     if (typeof settings !== 'object' || settings === null)
       return fail(`${at}.settings must be a record`);
     for (const k of Object.keys(settings))
@@ -160,7 +160,10 @@ export function validatePresets(raw: unknown): PresetData {
 export const GRAPHICS_PRESETS: PresetData = validatePresets(data);
 
 /** The preset by its id, or undefined. */
-export function findPreset(id: string, d: PresetData = GRAPHICS_PRESETS): GraphicsPreset | undefined {
+export function findPreset(
+  id: string,
+  d: PresetData = GRAPHICS_PRESETS,
+): GraphicsPreset | undefined {
   return d.presets.find((p) => p.id === id);
 }
 
@@ -177,6 +180,21 @@ export function applyPreset(s: Settings, p: GraphicsPreset, mobile: boolean): Se
   let out = s;
   for (const k of FIELD_NAMES) out = PRESET_FIELDS[k].with(out, p.settings[k], mobile);
   return out;
+}
+
+/**
+ * `?preset=<id>` draws a visit at that preset's graphics whatever is stored (the bench's preset
+ * runs, docs/DEV_TOOLS.md, Graphics presets); nothing is stored. An unknown id changes nothing.
+ */
+export function presetFromQuery(
+  search: string,
+  s: Settings,
+  mobile: boolean,
+  d: PresetData = GRAPHICS_PRESETS,
+): Settings {
+  const id = new URLSearchParams(search).get('preset');
+  const p = id === null ? undefined : findPreset(id, d);
+  return p ? applyPreset(s, p, mobile) : s;
 }
 
 /** The preset the settings match (as applied on this device), or null: Custom. */

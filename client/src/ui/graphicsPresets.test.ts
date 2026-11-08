@@ -6,6 +6,7 @@ import {
   applyPreset,
   defaultPreset,
   findPreset,
+  presetFromQuery,
   presetOf,
   validatePresets,
   type GraphicsPreset,
@@ -112,11 +113,18 @@ describe('applying a preset', () => {
     });
   }
 
-  it('clamps the detail to a phone\'s ranges, and still reads as the preset there', () => {
+  it("clamps the detail to a phone's ranges, and still reads as the preset there", () => {
     const ultra = findPreset('ultra') as GraphicsPreset;
     const s = applyPreset(defaultSettings(true), ultra, true);
     expect(s.detail.memoryMb).toBe(192);
     expect(presetOf(s, true)?.id).toBe('ultra');
+  });
+
+  it('?preset= draws a visit at a preset; an unknown one changes nothing', () => {
+    const s = defaultSettings(false);
+    expect(presetOf(presetFromQuery('?preset=low&at=1,2,3', s, false), false)?.id).toBe('low');
+    expect(presetFromQuery('?preset=potato', s, false)).toBe(s);
+    expect(presetFromQuery('', s, false)).toBe(s);
   });
 
   it('reads Custom once any one graphics setting is changed', () => {

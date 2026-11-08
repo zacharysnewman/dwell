@@ -37,7 +37,10 @@ export type ShaftQuality = (typeof SHAFT_QUALITIES)[number];
 export const DEFAULT_SHAFTS: ShaftQuality = 'high';
 
 /** A stored Light shafts setting; anything else (missing, unknown) takes the fallback (High). */
-export function sanitizeShafts(value: unknown, fallback: ShaftQuality = DEFAULT_SHAFTS): ShaftQuality {
+export function sanitizeShafts(
+  value: unknown,
+  fallback: ShaftQuality = DEFAULT_SHAFTS,
+): ShaftQuality {
   return SHAFT_QUALITIES.find((q) => q === value) ?? fallback;
 }
 

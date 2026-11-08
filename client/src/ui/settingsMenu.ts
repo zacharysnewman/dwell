@@ -490,16 +490,14 @@ function panes(mobile: boolean): Record<SettingsPane, Group[]> {
     // What the screen shows, one row per part listed as data (shared/ui/hud.json).
     screen: [
       {
-        rows: hideableParts(mobile).map(
-          (part): Row => ({
-            toggle: {
-              label: part.label,
-              hint: part.hint,
-              get: (st) => st.hud.shown[part.id] ?? part.shown,
-              with: (st, v) => ({ ...st, hud: { shown: { ...st.hud.shown, [part.id]: v } } }),
-            },
-          }),
-        ),
+        rows: hideableParts(mobile).map((part): Row => ({
+          toggle: {
+            label: part.label,
+            hint: part.hint,
+            get: (st) => st.hud.shown[part.id] ?? part.shown,
+            with: (st, v) => ({ ...st, hud: { shown: { ...st.hud.shown, [part.id]: v } } }),
+          },
+        })),
       },
     ],
   };
