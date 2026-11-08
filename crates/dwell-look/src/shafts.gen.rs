@@ -18,18 +18,18 @@ pub const LOW: ShaftTier = ShaftTier {
 
 /// The sun's and the moon's shafts in the air (`air`).
 pub const SUN_SHAFTS: AirShafts = AirShafts {
-    strength: 0.6,
-    reach: 0.85,
-    decay: 0.975,
+    strength: 1.4,
+    reach: 0.95,
+    decay: 0.985,
     disc_radius: 0.7,
     elevation_deg: 8.0,
     offscreen: 0.6,
 };
 pub const MOON_SHAFTS: AirShafts = AirShafts {
-    strength: 0.06,
-    reach: 0.7,
-    decay: 0.96,
-    disc_radius: 0.3,
+    strength: 0.35,
+    reach: 0.9,
+    decay: 0.98,
+    disc_radius: 0.45,
     elevation_deg: 10.0,
     offscreen: 0.3,
 };

@@ -893,7 +893,7 @@ aliased, one octave further down the band. Cost: none measurable (the same taps,
 clock at 0.74 so the sun is low behind it, the camera under the crown looking up into it) and over
 open hills with the clouds near the sun. Tuned for visible but soft rays (owner's choice: soft and
 subtle): `air.sun` strength 0.5 → 0.6, decay 0.965 → 0.975 (the rays reach further from the gaps),
-`discRadius` 0.55 → 0.7 (the glow round the sun wider and softer). The crown's gaps glow and
+`discRadius` 0.55 → 0.7 (the glow round the sun wider and softer). In 0.50.27 (owner, 2026-11-07: "I don't feel like the volumetric light rays are very obvious from the sun (should be moon too). I'd like them to be quite a bit stronger.") `air.sun` strength 0.6 → 1.4, reach 0.85 → 0.95, decay 0.975 → 0.985; `air.moon` strength 0.06 → 0.35, reach 0.7 → 0.9, decay 0.96 → 0.98, `discRadius` 0.3 → 0.45. The crown's gaps glow and
 streak faintly toward the camera; over open sky the glow is a soft halo, brighter in Low (its
 quarter-scale buffer blurs wider). Cost at the owner's setting (`gpu.frame` p95, Off → Low → High):
 through the tree 10.45 → 10.82 → 11.97 ms (+1.5, of which ~1 ms a shadow-cascade spike in that run;

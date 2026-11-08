@@ -5,8 +5,8 @@
     "low": { "scale": 0.25, "steps": 12, "lights": 2, "lightSteps": 6 }
   },
   "air": {
-    "sun": { "strength": 0.6, "reach": 0.85, "decay": 0.975, "discRadius": 0.7, "elevationDeg": 8, "offscreen": 0.6 },
-    "moon": { "strength": 0.06, "reach": 0.7, "decay": 0.96, "discRadius": 0.3, "elevationDeg": 10, "offscreen": 0.3 }
+    "sun": { "strength": 1.4, "reach": 0.95, "decay": 0.985, "discRadius": 0.7, "elevationDeg": 8, "offscreen": 0.6 },
+    "moon": { "strength": 0.35, "reach": 0.9, "decay": 0.98, "discRadius": 0.45, "elevationDeg": 10, "offscreen": 0.3 }
   },
   "default": {
     "strength": 0,
