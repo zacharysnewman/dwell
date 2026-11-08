@@ -10,7 +10,7 @@ use dwell_blocks::FluidInfo;
 use dwell_look::{hex, srgb_to_linear};
 
 /// vec4s per fluid in the buffer (`Fluid` in the WGSL).
-pub const FLUID_VEC4S: usize = 9;
+pub const FLUID_VEC4S: usize = 12;
 /// Bytes per fluid.
 pub const FLUID_STRIDE: u64 = (FLUID_VEC4S * 16) as u64;
 
@@ -228,12 +228,43 @@ pub fn pack_fluids(fluids: &[FluidInfo]) -> Vec<f32> {
             }
             None => out.extend_from_slice(&[0.0; 12]),
         }
+        // Its underwater look by name (shared/look/underwater.json; none: the default).
+        let u = dwell_look::underwater::underwater_look(f.name);
+        let m = hex(u.meniscus_color);
+        out.extend_from_slice(&[
+            u.lens_m as f32,
+            u.fog_clear_m as f32,
+            u.fog_density as f32,
+            u.meniscus_strength as f32,
+        ]);
+        out.extend_from_slice(&[
+            u.line_amplitude_m as f32,
+            u.line_wavelength_m as f32,
+            u.line_speed as f32,
+            u.meniscus_width_px as f32,
+        ]);
+        out.extend_from_slice(&[m[0] as f32, m[1] as f32, m[2] as f32, 0.0]);
     }
     if out.is_empty() {
         // A storage binding can't be empty: one zero fluid that nothing indexes.
         out.resize(FLUID_VEC4S * 4, 0.0);
     }
     out
+}
+
+/// The waterline (WATER_RENDERING.md §10; the WGSL `waterline_m` is its twin): how far (m, along
+/// the face's up) the point `lens_m` out along a pixel's view direction (world y `dir_y`) from the
+/// eye at world y `eye_y` is above the fluid's surface at world y `surface_y`, less the line's wave
+/// `wave_m` there. Negative: the pixel looks out from under the surface.
+pub fn waterline_m(
+    face: dwell_world::FaceFrame,
+    eye_y: f64,
+    surface_y: f64,
+    dir_y: f64,
+    lens_m: f64,
+    wave_m: f64,
+) -> f64 {
+    face.y(eye_y + dir_y * lens_m) - face.y(surface_y) - wave_m
 }
 
 /// The length of a view ray inside the water (m): from the surface, at view depth `d_water`, to
@@ -789,5 +820,66 @@ mod tests {
             assert!(seconds < 10.0, "{l:?}: {seconds} s a wavelength");
             assert!(seconds > 0.25, "{l:?}: {seconds} s, no blur of motion");
         }
+    }
+
+    #[test]
+    fn each_fluid_packs_its_underwater_look_and_one_without_takes_the_default() {
+        use dwell_look::underwater::{DEFAULT_UNDERWATER, underwater_look};
+        let buf = pack_fluids(&dwell_blocks::FLUIDS);
+        for (id, f) in dwell_blocks::FLUIDS.iter().enumerate() {
+            let v = &buf[id * FLUID_VEC4S * 4..(id + 1) * FLUID_VEC4S * 4];
+            let u = underwater_look(f.name);
+            let under = [u.lens_m, u.fog_clear_m, u.fog_density, u.meniscus_strength];
+            let line = [
+                u.line_amplitude_m,
+                u.line_wavelength_m,
+                u.line_speed,
+                u.meniscus_width_px,
+            ];
+            assert_eq!(v[36..40], under.map(|x| x as f32));
+            assert_eq!(v[40..44], line.map(|x| x as f32));
+        }
+        // A fluid with no look of its own takes the default's (fog from the eye, the registry's rates).
+        assert_eq!(underwater_look("test:oil"), &DEFAULT_UNDERWATER);
+        assert_eq!(DEFAULT_UNDERWATER.fog_density, 1.0);
+    }
+
+    dwell_world::both_faces!(
+        fn the_waterline_splits_a_view_from_the_surface_by_each_pixels_ray(f: FaceFrame) {
+            // Face-local fixture: the surface at 10.875, the eye exactly on it; rays a little up
+            // and a little down from level (world y of the face-local direction through `f`).
+            let surface = 10.875;
+            let (eye, s) = (f.y(surface), f.y(surface));
+            let dir_y = |local_y: f64| f.vector([0.0, local_y, 1.0])[1];
+            let lens = 0.3;
+            assert!(
+                waterline_m(f, eye, s, dir_y(0.1), lens, 0.0) > 0.0,
+                "a ray above level: above water"
+            );
+            assert!(
+                waterline_m(f, eye, s, dir_y(-0.1), lens, 0.0) < 0.0,
+                "a ray below level: under water"
+            );
+            // The line's wave lifts it: a ray just above level is under a crest.
+            assert!(waterline_m(f, eye, s, dir_y(0.01), lens, 0.01) < 0.0);
+            // The eye 0.2 m over the surface: a level ray is above; one steeply down reaches under.
+            let high = f.y(surface + 0.2);
+            assert!(waterline_m(f, high, s, dir_y(0.0), lens, 0.0) > 0.0);
+            assert!(waterline_m(f, high, s, dir_y(-1.0) / 2f64.sqrt(), lens, 0.0) < 0.0);
+            // Deep (1 m under), every ray within the lens is under: the whole view, as before.
+            let deep = f.y(surface - 1.0);
+            assert!(waterline_m(f, deep, s, dir_y(1.0) / 2f64.sqrt(), lens, 0.0) < 0.0);
+        }
+    );
+
+    #[test]
+    fn the_shader_decides_the_waterline_as_its_cpu_twin_does() {
+        // both-faces: the WGSL crosses into the face through face_y as waterline_m does through FaceFrame::y.
+        let src = super::super::shaders::source(1);
+        assert!(src.contains(
+            "return face_y(face, frame.eye.x + lens.y) - face_y(face, frame.water.z) - wave;"
+        ));
+        assert!(src.contains("let d = waterline_m(normalize(ray), f);"));
+        assert!(src.contains("let d = max(dist - f.under.y, 0.0) * f.under.z;"));
     }
 }

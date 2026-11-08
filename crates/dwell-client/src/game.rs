@@ -2696,8 +2696,12 @@ impl<S: Scene> Game<S> {
             None => camera_eye,
         };
         let store = self.streamer.store_mut();
-        let eye_fluid =
-            dwell_world::fluid::eye_fluid(camera_eye, |x, y, z| store.get_voxel(x, y, z));
+        // Under the surface, or above it within the waterline's reach (WATER_RENDERING.md §10).
+        let eye_fluid = dwell_world::fluid::eye_fluid(
+            camera_eye,
+            dwell_look::underwater::line_reach_m(),
+            |x, y, z| store.get_voxel(x, y, z),
+        );
         self.scene.borrow_mut().set_eye_fluid(eye_fluid);
         telemetry::span("lod", || self.update_lod(&c, now_ms, input));
         if let Some(lod) = &self.lod {

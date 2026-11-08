@@ -74,6 +74,8 @@ jobs:
           node --test shared/look/motes.test.mjs
           node shared/look/waterflow.mjs
           node --test shared/look/waterflow.test.mjs
+          node shared/look/underwater.mjs
+          node --test shared/look/underwater.test.mjs
           node shared/look/waterfalls.mjs
           node --test shared/look/waterfalls.test.mjs
           node shared/look/daynight.mjs

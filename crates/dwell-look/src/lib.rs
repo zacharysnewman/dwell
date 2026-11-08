@@ -27,6 +27,7 @@ pub mod shadows;
 #[path = "shadows.gen.rs"]
 mod shadows_gen;
 pub mod spyglass;
+pub mod underwater;
 pub mod waterfalls;
 pub mod waterflow;
 

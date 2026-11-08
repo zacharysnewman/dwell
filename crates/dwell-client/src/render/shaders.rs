@@ -119,6 +119,15 @@ struct Fluid {
     flow_foam: vec4f,
     // x a streak's length along the flow, y its width across (m)
     flow_shape: vec4f,
+    // Its underwater look (shared/look/underwater.json, WATER_RENDERING.md §10): x the lens (m out
+    // along a view ray where under or above is decided), y the fog's clear distance (m), z the
+    // fog's density (× its rates), w the meniscus's strength
+    under: vec4f,
+    // x the line's wave height (m), y its wavelength (m), z its cycles a second, w the meniscus's
+    // half-width (px)
+    line: vec4f,
+    // rgb the meniscus's colour (output colour, sRGB)
+    meniscus: vec4f,
 };
 @group(0) @binding(4) var<storage, read> fluids: array<Fluid>;
 // The water's tiles (render/water_tiles.rs): gradient noise and its derivatives over NOISE_TILE
@@ -407,10 +416,37 @@ fn schlick(cos: f32, f0: f32) -> f32 {
 // The underwater fog, the W4 stub (WATER_RENDERING.md W4 builds the full underwater view): over
 // `dist` metres of the fluid, Beer–Lambert absorption of what is behind and the fluid's in-scatter,
 // lit as the face's up is.
+// The underwater look's fog: none over its clear distance, then its rates × its density.
 fn underwater(lin: vec3f, dist: f32, f: Fluid) -> vec3f {
-    let t = exp(-(f.absorption.rgb + f.extra.w) * dist);
+    let d = max(dist - f.under.y, 0.0) * f.under.z;
+    let t = exp(-(f.absorption.rgb + f.extra.w) * d);
     let inscatter = lambert(f.scatter.rgb, face_up(frame.eye.y), frame.eye.x);
     return lin * t + inscatter * (1.0 - t);
+}
+
+// The fluid the eye is under or just above (`frame.water`).
+fn eye_fluid() -> Fluid {
+    return fluids[min(u32(frame.water.y), arrayLength(&fluids) - 1u)];
+}
+
+// The eye itself under a fluid's surface (`frame.water.x` 1 deep, 2 near the surface; 3 just
+// above it; render/mod.rs `waterline_state`).
+fn eye_under() -> bool {
+    return frame.water.x > 0.5 && frame.water.x < 2.5;
+}
+
+// The waterline (WATER_RENDERING.md §10; render/water.rs `waterline_m` is its CPU twin): how far
+// (m, along the face's up) the point the fluid's lens out along the view direction `dir` is above
+// the eye's fluid's surface, less the line's waves there. Negative: the pixel looks out from
+// under the surface. Per pixel, so with the eye at the surface the view splits along a line.
+fn waterline_m(dir: vec3f, f: Fluid) -> f32 {
+    let face = frame.eye.y;
+    let lens = dir * f.under.x;
+    let xz = frame.wrap.xy + lens.xz;
+    let k = 6.2831853 / f.line.y;
+    let t = 6.2831853 * f.line.z * frame.fog.z;
+    let wave = f.line.x * (0.6 * sin(xz.x * k + t) + 0.4 * sin((0.6 * xz.x + 0.8 * xz.y) * 1.7 * k - 1.3 * t));
+    return face_y(face, frame.eye.x + lens.y) - face_y(face, frame.water.z) - wave;
 }
 
 // The height fog (dwell-look's haze_amount, per pixel) in the eye's face's air: how much of the
@@ -1142,12 +1178,24 @@ fn composited_of(c: vec4f, depth: f32, ray: vec3f, clear: vec3f, back: vec3f) ->
 // while the taps re-composited the scene without it: the clouds from below (0.11.19) and above
 // (0.18.2), then the ink (0.20.1).
 fn composite_pixel(p: vec2i, ndc: vec2f) -> vec3f {
-    if (frame.water.x > 0.5) {
+    // Near or under a fluid's surface each pixel is under it or not by its own ray (the waterline,
+    // WATER_RENDERING.md §10), with the meniscus along the line between.
+    // Deep under it (x 1) the whole view is, as one uniform branch.
+    if (frame.water.x > 0.5 && frame.water.x < 1.5) {
         return composite_underwater(p, view_ray(ndc), textureLoad(scene_color, p, 0));
     }
     var s = composited(p, ndc);
     if (frame.outline.x > 0.5) {
         s.color = outlined(s, p);
+    }
+    if (frame.water.x > 1.5) {
+        let ray = view_ray(ndc);
+        let f = eye_fluid();
+        let d = waterline_m(normalize(ray), f);
+        if (d < 0.0) {
+            s.color = composite_underwater(p, ray, textureLoad(scene_color, p, 0));
+        }
+        s.color = meniscus(s.color, d, f);
     }
     return s.color;
 }
@@ -1174,12 +1222,20 @@ fn pixel_m(p: vec2i, ray: vec3f, depth: f32) -> f32 {
     return across / max(abs(normalize(ray).y), 0.15);
 }
 
+// The meniscus over the finished colour `c`: a thin bright band along the line, `d` the pixel's
+// waterline_m, its half-width the look's in pixels of the drawing buffer at the lens.
+fn meniscus(c: vec3f, d: f32, f: Fluid) -> vec3f {
+    let px_m = f.under.x * 2.0 * frame.tan.y / f32(textureDimensions(scene_color).y);
+    let band = 1.0 - smoothstep(0.0, f.line.w, abs(d) / max(px_m, 1e-6));
+    return mix(c, f.meniscus.rgb, f.under.w * band);
+}
+
 // The composite with the eye under a fluid's surface (the W4 stub): the fluid's fog over the
 // distance in it — to what the pixel shows, or to the surface where the ray reaches it first —
 // replaces the height fog; past the surface, the sky.
 fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
     let fluid = min(u32(frame.water.y), arrayLength(&fluids) - 1u);
-    let f = fluids[fluid];
+    let f = eye_fluid();
     let dir = normalize(ray);
     let rise = face_rise(frame.eye.y, dir);
     let below = max(face_y(frame.eye.y, frame.water.z) - face_y(frame.eye.y, frame.eye.x), 0.0);
@@ -1304,7 +1360,7 @@ fn motion_composite(px: vec2i, ndc: vec2f) -> vec3f {
 fn motion_fs(i: SkyOut) -> @location(0) vec4f {
     let p = vec2i(i.clip.xy);
     var color = textureLoad(finished, p, 0).rgb;
-    if (frame.water.x <= 0.5) {
+    if (!eye_under()) {
         color = motion_composite(p, i.ndc);
     }
     return vec4f(color + dither(p), 1.0);
@@ -1967,7 +2023,7 @@ const SPARKLE_POWER: f32 = 2400.0;
 // open edge, or past a bank) is the fluid seen from outside, so it takes the outside look, not
 // the inside's flat body colour (WATER_RENDERING.md §9).
 fn seen_from_inside(i: FluidOut, front: bool) -> bool {
-    return !front && (abs(i.normal.y) > 0.5 || frame.water.x > 0.5);
+    return !front && (abs(i.normal.y) > 0.5 || eye_under());
 }
 
 // A surface's underside seen from outside the water (owner, 2026-11-05: flat blue sheets on
@@ -1975,7 +2031,23 @@ fn seen_from_inside(i: FluidOut, front: bool) -> bool {
 // of that pool's surface. Drawn as seen from inside it was a flat sheet of the body's colour; from
 // outside the water it isn't drawn, and the riser shows the bed behind it through the water.
 fn underside_from_outside(i: FluidOut, front: bool) -> bool {
-    return !front && abs(i.normal.y) > 0.5 && frame.water.x < 0.5;
+    return !front && abs(i.normal.y) > 0.5 && !eye_under();
+}
+
+// The eye's own surface hidden where the waterline puts the pixel on its other side
+// (WATER_RENDERING.md §10): its top seen from above where the pixel looks out from under it, its
+// underside seen from below where the pixel looks out above it. Each half of a split view then
+// shows its own side, and the line between them is the waterline's.
+// Only near the surface (`frame.water.x` 2 or 3: a uniform branch, nothing to test elsewhere);
+// else branch-free, so the fragment's derivatives after it stay in uniform control flow.
+fn waterline_hides(i: FluidOut, front: bool) -> bool {
+    if (frame.water.x < 1.5) {
+        return false;
+    }
+    let face = frame.eye.y;
+    let own = abs(face_y(face, frame.eye.x + i.rel.y) - face_y(face, frame.water.z)) <= 0.05;
+    let other_side = (waterline_m(normalize(i.rel), eye_fluid()) < 0.0) == front;
+    return (abs(i.normal.y) > 0.5) & own & other_side;
 }
 
 // A fluid's surface seen from inside (the W4 stub): the body's colour, out through Snell's window,
@@ -2001,7 +2073,8 @@ fn water_fs(i: FluidOut, @builtin(front_facing) front: bool) -> SceneOut {
     let footprint = max(length(dpdx(i.wrapped)), length(dpdy(i.wrapped)));
     let deck_fw = reflected_deck_fw(i.rel);
     // A swap's water fades with its level's surface (the same pixels: neither blends twice).
-    if (fade_discard(draw, i.clip.xy)) {
+    let hidden = waterline_hides(i, front);
+    if (fade_discard(draw, i.clip.xy) || hidden) {
         discard;
     }
     let count = arrayLength(&fluids);
@@ -2098,7 +2171,8 @@ fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(
     let draw = draws[i.draw];
     let footprint = max(length(dpdx(i.wrapped)), length(dpdy(i.wrapped)));
     let deck_fw = reflected_deck_fw(i.rel);
-    if (fade_discard(draw, i.clip.xy)) {
+    let hidden = waterline_hides(i, front);
+    if (fade_discard(draw, i.clip.xy) || hidden) {
         discard;
     }
     let count = arrayLength(&fluids);
@@ -2540,7 +2614,7 @@ mod tests {
         let src = super::source(1);
         let at = src.find("fn underside_from_outside(").expect("the rule");
         let rule = &src[at..at + src[at..].find("\n}\n").expect("end")];
-        assert!(rule.contains("!front && abs(i.normal.y) > 0.5 && frame.water.x < 0.5"));
+        assert!(rule.contains("!front && abs(i.normal.y) > 0.5 && !eye_under()"));
         for entry in ["fn water_fs(", "fn water_scene_fs("] {
             let at = src.find(entry).expect(entry);
             let b = &src[at..at + src[at..].find("\n}\n").expect("end")];
@@ -2817,7 +2891,7 @@ mod tests {
         let m = body("motion_fs");
         assert!(m.contains("motion_composite(p, i.ndc)") && m.contains("dither(p)"));
         // Under water the wind isn't drawn (as before the split).
-        assert!(m.contains("if (frame.water.x <= 0.5)"));
+        assert!(m.contains("if (!eye_under())"));
         // Procedural: no textures beyond the finished image, which the edge blur loads.
         let motion = &src[src.find("fn motion_hash(").expect("motion")
             ..src.find("const EDGE_DEPTH").expect("outline")];
