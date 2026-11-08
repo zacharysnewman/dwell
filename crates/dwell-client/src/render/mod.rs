@@ -5228,10 +5228,17 @@ mod tests {
         // Owner, 2026-11-08: adventure ran slower than creative. Its loose items (ADR 0066) lie
         // spinning for minutes, and as falling pieces they made every far cascade a moving one,
         // drawn again every `refreshFrames` for as long as any lay anywhere in the world.
-        let item = (crate::loose_items::ID_BASE | 7, [0.0; 3], [0.0, 0.0, 0.0, 1.0]);
+        let item = (
+            crate::loose_items::ID_BASE | 7,
+            [0.0; 3],
+            [0.0, 0.0, 0.0, 1.0],
+        );
         let body = (42, [0.0; 3], [0.0, 0.0, 0.0, 1.0]);
         assert!(!casters_moving(false, &[]));
-        assert!(!casters_moving(false, &[item]), "a loose item is not a moving caster");
+        assert!(
+            !casters_moving(false, &[item]),
+            "a loose item is not a moving caster"
+        );
         assert!(casters_moving(false, &[item, body]), "a falling body is");
         assert!(casters_moving(true, &[item]), "another player is");
     }
