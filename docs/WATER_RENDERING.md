@@ -86,7 +86,7 @@ UV wobble in the composite.
 **As built since 0.50.29** (owner, 2026-11-07; proposals/WATER_GPU_SURFACE.md C1): the tiers are data,
 `shared/look/watertiers.json` (cheapest first; `watertiers.mjs` validates it and emits dwell-look
 `watertiers.gen.rs`, CI checks it is current; the shell reads the same JSON in `ui/waterSettings.ts`). Each
-tier names what it draws (`readsScene`, `rippleLayers`, `flowStreaks`, `bankBand`), whether Settings offers it
+tier names what it draws (`readsScene`, `opacity`, `surfaceCaustics`, `rippleLayers`, `flowStreaks`, `bankBand`), whether Settings offers it
 (`setting`) and whether it is the CPU adapter's (`cpu`, exactly one); its reflections are its entry in
 `reflections.json`. The renderer's `WaterQuality` is an index into the list, and the frame uniform's
 `water.w` carries the tier's switches as bits (dwell-look `tier_bits`; the WGSL's `water_tier_*`), so a new
@@ -96,10 +96,17 @@ store keeps the stored value as it was, append-only).
 | Tier | Contents |
 |---|---|
 | Opaque (the CPU adapter only, not in Settings) | Normal maps (one layer), Fresnel, glint, sky-only reflection, absorption at constant depth; underwater fog only. No copies (the old Low) |
-| Low (phone default; Low and Mobile presets) | See-through: the colour copy, refraction, depth absorption, shoreline foam, the caustic tile; one ripple layer, no flow streaks, no land march: the **bank band** instead (below), one cloud octave reflected |
+| Low (phone default; Low and Mobile presets) | See-through **without the scene copy**: drawn blended in the scene pass (no split), at `opacity` 0.55 of the fluid's own so the floor shows through, the caustic tile's lines added on the water (`surfaceCaustics`, as if on a floor `caustics.depthM` down); one ripple layer, no flow streaks, no land march, one cloud octave reflected. No refraction distortion, no depth absorption, no shoreline foam |
 | Medium (desktop default) | The whole look: three ripple layers, flow streaks, SSR (12 steps; a phone's 8) and the clouds reflected (W5a). High was folded in (0.50.29): it measured within 0.1–0.3 ms of Medium |
 
-**The bank band** (Low; `watertiers.json` `band`; WGSL `bank_band`): the land reflected without a march. The
+**Why Low has no copy** (owner, 2026-11-07): on the owner's iPhone, floating at the surface looking down ran
+~45 fps and fully under water ~60. The scene copy splits each scene pass with water in two (opaque half,
+copy, water half); on a phone's tile GPU each split stores the whole frame out and loads it back, which the
+M1's bandwidth hides. Low now draws the water in the same pass as the ground, blended: **zero water pass
+splits** (one far and one near scene pass, as with no water), the caustic tile's own small pass before them.
+
+**The bank band** (built, but no tier draws it since Low dropped the copy: it samples the scene copy;
+`watertiers.json` `band`; WGSL `bank_band`; a scene-reading tier may set `bankBand`): the land reflected without a march. The
 reflected ray's point `reachM` (6 m) out is projected on screen once; where the scene's depth there stands in
 front of it (within `depthSlack` of its depth: the bank above the water's edge), four taps of the scene copy
 (`spreadPx` across, `blurPx` up) give a soft strip of the bank's colour, darkened by `darken`, mixed in at

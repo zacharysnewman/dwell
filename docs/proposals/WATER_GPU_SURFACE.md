@@ -1,6 +1,7 @@
 # Proposal: cheaper water that stays pretty (costs, options, a GPU water surface, waterfalls)
 
-**Status:** written 2026-11-07, not adopted. Measured on the M1 Air; nothing in the renderer was changed
+**Status:** written 2026-11-07; the owner answered §6's questions 1–3 the same day (§5), and C1 and half of
+C2 are built in 0.50.29 (§7; WATER_RENDERING.md §4). The rest is not adopted yet. Measured on the M1 Air; nothing in the renderer was changed
 for it (the bench's `view` step gained switches for flow ripples, flow foam and waterfalls).
 
 The owner (2026-11-07): "cheaper water in general, preferably without sacrificing it looking pretty. But
@@ -284,6 +285,13 @@ and keep the new look within that.
   The far water reads the same levels at a coarser stride (§3, item 8).
 - **Waterfalls:** the reference photo ([`waterfall-reference.jpg`](../reference/water/waterfall-reference.jpg));
   "mesh or particles, whichever is most performant" (§4: a mesh).
+- **Tiers (2026-11-07, questions 1–3):** (1) phones default to a new see-through Low, today's opaque Low
+  only for the CPU adapter; (2) fold water High into Medium; (3) phones get the stylized bank band instead of
+  SSR. Then, from the owner's iPhone (45 fps floating at the surface looking down, 60 fully under water) and
+  "it's the refraction, transparency or something": Low draws **no scene copy** (a copy splits the scene
+  pass, which on a phone's tile GPU stores and reloads the whole frame), so it is blended in the same pass,
+  see-through by a lower opacity, with the caustic tile's lines on the water. The bank band needs the copy,
+  so it is built but drawn by no tier.
 - **The waterline** reference, for §12 of WATER_RENDERING.md, is kept beside it:
   [`waterline-reference.webp`](../reference/water/waterline-reference.webp).
 
@@ -302,10 +310,10 @@ and keep the new look within that.
 
 | Step | Work | Expected saving (*estimate*) | Risk |
 |---|---|---|---|
-| **C1** | The see-through phone tier as data (`reflections.json` phone overrides plus the water quality: copy, refraction, absorption, caustic tile; no SSR; one ripple layer; no flow streaks) | ~1 ms at the dam on a phone-sized frame against Medium | low: data and tier switches |
-| **C2** | Copy only the water's screen rectangle; tiles every other frame | 0.3–0.5 ms where little water shows | low |
+| **C1** ✅ 0.50.29 | The see-through phone tier as data (as built: `shared/look/watertiers.json`; Low blended with no copy, opacity 0.55, surface caustics; High folded into Medium; the opaque tier the CPU's only) (`reflections.json` phone overrides plus the water quality: copy, refraction, absorption, caustic tile; no SSR; one ripple layer; no flow streaks) | ~1 ms at the dam on a phone-sized frame against Medium | low: data and tier switches |
+| **C2** 🚧 | Copy only the water's screen rectangle (not built; Medium only now, since Low has no copy); tiles every other frame (✅ 0.50.29, `causticEveryFrames`) | 0.3–0.5 ms where little water shows | low |
 | **C3** | Flow streaks and ripple layers from tiles (one advected foam tile, the ripples baked) | ~0.3 ms where water fills the view | low–medium: the look must match |
-| **C4** | Half-resolution SSR on desktop; the stylized reflection band on phones | 0.2–0.35 ms | medium: upsample edges |
+| **C4** 🚧 | Half-resolution SSR on desktop (not built); the stylized reflection band on phones (built as `bank_band`, but it reads the scene copy, so Low can't draw it; needs a copy-free form, e.g. a bank colour from the LOD map) | 0.2–0.35 ms | medium: upsample edges |
 | **C5** | Waterfalls per §4 (streak tile, mist cards, pool rings), within today's waterfall cost | — (a look change at the same cost) | low |
 | **C6** | The GPU heightfield (§3): the grid mesh, the height atlas, the mesher's flag, levels from eighths first | the flood's 77 chunk re-meshes a second and ~1.3 ms of main thread go to ~0; tens of times fewer water triangles while it moves | medium: shores, drops, the waterline's level |
 | **C7** | The optional `WaterLevels` message (exact smooth levels) and the LOD water from the atlas's mips | smoother water; LOD water stops re-meshing too | medium: a new message (optional, no compatibility break) |

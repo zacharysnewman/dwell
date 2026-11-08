@@ -865,7 +865,7 @@ the exposure and the water's flow switches are outside the presets. `?preset=<id
 scale first (~74 % of the frame scales with the pixels; 50 % keeps the look at a distance and is the owner's
 default), then torch shadows (water High, ~0.1 ms over Medium at 50 %, was folded into Medium in 0.50.29), the
 sun's shadows to Low and the shafts to Low (Medium), then the water to Low (since 0.50.29 the see-through Low:
-refraction, absorption and caustics kept, no land march, one ripple layer, no streaks, the bank band; it waits
+blended with no scene copy, caustic lines on the water, no land march, one ripple layer, no streaks; it waits
 for Mobile), the clouds, and the draw distance last. Sharpen is in no
 preset: at 50 % it costs ~2 ms more than Stretch (the render-scale table), more than the next cut saves; a
 player can still pick it. On a phone the detail sliders clamp to its ranges (Ultra's 512 MB to 192), and the

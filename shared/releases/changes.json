@@ -2,6 +2,14 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions card. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.50.29",
+      "changes": [
+        "Water Low is now see-through, with light rippling on it, and much lighter on phones",
+        "Water High is merged into Medium, which keeps the whole look; a saved High plays as Medium",
+        "Water's moving light patterns are redrawn every other frame, a little cheaper everywhere"
+      ]
+    },
+    {
       "version": "0.50.28",
       "changes": [
         "Settings are split into Graphics, Sound, Gameplay and On screen, one compact column each",
