@@ -3428,14 +3428,11 @@ impl<S: Scene> Game<S> {
         if let Some(t) = self.held_tool() {
             return Held::Tool(t.held_for(self.chop.vertical).unwrap_or("block"));
         }
-        let block = self.selected_material();
-        if block == 0 {
-            Held::Empty
-        } else if self.brush.active() {
-            Held::Brush(block)
-        } else {
-            Held::Block(block)
-        }
+        // In a world that uses items the hand shows the held inventory slot's block, so an empty
+        // slot shows an empty hand (owner, 2026-11-08: "When you run out of a block in adventure it
+        // shouldn't be shown in your hand anymore"); the palette's selection otherwise.
+        let slot_empty = self.loose.uses_items() && self.held_palette_slot().is_none();
+        held_of(slot_empty, self.selected_material(), self.brush.active())
     }
 
     /// Tells the server what you hold when it changes (`Message::HeldItem`, protocol v17), so the
@@ -3871,9 +3868,32 @@ fn probe_lines(center: [f64; 3], c: &ClientState) -> Vec<Line> {
     lines
 }
 
+/// What the hand holds when it holds no tool: nothing for an empty inventory slot (a world that
+/// uses items) or no block, else the block, as a brush while the brush tool is on.
+fn held_of(inventory_slot_empty: bool, block: StateId, brush: bool) -> Held {
+    if inventory_slot_empty || block == 0 {
+        Held::Empty
+    } else if brush {
+        Held::Brush(block)
+    } else {
+        Held::Block(block)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_empty_inventory_slot_shows_an_empty_hand_whatever_the_palette_held_last() {
+        // Owner (2026-11-08): run out of a block in adventure and it was still in your hand: the
+        // palette kept the last block selected. face-a-only: no face involved.
+        let dirt = dwell_blocks::require("dwell:dirt");
+        assert_eq!(held_of(true, dirt, false), Held::Empty);
+        assert_eq!(held_of(false, dirt, false), Held::Block(dirt));
+        assert_eq!(held_of(false, dirt, true), Held::Brush(dirt));
+        assert_eq!(held_of(false, 0, false), Held::Empty);
+    }
 
     dwell_world::both_faces!(
         /// Owner (2026-11-06): dead on face B, the third-person camera was upside down. The body
