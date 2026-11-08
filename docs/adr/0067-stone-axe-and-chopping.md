@@ -1,7 +1,7 @@
 # 0067 — The stone axe: aimed chopping, notches, felling past half and bucking
 
 **Status:** Accepted (2026-11-08; data, server and client input built in 0.50.34; the owner's
-answers, the gouges, chips, arms and the axe on the creative hotbar in 0.50.35, see "Built so far"). Builds on ADR 0066 (items by
+answers, the gouges, chips, arms and the axe on the creative hotbar in 0.50.36, see "Built so far"). Builds on ADR 0066 (items by
 name, drops, the Welcome-flag message pattern) and docs/FELLING.md (how a cut trunk falls).
 
 ## Context
@@ -98,7 +98,7 @@ felling (FELLING.md). Scope: tools and woods are per build; cuts are per world, 
 10. **Save: a new table, append-only.** `cuts`: one record (key 0, version 1, each cell and its
     sides' notch and kerfs as f32), the whole set each save. Older builds leave it; a record this
     build can't read is kept, not overwritten.
-11. **The client draws** (0.50.35, `dwell-client` `chips.rs`, draw-only), all through the
+11. **The client draws** (0.50.36, `dwell-client` `chips.rs`, draw-only), all through the
     billboard pass the blasts' puffs use (render/blasts.rs, `PuffKind::Chip` and `Gouge`):
     - **Gouges** (chosen as the cheapest that reads: a decal, not a remesh): per cut cell and side,
       the notch as a quad lying on that side's face (lifted 4 mm), centred along the grain and
@@ -129,12 +129,12 @@ felling (FELLING.md). Scope: tools and woods are per build; cuts are per world, 
 Answered by the owner (2026-11-08):
 
 1. **Which way it falls: toward the notch**, like real felling (not away, as 0.50.34 built): the
-   uncut side is the hinge; the notch side opens and the trunk tips toward it (§5; built 0.50.35,
+   uncut side is the hinge; the notch side opens and the trunk tips toward it (§5; built 0.50.36,
    `tests/chopping.rs`, both faces).
 2. **Wood items or logs: wood items**, as built (2–3 `dwell:wood` per bucked length).
-3. **The axe in creative: on the creative hotbar**, by tool entries in `items.json` (§12; 0.50.35).
+3. **The axe in creative: on the creative hotbar**, by tool entries in `items.json` (§12; 0.50.36).
 5. **Hands on logs: in adventure, logs need an axe**; leaves and plants stay breakable by hand;
-   creative breaks anything (§7a, the block's `breakWith`; 0.50.35).
+   creative breaks anything (§7a, the block's `breakWith`; 0.50.36).
 
 Still parked (defaults chosen):
 
@@ -160,7 +160,7 @@ Still parked (defaults chosen):
 - **Client:** `dwell-client` `chop.rs` (the ray into the cell, the wait, the toggle), Hello on the
   flag, cuts kept, Use toggling and Break swinging with the axe held, the swing hint in the HUD.
 
-## Built in 0.50.35
+## Built in 0.50.36
 
 - **The owner's answers:** felling toward the notch (server and both-face test); `breakWith` block
   data, the log's `axe`, enforced in adventure (red → green: the hand break of a log is refused

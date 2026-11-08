@@ -53,7 +53,7 @@ The generator checks every state an item can place (each facing, and the upper c
 state of the registry (`blocks.gen.rs`). A slope placed on a slope is built on, never molded:
 `molds_into` takes a full block only. (13 items.)
 
-### 1a. Tools on the hotbar (ADR 0067, 0.50.35)
+### 1a. Tools on the hotbar (ADR 0067, 0.50.36)
 
 An item may be a **`tool`** (an item of `shared/tools/tools.json` by name) instead of a `block`:
 it places nothing, so it takes none of `rows`, `drag`, `state`, `facing` or `upper` (each fails

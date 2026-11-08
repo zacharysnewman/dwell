@@ -123,6 +123,20 @@
       "params": {
         "lodmap": "on"
       }
+    },
+    {
+      "name": "creative",
+      "notes": "The local world in creative (`?mode=creative`, ADR 0065): adventure's baseline.",
+      "params": {
+        "mode": "creative"
+      }
+    },
+    {
+      "name": "adventure",
+      "notes": "The local world in adventure (`?mode=adventure`, ADR 0065, 0066): health, the inventory and wallet in the HUD; compare with `creative`.",
+      "params": {
+        "mode": "adventure"
+      }
     }
   ]
 }
