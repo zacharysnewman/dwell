@@ -2681,8 +2681,8 @@ in 0.48.2.
   their own. Only the current reported changes, not the water's movement.
 - **[built, 0.50.24] Light shafts** ([ADR 0064](./adr/0064-light-shafts.md); data `shared/look/shafts.json` →
   `dwell-look` `shafts.gen.rs` by `shared/look/shafts.mjs`, validated, a fixture fluid by data alone,
-  CI stale check): one pass after the scene passes (`shafts_fs`, `gpu.shafts`) into a one-channel
-  `r16float` buffer at the tier's share of the drawing buffer (Settings → Graphics → Light shafts:
+  CI stale check): one pass after the scene passes (`shafts_fs`, `gpu.shafts`) into an
+  `rgba16float` buffer (rgb the placed and held lights' glow in its colours, a the sun's, moon's or fluid's) at the tier's share of the drawing buffer (Settings → Graphics → Light shafts:
   High ½ per axis and 24 samples, Low ¼ and 12, Off none; stored in `dwell.shafts`, High on every
   device; the CPU adapter draws none, `shafts_for`; `?shafts=` overrides it for the bench), reading the
   scene's colour and view depth through `frame::scene_read_layout`; the composite samples it filtered
@@ -2693,7 +2693,14 @@ in 0.48.2.
   (world-space shafts that converge on the sun's image, flickering with two drifting noise layers),
   faded by depth and distance. The frame block carries `shafts`, `shafts_cfg`, `shafts_color` and
   `shafts_window` (`shaft_uniforms`). Snell's window takes the fluid's window glow with a softened rim.
-  Torch and lamp shafts: planned (ADR 0064).
+  **[built, 0.50.26] Torch and lamp shafts:** the nearest placed and held lights in front of the
+  camera, within `lights.rangeM`, not too far off screen (`dwell_look::shafts::pick_shaft_lights`:
+  the tier's 4 or 2, weighed by the light source's `lights.kinds` strength by its name, the near,
+  range and screen fades and a day share), packed into the frame block's `torch_shafts` (a header and
+  two vec4s a light, `light_shaft_uniforms`); in the same pass each is a radial blur toward its
+  screen point over what doesn't hide it (the view depth behind the flame or the sky), weighed by its
+  halo (`discM` over its depth), so a torch glows in the air and casts soft rays past what stands in
+  front of it. The pass runs when either part draws. Not under a fluid (left for later).
 - **[built] The underwater look** (WATER_RENDERING.md §12; data `shared/look/underwater.json` →
   `dwell-look` `underwater.gen.rs` by `shared/look/underwater.mjs`, validated, a fixture fluid by
   data alone, CI stale check; per fluid by its name, a `default` for the rest): `lensM`, the line's
@@ -2897,8 +2904,10 @@ a second for 2–3 s once the world's LOD has settled — EXPLOSIVES.md §6.
 ### 7.4 Tunable constants
 
 The light shafts' tiers, strengths, reaches, decays and per-fluid looks are data in
-`shared/look/shafts.json` (ADR 0064; High: ½ resolution, 24 samples; Low: ¼, 12; the sun 0.35,
-the moon 0.06, water 0.55).
+`shared/look/shafts.json` (ADR 0064; High: ½ resolution, 24 samples, 4 lights at 12 samples each;
+Low: ¼, 12, 2 lights at 6; the sun 0.6, the moon 0.06, water 2.0; the placed and held lights'
+`lights`: within 20 m, faded out nearer than 1.5 m, 0.4 of the strength by day, the torch 0.35 with
+a 2.5 m halo, the fuse 0.15 with 1 m).
 
 The source spec left several thresholds unspecified. The values below are **initial defaults**
 to be tuned. Shared ones live in `shared/protocol/constants.json`, generated into Rust

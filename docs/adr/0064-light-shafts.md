@@ -1,6 +1,6 @@
 # 0064: Light shafts (volumetric glow rays) as data, one reduced-resolution pass
 
-**Status:** Accepted (2026-11-07; air and underwater shafts built in 0.50.24; torch and lamp shafts planned)
+**Status:** Accepted (2026-11-07; air and underwater shafts built in 0.50.24; torch and lamp shafts built in 0.50.26)
 
 ## Context
 
@@ -50,16 +50,31 @@ pass.
 - **Both faces:** the CPU side works in world vectors and reads elevation through
   `FaceFrame::vector`; the WGSL uses `face_rise`, `face_y`; the tests run on both faces with a
   parity check.
-- **Torch and lamp shafts (planned, next):** the same pass and buffer, a third mode: per placed light
-  near the eye (the point-light list the torch shadows use), a short march along each view ray
-  against the torch shadow cube maps, strength per light kind in `shafts.json` (`lights` by the
-  `lights.json` names), on High only at first.
+- **Torch and lamp shafts (built, 0.50.26):** the same pass and buffer, drawn alongside the sun's or
+  moon's: the nearest placed and held lights (the placed-light list the torch shadows use, and the
+  hands' torches) in front of the camera within `lights.rangeM`, faded out near the eye (a torch in
+  your own hand), toward the range's end and off screen, at `dayShare` of the strength by day; the
+  tier's count (High 4 at 12 samples, Low 2 at 6). Strength and halo per light source by its name
+  (`lights.kinds`, `dwell:torch`, `dwell:fuse`; one not listed takes `lights.default`, none; a
+  fixture kind is added by data alone in the generator's test). Each light is a radial blur toward
+  its screen point over what doesn't hide it (the view depth's first sample behind the flame, or
+  the sky), weighed by its halo (`discM` over the light's depth) and decayed; a pixel whose samples
+  can't reach the halo skips the light. The buffer became `rgba16float`: rgb the lights' glow in
+  their own colours, a the sun's, moon's or fluid's. Not under a fluid yet.
+  - **Deviation from the plan** (a short march per view ray against the torch shadow cube maps, High
+    only): the cube maps exist only with Torch shadows on (Off on phones), for at most 2–4 lights,
+    and would need their bindings in the shafts' group; the screen-space radial blur is the air
+    shafts' model, needs no new bindings, works with Torch shadows Off and on Low (owner: "a cheaper
+    version as a low setting"), and costs the tier's samples a light only near it on the screen. What
+    it gives up: an occluder off screen or behind the light casts no ray, and the glow is a halo
+    with rays past what stands in front of the flame, not true in-scatter through the room.
 
 ## Consequences
 
 - One small pass per frame with the shafts on: a full-screen triangle at ¼ (High) or 1/16 (Low) of
   the pixels with 24 or 12 samples.
-- A new frame uniform block of four vec4s (`frame.shafts*`) and a scene group with the shafts'
+- A new frame uniform block of four vec4s (`frame.shafts*`) and, for the lights, nine more
+  (`frame.torch_shafts`) and a scene group with the shafts'
   buffer and a filtering sampler (bindings 2, 3).
 - The radial blur is screen-space: shafts vanish with the light off screen (by design, faded), and a
   thin occluder at the screen's edge can't cast one.
