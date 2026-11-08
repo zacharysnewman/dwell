@@ -3,6 +3,7 @@
 // and a new world's Spawn (the New world form) is where it first starts.
 import { expect, test, type Page } from '@playwright/test';
 import { World } from '../src/protocol/constants.gen';
+import { untilTicking } from './ticking';
 
 type Vec3 = [number, number, number];
 
@@ -26,6 +27,7 @@ async function ready(page: Page): Promise<Vec3> {
       timeout: 60_000,
     })
     .toBe(true);
+  await untilTicking(page);
   const f = await feet(page);
   if (!f) throw new Error('no feet');
   return f;
