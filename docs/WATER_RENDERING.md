@@ -844,3 +844,27 @@ Snell's window from below reads as a flat lavender sky with a hard wavy edge (it
 bright white-cyan glow where the sun patch is); the band's texture is less regular but still reads as
 fine horizontal lines near the line, where the receding plane compresses it; the band's rim is
 smooth at the line but its streak texture just under it still shimmers.
+
+### 12.3 Light shafts, Snell's window's glow, the band's blur (2026-11-07, 0.50.24)
+
+The owner: "The glow rays is volumetric lighting which we want but don't have underwater or outside
+the water yet either" (design: [ADR 0064](./adr/0064-light-shafts.md); data `shared/look/shafts.json`).
+Under a fluid, `shafts_fs` marches each view ray (to what it shows, the surface, or `reachM`) and at
+each point looks up the surface along the refracted sun (`sun_through`): lit where two drifting
+noise layers of `cellM` cells are bright, faded over `fadeM` of depth and the reach. Parallel in the
+world, the shafts converge on the sun's image on the screen and fan down from the bright surface as
+the reference's do, flickering as the cells drift. **Snell's window** takes the fluid's `window` glow
+(water: `#c8f4ff`, 0.4) over the sky through it, brightest at its middle, its rim softened into the
+mirror over `edge` (0.18 of the window's rim) instead of a hard wavy edge; the **sun patch** is
+stronger (`sunPatch` 3 → 4). The **band** (§12.1) is blurred along its rows, three taps 1.5 px apart
+(`band_ripples`, `BAND_BLUR_PX`), after the owner's "looks pixelated. Blurring is fine."
+
+Measured at the owner's setting (`?renderscale=0.5&upscaler=stretch`, M-series Mac, 2560 × 1600,
+`gpu.frame` p95, Off → Low → High): in the air facing the sun 10.0 → 10.4 → 11.2 ms; under water at
+−1 m level 7.0 → 7.7 → 7.0 ms and looking up 7.2 → 6.8 → 7.0 ms (within the run's noise). `gpu.shafts`
+itself reads 3–6 ms on Apple's tile GPU, where the passes overlap: the frame's change is the cost.
+Against the references: the underwater shafts read as thin soft rays fanning from the surface into
+blue water, subtler than the photo's (no bright fog behind them); the window glows white-cyan.
+**Still off:** in the air the shafts show as a soft glow round the sun unless trees, hills or a
+cloud's edge are close to it on the screen (the radial blur needs an occluder near the light), and
+the open water views in the bench have none; the clouds' gaps are found every sixth sample.

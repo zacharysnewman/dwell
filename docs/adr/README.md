@@ -69,6 +69,7 @@ one's status line. Resolving an item in `ARCHITECTURE.md` Open Decisions require
 | [0061](0061-older-worlds-in-newer-builds.md) | Older worlds open in newer builds after a warning: a copy or an upgrade, unexplored land on the new terrain | Accepted (built, 0.49.2; amends 0014) |
 | [0062](0062-water-off-the-tick-thread.md) | The water runs off the server's tick thread, by message passing (a thread natively, a worker in the browser); shared memory later | Accepted (2026-11-06; built, Phase 53 G5; amends 0060) |
 | [0063](0063-unknown-block-properties-kept.md) | Unknown block properties stay on the block (alias states): adding a property or value is not breaking | Accepted (2026-11-07; built in 0.50.0 with flooded leaves; amends 0038, 0014) |
+| [0064](0064-light-shafts.md) | Light shafts (volumetric glow rays) as data, one reduced-resolution pass: the sun in the air, the sun under water, Snell's window's glow | Accepted (2026-11-07; air and underwater built, 0.50.24; torches planned) |
 
 Phase numbers in ADRs follow the implementation plan as it was then. In ADRs 0001–0010, Phases
 4–7 became 5–8 when the world-LOD phase (Phase 4) was added on 2026-09-29, and then 6–9 when the

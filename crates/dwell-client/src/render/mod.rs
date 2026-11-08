@@ -45,6 +45,7 @@ use dwell_look::outline::{OUTLINE, OutlineMode, outline_uniforms};
 use dwell_look::pixel_art::{AtlasFilter, PIXEL_ART, PixelArtPreset};
 use dwell_look::reflections::{REFLECTIONS, reflection_uniforms};
 use dwell_look::shadows::{SHADOWS, ShadowQuality, ShadowTier};
+use dwell_look::shafts::{ShaftQuality, ShaftTier, ShaftView, shaft_uniforms};
 use dwell_look::{DEFAULT_EXPOSURE, hex, sanitize_exposure, srgb_to_linear};
 use dwell_mesh::{ChunkMeshes, FlatMesh, MeshArrays, SectionMeshes};
 use dwell_world::fluid::EyeFluid;
@@ -114,6 +115,16 @@ pub fn motion_blur_for(device_type: wgpu::DeviceType) -> bool {
 /// (`composite_fs`). The shader's own test of the intensity (`frame.wind_point.z`) is the same.
 pub fn motion_pass(wind_intensity: f64) -> bool {
     wind_intensity > 1e-3
+}
+
+/// The light shafts a frame draws with the Light shafts setting `quality` (ADR 0064): none on a CPU
+/// adapter (a loop of samples per pixel).
+pub fn shafts_for(device_type: wgpu::DeviceType, quality: ShaftQuality) -> ShaftQuality {
+    if is_cpu(device_type) {
+        ShaftQuality::Off
+    } else {
+        quality
+    }
 }
 
 /// Whether the night sky draws its stars (a hashed grid per pixel): not on a CPU adapter.
@@ -996,6 +1007,11 @@ pub struct Renderer {
     pipelines: HashMap<(Kind, bool, bool), wgpu::RenderPipeline>,
     /// The scene targets as the composite and lines read them (`frame::scene_layout`).
     scene_layout: wgpu::BindGroupLayout,
+    /// The light shafts (ADR 0064): the setting, the scene targets as their pass reads them
+    /// (`frame::scene_read_layout`) and the pass's pipeline.
+    shafts: ShaftQuality,
+    scene_read_layout: wgpu::BindGroupLayout,
+    shafts_pipeline: wgpu::RenderPipeline,
     composite_pipeline: wgpu::RenderPipeline,
     /// While the wind is on (`motion_pass`): the composite into the finished image, the motion
     /// pass from it into the canvas, the image's layout, and the image (made when first needed).
@@ -1617,6 +1633,24 @@ impl Renderer {
             })
         };
         let finished_pipeline = full_screen("finished", &overlay_layout, "finished_fs", HDR.into());
+        // The light shafts pass (ADR 0064): the scene's colour and depth (not its own buffer) into
+        // the shafts' buffer.
+        let scene_read_layout = frame::scene_read_layout(&device, samples);
+        let shafts_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("light shafts"),
+            bind_group_layouts: &[
+                Some(&frame_layout),
+                Some(&draw_layout),
+                Some(&scene_read_layout),
+            ],
+            immediate_size: 0,
+        });
+        let shafts_pipeline = full_screen(
+            "light shafts",
+            &shafts_layout,
+            "shafts_fs",
+            frame::SHAFTS.into(),
+        );
         let finished_layout = frame::finished_layout(&device);
         let motion_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("motion"),
@@ -1802,6 +1836,9 @@ impl Renderer {
             adapted_a: 1.0,
             adapt_ms: None,
             clouds: CloudQuality::High,
+            shafts: ShaftQuality::High,
+            scene_read_layout,
+            shafts_pipeline,
             adapter: wgpu::DeviceType::Other,
             cloud_coverage: CLOUDS.shape.coverage,
             cloud_seconds: 0.0,
@@ -2080,6 +2117,14 @@ impl Renderer {
     /// The Clouds setting (Off, Low, High).
     pub fn set_clouds(&mut self, quality: CloudQuality) {
         self.clouds = quality;
+    }
+    /// The Light shafts setting (Off, Low, High; ADR 0064).
+    pub fn set_shafts(&mut self, quality: ShaftQuality) {
+        self.shafts = quality;
+    }
+    /// The light shafts' tier this frame draws (`shafts_for`).
+    fn shaft_tier(&self) -> Option<ShaftTier> {
+        shafts_for(self.adapter, self.shafts).tier()
     }
     /// The clouds' coverage, 0 (clear) to 1 (overcast): the data's by default; a weather system's
     /// to set.
@@ -2508,6 +2553,10 @@ impl Renderer {
             line_width_px(self.pixel_ratio) as f32,
             0.0,
         ]);
+        // The light shafts (ADR 0064; dwell-look `shaft_uniforms`).
+        for v in self.shaft_uniforms(basis, aspect, (fov.to_radians() / 2.0).tan()) {
+            put(&v);
+        }
         // The exposure follows the eye's adaptation; the fog is the air's the eye is in (the other
         // face's rides in the day block, for rays that cross the midplane: docs/DAY_NIGHT.md §13).
         let adapted = self.day.viewer(self.adapted_a);
@@ -2591,6 +2640,46 @@ impl Renderer {
         }
         put(&day);
         u
+    }
+
+    /// The light shafts' part of the frame block (`frame.shafts*`): the sun's or the moon's in the
+    /// air, the sun's under the eye's fluid, by the tier this frame draws.
+    fn shaft_uniforms(&self, basis: &Basis, aspect: f64, tan_y: f64) -> [[f32; 4]; 4] {
+        let under = self
+            .eye_fluid
+            .filter(|e| self.face.y(self.eye[1]) < self.face.y(e.surface_y))
+            .and_then(|e| dwell_blocks::FLUIDS.get(usize::from(e.fluid)))
+            .map(|f| dwell_look::shafts::fluid_shafts(f.name));
+        let v = self.day.of(self.face);
+        let lit = |c: [f64; 3]| {
+            let m = c[0].max(c[1]).max(c[2]).max(1e-6);
+            c.map(|x| x / m)
+        };
+        shaft_uniforms(
+            self.shaft_tier(),
+            &ShaftView {
+                right: basis.right,
+                up: basis.up,
+                forward: basis.forward(),
+                tan: [tan_y * aspect, tan_y],
+                aspect,
+                face: self.face,
+                sun: self.day.sun,
+                moon: self.day.moon,
+                sun_color: lit(v.sun_disc),
+                moon_color: lit(v.moon_light),
+                under,
+            },
+        )
+    }
+
+    /// Whether this frame's shafts draw anything (the near pass's uniforms: weight and mode).
+    fn shafts_drawn(&self) -> bool {
+        let basis = aim(self.yaw, self.pitch, self.face, self.roll);
+        let aspect = f64::from(self.size.0) / f64::from(self.size.1.max(1));
+        let tan_y = (self.frame_fov().to_radians() / 2.0).tan();
+        let u = self.shaft_uniforms(&basis, aspect, tan_y);
+        u[0][2] > 0.0 && u[0][3] > 0.5
     }
 
     /// The wind's part of the frame block (`wind_*` in shaders.rs): the vanishing point of the
@@ -3037,10 +3126,14 @@ impl Renderer {
     fn ensure_targets(&mut self) {
         // The under-water copy only where the water reads the scene (Medium and High).
         let under = self.water().reads_scene();
+        // The shafts' buffer at the tier's size (1 × 1 with none).
+        let shafts = self
+            .shaft_tier()
+            .map_or((1, 1), |t| dwell_look::shafts::buffer_size(self.size, t));
         if self
             .targets
             .as_ref()
-            .is_some_and(|t| t.under.is_some() == under)
+            .is_some_and(|t| t.under.is_some() == under && t.shafts_size() == shafts)
         {
             return;
         }
@@ -3050,7 +3143,12 @@ impl Renderer {
             &self.device,
             self.size,
             self.samples,
-            &self.scene_layout,
+            &frame::SceneGroups {
+                layout: &self.scene_layout,
+                read_layout: &self.scene_read_layout,
+                sampler: &self.under_sampler,
+                shafts,
+            },
             under.then_some((&self.under_layout, &self.under_sampler)),
         ));
     }
@@ -3625,6 +3723,31 @@ impl Renderer {
             // Your own torch's flame over your arms.
             self.flames
                 .draw_colour(&mut pass, flames::Group::Arms, true, &mut calls);
+        }
+        // The light shafts (ADR 0064) into their buffer at the tier's size, from the finished
+        // scene, when the frame draws some (the composite reads them).
+        if self.shaft_tier().is_some() && self.shafts_drawn() {
+            let query = self.timer.as_mut().and_then(|t| t.pass(timing::SHAFTS));
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("light shafts"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &targets.shafts.1,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                timestamp_writes: self.timer.as_ref().and_then(|t| t.writes(query)),
+                ..Default::default()
+            });
+            pass.set_bind_group(0, &self.frame_groups[scene_passes - 1], &[]);
+            pass.set_bind_group(1, &self.draw_group, &[]);
+            pass.set_bind_group(2, &targets.scene_read, &[]);
+            pass.set_pipeline(&self.shafts_pipeline);
+            pass.draw(0..3, 0..1);
+            calls += 1;
         }
         let cpu = crate::telemetry::now_ms() - t0 + collect_ms;
         // With the wind on, the composite draws the finished image and the motion pass reads it
@@ -4795,7 +4918,7 @@ const WIND_PERIOD: f64 = 1024.0;
 pub(crate) const FRAME_FLOATS: usize = 16
     + dwell_look::outline::OUTLINE_FLOATS
     + dwell_look::pixel_art::LIGHT_FLOATS
-    + 22 * 4
+    + 26 * 4
     + DAY_SKY_FLOATS;
 
 /// The atlas and its mipmaps, each with its side in texels: down to the level where a tile's gutter
@@ -5284,6 +5407,10 @@ mod tests {
     fn a_cpu_adapter_draws_no_clouds() {
         // Main's e2e suite (SwiftShader) slowed until two-client and walking tests timed out once
         // the clouds landed (0.11.10): their noise ran per pixel on the CPU.
+        for q in [ShaftQuality::Off, ShaftQuality::Low, ShaftQuality::High] {
+            assert_eq!(shafts_for(wgpu::DeviceType::Cpu, q), ShaftQuality::Off);
+            assert_eq!(shafts_for(wgpu::DeviceType::DiscreteGpu, q), q);
+        }
         for q in [CloudQuality::Off, CloudQuality::Low, CloudQuality::High] {
             assert_eq!(clouds_for(wgpu::DeviceType::Cpu, q), CloudQuality::Off);
             assert_eq!(clouds_for(wgpu::DeviceType::DiscreteGpu, q), q);

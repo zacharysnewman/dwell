@@ -37,6 +37,16 @@ struct Frame {
     // The lines (`line_vs`): x, y the drawing size (px), z a line's width (px: CSS px × the pixel
     // ratio, render/mod.rs `line_width_px`), so outlines read the same near and far.
     lines: vec4f,
+    // The light shafts (ADR 0064; dwell-look `shaft_uniforms`): shafts xy the light's NDC point in
+    // the air (under a fluid y the cells' drift, m/s), z the weight (0: none drawn), w the mode (0
+    // none, 1 air, 2 under a fluid); cfg x the samples, y the reach (a share of the way; under: m),
+    // z the decay (under: the fade depth, m), w the disc's radius (half screen heights; under: the
+    // cells' size, m); color rgb the light's (sRGB), w Snell's window's softened rim; window rgb
+    // its glow (sRGB), w how much of the window it is.
+    shafts: vec4f,
+    shafts_cfg: vec4f,
+    shafts_color: vec4f,
+    shafts_window: vec4f,
     // x eye height (world y), y face (±1), z exposure (× the eye's adaptation's), w the eye's face's
     // fog density (× its time of day's; the other face's is day.other_stars.y)
     eye: vec4f,
@@ -1204,12 +1214,26 @@ fn composited_of(c: vec4f, depth: f32, ray: vec3f, clear: vec3f, back: vec3f) ->
 // here is in their taps too. Three times a new effect vanished outside the blur's inner circle
 // while the taps re-composited the scene without it: the clouds from below (0.11.19) and above
 // (0.18.2), then the ink (0.20.1).
+
+// The light shafts over the finished picture (ADR 0064): the shafts pass's glow (`shafts_fs`, at
+// the tier's resolution, filtered up) × the light's colour and weight, screened over the colour so
+// it brightens softly and never clips. None when the frame draws none (uniform).
+fn with_shafts(color: vec3f, p: vec2i) -> vec3f {
+    if (frame.shafts.w < 0.5 || frame.shafts.z <= 0.0) {
+        return color;
+    }
+    let uv = (vec2f(p) + 0.5) / vec2f(textureDimensions(scene_color));
+    let g = textureSampleLevel(shafts_tex, scene_sampler, uv, 0.0).r * frame.shafts.z;
+    let glow = clamp(frame.shafts_color.rgb * g, vec3f(0.0), vec3f(1.0));
+    return color + glow * (1.0 - color);
+}
+
 fn composite_pixel(p: vec2i, ndc: vec2f) -> vec3f {
     // Near or under a fluid's surface each pixel is under it or not by its own ray (the waterline,
     // WATER_RENDERING.md §10), with the meniscus along the line between.
     // Deep under it (x 1) the whole view is, as one uniform branch.
     if (frame.water.x > 0.5 && frame.water.x < 1.5) {
-        return composite_underwater(p, view_ray(ndc), textureLoad(scene_color, p, 0));
+        return with_shafts(composite_underwater(p, view_ray(ndc), textureLoad(scene_color, p, 0)), p);
     }
     // Near the surface (x 2 or 3) a pixel under the line takes only the underwater composite and
     // the band (the ordinary composite would be thrown away: computing it anyway cost the whole
@@ -1222,7 +1246,7 @@ fn composite_pixel(p: vec2i, ndc: vec2f) -> vec3f {
         let f = eye_fluid();
         let d = waterline_m(ray, f);
         if (d < 0.0) {
-            return waterline_band(p, composite_underwater(p, ray, textureLoad(scene_color, p, 0)), d, f);
+            return with_shafts(waterline_band(p, composite_underwater(p, ray, textureLoad(scene_color, p, 0)), d, f), p);
         }
         // The pixel just above the line takes the rim's shade by the share of it the line covers
         // (render/water.rs `line_shade`), so the rim's top edge is anti-aliased, not a whole
@@ -1236,7 +1260,7 @@ fn composite_pixel(p: vec2i, ndc: vec2f) -> vec3f {
     if (frame.outline.x > 0.5) {
         s.color = outlined(s, p);
     }
-    return s.color;
+    return with_shafts(s.color, p);
 }
 
 // The finished picture, dithered, into the canvas (no wind this frame).
@@ -1303,17 +1327,31 @@ fn waterline_band(p: vec2i, c: vec3f, d: f32, f: Fluid) -> vec3f {
     let base = mix(above, c, 1.0 - m + m * smoothstep(0.0, 1.0, t)) * f.band.rgb;
     // Ripples, broken by `breakup`: warped by the noise's slope and coming and going under a
     // second, finer noise, instead of smooth parallel stripes.
+    // Blurred along the band's rows (three taps BAND_BLUR_PX apart; owner, 2026-11-07: the band
+    // 'looks pixelated. Blurring is fine.'), where the receding plane packs the texture tightest.
     let b = f.band_extra.y;
+    let duv = vec2f(4.0 * BAND_BLUR_PX / size.y / (t + 0.08), 0.0);
+    let r = (band_ripples(uv - duv, b, f) + band_ripples(uv, b, f) + band_ripples(uv + duv, b, f)) / 3.0;
+    var col = base * r.x + vec3f(r.y);
+    // The dark rim along the top edge, then the bright line under it (band_edge).
+    col *= band_edge(px, f);
+    return mix(c, col, 1.0 - smoothstep(0.55, 1.0, t));
+}
+
+// The band's blur along its rows (px of the drawing buffer between taps).
+const BAND_BLUR_PX: f32 = 1.5;
+
+// The band's ripples at texture point `uv` (waterline_band): x the streaks' multiplier, y the
+// glint; broken by `b`, warped by the noise's slope and coming and going under a second, finer
+// noise, instead of smooth parallel stripes.
+fn band_ripples(uv: vec2f, b: f32, f: Fluid) -> vec2f {
     let w = noise_t(uv * vec2f(0.45, 0.3) + 11.0);
     let n0 = noise_t(uv * vec2f(1.0 + 1.2 * b, 0.35) + w.yz * (0.35 * b)).x;
     let n1 = noise_t(uv * vec2f(2.6, 0.9) + 5.0).x;
     let n = mix(n0, n0 * 1.8 * smoothstep(-0.25, 0.45, n1) + 0.25 * w.x, b);
     let streak = clamp(1.0 + f.band.a * 2.5 * n, 0.3, 1.8);
     let glint = smoothstep(0.3, 0.45, noise_t(uv * vec2f(2.1, 0.8) + 7.0).x) * f.band_extra.x;
-    var col = base * streak + vec3f(glint);
-    // The dark rim along the top edge, then the bright line under it (band_edge).
-    col *= band_edge(px, f);
-    return mix(c, col, 1.0 - smoothstep(0.55, 1.0, t));
+    return vec2f(streak, glint);
 }
 
 // How far `waterline_m` changes a pixel across the line (x, m; render/water.rs `meniscus_px_m`:
@@ -1419,12 +1457,21 @@ fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
         let fp = to_surface * 2.0 * frame.tan.y / f32(textureDimensions(scene_color).y) / max(rise, 0.02);
         let look = underside_look(hit, dir, fp, f, fluid);
         let light = look.x * (1.0 + look.y);
+        // The mirror: the water's in-scatter, textured.
+        let mirror = display(underwater(underwater(vec3f(0.0), 1e6, f) * light, to_surface, f));
         if (leaves) {
-            // Out through the window: the sky, with the patch's light round the sun.
-            back = display(underwater((sky_radiance(dir) + underwater(vec3f(0.0), 1e6, f) * look.y) * look.x, to_surface, f));
+            // Out through the window: the sky, under the window's glow (shafts.json `window`: a
+            // bright white-cyan, strongest at its middle), with the patch's light round the sun;
+            // its rim softened into the mirror over the look's `edge` (ADR 0064).
+            let bent = rise + dot(noise_t(hit * 0.9).yz * 0.18, dir.xz);
+            let rim = sqrt(max(1.0 - 1.0 / (ior * ior), 0.0));
+            let inside = smoothstep(rim, rim + max(frame.shafts_color.w, 1e-3) * (1.0 - rim), bent);
+            let glow = inverse_display(frame.shafts_window.rgb);
+            let sky_in = mix(sky_radiance(dir), glow, frame.shafts_window.w * (0.55 + 0.45 * inside));
+            let window = display(underwater((sky_in + underwater(vec3f(0.0), 1e6, f) * look.y) * look.x, to_surface, f));
+            back = mix(mirror, window, inside);
         } else {
-            // The mirror: the water's in-scatter, textured.
-            back = display(underwater(underwater(vec3f(0.0), 1e6, f) * light, to_surface, f));
+            back = mirror;
         }
     } else if (c.a < 1.0) {
         back = display(underwater(sky_radiance(dir), to_surface, f));
@@ -1448,6 +1495,123 @@ fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
     }
     let shown = display(underwater(lit, min(dist, to_surface), f));
     return mix(back, shown, min(c.a, 1.0));
+}
+";
+
+/// The light shafts pass (ADR 0064): the glow a pixel of the shafts' buffer (the tier's share of
+/// the drawing buffer) gathers, read by `with_shafts` in the composite.
+const SHAFTS: &str = r"
+// How many air samples share one look-up of the clouds' density.
+const SHAFTS_CLOUD_EVERY: i32 = 6;
+
+// A per-pixel offset (0–1) for the samples, so the steps band into noise, not rings.
+fn shafts_jitter(p: vec2f) -> f32 {
+    return fract(52.9829189 * fract(dot(p, vec2f(0.06711056, 0.00583715))));
+}
+
+// The full-resolution pixel at screen point `ndc` (clamped to the screen).
+fn shafts_pixel(ndc: vec2f, size: vec2f) -> vec2i {
+    return vec2i(clamp((vec2f(ndc.x, -ndc.y) * 0.5 + 0.5) * size, vec2f(0.0), size - 1.0));
+}
+
+// How much of the sky toward screen point `ndc` the cloud deck hides (0–1): the deck's density as
+// the composite finds it (dwell_cloud_layer), at most three octaves and with no self-shadow, so
+// the gaps between clouds let the shafts through. 0 with the clouds off.
+fn shafts_cloud(ndc: vec2f) -> f32 {
+    let octaves = min(i32(frame.cloud_cfg.y), 3);
+    if (octaves <= 0) {
+        return 0.0;
+    }
+    let deck = dwell_cloud_deck(normalize(view_ray(ndc)), frame.eye.y, frame.clouds, frame.cloud_cfg.w);
+    if (deck.w <= 0.0) {
+        return max(-deck.w, 0.0) * frame.cloud_cfg.x;
+    }
+    let p = cloud_warped(deck.xy, frame.clouds.zw, 0.0);
+    return deck.w * cloud_shape(cloud_fbm(p, octaves, 0.0), frame.cloud_cfg.x);
+}
+
+// In the air: a radial blur toward the light's screen point over the open sky (the scene's
+// coverage: geometry dark, sky bright, the clouds' density between), each sample weighed by the disc round the light and
+// decayed along the way, so gaps in trees, clouds' edges, cave mouths and hills cast soft rays.
+fn shafts_air(ndc: vec2f, j: f32, size: vec2f) -> f32 {
+    let light = frame.shafts.xy;
+    let steps = max(i32(frame.shafts_cfg.x), 1);
+    let delta = (light - ndc) * frame.shafts_cfg.y / f32(steps);
+    let aspect = size.x / size.y;
+    var q = ndc + delta * j;
+    var w = 1.0;
+    var sum = 0.0;
+    var total = 0.0;
+    // The clouds' density is found every SHAFTS_CLOUD_EVERY samples and held between (the
+    // deck's noise is the pass's dearest part; the per-pixel jitter blends the steps).
+    var cloud = 0.0;
+    for (var k = 0; k < steps; k++) {
+        if (k % SHAFTS_CLOUD_EVERY == 0) {
+            cloud = shafts_cloud(q + delta * (0.5 * f32(SHAFTS_CLOUD_EVERY - 1)));
+        }
+        let open = (1.0 - min(textureLoad(scene_color, shafts_pixel(q, size), 0).a, 1.0)) * (1.0 - cloud);
+        let r = length((q - light) * vec2f(aspect, 1.0)) / max(frame.shafts_cfg.w, 1e-3);
+        let disc = max(1.0 - r, 0.0);
+        sum += open * disc * disc * w;
+        total += w;
+        w *= frame.shafts_cfg.z;
+        q += delta;
+    }
+    return sum / max(total, 1e-4);
+}
+
+// Under a fluid: march the view ray (to what it shows, the surface or the reach), and at each
+// point look up the surface along the sun's refracted direction: lit where the underside's cells
+// are bright there (two drifting noise layers, so the shafts flicker as the reference's do), faded
+// by the depth under the surface and the distance along the ray.
+fn shafts_under(ndc: vec2f, j: f32, size: vec2f) -> f32 {
+    let f = eye_fluid();
+    let face = frame.eye.y;
+    let ray = view_ray(ndc);
+    let dir = normalize(ray);
+    let px = shafts_pixel(ndc, size);
+    var dist = frame.shafts_cfg.y;
+    if (textureLoad(scene_color, px, 0).a > 0.0) {
+        let d = scene_depth_at(px).x;
+        if (d > 0.0) {
+            dist = min(dist, d * length(ray));
+        }
+    }
+    let rise = face_rise(face, dir);
+    let below = max(face_y(face, frame.water.z) - face_y(face, frame.eye.x), 0.0);
+    if (rise > 1e-4) {
+        dist = min(dist, below / rise);
+    }
+    let sun = sun_through(frame.day.sun.xyz, f.wave.x);
+    let slant = sun.xz / max(face_rise(face, sun), 0.2);
+    let steps = max(i32(frame.shafts_cfg.x), 1);
+    let dt = dist / f32(steps);
+    let cell = max(frame.shafts_cfg.w, 0.05);
+    let drift = frame.shafts.y * frame.fog.z;
+    var sum = 0.0;
+    for (var k = 0; k < steps; k++) {
+        let t = (f32(k) + j) * dt;
+        let h = max(below - rise * t, 0.0);
+        let at = (frame.wrap.xy + dir.xz * t + slant * h) / cell;
+        let a = noise_t(at + vec2f(drift, 0.6 * drift) / cell).x;
+        let b = noise_t(at * 0.47 - vec2f(0.4 * drift, drift) / cell + 3.1).x;
+        let lit = smoothstep(0.2, 0.6, a) * smoothstep(-0.2, 0.4, b);
+        sum += lit * exp(-h / max(frame.shafts_cfg.z, 0.1) - t / max(frame.shafts_cfg.y, 0.1));
+    }
+    return sum * dt / max(frame.shafts_cfg.y, 0.1) * 3.0;
+}
+
+@fragment
+fn shafts_fs(i: SkyOut) -> @location(0) vec4f {
+    let size = vec2f(textureDimensions(scene_color));
+    let j = shafts_jitter(i.clip.xy);
+    var g = 0.0;
+    if (frame.shafts.w > 1.5) {
+        g = shafts_under(i.ndc, j, size);
+    } else if (frame.shafts.w > 0.5) {
+        g = shafts_air(i.ndc, j, size);
+    }
+    return vec4f(g, 0.0, 0.0, 1.0);
 }
 ";
 
@@ -2691,7 +2855,8 @@ fn scene_bindings(samples: u32) -> String {
          @group(2) @binding(0) var scene_color: texture_2d<f32>;\n\
          @group(2) @binding(1) var scene_depth: {depth};\n\
          @group(3) @binding(0) var finished: texture_2d<f32>;\n\
-         @group(2) @binding(2) var scene_sampler: sampler;\n",
+         @group(2) @binding(2) var scene_sampler: sampler;\n\
+         @group(2) @binding(3) var shafts_tex: texture_2d<f32>;\n",
     )
 }
 
@@ -2699,7 +2864,7 @@ fn scene_bindings(samples: u32) -> String {
 /// shading and every entry point.
 pub fn source(samples: u32) -> String {
     format!(
-        "{}{DRAWS}\n{FADE}\n{}\n{}\n{}\n{}\n{TERRAIN}\n{MOTION}\n{OUTLINE}\n{WATER}\n{}",
+        "{}{DRAWS}\n{FADE}\n{}\n{}\n{}\n{}\n{TERRAIN}\n{MOTION}\n{OUTLINE}\n{WATER}\n{SHAFTS}\n{}",
         lighting_source(),
         dwell_look::lod_blend::LOD_BLEND.pattern.wgsl(),
         super::lod_map::wgsl(&dwell_look::lod_map::LOD_MAP),
@@ -3178,7 +3343,7 @@ mod tests {
             .find("s.color = outlined(s, p);")
             .expect("the ink is in the pixel");
         assert!(
-            pixel[ink..].contains("return s.color;"),
+            pixel[ink..].contains("return with_shafts(s.color, p);"),
             "nothing undoes it after"
         );
         assert!(body("finished_fs").contains("composite_pixel("));

@@ -131,9 +131,50 @@ pub fn scene_layout(device: &wgpu::Device, samples: u32) -> wgpu::BindGroupLayou
     };
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("scene"),
+        entries: &[
+            texture(0, false),
+            texture(1, samples > 1),
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 3,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+        ],
+    })
+}
+
+/// The scene targets the light shafts pass reads (group 2: the colour and the view depth, as
+/// [`scene_layout`]'s first two), without the shafts' own buffer, which it draws into (ADR 0064).
+pub fn scene_read_layout(device: &wgpu::Device, samples: u32) -> wgpu::BindGroupLayout {
+    let texture = |binding, multisampled| wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Texture {
+            sample_type: wgpu::TextureSampleType::Float { filterable: false },
+            view_dimension: wgpu::TextureViewDimension::D2,
+            multisampled,
+        },
+        count: None,
+    };
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("scene (read)"),
         entries: &[texture(0, false), texture(1, samples > 1)],
     })
 }
+
+/// The light shafts' buffer's format: one channel, the glow (ADR 0064).
+pub const SHAFTS: wgpu::TextureFormat = wgpu::TextureFormat::R16Float;
 
 type Target = (wgpu::Texture, wgpu::TextureView);
 
@@ -149,6 +190,19 @@ pub struct Targets {
     pub scene: wgpu::BindGroup,
     /// The under-water copy and its bind group (`under_layout`), when the water reads the scene.
     pub under: Option<(Target, wgpu::BindGroup)>,
+    /// The light shafts' buffer (the tier's size; 1 × 1 with the shafts off) and the scene group
+    /// the shafts pass reads (ADR 0064).
+    pub shafts: Target,
+    pub scene_read: wgpu::BindGroup,
+}
+
+/// What [`Targets::new`] makes the scene's groups with: the scene layout, the shafts pass's read
+/// layout, the filtering sampler, and the shafts' buffer size.
+pub struct SceneGroups<'a> {
+    pub layout: &'a wgpu::BindGroupLayout,
+    pub read_layout: &'a wgpu::BindGroupLayout,
+    pub sampler: &'a wgpu::Sampler,
+    pub shafts: (u32, u32),
 }
 
 impl Targets {
@@ -156,9 +210,10 @@ impl Targets {
         device: &wgpu::Device,
         (width, height): (u32, u32),
         samples: u32,
-        layout: &wgpu::BindGroupLayout,
+        groups: &SceneGroups,
         under: Option<(&wgpu::BindGroupLayout, &wgpu::Sampler)>,
     ) -> Self {
+        let layout = groups.layout;
         let make = |format, label, samples, usage| {
             let texture = device.create_texture(&wgpu::TextureDescriptor {
                 label: Some(label),
@@ -192,9 +247,49 @@ impl Targets {
         );
         let view_depth = make(VIEW_DEPTH, "view depth", samples, read);
         let depth = make(DEPTH, "depth", samples, attach);
+        let shafts = {
+            let texture = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("light shafts"),
+                size: wgpu::Extent3d {
+                    width: groups.shafts.0.max(1),
+                    height: groups.shafts.1.max(1),
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: SHAFTS,
+                usage: read,
+                view_formats: &[],
+            });
+            let view = texture.create_view(&Default::default());
+            (texture, view)
+        };
         let scene = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("scene"),
             layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&colour.1),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&view_depth.1),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(groups.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&shafts.1),
+                },
+            ],
+        });
+        let scene_read = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("scene (read)"),
+            layout: groups.read_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -240,7 +335,15 @@ impl Targets {
             depth,
             scene,
             under,
+            shafts,
+            scene_read,
         }
+    }
+
+    /// The shafts' buffer's size.
+    pub fn shafts_size(&self) -> (u32, u32) {
+        let s = self.shafts.0.size();
+        (s.width, s.height)
     }
 
     /// The colour attachment the scene passes draw into.
@@ -257,6 +360,7 @@ impl Drop for Targets {
         self.colour.0.destroy();
         self.view_depth.0.destroy();
         self.depth.0.destroy();
+        self.shafts.0.destroy();
         if let Some(((t, _), _)) = &self.under {
             t.destroy();
         }

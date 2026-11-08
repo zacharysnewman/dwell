@@ -1255,14 +1255,18 @@ mod tests {
                 }
                 let top = band_t(d(split + 1.0), look.band_depth_m).expect("the band's top");
                 assert!(top < 0.05, "the top edge is the surface: {top}");
-                // A slab of real thickness: rows down to its foot (5–8 % of the screen level).
+                // A slab of real thickness: rows down to its foot (2.5–4.5 % of the screen level;
+                // halved in 0.50.23, underwater.test.mjs's 2.5–4 % of the lens plane).
                 let mut foot = split + 1.0;
                 while band_t(d(foot + 1.0), look.band_depth_m).is_some() {
                     foot += 1.0;
                 }
                 let share = (foot - split) / h;
                 if pitch == 0.0 {
-                    assert!(share > 0.05 && share < 0.08, "level: {share} of the screen");
+                    assert!(
+                        share > 0.025 && share < 0.045,
+                        "level: {share} of the screen"
+                    );
                 }
                 // Along the edge: darker first, then lighter, then the band's own colour, in
                 // pixels across the line at any pitch and roll.
@@ -1334,7 +1338,7 @@ mod tests {
         // The band as band_t, band_edge, band_uv; Snell's window as sees_out; the underside's
         // texture from below and the body's partial shadow (the blotch).
         assert!(src.contains("let t = -d / depth;"));
-        assert!(src.contains("return waterline_band(p, composite_underwater(p, ray, textureLoad(scene_color, p, 0)), d, f);"));
+        assert!(src.contains("return with_shafts(waterline_band(p, composite_underwater(p, ray, textureLoad(scene_color, p, 0)), d, f), p);"));
         assert!(src.contains("let rim = 1.0 - smoothstep(f.rim.x - 0.75, f.rim.x + 0.25, px);"));
         assert!(src.contains("let uv = vec2f(along * 4.0, 1.0) / (t + 0.08)"));
         assert!(src.contains("1.0 - bent * bent < 1.0 / (ior * ior)"));
@@ -1344,7 +1348,7 @@ mod tests {
         // over its distance (underside_contrast), the sun patch along sun_through.
         assert!(src.contains("rim_above = 1.0 + (band_edge(0.0, f) - 1.0) * clamp(1.0 - d / waterline_across(f).x, 0.0, 1.0);"));
         assert!(src.contains(
-            "back = display(underwater(underwater(vec3f(0.0), 1e6, f) * light, to_surface, f));"
+            "let mirror = display(underwater(underwater(vec3f(0.0), 1e6, f) * light, to_surface, f));"
         ));
         assert!(src.contains("let h = (sun - up * face_rise(face, sun)) / max(ior, 1.0);"));
         assert!(src.contains("return h + up * sqrt(max(1.0 - dot(h, h), 0.0));"));
