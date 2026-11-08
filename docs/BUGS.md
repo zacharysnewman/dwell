@@ -6,6 +6,17 @@ pins it.
 
 ## Open
 
+### 50. Flying up at the top flight speed stops the game ticking on CI
+
+*Found 2026-11-07 (0.50.32).* `e2e/flightSpeed.spec.ts` on CI (software renderer): after the join's
+stall is waited out (#49) and 60 ticks at 8 m/s fly fine, Space held at level 11 (362 m/s, straight
+up in `?world=flat`) ticks 26 controller ticks in 20 s (`state().stats.ticks`) and the player climbs 0 m;
+it failed the same way with a 1 s timed hold on main at 0.50.30 and 0.50.25 (#412). It passes locally,
+on the M1 GPU and on SwiftShader. Unknown yet whether the page stops drawing (streaming 362 m/s of
+new chunks on the software renderer) or something holds prediction (flight loading, 0.50.13; the
+stream budget, 0.50.14). Next: on CI, read `telemetry().frames.interval` and the terrain counts while
+held, to tell a stalled page from a held controller.
+
 ### 49. On the software renderer the page stops drawing for seconds just after the terrain is ready
 
 *Found 2026-11-07 (0.50.31) while getting CI's e2e green.* On SwiftShader (the suite's CI adapter, and
