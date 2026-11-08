@@ -117,10 +117,10 @@ impl Run {
                     .set_shadow_quality(dwell_look::shadows::ShadowQuality::from_level(l as u32));
             }
         }
-        if let Some(q) = s["water"]["quality"].as_str() {
-            if let Some(w) = dwell_client::render::water::WaterQuality::named(q) {
-                h.renderer().set_water_quality(w);
-            }
+        if let Some(q) = s["water"]["quality"].as_str()
+            && let Some(w) = dwell_client::render::water::WaterQuality::named(q)
+        {
+            h.renderer().set_water_quality(w);
         }
         if let Some(c) = s["clouds"].as_str()
             && let Some(q) = dwell_look::clouds::CloudQuality::from_name(c)

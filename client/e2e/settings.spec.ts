@@ -5,6 +5,7 @@
 // to the clipboard as JSON.
 import { HUD_ELEMENTS } from '../src/ui/hud.gen';
 import { expect, test, type Locator } from '@playwright/test';
+import { untilTicking } from './ticking';
 
 /** A settings row by its name, in the pane shown. */
 function row(menu: Locator, name: string): Locator {
@@ -16,6 +17,7 @@ function row(menu: Locator, name: string): Locator {
 test('settings menu: opens from the corner, in panes, without fog sliders, and is kept', async ({
   page,
 }) => {
+  test.setTimeout(90_000);
   await page.goto('./?world=flat');
   await expect(page.locator('#net-status')).toContainText('player', { timeout: 20_000 });
   const button = page.locator('#menu-button');
@@ -68,6 +70,7 @@ test('settings menu: opens from the corner, in panes, without fog sliders, and i
   await expect(row(menu, 'Field of view').locator('.settings-value')).toHaveText('60°');
 
   await page.reload();
+  await untilTicking(page);
   await page.locator('#menu-button').click();
   await expect(menu.locator('#graphics-preset .settings-value')).toHaveText('Custom');
   await expect(row(menu, 'Distant memory').locator('.settings-value')).toHaveText('1024 MB');

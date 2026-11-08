@@ -6,6 +6,44 @@ pins it.
 
 ## Open
 
+### 51. Reopening a world in the same tab stalls on CI: spawn's reload and settings' reload
+
+Found 2026-11-08 getting CI green (PR #421). On CI's software renderer, two specs fail on all three
+attempts, both right after `page.reload()` of a local world: `spawn.spec.ts` ("a spawn link puts the
+player back …": after the reload `terrainReady` never comes within 60 s) and `settings.spec.ts` (after
+its reload the page ignores clicks for the rest of the 90 s). Both pass on a real GPU and on local
+SwiftShader. Suspects: the reloaded page waiting on the old page's local-world worker or storage (a
+save in flight, a lock not released), or #49's stall far longer on a reopened world. Next: log the
+time from reload to the local world's start, and the storage/worker events, on CI.
+
+### 50. Flying up at the top flight speed stops the game ticking on CI
+
+*Found 2026-11-07 (0.50.32).* `e2e/flightSpeed.spec.ts` on CI (software renderer): after the join's
+stall is waited out (#49) and 60 ticks at 8 m/s fly fine, Space held at level 11 (362 m/s, straight
+up in `?world=flat`) ticks 26 controller ticks in 20 s (`state().stats.ticks`) and the player climbs 0 m;
+it failed the same way with a 1 s timed hold on main at 0.50.30 and 0.50.25 (#412). It passes locally,
+on the M1 GPU and on SwiftShader. Unknown yet whether the page stops drawing (streaming 362 m/s of
+new chunks on the software renderer) or something holds prediction (flight loading, 0.50.13; the
+stream budget, 0.50.14). Next: on CI, read `telemetry().frames.interval` and the terrain counts while
+held, to tell a stalled page from a held controller.
+
+### 49. On the software renderer the page stops drawing for seconds just after the terrain is ready
+
+*Found 2026-11-07 (0.50.31) while getting CI's e2e green.* On SwiftShader (the suite's CI adapter, and
+locally with `playwright.config.ts`), `?seed=31&spawn=b` reports `terrainReady` with 9 of ~180 streamed
+chunks meshed; within a second rAF stops for 3–5 s (main thread responsive, `page.evaluate` answers, no
+long task) while the rest are meshed and first drawn (`upload.bytes` peaks at ~5 MB in a frame), then
+the game catches up its ticks at once. 0.50.10 does the same (~3 s), so it is not a recent regression;
+`?shadows=off` and `?lod=off` keep it. All 14 pipelines are created up front, so it is not a lazily
+created pipeline. The suspect is SwiftShader compiling its per-state draw routines on the first draws
+(it compiles when a draw first uses a state, not when the pipeline is created). A real GPU does not
+stall (the same specs pass on the M1 GPU). Effects on CI: input held right after the join moves the
+player 0 m (spawn.spec, gamepad.spec, flightSpeed.spec), the loading screen's fade and the menu button's
+stability wait for frames (join.spec, settings.spec). The specs now wait it out (`e2e/ticking.ts`
+`untilTicking`: the streamed chunks meshed, then ticking in real time) or allow for it in their timeouts.
+Next: a Chrome trace of the GPU process during the stall, to see whether it is the routine compiles or
+the uploads; if uploads, a per-frame upload cap on a CPU adapter.
+
 ### 41b. A reservoir filled behind a dam never falls asleep (the rest of #41; partly fixed in 0.49.44)
 
 *Measured 2026-11-06 (0.49.39), the remaining part of #41.* At seed 0's dam sites

@@ -53,7 +53,22 @@ fn a_save_of_many_dirty_chunks_costs_no_tick_more_than_a_few_ms() {
     // face-a-only: the save path has no up; the chunks are written straight to the world.
     // As the browser's server saves (an inline store, no I/O thread): 300 dirty chunks were one
     // tick of encoding and committing (red: 106 ms in a dev build); now ≤ 2 ms of encoding a
-    // tick, then the commit on a tick of its own.
+    // tick, then the commit on a tick of its own. A wall-clock measure: on a busy CI runner (the
+    // workspace's tests in parallel) one save read 16.7 ms where it reads ~4 ms alone, so the
+    // best of three saves is held to the bar (a regression to one big tick fails all three).
+    let worst = (0..3)
+        .map(|_| worst_save_tick())
+        .fold(f64::INFINITY, f64::min);
+    println!("the save's worst tick (best of three): {worst:.2} ms");
+    assert!(
+        worst < 15.0,
+        "a save tick took {worst:.1} ms of the server's tick"
+    );
+}
+
+/// One save of 300 dirty chunks on an inline store: its worst tick's save phase (ms), with the
+/// chunks checked saved.
+fn worst_save_tick() -> f64 {
     let db = WorldDb::in_memory().expect("opens");
     let mut f = Fixture::new(ServerConfig {
         store: Some(WorldStore::new(db.clone(), false)),
@@ -75,14 +90,10 @@ fn a_save_of_many_dirty_chunks_costs_no_tick_more_than_a_few_ms() {
         ticks += 1;
         assert!(ticks < 5 * 60, "the save never completed");
     }
-    println!("the save's worst tick: {worst:.2} ms");
-    assert!(
-        worst < 15.0,
-        "a save tick took {worst:.1} ms of the server's tick"
-    );
     // And it is all there.
     assert_eq!(f.server.save_stats().dirty, 0);
     for (c, voxels) in coords {
         assert_eq!(db.load_chunk(c).expect("saved").voxels, voxels, "{c:?}");
     }
+    worst
 }
