@@ -1183,7 +1183,11 @@ mod tests {
             let flags = welcome_flags::REGION_EDITS
                 | welcome_flags::BRUSHES
                 | if flies { welcome_flags::FLIGHT } else { 0 }
-                | if policy { welcome_flags::FLIGHT_POLICY } else { 0 };
+                | if policy {
+                    welcome_flags::FLIGHT_POLICY
+                } else {
+                    0
+                };
             send_registry(&mut s, &build_registry(), 1 << 16);
             s.on_reliable(
                 Channel::Control,
@@ -1196,13 +1200,27 @@ mod tests {
                 mode: "adventure",
                 ..settings()
             };
-            send_settings(&mut s, &world_settings::SettingsFields::default().with(adventure));
+            send_settings(
+                &mut s,
+                &world_settings::SettingsFields::default().with(adventure),
+            );
             assert!(s.take_abilities_changed());
-            assert_eq!(abilities(&s), (false, false), "adventure: no flight, no brushes");
+            assert_eq!(
+                abilities(&s),
+                (false, false),
+                "adventure: no flight, no brushes"
+            );
             assert_eq!(s.world_settings().map(|w| w.mode), Some("adventure"));
-            send_settings(&mut s, &world_settings::SettingsFields::default().with(settings()));
+            send_settings(
+                &mut s,
+                &world_settings::SettingsFields::default().with(settings()),
+            );
             assert!(s.take_abilities_changed());
-            assert_eq!(abilities(&s), (policy, true), "creative again, as the policy allows");
+            assert_eq!(
+                abilities(&s),
+                (policy, true),
+                "creative again, as the policy allows"
+            );
         }
     }
 

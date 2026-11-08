@@ -1354,7 +1354,10 @@ fn in_adventure_the_server_ignores_the_fly_bit() {
     let mut sim = NetSim::with(LinkConditions::default(), adventure_config());
     let c = sim.join(Some(fly_script()), false);
     assert_eq!(sim.clients[c].welcome_flags & welcome_flags::FLIGHT, 0);
-    assert_ne!(sim.clients[c].welcome_flags & welcome_flags::FLIGHT_POLICY, 0);
+    assert_ne!(
+        sim.clients[c].welcome_flags & welcome_flags::FLIGHT_POLICY,
+        0
+    );
     sim.step(10);
     let start = sim.clients[c].position().y;
     sim.step(ticks(1.0));
@@ -1374,11 +1377,11 @@ fn the_host_changing_the_mode_to_adventure_grounds_a_flying_player() {
     sim.step(10);
     let start = sim.clients[c].position().y;
     sim.step(ticks(1.0));
-    let up = sim.server.feet_of(sim.clients[c].player_id).unwrap()[1];
+    let up = sim.clients[c].position().y;
     assert!(up > start + 5.0, "flying in creative");
     assert!(sim.server.set_mode("adventure"));
     sim.step(ticks(4.0));
-    let now = sim.server.feet_of(sim.clients[c].player_id).unwrap()[1];
+    let now = sim.clients[c].position().y;
     assert!(now < up - 3.0, "fell once flight went: {up} -> {now}");
 }
 

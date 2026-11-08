@@ -79,6 +79,7 @@ export class LocalCore {
     upgrade = false,
     waterWorker = false,
     jobsWorker = false,
+    mode?: string,
   ): Promise<LocalCore> {
     const exports = (await loadWasm()) as { memory?: WebAssembly.Memory };
     const core = new LocalCore(
@@ -93,6 +94,7 @@ export class LocalCore {
         upgrade,
         waterWorker,
         jobsWorker,
+        mode,
       ),
     );
     core.memory = exports.memory ?? null;

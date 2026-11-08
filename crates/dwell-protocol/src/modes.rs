@@ -124,7 +124,10 @@ mod tests {
     #[test]
     fn the_generators_vocabulary_is_this_one_in_order() {
         let script = include_str!("../../../shared/modes/gen.mjs");
-        let names: Vec<String> = Ability::ALL.iter().map(|a| format!("'{}'", a.name())).collect();
+        let names: Vec<String> = Ability::ALL
+            .iter()
+            .map(|a| format!("'{}'", a.name()))
+            .collect();
         assert!(
             script.contains(&format!("ABILITIES = [{}];", names.join(", "))),
             "shared/modes/gen.mjs ABILITIES must list {names:?}"

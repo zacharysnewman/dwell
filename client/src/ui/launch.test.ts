@@ -136,11 +136,17 @@ describe('where routes open', () => {
       seed: '42',
       type: 'flat',
       spawn: '',
+      mode: '',
     });
     // The New world form's Spawn: with `new` it is the new world's first spawn, not a spawn link.
     expect(launchOf('?new=1&name=Hill&seed=42&type=terrain&spawn=portal-b')).toMatchObject({
       kind: 'new',
       spawn: 'portal-b',
+    });
+    // The New world form's Mode (ADR 0065).
+    expect(launchOf('?new=1&name=Hill&seed=42&type=terrain&mode=adventure')).toMatchObject({
+      kind: 'new',
+      mode: 'adventure',
     });
     // `seed` alone is a world by link; with `new` it is the new world's seed.
     expect(launchOf('?seed=42').kind).toBe('link');

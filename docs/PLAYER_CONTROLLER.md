@@ -535,7 +535,7 @@ layer — so a player can rise from the ground to see the whole world (ARCHITECT
 - **Input.** `fly` is a *mode* bit held in every input frame while flight is on (`input_buttons::FLY`);
   the client toggles it (`dwell-game`'s `FlightToggle`: the F key, `input::FLY_KEY`, or the touch
   Fly button; Jump pressed twice is two jumps — owner, 2026-10-15). The server clears the bit for players its flight policy
-  excludes (`dwell-server --flight everyone|ops|nobody`, default everyone; `Welcome` says whether
+  excludes, and for everyone in a game mode without `flight` (adventure; ADR 0065) (`dwell-server --flight everyone|ops|nobody`, default everyone; `Welcome` says whether
   this player may fly), so a client that sends it anyway just walks.
 - **Layer.** `step_fly` runs before crouch, so flying cancels climbing and swimming and stands a
   crouched player up (the exclusive rule of `step_crouch`). While flying there is no gravity: the

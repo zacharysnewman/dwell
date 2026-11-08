@@ -50,6 +50,8 @@ export interface LocalWorld {
    * ui/upgradePrompt.ts): the world file opens though its line is older.
    */
   upgrade?: boolean;
+  /** A new world's game mode by name (ADR 0065, the New world form's Mode); a saved world keeps its own. */
+  mode?: string;
 }
 
 /** The spawns a world can start at (`?spawn=`, a new world's Spawn): "" is face A's usual one. */

@@ -2515,6 +2515,7 @@ impl Inner {
             may_fly,
             region_edits,
             brushes,
+            ..
         }) = self.session.as_ref().map(|s| s.state().clone())
         else {
             return;

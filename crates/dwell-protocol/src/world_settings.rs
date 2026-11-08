@@ -280,8 +280,15 @@ mod tests {
             ..D
         };
         let f = SettingsFields::default().with(adventure);
-        assert!(f.0.iter().any(|(t, b)| *t == tag::MODE && b == b"adventure"));
-        assert_ne!(tag::MODE & tag::OPTIONAL, 0, "optional: no new compatibility line");
+        assert!(
+            f.0.iter()
+                .any(|(t, b)| *t == tag::MODE && b == b"adventure")
+        );
+        assert_ne!(
+            tag::MODE & tag::OPTIONAL,
+            0,
+            "optional: no new compatibility line"
+        );
         // A build before modes reads the same fields with its known ones only: the mode field is
         // skipped as an unknown optional one, and its world plays as before (creative).
         let older = |f: &SettingsFields| {
@@ -300,7 +307,11 @@ mod tests {
                 .cloned()
                 .collect(),
         );
-        assert_eq!(before.settings(adventure).map(|s| s.mode), Ok("adventure"), "the caller's default");
+        assert_eq!(
+            before.settings(adventure).map(|s| s.mode),
+            Ok("adventure"),
+            "the caller's default"
+        );
         assert_eq!(before.settings(D).map(|s| s.mode), Ok("creative"));
         // A newer build's mode, unknown here, plays as the default.
         let mut newer = before.clone();

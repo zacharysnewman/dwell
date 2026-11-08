@@ -136,21 +136,19 @@ The **presets** players pick, and which **game modes** allow brushes, are data:
   They are prototype content (`ARCHITECTURE.md` §6.1) for the owner to tune.
 
 - **Modes** (owner, 2026-11-06): *"I want my bulk change tools in regular worlds not just
-  sandbox"*, and *"we're going to add 'adventure' mode later to complement 'creative' mode (what we
-  have now) where you wouldn't have these tools, but for now everything is 'creative'."* The
-  per-world-type grant became a table of **game modes**, each with `brushes` and `reachM`. Every
-  world plays `defaultMode` (`dwell_world::brush::world_mode`): there is no mode selector and no
-  world setting yet. Adding adventure later is an entry
-  (`"adventure": { "brushes": false, "reachM": 5 }`) and a way for a world to pick its mode: a
-  world setting (ADR 0054, sent at join in `WorldSettings`) read by `world_mode`, which the server
-  (the `brushes` flag, `region_reach`) and the client (`set_capabilities`) already go through.
-  Sandbox-only things that aren't brushes (its unbreakable floor, its generator) stay the
-  sandbox's.
+  sandbox"*, and *"we're going to add 'adventure' mode later to complement 'creative' mode"*. Since
+  0.50.30 the game modes are their own data (`shared/modes/modes.json`, ADR 0065): a world's mode
+  allows brushes when it lists the `brushes` ability (creative does, adventure doesn't), and
+  `brushes.json` keeps only the brush reach (`reachM`, 256 m). Its old `modes` and `defaultMode`
+  fail the generator with a message naming where they moved. The server (the `brushes` Welcome
+  flag, `region_reach`, `KEEP` cells refused without brushes) and the client (`set_capabilities`,
+  again when the host changes the mode) read the world's mode. Sandbox-only things that aren't
+  brushes (its unbreakable floor, its generator) stay the sandbox's.
 
 ## 3. In the game
 
-- **Where.** A world whose mode has `"brushes": true` gets brushes; every world is creative, so
-  every world has them. The server announces them with the `brushes` Welcome flag. The client
+- **Where.** A world whose game mode has the `brushes` ability gets brushes (ADR 0065): creative,
+  every world's default, does; adventure doesn't. The server announces them with the `brushes` Welcome flag. The client
   offers the tool only then: V does nothing on a server without the flag (an older one in a terrain
   world).
 - **Aim.** The brush aims along the view ray up to the mode's `reachM` (256 m in creative; owner,

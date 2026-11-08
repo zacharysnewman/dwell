@@ -58,9 +58,7 @@ fn drop_from(fx: &mut Fixture, f: FaceFrame, metres: f64) -> i32 {
 fn damage_events(fx: &mut Fixture) -> usize {
     fx.take(1)
         .iter()
-        .filter(|(m, _)| {
-            matches!(m, Message::PlayerEvent(p) if p.kind == PlayerEventKind::Damage)
-        })
+        .filter(|(m, _)| matches!(m, Message::PlayerEvent(p) if p.kind == PlayerEventKind::Damage))
         .count()
 }
 
@@ -68,7 +66,11 @@ dwell_world::both_faces!(
     fn a_hard_fall_hurts_in_adventure_and_not_at_all_in_creative(f: FaceFrame) {
         let full = players::MAX_HEALTH as i32;
         let mut creative = scene(f, "creative");
-        assert_eq!(drop_from(&mut creative, f, 15.0), full, "creative: no fall damage");
+        assert_eq!(
+            drop_from(&mut creative, f, 15.0),
+            full,
+            "creative: no fall damage"
+        );
         assert_eq!(damage_events(&mut creative), 0);
         let mut adventure = scene(f, "adventure");
         let h = drop_from(&mut adventure, f, 15.0);
@@ -86,7 +88,10 @@ dwell_world::both_faces!(
         let mut fx = scene(f, "creative");
         assert_eq!(drop_from(&mut fx, f, 15.0), full);
         assert!(fx.server.set_mode("adventure"));
-        assert!(!fx.server.set_mode("no_such_mode"), "a name not in the data is refused");
+        assert!(
+            !fx.server.set_mode("no_such_mode"),
+            "a name not in the data is refused"
+        );
         assert_eq!(fx.server.world_settings().mode, "adventure");
         // The joined player is told the world's settings again, with the new mode.
         let sent: Vec<_> = fx
@@ -135,7 +140,10 @@ fn adventure_refuses_brush_strokes_creative_takes_them() {
     assert_eq!(stroke(&mut creative), RegionCheck::Ok);
     let mut adventure = scene(FaceFrame::A, "adventure");
     assert_eq!(stroke(&mut adventure), RegionCheck::NotPlaceable);
-    assert_eq!(adventure.server.stats_of(1).unwrap().region_edits_rejected, 1);
+    assert_eq!(
+        adventure.server.stats_of(1).unwrap().region_edits_rejected,
+        1
+    );
 }
 
 /// Connects player `id` and returns its Welcome's flags.
@@ -153,9 +161,17 @@ fn welcome_says_flight_and_brushes_by_the_mode_and_the_policy_apart() {
     let flags = welcome_flags_of(&mut fx, 1);
     assert_eq!(flags & welcome_flags::FLIGHT, 0, "adventure: no flight");
     assert_eq!(flags & welcome_flags::BRUSHES, 0, "adventure: no brushes");
-    assert_ne!(flags & welcome_flags::FLIGHT_POLICY, 0, "the policy would allow it");
+    assert_ne!(
+        flags & welcome_flags::FLIGHT_POLICY,
+        0,
+        "the policy would allow it"
+    );
     let mut fx = Fixture::new(flat());
     let flags = welcome_flags_of(&mut fx, 1);
-    assert_ne!(flags & welcome_flags::FLIGHT, 0, "creative (the default): flight");
+    assert_ne!(
+        flags & welcome_flags::FLIGHT,
+        0,
+        "creative (the default): flight"
+    );
     assert_ne!(flags & welcome_flags::BRUSHES, 0);
 }

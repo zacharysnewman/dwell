@@ -1718,7 +1718,7 @@ lives in side files. Chunk and LOD blobs are the protocol's palette + RLE compre
 
 | Table | Contents |
 |---|---|
-| `meta` | Scalars by name: format version, block registry hash, world seed, generator version, spawn, world time (`world_tick`, the server's tick: the day/night cycle's clock, §6.6), **[built, 0.42.0]** the world's settings (`world_settings`: the `WorldSettings` fields as sent, its clock and water speed, unknown optional fields kept; a new world takes this build's clock and the server's `water_speed`), timestamps, **[built, Phase 6]** the app versions that created and last saved the world; **[planned]** preview image |
+| `meta` | Scalars by name: format version, block registry hash, world seed, generator version, spawn, world time (`world_tick`, the server's tick: the day/night cycle's clock, §6.6), **[built, 0.42.0]** the world's settings (`world_settings`: the `WorldSettings` fields as sent, its clock, water speed and **[built, 0.50.30]** game mode (ADR 0065), unknown optional fields kept; a new world takes this build's clock and the server's `water_speed`), timestamps, **[built, Phase 6]** the app versions that created and last saved the world; **[planned]** preview image |
 | `settings` | Name, MOTD, max players, edit and flight policies, autosave interval, allow-list switch, the server key **[built]**; **[planned]** icon, visibility, password hash, online/offline mode, physics/view caps, backup policy; **[planned, Phase 30]** the growth-speed multiplier (default 1), applied by the server to tree growth |
 | `block_states` | **[built, Phase 8]** world state id → canonical string (§6.1), ids assigned densely in order of first use and stable for the life of the file |
 | `chunks` | Modified chunks only: `(cx, cy, cz)` → revision, generator version, LZ4 palette + RLE blob (same encoding as `ChunkData Explicit`, but the palette lists **world state ids** of `block_states`, not runtime ids) |
@@ -2525,6 +2525,17 @@ chunks), keeps the last selection (`LodSystem::update`; ~1 ms a frame standing s
   Three.js build's experimental `?batch=1` went with it (the parameter is not read). `?scale=0.5` (0.25–2) renders at a fraction of the resolution: a frame
   rate that rises with it is bound by pixels rather than draws (`render/display.rs`).
 
+**Game modes [built, 0.50.30]** (ADR 0065). A world plays one game mode from `shared/modes/modes.json`
+(generated into `dwell_protocol::modes` and `client/src/ui/modes.gen.ts` by `shared/modes/gen.mjs`):
+a name and the abilities it allows, from a fixed vocabulary — `damage` (every damage cause, through
+`Server::damage`), `flight` (with the flight policy; the server clears the fly bit otherwise),
+`brushes` (brush strokes' `KEEP` cells and the brush reach; refused otherwise) and `unlimitedBlocks`
+(both modes; nothing is used up until items and drops exist). Creative (the default: new worlds,
+and worlds saved before modes) has flight, brushes and unlimited blocks and no damage; adventure
+(experimental) has damage and unlimited blocks. The mode is a `WorldSettings` field (optional tag
+`0x82`), saved with the world; the New world form picks it, and the host changes it at runtime
+(`Server::set_mode`, sent to the joined clients as `WorldSettings` again).
+
 **Seeing it from above: creative flight** **[built, Phase 4]** (§9.1, PLAYER_CONTROLLER.md §6.7).
 The player flies — the body itself, simulated by the server and predicted like any movement — with
 no ceiling (Phase 16, ADR 0025 D3: the build sphere bounds building, not movement); from ~150 km up
@@ -3259,16 +3270,21 @@ S→C  BlockRegistry u16 part, u16 parts, u32 length, u8[length] — part of the
                    maps every state id it receives or sends through it
 S→C  WorldSettings 0x54 (protocol v22): u8 count, each u8 tag, u16 length, bytes — the
                    world's settings (`dwell_protocol::world_settings`): tag 1 the clock
-                   (f32 day s, f32 night s, f32 start hour), 0x81 the water speed (f32);
+                   (f32 day s, f32 night s, f32 start hour), 0x81 the water speed (f32),
+                   0x82 the game mode's name (UTF-8, ADR 0065; a build before modes skips
+                   it, an unknown name reads as creative);
                    a tag with the top bit set is optional (skipped by a build that doesn't
                    know it), any other must be understood ("This world needs a newer
                    version of Dwell."); before Welcome. The client uses the world's clock
-                   for the sky, not its own
+                   for the sky, not its own. Sent again while joined when the host changes
+                   the world's game mode (ADR 0065); older clients ignore it then
 S→C  Welcome       u16 playerId, u64 worldSeed, u32 generatorVersion, u32 serverTick,
                    i32×3 verificationChunk, u8 flags (WelcomeFlags: 1 = flight — this
                    player may use creative flight; 2 = regionEdits — the server takes
                    RegionEdit, §6.5; 4 = brushes — pastes may hold KEEP cells and region
-                   edits reach the world type's brush reach, §6.5), u64 registryHash (the
+                   edits reach the brush reach, §6.5 — set in game modes with `brushes`,
+                   ADR 0065; 8 = flightPolicy — the flight policy alone, which with the
+                   mode's `flight` gives flight again after a mode change), u64 registryHash (the
                    definitions hash: FNV-1a 64 of the registry payload sent before it,
                    §6.1; logs and the join prompt's "don't ask again")
      or Reject     u8 reason (ProtocolVersion, Banned, Full, NotAllowListed, AuthFailed,
