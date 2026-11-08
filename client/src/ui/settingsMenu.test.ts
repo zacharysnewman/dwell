@@ -69,6 +69,7 @@ describe('settings JSON', () => {
       showArms: false,
       hud: { shown: { hotbar: false } },
       renderScale: { scale: 0.67, upscaler: 'sharpen' },
+      shafts: 'low',
     });
     const parsed = JSON.parse(json) as { detail: unknown };
     expect(parsed).toEqual({
@@ -90,6 +91,7 @@ describe('settings JSON', () => {
       showArms: false,
       hud: { shown: { hotbar: false } },
       renderScale: { scale: 0.67, upscaler: 'sharpen' },
+      shafts: 'low',
     });
     expect(sanitizeDetail(parsed.detail, defaultDetail(false))).toEqual({
       distanceM: 200,
