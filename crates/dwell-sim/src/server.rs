@@ -37,6 +37,7 @@ use dwell_world::{
 
 use dwell_protocol::auth::verify_ed25519;
 
+mod chopping;
 mod items;
 
 use crate::app_version::APP_VERSION;
@@ -557,6 +558,10 @@ struct Session {
     inventory_hello: bool,
     inventory_dirty: bool,
     inventory_unread: bool,
+    /// Whether its client understands cuts (`ChopAction::Hello`, ADR 0067), and the tick its next
+    /// swing may land.
+    chop_hello: bool,
+    chop_ready: u32,
 
     stats: SessionStats,
     // Terrain streaming.
@@ -601,6 +606,8 @@ impl Session {
             inventory_hello: false,
             inventory_dirty: false,
             inventory_unread: false,
+            chop_hello: false,
+            chop_ready: 0,
             primed: false,
             low_water: usize::MAX,
             window_ticks: 0,
@@ -840,6 +847,9 @@ pub struct Server {
     /// The loose items lying in the world (ADR 0066), and the moved ones not yet sent.
     loose: crate::loose_items::LooseItems,
     loose_moved: HashSet<u32>,
+    /// The wood cells cut by axes (ADR 0067).
+    cuts: dwell_protocol::chopping::Cuts,
+    cuts_unread: bool,
     next_save_tick: u32,
     save_stats: SaveStats,
     // Level of detail: sections, index entries changed since the last LodIndexUpdate, sections to
@@ -962,6 +972,8 @@ impl Server {
             departed_inventories: Vec::new(),
             loose: Default::default(),
             loose_moved: HashSet::default(),
+            cuts: Default::default(),
+            cuts_unread: false,
             next_save_tick: 0,
             save_stats: SaveStats::default(),
             lod: if config.jobs_remote {
@@ -1250,6 +1262,7 @@ impl Server {
             // ignore the bit).
             flags: welcome_flags::REGION_EDITS
                 | welcome_flags::INVENTORY
+                | welcome_flags::CHOPPING
                 | if flight { welcome_flags::FLIGHT } else { 0 }
                 | if flight_policy {
                     welcome_flags::FLIGHT_POLICY
@@ -1405,6 +1418,7 @@ impl Server {
                 }
             }
             Message::InventoryAction(a) => self.inventory_action(id, a),
+            Message::Chop(a) => self.chop_action(id, a),
             Message::ChunkResync(coords) => self.resync(id, &coords),
             Message::ChunkRequest(coords) => self.request_chunks(id, &coords),
             Message::LodRequest(sections) => {
@@ -2555,6 +2569,8 @@ impl Server {
                 self.water_link.pending.push(WaterIn::Edit { cell, byte });
             }
         }
+        // A changed cell's cut goes with its wood (ADR 0067).
+        self.cuts_dropped(&before);
         if changed.is_empty() {
             return;
         }
@@ -3916,6 +3932,13 @@ impl Server {
         {
             self.loose.restore(saved);
         }
+        // A record this build can't read (a newer one's) is kept: not written over.
+        if let Some(b) = db.cuts() {
+            match dwell_protocol::chopping::Cuts::from_bytes(&b) {
+                Some(c) => self.cuts = c,
+                None => self.cuts_unread = true,
+            }
+        }
         let bodies = db.bodies();
         self.world.set_saved(Box::new(StoreChunks {
             db,
@@ -4022,6 +4045,9 @@ impl Server {
                 .push((s.public_key, s.inventory.to_bytes()));
         }
         batch.loose_items = Some(self.loose.to_bytes());
+        if !self.cuts_unread {
+            batch.cuts = Some(self.cuts.to_bytes());
+        }
         // The world's moving bodies, all of them each save (docs/BUILT_BODIES.md §7).
         batch.bodies = Some(self.felling.saved(&self.physics));
         // The free water (WATER_SURFACE_GRID.md §2b): the newest record the water sent (none

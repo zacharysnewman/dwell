@@ -168,6 +168,8 @@ pub enum MessageType {
     InventoryAction = 85,
     Inventory = 86,
     ItemDrops = 87,
+    Chop = 88,
+    Cuts = 89,
 }
 
 impl MessageType {
@@ -214,6 +216,8 @@ impl MessageType {
             85 => Some(Self::InventoryAction),
             86 => Some(Self::Inventory),
             87 => Some(Self::ItemDrops),
+            88 => Some(Self::Chop),
+            89 => Some(Self::Cuts),
             _ => None,
         }
     }
@@ -542,7 +546,8 @@ pub mod welcome_flags {
     pub const BRUSHES: u8 = 4;
     pub const FLIGHT_POLICY: u8 = 8;
     pub const INVENTORY: u8 = 16;
-    pub const ALL: u8 = 31;
+    pub const CHOPPING: u8 = 32;
+    pub const ALL: u8 = 63;
 }
 
 pub mod held_item {

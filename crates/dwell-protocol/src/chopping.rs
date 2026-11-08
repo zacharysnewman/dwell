@@ -342,6 +342,35 @@ mod tests {
     }
 
     #[test]
+    fn the_new_messages_round_trip_and_reject_bad_ones() {
+        use crate::{ChopAction, CutsMessage, Message};
+        let mut c = Cut::default();
+        c.swing(axe(), Y, 1, 0, 1.0);
+        let all = [
+            Message::Chop(ChopAction::Hello),
+            Message::Chop(ChopAction::Swing {
+                tool: "dwell:stone_axe".into(),
+                cell: [4, -80, 12],
+                face: 1,
+                point: [5.0, -39.8, 12.5],
+                vertical: true,
+            }),
+            Message::Cuts(CutsMessage {
+                cuts: vec![([4, -80, 12], c)],
+                gone: vec![[1, 2, 3]],
+            }),
+        ];
+        for m in all {
+            let b = m.encode();
+            assert_eq!(Message::decode(&b), Some(m.clone()));
+            assert_eq!(Message::decode(&b[..b.len() - 1]), None, "{m:?}");
+        }
+        let mut bad = Message::Chop(ChopAction::Hello).encode();
+        *bad.last_mut().unwrap() = 9;
+        assert_eq!(Message::decode(&bad), None);
+    }
+
+    #[test]
     fn cuts_round_trip_and_bad_records_are_refused() {
         let mut cuts = Cuts::default();
         let mut c = Cut::default();

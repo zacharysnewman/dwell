@@ -131,6 +131,8 @@ export const MessageType = {
   InventoryAction: 85,
   Inventory: 86,
   ItemDrops: 87,
+  Chop: 88,
+  Cuts: 89,
 } as const;
 export type MessageType = (typeof MessageType)[keyof typeof MessageType];
 
@@ -272,6 +274,7 @@ export const WelcomeFlags = {
   brushes: 4,
   flightPolicy: 8,
   inventory: 16,
+  chopping: 32,
 } as const;
 
 export const HeldItem = {

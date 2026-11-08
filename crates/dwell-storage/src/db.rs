@@ -52,6 +52,9 @@ const INVENTORIES: TableDefinition<&[u8; 32], &[u8]> = TableDefinition::new("inv
 /// The loose items lying in the world (`dwell_sim::loose_items::LooseItems::to_bytes`; ADR 0066):
 /// one record (key 0), rewritten on each save that carries it. Optional, as `inventories`.
 const LOOSE_ITEMS: TableDefinition<u32, &[u8]> = TableDefinition::new("loose_items");
+/// The cuts axes made in wood cells (`dwell_protocol::chopping::Cuts::to_bytes`; ADR 0067): one
+/// record (key 0), rewritten on each save that carries it. Optional, as `loose_items`.
+const CUTS: TableDefinition<u32, &[u8]> = TableDefinition::new("cuts");
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct WorldMeta {
@@ -206,6 +209,8 @@ pub struct SaveBatch {
     pub inventories: Vec<([u8; 32], Vec<u8>)>,
     /// The loose items now, replacing those saved before (None: leave them).
     pub loose_items: Option<Vec<u8>>,
+    /// The wood cells' cuts now, replacing those saved before (None: leave them; ADR 0067).
+    pub cuts: Option<Vec<u8>>,
 }
 
 /// A [`SaveBatch`] being encoded for its commit (`WorldDb::prepare`): its chunks mapped to the
@@ -633,6 +638,14 @@ impl WorldDb {
         Some(v.value().to_vec())
     }
 
+    /// The wood cells' cuts as last saved (ADR 0067), if any.
+    pub fn cuts(&self) -> Option<Vec<u8>> {
+        let txn = self.db.begin_read().ok()?;
+        let t = txn.open_table(CUTS).ok()?;
+        let v = t.get(0).ok()??;
+        Some(v.value().to_vec())
+    }
+
     /// The water as last saved (`Water::save`'s bytes), if any.
     pub fn water(&self) -> Option<Vec<u8>> {
         let txn = self.db.begin_read().ok()?;
@@ -931,6 +944,10 @@ impl WorldDb {
         if let Some(items) = &batch.loose_items {
             let mut t = txn.open_table(LOOSE_ITEMS).map_err(err)?;
             t.insert(0, items.as_slice()).map_err(err)?;
+        }
+        if let Some(cuts) = &batch.cuts {
+            let mut t = txn.open_table(CUTS).map_err(err)?;
+            t.insert(0, cuts.as_slice()).map_err(err)?;
         }
         if let Some(hook) = &self.before_commit {
             hook()?; // dropping the transaction aborts it
