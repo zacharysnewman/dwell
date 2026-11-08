@@ -56,13 +56,20 @@ test('bad entries fail with their path named', () => {
 
 test("water's waterline is a band of real thickness, a dark line over a light one (owner, 2026-11-07)", () => {
   const w = data().fluids['dwell:water'];
-  // 5–8 % of the screen's height at the default FOV (the lens plane spans lensM × 2 × 0.745 m).
+  // 2.5–4 % of the screen's height at the default FOV (the lens plane spans lensM × 2 × 0.745 m):
+  // 5–8 % until 0.50.23, halved then (owner: "halve the width").
   const share = w.band.depthM / (w.lensM * 2 * 0.745);
-  assert.ok(share >= 0.05 && share <= 0.08, `${share}`);
+  assert.ok(share >= 0.025 && share <= 0.04, `${share}`);
   assert.ok(w.band.rimShade < 1 && w.band.lineGlow > 1, 'darker over lighter');
   assert.ok(w.underside.texture > 0, 'the underside has a texture');
   // Owner's references (2026-11-07): broken bright cells, brightest toward the sun; the band's
   // ripples broken and its mirror of the land not literal.
   assert.ok(w.underside.breakup > 0.5 && w.underside.sunPatch > 0, 'broken cells, a sun patch');
-  assert.ok(w.band.breakup > 0.5 && w.band.mirrorWarpPx > 0 && w.band.mirror < 0.6, 'a rippled mirror');
+  assert.ok(w.band.breakup > 0 && w.band.mirrorWarpPx > 0 && w.band.mirror < 0.6, 'a rippled mirror');
+});
+
+test("water's band is half as deep and smoother (owner, 2026-11-07: 'a little smoother … halve the width')", () => {
+  const b = data().fluids['dwell:water'].band;
+  assert.equal(b.depthM, 0.021);
+  assert.ok(b.breakup <= 0.35 && b.glints <= 0.15 && b.mirrorWarpPx <= 10);
 });
