@@ -358,6 +358,20 @@ kbd.phrase {
   z-index: 1;
 }
 
+/* On a phone it sits under the tagline, clear of the wordmark. */
+@media (max-width: 640px) {
+  .mm-settings {
+    position: static;
+    margin-top: 10px;
+  }
+}
+
+/* The painted hills give way to the panorama once it has loaded. */
+.mm-backdrop:has(.mm-panorama.loaded)::before,
+.mm-backdrop:has(.mm-panorama.loaded)::after {
+  display: none;
+}
+
 body:has(#main-menu) .game-menu {
   z-index: calc(var(--z-menu) + 1);
 }

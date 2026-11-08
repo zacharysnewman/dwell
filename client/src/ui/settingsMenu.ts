@@ -1163,7 +1163,6 @@ export class SettingsMenu {
     this.addPage(name, page);
     const tab = this.pages.get(name)?.tab;
     tab?.classList.add('gm-tab-off');
-    tab?.setAttribute('aria-disabled', 'true');
     tab?.setAttribute('title', note);
   }
 
