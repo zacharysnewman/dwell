@@ -19,7 +19,8 @@ test('a murky fluid added by data alone reaches the output', () => {
   d.fluids['test:mud'] = {
     lensM: 0.1,
     line: { amplitudeM: 0, wavelengthM: 1, speed: 0 },
-    meniscus: { color: '#806040', strength: 0, widthPx: 1 },
+    band: { depthM: 0, tint: '#806040', streaks: 0, glints: 0, rimPx: 0, rimShade: 1, linePx: 0, lineGlow: 1 },
+    underside: { texture: 0 },
     fog: { clearM: 0, density: 4 },
   };
   const rs = underwaterRust(validateUnderwater(d));
@@ -31,13 +32,15 @@ test('bad entries fail with their path named', () => {
   const cases = [
     [(d) => (d.fluids[w].fog.density = 0), /fluids\.dwell:water\.fog\.density must be a number in \(0, 16\]/],
     [(d) => (d.fluids[w].fog.clearM = -1), /fluids\.dwell:water\.fog\.clearM must be a number/],
-    [(d) => (d.fluids[w].meniscus.strength = 2), /meniscus\.strength must be a number in \[0, 1\]/],
-    [(d) => (d.fluids[w].meniscus.color = 'white'), /meniscus\.color must be #rrggbb/],
+    [(d) => (d.fluids[w].band.streaks = 2), /band\.streaks must be a number in \[0, 1\]/],
+    [(d) => (d.fluids[w].band.tint = 'white'), /band\.tint must be #rrggbb/],
+    [(d) => (d.fluids[w].band.lineGlow = 0.5), /band\.lineGlow must be a number in \[1, 4\]/],
+    [(d) => (d.fluids[w].underside.texture = -1), /underside\.texture must be a number/],
     [(d) => ((d.fluids[w].lensM = 0.05), (d.fluids[w].line.amplitudeM = 0.1)), /line\.amplitudeM must be under lensM/],
     [(d) => (d.fluids[w].lensM = 0), /lensM must be a number in \[0\.01, 2\]/],
     [(d) => (d.fluids.Water = d.fluids[w]), /fluids\.Water: the name must be/],
     [(d) => (d.default.fog.extra = 1), /unknown entry default\.fog\.extra/],
-    [(d) => delete d.fluids[w].meniscus, /missing entry fluids\.dwell:water\.meniscus/],
+    [(d) => delete d.fluids[w].band, /missing entry fluids\.dwell:water\.band/],
   ];
   for (const [edit, message] of cases) {
     const d = data();
@@ -46,6 +49,11 @@ test('bad entries fail with their path named', () => {
   }
 });
 
-test("water's waterline band is 4 px wide (owner, 2026-11-07: 'a little thicker')", () => {
-  assert.equal(data().fluids['dwell:water'].meniscus.widthPx, 4);
+test("water's waterline is a band of real thickness, a dark line over a light one (owner, 2026-11-07)", () => {
+  const w = data().fluids['dwell:water'];
+  // 5–8 % of the screen's height at the default FOV (the lens plane spans lensM × 2 × 0.745 m).
+  const share = w.band.depthM / (w.lensM * 2 * 0.745);
+  assert.ok(share >= 0.05 && share <= 0.08, `${share}`);
+  assert.ok(w.band.rimShade < 1 && w.band.lineGlow > 1, 'darker over lighter');
+  assert.ok(w.underside.texture > 0, 'the underside has a texture');
 });

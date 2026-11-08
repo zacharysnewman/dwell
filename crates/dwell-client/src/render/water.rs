@@ -10,7 +10,7 @@ use dwell_blocks::FluidInfo;
 use dwell_look::{hex, srgb_to_linear};
 
 /// vec4s per fluid in the buffer (`Fluid` in the WGSL).
-pub const FLUID_VEC4S: usize = 12;
+pub const FLUID_VEC4S: usize = 14;
 /// Bytes per fluid.
 pub const FLUID_STRIDE: u64 = (FLUID_VEC4S * 16) as u64;
 
@@ -230,20 +230,32 @@ pub fn pack_fluids(fluids: &[FluidInfo]) -> Vec<f32> {
         }
         // Its underwater look by name (shared/look/underwater.json; none: the default).
         let u = dwell_look::underwater::underwater_look(f.name);
-        let m = hex(u.meniscus_color);
+        let tint = hex(u.band_tint);
         out.extend_from_slice(&[
             u.lens_m as f32,
             u.fog_clear_m as f32,
             u.fog_density as f32,
-            u.meniscus_strength as f32,
+            u.band_depth_m as f32,
         ]);
         out.extend_from_slice(&[
             u.line_amplitude_m as f32,
             u.line_wavelength_m as f32,
             u.line_speed as f32,
-            u.meniscus_width_px as f32,
+            u.underside_texture as f32,
         ]);
-        out.extend_from_slice(&[m[0] as f32, m[1] as f32, m[2] as f32, 0.0]);
+        out.extend_from_slice(&[
+            tint[0] as f32,
+            tint[1] as f32,
+            tint[2] as f32,
+            u.band_streaks as f32,
+        ]);
+        out.extend_from_slice(&[
+            u.band_rim_px as f32,
+            u.band_rim_shade as f32,
+            u.band_line_px as f32,
+            u.band_line_glow as f32,
+        ]);
+        out.extend_from_slice(&[u.band_glints as f32, 0.0, 0.0, 0.0]);
     }
     if out.is_empty() {
         // A storage binding can't be empty: one zero fluid that nothing indexes.
@@ -283,20 +295,39 @@ pub fn waterline_m(
 }
 
 /// How many metres of [`waterline_m`] one pixel of the drawing buffer spans across the line (the
-/// WGSL `meniscus`): `waterline_m` is linear on the screen, its gradient per pixel the lens times
-/// `2 tan_y / height` times the length of the camera's up and right axes' world y (the same along
-/// x and y, as `tan_x / width = tan_y / height`). The meniscus's band, measured in these, is the
-/// same pixel width either side of the line at any pitch or roll.
+/// WGSL `waterline_band`'s `px_m`): `waterline_m` is linear on the screen, its gradient per pixel
+/// the lens times `2 tan_y / height` times the length of the camera's up and right axes' world y
+/// (the same along x and y, as `tan_x / width = tan_y / height`). The band's rim and line,
+/// measured in these, are the same pixel width at any pitch or roll.
 pub fn meniscus_px_m(lens_m: f64, tan_y: f64, height_px: f64, up_y: f64, right_y: f64) -> f64 {
     lens_m * 2.0 * tan_y / height_px * up_y.hypot(right_y)
 }
 
-/// The meniscus's strength at a pixel `d` metres of [`waterline_m`] from the line, `px_m` from
-/// [`meniscus_px_m`], `width_px` its half-width: 1 on the line, falling to 0 at `width_px` either
-/// side, centred on the line.
-pub fn meniscus_band(d: f64, px_m: f64, width_px: f64) -> f64 {
-    let x = (d.abs() / px_m.max(1e-9) / width_px).clamp(0.0, 1.0);
-    1.0 - x * x * (3.0 - 2.0 * x)
+/// Where a pixel `d` metres of [`waterline_m`] from the line is in the band (the WGSL
+/// `waterline_band`): 0 at its top edge (the line: the surface), 1 at its foot `depth_m` under
+/// it; none above the line (the band is the surface's slab under it) or past its foot.
+pub fn band_t(d: f64, depth_m: f64) -> Option<f64> {
+    (depth_m > 0.0 && d < 0.0 && d > -depth_m).then(|| -d / depth_m)
+}
+
+/// The band's edge at a pixel `px` pixels under the line (the WGSL `waterline_band`): the colour's
+/// multiplier, `shade` over the dark rim's `rim_px`, then `glow` over the bright line's `line_px`
+/// under it, else 1 (a pixel's soft edge between).
+pub fn band_edge(px: f64, rim_px: f64, shade: f64, line_px: f64, glow: f64) -> f64 {
+    let smooth = |a: f64, b: f64, x: f64| {
+        let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
+        t * t * (3.0 - 2.0 * t)
+    };
+    let rim = 1.0 - smooth(rim_px - 0.75, rim_px + 0.25, px);
+    let line = (1.0 - rim) * (1.0 - smooth(rim_px + line_px - 0.75, rim_px + line_px + 0.25, px));
+    (1.0 + (shade - 1.0) * rim) * (1.0 + (glow - 1.0) * line)
+}
+
+/// The band's texture coordinate (the WGSL `waterline_band`'s `uv`) at `along` screen heights
+/// along the line and `t` down the band: a plane receding to the line, so a step on the screen
+/// covers more of the texture toward the line (cells shrink toward it, as the surface's do).
+pub fn band_uv(along: f64, t: f64) -> [f64; 2] {
+    [along * 4.0 / (t + 0.08), 1.0 / (t + 0.08)]
 }
 
 /// Snell's window (the WGSL `sees_out`): whether a ray from under the surface that rises at
@@ -870,15 +901,24 @@ mod tests {
         for (id, f) in dwell_blocks::FLUIDS.iter().enumerate() {
             let v = &buf[id * FLUID_VEC4S * 4..(id + 1) * FLUID_VEC4S * 4];
             let u = underwater_look(f.name);
-            let under = [u.lens_m, u.fog_clear_m, u.fog_density, u.meniscus_strength];
+            let under = [u.lens_m, u.fog_clear_m, u.fog_density, u.band_depth_m];
             let line = [
                 u.line_amplitude_m,
                 u.line_wavelength_m,
                 u.line_speed,
-                u.meniscus_width_px,
+                u.underside_texture,
+            ];
+            let rim = [
+                u.band_rim_px,
+                u.band_rim_shade,
+                u.band_line_px,
+                u.band_line_glow,
             ];
             assert_eq!(v[36..40], under.map(|x| x as f32));
             assert_eq!(v[40..44], line.map(|x| x as f32));
+            assert_eq!(v[47], u.band_streaks as f32);
+            assert_eq!(v[48..52], rim.map(|x| x as f32));
+            assert_eq!(v[52], u.band_glints as f32);
         }
         // A fluid with no look of its own takes the default's (fog from the eye, the registry's rates).
         assert_eq!(underwater_look("test:oil"), &DEFAULT_UNDERWATER);
@@ -1031,36 +1071,57 @@ mod tests {
     }
 
     dwell_world::both_faces!(
-        fn the_meniscus_is_centred_on_the_line_and_as_wide_at_any_pitch(f: FaceFrame) {
+        fn the_waterline_band_sits_under_the_line_with_a_dark_rim_over_a_bright_line(f: FaceFrame) {
+            // Owner, 2026-11-07: "the band isn't just a white line, it's supposed to be like an
+            // actual thing", "a darker line over a lighter line". The old meniscus was a thin
+            // light band straddling the line, and drew above the split.
             let look = dwell_look::underwater::underwater_look("dwell:water");
             let (lens, h) = (look.lens_m, 1600.0);
             for (pitch, roll) in [(0.0, 0.0), (0.5, 0.0), (-0.4, 0.3)] {
                 let cam = camera(f, pitch, roll);
                 let px_m = meniscus_px_m(lens, TAN[1], h, cam[2][1], cam[1][1]);
                 // Down the centre column in pixels (r from the top); the split is where d crosses 0.
-                let px = |r: f64| pixel_d(f, cam, 0.03, [0.0, 1.0 - 2.0 * r / h], lens);
+                let d = |r: f64| pixel_d(f, cam, 0.03, [0.0, 1.0 - 2.0 * r / h], lens);
                 let mut split = 0.0;
-                while px(split + 1.0) >= 0.0 && split < h {
+                while d(split + 1.0) >= 0.0 && split < h {
                     split += 1.0;
                 }
                 assert!(split > 0.0 && split < h, "the line is on screen");
-                // The band is strongest at the split (centred on it), the same a pixel or more
-                // either side, gone past its half-width: pixels on the screen at any pitch and roll.
-                let band = |r: f64| meniscus_band(px(r), px_m, look.meniscus_width_px);
-                assert!(band(split) > 0.8 && band(split + 1.0) > 0.8, "strongest on the line");
-                // Where d is zero between the last over and first under pixel.
-                let zero = split + px(split) / (px(split) - px(split + 1.0));
-                for k in [1.0, 2.0, 3.0] {
-                    assert!((band(zero - k) - band(zero + k)).abs() < 1e-6, "centred, ±{k} px");
+                // Nothing of the band above the line; its top edge is the first pixel under it.
+                for r in [split - 3.0, split - 1.0, split] {
+                    assert!(band_t(d(r), look.band_depth_m).is_none(), "above the line at {r}");
                 }
-                if roll == 0.0 {
-                    // Unrolled, the column is across the line: half strength at half the width.
-                    let half = look.meniscus_width_px / 2.0;
-                    assert!((band(zero - half) - 0.5).abs() < 1e-6, "pitch {pitch}: px wide");
-                    let off = 0.5 + look.meniscus_width_px;
-                    assert!(band(zero - off) < 1e-9 && band(zero + off) < 1e-9, "pitch {pitch}");
+                let top = band_t(d(split + 1.0), look.band_depth_m).expect("the band's top");
+                assert!(top < 0.05, "the top edge is the surface: {top}");
+                // A slab of real thickness: rows down to its foot (5–8 % of the screen level).
+                let mut foot = split + 1.0;
+                while band_t(d(foot + 1.0), look.band_depth_m).is_some() {
+                    foot += 1.0;
                 }
+                let share = (foot - split) / h;
+                if pitch == 0.0 {
+                    assert!(share > 0.05 && share < 0.08, "level: {share} of the screen");
+                }
+                // Along the edge: darker first, then lighter, then the band's own colour, in
+                // pixels across the line at any pitch and roll.
+                let edge = |r: f64| {
+                    let px = -d(r) / px_m;
+                    band_edge(px, look.band_rim_px, look.band_rim_shade, look.band_line_px, look.band_line_glow)
+                };
+                // The row `px` pixels across the line under it, down the column (d is linear).
+                let slope = d(split) - d(split + 1.0);
+                let zero = split + d(split) / slope;
+                let row = |px: f64| zero + px * px_m / slope;
+                assert!(edge(row(0.5)) < 0.6, "a dark rim on top, pitch {pitch} roll {roll}");
+                let lit = edge(row(look.band_rim_px + look.band_line_px / 2.0));
+                assert!(lit > 1.3, "a bright line under it: {lit}");
+                assert!((edge(row(look.band_rim_px + look.band_line_px + 3.0)) - 1.0).abs() < 1e-9);
             }
+            // The texture recedes to the line: a pixel near it spans more of the texture.
+            let rate = |t: f64| band_uv(0.0, t + 0.01)[1] - band_uv(0.0, t)[1];
+            assert!(rate(0.0).abs() > 5.0 * rate(0.9).abs(), "compressed toward the line");
+            let wide = |t: f64| band_uv(0.1, t)[0] - band_uv(0.0, t)[0];
+            assert!(wide(0.0) > 5.0 * wide(0.9), "and across it");
         }
     );
 
@@ -1087,9 +1148,16 @@ mod tests {
         assert!(src.contains("let lens = ray * f.under.x;"));
         assert!(src.contains("let d = waterline_m(ray, f);"));
         assert!(!src.contains("waterline_m(normalize("));
-        // The meniscus measured across the line (meniscus_px_m), Snell's window as sees_out.
-        assert!(src.contains("* across;"));
+        // The band as band_t, band_edge, band_uv; Snell's window as sees_out; the underside's
+        // texture from below and the body's partial shadow (the blotch).
+        assert!(src.contains("let t = -d / depth;"));
+        assert!(src.contains("return waterline_band(p, composite_underwater(p, ray, textureLoad(scene_color, p, 0)), d, f);"));
+        assert!(src.contains("let rim = 1.0 - smoothstep(f.rim.x - 0.75, f.rim.x + 0.25, px);"));
+        assert!(src.contains("let uv = vec2f(along * 4.0, 1.0) / (t + 0.08)"));
         assert!(src.contains("1.0 - bent * bent < 1.0 / (ior * ior)"));
+        assert!(src.contains("return vec4f(body * underside_cells(xz, footprint, f, fluid), fres);"));
+        assert!(src.contains("const BODY_SHADOW: f32 = 0.35;"));
+        assert!(src.contains("let body_shadow = mix(s.light.direct, s.shadow, BODY_SHADOW);"));
         assert!(src.contains("let d = max(dist - f.under.y, 0.0) * f.under.z;"));
     }
 }

@@ -1,6 +1,6 @@
 //! How the view looks from inside a fluid (docs/WATER_RENDERING.md §10, the waterline): where a
 //! pixel's view ray is decided under the surface (`lens_m` out from the eye), the line's waves,
-//! the meniscus along it, and the fog over the distance in the fluid, per fluid
+//! the band along it, and the fog over the distance in the fluid, per fluid
 //! (`shared/look/underwater.json`, generated into `underwater.gen.rs`). The renderer packs them
 //! into the fluid table beside the block registry's fluid look.
 
@@ -22,10 +22,20 @@ pub struct UnderwaterLook {
     pub line_amplitude_m: f64,
     pub line_wavelength_m: f64,
     pub line_speed: f64,
-    /// The bright band along the line: sRGB `0xRRGGBB`, strength (0–1), half-width (px).
-    pub meniscus_color: u32,
-    pub meniscus_strength: f64,
-    pub meniscus_width_px: f64,
+    /// The band: the surface's slab seen edge-on under the line, `band_depth_m` deep on the lens
+    /// plane; its colour from its surroundings times `band_tint` (sRGB `0xRRGGBB`), its texture's
+    /// strength, its glints; the dark rim along its top (px, shade) and the bright line under it
+    /// (px, glow).
+    pub band_depth_m: f64,
+    pub band_tint: u32,
+    pub band_streaks: f64,
+    pub band_glints: f64,
+    pub band_rim_px: f64,
+    pub band_rim_shade: f64,
+    pub band_line_px: f64,
+    pub band_line_glow: f64,
+    /// The light and dark cells on the surface's underside seen from below (0: flat).
+    pub underside_texture: f64,
     /// The fog: none over the first `fog_clear_m` metres, then the fluid's rates × `fog_density`.
     pub fog_clear_m: f64,
     pub fog_density: f64,
@@ -47,11 +57,11 @@ pub const LENS_RAY_MAX: f64 = 2.5;
 
 impl UnderwaterLook {
     /// How far from the surface the eye can be and still have a pixel on the other side of the
-    /// line (m): the furthest a lens-plane point rises or falls ([`LENS_RAY_MAX`] × the lens) plus
-    /// the line's waves. Past it no pixel splits, so entering or leaving the split states there
-    /// changes no pixel (no pop).
+    /// line or in its band (m): the furthest a lens-plane point rises or falls ([`LENS_RAY_MAX`] ×
+    /// the lens) plus the line's waves and the band's depth. Past it no pixel splits or shows the
+    /// band, so entering or leaving the split states there changes no pixel (no pop).
     pub fn reach_m(&self) -> f64 {
-        self.lens_m * LENS_RAY_MAX + self.line_amplitude_m
+        self.lens_m * LENS_RAY_MAX + self.line_amplitude_m + self.band_depth_m
     }
 }
 
@@ -78,6 +88,9 @@ mod tests {
         );
         assert_eq!(underwater_look("test:nothing"), &DEFAULT_UNDERWATER);
         assert!(line_reach_m() >= w.reach_m());
-        assert_eq!(w.reach_m(), w.lens_m * LENS_RAY_MAX + w.line_amplitude_m);
+        assert_eq!(
+            w.reach_m(),
+            w.lens_m * LENS_RAY_MAX + w.line_amplitude_m + w.band_depth_m
+        );
     }
 }
