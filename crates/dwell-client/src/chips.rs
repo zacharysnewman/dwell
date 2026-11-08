@@ -455,7 +455,7 @@ mod tests {
 
     both_faces!(
         fn a_notchs_lower_cut_face_looks_up_and_its_upper_one_down(f: FaceFrame) {
-            // Red before 0.50.38: the notch was one flat quad lit as if it faced the sky.
+            // Red before 0.50.39: the notch was one flat quad lit as if it faced the sky.
             let cell = f.cell([3, 80, 0]);
             let mut cut = Cut::default();
             cut.notch[0] = 0.12;

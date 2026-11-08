@@ -57,8 +57,8 @@ pub mod lod {
     pub const SECTION_CELLS: i64 = 32;
     pub const MAX_LEVEL: i64 = 12;
     pub const INDEX_LEVEL: i64 = 8;
-    pub const PIXEL_ERROR_DESKTOP: i64 = 4;
-    pub const PIXEL_ERROR_MOBILE: i64 = 8;
+    pub const PIXEL_ERROR_DESKTOP: i64 = 3;
+    pub const PIXEL_ERROR_MOBILE: i64 = 3;
     pub const NEAR_SPLIT_M: i64 = 1024;
     pub const CACHE_MB_DESKTOP: i64 = 256;
     pub const CACHE_MB_MOBILE: i64 = 96;

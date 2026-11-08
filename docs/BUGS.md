@@ -9,7 +9,7 @@ pins it.
 ### 52. A felled trunk landing on its chopper can fling them far
 
 Owner, 2026-11-08: "we shouldn't be capping player kick like that" — "the cap is removed". 0.50.37's
-`max_body_kick` cap is gone (0.50.38), so this is open again: a 10 m trunk felled toward its
+`max_body_kick` cap is gone (0.50.39), so this is open again: a 10 m trunk felled toward its
 chopper throws them ~150 m at ~75 m/s (`dwell-sim` `tests/chopping.rs`
 `a_felled_trunk_falling_on_the_chopper_does_not_fling_them`, ignored until fixed; both faces).
 Measured (2026-11-08): the trunk's slanted underside comes down on the player standing on the

@@ -2575,7 +2575,7 @@ capacity. The client draws loose items as small turning copies of their block th
 renderer (`dwell-client` `loose_items.rs`), and in such a world its hotbar is the inventory's first
 nine slots with counts and the wallet, and E opens the backpack screen (`client/src/ui/backpack.ts`).
 
-**Tools and chopping [built, 0.50.34–0.50.38]** (ADR 0067). Tools are items
+**Tools and chopping [built, 0.50.34–0.50.39]** (ADR 0067). Tools are items
 with data in `shared/tools/tools.json` (a `kind` from a fixed vocabulary, `axe`; its swing wait,
 bite, bind and its share across and along the grain), and so are the woods an axe cuts (a block
 by name whose `axis` is its grain, its fell and buck fractions, what a cut-through length drops,
@@ -2599,7 +2599,7 @@ the axe is held from the inventory in adventure or from the creative hotbar (`it
 wedge-shaded quad, each kerf a dark slit) and each swing's wood chips (the wood's count, a CPU
 adapter a third, out of the cut along the swing, falling face-locally), and plays the arms'
 `chop_level`/`chop_vertical` clips with the `stone_axe` item in hand (`shared/characters`).
-**The swing as melee (0.50.38):** a tool's `swing` data (wind-up, the arc's sweep, hit-stop,
+**The swing as melee (0.50.39):** a tool's `swing` data (wind-up, the arc's sweep, hit-stop,
 recoveries after a hit and a miss, reach, arc, samples, the camera's kick, a stamina cost unused
 until stamina exists, its swish and bounce sound events) drives both sides. A swing goes at any
 time; its path is what hits: `dwell_world::swing::sweep` turns the look through the arc
@@ -3396,7 +3396,7 @@ S→C  ItemDrops       0x57, world: u16 n, each u32 id, str item, u16 count, f32
 ```
 
 **Chopping: `Chop`, `Cuts`, `HeldTools` (reliable) [built, 0.50.34; Sweep, Held, HeldTools
-0.50.38]** (ADR 0067). New message types sent only when asked, as the inventory's: a client sends
+0.50.39]** (ADR 0067). New message types sent only when asked, as the inventory's: a client sends
 `Chop` only to a server whose Welcome has `chopping` (32), its kinds 2 and 3 only with `chopSweep`
 (64); the server sends `Cuts` only to a client that said `Hello`, `HeldTools` only to one that sent
 a `Held`.

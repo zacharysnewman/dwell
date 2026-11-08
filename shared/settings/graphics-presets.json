@@ -13,7 +13,7 @@
         "shafts": "off",
         "clouds": "off",
         "distanceM": 96,
-        "pixelError": 12,
+        "pixelError": 3,
         "memoryMb": 64
       }
     },
@@ -29,7 +29,7 @@
         "shafts": "low",
         "clouds": "low",
         "distanceM": 128,
-        "pixelError": 8,
+        "pixelError": 3,
         "memoryMb": 96
       }
     },
@@ -45,7 +45,7 @@
         "shafts": "low",
         "clouds": "high",
         "distanceM": 192,
-        "pixelError": 6,
+        "pixelError": 3,
         "memoryMb": 192
       }
     },
@@ -61,7 +61,7 @@
         "shafts": "high",
         "clouds": "high",
         "distanceM": 256,
-        "pixelError": 4,
+        "pixelError": 3,
         "memoryMb": 256
       }
     },
@@ -77,7 +77,7 @@
         "shafts": "high",
         "clouds": "high",
         "distanceM": 352,
-        "pixelError": 2,
+        "pixelError": 3,
         "memoryMb": 512
       }
     }

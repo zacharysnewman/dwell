@@ -88,7 +88,7 @@ felling (FELLING.md). Scope: tools and woods are per build; cuts are per world, 
    trunk's other cuts are not carried by the piece (Question 4).
 9. **The wire: new, optional messages (no new compatibility line)**, as ADR 0066:
    - Welcome gains flag **`CHOPPING` (32)**. Older clients ignore it; and **`CHOP_SWEEP` (64)**
-     (0.50.38): the swing's path and held tools (`Sweep`, `Held`, `HeldTools`).
+     (0.50.39): the swing's path and held tools (`Sweep`, `Held`, `HeldTools`).
    - C→S **`Chop`** (88), only to a server with `CHOPPING`: `Hello`, or `Swing { tool, cell, face,
      point, vertical }`.
    - S→C **`Cuts`** (89), world channel, only to a client that said `Hello`: changed cells' cuts
@@ -173,7 +173,7 @@ Still parked (defaults chosen):
   pass and its shader (`chip_colour`, validated with naga in both tiers), the chop clips and the
   held axe (`shared/characters`), the hotbar picture.
 
-## Built in 0.50.38: the swing as weighty melee
+## Built in 0.50.39: the swing as weighty melee
 
 The owner (2026-11-08): "This axe is a lot more like Dying Light melee mechanics than Minecraft":
 weighty first-person physical swings (the mechanics only). Built:
@@ -214,7 +214,7 @@ weighty first-person physical swings (the mechanics only). Built:
 
 **Next:** cuts on bodies (chopping a felled piece before it settles), a give command, stamina; the
 falling trunk's fling onto its chopper fixed at its root (BUGS.md #52: 0.50.37's `max_body_kick`
-cap was removed in 0.50.38 on the owner's word, "we shouldn't be capping player kick like that").
+cap was removed in 0.50.39 on the owner's word, "we shouldn't be capping player kick like that").
 
 ## Consequences
 
