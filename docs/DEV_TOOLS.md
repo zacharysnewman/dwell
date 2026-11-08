@@ -404,6 +404,9 @@ A new background: find the spot (a `goto` scenario, [Finding places](#finding-pl
 were found with `water` at `scope: world` for `sea` then the nearest `dwell:sand`, `river` and
 `lake`, seed 0), add its entry, run `npm run panoramas -- <name>`, then `node shared/ui/gen.mjs`.
 
+
+**Random (0.50.44).** `menu-backgrounds.json`'s `default` may be `"random"` (the default since 0.50.44; owner, 2026-11-08): the menu picks a view at random (`nextRandomBackground`), and after each full turn (`turnS`) picks a different one and fades it in over 3 s on a second layer (`MenuPanorama`, `.mm-pano-layer`). Settings offers Random first.
+
 ## Comparing builds
 
 Serve the other build on another port (for example a `git worktree` of the older commit, built with

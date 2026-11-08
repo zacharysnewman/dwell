@@ -68,6 +68,7 @@ import {
   BACKGROUNDS,
   DEFAULT_MENU_BACKGROUND,
   menuRecord,
+  RANDOM_BACKGROUND,
   sanitizeMenuBackground,
 } from './menuBackground';
 import { audio } from '../audio/engine';
@@ -763,8 +764,12 @@ export function menuBackgroundChoice(list = BACKGROUNDS): ChoiceSpec<string> {
     label: 'Menu background',
     pin: 'menuBackground',
     hint: 'The view of a world turning slowly behind the main menu',
-    choices: list.backgrounds.map((b) => b.name),
-    labels: Object.fromEntries(list.backgrounds.map((b) => [b.name, b.label])),
+    // Random first (the default): a view picked at random, fading to another after each turn.
+    choices: [RANDOM_BACKGROUND, ...list.backgrounds.map((b) => b.name)],
+    labels: {
+      [RANDOM_BACKGROUND]: 'Random',
+      ...Object.fromEntries(list.backgrounds.map((b) => [b.name, b.label])),
+    },
     get: (s) => s.menuBackground,
     with: (s, v) => ({ ...s, menuBackground: v }),
   };

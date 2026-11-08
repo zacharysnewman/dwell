@@ -319,6 +319,18 @@ kbd.phrase {
   opacity: 1;
 }
 
+/* Two layers: a new view (the menu's `random` choice, after each full turn) fades in over the old. */
+.mm-pano-layer {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 3s ease;
+}
+
+.mm-pano-layer.shown {
+  opacity: 1;
+}
+
 .mm-pano-strip {
   position: absolute;
   top: 0;

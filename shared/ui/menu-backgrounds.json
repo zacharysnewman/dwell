@@ -1,6 +1,6 @@
 {
   "$comment": "The main menu's backgrounds (owner, 2026-11-08): 360° panoramas of real spots in a world, rendered from the game. Each: `name` (lowercase words joined by dashes; Settings stores it), `label` (Settings → On screen → Menu background shows it), `about` (what is there and how it was found), the world's `seed`, the camera's `position` (world m, eye height; the player is spawned there so the chunks stream in), `yaw` (degrees, 0 = +Z, 90 = +X: the heading at the image's left edge; the camera is level), `timeOfDay` (0–1, 0 midnight) and `image` (a file in shared/ui/menu-backgrounds/). `default` is shown until the player chooses; `turnS` the seconds for one whole turn behind the menu. `capture` is how `npm run panoramas` (client/scripts/panoramas.ts) shoots them: `steps` level shots round the circle in a square window of `sizePx` at `fovDeg`, stitched into one cylindrical strip `span` of the focal length above and below the horizon, WebP at `quality`, after waiting up to `settleS` for the terrain. A new background: an entry here, `npm run panoramas -- <name>` (a built client), then `node shared/ui/gen.mjs`; CI fails on stale output.",
-  "default": "beach-peaks",
+  "default": "random",
   "turnS": 150,
   "capture": { "steps": 16, "sizePx": 1080, "fovDeg": 90, "span": 0.9, "quality": 0.8, "settleS": 90 },
   "backgrounds": [

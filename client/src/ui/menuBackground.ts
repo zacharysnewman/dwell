@@ -13,6 +13,26 @@ import {
 
 export { DEFAULT_MENU_BACKGROUND, MENU_BACKGROUNDS };
 
+/**
+ * The choice that picks a background at random and fades to another after each full turn (owner,
+ * 2026-11-08: "a default random setting that picks one at random and after doing a full 360 they
+ * fade into the next one").
+ */
+export const RANDOM_BACKGROUND = 'random';
+
+/** A different background from `current` (any one when there is only one), by `random()` in [0, 1). */
+export function nextRandomBackground(
+  current: string | null,
+  random: () => number = Math.random,
+  list: BackgroundList = BACKGROUNDS,
+): string {
+  const names = list.backgrounds.map((b) => b.name);
+  const others = names.length > 1 ? names.filter((n) => n !== current) : names;
+  const name = others[Math.min(others.length - 1, Math.floor(random() * others.length))];
+  if (name === undefined) throw new Error('no menu backgrounds');
+  return name;
+}
+
 /** The backgrounds and the default (the generated data; tests pass their own). */
 export interface BackgroundList {
   backgrounds: readonly MenuBackground[];
@@ -42,7 +62,8 @@ export function sanitizeMenuBackground(
     typeof stored === 'object' && stored !== null && !Array.isArray(stored)
       ? (stored as Record<string, unknown>).background
       : undefined;
-  return typeof name === 'string' && list.backgrounds.some((b) => b.name === name)
+  return typeof name === 'string' &&
+    (name === RANDOM_BACKGROUND || list.backgrounds.some((b) => b.name === name))
     ? name
     : list.default;
 }
@@ -81,40 +102,90 @@ function reducedMotion(): boolean {
 /** The panorama behind the main menu: `root` goes under its content. */
 export class MenuPanorama {
   readonly root = document.createElement('div');
-  private readonly strip = document.createElement('div');
+  /** Two layers, so a new view fades in over the old one. */
+  private readonly layers: [HTMLDivElement, HTMLDivElement];
+  private front: 0 | 1 = 0;
   private shown: string | null = null;
+  private choice: string;
+  private timer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(name: string) {
     this.root.className = 'mm-panorama';
     this.root.setAttribute('aria-hidden', 'true');
-    this.strip.className = 'mm-pano-strip';
-    this.root.append(this.strip);
+    const layer = () => {
+      const l = document.createElement('div');
+      l.className = 'mm-pano-layer';
+      const strip = document.createElement('div');
+      strip.className = 'mm-pano-strip';
+      l.append(strip);
+      this.root.append(l);
+      return l;
+    };
+    this.layers = [layer(), layer()];
+    this.choice = name;
     this.show(name);
     if (typeof matchMedia === 'function') {
       matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', () => {
-        const name = this.shown;
+        const shown = this.shown;
         this.shown = null;
-        if (name) this.show(name);
+        if (shown) this.display(shown);
       });
     }
   }
 
-  /** Shows the background named (the default for a name this build doesn't know). */
+  /**
+   * Shows the choice: a background by name (the default for a name this build doesn't know), or
+   * `random`: one picked at random, then another after each full turn, faded in over it.
+   */
   show(name: string): void {
+    this.choice = name;
+    if (this.timer !== null) clearTimeout(this.timer);
+    this.timer = null;
+    if (name === RANDOM_BACKGROUND) {
+      if (this.shown === null) this.display(nextRandomBackground(null));
+      else this.schedule();
+      return;
+    }
+    this.display(findBackground(name).name);
+  }
+
+  /** In `random`, the next view after one full turn. */
+  private schedule(): void {
+    if (this.choice !== RANDOM_BACKGROUND || this.timer !== null) return;
+    this.timer = setTimeout(() => {
+      this.timer = null;
+      if (this.choice !== RANDOM_BACKGROUND) return;
+      this.display(nextRandomBackground(this.shown));
+    }, MENU_BACKGROUND_TURN_S * 1000);
+  }
+
+  private display(name: string): void {
     const bg = findBackground(name);
-    if (bg.name === this.shown) return;
+    if (bg.name === this.shown) {
+      this.schedule();
+      return;
+    }
     this.shown = bg.name;
     this.root.dataset.background = bg.name;
+    const back = this.front === 0 ? 1 : 0;
+    const [layer, old] = back === 0 ? this.layers : [this.layers[1], this.layers[0]];
+    const strip = layer.firstElementChild as HTMLDivElement;
     const img = new Image();
     img.onload = () => {
       if (this.shown !== bg.name) return;
       const style = panoramaStyle(img.naturalWidth / img.naturalHeight, reducedMotion());
       // From script: the page's CSP takes no inline style sheet (element styles are allowed).
-      this.strip.style.backgroundImage = `url("${bg.url}")`;
-      this.strip.style.aspectRatio = style.aspectRatio;
-      this.strip.style.animationDuration = style.animationDuration;
-      this.strip.style.animationName = style.animationName;
+      strip.style.backgroundImage = `url("${bg.url}")`;
+      strip.style.aspectRatio = style.aspectRatio;
+      strip.style.animationDuration = style.animationDuration;
+      strip.style.animationName = 'none';
+      strip.getBoundingClientRect(); // a reflow: the turn restarts from its start
+      strip.style.animationName = style.animationName;
+      layer.classList.add('shown');
+      old.classList.remove('shown');
+      this.front = back;
       this.root.classList.add('loaded');
+      this.schedule();
     };
     img.src = bg.url;
   }
