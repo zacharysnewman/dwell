@@ -78,6 +78,9 @@ pub async fn probe_scene() -> Result<Vec<u8>, JsError> {
 pub fn hotbar_swatch(slot: usize) -> Vec<u8> {
     let palette = dwell_game::block_interaction::palette();
     palette.get(slot).map_or_else(Vec::new, |p| {
+        if p.tool.is_some() {
+            return tool_swatch(p.item);
+        }
         let mut px = dwell_mesh::swatch(p.material);
         let full = dwell_blocks::info(p.material).shape == dwell_blocks::VoxelShape::Full;
         if p.rows == 1 && full {
@@ -87,10 +90,43 @@ pub fn hotbar_swatch(slot: usize) -> Vec<u8> {
     })
 }
 
-/// An inventory item's picture (ADR 0066): a block item's swatch, a non-block item's colour; empty
-/// for an item this build doesn't know.
+/// A tool's picture (ADR 0067): a handle across the tile, bottom left to top right, and a head in
+/// the item's colour at its top.
+pub fn tool_swatch(item: &str) -> Vec<u8> {
+    let n = dwell_mesh::TILE;
+    let mut px = vec![0u8; n * n * 4];
+    let head = dwell_protocol::inventory::item(item).map_or([125, 116, 104], |d| d.color);
+    let s = n as f64;
+    for y in 0..n {
+        for x in 0..n {
+            let (u, v) = ((x as f64 + 0.5) / s, 1.0 - (y as f64 + 0.5) / s);
+            // The handle: within 0.06 of the diagonal u = v, from 0.12 to 0.85.
+            let on_handle = (u - v).abs() < 0.085 && (0.12..0.85).contains(&(0.5 * (u + v)));
+            // The head: a block across the handle's top, to its upper left.
+            let (a, b) = (0.5 * (u + v), 0.5 * (v - u));
+            let on_head = (0.66..0.86).contains(&a) && (-0.04..0.26).contains(&b);
+            let c = if on_head {
+                head.map(|c| (f64::from(c) * (1.1 - 0.5 * b)).min(255.0) as u8)
+            } else if on_handle {
+                [122, 84, 50]
+            } else {
+                continue;
+            };
+            let i = (y * n + x) * 4;
+            px[i..i + 3].copy_from_slice(&c);
+            px[i + 3] = 255;
+        }
+    }
+    px
+}
+
+/// An inventory item's picture (ADR 0066): a block item's swatch, a non-block item's colour (a
+/// tool's drawn as one); empty for an item this build doesn't know.
 #[wasm_bindgen(js_name = itemSwatch)]
 pub fn item_swatch(item: &str) -> Vec<u8> {
+    if dwell_protocol::chopping::tool(item).is_some() {
+        return tool_swatch(item);
+    }
     if let Some(b) = dwell_blocks::find_block(item) {
         let m = (b.first_state..b.first_state + b.state_count)
             .find(|&m| dwell_world::edit::placeable(m))

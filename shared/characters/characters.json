@@ -483,7 +483,7 @@
       "on": "grip_r",
       "parts": [
         { "id": "axe_handle", "on": "grip_r", "kind": "box", "size": [0.045, 0.5, 0.045], "at": [0, 0.02, 0.13], "rot": [90, 0, 0], "material": "heartwood" },
-        { "id": "axe_head", "on": "grip_r", "kind": "round_box", "size": [0.07, 0.2, 0.12], "at": [0, 0.09, 0.33], "round": 0.25, "material": "stone" },
+        { "id": "axe_head", "on": "grip_r", "kind": "round_box", "size": [0.055, 0.15, 0.1], "at": [0, 0.075, 0.32], "round": 0.25, "material": "stone.shadow" },
         { "id": "axe_lashing", "on": "grip_r", "kind": "box", "size": [0.062, 0.06, 0.07], "at": [0, 0.02, 0.33], "material": "leather" }
       ]
     },

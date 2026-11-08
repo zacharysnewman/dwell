@@ -28,20 +28,20 @@ pub static MATERIALS: &[Material] = &[
     Material { name: "bark.light", shadow: 0xa77a4c, base: 0xa77a4c, light: 0xa77a4c, overlay: 0.0, emissive: 0.0, tile: -1 },
     Material { name: "bark.shadow", shadow: 0x4a3438, base: 0x4a3438, light: 0x4a3438, overlay: 0.0, emissive: 0.0, tile: -1 },
     Material { name: "heartwood", shadow: 0x9c7650, base: 0xc99f66, light: 0xecc98e, overlay: 0.0, emissive: 0.0, tile: -1 },
-    Material { name: "stone", shadow: 0x817e8e, base: 0xa9a3a3, light: 0xdcd0b9, overlay: 1.0, emissive: 0.0, tile: 13 },
-    Material { name: "fur_wolf", shadow: 0x4a5068, base: 0x8b909e, light: 0xc9cbd0, overlay: 0.6, emissive: 0.0, tile: 14 },
-    Material { name: "fur_wolf_belly", shadow: 0xb4b2b4, base: 0xe8e3d6, light: 0xfaf6ec, overlay: 0.5, emissive: 0.0, tile: 15 },
+    Material { name: "stone.shadow", shadow: 0x817e8e, base: 0x817e8e, light: 0x817e8e, overlay: 0.0, emissive: 0.0, tile: -1 },
+    Material { name: "fur_wolf", shadow: 0x4a5068, base: 0x8b909e, light: 0xc9cbd0, overlay: 0.6, emissive: 0.0, tile: 13 },
+    Material { name: "fur_wolf_belly", shadow: 0xb4b2b4, base: 0xe8e3d6, light: 0xfaf6ec, overlay: 0.5, emissive: 0.0, tile: 14 },
     Material { name: "wolf.shadow", shadow: 0x4a5068, base: 0x4a5068, light: 0x4a5068, overlay: 0.0, emissive: 0.0, tile: -1 },
-    Material { name: "fur_deer", shadow: 0x74472f, base: 0xba7f4b, light: 0xe0b27a, overlay: 0.55, emissive: 0.0, tile: 16 },
-    Material { name: "fur_deer_cream", shadow: 0xcbb89c, base: 0xf2e4c8, light: 0xfdf8ee, overlay: 0.45, emissive: 0.0, tile: 17 },
+    Material { name: "fur_deer", shadow: 0x74472f, base: 0xba7f4b, light: 0xe0b27a, overlay: 0.55, emissive: 0.0, tile: 15 },
+    Material { name: "fur_deer_cream", shadow: 0xcbb89c, base: 0xf2e4c8, light: 0xfdf8ee, overlay: 0.45, emissive: 0.0, tile: 16 },
     Material { name: "deer_cream.light", shadow: 0xfdf8ee, base: 0xfdf8ee, light: 0xfdf8ee, overlay: 0.0, emissive: 0.0, tile: -1 },
     Material { name: "antler.shadow", shadow: 0x9e8a70, base: 0x9e8a70, light: 0x9e8a70, overlay: 0.0, emissive: 0.0, tile: -1 },
-    Material { name: "antler", shadow: 0x9e8a70, base: 0xdccaa6, light: 0xf7eed6, overlay: 0.4, emissive: 0.0, tile: 18 },
+    Material { name: "antler", shadow: 0x9e8a70, base: 0xdccaa6, light: 0xf7eed6, overlay: 0.4, emissive: 0.0, tile: 17 },
 ];
 
 /// Every material's brush tile (`TILE` x `TILE` bytes each, row y = 0 first): its luminance over the
 /// tile's mean, x 127.5.
-pub static TILES: &[u8; 19456] = include_bytes!("fixture.tiles");
+pub static TILES: &[u8; 18432] = include_bytes!("fixture.tiles");
 
 pub static CLIPS: &[Clip] = &[
     Clip {
@@ -971,7 +971,7 @@ pub static CHARACTERS: &[Character] = &[
             ] },
             Item { name: "stone_axe", light: None, pose: &[], parts: &[
                 Part { id: "axe_handle", bone: 9, kind: Kind::Box, size: [0.045, 0.5, 0.045], at: [0.0, -0.08, 0.15], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 19 },
-                Part { id: "axe_head", bone: 9, kind: Kind::RoundBox, size: [0.07, 0.2, 0.12], at: [0.0, -0.01, 0.35], rot: [0.0, 0.0, 0.0], round: 0.25, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 20 },
+                Part { id: "axe_head", bone: 9, kind: Kind::RoundBox, size: [0.055, 0.15, 0.1], at: [0.0, -0.025, 0.34], rot: [0.0, 0.0, 0.0], round: 0.25, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 20 },
                 Part { id: "axe_lashing", bone: 9, kind: Kind::Box, size: [0.062, 0.06, 0.07], at: [0.0, -0.08, 0.35], rot: [0.0, 0.0, 0.0], round: 0.0, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 6 },
             ] },
             Item { name: "brush", light: None, pose: &[], parts: &[
