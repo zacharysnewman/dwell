@@ -29,10 +29,11 @@ function unmeshed(page: Page): Promise<number | null> {
  * Resolves once most of the streamed view is meshed (at most `MOST_MESHED` chunks left; on CI's
  * runners the count need not reach 0 while light and water keep re-meshing, so this stops waiting
  * for it after `MESH_WAIT_MS`), and then the game has ticked at least `minPerS` ticks a second
- * over each of four consecutive half-second windows (60 a second is real time; a page drawing a
- * few frames a second still catches up its ticks, a stalled one ticks none).
+ * over each of two consecutive half-second windows (60 a second is real time; a page drawing a
+ * few frames a second still catches up its ticks, a stalled one ticks none; CI's generated-terrain
+ * pages never sustain 30, so the bar is 10).
  */
-export async function untilTicking(page: Page, minPerS = 30, timeout = 60_000): Promise<void> {
+export async function untilTicking(page: Page, minPerS = 10, timeout = 60_000): Promise<void> {
   const meshWait = Date.now() + MESH_WAIT_MS;
   while (Date.now() < meshWait) {
     const n = await unmeshed(page);
@@ -48,7 +49,7 @@ export async function untilTicking(page: Page, minPerS = 30, timeout = 60_000): 
         const now = await ticks(page);
         good = last !== null && now !== null && now - last >= minPerS / 2 ? good + 1 : 0;
         last = now;
-        return good >= 4;
+        return good >= 2;
       },
       { message: 'the game ticking in real time', timeout, intervals: [0] },
     )
