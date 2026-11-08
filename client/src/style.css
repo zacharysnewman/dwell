@@ -2586,14 +2586,14 @@ body.loading-wait #brush-panel {
   margin-top: 8px;
 }
 
-/* The minimap (ADR 0068; shared/ui/map.json's sizePx and edgeColor): round, top right, the
+/* The minimap (ADR 0068; its size from shared/ui/map.json, set as --minimap-size): round, top right, the
    heading up; a tap opens the explored map. */
 #minimap {
   position: absolute;
   right: calc(var(--safe-right) + 12px);
   top: calc(var(--safe-top) + 12px);
-  width: 168px;
-  height: 168px;
+  width: var(--minimap-size, 168px);
+  height: var(--minimap-size, 168px);
   border-radius: 50%;
   overflow: hidden;
   background: rgb(20 22 28 / 55%);
@@ -2606,7 +2606,7 @@ body.loading-wait #brush-panel {
 }
 /* The flight speed slider moves below it. */
 body.minimap-on:not(.hud-hide-minimap) #flight-speed {
-  top: calc(var(--safe-top) + 196px);
+  top: calc(var(--safe-top) + var(--minimap-size, 168px) + 28px);
 }
 #minimap.map-off {
   display: none;

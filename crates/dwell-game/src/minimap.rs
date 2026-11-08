@@ -25,6 +25,8 @@ pub struct MapTunables {
     pub minimap_radius_m: f64,
     pub minimap_texel_m: f64,
     pub minimap_size_px: f64,
+    pub minimap_compact_size_px: f64,
+    pub minimap_compact_below_px: f64,
     pub minimap_move_texels: f64,
     pub minimap_turn_degrees: f64,
     pub minimap_refresh_seconds: f64,

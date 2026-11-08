@@ -5,6 +5,8 @@ pub const MAP: MapTunables = MapTunables {
     minimap_radius_m: 64.0,
     minimap_texel_m: 1.0,
     minimap_size_px: 168.0,
+    minimap_compact_size_px: 104.0,
+    minimap_compact_below_px: 520.0,
     minimap_move_texels: 1.0,
     minimap_turn_degrees: 2.0,
     minimap_refresh_seconds: 2.0,

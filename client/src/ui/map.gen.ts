@@ -6,6 +6,8 @@ export const MAP = {
     radiusM: 64,
     texelM: 1,
     sizePx: 168,
+    compactSizePx: 104,
+    compactBelowPx: 520,
     moveTexels: 1,
     turnDegrees: 2,
     refreshSeconds: 2,

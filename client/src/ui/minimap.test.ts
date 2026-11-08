@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { MAP } from './map.gen';
 import {
   addExplored,
+  minimapSize,
   sameDots,
   cellKey,
   exploredRecord,
@@ -147,5 +148,17 @@ describe('the dots', () => {
     expect(sameDots([1, 2, 3, 4], [1.05, 2, 3, 4])).toBe(true);
     expect(sameDots([1, 2, 3, 4], [1.5, 2, 3, 4])).toBe(false);
     expect(sameDots([1, 2], [1, 2, 3, 4])).toBe(false);
+  });
+});
+
+describe('the minimap size', () => {
+  it('is compact on a short screen (a phone sideways), full otherwise', () => {
+    expect(minimapSize(342)).toBe(MAP.minimap.compactSizePx);
+    expect(minimapSize(900)).toBe(MAP.minimap.sizePx);
+    // On a phone sideways (750 × 342) it stays clear of the view at (600, 150), where the touch
+    // test taps to place: right edge 12 px in, top 12 px.
+    const r = MAP.minimap.compactSizePx / 2;
+    const [cx, cy] = [750 - 12 - r, 12 + r];
+    expect(Math.hypot(600 - cx, 150 - cy)).toBeGreaterThan(r);
   });
 });

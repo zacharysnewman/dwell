@@ -101,6 +101,8 @@ export const MAP_FIELDS = {
     radiusM: ['int', 8, 256],
     texelM: ['num', 0.25, 8],
     sizePx: ['int', 64, 512],
+    compactSizePx: ['int', 48, 512],
+    compactBelowPx: ['int', 0, 4096],
     moveTexels: ['num', 0.25, 16],
     turnDegrees: ['num', 0.1, 45],
     refreshSeconds: ['num', 0.1, 60],
