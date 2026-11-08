@@ -24,6 +24,7 @@ pub mod reflections;
 #[path = "reflections.gen.rs"]
 mod reflections_gen;
 pub mod shadows;
+pub mod shafts;
 #[path = "shadows.gen.rs"]
 mod shadows_gen;
 pub mod spyglass;
