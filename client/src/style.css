@@ -302,6 +302,84 @@ kbd.phrase {
   opacity: 0.92;
 }
 
+/*
+ * The panorama of a real spot (ui/menuBackground.ts, shared/ui/menu-backgrounds.json), over the
+ * painted hills once loaded: two copies of the 360° strip side by side, moved left by one copy
+ * each turn (the duration and the strip's aspect are set from script), so it never jumps.
+ */
+.mm-panorama {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 0.8s ease;
+}
+
+.mm-panorama.loaded {
+  opacity: 1;
+}
+
+.mm-pano-strip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background-repeat: repeat-x;
+  background-size: 50% 100%;
+  animation: mm-pano-turn 150s linear infinite;
+  will-change: transform;
+}
+
+/* A light veil, darker toward the bottom, so the menu's cards read over any view. */
+.mm-panorama::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgb(255 255 255 / 0%) 40%, rgb(16 28 40 / 28%) 100%);
+}
+
+@keyframes mm-pano-turn {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mm-pano-strip {
+    animation: none;
+  }
+}
+
+/* Settings from the main menu: the button in the top-right corner, its menu over the main menu. */
+.mm-settings {
+  position: fixed;
+  top: calc(var(--safe-top) + 12px);
+  right: calc(var(--safe-right) + 12px);
+  z-index: 1;
+}
+
+/* On a phone it sits under the tagline, clear of the wordmark. */
+@media (max-width: 640px) {
+  .mm-settings {
+    position: static;
+    margin-top: 10px;
+  }
+}
+
+/* The painted hills give way to the panorama once it has loaded. */
+.mm-backdrop:has(.mm-panorama.loaded)::before,
+.mm-backdrop:has(.mm-panorama.loaded)::after {
+  display: none;
+}
+
+body:has(#main-menu) .game-menu {
+  z-index: calc(var(--z-menu) + 1);
+}
+
+.gm-tab.gm-tab-off {
+  opacity: 0.55;
+}
+
 .menu-panel {
   box-sizing: border-box;
   max-width: 1080px;

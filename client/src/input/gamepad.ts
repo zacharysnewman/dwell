@@ -95,7 +95,7 @@ export class GamepadInput {
 }
 
 /** The main menu page's controller (no game): menus only, on its own animation frames. */
-export function startMenuGamepad(doc: Document, back: () => void): void {
+export function startMenuGamepad(doc: Document, back: () => void): GamepadInput {
   const input = new GamepadInput(
     {
       client: null,
@@ -111,4 +111,5 @@ export function startMenuGamepad(doc: Document, back: () => void): void {
     requestAnimationFrame(frame);
   };
   requestAnimationFrame(frame);
+  return input;
 }

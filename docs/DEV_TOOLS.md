@@ -385,6 +385,25 @@ player there with yaw 0 looks down it); `goto` finds water wherever the terrain 
 - A kind of place to find: a filter on `find.rs`'s `Query` (with a both-faces test), its option
   in `client/src/debug/find.ts` and the `goto` step's parser.
 
+## Menu panoramas
+
+The main menu's backgrounds (`shared/ui/menu-backgrounds.json`, ARCHITECTURE.md `ui/`) are rendered
+from the real game by `npm run panoramas [-- name …]` (`client/scripts/panoramas.ts`, a built client
+as for the bench; `--base`, `--out`). For each entry it opens the entry's seed as a local world with
+the player at its `position` (`?local=1&seed=…&fresh=1&at=…&time=…&preset=high`; the FOV at
+`capture.fovDeg`, arms and speed effects off, no music), waits for the terrain, hides everything but
+the game canvas, then places the camera there level and turns it in `capture.steps` equal steps
+(yaw falling, so each shot lands right of the last), waiting for what each way shows. The square
+shots are stitched in the page into one cylindrical 360° strip (each column from the shot looking
+nearest along it, reprojected from its perspective; `span` of the focal length above and below the
+horizon) whose ends meet, encoded as WebP at `capture.quality` into `shared/ui/menu-backgrounds/`
+(the shots stay in `--out`). With the defaults (16 shots, 1080 px at 90°) a strip is 3393 × 972,
+110–180 KB. The clouds drift between shots, so a soft seam can show in the sky.
+
+A new background: find the spot (a `goto` scenario, [Finding places](#finding-places): the three
+were found with `water` at `scope: world` for `sea` then the nearest `dwell:sand`, `river` and
+`lake`, seed 0), add its entry, run `npm run panoramas -- <name>`, then `node shared/ui/gen.mjs`.
+
 ## Comparing builds
 
 Serve the other build on another port (for example a `git worktree` of the older commit, built with

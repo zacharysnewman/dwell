@@ -32,6 +32,8 @@ export const SHADOWS_KEY = 'dwell.shadows';
 export const HUD_KEY = 'dwell.hud';
 /** The graphics preset chosen: `{ "id": … }`, append-only (0.50.31; older builds don't read it). */
 export const PRESET_KEY = 'dwell.graphicsPreset';
+/** The main menu's own settings: `{ "background": … }` (ui/menuBackground.ts), append-only (0.50.43). */
+export const MENU_KEY = 'dwell.menu';
 // The other keys live with their settings: MOTION_KEY, EXPLOSIONS_KEY, VIEW_KEY, RENDER_SCALE_KEY,
 // AUDIO_KEY (passed in below, so this module doesn't import them in a cycle).
 
@@ -93,6 +95,7 @@ export function settingFields(keys: StoreKeys): SettingField[] {
     ...HUD_ELEMENTS.map((e) => one(['hud', 'shown', e.id], HUD_KEY, ['shown', e.id])),
     one(['hud', 'mapShading'], HUD_KEY, ['mapShading']),
     ...rec('renderScale', keys.renderScale, ['scale', 'upscaler'], ['renderScale', 'upscaler']),
+    one(['menuBackground'], MENU_KEY, ['background']),
   ];
 }
 

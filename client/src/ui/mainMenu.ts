@@ -22,6 +22,7 @@ import type { RecentServer } from './recentServers';
 import { ServerBrowser } from './serverBrowser';
 import { playAdvancedPanel, spawnChoices } from './playAdvanced';
 import { audio } from '../audio/engine';
+import { DEFAULT_MENU_BACKGROUND, MenuPanorama } from './menuBackground';
 
 export interface MainMenuDeps {
   index: WorldIndex;
@@ -43,6 +44,10 @@ export interface MainMenuDeps {
   /** The version page and the licence notices. */
   versionsHref: string;
   noticesHref: string;
+  /** The background (shared/ui/menu-backgrounds.json, Settings → On screen); default the data's. */
+  background?: string;
+  /** Opens Settings (every pane; ui/menuPage.ts), from the Settings button. */
+  openSettings?: () => void;
   /** Whether a world can be regenerated (the build that opens it carries out `?regenerate=`). */
   canRegenerate?(world: WorldMeta): boolean;
   /** The master server (Phase 5d), when this build has one: addresses and nearby games. */
@@ -124,6 +129,8 @@ export class MainMenu {
   private readonly form = document.createElement('form');
   /** Worlds saved before versioned releases (RELEASES.md §6): listed only to be deleted. */
   private readonly legacy = document.createElement('section');
+  /** The panorama behind the menu (ui/menuBackground.ts). */
+  private readonly panorama: MenuPanorama;
 
   constructor(
     parent: HTMLElement,
@@ -134,6 +141,9 @@ export class MainMenu {
     const backdrop = document.createElement('div');
     backdrop.className = 'mm-backdrop';
     backdrop.setAttribute('aria-hidden', 'true');
+    // Over it, once loaded: the panorama of a real spot, turning slowly.
+    this.panorama = new MenuPanorama(deps.background ?? DEFAULT_MENU_BACKGROUND);
+    backdrop.append(this.panorama.root);
     const panel = document.createElement('div');
     panel.className = 'menu-panel';
     const hero = document.createElement('header');
@@ -145,6 +155,15 @@ export class MainMenu {
     tagline.className = 'mm-tagline';
     tagline.textContent = 'Build a world, alone or with friends.';
     hero.append(title, tagline);
+    if (deps.openSettings) {
+      const open = deps.openSettings;
+      const settings = button('Settings', 'quiet-button mm-settings', () => {
+        open();
+      });
+      settings.id = 'menu-settings';
+      settings.setAttribute('aria-controls', 'settings-menu');
+      hero.append(settings);
+    }
     this.message.id = 'menu-message';
     this.message.setAttribute('aria-live', 'polite');
     this.message.textContent = deps.message ?? '';
@@ -207,6 +226,11 @@ export class MainMenu {
     parent.append(this.root);
     this.render();
     void this.adoptSavedWorlds();
+  }
+
+  /** Shows another background (Settings changed it). */
+  setBackground(name: string): void {
+    this.panorama.show(name);
   }
 
   /**
