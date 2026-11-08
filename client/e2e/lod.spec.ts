@@ -3,6 +3,7 @@
 // disc drawn.
 import { expect, test, type Page } from '@playwright/test';
 import { World } from '../src/protocol/constants.gen';
+import { untilTicking } from './ticking';
 
 interface LodStats {
   drawn: number[];
@@ -45,6 +46,8 @@ test('local mode: LOD around the player, and the whole disc after flying up', as
   // fills ~2/3 of the view. There is no ceiling (Phase 16, ADR 0025 D3). At the flight speed
   // slider's top level (11: 362 m/s, 905 m/s running; PLAYER_CONTROLLER.md §6.7) the climb takes
   // about 170 s.
+  // Flight toggles in a frame: not while the software renderer draws none (BUGS.md #49).
+  await untilTicking(page);
   await call(page, 'fly(true)');
   await call(page, 'look(0, -89)');
   await call(page, "press('Space', true)");
