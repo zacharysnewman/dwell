@@ -1823,17 +1823,18 @@ impl<S: Scene> Game<S> {
         self.portals = dwell_worldgen::portal_axes_for(generator_version, world_seed);
     }
 
-    /// What the server announced it takes (Welcome flags): region edits, and brush strokes with
-    /// the game mode's brush reach (BRUSHES.md; every world is creative for now).
+    /// What the server announced it takes (Welcome flags, and the world's game mode when the host
+    /// changes it): region edits, and brush strokes with the brush reach where the mode allows
+    /// brushes (BRUSHES.md, ADR 0065).
     pub fn set_capabilities(&mut self, region_edits: bool, brushes: bool) {
-        let policy =
-            dwell_world::brush::brush_policy(dwell_world::brush::world_mode()).filter(|_| brushes);
         self.region.enabled = region_edits;
         self.region.keep = brushes;
-        self.region.reach = policy.map_or(dwell_protocol::region_edit::REACH, |p| {
-            p.reach.max(dwell_protocol::region_edit::REACH)
-        });
-        self.brush.available = region_edits && policy.is_some();
+        self.region.reach = if brushes {
+            dwell_world::brush::REACH.max(dwell_protocol::region_edit::REACH)
+        } else {
+            dwell_protocol::region_edit::REACH
+        };
+        self.brush.available = region_edits && brushes;
         self.brush.reach = self.region.reach;
     }
 

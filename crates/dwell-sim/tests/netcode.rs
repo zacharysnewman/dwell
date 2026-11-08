@@ -242,6 +242,14 @@ fn playground_config() -> ServerConfig {
     }
 }
 
+/// [`playground_config`] in adventure mode (ADR 0065): players are hurt, no flight, no brushes.
+fn adventure_config() -> ServerConfig {
+    ServerConfig {
+        mode: "adventure".into(),
+        ..playground_config()
+    }
+}
+
 impl NetSim {
     fn new(conditions: LinkConditions) -> Self {
         Self::with(conditions, playground_config())
@@ -712,7 +720,8 @@ fn input_datagrams_are_rate_limited() {
 
 #[test]
 fn a_hard_fall_damages_a_lethal_one_kills_and_every_client_sees_the_respawn() {
-    let mut sim = NetSim::new(LinkConditions::default());
+    // In adventure: creative hurts no one (ADR 0065, tests/modes.rs).
+    let mut sim = NetSim::with(LinkConditions::default(), adventure_config());
     let (a, b) = (sim.join(None, false), sim.join(None, false));
     sim.step(10);
     let pa = sim.clients[a].player_id;
@@ -1336,6 +1345,41 @@ fn with_flight_off_the_server_ignores_the_fly_bit() {
         "{}",
         sim.clients[c].position()
     );
+}
+
+/// ADR 0065: adventure has no flight. The server clears the fly bit (the client, told by Welcome,
+/// sends none, but the server's check is what counts), and the prediction stays with the server.
+#[test]
+fn in_adventure_the_server_ignores_the_fly_bit() {
+    let mut sim = NetSim::with(LinkConditions::default(), adventure_config());
+    let c = sim.join(Some(fly_script()), false);
+    assert_eq!(sim.clients[c].welcome_flags & welcome_flags::FLIGHT, 0);
+    assert_ne!(sim.clients[c].welcome_flags & welcome_flags::FLIGHT_POLICY, 0);
+    sim.step(10);
+    let start = sim.clients[c].position().y;
+    sim.step(ticks(1.0));
+    assert!(
+        sim.clients[c].position().y < start + 2.0,
+        "{}",
+        sim.clients[c].position()
+    );
+}
+
+/// ADR 0065: the host turning a creative world into an adventure one grounds a flying player at
+/// once: the server stops taking its fly bit and it falls.
+#[test]
+fn the_host_changing_the_mode_to_adventure_grounds_a_flying_player() {
+    let mut sim = NetSim::new(LinkConditions::default());
+    let c = sim.join(Some(fly_script()), false);
+    sim.step(10);
+    let start = sim.clients[c].position().y;
+    sim.step(ticks(1.0));
+    let up = sim.server.feet_of(sim.clients[c].player_id).unwrap()[1];
+    assert!(up > start + 5.0, "flying in creative");
+    assert!(sim.server.set_mode("adventure"));
+    sim.step(ticks(4.0));
+    let now = sim.server.feet_of(sim.clients[c].player_id).unwrap()[1];
+    assert!(now < up - 3.0, "fell once flight went: {up} -> {now}");
 }
 
 #[test]

@@ -153,6 +153,7 @@ fn decoded_fields_are_the_vectors_values() {
             start_hour: 0.0,
         },
         water_speed: 9.0,
+        mode: "creative",
     };
     let s = f
         .settings(d)

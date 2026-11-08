@@ -267,6 +267,7 @@ export const WelcomeFlags = {
   flight: 1,
   regionEdits: 2,
   brushes: 4,
+  flightPolicy: 8,
 } as const;
 
 export const HeldItem = {

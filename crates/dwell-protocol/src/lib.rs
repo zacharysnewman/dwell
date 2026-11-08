@@ -6,6 +6,7 @@ pub mod auth;
 pub mod bytes;
 pub mod fragment;
 mod messages;
+pub mod modes;
 pub mod world_settings;
 
 #[rustfmt::skip]

@@ -218,6 +218,15 @@ impl LocalCore {
         self.server
             .set_hosting(max_players, edits, flight, host_key);
     }
+    /// The host changes the world's game mode (ADR 0065): at once for everyone in it, saved with
+    /// the world. False for a name not in `shared/modes/modes.json`.
+    pub fn set_mode(&mut self, name: &str) -> bool {
+        self.server.set_mode(name)
+    }
+    /// The world's game mode's name.
+    pub fn mode(&self) -> &'static str {
+        self.server.world_settings().mode
+    }
     /// Tells the guests the host paused or resumed.
     pub fn host_status(&mut self, state: HostState) {
         self.server.broadcast_host_status(state);

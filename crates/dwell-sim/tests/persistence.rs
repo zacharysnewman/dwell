@@ -77,6 +77,7 @@ fn a_worlds_settings_are_saved_with_it_and_kept_over_a_new_servers_defaults() {
         let mut f = Fixture::new(ServerConfig {
             store: Some(store),
             water_speed: 3.0,
+            mode: "adventure".into(),
             ..flat()
         });
         assert_eq!(f.server.world_settings().water_speed, 3.0);
@@ -91,6 +92,8 @@ fn a_worlds_settings_are_saved_with_it_and_kept_over_a_new_servers_defaults() {
     });
     let s = f.server.world_settings();
     assert_eq!(s.water_speed, 3.0, "the world's own");
+    // ADR 0065: its game mode too, over the new-world default (creative).
+    assert_eq!(s.mode, "adventure");
     assert_eq!(
         s.clock,
         dwell_sim::server::default_settings(1.0).clock,

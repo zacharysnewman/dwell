@@ -20,7 +20,7 @@ use crate::edit::{FACE_DIRS, flooded_for, placeable, unbreakable};
 #[rustfmt::skip]
 #[path = "brushes.gen.rs"]
 mod table;
-pub use table::{DEFAULT_MODE, FORMAT_VERSION, MAX_SIZE, MIN_SIZE, MODES, PRESETS};
+pub use table::{FORMAT_VERSION, MAX_SIZE, MIN_SIZE, PRESETS, REACH};
 
 /// A cell and the state a stroke puts there.
 pub type Change = ([i32; 3], StateId);
@@ -356,36 +356,9 @@ impl Preset {
     }
 }
 
-/// A game mode's brush policy (`shared/brushes/brushes.json` `modes`): whether it allows brushes,
-/// and how far a brush's region edits may be from the eye. Every world plays `DEFAULT_MODE`
-/// (creative) until a world picks its mode (BRUSHES.md §2).
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct ModePolicy {
-    pub mode: &'static str,
-    pub brushes: bool,
-    /// Metres from the eye to a region edit's nearest cell.
-    pub reach: f32,
-}
-
 /// The preset of that name.
 pub fn preset(name: &str) -> Option<&'static Preset> {
     PRESETS.iter().find(|p| p.name == name)
-}
-
-/// The game mode a world plays in. Every world is creative for now (owner, 2026-11-06): no world
-/// picks its mode yet. When one can (a world setting, ADR 0054), it is read here.
-pub fn world_mode() -> &'static str {
-    DEFAULT_MODE
-}
-
-/// The brush policy of a game mode, if it allows brushes.
-pub fn brush_policy(mode: &str) -> Option<&'static ModePolicy> {
-    brush_policy_in(MODES, mode)
-}
-
-/// [`brush_policy`] over a table of modes (the data's, or a test's fixture).
-pub fn brush_policy_in<'a>(modes: &'a [ModePolicy], mode: &str) -> Option<&'a ModePolicy> {
-    modes.iter().find(|p| p.mode == mode && p.brushes)
 }
 
 /// What a stroke is: the brush, the performer, the radius and the parameters.
@@ -2221,30 +2194,9 @@ mod tests {
     }
 
     #[test]
-    fn brushes_are_for_the_modes_the_data_names() {
-        // Owner, 2026-11-06: brushes in every world, not just the sandbox; every world is creative.
-        let creative = brush_policy(world_mode()).expect("every world's mode allows brushes");
-        assert_eq!(creative.mode, "creative");
-        assert_eq!(creative.reach, 256.0);
-        assert_eq!(
-            brush_policy("adventure"),
-            None,
-            "no such mode in the data yet"
-        );
-        // A mode added by data alone, with brushes off (the coming adventure mode).
-        let fixture = [
-            ModePolicy {
-                mode: "creative",
-                brushes: true,
-                reach: 256.0,
-            },
-            ModePolicy {
-                mode: "adventure",
-                brushes: false,
-                reach: 5.0,
-            },
-        ];
-        assert_eq!(brush_policy_in(&fixture, "creative"), Some(&fixture[0]));
-        assert_eq!(brush_policy_in(&fixture, "adventure"), None);
+    fn the_brush_reach_is_the_datas() {
+        // Owner, 2026-11-06: "Increase the reach to 256m". Which modes have brushes is
+        // shared/modes/modes.json's (ADR 0065).
+        assert_eq!(REACH, 256.0);
     }
 }

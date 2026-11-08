@@ -4,13 +4,7 @@
     "min": 1,
     "max": 16
   },
-  "modes": {
-    "creative": {
-      "brushes": true,
-      "reachM": 256
-    }
-  },
-  "defaultMode": "creative",
+  "reachM": 256,
   "presets": [
     {
       "name": "ball",
