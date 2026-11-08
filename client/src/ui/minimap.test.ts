@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { MAP } from './map.gen';
 import {
   addExplored,
+  sameDots,
   cellKey,
   exploredRecord,
   headingOnScreen,
@@ -138,5 +139,13 @@ describe('the height shading toggle', () => {
 
   it('the minimap is a part Settings, On screen, can hide', () => {
     expect(defaultHud().shown.minimap).toBe(true);
+  });
+});
+
+describe('the dots', () => {
+  it('redraw only when one moved', () => {
+    expect(sameDots([1, 2, 3, 4], [1.05, 2, 3, 4])).toBe(true);
+    expect(sameDots([1, 2, 3, 4], [1.5, 2, 3, 4])).toBe(false);
+    expect(sameDots([1, 2], [1, 2, 3, 4])).toBe(false);
   });
 });

@@ -176,6 +176,13 @@ export function headingOnScreen(face: number, yaw: number): number {
 
 const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
 
+/** Whether two dot lists ([right, up] m each) draw the same (within a tenth of a metre). */
+export function sameDots(a: ArrayLike<number>, b: ArrayLike<number>): boolean {
+  if (a.length !== b.length) return false;
+  for (let n = 0; n < a.length; n++) if (Math.abs((a[n] ?? 0) - (b[n] ?? 0)) > 0.1) return false;
+  return true;
+}
+
 /** What the map needs from the client (the wasm `Client`). */
 export interface MapClient {
   minimapFrame(nowMs: number, shading: boolean): Uint8Array | undefined;
@@ -184,6 +191,7 @@ export interface MapClient {
   mapPose(): Float64Array;
   takeExplored(): Int32Array;
   mapAllowed(): boolean;
+  cpuAdapter(): boolean;
 }
 
 /** The minimap and the big map on the page. */
@@ -197,7 +205,9 @@ export class MapUi {
   private cells: ExploredCells = new Map();
   private dirty = false;
   private lastSave = 0;
-  private lastDots = 0;
+  private dots: ArrayLike<number> = [];
+  private lastUpdate = -Infinity;
+  private readonly cpu: boolean;
   /** The disc's last draw (ms), for the bench's cost readout. */
   costMs = 0;
   shading: boolean = MAP.heightShading.default;
@@ -208,6 +218,7 @@ export class MapUi {
     private readonly world: string,
     private readonly store: ExploredStore | null,
   ) {
+    this.cpu = client.cpuAdapter();
     const px = client.minimapPixels();
     this.root = doc.createElement('div');
     this.root.id = 'minimap';
@@ -259,6 +270,10 @@ export class MapUi {
       this.big.hidden = true;
       return;
     }
+    // The CPU adapter's tier (CLAUDE.md): a software renderer's page updates it at most every
+    // `cpuUpdateMs`, the dots with it.
+    if (this.cpu && now - this.lastUpdate < MAP.minimap.cpuUpdateMs) return;
+    this.lastUpdate = now;
     const t0 = performance.now();
     const pixels = this.client.minimapFrame(now, this.shading);
     if (pixels) {
@@ -267,8 +282,9 @@ export class MapUi {
       ctx?.putImageData(new ImageData(new Uint8ClampedArray(pixels), px, px), 0, 0);
       this.costMs = performance.now() - t0;
     }
-    if (pixels || now - this.lastDots > 100) {
-      this.lastDots = now;
+    const dots = this.client.minimapDots();
+    if (pixels || !sameDots(dots, this.dots)) {
+      this.dots = dots;
       this.drawDisc();
     }
     if (addExplored(this.cells, this.client.takeExplored())) {
@@ -309,7 +325,7 @@ export class MapUi {
       ctx.strokeStyle = 'rgb(0 0 0 / 60%)';
       ctx.stroke();
     };
-    const d = this.client.minimapDots();
+    const d = this.dots;
     for (let n = 0; n + 1 < d.length; n += 2) {
       dot(half + (d[n] ?? 0) * perM, half - (d[n + 1] ?? 0) * perM, MAP.minimap.otherColor);
     }

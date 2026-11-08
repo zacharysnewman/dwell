@@ -14,6 +14,7 @@ pub const MAP: MapTunables = MapTunables {
     minimap_other_color: 0x2f7df6,
     minimap_dot_px: 6.0,
     minimap_edge_color: 0x1e1a14,
+    minimap_cpu_update_ms: 1000.0,
     height_shading_default: true,
     height_shading_range_m: 24.0,
     height_shading_darkest: 0.6,

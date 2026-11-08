@@ -106,7 +106,10 @@ test('settings menu: opens from the corner, in panes, without fog sliders, and i
     fovDeg: 75,
     showArms: true,
     // Every part of the screen shows by default (shared/ui/hud.json).
-    hud: { shown: Object.fromEntries(HUD_ELEMENTS.map((e) => [e.id, e.shown])) },
+    hud: {
+      shown: Object.fromEntries(HUD_ELEMENTS.map((e) => [e.id, e.shown])),
+      mapShading: true,
+    },
     renderScale: { scale: 0.5, upscaler: 'stretch' },
   });
 });

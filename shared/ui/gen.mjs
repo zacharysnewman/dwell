@@ -110,6 +110,7 @@ export const MAP_FIELDS = {
     otherColor: ['color'],
     dotPx: ['num', 1, 32],
     edgeColor: ['color'],
+    cpuUpdateMs: ['int', 0, 10000],
   },
   heightShading: {
     default: ['bool'],

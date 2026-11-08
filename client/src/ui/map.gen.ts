@@ -15,6 +15,7 @@ export const MAP = {
     otherColor: '#2f7df6',
     dotPx: 6,
     edgeColor: '#1e1a14',
+    cpuUpdateMs: 1000,
   },
   heightShading: {
     default: true,

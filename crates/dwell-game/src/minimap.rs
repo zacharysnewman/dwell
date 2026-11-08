@@ -34,6 +34,7 @@ pub struct MapTunables {
     pub minimap_other_color: u32,
     pub minimap_dot_px: f64,
     pub minimap_edge_color: u32,
+    pub minimap_cpu_update_ms: f64,
     pub height_shading_default: bool,
     pub height_shading_range_m: f64,
     pub height_shading_darkest: f64,
