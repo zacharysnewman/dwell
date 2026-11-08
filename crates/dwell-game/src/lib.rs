@@ -21,6 +21,7 @@ pub mod hud_text;
 pub mod input;
 pub mod items;
 pub mod loading;
+pub mod minimap;
 pub mod region_tools;
 pub mod remotes;
 pub mod sound;

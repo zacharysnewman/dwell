@@ -1,0 +1,33 @@
+{
+  "$comment": "The minimap and the explored-world map (docs/adr/0068-minimap-and-explored-map.md; owner, 2026-11-08). minimap: radiusM (the disc's reach, m), texelM (metres a texel), sizePx (its CSS size), moveTexels and turnDegrees (the disc is drawn again only when the player has moved this many texels or turned this far), refreshSeconds (the terrain under it is read again this often, for edits), scanUpM and scanDownM (how far above and below the eye a column's top is looked for), playerColor (the red dot), otherColor (other players' dots), dotPx (a dot's size), edgeColor (the ring). heightShading: the toggle's default (Settings, On screen), rangeM (the height above or below the eye at which shading is strongest), darkest and brightest (its range of brightness), slope (the hill-shade's strength per metre of rise between neighbours), waterDepthM (water darkens to its deepest over this depth). explored: cellM (a coarse cell is explored once its centre has been inside the minimap's disc). bigMap: startPxPerCell, minPxPerCell, maxPxPerCell (the zoom, pixels per explored cell), zoomStep (one wheel notch's factor), fogColor (unexplored). Run `node shared/ui/gen.mjs` after editing; CI fails if crates/dwell-game/src/map.gen.rs or client/src/ui/map.gen.ts is stale.",
+  "minimap": {
+    "radiusM": 64,
+    "texelM": 1,
+    "sizePx": 168,
+    "moveTexels": 1,
+    "turnDegrees": 2,
+    "refreshSeconds": 2,
+    "scanUpM": 24,
+    "scanDownM": 48,
+    "playerColor": "#e8322a",
+    "otherColor": "#2f7df6",
+    "dotPx": 6,
+    "edgeColor": "#1e1a14"
+  },
+  "heightShading": {
+    "default": true,
+    "rangeM": 24,
+    "darkest": 0.6,
+    "brightest": 1.3,
+    "slope": 0.12,
+    "waterDepthM": 8
+  },
+  "explored": { "cellM": 8 },
+  "bigMap": {
+    "startPxPerCell": 6,
+    "minPxPerCell": 1,
+    "maxPxPerCell": 40,
+    "zoomStep": 1.25,
+    "fogColor": "#14161c"
+  }
+}
