@@ -14,7 +14,7 @@ mod table {
 
 pub use table::{
     BACKPACK_SLOTS, DESPAWN_SECONDS, DROPS, HOTBAR_SLOTS, ITEMS, MAX_DROPS, PICKUP_DELAY_SECONDS,
-    PICKUP_RADIUS_M, STACK_SIZE, STARTING_WALLET, WALLETS,
+    PICKUP_RADIUS_M, STACK_SIZE, STARTING_ITEMS, STARTING_WALLET, WALLETS,
 };
 
 /// Every slot: the hotbar's first, then the backpack's.
@@ -167,6 +167,16 @@ impl Default for Inventory {
 }
 
 impl Inventory {
+    /// A new player's inventory: the data's starting items (`STARTING_ITEMS`; owner, 2026-11-08:
+    /// "Adventure starts with an axe") in the first slots, the starting wallet empty.
+    pub fn starting() -> Self {
+        let mut inv = Self::default();
+        for &(item, count) in STARTING_ITEMS {
+            inv.add(item, count);
+        }
+        inv
+    }
+
     /// The wallet's capacity (an unknown wallet: the starting one's).
     pub fn capacity(&self) -> u16 {
         wallet(&self.wallet)
@@ -567,5 +577,16 @@ mod tests {
         let mut bad = Message::InventoryAction(InventoryAction::Hello).encode();
         *bad.last_mut().unwrap() = 9;
         assert_eq!(Message::decode(&bad), None);
+    }
+    #[test]
+    fn a_new_player_starts_with_the_datas_items_an_axe() {
+        // Owner (2026-11-08): "Adventure starts with an axe."
+        let inv = Inventory::starting();
+        assert_eq!(inv.count_of("dwell:stone_axe"), 1);
+        assert_eq!(
+            inv.slots[0].as_ref().map(|s| s.item.as_str()),
+            Some("dwell:stone_axe")
+        );
+        assert_eq!(inv.money, 0);
     }
 }

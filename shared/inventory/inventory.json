@@ -19,5 +19,6 @@
   ],
   "$wallets": "Currency items (with a `value`) go to the wallet, not a slot: a total up to its capacity (owner, 2026-11-08: the starting wallet holds 99; bigger wallets later).",
   "wallets": [{ "name": "dwell:pouch", "label": "Pouch", "capacity": 99 }],
+  "startingItems": [{ "item": "dwell:stone_axe", "count": 1 }],
   "startingWallet": "dwell:pouch"
 }
