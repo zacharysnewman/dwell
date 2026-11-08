@@ -176,6 +176,52 @@ dwell_world::both_faces!(
     }
 );
 
+/// The player's centre, face-local.
+fn player_at(fx: &mut Fixture, f: FaceFrame) -> [f64; 3] {
+    let h = fx.server.player_handle_of(1).expect("a live player");
+    let (_, physics, players) = fx.server.sim();
+    f.point(players.position(physics, h).to_array())
+}
+
+dwell_world::both_faces!(
+    fn a_felled_trunk_falling_on_the_chopper_does_not_fling_them(f: FaceFrame) {
+        // 0.50.36's screenshots: the trunk tips toward the notch, where the chopper stands, and
+        // its fall threw them ~20 m. A falling piece may knock a player down or aside, not
+        // launch them: over the fall and its landing they move a few metres at most.
+        let mut fx = scene(f, "creative", true);
+        // A tree's height (10 m of trunk), as the forest's.
+        for r in BASE + 10..BASE + 20 {
+            let [x, y, z] = f.cell([3, r, 0]);
+            fx.server.world().set_voxel(x, y, z, log(f, "y"));
+        }
+        let start = player_at(&mut fx, f);
+        swings_to_fell(&mut fx, f, false, 20, |i| i % 2).expect("felled");
+        let mut far: f64 = 0.0;
+        // The speed it was moved at over a quarter second (by its positions: one step's solver
+        // velocity is not a throw).
+        let mut fastest: f64 = 0.0;
+        let mut trail = vec![start];
+        for _ in 0..4 * 60 {
+            fx.server.step();
+            let p = player_at(&mut fx, f);
+            let d = ((p[0] - start[0]).powi(2) + (p[2] - start[2]).powi(2)).sqrt();
+            far = far.max(d);
+            trail.push(p);
+            if trail.len() > 15 {
+                let q = trail[trail.len() - 16];
+                let moved = (0..3).map(|k| (p[k] - q[k]).powi(2)).sum::<f64>().sqrt();
+                fastest = fastest.max(moved * 4.0);
+            }
+        }
+        println!("{f:?}: pushed {far:.2} m at most, {fastest:.1} m/s");
+        assert!(far < 4.0, "the falling trunk threw the chopper {far:.1} m");
+        assert!(
+            fastest < 12.0,
+            "the falling trunk threw the chopper at {fastest:.1} m/s"
+        );
+    }
+);
+
 dwell_world::both_faces!(
     fn hacking_one_spot_takes_three_to_four_times_the_swings_of_notching(f: FaceFrame) {
         let mut fx = scene(f, "creative", true);
