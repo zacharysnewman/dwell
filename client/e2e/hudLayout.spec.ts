@@ -6,7 +6,6 @@ import { devices, expect, test, type Page } from '@playwright/test';
 import { untilTicking } from './ticking';
 
 /** The parts the layout places (shared/ui/layout.json's selectors). */
-// Chromium is the suite's only browser (playwright.config.ts): a device's own browser type is left out.
 const PARTS = [
   '#menu-button',
   '#touch-debug',
@@ -37,6 +36,8 @@ const boxes = (page: Page) =>
       if (!el) continue;
       const r = el.getBoundingClientRect();
       if (r.width === 0 || r.height === 0) continue;
+      // A part the layout found no room for is hidden: a failure here, as an overlap is.
+      if (getComputedStyle(el).visibility === 'hidden') out.push({ sel: `${sel} (no room)`, x: -1, y: -1, w: 0, h: 0 });
       out.push({ sel, x: r.left, y: r.top, w: r.width, h: r.height });
     }
     return out;
@@ -48,6 +49,7 @@ function overlaps(a: Box, b: Box): boolean {
 
 for (const name of ['iPhone 13', 'iPhone 13 landscape'] as const) {
   test.describe(name, () => {
+    // Chromium is the suite's only browser (playwright.config.ts): a device's own browser type is left out.
     const { defaultBrowserType: _, ...device } = devices[name];
     test.use(device);
 

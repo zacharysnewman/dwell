@@ -1,0 +1,27 @@
+{
+  "$comment": "Where the on-screen interface's parts go (owner, 2026-11-08: 'The UI needs a relayout on mobile, it's all overlapping itself'). A small solver (client/src/ui/hudLayout.ts) places the visible parts each time the screen or a part changes, in priority order (lowest first; ties in list order), so no two overlap and each stays inside the safe area: a part starts at its anchor (top-left, top, top-right, bottom-left, bottom, bottom-right) and, where something already placed is in the way, takes the free stretch of that row on its side (left, centre, right), or moves down (top anchors) or up (bottom anchors) past it to the next row with room. Each part: id (lowercase words joined by dashes; Settings' id where it has one), selector (one #id or .class), anchor, priority (0-99), flush (true: it must touch its anchored side's edge), after (start below, or above for bottom anchors, the part of that id when it shows), minWidthPx (it may shrink to this width, its text cut short or its row scrolled; absent: never narrower than it is), fixed (true: placed by its own stylesheet, never moved; the others keep clear of it), clearPx (a fixed part's margin kept clear), and touch, landscape, portrait (any of anchor, flush, after, minWidthPx used instead on a touch screen, then on a screen wider than tall or taller than wide: sideways the minimap sits beside the info button, not under it, so the touch buttons have the right edge's height). keepClear: regions of the screen, as fractions of its width (x) and height (y), that no part is placed over: touch (on touch screens only), orientation (landscape, portrait or any). gapPx: the space kept between parts. A part the solver finds no room for is hidden until there is room. Run `node shared/ui/gen.mjs` after editing; CI fails if client/src/ui/layout.gen.ts is stale.",
+  "gapPx": 8,
+  "keepClear": [
+    {
+      "id": "held-item",
+      "$comment": "The held block or tool and the arm, drawn bottom centre-right (the owner's landscape screenshot).",
+      "x": [0.36, 0.8],
+      "y": [0.68, 1],
+      "touch": true,
+      "orientation": "landscape"
+    }
+  ],
+  "parts": [
+    { "id": "crosshair", "selector": "#crosshair", "fixed": true, "clearPx": 24 },
+    { "id": "health", "selector": "#health", "fixed": true, "clearPx": 0 },
+    { "id": "menu-button", "selector": "#menu-button", "anchor": "top-left", "priority": 0 },
+    { "id": "info-button", "selector": "#touch-debug", "anchor": "top-right", "priority": 0 },
+    { "id": "minimap", "selector": "#minimap", "anchor": "top-right", "priority": 1, "flush": true, "landscape": { "flush": false } },
+    { "id": "touch-buttons", "selector": ".touch-buttons", "anchor": "bottom-right", "priority": 1, "flush": true },
+    { "id": "hotbar", "selector": "#hotbar", "anchor": "bottom", "priority": 2, "minWidthPx": 140, "touch": { "anchor": "top" } },
+    { "id": "status-line", "selector": "#net-status", "anchor": "top-left", "priority": 3, "minWidthPx": 140 },
+    { "id": "performance", "selector": "#perf-status", "anchor": "top-left", "priority": 4, "minWidthPx": 140, "after": "status-line" },
+    { "id": "flight-speed", "selector": "#flight-speed", "anchor": "top-right", "priority": 5, "minWidthPx": 170, "after": "minimap" },
+    { "id": "loading-chip", "selector": "#status-chip", "anchor": "bottom-left", "priority": 6, "minWidthPx": 100 }
+  ]
+}
