@@ -742,7 +742,7 @@ bright glints), then the clear water; overhead the underside shows rippled light
 
 **The band** (`waterline_band`; CPU twins `band_t`, `band_edge`, `band_uv`, test
 `the_waterline_band_sits_under_the_line_with_a_dark_rim_over_a_bright_line`, both faces). The pixels
-under the line within `band.depthM` on the lens plane (the line is its top edge: the surface; 4.2 cm
+under the line within `band.depthM` on the lens plane (the line is its top edge: the surface; 2.1 cm, 3.5 % of the screen level at the default FOV since 0.50.23 — owner, 2026-11-07: "a little smoother … halve the width"; streaks 0.3, glints 0.15, breakup 0.35, mirror warp 10 px; until then 4.2 cm
 is 7 % of the screen level at the default FOV). Its colour is its surroundings': the scene just above
 the line mirrored across it (one load of the scene colour; the sky where nothing is drawn), at most
 60 % of it, over the pixel's own underwater view toward the band's foot, times the look's `tint`.
