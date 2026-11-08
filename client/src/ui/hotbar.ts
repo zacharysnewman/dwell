@@ -181,7 +181,7 @@ export class Hotbar {
       const s = inv.slots[i] ?? null;
       b.replaceChildren();
       b.classList.toggle('selected', i === inv.held);
-      b.title = s ? `${itemLabel(s.item)} × ${s.count}` : '';
+      b.title = s ? `${itemLabel(s.item)} × ${String(s.count)}` : '';
       if (s) {
         b.append(swatch(swatchOf(s.item)));
         const n = document.createElement('span');
@@ -194,7 +194,7 @@ export class Hotbar {
       k.textContent = slotKey(i);
       b.append(k);
     });
-    this.wallet.textContent = `◆ ${inv.money} / ${inv.capacity}`;
+    this.wallet.textContent = `◆ ${String(inv.money)} / ${String(inv.capacity)}`;
     this.wallet.title = 'Gems in your wallet';
     this.refresh();
   }

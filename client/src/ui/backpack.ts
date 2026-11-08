@@ -46,14 +46,16 @@ export class Backpack {
     title.textContent = 'Backpack';
     this.grid = document.createElement('div');
     this.grid.className = 'backpack-grid';
-    this.grid.style.gridTemplateColumns = `repeat(${HOTBAR_SLOTS}, 44px)`;
+    this.grid.style.gridTemplateColumns = `repeat(${String(HOTBAR_SLOTS)}, 44px)`;
     for (const slot of screenOrder()) {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'hotbar-slot backpack-slot';
       if (slot < HOTBAR_SLOTS) b.classList.add('backpack-hotbar');
       b.dataset.slot = String(slot);
-      b.addEventListener('contextmenu', (e) => e.preventDefault());
+      b.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+      });
       b.addEventListener('pointerdown', (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -115,7 +117,7 @@ export class Backpack {
       const s = this.inv.slots[slot] ?? null;
       b.replaceChildren();
       b.classList.toggle('selected', this.picked?.slot === slot);
-      b.title = s ? `${itemLabel(s.item)} × ${s.count}` : '';
+      b.title = s ? `${itemLabel(s.item)} × ${String(s.count)}` : '';
       if (!s) continue;
       const pic = this.swatchOf(s.item);
       const canvas = document.createElement('canvas');

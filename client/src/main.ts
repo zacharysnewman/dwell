@@ -1109,9 +1109,9 @@ function play(app: App, joined: Extract<SessionReport, { phase: 'joined' }>): vo
   });
   app.client.select(0);
   // The backpack screen (ADR 0066): E opens and closes it in a world that uses items.
-  app.backpack = new Backpack(document.body, itemPicture, (from, to, count) =>
-    app.client.moveItems(from, to, count),
-  );
+  app.backpack = new Backpack(document.body, itemPicture, (from, to, count) => {
+    app.client.moveItems(from, to, count);
+  });
   window.addEventListener(
     'keydown',
     (e) => {
@@ -1120,7 +1120,7 @@ function play(app: App, joined: Extract<SessionReport, { phase: 'joined' }>): vo
       const toggle = e.code === 'KeyE' && !e.repeat && b.usable;
       if (!toggle && !(e.code === 'Escape' && b.open)) return;
       b.open = !b.open;
-      if (b.open) document.exitPointerLock?.();
+      if (b.open) document.exitPointerLock();
       e.preventDefault();
       e.stopPropagation();
     },

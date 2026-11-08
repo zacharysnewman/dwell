@@ -2539,6 +2539,10 @@ body.loading-wait #brush-panel {
   font: 700 12px var(--font-body);
 }
 
+.hotbar-slots[hidden] {
+  display: none;
+}
+
 #hotbar-wallet[hidden] {
   display: none;
 }
