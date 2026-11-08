@@ -6,6 +6,16 @@ pins it.
 
 ## Open
 
+### 51. Reopening a world in the same tab stalls on CI: spawn's reload and settings' reload
+
+Found 2026-11-08 getting CI green (PR #421). On CI's software renderer, two specs fail on all three
+attempts, both right after `page.reload()` of a local world: `spawn.spec.ts` ("a spawn link puts the
+player back …": after the reload `terrainReady` never comes within 60 s) and `settings.spec.ts` (after
+its reload the page ignores clicks for the rest of the 90 s). Both pass on a real GPU and on local
+SwiftShader. Suspects: the reloaded page waiting on the old page's local-world worker or storage (a
+save in flight, a lock not released), or #49's stall far longer on a reopened world. Next: log the
+time from reload to the local world's start, and the storage/worker events, on CI.
+
 ### 50. Flying up at the top flight speed stops the game ticking on CI
 
 *Found 2026-11-07 (0.50.32).* `e2e/flightSpeed.spec.ts` on CI (software renderer): after the join's

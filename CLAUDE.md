@@ -334,6 +334,8 @@ Check these before chasing an e2e failure:
   If a terrain wait times out again, time `generator_for`/`spawn_point_for` natively against the
   last green commit before widening the timeout.
 
+- `e2e/spawn.spec.ts`'s reopen test and `e2e/settings.spec.ts` (shard 4) fail on CI after a
+  `page.reload()` of a local world (BUGS.md #51, open); they pass on a real GPU.
 - Since 0.50.32 the e2e suite retries a failed test twice on CI (`retries` in `playwright.config.ts`):
   the software renderer's stall after a join (BUGS.md #49) made tests fail by timing alone. A test
   that passes on a retry is reported "flaky"; check those against #49 before chasing a bug.
