@@ -51,7 +51,8 @@ function overlaps(a: Box, b: Box): boolean {
 for (const name of ['iPhone 13', 'iPhone 13 landscape'] as const) {
   test.describe(name, () => {
     // Chromium is the suite's only browser (playwright.config.ts): a device's own browser type is left out.
-    const { defaultBrowserType: _, ...device } = devices[name];
+    const device: Partial<(typeof devices)[string]> = { ...devices[name] };
+    delete device.defaultBrowserType;
     test.use(device);
 
     test(`hud layout: no two parts overlap on an ${name}`, async ({ page }) => {
@@ -83,8 +84,8 @@ for (const name of ['iPhone 13', 'iPhone 13 landscape'] as const) {
       }
       for (let i = 0; i < all.length; i++)
         for (let j = i + 1; j < all.length; j++) {
-          const a = all[i] as Box;
-          const b = all[j] as Box;
+          const a = all[i];
+          const b = all[j];
           if (overlaps(a, b)) problems.push(`${a.sel} overlaps ${b.sel}`);
         }
       expect(problems, JSON.stringify(all)).toEqual([]);

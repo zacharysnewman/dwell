@@ -185,7 +185,9 @@ export function sameDots(a: ArrayLike<number>, b: ArrayLike<number>): boolean {
 
 /** The minimap's CSS size on a `width` × `height` screen: compact when its short side is under `compactBelowPx` (a phone either way up; shared/ui/map.json). */
 export function minimapSize(width: number, height: number): number {
-  return Math.min(width, height) < MAP.minimap.compactBelowPx ? MAP.minimap.compactSizePx : MAP.minimap.sizePx;
+  return Math.min(width, height) < MAP.minimap.compactBelowPx
+    ? MAP.minimap.compactSizePx
+    : MAP.minimap.sizePx;
 }
 
 /** What the map needs from the client (the wasm `Client`). */
