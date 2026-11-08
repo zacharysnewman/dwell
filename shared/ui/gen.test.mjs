@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { hudCss, hudTs, mapRs, mapTs, validateHud, validateMap } from './gen.mjs';
+import { hudCss, hudTs, layoutTs, mapRs, mapTs, validateHud, validateLayout, validateMap } from './gen.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const data = () => JSON.parse(readFileSync(join(here, 'hud.json'), 'utf8'));
@@ -74,5 +74,37 @@ test('bad map entries fail naming them', () => {
     const d = mapData();
     change(d);
     assert.throws(() => validateMap(d), message);
+  }
+});
+
+const layoutData = () => JSON.parse(readFileSync(join(here, 'layout.json'), 'utf8'));
+
+test('the checked-in layout validates and generates the checked-in TypeScript', () => {
+  assert.equal(layoutTs(validateLayout(layoutData())), readFileSync(join(here, '../../client/src/ui/layout.gen.ts'), 'utf8'));
+});
+
+test('a layout part added by data alone reaches the output', () => {
+  const d = layoutData();
+  d.parts.push({ id: 'compass', selector: '#compass', anchor: 'top-right', priority: 2, after: 'minimap', landscape: { flush: true } });
+  assert.match(layoutTs(validateLayout(d)), /\{"id":"compass","selector":"#compass","anchor":"top-right","priority":2,"after":"minimap","landscape":\{"flush":true\}\}/);
+});
+
+test('bad layout entries fail with their path named', () => {
+  const at = (id) => (d) => d.parts.find((p) => p.id === id);
+  const cases = [
+    [(d) => (at('minimap')(d).anchor = 'middle'), /parts\[\d+\]\.anchor must be one of top-left/],
+    [(d) => (at('performance')(d).after = 'nothing'), /parts\[\d+\]\.after must name a part listed before it/],
+    [(d) => (at('hotbar')(d).touch.size = 3), /unknown entry parts\[\d+\]\.touch\.size/],
+    [(d) => (at('crosshair')(d).anchor = 'top'), /parts\[\d+\]\.anchor: a fixed part isn't placed/],
+    [(d) => delete at('minimap')(d).priority, /parts\[\d+\]\.priority must be a whole number/],
+    [(d) => (at('hotbar')(d).minWidthPx = -1), /minWidthPx must be a whole number within 0–2000/],
+    [(d) => (d.keepClear[0].x = [0.8, 0.2]), /keepClear\[0\]\.x must be \[from, to\]/],
+    [(d) => (d.keepClear[0].orientation = 'sideways'), /keepClear\[0\]\.orientation must be/],
+    [(d) => d.parts.push({ ...d.parts[2] }), /is listed twice/],
+  ];
+  for (const [change, message] of cases) {
+    const d = layoutData();
+    change(d);
+    assert.throws(() => validateLayout(d), message);
   }
 });

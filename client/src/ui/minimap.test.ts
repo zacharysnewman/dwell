@@ -152,9 +152,13 @@ describe('the dots', () => {
 });
 
 describe('the minimap size', () => {
-  it('is compact on a short screen (a phone sideways), full otherwise', () => {
-    expect(minimapSize(342)).toBe(MAP.minimap.compactSizePx);
-    expect(minimapSize(900)).toBe(MAP.minimap.sizePx);
+  it('is compact on a phone either way up, full on a tablet or a desktop', () => {
+    expect(minimapSize(750, 342)).toBe(MAP.minimap.compactSizePx);
+    // Upright (owner's screenshot, 0.50.39: the full size covered the hotbar and the lines).
+    expect(minimapSize(390, 844)).toBe(MAP.minimap.compactSizePx);
+    expect(minimapSize(360, 780)).toBe(MAP.minimap.compactSizePx);
+    expect(minimapSize(820, 1180)).toBe(MAP.minimap.sizePx);
+    expect(minimapSize(1440, 900)).toBe(MAP.minimap.sizePx);
     // On a phone sideways (750 × 342) it stays clear of the view at (600, 150), where the touch
     // test taps to place: right edge 12 px in, top 12 px.
     const r = MAP.minimap.compactSizePx / 2;
