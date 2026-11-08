@@ -74,7 +74,7 @@ import { loadFlySpeedLevel, saveFlySpeedLevel } from './predict/flightSpeed';
 import { formatStatus } from './ui/statusOverlay';
 import { formatPerf, TickRate } from './ui/perfLine';
 import { applyHud } from './ui/hudSettings';
-import { applyLayout } from './ui/hudLayout';
+import { LayoutRunner } from './ui/hudLayout';
 import { HUD_LAYOUT } from './ui/layout.gen';
 import { MapUi, indexedDbExplored } from './ui/minimap';
 import { hasWasmSimd } from './engine/simd';
@@ -1052,10 +1052,8 @@ async function start(): Promise<App | null> {
     },
   };
 
-  // The HUD's layout (shared/ui/layout.json): placed again when the screen changes, and a few times a
-  // second for the parts whose size changes (the lines' text, the hotbar's rows, the flight slider).
-  let laidOutAt = -Infinity;
-  window.addEventListener('resize', () => (laidOutAt = -Infinity));
+  // The HUD's layout (shared/ui/layout.json): placed again when the screen or a part's size changes.
+  const layout = new LayoutRunner(document, HUD_LAYOUT, mobile, LAYOUT_EVERY_MS);
   const frame = (now: number): void => {
     pad.poll(now);
     // Only the frames drawn count (one is skipped while the GPU is behind).
@@ -1067,10 +1065,7 @@ async function start(): Promise<App | null> {
       app.minimap.shading = app.mapShading;
       app.minimap.frame(now);
     }
-    if (now - laidOutAt >= LAYOUT_EVERY_MS) {
-      laidOutAt = now;
-      applyLayout(document, HUD_LAYOUT, mobile);
-    }
+    layout.frame(now);
     requestAnimationFrame(frame);
   };
   requestAnimationFrame(frame);
@@ -1244,7 +1239,7 @@ function blockDumpOf(app: App, water?: unknown): BlockDump | null {
 }
 
 /** How far around the player (cells) the block dump reports the local server's water. */
-/** How often the HUD's layout is solved again while nothing else asks (ms). */
+/** How often the HUD's layout is solved again while no part's size has changed (ms). */
 const LAYOUT_EVERY_MS = 250;
 
 const WATER_REPORT_RADIUS = 48;
