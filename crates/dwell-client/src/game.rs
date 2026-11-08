@@ -3491,6 +3491,18 @@ impl<S: Scene> Game<S> {
         self.held_tool().map(|_| self.chop.hint())
     }
 
+    /// The swing line the reticle shows while a tool is held: where its path will pass through
+    /// the crosshair, `level` or `vertical`.
+    pub fn swing_line(&self) -> Option<&'static str> {
+        self.held_tool().map(|_| {
+            if self.chop.vertical {
+                "vertical"
+            } else {
+                "level"
+            }
+        })
+    }
+
     /// Use with the axe: the swing turns; Break: a swing at the wood aimed at.
     fn chop_with(
         &mut self,

@@ -24,12 +24,19 @@ export class Hud {
   private hintTimer = 0;
   /** The spyglass's vignette (docs/SPYGLASS.md), hidden while unzoomed. */
   private readonly spyglass: HTMLDivElement;
+  /** The held tool's swing line (`setSwing`). */
+  private readonly swingLine: HTMLDivElement;
 
   constructor(parent: HTMLElement) {
     this.root = document.createElement('div');
     this.root.id = 'hud';
     const crosshair = document.createElement('div');
     crosshair.id = 'crosshair';
+    // A held tool's swing line through the crosshair (ADR 0067): where its path will pass.
+    this.swingLine = document.createElement('div');
+    this.swingLine.className = 'swing-line';
+    this.swingLine.hidden = true;
+    crosshair.append(this.swingLine);
     this.health = document.createElement('div');
     this.health.id = 'health';
     this.healthFill = document.createElement('div');
@@ -117,6 +124,13 @@ export class Hud {
 
   toggleDebug(): void {
     this.debug.hidden = !this.debug.hidden;
+  }
+
+  /** The held tool's swing line through the crosshair: level, vertical, or none. */
+  setSwing(mode: 'level' | 'vertical' | null): void {
+    this.swingLine.hidden = mode === null;
+    this.swingLine.classList.toggle('level', mode === 'level');
+    this.swingLine.classList.toggle('vertical', mode === 'vertical');
   }
 
   setHealth(health: number, nowMs: number): void {
