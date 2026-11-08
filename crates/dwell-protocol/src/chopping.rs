@@ -535,6 +535,28 @@ mod tests {
                 cuts: vec![([4, -80, 12], c)],
                 gone: vec![[1, 2, 3]],
             }),
+            // The swing's path and the held tool (CHOP_SWEEP).
+            Message::Chop(ChopAction::Sweep {
+                tool: "dwell:stone_axe".into(),
+                look: [0.6, -0.8, 0.0],
+                vertical: false,
+            }),
+            Message::Chop(ChopAction::Held {
+                tool: "dwell:stone_axe".into(),
+                vertical: true,
+            }),
+            Message::HeldTools(vec![
+                crate::HeldTool {
+                    player_id: 3,
+                    tool: "dwell:stone_axe".into(),
+                    vertical: false,
+                },
+                crate::HeldTool {
+                    player_id: 9,
+                    tool: String::new(),
+                    vertical: false,
+                },
+            ]),
         ];
         for m in all {
             let b = m.encode();
