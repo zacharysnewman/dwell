@@ -97,6 +97,13 @@ which the water's plane cuts in a circle. It jumps from absent (+0.25 m) to a th
 (+0.1 m). From −0.25 m down, the underside of the surface is flat blue with a dark blotch: no sky
 through Snell's window, and no rippled reflection.
 
+**Fixed in 0.50.20** (WATER_RENDERING.md §12.1): the lens plane (a straight line that moves linearly
+with the eye; a pop-free reach), total internal reflection outside Snell's window (which also put the
+colour edge on the line, where the meniscus had drawn above it), the waterline band in place of the
+meniscus (owner's follow-up), the underside's texture, and the blotch (the player's own shadow on the
+water's body). Cost at the owner's setting: 0 m 6.01 → 6.10 ms `gpu.frame`; −1 m 5.93 → 6.43 ms (the
+eye now within the band's reach there).
+
 ### 1.3 CPU, meshing and upload (water as blocks in eighths)
 
 Clients draw the server's grid as water blocks: full cells, the top cell in eighths of a ½ m cell

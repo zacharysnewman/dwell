@@ -969,7 +969,13 @@ mod tests {
     const TAN: [f64; 2] = [1.1918, 0.7449];
 
     /// A pixel's waterline at `ndc` for an eye `eye` metres over the surface (face-local).
-    fn pixel_d(f: dwell_world::FaceFrame, cam: [[f64; 3]; 3], eye: f64, ndc: [f64; 2], lens: f64) -> f64 {
+    fn pixel_d(
+        f: dwell_world::FaceFrame,
+        cam: [[f64; 3]; 3],
+        eye: f64,
+        ndc: [f64; 2],
+        lens: f64,
+    ) -> f64 {
         let surface = 10.875;
         let ray = view_ray(cam[0], cam[1], cam[2], TAN, ndc);
         waterline_m(f, f.y(surface + eye), f.y(surface), ray[1], lens, 0.0)
@@ -1029,13 +1035,22 @@ mod tests {
             // Centimetre steps from 0.25 m over to 0.25 m under: the line moves a little each
             // step (no jump), monotonically up the screen as the eye sinks.
             let mut last = line_row(0.25);
-            assert!(last > -1.0 && last < -0.8, "at +0.25 m the line is near the bottom edge");
+            assert!(
+                last > -1.0 && last < -0.8,
+                "at +0.25 m the line is near the bottom edge"
+            );
             for cm in (-25..25).rev() {
                 let row = line_row(f64::from(cm) / 100.0);
-                assert!(row >= last && row - last < 0.05, "at {cm} cm: {last} → {row}");
+                assert!(
+                    row >= last && row - last < 0.05,
+                    "at {cm} cm: {last} → {row}"
+                );
                 last = row;
             }
-            assert!(last > 0.8 && last < 1.0, "at −0.25 m the line is near the top edge");
+            assert!(
+                last > 0.8 && last < 1.0,
+                "at −0.25 m the line is near the top edge"
+            );
             // Entering the split (the eye `reach_m` over the surface, else no fluid found) or
             // leaving it for the whole view under (`reach_m` under): no pixel at any pitch or
             // roll is on the other side there, so the switch changes nothing.
@@ -1043,7 +1058,13 @@ mod tests {
             for pitch in [-1.5, -0.8, -0.3, 0.0, 0.3, 0.8, 1.5] {
                 for roll in [0.0, 0.7] {
                     let cam = camera(f, pitch, roll);
-                    for ndc in [[-1.0, -1.0], [1.0, -1.0], [-1.0, 1.0], [1.0, 1.0], [0.0, 0.0]] {
+                    for ndc in [
+                        [-1.0, -1.0],
+                        [1.0, -1.0],
+                        [-1.0, 1.0],
+                        [1.0, 1.0],
+                        [0.0, 0.0],
+                    ] {
                         let wave = look.line_amplitude_m;
                         assert!(pixel_d(f, cam, reach, ndc, lens) - wave > 0.0);
                         assert!(pixel_d(f, cam, -reach, ndc, lens) + wave < 0.0);
@@ -1089,7 +1110,10 @@ mod tests {
                 assert!(split > 0.0 && split < h, "the line is on screen");
                 // Nothing of the band above the line; its top edge is the first pixel under it.
                 for r in [split - 3.0, split - 1.0, split] {
-                    assert!(band_t(d(r), look.band_depth_m).is_none(), "above the line at {r}");
+                    assert!(
+                        band_t(d(r), look.band_depth_m).is_none(),
+                        "above the line at {r}"
+                    );
                 }
                 let top = band_t(d(split + 1.0), look.band_depth_m).expect("the band's top");
                 assert!(top < 0.05, "the top edge is the surface: {top}");
@@ -1106,20 +1130,32 @@ mod tests {
                 // pixels across the line at any pitch and roll.
                 let edge = |r: f64| {
                     let px = -d(r) / px_m;
-                    band_edge(px, look.band_rim_px, look.band_rim_shade, look.band_line_px, look.band_line_glow)
+                    band_edge(
+                        px,
+                        look.band_rim_px,
+                        look.band_rim_shade,
+                        look.band_line_px,
+                        look.band_line_glow,
+                    )
                 };
                 // The row `px` pixels across the line under it, down the column (d is linear).
                 let slope = d(split) - d(split + 1.0);
                 let zero = split + d(split) / slope;
                 let row = |px: f64| zero + px * px_m / slope;
-                assert!(edge(row(0.5)) < 0.6, "a dark rim on top, pitch {pitch} roll {roll}");
+                assert!(
+                    edge(row(0.5)) < 0.6,
+                    "a dark rim on top, pitch {pitch} roll {roll}"
+                );
                 let lit = edge(row(look.band_rim_px + look.band_line_px / 2.0));
                 assert!(lit > 1.3, "a bright line under it: {lit}");
                 assert!((edge(row(look.band_rim_px + look.band_line_px + 3.0)) - 1.0).abs() < 1e-9);
             }
             // The texture recedes to the line: a pixel near it spans more of the texture.
             let rate = |t: f64| band_uv(0.0, t + 0.01)[1] - band_uv(0.0, t)[1];
-            assert!(rate(0.0).abs() > 5.0 * rate(0.9).abs(), "compressed toward the line");
+            assert!(
+                rate(0.0).abs() > 5.0 * rate(0.9).abs(),
+                "compressed toward the line"
+            );
             let wide = |t: f64| band_uv(0.1, t)[0] - band_uv(0.0, t)[0];
             assert!(wide(0.0) > 5.0 * wide(0.9), "and across it");
         }
@@ -1132,9 +1168,18 @@ mod tests {
         let edge = (1.0f64 / ior).asin().to_degrees();
         assert!((edge - 48.6).abs() < 0.05, "{edge}");
         let at = |deg: f64| sees_out(deg.to_radians().cos(), ior);
-        assert!(at(0.0) && at(30.0) && at(48.0), "inside the window: out to the sky");
-        assert!(!at(49.5) && !at(80.0) && !at(89.0), "outside it: totally reflected");
-        assert!(!sees_out(-0.2, ior), "a ray going down never reaches the surface");
+        assert!(
+            at(0.0) && at(30.0) && at(48.0),
+            "inside the window: out to the sky"
+        );
+        assert!(
+            !at(49.5) && !at(80.0) && !at(89.0),
+            "outside it: totally reflected"
+        );
+        assert!(
+            !sees_out(-0.2, ior),
+            "a ray going down never reaches the surface"
+        );
     }
 
     #[test]
@@ -1155,7 +1200,9 @@ mod tests {
         assert!(src.contains("let rim = 1.0 - smoothstep(f.rim.x - 0.75, f.rim.x + 0.25, px);"));
         assert!(src.contains("let uv = vec2f(along * 4.0, 1.0) / (t + 0.08)"));
         assert!(src.contains("1.0 - bent * bent < 1.0 / (ior * ior)"));
-        assert!(src.contains("return vec4f(body * underside_cells(xz, footprint, f, fluid), fres);"));
+        assert!(
+            src.contains("return vec4f(body * underside_cells(xz, footprint, f, fluid), fres);")
+        );
         assert!(src.contains("const BODY_SHADOW: f32 = 0.35;"));
         assert!(src.contains("let body_shadow = mix(s.light.direct, s.shadow, BODY_SHADOW);"));
         assert!(src.contains("let d = max(dist - f.under.y, 0.0) * f.under.z;"));

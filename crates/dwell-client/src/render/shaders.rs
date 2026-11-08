@@ -2973,8 +2973,14 @@ mod tests {
         let c = body("composited_decks");
         assert!(c.contains("dwell_cloud_deck(") && c.contains("fwidth(") && !c.contains("if ("));
         let px = body("composite_pixel");
-        let decks = px.find("let decks = composited_decks(ndc);").expect("decks");
-        assert!(decks < px.find("if (frame.water.x > 1.5)").expect("the waterline branch"));
+        let decks = px
+            .find("let decks = composited_decks(ndc);")
+            .expect("decks");
+        assert!(
+            decks
+                < px.find("if (frame.water.x > 1.5)")
+                    .expect("the waterline branch")
+        );
     }
 
     #[test]

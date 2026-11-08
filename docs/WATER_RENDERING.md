@@ -633,21 +633,25 @@ metre in red, green and blue), so the floor was gone within ~5 m.
 **The waterline (per pixel).**
 
 - `dwell_world::fluid::eye_fluid(eye, reach, voxel)` also finds the eye's fluid surface when the eye
-  is **above** it by at most `reach` (`dwell_look::underwater::line_reach_m`: the largest lens plus
-  line wave over the looks), with `under` saying which side the eye is on; face-local through
+  is **above** it by at most `reach` (`dwell_look::underwater::line_reach_m`: the largest
+  `UnderwaterLook::reach_m` over the looks, the lens × `LENS_RAY_MAX` plus the line's waves and the
+  band's depth, 0.50.20), with `under` saying which side the eye is on; face-local through
   `FaceFrame` (test: `an_eye_just_above_the_surface_finds_it_within_the_reach_for_the_waterline`, both
   faces).
 - `frame.water.x` (`render/mod.rs` `waterline_state`): 1 when the eye is so deep that no pixel's lens
   reaches the surface (the whole view under: the old single branch, no per-pixel test), 2 near the
   surface with the eye under it, 3 near it with the eye above it.
-- In states 2 and 3 the composite decides each pixel by its own ray: `waterline_m` is how far the point
-  `lensM` out along the ray is above the surface, less the line's waves (two sines over world x and z,
+- In states 2 and 3 the composite decides each pixel by its own ray: `waterline_m` is how far the
+  pixel's point on the **lens plane** (`lensM` ahead of the eye along the camera's forward axis: the
+  view ray at view depth 1 times `lensM`; until 0.50.20 the point `lensM` along the normalized ray, a
+  sphere, below) is above the surface, less the line's waves (two sines over world x and z,
   `line.amplitudeM`, `wavelengthM`, `speed`; the drawn surface stays flat, §3, so the waves are the
-  line's only). Negative: the underwater composite; else the ordinary one. Then the **meniscus**, a band
-  `widthPx` either side of the line in the look's colour at its `strength`, measured in pixels at the
-  lens. The CPU twin is `render/water.rs` `waterline_m` (test:
-  `the_waterline_splits_a_view_from_the_surface_by_each_pixels_ray`, both faces; the shader's line is
-  pinned to it by `the_shader_decides_the_waterline_as_its_cpu_twin_does`).
+  line's only). Negative: the underwater composite and the **band** (below); else the ordinary one.
+  The CPU twin is `render/water.rs` `waterline_m` (tests:
+  `the_waterline_splits_a_view_from_the_surface_by_each_pixels_ray`,
+  `the_waterline_is_a_straight_line_at_any_eye_height_and_roll`,
+  `the_waterline_moves_smoothly_with_the_eye_and_enters_without_a_pop`, both faces; the shader is
+  pinned to its twins by `the_shader_decides_the_waterline_as_its_cpu_twin_does`).
 - The fluid shaders (`water_fs`, `water_scene_fs`) discard the eye's own surface (within 5 cm of its
   height) on the far side of the line (`waterline_hides`): its top where the pixel looks out from under
   it, its underside where it looks out above it, so each half shows its own side. Only in states 2 and
@@ -664,9 +668,14 @@ already (Medium and High) and now read far.
 **Data** (`shared/look/underwater.json` → `dwell-look` `underwater.gen.rs` by
 `shared/look/underwater.mjs`; validated with the bad entry named, a fixture murky fluid by data alone,
 CI stale check): per fluid by its registry name, a `default` for the rest (`lensM` 0.05, no waves, no
-meniscus, the registry's rates from the eye: the look before). Packed into the fluid table as three
-more vec4s (`FLUID_VEC4S` 12, 192 bytes a fluid). `dwell:water`: `lensM` 0.3, waves 1.2 cm over 0.9 m
-at 0.35 Hz, meniscus `#f2fbff` at 0.55, 4 px (2.5 px until 0.50.18; owner, 2026-11-07: "a little thicker").
+band, a flat underside, the registry's rates from the eye: the look before). Packed into the fluid
+table as five more vec4s (`FLUID_VEC4S` 14, 224 bytes a fluid; 12 and 192 until 0.50.20): `under`
+(lens, clear distance, density, band depth), `line` (waves, the underside's texture), `band` (tint,
+streaks), `rim` (rim px and shade, line px and glow), `band_extra` (glints). `dwell:water` (0.50.20):
+`lensM` 0.4, waves 1.8 cm over 0.38 m at 0.3 Hz, the band 4.2 cm deep, tint `#e8f6ff`, streaks 0.45,
+glints 0.35, a 3 px rim at ×0.45 over a 2.5 px line at ×1.6, the underside's texture 0.45. (Until
+0.50.20: `lensM` 0.3, waves 1.2 cm over 0.9 m, and a thin `#f2fbff` meniscus 4 px either side of the
+line, replaced by the band.)
 
 **Cost** (Apple M1 Air, 1280×800 at ratio 2 = 2560×1600, `?renderscale=0.5&upscaler=stretch`, default
 settings (High water), seed 0's nearest sea, `gpu.*` p50 over 4 s, one run before and two after). No
@@ -683,4 +692,88 @@ pixel, yet the runs read 0.7–1.6 ms more; it was not isolated within the time 
 comes last in each run, on a passively cooled laptop) and is worth a recheck with `?waterdbg=`.
 Per tier: Low and the CPU adapter draw the same (no caustics there, as before); the test is a
 normalize and two sines per pixel only while the eye is within ~0.3 m of the surface, so phones pay
-it only then.
+it only then. (0.50.20: no normalize, and the band's ~1 m reach; costs below.)
+
+### 12.1 On the way down: a straight line, the band, the underside (2026-11-07, 0.50.20)
+
+A shot series at one spot with the eye from +1 m to −1 m against the surface (the bench's descent;
+`docs/proposals/WATER_GPU_SURFACE.md` §1.2) showed four faults, and the owner then asked for more of
+the line: "The band isn't just a white line. It's supposed to be like an actual thing", "it's colored
+based on the surroundings with what looks like a darker line over a lighter line. And the underside
+of water has a texture". The reference was a stock photo of a camera half under a tropical sea (not
+kept: watermarked): the waterline a thick, wavy slab of water seen edge-on, its top edge a wavy
+silhouette against the island with a dark rim, under it a band some 5–8 % of the picture tall showing
+the surface from just below (horizontal darker and lighter streaks, the underside totally reflecting,
+bright glints), then the clear water; overhead the underside shows rippled light and dark cells.
+
+**What was wrong, and the fix.**
+
+1. *The line was an arc at ±0.1 m.* Each pixel tested the point `lensM` along its **normalized** ray:
+   those points lie on a sphere round the eye, which the water's plane cuts in a circle. Now the point
+   is on the **lens plane** (the view ray at view depth 1 times `lensM`), which the water's plane cuts
+   in a straight line at any eye height, pitch and roll; `waterline_m` is linear on the screen.
+2. *The line jumped between heights* (none at +0.25 m, a third of the screen at +0.1 m, most of it at
+   −0.1 m). With the plane the line's row is linear in the eye's height (`row = (surface − eye) /
+   (lensM · tan_y)`): `lensM` 0.4 puts a level view's line at the screen's edge with the eye 0.3 m
+   from the surface at the default FOV, so the descent sweeps it bottom to top. Entering the split
+   states must change no pixel: the reach is the furthest a lens-plane point can rise or fall,
+   `lensM × LENS_RAY_MAX` (2.5: the screen corner's ray length at the widest FOV setting and aspect,
+   pinned by `lens_ray_max_covers_every_field_of_view`), plus the waves and the band; the old reach
+   (the lens plus the waves) let a steep view flip at once.
+3. *The meniscus drew above the split, a white smear over the land.* Under the line the composite
+   showed a ray rising from just under the surface through it to the land (the eye a centimetre
+   under, the line above the horizon), so the visible colour edge was the horizon, not the line the
+   meniscus sat on. Now a ray from under the surface reaching it outside Snell's window is totally
+   reflected (fix 4), so the colour edge is the line; and the meniscus is replaced by the **band**.
+4. *From below the underside was flat blue with a dark blotch* (the blotch also from above). The
+   blotch was the player's own shadow (the body is drawn into the shadow maps in first person,
+   DAY_NIGHT.md §10) on the surface's body colour: from below `from_below` lit the underside with the
+   shadow, and from above the body took it at full strength. The underside is now lit unshadowed, and
+   the body from above takes a shadow at `BODY_SHADOW` (0.35) of its strength (the glint and sparkle
+   keep it all): the body is light scattered under the surface, which a shadow on it darkens only in
+   part. **Snell's window**: `from_below`'s alpha is now the Fresnel (out through the window the
+   composite's sky or the scene behind shows; outside it, alpha 1, the mirror), and the composite
+   tests rays that reach the surface where it isn't drawn (`sees_out`: `1 − rise² < 1/ior²`, the
+   critical angle 48.6° from the up for water, the rise bent by the noise tile's slope there): outside
+   the window the water's in-scatter mirrored, inside it the sky. The **underside's texture**
+   (`underside.texture`): `underside_cells`, the caustic cells on Medium and High (the noise tile on
+   Low) at the surface point, so perspective-correct on the mesh and in the composite, faded where a
+   pixel covers a cell.
+
+**The band** (`waterline_band`; CPU twins `band_t`, `band_edge`, `band_uv`, test
+`the_waterline_band_sits_under_the_line_with_a_dark_rim_over_a_bright_line`, both faces). The pixels
+under the line within `band.depthM` on the lens plane (the line is its top edge: the surface; 4.2 cm
+is 7 % of the screen level at the default FOV). Its colour is its surroundings': the scene just above
+the line mirrored across it (one load of the scene colour; the sky where nothing is drawn), at most
+60 % of it, over the pixel's own underwater view toward the band's foot, times the look's `tint`.
+Textured by the noise tile on a plane receding to the line (`band_uv`: along the line by the screen,
+down it by `1/(t + 0.08)`, so cells shrink toward it) as horizontal darker and lighter streaks
+(`streaks`) with glints (`glints`); along the top a dark rim (`rimPx`, `rimShade`) over a bright line
+(`linePx`, `lineGlow`), in pixels across the line at any pitch and roll (`meniscus_px_m`); faded into
+the underwater view over its lower half. The line's waves (1.8 cm over 0.38 m) give a few waves across
+the screen, moving.
+
+**The under path is cheaper.** A pixel under the line now takes only the underwater composite and the
+band; before, the ordinary composite (sky, clouds, fog) was computed for it too and thrown away. The
+composite's derivatives (the cloud decks' footprints, `composited_decks`) are taken first, in uniform
+control flow, so the early return is valid WGSL. `composite_underwater` reads the depth and computes
+the mirror or the sky behind only where the pixel needs them.
+
+**Cost** (the M1 Air at the owner's setting, `?renderscale=0.5&upscaler=stretch`, 2560×1600, High
+water, the descent scenario's records, `gpu.*` p50 over 4 s, one run each):
+
+| View | `gpu.frame` before → after | `gpu.composite` | `gpu.near.water` |
+|---|---|---|---|
+| Eye at the surface (0 m, split) | 6.01 → 6.10 | 3.36 → 3.40 | 1.71 → 1.71 |
+| 1 m under, level | 5.93 → 6.43 | 3.26 → 3.74 | 2.65 → 2.85 |
+
+At the surface the band and the plane cost nothing measurable. At −1 m the eye is now inside the
+band's reach (1.07 m), so the composite runs the per-pixel test, the cloud decks' prelude and the
+mirror test where the old code took the deep path (+0.48 ms), and the underside's texture adds 0.2 ms
+to the water (the caustic cells on the surface's underside). Deeper than ~1.1 m the composite is the
+old deep path. Before the cheaper under path the band cost 1.9 ms at −1 m.
+
+**Still off** (the after descent): the band's streaks read as smooth parallel stripes more than broken
+ripples; its dark rim steps along the wave on a pixel's worth of noise; looking level from below, the
+underside's mirror meets the fog at a hard horizon; from above at +0.5 m a faint trace of the player's
+shadow remains (by design, at 35 %).
