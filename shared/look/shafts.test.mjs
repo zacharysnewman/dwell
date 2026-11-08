@@ -28,6 +28,13 @@ test('a fluid added by data alone reaches the output', () => {
   assert.match(rs, /fluid: "test:glow",\s+strength: 1\.5,[\s\S]*window_color: 0xffcc88,/);
 });
 
+test('a light kind added by data alone reaches the output', () => {
+  const d = data();
+  d.lights.kinds['test:lamp'] = { strength: 0.8, discM: 4 };
+  const rs = shaftsRust(validateShafts(d));
+  assert.match(rs, /light: "test:lamp",\s+strength: 0\.8,\s+disc_m: 4\.0,/);
+});
+
 test('bad entries fail with their path named', () => {
   const w = 'dwell:water';
   const cases = [
@@ -41,6 +48,12 @@ test('bad entries fail with their path named', () => {
     [(d) => (d.fluids[w].window.color = 'cyan'), /fluids\.dwell:water\.window\.color must be #rrggbb/],
     [(d) => (d.fluids.Water = d.fluids[w]), /fluids\.Water: the name must be/],
     [(d) => delete d.default.window, /missing entry default\.window/],
+    [(d) => (d.tiers.high.lights = 5), /tiers\.high\.lights must be a number in \[0, 4\]/],
+    [(d) => (d.tiers.low.lightSteps = 32), /tiers\.low must cost no more than tiers\.high/],
+    [(d) => (d.lights.rangeM = 0), /lights\.rangeM must be a number in \(0, 64\]/],
+    [(d) => (d.lights.kinds['dwell:torch'].discM = 0), /lights\.kinds\.dwell:torch\.discM must be a number/],
+    [(d) => (d.lights.kinds.Torch = { strength: 1, discM: 1 }), /lights\.kinds\.Torch: the name must be/],
+    [(d) => delete d.lights.default, /missing entry lights\.default/],
   ];
   for (const [edit, message] of cases) {
     const d = data();
@@ -56,4 +69,7 @@ test('the shafts are soft and subtle, and Low is the cheaper tier (owner, 2026-1
   assert.ok(d.fluids['dwell:water'].strength > 0, 'water has shafts');
   assert.equal(d.tiers.high.scale, 0.5, 'High at half resolution');
   assert.equal(d.tiers.low.scale, 0.25, 'Low at quarter resolution');
+  const torch = d.lights.kinds['dwell:torch'];
+  assert.ok(torch.strength > 0 && torch.strength <= 0.5, 'a torch glows, softly');
+  assert.ok(d.tiers.low.lights > 0 && d.tiers.low.lights < d.tiers.high.lights, 'Low draws fewer lights');
 });

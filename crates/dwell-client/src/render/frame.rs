@@ -173,8 +173,9 @@ pub fn scene_read_layout(device: &wgpu::Device, samples: u32) -> wgpu::BindGroup
     })
 }
 
-/// The light shafts' buffer's format: one channel, the glow (ADR 0064).
-pub const SHAFTS: wgpu::TextureFormat = wgpu::TextureFormat::R16Float;
+/// The light shafts' buffer's format (ADR 0064): rgb the placed and held lights' glow (its
+/// colour), a the sun's, moon's or fluid's (× `frame.shafts_color`).
+pub const SHAFTS: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
 type Target = (wgpu::Texture, wgpu::TextureView);
 

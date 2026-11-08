@@ -3119,7 +3119,8 @@ Deliverables
   Outstanding: the owner's look.
 - [ ] **W4** — The rest of the underwater view: refraction of the scene above through the window,
   distortion. Caustics moved to W3. God rays moved out (0.50.24): built as the light shafts, in the
-  air and under water, with their own High/Low/Off setting (ADR 0064); torch and lamp shafts planned.
+  air and under water, with their own High/Low/Off setting (ADR 0064); torch and lamp shafts built
+  in 0.50.26 (the nearest placed and held lights, the same setting).
 - [x] **W5a** — Screen-space reflections of land and the clouds in reflections (brought forward from
   W5, the owner's report of 2026-10-16), per water quality as data (`shared/look/reflections.json`;
   WATER_RENDERING.md §8, W5a).

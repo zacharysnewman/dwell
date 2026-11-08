@@ -3,8 +3,18 @@
 use crate::shafts::*;
 
 /// The High and Low tiers (`tiers`).
-pub const HIGH: ShaftTier = ShaftTier { scale: 0.5, steps: 24 };
-pub const LOW: ShaftTier = ShaftTier { scale: 0.25, steps: 12 };
+pub const HIGH: ShaftTier = ShaftTier {
+    scale: 0.5,
+    steps: 24,
+    lights: 4,
+    light_steps: 12,
+};
+pub const LOW: ShaftTier = ShaftTier {
+    scale: 0.25,
+    steps: 12,
+    lights: 2,
+    light_steps: 6,
+};
 
 /// The sun's and the moon's shafts in the air (`air`).
 pub const SUN_SHAFTS: AirShafts = AirShafts {
@@ -23,6 +33,39 @@ pub const MOON_SHAFTS: AirShafts = AirShafts {
     elevation_deg: 10.0,
     offscreen: 0.3,
 };
+
+/// The most lights a frame draws shafts from.
+pub const MAX_SHAFT_LIGHTS: usize = 4;
+
+/// The placed and held lights' shafts (`lights`).
+pub const LIGHT_SHAFTS: LightShaftTuning = LightShaftTuning {
+    near_m: 1.5,
+    range_m: 20.0,
+    reach: 0.8,
+    decay: 0.96,
+    offscreen: 0.3,
+    day_share: 0.4,
+    max_disc: 0.5,
+};
+
+/// A light source not listed (`lights.default`), and each listed one (`lights.kinds`).
+pub const DEFAULT_LIGHT_SHAFTS: LightShafts = LightShafts {
+        light: "",
+        strength: 0.0,
+        disc_m: 1.0,
+    };
+pub const LIGHT_KINDS: &[LightShafts] = &[
+    LightShafts {
+        light: "dwell:torch",
+        strength: 0.35,
+        disc_m: 1.2,
+    },
+    LightShafts {
+        light: "dwell:fuse",
+        strength: 0.15,
+        disc_m: 1.0,
+    },
+];
 
 /// The shafts under a fluid not listed (`default`).
 pub const DEFAULT_FLUID_SHAFTS: FluidShafts = FluidShafts {
