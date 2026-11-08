@@ -401,21 +401,34 @@ mod tests {
         // A hit early on the arc ends sooner than one at its end, and every hit sooner than a miss.
         assert!(s.hit_length(0) < s.hit_length(s.samples - 1));
         assert!(s.hit_length(s.samples - 1) < s.miss_length());
-        assert!((s.time_of_step(0) - s.windup_s).abs() < 1e-12, "the arc starts after the wind-up");
+        assert!(
+            (s.time_of_step(0) - s.windup_s).abs() < 1e-12,
+            "the arc starts after the wind-up"
+        );
         assert!(s.hit_stop_s > 0.0 && s.recover_miss_s > s.recover_hit_s);
         // Never sooner than the server's wait.
         assert!(s.miss_length() >= axe().swing_seconds);
-        assert!(s.stamina_cost > 0.0, "a swing names its stamina cost (unused until stamina)");
+        assert!(
+            s.stamina_cost > 0.0,
+            "a swing names its stamina cost (unused until stamina)"
+        );
     }
 
     #[test]
     fn the_tree_sways_more_toward_the_fall_and_the_hits_sound_deeper() {
         let log = wood("dwell:log").unwrap();
         assert_eq!(log.sway_deg(0.0), 0.0);
-        assert_eq!(log.sway_deg(log.sway.from_fraction), 0.0, "still until ~40% through");
+        assert_eq!(
+            log.sway_deg(log.sway.from_fraction),
+            0.0,
+            "still until ~40% through"
+        );
         let mid = log.sway_deg((log.sway.from_fraction + log.fell_fraction) / 2.0);
         let end = log.sway_deg(log.fell_fraction);
-        assert!(mid > 0.0 && end > 2.0 * mid, "more toward the fall: {mid} then {end}");
+        assert!(
+            mid > 0.0 && end > 2.0 * mid,
+            "more toward the fall: {mid} then {end}"
+        );
         assert!((end - log.sway.max_deg).abs() < 1e-9);
         assert_eq!(log.sound_at(0.0), Some("chop_bark"));
         assert_eq!(log.sound_at(0.3), Some("chop_wood"));

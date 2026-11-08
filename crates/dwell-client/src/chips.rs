@@ -7,6 +7,14 @@
 //!
 //! Face-local: written with +y up and crossed into the world through `FaceFrame` (chips fall toward
 //! the face's ground; a standing trunk's bands are face-locally lower first).
+//!
+//! The owner (2026-11-08): the gouges read as bark chips stuck on, grey-olive in shade. A notch is
+//! now drawn as a V cut into the side, each of its two cut faces lit by its own normal
+//! ([`Gouge::cut_normals`], packed into the quad as [`Gouge::bits`]): the face toward the sky
+//! bright, the one under it in shade, fresh end grain, a crease at its apex darkening with depth
+//! and a bark lip; and fresh wood keeps its tan hue in shade (render/blasts.rs `wood_lit`). Each
+//! hit also shakes leaves down from the tree's leaf blocks ([`leaf_cells`], [`Chips::shake_leaves`]).
+use dwell_blocks::StateId;
 
 use crate::blasts::{Puff, PuffKind};
 use dwell_protocol::chopping::{self as chop, Cut, WOODS};
@@ -14,6 +22,12 @@ use dwell_world::{CELL_H, FaceFrame, m_of_row};
 
 /// How long a chip flies (s).
 pub const CHIP_SECONDS: f64 = 0.9;
+/// How long a leaf flutters down (s), its fall's settled speed (m/s) and its flutter (m).
+pub const LEAF_SECONDS: f64 = 2.8;
+const LEAF_FALL: f64 = 1.1;
+const LEAF_FLUTTER: f64 = 0.3;
+/// The most leaf cells a hit looks through for its leaves.
+const LEAF_CELLS_MAX: usize = 512;
 /// Gravity on a chip (m/s²), toward the face's ground.
 const CHIP_GRAVITY: f64 = 9.0;
 /// How far a gouge's quad sits out from its face (m), over the block's own face.
@@ -34,6 +48,8 @@ pub struct Chip {
     /// The wood's index in `WOODS`.
     pub wood: usize,
     pub seed: u32,
+    /// A leaf shaken down (it flutters and falls slowly), not a chip.
+    pub leaf: bool,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -117,12 +133,47 @@ impl Chips {
                 start_s: now_s,
                 wood,
                 seed: seed ^ k.wrapping_mul(0x27d4_eb2d),
+                leaf: false,
+            });
+        }
+    }
+
+    /// How many leaves a hit at wood `wood` shakes down (a CPU adapter: a third).
+    pub fn leaf_count(&self, wood: usize) -> usize {
+        let n = WOODS.get(wood).map_or(0, |w| w.leaves.count as usize);
+        if self.cpu { n.div_ceil(3) } else { n }
+    }
+
+    /// A hit's leaves: each from one of the tree's leaf cells `cells` (world), drifting down.
+    pub fn shake_leaves(&mut self, wood: usize, cells: &[[i32; 3]], now_s: f64, seed: u32) {
+        if cells.is_empty() {
+            return;
+        }
+        for k in 0..self.leaf_count(wood) as u32 {
+            let cell = cells[(hash(seed, 300 + k) * cells.len() as f64) as usize % cells.len()];
+            let f = FaceFrame::at_row(cell[1]);
+            let l = f.cell(cell);
+            // From under the leaf cell, somewhere across it.
+            let at = f.point([
+                f64::from(l[0]) + hash(seed, 400 + k),
+                m_of_row(l[1]) - 0.02,
+                f64::from(l[2]) + hash(seed, 500 + k),
+            ]);
+            let r: [f64; 3] = std::array::from_fn(|j| hash(seed, 600 + k * 3 + j as u32) - 0.5);
+            self.list.push(Chip {
+                at,
+                vel: f.vector([0.6 * r[0], 0.3 * r[1], 0.6 * r[2]]),
+                start_s: now_s,
+                wood,
+                seed: seed ^ k.wrapping_mul(0x1656_67b1),
+                leaf: true,
             });
         }
     }
 
     pub fn prune(&mut self, now_s: f64) {
-        self.list.retain(|c| now_s - c.start_s < CHIP_SECONDS);
+        self.list
+            .retain(|c| now_s - c.start_s < if c.leaf { LEAF_SECONDS } else { CHIP_SECONDS });
     }
 
     /// The chips to draw now: tumbling flat chips (`PuffKind::Chip`), falling to the face's ground.
@@ -131,12 +182,33 @@ impl Chips {
             .iter()
             .filter_map(|c| {
                 let t = now_s - c.start_s;
-                if !(0.0..CHIP_SECONDS).contains(&t) {
-                    return None;
-                }
                 let w = WOODS.get(c.wood)?;
                 let f = FaceFrame::at_height(c.at[1]);
                 let up = f.up();
+                if c.leaf {
+                    if !(0.0..LEAF_SECONDS).contains(&t) {
+                        return None;
+                    }
+                    // Settles to a slow fall, fluttering side to side as it goes.
+                    let fall = LEAF_FALL * (t - (1.0 - (-t * 3.0).exp()) / 3.0);
+                    let ph = hash(c.seed, 9) * std::f64::consts::TAU;
+                    let sway = LEAF_FLUTTER * (t * 4.2 + ph).sin();
+                    let side = f.vector([ph.cos(), 0.0, ph.sin()]);
+                    let at = std::array::from_fn(|k| {
+                        c.at[k] + c.vel[k] * t.min(0.6) - fall * up[k] + sway * side[k]
+                    });
+                    return Some(Puff {
+                        at,
+                        size: 0.05,
+                        alpha: (1.0 - (t / LEAF_SECONDS).powi(4)).clamp(0.0, 1.0),
+                        kind: PuffKind::Leaf,
+                        explosive: c.wood,
+                        seed: c.seed.wrapping_add((t * 12.0) as u32),
+                    });
+                }
+                if !(0.0..CHIP_SECONDS).contains(&t) {
+                    return None;
+                }
                 let at = std::array::from_fn(|k| {
                     c.at[k] + c.vel[k] * t - 0.5 * CHIP_GRAVITY * t * t * up[k]
                 });
@@ -165,6 +237,91 @@ pub struct Gouge {
     pub kerf: bool,
     /// The side's outward normal (world).
     pub normal: [f64; 3],
+}
+
+impl Gouge {
+    /// A notch's two cut faces' normals (world): the half toward +`v`, then the half toward −`v`.
+    /// The V opens 1.25× its depth each way along the grain, so each face slopes back toward the
+    /// apex: on a standing trunk the upper face looks down and the lower up (lit by the sky).
+    pub fn cut_normals(&self) -> [[f64; 3]; 2] {
+        let v = norm(self.v);
+        let n = self.normal;
+        [
+            norm(std::array::from_fn(|k| 1.25 * n[k] - v[k])),
+            norm(std::array::from_fn(|k| 1.25 * n[k] + v[k])),
+        ]
+    }
+
+    /// The side's normal and the grain's way as the shader reads them (`chip_colour`'s `bits`):
+    /// bits 0–2 the side's face (`axis × 2 + positive`), 3–4 the axis `v` lies along, 5 set when
+    /// `v` points down that axis.
+    pub fn bits(&self) -> u32 {
+        let axis = |v: [f64; 3]| {
+            (0..3)
+                .max_by(|&a, &b| v[a].abs().total_cmp(&v[b].abs()))
+                .unwrap_or(0)
+        };
+        let a = axis(self.normal);
+        let face = (a * 2) as u32 + u32::from(self.normal[a] > 0.0);
+        let g = axis(self.v);
+        face | (g as u32) << 3 | u32::from(self.v[g] < 0.0) << 5
+    }
+}
+
+/// [`Gouge::bits`] back as the side's normal and the grain's way (unit; the shader's decoding).
+pub fn decode_bits(bits: u32) -> ([f64; 3], [f64; 3]) {
+    let unit = |a: u32, s: f64| {
+        let mut v = [0.0; 3];
+        v[a as usize % 3] = s;
+        v
+    };
+    let f = bits & 7;
+    (
+        unit(f / 2, if f & 1 == 1 { 1.0 } else { -1.0 }),
+        unit(
+            (bits >> 3) & 3,
+            if (bits >> 5) & 1 == 1 { -1.0 } else { 1.0 },
+        ),
+    )
+}
+
+/// The leaf cells (world) a hit at world cell `hit` of wood `wood` shakes leaves from: the wood's
+/// `leaves.block` within its `radiusM` across and `heightM` above, face-locally. `voxel` reads the
+/// world.
+pub fn leaf_cells(
+    hit: [i32; 3],
+    wood: usize,
+    mut voxel: impl FnMut([i32; 3]) -> StateId,
+) -> Vec<[i32; 3]> {
+    let Some(w) = WOODS.get(wood) else {
+        return Vec::new();
+    };
+    let Some(leaf) = w.leaves.block else {
+        return Vec::new();
+    };
+    let f = FaceFrame::at_row(hit[1]);
+    let l = f.cell(hit);
+    let r = w.leaves.radius_m.ceil() as i32;
+    let rows = (w.leaves.height_m / CELL_H).ceil() as i32;
+    let mut out = Vec::new();
+    for dy in 0..=rows {
+        for dx in -r..=r {
+            for dz in -r..=r {
+                if f64::from(dx * dx + dz * dz) > w.leaves.radius_m * w.leaves.radius_m {
+                    continue;
+                }
+                let c = f.cell([l[0] + dx, l[1] + dy, l[2] + dz]);
+                let m = voxel(c);
+                if dwell_blocks::try_info(m).is_some() && dwell_blocks::block_of(m).name == leaf {
+                    out.push(c);
+                    if out.len() >= LEAF_CELLS_MAX {
+                        return out;
+                    }
+                }
+            }
+        }
+    }
+    out
 }
 
 /// The gouges of world cell `cell` (grain along world axis `grain`) cut `cut`: on each cut side, the
@@ -231,6 +388,7 @@ pub fn gouge_puffs(gs: &[Gouge], wood: usize, seed: u32) -> impl Iterator<Item =
             u: g.u,
             v: g.v,
             kerf: g.kerf,
+            bits: g.bits(),
         },
         explosive: wood,
         seed,
@@ -292,6 +450,60 @@ mod tests {
             v.burst(log(), face, point, true, look, 0.0);
             let down = v.list.iter().map(|ch| f.vector(ch.vel)[1]).sum::<f64>();
             assert!(down < 0.0, "downward: {down}");
+        }
+    );
+
+    both_faces!(
+        fn a_notchs_lower_cut_face_looks_up_and_its_upper_one_down(f: FaceFrame) {
+            // Red before 0.50.38: the notch was one flat quad lit as if it faced the sky.
+            let cell = f.cell([3, 80, 0]);
+            let mut cut = Cut::default();
+            cut.notch[0] = 0.12;
+            let g = gouges(cell, 1, &cut)[0];
+            let [upper, lower] = g.cut_normals().map(|n| f.vector(n));
+            assert!(lower[1] > 0.5 && upper[1] < -0.5, "{upper:?} {lower:?}");
+            // Both still face out of the −x side.
+            assert!(lower[0] < -0.5 && upper[0] < -0.5);
+            // The shader's decoding gives the same side and grain.
+            let (n, v) = decode_bits(g.bits());
+            assert_eq!(n, g.normal);
+            assert_eq!(v, norm(g.v));
+        }
+    );
+
+    both_faces!(
+        fn each_hit_shakes_the_woods_leaves_down_from_its_trees_leaf_cells(f: FaceFrame) {
+            let leaves = dwell_blocks::parse_state("dwell:leaves").expect("leaves");
+            // A canopy 3 m above a hit at face-local (0, 80, 0); nothing else.
+            let hit = f.cell([0, 80, 0]);
+            let canopy: Vec<[i32; 3]> = (-1..=1)
+                .flat_map(|x| (-1..=1).map(move |z| f.cell([x, 86, z])))
+                .collect();
+            let at = |c: [i32; 3]| if canopy.contains(&c) { leaves } else { 0 };
+            let cells = leaf_cells(hit, log(), at);
+            assert_eq!(cells.len(), canopy.len());
+            let mut c = Chips::default();
+            c.shake_leaves(log(), &cells, 1.0, 7);
+            let n = WOODS[log()].leaves.count as usize;
+            assert!(n > 0);
+            assert_eq!(c.list.len(), n, "the wood's leaves per hit");
+            // They fall slowly from under the canopy, fluttering, for longer than chips fly.
+            let early = c.puffs(1.1);
+            let late = c.puffs(2.5);
+            assert_eq!(early.len(), n);
+            assert!(early.iter().all(|p| p.kind == PuffKind::Leaf));
+            let h = |p: &[Puff]| p.iter().map(|q| f.point(q.at)[1]).sum::<f64>() / p.len() as f64;
+            assert!(h(&early) > m_of_row(85), "from the canopy: {}", h(&early));
+            assert!(
+                h(&late) < h(&early) - 0.8,
+                "falling: {} then {}",
+                h(&early),
+                h(&late)
+            );
+            c.prune(1.0 + CHIP_SECONDS + 0.1);
+            assert_eq!(c.list.len(), n, "still falling after a chip would be gone");
+            // No tree, no leaves.
+            assert!(leaf_cells(hit, log(), |_| 0).is_empty());
         }
     );
 

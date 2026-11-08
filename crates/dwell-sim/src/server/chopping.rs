@@ -38,15 +38,6 @@ pub(super) fn band_of(f: FaceFrame, cell: [i32; 3], grain: usize, point: [f64; 3
     usize::from(frac >= 0.5)
 }
 
-/// A tool's swing arc (its data).
-pub fn arc_of(t: &chop::ToolDef) -> dwell_world::swing::Arc {
-    dwell_world::swing::Arc {
-        reach_m: t.swing.reach_m,
-        arc_deg: t.swing.arc_deg,
-        samples: t.swing.samples,
-    }
-}
-
 impl Server {
     pub(super) fn chop_action(&mut self, id: SessionId, a: ChopAction) {
         match a {
@@ -106,7 +97,7 @@ impl Server {
         }
         let look = look.map(|v| v / len);
         let eye = self.eye_of(h);
-        let arc = arc_of(t);
+        let arc = dwell_world::swing::Arc::of(t);
         let hit = dwell_world::swing::sweep(&mut self.world, eye, look, vertical, &arc);
         let wood = hit.filter(|x| grain_of(self.world.get_voxel_if_loaded(x.hit.cell)).is_some());
         match wood {
@@ -161,9 +152,8 @@ impl Server {
                     })
                 })
                 .collect();
-            if !all.is_empty() {
-                self.send_reliable(id, &Message::HeldTools(all), Channel::World);
-            }
+            // At least one (empty when nobody holds a tool): the client's sign the server sweeps.
+            self.send_reliable(id, &Message::HeldTools(all), Channel::World);
         }
     }
 

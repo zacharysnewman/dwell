@@ -168,6 +168,9 @@ pub struct Animator {
     /// The clip faded out of, and how far the fade is (s) of how long.
     from: Option<(Playing, f32, f32)>,
     action: Option<Playing>,
+    /// The swing's clip time set from outside (a melee swing's hit-stop and pull-back,
+    /// `dwell-client` chop.rs), instead of advancing with the frame.
+    driven: Option<f32>,
 }
 
 impl Animator {
@@ -179,6 +182,7 @@ impl Animator {
             base: None,
             from: None,
             action: None,
+            driven: None,
         }
     }
 
@@ -206,6 +210,12 @@ impl Animator {
     /// The swing playing, if any.
     pub fn action(&self) -> Option<&'static str> {
         self.action.map(|a| a.role)
+    }
+
+    /// Drives the swing playing to clip time `t` (s) each frame from now on, or lets it run with the
+    /// frame again (none).
+    pub fn drive_action(&mut self, t: Option<f32>) {
+        self.driven = t;
     }
 
     /// Starts a swing (an edit's break or place) on the action layer.
@@ -286,8 +296,12 @@ impl Animator {
         {
             layer(&mut pose, &sample(self.clip(hold), base.t), 1.0);
         }
+        let driven = self.driven;
         if let Some(a) = &mut self.action {
-            a.t += dt;
+            match driven {
+                Some(t) => a.t = t,
+                None => a.t += dt,
+            }
             let c = self.tables.clip(a.clip);
             if a.t > c.duration {
                 self.action = None;

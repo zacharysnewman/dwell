@@ -14,9 +14,7 @@ fn part_centre(item: &str, role: &str, id: &str, t: f32) -> [f32; 3] {
     let ch = player();
     let fp = ch.first_person.expect("arms view");
     let it = ch.item(item).unwrap_or_else(|| panic!("item {item}"));
-    let clip = ch
-        .arms_clip(role)
-        .unwrap_or_else(|| panic!("role {role}"));
+    let clip = ch.arms_clip(role).unwrap_or_else(|| panic!("role {role}"));
     let bones = arm_transforms(ch, &with_item(&sample(TABLES.clip(clip), t), Some(it)));
     let part = it
         .parts

@@ -8478,11 +8478,11 @@ const DATA = {
    ]
   },
   "fp_chop_level": {
-   "$comment": "The axe's level swing (ADR 0067): wound back out to the right, swept across to the left through the cut, and back; the swing's 0.45 s (shared/tools swingSeconds).",
+   "$comment": "The axe's level swing (ADR 0067), timed to a miss (shared/tools `swing`: windupS 0.12, the arc's activeS 0.14, recoverMissS 0.36): wound back out to the right, swept across to the left through the cut, a loose overshoot, and back. A hit holds the impact's pose for the hit-stop and plays it back to the rest (dwell-client chop.rs `SwingRun::clip_time`).",
    "rig": "biped",
    "space": "arms",
    "layer": "action",
-   "duration": 0.45,
+   "duration": 0.62,
    "loop": false,
    "ease": "smooth",
    "keys": [
@@ -8512,32 +8512,32 @@ const DATA = {
      }
     },
     {
-     "t": 0.13,
+     "t": 0.12,
      "root": [
-      0.05,
-      0.02,
-      -0.03
+      0.06,
+      0.025,
+      -0.04
      ],
      "bones": {
       "arm_r": [
        -78,
-       62,
+       64,
        -10
       ],
       "forearm_r": [
-       -52,
+       -54,
        0,
        0
       ],
       "hand_r": [
        0,
-       30,
+       32,
        -38
       ]
      }
     },
     {
-     "t": 0.24,
+     "t": 0.26,
      "root": [
       -0.04,
       -0.01,
@@ -8562,7 +8562,32 @@ const DATA = {
      }
     },
     {
-     "t": 0.45,
+     "t": 0.38,
+     "root": [
+      -0.07,
+      -0.04,
+      0.03
+     ],
+     "bones": {
+      "arm_r": [
+       -72,
+       -24,
+       -10
+      ],
+      "forearm_r": [
+       -24,
+       0,
+       0
+      ],
+      "hand_r": [
+       0,
+       -30,
+       -30
+      ]
+     }
+    },
+    {
+     "t": 0.62,
      "root": [
       0,
       0,
@@ -8589,11 +8614,11 @@ const DATA = {
    ]
   },
   "fp_chop_vertical": {
-   "$comment": "The axe's vertical swing (ADR 0067): raised high, brought straight down through the cut, and back; the swing's 0.45 s.",
+   "$comment": "The axe's vertical swing (ADR 0067), timed to a miss as the level one: raised high, brought straight down through the cut, a loose follow-through low, and back.",
    "rig": "biped",
    "space": "arms",
    "layer": "action",
-   "duration": 0.45,
+   "duration": 0.62,
    "loop": false,
    "ease": "smooth",
    "keys": [
@@ -8623,57 +8648,82 @@ const DATA = {
      }
     },
     {
-     "t": 0.14,
+     "t": 0.12,
      "root": [
       0.01,
-      0.05,
-      -0.04
+      0.06,
+      -0.05
      ],
      "bones": {
       "arm_r": [
-       -125,
+       -130,
        20,
        0
       ],
       "forearm_r": [
-       -55,
+       -60,
        0,
        0
       ],
       "hand_r": [
-       -30,
+       -35,
        0,
        0
       ]
      }
     },
     {
-     "t": 0.25,
+     "t": 0.26,
      "root": [
       0,
-      -0.04,
+      -0.05,
       0.06
      ],
      "bones": {
       "arm_r": [
-       -48,
+       -45,
        18,
        0
       ],
       "forearm_r": [
-       -14,
+       -12,
        0,
        0
       ],
       "hand_r": [
-       35,
+       38,
        0,
        0
       ]
      }
     },
     {
-     "t": 0.45,
+     "t": 0.38,
+     "root": [
+      0,
+      -0.09,
+      0.03
+     ],
+     "bones": {
+      "arm_r": [
+       -30,
+       16,
+       0
+      ],
+      "forearm_r": [
+       -20,
+       0,
+       0
+      ],
+      "hand_r": [
+       30,
+       0,
+       0
+      ]
+     }
+    },
+    {
+     "t": 0.62,
      "root": [
       0,
       0,

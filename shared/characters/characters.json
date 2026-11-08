@@ -760,33 +760,35 @@
       ]
     },
     "fp_chop_level": {
-      "$comment": "The axe's level swing (ADR 0067): wound back out to the right, swept across to the left through the cut, and back; the swing's 0.45 s (shared/tools swingSeconds).",
+      "$comment": "The axe's level swing (ADR 0067), timed to a miss (shared/tools `swing`: windupS 0.12, the arc's activeS 0.14, recoverMissS 0.36): wound back out to the right, swept across to the left through the cut, a loose overshoot, and back. A hit holds the impact's pose for the hit-stop and plays it back to the rest (dwell-client chop.rs `SwingRun::clip_time`).",
       "rig": "biped",
       "space": "arms",
       "layer": "action",
-      "duration": 0.45,
+      "duration": 0.62,
       "loop": false,
       "ease": "smooth",
       "keys": [
         { "t": 0, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } },
-        { "t": 0.13, "root": [0.05, 0.02, -0.03], "bones": { "arm_r": [-78, 62, -10], "forearm_r": [-52, 0, 0], "hand_r": [0, 30, -38] } },
-        { "t": 0.24, "root": [-0.04, -0.01, 0.06], "bones": { "arm_r": [-82, -6, -6], "forearm_r": [-18, 0, 0], "hand_r": [0, -20, -38] } },
-        { "t": 0.45, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } }
+        { "t": 0.12, "root": [0.06, 0.025, -0.04], "bones": { "arm_r": [-78, 64, -10], "forearm_r": [-54, 0, 0], "hand_r": [0, 32, -38] } },
+        { "t": 0.26, "root": [-0.04, -0.01, 0.06], "bones": { "arm_r": [-82, -6, -6], "forearm_r": [-18, 0, 0], "hand_r": [0, -20, -38] } },
+        { "t": 0.38, "root": [-0.07, -0.04, 0.03], "bones": { "arm_r": [-72, -24, -10], "forearm_r": [-24, 0, 0], "hand_r": [0, -30, -30] } },
+        { "t": 0.62, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } }
       ]
     },
     "fp_chop_vertical": {
-      "$comment": "The axe's vertical swing (ADR 0067): raised high, brought straight down through the cut, and back; the swing's 0.45 s.",
+      "$comment": "The axe's vertical swing (ADR 0067), timed to a miss as the level one: raised high, brought straight down through the cut, a loose follow-through low, and back.",
       "rig": "biped",
       "space": "arms",
       "layer": "action",
-      "duration": 0.45,
+      "duration": 0.62,
       "loop": false,
       "ease": "smooth",
       "keys": [
         { "t": 0, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } },
-        { "t": 0.14, "root": [0.01, 0.05, -0.04], "bones": { "arm_r": [-125, 20, 0], "forearm_r": [-55, 0, 0], "hand_r": [-30, 0, 0] } },
-        { "t": 0.25, "root": [0, -0.04, 0.06], "bones": { "arm_r": [-48, 18, 0], "forearm_r": [-14, 0, 0], "hand_r": [35, 0, 0] } },
-        { "t": 0.45, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } }
+        { "t": 0.12, "root": [0.01, 0.06, -0.05], "bones": { "arm_r": [-130, 20, 0], "forearm_r": [-60, 0, 0], "hand_r": [-35, 0, 0] } },
+        { "t": 0.26, "root": [0, -0.05, 0.06], "bones": { "arm_r": [-45, 18, 0], "forearm_r": [-12, 0, 0], "hand_r": [38, 0, 0] } },
+        { "t": 0.38, "root": [0, -0.09, 0.03], "bones": { "arm_r": [-30, 16, 0], "forearm_r": [-20, 0, 0], "hand_r": [30, 0, 0] } },
+        { "t": 0.62, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } }
       ]
     },
     "fp_place": {

@@ -472,12 +472,19 @@ dwell_world::both_faces!(
         let left = -f64::from(right_z(f));
         let mut fx = near(f, "adventure");
         sweep(&mut fx, f, [a.cos(), 0.0, left * a.sin()], false);
-        assert!(!cut_rows(&fx, f).is_empty(), "the swing's path cut the trunk");
+        assert!(
+            !cut_rows(&fx, f).is_empty(),
+            "the swing's path cut the trunk"
+        );
         // Looking well to its right, the level swing starts past it and sweeps away: a miss.
         let b = 75f64.to_radians();
         let mut fx = near(f, "adventure");
         sweep(&mut fx, f, [b.cos(), 0.0, -left * b.sin()], false);
-        assert!(cut_rows(&fx, f).is_empty(), "swept away from it: {:?}", cut_rows(&fx, f));
+        assert!(
+            cut_rows(&fx, f).is_empty(),
+            "swept away from it: {:?}",
+            cut_rows(&fx, f)
+        );
     }
 );
 
@@ -497,9 +504,17 @@ dwell_world::both_faces!(
         }
         fx.server.step();
         sweep(&mut fx, f, [1.0, 0.0, 0.0], false);
-        assert!(cut_rows(&fx, f).is_empty(), "the post took it: {:?}", cut_rows(&fx, f));
+        assert!(
+            cut_rows(&fx, f).is_empty(),
+            "the post took it: {:?}",
+            cut_rows(&fx, f)
+        );
         for r in BASE..BASE + 6 {
-            assert_eq!(cell_is(&mut fx, f, [2, r, right_z(f)]), stone, "a bounce: no effect");
+            assert_eq!(
+                cell_is(&mut fx, f, [2, r, right_z(f)]),
+                stone,
+                "a bounce: no effect"
+            );
         }
     }
 );
@@ -574,7 +589,10 @@ fn the_held_axe_reaches_the_others_that_understand_it_by_name() {
     assert_eq!(got.len(), 1, "{got:?}");
     assert_eq!(got[0].tool, AXE);
     assert!(got[0].vertical);
-    assert!(held_tools_to(&mut fx, 3).is_empty(), "an older client is sent nothing new");
+    assert!(
+        held_tools_to(&mut fx, 3).is_empty(),
+        "an older client is sent nothing new"
+    );
     // A client that says what it holds later gets the others' at once.
     say_held(&mut fx, 3, "", false);
     assert!(held_tools_to(&mut fx, 3).iter().any(|h| h.tool == AXE));

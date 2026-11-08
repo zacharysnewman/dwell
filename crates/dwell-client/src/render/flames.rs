@@ -519,7 +519,7 @@ fn flame_colour(i: FlameVary) -> vec4f {
     let fw = fwidth(i.uv);
     let width_px = 2.0 / max(max(fw.x, fw.y), 1e-6);
     let look = flame_look(i.info & 0xffu);
-    let kind = i.info >> 8u;
+    let kind = (i.info >> 8u) & 0xffu;
     if (kind == 1u) {
         let c = flame_glow(look, i.uv, i.rest.z, i.rest.y);
         if (max(max(c.r, c.g), c.b) < 1e-4) {
@@ -537,7 +537,7 @@ fn flame_colour(i: FlameVary) -> vec4f {
     if (kind >= 8u) {
         // A blast's smoke, dust or fireball (render/blasts.rs): smoke and dust lit over what is
         // behind, the fireball added.
-        let c = blast_colour(kind, i.info & 0xffu, i.uv, i.rest, i.rel, i.seed);
+        let c = blast_colour(kind, i.info & 0xffu, i.uv, i.rest, i.rel, i.seed, i.info >> 16u);
         if (max(c.a, max(max(c.r, c.g), c.b)) < 0.005) {
             discard;
         }
@@ -615,15 +615,15 @@ fn flame_lit_fs(i: FlameVary) -> SceneOut {
 @fragment
 fn flame_mask_fs(i: FlameVary) -> SceneOut {
     let look = flame_look(i.info & 0xffu);
-    if ((i.info >> 8u) >= 4u) {
+    if (((i.info >> 8u) & 0xffu) >= 4u) {
         discard;
     }
-    if ((i.info >> 8u) == 3u) {
+    if (((i.info >> 8u) & 0xffu) == 3u) {
         let c = mote_shade(mote_look(i.info & 0xffu), i.uv, i.rest.y);
         if (max(max(c.r, c.g), c.b) < 0.1) {
             discard;
         }
-    } else if ((i.info >> 8u) == 2u) {
+    } else if (((i.info >> 8u) & 0xffu) == 2u) {
         if (max(flame_ember(look, i.uv, i.rest.y).r, 0.0) < 0.1) {
             discard;
         }

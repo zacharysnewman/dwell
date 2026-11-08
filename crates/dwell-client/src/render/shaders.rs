@@ -96,6 +96,12 @@ struct Frame {
     // screen height) and the hit thickness (m).
     reflect: vec4f,
     reflect_sky: vec4f,
+    // The tree being chopped leans toward its notch (crate::chop `TreeLean`, mod.rs
+    // `lean_uniforms`): the hinge (relative to the eye) and the radius; the tree's up and its
+    // height; the turn's axis and angle (radians; 0: nothing leans).
+    lean_hinge: vec4f,
+    lean_up: vec4f,
+    lean_axis: vec4f,
     // The day/night cycle (dwell-look `DaySky`): the sun, moon and stars, the viewer's sky and each
     // face's lights.
     day: DaySky,
@@ -590,7 +596,7 @@ fn terrain_vs(v: TerrainIn, @builtin(instance_index) k: u32) -> TerrainOut {
     let draw = draws[k];
     var o: TerrainOut;
     o.draw = k;
-    o.rel = draw.offset.xyz + qrot(draw.quat, v.position * draw.offset.w);
+    o.rel = tree_lean(draw.offset.xyz + qrot(draw.quat, v.position * draw.offset.w));
     o.clip = frame.view_proj * vec4f(o.rel, 1.0);
     o.normal = qrot(draw.quat, v.normal);
     o.color = v.color;
@@ -689,6 +695,25 @@ fn gust(p: vec2f, t: f32) -> f32 {
     return clamp(0.5 + 0.3 * a + 0.15 * b + 0.1 * c, 0.0, 1.0);
 }
 
+// The tree being chopped leans (frame.lean_*): a vertex above the hinge, within the radius across
+// and the height up, turned about the axis through it (crate::chop `TreeLean::apply`).
+fn tree_lean(rel: vec3f) -> vec3f {
+    let a = frame.lean_axis.w;
+    if (a == 0.0) {
+        return rel;
+    }
+    let d = rel - frame.lean_hinge.xyz;
+    let h = dot(d, frame.lean_up.xyz);
+    let across = d - frame.lean_up.xyz * h;
+    if (h <= 0.0 || h > frame.lean_up.w || length(across) > frame.lean_hinge.w) {
+        return rel;
+    }
+    let k = frame.lean_axis.xyz;
+    let c = cos(a);
+    let s = sin(a);
+    return frame.lean_hinge.xyz + d * c + cross(k, d) * s + k * dot(k, d) * (1.0 - c);
+}
+
 // The wind sways a vertex by its `plant.x` (m): leaning with the gusts, a faster flutter on top.
 // frame.fog.z is the time (s), frame.fog.w the wind's scale (0 when effects are off).
 fn sway(rel: vec3f, plant: vec4f) -> vec3f {
@@ -711,7 +736,7 @@ fn cutout_vs(v: CutoutIn, @builtin(instance_index) k: u32) -> CutoutOut {
     let draw = draws[k];
     var o: CutoutOut;
     o.draw = k;
-    o.rel = sway(draw.offset.xyz + qrot(draw.quat, v.position * draw.offset.w), v.plant);
+    o.rel = sway(tree_lean(draw.offset.xyz + qrot(draw.quat, v.position * draw.offset.w)), v.plant);
     o.clip = frame.view_proj * vec4f(o.rel, 1.0);
     o.normal = qrot(draw.quat, v.normal);
     o.color = v.color;

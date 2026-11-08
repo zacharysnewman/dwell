@@ -188,6 +188,21 @@ fn waterline_state(e: EyeFluid, eye_y: f64, face: FaceFrame) -> f32 {
     }
 }
 
+/// The frame uniform's `lean_*` vec4s (shaders.rs `tree_lean`): the hinge relative to `eye` and
+/// the radius, the tree's up and height, the turn's axis and angle (0: nothing leans).
+pub(crate) fn lean_uniforms(lean: Option<crate::chop::TreeLean>, eye: [f64; 3]) -> [[f32; 4]; 3] {
+    let Some(l) = lean else {
+        return [[0.0; 4]; 3];
+    };
+    let h: [f32; 3] = std::array::from_fn(|k| (l.hinge[k] - eye[k]) as f32);
+    let f = |v: [f64; 3], w: f64| [v[0] as f32, v[1] as f32, v[2] as f32, w as f32];
+    [
+        [h[0], h[1], h[2], l.radius as f32],
+        f(l.up, l.height),
+        f(l.axis, l.angle),
+    ]
+}
+
 /// The frame uniform's `water` vec4 (shaders.rs `Frame`): x [`waterline_state`] (0: the eye
 /// neither under a fluid's drawn surface nor just above it), y its fluid id, z the surface's world
 /// y (zeros when there is none); w the water tier's switches (`WaterQuality::bits`).
@@ -1133,6 +1148,8 @@ pub struct Renderer {
     roll: f64,
     /// The fluid the eye is under (`set_eye_fluid`), for the frame uniform.
     eye_fluid: Option<EyeFluid>,
+    /// The tree being chopped leans (`set_tree_lean`; frame.lean_*).
+    tree_lean: Option<crate::chop::TreeLean>,
     /// The water quality setting (`set_water_quality`).
     water_quality: WaterQuality,
     /// Whether this is a phone (the shell's `prefersTouch`): its own, cheaper reflection tiers
@@ -1834,6 +1851,7 @@ impl Renderer {
             face: FaceFrame::A,
             roll: 0.0,
             eye_fluid: None,
+            tree_lean: None,
             water_quality: WaterQuality::default(),
             phone: false,
             water_debug: 0,
@@ -2151,6 +2169,11 @@ impl Renderer {
     /// written to the frame uniform, where the composite fogs by it (the W4 stub).
     pub fn set_eye_fluid(&mut self, eye_fluid: Option<EyeFluid>) {
         self.eye_fluid = eye_fluid;
+    }
+    /// The tree being chopped leans toward its notch (crate::chop `TreeLean`): the terrain's
+    /// vertices above its hinge turn with it (shaders.rs `tree_lean`).
+    pub fn set_tree_lean(&mut self, lean: Option<crate::chop::TreeLean>) {
+        self.tree_lean = lean;
     }
     /// The water quality setting (the settings menu; WATER_RENDERING.md §4).
     pub fn set_water_quality(&mut self, quality: WaterQuality) {
@@ -2642,6 +2665,9 @@ impl Renderer {
             self.clouds.self_shadow(),
             self.phone,
         ) {
+            put(&v);
+        }
+        for v in lean_uniforms(self.tree_lean, self.eye) {
             put(&v);
         }
         let pixel_angle = 2.0 * tan_y / f64::from(self.size.1.max(1));
@@ -4967,8 +4993,12 @@ pub(crate) const FRAME_FLOATS: usize = 16
     + dwell_look::outline::OUTLINE_FLOATS
     + dwell_look::pixel_art::LIGHT_FLOATS
     + 26 * 4
+    + LEAN_FLOATS
     + dwell_look::shafts::LIGHT_SHAFT_VEC4S * 4
     + DAY_SKY_FLOATS;
+
+/// Floats of the tree lean's vec4s (`lean_uniforms`), just before the day/night block.
+pub(crate) const LEAN_FLOATS: usize = 3 * 4;
 
 /// The atlas and its mipmaps, each with its side in texels: down to the level where a tile's gutter
 /// is one texel wide. Filtering a smaller level at a tile's edge would reach past the gutter into
@@ -5181,6 +5211,9 @@ impl crate::game::Scene for Renderer {
     }
     fn set_eye_fluid(&mut self, eye_fluid: Option<EyeFluid>) {
         Renderer::set_eye_fluid(self, eye_fluid);
+    }
+    fn set_tree_lean(&mut self, lean: Option<crate::chop::TreeLean>) {
+        Renderer::set_tree_lean(self, lean);
     }
     fn set_day(&mut self, day: &DayState, seconds: f64) {
         Renderer::set_day(self, day, seconds);
@@ -5499,7 +5532,7 @@ mod tests {
         // The clouds' second vec4 (`cloud_cfg`: coverage, octaves, …) follows `clouds`, after tan.
         // (Then the clouds' third, the other deck's two, the water's, the wind's six, the wrap and
         // the reflections' two.)
-        let cfg = FRAME_FLOATS - DAY_SKY_FLOATS - 8 - 4 - 6 * 4 - 4 - 8 - 4 - 4;
+        let cfg = FRAME_FLOATS - DAY_SKY_FLOATS - LEAN_FLOATS - 8 - 4 - 6 * 4 - 4 - 8 - 4 - 4;
         assert_eq!(u[cfg + 1], 0.0, "no octaves on a CPU adapter");
         r.set_adapter(wgpu::DeviceType::DiscreteGpu);
         let u = r.frame_uniforms(&aim(0.0, 0.0, FaceFrame::A, 0.0), 1.0, 100.0);
@@ -5521,8 +5554,8 @@ mod tests {
         let basis = aim(0.0, 0.0, FaceFrame::A, 0.0);
         // After the water's vec4 (w: the tier's switches) come the wind's six (the last's x: the blur),
         // the wrapped eye, the reflections' two and the day sky.
-        let water_w = FRAME_FLOATS - DAY_SKY_FLOATS - 8 - 4 - 6 * 4 - 1;
-        let blur = FRAME_FLOATS - DAY_SKY_FLOATS - 8 - 4 - 4;
+        let water_w = FRAME_FLOATS - DAY_SKY_FLOATS - LEAN_FLOATS - 8 - 4 - 6 * 4 - 1;
+        let blur = FRAME_FLOATS - DAY_SKY_FLOATS - LEAN_FLOATS - 8 - 4 - 4;
         let u = r.frame_uniforms(&basis, 1.0, 100.0);
         assert_eq!(
             u[water_w],
@@ -6179,7 +6212,7 @@ mod tests {
         assert!((f64::from(u[5]) - f).abs() < 1e-5, "projection's y scale");
         // `tan` is the vec4 before the clouds' three, the other deck's two, the water's, the wind's
         // six, the wrap and the reflections' two (then the day's block).
-        let tan_y = f64::from(u[FRAME_FLOATS - DAY_SKY_FLOATS - 15 * 4 - 3]);
+        let tan_y = f64::from(u[FRAME_FLOATS - DAY_SKY_FLOATS - LEAN_FLOATS - 15 * 4 - 3]);
         assert!((tan_y - 1.0 / f).abs() < 1e-5, "the sky's rays");
         // The culling's corner stretch widens with the view.
         let aspect = 16.0 / 9.0;
@@ -6194,8 +6227,8 @@ mod tests {
         r.resize(1600, 900, 2.0);
         let basis = aim(0.0, 0.0, FaceFrame::A, 0.0);
         let wind = |r: &Renderer| {
-            r.frame_uniforms(&basis, 1.0, 100.0)
-                [FRAME_FLOATS - DAY_SKY_FLOATS - 36..FRAME_FLOATS - DAY_SKY_FLOATS - 12]
+            r.frame_uniforms(&basis, 1.0, 100.0)[FRAME_FLOATS - DAY_SKY_FLOATS - LEAN_FLOATS - 36
+                ..FRAME_FLOATS - DAY_SKY_FLOATS - LEAN_FLOATS - 12]
                 .to_vec()
         };
         assert_eq!(wind(&r)[2], 0.0, "no wind: intensity 0");
@@ -6265,8 +6298,8 @@ mod tests {
         r.resize(1280, 720, 1.0);
         let basis = aim(0.0, 0.0, FaceFrame::A, 0.0);
         let refl = |r: &Renderer| {
-            r.frame_uniforms(&basis, 1.0, 100.0)
-                [FRAME_FLOATS - DAY_SKY_FLOATS - 8..FRAME_FLOATS - DAY_SKY_FLOATS]
+            r.frame_uniforms(&basis, 1.0, 100.0)[FRAME_FLOATS - DAY_SKY_FLOATS - LEAN_FLOATS - 8
+                ..FRAME_FLOATS - DAY_SKY_FLOATS - LEAN_FLOATS]
                 .to_vec()
         };
         r.set_water_quality(WaterQuality::cpu());

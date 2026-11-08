@@ -22,6 +22,17 @@ pub struct Arc {
     pub samples: u32,
 }
 
+impl Arc {
+    /// A tool's arc (its `swing` data).
+    pub fn of(t: &dwell_protocol::chopping::ToolDef) -> Self {
+        Self {
+            reach_m: t.swing.reach_m,
+            arc_deg: t.swing.arc_deg,
+            samples: t.swing.samples,
+        }
+    }
+}
+
 /// A swing's first hit along its arc.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SwingHit {
@@ -129,7 +140,10 @@ mod tests {
             // Level: no climb, face-locally.
             assert!(d.iter().all(|v| f.vector(*v)[1].abs() < 1e-9));
             let v = arc_dirs(f, look, true, &ARC);
-            assert!(f.vector(v[0])[1] > 0.7 && f.vector(v[v.len() - 1])[1] < -0.7, "top to bottom");
+            assert!(
+                f.vector(v[0])[1] > 0.7 && f.vector(v[v.len() - 1])[1] < -0.7,
+                "top to bottom"
+            );
         }
     );
 
@@ -149,7 +163,10 @@ mod tests {
             assert!(crosshair.is_none(), "the crosshair misses: {crosshair:?}");
             let hit = sweep(&mut w, e, look, false, &ARC).expect("the swing's path meets the log");
             assert!(cells.contains(&hit.hit.cell), "{hit:?}");
-            assert!(hit.step < ARC.samples / 2, "on the arc's first half (the right): {hit:?}");
+            assert!(
+                hit.step < ARC.samples / 2,
+                "on the arc's first half (the right): {hit:?}"
+            );
             // A vertical swing's path (straight ahead) passes it by.
             assert_eq!(sweep(&mut w, e, look, true, &ARC), None);
         }
@@ -165,7 +182,10 @@ mod tests {
             let e = eye(f);
             let look = f.vector([0.0, 0.0, 1.0]);
             let hit = sweep(&mut w, e, look, false, &ARC).expect("the trunk ahead");
-            assert!(trunk.contains(&hit.hit.cell), "alone, the trunk aimed at: {hit:?}");
+            assert!(
+                trunk.contains(&hit.hit.cell),
+                "alone, the trunk aimed at: {hit:?}"
+            );
             // A stone post at the right, between the swing's start and the trunk.
             let side = f.handed(-1.0) as i32;
             let post = put(&mut w, f, [side, 3, 1], M.stone);
