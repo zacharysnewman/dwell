@@ -844,6 +844,15 @@ fn piece_shadow_tag(id: u32, part: usize) -> u64 {
     shadows::mix(u64::from(id) ^ 0x9ec3_0000_0000 ^ (part as u64) << 32)
 }
 
+/// Whether the shadows have moving casters (`shadows::Cache::wants`'s `moving`): other players,
+/// or falling pieces. Loose items (ADR 0066) are not: they only spin and bob in place, for
+/// minutes, too small to show in a far cascade; the nearest, drawn every frame, holds them. Until
+/// 0.50.35 any item lying anywhere redrew every far cascade every `refreshFrames`.
+fn casters_moving(players: bool, poses: &[(u32, V3, [f32; 4])]) -> bool {
+    use crate::loose_items::ID_BASE;
+    players || poses.iter().any(|&(id, ..)| id & ID_BASE != ID_BASE)
+}
+
 /// Whether a candidate's kind casts into cascade `i` at all: plants into the nearest
 /// `plantCascades` only (their alpha-tested blades cost the most per texel).
 fn casts_into(c: &Candidate, _cascade: &shadows::Cascade, i: usize, tier: &ShadowTier) -> bool {
@@ -3292,7 +3301,7 @@ impl Renderer {
             .map(|_| self.shadow_candidates(chunk_fade))
             .unwrap_or_default();
         let shadow_frame = shadow_plan.as_ref().map(|p| {
-            let moving = !self.players.is_empty() || !self.piece_poses.is_empty();
+            let moving = casters_moving(!self.players.is_empty(), &self.piece_poses);
             let wants = self.shadow_cache.wants(
                 &SHADOWS,
                 p,
@@ -5213,6 +5222,19 @@ impl crate::game::Scene for Renderer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn loose_items_alone_do_not_redraw_the_far_shadow_cascades() {
+        // Owner, 2026-11-08: adventure ran slower than creative. Its loose items (ADR 0066) lie
+        // spinning for minutes, and as falling pieces they made every far cascade a moving one,
+        // drawn again every `refreshFrames` for as long as any lay anywhere in the world.
+        let item = (crate::loose_items::ID_BASE | 7, [0.0; 3], [0.0, 0.0, 0.0, 1.0]);
+        let body = (42, [0.0; 3], [0.0, 0.0, 0.0, 1.0]);
+        assert!(!casters_moving(false, &[]));
+        assert!(!casters_moving(false, &[item]), "a loose item is not a moving caster");
+        assert!(casters_moving(false, &[item, body]), "a falling body is");
+        assert!(casters_moving(true, &[item]), "another player is");
+    }
 
     #[test]
     fn outlines_are_a_constant_number_of_pixels_wide_near_and_far() {
