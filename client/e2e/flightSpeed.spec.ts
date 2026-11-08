@@ -1,6 +1,7 @@
 // The flight speed slider (PLAYER_CONTROLLER.md §6.7): shown while flying; raising it flies faster
 // (applied by the local server and predicted alike); − steps it down; hidden when flight ends.
 import { expect, test, type Page } from '@playwright/test';
+import { untilTicking } from './ticking';
 
 type Vec3 = [number, number, number];
 
@@ -36,6 +37,7 @@ test('flight speed: the slider shows while flying and raises the speed', async (
       },
     )
     .toBe(true);
+  await untilTicking(page);
   const control = page.locator('#flight-speed');
   await expect(control).toBeHidden();
 

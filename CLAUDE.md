@@ -321,6 +321,9 @@ Check these before chasing an e2e failure:
   real GPU; not caused by other work.
 - `e2e/play.spec.ts`'s "two clients on a native server see each other move" (shard 3) times out
   waiting for page B's terrain on CI since 0.49.4 (BUGS.md #34, open); it passes locally on a GPU.
+- On the software renderer the page draws nothing for 3–5 s just after `terrainReady` (BUGS.md #49):
+  a spec that moves the player, times the screen or clicks the menu right after the join first awaits
+  `untilTicking` (`e2e/ticking.ts`). A new spec of that kind needs it too; a move of 0 m on CI is this.
 - The hotbar slot count in `e2e/edit.spec.ts` is the items' count (18, `shared/items/items.json`);
   update it when the items change.
 - Main's e2e failed from 0.28.x to 0.37.1 (fixed 0.37.2). Part was specs left behind by features:

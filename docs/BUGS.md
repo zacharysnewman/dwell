@@ -6,6 +6,23 @@ pins it.
 
 ## Open
 
+### 49. On the software renderer the page stops drawing for seconds just after the terrain is ready
+
+*Found 2026-11-07 (0.50.31) while getting CI's e2e green.* On SwiftShader (the suite's CI adapter, and
+locally with `playwright.config.ts`), `?seed=31&spawn=b` reports `terrainReady` with 9 of ~180 streamed
+chunks meshed; within a second rAF stops for 3–5 s (main thread responsive, `page.evaluate` answers, no
+long task) while the rest are meshed and first drawn (`upload.bytes` peaks at ~5 MB in a frame), then
+the game catches up its ticks at once. 0.50.10 does the same (~3 s), so it is not a recent regression;
+`?shadows=off` and `?lod=off` keep it. All 14 pipelines are created up front, so it is not a lazily
+created pipeline. The suspect is SwiftShader compiling its per-state draw routines on the first draws
+(it compiles when a draw first uses a state, not when the pipeline is created). A real GPU does not
+stall (the same specs pass on the M1 GPU). Effects on CI: input held right after the join moves the
+player 0 m (spawn.spec, gamepad.spec, flightSpeed.spec), the loading screen's fade and the menu button's
+stability wait for frames (join.spec, settings.spec). The specs now wait it out (`e2e/ticking.ts`
+`untilTicking`: the streamed chunks meshed, then ticking in real time) or allow for it in their timeouts.
+Next: a Chrome trace of the GPU process during the stall, to see whether it is the routine compiles or
+the uploads; if uploads, a per-frame upload cap on a CPU adapter.
+
 ### 41b. A reservoir filled behind a dam never falls asleep (the rest of #41; partly fixed in 0.49.44)
 
 *Measured 2026-11-06 (0.49.39), the remaining part of #41.* At seed 0's dam sites
