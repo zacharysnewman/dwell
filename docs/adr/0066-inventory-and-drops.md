@@ -1,6 +1,6 @@
 # 0066 — Inventory and block drops: items as data, drops as light server entities
 
-**Status:** Accepted (2026-11-08; first part built in 0.50.32, see "Built so far"). Builds on ADR 0065
+**Status:** Accepted (2026-11-08; built in 0.50.33, see "Built so far"). Builds on ADR 0065
 (game modes): adventure loses `unlimitedBlocks`.
 
 ## Context
@@ -18,6 +18,9 @@ use it up. The owner's answers (2026-11-07/08):
   items, with counts and chances.
 - **First drop rules** (owner, 2026-11-08): "Grass drops rocks and dirt and dirt drops dirt. Leaves
   drop sticks." Rocks and sticks are not blocks: the first non-block items.
+- "Tall grass drops grass seed half the time. And gems … 1/8 of the time. Value 1 and Value 5 (5% of
+  those times). **Wallet is separate from inventory slots, maxed at 99** with starting wallet."
+  (owner, 2026-11-08; not another game's names: `dwell:gem` and `dwell:gem_large`, prototype.)
 - Dropped items **vanish after a while** (data, 5 minutes).
 - On **death** in adventure, everything drops where the player died.
 - **Creative is unchanged:** unlimited blocks, nothing drops. The inventory is per player, saved
@@ -32,22 +35,26 @@ build (data), inventories per player per world, the rules per mode.
 
 1. **Item kinds are names.** An item is a namespaced name. Every block is an item of its own name
    (`dwell:dirt`), so blocks need no second list; non-block items are listed in
-   `shared/inventory/inventory.json`'s `items` (`dwell:rock`, `dwell:stick`: a label, a colour and a
-   size for their simple look, optional `stack`). A block's item places that block; a non-block
-   item places nothing for now. A name in neither (a newer build's item in a saved inventory) is
+   `shared/inventory/inventory.json`'s `items` (`dwell:rock`, `dwell:stick`, `dwell:grass_seed`,
+   `dwell:gem`, `dwell:gem_large`: a label, a colour and a size for their simple look, optional
+   `stack`, and `value` for currency). A block's item places that block; a non-block item places
+   nothing for now (planting seeds is future). A name in neither (a newer build's item in a saved inventory) is
    kept as it is, so nothing is lost when an older build on the line opens the world, and cannot be
    used until a build knows it.
 2. **Inventory data.** `shared/inventory/inventory.json` also holds `hotbarSlots` (9), `backpackSlots`
    (27), `stackSize` (64, an item may lower it with `stack`), `despawnSeconds` (300),
    `pickupRadiusM` (1.5), `pickupDelaySeconds` (a dropped item can't be taken back at once) and
-   `maxDrops` (the most loose items a world holds; the oldest go first).
+   `maxDrops` (the most loose items a world holds; the oldest go first), and `wallets` (a name, a
+   label and a `capacity`) with `startingWallet` (`dwell:pouch`, 99).
    `shared/inventory/gen.mjs` validates it, and every block's `drops` (below), and emits
    `crates/dwell-protocol/src/inventory.gen.rs` and `client/src/ui/inventory.gen.ts`. CI regenerates
    both and fails on a diff; `shared/inventory/gen.test.mjs` adds an item and a block's custom drop
    by data alone.
 3. **Drops are block data.** A block's optional `drops` in `shared/blocks/*.json` is a list of
-   `{ "item": name, "count": n or [min, max], "chance": 0..1 }`. Absent: the block drops one of
-   itself, except that a stored ramp drops its base material (`of`), a block's extra cell
+   `{ "item": name, "count": n or [min, max], "chance": 0..1 }`, or a weighted pick:
+   `{ "chance": 0.125, "pick": [{ "item", "count", "weight" }, …] }` (tall grass's gems: value 1 ×95,
+   value 5 ×5). Absent: the block drops one of itself, except that a stored ramp drops what its
+   base (`of`) drops, a block's extra cell
    (`partOf`) and a liquid drop nothing, and an indestructible block can't be broken. `[]` drops
    nothing. A bad entry fails naming the block and the problem (an item no block or item list
    names, a count or chance out of range). The roll uses the server's entropy.
@@ -57,7 +64,9 @@ build (data), inventories per player per world, the rules per mode.
    (a ramp takes its base) from the held slot if it holds it, otherwise from the first slot that
    does; without one the edit is refused. The client moves items between slots with a
    `move(from, to, count)` (onto an empty slot or the same item it merges, onto another item it
-   swaps); the server checks and applies it, and sends the result.
+   swaps); the server checks and applies it, and sends the result. **The wallet** is apart from the
+   slots: currency items (a `value`) add their value to it on pickup, whole items only, up to its
+   capacity; a gem that doesn't fit stays on the ground. A full inventory still takes currency.
 5. **Drops are light server entities, not Rapier bodies.** A loose item is an id, an item, a count,
    a point, a fall speed and an age. It falls toward the midplane (face-local, through
    `dwell_world::FaceFrame`: `+y` up on both faces) until the cell under it is solid, then rests on
@@ -68,7 +77,8 @@ build (data), inventories per player per world, the rules per mode.
 6. **Pickup, despawn, death.** Each tick a resting or falling item older than the pickup delay goes
    to the nearest living player within `pickupRadiusM` whose inventory has room (all of it or what
    fits; the rest stays). An item older than `despawnSeconds` is gone. A player who dies in a mode
-   without `unlimitedBlocks` drops every slot at the death point, spread a little.
+   without `unlimitedBlocks` drops every slot at the death point, spread a little; the wallet is
+   kept (Question 7).
 7. **Mode gating.** Without `unlimitedBlocks` (adventure, from this change) breaking drops and
    placing consumes; with it (creative) neither, and loose items already in the world can still be
    picked up. Adventure's `unlimitedBlocks` placeholder is removed from `shared/modes/modes.json`.
@@ -88,13 +98,15 @@ build (data), inventories per player per world, the rules per mode.
    in adventure, which it already handles as a refused edit). A newer client on an older server
    sees no flag and shows the creative hotbar.
 9. **Save format: new tables, append-only.** Inventories are a new `inventories` table keyed by the
-   device key (a version byte, then each slot's index, item name and count), and loose items a new
-   `drops` table (the whole set each save, like bodies). Older builds don't open the tables and
+   device key (a version byte, the held slot, the wallet's name and money, then each slot's index,
+   item name and count), and loose items a new
+   `loose_items` table (one record, the whole set each save, like bodies). Older builds don't open the tables and
    keep them; a record they can't read is left out and preserved. Player records are unchanged.
 10. **The UI.** In a world that uses items, the hotbar shows the inventory's first 9 slots with a
-    count on each, instead of the creative items; an empty slot holds nothing. A key (`E`,
-    data in the input bindings) or a button opens the **backpack screen**: the 36 slots in a 9 × 4
-    grid, dragged between (a drag moves the stack, right-drag or a modifier half). Loose items are
+    count on each, instead of the creative items, and the wallet's total beside it; an empty slot
+    or a non-block item places nothing. `E` opens the **backpack screen**: the 36 slots in a 9 × 4
+    grid, the hotbar's row last; a press picks a stack up and a press (or release, a drag) on
+    another slot puts it down (right press or Shift: half). Loose items are
     drawn as small spinning, bobbing copies of the block (a non-block item as a small block in its
     colour).
 
@@ -111,10 +123,35 @@ build (data), inventories per player per world, the rules per mode.
 5. **Throwing items out** (a drop key) and **dropping a stack from the backpack screen** are not
    designed; add?
 6. **Loose items in water** sink and rest on the bottom for now; should water carry them?
+7. **The wallet on death** is kept (gems are not dropped). Should dying cost gems?
+8. **A gem over the wallet's capacity** stays on the ground (whole gems only: a value-5 gem with
+   3 left of room is not taken). Or should it be taken and the extra lost?
+9. **E for the backpack** is a fixed key in the shell for now; into the input bindings data
+   (`shared/input`) and the controller next.
+10. **Item looks**: a non-block item is drawn as a small stone block tinted its colour (a flat
+    disc in the hotbar). Proper models (a pebble, a twig, a gem) wait for Phase 40's parts.
 
-## Built so far
+## Built so far (0.50.33)
 
-(filled in below as the work lands)
+- **Data:** `shared/inventory/inventory.json`, block `drops` (grass and snowy grass, leaves and snowy
+  leaves, tall grass), `shared/inventory/gen.mjs` with its test (validation naming the entry, an
+  item and a block's drop added by data alone), CI regenerating it; adventure without
+  `unlimitedBlocks`.
+- **Model and wire:** `dwell_protocol::inventory` (`Inventory`, `roll`, the wallet), the three
+  messages and the Welcome flag; round trips and the distribution of tall grass's drops pinned.
+- **Server:** inventories per player (loaded at join, saved in `inventories`), loose items
+  (`dwell-sim` `loose_items.rs`: fall and rest on both faces, despawn, the cap, saved in
+  `loose_items`), break → drop and place → consume for block, region and body edits, pickup to the
+  nearest player with room, death drops, `Hello` gating (`dwell-sim` `tests/items.rs`).
+- **Client:** Hello on the flag, the inventory and loose items kept (`dwell-client`
+  `loose_items.rs`), loose items drawn as small turning copies through the pieces' renderer, the
+  hotbar showing the inventory with counts and the wallet, number keys and the wheel choosing
+  inventory slots (the server told the held slot), a place with no block held refused, and the
+  backpack screen (`client/src/ui/backpack.ts`).
+
+**Next:** breaking time per block (needs hold-to-break), items thrown out, the backpack key in the
+input data and on the controller and touch, proper item models, planting seeds, bigger wallets,
+the dedicated server's give command.
 
 ## Consequences
 

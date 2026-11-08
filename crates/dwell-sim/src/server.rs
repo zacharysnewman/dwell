@@ -2454,7 +2454,7 @@ impl Server {
                 s.stats.region_cells_changed += outcome.changes.len() as u64;
                 let cells: Vec<[i32; 3]> = outcome.changes.iter().map(|(c, _)| *c).collect();
                 for (cell, m) in outcome.changes {
-                    if uses_items && m == M.air || uses_items && info(m).liquid {
+                    if uses_items && (m == M.air || info(m).liquid) {
                         broken.push((cell, self.world.get_voxel(cell[0], cell[1], cell[2])));
                     }
                     // As a block edit's: into a held body, or a new one on a build platform.

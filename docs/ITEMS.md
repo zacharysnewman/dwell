@@ -1,5 +1,9 @@
 # Items and placement rules **[built, 0.29.0]**
 
+This file is the creative hotbar's items (placement recipes). Adventure's inventories, loose items and
+block drops are ADR 0066 (`shared/inventory/inventory.json`, block `drops`): there the hotbar holds
+the inventory, and a slot places the item of this file whose name is its item's (`dwell:stone`).
+
 Owner (2026-10-26): "I want to build in 1m blocks by default in creative, but we're going to be able
 to build in half blocks too, it's just a different piece (item). We'll also want to setup rules for
 block overrides like placing a block on tall grass removes it, blocks can't be placed on top of

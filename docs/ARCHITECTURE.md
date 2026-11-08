@@ -1723,9 +1723,11 @@ lives in side files. Chunk and LOD blobs are the protocol's palette + RLE compre
 | `block_states` | **[built, Phase 8]** world state id → canonical string (§6.1), ids assigned densely in order of first use and stable for the life of the file |
 | `chunks` | Modified chunks only: `(cx, cy, cz)` → revision, generator version, LZ4 palette + RLE blob (same encoding as `ChunkData Explicit`, but the palette lists **world state ids** of `block_states`, not runtime ids) |
 | `lod_sections` | **[built, Phase 4b]** Cache of modified LOD sections (§6.6): `(level, i, j, k)` → `lodRevision`, dirty flag, generator version, LZ4 palette + RLE blob of the 34³ cells (empty while dirty and never computed); derivable from `chunks` (its cells are runtime ids: dropped when `meta`'s registry hash changes), rebuilt on a generator or registry change |
-| `players` | Keyed by device public key: display name, state blob (version 1: feet `f64×3`, health; later inventory), first/last seen |
+| `players` | Keyed by device public key: display name, state blob (version 1: feet `f64×3`, health; the inventory is its own table), first/last seen |
 | `permissions` | `(public key, kind)` with kind `op` / `ban` / `allow` → reason, granted by, when |
 | `bodies` | **[built, Phase 51 B2]** The world's moving bodies, rewritten whole each save: kind, pose, velocities, cells (states by name; BUILT_BODIES.md §7) |
+| `inventories` | **[built, 0.50.33]** Keyed by device public key: the player's inventory record (`Inventory::to_bytes`, version 1: held slot, wallet and money, each non-empty slot's index, item name and count; ADR 0066). Optional: older builds leave it; an unreadable record is kept, not overwritten |
+| `loose_items` | **[built, 0.50.33]** One record (key 0), rewritten each save: the loose items lying in the world (version 1: item name, count, point, age each; ADR 0066) |
 | `water` | **[built, 0.48.2]** The water surface grid's free water (§6.7, WATER_SURFACE_GRID.md): one LZ4 record of `Water::save` (`DWG1`): each water chunk with free columns, their floors, depths and flows (and the rest layer's), and what the chunk owes; held water is found again from the blocks. An older basin record (`DWW5`) is ignored |
 | `tree_tombstones` | **[planned, Phase 30]** Per chunk: the sparse set of chopped procedural tree ids `(chunk, procedural index)` and the pruned node sets of partly cut ones (§6.3 tree growth) |
 | `growers` | **[planned, Phase 30]** Player-planted trees, keyed by the chunk holding the root: structure, variant seed, root, planted world time, pruned nodes |
@@ -2530,11 +2532,30 @@ chunks), keeps the last selection (`LodSystem::update`; ~1 ms a frame standing s
 a name and the abilities it allows, from a fixed vocabulary — `damage` (every damage cause, through
 `Server::damage`), `flight` (with the flight policy; the server clears the fly bit otherwise),
 `brushes` (brush strokes' `KEEP` cells and the brush reach; refused otherwise) and `unlimitedBlocks`
-(both modes; nothing is used up until items and drops exist). Creative (the default: new worlds,
-and worlds saved before modes) has flight, brushes and unlimited blocks and no damage; adventure
-(experimental) has damage and unlimited blocks. The mode is a `WorldSettings` field (optional tag
+(without it placing uses items up and breaking drops them: inventories, below). Creative (the
+default: new worlds, and worlds saved before modes) has flight, brushes and unlimited blocks and no
+damage; adventure (experimental) has damage only. The mode is a `WorldSettings` field (optional tag
 `0x82`), saved with the world; the New world form picks it, and the host changes it at runtime
 (`Server::set_mode`, sent to the joined clients as `WorldSettings` again).
+
+**Inventories and block drops [built, 0.50.33]** (ADR 0066). Items are namespaced names: every
+block is an item of its own name, and `shared/inventory/inventory.json` lists the items that are not
+blocks (rocks, sticks, grass seed, gems; prototype content) with their simple look, and the numbers
+(9 hotbar and 27 backpack slots, stacks of 64, loose items gone after 300 s, picked up within
+1.5 m, at most 2,048 in a world) and the wallets (the starting one holds 99). What a block drops is
+its `drops` in the block data (absent: itself; a stored ramp its base's; liquids, extra cells and
+indestructible blocks nothing), each rule a chance and an item or a weighted pick (tall grass's
+gems). `shared/inventory/gen.mjs` checks both and emits `dwell_protocol::inventory` (the tables and
+the `Inventory` model) and `client/src/ui/inventory.gen.ts`. In a mode without `unlimitedBlocks`
+the server (`dwell-sim` `server/items.rs`) takes one of a block's item (its `cost`: a ramp its base)
+for every place, block, region or body edit (none held: refused; a torch held against dynamite
+lights it and is kept), and drops the broken block's items; a dying player's slots drop where it
+died (the wallet is kept). Loose items (`dwell-sim` `loose_items.rs`) are light server entities,
+not Rapier bodies: a point that falls toward the midplane through `FaceFrame` and rests on the top
+of the first solid cell. Currency items (a `value`) go to the wallet, whole items up to its
+capacity. The client draws loose items as small turning copies of their block through the pieces'
+renderer (`dwell-client` `loose_items.rs`), and in such a world its hotbar is the inventory's first
+nine slots with counts and the wallet, and E opens the backpack screen (`client/src/ui/backpack.ts`).
 
 **Seeing it from above: creative flight** **[built, Phase 4]** (§9.1, PLAYER_CONTROLLER.md §6.7).
 The player flies — the body itself, simulated by the server and predicted like any movement — with
@@ -3284,7 +3305,8 @@ S→C  Welcome       u16 playerId, u64 worldSeed, u32 generatorVersion, u32 serv
                    RegionEdit, §6.5; 4 = brushes — pastes may hold KEEP cells and region
                    edits reach the brush reach, §6.5 — set in game modes with `brushes`,
                    ADR 0065; 8 = flightPolicy — the flight policy alone, which with the
-                   mode's `flight` gives flight again after a mode change), u64 registryHash (the
+                   mode's `flight` gives flight again after a mode change; 16 = inventory —
+                   the server keeps inventories, ADR 0066), u64 registryHash (the
                    definitions hash: FNV-1a 64 of the registry payload sent before it,
                    §6.1; logs and the join prompt's "don't ask again")
      or Reject     u8 reason (ProtocolVersion, Banned, Full, NotAllowListed, AuthFailed,
@@ -3294,6 +3316,21 @@ S→C  Welcome       u16 playerId, u64 worldSeed, u32 generatorVersion, u32 serv
 C→S  WorldgenCheck u64 hash — FNV-1a 64 of the client-generated verification chunk (u16 LE
                    voxels in chunk index order); 0 asks for full-chunk mode. Once, after
                    Welcome; the server streams nothing before it (§6.3)
+```
+
+**Inventories: `InventoryAction`, `Inventory`, `ItemDrops` (reliable) [built, 0.50.33]** (ADR 0066).
+New message types an older build of the line doesn't know (it would close or reject on them), so
+neither side sends one unasked: a client sends `InventoryAction` only to a server whose Welcome has
+`inventory` (16), and the server sends the other two only to a client that said `Hello`.
+```
+C→S  InventoryAction 0x55, control: u8 kind — 0 Hello (send me inventories); 1 Move: u8 from,
+                     u8 to, u16 count (0: all; onto empty or the same item merges, onto another
+                     swaps); 2 Select: u8 slot (the held hotbar slot: places take from it first)
+S→C  Inventory       0x56, control, when it changes: u8 flags (1 = the mode uses items), then
+                     the inventory record (as the `inventories` table's)
+S→C  ItemDrops       0x57, world: u16 n, each u32 id, str item, u16 count, f32×3 point; then
+                     u16 n gone ids (at most 512 each); all of them after Hello, then what
+                     appeared, changed or moved (moves 20 times a second) and what went
 ```
 
 **Client → Server: `BlockEditRequest` (reliable, `control`) [built, Phase 3d]** (§6.5)

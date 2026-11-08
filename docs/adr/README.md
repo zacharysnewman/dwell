@@ -71,6 +71,7 @@ one's status line. Resolving an item in `ARCHITECTURE.md` Open Decisions require
 | [0063](0063-unknown-block-properties-kept.md) | Unknown block properties stay on the block (alias states): adding a property or value is not breaking | Accepted (2026-11-07; built in 0.50.0 with flooded leaves; amends 0038, 0014) |
 | [0064](0064-light-shafts.md) | Light shafts (volumetric glow rays) as data, one reduced-resolution pass: the sun in the air, the sun under water, Snell's window's glow | Accepted (2026-11-07; air and underwater built, 0.50.24; torches planned) |
 | [0065](0065-game-modes.md) | Game modes as data (`shared/modes/modes.json`, named abilities): creative and adventure, per world, a `WorldSettings` field the host can change | Accepted (2026-11-07; built in 0.50.30) |
+| [0066](0066-inventory-and-drops.md) | Inventories and block drops: items as names (blocks, and `shared/inventory/inventory.json`), drops as block data, a wallet for gems, loose items as light server entities, new optional messages | Accepted (2026-11-08; built in 0.50.33) |
 
 Phase numbers in ADRs follow the implementation plan as it was then. In ADRs 0001–0010, Phases
 4–7 became 5–8 when the world-LOD phase (Phase 4) was added on 2026-09-29, and then 6–9 when the
