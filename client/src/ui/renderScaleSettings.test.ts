@@ -10,8 +10,8 @@ import {
 } from './renderScaleSettings';
 
 describe('render scale settings', () => {
-  it('defaults to full resolution, stretched (unchanged until the owner picks)', () => {
-    expect(defaultRenderScale()).toEqual({ scale: 1, upscaler: 'stretch' });
+  it('defaults to 50 % stretched (owner, 2026-11-07: "make the default 50% upscaling")', () => {
+    expect(defaultRenderScale()).toEqual({ scale: 0.5, upscaler: 'stretch' });
     expect(UPSCALE.scales.map((s) => s.value)).toEqual([1, 0.75, 0.67, 0.5]);
     expect(UPSCALE.upscalers.map((u) => u.id)).toEqual(['stretch', 'sharpen']);
   });

@@ -1,8 +1,11 @@
 // The game menu: a button in the top-left corner (or Esc) opens a full-screen menu over the game
-// with pages — Settings (the detail settings, lod/detail.ts; the
-// tone-mapping exposure and the sky, render/look.ts; the water quality, ui/waterSettings.ts; the
-// sun and moon shadows, ui/shadowSettings.ts; the
-// volumes, audio/settings.ts; ARCHITECTURE.md §5, §6.6), Controls (every key
+// with pages, listed down the side (a row of tabs on phones) — the settings in four panes (owner,
+// 2026-11-07: "arranged concisely and mostly vertically", sound, graphics, etc. in their own panes):
+// Graphics (the Preset slider, ui/graphicsPresets.ts and shared/settings/graphics-presets.json; the
+// render scale, water, shadows, shafts, clouds and detail it sets; the exposure and the water's
+// flow), Sound (the volumes, audio/settings.ts), Gameplay (the view, motion and explosions) and On
+// screen (shared/ui/hud.json), one compact row a setting with Reset and Copy JSON under them
+// (ARCHITECTURE.md §5, §6.6); Controller (ui/controllerPanel.ts), Controls (every key
 // and touch control, ui/controls.ts), Debug (the debug tools as buttons, with their keys) and Host
 // (a local world's hosting, ui/hostPanel.ts) — and Resume and Quit to main menu (Phase 5a). The
 // settings are kept in this browser.
@@ -22,7 +25,6 @@ import {
   DEFAULT_SHAFTS,
   SHAFT_QUALITIES,
   defaultClouds,
-  sanitizeClouds,
   sanitizeShafts,
   type CloudQuality,
   type ShaftQuality,
@@ -35,6 +37,7 @@ import {
   sanitizeShowArms,
   viewRecord,
 } from './viewSettings';
+import { GRAPHICS_PRESETS, applyPreset, defaultPreset, presetOf } from './graphicsPresets';
 import { DEBUG_KEYS, KEYBOARD, TOUCH, keysLabel, type Control } from './controls';
 import { audio } from '../audio/engine';
 import { DEFAULT_VOLUMES, type Volumes } from '../audio/mixer';
@@ -126,8 +129,12 @@ export interface Settings {
   renderScale: RenderScaleSettings;
 }
 
+/**
+ * The defaults: the graphics are the device's default preset's (ui/graphicsPresets.ts: Mobile on
+ * phones, High on desktops), over each setting's own default.
+ */
 export function defaultSettings(mobile: boolean, reducedMotion = false): Settings {
-  return {
+  const base: Settings = {
     detail: defaultDetail(mobile),
     exposure: DEFAULT_EXPOSURE,
     audio: { ...DEFAULT_VOLUMES },
@@ -142,6 +149,7 @@ export function defaultSettings(mobile: boolean, reducedMotion = false): Setting
     hud: defaultHud(),
     renderScale: defaultRenderScale(),
   };
+  return applyPreset(base, defaultPreset(mobile), mobile);
 }
 
 /** The settings as JSON to copy and share (rounded: whole metres, fractions to 0.01). */
@@ -215,8 +223,8 @@ export function loadSettings(mobile: boolean): Settings {
     detail: sanitizeDetail(load(DETAIL_KEY), defaults.detail, detailLimits(mobile)),
     exposure: sanitizeExposure(load(EXPOSURE_KEY)),
     audio: loadVolumes(),
-    clouds: sanitizeClouds(load(CLOUDS_KEY), mobile),
-    shafts: sanitizeShafts(load(SHAFTS_KEY)),
+    clouds: CLOUD_QUALITIES.find((q) => q === load(CLOUDS_KEY)) ?? defaults.clouds,
+    shafts: sanitizeShafts(load(SHAFTS_KEY), defaults.shafts),
     water: sanitizeWater(load(WATER_KEY), defaults.water),
     shadows: sanitizeShadows(load(SHADOWS_KEY), defaults.shadows),
     motion: sanitizeMotion(load(MOTION_KEY), prefersReducedMotion()),
@@ -224,7 +232,7 @@ export function loadSettings(mobile: boolean): Settings {
     fovDeg: sanitizeFovSetting(load(VIEW_KEY)),
     showArms: sanitizeShowArms(load(VIEW_KEY)),
     hud: sanitizeHud(load(HUD_KEY)),
-    renderScale: sanitizeRenderScale(load(RENDER_SCALE_KEY)),
+    renderScale: sanitizeRenderScale(load(RENDER_SCALE_KEY), UPSCALE, defaults.renderScale),
   };
 }
 
@@ -670,6 +678,10 @@ export class SettingsMenu {
   private readonly toggles: { spec: ToggleSpec; input: HTMLInputElement }[] = [];
   /** Shows the JSON to copy by hand where the clipboard is unavailable. */
   private readonly fallback = document.createElement('textarea');
+  /** Reset and Copy JSON, shown under the settings panes. */
+  private readonly tail = el('div', 'settings-tail');
+  /** The Graphics pane's preset slider and its label. */
+  private preset: { input: HTMLInputElement; value: HTMLSpanElement } | null = null;
   private settings: Settings;
   /** Told when the menu opens or closes (the touch controls step aside while it is open). */
   onOpenChange: ((open: boolean) => void) | null = null;
@@ -1020,6 +1032,7 @@ export class SettingsMenu {
   private slider(spec: SliderSpec): HTMLLabelElement {
     const row = document.createElement('label');
     row.className = 'settings-row';
+    row.title = spec.hint;
     const name = el('span', 'settings-name', spec.label);
     const value = el('span', 'settings-value');
     const input = document.createElement('input');
@@ -1043,6 +1056,7 @@ export class SettingsMenu {
 
   private choice<T extends string>(spec: ChoiceSpec<T>): HTMLDivElement {
     const row = el('div', 'settings-row');
+    row.title = spec.hint;
     const name = el('span', 'settings-name', spec.label);
     const value = el('span', 'settings-value');
     const box = el('div', 'settings-choices');
@@ -1077,6 +1091,7 @@ export class SettingsMenu {
   private toggle(spec: ToggleSpec): HTMLLabelElement {
     const row = document.createElement('label');
     row.className = 'settings-row settings-toggle';
+    row.title = spec.hint;
     const input = document.createElement('input');
     input.type = 'checkbox';
     input.title = spec.hint;
@@ -1094,8 +1109,8 @@ export class SettingsMenu {
   }
 
   /** The slider's filled part, as a CSS variable the track's gradient reads. */
-  private paint(input: HTMLInputElement): void {
-    input.style.setProperty('--fill', `${String((100 * Number(input.value)) / SLIDER_STEPS)}%`);
+  private paint(input: HTMLInputElement, max = SLIDER_STEPS): void {
+    input.style.setProperty('--fill', `${String((100 * Number(input.value)) / max)}%`);
   }
 
   private set(settings: Settings): void {
@@ -1132,6 +1147,7 @@ export class SettingsMenu {
   }
 
   private apply(): void {
+    this.showPreset();
     if (!this.fallback.hidden) this.fallback.value = settingsJson(this.settings);
     this.onChange(this.settings);
     saveSettings(this.settings);
