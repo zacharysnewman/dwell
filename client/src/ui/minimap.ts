@@ -254,6 +254,7 @@ export class MapUi {
   frame(now: number): void {
     const allowed = this.client.mapAllowed();
     this.root.classList.toggle('map-off', !allowed);
+    this.doc.body.classList.toggle('minimap-on', allowed);
     if (!allowed) {
       this.big.hidden = true;
       return;

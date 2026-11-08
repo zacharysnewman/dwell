@@ -906,6 +906,8 @@ async function start(): Promise<App | null> {
     state: () => client.debugState() as GameDebugState | null,
     press: (code, down) => {
       client.press(code, down);
+      // The map's key is the shell's (ADR 0068), as a real key press is.
+      if (down && code === 'KeyM') app.minimap?.toggleBig();
     },
     look: (yaw, pitch) => {
       client.setLook(yaw, pitch);

@@ -217,6 +217,7 @@ What is recorded now:
 | `pacing.done` (samples) | each frame's time from submit to the GPU's `on_submitted_work_done` answer (ms): the GPU's time plus Chrome's delivery; with two in flight a draw is skipped once this passes two animation frames |
 | `net` | the session's network pumping (twice a frame) |
 | `jobs.poll`, `jobs.apply`, `jobs.done` | collecting finished jobs; applying them (chunks into the world, meshes to the GPU); how many |
+| `minimap.scan`, `minimap.draw` | the minimap (ADR 0068): a read of the columns' tops round the player with its draw (on a move of a texel, or every `refreshSeconds`), and a draw alone (a turn); samples, so only the frames that did one |
 | `ticks`, `ticks.count` | the fixed-rate prediction ticks (controller + physics) and how many ran |
 | `pieces.standIns` (samples) | the pieces stood in for in the prediction at each snapshot: those that could touch the local player soon ([`EXPLOSIVES.md`](./EXPLOSIVES.md) §3) |
 | `game.draw` | the game's draw step: `mesh_dirty` and `lod` inside it |

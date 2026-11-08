@@ -539,6 +539,22 @@ client **predicts** them (§6.5, edit prediction): each shows at once, the serve
 cells are held back until the server acknowledges the edit (`EditAck`), and then the cells show the
 server's state — the prediction confirmed, or rolled back and replaced.
 
+**The minimap and the explored map [built, 0.50.37]** ([ADR 0068](./adr/0068-minimap-and-explored-map.md)).
+Looks and sizes in `shared/ui/map.json` (`shared/ui/gen.mjs` → `dwell-game` `map.gen.rs`,
+`client/src/ui/map.gen.ts`). `dwell-game` `minimap.rs` reads the columns' tops within the disc
+(64 m) from the client's streamed voxels on the player's face (`FaceFrame`; LOD colours, water
+darkened by depth, a hill over the scan followed to its top) into a face-local grid — on each texel
+moved, from the last read's tops, and whole every `refreshSeconds` — and draws the round RGBA disc
+turned to the heading (the player's right on the right on both faces), height-shaded when the
+setting is on, only on a move or a turn; it marks the 8 m cells whose centres it has covered,
+reporting new and changed ones with their colour. The client's `minimapFrame`, `minimapDots`,
+`mapPose`, `takeExplored` and `mapAllowed` (the mode's `map` ability) feed the shell's
+`ui/minimap.ts`: the disc top right (a `hud.json` part; the height shading a toggle in Settings →
+On screen), the dots, and the big map (M or a tap; Esc closes): explored cells on fog, zoomed about the
+pointer and panned by a drag, the player's arrow. Explored cells are kept per world in this browser
+(IndexedDB `dwell-explored`, append-only), not on the server. Cost: `minimap.scan` and
+`minimap.draw` samples (DEV_TOOLS.md).
+
 ### 5.1 Threads and workers
 
 Per [ADR 0007](./adr/0007-threading-model.md):
@@ -2532,8 +2548,9 @@ chunks), keeps the last selection (`LodSystem::update`; ~1 ms a frame standing s
 (generated into `dwell_protocol::modes` and `client/src/ui/modes.gen.ts` by `shared/modes/gen.mjs`):
 a name and the abilities it allows, from a fixed vocabulary — `damage` (every damage cause, through
 `Server::damage`), `flight` (with the flight policy; the server clears the fly bit otherwise),
-`brushes` (brush strokes' `KEEP` cells and the brush reach; refused otherwise) and `unlimitedBlocks`
-(without it placing uses items up and breaking drops them: inventories, below). Creative (the
+`brushes` (brush strokes' `KEEP` cells and the brush reach; refused otherwise), `unlimitedBlocks`
+(without it placing uses items up and breaking drops them: inventories, below) and `map` (0.50.37,
+ADR 0068: the client shows the minimap and the explored map; both modes have it). Creative (the
 default: new worlds, and worlds saved before modes) has flight, brushes and unlimited blocks and no
 damage; adventure (experimental) has damage only. The mode is a `WorldSettings` field (optional tag
 `0x82`), saved with the world; the New world form picks it, and the host changes it at runtime

@@ -270,8 +270,9 @@ dwell_world::both_faces!(
 fn the_map_data_is_consistent() {
     // face-a-only: tunables, no up.
     assert_eq!(MAP.minimap_radius_m % MAP.explored_cell_m, 0.0);
-    assert!(MAP.big_map_min_px_per_cell <= MAP.big_map_start_px_per_cell);
-    assert!(MAP.big_map_start_px_per_cell <= MAP.big_map_max_px_per_cell);
+    let t = std::hint::black_box(MAP);
+    assert!(t.big_map_min_px_per_cell <= t.big_map_start_px_per_cell);
+    assert!(t.big_map_start_px_per_cell <= t.big_map_max_px_per_cell);
     assert_eq!(Minimap::pixels(&MAP), 128);
 }
 
@@ -290,7 +291,7 @@ fn a_grid_of_a_hundred_and_twenty_eight_columns_reads_and_draws_quickly() {
     let t = MAP;
     let pos = f.point([0.5, m_of_row(GROUND) + 1.6, 0.5]);
     let start = std::time::Instant::now();
-    let grid = scan_tops(&w, f, f.point(pos), &t, &colour_of);
+    let grid = scan_tops(&w, f, f.point(pos), &t, &colour_of, None);
     let scan = start.elapsed().as_secs_f64() * 1e3;
     let start = std::time::Instant::now();
     let mut image = Vec::new();
@@ -303,5 +304,79 @@ fn a_grid_of_a_hundred_and_twenty_eight_columns_reads_and_draws_quickly() {
         &mut image,
     );
     let draw = start.elapsed().as_secs_f64() * 1e3;
-    println!("minimap: scan {scan:.2} ms, draw {draw:.2} ms (native, this build's profile)");
+    let start = std::time::Instant::now();
+    let p = f.point([1.5, m_of_row(GROUND) + 1.6, 0.5]);
+    scan_tops(&w, f, p, &t, &colour_of, Some(&grid));
+    let hinted = start.elapsed().as_secs_f64() * 1e3;
+    println!(
+        "minimap: scan {scan:.2} ms, from the last {hinted:.2} ms, draw {draw:.2} ms (native, this build's profile)"
+    );
 }
+
+dwell_world::both_faces!(
+    fn a_hill_over_the_scans_top_shows_its_surface_not_its_inside(f: FaceFrame) {
+        // 0.50.37's browser check: hills higher than `scanUpM` over the eye drew as their stone.
+        let t = MAP;
+        let mut w = floor(f, 30);
+        let up = dwell_world::row_of_m(t.minimap_scan_up_m) + 30;
+        for x in 10..14 {
+            for z in 0..4 {
+                for r in GROUND..GROUND + up {
+                    let [x, y, z] = f.cell([x, r, z]);
+                    w.set_voxel(x, y, z, stone());
+                }
+                let [x, y, z] = f.cell([x, GROUND + up, z]);
+                w.set_voxel(x, y, z, sand());
+            }
+        }
+        let grid = scan_tops(
+            &w,
+            f,
+            [0.5, m_of_row(GROUND) + 1.6, 0.5],
+            &t,
+            &colour_of,
+            None,
+        );
+        let i = grid.index(11.5, 1.5).expect("in");
+        assert_eq!(grid.colour[i], RED, "the hill's top");
+        assert!((f64::from(grid.height[i]) - m_of_row(GROUND + up + 1)).abs() < 1e-6);
+    }
+);
+
+dwell_world::both_faces!(
+    fn a_read_from_the_last_reads_tops_matches_a_whole_read(f: FaceFrame) {
+        // Hills, a pit and a tall pillar (past the hint, from below) between two reads 3 m apart.
+        let t = MAP;
+        let mut w = floor(f, 80);
+        let y = m_of_row(GROUND) + 1.6;
+        let first = scan_tops(&w, f, [0.5, y, 0.5], &t, &colour_of, None);
+        for x in -30i32..30 {
+            for z in -30..30 {
+                let rows = ((x * 7 + z * 13).rem_euclid(9)) - 2;
+                for r in GROUND - 1..GROUND - 1 + rows.max(0) {
+                    let [x, y, z] = f.cell([x, r, z]);
+                    w.set_voxel(x, y, z, if (x + z) % 3 == 0 { dirt() } else { stone() });
+                }
+                if rows < 0 {
+                    let [x, y, z] = f.cell([x, GROUND - 1, z]);
+                    w.set_voxel(x, y, z, M.air);
+                }
+            }
+        }
+        for r in GROUND..GROUND + 60 {
+            let [x, y, z] = f.cell([5, r, 5]);
+            w.set_voxel(x, y, z, sand());
+        }
+        let hinted = scan_tops(&w, f, [3.5, y, 0.5], &t, &colour_of, Some(&first));
+        let whole = scan_tops(&w, f, [3.5, y, 0.5], &t, &colour_of, None);
+        assert_eq!(hinted.colour, whole.colour);
+        assert_eq!(
+            hinted
+                .height
+                .iter()
+                .map(|h| h.to_bits())
+                .collect::<Vec<_>>(),
+            whole.height.iter().map(|h| h.to_bits()).collect::<Vec<_>>()
+        );
+    }
+);

@@ -2314,6 +2314,7 @@ impl Client {
         let yaw = s.input.look.yaw;
         let g = s.game.as_mut()?;
         let pos = g.position();
+        let t0 = crate::telemetry::now_ms();
         let up = s.minimap.update(
             g.world(),
             pos,
@@ -2323,6 +2324,13 @@ impl Client {
             &dwell_game::minimap::MAP,
             &|m| (m != dwell_world::M.air).then(|| dwell_mesh::lod_color(m, 0)),
         );
+        // Its cost (DEV_TOOLS.md): a read of the tops (with its draw), or a draw alone.
+        let ms = crate::telemetry::now_ms() - t0;
+        if up.scanned {
+            crate::telemetry::sample("minimap.scan", ms);
+        } else if up.drawn {
+            crate::telemetry::sample("minimap.draw", ms);
+        }
         up.drawn.then(|| s.minimap.image.clone())
     }
     /// The minimap's size in pixels (its texels across).

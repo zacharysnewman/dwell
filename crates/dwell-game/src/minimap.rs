@@ -98,6 +98,12 @@ impl MapFrame {
     }
 }
 
+/// The most rows a column whose ground is over the scan's top is followed up to its surface.
+const CLIMB_ROWS: i32 = 256;
+
+/// How far over a column's last top (rows) its next read starts.
+const HINT_ROWS: i32 = 8;
+
 /// No top found in a column (open air, or not loaded).
 pub const NO_TOP: u32 = u32::MAX;
 
@@ -134,6 +140,7 @@ pub fn scan_tops(
     [x, eye_y, z]: [f64; 3],
     t: &MapTunables,
     colour_of: &dyn Fn(StateId) -> Option<u32>,
+    prev: Option<&TopGrid>,
 ) -> TopGrid {
     let texel = t.minimap_texel_m;
     let n = (2.0 * t.minimap_radius_m / texel).ceil() as usize;
@@ -148,7 +155,18 @@ pub fn scan_tops(
         for i in 0..n {
             let cx = (x0 + (i as f64 + 0.5) * texel).floor() as i32;
             let cz = (z0 + (k as f64 + 0.5) * texel).floor() as i32;
-            let mut row = top_row;
+            // A column the last read found starts a little over its top then (`HINT_ROWS`), not
+            // at the scan's top: most columns barely change between reads a texel apart (in the
+            // browser the whole scan from the top cost ~6 ms a read). Ground that rose past it
+            // is followed up below, as a hill over the scan's top is.
+            let start = prev
+                .and_then(|p| p.index(x0 + (i as f64 + 0.5) * texel, z0 + (k as f64 + 0.5) * texel))
+                .map(|j| prev.map_or(f32::NAN, |p| p.height[j]))
+                .filter(|h| h.is_finite())
+                .map_or(top_row, |h| {
+                    (row_of_m(f64::from(h)) + HINT_ROWS).clamp(bottom_row, top_row)
+                });
+            let mut row = start;
             // The chunk the row is in, looked up once per chunk down the column; a chunk not
             // held (all air, or not streamed) is skipped whole.
             let mut held: Option<(ChunkCoord, Option<&Chunk>)> = None;
@@ -174,6 +192,26 @@ pub fn scan_tops(
                     wy.rem_euclid(CHUNK_SIZE),
                     wz.rem_euclid(CHUNK_SIZE),
                 );
+                if m != M.air && row == start {
+                    // Ground over the scan's top (a hill above the eye): up to its surface, not
+                    // its inside (the 0.50.37 browser check showed hills as their stone).
+                    let mut up = row;
+                    let mut top = m;
+                    while up < start + CLIMB_ROWS {
+                        let [wx, wy, wz] = f.cell([cx, up + 1, cz]);
+                        let above = world.get_voxel_if_loaded([wx, wy, wz]);
+                        if above == M.air || colour_of(above).is_none() {
+                            break;
+                        }
+                        up += 1;
+                        top = above;
+                    }
+                    if let Some(c) = colour_of(top) {
+                        colour[k * n + i] = c;
+                        height[k * n + i] = dwell_world::m_of_row(up + 1) as f32;
+                    }
+                    break;
+                }
                 if m != M.air
                     && let Some(c) = colour_of(m)
                 {
@@ -286,6 +324,8 @@ pub struct Minimap {
     drawn_at: Option<([f64; 2], f64, bool)>,
     pub image: Vec<u8>,
     pub explored: Explored,
+    /// When every column was last read whole.
+    full_at: f64,
 }
 
 /// What [`Minimap::update`] did this call.
@@ -329,8 +369,17 @@ impl Minimap {
             }
         };
         if rescan {
-            self.grid = scan_tops(world, f, local, t, colour_of);
-            self.grid_at = Some((local, now_s, f));
+            // A move reads from the last read's tops; the refresh reads every column whole
+            // (an edit high over a column's top, a new face).
+            let full = self.grid_at.is_none_or(|(_, when, face)| {
+                face != f || now_s - when >= t.minimap_refresh_seconds
+            });
+            let hint = (!full).then_some(&self.grid);
+            self.grid = scan_tops(world, f, local, t, colour_of, hint);
+            if full {
+                self.full_at = now_s;
+            }
+            self.grid_at = Some((local, if full { now_s } else { self.full_at }, f));
             self.explored.mark(f, &self.grid, [local[0], local[2]], t);
             up.scanned = true;
         }
