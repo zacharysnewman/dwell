@@ -736,7 +736,7 @@ The owner's "try the upscaling options and compare performance and screenshots" 
 [cost profile](#cost-profile-m1-air) found ~74 % of the dam's GPU frame scaling with the pixel count. Built as
 a setting (ARCHITECTURE.md §6, the `render/` row; data `shared/render/upscale.json`): **Render scale**
 100 / 75 / 67 / 50 % per axis and **Upscaler** Stretch or Sharpen, Settings → Graphics, kept in
-`dwell.renderScale`; 100 % by default until the owner picks. `?renderscale=0.67&upscaler=sharpen` overrides
+`dwell.renderScale`; 50 % Stretch by default since 0.50.28 (owner: "make the default 50% upscaling instead of 100%"; a stored choice is kept), and the [graphics presets](#graphics-presets) pick it. `?renderscale=0.67&upscaler=sharpen` overrides
 it for a visit (the bench's configurations), and `?upscaler=stretch-pass` draws the plain stretch as a pass
 on a full-size canvas, to compare the browser's stretch with an internal one.
 
@@ -838,6 +838,64 @@ The owner's pick between the soft Stretch and the ~2 ms Sharpen is a look questi
 
 Scratch files (not checked in): the scenario and configurations in the session's scratchpad `up/`
 (`scenarios.json`, `configs.json`, `summ.py`), the report at `up/un/compare.html`.
+
+## Graphics presets
+
+The owner's "on the graphics one, provide a slider of presets from low, to mobile, to ultra, etc.
+prioritize these presets by maintaining beauty as much as possible with each step down, focusing on big
+performance gains" (2026-11-07). Settings → Graphics's **Preset** slider runs Low → Mobile → Medium → High →
+Ultra; the presets are data (`shared/settings/graphics-presets.json`, loaded and validated by
+`client/src/ui/graphicsPresets.ts`: each preset sets every field of a fixed vocabulary by name, each value
+checked against its setting's own choices, so a water tier, scale or upscaler that goes away fails with the
+entry). Moving the slider applies a preset; a setting changed by hand reads **Custom**. Nothing new is stored:
+the preset shown is the one the settings match. New players start on High on desktops and Mobile on phones;
+the exposure and the water's flow switches are outside the presets. `?preset=<id>` draws a visit at a preset
+(the bench's runs below), whatever is stored.
+
+| Preset | Render scale | Water | Sun & moon shadows | Torch shadows | Light shafts | Clouds | Full detail | Distant detail | Distant memory |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Ultra | 100 % | High | High | High | High | High | 352 m | 2 px | 512 MB |
+| High (desktop default) | 50 % Stretch | Medium | High | Low | High | High | 256 m | 4 px | 256 MB |
+| Medium | 50 % Stretch | Medium | Low | Off | Low | High | 192 m | 6 px | 192 MB |
+| Mobile (phone default) | 50 % Stretch | Low | Low | Off | Low | Low | 128 m | 8 px | 96 MB |
+| Low | 50 % Stretch | Low | Off | Off | Off | Off | 96 m | 12 px | 64 MB |
+
+**The order of the cuts**, by GPU time saved per beauty lost, from the [cost profile](#cost-profile-m1-air),
+[render scale](#render-scale-and-upscaling) and [water cost](#water-cost-m1-air) measurements: the render
+scale first (~74 % of the frame scales with the pixels; 50 % keeps the look at a distance and is the owner's
+default), then water High → Medium (High is ~0.1 ms over Medium at 50 %, little to see), torch shadows, the
+sun's shadows to Low and the shafts to Low (Medium), then the water to Low (no refraction or caustics: the
+biggest visible step, so it waits for Mobile), the clouds, and the draw distance last. Sharpen is in no
+preset: at 50 % it costs ~2 ms more than Stretch (the render-scale table), more than the next cut saves; a
+player can still pick it. On a phone the detail sliders clamp to its ranges (Ultra's 512 MB to 192), and the
+preset still reads as Ultra there.
+
+**Measured** (0.50.28, M1 Air on AC, Chrome on the GPU, a 1280 × 800 page at pixel ratio 2, so 2560 × 1600;
+seed 0 from the dam site, `?at=2364.5,142,7443.5`, a scratch scenario that goes to the nearest water and
+looks down 40° from 6 m, the river across most of the screen, noon; `npm run bench -- --compare` with one
+configuration per preset, `?preset=`; 1.5 s to settle, 4 s recorded; one page each, unthrottled and with
+vsync). `gpu.frame` mean / p95 (ms):
+
+| Preset | Unthrottled | Vsync | Drawn fps (vsync) | Memory |
+| --- | --- | --- | --- | --- |
+| Ultra | 25.78 / 26.26 | 26.18 / 27.48 | 59.9 | 1.96 GB |
+| High | 10.36 / 11.10 | 10.52 / 11.12 | 59.8 | 1.20 GB |
+| Medium | 9.05 / 9.63 | 8.97 / 9.72 | 59.8 | 1.00 GB |
+| Mobile | 6.41 / 7.19 | 7.50 / 9.93 | 59.8 | 0.77 GB |
+| Low | 4.49 / 5.22 | 6.54 / 9.41 | 59.6 | 0.69 GB |
+
+**Reading it.** Each step down saves GPU time, and the biggest is the first: Ultra → High is −15.4 ms (2.5×),
+almost all of it the render scale. High → Medium −1.3 ms with the river's look unchanged in the shots
+(refraction, caustics and reflections kept; the shadows softer); Medium → Mobile −2.6 ms, where the water
+turns opaque (Water Low); Mobile → Low −1.9 ms, a plain sky and no shadows. With vsync every preset drew
+~60 fps here (the M1 overlaps frames, so even Ultra's 26 ms held 60 with two in flight; it has no headroom),
+and the cheap presets read higher with vsync than unthrottled (the GPU clocks down when idle). Memory falls
+with the detail: 1.96 GB at Ultra to 0.69 GB at Low. Not measured: a real phone, night (torch shadows), a
+flight.
+
+Scratch (not checked in): the scenario and configurations in the session scratchpad `settings/`
+(`scenarios.json`, `configs.json`, `an.py`), the runs in `settings/unthrottled/` and `settings/vsync/`
+(`compare.html`, each preset's shot beside High's).
 
 ## Flight loading (M1 Air)
 

@@ -65,6 +65,7 @@ import {
 import { displayScale } from './ui/displayScale';
 import type { CloudQuality } from './ui/viewSettings';
 import { UPSCALE, renderScaleFromQuery } from './ui/renderScaleSettings';
+import { presetFromQuery } from './ui/graphicsPresets';
 import { FlightSpeedControl } from './ui/flightSpeedControl';
 import { loadFlySpeedLevel, saveFlySpeedLevel } from './predict/flightSpeed';
 import { formatStatus } from './ui/statusOverlay';
@@ -716,7 +717,9 @@ async function start(): Promise<App | null> {
     },
   );
   // The game menu (top left, or Esc): settings applied as the sliders move.
-  const settings = new SettingsMenu(document.body, mobile, (s) => {
+  const settings = new SettingsMenu(document.body, mobile, (stored) => {
+    // ?preset=<id> draws the visit at a graphics preset (the bench; ui/graphicsPresets.ts).
+    const s = presetFromQuery(location.search, stored, mobile);
     sfx.setVolumes(s.audio);
     client.setExposure(s.exposure);
     // What the screen shows (Settings, On screen; shared/ui/hud.json).

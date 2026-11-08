@@ -68,11 +68,18 @@ export function defaultRenderScale(d: UpscaleData = UPSCALE): RenderScaleSetting
   return { ...d.default };
 }
 
-/** A stored record; a scale or upscaler the data doesn't list takes the default. */
-export function sanitizeRenderScale(value: unknown, d: UpscaleData = UPSCALE): RenderScaleSettings {
+/**
+ * A stored record; a scale or upscaler the data doesn't list (or none stored) takes the fallback:
+ * the data's default, or the device's default graphics preset's (ui/graphicsPresets.ts).
+ */
+export function sanitizeRenderScale(
+  value: unknown,
+  d: UpscaleData = UPSCALE,
+  fallback: RenderScaleSettings = d.default,
+): RenderScaleSettings {
   const v = typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
-  const scale = d.scales.find((s) => s.value === v.scale)?.value ?? d.default.scale;
-  const upscaler = d.upscalers.find((u) => u.id === v.upscaler)?.id ?? d.default.upscaler;
+  const scale = d.scales.find((s) => s.value === v.scale)?.value ?? fallback.scale;
+  const upscaler = d.upscalers.find((u) => u.id === v.upscaler)?.id ?? fallback.upscaler;
   return { scale, upscaler };
 }
 

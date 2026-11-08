@@ -1,0 +1,86 @@
+{
+  "$comment": "Graphics presets (ARCHITECTURE.md §6, the settings row; docs/DEV_TOOLS.md, Graphics presets). Settings → Graphics's Preset slider runs through `presets` in order, cheapest first; moving it applies one, and any graphics setting changed by hand shows Custom. Each preset sets every field of the fixed vocabulary the loader knows (client/src/ui/graphicsPresets.ts `PRESET_FIELDS`), by name: `renderScale` one of shared/render/upscale.json's scales and `upscaler` one of its upscalers, `water` a water tier (low/medium/high), `shadows` and `torchShadows` off/low/high, `shafts` and `clouds` off/low/high, `distanceM`/`pixelError`/`memoryMb` the detail sliders (a phone clamps them to its ranges). The cuts are ordered by GPU time saved per beauty lost, from the measured costs (docs/DEV_TOOLS.md, Cost profile and Water cost): the render scale first, then water High → Medium, torch shadows, sun shadows, light shafts, clouds, and the draw distance last; refraction and caustics (water Medium) are kept down to Medium. `default` names the preset a new player starts on, per device.",
+  "presets": [
+    {
+      "id": "low",
+      "label": "Low",
+      "settings": {
+        "renderScale": 0.5,
+        "upscaler": "stretch",
+        "water": "low",
+        "shadows": "off",
+        "torchShadows": "off",
+        "shafts": "off",
+        "clouds": "off",
+        "distanceM": 96,
+        "pixelError": 12,
+        "memoryMb": 64
+      }
+    },
+    {
+      "id": "mobile",
+      "label": "Mobile",
+      "settings": {
+        "renderScale": 0.5,
+        "upscaler": "stretch",
+        "water": "low",
+        "shadows": "low",
+        "torchShadows": "off",
+        "shafts": "low",
+        "clouds": "low",
+        "distanceM": 128,
+        "pixelError": 8,
+        "memoryMb": 96
+      }
+    },
+    {
+      "id": "medium",
+      "label": "Medium",
+      "settings": {
+        "renderScale": 0.5,
+        "upscaler": "stretch",
+        "water": "medium",
+        "shadows": "low",
+        "torchShadows": "off",
+        "shafts": "low",
+        "clouds": "high",
+        "distanceM": 192,
+        "pixelError": 6,
+        "memoryMb": 192
+      }
+    },
+    {
+      "id": "high",
+      "label": "High",
+      "settings": {
+        "renderScale": 0.5,
+        "upscaler": "stretch",
+        "water": "medium",
+        "shadows": "high",
+        "torchShadows": "low",
+        "shafts": "high",
+        "clouds": "high",
+        "distanceM": 256,
+        "pixelError": 4,
+        "memoryMb": 256
+      }
+    },
+    {
+      "id": "ultra",
+      "label": "Ultra",
+      "settings": {
+        "renderScale": 1,
+        "upscaler": "stretch",
+        "water": "high",
+        "shadows": "high",
+        "torchShadows": "high",
+        "shafts": "high",
+        "clouds": "high",
+        "distanceM": 352,
+        "pixelError": 2,
+        "memoryMb": 512
+      }
+    }
+  ],
+  "default": { "desktop": "high", "mobile": "mobile" }
+}

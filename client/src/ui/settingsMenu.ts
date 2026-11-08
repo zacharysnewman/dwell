@@ -1,8 +1,11 @@
 // The game menu: a button in the top-left corner (or Esc) opens a full-screen menu over the game
-// with pages — Settings (the detail settings, lod/detail.ts; the
-// tone-mapping exposure and the sky, render/look.ts; the water quality, ui/waterSettings.ts; the
-// sun and moon shadows, ui/shadowSettings.ts; the
-// volumes, audio/settings.ts; ARCHITECTURE.md §5, §6.6), Controls (every key
+// with pages, listed down the side (a row of tabs on phones) — the settings in four panes (owner,
+// 2026-11-07: "arranged concisely and mostly vertically", sound, graphics, etc. in their own panes):
+// Graphics (the Preset slider, ui/graphicsPresets.ts and shared/settings/graphics-presets.json; the
+// render scale, water, shadows, shafts, clouds and detail it sets; the exposure and the water's
+// flow), Sound (the volumes, audio/settings.ts), Gameplay (the view, motion and explosions) and On
+// screen (shared/ui/hud.json), one compact row a setting with Reset and Copy JSON under them
+// (ARCHITECTURE.md §5, §6.6); Controller (ui/controllerPanel.ts), Controls (every key
 // and touch control, ui/controls.ts), Debug (the debug tools as buttons, with their keys) and Host
 // (a local world's hosting, ui/hostPanel.ts) — and Resume and Quit to main menu (Phase 5a). The
 // settings are kept in this browser.
@@ -22,7 +25,6 @@ import {
   DEFAULT_SHAFTS,
   SHAFT_QUALITIES,
   defaultClouds,
-  sanitizeClouds,
   sanitizeShafts,
   type CloudQuality,
   type ShaftQuality,
@@ -35,6 +37,7 @@ import {
   sanitizeShowArms,
   viewRecord,
 } from './viewSettings';
+import { GRAPHICS_PRESETS, applyPreset, defaultPreset, presetOf } from './graphicsPresets';
 import { DEBUG_KEYS, KEYBOARD, TOUCH, keysLabel, type Control } from './controls';
 import { audio } from '../audio/engine';
 import { DEFAULT_VOLUMES, type Volumes } from '../audio/mixer';
@@ -126,8 +129,12 @@ export interface Settings {
   renderScale: RenderScaleSettings;
 }
 
+/**
+ * The defaults: the graphics are the device's default preset's (ui/graphicsPresets.ts: Mobile on
+ * phones, High on desktops), over each setting's own default.
+ */
 export function defaultSettings(mobile: boolean, reducedMotion = false): Settings {
-  return {
+  const base: Settings = {
     detail: defaultDetail(mobile),
     exposure: DEFAULT_EXPOSURE,
     audio: { ...DEFAULT_VOLUMES },
@@ -142,6 +149,7 @@ export function defaultSettings(mobile: boolean, reducedMotion = false): Setting
     hud: defaultHud(),
     renderScale: defaultRenderScale(),
   };
+  return applyPreset(base, defaultPreset(mobile), mobile);
 }
 
 /** The settings as JSON to copy and share (rounded: whole metres, fractions to 0.01). */
@@ -215,8 +223,8 @@ export function loadSettings(mobile: boolean): Settings {
     detail: sanitizeDetail(load(DETAIL_KEY), defaults.detail, detailLimits(mobile)),
     exposure: sanitizeExposure(load(EXPOSURE_KEY)),
     audio: loadVolumes(),
-    clouds: sanitizeClouds(load(CLOUDS_KEY), mobile),
-    shafts: sanitizeShafts(load(SHAFTS_KEY)),
+    clouds: CLOUD_QUALITIES.find((q) => q === load(CLOUDS_KEY)) ?? defaults.clouds,
+    shafts: sanitizeShafts(load(SHAFTS_KEY), defaults.shafts),
     water: sanitizeWater(load(WATER_KEY), defaults.water),
     shadows: sanitizeShadows(load(SHADOWS_KEY), defaults.shadows),
     motion: sanitizeMotion(load(MOTION_KEY), prefersReducedMotion()),
@@ -224,7 +232,7 @@ export function loadSettings(mobile: boolean): Settings {
     fovDeg: sanitizeFovSetting(load(VIEW_KEY)),
     showArms: sanitizeShowArms(load(VIEW_KEY)),
     hud: sanitizeHud(load(HUD_KEY)),
-    renderScale: sanitizeRenderScale(load(RENDER_SCALE_KEY)),
+    renderScale: sanitizeRenderScale(load(RENDER_SCALE_KEY), UPSCALE, defaults.renderScale),
   };
 }
 
@@ -315,124 +323,184 @@ interface ToggleSpec {
   with: (s: Settings, v: boolean) => Settings;
 }
 
-/** The menu's sliders; the detail ranges depend on the device (lod/detail.ts). */
-function sections(
-  mobile: boolean,
-): { title: string; sliders: SliderSpec[]; toggles?: ToggleSpec[] }[] {
+/** One row of a pane: a slider, a row of choices, or a checkbox. */
+type Row = { slider: SliderSpec } | { choice: ChoiceSpec<string> } | { toggle: ToggleSpec };
+
+/** A titled group of rows in a pane (no title: the pane's own rows). */
+interface Group {
+  title?: string;
+  rows: Row[];
+}
+
+/** The settings panes, each a page of the menu. */
+export type SettingsPane = 'graphics' | 'sound' | 'gameplay' | 'screen';
+export const SETTINGS_PANES: readonly SettingsPane[] = ['graphics', 'sound', 'gameplay', 'screen'];
+
+/** Each pane's rows, in groups; the detail ranges depend on the device (lod/detail.ts). */
+function panes(mobile: boolean): Record<SettingsPane, Group[]> {
   const DETAIL_LIMITS = detailLimits(mobile);
-  const volume = (label: string, hint: string, key: keyof Volumes): SliderSpec => ({
-    label,
-    hint,
-    min: 0,
-    max: 1,
-    log: false,
-    format: (v) => `${String(Math.round(v * 100))}%`,
-    get: (s) => s.audio[key],
-    with: (s, v) => ({ ...s, audio: { ...s.audio, [key]: v } }),
+  const volume = (label: string, hint: string, key: keyof Volumes): Row => ({
+    slider: {
+      label,
+      hint,
+      min: 0,
+      max: 1,
+      log: false,
+      format: (v) => `${String(Math.round(v * 100))}%`,
+      get: (s) => s.audio[key],
+      with: (s, v) => ({ ...s, audio: { ...s.audio, [key]: v } }),
+    },
   });
-  return [
-    {
-      title: 'Sound',
-      sliders: [
-        volume('Master', 'Everything Dwell plays', 'master'),
-        volume('Effects', 'Footsteps, blocks, water, other players', 'effects'),
-        volume('Interface', 'Menus, buttons and the hotbar', 'ui'),
-        volume('Music', 'The music; 0% turns it off', 'music'),
-      ],
-    },
-    {
-      title: 'Detail',
-      sliders: [
-        {
-          label: 'Full detail',
-          hint: 'How far every block is drawn; farther uses more memory',
-          ...DETAIL_LIMITS.distanceM,
-          log: false,
-          format: formatMetres,
-          get: (s) => s.detail.distanceM,
-          with: (s, v) => ({ ...s, detail: { ...s.detail, distanceM: v } }),
-        },
-        {
-          label: 'Distant detail',
-          hint: 'Largest step in the distant terrain, in pixels; smaller is sharper and slower',
-          ...DETAIL_LIMITS.pixelError,
-          log: true,
-          format: (v) => `${v.toFixed(1)} px`,
-          get: (s) => s.detail.pixelError,
-          with: (s, v) => ({ ...s, detail: { ...s.detail, pixelError: v } }),
-        },
-        {
-          label: 'Distant memory',
-          hint: 'Memory for the distant terrain; past it, distant detail coarsens to fit',
-          ...DETAIL_LIMITS.memoryMb,
-          log: true,
-          format: (v) => `${String(Math.round(v))} MB`,
-          get: (s) => s.detail.memoryMb,
-          with: (s, v) => ({ ...s, detail: { ...s.detail, memoryMb: v } }),
-        },
-      ],
-    },
-    {
-      title: 'Look',
-      sliders: [
-        {
-          label: 'Field of view',
-          hint: 'How much the view takes in, top to bottom (narrower on wide screens)',
-          ...FOV_LIMITS,
-          log: false,
-          format: (v) => `${String(Math.round(v))}°`,
-          get: (s) => s.fovDeg,
-          with: (s, v) => ({ ...s, fovDeg: Math.round(v) }),
-        },
-        {
-          label: 'Exposure',
-          hint: 'How bright the picture is after tone mapping',
-          ...EXPOSURE_LIMITS,
-          log: true,
-          format: (v) => `${v.toFixed(2)}×`,
-          get: (s) => s.exposure,
-          with: (s, v) => ({ ...s, exposure: v }),
-        },
-      ],
-      toggles: [
-        {
-          label: 'Show your arms',
-          hint: 'Your hand and what it holds, in first person',
-          get: (s) => s.showArms,
-          with: (s, v) => ({ ...s, showArms: v }),
-        },
-      ],
-    },
-    {
-      title: 'Motion',
-      toggles: [
-        {
-          label: 'Speed effects',
-          hint: 'The view widens and wind streaks past when moving fast',
-          get: (s) => s.motion.speedEffects,
-          with: (s, v) => ({ ...s, motion: { ...s.motion, speedEffects: v } }),
-        },
-        {
-          label: 'Plant sway',
-          hint: 'Tall grass sways in the wind',
-          get: (s) => s.motion.plantSway,
-          with: (s, v) => ({ ...s, motion: { ...s.motion, plantSway: v } }),
-        },
-      ],
-      sliders: [
-        {
-          label: 'FOV boost',
-          hint: 'How much the view widens at speed (0: not at all)',
-          min: 0,
-          max: 1,
-          log: false,
-          format: (v) => `${String(Math.round(v * 100))}%`,
-          get: (s) => s.motion.fovBoost,
-          with: (s, v) => ({ ...s, motion: { ...s.motion, fovBoost: v } }),
-        },
-      ],
-    },
-  ];
+  const choice = <T extends string>(spec: ChoiceSpec<T>): Row => ({
+    choice: spec as unknown as ChoiceSpec<string>,
+  });
+  return {
+    graphics: [
+      {
+        title: 'Quality',
+        rows: [
+          ...RENDER_SCALE_CHOICES.map(choice),
+          choice(WATER_CHOICE),
+          choice(SHADOW_CHOICE),
+          choice(TORCH_SHADOW_CHOICE),
+          ...CHOICES.map(choice),
+          {
+            slider: {
+              label: 'Full detail',
+              hint: 'How far every block is drawn; farther uses more memory',
+              ...DETAIL_LIMITS.distanceM,
+              log: false,
+              format: formatMetres,
+              get: (s) => s.detail.distanceM,
+              with: (s, v) => ({ ...s, detail: { ...s.detail, distanceM: v } }),
+            },
+          },
+          {
+            slider: {
+              label: 'Distant detail',
+              hint: 'Largest step in the distant terrain, in pixels; smaller is sharper and slower',
+              ...DETAIL_LIMITS.pixelError,
+              log: true,
+              format: (v) => `${v.toFixed(1)} px`,
+              get: (s) => s.detail.pixelError,
+              with: (s, v) => ({ ...s, detail: { ...s.detail, pixelError: v } }),
+            },
+          },
+          {
+            slider: {
+              label: 'Distant memory',
+              hint: 'Memory for the distant terrain; past it, distant detail coarsens to fit',
+              ...DETAIL_LIMITS.memoryMb,
+              log: true,
+              format: (v) => `${String(Math.round(v))} MB`,
+              get: (s) => s.detail.memoryMb,
+              with: (s, v) => ({ ...s, detail: { ...s.detail, memoryMb: v } }),
+            },
+          },
+        ],
+      },
+      {
+        title: 'Look',
+        rows: [
+          {
+            slider: {
+              label: 'Exposure',
+              hint: 'How bright the picture is after tone mapping',
+              ...EXPOSURE_LIMITS,
+              log: true,
+              format: (v) => `${v.toFixed(2)}×`,
+              get: (s) => s.exposure,
+              with: (s, v) => ({ ...s, exposure: v }),
+            },
+          },
+          ...WATER_FLOW_TOGGLES.map((toggle) => ({ toggle })),
+        ],
+      },
+    ],
+    sound: [
+      {
+        rows: [
+          volume('Master', 'Everything Dwell plays', 'master'),
+          volume('Effects', 'Footsteps, blocks, water, other players', 'effects'),
+          volume('Interface', 'Menus, buttons and the hotbar', 'ui'),
+          volume('Music', 'The music; 0% turns it off', 'music'),
+        ],
+      },
+    ],
+    gameplay: [
+      {
+        title: 'View',
+        rows: [
+          {
+            slider: {
+              label: 'Field of view',
+              hint: 'How much the view takes in, top to bottom (narrower on wide screens)',
+              ...FOV_LIMITS,
+              log: false,
+              format: (v) => `${String(Math.round(v))}°`,
+              get: (s) => s.fovDeg,
+              with: (s, v) => ({ ...s, fovDeg: Math.round(v) }),
+            },
+          },
+          {
+            toggle: {
+              label: 'Show your arms',
+              hint: 'Your hand and what it holds, in first person',
+              get: (s) => s.showArms,
+              with: (s, v) => ({ ...s, showArms: v }),
+            },
+          },
+        ],
+      },
+      {
+        title: 'Motion',
+        rows: [
+          {
+            toggle: {
+              label: 'Speed effects',
+              hint: 'The view widens and wind streaks past when moving fast',
+              get: (s) => s.motion.speedEffects,
+              with: (s, v) => ({ ...s, motion: { ...s.motion, speedEffects: v } }),
+            },
+          },
+          {
+            slider: {
+              label: 'FOV boost',
+              hint: 'How much the view widens at speed (0: not at all)',
+              min: 0,
+              max: 1,
+              log: false,
+              format: (v) => `${String(Math.round(v * 100))}%`,
+              get: (s) => s.motion.fovBoost,
+              with: (s, v) => ({ ...s, motion: { ...s.motion, fovBoost: v } }),
+            },
+          },
+          {
+            toggle: {
+              label: 'Plant sway',
+              hint: 'Tall grass sways in the wind',
+              get: (s) => s.motion.plantSway,
+              with: (s, v) => ({ ...s, motion: { ...s.motion, plantSway: v } }),
+            },
+          },
+        ],
+      },
+      { title: 'Explosions', rows: EXPLOSION_TOGGLES.map((toggle) => ({ toggle })) },
+    ],
+    // What the screen shows, one row per part listed as data (shared/ui/hud.json).
+    screen: [
+      {
+        rows: hideableParts(mobile).map((part): Row => ({
+          toggle: {
+            label: part.label,
+            hint: part.hint,
+            get: (st) => st.hud.shown[part.id] ?? part.shown,
+            with: (st, v) => ({ ...st, hud: { shown: { ...st.hud.shown, [part.id]: v } } }),
+          },
+        })),
+      },
+    ],
+  };
 }
 
 /** A setting picked from a few named choices (a row of buttons). */
@@ -446,7 +514,7 @@ interface ChoiceSpec<T extends string> {
 }
 
 const WATER_CHOICE: ChoiceSpec<WaterQuality> = {
-  label: 'Quality',
+  label: 'Water',
   hint: 'Ripples, reflections and glints on water; lower is faster on phones',
   choices: WATER_QUALITIES,
   labels: WATER_QUALITY_LABELS,
@@ -530,10 +598,23 @@ export interface DebugTool {
   on?: () => boolean;
 }
 
-type Page = 'settings' | 'controller' | 'controls' | 'structures' | 'debug' | 'host';
+type Page = SettingsPane | 'controller' | 'controls' | 'structures' | 'debug' | 'host';
+
+/** The pages in the order they are listed, whatever order they are added in. */
+const PAGE_ORDER: readonly Page[] = [
+  ...SETTINGS_PANES,
+  'controller',
+  'controls',
+  'structures',
+  'debug',
+  'host',
+];
 
 const PAGE_TITLES: Record<Page, string> = {
-  settings: 'Settings',
+  graphics: 'Graphics',
+  sound: 'Sound',
+  gameplay: 'Gameplay',
+  screen: 'On screen',
   controller: 'Controller',
   controls: 'Controls',
   structures: 'Structures',
@@ -595,6 +676,10 @@ export class SettingsMenu {
   private readonly toggles: { spec: ToggleSpec; input: HTMLInputElement }[] = [];
   /** Shows the JSON to copy by hand where the clipboard is unavailable. */
   private readonly fallback = document.createElement('textarea');
+  /** Reset and Copy JSON, shown under the settings panes. */
+  private readonly tail = el('div', 'settings-tail');
+  /** The Graphics pane's preset slider and its label. */
+  private preset: { input: HTMLInputElement; value: HTMLSpanElement } | null = null;
   private settings: Settings;
   /** Told when the menu opens or closes (the touch controls step aside while it is open). */
   onOpenChange: ((open: boolean) => void) | null = null;
@@ -646,7 +731,9 @@ export class SettingsMenu {
       if (e.target === this.panel) this.setOpen(false);
     });
 
-    this.addPage('settings', this.settingsPage());
+    this.pagesBox.append(this.settingsTail());
+    const groups = panes(mobile);
+    for (const pane of SETTINGS_PANES) this.addPage(pane, this.settingsPage(pane, groups[pane]));
     this.addPage('controls', this.controlsPage());
 
     button.addEventListener('click', () => {
@@ -656,7 +743,7 @@ export class SettingsMenu {
     });
     parent.append(button, this.panel);
     this.set(this.settings);
-    this.show('settings');
+    this.show('graphics');
   }
 
   get current(): Settings {
@@ -798,7 +885,7 @@ export class SettingsMenu {
   }
 
   private addPage(name: Page, page: HTMLElement): void {
-    const order: Page[] = ['settings', 'controller', 'controls', 'structures', 'debug', 'host'];
+    const order = PAGE_ORDER;
     const tab = el('button', 'gm-tab', PAGE_TITLES[name]);
     tab.type = 'button';
     tab.setAttribute('role', 'tab');
@@ -817,7 +904,8 @@ export class SettingsMenu {
       after.page.before(page);
     } else {
       this.tabs.append(tab);
-      this.pagesBox.append(page);
+      // Before the settings' Reset / Copy JSON, which stay last.
+      this.pagesBox.insertBefore(page, this.tail);
     }
     this.pages.set(name, { tab, page });
     const shown = [...this.pages.values()].some((p) => !p.page.hidden && p.page !== page);
@@ -833,60 +921,73 @@ export class SettingsMenu {
       page.hidden = n !== name;
       tab.setAttribute('aria-selected', String(n === name));
     }
+    // Reset and Copy JSON under every settings pane, not the other pages.
+    this.tail.hidden = !(SETTINGS_PANES as readonly Page[]).includes(name);
     this.pagesBox.scrollTop = 0;
   }
 
-  private settingsPage(): HTMLElement {
+  /** A settings pane: the Graphics pane's preset slider first, then its groups of rows. */
+  private settingsPage(pane: SettingsPane, groups: Group[]): HTMLElement {
     const page = el('section');
-    for (const section of sections(this.mobile)) {
+    page.classList.add('settings-pane');
+    if (pane === 'graphics') page.append(this.presetRow());
+    for (const g of groups) {
       const group = el('div', 'gm-group');
-      group.append(el('h2', undefined, section.title));
-      const grid = el('div', 'gm-grid');
-      for (const spec of section.toggles ?? []) grid.append(this.toggle(spec));
-      for (const spec of section.sliders) grid.append(this.slider(spec));
-      if (section.title === 'Look') {
-        for (const spec of CHOICES) grid.append(this.choice(spec));
-        grid.append(this.choice(SHADOW_CHOICE));
-        grid.append(this.choice(TORCH_SHADOW_CHOICE));
+      if (g.title) group.append(el('h2', undefined, g.title));
+      const list = el('div', 'gm-grid');
+      for (const row of g.rows) {
+        if ('slider' in row) list.append(this.slider(row.slider));
+        else if ('choice' in row) list.append(this.choice(row.choice));
+        else list.append(this.toggle(row.toggle));
       }
-      group.append(grid);
+      group.append(list);
       page.append(group);
     }
-    const graphics = el('div', 'gm-group');
-    graphics.append(el('h2', undefined, 'Graphics'));
-    const graphicsGrid = el('div', 'gm-grid');
-    for (const spec of RENDER_SCALE_CHOICES) graphicsGrid.append(this.choice(spec));
-    graphics.append(graphicsGrid);
-    page.append(graphics);
-    const water = el('div', 'gm-group');
-    water.append(el('h2', undefined, 'Water'));
-    const waterGrid = el('div', 'gm-grid');
-    for (const spec of WATER_FLOW_TOGGLES) waterGrid.append(this.toggle(spec));
-    waterGrid.append(this.choice(WATER_CHOICE));
-    water.append(waterGrid);
-    page.append(water);
-    const blasts = el('div', 'gm-group');
-    blasts.append(el('h2', undefined, 'Explosions'));
-    const blastGrid = el('div', 'gm-grid');
-    for (const spec of EXPLOSION_TOGGLES) blastGrid.append(this.toggle(spec));
-    blasts.append(blastGrid);
-    page.append(blasts);
-    // What the screen shows, one row per part listed as data (shared/ui/hud.json).
-    const screen = el('div', 'gm-group');
-    screen.append(el('h2', undefined, 'On screen'));
-    const screenGrid = el('div', 'gm-grid');
-    for (const part of hideableParts(this.mobile)) {
-      screenGrid.append(
-        this.toggle({
-          label: part.label,
-          hint: part.hint,
-          get: (st) => st.hud.shown[part.id] ?? part.shown,
-          with: (st, v) => ({ ...st, hud: { shown: { ...st.hud.shown, [part.id]: v } } }),
-        }),
-      );
+    return page;
+  }
+
+  /**
+   * The Preset slider (shared/settings/graphics-presets.json, cheapest first): moving it applies
+   * a preset; it reads Custom while the graphics settings match none.
+   */
+  private presetRow(): HTMLElement {
+    const presets = GRAPHICS_PRESETS.presets;
+    const row = document.createElement('label');
+    row.className = 'settings-row settings-preset';
+    row.id = 'graphics-preset';
+    const value = el('span', 'settings-value');
+    const input = document.createElement('input');
+    input.type = 'range';
+    input.min = '0';
+    input.max = String(presets.length - 1);
+    input.step = '1';
+    input.title = 'A preset of the graphics settings: lower is lighter on the GPU';
+    input.addEventListener('input', () => {
+      const p = presets[Number(input.value)];
+      if (p) this.set(applyPreset(this.settings, p, this.mobile));
+    });
+    const ticks = el('span', 'preset-ticks');
+    for (const p of presets) ticks.append(el('span', undefined, p.label));
+    row.append(el('span', 'settings-name', 'Preset'), value, input, ticks);
+    this.preset = { input, value };
+    return row;
+  }
+
+  /** Shows the preset the settings match, or Custom. */
+  private showPreset(): void {
+    if (!this.preset) return;
+    const { input, value } = this.preset;
+    const p = presetOf(this.settings, this.mobile);
+    value.textContent = p ? p.label : 'Custom';
+    if (p) {
+      input.value = String(GRAPHICS_PRESETS.presets.indexOf(p));
+      this.paint(input, GRAPHICS_PRESETS.presets.length - 1);
     }
-    screen.append(screenGrid);
-    page.append(screen);
+    input.closest('.settings-preset')?.classList.toggle('custom', !p);
+  }
+
+  /** Reset and Copy JSON, under each settings pane (shown with them, ui `show`). */
+  private settingsTail(): HTMLElement {
     const reset = el('button', 'quiet-button settings-reset', 'Reset');
     reset.type = 'button';
     reset.title = 'Back to the defaults';
@@ -905,8 +1006,8 @@ export class SettingsMenu {
     this.fallback.readOnly = true;
     this.fallback.rows = 10;
     this.fallback.hidden = true;
-    page.append(actions, this.fallback);
-    return page;
+    this.tail.append(actions, this.fallback);
+    return this.tail;
   }
 
   private controlsPage(): HTMLElement {
@@ -929,6 +1030,7 @@ export class SettingsMenu {
   private slider(spec: SliderSpec): HTMLLabelElement {
     const row = document.createElement('label');
     row.className = 'settings-row';
+    row.title = spec.hint;
     const name = el('span', 'settings-name', spec.label);
     const value = el('span', 'settings-value');
     const input = document.createElement('input');
@@ -952,6 +1054,7 @@ export class SettingsMenu {
 
   private choice<T extends string>(spec: ChoiceSpec<T>): HTMLDivElement {
     const row = el('div', 'settings-row');
+    row.title = spec.hint;
     const name = el('span', 'settings-name', spec.label);
     const value = el('span', 'settings-value');
     const box = el('div', 'settings-choices');
@@ -986,6 +1089,7 @@ export class SettingsMenu {
   private toggle(spec: ToggleSpec): HTMLLabelElement {
     const row = document.createElement('label');
     row.className = 'settings-row settings-toggle';
+    row.title = spec.hint;
     const input = document.createElement('input');
     input.type = 'checkbox';
     input.title = spec.hint;
@@ -1003,8 +1107,8 @@ export class SettingsMenu {
   }
 
   /** The slider's filled part, as a CSS variable the track's gradient reads. */
-  private paint(input: HTMLInputElement): void {
-    input.style.setProperty('--fill', `${String((100 * Number(input.value)) / SLIDER_STEPS)}%`);
+  private paint(input: HTMLInputElement, max = SLIDER_STEPS): void {
+    input.style.setProperty('--fill', `${String((100 * Number(input.value)) / max)}%`);
   }
 
   private set(settings: Settings): void {
@@ -1041,6 +1145,7 @@ export class SettingsMenu {
   }
 
   private apply(): void {
+    this.showPreset();
     if (!this.fallback.hidden) this.fallback.value = settingsJson(this.settings);
     this.onChange(this.settings);
     saveSettings(this.settings);
