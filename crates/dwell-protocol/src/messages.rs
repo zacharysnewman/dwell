@@ -535,6 +535,37 @@ pub enum Message {
     /// S→C reliable, world channel, only to a client that sent `InventoryAction::Hello`: loose
     /// items that appeared or moved, and those gone (ADR 0066).
     ItemDrops(ItemDrops),
+    /// C→S reliable, world channel, only to a server whose Welcome has `welcome_flags::CHOPPING`
+    /// (ADR 0067): `Hello` first, then swings.
+    Chop(ChopAction),
+    /// S→C reliable, world channel, only to a client that sent `ChopAction::Hello`: wood cells'
+    /// cuts that changed, and cells whose cut is gone (ADR 0067).
+    Cuts(CutsMessage),
+}
+
+/// What a client asks of chopping (ADR 0067).
+#[derive(Clone, Debug, PartialEq)]
+pub enum ChopAction {
+    /// This client understands cuts: send it `Cuts` from now on (all of them now).
+    Hello,
+    /// A swing of `tool` (an item name) at the wood in `cell`, hitting its face `face` (0..6,
+    /// `axis × 2 + positive`, world) at `point` (world metres), its plane `vertical` or level.
+    Swing {
+        tool: String,
+        cell: [i32; 3],
+        face: u8,
+        point: [f32; 3],
+        vertical: bool,
+    },
+}
+
+/// The most cells one `Cuts` carries (more go in more messages).
+pub const MAX_CUTS_PER_MESSAGE: usize = 512;
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CutsMessage {
+    pub cuts: Vec<([i32; 3], crate::chopping::Cut)>,
+    pub gone: Vec<[i32; 3]>,
 }
 
 /// What a client asks of its inventory (ADR 0066).
@@ -621,6 +652,8 @@ impl Message {
             M::InventoryAction(_) => MessageType::InventoryAction,
             M::Inventory(_) => MessageType::Inventory,
             M::ItemDrops(_) => MessageType::ItemDrops,
+            M::Chop(_) => MessageType::Chop,
+            M::Cuts(_) => MessageType::Cuts,
             M::BodyEdit(_) => MessageType::BodyEdit,
         }
     }
@@ -1228,6 +1261,47 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
                 w.u32(id);
             }
         }
+        M::Chop(a) => match a {
+            ChopAction::Hello => w.u8(0),
+            ChopAction::Swing {
+                tool,
+                cell,
+                face,
+                point,
+                vertical,
+            } => {
+                w.u8(1);
+                w.str(crate::bytes::clamp_str(
+                    tool,
+                    crate::inventory::MAX_ITEM_NAME,
+                ));
+                for &v in cell {
+                    w.i32(v);
+                }
+                w.u8(*face);
+                for &v in point {
+                    w.f32(v);
+                }
+                w.u8(u8::from(*vertical));
+            }
+        },
+        M::Cuts(m) => {
+            let n = m.cuts.len().min(MAX_CUTS_PER_MESSAGE);
+            w.u16(n as u16);
+            for (c, k) in &m.cuts[..n] {
+                for &v in c {
+                    w.i32(v);
+                }
+                k.write(w);
+            }
+            let n = m.gone.len().min(MAX_CUTS_PER_MESSAGE);
+            w.u16(n as u16);
+            for c in &m.gone[..n] {
+                for &v in c {
+                    w.i32(v);
+                }
+            }
+        }
         M::BodyEditRequest(m) => {
             w.u32(m.body);
             for v in m.cell {
@@ -1591,6 +1665,48 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
                 gone.push(r.u32());
             }
             M::ItemDrops(ItemDrops { items, gone })
+        }
+        T::Chop => M::Chop(match r.u8() {
+            0 => ChopAction::Hello,
+            1 => {
+                let tool = r.str(crate::inventory::MAX_ITEM_NAME);
+                let cell = [r.i32(), r.i32(), r.i32()];
+                let face = r.u8();
+                r.check(face < 6);
+                let point = [r.f32(), r.f32(), r.f32()];
+                r.check(point.iter().all(|v| v.is_finite()));
+                let vertical = r.u8() != 0;
+                ChopAction::Swing {
+                    tool,
+                    cell,
+                    face,
+                    point,
+                    vertical,
+                }
+            }
+            _ => return None,
+        }),
+        T::Cuts => {
+            let n = usize::from(r.u16());
+            r.check(n <= MAX_CUTS_PER_MESSAGE);
+            let mut cuts = Vec::new();
+            for _ in 0..n {
+                if !r.ok() {
+                    break;
+                }
+                let c = [r.i32(), r.i32(), r.i32()];
+                cuts.push((c, crate::chopping::Cut::read(r)));
+            }
+            let n = usize::from(r.u16());
+            r.check(n <= MAX_CUTS_PER_MESSAGE);
+            let mut gone = Vec::new();
+            for _ in 0..n {
+                if !r.ok() {
+                    break;
+                }
+                gone.push([r.i32(), r.i32(), r.i32()]);
+            }
+            M::Cuts(CutsMessage { cuts, gone })
         }
         T::BodyEditRequest => {
             let body = r.u32();

@@ -29,6 +29,8 @@ jobs:
           node --test shared/modes/gen.test.mjs
           node shared/inventory/gen.mjs
           node --test shared/inventory/gen.test.mjs
+          node shared/tools/gen.mjs
+          node --test shared/tools/gen.test.mjs
           node shared/input/gen.mjs
           node shared/items/gen.mjs
           node --test shared/items/gen.test.mjs

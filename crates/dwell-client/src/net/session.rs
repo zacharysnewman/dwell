@@ -209,6 +209,10 @@ impl Session {
         if w.flags & welcome_flags::INVENTORY != 0 {
             self.send(&Message::InventoryAction(InventoryAction::Hello));
         }
+        // A server that chops (ADR 0067) sends its cuts once told (it answers with a `Cuts`).
+        if w.flags & welcome_flags::CHOPPING != 0 {
+            self.send(&Message::Chop(dwell_protocol::ChopAction::Hello));
+        }
     }
 
     /// The world's settings again while joined: the host changed its game mode (ADR 0065; only a
@@ -574,6 +578,7 @@ impl Session {
                     | Message::LodIndexUpdate(_)
                     | Message::LodData(_)
                     | Message::ItemDrops(_)
+                    | Message::Cuts(_)
             ) && (self.joined() || matches!(self.state, SessionState::Confirming { .. }))
             {
                 self.game.push_back((m, bytes.to_vec()));

@@ -88,6 +88,7 @@ fn everything_round_trips_through_a_file() {
             water: None,
             inventories: vec![(key, vec![1, 2, 3])],
             loose_items: Some(vec![9, 8]),
+            cuts: Some(vec![1, 0, 0, 0, 0]),
         };
         db.save(&batch).expect("saves");
         db.set_setting("motd", "hello").expect("setting");
@@ -127,6 +128,7 @@ fn everything_round_trips_through_a_file() {
     assert_eq!(db.load_inventory(&key), Some(vec![1, 2, 3]));
     assert_eq!(db.load_inventory(&[1; 32]), None);
     assert_eq!(db.loose_items(), Some(vec![9, 8]));
+    assert_eq!(db.cuts(), Some(vec![1, 0, 0, 0, 0]));
     let mut perms = db.permissions();
     perms.sort_by_key(|p| p.at);
     assert_eq!(perms.len(), 2);

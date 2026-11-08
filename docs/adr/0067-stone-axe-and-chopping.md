@@ -1,0 +1,134 @@
+# 0067 — The stone axe: aimed chopping, notches, felling past half and bucking
+
+**Status:** Accepted (2026-11-08; data, server and client input built in 0.50.34, see "Built so
+far"; the gouge drawing, chips and the arms' swing clips are next). Builds on ADR 0066 (items by
+name, drops, the Welcome-flag message pattern) and docs/FELLING.md (how a cut trunk falls).
+
+## Context
+
+The owner (2026-11-08): "a stone axe with tree cutting mechanics. We'll actually show gouging in the
+tree with chunks flying off (in the GPU only I think?), but I'd like it to take some aim. Right click
+switches angle from vertical to horizontal swing. Vertical swings on a vertical tree are very
+ineffective, ideally we'd have it work like real wood cutting where you chop into the tree, then you
+chop a little above or below to cut the chunk out. And you keep going until you get just past the
+half way point through the tree and it falls over. Then you chop it up on the ground, at some level
+of granularity, it drops wood items." And: "Chopping on the ground would then be more effective with
+vertical mode."
+
+Answers: the axe is an item (no crafting yet: given by a debug give or found in an adventure world);
+about 8–12 good swings fell a 1 m trunk, clumsy straight hacking 3–4× more; no durability yet; on
+the ground the log is cut into ~1 m lengths across the grain, each freed length dropping a few wood
+items. The general rule: **a swing cuts well when its plane crosses the wood's grain** (a standing
+trunk: level swings; a log on the ground: vertical swings across it; leaning: whichever crosses
+best), its effectiveness by the angle between the swing plane and the grain, as tool data.
+
+Who adds things: the owner or a mod, by data a tool could edit: a new tool is an item in
+`shared/inventory/inventory.json` and an entry in `shared/tools/tools.json`; a new wood is a block
+with an `axis` and an entry in `woods`. Fixed in code: the tool kinds (`axe`), the cut model below,
+felling (FELLING.md). Scope: tools and woods are per build; cuts are per world, saved with it.
+
+## Decision
+
+1. **Tools are data.** `shared/tools/tools.json`'s `tools`: an item name (an inventory item), a
+   `kind` from a fixed vocabulary (`axe`), `swingSeconds` (0.45), `biteM` (0.12: metres a swing
+   straight across the grain cuts into open wood), `bindM` (0.05: a kerf this deep past the notch
+   halves a swing into it), `across` (1) and `along` (0.15) shares and `sharpness` (2): a swing's
+   share is `along + (across − along) |cos θ|^sharpness`, θ the angle between the swing plane's
+   normal and the grain. `woods`: a block by name whose `axis` property is its grain,
+   `fellFraction` (0.55), `buckFraction` (0.55) and `buckDrops` (`dwell:wood` ×2–3, as a block's
+   `drops`). `shared/tools/gen.mjs` validates it (names against the items and blocks, ranges,
+   unknown fields; a message naming the entry) and emits `crates/dwell-protocol/src/tools.gen.rs`
+   and `client/src/ui/tools.gen.ts`; CI regenerates and fails on a diff; `gen.test.mjs` adds a
+   fixture tool by data alone. The stone axe (`stack` 1) and wood are inventory items.
+2. **The cut model** (`dwell_protocol::chopping::Cut`, shared by server and client). A wood cell has
+   four **sides** (the faces across its grain) and two **bands** per side (its halves along the
+   grain: a standing log's ½ m row in two quarter-metres, face-locally lower first; a lying one's
+   1 m in two halves). Each side has an open **notch** (metres cut out) and each band a **kerf**
+   past it. A swing into a band cuts `bite × share / (1 + kerf / bind)` (at most to the far side):
+   a deeper kerf binds. When both bands of a side are cut past the notch, the chunk between comes
+   out: the notch deepens by the shallower kerf. So the owner's technique (chop in, then a little
+   above or below) cuts 0.12 m per two swings, while hacking one spot slows as its kerf deepens.
+   With the data: notching fells in **9** swings, hacking one spot in **28** (3.1×), vertical
+   swings at a standing trunk take **61** (level and vertical alternated by band). The share of the
+   cross-section cut is the most of any two opposite sides together over the cell's size.
+3. **Aim.** The client casts its view ray into the targeted cell's box: the face it enters and the
+   point, sent with the swing. The server checks the point is on that cell (5 cm slack) and within
+   the edit reach (+0.75 m), that the cell is a wood and the face a side (end grain: nothing), and
+   takes the band from the point and the swing plane from the eye-to-point direction, all
+   face-locally through `FaceFrame` (+y up on both faces): a level swing's normal is up, a vertical
+   swing's is level and square to the look's heading.
+4. **The swing direction** is the client's: **Use (right click) with the axe held toggles** level
+   and vertical, sent with each swing; the HUD shows it ("Axe: level swing (right click:
+   vertical)") in the hotbar's status line. Break (left click) swings, at most every
+   `swingSeconds` (the server holds the same wait per player).
+5. **Felling past half.** A standing wood (grain along the face's up) cut past `fellFraction`: its
+   cell goes (the wood is chips) and FELLING's integrity takes what it held as a piece, **tipped
+   away from the notch** (its deepest side): away from the chopper, who stands at the notch. The
+   stump below stays. (Real felling falls toward the face notch; Question 1.)
+6. **Bucking.** A lying wood (grain level) is cut the same way, best by vertical swings across it,
+   and cut through at `buckFraction`: its cell (a 1 m length) goes and, in a mode that uses items,
+   drops `buckDrops` (rolled with the server's entropy) as loose items (ADR 0066). In creative
+   nothing drops, as for breaks.
+7. **Mode gating.** Chopping works in every mode that allows edits. In a mode that uses items the
+   held inventory slot must hold the tool; in creative the swing is trusted (Question 3).
+8. **Cuts go with their wood.** Any change to a cut cell (broken, cut through, collapsed into a
+   piece, replaced) drops its cut (`Server::cuts_dropped`, in `broadcast_changes`). A felled
+   trunk's other cuts are not carried by the piece (Question 4).
+9. **The wire: new, optional messages (no new compatibility line)**, as ADR 0066:
+   - Welcome gains flag **`CHOPPING` (32)**. Older clients ignore it.
+   - C→S **`Chop`** (88), only to a server with `CHOPPING`: `Hello`, or `Swing { tool, cell, face,
+     point, vertical }`.
+   - S→C **`Cuts`** (89), world channel, only to a client that said `Hello`: changed cells' cuts
+     and gone cells; after Hello all of them (at least one message, empty when none: the client's
+     sign that the server chops).
+   An older client on a newer server never sends `Chop`: it breaks logs by hand as before. A newer
+   client on an older server sees no flag: the axe does nothing (its swing is not sent).
+10. **Save: a new table, append-only.** `cuts`: one record (key 0, version 1, each cell and its
+    sides' notch and kerfs as f32), the whole set each save. Older builds leave it; a record this
+    build can't read is kept, not overwritten.
+11. **The client draws** (next, not in 0.50.34): gouges on the trunk's cells from the cuts (a
+    cut-depth mesh tweak of the wood's side faces on the GPU), wood chips as GPU particles, client
+    only, and the arms' level and vertical swing clips (`shared/characters`).
+
+## Questions (parked; defaults chosen)
+
+1. **Which way it falls.** Away from the notch (the chopper's side) by default, so it never falls
+   on them; real felling falls toward the face notch, with a back cut from the other side. Want
+   the real rule (a data flag on the wood), or a fall toward where the player looks?
+2. **Wood items or logs.** A cut-through length drops 2–3 `dwell:wood` (a new non-block item), not
+   a log block. Should bucked lengths drop `dwell:log` instead (placeable), or both?
+3. **The axe in creative.** The creative hotbar holds blocks only (`shared/items/items.json`); the
+   axe is reachable in a world that uses items (`?mode=adventure`, given with the server's `give`).
+   Add tool entries to the creative hotbar's data next?
+4. **Cuts on a felled trunk.** Cuts on cells that fall with a piece are dropped; carry them into the
+   piece and back when it settles?
+5. **Hands on logs.** Breaking a log by hand is still one click (there is no break progress yet,
+   ADR 0066 Q3). Should logs need an axe in adventure?
+6. **Numbers.** 9 notching swings, 28 hacking (3.1×; the owner asked 3–4×: a smaller `bindM` raises it), 0.45 s a swing; 0.55 of the cross-section to fell
+   or buck. All data.
+7. **Leaning trunks** (a log at an angle): logs are only ever along x, y or z, so a lean is not
+   stored; the share rule handles any angle once a body's cells can be chopped (bodies: next).
+
+## Built so far (0.50.34)
+
+- **Data:** `shared/tools/tools.json`, `gen.mjs` and its test (the fixture tool by data alone,
+  every validation message), CI regenerating it; `dwell:stone_axe` and `dwell:wood` items.
+- **Model and wire:** `dwell_protocol::chopping` (tools, woods, `Cut`, `Cuts`, the share and swing
+  plane), `Chop` and `Cuts` and the Welcome flag; round trips; the scripted chopper (9 vs 28).
+- **Server:** `dwell-sim` `server/chopping.rs` (aim checks, the wait, notching, felling away from
+  the notch, bucking with drops, cuts dropped with their wood, the `cuts` table, Hello gating);
+  `tests/chopping.rs`, both faces: notching fells in 8–12 and leans away from the notch, hacking
+  3–4×, vertical swings at a standing trunk barely cut, vertical swings buck a lying log and it
+  drops wood while level ones barely cut it, creative drops nothing, no axe in hand does nothing,
+  saved and sent after Hello, nothing without Hello.
+- **Client:** `dwell-client` `chop.rs` (the ray into the cell, the wait, the toggle), Hello on the
+  flag, cuts kept, Use toggling and Break swinging with the axe held, the swing hint in the HUD.
+
+**Next:** the gouges and chips (GPU), the arms' swing clips, the axe in the creative hotbar, cuts on
+bodies (chopping a felled piece before it settles), a give command.
+
+## Consequences
+
+- A new tool is an item and a `tools` entry; a new wood a block with an `axis` and a `woods` entry;
+  a new tool kind (a pick, a saw) is code with its data.
+- Reversing it: drop the flag; the `cuts` table stays, unread.

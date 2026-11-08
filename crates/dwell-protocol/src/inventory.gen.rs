@@ -30,6 +30,8 @@ pub static ITEMS: &[ItemDef] = &[
     ItemDef { name: "dwell:grass_seed", label: "Grass seed", color: [185, 180, 90], size: 0.12, stack: 64, value: 0 },
     ItemDef { name: "dwell:gem", label: "Gem", color: [79, 176, 122], size: 0.14, stack: 64, value: 1 },
     ItemDef { name: "dwell:gem_large", label: "Large gem", color: [79, 127, 208], size: 0.2, stack: 64, value: 5 },
+    ItemDef { name: "dwell:wood", label: "Wood", color: [160, 116, 70], size: 0.24, stack: 64, value: 0 },
+    ItemDef { name: "dwell:stone_axe", label: "Stone axe", color: [125, 116, 104], size: 0.3, stack: 1, value: 0 },
 ];
 
 /// What every block drops when broken without unlimited blocks, and what placing it uses up.

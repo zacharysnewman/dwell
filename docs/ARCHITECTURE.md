@@ -1728,6 +1728,7 @@ lives in side files. Chunk and LOD blobs are the protocol's palette + RLE compre
 | `bodies` | **[built, Phase 51 B2]** The world's moving bodies, rewritten whole each save: kind, pose, velocities, cells (states by name; BUILT_BODIES.md §7) |
 | `inventories` | **[built, 0.50.33]** Keyed by device public key: the player's inventory record (`Inventory::to_bytes`, version 1: held slot, wallet and money, each non-empty slot's index, item name and count; ADR 0066). Optional: older builds leave it; an unreadable record is kept, not overwritten |
 | `loose_items` | **[built, 0.50.33]** One record (key 0), rewritten each save: the loose items lying in the world (version 1: item name, count, point, age each; ADR 0066) |
+| `cuts` | **[built, 0.50.34]** One record (key 0), rewritten each save: the axes' cuts in wood cells (`dwell_protocol::chopping::Cuts::to_bytes`, version 1: each cell, then per side its notch and two kerfs as f32; ADR 0067). Optional: older builds leave it; an unreadable record is kept, not overwritten |
 | `water` | **[built, 0.48.2]** The water surface grid's free water (§6.7, WATER_SURFACE_GRID.md): one LZ4 record of `Water::save` (`DWG1`): each water chunk with free columns, their floors, depths and flows (and the rest layer's), and what the chunk owes; held water is found again from the blocks. An older basin record (`DWW5`) is ignored |
 | `tree_tombstones` | **[planned, Phase 30]** Per chunk: the sparse set of chopped procedural tree ids `(chunk, procedural index)` and the pruned node sets of partly cut ones (§6.3 tree growth) |
 | `growers` | **[planned, Phase 30]** Player-planted trees, keyed by the chunk holding the root: structure, variant seed, root, planted world time, pruned nodes |
@@ -2557,6 +2558,23 @@ capacity. The client draws loose items as small turning copies of their block th
 renderer (`dwell-client` `loose_items.rs`), and in such a world its hotbar is the inventory's first
 nine slots with counts and the wallet, and E opens the backpack screen (`client/src/ui/backpack.ts`).
 
+**Tools and chopping [in progress: built 0.50.34 but the drawing]** (ADR 0067). Tools are items
+with data in `shared/tools/tools.json` (a `kind` from a fixed vocabulary, `axe`; its swing wait,
+bite, bind and its share across and along the grain), and so are the woods an axe cuts (a block
+by name whose `axis` is its grain, its fell and buck fractions, what a cut-through length drops);
+`shared/tools/gen.mjs` validates them and emits `dwell_protocol::chopping`'s tables and
+`client/src/ui/tools.gen.ts`. The cut model (`dwell_protocol::chopping::Cut`) keeps per wood cell,
+per side across the grain, an open notch and a kerf in each of two bands along it: a swing cuts
+`bite × share / (1 + kerf / bind)`, its share from the angle between its plane (level, or vertical
+along the look, toggled by Use with the axe held) and the grain, face-locally through `FaceFrame`;
+both bands cut past the notch take the chunk out. The server (`dwell-sim` `server/chopping.rs`)
+checks the aimed hit (the client's ray into the cell: the face and point), keeps the cuts (saved in
+`cuts`), fells a standing wood cut past its fell fraction (its cell goes and FELLING's integrity
+tips what it held away from the notch) and bucks a lying one cut through (its cell goes; in a mode
+that uses items it drops its wood items). The client (`dwell-client` `chop.rs`) sends the swings,
+keeps the cuts and shows the swing in the HUD. **[planned]** gouges drawn from the cuts and wood
+chips (GPU), the arms' swing clips.
+
 **Seeing it from above: creative flight** **[built, Phase 4]** (§9.1, PLAYER_CONTROLLER.md §6.7).
 The player flies — the body itself, simulated by the server and predicted like any movement — with
 no ceiling (Phase 16, ADR 0025 D3: the build sphere bounds building, not movement); from ~150 km up
@@ -3306,7 +3324,8 @@ S→C  Welcome       u16 playerId, u64 worldSeed, u32 generatorVersion, u32 serv
                    edits reach the brush reach, §6.5 — set in game modes with `brushes`,
                    ADR 0065; 8 = flightPolicy — the flight policy alone, which with the
                    mode's `flight` gives flight again after a mode change; 16 = inventory —
-                   the server keeps inventories, ADR 0066), u64 registryHash (the
+                   the server keeps inventories, ADR 0066; 32 = chopping — the server keeps
+                   cuts and takes axe swings, ADR 0067), u64 registryHash (the
                    definitions hash: FNV-1a 64 of the registry payload sent before it,
                    §6.1; logs and the join prompt's "don't ask again")
      or Reject     u8 reason (ProtocolVersion, Banned, Full, NotAllowListed, AuthFailed,
@@ -3331,6 +3350,17 @@ S→C  Inventory       0x56, control, when it changes: u8 flags (1 = the mode us
 S→C  ItemDrops       0x57, world: u16 n, each u32 id, str item, u16 count, f32×3 point; then
                      u16 n gone ids (at most 512 each); all of them after Hello, then what
                      appeared, changed or moved (moves 20 times a second) and what went
+```
+
+**Chopping: `Chop`, `Cuts` (reliable) [built, 0.50.34]** (ADR 0067). New message types sent only
+when asked, as the inventory's: a client sends `Chop` only to a server whose Welcome has
+`chopping` (32), and the server sends `Cuts` only to a client that said `Hello`.
+```
+C→S  Chop  0x58: u8 kind — 0 Hello (send me cuts; answered with at least one Cuts); 1 Swing:
+           str tool, i32×3 cell, u8 face (axis × 2 + positive, world), f32×3 point (world),
+           u8 vertical (else level)
+S→C  Cuts  0x59, world: u16 n, each i32×3 cell and its cut (per side f32 notch, f32×2 kerfs);
+           then u16 n gone cells (at most 512 each); all of them after Hello, then each change
 ```
 
 **Client → Server: `BlockEditRequest` (reliable, `control`) [built, Phase 3d]** (§6.5)

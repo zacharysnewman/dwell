@@ -5,6 +5,7 @@
 
 pub mod blasts;
 pub mod bodies;
+pub mod chop;
 pub mod find;
 pub mod flecks;
 pub mod game;

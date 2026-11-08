@@ -121,7 +121,9 @@
     "WorldSettings": 84,
     "InventoryAction": 85,
     "Inventory": 86,
-    "ItemDrops": 87
+    "ItemDrops": 87,
+    "Chop": 88,
+    "Cuts": 89
   },
   "rejectReasons": {
     "ProtocolVersion": 1,
@@ -197,7 +199,8 @@
     "regionEdits": 2,
     "brushes": 4,
     "flightPolicy": 8,
-    "inventory": 16
+    "inventory": 16,
+    "chopping": 32
   },
   "groundKinds": {
     "None": 0,

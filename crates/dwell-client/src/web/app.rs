@@ -1999,6 +1999,12 @@ impl Client {
             );
             set(&o, "damaged", std::mem::take(&mut g.hud.damaged));
             set(&o, "region", g.region.status().as_str());
+            // The held axe's swing hint (ADR 0067): null without one.
+            set(
+                &o,
+                "chop",
+                g.chop_hint().map_or(JsValue::NULL, JsValue::from),
+            );
             // The brush panel (BRUSHES.md): null while the tool is off.
             match g.brush_panel() {
                 Some(p) => {
