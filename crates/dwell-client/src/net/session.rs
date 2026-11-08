@@ -1175,6 +1175,47 @@ mod tests {
     /// ADR 0065: the host changes the world's mode while a player is in it; the server sends the
     /// world's settings again, and flight and brushes follow the mode (flight only as far as the
     /// flight policy allows it).
+    /// ADR 0066: a client says `Hello` only to a server whose Welcome has `INVENTORY` (an older
+    /// server rejects the message), and passes the inventory messages on to the game once joined.
+    #[test]
+    fn hello_goes_only_to_a_server_that_keeps_inventories() {
+        let Message::Welcome(w) = welcome(0) else {
+            unreachable!()
+        };
+        for flag in [0, welcome_flags::INVENTORY] {
+            let (_, mut s) = setup();
+            send_registry(&mut s, &build_registry(), 1 << 16);
+            let _ = s.take_out();
+            let flags = w.flags | flag;
+            s.on_reliable(
+                Channel::Control,
+                &Message::Welcome(Welcome { flags, ..w.clone() }).encode(),
+                1000.0,
+            );
+            let hello = sent(&s.take_out())
+                .iter()
+                .any(|m| matches!(m, Message::InventoryAction(InventoryAction::Hello)));
+            assert_eq!(hello, flag != 0, "flags {flags}");
+        }
+        let (_, mut s) = setup();
+        send_registry(&mut s, &build_registry(), 1 << 16);
+        let flags = w.flags | welcome_flags::INVENTORY;
+        s.on_reliable(
+            Channel::Control,
+            &Message::Welcome(Welcome { flags, ..w.clone() }).encode(),
+            1000.0,
+        );
+        let inv = Message::Inventory(InventoryMessage {
+            flags: inventory_flags::USES_ITEMS,
+            inventory: Default::default(),
+        });
+        s.on_reliable(Channel::Control, &inv.encode(), 1000.0);
+        let drops = Message::ItemDrops(ItemDrops::default());
+        s.on_reliable(Channel::World, &drops.encode(), 1000.0);
+        assert!(matches!(s.next_game(), Some((Message::Inventory(_), _))));
+        assert!(matches!(s.next_game(), Some((Message::ItemDrops(_), _))));
+    }
+
     #[test]
     fn a_mode_change_after_join_turns_flight_and_brushes_off_and_on() {
         let Message::Welcome(w) = welcome(0) else {
