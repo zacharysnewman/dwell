@@ -868,3 +868,34 @@ blue water, subtler than the photo's (no bright fog behind them); the window glo
 **Still off:** in the air the shafts show as a soft glow round the sun unless trees, hills or a
 cloud's edge are close to it on the screen (the radial blur needs an occluder near the light), and
 the open water views in the bench have none; the clouds' gaps are found every sixth sample.
+
+### 12.4 The band filtered at its source; the air shafts through trees (2026-11-07, 0.50.25)
+
+**The band.** After 0.50.24's blur the owner still saw speckle: "a little smoother, it looks
+pixelated. Blurring is fine." The cause was aliasing, not too little blur: the band's texture lies
+on a plane receding to the line (`band_uv`'s `1 / (t + 0.08)`), so toward the line one pixel of the
+drawing buffer spans several of the noise's cells. At the owner's 50 % render scale (an 800-pixel
+buffer, the band ~28 px tall) its top row covered ~5.5 texture units a pixel across the line, its
+streak layers ~5 cycles a pixel, ten times Nyquist. Now each of `band_ripples`' noise layers (the
+warp, the streaks, the coming-and-going, the glints, the last counted at twice its frequency since
+it is thresholded) is faded to its mean by `band_keep` where the pixel's footprint
+(`band_footprint`: along the line `4 / height / (t + 0.08)`, across it the lens plane's metres a
+pixel over the band's depth through the same `1 / (t + 0.08)`, computed analytically, so no
+screen-space derivatives in non-uniform control flow) puts it past a quarter cycle a pixel, gone by
+half a cycle. Near the line the band is its smooth mean colour, its ripples resolve lower down, at
+any render scale and pitch; the three-tap blur along the rows (`BAND_BLUR_PX`) stays. CPU twins
+`band_footprint`, `band_layers`, `band_keep`; test
+`no_band_pattern_is_above_nyquist_where_the_plane_compresses_it` (both faces; red on 0.50.24 with
+3.7 cycles a pixel kept). The 50 % Stretch upscale was not the cause: at 100 % the same layers
+aliased, one octave further down the band. Cost: none measurable (the same taps, a few more ALU).
+
+**The air shafts.** The bench found the sun through a tree's crown (seed 0, `goto leaves`, the
+clock at 0.74 so the sun is low behind it, the camera under the crown looking up into it) and over
+open hills with the clouds near the sun. Tuned for visible but soft rays (owner's choice: soft and
+subtle): `air.sun` strength 0.5 → 0.6, decay 0.965 → 0.975 (the rays reach further from the gaps),
+`discRadius` 0.55 → 0.7 (the glow round the sun wider and softer). The crown's gaps glow and
+streak faintly toward the camera; over open sky the glow is a soft halo, brighter in Low (its
+quarter-scale buffer blurs wider). Cost at the owner's setting (`gpu.frame` p95, Off → Low → High):
+through the tree 10.45 → 10.82 → 11.97 ms (+1.5, of which ~1 ms a shadow-cascade spike in that run;
+`gpu.shafts` p95 2.7 / 3.7 on Apple's overlapping passes), the cloudy sky 11.30 → 11.63 → 12.53 ms
+(+1.2), as measured in 0.50.24.

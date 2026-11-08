@@ -8,10 +8,10 @@ pub const LOW: ShaftTier = ShaftTier { scale: 0.25, steps: 12 };
 
 /// The sun's and the moon's shafts in the air (`air`).
 pub const SUN_SHAFTS: AirShafts = AirShafts {
-    strength: 0.5,
+    strength: 0.6,
     reach: 0.85,
-    decay: 0.965,
-    disc_radius: 0.55,
+    decay: 0.975,
+    disc_radius: 0.7,
     elevation_deg: 8.0,
     offscreen: 0.6,
 };
