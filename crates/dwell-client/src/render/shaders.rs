@@ -47,6 +47,10 @@ struct Frame {
     shafts_cfg: vec4f,
     shafts_color: vec4f,
     shafts_window: vec4f,
+    // The placed and held lights' shafts (dwell-look `light_shaft_uniforms`): [0] x the count (0:
+    // none), y the samples toward each, z the reach, w the decay; per light its NDC point, depth
+    // along the view (m) and halo radius (half screen heights), then its glow (sRGB × weight).
+    torch_shafts: array<vec4f, 9>,
     // x eye height (world y), y face (±1), z exposure (× the eye's adaptation's), w the eye's face's
     // fog density (× its time of day's; the other face's is day.other_stars.y)
     eye: vec4f,
@@ -1219,12 +1223,15 @@ fn composited_of(c: vec4f, depth: f32, ray: vec3f, clear: vec3f, back: vec3f) ->
 // the tier's resolution, filtered up) × the light's colour and weight, screened over the colour so
 // it brightens softly and never clips. None when the frame draws none (uniform).
 fn with_shafts(color: vec3f, p: vec2i) -> vec3f {
-    if (frame.shafts.w < 0.5 || frame.shafts.z <= 0.0) {
+    let air = frame.shafts.w > 0.5 && frame.shafts.z > 0.0;
+    let lit = frame.torch_shafts[0].x > 0.5;
+    if (!air && !lit) {
         return color;
     }
     let uv = (vec2f(p) + 0.5) / vec2f(textureDimensions(scene_color));
-    let g = textureSampleLevel(shafts_tex, scene_sampler, uv, 0.0).r * frame.shafts.z;
-    let glow = clamp(frame.shafts_color.rgb * g, vec3f(0.0), vec3f(1.0));
+    let s = textureSampleLevel(shafts_tex, scene_sampler, uv, 0.0);
+    let g = select(0.0, s.a * frame.shafts.z, air);
+    let glow = clamp(frame.shafts_color.rgb * g + select(vec3f(0.0), s.rgb, lit), vec3f(0.0), vec3f(1.0));
     return color + glow * (1.0 - color);
 }
 
@@ -1513,6 +1520,8 @@ fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
 /// The light shafts pass (ADR 0064): the glow a pixel of the shafts' buffer (the tier's share of
 /// the drawing buffer) gathers, read by `with_shafts` in the composite.
 const SHAFTS: &str = r"
+// The most lights the shafts come from (dwell-look `MAX_SHAFT_LIGHTS`; `torch_shafts` holds 1 + 2 × it).
+const MAX_SHAFT_LIGHTS: u32 = 4u;
 // How many air samples share one look-up of the clouds' density.
 const SHAFTS_CLOUD_EVERY: i32 = 6;
 
@@ -1613,6 +1622,44 @@ fn shafts_under(ndc: vec2f, j: f32, size: vec2f) -> f32 {
     return sum * dt / max(frame.shafts_cfg.y, 0.1) * 3.0;
 }
 
+// From the placed and held lights (torches, lamps; ADR 0064): per light a radial blur toward its
+// screen point over what doesn't hide it (the scene behind the flame or the sky, by the view
+// depth's first sample), each sample weighed by the halo round the flame and decayed, so a torch
+// glows through the air and casts soft rays past what stands in front of it. A pixel whose
+// samples can't reach the halo skips the light.
+fn shafts_lights(ndc: vec2f, j: f32, size: vec2f) -> vec3f {
+    let head = frame.torch_shafts[0];
+    let count = min(u32(head.x), MAX_SHAFT_LIGHTS);
+    let steps = max(i32(head.y), 1);
+    let aspect = vec2f(size.x / size.y, 1.0);
+    var out = vec3f(0.0);
+    for (var i = 0u; i < count; i++) {
+        let a = frame.torch_shafts[1u + 2u * i];
+        let b = frame.torch_shafts[2u + 2u * i];
+        let rs = max(a.w, 1e-3);
+        if (length((ndc - a.xy) * aspect) * (1.0 - head.z) > rs) {
+            continue;
+        }
+        let delta = (a.xy - ndc) * head.z / f32(steps);
+        var q = ndc + delta * j;
+        var w = 1.0;
+        var sum = 0.0;
+        var total = 0.0;
+        for (var k = 0; k < steps; k++) {
+            let d = textureLoad(scene_depth, shafts_pixel(q, size), 0).r;
+            let open = select(smoothstep(a.z - 0.75, a.z - 0.25, d), 1.0, d <= 0.0);
+            let r = length((q - a.xy) * aspect) / rs;
+            let disc = max(1.0 - r, 0.0);
+            sum += open * disc * disc * w;
+            total += w;
+            w *= head.w;
+            q += delta;
+        }
+        out += b.rgb * (sum / max(total, 1e-4));
+    }
+    return out;
+}
+
 @fragment
 fn shafts_fs(i: SkyOut) -> @location(0) vec4f {
     let size = vec2f(textureDimensions(scene_color));
@@ -1623,7 +1670,11 @@ fn shafts_fs(i: SkyOut) -> @location(0) vec4f {
     } else if (frame.shafts.w > 0.5) {
         g = shafts_air(i.ndc, j, size);
     }
-    return vec4f(g, 0.0, 0.0, 1.0);
+    var lit = vec3f(0.0);
+    if (frame.torch_shafts[0].x > 0.5) {
+        lit = shafts_lights(i.ndc, j, size);
+    }
+    return vec4f(lit, g);
 }
 ";
 
@@ -3004,6 +3055,19 @@ mod tests {
                 "{entry} discards the underside before shading"
             );
         }
+    }
+
+    #[test]
+    fn the_lights_shafts_block_holds_the_datas_lights_and_the_composite_adds_their_colour() {
+        use super::{FRAME, SHAFTS, TERRAIN};
+        use dwell_look::shafts::{LIGHT_SHAFT_VEC4S, MAX_SHAFT_LIGHTS};
+        assert!(FRAME.contains(&format!("torch_shafts: array<vec4f, {LIGHT_SHAFT_VEC4S}>,")));
+        assert!(SHAFTS.contains(&format!("const MAX_SHAFT_LIGHTS: u32 = {MAX_SHAFT_LIGHTS}u;")));
+        // The pass writes the lights' glow in rgb and the sun's, moon's or fluid's in a.
+        assert!(SHAFTS.contains("return vec4f(lit, g);"));
+        let comp = &TERRAIN[TERRAIN.find("fn with_shafts").unwrap()..];
+        let comp = &comp[..comp.find("fn composite_pixel").unwrap()];
+        assert!(comp.contains("s.a * frame.shafts.z") && comp.contains("s.rgb, lit"));
     }
 
     #[test]

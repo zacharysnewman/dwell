@@ -45,7 +45,10 @@ use dwell_look::outline::{OUTLINE, OutlineMode, outline_uniforms};
 use dwell_look::pixel_art::{AtlasFilter, PIXEL_ART, PixelArtPreset};
 use dwell_look::reflections::{REFLECTIONS, reflection_uniforms};
 use dwell_look::shadows::{SHADOWS, ShadowQuality, ShadowTier};
-use dwell_look::shafts::{ShaftQuality, ShaftTier, ShaftView, shaft_uniforms};
+use dwell_look::shafts::{
+    LIGHT_SHAFT_VEC4S, ShaftLight, ShaftQuality, ShaftTier, ShaftView, light_shaft_uniforms,
+    shaft_uniforms,
+};
 use dwell_look::{DEFAULT_EXPOSURE, hex, sanitize_exposure, srgb_to_linear};
 use dwell_mesh::{ChunkMeshes, FlatMesh, MeshArrays, SectionMeshes};
 use dwell_world::fluid::EyeFluid;
@@ -2554,8 +2557,9 @@ impl Renderer {
             0.0,
         ]);
         // The light shafts (ADR 0064; dwell-look `shaft_uniforms`).
-        for v in self.shaft_uniforms(basis, aspect, (fov.to_radians() / 2.0).tan()) {
-            put(&v);
+        let (air, lit) = self.shaft_uniforms(basis, aspect, (fov.to_radians() / 2.0).tan());
+        for v in air.iter().chain(lit.iter()) {
+            put(v);
         }
         // The exposure follows the eye's adaptation; the fog is the air's the eye is in (the other
         // face's rides in the day block, for rays that cross the midplane: docs/DAY_NIGHT.md §13).
@@ -2642,9 +2646,15 @@ impl Renderer {
         u
     }
 
-    /// The light shafts' part of the frame block (`frame.shafts*`): the sun's or the moon's in the
-    /// air, the sun's under the eye's fluid, by the tier this frame draws.
-    fn shaft_uniforms(&self, basis: &Basis, aspect: f64, tan_y: f64) -> [[f32; 4]; 4] {
+    /// The light shafts' part of the frame block (`frame.shafts*`, `frame.torch_shafts`): the
+    /// sun's or the moon's in the air, the sun's under the eye's fluid, and the nearest placed and
+    /// held lights' (torches, lamps), by the tier this frame draws.
+    fn shaft_uniforms(
+        &self,
+        basis: &Basis,
+        aspect: f64,
+        tan_y: f64,
+    ) -> ([[f32; 4]; 4], [[f32; 4]; LIGHT_SHAFT_VEC4S]) {
         let under = self
             .eye_fluid
             .filter(|e| self.face.y(self.eye[1]) < self.face.y(e.surface_y))
@@ -2655,9 +2665,27 @@ impl Renderer {
             let m = c[0].max(c[1]).max(c[2]).max(1e-6);
             c.map(|x| x / m)
         };
-        shaft_uniforms(
-            self.shaft_tier(),
-            &ShaftView {
+        let srgb = |c: u32| {
+            let [r, g, b] = [16, 8, 0].map(|s| f64::from((c >> s) & 0xff) / 255.0);
+            lit([r, g, b])
+        };
+        let eye = self.eye;
+        let lights: Vec<ShaftLight> = self
+            .characters
+            .held_lights()
+            .iter()
+            .map(|h| ShaftLight {
+                pos: std::array::from_fn(|k| eye[k] + f64::from(h.rel[k])),
+                color: srgb(h.source.color),
+                light: h.source.name,
+            })
+            .chain(self.placed_lights.iter().map(|p| ShaftLight {
+                pos: p.pos,
+                color: srgb(p.source.color),
+                light: p.source.name,
+            }))
+            .collect();
+        let view = ShaftView {
                 right: basis.right,
                 up: basis.up,
                 forward: basis.forward(),
@@ -2669,8 +2697,17 @@ impl Renderer {
                 sun_color: lit(v.sun_disc),
                 moon_color: lit(v.moon_light),
                 under,
-            },
-        )
+                eye,
+                lights: &lights,
+            };
+        let tier = self.shaft_tier();
+        // Under a fluid only its own shafts (a torch under water is left for later).
+        let lit_u = if under.is_some() {
+            [[0.0; 4]; LIGHT_SHAFT_VEC4S]
+        } else {
+            light_shaft_uniforms(tier, &view)
+        };
+        (shaft_uniforms(tier, &view), lit_u)
     }
 
     /// Whether this frame's shafts draw anything (the near pass's uniforms: weight and mode).
@@ -2678,8 +2715,8 @@ impl Renderer {
         let basis = aim(self.yaw, self.pitch, self.face, self.roll);
         let aspect = f64::from(self.size.0) / f64::from(self.size.1.max(1));
         let tan_y = (self.frame_fov().to_radians() / 2.0).tan();
-        let u = self.shaft_uniforms(&basis, aspect, tan_y);
-        u[0][2] > 0.0 && u[0][3] > 0.5
+        let (u, lit) = self.shaft_uniforms(&basis, aspect, tan_y);
+        (u[0][2] > 0.0 && u[0][3] > 0.5) || lit[0][0] > 0.0
     }
 
     /// The wind's part of the frame block (`wind_*` in shaders.rs): the vanishing point of the
@@ -4919,6 +4956,7 @@ pub(crate) const FRAME_FLOATS: usize = 16
     + dwell_look::outline::OUTLINE_FLOATS
     + dwell_look::pixel_art::LIGHT_FLOATS
     + 26 * 4
+    + dwell_look::shafts::LIGHT_SHAFT_VEC4S * 4
     + DAY_SKY_FLOATS;
 
 /// The atlas and its mipmaps, each with its side in texels: down to the level where a tile's gutter
@@ -6194,16 +6232,21 @@ mod tests {
 
     #[test]
     fn the_frame_block_matches_the_shader_struct() {
-        // mat4x4f + the vec4fs + the `DaySky` block in `Frame`.
-        let fields = shaders::source(1)
+        // mat4x4f + the vec4fs (an `array<vec4f, N>` is N of them) + the `DaySky` block in `Frame`.
+        let src = shaders::source(1);
+        let body = src
             .split("struct Frame {")
             .nth(1)
             .unwrap()
             .split("};")
             .next()
-            .unwrap()
-            .matches("vec4f,")
-            .count();
+            .unwrap();
+        let arrays: usize = body
+            .split("array<vec4f, ")
+            .skip(1)
+            .map(|s| s.split('>').next().unwrap().parse::<usize>().unwrap())
+            .sum();
+        let fields = body.matches(": vec4f,").count() + arrays;
         assert_eq!(16 + 4 * fields + DAY_SKY_FLOATS, FRAME_FLOATS);
     }
 }
