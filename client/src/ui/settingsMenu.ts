@@ -50,6 +50,7 @@ import {
   DETAIL_KEY,
   EXPOSURE_KEY,
   HUD_KEY,
+  MENU_KEY,
   PRESET_KEY,
   SHADOWS_KEY,
   SHAFTS_KEY,
@@ -63,6 +64,12 @@ import {
   type SettingField,
 } from './settingsPins';
 import { DEBUG_KEYS, KEYBOARD, TOUCH, keysLabel, type Control } from './controls';
+import {
+  BACKGROUNDS,
+  DEFAULT_MENU_BACKGROUND,
+  menuRecord,
+  sanitizeMenuBackground,
+} from './menuBackground';
 import { audio } from '../audio/engine';
 import { DEFAULT_VOLUMES, type Volumes } from '../audio/mixer';
 import { AUDIO_KEY, loadVolumes } from '../audio/settings';
@@ -151,6 +158,8 @@ export interface Settings {
   hud: HudSettings;
   /** Render scale and its upscaler (ui/renderScaleSettings.ts, shared/render/upscale.json). */
   renderScale: RenderScaleSettings;
+  /** The main menu's background (ui/menuBackground.ts, shared/ui/menu-backgrounds.json). */
+  menuBackground: string;
 }
 
 /**
@@ -177,6 +186,7 @@ export function baseSettings(mobile: boolean, reducedMotion = false): Settings {
     showArms: true,
     hud: defaultHud(),
     renderScale: defaultRenderScale(),
+    menuBackground: DEFAULT_MENU_BACKGROUND,
   };
 }
 
@@ -215,6 +225,7 @@ export function settingsJson(s: Settings): string {
     showArms: s.showArms,
     hud: { shown: { ...s.hud.shown }, mapShading: s.hud.mapShading },
     renderScale: { ...s.renderScale },
+    menuBackground: s.menuBackground,
   };
   return JSON.stringify(rounded, null, 2);
 }
@@ -304,6 +315,7 @@ export function storedSettings(mobile: boolean, defaults: Settings): Settings {
     showArms: sanitizeShowArms(load(VIEW_KEY)),
     hud: sanitizeHud(load(HUD_KEY)),
     renderScale: sanitizeRenderScale(load(RENDER_SCALE_KEY), UPSCALE, defaults.renderScale),
+    menuBackground: sanitizeMenuBackground(load(MENU_KEY)),
   };
 }
 
@@ -364,6 +376,7 @@ function writeSettings(s: Settings, pins: ReadonlySet<string>): void {
     [HUD_KEY, hudRecord(load(HUD_KEY), s.hud)],
     [RENDER_SCALE_KEY, renderScaleRecord(load(RENDER_SCALE_KEY), s.renderScale)],
     [EXPLOSIONS_KEY, explosionRecord(load(EXPLOSIONS_KEY), s.explosions)],
+    [MENU_KEY, menuRecord(load(MENU_KEY), s.menuBackground)],
   ];
   for (const [key, value] of full) {
     try {
@@ -727,6 +740,8 @@ function panes(mobile: boolean): Record<SettingsPane, Group[]> {
           },
         ],
       },
+      // The backgrounds listed as data (shared/ui/menu-backgrounds.json).
+      { title: 'Main menu', rows: [choice(menuBackgroundChoice())] },
     ],
   };
 }
@@ -740,6 +755,19 @@ interface ChoiceSpec<T extends string> {
   labels: Record<T, string>;
   get: (s: Settings) => T;
   with: (s: Settings, v: T) => Settings;
+}
+
+/** The main menu's background: one of the panoramas, by label (ui/menuBackground.ts). */
+export function menuBackgroundChoice(list = BACKGROUNDS): ChoiceSpec<string> {
+  return {
+    label: 'Menu background',
+    pin: 'menuBackground',
+    hint: 'The view of a world turning slowly behind the main menu',
+    choices: list.backgrounds.map((b) => b.name),
+    labels: Object.fromEntries(list.backgrounds.map((b) => [b.name, b.label])),
+    get: (s) => s.menuBackground,
+    with: (s, v) => ({ ...s, menuBackground: v }),
+  };
 }
 
 const WATER_CHOICE: ChoiceSpec<WaterQuality> = {
@@ -937,7 +965,13 @@ export class SettingsMenu {
     parent: HTMLElement,
     private readonly mobile: boolean,
     private readonly onChange: (settings: Settings) => void,
+    /**
+     * `world: false`: opened from the main menu (no world): no corner button, titled Settings; the
+     * pages that need a world are listed with a note (`addUnavailablePage`).
+     */
+    options: { world?: boolean } = {},
   ) {
+    const world = options.world ?? true;
     this.state = loadSettingsState(mobile);
     const button = document.createElement('button');
     this.button = button;
@@ -962,7 +996,8 @@ export class SettingsMenu {
     const sheet = el('div', 'gm-sheet');
     const head = el('header', 'gm-head');
     const titles = el('div', 'gm-titles');
-    titles.append(el('h1', 'gm-title', 'Paused'), this.subtitle);
+    titles.append(el('h1', 'gm-title', world ? 'Paused' : 'Settings'), this.subtitle);
+    if (!world) this.panel.setAttribute('aria-label', 'Settings');
     const close = el('button', 'gm-close');
     close.type = 'button';
     close.setAttribute('aria-label', 'Close menu');
@@ -990,7 +1025,8 @@ export class SettingsMenu {
       // Unfocused, so Space (jump) doesn't press it again.
       button.blur();
     });
-    parent.append(button, this.panel);
+    if (world) parent.append(button);
+    parent.append(this.panel);
     this.set(this.state);
     this.show('graphics');
   }
@@ -1115,6 +1151,25 @@ export class SettingsMenu {
       page.append(list);
     }
     this.addPage('debug', page);
+  }
+
+  /**
+   * A page that needs a world, opened without one (the main menu): its tab listed, dimmed, and the
+   * page saying why it is empty.
+   */
+  addUnavailablePage(name: 'structures' | 'debug' | 'host', note: string): void {
+    const page = el('section');
+    page.append(el('p', 'gm-lead gm-unavailable', note));
+    this.addPage(name, page);
+    const tab = this.pages.get(name)?.tab;
+    tab?.classList.add('gm-tab-off');
+    tab?.setAttribute('aria-disabled', 'true');
+    tab?.setAttribute('title', note);
+  }
+
+  /** The pages listed, in order (their names). */
+  get pageNames(): string[] {
+    return [...this.tabs.querySelectorAll<HTMLElement>('.gm-tab')].map((t) => t.dataset.page ?? '');
   }
 
   /** A line at the foot of the menu (the build). */

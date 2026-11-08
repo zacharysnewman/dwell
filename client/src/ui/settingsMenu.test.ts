@@ -70,6 +70,7 @@ describe('settings JSON', () => {
       hud: { shown: { hotbar: false }, mapShading: true },
       renderScale: { scale: 0.67, upscaler: 'sharpen' },
       shafts: 'low',
+      menuBackground: 'lake-shore',
     });
     const parsed = JSON.parse(json) as { detail: unknown };
     expect(parsed).toEqual({
@@ -92,6 +93,7 @@ describe('settings JSON', () => {
       hud: { shown: { hotbar: false }, mapShading: true },
       renderScale: { scale: 0.67, upscaler: 'sharpen' },
       shafts: 'low',
+      menuBackground: 'lake-shore',
     });
     expect(sanitizeDetail(parsed.detail, defaultDetail(false))).toEqual({
       distanceM: 200,

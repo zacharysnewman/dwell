@@ -10,6 +10,11 @@ import { MainMenu, type MainMenuDeps } from './mainMenu';
 import { loadRecent } from './recentServers';
 import { installPageSounds } from '../audio/page';
 import { startMenuGamepad } from '../input/gamepad';
+import { loadGamepadSettings, saveGamepadSettings } from '../input/gamepadSettings';
+import { ControllerPanel } from './controllerPanel';
+import { SettingsMenu } from './settingsMenu';
+import { prefersTouch } from './touchControls';
+import { audio } from '../audio/engine';
 
 /** Most time a lobby ping may take, connecting included (§8.3). */
 export const PING_TIMEOUT_MS = 5000;
@@ -80,13 +85,50 @@ export function showMenu(options: MenuPageOptions): MainMenu {
   // Its buttons sound (docs/AUDIO.md §6), in plain TS: the launcher has no WASM.
   installPageSounds();
   // A controller moves through it too (docs/GAMEPAD.md); B is Esc.
-  startMenuGamepad(document, () => {
+  const pad = startMenuGamepad(document, () => {
     document.dispatchEvent(
       new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }),
     );
   });
   const master = menuMaster(options.ping);
-  return new MainMenu(document.body, {
+  // Settings, every pane (owner, 2026-11-08: "All settings" from the main menu): the same menu as
+  // in a world, saved the same way; the pages that need a world say so.
+  let menu: MainMenu | null = null;
+  const settings = new SettingsMenu(
+    document.body,
+    prefersTouch(),
+    (s) => {
+      audio().setVolumes(s.audio);
+      menu?.setBackground(s.menuBackground);
+    },
+    { world: false },
+  );
+  const controller = new ControllerPanel({
+    settings: loadGamepadSettings(),
+    apply: saveGamepadSettings,
+    capture: (done) => {
+      pad.capture = done;
+    },
+    connected: () => pad.active,
+  });
+  settings.addControllerPanel(
+    controller.element,
+    () => {
+      controller.refresh();
+    },
+    () => {
+      controller.cancel();
+    },
+  );
+  addWorldPages(settings);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && settings.isOpen) settings.setOpen(false);
+  });
+  menu = new MainMenu(document.body, {
+    background: settings.current.menuBackground,
+    openSettings: () => {
+      settings.setOpen(true);
+    },
     index: new WorldIndex(storage()),
     recent: loadRecent(storage()),
     listFiles: listWorldFiles,
@@ -103,4 +145,16 @@ export function showMenu(options: MenuPageOptions): MainMenu {
     ...(master ? { master } : {}),
     ...(options.canRegenerate ? { canRegenerate: options.canRegenerate } : {}),
   });
+  return menu;
+}
+
+/** The pages that need a world, listed in Settings from the main menu with what they are for. */
+export const WORLD_PAGES = [
+  ['structures', 'Open a world to save structures from it and load them into it.'],
+  ['debug', 'Open a world to use the debug tools: the overlay, the map and the block dump.'],
+  ['host', 'Open one of your worlds to host it for friends.'],
+] as const;
+
+function addWorldPages(settings: SettingsMenu): void {
+  for (const [page, note] of WORLD_PAGES) settings.addUnavailablePage(page, note);
 }
