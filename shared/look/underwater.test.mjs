@@ -45,3 +45,7 @@ test('bad entries fail with their path named', () => {
     assert.throws(() => validateUnderwater(d), message);
   }
 });
+
+test("water's waterline band is 4 px wide (owner, 2026-11-07: 'a little thicker')", () => {
+  assert.equal(data().fluids['dwell:water'].meniscus.widthPx, 4);
+});
