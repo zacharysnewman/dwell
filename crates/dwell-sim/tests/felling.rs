@@ -182,6 +182,8 @@ fn a_falling_trunk_hurts_a_player_it_lands_on_and_not_the_one_who_cut_it() {
     f.server.step();
     let full = f.server.health_of(1);
     assert_eq!(f.server.health_of(2), full);
+    // In adventure a log needs an axe in hand to break (its `breakWith`, ADR 0067).
+    f.server.give(1, "dwell:stone_axe", 1);
     f.send(
         1,
         Message::BlockEditRequest(BlockEditRequest {
