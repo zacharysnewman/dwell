@@ -146,7 +146,8 @@ async function clearYaw(page: Page): Promise<number> {
 test('local mode: every palette block can be picked from the hotbar, placed, and broken', async ({
   page,
 }) => {
-  test.setTimeout(120_000);
+  // 18 slots, each placed and broken: 66-114 s on CI's software renderer when it passed.
+  test.setTimeout(180_000);
   await page.goto('./?world=flat');
   await ready(page);
   // The hotbar is built once the page has taken the join, which can be a frame after the terrain.

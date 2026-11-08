@@ -714,7 +714,7 @@ mod tests {
         assert_eq!(buffer_size((1920, 1080), HIGH), (960, 540));
         assert_eq!(buffer_size((1921, 1081), LOW), (481, 271));
         assert_eq!(buffer_size((1, 1), LOW), (1, 1));
-        assert!(LOW.steps < HIGH.steps);
+        const { assert!(LOW.steps < HIGH.steps) };
     }
 
     #[test]

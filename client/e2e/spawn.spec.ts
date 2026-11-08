@@ -3,6 +3,7 @@
 // and a new world's Spawn (the New world form) is where it first starts.
 import { expect, test, type Page } from '@playwright/test';
 import { World } from '../src/protocol/constants.gen';
+import { untilTicking } from './ticking';
 
 type Vec3 = [number, number, number];
 
@@ -26,15 +27,27 @@ async function ready(page: Page): Promise<Vec3> {
       timeout: 60_000,
     })
     .toBe(true);
+  await untilTicking(page);
   const f = await feet(page);
   if (!f) throw new Error('no feet');
   return f;
 }
 
-/** Walks forward for `ms`. */
+/**
+ * Walks forward for at least `ms`, and on until the player has moved more than 1 m (up to 30 s):
+ * on the software renderer the page can draw nothing for seconds after the join (BUGS.md #49), and
+ * a key held then moves the player 0 m.
+ */
 async function walk(page: Page, ms: number): Promise<void> {
+  const from = await feet(page);
   await call(page, "d.press('KeyW', true)");
   await page.waitForTimeout(ms);
+  const until = Date.now() + 30_000;
+  while (Date.now() < until) {
+    const f = await feet(page);
+    if (from && f && Math.hypot(f[0] - from[0], f[2] - from[2]) > 1) break;
+    await page.waitForTimeout(250);
+  }
   await call(page, "d.press('KeyW', false)");
   await page.waitForTimeout(300);
 }

@@ -1,0 +1,8 @@
+# cargo-nextest settings (CI's `cargo nextest run --workspace`).
+
+# The tests that hold a tick's wall-clock cost to a budget (the save's, the streaming's) run with the
+# whole machine to themselves: alongside the rest of the workspace on CI's two-core runner they read
+# 16-18 ms where they read 3-4 ms alone, and failed on a budget the code meets.
+[[profile.default.overrides]]
+filter = 'binary(save_cost) | binary(stream_cost)'
+threads-required = 'num-test-threads'
