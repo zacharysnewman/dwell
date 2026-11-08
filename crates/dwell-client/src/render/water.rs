@@ -265,7 +265,7 @@ pub fn pack_fluids(fluids: &[FluidInfo]) -> Vec<f32> {
             u.underside_breakup as f32,
             u.underside_sun_patch as f32,
             u.underside_sun_power as f32,
-            0.0,
+            u.underside_cell_scale as f32,
         ]);
     }
     if out.is_empty() {
@@ -962,9 +962,19 @@ mod tests {
             assert_eq!(v[40..44], line.map(|x| x as f32));
             assert_eq!(v[47], u.band_streaks as f32);
             assert_eq!(v[48..52], rim.map(|x| x as f32));
-            let extra = [u.band_glints, u.band_breakup, u.band_mirror_warp_px, u.band_mirror];
+            let extra = [
+                u.band_glints,
+                u.band_breakup,
+                u.band_mirror_warp_px,
+                u.band_mirror,
+            ];
             assert_eq!(v[52..56], extra.map(|x| x as f32));
-            let under = [u.underside_breakup, u.underside_sun_patch, u.underside_sun_power, 0.0];
+            let under = [
+                u.underside_breakup,
+                u.underside_sun_patch,
+                u.underside_sun_power,
+                u.underside_cell_scale,
+            ];
             assert_eq!(v[56..60], under.map(|x| x as f32));
         }
         // A fluid with no look of its own takes the default's (fog from the eye, the registry's rates).
@@ -1145,11 +1155,20 @@ mod tests {
         // so the rim's top edge stepped a whole pixel along the wave (the 0.50.20 descent).
         let l = dwell_look::underwater::underwater_look("dwell:water");
         let shade = |px: f64| {
-            line_shade(px, l.band_rim_px, l.band_rim_shade, l.band_line_px, l.band_line_glow)
+            line_shade(
+                px,
+                l.band_rim_px,
+                l.band_rim_shade,
+                l.band_line_px,
+                l.band_line_glow,
+            )
         };
         let jump = (shade(-1e-3) - shade(1e-3)).abs();
         assert!(jump < 0.01, "no step at the line: {jump}");
-        assert!((shade(-0.5) - (1.0 + shade(0.0)) / 2.0).abs() < 0.01, "half a pixel, half the rim");
+        assert!(
+            (shade(-0.5) - (1.0 + shade(0.0)) / 2.0).abs() < 0.01,
+            "half a pixel, half the rim"
+        );
         assert_eq!(shade(-1.0), 1.0, "a pixel above, untouched");
         assert!(shade(0.5) < 0.6, "the rim under the line");
     }
@@ -1169,14 +1188,22 @@ mod tests {
                 let to_surface = below / f.vector(dir)[1];
                 underside_contrast(to_surface, l.fog_clear_m, l.fog_density, ext)
             };
-            assert_eq!(contrast(0.9), 1.0, "overhead, within the clear distance: all of it");
+            assert_eq!(
+                contrast(0.9),
+                1.0,
+                "overhead, within the clear distance: all of it"
+            );
             let mut last = 1.0;
             for k in 1..60 {
                 let c = contrast(0.9 * (1.0 - k as f64 / 60.0));
                 assert!(c <= last + 1e-12, "fades monotonically toward level");
                 last = c;
             }
-            assert!(contrast(0.005) < 0.02, "gone at the horizon: {}", contrast(0.005));
+            assert!(
+                contrast(0.005) < 0.02,
+                "gone at the horizon: {}",
+                contrast(0.005)
+            );
         }
     );
 
@@ -1316,7 +1343,9 @@ mod tests {
         // §12.2: the rim anti-aliased above the line (line_shade), the underside under the fog
         // over its distance (underside_contrast), the sun patch along sun_through.
         assert!(src.contains("rim_above = 1.0 + (band_edge(0.0, f) - 1.0) * clamp(1.0 - d / waterline_across(f).x, 0.0, 1.0);"));
-        assert!(src.contains("back = display(underwater(underwater(vec3f(0.0), 1e6, f) * light, to_surface, f));"));
+        assert!(src.contains(
+            "back = display(underwater(underwater(vec3f(0.0), 1e6, f) * light, to_surface, f));"
+        ));
         assert!(src.contains("let h = (sun - up * face_rise(face, sun)) / max(ior, 1.0);"));
         assert!(src.contains("return h + up * sqrt(max(1.0 - dot(h, h), 0.0));"));
         assert!(src.contains("let d = max(dist - f.under.y, 0.0) * f.under.z;"));

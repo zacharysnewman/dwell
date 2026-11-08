@@ -134,7 +134,8 @@ struct Fluid {
     // mirror of the scene above, w the most of it that mirror is
     band_extra: vec4f,
     // The underside seen from below: x how broken its cells are (0: the caustic web; 1: bright
-    // cells, dark gaps), y the sun patch's strength, z its tightness (a power)
+    // cells, dark gaps), y the sun patch's strength, z its tightness (a power), w the cells'
+    // scale against the floor's caustics (a whole number, so the pattern still wraps)
     underside: vec4f,
 };
 @group(0) @binding(4) var<storage, read> fluids: array<Fluid>;
@@ -1304,7 +1305,7 @@ fn waterline_band(p: vec2i, c: vec3f, d: f32, f: Fluid) -> vec3f {
     // second, finer noise, instead of smooth parallel stripes.
     let b = f.band_extra.y;
     let w = noise_t(uv * vec2f(0.45, 0.3) + 11.0);
-    let n0 = noise_t(uv * vec2f(1.0, 0.35) + w.yz * (0.35 * b)).x;
+    let n0 = noise_t(uv * vec2f(1.0 + 1.2 * b, 0.35) + w.yz * (0.35 * b)).x;
     let n1 = noise_t(uv * vec2f(2.6, 0.9) + 5.0).x;
     let n = mix(n0, n0 * 1.8 * smoothstep(-0.25, 0.45, n1) + 0.25 * w.x, b);
     let streak = clamp(1.0 + f.band.a * 2.5 * n, 0.3, 1.8);
@@ -1345,16 +1346,17 @@ fn underside_look(xz: vec2f, dir: vec3f, footprint: f32, f: Fluid, fluid: u32) -
     let k = f.line.w;
     var cells = 1.0;
     if (k > 0.0) {
-        let size = max(f.optics.y, 0.1);
+        let scale = max(round(f.underside.w), 1.0);
+        let size = max(f.optics.y, 0.1) / scale;
         let sharp = 1.0 - smoothstep(0.08, 0.3, footprint / size);
         let b = f.underside.x;
         let lit = smoothstep(-0.35, 0.45, noise_t(xz * (0.31 / size) + 5.3).x);
         var c = noise_t(xz / size).x * 1.5;
         c = mix(c, (c + 0.4) * (0.4 + 1.2 * lit) - 0.4, b);
         if (frame.water.w >= 0.5 && f.extra.y > 0.0) {
-            let web = caustic_pattern(xz, f, footprint, fluid);
-            let gaps = min(web * CAUSTIC_GAIN, 1.0);
-            c = mix(web * CAUSTIC_GAIN - CAUSTIC_MEAN, (1.0 - gaps) * (0.3 + 1.1 * lit) - 0.45, b);
+            let web = caustic_pattern(xz * scale, f, footprint * scale, fluid);
+            let gaps = min(web * CAUSTIC_GAIN * 0.8, 1.0);
+            c = mix(web * CAUSTIC_GAIN - CAUSTIC_MEAN, (1.0 - 0.8 * gaps) * (0.2 + 1.3 * lit) - 0.35, b);
         }
         cells = max(1.0 + k * sharp * c, 0.0);
     }
@@ -1419,7 +1421,7 @@ fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
         let light = look.x * (1.0 + look.y);
         if (leaves) {
             // Out through the window: the sky, with the patch's light round the sun.
-            back = display(underwater(sky_radiance(dir) * mix(1.0, look.x, 0.5) + underwater(vec3f(0.0), 1e6, f) * (light - look.x), to_surface, f));
+            back = display(underwater((sky_radiance(dir) + underwater(vec3f(0.0), 1e6, f) * look.y) * look.x, to_surface, f));
         } else {
             // The mirror: the water's in-scatter, textured.
             back = display(underwater(underwater(vec3f(0.0), 1e6, f) * light, to_surface, f));
@@ -2897,11 +2899,9 @@ mod tests {
         // The body takes none of the shadow (WATER_RENDERING.md §12.2: at 35 % it still read as a
         // trace of the player's shadow from above).
         assert!(!surface.contains("BODY_SHADOW"));
-        assert!(
-            surface.contains(
-                "s.body = lambert_lit(f.scatter.rgb * draw.tint.rgb, face_up(s.up), s.frag_y, s.light);"
-            )
-        );
+        assert!(surface.contains(
+            "s.body = lambert_lit(f.scatter.rgb * draw.tint.rgb, face_up(s.up), s.frag_y, s.light);"
+        ));
         assert!(
             !src.contains("TerrainLight(1.0, s.shadow"),
             "a fluid lit as open sky"

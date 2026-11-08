@@ -46,6 +46,8 @@ pub struct UnderwaterLook {
     pub underside_breakup: f64,
     pub underside_sun_patch: f64,
     pub underside_sun_power: f64,
+    /// The cells' scale against the floor's caustics (a whole number: 2 halves them).
+    pub underside_cell_scale: f64,
     /// The fog: none over the first `fog_clear_m` metres, then the fluid's rates × `fog_density`.
     pub fog_clear_m: f64,
     pub fog_density: f64,

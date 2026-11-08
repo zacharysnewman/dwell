@@ -23,7 +23,7 @@ test('a murky fluid added by data alone reaches the output', () => {
       depthM: 0, tint: '#806040', streaks: 0, glints: 0, rimPx: 0, rimShade: 1, linePx: 0, lineGlow: 1,
       breakup: 0, mirror: 0.6, mirrorWarpPx: 0,
     },
-    underside: { texture: 0, breakup: 0, sunPatch: 0, sunPower: 8 },
+    underside: { texture: 0, breakup: 0, sunPatch: 0, sunPower: 8, cellScale: 1 },
     fog: { clearM: 0, density: 4 },
   };
   const rs = underwaterRust(validateUnderwater(d));
