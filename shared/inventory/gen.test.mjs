@@ -67,3 +67,12 @@ test('bad entries fail naming the entry and the problem', () => {
     assert.throws(() => validateInventory(inv, blocks), message);
   }
 });
+
+test('new players start with the data\'s items: an axe (owner, 2026-11-08)', () => {
+  const d = validateInventory(...fresh());
+  assert.deepEqual(d.startingItems, [{ item: 'dwell:stone_axe', count: 1 }]);
+  assert.match(inventoryRust(d), /STARTING_ITEMS: &\[\(&str, u16\)\] = &\[\("dwell:stone_axe", 1\)\]/);
+  const [inv, blocks] = fresh();
+  inv.startingItems = [{ item: 'dwell:nothing', count: 1 }];
+  assert.throws(() => validateInventory(inv, blocks), /startingItems\[0\]: item must name a block or an item/);
+});

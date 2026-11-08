@@ -27,6 +27,7 @@ const TOP_FIELDS = [
   'items',
   'wallets',
   'startingWallet',
+  'startingItems',
 ];
 const ITEM_FIELDS = ['name', 'label', 'color', 'size', 'stack', 'value'];
 const DROP_FIELDS = ['item', 'count', 'chance', 'pick'];
@@ -164,7 +165,17 @@ export function validateInventory(data, namespaces) {
   // What placing a block uses up: a ramp its base's item, everything else itself.
   const cost = (b) => (b.def.of !== undefined ? `${b.ns}:${b.def.of}` : b.id);
   const drops = blocks.map((b) => ({ block: b.id, drops: resolve(b), cost: cost(b) }));
-  return { ...data, items, wallets, drops };
+  // What a new player starts with (owner, 2026-11-08: "Adventure starts with an axe"): a list of
+  // { item, count }, each a known item; optional, none by default.
+  const startingItems = (data.startingItems ?? []).map((st, i) => {
+    const at = `startingItems[${i}]`;
+    if (typeof st !== 'object' || st === null) fail(`${at} must be an object`);
+    for (const k of Object.keys(st)) if (!['item', 'count'].includes(k)) fail(`${at}: unknown field ${k} (item, count)`);
+    if (typeof st.item !== 'string' || !known(st.item)) fail(`${at}: item must name a block or an item, not ${st.item}`);
+    if (!isInt(st.count) || st.count < 1 || st.count > 65535) fail(`${at}: count must be a whole number in [1, 65535]`);
+    return { item: st.item, count: st.count };
+  });
+  return { ...data, items, wallets, drops, startingItems };
 }
 
 /** The block files, as shared/blocks/gen.mjs reads them (and the fixtures with `fixture`). */
@@ -206,6 +217,8 @@ export function inventoryRust(d) {
   for (const w of d.wallets) rs.push(`    WalletDef { name: "${w.name}", label: ${JSON.stringify(w.label)}, capacity: ${w.capacity} },`);
   rs.push('];');
   rs.push(`pub const STARTING_WALLET: &str = "${d.startingWallet}";`);
+  rs.push('/// What a new player starts with: (item, count).');
+  rs.push(`pub static STARTING_ITEMS: &[(&str, u16)] = &[${d.startingItems.map((s) => `("${s.item}", ${s.count})`).join(', ')}];`);
   rs.push('');
   rs.push('/// The items that are not blocks.');
   rs.push('pub static ITEMS: &[ItemDef] = &[');
