@@ -4012,8 +4012,14 @@ impl Server {
         }
         batch.players = std::mem::take(&mut self.departed);
         batch.inventories = std::mem::take(&mut self.departed_inventories);
-        for s in self.sessions.values().filter(|s| s.joined() && !s.inventory_unread) {
-            batch.inventories.push((s.public_key, s.inventory.to_bytes()));
+        for s in self
+            .sessions
+            .values()
+            .filter(|s| s.joined() && !s.inventory_unread)
+        {
+            batch
+                .inventories
+                .push((s.public_key, s.inventory.to_bytes()));
         }
         batch.loose_items = Some(self.loose.to_bytes());
         // The world's moving bodies, all of them each save (docs/BUILT_BODIES.md §7).

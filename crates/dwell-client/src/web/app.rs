@@ -1106,7 +1106,7 @@ impl Client {
             (None, Some(step)) => step,
             (None, None) => return,
         };
-        if let Some(slot) = g.interaction.scroll(step) {
+        if let Some(slot) = g.scroll_hotbar(step) {
             s.shell_events.push(shell_event("slot", slot as u32));
         }
     }
@@ -1141,7 +1141,7 @@ impl Client {
                 A::HotbarNext | A::HotbarPrev => {
                     let step = if a == A::HotbarNext { 1 } else { -1 };
                     if let Some(g) = &mut s.game
-                        && let Some(slot) = g.interaction.scroll(step)
+                        && let Some(slot) = g.scroll_hotbar(step)
                     {
                         s.shell_events.push(shell_event("slot", slot as u32));
                     }
@@ -1467,8 +1467,16 @@ impl Client {
     pub fn select(&self, slot: i32) {
         let mut s = self.inner.borrow_mut();
         if let Some(g) = &mut s.game {
-            let slot = g.interaction.select(i64::from(slot));
+            // A world that uses items (ADR 0066): the hotbar is the inventory's first slots.
+            let slot = g.select_hotbar(i64::from(slot));
             s.shell_events.push(shell_event("slot", slot as u32));
+        }
+    }
+    /// Moves items between inventory slots (the backpack screen; ADR 0066): `count` 0 moves all.
+    #[wasm_bindgen(js_name = moveItems)]
+    pub fn move_items(&self, from: u8, to: u8, count: u16) {
+        if let Some(g) = &mut self.inner.borrow_mut().game {
+            g.move_items(from, to, count);
         }
     }
     /// The hotbar's block names (the palette, in slot order).
@@ -2011,6 +2019,32 @@ impl Client {
                 None => set(&o, "brush", JsValue::NULL),
             }
             set(&o, "brushes", g.brush.available);
+            // The inventory (ADR 0066): null from a server without, or in a mode with unlimited
+            // blocks; else every slot ({ item, count } or null), the held one and the wallet.
+            match g.loose.inventory.as_ref().filter(|(uses, _)| *uses) {
+                Some((_, inv)) => {
+                    let i = Object::new();
+                    let slots: Array = inv
+                        .slots
+                        .iter()
+                        .map(|s| match s {
+                            Some(s) => {
+                                let o = Object::new();
+                                set(&o, "item", s.item.as_str());
+                                set(&o, "count", u32::from(s.count));
+                                JsValue::from(o)
+                            }
+                            None => JsValue::NULL,
+                        })
+                        .collect();
+                    set(&i, "slots", slots);
+                    set(&i, "held", g.inventory_slot as u32);
+                    set(&i, "money", u32::from(inv.money));
+                    set(&i, "capacity", u32::from(inv.capacity()));
+                    set(&o, "inventory", i);
+                }
+                None => set(&o, "inventory", JsValue::NULL),
+            }
             // The loading screen (ARCHITECTURE.md §6.3): null once open.
             match g.loading_screen() {
                 Some(sc) => {
@@ -2355,9 +2389,9 @@ impl Inner {
                     .and_then(|d| d.parse::<i64>().ok())
                     .map(|d| if d == 0 { 9 } else { d - 1 });
                 if let (Some(slot), Some(g)) = (slot, &mut self.game)
-                    && (slot as usize) < g.interaction.palette().len()
+                    && (slot as usize) < g.hotbar_len()
                 {
-                    let slot = g.interaction.select(slot);
+                    let slot = g.select_hotbar(slot);
                     self.shell_events.push(shell_event("slot", slot as u32));
                 }
             }

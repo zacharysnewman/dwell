@@ -11,6 +11,7 @@ pub mod game;
 pub mod jobs;
 pub mod local;
 pub mod lod_map;
+pub mod loose_items;
 pub mod net;
 pub mod pieces;
 pub mod pool;

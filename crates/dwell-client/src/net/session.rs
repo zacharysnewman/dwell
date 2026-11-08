@@ -205,6 +205,10 @@ impl Session {
             region_edits: w.flags & welcome_flags::REGION_EDITS != 0,
             brushes: w.flags & welcome_flags::BRUSHES != 0,
         });
+        // A server that keeps inventories (ADR 0066) sends them once told this client understands.
+        if w.flags & welcome_flags::INVENTORY != 0 {
+            self.send(&Message::InventoryAction(InventoryAction::Hello));
+        }
     }
 
     /// The world's settings again while joined: the host changed its game mode (ADR 0065; only a
@@ -569,6 +573,7 @@ impl Session {
                     | Message::LodIndex(_)
                     | Message::LodIndexUpdate(_)
                     | Message::LodData(_)
+                    | Message::ItemDrops(_)
             ) && (self.joined() || matches!(self.state, SessionState::Confirming { .. }))
             {
                 self.game.push_back((m, bytes.to_vec()));
@@ -590,6 +595,9 @@ impl Session {
                 self.world_fields = Some(f);
             }
             Message::WorldSettings(f) if self.joined() => self.on_settings_changed(f),
+            Message::Inventory(i) if self.joined() => {
+                self.game.push_back((Message::Inventory(i), bytes.to_vec()));
+            }
             Message::Welcome(w) if self.state == SessionState::Handshaking => self.on_welcome(w),
             Message::Reject(r) => {
                 self.set_state(SessionState::Rejected {

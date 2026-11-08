@@ -4,6 +4,7 @@ import { blockDump, formatBlockDump, type BlockDump, type BlockTarget } from './
 import {
   Client,
   hotbarSwatch,
+  itemSwatch,
   loadWasm,
   pingServer,
   setWorldFileVersion,
@@ -46,7 +47,8 @@ import {
 import { launchOf, launcherHref, pastedInvite, withRoute, type Launch } from './ui/launch';
 import { rememberServer } from './ui/recentServers';
 import { prefersTouch, TouchControls } from './ui/touchControls';
-import { Hotbar } from './ui/hotbar';
+import { Hotbar, type HotbarSlot, type InventoryHud } from './ui/hotbar';
+import { Backpack } from './ui/backpack';
 import type { BrushPanelState } from './ui/brushPanel';
 import { prefersReducedMotion } from './ui/motionSettings';
 import type { SpyglassHud } from './ui/spyglass';
@@ -407,6 +409,8 @@ interface App {
   loading: LoadingScreen;
   map: MapOverlay;
   hotbar: Hotbar | null;
+  /** The backpack screen (ADR 0066), in a world that uses items. */
+  backpack: Backpack | null;
   settings: SettingsMenu | null;
   flightSpeed: FlightSpeedControl;
   /** Frames per second, shown in the status line. */
@@ -560,6 +564,7 @@ function showHud(app: App, now: number): void {
     spyglass?: SpyglassHud | null;
     loading?: LoadingHud | null;
     loadingOpens?: number;
+    inventory?: InventoryHud | null;
   };
   app.loading.frame(h, now);
   if (h.message === undefined) return;
@@ -570,6 +575,8 @@ function showHud(app: App, now: number): void {
   app.hud.setStatus(h.status ?? '');
   app.hotbar?.setRegion(h.region ?? '');
   app.hotbar?.setBrush(h.brush ?? null);
+  app.hotbar?.setInventory(h.inventory ?? null, itemPicture);
+  app.backpack?.set(h.inventory ?? null);
   if (h.debug) app.hud.setDebug(h.debug);
 }
 
@@ -667,6 +674,7 @@ async function start(): Promise<App | null> {
     loading,
     map: new MapOverlay(document.body),
     hotbar: null,
+    backpack: null,
     settings: null,
     flightSpeed: new FlightSpeedControl(document.body, (level) => {
       client.flySpeed(level);
@@ -1078,6 +1086,18 @@ function wasmMemoryBytes(): number {
   return wasmMemory?.buffer.byteLength ?? 0;
 }
 
+const itemPictures = new Map<string, HotbarSlot>();
+
+/** An inventory item's picture (ADR 0066), drawn once per item. */
+function itemPicture(item: string): HotbarSlot {
+  let p = itemPictures.get(item);
+  if (!p) {
+    p = { name: item, swatch: itemSwatch(item), size: swatchSize() };
+    itemPictures.set(item, p);
+  }
+  return p;
+}
+
 /** Once joined: the hotbar, the block dump's world, and the debug tools. */
 function play(app: App, joined: Extract<SessionReport, { phase: 'joined' }>): void {
   app.playing = true;
@@ -1088,6 +1108,24 @@ function play(app: App, joined: Extract<SessionReport, { phase: 'joined' }>): vo
     app.client.select(slot);
   });
   app.client.select(0);
+  // The backpack screen (ADR 0066): E opens and closes it in a world that uses items.
+  app.backpack = new Backpack(document.body, itemPicture, (from, to, count) =>
+    app.client.moveItems(from, to, count),
+  );
+  window.addEventListener(
+    'keydown',
+    (e) => {
+      const b = app.backpack;
+      if (!b || !app.playing) return;
+      const toggle = e.code === 'KeyE' && !e.repeat && b.usable;
+      if (!toggle && !(e.code === 'Escape' && b.open)) return;
+      b.open = !b.open;
+      if (b.open) document.exitPointerLock?.();
+      e.preventDefault();
+      e.stopPropagation();
+    },
+    true,
+  );
   // The build mode as the game has it: a `buildMode` event may have come before the hotbar.
   app.hotbar.setBuildMode(app.client.buildMode());
   app.touch?.setBuildMode(app.client.buildMode());

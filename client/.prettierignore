@@ -16,3 +16,4 @@ src/ui/loading.gen.ts
 bench/out/
 src/ui/hud.gen.css
 src/ui/modes.gen.ts
+src/ui/inventory.gen.ts

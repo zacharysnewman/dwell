@@ -4,6 +4,23 @@
 import { BrushPanel, type BrushPanelState } from './brushPanel';
 import { BUILD_MODES } from './buildModes.gen';
 import { keyLabel } from './controls';
+import { HOTBAR_SLOTS, ITEMS } from './inventory.gen';
+
+/** The inventory as the HUD has it (`Client.hud().inventory`, ADR 0066): null in creative. */
+export interface InventoryHud {
+  slots: ({ item: string; count: number } | null)[];
+  held: number;
+  money: number;
+  capacity: number;
+}
+
+/** An item's label: a non-block item's from the data, a block's from its name. */
+export function itemLabel(item: string): string {
+  const def = ITEMS.find((i) => i.name === item);
+  if (def) return def.label;
+  const name = item.replace(/^[a-z0-9_]+:/, '').replace(/_/g, ' ');
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
 
 /** A palette slot as the hotbar shows it: its name and picture (`Client.palette()`, `hotbarSwatch`). */
 export interface HotbarSlot {
@@ -36,6 +53,12 @@ export class Hotbar {
   private readonly region: HTMLDivElement;
   private readonly brush: BrushPanel;
   private selected = 0;
+  /** The inventory's hotbar (a world that uses items), shown instead of the palette's slots. */
+  private readonly palRow: HTMLDivElement;
+  private readonly invRow: HTMLDivElement;
+  private readonly wallet: HTMLDivElement;
+  private inventory: InventoryHud | null = null;
+  private invKey = '';
 
   constructor(
     parent: HTMLElement,
@@ -80,7 +103,27 @@ export class Hotbar {
       this.slots.push(b);
       row.append(b);
     });
-    this.root.append(this.region, head, row);
+    this.palRow = row;
+    this.invRow = document.createElement('div');
+    this.invRow.className = 'hotbar-slots';
+    this.invRow.hidden = true;
+    for (let i = 0; i < HOTBAR_SLOTS; i++) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'hotbar-slot';
+      b.dataset.sound = 'none';
+      b.dataset.slot = String(i);
+      b.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        onPick(i);
+      });
+      this.invRow.append(b);
+    }
+    this.wallet = document.createElement('div');
+    this.wallet.id = 'hotbar-wallet';
+    this.wallet.hidden = true;
+    this.root.append(this.region, head, row, this.invRow, this.wallet);
     parent.append(this.root);
     this.setBuildMode(BUILD_MODES.modes[0].label);
     this.brush = new BrushPanel(this.root);
@@ -116,7 +159,52 @@ export class Hotbar {
     this.region.hidden = text === '';
   }
 
+  /**
+   * The inventory (ADR 0066): its first slots replace the palette's, each with its count, and the
+   * wallet shows; null shows the palette again. `swatchOf` draws an item (`itemSwatch`).
+   */
+  setInventory(inv: InventoryHud | null, swatchOf: (item: string) => HotbarSlot): void {
+    const key = inv ? JSON.stringify([inv.slots.slice(0, HOTBAR_SLOTS), inv.held, inv.money]) : '';
+    if (key === this.invKey) return;
+    this.invKey = key;
+    this.inventory = inv;
+    this.palRow.hidden = inv !== null;
+    this.invRow.hidden = inv === null;
+    this.wallet.hidden = inv === null;
+    if (!inv) {
+      this.refresh();
+      return;
+    }
+    this.selected = inv.held;
+    [...this.invRow.children].forEach((el, i) => {
+      const b = el as HTMLButtonElement;
+      const s = inv.slots[i] ?? null;
+      b.replaceChildren();
+      b.classList.toggle('selected', i === inv.held);
+      b.title = s ? `${itemLabel(s.item)} × ${s.count}` : '';
+      if (s) {
+        b.append(swatch(swatchOf(s.item)));
+        const n = document.createElement('span');
+        n.className = 'hotbar-count';
+        n.textContent = String(s.count);
+        b.append(n);
+      }
+      const k = document.createElement('span');
+      k.className = 'hotbar-key';
+      k.textContent = slotKey(i);
+      b.append(k);
+    });
+    this.wallet.textContent = `◆ ${inv.money} / ${inv.capacity}`;
+    this.wallet.title = 'Gems in your wallet';
+    this.refresh();
+  }
+
   private refresh(): void {
+    if (this.inventory) {
+      const s = this.inventory.slots[this.inventory.held] ?? null;
+      this.label.textContent = s ? itemLabel(s.item) : '';
+      return;
+    }
     const slot = this.palette[this.selected];
     this.label.textContent = (slot?.name ?? '').replace(/_/g, ' ');
   }

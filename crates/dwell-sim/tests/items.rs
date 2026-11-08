@@ -127,9 +127,10 @@ dwell_world::both_faces!(
             |(m, _)| matches!(m, Message::Inventory(i) if i.inventory.count_of("dwell:dirt") == 1
                 && i.flags & inventory_flags::USES_ITEMS != 0)
         ));
-        assert!(sent.iter().any(
-            |(m, _)| matches!(m, Message::ItemDrops(d) if d.gone.contains(&id))
-        ));
+        assert!(
+            sent.iter()
+                .any(|(m, _)| matches!(m, Message::ItemDrops(d) if d.gone.contains(&id)))
+        );
     }
 );
 
@@ -145,7 +146,10 @@ dwell_world::both_faces!(
         assert_eq!(fx.server.give(1, "dwell:stone", 2), 0);
         edit(&mut fx, f, BlockEditAction::Place, on, stone);
         assert_eq!(fx.server.world().get_voxel(x, y, z), stone);
-        assert_eq!(fx.server.inventory_of(1).unwrap().count_of("dwell:stone"), 1);
+        assert_eq!(
+            fx.server.inventory_of(1).unwrap().count_of("dwell:stone"),
+            1
+        );
     }
 );
 
@@ -244,10 +248,11 @@ fn a_client_that_never_says_hello_is_sent_no_inventory_messages() {
     fx.server.give(1, "dwell:dirt", 1);
     step(&mut fx, 30);
     assert!(!fx.server.loose_items().is_empty());
-    assert!(fx.take(1).iter().all(|(m, _)| !matches!(
-        m,
-        Message::Inventory(_) | Message::ItemDrops(_)
-    )));
+    assert!(
+        fx.take(1)
+            .iter()
+            .all(|(m, _)| !matches!(m, Message::Inventory(_) | Message::ItemDrops(_)))
+    );
 }
 
 trait MoveLocal {

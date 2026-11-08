@@ -1213,7 +1213,10 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
             w.u16(n as u16);
             for d in &m.items[..n] {
                 w.u32(d.id);
-                w.str(crate::bytes::clamp_str(&d.item, crate::inventory::MAX_ITEM_NAME));
+                w.str(crate::bytes::clamp_str(
+                    &d.item,
+                    crate::inventory::MAX_ITEM_NAME,
+                ));
                 w.u16(d.count);
                 for v in d.position {
                     w.f32(v);

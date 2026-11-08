@@ -101,7 +101,11 @@ impl Server {
         for (i, st) in stacks.into_iter().enumerate() {
             let a = i as f64 * 2.399_963; // the golden angle
             let r = 0.15 * (i as f64).sqrt();
-            let p = f.point([local[0] + r * a.cos(), local[1] + 0.25, local[2] + r * a.sin()]);
+            let p = f.point([
+                local[0] + r * a.cos(),
+                local[1] + 0.25,
+                local[2] + r * a.sin(),
+            ]);
             self.loose.drop(st, p);
         }
     }

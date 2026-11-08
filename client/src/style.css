@@ -2519,3 +2519,65 @@ body.loading-wait #brush-panel {
     font-size: 22px;
   }
 }
+
+/* Inventories (ADR 0066): a slot's count, the wallet, the backpack screen (ui/backpack.ts). */
+.hotbar-count {
+  position: absolute;
+  right: 3px;
+  bottom: 1px;
+  color: #fff;
+  font: 700 11px var(--font-body);
+  text-shadow: 0 1px 2px #000;
+}
+
+#hotbar-wallet {
+  align-self: center;
+  padding: 2px 10px;
+  border-radius: 8px;
+  background: var(--glass);
+  color: #bff5d2;
+  font: 700 12px var(--font-body);
+}
+
+#hotbar-wallet[hidden] {
+  display: none;
+}
+
+#backpack {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  z-index: var(--z-widgets);
+  padding: 14px;
+  border: 1px solid var(--glass-line);
+  border-radius: 12px;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+}
+
+#backpack[hidden] {
+  display: none;
+}
+
+.backpack-title {
+  margin-bottom: 8px;
+  color: #fff;
+  font: 700 14px var(--font-body);
+}
+
+.backpack-grid {
+  display: grid;
+  gap: 4px;
+}
+
+.backpack-slot {
+  width: 44px;
+  height: 44px;
+}
+
+.backpack-hotbar {
+  margin-top: 8px;
+}
