@@ -161,3 +161,12 @@ the dedicated server's give command.
   stacking and a full inventory; despawn; placing consumes in adventure and not in creative; death
   drops; save and load of inventories and loose items; loose items fall and rest on both faces.
 - Reversing it: give adventure `unlimitedBlocks` again; the tables stay, unread.
+
+## Starting items (0.50.40)
+
+Owner, 2026-11-08: "Adventure starts with an axe." `shared/inventory/inventory.json` `startingItems`
+(optional; `{ item, count }` each, validated by `gen.mjs`, emitted as `STARTING_ITEMS`) lists what a
+player new to a world starts with, in a mode that uses items: one `dwell:stone_axe`. A player with a
+saved inventory keeps it; creative players start with nothing (`Inventory::starting`,
+`Server::load_inventory`; tests `an_adventure_player_starts_with_an_axe_and_a_creative_one_with_nothing`
+and the generator's starting-items test).

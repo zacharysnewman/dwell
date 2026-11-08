@@ -73,13 +73,20 @@ impl Server {
             .store
             .as_ref()
             .and_then(|st| st.db().load_inventory(key));
+        // A player new to this world starts with the data's starting items (an axe) in a mode
+        // that uses items (adventure); creative's palette needs none.
+        let fresh = if self.uses_items() {
+            Inventory::starting()
+        } else {
+            Inventory::default()
+        };
         let s = self.sessions.get_mut(&id).expect("session");
         match saved {
             Some(bytes) => match Inventory::from_bytes(&bytes) {
                 Some(i) => s.inventory = i,
                 None => s.inventory_unread = true,
             },
-            None => s.inventory = Inventory::default(),
+            None => s.inventory = fresh,
         }
     }
 

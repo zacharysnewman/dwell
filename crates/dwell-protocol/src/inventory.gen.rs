@@ -22,6 +22,8 @@ pub static WALLETS: &[WalletDef] = &[
     WalletDef { name: "dwell:pouch", label: "Pouch", capacity: 99 },
 ];
 pub const STARTING_WALLET: &str = "dwell:pouch";
+/// What a new player starts with: (item, count).
+pub static STARTING_ITEMS: &[(&str, u16)] = &[("dwell:stone_axe", 1)];
 
 /// The items that are not blocks.
 pub static ITEMS: &[ItemDef] = &[

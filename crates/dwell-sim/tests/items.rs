@@ -195,9 +195,10 @@ dwell_world::both_faces!(
         let feet = fx.server.feet_of(1).unwrap();
         fx.server.kill_player(1);
         let loose = fx.server.loose_items().to_vec();
-        assert_eq!(loose.len(), 3, "a stack a slot: {loose:?}");
+        // The starting axe, two stacks of dirt and the sticks (the gems stay in the wallet).
+        assert_eq!(loose.len(), 4, "a stack a slot: {loose:?}");
         let total: u32 = loose.iter().map(|it| u32::from(it.stack.count)).sum();
-        assert_eq!(total, 73);
+        assert_eq!(total, 74);
         step(&mut fx, 60);
         for it in fx.server.loose_items() {
             let (a, b) = (f.point(it.position), f.point(feet));
@@ -273,4 +274,19 @@ impl MoveLocal for Fixture {
             dwell_physics::Vec3::ZERO,
         );
     }
+}
+
+#[test]
+fn an_adventure_player_starts_with_an_axe_and_a_creative_one_with_nothing() {
+    // Owner (2026-11-08): "Adventure starts with an axe." (face-a-only: no face involved)
+    let adv = scene(FaceFrame::A, "adventure");
+    assert_eq!(
+        adv.server
+            .inventory_of(1)
+            .unwrap()
+            .count_of("dwell:stone_axe"),
+        1
+    );
+    let cre = scene(FaceFrame::A, "creative");
+    assert!(cre.server.inventory_of(1).unwrap().is_empty());
 }
