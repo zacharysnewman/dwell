@@ -666,7 +666,7 @@ already (Medium and High) and now read far.
 CI stale check): per fluid by its registry name, a `default` for the rest (`lensM` 0.05, no waves, no
 meniscus, the registry's rates from the eye: the look before). Packed into the fluid table as three
 more vec4s (`FLUID_VEC4S` 12, 192 bytes a fluid). `dwell:water`: `lensM` 0.3, waves 1.2 cm over 0.9 m
-at 0.35 Hz, meniscus `#f2fbff` at 0.55, 2.5 px.
+at 0.35 Hz, meniscus `#f2fbff` at 0.55, 4 px (2.5 px until 0.50.18; owner, 2026-11-07: "a little thicker").
 
 **Cost** (Apple M1 Air, 1280×800 at ratio 2 = 2560×1600, `?renderscale=0.5&upscaler=stretch`, default
 settings (High water), seed 0's nearest sea, `gpu.*` p50 over 4 s, one run before and two after). No

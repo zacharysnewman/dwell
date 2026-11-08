@@ -26,7 +26,7 @@ pub const UNDERWATER_LOOKS: &[UnderwaterLook] = &[
         line_speed: 0.35,
         meniscus_color: 0xf2fbff,
         meniscus_strength: 0.55,
-        meniscus_width_px: 2.5,
+        meniscus_width_px: 4.0,
         fog_clear_m: 3.0,
         fog_density: 0.3,
     },

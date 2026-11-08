@@ -10,7 +10,7 @@
     "dwell:water": {
       "lensM": 0.3,
       "line": { "amplitudeM": 0.012, "wavelengthM": 0.9, "speed": 0.35 },
-      "meniscus": { "color": "#f2fbff", "strength": 0.55, "widthPx": 2.5 },
+      "meniscus": { "color": "#f2fbff", "strength": 0.55, "widthPx": 4 },
       "fog": { "clearM": 3, "density": 0.3 }
     }
   }
