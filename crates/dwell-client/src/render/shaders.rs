@@ -1329,9 +1329,13 @@ fn waterline_band(p: vec2i, c: vec3f, d: f32, f: Fluid) -> vec3f {
     // second, finer noise, instead of smooth parallel stripes.
     // Blurred along the band's rows (three taps BAND_BLUR_PX apart; owner, 2026-11-07: the band
     // 'looks pixelated. Blurring is fine.'), where the receding plane packs the texture tightest.
+    // Each layer kept only under the pixel's Nyquist rate (band_footprint, band_keep; 0.50.25):
+    // toward the line the plane packs many noise cells into a pixel, which aliased into speckle.
     let b = f.band_extra.y;
-    let duv = vec2f(4.0 * BAND_BLUR_PX / size.y / (t + 0.08), 0.0);
-    let r = (band_ripples(uv - duv, b, f) + band_ripples(uv, b, f) + band_ripples(uv + duv, b, f)) / 3.0;
+    let s = t + 0.08;
+    let fp = vec2f(4.0 / size.y / s, across.x / depth / (s * s));
+    let duv = vec2f(4.0 * BAND_BLUR_PX / size.y / s, 0.0);
+    let r = (band_ripples(uv - duv, b, f, fp) + band_ripples(uv, b, f, fp) + band_ripples(uv + duv, b, f, fp)) / 3.0;
     var col = base * r.x + vec3f(r.y);
     // The dark rim along the top edge, then the bright line under it (band_edge).
     col *= band_edge(px, f);
@@ -1343,15 +1347,23 @@ const BAND_BLUR_PX: f32 = 1.5;
 
 // The band's ripples at texture point `uv` (waterline_band): x the streaks' multiplier, y the
 // glint; broken by `b`, warped by the noise's slope and coming and going under a second, finer
-// noise, instead of smooth parallel stripes.
-fn band_ripples(uv: vec2f, b: f32, f: Fluid) -> vec2f {
-    let w = noise_t(uv * vec2f(0.45, 0.3) + 11.0);
-    let n0 = noise_t(uv * vec2f(1.0 + 1.2 * b, 0.35) + w.yz * (0.35 * b)).x;
-    let n1 = noise_t(uv * vec2f(2.6, 0.9) + 5.0).x;
+// noise, instead of smooth parallel stripes; each layer faded to its mean where a pixel spans `fp`
+// texture units too many for it (band_keep).
+fn band_ripples(uv: vec2f, b: f32, f: Fluid, fp: vec2f) -> vec2f {
+    let w = noise_t(uv * vec2f(0.45, 0.3) + 11.0) * band_keep(vec2f(0.45, 0.3), fp);
+    let n0 = noise_t(uv * vec2f(1.0 + 1.2 * b, 0.35) + w.yz * (0.35 * b)).x * band_keep(vec2f(1.0 + 1.2 * b, 0.35), fp);
+    let n1 = noise_t(uv * vec2f(2.6, 0.9) + 5.0).x * band_keep(vec2f(2.6, 0.9), fp);
     let n = mix(n0, n0 * 1.8 * smoothstep(-0.25, 0.45, n1) + 0.25 * w.x, b);
     let streak = clamp(1.0 + f.band.a * 2.5 * n, 0.3, 1.8);
-    let glint = smoothstep(0.3, 0.45, noise_t(uv * vec2f(2.1, 0.8) + 7.0).x) * f.band_extra.x;
+    let glint = smoothstep(0.3, 0.45, noise_t(uv * vec2f(2.1, 0.8) + 7.0).x) * f.band_extra.x * band_keep(vec2f(4.2, 1.6), fp);
     return vec2f(streak, glint);
+}
+
+// How much of a band noise layer of frequency `k` (cycles a texture unit) is kept where a pixel
+// spans `fp` texture units (render/water.rs `band_keep`): whole under a quarter cycle a pixel,
+// none past Nyquist (half), where it would only alias into speckle.
+fn band_keep(k: vec2f, fp: vec2f) -> f32 {
+    return 1.0 - smoothstep(0.25, 0.5, max(k.x * fp.x, k.y * fp.y));
 }
 
 // How far `waterline_m` changes a pixel across the line (x, m; render/water.rs `meniscus_px_m`:

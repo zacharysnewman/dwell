@@ -374,6 +374,33 @@ pub fn band_uv(along: f64, t: f64) -> [f64; 2] {
     [along * 4.0 / (t + 0.08), 1.0 / (t + 0.08)]
 }
 
+/// How many texture units of [`band_uv`] one pixel of the drawing buffer spans at `t` down the
+/// band (the WGSL `waterline_band`'s `fp`): x along the line (`along` is in screen heights of
+/// `height_px`), y across it (`px_m` metres of `waterline_m` a pixel, [`meniscus_px_m`], over the
+/// band's `depth_m`, through `band_uv`'s `1 / (t + 0.08)`). Toward the line the plane recedes and
+/// a pixel covers many of the noise's cells.
+pub fn band_footprint(t: f64, height_px: f64, px_m: f64, depth_m: f64) -> [f64; 2] {
+    let s = t + 0.08;
+    [4.0 / height_px / s, px_m / depth_m / (s * s)]
+}
+
+/// The band's noise layers (the WGSL `band_ripples`), by their frequency in [`band_uv`]'s units
+/// (cycles a unit, x along the line and y across it) for `breakup` `b`: the warp, the streaks, the
+/// coming-and-going and the glints (a thresholded noise, so about twice its own frequency).
+pub fn band_layers(b: f64) -> [[f64; 2]; 4] {
+    [[0.45, 0.3], [1.0 + 1.2 * b, 0.35], [2.6, 0.9], [4.2, 1.6]]
+}
+
+/// How much of a band noise layer of frequency `k` (cycles a texture unit) is kept where a pixel
+/// spans `fp` units (the WGSL `band_keep`; owner, 2026-11-07: the band "looks pixelated"): all of
+/// it under a quarter cycle a pixel, none past Nyquist (half a cycle a pixel), where it would
+/// only alias into speckle; faded to its mean between.
+pub fn band_keep(k: [f64; 2], fp: [f64; 2]) -> f64 {
+    let c = (k[0] * fp[0]).max(k[1] * fp[1]);
+    let t = ((c - 0.25) / 0.25).clamp(0.0, 1.0);
+    1.0 - t * t * (3.0 - 2.0 * t)
+}
+
 /// Snell's window (the WGSL `sees_out`): whether a ray from under the surface that rises at
 /// `rise` (the cosine of its angle from the face's up, after the ripples bend it) leaves the
 /// fluid of refractive index `ior` (through the window overhead), or is totally reflected back
@@ -1324,6 +1351,44 @@ mod tests {
         );
     }
 
+    dwell_world::both_faces!(
+        fn no_band_pattern_is_above_nyquist_where_the_plane_compresses_it(f: FaceFrame) {
+            // Owner, 2026-11-07: the band "looks pixelated", still stippled after 0.50.24's blur.
+            // The band's plane recedes to the line, so near it a pixel spans many noise cells and
+            // every layer aliased into speckle. Each layer is now kept only under the pixel's
+            // Nyquist rate (half a cycle a pixel), at any drawing-buffer height (the owner's 50 %
+            // render scale too) and pitch, and kept whole where it can be resolved.
+            let look = dwell_look::underwater::underwater_look("dwell:water");
+            for h in [360.0, 720.0, 1600.0] {
+                for (pitch, roll) in [(0.0, 0.0), (0.5, 0.0), (-0.4, 0.3)] {
+                    let cam = camera(f, pitch, roll);
+                    let px_m = meniscus_px_m(look.lens_m, TAN[1], h, cam[2][1], cam[1][1]);
+                    let mut aliased_somewhere = false;
+                    let mut resolved_somewhere = false;
+                    for i in 0..=100 {
+                        let t = i as f64 / 100.0;
+                        let fp = band_footprint(t, h, px_m, look.band_depth_m);
+                        for k in band_layers(look.band_breakup) {
+                            let cycles = (k[0] * fp[0]).max(k[1] * fp[1]);
+                            let keep = band_keep(k, fp);
+                            assert!(
+                                cycles * keep <= 0.5 + 1e-9 && (cycles <= 0.5 || keep == 0.0),
+                                "h {h} pitch {pitch} t {t}: {cycles} cycles a pixel kept {keep}"
+                            );
+                            if cycles <= 0.25 {
+                                assert_eq!(keep, 1.0, "resolved layers stay whole");
+                                resolved_somewhere = true;
+                            }
+                            aliased_somewhere |= cycles > 0.5;
+                        }
+                    }
+                    // The case the clamp exists for: near the line the layers do alias.
+                    assert!(aliased_somewhere && resolved_somewhere, "h {h}");
+                }
+            }
+        }
+    );
+
     #[test]
     fn the_shader_decides_the_waterline_as_its_cpu_twin_does() {
         // both-faces: the WGSL crosses into the face through face_y as waterline_m does through FaceFrame::y.
@@ -1341,6 +1406,12 @@ mod tests {
         assert!(src.contains("return with_shafts(waterline_band(p, composite_underwater(p, ray, textureLoad(scene_color, p, 0)), d, f), p);"));
         assert!(src.contains("let rim = 1.0 - smoothstep(f.rim.x - 0.75, f.rim.x + 0.25, px);"));
         assert!(src.contains("let uv = vec2f(along * 4.0, 1.0) / (t + 0.08)"));
+        // The band's layers faded past Nyquist (band_footprint, band_layers, band_keep).
+        assert!(src.contains("let fp = vec2f(4.0 / size.y / s, across.x / depth / (s * s));"));
+        assert!(src.contains("return 1.0 - smoothstep(0.25, 0.5, max(k.x * fp.x, k.y * fp.y));"));
+        for k in ["vec2f(0.45, 0.3)", "vec2f(1.0 + 1.2 * b, 0.35)", "vec2f(2.6, 0.9)", "vec2f(4.2, 1.6)"] {
+            assert!(src.contains(&format!("band_keep({k}, fp)")), "{k}");
+        }
         assert!(src.contains("1.0 - bent * bent < 1.0 / (ior * ior)"));
         assert!(src.contains("let look = underside_look(xz, -s.v, footprint, f, fluid);"));
         assert!(!src.contains("BODY_SHADOW"));
