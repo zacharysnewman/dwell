@@ -6,6 +6,7 @@
     "snow":        { "shadow": "#b9c9de", "base": "#e9eff6", "light": "#ffffff" },
     "soil":        { "shadow": "#5b3a3c", "base": "#8e5d3d", "light": "#b98352" },
     "stone":       { "shadow": "#817e8e", "base": "#a9a3a3", "light": "#dcd0b9" },
+    "flint":       { "shadow": "#5e5249", "base": "#8a7d70", "light": "#b9ab98" },
     "bedrock":     { "shadow": "#3a3645", "base": "#555060", "light": "#7d7680" },
     "sand":        { "shadow": "#c4a07a", "base": "#ebd39c", "light": "#f8ecc6" },
     "water":       { "shadow": "#1d5ea6", "base": "#2f8fd8", "light": "#96dcf0" },
