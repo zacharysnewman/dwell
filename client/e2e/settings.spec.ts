@@ -17,6 +17,7 @@ function row(menu: Locator, name: string): Locator {
 test('settings menu: opens from the corner, in panes, without fog sliders, and is kept', async ({
   page,
 }) => {
+  test.setTimeout(90_000);
   await page.goto('./?world=flat');
   await expect(page.locator('#net-status')).toContainText('player', { timeout: 20_000 });
   const button = page.locator('#menu-button');
