@@ -70,9 +70,7 @@ export function clearRegions(layout: HudLayout, screen: Screen): Rect[] {
   const landscape = screen.w > screen.h;
   return layout.keepClear
     .filter((c) => !c.touch || screen.touch)
-    .filter(
-      (c) => c.orientation === 'any' || (c.orientation === 'landscape') === landscape,
-    )
+    .filter((c) => c.orientation === 'any' || (c.orientation === 'landscape') === landscape)
     .map((c) => ({
       x: (c.x[0] ?? 0) * screen.w,
       y: (c.y[0] ?? 0) * screen.h,
@@ -87,7 +85,11 @@ export function clearRegions(layout: HudLayout, screen: Screen): Rect[] {
  * free stretch on its side (shrinking to `minWidthPx` at most), or moves on (down from a top anchor,
  * up from a bottom one) past them to the next row with room.
  */
-export function solveLayout(layout: HudLayout, screen: Screen, sizes: Map<string, Measured>): Solved {
+export function solveLayout(
+  layout: HudLayout,
+  screen: Screen,
+  sizes: Map<string, Measured>,
+): Solved {
   const gap = layout.gapPx;
   const { w: W, h: H, safe } = screen;
   const taken: Rect[] = clearRegions(layout, screen);
@@ -128,36 +130,42 @@ export function solveLayout(layout: HudLayout, screen: Screen, sizes: Map<string
     const rows = ys
       .filter((y) => (down ? y >= y0 : y <= y0) && y >= lo - 0.01 && y <= hi + 0.01)
       .sort((a, b) => (down ? a - b : b - a));
+    // A centred part looks for a row whose free stretch holds the screen's middle first (the
+    // desktop hotbar moves up past the health bar rather than aside), then for any stretch.
     let placed: Rect | null = null;
-    for (const y of rows) {
-      const spans = freeSpans(taken, y, h, gap, safe.l, W - safe.r);
-      const fits = spans.filter(
-        ([a, b]) =>
-          b - a >= minW - 0.01 &&
-          (!spec.flush ||
-            (side === 'left' && a <= safe.l + 0.01) ||
-            (side === 'right' && b >= W - safe.r - 0.01) ||
-            side === 'centre'),
-      );
-      if (fits.length === 0) continue;
-      let span: [number, number];
-      if (side === 'left') span = fits[0] as [number, number];
-      else if (side === 'right') span = fits[fits.length - 1] as [number, number];
-      else {
-        // The stretch holding the screen's middle, or the one nearest it.
-        const mid = W / 2;
-        const dist = ([a, b]: [number, number]) => (mid < a ? a - mid : mid > b ? mid - b : 0);
-        span = fits.reduce((best, s) => (dist(s) < dist(best) ? s : best));
+    for (const strict of side === 'centre' ? [true, false] : [false]) {
+      for (const y of rows) {
+        const spans = freeSpans(taken, y, h, gap, safe.l, W - safe.r);
+        const fits = spans.filter(
+          ([a, b]) =>
+            b - a >= minW - 0.01 &&
+            (!spec.flush ||
+              (side === 'left' && a <= safe.l + 0.01) ||
+              (side === 'right' && b >= W - safe.r - 0.01) ||
+              side === 'centre') &&
+            (!strict || (a <= W / 2 && W / 2 <= b)),
+        );
+        if (fits.length === 0) continue;
+        let span: [number, number];
+        if (side === 'left') span = fits[0] as [number, number];
+        else if (side === 'right') span = fits[fits.length - 1] as [number, number];
+        else {
+          // The stretch holding the screen's middle, or the one nearest it.
+          const mid = W / 2;
+          const dist = ([a, b]: [number, number]) => (mid < a ? a - mid : mid > b ? mid - b : 0);
+          span = fits.reduce((best, s) => (dist(s) < dist(best) ? s : best));
+        }
+        const w = Math.min(m.w, span[1] - span[0]);
+        const x =
+          side === 'left'
+            ? span[0]
+            : side === 'right'
+              ? span[1] - w
+              : Math.min(Math.max(W / 2 - w / 2, span[0]), span[1] - w);
+        placed = { x, y, w, h };
+        break;
       }
-      const w = Math.min(m.w, span[1] - span[0]);
-      const x =
-        side === 'left'
-          ? span[0]
-          : side === 'right'
-            ? span[1] - w
-            : Math.min(Math.max(W / 2 - w / 2, span[0]), span[1] - w);
-      placed = { x, y, w, h };
-      break;
+      if (placed) break;
     }
     out.set(p.id, placed);
     if (placed) taken.push(placed);
@@ -218,15 +226,20 @@ export function applyLayout(doc: Document, layout: HudLayout, touch: boolean): S
     const el = doc.querySelector<HTMLElement>(p.selector);
     if (!el) continue;
     if (!p.fixed) {
+      // Its size as the stylesheet lays it out (within the stylesheet's cap: wrapped text measures
+      // its wrapped height); the solver only narrows it from there.
       for (const k of PLACED) el.style[k] = '';
-      // Its natural width, not the stylesheet's cap.
-      el.style.maxWidth = 'none';
     }
     if (el.getClientRects().length === 0) continue;
     const r = el.getBoundingClientRect();
     if (r.width === 0 || r.height === 0) continue;
     els.set(p.id, el);
-    sizes.set(p.id, p.fixed ? { rect: { x: r.left, y: r.top, w: r.width, h: r.height } } : { w: r.width, h: r.height });
+    sizes.set(
+      p.id,
+      p.fixed
+        ? { rect: { x: r.left, y: r.top, w: r.width, h: r.height } }
+        : { w: r.width, h: r.height },
+    );
   }
   const screen: Screen = { w: W, h: H, safe: safeInsets(doc, W, H), touch };
   const solved = solveLayout(layout, screen, sizes);
@@ -245,7 +258,19 @@ export function applyLayout(doc: Document, layout: HudLayout, touch: boolean): S
     el.style.right = 'auto';
     el.style.bottom = 'auto';
     el.style.transform = 'none';
-    el.style.maxWidth = `${String(Math.ceil(r.w))}px`;
+    // max-width counts the content box unless the part sizes its border box.
+    const cs = win?.getComputedStyle(el);
+    const edges =
+      cs && cs.boxSizing !== 'border-box'
+        ? ['paddingLeft', 'paddingRight', 'borderLeftWidth', 'borderRightWidth'].reduce(
+            (sum, k) =>
+              sum +
+              (parseFloat(cs.getPropertyValue(k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`))) ||
+                0),
+            0,
+          )
+        : 0;
+    el.style.maxWidth = `${String(Math.floor(r.w - edges))}px`;
   }
   return solved;
 }

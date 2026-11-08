@@ -37,7 +37,8 @@ const boxes = (page: Page) =>
       const r = el.getBoundingClientRect();
       if (r.width === 0 || r.height === 0) continue;
       // A part the layout found no room for is hidden: a failure here, as an overlap is.
-      if (getComputedStyle(el).visibility === 'hidden') out.push({ sel: `${sel} (no room)`, x: -1, y: -1, w: 0, h: 0 });
+      if (getComputedStyle(el).visibility === 'hidden')
+        out.push({ sel: `${sel} (no room)`, x: -1, y: -1, w: 0, h: 0 });
       out.push({ sel, x: r.left, y: r.top, w: r.width, h: r.height });
     }
     return out;

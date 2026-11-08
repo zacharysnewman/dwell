@@ -22,6 +22,7 @@
     { "id": "status-line", "selector": "#net-status", "anchor": "top-left", "priority": 3, "minWidthPx": 140 },
     { "id": "performance", "selector": "#perf-status", "anchor": "top-left", "priority": 4, "minWidthPx": 140, "after": "status-line" },
     { "id": "flight-speed", "selector": "#flight-speed", "anchor": "top-right", "priority": 5, "minWidthPx": 170, "after": "minimap" },
+    { "id": "controls-hint", "selector": "#start-hint", "anchor": "bottom", "priority": 7, "touch": { "anchor": "top" } },
     { "id": "loading-chip", "selector": "#status-chip", "anchor": "bottom-left", "priority": 6, "minWidthPx": 100 }
   ]
 }
