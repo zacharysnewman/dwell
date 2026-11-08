@@ -1,6 +1,6 @@
 //! The server's side of chopping (docs/adr/0067-stone-axe-and-chopping.md): aimed axe swings cut
 //! wood cells (`dwell_protocol::chopping::Cut`), a standing trunk cut past its fell fraction falls
-//! away from the notch (docs/FELLING.md), a lying log cut through drops its wood; the cuts are
+//! toward the notch (docs/FELLING.md), a lying log cut through drops its wood; the cuts are
 //! saved with the world and sent to clients that said `ChopAction::Hello`.
 
 use super::{Server, SessionId, TickChanges};
@@ -154,10 +154,11 @@ impl Server {
         self.broadcast_changes(changes, VoxelModificationReason::Edit);
         let centre = crate::felling::cell_centre(cell);
         if standing {
-            // It falls away from the notch: tipped away from a point out past its deepest side.
+            // It falls toward the notch, as real felling does (owner, 2026-11-08): the uncut side
+            // is the hinge, so it tips away from a point out past the side opposite the deepest.
             let n = chop::side_normal(grain, cut.deepest(grain).unwrap_or(side));
-            let away = centre + DVec3::new(f64::from(n[0]), 0.0, f64::from(n[2])) * 2.0;
-            self.fell(&[cell], 0, Some(away));
+            let hinge = centre - DVec3::new(f64::from(n[0]), 0.0, f64::from(n[2])) * 2.0;
+            self.fell(&[cell], 0, Some(hinge));
         } else {
             if uses_items {
                 let stacks = inv::roll(wood.buck_drops, &mut || self.random());

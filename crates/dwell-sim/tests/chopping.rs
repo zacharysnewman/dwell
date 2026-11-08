@@ -1,5 +1,5 @@
 //! Chopping through the server (docs/adr/0067-stone-axe-and-chopping.md): aimed axe swings cut a
-//! standing trunk, which falls away from the notch once cut past its fell fraction (notching in
+//! standing trunk, which falls toward the notch (the uncut side the hinge) once cut past its fell fraction (notching in
 //! about 9 swings, hacking one spot about four times as many, vertical swings barely at all); a
 //! lying log is cut through by vertical swings across it and drops wood in adventure; cuts are
 //! saved with the world and sent only to clients that said `ChopAction::Hello`.
@@ -145,12 +145,12 @@ fn swings_to_fell(
 }
 
 dwell_world::both_faces!(
-    fn notching_fells_a_trunk_in_about_ten_swings_away_from_the_notch(f: FaceFrame) {
+    fn notching_fells_a_trunk_in_about_ten_swings_toward_the_notch(f: FaceFrame) {
         let mut fx = scene(f, "adventure", true);
         let n = swings_to_fell(&mut fx, f, false, 20, |i| i % 2).expect("felled");
         assert!((8..=12).contains(&n), "{n} swings");
-        // The trunk above the cut is a piece, tipping away from the notch (+x, away from the
-        // player at x = 0.5).
+        // The trunk above the cut is a piece, tipping toward the notch (−x, the player's side
+        // at x = 0.5): the uncut +x side is the hinge, as in real felling (owner, 2026-11-08).
         let sent = fx.take(1);
         let id = sent
             .iter()
@@ -165,7 +165,7 @@ dwell_world::both_faces!(
         let (_, q) = fx.server.body_pose(id).expect("still falling");
         let up = q * dwell_physics::DVec3::from(f.up());
         let lean = f.vector(up.to_array());
-        assert!(lean[0] > 0.2, "leans toward +x: {lean:?}");
+        assert!(lean[0] < -0.2, "leans toward −x, the notch: {lean:?}");
         // The stump stays; the client heard the cut and then its end.
         assert_ne!(cell_is(&mut fx, f, [3, AT - 1, 0]), M.air);
         assert!(
