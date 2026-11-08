@@ -33,6 +33,7 @@ describe('scenarios', () => {
           steps: [
             { do: 'view', clouds: 'off', speedEffects: false },
             { do: 'view', distanceM: 128, pixelError: 8, smoke: false, flowParticles: false },
+            { do: 'view', flowRipples: false, flowFoam: false, waterfalls: false },
           ],
         },
       ]),
@@ -44,6 +45,12 @@ describe('scenarios', () => {
       pixelError: 8,
       smoke: false,
       flowParticles: false,
+    });
+    expect(s.steps[2]).toEqual({
+      do: 'view',
+      flowRipples: false,
+      flowFoam: false,
+      waterfalls: false,
     });
     const bad =
       (step: unknown): (() => unknown) =>

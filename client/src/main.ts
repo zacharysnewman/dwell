@@ -251,7 +251,7 @@ interface DwellDebug {
   /**
    * Other settings mid-run, for the bench's `view` step (not stored; docs/DEV_TOOLS.md): the
    * clouds, the speed effects, the full-detail distance and the LOD's pixel error, the blasts'
-   * smoke, the water's flecks. Each one given replaces the menu's value; the rest stay.
+   * smoke, the water's flecks, flow ripples, flow foam and waterfalls. Each one given replaces the menu's value; the rest stay.
    */
   setView(view: {
     clouds?: CloudQuality;
@@ -260,6 +260,9 @@ interface DwellDebug {
     pixelError?: number;
     smoke?: boolean;
     flowParticles?: boolean;
+    flowRipples?: boolean;
+    flowFoam?: boolean;
+    waterfalls?: boolean;
   }): void;
   /** The ink outline's mode (`shared/look/outline.json`, as `?outline=` names it), or `off`. */
   outline(): string;
@@ -925,12 +928,17 @@ async function start(): Promise<App | null> {
       if (v.smoke !== undefined) {
         client.setExplosions(s.explosions.flash, v.smoke, s.explosions.shake);
       }
-      if (v.flowParticles !== undefined) {
+      if (
+        v.flowParticles !== undefined ||
+        v.flowRipples !== undefined ||
+        v.flowFoam !== undefined ||
+        v.waterfalls !== undefined
+      ) {
         client.setWaterFlow(
-          s.water.flowRipples,
-          s.water.flowFoam,
-          v.flowParticles,
-          s.water.waterfalls,
+          v.flowRipples ?? s.water.flowRipples,
+          v.flowFoam ?? s.water.flowFoam,
+          v.flowParticles ?? s.water.flowParticles,
+          v.waterfalls ?? s.water.waterfalls,
         );
       }
     },
