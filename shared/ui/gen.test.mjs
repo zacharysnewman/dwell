@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { hudCss, hudTs, validateHud } from './gen.mjs';
+import { hudCss, hudTs, mapRs, mapTs, validateHud, validateMap } from './gen.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const data = () => JSON.parse(readFileSync(join(here, 'hud.json'), 'utf8'));
@@ -41,5 +41,38 @@ test('bad entries fail with their path named', () => {
     const d = data();
     change(d);
     assert.throws(() => validateHud(d), message);
+  }
+});
+
+const mapData = () => JSON.parse(readFileSync(join(here, 'map.json'), 'utf8'));
+
+test('the checked-in map data validates and generates the checked-in Rust and TypeScript', () => {
+  const d = validateMap(mapData());
+  assert.equal(mapRs(d), readFileSync(join(here, '../../crates/dwell-game/src/map.gen.rs'), 'utf8'));
+  assert.equal(mapTs(d), readFileSync(join(here, '../../client/src/ui/map.gen.ts'), 'utf8'));
+});
+
+test('a changed look or size reaches both outputs by data alone', () => {
+  const d = mapData();
+  d.minimap.radiusM = 96;
+  d.minimap.otherColor = '#00ff88';
+  assert.match(mapRs(validateMap(d)), /minimap_radius_m: 96\.0,/);
+  assert.match(mapRs(validateMap(d)), /minimap_other_color: 0x00ff88,/);
+  assert.match(mapTs(validateMap(d)), /otherColor: '#00ff88',/);
+});
+
+test('bad map entries fail naming them', () => {
+  for (const [change, message] of [
+    [(d) => (d.minimap.radiusM = 3), /minimap\.radiusM must be within/],
+    [(d) => (d.minimap.playerColor = 'red'), /minimap\.playerColor must be a #rrggbb colour/],
+    [(d) => (d.heightShading.default = 1), /heightShading\.default must be true or false/],
+    [(d) => (d.explored.cellM = 7), /cellM must divide/],
+    [(d) => (d.bigMap.startPxPerCell = 100), /minPxPerCell ≤ startPxPerCell ≤ maxPxPerCell/],
+    [(d) => (d.minimap.extra = 1), /unknown entry minimap\.extra/],
+    [(d) => delete d.bigMap.fogColor, /missing entry bigMap\.fogColor/],
+  ]) {
+    const d = mapData();
+    change(d);
+    assert.throws(() => validateMap(d), message);
   }
 });

@@ -2,36 +2,36 @@
 
 /** The minimap and the explored map (shared/ui/map.json). */
 export const MAP = {
-  "minimap": {
-    "radiusM": 64,
-    "texelM": 1,
-    "sizePx": 168,
-    "moveTexels": 1,
-    "turnDegrees": 2,
-    "refreshSeconds": 2,
-    "scanUpM": 24,
-    "scanDownM": 48,
-    "playerColor": "#e8322a",
-    "otherColor": "#2f7df6",
-    "dotPx": 6,
-    "edgeColor": "#1e1a14"
+  minimap: {
+    radiusM: 64,
+    texelM: 1,
+    sizePx: 168,
+    moveTexels: 1,
+    turnDegrees: 2,
+    refreshSeconds: 2,
+    scanUpM: 24,
+    scanDownM: 48,
+    playerColor: '#e8322a',
+    otherColor: '#2f7df6',
+    dotPx: 6,
+    edgeColor: '#1e1a14',
   },
-  "heightShading": {
-    "default": true,
-    "rangeM": 24,
-    "darkest": 0.6,
-    "brightest": 1.3,
-    "slope": 0.12,
-    "waterDepthM": 8
+  heightShading: {
+    default: true,
+    rangeM: 24,
+    darkest: 0.6,
+    brightest: 1.3,
+    slope: 0.12,
+    waterDepthM: 8,
   },
-  "explored": {
-    "cellM": 8
+  explored: {
+    cellM: 8,
   },
-  "bigMap": {
-    "startPxPerCell": 6,
-    "minPxPerCell": 1,
-    "maxPxPerCell": 40,
-    "zoomStep": 1.25,
-    "fogColor": "#14161c"
-  }
+  bigMap: {
+    startPxPerCell: 6,
+    minPxPerCell: 1,
+    maxPxPerCell: 40,
+    zoomStep: 1.25,
+    fogColor: '#14161c',
+  },
 } as const;

@@ -262,6 +262,8 @@ struct Inner {
     link: Option<Link>,
     events: Events,
     session: Option<Session>,
+    /// The minimap and the explored cells it has covered (ADR 0068).
+    minimap: dwell_game::minimap::Minimap,
     /// A registry definitions hash the player said not to ask about for this server (ADR 0038).
     trusted_registry: Option<u64>,
     netsim: Option<NetSim>,
@@ -416,6 +418,7 @@ impl Client {
             link: None,
             events: Rc::default(),
             session: None,
+            minimap: dwell_game::minimap::Minimap::default(),
             trusted_registry: None,
             netsim: None,
             signature: Rc::default(),
@@ -2300,6 +2303,95 @@ impl Client {
             .game
             .as_mut()
             .map_or_else(Vec::new, |g| g.world().padded_chunk([x, y, z]))
+    }
+
+    /// The minimap (ADR 0068): brought up to date for the player's place and heading; its RGBA
+    /// disc (`minimapPixels()`² pixels, the heading up) when drawn again, else undefined.
+    #[wasm_bindgen(js_name = minimapFrame)]
+    pub fn minimap_frame(&self, now_ms: f64, shading: bool) -> Option<Vec<u8>> {
+        let mut guard = self.inner.borrow_mut();
+        let s = &mut *guard;
+        let yaw = s.input.look.yaw;
+        let g = s.game.as_mut()?;
+        let pos = g.position();
+        let up = s.minimap.update(
+            g.world(),
+            pos,
+            yaw,
+            now_ms / 1000.0,
+            shading,
+            &dwell_game::minimap::MAP,
+            &|m| (m != dwell_world::M.air).then(|| dwell_mesh::lod_color(m, 0)),
+        );
+        up.drawn.then(|| s.minimap.image.clone())
+    }
+    /// The minimap's size in pixels (its texels across).
+    #[wasm_bindgen(js_name = minimapPixels)]
+    pub fn minimap_pixels(&self) -> u32 {
+        dwell_game::minimap::Minimap::pixels(&dwell_game::minimap::MAP) as u32
+    }
+    /// The other players on the minimap: [right, up] metres from the player each, on the player's
+    /// face and within the disc.
+    #[wasm_bindgen(js_name = minimapDots)]
+    pub fn minimap_dots(&self) -> Vec<f64> {
+        let s = self.inner.borrow();
+        let Some(g) = &s.game else {
+            return Vec::new();
+        };
+        let pos = g.position();
+        let f = dwell_world::FaceFrame::at_height(pos[1]);
+        let local = f.point(pos);
+        let frame = dwell_game::minimap::MapFrame::new(f, local[0], local[2], s.input.look.yaw);
+        let r = dwell_game::minimap::MAP.minimap_radius_m;
+        let mut out = Vec::new();
+        for feet in g.remote_feet() {
+            if dwell_world::FaceFrame::at_height(feet[1]) != f {
+                continue;
+            }
+            let p = f.point(feet);
+            let [sx, sy] = frame.to_screen([p[0], p[2]]);
+            if sx * sx + sy * sy <= r * r {
+                out.extend([sx, sy]);
+            }
+        }
+        out
+    }
+    /// The player on the explored map: [face (0 A, 1 B), x, z (face-local m), heading (degrees)].
+    #[wasm_bindgen(js_name = mapPose)]
+    pub fn map_pose(&self) -> Vec<f64> {
+        let s = self.inner.borrow();
+        let Some(g) = &s.game else {
+            return Vec::new();
+        };
+        let pos = g.position();
+        let f = dwell_world::FaceFrame::at_height(pos[1]);
+        vec![
+            f64::from(u8::from(f.is_b())),
+            pos[0],
+            pos[2],
+            s.input.look.yaw,
+        ]
+    }
+    /// The explored cells new or changed since the last call: [face, i, k, 0xRRGGBB] each.
+    #[wasm_bindgen(js_name = takeExplored)]
+    pub fn take_explored(&self) -> Vec<i32> {
+        let mut s = self.inner.borrow_mut();
+        let mut out = Vec::new();
+        for ((face, i, k), c) in s.minimap.explored.take() {
+            out.extend([i32::from(face), i, k, c as i32]);
+        }
+        out
+    }
+    /// Whether the world's game mode shows the maps (the `map` ability, ADR 0068): a server that
+    /// names no mode shows them.
+    #[wasm_bindgen(js_name = mapAllowed)]
+    pub fn map_allowed(&self) -> bool {
+        self.inner
+            .borrow()
+            .session
+            .as_ref()
+            .and_then(|s| s.world_settings())
+            .is_none_or(|w| w.allows(dwell_protocol::modes::Ability::Map))
     }
 
     /// Asks for the F4 map around (x0, z0); `takeMap` returns it once generated.

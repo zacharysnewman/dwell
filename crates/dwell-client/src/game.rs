@@ -828,6 +828,11 @@ impl<S: Scene> Game<S> {
         self.current.position
     }
 
+    /// The other players' feet (world), their latest snapshots: the minimap's dots (ADR 0068).
+    pub fn remote_feet(&self) -> Vec<[f64; 3]> {
+        self.remotes.latest().iter().map(|v| v.feet).collect()
+    }
+
     /// The loading gate's state, for the bench and the tests.
     pub fn loading_gate(&self) -> &LoadingGate {
         &self.loading

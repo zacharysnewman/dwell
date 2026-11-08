@@ -91,6 +91,7 @@ export function settingFields(keys: StoreKeys): SettingField[] {
     one(['fovDeg'], keys.view, ['fovDeg']),
     one(['showArms'], keys.view, ['showArms']),
     ...HUD_ELEMENTS.map((e) => one(['hud', 'shown', e.id], HUD_KEY, ['shown', e.id])),
+    one(['hud', 'mapShading'], HUD_KEY, ['mapShading']),
     ...rec('renderScale', keys.renderScale, ['scale', 'upscaler'], ['renderScale', 'upscaler']),
   ];
 }

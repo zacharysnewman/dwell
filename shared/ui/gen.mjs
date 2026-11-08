@@ -182,13 +182,19 @@ export function mapRs(data) {
   return rs.join('\n');
 }
 
-/** The TypeScript for the shell. */
+/** The TypeScript for the shell (written as Prettier writes it: CI checks both). */
 export function mapTs(data) {
-  const out = {};
+  const ts = [`// ${mapHeader}`, '', '/** The minimap and the explored map (shared/ui/map.json). */', 'export const MAP = {'];
   for (const [section, fields] of Object.entries(MAP_FIELDS)) {
-    out[section] = Object.fromEntries(Object.keys(fields).map((k) => [k, data[section][k]]));
+    ts.push(`  ${section}: {`);
+    for (const k of Object.keys(fields)) {
+      const v = data[section][k];
+      ts.push(`    ${k}: ${typeof v === 'string' ? `'${v}'` : String(v)},`);
+    }
+    ts.push('  },');
   }
-  return [`// ${mapHeader}`, '', '/** The minimap and the explored map (shared/ui/map.json). */', `export const MAP = ${JSON.stringify(out, null, 2)} as const;`, ''].join('\n');
+  ts.push('} as const;', '');
+  return ts.join('\n');
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
