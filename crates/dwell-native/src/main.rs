@@ -340,6 +340,7 @@ impl Harness {
             may_fly,
             region_edits,
             brushes,
+            ..
         } = self.session.state().clone()
         else {
             return;
