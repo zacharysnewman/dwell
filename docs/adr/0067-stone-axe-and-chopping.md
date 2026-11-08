@@ -1,7 +1,7 @@
 # 0067 — The stone axe: aimed chopping, notches, felling past half and bucking
 
-**Status:** Accepted (2026-11-08; data, server and client input built in 0.50.34, see "Built so
-far"; the gouge drawing, chips and the arms' swing clips are next). Builds on ADR 0066 (items by
+**Status:** Accepted (2026-11-08; data, server and client input built in 0.50.34; the owner's
+answers, the gouges, chips, arms and the axe on the creative hotbar in 0.50.35, see "Built so far"). Builds on ADR 0066 (items by
 name, drops, the Welcome-flag message pattern) and docs/FELLING.md (how a cut trunk falls).
 
 ## Context
@@ -63,14 +63,26 @@ felling (FELLING.md). Scope: tools and woods are per build; cuts are per world, 
    `swingSeconds` (the server holds the same wait per player).
 5. **Felling past half.** A standing wood (grain along the face's up) cut past `fellFraction`: its
    cell goes (the wood is chips) and FELLING's integrity takes what it held as a piece, **tipped
-   away from the notch** (its deepest side): away from the chopper, who stands at the notch. The
-   stump below stays. (Real felling falls toward the face notch; Question 1.)
+   toward the notch** (its deepest side), as real felling falls (owner, 2026-11-08, Question 1): the
+   uncut side is the hinge, the notch side opens and the trunk tips into it, toward the chopper who
+   stands at the notch. The stump below stays.
 6. **Bucking.** A lying wood (grain level) is cut the same way, best by vertical swings across it,
    and cut through at `buckFraction`: its cell (a 1 m length) goes and, in a mode that uses items,
    drops `buckDrops` (rolled with the server's entropy) as loose items (ADR 0066). In creative
    nothing drops, as for breaks.
 7. **Mode gating.** Chopping works in every mode that allows edits. In a mode that uses items the
-   held inventory slot must hold the tool; in creative the swing is trusted (Question 3).
+   held inventory slot must hold the tool; in creative the swing is trusted, and the axe is a slot
+   of the creative hotbar (Question 3, below).
+7a. **Blocks that need a tool** (owner, 2026-11-08, Question 5: "in adventure, logs need an axe").
+   A block's **`breakWith`** (block data, `shared/blocks/*.json`; a tool kind of the fixed
+   vocabulary, `axe`) says hands can't break it **where blocks are not unlimited**: the rule
+   applies exactly when the mode lacks `unlimitedBlocks` (adventure), the same switch that makes
+   breaks drop items, so no new mode ability; creative breaks anything. `shared/tools/gen.mjs`
+   validates it (an unknown kind fails naming the block) and emits `BREAK_WITH`
+   (`dwell_protocol::chopping::break_with`, `may_break_holding`); the server refuses such a block
+   edit (and a region clearing one) unless the held slot holds a tool of that kind. The log has
+   `breakWith: "axe"`; leaves and plants have none and break by hand. With the axe held the client
+   swings (`Chop`) rather than breaks, so a log comes down only by chopping.
 8. **Cuts go with their wood.** Any change to a cut cell (broken, cut through, collapsed into a
    piece, replaced) drops its cut (`Server::cuts_dropped`, in `broadcast_changes`). A felled
    trunk's other cuts are not carried by the piece (Question 4).
@@ -86,24 +98,48 @@ felling (FELLING.md). Scope: tools and woods are per build; cuts are per world, 
 10. **Save: a new table, append-only.** `cuts`: one record (key 0, version 1, each cell and its
     sides' notch and kerfs as f32), the whole set each save. Older builds leave it; a record this
     build can't read is kept, not overwritten.
-11. **The client draws** (next, not in 0.50.34): gouges on the trunk's cells from the cuts (a
-    cut-depth mesh tweak of the wood's side faces on the GPU), wood chips as GPU particles, client
-    only, and the arms' level and vertical swing clips (`shared/characters`).
+11. **The client draws** (0.50.35, `dwell-client` `chips.rs`, draw-only), all through the
+    billboard pass the blasts' puffs use (render/blasts.rs, `PuffKind::Chip` and `Gouge`):
+    - **Gouges** (chosen as the cheapest that reads: a decal, not a remesh): per cut cell and side,
+      the notch as a quad lying on that side's face (lifted 4 mm), centred along the grain and
+      opened 2.5× its depth, shaded as a wedge (its upper cut face in shadow, its lower lit, darker
+      along the deep middle and the deeper it is), and each band's kerf past the notch as a dark
+      slit at the band's middle; in the wood's `chips.color`. Face-local through `FaceFrame`.
+    - **Chips**: each swing the client sends knocks out the wood's `chips.count` (a CPU adapter a
+      third) flat splinters out of the hit face, carried along the swing (a level swing sweeps from
+      the look's right to its left, a vertical one down), falling toward the face's ground for
+      0.9 s; `chips` (count, colour, speed, size) is per wood in `shared/tools/tools.json`.
+    - **The arms**: `fp_chop_level` (wound out right, swept across) and `fp_chop_vertical` (raised,
+      brought down), the first person's `chop_level` and `chop_vertical` roles
+      (`shared/characters/characters.json`; `Swing::ChopLevel`/`ChopVertical`, a character without
+      them plays its `break`); the held axe is the `stone_axe` item there (a stick, a knapped stone
+      head, a leather lashing), named by the tool's **`held`** in `tools.json` (validated against
+      the characters' items). Remote players see an empty hand: the held-item wire (v17) carries
+      blocks only.
+12. **Tools on the creative hotbar** (owner, 2026-11-08, Question 3). `shared/items/items.json`'s
+    items take **`tool`** (a tool of `tools.json` by item name) instead of `block`: such an entry
+    places nothing (no `rows`, `drag`, `state`, `facing`, `upper`; each fails naming the entry).
+    `shared/items/gen.mjs` validates it against the tools and emits `ItemDef.tool`; the palette
+    slot is a tool (`PaletteSlot.tool`, material 0) whose picture is drawn as a handle and head.
+    Holding it in creative selects the chop input exactly as the inventory's axe does in adventure
+    (left click swings, right click toggles level and vertical). The stone axe sits after the log.
 
-## Questions (parked; defaults chosen)
+## Questions
 
-1. **Which way it falls.** Away from the notch (the chopper's side) by default, so it never falls
-   on them; real felling falls toward the face notch, with a back cut from the other side. Want
-   the real rule (a data flag on the wood), or a fall toward where the player looks?
-2. **Wood items or logs.** A cut-through length drops 2–3 `dwell:wood` (a new non-block item), not
-   a log block. Should bucked lengths drop `dwell:log` instead (placeable), or both?
-3. **The axe in creative.** The creative hotbar holds blocks only (`shared/items/items.json`); the
-   axe is reachable in a world that uses items (`?mode=adventure`, given with the server's `give`).
-   Add tool entries to the creative hotbar's data next?
+Answered by the owner (2026-11-08):
+
+1. **Which way it falls: toward the notch**, like real felling (not away, as 0.50.34 built): the
+   uncut side is the hinge; the notch side opens and the trunk tips toward it (§5; built 0.50.35,
+   `tests/chopping.rs`, both faces).
+2. **Wood items or logs: wood items**, as built (2–3 `dwell:wood` per bucked length).
+3. **The axe in creative: on the creative hotbar**, by tool entries in `items.json` (§12; 0.50.35).
+5. **Hands on logs: in adventure, logs need an axe**; leaves and plants stay breakable by hand;
+   creative breaks anything (§7a, the block's `breakWith`; 0.50.35).
+
+Still parked (defaults chosen):
+
 4. **Cuts on a felled trunk.** Cuts on cells that fall with a piece are dropped; carry them into the
    piece and back when it settles?
-5. **Hands on logs.** Breaking a log by hand is still one click (there is no break progress yet,
-   ADR 0066 Q3). Should logs need an axe in adventure?
 6. **Numbers.** 9 notching swings, 28 hacking (3.1×; the owner asked 3–4×: a smaller `bindM` raises it), 0.45 s a swing; 0.55 of the cross-section to fell
    or buck. All data.
 7. **Leaning trunks** (a log at an angle): logs are only ever along x, y or z, so a lean is not
@@ -124,8 +160,20 @@ felling (FELLING.md). Scope: tools and woods are per build; cuts are per world, 
 - **Client:** `dwell-client` `chop.rs` (the ray into the cell, the wait, the toggle), Hello on the
   flag, cuts kept, Use toggling and Break swinging with the axe held, the swing hint in the HUD.
 
-**Next:** the gouges and chips (GPU), the arms' swing clips, the axe in the creative hotbar, cuts on
-bodies (chopping a felled piece before it settles), a give command.
+## Built in 0.50.35
+
+- **The owner's answers:** felling toward the notch (server and both-face test); `breakWith` block
+  data, the log's `axe`, enforced in adventure (red → green: the hand break of a log is refused
+  in adventure, leaves still break, creative breaks it; both faces); tool entries in
+  `items.json` with the stone axe on the creative hotbar (generator validation, a fixture tool
+  entry by data alone).
+- **Visuals:** `chips.rs` (gouges for a known cut, both faces; chips per swing: count, out of the
+  face, along the swing, falling, a CPU third), `PuffKind::Chip`/`Gouge` through the billboard
+  pass and its shader (`chip_colour`, validated with naga in both tiers), the chop clips and the
+  held axe (`shared/characters`), the hotbar picture.
+
+**Next:** cuts on bodies (chopping a felled piece before it settles), a give command, the held tool
+on the wire for remote players.
 
 ## Consequences
 

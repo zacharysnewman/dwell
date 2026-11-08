@@ -53,6 +53,15 @@ The generator checks every state an item can place (each facing, and the upper c
 state of the registry (`blocks.gen.rs`). A slope placed on a slope is built on, never molded:
 `molds_into` takes a full block only. (13 items.)
 
+### 1a. Tools on the hotbar (ADR 0067, 0.50.35)
+
+An item may be a **`tool`** (an item of `shared/tools/tools.json` by name) instead of a `block`:
+it places nothing, so it takes none of `rows`, `drag`, `state`, `facing` or `upper` (each fails
+naming the entry, as does an unknown tool or giving both). The generator emits `ItemDef.tool`; the
+palette's slot is a tool (`PaletteSlot.tool`, material 0) drawn as a handle and a head. The stone
+axe (`dwell:stone_axe`) sits after the log: held in creative, left click swings it and right click
+toggles level and vertical swings, as the inventory's axe does in adventure. Owner, 2026-11-08.
+
 ## 2. Pieces on the wire
 
 `BlockEditRequest` carries the piece (protocol 19): `rows` (1–`MAX_PIECE_ROWS` 2) and `down`. A place

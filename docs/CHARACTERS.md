@@ -223,6 +223,12 @@ The arms are a **separate view** of the same character, as first-person games do
   `grip_r` socket. Tools come later with an item system: an item is data (`items`), so a pickaxe is
   an entry, and its swing a clip.
 
+- **The axe's swings** (ADR 0067, 0.50.35): `fp_chop_level` and `fp_chop_vertical`, the arms'
+  `chop_level` and `chop_vertical` roles, played on each axe swing by its direction; a character
+  without them plays its `break`. The held axe is the `stone_axe` item (a stick handle, a knapped
+  stone head across its tip, a leather lashing), named by the tool's `held` in
+  `shared/tools/tools.json`.
+
 ### 5.1 Your own body in first person **[built, C1b]**
 
 The owner (2026-10-21): "I want to see legs in first person, particularly when sliding." The
