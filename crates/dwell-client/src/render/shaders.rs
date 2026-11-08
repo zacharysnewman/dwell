@@ -435,13 +435,15 @@ fn eye_under() -> bool {
     return frame.water.x > 0.5 && frame.water.x < 2.5;
 }
 
-// The waterline (WATER_RENDERING.md §10; render/water.rs `waterline_m` is its CPU twin): how far
-// (m, along the face's up) the point the fluid's lens out along the view direction `dir` is above
+// The waterline (WATER_RENDERING.md §12; render/water.rs `waterline_m` is its CPU twin): how far
+// (m, along the face's up) the pixel's point on the lens plane (the fluid's lens ahead of the eye
+// along the camera's forward axis: `ray`, the view ray at view depth 1, times the lens) is above
 // the eye's fluid's surface, less the line's waves there. Negative: the pixel looks out from
-// under the surface. Per pixel, so with the eye at the surface the view splits along a line.
-fn waterline_m(dir: vec3f, f: Fluid) -> f32 {
+// under the surface. The lens points lie on a plane, so the line is straight at any eye height
+// and roll, and moves smoothly with the eye.
+fn waterline_m(ray: vec3f, f: Fluid) -> f32 {
     let face = frame.eye.y;
-    let lens = dir * f.under.x;
+    let lens = ray * f.under.x;
     let xz = frame.wrap.xy + lens.xz;
     let k = 6.2831853 / f.line.y;
     let t = 6.2831853 * f.line.z * frame.fog.z;
@@ -1191,7 +1193,7 @@ fn composite_pixel(p: vec2i, ndc: vec2f) -> vec3f {
     if (frame.water.x > 1.5) {
         let ray = view_ray(ndc);
         let f = eye_fluid();
-        let d = waterline_m(normalize(ray), f);
+        let d = waterline_m(ray, f);
         if (d < 0.0) {
             s.color = composite_underwater(p, ray, textureLoad(scene_color, p, 0));
         }
@@ -1222,10 +1224,14 @@ fn pixel_m(p: vec2i, ray: vec3f, depth: f32) -> f32 {
     return across / max(abs(normalize(ray).y), 0.15);
 }
 
-// The meniscus over the finished colour `c`: a thin bright band along the line, `d` the pixel's
-// waterline_m, its half-width the look's in pixels of the drawing buffer at the lens.
+// The meniscus over the finished colour `c`: a thin bright band centred on the line, `d` the
+// pixel's waterline_m, its half-width the look's in pixels of the drawing buffer across the line
+// (render/water.rs `meniscus_px_m`, `meniscus_band`: d is linear on the screen, its gradient a
+// pixel the lens × 2 tan_y / height × the length of the camera's up and right axes' rise).
 fn meniscus(c: vec3f, d: f32, f: Fluid) -> vec3f {
-    let px_m = f.under.x * 2.0 * frame.tan.y / f32(textureDimensions(scene_color).y);
+    let face = frame.eye.y;
+    let across = length(vec2f(face_rise(face, frame.up.xyz), face_rise(face, frame.right.xyz)));
+    let px_m = f.under.x * 2.0 * frame.tan.y / f32(textureDimensions(scene_color).y) * across;
     let band = 1.0 - smoothstep(0.0, f.line.w, abs(d) / max(px_m, 1e-6));
     return mix(c, f.meniscus.rgb, f.under.w * band);
 }
@@ -1240,12 +1246,30 @@ fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
     let rise = face_rise(frame.eye.y, dir);
     let below = max(face_y(frame.eye.y, frame.water.z) - face_y(frame.eye.y, frame.eye.x), 0.0);
     let to_surface = select(1e6, below / rise, rise > 1e-4);
-    let back = display(underwater(sky_radiance(dir), to_surface, f));
+    // Snell's window (render/water.rs `sees_out`): a ray reaching the surface leaves it only
+    // within the critical angle of the face's up, bent by the ripples there; flatter, the surface
+    // mirrors the water below (its in-scatter, rippled), so the line is the colour edge and the
+    // view up from under is a bright window in a mirrored ceiling.
+    let ior = f.wave.x;
+    let hit = frame.wrap.xy + dir.xz * min(to_surface, 64.0);
+    let slope = noise_t(hit * 0.9).yz * 0.18;
+    let bent = rise + dot(slope, dir.xz);
+    let reaches = to_surface < 1e5;
+    let leaves = reaches && bent > 0.0 && 1.0 - bent * bent < 1.0 / (ior * ior);
+    var back = display(underwater(sky_radiance(dir), to_surface, f));
+    if (reaches && !leaves) {
+        let ripple = 0.85 + 0.3 * clamp(0.5 + 2.0 * dot(slope, vec2f(0.6, 0.8)), 0.0, 1.0);
+        back = display(underwater(vec3f(0.0), 1e6, f) * ripple);
+    }
     if (c.a <= 0.0) {
         return back;
     }
     let depth = scene_depth_at(p).x;
     let dist = select(1e6, depth * length(ray), depth > 0.0);
+    // Past a mirroring surface nothing above it shows.
+    if (reaches && !leaves && dist > to_surface) {
+        return back;
+    }
     var lit = c.rgb / c.a;
     // Caustics on what the pixel shows under the surface (W3, Medium and High): the seabed, walls,
     // anything opaque, before the fog takes its share over the distance to it.
@@ -2046,17 +2070,23 @@ fn waterline_hides(i: FluidOut, front: bool) -> bool {
     }
     let face = frame.eye.y;
     let own = abs(face_y(face, frame.eye.x + i.rel.y) - face_y(face, frame.water.z)) <= 0.05;
-    let other_side = (waterline_m(normalize(i.rel), eye_fluid()) < 0.0) == front;
+    let other_side = (waterline_m(i.rel / max(view_depth(i.rel), 1e-4), eye_fluid()) < 0.0) == front;
     return (abs(i.normal.y) > 0.5) & own & other_side;
 }
 
 // A fluid's surface seen from inside (the W4 stub): the body's colour, out through Snell's window,
 // else totally reflected.
+// Lit unshadowed: the underside shows the water below it, not the shadow on the surface (the
+// player's own shadow read as a dark blotch overhead, WATER_RENDERING.md §12). Outside Snell's
+// window the ripples shade the mirror; inside it what is above shows through by the Fresnel
+// (the composite's `back`: the sky, or the scene behind).
 fn from_below(s: Surface, f: Fluid) -> vec4f {
     let out_dir = refract(-s.v, s.n, f.wave.x);
     let tir = dot(out_dir, out_dir) < 0.5;
     let fres = select(schlick(abs(dot(out_dir, s.n)), f.extra.x), 1.0, tir);
-    return vec4f(s.body, 1.0 - (1.0 - fres) * (1.0 - f.absorption.a));
+    let body = lambert_lit(f.scatter.rgb, face_up(s.up), s.frag_y, TerrainLight(s.light.ambient, s.light.direct, s.light.glow, s.light.points));
+    let ripple = 0.85 + 0.3 * clamp(0.5 + 2.0 * dot(s.w.xy, vec2f(0.6, 0.8)), 0.0, 1.0);
+    return vec4f(body * ripple, fres);
 }
 
 // A fluid's surface (WATER_RENDERING.md W1b; the Low water tier, which reads no copy of the

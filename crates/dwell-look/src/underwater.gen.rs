@@ -20,7 +20,7 @@ pub const DEFAULT_UNDERWATER: UnderwaterLook = UnderwaterLook {
 pub const UNDERWATER_LOOKS: &[UnderwaterLook] = &[
     UnderwaterLook {
         fluid: "dwell:water",
-        lens_m: 0.3,
+        lens_m: 0.4,
         line_amplitude_m: 0.012,
         line_wavelength_m: 0.9,
         line_speed: 0.35,

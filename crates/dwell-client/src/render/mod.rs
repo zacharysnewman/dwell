@@ -155,7 +155,8 @@ pub fn pixel_art_for(
 }
 
 /// How the composite splits the view at the waterline (WATER_RENDERING.md §10; `frame.water.x`):
-/// 1 the eye so deep under the surface that no pixel's lens reaches it (the whole view under, the
+/// 1 the eye so deep under the surface that no pixel's lens point reaches it (past the look's
+/// `reach_m`, so the switch changes no pixel: the whole view under, the
 /// cheap path, no per-pixel test); within the line's reach, 2 with the eye under the surface and 3
 /// above it, each pixel under it or not by its own ray.
 fn waterline_state(e: EyeFluid, eye_y: f64, face: FaceFrame) -> f32 {
@@ -166,7 +167,7 @@ fn waterline_state(e: EyeFluid, eye_y: f64, face: FaceFrame) -> f32 {
     let depth = face.y(e.surface_y) - face.y(eye_y);
     if !e.under {
         3.0
-    } else if depth > look.lens_m + look.line_amplitude_m {
+    } else if depth > look.reach_m() {
         1.0
     } else {
         2.0
