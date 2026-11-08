@@ -119,15 +119,19 @@ struct Fluid {
     flow_foam: vec4f,
     // x a streak's length along the flow, y its width across (m)
     flow_shape: vec4f,
-    // Its underwater look (shared/look/underwater.json, WATER_RENDERING.md §10): x the lens (m out
-    // along a view ray where under or above is decided), y the fog's clear distance (m), z the
-    // fog's density (× its rates), w the meniscus's strength
+    // Its underwater look (shared/look/underwater.json, WATER_RENDERING.md §12): x the lens (m
+    // ahead of the eye: the plane where under or above is decided), y the fog's clear distance
+    // (m), z the fog's density (× its rates), w the band's depth (m on the lens plane)
     under: vec4f,
-    // x the line's wave height (m), y its wavelength (m), z its cycles a second, w the meniscus's
-    // half-width (px)
+    // x the line's wave height (m), y its wavelength (m), z its cycles a second, w the underside's
+    // texture strength
     line: vec4f,
-    // rgb the meniscus's colour (output colour, sRGB)
-    meniscus: vec4f,
+    // rgb the band's tint (a multiplier, output colour), a its streaks' strength
+    band: vec4f,
+    // x the dark rim's width (px), y its shade (×), z the bright line's width (px), w its glow (×)
+    rim: vec4f,
+    // x the band's glints
+    band_extra: vec4f,
 };
 @group(0) @binding(4) var<storage, read> fluids: array<Fluid>;
 // The water's tiles (render/water_tiles.rs): gradient noise and its derivatives over NOISE_TILE
@@ -435,13 +439,15 @@ fn eye_under() -> bool {
     return frame.water.x > 0.5 && frame.water.x < 2.5;
 }
 
-// The waterline (WATER_RENDERING.md §10; render/water.rs `waterline_m` is its CPU twin): how far
-// (m, along the face's up) the point the fluid's lens out along the view direction `dir` is above
+// The waterline (WATER_RENDERING.md §12; render/water.rs `waterline_m` is its CPU twin): how far
+// (m, along the face's up) the pixel's point on the lens plane (the fluid's lens ahead of the eye
+// along the camera's forward axis: `ray`, the view ray at view depth 1, times the lens) is above
 // the eye's fluid's surface, less the line's waves there. Negative: the pixel looks out from
-// under the surface. Per pixel, so with the eye at the surface the view splits along a line.
-fn waterline_m(dir: vec3f, f: Fluid) -> f32 {
+// under the surface. The lens points lie on a plane, so the line is straight at any eye height
+// and roll, and moves smoothly with the eye.
+fn waterline_m(ray: vec3f, f: Fluid) -> f32 {
     let face = frame.eye.y;
-    let lens = dir * f.under.x;
+    let lens = ray * f.under.x;
     let xz = frame.wrap.xy + lens.xz;
     let k = 6.2831853 / f.line.y;
     let t = 6.2831853 * f.line.z * frame.fog.z;
@@ -1089,15 +1095,31 @@ fn cloud_in_front_of(t: f32, ray: vec3f, depth: f32) -> bool {
     return dwell_cloud_in_front(t, length(ray), depth, face_rise(frame.eye.y, ray), frame.cloud_cfg.w);
 }
 
-fn composited(p: vec2i, ndc: vec2f) -> Composited {
+// Each face's cloud deck hit along a pixel's ray with its footprint (`fw`, `fw_o`): the
+// composite's derivatives, taken in uniform control flow before any per-pixel branch.
+struct Decks {
+    deck: vec4f,
+    fw: f32,
+    deck_o: vec4f,
+    fw_o: f32,
+};
+
+fn composited_decks(ndc: vec2f) -> Decks {
+    let dir = normalize(view_ray(ndc));
+    let face = frame.eye.y;
+    let deck = dwell_cloud_deck(dir, face, frame.clouds, frame.cloud_cfg.w);
+    let deck_o = dwell_cloud_deck(dir, -face, frame.clouds_o, frame.cloud_cfg_o.w);
+    return Decks(deck, max(fwidth(deck.x), fwidth(deck.y)), deck_o, max(fwidth(deck_o.x), fwidth(deck_o.y)));
+}
+
+fn composited(p: vec2i, ndc: vec2f, decks: Decks) -> Composited {
     let ray = view_ray(ndc);
     let dir = normalize(ray);
     let face = frame.eye.y;
-    // In uniform control flow, for the pixel's footprint on each face's deck.
-    let deck = dwell_cloud_deck(dir, face, frame.clouds, frame.cloud_cfg.w);
-    let fw = max(fwidth(deck.x), fwidth(deck.y));
-    let deck_o = dwell_cloud_deck(dir, -face, frame.clouds_o, frame.cloud_cfg_o.w);
-    let fw_o = max(fwidth(deck_o.x), fwidth(deck_o.y));
+    let deck = decks.deck;
+    let fw = decks.fw;
+    let deck_o = decks.deck_o;
+    let fw_o = decks.fw_o;
     let clear = sky(dir);
     let lights = cloud_lighting();
     let c = textureLoad(scene_color, p, 0);
@@ -1184,18 +1206,22 @@ fn composite_pixel(p: vec2i, ndc: vec2f) -> vec3f {
     if (frame.water.x > 0.5 && frame.water.x < 1.5) {
         return composite_underwater(p, view_ray(ndc), textureLoad(scene_color, p, 0));
     }
-    var s = composited(p, ndc);
-    if (frame.outline.x > 0.5) {
-        s.color = outlined(s, p);
-    }
+    // Near the surface (x 2 or 3) a pixel under the line takes only the underwater composite and
+    // the band (the ordinary composite would be thrown away: computing it anyway cost the whole
+    // view's composite again with the eye just under). The composite's derivatives come first,
+    // in uniform control flow.
+    let decks = composited_decks(ndc);
     if (frame.water.x > 1.5) {
         let ray = view_ray(ndc);
         let f = eye_fluid();
-        let d = waterline_m(normalize(ray), f);
+        let d = waterline_m(ray, f);
         if (d < 0.0) {
-            s.color = composite_underwater(p, ray, textureLoad(scene_color, p, 0));
+            return waterline_band(p, composite_underwater(p, ray, textureLoad(scene_color, p, 0)), d, f);
         }
-        s.color = meniscus(s.color, d, f);
+    }
+    var s = composited(p, ndc, decks);
+    if (frame.outline.x > 0.5) {
+        s.color = outlined(s, p);
     }
     return s.color;
 }
@@ -1222,12 +1248,67 @@ fn pixel_m(p: vec2i, ray: vec3f, depth: f32) -> f32 {
     return across / max(abs(normalize(ray).y), 0.15);
 }
 
-// The meniscus over the finished colour `c`: a thin bright band along the line, `d` the pixel's
-// waterline_m, its half-width the look's in pixels of the drawing buffer at the lens.
-fn meniscus(c: vec3f, d: f32, f: Fluid) -> vec3f {
-    let px_m = f.under.x * 2.0 * frame.tan.y / f32(textureDimensions(scene_color).y);
-    let band = 1.0 - smoothstep(0.0, f.line.w, abs(d) / max(px_m, 1e-6));
-    return mix(c, f.meniscus.rgb, f.under.w * band);
+// The band (WATER_RENDERING.md §12; render/water.rs `band_t`, `band_edge`, `band_uv` are its CPU
+// twins): the surface's slab seen edge-on just under the line, over `c` (the pixel's underwater
+// view), `d` its waterline_m (negative). Its colour is its surroundings': the scene just above
+// the line, mirrored across it (the slab's underside reflects what is above edge-on), over the
+// underwater view toward its foot, times the look's tint; textured by the underside's cells on a
+// plane receding to the line (compressed toward it), with glints; along the top a dark rim over a
+// bright line, both following the wavy edge; faded into the underwater view at its foot. Only the
+// band's rows pay for it.
+fn waterline_band(p: vec2i, c: vec3f, d: f32, f: Fluid) -> vec3f {
+    let depth = f.under.w;
+    if (depth <= 0.0 || d <= -depth) {
+        return c;
+    }
+    let t = -d / depth;
+    let face = frame.eye.y;
+    // d is linear on the screen: its gradient a pixel (x right, y down) is the lens × 2 tan_y /
+    // height × the camera's right and up axes' rise (render/water.rs `meniscus_px_m`).
+    let size = vec2f(textureDimensions(scene_color));
+    let g = vec2f(face_rise(face, frame.right.xyz), -face_rise(face, frame.up.xyz));
+    let px_m = f.under.x * 2.0 * frame.tan.y / size.y * max(length(g), 1e-4);
+    let px = -d / px_m;
+    let toward = g / max(length(g), 1e-4);
+    // Above the line, mirrored: the scene there, or the sky where nothing is drawn.
+    let q = clamp(vec2f(p) + 0.5 + toward * (2.0 * px + 2.0), vec2f(0.5), size - 0.5);
+    let above_c = textureLoad(scene_color, vec2i(q), 0);
+    let ndc = vec2f(q.x / size.x * 2.0 - 1.0, 1.0 - q.y / size.y * 2.0);
+    var above = sky(normalize(view_ray(ndc)));
+    if (above_c.a > 0.0) {
+        above = mix(above, scene_display(above_c, 0.0), min(above_c.a, 1.0));
+    }
+    // At most 60 % the mirrored scene, so a near bank reads as a tint, not a second picture.
+    let base = mix(above, c, 0.4 + 0.6 * smoothstep(0.0, 1.0, t)) * f.band.rgb;
+    // The underside's texture on a plane receding to the line (band_uv): along the line by the
+    // screen, down it by the inverse distance from the line, so cells shrink toward it.
+    let along = dot(vec2f(p), vec2f(-toward.y, toward.x)) / size.y;
+    let uv = vec2f(along * 4.0, 1.0) / (t + 0.08) + vec2f(0.0, 0.2 * frame.fog.z);
+    let n = noise_t(uv * vec2f(1.0, 0.35)).x;
+    let streak = clamp(1.0 + f.band.a * 2.5 * n, 0.3, 1.8);
+    let glint = smoothstep(0.3, 0.45, noise_t(uv * vec2f(2.1, 0.8) + 7.0).x) * f.band_extra.x;
+    var col = base * streak + vec3f(glint);
+    // The dark rim along the top edge, then the bright line under it (band_edge).
+    let rim = 1.0 - smoothstep(f.rim.x - 0.75, f.rim.x + 0.25, px);
+    let bright = (1.0 - rim) * (1.0 - smoothstep(f.rim.x + f.rim.z - 0.75, f.rim.x + f.rim.z + 0.25, px));
+    col *= mix(1.0, f.rim.y, rim) * mix(1.0, f.rim.w, bright);
+    return mix(c, col, 1.0 - smoothstep(0.55, 1.0, t));
+}
+
+// The underside's texture (look `underside.texture`, `line.w`): light and dark cells on the
+// surface's plane at `xz` (wrapped world m), the caustic cells on Medium and High, the noise tile
+// on Low; faded where a pixel covers a cell. Projected on the plane, so perspective-correct.
+fn underside_cells(xz: vec2f, footprint: f32, f: Fluid, fluid: u32) -> f32 {
+    let k = f.line.w;
+    if (k <= 0.0) {
+        return 1.0;
+    }
+    let sharp = 1.0 - smoothstep(0.08, 0.3, footprint / max(f.optics.y, 1e-3));
+    var c = noise_t(xz / max(f.optics.y, 0.1)).x * 1.5;
+    if (frame.water.w >= 0.5 && f.extra.y > 0.0) {
+        c = caustic_pattern(xz, f, footprint, fluid) * CAUSTIC_GAIN - CAUSTIC_MEAN;
+    }
+    return max(1.0 + k * sharp * c, 0.0);
 }
 
 // The composite with the eye under a fluid's surface (the W4 stub): the fluid's fog over the
@@ -1240,12 +1321,44 @@ fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
     let rise = face_rise(frame.eye.y, dir);
     let below = max(face_y(frame.eye.y, frame.water.z) - face_y(frame.eye.y, frame.eye.x), 0.0);
     let to_surface = select(1e6, below / rise, rise > 1e-4);
-    let back = display(underwater(sky_radiance(dir), to_surface, f));
+    // Snell's window (render/water.rs `sees_out`): a ray reaching the surface leaves it only
+    // within the critical angle of the face's up, bent by the ripples there; flatter, the surface
+    // mirrors the water below (its in-scatter, rippled), so the line is the colour edge and the
+    // view up from under is a bright window in a mirrored ceiling.
+    // Only what the pixel needs is paid for: most pixels show a drawn surface or floor (c.a 1).
+    let ior = f.wave.x;
+    let reaches = to_surface < 1e5;
+    var hit = vec2f(0.0);
+    var leaves = false;
+    if (reaches) {
+        hit = frame.wrap.xy + dir.xz * min(to_surface, 64.0);
+        let slope = noise_t(hit * 0.9).yz * 0.18;
+        let bent = rise + dot(slope, dir.xz);
+        leaves = bent > 0.0 && 1.0 - bent * bent < 1.0 / (ior * ior);
+    }
+    var depth = 0.0;
+    var dist = 1e6;
+    if (c.a > 0.0) {
+        depth = scene_depth_at(p).x;
+        dist = select(1e6, depth * length(ray), depth > 0.0);
+    }
+    var back = vec3f(0.0);
+    if (reaches && !leaves) {
+        if (c.a < 1.0 || dist > to_surface) {
+            // The mirror, textured by the underside's cells where the ray meets the surface.
+            let fp = to_surface * 2.0 * frame.tan.y / f32(textureDimensions(scene_color).y) / max(rise, 0.15);
+            back = display(underwater(vec3f(0.0), 1e6, f) * underside_cells(hit, fp, f, fluid));
+        }
+        // Past a mirroring surface nothing above it shows.
+        if (c.a <= 0.0 || dist > to_surface) {
+            return back;
+        }
+    } else if (c.a < 1.0) {
+        back = display(underwater(sky_radiance(dir), to_surface, f));
+    }
     if (c.a <= 0.0) {
         return back;
     }
-    let depth = scene_depth_at(p).x;
-    let dist = select(1e6, depth * length(ray), depth > 0.0);
     var lit = c.rgb / c.a;
     // Caustics on what the pixel shows under the surface (W3, Medium and High): the seabed, walls,
     // anything opaque, before the fog takes its share over the distance to it.
@@ -1767,7 +1880,11 @@ fn water_surface(i: FluidOut, front: bool, footprint: f32, f: Fluid, draw: Draw)
     s.light.points = point_lights(i.rel, face_up(s.up));
     s.sky = light_curve(i.flood.x, SKY_CURVE);
     s.shadow = shadow_light(i.rel, face_up(s.up), s.light.direct);
-    s.body = lambert_lit(f.scatter.rgb * draw.tint.rgb, face_up(s.up), s.frag_y, TerrainLight(s.light.ambient, s.shadow, s.light.glow, s.light.points));
+    // The body is the light scattered in the water under the surface, so a shadow on the surface
+    // (the player's own, standing in the water) darkens it only in part (BODY_SHADOW): at full
+    // strength it read as a dark blotch on the water beside the eye (WATER_RENDERING.md §12).
+    let body_shadow = mix(s.light.direct, s.shadow, BODY_SHADOW);
+    s.body = lambert_lit(f.scatter.rgb * draw.tint.rgb, face_up(s.up), s.frag_y, TerrainLight(s.light.ambient, body_shadow, s.light.glow, s.light.points));
     return s;
 }
 
@@ -2015,6 +2132,9 @@ fn sparkle(i: FluidOut, s: Surface, f: Fluid, footprint: f32) -> vec3f {
     return select(day.sun_b.rgb, day.sun_a.rgb, s.on_a) * own(day.sun.xyz, s.up) * (k * fade * lobe * schlick(s.ndv, f.extra.x));
 }
 
+// How much a shadow on a fluid's surface darkens its body (the in-scattered light; render/water.rs
+// test `the_waterline_band_...` pins it); the glint and sparkle keep the full shadow.
+const BODY_SHADOW: f32 = 0.35;
 const SPARKLE_WAVELENGTH: f32 = 0.06;
 const SPARKLE_POWER: f32 = 2400.0;
 
@@ -2046,17 +2166,22 @@ fn waterline_hides(i: FluidOut, front: bool) -> bool {
     }
     let face = frame.eye.y;
     let own = abs(face_y(face, frame.eye.x + i.rel.y) - face_y(face, frame.water.z)) <= 0.05;
-    let other_side = (waterline_m(normalize(i.rel), eye_fluid()) < 0.0) == front;
+    let other_side = (waterline_m(i.rel / max(view_depth(i.rel), 1e-4), eye_fluid()) < 0.0) == front;
     return (abs(i.normal.y) > 0.5) & own & other_side;
 }
 
-// A fluid's surface seen from inside (the W4 stub): the body's colour, out through Snell's window,
-// else totally reflected.
-fn from_below(s: Surface, f: Fluid) -> vec4f {
+// A fluid's surface seen from inside: out through Snell's window, else totally reflected.
+// Lit unshadowed: the underside shows the water below it, not the shadow on the surface (the
+// player's own shadow read as a dark blotch overhead, WATER_RENDERING.md §12). The mirror carries
+// the underside's texture (`underside_cells` at the surface point `xz`, perspective-correct on
+// the mesh); inside the window what is above shows through by the Fresnel (the composite's
+// `back`: the sky, or the scene behind).
+fn from_below(s: Surface, f: Fluid, xz: vec2f, footprint: f32, fluid: u32) -> vec4f {
     let out_dir = refract(-s.v, s.n, f.wave.x);
     let tir = dot(out_dir, out_dir) < 0.5;
     let fres = select(schlick(abs(dot(out_dir, s.n)), f.extra.x), 1.0, tir);
-    return vec4f(s.body, 1.0 - (1.0 - fres) * (1.0 - f.absorption.a));
+    let body = lambert_lit(f.scatter.rgb, face_up(s.up), s.frag_y, TerrainLight(s.light.ambient, s.light.direct, s.light.glow, s.light.points));
+    return vec4f(body * underside_cells(xz, footprint, f, fluid), fres);
 }
 
 // A fluid's surface (WATER_RENDERING.md W1b; the Low water tier, which reads no copy of the
@@ -2091,7 +2216,7 @@ fn water_fs(i: FluidOut, @builtin(front_facing) front: bool) -> SceneOut {
     let f = fluids[i.fluid];
     let s = water_surface(i, front, footprint, f, draw);
     if (seen_from_inside(i, front)) {
-        o.color = from_below(s, f);
+        o.color = from_below(s, f, i.wrapped, footprint, i.fluid);
         return o;
     }
     let fres = schlick(s.ndv, f.extra.x);
@@ -2189,7 +2314,7 @@ fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(
     let f = fluids[i.fluid];
     let s = water_surface(i, front, footprint, f, draw);
     if (seen_from_inside(i, front)) {
-        return from_below(s, f);
+        return from_below(s, f, i.wrapped, footprint, i.fluid);
     }
     let fres = schlick(s.ndv, f.extra.x);
     let size = vec2f(textureDimensions(scene_color));
@@ -2696,9 +2821,13 @@ mod tests {
         // direct share, they don't replace a full one.
         assert!(surface.contains("s.light = terrain_light(1.0, i.flood);"));
         assert!(surface.contains("s.shadow = shadow_light(i.rel, face_up(s.up), s.light.direct);"));
+        // The body takes part of the shadow (BODY_SHADOW, WATER_RENDERING.md §12), still of the
+        // direct share.
+        assert!(surface.contains("mix(s.light.direct, s.shadow, BODY_SHADOW)"));
         assert!(
-            surface
-                .contains("TerrainLight(s.light.ambient, s.shadow, s.light.glow, s.light.points)")
+            surface.contains(
+                "TerrainLight(s.light.ambient, body_shadow, s.light.glow, s.light.points)"
+            )
         );
         assert!(
             !src.contains("TerrainLight(1.0, s.shadow"),
@@ -2807,7 +2936,7 @@ mod tests {
         assert!(
             c.contains("sky(")
                 && c.contains("sky_behind_with_clouds(")
-                && c.contains("dwell_cloud_deck(")
+                && body("composited_decks").contains("dwell_cloud_deck(")
         );
         assert!(body("composite_pixel").contains("composited("));
     }
@@ -2839,12 +2968,18 @@ mod tests {
         let c = body("composited");
         assert!(c.contains("dwell_cloud_layer(clear, dir,"));
         assert!(c.contains("cloud_in_front_of(deck.z, ray, depth)"));
-        // The deck's footprint is taken before any branch (derivatives need uniform control flow).
-        let c = body("composited");
-        let deck = c.find("dwell_cloud_deck(").expect("deck");
+        // The deck's footprint is taken before any branch (derivatives need uniform control
+        // flow): in composited_decks, which composite_pixel calls before its waterline branch.
+        let c = body("composited_decks");
+        assert!(c.contains("dwell_cloud_deck(") && c.contains("fwidth(") && !c.contains("if ("));
+        let px = body("composite_pixel");
+        let decks = px
+            .find("let decks = composited_decks(ndc);")
+            .expect("decks");
         assert!(
-            deck < c.find("if (").expect("branch")
-                && c.find("fwidth(").expect("fw") < c.find("if (").unwrap()
+            decks
+                < px.find("if (frame.water.x > 1.5)")
+                    .expect("the waterline branch")
         );
     }
 
@@ -3218,7 +3353,7 @@ mod tests {
                 && c.contains("composited_scene(c, depth, self_lit, s)")
         );
         assert!(body("composited_scene").contains("var color = s.back;"));
-        assert!(body("composite_pixel").contains("composited(p, ndc)"));
+        assert!(body("composite_pixel").contains("composited(p, ndc, decks)"));
     }
 
     #[test]

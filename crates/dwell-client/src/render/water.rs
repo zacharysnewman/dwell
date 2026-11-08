@@ -10,7 +10,7 @@ use dwell_blocks::FluidInfo;
 use dwell_look::{hex, srgb_to_linear};
 
 /// vec4s per fluid in the buffer (`Fluid` in the WGSL).
-pub const FLUID_VEC4S: usize = 12;
+pub const FLUID_VEC4S: usize = 14;
 /// Bytes per fluid.
 pub const FLUID_STRIDE: u64 = (FLUID_VEC4S * 16) as u64;
 
@@ -230,20 +230,32 @@ pub fn pack_fluids(fluids: &[FluidInfo]) -> Vec<f32> {
         }
         // Its underwater look by name (shared/look/underwater.json; none: the default).
         let u = dwell_look::underwater::underwater_look(f.name);
-        let m = hex(u.meniscus_color);
+        let tint = hex(u.band_tint);
         out.extend_from_slice(&[
             u.lens_m as f32,
             u.fog_clear_m as f32,
             u.fog_density as f32,
-            u.meniscus_strength as f32,
+            u.band_depth_m as f32,
         ]);
         out.extend_from_slice(&[
             u.line_amplitude_m as f32,
             u.line_wavelength_m as f32,
             u.line_speed as f32,
-            u.meniscus_width_px as f32,
+            u.underside_texture as f32,
         ]);
-        out.extend_from_slice(&[m[0] as f32, m[1] as f32, m[2] as f32, 0.0]);
+        out.extend_from_slice(&[
+            tint[0] as f32,
+            tint[1] as f32,
+            tint[2] as f32,
+            u.band_streaks as f32,
+        ]);
+        out.extend_from_slice(&[
+            u.band_rim_px as f32,
+            u.band_rim_shade as f32,
+            u.band_line_px as f32,
+            u.band_line_glow as f32,
+        ]);
+        out.extend_from_slice(&[u.band_glints as f32, 0.0, 0.0, 0.0]);
     }
     if out.is_empty() {
         // A storage binding can't be empty: one zero fluid that nothing indexes.
@@ -252,19 +264,79 @@ pub fn pack_fluids(fluids: &[FluidInfo]) -> Vec<f32> {
     out
 }
 
-/// The waterline (WATER_RENDERING.md §10; the WGSL `waterline_m` is its twin): how far (m, along
-/// the face's up) the point `lens_m` out along a pixel's view direction (world y `dir_y`) from the
-/// eye at world y `eye_y` is above the fluid's surface at world y `surface_y`, less the line's wave
-/// `wave_m` there. Negative: the pixel looks out from under the surface.
+/// The view ray through screen point `ndc` scaled to view depth 1 (the WGSL `view_ray`): `forward`,
+/// `right` and `up` the camera's world axes, `tan` the half-FOV tangents (x, y).
+pub fn view_ray(
+    forward: [f64; 3],
+    right: [f64; 3],
+    up: [f64; 3],
+    tan: [f64; 2],
+    ndc: [f64; 2],
+) -> [f64; 3] {
+    std::array::from_fn(|k| forward[k] + ndc[0] * tan[0] * right[k] + ndc[1] * tan[1] * up[k])
+}
+
+/// The waterline (WATER_RENDERING.md §12; the WGSL `waterline_m` is its twin): how far (m, along
+/// the face's up) a pixel's point on the lens plane (`lens_m` ahead of the eye along the camera's
+/// forward axis: its view ray scaled to view depth 1, world y `ray_y`, times `lens_m`) from the
+/// eye at world y `eye_y` is above the fluid's surface at world y `surface_y`, less the line's
+/// wave `wave_m` there. Negative: the pixel looks out from under the surface. The lens points lie
+/// on a plane, which the water's plane cuts in a straight line at any eye height and roll; linear
+/// in the eye's height, so the line moves smoothly with it.
 pub fn waterline_m(
     face: dwell_world::FaceFrame,
     eye_y: f64,
     surface_y: f64,
-    dir_y: f64,
+    ray_y: f64,
     lens_m: f64,
     wave_m: f64,
 ) -> f64 {
-    face.y(eye_y + dir_y * lens_m) - face.y(surface_y) - wave_m
+    face.y(eye_y + ray_y * lens_m) - face.y(surface_y) - wave_m
+}
+
+/// How many metres of [`waterline_m`] one pixel of the drawing buffer spans across the line (the
+/// WGSL `waterline_band`'s `px_m`): `waterline_m` is linear on the screen, its gradient per pixel
+/// the lens times `2 tan_y / height` times the length of the camera's up and right axes' world y
+/// (the same along x and y, as `tan_x / width = tan_y / height`). The band's rim and line,
+/// measured in these, are the same pixel width at any pitch or roll.
+pub fn meniscus_px_m(lens_m: f64, tan_y: f64, height_px: f64, up_y: f64, right_y: f64) -> f64 {
+    lens_m * 2.0 * tan_y / height_px * up_y.hypot(right_y)
+}
+
+/// Where a pixel `d` metres of [`waterline_m`] from the line is in the band (the WGSL
+/// `waterline_band`): 0 at its top edge (the line: the surface), 1 at its foot `depth_m` under
+/// it; none above the line (the band is the surface's slab under it) or past its foot.
+pub fn band_t(d: f64, depth_m: f64) -> Option<f64> {
+    (depth_m > 0.0 && d < 0.0 && d > -depth_m).then(|| -d / depth_m)
+}
+
+/// The band's edge at a pixel `px` pixels under the line (the WGSL `waterline_band`): the colour's
+/// multiplier, `shade` over the dark rim's `rim_px`, then `glow` over the bright line's `line_px`
+/// under it, else 1 (a pixel's soft edge between).
+pub fn band_edge(px: f64, rim_px: f64, shade: f64, line_px: f64, glow: f64) -> f64 {
+    let smooth = |a: f64, b: f64, x: f64| {
+        let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
+        t * t * (3.0 - 2.0 * t)
+    };
+    let rim = 1.0 - smooth(rim_px - 0.75, rim_px + 0.25, px);
+    let line = (1.0 - rim) * (1.0 - smooth(rim_px + line_px - 0.75, rim_px + line_px + 0.25, px));
+    (1.0 + (shade - 1.0) * rim) * (1.0 + (glow - 1.0) * line)
+}
+
+/// The band's texture coordinate (the WGSL `waterline_band`'s `uv`) at `along` screen heights
+/// along the line and `t` down the band: a plane receding to the line, so a step on the screen
+/// covers more of the texture toward the line (cells shrink toward it, as the surface's do).
+pub fn band_uv(along: f64, t: f64) -> [f64; 2] {
+    [along * 4.0 / (t + 0.08), 1.0 / (t + 0.08)]
+}
+
+/// Snell's window (the WGSL `sees_out`): whether a ray from under the surface that rises at
+/// `rise` (the cosine of its angle from the face's up, after the ripples bend it) leaves the
+/// fluid of refractive index `ior` (through the window overhead), or is totally reflected back
+/// (rising at a slant flatter than the critical angle, `asin(1 / ior)`: 48.6° from the up for
+/// water). Below the surface's plane (rise ≤ 0) it never reaches it.
+pub fn sees_out(rise: f64, ior: f64) -> bool {
+    rise > 0.0 && 1.0 - rise * rise < 1.0 / (ior * ior)
 }
 
 /// The length of a view ray inside the water (m): from the surface, at view depth `d_water`, to
@@ -829,15 +901,24 @@ mod tests {
         for (id, f) in dwell_blocks::FLUIDS.iter().enumerate() {
             let v = &buf[id * FLUID_VEC4S * 4..(id + 1) * FLUID_VEC4S * 4];
             let u = underwater_look(f.name);
-            let under = [u.lens_m, u.fog_clear_m, u.fog_density, u.meniscus_strength];
+            let under = [u.lens_m, u.fog_clear_m, u.fog_density, u.band_depth_m];
             let line = [
                 u.line_amplitude_m,
                 u.line_wavelength_m,
                 u.line_speed,
-                u.meniscus_width_px,
+                u.underside_texture,
+            ];
+            let rim = [
+                u.band_rim_px,
+                u.band_rim_shade,
+                u.band_line_px,
+                u.band_line_glow,
             ];
             assert_eq!(v[36..40], under.map(|x| x as f32));
             assert_eq!(v[40..44], line.map(|x| x as f32));
+            assert_eq!(v[47], u.band_streaks as f32);
+            assert_eq!(v[48..52], rim.map(|x| x as f32));
+            assert_eq!(v[52], u.band_glints as f32);
         }
         // A fluid with no look of its own takes the default's (fog from the eye, the registry's rates).
         assert_eq!(underwater_look("test:oil"), &DEFAULT_UNDERWATER);
@@ -872,6 +953,235 @@ mod tests {
         }
     );
 
+    /// A camera at `pitch` and `roll` (radians), face-local through `f`: forward, right, up.
+    fn camera(f: dwell_world::FaceFrame, pitch: f64, roll: f64) -> [[f64; 3]; 3] {
+        let (sp, cp) = pitch.sin_cos();
+        let (sr, cr) = roll.sin_cos();
+        let fwd = [0.0, sp, cp];
+        let up0 = [0.0, cp, -sp];
+        let right0 = [1.0, 0.0, 0.0];
+        let right: [f64; 3] = std::array::from_fn(|k| cr * right0[k] + sr * up0[k]);
+        let up: [f64; 3] = std::array::from_fn(|k| cr * up0[k] - sr * right0[k]);
+        [f.vector(fwd), f.vector(right), f.vector(up)]
+    }
+
+    /// The default FOV at 16:10 (100° across, 75°-ish down: the bench's view).
+    const TAN: [f64; 2] = [1.1918, 0.7449];
+
+    /// A pixel's waterline at `ndc` for an eye `eye` metres over the surface (face-local).
+    fn pixel_d(
+        f: dwell_world::FaceFrame,
+        cam: [[f64; 3]; 3],
+        eye: f64,
+        ndc: [f64; 2],
+        lens: f64,
+    ) -> f64 {
+        let surface = 10.875;
+        let ray = view_ray(cam[0], cam[1], cam[2], TAN, ndc);
+        waterline_m(f, f.y(surface + eye), f.y(surface), ray[1], lens, 0.0)
+    }
+
+    dwell_world::both_faces!(
+        fn the_waterline_is_a_straight_line_at_any_eye_height_and_roll(f: FaceFrame) {
+            // The lens points lie on a plane, so the water cuts them in a line: for a level camera
+            // a screen row is all under or all over (the old sphere of points bent it into an arc,
+            // its ends rising toward the screen's edges: WATER_GPU_SURFACE.md §1.2).
+            let lens = dwell_look::underwater::underwater_look("dwell:water").lens_m;
+            let level = camera(f, 0.0, 0.0);
+            for eye in [0.1, 0.05, -0.05, -0.1, -0.2] {
+                // The row the line crosses at the centre, then rows a pixel's worth either side.
+                let row = -eye / (lens * TAN[1]);
+                for (dy, under) in [(-0.002, true), (0.002, false)] {
+                    for k in -10..=10 {
+                        let x = f64::from(k) / 10.0;
+                        let d = pixel_d(f, level, eye, [x, row + dy], lens);
+                        assert_eq!(d < 0.0, under, "eye {eye}, ndc ({x}, {}): d {d}", row + dy);
+                    }
+                }
+            }
+            // Rolled and pitched: the under pixels are a half-plane, so three points on any
+            // screen line are never under, over, under.
+            let tilted = camera(f, 0.2, 0.3);
+            for eye in [0.12, -0.08] {
+                for k in -10..=10 {
+                    let t = f64::from(k) / 10.0;
+                    let a = pixel_d(f, tilted, eye, [-1.0, t], lens);
+                    let m = pixel_d(f, tilted, eye, [0.0, t], lens);
+                    let b = pixel_d(f, tilted, eye, [1.0, t], lens);
+                    assert!((m - (a + b) / 2.0).abs() < 1e-9, "linear across the screen");
+                }
+            }
+        }
+    );
+
+    dwell_world::both_faces!(
+        fn the_waterline_moves_smoothly_with_the_eye_and_enters_without_a_pop(f: FaceFrame) {
+            let look = dwell_look::underwater::underwater_look("dwell:water");
+            let lens = look.lens_m;
+            let level = camera(f, 0.0, 0.0);
+            // The level view's line at the centre column, by bisection over the screen.
+            let line_row = |eye: f64| {
+                let (mut lo, mut hi) = (-1.0, 1.0);
+                for _ in 0..50 {
+                    let mid = (lo + hi) / 2.0;
+                    if pixel_d(f, level, eye, [0.0, mid], lens) < 0.0 {
+                        lo = mid;
+                    } else {
+                        hi = mid;
+                    }
+                }
+                lo
+            };
+            // Centimetre steps from 0.25 m over to 0.25 m under: the line moves a little each
+            // step (no jump), monotonically up the screen as the eye sinks.
+            let mut last = line_row(0.25);
+            assert!(
+                last > -1.0 && last < -0.8,
+                "at +0.25 m the line is near the bottom edge"
+            );
+            for cm in (-25..25).rev() {
+                let row = line_row(f64::from(cm) / 100.0);
+                assert!(
+                    row >= last && row - last < 0.05,
+                    "at {cm} cm: {last} → {row}"
+                );
+                last = row;
+            }
+            assert!(
+                last > 0.8 && last < 1.0,
+                "at −0.25 m the line is near the top edge"
+            );
+            // Entering the split (the eye `reach_m` over the surface, else no fluid found) or
+            // leaving it for the whole view under (`reach_m` under): no pixel at any pitch or
+            // roll is on the other side there, so the switch changes nothing.
+            let reach = look.reach_m();
+            for pitch in [-1.5, -0.8, -0.3, 0.0, 0.3, 0.8, 1.5] {
+                for roll in [0.0, 0.7] {
+                    let cam = camera(f, pitch, roll);
+                    for ndc in [
+                        [-1.0, -1.0],
+                        [1.0, -1.0],
+                        [-1.0, 1.0],
+                        [1.0, 1.0],
+                        [0.0, 0.0],
+                    ] {
+                        let wave = look.line_amplitude_m;
+                        assert!(pixel_d(f, cam, reach, ndc, lens) - wave > 0.0);
+                        assert!(pixel_d(f, cam, -reach, ndc, lens) + wave < 0.0);
+                    }
+                }
+            }
+        }
+    );
+
+    #[test]
+    fn lens_ray_max_covers_every_field_of_view() {
+        // both-faces: a camera's FOV is the same on either face.
+        use dwell_lod::frustum::{FOV_SETTING_RANGE, base_fov};
+        for setting in [FOV_SETTING_RANGE.0, 75.0, FOV_SETTING_RANGE.1] {
+            for aspect in [0.45, 0.75, 1.0, 1.33, 1.6, 2.0, 2.4, 3.0] {
+                let v = (base_fov(setting, aspect).to_radians() / 2.0).tan();
+                let h = v * aspect;
+                let corner = (1.0 + v * v + h * h).sqrt();
+                assert!(
+                    corner <= dwell_look::underwater::LENS_RAY_MAX,
+                    "setting {setting}, aspect {aspect}: {corner}"
+                );
+            }
+        }
+    }
+
+    dwell_world::both_faces!(
+        fn the_waterline_band_sits_under_the_line_with_a_dark_rim_over_a_bright_line(f: FaceFrame) {
+            // Owner, 2026-11-07: "the band isn't just a white line, it's supposed to be like an
+            // actual thing", "a darker line over a lighter line". The old meniscus was a thin
+            // light band straddling the line, and drew above the split.
+            let look = dwell_look::underwater::underwater_look("dwell:water");
+            let (lens, h) = (look.lens_m, 1600.0);
+            for (pitch, roll) in [(0.0, 0.0), (0.5, 0.0), (-0.4, 0.3)] {
+                let cam = camera(f, pitch, roll);
+                let px_m = meniscus_px_m(lens, TAN[1], h, cam[2][1], cam[1][1]);
+                // Down the centre column in pixels (r from the top); the split is where d crosses 0.
+                let d = |r: f64| pixel_d(f, cam, 0.03, [0.0, 1.0 - 2.0 * r / h], lens);
+                let mut split = 0.0;
+                while d(split + 1.0) >= 0.0 && split < h {
+                    split += 1.0;
+                }
+                assert!(split > 0.0 && split < h, "the line is on screen");
+                // Nothing of the band above the line; its top edge is the first pixel under it.
+                for r in [split - 3.0, split - 1.0, split] {
+                    assert!(
+                        band_t(d(r), look.band_depth_m).is_none(),
+                        "above the line at {r}"
+                    );
+                }
+                let top = band_t(d(split + 1.0), look.band_depth_m).expect("the band's top");
+                assert!(top < 0.05, "the top edge is the surface: {top}");
+                // A slab of real thickness: rows down to its foot (5–8 % of the screen level).
+                let mut foot = split + 1.0;
+                while band_t(d(foot + 1.0), look.band_depth_m).is_some() {
+                    foot += 1.0;
+                }
+                let share = (foot - split) / h;
+                if pitch == 0.0 {
+                    assert!(share > 0.05 && share < 0.08, "level: {share} of the screen");
+                }
+                // Along the edge: darker first, then lighter, then the band's own colour, in
+                // pixels across the line at any pitch and roll.
+                let edge = |r: f64| {
+                    let px = -d(r) / px_m;
+                    band_edge(
+                        px,
+                        look.band_rim_px,
+                        look.band_rim_shade,
+                        look.band_line_px,
+                        look.band_line_glow,
+                    )
+                };
+                // The row `px` pixels across the line under it, down the column (d is linear).
+                let slope = d(split) - d(split + 1.0);
+                let zero = split + d(split) / slope;
+                let row = |px: f64| zero + px * px_m / slope;
+                assert!(
+                    edge(row(0.5)) < 0.6,
+                    "a dark rim on top, pitch {pitch} roll {roll}"
+                );
+                let lit = edge(row(look.band_rim_px + look.band_line_px / 2.0));
+                assert!(lit > 1.3, "a bright line under it: {lit}");
+                assert!((edge(row(look.band_rim_px + look.band_line_px + 3.0)) - 1.0).abs() < 1e-9);
+            }
+            // The texture recedes to the line: a pixel near it spans more of the texture.
+            let rate = |t: f64| band_uv(0.0, t + 0.01)[1] - band_uv(0.0, t)[1];
+            assert!(
+                rate(0.0).abs() > 5.0 * rate(0.9).abs(),
+                "compressed toward the line"
+            );
+            let wide = |t: f64| band_uv(0.1, t)[0] - band_uv(0.0, t)[0];
+            assert!(wide(0.0) > 5.0 * wide(0.9), "and across it");
+        }
+    );
+
+    #[test]
+    fn snells_window_is_48_6_degrees_and_outside_it_the_surface_reflects() {
+        // both-faces: `rise` is face-local (the cosine from the face's own up).
+        let ior = 1.333;
+        let edge = (1.0f64 / ior).asin().to_degrees();
+        assert!((edge - 48.6).abs() < 0.05, "{edge}");
+        let at = |deg: f64| sees_out(deg.to_radians().cos(), ior);
+        assert!(
+            at(0.0) && at(30.0) && at(48.0),
+            "inside the window: out to the sky"
+        );
+        assert!(
+            !at(49.5) && !at(80.0) && !at(89.0),
+            "outside it: totally reflected"
+        );
+        assert!(
+            !sees_out(-0.2, ior),
+            "a ray going down never reaches the surface"
+        );
+    }
+
     #[test]
     fn the_shader_decides_the_waterline_as_its_cpu_twin_does() {
         // both-faces: the WGSL crosses into the face through face_y as waterline_m does through FaceFrame::y.
@@ -879,7 +1189,22 @@ mod tests {
         assert!(src.contains(
             "return face_y(face, frame.eye.x + lens.y) - face_y(face, frame.water.z) - wave;"
         ));
-        assert!(src.contains("let d = waterline_m(normalize(ray), f);"));
+        // The view ray at view depth 1, not normalized: the lens plane, not a sphere.
+        assert!(src.contains("let lens = ray * f.under.x;"));
+        assert!(src.contains("let d = waterline_m(ray, f);"));
+        assert!(!src.contains("waterline_m(normalize("));
+        // The band as band_t, band_edge, band_uv; Snell's window as sees_out; the underside's
+        // texture from below and the body's partial shadow (the blotch).
+        assert!(src.contains("let t = -d / depth;"));
+        assert!(src.contains("return waterline_band(p, composite_underwater(p, ray, textureLoad(scene_color, p, 0)), d, f);"));
+        assert!(src.contains("let rim = 1.0 - smoothstep(f.rim.x - 0.75, f.rim.x + 0.25, px);"));
+        assert!(src.contains("let uv = vec2f(along * 4.0, 1.0) / (t + 0.08)"));
+        assert!(src.contains("1.0 - bent * bent < 1.0 / (ior * ior)"));
+        assert!(
+            src.contains("return vec4f(body * underside_cells(xz, footprint, f, fluid), fres);")
+        );
+        assert!(src.contains("const BODY_SHADOW: f32 = 0.35;"));
+        assert!(src.contains("let body_shadow = mix(s.light.direct, s.shadow, BODY_SHADOW);"));
         assert!(src.contains("let d = max(dist - f.under.y, 0.0) * f.under.z;"));
     }
 }

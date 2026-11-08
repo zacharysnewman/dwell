@@ -32,7 +32,17 @@ function checkNumber(where, v, lo, hi, open = false) {
 /** Part → field → [min, max, open below] or 'color'. */
 const PARTS = {
   line: { amplitudeM: [0, 0.25], wavelengthM: [0.05, 64, true], speed: [0, 10] },
-  meniscus: { color: 'color', strength: [0, 1], widthPx: [0.25, 32] },
+  band: {
+    depthM: [0, 0.25],
+    tint: 'color',
+    streaks: [0, 1],
+    glints: [0, 1],
+    rimPx: [0, 32],
+    rimShade: [0, 1],
+    linePx: [0, 32],
+    lineGlow: [1, 4],
+  },
+  underside: { texture: [0, 1] },
   fog: { clearM: [0, 256], density: [0, 16, true] },
 };
 
@@ -86,9 +96,15 @@ function lookRust(name, l, indent) {
     `${i}    line_amplitude_m: ${rf(l.line.amplitudeM)},`,
     `${i}    line_wavelength_m: ${rf(l.line.wavelengthM)},`,
     `${i}    line_speed: ${rf(l.line.speed)},`,
-    `${i}    meniscus_color: ${hex(l.meniscus.color)},`,
-    `${i}    meniscus_strength: ${rf(l.meniscus.strength)},`,
-    `${i}    meniscus_width_px: ${rf(l.meniscus.widthPx)},`,
+    `${i}    band_depth_m: ${rf(l.band.depthM)},`,
+    `${i}    band_tint: ${hex(l.band.tint)},`,
+    `${i}    band_streaks: ${rf(l.band.streaks)},`,
+    `${i}    band_glints: ${rf(l.band.glints)},`,
+    `${i}    band_rim_px: ${rf(l.band.rimPx)},`,
+    `${i}    band_rim_shade: ${rf(l.band.rimShade)},`,
+    `${i}    band_line_px: ${rf(l.band.linePx)},`,
+    `${i}    band_line_glow: ${rf(l.band.lineGlow)},`,
+    `${i}    underside_texture: ${rf(l.underside.texture)},`,
     `${i}    fog_clear_m: ${rf(l.fog.clearM)},`,
     `${i}    fog_density: ${rf(l.fog.density)},`,
     `${i}}`,
