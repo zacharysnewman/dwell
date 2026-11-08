@@ -124,7 +124,10 @@ export function storedHas(stored: unknown, path: readonly string[]): boolean {
 }
 
 /** The fields pinned: those their stores hold. */
-export function pinsIn(fields: readonly SettingField[], load: (key: string) => unknown): Set<string> {
+export function pinsIn(
+  fields: readonly SettingField[],
+  load: (key: string) => unknown,
+): Set<string> {
   return new Set(fields.filter((f) => storedHas(load(f.key), f.path)).map((f) => f.id));
 }
 
@@ -164,14 +167,10 @@ function withoutAt(v: unknown, path: readonly string[]): unknown {
   if (!isRecord(v) || path.length === 0) return v;
   const [head, ...rest] = path as [string, ...string[]];
   if (!(head in v)) return v;
-  const copy: Obj = { ...v };
-  if (rest.length === 0) delete copy[head];
-  else {
-    const inner = withoutAt(copy[head], rest);
-    if (isRecord(inner) && Object.keys(inner).length === 0) delete copy[head];
-    else copy[head] = inner;
-  }
-  return copy;
+  const others = Object.fromEntries(Object.entries(v).filter(([k]) => k !== head));
+  if (rest.length === 0) return others;
+  const inner = withoutAt(v[head], rest);
+  return isRecord(inner) && Object.keys(inner).length === 0 ? others : { ...others, [head]: inner };
 }
 
 /** The stored preset id (`dwell.graphicsPreset`'s `id`), or null when none is (or it isn't text). */

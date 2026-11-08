@@ -171,7 +171,7 @@ describe('the defaults', () => {
     expect(loadSettings(false).renderScale).toEqual({ scale: 1, upscaler: 'sharpen' });
   });
 
-  it('store nothing new: a preset is its settings, and the stores stay append-only', () => {
+  it('saved whole (as builds before 0.50.31 did): the stores stay append-only, no preset id', () => {
     store.set('dwell.renderScale', JSON.stringify({ scale: 1, upscaler: 'stretch', later: 7 }));
     store.set('dwell.water', JSON.stringify({ quality: 'high', later: 'kept' }));
     store.set('dwell.shadows', JSON.stringify({ quality: 'high', torch: 'low', later: [1] }));

@@ -421,7 +421,11 @@ export function clearPreset(
 
 /** Reset: nothing pinned and no preset chosen, so everything follows this build's defaults. */
 export function resetSettings(mobile: boolean, src: DefaultsSource = {}): SettingsState {
-  return withDefaults({ settings: baseSettings(mobile), pins: new Set(), preset: null }, mobile, src);
+  return withDefaults(
+    { settings: baseSettings(mobile), pins: new Set(), preset: null },
+    mobile,
+    src,
+  );
 }
 
 /**
