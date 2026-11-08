@@ -178,6 +178,7 @@
     "Keep building as you aim": ["event:place"],
     "Build mode": ["event:tool"],
     "Choose block": ["action:hotbar"],
+    "Previous / next block": ["action:hotbar"],
     "Select first corner": ["event:tool"],
     "Select second corner": ["event:tool"],
     "Clear the selection": ["event:tool"],

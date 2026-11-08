@@ -376,6 +376,9 @@ export const SOUND_DATA: SoundData = {
     "Choose block": [
       "action:hotbar"
     ],
+    "Previous / next block": [
+      "action:hotbar"
+    ],
     "Select first corner": [
       "event:tool"
     ],
