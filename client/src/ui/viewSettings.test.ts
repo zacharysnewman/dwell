@@ -75,7 +75,8 @@ describe('field of view', () => {
 describe('light shafts', () => {
   it('keeps a stored tier and defaults to High on every device (owner, 2026-11-07)', () => {
     for (const q of ['off', 'low', 'high'] as const) expect(sanitizeShafts(q)).toBe(q);
-    for (const bad of [null, undefined, 'ultra', 2, { q: 'low' }]) expect(sanitizeShafts(bad)).toBe('high');
+    for (const bad of [null, undefined, 'ultra', 2, { q: 'low' }])
+      expect(sanitizeShafts(bad)).toBe('high');
     expect(SHAFT_QUALITIES).toEqual(['off', 'low', 'high']);
   });
 });
