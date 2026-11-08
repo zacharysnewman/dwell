@@ -1239,7 +1239,7 @@ function blockDumpOf(app: App, water?: unknown): BlockDump | null {
 }
 
 /** How far around the player (cells) the block dump reports the local server's water. */
-/** How often the HUD's layout is solved again while no part's size has changed (ms). */
+/** How often the HUD's layout looks for parts made since its last run (ms). */
 const LAYOUT_EVERY_MS = 250;
 
 const WATER_REPORT_RADIUS = 48;

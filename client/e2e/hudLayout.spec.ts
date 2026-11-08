@@ -73,7 +73,7 @@ for (const name of ['iPhone 13', 'iPhone 13 landscape'] as const) {
       await expect(page.locator('#minimap')).toBeVisible();
       await expect(page.locator('#net-status')).not.toBeEmpty();
       await expect(page.locator('#perf-status')).not.toBeEmpty({ timeout: 10_000 });
-      // The layout runs a few times a second: let it settle on the lines' text.
+      // The layout follows the lines' text as it changes size: let it settle.
       await page.waitForTimeout(600);
       const all = await boxes(page);
       const vp = page.viewportSize() ?? { width: 0, height: 0 };

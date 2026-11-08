@@ -277,8 +277,8 @@ export function applyLayout(doc: Document, layout: HudLayout, touch: boolean): S
 
 /**
  * Runs the layout from the frame loop: at once when the screen is resized or a part changes size (a
- * part shown, the lines' text, the hotbar's rows; a ResizeObserver on each part), else every
- * `everyMs` (a part created after the last run is found then).
+ * part shown, the lines' text, the hotbar's rows; a ResizeObserver on each part) or a part is made, and
+ * not otherwise: on a software renderer restyling the blurred parts costs frames.
  */
 export class LayoutRunner {
   private dirty = true;
@@ -298,17 +298,23 @@ export class LayoutRunner {
   }
 
   frame(now: number): void {
-    if (!this.dirty && now - this.last < this.everyMs) return;
-    this.dirty = false;
-    this.last = now;
-    applyLayout(this.doc, this.layout, this.touch);
-    if (!this.observer) return;
-    for (const p of this.layout.parts) {
-      const el = this.doc.querySelector(p.selector);
-      if (el && !this.seen.has(el)) {
-        this.seen.add(el);
-        this.observer.observe(el);
-      }
+    // Every `everyMs`, only a look for parts made since (cheap); the layout itself runs only when
+    // something changed (without a ResizeObserver, every `everyMs`).
+    if (now - this.last >= this.everyMs) {
+      this.last = now;
+      if (!this.observer) this.dirty = true;
+      else
+        for (const p of this.layout.parts) {
+          const el = this.doc.querySelector(p.selector);
+          if (el && !this.seen.has(el)) {
+            this.seen.add(el);
+            this.observer.observe(el);
+            this.dirty = true;
+          }
+        }
     }
+    if (!this.dirty) return;
+    this.dirty = false;
+    applyLayout(this.doc, this.layout, this.touch);
   }
 }
