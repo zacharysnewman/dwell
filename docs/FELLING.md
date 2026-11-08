@@ -206,3 +206,10 @@ snapshots, at most every 250 ms).
 Trees as records that grow (TREE_GROWTH.md §5); terrain and builds falling (opt in by data later,
 with Phase 20's remaining exit criteria: large structures across ticks, crush); explosions and
 Tier 2 debris (Phase 21).
+
+## 8. Felled by an axe (ADR 0067)
+
+A standing trunk cut past its wood's `fellFraction` (docs/adr/0067-stone-axe-and-chopping.md) loses
+its cut cell, and the integrity pass takes what that cell held as one piece as §3 describes, tipped
+**toward the notch** (owner, 2026-11-08: real felling): the uncut side is the hinge, so the piece
+is tipped away from a point out past the side opposite the deepest notch. The stump stays.

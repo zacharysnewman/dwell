@@ -7,9 +7,11 @@ const blocks = registryBlocks();
 
 test("the build's items validate", () => {
   const rs = itemsRust(validateItems(loadItems(), blocks));
-  assert.match(rs, /name: "dwell:stone", label: "Stone", block: "dwell:stone", rows: 1, drag: ItemDrag::Modes/);
+  assert.match(rs, /name: "dwell:stone", label: "Stone", block: "dwell:stone", tool: None, rows: 1, drag: ItemDrag::Modes/);
   assert.match(rs, /name: "dwell:ladder", .*drag: ItemDrag::Vertical/);
   assert.match(rs, /name: "dwell:torch", .*drag: ItemDrag::None/);
+  // The stone axe is on the creative hotbar (ADR 0067; owner, 2026-11-08): a tool, placing nothing.
+  assert.match(rs, /name: "dwell:stone_axe", label: "Stone axe", block: "", tool: Some\("dwell:stone_axe"\), rows: 1, drag: ItemDrag::None/);
   assert.match(rs, /BUILD_MODE_KEY: &str = "KeyL"/);
   assert.match(rs, /name: "dwell:line", label: "Line", kind: DragKind::Line/);
   assert.match(buildModesTs(loadItems()), /key: 'KeyL'/);
@@ -67,6 +69,9 @@ test('bad items fail with the entry and the problem', () => {
     [(d) => (d.buildModes.modes = []), /buildModes\.modes must be a non-empty list/],
     [(d) => (d.buildModes.clearance = 2), /buildModes\.clearance must be 0\.\.0\.5/],
     [(d) => (d.buildModes.holdMs = -1), /buildModes\.holdMs must be 0\.\.2000/],
+    [(d) => d.items.push({ name: 'test:saw', label: 'Saw', tool: 'test:saw' }), /items\[19\]\.tool "test:saw" is not a tool of shared\/tools\/tools\.json/],
+    [(d) => d.items.push({ name: 'test:axe2', label: 'Axe', tool: 'dwell:stone_axe', block: 'dwell:stone' }), /items\[19\]: give block or tool \(not both\)/],
+    [(d) => d.items.push({ name: 'test:axe3', label: 'Axe', tool: 'dwell:stone_axe', rows: 1 }), /items\[19\]: a tool places nothing \(rows\)/],
   ];
   for (const [change, message] of cases) {
     const d = loadItems();
@@ -91,4 +96,13 @@ test('a slope item added by data alone is generated with its state, facing and u
     rs,
     /name: "dwell:stone_ramp_away", .*state: &\[\("flooded", "false"\), \("half", "top"\), \("shape", "steep_lower"\)\], facing: ItemFacing::Away, upper: &\[\("shape", "steep_upper"\)\]/,
   );
+});
+
+test('a tool item added by data alone is emitted (a fixture tool of the tools data)', () => {
+  const d = loadItems();
+  d.items.push({ name: 'test:flint_axe', label: 'Flint axe', tool: 'test:flint_axe' });
+  const tools = new Set(['dwell:stone_axe', 'test:flint_axe']);
+  const rs = itemsRust(validateItems(d, blocks, undefined, tools));
+  assert.match(rs, /ITEMS: \[ItemDef; 20\]/);
+  assert.match(rs, /name: "test:flint_axe", label: "Flint axe", block: "", tool: Some\("test:flint_axe"\)/);
 });

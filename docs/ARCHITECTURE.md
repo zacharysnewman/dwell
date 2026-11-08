@@ -2558,10 +2558,13 @@ capacity. The client draws loose items as small turning copies of their block th
 renderer (`dwell-client` `loose_items.rs`), and in such a world its hotbar is the inventory's first
 nine slots with counts and the wallet, and E opens the backpack screen (`client/src/ui/backpack.ts`).
 
-**Tools and chopping [in progress: built 0.50.34 but the drawing]** (ADR 0067). Tools are items
+**Tools and chopping [built, 0.50.34–0.50.36]** (ADR 0067). Tools are items
 with data in `shared/tools/tools.json` (a `kind` from a fixed vocabulary, `axe`; its swing wait,
 bite, bind and its share across and along the grain), and so are the woods an axe cuts (a block
-by name whose `axis` is its grain, its fell and buck fractions, what a cut-through length drops);
+by name whose `axis` is its grain, its fell and buck fractions, what a cut-through length drops,
+its `chips` look); a tool's `held` names the characters' item a hand shows; a block's `breakWith`
+(block data) names the tool kind breaking it needs where blocks are not unlimited (the log: an
+axe, so in adventure hands can't break logs; the server refuses the edit; creative breaks anything);
 `shared/tools/gen.mjs` validates them and emits `dwell_protocol::chopping`'s tables and
 `client/src/ui/tools.gen.ts`. The cut model (`dwell_protocol::chopping::Cut`) keeps per wood cell,
 per side across the grain, an open notch and a kerf in each of two bands along it: a swing cuts
@@ -2570,10 +2573,15 @@ along the look, toggled by Use with the axe held) and the grain, face-locally th
 both bands cut past the notch take the chunk out. The server (`dwell-sim` `server/chopping.rs`)
 checks the aimed hit (the client's ray into the cell: the face and point), keeps the cuts (saved in
 `cuts`), fells a standing wood cut past its fell fraction (its cell goes and FELLING's integrity
-tips what it held away from the notch) and bucks a lying one cut through (its cell goes; in a mode
-that uses items it drops its wood items). The client (`dwell-client` `chop.rs`) sends the swings,
-keeps the cuts and shows the swing in the HUD. **[planned]** gouges drawn from the cuts and wood
-chips (GPU), the arms' swing clips.
+tips what it held toward the notch, the uncut side its hinge, as real felling falls) and bucks a
+lying one cut through (its cell goes; in a mode that uses items it drops its wood items). The
+client (`dwell-client` `chop.rs`) sends the swings, keeps the cuts and shows the swing in the HUD;
+the axe is held from the inventory in adventure or from the creative hotbar (`items.json`'s
+`tool` entries). It draws (`chips.rs`, draw-only, through the blasts' billboard pass:
+`PuffKind::Chip`, `Gouge`) each cut cell's gouges as decals on its cut sides (the notch a
+wedge-shaded quad, each kerf a dark slit) and each swing's wood chips (the wood's count, a CPU
+adapter a third, out of the cut along the swing, falling face-locally), and plays the arms'
+`chop_level`/`chop_vertical` clips with the `stone_axe` item in hand (`shared/characters`).
 
 **Seeing it from above: creative flight** **[built, Phase 4]** (§9.1, PLAYER_CONTROLLER.md §6.7).
 The player flies — the body itself, simulated by the server and predicted like any movement — with

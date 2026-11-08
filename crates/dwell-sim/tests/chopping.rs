@@ -1,5 +1,5 @@
 //! Chopping through the server (docs/adr/0067-stone-axe-and-chopping.md): aimed axe swings cut a
-//! standing trunk, which falls away from the notch once cut past its fell fraction (notching in
+//! standing trunk, which falls toward the notch (the uncut side the hinge) once cut past its fell fraction (notching in
 //! about 9 swings, hacking one spot about four times as many, vertical swings barely at all); a
 //! lying log is cut through by vertical swings across it and drops wood in adventure; cuts are
 //! saved with the world and sent only to clients that said `ChopAction::Hello`.
@@ -145,12 +145,12 @@ fn swings_to_fell(
 }
 
 dwell_world::both_faces!(
-    fn notching_fells_a_trunk_in_about_ten_swings_away_from_the_notch(f: FaceFrame) {
+    fn notching_fells_a_trunk_in_about_ten_swings_toward_the_notch(f: FaceFrame) {
         let mut fx = scene(f, "adventure", true);
         let n = swings_to_fell(&mut fx, f, false, 20, |i| i % 2).expect("felled");
         assert!((8..=12).contains(&n), "{n} swings");
-        // The trunk above the cut is a piece, tipping away from the notch (+x, away from the
-        // player at x = 0.5).
+        // The trunk above the cut is a piece, tipping toward the notch (−x, the player's side
+        // at x = 0.5): the uncut +x side is the hinge, as in real felling (owner, 2026-11-08).
         let sent = fx.take(1);
         let id = sent
             .iter()
@@ -165,7 +165,7 @@ dwell_world::both_faces!(
         let (_, q) = fx.server.body_pose(id).expect("still falling");
         let up = q * dwell_physics::DVec3::from(f.up());
         let lean = f.vector(up.to_array());
-        assert!(lean[0] > 0.2, "leans toward +x: {lean:?}");
+        assert!(lean[0] < -0.2, "leans toward −x, the notch: {lean:?}");
         // The stump stays; the client heard the cut and then its end.
         assert_ne!(cell_is(&mut fx, f, [3, AT - 1, 0]), M.air);
         assert!(
@@ -274,6 +274,59 @@ fn without_the_axe_in_hand_adventure_swings_do_nothing() {
     at_trunk(&mut fx, f, 0, false);
     assert!(fx.server.cut_of(f.cell([3, AT, 0])).is_none());
 }
+
+/// A hand break (`BlockEditRequest`) of face-local `cell` from its −x face.
+fn hand_break(fx: &mut Fixture, f: FaceFrame, cell: [i32; 3]) {
+    fx.send(
+        1,
+        Message::BlockEditRequest(BlockEditRequest {
+            action: BlockEditAction::Break,
+            cell: f.cell(cell),
+            face: f.cell_face(1) as u8,
+            material: 0,
+            rows: 1,
+            down: false,
+        }),
+    );
+    for _ in 0..3 {
+        fx.server.step();
+    }
+}
+
+dwell_world::both_faces!(
+    fn in_adventure_hands_cannot_break_a_log_but_leaves_still_break(f: FaceFrame) {
+        // Owner, 2026-11-08: logs need an axe in adventure (the log's `breakWith: "axe"`).
+        let mut fx = scene(f, "adventure", true);
+        let leaves = f.state(require("dwell:leaves"));
+        let [x, y, z] = f.cell([2, AT, 1]);
+        fx.server.world().set_voxel(x, y, z, leaves);
+        fx.send(
+            1,
+            Message::InventoryAction(InventoryAction::Select { slot: 3 }),
+        );
+        hand_break(&mut fx, f, [3, AT, 0]);
+        assert_ne!(cell_is(&mut fx, f, [3, AT, 0]), M.air, "the log stays");
+        assert!(fx.server.loose_items().is_empty(), "and drops nothing");
+        hand_break(&mut fx, f, [2, AT, 1]);
+        assert_eq!(
+            cell_is(&mut fx, f, [2, AT, 1]),
+            M.air,
+            "leaves break by hand"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    fn in_creative_hands_break_a_log(f: FaceFrame) {
+        let mut fx = scene(f, "creative", true);
+        fx.send(
+            1,
+            Message::InventoryAction(InventoryAction::Select { slot: 3 }),
+        );
+        hand_break(&mut fx, f, [3, AT, 0]);
+        assert_eq!(cell_is(&mut fx, f, [3, AT, 0]), M.air);
+    }
+);
 
 #[test]
 fn cuts_are_saved_with_the_world() {

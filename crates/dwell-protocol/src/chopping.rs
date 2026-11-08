@@ -17,7 +17,7 @@ mod table {
     include!("tools.gen.rs");
 }
 
-pub use table::{TOOLS, WOODS};
+pub use table::{BREAK_WITH, TOOLS, WOODS};
 
 /// The tool kinds the engine understands (`kind` in the data).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -31,6 +31,8 @@ pub enum ToolKind {
 pub struct ToolDef {
     pub name: &'static str,
     pub kind: ToolKind,
+    /// The item a hand shows holding it (`shared/characters/characters.json`'s `items`).
+    pub held: Option<&'static str>,
     /// The least time between two swings.
     pub swing_seconds: f64,
     /// Metres a swing straight across the grain cuts into open wood.
@@ -54,6 +56,37 @@ pub struct WoodDef {
     pub buck_fraction: f64,
     /// What a cut-through lying length drops.
     pub buck_drops: &'static [crate::inventory::DropRule],
+    /// The chips a swing knocks out of it (the client's particles).
+    pub chips: Chips,
+}
+
+/// The chips a swing knocks out of a wood (`chips` in the data).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Chips {
+    pub count: u32,
+    /// sRGB.
+    pub color: [u8; 3],
+    /// Their speed out of the cut (m/s).
+    pub speed: f64,
+    /// Their size (m).
+    pub size: f64,
+}
+
+/// The tool kind breaking a block needs where blocks are not unlimited (its `breakWith`), if any.
+pub fn break_with(block: &str) -> Option<ToolKind> {
+    BREAK_WITH
+        .iter()
+        .find(|(b, _)| *b == block)
+        .map(|(_, k)| *k)
+}
+
+/// Whether a break of `block` holding `held` (an item name, none: an empty hand) is allowed where
+/// blocks are not unlimited: a block with a `breakWith` needs a tool of that kind.
+pub fn may_break_holding(block: &str, held: Option<&str>) -> bool {
+    match break_with(block) {
+        None => true,
+        Some(kind) => held.and_then(tool).is_some_and(|t| t.kind == kind),
+    }
 }
 
 /// The tool of an item's name.

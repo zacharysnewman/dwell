@@ -146,14 +146,14 @@ async function clearYaw(page: Page): Promise<number> {
 test('local mode: every palette block can be picked from the hotbar, placed, and broken', async ({
   page,
 }) => {
-  // 18 slots, each placed and broken: 66-114 s on CI's software renderer when it passed.
+  // 19 slots (the stone axe places nothing), each placed and broken: 66-114 s on CI's software renderer when it passed.
   test.setTimeout(180_000);
   await page.goto('./?world=flat');
   await ready(page);
   // The hotbar is built once the page has taken the join, which can be a frame after the terrain.
   // One slot per item (shared/items/items.json, docs/ITEMS.md).
-  await expect(page.locator('.hotbar-slot')).toHaveCount(18);
-  const slots = await page.locator('.hotbar-slot').count();
+  await expect(page.locator('#hotbar .hotbar-slot:visible')).toHaveCount(19);
+  const slots = await page.locator('#hotbar .hotbar-slot:visible').count();
   const ground = await aim(page);
   expect(ground.face).toBe(2);
   const cell = add(ground.cell, FACE_DIRS[ground.face] ?? [0, 0, 0]);
@@ -162,14 +162,19 @@ test('local mode: every palette block can be picked from the hotbar, placed, and
   for (let slot = 0; slot < slots; slot++) {
     // Number keys pick the first ten slots, a tap on the hotbar the rest.
     if (slot < 10) await page.keyboard.press(`Digit${String((slot + 1) % 10)}`);
-    else await page.locator(`.hotbar-slot[data-slot="${String(slot)}"]`).click();
-    await expect(page.locator('.hotbar-slot.selected')).toHaveAttribute('data-slot', String(slot));
+    else await page.locator(`#hotbar .hotbar-slot[data-slot="${String(slot)}"]:visible`).click();
+    await expect(page.locator('#hotbar .hotbar-slot.selected:visible')).toHaveAttribute(
+      'data-slot',
+      String(slot),
+    );
     // A ladder hangs on a block's side, never on the ground's top (docs/ITEMS.md; the placement
     // rules' tests, dwell-world tests/placement.rs, hang it).
     const title = await page
-      .locator(`.hotbar-slot[data-slot="${String(slot)}"]`)
+      .locator(`#hotbar .hotbar-slot[data-slot="${String(slot)}"]:visible`)
       .getAttribute('title');
     if (title === 'Ladder') continue;
+    // A tool places nothing: held, Place turns the axe's swing (docs/adr/0067-stone-axe-and-chopping.md).
+    if (title === 'Stone axe') continue;
     // Leaves placed on the ground stay there (docs/FELLING.md §2: loose leaves fall only to land).
 
     // Back to the ground cell, and wait until it is the target: the target is the previous look's
@@ -273,7 +278,7 @@ test('local mode: an edited world is saved in the browser and survives a reload'
   await ready(page);
   const target = await aim(page);
   const cell = add(target.cell, FACE_DIRS[target.face] ?? [0, 0, 0]);
-  await page.locator('.hotbar-slot[title="Sand"]').click(); // not a fixed slot: the palette grows
+  await page.locator('#hotbar .hotbar-slot[title="Sand"]:visible').click(); // not a fixed slot: the palette grows
   const sand = stateId('dwell:sand');
   expect(await call<boolean>(page, `d.edit('place')`)).toBe(true);
   await expect.poll(() => voxel(page, cell), { timeout: 5_000 }).toBe(sand);

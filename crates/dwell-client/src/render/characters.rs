@@ -68,6 +68,8 @@ pub enum Held {
     Block(u16),
     /// The brush tool, painting with that block.
     Brush(u16),
+    /// A tool (ADR 0067): the item of the characters data its hand shows (the axe's `held`).
+    Tool(&'static str),
 }
 
 impl Held {
@@ -83,6 +85,7 @@ impl Held {
                 b,
             )),
             Held::Brush(b) => Some(("brush", b)),
+            Held::Tool(item) => Some((item, 0)),
         }
     }
 

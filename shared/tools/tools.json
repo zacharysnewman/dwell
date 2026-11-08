@@ -1,5 +1,5 @@
 {
-  "$comment": "Tools and what they cut (docs/adr/0067-stone-axe-and-chopping.md). A tool is an item (shared/inventory/inventory.json names it) with a `kind` from a fixed vocabulary (`axe`: chops the `woods`). A swing cuts `biteM` into open wood when its plane crosses the grain; its share is `along + (across - along) * |cos θ|^sharpness`, θ the angle between the swing plane's normal and the grain. Wood cut deeper than a side's open notch binds: a swing into a kerf cuts `bite / (1 + kerf / bindM)`. A chunk comes out when both bands of a side are cut past its notch. `woods`: the blocks an axe cuts (by name; their grain is their `axis` property), when a standing one falls (`fellFraction` of its cross-section cut) and a lying one is cut through (`buckFraction`), and what a cut-through length drops (`buckDrops`, as a block's `drops`). Prototype content (ARCHITECTURE.md §6.1). Run `node shared/tools/gen.mjs` after editing; CI fails if the generated files are stale.",
+  "$comment": "Tools and what they cut (docs/adr/0067-stone-axe-and-chopping.md). A tool is an item (shared/inventory/inventory.json names it) with a `kind` from a fixed vocabulary (`axe`: chops the `woods`). A swing cuts `biteM` into open wood when its plane crosses the grain; its share is `along + (across - along) * |cos θ|^sharpness`, θ the angle between the swing plane's normal and the grain. Wood cut deeper than a side's open notch binds: a swing into a kerf cuts `bite / (1 + kerf / bindM)`. A chunk comes out when both bands of a side are cut past its notch. `woods`: the blocks an axe cuts (by name; their grain is their `axis` property), when a standing one falls (`fellFraction` of its cross-section cut) and a lying one is cut through (`buckFraction`), what a cut-through length drops (`buckDrops`, as a block's `drops`) and the chips a swing knocks out (`chips`: how many, their colour, speed m/s and size m; the client's particles). A tool's `held` is the item of shared/characters/characters.json a hand shows holding it. A block's `breakWith` (shared/blocks) names the tool kind breaking it needs where blocks are not unlimited (adventure: logs need an axe). Prototype content (ARCHITECTURE.md §6.1). Run `node shared/tools/gen.mjs` after editing; CI fails if the generated files are stale.",
   "formatVersion": 1,
   "tools": [
     {
@@ -10,7 +10,8 @@
       "bindM": 0.05,
       "across": 1.0,
       "along": 0.15,
-      "sharpness": 2
+      "sharpness": 2,
+      "held": "stone_axe"
     }
   ],
   "woods": [
@@ -18,7 +19,8 @@
       "block": "dwell:log",
       "fellFraction": 0.55,
       "buckFraction": 0.55,
-      "buckDrops": [{ "item": "dwell:wood", "count": [2, 3] }]
+      "buckDrops": [{ "item": "dwell:wood", "count": [2, 3] }],
+      "chips": { "count": 7, "color": "#c99a62", "speed": 2.6, "size": 0.05 }
     }
   ]
 }

@@ -69,7 +69,8 @@ pub fn held_from_wire(held: u16, to_client: impl Fn(u16) -> Option<u16>) -> Held
 /// The wire form of what you hold: `to_server` maps the block.
 pub fn held_to_wire(held: Held, to_server: impl Fn(u16) -> Option<u16>) -> u16 {
     let (brush, block) = match held {
-        Held::Empty => return 0,
+        // A tool has no wire form yet (protocol v17 carries blocks): the others see an empty hand.
+        Held::Empty | Held::Tool(_) => return 0,
         Held::Block(b) => (0, b),
         Held::Brush(b) => (held_item::BRUSH, b),
     };

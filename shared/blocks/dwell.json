@@ -228,9 +228,10 @@
       }
     },
     {
-      "$comment": "A trunk or branch (docs/FELLING.md): a carrier, holding up the leaves on it while a path of logs reaches the ground, and falling when cut off. Its axis turns its end grain (top, bottom) to face along it, so a felled trunk lies along x or z.",
+      "$comment": "A trunk or branch (docs/FELLING.md): a carrier, holding up the leaves on it while a path of logs reaches the ground, and falling when cut off. Its axis turns its end grain (top, bottom) to face along it, so a felled trunk lies along x or z. breakWith (shared/tools, ADR 0067; owner, 2026-11-08): where blocks are not unlimited (adventure), hands can't break it: an axe chops it.",
       "name": "log",
       "sound": "dwell:wood",
+      "breakWith": "axe",
       "density": 700,
       "shape": "full",
       "placeable": true,
