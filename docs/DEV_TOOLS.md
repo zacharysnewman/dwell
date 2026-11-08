@@ -19,7 +19,7 @@ npm run build:wasm && npm run build     # the bench runs the built client
 npm run bench -- fly-low-fast           # one or more scenarios by name; none: all of them
 ```
 
-Options: `--swiftshader` (software WebGPU, for machines without a GPU such as CI or a Linux
+Options: `--cpu-throttle N` (Chrome slows the page's CPU N×, CDP `Emulation.setCPUThrottlingRate`: a phone's CPU-side costs such as HUD and DOM work show up), `--touch` (a touch device: the phone's touch controls and HUD), `--swiftshader` (software WebGPU, for machines without a GPU such as CI or a Linux
 sandbox; under Xvfb there), `--unthrottled` (no vsync or frame-rate cap, so frame intervals show
 the frame's real cost rather than 16.7 ms), `--base URL` (a served build; by default it reuses
 `vite preview` on :4173 or starts one; the server's root or the build's `…/dwell/`), `--out DIR`
@@ -1364,3 +1364,21 @@ Which tier the phone ran needs asking; not measured on a phone.
 Screenshots (old High, old opaque Low, new Medium, new Low, new opaque) in the session scratchpad
 `water-tiers/shots/`; the runs and `compare.html` per run in `water-tiers/out/` (`before-*`, `final-*`),
 scenarios from `water-tiers/gen.py`, `an.py` summarises.
+
+## Adventure vs creative (M1 Air, phone-like)
+
+Owner, 2026-11-08: adventure felt ~15 fps slower than creative (on an iPhone). Measured 0.50.34 on
+seed 7 with the `creative` and `adventure` configurations (`bench/configs.json`, `?mode=`) plus the
+owner's `?renderscale=0.5&upscaler=stretch`, `--unthrottled --cpu-throttle 4 --touch`:
+
+- Idle at the spawn and sprinting, with no items lying about: no adventure cost beyond noise. The
+  HUD's inventory (`hud().inventory` and `Hotbar.setInventory`) is ~18 µs a frame at 4× (a JS CPU
+  profile); the hotbar and backpack touch the DOM only on change (a MutationObserver saw the same
+  ~1 mutation a frame in both modes); the server sends `Inventory`/`ItemDrops` only on change.
+- After breaking 30 blocks (`break-drops`: their drops lie as loose items): the shadows drew
+  **161 k triangles a frame against creative's 99 k** (gpu.shadows mean 0.95 vs 0.81 ms). Any loose
+  item anywhere counted as a moving caster, so every far cascade was drawn again every
+  `refreshFrames` for the item's 300 s life. Fixed in 0.50.35 (`render/mod.rs` `casters_moving`):
+  loose items only spin in place and the nearest cascade (drawn every frame) holds them. After:
+  99 k vs 99 k, gpu.frame 3.36 vs 3.36 ms, frame.cpu 4.40 vs 4.21 ms (adventure first; the second
+  page of a compare runs ~0.5–1 ms CPU slower under throttling, so swap the order to check a gap).

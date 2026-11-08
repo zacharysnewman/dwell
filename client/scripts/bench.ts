@@ -9,6 +9,8 @@
 //   --swiftshader    software WebGPU (no GPU: CI, Linux sandboxes); default is Chrome on the GPU
 //   --unthrottled    no vsync or frame-rate cap: frame intervals show the frame's real cost
 //   --file FILE      another scenarios file
+//   --cpu-throttle N slow the page's CPU N× (CDP Emulation.setCPUThrottlingRate): a phone-like CPU
+//   --touch          a touch device (coarse pointer, touch events): the phone's touch UI
 //   --compare        each scenario once per configuration, compared (scripts/compare.ts)
 //   --configs A,B    with --compare: these configurations (and the baseline) only
 //   --configs-file F with --compare: another configurations file (default bench/configs.json)
@@ -44,7 +46,12 @@ interface Options {
   compare: boolean;
   configs: string[];
   configsFile: string;
+  cpuThrottle: number;
+  touch: boolean;
 }
+
+/** The page emulation every scenario's context gets (`--cpu-throttle`, `--touch`). */
+const emulation = { cpuThrottle: 1, touch: false };
 
 function options(argv: string[]): Options {
   const o: Options = {
@@ -57,6 +64,8 @@ function options(argv: string[]): Options {
     compare: false,
     configs: [],
     configsFile: 'bench/configs.json',
+    cpuThrottle: 1,
+    touch: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -73,6 +82,10 @@ function options(argv: string[]): Options {
     else if (a === '--compare') o.compare = true;
     else if (a === '--configs') o.configs = value().split(',').filter(Boolean);
     else if (a === '--configs-file') o.configsFile = value();
+    else if (a === '--cpu-throttle') {
+      o.cpuThrottle = Number(value());
+      if (!(o.cpuThrottle >= 1)) throw new Error('--cpu-throttle needs a number ≥ 1');
+    } else if (a === '--touch') o.touch = true;
     else if (a.startsWith('--')) throw new Error(`unknown option ${a}`);
     else o.names.push(a);
   }
@@ -686,8 +699,13 @@ async function runScenario(
   const context = await browser.newContext({
     viewport,
     ...(pixelRatio === undefined ? {} : { deviceScaleFactor: pixelRatio }),
+    ...(emulation.touch ? { hasTouch: true, isMobile: true } : {}),
   });
   const page = await context.newPage();
+  if (emulation.cpuThrottle > 1) {
+    const cdp = await context.newCDPSession(page);
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: emulation.cpuThrottle });
+  }
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => {
@@ -764,6 +782,8 @@ async function runScenario(
 
 async function main(): Promise<void> {
   const o = options(process.argv.slice(2));
+  emulation.cpuThrottle = o.cpuThrottle;
+  emulation.touch = o.touch;
   const all = parseScenarios(JSON.parse(readFileSync(o.file, 'utf8')) as unknown);
   const unknown = o.names.filter((n) => !all.some((s) => s.name === n));
   if (unknown.length) {
