@@ -729,14 +729,14 @@ bright glints), then the clear water; overhead the underside shows rippled light
    blotch was the player's own shadow (the body is drawn into the shadow maps in first person,
    DAY_NIGHT.md §10) on the surface's body colour: from below `from_below` lit the underside with the
    shadow, and from above the body took it at full strength. The underside is now lit unshadowed, and
-   the body from above takes a shadow at `BODY_SHADOW` (0.35) of its strength (the glint and sparkle
+   the body from above takes a shadow at `BODY_SHADOW` (0.35; 0 from 0.50.22, §12.2) of its strength (the glint and sparkle
    keep it all): the body is light scattered under the surface, which a shadow on it darkens only in
    part. **Snell's window**: `from_below`'s alpha is now the Fresnel (out through the window the
    composite's sky or the scene behind shows; outside it, alpha 1, the mirror), and the composite
    tests rays that reach the surface where it isn't drawn (`sees_out`: `1 − rise² < 1/ior²`, the
    critical angle 48.6° from the up for water, the rise bent by the noise tile's slope there): outside
    the window the water's in-scatter mirrored, inside it the sky. The **underside's texture**
-   (`underside.texture`): `underside_cells`, the caustic cells on Medium and High (the noise tile on
+   (`underside.texture`): `underside_cells` (`underside_look` from 0.50.22), the caustic cells on Medium and High (the noise tile on
    Low) at the surface point, so perspective-correct on the mesh and in the composite, faded where a
    pixel covers a cell.
 
@@ -777,3 +777,70 @@ old deep path. Before the cheaper under path the band cost 1.9 ms at −1 m.
 ripples; its dark rim steps along the wave on a pixel's worth of noise; looking level from below, the
 underside's mirror meets the fog at a hard horizon; from above at +0.5 m a faint trace of the player's
 shadow remains (by design, at 35 %).
+
+### 12.2 The underside and the band against the owner's references (2026-11-07, 0.50.22)
+
+The owner gave three more stock photos (watermarked, not kept; described here). Two show the
+surface's underside from below: irregular, broken bright cells (white-cyan, brightest in a patch
+toward the sun) with darker blue gaps between them, the cells stretching and shrinking in perspective
+toward the horizon and fading into a deep, even blue below it; a sand floor with rippled light. The
+third is the waterline band: a wavy slab coloured by its surroundings, a darker line over a lighter
+one, a textured underside. Measured against them, 0.50.20's "still off" list (§12.1) and the descent:
+
+1. *The underside was a caustic web* (bright lines on a flat blue, cells the floor's size) *and met
+   the fog at a hard horizon looking level.* `underside_look` (replacing `underside_cells`) now
+   returns the cells and a sun patch. With `underside.breakup` the caustic web turns into **bright
+   cells with dark gaps** (the web's lines become the gaps), some cells lit more than others by a
+   slow noise over a few cells; `underside.cellScale` (a whole number, so the pattern still wraps)
+   makes them smaller than the floor's (2 for water). The **sun patch** brightens the cells toward the
+   sun's image through Snell's window (`sun_through`: the sun's direction refracted, its slant from
+   the up shrunk by 1/ior, so a low sun shows at the window's rim; `underside.sunPatch`,
+   `sunPower`), gone at night (`own`). **The horizon:** the composite's mirror was the in-scatter ×
+   the cells at full strength to the last ray that reached the surface; it now goes through the
+   fog over the distance to the surface (`underwater(…, to_surface)`), so the texture and the patch
+   fade into the fog as the view levels (CPU twin `underside_contrast`, test
+   `the_undersides_texture_fades_into_the_fog_toward_level`, both faces, red on the old: contrast 1
+   at the horizon), and the cells' footprint uses the true slant (`max(rise, 0.02)`, was 0.15).
+   **Hook:** the volumetric light shafts (a separate feature, being designed) should start from
+   `underside_look`'s sun patch (the comment there), not from a second sun model.
+2. *The band's streaks read as smooth parallel stripes* → `band.breakup`: the ripples warped by the
+   noise's slope, shorter along the line, and coming and going under a second, finer noise.
+3. *The dark rim stepped along the wave.* The pixels above the line took none of the rim and the
+   first under it all of it (the per-pixel under/above test is binary), so its top edge was a
+   one-pixel staircase. The pixel just above the line now takes the rim's shade by the share of it
+   the line covers (`composite_pixel`'s `rim_above`; CPU twin `line_shade`, test
+   `the_rims_top_edge_is_anti_aliased_across_the_line`, red on the old: a 0.55 step at the line).
+4. *The mirrored land was literal.* The band's mirror is two taps of the scene above, shifted and
+   blurred by the ripples (`band.mirrorWarpPx`, 24 px for water), at most `band.mirror` (0.45 for
+   water; 0.6, the old fixed share, by default).
+5. *The player's shadow from above at +0.5 m.* `BODY_SHADOW` is gone: the body takes no shadow (it is
+   light scattered under the surface); the glint and sparkle still do.
+
+Data (`shared/look/underwater.json`, defaults "as before"): `band.breakup`, `band.mirror`,
+`band.mirrorWarpPx`, `underside.breakup`, `underside.sunPatch`, `underside.sunPower`,
+`underside.cellScale`; packed into `band_extra.yzw` and a new `underside` vec4 (`FLUID_VEC4S` 15,
+240 bytes a fluid). Every tier: Low takes the noise tile's cells with the same breakup, the CPU
+adapter the same path (two more noise taps in the band's rows, one in the underside's).
+
+**Cost** (the M1 Air, `?renderscale=0.5&upscaler=stretch`, 2560×1600, High water, the descent's
+records, `gpu.*` p50 over 4 s, one run each; "before" is 0.50.20's run from §12.1, same scenario
+and machine, an earlier session):
+
+| View | `gpu.frame` before → after | `gpu.composite` | `gpu.near.water` |
+|---|---|---|---|
+| Eye at the surface (0 m, split) | 6.10 → 6.35 | 3.40 → 3.60 | 1.71 → 1.72 |
+| 1 m under, level | 6.43 → 6.78 | 3.74 → 4.03 | 2.85 → 2.97 |
+
+About 0.2–0.3 ms more in the composite (the band's extra noise taps and second mirror tap at the
+surface; at −1 m the underside's look with the fog and the patch where the composite draws the
+surface), and nothing measurable on the water mesh.
+
+**Honest comparison with the references** (the after descent: `underside-after.png`, a 0 m band
+crop): the horizon looking level is now a soft fade into the blue (fixed); the cells are smaller and
+broken, cells with gaps rather than a web, but still read as a stylized cell pattern (rounded
+polygons) more than the references' stretched, flowing ripples; the sun patch is weak at noon
+(the sun overhead puts it inside Snell's window, where the window shows the sky). **Still off:**
+Snell's window from below reads as a flat lavender sky with a hard wavy edge (it should read as a
+bright white-cyan glow where the sun patch is); the band's texture is less regular but still reads as
+fine horizontal lines near the line, where the receding plane compresses it; the band's rim is
+smooth at the line but its streak texture just under it still shimmers.

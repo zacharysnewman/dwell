@@ -34,8 +34,20 @@ pub struct UnderwaterLook {
     pub band_rim_shade: f64,
     pub band_line_px: f64,
     pub band_line_glow: f64,
-    /// The light and dark cells on the surface's underside seen from below (0: flat).
+    /// How broken the band's ripples are (0: smooth stripes), the most of it the mirrored scene
+    /// above is, and how far (px) the ripples shift and blur that mirror (0: literal).
+    pub band_breakup: f64,
+    pub band_mirror: f64,
+    pub band_mirror_warp_px: f64,
+    /// The light and dark cells on the surface's underside seen from below (0: flat); how much
+    /// they read as broken bright cells with dark gaps (0: the caustic web); the sun patch's
+    /// strength toward the sun's image through Snell's window and its tightness (a power).
     pub underside_texture: f64,
+    pub underside_breakup: f64,
+    pub underside_sun_patch: f64,
+    pub underside_sun_power: f64,
+    /// The cells' scale against the floor's caustics (a whole number: 2 halves them).
+    pub underside_cell_scale: f64,
     /// The fog: none over the first `fog_clear_m` metres, then the fluid's rates × `fog_density`.
     pub fog_clear_m: f64,
     pub fog_density: f64,

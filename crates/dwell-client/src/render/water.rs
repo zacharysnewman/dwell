@@ -10,7 +10,7 @@ use dwell_blocks::FluidInfo;
 use dwell_look::{hex, srgb_to_linear};
 
 /// vec4s per fluid in the buffer (`Fluid` in the WGSL).
-pub const FLUID_VEC4S: usize = 14;
+pub const FLUID_VEC4S: usize = 15;
 /// Bytes per fluid.
 pub const FLUID_STRIDE: u64 = (FLUID_VEC4S * 16) as u64;
 
@@ -255,7 +255,18 @@ pub fn pack_fluids(fluids: &[FluidInfo]) -> Vec<f32> {
             u.band_line_px as f32,
             u.band_line_glow as f32,
         ]);
-        out.extend_from_slice(&[u.band_glints as f32, 0.0, 0.0, 0.0]);
+        out.extend_from_slice(&[
+            u.band_glints as f32,
+            u.band_breakup as f32,
+            u.band_mirror_warp_px as f32,
+            u.band_mirror as f32,
+        ]);
+        out.extend_from_slice(&[
+            u.underside_breakup as f32,
+            u.underside_sun_patch as f32,
+            u.underside_sun_power as f32,
+            u.underside_cell_scale as f32,
+        ]);
     }
     if out.is_empty() {
         // A storage binding can't be empty: one zero fluid that nothing indexes.
@@ -321,6 +332,39 @@ pub fn band_edge(px: f64, rim_px: f64, shade: f64, line_px: f64, glow: f64) -> f
     let rim = 1.0 - smooth(rim_px - 0.75, rim_px + 0.25, px);
     let line = (1.0 - rim) * (1.0 - smooth(rim_px + line_px - 0.75, rim_px + line_px + 0.25, px));
     (1.0 + (shade - 1.0) * rim) * (1.0 + (glow - 1.0) * line)
+}
+
+/// The line's shade across it (the WGSL `composite_pixel` and `waterline_band`), `px` pixels under
+/// it (negative: above it): under it [`band_edge`]; above it, within a pixel, the rim's shade by
+/// the share of the pixel the line covers, so the rim's top edge is anti-aliased instead of
+/// stepping a whole pixel at a time along the wave (§12.2).
+pub fn line_shade(px: f64, rim_px: f64, shade: f64, line_px: f64, glow: f64) -> f64 {
+    let top = band_edge(px.max(0.0), rim_px, shade, line_px, glow);
+    if px >= 0.0 {
+        return top;
+    }
+    1.0 + (top - 1.0) * (1.0 + px).clamp(0.0, 1.0)
+}
+
+/// How much of the underside's texture (and its sun patch) reaches an eye `to_surface_m` from
+/// the surface along its ray, in a fluid of extinction `extinction` a metre (absorption plus
+/// scattering, the mean over rgb) with the look's fog `clear_m` and `density` (the WGSL
+/// `composite_underwater`'s mirror, through `underwater`): the fog's transmittance over the
+/// distance. Toward level the distance grows without bound and the texture fades into the fog
+/// smoothly, with no hard horizon (§12.2).
+pub fn underside_contrast(to_surface_m: f64, clear_m: f64, density: f64, extinction: f64) -> f64 {
+    (-extinction * density * (to_surface_m - clear_m).max(0.0)).exp()
+}
+
+/// The sun seen from under the surface (the WGSL `sun_through`): the direction toward the sun's
+/// image through Snell's window, the sun's direction `sun` (world, unit) refracted into a fluid
+/// of refractive index `ior` (its slant from the face's up shrunk by `1 / ior`, so a sun on the
+/// horizon shows at the critical angle). The underside's sun patch is brightest along it.
+pub fn sun_through(f: dwell_world::FaceFrame, sun: [f64; 3], ior: f64) -> [f64; 3] {
+    let s = f.vector(sun);
+    let h = [s[0] / ior.max(1.0), 0.0, s[2] / ior.max(1.0)];
+    let up = (1.0 - h[0] * h[0] - h[2] * h[2]).max(0.0).sqrt();
+    f.vector([h[0], up, h[2]])
 }
 
 /// The band's texture coordinate (the WGSL `waterline_band`'s `uv`) at `along` screen heights
@@ -918,7 +962,20 @@ mod tests {
             assert_eq!(v[40..44], line.map(|x| x as f32));
             assert_eq!(v[47], u.band_streaks as f32);
             assert_eq!(v[48..52], rim.map(|x| x as f32));
-            assert_eq!(v[52], u.band_glints as f32);
+            let extra = [
+                u.band_glints,
+                u.band_breakup,
+                u.band_mirror_warp_px,
+                u.band_mirror,
+            ];
+            assert_eq!(v[52..56], extra.map(|x| x as f32));
+            let under = [
+                u.underside_breakup,
+                u.underside_sun_patch,
+                u.underside_sun_power,
+                u.underside_cell_scale,
+            ];
+            assert_eq!(v[56..60], under.map(|x| x as f32));
         }
         // A fluid with no look of its own takes the default's (fog from the eye, the registry's rates).
         assert_eq!(underwater_look("test:oil"), &DEFAULT_UNDERWATER);
@@ -1091,6 +1148,87 @@ mod tests {
         }
     }
 
+    #[test]
+    fn the_rims_top_edge_is_anti_aliased_across_the_line() {
+        // face-a-only: the shade across the line is a function of pixels from it (face-free).
+        // Was: the pixels above the line took none of the rim and the first under it all of it,
+        // so the rim's top edge stepped a whole pixel along the wave (the 0.50.20 descent).
+        let l = dwell_look::underwater::underwater_look("dwell:water");
+        let shade = |px: f64| {
+            line_shade(
+                px,
+                l.band_rim_px,
+                l.band_rim_shade,
+                l.band_line_px,
+                l.band_line_glow,
+            )
+        };
+        let jump = (shade(-1e-3) - shade(1e-3)).abs();
+        assert!(jump < 0.01, "no step at the line: {jump}");
+        assert!(
+            (shade(-0.5) - (1.0 + shade(0.0)) / 2.0).abs() < 0.01,
+            "half a pixel, half the rim"
+        );
+        assert_eq!(shade(-1.0), 1.0, "a pixel above, untouched");
+        assert!(shade(0.5) < 0.6, "the rim under the line");
+    }
+
+    dwell_world::both_faces!(
+        fn the_undersides_texture_fades_into_the_fog_toward_level(f: FaceFrame) {
+            // Was: looking level from 1 m down, the textured underside met the fog at a hard
+            // horizon (its cells at full strength to the last ray that reached the surface).
+            let l = dwell_look::underwater::underwater_look("dwell:water");
+            let water = dwell_blocks::require_fluid("dwell:water");
+            let ext = (0..3).map(|k| water.absorption[k] as f64).sum::<f64>() / 3.0
+                + water.scattering as f64;
+            let below = 1.0;
+            // A ray rising at `rise` (face-local) from 1 m under reaches the surface below/rise away.
+            let contrast = |rise: f64| {
+                let dir = f.vector([0.0, rise, (1.0 - rise * rise).sqrt()]);
+                let to_surface = below / f.vector(dir)[1];
+                underside_contrast(to_surface, l.fog_clear_m, l.fog_density, ext)
+            };
+            assert_eq!(
+                contrast(0.9),
+                1.0,
+                "overhead, within the clear distance: all of it"
+            );
+            let mut last = 1.0;
+            for k in 1..60 {
+                let c = contrast(0.9 * (1.0 - k as f64 / 60.0));
+                assert!(c <= last + 1e-12, "fades monotonically toward level");
+                last = c;
+            }
+            assert!(
+                contrast(0.005) < 0.02,
+                "gone at the horizon: {}",
+                contrast(0.005)
+            );
+        }
+    );
+
+    dwell_world::both_faces!(
+        fn the_sun_patch_follows_the_sun_through_snells_window(f: FaceFrame) {
+            let ior = dwell_blocks::require_fluid("dwell:water").ior as f64;
+            let rise = |v: [f64; 3]| f.vector(v)[1];
+            // Overhead: straight up.
+            let z = sun_through(f, f.vector([0.0, 1.0, 0.0]), ior);
+            assert!((rise(z) - 1.0).abs() < 1e-9);
+            // On the horizon: at the critical angle (48.6 deg from the up for water), toward it.
+            let h = sun_through(f, f.vector([1.0, 0.0, 0.0]), ior);
+            let critical = (1.0 / ior).asin();
+            assert!((rise(h) - critical.cos()).abs() < 1e-9 && h[0] > 0.0);
+            // Lower suns show lower in the window, monotonically.
+            let mut last = 2.0;
+            for k in 0..=10 {
+                let a = std::f64::consts::FRAC_PI_2 * (1.0 - k as f64 / 10.0);
+                let r = rise(sun_through(f, f.vector([a.cos(), a.sin(), 0.0]), ior));
+                assert!(r < last + 1e-12);
+                last = r;
+            }
+        }
+    );
+
     dwell_world::both_faces!(
         fn the_waterline_band_sits_under_the_line_with_a_dark_rim_over_a_bright_line(f: FaceFrame) {
             // Owner, 2026-11-07: "the band isn't just a white line, it's supposed to be like an
@@ -1200,11 +1338,16 @@ mod tests {
         assert!(src.contains("let rim = 1.0 - smoothstep(f.rim.x - 0.75, f.rim.x + 0.25, px);"));
         assert!(src.contains("let uv = vec2f(along * 4.0, 1.0) / (t + 0.08)"));
         assert!(src.contains("1.0 - bent * bent < 1.0 / (ior * ior)"));
-        assert!(
-            src.contains("return vec4f(body * underside_cells(xz, footprint, f, fluid), fres);")
-        );
-        assert!(src.contains("const BODY_SHADOW: f32 = 0.35;"));
-        assert!(src.contains("let body_shadow = mix(s.light.direct, s.shadow, BODY_SHADOW);"));
+        assert!(src.contains("let look = underside_look(xz, -s.v, footprint, f, fluid);"));
+        assert!(!src.contains("BODY_SHADOW"));
+        // §12.2: the rim anti-aliased above the line (line_shade), the underside under the fog
+        // over its distance (underside_contrast), the sun patch along sun_through.
+        assert!(src.contains("rim_above = 1.0 + (band_edge(0.0, f) - 1.0) * clamp(1.0 - d / waterline_across(f).x, 0.0, 1.0);"));
+        assert!(src.contains(
+            "back = display(underwater(underwater(vec3f(0.0), 1e6, f) * light, to_surface, f));"
+        ));
+        assert!(src.contains("let h = (sun - up * face_rise(face, sun)) / max(ior, 1.0);"));
+        assert!(src.contains("return h + up * sqrt(max(1.0 - dot(h, h), 0.0));"));
         assert!(src.contains("let d = max(dist - f.under.y, 0.0) * f.under.z;"));
     }
 }
