@@ -501,10 +501,15 @@ dwell_world::both_faces!(
 
 dwell_world::both_faces!(
     fn a_nearer_block_on_the_swings_path_takes_the_hit_and_the_trunk_is_spared(f: FaceFrame) {
-        // Aimed straight at the trunk, it is cut.
+        // Aimed straight at the trunk, it is cut, on its side facing the swing (−x: side 0).
+        // Red before: the sweep's face was `edit::FACE_DIRS`'s order, so the notch went on the far
+        // side (out of sight, and the tree fell away from it).
         let mut fx = near(f, "adventure");
         sweep(&mut fx, f, [1.0, 0.0, 0.0], false);
-        assert!(!cut_rows(&fx, f).is_empty(), "the trunk aimed at");
+        let rows = cut_rows(&fx, f);
+        assert!(!rows.is_empty(), "the trunk aimed at");
+        let cut = fx.server.cut_of(f.cell([3, rows[0], 0])).unwrap();
+        assert_eq!(cut.deepest(1), Some(0), "the near side: {cut:?}");
         // A stone post to the right, between the swing's start and the trunk: it takes the hit
         // (a bounce: nothing changes) and the trunk is not cut.
         let mut fx = near(f, "adventure");

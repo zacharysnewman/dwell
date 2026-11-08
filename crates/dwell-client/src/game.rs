@@ -3528,7 +3528,7 @@ impl<S: Scene> Game<S> {
             let m = store.get_voxel(h.hit.cell[0], h.hit.cell[1], h.hit.cell[2]);
             crate::chop::Impact {
                 cell: h.hit.cell,
-                face: h.hit.face,
+                face: h.axis_face(),
                 point: h.point,
                 step: h.step,
                 wood: dwell_protocol::chopping::wood(dwell_blocks::block_of(m).name).is_some(),

@@ -484,8 +484,8 @@
       "pose": { "hand_r": [0, 0, -55], "forearm_r": [0, -10, 0] },
       "parts": [
         { "id": "axe_handle", "on": "grip_r", "kind": "box", "size": [0.045, 0.5, 0.045], "at": [0, 0.02, 0.13], "rot": [90, 0, 0], "material": "heartwood" },
-        { "id": "axe_head", "on": "grip_r", "kind": "round_box", "size": [0.06, 0.1, 0.1], "at": [0, -0.035, 0.33], "round": 0.3, "material": "flint" },
-        { "id": "axe_blade", "on": "grip_r", "kind": "round_box", "size": [0.028, 0.08, 0.14], "at": [0, -0.115, 0.33], "round": 0.2, "material": "flint.light" },
+        { "id": "axe_head", "on": "grip_r", "kind": "round_box", "size": [0.06, 0.1, 0.1], "at": [0, -0.035, 0.33], "round": 0.3, "material": "flint.shadow" },
+        { "id": "axe_blade", "on": "grip_r", "kind": "round_box", "size": [0.028, 0.08, 0.14], "at": [0, -0.115, 0.33], "round": 0.2, "material": "flint" },
         { "id": "axe_lashing", "on": "grip_r", "kind": "box", "size": [0.062, 0.06, 0.07], "at": [0, 0.02, 0.33], "material": "leather" }
       ]
     },
@@ -495,8 +495,8 @@
       "pose": { "forearm_r": [-14, 0, 0], "hand_r": [-12, 0, 0] },
       "parts": [
         { "id": "axe_handle", "on": "grip_r", "kind": "box", "size": [0.045, 0.5, 0.045], "at": [0, 0.02, 0.13], "rot": [90, 0, 0], "material": "heartwood" },
-        { "id": "axe_head", "on": "grip_r", "kind": "round_box", "size": [0.06, 0.1, 0.1], "at": [0, -0.035, 0.33], "round": 0.3, "material": "flint" },
-        { "id": "axe_blade", "on": "grip_r", "kind": "round_box", "size": [0.028, 0.08, 0.14], "at": [0, -0.115, 0.33], "round": 0.2, "material": "flint.light" },
+        { "id": "axe_head", "on": "grip_r", "kind": "round_box", "size": [0.06, 0.1, 0.1], "at": [0, -0.035, 0.33], "round": 0.3, "material": "flint.shadow" },
+        { "id": "axe_blade", "on": "grip_r", "kind": "round_box", "size": [0.028, 0.08, 0.14], "at": [0, -0.115, 0.33], "round": 0.2, "material": "flint" },
         { "id": "axe_lashing", "on": "grip_r", "kind": "box", "size": [0.062, 0.06, 0.07], "at": [0, 0.02, 0.33], "material": "leather" }
       ]
     },

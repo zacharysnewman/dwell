@@ -43,6 +43,14 @@ pub struct SwingHit {
     pub step: u32,
 }
 
+impl SwingHit {
+    /// The face met as `axis × 2 + positive` (0 −X, 1 +X, …; the chopping wire's and
+    /// `dwell_protocol::chopping::side_of`'s), not `edit::FACE_DIRS`'s order (0 +X, 1 −X, …).
+    pub fn axis_face(&self) -> u8 {
+        self.hit.face ^ 1
+    }
+}
+
 /// The arc's ray directions (world, unit), in the order the head sweeps them, for a look `look`
 /// (world, unit) from an eye on face `f`.
 pub fn arc_dirs(f: FaceFrame, look: [f64; 3], vertical: bool, arc: &Arc) -> Vec<[f64; 3]> {

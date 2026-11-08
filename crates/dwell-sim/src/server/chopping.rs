@@ -101,7 +101,7 @@ impl Server {
         let hit = dwell_world::swing::sweep(&mut self.world, eye, look, vertical, &arc);
         let wood = hit.filter(|x| grain_of(self.world.get_voxel_if_loaded(x.hit.cell)).is_some());
         match wood {
-            Some(x) => self.swing(id, tool, x.hit.cell, x.hit.face, x.point, vertical),
+            Some(x) => self.swing(id, tool, x.hit.cell, x.axis_face(), x.point, vertical),
             None => {
                 let s = self.sessions.get_mut(&id).expect("session");
                 s.chop_ready =
