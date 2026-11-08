@@ -89,6 +89,9 @@ export type Step =
       pixelError?: number;
       smoke?: boolean;
       flowParticles?: boolean;
+      flowRipples?: boolean;
+      flowFoam?: boolean;
+      waterfalls?: boolean;
     }
   /** Breaks or places at the crosshair, as a click does; selects a hotbar slot. */
   | { do: 'edit'; action: 'break' | 'place' }
@@ -308,7 +311,17 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   releaseCamera: [],
   water: ['quality', 'debug'],
   shadows: ['quality'],
-  view: ['clouds', 'speedEffects', 'distanceM', 'pixelError', 'smoke', 'flowParticles'],
+  view: [
+    'clouds',
+    'speedEffects',
+    'distanceM',
+    'pixelError',
+    'smoke',
+    'flowParticles',
+    'flowRipples',
+    'flowFoam',
+    'waterfalls',
+  ],
   edit: ['action'],
   select: ['slot'],
   brush: ['command'],
@@ -431,6 +444,15 @@ export function parseStep(where: string, v: unknown): Step {
         ...opt(
           'flowParticles',
           o.flowParticles === undefined ? undefined : bool(at('flowParticles'), o.flowParticles),
+        ),
+        ...opt(
+          'flowRipples',
+          o.flowRipples === undefined ? undefined : bool(at('flowRipples'), o.flowRipples),
+        ),
+        ...opt('flowFoam', o.flowFoam === undefined ? undefined : bool(at('flowFoam'), o.flowFoam)),
+        ...opt(
+          'waterfalls',
+          o.waterfalls === undefined ? undefined : bool(at('waterfalls'), o.waterfalls),
         ),
       };
     }
