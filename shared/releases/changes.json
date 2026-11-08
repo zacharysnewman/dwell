@@ -5,6 +5,9 @@
       "version": "0.50.42",
       "changes": [
         "In adventure, a hotbar slot you've used up shows an empty hand instead of the last block"
+      ]
+    },
+    {
       "version": "0.50.41",
       "changes": [
         "The on-screen interface no longer overlaps itself on phones: the minimap, hotbar, status lines, flight slider and buttons each get their own place",
