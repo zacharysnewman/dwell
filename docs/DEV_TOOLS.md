@@ -847,8 +847,9 @@ performance gains" (2026-11-07). Settings → Graphics's **Preset** slider runs 
 Ultra; the presets are data (`shared/settings/graphics-presets.json`, loaded and validated by
 `client/src/ui/graphicsPresets.ts`: each preset sets every field of a fixed vocabulary by name, each value
 checked against its setting's own choices, so a water tier, scale or upscaler that goes away fails with the
-entry). Moving the slider applies a preset; a setting changed by hand reads **Custom**. Nothing new is stored:
-the preset shown is the one the settings match. New players start on High on desktops and Mobile on phones;
+entry). Moving the slider applies a preset and stores its id (`dwell.graphicsPreset`, since 0.50.31): the settings it
+sets then follow the preset's current definition here, so retuning a preset reaches the players on it; a setting
+changed by hand is pinned and reads **Custom** (ARCHITECTURE.md §5, the game menu: defaults or pinned). New players start on High on desktops and Mobile on phones;
 the exposure and the water's flow switches are outside the presets. `?preset=<id>` draws a visit at a preset
 (the bench's runs below), whatever is stored.
 

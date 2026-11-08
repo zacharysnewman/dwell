@@ -1,10 +1,11 @@
 // Graphics presets (docs/DEV_TOOLS.md, Graphics presets; ARCHITECTURE.md §6): Low → Mobile →
 // Medium → High → Ultra, each a set of graphics settings by name, as data
-// (shared/settings/graphics-presets.json). Settings → Graphics's Preset slider applies one; a
-// graphics setting changed by hand shows Custom. Nothing new is stored: the preset shown is the
-// one the current settings match (`presetOf`), so the stores stay as they were (each setting
-// under its own append-only key) and a player's own render scale is kept. A new player starts
-// on the data's default preset for the device (Mobile on phones, High on desktops).
+// (shared/settings/graphics-presets.json). Settings → Graphics's Preset slider applies one and
+// stores its id (0.50.31, `dwell.graphicsPreset`; ui/settingsPins.ts): the settings it sets then
+// follow the preset's current definition, so a retuned preset reaches its players; a graphics
+// setting changed by hand is pinned and shows Custom (settingsMenu.ts `shownPreset`). A new
+// player starts on the data's default preset for the device (Mobile on phones, High on desktops).
+// `presetOf` is the preset a set of values matches (the tests', and `?preset=`'s checks).
 //
 // The engine is the fixed vocabulary of fields below (`PRESET_FIELDS`): each names one setting,
 // checks a value from the data against the setting's own choices (the water tiers, the upscale
