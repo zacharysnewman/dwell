@@ -88,7 +88,7 @@ test('settings menu: opens from the corner, in panes, without fog sliders, and i
   await expect(menu.locator('.settings-copy')).toHaveText('Copied');
   const copied = await page.evaluate<string>('navigator.clipboard.readText()');
   expect(JSON.parse(copied)).toEqual({
-    detail: { distanceM: 256, pixelError: 4, memoryMb: 256 },
+    detail: { distanceM: 256, pixelError: 3, memoryMb: 256 },
     exposure: 1,
     audio: { master: 0.8, effects: 1, ui: 0.6, music: 0.6 },
     clouds: 'high',

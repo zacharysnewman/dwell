@@ -183,9 +183,11 @@ export function sameDots(a: ArrayLike<number>, b: ArrayLike<number>): boolean {
   return true;
 }
 
-/** The minimap's CSS size on a screen `height` px tall (shared/ui/map.json). */
-export function minimapSize(height: number): number {
-  return height < MAP.minimap.compactBelowPx ? MAP.minimap.compactSizePx : MAP.minimap.sizePx;
+/** The minimap's CSS size on a `width` × `height` screen: compact when its short side is under `compactBelowPx` (a phone either way up; shared/ui/map.json). */
+export function minimapSize(width: number, height: number): number {
+  return Math.min(width, height) < MAP.minimap.compactBelowPx
+    ? MAP.minimap.compactSizePx
+    : MAP.minimap.sizePx;
 }
 
 /** What the map needs from the client (the wasm `Client`). */
@@ -240,7 +242,7 @@ export class MapUi {
     this.big.append(this.bigCanvas);
     doc.body.append(this.root, this.big);
     const size = () => {
-      const px = `${String(minimapSize(doc.defaultView?.innerHeight ?? 1000))}px`;
+      const px = `${String(minimapSize(doc.defaultView?.innerWidth ?? 1000, doc.defaultView?.innerHeight ?? 1000))}px`;
       doc.documentElement.style.setProperty('--minimap-size', px);
     };
     size();
