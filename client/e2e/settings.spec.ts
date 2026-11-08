@@ -1,10 +1,21 @@
-// The settings menu (ui/settingsMenu.ts, local mode): the top-left button opens the sliders (sound,
-// detail, look; the fog is fixed look data, not a setting), clear of the connection status; a moved
-// slider applies and is kept after a reload, and the settings copy to the clipboard as JSON.
+// The settings menu (ui/settingsMenu.ts, local mode): the top-left button opens the menu, clear of
+// the connection status, on the Graphics pane (the Preset slider first; the fog is fixed look data,
+// not a setting); the panes switch from the list; a moved slider applies and is kept after a
+// reload; the Preset slider applies a preset and a changed setting reads Custom; the settings copy
+// to the clipboard as JSON.
 import { HUD_ELEMENTS } from '../src/ui/hud.gen';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Locator } from '@playwright/test';
 
-test('settings menu: opens from the corner, without fog sliders, and is kept', async ({ page }) => {
+/** A settings row by its name, in the pane shown. */
+function row(menu: Locator, name: string): Locator {
+  return menu
+    .locator('.gm-page:not([hidden]) .settings-row')
+    .filter({ has: menu.page().locator('.settings-name', { hasText: new RegExp(`^${name}$`) }) });
+}
+
+test('settings menu: opens from the corner, in panes, without fog sliders, and is kept', async ({
+  page,
+}) => {
   await page.goto('./?world=flat');
   await expect(page.locator('#net-status')).toContainText('player', { timeout: 20_000 });
   const button = page.locator('#menu-button');
@@ -19,55 +30,66 @@ test('settings menu: opens from the corner, without fog sliders, and is kept', a
   await expect(menu).toBeHidden();
   await button.click();
   await expect(menu).toBeVisible();
-  // Sound's four volumes first, then the detail's three (no fog sliders: the fog is fixed).
-  await expect(menu.locator('.settings-value')).toHaveText([
+  // The panes, then the other pages.
+  await expect(menu.locator('.gm-tab').first()).toHaveText('Graphics');
+  await expect(menu.locator('.gm-tab').nth(1)).toHaveText('Sound');
+  await expect(menu.locator('.gm-tab').nth(2)).toHaveText('Gameplay');
+  await expect(menu.locator('.gm-tab').nth(3)).toHaveText('On screen');
+  // Graphics opens first, at the desktop default's 50 % Stretch; the suite stores the clouds Off
+  // (playwright.config.ts), so the preset reads Custom until Reset.
+  await expect(menu.locator('#graphics-preset .settings-value')).toHaveText('Custom');
+  await expect(row(menu, 'Render scale').locator('[aria-pressed=true]')).toHaveText('50 %');
+  await expect(row(menu, 'Full detail').locator('.settings-value')).toHaveText('256 m');
+  await expect(row(menu, 'Distant memory').locator('.settings-value')).toHaveText('256 MB');
+  await expect(menu).not.toContainText('Fog');
+  await expect(menu).not.toContainText('Density');
+
+  // The preset slider to Ultra (its last stop) sets 100 %; one setting changed reads Custom.
+  await menu.locator('#graphics-preset input[type=range]').fill('4');
+  await expect(menu.locator('#graphics-preset .settings-value')).toHaveText('Ultra');
+  await expect(row(menu, 'Render scale').locator('[aria-pressed=true]')).toHaveText('100 %');
+  await row(menu, 'Clouds').getByRole('button', { name: 'Low' }).click();
+  await expect(menu.locator('#graphics-preset .settings-value')).toHaveText('Custom');
+
+  // The distant view's memory to the most.
+  await row(menu, 'Distant memory').locator('input[type=range]').fill('1000');
+  await expect(row(menu, 'Distant memory').locator('.settings-value')).toHaveText('1024 MB');
+  // Sound: the four volumes.
+  await menu.locator('.gm-tab', { hasText: 'Sound' }).click();
+  await expect(menu.locator('.gm-page:not([hidden]) .settings-value')).toHaveText([
     '80%',
     '100%',
     '60%',
     '60%',
-    '256 m',
-    '4.0 px',
-    '256 MB',
-    '75°',
-    '1.00×',
-    // Clouds, Sun & moon shadows and Torch shadows, then (after the FOV boost) the water
-    // quality: rows of buttons, the pressed one the value.
-    '',
-    '',
-    '',
-    '100%',
-    '',
-    // Settings → Controller's look speed (ui/controllerPanel.ts).
-    '1.00×',
   ]);
+  // Gameplay: the field of view to its narrowest, as a drag would.
+  await menu.locator('.gm-tab', { hasText: 'Gameplay' }).click();
+  await row(menu, 'Field of view').locator('input[type=range]').fill('0');
+  await expect(row(menu, 'Field of view').locator('.settings-value')).toHaveText('60°');
 
-  await expect(menu).not.toContainText('Fog');
-  await expect(menu).not.toContainText('Density');
-
-  // The field of view to its narrowest, as a drag would.
-  await menu.locator('input[type=range]').nth(7).fill('0');
-  await expect(menu.locator('.settings-value').nth(7)).toHaveText('60°');
-  // The distant view's memory to the most.
-  await menu.locator('input[type=range]').nth(6).fill('1000');
-  await expect(menu.locator('.settings-value').nth(6)).toHaveText('1024 MB');
   await page.reload();
   await page.locator('#menu-button').click();
-  await expect(page.locator('#settings-menu .settings-value').nth(7)).toHaveText('60°');
-  await expect(page.locator('#settings-menu .settings-value').nth(6)).toHaveText('1024 MB');
-  await page.locator('#settings-menu .settings-reset[title="Back to the defaults"]').click();
-  await expect(page.locator('#settings-menu .settings-value').nth(7)).toHaveText('75°');
-  await expect(page.locator('#settings-menu .settings-value').nth(6)).toHaveText('256 MB');
+  await expect(menu.locator('#graphics-preset .settings-value')).toHaveText('Custom');
+  await expect(row(menu, 'Distant memory').locator('.settings-value')).toHaveText('1024 MB');
+  await menu.locator('.gm-tab', { hasText: 'Gameplay' }).click();
+  await expect(row(menu, 'Field of view').locator('.settings-value')).toHaveText('60°');
+  await menu.locator('.settings-reset[title="Back to the defaults"]').click();
+  await expect(row(menu, 'Field of view').locator('.settings-value')).toHaveText('75°');
+  await menu.locator('.gm-tab', { hasText: 'Graphics' }).click();
+  await expect(menu.locator('#graphics-preset .settings-value')).toHaveText('High');
+  await expect(row(menu, 'Distant memory').locator('.settings-value')).toHaveText('256 MB');
 
   // Copy JSON puts the settings on the clipboard, to paste elsewhere.
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
-  await page.locator('#settings-menu .settings-copy').click();
-  await expect(page.locator('#settings-menu .settings-copy')).toHaveText('Copied');
+  await menu.locator('.settings-copy').click();
+  await expect(menu.locator('.settings-copy')).toHaveText('Copied');
   const copied = await page.evaluate<string>('navigator.clipboard.readText()');
   expect(JSON.parse(copied)).toEqual({
     detail: { distanceM: 256, pixelError: 4, memoryMb: 256 },
     exposure: 1,
     audio: { master: 0.8, effects: 1, ui: 0.6, music: 0.6 },
     clouds: 'high',
+    shafts: 'high',
     water: {
       quality: 'medium',
       flowRipples: true,
@@ -82,5 +104,6 @@ test('settings menu: opens from the corner, without fog sliders, and is kept', a
     showArms: true,
     // Every part of the screen shows by default (shared/ui/hud.json).
     hud: { shown: Object.fromEntries(HUD_ELEMENTS.map((e) => [e.id, e.shown])) },
+    renderScale: { scale: 0.5, upscaler: 'stretch' },
   });
 });

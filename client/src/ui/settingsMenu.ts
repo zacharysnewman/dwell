@@ -516,7 +516,7 @@ interface ChoiceSpec<T extends string> {
 }
 
 const WATER_CHOICE: ChoiceSpec<WaterQuality> = {
-  label: 'Quality',
+  label: 'Water',
   hint: 'Ripples, reflections and glints on water; lower is faster on phones',
   choices: WATER_QUALITIES,
   labels: WATER_QUALITY_LABELS,
