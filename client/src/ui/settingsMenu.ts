@@ -37,11 +37,35 @@ import {
   sanitizeShowArms,
   viewRecord,
 } from './viewSettings';
-import { GRAPHICS_PRESETS, applyPreset, defaultPreset, presetOf } from './graphicsPresets';
+import {
+  GRAPHICS_PRESETS,
+  applyPreset,
+  defaultPreset,
+  findPreset,
+  type GraphicsPreset,
+  type PresetData,
+} from './graphicsPresets';
+import {
+  CLOUDS_KEY,
+  DETAIL_KEY,
+  EXPOSURE_KEY,
+  HUD_KEY,
+  PRESET_KEY,
+  SHADOWS_KEY,
+  SHAFTS_KEY,
+  WATER_KEY,
+  pinnedRecord,
+  pinsIn,
+  presetRecord,
+  resolveSettings,
+  settingFields,
+  storedPresetId,
+  type SettingField,
+} from './settingsPins';
 import { DEBUG_KEYS, KEYBOARD, TOUCH, keysLabel, type Control } from './controls';
 import { audio } from '../audio/engine';
 import { DEFAULT_VOLUMES, type Volumes } from '../audio/mixer';
-import { loadVolumes, saveVolumes } from '../audio/settings';
+import { AUDIO_KEY, loadVolumes } from '../audio/settings';
 import {
   defaultWater,
   sanitizeWater,
@@ -134,7 +158,12 @@ export interface Settings {
  * phones, High on desktops), over each setting's own default.
  */
 export function defaultSettings(mobile: boolean, reducedMotion = false): Settings {
-  const base: Settings = {
+  return applyPreset(baseSettings(mobile, reducedMotion), defaultPreset(mobile), mobile);
+}
+
+/** Each setting's own default, before the device's preset is written over the graphics. */
+export function baseSettings(mobile: boolean, reducedMotion = false): Settings {
+  return {
     detail: defaultDetail(mobile),
     exposure: DEFAULT_EXPOSURE,
     audio: { ...DEFAULT_VOLUMES },
@@ -149,7 +178,6 @@ export function defaultSettings(mobile: boolean, reducedMotion = false): Setting
     hud: defaultHud(),
     renderScale: defaultRenderScale(),
   };
-  return applyPreset(base, defaultPreset(mobile), mobile);
 }
 
 /** The settings as JSON to copy and share (rounded: whole metres, fractions to 0.01). */
@@ -193,19 +221,59 @@ export function settingsJson(s: Settings): string {
 
 // `dwell.fog` (the fog sliders, before the fog was fixed look data: shared/look/fog.json) is no
 // longer read or written. Builds before it still read it; it is left as it is.
-const DETAIL_KEY = 'dwell.detail';
-const EXPOSURE_KEY = 'dwell.exposure';
 // `dwell.skyRotation` (the sky rotation slider before the day/night cycle) is no longer read or
 // written: the time of day is the world's. Builds before it still read it; it is left as it is.
-/** Its own key (the stores are append-only: an older build ignores it, a newer one reads it). */
-const CLOUDS_KEY = 'dwell.clouds';
-const SHAFTS_KEY = 'dwell.shafts';
-/** A record, append-only: unknown fields are kept on rewrite (ui/waterSettings.ts). */
-const WATER_KEY = 'dwell.water';
-/** A record, append-only: unknown fields are kept on rewrite (ui/shadowSettings.ts). */
-const SHADOWS_KEY = 'dwell.shadows';
-/** A record, append-only: parts and fields a newer build stored are kept (ui/hudSettings.ts). */
-const HUD_KEY = 'dwell.hud';
+// The keys themselves: ui/settingsPins.ts, with the settings each holds.
+
+/** Every stored setting (ui/settingsPins.ts): the pins' vocabulary. */
+export const SETTING_FIELDS: readonly SettingField[] = settingFields({
+  motion: MOTION_KEY,
+  explosions: EXPLOSIONS_KEY,
+  view: VIEW_KEY,
+  renderScale: RENDER_SCALE_KEY,
+  audio: AUDIO_KEY,
+});
+
+/** The graphics settings a preset sets: changing one by hand pins it and reads Custom. */
+export const PRESET_PINS: ReadonlySet<string> = new Set(
+  SETTING_FIELDS.filter((f) => f.preset).map((f) => f.id),
+);
+
+/** Every setting pinned: what builds before 0.50.31 stored (`saveSettings`'s default). */
+export const ALL_PINS: ReadonlySet<string> = new Set(SETTING_FIELDS.map((f) => f.id));
+
+/**
+ * The settings with which of them the player pinned (ui/settingsPins.ts): a pinned one is stored
+ * and kept; any other follows this build's default for the device, the graphics ones the preset
+ * chosen (`preset`, its id) or, with none, the device's default preset.
+ */
+export interface SettingsState {
+  settings: Settings;
+  pins: ReadonlySet<string>;
+  preset: string | null;
+}
+
+/** Where the defaults come from: the presets data and each setting's own default (tests swap them). */
+export interface DefaultsSource {
+  presets?: PresetData;
+  /** Each setting's own default, before a preset is applied (`baseSettings`). */
+  base?: (mobile: boolean, reducedMotion: boolean) => Settings;
+}
+
+/**
+ * The defaults the unpinned settings follow: the preset chosen (if the data still lists it) or the
+ * device's default preset, over each setting's own default.
+ */
+export function settingsDefaults(
+  mobile: boolean,
+  preset: string | null,
+  reducedMotion = false,
+  src: DefaultsSource = {},
+): Settings {
+  const d = src.presets ?? GRAPHICS_PRESETS;
+  const p = (preset === null ? undefined : findPreset(preset, d)) ?? defaultPreset(mobile, d);
+  return applyPreset((src.base ?? baseSettings)(mobile, reducedMotion), p, mobile);
+}
 
 function load(key: string): unknown {
   try {
@@ -216,9 +284,12 @@ function load(key: string): unknown {
   }
 }
 
-/** The settings kept in this browser, or the defaults. */
-export function loadSettings(mobile: boolean): Settings {
-  const defaults = defaultSettings(mobile);
+/**
+ * The stored settings over `defaults`, each record read by its setting's own sanitizer: anything
+ * missing or unknown takes the default. The read path builds before 0.50.31 used as their whole
+ * `loadSettings`, so it is also how an older build reads this one's pinned-only records.
+ */
+export function storedSettings(mobile: boolean, defaults: Settings): Settings {
   return {
     detail: sanitizeDetail(load(DETAIL_KEY), defaults.detail, detailLimits(mobile)),
     exposure: sanitizeExposure(load(EXPOSURE_KEY)),
@@ -236,37 +307,157 @@ export function loadSettings(mobile: boolean): Settings {
   };
 }
 
-export function saveSettings(s: Settings): void {
+/** The settings kept in this browser, which of them are pinned, and the preset chosen. */
+export function loadSettingsState(mobile: boolean, src: DefaultsSource = {}): SettingsState {
+  const id = storedPresetId(load(PRESET_KEY));
+  // A preset the data no longer lists reads as none: the device's default.
+  const preset = id !== null && findPreset(id, src.presets ?? GRAPHICS_PRESETS) ? id : null;
+  const defaults = settingsDefaults(mobile, preset, prefersReducedMotion(), src);
+  const pins = pinsIn(SETTING_FIELDS, load);
+  const settings = resolveSettings(
+    SETTING_FIELDS,
+    defaults,
+    storedSettings(mobile, defaults),
+    pins,
+  );
+  return { settings, pins, preset };
+}
+
+/** The settings kept in this browser, or the defaults. */
+export function loadSettings(mobile: boolean): Settings {
+  return loadSettingsState(mobile).settings;
+}
+
+/**
+ * Stores the pinned settings and the preset chosen: each key's record keeps the fields it doesn't
+ * know (append-only) and holds the pinned fields; known fields that follow a default are taken
+ * out, and a key left with nothing is removed.
+ */
+export function saveSettingsState(state: SettingsState): void {
+  writeSettings(state.settings, state.pins);
   try {
-    localStorage.setItem(DETAIL_KEY, JSON.stringify(s.detail));
-    localStorage.setItem(EXPOSURE_KEY, JSON.stringify(s.exposure));
-    localStorage.setItem(CLOUDS_KEY, JSON.stringify(s.clouds));
-    localStorage.setItem(SHAFTS_KEY, JSON.stringify(s.shafts));
-    localStorage.setItem(WATER_KEY, JSON.stringify(waterRecord(load(WATER_KEY), s.water)));
-    localStorage.setItem(SHADOWS_KEY, JSON.stringify(shadowRecord(load(SHADOWS_KEY), s.shadows)));
-    // Append-only: fields a newer build stored are kept.
-    localStorage.setItem(MOTION_KEY, JSON.stringify(motionRecord(load(MOTION_KEY), s.motion)));
-    localStorage.setItem(
-      VIEW_KEY,
-      JSON.stringify(viewRecord(load(VIEW_KEY), s.fovDeg, s.showArms)),
-    );
-    localStorage.setItem(HUD_KEY, JSON.stringify(hudRecord(load(HUD_KEY), s.hud)));
-    localStorage.setItem(
-      RENDER_SCALE_KEY,
-      JSON.stringify(renderScaleRecord(load(RENDER_SCALE_KEY), s.renderScale)),
-    );
-    localStorage.setItem(
-      EXPLOSIONS_KEY,
-      JSON.stringify(explosionRecord(load(EXPLOSIONS_KEY), s.explosions)),
-    );
+    const rec = presetRecord(load(PRESET_KEY), state.preset);
+    if (rec) localStorage.setItem(PRESET_KEY, JSON.stringify(rec));
+    else localStorage.removeItem(PRESET_KEY);
   } catch {
     // Not kept: the settings still apply for this visit.
   }
-  saveVolumes(s.audio);
+}
+
+/** Stores the settings, by default every one pinned (as builds before 0.50.31 did); no preset. */
+export function saveSettings(s: Settings, pins: ReadonlySet<string> = ALL_PINS): void {
+  writeSettings(s, pins);
+}
+
+function writeSettings(s: Settings, pins: ReadonlySet<string>): void {
+  // The whole record each key would hold, the stored one's unknown fields kept (append-only).
+  const full: [string, unknown][] = [
+    [DETAIL_KEY, { ...asRecord(load(DETAIL_KEY)), ...s.detail }],
+    [EXPOSURE_KEY, s.exposure],
+    [AUDIO_KEY, { ...asRecord(load(AUDIO_KEY)), ...s.audio }],
+    [CLOUDS_KEY, s.clouds],
+    [SHAFTS_KEY, s.shafts],
+    [WATER_KEY, waterRecord(load(WATER_KEY), s.water)],
+    [SHADOWS_KEY, shadowRecord(load(SHADOWS_KEY), s.shadows)],
+    [MOTION_KEY, motionRecord(load(MOTION_KEY), s.motion)],
+    [VIEW_KEY, viewRecord(load(VIEW_KEY), s.fovDeg, s.showArms)],
+    [HUD_KEY, hudRecord(load(HUD_KEY), s.hud)],
+    [RENDER_SCALE_KEY, renderScaleRecord(load(RENDER_SCALE_KEY), s.renderScale)],
+    [EXPLOSIONS_KEY, explosionRecord(load(EXPLOSIONS_KEY), s.explosions)],
+  ];
+  for (const [key, value] of full) {
+    try {
+      const kept = pinnedRecord(SETTING_FIELDS, key, value, pins);
+      if (kept === undefined) localStorage.removeItem(key);
+      else localStorage.setItem(key, JSON.stringify(kept));
+    } catch {
+      // Not kept: the settings still apply for this visit.
+    }
+  }
+}
+
+// What the menu does with the state, as plain functions (tested; the DOM part is thin).
+
+/** A control changed: its setting takes the new value and is pinned (even if that is the default). */
+export function changeSetting(state: SettingsState, pin: string, next: Settings): SettingsState {
+  return { ...state, settings: next, pins: new Set([...state.pins, pin]) };
+}
+
+/** A pin's marker pressed: the setting follows its default again (the preset's, if it sets it). */
+export function clearPin(
+  state: SettingsState,
+  pin: string,
+  mobile: boolean,
+  src: DefaultsSource = {},
+): SettingsState {
+  const pins = new Set(state.pins);
+  pins.delete(pin);
+  return withDefaults({ ...state, pins }, mobile, src);
+}
+
+/**
+ * A preset chosen: its id is stored, and every setting it sets follows it (their pins cleared, so a
+ * later retune of the preset reaches them). Settings outside the presets keep their pins.
+ */
+export function choosePreset(
+  state: SettingsState,
+  id: string,
+  mobile: boolean,
+  src: DefaultsSource = {},
+): SettingsState {
+  const pins = new Set([...state.pins].filter((p) => !PRESET_PINS.has(p)));
+  return withDefaults({ ...state, pins, preset: id }, mobile, src);
+}
+
+/** The Preset row's marker: back to the device's default preset, no graphics setting pinned. */
+export function clearPreset(
+  state: SettingsState,
+  mobile: boolean,
+  src: DefaultsSource = {},
+): SettingsState {
+  const pins = new Set([...state.pins].filter((p) => !PRESET_PINS.has(p)));
+  return withDefaults({ ...state, pins, preset: null }, mobile, src);
+}
+
+/** Reset: nothing pinned and no preset chosen, so everything follows this build's defaults. */
+export function resetSettings(mobile: boolean, src: DefaultsSource = {}): SettingsState {
+  return withDefaults({ settings: baseSettings(mobile), pins: new Set(), preset: null }, mobile, src);
+}
+
+/**
+ * The preset the Preset row shows: the one chosen (or the device's default) while no setting it
+ * sets is pinned; null (Custom) once one is. With one pinned the preset stays the base the other
+ * graphics settings follow, so the slider stays on it.
+ */
+export function shownPreset(
+  state: SettingsState,
+  mobile: boolean,
+  d: PresetData = GRAPHICS_PRESETS,
+): { base: GraphicsPreset; custom: boolean } {
+  const base =
+    (state.preset === null ? undefined : findPreset(state.preset, d)) ?? defaultPreset(mobile, d);
+  return { base, custom: [...state.pins].some((p) => PRESET_PINS.has(p)) };
+}
+
+/** The unpinned settings set again from the defaults (the preset's, then each setting's own). */
+function withDefaults(state: SettingsState, mobile: boolean, src: DefaultsSource): SettingsState {
+  const defaults = settingsDefaults(mobile, state.preset, prefersReducedMotion(), src);
+  return {
+    ...state,
+    settings: resolveSettings(SETTING_FIELDS, defaults, state.settings, state.pins),
+  };
+}
+
+function asRecord(v: unknown): Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v)
+    ? (v as Record<string, unknown>)
+    : {};
 }
 
 interface SliderSpec {
   label: string;
+  /** The setting it changes (a SETTING_FIELDS id): changing it pins it. */
+  pin: string;
   hint: string;
   min: number;
   max: number;
@@ -280,6 +471,7 @@ interface SliderSpec {
 const CHOICES: ChoiceSpec<CloudQuality>[] = [
   {
     label: 'Clouds',
+    pin: 'clouds',
     hint: 'Clouds in the sky; Low is lighter on the GPU',
     choices: CLOUD_QUALITIES,
     labels: { off: 'Off', low: 'Low', high: 'High' },
@@ -288,6 +480,7 @@ const CHOICES: ChoiceSpec<CloudQuality>[] = [
   },
   {
     label: 'Light shafts',
+    pin: 'shafts',
     hint: 'Sun rays through trees, clouds and water; Low is lighter on the GPU',
     choices: SHAFT_QUALITIES,
     labels: { off: 'Off', low: 'Low', high: 'High' },
@@ -300,6 +493,7 @@ const CHOICES: ChoiceSpec<CloudQuality>[] = [
 const RENDER_SCALE_CHOICES: ChoiceSpec<string>[] = [
   {
     label: 'Render scale',
+    pin: 'renderScale.scale',
     hint: 'The share of the screen drawn, then upscaled; lower is lighter on the GPU',
     choices: UPSCALE.scales.map((c) => String(c.value)),
     labels: Object.fromEntries(UPSCALE.scales.map((c) => [String(c.value), c.label])),
@@ -308,6 +502,7 @@ const RENDER_SCALE_CHOICES: ChoiceSpec<string>[] = [
   },
   {
     label: 'Upscaler',
+    pin: 'renderScale.upscaler',
     hint: UPSCALE.upscalers.map((u) => `${u.label}: ${u.hint}`).join('. '),
     choices: UPSCALE.upscalers.map((u) => u.id),
     labels: Object.fromEntries(UPSCALE.upscalers.map((u) => [u.id, u.label])),
@@ -318,6 +513,7 @@ const RENDER_SCALE_CHOICES: ChoiceSpec<string>[] = [
 
 interface ToggleSpec {
   label: string;
+  pin: string;
   hint: string;
   get: (s: Settings) => boolean;
   with: (s: Settings, v: boolean) => Settings;
@@ -342,6 +538,7 @@ function panes(mobile: boolean): Record<SettingsPane, Group[]> {
   const volume = (label: string, hint: string, key: keyof Volumes): Row => ({
     slider: {
       label,
+      pin: `audio.${key}`,
       hint,
       min: 0,
       max: 1,
@@ -367,6 +564,7 @@ function panes(mobile: boolean): Record<SettingsPane, Group[]> {
           {
             slider: {
               label: 'Full detail',
+              pin: 'detail.distanceM',
               hint: 'How far every block is drawn; farther uses more memory',
               ...DETAIL_LIMITS.distanceM,
               log: false,
@@ -378,6 +576,7 @@ function panes(mobile: boolean): Record<SettingsPane, Group[]> {
           {
             slider: {
               label: 'Distant detail',
+              pin: 'detail.pixelError',
               hint: 'Largest step in the distant terrain, in pixels; smaller is sharper and slower',
               ...DETAIL_LIMITS.pixelError,
               log: true,
@@ -389,6 +588,7 @@ function panes(mobile: boolean): Record<SettingsPane, Group[]> {
           {
             slider: {
               label: 'Distant memory',
+              pin: 'detail.memoryMb',
               hint: 'Memory for the distant terrain; past it, distant detail coarsens to fit',
               ...DETAIL_LIMITS.memoryMb,
               log: true,
@@ -405,6 +605,7 @@ function panes(mobile: boolean): Record<SettingsPane, Group[]> {
           {
             slider: {
               label: 'Exposure',
+              pin: 'exposure',
               hint: 'How bright the picture is after tone mapping',
               ...EXPOSURE_LIMITS,
               log: true,
@@ -434,6 +635,7 @@ function panes(mobile: boolean): Record<SettingsPane, Group[]> {
           {
             slider: {
               label: 'Field of view',
+              pin: 'fovDeg',
               hint: 'How much the view takes in, top to bottom (narrower on wide screens)',
               ...FOV_LIMITS,
               log: false,
@@ -445,6 +647,7 @@ function panes(mobile: boolean): Record<SettingsPane, Group[]> {
           {
             toggle: {
               label: 'Show your arms',
+              pin: 'showArms',
               hint: 'Your hand and what it holds, in first person',
               get: (s) => s.showArms,
               with: (s, v) => ({ ...s, showArms: v }),
@@ -458,6 +661,7 @@ function panes(mobile: boolean): Record<SettingsPane, Group[]> {
           {
             toggle: {
               label: 'Speed effects',
+              pin: 'motion.speedEffects',
               hint: 'The view widens and wind streaks past when moving fast',
               get: (s) => s.motion.speedEffects,
               with: (s, v) => ({ ...s, motion: { ...s.motion, speedEffects: v } }),
@@ -466,6 +670,7 @@ function panes(mobile: boolean): Record<SettingsPane, Group[]> {
           {
             slider: {
               label: 'FOV boost',
+              pin: 'motion.fovBoost',
               hint: 'How much the view widens at speed (0: not at all)',
               min: 0,
               max: 1,
@@ -478,6 +683,7 @@ function panes(mobile: boolean): Record<SettingsPane, Group[]> {
           {
             toggle: {
               label: 'Plant sway',
+              pin: 'motion.plantSway',
               hint: 'Tall grass sways in the wind',
               get: (s) => s.motion.plantSway,
               with: (s, v) => ({ ...s, motion: { ...s.motion, plantSway: v } }),
@@ -493,6 +699,7 @@ function panes(mobile: boolean): Record<SettingsPane, Group[]> {
         rows: hideableParts(mobile).map((part): Row => ({
           toggle: {
             label: part.label,
+            pin: `hud.shown.${part.id}`,
             hint: part.hint,
             get: (st) => st.hud.shown[part.id] ?? part.shown,
             with: (st, v) => ({ ...st, hud: { shown: { ...st.hud.shown, [part.id]: v } } }),
@@ -506,6 +713,7 @@ function panes(mobile: boolean): Record<SettingsPane, Group[]> {
 /** A setting picked from a few named choices (a row of buttons). */
 interface ChoiceSpec<T extends string> {
   label: string;
+  pin: string;
   hint: string;
   choices: readonly T[];
   labels: Record<T, string>;
@@ -515,6 +723,7 @@ interface ChoiceSpec<T extends string> {
 
 const WATER_CHOICE: ChoiceSpec<WaterQuality> = {
   label: 'Water',
+  pin: 'water.quality',
   hint: 'Ripples, reflections and glints on water; lower is faster on phones',
   choices: WATER_QUALITIES,
   labels: WATER_QUALITY_LABELS,
@@ -526,24 +735,28 @@ const WATER_CHOICE: ChoiceSpec<WaterQuality> = {
 const WATER_FLOW_TOGGLES: ToggleSpec[] = [
   {
     label: 'Flowing ripples',
+    pin: 'water.flowRipples',
     hint: 'Ripples on rivers and moving water are carried along with the current',
     get: (s) => s.water.flowRipples,
     with: (s, v) => ({ ...s, water: { ...s.water, flowRipples: v } }),
   },
   {
     label: 'Foam streaks',
+    pin: 'water.flowFoam',
     hint: 'Pale streaks along fast water, showing which way it runs',
     get: (s) => s.water.flowFoam,
     with: (s, v) => ({ ...s, water: { ...s.water, flowFoam: v } }),
   },
   {
     label: 'Drifting flecks',
+    pin: 'water.flowParticles',
     hint: 'Small flecks floating downstream on moving water',
     get: (s) => s.water.flowParticles,
     with: (s, v) => ({ ...s, water: { ...s.water, flowParticles: v } }),
   },
   {
     label: 'Waterfalls',
+    pin: 'water.waterfalls',
     hint: 'Water falling over a drop shows as a sheet, with foam and spray where it lands',
     get: (s) => s.water.waterfalls,
     with: (s, v) => ({ ...s, water: { ...s.water, waterfalls: v } }),
@@ -554,18 +767,21 @@ const WATER_FLOW_TOGGLES: ToggleSpec[] = [
 const EXPLOSION_TOGGLES: ToggleSpec[] = [
   {
     label: 'Explosion flash',
+    pin: 'explosions.flash',
     hint: 'A blast lights up its surroundings for a moment, with a fireball',
     get: (s) => s.explosions.flash,
     with: (s, v) => ({ ...s, explosions: { ...s.explosions, flash: v } }),
   },
   {
     label: 'Smoke and dust',
+    pin: 'explosions.smoke',
     hint: 'A blast throws up dust and leaves a cloud of smoke',
     get: (s) => s.explosions.smoke,
     with: (s, v) => ({ ...s, explosions: { ...s.explosions, smoke: v } }),
   },
   {
     label: 'Screen shake',
+    pin: 'explosions.shake',
     hint: 'The view shakes a little when a blast goes off nearby',
     get: (s) => s.explosions.shake,
     with: (s, v) => ({ ...s, explosions: { ...s.explosions, shake: v } }),
@@ -574,6 +790,7 @@ const EXPLOSION_TOGGLES: ToggleSpec[] = [
 
 const SHADOW_CHOICE: ChoiceSpec<ShadowQuality> = {
   label: 'Sun & moon shadows',
+  pin: 'shadows.quality',
   hint: 'Sun and moon shadows near you; Low is lighter on the GPU',
   choices: SHADOW_QUALITIES,
   labels: SHADOW_QUALITY_LABELS,
@@ -583,6 +800,7 @@ const SHADOW_CHOICE: ChoiceSpec<ShadowQuality> = {
 
 const TORCH_SHADOW_CHOICE: ChoiceSpec<ShadowQuality> = {
   label: 'Torch shadows',
+  pin: 'shadows.torch',
   hint: 'Shadows from the nearest torches, held and placed; High draws more of them, sharper',
   choices: SHADOW_QUALITIES,
   labels: SHADOW_QUALITY_LABELS,
@@ -679,8 +897,18 @@ export class SettingsMenu {
   /** Reset and Copy JSON, shown under the settings panes. */
   private readonly tail = el('div', 'settings-tail');
   /** The Graphics pane's preset slider and its label. */
-  private preset: { input: HTMLInputElement; value: HTMLSpanElement } | null = null;
-  private settings: Settings;
+  private preset: {
+    input: HTMLInputElement;
+    value: HTMLSpanElement;
+    marker: HTMLButtonElement;
+  } | null = null;
+  /** The settings, which of them are pinned, and the preset chosen. */
+  private state: SettingsState;
+  /** Each row's pin marker. */
+  private readonly markers: { pin: string; button: HTMLButtonElement }[] = [];
+  private get settings(): Settings {
+    return this.state.settings;
+  }
   /** Told when the menu opens or closes (the touch controls step aside while it is open). */
   onOpenChange: ((open: boolean) => void) | null = null;
 
@@ -689,7 +917,7 @@ export class SettingsMenu {
     private readonly mobile: boolean,
     private readonly onChange: (settings: Settings) => void,
   ) {
-    this.settings = loadSettings(mobile);
+    this.state = loadSettingsState(mobile);
     const button = document.createElement('button');
     this.button = button;
     button.type = 'button';
@@ -742,7 +970,7 @@ export class SettingsMenu {
       button.blur();
     });
     parent.append(button, this.panel);
-    this.set(this.settings);
+    this.set(this.state);
     this.show('graphics');
   }
 
@@ -948,7 +1176,9 @@ export class SettingsMenu {
 
   /**
    * The Preset slider (shared/settings/graphics-presets.json, cheapest first): moving it applies
-   * a preset; it reads Custom while the graphics settings match none.
+   * a preset (stored by id: its settings then follow the preset's current definition); it reads
+   * Custom once a setting it sets is changed by hand, the slider staying on the preset the others
+   * follow. Its marker goes back to the device's default preset.
    */
   private presetRow(): HTMLElement {
     const presets = GRAPHICS_PRESETS.presets;
@@ -964,26 +1194,61 @@ export class SettingsMenu {
     input.title = 'A preset of the graphics settings: lower is lighter on the GPU';
     input.addEventListener('input', () => {
       const p = presets[Number(input.value)];
-      if (p) this.set(applyPreset(this.settings, p, this.mobile));
+      if (p) this.set(choosePreset(this.state, p.id, this.mobile));
     });
     const ticks = el('span', 'preset-ticks');
     for (const p of presets) ticks.append(el('span', undefined, p.label));
-    row.append(el('span', 'settings-name', 'Preset'), value, input, ticks);
-    this.preset = { input, value };
+    const marker = this.marker('Preset', () => {
+      this.set(clearPreset(this.state, this.mobile));
+    });
+    row.append(el('span', 'settings-name', 'Preset'), value, input, marker, ticks);
+    this.preset = { input, value, marker };
     return row;
   }
 
-  /** Shows the preset the settings match, or Custom. */
+  /** Shows the preset the graphics follow, or Custom once one of them is pinned. */
   private showPreset(): void {
     if (!this.preset) return;
-    const { input, value } = this.preset;
-    const p = presetOf(this.settings, this.mobile);
-    value.textContent = p ? p.label : 'Custom';
-    if (p) {
-      input.value = String(GRAPHICS_PRESETS.presets.indexOf(p));
-      this.paint(input, GRAPHICS_PRESETS.presets.length - 1);
-    }
-    input.closest('.settings-preset')?.classList.toggle('custom', !p);
+    const { input, value, marker } = this.preset;
+    const { base, custom } = shownPreset(this.state, this.mobile);
+    value.textContent = custom ? 'Custom' : base.label;
+    input.value = String(GRAPHICS_PRESETS.presets.indexOf(base));
+    this.paint(input, GRAPHICS_PRESETS.presets.length - 1);
+    input.closest('.settings-preset')?.classList.toggle('custom', custom);
+    marker.hidden = !custom && this.state.preset === null;
+  }
+
+  /**
+   * A pinned setting's marker (owner, 2026-11-07): shown while the player has changed the setting,
+   * pressing it clears the pin, so the setting follows the build's default again. A button, so the
+   * keyboard (Tab) and a controller (ui/gamepadMenu.ts) reach it.
+   */
+  private marker(label: string, clear: () => void): HTMLButtonElement {
+    const b = el('button', 'settings-pin', '↺');
+    b.type = 'button';
+    b.title = 'Changed: press to go back to the default';
+    b.setAttribute('aria-label', `${label}: back to the default`);
+    b.hidden = true;
+    b.addEventListener('click', (e) => {
+      // Not the row's control (a label's click would toggle its checkbox).
+      e.preventDefault();
+      clear();
+      b.blur();
+    });
+    return b;
+  }
+
+  /** A row's marker for its setting, shown while the setting is pinned. */
+  private pinMarker(label: string, pin: string): HTMLButtonElement {
+    const b = this.marker(label, () => {
+      this.set(clearPin(this.state, pin, this.mobile));
+    });
+    this.markers.push({ pin, button: b });
+    return b;
+  }
+
+  private showMarkers(): void {
+    for (const { pin, button } of this.markers) button.hidden = !this.state.pins.has(pin);
   }
 
   /** Reset and Copy JSON, under each settings pane (shown with them, ui `show`). */
@@ -992,7 +1257,7 @@ export class SettingsMenu {
     reset.type = 'button';
     reset.title = 'Back to the defaults';
     reset.addEventListener('click', () => {
-      this.set(defaultSettings(this.mobile, prefersReducedMotion()));
+      this.set(resetSettings(this.mobile));
     });
     const copy = el('button', 'quiet-button settings-copy', 'Copy JSON');
     copy.type = 'button';
@@ -1041,13 +1306,13 @@ export class SettingsMenu {
     input.title = spec.hint;
     input.addEventListener('input', () => {
       const v = sliderToValue(Number(input.value), spec.min, spec.max, spec.log);
-      this.settings = spec.with(this.settings, v);
+      this.state = changeSetting(this.state, spec.pin, spec.with(this.settings, v));
       value.textContent = spec.format(v);
       this.paint(input);
       this.apply();
     });
     const hint = el('span', 'settings-hint', spec.hint);
-    row.append(name, value, input, hint);
+    row.append(name, value, input, this.pinMarker(spec.label, spec.pin), hint);
     this.rows.push({ spec, input, value });
     return row;
   }
@@ -1065,7 +1330,7 @@ export class SettingsMenu {
       const b = el('button', 'settings-choice', spec.labels[c]);
       b.type = 'button';
       b.addEventListener('click', () => {
-        this.settings = spec.with(this.settings, c);
+        this.state = changeSetting(this.state, spec.pin, spec.with(this.settings, c));
         this.showChoices();
         this.apply();
         b.blur();
@@ -1074,7 +1339,7 @@ export class SettingsMenu {
       box.append(b);
     }
     const hint = el('span', 'settings-hint', spec.hint);
-    row.append(name, value, box, hint);
+    row.append(name, value, box, this.pinMarker(spec.label, spec.pin), hint);
     this.choiceRows.push({ get: spec.get, buttons });
     return row;
   }
@@ -1094,12 +1359,13 @@ export class SettingsMenu {
     input.type = 'checkbox';
     input.title = spec.hint;
     input.addEventListener('change', () => {
-      this.settings = spec.with(this.settings, input.checked);
+      this.state = changeSetting(this.state, spec.pin, spec.with(this.settings, input.checked));
       this.apply();
     });
     row.append(
       el('span', 'settings-name', spec.label),
       input,
+      this.pinMarker(spec.label, spec.pin),
       el('span', 'settings-hint', spec.hint),
     );
     this.toggles.push({ spec, input });
@@ -1111,8 +1377,9 @@ export class SettingsMenu {
     input.style.setProperty('--fill', `${String((100 * Number(input.value)) / max)}%`);
   }
 
-  private set(settings: Settings): void {
-    this.settings = settings;
+  private set(state: SettingsState): void {
+    this.state = state;
+    const settings = state.settings;
     for (const { spec, input, value } of this.rows) {
       const v = spec.get(settings);
       input.value = String(valueToSlider(v, spec.min, spec.max, spec.log));
@@ -1146,8 +1413,9 @@ export class SettingsMenu {
 
   private apply(): void {
     this.showPreset();
+    this.showMarkers();
     if (!this.fallback.hidden) this.fallback.value = settingsJson(this.settings);
     this.onChange(this.settings);
-    saveSettings(this.settings);
+    saveSettingsState(this.state);
   }
 }
