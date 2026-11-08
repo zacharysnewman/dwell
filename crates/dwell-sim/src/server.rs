@@ -2348,16 +2348,20 @@ impl Server {
                     s.edit_refused.push(seq);
                     continue;
                 }
-                if uses_items
-                    && edit.action == BlockEditAction::Place
-                    && !s.inventory.take_one(&items::cost_of(outcome.material))
-                {
-                    s.stats.edits_rejected += 1;
-                    s.edit_refused.push(seq);
-                    continue;
-                }
+                // The item asked for must be held; it is used up when it is what goes in (a torch
+                // held against dynamite lights it and stays in the hand).
                 if uses_items && edit.action == BlockEditAction::Place {
-                    s.inventory_dirty = true;
+                    let item = items::cost_of(edit.material);
+                    let placed = items::cost_of(outcome.material) == item;
+                    if s.inventory.count_of(&item) == 0 {
+                        s.stats.edits_rejected += 1;
+                        s.edit_refused.push(seq);
+                        continue;
+                    }
+                    if placed {
+                        s.inventory.take_one(&item);
+                        s.inventory_dirty = true;
+                    }
                 }
                 s.edit_credit -= 1.0;
                 s.stats.edits_applied += 1;
