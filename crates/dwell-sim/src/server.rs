@@ -2377,6 +2377,23 @@ impl Server {
                         s.inventory_dirty = true;
                     }
                 }
+                // A block that needs a tool kind to break (its `breakWith`: a log, an axe; ADR
+                // 0067) is refused to a hand without one where blocks are not unlimited.
+                if uses_items && edit.action == BlockEditAction::Break {
+                    let [x, y, z] = outcome.cell;
+                    let block = dwell_blocks::block_of(self.world.get_voxel(x, y, z)).name;
+                    let held = s
+                        .inventory
+                        .slots
+                        .get(usize::from(s.inventory.held))
+                        .and_then(|h| h.as_ref())
+                        .map(|st| st.item.as_str());
+                    if !dwell_protocol::chopping::may_break_holding(block, held) {
+                        s.stats.edits_rejected += 1;
+                        s.edit_refused.push(seq);
+                        continue;
+                    }
+                }
                 s.edit_credit -= 1.0;
                 s.stats.edits_applied += 1;
                 // On a build platform's top, or touching a held body, a block goes into that body,
@@ -2432,6 +2449,27 @@ impl Server {
                 };
                 s.stats.last_region_check = outcome.check;
                 // Without unlimited blocks, a region places only what the player holds (ADR 0066).
+                let held_item = s
+                    .inventory
+                    .slots
+                    .get(usize::from(s.inventory.held))
+                    .and_then(|h| h.as_ref())
+                    .map(|st| st.item.clone());
+                // Nor does a region clear a block that needs a tool the hand lacks (`breakWith`).
+                let outcome = if uses_items
+                    && outcome.check == RegionCheck::Ok
+                    && outcome.changes.iter().any(|&(c, m)| {
+                        (m == M.air || info(m).liquid)
+                            && !dwell_protocol::chopping::may_break_holding(
+                                dwell_blocks::block_of(self.world.get_voxel(c[0], c[1], c[2]))
+                                    .name,
+                                held_item.as_deref(),
+                            )
+                    }) {
+                    dwell_world::region::RegionOutcome::fail(RegionCheck::NotPlaceable)
+                } else {
+                    outcome
+                };
                 let outcome = if uses_items && outcome.check == RegionCheck::Ok {
                     let need = items::region_costs(&outcome.changes);
                     if need

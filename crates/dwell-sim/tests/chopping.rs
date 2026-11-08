@@ -275,6 +275,55 @@ fn without_the_axe_in_hand_adventure_swings_do_nothing() {
     assert!(fx.server.cut_of(f.cell([3, AT, 0])).is_none());
 }
 
+/// A hand break (`BlockEditRequest`) of face-local `cell` from its −x face.
+fn hand_break(fx: &mut Fixture, f: FaceFrame, cell: [i32; 3]) {
+    fx.send(
+        1,
+        Message::BlockEditRequest(BlockEditRequest {
+            action: BlockEditAction::Break,
+            cell: f.cell(cell),
+            face: f.cell_face(1) as u8,
+            material: 0,
+            rows: 1,
+            down: false,
+        }),
+    );
+    for _ in 0..3 {
+        fx.server.step();
+    }
+}
+
+dwell_world::both_faces!(
+    fn in_adventure_hands_cannot_break_a_log_but_leaves_still_break(f: FaceFrame) {
+        // Owner, 2026-11-08: logs need an axe in adventure (the log's `breakWith: "axe"`).
+        let mut fx = scene(f, "adventure", true);
+        let leaves = f.state(require("dwell:leaves"));
+        let [x, y, z] = f.cell([2, AT, 1]);
+        fx.server.world().set_voxel(x, y, z, leaves);
+        fx.send(
+            1,
+            Message::InventoryAction(InventoryAction::Select { slot: 3 }),
+        );
+        hand_break(&mut fx, f, [3, AT, 0]);
+        assert_ne!(cell_is(&mut fx, f, [3, AT, 0]), M.air, "the log stays");
+        assert!(fx.server.loose_items().is_empty(), "and drops nothing");
+        hand_break(&mut fx, f, [2, AT, 1]);
+        assert_eq!(cell_is(&mut fx, f, [2, AT, 1]), M.air, "leaves break by hand");
+    }
+);
+
+dwell_world::both_faces!(
+    fn in_creative_hands_break_a_log(f: FaceFrame) {
+        let mut fx = scene(f, "creative", true);
+        fx.send(
+            1,
+            Message::InventoryAction(InventoryAction::Select { slot: 3 }),
+        );
+        hand_break(&mut fx, f, [3, AT, 0]);
+        assert_eq!(cell_is(&mut fx, f, [3, AT, 0]), M.air);
+    }
+);
+
 #[test]
 fn cuts_are_saved_with_the_world() {
     // face-a-only: a byte format.
