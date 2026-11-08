@@ -62,9 +62,10 @@ test('bad entries fail with their path named', () => {
   }
 });
 
-test('the shafts are soft and subtle, and Low is the cheaper tier (owner, 2026-11-07)', () => {
+test('the shafts are clear in the air, soft elsewhere, and Low is the cheaper tier (owner, 2026-11-07)', () => {
   const d = data();
-  assert.ok(d.air.sun.strength > 0 && d.air.sun.strength <= 0.6, 'the sun shafts glow, softly');
+  assert.ok(d.air.sun.strength >= 1.2, 'the sun shafts are clearly visible (owner, 2026-11-07: "quite a bit stronger")');
+  assert.ok(d.air.moon.strength >= 0.3, 'the moon\'s too (owner: "should be moon too")');
   assert.ok(d.air.moon.strength < d.air.sun.strength, 'the moon faintly');
   assert.ok(d.fluids['dwell:water'].strength > 0, 'water has shafts');
   assert.equal(d.tiers.high.scale, 0.5, 'High at half resolution');
