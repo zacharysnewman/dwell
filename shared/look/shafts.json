@@ -18,12 +18,12 @@
   },
   "fluids": {
     "dwell:water": {
-      "strength": 0.55,
+      "strength": 2.0,
       "reachM": 18,
       "fadeM": 14,
-      "cellM": 1.6,
+      "cellM": 0.7,
       "speed": 0.25,
-      "window": { "color": "#dcfbff", "glow": 0.75, "edge": 0.18 }
+      "window": { "color": "#c8f4ff", "glow": 0.4, "edge": 0.18 }
     }
   }
 }

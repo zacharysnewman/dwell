@@ -1452,7 +1452,7 @@ fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
             let bent = rise + dot(noise_t(hit * 0.9).yz * 0.18, dir.xz);
             let rim = sqrt(max(1.0 - 1.0 / (ior * ior), 0.0));
             let inside = smoothstep(rim, rim + max(frame.shafts_color.w, 1e-3) * (1.0 - rim), bent);
-            let glow = inverse_display(frame.shafts_window.rgb) * (1.0 + look.y);
+            let glow = inverse_display(frame.shafts_window.rgb);
             let sky_in = mix(sky_radiance(dir), glow, frame.shafts_window.w * (0.55 + 0.45 * inside));
             let window = display(underwater((sky_in + underwater(vec3f(0.0), 1e6, f) * look.y) * look.x, to_surface, f));
             back = mix(mirror, window, inside);
@@ -1556,7 +1556,7 @@ fn shafts_under(ndc: vec2f, j: f32, size: vec2f) -> f32 {
         let at = (frame.wrap.xy + dir.xz * t + slant * h) / cell;
         let a = noise_t(at + vec2f(drift, 0.6 * drift) / cell).x;
         let b = noise_t(at * 0.47 - vec2f(0.4 * drift, drift) / cell + 3.1).x;
-        let lit = smoothstep(0.05, 0.55, a) * smoothstep(-0.3, 0.4, b);
+        let lit = smoothstep(0.2, 0.6, a) * smoothstep(-0.2, 0.4, b);
         sum += lit * exp(-h / max(frame.shafts_cfg.z, 0.1) - t / max(frame.shafts_cfg.y, 0.1));
     }
     return sum * dt / max(frame.shafts_cfg.y, 0.1) * 3.0;
