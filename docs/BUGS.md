@@ -6,6 +6,17 @@ pins it.
 
 ## Open
 
+### 52. A falling piece's shove on a player is capped (`max_body_kick`), not fixed at its root
+
+Owner, 2026-11-08: "we shouldn't be capping player kick like that" (leave it for now). 0.50.37's
+`Players::limit_body_kick` (`advanced.max_body_kick`, 6 m/s, PLAYER_CONTROLLER.md §6.6) stops a
+felled trunk throwing its chopper ~150 m. The cause: the trunk's slanted underside pinches the
+frictionless player capsule against the ground, the grounded controller cancels the downward part
+each step, and the solver's separation compounds sideways (~75 m/s). Later: replace the cap with a
+proper fix (the tree's mass, contact softness for player–piece contacts, or bounding a pinch by
+the piece's contact-point speed) so a real shove is as hard as physics says. Pinned by
+`dwell-sim` `tests/chopping.rs` `a_felled_trunk_falling_on_the_chopper_does_not_fling_them`.
+
 ### 51. Reopening a world in the same tab stalls on CI: spawn's reload and settings' reload
 
 Found 2026-11-08 getting CI green (PR #421). On CI's software renderer, two specs fail on all three
