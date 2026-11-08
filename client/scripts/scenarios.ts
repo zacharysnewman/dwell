@@ -4,7 +4,7 @@
 // adding a benchmark or a repro is a new entry in the data file. Pure: no Node or browser imports.
 
 import { AIMS, MAP_WATERS, type Aim, type FaceChoice, type MapWater } from '../src/debug/find.ts';
-import { ViewError, viewUrl, type View } from './views.ts';
+import { ViewError, viewUrl, WATER_TIER_NAMES, type View } from './views.ts';
 
 export type Vec3 = [number, number, number];
 
@@ -78,7 +78,7 @@ export type Step =
     }
   | { do: 'releaseCamera' }
   /** The water quality, and/or its cost-isolation switches (`?waterdbg=` names; "" for none). */
-  | { do: 'water'; quality?: 'low' | 'medium' | 'high'; debug?: string }
+  | { do: 'water'; quality?: string; debug?: string }
   /** The Shadows setting, for this page only (docs/DAY_NIGHT.md §10). */
   | { do: 'shadows'; quality: 'off' | 'low' | 'high' }
   | {
@@ -458,8 +458,10 @@ export function parseStep(where: string, v: unknown): Step {
     }
     case 'water': {
       const q = o.quality;
-      if (q !== undefined && q !== 'low' && q !== 'medium' && q !== 'high') {
-        throw new ViewError(`${at('quality')}: expected "low", "medium" or "high"`);
+      if (q !== undefined && (typeof q !== 'string' || !WATER_TIER_NAMES.includes(q))) {
+        throw new ViewError(
+          `${at('quality')}: expected ${WATER_TIER_NAMES.map((n) => `"${n}"`).join(', ')}`,
+        );
       }
       // "" turns every switch off again, so text may be empty here.
       if (o.debug !== undefined && typeof o.debug !== 'string') {

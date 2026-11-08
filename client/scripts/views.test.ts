@@ -1,6 +1,15 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { parseViews, selectViews, ViewError, viewStorage, viewUrl, type View } from './views.ts';
+import {
+  parseViews,
+  selectViews,
+  ViewError,
+  viewStorage,
+  viewUrl,
+  WATER_SETTING_NAMES,
+  WATER_TIER_NAMES,
+  type View,
+} from './views.ts';
 
 const minimal = { name: 'a', camera: { yaw: 0, pitch: 0 } };
 
@@ -10,6 +19,18 @@ function only(view: unknown): View {
 }
 
 describe('views', () => {
+  it('name the water tiers as shared/look/watertiers.json does (its tiers, then the aliases)', () => {
+    const data = JSON.parse(
+      readFileSync(new URL('../../shared/look/watertiers.json', import.meta.url), 'utf8'),
+    ) as { tiers: { id: string; setting: boolean }[]; aliases: Record<string, string> };
+    const aliases = Object.keys(data.aliases).filter((k) => k !== '$comment');
+    expect(WATER_TIER_NAMES).toEqual([...data.tiers.map((t) => t.id), ...aliases]);
+    expect(WATER_SETTING_NAMES).toEqual([
+      ...data.tiers.filter((t) => t.setting).map((t) => t.id),
+      ...aliases,
+    ]);
+  });
+
   it('the checked-in views parse', () => {
     const json = JSON.parse(
       readFileSync(new URL('../views/views.json', import.meta.url), 'utf8'),
