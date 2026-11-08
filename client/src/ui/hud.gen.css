@@ -36,6 +36,10 @@ body.hud-hide-notices #hud-note {
   display: none !important;
 }
 
+body.hud-hide-minimap #minimap {
+  display: none !important;
+}
+
 body.hud-hide-loading-chip #status-chip {
   display: none !important;
 }

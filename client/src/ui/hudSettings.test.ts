@@ -37,6 +37,7 @@ describe('HUD settings', () => {
     expect(hudRecord(stored, s)).toEqual({
       layout: 'compact',
       shown: { ...s.shown, minimap: false, hotbar: false },
+      mapShading: s.mapShading,
     });
   });
 

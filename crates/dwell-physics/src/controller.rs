@@ -918,6 +918,7 @@ impl Players {
         for p in self.players.iter_mut().flatten() {
             physics.contact_normals(p.body, MAX_CONTACTS, &mut p.contacts);
             physics.tier1_contacts(p.body, MAX_CONTACTS, &mut p.tier1);
+            Self::limit_body_kick(physics, p);
         }
         self.pushes.clear();
         // Pass-major, like the PPC's Quantum system group.
@@ -945,6 +946,25 @@ impl Players {
                     pass(self, i, world, physics);
                 }
             }
+        }
+    }
+
+    /// Dwell (§6.6): a Tier 1 body's hit speeds the player up to at most
+    /// `advanced.max_body_kick`, or keeps the speed it went into the step with if that was more.
+    /// A heavy piece meeting a light player (a felled trunk tipping onto its chopper, 0.50.36)
+    /// is pushed out by the solver at whatever speed its penetration takes, ~75 m/s from a 10 m
+    /// trunk's fall: they were thrown 150 m. Only speed is taken, never direction or a stop (a
+    /// landing on a log still stops), and an instant change before the step (a blast's
+    /// knockback, `add_velocity`) is in `pre_step`, so it is kept whole.
+    fn limit_body_kick(physics: &mut Physics, p: &mut Player) {
+        if p.tier1.is_empty() {
+            return;
+        }
+        let v = physics.velocity(p.body);
+        let allowed = f64::from(p.pre_step.length().max(p.cfg.advanced.max_body_kick));
+        let speed = v.length();
+        if speed > allowed {
+            physics.set_velocity(p.body, v * (allowed / speed));
         }
     }
 

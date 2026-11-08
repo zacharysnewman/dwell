@@ -213,7 +213,7 @@ export function settingsJson(s: Settings): string {
     explosions: { ...s.explosions },
     fovDeg: Math.round(s.fovDeg),
     showArms: s.showArms,
-    hud: { shown: { ...s.hud.shown } },
+    hud: { shown: { ...s.hud.shown }, mapShading: s.hud.mapShading },
     renderScale: { ...s.renderScale },
   };
   return JSON.stringify(rounded, null, 2);
@@ -706,9 +706,26 @@ function panes(mobile: boolean): Record<SettingsPane, Group[]> {
             pin: `hud.shown.${part.id}`,
             hint: part.hint,
             get: (st) => st.hud.shown[part.id] ?? part.shown,
-            with: (st, v) => ({ ...st, hud: { shown: { ...st.hud.shown, [part.id]: v } } }),
+            with: (st, v) => ({
+              ...st,
+              hud: { ...st.hud, shown: { ...st.hud.shown, [part.id]: v } },
+            }),
           },
         })),
+      },
+      {
+        title: 'Map',
+        rows: [
+          {
+            toggle: {
+              label: 'Minimap height shading',
+              pin: 'hud.mapShading',
+              hint: 'Higher ground lighter, slopes shaded, on the minimap',
+              get: (st) => st.hud.mapShading,
+              with: (st, v) => ({ ...st, hud: { ...st.hud, mapShading: v } }),
+            },
+          },
+        ],
       },
     ],
   };

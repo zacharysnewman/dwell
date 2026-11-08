@@ -223,7 +223,7 @@ describe('Reset', () => {
     s = changeSetting(s, 'fovDeg', { ...s.settings, fovDeg: 99 });
     s = changeSetting(s, 'hud.shown.crosshair', {
       ...s.settings,
-      hud: { shown: { ...s.settings.hud.shown, crosshair: false } },
+      hud: { ...s.settings.hud, shown: { ...s.settings.hud.shown, crosshair: false } },
     });
     saveSettingsState(s);
     s = resetSettings(false);

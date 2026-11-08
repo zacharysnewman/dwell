@@ -74,6 +74,7 @@ import { loadFlySpeedLevel, saveFlySpeedLevel } from './predict/flightSpeed';
 import { formatStatus } from './ui/statusOverlay';
 import { formatPerf, TickRate } from './ui/perfLine';
 import { applyHud } from './ui/hudSettings';
+import { MapUi, indexedDbExplored } from './ui/minimap';
 import { hasWasmSimd } from './engine/simd';
 import { NEEDS_SIMD, startupMessage } from './ui/startupError';
 import { FpsMeter } from './ui/fps';
@@ -420,6 +421,29 @@ interface App {
   /** The world being played (its seed and generator), once joined: for the block dump. */
   world: { seed: bigint; generatorVersion: number } | null;
   playing: boolean;
+  /** The minimap and the explored map (ADR 0068), once joined. */
+  minimap: MapUi | null;
+  /** The minimap's height shading (Settings, On screen). */
+  mapShading: boolean;
+}
+
+/**
+ * The minimap and the explored map (ADR 0068): M or a tap on the minimap opens the big map, M or
+ * Esc closes it; the explored cells are kept per world (`world`) in this browser.
+ */
+function startMinimap(app: App, world: string): void {
+  if (app.minimap) return;
+  const ui = new MapUi(document, app.client, world, indexedDbExplored());
+  app.minimap = ui;
+  window.addEventListener('keydown', (e) => {
+    const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+    if (typing || e.repeat) return;
+    if (e.code === 'KeyM') ui.toggleBig();
+    else if (e.code === 'Escape' && ui.bigOpen) ui.toggleBig();
+  });
+  window.addEventListener('pagehide', () => {
+    ui.save(performance.now() + 1e9);
+  });
 }
 
 function lockPointer(canvas: HTMLCanvasElement): void {
@@ -683,6 +707,8 @@ async function start(): Promise<App | null> {
     }),
     fps: new FpsMeter(),
     loopback: null,
+    minimap: null,
+    mapShading: true,
     world: null,
     playing: false,
   };
@@ -735,6 +761,7 @@ async function start(): Promise<App | null> {
     client.setExposure(s.exposure);
     // What the screen shows (Settings, On screen; shared/ui/hud.json).
     applyHud(document, s.hud, mobile);
+    app.mapShading = s.hud.mapShading;
     client.setWaterQuality(waterQualityLevel(s.water.quality));
     // A phone draws the water's cheaper reflection tiers (shared/look/reflections.json `phone`).
     client.setPhone(mobile);
@@ -879,6 +906,8 @@ async function start(): Promise<App | null> {
     state: () => client.debugState() as GameDebugState | null,
     press: (code, down) => {
       client.press(code, down);
+      // The map's key is the shell's (ADR 0068), as a real key press is.
+      if (down && code === 'KeyM') app.minimap?.toggleBig();
     },
     look: (yaw, pitch) => {
       client.setLook(yaw, pitch);
@@ -1026,6 +1055,10 @@ async function start(): Promise<App | null> {
     handleEvents(app);
     playSounds(app, sounds);
     showHud(app, now);
+    if (app.minimap) {
+      app.minimap.shading = app.mapShading;
+      app.minimap.frame(now);
+    }
     requestAnimationFrame(frame);
   };
   requestAnimationFrame(frame);
@@ -1582,6 +1615,7 @@ async function connect(app: App): Promise<void> {
         if (joinedInvite) rememberServer(storage(), joinedInvite, Date.now());
         onJoined?.();
         play(app, s);
+        startMinimap(app, localWorld ? `local:${localWorld.file ?? target}` : serverKey);
       }
     };
     // The session's state is polled: twice a second is quick enough for the join and the line.

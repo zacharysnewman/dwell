@@ -276,6 +276,9 @@ pub struct Advanced {
     pub probe_ring_radius: f32,
     pub wall_check_distance: f32,
     pub external_absorb_threshold: f32,
+    /// ◆ The most speed (m/s) a Tier 1 body's hit gives a player in one step, beyond the speed
+    /// they went into it with (§6.6): a falling trunk knocks its chopper aside, not 150 m away.
+    pub max_body_kick: f32,
     /// deg/s
     pub max_platform_yaw_speed: f32,
 }
@@ -412,6 +415,7 @@ impl Default for PlayerControllerConfig {
                 probe_ring_radius: 0.9,
                 wall_check_distance: 0.16,
                 external_absorb_threshold: 0.01,
+                max_body_kick: 6.0,
                 max_platform_yaw_speed: 360.0,
             },
         }

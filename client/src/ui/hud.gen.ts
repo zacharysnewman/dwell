@@ -20,5 +20,6 @@ export const HUD_ELEMENTS: readonly HudElement[] = [
   {"id":"health","label":"Health bar","hint":"Your health, under the hotbar","selector":"#health","shown":true,"phone":true},
   {"id":"controls-hint","label":"Controls hint","hint":"The keys shown when a game starts","selector":"#start-hint","shown":true,"phone":true},
   {"id":"notices","label":"Notices","hint":"Short notes under the crosshair (what can't be placed, and why)","selector":"#hud-note","shown":true,"phone":true},
+  {"id":"minimap","label":"Minimap","hint":"The round map in the top corner (M or a tap opens the explored map)","selector":"#minimap","shown":true,"phone":true},
   {"id":"loading-chip","label":"Loading chip","hint":"The terrain still loading, in the bottom corner","selector":"#status-chip","shown":true,"phone":true},
 ];

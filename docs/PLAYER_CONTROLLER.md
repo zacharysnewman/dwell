@@ -494,7 +494,7 @@ openings), **crouch height 0.9** (fits 1-tall crawlspaces with skin to spare).
 - **Collapse onto a player:** handled by physics (shoved, knocked down) and by crush detection (§6.6).
 
 ### 6.6 Interaction with Tier 1 bodies and other players
-- **Being pushed / hit:** natural solver response; absorbed as external velocity and decayed.
+- **Being pushed / hit:** natural solver response; absorbed as external velocity and decayed. A Tier 1 body's hit speeds the player up by at most `advanced.max_body_kick` (6 m/s) over the speed they went into the step with (`limit_body_kick`, 0.50.37): a heavy piece meeting a light player was pushed out at whatever speed its penetration took, and a felled 10 m trunk tipping onto its chopper threw them ~150 m at 75 m/s (red before, `dwell-sim` `tests/chopping.rs` `a_felled_trunk_falling_on_the_chopper_does_not_fling_them`, both faces; now ~3 m). Only speed is taken, never a stop (a landing on a log still stops), and a knockback before the step (`add_velocity`, a blast) is kept whole.
 - **Riding:** `step_platform` uses the Tier 1 body's linear + angular velocity at the player's
   position; the horizontal layer accelerates in that frame, and the vertical layer follows its
   vertical velocity, so standing on a falling slab or tipping tower needs no input. `yaw_delta`
@@ -1026,6 +1026,7 @@ PPC default for voxels.
 | `advanced` | `step_probe_distance` ◆ / `probe_ring_radius` / `wall_check_distance` | 0.05 m / 0.9 / 0.16 m | 0.01 / same / same | The step's top is read this far past its face (§4) |
 | | `step_face_heights` ◆ / `step_footing` ◆ / `step_max_rise` ◆ | [0.05, 0.25] m / 0.01 m / 0.25 m | — | Dwell's step-up (§4): the face rays' heights; the step's edge this far inside the ring after a step; the most the ground rises to a step's foot (`max_step_lift()` = `max_step_height + step_max_rise`) |
 | | `external_absorb_threshold` | 0.01 m/s | same | Far above native↔WASM noise (none measured, §8.3) |
+| | `max_body_kick` ◆ | 6 m/s | — | The most speed a Tier 1 body's hit adds in one step (§6.6, 0.50.37) |
 | | `max_platform_yaw_speed` | 360 °/s | same | |
 
 A **Unity parity** preset (PPC `ApplyUnityParity`, with Dwell's body dimensions) is kept for

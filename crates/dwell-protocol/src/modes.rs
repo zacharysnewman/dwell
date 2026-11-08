@@ -25,14 +25,17 @@ pub enum Ability {
     /// Blocks are not used up by placing them, and breaking drops nothing (ADR 0066); without
     /// it, placing takes an item from the player's inventory and breaking drops the block's items.
     UnlimitedBlocks,
+    /// The minimap and the explored map (ADR 0068): the client shows them; nothing on the server.
+    Map,
 }
 
 impl Ability {
-    pub const ALL: [Ability; 4] = [
+    pub const ALL: [Ability; 5] = [
         Ability::Damage,
         Ability::Flight,
         Ability::Brushes,
         Ability::UnlimitedBlocks,
+        Ability::Map,
     ];
     /// The data's name (`shared/modes/gen.mjs` `ABILITIES`).
     pub const fn name(self) -> &'static str {
@@ -41,6 +44,7 @@ impl Ability {
             Ability::Flight => "flight",
             Ability::Brushes => "brushes",
             Ability::UnlimitedBlocks => "unlimitedBlocks",
+            Ability::Map => "map",
         }
     }
     pub const fn bit(self) -> u32 {

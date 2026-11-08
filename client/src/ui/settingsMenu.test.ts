@@ -67,7 +67,7 @@ describe('settings JSON', () => {
       explosions: { flash: true, smoke: false, shake: true },
       fovDeg: 82.4,
       showArms: false,
-      hud: { shown: { hotbar: false } },
+      hud: { shown: { hotbar: false }, mapShading: true },
       renderScale: { scale: 0.67, upscaler: 'sharpen' },
       shafts: 'low',
     });
@@ -89,7 +89,7 @@ describe('settings JSON', () => {
       explosions: { flash: true, smoke: false, shake: true },
       fovDeg: 82,
       showArms: false,
-      hud: { shown: { hotbar: false } },
+      hud: { shown: { hotbar: false }, mapShading: true },
       renderScale: { scale: 0.67, upscaler: 'sharpen' },
       shafts: 'low',
     });
