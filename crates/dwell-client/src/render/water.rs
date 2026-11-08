@@ -970,15 +970,26 @@ mod tests {
         for q in [low, medium, WaterQuality::cpu()] {
             assert_eq!(WaterQuality::from_level(q.index() as u32), q);
         }
-        assert_eq!(WaterQuality::from_level(99), medium, "past the last: the last");
-        assert_eq!(WaterQuality::named("high"), Some(medium), "High folded into Medium");
+        assert_eq!(
+            WaterQuality::from_level(99),
+            medium,
+            "past the last: the last"
+        );
+        assert_eq!(
+            WaterQuality::named("high"),
+            Some(medium),
+            "High folded into Medium"
+        );
         assert_eq!(WaterQuality::default(), medium, "the desktop default");
         assert_eq!((low.layers(), medium.layers()), (1, 3));
         // The owner (2026-11-07): Low sees through without the scene copy (no pass split), with
         // the caustic tile's lines; Medium reads the scene; the CPU's tier is opaque.
         assert!(!low.reads_scene() && low.draws_caustics() && medium.reads_scene());
         assert!(!WaterQuality::cpu().reads_scene() && !WaterQuality::cpu().draws_caustics());
-        assert_eq!(low.bits(), dwell_look::water_tiers::tier_bits(low.tier()) as f32);
+        assert_eq!(
+            low.bits(),
+            dwell_look::water_tiers::tier_bits(low.tier()) as f32
+        );
     }
 
     #[test]

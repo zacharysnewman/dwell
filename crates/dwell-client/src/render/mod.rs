@@ -5336,7 +5336,10 @@ mod tests {
     fn the_water_uniform_carries_the_eye_fluid_and_the_water_quality() {
         let a = FaceFrame::A;
         let cpu = WaterQuality::cpu();
-        assert_eq!(water_uniform(None, 0.0, a, cpu), [0.0, 0.0, 0.0, cpu.bits()]);
+        assert_eq!(
+            water_uniform(None, 0.0, a, cpu),
+            [0.0, 0.0, 0.0, cpu.bits()]
+        );
         let medium = WaterQuality::named("medium").unwrap();
         let e = EyeFluid {
             fluid: 0,
@@ -5542,7 +5545,10 @@ mod tests {
             assert_eq!(water_for(wgpu::DeviceType::IntegratedGpu, q), q);
         }
         // Low draws no scene copy on a GPU either (no pass split), but the caustic tile.
-        let low = water_for(wgpu::DeviceType::IntegratedGpu, WaterQuality::named("low").unwrap());
+        let low = water_for(
+            wgpu::DeviceType::IntegratedGpu,
+            WaterQuality::named("low").unwrap(),
+        );
         assert!(!low.reads_scene() && low.draws_caustics());
     }
 
@@ -6236,10 +6242,18 @@ mod tests {
         };
         r.set_water_quality(WaterQuality::cpu());
         let opaque = refl(&r);
-        assert_eq!((opaque[0], opaque[4]), (0.0, 0.0), "the CPU's tier: the sky alone");
+        assert_eq!(
+            (opaque[0], opaque[4]),
+            (0.0, 0.0),
+            "the CPU's tier: the sky alone"
+        );
         let low = WaterQuality::named("low").unwrap();
         r.set_water_quality(low);
-        assert_eq!(refl(&r)[0], 0.0, "Low marches no land (the bank band instead)");
+        assert_eq!(
+            refl(&r)[0],
+            0.0,
+            "Low marches no land (the bank band instead)"
+        );
         let medium = WaterQuality::named("medium").unwrap();
         r.set_water_quality(medium);
         let m = refl(&r);

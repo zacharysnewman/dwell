@@ -129,11 +129,14 @@ export function waterTiersRust(data) {
   rs.push('];');
   rs.push('');
   rs.push('/// Removed tiers read as another (name, the tier it reads as).');
-  rs.push('pub const WATER_TIER_ALIASES: &[(&str, &str)] = &[');
-  for (const [from, to] of Object.entries(data.aliases)) {
-    if (from !== '$comment') rs.push(`    (${JSON.stringify(from)}, ${JSON.stringify(to)}),`);
-  }
-  rs.push('];');
+  // As rustfmt lays it out: one line while it fits in 100 columns.
+  const pairs = Object.entries(data.aliases)
+    .filter(([from]) => from !== '$comment')
+    .map(([from, to]) => `(${JSON.stringify(from)}, ${JSON.stringify(to)})`);
+  const head = 'pub const WATER_TIER_ALIASES: &[(&str, &str)] = &[';
+  const line = `${head}${pairs.join(', ')}];`;
+  if (line.length <= 100) rs.push(line);
+  else rs.push(head, ...pairs.map((p) => `    ${p},`), '];');
   rs.push('');
   rs.push('/// The bank band (a stylized reflection of the bank, no march).');
   rs.push('pub const BANK_BAND: BankBand = BankBand {');

@@ -1325,3 +1325,41 @@ Scratch (not checked in): scenarios and configurations in the session scratchpad
 `scenarios.json`: `wc-dam`, `wc-wide`, `wc-wl`, `wc-flood`, `wc-descent`; `dam.json`, `damfull.json`,
 `wl.json`; `an.py` summarises), the selected screenshots in `water-cost-shots/` (each view with each piece
 off, the flood, the waterline, the descent grid).
+
+## Water tiers (M1 Air)
+
+The tiers rework (0.50.29; WATER_RENDERING.md §4, proposals/WATER_GPU_SURFACE.md C1): the same dam close-up
+and valley as "Water cost", 50 % Stretch, `--unthrottled`, one page per view with the tiers switched in turn
+(the `water` step by tier name; Medium first and again last), 1.5 s to settle, 3 s recorded, `gpu.frame`
+mean. **The owner was playing a game on the Mac** (load 11–76 over the runs), so the absolute ms are high and
+need a recheck on a quiet machine; read the differences within one page (each row's run).
+
+| `gpu.frame` mean (ms) | Dam | Valley |
+| --- | --- | --- |
+| *Before* (0.50.28): High / Medium / opaque Low / High again | 9.62 / 9.33 / 7.87 / 9.68 | 10.94 / 10.79 / 9.62 / 10.92 |
+| *After*: Medium / Low / opaque (CPU) / Medium again | 10.05 / 8.98 / 8.52 / 10.61 | 12.54 / 10.92 / 10.54 / 12.41 |
+| Low − Medium (after, mean of the two Medium records) | −1.35 | −1.56 |
+| Low − opaque (after) | +0.46 | +0.38 |
+| With vsync (60 Hz; frames held at 16.7 ms) — before: High / Medium / opaque Low / High again | 9.81 / 9.48 / 8.33 / 9.55 | 11.18 / 10.89 / 9.76 / 11.32 |
+| With vsync — after: Medium / Low / opaque / Medium again | 10.93 / 8.54 / 8.42 / 10.30 | 11.82 / 10.33 / 10.32 / 11.91 |
+| Low − Medium with vsync | −2.08 | −1.54 |
+| A Low with the scene copy (an intermediate build, refraction and absorption kept, no SSR) − Medium | −0.71 | +0.09 (noisy) |
+
+Low draws no scene copy: **no water pass split** (two scene passes, as with no water), and the caustic tile
+(`gpu.water.tiles` ~0.45–0.5 ms on the frames it is drawn, every other frame since 0.50.29). Its cost over the
+opaque tier is the blend and the surface caustics. The intermediate copy-reading Low saved only about half as
+much: the copy and split cost ~0.6 ms even on the M1, and on a phone's tile GPU a split stores and reloads the
+whole frame (not visible on the M1's bandwidth).
+
+**A phone** (*estimate*): the owner's iPhone ran ~45 fps floating over the water looking down and ~60 under
+it, "at the original defaults", so ~5.5 ms a frame over the surface. **Caveat:** a phone's default water was
+Low before this change too, which was then the opaque tier (no copy, no split); if the phone was on it, the
+copy was not the cause, and the cost lies in what the opaque tier and Low share (the blended full-screen water
+shading, the sky reflection per pixel, the near-surface waterline test). If it was on Medium (set by hand, or
+`prefersTouch` false on that device), scaling the M1's Medium − Low (1.35–1.56 ms) by a phone GPU's ~2–3× per
+pixel gives ~3–4.5 ms, plus the split's store and reload that the M1 hides: Low should bring it near 60 fps.
+Which tier the phone ran needs asking; not measured on a phone.
+
+Screenshots (old High, old opaque Low, new Medium, new Low, new opaque) in the session scratchpad
+`water-tiers/shots/`; the runs and `compare.html` per run in `water-tiers/out/` (`before-*`, `final-*`),
+scenarios from `water-tiers/gen.py`, `an.py` summarises.

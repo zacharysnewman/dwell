@@ -111,7 +111,10 @@ mod tests {
         let opaque = REFLECTIONS.tier(at("opaque"));
         assert_eq!((opaque.ssr_steps, opaque.cloud_octaves), (0, 0));
         let low = REFLECTIONS.tier(at("low"));
-        assert_eq!(low.ssr_steps, 0, "Low reflects the bank by the band, not a march");
+        assert_eq!(
+            low.ssr_steps, 0,
+            "Low reflects the bank by the band, not a march"
+        );
         let m = REFLECTIONS.tier(at("medium"));
         assert!(m.ssr_steps > 0 && m.cloud_octaves > 0);
         assert_eq!(

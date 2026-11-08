@@ -43,9 +43,7 @@ pub const WATER_TIERS: &[WaterTier] = &[
 ];
 
 /// Removed tiers read as another (name, the tier it reads as).
-pub const WATER_TIER_ALIASES: &[(&str, &str)] = &[
-    ("high", "medium"),
-];
+pub const WATER_TIER_ALIASES: &[(&str, &str)] = &[("high", "medium")];
 
 /// The bank band (a stylized reflection of the bank, no march).
 pub const BANK_BAND: BankBand = BankBand {
