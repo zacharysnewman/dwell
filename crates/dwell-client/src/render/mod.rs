@@ -1858,7 +1858,7 @@ impl Renderer {
             flow_switches: 0,
             water_tiles,
             pacer: pacing::FramePacer::default(),
-            start_ms: crate::telemetry::now_ms(),
+            start_ms: crate::render_clock::now_ms(),
             exposure: DEFAULT_EXPOSURE,
             day: DayState::default(),
             day_seconds: 0.0,
@@ -2602,8 +2602,9 @@ impl Renderer {
             (self.exposure * adapted.exposure) as f32,
             dwell_look::daynight::fog_density(self.day.of(self.face)) as f32,
         ]);
-        // The water's scroll time, seconds since the renderer started.
-        let seconds = (crate::telemetry::now_ms() - self.start_ms) / 1000.0;
+        // The water's scroll time, seconds of render time since the renderer started (the
+        // render clock: frozen while the look is paused, render_clock.rs).
+        let seconds = (crate::render_clock::now_ms() - self.start_ms) / 1000.0;
         put(&[
             fog_sigma(FOG.distance_m) as f32,
             FOG.height_m as f32,
@@ -3240,7 +3241,7 @@ impl Renderer {
         // and the upscale shifts the picture by the remainder (dwell-look `snap_eye`).
         let eye = self.eye;
         self.pixel_shift = [0.0; 2];
-        self.adapt_eye(crate::telemetry::now_ms());
+        self.adapt_eye(crate::render_clock::now_ms());
         if let (Some(p), Some(g)) = (self.pixel_preset(), self.pixel_grid)
             && p.snap_camera
         {
@@ -3449,7 +3450,7 @@ impl Renderer {
         // placed ones near the eye, nearest first, flickering by the frame's clock; and the torch
         // shadows' maps (§4, point_shadows.rs): the nearest lights that may cast take a slot, and
         // the maps of those new, moved or whose terrain changed are drawn, a budget a frame.
-        let seconds = (crate::telemetry::now_ms() - self.start_ms) / 1000.0;
+        let seconds = (crate::render_clock::now_ms() - self.start_ms) / 1000.0;
         let torch = self.torch_frame(chunk_fade);
         let (block, drawn) = lights::frame_block(&torch.lights, self.eye, seconds);
         self.queue

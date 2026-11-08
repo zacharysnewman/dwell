@@ -215,6 +215,7 @@
     "Terrain map": ["action:map_open", "action:map_close"],
     "Map zoom": ["action:map_zoom"],
     "Copy block info": ["action:copy"],
+    "Pause the look": ["action:overlay_on", "action:overlay_off"],
     "Break or place": ["event:break", "event:place", "event:hit", "event:deny", "action:touch_mode"],
     "Keep building as you look": ["event:place"],
     "Jump, Run, Crouch, Fly": ["event:jump", "event:sprint", "event:crouch_on", "action:fly_on"]

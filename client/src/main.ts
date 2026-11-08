@@ -110,6 +110,7 @@ import {
 } from './input/gamepadSettings';
 import { ControllerPanel } from './ui/controllerPanel';
 import { workerCount } from './workerCount';
+import { pauseFromQuery, togglePause } from './debug/pause';
 
 type Vec3 = [number, number, number];
 
@@ -324,6 +325,12 @@ interface DwellDebug {
   setTime(t: number | null, moon?: number | null): void;
   /** The water's cost-isolation switches (`?waterdbg=` names, comma-separated; "" for none). */
   waterDebug(names: string): void;
+  /**
+   * Pauses (true) or resumes (false) the look: every drawn animation stands still at one instant
+   * while the game runs on (`?pause=1`, F7, Settings → Debug; debug/pause.ts). Returns the state;
+   * no argument only reads it.
+   */
+  pause(on?: boolean): boolean;
 }
 
 /** A distribution's summary (telemetry.rs `Stats`). */
@@ -466,6 +473,11 @@ function toggleDebug(app: App): void {
   audio().action(app.hud.debugVisible ? 'overlay_on' : 'overlay_off');
 }
 
+/** The F7 debug pause (debug/pause.ts): the look stands still, with its sound. */
+function togglePauseLook(app: App): void {
+  audio().action(togglePause(app.client) ? 'overlay_on' : 'overlay_off');
+}
+
 /** The F4 map on or off, with its sound. */
 function toggleMap(app: App): void {
   app.map.toggle();
@@ -552,6 +564,7 @@ function handleEvents(app: App): void {
     if (e.t === 'toggle') {
       if (e.value === 'F3') toggleDebug(app);
       if (e.value === 'F6') copyBlockDump(app);
+      if (e.value === 'F7') togglePauseLook(app);
       if (e.value === 'F4') toggleMap(app);
       if (e.value === 'Minus') zoomMap(app, 1);
       if (e.value === 'Equal') zoomMap(app, -1);
@@ -868,6 +881,13 @@ async function start(): Promise<App | null> {
         copyBlockDump(app);
       },
     },
+    {
+      key: 'F7',
+      run: () => {
+        togglePauseLook(app);
+      },
+      on: () => client.lookPaused(),
+    },
   ]);
   // The Structures page (STRUCTURES.md §4): the browser's structures store, saved from and
   // loaded into this world through the region tools.
@@ -901,6 +921,8 @@ async function start(): Promise<App | null> {
   };
   // No F3 on a phone: ?debug=1 opens the debug overlay.
   if (params.get('debug') === '1') toggleDebug(app);
+  // ?pause=1 starts with the look paused (debug/pause.ts; the panoramas pause from script).
+  if (pauseFromQuery(location.search)) client.setLookPaused(true);
   app.hud.onCopyBlocks = () => {
     copyBlockDump(app);
   };
@@ -1049,6 +1071,10 @@ async function start(): Promise<App | null> {
     setTime: (t, moon) => {
       client.setTimeOfDay(t ?? undefined);
       if (moon !== undefined) client.setMoonPhase(moon ?? undefined);
+    },
+    pause: (on) => {
+      if (on !== undefined) client.setLookPaused(on);
+      return client.lookPaused();
     },
   };
 

@@ -392,13 +392,17 @@ from the real game by `npm run panoramas [-- name …]` (`client/scripts/panoram
 as for the bench; `--base`, `--out`). For each entry it opens the entry's seed as a local world with
 the player at its `position` (`?local=1&seed=…&fresh=1&at=…&time=…&preset=high`; the FOV at
 `capture.fovDeg`, arms and speed effects off, no music), waits for the terrain, hides everything but
-the game canvas, then places the camera there level and turns it in `capture.steps` equal steps
-(yaw falling, so each shot lands right of the last), waiting for what each way shows. The square
-shots are stitched in the page into one cylindrical 360° strip (each column from the shot looking
-nearest along it, reprojected from its perspective; `span` of the focal length above and below the
-horizon) whose ends meet, encoded as WebP at `capture.quality` into `shared/ui/menu-backgrounds/`
-(the shots stay in `--out`). With the defaults (16 shots, 1080 px at 90°) a strip is 3393 × 972,
-110–180 KB. The clouds drift between shots, so a soft seam can show in the sky.
+the game canvas, pauses the look ([Pausing the look](#pausing-the-look): every shot is of one
+instant, so the clouds and the water match across them), then places the camera there level and
+turns it in `capture.steps` equal steps (yaw falling, so each shot lands right of the last),
+waiting for what each way shows. The square shots are stitched in the page into one cylindrical
+360° strip whose ends meet (`span` of the focal length above and below the horizon): each column
+blends the two shots either side of it, each reprojected from its own perspective along the same
+ray (`shotPoint`), with a smoothstep weight from 1 at a shot's centre to 0 at its neighbours'
+(`columnShots`), so the feather spans the whole 22.5° step and there is no hard join; any
+view-dependent difference (a reflection) fades across the step instead. Encoded as WebP at
+`capture.quality` into `shared/ui/menu-backgrounds/` (the shots stay in `--out`). With the defaults
+(16 shots, 1080 px at 90°) a strip is 3393 × 972, 105–225 KB.
 
 A new background: find the spot (a `goto` scenario, [Finding places](#finding-places): the three
 were found with `water` at `scope: world` for `sea` then the nearest `dwell:sand`, `river` and
@@ -406,6 +410,20 @@ were found with `water` at `scope: world` for `sea` then the nearest `dwell:sand
 
 
 **Random (0.50.44).** `menu-backgrounds.json`'s `default` may be `"random"` (the default since 0.50.44; owner, 2026-11-08): the menu picks a view at random (`nextRandomBackground`), and after each full turn (`turnS`) picks a different one and fades it in over 3 s on a second layer (`MenuPanorama`, `.mm-pano-layer`). Settings offers Random first.
+
+## Pausing the look
+
+A debug pause stops every drawn animation at one instant while the game runs on (owner,
+2026-11-08: for the panoramas' seams): `?pause=1`, `__dwell.pause(true)` / `pause(false)` /
+`pause()` (reads it), F7, or Settings → Debug → Pause the look. The client keeps one **render
+clock** (`crates/dwell-client/src/render_clock.rs`): wall time less the time spent paused, frozen
+while paused, resuming from the same instant. Everything drawn reads it: the frame block's time
+(`fog.z`: the water's ripples, caustics, carried flow and waves, the plants' sway), the flames,
+motes, flecks and lights' flicker, the stars' twinkle and the day clock (`update_day`), the clouds'
+drift (the world clock read at render time), the eye's adaptation; the flecks step by no time. The
+simulation, the controller, prediction, streaming and the network stay on the wall clock, so the
+world can change under a paused look (water levels, a falling piece), and the camera can be moved
+(`placeCamera`) to shoot the same moment from another angle.
 
 ## Comparing builds
 

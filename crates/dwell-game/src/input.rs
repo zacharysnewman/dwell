@@ -94,7 +94,7 @@ pub enum EditAction {
 /// What a key press asks of the shell, besides the held key.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum InputEvent {
-    /// Debug toggles: F3 overlay, F4 terrain map, F6; Minus and Equal zoom the map.
+    /// Debug toggles: F3 overlay, F4 terrain map, F6, F7 pause the look; Minus and Equal zoom the map.
     Toggle(String),
     /// Hotbar: a number key (its code, e.g. `Digit3`).
     Digit(String),
@@ -289,7 +289,7 @@ impl KeyboardMouseInput {
 
     /// A `keydown`: `code` is `KeyboardEvent.code`.
     pub fn key_down(&mut self, code: &str, repeat: bool, ctrl: bool, meta: bool) -> KeyDown {
-        if matches!(code, "F3" | "F4" | "F6") {
+        if matches!(code, "F3" | "F4" | "F6" | "F7") {
             return KeyDown {
                 prevent_default: true,
                 events: vec![InputEvent::Toggle(code.to_owned())],
@@ -529,6 +529,10 @@ mod tests {
         assert!(f3.prevent_default);
         assert_eq!(f3.events, vec![InputEvent::Toggle("F3".into())]);
         assert!(!input.key_held("F3"));
+        // F7 pauses the look (the render clock, DEV_TOOLS.md "Pausing the look").
+        let f7 = input.key_down("F7", false, false, false);
+        assert!(f7.prevent_default);
+        assert_eq!(f7.events, vec![InputEvent::Toggle("F7".into())]);
         assert!(
             input
                 .key_down("Minus", false, true, false)
@@ -713,7 +717,7 @@ mod tests {
             tool_for_key(key, false, false).is_none() && tool_for_key(key, false, true).is_none()
         );
         for taken in [
-            FLY_KEY, "KeyW", "KeyA", "KeyS", "KeyD", "KeyC", "Space", "F3", "F4", "F6",
+            FLY_KEY, "KeyW", "KeyA", "KeyS", "KeyD", "KeyC", "Space", "F3", "F4", "F6", "F7",
         ] {
             assert_ne!(key, taken);
         }
