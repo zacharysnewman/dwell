@@ -21,8 +21,8 @@ world; the minimap is per build, its looks the same for every world.
 
 1. **Data.** `shared/ui/map.json`: the minimap's radius (64 m), texel (1 m), size (168 px), redraw
    thresholds (a texel's move, 2° of turn), the full re-read interval (2 s, for edits), the scan
-   window above and below the eye, the dots' colours and size; the height shading's default (on), its
-   range and strength; the explored cell (8 m); the big map's zoom range and step and fog colour.
+   window above and below the eye, the dots' colours and size; the height shading's default (on); the
+   height bands' colour stops (0.50.52, below); the explored cell (8 m); the big map's zoom range and step and fog colour.
    `shared/ui/gen.mjs` (with the HUD's parts) validates it (ranges, colours, unknown and missing
    fields, a message naming the entry) and emits `crates/dwell-game/src/map.gen.rs` and
    `client/src/ui/map.gen.ts`; CI regenerates and fails on a diff; `gen.test.mjs` changes a look by
@@ -49,7 +49,8 @@ world; the minimap is per build, its looks the same for every world.
    else the generator's column top at its centre, from the revealed map's tiles (below; asked for by
    `Explored::ask`, at most `revealed.jobsInFlight` at once, run in the job workers, never on the
    main thread, kept for the session); else `explored.pendingColor`. The disc itself draws a texel
-   its scan found nothing in from its explored cell's colour (unless pending), shaded as low ground,
+   its scan found nothing in from its explored cell's colour (unless pending; in the height bands by
+   the cell's height when the toggle is on),
    so a valley below shows there too. A world
    the client does not generate keeps its pending cells until the terrain is seen. The client
    reports new and visibly changed cells with their colour (`takeExplored`; again as a better
@@ -106,6 +107,31 @@ light direction that is data (`shade.lightAzimuthDeg`, `lightElevationDeg`, `exa
 `strength`; flat ground unchanged), then a gentle tint by height above sea level (`shade.tint*`);
 water keeps its colour. The gradient is in screen terms, so the light comes from the screen's top left
 on both faces. Stored records gain an optional `heights` map beside `cells` (append-only).
+
+### Height bands instead of the hill-shade (0.50.52; owner, 2026-11-09)
+
+After seeing 0.50.48: "That looks like lighting, not elevation shading? Is that a height map? It
+doesn't look like one." The owner's answers: **colour bands by height** (a classic topographic,
+hypsometric tint: low ground dark green, rising through lighter greens and tans to grey and white
+peaks; water in blues by depth) and **no lighting**. So the hill-shade and the tint (`shade.*`,
+`relief`, `tint`, `shade_rgb`) are gone, and the eye-relative brightness of the minimap's toggle
+with them (`heightShading.rangeM`, `darkest`, `brightest`). `dwell_game::minimap::band_rgb` colours
+a cell by its height alone: land by its height above sea level through `heightBands.land`, a list of
+`{heightM, color}` stops, interpolated between them and held past the ends, the height first
+rounded down to a multiple of `heightBands.stepM` (8 m: gentle steps, so a slope reads as contour-like
+bands); water by its bed's depth below sea level through `heightBands.water` (`{depthM, color}`,
+`waterStepM` 0, smooth), water above sea level (a river or a lake in the hills) the shallowest stop.
+The block colour and the slope play no part. A water cell's height code is now its **bed's** (the
+generator's column ground, a river's channel bottom; on the loaded terrain the scan's surface less
+the depth it followed, up to `heightShading.waterDepthM`), so the depth comes from the one height;
+codes stored by 0.50.48–0.50.51 (the water's surface) read as shallow water. The big map uses the
+bands always; the minimap keeps its blocks' colours, and its height-shading toggle switches it to the
+same bands, to compare. `shared/ui/gen.mjs` validates the stops (at least one, rising, colours,
+ranges, unknown fields) and emits them as Rust slices and TS arrays; a stop is added by data alone.
+The stops were picked for the generator's range (sampled at seeds 0 and 7, face A): the ground round
+spawn is mostly 280–330 m above sea level (seed 7's hills to ~850 m), the whole disc 0–2600 m, the
+sea at most ~22 m deep; so the stops are dense between 200 and 400 m (a change every 40–60 m), then
+wider to the peaks.
 
 ## Consequences
 

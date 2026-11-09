@@ -1,5 +1,5 @@
 {
-  "$comment": "The minimap and the explored-world map (docs/adr/0068-minimap-and-explored-map.md; owner, 2026-11-08). minimap: radiusM (the disc's reach, m), texelM (metres a texel), sizePx (its CSS size), compactSizePx on a screen whose short side is less than compactBelowPx (a phone either way up: the full size covered the touch look area sideways and the hotbar and status lines upright), moveTexels and turnDegrees (the disc is drawn again only when the player has moved this many texels or turned this far), refreshSeconds (the terrain under it is read again this often, for edits), scanUpM and scanDownM (how far above and below the eye a column's top is looked for), playerColor (the red dot), otherColor (other players' dots), dotPx (a dot's size), edgeColor (the ring), cpuUpdateMs (the CPU adapter's tier: on a software renderer the minimap and its dots are brought up to date at most this often, ms). heightShading: the toggle's default (Settings, On screen), rangeM (the height above or below the eye at which shading is strongest), darkest and brightest (its range of brightness), waterDepthM (water darkens to its deepest over this depth). shade (the maps' one shading, the minimap's when heightShading is on and the big map's always; owner, 2026-11-09: \"shading based on elevation\"): a hill-shade lit from lightAzimuthDeg (degrees clockwise from the screen's top, the same side of the screen on both faces) at lightElevationDeg above the ground, the rise between neighbouring cells exaggerated by exaggeration, flat ground unchanged and strength the share of the light's change used; darkest and brightest clamp the brightness; then a tint by height, tintAmount toward tintLowColor at tintLowM above sea level and below, toward tintHighColor at tintHighM and above; water is kept as it is. explored: cellM (a coarse cell is explored once its centre is within the minimap's radius of the player, a 2D distance on their face, whatever the height and whether its terrain is loaded), pendingColor (an explored cell's colour until the loaded terrain or the generator gives it one). bigMap: startPxPerCell, minPxPerCell, maxPxPerCell (the zoom, pixels per explored cell), zoomStep (one wheel notch's factor), fogColor (unexplored), and the panel it is drawn in (owner, 2026-11-09): panelFraction (its share of the screen's width and height, the game showing round it), phoneMarginPx (its margin inside the safe area on a screen whose short side is under minimap.compactBelowPx, where it is nearly full screen), buttonPx and phoneButtonPx (the close, zoom and centre buttons' size), scaleBarMaxPx (the scale bar's longest; its length a 1, 2 or 5 times ten metres), frameColor (its title bar and frame), padPanPxPerS (the controller's stick or D-pad pans this many pixels a second at full tilt), padZoomPerS (a held zoom button zooms by this factor a second), and the controller's buttons on the open map (shared/input/gamepad.json's names): padZoomIn, padZoomInAlt, padZoomOut, padZoomOutAlt, padCenter, padClose (View closes it too). revealed (a mode with the mapRevealed ability, creative: the whole big map shown, ground not yet explored coloured from the terrain generator in the job workers): tileCells (a tile is this many explored cells a side, generated as one job), jobsInFlight (at most this many tiles generating at once, so chunk streaming keeps its workers), budgetMs (the most a frame spends taking finished tiles), redrawMs (the open map is drawn again at most this often while tiles arrive). Run `node shared/ui/gen.mjs` after editing; CI fails if crates/dwell-game/src/map.gen.rs or client/src/ui/map.gen.ts is stale.",
+  "$comment": "The minimap and the explored-world map (docs/adr/0068-minimap-and-explored-map.md; owner, 2026-11-08). minimap: radiusM (the disc's reach, m), texelM (metres a texel), sizePx (its CSS size), compactSizePx on a screen whose short side is less than compactBelowPx (a phone either way up: the full size covered the touch look area sideways and the hotbar and status lines upright), moveTexels and turnDegrees (the disc is drawn again only when the player has moved this many texels or turned this far), refreshSeconds (the terrain under it is read again this often, for edits), scanUpM and scanDownM (how far above and below the eye a column's top is looked for), playerColor (the red dot), otherColor (other players' dots), dotPx (a dot's size), edgeColor (the ring), cpuUpdateMs (the CPU adapter's tier: on a software renderer the minimap and its dots are brought up to date at most this often, ms). heightShading: the toggle's default (Settings, On screen: the minimap in the big map's height colours instead of its blocks' colours, to compare), waterDepthM (the minimap's scan follows water down this far: its blocks' colour darkens to its deepest over it and its height colours read the depth to here). heightBands (the big map's colours always, the minimap's when heightShading is on; owner, 2026-11-09: \"colour bands by height\", \"no lighting\"): a hypsometric tint, the block colours and the slope ignored. land: stops of {heightM (above sea level), color}, rising heights, interpolated between and held past the ends, the height first rounded down to a multiple of stepM (gentle steps; 0: smooth). water: stops of {depthM (below sea level: water above it, a river or a lake, is the first stop), color}, rising depths, waterStepM likewise. explored: cellM (a coarse cell is explored once its centre is within the minimap's radius of the player, a 2D distance on their face, whatever the height and whether its terrain is loaded), pendingColor (an explored cell's colour until the loaded terrain or the generator gives it one). bigMap: startPxPerCell, minPxPerCell, maxPxPerCell (the zoom, pixels per explored cell), zoomStep (one wheel notch's factor), fogColor (unexplored), and the panel it is drawn in (owner, 2026-11-09): panelFraction (its share of the screen's width and height, the game showing round it), phoneMarginPx (its margin inside the safe area on a screen whose short side is under minimap.compactBelowPx, where it is nearly full screen), buttonPx and phoneButtonPx (the close, zoom and centre buttons' size), scaleBarMaxPx (the scale bar's longest; its length a 1, 2 or 5 times ten metres), frameColor (its title bar and frame), padPanPxPerS (the controller's stick or D-pad pans this many pixels a second at full tilt), padZoomPerS (a held zoom button zooms by this factor a second), and the controller's buttons on the open map (shared/input/gamepad.json's names): padZoomIn, padZoomInAlt, padZoomOut, padZoomOutAlt, padCenter, padClose (View closes it too). revealed (a mode with the mapRevealed ability, creative: the whole big map shown, ground not yet explored coloured from the terrain generator in the job workers): tileCells (a tile is this many explored cells a side, generated as one job), jobsInFlight (at most this many tiles generating at once, so chunk streaming keeps its workers), budgetMs (the most a frame spends taking finished tiles), redrawMs (the open map is drawn again at most this often while tiles arrive). Run `node shared/ui/gen.mjs` after editing; CI fails if crates/dwell-game/src/map.gen.rs or client/src/ui/map.gen.ts is stale.",
   "minimap": {
     "radiusM": 64,
     "texelM": 1,
@@ -19,23 +19,34 @@
   },
   "heightShading": {
     "default": true,
-    "rangeM": 24,
-    "darkest": 0.6,
-    "brightest": 1.3,
     "waterDepthM": 8
   },
-  "shade": {
-    "lightAzimuthDeg": 315,
-    "lightElevationDeg": 40,
-    "exaggeration": 1.5,
-    "strength": 0.6,
-    "darkest": 0.7,
-    "brightest": 1.2,
-    "tintLowM": 0,
-    "tintHighM": 140,
-    "tintLowColor": "#46653f",
-    "tintHighColor": "#d9d3bf",
-    "tintAmount": 0.18
+  "heightBands": {
+    "stepM": 8,
+    "land": [
+      { "heightM": 0, "color": "#2f5d34" },
+      { "heightM": 30, "color": "#3d6d3c" },
+      { "heightM": 100, "color": "#557f45" },
+      { "heightM": 200, "color": "#6e934e" },
+      { "heightM": 260, "color": "#88a557" },
+      { "heightM": 300, "color": "#a3b462" },
+      { "heightM": 340, "color": "#bfbe74" },
+      { "heightM": 400, "color": "#cfb781" },
+      { "heightM": 500, "color": "#c29f75" },
+      { "heightM": 700, "color": "#a9876b" },
+      { "heightM": 1000, "color": "#8f7c71" },
+      { "heightM": 1400, "color": "#9c9893" },
+      { "heightM": 1900, "color": "#c9c7c3" },
+      { "heightM": 2400, "color": "#f4f3f0" }
+    ],
+    "waterStepM": 0,
+    "water": [
+      { "depthM": 0, "color": "#9ccbe0" },
+      { "depthM": 3, "color": "#6aaed6" },
+      { "depthM": 8, "color": "#3f8bc2" },
+      { "depthM": 15, "color": "#2b68a6" },
+      { "depthM": 22, "color": "#1e4b85" }
+    ]
   },
   "explored": {
     "cellM": 8,

@@ -138,8 +138,9 @@ pub fn raster(
 }
 
 /// [`raster`], then each texel's height code (`dwell_game::minimap::height_code` as i16 LE, rows
-/// of x from `z0`; i16::MIN beyond the disc): the ground's face-local height, the water's surface
-/// and the water bit where the texel is water (a river's where it covers half the texel). The big
+/// of x from `z0`; i16::MIN beyond the disc): the ground's face-local height (where the texel is
+/// water, its bed's: a river's under its channel) and the water bit (a river's where it covers half
+/// the texel), for the big map's height bands (`dwell_game::minimap::band_rgb`). The big
 /// map's tiles and the explored cells' generated colours (`map_reveal`).
 pub fn raster_with_heights(
     terrain: &TerrainGenerator,
@@ -181,6 +182,8 @@ fn raster_into(
                 continue;
             }
             let mut wet = col.water != Water::None;
+            // The bed under a river's channel (the column's own ground is its bank's).
+            let mut bed = f64::from(col.height);
             let mut c = if col.water != Water::None {
                 let k = shade(f64::from(col.level - col.height));
                 water.map(|v| v * k)
@@ -190,7 +193,10 @@ fn raster_into(
             if let Some(r) = terrain.river_hit(x, z, min_half) {
                 // Coverage of the texel by the channel (its edge anti-aliased over one texel).
                 let a = ((r.half - r.d) / s + 0.5).clamp(0.0, 1.0);
-                wet |= a >= 0.5;
+                if a >= 0.5 {
+                    wet = true;
+                    bed = bed.min(f64::from(col.height) - r.depth);
+                }
                 if a > 0.0 {
                     let k = shade(r.depth.min(t.water_depth_m * 0.5));
                     for (v, w) in c.iter_mut().zip(water) {
@@ -201,12 +207,8 @@ fn raster_into(
             out.extend(c.map(srgb_byte));
             out.push(255);
             if let Some(h) = heights.as_deref_mut() {
-                let top = if col.water != Water::None {
-                    col.level
-                } else {
-                    col.height
-                };
-                let code = dwell_game::minimap::height_code(f64::from(top), wet)
+                // Water's height is its bed's: the height bands colour it by depth.
+                let code = dwell_game::minimap::height_code(bed, wet)
                     .clamp(i32::from(i16::MIN) + 1, i32::from(i16::MAX));
                 h.extend_from_slice(&(code as i16).to_le_bytes());
             }

@@ -2430,20 +2430,13 @@ impl Client {
         }
         out
     }
-    /// The big map's cells shaded by their heights (`dwell_game::minimap::shade_grid`, the
-    /// minimap's shading): a `w` × `h` grid in screen order inside a one-cell border, colours
+    /// The big map's cells coloured by their heights (`dwell_game::minimap::shade_grid`, the
+    /// height bands, the minimap's too when its toggle is on): a `w` × `h` grid in screen order inside a one-cell border, colours
     /// (top byte 0xff: nothing there) and height codes; out, the cells' RGBA.
     #[wasm_bindgen(js_name = shadeMap)]
     pub fn shade_map(&self, colours: Vec<u32>, codes: Vec<i32>, w: u32, h: u32) -> Vec<u8> {
         let t = &dwell_game::minimap::MAP;
-        dwell_game::minimap::shade_grid(
-            t,
-            &colours,
-            &codes,
-            w as usize,
-            h as usize,
-            t.explored_cell_m,
-        )
+        dwell_game::minimap::shade_grid(t, &colours, &codes, w as usize, h as usize)
     }
     /// Whether the world's game mode shows the maps (the `map` ability, ADR 0068): a server that
     /// names no mode shows them.
