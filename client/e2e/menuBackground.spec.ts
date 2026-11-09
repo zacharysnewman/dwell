@@ -11,7 +11,8 @@ async function strip(page: Page): Promise<{ name: string; image: string; duratio
   await expect(panorama).toBeVisible({ timeout: 15_000 });
   return page.evaluate(() => {
     const p = document.querySelector<HTMLElement>('.mm-panorama');
-    const s = document.querySelector<HTMLElement>('.mm-pano-strip');
+    // The layer shown (0.50.44: two layers, the random choice fading between them).
+    const s = document.querySelector<HTMLElement>('.mm-pano-layer.shown .mm-pano-strip');
     if (!p || !s) throw new Error('no panorama');
     return {
       name: p.dataset.background ?? '',
@@ -26,10 +27,11 @@ test('main menu: a turning panorama, and every setting from the Settings button'
 }) => {
   await page.goto('./');
   const shown = await strip(page);
-  expect(shown.name).toBe('beach-peaks');
-  expect(shown.image).toMatch(/beach-peaks.*\.webp/);
+  // Random by default (0.50.44): one of the views, its own image.
+  expect(['beach-peaks', 'river-bank', 'lake-shore']).toContain(shown.name);
+  expect(shown.image).toMatch(new RegExp(`${shown.name}.*\\.webp`));
   expect(shown.duration).toBe('mm-pano-turn');
-  if (SHOTS) await page.screenshot({ path: `${SHOTS}/desktop-beach-peaks.png` });
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/desktop-${shown.name}.png` });
 
   await page.locator('#menu-settings').click();
   const menu = page.locator('#settings-menu');
