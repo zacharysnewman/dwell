@@ -122,7 +122,7 @@ export const MAP_FIELDS = {
     slope: ['num', 0, 4],
     waterDepthM: ['num', 0.5, 128],
   },
-  explored: { cellM: ['int', 1, 128] },
+  explored: { cellM: ['int', 1, 128], pendingColor: ['color'] },
   bigMap: {
     startPxPerCell: ['num', 0.1, 256],
     minPxPerCell: ['num', 0.1, 256],

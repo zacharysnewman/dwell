@@ -546,8 +546,12 @@ Looks and sizes in `shared/ui/map.json` (`shared/ui/gen.mjs` → `dwell-game` `m
 darkened by depth, a hill over the scan followed to its top) into a face-local grid — on each texel
 moved only the strip it uncovers, and every column (from its last top) every `refreshSeconds` — and draws the round RGBA disc
 turned to the heading (the player's right on the right on both faces), height-shaded when the
-setting is on, only on a move or a turn; it marks the 8 m cells whose centres it has covered,
-reporting new and changed ones with their colour. The client's `minimapFrame`, `minimapDots`,
+setting is on, only on a move or a turn; it marks the 8 m cells whose centres are within its radius
+of the player (a 2D distance on their face, whatever the height or what is loaded; 0.50.47), each
+coloured by the loaded terrain's tops, else the generator's (the revealed map's tiles below, asked for
+at most `revealed.jobsInFlight` at once in the job workers), else `explored.pendingColor`, reporting
+new and changed ones with their colour; the disc draws a texel the scan found nothing in (ground below
+its reach) from its cell's colour. The client's `minimapFrame`, `minimapDots`,
 `mapPose`, `takeExplored` and `mapAllowed` (the mode's `map` ability) feed the shell's
 `ui/minimap.ts`: the disc top right (placed by the HUD's layout, `shared/ui/layout.json`; compact when the screen's short side is under `compactBelowPx`, a phone either way up; a `hud.json` part; the height shading a toggle in Settings →
 On screen), the dots, and the big map (M or a tap; Esc closes): explored cells on fog, zoomed about the

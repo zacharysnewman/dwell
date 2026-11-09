@@ -81,6 +81,55 @@ mod tests {
         }
     );
 
+    both_faces!(
+        fn explored_cells_the_terrain_has_not_shown_take_the_generators_colours(f: FaceFrame) {
+            // Explored from high over a valley: the disc's tops saw nothing (an empty grid).
+            use dwell_game::minimap::{Explored, TopGrid};
+            let r = Runner::world(GENERATOR_TERRAIN, 1);
+            let mut e = Explored::default();
+            // One tile's worth: its centre, the disc inside it (a generated tile is slow in debug).
+            let none = TopGrid {
+                texel_m: MAP.minimap_texel_m,
+                ..TopGrid::default()
+            };
+            e.mark(f, &none, [128.5, 128.5], &MAP);
+            let first = e.take();
+            assert!(first.iter().all(|&(_, c)| c == MAP.explored_pending_color));
+            let mut tiles = Vec::new();
+            loop {
+                let asked = e.ask(&MAP);
+                if asked.is_empty() {
+                    break;
+                }
+                for key in asked {
+                    let (face, ti, tk) = key;
+                    assert_eq!(face, u8::from(f.is_b()));
+                    let Output::LodMap(rgba) = r.run(reveal_job(f, ti, tk, &MAP)) else {
+                        panic!()
+                    };
+                    tiles.push((key, rgba.clone().expect("a terrain world")));
+                    e.fill(key, rgba, &MAP);
+                }
+            }
+            assert_eq!(tiles.len(), 1);
+            let fresh = e.take();
+            assert_eq!(fresh.len(), first.len(), "every explored cell coloured");
+            let n = tile_cells(&MAP);
+            for ((face, i, k), c) in fresh {
+                let ((_, ti, tk), rgba) = tiles
+                    .iter()
+                    .find(|((fc, ti, tk), _)| {
+                        *fc == face && i.div_euclid(n) == *ti && k.div_euclid(n) == *tk
+                    })
+                    .expect("its tile");
+                let o = (((k - tk * n) * n + (i - ti * n)) * 4) as usize;
+                let p = &rgba[o..o + 4];
+                let want = (u32::from(p[0]) << 16) | (u32::from(p[1]) << 8) | u32::from(p[2]);
+                assert_eq!(c, want, "cell ({i}, {k}) is its column's generated top");
+            }
+        }
+    );
+
     #[test]
     fn a_world_without_a_terrain_reveals_nothing_and_the_tile_says_where_it_is() {
         // face-a-only: no generation is involved, only the encoding.

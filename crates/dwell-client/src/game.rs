@@ -603,6 +603,9 @@ pub struct Game<S: Scene> {
     map: Option<Vec<u8>>,
     /// The revealed big map's finished tiles, not yet taken (`crate::map_reveal::encode_tile`).
     reveal: std::collections::VecDeque<Vec<u8>>,
+    /// The explored cells' generated tiles, not yet taken: (face, ti, tk), RGBA (None: no
+    /// terrain to generate from).
+    explore_tiles: std::collections::VecDeque<(dwell_game::minimap::TileKey, Option<Vec<u8>>)>,
     /// A placed camera, if a tool set one.
     view: Option<ViewOverride>,
     /// Sound events since the shell last took them (docs/AUDIO.md §5): a side channel.
@@ -764,6 +767,7 @@ impl<S: Scene> Game<S> {
             pending_lod: None,
             map: None,
             reveal: std::collections::VecDeque::new(),
+            explore_tiles: std::collections::VecDeque::new(),
             view: None,
             sounds: Vec::new(),
             mover_sounds: MoverSounds::new(),
@@ -1007,6 +1011,24 @@ impl<S: Scene> Game<S> {
             Purpose::Reveal(face, ti, tk),
             crate::map_reveal::reveal_job(f, ti, tk, &dwell_game::minimap::MAP),
         );
+    }
+    /// Asks for the generated colours of the explored cells in tile `key` (face, ti, tk;
+    /// `dwell_game::minimap::Explored::ask`), in the job workers.
+    pub fn request_explore_tile(&mut self, key: dwell_game::minimap::TileKey) {
+        let (face, ti, tk) = key;
+        let f = if face == 1 {
+            FaceFrame::B
+        } else {
+            FaceFrame::A
+        };
+        self.pool.borrow_mut().submit(
+            Purpose::ExploreTile(face, ti, tk),
+            crate::map_reveal::reveal_job(f, ti, tk, &dwell_game::minimap::MAP),
+        );
+    }
+    /// The oldest finished explored-cell tile, once.
+    pub fn take_explore_tile(&mut self) -> Option<(dwell_game::minimap::TileKey, Option<Vec<u8>>)> {
+        self.explore_tiles.pop_front()
     }
     /// The oldest finished tile of the revealed big map, once.
     pub fn take_reveal(&mut self) -> Option<Vec<u8>> {
@@ -1370,6 +1392,13 @@ impl<S: Scene> Game<S> {
                     };
                     self.reveal
                         .push_back(crate::map_reveal::encode_tile(face, ti, tk, rgba));
+                }
+                (Purpose::ExploreTile(face, ti, tk), out) => {
+                    let rgba = match out {
+                        Output::LodMap(p) => p,
+                        _ => None,
+                    };
+                    self.explore_tiles.push_back(((face, ti, tk), rgba));
                 }
                 (Purpose::Diff(c), Output::Chunk { voxels, .. }) => {
                     let revision = self.streamer.revision(c);

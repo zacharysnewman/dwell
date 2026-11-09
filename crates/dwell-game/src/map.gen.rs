@@ -24,6 +24,7 @@ pub const MAP: MapTunables = MapTunables {
     height_shading_slope: 0.12,
     height_shading_water_depth_m: 8.0,
     explored_cell_m: 8.0,
+    explored_pending_color: 0x4e4c44,
     big_map_start_px_per_cell: 6.0,
     big_map_min_px_per_cell: 1.0,
     big_map_max_px_per_cell: 40.0,

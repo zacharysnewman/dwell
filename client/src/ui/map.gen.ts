@@ -29,6 +29,7 @@ export const MAP = {
   },
   explored: {
     cellM: 8,
+    pendingColor: '#4e4c44',
   },
   bigMap: {
     startPxPerCell: 6,

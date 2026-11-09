@@ -17,7 +17,7 @@
 
 use dwell_blocks::StateId;
 use dwell_world::{CHUNK_SIZE, Chunk, ChunkCoord, FaceFrame, M, VoxelWorld, chunk_of, row_of_m};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// The map's tunables (`shared/ui/map.json`).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -44,6 +44,7 @@ pub struct MapTunables {
     pub height_shading_slope: f64,
     pub height_shading_water_depth_m: f64,
     pub explored_cell_m: f64,
+    pub explored_pending_color: u32,
     pub big_map_start_px_per_cell: f64,
     pub big_map_min_px_per_cell: f64,
     pub big_map_max_px_per_cell: f64,
@@ -280,13 +281,18 @@ pub fn shade(t: &MapTunables, h: f64, eye_y: f64, dx: f64, dz: f64) -> f64 {
 }
 
 /// The disc: `px`² RGBA pixels covering the minimap's radius, turned by `frame`, shaded when
-/// `shading`; transparent outside the circle and where there is no top.
+/// `shading`; transparent outside the circle. Where the tops found nothing (ground past the
+/// scan's reach below, a valley seen from a hilltop or high flight, or not loaded) a pixel takes
+/// `under`'s colour for its face-local (x, z) (the explored cell's: the generator's, or the
+/// terrain's from an earlier look), shaded as ground below the eye; else it is transparent.
+#[allow(clippy::too_many_arguments)]
 pub fn render_disc(
     grid: &TopGrid,
     frame: &MapFrame,
     t: &MapTunables,
     px: usize,
     shading: bool,
+    under: &dyn Fn(f64, f64) -> Option<u32>,
     out: &mut Vec<u8>,
 ) {
     out.clear();
@@ -311,10 +317,17 @@ pub fn render_disc(
                 continue;
             };
             let c = grid.colour[i];
-            if c == NO_TOP {
-                continue;
-            }
-            let c = if shading {
+            let c = if c == NO_TOP {
+                let Some(c) = under(lx, lz) else {
+                    continue;
+                };
+                if shading {
+                    let low = grid.eye_y - t.height_shading_range_m;
+                    scale_rgb(c, shade(t, low, grid.eye_y, 0.0, 0.0))
+                } else {
+                    c
+                }
+            } else if shading {
                 let h = f64::from(grid.height[i]);
                 let tx = grid.texel_m;
                 let dx = height_at(lx + tx, lz).map_or(0.0, |n| n - h);
@@ -413,12 +426,15 @@ impl Minimap {
             };
         if redraw {
             let frame = MapFrame::new(f, local[0], local[2], yaw_deg);
+            let face = u8::from(f.is_b());
+            let explored = &self.explored;
             render_disc(
                 &self.grid,
                 &frame,
                 t,
                 Self::pixels(t),
                 shading,
+                &|x, z| explored.colour_at(face, x, z, t),
                 &mut self.image,
             );
             self.drawn_at = Some(([local[0], local[2]], yaw_deg, shading));
@@ -437,22 +453,51 @@ pub fn angle_between(a: f64, b: f64) -> f64 {
 /// An explored cell: its face (0 A, 1 B) and its index along face-local x and z.
 pub type CellKey = (u8, i32, i32);
 
-/// The explored cells this session has seen, each with the colour last reported.
+/// A tile of generated explored-cell colours: its face (0 A, 1 B) and its index along face-local
+/// x and z, `revealed.tileCells` cells a side (`dwell-client` `map_reveal`).
+pub type TileKey = (u8, i32, i32);
+
+/// Where an explored cell's colour came from, worst first: a better source replaces a worse one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Source {
+    /// Nothing yet: `explored.pendingColor`.
+    Pending,
+    /// The terrain generator's column top at the cell's centre (a generated tile).
+    Generated,
+    /// The loaded terrain's tops under the disc, averaged.
+    Terrain,
+}
+
+/// The explored cells this session has seen, each with the colour last reported and its source.
+/// A cell is explored once its centre is within the minimap's radius of the player, a 2D distance
+/// on their face alone (owner, 2026-11-09: "a simple 2D exploration"), whatever the height between
+/// them and whether its terrain is loaded. Its colour is the loaded terrain's where the disc's tops
+/// see it, else the generator's (tiles asked for with [`Explored::ask`], generated in the job
+/// workers, given with [`Explored::fill`]), else `explored.pendingColor`; reported again as a
+/// better source gives it a different colour.
 #[derive(Clone, Debug, Default)]
 pub struct Explored {
-    pub cells: HashMap<CellKey, u32>,
+    pub cells: HashMap<CellKey, (u32, Source)>,
     /// New or changed since the last [`Explored::take`].
     fresh: Vec<(CellKey, u32)>,
+    /// Cells still [`Source::Pending`] whose tile has not come back yet.
+    pending: HashSet<CellKey>,
+    /// The tiles generated this session (None: no terrain to generate from).
+    tiles: HashMap<TileKey, Option<Vec<u8>>>,
+    /// The tiles asked for and not yet given.
+    asked: HashSet<TileKey>,
 }
 
 impl Explored {
-    /// Marks the cells whose centres are inside the disc round `centre` (face-local x, z) on face
-    /// `f`, each its average top colour in `grid`; a cell already known is reported again only
-    /// when its colour changed visibly.
+    /// Marks the cells whose centres are within the minimap's radius of `centre` (face-local x,
+    /// z) on face `f`: each its average top colour in `grid` where the grid has tops in it, else
+    /// its generated tile's colour, else pending. A known cell is reported again only when a
+    /// source as good or better gives it a visibly different colour.
     pub fn mark(&mut self, f: FaceFrame, grid: &TopGrid, centre: [f64; 2], t: &MapTunables) {
         let cell = t.explored_cell_m;
         let r = t.minimap_radius_m;
         let face = u8::from(f.is_b());
+        let tile = t.revealed_tile_cells as i32;
         let (i0, i1) = (
             ((centre[0] - r) / cell).floor() as i32,
             ((centre[0] + r) / cell).floor() as i32,
@@ -468,17 +513,104 @@ impl Explored {
                 if (cx - centre[0]).powi(2) + (cz - centre[1]).powi(2) > r * r {
                     continue;
                 }
-                let Some(c) = average(grid, f64::from(i) * cell, f64::from(k) * cell, cell) else {
-                    continue;
-                };
                 let key = (face, i, k);
-                let known = self.cells.get(&key).copied();
-                if known.is_none_or(|old| rgb_distance(old, c) > 12) {
-                    self.cells.insert(key, c);
-                    self.fresh.push((key, c));
-                }
+                let seen = average(grid, f64::from(i) * cell, f64::from(k) * cell, cell);
+                let (c, source) = match seen {
+                    Some(c) => (c, Source::Terrain),
+                    None if self.cells.contains_key(&key) => continue,
+                    None => match self.generated(key, tile) {
+                        Some(c) => (c, Source::Generated),
+                        None => {
+                            if !self.tiles.contains_key(&tile_of(key, tile)) {
+                                self.pending.insert(key);
+                            }
+                            (t.explored_pending_color, Source::Pending)
+                        }
+                    },
+                };
+                self.set(key, c, source);
             }
         }
+    }
+
+    /// Gives `key` colour `c` from `source`: a worse source than the cell's never replaces it, and
+    /// the cell is reported when new or when its colour changes visibly.
+    fn set(&mut self, key: CellKey, c: u32, source: Source) {
+        match self.cells.get(&key).copied() {
+            None => {
+                self.cells.insert(key, (c, source));
+                self.fresh.push((key, c));
+            }
+            Some((_, was)) if source < was => {}
+            Some((old, _)) if rgb_distance(old, c) > 12 => {
+                self.cells.insert(key, (c, source));
+                self.fresh.push((key, c));
+            }
+            Some((old, _)) => {
+                self.cells.insert(key, (old, source));
+            }
+        }
+        if source > Source::Pending {
+            self.pending.remove(&key);
+        }
+    }
+
+    /// The generated colour of cell `key`, if its tile has come back with one there.
+    fn generated(&self, key: CellKey, tile: i32) -> Option<u32> {
+        let tk = tile_of(key, tile);
+        let rgba = self.tiles.get(&tk)?.as_ref()?;
+        let o = (((key.2 - tk.2 * tile) * tile + (key.1 - tk.1 * tile)) * 4) as usize;
+        let p = rgba.get(o..o + 4)?;
+        (p[3] == 255).then(|| (u32::from(p[0]) << 16) | (u32::from(p[1]) << 8) | u32::from(p[2]))
+    }
+
+    /// The tiles to generate for the pending cells, each asked for once, at most
+    /// `revealed.jobsInFlight` outstanding (so chunk streaming keeps its workers).
+    pub fn ask(&mut self, t: &MapTunables) -> Vec<TileKey> {
+        let tile = t.revealed_tile_cells as i32;
+        let room = (t.revealed_jobs_in_flight as usize).saturating_sub(self.asked.len());
+        let mut out: Vec<TileKey> = Vec::new();
+        for &key in &self.pending {
+            if out.len() >= room {
+                break;
+            }
+            let tk = tile_of(key, tile);
+            if !self.asked.contains(&tk) && !self.tiles.contains_key(&tk) && !out.contains(&tk) {
+                out.push(tk);
+            }
+        }
+        self.asked.extend(out.iter().copied());
+        out
+    }
+
+    /// A generated tile (`revealed.tileCells`² cells' RGBA, rows of x from its least z; None: no
+    /// terrain to generate from): its pending cells take their colours from it.
+    pub fn fill(&mut self, key: TileKey, rgba: Option<Vec<u8>>, t: &MapTunables) {
+        let tile = t.revealed_tile_cells as i32;
+        self.asked.remove(&key);
+        self.tiles.insert(key, rgba);
+        let inside: Vec<CellKey> = self
+            .pending
+            .iter()
+            .copied()
+            .filter(|&c| tile_of(c, tile) == key)
+            .collect();
+        for c in inside {
+            self.pending.remove(&c);
+            if let Some(colour) = self.generated(c, tile) {
+                self.set(c, colour, Source::Generated);
+            }
+        }
+    }
+
+    /// The colour of face `face`'s explored cell holding face-local (x, z), unless still pending.
+    pub fn colour_at(&self, face: u8, x: f64, z: f64, t: &MapTunables) -> Option<u32> {
+        let cell = t.explored_cell_m;
+        let key = (face, (x / cell).floor() as i32, (z / cell).floor() as i32);
+        self.cells
+            .get(&key)
+            .filter(|&&(_, s)| s > Source::Pending)
+            .map(|&(c, _)| c)
     }
 
     /// The cells new or changed since the last call.
@@ -487,8 +619,16 @@ impl Explored {
     }
 }
 
+/// The tile holding cell `key`, `tile` cells a side.
+fn tile_of((face, i, k): CellKey, tile: i32) -> TileKey {
+    (face, i.div_euclid(tile), k.div_euclid(tile))
+}
+
 /// The average colour of the grid's tops in the square from (x, z), `size` m a side.
 fn average(grid: &TopGrid, x: f64, z: f64, size: f64) -> Option<u32> {
+    if grid.n == 0 {
+        return None;
+    }
     let mut sum = [0u64; 3];
     let mut count = 0u64;
     let steps = (size / grid.texel_m).round().max(1.0) as usize;
