@@ -2343,6 +2343,16 @@ impl Client {
             &dwell_game::minimap::MAP,
             &|m| (m != dwell_world::M.air).then(|| dwell_mesh::lod_color(m, 0)),
         );
+        // Explored cells the terrain has not shown take the generator's colours, a tile at a
+        // time in the job workers (at most `revealed.jobsInFlight` at once; never generated here).
+        while let Some((key, rgba)) = g.take_explore_tile() {
+            s.minimap
+                .explored
+                .fill(key, rgba, &dwell_game::minimap::MAP);
+        }
+        for key in s.minimap.explored.ask(&dwell_game::minimap::MAP) {
+            g.request_explore_tile(key);
+        }
         // Its cost (DEV_TOOLS.md): a read of the tops (with its draw), or a draw alone.
         let ms = crate::telemetry::now_ms() - t0;
         if up.scanned {

@@ -1,5 +1,5 @@
 use super::*;
-use dwell_world::{FLAT_TOP_Y, empty_generator, m_of_row};
+use dwell_world::{FLAT_TOP_Y, empty_generator, m_of_row, row_of_m};
 
 const GROUND: i32 = FLAT_TOP_Y + 20;
 const GREEN: u32 = 0x40a040;
@@ -301,6 +301,7 @@ fn a_grid_of_a_hundred_and_twenty_eight_columns_reads_and_draws_quickly() {
         &t,
         Minimap::pixels(&t),
         true,
+        &|_, _| None,
         &mut image,
     );
     let draw = start.elapsed().as_secs_f64() * 1e3;
@@ -388,5 +389,210 @@ dwell_world::both_faces!(
                 .collect::<Vec<_>>(),
             whole.height.iter().map(|h| h.to_bits()).collect::<Vec<_>>()
         );
+    }
+);
+
+/// The cells whose centres are within the minimap's radius of face-local (x, z): what a player
+/// there has explored, a 2D distance alone (owner, 2026-11-09).
+fn cells_within(t: &MapTunables, x: f64, z: f64) -> usize {
+    let (cell, r) = (t.explored_cell_m, t.minimap_radius_m);
+    let n = (r / cell).ceil() as i32 + 1;
+    let (ci, ck) = ((x / cell).floor() as i32, (z / cell).floor() as i32);
+    let mut count = 0;
+    for k in ck - n..=ck + n {
+        for i in ci - n..=ci + n {
+            let (cx, cz) = ((f64::from(i) + 0.5) * cell, (f64::from(k) + 0.5) * cell);
+            if (cx - x).powi(2) + (cz - z).powi(2) <= r * r {
+                count += 1;
+            }
+        }
+    }
+    count
+}
+
+dwell_world::both_faces!(
+    fn flying_high_over_a_valley_explores_it_all(f: FaceFrame) {
+        // The owner's report (2026-11-09): flying over a valley left it unexplored. The ground is
+        // past the scan's reach below the eye (`scanDownM`), so the tops find nothing there.
+        let t = MAP;
+        let w = floor(f, 100);
+        let y = m_of_row(GROUND) + t.minimap_scan_down_m + 40.0;
+        let mut map = Minimap::default();
+        map.update(&w, f.point([0.5, y, 0.5]), 0.0, 0.0, false, &t, &colour_of);
+        let fresh = map.explored.take();
+        assert_eq!(
+            fresh.len(),
+            cells_within(&t, 0.5, 0.5),
+            "every cell in the radius"
+        );
+        let face = u8::from(f.is_b());
+        assert!(fresh.iter().all(|&((fc, ..), _)| fc == face));
+        // Nothing seen yet: the pending colour, until the generator or the terrain gives one.
+        assert!(fresh.iter().all(|&(_, c)| c == t.explored_pending_color));
+    }
+);
+
+dwell_world::both_faces!(
+    fn standing_on_a_hilltop_explores_the_valley_below(f: FaceFrame) {
+        // The valley floor is further below the hilltop than the scan reaches.
+        let t = MAP;
+        let mut w = floor(f, 100);
+        let rise = row_of_m(t.minimap_scan_down_m + 20.0);
+        for x in -2..=2 {
+            for z in -2..=2 {
+                for up in 0..rise {
+                    let [x, y, z] = f.cell([x, GROUND + up, z]);
+                    w.set_voxel(x, y, z, sand());
+                }
+            }
+        }
+        let y = m_of_row(GROUND + rise) + 1.6;
+        let mut map = Minimap::default();
+        map.update(&w, f.point([0.5, y, 0.5]), 0.0, 0.0, false, &t, &colour_of);
+        let fresh = map.explored.take();
+        assert_eq!(fresh.len(), cells_within(&t, 0.5, 0.5), "the valley too");
+        // The hilltop's own cells are its sand, seen; the valley's wait for a colour.
+        let at = |i: i32, k: i32| {
+            fresh
+                .iter()
+                .find(|&&((_, a, b), _)| (a, b) == (i, k))
+                .map(|&(_, c)| c)
+        };
+        assert_eq!(at(0, 0), Some(RED));
+        assert_eq!(at(5, 0), Some(t.explored_pending_color));
+    }
+);
+
+/// A generated tile all of colour `c` (`revealed.tileCells`² RGBA texels).
+fn tile_all(t: &MapTunables, c: u32) -> Vec<u8> {
+    let n = (t.revealed_tile_cells as usize).pow(2);
+    [(c >> 16) as u8, (c >> 8) as u8, c as u8, 255].repeat(n)
+}
+
+dwell_world::both_faces!(
+    fn explored_cells_take_the_generators_colour_then_the_loaded_terrains(f: FaceFrame) {
+        let t = MAP;
+        let w = floor(f, 100);
+        let high = m_of_row(GROUND) + t.minimap_scan_down_m + 40.0;
+        let mut map = Minimap::default();
+        map.update(
+            &w,
+            f.point([0.5, high, 0.5]),
+            0.0,
+            0.0,
+            false,
+            &t,
+            &colour_of,
+        );
+        assert_eq!(map.explored.take().len(), cells_within(&t, 0.5, 0.5));
+        // The pending cells' tiles are asked for, at most `jobsInFlight` at once, each once.
+        let face = u8::from(f.is_b());
+        let mut given = 0;
+        loop {
+            let asked = map.explored.ask(&t);
+            if asked.is_empty() {
+                break;
+            }
+            assert!(asked.len() <= t.revealed_jobs_in_flight as usize);
+            assert!(
+                map.explored.ask(&t).is_empty(),
+                "none more while those are in flight"
+            );
+            for tk in asked {
+                assert_eq!(tk.0, face);
+                map.explored.fill(tk, Some(tile_all(&t, BLUE)), &t);
+                given += 1;
+            }
+        }
+        // The disc round the origin spans four tiles.
+        assert_eq!(given, 4);
+        let fresh = map.explored.take();
+        assert_eq!(
+            fresh.len(),
+            cells_within(&t, 0.5, 0.5),
+            "every cell coloured again"
+        );
+        assert!(fresh.iter().all(|&(_, c)| c == BLUE), "from the generator");
+        // The disc shows the valley it cannot reach in the generated colour, not a gap.
+        map.update(
+            &w,
+            f.point([0.5, high, 0.5]),
+            30.0,
+            0.5,
+            false,
+            &t,
+            &colour_of,
+        );
+        assert_eq!(pixel(&map.image, &t, 20.0, 20.0), BLUE);
+        // Down in the valley the loaded terrain's tops replace it (at the next whole read):
+        // reported again, green.
+        let low = m_of_row(GROUND) + 1.6;
+        map.update(
+            &w,
+            f.point([0.5, low, 0.5]),
+            30.0,
+            2.5,
+            false,
+            &t,
+            &colour_of,
+        );
+        let fresh = map.explored.take();
+        assert_eq!(fresh.len(), cells_within(&t, 0.5, 0.5));
+        assert!(fresh.iter().all(|&(_, c)| c == GREEN));
+        // Up again: the terrain's colour stays (the generator's never replaces it).
+        map.update(
+            &w,
+            f.point([0.5, high, 0.5]),
+            30.0,
+            5.0,
+            false,
+            &t,
+            &colour_of,
+        );
+        assert!(map.explored.take().is_empty());
+        assert!(map.explored.ask(&t).is_empty());
+    }
+);
+
+dwell_world::both_faces!(
+    fn without_a_terrain_to_generate_from_cells_stay_pending_until_seen(f: FaceFrame) {
+        let t = MAP;
+        let w = floor(f, 100);
+        let high = m_of_row(GROUND) + t.minimap_scan_down_m + 40.0;
+        let mut map = Minimap::default();
+        map.update(
+            &w,
+            f.point([0.5, high, 0.5]),
+            0.0,
+            0.0,
+            false,
+            &t,
+            &colour_of,
+        );
+        map.explored.take();
+        loop {
+            let asked = map.explored.ask(&t);
+            if asked.is_empty() {
+                break;
+            }
+            for tk in asked {
+                map.explored.fill(tk, None, &t);
+            }
+        }
+        assert!(map.explored.take().is_empty(), "nothing new to report");
+        // Moving on over the same tiles asks for none again.
+        map.update(
+            &w,
+            f.point([8.5, high, 0.5]),
+            0.0,
+            0.1,
+            false,
+            &t,
+            &colour_of,
+        );
+        assert!(!map.explored.take().is_empty(), "the new cells ahead");
+        assert!(map.explored.ask(&t).is_empty());
+        // The disc keeps its gap over ground nothing has coloured.
+        assert_eq!(pixel(&map.image, &t, 20.0, 20.0), 0);
     }
 );

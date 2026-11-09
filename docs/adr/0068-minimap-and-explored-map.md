@@ -40,8 +40,20 @@ world; the minimap is per build, its looks the same for every world.
    creative and adventure both have it. The client hides the minimap and the big map in a mode
    without it (`Client::mapAllowed`); nothing on the server. A server that names no mode shows them.
 4. **Explored cells are kept by the client, in this browser** (not the server). A cell (8 m, per
-   face) is explored once its centre has been inside the disc; the client reports new and visibly
-   changed cells with their average colour (`takeExplored`), and the shell keeps them in IndexedDB
+   face) is explored once its centre is within the disc's radius of the player, a **2D distance on
+   their face alone** (owner, 2026-11-09: "I just want it as a simple 2D exploration"; 0.50.47): the
+   height between them and whether its terrain is loaded do not matter. Before 0.50.47 a cell was
+   marked only where the disc's tops found ground inside the scan's height window, so a valley more
+   than `scanDownM` below a hilltop or a flight was left a gap. A cell's colour has three sources,
+   better replacing worse (`minimap::Source`): the loaded terrain's tops under the disc, averaged;
+   else the generator's column top at its centre, from the revealed map's tiles (below; asked for by
+   `Explored::ask`, at most `revealed.jobsInFlight` at once, run in the job workers, never on the
+   main thread, kept for the session); else `explored.pendingColor`. The disc itself draws a texel
+   its scan found nothing in from its explored cell's colour (unless pending), shaded as low ground,
+   so a valley below shows there too. A world
+   the client does not generate keeps its pending cells until the terrain is seen. The client
+   reports new and visibly changed cells with their colour (`takeExplored`; again as a better
+   source changes it), and the shell keeps them in IndexedDB
    (`dwell-explored`, one record per world: a local world by its file, a remote one by how it was
    reached, the same key the registry's trust uses), saved every 10 s and on leaving the page. The
    record is **append-only** (`format`, `cellM`, `cells` by `"face,i,k"`): unknown fields and other
