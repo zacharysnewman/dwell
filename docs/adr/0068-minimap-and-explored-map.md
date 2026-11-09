@@ -58,6 +58,17 @@ world; the minimap is per build, its looks the same for every world.
    closes it; the explored cells drawn as squares of their colour on the fog, the player an arrow at
    their heading; the wheel zooms about the pointer, a drag pans. It is drawn with the same handedness
    as the minimap (a yaw-0 player's right is right), so face B reads as the player sees it.
+   **Revealed in creative** (owner, 2026-11-08: "big map should be fully explored on creative";
+   0.50.46): a mode with the `mapRevealed` ability shows the whole map, no fog. Unexplored cells
+   take the terrain generator's colour for their column (the client already runs the generator from
+   the seed for its LOD): tiles of `revealed.tileCells`² cells generated in the job workers by the LOD
+   colour map's raster (`crates/dwell-client/src/map_reveal.rs`), asked for nearest the view's centre
+   first, at most `jobsInFlight` at once, taken at most `budgetMs` a frame (`RevealCache`), so opening
+   or zooming the map never hitches. Explored cells draw over them (edits show once explored).
+   Chosen over the LOD sections' colours (only near the player) and a coarse world map (too coarse
+   close up): the generator covers every distance at the cell's resolution and agrees with the
+   explored colours, which come from the same `lod_color`. The tiles are kept for the session only.
+   A world the client does not generate (a flat world) has nothing to reveal and stays fogged.
 6. **Settings.** The minimap is a part of `shared/ui/hud.json` (Settings → On screen hides it); the
    height shading is a toggle there (`dwell.hud`'s `mapShading`, pinned only when changed).
 

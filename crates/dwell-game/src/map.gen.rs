@@ -29,4 +29,8 @@ pub const MAP: MapTunables = MapTunables {
     big_map_max_px_per_cell: 40.0,
     big_map_zoom_step: 1.25,
     big_map_fog_color: 0x14161c,
+    revealed_tile_cells: 32.0,
+    revealed_jobs_in_flight: 2.0,
+    revealed_budget_ms: 2.0,
+    revealed_redraw_ms: 150.0,
 };

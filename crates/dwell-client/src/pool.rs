@@ -87,6 +87,8 @@ pub enum Purpose {
     Diff(Coord),
     /// A strip of the LOD colour map (`crate::lod_map`).
     LodMap(crate::lod_map::TileJob),
+    /// A tile of the revealed big map (`crate::map_reveal`): face (0 A, 1 B) and tile indices.
+    Reveal(u8, i32, i32),
 }
 
 impl Purpose {
@@ -103,6 +105,7 @@ impl Purpose {
             Purpose::Map => ("job.map.wait", "job.map.run"),
             Purpose::Diff(..) => ("job.diff.wait", "job.diff.run"),
             Purpose::LodMap(..) => ("job.lod_map.wait", "job.lod_map.run"),
+            Purpose::Reveal(..) => ("job.reveal.wait", "job.reveal.run"),
         }
     }
 }

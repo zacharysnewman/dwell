@@ -49,6 +49,10 @@ pub struct MapTunables {
     pub big_map_max_px_per_cell: f64,
     pub big_map_zoom_step: f64,
     pub big_map_fog_color: u32,
+    pub revealed_tile_cells: f64,
+    pub revealed_jobs_in_flight: f64,
+    pub revealed_budget_ms: f64,
+    pub revealed_redraw_ms: f64,
 }
 
 #[rustfmt::skip]

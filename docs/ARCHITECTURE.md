@@ -554,6 +554,18 @@ On screen), the dots, and the big map (M or a tap; Esc closes): explored cells o
 pointer and panned by a drag, the player's arrow. Explored cells are kept per world in this browser
 (IndexedDB `dwell-explored`, append-only), not on the server. Cost (`minimap.scan`, `minimap.draw`
 samples, DEV_TOOLS.md): ~1 ms a read with its draw flying at 8 m/s, the 2 s refresh 5–9 ms.
+**[built, 0.50.46] The revealed big map** (owner, 2026-11-08: "big map should be fully explored on
+creative"): in a mode with the `mapRevealed` ability (creative; `mapRevealed()`) nothing is fogged.
+Ground not yet explored takes its colour from the terrain generator the client already runs from the
+seed: the shell's `RevealCache` asks for the view's tiles (`revealed.tileCells`² explored cells, nearest
+the view's centre first, at most `revealed.jobsInFlight` at once) with `requestReveal`, which
+`map_reveal.rs` runs as the LOD colour map's `Job::LodMap` raster in the generation workers (a texel an
+explored cell: its column's top block's LOD colour — the colour explored cells average — water darkened
+by depth, rivers from their polylines); `takeReveal` returns finished tiles, which the shell takes for
+at most `revealed.budgetMs` a frame and draws as images under the explored cells (redrawn at most every
+`redrawMs`; beyond the world's edge transparent). Kept for the session, not stored. The main thread
+generates nothing (`job.reveal.run` p50 ~36 ms a 32² tile on a worker; the open map's worst frame
+17.7 ms while filling, a Mac). Adventure keeps the fog as before.
 
 ### 5.1 Threads and workers
 
@@ -2550,7 +2562,9 @@ a name and the abilities it allows, from a fixed vocabulary — `damage` (every 
 `Server::damage`), `flight` (with the flight policy; the server clears the fly bit otherwise),
 `brushes` (brush strokes' `KEEP` cells and the brush reach; refused otherwise), `unlimitedBlocks`
 (without it placing uses items up and breaking drops them: inventories, below) and `map` (0.50.37,
-ADR 0068: the client shows the minimap and the explored map; both modes have it). Creative (the
+ADR 0068: the client shows the minimap and the explored map; both modes have it) and `mapRevealed`
+(0.50.46: the big map shows the whole world, unexplored ground coloured from the generator; creative
+only). Creative (the
 default: new worlds, and worlds saved before modes) has flight, brushes and unlimited blocks and no
 damage; adventure (experimental) has damage only. The mode is a `WorldSettings` field (optional tag
 `0x82`), saved with the world; the New world form picks it, and the host changes it at runtime
