@@ -3359,6 +3359,7 @@ impl<S: Scene> Game<S> {
                 Purpose::LodMap(job),
                 crate::jobs::Job::LodMap {
                     face: u8::from(face.is_b()),
+                    heights: false,
                     texel_m: job.texel_m as i32,
                     x0: r.x0 as i32,
                     z0: r.z0 as i32,

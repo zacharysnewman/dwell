@@ -84,6 +84,29 @@ world; the minimap is per build, its looks the same for every world.
 6. **Settings.** The minimap is a part of `shared/ui/hud.json` (Settings → On screen hides it); the
    height shading is a toggle there (`dwell.hud`'s `mapShading`, pinned only when changed).
 
+### The big map panel and elevation shading (0.50.48; owner, 2026-11-09)
+
+"The big map sucks. It takes up the whole screen, doesn't have an obvious close button, and
+unintuitive zoom/move controls." The owner's answers: a **framed panel** about 80% of the screen over
+the game (the world visible round it) with a title bar; an obvious **✕ close** (plus M and Esc); **+ / −
+zoom buttons** (scroll and pinch kept); **"Center on me"**; a **scale bar** in metres; **drag to pan**
+with a grab / grabbing cursor. Mouse, touch (pinch, drag, tap) and the controller (stick / D-pad pan,
+triggers / bumpers zoom, B closes; View opens and closes it, no longer the F4 debug map). On a phone
+the panel is nearly full screen inside the safe area, its buttons big enough to tap. The sizes,
+colours and controller buttons are data (`bigMap.*` in `shared/ui/map.json`); the controls' logic is
+a page-free `BigMapState` / `PadMap` (`client/src/ui/minimap.ts`), tested without a page.
+
+"The world map also is almost all one color, we should do shading based on elevation." Each explored
+cell carries a height from the same source as its colour (the loaded terrain's tops averaged, the
+generator's column top in the reveal/explore tiles — `Job::LodMap { heights }` appends i16 height
+codes — else none, flat): a code of half-metres times two plus a water bit. The big map's tiles are
+shaded by `dwell_game::minimap::shade_rgb`, the one shading function the minimap's height-shading
+toggle also uses: a Lambert hill-shade of the screen gradient from neighbouring cells, lit from a
+light direction that is data (`shade.lightAzimuthDeg`, `lightElevationDeg`, `exaggeration`,
+`strength`; flat ground unchanged), then a gentle tint by height above sea level (`shade.tint*`);
+water keeps its colour. The gradient is in screen terms, so the light comes from the screen's top left
+on both faces. Stored records gain an optional `heights` map beside `cells` (append-only).
+
 ## Consequences
 
 - The minimap's cost, measured in the browser (Chrome, a Mac's GPU; the bench flying at 8 m/s for

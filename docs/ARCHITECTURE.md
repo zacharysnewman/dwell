@@ -550,13 +550,26 @@ setting is on, only on a move or a turn; it marks the 8 m cells whose centres ar
 of the player (a 2D distance on their face, whatever the height or what is loaded; 0.50.47), each
 coloured by the loaded terrain's tops, else the generator's (the revealed map's tiles below, asked for
 at most `revealed.jobsInFlight` at once in the job workers), else `explored.pendingColor`, reporting
-new and changed ones with their colour; the disc draws a texel the scan found nothing in (ground below
+new and changed ones with their colour and their height (a height code, the same source as the colour;
+0.50.48); the disc draws a texel the scan found nothing in (ground below
 its reach) from its cell's colour. The client's `minimapFrame`, `minimapDots`,
-`mapPose`, `takeExplored` and `mapAllowed` (the mode's `map` ability) feed the shell's
+`mapPose`, `takeExplored`, `shadeMap` and `mapAllowed` (the mode's `map` ability) feed the shell's
 `ui/minimap.ts`: the disc top right (placed by the HUD's layout, `shared/ui/layout.json`; compact when the screen's short side is under `compactBelowPx`, a phone either way up; a `hud.json` part; the height shading a toggle in Settings →
-On screen), the dots, and the big map (M or a tap; Esc closes): explored cells on fog, zoomed about the
-pointer and panned by a drag, the player's arrow. Explored cells are kept per world in this browser
-(IndexedDB `dwell-explored`, append-only), not on the server. Cost (`minimap.scan`, `minimap.draw`
+On screen), the dots, and the big map (M, a tap or the controller's View; M, Esc, B or its ✕ closes):
+**[built, 0.50.48]** a framed panel over the game (`bigMap.panelFraction` of the screen, nearly full
+screen inside the safe area on a phone, bigger buttons there) with a title bar, + / − zoom buttons
+(stopping at the zoom range), "Center on me", a scale bar (1, 2 or 5 × 10ⁿ m), drag to pan with a grab
+cursor, scroll, pinch or + / − to zoom about the pointer, and the controller (stick and D-pad pan,
+triggers and bumpers zoom, Y centres; `bigMap.pad*`, button names from `shared/input/gamepad.json`); the
+game holds still while it is open (`setMenuOpen`). Its state and controls are a page-free
+`BigMapState`. It draws explored cells on fog as shaded tile images (`revealed.tileCells`² cells, made
+again when a cell in or bordering them changes): **elevation shading** (owner, 2026-11-09) — the
+maps' one shading function, `dwell_game::minimap::shade_rgb` (the minimap's height shading uses it
+too): a hill-shade from neighbouring cells' heights lit from `shade.lightAzimuthDeg` (screen terms,
+the same side on both faces) plus a tint by height (`shade.tint*`), water kept as it is; the shell
+hands each tile's screen-order cells inside a one-cell border to `shadeMap` (`shade_grid`). Explored
+cells and their heights are kept per world in this browser (IndexedDB `dwell-explored`, append-only:
+`heights` beside `cells`), not on the server. Cost (`minimap.scan`, `minimap.draw`
 samples, DEV_TOOLS.md): ~1 ms a read with its draw flying at 8 m/s, the 2 s refresh 5–9 ms.
 **[built, 0.50.46] The revealed big map** (owner, 2026-11-08: "big map should be fully explored on
 creative"): in a mode with the `mapRevealed` ability (creative; `mapRevealed()`) nothing is fogged.
@@ -565,7 +578,8 @@ seed: the shell's `RevealCache` asks for the view's tiles (`revealed.tileCells`�
 the view's centre first, at most `revealed.jobsInFlight` at once) with `requestReveal`, which
 `map_reveal.rs` runs as the LOD colour map's `Job::LodMap` raster in the generation workers (a texel an
 explored cell: its column's top block's LOD colour — the colour explored cells average — water darkened
-by depth, rivers from their polylines); `takeReveal` returns finished tiles, which the shell takes for
+by depth, rivers from their polylines; with `heights`, each cell's height code after the colours,
+`raster_with_heights`); `takeReveal` returns finished tiles, which the shell takes for
 at most `revealed.budgetMs` a frame and draws as images under the explored cells (redrawn at most every
 `redrawMs`; beyond the world's edge transparent). Kept for the session, not stored. The main thread
 generates nothing (`job.reveal.run` p50 ~36 ms a 32² tile on a worker; the open map's worst frame

@@ -17,6 +17,15 @@ export interface GamepadHost {
   closeMenu(): void;
   /** B in a menu: back, as Esc. */
   back(): void;
+  /**
+   * The big map (ADR 0068), in the game: the map action opens it, and while it is open the
+   * controller pans, zooms and closes it (`MapUi.padFrame`) instead of playing.
+   */
+  map?: {
+    open(): boolean;
+    toggle(): void;
+    pad(values: readonly number[], axes: readonly number[], now: number): void;
+  };
 }
 
 /** The pad to read: the first connected one, a standard-mapped one first. */
@@ -89,8 +98,11 @@ export class GamepadInput {
       this.menu.frame(values, pad.axes, now);
     }
     this.wasMenu = menuOpen;
+    const mapOpen = !menuOpen && (this.host.map?.open() ?? false);
+    if (mapOpen) this.host.map?.pad(values, pad.axes, now);
     const shell = this.host.client?.gamepad(buttons, axes, now) ?? [];
     if (!menuOpen && shell.includes('pause')) this.host.openMenu();
+    if (!menuOpen && !mapOpen && shell.includes('map')) this.host.map?.toggle();
   }
 }
 

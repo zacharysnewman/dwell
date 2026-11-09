@@ -596,3 +596,172 @@ dwell_world::both_faces!(
         assert_eq!(pixel(&map.image, &t, 20.0, 20.0), 0);
     }
 );
+
+// The maps' elevation shading (owner, 2026-11-09: "The world map also is almost all one color, we
+// should do shading based on elevation").
+
+#[test]
+fn flat_ground_is_neutral_and_a_slope_facing_the_light_is_lit() {
+    // Screen terms (face-free): the light from the screen's top left (azimuth 315°).
+    let t = MAP;
+    assert!(
+        (relief(&t, [0.0, 0.0]) - 1.0).abs() < 1e-12,
+        "flat is unchanged"
+    );
+    // Rising toward the screen's right faces left, toward the light: lit; falling: shaded.
+    assert!(relief(&t, [0.3, 0.0]) > 1.05);
+    assert!(relief(&t, [-0.3, 0.0]) < 0.95);
+    // Rising toward the screen's bottom faces up, toward the light, too.
+    assert!(relief(&t, [0.0, -0.3]) > 1.05);
+    assert!(relief(&t, [0.0, 0.3]) < 0.95);
+    // Across the light: about neutral.
+    assert!((relief(&t, [0.3, 0.3]) - relief(&t, [-0.3, -0.3])).abs() < 1e-9);
+    // A light from the other side flips it: the direction is data.
+    let other = MapTunables {
+        shade_light_azimuth_deg: 135.0,
+        ..MAP
+    };
+    assert!(relief(&other, [0.3, 0.0]) < 0.95);
+    // No strength: no relief at all.
+    let none = MapTunables {
+        shade_strength: 0.0,
+        ..MAP
+    };
+    assert_eq!(relief(&none, [0.5, -0.2]), 1.0);
+}
+
+#[test]
+fn the_tint_follows_the_height_and_water_is_kept_as_it_is() {
+    let t = MapTunables {
+        shade_tint_amount: 1.0,
+        ..MAP
+    };
+    let sea = dwell_world::SEA_LEVEL_M;
+    let low = sea + t.shade_tint_low_m - 5.0;
+    let high = sea + t.shade_tint_high_m + 5.0;
+    let flat = |h: f64, water: bool| {
+        shade_rgb(
+            &t,
+            GREEN,
+            ShadeAt {
+                gradient: Some([0.0, 0.0]),
+                height: Some(h),
+                water,
+                eye: None,
+            },
+        )
+    };
+    assert_eq!(flat(low, false), t.shade_tint_low_color);
+    assert_eq!(flat(high, false), t.shade_tint_high_color);
+    assert_eq!(flat(high, true), GREEN, "water untouched");
+    // No height: no tint; no gradient: no relief.
+    assert_eq!(shade_rgb(&MAP, GREEN, ShadeAt::default()), GREEN);
+}
+
+#[test]
+fn height_codes_round_trip_and_tiles_carry_them() {
+    for (h, w) in [
+        (0.0, false),
+        (12.5, true),
+        (-3.5, false),
+        (-0.5, true),
+        (400.0, false),
+    ] {
+        assert_eq!(decode_height(height_code(h, w)), Some((h, w)));
+    }
+    assert_eq!(decode_height(NO_HEIGHT), None);
+    // A tile's cell: its RGBA, then its i16 code after all the colours.
+    let mut tile = vec![1, 2, 3, 255, 0, 0, 0, 0];
+    tile.extend_from_slice(&(height_code(20.0, true) as i16).to_le_bytes());
+    tile.extend_from_slice(&i16::MIN.to_le_bytes());
+    assert_eq!(
+        tile_cell(&tile, 2, 0),
+        Some((0x010203, height_code(20.0, true)))
+    );
+    assert_eq!(tile_cell(&tile, 2, 1), None, "no ground");
+    // A tile without heights (an older payload) has none.
+    assert_eq!(tile_cell(&tile[..8], 2, 0), Some((0x010203, NO_HEIGHT)));
+}
+
+#[test]
+fn the_big_maps_grid_is_lit_on_the_slope_facing_the_light() {
+    // A 3 × 1 grid (with its border) rising to the right: lit; to the left: shaded. The empty
+    // cell stays transparent; a cell with no height is its own colour.
+    let t = MAP;
+    let (w, h) = (3, 1);
+    let grey = 0x80_8080;
+    let rising = |dir: f64| {
+        let mut colours = vec![grey; (w + 2) * (h + 2)];
+        let mut codes = vec![NO_HEIGHT; (w + 2) * (h + 2)];
+        for r in 0..h + 2 {
+            for c in 0..w + 2 {
+                codes[r * (w + 2) + c] =
+                    height_code(dwell_world::SEA_LEVEL_M + dir * c as f64 * 4.0, false);
+            }
+        }
+        colours[w + 2 + 3] = 0xff00_0000;
+        codes[w + 2 + 2] = NO_HEIGHT;
+        shade_grid(&t, &colours, &codes, w, h, 8.0)
+    };
+    let up = rising(1.0);
+    let down = rising(-1.0);
+    assert!(up[0] > down[0], "{} vs {}", up[0], down[0]);
+    assert_eq!(up[11], 0, "nothing there: transparent");
+    assert_eq!(&up[4..8], &[0x80, 0x80, 0x80, 255], "no height: unshaded");
+}
+
+dwell_world::both_faces!(
+    fn explored_cells_carry_the_terrains_heights(f: FaceFrame) {
+        let t = MAP;
+        let w = floor(f, 100);
+        let y = m_of_row(GROUND) + 1.6;
+        let mut map = Minimap::default();
+        map.update(&w, f.point([0.5, y, 0.5]), 0.0, 0.0, false, &t, &colour_of);
+        let fresh = map.explored.take();
+        assert!(!fresh.is_empty());
+        for (key, _) in fresh {
+            let (hm, water) = decode_height(map.explored.height_of(key)).expect("a height");
+            assert_eq!(hm, m_of_row(GROUND), "the floor's top, face-local");
+            assert!(!water);
+        }
+    }
+);
+
+dwell_world::both_faces!(
+    fn explored_cells_take_the_generated_tiles_heights(f: FaceFrame) {
+        let t = MAP;
+        let w = floor(f, 10);
+        let high = m_of_row(GROUND) + t.minimap_scan_down_m + 40.0;
+        let mut map = Minimap::default();
+        map.update(
+            &w,
+            f.point([0.5, high, 0.5]),
+            0.0,
+            0.0,
+            false,
+            &t,
+            &colour_of,
+        );
+        map.explored.take();
+        let n = (t.revealed_tile_cells as usize).pow(2);
+        let mut tile = tile_all(&t, BLUE);
+        for _ in 0..n {
+            tile.extend_from_slice(&(height_code(30.0, false) as i16).to_le_bytes());
+        }
+        loop {
+            let asked = map.explored.ask(&t);
+            if asked.is_empty() {
+                break;
+            }
+            for tk in asked {
+                map.explored.fill(tk, Some(tile.clone()), &t);
+            }
+        }
+        let fresh = map.explored.take();
+        assert!(!fresh.is_empty());
+        for (key, c) in fresh {
+            assert_eq!(c, BLUE);
+            assert_eq!(map.explored.height_of(key), height_code(30.0, false));
+        }
+    }
+);

@@ -1171,8 +1171,8 @@ impl Client {
                         g.sound(dwell_game::sound::SoundKind::Tool);
                     }
                 }
-                A::Map => s.on_input_event(InputEvent::Toggle("F4".into()), now_ms),
-                A::Pause => shell.push(a.name().to_owned()),
+                // The big map is the shell's (ADR 0068), as M is; the F4 debug map stays a key.
+                A::Map | A::Pause => shell.push(a.name().to_owned()),
                 A::Jump | A::Crouch | A::Run => {}
             }
         }
@@ -2409,15 +2409,32 @@ impl Client {
             s.input.look.yaw,
         ]
     }
-    /// The explored cells new or changed since the last call: [face, i, k, 0xRRGGBB] each.
+    /// The explored cells new or changed since the last call: [face, i, k, 0xRRGGBB, height code]
+    /// each (`dwell_game::minimap::height_code`; `NO_HEIGHT`, i32::MIN, for none).
     #[wasm_bindgen(js_name = takeExplored)]
     pub fn take_explored(&self) -> Vec<i32> {
         let mut s = self.inner.borrow_mut();
         let mut out = Vec::new();
-        for ((face, i, k), c) in s.minimap.explored.take() {
-            out.extend([i32::from(face), i, k, c as i32]);
+        for (key @ (face, i, k), c) in s.minimap.explored.take() {
+            let code = s.minimap.explored.height_of(key);
+            out.extend([i32::from(face), i, k, c as i32, code]);
         }
         out
+    }
+    /// The big map's cells shaded by their heights (`dwell_game::minimap::shade_grid`, the
+    /// minimap's shading): a `w` × `h` grid in screen order inside a one-cell border, colours
+    /// (top byte 0xff: nothing there) and height codes; out, the cells' RGBA.
+    #[wasm_bindgen(js_name = shadeMap)]
+    pub fn shade_map(&self, colours: Vec<u32>, codes: Vec<i32>, w: u32, h: u32) -> Vec<u8> {
+        let t = &dwell_game::minimap::MAP;
+        dwell_game::minimap::shade_grid(
+            t,
+            &colours,
+            &codes,
+            w as usize,
+            h as usize,
+            t.explored_cell_m,
+        )
     }
     /// Whether the world's game mode shows the maps (the `map` ability, ADR 0068): a server that
     /// names no mode shows them.

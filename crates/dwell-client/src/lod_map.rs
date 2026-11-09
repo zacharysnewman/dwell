@@ -134,6 +134,32 @@ pub fn raster(
     texel_m: i64,
     rect: &Rect,
 ) -> Vec<u8> {
+    raster_into(terrain, t, texel_m, rect, None)
+}
+
+/// [`raster`], then each texel's height code (`dwell_game::minimap::height_code` as i16 LE, rows
+/// of x from `z0`; i16::MIN beyond the disc): the ground's face-local height, the water's surface
+/// and the water bit where the texel is water (a river's where it covers half the texel). The big
+/// map's tiles and the explored cells' generated colours (`map_reveal`).
+pub fn raster_with_heights(
+    terrain: &TerrainGenerator,
+    t: &LodMapTunables,
+    texel_m: i64,
+    rect: &Rect,
+) -> Vec<u8> {
+    let mut heights = Vec::with_capacity((rect.width() * rect.height() * 2) as usize);
+    let mut out = raster_into(terrain, t, texel_m, rect, Some(&mut heights));
+    out.extend_from_slice(&heights);
+    out
+}
+
+fn raster_into(
+    terrain: &TerrainGenerator,
+    t: &LodMapTunables,
+    texel_m: i64,
+    rect: &Rect,
+    mut heights: Option<&mut Vec<u8>>,
+) -> Vec<u8> {
     let water_state = dwell_blocks::state(t.water_block).unwrap_or(0);
     let water = top_rgb(water_state);
     let shade = |depth: f64| {
@@ -149,8 +175,12 @@ pub fn raster(
             let col = terrain.column_lod(x, z, texel_m);
             if col.outside {
                 out.extend_from_slice(&[0, 0, 0, 0]);
+                if let Some(h) = heights.as_deref_mut() {
+                    h.extend_from_slice(&i16::MIN.to_le_bytes());
+                }
                 continue;
             }
+            let mut wet = col.water != Water::None;
             let mut c = if col.water != Water::None {
                 let k = shade(f64::from(col.level - col.height));
                 water.map(|v| v * k)
@@ -160,6 +190,7 @@ pub fn raster(
             if let Some(r) = terrain.river_hit(x, z, min_half) {
                 // Coverage of the texel by the channel (its edge anti-aliased over one texel).
                 let a = ((r.half - r.d) / s + 0.5).clamp(0.0, 1.0);
+                wet |= a >= 0.5;
                 if a > 0.0 {
                     let k = shade(r.depth.min(t.water_depth_m * 0.5));
                     for (v, w) in c.iter_mut().zip(water) {
@@ -169,6 +200,16 @@ pub fn raster(
             }
             out.extend(c.map(srgb_byte));
             out.push(255);
+            if let Some(h) = heights.as_deref_mut() {
+                let top = if col.water != Water::None {
+                    col.level
+                } else {
+                    col.height
+                };
+                let code = dwell_game::minimap::height_code(f64::from(top), wet)
+                    .clamp(i32::from(i16::MIN) + 1, i32::from(i16::MAX));
+                h.extend_from_slice(&(code as i16).to_le_bytes());
+            }
         }
     }
     out

@@ -41,8 +41,18 @@ pub struct MapTunables {
     pub height_shading_range_m: f64,
     pub height_shading_darkest: f64,
     pub height_shading_brightest: f64,
-    pub height_shading_slope: f64,
     pub height_shading_water_depth_m: f64,
+    pub shade_light_azimuth_deg: f64,
+    pub shade_light_elevation_deg: f64,
+    pub shade_exaggeration: f64,
+    pub shade_strength: f64,
+    pub shade_darkest: f64,
+    pub shade_brightest: f64,
+    pub shade_tint_low_m: f64,
+    pub shade_tint_high_m: f64,
+    pub shade_tint_low_color: u32,
+    pub shade_tint_high_color: u32,
+    pub shade_tint_amount: f64,
     pub explored_cell_m: f64,
     pub explored_pending_color: u32,
     pub big_map_start_px_per_cell: f64,
@@ -50,6 +60,20 @@ pub struct MapTunables {
     pub big_map_max_px_per_cell: f64,
     pub big_map_zoom_step: f64,
     pub big_map_fog_color: u32,
+    pub big_map_panel_fraction: f64,
+    pub big_map_phone_margin_px: f64,
+    pub big_map_button_px: f64,
+    pub big_map_phone_button_px: f64,
+    pub big_map_scale_bar_max_px: f64,
+    pub big_map_frame_color: u32,
+    pub big_map_pad_pan_px_per_s: f64,
+    pub big_map_pad_zoom_per_s: f64,
+    pub big_map_pad_zoom_in: &'static str,
+    pub big_map_pad_zoom_out: &'static str,
+    pub big_map_pad_zoom_in_alt: &'static str,
+    pub big_map_pad_zoom_out_alt: &'static str,
+    pub big_map_pad_center: &'static str,
+    pub big_map_pad_close: &'static str,
     pub revealed_tile_cells: f64,
     pub revealed_jobs_in_flight: f64,
     pub revealed_budget_ms: f64,
@@ -126,6 +150,8 @@ pub struct TopGrid {
     pub texel_m: f64,
     pub colour: Vec<u32>,
     pub height: Vec<f32>,
+    /// Whether the top is a liquid's (water keeps its colour on the maps: no relief or tint).
+    pub water: Vec<bool>,
     /// The face-local eye height it was read from.
     pub eye_y: f64,
 }
@@ -161,6 +187,7 @@ pub fn scan_tops(
     let water_rows = row_of_m(t.height_shading_water_depth_m).max(1);
     let mut colour = vec![NO_TOP; n * n];
     let mut height = vec![f32::NAN; n * n];
+    let mut water = vec![false; n * n];
     for k in 0..n {
         for i in 0..n {
             let (px, pz) = (x0 + (i as f64 + 0.5) * texel, z0 + (k as f64 + 0.5) * texel);
@@ -170,6 +197,7 @@ pub fn scan_tops(
                 // read (the browser's whole read was ~5 ms; edits come with the refresh).
                 colour[k * n + i] = p.colour[j];
                 height[k * n + i] = p.height[j];
+                water[k * n + i] = p.water.get(j).copied().unwrap_or(false);
                 continue;
             }
             let cx = (x0 + (i as f64 + 0.5) * texel).floor() as i32;
@@ -246,6 +274,7 @@ pub fn scan_tops(
                             depth += 1;
                         }
                         c = scale_rgb(c, 1.0 - 0.55 * f64::from(depth) / f64::from(water_rows));
+                        water[k * n + i] = true;
                     }
                     colour[k * n + i] = c;
                     height[k * n + i] = dwell_world::m_of_row(row + 1) as f32;
@@ -262,6 +291,7 @@ pub fn scan_tops(
         texel_m: texel,
         colour,
         height,
+        water,
         eye_y,
     }
 }
@@ -272,12 +302,141 @@ pub fn scale_rgb(c: u32, k: f64) -> u32 {
     ch(16) | ch(8) | ch(0)
 }
 
-/// The height shading's brightness at a texel of height `h` with neighbours' rise `dx`, `dz`
-/// (m per texel), for an eye at `eye_y`.
-pub fn shade(t: &MapTunables, h: f64, eye_y: f64, dx: f64, dz: f64) -> f64 {
-    let rel = ((h - eye_y) / t.height_shading_range_m).clamp(-1.0, 1.0);
-    let hill = -(dx + dz) * t.height_shading_slope;
-    (1.0 + 0.3 * rel + hill).clamp(t.height_shading_darkest, t.height_shading_brightest)
+/// What [`shade_rgb`] shades a map texel or cell by.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ShadeAt {
+    /// The ground's rise per metre toward the screen's right and toward its top (None: flat or
+    /// unknown). Screen terms, so the light comes from the same side of the screen on both faces.
+    pub gradient: Option<[f64; 2]>,
+    /// The ground's face-local height (m), for the elevation tint (None: no tint).
+    pub height: Option<f64>,
+    /// A liquid's top: kept as it is (no relief, no tint).
+    pub water: bool,
+    /// The minimap's: the eye's face-local height, the ground above it brighter and below darker
+    /// (`heightShading.rangeM`).
+    pub eye: Option<f64>,
+}
+
+/// The hill-shade's brightness for a screen gradient (`shade.*`; owner, 2026-11-09: "shading
+/// based on elevation"): Lambert light from `lightAzimuthDeg` (clockwise from the screen's top)
+/// at `lightElevationDeg`, the rise exaggerated by `exaggeration`, relative to flat ground (flat is
+/// exactly 1) and scaled by `strength`.
+pub fn relief(t: &MapTunables, [gx, gy]: [f64; 2]) -> f64 {
+    let (sa, ca) = t.shade_light_azimuth_deg.to_radians().sin_cos();
+    let (se, ce) = t.shade_light_elevation_deg.to_radians().sin_cos();
+    let light = [sa * ce, ca * ce, se];
+    let z = t.shade_exaggeration;
+    let n = [-gx * z, -gy * z, 1.0];
+    let len = (n[0] * n[0] + n[1] * n[1] + 1.0).sqrt();
+    let lambert = ((n[0] * light[0] + n[1] * light[1] + n[2] * light[2]) / len).max(0.0);
+    1.0 + t.shade_strength * (lambert / se.max(1e-6) - 1.0)
+}
+
+/// The elevation tint: `rgb` mixed `tintAmount` toward the colour between `tintLowColor` (at
+/// `tintLowM` above sea level and below) and `tintHighColor` (at `tintHighM` and above).
+pub fn tint(t: &MapTunables, rgb: u32, h: f64) -> u32 {
+    let above = h - dwell_world::SEA_LEVEL_M;
+    let span = (t.shade_tint_high_m - t.shade_tint_low_m).max(1e-6);
+    let s = ((above - t.shade_tint_low_m) / span).clamp(0.0, 1.0);
+    let ch = |c: u32, sh: u32| f64::from((c >> sh) & 0xff);
+    let mut out = 0;
+    for sh in [16, 8, 0] {
+        let lo = ch(t.shade_tint_low_color, sh);
+        let target = lo + (ch(t.shade_tint_high_color, sh) - lo) * s;
+        let v = ch(rgb, sh) + (target - ch(rgb, sh)) * t.shade_tint_amount;
+        out |= (v.round().clamp(0.0, 255.0) as u32) << sh;
+    }
+    out
+}
+
+/// The maps' one shading (the minimap's height shading and the big map's): the elevation tint,
+/// then the hill-shade's brightness (and on the minimap the eye's), clamped to `shade.darkest`
+/// .. `shade.brightest`. Water keeps its colour (the eye's brightness alone on the minimap).
+pub fn shade_rgb(t: &MapTunables, rgb: u32, at: ShadeAt) -> u32 {
+    let eye = at.eye.map_or(1.0, |eye| {
+        let rel = ((at.height.unwrap_or(eye) - eye) / t.height_shading_range_m).clamp(-1.0, 1.0);
+        (1.0 + 0.3 * rel).clamp(t.height_shading_darkest, t.height_shading_brightest)
+    });
+    if at.water {
+        return if at.eye.is_some() {
+            scale_rgb(rgb, eye)
+        } else {
+            rgb
+        };
+    }
+    let c = at.height.map_or(rgb, |h| tint(t, rgb, h));
+    let k = at.gradient.map_or(1.0, |g| relief(t, g)) * eye;
+    scale_rgb(c, k.clamp(t.shade_darkest, t.shade_brightest))
+}
+
+/// No height in a cell (a fogged or pending cell; [`height_code`]).
+pub const NO_HEIGHT: i32 = i32::MIN;
+
+/// A cell's height as the shell keeps it: half-metres times two, plus 1 for water.
+pub fn height_code(h: f64, water: bool) -> i32 {
+    ((h * 2.0).round() as i32) * 2 + i32::from(water)
+}
+
+/// A [`height_code`]'s height (m) and whether it is water; None for [`NO_HEIGHT`].
+pub fn decode_height(code: i32) -> Option<(f64, bool)> {
+    (code != NO_HEIGHT).then(|| (f64::from(code >> 1) / 2.0, code & 1 == 1))
+}
+
+/// The big map's cells shaded (`shadeMap`, `client/src/ui/minimap.ts`): a `w` × `h` grid in screen
+/// order (rows from the top, columns from the left) inside a border of one cell, so `(w + 2) ×
+/// (h + 2)` colours (`0xRRGGBB`; top byte 0xff: nothing there, drawn transparent) and
+/// [`height_code`]s; out, the `w` × `h` cells' RGBA. A cell's gradient is its neighbours' heights'
+/// difference across it, `cell_m` apart (one side's where the other has none; none: flat).
+pub fn shade_grid(
+    t: &MapTunables,
+    colours: &[u32],
+    codes: &[i32],
+    w: usize,
+    h: usize,
+    cell_m: f64,
+) -> Vec<u8> {
+    let mut out = vec![0u8; w * h * 4];
+    let stride = w + 2;
+    if colours.len() < stride * (h + 2) || codes.len() < stride * (h + 2) {
+        return out;
+    }
+    let at = |c: usize, r: usize| decode_height(codes[r * stride + c]).map(|(hm, _)| hm);
+    let slope = |a: Option<f64>, b: Option<f64>, mid: f64| match (a, b) {
+        (Some(a), Some(b)) => (b - a) / (2.0 * cell_m),
+        (Some(a), None) => (mid - a) / cell_m,
+        (None, Some(b)) => (b - mid) / cell_m,
+        (None, None) => 0.0,
+    };
+    for r in 0..h {
+        for c in 0..w {
+            let (cc, rr) = (c + 1, r + 1);
+            let col = colours[rr * stride + cc];
+            if col >> 24 == 0xff {
+                continue;
+            }
+            let rgb = match decode_height(codes[rr * stride + cc]) {
+                Some((hm, water)) => {
+                    let gx = slope(at(cc - 1, rr), at(cc + 1, rr), hm);
+                    // Screen up is the row above.
+                    let gy = slope(at(cc, rr + 1), at(cc, rr - 1), hm);
+                    let at = ShadeAt {
+                        gradient: Some([gx, gy]),
+                        height: Some(hm),
+                        water,
+                        eye: None,
+                    };
+                    shade_rgb(t, col & 0xff_ffff, at)
+                }
+                None => col & 0xff_ffff,
+            };
+            let o = (r * w + c) * 4;
+            out[o] = (rgb >> 16) as u8;
+            out[o + 1] = (rgb >> 8) as u8;
+            out[o + 2] = rgb as u8;
+            out[o + 3] = 255;
+        }
+    }
+    out
 }
 
 /// The disc: `px`² RGBA pixels covering the minimap's radius, turned by `frame`, shaded when
@@ -322,17 +481,32 @@ pub fn render_disc(
                     continue;
                 };
                 if shading {
+                    // Ground below the scan: the eye's darkest, no relief or tint (no height).
                     let low = grid.eye_y - t.height_shading_range_m;
-                    scale_rgb(c, shade(t, low, grid.eye_y, 0.0, 0.0))
+                    let rel = ((low - grid.eye_y) / t.height_shading_range_m).clamp(-1.0, 1.0);
+                    let k = (1.0 + 0.3 * rel)
+                        .clamp(t.height_shading_darkest, t.height_shading_brightest);
+                    scale_rgb(c, k)
                 } else {
                     c
                 }
             } else if shading {
                 let h = f64::from(grid.height[i]);
                 let tx = grid.texel_m;
-                let dx = height_at(lx + tx, lz).map_or(0.0, |n| n - h);
-                let dz = height_at(lx, lz + tx).map_or(0.0, |n| n - h);
-                scale_rgb(c, shade(t, h, grid.eye_y, dx, dz))
+                let dx = height_at(lx + tx, lz).map_or(0.0, |n| n - h) / tx;
+                let dz = height_at(lx, lz + tx).map_or(0.0, |n| n - h) / tx;
+                // The face-local rise turned to the screen's (the disc turns with the heading).
+                let g = [
+                    dx * frame.right[0] + dz * frame.right[1],
+                    dx * frame.forward[0] + dz * frame.forward[1],
+                ];
+                let at = ShadeAt {
+                    gradient: Some(g),
+                    height: Some(h),
+                    water: grid.water.get(i).copied().unwrap_or(false),
+                    eye: Some(grid.eye_y),
+                };
+                shade_rgb(t, c, at)
             } else {
                 c
             };
@@ -478,6 +652,8 @@ pub enum Source {
 #[derive(Clone, Debug, Default)]
 pub struct Explored {
     pub cells: HashMap<CellKey, (u32, Source)>,
+    /// Each cell's [`height_code`] from the same source as its colour (none: [`NO_HEIGHT`]).
+    pub heights: HashMap<CellKey, i32>,
     /// New or changed since the last [`Explored::take`].
     fresh: Vec<(CellKey, u32)>,
     /// Cells still [`Source::Pending`] whose tile has not come back yet.
@@ -515,35 +691,44 @@ impl Explored {
                 }
                 let key = (face, i, k);
                 let seen = average(grid, f64::from(i) * cell, f64::from(k) * cell, cell);
-                let (c, source) = match seen {
-                    Some(c) => (c, Source::Terrain),
+                let (c, code, source) = match seen {
+                    Some((c, code)) => (c, code, Source::Terrain),
                     None if self.cells.contains_key(&key) => continue,
                     None => match self.generated(key, tile) {
-                        Some(c) => (c, Source::Generated),
+                        Some((c, code)) => (c, code, Source::Generated),
                         None => {
                             if !self.tiles.contains_key(&tile_of(key, tile)) {
                                 self.pending.insert(key);
                             }
-                            (t.explored_pending_color, Source::Pending)
+                            (t.explored_pending_color, NO_HEIGHT, Source::Pending)
                         }
                     },
                 };
-                self.set(key, c, source);
+                self.set(key, c, code, source);
             }
         }
     }
 
     /// Gives `key` colour `c` from `source`: a worse source than the cell's never replaces it, and
     /// the cell is reported when new or when its colour changes visibly.
-    fn set(&mut self, key: CellKey, c: u32, source: Source) {
+    fn set(&mut self, key: CellKey, c: u32, code: i32, source: Source) {
+        let old_code = self.heights.get(&key).copied().unwrap_or(NO_HEIGHT);
+        // A height a metre or more off (or newly known) is reported as a colour change is.
+        let moved = match (decode_height(old_code), decode_height(code)) {
+            (Some((a, wa)), Some((b, wb))) => (a - b).abs() >= 1.0 || wa != wb,
+            (None, None) => false,
+            _ => true,
+        };
         match self.cells.get(&key).copied() {
             None => {
                 self.cells.insert(key, (c, source));
+                self.heights.insert(key, code);
                 self.fresh.push((key, c));
             }
             Some((_, was)) if source < was => {}
-            Some((old, _)) if rgb_distance(old, c) > 12 => {
+            Some((old, _)) if rgb_distance(old, c) > 12 || moved => {
                 self.cells.insert(key, (c, source));
+                self.heights.insert(key, code);
                 self.fresh.push((key, c));
             }
             Some((old, _)) => {
@@ -555,13 +740,18 @@ impl Explored {
         }
     }
 
-    /// The generated colour of cell `key`, if its tile has come back with one there.
-    fn generated(&self, key: CellKey, tile: i32) -> Option<u32> {
+    /// The generated colour and [`height_code`] of cell `key`, if its tile has come back with
+    /// one there.
+    fn generated(&self, key: CellKey, tile: i32) -> Option<(u32, i32)> {
         let tk = tile_of(key, tile);
-        let rgba = self.tiles.get(&tk)?.as_ref()?;
-        let o = (((key.2 - tk.2 * tile) * tile + (key.1 - tk.1 * tile)) * 4) as usize;
-        let p = rgba.get(o..o + 4)?;
-        (p[3] == 255).then(|| (u32::from(p[0]) << 16) | (u32::from(p[1]) << 8) | u32::from(p[2]))
+        let bytes = self.tiles.get(&tk)?.as_ref()?;
+        let j = ((key.2 - tk.2 * tile) * tile + (key.1 - tk.1 * tile)) as usize;
+        tile_cell(bytes, (tile * tile) as usize, j)
+    }
+
+    /// The [`height_code`] the cell was last reported with ([`NO_HEIGHT`]: none).
+    pub fn height_of(&self, key: CellKey) -> i32 {
+        self.heights.get(&key).copied().unwrap_or(NO_HEIGHT)
     }
 
     /// The tiles to generate for the pending cells, each asked for once, at most
@@ -597,8 +787,8 @@ impl Explored {
             .collect();
         for c in inside {
             self.pending.remove(&c);
-            if let Some(colour) = self.generated(c, tile) {
-                self.set(c, colour, Source::Generated);
+            if let Some((colour, code)) = self.generated(c, tile) {
+                self.set(c, colour, code, Source::Generated);
             }
         }
     }
@@ -624,13 +814,33 @@ fn tile_of((face, i, k): CellKey, tile: i32) -> TileKey {
     (face, i.div_euclid(tile), k.div_euclid(tile))
 }
 
-/// The average colour of the grid's tops in the square from (x, z), `size` m a side.
-fn average(grid: &TopGrid, x: f64, z: f64, size: f64) -> Option<u32> {
+/// Cell `j` of a generated tile of `cells` cells (`dwell-client` `map_reveal`): its colour and
+/// [`height_code`], from the tile's RGBA and, after it, its i16 LE height codes (absent in a tile
+/// without heights: [`NO_HEIGHT`]). None where the tile has no ground (alpha 0).
+pub fn tile_cell(bytes: &[u8], cells: usize, j: usize) -> Option<(u32, i32)> {
+    let p = bytes.get(j * 4..j * 4 + 4)?;
+    if p[3] != 255 {
+        return None;
+    }
+    let c = (u32::from(p[0]) << 16) | (u32::from(p[1]) << 8) | u32::from(p[2]);
+    let o = cells * 4 + j * 2;
+    let code = bytes
+        .get(o..o + 2)
+        .map(|b| i16::from_le_bytes([b[0], b[1]]))
+        .filter(|&v| v != i16::MIN)
+        .map_or(NO_HEIGHT, i32::from);
+    Some((c, code))
+}
+
+/// The average colour of the grid's tops in the square from (x, z), `size` m a side, and their
+/// average height's [`height_code`] (water when most of them are).
+fn average(grid: &TopGrid, x: f64, z: f64, size: f64) -> Option<(u32, i32)> {
     if grid.n == 0 {
         return None;
     }
     let mut sum = [0u64; 3];
     let mut count = 0u64;
+    let (mut hsum, mut hcount, mut wet) = (0.0, 0u64, 0u64);
     let steps = (size / grid.texel_m).round().max(1.0) as usize;
     for b in 0..steps {
         for a in 0..steps {
@@ -644,12 +854,22 @@ fn average(grid: &TopGrid, x: f64, z: f64, size: f64) -> Option<u32> {
                 sum[1] += u64::from((c >> 8) & 0xff);
                 sum[2] += u64::from(c & 0xff);
                 count += 1;
+                if grid.height.get(i).is_some_and(|h| h.is_finite()) {
+                    hsum += f64::from(grid.height[i]);
+                    hcount += 1;
+                }
+                wet += u64::from(grid.water.get(i).copied().unwrap_or(false));
             }
         }
     }
     (count > 0).then(|| {
         let ch = |s: u64| (s / count) as u32;
-        (ch(sum[0]) << 16) | (ch(sum[1]) << 8) | ch(sum[2])
+        let code = if hcount > 0 {
+            height_code(hsum / hcount as f64, wet * 2 > count)
+        } else {
+            NO_HEIGHT
+        };
+        ((ch(sum[0]) << 16) | (ch(sum[1]) << 8) | ch(sum[2]), code)
     })
 }
 
