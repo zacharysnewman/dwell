@@ -73,6 +73,27 @@ describe('scenarios', () => {
     expect(viewUrl('./', scenarioView(s))).toBe('./?local=1&seed=7');
   });
 
+  it('carries the player on a moving raft (the carry rig)', () => {
+    const [s] = parseScenarios(
+      file([
+        {
+          name: 'c',
+          steps: [
+            { do: 'carry', speed: 3, yaw: 90, s: 20 },
+            { do: 'carry', speed: 2, yaw: 0, s: 5, lift: 0 },
+          ],
+        },
+      ]),
+    );
+    expect(s.steps).toEqual([
+      { do: 'carry', speed: 3, yaw: 90, s: 20 },
+      { do: 'carry', speed: 2, yaw: 0, s: 5, lift: 0 },
+    ]);
+    expect(() =>
+      parseScenarios(file([{ name: 'c', steps: [{ do: 'carry', speed: 3, yaw: 0 }] }])),
+    ).toThrow(/s/);
+  });
+
   it('zooms the spyglass to a step, or out (docs/SPYGLASS.md)', () => {
     const [s] = parseScenarios(
       file([

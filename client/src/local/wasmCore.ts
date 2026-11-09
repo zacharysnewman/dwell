@@ -129,6 +129,10 @@ export class LocalCore {
   kill(): void {
     this.world.kill();
   }
+  /** Carries the local player on a moving raft (the bench's `carry` step). */
+  carry(speed: number, yaw: number, seconds: number, lift: number): boolean {
+    return this.world.carry(speed, yaw, seconds, lift);
+  }
   /**
    * The water near a cell (JSON, `Water::report`): a diagnostic for the block dump; undefined
    * while the water worker's is on its way (`takeWaterReport`).

@@ -1709,6 +1709,15 @@ impl Client {
             .flat_map(|(p, age)| [p[0], p[1], p[2], age])
             .collect()
     }
+    /// Fixed points (x, y, z triples, m) the streaming probe reports how they are drawn
+    /// (`probe.target`, then `probe.control`; the bench's `probe` step). True when in a world.
+    #[wasm_bindgen(js_name = setProbe)]
+    pub fn set_probe(&self, points: Vec<f64>) -> bool {
+        let mut s = self.inner.borrow_mut();
+        let Some(g) = &mut s.game else { return false };
+        g.probe_points = points.chunks_exact(3).map(|p| [p[0], p[1], p[2]]).collect();
+        true
+    }
     /// The distant terrain (LOD) drawn or not, a debug switch (`?lod=off`, `__dwell.setLod`): the
     /// full-detail chunks alone show what they hold. True when in a world.
     #[wasm_bindgen(js_name = setLod)]

@@ -333,6 +333,54 @@ pub fn downsample_octant(
             }
         }
     }
+    // A surface cell (filled, air over it on its face) shows its columns' tops, the cells of the
+    // block over it included: where the ground steps up by a row across that block, too few of
+    // its cells are filled to fill it, and the cell under it would show the dirt under the higher
+    // columns' grass (speckled dirt on edited ground, BUGS.md #53).
+    for y in 0..h {
+        let face = row_face(parent_coord, oy + y);
+        let Some(over) = (match face {
+            Face::A => (y + 1 < h).then_some(y + 1),
+            Face::B => (y > 0).then(|| y - 1),
+        }) else {
+            continue;
+        };
+        if row_face(parent_coord, oy + over) != face {
+            continue;
+        }
+        // The four child rows from the top of the block over down (face-local).
+        let rows: [i32; 4] = match face {
+            Face::A => [2 * y + 3, 2 * y + 2, 2 * y + 1, 2 * y],
+            Face::B => [2 * y - 2, 2 * y - 1, 2 * y, 2 * y + 1],
+        };
+        for z in 0..h {
+            for x in 0..h {
+                let at = cell_index(ox + x, oy + y, oz + z);
+                let m = parent[at];
+                if !lod_solid(m) || parent[cell_index(ox + x, oy + over, oz + z)] != M.air {
+                    continue;
+                }
+                let mut tops = [M.air; 4];
+                for (col, top) in tops.iter_mut().enumerate() {
+                    let (cx, cz) = (2 * x + (col as i32 & 1), 2 * z + (col as i32 >> 1));
+                    *top = rows
+                        .iter()
+                        .map(|&r| child_at(cx, r, cz))
+                        .find(|&c| c != M.air && lod_drawn(c))
+                        .unwrap_or(M.air);
+                }
+                let solid = |c: StateId| lod_solid(c);
+                let best = tops.iter().copied().filter(|&c| solid(c)).max_by_key(|&c| {
+                    // The most common, ties to the first column's.
+                    let n = tops.iter().filter(|&&t| t == c).count();
+                    (n, std::cmp::Reverse(tops.iter().position(|&t| t == c)))
+                });
+                if let Some(best) = best {
+                    parent[at] = best;
+                }
+            }
+        }
+    }
 }
 
 pub fn downsample_chunk_octant(

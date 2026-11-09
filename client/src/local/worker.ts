@@ -166,6 +166,9 @@ function handle(msg: ToWorker): void {
     case 'kill':
       core.kill();
       break;
+    case 'carry':
+      core.carry(msg.speed, msg.yaw, msg.seconds, msg.lift);
+      break;
     case 'waterReport': {
       const report = core.waterReport(msg.at, msg.radius);
       if (report !== undefined) scope.postMessage({ t: 'waterReport', report });

@@ -32,7 +32,23 @@ pub struct LocalCore {
     pub persisted: bool,
     /// Why it is not, when storage was given.
     pub storage_error: String,
+    /// The bench's `carry` rig: a raft under the player moved at a set velocity (dev tools).
+    carry: Option<Carry>,
 }
+
+/// A body carrying the local player (the bench's `carry` step, docs/DEV_TOOLS.md): moved at
+/// `velocity` (m/s, horizontal) at a held height for `ticks` more ticks, then stopped.
+#[derive(Clone, Copy, Debug)]
+struct Carry {
+    body: u32,
+    velocity: [f64; 2],
+    /// The raft's height over the ground (or water) under and just ahead of it (m).
+    lift: f64,
+    ticks: u32,
+}
+
+/// The carrying raft: `CARRY_SIDE` × `CARRY_SIDE` logs one cell thick.
+const CARRY_SIDE: i32 = 4;
 
 impl LocalCore {
     /// Starts the local server. With `storage` the world is loaded from and saved to it, and a
@@ -190,6 +206,7 @@ impl LocalCore {
             fixed: FixedStep::new(dwell_protocol::SIM_HZ),
             persisted,
             storage_error,
+            carry: None,
         })
     }
 
@@ -251,6 +268,7 @@ impl LocalCore {
     /// Runs the simulation steps due for `elapsed_seconds` of real time; returns the tick.
     pub fn advance(&mut self, elapsed_seconds: f64) -> u32 {
         for _ in 0..self.fixed.advance(elapsed_seconds) {
+            self.drive_carry();
             self.server.step();
         }
         self.server.tick()
@@ -258,6 +276,105 @@ impl LocalCore {
 
     pub fn take_outbox(&mut self) -> Vec<Outgoing> {
         self.server.take_outbox()
+    }
+
+    /// Puts a raft under the local player's feet, `lift_m` above them, stands the player on it
+    /// and moves it at `speed` m/s toward `yaw_deg` (0 = +Z, 90 = +X) for `seconds`, at a held
+    /// height (the bench's `carry` step: "carried by a moving body" bugs, docs/DEV_TOOLS.md). A
+    /// carry already running is replaced (its raft stops where it is). False without a living
+    /// local player.
+    /// face-a-only: a dev rig; the raft's cells and the held height are face A's (+y up), and a
+    /// player on face B is refused rather than carried upside down.
+    pub fn carry_local_player(
+        &mut self,
+        speed: f64,
+        yaw_deg: f64,
+        seconds: f64,
+        lift_m: f64,
+    ) -> bool {
+        let Some(p) = self.server.player_of_session(LOCAL_SESSION) else {
+            return false;
+        };
+        let Some(feet) = self.server.feet_of(p) else {
+            return false;
+        };
+        if dwell_world::FaceFrame::at_height(feet[1]) != dwell_world::FaceFrame::A
+            || ![speed, yaw_deg, seconds, lift_m]
+                .iter()
+                .all(|v| v.is_finite())
+        {
+            return false;
+        }
+        let log = dwell_blocks::require("dwell:log[axis=y]");
+        let cells: Vec<([i32; 3], u16)> = (0..CARRY_SIDE)
+            .flat_map(|x| (0..CARRY_SIDE).map(move |z| ([x, 0, z], log)))
+            .collect();
+        let half = f64::from(CARRY_SIDE - 1) / 2.0;
+        let top = feet[1] + lift_m.max(0.0);
+        let cell_h = dwell_world::CELL_H;
+        let y = top - cell_h / 2.0;
+        let body = self
+            .server
+            .add_body(1, cells, [feet[0] - half, y, feet[2] - half]);
+        let yaw = yaw_deg.to_radians();
+        self.carry = Some(Carry {
+            body,
+            velocity: [speed * yaw.sin(), speed * yaw.cos()],
+            lift: lift_m.max(0.0),
+            ticks: (seconds.max(0.0) * f64::from(dwell_protocol::SIM_HZ)).round() as u32,
+        });
+        self.teleport_local_player([feet[0], top + 0.05, feet[2]])
+    }
+
+    /// Whether a carry is still moving its raft.
+    pub fn carrying(&self) -> bool {
+        self.carry.is_some_and(|c| c.ticks > 0)
+    }
+
+    /// Before a step: the carrying raft's velocity, flat and unturned, its height held.
+    fn drive_carry(&mut self) {
+        let Some(c) = &mut self.carry else { return };
+        let moving = c.ticks > 0;
+        c.ticks = c.ticks.saturating_sub(1);
+        let (id, [vx, vz], lift) = (c.body, c.velocity, c.lift);
+        let Some(h) = self.server.body_handle(id) else {
+            self.carry = None;
+            return;
+        };
+        let (world, physics, _) = self.server.sim();
+        let at = physics.position(h);
+        let hz = f64::from(dwell_protocol::SIM_HZ);
+        // The highest filled cell under the raft and up to 3 m ahead of it, from 16 m above.
+        let half = f64::from(CARRY_SIDE - 1) / 2.0;
+        let speed = vx.hypot(vz).max(1e-9);
+        let row = dwell_world::row_of_m(at.y);
+        let mut ground = None;
+        for ahead in [0.0, 1.5, 3.0] {
+            for (ox, oz) in [
+                (-half, -half),
+                (half, -half),
+                (-half, half),
+                (half, half),
+                (0.0, 0.0),
+            ] {
+                let x = (at.x + half + ox + vx / speed * ahead).floor() as i32;
+                let z = (at.z + half + oz + vz / speed * ahead).floor() as i32;
+                if let Some(top) = (row - 32..row + 32)
+                    .rev()
+                    .find(|&y| world.get_voxel(x, y, z) != dwell_blocks::AIR)
+                {
+                    ground = ground.max(Some(top));
+                }
+            }
+        }
+        let cell_h = dwell_world::CELL_H;
+        let y = ground.map_or(at.y, |g| f64::from(g + 1) * cell_h + lift + cell_h / 2.0);
+        // Back to the held height within a few ticks, against gravity's pull this step.
+        let vy = (y - at.y) * hz / 4.0 + physics.gravity() / hz;
+        let v = if moving { [vx, vy, vz] } else { [0.0, vy, 0.0] };
+        physics.set_velocity(h, dwell_physics::DVec3::from_array(v));
+        physics.set_angular_velocity(h, dwell_physics::DVec3::ZERO);
+        physics.set_rotation(h, dwell_physics::DQuat::IDENTITY);
     }
 
     /// Kills the local player (the bench's `die` step; dev tools).

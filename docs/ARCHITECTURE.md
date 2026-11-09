@@ -2097,7 +2097,10 @@ order (`dwell-protocol` `encode_lod_cells`); a terrain section near the surface 
   are deeper than the sea instead of showing its floor). The material is the most common one
   among the **top filled cell of each of the block's four columns** (the surface seen from
   above), ties to the upper cells — so surface materials survive to the coarsest levels instead
-  of the rock beneath them (`downsample_block`, tested on crafted layouts). The flat world's
+  of the rock beneath them (`downsample_block`, tested on crafted layouts). **[built, 0.50.51]** A
+  surface cell (filled, air over it on its face) takes the most common top of its four columns over
+  its block and the block over it (`downsample_octant`), so ground stepping up a ½ m row across a
+  coarse cell's top shows its grass, not the dirt under the higher columns' (BUGS.md #53). The flat world's
   generated sections equal the downsample of its chunks exactly (levels 1–3, tested).
 - Sections that the generator's column height bounds prove all air, or buried with no exposed
   face, are skipped without generating anything: the bounds of a column of sections

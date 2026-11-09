@@ -284,6 +284,8 @@ interface DwellDebug {
   setLodMap(on: boolean): boolean;
   /** Draws the distant terrain (LOD) or not, live (a debug switch); true in a world. */
   setLod(on: boolean): boolean;
+  /** Fixed points (x, y, z triples) the streaming probe reports (`probe.target`, `probe.control`). */
+  setProbe(points: number[]): boolean;
   /** How long the camera rolls upright after crossing the midplane (s; `?crossingroll=`). */
   crossingRoll(): number;
   /** Sets the crossing roll's duration (s, 0..5; 0 snaps upright at once); false for a value it refuses. */
@@ -316,6 +318,11 @@ interface DwellDebug {
   sounds(): string[];
   /** Kills the local player (a local world only; false otherwise): the bench's `die` step. */
   die(): boolean;
+  /**
+   * Carries the local player on a raft moved at `speed` m/s toward `yaw` (degrees, 0 = +Z) for
+   * `seconds`, `lift` m above its feet (a local world only; false otherwise): the bench's `carry`.
+   */
+  carry(speed: number, yaw: number, seconds: number, lift?: number): boolean;
   /** Forgets the telemetry so far: measure from here. */
   telemetryReset(): void;
   /**
@@ -1036,6 +1043,7 @@ async function start(): Promise<App | null> {
     setPixelArt: (name) => client.setPixelArt(name),
     setLodMap: (on) => client.setLodMap(on),
     setLod: (on) => client.setLod(on),
+    setProbe: (points) => client.setProbe(new Float64Array(points)),
     crossingRoll: () => client.crossingRoll(),
     setCrossingRoll: (seconds) => client.setCrossingRoll(seconds),
     memory: () => memoryReport(app),
@@ -1080,6 +1088,10 @@ async function start(): Promise<App | null> {
       app.loopback?.waterReport([x, y, z], radius ?? WATER_REPORT_RADIUS) ?? Promise.resolve(null),
     die: () => {
       app.loopback?.postToWorker({ t: 'kill' });
+      return app.loopback !== null;
+    },
+    carry: (speed, yaw, seconds, lift) => {
+      app.loopback?.postToWorker({ t: 'carry', speed, yaw, seconds, lift: lift ?? 1 });
       return app.loopback !== null;
     },
     waterDebug: (names) => {
