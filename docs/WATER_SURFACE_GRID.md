@@ -226,7 +226,15 @@ The owner approved these recommendations (2026-11-05):
   Manning's law gives the column's depth on the river's fall (its segment's, or its course's mean over
   `riverFallReachM`, 256 m, up and down stream where steeper; below) with the liquid's roughness (the grid's
   own law), or at its flow over the column's depth (`river_flow / depth`) where that is faster, at most
-  `riverCurrentMaxMs` (1.5 m/s: a steep chute's would be a torrent, and a swimmer at 3 m/s still makes headway); a lake is still.
+  times `riverCurrentScale`, at most `riverCurrentMaxMs` (a steep chute's would be a torrent); a lake is still.
+  **Doubled** (0.50.50; owner, 2026-11-09: "double the river current speeds generally"): the scale is 2
+  and the cap 3 m/s (were 1 and 1.5), so a typical creek's ~1.3 m/s runs ~2.6. At the cap a swimmer,
+  whose headway is the swim layer's 3 m/s, makes no way upstream in the fastest reaches; below it, slowly.
+  Only the current reported changes (swimmers, floating bodies, the flow shown): the grid's movement,
+  the carried flow and the terrain are as they were, and the current is found again as a chunk's water
+  joins the grid (never saved) and sent to clients in `WaterCurrents` (5 cm/s steps, ±6.35 m/s), so no
+  world or client on the line disagrees (`a_rivers_current_runs_twice_its_law`, both faces;
+  `a_swimmer_in_a_river_drifts_at_twice_its_law`).
   **Level and shallow reaches run** (0.49.19, BUGS.md #38; owner, 2026-11-06: "dead rivers ... the
   shallow ones missing currents"): Manning's speed on no fall is none, and about half of seed 0's
   sampled channel columns (109 of 209) lie in level reaches, so those reaches were still; the flow
