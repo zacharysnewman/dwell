@@ -144,6 +144,8 @@ struct Rig {
     guest: Option<(Session, SigningKey, Vec<dwell_protocol::Message>)>,
     /// The game's loading screen on joining (ARCHITECTURE.md §6.3; off, as in the e2e suite).
     loading_screen: bool,
+    /// Jobs the workers finish per poll (usize::MAX: all at once; a few: a device's workers).
+    jobs_per_poll: usize,
 }
 
 /// The guest's session id on the local core.
@@ -183,6 +185,7 @@ impl Rig {
             down: std::collections::VecDeque::new(),
             guest: None,
             loading_screen: false,
+            jobs_per_poll: usize::MAX,
         }
     }
 
@@ -302,10 +305,9 @@ impl Rig {
                 ..
             } = self.session.state().clone()
         {
-            let pool = Pool::new(Box::new(InlineJobs::new(Runner::world(
-                self.generator,
-                SEED,
-            ))));
+            let mut jobs = InlineJobs::new(Runner::world(self.generator, SEED));
+            jobs.per_poll = self.jobs_per_poll;
+            let pool = Pool::new(Box::new(jobs));
             let c = ChunkCoord::from_array(verification_chunk);
             let mut game = Game::new(
                 player_id,
@@ -2256,4 +2258,101 @@ fn a_flat_drags_a_floor_across_a_pools_bed_from_the_shore_and_from_in_it() {
             "the floor is built on past its first piece (in the water: {in_water}): {built:?}"
         );
     }
+}
+
+/// Riding a raft (owner, 2026-11-09: "close chunks aren't being correctly prioritized. And
+/// previously loaded chunks are not being unloaded behind you", on a raft): a 4 × 4 log raft
+/// carries the player 4 m/s along a 400 m channel, the workers finishing one job a frame. The
+/// LOD's camera follows the rider, the chunk 10 m ahead is drawn as chunks (not a LOD section)
+/// every frame, and the chunks left behind past the requested radius are dropped. Not red on
+/// main: kept as the guard for the report, which this does not reproduce natively.
+/// face-a-only: the flat test world is face A's; the streaming centre is a world point (the
+/// server's `view_center`, the client's `LodCamera`), no face-local logic.
+#[test]
+fn riding_a_raft_streams_the_terrain_ahead_and_drops_it_behind() {
+    let mut rig = Rig::with_generator(dwell_world::GENERATOR_FLAT);
+    rig.jobs_per_poll = 1;
+    let g = dwell_world::FLAT_TOP_Y;
+    for x in -8..700 {
+        for z in -8..16 {
+            for y in g - 6..g {
+                rig.core
+                    .server()
+                    .world()
+                    .set_voxel(x, y, z, dwell_world::M.water);
+            }
+        }
+    }
+    assert!(rig.run_until(60 * 30, |r| {
+        r.game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)
+    }));
+    rig.game
+        .as_mut()
+        .unwrap()
+        .enable_lod(dwell_client::game::LodSettings {
+            pixel_error: 4.0,
+            cache_bytes: 256 << 20,
+            detail_distance_m: Some(256.0),
+            full_mode: false,
+        });
+    let surface = f64::from(g) * dwell_world::CELL_H;
+    let log = dwell_blocks::require("dwell:log[axis=y]");
+    let cells: Vec<([i32; 3], u16)> = (0..4)
+        .flat_map(|x| (0..4).map(move |z| ([x, 0, z], log)))
+        .collect();
+    let raft = rig.core.server().add_body(1, cells, [0.5, surface, 2.5]);
+    rig.run_until(240, |_| false);
+    for _ in 0..30 {
+        assert!(rig.core.teleport_local_player([1.5, surface + 0.3, 3.5]));
+        rig.frame();
+    }
+    rig.run_until(120, |_| false);
+    rig.input.look.yaw = 90.0;
+    let body = rig.core.server().body_handle(raft).expect("the raft");
+    let mut coarse = 0;
+    let mut coarse_run = 0;
+    let mut worst_run = 0;
+    for t in 0..60 * 85 {
+        {
+            let (_, physics, _) = rig.core.server().sim();
+            let v = physics.velocity(body);
+            physics.set_velocity(body, dwell_physics::DVec3::new(4.0, v.y, 0.0));
+        }
+        rig.frame();
+        let game = rig.game.as_ref().unwrap();
+        let feet = game.debug_state().feet;
+        let camera = game.lod_camera().expect("the LOD selects").position;
+        assert!(
+            (camera[0] - feet[0]).abs() < 1.0,
+            "the LOD's camera {camera:?} follows the rider {feet:?} (t {t})"
+        );
+        let ahead = dwell_world::chunk_of_pos([feet[0] + 10.0, feet[1] - 1.0, feet[2]]);
+        let drawn = rig.scene.borrow().chunks.contains(&ahead) && game.chunk_visible(ahead);
+        if drawn {
+            coarse_run = 0;
+        } else {
+            coarse += 1;
+            coarse_run += 1;
+            worst_run = worst_run.max(coarse_run);
+        }
+    }
+    let feet = rig.game.as_ref().unwrap().debug_state().feet;
+    assert!(feet[0] > 300.0, "the raft carried the rider to {feet:?}");
+    assert!(
+        worst_run <= 30,
+        "the chunk 10 m ahead was coarse {coarse} frames, at most {worst_run} in a row"
+    );
+    // Past the requested radius and its margin (13 chunks): gone from the client.
+    let me = dwell_world::chunk_of_pos(feet);
+    let behind: Vec<_> = rig
+        .scene
+        .borrow()
+        .chunks
+        .iter()
+        .filter(|c| c.x < me.x - 14)
+        .copied()
+        .collect();
+    assert!(behind.is_empty(), "left behind and still drawn: {behind:?}");
 }
