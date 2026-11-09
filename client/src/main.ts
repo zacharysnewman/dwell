@@ -284,6 +284,8 @@ interface DwellDebug {
   setLodMap(on: boolean): boolean;
   /** Draws the distant terrain (LOD) or not, live (a debug switch); true in a world. */
   setLod(on: boolean): boolean;
+  /** Fixed points (x, y, z triples) the streaming probe reports (`probe.target`, `probe.control`). */
+  setProbe(points: number[]): boolean;
   /** How long the camera rolls upright after crossing the midplane (s; `?crossingroll=`). */
   crossingRoll(): number;
   /** Sets the crossing roll's duration (s, 0..5; 0 snaps upright at once); false for a value it refuses. */
@@ -1041,6 +1043,7 @@ async function start(): Promise<App | null> {
     setPixelArt: (name) => client.setPixelArt(name),
     setLodMap: (on) => client.setLodMap(on),
     setLod: (on) => client.setLod(on),
+    setProbe: (points) => client.setProbe(new Float64Array(points)),
     crossingRoll: () => client.crossingRoll(),
     setCrossingRoll: (seconds) => client.setCrossingRoll(seconds),
     memory: () => memoryReport(app),

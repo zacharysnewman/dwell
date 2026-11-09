@@ -577,6 +577,13 @@ async function step(run: Run, s: Step): Promise<void> {
       );
       return;
     }
+    case 'probe': {
+      const feet = await call<[number, number, number]>(page, 'd.state().feet');
+      const points = s.at.flatMap((p) => [feet[0] + p[0], feet[1] + p[1], feet[2] + p[2]]);
+      await call(page, `d.setProbe(${JSON.stringify(points)})`);
+      console.log(`  probe: ${JSON.stringify(points)}`);
+      return;
+    }
     case 'carry': {
       const ok = await call<boolean | null>(
         page,

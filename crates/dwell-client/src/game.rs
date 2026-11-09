@@ -530,6 +530,8 @@ pub struct Game<S: Scene> {
     death_feet: [f64; 3],
     /// The streaming probe's last feet and heading (`probe_stream`).
     probe: ([f64; 3], [f64; 2]),
+    /// Fixed points the streaming probe also reports (`probe.target`, `probe.control`).
+    pub probe_points: Vec<[f64; 3]>,
     previous: Option<ClientState>,
     current: ClientState,
     flip: FaceFlip,
@@ -732,6 +734,7 @@ impl<S: Scene> Game<S> {
             dead: false,
             death_feet: [0.0; 3],
             probe: ([0.0; 3], [0.0, 1.0]),
+            probe_points: Vec::new(),
             previous: None,
             current,
             flip,
@@ -1094,6 +1097,15 @@ impl<S: Scene> Game<S> {
         };
         telemetry::add("probe.under", f64::from(self.chunk_detail(at(0.0))));
         telemetry::add("probe.ahead", f64::from(self.chunk_detail(at(10.0))));
+        const POINTS: [(&str, &str); 2] = [
+            ("probe.target", "probe.target_m"),
+            ("probe.control", "probe.control_m"),
+        ];
+        for (p, (detail, distance)) in self.probe_points.iter().zip(POINTS) {
+            let c = dwell_world::chunk_of_pos(*p);
+            telemetry::add(detail, f64::from(self.chunk_detail(c)));
+            telemetry::add(distance, (p[0] - feet[0]).hypot(p[2] - feet[2]));
+        }
         telemetry::add("probe.x", feet[0]);
         telemetry::add("probe.z", feet[2]);
         let [generating, mesh] = self.pool.borrow().pending();

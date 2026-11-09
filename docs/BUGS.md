@@ -6,6 +6,20 @@ pins it.
 
 ## Open
 
+### 54. Close chunks drawn in low detail while carried, and edited chunks refined only up close
+
+*Reported by the owner, 2026-11-09,* riding a raft at walking or swimming speed on a fast desktop: "close
+chunks aren't being correctly prioritized. And previously loaded chunks are not being unloaded behind
+you" (low detail within 10 m ahead), and edited chunks (by water) "refusing to load in higher detail …
+unless you get really close". **Not reproduced yet.** The bench's `carry` step (docs/DEV_TOOLS.md) rode
+seed 0 from its spawn at 3 m/s for 45 s (135 m, 1280×800, the default preset, this M1 Air's GPU): the
+chunk under the feet and the one 10 m ahead were drawn as chunks in all 2,700 frames (`probe.under`,
+`probe.ahead` 0), `job.chunk.wait` p95 6.6 ms, max 25 ms, the generation queue (`pool.gen`) empty but
+for single frames. Natively, `game_local.rs`'s `riding_a_raft_streams_the_terrain_ahead_and_drops_it_behind`
+is green too. Next: the `carry-flood` ride (a dug channel, the probe's `target` against `control`), a
+larger window and a faster CPU, and the LOD's `errorScale` (4.65 with the default 256 MB cache at
+1280×800) on a bigger screen.
+
 ### 52. A felled trunk landing on its chopper can fling them far
 
 Owner, 2026-11-08: "we shouldn't be capping player kick like that" — "the cap is removed". 0.50.37's
@@ -134,6 +148,17 @@ face, or the placement check against its shape.
 
 
 ## Fixed
+
+### 53. Edited ground looked speckled with dirt from far away (fixed in 0.50.51)
+
+*Reported by the owner, 2026-11-09:* chunks edited by water "look like they have speckled dirt instead
+of grass at lower LODs". An edited chunk's level-1 section is the downsample of its cells, and where the
+ground steps up by one ½ m row across a LOD cell's top, that LOD cell (three of its eight cells filled)
+is air and the one under it showed the dirt under the higher columns' grass; the generated section
+shows the surface's grass there. Fixed: a surface cell of a downsample (filled, air over it on its face)
+takes its columns' tops with the cells of the block over it (`dwell_world::lod::downsample_octant`).
+Pinned by `dwell-world` `a_downsampled_step_in_the_ground_shows_its_grass_not_the_dirt_under_it` (both
+faces; red: `dwell:dirt` under the air, green: grass).
 
 ### 48. Neighbouring chunks falling asleep at different moments of a slosh made or lost water (fixed in 0.49.52)
 

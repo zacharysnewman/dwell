@@ -136,6 +136,11 @@ export type Step =
    * m/s toward `yaw` (degrees, 0 = +Z, 90 = +X) for `s` seconds at a held height, then waits out
    * the ride (a local world only): "carried by a moving body" bugs (`__dwell.carry`).
    */
+  /**
+   * Points the streaming probe reports per frame (`probe.target`, `probe.control`: 0 drawn as
+   * chunks, 1 loaded but not, 2 not loaded): offsets in metres from the player's feet.
+   */
+  | { do: 'probe'; at: Vec3[] }
   | { do: 'carry'; speed: number; yaw: number; s: number; lift?: number }
   /** Forgets the telemetry so far: the next `record` measures from here. */
   | { do: 'mark' }
@@ -286,6 +291,7 @@ function drift(where: string, v: unknown): { position: Vec3; yaw: number; pitch:
 const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   wait: ['s'],
   carry: ['speed', 'yaw', 's', 'lift'],
+  probe: ['at'],
   server: ['name', 's'],
   key: ['code', 'down'],
   hold: ['code', 's'],
@@ -518,6 +524,12 @@ export function parseStep(where: string, v: unknown): Step {
         ...(o.face === undefined ? {} : { face: o.face }),
         ...(o.held === undefined ? {} : { held: bool(at('held'), o.held) }),
       };
+    }
+    case 'probe': {
+      if (!Array.isArray(o.at) || o.at.length > 2) {
+        throw new ViewError(`${at('at')}: expected a list of at most 2 points`);
+      }
+      return { do: d, at: o.at.map((p, i) => vec3(at(`at[${String(i)}]`), p)) };
     }
     case 'carry':
       return {
