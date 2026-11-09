@@ -562,12 +562,15 @@ screen inside the safe area on a phone, bigger buttons there) with a title bar, 
 cursor, scroll, pinch or + / − to zoom about the pointer, and the controller (stick and D-pad pan,
 triggers and bumpers zoom, Y centres; `bigMap.pad*`, button names from `shared/input/gamepad.json`); the
 game holds still while it is open (`setMenuOpen`). Its state and controls are a page-free
-`BigMapState`. It draws explored cells on fog as shaded tile images (`revealed.tileCells`² cells, made
-again when a cell in or bordering them changes): **elevation shading** (owner, 2026-11-09) — the
-maps' one shading function, `dwell_game::minimap::shade_rgb` (the minimap's height shading uses it
-too): a hill-shade from neighbouring cells' heights lit from `shade.lightAzimuthDeg` (screen terms,
-the same side on both faces) plus a tint by height (`shade.tint*`), water kept as it is; the shell
-hands each tile's screen-order cells inside a one-cell border to `shadeMap` (`shade_grid`). Explored
+`BigMapState`. It draws explored cells on fog as tile images (`revealed.tileCells`² cells, made
+again when a cell in or bordering them changes): **[built, 0.50.52] height bands** (owner,
+2026-11-09: "colour bands by height", no lighting; replacing 0.50.48's hill-shade) — the maps' one
+height colouring, `dwell_game::minimap::band_rgb` (the minimap's height-shading toggle shows it too):
+a hypsometric tint, land by its height above sea level through `heightBands.land`'s colour stops
+(`{heightM, color}`, interpolated, in `stepM` steps), water by its bed's depth below sea level
+through `heightBands.water`'s (`{depthM, color}`; water above sea level the first stop), the block
+colours and the slope ignored; a water cell's height code is its bed's. The shell hands each tile's
+screen-order cells (inside a one-cell border, unread) to `shadeMap` (`shade_grid`). Explored
 cells and their heights are kept per world in this browser (IndexedDB `dwell-explored`, append-only:
 `heights` beside `cells`), not on the server. Cost (`minimap.scan`, `minimap.draw`
 samples, DEV_TOOLS.md): ~1 ms a read with its draw flying at 8 m/s, the 2 s refresh 5–9 ms.

@@ -116,23 +116,14 @@ export const MAP_FIELDS = {
   },
   heightShading: {
     default: ['bool'],
-    rangeM: ['num', 1, 512],
-    darkest: ['num', 0, 1],
-    brightest: ['num', 1, 3],
     waterDepthM: ['num', 0.5, 128],
   },
-  shade: {
-    lightAzimuthDeg: ['num', 0, 360],
-    lightElevationDeg: ['num', 5, 90],
-    exaggeration: ['num', 0, 32],
-    strength: ['num', 0, 2],
-    darkest: ['num', 0, 1],
-    brightest: ['num', 1, 3],
-    tintLowM: ['num', -1024, 1024],
-    tintHighM: ['num', -1024, 2048],
-    tintLowColor: ['color'],
-    tintHighColor: ['color'],
-    tintAmount: ['num', 0, 1],
+  // Stops: a list of { <key>: number within lo–hi, color }, the keys rising (at least one).
+  heightBands: {
+    stepM: ['num', 0, 256],
+    land: ['stops', 'heightM', -1024, 4096],
+    waterStepM: ['num', 0, 256],
+    water: ['stops', 'depthM', 0, 1024],
   },
   explored: { cellM: ['int', 1, 128], pendingColor: ['color'] },
   bigMap: {
@@ -187,6 +178,18 @@ export function validateMap(data) {
         if (typeof v !== 'boolean') mapFail(`${where} must be true or false`);
       } else if (kind === 'button') {
         if (!PAD_BUTTONS.includes(v)) mapFail(`${where} must be a controller button (${PAD_BUTTONS.join(', ')}), got ${JSON.stringify(v)}`);
+      } else if (kind === 'stops') {
+        const [, key, from, to] = fields[k];
+        if (!Array.isArray(v) || v.length === 0) mapFail(`${where} must be a list of at least one { ${key}, color }`);
+        v.forEach((stop, i) => {
+          const at = `${where}[${i}]`;
+          if (typeof stop !== 'object' || stop === null || Array.isArray(stop)) mapFail(`${at} must be an object`);
+          for (const sk of Object.keys(stop)) if (sk !== '$comment' && sk !== key && sk !== 'color') mapFail(`unknown entry ${at}.${sk}`);
+          const n = stop[key];
+          if (typeof n !== 'number' || !Number.isFinite(n) || n < from || n > to) mapFail(`${at}.${key} must be a number within ${from}–${to}, got ${JSON.stringify(n)}`);
+          if (typeof stop.color !== 'string' || !/^#[0-9a-f]{6}$/i.test(stop.color)) mapFail(`${at}.color must be a #rrggbb colour, got ${JSON.stringify(stop.color)}`);
+          if (i > 0 && !(n > v[i - 1][key])) mapFail(`${at}.${key} must be above the stop before it (${v[i - 1][key]})`);
+        });
       } else if (kind === 'color') {
         if (typeof v !== 'string' || !/^#[0-9a-f]{6}$/i.test(v)) mapFail(`${where} must be a #rrggbb colour, got ${JSON.stringify(v)}`);
       } else {
@@ -201,7 +204,6 @@ export function validateMap(data) {
     mapFail('bigMap: minPxPerCell ≤ startPxPerCell ≤ maxPxPerCell');
   }
   if (data.minimap.radiusM % data.explored.cellM !== 0) mapFail('explored.cellM must divide minimap.radiusM');
-  if (!(data.shade.tintLowM < data.shade.tintHighM)) mapFail('shade: tintLowM < tintHighM');
   const pad = ['padZoomIn', 'padZoomInAlt', 'padZoomOut', 'padZoomOutAlt', 'padCenter', 'padClose'].map((k) => b[k]);
   if (new Set(pad).size !== pad.length || pad.includes('view')) mapFail('bigMap: the controller buttons must differ (View closes the map)');
   return data;
@@ -218,7 +220,15 @@ export function mapRs(data) {
       const v = data[section][k];
       const name = `${snake(section)}_${snake(k)}`;
       const val =
-        kind === 'bool' ? String(v) : kind === 'color' ? `0x${v.slice(1).toLowerCase()}` : kind === 'button' ? JSON.stringify(v) : rsNum(v);
+        kind === 'bool'
+          ? String(v)
+          : kind === 'color'
+            ? `0x${v.slice(1).toLowerCase()}`
+            : kind === 'button'
+              ? JSON.stringify(v)
+              : kind === 'stops'
+                ? `&[${v.map((s) => `(${rsNum(s[fields[k][1]])}, 0x${s.color.slice(1).toLowerCase()})`).join(', ')}]`
+                : rsNum(v);
       rs.push(`    ${name}: ${val},`);
     }
   }
@@ -233,7 +243,12 @@ export function mapTs(data) {
     ts.push(`  ${section}: {`);
     for (const k of Object.keys(fields)) {
       const v = data[section][k];
-      ts.push(`    ${k}: ${typeof v === 'string' ? `'${v}'` : String(v)},`);
+      if (Array.isArray(v)) {
+        const key = fields[k][1];
+        ts.push(`    ${k}: [`, ...v.map((s) => `      { ${key}: ${s[key]}, color: '${s.color}' },`), '    ],');
+      } else {
+        ts.push(`    ${k}: ${typeof v === 'string' ? `'${v}'` : String(v)},`);
+      }
     }
     ts.push('  },');
   }

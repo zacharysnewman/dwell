@@ -5,7 +5,7 @@
 //! generation workers (the LOD colour map's raster, [`crate::lod_map::raster`]: each cell its
 //! column's top block's LOD colour, the colour the minimap's explored cells average, water
 //! darkened by depth, rivers drawn from their polylines), and after the colours each cell's height
-//! code (`dwell_game::minimap::height_code`, i16 LE: the big map's elevation shading,
+//! code (`dwell_game::minimap::height_code`, i16 LE: the big map's height bands,
 //! `shadeMap`). The shell asks for the tiles the map's
 //! view needs and caches them (`client/src/ui/minimap.ts`); the main thread does no generation.
 
@@ -101,8 +101,13 @@ mod tests {
             let j = ((k - tk * n) * n + (i - ti * n)) as usize;
             let (_, code) = dwell_game::minimap::tile_cell(&tile, (n * n) as usize, j).unwrap();
             let (hm, water) = dwell_game::minimap::decode_height(code).expect("a height");
-            let top = if water { col.level } else { col.height };
-            assert!((hm - f64::from(top)).abs() <= 0.25, "{hm} vs {top}");
+            // Water's is its bed's (a river's channel under the column's own ground).
+            let top = f64::from(col.height);
+            if water {
+                assert!(hm <= top + 0.25, "{hm} vs {top}");
+            } else {
+                assert!((hm - top).abs() <= 0.25, "{hm} vs {top}");
+            }
             // The ground round the origin is inside the world: every texel has a colour.
             assert!(tile[..(n * n * 4) as usize].chunks(4).all(|p| p[3] == 255));
         }
