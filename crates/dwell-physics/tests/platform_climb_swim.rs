@@ -666,3 +666,28 @@ fn a_swimmer_drifts_with_the_current_and_swims_in_the_waters_frame() {
         "{with} with the current, {own} without"
     );
 }
+
+/// Owner, 2026-11-09: "double the river current speeds generally". A river reach 1 m deep on a
+/// fall of 0.0005 runs 0.745 m/s by Manning's law; its current (`FlowData::river_speed`, what the
+/// server's water grid gives the untouched river) is twice that, so an idle swimmer in it is
+/// carried about 1.49 m a second. Red before: ~0.75 m. Face B by the mirror suite
+/// (`DWELL_FACE=b`).
+#[test]
+fn a_swimmer_in_a_river_drifts_at_twice_its_law() {
+    let law = 0.0005f64.sqrt() / 0.03;
+    let current = dwell_world::flow::FLOW.river_speed(0.0005, 0.0, 1.0) as f32;
+    let mut w = PlayerTestWorld::new();
+    pool(&mut w);
+    pool_current(&mut w, 0.0, current);
+    let e = w.spawn(v(0.5, -1.2, 1.0));
+    w.set_input(move |_, _| look(0.0, 0.0, 0.0, 0.0));
+    w.step(ticks(1.0));
+    assert!(w.c(e).swim.swimming);
+    let z = w.pos(e).z;
+    w.step(ticks(1.0));
+    let carried = w.pos(e).z - z;
+    assert!(
+        approx(carried, 2.0 * law as f32, 0.15),
+        "carried {carried} m in a second in a {current} m/s current (the law's {law})"
+    );
+}

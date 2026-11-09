@@ -58,6 +58,9 @@ pub struct FlowData {
     pub current_still_ms: f64,
     /// Water shallower than this (m) has no current.
     pub current_depth_m: f64,
+    /// An untouched river's current is its speed by the law times this (then at most
+    /// `river_current_max_ms`).
+    pub river_current_scale: f64,
     /// The fastest an untouched river's current runs (m/s).
     pub river_current_max_ms: f64,
     /// How far up and down its course (m) an untouched river's fall is averaged for its current.
@@ -75,6 +78,19 @@ mod flow_generated {
 }
 pub use flow_generated::FLOW;
 
+impl FlowData {
+    /// An untouched river's current speed (m/s; docs/WATER_SURFACE_GRID.md §2c) where its water is
+    /// `depth` m deep on a fall of `fall` (m per m) carrying `unit_flow` m²/s: Manning's law with
+    /// the drawn liquid's roughness, or the flow over the depth where faster (a level reach runs
+    /// too), times `river_current_scale`, at most `river_current_max_ms`.
+    pub fn river_speed(&self, fall: f64, unit_flow: f64, depth: f64) -> f64 {
+        let n = self.liquids.first().map_or(0.03, |l| l.manning);
+        let manning = depth.powf(2.0 / 3.0) * fall.max(0.0).sqrt() / n;
+        let carried = unit_flow.max(0.0) / depth;
+        (manning.max(carried) * self.river_current_scale).min(self.river_current_max_ms)
+    }
+}
+
 /// What a free sill `width` m wide passes (m³/s) with water standing `head` m over it, for a
 /// liquid of weir coefficient `weir`: the weir law, `weir × width × head^1.5`.
 pub fn sill_flow(weir: f64, width: f64, head: f64) -> f64 {
@@ -87,4 +103,39 @@ pub fn water_weir() -> f64 {
         .iter()
         .find(|l| l.block == "dwell:water")
         .map_or(0.0, |l| l.weir)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Owner, 2026-11-09: "double the river current speeds generally". A river 1 m deep on a fall
+    /// of 0.0005 runs 0.745 m/s by Manning's law (n 0.03); its current is twice that, and the cap
+    /// is 3 m/s, the old 1.5 doubled. Red before: 0.745 m/s, capped at 1.5.
+    #[test]
+    fn a_rivers_current_runs_twice_its_law_up_to_three_metres_a_second() {
+        let law = 0.0005f64.sqrt() / 0.03;
+        let speed = FLOW.river_speed(0.0005, 0.0, 1.0);
+        assert!(
+            (speed - 2.0 * law).abs() < 1e-9,
+            "{speed} m/s, the law {law}"
+        );
+        // A level reach runs at twice its flow over its depth (0.2 m²/s over 1 m).
+        let level = FLOW.river_speed(0.0, 0.2, 1.0);
+        assert!((level - 0.4).abs() < 1e-9, "a level reach runs {level} m/s");
+        // A steep chute is held at the cap.
+        assert_eq!(FLOW.river_current_max_ms, 3.0);
+        assert_eq!(FLOW.river_speed(0.05, 0.0, 1.0), 3.0);
+    }
+
+    /// The scale is data: a fixture of scale 1 runs the plain law.
+    #[test]
+    fn the_scale_is_the_datas() {
+        let plain = FlowData {
+            river_current_scale: 1.0,
+            ..FLOW
+        };
+        let law = 0.0005f64.sqrt() / 0.03;
+        assert!((plain.river_speed(0.0005, 0.0, 1.0) - law).abs() < 1e-9);
+    }
 }

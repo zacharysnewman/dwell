@@ -2796,7 +2796,8 @@ in 0.48.2.
   or its course's mean over `riverFallReachM` 256 m up and down stream where steeper: a reach held level
   where the land dips runs as the river round it, 0.49.24, BUGS.md #42) or its flow
   over its depth where faster (so level and shallow reaches run, 0.49.18), at most
-  `riverCurrentMaxMs` (1.5 m/s: a swimmer, at 3 m/s, still makes headway); a lake is still.
+  times `riverCurrentScale` (2 since 0.50.50, owner 2026-11-09), at most `riverCurrentMaxMs` (3 m/s: at it a
+  swimmer, at 3 m/s, makes no way upstream; `FlowData::river_speed`); a lake is still.
   A freed column still its river's (0.49.43, BUGS.md #47: in the rest, `Water::share`, with a rest
   velocity) shows that map current too, times how much of the rest's speed it still runs
   downstream (0..=1), blended to its own velocity as its depth leaves its generated depth by up to

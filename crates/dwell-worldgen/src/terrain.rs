@@ -1204,7 +1204,8 @@ impl TerrainGenerator {
     /// where steeper: BUGS.md #42) with the drawn liquid's roughness (`flow.json`), the grid's own
     /// law, or that its
     /// flow (`river_flow`) gives over that depth where faster, so a level reach and a shallow one
-    /// run too (owner, 2026-11-06: "dead rivers"); at most `riverCurrentMaxMs`.
+    /// run too (owner, 2026-11-06: "dead rivers"); times `riverCurrentScale` (2: owner, 2026-11-09),
+    /// at most `riverCurrentMaxMs`.
     /// None off a river's channel, under `currentDepthM` or slower than `currentStillMs`.
     pub fn river_current(&self, x: i32, z: i32, depth: f64) -> Option<[f64; 2]> {
         let flow = &dwell_world::flow::FLOW;
@@ -1212,14 +1213,11 @@ impl TerrainGenerator {
             return None;
         }
         let (hit, [u, v]) = self.river_heading(x, z)?;
-        let n = flow.liquids.first().map_or(0.03, |l| l.manning);
         // Manning's on the river's fall (its own, or its course's mean round it where steeper: a
         // reach held level where the land dips runs as the river round it does, BUGS.md #42), or
-        // its flow over the column's depth where that is faster.
+        // its flow over the column's depth where that is faster; times `riverCurrentScale`.
         let fall = hit.fall.max(hit.mean_fall).max(0.0);
-        let manning = depth.powf(2.0 / 3.0) * fall.sqrt() / n;
-        let carried = Self::unit_flow(&hit) / depth;
-        let speed = manning.max(carried).min(flow.river_current_max_ms);
+        let speed = flow.river_speed(fall, Self::unit_flow(&hit), depth);
         (speed >= flow.current_still_ms).then_some([u * speed, v * speed])
     }
 
@@ -2983,6 +2981,46 @@ mod tests {
                 "{} of {level} level reaches crawl: {:?}",
                 slow.len(),
                 &slow[..slow.len().min(5)]
+            );
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// Owner, 2026-11-09: "double the river current speeds generally". On either face's map
+        /// every sampled river column 1 m deep runs twice its speed by the law (Manning's on its
+        /// fall, or its flow over its depth where faster), at most 3 m/s, and some reaches run
+        /// past the old 1.5 m/s cap. Red before: the law's speed, at most 1.5.
+        fn a_rivers_current_runs_twice_its_law(f: dwell_world::FaceFrame) {
+            let t = crate::BifacialTerrain::height_field(0);
+            let g = t.local(f.face);
+            let (mut checked, mut past_old_cap) = (0, 0);
+            for r in &g.map.rivers {
+                for (i, v) in r.path.iter().enumerate() {
+                    if i % 5 != 2 || v.surface <= 3.0 {
+                        continue;
+                    }
+                    let (x, z) = (v.x as i32, v.z as i32);
+                    let Some((hit, _)) = g.river_heading(x, z) else {
+                        continue;
+                    };
+                    let fall = hit.fall.max(hit.mean_fall).max(0.0);
+                    let law = (fall.sqrt() / 0.03).max(TerrainGenerator::unit_flow(&hit));
+                    let want = (2.0 * law).min(3.0);
+                    let got = g.river_current(x, z, 1.0).map_or(0.0, |c| c[0].hypot(c[1]));
+                    if want < dwell_world::flow::FLOW.current_still_ms {
+                        continue;
+                    }
+                    assert!(
+                        (got - want).abs() < 1e-9,
+                        "({x}, {z}) runs {got} m/s, the law {law}"
+                    );
+                    checked += 1;
+                    past_old_cap += usize::from(got > 1.5 + 1e-9);
+                }
+            }
+            assert!(
+                checked >= 50 && past_old_cap > 0,
+                "{checked} columns, {past_old_cap} past 1.5 m/s"
             );
         }
     );

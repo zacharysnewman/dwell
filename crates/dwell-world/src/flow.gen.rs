@@ -24,7 +24,8 @@ pub const FLOW: FlowData = FlowData {
     fill_hysteresis: 0.25,
     current_still_ms: 0.02,
     current_depth_m: 0.05,
-    river_current_max_ms: 1.5,
+    river_current_scale: 2.0,
+    river_current_max_ms: 3.0,
     river_fall_reach_m: 256.0,
     river_current_band_m: 0.2,
     liquids: &[
