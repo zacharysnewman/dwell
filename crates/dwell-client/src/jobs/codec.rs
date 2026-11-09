@@ -243,6 +243,7 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
         }
         Job::LodMap {
             face,
+            heights,
             texel_m,
             x0,
             z0,
@@ -251,6 +252,7 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
         } => {
             w.u8(7);
             w.u8(*face);
+            w.u8(u8::from(*heights));
             [*texel_m, *x0, *z0, *width, *h]
                 .into_iter()
                 .for_each(|v| w.i32(v));
@@ -310,6 +312,7 @@ pub fn decode_job(bytes: &[u8]) -> Result<(u32, Job), DecodeError> {
         },
         7 => Job::LodMap {
             face: r.u8()?,
+            heights: r.u8()? == 1,
             texel_m: r.i32()?,
             x0: r.i32()?,
             z0: r.i32()?,
@@ -475,6 +478,7 @@ mod tests {
             },
             Job::LodMap {
                 face: 1,
+                heights: true,
                 texel_m: 64,
                 x0: -3,
                 z0: 2,

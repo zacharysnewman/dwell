@@ -511,6 +511,13 @@ export const SOUND_DATA: SoundData = {
     "Map zoom": [
       "action:map_zoom"
     ],
+    "World map": [
+      "action:map_open",
+      "action:map_close"
+    ],
+    "Map zoom / center on me": [
+      "action:map_zoom"
+    ],
     "Copy block info": [
       "action:copy"
     ],

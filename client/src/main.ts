@@ -444,11 +444,21 @@ function startMinimap(app: App, world: string): void {
   if (app.minimap) return;
   const ui = new MapUi(document, app.client, world, indexedDbExplored());
   app.minimap = ui;
+  // While the big map is open the game holds still, as under the game menu (the keys and the
+  // controller drive the map).
+  ui.onOpenChange = (open) => {
+    app.client.setMenuOpen(open || (app.settings?.isOpen ?? false));
+    audio().action(open ? 'map_open' : 'map_close');
+  };
+  ui.onZoom = () => {
+    audio().action('map_zoom');
+  };
   window.addEventListener('keydown', (e) => {
     const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
     if (typing || e.repeat) return;
     if (e.code === 'KeyM') ui.toggleBig();
     else if (e.code === 'Escape' && ui.bigOpen) ui.toggleBig();
+    else ui.key(e.code);
   });
   window.addEventListener('pagehide', () => {
     ui.save(performance.now() + 1e9);
@@ -548,7 +558,8 @@ function forwardInput(app: App): void {
   // Flight speed (§6.7): the − and = keys while flying (not while typing in a text field).
   window.addEventListener('keydown', (e) => {
     const typing = e.target instanceof HTMLInputElement && e.target.type !== 'range';
-    if (!client.flying() || typing) return;
+    // On the open big map − and = zoom it instead (MapUi.key).
+    if (!client.flying() || typing || app.minimap?.bigOpen) return;
     if (e.code === 'Minus' || e.code === 'NumpadSubtract')
       client.flySpeed(client.flySpeedLevel() - 1);
     if (e.code === 'Equal' || e.code === 'NumpadAdd') client.flySpeed(client.flySpeedLevel() + 1);
@@ -814,8 +825,8 @@ async function start(): Promise<App | null> {
   settings.onOpenChange = (open) => {
     touch.visible = touchWanted && !open;
     sfx.action(open ? 'menu_open' : 'menu_close');
-    // The speed effects hold still while the menu is open.
-    client.setMenuOpen(open);
+    // The speed effects hold still while the menu is open (or the big map).
+    client.setMenuOpen(open || (app.minimap?.bigOpen ?? false));
   };
   // The controller (docs/GAMEPAD.md): polled every frame; Menu opens the game menu, and in it the
   // D-pad moves, A presses, B and Menu close it. Settings → Controller rebinds it.
@@ -830,6 +841,11 @@ async function start(): Promise<App | null> {
     },
     back: () => {
       settings.setOpen(false);
+    },
+    map: {
+      open: () => app.minimap?.bigOpen ?? false,
+      toggle: () => app.minimap?.toggleBig(),
+      pad: (values, axes, now) => app.minimap?.padFrame(values, axes, now),
     },
   });
   const applyPad = (s: GamepadSettings): void => {
@@ -934,6 +950,7 @@ async function start(): Promise<App | null> {
       client.press(code, down);
       // The map's key is the shell's (ADR 0068), as a real key press is.
       if (down && code === 'KeyM') app.minimap?.toggleBig();
+      else if (down) app.minimap?.key(code);
     },
     look: (yaw, pitch) => {
       client.setLook(yaw, pitch);

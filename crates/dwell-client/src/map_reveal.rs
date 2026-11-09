@@ -4,7 +4,9 @@
 //! from the seed, one tile of `revealed.tileCells`² explored cells at a time, as a job in the
 //! generation workers (the LOD colour map's raster, [`crate::lod_map::raster`]: each cell its
 //! column's top block's LOD colour, the colour the minimap's explored cells average, water
-//! darkened by depth, rivers drawn from their polylines). The shell asks for the tiles the map's
+//! darkened by depth, rivers drawn from their polylines), and after the colours each cell's height
+//! code (`dwell_game::minimap::height_code`, i16 LE: the big map's elevation shading,
+//! `shadeMap`). The shell asks for the tiles the map's
 //! view needs and caches them (`client/src/ui/minimap.ts`); the main thread does no generation.
 
 use crate::jobs::Job;
@@ -22,6 +24,7 @@ pub fn reveal_job(f: FaceFrame, ti: i32, tk: i32, t: &MapTunables) -> Job {
     let n = tile_cells(t);
     Job::LodMap {
         face: u8::from(f.is_b()),
+        heights: true,
         texel_m: t.explored_cell_m as i32,
         x0: ti * n,
         z0: tk * n,
@@ -31,7 +34,8 @@ pub fn reveal_job(f: FaceFrame, ti: i32, tk: i32, t: &MapTunables) -> Job {
 }
 
 /// A finished tile for the shell: face (0 A, 1 B), `ti` and `tk` (i32 LE), then the tile's RGBA
-/// rows of x from its least z (none without a terrain: a world the client does not generate).
+/// rows of x from its least z, then its i16 LE height codes (none without a terrain: a world the
+/// client does not generate).
 pub fn encode_tile(face: u8, ti: i32, tk: i32, rgba: Option<&[u8]>) -> Vec<u8> {
     let mut out = Vec::with_capacity(9 + rgba.map_or(0, <[u8]>::len));
     out.push(face);
@@ -59,12 +63,14 @@ mod tests {
             let Output::LodMap(Some(tile)) = r.run(reveal_job(f, ti, tk, &MAP)) else {
                 panic!("a terrain world reveals its tiles")
             };
-            assert_eq!(tile.len(), (n * n * 4) as usize);
+            // The colours, then a height code a cell.
+            assert_eq!(tile.len(), (n * n * 6) as usize);
             // Explored cell (i, k) is texel (i − ti·n, k − tk·n): the same column one texel
             // generated alone at that cell gives.
             for (i, k) in [(-n, 0), (-1, n - 1), (-n / 2, 3)] {
                 let Output::LodMap(Some(one)) = r.run(Job::LodMap {
                     face: u8::from(f.is_b()),
+                    heights: true,
                     texel_m: cell,
                     x0: i,
                     z0: k,
@@ -73,11 +79,32 @@ mod tests {
                 }) else {
                     panic!()
                 };
-                let o = (((k - tk * n) * n + (i - ti * n)) * 4) as usize;
-                assert_eq!(&tile[o..o + 4], &one[..], "cell ({i}, {k})");
+                let j = ((k - tk * n) * n + (i - ti * n)) as usize;
+                assert_eq!(&tile[j * 4..j * 4 + 4], &one[..4], "cell ({i}, {k})");
+                let h = (n * n * 4) as usize + j * 2;
+                assert_eq!(&tile[h..h + 2], &one[4..6], "cell ({i}, {k})'s height");
             }
+            // The heights are the generator's column tops on this face, face-local.
+            let terrain = dwell_worldgen::BifacialTerrain::for_generator(GENERATOR_TERRAIN, 1)
+                .expect("a terrain world");
+            let local = terrain.local(if f.is_b() {
+                dwell_world::Face::B
+            } else {
+                dwell_world::Face::A
+            });
+            let (i, k) = (-n / 2, 3);
+            let col = local.column_lod(
+                i64::from(i * cell + cell / 2),
+                i64::from(k * cell + cell / 2),
+                i64::from(cell),
+            );
+            let j = ((k - tk * n) * n + (i - ti * n)) as usize;
+            let (_, code) = dwell_game::minimap::tile_cell(&tile, (n * n) as usize, j).unwrap();
+            let (hm, water) = dwell_game::minimap::decode_height(code).expect("a height");
+            let top = if water { col.level } else { col.height };
+            assert!((hm - f64::from(top)).abs() <= 0.25, "{hm} vs {top}");
             // The ground round the origin is inside the world: every texel has a colour.
-            assert!(tile.chunks(4).all(|p| p[3] == 255));
+            assert!(tile[..(n * n * 4) as usize].chunks(4).all(|p| p[3] == 255));
         }
     );
 

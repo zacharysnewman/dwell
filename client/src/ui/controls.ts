@@ -114,6 +114,12 @@ export const KEYBOARD: ControlGroup[] = [
         when: SPYGLASS.magnifications.map((m) => `${String(m)}×`).join(', '),
       },
       { action: 'Zoom further / back', keys: ['Wheel'], when: 'while zoomed' },
+      { action: 'World map', keys: ['M'], when: 'M, Esc or ✕ closes it' },
+      {
+        action: 'Map zoom / center on me',
+        keys: ['−', '=', 'C'],
+        when: 'while the world map is open',
+      },
     ],
   },
   {

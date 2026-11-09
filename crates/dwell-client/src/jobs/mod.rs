@@ -46,9 +46,11 @@ pub enum Job {
         mirror: bool,
     },
     /// A strip of the LOD colour map (`crate::lod_map::raster`): world texels `x0..x0 + w` ×
-    /// `z0..z0 + h` of `texel_m` m on face `face` (0 A, 1 B).
+    /// `z0..z0 + h` of `texel_m` m on face `face` (0 A, 1 B); with `heights`, each texel's height
+    /// code after the colours (`crate::lod_map::raster_with_heights`).
     LodMap {
         face: u8,
+        heights: bool,
         texel_m: i32,
         x0: i32,
         z0: i32,
@@ -212,6 +214,7 @@ impl Runner {
             }
             Job::LodMap {
                 face,
+                heights,
                 texel_m,
                 x0,
                 z0,
@@ -235,7 +238,12 @@ impl Runner {
                     x1: i64::from(x0) + i64::from(w),
                     z1: i64::from(z0) + i64::from(h),
                 };
-                Output::LodMap(Some(crate::lod_map::raster(
+                let raster = if heights {
+                    crate::lod_map::raster_with_heights
+                } else {
+                    crate::lod_map::raster
+                };
+                Output::LodMap(Some(raster(
                     local,
                     &dwell_look::lod_map::LOD_MAP,
                     i64::from(texel_m),

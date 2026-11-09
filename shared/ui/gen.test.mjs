@@ -110,6 +110,20 @@ test('a changed look or size reaches both outputs by data alone', () => {
   assert.match(mapTs(validateMap(d)), /otherColor: '#00ff88',/);
 });
 
+test("the shading's light, its tint and the map's controller buttons are data", () => {
+  const d = mapData();
+  d.shade.lightAzimuthDeg = 45;
+  d.shade.tintHighColor = '#ffffff';
+  d.bigMap.padCenter = 'x';
+  d.bigMap.panelFraction = 0.9;
+  const rs = mapRs(validateMap(d));
+  assert.match(rs, /shade_light_azimuth_deg: 45\.0,/);
+  assert.match(rs, /shade_tint_high_color: 0xffffff,/);
+  assert.match(rs, /big_map_pad_center: "x",/);
+  assert.match(mapTs(validateMap(d)), /padCenter: 'x',/);
+  assert.match(mapTs(validateMap(d)), /panelFraction: 0\.9,/);
+});
+
 test('bad map entries fail naming them', () => {
   for (const [change, message] of [
     [(d) => (d.minimap.radiusM = 3), /minimap\.radiusM must be within/],
@@ -119,6 +133,11 @@ test('bad map entries fail naming them', () => {
     [(d) => (d.bigMap.startPxPerCell = 100), /minPxPerCell ≤ startPxPerCell ≤ maxPxPerCell/],
     [(d) => (d.minimap.extra = 1), /unknown entry minimap\.extra/],
     [(d) => delete d.bigMap.fogColor, /missing entry bigMap\.fogColor/],
+    [(d) => (d.bigMap.padClose = 'z'), /bigMap\.padClose must be a controller button/],
+    [(d) => (d.bigMap.padCenter = d.bigMap.padClose), /controller buttons must differ/],
+    [(d) => (d.bigMap.padZoomIn = 'view'), /controller buttons must differ/],
+    [(d) => (d.shade.tintHighM = d.shade.tintLowM), /tintLowM < tintHighM/],
+    [(d) => (d.shade.lightElevationDeg = 0), /shade\.lightElevationDeg must be within/],
   ]) {
     const d = mapData();
     change(d);

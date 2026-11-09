@@ -26,7 +26,8 @@ range; unknown keys fail with their path.
 
 Default play bindings: A jump (fly up), B crouch (fly down), left stick press run, RT break, LT
 place (held, it builds on: ITEMS.md §5), D-pad right the build mode, RB / LB next / previous block, Y fly, D-pad up / down fly faster / slower, X spyglass, View
-map, Menu the game menu. Menus: D-pad (or left stick) moves the focus, A presses, B goes back, Menu
+the big map (ADR 0068; on it the left stick and D-pad pan, RT / RB zoom in, LT / LB zoom out, Y centres
+on the player, B or View closes: `bigMap.pad*` in `shared/ui/map.json`), Menu the game menu. Menus: D-pad (or left stick) moves the focus, A presses, B goes back, Menu
 closes the game menu.
 
 ## 2. Engine (fixed vocabulary)
@@ -41,8 +42,9 @@ closes the game menu.
   (`setMenuOpen`) nothing acts or is held, but the buttons are tracked, so one held over closing the
   menu isn't a press.
 - **WASM** (`web/app.rs`): `gamepad(buttons, axes, now)` each frame (actions: break and place as
-  clicks — place held as the right button is —, the build mode as `L`, the hotbar as the wheel, fly as F, fly faster/slower one level, the spyglass, the map as
-  F4; returns `pause` for the shell), `gamepadDisconnected`, `setGamepadBinding`,
+  clicks — place held as the right button is —, the build mode as `L`, the hotbar as the wheel, fly as F, fly faster/slower one level, the spyglass; returns `pause` and `map` for the shell,
+  which opens the game menu or the big map — while the big map is open the poller hands the pad to
+  `MapUi.padFrame` and the client holds still, as under a menu), `gamepadDisconnected`, `setGamepadBinding`,
   `resetGamepadBindings`, `setGamepadLook`, `gamepadBinding`.
 - **Menus** (`client/src/input/gamepadMenu.ts`): the reachable controls are the open modal
   dialog's (the game menu, `aria-modal`), else the page's; a direction moves the focus to the

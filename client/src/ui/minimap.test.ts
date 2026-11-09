@@ -19,7 +19,17 @@ import {
   tileOnScreen,
   type BigView,
   type ExploredCells,
+  BigMapState,
+  NO_HEIGHT,
+  PadMap,
+  bigMapPanel,
+  parseHeights,
+  scaleBar,
+  tileCellAt,
+  tileGrid,
+  tilesShowing,
 } from './minimap';
+import { GAMEPAD } from '../input/gamepad.gen';
 import { defaultHud, hudRecord, sanitizeHud } from './hudSettings';
 
 const view = (face: number): BigView => ({ face, cx: 100, cz: -40, pxPerM: 0.75 });
@@ -87,11 +97,20 @@ describe('the explored map view', () => {
 describe('the explored cells', () => {
   it('are added from the client, and only changes count', () => {
     const cells = new Map<string, number>();
-    expect(addExplored(cells, [0, 1, -2, 0x336699, 1, 1, -2, 0x112233])).toBe(true);
+    const heights = new Map<string, number>();
+    expect(
+      addExplored(cells, [0, 1, -2, 0x336699, 84, 1, 1, -2, 0x112233, -2147483648], heights),
+    ).toBe(true);
     expect(cells.get(cellKey(0, 1, -2))).toBe(0x336699);
     expect(cells.get(cellKey(1, 1, -2))).toBe(0x112233);
-    expect(addExplored(cells, [0, 1, -2, 0x336699])).toBe(false);
-    expect(addExplored(cells, [0, 1, -2, 0x336600])).toBe(true);
+    expect(heights.get(cellKey(0, 1, -2))).toBe(84);
+    expect(heights.has(cellKey(1, 1, -2))).toBe(false);
+    expect(addExplored(cells, [0, 1, -2, 0x336699, 84], heights)).toBe(false);
+    // A new height alone is a change (the shading follows it).
+    const changed: string[] = [];
+    expect(addExplored(cells, [0, 1, -2, 0x336699, 90], heights, changed)).toBe(true);
+    expect(changed).toEqual([cellKey(0, 1, -2)]);
+    expect(addExplored(cells, [0, 1, -2, 0x336600, 90], heights)).toBe(true);
   });
 
   it('are saved and loaded', () => {
@@ -311,4 +330,231 @@ describe('a revealed tile on screen', () => {
       }
     });
   }
+});
+
+describe('the big map panel (owner, 2026-11-09)', () => {
+  const pose = (face: number, x: number, z: number) => () => [face, x, z, 0];
+
+  it('opens on the player, closes, and its zoom buttons stop at the zoom range', () => {
+    const s = new BigMapState(pose(0, 12, -30));
+    expect(s.open).toBe(false);
+    s.openAt();
+    expect(s.open).toBe(true);
+    expect(s.view).toMatchObject({ face: 0, cx: 12, cz: -30 });
+    expect(s.view?.pxPerM).toBeCloseTo(MAP.bigMap.startPxPerCell / MAP.explored.cellM);
+    const [lo, hi] = zoomRange();
+    for (let n = 0; n < 200; n++) s.zoomStep(1);
+    expect(s.view?.pxPerM).toBeCloseTo(hi);
+    expect(s.canZoom(1)).toBe(false);
+    expect(s.canZoom(-1)).toBe(true);
+    for (let n = 0; n < 200; n++) s.zoomStep(-1);
+    expect(s.view?.pxPerM).toBeCloseTo(lo);
+    expect(s.canZoom(-1)).toBe(false);
+    // The buttons zoom about the centre: the place in the middle stays put.
+    expect(s.view?.cx).toBeCloseTo(12);
+    expect(s.view?.cz).toBeCloseTo(-30);
+    s.close();
+    expect(s.open).toBe(false);
+    expect(s.canZoom(1)).toBe(false);
+  });
+
+  for (const face of [0, 1]) {
+    it(`face ${String(face)}: "Center on me" brings back the player's place, the zoom kept`, () => {
+      let at = [face, 5, 6, 0];
+      const s = new BigMapState(() => at);
+      s.openAt();
+      s.zoomStep(1);
+      const zoom = s.view?.pxPerM;
+      if (s.view) s.view = pan(s.view, 300, -120);
+      expect(Math.abs((s.view?.cx ?? 5) - 5)).toBeGreaterThan(1);
+      at = [face, -40, 90, 0];
+      s.center();
+      expect(s.view).toMatchObject({ face, cx: -40, cz: 90, pxPerM: zoom });
+    });
+  }
+
+  it('the scale bar is a 1, 2 or 5 × 10ⁿ metres no longer than its most, per zoom', () => {
+    for (const [pxPerM, m] of [
+      [5, 20],
+      [1, 100],
+      [0.125, 500],
+      [1 / 16, 1000],
+    ] as const) {
+      const s = scaleBar(pxPerM, 120);
+      expect(s.metres).toBe(m);
+      expect(s.px).toBeLessThanOrEqual(120);
+      expect(s.px).toBeGreaterThan(120 / 2.5);
+    }
+    expect(scaleBar(1 / 16, 120).label).toBe('1 km');
+    expect(scaleBar(1, 120).label).toBe('100 m');
+    expect(scaleBar(0.01, 120).label).toBe('10 km');
+    // Every zoom the data allows has a bar.
+    const [lo, hi] = zoomRange();
+    for (const z of [lo, hi])
+      expect(scaleBar(z).px).toBeGreaterThan(MAP.bigMap.scaleBarMaxPx / 2.5);
+  });
+
+  it('is a framed panel round most of a desktop, nearly the whole of a phone with bigger buttons', () => {
+    const desk = bigMapPanel(1600, 1000);
+    expect(desk.phone).toBe(false);
+    expect(desk.marginX).toBe(Math.round((1600 * (1 - MAP.bigMap.panelFraction)) / 2));
+    expect(desk.marginY).toBe(Math.round((1000 * (1 - MAP.bigMap.panelFraction)) / 2));
+    for (const [w, h] of [
+      [390, 844],
+      [844, 390],
+    ] as const) {
+      const phone = bigMapPanel(w, h);
+      expect(phone.phone).toBe(true);
+      expect(phone.marginX).toBe(MAP.bigMap.phoneMarginPx);
+      expect(phone.buttonPx).toBe(MAP.bigMap.phoneButtonPx);
+      // Big enough to tap.
+      expect(phone.buttonPx).toBeGreaterThanOrEqual(44);
+    }
+  });
+
+  describe('the controller', () => {
+    const idx = (name: string) => GAMEPAD.buttons.find((b) => b.name === name)?.index ?? -1;
+    const buttons = (...names: string[]) => {
+      const v = new Array<number>(16).fill(0);
+      for (const n of names) v[idx(n)] = 1;
+      return v;
+    };
+    const still = [0, 0, 0, 0];
+
+    it('B or View closes, but not when it was held as the map opened', () => {
+      const s = new BigMapState(pose(0, 0, 0));
+      s.openAt();
+      // View held from the press that opened it: no close until it lets go and comes again.
+      expect(s.padFrame(buttons('view'), still, 0).closed).toBe(false);
+      expect(s.padFrame(buttons(), still, 16).closed).toBe(false);
+      expect(s.padFrame(buttons(MAP.bigMap.padClose), still, 32).closed).toBe(true);
+      expect(s.open).toBe(false);
+    });
+
+    for (const face of [0, 1]) {
+      it(`face ${String(face)}: the stick and D-pad pan the way pushed, the zoom buttons zoom`, () => {
+        const s = new BigMapState(pose(face, 0, 0));
+        s.openAt();
+        s.padFrame(buttons(), still, 0);
+        const before = s.view as BigView;
+        // Stick right for 0.1 s: the view moves right on screen.
+        s.padFrame(buttons(), [1, 0, 0, 0], 100);
+        const v = s.view as BigView;
+        const [sx, sy] = toScreen(before, v.cx, v.cz);
+        expect(sx).toBeGreaterThan(0);
+        expect(Math.abs(sy)).toBeLessThan(1e-9);
+        // D-pad up: up the screen.
+        const b2 = s.view as BigView;
+        s.padFrame(buttons('up'), still, 200);
+        const [, uy] = toScreen(b2, (s.view as BigView).cx, (s.view as BigView).cz);
+        expect(uy).toBeLessThan(0);
+        // A held zoom-in zooms in; zoom-out out.
+        const z0 = (s.view as BigView).pxPerM;
+        s.padFrame(buttons(MAP.bigMap.padZoomIn), still, 300);
+        expect((s.view as BigView).pxPerM).toBeGreaterThan(z0);
+        const z1 = (s.view as BigView).pxPerM;
+        s.padFrame(buttons(MAP.bigMap.padZoomOutAlt), still, 400);
+        expect((s.view as BigView).pxPerM).toBeLessThan(z1);
+        // Y: back on the player.
+        s.padFrame(buttons(MAP.bigMap.padCenter), still, 410);
+        expect(s.view).toMatchObject({ cx: 0, cz: 0 });
+      });
+    }
+
+    it('a stick inside the dead zone does not pan', () => {
+      const p = new PadMap();
+      p.step(buttons(), still, 0);
+      const s = p.step(buttons(), [GAMEPAD.tunables.deadzone * 0.9, 0, 0, 0], 100);
+      expect(s.panX).toBe(0);
+    });
+  });
+});
+
+describe('the big map elevation shading', () => {
+  for (const face of [0, 1]) {
+    it(`face ${String(face)}: a tile's grid is in screen order, its border its neighbours' cells`, () => {
+      const n = 4;
+      const [ti, tk] = [-1, 2];
+      // Each cell's colour names it, its height code its i.
+      const g = tileGrid(
+        face,
+        ti,
+        tk,
+        n,
+        (i, k) => ((i & 0xff) << 8) | (k & 0xff),
+        (i) => i * 4,
+      );
+      const s = n + 2;
+      expect(g.colours.length).toBe(s * s);
+      expect(g.any).toBe(true);
+      const v: BigView = { face, cx: 0, cz: 0, pxPerM: 1 };
+      const cell = MAP.explored.cellM;
+      const [i0, k0] = tileCellAt(face, ti, tk, 0, 0, n);
+      const [x0, y0] = toScreen(v, (i0 + 0.5) * cell, (k0 + 0.5) * cell);
+      for (const [c, r] of [
+        [0, 0],
+        [n - 1, 0],
+        [-1, 2],
+        [n, n],
+      ] as const) {
+        const [i, k] = tileCellAt(face, ti, tk, c, r, n);
+        expect(g.colours[(r + 1) * s + (c + 1)]).toBe(((i & 0xff) << 8) | (k & 0xff));
+        expect(g.codes[(r + 1) * s + (c + 1)]).toBe(i * 4);
+        // Where toScreen puts that cell: further right for a larger c, lower for a larger r.
+        const [x1, y1] = toScreen(v, (i + 0.5) * cell, (k + 0.5) * cell);
+        expect(Math.round(x1 - x0)).toBe(c * cell);
+        expect(Math.round(y1 - y0)).toBe(r * cell);
+      }
+    });
+  }
+
+  it('fog and the world edge are nothing there; a tile with none of its own cells is empty', () => {
+    const g = tileGrid(
+      0,
+      0,
+      0,
+      2,
+      () => undefined,
+      () => 0,
+    );
+    expect(g.any).toBe(false);
+    expect(Array.from(g.colours).every((c) => c === 0xff000000)).toBe(true);
+    expect(Array.from(g.codes).every((c) => c === NO_HEIGHT)).toBe(true);
+  });
+
+  it("a cell's change makes its own tile and the tiles it borders stale", () => {
+    expect(tilesShowing(0, 5, 5, 32)).toEqual([cellKey(0, 0, 0)]);
+    expect(new Set(tilesShowing(1, 0, 31, 32))).toEqual(
+      new Set([cellKey(1, -1, 0), cellKey(1, 0, 0), cellKey(1, -1, 1), cellKey(1, 0, 1)]),
+    );
+  });
+
+  it('heights are saved and loaded with the cells, unknown ones kept', () => {
+    const cells = new Map([[cellKey(0, 3, 4), 0x445566]]);
+    const heights = new Map([[cellKey(0, 3, 4), 168]]);
+    const stored = { cellM: MAP.explored.cellM, cells: {}, heights: { '1,9,9': 4 } };
+    const record = exploredRecord(stored, cells, heights);
+    const back = parseHeights(JSON.parse(JSON.stringify(record)));
+    expect(back.get(cellKey(0, 3, 4))).toBe(168);
+    expect(back.get('1,9,9')).toBe(4);
+    expect(parseHeights({ cellM: MAP.explored.cellM + 1, heights: { '0,1,1': 2 } }).size).toBe(0);
+  });
+
+  it("a revealed tile's heights follow its colours", () => {
+    const n = 2;
+    const b = new Uint8Array(9 + n * n * 6);
+    const d = new DataView(b.buffer);
+    for (let j = 0; j < n * n; j++) {
+      b[9 + j * 4 + 3] = 255;
+      d.setInt16(9 + n * n * 4 + j * 2, j === 3 ? -32768 : 10 * j + 1, true);
+    }
+    const t = parseRevealTile(b, n);
+    expect(Array.from(t.heights ?? [])).toEqual([1, 11, 21, -32768]);
+    expect(t.rgba?.length).toBe(n * n * 4);
+    const cache = new RevealCache(n, 1, 1);
+    cache.tiles.set(RevealCache.key(0, 0, 0), t);
+    expect(cache.height(0, 1, 0)).toBe(11);
+    expect(cache.height(0, 1, 1)).toBe(NO_HEIGHT);
+    expect(cache.height(0, 5, 5)).toBe(NO_HEIGHT);
+  });
 });
