@@ -1,0 +1,1179 @@
+{
+  "$comment": "Written by docs/prototypes/vox/vox.mjs: per file, its parts (model name → bone) and palette (index → material stop).",
+  "files": {
+    "player_16.vox": {
+      "character": "player",
+      "voxelsPerMetre": 16,
+      "voxels": 973,
+      "parts": {
+        "head": {
+          "bone": "head",
+          "material": "skin_tan"
+        },
+        "nose": {
+          "bone": "head",
+          "material": "skin_tan"
+        },
+        "eye_l": {
+          "bone": "head",
+          "material": "ink"
+        },
+        "eye_r": {
+          "bone": "head",
+          "material": "ink"
+        },
+        "ear_l": {
+          "bone": "head",
+          "material": "skin_tan"
+        },
+        "ear_r": {
+          "bone": "head",
+          "material": "skin_tan"
+        },
+        "hair_back": {
+          "bone": "head",
+          "material": "hair_brown"
+        },
+        "neck": {
+          "bone": "chest",
+          "material": "skin_tan"
+        },
+        "torso": {
+          "bone": "chest",
+          "material": "cloth_wool_blue"
+        },
+        "tunic_hem": {
+          "bone": "hips",
+          "material": "cloth_wool_blue"
+        },
+        "pelvis": {
+          "bone": "hips",
+          "material": "cloth_canvas"
+        },
+        "belt": {
+          "bone": "hips",
+          "material": "leather"
+        },
+        "buckle": {
+          "bone": "hips",
+          "material": "metal_brass"
+        },
+        "upper_arm_l": {
+          "bone": "arm_l",
+          "material": "cloth_wool_blue"
+        },
+        "upper_arm_r": {
+          "bone": "arm_r",
+          "material": "cloth_wool_blue"
+        },
+        "sleeve_hem_l": {
+          "bone": "arm_l",
+          "material": "cloth_wool_blue"
+        },
+        "sleeve_hem_r": {
+          "bone": "arm_r",
+          "material": "cloth_wool_blue"
+        },
+        "forearm_l": {
+          "bone": "forearm_l",
+          "material": "skin_tan"
+        },
+        "forearm_r": {
+          "bone": "forearm_r",
+          "material": "skin_tan"
+        },
+        "thigh_l": {
+          "bone": "thigh_l",
+          "material": "cloth_canvas"
+        },
+        "thigh_r": {
+          "bone": "thigh_r",
+          "material": "cloth_canvas"
+        },
+        "shin_l": {
+          "bone": "shin_l",
+          "material": "cloth_canvas"
+        },
+        "shin_r": {
+          "bone": "shin_r",
+          "material": "cloth_canvas"
+        },
+        "boot_l": {
+          "bone": "shin_l",
+          "material": "leather"
+        },
+        "boot_r": {
+          "bone": "shin_r",
+          "material": "leather"
+        },
+        "boot_cuff_l": {
+          "bone": "shin_l",
+          "material": "leather"
+        },
+        "boot_cuff_r": {
+          "bone": "shin_r",
+          "material": "leather"
+        },
+        "foot_l": {
+          "bone": "foot_l",
+          "material": "leather"
+        },
+        "foot_r": {
+          "bone": "foot_r",
+          "material": "leather"
+        },
+        "hat_brim": {
+          "bone": "head",
+          "material": "leather"
+        },
+        "hat_crown": {
+          "bone": "head",
+          "material": "leather"
+        },
+        "hat_band": {
+          "bone": "head",
+          "material": "cloth_wool_red"
+        },
+        "hat_feather": {
+          "bone": "head",
+          "material": "brass"
+        },
+        "hat_fringe": {
+          "bone": "head",
+          "material": "hair_brown"
+        },
+        "hat_tuft_l": {
+          "bone": "head",
+          "material": "hair_brown"
+        },
+        "hat_tuft_r": {
+          "bone": "head",
+          "material": "hair_brown"
+        },
+        "pack": {
+          "bone": "chest",
+          "material": "cloth_canvas"
+        },
+        "pack_flap": {
+          "bone": "chest",
+          "material": "leather"
+        },
+        "pack_pocket": {
+          "bone": "chest",
+          "material": "cloth_canvas"
+        },
+        "pack_buckle": {
+          "bone": "chest",
+          "material": "metal_brass"
+        },
+        "strap_l": {
+          "bone": "chest",
+          "material": "leather"
+        },
+        "strap_r": {
+          "bone": "chest",
+          "material": "leather"
+        },
+        "roll": {
+          "bone": "chest",
+          "material": "cloth_wool_red"
+        },
+        "roll_tie_l": {
+          "bone": "chest",
+          "material": "leather"
+        },
+        "roll_tie_r": {
+          "bone": "chest",
+          "material": "leather"
+        },
+        "glove_l": {
+          "bone": "hand_l",
+          "material": "leather"
+        },
+        "glove_r": {
+          "bone": "hand_r",
+          "material": "leather"
+        },
+        "glove_thumb_l": {
+          "bone": "hand_l",
+          "material": "leather"
+        },
+        "glove_thumb_r": {
+          "bone": "hand_r",
+          "material": "leather"
+        },
+        "glove_cuff_l": {
+          "bone": "hand_l",
+          "material": "leather"
+        },
+        "glove_cuff_r": {
+          "bone": "hand_r",
+          "material": "leather"
+        },
+        "glove_strap_l": {
+          "bone": "hand_l",
+          "material": "leather.shadow"
+        },
+        "glove_strap_r": {
+          "bone": "hand_r",
+          "material": "leather.shadow"
+        }
+      },
+      "palette": {
+        "1": "skin_tan.shadow",
+        "2": "skin_tan.base",
+        "3": "skin_tan.light",
+        "4": "ink.base",
+        "5": "ink_soft.base",
+        "6": "hair_brown.shadow",
+        "7": "hair_brown.base",
+        "8": "hair_brown.light",
+        "9": "cloth_wool_blue.shadow",
+        "10": "cloth_wool_blue.base",
+        "11": "cloth_wool_blue.light",
+        "12": "cloth_canvas.shadow",
+        "13": "cloth_canvas.base",
+        "14": "cloth_canvas.light",
+        "15": "leather.shadow",
+        "16": "leather.base",
+        "17": "leather.light",
+        "18": "metal_brass.shadow",
+        "19": "metal_brass.base",
+        "20": "metal_brass.light",
+        "21": "cloth_wool_red.shadow",
+        "22": "cloth_wool_red.base",
+        "23": "cloth_wool_red.light",
+        "24": "brass.shadow",
+        "25": "brass.base",
+        "26": "brass.light",
+        "27": "leather.shadow.base"
+      }
+    },
+    "player_32.vox": {
+      "character": "player",
+      "voxelsPerMetre": 32,
+      "voxels": 7474,
+      "parts": {
+        "head": {
+          "bone": "head",
+          "material": "skin_tan"
+        },
+        "nose": {
+          "bone": "head",
+          "material": "skin_tan"
+        },
+        "eye_l": {
+          "bone": "head",
+          "material": "ink"
+        },
+        "eye_r": {
+          "bone": "head",
+          "material": "ink"
+        },
+        "brow_l": {
+          "bone": "head",
+          "material": "ink_soft"
+        },
+        "brow_r": {
+          "bone": "head",
+          "material": "ink_soft"
+        },
+        "ear_l": {
+          "bone": "head",
+          "material": "skin_tan"
+        },
+        "ear_r": {
+          "bone": "head",
+          "material": "skin_tan"
+        },
+        "hair_back": {
+          "bone": "head",
+          "material": "hair_brown"
+        },
+        "neck": {
+          "bone": "chest",
+          "material": "skin_tan"
+        },
+        "torso": {
+          "bone": "chest",
+          "material": "cloth_wool_blue"
+        },
+        "tunic_hem": {
+          "bone": "hips",
+          "material": "cloth_wool_blue"
+        },
+        "pelvis": {
+          "bone": "hips",
+          "material": "cloth_canvas"
+        },
+        "belt": {
+          "bone": "hips",
+          "material": "leather"
+        },
+        "buckle": {
+          "bone": "hips",
+          "material": "metal_brass"
+        },
+        "upper_arm_l": {
+          "bone": "arm_l",
+          "material": "cloth_wool_blue"
+        },
+        "upper_arm_r": {
+          "bone": "arm_r",
+          "material": "cloth_wool_blue"
+        },
+        "sleeve_hem_l": {
+          "bone": "arm_l",
+          "material": "cloth_wool_blue"
+        },
+        "sleeve_hem_r": {
+          "bone": "arm_r",
+          "material": "cloth_wool_blue"
+        },
+        "forearm_l": {
+          "bone": "forearm_l",
+          "material": "skin_tan"
+        },
+        "forearm_r": {
+          "bone": "forearm_r",
+          "material": "skin_tan"
+        },
+        "thigh_l": {
+          "bone": "thigh_l",
+          "material": "cloth_canvas"
+        },
+        "thigh_r": {
+          "bone": "thigh_r",
+          "material": "cloth_canvas"
+        },
+        "shin_l": {
+          "bone": "shin_l",
+          "material": "cloth_canvas"
+        },
+        "shin_r": {
+          "bone": "shin_r",
+          "material": "cloth_canvas"
+        },
+        "boot_l": {
+          "bone": "shin_l",
+          "material": "leather"
+        },
+        "boot_r": {
+          "bone": "shin_r",
+          "material": "leather"
+        },
+        "boot_cuff_l": {
+          "bone": "shin_l",
+          "material": "leather"
+        },
+        "boot_cuff_r": {
+          "bone": "shin_r",
+          "material": "leather"
+        },
+        "foot_l": {
+          "bone": "foot_l",
+          "material": "leather"
+        },
+        "foot_r": {
+          "bone": "foot_r",
+          "material": "leather"
+        },
+        "hat_brim": {
+          "bone": "head",
+          "material": "leather"
+        },
+        "hat_crown": {
+          "bone": "head",
+          "material": "leather"
+        },
+        "hat_band": {
+          "bone": "head",
+          "material": "cloth_wool_red"
+        },
+        "hat_feather": {
+          "bone": "head",
+          "material": "brass"
+        },
+        "hat_fringe": {
+          "bone": "head",
+          "material": "hair_brown"
+        },
+        "hat_tuft_l": {
+          "bone": "head",
+          "material": "hair_brown"
+        },
+        "hat_tuft_r": {
+          "bone": "head",
+          "material": "hair_brown"
+        },
+        "pack": {
+          "bone": "chest",
+          "material": "cloth_canvas"
+        },
+        "pack_flap": {
+          "bone": "chest",
+          "material": "leather"
+        },
+        "pack_pocket": {
+          "bone": "chest",
+          "material": "cloth_canvas"
+        },
+        "pack_buckle": {
+          "bone": "chest",
+          "material": "metal_brass"
+        },
+        "strap_l": {
+          "bone": "chest",
+          "material": "leather"
+        },
+        "strap_r": {
+          "bone": "chest",
+          "material": "leather"
+        },
+        "roll": {
+          "bone": "chest",
+          "material": "cloth_wool_red"
+        },
+        "roll_tie_l": {
+          "bone": "chest",
+          "material": "leather"
+        },
+        "roll_tie_r": {
+          "bone": "chest",
+          "material": "leather"
+        },
+        "glove_l": {
+          "bone": "hand_l",
+          "material": "leather"
+        },
+        "glove_r": {
+          "bone": "hand_r",
+          "material": "leather"
+        },
+        "glove_thumb_l": {
+          "bone": "hand_l",
+          "material": "leather"
+        },
+        "glove_thumb_r": {
+          "bone": "hand_r",
+          "material": "leather"
+        },
+        "glove_cuff_l": {
+          "bone": "hand_l",
+          "material": "leather"
+        },
+        "glove_cuff_r": {
+          "bone": "hand_r",
+          "material": "leather"
+        },
+        "glove_strap_l": {
+          "bone": "hand_l",
+          "material": "leather.shadow"
+        },
+        "glove_strap_r": {
+          "bone": "hand_r",
+          "material": "leather.shadow"
+        }
+      },
+      "palette": {
+        "1": "skin_tan.shadow",
+        "2": "skin_tan.base",
+        "3": "skin_tan.light",
+        "4": "ink.base",
+        "5": "ink_soft.base",
+        "6": "hair_brown.shadow",
+        "7": "hair_brown.base",
+        "8": "hair_brown.light",
+        "9": "cloth_wool_blue.shadow",
+        "10": "cloth_wool_blue.base",
+        "11": "cloth_wool_blue.light",
+        "12": "cloth_canvas.shadow",
+        "13": "cloth_canvas.base",
+        "14": "cloth_canvas.light",
+        "15": "leather.shadow",
+        "16": "leather.base",
+        "17": "leather.light",
+        "18": "metal_brass.shadow",
+        "19": "metal_brass.base",
+        "20": "metal_brass.light",
+        "21": "cloth_wool_red.shadow",
+        "22": "cloth_wool_red.base",
+        "23": "cloth_wool_red.light",
+        "24": "brass.shadow",
+        "25": "brass.base",
+        "26": "brass.light",
+        "27": "leather.shadow.base"
+      }
+    },
+    "wolf_16.vox": {
+      "character": "wolf",
+      "voxelsPerMetre": 16,
+      "voxels": 528,
+      "parts": {
+        "haunch": {
+          "bone": "body",
+          "material": "fur_wolf"
+        },
+        "barrel": {
+          "bone": "chest",
+          "material": "fur_wolf"
+        },
+        "belly": {
+          "bone": "chest",
+          "material": "fur_wolf_belly"
+        },
+        "ruff": {
+          "bone": "chest",
+          "material": "fur_wolf"
+        },
+        "bib": {
+          "bone": "chest",
+          "material": "fur_wolf_belly"
+        },
+        "neck": {
+          "bone": "neck",
+          "material": "fur_wolf"
+        },
+        "skull": {
+          "bone": "head",
+          "material": "fur_wolf"
+        },
+        "cheek_l": {
+          "bone": "head",
+          "material": "fur_wolf_belly"
+        },
+        "cheek_r": {
+          "bone": "head",
+          "material": "fur_wolf_belly"
+        },
+        "muzzle": {
+          "bone": "head",
+          "material": "fur_wolf"
+        },
+        "jaw": {
+          "bone": "head",
+          "material": "fur_wolf_belly"
+        },
+        "nose": {
+          "bone": "head",
+          "material": "ink"
+        },
+        "eye_l": {
+          "bone": "head",
+          "material": "ink"
+        },
+        "eye_r": {
+          "bone": "head",
+          "material": "ink"
+        },
+        "ear_l": {
+          "bone": "ear_l",
+          "material": "fur_wolf"
+        },
+        "ear_r": {
+          "bone": "ear_r",
+          "material": "fur_wolf"
+        },
+        "tail_base": {
+          "bone": "tail_1",
+          "material": "fur_wolf"
+        },
+        "tail_brush": {
+          "bone": "tail_2",
+          "material": "fur_wolf"
+        },
+        "tail_tip": {
+          "bone": "tail_2",
+          "material": "wolf.shadow"
+        },
+        "front_upper_l": {
+          "bone": "front_upper_l",
+          "material": "fur_wolf"
+        },
+        "front_upper_r": {
+          "bone": "front_upper_r",
+          "material": "fur_wolf"
+        },
+        "front_lower_l": {
+          "bone": "front_lower_l",
+          "material": "fur_wolf"
+        },
+        "front_lower_r": {
+          "bone": "front_lower_r",
+          "material": "fur_wolf"
+        },
+        "front_paw_l": {
+          "bone": "front_foot_l",
+          "material": "fur_wolf_belly"
+        },
+        "front_paw_r": {
+          "bone": "front_foot_r",
+          "material": "fur_wolf_belly"
+        },
+        "hind_thigh_l": {
+          "bone": "hind_upper_l",
+          "material": "fur_wolf"
+        },
+        "hind_thigh_r": {
+          "bone": "hind_upper_r",
+          "material": "fur_wolf"
+        },
+        "hind_shank_l": {
+          "bone": "hind_lower_l",
+          "material": "fur_wolf"
+        },
+        "hind_shank_r": {
+          "bone": "hind_lower_r",
+          "material": "fur_wolf"
+        },
+        "hind_paw_l": {
+          "bone": "hind_foot_l",
+          "material": "fur_wolf_belly"
+        },
+        "hind_paw_r": {
+          "bone": "hind_foot_r",
+          "material": "fur_wolf_belly"
+        }
+      },
+      "palette": {
+        "1": "fur_wolf.shadow",
+        "2": "fur_wolf.base",
+        "3": "fur_wolf.light",
+        "4": "fur_wolf_belly.shadow",
+        "5": "fur_wolf_belly.base",
+        "6": "fur_wolf_belly.light",
+        "7": "ink.base",
+        "8": "wolf.shadow.base"
+      }
+    },
+    "wolf_32.vox": {
+      "character": "wolf",
+      "voxelsPerMetre": 32,
+      "voxels": 4316,
+      "parts": {
+        "haunch": {
+          "bone": "body",
+          "material": "fur_wolf"
+        },
+        "barrel": {
+          "bone": "chest",
+          "material": "fur_wolf"
+        },
+        "belly": {
+          "bone": "chest",
+          "material": "fur_wolf_belly"
+        },
+        "ruff": {
+          "bone": "chest",
+          "material": "fur_wolf"
+        },
+        "bib": {
+          "bone": "chest",
+          "material": "fur_wolf_belly"
+        },
+        "neck": {
+          "bone": "neck",
+          "material": "fur_wolf"
+        },
+        "skull": {
+          "bone": "head",
+          "material": "fur_wolf"
+        },
+        "cheek_l": {
+          "bone": "head",
+          "material": "fur_wolf_belly"
+        },
+        "cheek_r": {
+          "bone": "head",
+          "material": "fur_wolf_belly"
+        },
+        "muzzle": {
+          "bone": "head",
+          "material": "fur_wolf"
+        },
+        "jaw": {
+          "bone": "head",
+          "material": "fur_wolf_belly"
+        },
+        "nose": {
+          "bone": "head",
+          "material": "ink"
+        },
+        "eye_l": {
+          "bone": "head",
+          "material": "ink"
+        },
+        "eye_r": {
+          "bone": "head",
+          "material": "ink"
+        },
+        "ear_l": {
+          "bone": "ear_l",
+          "material": "fur_wolf"
+        },
+        "ear_r": {
+          "bone": "ear_r",
+          "material": "fur_wolf"
+        },
+        "ear_inner_l": {
+          "bone": "ear_l",
+          "material": "fur_wolf_belly"
+        },
+        "ear_inner_r": {
+          "bone": "ear_r",
+          "material": "fur_wolf_belly"
+        },
+        "tail_base": {
+          "bone": "tail_1",
+          "material": "fur_wolf"
+        },
+        "tail_brush": {
+          "bone": "tail_2",
+          "material": "fur_wolf"
+        },
+        "tail_tip": {
+          "bone": "tail_2",
+          "material": "wolf.shadow"
+        },
+        "front_upper_l": {
+          "bone": "front_upper_l",
+          "material": "fur_wolf"
+        },
+        "front_upper_r": {
+          "bone": "front_upper_r",
+          "material": "fur_wolf"
+        },
+        "front_lower_l": {
+          "bone": "front_lower_l",
+          "material": "fur_wolf"
+        },
+        "front_lower_r": {
+          "bone": "front_lower_r",
+          "material": "fur_wolf"
+        },
+        "front_paw_l": {
+          "bone": "front_foot_l",
+          "material": "fur_wolf_belly"
+        },
+        "front_paw_r": {
+          "bone": "front_foot_r",
+          "material": "fur_wolf_belly"
+        },
+        "hind_thigh_l": {
+          "bone": "hind_upper_l",
+          "material": "fur_wolf"
+        },
+        "hind_thigh_r": {
+          "bone": "hind_upper_r",
+          "material": "fur_wolf"
+        },
+        "hind_shank_l": {
+          "bone": "hind_lower_l",
+          "material": "fur_wolf"
+        },
+        "hind_shank_r": {
+          "bone": "hind_lower_r",
+          "material": "fur_wolf"
+        },
+        "hind_paw_l": {
+          "bone": "hind_foot_l",
+          "material": "fur_wolf_belly"
+        },
+        "hind_paw_r": {
+          "bone": "hind_foot_r",
+          "material": "fur_wolf_belly"
+        }
+      },
+      "palette": {
+        "1": "fur_wolf.shadow",
+        "2": "fur_wolf.base",
+        "3": "fur_wolf.light",
+        "4": "fur_wolf_belly.shadow",
+        "5": "fur_wolf_belly.base",
+        "6": "fur_wolf_belly.light",
+        "7": "ink.base",
+        "8": "wolf.shadow.base"
+      }
+    },
+    "deer_16.vox": {
+      "character": "deer",
+      "voxelsPerMetre": 16,
+      "voxels": 477,
+      "parts": {
+        "haunch": {
+          "bone": "body",
+          "material": "fur_deer"
+        },
+        "rump": {
+          "bone": "body",
+          "material": "fur_deer_cream"
+        },
+        "barrel": {
+          "bone": "chest",
+          "material": "fur_deer"
+        },
+        "belly": {
+          "bone": "chest",
+          "material": "fur_deer_cream"
+        },
+        "neck": {
+          "bone": "neck",
+          "material": "fur_deer"
+        },
+        "throat": {
+          "bone": "neck",
+          "material": "fur_deer_cream"
+        },
+        "skull": {
+          "bone": "head",
+          "material": "fur_deer"
+        },
+        "muzzle": {
+          "bone": "head",
+          "material": "fur_deer"
+        },
+        "muzzle_tip": {
+          "bone": "head",
+          "material": "fur_deer_cream"
+        },
+        "nose": {
+          "bone": "head",
+          "material": "ink"
+        },
+        "eye_l": {
+          "bone": "head",
+          "material": "ink"
+        },
+        "eye_r": {
+          "bone": "head",
+          "material": "ink"
+        },
+        "ear_l": {
+          "bone": "ear_l",
+          "material": "fur_deer"
+        },
+        "ear_r": {
+          "bone": "ear_r",
+          "material": "fur_deer"
+        },
+        "ear_inner_l": {
+          "bone": "ear_l",
+          "material": "fur_deer_cream"
+        },
+        "ear_inner_r": {
+          "bone": "ear_r",
+          "material": "fur_deer_cream"
+        },
+        "tail": {
+          "bone": "tail_1",
+          "material": "fur_deer"
+        },
+        "tail_flash": {
+          "bone": "tail_2",
+          "material": "deer_cream.light"
+        },
+        "front_upper_l": {
+          "bone": "front_upper_l",
+          "material": "fur_deer"
+        },
+        "front_upper_r": {
+          "bone": "front_upper_r",
+          "material": "fur_deer"
+        },
+        "front_lower_l": {
+          "bone": "front_lower_l",
+          "material": "fur_deer"
+        },
+        "front_lower_r": {
+          "bone": "front_lower_r",
+          "material": "fur_deer"
+        },
+        "front_hoof_l": {
+          "bone": "front_foot_l",
+          "material": "bark.shadow"
+        },
+        "front_hoof_r": {
+          "bone": "front_foot_r",
+          "material": "bark.shadow"
+        },
+        "hind_thigh_l": {
+          "bone": "hind_upper_l",
+          "material": "fur_deer"
+        },
+        "hind_thigh_r": {
+          "bone": "hind_upper_r",
+          "material": "fur_deer"
+        },
+        "hind_lower_l": {
+          "bone": "hind_lower_l",
+          "material": "fur_deer"
+        },
+        "hind_lower_r": {
+          "bone": "hind_lower_r",
+          "material": "fur_deer"
+        },
+        "hind_hoof_l": {
+          "bone": "hind_foot_l",
+          "material": "bark.shadow"
+        },
+        "hind_hoof_r": {
+          "bone": "hind_foot_r",
+          "material": "bark.shadow"
+        },
+        "antler_burr_l": {
+          "bone": "head",
+          "material": "antler.shadow"
+        },
+        "antler_burr_r": {
+          "bone": "head",
+          "material": "antler.shadow"
+        },
+        "antler_beam_l": {
+          "bone": "head",
+          "material": "antler"
+        },
+        "antler_beam_r": {
+          "bone": "head",
+          "material": "antler"
+        },
+        "antler_upper_l": {
+          "bone": "head",
+          "material": "antler"
+        },
+        "antler_upper_r": {
+          "bone": "head",
+          "material": "antler"
+        },
+        "antler_brow_l": {
+          "bone": "head",
+          "material": "antler"
+        },
+        "antler_brow_r": {
+          "bone": "head",
+          "material": "antler"
+        },
+        "antler_back_l": {
+          "bone": "head",
+          "material": "antler"
+        },
+        "antler_back_r": {
+          "bone": "head",
+          "material": "antler"
+        },
+        "antler_top_l": {
+          "bone": "head",
+          "material": "antler"
+        },
+        "antler_top_r": {
+          "bone": "head",
+          "material": "antler"
+        }
+      },
+      "palette": {
+        "1": "fur_deer.shadow",
+        "2": "fur_deer.base",
+        "3": "fur_deer.light",
+        "4": "fur_deer_cream.shadow",
+        "5": "fur_deer_cream.base",
+        "6": "fur_deer_cream.light",
+        "7": "ink.base",
+        "8": "deer_cream.light.base",
+        "9": "bark.shadow.base",
+        "10": "antler.shadow.base",
+        "11": "antler.shadow",
+        "12": "antler.base",
+        "13": "antler.light"
+      }
+    },
+    "deer_32.vox": {
+      "character": "deer",
+      "voxelsPerMetre": 32,
+      "voxels": 3920,
+      "parts": {
+        "haunch": {
+          "bone": "body",
+          "material": "fur_deer"
+        },
+        "rump": {
+          "bone": "body",
+          "material": "fur_deer_cream"
+        },
+        "barrel": {
+          "bone": "chest",
+          "material": "fur_deer"
+        },
+        "belly": {
+          "bone": "chest",
+          "material": "fur_deer_cream"
+        },
+        "neck": {
+          "bone": "neck",
+          "material": "fur_deer"
+        },
+        "throat": {
+          "bone": "neck",
+          "material": "fur_deer_cream"
+        },
+        "skull": {
+          "bone": "head",
+          "material": "fur_deer"
+        },
+        "muzzle": {
+          "bone": "head",
+          "material": "fur_deer"
+        },
+        "muzzle_tip": {
+          "bone": "head",
+          "material": "fur_deer_cream"
+        },
+        "nose": {
+          "bone": "head",
+          "material": "ink"
+        },
+        "eye_l": {
+          "bone": "head",
+          "material": "ink"
+        },
+        "eye_r": {
+          "bone": "head",
+          "material": "ink"
+        },
+        "ear_l": {
+          "bone": "ear_l",
+          "material": "fur_deer"
+        },
+        "ear_r": {
+          "bone": "ear_r",
+          "material": "fur_deer"
+        },
+        "ear_inner_l": {
+          "bone": "ear_l",
+          "material": "fur_deer_cream"
+        },
+        "ear_inner_r": {
+          "bone": "ear_r",
+          "material": "fur_deer_cream"
+        },
+        "tail": {
+          "bone": "tail_1",
+          "material": "fur_deer"
+        },
+        "tail_flash": {
+          "bone": "tail_2",
+          "material": "deer_cream.light"
+        },
+        "front_upper_l": {
+          "bone": "front_upper_l",
+          "material": "fur_deer"
+        },
+        "front_upper_r": {
+          "bone": "front_upper_r",
+          "material": "fur_deer"
+        },
+        "front_lower_l": {
+          "bone": "front_lower_l",
+          "material": "fur_deer"
+        },
+        "front_lower_r": {
+          "bone": "front_lower_r",
+          "material": "fur_deer"
+        },
+        "front_hoof_l": {
+          "bone": "front_foot_l",
+          "material": "bark.shadow"
+        },
+        "front_hoof_r": {
+          "bone": "front_foot_r",
+          "material": "bark.shadow"
+        },
+        "hind_thigh_l": {
+          "bone": "hind_upper_l",
+          "material": "fur_deer"
+        },
+        "hind_thigh_r": {
+          "bone": "hind_upper_r",
+          "material": "fur_deer"
+        },
+        "hind_lower_l": {
+          "bone": "hind_lower_l",
+          "material": "fur_deer"
+        },
+        "hind_lower_r": {
+          "bone": "hind_lower_r",
+          "material": "fur_deer"
+        },
+        "hind_hoof_l": {
+          "bone": "hind_foot_l",
+          "material": "bark.shadow"
+        },
+        "hind_hoof_r": {
+          "bone": "hind_foot_r",
+          "material": "bark.shadow"
+        },
+        "antler_burr_l": {
+          "bone": "head",
+          "material": "antler.shadow"
+        },
+        "antler_burr_r": {
+          "bone": "head",
+          "material": "antler.shadow"
+        },
+        "antler_beam_l": {
+          "bone": "head",
+          "material": "antler"
+        },
+        "antler_beam_r": {
+          "bone": "head",
+          "material": "antler"
+        },
+        "antler_upper_l": {
+          "bone": "head",
+          "material": "antler"
+        },
+        "antler_upper_r": {
+          "bone": "head",
+          "material": "antler"
+        },
+        "antler_brow_l": {
+          "bone": "head",
+          "material": "antler"
+        },
+        "antler_brow_r": {
+          "bone": "head",
+          "material": "antler"
+        },
+        "antler_back_l": {
+          "bone": "head",
+          "material": "antler"
+        },
+        "antler_back_r": {
+          "bone": "head",
+          "material": "antler"
+        },
+        "antler_top_l": {
+          "bone": "head",
+          "material": "antler"
+        },
+        "antler_top_r": {
+          "bone": "head",
+          "material": "antler"
+        }
+      },
+      "palette": {
+        "1": "fur_deer.shadow",
+        "2": "fur_deer.base",
+        "3": "fur_deer.light",
+        "4": "fur_deer_cream.shadow",
+        "5": "fur_deer_cream.base",
+        "6": "fur_deer_cream.light",
+        "7": "ink.base",
+        "8": "deer_cream.light.base",
+        "9": "bark.shadow.base",
+        "10": "antler.shadow.base",
+        "11": "antler.shadow",
+        "12": "antler.base",
+        "13": "antler.light"
+      }
+    }
+  }
+}

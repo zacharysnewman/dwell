@@ -10,6 +10,12 @@
       ]
     },
     {
+      "version": "0.50.52",
+      "changes": [
+        "Behind the scenes: voxel model prototypes of the player, the wolf and the deer"
+      ]
+    },
+    {
       "version": "0.50.51",
       "changes": [
         "Edited ground seen from far away keeps its grass instead of looking speckled with dirt"
