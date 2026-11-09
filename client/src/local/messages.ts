@@ -58,6 +58,8 @@ export type ToWorker =
   | { t: 'closeGuests' }
   /** Kill the local player (the bench's `die` step). */
   | { t: 'kill' }
+  /** Carry the local player on a moving raft (the bench's `carry` step). */
+  | { t: 'carry'; speed: number; yaw: number; seconds: number; lift: number }
   /** The respawn preload (ARCHITECTURE.md §6.3) on or off (`?respawnPreload=off`). */
   | { t: 'respawnPreload'; on: boolean }
   /** The water near a cell (a diagnostic for the block dump); answered with `waterReport`. */

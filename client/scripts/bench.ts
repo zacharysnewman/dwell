@@ -577,6 +577,15 @@ async function step(run: Run, s: Step): Promise<void> {
       );
       return;
     }
+    case 'carry': {
+      const ok = await call<boolean | null>(
+        page,
+        `d.carry(${s.speed}, ${s.yaw}, ${s.s}, ${s.lift ?? 1})`,
+      );
+      if (ok !== true) throw new Error('carry: not a local world');
+      await page.waitForTimeout(s.s * 1000);
+      return;
+    }
     case 'die': {
       // The respawn's timeline (ARCHITECTURE.md §6.3): killed, the death screen (the respawn
       // preload streams the spawn meanwhile), the respawn, then playing behind the loading screen.

@@ -256,6 +256,11 @@ impl LocalWorld {
     pub fn save(&mut self) -> bool {
         self.core.save()
     }
+    /// Carries the local player on a raft at `speed` m/s toward `yaw` (degrees, 0 = +Z) for
+    /// `seconds`, `lift` m above its feet (the bench's `carry` step, docs/DEV_TOOLS.md).
+    pub fn carry(&mut self, speed: f64, yaw: f64, seconds: f64, lift: f64) -> bool {
+        self.core.carry_local_player(speed, yaw, seconds, lift)
+    }
     /// Kills the local player (the bench's `die` step).
     pub fn kill(&mut self) {
         self.core.kill_local_player();

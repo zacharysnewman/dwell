@@ -528,6 +528,8 @@ pub struct Game<S: Scene> {
     health: u8,
     dead: bool,
     death_feet: [f64; 3],
+    /// The streaming probe's last feet and heading (`probe_stream`).
+    probe: ([f64; 3], [f64; 2]),
     previous: Option<ClientState>,
     current: ClientState,
     flip: FaceFlip,
@@ -729,6 +731,7 @@ impl<S: Scene> Game<S> {
             health: 0,
             dead: false,
             death_feet: [0.0; 3],
+            probe: ([0.0; 3], [0.0, 1.0]),
             previous: None,
             current,
             flip,
@@ -1056,6 +1059,52 @@ impl<S: Scene> Game<S> {
     pub fn lod(&mut self) -> Option<&mut LodSystem> {
         self.lod.as_mut()
     }
+    /// How a chunk is drawn, for the streaming probe: 0 as a chunk, 1 loaded but not drawn as one
+    /// (waiting for its light or mesh, or the LOD shows its section), 2 not loaded.
+    pub fn chunk_detail(&self, c: ChunkCoord) -> u8 {
+        let a = c.to_array();
+        if !self.streamer.is_loaded(a) {
+            2
+        } else if self.streamer.drawable(a) && self.chunk_visible(c) {
+            0
+        } else {
+            1
+        }
+    }
+
+    /// The streaming probe (the bench's per-frame series, docs/DEV_TOOLS.md): how the chunk under
+    /// the feet (a metre down) and the one 10 m ahead along the way the player last moved are
+    /// drawn ([`Self::chunk_detail`]), where the feet are, and the queues behind them.
+    fn probe_stream(&mut self, feet: [f64; 3]) {
+        let (last, mut heading) = self.probe;
+        let (dx, dz) = (feet[0] - last[0], feet[2] - last[2]);
+        let moved = dx.hypot(dz);
+        if moved > 1e-3 && moved < 50.0 {
+            heading = [dx / moved, dz / moved];
+        }
+        self.probe = (feet, heading);
+        let f = dwell_world::FaceFrame::at_height(feet[1]);
+        let local = f.point(feet);
+        let at = |ahead: f64| {
+            dwell_world::chunk_of_pos(f.point([
+                local[0] + heading[0] * ahead,
+                local[1] - 1.0,
+                local[2] + heading[1] * ahead,
+            ]))
+        };
+        telemetry::add("probe.under", f64::from(self.chunk_detail(at(0.0))));
+        telemetry::add("probe.ahead", f64::from(self.chunk_detail(at(10.0))));
+        telemetry::add("probe.x", feet[0]);
+        telemetry::add("probe.z", feet[2]);
+        let [generating, mesh] = self.pool.borrow().pending();
+        telemetry::add("pool.gen", generating as f64);
+        telemetry::add("pool.mesh", mesh as f64);
+        let s = self.streamer.stats();
+        telemetry::add("stream.loaded", s.loaded as f64);
+        telemetry::add("stream.dirty", s.dirty as f64);
+        telemetry::add("stream.generating", s.generating as f64);
+    }
+
     /// Which chunks the renderer draws (the LOD draws instead of the others).
     pub fn chunk_visible(&self, c: ChunkCoord) -> bool {
         self.chunk_fade(c).is_some()
@@ -2986,6 +3035,7 @@ impl<S: Scene> Game<S> {
         let lean = self.tree_lean(now_ms);
         self.scene.borrow_mut().set_tree_lean(lean);
         telemetry::span("lod", || self.update_lod(&c, now_ms, input));
+        self.probe_stream(c.feet());
         if let Some(lod) = &self.lod {
             // The cross-fade's extra draws this frame (dwell-lod fade.rs): the bench reads them.
             let f = lod.debug_stats().fades;

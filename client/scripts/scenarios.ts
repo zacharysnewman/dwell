@@ -131,6 +131,12 @@ export type Step =
    * respawn's loading screen, ARCHITECTURE.md §6.3).
    */
   | { do: 'die'; maxS: number }
+  /**
+   * Stands the player on a raft `lift` m (default 1) above its feet and moves the raft at `speed`
+   * m/s toward `yaw` (degrees, 0 = +Z, 90 = +X) for `s` seconds at a held height, then waits out
+   * the ride (a local world only): "carried by a moving body" bugs (`__dwell.carry`).
+   */
+  | { do: 'carry'; speed: number; yaw: number; s: number; lift?: number }
   /** Forgets the telemetry so far: the next `record` measures from here. */
   | { do: 'mark' }
   /** Saves the telemetry, the controller ticks and the game's state under `name`. */
@@ -279,6 +285,7 @@ function drift(where: string, v: unknown): { position: Vec3; yaw: number; pitch:
 
 const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   wait: ['s'],
+  carry: ['speed', 'yaw', 's', 'lift'],
   server: ['name', 's'],
   key: ['code', 'down'],
   hold: ['code', 's'],
@@ -512,6 +519,14 @@ export function parseStep(where: string, v: unknown): Step {
         ...(o.held === undefined ? {} : { held: bool(at('held'), o.held) }),
       };
     }
+    case 'carry':
+      return {
+        do: d,
+        speed: num(at('speed'), o.speed, 0, 100),
+        yaw: num(at('yaw'), o.yaw, -360, 360),
+        s: num(at('s'), o.s, 0, 600),
+        ...(o.lift === undefined ? {} : { lift: num(at('lift'), o.lift, 0, 64) }),
+      };
     case 'settle':
     case 'die':
       return { do: d, maxS: num(at('maxS'), o.maxS, 0, 3600) };
