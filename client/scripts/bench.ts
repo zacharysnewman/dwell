@@ -587,7 +587,7 @@ async function step(run: Run, s: Step): Promise<void> {
     case 'carry': {
       const ok = await call<boolean | null>(
         page,
-        `d.carry(${s.speed}, ${s.yaw}, ${s.s}, ${s.lift ?? 1})`,
+        `d.carry(${String(s.speed)}, ${String(s.yaw)}, ${String(s.s)}, ${String(s.lift ?? 1)})`,
       );
       if (ok !== true) throw new Error('carry: not a local world');
       await page.waitForTimeout(s.s * 1000);
