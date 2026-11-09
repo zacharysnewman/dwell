@@ -37,4 +37,10 @@ export const MAP = {
     zoomStep: 1.25,
     fogColor: '#14161c',
   },
+  revealed: {
+    tileCells: 32,
+    jobsInFlight: 2,
+    budgetMs: 2,
+    redrawMs: 150,
+  },
 } as const;

@@ -27,15 +27,19 @@ pub enum Ability {
     UnlimitedBlocks,
     /// The minimap and the explored map (ADR 0068): the client shows them; nothing on the server.
     Map,
+    /// The big map shows the whole world, unexplored ground coloured from the terrain generator
+    /// (ADR 0068, owner 2026-11-08); without it unexplored ground is fogged. Client only.
+    MapRevealed,
 }
 
 impl Ability {
-    pub const ALL: [Ability; 5] = [
+    pub const ALL: [Ability; 6] = [
         Ability::Damage,
         Ability::Flight,
         Ability::Brushes,
         Ability::UnlimitedBlocks,
         Ability::Map,
+        Ability::MapRevealed,
     ];
     /// The data's name (`shared/modes/gen.mjs` `ABILITIES`).
     pub const fn name(self) -> &'static str {
@@ -45,6 +49,7 @@ impl Ability {
             Ability::Brushes => "brushes",
             Ability::UnlimitedBlocks => "unlimitedBlocks",
             Ability::Map => "map",
+            Ability::MapRevealed => "mapRevealed",
         }
     }
     pub const fn bit(self) -> u32 {
@@ -107,6 +112,9 @@ mod tests {
         // ADR 0066: adventure uses items up and drops them; creative has unlimited blocks.
         assert!(c.allows(Ability::UnlimitedBlocks) && !a.allows(Ability::UnlimitedBlocks));
         assert_eq!(mode_or_default("a_newer_builds_mode").name, "creative");
+        // The big map is revealed in creative, explored in adventure (owner, 2026-11-08).
+        assert!(c.allows(Ability::MapRevealed) && !a.allows(Ability::MapRevealed));
+        assert!(c.allows(Ability::Map) && a.allows(Ability::Map));
     }
 
     #[test]

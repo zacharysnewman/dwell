@@ -130,6 +130,12 @@ export const MAP_FIELDS = {
     zoomStep: ['num', 1.01, 4],
     fogColor: ['color'],
   },
+  revealed: {
+    tileCells: ['int', 4, 256],
+    jobsInFlight: ['int', 1, 16],
+    budgetMs: ['num', 0.1, 16],
+    redrawMs: ['num', 0, 2000],
+  },
 };
 
 const mapFail = (m) => {

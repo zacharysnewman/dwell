@@ -4,7 +4,9 @@
 // (`takeExplored`); this shell shows the disc with the player's and the others' dots, keeps the
 // explored cells per world in this browser (IndexedDB, append-only), and draws them on the big map
 // (M, or a tap on the minimap): zoomable and pannable, unexplored ground fogged, the player's place
-// and heading on it. Its looks and sizes are data (shared/ui/map.json → map.gen.ts).
+// and heading on it. Its looks and sizes are data (shared/ui/map.json → map.gen.ts). In a mode
+// with the `mapRevealed` ability (creative) nothing is fogged: ground not yet explored takes its
+// colour from the terrain generator, a tile at a time in the job workers (`RevealCache`).
 
 import { MAP } from './map.gen';
 
@@ -174,6 +176,167 @@ export function headingOnScreen(face: number, yaw: number): number {
   return Math.atan2(sx, -sy);
 }
 
+/** What the revealed map needs from the client (`crates/dwell-client/src/map_reveal.rs`). */
+export interface RevealClient {
+  requestReveal(face: number, ti: number, tk: number): void;
+  takeReveal(): Uint8Array | undefined;
+}
+
+/** A finished tile: face, tile indices and its RGBA (null: no terrain to reveal from). */
+export interface RevealTile {
+  face: number;
+  ti: number;
+  tk: number;
+  rgba: Uint8Array | null;
+}
+
+/** `takeReveal`'s bytes: face, ti and tk (i32 LE), then the tile's RGBA rows of x from its least z. */
+export function parseRevealTile(b: Uint8Array): RevealTile {
+  const d = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  return {
+    face: b[0] ?? 0,
+    ti: d.getInt32(1, true),
+    tk: d.getInt32(5, true),
+    rgba: b.length > 9 ? b.subarray(9) : null,
+  };
+}
+
+/**
+ * The revealed big map's tiles (ADR 0068; owner, 2026-11-08): `revealed.tileCells`² explored cells
+ * each, generated in the job workers from the seed and kept for the session. Each frame
+ * `pump` takes finished tiles for at most `budgetMs` and asks for the missing tiles of the view,
+ * nearest its centre first, at most `jobsInFlight` at once: opening or zooming the map never
+ * waits for generation.
+ */
+export class RevealCache {
+  readonly tiles = new Map<string, RevealTile>();
+  private readonly pending = new Set<string>();
+  /** Tiles still to ask for, the nearest last (the last view's). */
+  private wanted: [number, number, number][] = [];
+  private wantedFor = '';
+
+  constructor(
+    readonly tileCells: number = MAP.revealed.tileCells,
+    readonly jobsInFlight: number = MAP.revealed.jobsInFlight,
+    readonly budgetMs: number = MAP.revealed.budgetMs,
+  ) {}
+
+  /** A tile's key. */
+  static key(face: number, ti: number, tk: number): string {
+    return cellKey(face, ti, tk);
+  }
+
+  /** The tiles a `w` × `h` view covers, [face, ti, tk] each, nearest its centre first. */
+  tilesFor(v: BigView, w: number, h: number): [number, number, number][] {
+    const span = this.tileCells * MAP.explored.cellM;
+    const [ax, az] = toWorld(v, -w / 2, -h / 2);
+    const [bx, bz] = toWorld(v, w / 2, h / 2);
+    const [i0, i1] = [Math.floor(Math.min(ax, bx) / span), Math.floor(Math.max(ax, bx) / span)];
+    const [k0, k1] = [Math.floor(Math.min(az, bz) / span), Math.floor(Math.max(az, bz) / span)];
+    const out: [number, number, number][] = [];
+    for (let k = k0; k <= k1; k++) for (let i = i0; i <= i1; i++) out.push([v.face, i, k]);
+    const d = ([, i, k]: [number, number, number]) =>
+      ((i + 0.5) * span - v.cx) ** 2 + ((k + 0.5) * span - v.cz) ** 2;
+    return out.sort((a, b) => d(a) - d(b));
+  }
+
+  /**
+   * One frame's fill: takes finished tiles (handing each to `onTile`) while under `budgetMs` by
+   * `now`, then asks for the view's missing tiles up to `jobsInFlight` pending. The tiles taken.
+   */
+  pump(
+    client: RevealClient,
+    v: BigView,
+    w: number,
+    h: number,
+    now: () => number,
+    onTile?: (t: RevealTile) => void,
+  ): number {
+    const t0 = now();
+    let taken = 0;
+    while (now() - t0 < this.budgetMs) {
+      const bytes = client.takeReveal();
+      if (!bytes) break;
+      const t = parseRevealTile(bytes);
+      const key = RevealCache.key(t.face, t.ti, t.tk);
+      this.pending.delete(key);
+      this.tiles.set(key, t);
+      onTile?.(t);
+      taken++;
+    }
+    const at = [v.face, v.cx, v.cz, v.pxPerM, w, h].join(',');
+    if (at !== this.wantedFor) {
+      this.wantedFor = at;
+      this.wanted = this.tilesFor(v, w, h).reverse();
+    }
+    while (this.pending.size < this.jobsInFlight && this.wanted.length > 0) {
+      const [face, ti, tk] = this.wanted.pop() ?? [0, 0, 0];
+      const key = RevealCache.key(face, ti, tk);
+      if (this.tiles.has(key) || this.pending.has(key)) continue;
+      this.pending.add(key);
+      client.requestReveal(face, ti, tk);
+    }
+    return taken;
+  }
+
+  /** Tiles asked for and not yet back. */
+  get inFlight(): number {
+    return this.pending.size;
+  }
+
+  /**
+   * Explored cell (i, k)'s revealed colour: 0xRRGGBB, null beyond the world's edge (or in a world
+   * the client does not generate), undefined while its tile is still to come.
+   */
+  colour(face: number, i: number, k: number): number | null | undefined {
+    const n = this.tileCells;
+    const [ti, tk] = [Math.floor(i / n), Math.floor(k / n)];
+    const t = this.tiles.get(RevealCache.key(face, ti, tk));
+    if (!t) return undefined;
+    if (!t.rgba) return null;
+    const o = ((k - tk * n) * n + (i - ti * n)) * 4;
+    if ((t.rgba[o + 3] ?? 0) === 0) return null;
+    return ((t.rgba[o] ?? 0) << 16) | ((t.rgba[o + 1] ?? 0) << 8) | (t.rgba[o + 2] ?? 0);
+  }
+}
+
+/**
+ * A tile's RGBA (rows of face-local x from its least z) turned to how the big map shows it: rows
+ * from the top of the screen (+z up), columns from the left (−x on face A, +x on face B).
+ */
+export function tileOnScreen(
+  rgba: Uint8Array,
+  n: number,
+  face: number,
+): Uint8ClampedArray<ArrayBuffer> {
+  const out = new Uint8ClampedArray(n * n * 4);
+  const flipX = rightSign(face) < 0;
+  for (let r = 0; r < n; r++) {
+    const b = n - 1 - r;
+    for (let c = 0; c < n; c++) {
+      const a = flipX ? n - 1 - c : c;
+      out.set(rgba.subarray((b * n + a) * 4, (b * n + a) * 4 + 4), (r * n + c) * 4);
+    }
+  }
+  return out;
+}
+
+/**
+ * What the big map draws at explored cell (i, k): its explored colour, else (the map revealed)
+ * the generator's, or null for nothing there (beyond the world's edge); undefined is fog.
+ */
+export function cellColour(
+  cells: ExploredCells,
+  reveal: RevealCache | null,
+  face: number,
+  i: number,
+  k: number,
+): number | null | undefined {
+  const c = cells.get(cellKey(face, i, k));
+  if (c !== undefined) return c;
+  return reveal?.colour(face, i, k);
+}
+
 const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
 
 /** Whether two dot lists ([right, up] m each) draw the same (within a tenth of a metre). */
@@ -191,13 +354,15 @@ export function minimapSize(width: number, height: number): number {
 }
 
 /** What the map needs from the client (the wasm `Client`). */
-export interface MapClient {
+export interface MapClient extends RevealClient {
   minimapFrame(nowMs: number, shading: boolean): Uint8Array | undefined;
   minimapPixels(): number;
   minimapDots(): Float64Array;
   mapPose(): Float64Array;
   takeExplored(): Int32Array;
   mapAllowed(): boolean;
+  /** The `mapRevealed` ability (creative): the big map shows everything. */
+  mapRevealed(): boolean;
   cpuAdapter(): boolean;
 }
 
@@ -215,6 +380,11 @@ export class MapUi {
   private dots: ArrayLike<number> = [];
   private lastUpdate = -Infinity;
   private readonly cpu: boolean;
+  /** The revealed map's tiles and their images (a mode with `mapRevealed`). */
+  private readonly reveal = new RevealCache();
+  private readonly revealImages = new Map<string, HTMLCanvasElement>();
+  private lastBigDraw = 0;
+  private revealStale = false;
   /** The disc's last draw (ms), for the bench's cost readout. */
   costMs = 0;
   shading: boolean = MAP.heightShading.default;
@@ -283,6 +453,7 @@ export class MapUi {
       this.big.hidden = true;
       return;
     }
+    this.fillReveal(now);
     // The CPU adapter's tier (CLAUDE.md): a software renderer's page updates it at most every
     // `cpuUpdateMs`, the dots with it.
     if (this.cpu && now - this.lastUpdate < MAP.minimap.cpuUpdateMs) return;
@@ -319,6 +490,38 @@ export class MapUi {
       .catch(() => {
         this.dirty = true;
       });
+  }
+
+  /** The open revealed map's tiles: one frame's budget of them, drawn at most every `redrawMs`. */
+  private fillReveal(now: number): void {
+    const v = this.view;
+    if (this.big.hidden || !v || !this.client.mapRevealed()) return;
+    const c = this.bigCanvas;
+    const w = Math.max(1, Math.round(c.clientWidth || 800));
+    const h = Math.max(1, Math.round(c.clientHeight || 600));
+    const n = this.reveal.tileCells;
+    const taken = this.reveal.pump(
+      this.client,
+      v,
+      w,
+      h,
+      () => performance.now(),
+      (t) => {
+        if (!t.rgba) return;
+        const img = this.doc.createElement('canvas');
+        img.width = img.height = n;
+        img
+          .getContext('2d')
+          ?.putImageData(new ImageData(tileOnScreen(t.rgba, n, t.face), n, n), 0, 0);
+        this.revealImages.set(RevealCache.key(t.face, t.ti, t.tk), img);
+      },
+    );
+    if (taken > 0) this.revealStale = true;
+    if (this.revealStale && now - this.lastBigDraw >= MAP.revealed.redrawMs) {
+      this.revealStale = false;
+      this.lastBigDraw = now;
+      this.drawBig();
+    }
   }
 
   private drawDisc(): void {
@@ -362,19 +565,53 @@ export class MapUi {
     const [i0, i1] = [Math.floor(Math.min(ax, bx) / cell), Math.floor(Math.max(ax, bx) / cell)];
     const [k0, k1] = [Math.floor(Math.min(az, bz) / cell), Math.floor(Math.max(az, bz) / cell)];
     const s = rightSign(v.face);
-    for (let k = k0; k <= k1; k++) {
-      for (let i = i0; i <= i1; i++) {
-        const c = this.cells.get(cellKey(v.face, i, k));
-        if (c === undefined) continue;
-        // The cell's corner nearest the screen's top left.
-        const [sx, sy] = toScreen(v, (s > 0 ? i : i + 1) * cell, (k + 1) * cell);
-        ctx.fillStyle = hex(c);
-        ctx.fillRect(
-          Math.floor(w / 2 + sx),
-          Math.floor(h / 2 + sy),
-          Math.ceil(size),
-          Math.ceil(size),
-        );
+    if (this.client.mapRevealed()) {
+      // The generator's tiles under the explored cells: a texel a cell, unsmoothed (beyond the
+      // world's edge transparent, the fog colour showing).
+      ctx.imageSmoothingEnabled = false;
+      const n = this.reveal.tileCells;
+      for (const [face, ti, tk] of this.reveal.tilesFor(v, w, h)) {
+        const img = this.revealImages.get(RevealCache.key(face, ti, tk));
+        if (!img) continue;
+        // Whole pixels on both edges (a scaled draw at a fractional corner left seams).
+        const [ax, ay] = toScreen(v, ti * n * cell, tk * n * cell);
+        const [bx, by] = toScreen(v, (ti + 1) * n * cell, (tk + 1) * n * cell);
+        const [x0, x1] = [
+          Math.round(w / 2 + Math.min(ax, bx)),
+          Math.round(w / 2 + Math.max(ax, bx)),
+        ];
+        const [y0, y1] = [
+          Math.round(h / 2 + Math.min(ay, by)),
+          Math.round(h / 2 + Math.max(ay, by)),
+        ];
+        ctx.drawImage(img, x0, y0, x1 - x0, y1 - y0);
+      }
+    }
+    const fill = (i: number, k: number, c: number) => {
+      // The cell's corner nearest the screen's top left.
+      const [sx, sy] = toScreen(v, (s > 0 ? i : i + 1) * cell, (k + 1) * cell);
+      ctx.fillStyle = hex(c);
+      ctx.fillRect(
+        Math.floor(w / 2 + sx),
+        Math.floor(h / 2 + sy),
+        Math.ceil(size),
+        Math.ceil(size),
+      );
+    };
+    if ((i1 - i0 + 1) * (k1 - k0 + 1) > this.cells.size) {
+      // Zoomed out over more cells than were explored: the explored ones, not every cell's lookup.
+      const prefix = `${String(v.face)},`;
+      for (const [key, c] of this.cells) {
+        if (!key.startsWith(prefix)) continue;
+        const [, i = 0, k = 0] = key.split(',').map(Number);
+        if (i >= i0 && i <= i1 && k >= k0 && k <= k1) fill(i, k, c);
+      }
+    } else {
+      for (let k = k0; k <= k1; k++) {
+        for (let i = i0; i <= i1; i++) {
+          const c = this.cells.get(cellKey(v.face, i, k));
+          if (c !== undefined) fill(i, k, c);
+        }
       }
     }
     const [face = 0, x = 0, z = 0, yaw = 0] = this.client.mapPose();

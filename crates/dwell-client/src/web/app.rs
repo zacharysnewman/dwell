@@ -2421,6 +2421,36 @@ impl Client {
             .is_none_or(|w| w.allows(dwell_protocol::modes::Ability::Map))
     }
 
+    /// Whether the big map shows the whole world (the `mapRevealed` ability, ADR 0068): creative.
+    /// A server that names no mode does not reveal it.
+    #[wasm_bindgen(js_name = mapRevealed)]
+    pub fn map_revealed(&self) -> bool {
+        self.inner
+            .borrow()
+            .session
+            .as_ref()
+            .and_then(|s| s.world_settings())
+            .is_some_and(|w| w.allows(dwell_protocol::modes::Ability::MapRevealed))
+    }
+    /// Asks for tile (`ti`, `tk`) of the revealed big map on `face` (`revealed.tileCells`² explored
+    /// cells); `takeReveal` returns it once generated.
+    #[wasm_bindgen(js_name = requestReveal)]
+    pub fn request_reveal(&self, face: u8, ti: i32, tk: i32) {
+        if let Some(g) = &mut self.inner.borrow_mut().game {
+            g.request_reveal(face, ti, tk);
+        }
+    }
+    /// A finished tile of the revealed big map, or undefined: face, ti and tk (i32 LE), then
+    /// RGBA (none: no terrain to reveal from).
+    #[wasm_bindgen(js_name = takeReveal)]
+    pub fn take_reveal(&self) -> Option<Vec<u8>> {
+        self.inner
+            .borrow_mut()
+            .game
+            .as_mut()
+            .and_then(|g| g.take_reveal())
+    }
+
     /// Asks for the F4 map around (x0, z0); `takeMap` returns it once generated.
     #[wasm_bindgen(js_name = requestMap)]
     pub fn request_map(&self, x0: i32, z0: i32, step: i32, n: i32, face: u8) {

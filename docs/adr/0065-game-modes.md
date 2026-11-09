@@ -35,7 +35,7 @@ fixed in code: the abilities and where each is checked. Scope: per world.
 1. **Data.** `shared/modes/modes.json` holds `formatVersion`, `defaultMode` and `modes`: each a
    `name` (how worlds refer to it), a `label`, an optional `description` and `experimental` flag,
    and `abilities`, a list of names from the fixed vocabulary **`damage`, `flight`, `brushes`,
-   `unlimitedBlocks`** (`dwell_protocol::modes::Ability`). `shared/modes/gen.mjs` validates it (a
+   `unlimitedBlocks`, `map`, `mapRevealed`** (`dwell_protocol::modes::Ability`). `shared/modes/gen.mjs` validates it (a
    bad entry fails naming the mode and the problem: an unknown ability or field, a name twice, a
    `defaultMode` that names no mode) and emits `crates/dwell-protocol/src/modes.gen.rs` (the
    server, the sim core and the client) and `client/src/ui/modes.gen.ts` (the New world form). CI

@@ -601,6 +601,8 @@ pub struct Game<S: Scene> {
     pending_lod: Option<LodSettings>,
     /// The latest F4 map (None until one arrives; an empty map without a terrain).
     map: Option<Vec<u8>>,
+    /// The revealed big map's finished tiles, not yet taken (`crate::map_reveal::encode_tile`).
+    reveal: std::collections::VecDeque<Vec<u8>>,
     /// A placed camera, if a tool set one.
     view: Option<ViewOverride>,
     /// Sound events since the shell last took them (docs/AUDIO.md §5): a side channel.
@@ -761,6 +763,7 @@ impl<S: Scene> Game<S> {
             registry: None,
             pending_lod: None,
             map: None,
+            reveal: std::collections::VecDeque::new(),
             view: None,
             sounds: Vec::new(),
             mover_sounds: MoverSounds::new(),
@@ -992,6 +995,22 @@ impl<S: Scene> Game<S> {
     /// The latest map, once (height i16 LE and an outside flag per sample; empty without a terrain).
     pub fn take_map(&mut self) -> Option<Vec<u8>> {
         self.map.take()
+    }
+    /// Asks for tile (`ti`, `tk`) of the revealed big map on `face` (0 A, 1 B; `crate::map_reveal`).
+    pub fn request_reveal(&mut self, face: u8, ti: i32, tk: i32) {
+        let f = if face == 1 {
+            FaceFrame::B
+        } else {
+            FaceFrame::A
+        };
+        self.pool.borrow_mut().submit(
+            Purpose::Reveal(face, ti, tk),
+            crate::map_reveal::reveal_job(f, ti, tk, &dwell_game::minimap::MAP),
+        );
+    }
+    /// The oldest finished tile of the revealed big map, once.
+    pub fn take_reveal(&mut self) -> Option<Vec<u8>> {
+        self.reveal.pop_front()
     }
     /// Regenerates the chunk under the player and diffs it against the world (the F3 note).
     pub fn request_diff(&mut self, c: Coord) {
@@ -1344,6 +1363,14 @@ impl<S: Scene> Game<S> {
                     self.verify(hash)
                 }
                 (Purpose::Map, Output::Map(bytes)) => self.map = Some(bytes.unwrap_or_default()),
+                (Purpose::Reveal(face, ti, tk), out) => {
+                    let rgba = match &out {
+                        Output::LodMap(Some(p)) => Some(p.as_slice()),
+                        _ => None,
+                    };
+                    self.reveal
+                        .push_back(crate::map_reveal::encode_tile(face, ti, tk, rgba));
+                }
                 (Purpose::Diff(c), Output::Chunk { voxels, .. }) => {
                     let revision = self.streamer.revision(c);
                     let padded = dwell_game::chunk_stream::ChunkStore::padded_chunk(
