@@ -1258,8 +1258,13 @@ impl<S: Scene> Game<S> {
                 // The pieces' poses first: drawn interpolated, and stood in for in the prediction
                 // at their latest carried on to the present, so a replay meets them where the
                 // server had them (docs/FELLING.md §3, BUILT_BODIES.md §6).
-                self.pieces
-                    .on_snapshot(&s.pieces, s.ack_input_seq, now_ms, &mut self.sounds);
+                self.pieces.on_snapshot(
+                    &s.pieces,
+                    s.ack_input_seq,
+                    s.server_tick,
+                    now_ms,
+                    &mut self.sounds,
+                );
                 for (id, cells, position, rotation, velocity, seq) in self.pieces.latest() {
                     self.predictor.set_piece(
                         id,
@@ -2720,6 +2725,8 @@ impl<S: Scene> Game<S> {
         while self.accumulator >= TICK_MS {
             self.accumulator -= TICK_MS;
             self.tick(input, touch);
+            let predictor = &self.predictor;
+            self.pieces.tick_present(|id| predictor.piece_pose(id));
             self.drag_tick(input, now_ms - self.accumulator / self.tick_rate);
             telemetry::add("ticks.count", 1.0);
         }
@@ -3120,10 +3127,9 @@ impl<S: Scene> Game<S> {
             self.scene.borrow_mut().set_piece(id, None);
         }
         // Pieces near the player drawn at the present it is drawn in (docs/BUILT_BODIES.md §6).
+        // Between the stand-ins' last two ticks, as the player is drawn.
         let me = self.predictor.active().then(|| self.predictor.position());
-        let predictor = &self.predictor;
-        self.pieces
-            .set_present(|id| predictor.piece_pose(id), me, dt);
+        self.pieces.set_present(self.accumulator / TICK_MS, me, dt);
         let mut poses = self.pieces.poses(now_ms);
         poses.extend(self.glides.poses(now_ms));
         poses.extend(self.loose.poses(now_ms));

@@ -44,6 +44,9 @@ struct Pose {
 /// snapshot carries each of many pieces only every few (docs/FELLING.md §3.1).
 const EXTRAPOLATE_MS: f64 = 250.0;
 
+/// A position and rotation.
+type Placed = (DVec3, DQuat);
+
 struct Piece {
     cells: Vec<PieceCell>,
     /// Its cells' offsets and states (this client's), for its settle glide, its edits and aiming
@@ -55,6 +58,8 @@ struct Piece {
     /// Its stand-in's pose in the prediction (the present), and how far it is drawn there (0 at
     /// its past pose, 1 at the present).
     present: Option<(DVec3, DQuat)>,
+    /// Its stand-in's pose before and after the last prediction tick.
+    ticked: (Option<Placed>, Option<Placed>),
     near: f64,
     /// The block its landings sound like (its first carrier's; 0: riders only, silent).
     block: StateId,
@@ -69,10 +74,70 @@ pub type Latest<'a> = (u32, &'a [PieceCell], DVec3, DQuat, DVec3, u32);
 /// the server lifts a piece up to two cells to free it, and a snapshot may lag its last moves.
 const SETTLE_REACH_M: f64 = 4.0;
 
+/// How fast (ms a ms) the drawn clock is brought to a better estimate of the server's: 3 % faster
+/// or slower, no visible change of speed; one off by more than `SNAP_MS` (the first snapshot, a
+/// restarted server) is taken at once.
+const SLEW: f64 = 0.03;
+const SNAP_MS: f64 = 250.0;
+/// How fast (ms a snapshot) the delivery estimate drifts up, so the clock follows a slower link
+/// (as `dwell_game::remotes`).
+const DRIFT_MS: f64 = 0.05;
+
+/// The server's clock as the pieces are drawn on it: a pose is timed by the server tick it was
+/// taken at, not by when the frame read its snapshot (an arrival a frame earlier or later drew
+/// 50 ms of motion over 33 or 67 ms, the shake of every moving piece, owner 2026-11-09). The
+/// local-minus-server offset is the least-delayed snapshot's (as `dwell_game::remotes`), and the
+/// offset drawn with moves toward it continuously at `SLEW`, so a better estimate never jumps
+/// the drawn time.
+#[derive(Clone, Copy, Debug, Default)]
+struct Timeline {
+    /// The offset (local − server, ms) estimated: the smallest seen, drifting up by `DRIFT_MS`.
+    target: Option<f64>,
+    /// The offset drawn with at local time `anchor_ms`, moving toward `target` from there.
+    anchor: f64,
+    anchor_ms: f64,
+}
+
+impl Timeline {
+    fn offset(&self, now_ms: f64) -> Option<f64> {
+        let target = self.target?;
+        let most = (now_ms - self.anchor_ms).max(0.0) * SLEW;
+        Some(self.anchor + (target - self.anchor).clamp(-most, most))
+    }
+
+    /// A snapshot of server time `server_ms` read at local `now_ms`.
+    fn observe(&mut self, server_ms: f64, now_ms: f64) {
+        let seen = now_ms - server_ms;
+        let (anchor, target) = match (self.offset(now_ms), self.target) {
+            (Some(drawn), Some(t)) => {
+                let target = seen.min(t + DRIFT_MS);
+                let drawn = if (target - drawn).abs() > SNAP_MS {
+                    target
+                } else {
+                    drawn
+                };
+                (drawn, target)
+            }
+            _ => (seen, seen),
+        };
+        *self = Self {
+            target: Some(target),
+            anchor,
+            anchor_ms: now_ms,
+        };
+    }
+
+    /// The server time (ms) at local `now_ms`, if a snapshot has been seen.
+    fn server_ms(&self, now_ms: f64) -> Option<f64> {
+        Some(now_ms - self.offset(now_ms)?)
+    }
+}
+
 /// The pieces falling now.
 #[derive(Default)]
 pub struct Pieces {
     map: HashMap<u32, Piece>,
+    timeline: Timeline,
 }
 
 fn quat(q: [f32; 4]) -> DQuat {
@@ -102,7 +167,8 @@ impl Pieces {
             .collect();
         let boxes = piece_boxes(&cells, e.kind);
         let pose = Pose {
-            at_ms: now_ms,
+            // Before any snapshot, local time, moved onto the server's by the first.
+            at_ms: self.timeline.server_ms(now_ms).unwrap_or(now_ms),
             seq: 0,
             position: DVec3::from(e.origin),
             rotation: quat(e.rotation),
@@ -121,6 +187,7 @@ impl Pieces {
                 kind: e.kind,
                 poses: VecDeque::from([pose]),
                 present: None,
+                ticked: (None, None),
                 near: 0.0,
                 block,
                 landed_ms: f64::NEG_INFINITY,
@@ -151,8 +218,9 @@ impl Pieces {
     /// The piece settled (or went): forgotten, and returned as it was drawn at `now_ms` and last
     /// sent, for its settle glide.
     pub fn despawn(&mut self, id: u32, now_ms: f64) -> Option<crate::settle_glide::SettledPiece> {
+        let at = self.draw_ms(now_ms);
         let p = self.map.remove(&id)?;
-        let drawn = p.drawn(now_ms);
+        let drawn = p.drawn(at);
         let last = p.poses.back()?;
         Some(crate::settle_glide::SettledPiece {
             cells: p.blocks,
@@ -181,8 +249,9 @@ impl Pieces {
     /// 2 +Y, 3 −Y, 4 +Z, 5 −Z, in its frame) and the distance.
     pub fn raycast(&self, origin: DVec3, dir: DVec3, max: f64, now_ms: f64) -> Option<BodyHit> {
         let mut best: Option<BodyHit> = None;
+        let at = self.draw_ms(now_ms);
         for (&id, p) in &self.map {
-            let (position, rotation) = p.drawn(now_ms);
+            let (position, rotation) = p.drawn(at);
             let inverse = rotation.inverse();
             let local_origin = inverse * (origin - position);
             let local_dir = inverse * dir;
@@ -225,9 +294,21 @@ impl Pieces {
         &mut self,
         states: &[PieceState],
         seq: u32,
+        server_tick: u32,
         now_ms: f64,
         sounds: &mut Vec<SoundEvent>,
     ) {
+        let server_ms = f64::from(server_tick) * 1000.0 / f64::from(dwell_protocol::SIM_HZ);
+        if self.timeline.target.is_none() {
+            // The spawn poses timed before any snapshot, onto the server's clock.
+            let offset = now_ms - server_ms;
+            for p in self.map.values_mut() {
+                for pose in &mut p.poses {
+                    pose.at_ms -= offset;
+                }
+            }
+        }
+        self.timeline.observe(server_ms, now_ms);
         for s in states {
             let Some(p) = self.map.get_mut(&s.id) else {
                 continue;
@@ -253,8 +334,14 @@ impl Pieces {
                     Some(s.position),
                 ));
             }
+            if p.poses.len() == 1 && p.poses[0].at_ms >= server_ms {
+                p.poses.clear(); // its spawn pose, timed by an estimate past this snapshot
+            }
+            if p.poses.back().is_some_and(|l| l.at_ms >= server_ms) {
+                continue; // reordered
+            }
             p.poses.push_back(Pose {
-                at_ms: now_ms,
+                at_ms: server_ms,
                 seq,
                 position: DVec3::from(s.position),
                 rotation: quat(s.rotation),
@@ -271,13 +358,14 @@ impl Pieces {
         }
     }
 
-    /// Each piece's pose to draw at `now_ms`: interpolated between the snapshots round
-    /// `now_ms − INTERP_DELAY_MS` (the newest one past them).
+    /// Each piece's pose to draw at local `now_ms`: interpolated between the snapshots round
+    /// [`Pieces::draw_ms`] (the newest one past them), on the server's ticks.
     pub fn poses(&self, now_ms: f64) -> Vec<(u32, [f64; 3], [f32; 4])> {
+        let at = self.draw_ms(now_ms);
         self.map
             .iter()
             .map(|(&id, p)| {
-                let (position, rotation) = p.drawn(now_ms);
+                let (position, rotation) = p.drawn(at);
                 let r = rotation;
                 (
                     id,
@@ -286,6 +374,13 @@ impl Pieces {
                 )
             })
             .collect()
+    }
+
+    /// The server time (ms) the pieces are drawn at for local `now_ms`: `INTERP_DELAY_MS` behind
+    /// the server's clock as the snapshots show it (before any, `now_ms` on the spawn poses'
+    /// local times).
+    fn draw_ms(&self, now_ms: f64) -> f64 {
+        self.timeline.server_ms(now_ms).unwrap_or(now_ms) - players::INTERP_DELAY_MS as f64
     }
 
     /// Each piece's latest pose and velocity with its boxes and the input seq its snapshot
@@ -307,18 +402,29 @@ impl Pieces {
             .collect()
     }
 
-    /// Each frame: the stand-ins' present poses (`present`, by piece) and the local player's
-    /// position: a piece near the player moves toward being drawn at the present, the rest toward
-    /// their past poses, over `NEAR_BLEND_SECONDS`.
-    pub fn set_present(
-        &mut self,
-        present: impl Fn(u32) -> Option<(DVec3, DQuat)>,
-        player: Option<DVec3>,
-        dt: f64,
-    ) {
-        let step = dt / NEAR_BLEND_SECONDS;
+    /// Each prediction tick: the stand-ins' poses after it (`present`, by piece), kept with the
+    /// tick's before so a frame can draw between them as it draws the player.
+    pub fn tick_present(&mut self, present: impl Fn(u32) -> Option<(DVec3, DQuat)>) {
         for (&id, p) in &mut self.map {
-            p.present = present(id);
+            let now = present(id);
+            p.ticked = (p.ticked.1.or(now), now);
+        }
+    }
+
+    /// Each frame: `alpha`, how far the frame is from the last prediction tick to the next (the
+    /// player's own, `accumulator / TICK_MS`), and the local player's position: a piece's present
+    /// is its stand-in's pose `alpha` of the way from before the last tick to after it, where the
+    /// player is drawn (drawn at the last tick alone, a near piece moved in 60 Hz steps: on a
+    /// 120 Hz display one frame in two, against a player drawn between ticks); a piece near the
+    /// player moves toward being drawn at the present, the rest toward their past poses, over
+    /// `NEAR_BLEND_SECONDS`.
+    pub fn set_present(&mut self, alpha: f64, player: Option<DVec3>, dt: f64) {
+        let step = dt / NEAR_BLEND_SECONDS;
+        for p in self.map.values_mut() {
+            p.present = match p.ticked {
+                (Some(a), Some(b)) => Some((a.0.lerp(b.0, alpha), a.1.slerp(b.1, alpha))),
+                (_, b) => b,
+            };
             let near = match (p.present, player) {
                 (Some((at, _)), Some(me)) => {
                     let reach = p
@@ -429,10 +535,10 @@ pub fn ray_cells(
 }
 
 impl Piece {
-    /// Where it is drawn at `now_ms`: its past pose (interpolated `INTERP_DELAY_MS` behind),
-    /// blended toward its present (its stand-in's) as it nears the player.
-    fn drawn(&self, now_ms: f64) -> (DVec3, DQuat) {
-        let past = pose_at(&self.poses, now_ms - players::INTERP_DELAY_MS as f64);
+    /// Where it is drawn at server time `at` ([`Pieces::draw_ms`]): its past pose, blended toward
+    /// its present (its stand-in's) as it nears the player.
+    fn drawn(&self, at: f64) -> (DVec3, DQuat) {
+        let past = pose_at(&self.poses, at);
         match self.present {
             Some((at, turn)) if self.near > 0.0 => {
                 let t = self.near * self.near * (3.0 - 2.0 * self.near);
@@ -607,6 +713,7 @@ fn meshed_blocks(cells: &[([i32; 3], StateId)], mirror: bool) -> Vec<ChunkMeshes
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dwell_world::FaceFrame;
 
     #[test]
     fn a_one_cell_piece_meshes_one_block_not_the_blocks_whose_apron_holds_it() {
@@ -696,6 +803,118 @@ mod tests {
         assert!((far.y - (10.0 - 4.0 * most)).abs() < 1e-9, "{far}");
     }
 
+    /// A flung one-cell piece as the server moves it at server time `t` (s): 6 m/s across,
+    /// gravity toward the face's ground, a 2 rad/s spin about the up axis (a turn about y is the
+    /// same on both faces: the mirror flips y alone, and the spin, an axial vector, stays).
+    fn flung(t: f64, f: FaceFrame) -> (DVec3, DQuat, DVec3, DVec3) {
+        let at = [6.0 * t, 40.0 + 4.0 * t - 4.9 * t * t, 0.0];
+        let v = [6.0, 4.0 - 9.8 * t, 0.0];
+        (
+            DVec3::from(f.point(at)),
+            DQuat::from_rotation_y(2.0 * t),
+            DVec3::from(f.vector(v)),
+            DVec3::new(0.0, 2.0, 0.0),
+        )
+    }
+
+    /// Plays the flung piece through `Pieces` as the game does (60 Hz server ticks, a snapshot
+    /// every 3; each read at the first frame after it arrives, a drawn pose a frame) for 3.5 s of
+    /// frames `frame_ms` apart (cycled), each snapshot delivered in 40 ms plus a deterministic
+    /// 0–20 ms of jitter. Returns the worst deviation of a frame's drawn speed across and spin
+    /// rate from the server's (fractions), after the first second.
+    fn drawn_jitter(frame_ms: &[f64], f: FaceFrame) -> (f64, f64) {
+        let stone = dwell_blocks::require("dwell:stone");
+        let mut pieces = Pieces::default();
+        let mut sounds = Vec::new();
+        // The local clock runs 1234.5 ms ahead of the server's.
+        let skew = 1234.5;
+        let mut seed = 7u32;
+        let mut jitter = move || {
+            seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            f64::from(seed >> 8) / f64::from(1u32 << 24) * 20.0
+        };
+        let tick_ms = 1000.0 / 60.0;
+        let snapshots: Vec<(u32, f64)> = (1..400)
+            .map(|k| 3 * k)
+            .map(|tick| (tick, f64::from(tick) * tick_ms + skew + 40.0 + jitter()))
+            .collect();
+        let (origin, r, _, _) = flung(0.0, f);
+        let spawn = EntitySpawn {
+            id: 1,
+            origin: origin.to_array(),
+            rotation: [r.x as f32, r.y as f32, r.z as f32, r.w as f32],
+            kind: 0,
+            carriers: 1,
+            cells: vec![dwell_protocol::PieceCellNet {
+                offset: [0, 0, 0],
+                state: stone,
+            }],
+        };
+        let mut now = skew + 40.0;
+        pieces.spawn(&spawn, now, &mut sounds);
+        let mut next = 0;
+        let mut drawn: Vec<(f64, DVec3, DQuat)> = Vec::new();
+        let mut i = 0;
+        while now < skew + 3500.0 {
+            let dt = frame_ms[i % frame_ms.len()];
+            now += dt;
+            i += 1;
+            while next < snapshots.len() && snapshots[next].1 <= now {
+                let tick = snapshots[next].0;
+                let (at, q, v, w) = flung(f64::from(tick) * tick_ms / 1000.0, f);
+                let state = PieceState {
+                    id: 1,
+                    position: at.to_array(),
+                    rotation: [q.x as f32, q.y as f32, q.z as f32, q.w as f32],
+                    velocity: v.as_vec3().to_array(),
+                    angular: w.as_vec3().to_array(),
+                };
+                pieces.on_snapshot(&[state], 0, tick, now, &mut sounds);
+                next += 1;
+            }
+            pieces.set_present(0.0, None, dt / 1000.0);
+            let (_, at, q) = pieces.poses(now)[0];
+            drawn.push((now, DVec3::from(at), quat(q)));
+        }
+        let (mut speed, mut spin) = (0.0f64, 0.0f64);
+        for w in drawn.windows(2).filter(|w| w[0].0 > skew + 1000.0) {
+            let (a, b) = (w[0], w[1]);
+            let dt = (b.0 - a.0) / 1000.0;
+            let across = (b.1 - a.1).x / dt;
+            speed = speed.max((across / 6.0 - 1.0).abs());
+            let turned = (b.2 * a.2.inverse()).normalize().to_axis_angle().1;
+            let turned = turned.min(std::f64::consts::TAU - turned);
+            spin = spin.max((turned / dt / 2.0 - 1.0).abs());
+        }
+        (speed, spin)
+    }
+
+    dwell_world::both_faces!(
+        fn a_moving_piece_is_drawn_smoothly_however_its_snapshots_arrive(f: FaceFrame) {
+            // Owner, 2026-11-09: every moving piece shakes, even one alone. Its poses were timed
+            // by when a frame read their snapshot, not by the server tick they were taken at, so
+            // 50 ms of motion was drawn over 33 or 67 ms as an arrival fell either side of a
+            // frame. Red before: the drawn speed off by tens of percent at 60 and 120 Hz.
+            let worst: Vec<(&str, f64, f64)> = [
+                ("60 Hz", vec![1000.0 / 60.0]),
+                ("120 Hz", vec![1000.0 / 120.0]),
+                ("uneven", vec![9.0, 24.0, 14.0, 19.0]),
+            ]
+            .into_iter()
+            .map(|(name, frames)| {
+                let (speed, spin) = drawn_jitter(&frames, f);
+                (name, (speed * 100.0).round(), (spin * 100.0).round())
+            })
+            .collect();
+            assert!(
+                worst
+                    .iter()
+                    .all(|&(_, speed, spin)| speed < 5.0 && spin < 5.0),
+                "drawn speed and spin off by (%): {worst:?}"
+            );
+        }
+    );
+
     #[test]
     fn the_ray_enters_the_nearest_cell_of_a_body_through_the_face_toward_it() {
         // face-a-only: a body's own frame has no up (the faces are in it); its pose is the caller's.
@@ -738,23 +957,75 @@ mod tests {
             &mut sounds,
         );
         let present = |_| Some((DVec3::new(1.5, 40.25, 0.5), DQuat::IDENTITY));
+        pieces.tick_present(present);
         let x = |p: &Pieces| p.poses(1000.0)[0].1[0];
         // Far: the past.
         for _ in 0..30 {
-            pieces.set_present(present, Some(DVec3::new(30.5, 40.0, 0.5)), 1.0 / 60.0);
+            pieces.set_present(0.5, Some(DVec3::new(30.5, 40.0, 0.5)), 1.0 / 60.0);
         }
         assert!((x(&pieces) - 0.5).abs() < 1e-9, "far: {}", x(&pieces));
         // Near: halfway in after a few frames, at the present after 0.25 s.
         for _ in 0..5 {
-            pieces.set_present(present, Some(DVec3::new(2.5, 40.0, 0.5)), 1.0 / 60.0);
+            pieces.set_present(0.5, Some(DVec3::new(2.5, 40.0, 0.5)), 1.0 / 60.0);
         }
         let partway = x(&pieces);
         assert!(partway > 0.5 && partway < 1.5, "blending: {partway}");
         for _ in 0..15 {
-            pieces.set_present(present, Some(DVec3::new(2.5, 40.0, 0.5)), 1.0 / 60.0);
+            pieces.set_present(0.5, Some(DVec3::new(2.5, 40.0, 0.5)), 1.0 / 60.0);
         }
         assert!((x(&pieces) - 1.5).abs() < 1e-9, "near: {}", x(&pieces));
     }
+
+    dwell_world::both_faces!(
+        fn a_piece_near_the_player_moves_between_the_ticks_as_the_player_is_drawn(f: FaceFrame) {
+            // Owner, 2026-11-09: a moving piece shakes. One near the player is drawn where its
+            // stand-in is in the prediction, which moves once a 60 Hz tick; drawn at the last
+            // tick, on a 120 Hz display it stood still one frame in two (the player, drawn
+            // between ticks, did not). Red before (drawn at the last tick): steps of 0 and 10 cm.
+            let stone = dwell_blocks::require("dwell:stone");
+            let mut pieces = Pieces::default();
+            let mut sounds = Vec::new();
+            let spawn = EntitySpawn {
+                id: 2,
+                origin: f.point([0.5, 40.25, 0.5]),
+                rotation: [0.0, 0.0, 0.0, 1.0],
+                kind: 0,
+                carriers: 1,
+                cells: vec![dwell_protocol::PieceCellNet {
+                    offset: [0, 0, 0],
+                    state: stone,
+                }],
+            };
+            pieces.spawn(&spawn, 0.0, &mut sounds);
+            // The stand-in slides 6 m/s across beside the player: 10 cm a tick.
+            let tick_ms = 1000.0 / 60.0;
+            let (mut accumulator, mut tick) = (0.0, 0u32);
+            let mut xs = Vec::new();
+            for frame in 0..120 {
+                accumulator += 1000.0 / 120.0;
+                while accumulator >= tick_ms {
+                    accumulator -= tick_ms;
+                    tick += 1;
+                    let at = DVec3::from(f.point([0.5 + 0.1 * f64::from(tick), 40.25, 0.5]));
+                    pieces.tick_present(|_| Some((at, DQuat::IDENTITY)));
+                }
+                // Always near: the player runs along beside it.
+                let player = f.point([0.5 + 0.1 * f64::from(tick), 40.0, 1.5]);
+                pieces.set_present(accumulator / tick_ms, Some(player.into()), 1.0 / 120.0);
+                if frame >= 60 {
+                    xs.push(pieces.poses(1000.0)[0].1[0]);
+                }
+            }
+            let steps: Vec<f64> = xs.windows(2).map(|w| w[1] - w[0]).collect();
+            let (lo, hi) = steps
+                .iter()
+                .fold((f64::MAX, f64::MIN), |(a, b), &s| (a.min(s), b.max(s)));
+            assert!(
+                (lo - 0.05).abs() < 1e-6 && (hi - 0.05).abs() < 1e-6,
+                "a frame's step {lo:.3}..{hi:.3} m, not 0.05"
+            );
+        }
+    );
 
     #[test]
     fn a_body_aimed_at_in_the_world_is_turned_into_its_frame() {
@@ -837,7 +1108,13 @@ mod tests {
             .into_iter()
             .enumerate()
         {
-            pieces.on_snapshot(&[state(vy)], 0, 50.0 * k as f64 + 50.0, &mut sounds);
+            pieces.on_snapshot(
+                &[state(vy)],
+                0,
+                3 * (k as u32 + 1),
+                50.0 * k as f64 + 50.0,
+                &mut sounds,
+            );
         }
         // -3 to -8 is a shove, not a stop: still a change over 2 m/s, so it sounds (a hit).
         assert_eq!(
@@ -848,8 +1125,8 @@ mod tests {
         );
         sounds.clear();
         // It hits the ground: -8 → 0, a landing; the bounce right after stays quiet.
-        pieces.on_snapshot(&[state(0.0)], 0, 600.0, &mut sounds);
-        pieces.on_snapshot(&[state(-3.0)], 0, 650.0, &mut sounds);
+        pieces.on_snapshot(&[state(0.0)], 0, 36, 600.0, &mut sounds);
+        pieces.on_snapshot(&[state(-3.0)], 0, 39, 650.0, &mut sounds);
         assert_eq!(
             sounds
                 .iter()
