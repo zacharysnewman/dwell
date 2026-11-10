@@ -6,6 +6,15 @@ pins it.
 
 ## Open
 
+### 56. A second water surface layer under the water, strange to be between
+
+Owner, 2026-11-09 (on 0.50.76–0.50.78): "There's a weird underwater double surface layer, and it
+looks strange when you're between them." Then: "I actually can't repro that double surface layer
+issue." Parked: not reproduced by the owner or here; reopen with a screenshot if seen again. Suspects: the 0.50.20s underside texture or the waterline band drawn at a second
+level (e.g. a flooded cell's top or the ½ m step's lower surface seen from below), a sea/river
+cell's top plus the cell's own underside, or something from the heightfield work (0.50.69–0.50.78)
+even with the switch off (the mesher's `water_tops` flag is on, so tops should be meshed as before).
+
 ### 54. Close chunks drawn in low detail while carried, and edited chunks refined only up close
 
 *Reported by the owner, 2026-11-09,* riding a raft at walking or swimming speed on a fast desktop: "close
@@ -148,6 +157,22 @@ face, or the placement check against its shape.
 
 
 ## Fixed
+
+### 57. iOS Safari: touch stops doing anything (no look, taps neither break nor build)
+
+Owner, 2026-11-09: "a really random iOS Safari bug where tapping and dragging stops doing anything
+at all, no looking, tapping doesn't break or build. Game is fully responsive." Cause (found in code,
+not reproduced on a device): the touch controls hold one finger per zone (`TouchControls::look_down`
+/ `stick_down` ignore a new finger while one is held). iOS Safari can drop a finger's pointerup or
+pointercancel (a system gesture, the controls hidden under the finger), so that finger stayed held
+and every later one was ignored. Fixed in 0.50.79: when the page sees no finger down (`touchend` /
+`touchcancel` with no touches left), loses focus or is hidden, held fingers are released
+(`all_lifted`, a lost held build ends); a zone that loses pointer capture lets its finger go.
+Tests: `a_finger_whose_lift_never_arrived_does_not_block_the_next`, `a_tap_after_a_lost_lift_still_taps`,
+`a_held_build_whose_lift_never_arrived_ends_when_a_new_finger_comes`,
+`a_new_stick_finger_takes_over_a_lost_one` (dwell-game touch; red: the second finger was ignored).
+Check on the device: if it still happens, lifting every finger once should bring touch back.
+
 
 ### 55. Walking animations played while standing still on a moving body (fixed in 0.50.65)
 

@@ -195,6 +195,8 @@ pub struct TouchControls {
     stick_origin: (f64, f64),
     stick_offset: (f64, f64),
     look_pointer: Option<LookPointer>,
+    /// A held look finger was replaced before its lift arrived: its hold ends next frame.
+    hold_lost: bool,
     buttons: [TouchButtonState; 7],
     run_latched: bool,
     stick_run: bool,
@@ -208,6 +210,7 @@ impl Default for TouchControls {
             stick_origin: (0.0, 0.0),
             stick_offset: (0.0, 0.0),
             look_pointer: None,
+            hold_lost: false,
             buttons: TouchButton::ALL.map(|b| TouchButtonState::new(b.spec().mode)),
             run_latched: false,
             stick_run: false,
@@ -285,9 +288,26 @@ impl TouchControls {
         });
     }
 
+    /// No finger is on the screen any more (the page's `touches` list is empty, or the page lost
+    /// focus): any finger still held here is one whose lift never arrived. iOS Safari can drop a
+    /// pointerup or pointercancel (a system gesture, the controls hidden under a finger), and a held
+    /// finger made every later one be ignored: no look, no taps (BUGS #57). Releases them; a lost
+    /// hold ends at the next [`Self::hold_due`].
+    pub fn all_lifted(&mut self) {
+        if self.stick_pointer.take().is_some() {
+            self.update_stick(0.0, 0.0);
+        }
+        if self.look_pointer.take().is_some_and(|p| p.held) {
+            self.hold_lost = true;
+        }
+    }
+
     /// Each frame (`now_ms` on the events' clock): [`TouchEvent::Hold`] once, when the look finger
     /// has been held still for HOLD_MS in Place mode.
     pub fn hold_due(&mut self, now_ms: f64) -> Option<TouchEvent> {
+        if std::mem::take(&mut self.hold_lost) {
+            return Some(TouchEvent::HoldEnd);
+        }
         let place = self.button_active(TouchButton::Edit);
         let p = self.look_pointer.as_mut().filter(|p| !p.held && place)?;
         let (sx, sy, st) = p.start;
@@ -413,6 +433,56 @@ mod tests {
 
     fn press_and_release(b: &mut TouchButtonState) -> [bool; 2] {
         [b.press(), b.release()]
+    }
+
+    // BUGS #57 (owner, 2026-11-09): on iOS Safari touch stopped doing anything (no look, taps
+    // neither break nor build) while the game ran on. A finger whose pointerup/pointercancel never
+    // arrived (a system gesture, the controls hidden under it) held the look slot, and every later
+    // finger was ignored. When the page sees no finger down, held ones are released.
+    #[test]
+    fn a_finger_whose_lift_never_arrived_does_not_block_the_next() {
+        let mut t = TouchControls::new();
+        let mut look = Look::default();
+        t.look_down(1, 100.0, 100.0, 0.0); // its pointerup is lost
+        t.all_lifted(); // the page sees no finger down
+        t.look_down(2, 200.0, 200.0, 5_000.0);
+        let before = look.yaw;
+        t.look_move(2, 260.0, 200.0, &mut look);
+        assert_ne!(look.yaw, before, "the new finger turns the view");
+    }
+
+    #[test]
+    fn a_tap_after_a_lost_lift_still_taps() {
+        let mut t = TouchControls::new();
+        t.look_down(1, 100.0, 100.0, 0.0); // its pointerup is lost
+        t.all_lifted(); // the page sees no finger down
+        t.look_down(2, 200.0, 200.0, 5_000.0);
+        assert_eq!(t.look_up(2, 5_080.0, false), Some(TouchEvent::Tap));
+    }
+
+    #[test]
+    fn a_held_build_whose_lift_never_arrived_ends_when_a_new_finger_comes() {
+        let mut t = TouchControls::new();
+        t.button_down(TouchButton::Edit);
+        t.button_up(TouchButton::Edit); // Place mode latched
+        t.look_down(1, 100.0, 100.0, 0.0);
+        assert_eq!(t.hold_due(HOLD_MS + 1.0), Some(TouchEvent::Hold));
+        t.all_lifted(); // finger 1's lift was lost; the page sees no finger down
+        t.look_down(2, 200.0, 200.0, 5_000.0);
+        assert_eq!(t.hold_due(5_001.0), Some(TouchEvent::HoldEnd));
+        assert_eq!(t.hold_due(5_002.0), None);
+    }
+
+    #[test]
+    fn a_new_stick_finger_takes_over_a_lost_one() {
+        let mut t = TouchControls::new();
+        t.stick_down(1, 50.0, 500.0); // its pointerup is lost
+        t.all_lifted();
+        assert_eq!(t.stick_view(), None, "the lost finger's stick is gone");
+        t.stick_down(2, 60.0, 500.0);
+        t.stick_move(2, 60.0, 500.0 - STICK_RADIUS);
+        assert!(t.stick_view().is_some());
+        assert!(t.state.move_y > 0.9, "the new finger drives the stick");
     }
 
     #[test]

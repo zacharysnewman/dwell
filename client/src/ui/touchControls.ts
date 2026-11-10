@@ -87,6 +87,25 @@ export class TouchControls {
     lookZone.addEventListener('pointercancel', (e) => {
       client.lookUp(e.pointerId, e.timeStamp, true, performance.now());
     });
+    // iOS Safari can drop a finger's pointerup/pointercancel (a system gesture, the controls hidden
+    // under it); the game then held that finger and ignored every later one: no look, no taps
+    // (BUGS #57). When the page sees no finger down, or loses focus, held fingers are released.
+    const liftedAll = (e: TouchEvent) => {
+      if (e.touches.length === 0) client.touchesLifted();
+    };
+    document.addEventListener('touchend', liftedAll, { passive: true });
+    document.addEventListener('touchcancel', liftedAll, { passive: true });
+    window.addEventListener('blur', () => {
+      client.touchesLifted();
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) client.touchesLifted();
+    });
+    // A zone that loses its pointer without an up or cancel lets it go too.
+    moveZone.addEventListener('lostpointercapture', stickUp);
+    lookZone.addEventListener('lostpointercapture', (e) => {
+      client.lookUp(e.pointerId, e.timeStamp, true, performance.now());
+    });
     // iOS Safari: no page scrolling, rubber-banding, double-tap zoom, or callout while playing.
     for (const type of ['touchstart', 'touchmove', 'gesturestart', 'contextmenu'] as const) {
       this.root.addEventListener(
