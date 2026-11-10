@@ -15,6 +15,7 @@ Open proposals:
 | [`TERRAIN_HYDROLOGY_AND_VOLUMES.md`](./TERRAIN_HYDROLOGY_AND_VOLUMES.md) | A world-scale hydrology map per seed and face (stream-power erosion, priority-flood lakes, rivers to the sea), then a 3D density function for rich caves, cliffs, arches, sea stacks, cross-face caves and floating islands | Hydrology prototype built (a viewer of images, not wired into generation); open questions for the owner |
 | [`BIOME_SANDBOX.md`](./BIOME_SANDBOX.md) | A biome sandbox and a texture lab: sliders for the top blocks, relief, water banks and hue, trees, rocks and structures, a live preview patch, export to JSON (archipelago, Arches, Mount Rainier as biomes) | Recorded 2026-11-09; queued after the current work, questions parked until then by the owner's request |
 | [`SYSTEMIC_TERRAIN.md`](./SYSTEMIC_TERRAIN.md) | Systemic terrain: world shape → geology (rock types: hardness, jointing) → climate (temperature, prevailing wind and rain shadow) → weathering/erosion style → soil and life; biomes as labels and Chisel presets | Recorded 2026-11-10; extends ADR 0074; questions before B5 |
+| [`WORLD_SCALE.md`](./WORLD_SCALE.md) | What a 10× wider disc (500 km) would cost, measured at 1×, 2× and 5× (`dwell-worldgen` example `world_scale`): the world map's build, memory and storage, the spawn search, chunks, the big map; what breaks (the lake-shore scan, the spawn fallback, the LOD root, wasm32 memory); coarse whole-world map with regional maps on demand | Measured 2026-11-10; questions for the owner |
 
 Adopted proposals, and where they went:
 
