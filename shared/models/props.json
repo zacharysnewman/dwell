@@ -1,0 +1,323 @@
+{
+  "$comment": "Dwell's static models, the props (ADR 0070 \u00a78, docs/CHARACTERS.md \u00a711.7): no skin, no clips. Each is a GLB in shared/models/glb/props (the checked-in source of truth, made once by `node shared/models/import.mjs --props --from <unpacked packs>` from its pack's FBX: every face one palette colour, the pack's gradient texture snapped to the nearest ramp's base, its longest side scaled to `length` metres (else its category's), its origin at its bounds' centre). `category` is one of `categories`, whose `length` is the default size and `min`/`max` the sizes a prop of it may be (the generator fails outside them). `grip` (optional, metres from the origin) is where a hand holds it, for a prop an item's look names (shared/inventory `look.model`). `source.pack` names the unpacked pack and `source.root` the path inside it the `fbx` paths are under. Prototype content: which props become items is the owner's to decide. Run `node shared/models/gen.mjs` after editing.",
+  "source": {
+    "pack": "3D_Low_Poly_Tools_Weapons_Containers",
+    "root": "Assets/WeaponsAndPropsAssetPack_NAS/",
+    "texture": "Textures/GradientPalette.png"
+  },
+  "categories": {
+    "tools": {
+      "label": "Tools",
+      "length": 0.8,
+      "min": 0.2,
+      "max": 1.6
+    },
+    "weapons": {
+      "label": "Weapons",
+      "length": 1,
+      "min": 0.2,
+      "max": 1.8
+    },
+    "instruments": {
+      "label": "Instruments",
+      "length": 0.9,
+      "min": 0.2,
+      "max": 1.4
+    },
+    "containers": {
+      "label": "Containers",
+      "length": 0.7,
+      "min": 0.2,
+      "max": 1.4
+    },
+    "tableware": {
+      "label": "Tableware",
+      "length": 0.25,
+      "min": 0.05,
+      "max": 0.8
+    },
+    "lamps": {
+      "label": "Lamps",
+      "length": 0.5,
+      "min": 0.1,
+      "max": 1.2
+    }
+  },
+  "props": {
+    "bag": {
+      "category": "containers",
+      "glb": "glb/props/bag.glb",
+      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-bag.fbx"
+    },
+    "breakable_barrel": {
+      "category": "containers",
+      "glb": "glb/props/breakable_barrel.glb",
+      "fbx": "Assets/Breakables/Barrel/AssetsPack-01-NAS-breakable-barrel.fbx"
+    },
+    "chest": {
+      "category": "containers",
+      "glb": "glb/props/chest.glb",
+      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-chest.fbx"
+    },
+    "openable_barrel": {
+      "category": "containers",
+      "glb": "glb/props/openable_barrel.glb",
+      "fbx": "Assets/Breakables/Barrel/AssetsPack-01-NAS-openable-barrel.fbx"
+    },
+    "static_barrel": {
+      "category": "containers",
+      "glb": "glb/props/static_barrel.glb",
+      "fbx": "Assets/Breakables/Barrel/AssetsPack-01-NAS-static-barrel.fbx"
+    },
+    "claves": {
+      "category": "instruments",
+      "glb": "glb/props/claves.glb",
+      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-claves.fbx"
+    },
+    "flutes": {
+      "category": "instruments",
+      "glb": "glb/props/flutes.glb",
+      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-flutes.fbx"
+    },
+    "guitar": {
+      "category": "instruments",
+      "glb": "glb/props/guitar.glb",
+      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-guitar.fbx"
+    },
+    "ceiling_lamp": {
+      "category": "lamps",
+      "glb": "glb/props/ceiling_lamp.glb",
+      "fbx": "Assets/Lamps/AssetsPack-01-NAS-ceiling-lamp.fbx"
+    },
+    "steampunk_wall_lamp": {
+      "category": "lamps",
+      "glb": "glb/props/steampunk_wall_lamp.glb",
+      "fbx": "Assets/Lamps/AssetsPack-01-NAS-steampunk-wall-lamp.fbx"
+    },
+    "wall_lamp": {
+      "category": "lamps",
+      "glb": "glb/props/wall_lamp.glb",
+      "fbx": "Assets/Lamps/AssetsPack-01-NAS-wall-lamp.fbx"
+    },
+    "fixed_bowl": {
+      "category": "tableware",
+      "glb": "glb/props/fixed_bowl.glb",
+      "fbx": "Assets/Breakables/Bowl/AssetsPack-01-NAS-fixed-bowl.fbx"
+    },
+    "fixed_plate": {
+      "category": "tableware",
+      "glb": "glb/props/fixed_plate.glb",
+      "fbx": "Assets/Breakables/Plate/AssetsPack-01-NAS-fixed-plate.fbx"
+    },
+    "fixed_shallow_plate": {
+      "category": "tableware",
+      "glb": "glb/props/fixed_shallow_plate.glb",
+      "fbx": "Assets/Breakables/ShallowPlate/AssetsPack-01-NAS-fixed-shallow-plate.fbx"
+    },
+    "fixed_simple_cup": {
+      "category": "tableware",
+      "glb": "glb/props/fixed_simple_cup.glb",
+      "fbx": "Assets/Breakables/SimpleCup/AssetsPack-01-NAS-fixed-simple-cup.fbx"
+    },
+    "fixed_simple_mug": {
+      "category": "tableware",
+      "glb": "glb/props/fixed_simple_mug.glb",
+      "fbx": "Assets/Breakables/SimpleMug/AssetsPack-01-NAS-fixed-simple-mug.fbx"
+    },
+    "fixed_vase_001": {
+      "category": "tableware",
+      "glb": "glb/props/fixed_vase_001.glb",
+      "fbx": "Assets/Breakables/Vases/AssetsPack-01-NAS-fixed-vase-001.fbx"
+    },
+    "fixed_vase_002": {
+      "category": "tableware",
+      "glb": "glb/props/fixed_vase_002.glb",
+      "fbx": "Assets/Breakables/Vases/AssetsPack-01-NAS-fixed-vase-002.fbx"
+    },
+    "fixed_vase_003": {
+      "category": "tableware",
+      "glb": "glb/props/fixed_vase_003.glb",
+      "fbx": "Assets/Breakables/Vases/AssetsPack-01-NAS-fixed-vase-003.fbx"
+    },
+    "fixed_vase_004": {
+      "category": "tableware",
+      "glb": "glb/props/fixed_vase_004.glb",
+      "fbx": "Assets/Breakables/Vases/AssetsPack-01-NAS-fixed-vase-004.fbx"
+    },
+    "fractured_plate": {
+      "category": "tableware",
+      "glb": "glb/props/fractured_plate.glb",
+      "fbx": "Assets/Breakables/Plate/AssetsPack-01-NAS-fractured-plate.fbx"
+    },
+    "fractured_shallow_plate": {
+      "category": "tableware",
+      "glb": "glb/props/fractured_shallow_plate.glb",
+      "fbx": "Assets/Breakables/ShallowPlate/AssetsPack-01-NAS-fractured-shallow-plate.fbx"
+    },
+    "fractured_simple_bowl": {
+      "category": "tableware",
+      "glb": "glb/props/fractured_simple_bowl.glb",
+      "fbx": "Assets/Breakables/Bowl/AssetsPack-01-NAS-fractured-simple-bowl.fbx"
+    },
+    "fractured_simple_cup": {
+      "category": "tableware",
+      "glb": "glb/props/fractured_simple_cup.glb",
+      "fbx": "Assets/Breakables/SimpleCup/AssetsPack-01-NAS-fractured-simple-cup.fbx"
+    },
+    "fractured_simple_mug": {
+      "category": "tableware",
+      "glb": "glb/props/fractured_simple_mug.glb",
+      "fbx": "Assets/Breakables/SimpleMug/AssetsPack-01-NAS-fractured-simple-mug.fbx"
+    },
+    "fractured_vase_001": {
+      "category": "tableware",
+      "glb": "glb/props/fractured_vase_001.glb",
+      "fbx": "Assets/Breakables/Vases/AssetsPack-01-NAS-fractured-vase-001.fbx"
+    },
+    "fractured_vase_002": {
+      "category": "tableware",
+      "glb": "glb/props/fractured_vase_002.glb",
+      "fbx": "Assets/Breakables/Vases/AssetsPack-01-NAS-fractured-vase-002.fbx"
+    },
+    "fractured_vase_003": {
+      "category": "tableware",
+      "glb": "glb/props/fractured_vase_003.glb",
+      "fbx": "Assets/Breakables/Vases/AssetsPack-01-NAS-fractured-vase-003.fbx"
+    },
+    "fractured_vase_004": {
+      "category": "tableware",
+      "glb": "glb/props/fractured_vase_004.glb",
+      "fbx": "Assets/Breakables/Vases/AssetsPack-01-NAS-fractured-vase-004.fbx"
+    },
+    "axes": {
+      "category": "tools",
+      "glb": "glb/props/axes.glb",
+      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-axes.fbx"
+    },
+    "metal_fork": {
+      "category": "tools",
+      "glb": "glb/props/metal_fork.glb",
+      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-metal-fork.fbx",
+      "length": 0.3
+    },
+    "metal_hammer": {
+      "category": "tools",
+      "glb": "glb/props/metal_hammer.glb",
+      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-metal-hammer.fbx",
+      "length": 0.45
+    },
+    "metal_pickaxes": {
+      "category": "tools",
+      "glb": "glb/props/metal_pickaxes.glb",
+      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-metal-pickaxes.fbx"
+    },
+    "metal_shovel": {
+      "category": "tools",
+      "glb": "glb/props/metal_shovel.glb",
+      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-metal-shovel.fbx"
+    },
+    "modern_hoe": {
+      "category": "tools",
+      "glb": "glb/props/modern_hoe.glb",
+      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-modern-hoe.fbx"
+    },
+    "primitive_hoe": {
+      "category": "tools",
+      "glb": "glb/props/primitive_hoe.glb",
+      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-primitive-hoe.fbx"
+    },
+    "scythes": {
+      "category": "tools",
+      "glb": "glb/props/scythes.glb",
+      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-scythes.fbx"
+    },
+    "stone_axes": {
+      "category": "tools",
+      "glb": "glb/props/stone_axes.glb",
+      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-stone-axes.fbx"
+    },
+    "stone_hammer": {
+      "category": "tools",
+      "glb": "glb/props/stone_hammer.glb",
+      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-stone-hammer.fbx",
+      "length": 0.45
+    },
+    "stone_pickaxes": {
+      "category": "tools",
+      "glb": "glb/props/stone_pickaxes.glb",
+      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-stone-pickaxes.fbx",
+      "length": 0.6,
+      "grip": [0, -0.2, 0]
+    },
+    "wooden_shovel": {
+      "category": "tools",
+      "glb": "glb/props/wooden_shovel.glb",
+      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-wooden-shovel.fbx"
+    },
+    "wrenches": {
+      "category": "tools",
+      "glb": "glb/props/wrenches.glb",
+      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-wrenches.fbx",
+      "length": 0.35
+    },
+    "golf_bats": {
+      "category": "weapons",
+      "glb": "glb/props/golf_bats.glb",
+      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-golf-bats.fbx"
+    },
+    "katanas_swords": {
+      "category": "weapons",
+      "glb": "glb/props/katanas_swords.glb",
+      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-katanas-swords.fbx"
+    },
+    "metal_bat": {
+      "category": "weapons",
+      "glb": "glb/props/metal_bat.glb",
+      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-metal-bat.fbx"
+    },
+    "metal_knives": {
+      "category": "weapons",
+      "glb": "glb/props/metal_knives.glb",
+      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-metal-knives.fbx",
+      "length": 0.35
+    },
+    "metal_spear": {
+      "category": "weapons",
+      "glb": "glb/props/metal_spear.glb",
+      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-metal-spear.fbx"
+    },
+    "staves": {
+      "category": "weapons",
+      "glb": "glb/props/staves.glb",
+      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-staves.fbx"
+    },
+    "stone_knife": {
+      "category": "weapons",
+      "glb": "glb/props/stone_knife.glb",
+      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-stone-knife.fbx",
+      "length": 0.3
+    },
+    "stone_spear": {
+      "category": "weapons",
+      "glb": "glb/props/stone_spear.glb",
+      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-stone-spear.fbx"
+    },
+    "wand_handles": {
+      "category": "weapons",
+      "glb": "glb/props/wand_handles.glb",
+      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-wand-handles.fbx",
+      "length": 0.45
+    },
+    "wands": {
+      "category": "weapons",
+      "glb": "glb/props/wands.glb",
+      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-wands.fbx",
+      "length": 0.45
+    },
+    "wooden_bat": {
+      "category": "weapons",
+      "glb": "glb/props/wooden_bat.glb",
+      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-wooden-bat.fbx"
+    }
+  }
+}
