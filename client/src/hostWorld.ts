@@ -7,6 +7,7 @@ import { startHosting, type HostRelay } from './net/hosting';
 import { configuredMasterUrl, MasterClient } from './net/master';
 import { codeLink } from './ui/launch';
 import { HostPanel } from './ui/hostPanel';
+import { DEFAULT_MODE } from './ui/modes.gen';
 import type { SettingsMenu } from './ui/settingsMenu';
 
 /** Keeps the screen on while hosting, where the browser allows it (re-taken when shown again). */
@@ -45,6 +46,8 @@ export function enableHosting(
   local: LocalSession,
   mobile: boolean,
   worldName: string,
+  /** The world's mode was switched (ADR 0065): the world list's badge follows it. */
+  onModeChanged: (mode: string) => void = () => undefined,
 ): void {
   const base = configuredMasterUrl();
   let relay: HostRelay | null = null;
@@ -75,6 +78,13 @@ export function enableHosting(
       };
     },
     stop,
+    mode: local.loopback.mode || DEFAULT_MODE,
+    setMode: async (name) => {
+      const before = local.loopback.mode;
+      const now = await local.loopback.setMode(name);
+      if (now !== before) onModeChanged(now);
+      return now;
+    },
   });
   settings.addHostPanel(panel.element);
 

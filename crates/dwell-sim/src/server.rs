@@ -562,6 +562,9 @@ struct Session {
     ground_hello: bool,
     inventory_dirty: bool,
     inventory_unread: bool,
+    /// The host took flight away (a mode change, ADR 0065) while this player was in the air: its
+    /// next landing hurts nothing (the fall is the host's doing), then it is cleared.
+    flight_grace: bool,
     /// Whether its client understands cuts (`ChopAction::Hello`, ADR 0067), and the tick its next
     /// swing may land.
     chop_hello: bool,
@@ -618,6 +621,7 @@ impl Session {
             ground_hello: false,
             inventory_dirty: false,
             inventory_unread: false,
+            flight_grace: false,
             chop_hello: false,
             chop_ready: 0,
             vitals_hello: false,
@@ -1579,8 +1583,15 @@ impl Server {
             return;
         };
         let c = self.players.controller(h);
-        if c.events & events::IMPACTED != 0 {
-            let amount = self.config.player_config.impact_damage(c.impact_speed);
+        let (impacted, grounded) = (c.events & events::IMPACTED != 0, c.ground.grounded);
+        let (speed, flying) = (c.impact_speed, c.fly.flying);
+        let s = self.sessions.get_mut(&id).expect("session");
+        let graced = s.flight_grace;
+        if s.flight_grace && !flying && (impacted || grounded) {
+            s.flight_grace = false; // landed: the host's fall is over
+        }
+        if impacted && !graced {
+            let amount = self.config.player_config.impact_damage(speed);
             self.damage(id, amount, DamageCause::Fall);
         }
         self.drown(id);
@@ -3446,6 +3457,21 @@ impl Server {
         }
         self.settings.mode = m.name;
         self.settings_fields = self.settings_fields.with(self.settings);
+        // Flight taken away: nobody flies on (their queued inputs too), and whoever was in the air
+        // lands unhurt (`flight_grace`). The inventory is the player's either way (ADR 0066): a
+        // creative spell neither uses nor drops it, so switching back finds it as it was.
+        if !m.allows(Ability::Flight) {
+            for s in self.sessions.values_mut() {
+                s.last_input.fly = false;
+                for (_, input) in &mut s.inputs {
+                    input.fly = false;
+                }
+                if let Some(h) = s.handle {
+                    let c = self.players.controller(h);
+                    s.flight_grace |= c.fly.flying || !c.ground.grounded;
+                }
+            }
+        }
         // Whether the mode uses items is in each `Inventory` (ADR 0066).
         for s in self.sessions.values_mut() {
             s.inventory_dirty = true;

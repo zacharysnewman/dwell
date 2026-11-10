@@ -82,11 +82,37 @@ fixed in code: the abilities and where each is checked. Scope: per world.
   brush strokes and flight on the server (`tests/modes.rs`, `tests/netcode.rs`); the host's change
   applies to players in the world (`tests/modes.rs`, `tests/netcode.rs`, the client session's
   `a_mode_change_after_join_…`). Tests that are about damage now run in adventure.
-- **Not built yet:** a host control to change the mode in game (the server, `LocalCore` and the
-  worker's `setMode` are ready; the pause menu or host panel needs the button), and the dedicated
-  server's `--mode` flag. Those are UI and CLI on a finished system.
+- **Built in 0.51.10** (the amendment below): the Host page's Mode choice and the dedicated
+  server's `--mode` flag.
 - Reversing it: drop the `MODE` field's reader; worlds keep the field, which builds without it
   skip.
+
+**Amendment, 0.51.10 (owner, 2026-11-08: "host in-game mode switch + server --mode"):** the two
+items "not built yet" above are built.
+
+- **The Host page's Mode.** In a local world (single-player or hosting) the game menu's Host page
+  offers the modes from the data (`modeOptions`, experimental marked) in both its views; a change
+  goes to the local worker (`setMode` → `LocalCore::set_mode`, answered with the world's `mode`),
+  which saves the world at once. The world list's mode badge follows: `WorldMeta.mode` is now the
+  world's current mode, not only its creation choice (`WorldIndex.setMode`, the index entry
+  append-only; still read by the worker only when the file is created).
+- **`--mode <name>`** on the dedicated server: checked against `shared/modes/modes.json` before the
+  world file is opened (an unknown name fails naming the modes, nothing written); a new world is
+  made in it, and a saved world in another mode switches to it on start (`switch_mode`, which logs
+  `world: game mode adventure (switched from creative by --mode)`).
+- **Flight taken away live.** `set_mode` to a mode without `flight` clears the fly bit in every
+  player's queued and held input, so nobody flies on, and marks whoever is flying or in the air:
+  that player's next landing deals no fall damage (`flight_grace`; the fall is the host's doing,
+  owner: "falls gently"), cleared once it lands. The fall itself is the ordinary one (no slowed
+  descent: that would need the controller and the prediction to agree on a new state).
+- **Inventories across a switch** (ADR 0066). A player has one inventory and wallet per world,
+  saved with it; creative neither uses nor drops it, so switching adventure → creative → adventure
+  finds it as it was (kept and restored). Creative's hotbar is the creative items meanwhile; loose
+  items can still be picked up in creative (ADR 0066 §7).
+- Tests: `dwell-sim` `tests/modes.rs` `switching_modes_live_…` (both faces: a flyer lands unhurt, a
+  later fall hurts, the inventory kept through creative and back, flight again); `dwell-server`
+  `tests/host.rs` (`--mode` creates and switches, the saved mode reloads, a bad name fails);
+  `hostPanel.test.ts` (the modes from data, a fixture mode), `loopback.test.ts`, `worldIndex.test.ts`.
 
 **0.50.71 (owner, 2026-11-09):** the main menu's world list shows each world's mode as a badge at the
 start of its details line (`worldModeLabel`: `WorldMeta.mode`, or the default mode for a world without

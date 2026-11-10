@@ -1673,7 +1673,12 @@ async function connect(app: App): Promise<void> {
     enableGameMenu(app, local?.save ?? null);
     app.settings?.setSubtitle(localWorld ? `${target} · this device` : target);
     // A local world can be opened to friends (Host…, Phase 5c).
-    if (local && app.settings) enableHosting(app.settings, local, prefersTouch(), worldName);
+    if (local && app.settings) {
+      const id = thumbId;
+      enableHosting(app.settings, local, prefersTouch(), worldName, (mode) => {
+        if (id) index.setMode(id, mode);
+      });
+    }
     let started = false;
     let asking = false;
     const perf = element('perf-status', HTMLDivElement);

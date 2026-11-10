@@ -44,6 +44,8 @@ export type ToWorker =
   | { t: 'disconnect'; session: number }
   /** Save the world now (the page is being hidden or closed); answered with `saved`. */
   | { t: 'save' }
+  /** The host switches the world's game mode (ADR 0065, by name); answered with `mode`. */
+  | { t: 'setMode'; mode: string }
   /** Friend-world hosting (§10.2): start hosting with these limits and policies. */
   | {
       t: 'host';
@@ -82,7 +84,10 @@ export type ToWorker =
 
 export type FromWorker =
   /** `persisted`: the world is saved in the browser (OPFS, §6.4). */
-  | { t: 'ready'; persisted: boolean }
+  /** `mode`: the world's game mode (ADR 0065), as its file has it. */
+  | { t: 'ready'; persisted: boolean; mode?: string }
+  /** The world's game mode after a `setMode` (unchanged if the name was refused). */
+  | { t: 'mode'; mode: string }
   | { t: 'error'; message: string }
   /**
    * A loading stage of the world's start (shared/look/loading.json `stages`, by id) began or ended;
