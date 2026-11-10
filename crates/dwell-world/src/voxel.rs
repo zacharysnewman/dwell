@@ -779,6 +779,36 @@ impl VoxelWorld {
         )
     }
 
+    /// The voxel as its chunk was generated: an unedited chunk's own, an edited one's generated
+    /// again into `cache` (kept for the next read; ground items' rules read the terrain as generated,
+    /// ADR 0071). A streamed world (no generator) has only its voxels now.
+    pub fn generated_voxel(
+        &mut self,
+        [x, y, z]: [i32; 3],
+        cache: &mut crate::hash::HashMap<ChunkCoord, Box<Chunk>>,
+    ) -> StateId {
+        let c = chunk_of(x, y, z);
+        let l = (x - c.x * CHUNK_SIZE, y - c.y * CHUNK_SIZE, z - c.z * CHUNK_SIZE);
+        let k = self.read(c);
+        let now = k.get(l.0, l.1, l.2);
+        if k.revision() == 0 {
+            return now;
+        }
+        let Some(g) = &self.generator else {
+            return now;
+        };
+        if !cache.contains_key(&c) {
+            // A few chunks round an edit are enough; an explosion's span stays well under this.
+            if cache.len() >= 64 {
+                cache.clear();
+            }
+            let mut fresh = Chunk::default();
+            g(c, &mut fresh);
+            cache.insert(c, Box::new(fresh));
+        }
+        cache[&c].get(l.0, l.1, l.2)
+    }
+
     /// The shape the voxel is drawn, collided and targeted as: its state's own (no block is shaped
     /// by its neighbours, ADR 0042; a face-B state is stored turned over).
     pub fn shape_at(&mut self, x: i32, y: i32, z: i32) -> &'static dwell_blocks::ShapeInfo {
