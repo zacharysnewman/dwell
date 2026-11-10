@@ -102,7 +102,7 @@ export const WORLD_GROUPS = ['inland', 'seaFloor', 'islands', 'hills', 'bumps', 
 /** A biome's groups (shared/worldgen/biomes/*.json): layered on the elevation. */
 export const BIOME_GROUPS = Object.keys(TERRAIN).filter((g) => !WORLD_GROUPS.includes(g));
 /** A biome's reference fields beside its groups. */
-const BIOME_REFS = ['where', 'bands', 'decorations', 'placements', 'water', 'waterLook'];
+const BIOME_REFS = ['where', 'bands', 'decorations', 'placements', 'water', 'waterLook', 'rockStack'];
 /** A biome's optional words for people (Chisel's lists): a short label and a one-line description. */
 export const BIOME_TEXT = { label: 40, description: 200 };
 const BIOME_NAME = /^[a-z0-9_]+:[a-z0-9_]+$/;
@@ -166,6 +166,93 @@ export function validateBiome(data, blocks, refs) {
   if (!w) fail(`water ${JSON.stringify(data.water)} is not in the registry`);
   if (!w.fluid) fail(`water ${data.water} must be a fluid block`);
   if (data.waterLook !== undefined) checkWaterLook(data.waterLook, fail);
+  if (data.rockStack !== undefined) {
+    if (typeof data.rockStack !== 'string') fail('rockStack must be a stack name');
+    if (refs.stacks && !refs.stacks.has(data.rockStack)) {
+      fail(`rockStack: ${JSON.stringify(data.rockStack)} is not a stack of rocks.json`);
+    }
+  }
+  return data;
+}
+
+/** A rock's jointing (code, a fixed vocabulary; systemic terrain T2). */
+export const JOINTING = ['bedded', 'vertical', 'massive'];
+/** The geology's groups' ranges (rocks.json `provinces`, `shaping`), as `TERRAIN`'s. */
+export const GEOLOGY = {
+  provinces: { wavelength: [256, 1_000_000, true] },
+  shaping: { strength: [0, 1], tread: [0, 10], sheer: [0, 10] },
+};
+
+/**
+ * Checks the geology (shared/worldgen/rocks.json, systemic terrain T2): the rock types, the strata
+ * stacks (layers top to bottom, each a known rock), the provinces and the shaping; throws naming the
+ * rock, the stack or the key. `blocks` as `validateBiome`'s: a rock's blocks must be full blocks.
+ */
+export function validateRocks(data, blocks) {
+  const fail = (m) => {
+    throw new Error(`rocks.json: ${m}`);
+  };
+  if (typeof data !== 'object' || data === null) fail('must be an object');
+  const extra = Object.keys(data).filter((k) => !['$comment', 'rocks', 'stacks', 'provinces', 'shaping'].includes(k));
+  if (extra.length) fail(`unknown ${extra.join(', ')}`);
+  const between = (v, lo, hi) => isNum(v) && v >= lo && v <= hi;
+  if (!Array.isArray(data.rocks) || data.rocks.length === 0) fail('rocks must be a list of at least one rock');
+  const rocks = new Set();
+  for (const r of data.rocks) {
+    const at = `rock ${typeof r?.name === 'string' ? r.name : '?'}`;
+    const rf = (m) => fail(`${at}: ${m}`);
+    if (typeof r.name !== 'string' || !BIOME_NAME.test(r.name)) rf('name must be "namespace:name"');
+    if (rocks.has(r.name)) rf('is listed twice');
+    rocks.add(r.name);
+    const keys = ['name', 'hardness', 'jointing', 'bed', 'solubility', 'face', 'cap', 'scree', 'color', '$comment'];
+    const ex = Object.keys(r).filter((k) => !keys.includes(k));
+    if (ex.length) rf(`unknown ${ex.join(', ')}`);
+    if (!between(r.hardness, 0, 1)) rf('hardness must be in [0, 1]');
+    if (!between(r.solubility, 0, 1)) rf('solubility must be in [0, 1]');
+    if (!JOINTING.includes(r.jointing)) rf(`jointing must be one of ${JOINTING.join(', ')}`);
+    if (!(isNum(r.bed) && r.bed >= 1 && r.bed <= 1000)) rf('bed must be in [1, 1000] m');
+    for (const k of ['face', 'cap', 'scree']) {
+      const b = blocks.get(r[k]);
+      if (!b) rf(`${k} ${JSON.stringify(r[k])} is not in the registry`);
+      if (b.shape !== 'full') rf(`${k} ${r[k]} must be a full block`);
+    }
+    if (typeof r.color !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(r.color)) rf('color must be "#rrggbb"');
+  }
+  if (!Array.isArray(data.stacks) || data.stacks.length === 0) fail('stacks must be a list of at least one stack');
+  const stacks = new Set();
+  for (const s of data.stacks) {
+    const at = `stack ${typeof s?.name === 'string' ? s.name : '?'}`;
+    const sf = (m) => fail(`${at}: ${m}`);
+    if (typeof s.name !== 'string' || !BIOME_NAME.test(s.name)) sf('name must be "namespace:name"');
+    if (stacks.has(s.name)) sf('is listed twice');
+    stacks.add(s.name);
+    const ex = Object.keys(s).filter((k) => !['name', 'weight', 'layers', '$comment'].includes(k));
+    if (ex.length) sf(`unknown ${ex.join(', ')}`);
+    if (!between(s.weight, 0, 1000)) sf('weight must be in [0, 1000]');
+    if (!Array.isArray(s.layers) || s.layers.length === 0) sf('layers must be a list of at least one layer');
+    for (const l of s.layers) {
+      if (!rocks.has(l?.rock)) sf(`layer rock ${JSON.stringify(l?.rock)} is not a rock of rocks.json`);
+      if (!(isNum(l.thickness) && l.thickness >= 1 && l.thickness <= 2000)) sf('a layer thickness must be in [1, 2000] m');
+      const ex2 = Object.keys(l).filter((k) => !['rock', 'thickness'].includes(k));
+      if (ex2.length) sf(`a layer: unknown ${ex2.join(', ')}`);
+    }
+  }
+  if (!data.stacks.some((s) => s.weight > 0)) fail('a stack must have a weight above 0');
+  const groups = (g) => {
+    for (const [group, keys] of Object.entries(GEOLOGY)) {
+      const v = g[group];
+      if (typeof v !== 'object' || v === null) fail(`${group} must be an object`);
+      const ex = Object.keys(v).filter((k) => k !== '$comment' && !(k in keys));
+      if (ex.length) fail(`${group}: unknown ${ex.join(', ')}`);
+      for (const [key, [min, max, whole]] of Object.entries(keys)) {
+        const x = v[key];
+        if (!(isNum(x) && x >= min && x <= max && (!whole || Number.isInteger(x)))) {
+          fail(`${group}.${key} must be ${whole ? 'a whole number ' : ''}in [${min}, ${max}]`);
+        }
+      }
+    }
+  };
+  groups(data);
   return data;
 }
 

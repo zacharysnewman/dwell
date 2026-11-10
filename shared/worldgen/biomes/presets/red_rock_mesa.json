@@ -63,5 +63,6 @@
   ],
   "decorations": [],
   "placements": [],
-  "water": "dwell:water"
+  "water": "dwell:water",
+  "rockStack": "dwell:red_beds"
 }

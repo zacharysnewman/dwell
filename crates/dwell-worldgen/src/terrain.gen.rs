@@ -120,6 +120,7 @@ pub const BIOMES: &[Biome] = &[
         decorations: &["meadow_grass"],
         placements: &["pine_groves"],
         water: "dwell:water",
+        rock_stack: None,
         water_look: None,
     },
 ];
@@ -207,6 +208,7 @@ pub const FIXTURE_BIOMES: &[Biome] = &[
         decorations: &["meadow_grass"],
         placements: &["pine_groves"],
         water: "dwell:water",
+        rock_stack: None,
         water_look: Some(WaterLook { scatter: Some(0x19d4c0), absorption: Some([0.55, 0.05, 0.06]) }),
     },
     Biome {
@@ -304,6 +306,7 @@ pub const FIXTURE_BIOMES: &[Biome] = &[
         decorations: &[],
         placements: &[],
         water: "dwell:water",
+        rock_stack: None,
         water_look: None,
     },
 ];
@@ -391,6 +394,7 @@ pub const PRESET_BIOMES: &[Biome] = &[
         decorations: &[],
         placements: &[],
         water: "dwell:water",
+        rock_stack: None,
         water_look: None,
     },
     Biome {
@@ -484,6 +488,7 @@ pub const PRESET_BIOMES: &[Biome] = &[
         decorations: &[],
         placements: &[],
         water: "dwell:water",
+        rock_stack: Some("dwell:badland_beds"),
         water_look: None,
     },
     Biome {
@@ -573,6 +578,7 @@ pub const PRESET_BIOMES: &[Biome] = &[
         decorations: &["meadow_grass"],
         placements: &["pine_groves"],
         water: "dwell:water",
+        rock_stack: None,
         water_look: Some(WaterLook { scatter: Some(0x2a5a6a), absorption: Some([0.6, 0.2, 0.15]) }),
     },
     Biome {
@@ -658,6 +664,7 @@ pub const PRESET_BIOMES: &[Biome] = &[
         decorations: &["meadow_grass"],
         placements: &[],
         water: "dwell:water",
+        rock_stack: None,
         water_look: Some(WaterLook { scatter: Some(0x1a5a8a), absorption: Some([0.5, 0.1, 0.06]) }),
     },
     Biome {
@@ -743,6 +750,7 @@ pub const PRESET_BIOMES: &[Biome] = &[
         decorations: &["meadow_grass"],
         placements: &["pine_groves"],
         water: "dwell:water",
+        rock_stack: None,
         water_look: Some(WaterLook { scatter: Some(0x1f4a3a), absorption: Some([0.9, 0.35, 0.4]) }),
     },
     Biome {
@@ -828,6 +836,7 @@ pub const PRESET_BIOMES: &[Biome] = &[
         decorations: &["meadow_grass"],
         placements: &["pine_groves"],
         water: "dwell:water",
+        rock_stack: None,
         water_look: None,
     },
     Biome {
@@ -921,6 +930,7 @@ pub const PRESET_BIOMES: &[Biome] = &[
         decorations: &[],
         placements: &[],
         water: "dwell:water",
+        rock_stack: Some("dwell:red_beds"),
         water_look: None,
     },
     Biome {
@@ -1002,6 +1012,7 @@ pub const PRESET_BIOMES: &[Biome] = &[
         decorations: &[],
         placements: &[],
         water: "dwell:water",
+        rock_stack: None,
         water_look: None,
     },
     Biome {
@@ -1087,6 +1098,7 @@ pub const PRESET_BIOMES: &[Biome] = &[
         decorations: &["meadow_grass"],
         placements: &[],
         water: "dwell:water",
+        rock_stack: None,
         water_look: Some(WaterLook { scatter: Some(0x5a7a40), absorption: Some([0.5, 0.25, 0.4]) }),
     },
     Biome {
@@ -1168,6 +1180,7 @@ pub const PRESET_BIOMES: &[Biome] = &[
         decorations: &[],
         placements: &[],
         water: "dwell:water",
+        rock_stack: None,
         water_look: None,
     },
     Biome {
@@ -1253,6 +1266,7 @@ pub const PRESET_BIOMES: &[Biome] = &[
         decorations: &["meadow_grass"],
         placements: &[],
         water: "dwell:water",
+        rock_stack: None,
         water_look: None,
     },
     Biome {
@@ -1338,6 +1352,7 @@ pub const PRESET_BIOMES: &[Biome] = &[
         decorations: &["meadow_grass"],
         placements: &[],
         water: "dwell:water",
+        rock_stack: None,
         water_look: None,
     },
     Biome {
@@ -1423,6 +1438,7 @@ pub const PRESET_BIOMES: &[Biome] = &[
         decorations: &["meadow_grass"],
         placements: &[],
         water: "dwell:water",
+        rock_stack: None,
         water_look: Some(WaterLook { scatter: Some(0x19d4c0), absorption: Some([0.55, 0.05, 0.06]) }),
     },
     Biome {
@@ -1504,6 +1520,7 @@ pub const PRESET_BIOMES: &[Biome] = &[
         decorations: &["meadow_grass"],
         placements: &[],
         water: "dwell:water",
+        rock_stack: None,
         water_look: Some(WaterLook { scatter: Some(0x4a5a2a), absorption: Some([0.8, 0.45, 0.9]) }),
     },
 ];
