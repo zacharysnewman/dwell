@@ -1361,8 +1361,11 @@ fn a_chained_column_of_yellow_destroys_the_pieces_left_in_each_later_blasts_core
 /// lit, run until every charge has blown, no piece is queued and none spawned for half a second, or
 /// `max` ticks (with `settle`, until the pieces have settled too): each tick's (ms, pieces spawned, phases), the cells the chain cleared within 12 m and
 /// the pieces spawned.
+/// A tick's phases (`Server::tick_phases`).
+type Phases = [(&'static str, f64); 14];
+
 struct Chain {
-    ticks: Vec<(f64, usize, [(&'static str, f64); 14])>,
+    ticks: Vec<(f64, usize, Phases)>,
     cleared: usize,
     pieces: usize,
     /// Every cell the blasts' `Explosion` modifications set (chunk, index), and how many there were.
@@ -1530,9 +1533,7 @@ fn measure_chain_ticks() {
 }
 
 dwell_world::both_faces!(
-    fn a_chained_blasts_pieces_spawn_within_the_tick_budget_and_the_outcome_is_the_same(
-        f: FaceFrame,
-    ) {
+    fn a_chains_pieces_spawn_within_the_tick_budget_to_the_same_end(f: FaceFrame) {
         // A big chain's pieces are spread over the ticks (`limits.piecesPerTick`, docs/EXPLOSIVES.md
         // §3.12): no tick spawns more than the budget, and the chain clears the same cells, booms
         // the same blasts (one modification each) and spawns the same pieces as with no budget.
