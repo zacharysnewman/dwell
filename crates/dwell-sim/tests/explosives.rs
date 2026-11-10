@@ -1013,54 +1013,39 @@ fn cliff_blast(f: FaceFrame, e: ExplosiveData) -> (Vec<([i32; 3], f64)>, Scene) 
 }
 
 dwell_world::both_faces!(
-    fn yellow_flings_every_exposed_cell_and_wall_checks_the_rest(f: FaceFrame) {
-        // Owner (2026-11-07): "destroys 4m radius, and cracks anything touching air"; "anything
-        // touching air in 5m not queued for destruction"; the roof over the cleared core drops; and
-        // "I want the wall check for everything not exposed to air" — exposed cells fly with the
-        // blast's push whatever is in their way, the rest of the shell flies only if the wall
-        // check lets it, as red's does.
+    fn yellow_cracks_cells_open_above_or_below_and_not_those_open_only_to_a_side(f: FaceFrame) {
+        // Owner (2026-11-07): "destroys 4m radius, and cracks anything touching air"; the roof over
+        // the cleared core drops; then (2026-11-09): "anything touching air on top or bottom,
+        // exclude blocks that are only touching 'side' air". A charge in rock beside a cliff open
+        // from x 5: cells beside the cliff face are open only to their side, so they stay; the
+        // roof over the cleared core still drops; cells pushed into rock stay.
         let e = yellow();
         assert_eq!(e.shell, dwell_world::explosives::ShellRule::Crack);
+        assert!(e.crack_vertical_only);
         let (pieces, mut s) = cliff_blast(f, e);
         let stone = require("dwell:stone");
-        let open = |o: [i32; 3]| o[0] >= 5;
-        let sides = [
-            [1, 0, 0],
-            [-1, 0, 0],
-            [0, 1, 0],
-            [0, -1, 0],
-            [0, 0, 1],
-            [0, 0, -1],
-        ];
-        let add = |a: [i32; 3], b: [i32; 3]| [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
-        let exposed: std::collections::HashSet<[i32; 3]> = cells_within(e.radius_m)
-            .into_iter()
-            .filter(|&o| !open(o) && dist(o) > e.destroy_radius_m)
-            .filter(|&o| {
-                sides.iter().any(|&d| open(add(o, d)))
-                    || dist(add(o, [0, -1, 0])) <= e.destroy_radius_m
-            })
-            .collect();
         let got: std::collections::HashMap<[i32; 3], f64> = pieces.iter().copied().collect();
-        // Every exposed cell cracks loose, even one pushed into rock that barely moves.
-        for o in &exposed {
-            assert!(got.contains_key(o), "the exposed cell {o:?} cracks loose");
-        }
-        // The roof over the core and a cell beside the open cliff are among them; the one facing
-        // the open cliff takes the blast's push (was no push: 2 ticks of gravity, 0.33 m/s).
-        assert!(exposed.contains(&[0, 9, 0]) && exposed.contains(&[4, 0, 2]));
-        let v = got[&[4, 0, 2]];
+        // The roof over the core cracks loose (crackOverCleared).
         assert!(
-            v > 5.0,
-            "the cell beside the open cliff is flung ({v:.2} m/s)"
+            got.contains_key(&[0, 9, 0]),
+            "the roof over the core drops: {:?}",
+            got.keys()
         );
-        // Within 4 m: gone. Cells pushed into rock with no way out: stay, as red's would.
+        // Beside the open cliff, open only to the side: stays (was flung before 0.50.55).
+        assert!(
+            !got.contains_key(&[4, 0, 2]),
+            "a cell open only to its side stays"
+        );
+        assert_eq!(s.get([4, 0, 2]), stone);
+        // Every piece was open above or below before the blast, or sat on the cleared core: none
+        // came from the cliff face's side cells.
+        for o in got.keys() {
+            assert!(o[0] < 4 || o[1] != 0, "{o:?} cracked from side air alone");
+        }
+        // Within 4 m: gone. Cells with no open side above or below: stay.
         assert_eq!(s.get([0, 7, 2]), M.air, "3.6 m: destroyed");
         for o in [[0, -9, 0], [0, 0, -5]] {
-            assert!(
-                !got.contains_key(&o),
-                "{o:?} is has no open side before the blast: it stays"
-            );
+            assert!(!got.contains_key(&o), "{o:?} stays");
             assert_eq!(s.get(o), stone, "{o:?}: stays");
         }
     }
