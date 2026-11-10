@@ -57,7 +57,7 @@ and ~90 generations were queued — the pool's generation queue is FIFO (`pool.r
 meshed while a neighbour is still being generated, so lead (1) remains the suspect. Next: the long trip
 over terrain on a fixed path (teleport along a line, or a raft on a river) and the bench's river ride.
 
-**Reproduced over the terrain and fixed (2026-11-10, 0.51.2):** `game_local.rs`'s
+**Reproduced over the terrain and fixed (2026-11-10, 0.51.3):** `game_local.rs`'s
 `a_long_trip_over_the_terrain_keeps_the_near_ring_at_full_detail` carries the player 5 m/s in a straight
 line 40 m over seed 7's ground for 150 s (750 m; the position set every frame, so no hill stops it), the
 same LOD settings and one job a poll. Red on 0.51.1: a near-ring chunk waited 356 frames (~6 s) to be drawn
@@ -214,6 +214,21 @@ face, or the placement check against its shape.
 
 
 ## Fixed
+
+### 58. On a slow device a walk's start or stop was corrected by up to 3 ticks of walking (fixed in 0.51.2)
+
+Found 2026-11-10 in the bug 54 work: `a_device_at_under_two_frames_a_second_walks_and_jumps_without_snapping`
+(dwell-client `game_local.rs`, 48 server ticks a frame, CI's 800 ms frames) passed by luck. With 0, 1 or 3
+frames more on the ground before the slow frames its walk's correction was 0.08–0.17 m, with 2, 5 or 8 it
+was 0.25 m, over the 0.2 m bar. Cause: the client held its prediction while 45 of its inputs were
+unacknowledged (`UNACKED_HOLD`, for a stalled server that sends no snapshots), below a slow frame's 48
+ticks, so it predicted only 45 a frame and dropped the rest. The server starved for 3 ticks every frame
+and repeated the last input for them, so where the walk started and stopped among the starved ticks set
+how far the server walked past the prediction. Fixed: `UNACKED_HOLD` is `MAX_TICKS_PER_FRAME` + 30 (90,
+under the server's 96-input queue), so a frame's whole catch-up is predicted and sent. Pinned by
+`a_slow_devices_prediction_matches_whatever_the_phase_of_its_frames` (0–8 extra frames before the slow
+ones; red: a 0.25 m correction after 2, the server starving 3 ticks a frame; green: 48 ticks a frame, no
+starved ticks, no correction).
 
 ### 57. iOS Safari: touch stops doing anything (no look, taps neither break nor build)
 

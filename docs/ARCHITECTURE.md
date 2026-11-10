@@ -1687,11 +1687,11 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
   each stopping before an item its running cost estimate says would pass the deadline; a chunk arriving marks
   its loaded neighbours for re-meshing, and a chunk waits while a neighbour is still being generated;
   within the near-first order a chunk in the server's view (`VIEW_RADIUS_CHUNKS`) not drawn yet is
-  meshed before the re-meshes of drawn chunks, which show their last mesh meanwhile (BUGS #54, 0.51.2).
+  meshed before the re-meshes of drawn chunks, which show their last mesh meanwhile (BUGS #54, 0.51.3).
   The worker pool (`dwell-client` `pool.rs`) starts each kind's queued jobs by the player's place
   (`Pool::set_focus`): chunk meshes before the LOD's section meshes (in the streamer's order), chunk
   generations within `NEAR_JOBS_M` (128 m) before the other generation jobs, nearest first, the rest in
-  the order queued (0.51.2: a FIFO queue
+  the order queued (0.51.3: a FIFO queue
   left the chunks coming into the near ring seconds behind far chunks' and the LOD's jobs).
   Voxel modifications (§6.5) apply in revision order: those of a chunk still being generated are
   held until it arrives, one for a chunk held as Air creates it, stale ones are dropped, and a gap
