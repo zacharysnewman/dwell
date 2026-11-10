@@ -83,6 +83,10 @@ pub trait ChunkStore {
     fn chunk_voxels(&mut self, _coord: Coord) -> Option<Vec<u16>> {
         None
     }
+    /// One of the chunk's own voxels (chunk-local `x | y << 5 | z << 10`; none: not stored).
+    fn voxel(&mut self, _coord: Coord, _index: u16) -> Option<u16> {
+        None
+    }
     /// What a mesh job meshes: the chunk with the sky apron (`dwell_world::SKY_APRON`, for the
     /// baked ambient light's rays), or the one-voxel padded block (rays past it count as open).
     fn mesh_block(&mut self, coord: Coord) -> Vec<u16> {
@@ -117,6 +121,10 @@ pub trait ChunkStore {
 /// The client sim's voxel world is the store.
 /// With [`VoxelWorld::enable_light`] (the client) it keeps the flood light of what it holds.
 impl ChunkStore for VoxelWorld {
+    fn voxel(&mut self, coord: Coord, index: u16) -> Option<u16> {
+        self.find(ChunkCoord::from_array(coord))
+            .and_then(|c| c.voxels().get(usize::from(index)).copied())
+    }
     fn chunk_voxels(&mut self, coord: Coord) -> Option<Vec<u16>> {
         self.find(ChunkCoord::from_array(coord))
             .map(|c| c.voxels().to_vec())
@@ -340,6 +348,30 @@ pub trait Mesher {
 pub trait TerrainView<M> {
     /// Shows a chunk's meshes at `origin`, or removes the chunk (`None`).
     fn set_terrain_chunk(&mut self, coord: Coord, origin: [i32; 3], meshes: Option<M>);
+    /// Redraws only chunk `coord`'s water surface from its new padded voxels and flood light
+    /// (the GPU heightfield's tile, proposals/WATER_GPU_SURFACE.md §3), when only its water's
+    /// levels changed; whether that stands in for a re-mesh (false: the chunk is re-meshed).
+    fn set_water_levels(
+        &mut self,
+        _coord: Coord,
+        _padded: &[u16],
+        _light: &[u8],
+        _mirror: bool,
+    ) -> bool {
+        false
+    }
+}
+
+/// Mesh-dirty passes (about frames) a chunk whose water levels changed without a re-mesh waits,
+/// with no further change, before it is re-meshed once: its water's sides and falls, which the
+/// heightfield's tile does not hold, catch up when the water settles.
+pub const WATER_SETTLE_PASSES: u32 = 60;
+
+/// Whether state `m` is a liquid at some fill.
+fn is_liquid(m: u16) -> bool {
+    dwell_blocks::STATES
+        .get(usize::from(m))
+        .is_some_and(|s| s.liquid)
 }
 
 /// A ChunkData message's parts the streamer reads.
@@ -559,6 +591,10 @@ pub struct ChunkStreamer<S, G, M: Mesher, V> {
     /// Chunks whose mesh job in flight began before a cell in them was hidden or shown: its result
     /// is dropped (the chunk is dirty again).
     stale: HashSet<Coord>,
+    /// Chunks whose water surface was redrawn without a re-mesh → mesh-dirty passes since their
+    /// last level change: re-meshed at [`WATER_SETTLE_PASSES`].
+    settling: HashMap<Coord, u32>,
+    level_redraws: u64,
     /// First worldgen failure (the workers are unusable).
     pub error: Option<String>,
 }
@@ -610,6 +646,8 @@ where
             pristine: HashSet::default(),
             generated: HashMap::default(),
             stale: HashSet::default(),
+            settling: HashMap::default(),
+            level_redraws: 0,
             error: None,
         }
     }
@@ -886,6 +924,21 @@ where
     ) -> usize {
         let start = now();
         let deadline = start + budget.ms;
+        // Water redrawn from its levels alone is re-meshed once it has settled.
+        let mut settled = Vec::new();
+        self.settling.retain(|c, passes| {
+            *passes += 1;
+            let done = *passes >= WATER_SETTLE_PASSES;
+            if done {
+                settled.push(*c);
+            }
+            !done
+        });
+        for c in settled {
+            if self.loaded.contains_key(&c) {
+                self.dirty.mark(c);
+            }
+        }
         let distance_to = |c: &Coord, to: [f64; 3]| -> f64 {
             let m = dwell_world::chunk_centre_m(ChunkCoord::from_array(*c));
             (0..3).map(|i| (m[i] - to[i]).powi(2)).sum()
@@ -1301,9 +1354,21 @@ where
             // Its first edit: its voxels till now are its generation (ADR 0071's rules read it).
             self.generated.insert(key, v);
         }
+        // Only the water's levels change (each cell liquid before and after, the same liquid):
+        // the chunk and the neighbours it touches may redraw their surface tiles instead.
+        let levels_only = !changes.changes.is_empty()
+            && changes.changes.iter().all(|v| {
+                self.store.voxel(key, v.index).is_some_and(|old| {
+                    is_liquid(old)
+                        && is_liquid(v.material)
+                        && dwell_blocks::liquid_full(old) == dwell_blocks::liquid_full(v.material)
+                })
+            });
         self.store.edit_chunk(changes);
         self.loaded.insert(key, changes.revision);
-        self.dirty.mark(changes.coord);
+        if !(levels_only && self.levels_only(key)) {
+            self.dirty.mark(changes.coord);
+        }
         // Neighbours whose mesh block holds a changed voxel, diagonals included: their border
         // faces, and their baked ambient light, whose sky rays read `SKY_APRON` cells past their
         // borders (`ChunkStore::mesh_block`), may change. In the order first touched.
@@ -1333,11 +1398,36 @@ where
         }
         for n in touched {
             let c = add(changes.coord, n);
-            if self.loaded.contains_key(&c) && !self.air.contains(&c) {
+            if self.loaded.contains_key(&c)
+                && !self.air.contains(&c)
+                && !(levels_only && self.levels_only(c))
+            {
                 self.dirty.mark(c);
             }
         }
         self.relit();
+    }
+
+    /// Redraws chunk `c`'s water surface alone (its tile) when the view can and the chunk's
+    /// shown mesh is current; it is re-meshed once its water settles ([`WATER_SETTLE_PASSES`]).
+    fn levels_only(&mut self, c: Coord) -> bool {
+        if !self.meshed.contains(&c) || self.dirty.contains(&c) || self.meshing.contains_key(&c) {
+            return false;
+        }
+        let padded = self.store.padded_chunk(c);
+        let light = self.store.mesh_light(c);
+        let mirror = face_of_chunk_y(c[1]) == Face::B;
+        if !self.view.set_water_levels(c, &padded, &light, mirror) {
+            return false;
+        }
+        self.settling.insert(c, 0);
+        self.level_redraws += 1;
+        true
+    }
+
+    /// Chunks redrawn from their water levels alone, without a re-mesh (telemetry, tests).
+    pub fn level_redraws(&self) -> u64 {
+        self.level_redraws
     }
 
     /// Neighbours' border faces may now be hidden (or exposed) by this chunk, and their adaptive
@@ -1540,6 +1630,9 @@ mod tests {
         fn set_chunk(&mut self, coord: Coord, revision: u32, voxels: &[u16]) {
             self.chunks.insert(coord, (revision, voxels[0]));
         }
+        fn voxel(&mut self, coord: Coord, _index: u16) -> Option<u16> {
+            self.chunks.get(&coord).map(|c| c.1)
+        }
         fn remove_chunk(&mut self, coord: Coord) {
             self.chunks.remove(&coord);
         }
@@ -1581,6 +1674,10 @@ mod tests {
     #[derive(Default)]
     struct FakeView {
         chunks: HashMap<Coord, [i32; 3]>,
+        /// It draws the water from tiles (takes level-only changes).
+        tiles: bool,
+        /// Each tile redrawn without a re-mesh.
+        tiled: Vec<Coord>,
     }
     impl TerrainView<()> for FakeView {
         fn set_terrain_chunk(&mut self, coord: Coord, origin: [i32; 3], meshes: Option<()>) {
@@ -1588,6 +1685,12 @@ mod tests {
                 Some(()) => self.chunks.insert(coord, origin),
                 None => self.chunks.remove(&coord),
             };
+        }
+        fn set_water_levels(&mut self, coord: Coord, _: &[u16], _: &[u8], _: bool) -> bool {
+            if self.tiles {
+                self.tiled.push(coord);
+            }
+            self.tiles
         }
     }
 
@@ -2110,6 +2213,50 @@ mod tests {
             s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock),
             1
         );
+    }
+
+    fn jobs(s: &Streamer) -> Vec<Coord> {
+        s.mesher().jobs.iter().map(|j| j.coord).collect()
+    }
+
+    // face-a-only: the streamer's bookkeeping is face-blind (the view takes the face's mirror).
+    #[test]
+    fn a_water_level_change_redraws_the_tile_and_re_meshes_only_once_settled() {
+        let water = dwell_blocks::require("dwell:water");
+        let low = dwell_blocks::liquid_at_fill(water, 0.5);
+        assert_ne!(low, water, "water has fills");
+        let stone = dwell_blocks::require("dwell:stone");
+        let (mut s, _) = setup();
+        s.view_mut().tiles = true;
+        s.on_chunk_data(explicit([0, 0, 0], 3, water));
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+        flush(&mut s);
+
+        // A level change inside the chunk: its tile is redrawn, no mesh job is queued.
+        s.on_voxel_modification(&[modification([0, 0, 0], 4, &[5 | (5 << 5), low])]);
+        assert_eq!(s.view().tiled, vec![[0, 0, 0]]);
+        assert_eq!(s.level_redraws(), 1);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+        assert!(s.mesher().jobs.is_empty(), "no re-mesh while it moves");
+        // Once it has been still for the settle passes it is re-meshed once (its sides catch up).
+        for _ in 1..WATER_SETTLE_PASSES {
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+        }
+        assert_eq!(jobs(&s), vec![[0, 0, 0]]);
+        flush(&mut s);
+
+        // A block change in the water still re-meshes at once.
+        s.on_voxel_modification(&[modification([0, 0, 0], 5, &[5 | (5 << 5), stone])]);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+        assert_eq!(jobs(&s), vec![[0, 0, 0]]);
+        assert_eq!(s.view().tiled.len(), 1);
+        flush(&mut s);
+
+        // A view that draws no tiles (the meshed water's tier) re-meshes on a level change.
+        s.view_mut().tiles = false;
+        s.on_voxel_modification(&[modification([0, 0, 0], 6, &[5 | (5 << 5), low])]);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+        assert_eq!(jobs(&s), vec![[0, 0, 0]]);
     }
 
     #[test]

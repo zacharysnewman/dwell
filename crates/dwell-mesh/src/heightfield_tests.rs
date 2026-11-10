@@ -211,3 +211,40 @@ fn the_meshes_carry_the_tile_only_without_tops() {
         assert!(tile.lights.iter().all(|l| *l == pack_light([1.0, 0.0])));
     }
 }
+
+// both-faces: each face's winding is checked.
+#[test]
+fn dry_columns_draw_nothing_and_wet_ones_end_at_their_edge() {
+    // One wet column at (5, 7) in an otherwise dry tile: its two triangles are drawn, flat at its
+    // level and within its own square; every other column's six vertices collapse (no pixels,
+    // so no fragment of a dry column is shaded, and the surface ends at the shoreline).
+    for face_b in [false, true] {
+        let mut levels = vec![DRY; TILE * TILE];
+        levels[6 + TILE * 8] = 2.25;
+        let drawn: Vec<(usize, [f32; 3])> = (0..GRID_VERTICES)
+            .filter_map(|v| grid_vertex(&levels, 0.2, v, face_b).map(|p| (v, p)))
+            .collect();
+        assert_eq!(drawn.len(), COLUMN_VERTICES, "face_b {face_b}");
+        for (v, [x, h, z]) in &drawn {
+            assert_eq!(v / COLUMN_VERTICES, 5 + COLUMNS * 7);
+            assert_eq!(*h, 2.25);
+            assert!(
+                (5.0..=6.0).contains(x) && (7.0..=8.0).contains(z),
+                "{x} {z}"
+            );
+        }
+    }
+}
+
+// both-faces: face B's column vertices are the re-wound grid's.
+#[test]
+fn a_columns_vertices_follow_the_grids_winding_on_both_faces() {
+    let idx = grid_indices_both();
+    let c = CORNERS as u32;
+    for (face_b, first) in [(false, 0), (true, COLUMNS * COLUMNS * 6)] {
+        for (k, [ox, oz]) in column_corners(face_b).iter().enumerate() {
+            // Column (0, 0)'s corners are (0, 0) .. (1, 1): corner i + CORNERS × j.
+            assert_eq!(idx[first + k], *ox as u32 + c * *oz as u32);
+        }
+    }
+}

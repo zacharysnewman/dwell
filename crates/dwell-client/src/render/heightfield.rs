@@ -13,7 +13,7 @@
 //! face-local floor; the shader crosses into the world through `FaceFrame::wgsl()`'s `face_y`, so
 //! one grid serves both faces (BIFACIAL_WORLD.md §11).
 
-use dwell_mesh::heightfield::{COLUMNS, CORNERS, DRY, HeightAtlas, TILE, WaterTile};
+use dwell_mesh::heightfield::{COLUMNS, DRY, HeightAtlas, TILE, WaterTile, column_corners};
 
 /// Tiles per row of the atlas texture (its width is this × [`TILE`] texels).
 pub const TILES_PER_ROW: usize = 64;
@@ -40,15 +40,15 @@ pub const GROUP: u32 = 3;
 /// from the corners around it) and `heightfield_vs`, a `fluid_vs` twin that places grid vertex
 /// `vertex_index` of the draw's tile and feeds `water_fs`/`water_scene_fs` unchanged. A draw
 /// carries its tile's texel origin in `quat.xy`, its face (+1 A, −1 B) in `quat.z` and its fluid
-/// id in `quat.w`; dry columns are collapsed onto their wet neighbours' corners or, with none,
-/// onto the chunk's floor under a discarded fragment (`hf_dry`).
+/// id in `quat.w`; the grid is drawn unindexed, six vertices a column, and a dry column's six
+/// collapse to one point outside the view (no pixels shaded under the ground or past the shore).
 pub fn wgsl() -> String {
     let join = dwell_look::water_tiers::HEIGHTFIELD.join_m as f32;
     let chunk_h = (f64::from(dwell_world::CHUNK_SIZE) * dwell_world::CELL_H) as f32;
     format!(
         "\n\
 const HF_TILE: i32 = {tile};\n\
-const HF_CORNERS: u32 = {corners}u;\n\
+const HF_COLUMNS: u32 = {columns}u;\n\
 const HF_DRY: f32 = {dry:?};\n\
 const HF_JOIN_M: f32 = {join:?};\n\
 const HF_CHUNK_H: f32 = {chunk_h:?};\n\
@@ -100,27 +100,31 @@ fn hf_normal(tile: vec2i, corner: vec2i, own: f32) -> vec3f {{\n\
     let dz = hf_or(tile, corner + vec2i(0, 1), own) - hf_or(tile, corner - vec2i(0, 1), own);\n\
     return normalize(vec3f(-0.5 * dx, 1.0, -0.5 * dz));\n\
 }}\n\
-// A wet chunk-local column (0..16 in x and z) under a point of the surface.\n\
-fn hf_column_wet(tile: vec2i, xz: vec2f) -> bool {{\n\
-    let c = clamp(vec2i(floor(xz)), vec2i(0), vec2i(HF_TILE - 3));\n\
-    return hf_wet(hf_level(tile, c + vec2i(1)));\n\
-}}\n\
 \n\
 @vertex\n\
 fn heightfield_vs(@builtin(vertex_index) index: u32, @builtin(instance_index) k: u32) -> FluidOut {{\n\
     let draw = draws[k];\n\
     let tile = vec2i(draw.quat.xy);\n\
     let face = draw.quat.z;\n\
-    let corner = vec2i(i32(index % HF_CORNERS), i32(index / HF_CORNERS));\n\
-    var h = hf_corner(tile, corner);\n\
-    var n = vec3f(0.0, 1.0, 0.0);\n\
-    if hf_wet(h) {{ n = hf_normal(tile, corner, h); }} else {{ h = 0.0; }}\n\
+    // Six unshared vertices per column (dwell-mesh heightfield.rs `grid_vertex`, the reference):\n\
+    // a dry column's collapse to one point outside the view, so no fragment of it is shaded and\n\
+    // the surface ends at the shoreline's column edge.\n\
+    let column = vec2i(i32((index / 6u) % HF_COLUMNS), i32((index / 6u) / HF_COLUMNS));\n\
+    var o: FluidOut;\n\
+    o.draw = k;\n\
+    if !hf_wet(hf_level(tile, column + vec2i(1))) {{\n\
+        o.clip = vec4f(2.0, 2.0, 2.0, 1.0);\n\
+        return o;\n\
+    }}\n\
+    var offsets = array<vec2i, 6>({offsets_a});\n\
+    if face < 0.0 {{ offsets = array<vec2i, 6>({offsets_b}); }}\n\
+    let corner = column + offsets[index % 6u];\n\
+    let h = hf_corner(tile, corner);\n\
+    let n = hf_normal(tile, corner, h);\n\
     // face-boundary: the face-local chunk turned back into world rows, as the chunk mesher's\n\
     // `flip_arrays_y` turns a face-B chunk's mesh (the draw's offset is the chunk's minimum).\n\
     let y = select(HF_CHUNK_H - h, h, face > 0.0);\n\
     let local = vec3f(f32(corner.x), y, f32(corner.y));\n\
-    var o: FluidOut;\n\
-    o.draw = k;\n\
     o.rel = draw.offset.xyz + local * draw.offset.w;\n\
     o.clip = frame.view_proj * vec4f(o.rel, 1.0);\n\
     o.normal = vec3f(n.x, n.y * face, n.z);\n\
@@ -131,41 +135,43 @@ fn heightfield_vs(@builtin(vertex_index) index: u32, @builtin(instance_index) k:
     return o;\n\
 }}\n",
         tile = TILE,
-        corners = CORNERS,
+        columns = COLUMNS,
         dry = DRY,
         group = GROUP,
+        offsets_a = wgsl_offsets(false),
+        offsets_b = wgsl_offsets(true),
     )
 }
 
-/// The heightfield on the GPU: the atlas texture and its bind group (group [`GROUP`]), the shared
-/// grid's index buffer (both windings), the water pipelines over it (blended, and reading the
-/// scene), and the chunks' slots ([`HeightAtlas`]) with each tile's fluid and face.
+/// A column's six corner offsets as WGSL `vec2i`s (`column_corners`: face B's re-wound).
+fn wgsl_offsets(face_b: bool) -> String {
+    column_corners(face_b)
+        .iter()
+        .map(|[x, z]| format!("vec2i({x}, {z})"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// The heightfield on the GPU: the atlas texture and its bind group (group [`GROUP`]), the water
+/// pipelines over the unindexed grid (blended, and reading the scene), and the chunks' slots
+/// ([`HeightAtlas`]) with each tile's fluid and face.
 pub struct HeightfieldGpu {
     texture: wgpu::Texture,
     pub group: wgpu::BindGroup,
-    pub index: wgpu::Buffer,
     pub blended: wgpu::RenderPipeline,
     pub scene: wgpu::RenderPipeline,
     atlas: HeightAtlas<dwell_world::ChunkCoord>,
     tiles: std::collections::HashMap<dwell_world::ChunkCoord, (f32, bool)>,
 }
 
-/// One winding's index count in [`HeightfieldGpu::index`].
-pub const GRID_INDICES: u32 = (COLUMNS * COLUMNS * 6) as u32;
+/// One grid draw's vertices (six a column, unshared; `dwell_mesh::heightfield::grid_vertex`).
+pub const GRID_VERTICES: u32 = dwell_mesh::heightfield::GRID_VERTICES as u32;
 
-/// A heightfield draw's `quat`: its tile's texel origin, its face (+1 A, −1 B) and its fluid.
+/// A heightfield draw's `quat`: its tile's texel origin, its face (+1 A, −1 B; face B's columns
+/// are re-wound in the shader) and its fluid.
 pub fn draw_quat(slot: usize, fluid: f32, face_b: bool) -> [f32; 4] {
     let [x, y] = tile_origin(slot);
     [x as f32, y as f32, if face_b { -1.0 } else { 1.0 }, fluid]
-}
-
-/// The index range of a tile's face (face B's grid is re-wound).
-pub fn grid_range(face_b: bool) -> std::ops::Range<u32> {
-    if face_b {
-        GRID_INDICES..2 * GRID_INDICES
-    } else {
-        0..GRID_INDICES
-    }
 }
 
 /// What the water pipelines over the grid are built from.
@@ -183,7 +189,6 @@ pub struct PipelineParts<'a> {
 
 impl HeightfieldGpu {
     pub fn new(device: &wgpu::Device, p: &PipelineParts<'_>) -> Self {
-        use wgpu::util::DeviceExt;
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("water heights"),
             size: wgpu::Extent3d {
@@ -219,11 +224,6 @@ impl HeightfieldGpu {
                 binding: 0,
                 resource: wgpu::BindingResource::TextureView(&view),
             }],
-        });
-        let index = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("water grid"),
-            contents: bytemuck::cast_slice(&dwell_mesh::heightfield::grid_indices_both()),
-            usage: wgpu::BufferUsages::INDEX,
         });
         let pipeline = |scene: bool| {
             let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -301,7 +301,7 @@ impl HeightfieldGpu {
         Self {
             texture,
             group,
-            index,
+
             blended: pipeline(false),
             scene: pipeline(true),
             atlas: HeightAtlas::new(),
@@ -331,14 +331,11 @@ impl HeightfieldGpu {
         }
     }
 
-    /// Chunk `coord`'s draw `quat` and index range, if it has a tile.
-    pub fn draw_of(
-        &self,
-        coord: dwell_world::ChunkCoord,
-    ) -> Option<([f32; 4], std::ops::Range<u32>)> {
+    /// Chunk `coord`'s draw `quat`, if it has a tile.
+    pub fn draw_of(&self, coord: dwell_world::ChunkCoord) -> Option<[f32; 4]> {
         let slot = self.atlas.slot(coord).filter(|s| *s < MAX_TILES)?;
         let (fluid, face_b) = *self.tiles.get(&coord)?;
-        Some((draw_quat(slot, fluid, face_b), grid_range(face_b)))
+        Some(draw_quat(slot, fluid, face_b))
     }
 
     /// Uploads the tiles changed since the last frame (`TILE`² × 8 bytes each); how many.
@@ -400,8 +397,20 @@ mod tests {
     fn a_draw_names_its_tile_face_and_fluid() {
         assert_eq!(draw_quat(1, 3.0, false), [TILE as f32, 0.0, 1.0, 3.0]);
         assert_eq!(draw_quat(0, 0.0, true)[2], -1.0);
-        assert_eq!(grid_range(false), 0..GRID_INDICES);
-        assert_eq!(grid_range(true), GRID_INDICES..2 * GRID_INDICES);
+    }
+
+    #[test]
+    fn the_shader_winds_each_face_as_the_reference_grid() {
+        // The WGSL's offset tables are `column_corners`' (face B's re-wound), so the vertex shader
+        // and `dwell_mesh::heightfield::grid_vertex` place the same corners.
+        let src = wgsl();
+        assert!(src.contains(&format!("array<vec2i, 6>({})", wgsl_offsets(false))));
+        assert!(src.contains(&format!("array<vec2i, 6>({})", wgsl_offsets(true))));
+        assert_ne!(wgsl_offsets(false), wgsl_offsets(true));
+        assert!(
+            src.contains("o.clip = vec4f(2.0, 2.0, 2.0, 1.0)"),
+            "a dry column collapses"
+        );
     }
 
     #[test]

@@ -49,6 +49,13 @@ pub struct WaterTile {
     pub face_b: bool,
 }
 
+/// Chunk `padded`'s tile with its flood light (`light`: the mesh job's; empty: open sky), as the
+/// mesher makes it; none where no column inside the chunk is wet. The client's re-mesh skip: a
+/// chunk whose only changes are its water's levels gets its tile from this, not a mesh job.
+pub fn water_tile(padded: &[u16], light: &[u8], mirror: bool) -> Option<WaterTile> {
+    tile_with(crate::mesher::Kinds::build(), padded, light, mirror)
+}
+
 /// Chunk `padded`'s tile over `kinds`; none where no column inside the chunk is wet.
 pub(crate) fn tile_with(
     kinds: &Kinds,
@@ -208,6 +215,40 @@ impl<K: std::hash::Hash + Eq + Copy> HeightAtlas<K> {
             .filter_map(|s| by_slot.get(&s).map(|l| (s, *l)))
             .collect()
     }
+}
+
+/// The grid's vertices per column: its two triangles, unshared, so a dry column's six collapse
+/// to one point and draw nothing (the vertex shader decides per column, not per corner).
+pub const COLUMN_VERTICES: usize = 6;
+/// The grid's vertices in one draw: every column's [`COLUMN_VERTICES`].
+pub const GRID_VERTICES: usize = COLUMNS * COLUMNS * COLUMN_VERTICES;
+
+/// The corner offsets (x, z from the column's own corner) of a column's six vertices, in
+/// [`grid_indices`]' order (face A) or re-wound as [`grid_indices_both`]' second half (face B).
+pub fn column_corners(face_b: bool) -> [[usize; 2]; COLUMN_VERTICES] {
+    let both = grid_indices_both();
+    let first = if face_b { COLUMNS * COLUMNS * 6 } else { 0 };
+    std::array::from_fn(|k| {
+        let i = both[first + k] as usize;
+        [i % CORNERS, i / CORNERS]
+    })
+}
+
+/// Grid vertex `vertex` of a tile, face-local (x, height, z in chunk-local metres), as
+/// `heightfield_vs` places it: none (collapsed to one point, no pixels) where its column is dry,
+/// else its corner at [`corner_height`]. A wet column's corners are all wet, so the surface ends
+/// at the shoreline's column edge as the meshed water's tops do. The shader's reference.
+pub fn grid_vertex(levels: &[f32], join_m: f32, vertex: usize, face_b: bool) -> Option<[f32; 3]> {
+    let column = vertex / COLUMN_VERTICES;
+    let (cx, cz) = (column % COLUMNS, column / COLUMNS);
+    let l = |x: usize, z: usize| levels[x + TILE * z];
+    if !wet(l(cx + 1, cz + 1)) {
+        return None;
+    }
+    let [ox, oz] = column_corners(face_b)[vertex % COLUMN_VERTICES];
+    let (i, j) = (cx + ox, cz + oz);
+    let h = corner_height([l(i, j), l(i + 1, j), l(i, j + 1), l(i + 1, j + 1)], join_m);
+    Some([i as f32, h, j as f32])
 }
 
 #[cfg(test)]

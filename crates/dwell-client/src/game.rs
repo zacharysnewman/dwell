@@ -102,6 +102,18 @@ pub trait Scene: TerrainRenderer {
     fn draws_heightfield(&self) -> bool {
         false
     }
+    /// Chunk `coord`'s water surface is drawn from a heightfield tile now (it was meshed
+    /// without tops and holds water): a level-only change can rewrite the tile alone.
+    fn has_water_tile(&self, _coord: ChunkCoord) -> bool {
+        false
+    }
+    /// Rewrites chunk `coord`'s heightfield tile alone (none: its water is gone), its meshes kept.
+    fn set_water_tile(
+        &mut self,
+        _coord: ChunkCoord,
+        _tile: Option<&dwell_mesh::heightfield::WaterTile>,
+    ) {
+    }
     /// Your first-person arms this frame (docs/CHARACTERS.md §5), or none.
     fn set_arms(&mut self, _arms: Option<ArmsView>) {}
     /// Your own body this frame, cast into the shadow maps only (none while it is drawn).
@@ -235,6 +247,22 @@ impl<S: Scene> TerrainView<ChunkMeshes> for View<S> {
         self.0
             .borrow_mut()
             .set_chunk(ChunkCoord::from_array(coord), meshes.as_ref());
+    }
+    fn set_water_levels(
+        &mut self,
+        coord: Coord,
+        padded: &[u16],
+        light: &[u8],
+        mirror: bool,
+    ) -> bool {
+        let mut scene = self.0.borrow_mut();
+        let coord = ChunkCoord::from_array(coord);
+        if !scene.draws_heightfield() || !scene.has_water_tile(coord) {
+            return false;
+        }
+        let tile = dwell_mesh::heightfield::water_tile(padded, light, mirror);
+        scene.set_water_tile(coord, tile.as_ref());
+        true
     }
 }
 

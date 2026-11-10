@@ -920,8 +920,8 @@ enum DrawMesh {
     Region(usize),
     /// The brush preview's ghost (true) or lines.
     Brush(bool),
-    /// A chunk's water surface on the shared grid (`heightfield.rs`), face B's re-wound (true).
-    Heightfield(bool),
+    /// A chunk's water surface on the shared grid (`heightfield.rs`; its face in the draw's quat).
+    Heightfield,
 }
 
 /// A line's width on screen in CSS pixels (the block outline, the region boxes, the brush preview,
@@ -2877,7 +2877,7 @@ impl Renderer {
                 let m = self.debug.as_ref().expect("collected");
                 (m, vec![m.parts[0].clone()])
             }
-            DrawMesh::Heightfield(_) => unreachable!("drawn from the grid, not the arena"),
+            DrawMesh::Heightfield => unreachable!("drawn from the grid, not the arena"),
         }
     }
 
@@ -2962,7 +2962,7 @@ impl Renderer {
                     mesh: DrawMesh::Chunk(coord, Part::Water),
                 });
             }
-            if let Some((quat, range)) = self.heightfield.draw_of(coord) {
+            if let Some(quat) = self.heightfield.draw_of(coord) {
                 out.push(DrawItem {
                     kind: Kind::Fluid,
                     water: true,
@@ -2976,7 +2976,7 @@ impl Renderer {
                     page: 0,
                     passes,
                     key: 0,
-                    mesh: DrawMesh::Heightfield(range.start > 0),
+                    mesh: DrawMesh::Heightfield,
                 });
             }
         }
@@ -3213,7 +3213,7 @@ impl Renderer {
             });
         }
         for d in &mut out {
-            if !matches!(d.mesh, DrawMesh::Heightfield(_)) {
+            if !matches!(d.mesh, DrawMesh::Heightfield) {
                 d.page = self.mesh_of(&d.mesh).0.region.page;
             }
             d.key = draw_order(d);
@@ -4012,15 +4012,14 @@ impl Renderer {
         let mut bound_page: Option<(usize, usize)> = None;
         for (k, d) in draws.iter().enumerate() {
             let instance = (first_slot + k as u64) as u32;
-            if let DrawMesh::Heightfield(face_b) = d.mesh {
+            if matches!(d.mesh, DrawMesh::Heightfield) {
                 let hf = &self.heightfield;
                 pass.set_pipeline(if water_scene { &hf.scene } else { &hf.blended });
                 pass.set_bind_group(heightfield::GROUP, &hf.group, &[]);
-                pass.set_index_buffer(hf.index.slice(..), wgpu::IndexFormat::Uint32);
                 bound = None;
                 bound_page = None;
-                *triangles += u64::from(heightfield::GRID_INDICES / 3);
-                pass.draw_indexed(heightfield::grid_range(face_b), 0, instance..instance + 1);
+                *triangles += u64::from(heightfield::GRID_VERTICES / 3);
+                pass.draw(0..heightfield::GRID_VERTICES, instance..instance + 1);
                 *calls += 1;
                 continue;
             }
@@ -5210,6 +5209,16 @@ impl TerrainRenderer for Renderer {
 impl crate::game::Scene for Renderer {
     fn draws_heightfield(&self) -> bool {
         self.water().tier().heightfield
+    }
+    fn has_water_tile(&self, coord: ChunkCoord) -> bool {
+        self.heightfield.draw_of(coord).is_some()
+    }
+    fn set_water_tile(
+        &mut self,
+        coord: ChunkCoord,
+        tile: Option<&dwell_mesh::heightfield::WaterTile>,
+    ) {
+        self.heightfield.set(coord, tile);
     }
     fn set_piece(&mut self, id: u32, meshes: Option<(&[ChunkMeshes], f64)>) {
         Renderer::set_piece(self, id, meshes);
