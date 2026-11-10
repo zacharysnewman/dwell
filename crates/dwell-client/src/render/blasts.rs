@@ -323,5 +323,4 @@ mod tests {
             assert_eq!(entries.matches("ShaderStages::VERTEX_FRAGMENT").count(), 3);
         }
     }
-
 }
