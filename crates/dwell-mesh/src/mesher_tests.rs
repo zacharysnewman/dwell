@@ -1624,23 +1624,31 @@ fn a_log_lying_along_x_shows_its_end_grain_on_its_ends_and_its_bark_along_it() {
     };
     for (axis, end_normal) in [("y", 1usize), ("x", 0), ("z", 2)] {
         let m = mesh(&[(4, 4, 4, log(axis))], false).opaque;
-        for q in 0..quads(&m) {
-            let n = [0, 1, 2].map(|k| m.normals[q * 12 + k]);
-            let along = n
-                .iter()
-                .position(|c| c.abs() == 1.0)
-                .expect("an axis normal");
-            let tile = [m.tiles[q * 16], m.tiles[q * 16 + 1]];
-            let want = if along == end_normal {
-                "logTop"
-            } else {
-                "logSide"
+        // Polygon by polygon (an octagonal log's caps have eight corners, ADR 0072): each
+        // triangle's first vertex carries its face's normal and tile; a triangle of a rectangle
+        // spans its face's v.
+        for t in m.indices.chunks_exact(3) {
+            let i = t[0] as usize;
+            let n = [0, 1, 2].map(|k| m.normals[i * 3 + k]);
+            let tile = [m.tiles[i * 4], m.tiles[i * 4 + 1]];
+            let Some(along) = n.iter().position(|c| c.abs() == 1.0) else {
+                // A chamfer (45 degrees): bark.
+                assert_eq!(tile, rect("logSide"), "axis {axis}, chamfer {n:?}");
+                continue;
             };
-            assert_eq!(tile, rect(want), "axis {axis}, face normal {n:?}");
+            if along == end_normal {
+                // The cap: the heart's end grain inside the bark ring (Phase 55 T3).
+                assert!(
+                    tile == rect("logHeart") || tile == rect("logSide"),
+                    "axis {axis}, cap tile {tile:?}"
+                );
+                continue;
+            }
+            assert_eq!(tile, rect("logSide"), "axis {axis}, face normal {n:?}");
             if along != end_normal {
                 // The bark's v runs along the log: over the face, v spans the log's own length
-                // (1 m along x or z, a ½ m cell along y), u the other way.
-                let vs: Vec<f32> = (0..4).map(|c| m.uvs[q * 8 + c * 2 + 1]).collect();
+                // (1 m along x or z, a half-metre cell along y), u the other way.
+                let vs: Vec<f32> = t.iter().map(|&c| m.uvs[c as usize * 2 + 1]).collect();
                 let span = vs.iter().fold(f32::MIN, |a, &b| a.max(b))
                     - vs.iter().fold(f32::MAX, |a, &b| a.min(b));
                 let length = if end_normal == 1 { 0.5 } else { 1.0 };
@@ -2090,5 +2098,184 @@ dwell_world::both_faces!(
         });
         assert!(apex, "the lying log's apex at y {apex_y}");
         assert!(triangles(&m, "logCut").iter().any(|t| t.2));
+    }
+);
+
+/// The opaque mesh of logs (`(x, y, z, axis)`, chunk-local) in chunk (0, 2, 0) of face `f`,
+/// read back face-local: each triangle's (centroid, normal).
+fn log_triangles(f: FaceFrame, logs: &[(i32, i32, i32, &str)]) -> Vec<([f64; 3], [f64; 3])> {
+    let states: Vec<(i32, i32, i32, StateId)> = logs
+        .iter()
+        .map(|&(x, y, z, axis)| (x, y, z, require(&format!("dwell:log[axis={axis}]"))))
+        .collect();
+    state_triangles(f, &states)
+}
+
+/// As `log_triangles`, for face-local states.
+fn state_triangles(f: FaceFrame, cells: &[(i32, i32, i32, StateId)]) -> Vec<([f64; 3], [f64; 3])> {
+    let c = ChunkCoord::new(0, 2, 0);
+    let n = CHUNK_SIZE;
+    let mut source = dwell_world::VoxelWorld::new(dwell_world::empty_generator(), None);
+    for &(x, y, z, m) in cells {
+        source.set_voxel(x, c.y * n + y, z, m);
+    }
+    let m = local_mesh(f, mesh_on_face(&mut source, c, f).opaque);
+    m.indices
+        .chunks_exact(3)
+        .map(|t| {
+            let p: Vec<[f64; 3]> = t.iter().map(|&i| vertex(&m.positions, i)).collect();
+            let mid = std::array::from_fn(|a| (p[0][a] + p[1][a] + p[2][a]) / 3.0);
+            (mid, vertex(&m.normals, t[0]))
+        })
+        .collect()
+}
+
+fn diagonal(n: [f64; 3]) -> bool {
+    n.iter().filter(|c| c.abs() > 0.1).count() == 2
+}
+
+dwell_world::both_faces!(
+    /// A lone log is an octagonal prism (ADR 0072): eight bark sides round its axis, four of them
+    /// the 45° chamfers, and end-grain caps; nothing outside the octagon's corners is drawn.
+    fn a_lone_log_meshes_as_an_octagonal_prism(f: FaceFrame) {
+        let tris = log_triangles(f, &[(8, 8, 8, "y")]);
+        let normals: std::collections::BTreeSet<[i64; 3]> = tris
+            .iter()
+            .map(|(_, n)| n.map(|c| (c * 100.0).round() as i64))
+            .collect();
+        assert_eq!(normals.len(), 10, "8 sides and 2 caps: {normals:?}");
+        assert_eq!(
+            tris.iter().filter(|(_, n)| diagonal(*n)).count(),
+            8,
+            "4 chamfer quads"
+        );
+        // The chamfers cut the corners: nothing is drawn at a corner column of the cell.
+        for (mid, _) in &tris {
+            let (u, v) = (mid[0] - 8.0, mid[2] - 8.0);
+            assert!(!(u < 0.05 && v < 0.05), "a corner face at {mid:?}");
+        }
+    }
+);
+
+dwell_world::both_faces!(
+    /// Two logs side by side along one axis join flat (owner, 2026-11-09: "full width sides where
+    /// they meet"): no face between them, no chamfer on the corners at the join, and their sides
+    /// run on flat across it. Logs of different axes keep their chamfers.
+    fn two_same_axis_logs_join_full_width_and_different_axes_do_not(f: FaceFrame) {
+        let joined = log_triangles(f, &[(8, 8, 8, "y"), (9, 8, 8, "y")]);
+        assert!(
+            joined.iter().all(|(m, _)| (m[0] - 9.0).abs() > 1e-6),
+            "a face on the shared plane x = 9"
+        );
+        assert_eq!(
+            joined.iter().filter(|(_, n)| diagonal(*n)).count(),
+            8,
+            "2 chamfers each"
+        );
+        let crossed = log_triangles(f, &[(8, 8, 8, "y"), (9, 8, 8, "z")]);
+        assert_eq!(
+            crossed.iter().filter(|(_, n)| diagonal(*n)).count(),
+            16,
+            "4 chamfers each"
+        );
+    }
+);
+
+/// The face-local top caps' triangles of logs (as `log_triangles`) with each one's tile.
+fn log_top_tiles(f: FaceFrame, logs: &[(i32, i32, i32, &str)]) -> Vec<([f64; 3], [f32; 2])> {
+    let c = ChunkCoord::new(0, 2, 0);
+    let n = CHUNK_SIZE;
+    let mut source = dwell_world::VoxelWorld::new(dwell_world::empty_generator(), None);
+    for &(x, y, z, axis) in logs {
+        let m = require(&format!("dwell:log[axis={axis}]"));
+        source.set_voxel(x, c.y * n + y, z, m);
+    }
+    let m = local_mesh(f, mesh_on_face(&mut source, c, f).opaque);
+    m.indices
+        .chunks_exact(3)
+        .filter(|t| vertex(&m.normals, t[0])[1] > 0.5)
+        .map(|t| {
+            let p: Vec<[f64; 3]> = t.iter().map(|&i| vertex(&m.positions, i)).collect();
+            let mid = std::array::from_fn(|a| (p[0][a] + p[1][a] + p[2][a]) / 3.0);
+            let i = t[0] as usize;
+            (mid, [m.tiles[i * 4], m.tiles[i * 4 + 1]])
+        })
+        .collect()
+}
+
+dwell_world::both_faces!(
+    /// Phase 55 T3 (owner, 2026-11-09: "the outside bark ring should follow the octagon, it
+    /// doesn't, it gets cut off on the corners"): a lone log's top is end grain (the ringless
+    /// heart tile) inside a band of bark that runs along all eight edges, the chamfers too. Red
+    /// before: the whole cap was the square-ringed end tile, its ring clipped at the corners.
+    fn a_lone_logs_cap_rings_the_octagon_in_bark(f: FaceFrame) {
+        let tris = log_top_tiles(f, &[(8, 8, 8, "y")]);
+        assert!(
+            tris.iter().any(|(_, t)| *t == rect_of("logHeart")),
+            "no heart"
+        );
+        let bark: Vec<_> = tris
+            .iter()
+            .filter(|(_, t)| *t == rect_of("logSide"))
+            .collect();
+        // Bark at a chamfer: near the cut corner (u + v about the chamfer), on all four.
+        for (cu, cv) in [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)] {
+            let near = bark.iter().any(|(m, _)| {
+                let (u, v) = ((m[0] - 8.0 - cu).abs(), (m[2] - 8.0 - cv).abs());
+                (0.2..0.45).contains(&(u + v)) && u < 0.4 && v < 0.4
+            });
+            assert!(near, "no bark along the chamfer at corner ({cu}, {cv})");
+        }
+    }
+);
+
+dwell_world::both_faces!(
+    /// Joined logs' tops have no bark between them: no ring runs along the joined side, so a
+    /// joined wall's top reads as continuous wood; the open sides keep their ring.
+    fn joined_logs_tops_have_no_ring_between_them(f: FaceFrame) {
+        let tris = log_top_tiles(f, &[(8, 8, 8, "y"), (9, 8, 8, "y")]);
+        let bark: Vec<_> = tris
+            .iter()
+            .filter(|(_, t)| *t == rect_of("logSide"))
+            .collect();
+        assert!(!bark.is_empty(), "the open sides keep their ring");
+        assert!(
+            bark.iter().all(|(m, _)| (m[0] - 9.0).abs() > 0.15),
+            "bark along the joined side x = 9: {:?}",
+            bark.iter().map(|b| b.0).collect::<Vec<_>>()
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    /// Phase 55 T4 (owner, 2026-11-09: "everything log/tree should be octagonal"): a stump's wood
+    /// ramp is the log's octagon prism cut by its slant: its slant and sides stay inside the
+    /// octagon (nothing at the cell's cut corners), and it meets the log below flat (neither cap
+    /// between them drawn). Red before: the square ramp drew its corners.
+    fn a_stumps_wood_ramp_is_the_octagon_cut_by_its_slant(f: FaceFrame) {
+        let log = require("dwell:log[axis=y]");
+        let ramp = require("dwell:log_ramp[facing=west,flooded=false,half=bottom,shape=ramp]");
+        let tris = state_triangles(f, &[(8, 8, 8, log), (8, 9, 8, ramp)]);
+        let slant = |n: [f64; 3]| n[1].abs() > 0.1 && n[1].abs() < 0.99;
+        assert!(tris.iter().any(|(_, n)| slant(*n)), "a slant");
+        // The log's four chamfers are 8 triangles; the ramp's run on up its sides.
+        let chamfers = tris
+            .iter()
+            .filter(|(_, n)| n[1].abs() < 0.01 && diagonal(*n))
+            .count();
+        assert!(chamfers > 8, "the ramp's chamfers too: {chamfers}");
+        for (mid, n) in &tris {
+            let (u, v) = (mid[0] - 8.0, mid[2] - 8.0);
+            let corner = |a: f64| !(0.05..=0.95).contains(&a);
+            assert!(
+                !(corner(u) && corner(v)),
+                "a corner face at {mid:?} ({n:?})"
+            );
+        }
+        assert!(
+            !tris.iter().any(|(_, n)| n[1] > 0.99),
+            "no flat top: the log's cap is covered and the ramp's is its slant"
+        );
+        assert!(tris.iter().any(|(_, n)| n[1] < -0.99), "the log's bottom");
     }
 );

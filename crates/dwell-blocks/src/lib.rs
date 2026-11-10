@@ -2,6 +2,7 @@
 //! `shared/blocks/*.json` by `shared/blocks/gen.mjs`; code refers to blocks by name
 //! (`"dwell:sand"`), never by a numeric constant, and resolves names once at startup.
 
+pub mod octagon;
 mod registry;
 pub mod shape;
 pub mod sync;

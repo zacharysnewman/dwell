@@ -282,8 +282,14 @@ pub fn face_covered(shape: &ShapeInfo, face: usize, neighbour: Option<&ShapeInfo
 }
 
 /// The geometry a neighbour covers faces with: none if it is see-through (cutout, translucent).
+/// An octagonal log (ADR 0072) covers nothing: its chamfers leave its cell's corners open, and
+/// where it joins a neighbour it draws (and hides) the shared side itself.
 fn cover(k: &Kind) -> Option<&'static ShapeInfo> {
-    if k.occludes { k.def } else { None }
+    if k.occludes && !k.style.octagon {
+        k.def
+    } else {
+        None
+    }
 }
 
 /// The light keys of the corners of the face cell (i, j) (u, v) on plane `plane` of the face
@@ -993,6 +999,132 @@ fn carved_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, cell: [i32; 3], cu
         b.polygon(
             &f.pts,
             at,
+            normal,
+            tint,
+            color,
+            &tile,
+            None,
+            Some((&light, &flood)),
+        );
+        if tile.turn {
+            for uv in b.m.uvs[first..].chunks_exact_mut(2) {
+                uv.swap(0, 1);
+            }
+        }
+    }
+}
+
+/// An octagonal log (ADR 0072, `dwell_blocks::octagon`): its prism's faces that nothing covers,
+/// squared off where it joins a neighbour. Bark on the sides and chamfers, end grain on the caps;
+/// each face lit by the sky its side sees (a chamfer: the mean of its two sides').
+fn octagon_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, m: StateId, cell: [i32; 3]) {
+    use dwell_blocks::octagon::{Part as Oct, cap_pieces, joined_mask, open_faces, section_of};
+    let [x, y, z] = cell;
+    let at = |o: [i32; 3]| cells.state(x + o[0], y + o[1], z + o[2]);
+    let covers = |n: StateId| {
+        let kn = cells.kinds.of(n);
+        kn.occludes && kn.shape == Shape::Full
+    };
+    let pos = [f64::from(x), f64::from(y), f64::from(z)];
+    let size = [1.0, CELL_H, 1.0];
+    let Some((section, sec_axis)) = section_of(m) else {
+        return;
+    };
+    let joined = joined_mask(m, &at);
+    // Each open cap split into its bark ring along the octagon's unjoined edges and the heart
+    // inside (Phase 55 T3).
+    // A cut cap (a wood ramp's, Phase 55 T4) is drawn whole, its ring not split off.
+    let whole = |f: &dwell_blocks::octagon::Face| {
+        let n = dwell_blocks::octagon::outline(f64::from(section.chamfer), sec_axis, joined, size);
+        f.pts.len() == n.len()
+    };
+    let pieces = open_faces(m, &at, &covers, size)
+        .into_iter()
+        .flat_map(|f| match f.part {
+            Oct::Cap(end) if whole(&f) => cap_pieces(&section, sec_axis, joined, size, end),
+            _ => vec![f],
+        });
+    for f in pieces {
+        let sides: [usize; 2] = match f.part {
+            Oct::Cap(end) | Oct::Ring(end, _) => {
+                let face = face_of(k.style.axis, if end { 1 } else { -1 });
+                [face, face]
+            }
+            Oct::Side(face) => [face, face],
+            Oct::Chamfer(a, c) => [a, c],
+            // The cut: lit from the cell face its normal leans to most.
+            Oct::Cut => {
+                let n = carve::normal(&f.pts);
+                let a = (0..3)
+                    .max_by(|&i, &j| n[i].abs().total_cmp(&n[j].abs()))
+                    .unwrap_or(1);
+                let face = face_of(a, if n[a] >= 0.0 { 1 } else { -1 });
+                [face, face]
+            }
+        };
+        let (axis, sign) = FACES[sides[0]];
+        let (color, tile) = match (f.part, k.style.textures) {
+            // The ring: the bark (side) tile, laid flat on the cap.
+            (Oct::Ring(..), Some(t)) => (0xffffff, tile_rect(t.side)),
+            // The heart: its own tile when the data names one this build has.
+            (Oct::Cap(_) | Oct::Cut, Some(_))
+                if section.heart.is_some_and(crate::textures::has_tile) =>
+            {
+                (0xffffff, tile_rect(section.heart.unwrap_or_default()))
+            }
+            _ => surface(&k.style, axis, sign),
+        };
+        let normal = carve::normal(&f.pts);
+        let tint = match f.part {
+            Oct::Chamfer(..) | Oct::Cut => {
+                let n = normal_to_m(normal);
+                normal_tint(n[0], n[1], n[2])
+            }
+            _ => face_tint(axis, sign),
+        };
+        let light: Vec<f32> = f
+            .pts
+            .iter()
+            .map(|p| {
+                let lit = |face: usize| {
+                    let (a, s) = FACES[face];
+                    let mut q = *p;
+                    q[a] = if s > 0 { 1.0 } else { 0.0 };
+                    let mut n = [0.0; 3];
+                    n[a] = f64::from(s);
+                    vertex_light(AO_OPEN, cells.sky_rays(cell, q, n, 20 + face as i64))
+                };
+                (lit(sides[0]) + lit(sides[1])) / 2.0
+            })
+            .collect();
+        // Each corner's flood light as a cube face's corner takes it (the front layer's cells
+        // round it, `Flood::corner`), brightest of the sides it looks out of (a chamfer: two).
+        let flood: Vec<[f32; 2]> = f
+            .pts
+            .iter()
+            .map(|p| {
+                let one = |face: usize| {
+                    let (a, s) = FACES[face];
+                    let front = neighbour_of(x, y, z, a, s);
+                    let (u, v) = ((a + 1) % 3, (a + 2) % 3);
+                    let toward = |c: f64| if c < 0.5 { -1 } else { 1 };
+                    let (sky, block) =
+                        cells
+                            .flood
+                            .corner(cells.occ, front, u, toward(p[u]), v, toward(p[v]));
+                    [
+                        f32::from(sky) / crate::flood::QUARTERS,
+                        f32::from(block) / crate::flood::QUARTERS,
+                    ]
+                };
+                let (l0, l1) = (one(sides[0]), one(sides[1]));
+                [l0[0].max(l1[0]), l0[1].max(l1[1])]
+            })
+            .collect();
+        let first = b.m.uvs.len();
+        b.polygon(
+            &f.pts,
+            pos,
             normal,
             tint,
             color,
@@ -1742,6 +1874,7 @@ fn mesh_cells(
                     }
                     if k.shape == Shape::Shaped
                         || k.style.look == Look::Cross
+                        || k.style.octagon
                         || (!carved.is_empty() && carved.contains_key(&cell))
                     {
                         continue; // drawn whole, below
@@ -1912,7 +2045,8 @@ fn mesh_cells(
                     continue;
                 }
                 let k = cells.kind(cx, cy, cz);
-                if k.shape == Shape::Shaped {
+                // A wood ramp with the log's octagon (Phase 55 T4) is drawn as its cut prism below.
+                if k.shape == Shape::Shaped && !k.style.octagon {
                     shaped_voxel(&mut opaque, &cells, &k, cx, cy, cz);
                 }
                 if let Some(cut) = (!carved.is_empty())
@@ -1920,6 +2054,8 @@ fn mesh_cells(
                     .flatten()
                 {
                     carved_voxel(&mut opaque, &cells, &k, [cx, cy, cz], cut);
+                } else if k.style.octagon {
+                    octagon_voxel(&mut opaque, &cells, &k, m, [cx, cy, cz]);
                 }
                 if k.liquid {
                     fall_into(&mut transparent, &cells, &k, cx, cy, cz);

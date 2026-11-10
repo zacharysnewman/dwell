@@ -199,6 +199,8 @@ fn piece_box(offset: [i32; 3], m: StateId, carrier: bool, riders_only: bool) -> 
         } else {
             Collide::None
         },
+        hull: dwell_physics::piece_hull(m),
+        joined: 0,
     }
 }
 
@@ -418,6 +420,59 @@ fn in_world_rows(y: f64) -> bool {
 }
 
 /// The centre of world cell `c` (m).
+/// How a felled trunk's upside-down wood ramp lies over the stump's ramp (a wood's
+/// `fellWedgeTrunk`, shared/tools).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WedgeTrunk {
+    /// The notch's upper face: the trunk's ramp thick at the hinge, so the two ramps meet on the
+    /// hinge's edge in a V open toward the notch, and the trunk, resting on that edge with its
+    /// weight over the notch, pivots into it (an open-face notch).
+    Open,
+    /// Parallel to the stump's: the trunk drops ½ m onto the slope and rests on it (it stood
+    /// there in the sim test: the slope's friction holds it).
+    Matching,
+}
+
+/// The fell wedges of a felled standing wood (Phase 55 T2; owner, 2026-11-09: the felled cell
+/// "should turn into a wood ramp and a wood ramp upside down on the piece above"), in the stored
+/// ramps of the block `wedge`, face-local (+y up): the stump's ramp in the cut cell, rising away
+/// from the notch (`notch`: the level direction, x and z, from the trunk's axis to its notched
+/// side; a ramp *faces* the way it falls, so the stump's faces the notch), and the trunk's new
+/// bottom, the upside-down ramp in the cell above, laid as `trunk` says. The cut cell's other half
+/// is chips. Not flooded. None if `wedge` has no such ramps.
+pub fn fell_wedges(wedge: &str, notch: [f64; 2], trunk: WedgeTrunk) -> Option<(StateId, StateId)> {
+    let b = dwell_blocks::find_block(wedge)?;
+    // A shape's corners, NW NE SE SW, as (x, z) signs about the cell's middle.
+    const CORNERS: [[f64; 2]; 4] = [[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]];
+    let hinge = |k: usize| CORNERS[k][0] * notch[0] + CORNERS[k][1] * notch[1] < 0.0;
+    // The upright ramp full on the side `full` says: its facing is the way it falls.
+    let facing = |full: &dyn Fn(usize) -> bool| {
+        (b.first_state..b.first_state + b.state_count)
+            .find(|&s| {
+                let c = dwell_blocks::shape::shape_of(s).corners;
+                state_property(s, "shape") == Some("ramp")
+                    && state_property(s, "half") == Some("bottom")
+                    && (0..4).all(|k| (c[k] == 2) == full(k))
+            })
+            .and_then(|s| state_property(s, "facing"))
+    };
+    let to_notch = facing(&hinge)?;
+    let to_hinge = facing(&|k| !hinge(k))?;
+    let state = |half: &str, facing: &str| {
+        let s = with_property(b.first_state, "shape", "ramp")?;
+        let s = with_property(s, "half", half)?;
+        let s = with_property(s, "facing", facing)?;
+        Some(with_property(s, "flooded", "false").unwrap_or(s))
+    };
+    // A hanging ramp (`half: top`) is the upright one turned over: facing the notch it reaches
+    // down at the hinge (open), facing the hinge at the notch (matching).
+    let top = match trunk {
+        WedgeTrunk::Open => to_notch,
+        WedgeTrunk::Matching => to_hinge,
+    };
+    Some((state("bottom", to_notch)?, state("top", top)?))
+}
+
 pub fn cell_centre(c: [i32; 3]) -> DVec3 {
     DVec3::new(
         f64::from(c[0]) + 0.5,
@@ -508,14 +563,15 @@ impl Felling {
     /// (`clear`: the cell and the state it leaves, water where the block was flooded) and it
     /// becomes a body. Returns the new pieces' indices in `pieces`.
     /// `away_from`: who cut it (a point, e.g. the player's eye), which a carrying piece tips away
-    /// from (`topple_spin`); none for what a settle left unanchored.
+    /// from (`topple_spin`), with the share of that spin (1: all of it; a wood's `fellTip`); none
+    /// for what a settle left unanchored.
     pub fn detach(
         &mut self,
         world: &mut VoxelWorld,
         physics: &mut Physics,
         changed: &[[i32; 3]],
         settles: u8,
-        away_from: Option<DVec3>,
+        away_from: Option<(DVec3, f64)>,
         clear: &mut dyn FnMut(&mut VoxelWorld, [i32; 3], StateId),
     ) -> Vec<usize> {
         let mut out = Vec::new();
@@ -551,7 +607,7 @@ impl Felling {
             // starts still: a body's spin turns it about its centre of mass, which flung a tall
             // trunk's foot back (60 m: 18 m/s; owner, 2026-10-30, "flip out"). Its farthest point
             // at most `topple_tip_speed`: a tall trunk is nudged, gravity does the rest.
-            if let Some(from) = away_from.filter(|_| piece.carriers > 0) {
+            if let Some((from, share)) = away_from.filter(|_| piece.carriers > 0) {
                 let up = DVec3::Y * f64::from(FaceFrame::at_row(reference[1]).sign());
                 let mut d = origin - from;
                 d -= up * d.dot(up);
@@ -569,7 +625,8 @@ impl Felling {
                     let spin = self
                         .rules
                         .topple_spin
-                        .min(self.rules.topple_tip_speed / far.max(1e-6));
+                        .min(self.rules.topple_tip_speed / far.max(1e-6))
+                        * share;
                     let w = up.cross(d.normalize()) * spin;
                     physics.set_angular_velocity(body, w);
                     physics.set_velocity(body, w.cross(com - foot));
@@ -1431,6 +1488,50 @@ impl PieceBook {
 mod tests {
     use super::*;
 
+    /// The heights (face-local, metres over the cell's floor) of `m`'s hull's top and bottom at
+    /// the cell's hinge (+x) and notch (−x) edges, the wedges' notch on −x.
+    fn edges(m: StateId) -> [f64; 4] {
+        let half = DVec3::new(0.5, 0.25, 0.5);
+        let pts = dwell_physics::shape_hull_points(m, half);
+        let at = |x: f64| pts.iter().filter(move |p| (p.x - x).abs() < 1e-6);
+        let top = |x: f64| at(x).map(|p| p.y + 0.25).fold(f64::NEG_INFINITY, f64::max);
+        let bottom = |x: f64| at(x).map(|p| p.y + 0.25).fold(f64::INFINITY, f64::min);
+        [top(0.5), top(-0.5), bottom(0.5), bottom(-0.5)]
+    }
+
+    #[test]
+    fn the_fell_wedges_are_the_stumps_ramp_and_the_trunks_upside_down_ramp_meeting_at_the_hinge() {
+        // face-a-only: `fell_wedges` is face-local (the server turns its states over on face B
+        // with `FaceFrame::state`; tests/chopping.rs fells on both faces).
+        let wedge = dwell_protocol::chopping::wood("dwell:log")
+            .and_then(|w| w.fell_wedge)
+            .expect("the log's fell wedge, data");
+        let (stump, top) = fell_wedges(wedge, [-1.0, 0.0], WedgeTrunk::Open).expect("wedges");
+        // The stump: full (½ m) at the hinge, nothing at the notch, standing on its floor.
+        assert_eq!(edges(stump), [0.5, 0.0, 0.0, 0.0], "the stump's ramp");
+        // The trunk's (the cell above): hanging from its ceiling, reaching its floor at the hinge
+        // only, so it rests on the stump's top edge there with the notch open under it.
+        assert_eq!(
+            edges(top),
+            [0.5, 0.5, 0.0, 0.5],
+            "the trunk's upside-down ramp"
+        );
+        // Matching: parallel, reaching its floor at the notch.
+        let (_, parallel) = fell_wedges(wedge, [-1.0, 0.0], WedgeTrunk::Matching).expect("wedges");
+        assert_eq!(edges(parallel), [0.5, 0.5, 0.5, 0.0]);
+        // The notch on +z turns them a quarter.
+        let (s2, _) = fell_wedges(wedge, [0.0, 1.0], WedgeTrunk::Open).expect("wedges");
+        assert_eq!(state_property(s2, "facing"), Some("south"));
+        assert!(fell_wedges("dwell:stone", [-1.0, 0.0], WedgeTrunk::Open).is_none());
+        // A shaped piece cell collides as its hull, a full one as its box.
+        assert_eq!(dwell_physics::piece_hull(stump), Some(stump));
+        assert_eq!(
+            dwell_physics::piece_hull(dwell_blocks::require("dwell:log")),
+            None
+        );
+        assert_eq!(dwell_physics::piece_hull(M.air), None);
+    }
+
     fn log() -> StateId {
         dwell_blocks::parse_state("dwell:log[axis=y]").expect("log")
     }
@@ -1574,7 +1675,7 @@ mod tests {
                 &mut physics,
                 &[cut],
                 0,
-                Some(from),
+                Some((from, 1.0)),
                 &mut |w, c, m| w.set_voxel(c[0], c[1], c[2], m),
             );
             assert_eq!(new.len(), 1);
@@ -1730,6 +1831,8 @@ mod tests {
                 half: DVec3::new(0.5, 0.25, 0.5),
                 mass: 300.0,
                 collide: Collide::All,
+                hull: None,
+                joined: 0,
             })
             .collect();
         let body = physics.add_piece(at, &boxes, true);

@@ -321,7 +321,7 @@ without catching on internal edges (`walking_across_chunk_seams_in_every_directi
 no loss of ground crossing chunk borders in 8 directions). With `f64` positions it is exact anywhere
 in the world, so it needs no regions, anchors or seams between bodies. **Shaped cells** (Phase 18)
 collide as one Parry `TriMesh` per chunk (`FIX_INTERNAL_EDGES`, at the chunk's corner) of their
-derived shapes' faces that no neighbour covers; a chunk's collision reads a two-cell apron: a
+derived shapes' faces that no neighbour covers, and so do octagonal logs (0.51.0, ADR 0072: the prism of `dwell_blocks::octagon`, squared where same-axis logs join); a chunk's collision reads a two-cell apron: a
 chunk is rebuilt when it changes, and a chunk with shaped cells also when any of the 27 chunks
 around it changes stamp or collision revision (an empty chunk watches only itself; full cubes read only their
 own cells, 0.49.29). The collision revision (`Chunk::collision_revision`, 0.49.34) counts only the writes

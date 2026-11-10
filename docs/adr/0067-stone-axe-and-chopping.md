@@ -63,10 +63,42 @@ felling (FELLING.md). Scope: tools and woods are per build; cuts are per world, 
    vertical)") in the hotbar's status line. Break (left click) swings, at most every
    `swingSeconds` (the server holds the same wait per player).
 5. **Felling past half.** A standing wood (grain along the face's up) cut past `fellFraction`: its
-   cell goes (the wood is chips) and FELLING's integrity takes what it held as a piece, **tipped
-   toward the notch** (its deepest side), as real felling falls (owner, 2026-11-08, Question 1): the
+   cell goes (the wood is chips; since 0.51.0 a wood with a `fellWedge` splits instead, 5a) and
+   FELLING's integrity takes what it held as a piece, **tipped toward the notch** (its deepest side), as real felling falls (owner, 2026-11-08, Question 1): the
    uncut side is the hinge, the notch side opens and the trunk tips into it, toward the chopper who
    stands at the notch. The stump below stays.
+5a. **Felling as wedges** (0.51.0, Phase 55 T2; owner, 2026-11-09: the cut cell "should not
+   destroy the block, it should turn into a wood ramp and a wood ramp upside down on the piece
+   above (both pieces are involved). And then it should fall straight down, which will tilt
+   automatically toward the cut just because of the shape of the cut"). A wood with a
+   **`fellWedge`** (shared/tools: a stored-ramp block, a carrier; the log's is `dwell:log_ramp`, the
+   log's `family: ramp` entry in shared/blocks, never placed and not on the hotbar) is felled
+   differently from item 5: the cut cell becomes the stump's ramp, facing the notch (rising away
+   from it), the log above it the trunk's upside-down ramp (`half: top`), and the trunk is released
+   with **no push** (`detach`'s `away_from` none: no topple spin). How the trunk's ramp lies is the
+   wood's **`fellWedgeTrunk`**: `open` (the default) reaches down at the hinge, so the two ramps meet
+   on the hinge's edge in a V open toward the notch and the trunk, resting on that edge with its
+   weight over the notch, pivots into it; `matching` lies parallel to the stump's (the trunk drops
+   ½ m onto the slope). The cut cell's notch-side half is chips. `dwell_sim::felling::fell_wedges`
+   picks the states face-locally (the notch's direction from the deepest side; a ramp faces the way
+   it falls) and the server turns them over on face B (`FaceFrame::state`). The wedges collide: the
+   stump in the terrain mesh as the log's octagon cut by its slant (Phase 55 T4, ADR 0072: the wood
+   ramp's `crossSection: "of"`; drawn so too), the trunk's in its body as its square shape's convex
+   hull (`PieceCell::hull`, never merged into a box; drawn octagonal; the octagon's hinge let the
+   trunk slide off the stump, ADR 0072 T4), the logs above it as boxes (their octagon prisms are
+   built but not switched on, ADR 0072 T4). The axe's swing clears a wood ramp (the axe's
+   `clears`), and hands can't break one where blocks are not unlimited (`breakWith: axe`, as the
+   log); broken, it drops a log. A wood without `fellWedge` falls as item 5. Measured (2026-11-09,
+   `tests/chopping.rs`): `matching` stood on its 26.6° slope (friction 0.8); a 45° two-cell split
+   slid toward the notch and toppled back over the hinge on face A; `open` is down past 60° toward
+   the notch in 0.6 s on both faces. **Revised the same day** (owner: "You can make the tree tip if
+   needed, like we used to, maybe 3/4 of the force"): `fellWedgeTrunk` defaults to `matching`
+   (`open` stays a value), and the wood's **`fellTip`** (shared/tools, in [0, 2], 0: none) releases
+   the trunk tipping toward the notch with that share of item 5's topple spin (away from a point
+   past the hinge side). At 0.75 and 0.85 the 3.5 m test trunk leant ~5° and rocked back upright on
+   the matching slope; at 1 it is down past 60° toward the notch in ~1.25 s on both faces, so the
+   log's `fellTip` is 1. A breaking change (new block states, a changed fell): it ships
+   in 0.51.0, the line's first release.
 6. **Bucking.** A lying wood (grain level) is cut the same way, best by vertical swings across it,
    and cut through at `buckFraction`: its cell (a 1 m length) goes and, in a mode that uses items,
    drops `buckDrops` (rolled with the server's entropy) as loose items (ADR 0066). In creative

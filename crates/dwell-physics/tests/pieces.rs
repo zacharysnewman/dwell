@@ -14,6 +14,8 @@ fn log_across(w: &mut PlayerTestWorld, mass: f64, dominant: bool) -> dwell_physi
             half: DVec3::new(0.5, 0.5, 0.5),
             mass,
             collide: dwell_physics::Collide::All,
+            hull: None,
+            joined: 0,
         })
         .collect();
     w.physics
@@ -95,6 +97,8 @@ fn a_player_standing_on_a_sliding_piece_rides_it() {
             half: DVec3::new(0.5, 0.5, 2.0),
             mass: 100.0,
             collide: dwell_physics::Collide::All,
+            hull: None,
+            joined: 0,
         })
         .collect();
     let slab = w
@@ -119,4 +123,40 @@ fn a_player_standing_on_a_sliding_piece_rides_it() {
         "rode {rode} on a slab that slid {slid}"
     );
     assert!(w.c(e).ground.grounded);
+}
+
+#[test]
+fn a_felled_octagonal_trunk_falls_and_settles_on_a_flat_side() {
+    // Phase 55 T4 (owner, 2026-11-09: "everything log/tree should be octagonal"): a felled trunk's
+    // logs as one octagonal prism (`merged_boxes`; `piece_hull` doesn't give it yet), dropped on the floor, still
+    // falls and comes to rest, lying on one of its flat sides (face-local: DWELL_FACE=b mirrors it).
+    let mut w = PlayerTestWorld::new();
+    w.floor();
+    let _p = w.spawn(Vec3::new(0.5, 0.0, -2.5));
+    w.step(5);
+    let log = dwell_blocks::require("dwell:log[axis=x]");
+    let cells: Vec<PieceCell> = (-2..2)
+        .map(|x| PieceCell {
+            center: DVec3::new(f64::from(x), 0.0, 0.0),
+            half: DVec3::new(0.5, 0.25, 0.5),
+            mass: 350.0,
+            collide: dwell_physics::Collide::All,
+            hull: Some(log),
+            joined: 0,
+        })
+        .collect();
+    let trunk = w
+        .physics
+        .add_piece(to_world(Vec3::new(0.5, 1.5, 0.5)), &cells, false);
+    w.step(ticks(4.0));
+    let at = to_local(w.physics.position(trunk));
+    let speed = w.physics.velocity(trunk).length();
+    assert!(at.y < 1.0, "it fell: {at:?}");
+    assert!(speed < 0.05, "it settled: {speed} m/s at {at:?}");
+    // On a flat side: its centre a cell's half (less the skin) over the floor, not on a corner.
+    assert!(
+        (f64::from(at.y) - 0.24).abs() < 0.03,
+        "it lies on a flat side: centre {} m up",
+        at.y
+    );
 }

@@ -287,6 +287,8 @@ fn the_local_player_rides_a_falling_pieces_stand_in() {
             half: DVec3::new(0.5, 0.5, 2.0),
             mass: 300.0,
             collide: dwell_physics::Collide::All,
+            hull: None,
+            joined: 0,
         })
         .collect();
     let start = DVec3::new(0.5, top + 0.5, 0.5);
@@ -330,6 +332,8 @@ fn only_the_pieces_that_could_touch_the_player_soon_are_stood_in_for() {
         half: DVec3::new(0.5, 0.25, 0.5),
         mass: 500.0,
         collide: dwell_physics::Collide::All,
+        hull: None,
+        joined: 0,
     }];
     let q = dwell_physics::DQuat::IDENTITY;
     // Dead (no snapshot yet): nothing is stood in for.

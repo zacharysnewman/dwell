@@ -21,7 +21,7 @@ const TOOL_FIELDS = ['name', 'kind', 'swingSeconds', 'biteM', 'bindM', 'across',
 const SWING_FIELDS = ['windupS', 'activeS', 'hitStopS', 'recoverHitS', 'recoverMissS', 'reachM', 'arcDeg', 'samples', 'kickDeg', 'staminaCost', 'swish', 'bounce', 'rustle', 'rustleLeaves'];
 /** A swing's defaults (a tool without `swing`): a short wind-up, a committed arc, a hit-stop. */
 export const SWING_DEFAULTS = { windupS: 0.12, activeS: 0.14, hitStopS: 0.07, recoverHitS: 0.22, recoverMissS: 0.36, reachM: 2.2, arcDeg: 110, samples: 12, kickDeg: 1.5, staminaCost: 0, swish: null, bounce: null, rustle: null, rustleLeaves: 4 };
-const WOOD_FIELDS = ['block', 'fellFraction', 'buckFraction', 'buckDrops', 'chips', 'leaves', 'sway', 'sounds', 'cut'];
+const WOOD_FIELDS = ['block', 'fellFraction', 'buckFraction', 'buckDrops', 'chips', 'leaves', 'sway', 'sounds', 'cut', 'fellWedge', 'fellWedgeTrunk', 'fellTip'];
 const CUT_FIELDS = ['tile', 'tint', 'open', 'kerfWidthM'];
 const LEAF_FIELDS = ['block', 'count', 'color', 'radiusM', 'heightM'];
 const SWAY_FIELDS = ['fromFraction', 'maxDeg'];
@@ -121,6 +121,28 @@ export function validateTools(data, items, blocks, heldItems = loadHeldItems(), 
     woodNames.add(w.block);
     inRange(w, 'fellFraction', 0, 1, at, true);
     inRange(w, 'buckFraction', 0, 1, at, true);
+    // The fell wedge (Phase 55 T2; owner, 2026-11-09): a stored-ramp block (`facing`, `half`,
+    // `shape`) whose ramp the stump keeps and whose upside-down ramp is the felled trunk's bottom.
+    const fellWedge = w.fellWedge ?? null;
+    if (fellWedge !== null) {
+      const wd = blocks.get(fellWedge);
+      if (!wd) fail(`${at}.fellWedge: no block named ${JSON.stringify(fellWedge)}`);
+      // A `family: ramp` entry (shared/blocks: `<m>_ramp[facing, flooded, half, shape]`) or a block
+      // declaring those properties itself.
+      const p = wd.properties ?? {};
+      const ramp = wd.family === 'ramp' || (p.facing && p.half?.includes('top') && p.half?.includes('bottom') && p.shape?.includes('ramp'));
+      if (!ramp) {
+        fail(`${at}.fellWedge: ${fellWedge} is not a ramp block (facing, half bottom/top, shape ramp)`);
+      }
+      if ((wd.support ?? 'ground') !== 'carrier') fail(`${at}.fellWedge: ${fellWedge} must be a carrier (support)`);
+    }
+    // How the trunk's upside-down ramp lies: `open` (the notch's upper face, meeting the stump's
+    // ramp on the hinge's edge) or `matching` (parallel to it, the default: no lost half).
+    const fellWedgeTrunk = w.fellWedgeTrunk ?? 'matching';
+    if (!['open', 'matching'].includes(fellWedgeTrunk)) fail(`${at}.fellWedgeTrunk must be one of open, matching`);
+    // The trunk's tip toward the notch as a share of the topple spin (0: none, the default).
+    const fellTip = w.fellTip ?? 0;
+    if (typeof fellTip !== 'number' || !(fellTip >= 0 && fellTip <= 2)) fail(`${at}.fellTip must be a number in [0, 2]`);
     if (!Array.isArray(w.buckDrops)) fail(`${at}.buckDrops must be a list`);
     const buckDrops = w.buckDrops.map((d, j) => {
       const dat = `${at}.buckDrops[${j}]`;
@@ -176,7 +198,7 @@ export function validateTools(data, items, blocks, heldItems = loadHeldItems(), 
     sounds.forEach((x, j) => {
       if (j === 0 ? x.from !== 0 : x.from <= sounds[j - 1].from) fail(`${at}.sounds: from must start at 0 and rise`);
     });
-    return { ...w, buckDrops, chips, leaves: lv, sway, sounds, cut };
+    return { ...w, buckDrops, chips, leaves: lv, sway, sounds, cut, fellWedge, fellWedgeTrunk, fellTip };
   });
   // Blocks a break needs a tool kind for where blocks are not unlimited (`breakWith` on the block;
   // owner, 2026-11-08: logs need an axe in adventure).
@@ -245,7 +267,7 @@ export function toolsRust(d) {
       (x) => `DropRule { chance: ${f64(x.chance)}, choices: &[DropChoice { item: "${x.item}", min: ${x.min}, max: ${x.max}, weight: 1.0 }] }`,
     );
     rs.push(
-      `    WoodDef { block: "${w.block}", fell_fraction: ${f64(w.fellFraction)}, buck_fraction: ${f64(w.buckFraction)}, buck_drops: &[${drops.join(', ')}], chips: Chips { count: ${w.chips.count}, color: [${rgb(w.chips.color).join(', ')}], speed: ${f64(w.chips.speed)}, size: ${f64(w.chips.size)} }, leaves: Leaves { block: ${optStr(w.leaves.block)}, count: ${w.leaves.count}, color: [${rgb(w.leaves.color).join(', ')}], radius_m: ${f64(w.leaves.radiusM)}, height_m: ${f64(w.leaves.heightM)} }, sway: Sway { from_fraction: ${f64(w.sway.fromFraction)}, max_deg: ${f64(w.sway.maxDeg)} }, sounds: &[${w.sounds.map((x) => `(${f64(x.from)}, "${x.event}")`).join(', ')}], cut: CutLook { tile: ${optStr(w.cut.tile)}, tint: [${rgb(w.cut.tint).join(', ')}], open: ${f64(w.cut.open)}, kerf_width_m: ${f64(w.cut.kerfWidthM)} } },`,
+      `    WoodDef { block: "${w.block}", fell_fraction: ${f64(w.fellFraction)}, buck_fraction: ${f64(w.buckFraction)}, buck_drops: &[${drops.join(', ')}], chips: Chips { count: ${w.chips.count}, color: [${rgb(w.chips.color).join(', ')}], speed: ${f64(w.chips.speed)}, size: ${f64(w.chips.size)} }, leaves: Leaves { block: ${optStr(w.leaves.block)}, count: ${w.leaves.count}, color: [${rgb(w.leaves.color).join(', ')}], radius_m: ${f64(w.leaves.radiusM)}, height_m: ${f64(w.leaves.heightM)} }, sway: Sway { from_fraction: ${f64(w.sway.fromFraction)}, max_deg: ${f64(w.sway.maxDeg)} }, sounds: &[${w.sounds.map((x) => `(${f64(x.from)}, "${x.event}")`).join(', ')}], cut: CutLook { tile: ${optStr(w.cut.tile)}, tint: [${rgb(w.cut.tint).join(', ')}], open: ${f64(w.cut.open)}, kerf_width_m: ${f64(w.cut.kerfWidthM)} }, fell_wedge: ${optStr(w.fellWedge)}, fell_wedge_matching: ${w.fellWedgeTrunk === 'matching'}, fell_tip: ${f64(w.fellTip)} },`,
     );
   }
   rs.push('];');
