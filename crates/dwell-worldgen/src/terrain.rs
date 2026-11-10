@@ -146,10 +146,34 @@ pub struct Surface {
     pub spawn_near_river: f64,
 }
 
+/// A biome (data: `shared/worldgen/biomes/<name>.json`, ADR 0074): what makes a landscape read
+/// as one place, its height field and surface merged with the world-scale fields of `terrain.json`.
+/// Every world is shaped by the default biome ([`BIOMES`]`[0]`) today; B1 reads the biome's surface
+/// blocks per generator ([`TerrainGenerator::with_biome`]), the rest is read through [`HEIGHT`] and
+/// [`SURFACE`] (the default's) until the biome map (B2) weights biomes across a world.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Biome {
+    /// The biome's name (`namespace:name`).
+    pub name: &'static str,
+    pub height: HeightField,
+    pub surface: Surface,
+    /// The decoration rules (`decorations.json`, by name) that may grow here.
+    pub decorations: &'static [&'static str],
+    /// The structure placement rules (`placements.json`, by name) that may stand here.
+    pub placements: &'static [&'static str],
+    /// The fluid block the biome's water is drawn as.
+    pub water: &'static str,
+}
+
 mod table {
     include!("terrain.gen.rs");
 }
-pub use table::{HEIGHT, SURFACE};
+pub use table::{BIOMES, HEIGHT, SURFACE};
+
+/// The biome named `name` (`shared/worldgen/biomes`), if the build has it.
+pub fn find_biome(name: &str) -> Option<&'static Biome> {
+    BIOMES.iter().find(|b| b.name == name)
+}
 
 const S: Surface = SURFACE;
 /// Sand at the shore and under water to SAND_DEPTH (rows, from metres).
@@ -374,22 +398,31 @@ pub struct Bands {
     pub shore: StateId,
 }
 
+impl Bands {
+    /// A surface's band blocks, resolved by name (panics on a name the registry lacks: the
+    /// generator's validation checks the checked-in biomes).
+    pub fn of(s: &Surface) -> Self {
+        Self {
+            ground: dwell_blocks::require(s.ground),
+            under: dwell_blocks::require(s.under),
+            snow: dwell_blocks::require(s.snow),
+            rock: dwell_blocks::require(s.rock),
+            shore: dwell_blocks::require(s.shore_block),
+        }
+    }
+}
+
+/// The default biome's band blocks.
 pub fn bands() -> &'static Bands {
-    static BANDS: std::sync::LazyLock<Bands> = std::sync::LazyLock::new(|| Bands {
-        ground: dwell_blocks::require(S.ground),
-        under: dwell_blocks::require(S.under),
-        snow: dwell_blocks::require(S.snow),
-        rock: dwell_blocks::require(S.rock),
-        shore: dwell_blocks::require(S.shore_block),
-    });
+    static BANDS: std::sync::LazyLock<Bands> = std::sync::LazyLock::new(|| Bands::of(&S));
     &BANDS
 }
 
 /// The material `depth` rows below the surface of a column whose top voxel is `top` and band
 /// `band`: the bedrock in the face's first `bedrock_rows` from the midplane, the core's stone over
 /// it up to `CORE_LAYERS`, then the band's layers.
-fn fill(band: Band, top: i32, depth: i64) -> StateId {
-    fill_soil(band, top, depth, under_rows())
+fn fill(b: &Bands, band: Band, top: i32, depth: i64) -> StateId {
+    fill_soil(b, band, top, depth, under_rows())
 }
 
 /// The `under` block's least depth under a top block (rows): `underDepth` m.
@@ -406,7 +439,7 @@ pub fn soil_rows(top: i32, lowest_neighbour_top: i32) -> i64 {
 }
 
 /// [`fill`] with `soil` rows of the `under` block under a ground or snow top.
-fn fill_soil(band: Band, top: i32, depth: i64, soil: i64) -> StateId {
+fn fill_soil(b: &Bands, band: Band, top: i32, depth: i64, soil: i64) -> StateId {
     let y = i64::from(top) - depth;
     if y < i64::from(MIDPLANE_Y + MIDPLANE.bedrock_rows) {
         return bedrock();
@@ -414,7 +447,6 @@ fn fill_soil(band: Band, top: i32, depth: i64, soil: i64) -> StateId {
     if y < i64::from(MIDPLANE_Y + CORE_LAYERS) {
         return M.stone;
     }
-    let b = bands();
     match band {
         Band::Shore => {
             if depth < SAND_DEPTH {
@@ -469,6 +501,8 @@ pub struct TerrainGenerator {
     ramps: Arc<RampPieces>,
     /// The structure placements (data), resolved for this world.
     planters: Vec<Planter>,
+    /// The surface blocks of this generator's biome (the default's unless `with_biome`).
+    bands: Bands,
     /// The portals between the faces (`portals.rs`), shared by both faces' generators; none for a
     /// face's generator on its own.
     portals: Option<Arc<Portals>>,
@@ -499,9 +533,8 @@ struct RampPieces {
 }
 
 impl RampPieces {
-    fn resolve() -> Self {
+    fn resolve(b: &Bands) -> Self {
         let mut by = HashMap::default();
-        let b = bands();
         for m in [b.ground, b.shore, b.under, b.rock, b.snow] {
             let base = dwell_blocks::block_of(m).name;
             for facing in RampFacing::ALL {
@@ -567,8 +600,9 @@ impl TerrainGenerator {
             offset_x,
             offset_z,
             decorations: Placer::resolve(&DECORATIONS, world_seed),
-            ramps: Arc::new(RampPieces::resolve()),
+            ramps: Arc::new(RampPieces::resolve(bands())),
             planters: Vec::new(),
+            bands: *bands(),
             portals: None,
             rise: DECORATION_RISE as f32,
             lod_valleys: None,
@@ -588,6 +622,15 @@ impl TerrainGenerator {
     /// This face's world map.
     pub fn map(&self) -> &Arc<WorldMap> {
         &self.map
+    }
+
+    /// The generator with `biome`'s surface blocks in place of the default biome's (B1: the bands
+    /// only; ADR 0074).
+    pub fn with_biome(mut self, biome: &Biome) -> Self {
+        self.bands = Bands::of(&biome.surface);
+        self.ramps = Arc::new(RampPieces::resolve(&self.bands));
+        self.cache_id = next_cache_id();
+        self
     }
 
     /// The generator with these structure placements in place of the build's (tests add one by
@@ -1482,7 +1525,7 @@ impl TerrainGenerator {
     pub fn state_at(&self, x: i32, y: i32, z: i32) -> StateId {
         let col = self.column_at(x, z);
         let soil = self.soil_at(x, z, &col, |nx, nz| self.column_at(nx, nz));
-        Self::state_in(&col, y, soil)
+        self.state_in(&col, y, soil)
     }
 
     /// [`soil_rows`] for column (x, z), its neighbours' columns from `column`.
@@ -1516,14 +1559,14 @@ impl TerrainGenerator {
         }
     }
 
-    fn state_in(col: &Column, y: i32, soil: i64) -> StateId {
+    fn state_in(&self, col: &Column, y: i32, soil: i64) -> StateId {
         if col.outside || !(FACE_MIN_Y..FACE_MAX_Y).contains(&y) {
             return M.air;
         }
         let top = top_voxel(col.height);
         let water = col.water_row();
         if y <= top {
-            let m = fill_soil(col.band, top, i64::from(top - y), soil);
+            let m = fill_soil(&self.bands, col.band, top, i64::from(top - y), soil);
             if y == top {
                 under_water(m, y, col.flood_row())
             } else {
@@ -1627,7 +1670,7 @@ impl TerrainGenerator {
     }
 
     /// A column's ground as placements see it (`None` beyond the rim).
-    fn ground_of(col: &Column) -> Option<Ground> {
+    fn ground_of(&self, col: &Column) -> Option<Ground> {
         if col.outside {
             return None;
         }
@@ -1635,7 +1678,7 @@ impl TerrainGenerator {
         // The top block as generated: under water it takes its flooded state. Rows of cells for
         // the top; metres for the height band (placements.json's) and the slope.
         let water = col.water_row();
-        let block = under_water(fill(col.band, top, 0), top, col.flood_row());
+        let block = under_water(fill(&self.bands, col.band, top, 0), top, col.flood_row());
         Some(Ground {
             top,
             above_sea: (m_of_row(top) - SEA_LEVEL_M).floor() as i32,
@@ -1658,9 +1701,9 @@ impl TerrainGenerator {
         let ground = |x: i32, z: i32| {
             let (i, j) = (x - rx, z - rz);
             if (0..w).contains(&i) && (0..l).contains(&j) {
-                Self::ground_of(&cols[(j * w + i) as usize])
+                self.ground_of(&cols[(j * w + i) as usize])
             } else {
-                Self::ground_of(&self.column_at(x, z))
+                self.ground_of(&self.column_at(x, z))
             }
         };
         let mut trees = placements::trees_in(&self.planters, (x0, z0), (x1, z1), &ground);
@@ -1827,9 +1870,9 @@ impl TerrainGenerator {
                     } else if y <= top && y >= first_piece {
                         *v = under_water(pieces[(y - first_piece) as usize], y, flood_at(y));
                     } else if y == top {
-                        *v = under_water(fill(col.band, top, 0), y, flood);
+                        *v = under_water(fill(&self.bands, col.band, top, 0), y, flood);
                     } else if y < top {
-                        *v = fill_soil(col.band, top, i64::from(top - y), soil);
+                        *v = fill_soil(&self.bands, col.band, top, i64::from(top - y), soil);
                     } else if y < water {
                         *v = M.water;
                     } else if col.stream && y == top + 1 {
@@ -1954,7 +1997,7 @@ impl TerrainGenerator {
                         *cell = if y < water { M.water } else { M.air };
                     } else if full && !solid(y + 1) {
                         *cell = if sky_near(y) {
-                            under_water(fill(col.band, y, 0), y, col.flood_row())
+                            under_water(fill(&self.bands, col.band, y, 0), y, col.flood_row())
                         } else {
                             v.material
                         };
@@ -2101,7 +2144,7 @@ impl TerrainGenerator {
         });
         let shape = ramps_rule::top_of(&around, rows_for_m(1.0));
         // Dry pieces: `generate` floods each one under the water (`under_water`).
-        let cells = self.ramps.cells(fill(col.band, top, 0), shape, false);
+        let cells = self.ramps.cells(fill(&self.bands, col.band, top, 0), shape, false);
         // A 1 m ramp needs two cells of ground; a column one cell deep takes none.
         if (cells.len() as i32) > top + 1 - FACE_MIN_Y {
             return &[];
@@ -2127,7 +2170,7 @@ impl TerrainGenerator {
             return None;
         }
         let (x, z) = (x0 + lx, z0 + lz);
-        let ground = fill(cols[(lz * S + lx) as usize].band, top, 0);
+        let ground = fill(&self.bands, cols[(lz * S + lx) as usize].band, top, 0);
         let neighbour_top = |nx: i32, nz: i32| {
             let (ix, iz) = (nx - x0, nz - z0);
             let col = if (0..S).contains(&ix) && (0..S).contains(&iz) {
@@ -2211,8 +2254,8 @@ impl TerrainGenerator {
     }
 
     /// The block on top of a column (dry, as the LOD and the colour map show it).
-    pub fn top_state(col: &Column) -> StateId {
-        fill(col.band, top_voxel(col.height), 0)
+    pub fn top_state(&self, col: &Column) -> StateId {
+        fill(&self.bands, col.band, top_voxel(col.height), 0)
     }
 
     fn lod_columns(&self, o: lod::LodOrigin, level: i32) -> Vec<Column> {
@@ -2447,7 +2490,7 @@ impl TerrainGenerator {
                         *m = if empty(a - cell) {
                             M.stone
                         } else {
-                            fill_soil(col.band, top as i32, depth.min(1000), lod_soil(x, z))
+                            fill_soil(&self.bands, col.band, top as i32, depth.min(1000), lod_soil(x, z))
                         };
                         continue;
                     }
@@ -2457,14 +2500,14 @@ impl TerrainGenerator {
                     *m = if wet && !water_above {
                         M.water
                     } else {
-                        fill(col.band, top as i32, 0)
+                        fill(&self.bands, col.band, top as i32, 0)
                     };
                     if let Some(s) = surface.as_deref_mut() {
                         s[lod::column_index(x, z)] = LodSurface {
                             valid: true,
                             wet,
                             height: rows(col.height).min((a + cell) as f32),
-                            material: fill(col.band, top as i32, 0),
+                            material: fill(&self.bands, col.band, top as i32, 0),
                             water: if wet { water as f32 } else { 0.0 },
                         };
                     }
@@ -2581,7 +2624,7 @@ impl TerrainGenerator {
         for zi in -1..=n {
             for xi in -1..=n {
                 let col = cols[lod::column_index(xi, zi)];
-                let Some(g) = Self::ground_of(&col) else {
+                let Some(g) = self.ground_of(&col) else {
                     continue;
                 };
                 let h = |dx: i32, dz: i32| {
@@ -3089,7 +3132,7 @@ mod tests {
         // HALF_HEIGHT_GRID.md §4: on 1 m cells the generator writes what it always has (its
         // goldens are unchanged); on ½ m cells every natural surface material has its pieces, a
         // ½ m ramp in one cell and a 45° ramp in two.
-        let pieces = RampPieces::resolve();
+        let pieces = RampPieces::resolve(bands());
         if CELL_H == 1.0 {
             assert!(pieces.by.is_empty());
             return;
