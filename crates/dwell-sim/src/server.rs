@@ -2936,6 +2936,20 @@ impl Server {
             let spawn = self.spawn_message(i);
             self.broadcast_world(&spawn);
         }
+        // Pieces already moving within the destroy radius are destroyed, as blocks there are
+        // (owner, 2026-11-09: chained dynamite left "a ton of physics blocks that are affected by
+        // multiple explosion forces"); a piece is judged by its body's centre.
+        let new_from = self.felling.pieces.len() - flung.len();
+        let doomed: Vec<u32> = self.felling.pieces[..new_from]
+            .iter()
+            .filter(|p| (self.physics.position(p.body) - centre).length() <= e.destroy_radius_m)
+            .map(|p| p.id)
+            .collect();
+        for id in doomed {
+            if self.felling.destroy_piece(&mut self.physics, id) {
+                self.broadcast_world(&Message::EntityDespawn(id));
+            }
+        }
         // Bodies already moving are pushed by the same falloff (their mass resists).
         let new_from = self.felling.pieces.len() - flung.len();
         for k in 0..new_from {

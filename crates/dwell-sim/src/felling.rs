@@ -601,6 +601,20 @@ impl Felling {
     /// collider goes and its mass follows; a body left in more than one connected group splits (its
     /// kind's `split`), each group but the largest a new body of the same kind at its cells' world
     /// pose, moving as that part of the old one was; a body with no cells left is removed. None if
+    /// Removes the piece `id` whole (a blast destroying it, docs/EXPLOSIVES.md §3.11): its body
+    /// leaves the physics world. False if there is no such piece or its kind can't be broken.
+    pub fn destroy_piece(&mut self, physics: &mut Physics, id: u32) -> bool {
+        let Some(i) = self.pieces.iter().position(|p| p.id == id) else {
+            return false;
+        };
+        if !body_kind(self.pieces[i].kind).breaks {
+            return false;
+        }
+        let p = self.pieces.remove(i);
+        physics.remove_body(p.body);
+        true
+    }
+
     /// there is no such body or cell, or its kind can't be broken.
     pub fn break_cell(
         &mut self,
