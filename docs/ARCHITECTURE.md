@@ -356,9 +356,9 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
                      Character Lab page, docs/prototypes/character-lab.html, and the Rust tables
                      for dwell-characters), fixtures/ (test-only parts), gen.test.mjs
                      (CHARACTERS.md, ADR 0041).
-/shared/creatures    creatures.json (the animals: model, speeds, wandering, spawn rules, limits; ADR 0073),
+/shared/creatures    creatures.json (the animals: model, speeds, wandering, spawn rules with a group mix, limits; ADR 0073),
                      gen.mjs → dwell-sim creatures.gen.rs, a fixture creature
-/shared/models       models.json (each skinned model's GLB, scale, yaw, role → clip map, palette
+/shared/models       models.json (the model-detail levels, ADR 0070 §10; each skinned model's GLB, scale, yaw, role → clip map, palette
                      remap; the player model) + glb/ (the checked-in GLBs, the source of truth) +
                      import.mjs and blender_import.py (FBX → GLB with the palette remap, Blender
                      headless, run by hand from the unpacked packs) + gen.mjs (validates against
@@ -734,11 +734,15 @@ first-person arms and your own body seen in first person stay the rigid parts be
 lists each model's GLB (`shared/models/glb/`, checked in: the source of truth), scale, yaw, which of
 its clips plays each role (`body_role`'s names, with a speed; a `fallback` role for the rest) and a
 palette remap. `shared/models/import.mjs` makes the GLBs once from the packs' FBX with Blender
-headless (`blender_import.py`): one mesh, each face one colour (the pack's texture sampled at the face
-and snapped to the nearest palette stop, taking its ramp's base, or a `remap` entry), no texture or
-UVs, at most four joints a vertex, clips named by their last word, sampled at 15 keys a second.
-`gen.mjs` validates the data against the GLBs (clips present, ≤ 64 joints, one mesh, known roles,
-palette names) and writes `dwell-models`' table; CI fails on stale output. `dwell-models` reads the
+headless (`blender_import.py`): one mesh per **model-detail level** (`models.json` `detail`: the
+full mesh and Decimate-collapsed copies at each level's `ratio`, all on one skin, meshes `detail_0`,
+`detail_1`, …; ADR 0070 §10), each face one colour (the pack's texture sampled at the face and snapped
+to the nearest palette stop, taking its ramp's base, or a `remap` entry), **flat shaded** (a normal a
+face), no texture or UVs, at most four joints a vertex, clips named by their last word, sampled at 15
+keys a second; a `source.remove` rule deletes parts (the doe: the deer without antlers). Settings →
+Graphics → **Model detail** picks the level every skinned model draws (`setModelDetail`, the meshes
+re-uploaded live; stored as the level's id). `gen.mjs` validates the data against the GLBs (clips
+present, ≤ 64 joints, a mesh per detail level, the levels themselves, known roles, palette names) and writes `dwell-models`' table; CI fails on stale output. `dwell-models` reads the
 GLB (`glb.rs`: positions, normals, colours, joints, weights, the node tree, the skin's inverse bind
 matrices, linear and step channels), samples and blends clips (`anim.rs`: nlerp, looped by the
 player) and gives the joint matrices; its `Player` maps a role to its clip and cross-fades 0.2 s

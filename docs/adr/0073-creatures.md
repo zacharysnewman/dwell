@@ -44,6 +44,15 @@
    idle below 0.05 m/s, `sprint` (the run clip) above 3 m/s, else walk. Every model's GLB is built
    into the client (`dwell_models::GLBS`, ~1.6 MB of WASM).
 
+7. **Group mix and what spawns (0.52.1).** A rule's optional `mix` lists other creatures its groups
+   may hold: each part is rolled once a group (from the seed) with its `chance` and puts up to `max` of
+   that creature in place of the rule's own (`dwell_sim::creatures::group_kinds`). The deer rule
+   spawns does (`dwell:doe`, the `doe` model) with a 40 % chance of one stag (`dwell:deer`). Owner,
+   2026-11-10: "let's disable all the animals except wolves and deer for now. We'll be working on
+   simulation for them soon too." The horse and the chicken stay listed as creatures but have no
+   rule; wolves (`dwell:wolf`, the dog recoloured at twice its size) spawn in packs of 2–4 on grass,
+   at a third of the herds' chance.
+
 ## Open questions for the owner
 
 - What should animals do beyond wandering: flee from players, follow, be fed, be hunted (drops, damage),
