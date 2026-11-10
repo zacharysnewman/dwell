@@ -199,6 +199,7 @@ fn piece_box(offset: [i32; 3], m: StateId, carrier: bool, riders_only: bool) -> 
         } else {
             Collide::None
         },
+        hull: dwell_physics::piece_hull(m),
     }
 }
 
@@ -418,6 +419,59 @@ fn in_world_rows(y: f64) -> bool {
 }
 
 /// The centre of world cell `c` (m).
+/// How a felled trunk's upside-down wood ramp lies over the stump's ramp (a wood's
+/// `fellWedgeTrunk`, shared/tools).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WedgeTrunk {
+    /// The notch's upper face: the trunk's ramp thick at the hinge, so the two ramps meet on the
+    /// hinge's edge in a V open toward the notch, and the trunk, resting on that edge with its
+    /// weight over the notch, pivots into it (an open-face notch).
+    Open,
+    /// Parallel to the stump's: the trunk drops ½ m onto the slope and rests on it (it stood
+    /// there in the sim test: the slope's friction holds it).
+    Matching,
+}
+
+/// The fell wedges of a felled standing wood (Phase 55 T2; owner, 2026-11-09: the felled cell
+/// "should turn into a wood ramp and a wood ramp upside down on the piece above"), in the stored
+/// ramps of the block `wedge`, face-local (+y up): the stump's ramp in the cut cell, rising away
+/// from the notch (`notch`: the level direction, x and z, from the trunk's axis to its notched
+/// side; a ramp *faces* the way it falls, so the stump's faces the notch), and the trunk's new
+/// bottom, the upside-down ramp in the cell above, laid as `trunk` says. The cut cell's other half
+/// is chips. Not flooded. None if `wedge` has no such ramps.
+pub fn fell_wedges(wedge: &str, notch: [f64; 2], trunk: WedgeTrunk) -> Option<(StateId, StateId)> {
+    let b = dwell_blocks::find_block(wedge)?;
+    // A shape's corners, NW NE SE SW, as (x, z) signs about the cell's middle.
+    const CORNERS: [[f64; 2]; 4] = [[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]];
+    let hinge = |k: usize| CORNERS[k][0] * notch[0] + CORNERS[k][1] * notch[1] < 0.0;
+    // The upright ramp full on the side `full` says: its facing is the way it falls.
+    let facing = |full: &dyn Fn(usize) -> bool| {
+        (b.first_state..b.first_state + b.state_count)
+            .find(|&s| {
+                let c = dwell_blocks::shape::shape_of(s).corners;
+                state_property(s, "shape") == Some("ramp")
+                    && state_property(s, "half") == Some("bottom")
+                    && (0..4).all(|k| (c[k] == 2) == full(k))
+            })
+            .and_then(|s| state_property(s, "facing"))
+    };
+    let to_notch = facing(&hinge)?;
+    let to_hinge = facing(&|k| !hinge(k))?;
+    let state = |half: &str, facing: &str| {
+        let s = with_property(b.first_state, "shape", "ramp")?;
+        let s = with_property(s, "half", half)?;
+        let s = with_property(s, "facing", facing)?;
+        Some(with_property(s, "flooded", "false").unwrap_or(s))
+    };
+    // A hanging ramp (`half: top`) is the upright one turned over: facing the notch it reaches
+    // down at the hinge (open), facing the hinge at the notch (matching).
+    let top = match trunk {
+        WedgeTrunk::Open => to_notch,
+        WedgeTrunk::Matching => to_hinge,
+    };
+    Some((state("bottom", to_notch)?, state("top", top)?))
+}
+
 pub fn cell_centre(c: [i32; 3]) -> DVec3 {
     DVec3::new(
         f64::from(c[0]) + 0.5,
@@ -1730,6 +1784,7 @@ mod tests {
                 half: DVec3::new(0.5, 0.25, 0.5),
                 mass: 300.0,
                 collide: Collide::All,
+                hull: None,
             })
             .collect();
         let body = physics.add_piece(at, &boxes, true);

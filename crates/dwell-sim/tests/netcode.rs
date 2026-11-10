@@ -206,6 +206,7 @@ fn piece_boxes(e: &EntitySpawn) -> Vec<dwell_physics::PieceCell> {
                 } else {
                     dwell_physics::Collide::None
                 },
+                hull: None,
             }
         })
         .collect()

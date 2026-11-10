@@ -157,4 +157,7 @@ test('a fixture wood with its own fell wedge by data alone; a bad wedge fails na
   bad('dwell:nope', /woods\.dwell:log\.fellWedge: no block named "dwell:nope"/);
   bad('dwell:stone', /fellWedge: dwell:stone is not a ramp block/);
   bad('dwell:stone_ramp', /fellWedge: dwell:stone_ramp must be a carrier/);
+  const rows = loadTools();
+  rows.woods[0].fellWedgeTrunk = 'flat';
+  assert.throws(() => validateTools(rows, items, blocks), /woods\.dwell:log\.fellWedgeTrunk must be one of open, matching/);
 });

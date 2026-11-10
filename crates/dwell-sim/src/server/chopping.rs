@@ -313,15 +313,43 @@ impl Server {
             self.send_cuts(vec![(cell, cut)], Vec::new());
             return;
         }
-        // Cut through: the cell's wood is gone (chips; its cut goes with it, `cuts_dropped`).
+        let centre = crate::felling::cell_centre(cell);
+        // A standing wood with a fell wedge (Phase 55 T2; owner, 2026-11-09): the cut cell splits
+        // along its diagonal, the stump keeping the ramp rising away from the notch and the trunk
+        // above taking the upside-down ramp as its new bottom; the trunk is released with no push
+        // and tips toward the notch from the slanted contact alone (no scripted tip).
+        let n = chop::side_normal(grain, cut.deepest(grain).unwrap_or(side));
+        let above = dwell_world::edit::above(cell);
+        // The trunk's bottom needs the log above the cut (else no wedges: it falls as before).
+        let wedges = wood
+            .fell_wedge
+            .filter(|_| standing && self.world.get_voxel_if_loaded(above) == m)
+            .and_then(|w| {
+                let trunk = if wood.fell_wedge_matching {
+                    crate::felling::WedgeTrunk::Matching
+                } else {
+                    crate::felling::WedgeTrunk::Open
+                };
+                crate::felling::fell_wedges(w, [f64::from(n[0]), f64::from(n[2])], trunk)
+            });
         let mut changes = TickChanges::default();
+        if let Some((_, top)) = wedges {
+            // The trunk's new bottom, released with it.
+            changes.set(&mut self.world, above, f.state(top));
+        }
+        // Cut through: the cell's wood is gone (chips; its cut goes with it, `cuts_dropped`).
         changes.set_and_unsupport(&mut self.world, cell, M.air);
         self.broadcast_changes(changes, VoxelModificationReason::Edit);
-        let centre = crate::felling::cell_centre(cell);
-        if standing {
-            // It falls toward the notch, as real felling does (owner, 2026-11-08): the uncut side
-            // is the hinge, so it tips away from a point out past the side opposite the deepest.
-            let n = chop::side_normal(grain, cut.deepest(grain).unwrap_or(side));
+        if let Some((stump, _)) = wedges {
+            // Released with no push, then the stump's ramp set where it stood.
+            self.fell(&[cell], 0, None);
+            let mut changes = TickChanges::default();
+            changes.set(&mut self.world, cell, f.state(stump));
+            self.broadcast_changes(changes, VoxelModificationReason::Edit);
+        } else if standing {
+            // No wedge: it falls toward the notch, as real felling does (owner, 2026-11-08): the
+            // uncut side is the hinge, so it tips away from a point out past the side opposite the
+            // deepest.
             let hinge = centre - DVec3::new(f64::from(n[0]), 0.0, f64::from(n[2])) * 2.0;
             self.fell(&[cell], 0, Some(hinge));
         } else {

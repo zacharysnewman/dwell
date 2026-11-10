@@ -14,6 +14,7 @@ fn log_across(w: &mut PlayerTestWorld, mass: f64, dominant: bool) -> dwell_physi
             half: DVec3::new(0.5, 0.5, 0.5),
             mass,
             collide: dwell_physics::Collide::All,
+            hull: None,
         })
         .collect();
     w.physics
@@ -95,6 +96,7 @@ fn a_player_standing_on_a_sliding_piece_rides_it() {
             half: DVec3::new(0.5, 0.5, 2.0),
             mass: 100.0,
             collide: dwell_physics::Collide::All,
+            hull: None,
         })
         .collect();
     let slab = w
