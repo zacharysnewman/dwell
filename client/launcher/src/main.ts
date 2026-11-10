@@ -7,6 +7,7 @@ import './style.css';
 import { buildInfo } from '../../src/buildInfo';
 import { WorldIndex } from '../../src/local/worldIndex';
 import { withRoute } from '../../src/ui/launch';
+import { LAUNCH_AT_KEY } from '../../src/ui/loadingStages';
 import { changesView } from '../../src/ui/changesView';
 import { showMenu, type PingServer } from '../../src/ui/menuPage';
 import { isBuildOf, parseManifest, type BuildEntry, type Manifest } from './manifest';
@@ -318,6 +319,12 @@ async function run(): Promise<void> {
     return;
   }
   const target = buildUrl(choice.version);
+  // When this launcher opened, for the game page's 'page' stage (§6.3): its time is the start's too.
+  try {
+    sessionStorage.setItem(LAUNCH_AT_KEY, String(performance.timeOrigin));
+  } catch {
+    // no session storage: the page stage begins on the game page
+  }
   location.replace(`${target.href}${forwardedSearch(location.search)}${location.hash}`);
 }
 

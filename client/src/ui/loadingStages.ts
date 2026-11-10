@@ -206,7 +206,27 @@ export class StageTracker {
   }
 }
 
-/** The bar's fill for a stage: its count's or bytes' fraction, or null (no known total). */
+/** The session store key the launcher stamps with when it opened (epoch ms, `performance.timeOrigin`). */
+export const LAUNCH_AT_KEY = 'dwell.launchAt';
+
+/**
+ * When the page stage begins, on this page's clock (ms, ≤ 0): the launcher's stamp (`launchAt`,
+ * epoch ms) when it opened before this page, so its time (its manifest and build checks, then
+ * the redirect) lands on 'page' rather than on no stage; 0 (this page opened) without a stamp,
+ * or one that is unreadable, after this page opened, or over a minute old (a stale tab's).
+ */
+export function pageStartMs(
+  launchAt: string | null,
+  timeOrigin: number,
+  nowEpochMs: number,
+): number {
+  const at = Number(launchAt);
+  if (!launchAt || !Number.isFinite(at) || at > timeOrigin) return 0;
+  if (nowEpochMs - at > 60_000) return 0;
+  return at - timeOrigin;
+}
+
+/** The bar's fill for a stage:its count's or bytes' fraction, or null (no known total). */
 export function stageFraction(run: StageRun | null): number | null {
   if (!run || run.done === null || !run.total) return null;
   return Math.min(1, Math.max(0, run.done / run.total));
