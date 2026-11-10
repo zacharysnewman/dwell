@@ -488,6 +488,9 @@ struct FlameVary {
     @location(2) rest: vec3f,
     @location(3) @interpolate(flat) info: u32,
     @location(4) @interpolate(flat) seed: u32,
+    // A blast's smoke or dust puff: the light at its centre (`puff_light`, render/blasts.rs), lit
+    // once per puff here rather than per pixel; 0 for every other kind.
+    @location(5) @interpolate(flat) lit: vec3f,
 };
 
 @vertex
@@ -499,6 +502,11 @@ fn flame_vs(v: FlameIn) -> FlameVary {
     o.rest = v.rest;
     o.info = v.info;
     o.seed = v.seed;
+    o.lit = vec3f(0.0);
+    let kind = (v.info >> 8u) & 0xffu;
+    if (kind == 8u || kind == 9u) {
+        o.lit = puff_light(puff_centre(v.rel, v.uv, v.rest.z));
+    }
     return o;
 }
 
@@ -537,7 +545,7 @@ fn flame_colour(i: FlameVary) -> vec4f {
     if (kind >= 8u) {
         // A blast's smoke, dust or fireball (render/blasts.rs): smoke and dust lit over what is
         // behind, the fireball added.
-        let c = blast_colour(kind, i.info & 0xffu, i.uv, i.rest, i.rel, i.seed, i.info >> 16u);
+        let c = blast_colour(kind, i.info & 0xffu, i.uv, i.rest, i.rel, i.seed, i.info >> 16u, i.lit);
         if (max(c.a, max(max(c.r, c.g), c.b)) < 0.005) {
             discard;
         }
