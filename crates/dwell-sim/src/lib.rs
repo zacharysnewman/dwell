@@ -5,6 +5,7 @@
 pub mod app_version;
 pub mod blasts;
 pub mod clock;
+pub mod creatures;
 pub mod entropy;
 pub mod felling;
 pub mod fixed_step;
