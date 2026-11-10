@@ -276,8 +276,8 @@ pub struct CharacterRenderer {
     /// arms' light when the arms are drawn: where flames burn (render/flames.rs).
     others_lights: usize,
     arms_light: Option<HeldLight>,
-    /// Other players' bodies, skinned (docs/CHARACTERS.md §11): the rigid parts are kept for your
-    /// own arms, body and shadow this phase.
+    /// Other players' bodies and your shadow, skinned (docs/CHARACTERS.md §11): the rigid parts are
+    /// kept for your first-person arms and body, and the held items (drawn on the skinned hand).
     skinned: super::skinned::SkinnedRenderer,
     pub stats: CharacterStats,
 }

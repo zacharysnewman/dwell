@@ -1,9 +1,10 @@
 # 0070 — Skinned models from the Asset Store packs replace the rigid-part characters
 
 **Status:** Accepted (2026-11-09; phase 1 built: other players drawn as the Peasant, the animals in
-the data and the model viewer). Supersedes part of [ADR 0041](0041-characters.md): characters are no
+the data and the model viewer; phase 2 (2026-11-10, 0.51.7): held items in the skinned hand, your
+shadow as the Peasant). Supersedes part of [ADR 0041](0041-characters.md): characters are no
 longer made only of rigid parts from `shared/characters/characters.json`; that system stays for your
-first-person arms, your own body and your shadow until they move over.
+first-person arms and your own body seen in first person, and the held items' meshes.
 
 ## Context
 
@@ -61,6 +62,18 @@ are code and rare. Per build: the models ship with a release, like the block reg
    clips; sprint, crouch-walk and slide play the walk at another speed; the rest fall back to idle).
    Your first-person arms, your own body and your shadow stay rigid this phase. The animals are
    imported, in the data and in the model viewer (`docs/prototypes/model-viewer.html`), not spawned.
+7. **Phase 2: held items and your shadow** (2026-11-10). A model's `hand` in `models.json` names the
+   skin joint a held item follows (the Peasant's `hand.R`) and the turn and offset from that joint to
+   the rigid rig's hand bone (`hand_r`), the frame every held item in `characters.json` is authored
+   in; so the held items (blocks, the axe, the torch, held looks) stay one set of data, drawn by the
+   rigid renderer on the skinned hand, with the item's own turns of the hand (the axe's tilt) on top,
+   and the held light from the same frame. The turn was measured once from the Peasant's idle hand
+   against the rigid rest hand (−2°, 1°, −175°: the joint's +y runs to the fingers, the rig's
+   down). Your shadow (the `cast_only` body) is the Peasant, into the nearest cascade only as before.
+   Your first-person arms and your own body seen from the eye stay rigid: the Peasant's arms are
+   the whole-body mesh (no separate arms mesh, the sleeves and hands skinned to the shoulders), and
+   drawn at the eye they would need their own view and clips the pack doesn't have. There is no
+   third-person view in the game yet; a bench `camera` view shows only your shadow.
 
 ## Consequences
 

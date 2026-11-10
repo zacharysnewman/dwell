@@ -1,6 +1,6 @@
-//! Skinned bodies in the raster renderer (docs/CHARACTERS.md §11, ADR 0070): other players drawn
-//! as the player's skinned model (`dwell_models::player`, the Peasant), its clips chosen by the
-//! body's role and cross-faded (`dwell_models::anim::Player`).
+//! Skinned bodies in the raster renderer (docs/CHARACTERS.md §11, ADR 0070): other players and your
+//! shadow drawn as the player's skinned model (`dwell_models::player`, the Peasant), its clips
+//! chosen by the body's role and cross-faded (`dwell_models::anim::Player`).
 //!
 //! - **Mesh**: the model's one mesh, uploaded once: position, normal, its palette colour (sRGB
 //!   bytes, one per face from the import's remap) and four joints and weights a vertex.

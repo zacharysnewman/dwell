@@ -17,7 +17,12 @@
       "yaw": 0,
       "remap": {},
       "fallback": "idle",
-      "hand": { "joint": "hand.R", "bone": "hand_r", "at": [0, 0.05, 0], "rot": [-2, 1, -175] },
+      "hand": {
+        "joint": "hand.R",
+        "bone": "hand_r",
+        "at": [0, 0.05, 0],
+        "rot": [-2, 1, -175]
+      },
       "roles": {
         "idle": { "clip": "idle" },
         "walk": { "clip": "walk" },
