@@ -53,12 +53,12 @@ impl ChiselPreview {
                     .unwrap_or_else(|| self.base.clone())
             }
         };
-        self.current = ground.with_biomes_on(&e.biomes, e.map);
+        self.current = ground.with_biomes_and_geology(&e.biomes, e.map, e.geology);
         Ok(())
     }
 
     /// An `n` × `n` RGBA tile of `texel` m from face-local (x0, z0): `overlay` 0 blocks, 1 biome
-    /// weights, 2 temperature, 3 wetness, 4 rainfall.
+    /// weights, 2 temperature, 3 wetness, 4 rainfall, 5 rock.
     pub fn tile(&self, x0: i32, z0: i32, n: u32, texel: u32, overlay: u32) -> Vec<u8> {
         preview(
             &self.current,
