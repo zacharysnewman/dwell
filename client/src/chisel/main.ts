@@ -112,9 +112,25 @@ function vegetationEditor() {
 }
 
 /** The edit's geology, the build's (a copy) put on the edit the first time it is shaped. */
+/** The geology sliders' tops where the data's range is wider than a slider reads well. */
+const GEOLOGY_SLIDER_MAX: Record<string, number> = {
+  wavelength: 40_000,
+  reach: 3000,
+  relief: 20,
+  threshold: 200,
+  wall: 20,
+  talusWidth: 100,
+  outlineWavelength: 2000,
+  gullyWavelength: 400,
+  gullyDepth: 30,
+};
+
 function geology() {
   edit.geology ??= JSON.parse(JSON.stringify(BUILD_GEOLOGY)) as typeof BUILD_GEOLOGY;
-  return edit.geology;
+  // An edit stored before T4 has no erosion: the build's.
+  const g = edit.geology;
+  g.erosion ??= { ...(BUILD_GEOLOGY.erosion ?? {}) };
+  return g as typeof g & { erosion: Record<string, number> };
 }
 
 function byId(id: string): HTMLElement {
@@ -192,7 +208,7 @@ function groupSliders(
     // The geology's knobs are 0..1 or a few (strength, tread, sheer) or the provinces' scale.
     const max =
       table === GEOLOGY
-        ? Math.min(hi, key === 'wavelength' ? 40_000 : hi)
+        ? Math.min(hi, GEOLOGY_SLIDER_MAX[key] ?? hi)
         : Math.min(hi, Math.max(whole ? 8 : 1, Math.abs(v) * 4));
     const step = whole ? 1 : max <= 2 ? 0.01 : max <= 50 ? 0.1 : 1;
     out.append(
@@ -311,6 +327,22 @@ function biomeEditor(b: BiomeJson, isDefault: boolean) {
       0.05,
       () => Number(b.vegetation ?? 0),
       (v) => (b.vegetation = v),
+    ),
+    slider(
+      'erosion (cut-back share)',
+      0,
+      1,
+      0.05,
+      () => Number(b.erosion ?? 0),
+      (v) => (b.erosion = v),
+    ),
+    slider(
+      'gullies (badland rills)',
+      0,
+      1,
+      0.05,
+      () => Number(b.gullies ?? 0),
+      (v) => (b.gullies = v),
     ),
   );
   box.append(waterEditor(b));
@@ -495,6 +527,17 @@ function render() {
       }),
       groupSliders('shaping', geology().shaping, GEOLOGY),
       groupSliders('provinces', geology().provinces, GEOLOGY),
+    ),
+    el(
+      'details',
+      {},
+      el('summary', { textContent: 'Erosion: cut-back (rocks.json erosion)' }),
+      el('p', {
+        className: 'about',
+        textContent:
+          'Scarps retreat from the drainage lines; nearer than the retreat the land is the floor, farther it stands as mesas and buttes. A biome opts in with its erosion slider (the mesa and badlands presets at 1).',
+      }),
+      groupSliders('erosion', geology().erosion, GEOLOGY),
     ),
     el(
       'details',
@@ -746,6 +789,7 @@ function viewBar() {
     'rock',
     'soil',
     'vegetation',
+    'erosion',
   ].forEach((t, i) => {
     overlay.append(
       el('option', { value: String(i), textContent: t, selected: i === view.overlay }),

@@ -114,7 +114,7 @@ pub const GEOLOGY: Geology = Geology {
     sheer: 2.0,
     erosion: Erosion {
         strength: 1.0,
-        reach: 700.0,
+        reach: 450.0,
         valley: 0.35,
         resist: 0.6,
         relief: 3.0,

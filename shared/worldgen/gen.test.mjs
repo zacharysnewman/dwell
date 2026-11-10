@@ -574,6 +574,27 @@ test('the checked-in rocks are valid, generate the checked-in Rust, and take a r
   bad((x) => (x.stacks[0].layers[0].rock = 'dwell:nothing'), /stack dwell:red_beds: layer rock "dwell:nothing"/);
   bad((x) => (x.shaping.strength = 3), /shaping.strength must be in \[0, 1\]/);
   bad((x) => (x.extra = 1), /unknown extra/);
+  // The erosion (T4): its knobs by data alone; bad ones named.
+  const e = rocks();
+  e.erosion.reach = 1234;
+  assert.match(rocksRust(validateRocks(e, blocks)), /erosion: Erosion \{\n {8}strength: 1\.0,\n {8}reach: 1234\.0,/);
+  bad((x) => (x.erosion.threshold = 0.5), /erosion.threshold must be/);
+  bad((x) => delete x.erosion.wall, /erosion.wall must be/);
+  bad((x) => (x.erosion.flow = 1), /erosion: unknown flow/);
+});
+
+test('a biome opts in to erosion and gullies in [0, 1]; the default biome does not', async () => {
+  const { biomeRefs } = await import('./gen.mjs');
+  const { validateBiome } = await import('./biomes.mjs');
+  const blocks = registryBlocks();
+  const def = JSON.parse(readFileSync(join(here, 'biomes/default.json'), 'utf8'));
+  assert.equal(def.erosion, undefined);
+  assert.equal(def.gullies, undefined);
+  const mesa = JSON.parse(readFileSync(join(here, 'biomes/presets/red_rock_mesa.json'), 'utf8'));
+  assert.equal(mesa.erosion, 1);
+  const refs = biomeRefs();
+  validateBiome(mesa, blocks, refs);
+  assert.throws(() => validateBiome({ ...mesa, gullies: 2 }, blocks, refs), /gullies must be in \[0, 1\]/);
 });
 
 test('the checked-in vegetation is valid, generates the checked-in Rust, and takes a kind by data alone', () => {

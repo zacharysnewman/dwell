@@ -42,6 +42,8 @@ export interface GeologyJson {
   stacks: { name: string; [k: string]: unknown }[];
   provinces: Record<string, number>;
   shaping: Record<string, number>;
+  /** The rule-based erosion (T4); absent in an edit stored before it. */
+  erosion?: Record<string, number>;
   [k: string]: unknown;
 }
 
