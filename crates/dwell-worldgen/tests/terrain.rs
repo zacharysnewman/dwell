@@ -1369,7 +1369,19 @@ dwell_world::both_faces!(
                             let lower = back.water == Water::Sea
                                 || (back.water == Water::None
                                     && g.ground_y(x - dx, z - dz).is_some_and(|b| b < surface - 1));
-                            if top >= surface && lower {
+                            // Not where that lower ground is the bank of the river's own water
+                            // further down: a reach falling a row a cell (no dry chutes since
+                            // BUGS.md #62) is banked by a stair down beside it, not a ridge.
+                            let down_bank = || {
+                                [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                                    .into_iter()
+                                    .any(|(ex, ez)| {
+                                        let n = g.column_at(x - dx + ex, z - dz + ez);
+                                        n.water == Water::River && n.water_row() < surface
+                                    })
+                            };
+                            if top >= surface && lower && (back.water == Water::Sea || !down_bank())
+                            {
                                 ridges.push((x, z));
                             }
                         }
