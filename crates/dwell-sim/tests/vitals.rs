@@ -35,7 +35,8 @@ fn scene_with(f: FaceFrame, cfg: ServerConfig) -> Fixture {
     for x in -6..=6 {
         for z in -6..=6 {
             for r in -10..0 {
-                let inside = (-2..=2).contains(&x) && (-2..=2).contains(&z) && (-8..=-3).contains(&r);
+                let inside =
+                    (-2..=2).contains(&x) && (-2..=2).contains(&z) && (-8..=-3).contains(&r);
                 let [x, y, z] = f.cell([x, BASE + r, z]);
                 fx.server
                     .world()
@@ -75,7 +76,10 @@ fn vitals(fx: &mut Fixture, id: u16) -> Vitals {
     fx.server.sim().2.controller(h).vitals
 }
 
-fn damage_causes(all: &std::collections::BTreeMap<SessionId, Vec<Message>>, id: SessionId) -> Vec<DamageCause> {
+fn damage_causes(
+    all: &std::collections::BTreeMap<SessionId, Vec<Message>>,
+    id: SessionId,
+) -> Vec<DamageCause> {
     all.get(&id)
         .into_iter()
         .flatten()

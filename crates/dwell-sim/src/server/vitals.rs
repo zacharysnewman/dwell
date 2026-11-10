@@ -80,8 +80,11 @@ impl Server {
         let Some(h) = self.sessions[&id].handle else {
             return;
         };
-        let out_of_air = self.vitals_rules().oxygen && self.players.controller(h).vitals.oxygen <= 0.0;
-        let interval = (VITALS.drown_interval_seconds * SIM_HZ as f32).round().max(1.0) as u32;
+        let out_of_air =
+            self.vitals_rules().oxygen && self.players.controller(h).vitals.oxygen <= 0.0;
+        let interval = (VITALS.drown_interval_seconds * SIM_HZ as f32)
+            .round()
+            .max(1.0) as u32;
         let s = self.sessions.get_mut(&id).expect("session");
         if !out_of_air {
             s.drown_ticks = 0;
@@ -121,7 +124,8 @@ impl Server {
         if !rules.any() {
             return;
         }
-        let flags = if rules.stamina { vf::STAMINA } else { 0 } | if rules.oxygen { vf::OXYGEN } else { 0 };
+        let flags =
+            if rules.stamina { vf::STAMINA } else { 0 } | if rules.oxygen { vf::OXYGEN } else { 0 };
         let out: Vec<(SessionId, Message)> = self
             .sessions
             .iter()
@@ -161,7 +165,11 @@ impl Server {
                 self.outbox.push(Outgoing {
                     session: id,
                     kind: OutKind::Reliable(Channel::World),
-                    bytes: if s.vitals_hello { new.clone() } else { old.clone() },
+                    bytes: if s.vitals_hello {
+                        new.clone()
+                    } else {
+                        old.clone()
+                    },
                 });
             }
         }

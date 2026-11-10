@@ -202,7 +202,10 @@ mod tests {
             let mut v = Vitals::default();
             run(&mut v, Some(a), false, 1.0);
             let spent = VITALS.max_stamina - v.stamina;
-            assert!((spent - VITALS.drain(a)).abs() < 0.05, "{a:?} spent {spent}");
+            assert!(
+                (spent - VITALS.drain(a)).abs() < 0.05,
+                "{a:?} spent {spent}"
+            );
         }
         let mut v = Vitals::default();
         run(&mut v, Some(Activity::Sprint), false, 2.0);
@@ -212,7 +215,10 @@ mod tests {
         assert_eq!(v.stamina, low);
         run(&mut v, None, false, 1.0);
         let back = v.stamina - low;
-        assert!((back - VITALS.regen_per_second).abs() < 0.5, "regained {back}");
+        assert!(
+            (back - VITALS.regen_per_second).abs() < 0.5,
+            "regained {back}"
+        );
     }
 
     #[test]
@@ -279,7 +285,13 @@ mod tests {
     fn without_the_rules_nothing_drains() {
         let mut v = Vitals::default();
         for _ in 0..600 {
-            v.step(&VITALS, VitalsRules::default(), Some(Activity::Sprint), true, DT);
+            v.step(
+                &VITALS,
+                VitalsRules::default(),
+                Some(Activity::Sprint),
+                true,
+                DT,
+            );
         }
         assert_eq!(v, Vitals::default());
         assert!(v.can_exert(VitalsRules::default()));

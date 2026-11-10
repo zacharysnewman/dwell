@@ -11,11 +11,11 @@ use dwell_world::{
 use rapier3d_f64::prelude::*;
 
 use crate::config::{ImpactMeasure, ImpactSurfaces, PlayerControllerConfig};
-pub use dwell_protocol::vitals::{Activity, VITALS, Vitals, VitalsRules};
 use crate::frame::{FaceQuery, Frame};
 use crate::physics::{BodyHandle, DVec3, Layer, Physics, Vec3, groups};
 use crate::query::{Capsule, GroundRef, ProbeHit, VoxelQuery};
 use crate::terrain::TerrainCollision;
+pub use dwell_protocol::vitals::{Activity, VITALS, Vitals, VitalsRules};
 
 const DT: f32 = PlayerControllerConfig::dt();
 const RAD_TO_DEG: f32 = 180.0 / std::f32::consts::PI;

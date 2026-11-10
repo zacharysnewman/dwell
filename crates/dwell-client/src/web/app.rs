@@ -2022,7 +2022,7 @@ impl Client {
             match g.hud.vitals {
                 Some(v) => {
                     let b = Object::new();
-                    let share = |x: Option<f32>| x.map_or(JsValue::NULL, |x| JsValue::from(x));
+                    let share = |x: Option<f32>| x.map_or(JsValue::NULL, JsValue::from);
                     set(&b, "stamina", share(v.stamina));
                     set(&b, "oxygen", share(v.oxygen));
                     set(&b, "exhausted", v.exhausted);

@@ -467,11 +467,18 @@ pub struct HudVitals {
 }
 
 impl HudVitals {
-    pub fn of(v: &dwell_protocol::vitals::Vitals, rules: dwell_protocol::vitals::VitalsRules) -> Option<Self> {
+    pub fn of(
+        v: &dwell_protocol::vitals::Vitals,
+        rules: dwell_protocol::vitals::VitalsRules,
+    ) -> Option<Self> {
         use dwell_protocol::vitals::VITALS;
         rules.any().then(|| HudVitals {
-            stamina: rules.stamina.then(|| (v.stamina / VITALS.max_stamina).clamp(0.0, 1.0)),
-            oxygen: rules.oxygen.then(|| (v.oxygen / VITALS.oxygen_seconds).clamp(0.0, 1.0)),
+            stamina: rules
+                .stamina
+                .then(|| (v.stamina / VITALS.max_stamina).clamp(0.0, 1.0)),
+            oxygen: rules
+                .oxygen
+                .then(|| (v.oxygen / VITALS.oxygen_seconds).clamp(0.0, 1.0)),
             exhausted: rules.stamina && v.exhausted,
         })
     }
