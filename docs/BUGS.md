@@ -229,6 +229,21 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 63. Fallen logs settled with mismatched half rings (fixed pending release 0.52.2)
+
+Owner, 2026-11-10: "sometimes when trees fall and settle, the rings/logs end up offset, so it's
+like an upward facing half ring stacked on a downward facing half ring?" A lying log (axis x or z)
+is two ½ m cells, its lower and upper half, each squared off where it joins the other. Settling
+itself pairs a trunk's cells correctly at any row, odd ½ m heights included (checked natively for
+both turns about x and z and odd lengths). Cause: the join rule (ADR 0072 §2) joined any two cells
+of one group and axis beside each other, so a log lying one row higher or lower than its neighbour
+(trunks felled side by side on uneven ground, or one lifted a row by `settle`) had its lower half
+squared against the other's upper half: each octagon lost a corner and the caps' bark rings broke
+into offset halves. Fixed: across a level side, a lying log's cell joins only the same half, the
+half read from the log cells it joins above and below (`octagon::joined_mask`); level logs still
+join full width, standing logs are unchanged. Test (both faces, red before the fix):
+`felling::tests::trunks_settled_side_by_side_a_row_apart_keep_whole_octagons`.
+
 ### 62. River beds rose into dry grass humps across the channel (fixed pending release 0.52.0)
 
 Owner, 2026-11-10 (0.51.18, seed "0"): "On rivers there's a bug where they don't go all the way
