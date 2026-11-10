@@ -562,14 +562,15 @@ impl Felling {
     /// (`clear`: the cell and the state it leaves, water where the block was flooded) and it
     /// becomes a body. Returns the new pieces' indices in `pieces`.
     /// `away_from`: who cut it (a point, e.g. the player's eye), which a carrying piece tips away
-    /// from (`topple_spin`); none for what a settle left unanchored.
+    /// from (`topple_spin`), with the share of that spin (1: all of it; a wood's `fellTip`); none
+    /// for what a settle left unanchored.
     pub fn detach(
         &mut self,
         world: &mut VoxelWorld,
         physics: &mut Physics,
         changed: &[[i32; 3]],
         settles: u8,
-        away_from: Option<DVec3>,
+        away_from: Option<(DVec3, f64)>,
         clear: &mut dyn FnMut(&mut VoxelWorld, [i32; 3], StateId),
     ) -> Vec<usize> {
         let mut out = Vec::new();
@@ -605,7 +606,7 @@ impl Felling {
             // starts still: a body's spin turns it about its centre of mass, which flung a tall
             // trunk's foot back (60 m: 18 m/s; owner, 2026-10-30, "flip out"). Its farthest point
             // at most `topple_tip_speed`: a tall trunk is nudged, gravity does the rest.
-            if let Some(from) = away_from.filter(|_| piece.carriers > 0) {
+            if let Some((from, share)) = away_from.filter(|_| piece.carriers > 0) {
                 let up = DVec3::Y * f64::from(FaceFrame::at_row(reference[1]).sign());
                 let mut d = origin - from;
                 d -= up * d.dot(up);
@@ -623,7 +624,8 @@ impl Felling {
                     let spin = self
                         .rules
                         .topple_spin
-                        .min(self.rules.topple_tip_speed / far.max(1e-6));
+                        .min(self.rules.topple_tip_speed / far.max(1e-6))
+                        * share;
                     let w = up.cross(d.normalize()) * spin;
                     physics.set_angular_velocity(body, w);
                     physics.set_velocity(body, w.cross(com - foot));
@@ -1672,7 +1674,7 @@ mod tests {
                 &mut physics,
                 &[cut],
                 0,
-                Some(from),
+                Some((from, 1.0)),
                 &mut |w, c, m| w.set_voxel(c[0], c[1], c[2], m),
             );
             assert_eq!(new.len(), 1);
