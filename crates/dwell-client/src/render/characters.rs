@@ -1225,6 +1225,11 @@ impl CharacterRenderer {
     }
 
     /// Whether the arms are drawn this frame (the renderer adds their pass).
+    /// The Model detail setting (ADR 0070 §10): the skinned bodies' level.
+    pub fn set_model_detail(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, level: usize) {
+        self.skinned.set_level(device, queue, level);
+    }
+
     pub fn has_arms(&self) -> bool {
         self.arms.is_some()
     }

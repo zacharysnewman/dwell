@@ -1,9 +1,10 @@
 {
-  "$comment": "The fixture creature (tests only): added by data alone, on stone, always spawning.",
+  "$comment": "The fixture creature (tests only): added by data alone, on stone, always spawning, a group of three walkers with one leader (its mix).",
   "formatVersion": 1,
   "limits": { "spawnChunks": 0, "despawnM": 40, "max": 8 },
   "creatures": [
-    { "name": "test:walker", "model": "penguin", "walkSpeed": 2, "wanderM": 6, "idleSeconds": [0.5, 1], "rows": 2, "climbRows": 1, "dropRows": 1 }
+    { "name": "test:walker", "model": "penguin", "walkSpeed": 2, "wanderM": 6, "idleSeconds": [0.5, 1], "rows": 2, "climbRows": 1, "dropRows": 1 },
+    { "name": "test:leader", "model": "penguin", "walkSpeed": 2, "wanderM": 6, "idleSeconds": [0.5, 1], "rows": 2, "climbRows": 1, "dropRows": 1 }
   ],
-  "rules": [{ "creature": "test:walker", "on": ["dwell:stone"], "chance": 1, "group": [3, 3] }]
+  "rules": [{ "creature": "test:walker", "on": ["dwell:stone"], "chance": 1, "group": [3, 3], "mix": [{ "creature": "test:leader", "chance": 1, "max": 1 }] }]
 }

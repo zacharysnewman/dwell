@@ -857,6 +857,8 @@ async function start(): Promise<App | null> {
     const heightfield = new URLSearchParams(location.search).get('heightfield');
     if (heightfield === '1' || heightfield === '0') client.setHeightfield(Number(heightfield));
     client.setClouds(s.clouds);
+    // The skinned models' detail level (ADR 0070 §10); ?modeldetail=<level id> overrides it.
+    client.setModelDetail(new URLSearchParams(location.search).get('modeldetail') ?? s.modelDetail);
     // The light shafts (ADR 0064); ?shafts=off|low|high overrides them (the bench).
     client.setShafts(new URLSearchParams(location.search).get('shafts') ?? s.shafts);
     // Render scale and its upscaler; ?renderscale= and ?upscaler= override them (the bench).

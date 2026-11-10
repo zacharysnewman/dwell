@@ -65,6 +65,36 @@ test("a model is added by data alone: the fixture validates and lands in the tab
   );
 });
 
+test("the detail levels are data: the fixture's own level lands in the table", () => {
+  const f = fixture();
+  const out = rust(f, validate(f, palette, fixtures), "../../../shared/models/fixtures");
+  assert.match(out, /DetailLevel \{ id: "coarse", label: "Coarse", ratio: 0\.5 \}/);
+  assert.match(out, /DETAIL_DEFAULT: usize = 1;/);
+  // Every game model holds one mesh a level.
+  const d = data();
+  for (const [name, m] of Object.entries(d.models)) {
+    const s = glbSummary(readFileSync(join(here, m.glb)));
+    assert.deepEqual(
+      s.meshNames,
+      d.detail.levels.map((_, k) => `detail_${k}`),
+      name,
+    );
+  }
+});
+
+test("bad detail levels fail naming the problem", () => {
+  const bad = (edit, re) => {
+    const f = fixture();
+    edit(f.detail, f);
+    assert.throws(() => validate(f, palette, fixtures), re);
+  };
+  bad((d) => (d.default = "ultra"), /default ultra is not a level/);
+  bad((d) => (d.levels[0].ratio = 0.9), /the first level is the full mesh/);
+  bad((d) => (d.levels[1].ratio = 1), /ratios fall level by level/);
+  bad((d) => (d.levels[1].id = "full"), /level full twice/);
+  bad((d) => d.levels.push({ id: "tiny", label: "Tiny", ratio: 0.1 }), /not one a detail level/);
+});
+
 test("a role naming a clip the GLB lacks fails naming it", () => {
   const f = fixture();
   f.models.two_bone.roles.walk.clip = "cartwheel";
@@ -148,7 +178,7 @@ test("bad props fail naming the entry and the problem", () => {
   bad((p) => (p.length = 2), /length 2 m is outside dishes's/);
   bad((p) => (p.length = 0.4), /is 0\.250 m long, not its length 0\.4 m/);
   bad((p) => (p.grip = [0, 1]), /grip is \[x, y, z\]/);
-  bad((p) => (p.glb = "two_bone.glb"), /a skin or clips/);
+  bad((p) => (p.glb = "two_bone.glb"), /a skin or clips|meshes, not one/);
   bad((_, f) => (f.categories.dishes.min = 0), /category dishes: needs/);
   // The game's item looks may only name a prop.
   assert.deepEqual(

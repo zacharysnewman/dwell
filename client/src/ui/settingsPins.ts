@@ -57,6 +57,7 @@ export interface StoreKeys {
   view: string;
   renderScale: string;
   audio: string;
+  modelDetail: string;
 }
 
 /** Every stored setting, by key. */
@@ -96,6 +97,7 @@ export function settingFields(keys: StoreKeys): SettingField[] {
     one(['hud', 'mapShading'], HUD_KEY, ['mapShading']),
     ...rec('renderScale', keys.renderScale, ['scale', 'upscaler'], ['renderScale', 'upscaler']),
     one(['menuBackground'], MENU_KEY, ['background']),
+    one(['modelDetail'], keys.modelDetail, []),
   ];
 }
 
