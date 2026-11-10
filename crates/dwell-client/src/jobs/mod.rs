@@ -41,6 +41,8 @@ pub enum Job {
         cuts: Vec<([i32; 3], dwell_protocol::chopping::Cut)>,
         /// Its ground items (ADR 0071): the world seed and its gone cells, chunk-local.
         ground: Option<(u64, Vec<[i32; 3]>)>,
+        /// Liquid tops are meshed (false: the GPU heightfield draws them; `dwell_mesh::ChunkFlags`).
+        water_tops: bool,
     },
     /// An LOD section's meshes.
     MeshSection {
@@ -261,7 +263,8 @@ impl Runner {
                 origin,
                 cuts,
                 ground,
-            } => match dwell_mesh::mesh_chunk_ground(
+                water_tops,
+            } => match dwell_mesh::mesh_chunk_flags(
                 &padded,
                 &light,
                 mirror,
@@ -270,6 +273,7 @@ impl Runner {
                 ground
                     .map(|(seed, gone)| dwell_mesh::GroundJob { seed, gone })
                     .as_ref(),
+                dwell_mesh::ChunkFlags { water_tops },
             ) {
                 Ok(m) => Output::ChunkMesh(Box::new(m)),
                 Err(e) => Output::Failed(format!("{e:?}")),
