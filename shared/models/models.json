@@ -1,5 +1,5 @@
 {
-  "$comment": "Dwell's skinned models (docs/CHARACTERS.md §11, ADR 0070). Each model is a GLB in shared/models/glb (the checked-in source of truth, made once by `node shared/models/import.mjs --from <unpacked packs>` from its pack's FBX with the palette remap below), its scale, its yaw (degrees turning its front to +z), and which of its clips play each role. A role a model has no entry for plays its `fallback`. `speed` scales a clip's playback. `source` records where the GLB came from (the pack and the paths inside it); `remap` turns a source colour (sRGB hex) into a palette stop before the nearest-stop snap. Run `node shared/models/gen.mjs` after editing.",
+  "$comment": "Dwell's skinned models (docs/CHARACTERS.md §11, ADR 0070). Each model is a GLB in shared/models/glb (the checked-in source of truth, made once by `node shared/models/import.mjs --from <unpacked packs>` from its pack's FBX with the palette remap below), its scale, its yaw (degrees turning its front to +z), and which of its clips play each role. A role a model has no entry for plays its `fallback`. `speed` scales a clip's playback. `hand` (optional) names the skin joint a held item follows and the turn and offset (metres, in the joint's frame) from that joint to the characters rig's hand bone, the frame the held items in shared/characters are authored in. `source` records where the GLB came from (the pack and the paths inside it); `remap` turns a source colour (sRGB hex) into a palette stop before the nearest-stop snap. Run `node shared/models/gen.mjs` after editing.",
   "palette": {
     "$comment": "Palette ramps a remap never snaps to: utility and effect colours.",
     "exclude": ["chalk", "flame", "flame_core", "water", "cloud", "snow"]
@@ -17,6 +17,12 @@
       "yaw": 0,
       "remap": {},
       "fallback": "idle",
+      "hand": {
+        "joint": "hand.R",
+        "bone": "hand_r",
+        "at": [0, 0.05, 0],
+        "rot": [-2, 1, -175]
+      },
       "roles": {
         "idle": { "clip": "idle" },
         "walk": { "clip": "walk" },

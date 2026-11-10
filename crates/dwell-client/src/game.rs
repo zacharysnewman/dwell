@@ -3062,12 +3062,16 @@ impl<S: Scene> Game<S> {
             }
         }
         if let Some(mut p) = self.puppets {
+            // Holding the hotbar's: a tool (the axe) as your hand shows it, else its block.
+            let tool = (p.held == Puppets::HOTBAR)
+                .then(|| self.held())
+                .filter(|h| matches!(h, Held::Tool(_)));
             if p.held == Puppets::HOTBAR {
                 p.held = self.selected_material();
             }
             for v in p.views(now_ms / 1000.0) {
                 drawn.insert(v.player_id);
-                let held = crate::bodies::held_from_wire(v.held, Some);
+                let held = tool.unwrap_or_else(|| crate::bodies::held_from_wire(v.held, Some));
                 let world = self.streamer.store_mut();
                 let reach = self.current.max_step_lift;
                 let mut view = self.bodies.remote(&v, held, dt, &mut |f, p| {

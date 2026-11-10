@@ -587,12 +587,23 @@ swim, climb and fly play idle until clips are added. The animals map `idle`, `wa
 characters' ramp from the vertex's palette colour, the same lights and shadow maps; both faces through
 `place_frame`. ARCHITECTURE.md §5.3 has the details and sizes.
 
-### 11.5 What phase 1 leaves (next)
+### 11.5 Held items and your shadow (phase 2)
 
-- Your **first-person arms**, your **own body** in first person and your **shadow** are still the
-  rigid parts of §3–§5 (so your shadow is not the Peasant's).
-- **Held items** on the skinned hand (a socket on a joint, `hand.R`); the held light already follows
-  the rigid hand's place.
+- **Held items on the skinned hand**: a model's `hand` (`models.json`: `joint`, `bone`, `at`, `rot`)
+  puts the rigid rig's hand bone (`hand_r`, where the held items of §6 are authored) on the skin
+  joint (the Peasant's `hand.R`) this frame: the joint's world matrix with the model's scale taken
+  out, then `at` (metres, in the joint's frame) and `rot` (Euler XYZ degrees). The item's own turns
+  of the hand (the axe's tilt, its `pose`) are applied on top, so the axe, the torch, blocks and held
+  looks are drawn by the rigid renderer, from the same data, swinging with the walk clip; the held
+  light rides the same frame. A model with no `hand` (the animals) holds nothing.
+- **Your shadow** (the `cast_only` body) is the Peasant, into the nearest cascade only, with your
+  held item in its hand: your shadow is what others see.
+- **Still rigid**: your **first-person arms** and your **own body** seen in first person (§5.1). The
+  Peasant's arms are part of its one body mesh, with no arms mesh or first-person clips; drawing them
+  at the eye needs its own view and clips (later).
+
+### 11.6 What phase 2 leaves (next)
+
 - The **animals** in the world (Phase 40's C3 creatures move here); jump, swim and climb clips for
   the player; looks per player (§9.4) as models.
 - The **tools pack**; repainting with the painterly textures.

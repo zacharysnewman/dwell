@@ -50,6 +50,11 @@ test("a model is added by data alone: the fixture validates and lands in the tab
   const out = rust(f, models, "../../../shared/models/fixtures");
   assert.match(out, /name: "two_bone"/);
   assert.match(out, /role: "sprint", clip: "bend", speed: 2\.0/);
+  // Its hand by data alone: the joint named in its skin, as an index.
+  assert.match(
+    out,
+    /hand: Some\(Hand \{ joint: 1, bone: "hand_r", at: \[0\.0, 0\.1, 0\.0\], rot: \[0\.0, 0\.0, 90\.0\] \}\)/,
+  );
   assert.match(
     out,
     /include_bytes!\("\.\.\/\.\.\/\.\.\/shared\/models\/fixtures\/two_bone\.glb"\)/,
@@ -90,6 +95,9 @@ test("unknown roles, bad fallbacks, scales and remaps fail", () => {
   bad((m) => (m.remap = { red: "soil" }), /not #rrggbb/);
   bad((_, f) => (f.player = "ghost"), /player: no model ghost/);
   bad((m) => (m.roles.walk.speed = -1), /speed must be > 0/);
+  bad((m) => (m.hand.joint = "paw"), /hand: no joint paw/);
+  bad((m) => (m.hand.bone = ""), /hand: bone names/);
+  bad((m) => (m.hand.rot = [0, 0]), /hand: rot is \[x, y, z\]/);
 });
 
 test("palette references resolve; excluded ramps are left out of the snap", () => {

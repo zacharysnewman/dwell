@@ -718,13 +718,13 @@ suite and the bench). The file is served once per site at `/dwell/media/<name>-<
 than in each version directory: release builds load it from the site root (`__MEDIA_BASE__`,
 `client/scripts/media.ts`), and the Pages workflow moves each build's copy there (`site.ts media`).
 
-### 5.3 Characters and creatures **[in progress; Phase 40: the design, data and prototype built; players in the game built (C1, C2's held item and swings); looks at join and creatures planned. Phase 54: other players drawn as skinned models (S1); the arms, your own body and the creatures in game to follow]**
+### 5.3 Characters and creatures **[in progress; Phase 40: the design, data and prototype built; players in the game built (C1, C2's held item and swings); looks at join and creatures planned. Phase 54: other players and your shadow drawn as skinned models, held items in the skinned hand (S1, S2); the arms, your own body in first person and the creatures in game to follow]**
 
-**Skinned models [in progress, Phase 54 S1]** ([ADR 0070](./adr/0070-skinned-models.md),
+**Skinned models [in progress, Phase 54 S1–S2]** ([ADR 0070](./adr/0070-skinned-models.md),
 [`CHARACTERS.md`](./CHARACTERS.md) §11). Skinned models from the owner's Unity Asset Store packs
 replace the rigid-part characters, starting with **other players' bodies**: they are drawn as the
-Peasant model (`shared/models/models.json` `player`); your first-person arms, your own body in first
-person and your own shadow stay the rigid parts below for now. The data (`shared/models/models.json`)
+Peasant model (`shared/models/models.json` `player`), and so is your own shadow (S2); your
+first-person arms and your own body seen in first person stay the rigid parts below for now. The data (`shared/models/models.json`)
 lists each model's GLB (`shared/models/glb/`, checked in: the source of truth), scale, yaw, which of
 its clips plays each role (`body_role`'s names, with a speed; a `fallback` role for the rest) and a
 palette remap. `shared/models/import.mjs` makes the GLBs once from the packs' FBX with Blender
@@ -745,8 +745,13 @@ packs' meshes aren't closed). The vertex shader sums its four joints; the fragme
 characters' ramp from the vertex's palette colour (cool shadow, warm light, half-Lambert key light,
 the flood light, shadow maps and point lights, `CHARACTER_EXPOSURE`); no per-pixel cost beyond the
 rigid characters', so no CPU-adapter tier. Bodies cast into the shadow maps. The body's frame is
-`place_frame` (upside down on face B, lying on its back when dead). A remote player's held item is
-not drawn on the skinned body yet (its held light still is, from the rigid hand).
+`place_frame` (upside down on face B, lying on its back when dead). Your own body's shadow
+(`cast_only`) is a skinned body drawn into the nearest cascade only. **Held items** (S2): a model's
+`hand` (`models.json`: the skin joint, the rigid rig's hand bone, an offset and turn) gives
+`skinned::hand_frame`, the hand joint's world matrix with the scale taken out, turned onto the rigid
+hand bone's frame; `SkinnedRenderer::prepare` returns it per body and the rigid renderer draws the
+held item's mesh alone there (an item-only draw, the item's own turns of the hand on top), and the
+held light comes from the same frame.
 
 ([ADR 0041](./adr/0041-characters.md), [`CHARACTERS.md`](./CHARACTERS.md).) Characters (the
 player's full body, its first-person arms, and creatures: a wolf and a deer so far) are **data**
@@ -3212,7 +3217,7 @@ in the code yet.
 | explosives (`shared/explosives/explosives.json`) | see [`EXPLOSIVES.md`](./EXPLOSIVES.md) §2 | Dynamite: a 3 s fuse, 5 m radius, the inner 2 m destroyed outright (0.49.38; 4 m and no core before), impulse 9,000 N·s, falloff 1.5, lift 0.5, at most 22 m/s; players within 7 m: 22 m/s knockback by (1 − d / 7)^1.5; 160 damage by (1 − d / 2)^1.5, none past 2 m; water blown out within 3 m; a wave of 3 m/s outward within 6 m, held water freed within 24 m (0.49.48); chained fuses 0.15–0.6 s; at most 1 blast a tick and 1,200 pieces a blast; the clients' smoke and dust at most 64 puffs at once, each blast at least 0.15 of its own (0.50.16); the effects' numbers **[built, 0.49.32]** |
 | felling tunables (`shared/physics/felling.json`) | see [`FELLING.md`](./FELLING.md) §5 | The support search's reach and bounds, a falling piece's topple spin (about its foot, its farthest point at most `toppleTipSpeed` 4 m/s, 0.40.6), sleep (`sleepSeconds` 1 s, `restDrift` 0.1 m, 0.49.29) and timeouts, settles batched every `settleEveryTicks` (6), hit damage (`hitSpeed` 4 m/s, `hitDamagePerSpeed` 6), held from players' contacts while slower than `holdSpeed` (1 m/s) or pushed in the last `pushHoldSeconds` (0.25 s), moved by their push (0.41.5); a piece settles once and stays (`maxSettles` 1, 0.41.5) **[built, 0.37.1]**; the clients' settle glide (`settleGlideSeconds` 0.3 s, `settleBounce` 0.12) **[built, 0.40.3]**; terrain collision built round pieces at most `terrainChunksPerTick` (4) chunks a tick **[built, 0.40.5]** |
 | vitals (`shared/vitals/vitals.json`) | see ADR 0069 | Stamina: 100 points; sprint 12, swim 6, tread 4 a second; regen 20 a second after 1 s without spending; exhausted at 0 until back to 25 %; an exhausted swimmer sinks at 1.2 m/s; an axe swing its tool's `staminaCost` (8). Oxygen: 20 s with the head under (0.9 of the capsule submerged), refilled 10 s a second; out of air, 10 damage a second **[built, 0.50.57]** |
-| skinned models (`shared/models/models.json`, `dwell-models`) | see ADR 0070 | Per model: scale, yaw, each role's clip and speed (the Peasant's sprint is its walk at 1.8×), the fallback role; in code: 0.2 s cross-fade (`anim::BLEND_S`), at most 64 joints (`MAX_JOINTS`), 4 joints a vertex, clips sampled at 15 keys a second by the import **[built, Phase 54 S1]** |
+| skinned models (`shared/models/models.json`, `dwell-models`) | see ADR 0070 | Per model: scale, yaw, each role's clip and speed (the Peasant's sprint is its walk at 1.8×), the fallback role, the hand (joint `hand.R` onto `hand_r`, 5 cm along the joint, turned −2°, 1°, −175°); in code: 0.2 s cross-fade (`anim::BLEND_S`), at most 64 joints (`MAX_JOINTS`), 4 joints a vertex, clips sampled at 15 keys a second by the import **[built, Phase 54 S1]** |
 | `SNAPSHOT_HZ` | 20 | Snapshot broadcast rate |
 | `probes.max_slope_angle` (`config.rs`) | 56° | The steepest ground (above the 45° ramps); steeper faces are walls (PLAYER_CONTROLLER.md §6.2) |
 | `slide.min_angle` / `friction` / `terminal_speed` (`config.rs`) | 44° / 0.3 / 14 m/s | Ground under the player steeper than this slides (owner, 2026-10-15), pulled by `g (sin θ − friction cos θ)` up to the terminal speed along the slope (PLAYER_CONTROLLER.md §6.8) |

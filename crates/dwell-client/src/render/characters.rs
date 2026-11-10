@@ -228,7 +228,8 @@ struct GpuMesh {
 
 struct Draw {
     instance: u32,
-    body: MeshKey,
+    /// None: a held item alone (in a skinned body's hand).
+    body: Option<MeshKey>,
     item: Option<MeshKey>,
     outline: bool,
     /// Bit per scene pass it is drawn in (far 1, near 2).
@@ -275,8 +276,8 @@ pub struct CharacterRenderer {
     /// arms' light when the arms are drawn: where flames burn (render/flames.rs).
     others_lights: usize,
     arms_light: Option<HeldLight>,
-    /// Other players' bodies, skinned (docs/CHARACTERS.md §11): the rigid parts are kept for your
-    /// own arms, body and shadow this phase.
+    /// Other players' bodies and your shadow, skinned (docs/CHARACTERS.md §11): the rigid parts are
+    /// kept for your first-person arms and body, and the held items (drawn on the skinned hand).
     skinned: super::skinned::SkinnedRenderer,
     pub stats: CharacterStats,
 }
@@ -531,6 +532,48 @@ fn rows(a: &Affine) -> [f32; 12] {
 /// turn about its forward axis, so it stays a proper rotation), lying on its back when dead.
 pub fn body_frame(d: &BodyDraw, eye: V3) -> Affine {
     place_frame(d.feet, d.yaw, d.face, d.dead, eye)
+}
+
+/// A held item on a skinned body (CHARACTERS.md §11.5): what is needed to pose it once the skinned
+/// hand's frame is known.
+struct HeldOnSkin {
+    held: Held,
+    /// The rigid rig's bones (model space) without and with the item's turns.
+    rest: [Affine; MAX_BONES],
+    posed: [Affine; MAX_BONES],
+    /// The body's frame (relative to the eye).
+    frame: Affine,
+    seed: u32,
+    light: [f32; 2],
+    far: bool,
+    passes: u8,
+    casts: bool,
+    cast_only: bool,
+}
+
+/// A rigid frame's inverse.
+fn inverse(a: &Affine) -> Affine {
+    let m = a.m;
+    let r: [[f32; 3]; 3] = std::array::from_fn(|c| std::array::from_fn(|k| m[k][c]));
+    let inv = Affine { m: r, t: [0.0; 3] };
+    let t = inv.rotate(a.t);
+    Affine {
+        m: r,
+        t: t.map(|v| -v),
+    }
+}
+
+/// The rigid rig's bones (relative to the eye) for an item held in a skinned hand: the body's own
+/// rigid pose, with the hand bone (`hand_bone`, whose frame the items are authored in) moved onto
+/// the skinned hand (`hand`, [`super::skinned::hand_frame`]) and turned by the item's own turns
+/// of that bone (an axe's tilt, data `pose`).
+fn on_skinned_hand(h: &HeldOnSkin, hand_bone: Option<usize>, hand: &Affine) -> [Affine; MAX_BONES] {
+    let mut bones = h.posed.map(|b| h.frame.then(&b));
+    if let Some(b) = hand_bone.filter(|&b| b < MAX_BONES) {
+        let turn = inverse(&h.rest[b]).then(&h.posed[b]);
+        bones[b] = hand.then(&turn);
+    }
+    bones
 }
 
 /// [`body_frame`] from its parts (the skinned bodies' too, render/skinned.rs).
@@ -932,6 +975,7 @@ impl CharacterRenderer {
         };
         let mut keys = Vec::new();
         let mut skinned = Vec::new();
+        let mut held_items = Vec::new();
         for d in bodies {
             let dist = (0..3)
                 .map(|k| (d.feet[k] - eye[k]).powi(2))
@@ -979,32 +1023,43 @@ impl CharacterRenderer {
                 None => body_frame(d, eye),
             };
             let bones = posed.map(|b| frame.then(&b));
-            // Another player: the skinned body (its held light still from the rigid hand; the
-            // held item in the skinned hand is the next phase, CHARACTERS.md §11.5).
-            if !d.first_person && !d.cast_only {
-                if let Some(l) = light_at(d.held, &bones, d.seed) {
-                    self.held_lights.push(l);
-                }
+            // Another player, or your own shadow: the skinned body, its held item drawn in the
+            // skinned hand after (CHARACTERS.md §11.5).
+            if !d.first_person {
                 skinned.push(super::skinned::SkinnedDraw {
-                    seed: d.seed,
+                    // Your shadow's clip player apart from any other player's.
+                    seed: if d.cast_only { u32::MAX } else { d.seed },
                     feet: d.feet,
                     yaw: d.yaw,
                     face: d.face,
                     dead: d.dead,
                     role: d.role,
                     light: d.light,
+                    cast_only: d.cast_only,
+                });
+                held_items.push(HeldOnSkin {
+                    held: d.held,
+                    rest: bone_transforms(self.character, &d.pose),
+                    posed,
+                    frame,
+                    seed: d.seed,
+                    light: d.light,
+                    far,
+                    passes: mask,
+                    casts,
+                    cast_only: d.cast_only,
                 });
                 continue;
             }
             let discard = own.map_or(0.0, |b| own_discard_m(&b));
             let instance = push(&bones, d.held, !far, false, discard, d.light);
-            let body = MeshKey {
+            let body = Some(MeshKey {
                 name: look,
                 item: false,
                 view: View::Body,
                 far,
                 own: own.is_some(),
-            };
+            });
             if d.first_person || d.cast_only {
                 own_light = own_light.or_else(|| light_at(d.held, &bones, d.seed));
             } else if let Some(l) = light_at(d.held, &bones, d.seed) {
@@ -1019,7 +1074,7 @@ impl CharacterRenderer {
                     far,
                     own: false,
                 });
-            keys.push(body);
+            keys.extend(body);
             keys.extend(item);
             self.draws.push(Draw {
                 instance,
@@ -1029,6 +1084,49 @@ impl CharacterRenderer {
                 passes: mask,
                 casts,
                 cast_only: d.cast_only,
+            });
+        }
+        let hands = self.skinned.prepare(
+            device,
+            queue,
+            eye,
+            passes,
+            cast_m,
+            &skinned,
+            crate::render_clock::now_ms() / 1000.0,
+        );
+        let hand_bone = self
+            .skinned
+            .hand()
+            .and_then(|h| self.character.bone(h.bone));
+        for (h, hand) in held_items.iter().zip(hands) {
+            let Some(hand) = hand else { continue };
+            let bones = on_skinned_hand(h, hand_bone, &hand);
+            if h.cast_only {
+                own_light = own_light.or_else(|| light_at(h.held, &bones, h.seed));
+            } else if let Some(l) = light_at(h.held, &bones, h.seed) {
+                self.held_lights.push(l);
+            }
+            let Some(name) = item_name(h.held) else {
+                continue;
+            };
+            let item = MeshKey {
+                name,
+                item: true,
+                view: View::Body,
+                far: h.far,
+                own: false,
+            };
+            let instance = push(&bones, h.held, !h.far, false, 0.0, h.light);
+            keys.push(item);
+            self.draws.push(Draw {
+                instance,
+                body: None,
+                item: Some(item),
+                outline: outline_for(h.far),
+                passes: h.passes,
+                casts: h.casts,
+                cast_only: h.cast_only,
             });
         }
         if let Some(a) = arms {
@@ -1059,7 +1157,7 @@ impl CharacterRenderer {
             keys.extend(item);
             self.arms = Some(Draw {
                 instance,
-                body,
+                body: Some(body),
                 item,
                 outline: outline_for(false),
                 passes: 0,
@@ -1067,15 +1165,6 @@ impl CharacterRenderer {
                 cast_only: false,
             });
         }
-        self.skinned.prepare(
-            device,
-            queue,
-            eye,
-            passes,
-            cast_m,
-            &skinned,
-            crate::render_clock::now_ms() / 1000.0,
-        );
         self.others_lights = self.held_lights.len();
         self.held_lights.extend(own_light);
         for k in keys {
@@ -1122,7 +1211,7 @@ impl CharacterRenderer {
     fn record(&self, pass: &mut wgpu::RenderPass<'_>, d: &Draw, calls: &mut u32, tris: &mut u64) {
         let offset = d.instance * INSTANCE_BYTES as u32;
         pass.set_bind_group(1, &self.group, &[offset]);
-        let meshes: Vec<&GpuMesh> = [Some(d.body), d.item]
+        let meshes: Vec<&GpuMesh> = [d.body, d.item]
             .into_iter()
             .flatten()
             .filter_map(|k| self.meshes.get(&k))
@@ -1179,7 +1268,7 @@ impl CharacterRenderer {
         {
             pass.set_bind_group(1, &self.group, &[d.instance * INSTANCE_BYTES as u32]);
             pass.set_pipeline(&self.shadow_pipeline);
-            for m in [Some(d.body), d.item]
+            for m in [d.body, d.item]
                 .into_iter()
                 .flatten()
                 .filter_map(|k| self.meshes.get(&k))
@@ -1192,7 +1281,7 @@ impl CharacterRenderer {
                 *tris += u64::from(m.count / 3);
             }
         }
-        self.skinned.draw_shadows(pass, calls, tris);
+        self.skinned.draw_shadows(pass, nearest, calls, tris);
     }
 
     /// Draws the arms (group 0 bound to the arms' frame, over a cleared depth buffer).
@@ -1338,6 +1427,62 @@ mod tests {
     }
 
     use super::*;
+
+    // An item in a skinned hand: the rigid rig's hand bone is moved onto the skinned hand's frame,
+    // turned by the item's own turns of that bone (the axe's tilt); the other bones keep the
+    // body's frame. The torch's light rides the skinned hand too.
+    dwell_world::both_faces! {
+        fn a_held_item_is_posed_on_the_skinned_hand(face: FaceFrame) {
+            let ch = dwell_characters::player();
+            let b = ch.bone("hand_r").unwrap();
+            let pose = Pose::default();
+            let frame = place_frame(face.point([1.0, 2.0, 3.0]), 45.0, face, false, [0.0; 3]);
+            let hand = Affine::translation([5.0, 6.0, 7.0]).then(&Affine::euler([10.0, 20.0, 30.0]));
+            let axe = ch.item("stone_axe").expect("the axe is data");
+            let held = |h: Held, item: Option<&dwell_characters::Item>| HeldOnSkin {
+                held: h,
+                rest: bone_transforms(ch, &pose),
+                posed: bone_transforms(ch, &with_item(&pose, item)),
+                frame,
+                seed: 3,
+                light: [1.0, 0.0],
+                far: false,
+                passes: 1,
+                casts: true,
+                cast_only: false,
+            };
+            // No turns of its own: exactly the skinned hand's frame.
+            let bones = on_skinned_hand(&held(Held::Block(0), None), Some(b), &hand);
+            for k in 0..3 {
+                assert!((bones[b].t[k] - hand.t[k]).abs() < 1e-5);
+                for r in 0..3 {
+                    assert!((bones[b].m[k][r] - hand.m[k][r]).abs() < 1e-5);
+                }
+            }
+            // The axe's tilt of the hand on top of the skinned hand.
+            let h = held(Held::Tool("stone_axe"), Some(axe));
+            let bones = on_skinned_hand(&h, Some(b), &hand);
+            let turn = inverse(&h.rest[b]).then(&h.posed[b]);
+            let want = hand.then(&turn);
+            assert!((0..3).all(|k| (bones[b].t[k] - want.t[k]).abs() < 1e-5));
+            assert!((0..3).all(|k| (bones[b].m[k][0] - want.m[k][0]).abs() < 1e-5));
+            assert!(turn.m[0][0] < 0.99, "the axe turns the hand: {turn:?}");
+            // Another bone keeps the body's frame.
+            let head = ch.bone("head").unwrap();
+            let body = frame.then(&h.posed[head]);
+            assert!((0..3).all(|k| (bones[head].t[k] - body.t[k]).abs() < 1e-5));
+            // A torch's light sits on the skinned hand.
+            let torch = Held::Block(dwell_blocks::require("dwell:torch"));
+            let h = held(torch, None);
+            let bones = on_skinned_hand(&h, Some(b), &hand);
+            let l = held_light(ch, torch, &bones, 3).expect("a torch gives light"); {
+                let (bone, at) = ch.item("torch").unwrap().light.unwrap();
+                assert_eq!(bone, b);
+                let p = hand.apply(at);
+                assert!((0..3).all(|k| (l.rel[k] - p[k]).abs() < 1e-4), "{:?} {p:?}", l.rel);
+            }
+        }
+    }
 
     #[test]
     fn the_character_module_parses_and_validates() {
