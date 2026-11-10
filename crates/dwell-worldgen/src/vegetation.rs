@@ -170,7 +170,7 @@ mod tests {
         };
         assert_eq!(v.density(k, &cold), 0.0, "above the tree line");
         let dry = Climate {
-            moisture: 0.1,
+            moisture: 0.01,
             ..c
         };
         assert_eq!(v.density(k, &dry), 0.0, "too dry");

@@ -20,11 +20,11 @@
       "name": "dwell:conifers",
       "placement": "pine_groves",
       "temperature": [6.5, 28],
-      "moisture": [0.2, 1],
-      "minSoil": 0.25,
+      "moisture": [0.04, 1],
+      "minSoil": 0.15,
       "maxSlopeDeg": 40,
       "soils": [],
-      "fade": { "temperature": 1.5, "moisture": 0.15, "soil": 0.25 },
+      "fade": { "temperature": 1.5, "moisture": 0.04, "soil": 0.1 },
       "density": 1
     }
   ]

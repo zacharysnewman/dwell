@@ -2235,6 +2235,33 @@ impl TerrainGenerator {
         self.climate_with(x, z, &h)
     }
 
+    /// The climate's factor on a placement's chance at (x, z) (1 for a placement no kind governs).
+    fn climate_factor(
+        &self,
+        kind: Option<usize>,
+        x: i64,
+        z: i64,
+        height: &dyn Fn(i64, i64) -> Option<f32>,
+    ) -> f32 {
+        let Some(k) = kind else { return 1.0 };
+        self.climate_with(x, z, height)
+            .map_or(1.0, |c| self.vegetation.factor(k, &c) as f32)
+    }
+
+    /// The vegetation's density at (x, z) for the placements of the biome the column takes (the
+    /// most of its kinds': 0 where none grows, 1 where the climate doesn't rule; Chisel's overlay).
+    pub fn vegetation_at(&self, x: i64, z: i64) -> Option<f64> {
+        let c = self.climate_at(x, z)?;
+        let b = &self.biomes.list[usize::from(self.biome_mix(x, z).chosen)];
+        Some(
+            b.placements
+                .iter()
+                .filter_map(|p| self.vegetation.kind_for(p))
+                .map(|k| self.vegetation.factor(k, &c))
+                .fold(0.0, f64::max),
+        )
+    }
+
     /// Whether any biome lets the climate rule its placements (else `trees_in` asks nothing of it).
     fn climate_rules(&self) -> bool {
         self.biomes.field.is_some()
@@ -2269,11 +2296,7 @@ impl TerrainGenerator {
             .collect();
         let height = |x: i64, z: i64| ground(x as i32, z as i32).map(|g| g.height);
         let factor = |i: usize, x: i32, z: i32| -> f32 {
-            let Some(k) = kinds[i] else { return 1.0 };
-            match self.climate_with(i64::from(x), i64::from(z), &height) {
-                Some(c) => self.vegetation.factor(k, &c) as f32,
-                None => 1.0,
-            }
+            self.climate_factor(kinds[i], i64::from(x), i64::from(z), &height)
         };
         let factor: Option<&placements::Factor<'_>> = self.climate_rules().then_some(&factor);
         let mut trees =
@@ -3201,6 +3224,7 @@ impl TerrainGenerator {
             }
             return;
         }
+        let climate = self.climate_rules();
         for zi in -1..=n {
             for xi in -1..=n {
                 let col = cols[lod::column_index(xi, zi)];
@@ -3215,11 +3239,19 @@ impl TerrainGenerator {
                 let gx = (h(1, 0) - h(-1, 0)) / run;
                 let gz = (h(0, 1) - h(0, -1)) / run;
                 let (wx, wz) = (centre(o.x, xi), centre(o.z, zi));
-                let Some(p) = self
-                    .planters
-                    .iter()
-                    .find(|p| p.canopy_at((wx, wz), level, g, gx * gx + gz * gz))
-                else {
+                // The climate (systemic terrain T3) on the canopy's share, the slope from the LOD's
+                // own gradient.
+                let plane = |x: i64, z: i64| {
+                    Some(col.height + gx * (x - i64::from(wx)) as f32 + gz * (z - i64::from(wz)) as f32)
+                };
+                let Some(p) = self.planters.iter().find(|p| {
+                    let f = || {
+                        let k = self.vegetation.kind_for(p.rule().name);
+                        self.climate_factor(k, wx.into(), wz.into(), &plane)
+                    };
+                    let f: Option<&dyn Fn() -> f32> = climate.then_some(&f);
+                    p.canopy_at_with((wx, wz), level, g, gx * gx + gz * gz, f)
+                }) else {
                     continue;
                 };
                 // The column's topmost solid cell in the section, if its top is the ground's.

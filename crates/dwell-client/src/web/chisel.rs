@@ -53,7 +53,9 @@ impl ChiselPreview {
                     .unwrap_or_else(|| self.base.clone())
             }
         };
-        self.current = ground.with_biomes_and_geology(&e.biomes, e.map, e.geology);
+        self.current = ground
+            .with_biomes_and_geology(&e.biomes, e.map, e.geology)
+            .with_vegetation(e.vegetation);
         Ok(())
     }
 

@@ -447,12 +447,29 @@ impl Planter {
     /// Whether the LOD's column at (x, z) of a level coarser than the trees shows canopy: a share
     /// of columns as large as the trees' cover there, on ground of `on`, dry, in the band and no
     /// steeper than the limit (`gradient_sq`, from the LOD's own columns).
-    pub fn canopy_at(&self, (x, z): (i32, i32), level: i32, g: Ground, gradient_sq: f32) -> bool {
+    pub fn canopy_at(&self, at: (i32, i32), level: i32, g: Ground, gradient_sq: f32) -> bool {
+        self.canopy_at_with(at, level, g, gradient_sq, None)
+    }
+
+    /// [`Planter::canopy_at`] with the climate's factor on the share (systemic terrain T3), asked
+    /// only of a column the share would otherwise keep.
+    pub fn canopy_at_with(
+        &self,
+        (x, z): (i32, i32),
+        level: i32,
+        g: Ground,
+        gradient_sq: f32,
+        factor: Option<&dyn Fn() -> f32>,
+    ) -> bool {
         if !g.dry || !self.on.contains(&g.block) || gradient_sq > self.rule.max_gradient_sq {
             return false;
         }
-        unit(hash3(self.cell_seed ^ 0xC0A0_0000, x, level, z))
-            < self.chance(x, z, g.above_sea) * self.cover
+        let roll = unit(hash3(self.cell_seed ^ 0xC0A0_0000, x, level, z));
+        let share = self.chance(x, z, g.above_sea) * self.cover;
+        if roll >= share {
+            return false;
+        }
+        factor.is_none_or(|f| roll < share * f())
     }
 }
 

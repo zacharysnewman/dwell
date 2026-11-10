@@ -15,6 +15,7 @@ use dwell_worldgen::terrain::{
     BIOME_MAP, BIOMES, Biome, BiomeMap, ElevationBand, HEIGHT, HeightField, TerrainGenerator,
     WaterLook, Where, WhereRange, water_tint_of,
 };
+use dwell_worldgen::vegetation::{Kind, RockSoil, SoilType, VEGETATION, Vegetation};
 use serde_json::Value;
 
 use crate::lod_map::{Rect, raster_with_heights};
@@ -35,6 +36,10 @@ pub enum Overlay {
     /// The rock at the surface (systemic terrain T2): its colour, darker on a wall, lighter on a
     /// tread.
     Rock,
+    /// The soil (systemic terrain T3): bare rock grey (0 m) to its type's colour (2 m and deeper).
+    Soil,
+    /// The vegetation's density (systemic terrain T3) for the column's biome: tan (none) to green.
+    Vegetation,
 }
 
 impl Overlay {
@@ -45,6 +50,8 @@ impl Overlay {
             3 => Self::Wetness,
             4 => Self::Rainfall,
             5 => Self::Rock,
+            6 => Self::Soil,
+            7 => Self::Vegetation,
             _ => Self::Blocks,
         }
     }
@@ -361,12 +368,111 @@ pub fn geology_from_json(v: &Value) -> Result<Geology, String> {
     })
 }
 
-/// A Chisel edit parsed: the biomes (the default first), the biome map, the geology, and the
-/// world's height field when the edit changes its knobs (`world`).
+/// The soil and vegetation from its JSON (`shared/worldgen/vegetation.json`, checked by
+/// `biomes.mjs` `validateVegetation`; systemic terrain T3).
+pub fn vegetation_from_json(v: &Value) -> Result<Vegetation, String> {
+    let at = |e: String| format!("vegetation.json: {e}");
+    let list = |k: &str| {
+        v.get(k)
+            .and_then(Value::as_array)
+            .ok_or(at(format!("{k} must be a list")))
+    };
+    let mut types = Vec::new();
+    for t in list("soilTypes")? {
+        let color = t
+            .get("color")
+            .and_then(Value::as_str)
+            .and_then(|s| s.strip_prefix('#'))
+            .and_then(|h| u32::from_str_radix(h, 16).ok())
+            .ok_or(at("a soil type's color must be \"#rrggbb\"".into()))?;
+        types.push(SoilType {
+            name: text(t, "name").map_err(at)?,
+            color,
+        });
+    }
+    if types.is_empty() {
+        return Err(at("soilTypes must not be empty".into()));
+    }
+    let type_of = |s: &Value| -> Result<u8, String> {
+        let n = s.as_str().unwrap_or("?");
+        types
+            .iter()
+            .position(|t| t.name == n)
+            .map(|i| i as u8)
+            .ok_or(at(format!("{n} is not a soil type")))
+    };
+    let soil = |r: &Value, rock: &'static str| -> Result<RockSoil, String> {
+        Ok(RockSoil {
+            rock,
+            depth: num(r, "depth").map_err(at)?,
+            soil_type: type_of(r.get("type").unwrap_or(&Value::Null))?,
+        })
+    };
+    let fallback = soil(v.get("fallback").unwrap_or(&Value::Null), "")?;
+    let mut rock_soils = Vec::new();
+    for r in list("rockSoils")? {
+        rock_soils.push(soil(r, text(r, "rock").map_err(at)?)?);
+    }
+    let mut kinds = Vec::new();
+    for k in list("kinds")? {
+        let name = text(k, "name").map_err(at)?;
+        let kf = |e: String| format!("vegetation.json: kind {name}: {e}");
+        let pair = |key: &str| -> Result<[f64; 2], String> {
+            match k.get(key).and_then(Value::as_array).map(Vec::as_slice) {
+                Some([a, b]) => match (a.as_f64(), b.as_f64()) {
+                    (Some(a), Some(b)) if a < b => Ok([a, b]),
+                    _ => Err(kf(format!("{key} must be [least, most]"))),
+                },
+                _ => Err(kf(format!("{key} must be [least, most]"))),
+            }
+        };
+        let soils: Result<Vec<u8>, String> = k
+            .get("soils")
+            .and_then(Value::as_array)
+            .map(|l| l.iter().map(type_of).collect())
+            .unwrap_or(Ok(Vec::new()));
+        let placement = text(k, "placement").map_err(kf)?;
+        if !dwell_worldgen::placements::PLACEMENTS
+            .iter()
+            .any(|p| p.name == placement)
+        {
+            return Err(kf(format!("placement {placement} is not a rule of placements.json")));
+        }
+        kinds.push(Kind {
+            name,
+            placement,
+            temperature: pair("temperature")?,
+            moisture: pair("moisture")?,
+            min_soil: num(k, "minSoil").map_err(kf)?,
+            max_slope_deg: num(k, "maxSlopeDeg").map_err(kf)?,
+            soils: Box::leak(soils?.into_boxed_slice()),
+            fade: [
+                num(k, "fade.temperature").map_err(kf)?,
+                num(k, "fade.moisture").map_err(kf)?,
+                num(k, "fade.soil").map_err(kf)?,
+            ],
+            density: num(k, "density").map_err(kf)?,
+        });
+    }
+    Ok(Vegetation {
+        zero_c: num(v, "climate.zeroC").map_err(at)?,
+        per_unit_c: num(v, "climate.perUnitC").map_err(at)?,
+        flat_slope_deg: num(v, "soil.flatSlopeDeg").map_err(at)?,
+        valley: num(v, "soil.valley").map_err(at)?,
+        soil_types: Box::leak(types.into_boxed_slice()),
+        fallback,
+        rock_soils: Box::leak(rock_soils.into_boxed_slice()),
+        kinds: Box::leak(kinds.into_boxed_slice()),
+    })
+}
+
+/// A Chisel edit parsed: the biomes (the default first), the biome map, the geology, the soil and
+/// vegetation, and the world's height field when the edit changes its knobs (`world`).
 pub struct Edit {
     pub biomes: Vec<Biome>,
     pub map: BiomeMap,
     pub geology: Geology,
+    pub vegetation: Vegetation,
     pub height: Option<HeightField>,
 }
 
@@ -391,6 +497,15 @@ pub fn edit_from_json(text: &str) -> Result<Edit, String> {
         Some(g) => geology_from_json(g)?,
         None => GEOLOGY,
     };
+    let vegetation = match v.get("vegetation") {
+        Some(g) => vegetation_from_json(g)?,
+        None => VEGETATION,
+    };
+    for r in vegetation.rock_soils {
+        if !geology.rocks.iter().any(|k| k.name == r.rock) {
+            return Err(format!("vegetation.json: rockSoils: {} is not a rock", r.rock));
+        }
+    }
     let biomes = biomes?;
     for b in &biomes {
         if let Some(s) = b.rock_stack
@@ -403,6 +518,7 @@ pub fn edit_from_json(text: &str) -> Result<Edit, String> {
         biomes,
         map,
         geology,
+        vegetation,
         height,
     })
 }
@@ -521,6 +637,18 @@ pub fn preview(g: &TerrainGenerator, x0: i64, z0: i64, n: i64, texel: i64, o: Ov
                     Part::Talus | Part::Plain => base,
                 })
             }
+            Overlay::Soil => bytes(match g.climate_at(x, z) {
+                None => [0.5; 3],
+                Some(c) => {
+                    let t = g.vegetation().soil_types[usize::from(c.soil_type)].color;
+                    let col = [t >> 16, t >> 8, t].map(|v| f64::from(v & 0xff) / 255.0);
+                    lerp3([0.62, 0.62, 0.6], col, c.soil_depth / 2.0)
+                }
+            }),
+            Overlay::Vegetation => bytes(match g.vegetation_at(x, z) {
+                None => [0.5; 3],
+                Some(d) => lerp3([0.86, 0.78, 0.58], [0.1, 0.42, 0.16], d),
+            }),
             Overlay::Rainfall => bytes(match g.biome_rainfall(x, z) {
                 None => [0.5; 3],
                 // Square-root eased: the dry lee's small values stay readable.
@@ -810,5 +938,56 @@ mod tests {
         b["rockStack"] = "test:none".into();
         let bad = serde_json::json!({ "biomes": [b] }).to_string();
         assert!(edit_from_json(&bad).err().unwrap().contains("test:none"));
+    }
+
+    #[test]
+    fn the_json_vegetation_is_the_generated_tables_and_takes_a_kind_by_data() {
+        // face-a-only: Chisel previews face A (the vegetation's faces are dwell-worldgen's
+        // tests/vegetation.rs).
+        assert_eq!(
+            vegetation_from_json(&file("vegetation.json")).unwrap(),
+            VEGETATION
+        );
+        // The boreal preset beside the default (both opting in), the rain shadow on.
+        let mut d = file("biomes/default.json");
+        d["vegetation"] = 1.into();
+        let boreal = file("biomes/presets/boreal.json");
+        let mut map = file("terrain.json")["biomeMap"].clone();
+        map["rainShare"] = 0.5.into();
+        let edit = |veg: &Value| {
+            let e = serde_json::json!({ "biomes": [d, boreal], "biomeMap": map, "vegetation": veg });
+            edit_from_json(&e.to_string()).unwrap()
+        };
+        let t = BifacialTerrain::height_field(7);
+        let base = t.local(dwell_world::Face::A).clone();
+        let gen_of = |e: Edit| {
+            base.clone()
+                .with_biomes_and_geology(&e.biomes, e.map, e.geology)
+                .with_vegetation(e.vegetation)
+        };
+        let (x0, n, texel) = (-6144, 48, 256);
+        let green = |tile: &[u8]| tile.chunks(4).filter(|p| p[3] > 0 && u16::from(p[1]) > u16::from(p[0]) + 60).count();
+        let g = gen_of(edit(&file("vegetation.json")));
+        let build = green(&preview(&g, x0, x0, n, texel, Overlay::Vegetation));
+        assert!(build > 0, "the build's conifers grow somewhere");
+        // A fixture kind by data alone: the conifers replaced by one that wants 40 °C and more.
+        let mut v = file("vegetation.json");
+        v["kinds"][0]["name"] = "test:hot_pines".into();
+        v["kinds"][0]["temperature"] = serde_json::json!([40, 80]);
+        let hot = gen_of(edit(&v));
+        assert_eq!(hot.vegetation().kinds[0].name, "test:hot_pines");
+        assert_eq!(
+            green(&preview(&hot, x0, x0, n, texel, Overlay::Vegetation)),
+            0,
+            "nowhere is that hot"
+        );
+        // The soil overlay draws; a kind naming an unknown placement or soil type fails, named.
+        let soil = preview(&g, x0, x0, n, texel, Overlay::Soil);
+        assert!(soil.chunks(4).any(|p| p[3] > 0));
+        v["kinds"][0]["placement"] = "test:nothing".into();
+        assert!(vegetation_from_json(&v).unwrap_err().contains("test:nothing"));
+        let mut v = file("vegetation.json");
+        v["kinds"][0]["soils"] = serde_json::json!(["test:clay"]);
+        assert!(vegetation_from_json(&v).unwrap_err().contains("test:clay"));
     }
 }
