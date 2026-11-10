@@ -1,0 +1,31 @@
+{
+  "$comment": "Soil and vegetation from climate (systemic terrain T3, ADR 0075). The climate in °C: the biome map's temperature (0..1-ish, less lapseRate per km) × perUnitC + zeroC (0.3/km × 21.7 ≈ 6.5 °C/km). Soil depth (m) per rock (rockSoils; a rock not listed takes `fallback`): its depth on flat ground, thinning to 0 at soil.flatSlopeDeg, deepened by soil.valley × the wetness on valley floors; its type one of soilTypes. Each vegetation kind gives a placement (placements.json) a climate envelope: temperature (°C) and moisture ranges (moisture: the biome map's wetness, rivers and the rain shadow by rainShare), a least soil depth (m), a steepest slope and optional soil types, each edge faded in over `fade`, times `density`. Only a biome with `vegetation` above 0 uses it, by that share (none in the default biome: the default world unchanged); there the tree line is where the temperature falls below the kind's least, and a dry lee has no trees. Prototype content. Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output.",
+  "climate": { "zeroC": 2, "perUnitC": 21.7 },
+  "soil": { "flatSlopeDeg": 40, "valley": 1 },
+  "soilTypes": [
+    { "name": "dwell:sandy", "color": "#d8c48a" },
+    { "name": "dwell:loamy", "color": "#5f4426" },
+    { "name": "dwell:rocky", "color": "#8c8c88" }
+  ],
+  "fallback": { "depth": 1, "type": "dwell:loamy" },
+  "rockSoils": [
+    { "rock": "dwell:sandstone", "depth": 1, "type": "dwell:sandy" },
+    { "rock": "dwell:shale", "depth": 1.6, "type": "dwell:loamy" },
+    { "rock": "dwell:granite", "depth": 0.3, "type": "dwell:rocky" },
+    { "rock": "dwell:basalt", "depth": 0.8, "type": "dwell:loamy" },
+    { "rock": "dwell:limestone", "depth": 0.5, "type": "dwell:rocky" }
+  ],
+  "kinds": [
+    {
+      "name": "dwell:conifers",
+      "placement": "pine_groves",
+      "temperature": [6.5, 28],
+      "moisture": [0.04, 1],
+      "minSoil": 0.15,
+      "maxSlopeDeg": 40,
+      "soils": [],
+      "fade": { "temperature": 1.5, "moisture": 0.04, "soil": 0.1 },
+      "density": 1
+    }
+  ]
+}

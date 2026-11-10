@@ -49,6 +49,7 @@
     }
   ],
   "decorations": [],
+  "vegetation": 1,
   "placements": [],
   "water": "dwell:water"
 }

@@ -124,6 +124,15 @@ sheer walls, massive rock unstepped; `strength` 0 by default. The rule-based sha
 first (§6 q3) is T2's; T4 keeps the isolated buttes and the simulated comparison. First look: stepped
 hills following the contours rather than isolated mesas.
 
+## 7c. T3, soil and vegetation from climate (built, 0.52.14)
+
+Soil depth and type per rock, thinning with slope and deepening on wet valley floors, and vegetation
+kinds as climate envelopes on placements (`shared/worldgen/vegetation.json`; ADR 0075 T3): the tree line
+emerges from temperature (°C with the ≈ 6.5 °C/km lapse), a dry lee grows no trees; a biome opts in by
+its `vegetation` share (0 in the default biome: goldens byte-identical; the boreal, rainforest, savanna,
+desert and alpine presets at 1). The snow line from temperature, the soil's blocks and the grass and
+ground items as kinds follow (T3b).
+
 ## 8. Presets (built, 0.52.8)
 
 Owner (2026-11-10): "We need a lot of prefabbed biomes as options to use as starting points." Fourteen

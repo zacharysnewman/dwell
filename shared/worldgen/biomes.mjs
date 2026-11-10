@@ -102,7 +102,7 @@ export const WORLD_GROUPS = ['inland', 'seaFloor', 'islands', 'hills', 'bumps', 
 /** A biome's groups (shared/worldgen/biomes/*.json): layered on the elevation. */
 export const BIOME_GROUPS = Object.keys(TERRAIN).filter((g) => !WORLD_GROUPS.includes(g));
 /** A biome's reference fields beside its groups. */
-const BIOME_REFS = ['where', 'bands', 'decorations', 'placements', 'water', 'waterLook', 'rockStack'];
+const BIOME_REFS = ['where', 'bands', 'decorations', 'placements', 'water', 'waterLook', 'rockStack', 'vegetation'];
 /** A biome's optional words for people (Chisel's lists): a short label and a one-line description. */
 export const BIOME_TEXT = { label: 40, description: 200 };
 const BIOME_NAME = /^[a-z0-9_]+:[a-z0-9_]+$/;
@@ -171,6 +171,97 @@ export function validateBiome(data, blocks, refs) {
     if (refs.stacks && !refs.stacks.has(data.rockStack)) {
       fail(`rockStack: ${JSON.stringify(data.rockStack)} is not a stack of rocks.json`);
     }
+  }
+  if (data.vegetation !== undefined && !(isNum(data.vegetation) && data.vegetation >= 0 && data.vegetation <= 1)) {
+    fail('vegetation must be in [0, 1]');
+  }
+  return data;
+}
+
+/** The soil and vegetation's groups' ranges (vegetation.json `climate`, `soil`), as `TERRAIN`'s. */
+export const VEGETATION = {
+  climate: { zeroC: [-60, 60], perUnitC: [0, 200] },
+  soil: { flatSlopeDeg: [1, 90], valley: [0, 10] },
+};
+
+/**
+ * Checks the soil and vegetation (shared/worldgen/vegetation.json, systemic terrain T3): the climate's
+ * °C scale, the soil rules, the soil types, each rock's soil (`rocks`: the rock names it may name; a
+ * rock not listed takes `fallback`) and the vegetation kinds (each a placement's envelope;
+ * `placements`: the names it may name). Throws naming the kind, the rock or the key.
+ */
+export function validateVegetation(data, rocks, placements) {
+  const fail = (m) => {
+    throw new Error(`vegetation.json: ${m}`);
+  };
+  if (typeof data !== 'object' || data === null) fail('must be an object');
+  const keys = ['$comment', 'climate', 'soil', 'soilTypes', 'fallback', 'rockSoils', 'kinds'];
+  const extra = Object.keys(data).filter((k) => !keys.includes(k));
+  if (extra.length) fail(`unknown ${extra.join(', ')}`);
+  for (const [group, ks] of Object.entries(VEGETATION)) {
+    const v = data[group];
+    if (typeof v !== 'object' || v === null) fail(`${group} must be an object`);
+    const ex = Object.keys(v).filter((k) => k !== '$comment' && !(k in ks));
+    if (ex.length) fail(`${group}: unknown ${ex.join(', ')}`);
+    for (const [key, [min, max]] of Object.entries(ks)) {
+      if (!(isNum(v[key]) && v[key] >= min && v[key] <= max)) fail(`${group}.${key} must be in [${min}, ${max}]`);
+    }
+  }
+  if (!Array.isArray(data.soilTypes) || data.soilTypes.length === 0 || data.soilTypes.length > 32) {
+    fail('soilTypes must be a list of 1 to 32 soil types');
+  }
+  const types = data.soilTypes.map((t) => t?.name);
+  for (const t of data.soilTypes) {
+    if (typeof t.name !== 'string' || !BIOME_NAME.test(t.name)) fail('a soil type name must be "namespace:name"');
+    if (typeof t.color !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(t.color)) fail(`soil type ${t.name}: color must be "#rrggbb"`);
+  }
+  if (new Set(types).size !== types.length) fail('a soil type is listed twice');
+  const soil = (s, at) => {
+    if (!(isNum(s?.depth) && s.depth >= 0 && s.depth <= 50)) fail(`${at}: depth must be in [0, 50] m`);
+    if (!types.includes(s.type)) fail(`${at}: type ${JSON.stringify(s.type)} is not a soil type`);
+  };
+  soil(data.fallback, 'fallback');
+  if (!Array.isArray(data.rockSoils)) fail('rockSoils must be a list');
+  const seen = new Set();
+  for (const r of data.rockSoils) {
+    if (rocks && !rocks.has(r?.rock)) fail(`rockSoils: ${JSON.stringify(r?.rock)} is not a rock of rocks.json`);
+    if (seen.has(r.rock)) fail(`rockSoils: ${r.rock} is listed twice`);
+    seen.add(r.rock);
+    soil(r, `rock ${r.rock}`);
+  }
+  if (!Array.isArray(data.kinds)) fail('kinds must be a list');
+  const names = new Set();
+  const governed = new Set();
+  for (const k of data.kinds) {
+    const at = `kind ${typeof k?.name === 'string' ? k.name : '?'}`;
+    const kf = (m) => fail(`${at}: ${m}`);
+    if (typeof k.name !== 'string' || !BIOME_NAME.test(k.name)) kf('name must be "namespace:name"');
+    if (names.has(k.name)) kf('is listed twice');
+    names.add(k.name);
+    const ks = ['name', 'placement', 'temperature', 'moisture', 'minSoil', 'maxSlopeDeg', 'soils', 'fade', 'density', '$comment'];
+    const ex = Object.keys(k).filter((x) => !ks.includes(x));
+    if (ex.length) kf(`unknown ${ex.join(', ')}`);
+    if (placements && !placements.has(k.placement)) kf(`placement ${JSON.stringify(k.placement)} is not a rule of placements.json`);
+    if (governed.has(k.placement)) kf(`placement ${k.placement} already has a kind`);
+    governed.add(k.placement);
+    const range = (v, lo, hi, n) => {
+      if (!(Array.isArray(v) && v.length === 2 && v.every(isNum) && v[0] >= lo && v[1] <= hi && v[0] < v[1])) {
+        kf(`${n} must be [least, most] within [${lo}, ${hi}], least below most`);
+      }
+    };
+    range(k.temperature, -80, 80, 'temperature');
+    range(k.moisture, 0, 1, 'moisture');
+    if (!(isNum(k.minSoil) && k.minSoil >= 0 && k.minSoil <= 50)) kf('minSoil must be in [0, 50] m');
+    if (!(isNum(k.maxSlopeDeg) && k.maxSlopeDeg > 0 && k.maxSlopeDeg <= 90)) kf('maxSlopeDeg must be in (0, 90]');
+    if (!(isNum(k.density) && k.density >= 0 && k.density <= 1)) kf('density must be in [0, 1]');
+    if (!Array.isArray(k.soils) || !k.soils.every((s) => types.includes(s))) kf('soils must be a list of soil types');
+    const f = k.fade;
+    if (typeof f !== 'object' || f === null) kf('fade must be an object');
+    for (const [key, hi] of [['temperature', 40], ['moisture', 1], ['soil', 10]]) {
+      if (!(isNum(f[key]) && f[key] >= 0 && f[key] <= hi)) kf(`fade.${key} must be in [0, ${hi}]`);
+    }
+    const fx = Object.keys(f).filter((x) => !['temperature', 'moisture', 'soil'].includes(x));
+    if (fx.length) kf(`fade: unknown ${fx.join(', ')}`);
   }
   return data;
 }

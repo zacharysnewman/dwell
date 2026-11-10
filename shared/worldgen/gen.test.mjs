@@ -11,6 +11,8 @@ import {
   placementsRust,
   rocksRust,
   validateRocks,
+  vegetationRust,
+  validateVegetation,
   registryBlocks,
   registryStructures,
   terrainRust,
@@ -571,5 +573,33 @@ test('the checked-in rocks are valid, generate the checked-in Rust, and take a r
   bad((x) => (x.rocks[1].face = 'dwell:nothing'), /rock dwell:shale: face "dwell:nothing" is not in the registry/);
   bad((x) => (x.stacks[0].layers[0].rock = 'dwell:nothing'), /stack dwell:red_beds: layer rock "dwell:nothing"/);
   bad((x) => (x.shaping.strength = 3), /shaping.strength must be in \[0, 1\]/);
+  bad((x) => (x.extra = 1), /unknown extra/);
+});
+
+test('the checked-in vegetation is valid, generates the checked-in Rust, and takes a kind by data alone', () => {
+  const veg = () => JSON.parse(readFileSync(join(here, 'vegetation.json'), 'utf8'));
+  const rs = readFileSync(join(here, '../../crates/dwell-worldgen/src/vegetation.gen.rs'), 'utf8');
+  assert.equal(vegetationRust(validateVegetation(veg())), rs);
+  // The default biome doesn't opt in: the default world is unchanged.
+  const def = JSON.parse(readFileSync(join(here, 'biomes/default.json'), 'utf8'));
+  assert.equal(def.vegetation, undefined);
+  const d = veg();
+  d.soilTypes.push({ name: 'test:clay', color: '#aa5500' });
+  d.kinds[0] = { ...d.kinds[0], name: 'test:clay_pines', temperature: [0, 9], soils: ['test:clay'] };
+  const out = vegetationRust(validateVegetation(d));
+  assert.match(out, /name: "test:clay_pines",\n {12}placement: "pine_groves",\n {12}temperature: \[0\.0, 9\.0\]/);
+  assert.match(out, /soils: &\[3\]/);
+  const bad = (f, msg) => {
+    const x = veg();
+    f(x);
+    assert.throws(() => validateVegetation(x), msg);
+  };
+  bad((x) => (x.kinds[0].placement = 'nothing'), /kind dwell:conifers: placement "nothing" is not a rule/);
+  bad((x) => (x.kinds[0].temperature = [10, 5]), /temperature must be \[least, most\]/);
+  bad((x) => (x.kinds[0].soils = ['test:none']), /soils must be a list of soil types/);
+  bad((x) => (x.rockSoils[0].rock = 'dwell:nothing'), /rockSoils: "dwell:nothing" is not a rock/);
+  bad((x) => (x.rockSoils[0].type = 'dwell:nothing'), /rock dwell:sandstone: type "dwell:nothing" is not a soil type/);
+  bad((x) => (x.climate.perUnitC = -1), /climate.perUnitC must be in/);
+  bad((x) => x.kinds.push({ ...x.kinds[0], name: 'test:twin' }), /placement pine_groves already has a kind/);
   bad((x) => (x.extra = 1), /unknown extra/);
 });

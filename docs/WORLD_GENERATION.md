@@ -424,6 +424,17 @@ bed a talus slope, vertical jointing one sheer wall, massive rock unstepped; the
 a wall shows its rock's face, talus its scree, a tread its cap. Tuned in Chisel (the Rock group and the
 rock overlay). Prototype content (§6.1 of the architecture): today's blocks stand in for the rocks.
 
+## Soil and vegetation from climate (2026-11-10, ADR 0075 T3)
+
+Systemic terrain's life layer: `shared/worldgen/vegetation.json` holds the climate's °C scale, each
+rock's soil (depth on flat ground, a soil type), the soil rules (thinning with slope, deeper on wet valley
+floors) and the vegetation kinds, each a placement's climate envelope (temperature °C, moisture, least
+soil, steepest slope, soil types, fades, density). A biome's `vegetation` (0..1) is how much the climate
+rules its placements: none in the default biome (the terrain unchanged), all in the boreal, rainforest,
+savanna, desert and alpine presets. The tree line is where the temperature falls below a kind's least; a
+dry lee has no trees. Tuned in Chisel (the Soil and vegetation group, the soil and vegetation overlays).
+Prototype content (§6.1 of the architecture).
+
 ## Preset biomes (2026-11-10, ADR 0075)
 
 Starting points for a world's biomes: `shared/worldgen/biomes/presets/*.json` (14: temperate meadow,

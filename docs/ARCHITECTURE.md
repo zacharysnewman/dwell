@@ -1578,6 +1578,13 @@ it is) and a rule-based shaping: each stack a monotone profile of height (hard b
 soft beds talus), the column's ground moved `shaping.strength` of the way to it before the rivers and
 lakes cut it, its walls, talus and treads showing the rock's blocks (rock palettes after the biomes'). The
 strength is 0 in the default world, so it changes nothing (goldens byte-identical) until tuned in Chisel.
+**Soil and vegetation [built, Phase 57 T3, 0.52.14; ADR 0075]** (`shared/worldgen/vegetation.json` →
+`vegetation.gen.rs`, `dwell-worldgen` `vegetation.rs`): a column's climate (`TerrainGenerator::climate_at`:
+°C from the biome map's temperature, the moisture its wetness, the soil depth and type from the surface
+rock, the slope) and vegetation kinds, each a placement's climate envelope; a biome's `vegetation` share
+scales its placements' chance by the kind's density (`placements::trees_in_with`, `canopy_at_with` for the
+LOD's canopy), so the tree line and dry lees emerge. The default biome's share is 0 and a one-biome world
+has no biome map, so the default world is unchanged (goldens byte-identical).
 **Chisel [built, B3]** (`client/chisel.html`, a second page of the client build; `client/src/chisel/`):
 the biome editor. Its state is the biomes' JSON (the default first) and `terrain.json`'s `biomeMap`,
 checked by `shared/worldgen/biomes.mjs` (the same rules `gen.mjs` applies; the sliders are made from its
@@ -1585,8 +1592,8 @@ ranges) and kept in the browser (`dwell.chisel`, append-only). A worker loads th
 (`ChiselPreview`, `dwell-client` `chisel.rs`): the face A height field built once per seed, the edit
 parsed and put on it (`TerrainGenerator::with_biomes_on`, `BiomeField::with_params`), tiles rasterised
 by the big map's rules (`lod_map::raster_with_heights`, `tint_rgb`) or as overlays (biome weights,
-temperature, wetness, rainfall, rock), 64² then 256² per change; the edit may carry the geology
-(`rocks.json`'s shape: the Rock group's sliders). The world overview (0.52.11; owner, 2026-11-10: "a world map preview for this tool when we can blend between biomes"): beside the detail preview, the whole disc (island and sea, `WORLD_RADIUS`) from the same edit and overlay, 128² (~0.78 km texels) then 512² (~0.2 km), the frame from `chisel::overview_frame` (`ChiselPreview.overview_frame`); the worker runs the detail lane first, splits the overview's passes into 128² chunks, drops a lane's older generation when a newer edit arrives and caches the chunks by the edit state (`client/src/chisel/overview.ts`); the detail region drawn as a rectangle, a click or drag moving its centre. Face A only (Chisel has no face toggle; face B is its mirror). The texture tab (B6) and Chisel in the game (B7)
+temperature, wetness, rainfall, rock, soil, vegetation), 64² then 256² per change; the edit may carry the geology
+(`rocks.json`'s shape: the Rock group's sliders) and the soil and vegetation (`vegetation.json`'s shape). The world overview (0.52.11; owner, 2026-11-10: "a world map preview for this tool when we can blend between biomes"): beside the detail preview, the whole disc (island and sea, `WORLD_RADIUS`) from the same edit and overlay, 128² (~0.78 km texels) then 512² (~0.2 km), the frame from `chisel::overview_frame` (`ChiselPreview.overview_frame`); the worker runs the detail lane first, splits the overview's passes into 128² chunks, drops a lane's older generation when a newer edit arrives and caches the chunks by the edit state (`client/src/chisel/overview.ts`); the detail region drawn as a rectangle, a click or drag moving its centre. Face A only (Chisel has no face toggle; face B is its mirror). The texture tab (B6) and Chisel in the game (B7)
 follow.
 
 1. **Layout (2D).** The coast distance of the interim island (above).

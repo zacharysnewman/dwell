@@ -54,7 +54,8 @@
     }
   ],
   "decorations": ["meadow_grass"],
-  "placements": [],
+  "vegetation": 1,
+  "placements": ["pine_groves"],
   "water": "dwell:water",
   "waterLook": {
     "scatter": "#5a7a40",
