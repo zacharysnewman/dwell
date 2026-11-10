@@ -25,6 +25,9 @@ pub struct Chopping {
     pub cuts: HashMap<[i32; 3], Cut>,
     /// The swing under way, if any.
     pub run: Option<SwingRun>,
+    /// The cells the swing under way clears on its path (the tool's `clears`; the server breaks
+    /// them), shown when the head reaches the first of them (`SwingRun::take_clear`).
+    pub cleared: Vec<[i32; 3]>,
 }
 
 /// What a swing's path met (the client's prediction of the server's sweep).
@@ -52,6 +55,10 @@ pub struct SwingRun {
     pub hit: Option<Impact>,
     /// The impact's effects have been shown.
     pub impacted: bool,
+    /// The arc step it first goes through a cell it clears (none: it clears nothing), and whether
+    /// that has been shown (a rustle and falling leaves: not a hit, so no hit-stop, no bounce).
+    pub clear_step: Option<u32>,
+    pub cleared_shown: bool,
 }
 
 /// Smooth 0..1.
@@ -68,7 +75,21 @@ impl SwingRun {
             start_ms,
             hit,
             impacted: false,
+            clear_step: None,
+            cleared_shown: false,
         }
+    }
+
+    /// Whether the moment it reaches the first cell it clears has come (true once).
+    pub fn take_clear(&mut self, now_ms: f64) -> bool {
+        let Some(step) = self.clear_step else {
+            return false;
+        };
+        if self.cleared_shown || self.elapsed(now_ms) < self.tool.swing.time_of_step(step) {
+            return false;
+        }
+        self.cleared_shown = true;
+        true
     }
 
     /// Seconds since it started.
@@ -211,6 +232,15 @@ impl Chopping {
                 vertical: self.vertical,
             })
         })
+    }
+
+    /// The swing just started clears `cleared` on its path (the sweep's, in the head's order).
+    pub fn set_cleared(&mut self, cleared: &[dwell_world::swing::Cleared]) {
+        self.cleared = cleared.iter().map(|c| c.cell).collect();
+        if let Some(run) = &mut self.run {
+            run.clear_step = cleared.iter().map(|c| c.step).min();
+            run.cleared_shown = false;
+        }
     }
 
     pub fn apply(&mut self, m: CutsMessage) {
@@ -544,5 +574,41 @@ mod tests {
             Some(Some(ChopAction::Sweep { vertical: true, .. }))
         ));
         assert!(c.run.unwrap().vertical);
+    }
+
+    #[test]
+    fn a_swing_through_only_leaves_rustles_once_and_follows_through_with_no_bounce() {
+        // face-a-only: timing of the swing's run, no world.
+        assert!(axe().clears_block("dwell:leaves") && axe().clears_block("dwell:snowy_leaves"));
+        assert!(axe().swing.rustle.is_some(), "a rustle, not the clank");
+        let mut c = Chopping {
+            on: true,
+            sweep: true,
+            ..Default::default()
+        };
+        c.start(axe(), [1.0, 0.0, 0.0], None, 0.0).unwrap();
+        let cells = [
+            dwell_world::swing::Cleared {
+                cell: [2, 0, 0],
+                step: 4,
+            },
+            dwell_world::swing::Cleared {
+                cell: [2, 1, 0],
+                step: 6,
+            },
+        ];
+        c.set_cleared(&cells);
+        assert_eq!(c.cleared, vec![[2, 0, 0], [2, 1, 0]]);
+        let mut run = c.run.unwrap();
+        let at = axe().swing.time_of_step(4) * 1000.0;
+        assert!(!run.take_clear(at - 1.0), "not before the head gets there");
+        assert!(run.take_clear(at + 1.0));
+        assert!(!run.take_clear(at + 2.0), "once");
+        // Not a hit: no impact (no hit-stop, no clank), a miss's follow-through.
+        assert_eq!(run.take_impact(at + 500.0), None);
+        assert_eq!(run.length(), axe().swing.miss_length());
+        // A swing that clears nothing has no clear moment.
+        let mut plain = SwingRun::new(axe(), false, 0.0, Some(impact(5, true)));
+        assert!(!plain.take_clear(1e6));
     }
 }

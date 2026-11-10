@@ -230,6 +230,10 @@ export const SOUND_DATA: SoundData = {
     {
       "name": "axe_swish",
       "sound": "dwell:axe_swish"
+    },
+    {
+      "name": "axe_rustle",
+      "sound": "dwell:axe_rustle"
     }
   ],
   "sets": {
@@ -4916,6 +4920,63 @@ export const SOUND_DATA: SoundData = {
           "env": {
             "attack": 0.0005,
             "decay": 0.015
+          }
+        }
+      ]
+    },
+    "dwell:axe_rustle": {
+      "gain": 0.6,
+      "reverb": 0.06,
+      "variation": {
+        "pitch": 2,
+        "gain": 1,
+        "cutoff": 0.15,
+        "time": 0.15
+      },
+      "layers": [
+        {
+          "source": "noise",
+          "color": "pink",
+          "gain": 0.45,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 2400,
+              "q": 0.7
+            }
+          ],
+          "env": {
+            "attack": 0.01,
+            "hold": 0.05,
+            "decay": 0.22
+          }
+        },
+        {
+          "source": "noise",
+          "color": "white",
+          "gain": 0.2,
+          "filters": [
+            {
+              "type": "highpass",
+              "freq": 3500,
+              "q": 0.6
+            }
+          ],
+          "env": {
+            "attack": 0.002,
+            "decay": 0.03
+          },
+          "grains": {
+            "count": [
+              6,
+              11
+            ],
+            "spread": 0.3,
+            "gain": [
+              0.3,
+              1
+            ],
+            "pitch": 4
           }
         }
       ]

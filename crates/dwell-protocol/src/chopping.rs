@@ -42,6 +42,10 @@ pub struct SwingDef {
     /// Sound events (shared/sounds): the arc's swish, a bounce off what is not a wood.
     pub swish: Option<&'static str>,
     pub bounce: Option<&'static str>,
+    /// The sound event of a swing that cleared blocks on its way (its `clears`), and the leaves
+    /// each cleared cell scatters (the client's particles).
+    pub rustle: Option<&'static str>,
+    pub rustle_leaves: u32,
 }
 
 impl SwingDef {
@@ -128,9 +132,16 @@ pub struct ToolDef {
     pub held_vertical: Option<&'static str>,
     /// The swing: its timing, its arc, its feel.
     pub swing: SwingDef,
+    /// The blocks (by name) its swing goes through, breaking each it touches (owner, 2026-11-09:
+    /// the axe clears leaves); never a wood.
+    pub clears: &'static [&'static str],
 }
 
 impl ToolDef {
+    /// Whether its swing clears the block of this name on its way.
+    pub fn clears_block(&self, block: &str) -> bool {
+        self.clears.contains(&block)
+    }
     /// The held item for the swing's plane.
     pub fn held_for(&self, vertical: bool) -> Option<&'static str> {
         if vertical {

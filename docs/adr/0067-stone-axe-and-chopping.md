@@ -248,6 +248,37 @@ weighty first-person physical swings (the mechanics only). Built:
   down: the ground's green bounce still tints it olive-brown; a terrain-lighting matter, not the
   carve).
 
+## Built in 0.50.62: the axe clears leaves
+
+Owner, 2026-11-09: "the axe should be able to clear leaves too."
+
+- **Data:** a tool's `clears` (`shared/tools/tools.json`): block names its swing goes through and
+  breaks; the stone axe's are `dwell:leaves` and `dwell:snowy_leaves`. Validated by
+  `shared/tools/gen.mjs` (each a block of the registry, listed once, never a wood), emitted as
+  `ToolDef::clears` (`clears_block`). The swing's `rustle` (sound event `axe_rustle`,
+  `shared/sounds/dwell.json`) and `rustleLeaves` (leaves each cleared cell scatters, 5). A test adds a
+  fixture tool clearing `dwell:tall_grass` by data alone; bad entries fail naming them.
+- **The sweep** (`dwell_world::swing::sweep`, now returning `Sweep { cleared, hit }`): the head
+  passes through a cell of the arc's `clears` as through a plant, recording each once with the
+  step it was first met at, until it reaches another solid (`hit`: a wood, chopped as before, or
+  anything else, a bounce) or the arc ends. Tests (both faces): through a leaf wall to the trunk
+  behind; only leaves on the path, no hit; a fixture arc clearing stone by data alone.
+- **The server** (`chopping.rs` `clear_cells`): the cleared cells are broken in one edit
+  (`edit_writes_all`, `VoxelModificationReason::Edit`; flooded leaves leave their water), refused as
+  a swing is (a player who can't edit; in a mode that uses items, not holding the tool, or a block
+  whose `breakWith` the tool's kind doesn't meet), what they leave unsupported falls (`fell`), and
+  where blocks are not unlimited each drops its block's `drops` (`drop_block`: sticks half the
+  time); then the wood behind is chopped. Tests (both faces, `tests/chopping.rs`): a swing through
+  leaves clears them and still cuts the trunk (red before: the leaves took the hit); through only
+  leaves clears them; stone still stops the head with the leaves behind it untouched; cleared leaves
+  drop sticks in adventure, nothing in creative.
+- **The client** predicts the same sweep, so the hit-stop is on the wood, not the leaves; a swing
+  that only clears is a miss (its follow-through, no clank). When the head reaches the first
+  cleared cell (`SwingRun::take_clear`, tested) it plays the rustle once and drops `rustleLeaves`
+  falling leaves from each cleared cell (`Chips::fall_leaves`, in the leaf colour of the wood whose
+  `leaves.block` it is, else the first wood's). The cells themselves go when the server's edit
+  arrives.
+
 **Next:** cuts on bodies (chopping a felled piece before it settles), a give command, stamina; the
 falling trunk's fling onto its chopper fixed at its root (BUGS.md #52: 0.50.37's `max_body_kick`
 cap was removed in 0.50.39 on the owner's word, "we shouldn't be capping player kick like that").

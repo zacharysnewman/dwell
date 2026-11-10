@@ -616,3 +616,101 @@ fn the_held_axe_reaches_the_others_that_understand_it_by_name() {
     say_held(&mut fx, 1, "dwell:stone", false);
     assert!(held_tools_to(&mut fx, 2).iter().any(|h| h.tool.is_empty()));
 }
+
+// The axe clears leaves (owner, 2026-11-09: "the axe should be able to clear leaves too"): its
+// `clears` (shared/tools) let the swing's head through, breaking every such cell it touches, on to
+// the wood behind (chopped) or another solid (a bounce).
+
+/// A wall of leaves at face-local x = `x`, z −3..=3, rows BASE..BASE + 8; its cells.
+fn leaf_wall(fx: &mut Fixture, f: FaceFrame, x: i32) -> Vec<[i32; 3]> {
+    let leaves = f.state(require("dwell:leaves"));
+    let mut cells = Vec::new();
+    for z in -3..=3 {
+        for r in BASE..BASE + 8 {
+            let [wx, wy, wz] = f.cell([x, r, z]);
+            fx.server.world().set_voxel(wx, wy, wz, leaves);
+            cells.push([x, r, z]);
+        }
+    }
+    fx.server.step();
+    cells
+}
+
+fn cleared(fx: &mut Fixture, f: FaceFrame, cells: &[[i32; 3]]) -> usize {
+    cells
+        .iter()
+        .filter(|&&c| cell_is(fx, f, c) == M.air)
+        .count()
+}
+
+fn sticks(fx: &Fixture) -> u32 {
+    fx.server
+        .loose_items()
+        .iter()
+        .filter(|it| it.stack.item == "dwell:stick")
+        .map(|it| u32::from(it.stack.count))
+        .sum()
+}
+
+dwell_world::both_faces!(
+    fn a_swing_through_leaves_clears_them_and_still_chops_the_trunk_behind(f: FaceFrame) {
+        // Red before: the leaves in front took the hit (a bounce) and the trunk was not cut.
+        let mut fx = near(f, "adventure");
+        let wall = leaf_wall(&mut fx, f, 2);
+        sweep(&mut fx, f, [1.0, 0.0, 0.0], false);
+        let n = cleared(&mut fx, f, &wall);
+        assert!(n >= 2, "the leaves on the arc are cleared: {n}");
+        assert!(n < wall.len(), "only those the arc touched: {n}");
+        assert!(!cut_rows(&fx, f).is_empty(), "and the trunk behind is cut");
+    }
+);
+
+dwell_world::both_faces!(
+    fn a_swing_through_only_leaves_clears_them_and_a_swing_at_stone_still_bounces(f: FaceFrame) {
+        let mut fx = near(f, "creative");
+        // Looking away from the trunk, through a wall of leaves at x = 0, nothing behind.
+        let wall = leaf_wall(&mut fx, f, 0);
+        sweep(&mut fx, f, [-1.0, 0.0, 0.0], false);
+        assert!(cleared(&mut fx, f, &wall) >= 2, "the leaves are cleared");
+        assert!(cut_rows(&fx, f).is_empty());
+        // Stone stops the head and stays (a bounce): the leaves behind it are untouched.
+        let mut fx = near(f, "creative");
+        let wall = leaf_wall(&mut fx, f, -1);
+        let stone = f.state(require("dwell:stone"));
+        for z in -3..=3 {
+            for r in BASE..BASE + 8 {
+                let [x, y, wz] = f.cell([0, r, z]);
+                fx.server.world().set_voxel(x, y, wz, stone);
+            }
+        }
+        fx.server.step();
+        sweep(&mut fx, f, [-1.0, 0.0, 0.0], false);
+        assert_eq!(cleared(&mut fx, f, &wall), 0, "behind the stone");
+        assert_eq!(
+            cell_is(&mut fx, f, [0, AT, 0]),
+            stone,
+            "a bounce: no effect"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    fn cleared_leaves_drop_their_items_in_adventure_not_in_creative(f: FaceFrame) {
+        for (mode, drops) in [("adventure", true), ("creative", false)] {
+            let mut fx = near(f, mode);
+            let wall = leaf_wall(&mut fx, f, 0);
+            // A level and a vertical swing and a level one lower: many leaves (sticks half the time).
+            sweep(&mut fx, f, [-1.0, 0.0, 0.0], false);
+            sweep(&mut fx, f, [-1.0, 0.0, 0.0], true);
+            sweep(&mut fx, f, [-1.0, -0.6, 0.0], false);
+            let n = cleared(&mut fx, f, &wall) as u32;
+            assert!(n >= 6, "{mode}: {n} cleared");
+            let s = sticks(&fx);
+            if drops {
+                assert!((1..=n).contains(&s), "{mode}: {s} sticks from {n} leaves");
+            } else {
+                assert!(fx.server.loose_items().is_empty(), "{mode}: no drops");
+            }
+        }
+    }
+);

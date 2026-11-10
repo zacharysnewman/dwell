@@ -5,7 +5,7 @@ use crate::inventory::{DropChoice, DropRule};
 
 /// The tools, by item name.
 pub static TOOLS: &[ToolDef] = &[
-    ToolDef { name: "dwell:stone_axe", kind: ToolKind::Axe, held: Some("stone_axe"), swing_seconds: 0.45, bite_m: 0.12, bind_m: 0.05, across: 1.0, along: 0.15, sharpness: 2.0, held_vertical: Some("stone_axe_vertical"), swing: SwingDef { windup_s: 0.12, active_s: 0.14, hit_stop_s: 0.08, recover_hit_s: 0.22, recover_miss_s: 0.36, reach_m: 2.2, arc_deg: 110.0, samples: 12, kick_deg: 1.6, stamina_cost: 8.0, swish: Some("axe_swish"), bounce: Some("axe_clank") } },
+    ToolDef { name: "dwell:stone_axe", kind: ToolKind::Axe, held: Some("stone_axe"), swing_seconds: 0.45, bite_m: 0.12, bind_m: 0.05, across: 1.0, along: 0.15, sharpness: 2.0, held_vertical: Some("stone_axe_vertical"), swing: SwingDef { windup_s: 0.12, active_s: 0.14, hit_stop_s: 0.08, recover_hit_s: 0.22, recover_miss_s: 0.36, reach_m: 2.2, arc_deg: 110.0, samples: 12, kick_deg: 1.6, stamina_cost: 8.0, swish: Some("axe_swish"), bounce: Some("axe_clank"), rustle: Some("axe_rustle"), rustle_leaves: 5 }, clears: &["dwell:leaves", "dwell:snowy_leaves"] },
 ];
 
 /// The blocks an axe cuts, by block name.

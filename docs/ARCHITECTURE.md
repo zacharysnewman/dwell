@@ -2676,9 +2676,14 @@ recoveries after a hit and a miss, reach, arc, samples, the camera's kick, a sta
 until stamina exists, its swish and bounce sound events) drives both sides. A swing goes at any
 time; its path is what hits: `dwell_world::swing::sweep` turns the look through the arc
 face-locally (a level swing from the screen's right to its left, `FaceFrame::handed`; a vertical
-one top to bottom) and the first solid cell any step's ray meets within the reach is hit. The
-client sends the swing's start (`ChopAction::Sweep`: the look, the plane) and the server sweeps the
-same arc from its own eye, cutting a wood it meets and spending the swing on anything else. The
+one top to bottom) and the first solid cell any step's ray meets within the reach is hit, but
+**[built, 0.50.62]** the head goes through the blocks of the tool's `clears` (the stone axe:
+leaves and snowy leaves; validated names), recording each it touches (`Sweep { cleared, hit }`).
+The client sends the swing's start (`ChopAction::Sweep`: the look, the plane) and the server sweeps the
+same arc from its own eye, breaking the cleared cells in one `Edit` modification (what they leave
+unsupported falls; in a mode that uses items each drops its block's `drops`), then cutting a wood
+it meets and spending the swing on anything else. A swing that only clears is a miss with a rustle
+(the swing's `rustle` event) and `rustleLeaves` falling leaves per cleared cell, not a bounce. The
 client predicts the same sweep for the feel (`chop.rs` `SwingRun`: the arms' clip driven through
 the hit-stop and back, `Animator::drive_action`; the camera's wind-up, sweep and jolt; at the
 impact the chips, the hit's sound by how far the wood is cut (the wood's `sounds`), leaves shaken

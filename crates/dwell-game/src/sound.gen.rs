@@ -42,10 +42,11 @@ pub enum SoundKind {
     ChopCreak = 35,
     AxeClank = 36,
     AxeSwish = 37,
+    AxeRustle = 38,
 }
 
 impl SoundKind {
-    pub const ALL: [SoundKind; 38] = [
+    pub const ALL: [SoundKind; 39] = [
         SoundKind::Step,
         SoundKind::Climb,
         SoundKind::Land,
@@ -84,6 +85,7 @@ impl SoundKind {
         SoundKind::ChopCreak,
         SoundKind::AxeClank,
         SoundKind::AxeSwish,
+        SoundKind::AxeRustle,
     ];
 
     /// The event's name in the data.
@@ -127,6 +129,7 @@ impl SoundKind {
             SoundKind::ChopCreak => "chop_creak",
             SoundKind::AxeClank => "axe_clank",
             SoundKind::AxeSwish => "axe_swish",
+            SoundKind::AxeRustle => "axe_rustle",
         }
     }
 
@@ -171,6 +174,7 @@ impl SoundKind {
             SoundKind::ChopCreak => None,
             SoundKind::AxeClank => None,
             SoundKind::AxeSwish => None,
+            SoundKind::AxeRustle => None,
         }
     }
 }

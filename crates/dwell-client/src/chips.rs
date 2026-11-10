@@ -158,6 +158,31 @@ impl Chips {
         }
     }
 
+    /// `count` leaves (a CPU adapter: a third) falling from the cleared cell `cell` (world), drawn
+    /// in wood `wood`'s leaf colour ([`leaf_colour_of`]).
+    pub fn fall_leaves(&mut self, wood: usize, cell: [i32; 3], count: u32, now_s: f64, seed: u32) {
+        let n = if self.cpu { count.div_ceil(3) } else { count };
+        let f = FaceFrame::at_row(cell[1]);
+        let l = f.cell(cell);
+        for k in 0..n {
+            // From somewhere in the cell, scattered out a little.
+            let at = f.point([
+                f64::from(l[0]) + hash(seed, 700 + k),
+                m_of_row(l[1]) + CELL_H * hash(seed, 800 + k),
+                f64::from(l[2]) + hash(seed, 900 + k),
+            ]);
+            let r: [f64; 3] = std::array::from_fn(|j| hash(seed, 1000 + k * 3 + j as u32) - 0.5);
+            self.list.push(Chip {
+                at,
+                vel: f.vector([1.2 * r[0], 0.6 * r[1].abs(), 1.2 * r[2]]),
+                start_s: now_s,
+                wood,
+                seed: seed ^ k.wrapping_mul(0x1656_67b1),
+                leaf: true,
+            });
+        }
+    }
+
     pub fn prune(&mut self, now_s: f64) {
         self.list
             .retain(|c| now_s - c.start_s < if c.leaf { LEAF_SECONDS } else { CHIP_SECONDS });
@@ -210,6 +235,15 @@ impl Chips {
             })
             .collect()
     }
+}
+
+/// The wood whose leaf colour a cleared block's falling leaves take: the wood whose `leaves.block`
+/// it is, else the first.
+pub fn leaf_colour_of(block: &str) -> usize {
+    WOODS
+        .iter()
+        .position(|w| w.leaves.block == Some(block))
+        .unwrap_or(0)
 }
 
 /// The leaf cells (world) a hit at world cell `hit` of wood `wood` shakes leaves from: the wood's

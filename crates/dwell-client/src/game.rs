@@ -2416,6 +2416,9 @@ impl<S: Scene> Game<S> {
         }
         let t = run.elapsed(now_ms);
         self.bodies.drive_arms(Some(run.clip_time(t)));
+        if run.take_clear(now_ms) {
+            self.swing_clear(run.tool, now_ms);
+        }
         if let Some(hit) = run.take_impact(now_ms) {
             self.swing_impact(run.tool, hit, now_ms);
         }
@@ -2469,6 +2472,29 @@ impl<S: Scene> Game<S> {
                     self.sounds.push(SoundEvent::new(k, block, 1.0, at));
                 }
             }
+        }
+    }
+
+    /// What a swing going through the cells it clears (its tool's `clears`: leaves) shows: the
+    /// tool's rustle once, at the first, and its `rustleLeaves` falling from each (the server
+    /// breaks them; no hit-stop, no bounce).
+    fn swing_clear(&mut self, tool: &'static dwell_protocol::chopping::ToolDef, now_ms: f64) {
+        let cells = std::mem::take(&mut self.chop.cleared);
+        let Some(&first) = cells.first() else {
+            return;
+        };
+        let event = |n: &str| SoundKind::ALL.into_iter().find(|k| k.name() == n);
+        let block = self.voxel(first[0], first[1], first[2]);
+        if let Some(k) = tool.swing.rustle.and_then(event) {
+            let at = dwell_world::centre_of_cell(first);
+            self.sounds.push(SoundEvent::new(k, block, 1.0, Some(at)));
+        }
+        for (i, &c) in cells.iter().enumerate() {
+            let m = self.voxel(c[0], c[1], c[2]);
+            let colour = crate::chips::leaf_colour_of(dwell_blocks::block_of(m).name);
+            let seed = (now_ms as u32) ^ (i as u32).wrapping_mul(0x9e37_79b9);
+            self.chips
+                .fall_leaves(colour, c, tool.swing.rustle_leaves, now_ms / 1000.0, seed);
         }
     }
 
@@ -3696,7 +3722,8 @@ impl<S: Scene> Game<S> {
         let look = self.view_dir;
         let arc = dwell_world::swing::Arc::of(tool);
         let store = self.streamer.store_mut();
-        let hit = dwell_world::swing::sweep(store, eye, look, self.chop.vertical, &arc).map(|h| {
+        let swept = dwell_world::swing::sweep(store, eye, look, self.chop.vertical, &arc);
+        let hit = swept.hit.map(|h| {
             let m = store.get_voxel(h.hit.cell[0], h.hit.cell[1], h.hit.cell[2]);
             crate::chop::Impact {
                 cell: h.hit.cell,
@@ -3709,6 +3736,7 @@ impl<S: Scene> Game<S> {
         let Some(message) = self.chop.start(tool, look, hit, now_ms) else {
             return false;
         };
+        self.chop.set_cleared(&swept.cleared);
         self.bodies.swing_arms(if self.chop.vertical {
             dwell_characters::animator::Swing::ChopVertical
         } else {
