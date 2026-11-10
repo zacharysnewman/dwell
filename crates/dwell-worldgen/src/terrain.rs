@@ -478,6 +478,11 @@ pub struct BiomeSet {
 impl BiomeSet {
     /// `list` (the world's default first) over `map`.
     pub fn new(list: &[Biome], map: &WorldMap, world_seed: u64) -> Self {
+        Self::with_map(list, map, world_seed, BIOME_MAP)
+    }
+
+    /// [`BiomeSet::new`] with the biome map's geography `params` (`terrain.json` `biomeMap`).
+    pub fn with_map(list: &[Biome], map: &WorldMap, world_seed: u64, params: BiomeMap) -> Self {
         assert!(!list.is_empty(), "a world has at least one biome");
         let mut palettes = Vec::new();
         let mut first = Vec::new();
@@ -485,13 +490,19 @@ impl BiomeSet {
             first.push(palettes.len() as u16);
             palettes.extend(b.bands.iter().map(Bands::of));
         }
-        let field = (list.len() > 1).then(|| crate::biomemap::BiomeField::new(map, world_seed));
+        let field = (list.len() > 1).then(|| crate::biomemap::BiomeField::with_params(map, world_seed, params));
         Self {
             list: list.to_vec(),
             palettes,
             first,
             field,
         }
+    }
+
+    /// The geography at (x, z) over the world height field's `elevation` m (None with one biome:
+    /// no map is built).
+    pub fn geography(&self, x: i64, z: i64, elevation: f64) -> Option<crate::biomemap::Geography> {
+        self.field.as_ref().map(|f| f.geography(x, z, elevation))
     }
 
     /// The biomes' weights at (x, z) over the world height field's `elevation` m.
@@ -723,8 +734,14 @@ impl TerrainGenerator {
 
     /// The generator with `biomes` (the first the world's default, taking a column no biome
     /// fits) in place of the build's, weighted per column by the biome map (ADR 0074 B2).
-    pub fn with_biomes(mut self, biomes: &[Biome]) -> Self {
-        let set = BiomeSet::new(biomes, &self.map, self.world_seed);
+    pub fn with_biomes(self, biomes: &[Biome]) -> Self {
+        self.with_biomes_on(biomes, BIOME_MAP)
+    }
+
+    /// [`TerrainGenerator::with_biomes`] with the biome map's geography `params` in place of the
+    /// build's (`terrain.json` `biomeMap`; Chisel's edits).
+    pub fn with_biomes_on(mut self, biomes: &[Biome], params: BiomeMap) -> Self {
+        let set = BiomeSet::with_map(biomes, &self.map, self.world_seed, params);
         self.ramps = Arc::new(RampPieces::resolve(&set.palettes));
         self.biomes = Arc::new(set);
         self.cache_id = next_cache_id();
@@ -741,6 +758,12 @@ impl TerrainGenerator {
     pub fn biome_mix(&self, x: i64, z: i64) -> crate::biomemap::Mix {
         let (base, _, _) = self.map.height_at(x as f64, z as f64);
         self.biomes.mix(x, z, base)
+    }
+
+    /// The geography at face-local (x, z) the biome map reads (None with one biome).
+    pub fn biome_geography(&self, x: i64, z: i64) -> Option<crate::biomemap::Geography> {
+        let (base, _, _) = self.map.height_at(x as f64, z as f64);
+        self.biomes.geography(x, z, base)
     }
 
     /// A column's surface palette.

@@ -2,7 +2,7 @@
   "$comment": "A test fixture biome (ADR 0074 B2), never on a world's map: a dry, warm place with low dunes, rock and mesas higher up, and frozen tundra on the heights. Tests add it by data alone (FIXTURE_BIOMES, TerrainGenerator::with_biomes). Prototype content.",
   "name": "test:desert",
   "where": {
-    "weight": 100,
+    "weight": 1,
     "temperature": { "min": 0.4, "blend": 0.12 },
     "wetness": { "max": 0.35, "blend": 0.15 }
   },
