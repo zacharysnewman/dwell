@@ -219,6 +219,16 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 61. Chickens drawn pure white
+
+Owner, 2026-11-10: "Chickens are showing up pure white." The chicken's (and the kitty's) source mesh
+had its own white vertex colours, so the importer's palette colours went into a second layer
+(`COLOR_1`) and the game, which reads `COLOR_0`, drew them white. Fixed in 0.51.22: the two GLBs'
+colours moved to `COLOR_0`, and `shared/models/blender_import.py` removes a mesh's own colour layers
+before adding ours. Test: `every_model_is_coloured_not_plain_white` (dwell-models; red on the old
+GLBs: "kitty: one colour only").
+
+
 ### 59. On a slow device the loading screen waited its whole 20 s timeout (fixed in 0.51.8)
 
 Found 2026-11-10 from CI: `e2e/join.spec.ts:55` and `:113` ran into their 30 s test timeout on most main runs
