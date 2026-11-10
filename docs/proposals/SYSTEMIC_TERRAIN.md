@@ -125,3 +125,11 @@ wetland, coastal cliffs), each with a `label` and `description`, validated like 
 Chisel's "Add from preset", never in the default world. They use today's blocks; T2's rock types and
 T3's soil will give the mesa, badlands and tundra their own materials.
 
+First look (Chisel, seed 7 and 0, 16 km, the default, desert, tundra, forest, steppe, beach, wetland and
+boreal): the desert takes the warm coast's lowlands, the tundra the high cold ground, the beach a thin
+coastal strip, as their `where` says. With `rainShare` 0 the wetness is the rivers' alone (the land's
+mean 0.1), so the wet presets (forest, rainforest, wetland) only follow river corridors and the dry ones
+cover most land; raising `rainShare` lets the rain shadow spread them. In the blocks view the grass
+presets (meadow, steppe, forest) look alike: their differences are relief, banks and rules, not blocks.
+The smoothed rainfall overlay reads as broad wet and dry regions, no per-slope striping.
+
