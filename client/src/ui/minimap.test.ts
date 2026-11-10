@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MAP } from './map.gen';
+import { World } from '../protocol/constants.gen';
 import {
   addExplored,
   minimapSize,
@@ -251,14 +252,14 @@ const memoryTiles = () => {
 };
 
 describe('the zoom levels (owner, 2026-11-09)', () => {
-  it('are at most five, the closest the minimap area at 1 m a cell, the widest the island, geometric between', () => {
+  it('are at most five, the closest the minimap area at 1 m a cell, the widest the world disc, geometric between', () => {
     expect(LEVELS.length).toBeGreaterThanOrEqual(2);
     expect(LEVELS.length).toBeLessThanOrEqual(5);
     const first = LEVELS[0];
     const last = LEVELS[LEVELS.length - 1];
     expect(first).toEqual({ cellM: 1, spanM: 2 * MAP.minimap.radiusM });
-    // shared/protocol/constants.json's islandRadius.
-    expect(last?.spanM).toBe(50_000);
+    // shared/protocol/constants.json's worldRadius: the whole world, its sea too.
+    expect(last?.spanM).toBe(2 * World.worldRadius);
     const ratios = LEVELS.slice(1).map((l, i) => l.spanM / (LEVELS[i]?.spanM ?? 1));
     for (const r of ratios) expect(r).toBeCloseTo(ratios[0] ?? 0, 2);
     // Each level its own, coarser cell.
@@ -281,6 +282,84 @@ describe('the zoom levels (owner, 2026-11-09)', () => {
     expect(w.add(-250)).toBe(-2);
     w.reset();
     expect(w.add(99)).toBe(0);
+  });
+});
+
+/** The tiles of side `span` (m) that intersect the world disc and the square [x0, x1] × [z0, z1]. */
+const discTiles = (span: number, x0: number, x1: number, z0: number, z1: number): string[] => {
+  const r = World.worldRadius;
+  const out: string[] = [];
+  for (let k = Math.floor(z0 / span); k <= Math.floor(z1 / span); k++) {
+    for (let i = Math.floor(x0 / span); i <= Math.floor(x1 / span); i++) {
+      const nx = Math.max(i * span, Math.min(0, (i + 1) * span));
+      const nz = Math.max(k * span, Math.min(0, (k + 1) * span));
+      if (nx * nx + nz * nz <= r * r) out.push(`${String(i)},${String(k)}`);
+    }
+  }
+  return out.sort();
+};
+
+describe('the widest level shows the whole world (owner, 2026-11-09: "Including all the water")', () => {
+  // A desktop's wide panel, a phone upright and sideways, a square.
+  for (const [w, h] of [
+    [1536, 691],
+    [374, 707],
+    [828, 358],
+    [600, 600],
+  ] as const) {
+    it(`a ${String(w)} × ${String(h)} panel holds the whole disc, centred`, () => {
+      const state = new BigMapState(
+        () => [0, 31_000, -12_000],
+        () => [w, h],
+      );
+      state.openAt();
+      while (state.canZoom(-1)) state.zoomStep(-1);
+      const v = state.view;
+      expect(v?.level).toBe(LEVELS.length - 1);
+      if (!v) return;
+      const r = World.worldRadius;
+      for (const [x, z] of [
+        [r, 0],
+        [-r, 0],
+        [0, r],
+        [0, -r],
+      ] as const) {
+        const [sx, sy] = toScreen(v, x, z);
+        expect(Math.abs(sx)).toBeLessThanOrEqual(w / 2 + 1e-6);
+        expect(Math.abs(sy)).toBeLessThanOrEqual(h / 2 + 1e-6);
+      }
+      // And fills the short side: the disc's diameter is the short side.
+      expect(2 * r * v.pxPerM).toBeCloseTo(Math.min(w, h), 6);
+      // Its view asks for every tile on the disc it shows, the sea's too.
+      const span = 32 * (LEVELS[v.level]?.cellM ?? 1);
+      const asked = new RevealCache(32)
+        .tilesFor(v, w, h)
+        .map(([, , i, k]) => `${String(i)},${String(k)}`)
+        .sort();
+      expect(asked).toEqual(discTiles(span, -r, r, -r, r));
+    });
+  }
+
+  it("the background builds every tile of the widest level on the disc, and no level's square has holes in the world", () => {
+    const cache = new RevealCache(32, 2, 1000, 1);
+    // Out at sea, beyond the island's coast but well inside the world.
+    const [x, z] = [33_000, -9_000];
+    const list = cache.backgroundFor(1, x, z);
+    const r = World.worldRadius;
+    for (let l = 0; l < LEVELS.length; l++) {
+      const { cellM, spanM } = LEVELS[l] ?? { cellM: 1, spanM: 1 };
+      const span = 32 * cellM;
+      const got = list
+        .filter(([c]) => c === cellM)
+        .map(([, , i, k]) => `${String(i)},${String(k)}`)
+        .sort();
+      const half = (spanM * MAP.revealed.prebuildSpans) / 2;
+      const want =
+        l === LEVELS.length - 1
+          ? discTiles(span, -r, r, -r, r)
+          : discTiles(span, x - half, x + half, z - half, z + half);
+      expect(got).toEqual(want);
+    }
   });
 });
 
@@ -349,8 +428,9 @@ describe("the big map's tiles", () => {
     expect(taken).toBeLessThanOrEqual(cache.budgetMs);
     expect(cache.inFlight).toBeLessThanOrEqual(2);
     // The first tiles asked for are the view centre's.
-    const centre = Math.floor(1000 / (32 * 8));
-    expect(client.asked.slice(40, 42)).toContain(RevealCache.key(8, 0, centre, centre));
+    const c2 = LEVELS[2]?.cellM ?? 1;
+    const centre = Math.floor(1000 / (32 * c2));
+    expect(client.asked.slice(40, 42)).toContain(RevealCache.key(c2, 0, centre, centre));
     for (let f = 0; f < 30; f++) {
       const t0 = clock;
       const n = cache.pump(client, v, 800, 600, () => clock++);
@@ -360,16 +440,16 @@ describe("the big map's tiles", () => {
     }
   });
 
-  it('the background builds each level round the player, the widest the whole island, a few at a time', () => {
+  it('the background builds each level round the player, the widest the whole world disc, a few at a time', () => {
     const cache = new RevealCache(32, 2, 1000, 1);
     const list = cache.backgroundFor(0, 300, -200);
     const by = new Map<number, number>();
     for (const [c] of list) by.set(c, (by.get(c) ?? 0) + 1);
     expect([...by.keys()].sort((a, b) => a - b)).toEqual(LEVELS.map((l) => l.cellM));
-    // The widest level: every tile touching the island, wherever the player stands.
+    // The widest level: every tile touching the world disc, wherever the player stands.
     const widest = LEVELS[LEVELS.length - 1]?.cellM ?? 1;
     const span = 32 * widest;
-    const r = 25_000;
+    const r = World.worldRadius;
     let island = 0;
     for (let k = -Math.ceil(r / span) - 1; k <= Math.ceil(r / span); k++) {
       for (let i = -Math.ceil(r / span) - 1; i <= Math.ceil(r / span); i++) {
@@ -529,12 +609,12 @@ describe('the big map panel (owner, 2026-11-09)', () => {
     expect(s.canZoom(1)).toBe(false);
     expect(s.canZoom(-1)).toBe(true);
     expect(s.zoomStep(1)).toBe(false);
-    // Out a level at a time, to the whole island.
+    // Out a level at a time, to the whole world disc.
     const seen = [0];
     while (s.zoomStep(-1)) seen.push(s.view?.level ?? -1);
     expect(seen).toEqual(LEVELS.map((_, l) => l));
-    expect((s.view?.pxPerM ?? 0) * 50_000).toBeCloseTo(600, 6);
-    // The widest is centred on the island, the whole of it in view.
+    expect((s.view?.pxPerM ?? 0) * 2 * World.worldRadius).toBeCloseTo(600, 6);
+    // The widest is centred on the world, the whole of it in view.
     expect(s.view).toMatchObject({ cx: 0, cz: 0 });
     expect(s.canZoom(-1)).toBe(false);
     // A big wheel spin is a few levels at most, never past the ends.

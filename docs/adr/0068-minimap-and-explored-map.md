@@ -173,6 +173,29 @@ lightly tinted by height. So:
   same tinted look (off: plain block colours). Minecraft's per-pixel stair-step shading is left for
   later (docs/FUTURE.md).
 
+### The widest level is the whole world, its sea included (0.50.63; owner, 2026-11-09)
+
+"The full zoom doesn't show the whole world surface" … "Including all the water". 0.50.61's widest
+level spanned the island's *mean* diameter (`islandRadius` × 2, 50 km), but the island's coast reaches
+well past it (the radius noise, the warp and the coast detail add up to ~10 km), so the island ran off
+the panel; and its tiles were built only inside the 25 km circle, so the drawn ground ended in square
+steps against the fog where the sea should go on. So:
+
+- **The widest span is the world disc's** (`worldRadius` × 2, 100 km, `shared/protocol/constants.json`),
+  computed by `shared/ui/gen.mjs` (`levelSpans`, `WORLD_RADIUS_M`), across the panel's **short side**
+  (`levelPxPerM`), so the whole disc fits a wide desktop panel and a phone either way up; centred on
+  the world. The levels between stay geometric (677 m, 3.6 km, 18.9 km).
+- **Tiles are clipped to the world disc, not the island** (`RevealCache.onWorld`): the sea's tiles are
+  built like the land's, at every level, so no level's view or background square has holes inside the
+  world. Off the disc the panel shows the fog colour (`bigMap.fogColor`), the world's edge reading as
+  a dark rim round the round sea.
+- **Coarser cells to keep the build small** (`bigMap.levels`, 1, 2, **16, 64, 256** m, from 1, 2, 8, 32,
+  128): the widest level at 256 m covers the whole disc in ~150 tiles (8 km a tile), as many as the
+  island took at 128 m; the middle levels' longer spans at 16 and 64 m keep ~220–300 cells across the
+  short side. A background build at the origin is ~1950 tiles (it was ~2300 clipped to the island).
+  Kept tiles of the old cell sizes are never read again (their key carries the cell size); a new build
+  makes its own anyway.
+
 ## Consequences
 
 - The minimap's cost, measured in the browser (Chrome, a Mac's GPU; the bench flying at 8 m/s for

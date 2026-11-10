@@ -120,10 +120,10 @@ test("the zoom levels, the height tint and the map's controller buttons are data
   d.bigMap.padCenter = 'x';
   d.bigMap.panelFraction = 0.9;
   const rs = mapRs(validateMap(d));
-  // The spans: the minimap's diameter, the island's, the geometric mean between.
-  const mid = Math.round(Math.sqrt(128 * 50000));
-  assert.deepEqual(levelSpans(d), [128, mid, 50000]);
-  assert.match(rs, new RegExp(`big_map_levels: &\\[\\(1\\.0, 128\\.0\\), \\(16\\.0, ${mid}\\.0\\), \\(512\\.0, 50000\\.0\\)\\],`));
+  // The spans: the minimap's diameter, the world disc's, the geometric mean between.
+  const mid = Math.round(Math.sqrt(128 * 100000));
+  assert.deepEqual(levelSpans(d), [128, mid, 100000]);
+  assert.match(rs, new RegExp(`big_map_levels: &\\[\\(1\\.0, 128\\.0\\), \\(16\\.0, ${mid}\\.0\\), \\(512\\.0, 100000\\.0\\)\\],`));
   assert.match(rs, /big_map_start_level: 2\.0,/);
   assert.match(rs, /height_tint_brightest: 1\.3,/);
   const ts = mapTs(validateMap(d));

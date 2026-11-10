@@ -3,7 +3,7 @@
 // metre, drawn again only on a move or a turn) and reports the explored cells it covers
 // (`takeExplored`); this shell shows the disc with the player's and the others' dots, keeps the
 // explored cells per world in this browser (IndexedDB, append-only), and draws them on the big map
-// (M, or a tap on the minimap): five fixed zoom levels from the minimap's area to the whole island
+// (M, or a tap on the minimap): five fixed zoom levels from the minimap's area to the whole world disc
 // (owner, 2026-11-09), pannable, unexplored ground fogged, the player's place and heading on it.
 // Each level's ground is its own tiles of its own cell size, generated from the terrain generator
 // in the job workers once per world and build, in the background, and kept in this browser
@@ -14,6 +14,7 @@
 
 import { GAMEPAD } from '../input/gamepad.gen';
 import { MAP } from './map.gen';
+import { World } from '../protocol/constants.gen';
 
 /** An explored cell's key: its face (0 A, 1 B) and its index along face-local x and z. */
 export function cellKey(face: number, i: number, k: number): string {
@@ -207,9 +208,12 @@ export function levelPxPerM(level: number, w: number, h: number): number {
   return Math.max(1, Math.min(w, h)) / (LEVELS[clampLevel(level)]?.spanM ?? 1);
 }
 
-/** The island's radius (m): the widest level's half span. */
-export function islandRadiusM(): number {
-  return (LEVELS[LEVELS.length - 1]?.spanM ?? 0) / 2;
+/**
+ * The world disc's radius (m; shared/protocol/constants.json's worldRadius, the widest level's
+ * half span): the map's tiles are built anywhere on it, the sea's included, and nowhere off it.
+ */
+export function worldRadiusM(): number {
+  return World.worldRadius;
 }
 
 /**
@@ -396,7 +400,7 @@ export type TileAt = [number, number, number, number];
  * Each frame `pump` takes finished tiles for at most `budgetMs`, asks for the open view's missing
  * tiles (nearest its centre first, at most `jobsInFlight` at once) and, once the kept tiles are
  * read and the view has what it needs, builds the background's (`backgroundJobs` at once): each
- * level's round the player, the widest level's the whole island. Opening or zooming the map never
+ * level's round the player, the widest level's the whole world disc. Opening or zooming the map never
  * waits for generation.
  */
 export class RevealCache {
@@ -455,17 +459,20 @@ export class RevealCache {
     return this.tileCells * cellM;
   }
 
-  /** Whether tile (i, k) at the level of `cellM` cells touches the island (the rest is sea). */
-  onIsland(cellM: number, i: number, k: number): boolean {
+  /**
+   * Whether tile (i, k) at the level of `cellM` cells touches the world disc (its sea too: the
+   * owner, 2026-11-09, "Including all the water"; off the disc the panel shows `fogColor`).
+   */
+  onWorld(cellM: number, i: number, k: number): boolean {
     const span = this.span(cellM);
-    const r = islandRadiusM();
-    // The tile's nearest point to the island's centre.
+    const r = worldRadiusM();
+    // The tile's nearest point to the world's centre.
     const nx = Math.max(i * span, Math.min(0, (i + 1) * span));
     const nz = Math.max(k * span, Math.min(0, (k + 1) * span));
     return nx * nx + nz * nz <= r * r;
   }
 
-  /** The tiles a `w` × `h` view covers at its level that touch the island, nearest its centre first. */
+  /** The tiles a `w` × `h` view covers at its level that touch the world disc, nearest its centre first. */
   tilesFor(v: BigView, w: number, h: number): TileAt[] {
     const cellM = levelCellM(v.level);
     const span = this.span(cellM);
@@ -475,8 +482,7 @@ export class RevealCache {
     const [k0, k1] = [Math.floor(Math.min(az, bz) / span), Math.floor(Math.max(az, bz) / span)];
     const out: TileAt[] = [];
     for (let k = k0; k <= k1; k++) {
-      for (let i = i0; i <= i1; i++)
-        if (this.onIsland(cellM, i, k)) out.push([cellM, v.face, i, k]);
+      for (let i = i0; i <= i1; i++) if (this.onWorld(cellM, i, k)) out.push([cellM, v.face, i, k]);
     }
     const d = ([, , i, k]: TileAt) =>
       ((i + 0.5) * span - v.cx) ** 2 + ((k + 0.5) * span - v.cz) ** 2;
@@ -485,8 +491,8 @@ export class RevealCache {
 
   /**
    * The background's tiles round a player at (x, z) on `face`: each level's within
-   * `prebuildSpans` of its span (a square, so the widest level's is the whole island), those
-   * touching the island only; the start level first, then outward, nearest first in each.
+   * `prebuildSpans` of its span (a square, so the widest level's is the whole world disc), those
+   * touching the disc only (no holes inside the world); the start level first, then outward, nearest first in each.
    */
   backgroundFor(face: number, x: number, z: number): TileAt[] {
     const start = MAP.bigMap.startLevel;
@@ -503,7 +509,7 @@ export class RevealCache {
       const level: TileAt[] = [];
       for (let k = k0; k <= k1; k++) {
         for (let i = i0; i <= i1; i++)
-          if (this.onIsland(cellM, i, k)) level.push([cellM, face, i, k]);
+          if (this.onWorld(cellM, i, k)) level.push([cellM, face, i, k]);
       }
       const d = ([, , i, k]: TileAt) => ((i + 0.5) * span - x) ** 2 + ((k + 0.5) * span - z) ** 2;
       out.push(...level.sort((a, b) => d(a) - d(b)));
@@ -847,7 +853,7 @@ export class PadMap {
 /**
  * The big map's state, apart from the page (owner, 2026-11-09: a framed panel, an obvious close,
  * + and − zoom, "Center on me", a scale bar, drag to pan; at most five fixed zoom levels, the
- * closest the minimap's area, the widest the whole island): open or closed, the view, and what
+ * closest the minimap's area, the widest the whole world disc): open or closed, the view, and what
  * each control does to it. `size` is the map's size in pixels, each level's span across its short
  * side.
  */
@@ -885,7 +891,8 @@ export class BigMapState {
     const level = clampLevel(this.view.level - Math.sign(steps) * Math.min(Math.abs(steps), 4));
     if (level === this.view.level) return false;
     this.view = { ...zoomAt(this.view, levelPxPerM(level, ...this.size()), sx, sy), level };
-    // The widest level shows the whole island: centred on it, not on the player.
+    // The widest level shows the whole world disc, fitted to the short side: centred on it, not
+    // on the player.
     if (level === LEVELS.length - 1) this.view = { ...this.view, cx: 0, cz: 0 };
     return true;
   }
