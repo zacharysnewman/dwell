@@ -26,6 +26,14 @@
       "used_in": "shared/models/glb (model viewer; not in the game yet)"
     },
     {
+      "name": "Universal Sound FX (Imphenzia), selected sounds converted to mono AAC",
+      "version": "Asset Store pack",
+      "url": "https://assetstore.unity.com/",
+      "license": "Unity Asset Store EULA (Standard), Imphenzia, Universal Sound FX",
+      "text": "unity-asset-store-eula.txt",
+      "used_in": "web client (sound effects, shared/sounds/samples)"
+    },
+    {
       "name": "Stylized NPC - Peasant Nolant (Winged Boots), converted to GLB",
       "version": "Asset Store pack (DEMO)",
       "url": "https://assetstore.unity.com/",

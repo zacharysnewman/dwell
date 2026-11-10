@@ -22,7 +22,7 @@ and was not asked CLAUDE.md's "ask before designing" questions, so the answers b
 | Fixed in code | The synthesis vocabulary (noise, oscillator, modal partials, filters, envelopes, grains, layers, alternatives), the event kinds the game detects (the list is data, the detection is code), the bus/mixer, spatialisation. |
 | Data | Every sound's parameters, every variation range, which sound each set plays per event, each gait's stride and loudness, each event's speed range, the UI vocabulary's sounds, which sound each control makes. |
 | Per build, world or player? | Per build (like the block registry). Volumes are per browser. |
-| Assets | **None recorded** for effects: every sound is synthesised at play time (no licensing, no download, endless variation). The one recorded asset is the music (§2a), the owner's own. |
+| Assets | Every effect has a procedural form. Since 0.52.15 most also play **recorded samples** (§2b) from the owner's Asset Store pack *Universal Sound FX* (Imphenzia); the music (§2a) is the owner's own. |
 
 ## 2. Data: `shared/sounds/*.json`
 
@@ -132,6 +132,72 @@ One file per namespace (`music.json`), its audio files beside it:
 Blocks: `"sound"` on a block in `shared/blocks/*.json` names a set (`dwell:stone`); the block
 generator checks that it exists and emits it in the TS `BLOCK_DEFS`. Blocks without one use the
 `fallback` set. Air has none.
+
+### 2b. Recorded samples: `samples` on a sound
+
+Owner (2026-11-10): *"I'd like to use these in our game over most of our procedural FX, there may
+be some SFX that make more sense to use our procedural ones, I'm expecting just a few exceptions,
+but one is likely our Sliding SFX."* Answers: about **5 MB** compressed in all (a few mono
+variations per event); a **per-block sound material** picks the samples of step, land, break and
+place. The material is the block's existing `"sound"` set (`dwell:grass`, …), already validated
+against the sets — no second field was added (deviation from the brief's `soundMaterial` name: the
+same thing under the name the data already had).
+
+| Question | Answer |
+|---|---|
+| What is added later? | More files per sound, samples on more sounds, more materials (a set: `metal`, `mud`, `leaves`, …). |
+| Who adds them, with what? | The owner or a developer: a file in `shared/sounds/samples/` and its name in a sound's `samples`. |
+| Fixed in code | Loading (all at the first gesture), the draw (never the same file twice running), playback. |
+| Data | The files, their level and pitch range, and `play` (samples or procedural) per sound. |
+| Per build, world or player? | Per build. |
+
+```json
+"stone_step": { "samples": {"files": ["stone-step-1.m4a", "stone-step-2.m4a"], "gain": 0.5, "pitch": 1},
+  "play": "samples", "gain": 1.02, "variation": {…}, "layers": […] }
+```
+
+- `files`: 1–16 lower-case `.m4a` (AAC; every browser decodes it) or `.mp3` names in
+  `shared/sounds/samples/`; a missing file fails the generator with the sound's name. All the files
+  together may be at most **5,000,000 bytes** (`SAMPLES_MAX_BYTES`, validated).
+- `gain` (0–4, default 1): the samples' level, times the event's (a gait's) and the sound's
+  `intensity.gain` range (a landing's impact); `pitch` (± semitones, default 0) drawn per play.
+- `play`: `"samples"` (default) or `"procedural"` (keep the layers; the samples stay listed).
+- The `layers` stay: they play until the samples are decoded, if one fails to load, and on
+  `play: "procedural"`. Loop sounds cannot have samples (the slide, fires and the waterfall stay
+  procedural; the owner's exception).
+- The generator rewrites each file to a content-hashed name (`stone-step-1-<hash>.m4a`) and lists
+  them (`sampleFiles`); the build emits them into `media/` beside the music, shipped once per site
+  (`client/scripts/media.ts`, `site.ts media`). The engine (`engine.ts`, `samples.ts`) fetches and
+  decodes them all once the AudioContext exists (the first gesture).
+
+**The picks** (0.52.15, by filename and category, unheard; swap by data). Converted with ffmpeg to
+mono AAC 64 kbps, 44.1 kHz, leading and trailing silence trimmed; about 0.8 MB in all.
+
+| Sound | Universal Sound FX files |
+|---|---|
+| `stone_step` / `stone_land` | `FOOTSTEP_Rock_Walk_01_RR01–06` / `FOOTSTEP_Rock_Run_01_RR01–03` |
+| `dirt_step` / `dirt_land` | `FOOTSTEP_Dirt_Walk_01_RR01–06` / `FOOTSTEP_Dirt_Run_01_RR01–03` |
+| `grass_step` / `grass_land` | `FOOTSTEP_Grass_Walk_01_RR01–06` / `FOOTSTEP_Grass_Run_01_RR01–03` |
+| `snow_step` / `snow_land` | `FOOTSTEP_Snow_Walk_01_RR01–06` / `FOOTSTEP_Snow_Run_01_RR01–03` |
+| `sand_step` / `sand_land` | `FOOTSTEP_Gravel_Walk_01_RR01–06` / `FOOTSTEP_Gravel_Run_01_RR01–03` (the pack has no sand) |
+| `wood_step` / `wood_land` | `FOOTSTEP_Wood_Walk_01_RR01–06` / `FOOTSTEP_Leather_Wood_Hollow_Land_RR1–3` |
+| `water_step` | `FOOTSTEP_Water_Walk_01_RR01–04` |
+| `*_break` | stone `PICKAXE_Impact_Rock_01`, dirt `PICKAXE_Impact_Dirt_Hard_01`, grass `PICKAXE_Impact_Soft_01`, sand `PICKAXE_Impact_Soft_02`, wood `PICKAXE_Impact_Wood_01` (RR1–3 each) |
+| `*_hit` | stone `PICKAXE_Impact_Rock_02`, dirt `PICKAXE_Impact_Dirt_Hard_02`, sand `PICKAXE_Impact_Soft_03`, wood `PICKAXE_Impact_Wood_02` (RR1–3) |
+| `*_place` | stone `IMPACT_Stone_On_Stone_01–03_Subtle`, wood `IMPACT_Wood_Plank_On_Wood_Pile_06–08_Short`, dirt/grass/sand `SPADE_Dig_01–03` / `04–06` / `07–08` |
+| `water_enter` / `water_exit` / `water_swim` / `water_place` | `SPLASH_Designed_Medium_01–03` / `SPLASH_Small_01–03` / `SPLASH_Movement_01–04` / `SPLASH_Designed_Quick_01–02` |
+| `jump` | `WHOOSH_Air_Fast_Subtle_RR1–3` |
+| `hurt` / `death` | `GRUNT_Male_B_Hurt_Short_01–04` / `GROAN_Male_Hurt_Long` |
+| `body_thud` (impact, piece landing) | `THUD_Dark_01`, `THUD_Medium_01–02` |
+| `fell_crack` | `TREE_Falling_Tree_Only_Cracking_01–02` |
+| `dynamite_boom` | `EXPLOSION_Medium_Blast_Scatter_Debris`, `EXPLOSION_Short_Dark_Debris`, `EXPLOSION_Medium_Fast_with_Rock_Debris` |
+| `chop_bark` / `chop_wood` / `chop_creak` | `AXE_Chop_Tree_01_RR1–3` / `AXE_Chop_Wood_01_RR1–3` / `CREAK_Wood_01–03` |
+| `axe_clank` / `axe_swish` | `PICKAXE_Impact_Metal_01_RR1–3` / `WHOOSH_Air_Blade_RR1–3` |
+| `deny` | `UI_Error_Tone_01` |
+
+Still procedural: the slides and slide stops, `rise`, `dive`, `crouch_on`/`off`, `sprint`,
+`respawn`, `axe_rustle`, the torch's place and break, the fuse, the loops (fire, fuse fizz,
+waterfall), the game actions and the menu vocabulary.
 
 ## 3. Synthesis (`client/src/audio/synth.ts`)
 
