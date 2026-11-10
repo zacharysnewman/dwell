@@ -3506,6 +3506,23 @@ body.loading-wait #brush-panel {
     sans-serif;
   pointer-events: none;
 }
+/* The tiles still building while the map is open: quiet, bottom right. */
+#world-map .map-progress {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: rgb(30 26 20 / 55%);
+  color: rgb(244 236 216 / 80%);
+  font:
+    500 11px/1 system-ui,
+    sans-serif;
+  pointer-events: none;
+}
+#world-map .map-progress[hidden] {
+  display: none;
+}
 #world-map .map-scale i {
   display: block;
   height: 6px;

@@ -20,6 +20,7 @@ import {
   LEVELS,
   Steps,
   levelPxPerM,
+  levelCellM,
   tilePrefix,
   type TileStore,
   type ExploredHeights,
@@ -933,5 +934,75 @@ describe("the closest levels' real blocks (owner, 2026-11-09: closest zooms use 
     const far: BigView = { ...v, level: 2 };
     expect(cache.pumpLive(live, far, 800, 600, 5000, 2, 1000)).toEqual([]);
     expect(live.reads).toEqual([]);
+  });
+});
+
+describe('the minimap and the open map keep building (owner, 2026-11-10)', () => {
+  for (const face of [0, 1]) {
+    it(`face ${String(face)}: the minimap's 1 m tiles are built first and handed over, kept ones at once`, () => {
+      const cache = new RevealCache(32, 2, 1000, 1);
+      const client = fakeClient(32);
+      // The client wants four 1 m tiles until it is given them.
+      const wanted = new Set(['0,0', '-1,0', '0,-1', '-1,-1']);
+      const given: string[] = [];
+      const feed = {
+        ...client,
+        minimapWants: () =>
+          Int32Array.from(
+            [...wanted].flatMap((s) => [face, ...s.split(',').map(Number)] as number[]),
+          ),
+        minimapTile(f: number, ti: number, tk: number, rgba: Uint8Array, heights: Int16Array) {
+          expect(f).toBe(face);
+          expect(rgba.length).toBe(32 * 32 * 4);
+          expect(heights.length).toBe(32 * 32);
+          wanted.delete(`${String(ti)},${String(tk)}`);
+          given.push(`${String(ti)},${String(tk)}`);
+        },
+      };
+      // Asked before the background (which waits on the pending ones), at the closest level.
+      cache.feedMinimap(feed);
+      expect(client.asked.length).toBe(2);
+      expect(client.asked.every((k) => k.startsWith(`${String(levelCellM(0))}|`))).toBe(true);
+      for (let f = 0; f < 6 && wanted.size > 0; f++) {
+        cache.pump(feed, null, 0, 0, () => 0, undefined, [face, 0, 0]);
+        cache.feedMinimap(feed);
+      }
+      expect(wanted.size).toBe(0);
+      expect(given.length).toBe(4);
+      // A tile already kept (from the store or the big map) is handed over without a build.
+      const before = client.asked.length;
+      wanted.add('0,0');
+      cache.feedMinimap(feed);
+      expect(wanted.size).toBe(0);
+      expect(client.asked.length).toBe(before);
+    });
+  }
+
+  it("with the map open every level's tiles round the view and the player get built until none remain", () => {
+    const cache = new RevealCache(32, 2, 1000, 1);
+    const client = fakeClient(32);
+    // Panned away from the player, at the open level 1.
+    const [w, h] = [800, 600];
+    const v: BigView = { face: 0, cx: 900, cz: -700, level: 1, pxPerM: levelPxPerM(1, w, h) };
+    const pose = [0, 0, 0];
+    const inRange = [
+      ...cache.backgroundFor(0, v.cx, v.cz, v.level),
+      ...cache.backgroundFor(0, 0, 0, v.level),
+    ];
+    let frames = 0;
+    for (; frames < 20000; frames++) {
+      cache.pump(client, v, w, h, () => 0, undefined, pose);
+      if (frames > 0 && cache.backgroundLeft === 0 && cache.inFlight === 0) break;
+    }
+    // Over many frames, a few jobs at a time.
+    expect(frames).toBeGreaterThan(50);
+    for (const [c, f, i, k] of inRange) {
+      expect(cache.tiles.has(RevealCache.key(c, f, i, k)), `${String(c)} m tile ${String(i)},${String(k)}`).toBe(true);
+    }
+    // Every level, the coarser and the finer, not only the open one.
+    const levels = new Set([...cache.tiles.values()].map((t) => t.cellM));
+    expect([...levels].sort((a, b) => a - b)).toEqual(LEVELS.map((l) => l.cellM));
+    // The open level's came first.
+    expect(client.asked[0]?.startsWith(`${String(levelCellM(1))}|`)).toBe(true);
   });
 });

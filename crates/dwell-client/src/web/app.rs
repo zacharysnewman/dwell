@@ -2446,6 +2446,40 @@ impl Client {
         }
         up.drawn.then(|| s.minimap.image.clone())
     }
+    /// The generated 1 m tiles the minimap wants under its disc (`dwell_game::minimap::Generated`,
+    /// the big map's closest level's): [face, ti, tk] each, the nearest first; the shell hands
+    /// each over with `minimapTile` from its tile cache, building those it does not have first.
+    #[wasm_bindgen(js_name = minimapWants)]
+    pub fn minimap_wants(&self) -> Vec<i32> {
+        let mut guard = self.inner.borrow_mut();
+        let s = &mut *guard;
+        let Some(g) = &s.game else {
+            return Vec::new();
+        };
+        let pos = g.position();
+        let f = dwell_world::FaceFrame::at_height(pos[1]);
+        let local = f.point(pos);
+        let face = u8::from(f.is_b());
+        s.minimap
+            .generated
+            .wants(face, local[0], local[2], &dwell_game::minimap::MAP)
+            .into_iter()
+            .flat_map(|(face, ti, tk)| [i32::from(face), ti, tk])
+            .collect()
+    }
+    /// A generated 1 m tile for the minimap: its RGBA and its height codes (`takeReveal`'s).
+    #[wasm_bindgen(js_name = minimapTile)]
+    pub fn minimap_tile(&self, face: u8, ti: i32, tk: i32, rgba: Vec<u8>, heights: Vec<i16>) {
+        let mut bytes = rgba;
+        for h in heights {
+            bytes.extend_from_slice(&h.to_le_bytes());
+        }
+        self.inner
+            .borrow_mut()
+            .minimap
+            .generated
+            .fill((face, ti, tk), bytes);
+    }
     /// The minimap's size in pixels (its texels across).
     #[wasm_bindgen(js_name = minimapPixels)]
     pub fn minimap_pixels(&self) -> u32 {

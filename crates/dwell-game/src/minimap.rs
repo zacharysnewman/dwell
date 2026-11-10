@@ -480,7 +480,7 @@ pub fn shade_grid(t: &MapTunables, colours: &[u32], codes: &[i32], w: usize, h: 
 /// colours tinted by height ([`tint_rgb`], the big map's look) when `shading`, else plain; transparent outside the circle.
 /// Where the tops found nothing (ground past the scan's reach below, a valley seen from a hilltop
 /// or high flight, or not loaded) a pixel takes `under`'s colour and [`height_code`] for its
-/// face-local (x, z) (the explored cell's: the generator's, or the terrain's from an earlier look),
+/// face-local (x, z) (the generator's 1 m top, [`Generated`]),
 /// tinted by that height when `shading` and it has one; else it is transparent.
 #[allow(clippy::too_many_arguments)]
 pub fn render_disc(
@@ -543,6 +543,8 @@ pub struct Minimap {
     drawn_at: Option<([f64; 2], f64, bool)>,
     pub image: Vec<u8>,
     pub explored: Explored,
+    /// The generator's 1 m tops under the disc, where the loaded terrain shows nothing.
+    pub generated: Generated,
     /// When every column was last read whole.
     full_at: f64,
 }
@@ -608,7 +610,8 @@ impl Minimap {
             || match self.drawn_at {
                 None => true,
                 Some((at, yaw, shaded)) => {
-                    shaded != shading
+                    self.generated.changed
+                        || shaded != shading
                         || moved(at, [local[0], local[2]]) >= step
                         || angle_between(yaw, yaw_deg) >= t.minimap_turn_degrees
                 }
@@ -616,20 +619,99 @@ impl Minimap {
         if redraw {
             let frame = MapFrame::new(f, local[0], local[2], yaw_deg);
             let face = u8::from(f.is_b());
-            let explored = &self.explored;
+            // Never coarser than the disc's 1 m (owner, 2026-11-10: "It shouldn't ever be
+            // coarse"): where the tops found nothing, the generator's 1 m top, not an explored cell.
+            let generated = &self.generated;
             render_disc(
                 &self.grid,
                 &frame,
                 t,
                 Self::pixels(t),
                 shading,
-                &|x, z| explored.cell_at(face, x, z, t),
+                &|x, z| generated.at(face, x, z, t),
                 &mut self.image,
             );
+            self.generated.changed = false;
             self.drawn_at = Some(([local[0], local[2]], yaw_deg, shading));
             up.drawn = true;
         }
         up
+    }
+}
+
+/// The generator's tops at 1 m under the minimap (ADR 0068; owner, 2026-11-10: the minimap
+/// "should always show the full width and height of what's around you" and "shouldn't ever be
+/// coarse"): the big map's closest level's tiles (`bigMap.levels[0]`, 1 m cells, generated in
+/// the job workers and kept in the browser's tile store), handed over by the shell
+/// ([`Generated::fill`]) as [`Generated::wants`] names them: those within the disc's radius and a
+/// tile's margin of the player, so a sprint finds its next ones already there. Where the loaded
+/// terrain's tops found nothing (not loaded yet, only the LOD drawn, or past the scan's reach) the
+/// disc shows these, never an 8 m explored cell.
+#[derive(Clone, Debug, Default)]
+pub struct Generated {
+    tiles: HashMap<TileKey, Vec<u8>>,
+    /// A tile came since the disc was drawn.
+    pub changed: bool,
+}
+
+impl Generated {
+    /// The cell side of the tiles (the big map's closest level's).
+    pub fn cell_m(t: &MapTunables) -> f64 {
+        t.big_map_levels.first().map_or(1.0, |l| l.0)
+    }
+
+    fn span(t: &MapTunables) -> f64 {
+        t.revealed_tile_cells * Self::cell_m(t)
+    }
+
+    /// The tiles within the disc's radius and a tile of face `face`'s face-local (x, z) not yet
+    /// held, the nearest first; tiles past three tiles of the radius (or on the other face) are
+    /// let go.
+    pub fn wants(&mut self, face: u8, x: f64, z: f64, t: &MapTunables) -> Vec<TileKey> {
+        let span = Self::span(t);
+        let reach = t.minimap_radius_m + span;
+        let d2 = |ti: i32, tk: i32| {
+            // The tile's nearest point to (x, z).
+            let nx = x.clamp(f64::from(ti) * span, f64::from(ti + 1) * span) - x;
+            let nz = z.clamp(f64::from(tk) * span, f64::from(tk + 1) * span) - z;
+            nx * nx + nz * nz
+        };
+        let keep = reach + 2.0 * span;
+        self.tiles
+            .retain(|&(f, ti, tk), _| f == face && d2(ti, tk) <= keep * keep);
+        let (i0, i1) = (((x - reach) / span).floor() as i32, ((x + reach) / span).floor() as i32);
+        let (k0, k1) = (((z - reach) / span).floor() as i32, ((z + reach) / span).floor() as i32);
+        let mut out = Vec::new();
+        for tk in k0..=k1 {
+            for ti in i0..=i1 {
+                if d2(ti, tk) <= reach * reach && !self.tiles.contains_key(&(face, ti, tk)) {
+                    out.push((face, ti, tk));
+                }
+            }
+        }
+        out.sort_by(|a, b| d2(a.1, a.2).total_cmp(&d2(b.1, b.2)));
+        out
+    }
+
+    /// Tile `key`'s bytes: its RGBA, then its i16 LE height codes ([`tile_cell`]'s layout).
+    pub fn fill(&mut self, key: TileKey, bytes: Vec<u8>) {
+        self.tiles.insert(key, bytes);
+        self.changed = true;
+    }
+
+    /// Whether tile `key` is held.
+    pub fn has(&self, key: TileKey) -> bool {
+        self.tiles.contains_key(&key)
+    }
+
+    /// The generator's top at face `face`'s face-local (x, z): its colour and [`height_code`].
+    pub fn at(&self, face: u8, x: f64, z: f64, t: &MapTunables) -> Option<(u32, i32)> {
+        let cell = Self::cell_m(t);
+        let n = t.revealed_tile_cells as i32;
+        let (i, k) = ((x / cell).floor() as i32, (z / cell).floor() as i32);
+        let key = (face, i.div_euclid(n), k.div_euclid(n));
+        let j = (k.rem_euclid(n) * n + i.rem_euclid(n)) as usize;
+        tile_cell(self.tiles.get(&key)?, (n * n) as usize, j)
     }
 }
 
