@@ -270,6 +270,16 @@ const LAKE_DEPTH: f64 = 6.0;
 /// The spawn point's level patch reaches this many columns either side.
 pub const SPAWN_CLEAR: i32 = 4;
 
+/// The spawn's wider search (WORLD_SCALE.md §3.2): the origin's spiral reaches this many legs of
+/// 8 m (20 km out, 12.5 M patches, probed over the cores; the 50 km disc's seeds spawn within it)...
+const SPAWN_ORIGIN_LEGS: i32 = 5000;
+/// A spiral's patches probed at once (natively shared over the cores).
+const SPAWN_BATCH: usize = 1 << 14;
+/// ... then up to this many suitable map cells, one per block this many cells a side, are each
+/// searched 12 legs round (~80 patches a cell, three times over as the level relaxes).
+const SPAWN_SPREAD: usize = 256;
+const SPAWN_BLOCK: i32 = 8;
+
 /// How many reshaped columns each thread keeps (`TerrainGenerator::column`): a few chunk columns'
 /// worth with their trees' margins; all are dropped when it fills.
 const SHAPED_KEPT: usize = 1 << 16;
@@ -2975,30 +2985,75 @@ impl TerrainGenerator {
     /// Feet position for players (`terrain.json` `spawn`): on level dry land between the spawn
     /// heights, by a river when one is near: the map's suitable cells nearest the disc's centre
     /// first, each searched round its centre for a level patch clear of structures and portals.
-    /// Falls back to the level dry ground nearest the origin.
+    /// When none of those holds one (a wide island, WORLD_SCALE.md §3.2), a bounded search
+    /// (`spawn_wider`); never a mountain top.
     pub fn spawn_point(&self) -> [f64; 3] {
-        for (x, z) in self.spawn_candidates(48) {
-            if let Some(p) = self.spawn_near(x, z, 12) {
+        let candidates = self.spawn_cells(true);
+        for &(x, z) in candidates.iter().take(48) {
+            if let Some(p) = self.spawn_near(x, z, 12, 0) {
                 return p;
             }
         }
-        let mut fallback = None;
-        self.spawn_near(0, 0, 5000)
-            .or_else(|| {
-                fallback = self.ground_y(0, 0).map(|g| [0.5, m_of_row(g + 1), 0.5]);
-                fallback
-            })
+        self.spawn_wider(&candidates)
+    }
+
+    /// The search past the river-side cells nearest the centre, in a bounded number of probes:
+    /// the origin's spiral to `SPAWN_ORIGIN_LEGS` legs, then up to `SPAWN_SPREAD` cells (river-side
+    /// first, then any suitable dry cell) one per block of `SPAWN_BLOCK` map cells, nearest the
+    /// centre first, each searched 12 legs round, with a level patch's rise 0, then 1 and 2 rows.
+    /// Failing all, the nearest suitable cell's ground (low dry land, not a peak), else the
+    /// origin's.
+    fn spawn_wider(&self, river_side: &[(i32, i32)]) -> [f64; 3] {
+        if let Some(p) = self.spawn_near(0, 0, SPAWN_ORIGIN_LEGS, 0) {
+            return p;
+        }
+        let spread = self.spawn_spread(river_side, &self.spawn_cells(false));
+        for rise in 0..=2 {
+            for &(x, z) in &spread {
+                if let Some(p) = self.spawn_near(x, z, 12, rise) {
+                    return p;
+                }
+            }
+        }
+        let ground = |(x, z): (i32, i32)| {
+            self.ground_y(x, z)
+                .map(|g| [f64::from(x) + 0.5, m_of_row(g + 1), f64::from(z) + 0.5])
+        };
+        spread
+            .first()
+            .and_then(|&c| ground(c))
+            .or_else(|| ground((0, 0)))
             .unwrap_or([0.5, m_of_row(SEA_LEVEL + 1), 0.5])
     }
 
-    /// Up to `most` map cells to look for a spawn in: dry land between the spawn heights, not in
-    /// a lake, within `spawn.nearRiver` m of a river vertex; nearest the disc's centre first.
-    fn spawn_candidates(&self, most: usize) -> Vec<(i32, i32)> {
+    /// One cell per block of `SPAWN_BLOCK` map cells from `first` then `then` (each nearest the
+    /// centre first), at most `SPAWN_SPREAD`: candidates spread over the island, not one valley.
+    fn spawn_spread(&self, first: &[(i32, i32)], then: &[(i32, i32)]) -> Vec<(i32, i32)> {
+        let block = f64::from(SPAWN_BLOCK) * self.map.cell;
+        let mut seen = std::collections::HashSet::new();
+        first
+            .iter()
+            .chain(then)
+            .filter(|&&(x, z)| {
+                seen.insert((
+                    (f64::from(x) / block).floor() as i64,
+                    (f64::from(z) / block).floor() as i64,
+                ))
+            })
+            .take(SPAWN_SPREAD)
+            .copied()
+            .collect()
+    }
+
+    /// The map cells to look for a spawn in: dry land between the spawn heights, not in a lake,
+    /// within `spawn.nearRiver` m of a river vertex when `river` is set; nearest the disc's centre
+    /// first.
+    fn spawn_cells(&self, river: bool) -> Vec<(i32, i32)> {
         let map = &*self.map;
         let n = map.n as i64;
         let reach = (S.spawn_near_river / map.cell).ceil() as i64;
-        let mut near = vec![false; map.n * map.n];
-        for r in &map.rivers {
+        let mut near = vec![!river; map.n * map.n];
+        for r in map.rivers.iter().filter(|_| river) {
             for v in &r.path {
                 let c = map.cell_at(f64::from(v.x), f64::from(v.z));
                 let (ci, cj) = ((c % map.n) as i64, (c / map.n) as i64);
@@ -3032,7 +3087,6 @@ impl TerrainGenerator {
         cells.sort_unstable();
         cells
             .into_iter()
-            .take(most)
             .map(|(_, c)| {
                 let (x, z) = map.centre(c);
                 (x as i32, z as i32)
@@ -3040,14 +3094,21 @@ impl TerrainGenerator {
             .collect()
     }
 
-    /// A spawn on a level dry patch found by a square spiral of 8 m steps round (cx, cz), at most
-    /// `steps` legs out.
-    fn spawn_near(&self, cx: i32, cz: i32, steps: i32) -> Option<[f64; 3]> {
+    /// A spawn on a level dry patch (its tops within `rise` rows of its centre's) found by a
+    /// square spiral of 8 m steps round (cx, cz), at most `steps` legs out.
+    /// Natively a long spiral is probed in batches over the cores, the first patch in spiral
+    /// order kept, so the answer is the one a probe at a time gives.
+    fn spawn_near(&self, cx: i32, cz: i32, steps: i32, rise: i32) -> Option<[f64; 3]> {
         let (mut x, mut z, mut dx, mut dz) = (cx, cz, 1i32, 0i32);
         let (mut leg, mut walked, mut turns) = (1, 0, 0);
+        let mut batch = Vec::with_capacity(SPAWN_BATCH);
         while leg <= steps {
-            if let Some(p) = self.spawn_patch(x, z) {
-                return Some(p);
+            batch.push((x, z));
+            if batch.len() == SPAWN_BATCH {
+                if let Some(p) = self.first_patch(&batch, rise) {
+                    return Some(p);
+                }
+                batch.clear();
             }
             x += dx * 8;
             z += dz * 8;
@@ -3063,25 +3124,58 @@ impl TerrainGenerator {
                 }
             }
         }
-        None
+        self.first_patch(&batch, rise)
+    }
+
+    /// The first of `at` (in order) holding a spawn patch: natively each core takes a share,
+    /// the earliest found wins.
+    fn first_patch(&self, at: &[(i32, i32)], rise: i32) -> Option<[f64; 3]> {
+        let one = |at: &[(i32, i32)]| {
+            at.iter()
+                .enumerate()
+                .find_map(|(k, &(x, z))| self.spawn_patch(x, z, rise).map(|p| (k, p)))
+        };
+        #[cfg(not(target_family = "wasm"))]
+        {
+            let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
+            if cores > 1 && at.len() >= 256 {
+                let share = at.len().div_ceil(cores);
+                let found = std::thread::scope(|s| {
+                    let jobs: Vec<_> = at
+                        .chunks(share)
+                        .enumerate()
+                        .map(|(i, part)| s.spawn(move || one(part).map(|(k, p)| (i * share + k, p))))
+                        .collect();
+                    jobs.into_iter()
+                        .filter_map(|j| j.join().expect("spawn search"))
+                        .min_by_key(|&(k, _)| k)
+                });
+                return found.map(|(_, p)| p);
+            }
+        }
+        one(at).map(|(_, p)| p)
     }
 
     /// The feet on column (x, z) when it is the centre of a level dry patch SPAWN_CLEAR columns
-    /// either side, between the spawn heights, clear of structures and portals.
-    fn spawn_patch(&self, x: i32, z: i32) -> Option<[f64; 3]> {
+    /// either side (its tops within `rise` rows of the centre's), between the spawn heights, clear
+    /// of structures and portals.
+    fn spawn_patch(&self, x: i32, z: i32, rise: i32) -> Option<[f64; 3]> {
         // First on the ground before the cliffs reshape it (a column's volume pass is most of its
         // cost): a patch that is not a level dry one there is passed over without it.
-        if self.volume.is_some() && !self.level_patch(x, z, |x, z| self.base_column(x, z, 1)) {
+        if self.volume.is_some()
+            && !self.level_patch(x, z, rise, |x, z| self.base_column(x, z, 1))
+        {
             return None;
         }
-        if !self.level_patch(x, z, |x, z| self.column(x, z, 1)) {
+        if !self.level_patch(x, z, rise, |x, z| self.column(x, z, 1)) {
             return None;
         }
         self.spawn_clear(x, z)
     }
 
-    /// Whether (x, z) is the centre of a level dry patch between the spawn heights, by `column`.
-    fn level_patch(&self, x: i32, z: i32, column: impl Fn(i64, i64) -> Column) -> bool {
+    /// Whether (x, z) is the centre of a level dry patch between the spawn heights, by `column`:
+    /// every column's top within `rise` rows of the centre's (0: all one row).
+    fn level_patch(&self, x: i32, z: i32, rise: i32, column: impl Fn(i64, i64) -> Column) -> bool {
         let col = column(i64::from(x), i64::from(z));
         if col.outside || col.wet() {
             return false;
@@ -3094,7 +3188,7 @@ impl TerrainGenerator {
         (-SPAWN_CLEAR..=SPAWN_CLEAR).all(|pz| {
             (-SPAWN_CLEAR..=SPAWN_CLEAR).all(|px| {
                 let c = column(i64::from(x + px), i64::from(z + pz));
-                !c.outside && !c.wet() && top_voxel(c.height) == g
+                !c.outside && !c.wet() && (top_voxel(c.height) - g).abs() <= rise
             })
         })
     }
