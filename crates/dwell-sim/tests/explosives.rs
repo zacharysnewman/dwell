@@ -49,6 +49,9 @@ impl Scene {
             ..flat()
         });
         let mut s = Self { f, fx, base: BASE };
+        // A blast's pieces all spawn on its tick here: these tests read that tick; the spreading
+        // over ticks (`limits.piecesPerTick`) is pinned by its own test, which sets it back.
+        s.fx.server.set_pieces_per_tick(usize::MAX);
         let stone = require("dwell:stone");
         for x in -14..=14 {
             for z in -14..=14 {
@@ -76,6 +79,7 @@ impl Scene {
             fx: Fixture::new(flat()),
             base: FLAT_TOP_Y,
         };
+        s.fx.server.set_pieces_per_tick(usize::MAX);
         for id in 1..=players as SessionId {
             s.fx.join(id, &Client::new(id as u8));
         }
@@ -1361,6 +1365,9 @@ struct Chain {
     ticks: Vec<(f64, usize, [(&'static str, f64); 14])>,
     cleared: usize,
     pieces: usize,
+    /// Every cell the blasts' `Explosion` modifications set (chunk, index), and how many there were.
+    exploded: std::collections::BTreeSet<([i32; 3], u16)>,
+    booms: usize,
 }
 
 fn solid_round(s: &mut Scene) -> usize {
@@ -1384,12 +1391,17 @@ fn chain(
     charges: &[[i32; 3]],
     max: usize,
     settle: bool,
+    per_tick: Option<usize>,
 ) -> Chain {
     let mut s = match f {
         Some(f) => Scene::new(f, 1),
         None => Scene::flat(1),
     };
     s.fx.server.set_explosives(vec![e]);
+    // None: the data's budget.
+    s.fx.server.set_pieces_per_tick(
+        per_tick.unwrap_or(dwell_world::explosives::LIMITS.pieces_per_tick as usize),
+    );
     s.put(1, 0.5, -3.5);
     s.run(2);
     if f.is_some() {
@@ -1414,11 +1426,24 @@ fn chain(
     let mut ticks = Vec::new();
     let mut ids = std::collections::HashSet::new();
     let mut quiet = 0;
+    let (mut exploded, mut booms) = (std::collections::BTreeSet::new(), 0);
     for _ in 0..max {
         let t = std::time::Instant::now();
         let out = s.run(1);
         let ms = t.elapsed().as_secs_f64() * 1000.0;
         let new = spawns(&out).iter().filter(|p| ids.insert(p.id)).count();
+        for m in &out {
+            if let Message::VoxelModification(v) = m
+                && v.reason == VoxelModificationReason::Explosion
+            {
+                booms += 1;
+                for c in &v.chunks {
+                    for ch in &c.changes {
+                        exploded.insert((c.coord, ch.index));
+                    }
+                }
+            }
+        }
         ticks.push((ms, new, s.fx.server.tick_phases()));
         let done = s.fx.server.fuses().is_empty() && s.fx.server.queued_pieces() == 0;
         quiet = if done && new == 0 { quiet + 1 } else { 0 };
@@ -1431,6 +1456,8 @@ fn chain(
         ticks,
         cleared: before - after,
         pieces: ids.len(),
+        exploded,
+        booms,
     }
 }
 
@@ -1456,11 +1483,14 @@ fn yellow_column() -> Vec<[i32; 3]> {
 #[ignore = "a measurement: cargo test --release -p dwell-sim --test explosives measure_chain_ticks -- --ignored --nocapture"]
 fn measure_chain_ticks() {
     // face-a-only: a measurement; the parity is in the chained tests.
+    let per_tick = std::env::var("DWELL_PIECES_PER_TICK")
+        .ok()
+        .and_then(|v| v.parse().ok());
     for (name, e, charges) in [
         ("red 3x9", dynamite(), red_block()),
         ("yellow column", yellow(), yellow_column()),
     ] {
-        let c = chain(None, e, &charges, 30 * 60, true);
+        let c = chain(None, e, &charges, 30 * 60, true, per_tick);
         let (wi, w) = c
             .ticks
             .iter()
@@ -1478,13 +1508,14 @@ fn measure_chain_ticks() {
             .filter(|&k| c.ticks[k.saturating_sub(30)..=k].iter().any(|t| t.1 > 0))
             .map(|k| c.ticks[k].0)
             .fold(0.0f64, f64::max);
-        println!("{name}: worst spawning tick {worst_spawn:.1} ms, worst within 0.5 s of a spawn {near:.1} ms");
-        let phases: Vec<String> = w
-            .2
-            .iter()
-            .filter(|p| p.1 > 0.5)
-            .map(|p| format!("{} {:.1}", p.0, p.1))
-            .collect();
+        println!(
+            "{name}: worst spawning tick {worst_spawn:.1} ms, worst within 0.5 s of a spawn {near:.1} ms"
+        );
+        let phases: Vec<String> =
+            w.2.iter()
+                .filter(|p| p.1 > 0.5)
+                .map(|p| format!("{} {:.1}", p.0, p.1))
+                .collect();
         println!(
             "{name}: {} pieces, {} cells cleared, {} ticks, worst {:.1} ms at tick {wi} ({} spawned; {}), p95 {:.1}, over 16.7 ms {over}, most spawned a tick {most}",
             c.pieces,
@@ -1497,3 +1528,42 @@ fn measure_chain_ticks() {
         );
     }
 }
+
+dwell_world::both_faces!(
+    fn a_chained_blasts_pieces_spawn_within_the_tick_budget_and_the_outcome_is_the_same(
+        f: FaceFrame,
+    ) {
+        // A big chain's pieces are spread over the ticks (`limits.piecesPerTick`, docs/EXPLOSIVES.md
+        // §3.12): no tick spawns more than the budget, and the chain clears the same cells, booms
+        // the same blasts (one modification each) and spawns the same pieces as with no budget.
+        let red = dynamite();
+        let budget = dwell_world::explosives::LIMITS.pieces_per_tick as usize;
+        let whole = chain(Some(f), red, &red_block(), 6 * 60, false, Some(usize::MAX));
+        let spread = chain(Some(f), red, &red_block(), 6 * 60, false, Some(budget));
+        let most = |c: &Chain| c.ticks.iter().map(|t| t.1).max().unwrap_or(0);
+        assert!(
+            most(&whole) > budget,
+            "the fixture is over budget: {}",
+            most(&whole)
+        );
+        assert!(
+            most(&spread) <= budget,
+            "a tick spawned {} pieces, over the budget {budget}",
+            most(&spread)
+        );
+        assert_eq!(
+            spread.booms, whole.booms,
+            "the same blasts, each one modification"
+        );
+        assert_eq!(spread.exploded, whole.exploded, "the same cells cleared");
+        // The same pieces, but those a later blast's core destroys while they wait (judged at their
+        // cell, not where a spawned one would have flown in the ticks between): within 2%.
+        let gap = spread.pieces.abs_diff(whole.pieces);
+        assert!(
+            gap * 50 <= whole.pieces,
+            "pieces spawned {} spread, {} whole",
+            spread.pieces,
+            whole.pieces
+        );
+    }
+);

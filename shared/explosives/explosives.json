@@ -3,7 +3,7 @@
   "limits": {
     "blastsPerTick": 1,
     "maxPieces": 1200,
-    "piecesPerTick": 1200,
+    "piecesPerTick": 64,
     "maxPuffs": 64,
     "minPuffShare": 0.15
   },

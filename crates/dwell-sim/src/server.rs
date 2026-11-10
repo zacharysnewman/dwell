@@ -3075,6 +3075,11 @@ impl Server {
         }
     }
 
+    /// Sets the most blast pieces spawned a tick (tests and measurements; `limits.piecesPerTick`).
+    pub fn set_pieces_per_tick(&mut self, n: usize) {
+        self.fuses.pieces_per_tick = n.max(1);
+    }
+
     /// The blasts' pieces waiting to spawn (tests).
     pub fn queued_pieces(&self) -> usize {
         self.fuses.queued.len()
