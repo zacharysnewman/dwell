@@ -1051,10 +1051,10 @@ fn octagon_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, m: StateId, cell:
         let (axis, sign) = FACES[sides[0]];
         let (color, tile) = match (f.part, k.style.textures) {
             // The ring: the bark (side) tile, laid flat on the cap.
-            (Oct::Ring(..), Some(t)) => (0xffff_ff, tile_rect(t.side)),
+            (Oct::Ring(..), Some(t)) => (0xffffff, tile_rect(t.side)),
             // The heart: its own tile when the data names one this build has.
             (Oct::Cap(_), Some(_)) if section.heart.is_some_and(crate::textures::has_tile) => {
-                (0xffff_ff, tile_rect(section.heart.unwrap_or_default()))
+                (0xffffff, tile_rect(section.heart.unwrap_or_default()))
             }
             _ => surface(&k.style, axis, sign),
         };

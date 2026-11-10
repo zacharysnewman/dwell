@@ -72,7 +72,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 52 — Water flow | ✖ Replaced by Phase 53 (ADR 0060): its basins, outlets and pool graph were removed from the game in 0.48.2, when the water surface grid's runtime (G2a) took their place; what was built is in its section below, and its outstanding items (G4–G6, W3–W5) are carried by Phase 53 |
 | 53 — Water surface grid | 🚧 In progress — G2a built (0.48.2): the runtime grid in `dwell-sim` replaces the basins; generated water held at rest as found, edits free it, a rest layer keeps drawn rivers exactly at rest under the law, sleeping chunks with a 5 mm sleep and 5 cm wake band and smooth waking, written as blocks, saved as `DWG1`; both faces tested; a dam across seed 0's river backs it up 0.5 m in the browser. G0's prototype done but for the owner's look at the eroded rivers. G1a built (0.49.0): no river lips (BUGS.md #29 fixed), the pool graph removed. G3a and G3b built: currents for swimmers and floating bodies, free water's by the law and untouched rivers' by the map, sent as optional `WaterCurrents` datagrams. G3d built: the flow shown (carried ripples, foam streaks, drifting flecks, each a setting). Outstanding: G1b (the water computed from the map where the world loads: no beds or stepped levels; replaces the design's whole-world fill, measured too slow), G1c (erosion), G2b (pools, the held sea, the water layer's own storage), G3c (the water's own client layer, deferred); G4a built (0.49.1: the grid's settings and liquids as data), G4's pools, sources and per-world values follow G2b and G1b. G5 built: the water off the tick thread (ADR 0062: its own native thread, a browser water worker; a flood no longer slows the water or the tick); its follow-up built: the LOD of the chunks the water rewrites held and from kept bases, and the browser server's generation and LOD in a server-jobs worker (a dam's ticks 58 → 13 ms at worst). Follow-up (0.49.19, BUGS.md #38): generated rivers carry the map's flow through both layers, so a dam on a level reach backs the river up (seed 0's dam site 139.50 → 140.07 m in 20 water minutes; saved worlds fixed on load) and level and shallow reaches have a current. Follow-up (0.49.20, BUGS.md #39): the slope over a river's step is a closed wedge, so a diagonal river's staircase steps show no triangle holes. Follow-up (0.49.23, BUGS.md #40): a column built up into a dam no longer keeps its rest-layer spring, so water stops standing on a raised dam. Follow-up (0.49.24, BUGS.md #42): a river reach held level runs on its course's mean fall, and currents are sent as far as the flow is drawn (4 chunks). Follow-up (0.49.25, BUGS.md #41): the reach below a dam leaves the rest layer down the rest's own flow (`restCut`/`restBack`), so it dries completely to the next inflow and sleeps (seed 0's dam site: 575 water columns left → none). G6 built (0.49.31): waterfalls (a sheet with foam and spray, a push down and out, a rushing sound, the Waterfalls setting). Follow-up (0.49.43, BUGS.md #47): a freed river column still in the rest shows the map's current (`riverCurrentBandM`), so the river no longer slows beside an edit. Follow-up (0.49.44, BUGS.md #41b, partly): a sleeping chunk passes its edges' flow on, so a fixture reservoir spilling over its dam sleeps; deep water's slosh (seed 0's reservoirs) still keeps them awake. Tuning (0.50.50, owner 2026-11-09): river currents doubled (`riverCurrentScale` 2, `riverCurrentMaxMs` 3 m/s) |
 | 54 — Skinned characters | 🚧 In progress — S1 built and tested natively and in Chrome on the GPU (ADR 0070, `CHARACTERS.md` §11): the import pipeline (Blender headless, FBX → GLB with the palette remap), `shared/models` (data, generator, validation, a fixture model), `dwell-models` (GLB reader, clips, blending, role → clip player), GPU skinning in the renderer, other players drawn as the Peasant on both faces, the seven animals in the data and the Model Viewer. Outstanding: CI; the owner's look and confirmation that the packs may ship in a web build; S2 (your arms, own body and shadow as the model; held items on the skinned hand), S3 (the animals in the world), the tools pack |
-| 55 — Octagonal logs | 🚧 In progress — T1 built (0.51.0, a new compatibility line; ADR 0072): `crossSection` as block data, the octagon squared where same-axis logs join, drawn and collided (terrain) on both faces. T2's felling as wedges built (0.51.0): `dwell:log_ramp`, a wood's `fellWedge`, the stump's ramp and the trunk's upside-down ramp, no scripted tip, shaped piece cells as hulls. Outstanding: the owner's bench check of T1 and a felled tree; T2's carved notch on the octagon, felled pieces and wedges as octagons |
+| 55 — Octagonal logs | 🚧 In progress — T1 built (0.51.0, a new compatibility line; ADR 0072): `crossSection` as block data, the octagon squared where same-axis logs join, drawn and collided (terrain) on both faces. T2's felling as wedges built (0.51.0): `dwell:log_ramp`, a wood's `fellWedge`, the stump's ramp and the trunk's upside-down ramp, shaped piece cells as hulls; follow-up: the matching trunk wedge by default, tipped by the wood's `fellTip` (the log's 1). T3's bark ring on the caps follows the octagon, none along joined sides (`crossSection.ring`/`heart`). Outstanding: the owner's bench check of T1 and a felled tree; T2's carved notch on the octagon, felled pieces and wedges as octagons |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -5492,7 +5492,8 @@ this phase (its held light is).
 **Status:** 🚧 In progress — T1 built in 0.51.0 (a new compatibility line); T2's felling as wedges
 built in 0.51.0 (the wood ramp blocks ship in the line's first release). Outstanding: the owner's
 bench check of T1 and of a felled tree; T2's carved notch on the octagon and felled pieces as
-octagons.
+octagons. T3's bark ring on the octagon built (0.51.0); T2 follow-up (owner, 2026-11-09): the
+matching trunk wedge with the old tip, as data (`fellTip`).
 
 Owner (2026-11-09): "trees should be octagons around. But smoothly connect when placed next to each
 other, full width sides where they meet." A real shape with collision (owner's choice).
@@ -5537,6 +5538,27 @@ other, full width sides where they meet." A real shape with collision (owner's c
 - [ ] Felled pieces' body colliders as octagons (`Physics::add_piece` boxes them today), and the
   wedges' octagonal outline (the wood ramps are square).
 - [ ] Bench screenshots of a felled tree mid-fall and its stump checked by the owner.
+- [x] Follow-up (owner, 2026-11-09: "You can make the tree tip if needed, like we used to, maybe 3/4
+  of the force"): `fellWedgeTrunk` defaults to `matching` (`open` stays a value), and a wood's
+  **`fellTip`** (shared/tools, validated in [0, 2], 0: none) releases the trunk with that share of
+  the old scripted topple spin (`Felling::detach`'s `away_from` share). The log's is 1
+  (`notching_fells_a_trunk_in_about_ten_swings_toward_the_notch`, both faces: down past 60° toward
+  the notch in ~75 ticks, not sideways; `gen.test.mjs`: a bad `fellTip` fails, the defaults).
+
+**T3 — the end caps' bark ring on the octagon** [built, 0.51.0]
+
+- [x] Owner (2026-11-09): "On the octagon log, the outside bark ring should follow the octagon, it
+  doesn't, it gets cut off on the corners." `crossSection.ring` (the band's width, a fraction of the
+  shorter side) and `crossSection.heart` (the tile inside it; `logHeart`, the ringless end grain in
+  `shared/textures/materials.json`), validated by `shared/blocks/gen.mjs` and carried by the sync's
+  tag 13. `dwell_blocks::octagon::cap_pieces` splits a cap into the heart (the outline moved in by
+  the ring's width) and a bark band along each edge of the octagon that is not joined, chamfers
+  included; the mesher draws the band with the side tile. A joined side has no band, so a joined
+  wall's top reads as one surface of end grain (`a_lone_logs_bark_ring_follows_the_octagon`,
+  `joined_sides_have_no_ring`; the mesher's `a_lone_logs_cap_rings_the_octagon_in_bark` and
+  `joined_logs_tops_have_no_ring_between_them`, both faces, red before the fix). The fixture's
+  `test:post` has a ring with no heart by data alone.
+- [ ] Bench screenshots of a lone trunk's end and a joined wall's top checked by the owner.
 
 **Deviations (T2):** the owner's default was the trunk's upside-down ramp *matching* the stump's
 (parallel, the cut cell split along its diagonal) and, if it didn't tip, a steeper 2-cell 45° wedge.
@@ -5546,7 +5568,11 @@ A slid toward the notch and toppled back over the hinge. So the default is `open
 upside-down ramp reaches down at the hinge, the two ramps meet on the hinge's edge in a V open
 toward the notch (a real open-face notch), and the trunk, on that edge with its weight over the
 notch, pivots into it on both faces. `matching` stays a data value. The cut cell's notch-side
-half is chips.
+half is chips. Reversed by the owner the same day: the default is `matching` again, with the old
+tip restored as the wood's `fellTip`. The owner suggested 3/4 of the old force; measured
+(`tests/chopping.rs`, the 3.5 m test trunk): at 0.75 and 0.85 it leant ~5° and rocked back upright
+on the matching wedge's slope, at 1 it is down past 60° toward the notch in ~1.25 s on both faces,
+so the log's `fellTip` is 1 (a data value to lower for taller trees).
 
 **Deviations:** targeting, the selection box and the LOD treat a log as its cube (T1 changes the
 drawn and collided shape only).

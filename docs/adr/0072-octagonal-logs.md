@@ -47,6 +47,16 @@ the join rule (same group, same axis), the geometry.
 4. **Mesher.** An octagonal cell is drawn whole (`octagon_voxel`), not in the greedy slices: bark
    (the side tile) on the sides and chamfers, end grain on the caps, lit by the sky its sides see.
    It covers no neighbour's face (its corners are open).
+4a. **The caps' bark ring** (Phase 55 T3; owner, 2026-11-09: "the outside bark ring should follow
+   the octagon, it doesn't, it gets cut off on the corners"). The square end-grain tile's painted
+   edge was clipped at the chamfers. Now the ring is geometry: `crossSection.ring` (its width, a
+   fraction of the shorter side, in metres so it is even on ½ m cells; validated in (0, ¼)) and
+   `crossSection.heart` (the tile inside it, a ringless end grain: `logHeart`; the cap's own tile
+   when absent). `octagon::cap_pieces` moves each edge of the outline in by the ring's width, the
+   heart being the moved outline, and lays a bark band (the side tile) along each edge that is not
+   joined, chamfers included; along a joined side there is none and the heart reaches the cell's
+   edge, so a joined wall's top reads as continuous end grain, not a ring per cell. Collision keeps
+   the whole cap. Sync: tag 13 carries the ring and the heart after the chamfer and the group.
 5. **Collision.** Octagonal cells go into the chunk's triangle mesh with the shaped cells (not the
    voxel collider), so a player standing on a lone log's cut corner slides off, and joined logs are
    flat across. A chunk with logs is rebuilt when a chunk round it changes, as shaped ones are.

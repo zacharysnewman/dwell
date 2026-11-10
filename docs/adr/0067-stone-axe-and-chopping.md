@@ -88,7 +88,13 @@ felling (FELLING.md). Scope: tools and woods are per build; cuts are per world, 
    log); broken, it drops a log. A wood without `fellWedge` falls as item 5. Measured (2026-11-09,
    `tests/chopping.rs`): `matching` stood on its 26.6° slope (friction 0.8); a 45° two-cell split
    slid toward the notch and toppled back over the hinge on face A; `open` is down past 60° toward
-   the notch in 0.6 s on both faces. A breaking change (new block states, a changed fell): it ships
+   the notch in 0.6 s on both faces. **Revised the same day** (owner: "You can make the tree tip if
+   needed, like we used to, maybe 3/4 of the force"): `fellWedgeTrunk` defaults to `matching`
+   (`open` stays a value), and the wood's **`fellTip`** (shared/tools, in [0, 2], 0: none) releases
+   the trunk tipping toward the notch with that share of item 5's topple spin (away from a point
+   past the hinge side). At 0.75 and 0.85 the 3.5 m test trunk leant ~5° and rocked back upright on
+   the matching slope; at 1 it is down past 60° toward the notch in ~1.25 s on both faces, so the
+   log's `fellTip` is 1. A breaking change (new block states, a changed fell): it ships
    in 0.51.0, the line's first release.
 6. **Bucking.** A lying wood (grain level) is cut the same way, best by vertical swings across it,
    and cut through at `buckFraction`: its cell (a 1 m length) goes and, in a mode that uses items,
