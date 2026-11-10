@@ -8,7 +8,11 @@
   "models": {
     "peasant": {
       "glb": "glb/peasant.glb",
-      "source": { "pack": "Stylized_NPC_-_Peasant_Nolant_DEMO", "fbx": "Assets/Stylized NPC - Peasant Nolant/Models/Peasant Nolant(Free Version).fbx", "texture": "Assets/Stylized NPC - Peasant Nolant/Textures/Peasant Nolant Green.png" },
+      "source": {
+        "pack": "Stylized_NPC_-_Peasant_Nolant_DEMO",
+        "fbx": "Assets/Stylized NPC - Peasant Nolant/Models/Peasant Nolant(Free Version).fbx",
+        "texture": "Assets/Stylized NPC - Peasant Nolant/Textures/Peasant Nolant Green.png"
+      },
       "scale": 1.04,
       "yaw": 0,
       "remap": {},
@@ -23,66 +27,122 @@
     },
     "deer": {
       "glb": "glb/deer.glb",
-      "source": { "pack": "Animals_FREE_-_Animated_Low_Poly_3D_Models", "fbx": "Assets/ithappy/Animals_FREE/Meshes/Deer_001.fbx", "texture": "Assets/ithappy/Animals_FREE/Textures/Texture.png" },
+      "source": {
+        "pack": "Animals_FREE_-_Animated_Low_Poly_3D_Models",
+        "fbx": "Assets/ithappy/Animals_FREE/Meshes/Deer_001.fbx",
+        "texture": "Assets/ithappy/Animals_FREE/Textures/Texture.png"
+      },
       "scale": 1,
       "yaw": 0,
       "remap": {},
       "fallback": "idle",
-      "roles": { "idle": { "clip": "idle" }, "walk": { "clip": "walk" }, "sprint": { "clip": "run" } }
+      "roles": {
+        "idle": { "clip": "idle" },
+        "walk": { "clip": "walk" },
+        "sprint": { "clip": "run" }
+      }
     },
     "dog": {
       "glb": "glb/dog.glb",
-      "source": { "pack": "Animals_FREE_-_Animated_Low_Poly_3D_Models", "fbx": "Assets/ithappy/Animals_FREE/Meshes/Dog_001.fbx", "texture": "Assets/ithappy/Animals_FREE/Textures/Texture.png" },
+      "source": {
+        "pack": "Animals_FREE_-_Animated_Low_Poly_3D_Models",
+        "fbx": "Assets/ithappy/Animals_FREE/Meshes/Dog_001.fbx",
+        "texture": "Assets/ithappy/Animals_FREE/Textures/Texture.png"
+      },
       "scale": 1,
       "yaw": 0,
       "remap": {},
       "fallback": "idle",
-      "roles": { "idle": { "clip": "idle" }, "walk": { "clip": "walk" }, "sprint": { "clip": "run" } }
+      "roles": {
+        "idle": { "clip": "idle" },
+        "walk": { "clip": "walk" },
+        "sprint": { "clip": "run" }
+      }
     },
     "kitty": {
       "glb": "glb/kitty.glb",
-      "source": { "pack": "Animals_FREE_-_Animated_Low_Poly_3D_Models", "fbx": "Assets/ithappy/Animals_FREE/Meshes/Kitty_001.fbx", "texture": "Assets/ithappy/Animals_FREE/Textures/Texture.png" },
+      "source": {
+        "pack": "Animals_FREE_-_Animated_Low_Poly_3D_Models",
+        "fbx": "Assets/ithappy/Animals_FREE/Meshes/Kitty_001.fbx",
+        "texture": "Assets/ithappy/Animals_FREE/Textures/Texture.png"
+      },
       "scale": 1,
       "yaw": 0,
       "remap": {},
       "fallback": "idle",
-      "roles": { "idle": { "clip": "idle" }, "walk": { "clip": "walk" }, "sprint": { "clip": "run" } }
+      "roles": {
+        "idle": { "clip": "idle" },
+        "walk": { "clip": "walk" },
+        "sprint": { "clip": "run" }
+      }
     },
     "horse": {
       "glb": "glb/horse.glb",
-      "source": { "pack": "Animals_FREE_-_Animated_Low_Poly_3D_Models", "fbx": "Assets/ithappy/Animals_FREE/Meshes/Horse_001.fbx", "texture": "Assets/ithappy/Animals_FREE/Textures/Texture.png" },
+      "source": {
+        "pack": "Animals_FREE_-_Animated_Low_Poly_3D_Models",
+        "fbx": "Assets/ithappy/Animals_FREE/Meshes/Horse_001.fbx",
+        "texture": "Assets/ithappy/Animals_FREE/Textures/Texture.png"
+      },
       "scale": 1,
       "yaw": 0,
       "remap": {},
       "fallback": "idle",
-      "roles": { "idle": { "clip": "idle" }, "walk": { "clip": "walk" }, "sprint": { "clip": "run" } }
+      "roles": {
+        "idle": { "clip": "idle" },
+        "walk": { "clip": "walk" },
+        "sprint": { "clip": "run" }
+      }
     },
     "tiger": {
       "glb": "glb/tiger.glb",
-      "source": { "pack": "Animals_FREE_-_Animated_Low_Poly_3D_Models", "fbx": "Assets/ithappy/Animals_FREE/Meshes/Tiger_001.fbx", "texture": "Assets/ithappy/Animals_FREE/Textures/Texture.png" },
+      "source": {
+        "pack": "Animals_FREE_-_Animated_Low_Poly_3D_Models",
+        "fbx": "Assets/ithappy/Animals_FREE/Meshes/Tiger_001.fbx",
+        "texture": "Assets/ithappy/Animals_FREE/Textures/Texture.png"
+      },
       "scale": 1,
       "yaw": 0,
       "remap": {},
       "fallback": "idle",
-      "roles": { "idle": { "clip": "idle" }, "walk": { "clip": "walk" }, "sprint": { "clip": "run" } }
+      "roles": {
+        "idle": { "clip": "idle" },
+        "walk": { "clip": "walk" },
+        "sprint": { "clip": "run" }
+      }
     },
     "chicken": {
       "glb": "glb/chicken.glb",
-      "source": { "pack": "Animals_FREE_-_Animated_Low_Poly_3D_Models", "fbx": "Assets/ithappy/Animals_FREE/Meshes/Chicken_001.fbx", "texture": "Assets/ithappy/Animals_FREE/Textures/Texture.png" },
+      "source": {
+        "pack": "Animals_FREE_-_Animated_Low_Poly_3D_Models",
+        "fbx": "Assets/ithappy/Animals_FREE/Meshes/Chicken_001.fbx",
+        "texture": "Assets/ithappy/Animals_FREE/Textures/Texture.png"
+      },
       "scale": 1,
       "yaw": 0,
       "remap": {},
       "fallback": "idle",
-      "roles": { "idle": { "clip": "idle" }, "walk": { "clip": "walk" }, "sprint": { "clip": "run" } }
+      "roles": {
+        "idle": { "clip": "idle" },
+        "walk": { "clip": "walk" },
+        "sprint": { "clip": "run" }
+      }
     },
     "penguin": {
       "glb": "glb/penguin.glb",
-      "source": { "pack": "Animals_FREE_-_Animated_Low_Poly_3D_Models", "fbx": "Assets/ithappy/Animals_FREE/Meshes/Pinguin_001.fbx", "texture": "Assets/ithappy/Animals_FREE/Textures/Texture.png" },
+      "source": {
+        "pack": "Animals_FREE_-_Animated_Low_Poly_3D_Models",
+        "fbx": "Assets/ithappy/Animals_FREE/Meshes/Pinguin_001.fbx",
+        "texture": "Assets/ithappy/Animals_FREE/Textures/Texture.png"
+      },
       "scale": 1,
       "yaw": 0,
       "remap": {},
       "fallback": "idle",
-      "roles": { "idle": { "clip": "idle" }, "walk": { "clip": "walk" }, "sprint": { "clip": "run" } }
+      "roles": {
+        "idle": { "clip": "idle" },
+        "walk": { "clip": "walk" },
+        "sprint": { "clip": "run" }
+      }
     }
   }
 }
