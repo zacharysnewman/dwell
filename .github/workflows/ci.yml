@@ -38,6 +38,8 @@ jobs:
           node --test shared/items/gen.test.mjs
           node shared/ground/gen.mjs
           node --test shared/ground/gen.test.mjs
+          node shared/creatures/gen.mjs
+          node --test shared/creatures/gen.test.mjs
           node --test shared/input/gen.test.mjs
           node --test shared/look/gen.test.mjs
           node shared/look/clouds.mjs

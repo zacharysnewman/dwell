@@ -543,7 +543,7 @@ body is the crouch clip as drawn, poking above a 1-block crawlspace (Q4); creatu
     are just below the frame. Keep, or add a slide camera (lower or pitched a little down) or raise
     the slide clip's lead leg so they show looking level?
 
-## 11. Skinned models **[in progress, Phase 54: S1 built]**
+## 11. Skinned models **[in progress, Phase 54: S1 built, S3's wandering animals built]**
 
 [ADR 0070](./adr/0070-skinned-models.md). The owner's decision (2026-11-09): **skinned models from
 the Unity Asset Store packs replace the rigid-part characters**, restyled first by **remapping**
@@ -602,10 +602,20 @@ characters' ramp from the vertex's palette colour, the same lights and shadow ma
   Peasant's arms are part of its one body mesh, with no arms mesh or first-person clips; drawing them
   at the eye needs its own view and clips (later).
 
-### 11.6 What phase 2 leaves (next)
+### 11.6 The animals in the world (phase 3, ADR 0073)
 
-- The **animals** in the world (Phase 40's C3 creatures move here); jump, swim and climb clips for
-  the player; looks per player (§9.4) as models.
+- **Creatures** (`shared/creatures/creatures.json`, ADR 0073): the deer, the horse and the chicken spawn
+  in groups on grass (the chicken on dirt too) near players, rolled once per chunk column from the seed;
+  they idle and walk between random nearby points on ground they can stand on (no water, no step
+  steeper than their `climbRows`/`dropRows`), and go when no player is within 128 m. Server entities,
+  sent as `Creatures` to clients that said `CreaturesHello`; drawn with the skinned renderer (a mesh per
+  model), idle or walk (run above 3 m/s) by their speed. No damage, hunting or other behaviour yet: the
+  open questions are in ADR 0073.
+
+### 11.7 What is left (next)
+
+- Animal behaviour beyond wandering (ADR 0073's questions); jump, swim and climb clips for the
+  player; looks per player (§9.4) as models.
 - The **tools pack**; repainting with the painterly textures.
 - The **Model Viewer** (`docs/prototypes/model-viewer.html`) plays every model's clips by role; the
   Character Lab stays for the rigid parts until they go.

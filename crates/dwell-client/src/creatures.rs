@@ -80,13 +80,13 @@ impl ClientCreatures {
                 let to = s.net.position.map(f64::from);
                 // A point far off (a teleport, a first sight) is taken at once.
                 let far = (0..3).map(|i| (to[i] - s.shown[i]).powi(2)).sum::<f64>() > 16.0;
-                for i in 0..3 {
-                    s.shown[i] = if far {
+                s.shown = std::array::from_fn(|i| {
+                    if far {
                         to[i]
                     } else {
                         s.shown[i] + (to[i] - s.shown[i]) * k
-                    };
-                }
+                    }
+                });
                 let dyaw = (f64::from(s.net.yaw) - s.yaw + 540.0).rem_euclid(360.0) - 180.0;
                 s.yaw += dyaw * k;
                 CreatureView {

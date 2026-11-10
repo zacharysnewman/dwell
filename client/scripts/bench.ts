@@ -478,9 +478,15 @@ async function step(run: Run, s: Step): Promise<void> {
       const position: [number, number, number] = [cx - 4, cy + 2.5 * up, cz - 4.5];
       const yaw = (Math.atan2(cx - position[0], cz - position[2]) * 180) / Math.PI;
       const pitch = -20;
-      await until(page, `d.placeCamera(${JSON.stringify(position)}, ${String(yaw)}, ${String(pitch)})`, 30_000);
+      await until(
+        page,
+        `d.placeCamera(${JSON.stringify(position)}, ${String(yaw)}, ${String(pitch)})`,
+        30_000,
+      );
       run.camera = { position, yaw, pitch };
-      console.log(`  creatureCamera: ${String(n)} creatures, nearest at ${[cx, cy, cz].map((v) => f(v)).join(', ')}`);
+      console.log(
+        `  creatureCamera: ${String(n)} creatures, nearest at ${[cx, cy, cz].map((v) => f(v)).join(', ')}`,
+      );
       return;
     }
     case 'goto': {
