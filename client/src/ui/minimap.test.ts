@@ -12,10 +12,15 @@ import {
   toScreen,
   toWorld,
   zoomAt,
-  zoomRange,
-  cellColour,
   parseRevealTile,
   RevealCache,
+  ExploredLevels,
+  LEVELS,
+  Steps,
+  levelPxPerM,
+  tilePrefix,
+  type TileStore,
+  type ExploredHeights,
   tileOnScreen,
   type BigView,
   type ExploredCells,
@@ -32,7 +37,7 @@ import {
 import { GAMEPAD } from '../input/gamepad.gen';
 import { defaultHud, hudRecord, sanitizeHud } from './hudSettings';
 
-const view = (face: number): BigView => ({ face, cx: 100, cz: -40, pxPerM: 0.75 });
+const view = (face: number): BigView => ({ face, cx: 100, cz: -40, level: 1, pxPerM: 0.75 });
 
 describe('the explored map view', () => {
   for (const face of [0, 1]) {
@@ -66,21 +71,15 @@ describe('the explored map view', () => {
       expect(headingOnScreen(face, turned)).toBeCloseTo(Math.PI / 2, 9);
     });
 
-    it(`face ${String(face)}: zooming keeps the point under the pointer and stays in range`, () => {
+    it(`face ${String(face)}: zooming keeps the point under the pointer`, () => {
       const v = view(face);
       const at: [number, number] = [120, -35];
       const before = toWorld(v, ...at);
-      const z = zoomAt(v, MAP.bigMap.zoomStep, ...at);
-      expect(z.pxPerM).toBeCloseTo(v.pxPerM * MAP.bigMap.zoomStep, 9);
+      const z = zoomAt(v, 2.5, ...at);
+      expect(z.pxPerM).toBe(2.5);
       const after = toWorld(z, ...at);
       expect(after[0]).toBeCloseTo(before[0], 9);
       expect(after[1]).toBeCloseTo(before[1], 9);
-      const [lo, hi] = zoomRange();
-      let w = v;
-      for (let n = 0; n < 100; n++) w = zoomAt(w, MAP.bigMap.zoomStep, 0, 0);
-      expect(w.pxPerM).toBeCloseTo(hi, 9);
-      for (let n = 0; n < 200; n++) w = zoomAt(w, 1 / MAP.bigMap.zoomStep, 0, 0);
-      expect(w.pxPerM).toBeCloseTo(lo, 9);
     });
 
     it(`face ${String(face)}: a drag moves the ground with the pointer`, () => {
@@ -191,104 +190,167 @@ describe('the minimap size', () => {
   });
 });
 
-describe('the revealed big map (mapRevealed, creative)', () => {
-  /** A client whose workers finish every tile asked for: each cell coloured from its indices. */
-  const fakeClient = (n: number, edgeAt = Infinity) => {
-    const done: Uint8Array[] = [];
-    const asked: string[] = [];
-    return {
-      asked,
-      requestReveal(face: number, ti: number, tk: number) {
-        asked.push(`${String(face)},${String(ti)},${String(tk)}`);
-        const b = new Uint8Array(9 + n * n * 4);
-        const d = new DataView(b.buffer);
-        b[0] = face;
-        d.setInt32(1, ti, true);
-        d.setInt32(5, tk, true);
-        for (let k = 0; k < n; k++) {
-          for (let i = 0; i < n; i++) {
-            const o = 9 + (k * n + i) * 4;
-            b[o] = (ti * n + i) & 0xff;
-            b[o + 1] = (tk * n + k) & 0xff;
-            b[o + 2] = face;
-            b[o + 3] = Math.abs(ti * n + i) * MAP.explored.cellM > edgeAt ? 0 : 255;
-          }
-        }
-        done.push(b);
-      },
-      takeReveal: () => done.shift(),
-    };
-  };
-  const cellsIn = (v: BigView, w: number, h: number) => {
-    const c = MAP.explored.cellM;
-    const [ax, az] = toWorld(v, -w / 2, -h / 2);
-    const [bx, bz] = toWorld(v, w / 2, h / 2);
-    const out: [number, number][] = [];
-    for (let k = Math.floor(Math.min(az, bz) / c); k <= Math.floor(Math.max(az, bz) / c); k++) {
-      for (let i = Math.floor(Math.min(ax, bx) / c); i <= Math.floor(Math.max(ax, bx) / c); i++) {
-        out.push([i, k]);
-      }
+/** A tile's `takeReveal` bytes: each cell's colour from its indices; alpha 0 past `edgeAt` m. */
+const tileBytes = (
+  n: number,
+  face: number,
+  ti: number,
+  tk: number,
+  cellM: number,
+  edgeAt = Infinity,
+) => {
+  const b = new Uint8Array(13 + n * n * 6);
+  const d = new DataView(b.buffer);
+  b[0] = face;
+  d.setInt32(1, ti, true);
+  d.setInt32(5, tk, true);
+  d.setInt32(9, cellM, true);
+  for (let k = 0; k < n; k++) {
+    for (let i = 0; i < n; i++) {
+      const o = 13 + (k * n + i) * 4;
+      b[o] = (ti * n + i) & 0xff;
+      b[o + 1] = (tk * n + k) & 0xff;
+      b[o + 2] = face;
+      b[o + 3] = Math.abs(ti * n + i) * cellM > edgeAt ? 0 : 255;
+      d.setInt16(13 + n * n * 4 + (k * n + i) * 2, 2 * (ti * n + i), true);
     }
-    return out;
-  };
+  }
+  return b;
+};
 
+/** A client whose workers finish every tile asked for (`tileBytes`). */
+const fakeClient = (n: number, edgeAt = Infinity) => {
+  const done: Uint8Array[] = [];
+  const asked: string[] = [];
+  return {
+    asked,
+    requestReveal(face: number, ti: number, tk: number, cellM: number) {
+      asked.push(RevealCache.key(cellM, face, ti, tk));
+      done.push(tileBytes(n, face, ti, tk, cellM, edgeAt));
+    },
+    takeReveal: () => done.shift(),
+  };
+};
+
+/** A memory tile store. */
+const memoryTiles = () => {
+  const kept = new Map<string, Uint8Array>();
+  const store: TileStore = {
+    list: (prefix) =>
+      Promise.resolve(
+        [...kept]
+          .filter(([k]) => k.startsWith(prefix))
+          .map(([k, v]) => [k.slice(prefix.length), v]),
+      ),
+    put: (key, bytes) => {
+      kept.set(key, bytes);
+      return Promise.resolve();
+    },
+  };
+  return { kept, store };
+};
+
+describe('the zoom levels (owner, 2026-11-09)', () => {
+  it('are at most five, the closest the minimap area at 1 m a cell, the widest the island, geometric between', () => {
+    expect(LEVELS.length).toBeGreaterThanOrEqual(2);
+    expect(LEVELS.length).toBeLessThanOrEqual(5);
+    const first = LEVELS[0];
+    const last = LEVELS[LEVELS.length - 1];
+    expect(first).toEqual({ cellM: 1, spanM: 2 * MAP.minimap.radiusM });
+    // shared/protocol/constants.json's islandRadius.
+    expect(last?.spanM).toBe(50_000);
+    const ratios = LEVELS.slice(1).map((l, i) => l.spanM / (LEVELS[i]?.spanM ?? 1));
+    for (const r of ratios) expect(r).toBeCloseTo(ratios[0] ?? 0, 2);
+    // Each level its own, coarser cell.
+    for (let i = 1; i < LEVELS.length; i++) {
+      expect(LEVELS[i]?.cellM).toBeGreaterThan(LEVELS[i - 1]?.cellM ?? 0);
+    }
+  });
+
+  it("a level's span fills the map's short side", () => {
+    for (let l = 0; l < LEVELS.length; l++) {
+      expect(levelPxPerM(l, 1000, 700) * (LEVELS[l]?.spanM ?? 0)).toBeCloseTo(700, 9);
+    }
+  });
+
+  it('a wheel or a pinch steps whole levels, the rest kept', () => {
+    const w = new Steps(100);
+    expect(w.add(40)).toBe(0);
+    expect(w.add(70)).toBe(1);
+    expect(w.add(-30)).toBe(0);
+    expect(w.add(-250)).toBe(-2);
+    w.reset();
+    expect(w.add(99)).toBe(0);
+  });
+});
+
+describe("the big map's tiles", () => {
   for (const face of [0, 1]) {
-    it(`face ${String(face)}: zoomed out over km, every cell in view resolves to a colour; adventure keeps the fog`, () => {
-      // The widest zoom: a cell a pixel, 800 × 600 px = 6.4 × 4.8 km.
-      const v: BigView = { face, cx: 300, cz: -900, pxPerM: zoomRange()[0] };
+    it(`face ${String(face)}: each level's view resolves at its own cell size; adventure keeps the fog at every level`, () => {
       const [w, h] = [800, 600];
-      const cache = new RevealCache();
-      const client = fakeClient(cache.tileCells);
-      const explored: ExploredCells = new Map([[cellKey(face, 40, -110), 0xabcdef]]);
-      let clock = 0;
-      const all = cache.tilesFor(v, w, h).length;
-      for (let frame = 0; frame < 2000 && cache.tiles.size < all; frame++) {
-        cache.pump(client, v, w, h, () => clock++);
+      const cells: ExploredCells = new Map([[cellKey(face, 40, -110), 0xabcdef]]);
+      const heights: ExploredHeights = new Map([[cellKey(face, 40, -110), 900]]);
+      const levels = new ExploredLevels(cells, heights);
+      levels.note(cellKey(face, 40, -110));
+      // The explored cell's centre, face-local.
+      const [ex, ez] = [40.5 * MAP.explored.cellM, -109.5 * MAP.explored.cellM];
+      for (let l = 0; l < LEVELS.length; l++) {
+        const { cellM } = LEVELS[l] ?? { cellM: 1 };
+        const v: BigView = { face, cx: ex, cz: ez, level: l, pxPerM: levelPxPerM(l, w, h) };
+        const cache = new RevealCache();
+        const client = fakeClient(cache.tileCells);
+        const all = cache.tilesFor(v, w, h);
+        expect(all.every(([c]) => c === cellM)).toBe(true);
+        let clock = 0;
+        for (let f = 0; f < 4000 && cache.tiles.size < all.length; f++) {
+          cache.pump(client, v, w, h, () => clock++);
+        }
+        expect(cache.tiles.size).toBe(all.length);
+        // The explored cell's place at this level.
+        const [i, k] = [Math.floor(ex / cellM), Math.floor(ez / cellM)];
+        // Creative: every cell resolves; adventure: only the explored ones.
+        const at = levels.at(cache, true, cellM, face, i, k);
+        expect(at).toBeDefined();
+        // A cell two explored cells away, still in view.
+        const d = Math.max(2, (2 * MAP.explored.cellM) / cellM);
+        expect(levels.at(cache, true, cellM, face, i + d, k)).toBeDefined();
+        expect(levels.at(cache, false, cellM, face, i + d, k)).toBeUndefined();
+        expect(levels.at(cache, false, cellM, face, i, k)).toBeDefined();
+        // Finer than the explored cells: the generator's detail; as coarse or coarser: the
+        // explored (loaded, edited) terrain's colour.
+        if (cellM < MAP.explored.cellM) {
+          expect(at?.[0]).toBe(((i & 0xff) << 16) | ((k & 0xff) << 8) | face);
+          expect(at?.[1]).toBe(2 * i);
+        } else expect(at).toEqual([0xabcdef, 900]);
+        // The other face's is another tile, not yet built.
+        expect(levels.at(cache, true, cellM, 1 - face, i, k)).toBeUndefined();
       }
-      const cells = cellsIn(v, w, h);
-      expect(cells.length).toBeGreaterThan(400_000);
-      for (const [i, k] of cells) {
-        const c = cellColour(explored, cache, face, i, k);
-        if (typeof c !== 'number') throw new Error(`cell (${String(i)}, ${String(k)}) is fogged`);
-      }
-      // An explored cell keeps the minimap's colour; another the generator's, on its own face.
-      expect(cellColour(explored, cache, face, 40, -110)).toBe(0xabcdef);
-      expect(cellColour(explored, cache, face, 41, -110)).toBe(
-        (41 << 16) | ((-110 & 0xff) << 8) | face,
-      );
-      expect(cellColour(explored, cache, 1 - face, 41, -110)).toBeUndefined();
-      // Adventure (no reveal): the unexplored cells stay fogged.
-      for (const [i, k] of cells.slice(0, 5000)) {
-        if (i === 40 && k === -110) continue;
-        expect(cellColour(explored, null, face, i, k)).toBeUndefined();
-      }
-      expect(cellColour(explored, null, face, 40, -110)).toBe(0xabcdef);
     });
   }
 
   it('beyond the world edge a cell resolves to nothing there (null), not fog', () => {
     const cache = new RevealCache();
     const client = fakeClient(cache.tileCells, 100);
-    const v: BigView = { face: 0, cx: 0, cz: 0, pxPerM: 1 };
+    const v: BigView = { face: 0, cx: 0, cz: 0, level: 0, pxPerM: 1 };
     for (let f = 0; f < 50; f++) cache.pump(client, v, 400, 400, () => 0);
-    expect(cache.colour(0, 0, 0)).toBeTypeOf('number');
-    expect(cache.colour(0, 20, 0)).toBeNull();
+    expect(cache.colour(1, 0, 0, 0)).toBeTypeOf('number');
+    expect(cache.colour(1, 0, 150, 0)).toBeNull();
   });
 
   it('the fill stays under its per-frame budget and its jobs in flight, nearest tiles first', () => {
-    const cache = new RevealCache(32, 2, 2);
+    const cache = new RevealCache(32, 2, 2, 1);
     const client = fakeClient(32);
-    const v: BigView = { face: 0, cx: 1000, cz: 1000, pxPerM: zoomRange()[0] };
+    const v: BigView = { face: 0, cx: 1000, cz: 1000, level: 2, pxPerM: levelPxPerM(2, 800, 600) };
     // Many finished tiles waiting (another view's): each costs 1 ms on this clock.
-    for (let t = 0; t < 40; t++) client.requestReveal(0, 100 + t, 0);
+    for (let t = 0; t < 40; t++) client.requestReveal(0, 100 + t, 0, 8);
     let clock = 0;
     const taken = cache.pump(client, v, 800, 600, () => clock++);
     expect(taken).toBeGreaterThan(0);
     expect(taken).toBeLessThanOrEqual(cache.budgetMs);
     expect(cache.inFlight).toBeLessThanOrEqual(2);
     // The first tiles asked for are the view centre's.
-    const centre = Math.floor(1000 / (32 * MAP.explored.cellM));
-    expect(client.asked.slice(40, 42)).toContain(`0,${String(centre)},${String(centre)}`);
+    const centre = Math.floor(1000 / (32 * 8));
+    expect(client.asked.slice(40, 42)).toContain(RevealCache.key(8, 0, centre, centre));
     for (let f = 0; f < 30; f++) {
       const t0 = clock;
       const n = cache.pump(client, v, 800, 600, () => clock++);
@@ -298,12 +360,125 @@ describe('the revealed big map (mapRevealed, creative)', () => {
     }
   });
 
-  it('a tile from the client parses its face, place and pixels', () => {
-    const b = new Uint8Array([1, 0xfd, 0xff, 0xff, 0xff, 7, 0, 0, 0, 9, 8, 7, 255]);
+  it('the background builds each level round the player, the widest the whole island, a few at a time', () => {
+    const cache = new RevealCache(32, 2, 1000, 1);
+    const list = cache.backgroundFor(0, 300, -200);
+    const by = new Map<number, number>();
+    for (const [c] of list) by.set(c, (by.get(c) ?? 0) + 1);
+    expect([...by.keys()].sort((a, b) => a - b)).toEqual(LEVELS.map((l) => l.cellM));
+    // The widest level: every tile touching the island, wherever the player stands.
+    const widest = LEVELS[LEVELS.length - 1]?.cellM ?? 1;
+    const span = 32 * widest;
+    const r = 25_000;
+    let island = 0;
+    for (let k = -Math.ceil(r / span) - 1; k <= Math.ceil(r / span); k++) {
+      for (let i = -Math.ceil(r / span) - 1; i <= Math.ceil(r / span); i++) {
+        const nx = Math.max(i * span, Math.min(0, (i + 1) * span));
+        const nz = Math.max(k * span, Math.min(0, (k + 1) * span));
+        if (nx * nx + nz * nz <= r * r) island++;
+      }
+    }
+    expect(by.get(widest)).toBe(island);
+    // The start level's first, nearest the player first.
+    const start = LEVELS[MAP.bigMap.startLevel]?.cellM ?? 1;
+    expect(list[0]?.[0]).toBe(start);
+    const s = 32 * start;
+    expect(list[0]?.slice(2)).toEqual([Math.floor(300 / s), Math.floor(-200 / s)]);
+    // With the map shut, one job in flight at a time (backgroundJobs), and only once the kept
+    // tiles are read.
+    const client = fakeClient(32);
+    const held: Uint8Array[] = [];
+    const slow = { requestReveal: client.requestReveal, takeReveal: () => held.shift() };
+    cache.pump(slow, null, 0, 0, () => 0, undefined, [0, 300, -200]);
+    expect(cache.inFlight).toBe(1);
+    cache.pump(slow, null, 0, 0, () => 0, undefined, [0, 300, -200]);
+    expect(cache.inFlight).toBe(1);
+  });
+
+  it('tiles are built once: a second open of the world reads them from the store and builds nothing', async () => {
+    const { kept, store } = memoryTiles();
+    const prefix = tilePrefix('local:seed-7', '0.50.61');
+    const pose = [0, 40, 40];
+    const first = new RevealCache(32, 2, 1000, 4, store, prefix);
+    await first.load();
+    const c1 = fakeClient(32);
+    for (let f = 0; f < 2000 && (f === 0 || first.backgroundLeft > 0 || first.inFlight > 0); f++) {
+      first.pump(c1, null, 0, 0, () => 0, undefined, pose);
+    }
+    expect(first.built).toBeGreaterThan(100);
+    expect(first.backgroundLeft).toBe(0);
+    expect(kept.size).toBe(first.built);
+    // Each tile once.
+    expect(new Set(c1.asked).size).toBe(c1.asked.length);
+    // The world again (a reload): everything read, nothing asked for, opened at any level.
+    const second = new RevealCache(32, 2, 1000, 4, store, prefix);
+    const c2 = fakeClient(32);
+    // Not yet read: no background (it would build them twice).
+    second.pump(c2, null, 0, 0, () => 0, undefined, pose);
+    expect(c2.asked).toEqual([]);
+    expect(await second.load()).toBe(first.built);
+    for (let l = 0; l < LEVELS.length; l++) {
+      const v: BigView = { face: 0, cx: 40, cz: 40, level: l, pxPerM: levelPxPerM(l, 800, 600) };
+      for (let f = 0; f < 10; f++) second.pump(c2, v, 800, 600, () => 0, undefined, pose);
+    }
+    expect(c2.asked).toEqual([]);
+    expect(second.built).toBe(0);
+    // Another build (or another world) has its own tiles.
+    const other = new RevealCache(32, 2, 1000, 4, store, tilePrefix('local:seed-7', '0.50.62'));
+    expect(await other.load()).toBe(0);
+  });
+
+  it('a world without a terrain builds no background', () => {
+    const cache = new RevealCache(32, 2, 1000, 1);
+    const none = {
+      asked: 0,
+      requestReveal(face: number, ti: number, tk: number, cellM: number) {
+        this.asked++;
+        const b = new Uint8Array(13);
+        const d = new DataView(b.buffer);
+        b[0] = face;
+        d.setInt32(1, ti, true);
+        d.setInt32(5, tk, true);
+        d.setInt32(9, cellM, true);
+        this.done.push(b);
+      },
+      done: [] as Uint8Array[],
+      takeReveal() {
+        return this.done.shift();
+      },
+    };
+    for (let f = 0; f < 20; f++) cache.pump(none, null, 0, 0, () => 0, undefined, [0, 0, 0]);
+    expect(cache.noTerrain).toBe(true);
+    expect(none.asked).toBe(1);
+  });
+
+  it('a tile from the client parses its face, place, level and pixels', () => {
+    const b = new Uint8Array([1, 0xfd, 0xff, 0xff, 0xff, 7, 0, 0, 0, 32, 0, 0, 0, 9, 8, 7, 255]);
     const t = parseRevealTile(b);
-    expect([t.face, t.ti, t.tk]).toEqual([1, -3, 7]);
+    expect([t.face, t.ti, t.tk, t.cellM]).toEqual([1, -3, 7, 32]);
     expect(Array.from(t.rgba ?? [])).toEqual([9, 8, 7, 255]);
-    expect(parseRevealTile(b.subarray(0, 9)).rgba).toBeNull();
+    expect(parseRevealTile(b.subarray(0, 13)).rgba).toBeNull();
+  });
+
+  it('an explored cell fogs and stales the right cells and tiles at every level', () => {
+    const cells: ExploredCells = new Map([[cellKey(1, 5, -1), 0x123456]]);
+    const levels = new ExploredLevels(cells, new Map());
+    levels.note(cellKey(1, 5, -1));
+    const e = MAP.explored.cellM;
+    for (const { cellM } of LEVELS) {
+      // A level cell inside the explored cell is explored; one just outside it is not.
+      const [x, z] = [5 * e + e / 2, -e / 2];
+      const [i, k] = [Math.floor(x / cellM), Math.floor(z / cellM)];
+      expect(levels.keyAt(cellM, 1, i, k)).toBe(cellKey(1, 5, -1));
+      expect(levels.keyAt(cellM, 0, i, k)).toBeUndefined();
+      if (cellM <= e)
+        expect(levels.keyAt(cellM, 1, i, Math.floor((z + e) / cellM))).toBeUndefined();
+      // Its tiles at that level include the one holding it.
+      const n = 32;
+      expect(levels.tilesOf(cellM, cellKey(1, 5, -1), n)).toContain(
+        RevealCache.key(cellM, 1, Math.floor(i / n), Math.floor(k / n)),
+      );
+    }
   });
 });
 
@@ -314,7 +489,7 @@ describe('a revealed tile on screen', () => {
       const rgba = new Uint8Array(n * n * 4);
       for (let b = 0; b < n; b++) for (let a = 0; a < n; a++) rgba[(b * n + a) * 4] = b * n + a;
       const img = tileOnScreen(rgba, n, face);
-      const v: BigView = { face, cx: 0, cz: 0, pxPerM: 1 };
+      const v: BigView = { face, cx: 0, cz: 0, level: 2, pxPerM: 1 };
       const cell = MAP.explored.cellM;
       // The tile's screen corner: the least screen x and y of its cells' centres.
       const at = (a: number, b: number) => toScreen(v, (a + 0.5) * cell, (b + 0.5) * cell);
@@ -335,21 +510,29 @@ describe('a revealed tile on screen', () => {
 describe('the big map panel (owner, 2026-11-09)', () => {
   const pose = (face: number, x: number, z: number) => () => [face, x, z, 0];
 
-  it('opens on the player, closes, and its zoom buttons stop at the zoom range', () => {
-    const s = new BigMapState(pose(0, 12, -30));
+  it('opens on the player at the start level, closes, and its zoom buttons step and clamp the levels', () => {
+    const s = new BigMapState(pose(0, 12, -30), () => [900, 600]);
     expect(s.open).toBe(false);
     s.openAt();
     expect(s.open).toBe(true);
-    expect(s.view).toMatchObject({ face: 0, cx: 12, cz: -30 });
-    expect(s.view?.pxPerM).toBeCloseTo(MAP.bigMap.startPxPerCell / MAP.explored.cellM);
-    const [lo, hi] = zoomRange();
-    for (let n = 0; n < 200; n++) s.zoomStep(1);
-    expect(s.view?.pxPerM).toBeCloseTo(hi);
+    expect(s.view).toMatchObject({ face: 0, cx: 12, cz: -30, level: MAP.bigMap.startLevel });
+    expect(s.view?.pxPerM).toBeCloseTo(levelPxPerM(MAP.bigMap.startLevel, 900, 600));
+    // In to the closest: the minimap's area across the short side.
+    for (let n = 0; n < 10; n++) s.zoomStep(1);
+    expect(s.view?.level).toBe(0);
+    expect((s.view?.pxPerM ?? 0) * 2 * MAP.minimap.radiusM).toBeCloseTo(600, 6);
     expect(s.canZoom(1)).toBe(false);
     expect(s.canZoom(-1)).toBe(true);
-    for (let n = 0; n < 200; n++) s.zoomStep(-1);
-    expect(s.view?.pxPerM).toBeCloseTo(lo);
+    expect(s.zoomStep(1)).toBe(false);
+    // Out a level at a time, to the whole island.
+    const seen = [0];
+    while (s.zoomStep(-1)) seen.push(s.view?.level ?? -1);
+    expect(seen).toEqual(LEVELS.map((_, l) => l));
+    expect((s.view?.pxPerM ?? 0) * 50_000).toBeCloseTo(600, 6);
     expect(s.canZoom(-1)).toBe(false);
+    // A big wheel spin is a few levels at most, never past the ends.
+    s.zoomStep(40);
+    expect(s.view?.level).toBe(0);
     // The buttons zoom about the centre: the place in the middle stays put.
     expect(s.view?.cx).toBeCloseTo(12);
     expect(s.view?.cz).toBeCloseTo(-30);
@@ -388,10 +571,15 @@ describe('the big map panel (owner, 2026-11-09)', () => {
     expect(scaleBar(1 / 16, 120).label).toBe('1 km');
     expect(scaleBar(1, 120).label).toBe('100 m');
     expect(scaleBar(0.01, 120).label).toBe('10 km');
-    // Every zoom the data allows has a bar.
-    const [lo, hi] = zoomRange();
-    for (const z of [lo, hi])
-      expect(scaleBar(z).px).toBeGreaterThan(MAP.bigMap.scaleBarMaxPx / 2.5);
+    // Every zoom level has a bar, on a phone and on a desktop.
+    for (let l = 0; l < LEVELS.length; l++) {
+      for (const [w, h] of [
+        [380, 700],
+        [1600, 900],
+      ] as const) {
+        expect(scaleBar(levelPxPerM(l, w, h)).px).toBeGreaterThan(MAP.bigMap.scaleBarMaxPx / 2.5);
+      }
+    }
   });
 
   it('is a framed panel round most of a desktop, nearly the whole of a phone with bigger buttons', () => {
@@ -432,7 +620,7 @@ describe('the big map panel (owner, 2026-11-09)', () => {
     });
 
     for (const face of [0, 1]) {
-      it(`face ${String(face)}: the stick and D-pad pan the way pushed, the zoom buttons zoom`, () => {
+      it(`face ${String(face)}: the stick and D-pad pan the way pushed, a zoom button press steps a level`, () => {
         const s = new BigMapState(pose(face, 0, 0));
         s.openAt();
         s.padFrame(buttons(), still, 0);
@@ -448,13 +636,15 @@ describe('the big map panel (owner, 2026-11-09)', () => {
         s.padFrame(buttons('up'), still, 200);
         const [, uy] = toScreen(b2, (s.view as BigView).cx, (s.view as BigView).cz);
         expect(uy).toBeLessThan(0);
-        // A held zoom-in zooms in; zoom-out out.
-        const z0 = (s.view as BigView).pxPerM;
+        // A press of zoom-in steps one level in (held, no more); zoom-out one out.
+        const l0 = (s.view as BigView).level;
         s.padFrame(buttons(MAP.bigMap.padZoomIn), still, 300);
-        expect((s.view as BigView).pxPerM).toBeGreaterThan(z0);
-        const z1 = (s.view as BigView).pxPerM;
+        expect((s.view as BigView).level).toBe(l0 - 1);
+        s.padFrame(buttons(MAP.bigMap.padZoomIn), still, 350);
+        expect((s.view as BigView).level).toBe(l0 - 1);
+        s.padFrame(buttons(), still, 360);
         s.padFrame(buttons(MAP.bigMap.padZoomOutAlt), still, 400);
-        expect((s.view as BigView).pxPerM).toBeLessThan(z1);
+        expect((s.view as BigView).level).toBe(l0);
         // Y: back on the player.
         s.padFrame(buttons(MAP.bigMap.padCenter), still, 410);
         expect(s.view).toMatchObject({ cx: 0, cz: 0 });
@@ -470,7 +660,7 @@ describe('the big map panel (owner, 2026-11-09)', () => {
   });
 });
 
-describe('the big map elevation shading', () => {
+describe('the big map tinted by height', () => {
   for (const face of [0, 1]) {
     it(`face ${String(face)}: a tile's grid is in screen order, its border its neighbours' cells`, () => {
       const n = 4;
@@ -487,7 +677,7 @@ describe('the big map elevation shading', () => {
       const s = n + 2;
       expect(g.colours.length).toBe(s * s);
       expect(g.any).toBe(true);
-      const v: BigView = { face, cx: 0, cz: 0, pxPerM: 1 };
+      const v: BigView = { face, cx: 0, cz: 0, level: 2, pxPerM: 1 };
       const cell = MAP.explored.cellM;
       const [i0, k0] = tileCellAt(face, ti, tk, 0, 0, n);
       const [x0, y0] = toScreen(v, (i0 + 0.5) * cell, (k0 + 0.5) * cell);
@@ -523,9 +713,10 @@ describe('the big map elevation shading', () => {
   });
 
   it("a cell's change makes its own tile and the tiles it borders stale", () => {
-    expect(tilesShowing(0, 5, 5, 32)).toEqual([cellKey(0, 0, 0)]);
-    expect(new Set(tilesShowing(1, 0, 31, 32))).toEqual(
-      new Set([cellKey(1, -1, 0), cellKey(1, 0, 0), cellKey(1, -1, 1), cellKey(1, 0, 1)]),
+    const key = (face: number, ti: number, tk: number) => RevealCache.key(8, face, ti, tk);
+    expect(tilesShowing(8, 0, 5, 5, 32)).toEqual([key(0, 0, 0)]);
+    expect(new Set(tilesShowing(8, 1, 0, 31, 32))).toEqual(
+      new Set([key(1, -1, 0), key(1, 0, 0), key(1, -1, 1), key(1, 0, 1)]),
     );
   });
 
@@ -542,19 +733,22 @@ describe('the big map elevation shading', () => {
 
   it("a revealed tile's heights follow its colours", () => {
     const n = 2;
-    const b = new Uint8Array(9 + n * n * 6);
+    const b = new Uint8Array(13 + n * n * 6);
     const d = new DataView(b.buffer);
+    d.setInt32(9, 8, true);
     for (let j = 0; j < n * n; j++) {
-      b[9 + j * 4 + 3] = 255;
-      d.setInt16(9 + n * n * 4 + j * 2, j === 3 ? -32768 : 10 * j + 1, true);
+      b[13 + j * 4 + 3] = 255;
+      d.setInt16(13 + n * n * 4 + j * 2, j === 3 ? -32768 : 10 * j + 1, true);
     }
     const t = parseRevealTile(b, n);
     expect(Array.from(t.heights ?? [])).toEqual([1, 11, 21, -32768]);
     expect(t.rgba?.length).toBe(n * n * 4);
     const cache = new RevealCache(n, 1, 1);
-    cache.tiles.set(RevealCache.key(0, 0, 0), t);
-    expect(cache.height(0, 1, 0)).toBe(11);
-    expect(cache.height(0, 1, 1)).toBe(NO_HEIGHT);
-    expect(cache.height(0, 5, 5)).toBe(NO_HEIGHT);
+    cache.tiles.set(RevealCache.key(8, 0, 0, 0), t);
+    expect(cache.height(8, 0, 1, 0)).toBe(11);
+    expect(cache.height(8, 0, 1, 1)).toBe(NO_HEIGHT);
+    expect(cache.height(8, 0, 5, 5)).toBe(NO_HEIGHT);
+    // Another level's cell is another tile.
+    expect(cache.height(2, 0, 1, 0)).toBe(NO_HEIGHT);
   });
 });

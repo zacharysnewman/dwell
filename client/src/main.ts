@@ -76,7 +76,7 @@ import { formatPerf, TickRate } from './ui/perfLine';
 import { applyHud } from './ui/hudSettings';
 import { LayoutRunner } from './ui/hudLayout';
 import { HUD_LAYOUT } from './ui/layout.gen';
-import { MapUi, indexedDbExplored } from './ui/minimap';
+import { MapUi, indexedDbExplored, indexedDbTiles } from './ui/minimap';
 import { hasWasmSimd } from './engine/simd';
 import { NEEDS_SIMD, startupMessage } from './ui/startupError';
 import { FpsMeter } from './ui/fps';
@@ -449,7 +449,14 @@ interface App {
  */
 function startMinimap(app: App, world: string): void {
   if (app.minimap) return;
-  const ui = new MapUi(document, app.client, world, indexedDbExplored());
+  const ui = new MapUi(
+    document,
+    app.client,
+    world,
+    indexedDbExplored(),
+    indexedDbTiles(),
+    recordedVersion(),
+  );
   app.minimap = ui;
   // While the big map is open the game holds still, as under the game menu (the keys and the
   // controller drive the map).

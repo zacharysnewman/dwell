@@ -3,10 +3,14 @@
 // metre, drawn again only on a move or a turn) and reports the explored cells it covers
 // (`takeExplored`); this shell shows the disc with the player's and the others' dots, keeps the
 // explored cells per world in this browser (IndexedDB, append-only), and draws them on the big map
-// (M, or a tap on the minimap): zoomable and pannable, unexplored ground fogged, the player's place
-// and heading on it. Its looks and sizes are data (shared/ui/map.json → map.gen.ts). In a mode
-// with the `mapRevealed` ability (creative) nothing is fogged: ground not yet explored takes its
-// colour from the terrain generator, a tile at a time in the job workers (`RevealCache`).
+// (M, or a tap on the minimap): five fixed zoom levels from the minimap's area to the whole island
+// (owner, 2026-11-09), pannable, unexplored ground fogged, the player's place and heading on it.
+// Each level's ground is its own tiles of its own cell size, generated from the terrain generator
+// in the job workers once per world and build, in the background, and kept in this browser
+// (`RevealCache`, IndexedDB `dwell-map-tiles`); explored cells (the loaded terrain's, edits too)
+// draw over the levels of their size and coarser. In a mode with the `mapRevealed` ability
+// (creative) nothing is fogged. Its looks, levels and sizes are data (shared/ui/map.json →
+// map.gen.ts).
 
 import { GAMEPAD } from '../input/gamepad.gen';
 import { MAP } from './map.gen';
@@ -180,7 +184,50 @@ export interface BigView {
   face: number;
   cx: number;
   cz: number;
+  /** The zoom level (`bigMap.levels`, 0 the closest). */
+  level: number;
   pxPerM: number;
+}
+
+/** The zoom levels, closest first (shared/ui/map.json): each its cell side and span (m). */
+export const LEVELS: readonly { cellM: number; spanM: number }[] = MAP.bigMap.levels;
+
+/** `level` within the levels. */
+export function clampLevel(level: number): number {
+  return Math.max(0, Math.min(LEVELS.length - 1, Math.round(level)));
+}
+
+/** A zoom level's cell side (m). */
+export function levelCellM(level: number): number {
+  return LEVELS[clampLevel(level)]?.cellM ?? MAP.explored.cellM;
+}
+
+/** Level `level`'s zoom on a `w` × `h` map (pixels a metre): its span across the short side. */
+export function levelPxPerM(level: number, w: number, h: number): number {
+  return Math.max(1, Math.min(w, h)) / (LEVELS[clampLevel(level)]?.spanM ?? 1);
+}
+
+/** The island's radius (m): the widest level's half span. */
+export function islandRadiusM(): number {
+  return (LEVELS[LEVELS.length - 1]?.spanM ?? 0) / 2;
+}
+
+/**
+ * Turns a stream of amounts (a wheel's pixels, a pinch's log spread) into whole steps of `step`
+ * each, the remainder kept for the next.
+ */
+export class Steps {
+  private acc = 0;
+  constructor(readonly step: number) {}
+  add(d: number): number {
+    this.acc += d;
+    const n = Math.trunc(this.acc / this.step) || 0;
+    this.acc -= n * this.step;
+    return n;
+  }
+  reset(): void {
+    this.acc = 0;
+  }
 }
 
 /** The handed sign of a face: its face-local −x is a yaw-0 player's right on face A, +x on B. */
@@ -198,16 +245,8 @@ export function toWorld(v: BigView, sx: number, sy: number): [number, number] {
   return [v.cx + (rightSign(v.face) * sx) / v.pxPerM, v.cz - sy / v.pxPerM];
 }
 
-/** The zoom's range in pixels a metre (the data's pixels a cell over the cell's size). */
-export function zoomRange(): [number, number] {
-  const c = MAP.explored.cellM;
-  return [MAP.bigMap.minPxPerCell / c, MAP.bigMap.maxPxPerCell / c];
-}
-
-/** Zoomed by `factor` about pixels (sx, sy) from the centre: the point under them stays put. */
-export function zoomAt(v: BigView, factor: number, sx: number, sy: number): BigView {
-  const [lo, hi] = zoomRange();
-  const pxPerM = Math.min(hi, Math.max(lo, v.pxPerM * factor));
+/** Zoomed to `pxPerM` about pixels (sx, sy) from the centre: the point under them stays put. */
+export function zoomAt(v: BigView, pxPerM: number, sx: number, sy: number): BigView {
   const [x, z] = toWorld(v, sx, sy);
   const next = { ...v, pxPerM };
   const [nx, nz] = toWorld(next, sx, sy);
@@ -227,119 +266,316 @@ export function headingOnScreen(face: number, yaw: number): number {
   return Math.atan2(sx, -sy);
 }
 
-/** What the revealed map needs from the client (`crates/dwell-client/src/map_reveal.rs`). */
+/** What the map's tiles need from the client (`crates/dwell-client/src/map_reveal.rs`). */
 export interface RevealClient {
-  requestReveal(face: number, ti: number, tk: number): void;
+  /** Asks for tile (ti, tk) of the level of `cellM` cells on `face`. */
+  requestReveal(face: number, ti: number, tk: number, cellM: number): void;
   takeReveal(): Uint8Array | undefined;
 }
 
 /**
- * A finished tile: face, tile indices, its RGBA (null: no terrain to reveal from) and its cells'
- * height codes (null: none sent).
+ * A finished tile: face, tile indices, its level's cell side, its RGBA (null: no terrain to
+ * reveal from) and its cells' height codes (null: none sent).
  */
 export interface RevealTile {
   face: number;
   ti: number;
   tk: number;
+  cellM: number;
   rgba: Uint8Array | null;
   heights: Int16Array | null;
 }
 
+/** `takeReveal`'s header: face (u8), then ti, tk and the cell side (i32 LE). */
+const TILE_HEADER = 13;
+
 /**
- * `takeReveal`'s bytes: face, ti and tk (i32 LE), then the tile's RGBA rows of x from its least z,
- * then (when there) its `n`² i16 LE height codes in the same order.
+ * `takeReveal`'s bytes: face, ti, tk and cellM (i32 LE), then the tile's RGBA rows of x from its
+ * least z, then (when there) its `n`² i16 LE height codes in the same order.
  */
 export function parseRevealTile(b: Uint8Array, n: number = MAP.revealed.tileCells): RevealTile {
   const d = new DataView(b.buffer, b.byteOffset, b.byteLength);
   const colours = n * n * 4;
+  const at = TILE_HEADER;
   let heights: Int16Array | null = null;
-  if (b.length >= 9 + colours + n * n * 2) {
+  if (b.length >= at + colours + n * n * 2) {
     heights = new Int16Array(n * n);
-    for (let j = 0; j < n * n; j++) heights[j] = d.getInt16(9 + colours + j * 2, true);
+    for (let j = 0; j < n * n; j++) heights[j] = d.getInt16(at + colours + j * 2, true);
   }
   return {
     face: b[0] ?? 0,
     ti: d.getInt32(1, true),
     tk: d.getInt32(5, true),
-    rgba: b.length > 9 ? b.subarray(9, Math.min(b.length, 9 + colours)) : null,
+    cellM: b.length >= at ? d.getInt32(9, true) : MAP.explored.cellM,
+    rgba: b.length > at ? b.subarray(at, Math.min(b.length, at + colours)) : null,
     heights,
   };
 }
 
 /**
- * The revealed big map's tiles (ADR 0068; owner, 2026-11-08): `revealed.tileCells`² explored cells
- * each, generated in the job workers from the seed and kept for the session. Each frame
- * `pump` takes finished tiles for at most `budgetMs` and asks for the missing tiles of the view,
- * nearest its centre first, at most `jobsInFlight` at once: opening or zooming the map never
+ * The built tiles kept in this browser (IndexedDB `dwell-map-tiles` in the browser, a memory one
+ * in tests): each a tile's `takeReveal` bytes under its key, a world's and build's under one
+ * prefix ([`tilePrefix`]). Append-only: a key is a tile, written once, never rewritten.
+ */
+export interface TileStore {
+  /** Every tile kept under `prefix`: [the rest of its key, its bytes]. */
+  list(prefix: string): Promise<[string, Uint8Array][]>;
+  put(key: string, bytes: Uint8Array): Promise<void>;
+}
+
+/**
+ * The prefix of a world's tiles for this build: the world, the build's version (the generator and
+ * the looks are the build's; another build builds its own once) and the tile size.
+ */
+export function tilePrefix(world: string, version: string, n: number = MAP.revealed.tileCells) {
+  return `${world}|${version}|${String(n)}|`;
+}
+
+/** The browser's tile store: `dwell-map-tiles`. Null where there is none. */
+export function indexedDbTiles(): TileStore | null {
+  if (typeof indexedDB === 'undefined') return null;
+  let db: Promise<IDBDatabase> | null = null;
+  const open = (): Promise<IDBDatabase> =>
+    (db ??= new Promise((resolve, reject) => {
+      const req = indexedDB.open('dwell-map-tiles', 1);
+      req.onupgradeneeded = () => req.result.createObjectStore('tiles');
+      req.onsuccess = () => {
+        resolve(req.result);
+      };
+      req.onerror = () => {
+        reject(req.error ?? new Error('indexedDB'));
+      };
+    }));
+  return {
+    list: (prefix) =>
+      open().then(
+        (d) =>
+          new Promise((resolve, reject) => {
+            const out: [string, Uint8Array][] = [];
+            const range = IDBKeyRange.bound(prefix, `${prefix}\uffff`);
+            const req = d.transaction('tiles', 'readonly').objectStore('tiles').openCursor(range);
+            req.onsuccess = () => {
+              const c = req.result;
+              if (!c) {
+                resolve(out);
+                return;
+              }
+              if (typeof c.key === 'string' && c.value instanceof Uint8Array) {
+                out.push([c.key.slice(prefix.length), c.value]);
+              }
+              c.continue();
+            };
+            req.onerror = () => {
+              reject(req.error ?? new Error('indexedDB'));
+            };
+          }),
+      ),
+    put: (key, bytes) =>
+      open().then(
+        (d) =>
+          new Promise((resolve, reject) => {
+            const req = d.transaction('tiles', 'readwrite').objectStore('tiles').put(bytes, key);
+            req.onsuccess = () => {
+              resolve();
+            };
+            req.onerror = () => {
+              reject(req.error ?? new Error('indexedDB'));
+            };
+          }),
+      ),
+  };
+}
+
+/** A tile: [cellM, face, ti, tk]. */
+export type TileAt = [number, number, number, number];
+
+/**
+ * The big map's tiles (ADR 0068; owner, 2026-11-09: "If the map loads I'd love if it only did it
+ * once. And preferably invisibly"): `revealed.tileCells`² cells of a zoom level each, generated
+ * in the job workers from the seed, kept in the store per world and build, so each is built once.
+ * Each frame `pump` takes finished tiles for at most `budgetMs`, asks for the open view's missing
+ * tiles (nearest its centre first, at most `jobsInFlight` at once) and, once the kept tiles are
+ * read and the view has what it needs, builds the background's (`backgroundJobs` at once): each
+ * level's round the player, the widest level's the whole island. Opening or zooming the map never
  * waits for generation.
  */
 export class RevealCache {
   readonly tiles = new Map<string, RevealTile>();
   private readonly pending = new Set<string>();
   /** Tiles still to ask for, the nearest last (the last view's). */
-  private wanted: [number, number, number][] = [];
+  private wanted: TileAt[] = [];
   private wantedFor = '';
+  /** The background's tiles still to ask for, the first last. */
+  private background: TileAt[] = [];
+  private backgroundAt = '';
+  /** Whether the kept tiles have been read (the background waits: nothing is built twice). */
+  loaded: boolean;
+  /** Tiles built this session (not read from the store). */
+  built = 0;
+  /** No terrain to build from (a world the client does not generate): no background. */
+  noTerrain = false;
 
   constructor(
     readonly tileCells: number = MAP.revealed.tileCells,
     readonly jobsInFlight: number = MAP.revealed.jobsInFlight,
     readonly budgetMs: number = MAP.revealed.budgetMs,
-  ) {}
-
-  /** A tile's key. */
-  static key(face: number, ti: number, tk: number): string {
-    return cellKey(face, ti, tk);
+    readonly backgroundJobs: number = MAP.revealed.backgroundJobs,
+    private readonly store: TileStore | null = null,
+    private readonly prefix = '',
+  ) {
+    this.loaded = store === null;
   }
 
-  /** The tiles a `w` × `h` view covers, [face, ti, tk] each, nearest its centre first. */
-  tilesFor(v: BigView, w: number, h: number): [number, number, number][] {
-    const span = this.tileCells * MAP.explored.cellM;
+  /** A tile's key. */
+  static key(cellM: number, face: number, ti: number, tk: number): string {
+    return `${String(cellM)}|${cellKey(face, ti, tk)}`;
+  }
+
+  /** Reads the kept tiles (once); the count read. */
+  async load(): Promise<number> {
+    let read = 0;
+    try {
+      for (const [rest, bytes] of (await this.store?.list(this.prefix)) ?? []) {
+        const t = parseRevealTile(bytes, this.tileCells);
+        const key = RevealCache.key(t.cellM, t.face, t.ti, t.tk);
+        if (key !== rest || this.tiles.has(key) || !t.rgba) continue;
+        this.tiles.set(key, t);
+        read++;
+      }
+    } catch {
+      // Unreadable: built again.
+    } finally {
+      this.loaded = true;
+    }
+    return read;
+  }
+
+  /** A tile's side (m) at a level of `cellM` cells. */
+  span(cellM: number): number {
+    return this.tileCells * cellM;
+  }
+
+  /** Whether tile (i, k) at the level of `cellM` cells touches the island (the rest is sea). */
+  onIsland(cellM: number, i: number, k: number): boolean {
+    const span = this.span(cellM);
+    const r = islandRadiusM();
+    // The tile's nearest point to the island's centre.
+    const nx = Math.max(i * span, Math.min(0, (i + 1) * span));
+    const nz = Math.max(k * span, Math.min(0, (k + 1) * span));
+    return nx * nx + nz * nz <= r * r;
+  }
+
+  /** The tiles a `w` × `h` view covers at its level that touch the island, nearest its centre first. */
+  tilesFor(v: BigView, w: number, h: number): TileAt[] {
+    const cellM = levelCellM(v.level);
+    const span = this.span(cellM);
     const [ax, az] = toWorld(v, -w / 2, -h / 2);
     const [bx, bz] = toWorld(v, w / 2, h / 2);
     const [i0, i1] = [Math.floor(Math.min(ax, bx) / span), Math.floor(Math.max(ax, bx) / span)];
     const [k0, k1] = [Math.floor(Math.min(az, bz) / span), Math.floor(Math.max(az, bz) / span)];
-    const out: [number, number, number][] = [];
-    for (let k = k0; k <= k1; k++) for (let i = i0; i <= i1; i++) out.push([v.face, i, k]);
-    const d = ([, i, k]: [number, number, number]) =>
+    const out: TileAt[] = [];
+    for (let k = k0; k <= k1; k++) {
+      for (let i = i0; i <= i1; i++)
+        if (this.onIsland(cellM, i, k)) out.push([cellM, v.face, i, k]);
+    }
+    const d = ([, , i, k]: TileAt) =>
       ((i + 0.5) * span - v.cx) ** 2 + ((k + 0.5) * span - v.cz) ** 2;
     return out.sort((a, b) => d(a) - d(b));
   }
 
   /**
-   * One frame's fill: takes finished tiles (handing each to `onTile`) while under `budgetMs` by
-   * `now`, then asks for the view's missing tiles up to `jobsInFlight` pending. The tiles taken.
+   * The background's tiles round a player at (x, z) on `face`: each level's within
+   * `prebuildSpans` of its span (a square, so the widest level's is the whole island), those
+   * touching the island only; the start level first, then outward, nearest first in each.
+   */
+  backgroundFor(face: number, x: number, z: number): TileAt[] {
+    const start = MAP.bigMap.startLevel;
+    const order = LEVELS.map((_, l) => l).sort(
+      (a, b) => Math.abs(a - start) - Math.abs(b - start) || b - a,
+    );
+    const out: TileAt[] = [];
+    for (const l of order) {
+      const { cellM, spanM } = LEVELS[l] ?? { cellM: 1, spanM: 1 };
+      const span = this.span(cellM);
+      const half = (spanM * MAP.revealed.prebuildSpans) / 2;
+      const [i0, i1] = [Math.floor((x - half) / span), Math.floor((x + half) / span)];
+      const [k0, k1] = [Math.floor((z - half) / span), Math.floor((z + half) / span)];
+      const level: TileAt[] = [];
+      for (let k = k0; k <= k1; k++) {
+        for (let i = i0; i <= i1; i++)
+          if (this.onIsland(cellM, i, k)) level.push([cellM, face, i, k]);
+      }
+      const d = ([, , i, k]: TileAt) => ((i + 0.5) * span - x) ** 2 + ((k + 0.5) * span - z) ** 2;
+      out.push(...level.sort((a, b) => d(a) - d(b)));
+    }
+    return out;
+  }
+
+  /** Whether tile `t` is built (or read) or on its way. */
+  private known([cellM, face, ti, tk]: TileAt): boolean {
+    const key = RevealCache.key(cellM, face, ti, tk);
+    return this.tiles.has(key) || this.pending.has(key);
+  }
+
+  private ask(client: RevealClient, [cellM, face, ti, tk]: TileAt): void {
+    this.pending.add(RevealCache.key(cellM, face, ti, tk));
+    client.requestReveal(face, ti, tk, cellM);
+  }
+
+  /**
+   * One frame's fill: takes finished tiles (keeping each, handing it to `onTile`) while under
+   * `budgetMs` by `now`; asks for the open view `v`'s missing tiles up to `jobsInFlight` pending;
+   * then, with the kept tiles read and the view whole, the background's round the player `pose`
+   * ([face, x, z]) up to `backgroundJobs` pending. The tiles taken.
    */
   pump(
     client: RevealClient,
-    v: BigView,
+    v: BigView | null,
     w: number,
     h: number,
     now: () => number,
     onTile?: (t: RevealTile) => void,
+    pose: ArrayLike<number> | null = null,
   ): number {
     const t0 = now();
     let taken = 0;
     while (now() - t0 < this.budgetMs) {
       const bytes = client.takeReveal();
       if (!bytes) break;
-      const t = parseRevealTile(bytes);
-      const key = RevealCache.key(t.face, t.ti, t.tk);
+      const t = parseRevealTile(bytes, this.tileCells);
+      const key = RevealCache.key(t.cellM, t.face, t.ti, t.tk);
       this.pending.delete(key);
       this.tiles.set(key, t);
+      if (t.rgba) {
+        this.built++;
+        void this.store?.put(this.prefix + key, bytes.slice()).catch(() => undefined);
+      } else this.noTerrain = true;
       onTile?.(t);
       taken++;
     }
-    const at = [v.face, v.cx, v.cz, v.pxPerM, w, h].join(',');
-    if (at !== this.wantedFor) {
-      this.wantedFor = at;
-      this.wanted = this.tilesFor(v, w, h).reverse();
+    if (v) {
+      const at = [v.face, v.cx, v.cz, v.pxPerM, v.level, w, h].join(',');
+      if (at !== this.wantedFor) {
+        this.wantedFor = at;
+        this.wanted = this.tilesFor(v, w, h).reverse();
+      }
+      while (this.pending.size < this.jobsInFlight && this.wanted.length > 0) {
+        const t = this.wanted.pop();
+        if (t && !this.known(t)) this.ask(client, t);
+      }
     }
-    while (this.pending.size < this.jobsInFlight && this.wanted.length > 0) {
-      const [face, ti, tk] = this.wanted.pop() ?? [0, 0, 0];
-      const key = RevealCache.key(face, ti, tk);
-      if (this.tiles.has(key) || this.pending.has(key)) continue;
-      this.pending.add(key);
-      client.requestReveal(face, ti, tk);
+    if (!this.loaded || this.noTerrain || !pose || (v && this.wanted.length > 0)) return taken;
+    const [face = 0, x = 0, z = 0] = Array.from(pose);
+    // Again once the player has moved a closest-level tile.
+    const step = this.span(levelCellM(0));
+    const at = [face, Math.floor(x / step), Math.floor(z / step)].join(',');
+    if (at !== this.backgroundAt) {
+      this.backgroundAt = at;
+      this.background = this.backgroundFor(face, x, z).reverse();
+    }
+    while (this.pending.size < this.backgroundJobs && this.background.length > 0) {
+      const t = this.background.pop();
+      if (t && !this.known(t)) this.ask(client, t);
     }
     return taken;
   }
@@ -349,28 +585,115 @@ export class RevealCache {
     return this.pending.size;
   }
 
-  /**
-   * Explored cell (i, k)'s revealed colour: 0xRRGGBB, null beyond the world's edge (or in a world
-   * the client does not generate), undefined while its tile is still to come.
-   */
-  colour(face: number, i: number, k: number): number | null | undefined {
+  /** The background's tiles still to build (after the last pump). */
+  get backgroundLeft(): number {
+    return this.background.filter((t) => !this.known(t)).length;
+  }
+
+  private cell(cellM: number, face: number, i: number, k: number) {
     const n = this.tileCells;
     const [ti, tk] = [Math.floor(i / n), Math.floor(k / n)];
-    const t = this.tiles.get(RevealCache.key(face, ti, tk));
+    return {
+      t: this.tiles.get(RevealCache.key(cellM, face, ti, tk)),
+      j: (k - tk * n) * n + (i - ti * n),
+    };
+  }
+
+  /**
+   * Cell (i, k) of the level of `cellM` cells: 0xRRGGBB, null beyond the world's edge (or in a
+   * world the client does not generate), undefined while its tile is still to come.
+   */
+  colour(cellM: number, face: number, i: number, k: number): number | null | undefined {
+    const { t, j } = this.cell(cellM, face, i, k);
     if (!t) return undefined;
     if (!t.rgba) return null;
-    const o = ((k - tk * n) * n + (i - ti * n)) * 4;
+    const o = j * 4;
     if ((t.rgba[o + 3] ?? 0) === 0) return null;
     return ((t.rgba[o] ?? 0) << 16) | ((t.rgba[o + 1] ?? 0) << 8) | (t.rgba[o + 2] ?? 0);
   }
 
-  /** Explored cell (i, k)'s revealed height code, NO_HEIGHT where its tile has none (yet). */
-  height(face: number, i: number, k: number): number {
-    const n = this.tileCells;
-    const [ti, tk] = [Math.floor(i / n), Math.floor(k / n)];
-    const h = this.tiles.get(RevealCache.key(face, ti, tk))?.heights;
-    const v = h?.[(k - tk * n) * n + (i - ti * n)];
+  /** Cell (i, k)'s height code at the level of `cellM` cells, NO_HEIGHT where none (yet). */
+  height(cellM: number, face: number, i: number, k: number): number {
+    const { t, j } = this.cell(cellM, face, i, k);
+    const v = t?.heights?.[j];
     return v === undefined || v === -32768 ? NO_HEIGHT : v;
+  }
+}
+
+/**
+ * The explored cells at every zoom level (fog per level, owner, 2026-11-09: "Adventure keeps the
+ * fog at every level"): a level's cell is explored when an explored cell covers it (a level finer
+ * than the explored cells) or lies in it (a coarser one, its latest explored cell standing for it).
+ */
+export class ExploredLevels {
+  private readonly coarse = new Map<number, Map<string, string>>();
+
+  constructor(
+    readonly cells: ExploredCells,
+    readonly heights: ExploredHeights,
+  ) {}
+
+  /** An explored cell's key came or changed. */
+  note(key: string): void {
+    const [face = 0, i = 0, k = 0] = key.split(',').map(Number);
+    const e = MAP.explored.cellM;
+    for (const { cellM } of LEVELS) {
+      if (cellM <= e) continue;
+      const r = cellM / e;
+      let m = this.coarse.get(cellM);
+      if (!m) this.coarse.set(cellM, (m = new Map()));
+      m.set(cellKey(face, Math.floor(i / r), Math.floor(k / r)), key);
+    }
+  }
+
+  /** The explored cell standing for level cell (i, k) of `cellM` cells; undefined: fogged. */
+  keyAt(cellM: number, face: number, i: number, k: number): string | undefined {
+    const e = MAP.explored.cellM;
+    if (cellM > e) return this.coarse.get(cellM)?.get(cellKey(face, i, k));
+    const r = e / cellM;
+    const key = cellKey(face, Math.floor(i / r), Math.floor(k / r));
+    return this.cells.has(key) ? key : undefined;
+  }
+
+  /**
+   * What level cell (i, k) of `cellM` cells shows: [0xRRGGBB, height code], null for nothing
+   * there (beyond the world's edge), undefined for fog (or, revealed, still to come). Unexplored
+   * is fog unless `revealed`; explored ground is the generator's at a level finer than the
+   * explored cells (their detail), else the explored cell's own (the loaded terrain's: edits).
+   */
+  at(
+    reveal: RevealCache,
+    revealed: boolean,
+    cellM: number,
+    face: number,
+    i: number,
+    k: number,
+  ): [number, number] | null | undefined {
+    const ek = this.keyAt(cellM, face, i, k);
+    if (!revealed && ek === undefined) return undefined;
+    const g = reveal.colour(cellM, face, i, k);
+    if (ek !== undefined && (cellM >= MAP.explored.cellM || g === undefined || g === null)) {
+      return [this.cells.get(ek) ?? 0, this.heights.get(ek) ?? NO_HEIGHT];
+    }
+    if (g === undefined || g === null) return g;
+    return [g, reveal.height(cellM, face, i, k)];
+  }
+
+  /** The tiles (at the level of `cellM` cells, `n` a side) whose images show explored cell `key`. */
+  tilesOf(cellM: number, key: string, n: number): string[] {
+    const [face = 0, i = 0, k = 0] = key.split(',').map(Number);
+    const e = MAP.explored.cellM;
+    if (cellM > e) {
+      const r = cellM / e;
+      return tilesShowing(cellM, face, Math.floor(i / r), Math.floor(k / r), n);
+    }
+    const r = e / cellM;
+    return [
+      ...new Set([
+        ...tilesShowing(cellM, face, i * r, k * r, n),
+        ...tilesShowing(cellM, face, i * r + r - 1, k * r + r - 1, n),
+      ]),
+    ];
   }
 }
 
@@ -393,22 +716,6 @@ export function tileOnScreen(
     }
   }
   return out;
-}
-
-/**
- * What the big map draws at explored cell (i, k): its explored colour, else (the map revealed)
- * the generator's, or null for nothing there (beyond the world's edge); undefined is fog.
- */
-export function cellColour(
-  cells: ExploredCells,
-  reveal: RevealCache | null,
-  face: number,
-  i: number,
-  k: number,
-): number | null | undefined {
-  const c = cells.get(cellKey(face, i, k));
-  if (c !== undefined) return c;
-  return reveal?.colour(face, i, k);
 }
 
 /** Whether two dot lists ([right, up] m each) draw the same (within a tenth of a metre). */
@@ -437,8 +744,8 @@ export interface MapClient extends RevealClient {
   mapRevealed(): boolean;
   cpuAdapter(): boolean;
   /**
-   * The big map's cells shaded by height (`dwell_game::minimap::shade_grid`, the minimap's own
-   * shading): a `w` × `h` screen-order grid inside a one-cell border; RGBA out.
+   * The big map's cells tinted by height (`dwell_game::minimap::shade_grid`, the minimap's look
+   * when its toggle is on): a `w` × `h` screen-order grid inside a one-cell border; RGBA out.
    */
   shadeMap(colours: Uint32Array, codes: Int32Array, w: number, h: number): Uint8Array;
 }
@@ -485,7 +792,7 @@ function padIndex(name: string): number {
 export interface PadMapStep {
   close: boolean;
   center: boolean;
-  /** The zoom factor this frame (1: none). */
+  /** The zoom levels stepped this frame: +1 in, −1 out, 0 none. */
   zoom: number;
   /** The pan this frame, screen pixels the view moves (right, down). */
   panX: number;
@@ -494,8 +801,8 @@ export interface PadMapStep {
 
 /**
  * The controller on the open map (docs/GAMEPAD.md; buttons as data, `bigMap.pad*`): the left
- * stick and the D-pad pan, the zoom buttons zoom while held, B (and View) close, Y centres. A
- * button held when the map opened is not a press until it lets go.
+ * stick and the D-pad pan, a press of a zoom button steps one zoom level, B (and View) close, Y
+ * centres. A button held when the map opened is not a press until it lets go.
  */
 export class PadMap {
   private was: boolean[] | null = null;
@@ -517,9 +824,9 @@ export class PadMap {
     const b = MAP.bigMap;
     const held = (name: string) => down[padIndex(name)] ?? false;
     const pressed = (name: string) => held(name) && !(was[padIndex(name)] ?? false);
-    let zoom = 1;
-    if (held(b.padZoomIn) || held(b.padZoomInAlt)) zoom *= b.padZoomPerS ** dt;
-    if (held(b.padZoomOut) || held(b.padZoomOutAlt)) zoom /= b.padZoomPerS ** dt;
+    let zoom = 0;
+    if (pressed(b.padZoomIn) || pressed(b.padZoomInAlt)) zoom += 1;
+    if (pressed(b.padZoomOut) || pressed(b.padZoomOutAlt)) zoom -= 1;
     const dz = GAMEPAD.tunables.deadzone;
     const stick = (v: number) => (Math.abs(v) < dz ? 0 : (v - Math.sign(v) * dz) / (1 - dz));
     const sx =
@@ -539,23 +846,29 @@ export class PadMap {
 
 /**
  * The big map's state, apart from the page (owner, 2026-11-09: a framed panel, an obvious close,
- * + and − zoom, "Center on me", a scale bar, drag to pan): open or closed, the view, and what each
- * control does to it.
+ * + and − zoom, "Center on me", a scale bar, drag to pan; at most five fixed zoom levels, the
+ * closest the minimap's area, the widest the whole island): open or closed, the view, and what
+ * each control does to it. `size` is the map's size in pixels, each level's span across its short
+ * side.
  */
 export class BigMapState {
   view: BigView | null = null;
   readonly pad = new PadMap();
 
-  constructor(private readonly pose: () => ArrayLike<number>) {}
+  constructor(
+    private readonly pose: () => ArrayLike<number>,
+    private readonly size: () => [number, number] = () => [800, 600],
+  ) {}
 
   get open(): boolean {
     return this.view !== null;
   }
 
-  /** Opens it centred on the player at the starting zoom. */
+  /** Opens it centred on the player at the start level. */
   openAt(): void {
     const [face = 0, x = 0, z = 0] = Array.from(this.pose());
-    this.view = { face, cx: x, cz: z, pxPerM: MAP.bigMap.startPxPerCell / MAP.explored.cellM };
+    const level = clampLevel(MAP.bigMap.startLevel);
+    this.view = { face, cx: x, cz: z, level, pxPerM: levelPxPerM(level, ...this.size()) };
     this.pad.reset();
   }
 
@@ -563,18 +876,28 @@ export class BigMapState {
     this.view = null;
   }
 
-  /** One zoom step about the centre (+1 in, −1 out), within the zoom's range. */
-  zoomStep(dir: number): void {
-    if (!this.view) return;
-    const f = dir > 0 ? MAP.bigMap.zoomStep : 1 / MAP.bigMap.zoomStep;
-    this.view = zoomAt(this.view, f, 0, 0);
+  /**
+   * `steps` zoom levels in (+) or out (−) about pixels (sx, sy) from the centre, clamped to the
+   * levels; whether the level changed.
+   */
+  zoomStep(steps: number, sx = 0, sy = 0): boolean {
+    if (!this.view || steps === 0) return false;
+    const level = clampLevel(this.view.level - Math.sign(steps) * Math.min(Math.abs(steps), 4));
+    if (level === this.view.level) return false;
+    this.view = { ...zoomAt(this.view, levelPxPerM(level, ...this.size()), sx, sy), level };
+    return true;
   }
 
   /** Whether zooming in (+1) or out (−1) can go further. */
   canZoom(dir: number): boolean {
     if (!this.view) return false;
-    const [lo, hi] = zoomRange();
-    return dir > 0 ? this.view.pxPerM < hi - 1e-9 : this.view.pxPerM > lo + 1e-9;
+    return dir > 0 ? this.view.level > 0 : this.view.level < LEVELS.length - 1;
+  }
+
+  /** The level's zoom again for the map's size (on a resize). */
+  fit(): void {
+    if (this.view)
+      this.view = { ...this.view, pxPerM: levelPxPerM(this.view.level, ...this.size()) };
   }
 
   /** Back to the player's place and face, the zoom kept. */
@@ -602,10 +925,7 @@ export class BigMapState {
       this.center();
       moved = true;
     }
-    if (s.zoom !== 1) {
-      this.view = zoomAt(this.view, s.zoom, 0, 0);
-      moved = true;
-    }
+    if (this.zoomStep(s.zoom)) moved = true;
     if (s.panX !== 0 || s.panY !== 0) {
       this.view = pan(this.view, -s.panX, -s.panY);
       moved = true;
@@ -665,12 +985,18 @@ export function tileGrid(
   return { colours, codes, any };
 }
 
-/** The tiles whose images show explored cell (i, k) (its own, and those it borders). */
-export function tilesShowing(face: number, i: number, k: number, n: number): string[] {
+/** The tiles (of the level of `cellM` cells) whose images show its cell (i, k): its own, and those it borders. */
+export function tilesShowing(
+  cellM: number,
+  face: number,
+  i: number,
+  k: number,
+  n: number,
+): string[] {
   const out = new Set<string>();
   for (const di of [-1, 0, 1]) {
     for (const dk of [-1, 0, 1]) {
-      out.add(RevealCache.key(face, Math.floor((i + di) / n), Math.floor((k + dk) / n)));
+      out.add(RevealCache.key(cellM, face, Math.floor((i + di) / n), Math.floor((k + dk) / n)));
     }
   }
   return [...out];
@@ -689,19 +1015,24 @@ export class MapUi {
   private readonly scaleEl: HTMLDivElement;
   private readonly scaleLabel: HTMLSpanElement;
   readonly state: BigMapState;
-  private cells: ExploredCells = new Map();
-  private heights: ExploredHeights = new Map();
+  private readonly cells: ExploredCells = new Map();
+  private readonly heights: ExploredHeights = new Map();
+  /** The explored cells at each zoom level (the fog). */
+  private readonly levels = new ExploredLevels(this.cells, this.heights);
   private dirty = false;
   private lastSave = 0;
   private dots: ArrayLike<number> = [];
   private lastUpdate = -Infinity;
   private readonly cpu: boolean;
-  /** The revealed map's tiles (a mode with `mapRevealed`). */
-  private readonly reveal = new RevealCache();
+  /** Every zoom level's tiles, built once per world and build (`RevealCache`). */
+  readonly reveal: RevealCache;
+  /** The pinch's and the wheel's steps between zoom levels. */
+  private readonly wheel = new Steps(MAP.bigMap.wheelStepPx);
+  private readonly pinch = new Steps(Math.log(MAP.bigMap.pinchStep));
   /** The big map's shaded tile images, and those to make again. */
   private readonly tileImages = new Map<string, HTMLCanvasElement | null>();
   private readonly staleTiles = new Set<string>();
-  /** The tiles with explored cells in them. */
+  /** The tiles (of every level) with explored cells in them. */
   private readonly exploredTiles = new Set<string>();
   private lastBigDraw = 0;
   private bigStale = false;
@@ -718,9 +1049,28 @@ export class MapUi {
     private readonly client: MapClient,
     private readonly world: string,
     private readonly store: ExploredStore | null,
+    tiles: TileStore | null = null,
+    version = '',
   ) {
     this.cpu = client.cpuAdapter();
-    this.state = new BigMapState(() => client.mapPose());
+    this.reveal = new RevealCache(
+      MAP.revealed.tileCells,
+      MAP.revealed.jobsInFlight,
+      MAP.revealed.budgetMs,
+      MAP.revealed.backgroundJobs,
+      tiles,
+      tilePrefix(world, version),
+    );
+    void this.reveal.load().then((read) => {
+      if (read > 0 && this.bigOpen) this.bigStale = true;
+    });
+    this.state = new BigMapState(
+      () => client.mapPose(),
+      () => [
+        Math.max(1, Math.round(this.bigCanvas.clientWidth || 800)),
+        Math.max(1, Math.round(this.bigCanvas.clientHeight || 600)),
+      ],
+    );
     const px = client.minimapPixels();
     this.root = doc.createElement('div');
     this.root.id = 'minimap';
@@ -745,7 +1095,7 @@ export class MapUi {
     title.textContent = 'Map';
     const hint = doc.createElement('span');
     hint.className = 'map-hint';
-    hint.textContent = 'Drag to move · scroll, pinch or + − to zoom · M or Esc to close';
+    hint.textContent = 'Drag to move · scroll, pinch or + − to zoom a level · M or Esc to close';
     const close = this.button('map-close', '✕', 'Close map (M or Esc)');
     bar.append(title, hint, close);
     const body = doc.createElement('div');
@@ -771,14 +1121,10 @@ export class MapUi {
       this.setBig(false);
     });
     this.zoomIn.addEventListener('click', () => {
-      this.state.zoomStep(1);
-      this.onZoom?.();
-      this.drawBig();
+      this.zoomBy(1);
     });
     this.zoomOut.addEventListener('click', () => {
-      this.state.zoomStep(-1);
-      this.onZoom?.();
-      this.drawBig();
+      this.zoomBy(-1);
     });
     centre.addEventListener('click', () => {
       this.state.center();
@@ -799,8 +1145,12 @@ export class MapUi {
       st.setProperty('--map-button', `${String(p.buttonPx)}px`);
       st.setProperty('--map-frame', MAP.bigMap.frameColor);
       st.setProperty('--map-fog', MAP.bigMap.fogColor);
+      st.setProperty('--map-levels', String(LEVELS.length));
       this.panel.classList.toggle('phone', p.phone);
-      if (this.bigOpen) this.drawBig();
+      if (this.bigOpen) {
+        this.state.fit();
+        this.drawBig();
+      }
     };
     size();
     doc.defaultView?.addEventListener('resize', size);
@@ -831,6 +1181,19 @@ export class MapUi {
     return b;
   }
 
+  /** Steps zoom levels about pixels (sx, sy) from the map's centre, with the zoom's sound. */
+  private zoomBy(steps: number, sx = 0, sy = 0): void {
+    if (this.state.zoomStep(steps, sx, sy)) {
+      this.onZoom?.();
+      this.drawBig();
+    }
+  }
+
+  /** The open map's zoom level (0 the closest), or null. */
+  get level(): number | null {
+    return this.state.view?.level ?? null;
+  }
+
   /** Whether the big map is open. */
   get bigOpen(): boolean {
     return !this.big.hidden;
@@ -845,6 +1208,7 @@ export class MapUi {
     if (open === this.bigOpen) return;
     this.big.hidden = !open;
     if (open) {
+      this.wheel.reset();
       this.state.openAt();
       if (this.doc.pointerLockElement) this.doc.exitPointerLock();
       this.drawBig();
@@ -857,32 +1221,49 @@ export class MapUi {
   /** A key on the open big map: + and − zoom, C centres on the player. Whether it was the map's. */
   key(code: string): boolean {
     if (!this.bigOpen) return false;
-    if (code === 'Equal' || code === 'NumpadAdd') this.state.zoomStep(1);
-    else if (code === 'Minus' || code === 'NumpadSubtract') this.state.zoomStep(-1);
-    if (code === 'Equal' || code === 'NumpadAdd' || code === 'Minus' || code === 'NumpadSubtract') {
-      this.onZoom?.();
-    } else if (code === 'KeyC') this.state.center();
-    else return false;
-    this.drawBig();
+    if (code === 'Equal' || code === 'NumpadAdd') this.zoomBy(1);
+    else if (code === 'Minus' || code === 'NumpadSubtract') this.zoomBy(-1);
+    else if (code === 'KeyC') {
+      this.state.center();
+      this.drawBig();
+    } else return false;
     return true;
   }
 
   /** The controller while the big map is open (docs/GAMEPAD.md). */
   padFrame(values: ArrayLike<number>, axes: ArrayLike<number>, now: number): void {
     if (!this.bigOpen) return;
+    const level = this.state.view?.level;
     const r = this.state.padFrame(values, axes, now);
+    if (this.state.view && this.state.view.level !== level) this.onZoom?.();
     if (r.closed) {
       this.big.hidden = true;
       this.onOpenChange?.(false);
     } else if (r.moved) this.drawBig();
   }
 
-  /** A cell's tile has explored cells (drawn without the reveal) and its images are stale. */
+  /** An explored cell came or changed: at every level its tiles have explored cells and are stale. */
   private noteCell(key: string): void {
-    const [face = 0, i = 0, k = 0] = key.split(',').map(Number);
+    this.levels.note(key);
     const n = this.reveal.tileCells;
-    this.exploredTiles.add(RevealCache.key(face, Math.floor(i / n), Math.floor(k / n)));
-    for (const t of tilesShowing(face, i, k, n)) this.staleTiles.add(t);
+    for (const { cellM } of LEVELS) {
+      const tiles = this.levels.tilesOf(cellM, key, n);
+      for (const t of tiles) this.staleTiles.add(t);
+      // Its own tiles (the middle of each 3 × 3).
+      const [face = 0, i = 0, k = 0] = key.split(',').map(Number);
+      const e = MAP.explored.cellM;
+      const [li, lk] =
+        cellM > e
+          ? [Math.floor((i * e) / cellM), Math.floor((k * e) / cellM)]
+          : [i * (e / cellM), k * (e / cellM)];
+      const [hi, hk] = cellM > e ? [li, lk] : [li + e / cellM - 1, lk + e / cellM - 1];
+      for (const [a, b] of [
+        [li, lk],
+        [hi, hk],
+      ] as const) {
+        this.exploredTiles.add(RevealCache.key(cellM, face, Math.floor(a / n), Math.floor(b / n)));
+      }
+    }
   }
 
   /** Each frame: the disc when the client drew it again, the dots, the explored cells. */
@@ -938,10 +1319,12 @@ export class MapUi {
       });
   }
 
-  /** The open revealed map's tiles: one frame's budget of them (drawn at most every `redrawMs`). */
+  /**
+   * The map's tiles: one frame's budget of them, the open view's first, else the background's
+   * (the open map drawn again at most every `redrawMs`).
+   */
   private fillReveal(): void {
-    const v = this.state.view;
-    if (this.big.hidden || !v || !this.client.mapRevealed()) return;
+    const v = this.big.hidden ? null : this.state.view;
     const c = this.bigCanvas;
     const w = Math.max(1, Math.round(c.clientWidth || 800));
     const h = Math.max(1, Math.round(c.clientHeight || 600));
@@ -955,10 +1338,11 @@ export class MapUi {
         // Its own image and its neighbours' borders.
         for (let di = -1; di <= 1; di++) {
           for (let dk = -1; dk <= 1; dk++) {
-            this.staleTiles.add(RevealCache.key(t.face, t.ti + di, t.tk + dk));
+            this.staleTiles.add(RevealCache.key(t.cellM, t.face, t.ti + di, t.tk + dk));
           }
         }
       },
+      this.client.mapPose(),
     );
     if (taken > 0) this.bigStale = true;
   }
@@ -987,25 +1371,24 @@ export class MapUi {
     dot(half, half, MAP.minimap.playerColor);
   }
 
-  /** Tile (ti, tk)'s shaded image (null: nothing in it to draw), made again when stale. */
-  private tileImage(face: number, ti: number, tk: number): HTMLCanvasElement | null {
-    const key = RevealCache.key(face, ti, tk);
+  /** Tile (ti, tk) of a level's tinted image (null: nothing in it to draw), made again when stale. */
+  private tileImage(cellM: number, face: number, ti: number, tk: number): HTMLCanvasElement | null {
+    const key = RevealCache.key(cellM, face, ti, tk);
     const revealed = this.client.mapRevealed();
     if (!revealed && !this.exploredTiles.has(key)) return null;
     const had = this.tileImages.get(key);
     if (had !== undefined && !this.staleTiles.has(key)) return had;
     const n = this.reveal.tileCells;
-    const reveal = revealed ? this.reveal : null;
     const g = tileGrid(
       face,
       ti,
       tk,
       n,
-      (i, k) => cellColour(this.cells, reveal, face, i, k),
       (i, k) => {
-        const key = cellKey(face, i, k);
-        return this.heights.get(key) ?? (reveal ? reveal.height(face, i, k) : NO_HEIGHT);
+        const c = this.levels.at(this.reveal, revealed, cellM, face, i, k);
+        return c ? c[0] : c;
       },
+      (i, k) => this.levels.at(this.reveal, revealed, cellM, face, i, k)?.[1] ?? NO_HEIGHT,
     );
     this.staleTiles.delete(key);
     if (!g.any) {
@@ -1032,18 +1415,18 @@ export class MapUi {
     if (!ctx) return;
     ctx.fillStyle = MAP.bigMap.fogColor;
     ctx.fillRect(0, 0, w, h);
-    const cell = MAP.explored.cellM;
+    const cell = levelCellM(v.level);
     const n = this.reveal.tileCells;
     // The shaded tiles, a texel a cell, unsmoothed; made again within a budget a draw (the rest
     // the next frames), whole pixels on both edges (a scaled draw at a fractional corner left
     // seams).
     ctx.imageSmoothingEnabled = false;
     const t0 = performance.now();
-    for (const [face, ti, tk] of this.reveal.tilesFor(v, w, h)) {
-      const key = RevealCache.key(face, ti, tk);
+    for (const [cellM, face, ti, tk] of this.reveal.tilesFor(v, w, h)) {
+      const key = RevealCache.key(cellM, face, ti, tk);
       const fresh = !this.tileImages.has(key) || this.staleTiles.has(key);
       if (fresh && performance.now() - t0 > 8) this.bigStale = true;
-      else this.tileImage(face, ti, tk);
+      else this.tileImage(cellM, face, ti, tk);
       const img = this.tileImages.get(key);
       if (!img) continue;
       const [ax, ay] = toScreen(v, ti * n * cell, tk * n * cell);
@@ -1096,20 +1479,17 @@ export class MapUi {
       const v = this.state.view;
       if (!v) return;
       const r = c.getBoundingClientRect();
-      const factor = e.deltaY < 0 ? MAP.bigMap.zoomStep : 1 / MAP.bigMap.zoomStep;
-      this.state.view = zoomAt(
-        v,
-        factor,
-        e.clientX - r.left - r.width / 2,
-        e.clientY - r.top - r.height / 2,
-      );
-      this.drawBig();
+      // A notch (or a line) of scroll is a step's worth; a trackpad's pixels add up to one.
+      const px = e.deltaMode === 0 ? e.deltaY : Math.sign(e.deltaY) * MAP.bigMap.wheelStepPx;
+      const steps = this.wheel.add(-px);
+      this.zoomBy(steps, e.clientX - r.left - r.width / 2, e.clientY - r.top - r.height / 2);
     });
     c.addEventListener('pointerdown', (e) => {
       const [x, y] = local(e);
       down.set(e.pointerId, { x, y });
       c.setPointerCapture(e.pointerId);
       c.classList.add('dragging');
+      this.pinch.reset();
     });
     c.addEventListener('pointermove', (e) => {
       const was = down.get(e.pointerId);
@@ -1122,9 +1502,9 @@ export class MapUi {
           const before = Math.hypot(was.x - other.x, was.y - other.y);
           const after = Math.hypot(x - other.x, y - other.y);
           const [mx, my] = [(x + other.x) / 2, (y + other.y) / 2];
-          let next = pan(v, (x - was.x) / 2, (y - was.y) / 2);
-          if (before > 4) next = zoomAt(next, after / before, mx, my);
-          this.state.view = next;
+          this.state.view = pan(v, (x - was.x) / 2, (y - was.y) / 2);
+          // A pinch steps a level each `pinchStep` of spread or squeeze.
+          if (before > 4) this.zoomBy(this.pinch.add(Math.log(after / before)), mx, my);
         }
       } else {
         this.state.view = pan(v, x - was.x, y - was.y);
