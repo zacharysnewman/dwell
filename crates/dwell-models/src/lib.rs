@@ -11,7 +11,9 @@ pub mod math;
 mod table {
     include!("models.gen.rs");
 }
-pub use table::{DETAIL_DEFAULT, DETAIL_LEVELS, GLBS, MODELS, PLAYER, PLAYER_GLB, PROP_GLBS, PROPS};
+pub use table::{
+    DETAIL_DEFAULT, DETAIL_LEVELS, GLBS, MODELS, PLAYER, PLAYER_GLB, PROP_GLBS, PROPS,
+};
 
 /// The fixture table (shared/models/fixtures): a model added by data alone, for tests.
 #[rustfmt::skip]
@@ -165,11 +167,17 @@ mod detail_tests {
 
     #[test]
     fn the_setting_picks_a_level_by_name_from_the_data() {
-        assert_eq!(DETAIL_LEVELS[0].ratio, 1.0, "the first level is the full mesh");
+        assert_eq!(
+            DETAIL_LEVELS[0].ratio, 1.0,
+            "the first level is the full mesh"
+        );
         assert_eq!(DETAIL_LEVELS[DETAIL_DEFAULT].id, "full");
         let low = detail_level(DETAIL_LEVELS, "low", DETAIL_DEFAULT);
         assert_eq!(DETAIL_LEVELS[low].id, "low");
-        assert_eq!(detail_level(DETAIL_LEVELS, "nonsense", DETAIL_DEFAULT), DETAIL_DEFAULT);
+        assert_eq!(
+            detail_level(DETAIL_LEVELS, "nonsense", DETAIL_DEFAULT),
+            DETAIL_DEFAULT
+        );
     }
 
     #[test]

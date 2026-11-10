@@ -22,17 +22,18 @@ export interface DetailData {
 
 /** The levels, validated: at least one, unique ids, the default one of them (else it throws). */
 export function detailData(raw: unknown): DetailData {
-  const d = raw as Partial<DetailData> | undefined;
-  const levels = d?.levels;
-  if (!Array.isArray(levels) || levels.length === 0) throw new Error('models.json: detail: no levels');
+  const d = (raw ?? {}) as Partial<DetailData>;
+  const levels = d.levels;
+  if (!Array.isArray(levels) || levels.length === 0)
+    throw new Error('models.json: detail: no levels');
   const ids = new Set<string>();
   for (const l of levels) {
     if (typeof l.id !== 'string' || ids.has(l.id))
-      throw new Error(`models.json: detail: bad or repeated level ${String(l.id)}`);
+      throw new Error(`models.json: detail: bad or repeated level ${JSON.stringify(l.id)}`);
     ids.add(l.id);
   }
   if (typeof d.default !== 'string' || !ids.has(d.default))
-    throw new Error(`models.json: detail: default ${String(d.default)} is not a level`);
+    throw new Error(`models.json: detail: default ${JSON.stringify(d.default)} is not a level`);
   return { levels, default: d.default };
 }
 

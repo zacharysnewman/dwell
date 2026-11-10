@@ -461,7 +461,11 @@ mod tests {
             let cs = spawn(f);
             assert_eq!(cs.list.len(), 3, "the fixture's group of 3");
             // The mix by data: two walkers and their leader.
-            let names: Vec<_> = cs.list.iter().map(|c| cs.table.creatures[c.kind].name).collect();
+            let names: Vec<_> = cs
+                .list
+                .iter()
+                .map(|c| cs.table.creatures[c.kind].name)
+                .collect();
             assert_eq!(names, ["test:walker", "test:walker", "test:leader"]);
             for c in &cs.list {
                 let l = f.point(c.position);
@@ -529,7 +533,10 @@ mod tests {
             groups += 1;
         }
         let share = with as f64 / f64::from(groups);
-        assert!((0.25..0.55).contains(&share), "a stag in {share} of the herds");
+        assert!(
+            (0.25..0.55).contains(&share),
+            "a stag in {share} of the herds"
+        );
     }
 
     both_faces!(

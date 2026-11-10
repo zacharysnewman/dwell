@@ -67,8 +67,15 @@ test("a model is added by data alone: the fixture validates and lands in the tab
 
 test("the detail levels are data: the fixture's own level lands in the table", () => {
   const f = fixture();
-  const out = rust(f, validate(f, palette, fixtures), "../../../shared/models/fixtures");
-  assert.match(out, /DetailLevel \{ id: "coarse", label: "Coarse", ratio: 0\.5 \}/);
+  const out = rust(
+    f,
+    validate(f, palette, fixtures),
+    "../../../shared/models/fixtures",
+  );
+  assert.match(
+    out,
+    /DetailLevel \{ id: "coarse", label: "Coarse", ratio: 0\.5 \}/,
+  );
   assert.match(out, /DETAIL_DEFAULT: usize = 1;/);
   // Every game model holds one mesh a level.
   const d = data();
@@ -92,7 +99,10 @@ test("bad detail levels fail naming the problem", () => {
   bad((d) => (d.levels[0].ratio = 0.9), /the first level is the full mesh/);
   bad((d) => (d.levels[1].ratio = 1), /ratios fall level by level/);
   bad((d) => (d.levels[1].id = "full"), /level full twice/);
-  bad((d) => d.levels.push({ id: "tiny", label: "Tiny", ratio: 0.1 }), /not one a detail level/);
+  bad(
+    (d) => d.levels.push({ id: "tiny", label: "Tiny", ratio: 0.1 }),
+    /not one a detail level/,
+  );
 });
 
 test("a role naming a clip the GLB lacks fails naming it", () => {

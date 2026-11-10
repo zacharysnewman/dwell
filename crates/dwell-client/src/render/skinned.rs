@@ -528,7 +528,8 @@ impl SkinnedRenderer {
             if self.meshes.iter().all(|m| m.data.name != d.model)
                 && let Some((data, model)) = dwell_models::model(d.model)
             {
-                self.meshes.push(upload(device, queue, data, model, self.level));
+                self.meshes
+                    .push(upload(device, queue, data, model, self.level));
             }
         }
         let mesh_of = |name: &str| self.meshes.iter().position(|m| m.data.name == name);

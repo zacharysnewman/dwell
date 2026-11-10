@@ -1625,7 +1625,11 @@ impl Client {
             level,
             dwell_models::DETAIL_DEFAULT,
         );
-        self.inner.borrow().renderer.borrow_mut().set_model_detail(k);
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_model_detail(k);
     }
     /// The Light shafts setting: `off`, `low` or `high` (anything else: high; ADR 0064).
     #[wasm_bindgen(js_name = setShafts)]

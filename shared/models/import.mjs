@@ -159,7 +159,13 @@ try {
       },
     );
     console.log(
-      out.split("\n").filter((l) => l.startsWith("IMPORTED") || (verbose && l.startsWith("COLOUR"))).join("\n") || out.slice(-2000),
+      out
+        .split("\n")
+        .filter(
+          (l) =>
+            l.startsWith("IMPORTED") || (verbose && l.startsWith("COLOUR")),
+        )
+        .join("\n") || out.slice(-2000),
     );
   }
 } finally {
