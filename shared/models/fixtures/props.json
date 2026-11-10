@@ -1,0 +1,13 @@
+{
+  "$comment": "The tests' fixture props (shared/models/gen.mjs writes them into crates/dwell-models/src/fixture.gen.rs): a prop added by data alone, in a category of its own.",
+  "categories": {
+    "dishes": { "label": "Dishes", "length": 0.25, "min": 0.1, "max": 0.5 }
+  },
+  "props": {
+    "plate": {
+      "category": "dishes",
+      "glb": "plate.glb",
+      "grip": [0, 0.01, 0]
+    }
+  }
+}

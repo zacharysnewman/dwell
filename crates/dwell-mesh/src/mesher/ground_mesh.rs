@@ -107,20 +107,60 @@ pub(super) fn append(
 /// the origin, +y up), every side drawn (the underside too: a loose item spins in the air): the
 /// same shape, tile and tint a ground item of it is drawn with, for the loose item.
 pub fn look_mesh(look: &dwell_protocol::inventory::ItemLook) -> MeshArrays {
-    let tile = look_tile(look);
+    let tile = crate::textures::tile_rect(look_tile(look));
     let color = look.color.map(|v| f64::from(v) / 255.0);
     let mut m = MeshArrays::default();
-    for face in polygons(look.shape, look.size, true) {
-        push_polygon(
-            &mut m,
-            &face,
-            color,
-            &crate::textures::tile_rect(tile),
-            [1.0, 0.0],
-            1.0,
-        );
+    for (face, c) in look_faces(look) {
+        push_polygon(&mut m, &face, c.unwrap_or(color), &tile, [1.0, 0.0], 1.0);
     }
     m
+}
+
+/// A look's faces, each with its own colour where it has one (a model look's palette colours).
+fn look_faces(
+    look: &dwell_protocol::inventory::ItemLook,
+) -> Vec<(Vec<[f64; 3]>, Option<[f64; 3]>)> {
+    if look.shape == GroundShape::Model {
+        return model_faces(look.model)
+            .into_iter()
+            .map(|(f, c)| (f, Some(c)))
+            .collect();
+    }
+    polygons(look.shape, look.size, true)
+        .into_iter()
+        .map(|f| (f, None))
+        .collect()
+}
+
+/// A prop's triangles as a lying look (ADR 0070 §8): its long axis (the GLB's +y) turned along +x,
+/// its base on y = 0 and its middle over the origin, each with its face's colour as an sRGB tint
+/// (0..1, as a look's `color`); empty for a prop not built in.
+pub fn model_faces(name: &str) -> Vec<(Vec<[f64; 3]>, [f64; 3])> {
+    let Some((_, m)) = dwell_models::prop(name) else {
+        return Vec::new();
+    };
+    // Turned -90° about z: the GLB's +y (its length) to +x, its +x to -y.
+    let lie = |p: [f32; 3]| [f64::from(p[1]), -f64::from(p[0]), f64::from(p[2])];
+    let floor = m
+        .positions
+        .iter()
+        .map(|&p| lie(p)[1])
+        .fold(f64::MAX, f64::min);
+    let srgb = |c: f32| f64::from(c.clamp(0.0, 1.0)).powf(1.0 / 2.2);
+    m.indices
+        .chunks_exact(3)
+        .map(|t| {
+            let pts = t
+                .iter()
+                .map(|&i| {
+                    let [x, y, z] = lie(m.positions[i as usize]);
+                    [x, y - floor, z]
+                })
+                .collect();
+            let c = m.colors[t[0] as usize];
+            (pts, [srgb(c[0]), srgb(c[1]), srgb(c[2])])
+        })
+        .collect()
 }
 
 /// The tile a look is drawn with: its texture block's side tile.
@@ -136,7 +176,7 @@ fn look_tile(look: &dwell_protocol::inventory::ItemLook) -> &'static str {
 pub fn look_swatch(look: &dwell_protocol::inventory::ItemLook) -> Vec<u8> {
     use crate::textures::TILE;
     let tile = look_tile(look);
-    let faces = polygons(look.shape, look.size, true);
+    let (faces, colours): (Vec<_>, Vec<_>) = look_faces(look).into_iter().unzip();
     // The view: turned 35° about up (a rod lies across the picture's diagonal), tilted 30° down.
     let (ys, yc) = (35f64.to_radians().sin(), 35f64.to_radians().cos());
     let (ts, tc) = (30f64.to_radians().sin(), 30f64.to_radians().cos());
@@ -170,7 +210,8 @@ pub fn look_swatch(look: &dwell_protocol::inventory::ItemLook) -> Vec<u8> {
     let mut px = vec![0u8; TILE * TILE * 4];
     let mut depth = vec![f64::MIN; TILE * TILE];
     let tint = look.color.map(|c| f64::from(c) / 255.0);
-    for (face, world) in pts.iter().zip(&faces) {
+    for ((face, world), colour) in pts.iter().zip(&faces).zip(&colours) {
+        let tint = colour.unwrap_or(tint);
         let n3 = newell(world);
         // Faces away from the eye (in view space) are hidden.
         let nv = view(n3);
@@ -236,6 +277,8 @@ fn newell(pts: &[[f64; 3]]) -> [f64; 3] {
 /// middle at the origin, +y up. The underside only with `base` (lying on the ground it is hidden).
 fn polygons(shape: GroundShape, [sx, sy, sz]: [f64; 3], base: bool) -> Vec<Vec<[f64; 3]>> {
     match shape {
+        // A model look's faces are its prop's (`model_faces`), not a shape's.
+        GroundShape::Model => Vec::new(),
         GroundShape::Cluster => {
             // Tiny lumps heaped in the footprint (fractions of it): a ring of five on the
             // ground, a sixth on top in the middle; each a lump a third of the footprint across.
@@ -407,6 +450,50 @@ mod tests {
     }
 
     #[test]
+    fn a_model_look_is_its_props_mesh_lying_with_its_colours() {
+        // both-faces: item-local geometry; the loose item mirrors it with its face.
+        let l = look("dwell:stone_pickaxe");
+        assert_eq!(l.shape, GroundShape::Model);
+        let (data, prop) = dwell_models::prop(l.model).expect("built in");
+        let m = look_mesh(&l);
+        assert_eq!(m.indices.len(), prop.indices.len(), "every triangle of the prop");
+        // Lying: its length along x, its base on y = 0.
+        let (mut lo, mut hi) = ([f32::MAX; 3], [f32::MIN; 3]);
+        for p in m.positions.chunks_exact(3) {
+            for k in 0..3 {
+                lo[k] = lo[k].min(p[k]);
+                hi[k] = hi[k].max(p[k]);
+            }
+        }
+        assert!((hi[0] - lo[0] - data.length).abs() < 0.02, "{lo:?} {hi:?}");
+        assert!(lo[1].abs() < 1e-4 && hi[1] < data.length / 2.0);
+        // More than one colour: the prop's palette colours, not one tint.
+        let mut cs: Vec<[u8; 3]> = m
+            .colors
+            .chunks_exact(3)
+            .map(|c| [c[0], c[1], c[2]].map(|v| (v * 64.0) as u8))
+            .collect();
+        cs.sort_unstable();
+        cs.dedup();
+        assert!(cs.len() > 2, "{cs:?}");
+    }
+
+    #[test]
+    fn a_model_looks_swatch_is_drawn_in_its_colours() {
+        let px = look_swatch(&look("dwell:stone_pickaxe"));
+        let mut cs: Vec<[u8; 3]> = px
+            .chunks_exact(4)
+            .filter(|p| p[3] == 255)
+            .map(|p| [p[0] >> 4, p[1] >> 4, p[2] >> 4])
+            .collect();
+        let drawn = cs.len();
+        cs.sort_unstable();
+        cs.dedup();
+        assert!(drawn > px.len() / 4 / 20, "{drawn} pixels drawn");
+        assert!(cs.len() > 3, "{} colours", cs.len());
+    }
+
+    #[test]
     fn an_items_look_mesh_is_its_shape_at_its_size_closed_all_round() {
         // both-faces: item-local geometry; the loose item mirrors it with its face.
         for (item, shape, faces) in [
@@ -483,6 +570,7 @@ mod tests {
             size: [0.2, 0.06, 0.2],
             texture: "dwell:sand",
             color: [200, 190, 90],
+            model: "",
         };
         let faces = polygons(l.shape, l.size, false);
         // Five on the ground with no base, the top one with its base: 5 × 13 + 14.

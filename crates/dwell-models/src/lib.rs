@@ -11,7 +11,7 @@ pub mod math;
 mod table {
     include!("models.gen.rs");
 }
-pub use table::{GLBS, MODELS, PLAYER, PLAYER_GLB};
+pub use table::{GLBS, MODELS, PLAYER, PLAYER_GLB, PROP_GLBS, PROPS};
 
 /// The fixture table (shared/models/fixtures): a model added by data alone, for tests.
 #[rustfmt::skip]
@@ -100,4 +100,108 @@ pub fn player() -> (&'static ModelData, &'static glb::Model) {
     let data = find(MODELS, PLAYER).expect("models.json names a player model");
     let model = MODEL.get_or_init(|| glb::parse(PLAYER_GLB).expect("the player's GLB reads"));
     (data, model)
+}
+
+/// One static model, a prop (shared/models/props.json, ADR 0070 §8): no skin, no clips.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PropData {
+    pub name: &'static str,
+    /// Its category in props.json (`tools`, `weapons`, …).
+    pub category: &'static str,
+    /// Its GLB, relative to its props.json.
+    pub glb: &'static str,
+    /// Metres along its longest side (the import scales it to this).
+    pub length: f32,
+    /// Its bounds' size (m, x y z; +y up in the GLB), centred on its origin.
+    pub size: [f32; 3],
+    /// Where a hand holds it (m from its origin).
+    pub grip: [f32; 3],
+}
+
+/// A prop built into the game (one an item's look names) and its GLB read once, by name; None:
+/// not a prop, or not built in.
+pub fn prop(name: &str) -> Option<(&'static PropData, &'static glb::Model)> {
+    prop_in(PROPS, PROP_GLBS, name)
+}
+
+/// [`prop`] over a table (the data's, or the fixture's).
+pub fn prop_in(
+    table: &'static [PropData],
+    glbs: &'static [(&'static str, &'static [u8])],
+    name: &str,
+) -> Option<(&'static PropData, &'static glb::Model)> {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    static READ: OnceLock<Mutex<HashMap<usize, &'static glb::Model>>> = OnceLock::new();
+    let data = table.iter().find(|p| p.name == name)?;
+    let bytes = glbs.iter().find(|(n, _)| *n == data.name)?.1;
+    let mut read = READ.get_or_init(Default::default).lock().ok()?;
+    let key = bytes.as_ptr() as usize;
+    if let Some(m) = read.get(&key) {
+        return Some((data, m));
+    }
+    let model: &'static glb::Model = Box::leak(Box::new(glb::parse_static(bytes).ok()?));
+    read.insert(key, model);
+    Some((data, model))
+}
+
+#[cfg(test)]
+mod props_tests {
+    use super::*;
+
+    #[test]
+    fn every_prop_glb_reads_static_with_colours_and_its_size() {
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../shared/models/");
+        assert!(PROPS.len() >= 50, "the tools pack's props");
+        for p in PROPS {
+            let bytes = std::fs::read(format!("{dir}{}", p.glb)).unwrap();
+            let m = glb::parse_static(&bytes).unwrap_or_else(|e| panic!("{}: {e}", p.name));
+            assert!(!m.indices.is_empty(), "{}: no triangles", p.name);
+            let mut colours: Vec<[u8; 3]> = m
+                .colors
+                .iter()
+                .map(|c| c.map(|v| (v * 255.0).round() as u8))
+                .collect();
+            colours.sort_unstable();
+            colours.dedup();
+            assert!(colours.len() > 1, "{}: one colour (COLOR_0 lost?)", p.name);
+            let (mut lo, mut hi) = ([f32::MAX; 3], [f32::MIN; 3]);
+            for q in &m.positions {
+                for k in 0..3 {
+                    lo[k] = lo[k].min(q[k]);
+                    hi[k] = hi[k].max(q[k]);
+                }
+            }
+            let longest = (0..3).map(|k| hi[k] - lo[k]).fold(0.0, f32::max);
+            assert!(
+                (longest - p.length).abs() < 0.02 * p.length + 0.005,
+                "{}: {longest} m",
+                p.name
+            );
+            assert!((0.05..=1.8).contains(&longest), "{}: {longest} m", p.name);
+        }
+    }
+
+    #[test]
+    fn a_prop_named_by_an_item_look_is_built_in_and_reads() {
+        let (data, m) = prop("stone_pickaxes").expect("the stone pickaxe's look is built in");
+        assert_eq!(data.category, "tools");
+        assert!(m.positions.len() > 100);
+        // A prop no look names is listed but not built in.
+        assert!(PROPS.iter().any(|p| p.name == "chest"));
+        assert!(prop("chest").is_none());
+    }
+
+    #[test]
+    fn a_prop_is_added_by_data_alone() {
+        let (data, m) = prop_in(fixture::PROPS, fixture::PROP_GLBS, "plate").unwrap();
+        assert_eq!(data.category, "dishes");
+        assert_eq!(data.grip, [0.0, 0.01, 0.0]);
+        assert!(!m.indices.is_empty());
+    }
+
+    #[test]
+    fn a_skinned_glb_is_not_a_prop() {
+        assert!(glb::parse_static(PLAYER_GLB).is_err());
+    }
 }
