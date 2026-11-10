@@ -157,6 +157,20 @@ pub struct WoodDef {
     pub leaves: Leaves,
     pub sway: Sway,
     pub sounds: &'static [(f64, &'static str)],
+    /// How its cuts are carved into its cell's mesh (the client's, `dwell-mesh`).
+    pub cut: CutLook,
+}
+
+/// How a wood's cuts are carved into its cell's mesh (`cut` in the data): the notch as a V across
+/// the side, each band's kerf past it as a slit, the faces inside fresh wood.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CutLook {
+    /// The atlas tile of the cut faces (none: the block's end-grain tile).
+    pub tile: Option<&'static str>,
+    /// The notch's opening along the grain per metre of its depth.
+    pub open: f64,
+    /// The kerf slits' width along the grain (m).
+    pub kerf_width_m: f64,
 }
 
 /// The chips a swing knocks out of a wood (`chips` in the data).

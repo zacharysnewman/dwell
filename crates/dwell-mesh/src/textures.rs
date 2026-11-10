@@ -43,7 +43,7 @@ pub const ATLAS_SIZE: usize = CELL * ATLAS_CELLS;
 pub const ATLAS_TILES: usize = ATLAS_CELLS * ATLAS_CELLS;
 
 /// The tiles in atlas order (the registry's texture names).
-pub const TILE_ORDER: [&str; 32] = [
+pub const TILE_ORDER: [&str; 33] = [
     "plain",
     "grass",
     "grassSide",
@@ -82,6 +82,8 @@ pub const TILE_ORDER: [&str; 32] = [
     "dynamiteGreenTop",
     "dynamiteYellow",
     "dynamiteYellowTop",
+    // Fresh wood inside an axe's cut (a wood's `cut.tile`, shared/tools/tools.json; ADR 0067).
+    "logCut",
     // The fallback look of a state whose look or textures this build lacks (synced from a server,
     // ADR 0038): a magenta and black checker, never content.
     MISSING_TILE,

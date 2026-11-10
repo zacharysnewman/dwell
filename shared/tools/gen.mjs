@@ -21,7 +21,8 @@ const TOOL_FIELDS = ['name', 'kind', 'swingSeconds', 'biteM', 'bindM', 'across',
 const SWING_FIELDS = ['windupS', 'activeS', 'hitStopS', 'recoverHitS', 'recoverMissS', 'reachM', 'arcDeg', 'samples', 'kickDeg', 'staminaCost', 'swish', 'bounce'];
 /** A swing's defaults (a tool without `swing`): a short wind-up, a committed arc, a hit-stop. */
 export const SWING_DEFAULTS = { windupS: 0.12, activeS: 0.14, hitStopS: 0.07, recoverHitS: 0.22, recoverMissS: 0.36, reachM: 2.2, arcDeg: 110, samples: 12, kickDeg: 1.5, staminaCost: 0, swish: null, bounce: null };
-const WOOD_FIELDS = ['block', 'fellFraction', 'buckFraction', 'buckDrops', 'chips', 'leaves', 'sway', 'sounds'];
+const WOOD_FIELDS = ['block', 'fellFraction', 'buckFraction', 'buckDrops', 'chips', 'leaves', 'sway', 'sounds', 'cut'];
+const CUT_FIELDS = ['tile', 'open', 'kerfWidthM'];
 const LEAF_FIELDS = ['block', 'count', 'color', 'radiusM', 'heightM'];
 const SWAY_FIELDS = ['fromFraction', 'maxDeg'];
 const CHIP_FIELDS = ['count', 'color', 'speed', 'size'];
@@ -48,7 +49,7 @@ const inRange = (o, k, lo, hi, at, open = false) => {
  * maps a block's name to its definition (to check a wood has an `axis`). Returns the data with
  * defaults filled.
  */
-export function validateTools(data, items, blocks, heldItems = loadHeldItems(), soundEvents = loadSoundEvents()) {
+export function validateTools(data, items, blocks, heldItems = loadHeldItems(), soundEvents = loadSoundEvents(), tiles = loadTiles()) {
   const event = (v, at) => {
     if (v === undefined || v === null) return null;
     if (!soundEvents.has(v)) fail(`${at}: no sound event ${JSON.stringify(v)} in shared/sounds/dwell.json's events`);
@@ -129,6 +130,15 @@ export function validateTools(data, items, blocks, heldItems = loadHeldItems(), 
     if (typeof chips.color !== 'string' || !COLOR.test(chips.color)) fail(`${at}.chips.color must be #rrggbb`);
     inRange(chips, 'speed', 0, 10, `${at}.chips`, true);
     inRange(chips, 'size', 0, 0.2, `${at}.chips`, true);
+    // How a cut is carved into the cell's mesh (the client's): the cut faces' atlas tile (a tile of
+    // shared/textures/materials.json), the notch's opening along the grain per metre of depth and
+    // the kerf slits' width.
+    const k = w.cut ?? {};
+    known(k, CUT_FIELDS, `${at}.cut`);
+    const cut = { tile: k.tile ?? null, open: k.open ?? 2.5, kerfWidthM: k.kerfWidthM ?? 0.03 };
+    if (cut.tile !== null && !tiles.has(cut.tile)) fail(`${at}.cut.tile: no atlas tile named ${cut.tile}`);
+    inRange(cut, 'open', 0.2, 8, `${at}.cut`, true);
+    inRange(cut, 'kerfWidthM', 0.005, 0.2, `${at}.cut`, true);
     // Leaves shaken down from the tree's leaf blocks on each hit (the client's particles).
     const lv = { block: null, count: 0, color: '#5f9e3e', radiusM: 3, heightM: 8, ...(w.leaves ?? {}) };
     known(w.leaves ?? {}, LEAF_FIELDS, `${at}.leaves`);
@@ -154,7 +164,7 @@ export function validateTools(data, items, blocks, heldItems = loadHeldItems(), 
     sounds.forEach((x, j) => {
       if (j === 0 ? x.from !== 0 : x.from <= sounds[j - 1].from) fail(`${at}.sounds: from must start at 0 and rise`);
     });
-    return { ...w, buckDrops, chips, leaves: lv, sway, sounds };
+    return { ...w, buckDrops, chips, leaves: lv, sway, sounds, cut };
   });
   // Blocks a break needs a tool kind for where blocks are not unlimited (`breakWith` on the block;
   // owner, 2026-11-08: logs need an axe in adventure).
@@ -179,6 +189,12 @@ export function loadSoundEvents() {
   return new Set(Object.keys(s.events ?? {}));
 }
 
+/** The atlas tiles (shared/textures/materials.json's `tiles`): a wood's cut faces name one. */
+export function loadTiles() {
+  const m = JSON.parse(readFileSync(join(root, 'shared/textures/materials.json'), 'utf8'));
+  return new Set(Object.keys(m.tiles ?? {}));
+}
+
 export function loadTools() {
   return JSON.parse(readFileSync(join(here, 'tools.json'), 'utf8'));
 }
@@ -199,7 +215,7 @@ const swingRust = (s) =>
   `SwingDef { windup_s: ${f64(s.windupS)}, active_s: ${f64(s.activeS)}, hit_stop_s: ${f64(s.hitStopS)}, recover_hit_s: ${f64(s.recoverHitS)}, recover_miss_s: ${f64(s.recoverMissS)}, reach_m: ${f64(s.reachM)}, arc_deg: ${f64(s.arcDeg)}, samples: ${s.samples}, kick_deg: ${f64(s.kickDeg)}, stamina_cost: ${f64(s.staminaCost)}, swish: ${optStr(s.swish)}, bounce: ${optStr(s.bounce)} }`;
 
 export function toolsRust(d) {
-  const rs = [`// ${header}`, '', 'use crate::chopping::{Chips, Leaves, Sway, SwingDef, ToolDef, ToolKind, WoodDef};', 'use crate::inventory::{DropChoice, DropRule};', ''];
+  const rs = [`// ${header}`, '', 'use crate::chopping::{Chips, CutLook, Leaves, Sway, SwingDef, ToolDef, ToolKind, WoodDef};', 'use crate::inventory::{DropChoice, DropRule};', ''];
   rs.push('/// The tools, by item name.');
   rs.push('pub static TOOLS: &[ToolDef] = &[');
   for (const t of d.tools) {
@@ -217,7 +233,7 @@ export function toolsRust(d) {
       (x) => `DropRule { chance: ${f64(x.chance)}, choices: &[DropChoice { item: "${x.item}", min: ${x.min}, max: ${x.max}, weight: 1.0 }] }`,
     );
     rs.push(
-      `    WoodDef { block: "${w.block}", fell_fraction: ${f64(w.fellFraction)}, buck_fraction: ${f64(w.buckFraction)}, buck_drops: &[${drops.join(', ')}], chips: Chips { count: ${w.chips.count}, color: [${rgb(w.chips.color).join(', ')}], speed: ${f64(w.chips.speed)}, size: ${f64(w.chips.size)} }, leaves: Leaves { block: ${optStr(w.leaves.block)}, count: ${w.leaves.count}, color: [${rgb(w.leaves.color).join(', ')}], radius_m: ${f64(w.leaves.radiusM)}, height_m: ${f64(w.leaves.heightM)} }, sway: Sway { from_fraction: ${f64(w.sway.fromFraction)}, max_deg: ${f64(w.sway.maxDeg)} }, sounds: &[${w.sounds.map((x) => `(${f64(x.from)}, "${x.event}")`).join(', ')}] },`,
+      `    WoodDef { block: "${w.block}", fell_fraction: ${f64(w.fellFraction)}, buck_fraction: ${f64(w.buckFraction)}, buck_drops: &[${drops.join(', ')}], chips: Chips { count: ${w.chips.count}, color: [${rgb(w.chips.color).join(', ')}], speed: ${f64(w.chips.speed)}, size: ${f64(w.chips.size)} }, leaves: Leaves { block: ${optStr(w.leaves.block)}, count: ${w.leaves.count}, color: [${rgb(w.leaves.color).join(', ')}], radius_m: ${f64(w.leaves.radiusM)}, height_m: ${f64(w.leaves.heightM)} }, sway: Sway { from_fraction: ${f64(w.sway.fromFraction)}, max_deg: ${f64(w.sway.maxDeg)} }, sounds: &[${w.sounds.map((x) => `(${f64(x.from)}, "${x.event}")`).join(', ')}], cut: CutLook { tile: ${optStr(w.cut.tile)}, open: ${f64(w.cut.open)}, kerf_width_m: ${f64(w.cut.kerfWidthM)} } },`,
     );
   }
   rs.push('];');

@@ -1980,3 +1980,115 @@ dwell_world::both_faces!(
         assert_eq!(quads(&flooded.cutout), 6, "the leaf drawn inside the water");
     }
 );
+
+/// The opaque mesh of `cells` with `cuts` carved (chunk-local, world-oriented), in cells.
+fn mesh_cut(cells: &[(i32, i32, i32, u16)], cuts: &[([i32; 3], Cut)], mirror: bool) -> MeshArrays {
+    in_cells(super::mesh_chunk_cut(&voxels(cells), &[], mirror, [0; 3], cuts).expect("padded"))
+        .opaque
+}
+
+/// The triangles of `m` as (corners, unit normal, whether its tile is `tile`).
+fn triangles(m: &MeshArrays, tile: &str) -> Vec<([[f64; 3]; 3], [f64; 3], bool)> {
+    let r = tile_rect(tile);
+    m.indices
+        .chunks_exact(3)
+        .map(|t| {
+            let p = [0, 1, 2].map(|k| vertex(&m.positions, t[k]));
+            let n = normal_of(&m.positions, t[0], t[1], t[2]);
+            let l = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt().max(1e-12);
+            let i = t[0] as usize * 4;
+            let is = (f64::from(m.tiles[i]) - r.u0).abs() < 1e-6
+                && (f64::from(m.tiles[i + 1]) - r.v0).abs() < 1e-6;
+            (p, n.map(|c| c / l), is)
+        })
+        .collect()
+}
+
+dwell_world::both_faces!(
+    /// A cut log is meshed carved (ADR 0067 §11): a standing trunk notched 0.15 m into its −x
+    /// side with a kerf past it shows the V's fresh-wood faces sloping in to the apex 0.15 m deep
+    /// at the row's middle, the slit deeper, and no bark left over the notch's mouth; the cells
+    /// above and below stay cubes. A trunk lying along x notched down from its face-local top is
+    /// cut the same, from whichever world side is that face's up.
+    fn a_cut_log_is_carved_into_the_chunk_mesh(f: FaceFrame) {
+        let log = require("dwell:log");
+        let (x, z) = (5, 5);
+        let cells: Vec<_> = (10..13).map(|y| (x, y, z, log)).collect();
+        let mut cut = Cut::default();
+        cut.notch[0] = 0.15;
+        cut.kerf[0][1] = 0.05;
+        let m = mesh_cut(&cells, &[([x, 11, z], cut)], f.is_b());
+        let tris = triangles(&m, "logCut");
+        let fresh: Vec<_> = tris.iter().filter(|t| t.2).collect();
+        assert!(!fresh.is_empty(), "fresh-wood faces");
+        // Every fresh face lies in the cut: within 0.2 m of the −x side, inside the cut row.
+        for (p, n, _) in &fresh {
+            for q in p {
+                assert!(q[0] >= 5.0 - 1e-6 && q[0] <= 5.2 + 1e-6, "{q:?}");
+                assert!(q[1] >= 11.0 - 1e-6 && q[1] <= 12.0 + 1e-6, "{q:?}");
+            }
+            assert!(n[0] <= 1e-6, "faces out of the −x side: {n:?}");
+        }
+        // The V's apex line, 0.15 m in at the row's middle (a ½ m row: 1 cell).
+        let has = |px: f64, py: &dyn Fn(f64) -> bool| {
+            m.positions
+                .chunks_exact(3)
+                .any(|p| (f64::from(p[0]) - px).abs() < 1e-5 && py(f64::from(p[1])))
+        };
+        assert!(has(5.15, &|y| (y - 11.5).abs() < 1e-5), "the apex");
+        // The kerf's slit, 0.2 m in, in the face-locally upper band.
+        let upper = |y: f64| if f.is_b() { y < 11.5 } else { y > 11.5 };
+        assert!(has(5.2, &upper), "the kerf's slit in the upper band");
+        // No bark (a −x face on the side's plane) over the mouth: 2.5 × 0.15 = 0.375 m open.
+        let hw = 0.5 * 2.5 * 0.15 / 0.5;
+        for (p, n, is) in &tris {
+            let c = [0, 1, 2].map(|k| (p[0][k] + p[1][k] + p[2][k]) / 3.0);
+            let on_side = n[0] < -0.999 && (c[0] - 5.0).abs() < 1e-6;
+            assert!(
+                *is || !on_side || (c[1] - 11.5).abs() >= hw - 1e-3,
+                "a cube face left in the notch: {p:?}"
+            );
+        }
+        // Closed: the carved cell's faces' area vectors sum to zero but for its two end squares
+        // (hidden by the logs above and below), which cancel each other.
+        let mut sum = [0.0; 3];
+        for (p, _, _) in &tris {
+            let inside = p.iter().all(|q| {
+                q[0] > 5.0 - 1e-6 && q[0] < 6.0 + 1e-6 && q[1] > 11.0 - 1e-6 && q[1] < 12.0 + 1e-6
+            });
+            let flat = |y: f64| p.iter().all(|q| (q[1] - y).abs() < 1e-6);
+            if inside && !flat(11.0) && !flat(12.0) {
+                let e1 = [0, 1, 2].map(|k| p[1][k] - p[0][k]);
+                let e2 = [0, 1, 2].map(|k| p[2][k] - p[0][k]);
+                let c = [
+                    e1[1] * e2[2] - e1[2] * e2[1],
+                    e1[2] * e2[0] - e1[0] * e2[2],
+                    e1[0] * e2[1] - e1[1] * e2[0],
+                ];
+                sum = [0, 1, 2].map(|k| sum[k] + c[k]);
+            }
+        }
+        assert!(sum.iter().all(|c| c.abs() < 1e-4), "open: {sum:?}");
+        // Uncut: the column meshes as without cuts, with no fresh wood.
+        let plain = mesh_cut(&cells, &[], f.is_b());
+        assert!(triangles(&plain, "logCut").iter().all(|t| !t.2));
+        assert_eq!(plain, mesh_chunk(&voxels(&cells), f.is_b()).unwrap().opaque);
+
+        // A log lying along x, notched 0.1 m from its face-local top (world: the face's up).
+        let lying = dwell_blocks::state("dwell:log[axis=x]").expect("a lying log");
+        let up = f.vector([0.0, 1.0, 0.0]);
+        let side = (0..4)
+            .find(|&s| f64::from(dwell_protocol::chopping::side_normal(0, s)[1]) == up[1])
+            .expect("the up side");
+        let mut cut = Cut::default();
+        cut.notch[side] = 0.1;
+        let m = mesh_cut(&[(8, 10, 8, lying)], &[([8, 10, 8], cut)], f.is_b());
+        // 0.1 m of a ½ m row: 0.2 of a cell down from the face-local top, at x's middle.
+        let apex_y = if f.is_b() { 10.2 } else { 10.8 };
+        let apex = m.positions.chunks_exact(3).any(|p| {
+            (f64::from(p[0]) - 8.5).abs() < 1e-5 && (f64::from(p[1]) - apex_y).abs() < 1e-5
+        });
+        assert!(apex, "the lying log's apex at y {apex_y}");
+        assert!(triangles(&m, "logCut").iter().any(|t| t.2));
+    }
+);

@@ -8,15 +8,18 @@
 //! Arithmetic is done in `f64` and stored as `f32`, as the TS computes in doubles and stores into
 //! `Float32Array`s, so the buffers match it value for value.
 
+use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use dwell_blocks::{
     FLUIDS, FluidInfo, RenderMode, STATES, ShapeInfo, StateId, StateInfo, shape::faces_of,
 };
 use dwell_protocol::CHUNK_SIZE;
+use dwell_protocol::chopping::Cut;
 use dwell_world::FaceFrame;
 
 use crate::LengthError;
+use crate::carve::{self, Part};
 use crate::flood::Flood;
 use crate::sky::{AO_OPEN, LatticeRays, Occupancy, corner_key, key_flood, key_light, vertex_light};
 use crate::style::{
@@ -912,6 +915,96 @@ fn shaped_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, x: i32, y: i32, z:
     }
 }
 
+/// How much darker a cut face is per cell of its depth into the wood (the notch's shade).
+const CUT_SHADE: f64 = 0.55;
+
+/// A cut wood cell (ADR 0067 §11): its carved faces (`crate::carve`) instead of the cube's. The
+/// bark left on each side and the end grain are drawn as the cube's faces would be (and not where a
+/// neighbour covers them); the faces cut into it take the wood's cut tile (its `cut.tile`, else the
+/// end grain), lit by the sky the side they are cut into sees and darker the deeper they lie.
+fn carved_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, cell: [i32; 3], cut: &Cut) {
+    let grain = k.style.axis;
+    let wood = dwell_protocol::chopping::wood(k.style.block);
+    let look = wood.map_or(
+        dwell_protocol::chopping::CutLook {
+            tile: None,
+            open: 2.5,
+            kerf_width_m: 0.035,
+        },
+        |w| w.cut,
+    );
+    let fresh = match look.tile.filter(|t| crate::textures::has_tile(t)) {
+        Some(t) => (0xffffff, tile_rect(t)),
+        None => surface(&k.style, grain, 1),
+    };
+    let [x, y, z] = cell;
+    let at = [f64::from(x), f64::from(y), f64::from(z)];
+    for f in carve::carve(grain, cut, &look) {
+        // The side (axis, sign) the face looks out of: a cut face's light comes from there.
+        let (axis, sign, shade_axis) = match f.part {
+            Part::Bark(s) | Part::Cut(s) => {
+                let a = dwell_protocol::chopping::side_axis(grain, s);
+                (a, if s % 2 == 1 { 1 } else { -1 }, Some(a))
+            }
+            Part::End(pos) => (grain, if pos { 1 } else { -1 }, None),
+        };
+        let [nx, ny, nz] = neighbour_of(x, y, z, axis, sign);
+        if !matches!(f.part, Part::Cut(_))
+            && face_covered(cube(), face_of(axis, sign), cover(&cells.kind(nx, ny, nz)))
+        {
+            continue;
+        }
+        let normal = carve::normal(&f.pts);
+        let (color, tile, tint) = match f.part {
+            Part::Cut(_) => {
+                let m = normal_to_m(normal);
+                (fresh.0, fresh.1, normal_tint(m[0], m[1], m[2]))
+            }
+            _ => {
+                let (c, t) = side_surface(&k.style, face_of(axis, sign), None);
+                (c, t, face_tint(axis, sign))
+            }
+        };
+        let mut out_n = [0.0; 3];
+        out_n[axis] = f64::from(sign);
+        let salt = 20 + face_of(axis, sign) as i64;
+        let light: Vec<f32> = f
+            .pts
+            .iter()
+            .map(|p| {
+                // Cast from the point brought out to the side's plane, along the side's normal.
+                let mut q = *p;
+                q[axis] = if sign > 0 { 1.0 } else { 0.0 };
+                let open = vertex_light(AO_OPEN, cells.sky_rays(cell, q, out_n, salt));
+                let depth = shade_axis.map_or(0.0, |_| (p[axis] - q[axis]).abs());
+                open * (1.0 - CUT_SHADE * depth).max(0.35) as f32
+            })
+            .collect();
+        let flood = vec![cells.flood.cell([nx, ny, nz]); f.pts.len()];
+        let first = b.m.uvs.len();
+        b.polygon(
+            &f.pts,
+            at,
+            normal,
+            tint,
+            color,
+            &tile,
+            None,
+            Some((&light, &flood)),
+        );
+        if tile.turn {
+            for uv in b.m.uvs[first..].chunks_exact_mut(2) {
+                uv.swap(0, 1);
+            }
+        }
+    }
+}
+
+/// The face index (`FACES`) of an axis and sign.
+fn face_of(axis: usize, sign: i32) -> usize {
+    2 * axis + usize::from(sign < 0)
+}
+
 /// The height (cells above its floor) a fluid cell's side faces reach: its drawn surface when its
 /// top face shows (nothing of the same fluid, no flooded cell and no solid over it), else the
 /// cell's top.
@@ -1353,7 +1446,21 @@ pub fn mesh_chunk_lit(
     mirror: bool,
     origin: [i32; 3],
 ) -> Result<ChunkMeshes, LengthError> {
-    mesh_chunk_with(Kinds::build(), padded, light, mirror, origin)
+    mesh_chunk_cut(padded, light, mirror, origin, &[])
+}
+
+/// [`mesh_chunk_lit`] with the chunk's cut wood cells (ADR 0067 §11): each `(cell, cut)` (the
+/// chunk-local cell, world-oriented; its cut's sides as the chopping model gives them) is meshed
+/// carved, its notch and kerfs cut into it (`crate::carve`), instead of as a cube. A cell that is
+/// not an opaque full block is meshed as it is.
+pub fn mesh_chunk_cut(
+    padded: &[u16],
+    light: &[u8],
+    mirror: bool,
+    origin: [i32; 3],
+    cuts: &[([i32; 3], Cut)],
+) -> Result<ChunkMeshes, LengthError> {
+    mesh_chunk_full(Kinds::build(), padded, light, mirror, origin, cuts)
 }
 
 /// [`mesh_chunk_at`] over the registry `kinds` describes.
@@ -1363,6 +1470,18 @@ pub(crate) fn mesh_chunk_with(
     light: &[u8],
     mirror: bool,
     origin: [i32; 3],
+) -> Result<ChunkMeshes, LengthError> {
+    mesh_chunk_full(kinds, padded, light, mirror, origin, &[])
+}
+
+/// [`mesh_chunk_cut`] over the registry `kinds` describes.
+pub(crate) fn mesh_chunk_full(
+    kinds: &Kinds,
+    padded: &[u16],
+    light: &[u8],
+    mirror: bool,
+    origin: [i32; 3],
+    cuts: &[([i32; 3], Cut)],
 ) -> Result<ChunkMeshes, LengthError> {
     // The one-voxel apron, or the sky volume's deeper one (the client's jobs): the faces are
     // meshed from the one-voxel block inside it, the ambient light from all of it.
@@ -1386,14 +1505,29 @@ pub(crate) fn mesh_chunk_with(
         // Meshed in the face-local frame (BIFACIAL_WORLD.md §11): the mirror image's minimum
         // corner is the face-local chunk's, so a plant is jittered as its face-A twin is.
         let local = [origin[0], FaceFrame::B.row(origin[1] + N - 1), origin[2]];
-        let m = mesh_cells(kinds, &mirror_padded(&inner), &occ, &flood, local);
+        // Its cut cells too, face-local: rows turned over, the sides along y swapped.
+        let carved = cuts
+            .iter()
+            .filter(|(c, _)| in_chunk(*c))
+            .map(|(c, cut)| {
+                let at = [c[0], N - 1 - c[1], c[2]];
+                let grain = kinds.of(padded[padded_index(c[0], c[1], c[2])]).style.axis;
+                (at, carve::mirror_cut(grain, cut))
+            })
+            .collect();
+        let m = mesh_cells(kinds, &mirror_padded(&inner), &occ, &flood, local, &carved);
         ChunkMeshes {
             opaque: flip_arrays_y(m.opaque),
             transparent: flip_arrays_y(m.transparent),
             cutout: flip_arrays_y(m.cutout),
         }
     } else {
-        mesh_cells(kinds, &inner, &occ, &flood, origin)
+        let carved = cuts
+            .iter()
+            .filter(|(c, _)| in_chunk(*c))
+            .map(|(c, cut)| (*c, *cut))
+            .collect();
+        mesh_cells(kinds, &inner, &occ, &flood, origin, &carved)
     };
     Ok(ChunkMeshes {
         opaque: to_metres(m.opaque),
@@ -1424,14 +1558,29 @@ type ShapedKey = ([i64; 3], [i64; 3]);
 /// The light key of each corner of a face cell (u0v0, u1v0, u1v1, u0v1; `sky::corner_key`).
 type CornerKeys = [u32; 4];
 
-/// The meshes of a chunk of face A (or a mirrored one), in chunk-local cells.
+fn in_chunk(c: [i32; 3]) -> bool {
+    c.iter().all(|v| (0..N).contains(v))
+}
+
+/// The meshes of a chunk of face A (or a mirrored one), in chunk-local cells; `carved` its cut
+/// wood cells (face-local, as the padded block).
 fn mesh_cells(
     kinds: &Kinds,
     padded: &[u16],
     occ: &Occupancy,
     flood: &Flood,
     origin: [i32; 3],
+    carved: &HashMap<[i32; 3], Cut>,
 ) -> ChunkMeshes {
+    // A cut cell is carved only if it is drawn as an opaque cube.
+    let carved: HashMap<[i32; 3], Cut> = carved
+        .iter()
+        .filter(|(c, _)| {
+            let k = kinds.of(padded[padded_index(c[0], c[1], c[2])]);
+            k.shape == Shape::Full && k.style.render == RenderMode::Opaque
+        })
+        .map(|(c, k)| (*c, *k))
+        .collect();
     let mut opaque = Builder::default();
     let mut transparent = Builder::default();
     let cells = Cells::new(kinds, padded, occ, flood, origin);
@@ -1486,7 +1635,10 @@ fn mesh_cells(
                         }
                         continue;
                     }
-                    if k.shape == Shape::Shaped || k.style.look == Look::Cross {
+                    if k.shape == Shape::Shaped
+                        || k.style.look == Look::Cross
+                        || (!carved.is_empty() && carved.contains_key(&cell))
+                    {
                         continue; // drawn whole, below
                     }
                     let [nx, ny, nz] = neighbour_of(cx, cy, cz, axis, sign);
@@ -1653,6 +1805,12 @@ fn mesh_cells(
                 let k = cells.kind(cx, cy, cz);
                 if k.shape == Shape::Shaped {
                     shaped_voxel(&mut opaque, &cells, &k, cx, cy, cz);
+                }
+                if let Some(cut) = (!carved.is_empty())
+                    .then(|| carved.get(&[cx, cy, cz]))
+                    .flatten()
+                {
+                    carved_voxel(&mut opaque, &cells, &k, [cx, cy, cz], cut);
                 }
                 if k.liquid {
                     fall_into(&mut transparent, &cells, &k, cx, cy, cz);
