@@ -171,6 +171,8 @@ pub enum MessageType {
     Chop = 88,
     Cuts = 89,
     HeldTools = 90,
+    VitalsHello = 91,
+    Vitals = 92,
 }
 
 impl MessageType {
@@ -220,6 +222,8 @@ impl MessageType {
             88 => Some(Self::Chop),
             89 => Some(Self::Cuts),
             90 => Some(Self::HeldTools),
+            91 => Some(Self::VitalsHello),
+            92 => Some(Self::Vitals),
             _ => None,
         }
     }
@@ -364,16 +368,18 @@ pub enum DamageCause {
     Fall = 1,
     Crush = 2,
     Explosion = 3,
+    Drown = 4,
 }
 
 impl DamageCause {
-    pub const MAX: u8 = 3;
+    pub const MAX: u8 = 4;
 
     pub const fn from_u8(v: u8) -> Option<Self> {
         match v {
             1 => Some(Self::Fall),
             2 => Some(Self::Crush),
             3 => Some(Self::Explosion),
+            4 => Some(Self::Drown),
             _ => None,
         }
     }
@@ -550,7 +556,8 @@ pub mod welcome_flags {
     pub const INVENTORY: u8 = 16;
     pub const CHOPPING: u8 = 32;
     pub const CHOP_SWEEP: u8 = 64;
-    pub const ALL: u8 = 127;
+    pub const VITALS: u8 = 128;
+    pub const ALL: u8 = 255;
 }
 
 pub mod held_item {
@@ -564,4 +571,11 @@ pub mod swing_flags {
     pub const BREAK: u8 = 64;
     pub const PLACE: u8 = 128;
     pub const ALL: u8 = 255;
+}
+
+pub mod vitals_flags {
+    pub const EXHAUSTED: u8 = 1;
+    pub const STAMINA: u8 = 2;
+    pub const OXYGEN: u8 = 4;
+    pub const ALL: u8 = 7;
 }

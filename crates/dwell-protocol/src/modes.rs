@@ -30,16 +30,23 @@ pub enum Ability {
     /// The big map shows the whole world, unexplored ground coloured from the terrain generator
     /// (ADR 0068, owner 2026-11-08); without it unexplored ground is fogged. Client only.
     MapRevealed,
+    /// Sprinting, swimming, treading water and tool swings spend stamina; at none the player is
+    /// exhausted (no sprint, sinks in water, no swings) until a share is back (ADR 0069).
+    Stamina,
+    /// Air runs out with the head under water, and then the player drowns (ADR 0069).
+    Oxygen,
 }
 
 impl Ability {
-    pub const ALL: [Ability; 6] = [
+    pub const ALL: [Ability; 8] = [
         Ability::Damage,
         Ability::Flight,
         Ability::Brushes,
         Ability::UnlimitedBlocks,
         Ability::Map,
         Ability::MapRevealed,
+        Ability::Stamina,
+        Ability::Oxygen,
     ];
     /// The data's name (`shared/modes/gen.mjs` `ABILITIES`).
     pub const fn name(self) -> &'static str {
@@ -50,6 +57,8 @@ impl Ability {
             Ability::UnlimitedBlocks => "unlimitedBlocks",
             Ability::Map => "map",
             Ability::MapRevealed => "mapRevealed",
+            Ability::Stamina => "stamina",
+            Ability::Oxygen => "oxygen",
         }
     }
     pub const fn bit(self) -> u32 {

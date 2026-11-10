@@ -124,7 +124,9 @@
     "ItemDrops": 87,
     "Chop": 88,
     "Cuts": 89,
-    "HeldTools": 90
+    "HeldTools": 90,
+    "VitalsHello": 91,
+    "Vitals": 92
   },
   "rejectReasons": {
     "ProtocolVersion": 1,
@@ -186,6 +188,11 @@
   "slideFlags": {
     "active": 1
   },
+  "vitalsFlags": {
+    "exhausted": 1,
+    "stamina": 2,
+    "oxygen": 4
+  },
   "heldItem": {
     "blockMask": 32767,
     "brush": 32768
@@ -202,7 +209,8 @@
     "flightPolicy": 8,
     "inventory": 16,
     "chopping": 32,
-    "chopSweep": 64
+    "chopSweep": 64,
+    "vitals": 128
   },
   "groundKinds": {
     "None": 0,
@@ -219,7 +227,8 @@
   "damageCauses": {
     "Fall": 1,
     "Crush": 2,
-    "Explosion": 3
+    "Explosion": 3,
+    "Drown": 4
   },
   "chunkForms": {
     "Generated": 0,

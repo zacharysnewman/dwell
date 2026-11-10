@@ -11,9 +11,9 @@
     {
       "name": "adventure",
       "label": "Adventure",
-      "description": "Falls, blasts and crushes hurt; no flight, no brush tools; blocks you break drop items, placing uses them.",
+      "description": "Falls, blasts, crushes and drowning hurt; sprinting and swimming tire you; no flight, no brush tools; blocks you break drop items, placing uses them.",
       "experimental": true,
-      "abilities": ["damage", "map"]
+      "abilities": ["damage", "map", "stamina", "oxygen"]
     }
   ]
 }
