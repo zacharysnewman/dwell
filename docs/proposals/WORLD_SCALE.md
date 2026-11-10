@@ -48,7 +48,7 @@ twice the memory at once).
 
 ## 3. What breaks first
 
-### 3.1 Lake shores are a linear scan (a bug at scale, cheap to fix)
+### 3.1 Lake shores are a linear scan (a bug at scale, cheap to fix) — fixed in 0.51.21
 
 A profile of chunk generation at 5× is 97 % `worldmap::Shores::query`: every column asks every
 lake's distance field whether it covers it, so the cost per column grows with the lake count (3 at
@@ -57,7 +57,15 @@ fallback), the big map's tiles (0.4 → 6.2 ms) and the spawn search grow with t
 should be flat. A spatial index of the lakes' boxes (as `Channels` has for the rivers) makes it flat
 again; worth doing whatever the world size, since more lakes come with more biomes too.
 
-### 3.2 The spawn search falls back to a mountain top
+**Fixed (0.51.21):** `Shores` keeps a grid of buckets 16 map cells (1.6 km) a side, each listing
+the lake fields whose box reaches it in the fields' order, so a query reads the few lakes near
+its column and breaks ties as the scan did (the goldens are unchanged; a test compares the index
+with a scan of every lake on both faces' maps and on 600 overlapping fixture fields). Measured
+after, seed 0 (M1, release): chunk generation 1.03 ms a chunk at 1× (unchanged), 1.03 ms at 2×
+(was 2.3), 0.87 ms at 5× at the origin (was 24–436); the big map's tiles 0.4 / 0.5 / 0.5 ms
+(were 0.4 / 0.7 / 6.2).
+
+### 3.2 The spawn search falls back to a mountain top — fixed in 0.51.21
 
 At 2× and 5× none of the 48 river-side candidates nearest the centre held a level dry patch, so the
 search walked its whole 5000-leg spiral round the origin (14 s, 161 s) and gave up on the origin's
@@ -65,6 +73,17 @@ ground, 341–347 m up a range (the uplift layer's ranges lie inland, and a wide
 far from any coast). The search needs a bounded budget and candidates spread over the island (by
 cell, not nearest-the-centre first); the spawn's place on a 500 km island is also a design question
 (§6).
+
+**Fixed (0.51.21):** at 1× the 48 river-side candidates rarely hold a patch either: the 16 test
+seeds all spawned from the origin's spiral (2–14 km out). To keep those spawns, the spiral stays,
+bounded at its 5,000 legs, but is probed natively in batches of 16 k patches over the cores, the
+first in spiral order kept (the same answer; seeds 0–15 unchanged on both faces, 0 and 7 pinned
+by a test; 1× ~3× faster, e.g. seed 8 2.1 → 0.6 s with its map). Past it, a bounded search: at
+most 256 suitable cells (dry, between the spawn heights, not a lake), one per 800 m block,
+river-side first, each searched 12 legs round, with the patch level, then within 1 and 2 rows;
+then the nearest suitable cell's ground, never the origin's. Measured after, seed 0: 2× found at
+(−29898, 18850), 105 m, in 2.1 s (was 14 s and a peak); 5× found at (110434, −15442), 77 m, in
+2.1 s (was 161 s and a peak). Where a 500 km island's spawn should be stays §6's question.
 
 ### 3.3 The world map's size and the browser
 
@@ -129,7 +148,7 @@ cell, not nearest-the-centre first); the spawn's place on a 500 km island is als
 3. **Grow less than 10×.** 2× (100 km) works today on the M1 (5 s a face, 628 MB) once §3.1 and §3.2
    are fixed, and on a phone at the edge of its memory; 3× would not on a phone.
 
-Independently of the size: fix the lake index (§3.1) and the spawn search (§3.2), and make the big
+Independently of the size: fix the lake index (§3.1) and the spawn search (§3.2) (both done in 0.51.21), and make the big
 map's widest `cellM`, the LOD root and the island's shape tunables follow the world radius from data
 (§3.4), so the radius is one value in `constants.json`.
 

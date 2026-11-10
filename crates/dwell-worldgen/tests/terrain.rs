@@ -1849,7 +1849,11 @@ fn existing_seeds_spawn_where_they_did() {
         (0u64, [2128.5, 162.0, 7544.5], [-1567.5, -187.5, 1208.5]),
         (7, [1688.5, 186.0, 7160.5], [-10557.5, -68.5, 2158.5]),
     ] {
-        assert_eq!(spawn_point_for(GENERATOR_TERRAIN, seed), a, "seed {seed} face A");
+        assert_eq!(
+            spawn_point_for(GENERATOR_TERRAIN, seed),
+            a,
+            "seed {seed} face A"
+        );
         assert_eq!(
             dwell_worldgen::spawn_point_b_for(GENERATOR_TERRAIN, seed),
             b,

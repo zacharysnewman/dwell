@@ -3144,7 +3144,9 @@ impl TerrainGenerator {
                     let jobs: Vec<_> = at
                         .chunks(share)
                         .enumerate()
-                        .map(|(i, part)| s.spawn(move || one(part).map(|(k, p)| (i * share + k, p))))
+                        .map(|(i, part)| {
+                            s.spawn(move || one(part).map(|(k, p)| (i * share + k, p)))
+                        })
                         .collect();
                     jobs.into_iter()
                         .filter_map(|j| j.join().expect("spawn search"))
@@ -3162,8 +3164,7 @@ impl TerrainGenerator {
     fn spawn_patch(&self, x: i32, z: i32, rise: i32) -> Option<[f64; 3]> {
         // First on the ground before the cliffs reshape it (a column's volume pass is most of its
         // cost): a patch that is not a level dry one there is passed over without it.
-        if self.volume.is_some()
-            && !self.level_patch(x, z, rise, |x, z| self.base_column(x, z, 1))
+        if self.volume.is_some() && !self.level_patch(x, z, rise, |x, z| self.base_column(x, z, 1))
         {
             return None;
         }

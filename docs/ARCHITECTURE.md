@@ -1183,7 +1183,11 @@ playground** (generator 1 until Phase 15) is now a **structure file**
 the flat world; no world uses it. Players spawn on a dry, level 9 × 9 patch (top voxels at
 one height; `SPAWN_CLEAR`, wide enough for the spread of spawning players to build beside
 themselves) in a lowland by a river (`terrain.json` `spawn`: the map's suitable cells nearest the
-disc's centre, each searched in an 8 m spiral), standing on the
+disc's centre, each searched in an 8 m spiral; failing those, the origin's spiral to 5,000 legs,
+probed natively in batches over the cores with the first in spiral order kept; failing that
+(a wide island, WORLD_SCALE.md §3.2; 0.51.21), at most 256 suitable cells spread one per
+800 m block, river-side first, searched with the patch's level relaxed to within 1, then 2 rows,
+and at last the nearest suitable cell's ground, never the origin's peak), standing on the
 surface (`TerrainGenerator::surface_y_at`: the top voxel's shape — on a level patch, its top).
 Water is generated in open cells below sea level and below a river's or lake's surface; a flooded
 ramp under it holds water in its open part (§6.1). Debug tooling: **named
@@ -1223,7 +1227,8 @@ eroded by stream power, its lakes filled and its rivers traced (`hydrology/`, th
 `shared/worldgen/hydrology.json`: ranges ~2,300–2,500 m). The kept map holds the eroded heights,
 the sea, each cell's flow direction (D8: for moving water later), the lakes and the river
 polylines; derived on load: the rivers' smoothed channels in a 64 m bucket index and each lake's
-shore distance field. Columns (`terrain.rs`) take the map's height bicubic (C1) plus detail noise,
+shore distance field, indexed in buckets of 16 map cells (a column reads only the lakes whose
+field reaches its bucket; 0.51.21, WORLD_SCALE.md §3.1). Columns (`terrain.rs`) take the map's height bicubic (C1) plus detail noise,
 carve river channels and valleys (water in ½ m terraces down the river; broad levees where the land
 is lower, none at sea level; a joining river at the other's level across its channel, generator
 25), fill lakes flat to their
