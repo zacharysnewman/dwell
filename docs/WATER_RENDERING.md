@@ -988,3 +988,12 @@ post, a doorway, leaves). A first build sized the halo by `discM` alone, and a t
 the whole view (the screen blend lifts the black corners of a cave); it is capped at `maxDisc`
 (half a screen height), and its decay is per twelfth of the way, since Low's fewer samples read
 brighter than High's when it was per sample.
+
+## 13. Water looks per biome (2026-11-10, ADR 0074 B4)
+
+A biome may name its water's colour and clarity (`waterLook`: `scatter`, `absorption`) over its fluid's
+look in the `fluids` table; `dwell_worldgen::terrain::water_look_at` resolves the look per column,
+blended by the biomes' weights, from the build's biome data (clients generate terrain from the same
+data, so nothing is sent). The default biome has none: today's water exactly. Not yet drawn: the water
+shader still takes one look per fluid; feeding it the per-column look (a vertex tint or a look texture)
+is outstanding. Chisel's preview tints its water by it.

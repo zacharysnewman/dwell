@@ -339,7 +339,7 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
 /shared/music        Music (music.json: tracks — title, author, file, volume, loop, fades, when —
                      and their audio files, the owner's Starry Sunshine) + gen.mjs (→ TS
                      music.gen.ts, each file's published name with its content hash), validate.mjs.
-/shared/worldgen     golden/: chunk and LOD-section hashes of generator version 23 (§6.3); terrain.json: the world's elevation and water (the height field, rivers, lakes, spawn, the `defaultBiome`), biomes/: the biomes layered on it (where they belong, fine relief, elevation bands, rule references; fixtures/ for tests; ADR 0074), decorations.json: the terrain's decoration rules, placements.json: the structure placements (the pines, ADR 0043), midplane.json: the bedrock between the faces and the portals through it, gen.mjs (→ Rust tables for dwell-worldgen) (§6.3).
+/shared/worldgen     golden/: chunk and LOD-section hashes of generator version 23 (§6.3); terrain.json: the world's elevation and water (the height field, rivers, lakes, spawn, the `defaultBiome`), biomes/: the biomes layered on it (where they belong, fine relief, banks, water look, elevation bands, rule references; fixtures/ for tests; ADR 0074), worlds/: example world settings (the archipelago), decorations.json: the terrain's decoration rules, placements.json: the structure placements (the pines, ADR 0043), midplane.json: the bedrock between the faces and the portals through it, gen.mjs (→ Rust tables for dwell-worldgen) (§6.3).
 /shared/structures   Structure files (*.json; test/ holds fixtures) + gen.mjs (→ Rust tables for
                      dwell-world) and gen.test.mjs; format.mjs, the format's rules, shared by gen.mjs
                      and the client's structures store; playground.json is the movement playground
@@ -1494,7 +1494,7 @@ so chunks can be generated in any order and in parallel. The 2D fields are sampl
 lattice and interpolated bilinearly; the chunk path and the point queries (`column_at`, `solid_at`,
 `ground_y`) share that arithmetic.
 
-**Biomes [in progress; B1 built, 0.51.14; B2 built, 0.51.15]** (ADR 0074, Phase 56). A biome is one data file,
+**Biomes [in progress; B1 built, 0.51.14; B2 built, 0.51.15; B4 built, 0.51.17]** (ADR 0074, Phase 56). B4: a biome's `banks` (river valley slope, lake bank and slope, beach width; blended by weight) shape the banks of the water the elevation placed; an optional `waterLook` (scatter colour, absorption) over its fluid's look is resolved per column (`TerrainGenerator::water_look_at`, blended) from the build's biome data, so nothing is sent (the renderer does not read it yet; Chisel's preview does); terrain.json's `islands` group (off by default) breaks the coast into an archipelago, `WorldMap::for_height` builds a map over other height-field knobs, and `shared/worldgen/worlds/` holds example world settings (`FIXTURE_WORLDS`). A biome is one data file,
 `shared/worldgen/biomes/<name>.json` (`namespace:name`), layered on the world's elevation: `where` (where
 it belongs: a `weight` and optional eased ranges of `temperature`, `wetness`, `elevation`, `coast`),
 `detail` (bounded fine relief), `shaping` (the band edges' noise and slope lift, the rock band, the

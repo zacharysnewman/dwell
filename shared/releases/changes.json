@@ -2,6 +2,13 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.51.17",
+      "changes": [
+        "Chisel can now shape river and lake banks per biome, from steep banks to wide sandy beaches, and give each biome its own water colour.",
+        "Chisel has world knobs for the coast, with an Archipelago preset: many small islands in a shallow sea. Your worlds are unchanged."
+      ]
+    },
+    {
       "version": "0.51.16",
       "changes": [
         "Chisel, a biome editor for developers: tune biomes with sliders and watch a map of the world update as you drag. Worlds still have one biome, so the terrain is unchanged."

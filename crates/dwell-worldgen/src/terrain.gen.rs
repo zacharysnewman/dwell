@@ -321,7 +321,7 @@ pub const FIXTURE_WORLDS: &[(&str, HeightField)] = &[
         island_amplitude: 1400.0,
         island_wavelength: 4096,
         island_octaves: 3,
-        island_cap: 150.0,
+        island_cap: -300.0,
     }),
 ];
 

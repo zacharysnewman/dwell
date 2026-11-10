@@ -25,7 +25,10 @@ function memory(init: Record<string, string> = {}) {
 
 describe('Chisel state', () => {
   it('the archipelago (world knobs, a water hue, banks) round-trips and validates', () => {
-    const e = { ...addBiome(buildEdit(), ARCHIPELAGO_FIXTURE), world: structuredClone(ARCHIPELAGO_WORLD) };
+    const e = {
+      ...addBiome(buildEdit(), ARCHIPELAGO_FIXTURE),
+      world: structuredClone(ARCHIPELAGO_WORLD),
+    };
     expect(validateEdit(e)).toEqual([]);
     expect(knob(e, 'islands', 'amplitude')).toBe(1400);
     expect(knob(buildEdit(), 'islands', 'amplitude')).toBe(0);
@@ -35,7 +38,11 @@ describe('Chisel state', () => {
     bad.world = { ...bad.world, islands: { amplitude: -1 } };
     expect(validateEdit(bad).join()).toMatch(/islands\.amplitude is out of range/);
     const hue = structuredClone(e);
-    hue.biomes[1] = { ...ARCHIPELAGO_FIXTURE, name: 'test:archipelago', waterLook: { scatter: 'teal' } };
+    hue.biomes[1] = {
+      ...ARCHIPELAGO_FIXTURE,
+      name: 'test:archipelago',
+      waterLook: { scatter: 'teal' },
+    };
     expect(validateEdit(hue).join()).toMatch(/waterLook\.scatter must be a colour/);
     const unknown = structuredClone(e);
     (unknown.world as Record<string, unknown>).rivers = { bank: 1 };
