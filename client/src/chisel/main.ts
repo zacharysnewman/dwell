@@ -11,6 +11,7 @@ import {
 import {
   ARCHIPELAGO_WORLD,
   FULL_BLOCKS,
+  PRESETS,
   TEMPLATES,
   addBiome,
   buildEdit,
@@ -334,6 +335,15 @@ function render() {
   });
   const tpl = select();
   for (const t of TEMPLATES) tpl.append(el('option', { value: t.name, textContent: t.name }));
+  // The presets (Add preset): by label, the description as the option's tooltip and below.
+  const presetPick = select();
+  for (const p of PRESETS) {
+    presetPick.append(el('option', { value: p.name, textContent: p.label, title: p.description }));
+  }
+  const presetAbout = el('p', { className: 'about', textContent: PRESETS[0]?.description ?? '' });
+  presetPick.addEventListener('change', () => {
+    presetAbout.textContent = PRESETS.find((p) => p.name === presetPick.value)?.description ?? '';
+  });
   const add = (from: BiomeJson | undefined) => {
     if (!from) return;
     edit = addBiome(edit, from);
@@ -360,7 +370,15 @@ function render() {
       selected === 0,
     ),
   );
-  panel.append(list, actions, errors);
+  const presets = el(
+    'div',
+    { className: 'bar' },
+    presetPick,
+    button('Add from preset', () => {
+      add(PRESETS.find((t) => t.name === presetPick.value));
+    }),
+  );
+  panel.append(list, actions, presets, presetAbout, errors);
   const b = edit.biomes[selected];
   if (b) panel.append(el('h2', { textContent: b.name }), biomeEditor(b, selected === 0));
   panel.append(
