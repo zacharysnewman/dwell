@@ -74,7 +74,15 @@ wait for its level-1 section accounts for up to 1 s of it). **Left:** two `game_
 change turns red (green on main): `with_the_lod_a_preloaded_respawn_opens_its_loading_screen_at_once`
 (opened after 39 frames, bar 3; bisected to chunk meshes going before section meshes: the preload's
 level-1 sections wait behind them) and `a_device_at_under_two_frames_a_second_walks_and_jumps_without_snapping`
-(a 0.25 m correction, bar 0.2; bisected to the near-first generation order, cause not found). Without
+(a 0.25 m correction, bar 0.2; bisected to the near-first generation order). That one is not the
+terrain: at the correction every chunk around the player is loaded and nothing is generating, and the
+start is the same point. On **main**, settling 2, 5 or 8 frames longer before the slow frames (the
+test's `run_until(60, …)`) gives the same 0.25 m (3 ticks of walking at 5 m/s) and fails, where 0, 1 or
+3 frames give 0.08–0.17 m. main's correction is always 1–3 ticks at the walk's start, depending on the
+phase of the 48-tick frames against the server's ticks, and passes the 0.2 m bar by luck. The new order
+only moves `terrain_ready` by a few frames, which changes that phase. Suspect: the 48-input bursts
+against the server's one-a-tick input queue and jitter buffer (`dwell-sim` `server.rs` step 2, starved
+ticks repeating the last input). A prediction bug of its own, to fix there. Without
 the near-first generations the terrain trip is red again (218 frames). Then the owner's check on the
 river in the browser, and the report's other half (edited chunks refined only up close).
 
