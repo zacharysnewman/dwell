@@ -7,6 +7,7 @@ pub mod base;
 pub mod bifacial;
 pub mod biomemap;
 pub mod decorations;
+pub mod geology;
 pub mod hydrology;
 pub mod island;
 pub mod noise;

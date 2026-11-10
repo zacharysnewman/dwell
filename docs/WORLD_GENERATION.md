@@ -411,6 +411,19 @@ until the systemic layers are tuned in Chisel and adopted together on a new comp
 sees the ground smoothed over `windSmoothM` (3 km), so the shadow falls behind whole ranges, not each
 hillside (0.52.8).
 
+## Rock types and shaping (2026-11-10, ADR 0075 T2)
+
+Systemic terrain's geology layer: `shared/worldgen/rocks.json` holds the rock types (hardness, jointing
+`bedded`/`vertical`/`massive`, bed thickness, solubility, the `face`/`cap`/`scree` blocks they show, a
+colour), the strata stacks (layers top to bottom, repeating with height from sea level), the provinces
+(a stack per region by a noise of `provinces.wavelength` m, by the stacks' weights) and the shaping. A
+biome may name its own `rockStack` (the red-rock mesa and badlands presets). Each stack is a monotone
+profile of height (`geology::Profile`): a hard bed a near-vertical wall and a flat tread (caprock), a soft
+bed a talus slope, vertical jointing one sheer wall, massive rock unstepped; the ground moves
+`shaping.strength` of the way to it (0 in the default world: the terrain unchanged), and at half strength
+a wall shows its rock's face, talus its scree, a tread its cap. Tuned in Chisel (the Rock group and the
+rock overlay). Prototype content (§6.1 of the architecture): today's blocks stand in for the rocks.
+
 ## Preset biomes (2026-11-10, ADR 0075)
 
 Starting points for a world's biomes: `shared/worldgen/biomes/presets/*.json` (14: temperate meadow,

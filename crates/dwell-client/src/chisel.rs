@@ -10,6 +10,7 @@
 
 use dwell_game::minimap::{MAP, decode_height, tint_rgb};
 use dwell_look::lod_map::LOD_MAP;
+use dwell_worldgen::geology::{GEOLOGY, Geology, Jointing, Layer, Rock, Stack};
 use dwell_worldgen::terrain::{
     BIOME_MAP, BIOMES, Biome, BiomeMap, ElevationBand, HEIGHT, HeightField, TerrainGenerator,
     WaterLook, Where, WhereRange, water_tint_of,
@@ -31,6 +32,9 @@ pub enum Overlay {
     Wetness,
     /// The rain shadow's rainfall (systemic terrain T1), tan (0) to green (1).
     Rainfall,
+    /// The rock at the surface (systemic terrain T2): its colour, darker on a wall, lighter on a
+    /// tread.
+    Rock,
 }
 
 impl Overlay {
@@ -40,6 +44,7 @@ impl Overlay {
             2 => Self::Temperature,
             3 => Self::Wetness,
             4 => Self::Rainfall,
+            5 => Self::Rock,
             _ => Self::Blocks,
         }
     }
@@ -184,6 +189,7 @@ pub fn biome_from_json(v: &Value) -> Result<Biome, String> {
         placements: names(v, "placements").map_err(at)?,
         water: text(v, "water").map_err(at)?,
         water_look: water_look(v).map_err(at)?,
+        rock_stack: v.get("rockStack").and_then(Value::as_str).map(leak),
     })
 }
 
@@ -270,11 +276,96 @@ pub fn biome_map_from_json(v: &Value) -> Result<BiomeMap, String> {
     })
 }
 
-/// A Chisel edit parsed: the biomes (the default first), the biome map, and the world's height
-/// field when the edit changes its knobs (`world`).
+/// The geology from its JSON (`shared/worldgen/rocks.json`, checked by `biomes.mjs`
+/// `validateRocks`): the rocks, the stacks, the provinces and the shaping.
+pub fn geology_from_json(v: &Value) -> Result<Geology, String> {
+    let list = |k: &str| {
+        v.get(k)
+            .and_then(Value::as_array)
+            .filter(|l| !l.is_empty())
+            .ok_or(format!("rocks.json: {k} must be a list"))
+    };
+    let mut rocks = Vec::new();
+    for r in list("rocks")? {
+        let name = text(r, "name")?;
+        let at = |e: String| format!("rock {name}: {e}");
+        let jointing = match r.get("jointing").and_then(Value::as_str) {
+            Some("bedded") => Jointing::Bedded,
+            Some("vertical") => Jointing::Vertical,
+            Some("massive") => Jointing::Massive,
+            _ => return Err(at("jointing must be bedded, vertical or massive".into())),
+        };
+        let color = r
+            .get("color")
+            .and_then(Value::as_str)
+            .and_then(|c| c.strip_prefix('#'))
+            .and_then(|h| u32::from_str_radix(h, 16).ok())
+            .ok_or_else(|| at("color must be \"#rrggbb\"".into()))?;
+        let rock = Rock {
+            name,
+            hardness: num(r, "hardness").map_err(at)?,
+            jointing,
+            bed: num(r, "bed").map_err(at)?.max(1.0),
+            solubility: num(r, "solubility").map_err(at)?,
+            face: text(r, "face").map_err(at)?,
+            cap: text(r, "cap").map_err(at)?,
+            scree: text(r, "scree").map_err(at)?,
+            color,
+        };
+        for id in [rock.face, rock.cap, rock.scree] {
+            if dwell_blocks::state(id).is_none() {
+                return Err(at(format!("{id} is not in the registry")));
+            }
+        }
+        rocks.push(rock);
+    }
+    let mut stacks = Vec::new();
+    for st in list("stacks")? {
+        let name = text(st, "name")?;
+        let at = |e: String| format!("stack {name}: {e}");
+        let layers = st
+            .get("layers")
+            .and_then(Value::as_array)
+            .filter(|l| !l.is_empty())
+            .ok_or_else(|| at("layers must be a list".into()))?;
+        let mut ls = Vec::new();
+        for l in layers {
+            let rock = text(l, "rock").map_err(at)?;
+            if !rocks.iter().any(|r| r.name == rock) {
+                return Err(at(format!("{rock} is not a rock")));
+            }
+            ls.push(Layer {
+                rock,
+                thickness: num(l, "thickness").map_err(at)?.max(1.0),
+            });
+        }
+        stacks.push(Stack {
+            name,
+            weight: num(st, "weight").map_err(at)?,
+            layers: Box::leak(ls.into_boxed_slice()),
+        });
+    }
+    let g = |grp: &str, k: &str| {
+        v.get(grp)
+            .ok_or(format!("rocks.json: {grp} is missing"))
+            .and_then(|o| num(o, k).map_err(|e| format!("rocks.json: {grp}.{e}")))
+    };
+    Ok(Geology {
+        rocks: Box::leak(rocks.into_boxed_slice()),
+        stacks: Box::leak(stacks.into_boxed_slice()),
+        province_wavelength: (g("provinces", "wavelength")? as i32).max(256),
+        strength: g("shaping", "strength")?.clamp(0.0, 1.0),
+        tread: g("shaping", "tread")?,
+        sheer: g("shaping", "sheer")?,
+    })
+}
+
+/// A Chisel edit parsed: the biomes (the default first), the biome map, the geology, and the
+/// world's height field when the edit changes its knobs (`world`).
 pub struct Edit {
     pub biomes: Vec<Biome>,
     pub map: BiomeMap,
+    pub geology: Geology,
     pub height: Option<HeightField>,
 }
 
@@ -295,9 +386,22 @@ pub fn edit_from_json(text: &str) -> Result<Edit, String> {
         Some(w) => Some(height_from_json(w)?).filter(|h| *h != HEIGHT),
         None => None,
     };
+    let geology = match v.get("geology") {
+        Some(g) => geology_from_json(g)?,
+        None => GEOLOGY,
+    };
+    let biomes = biomes?;
+    for b in &biomes {
+        if let Some(s) = b.rock_stack
+            && geology.stack(s).is_none()
+        {
+            return Err(format!("biome {}: rockStack {s} is not a stack", b.name));
+        }
+    }
     Ok(Edit {
-        biomes: biomes?,
+        biomes,
         map,
+        geology,
         height,
     })
 }
@@ -395,6 +499,17 @@ pub fn preview(g: &TerrainGenerator, x0: i64, z0: i64, n: i64, texel: i64, o: Ov
                 }
                 Some(geo) => lerp3([0.82, 0.72, 0.5], [0.15, 0.35, 0.85], geo.wetness),
             }),
+            Overlay::Rock => {
+                let (rock, part) = g.rock_at_surface(x, z);
+                let c = rock.color;
+                let base = [c >> 16, c >> 8, c].map(|v| f64::from(v & 0xff) / 255.0);
+                use dwell_worldgen::geology::Part;
+                bytes(match part {
+                    Part::Wall => base.map(|v| v * 0.6),
+                    Part::Tread => lerp3(base, [1.0; 3], 0.2),
+                    Part::Talus | Part::Plain => base,
+                })
+            }
             Overlay::Rainfall => bytes(match g.biome_rainfall(x, z) {
                 None => [0.5; 3],
                 // Square-root eased: the dry lee's small values stay readable.
@@ -603,5 +718,53 @@ mod tests {
         let a = preview(&g, x0, x0, n, texel, Overlay::Wetness);
         let b = preview(&plain, x0, x0, n, texel, Overlay::Wetness);
         assert_ne!(a, b, "rainShare 1 changes the wetness overlay");
+    }
+
+    #[test]
+    fn the_json_geology_is_the_generated_tables_and_takes_a_rock_by_data() {
+        // face-a-only: Chisel previews face A (the shaping's faces are dwell-worldgen's
+        // tests/rocks.rs).
+        let g = geology_from_json(&file("rocks.json")).unwrap();
+        assert_eq!(g, GEOLOGY);
+        // A fixture rock and stack by data alone: a new hard cap over shale, named by a biome.
+        let mut v = file("rocks.json");
+        v["rocks"].as_array_mut().unwrap().push(serde_json::json!({
+            "name": "test:cap", "hardness": 0.95, "jointing": "vertical", "bed": 10,
+            "solubility": 0, "face": "dwell:stone", "cap": "dwell:stone", "scree": "dwell:sand",
+            "color": "#ff0000"
+        }));
+        v["stacks"].as_array_mut().unwrap().push(serde_json::json!({
+            "name": "test:capped", "weight": 0,
+            "layers": [ { "rock": "test:cap", "thickness": 20 }, { "rock": "dwell:shale", "thickness": 30 } ]
+        }));
+        v["shaping"]["strength"] = 1.into();
+        let mut b = file("biomes/default.json");
+        b["rockStack"] = "test:capped".into();
+        let edit = serde_json::json!({ "biomes": [b], "geology": v }).to_string();
+        let e = edit_from_json(&edit).unwrap();
+        assert_eq!(e.geology.rocks.len(), GEOLOGY.rocks.len() + 1);
+        assert_eq!(e.biomes[0].rock_stack, Some("test:capped"));
+        // The rock overlay shows the new rock somewhere, and the blocks differ from the build's.
+        let t = BifacialTerrain::height_field(7);
+        let base = t.local(dwell_world::Face::A).clone();
+        let g1 = base
+            .clone()
+            .with_biomes_and_geology(&e.biomes, e.map, e.geology);
+        let (x0, n, texel) = (-4096, 64, 128);
+        let tile = preview(&g1, x0, x0, n, texel, Overlay::Rock);
+        assert!(
+            tile.chunks(4).any(|p| p[0] > 120 && p[1] == 0 && p[2] == 0),
+            "the fixture rock's red shows"
+        );
+        let a = preview(&g1, x0, x0, n, texel, Overlay::Blocks);
+        let b = preview(&base, x0, x0, n, texel, Overlay::Blocks);
+        assert_ne!(a, b, "strength 1 reshapes the ground");
+        // A stack naming an unknown rock, or a biome an unknown stack, fails with a message.
+        v["stacks"][0]["layers"][0]["rock"] = "test:nothing".into();
+        assert!(geology_from_json(&v).unwrap_err().contains("test:nothing"));
+        let mut b = file("biomes/default.json");
+        b["rockStack"] = "test:none".into();
+        let bad = serde_json::json!({ "biomes": [b] }).to_string();
+        assert!(edit_from_json(&bad).err().unwrap().contains("test:none"));
     }
 }

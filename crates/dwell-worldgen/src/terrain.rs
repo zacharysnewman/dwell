@@ -264,6 +264,9 @@ pub struct Biome {
     pub water: &'static str,
     /// Its water's colour and clarity over the fluid's look (none: the fluid's own).
     pub water_look: Option<WaterLook>,
+    /// The strata stack (`rocks.json`, by name) its ground is made of, in place of the rock
+    /// province's (systemic terrain T2); none: the province's.
+    pub rock_stack: Option<&'static str>,
 }
 
 mod table {
@@ -584,6 +587,15 @@ pub struct BiomeSet {
     pub palettes: Vec<Bands>,
     first: Vec<u16>,
     field: Option<crate::biomemap::BiomeField>,
+    /// The biome map's geography it was built with.
+    params: BiomeMap,
+    /// The geology (systemic terrain T2): the stacks' profiles and the provinces.
+    pub geology: crate::geology::Resolved,
+    /// Each biome's own stack (its `rockStack`), by index into the geology's stacks.
+    biome_stack: Vec<Option<usize>>,
+    /// The rocks' palettes from here: rock r's scree palette at `rock_first + 2r` (ground and
+    /// under its scree, rock its face), its cap palette at `+ 1` (ground and under its cap).
+    rock_first: u16,
 }
 
 impl BiomeSet {
@@ -594,6 +606,17 @@ impl BiomeSet {
 
     /// [`BiomeSet::new`] with the biome map's geography `params` (`terrain.json` `biomeMap`).
     pub fn with_map(list: &[Biome], map: &WorldMap, world_seed: u64, params: BiomeMap) -> Self {
+        Self::with_geology(list, map, world_seed, params, crate::geology::GEOLOGY)
+    }
+
+    /// [`BiomeSet::with_map`] with `geology` (`rocks.json`) in place of the build's.
+    pub fn with_geology(
+        list: &[Biome],
+        map: &WorldMap,
+        world_seed: u64,
+        params: BiomeMap,
+        geology: crate::geology::Geology,
+    ) -> Self {
         assert!(!list.is_empty(), "a world has at least one biome");
         let mut palettes = Vec::new();
         let mut first = Vec::new();
@@ -601,6 +624,36 @@ impl BiomeSet {
             first.push(palettes.len() as u16);
             palettes.extend(b.bands.iter().map(Bands::of));
         }
+        let rock_first = palettes.len() as u16;
+        for r in geology.rocks {
+            let (face, cap, scree) = (
+                dwell_blocks::require(r.face),
+                dwell_blocks::require(r.cap),
+                dwell_blocks::require(r.scree),
+            );
+            palettes.push(Bands {
+                ground: scree,
+                under: scree,
+                rock: face,
+                shore: scree,
+            });
+            palettes.push(Bands {
+                ground: cap,
+                under: cap,
+                rock: face,
+                shore: scree,
+            });
+        }
+        let biome_stack = list
+            .iter()
+            .map(|b| {
+                b.rock_stack.map(|n| {
+                    geology
+                        .stack(n)
+                        .unwrap_or_else(|| panic!("biome {}: no rock stack {n}", b.name))
+                })
+            })
+            .collect();
         let field = (list.len() > 1)
             .then(|| crate::biomemap::BiomeField::with_params(map, world_seed, params));
         Self {
@@ -608,6 +661,10 @@ impl BiomeSet {
             palettes,
             first,
             field,
+            params,
+            geology: crate::geology::Resolved::new(geology, world_seed),
+            biome_stack,
+            rock_first,
         }
     }
 
@@ -849,12 +906,84 @@ impl TerrainGenerator {
 
     /// [`TerrainGenerator::with_biomes`] with the biome map's geography `params` in place of the
     /// build's (`terrain.json` `biomeMap`; Chisel's edits).
-    pub fn with_biomes_on(mut self, biomes: &[Biome], params: BiomeMap) -> Self {
-        let set = BiomeSet::with_map(biomes, &self.map, self.world_seed, params);
+    pub fn with_biomes_on(self, biomes: &[Biome], params: BiomeMap) -> Self {
+        let geology = self.biomes.geology.geology;
+        self.with_biomes_and_geology(biomes, params, geology)
+    }
+
+    /// [`TerrainGenerator::with_biomes_on`] with `geology` (`rocks.json`) in place of the build's.
+    pub fn with_biomes_and_geology(
+        mut self,
+        biomes: &[Biome],
+        params: BiomeMap,
+        geology: crate::geology::Geology,
+    ) -> Self {
+        let set = BiomeSet::with_geology(biomes, &self.map, self.world_seed, params, geology);
         self.ramps = Arc::new(RampPieces::resolve(&set.palettes));
         self.biomes = Arc::new(set);
         self.cache_id = next_cache_id();
         self
+    }
+
+    /// The generator with `geology` (`rocks.json`: the rocks, the stacks, the provinces and the
+    /// shaping; systemic terrain T2) in place of the build's.
+    pub fn with_geology(mut self, geology: crate::geology::Geology) -> Self {
+        let b = &self.biomes;
+        let set = BiomeSet::with_geology(&b.list, &self.map, self.world_seed, b.params, geology);
+        self.ramps = Arc::new(RampPieces::resolve(&set.palettes));
+        self.biomes = Arc::new(set);
+        self.cache_id = next_cache_id();
+        self
+    }
+
+    /// The ground at `h` m over the sea shaped by its rock (systemic terrain T2): each biome's
+    /// stack (its own, or the province's, fading out at a province's border) mapped through its
+    /// profile, blended by the biomes' weights, `strength` of the way (none at 0, the default
+    /// world's) and none under the sea or at the water (`fade`). With it, the chosen biome's rock
+    /// and part where the shaping is at least half strength (its blocks show there).
+    fn rock_shaping(
+        &self,
+        mix: &crate::biomemap::Mix,
+        x: i64,
+        z: i64,
+        h: f64,
+        fade: f64,
+    ) -> (f64, Option<(usize, crate::geology::Part)>) {
+        let geo = &self.biomes.geology;
+        let strength = geo.geology.strength;
+        if strength <= 0.0 || h <= 0.0 {
+            return (h, None);
+        }
+        let reach = strength * smooth01(h / 8.0) * fade;
+        let mut province = None;
+        let mut dh = 0.0;
+        let mut chosen = None;
+        for (i, w) in mix.iter() {
+            let (stack, f) = match self.biomes.biome_stack[i] {
+                Some(k) => (k, 1.0),
+                None => *province.get_or_insert_with(|| geo.province(x, z)),
+            };
+            let (v, rock, part) = geo.profiles[stack].map(h);
+            dh += w * f * (v - h);
+            if i == usize::from(mix.chosen) && reach * f >= 0.5 {
+                chosen = Some((rock, part));
+            }
+        }
+        (h + reach * dh, chosen)
+    }
+
+    /// The rock at the surface of face-local (x, z) and the part of its stack's profile there,
+    /// by the height field's ground (whatever the shaping's strength; Chisel's rock overlay).
+    pub fn rock_at_surface(&self, x: i64, z: i64) -> (crate::geology::Rock, crate::geology::Part) {
+        let (base, _, _) = self.map.height_at(x as f64, z as f64);
+        let mix = self.biomes.mix(x, z, base);
+        let geo = &self.biomes.geology;
+        let stack = match self.biomes.biome_stack[usize::from(mix.chosen)] {
+            Some(k) => k,
+            None => geo.province(x, z).0,
+        };
+        let (_, rock, part) = geo.profiles[stack].map(base.max(0.0));
+        (geo.geology.rocks[rock], part)
     }
 
     /// This generator's biomes.
@@ -1364,6 +1493,9 @@ impl TerrainGenerator {
             fade = fade.min(smooth01(-l.sdf / bs.detail_water_fade.max(1e-6)));
         }
         let mut h = base + detail * fade;
+        // The rock's shaping (systemic terrain T2; none at strength 0).
+        let (shaped, rock) = self.rock_shaping(&mix, x, z, h, fade);
+        h = shaped;
         let on_lip = false;
         let stream = false;
         let mut water = Water::None;
@@ -1508,7 +1640,23 @@ impl TerrainGenerator {
                 }
             }
         }
-        let palette = self.biomes.first[usize::from(mix.chosen)] + level_band as u16;
+        let mut palette = self.biomes.first[usize::from(mix.chosen)] + level_band as u16;
+        let mut band = band;
+        // Where the rock shapes the ground, its blocks show: a wall its face, talus its scree, a
+        // tread its cap, a massive rock's steep faces its face.
+        if let Some((r, part)) = rock
+            && band != Band::Shore
+        {
+            use crate::geology::Part;
+            let scree = self.biomes.rock_first + 2 * r as u16;
+            match part {
+                Part::Wall => (palette, band) = (scree, Band::Rock),
+                Part::Talus => (palette, band) = (scree, Band::Ground),
+                Part::Tread => (palette, band) = (scree + 1, Band::Ground),
+                Part::Plain if band == Band::Rock => palette = scree,
+                Part::Plain => {}
+            }
+        }
         let mut shore = FAR_WATER;
         if let Some(r) = &river {
             shore = shore.min((r.d - r.half).max(0.0) as f32);

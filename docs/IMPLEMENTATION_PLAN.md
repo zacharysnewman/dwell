@@ -72,7 +72,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 52 — Water flow | ✖ Replaced by Phase 53 (ADR 0060): its basins, outlets and pool graph were removed from the game in 0.48.2, when the water surface grid's runtime (G2a) took their place; what was built is in its section below, and its outstanding items (G4–G6, W3–W5) are carried by Phase 53 |
 | 53 — Water surface grid | 🚧 In progress — G2a built (0.48.2): the runtime grid in `dwell-sim` replaces the basins; generated water held at rest as found, edits free it, a rest layer keeps drawn rivers exactly at rest under the law, sleeping chunks with a 5 mm sleep and 5 cm wake band and smooth waking, written as blocks, saved as `DWG1`; both faces tested; a dam across seed 0's river backs it up 0.5 m in the browser. G0's prototype done but for the owner's look at the eroded rivers. G1a built (0.49.0): no river lips (BUGS.md #29 fixed), the pool graph removed. G3a and G3b built: currents for swimmers and floating bodies, free water's by the law and untouched rivers' by the map, sent as optional `WaterCurrents` datagrams. G3d built: the flow shown (carried ripples, foam streaks, drifting flecks, each a setting). Outstanding: G1b (the water computed from the map where the world loads: no beds or stepped levels; replaces the design's whole-world fill, measured too slow), G1c (erosion), G2b (pools, the held sea, the water layer's own storage), G3c (the water's own client layer, deferred); G4a built (0.49.1: the grid's settings and liquids as data), G4's pools, sources and per-world values follow G2b and G1b. G5 built: the water off the tick thread (ADR 0062: its own native thread, a browser water worker; a flood no longer slows the water or the tick); its follow-up built: the LOD of the chunks the water rewrites held and from kept bases, and the browser server's generation and LOD in a server-jobs worker (a dam's ticks 58 → 13 ms at worst). Follow-up (0.49.19, BUGS.md #38): generated rivers carry the map's flow through both layers, so a dam on a level reach backs the river up (seed 0's dam site 139.50 → 140.07 m in 20 water minutes; saved worlds fixed on load) and level and shallow reaches have a current. Follow-up (0.49.20, BUGS.md #39): the slope over a river's step is a closed wedge, so a diagonal river's staircase steps show no triangle holes. Follow-up (0.49.23, BUGS.md #40): a column built up into a dam no longer keeps its rest-layer spring, so water stops standing on a raised dam. Follow-up (0.49.24, BUGS.md #42): a river reach held level runs on its course's mean fall, and currents are sent as far as the flow is drawn (4 chunks). Follow-up (0.49.25, BUGS.md #41): the reach below a dam leaves the rest layer down the rest's own flow (`restCut`/`restBack`), so it dries completely to the next inflow and sleeps (seed 0's dam site: 575 water columns left → none). G6 built (0.49.31): waterfalls (a sheet with foam and spray, a push down and out, a rushing sound, the Waterfalls setting). Follow-up (0.49.43, BUGS.md #47): a freed river column still in the rest shows the map's current (`riverCurrentBandM`), so the river no longer slows beside an edit. Follow-up (0.49.44, BUGS.md #41b, partly): a sleeping chunk passes its edges' flow on, so a fixture reservoir spilling over its dam sleeps; deep water's slosh (seed 0's reservoirs) still keeps them awake. Tuning (0.50.50, owner 2026-11-09): river currents doubled (`riverCurrentScale` 2, `riverCurrentMaxMs` 3 m/s) |
 | 54 — Skinned characters | 🚧 In progress — S1 built and tested natively and in Chrome on the GPU (ADR 0070, `CHARACTERS.md` §11): the import pipeline (Blender headless, FBX → GLB with the palette remap), `shared/models` (data, generator, validation, a fixture model), `dwell-models` (GLB reader, clips, blending, role → clip player), GPU skinning in the renderer, other players drawn as the Peasant on both faces, the seven animals in the data and the Model Viewer. S2 partly built (0.51.7): held items in the skinned hand (`hand` in models.json), your shadow as the Peasant. Outstanding: CI; the owner's look and confirmation that the packs may ship in a web build; S2's first-person arms and own body (they stay rigid: no arms mesh in the pack). S3 built (0.51.13, ADR 0073): animals spawned near players by data, wandering, despawned far away, drawn skinned; outstanding: the owner's answers on behaviour (ADR 0073), CI. S4 (0.51.24): the tools pack's 53 models imported as props (`props.json`, Model Viewer Props view), an item look by prop (the stone pickaxe) loose and on the hotbar; outstanding: the prop in the hand, which props become items, CI. S5 (0.52.1): Model detail setting (decimated, flat-shaded levels as data), the doe and the wolf, herd mix, only deer and wolves spawn; outstanding: the owner's default level, CI |
-| 57 — Systemic terrain | 🚧 In progress — T1 built (0.52.7, ADR 0075): the rain shadow (wind and rain keys in `terrain.json` `biomeMap`, `biomemap::rainfall` per face's map, the wetness blended by `rainShare`, 0 by default: goldens byte-identical), Chisel's sliders and rainfall overlay; follow-up (0.52.8): the wind sees a 3 km smoothed ground (`windSmoothM`), and 14 preset biomes (`biomes/presets/`, Chisel's "Add from preset"); outstanding: CI, the owner's look and tuning. Next: T2 rock types, T3 soil and vegetation, T4 rule-based erosion, T5 tectonics |
+| 57 — Systemic terrain | 🚧 In progress — T1 built (0.52.7, ADR 0075): the rain shadow (wind and rain keys in `terrain.json` `biomeMap`, `biomemap::rainfall` per face's map, the wetness blended by `rainShare`, 0 by default: goldens byte-identical), Chisel's sliders and rainfall overlay; follow-up (0.52.8): the wind sees a 3 km smoothed ground (`windSmoothM`), and 14 preset biomes (`biomes/presets/`, Chisel's "Add from preset"); T2 built (0.52.9): rock types, strata stacks and provinces as data (`shared/worldgen/rocks.json`, `geology.rs`), rule-based shaping by rock (hard-over-soft caprock terraces, walls and talus; vertical jointing sheer; massive unstepped), `strength` 0 by default (goldens byte-identical), a biome's `rockStack` (the mesa and badlands presets), Chisel's rock overlay and sliders; outstanding: CI, the owner's look and tuning (T2's mesas read as stepped hills, not isolated buttes yet). Next: T3 soil and vegetation, T4 erosion (isolated buttes, a simulated pass), T5 tectonics |
 | 56 — Biomes and Chisel | 🚧 In progress — B1 built (0.51.14, ADR 0074): the world's elevation and water stay in `terrain.json`, biomes as data layered on it (`shared/worldgen/biomes/<name>.json`: fine relief, surface bands, rule references; the default biome today's, goldens byte-identical), validated and generated into `BIOMES`; the generator reads a biome's surface blocks (`with_biome`). B2 built (0.51.15): the biome map (`biomemap.rs`: biomes weighted by temperature, wetness, elevation and coast distance, dithered borders, blended fine relief), elevation bands as a list, a desert fixture by data alone; goldens byte-identical. B3 built (0.51.16): the default biome a fallback (a fitting biome takes its place at weight 1), Chisel's page (`client/chisel.html`: biomes, sliders from the validation's ranges, a live preview from the real generator in a worker, overlays, Export/Import, stored edits); outstanding: CI, the owner's look. B4 built (0.51.17): water banks per biome (`banks`, blended), a water look per biome (`waterLook`, resolved and blended per column; the game's water shader not fed yet), the archipelago's world knob (`islands`) with an example world and fixture biome, Chisel's sliders, hue picker and world knobs; goldens byte-identical. Next: B6 texture tab, B7 Chisel in game, B5 trees/ground items/structures, B8 arches |
 | 55 — Octagonal logs | 🚧 In progress — T1 built (0.51.0, a new compatibility line; ADR 0072): `crossSection` as block data, the octagon squared where same-axis logs join, drawn and collided (terrain) on both faces. T2's felling as wedges built (0.51.0): `dwell:log_ramp`, a wood's `fellWedge`, the stump's ramp and the trunk's upside-down ramp, shaped piece cells as hulls; follow-up: the matching trunk wedge by default, tipped by the wood's `fellTip` (the log's 1). T3's bark ring on the caps follows the octagon, none along joined sides (`crossSection.ring`/`heart`). T4: felled trunks draw as octagons, the wood ramps are the octagon cut by their slant (mesh, terrain collision; `crossSection: "of"`); the bodies' octagon prism colliders built and tested but not switched on (an octagonal log wasn't pushed on land). Outstanding: the owner's bench check of T1 and a felled tree; switching the prism colliders on; the carved notch on the octagon; the trunk's riding wedge collides square (deviation) |
 
@@ -5801,7 +5801,7 @@ enough: the refined pass is ~0.1 s); a `where.weight` slider runs to 2 (the data
 
 ## Phase 57 — Systemic terrain
 
-**Status:** 🚧 In progress — T1 built (0.52.7; smoothed wind 0.52.8), the presets built (0.52.8); CI, the owner's look and tuning outstanding. Design:
+**Status:** 🚧 In progress — T1 built (0.52.7; smoothed wind 0.52.8), the presets built (0.52.8), T2 built (0.52.9); CI, the owner's look and tuning outstanding. Design:
 [ADR 0075](./adr/0075-systemic-terrain.md), [`proposals/SYSTEMIC_TERRAIN.md`](./proposals/SYSTEMIC_TERRAIN.md)
 (the owner's direction and answers, 2026-11-10). Every layer ships **neutral** in the default world
 (goldens byte-identical) and is tuned in Chisel; the tuned layers are adopted together on one new
@@ -5850,12 +5850,48 @@ starting points")
 `biomeMap` (the biome map's geography group) rather than a separate `climate` group, so Chisel's
 sliders, stored state and parsing carry them unchanged; the rainfall does not feed the rivers' flow.
 
-**T2 — rock provinces and rock types** (hardness, jointing, the blocks a rock shows), neutral by default.
+**T2 — rock provinces and rock types (built, 0.52.9)** (hardness, jointing, the blocks a rock shows),
+neutral by default.
+
+- [x] Data: `shared/worldgen/rocks.json`: 5 prototype rocks (sandstone, shale, granite, basalt,
+  limestone: hardness, jointing `bedded`/`vertical`/`massive`, bed thickness, solubility (unused yet),
+  `face`/`cap`/`scree` blocks, a colour), 5 strata stacks (layers top to bottom), `provinces.wavelength`,
+  `shaping` (`strength` 0, `tread`, `sheer`); checked by `biomes.mjs` `validateRocks` (shared with
+  Chisel), emitted as `rocks.gen.rs` (`ROCKS`, `STACKS`, `GEOLOGY`) by `gen.mjs`. A biome may name a
+  `rockStack` (validated against the stacks): the red-rock mesa preset `dwell:red_beds`, badlands
+  `dwell:badland_beds`.
+- [x] Provinces: a 2-octave noise of `wavelength` m picks a stack by the stacks' weights, the shaping
+  fading out within 0.03 of a border so a province edge is no cliff; a biome's own stack wins where it is.
+- [x] Shaping (`geology::Profile`, `TerrainGenerator::rock_shaping`): each stack is a monotone
+  piecewise-linear profile over its period (layers repeating from sea level): a hard bed a wall over
+  (1 − hardness)^sheer of its height and a tread over hardness² × tread; a soft bed a talus slope;
+  vertical jointing one sheer wall the unit's height; massive unstepped. The ground moves `strength` of
+  the way to the profile's (bounded by a period), blended by the biomes' weights, none under the sea or
+  at rivers and lakes. At half strength or more a wall shows its rock's face, talus its scree, a tread its
+  cap (rock palettes after the biomes'). Both faces (face-local heights).
+- [x] Chisel: a "Rock" group (strength, tread, sheer, province wavelength sliders from `GEOLOGY`'s
+  ranges), a rock overlay (each rock's colour, darker on walls, lighter on treads), the geology in the
+  edit (`geology`, optional: an older edit loads with the build's).
+- [x] Tests: `tests/rocks.rs` (the build's geology changes no column, both faces; a hard-over-soft
+  fixture profile: a 20 m wall over < 1 m of input, wide treads and talus, monotone; at full strength
+  on seed 7 the land gathers on the caps' levels (> 5× mid-slope), ≥ 3 walls of ≥ 4 m between columns
+  2 m apart, scree and stone tops, both faces; a massive rock leaves the ground unstepped, both faces);
+  the goldens unchanged; `gen.test.mjs` (the data generates the checked-in Rust, a rock and stack by data
+  alone, bad entries named); `chisel.rs` (the JSON is `GEOLOGY`; a fixture rock and stack by data alone
+  show in the rock overlay and reshape the blocks; unknown rocks and stacks named); `state.test.ts` (the
+  mesa with strong shaping round-trips; a bad jointing and a missing stack named).
+- [ ] Exit: the owner's look in Chisel and tuning.
+
+**Deviations (T2):** the rule-based shaping (proposal §6 q3's "rule-based first") is T2's, not T4's: T4
+keeps the isolated buttes and the simulated erosion to compare. Rocks show today's blocks (stone, sand,
+dirt) until rocks of their own; their colour shows in Chisel's overlay only. The shaping maps height
+alone, so terraces follow every contour (stepped hills); isolated mesas and buttes on a flat floor need
+the erosion's plan view (T4). Massive rock is unstepped, not yet domed. Solubility is unused.
 
 **T3 — soil and vegetation from climate** (soil depth, the tree line and snow line from temperature).
 
-**T4 — rule-based erosion** per rock (caprock terraces, cliff faces, scree); a simulated pass to compare
-later.
+**T4 — erosion** per rock: isolated buttes and mesas on a cut floor (T2's terraces follow every
+contour), domes for massive rock; a simulated pass to compare.
 
 **T5 — tectonics** at real scale: one plate boundary across the island, hotspots offshore making island
 chains; volcanoes (dormant or active: open).

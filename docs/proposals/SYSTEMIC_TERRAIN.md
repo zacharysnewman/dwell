@@ -116,6 +116,14 @@ Follow-up (0.52.8): the wind sees the ground smoothed over `windSmoothM` (3 km, 
 map's heights), so the rain follows ranges: the windward flank of a range is wet and its lee dry over
 kilometres, hillsides included (`tests/rain_shadow.rs` `a_whole_range_shadows_a_wide_band_of_its_lee`).
 
+## 7b. T2, rock types and shaping (built, 0.52.9)
+
+Rock types, stacks, provinces and a rule-based shaping by rock, as data (`shared/worldgen/rocks.json`;
+ADR 0075 T2): hard-over-soft beds step into caprock terraces with walls and talus, vertical jointing into
+sheer walls, massive rock unstepped; `strength` 0 by default. The rule-based shaping the owner asked for
+first (§6 q3) is T2's; T4 keeps the isolated buttes and the simulated comparison. First look: stepped
+hills following the contours rather than isolated mesas.
+
 ## 8. Presets (built, 0.52.8)
 
 Owner (2026-11-10): "We need a lot of prefabbed biomes as options to use as starting points." Fourteen

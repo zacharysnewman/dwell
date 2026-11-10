@@ -11,7 +11,11 @@ export interface BlockInfo {
 export interface BiomeRefs {
   decorations: Set<string>;
   placements: Set<string>;
+  stacks?: Set<string>;
 }
+export const GEOLOGY: Record<string, Record<string, Range>>;
+export const JOINTING: readonly string[];
+export function validateRocks<T>(data: T, blocks: Map<string, BlockInfo>): T;
 export function validateBiome<T>(
   data: T,
   blocks: Map<string, BlockInfo>,
