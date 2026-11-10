@@ -265,7 +265,9 @@ where the river is at sea level (its water is the sea's, so a mouth opens into t
 joining another meets it at the other's level `joinMargin` 3 m plus its own half-width outside the
 other's channel (the other's water backing up into it where it lies lower) and falls to it at most
 `joinSlope` 0.25 m per m upstream (a short gorge where it hangs above), so the waters never stand
-side by side at two levels. A valley is carved by every channel whose valley reaches the column,
+side by side at two levels. A channel's bed is cut to its river's depth under its own surface row
+in every column, however steep the reach, so it only falls downstream (0.52.0, docs/BUGS.md 62: a
+steep reach's "chute" was a dry bed a row under its surface, a grass hump over the pool above). A valley is carved by every channel whose valley reaches the column,
 the lowest (generator 26, docs/BUGS.md 14: carved toward the nearest channel alone, the ground
 stepped by the two rivers' difference in level where the nearest changed, a wall up the hills
 between two valleys). Planned (owner, the same day): rivers filling the lower land beside them
