@@ -71,7 +71,9 @@ gone set.
 
 1. **Densities**: 8 % under canopies, 12 % at cliff feet, 0.3 % on open grass. More or fewer?
 2. **The prompt says "E"** whatever the device; show "X" when the last input was a controller?
-3. **Touch**: no pick button yet. Tap on one?
+3. ~~**Touch**~~ answered (owner, 2026-11-09, "Do it"): from 0.50.70 a **Pick up** button shows under
+   the crosshair while it is on a ground item, and a tap picks it up (`TouchControls.setPickUp`);
+   the keyboard prompt hides on touch.
 4. **Sending all gone cells at the hello** grows with play; per chunk with the chunk later if it
    ever matters.
 5. **Leaves broken over sticks** make the sticks vanish (the canopy rule fails). Keep them instead

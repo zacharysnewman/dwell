@@ -2326,6 +2326,29 @@ body:has(#main-menu) #build-info {
   width: 55%;
 }
 
+/* The pick-up button (ADR 0071): under the crosshair while it is on a stick or rock; a tap picks it up. */
+#touch-pick {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 22px);
+  transform: translateX(-50%);
+  z-index: 1;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1.5px solid rgb(255 255 255 / 70%);
+  border-radius: 22px;
+  font:
+    600 15px/1 system-ui,
+    sans-serif;
+  color: #fff;
+  background: rgb(0 0 0 / 50%);
+  touch-action: none;
+}
+
+#touch-pick[hidden] {
+  display: none;
+}
+
 /* The debug overlay's button (F3 on touch): top right, clear of the hotbar. */
 #touch-debug {
   position: absolute;
