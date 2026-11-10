@@ -20,6 +20,8 @@ pub struct Arc {
     pub arc_deg: f64,
     /// Steps along it (at least 2).
     pub samples: u32,
+    /// The blocks (by name) the head goes through and clears (the tool's `clears`).
+    pub clears: &'static [&'static str],
 }
 
 impl Arc {
@@ -29,8 +31,30 @@ impl Arc {
             reach_m: t.swing.reach_m,
             arc_deg: t.swing.arc_deg,
             samples: t.swing.samples,
+            clears: t.clears,
         }
     }
+
+    /// Whether the head goes through `m` and clears it.
+    pub fn clears(&self, m: dwell_blocks::StateId) -> bool {
+        m != 0 && self.clears.contains(&dwell_blocks::block_of(m).name)
+    }
+}
+
+/// What a swing's arc met: the cells it cleared on the way (in the order the head reached them),
+/// then its first other solid hit, if any.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Sweep {
+    pub cleared: Vec<Cleared>,
+    pub hit: Option<SwingHit>,
+}
+
+/// A cell the head went through and cleared (one of the tool's `clears`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Cleared {
+    pub cell: [i32; 3],
+    /// The arc step it was first met at.
+    pub step: u32,
 }
 
 /// A swing's first hit along its arc.
@@ -76,30 +100,44 @@ pub fn arc_dirs(f: FaceFrame, look: [f64; 3], vertical: bool, arc: &Arc) -> Vec<
         .collect()
 }
 
-/// The first solid cell the arc meets (non-solid cells, such as plants, let the head through).
+/// The arc's sweep: the head goes through non-solid cells (plants) and the cells it clears (the
+/// arc's `clears`, each recorded once), and stops at the first other solid cell it meets.
 pub fn sweep(
     world: &mut VoxelWorld,
     eye: [f64; 3],
     look: [f64; 3],
     vertical: bool,
     arc: &Arc,
-) -> Option<SwingHit> {
+) -> Sweep {
     let f = FaceFrame::at_row(row_of_m(eye[1]));
+    let mut out = Sweep::default();
     for (step, d) in arc_dirs(f, look, vertical, arc).into_iter().enumerate() {
         let dir = d.map(|v| v as f32);
-        let hit = raycast_block_past(world, eye, dir, arc.reach_m as f32, |_, m| {
+        let step = step as u32;
+        let met = std::cell::RefCell::new(Vec::new());
+        let hit = raycast_block_past(world, eye, dir, arc.reach_m as f32, |c, m| {
+            if arc.clears(m) {
+                met.borrow_mut().push(c);
+                return true;
+            }
             !dwell_blocks::info(m).solid
         });
+        for cell in met.into_inner() {
+            if !out.cleared.iter().any(|x| x.cell == cell) {
+                out.cleared.push(Cleared { cell, step });
+            }
+        }
         if let Some(hit) = hit {
             let t = f64::from(hit.distance);
-            return Some(SwingHit {
+            out.hit = Some(SwingHit {
                 hit,
                 point: std::array::from_fn(|k| eye[k] + d[k] * t),
-                step: step as u32,
+                step,
             });
+            return out;
         }
     }
-    None
+    out
 }
 
 #[cfg(test)]
@@ -111,6 +149,7 @@ mod tests {
         reach_m: 2.2,
         arc_deg: 110.0,
         samples: 12,
+        clears: &[],
     };
     /// A face-local row well up on face A (and its mirror on face B).
     const R0: i32 = MIDPLANE_Y + 40;
@@ -169,14 +208,16 @@ mod tests {
             let look = f.vector([0.0, 0.0, 1.0]);
             let crosshair = crate::edit::raycast_block(&mut w, e, look.map(|v| v as f32), 2.2);
             assert!(crosshair.is_none(), "the crosshair misses: {crosshair:?}");
-            let hit = sweep(&mut w, e, look, false, &ARC).expect("the swing's path meets the log");
+            let hit = sweep(&mut w, e, look, false, &ARC)
+                .hit
+                .expect("the swing's path meets the log");
             assert!(cells.contains(&hit.hit.cell), "{hit:?}");
             assert!(
                 hit.step < ARC.samples / 2,
                 "on the arc's first half (the right): {hit:?}"
             );
             // A vertical swing's path (straight ahead) passes it by.
-            assert_eq!(sweep(&mut w, e, look, true, &ARC), None);
+            assert_eq!(sweep(&mut w, e, look, true, &ARC).hit, None);
         }
     );
 
@@ -189,7 +230,9 @@ mod tests {
             }
             let e = eye(f);
             let look = f.vector([0.0, 0.0, 1.0]);
-            let hit = sweep(&mut w, e, look, false, &ARC).expect("the trunk ahead");
+            let hit = sweep(&mut w, e, look, false, &ARC)
+                .hit
+                .expect("the trunk ahead");
             assert!(
                 trunk.contains(&hit.hit.cell),
                 "alone, the trunk aimed at: {hit:?}"
@@ -197,7 +240,7 @@ mod tests {
             // A stone post at the right, between the swing's start and the trunk.
             let side = f.handed(-1.0) as i32;
             let post = put(&mut w, f, [side, 3, 1], M.stone);
-            let hit = sweep(&mut w, e, look, false, &ARC).expect("something");
+            let hit = sweep(&mut w, e, look, false, &ARC).hit.expect("something");
             assert_eq!(hit.hit.cell, post, "the post on the path takes it: {hit:?}");
         }
     );
@@ -207,8 +250,64 @@ mod tests {
             let mut w = world();
             let e = eye(f);
             let look = f.vector([0.0, 0.0, 1.0]);
-            assert_eq!(sweep(&mut w, e, look, false, &ARC), None);
-            assert_eq!(sweep(&mut w, e, look, true, &ARC), None);
+            assert_eq!(sweep(&mut w, e, look, false, &ARC), Sweep::default());
+            assert_eq!(sweep(&mut w, e, look, true, &ARC).hit, None);
+        }
+    );
+
+    fn leaves() -> dwell_blocks::StateId {
+        dwell_blocks::parse_state("dwell:leaves").expect("leaves")
+    }
+    /// The arc of a tool clearing `clears` (by name: data alone).
+    fn clearing(clears: &'static [&'static str]) -> Arc {
+        Arc { clears, ..ARC }
+    }
+
+    crate::both_faces!(
+        fn the_head_goes_through_the_blocks_it_clears_to_the_trunk_behind(f: FaceFrame) {
+            let mut w = world();
+            let mut trunk = Vec::new();
+            for r in 0..8 {
+                trunk.push(put(&mut w, f, [0, r, 2], log()));
+            }
+            let mut wall = Vec::new();
+            for x in -2..=2 {
+                for r in 0..8 {
+                    wall.push(put(&mut w, f, [x, r, 1], f.state(leaves())));
+                }
+            }
+            let (e, look) = (eye(f), f.vector([0.0, 0.0, 1.0]));
+            // Without `clears` the leaves take the hit.
+            let s = sweep(&mut w, e, look, false, &ARC);
+            assert!(s.cleared.is_empty() && wall.contains(&s.hit.unwrap().hit.cell));
+            let s = sweep(&mut w, e, look, false, &clearing(&["dwell:leaves"]));
+            assert!(trunk.contains(&s.hit.expect("the trunk").hit.cell), "{s:?}");
+            assert!(s.cleared.len() >= 2, "the leaves on the arc: {s:?}");
+            assert!(s.cleared.iter().all(|c| wall.contains(&c.cell)));
+            assert!(s.cleared.iter().all(|c| c.step <= s.hit.unwrap().step));
+            // Only leaves on the path: they are cleared, nothing is hit (no bounce).
+            let mut w = world();
+            for x in -2..=2 {
+                put(&mut w, f, [x, 3, 1], f.state(leaves()));
+            }
+            let s = sweep(&mut w, e, look, false, &clearing(&["dwell:leaves"]));
+            assert_eq!(s.hit, None);
+            assert!(!s.cleared.is_empty());
+        }
+    );
+
+    crate::both_faces!(
+        fn a_fixture_tool_clears_another_block_by_data_alone(f: FaceFrame) {
+            let mut w = world();
+            let post = put(&mut w, f, [0, 3, 1], M.stone);
+            let (e, look) = (eye(f), f.vector([0.0, 0.0, 1.0]));
+            assert_eq!(
+                sweep(&mut w, e, look, false, &ARC).hit.unwrap().hit.cell,
+                post
+            );
+            let s = sweep(&mut w, e, look, false, &clearing(&["dwell:stone"]));
+            assert_eq!(s.hit, None, "the head went through");
+            assert!(s.cleared.iter().any(|c| c.cell == post), "{s:?}");
         }
     );
 }

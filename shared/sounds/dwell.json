@@ -47,7 +47,8 @@
     "chop_wood": {"sound": "chop_wood"},
     "chop_creak": {"sound": "chop_creak"},
     "axe_clank": {"sound": "axe_clank"},
-    "axe_swish": {"sound": "axe_swish"}
+    "axe_swish": {"sound": "axe_swish"},
+    "axe_rustle": {"sound": "axe_rustle"}
   },
   "ambient": {
     "fire": {"radiusM": 10, "max": 4},
@@ -1987,6 +1988,14 @@
       "layers": [
         {"source": "modal", "freq": 1400, "gain": 0.22, "partials": [[1, 1, 0.09], [2.76, 0.5, 0.06], [5.4, 0.25, 0.03]]},
         {"source": "noise", "color": "white", "gain": 0.3, "filters": [{"type": "bandpass", "freq": 3200, "q": 1.4}], "env": {"attack": 0.0005, "decay": 0.015}}
+      ]
+    },
+    "axe_rustle": {
+      "gain": 0.6, "reverb": 0.06,
+      "variation": {"pitch": 2, "gain": 1, "cutoff": 0.15, "time": 0.15},
+      "layers": [
+        {"source": "noise", "color": "pink", "gain": 0.45, "filters": [{"type": "bandpass", "freq": 2400, "q": 0.7}], "env": {"attack": 0.01, "hold": 0.05, "decay": 0.22}},
+        {"source": "noise", "color": "white", "gain": 0.2, "filters": [{"type": "highpass", "freq": 3500, "q": 0.6}], "env": {"attack": 0.002, "decay": 0.03}, "grains": {"count": [6, 11], "spread": 0.3, "gain": [0.3, 1], "pitch": 4}}
       ]
     },
     "axe_swish": {

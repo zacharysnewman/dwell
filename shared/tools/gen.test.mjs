@@ -118,3 +118,26 @@ test("a wood's cut look (its carved faces, ADR 0067 §11) is validated and reach
   delete data.woods[0].cut;
   assert.match(toolsRust(validateTools(data, items, blocks)), /cut: CutLook \{ tile: None, tint: \[255, 255, 255\], open: 2\.5, kerf_width_m: 0\.03 \}/);
 });
+
+test("the axe clears leaves; a fixture tool clearing another block by data alone is emitted", () => {
+  const d = validateTools(...fresh());
+  const axe = d.tools.find((t) => t.name === 'dwell:stone_axe');
+  assert.deepEqual(axe.clears, ['dwell:leaves', 'dwell:snowy_leaves']);
+  assert.match(toolsRust(d), /rustle: Some\("axe_rustle"\), rustle_leaves: 5 \}, clears: &\["dwell:leaves", "dwell:snowy_leaves"\] \}/);
+  const [data, items, blocks] = fresh();
+  items.add('test:sickle');
+  data.tools.push({ name: 'test:sickle', kind: 'axe', swingSeconds: 0.3, biteM: 0.1, bindM: 0.1, across: 1, along: 0.3, sharpness: 1, clears: ['dwell:tall_grass'] });
+  const rs = toolsRust(validateTools(data, items, blocks));
+  assert.match(rs, /name: "test:sickle".*rustle: None, rustle_leaves: 4 \}, clears: &\["dwell:tall_grass"\] \}/);
+  const bad = (edit, re) => {
+    const [data, items, blocks] = fresh();
+    edit(data);
+    assert.throws(() => validateTools(data, items, blocks), re);
+  };
+  bad((d) => (d.tools[0].clears = ['dwell:nope']), /tools\.dwell:stone_axe\.clears\[0\]: no block named "dwell:nope"/);
+  bad((d) => (d.tools[0].clears = 'dwell:leaves'), /clears must be a list of block names/);
+  bad((d) => (d.tools[0].clears = ['dwell:leaves', 'dwell:leaves']), /clears: dwell:leaves listed twice/);
+  bad((d) => (d.tools[0].clears = ['dwell:log']), /clears: dwell:log is a wood/);
+  bad((d) => (d.tools[0].swing.rustle = 'nope'), /swing\.rustle: no sound event "nope"/);
+  bad((d) => (d.tools[0].swing.rustleLeaves = 99), /rustleLeaves must be a whole number/);
+});

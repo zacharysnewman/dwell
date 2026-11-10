@@ -81,8 +81,9 @@ impl Server {
     }
 
     /// A swing along its path (`ChopAction::Sweep`): the tool's arc swept from this player's eye
-    /// (`dwell_world::swing`), its first solid hit cut as an aimed swing would be; a miss or a hit
-    /// on what is not a wood (a bounce) only spends the swing.
+    /// (`dwell_world::swing`); the cells of its `clears` it went through are broken
+    /// ([`Self::clear_cells`]), its first other solid hit cut as an aimed swing would be; a miss or
+    /// a hit on what is not a wood (a bounce) only spends the swing.
     fn sweep(&mut self, id: SessionId, tool: &str, look: [f64; 3], vertical: bool) {
         let Some(t) = chop::tool(tool) else {
             return;
@@ -101,8 +102,12 @@ impl Server {
         let look = look.map(|v| v / len);
         let eye = self.eye_of(h);
         let arc = dwell_world::swing::Arc::of(t);
-        let hit = dwell_world::swing::sweep(&mut self.world, eye, look, vertical, &arc);
-        let wood = hit.filter(|x| grain_of(self.world.get_voxel_if_loaded(x.hit.cell)).is_some());
+        let swept = dwell_world::swing::sweep(&mut self.world, eye, look, vertical, &arc);
+        let cleared: Vec<[i32; 3]> = swept.cleared.iter().map(|c| c.cell).collect();
+        self.clear_cells(id, tool, &cleared, eye);
+        let wood = swept
+            .hit
+            .filter(|x| grain_of(self.world.get_voxel_if_loaded(x.hit.cell)).is_some());
         match wood {
             Some(x) => self.swing(id, tool, x.hit.cell, x.axis_face(), x.point, vertical),
             None => {
@@ -111,6 +116,69 @@ impl Server {
                     self.tick + (t.swing_seconds * f64::from(dwell_protocol::SIM_HZ)) as u32;
             }
         }
+    }
+
+    /// Breaks the cells a swing of `tool` went through (its `clears`: leaves, for the axe) in one
+    /// edit: what they leave without support falls as after a break by hand, and where blocks
+    /// are not unlimited each drops its block's `drops`. Refused as a swing is: a player who can't
+    /// edit, or (a mode that uses items) isn't holding the tool.
+    fn clear_cells(&mut self, id: SessionId, tool: &str, cells: &[[i32; 3]], eye: [f64; 3]) {
+        let Some(t) = chop::tool(tool) else {
+            return;
+        };
+        if cells.is_empty() {
+            return;
+        }
+        let uses_items = self.uses_items();
+        let s = &self.sessions[&id];
+        if !s.joined() || !self.may_edit(s) {
+            return;
+        }
+        if uses_items {
+            let held = s.inventory.slots.get(usize::from(s.inventory.held));
+            if held
+                .and_then(|h| h.as_ref())
+                .is_none_or(|st| st.item != tool)
+            {
+                return;
+            }
+        }
+        let reach = f64::from(dwell_world::edit::DEFAULT_REACH) + REACH_SLACK_M;
+        let mut writes = Vec::new();
+        for &c in cells {
+            let m = self.world.get_voxel_if_loaded(c);
+            let name = block_of(m).name;
+            if !t.clears_block(name)
+                || (uses_items && !chop::may_break_holding(name, Some(tool)))
+                || (DVec3::from(dwell_world::centre_of_cell(c)) - DVec3::from(eye)).length() > reach
+            {
+                continue;
+            }
+            // Flooded leaves leave the water they held.
+            let left = if dwell_blocks::info(m).flooded {
+                M.water
+            } else {
+                M.air
+            };
+            writes.push((c, left));
+        }
+        if writes.is_empty() {
+            return;
+        }
+        let mut changes = TickChanges::default();
+        let mut broken = Vec::new();
+        for (at, m) in dwell_world::edit::edit_writes_all(&mut self.world, &writes) {
+            if uses_items && (m == M.air || dwell_blocks::info(m).liquid) {
+                broken.push((at, self.world.get_voxel(at[0], at[1], at[2])));
+            }
+            changes.set(&mut self.world, at, m);
+        }
+        let edited = changes.cells();
+        self.broadcast_changes(changes, VoxelModificationReason::Edit);
+        for (cell, was) in broken {
+            self.drop_block(was, dwell_world::centre_of_cell(cell));
+        }
+        self.fell(&edited, 0, Some(DVec3::from(eye)));
     }
 
     /// What a player holds (`ChopAction::Held`): kept, and told to the others that understand it;
