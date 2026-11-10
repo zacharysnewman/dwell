@@ -72,28 +72,29 @@ const json = {
     generator: "shared/models/fixtures/make_two_bone.mjs",
   },
   scene: 0,
-  scenes: [{ nodes: [0, 2] }],
+  scenes: [{ nodes: [0, 2, 3] }],
   nodes: [
     { name: "root", children: [1] },
     { name: "tip", translation: [0, 1, 0] },
     { name: "mesh", mesh: 0, skin: 0 },
+    // A second model-detail level (fixtures/models.json `detail`): the same triangle.
+    { name: "mesh_1", mesh: 1, skin: 0 },
   ],
-  meshes: [
-    {
-      primitives: [
-        {
-          attributes: {
-            POSITION: position,
-            NORMAL: normal,
-            COLOR_0: color,
-            JOINTS_0: joints,
-            WEIGHTS_0: weights,
-          },
-          indices,
+  meshes: [0, 1].map((k) => ({
+    name: `detail_${k}`,
+    primitives: [
+      {
+        attributes: {
+          POSITION: position,
+          NORMAL: normal,
+          COLOR_0: color,
+          JOINTS_0: joints,
+          WEIGHTS_0: weights,
         },
-      ],
-    },
-  ],
+        indices,
+      },
+    ],
+  })),
   skins: [{ joints: [0, 1], inverseBindMatrices: ibm }],
   animations: [
     {
