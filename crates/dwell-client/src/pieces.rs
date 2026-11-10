@@ -44,6 +44,9 @@ struct Pose {
 /// snapshot carries each of many pieces only every few (docs/FELLING.md §3.1).
 const EXTRAPOLATE_MS: f64 = 250.0;
 
+/// A position and rotation.
+type Placed = (DVec3, DQuat);
+
 struct Piece {
     cells: Vec<PieceCell>,
     /// Its cells' offsets and states (this client's), for its settle glide, its edits and aiming
@@ -56,7 +59,7 @@ struct Piece {
     /// its past pose, 1 at the present).
     present: Option<(DVec3, DQuat)>,
     /// Its stand-in's pose before and after the last prediction tick.
-    ticked: (Option<(DVec3, DQuat)>, Option<(DVec3, DQuat)>),
+    ticked: (Option<Placed>, Option<Placed>),
     near: f64,
     /// The block its landings sound like (its first carrier's; 0: riders only, silent).
     block: StateId,
