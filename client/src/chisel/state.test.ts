@@ -56,6 +56,20 @@ describe('Chisel state', () => {
     expect(back).toEqual({ edit: e });
   });
 
+  it('round-trips the rain shadow’s wind and loads an older edit without its keys', () => {
+    const e = buildEdit();
+    expect(e.biomeMap.rainShare).toBe(0);
+    const windy = { ...e, biomeMap: { ...e.biomeMap, windDirection: 90, rainShare: 0.8 } };
+    expect(fromJson(toJson(windy))).toEqual({ edit: windy });
+    // An edit saved before the rain shadow: the new keys come back at terrain.json's values.
+    const old: Record<string, number | string> = { ...e.biomeMap };
+    for (const k of ['windDirection', 'windReach', 'baseRain', 'upliftRain', 'leeDry', 'rainShare'])
+      delete old[k];
+    expect(fromJson(JSON.stringify({ biomes: e.biomes, biomeMap: old }))).toEqual({ edit: e });
+    const store = memory({ [STORE_KEY]: JSON.stringify({ edit: { biomes: e.biomes, biomeMap: old } }) });
+    expect(loadEdit(store)).toEqual(e);
+  });
+
   it('shows the validation rules’ messages (biomes.mjs, as gen.mjs)', () => {
     const e = addBiome(buildEdit(), DESERT_FIXTURE);
     const [, d] = e.biomes;

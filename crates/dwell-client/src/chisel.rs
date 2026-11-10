@@ -536,4 +536,48 @@ mod tests {
             "the archipelago has sea in the view: {a} vs {b}"
         );
     }
+
+    #[test]
+    fn a_windy_edit_shows_its_rain_shadow_in_the_rainfall_overlay() {
+        // face-a-only: Chisel previews face A (the rain shadow's faces are dwell-worldgen's
+        // tests/rain_shadow.rs).
+        // An edit by data alone, as the page sends it: terrain.json's biome map with a strong
+        // wind, the wetness all rain.
+        let mut bm = file("terrain.json")["biomeMap"].clone();
+        bm["windDirection"] = 0.into();
+        bm["windReach"] = 1500.into();
+        bm["rainShare"] = 1.into();
+        let desert = file("biomes/fixtures/desert.json");
+        let edit = serde_json::json!({
+            "biomes": [file("biomes/default.json"), desert],
+            "biomeMap": bm,
+        });
+        let e = edit_from_json(&edit.to_string()).unwrap();
+        assert_eq!(e.map.rain_share, 1.0);
+        assert_eq!(e.map.wind_reach, 1500.0);
+        let t = BifacialTerrain::height_field(7);
+        let g = t
+            .local(dwell_world::Face::A)
+            .clone()
+            .with_biomes_on(&e.biomes, e.map);
+        let n = 64;
+        let texel = 2 * i64::from(dwell_world::WORLD_RADIUS) / n;
+        let x0 = -n * texel / 2;
+        let tile = preview(&g, x0, x0, n, texel, Overlay::Rainfall);
+        let mut shades = std::collections::BTreeSet::new();
+        for k in 0..(n * n) as usize {
+            if tile[k * 4 + 3] == 255 {
+                shades.insert(tile[k * 4 + 1]);
+            }
+        }
+        assert!(shades.len() > 20, "the rainfall varies: {} shades", shades.len());
+        // The wetness is the rain's now: it differs from the build's where the rain does.
+        let plain = t
+            .local(dwell_world::Face::A)
+            .clone()
+            .with_biomes_on(&e.biomes, BIOME_MAP);
+        let a = preview(&g, x0, x0, n, texel, Overlay::Wetness);
+        let b = preview(&plain, x0, x0, n, texel, Overlay::Wetness);
+        assert_ne!(a, b, "rainShare 1 changes the wetness overlay");
+    }
 }
