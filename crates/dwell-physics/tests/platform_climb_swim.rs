@@ -4,6 +4,7 @@
 mod common;
 use common::*;
 use dwell_blocks::require;
+use dwell_physics::controller::State;
 use dwell_physics::query::GroundRef;
 use dwell_physics::{DQuat, Vec3, controller::events as ev};
 
@@ -77,6 +78,49 @@ fn walking_on_a_moving_platform_is_relative_to_it() {
     w.step(ticks(0.8));
     assert!(approx(w.vel(e).x, 5.0, 0.02), "{:?}", w.vel(e));
     assert!(approx(w.vel(e).z, 3.0, 0.03), "{:?}", w.vel(e));
+}
+
+/// Standing still on a moving platform is standing still (owner, 2026-11-09: walking animations
+/// played while carried): the state is the motion relative to the ground carrying the player.
+#[test]
+fn standing_still_on_a_moving_platform_is_idle() {
+    let mut w = PlayerTestWorld::new();
+    w.boxed(
+        v(0.0, -0.5, 0.0),
+        v(10.0, 0.5, 10.0),
+        DQuat::IDENTITY,
+        v(0.0, 0.0, 3.0),
+        0.0,
+    );
+    let e = w.spawn(Vec3::ZERO);
+    w.step(ticks(0.8));
+    assert!(approx(w.vel(e).z, 3.0, 0.03), "carried: {:?}", w.vel(e));
+    assert_eq!(w.c(e).state, State::Idle);
+}
+
+/// Walking on a moving platform walks, with its motion or against it, even where the two cancel
+/// and the player stands still in the world.
+#[test]
+fn walking_on_a_moving_platform_walks_even_against_its_motion() {
+    for platform_x in [3.0, -5.0] {
+        let mut w = PlayerTestWorld::new();
+        w.boxed(
+            v(0.0, -0.5, 0.0),
+            v(10.0, 0.5, 10.0),
+            DQuat::IDENTITY,
+            v(platform_x, 0.0, 0.0),
+            0.0,
+        );
+        let e = w.spawn(Vec3::ZERO);
+        w.set_input(|_, _| mv(-1.0, 0.0)); // strafe left: +X at yaw 0, 5 m/s
+        w.step(ticks(0.8));
+        assert!(
+            approx(w.vel(e).x, 5.0 + platform_x, 0.05),
+            "{platform_x}: {:?}",
+            w.vel(e)
+        );
+        assert_eq!(w.c(e).state, State::Walking, "{platform_x}");
+    }
 }
 
 #[test]

@@ -58,6 +58,10 @@ pub struct MoverSample {
     pub face: FaceFrame,
     /// 0–1: how much of the body is under water.
     pub submerged: f64,
+    /// The velocity (world, m/s) of the moving ground carrying it (zero on the world's ground):
+    /// strides are walked over that ground, so a player still on a raft takes no steps and one
+    /// walking against its motion does (owner, 2026-11-09).
+    pub carry: [f64; 3],
     /// The block just under the feet.
     pub ground: StateId,
     /// The block at the body (a ladder being climbed, the water swum in).
@@ -390,11 +394,8 @@ impl MoverSounds {
         };
         // Speeds along the mover's up (face-local).
         let up = |v: [f64; 3], face: FaceFrame| face.vector(v)[1];
-        let d = [
-            s.feet[0] - p.feet[0],
-            s.feet[1] - p.feet[1],
-            s.feet[2] - p.feet[2],
-        ];
+        // Moved over the ground carrying it (its carry taken off).
+        let d: [f64; 3] = std::array::from_fn(|k| s.feet[k] - p.feet[k] - s.carry[k] * s.dt);
         let horizontal = d[0].hypot(d[2]);
         // A jump of more than a few metres between samples is a teleport (respawn, snap): no sound.
         if horizontal + d[1].abs() > 4.0 {
@@ -1010,6 +1011,7 @@ mod tests {
             crouched: false,
             face: FaceFrame::A,
             submerged: 0.0,
+            carry: [0.0; 3],
             ground: stone(),
             body: 0,
             walls: [0; 4],
@@ -1039,6 +1041,38 @@ mod tests {
     fn kinds(events: &[SoundEvent]) -> Vec<SoundKind> {
         events.iter().map(|e| e.kind).collect()
     }
+
+    dwell_world::both_faces!(
+        /// Owner, 2026-11-09 (walking played while still on moving bodies): strides are walked over
+        /// the ground carrying the mover. Walking at 5 m/s against a raft's 5 m/s, still in the
+        /// world, steps as on the ground; carried while still, none. Red before: the steps
+        /// counted the world's distance, none against the raft.
+        fn footsteps_are_walked_over_the_moving_ground_carrying_the_mover(f: FaceFrame) {
+            let steps = |state, world: f64, carry: f64| {
+                let mut m = MoverSounds::new();
+                let mut s = MoverSample {
+                    feet: f.point([0.0, 10.0, 0.0]),
+                    face: f,
+                    carry: f.vector([carry, 0.0, 0.0]),
+                    ..standing()
+                };
+                m.update(&s, None, &mut Vec::new());
+                s.state = state;
+                s.velocity = f.vector([world, 0.0, 0.0]);
+                let mut out = Vec::new();
+                for _ in 0..(10.0 / DT).round() as usize {
+                    s.feet[0] += world * DT;
+                    m.update(&s, None, &mut out);
+                }
+                out.iter().filter(|e| e.kind == SoundKind::Step).count()
+            };
+            let ground = steps(PlayerState::Walking, 5.0, 0.0);
+            assert!(ground > 10, "{ground}");
+            assert_eq!(steps(PlayerState::Walking, 0.0, -5.0), ground);
+            assert_eq!(steps(PlayerState::Walking, 8.0, 3.0), ground);
+            assert_eq!(steps(PlayerState::Idle, 3.0, 3.0), 0);
+        }
+    );
 
     #[test]
     fn footsteps_follow_distance_travelled_at_each_gaits_stride() {

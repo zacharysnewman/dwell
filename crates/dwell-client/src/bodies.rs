@@ -31,16 +31,31 @@ pub fn remote_input(v: &RemoteView, holding: bool) -> MoveInput {
     }
 }
 
-/// The local prediction's movement (controller flags), for the arms.
+/// A remote player as it moves over the ground carrying it: its velocity less `carry`, the
+/// velocity (world, m/s) of the moving body under its feet (`Pieces::ground_velocity`; zero on the
+/// world's ground). The animator, the step view and the footsteps read this (owner, 2026-11-09:
+/// standing still on a moving body played the walk).
+pub fn over_its_ground(v: &RemoteView, carry: [f64; 3]) -> RemoteView {
+    RemoteView {
+        velocity: std::array::from_fn(|k| v.velocity[k] - carry[k] as f32),
+        ..*v
+    }
+}
+
+/// The local prediction's movement (controller flags), for the arms: its `velocity` (world) less
+/// `carry`, the velocity of the ground carrying it (the controller's `base_velocity`, world), so
+/// standing still on a moving body is standing still.
 pub fn local_input(
     state: dwell_protocol::PlayerState,
     velocity: [f64; 3],
+    carry: [f64; 3],
     controller: u8,
     face: FaceFrame,
 ) -> MoveInput {
+    let over = std::array::from_fn(|k| velocity[k] - carry[k]);
     MoveInput {
         state,
-        velocity: face.vector(velocity).map(|v| v as f32),
+        velocity: face.vector(over).map(|v| v as f32),
         crouched: controller & controller_flags::CROUCHING != 0,
         climbing: controller & controller_flags::CLIMBING != 0,
         swimming: controller & controller_flags::SWIMMING != 0,
@@ -386,6 +401,84 @@ impl Bodies {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dwell_characters::animator::body_role;
+    use dwell_protocol::PlayerState;
+
+    /// A remote on face `f`, grounded, its world velocity `velocity` (face-local) in `state`.
+    fn grounded_remote(f: FaceFrame, state: PlayerState, velocity: [f32; 3]) -> RemoteView {
+        RemoteView {
+            player_id: 1,
+            feet: f.point([0.5, 40.5, 0.5]),
+            velocity: f.vector_f32(velocity),
+            yaw: 0.0,
+            pitch: 0.0,
+            state,
+            flags: player_flags::GROUNDED | dwell_physics::net::face_bit(f, player_flags::FACE_B),
+            held: 0,
+            swing: 0,
+            jumped: false,
+        }
+    }
+
+    dwell_world::both_faces!(
+        /// Owner, 2026-11-09: "walking animations play while standing still on moving physics
+        /// objects". The clips read the motion over the ground carrying the player, not the
+        /// world's: still on a raft moving at 3 m/s is idle; walking on it walks, with it or
+        /// against it, even where the two cancel and the player is still in the world. Red
+        /// before: the raft's 3 m/s played the walk.
+        fn a_remote_still_on_a_moving_body_is_idle_and_one_walking_on_it_walks(f: FaceFrame) {
+            let carry = f.vector([3.0, 0.0, 0.0]);
+            let role = |state, v: [f32; 3]| {
+                let r = over_its_ground(&grounded_remote(f, state, v), carry);
+                body_role(&remote_input(&r, false), "idle")
+            };
+            assert_eq!(role(PlayerState::Idle, [3.0, 0.0, 0.0]), "idle");
+            assert_eq!(role(PlayerState::Crouching, [3.0, 0.0, 0.0]), "crouch");
+            assert_eq!(role(PlayerState::Walking, [8.0, 0.0, 0.0]), "walk");
+            assert_eq!(role(PlayerState::Walking, [0.0, 0.0, 0.0]), "walk");
+            // The walk's clip plays at the speed over the raft (5 m/s), not the world's 0.
+            let r = over_its_ground(
+                &grounded_remote(f, PlayerState::Walking, [-2.0, 0.0, 0.0]),
+                carry,
+            );
+            let i = remote_input(&r, false);
+            assert!(
+                (i.velocity[0].hypot(i.velocity[2]) - 5.0).abs() < 1e-4,
+                "{:?}",
+                i.velocity
+            );
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// As above for your own arms and body: the controller's carry is taken off.
+        fn your_arms_still_on_a_moving_body_are_idle(f: FaceFrame) {
+            let carry = f.vector([0.0, 0.0, 3.0]);
+            let grounded = controller_flags::GROUNDED;
+            let still = local_input(PlayerState::Idle, carry, carry, grounded, f);
+            assert_eq!(body_role(&still, "idle"), "idle");
+            assert!(
+                still.velocity.iter().all(|v| v.abs() < 1e-6),
+                "{:?}",
+                still.velocity
+            );
+            let crouched = local_input(
+                PlayerState::Crouching,
+                carry,
+                carry,
+                grounded | controller_flags::CROUCHING,
+                f,
+            );
+            assert_eq!(body_role(&crouched, "idle"), "crouch");
+            let against = local_input(PlayerState::Walking, [0.0; 3], carry, grounded, f);
+            assert_eq!(body_role(&against, "idle"), "walk");
+            assert!(
+                (against.velocity[2] + 3.0).abs() < 1e-6,
+                "{:?}",
+                against.velocity
+            );
+        }
+    );
 
     #[test]
     fn the_held_item_round_trips_through_its_wire_form() {

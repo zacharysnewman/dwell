@@ -284,6 +284,10 @@ pub struct ClientState {
     pub position: [f64; 3],
     pub render_offset: [f64; 3],
     pub velocity: [f64; 3],
+    /// The velocity of the ground carrying the player (world, m/s; the controller's
+    /// `base_velocity`): its motion over that ground is `velocity - carry`, what the arms, the
+    /// body and the footsteps read.
+    pub carry: [f64; 3],
     pub half_height: f64,
     pub state: PlayerState,
     pub controller_flags: u8,
@@ -366,6 +370,7 @@ impl ClientState {
             position: [pos.x, pos.y, pos.z],
             render_offset: v3(p.render_offset()),
             velocity: v3(p.velocity()),
+            carry: c.face.vector(v3(c.platform.base_velocity)),
             half_height: f64::from(p.half_height()),
             state: PlayerState::from_u8(c.state as u8).unwrap_or(PlayerState::Idle),
             controller_flags: net.flags,
@@ -2616,6 +2621,7 @@ impl<S: Scene> Game<S> {
             crouched,
             face,
             submerged: submerged.unwrap_or(if liquid(body) { 1.0 } else { 0.0 }),
+            carry: [0.0; 3],
             ground,
             body,
             walls,
@@ -2770,7 +2776,7 @@ impl<S: Scene> Game<S> {
         self.previous = Some(self.current);
         self.current = ClientState::of(&self.predictor);
         let c = self.current;
-        let sample = self.mover_sample(
+        let mut sample = self.mover_sample(
             c.feet(),
             c.velocity,
             c.state,
@@ -2780,6 +2786,7 @@ impl<S: Scene> Game<S> {
             Some(c.submerged),
             1.0 / SIM_HZ as f64,
         );
+        sample.carry = c.carry;
         self.mover_sounds.update(&sample, None, &mut self.sounds);
         // Across the midplane the body turns over and the look goes on across: the heading kept,
         // the pitch mirrored, the camera pointing the same way and rolling upright (face_flip.rs).
@@ -2923,10 +2930,19 @@ impl<S: Scene> Game<S> {
         let mut drawn = HashSet::default();
         for v in &views {
             drawn.insert(v.player_id);
+            // The moving body under its feet, if any: its motion is read over it (standing still
+            // on a raft is idle; owner, 2026-11-09).
+            let carry = if v.flags & player_flags::GROUNDED != 0 && !v.is_dead() {
+                self.pieces
+                    .ground_velocity(DVec3::from(v.feet), v.face(), now_ms)
+                    .map_or([0.0; 3], |c| c.to_array())
+            } else {
+                [0.0; 3]
+            };
             if !v.is_dead() {
                 let grounded = on_ground(v.state);
                 let face = v.face();
-                let sample = self.mover_sample(
+                let mut sample = self.mover_sample(
                     v.feet,
                     v.velocity.map(f64::from),
                     v.state,
@@ -2936,6 +2952,7 @@ impl<S: Scene> Game<S> {
                     None,
                     dt,
                 );
+                sample.carry = carry;
                 self.remote_sounds
                     .entry(v.player_id)
                     .or_insert_with(|| MoverSounds::with_voice(v.player_id))
@@ -2950,7 +2967,8 @@ impl<S: Scene> Game<S> {
             let held = crate::bodies::with_tool(held, self.remote_tools.get(&v.player_id).copied());
             let world = self.streamer.store_mut();
             let reach = self.current.max_step_lift;
-            let mut view = self.bodies.remote(v, held, dt, &mut |f, p| {
+            let ridden = crate::bodies::over_its_ground(v, carry);
+            let mut view = self.bodies.remote(&ridden, held, dt, &mut |f, p| {
                 crate::bodies::ground_at(world, f, p, reach)
             });
             view.light = self.body_light(u32::from(v.player_id), view.feet, view.face, dt);
@@ -3069,8 +3087,13 @@ impl<S: Scene> Game<S> {
             self.update_motion(eye, dt);
             // Your arms in their own pass (CHARACTERS.md §5): not while zoomed in the spyglass, in
             // a placed camera, or with the setting off.
-            let move_input =
-                crate::bodies::local_input(c.state, c.velocity, c.controller_flags, c.face);
+            let move_input = crate::bodies::local_input(
+                c.state,
+                c.velocity,
+                c.carry,
+                c.controller_flags,
+                c.face,
+            );
             let mut arms = self.bodies.arms(&move_input, held, dt);
             arms.light = self.eased_light(ARMS_LIGHT, eye, dt);
             let shown = self.show_arms
