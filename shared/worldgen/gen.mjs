@@ -446,6 +446,7 @@ export function terrainRust({ world, biomes, fixtures = [], worlds = [] }) {
   rs.push(`    uplift_rain: ${rf(bm.upliftRain)},`);
   rs.push(`    lee_dry: ${rf(bm.leeDry)},`);
   rs.push(`    rain_share: ${rf(bm.rainShare)},`);
+  rs.push(`    wind_smooth_m: ${rf(bm.windSmoothM)},`);
   rs.push('};');
   rs.push('');
   const list = (xs) => `&[${xs.map((x) => JSON.stringify(x)).join(', ')}]`;

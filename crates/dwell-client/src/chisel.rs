@@ -266,6 +266,7 @@ pub fn biome_map_from_json(v: &Value) -> Result<BiomeMap, String> {
         uplift_rain: n("upliftRain")?,
         lee_dry: n("leeDry")?,
         rain_share: n("rainShare")?,
+        wind_smooth_m: n("windSmoothM")?,
     })
 }
 

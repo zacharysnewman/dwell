@@ -36,6 +36,7 @@ pub const BIOME_MAP: BiomeMap = BiomeMap {
     uplift_rain: 1.5,
     lee_dry: 1.0,
     rain_share: 0.0,
+    wind_smooth_m: 3000.0,
 };
 
 /// The biomes (shared/worldgen/biomes/*.json), the default (terrain.json `defaultBiome`) first.

@@ -84,6 +84,7 @@ export const TERRAIN = {
     upliftRain: [0, 10],
     leeDry: [0, 10],
     rainShare: [0, 1],
+    windSmoothM: [0, 50_000],
   },
   spawn: { minHeight: [0, 10_000], maxHeight: [0, 10_000], nearRiver: [0, 100_000] },
 };

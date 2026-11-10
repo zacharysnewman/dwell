@@ -237,6 +237,9 @@ pub struct BiomeMap {
     pub lee_dry: f64,
     /// The rainfall's share of the wetness (0: the river/lake wetness alone, the default).
     pub rain_share: f64,
+    /// The wind sees the ground low-passed over about this many metres (0: the map's own), so the
+    /// rain follows whole ranges, not each hillside.
+    pub wind_smooth_m: f64,
 }
 
 /// A biome (data: `shared/worldgen/biomes/<name>.json`, ADR 0074): what is layered on the world's

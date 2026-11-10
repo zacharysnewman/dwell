@@ -69,6 +69,7 @@ describe('Chisel state', () => {
       'upliftRain',
       'leeDry',
       'rainShare',
+      'windSmoothM',
     ];
     const old = Object.fromEntries(
       Object.entries(e.biomeMap).filter(([k]) => !rainKeys.includes(k)),
