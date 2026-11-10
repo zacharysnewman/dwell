@@ -22,8 +22,6 @@ pub struct BaseField {
     islands_seed: u32,
     /// The field's parameters (the build's `HEIGHT` unless `with_height`).
     h: HeightField,
-    /// The tectonics' volcanoes (systemic terrain T5; none when it is off).
-    volcanoes: Vec<crate::tectonics::Volcano>,
 }
 
 impl BaseField {
@@ -35,11 +33,6 @@ impl BaseField {
     pub fn with_height(seed: u64, h: HeightField) -> Self {
         Self {
             islands_seed: seed_word(seed, 0x1514_A010),
-            volcanoes: if h.tectonics.enabled() {
-                h.tectonics.volcanoes()
-            } else {
-                Vec::new()
-            },
             h,
             hills_seed: seed_word(seed, 1),
             bumps_seed: seed_word(seed, 2),
@@ -116,13 +109,7 @@ impl BaseField {
             h.sea_floor * clamp01(-coast * (1.0 / h.shelf))
         };
         let land = smooth_step(h.hill_fade_from, h.hill_fade_to, coast);
-        let mut relief = base + land * h.hill_height * 2.0 * hills + h.bump_height * 2.0 * bumps;
-        // Tectonics (systemic terrain T5): the boundary's range, rift or ridges and the volcanoes.
-        // Off by default: the field is unchanged.
-        if h.tectonics.enabled() {
-            relief += h.tectonics.height(&self.volcanoes, x as f64, z as f64, f64::from(coast))
-                as f32;
-        }
+        let relief = base + land * h.hill_height * 2.0 * hills + h.bump_height * 2.0 * bumps;
         Some(
             (dwell_world::SEA_LEVEL_M as f32 + relief)
                 .max((dwell_world::MIDPLANE_M + dwell_world::CORE_M) as f32),

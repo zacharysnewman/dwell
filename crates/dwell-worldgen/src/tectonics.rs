@@ -14,7 +14,7 @@
 //! - **The hotspot chain**: `hotspotCount` volcanic islands from (`hotspotX`, `hotspotZ`) in the plate's
 //!   motion (`hotspotHeading` degrees), `hotspotSpacing` m apart: the youngest `hotspotHeight` m over
 //!   the sea floor, each older one `hotspotDecay` of the last's height and `hotspotWiden` broader
-//!   (eroded down the chain, Hawaii-style); the youngest has a crater.
+//!   (eroded down the chain, Hawaii-style); shields without a crater.
 //!
 //! Neutral by default (`kind` 0, no arc, no hotspots): `enabled` is false and the base field skips it,
 //! so the terrain a seed generates is unchanged. Face-local, so both faces.
@@ -108,7 +108,8 @@ impl Tectonics {
         if self.kind == CONVERGENT {
             let n = self.arc_count;
             for k in 0..n {
-                let along = (f64::from(k) - f64::from(n.saturating_sub(1)) * 0.5) * self.arc_spacing;
+                let along =
+                    (f64::from(k) - f64::from(n.saturating_sub(1)) * 0.5) * self.arc_spacing;
                 let (x, z) = self.point(along, self.arc_distance);
                 v.push(Volcano {
                     x,
@@ -130,8 +131,8 @@ impl Tectonics {
                 z: self.hotspot_z + d * a.sin(),
                 height: self.hotspot_height * self.hotspot_decay.powf(age),
                 radius: self.hotspot_radius * (1.0 + self.hotspot_widen * age),
-                crater_radius: if k == 0 { self.crater_radius } else { 0.0 },
-                crater_depth: if k == 0 { self.crater_depth } else { 0.0 },
+                crater_radius: 0.0,
+                crater_depth: 0.0,
                 chain: k + 1,
             });
         }
@@ -156,7 +157,11 @@ impl Tectonics {
             }
             TRANSFORM => {
                 // Ridges across the line, the + side's shifted along it by `shift`.
-                let phase = if across > 0.0 { along + self.shift } else { along };
+                let phase = if across > 0.0 {
+                    along + self.shift
+                } else {
+                    along
+                };
                 let ridge = 0.5 + 0.5 * (2.0 * PI * phase / (4.0 * w)).cos();
                 self.range_height * ridge * ridge * bump(across / (3.0 * w))
             }
@@ -174,7 +179,10 @@ impl Tectonics {
         }
         let body = v.height * (1.0 - u).powf(1.8);
         if v.crater_radius > 0.0 && r < v.crater_radius {
-            let rim = v.height * (1.0 - v.crater_radius / v.radius.max(1.0)).max(0.0).powf(1.8);
+            let rim = v.height
+                * (1.0 - v.crater_radius / v.radius.max(1.0))
+                    .max(0.0)
+                    .powf(1.8);
             let t = r / v.crater_radius;
             rim - v.crater_depth * (1.0 - t * t)
         } else {

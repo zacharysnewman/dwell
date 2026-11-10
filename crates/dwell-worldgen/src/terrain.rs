@@ -1117,6 +1117,13 @@ impl TerrainGenerator {
         &self.biomes.geology.geology
     }
 
+    /// The rock province's stack at face-local (x, z): the noise's, or the tectonics' (T5: a
+    /// volcano's, the old core's).
+    pub fn province_at(&self, x: i64, z: i64) -> &'static str {
+        let geo = &self.biomes.geology;
+        geo.geology.stacks[geo.province(x, z).0].name
+    }
+
     /// The erosion's strength, cut-back margin (m past the retreated scarp; below 0 cut down to
     /// the floor) and floor (m over the sea) at face-local (x, z), by the height field's ground
     /// (Chisel's erosion overlay; systemic terrain T4). None where nothing erodes.

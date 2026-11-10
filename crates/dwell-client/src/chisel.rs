@@ -66,7 +66,12 @@ impl Overlay {
 }
 
 /// The tectonics overlay's colour at face-local (x, z) (systemic terrain T5), `texel` m wide.
-pub fn tectonics_rgb(t: &dwell_worldgen::tectonics::Tectonics, x: i64, z: i64, texel: i64) -> [f64; 3] {
+pub fn tectonics_rgb(
+    t: &dwell_worldgen::tectonics::Tectonics,
+    x: i64,
+    z: i64,
+    texel: i64,
+) -> [f64; 3] {
     if !t.enabled() {
         return [0.5; 3];
     }
@@ -954,6 +959,34 @@ mod tests {
             }
         }
         assert!(inside > 500 && outside > 50, "{inside} in, {outside} out");
+    }
+
+    #[test]
+    fn the_tectonics_knobs_round_trip_and_draw_their_overlay() {
+        // face-a-only: Chisel's parsing and the overlay's colours are face-local data.
+        assert_eq!(height_from_json(&serde_json::json!({})).unwrap(), HEIGHT);
+        let h = height_from_json(&serde_json::json!({
+            "tectonics": { "kind": 1, "arcCount": 3, "coneHeight": 900, "hotspotCount": 2 }
+        }))
+        .unwrap();
+        let t = h.tectonics;
+        assert_eq!((t.kind, t.arc_count, t.hotspot_count), (1, 3, 2));
+        assert_eq!(t.cone_height, 900.0);
+        assert_eq!(
+            t.angle, HEIGHT.tectonics.angle,
+            "a key left out is the build's"
+        );
+        assert!(
+            height_from_json(&serde_json::json!({ "tectonics": { "coneRadius": 0 } })).is_err()
+        );
+        assert_eq!(
+            tectonics_rgb(&HEIGHT.tectonics, 0, 0, 64),
+            [0.5; 3],
+            "off: grey"
+        );
+        let v = t.volcanoes()[0];
+        let red = tectonics_rgb(&t, (v.x + v.crater_radius * 2.0) as i64, v.z as i64, 64);
+        assert!(red[0] > 0.8 && red[1] < 0.3, "a volcano reads red: {red:?}");
     }
 
     #[test]
