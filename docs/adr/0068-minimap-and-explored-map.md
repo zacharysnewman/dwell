@@ -286,6 +286,16 @@ The two coarse ones load along with the area around you in 1m. The 1m is always 
   asked first, then the 1 m round the player, then the disc, then the island nearest the view, until
   none is left; panning re-centres the island build; shut, it carries on round the player a job at a
   time. `gen.test.mjs`: a bad `reach` fails naming it.
+- **Cost** (bench, M1 Air, seed 7, a fresh world and tile store, unthrottled; 60 s walking with the map
+  shut, default against `?mapbuild=off`): frame interval p50 3.5 / 3.4 ms, p95 and p99 18.7 / 18.8 ms
+  both, max 35.2 / 18.8 ms (one frame with the build on, its time in `ticks`, 32.7 ms, not the map's
+  pump); `frame.cpu` mean 1.92 ms both, p95 3.2 both. In the workers a tile is `job.reveal.run` p50
+  6.1 ms (2 766 built in the run); chunk generation ran p50 13.9 vs 11.8 ms (sharing the cores) but
+  waited no longer (queued p95 15.4 vs 15.6 ms), meshing the same (queued p95 13.7 vs 14.3 ms). The
+  whole island takes ~3.5 min with the map shut (one job at a time, ~35 tiles a second) and under a
+  minute open (two at once: 7 317 left at opening, 2 636 after 30 s). Building the 256 m level on the
+  loading screen from the world map was weighed and not done: it is ~120 tiles, built a few seconds
+  after the join behind the 1 m area, and the generator's tiles already read its LOD columns.
 
 ## Consequences
 
