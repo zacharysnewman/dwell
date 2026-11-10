@@ -1508,7 +1508,11 @@ mod tests {
         assert_eq!(edges(stump), [0.5, 0.0, 0.0, 0.0], "the stump's ramp");
         // The trunk's (the cell above): hanging from its ceiling, reaching its floor at the hinge
         // only, so it rests on the stump's top edge there with the notch open under it.
-        assert_eq!(edges(top), [0.5, 0.5, 0.0, 0.5], "the trunk's upside-down ramp");
+        assert_eq!(
+            edges(top),
+            [0.5, 0.5, 0.0, 0.5],
+            "the trunk's upside-down ramp"
+        );
         // Matching: parallel, reaching its floor at the notch.
         let (_, parallel) = fell_wedges(wedge, [-1.0, 0.0], WedgeTrunk::Matching).expect("wedges");
         assert_eq!(edges(parallel), [0.5, 0.5, 0.5, 0.0]);
@@ -1518,7 +1522,10 @@ mod tests {
         assert!(fell_wedges("dwell:stone", [-1.0, 0.0], WedgeTrunk::Open).is_none());
         // A shaped piece cell collides as its hull, a full one as its box.
         assert_eq!(dwell_physics::piece_hull(stump), Some(stump));
-        assert_eq!(dwell_physics::piece_hull(dwell_blocks::require("dwell:log")), None);
+        assert_eq!(
+            dwell_physics::piece_hull(dwell_blocks::require("dwell:log")),
+            None
+        );
         assert_eq!(dwell_physics::piece_hull(M.air), None);
     }
 

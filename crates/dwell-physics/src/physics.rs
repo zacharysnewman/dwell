@@ -850,9 +850,16 @@ mod piece_box_tests {
         ];
         cells[0].hull = piece_hull(ramp);
         let merged = merged_boxes(&cells);
-        assert_eq!(merged.len(), 2, "the shaped cell is not merged with the box above");
+        assert_eq!(
+            merged.len(),
+            2,
+            "the shaped cell is not merged with the box above"
+        );
         let c = piece_collider(&merged[0]);
-        assert!(c.shape().as_convex_polyhedron().is_some(), "a hull, not a box");
+        assert!(
+            c.shape().as_convex_polyhedron().is_some(),
+            "a hull, not a box"
+        );
         assert!(piece_collider(&merged[1]).shape().as_cuboid().is_some());
     }
 

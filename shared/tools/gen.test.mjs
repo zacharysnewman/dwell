@@ -120,11 +120,11 @@ test("a wood's cut look (its carved faces, ADR 0067 §11) is validated and reach
   assert.match(toolsRust(validateTools(data, items, blocks)), /cut: CutLook \{ tile: None, tint: \[255, 255, 255\], open: 2\.5, kerf_width_m: 0\.03 \}/);
 });
 
-test("the axe clears leaves; a fixture tool clearing another block by data alone is emitted", () => {
+test("the axe clears leaves and the stump's wood ramp; a fixture tool clearing another block by data alone is emitted", () => {
   const d = validateTools(...fresh());
   const axe = d.tools.find((t) => t.name === 'dwell:stone_axe');
-  assert.deepEqual(axe.clears, ['dwell:leaves', 'dwell:snowy_leaves']);
-  assert.match(toolsRust(d), /rustle: Some\("axe_rustle"\), rustle_leaves: 5 \}, clears: &\["dwell:leaves", "dwell:snowy_leaves"\] \}/);
+  assert.deepEqual(axe.clears, ['dwell:leaves', 'dwell:snowy_leaves', 'dwell:log_ramp']);
+  assert.match(toolsRust(d), /rustle: Some\("axe_rustle"\), rustle_leaves: 5 \}, clears: &\["dwell:leaves", "dwell:snowy_leaves", "dwell:log_ramp"\] \}/);
   const [data, items, blocks] = fresh();
   items.add('test:sickle');
   data.tools.push({ name: 'test:sickle', kind: 'axe', swingSeconds: 0.3, biteM: 0.1, bindM: 0.1, across: 1, along: 0.3, sharpness: 1, clears: ['dwell:tall_grass'] });

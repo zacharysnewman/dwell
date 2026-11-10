@@ -1,7 +1,7 @@
 # 0072 — Octagonal logs: a cross-section shape kind, squared where logs join
 
-**Status:** Accepted (2026-11-09; T1 built in 0.51.0, a new compatibility line; T2 outstanding:
-the carved notch on the octagon, felling as wedges, bodies). Builds on ADR 0042 (½ m cells, stored
+**Status:** Accepted (2026-11-09; T1 built in 0.51.0, a new compatibility line; T2's felling as
+wedges built in 0.51.0; outstanding: the carved notch on the octagon, bodies). Builds on ADR 0042 (½ m cells, stored
 shapes), ADR 0067 (chopping) and docs/SLOPE_BLOCKS.md (the shape mechanism).
 
 ## Context
@@ -57,7 +57,9 @@ the join rule (same group, same axis), the geometry.
 
 - No new states; the rule and the chamfer are data. Targeting, the selection box and the LOD still
   treat a log as its cube (the LOD at distance cannot tell).
-- **T2 (outstanding):** the carved notch on an octagon (`crates/dwell-mesh/src/carve.rs` still
-  carves a cut log as a cube); felling as wedges (the cut cell splits into a wood ramp stump and an
-  upside-down wood ramp under the trunk, which falls straight down and tips toward the notch); felled
-  pieces' body colliders as octagons.
+- **T2:** felling as wedges is built (0.51.0; ADR 0067 §5a): the cut cell becomes a wood ramp
+  stump and the log above an upside-down wood ramp under the trunk, released with no push, tipping
+  toward the notch. The wood ramps (`dwell:log_ramp`) are square stored ramps, not octagonal: the
+  octagon is applied to full cells only. Outstanding: the carved notch on an octagon
+  (`crates/dwell-mesh/src/carve.rs` still carves a cut log as a cube); felled pieces' body colliders
+  and the wedges as octagons.

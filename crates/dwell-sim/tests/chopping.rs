@@ -161,7 +161,11 @@ dwell_world::both_faces!(
             dwell_sim::felling::WedgeTrunk::Open,
         )
         .expect("the log's wedges");
-        assert_eq!(cell_is(&mut fx, f, [3, AT, 0]), f.state(stump), "the stump's wedge");
+        assert_eq!(
+            cell_is(&mut fx, f, [3, AT, 0]),
+            f.state(stump),
+            "the stump's wedge"
+        );
         let prop = dwell_blocks::state_property;
         assert_eq!(
             (prop(stump, "facing"), prop(stump, "half")),
@@ -188,7 +192,11 @@ dwell_world::both_faces!(
             .iter()
             .min_by_key(|c| c.offset[1] * up)
             .expect("cells");
-        assert_eq!(bottom.state, f.state(top), "the trunk's bottom is the inverted wedge");
+        assert_eq!(
+            bottom.state,
+            f.state(top),
+            "the trunk's bottom is the inverted wedge"
+        );
         // Released with no push (no scripted tip): the slanted contact alone tips it toward the
         // notch (−x), and within four seconds it is down (leaning past 60°) on that side.
         // A matching (parallel) wedge stood on the slope; a two-cell 45° one slid toward the

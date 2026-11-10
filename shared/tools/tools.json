@@ -29,7 +29,7 @@
         "rustle": "axe_rustle",
         "rustleLeaves": 5
       },
-      "clears": ["dwell:leaves", "dwell:snowy_leaves"]
+      "clears": ["dwell:leaves", "dwell:snowy_leaves", "dwell:log_ramp"]
     }
   ],
   "woods": [

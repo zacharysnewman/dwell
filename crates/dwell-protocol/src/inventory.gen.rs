@@ -69,4 +69,5 @@ pub static DROPS: &[BlockDrops] = &[
     BlockDrops { block: "dwell:lit_dynamite_green", cost: "dwell:lit_dynamite_green", drops: &[] },
     BlockDrops { block: "dwell:dynamite_yellow", cost: "dwell:dynamite_yellow", drops: &[DropRule { chance: 1.0, choices: &[DropChoice { item: "dwell:dynamite_yellow", min: 1, max: 1, weight: 1.0 }] }] },
     BlockDrops { block: "dwell:lit_dynamite_yellow", cost: "dwell:lit_dynamite_yellow", drops: &[] },
+    BlockDrops { block: "dwell:log_ramp", cost: "dwell:log", drops: &[DropRule { chance: 1.0, choices: &[DropChoice { item: "dwell:log", min: 1, max: 1, weight: 1.0 }] }] },
 ];
