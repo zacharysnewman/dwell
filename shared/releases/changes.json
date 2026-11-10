@@ -2,6 +2,13 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.52.5",
+      "changes": [
+        "Wolves wear a softer, blended coat: a dark grey back, fawn flanks, a cream belly and legs and a pale muzzle; the collar blends into the fur.",
+        "Wolves are smaller: three quarters of their old size."
+      ]
+    },
+    {
       "version": "0.52.4",
       "changes": [
         "The main menu's turning views are sharper: rendered again at twice the resolution (phones load a lighter copy)"

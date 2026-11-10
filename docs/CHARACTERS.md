@@ -617,7 +617,13 @@ characters' ramp from the vertex's palette colour, the same lights and shadow ma
 - **Model detail and variants** (0.52.1, ADR 0070 §10–11): every skinned GLB holds one mesh per
   `models.json` `detail` level (decimated, flat shaded); Settings → Graphics → Model detail picks the
   level for all of them, live. The doe is the deer without antlers (`source.remove`), the wolf the dog
-  recoloured (`remap`) at `scale` 2. The Model Viewer's detail buttons (`?detail=low`) show each level.
+  recoloured (`remap`) at `scale` 1.5 (0.52.5; 2 before). The Model Viewer's detail buttons
+  (`?detail=low`) show each level; `?focus=wolf&yaw=90` frames one model from a side.
+- **Coats** (0.52.5, ADR 0070 §12): a model's optional `coat` (`models.json`) paints it by body
+  region with soft blends (`shared/models/coat.mjs`, run by `import.mjs` or `import.mjs --coat`)
+  instead of a colour a face: the wolf's grey saddle, fawn flanks, cream belly and legs, pale muzzle
+  and dark tail tip, faces still flat-shaded. Colours are palette references mixed in sRGB, so a
+  coat holds blends between palette stops.
 
 ### 11.7 What is left (next)
 
