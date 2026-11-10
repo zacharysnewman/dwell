@@ -12,6 +12,35 @@ export const TERRAIN = {
   inland: { rise: [0, 1000], halfDistance: [{ above: 0 }, 100_000] },
   seaFloor: { depth: [0, 1000], shelf: [{ above: 0 }, 100_000] },
   islands: { amplitude: [0, 10_000], wavelength: [64, 65_536, true], octaves: [1, 8, true], cap: [-10_000, 100_000] },
+  // Systemic terrain T5: one plate boundary (kind 0 none, 1 convergent, 2 divergent, 3 transform), its
+  // volcanic arc and one hotspot chain (tectonics.rs).
+  tectonics: {
+    kind: [0, 3, true],
+    angle: [-360, 360],
+    offset: [-50_000, 50_000],
+    width: [{ above: 0 }, 20_000],
+    rangeHeight: [0, 3000],
+    trenchDepth: [0, 1000],
+    riftDepth: [0, 1000],
+    shift: [0, 20_000],
+    arcCount: [0, 32, true],
+    arcDistance: [0, 30_000],
+    arcSpacing: [{ above: 0 }, 50_000],
+    coneHeight: [0, 5000],
+    coneRadius: [{ above: 0 }, 20_000],
+    craterRadius: [0, 5000],
+    craterDepth: [0, 1000],
+    hotspotCount: [0, 32, true],
+    hotspotX: [-50_000, 50_000],
+    hotspotZ: [-50_000, 50_000],
+    hotspotHeading: [-360, 360],
+    hotspotSpacing: [{ above: 0 }, 50_000],
+    hotspotHeight: [0, 5000],
+    hotspotRadius: [{ above: 0 }, 20_000],
+    hotspotDecay: [0, 1],
+    hotspotWiden: [0, 2],
+    coreDistance: [0, 50_000],
+  },
   hills: {
     amplitude: [0, 1000],
     wavelength: [8, 65_536, true],
@@ -98,7 +127,7 @@ const BAND_NAME = /^[a-z0-9_]+$/;
  * The world's elevation and water (terrain.json): one world-scale system, not per biome (ADR 0074;
  * owner, 2026-11-10). The rest of `TERRAIN` is each biome's.
  */
-export const WORLD_GROUPS = ['inland', 'seaFloor', 'islands', 'hills', 'bumps', 'rivers', 'mouths', 'lakes', 'spawn', 'biomeMap'];
+export const WORLD_GROUPS = ['inland', 'seaFloor', 'islands', 'tectonics', 'hills', 'bumps', 'rivers', 'mouths', 'lakes', 'spawn', 'biomeMap'];
 /** A biome's groups (shared/worldgen/biomes/*.json): layered on the elevation. */
 export const BIOME_GROUPS = Object.keys(TERRAIN).filter((g) => !WORLD_GROUPS.includes(g));
 /** A biome's reference fields beside its groups. */
@@ -303,7 +332,7 @@ export function validateRocks(data, blocks) {
     throw new Error(`rocks.json: ${m}`);
   };
   if (typeof data !== 'object' || data === null) fail('must be an object');
-  const extra = Object.keys(data).filter((k) => !['$comment', 'rocks', 'stacks', 'provinces', 'shaping', 'erosion'].includes(k));
+  const extra = Object.keys(data).filter((k) => !['$comment', 'rocks', 'stacks', 'provinces', 'shaping', 'erosion', 'tectonic'].includes(k));
   if (extra.length) fail(`unknown ${extra.join(', ')}`);
   const between = (v, lo, hi) => isNum(v) && v >= lo && v <= hi;
   if (!Array.isArray(data.rocks) || data.rocks.length === 0) fail('rocks must be a list of at least one rock');
@@ -363,6 +392,14 @@ export function validateRocks(data, blocks) {
     }
   };
   groups(data);
+  // The tectonic provinces (systemic terrain T5): the stacks of the volcanoes and the old core.
+  const t = data.tectonic;
+  if (typeof t !== 'object' || t === null) fail('tectonic must be an object');
+  const te = Object.keys(t).filter((k) => !['$comment', 'volcanic', 'core'].includes(k));
+  if (te.length) fail(`tectonic: unknown ${te.join(', ')}`);
+  for (const k of ['volcanic', 'core']) {
+    if (!stacks.has(t[k])) fail(`tectonic.${k} must name a stack (${String(t[k])} is none)`);
+  }
   return data;
 }
 
@@ -484,6 +521,7 @@ export const WORLD_KNOBS = {
   seaFloor: ['depth', 'shelf'],
   inland: ['rise', 'halfDistance'],
   hills: ['amplitude'],
+  tectonics: Object.keys(TERRAIN.tectonics),
 };
 
 /** Checks Chisel's world knobs (`{ group: { key: v } }`, `WORLD_KNOBS`'s) by `TERRAIN`'s ranges. */

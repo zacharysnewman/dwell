@@ -624,3 +624,22 @@ test('the checked-in vegetation is valid, generates the checked-in Rust, and tak
   bad((x) => x.kinds.push({ ...x.kinds[0], name: 'test:twin' }), /placement pine_groves already has a kind/);
   bad((x) => (x.extra = 1), /unknown extra/);
 });
+
+test('the tectonics (T5) are off by default, take a boundary and a chain by data alone, and name bad keys', async () => {
+  const { validateWorldKnobs } = await import('./biomes.mjs');
+  const world = JSON.parse(readFileSync(join(here, 'terrain.json'), 'utf8'));
+  assert.equal(world.tectonics.kind, 0, 'the default world has no boundary');
+  assert.equal(world.tectonics.hotspotCount, 0, 'and no hotspot chain');
+  const on = { name: 'test:plates', overrides: { tectonics: { kind: 1, arcCount: 3, hotspotCount: 4 } } };
+  const [w] = validateFixtureWorlds([on], world);
+  assert.equal(w.world.tectonics.arcCount, 3);
+  assert.throws(
+    () => validateFixtureWorlds([{ name: 'test:x', overrides: { tectonics: { kind: 4 } } }], world),
+    /tectonics\.kind must be a whole number in \[0, 3\]/,
+  );
+  validateWorldKnobs({ tectonics: { kind: 2, riftDepth: 120 } });
+  assert.throws(() => validateWorldKnobs({ tectonics: { coneRadius: 0 } }), /tectonics\.coneRadius/);
+  const rocks = JSON.parse(readFileSync(join(here, 'rocks.json'), 'utf8'));
+  rocks.tectonic.volcanic = 'dwell:nothing';
+  assert.throws(() => validateRocks(rocks, blocks), /tectonic\.volcanic must name a stack/);
+});

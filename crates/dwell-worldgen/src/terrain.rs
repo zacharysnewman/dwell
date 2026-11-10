@@ -88,6 +88,9 @@ pub struct HeightField {
     pub island_wavelength: i32,
     pub island_octaves: u32,
     pub island_cap: f32,
+    /// Tectonics at realistic scale (`terrain.json` `tectonics`, systemic terrain T5): one plate
+    /// boundary, its volcanic arc and a hotspot chain, added to the field; off by default.
+    pub tectonics: crate::tectonics::Tectonics,
 }
 
 /// A biome's water look over its fluid's (`waterLook`, ADR 0074 B4): its colour (`scatter`, sRGB
@@ -674,7 +677,8 @@ impl BiomeSet {
             first,
             field,
             params,
-            geology: crate::geology::Resolved::new(geology, world_seed),
+            geology: crate::geology::Resolved::new(geology, world_seed)
+                .with_tectonics(map.tectonics),
             biome_stack,
             rock_first,
             drainage: (geology.erosion.strength > 0.0
@@ -1111,6 +1115,13 @@ impl TerrainGenerator {
     /// This generator's geology (`rocks.json`).
     pub fn geology(&self) -> &crate::geology::Geology {
         &self.biomes.geology.geology
+    }
+
+    /// The rock province's stack at face-local (x, z): the noise's, or the tectonics' (T5: a
+    /// volcano's, the old core's).
+    pub fn province_at(&self, x: i64, z: i64) -> &'static str {
+        let geo = &self.biomes.geology;
+        geo.geology.stacks[geo.province(x, z).0].name
     }
 
     /// The erosion's strength, cut-back margin (m past the retreated scarp; below 0 cut down to

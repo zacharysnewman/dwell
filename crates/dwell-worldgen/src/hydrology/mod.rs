@@ -377,8 +377,36 @@ pub fn generate_with_height(
     p: &HydrologyParams,
     h: crate::terrain::HeightField,
 ) -> HydrologyMap {
-    let (grid, x0, hs) = sample_field(&BaseField::with_height(seed, h), p.cell);
-    from_heights(grid, f64::from(p.cell), x0, &hs, seed, p)
+    let base = BaseField::with_height(seed, h);
+    let (grid, x0, hs) = sample_field(&base, p.cell);
+    if !h.tectonics.enabled() {
+        return from_heights(grid, f64::from(p.cell), x0, &hs, seed, p);
+    }
+    // Tectonics (systemic terrain T5): the boundary's landform and the volcanoes on each cell.
+    let t = h.tectonics;
+    let volcanoes = t.volcanoes();
+    let n = grid.n;
+    let (mut extra, mut rising) = (vec![0.0; grid.len()], vec![0.0; grid.len()]);
+    for i in 0..grid.len() {
+        let (x, z) = (
+            x0 + (i % n) as f64 * f64::from(p.cell),
+            x0 + (i / n) as f64 * f64::from(p.cell),
+        );
+        if hs[i].is_finite() {
+            let coast = f64::from(base.coast_at(x as i64, z as i64));
+            extra[i] = t.height(&volcanoes, x, z, coast);
+            rising[i] = t.boundary(x, z, coast);
+        }
+    }
+    from_heights_with(
+        grid,
+        f64::from(p.cell),
+        x0,
+        &hs,
+        seed,
+        p,
+        Some((&extra, &rising)),
+    )
 }
 
 /// [`sample_seed`] of a given base field.
@@ -413,7 +441,33 @@ pub fn from_heights(
     seed: u64,
     p: &HydrologyParams,
 ) -> HydrologyMap {
+    from_heights_with(grid, cell, x0, h0, seed, p, None)
+}
+
+/// [`from_heights`] with the tectonics' landforms (systemic terrain T5, m per cell) added: to the
+/// sampled field (so a hotspot island rises from the sea), in full over the uplift layer's kept
+/// relief; the boundary's part (`extra.1`) also as uplift (`rate` per `base_height` m), so its range
+/// keeps rising as the uplift layer's do, the dormant volcanoes not, so the erosion wears them.
+pub fn from_heights_with(
+    grid: Grid,
+    cell: f64,
+    x0: f64,
+    h0: &[f64],
+    seed: u64,
+    p: &HydrologyParams,
+    extra: Option<(&[f64], &[f64])>,
+) -> HydrologyMap {
     assert_eq!(h0.len(), grid.len());
+    let lifted: Vec<f64>;
+    // The sea before the tectonics: a volcanic island rising from it takes no uplift (T5).
+    let offshore = extra.map(|_| open_sea(grid, h0));
+    let h0 = match extra {
+        None => h0,
+        Some((e, _)) => {
+            lifted = h0.iter().zip(e).map(|(&v, &d)| v + d).collect();
+            &lifted
+        }
+    };
     let len = grid.len();
     let sea = open_sea(grid, h0);
     let original: Vec<f32> = h0.iter().map(|&v| v.max(-1e4) as f32).collect();
@@ -436,13 +490,38 @@ pub fn from_heights(
         ),
         Some(t) => {
             let coast = uplift::coast_distance(grid, cell, &sea);
-            let u = uplift::generate(grid, cell, x0, &sea, &coast, seed, t);
-            for (i, v) in h.iter_mut().enumerate() {
-                if !sea[i] {
-                    *v = t.keep_relief * *v + t.base_height * u.strength[i];
+            // With the tectonics on, their one boundary takes the place of the uplift layer's
+            // random ranges and plates (T5: one boundary crossing the island).
+            let mut t = *t;
+            if extra.is_some() {
+                t.ranges.count = 0;
+                t.plates.count = 0;
+            }
+            let t = &t;
+            let mut u = uplift::generate(grid, cell, x0, &sea, &coast, seed, t);
+            if let Some(off) = &offshore {
+                for (s, &o) in u.strength.iter_mut().zip(off) {
+                    if o {
+                        *s = 0.0;
+                    }
                 }
             }
-            let rate = u.strength.iter().map(|&s| t.rate * s).collect();
+            for (i, v) in h.iter_mut().enumerate() {
+                if !sea[i] {
+                    // The tectonics' landform kept whole, not scaled with the relief.
+                    let e = extra.map_or(0.0, |e| e.0[i]);
+                    *v = t.keep_relief * (*v - e) + e + t.base_height * u.strength[i];
+                }
+            }
+            let rate = u
+                .strength
+                .iter()
+                .enumerate()
+                .map(|(i, &s)| {
+                    let rise = extra.map_or(0.0, |e| (e.1[i] / t.base_height).max(0.0));
+                    t.rate * (s + rise)
+                })
+                .collect();
             (rate, u.spines, u.plates)
         }
     };

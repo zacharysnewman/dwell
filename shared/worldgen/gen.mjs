@@ -370,6 +370,8 @@ export function rocksRust(data) {
   const snake = (k) => k.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
   for (const k of Object.keys(GEOLOGY.erosion)) rs.push(`        ${snake(k)}: ${rf(data.erosion[k])},`);
   rs.push('    },');
+  rs.push(`    volcanic_stack: ${JSON.stringify(data.tectonic.volcanic)},`);
+  rs.push(`    core_stack: ${JSON.stringify(data.tectonic.core)},`);
   rs.push('};');
   rs.push('');
   return rs.join('\n');
@@ -461,6 +463,15 @@ export function validateFixtureWorlds(fixtures, world) {
   });
 }
 
+/** terrain.json `tectonics` (systemic terrain T5) as Rust: the keys in camelCase become snake_case. */
+function tectonicsRs(g) {
+  const whole = ['kind', 'arcCount', 'hotspotCount'];
+  const body = Object.keys(TERRAIN.tectonics)
+    .map((k) => `${k.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`)}: ${whole.includes(k) ? g[k] : rf(g[k])}`)
+    .join(', ');
+  return `crate::tectonics::Tectonics { ${body} }`;
+}
+
 /** The world's groups and one biome's, merged, as Rust: the base field's and the surface's. */
 function biomeFields(t) {
   const fields = [
@@ -480,6 +491,7 @@ function biomeFields(t) {
     ['island_wavelength', `${t.islands.wavelength}`],
     ['island_octaves', `${t.islands.octaves}`],
     ['island_cap', rf(t.islands.cap)],
+    ['tectonics', tectonicsRs(t.tectonics)],
   ];
   const { detail: d, rivers: r, mouths: m, lakes: l, shaping: b, banks: k, spawn: s } = t;
   const surface = [

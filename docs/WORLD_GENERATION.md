@@ -424,6 +424,11 @@ bed a talus slope, vertical jointing one sheer wall, massive rock unstepped; the
 a wall shows its rock's face, talus its scree, a tread its cap. Tuned in Chisel (the Rock group and the
 rock overlay). Prototype content (§6.1 of the architecture): today's blocks stand in for the rocks.
 
+## Tectonics (2026-11-10, ADR 0075 T5)
+
+Systemic terrain's first layer, at realistic scale: one plate boundary across the island and one hotspot chain offshore as data (`terrain.json` `tectonics`, `tectonics.rs`), added to the world map's sampled field before the uplift and erosion: a convergent range (kept rising as uplift) and trench, a divergent rift with shoulders, or transform offset ridges; a dormant volcanic arc of concave cratered cones behind a convergent line; hotspot islands rising from the sea, lower and broader down the chain; the uplift layer's random ranges and plates off while the tectonics are on; rock provinces from them (`rocks.json` `tectonic`: volcanoes basalt, the old core granite); `kind` 0 and no hotspots by default (goldens byte-identical). Tuned in Chisel (the World group's
+tectonics sliders, the tectonics overlay in the detail and the world overview). Prototype content.
+
 ## Rule-based erosion (2026-11-10, ADR 0075 T4)
 
 Systemic terrain's erosion layer, from the world map's plan view: rule-based erosion from the world map's plan view (`rocks.json` `erosion`, `geology::DrainageField`, `geology::eroded`): drainage lines are map cells with at least `threshold` cells of flow accumulation (or the sea); a column nearer a line than the scarp's retreat (`reach` × (1 − `resist` × the cap rock's hardness) × (1 + `valley` × log2 of the line's accumulation over the threshold) × (1 ± `outline` noise) − `relief` × the hill's height over the floor) is cut down to the floor (the line's height, `snap` of the way down to the stack's lowest soft layer's top), farther it stands; a `wall` m sheer wall at the edge (the cap rock's face) and a `talusWidth` m skirt (the soft rock's scree) below; a biome's `gullies` cuts short-wavelength rills (`gullyWavelength`, `gullyDepth`). A biome opts in with `erosion` 0..1 (absent 0: the default world and goldens unchanged); the red-rock mesa preset at 1, badlands at 1 with gullies 1. Tuned in Chisel

@@ -16,5 +16,10 @@
   ],
   "provinces": { "wavelength": 12000 },
   "shaping": { "strength": 0, "tread": 1.5, "sheer": 2 },
-  "erosion": { "strength": 1, "reach": 450, "valley": 0.35, "resist": 0.6, "relief": 3, "threshold": 6, "snap": 0, "wall": 2, "talusWidth": 14, "talusShare": 0.2, "outline": 0.45, "outlineWavelength": 260, "gullyWavelength": 40, "gullyDepth": 5 }
+  "erosion": { "strength": 1, "reach": 450, "valley": 0.35, "resist": 0.6, "relief": 3, "threshold": 6, "snap": 0, "wall": 2, "talusWidth": 14, "talusShare": 0.2, "outline": 0.45, "outlineWavelength": 260, "gullyWavelength": 40, "gullyDepth": 5 },
+  "tectonic": {
+    "$comment": "The tectonic rock provinces (systemic terrain T5, terrain.json tectonics): on a volcano (the arc's cones and the hotspot islands) the ground's stack is volcanic, in the overriding plate's old core (coreDistance m behind a convergent boundary) core; elsewhere the provinces' noise picks. Read only when the tectonics are on and the shaping shows rock (strength > 0).",
+    "volcanic": "dwell:basalt_flows",
+    "core": "dwell:granite_core"
+  }
 }

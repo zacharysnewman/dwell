@@ -1,6 +1,6 @@
 # ADR 0075: Systemic terrain — climate, rock and life as layers, biomes as results
 
-- **Status:** Accepted (2026-11-10; Phase 57 T1, the rain shadow, built in 0.52.7). Adopts
+- **Status:** Accepted (2026-11-10; Phase 57 T1, the rain shadow, built in 0.52.7; T5, tectonics, in 0.52.18). Adopts
   [`proposals/SYSTEMIC_TERRAIN.md`](../proposals/SYSTEMIC_TERRAIN.md) with the owner's answers (its §6).
   Extends [ADR 0074](./0074-biomes-and-chisel.md) (biomes and Chisel).
 - **Context:** The owner (2026-11-10): biomes are "more about meta composition"; the terrain should be
@@ -143,6 +143,65 @@ floor's shade in the erosion overlay shows the 100 m map cells (the distance fie
 them; the outlines, from the noise and the threshold, are smooth enough). Not yet: an in-game look, the
 remnants' tops are the height field's (gently tilted, not snapped to the cap's level), the floor between
 two drainage lines of different heights is their blend, and a simulated erosion pass to compare.
+
+## T5, tectonics at realistic scale (built, 0.52.18)
+
+The owner's §6 answer: **one plate boundary crossing the island, hotspots offshore making island chains**;
+volcanoes dormant landforms first (cone, crater, lava rock), eruptions later (§5 q5 still open).
+`terrain.json` `tectonics` (one group of the world's, checked by `biomes.mjs` `TERRAIN.tectonics`, emitted
+into `HeightField::tectonics`; `dwell-worldgen` `tectonics.rs`):
+
+- **The boundary**: a line `angle` degrees from +x toward +z, `offset` m from the centre along its normal,
+  the overriding plate on its + side. `kind` (a whole number: the group's keys are numbers): 0 none, 1
+  **convergent** (a range `rangeHeight` m high and `width` m half-wide one width behind the line, a trench
+  `trenchDepth` m before it), 2 **divergent** (a rift `riftDepth` m deep with shoulders; its floor fills
+  with lakes by the hydrology), 3 **transform** (ridges across the line, the sides offset by `shift` m).
+  Faded out offshore (by the island's coast distance).
+- **The volcanic arc** (convergent only): `arcCount` stratovolcanoes `arcDistance` m behind the line,
+  `arcSpacing` m apart: a concave cone (`coneHeight` × (1 − r/`coneRadius`)^1.8, steeper near the top)
+  with a crater `craterRadius` m wide and `craterDepth` m deep. Dormant: a landform only.
+- **The hotspot chain**: `hotspotCount` shield islands from (`hotspotX`, `hotspotZ`) along the plate's
+  motion (`hotspotHeading`), `hotspotSpacing` m apart; each older one `hotspotDecay` of the last's height
+  and `hotspotWiden` broader (eroded with age).
+- **Where it acts**: `hydrology::generate_with_height` computes the landforms on the world map's 100 m
+  cells and `from_heights_with` adds them to the sampled field before the sea is found (so a hotspot
+  island is land) and in full over the uplift layer's kept relief (not scaled by `keepRelief`). The
+  boundary's part is also uplift (`rate` per `baseHeight` m), so its range keeps rising against the
+  erosion as the uplift layer's ranges do; the dormant volcanoes take none and are worn by it. While the
+  tectonics are on, the uplift layer's random ranges and plates are off (the one boundary takes their
+  place) and a cell that was sea before them takes no uplift strength (the islands are not lifted as
+  land). The chunks follow the map as before.
+- **Rock provinces**: `rocks.json` `tectonic` names the stacks: within 0.85 of a volcano's radius the
+  `volcanic` stack (`dwell:basalt_flows`), `coreDistance` m behind a convergent line the `core` stack
+  (`dwell:granite_core`), elsewhere the provinces' noise (`geology::Resolved::with_tectonics`, from the
+  map's `tectonics`). Read where the rock shows (T2's shaping) like any province.
+- **Neutral**: `kind` 0 and `hotspotCount` 0 in the default world: nothing is computed and the map is the
+  plain one (the goldens byte-identical; `tests/tectonics.rs` compares the maps too).
+- **Chisel**: the tectonics keys are world knobs (`WORLD_KNOBS.tectonics`, sliders in the World group,
+  `height_from_json`), and a tectonics overlay (the overriding plate tan, the other blue-grey, the old core
+  darker, the boundary dark, the volcanoes red by height, their craters dark), in the detail and the
+  world overview.
+
+Tests (`tests/tectonics.rs`, both faces): no plates leave the map identical; a fixture by data alone (a
+convergent line, three arc cones, a four-island chain): the range stands > ½ `rangeHeight` above the plain
+map and above the trench side along the line; each arc cone's rim stands above its flank and its
+surroundings with a crater dip at its centre, on the volcanic stack; the old core is granite; each hotspot
+island stands above the sea where the plain map is sea, lower down the chain. `gen.test.mjs`: the default
+off, a fixture world with tectonics validates, bad keys and stacks named. Chisel: the knobs round trip,
+the overlay colours.
+
+First look (Chisel, seed 7, the fixture's knobs): the world overview shows the range as a pale band
+across the island along the line and four volcanic islands offshore, smaller down the chain; the
+tectonics overlay shows the two plates, the line, the three arc cones and the chain. In the blocks view the
+arc cones read weakly (a faint radial cone with bare stone at its summit): the blocks view has no relief
+shading and the eroded cones stand ~100–150 m over the range's slope, so a Rainier-like peak needs a taller
+`coneHeight` or the in-game look to judge.
+
+Not yet: one boundary and one chain (a list of either is a later data change); `kind` is a number, not a
+name; at the 100 m map cells and after the erosion the cones keep less relief than their profile (the
+fixture's 700 m cone's rim ~100–150 m over its surroundings on the range's slope); eruptions, lava
+flows and calderas; a curved boundary; the snow on the peaks comes from the bands' fixed snow height
+until T3b's temperature snow line.
 
 ## Consequences
 

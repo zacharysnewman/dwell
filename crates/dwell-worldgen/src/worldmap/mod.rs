@@ -116,6 +116,9 @@ pub struct WorldMap {
     /// Derived on load.
     pub channels: Channels,
     pub shores: Shores,
+    /// The tectonics its base field was made with (systemic terrain T5; not stored: a map from
+    /// bytes is the build's), for the rock provinces.
+    pub tectonics: crate::tectonics::Tectonics,
 }
 
 impl WorldMap {
@@ -129,7 +132,9 @@ impl WorldMap {
     /// as the archipelago, `FIXTURE_WORLDS`; Chisel's world knobs).
     pub fn for_height(seed: u64, h: crate::terrain::HeightField) -> Self {
         let p = hydrology::default_profile();
-        Self::from_hydrology(seed, &hydrology::generate_with_height(seed, p, h))
+        let mut map = Self::from_hydrology(seed, &hydrology::generate_with_height(seed, p, h));
+        map.tectonics = h.tectonics;
+        map
     }
 
     /// The kept map of a hydrology map.
@@ -294,6 +299,7 @@ impl WorldMap {
             rivers,
             channels: Channels::default(),
             shores: Shores::default(),
+            tectonics: crate::terrain::HEIGHT.tectonics,
         };
         map.channels = Channels::build(&map);
         map.shores = Shores::build(&map);

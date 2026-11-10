@@ -128,4 +128,6 @@ pub const GEOLOGY: Geology = Geology {
         gully_wavelength: 40.0,
         gully_depth: 5.0,
     },
+    volcanic_stack: "dwell:basalt_flows",
+    core_stack: "dwell:granite_core",
 };
