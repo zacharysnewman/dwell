@@ -1685,7 +1685,13 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
   `STREAM_DEADLINE_MS` after the frame's start (the finished jobs taken in and the ticks counted), at
   least `STREAM_MIN_MS`, the light stopping short of the `STREAM_MESH_SHARE` kept for the mesh starts, and
   each stopping before an item its running cost estimate says would pass the deadline; a chunk arriving marks
-  its loaded neighbours for re-meshing, and a chunk waits while a neighbour is still being generated.
+  its loaded neighbours for re-meshing, and a chunk waits while a neighbour is still being generated;
+  within the near-first order (without a second centre) a chunk in the server's view (`VIEW_RADIUS_CHUNKS`) not drawn yet is
+  meshed before the re-meshes of drawn chunks, which show their last mesh meanwhile (BUGS #54, 0.51.3).
+  The worker pool (`dwell-client` `pool.rs`) starts queued chunk generations within `NEAR_JOBS_M`
+  (128 m) of the player (`Pool::set_focus`) before the other generation jobs, nearest first, the rest
+  and the mesh jobs in the order queued; with a second centre (the respawn preload) everything in the
+  order queued (0.51.3: a FIFO queue left the chunks coming into the near ring seconds behind far chunks' and the LOD's jobs).
   Voxel modifications (§6.5) apply in revision order: those of a chunk still being generated are
   held until it arrives, one for a chunk held as Air creates it, stale ones are dropped, and a gap
   sends `ChunkResync` for the chunk (answered with its current state) and ignores it until then. Prediction starts once the chunks within 1 of the player

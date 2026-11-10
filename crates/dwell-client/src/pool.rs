@@ -134,7 +134,16 @@ pub struct Pool {
     ready: Vec<Done>,
     /// Chunk meshes take their liquid tops (false while the scene draws the heightfield).
     pub water_tops: bool,
+    /// Where the player is (m; [`Self::set_focus`]): chunk jobs near it start first.
+    focus: Option<[f64; 3]>,
 }
+
+/// Chunk generations (and the ground items' bases) within this distance (m) of the focus start
+/// before every other queued generation job, nearest first; the rest, and every mesh job (the
+/// streamer starts its chunk meshes nearest first), start in the order they were queued. BUGS #54:
+/// on a long trip the chunks coming into the near ring waited seconds behind far chunks' and the
+/// LOD's generations queued first.
+pub const NEAR_JOBS_M: f64 = 128.0;
 
 pub type PoolRef = Rc<RefCell<Pool>>;
 
@@ -149,6 +158,7 @@ impl Pool {
             in_flight: [0; 2],
             ready: Vec::new(),
             water_tops: true,
+            focus: None,
         }));
         let weak = Rc::downgrade(&pool);
         // A result between frames: collected, and the worker given the next queued job. Never
@@ -198,10 +208,43 @@ impl Pool {
         true
     }
 
+    /// Sets where the player is (m): queued chunk generations within [`NEAR_JOBS_M`] of it start
+    /// first, nearest first. None: every job in the order queued (the respawn preload, whose
+    /// second ring the streamer and the LOD order).
+    pub fn set_focus(&mut self, at: Option<[f64; 3]>) {
+        self.focus = at;
+    }
+
+    /// The queued job of `kind` to start next: the chunk generation within [`NEAR_JOBS_M`] nearest
+    /// the focus, else the oldest.
+    fn next_of(&mut self, kind: usize) -> Option<(u32, Job)> {
+        let Some(f) = self.focus else {
+            return self.queued[kind].pop_front();
+        };
+        let q = &self.queued[kind];
+        let first = q
+            .iter()
+            .enumerate()
+            .filter_map(|(at, (id, _))| match self.purposes.get(id)?.0 {
+                Purpose::Chunk(c, _) | Purpose::Base(c) => {
+                    let m = dwell_world::chunk_centre_m(dwell_world::ChunkCoord::from_array(c));
+                    let d: f64 = (0..3).map(|i| (m[i] - f[i]).powi(2)).sum();
+                    (d <= NEAR_JOBS_M * NEAR_JOBS_M).then_some((d, at))
+                }
+                _ => None,
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|(_, at)| at);
+        match first {
+            Some(at) => self.queued[kind].remove(at),
+            None => self.queued[kind].pop_front(),
+        }
+    }
+
     fn pump(&mut self) {
         for kind in 0..2 {
             while self.in_flight[kind] < self.jobs.capacity(kind == 1) {
-                let Some((id, job)) = self.queued[kind].pop_front() else {
+                let Some((id, job)) = self.next_of(kind) else {
                     break;
                 };
                 self.in_flight[kind] += 1;
@@ -441,6 +484,33 @@ mod tests {
             held.borrow().started,
             vec![1, 2],
             "the next queued job starts"
+        );
+    }
+
+    #[test]
+    fn near_chunk_jobs_start_before_older_far_and_lod_ones_nearest_first() {
+        // BUGS #54: FIFO queues left the chunks coming into the near ring behind far chunks' and
+        // the LOD's jobs queued first.
+        let held = Rc::new(RefCell::new(Held {
+            cap: 1,
+            ..Default::default()
+        }));
+        let pool = Pool::new(Box::new(held.clone()));
+        pool.borrow_mut().set_focus(Some([16.0, 8.0, 16.0]));
+        let mut source = ChunkJobs(pool.clone());
+        source.generate([0, 0, 0], 1); // id 1, started at once
+        dwell_lod::SectionSource::lod_bounds(&mut source, 1, 0, 0); // id 2
+        source.generate([40, 0, 0], 2); // id 3: past NEAR_JOBS_M
+        source.generate([2, 0, 0], 3); // id 4
+        source.generate([1, 0, 0], 4); // id 5
+        for id in 1..=4 {
+            finish(&held, id);
+        }
+        let started = held.borrow().started.clone();
+        assert_eq!(
+            started,
+            vec![1, 5, 4, 2, 3],
+            "near nearest first, then in order"
         );
     }
 }

@@ -2986,7 +2986,8 @@ impl<S: Scene> Game<S> {
             let a = p.position[i] + p.render_offset[i];
             a + (c.position[i] + c.render_offset[i] - a) * alpha
         });
-        self.streamer.set_second_centre(self.respawn_preload());
+        let second = self.respawn_preload();
+        self.streamer.set_second_centre(second);
         let around = if c.active {
             center
         } else if self.dead {
@@ -2994,6 +2995,11 @@ impl<S: Scene> Game<S> {
         } else {
             [0.5, 64.0, 0.5]
         };
+        // The pool starts the jobs near the player first; with a second centre (the respawn
+        // preload) the streamer's and the LOD's own order rules, as queued.
+        self.pool
+            .borrow_mut()
+            .set_focus(second.is_none().then_some(around));
         // What is left of the frame's loading budget after the jobs taken in and the ticks.
         let budget = StreamBudget::for_frame(now() - self.frame_start_ms, dt * 1000.0);
         telemetry::span("mesh_dirty", || {

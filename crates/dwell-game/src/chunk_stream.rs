@@ -1007,8 +1007,21 @@ where
                     })
             })
             .collect();
-        // Stable: equal distances keep their order.
-        let mut keyed: Vec<((u8, f64), Coord)> = ready.into_iter().map(|c| (key(&c), c)).collect();
+        // Within each of those, without a second centre, a chunk in the server's view
+        // (VIEW_RADIUS_CHUNKS) not drawn yet goes before the re-meshes of chunks already drawn, which show their last mesh meanwhile
+        // (BUGS #54: on a long trip each chunk arriving re-meshed its drawn neighbours, and the
+        // chunks just come into the view, a level-1 section's partners of the near ring's, waited
+        // seconds behind them). Stable: equal distances keep their order.
+        let view = dwell_protocol::world::VIEW_RADIUS_CHUNKS as i32;
+        let mut keyed: Vec<((u8, f64), Coord)> = ready
+            .into_iter()
+            .map(|c| {
+                let (class, d) = key(&c);
+                let redraw =
+                    second.is_some() || self.meshed.contains(&c) || !in_sphere(c, me, view);
+                ((2 * class + u8::from(redraw), d), c)
+            })
+            .collect();
         keyed.sort_by(|a, b| order_of(&a.0, &b.0));
         let mut count = 0;
         for (_, c) in keyed {
