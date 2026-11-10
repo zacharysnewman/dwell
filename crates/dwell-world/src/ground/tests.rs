@@ -277,6 +277,39 @@ crate::both_faces!(
     }
 );
 
+crate::both_faces!(
+    /// The break action aimed at an item hits it, not the ground under it behind it (ADR 0071,
+    /// amended 2026-11-09); a block in front of it along the ray is hit instead.
+    fn the_break_action_hits_a_nearer_item_before_the_block_behind_it(f: FaceFrame) {
+        let w = Fixture::field(f, 8);
+        let kinds = [KINDS[1]];
+        let rules = [GroundRule {
+            kind: 0,
+            on: &["dwell:grass"],
+            under: None,
+            near_wall: None,
+            density: 1.0,
+        }];
+        let r = Rules::new(&kinds, &rules);
+        let cell = f.cell([4, G + 1, 4]);
+        let it = r.item_at(&mut w.get(), 2, cell).expect("an item");
+        let p = it.point();
+        let eye_local = [f.point(p)[0] - 2.0, f.point(p)[1] + 1.6, f.point(p)[2]];
+        let eye = f.point(eye_local);
+        let to: [f64; 3] = std::array::from_fn(|k| p[k] - eye[k]);
+        let len = to.iter().map(|v| v * v).sum::<f64>().sqrt();
+        let dir = to.map(|v| v / len);
+        // The grass the item lies on, which the ray reaches after it.
+        let under = f.cell([4, G, 4]);
+        assert!(r.hit_before(&it, eye, dir, Some(under)), "the item first");
+        assert!(r.hit_before(&it, eye, dir, None));
+        // A block halfway along the ray, in front of it.
+        let mid: [f64; 3] = std::array::from_fn(|k| eye[k] + dir[k] * len * 0.4);
+        let front = crate::cell_of_pos(mid);
+        assert!(!r.hit_before(&it, eye, dir, Some(front)), "the block first");
+    }
+);
+
 #[test]
 fn the_gone_set_round_trips_and_a_newer_record_is_not_read() {
     // both-faces: a byte format, no face.

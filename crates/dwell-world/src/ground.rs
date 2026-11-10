@@ -270,17 +270,60 @@ impl<'a> Rules<'a> {
         None
     }
 
-    /// Whether the ray meets the item's bounding sphere (a little generous: they are small).
-    fn hit(&self, it: &Placed, eye: [f64; 3], dir: [f64; 3], reach: f64) -> bool {
-        let Some(k) = self.kind(it.kind) else {
+    /// Whether the break action aimed along `dir` from `eye` hits the item `it` (the crosshair's,
+    /// from [`target`](Self::target)) rather than `block`, the cell the block targeting found (ADR
+    /// 0071, amended 2026-11-09): the item when it is nearer along the ray than where the ray
+    /// enters the block's cell, so a hit on a stick does not break the ground under it; with no
+    /// block, the item.
+    pub fn hit_before(
+        &self,
+        it: &Placed,
+        eye: [f64; 3],
+        dir: [f64; 3],
+        block: Option<[i32; 3]>,
+    ) -> bool {
+        let Some((c, _)) = self.sphere(it) else {
             return false;
         };
+        let along = (0..3).map(|i| (c[i] - eye[i]) * dir[i]).sum::<f64>();
+        let Some(block) = block else {
+            return true;
+        };
+        // The ray's entry into the block's cell (slabs).
+        let lo = crate::pos_of_cell(block);
+        let hi = [lo[0] + 1.0, lo[1] + crate::CELL_H, lo[2] + 1.0];
+        let (mut t0, mut t1) = (f64::NEG_INFINITY, f64::INFINITY);
+        for i in 0..3 {
+            if dir[i].abs() < 1e-12 {
+                if eye[i] < lo[i] || eye[i] > hi[i] {
+                    return true; // the ray misses the cell
+                }
+                continue;
+            }
+            let (a, b) = ((lo[i] - eye[i]) / dir[i], (hi[i] - eye[i]) / dir[i]);
+            t0 = t0.max(a.min(b));
+            t1 = t1.min(a.max(b));
+        }
+        t0 > t1 || along < t0.max(0.0)
+    }
+
+    /// The item's bounding sphere (world centre, radius m).
+    fn sphere(&self, it: &Placed) -> Option<([f64; 3], f64)> {
+        let k = self.kind(it.kind)?;
         let f = FaceFrame::at_row(it.cell[1]);
         let base = it.point();
         let up = f.up();
         let h = k.size[1] * it.scale / 2.0;
         let c: [f64; 3] = std::array::from_fn(|i| base[i] + up[i] * h);
         let r = k.size[0].max(k.size[2]) * it.scale / 2.0 + 0.08;
+        Some((c, r))
+    }
+
+    /// Whether the ray meets the item's bounding sphere (a little generous: they are small).
+    fn hit(&self, it: &Placed, eye: [f64; 3], dir: [f64; 3], reach: f64) -> bool {
+        let Some((c, r)) = self.sphere(it) else {
+            return false;
+        };
         let to: [f64; 3] = std::array::from_fn(|i| c[i] - eye[i]);
         let along = (0..3)
             .map(|i| to[i] * dir[i])
