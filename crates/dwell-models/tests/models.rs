@@ -253,7 +253,7 @@ fn the_wolf_is_the_dog_recoloured_grey_at_twice_its_size() {
     assert!(!wolf_rgb.contains(blue));
     let grey = wolf_rgb
         .iter()
-        .filter(|c| (c[0] - c[2]).abs() < 24 && (c[1] - c[2]).abs() < 24)
+        .filter(|c| c.iter().max().unwrap() - c.iter().min().unwrap() < 40)
         .count();
-    assert!(grey * 10 > wolf_rgb.len() * 8, "grey {grey} of {}", wolf_rgb.len());
+    assert!(grey * 10 > wolf_rgb.len() * 9, "grey {grey} of {}", wolf_rgb.len());
 }
