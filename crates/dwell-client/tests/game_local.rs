@@ -2356,3 +2356,117 @@ fn riding_a_raft_streams_the_terrain_ahead_and_drops_it_behind() {
         .collect();
     assert!(behind.is_empty(), "left behind and still drawn: {behind:?}");
 }
+
+/// BUGS #54's long trip (owner, 2026-11-09: "a long ways down a river at or greater than walking
+/// speed … for several minutes"): the player flies 8 m/s in a straight line for `seconds`, the
+/// workers finishing one job a poll, with the LOD on (the default desktop settings). Returns the
+/// longest wait (frames) of a chunk of the near ring (the 3 × 3 chunks of the ground's row around
+/// the player) to be drawn as a chunk after the first 20 s (the start's load), the frame and chunk, the distance
+/// flown, the chunks still drawn 14 or more behind, and a log every 30 s.
+fn long_trip(mut rig: Rig, seconds: u32) -> ((u32, u32, ChunkCoord), f64, usize, String) {
+    rig.jobs_per_poll = 1;
+    assert!(rig.run_until(60 * 30, |r| {
+        r.game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)
+    }));
+    rig.game
+        .as_mut()
+        .unwrap()
+        .enable_lod(dwell_client::game::LodSettings {
+            pixel_error: 4.0,
+            cache_bytes: 256 << 20,
+            detail_distance_m: Some(256.0),
+            full_mode: false,
+        });
+    rig.input.flight.set_allowed(true);
+    rig.input.flight.set(true);
+    rig.input.look.yaw = 90.0;
+    rig.input.look.pitch = 0.0;
+    // Up clear of the hills and trees, then on at that height.
+    rig.input.set_key("Space", true);
+    rig.run_until(90, |_| false);
+    rig.input.set_key("Space", false);
+    rig.input.set_key("KeyW", true);
+    let start = rig.game.as_ref().unwrap().debug_state().feet;
+    let mut waited: dwell_world::hash::HashMap<ChunkCoord, u32> = Default::default();
+    let mut worst = (0, 0, ChunkCoord::new(0, 0, 0));
+    let mut lines = Vec::new();
+    for t in 1..=60 * seconds {
+        rig.frame();
+        // The ground under the player (the first solid cell down, within 64 m).
+        let feet = rig.game.as_ref().unwrap().debug_state().feet;
+        let [x, z] = [feet[0].floor() as i32, feet[2].floor() as i32];
+        let top = dwell_world::row_of_m(feet[1]);
+        let air = dwell_world::M.air;
+        let Some(ground) = (top - 128..=top)
+            .rev()
+            .find(|&y| rig.game.as_mut().unwrap().voxel(x, y, z) != air)
+        else {
+            continue;
+        };
+        let game = rig.game.as_ref().unwrap();
+        let me = dwell_world::chunk_of(x, ground, z);
+        let ring: Vec<ChunkCoord> = (-1..=1)
+            .flat_map(|dx| (-1..=1).map(move |dz| ChunkCoord::new(me.x + dx, me.y, me.z + dz)))
+            .collect();
+        waited.retain(|c, _| ring.contains(c));
+        for c in ring {
+            if game.chunk_detail(c) == 0
+                || !rig.scene.borrow().chunks.contains(&c) && game.chunk_drawable(c.to_array())
+            {
+                // Drawn as a chunk (or all air: nothing to draw).
+                waited.remove(&c);
+            } else {
+                let n = waited.entry(c).or_insert(0);
+                *n += 1;
+                if t > 1200 && *n > worst.0 {
+                    worst = (*n, t, c);
+                }
+            }
+        }
+        if t % (60 * 30) == 0 {
+            let s = game.terrain_stats();
+            lines.push(format!(
+                "t {:>3}s x {:>6.0} loaded {} generating {} dirty {} meshing {} drawn {} worst {:?}",
+                t / 60,
+                feet[0],
+                s.loaded,
+                s.generating,
+                s.dirty,
+                s.meshing,
+                rig.scene.borrow().chunks.len(),
+                worst
+            ));
+        }
+    }
+    let feet = rig.game.as_ref().unwrap().debug_state().feet;
+    let me = dwell_world::chunk_of_pos(feet);
+    let behind = rig
+        .scene
+        .borrow()
+        .chunks
+        .iter()
+        .filter(|c| c.x < me.x - 14)
+        .count();
+    (worst, feet[0] - start[0], behind, lines.join("\n"))
+}
+
+/// The long trip over the flat test world: past ~1.1 km from the axis its LOD bounds read every
+/// column as outside the world (`flat_lod_bounds`), so the ground's sections were Empty and the
+/// chunks under the player were never drawn (red before the fix: a near chunk waited 720 frames).
+/// face-a-only: the flat test world is face A's; the streaming centre is a world point.
+#[test]
+fn a_long_trip_over_the_flat_world_keeps_the_near_ring_at_full_detail() {
+    let (worst, flown, behind, log) =
+        long_trip(Rig::with_generator(dwell_world::GENERATOR_FLAT), 180);
+    assert!(flown > 1_300.0, "flew {flown} m\n{log}");
+    assert!(
+        worst.0 <= 120,
+        "a near chunk waited {} frames to be drawn as a chunk (frame {}, {:?})\n{log}",
+        worst.0,
+        worst.1,
+        worst.2
+    );
+    assert_eq!(behind, 0, "left behind and still drawn\n{log}");
+}

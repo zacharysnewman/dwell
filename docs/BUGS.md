@@ -38,6 +38,25 @@ while refusing new near chunks; (3) memory/upload pressure growing with the trai
 scenario that travels several minutes down the seed-7 river at 4–6 m/s and logs the near ring's
 detail, the queue depth, the cache size and evictions over time.
 
+**Long trip natively (2026-11-10, 0.51.1):** `game_local.rs`'s `long_trip` flies the player 8 m/s in a
+straight line with the LOD on (default desktop settings: 256 MB, 256 m full detail) and the workers
+finishing one job a poll, and times how long each chunk of the near ring (3 × 3 around the player, the
+ground's row) waits to be drawn as a chunk. Over the **flat** world it was red: from ~1.1 km out every
+near chunk waited 12 s or for good, though meshed and in the scene. Cause: `flat_lod_bounds` judged a
+column inside the world by `in_world` of the column's *bottom* row, where the build sphere is only a
+few km across, so past ~1 km every column read as outside, its level-1 sections Empty and their chunks
+never shown (the LOD drew level 2 over them). Fixed in 0.51.1 (the disc test of the column's nearest
+point); tests `the_flat_worlds_ground_is_content_kilometres_from_the_axis` (dwell-worldgen) and
+`a_long_trip_over_the_flat_world_keeps_the_near_ring_at_full_detail` (red: 720 frames at x ≈ 1,290 m;
+green: none over 2 s in 1.4 km). Over that trip the streamer's load stayed flat (~1,480 chunks), the
+generation queue drained and nothing 14 chunks behind stayed drawn: leads (1)–(3) did not show there.
+**The generated terrain (the owner's river) is not affected by this cause** (its bounds come from its
+columns) and stays unreproduced: the same flight on `Rig::new()`'s terrain was blocked by a hill within
+50 m. Seen there at the start's load with one job a poll: a near chunk waited 15 s while 300–500 meshes
+and ~90 generations were queued — the pool's generation queue is FIFO (`pool.rs`), and a chunk is not
+meshed while a neighbour is still being generated, so lead (1) remains the suspect. Next: the long trip
+over terrain on a fixed path (teleport along a line, or a raft on a river) and the bench's river ride.
+
 ### 52. A felled trunk landing on its chopper can fling them far
 
 Owner, 2026-11-08: "we shouldn't be capping player kick like that" — "the cap is removed". 0.50.37's

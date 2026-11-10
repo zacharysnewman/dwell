@@ -532,12 +532,28 @@ pub fn flat_lod_bounds(level: i32, i: i32, k: i32) -> LodBounds {
             all_inside &= inside_world_disc(x, z);
         }
     }
+    // Some column (with the apron) inside the disc: the point of the box nearest the axis. (Not
+    // `in_world(c)`: `c` is the column's bottom row, where the build sphere is only a few km
+    // across, so columns past ~1 km read as outside — BUGS #54.)
+    let nearest = |lo: i64, hi: i64| {
+        if lo > 0 {
+            lo
+        } else if hi < 0 {
+            hi
+        } else {
+            0
+        }
+    };
+    let any_inside = inside_world_disc(
+        nearest(o.x - cell, o.x + s + cell),
+        nearest(o.z - cell, o.z + s + cell),
+    );
     let top = f64::from(FLAT_TOP_Y); // rows, as the bounds are
     LodBounds {
         hi: top - 1.0,
         lo: if all_inside { top } else { f64::NEG_INFINITY },
         bifacial: false,
-        any_inside: in_world(c),
+        any_inside,
         ..LodBounds::default()
     }
 }
