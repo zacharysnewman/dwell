@@ -8,10 +8,13 @@
 // Opted out for testing with `?loading=off` or the `dwell.loading` store set to "off" (the e2e
 // suite's storage does), it never shows. While it waits it lists the start's stages as they run,
 // each with its time (`StageTracker`, loadingStages.ts; shared/look/loading.json `stages`), so a
-// slow one shows rather than the screen looking hung; the headline and the bar follow the latest.
+// slow one shows rather than the screen looking hung; the headline follows the latest. The bar is a
+// time estimate for this device (loadingEstimate.ts): it fills by elapsed / (elapsed + left), reads
+// "About N s", and at its hold point short of full a shimmer runs along it until the screen opens.
 import type { KeyValueStore } from '../local/worldIndex';
 import { LOADING_FADE } from './loading.gen';
-import { PERFORMANCE_MARKS, StageTracker, stageFraction, stagesFromHud } from './loadingStages';
+import { BarFill, SecondsLabel, estimate, type DeviceRead } from './loadingEstimate';
+import { PERFORMANCE_MARKS, StageTracker, stagesFromHud } from './loadingStages';
 
 /** The dev store that turns the screen off ("off"); anything else, or nothing, leaves it on. */
 export const LOADING_KEY = 'dwell.loading';
@@ -144,6 +147,14 @@ export class LoadingScreen {
   private readonly text: HTMLDivElement;
   private readonly bar: HTMLDivElement;
   private readonly fill: HTMLDivElement;
+  private readonly eta: HTMLDivElement;
+  private readonly barFill = new BarFill();
+  private readonly label = new SecondsLabel();
+  private barAtMs: number | null = null;
+  /** The device as read at the start (the estimate's opening guess); the adapter set later. */
+  device: DeviceRead = { phone: false, cpuAdapter: false, workers: 4 };
+  /** Joining a server: the local world's stages are not to come. */
+  remote = false;
   private readonly list: HTMLOListElement;
   private readonly flow: LoadingFlow;
   private readonly reducedMotion: boolean;
@@ -188,11 +199,14 @@ export class LoadingScreen {
     this.fill.className = 'ls-fill';
     this.fill.style.width = '0%';
     this.bar.append(this.fill);
+    // The time left as estimated ("About 4 s"), hidden under a second.
+    this.eta = document.createElement('div');
+    this.eta.className = 'ls-eta';
     // The stages so far, each with its time (read by the screen, not announced line by line).
     this.list = document.createElement('ol');
     this.list.className = 'ls-stages';
     this.list.setAttribute('aria-hidden', 'true');
-    sheet.append(title, this.text, this.bar, this.list);
+    sheet.append(title, this.text, this.bar, this.eta, this.list);
     this.root.append(sheet);
     parent.append(this.root);
     this.draw(1);
@@ -207,6 +221,7 @@ export class LoadingScreen {
   /** The adapter is a CPU (software) one: the quick fade. */
   setCpuAdapter(cpu: boolean): void {
     this.flow.durationS = fadeDurationS(LOADING_FADE, cpu, this.reducedMotion);
+    this.device = { ...this.device, cpuAdapter: cpu };
   }
 
   /** The latest frame's loading state (`Client.hud()`); `nowMs` the frame's clock. */
@@ -217,6 +232,9 @@ export class LoadingScreen {
     if (this.flow.openings !== before) {
       // Opened: this wait's stages end (a respawn's wait lists its own).
       this.stages.clear(nowMs);
+      this.barFill.reset();
+      this.label.reset();
+      this.barAtMs = null;
       this.onOpen?.();
     }
     this.draw(opacity);
@@ -242,22 +260,42 @@ export class LoadingScreen {
       }
     }
     this.root.style.opacity = phase === 'fading' ? opacity.toFixed(3) : '';
+    // Opened: the bar completes under the fade.
+    if (phase === 'fading') {
+      this.fill.style.width = '100%';
+      this.bar.classList.remove('ls-holding');
+    }
     if (phase === 'waiting') this.drawStages(performance.now());
   }
 
-  /** The headline (the running stage), the bar (its progress) and the list, at `nowMs`. */
+  /** The bar and the time left at `nowMs`: the estimate, eased; the shimmer at the hold point. */
+  private drawBar(nowMs: number): void {
+    const e = estimate({
+      runs: this.stages.runsNow(),
+      history: this.stages.history,
+      device: this.device,
+      remote: this.remote,
+      nowMs,
+    });
+    const dtS = this.barAtMs === null ? 0 : (nowMs - this.barAtMs) / 1000;
+    this.barAtMs = nowMs;
+    const shown = this.barFill.update(e, dtS);
+    this.fill.style.width = `${(shown * 100).toFixed(1)}%`;
+    this.bar.classList.toggle('ls-holding', this.barFill.holding);
+    this.eta.textContent = this.label.update(e.leftS, nowMs);
+  }
+
+  /** The headline (the running stage), the bar (the estimate) and the list, at `nowMs`. */
   private drawStages(nowMs: number): void {
     if (this.flow.phase !== 'waiting') return;
+    this.drawBar(nowMs);
     const lines = this.stages.lines(nowMs);
     const current = this.stages.current();
     const head = lines.find((l) => l.id === current?.id);
-    const fraction = stageFraction(current);
     const key = lines.map((l) => `${l.text}|${l.progress}|${l.time}|${String(l.slow)}`).join(';');
     if (key === this.shown) return;
     this.shown = key;
     if (head) this.text.textContent = head.progress ? `${head.text} ${head.progress}` : head.text;
-    this.bar.classList.toggle('ls-indeterminate', fraction === null);
-    this.fill.style.width = fraction === null ? '' : `${(fraction * 100).toFixed(1)}%`;
     // The list, its rows kept and updated in place.
     while (this.list.children.length > lines.length) this.list.lastElementChild?.remove();
     lines.forEach((l, i) => {
@@ -288,5 +326,10 @@ export class LoadingScreen {
 
   get phase(): LoadingPhase {
     return this.flow.phase;
+  }
+
+  /** The bar's state (the bench and `__dwell`): its fill, the label, and whether it holds. */
+  get barState(): { fill: number; label: string; holding: boolean } {
+    return { fill: this.barFill.shown, label: this.eta.textContent, holding: this.barFill.holding };
   }
 }

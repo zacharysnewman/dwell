@@ -15,6 +15,39 @@
     "cpuDurationS": 0.2,
     "reducedMotionDurationS": 0
   },
+  "estimate": {
+    "$comment": "The bar as a per-device time estimate (owner, 2026-11-10: \"the map loading progress bar speed should be a best guess for how long it will take to load the game on the current device … When it reaches the end, it keeps visually showing it's doing stuff … I'd rather we estimate this somehow without a previous run\"; ARCHITECTURE.md §6.3). No history is stored: the time left is the work still to do (the stages not yet ended, in the list's order) at the rates measured as it runs (client/src/ui/loadingEstimate.ts). Before a stage measures anything its cost is an opening guess: baseS seconds plus perItemS for each of its items (totalGuess of them until the total is known; the terrain's is the near ring's chunk count), divided by the workers where perWorker, on the reference desktop (device.referenceCores cores, a GPU) and scaled by the device read at the start: × referenceCores / cores (clamped to [minFactor, maxFactor]), × phoneFactor on a phone, × lowMemoryFactor under lowMemoryGB of memory (where the browser says), × cpuFactor on a CPU (software) adapter. The opening guesses were set from a fresh local world on an 8-core Mac (2026-11-10). A 'network' stage is not scaled by the device; its bytes come at bytesPerS until measured. Measured: a count stage's time per item (blended in over its first minSamples), a bytes stage's download rate, and each ended device stage's time against its guess rescales the guesses still to come (that ratio to calibrationPower, damped so one slow stage does not swing the rest; within [0.25, 8]). local: run only for a world on this device (not when joining a server); remote: only when joining one. A running stage without progress past its guess has overrunFraction of its time again left. The bar fills by elapsed / (elapsed + left), eased over easeS, never backward, holding at holdFraction until the screen opens, where a shimmer runs along it (a pulse with prefers-reduced-motion). The label reads \"About N s\" (whole seconds; steps of 5 above roundAboveS), changing at most every labelEveryS and only when the estimate moved by labelHysteresisS or labelHysteresisFraction of itself, whichever is more; hidden under hideBelowS.",
+    "holdFraction": 0.95,
+    "easeS": 0.5,
+    "labelEveryS": 0.5,
+    "labelHysteresisS": 0.75,
+    "labelHysteresisFraction": 0.2,
+    "hideBelowS": 1,
+    "roundAboveS": 10,
+    "minSamples": 16,
+    "calibrationPower": 0.25,
+    "overrunFraction": 0.2,
+    "device": {
+      "referenceCores": 8,
+      "minFactor": 0.6,
+      "maxFactor": 3,
+      "phoneFactor": 2,
+      "lowMemoryGB": 4,
+      "lowMemoryFactor": 1.4,
+      "cpuFactor": 4
+    },
+    "stages": {
+      "game": { "scales": "network", "baseS": 0.2, "totalGuess": 9000000, "bytesPerS": 4000000 },
+      "graphics": { "scales": "device", "baseS": 0.4 },
+      "worldFile": { "scales": "device", "baseS": 1.5, "local": true },
+      "worldMap": { "scales": "device", "baseS": 0.3, "totalGuess": 2, "perItemS": 1 },
+      "server": { "scales": "device", "baseS": 0.3, "local": true },
+      "spawn": { "scales": "device", "baseS": 4, "local": true },
+      "connect": { "scales": "network", "baseS": 1, "remote": true },
+      "join": { "scales": "device", "baseS": 0.4 },
+      "terrain": { "scales": "device", "baseS": 0.4, "perItemS": 0.1, "perWorker": true }
+    }
+  },
   "stages": {
     "$comment": "What the loading screen lists while the game starts, before and while the terrain counts (owner, 2026-11-06: \"there's often quite a long delay before loading starts counting up … I'd like to quantify whatever is loading before that and show it, so it doesn't just look hung\"; ARCHITECTURE.md §6.3). Each stage is reported by code by its id (`StageTracker.begin/progress/end`, client/src/ui/loadingStages.ts; the local world's worker posts its own, and the Rust client's readout names its stage: 'worldMap', 'join', 'terrain'). The screen lists the stages begun so far in the order they began: the label, the progress where the stage has one ('bytes': downloaded, of the total when known; 'count': done / total, which also fills the bar) and its time, the running one counting up. id: lowerCamel, unique; label: what the player reads, at most 32 characters (phones), no trailing ellipsis (the screen adds one while it runs). A stage nobody reports is never shown. slowS: a stage running longer than this is marked slow.",
     "slowS": 3,

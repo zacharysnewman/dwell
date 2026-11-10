@@ -28,7 +28,7 @@ const fail = (m) => {
 /** Checks the tunables; returns them. Throws naming the entry. */
 export function validateLoading(data, viewRadius = VIEW_RADIUS_CHUNKS) {
   if (typeof data !== 'object' || data === null || Array.isArray(data)) fail('(root) must be an object');
-  const keys = ['radiusChunks', 'timeoutS', 'respawnPreload', 'fade', 'stages'];
+  const keys = ['radiusChunks', 'timeoutS', 'respawnPreload', 'fade', 'estimate', 'stages'];
   for (const k of Object.keys(data)) if (k !== '$comment' && !keys.includes(k)) fail(`unknown entry ${k}`);
   for (const k of keys) if (!(k in data)) fail(`missing entry ${k}`);
   const r = data.radiusChunks;
@@ -44,6 +44,7 @@ export function validateLoading(data, viewRadius = VIEW_RADIUS_CHUNKS) {
   validateRespawnPreload(data.respawnPreload, viewRadius);
   validateFade(data.fade);
   validateStages(data.stages);
+  validateEstimate(data.estimate, data.stages);
   return data;
 }
 
@@ -129,6 +130,134 @@ function validateStages(st) {
   });
 }
 
+/** The near ring's chunk count: chunks c with |c|² ≤ r² + r (the server's view sphere). */
+export function ringChunks(r) {
+  let n = 0;
+  for (let x = -r; x <= r; x++) {
+    for (let y = -r; y <= r; y++) {
+      for (let z = -r; z <= r; z++) if (x * x + y * y + z * z <= r * r + r) n++;
+    }
+  }
+  return n;
+}
+
+/** estimate's numbers: [min, max]. */
+const ESTIMATE = {
+  holdFraction: [0.5, 0.995],
+  easeS: [0, 5],
+  labelEveryS: [0, 5],
+  labelHysteresisS: [0, 10],
+  labelHysteresisFraction: [0, 1],
+  hideBelowS: [0, 10],
+  roundAboveS: [1, 600],
+  minSamples: [1, 1000],
+  calibrationPower: [0, 1],
+  overrunFraction: [0, 2],
+};
+const DEVICE = {
+  referenceCores: [1, 128],
+  minFactor: [0.1, 1],
+  maxFactor: [1, 20],
+  phoneFactor: [0.1, 20],
+  lowMemoryGB: [0, 64],
+  lowMemoryFactor: [0.1, 20],
+  cpuFactor: [0.1, 50],
+};
+/** A stage's estimate numbers: [min, max]. */
+const STAGE_COST = { baseS: [0, 120], perItemS: [0, 60], totalGuess: [0, 1e10], bytesPerS: [1, 1e10] };
+/** What scales a stage's opening guess: the device read, or nothing (the network). */
+export const STAGE_SCALES = ['device', 'network'];
+
+function numbers(obj, spec, at) {
+  for (const [k, [lo, hi]] of Object.entries(spec)) {
+    if (!(k in obj)) fail(`missing entry ${at}.${k}`);
+    const v = obj[k];
+    if (typeof v !== 'number' || !Number.isFinite(v) || v < lo || v > hi) {
+      fail(`${at}.${k} must be a number in [${lo}, ${hi}], got ${JSON.stringify(v)}`);
+    }
+  }
+}
+
+const isObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/** Checks the bar's time estimate (`estimate`) against the stages. Throws naming the entry. */
+function validateEstimate(e, stages) {
+  if (!isObject(e)) fail('estimate must be an object');
+  const keys = [...Object.keys(ESTIMATE), 'device', 'stages'];
+  for (const k of Object.keys(e)) if (k !== '$comment' && !keys.includes(k)) fail(`unknown entry estimate.${k}`);
+  numbers(e, ESTIMATE, 'estimate');
+  if (!Number.isInteger(e.minSamples)) fail(`estimate.minSamples must be a whole number, got ${e.minSamples}`);
+  const d = e.device;
+  if (!isObject(d)) fail('estimate.device must be an object');
+  for (const k of Object.keys(d)) if (k !== '$comment' && !(k in DEVICE)) fail(`unknown entry estimate.device.${k}`);
+  numbers(d, DEVICE, 'estimate.device');
+  const st = e.stages;
+  if (!isObject(st)) fail('estimate.stages must be an object');
+  const defs = new Map(stages.list.map((s) => [s.id, s]));
+  for (const [id, c] of Object.entries(st)) {
+    if (id === '$comment') continue;
+    const at = `estimate.stages.${id}`;
+    const def = defs.get(id);
+    if (!def) fail(`${at}: no stage ${id} in stages.list`);
+    if (!isObject(c)) fail(`${at} must be an object`);
+    for (const k of Object.keys(c)) {
+      if (!(k in STAGE_COST) && !['scales', 'local', 'remote', 'perWorker'].includes(k)) fail(`unknown entry ${at}.${k}`);
+    }
+    if (!STAGE_SCALES.includes(c.scales)) {
+      fail(`${at}.scales must be one of ${STAGE_SCALES.join(', ')}, got ${JSON.stringify(c.scales)}`);
+    }
+    numbers(c, { baseS: STAGE_COST.baseS }, at);
+    for (const k of ['perItemS', 'totalGuess', 'bytesPerS']) if (k in c) numbers(c, { [k]: STAGE_COST[k] }, at);
+    for (const k of ['local', 'remote', 'perWorker']) {
+      if (k in c && typeof c[k] !== 'boolean') fail(`${at}.${k} must be true or false, got ${JSON.stringify(c[k])}`);
+    }
+    if (c.local && c.remote) fail(`${at}: local and remote cannot both be set`);
+    if (!def.progress && ('perItemS' in c || 'totalGuess' in c || 'bytesPerS' in c)) {
+      fail(`${at}: perItemS, totalGuess and bytesPerS need a stage with progress`);
+    }
+    if (def.progress === 'bytes' && !('bytesPerS' in c && 'totalGuess' in c)) {
+      fail(`${at}: a bytes stage needs bytesPerS and totalGuess`);
+    }
+    if (def.progress === 'bytes' && 'perItemS' in c) fail(`${at}: a bytes stage takes bytesPerS, not perItemS`);
+    if (def.progress === 'count' && !('perItemS' in c)) fail(`${at}: a count stage needs perItemS`);
+  }
+}
+
+/** The bar's time estimate's tunables (TypeScript lines). */
+function estimateTs(data) {
+  const e = data.estimate;
+  const out = [
+    "/** A stage's opening cost on the reference desktop (shared/look/loading.json `estimate.stages`). */",
+    'export interface LoadingStageCost {',
+    "  scales: 'device' | 'network';",
+    '  baseS: number;',
+    '  perItemS?: number;',
+    '  totalGuess?: number;',
+    '  bytesPerS?: number;',
+    '  local?: boolean;',
+    '  remote?: boolean;',
+    '  perWorker?: boolean;',
+    '}',
+    '',
+    "/** The loading bar's per-device time estimate (ARCHITECTURE.md §6.3). */",
+    'export const LOADING_ESTIMATE = {',
+    ...Object.keys(ESTIMATE).map((k) => `  ${k}: ${e[k]},`),
+    `  device: { ${Object.keys(DEVICE).map((k) => `${k}: ${e.device[k]}`).join(', ')} },`,
+    `  /** The near ring's chunks (radiusChunks ${data.radiusChunks}): the terrain's count. */`,
+    `  ringChunks: ${ringChunks(data.radiusChunks)},`,
+    '  stages: {',
+  ];
+  for (const [id, c] of Object.entries(e.stages)) {
+    if (id === '$comment') continue;
+    const fields = ['scales', 'baseS', 'perItemS', 'totalGuess', 'bytesPerS', 'local', 'remote', 'perWorker']
+      .filter((k) => k in c)
+      .map((k) => `${k}: ${typeof c[k] === 'string' ? `'${c[k]}'` : c[k]}`);
+    out.push(`    ${id}: { ${fields.join(', ')} },`);
+  }
+  out.push('  } as Partial<Record<LoadingStageId, LoadingStageCost>>,', '};', '');
+  return out;
+}
+
 const rf = (v) => (Number.isInteger(v) ? `${v}.0` : `${v}`);
 
 /** The Rust source for validated tunables. */
@@ -201,6 +330,7 @@ export function loadingTs(data) {
     '/** A stage running longer than this (s) is marked slow. */',
     `export const LOADING_STAGE_SLOW_S = ${data.stages.slowS};`,
     '',
+    ...estimateTs(data),
   ].join('\n');
 }
 

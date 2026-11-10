@@ -3173,6 +3173,7 @@ body.loading-wait #brush-panel {
 }
 
 .ls-bar {
+  position: relative;
   height: 10px;
   overflow: hidden;
   border-radius: 999px;
@@ -3187,29 +3188,52 @@ body.loading-wait #brush-panel {
   transition: width 120ms linear;
 }
 
-/* A stage without a known total: a band sweeping the bar, so the screen never looks stopped. */
-.ls-bar.ls-indeterminate .ls-fill {
-  width: 30%;
-  transition: none;
-  animation: ls-sweep 1.4s ease-in-out infinite;
+/* At the hold point short of full (ui/loadingEstimate.ts) while the game is not ready yet: a light
+   band moving along the bar, so it keeps visibly working. */
+.ls-bar.ls-holding::after {
+  position: absolute;
+  inset: 0;
+  width: 35%;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 60%), transparent);
+  animation: ls-shimmer 1.3s ease-in-out infinite;
+  content: '';
 }
 
-@keyframes ls-sweep {
+@keyframes ls-shimmer {
   from {
     transform: translateX(-100%);
   }
 
   to {
-    transform: translateX(340%);
+    transform: translateX(290%);
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .ls-bar.ls-indeterminate .ls-fill {
-    width: 100%;
-    opacity: 0.35;
-    animation: none;
+@keyframes ls-pulse {
+  50% {
+    opacity: 0.55;
   }
+}
+
+/* Reduced motion: a gentle pulse of the fill instead of the moving band. */
+@media (prefers-reduced-motion: reduce) {
+  .ls-bar.ls-holding::after {
+    content: none;
+  }
+
+  .ls-bar.ls-holding .ls-fill {
+    animation: ls-pulse 2s ease-in-out infinite;
+  }
+}
+
+/* The time left as estimated: "About 4 s" (empty under a second). */
+.ls-eta {
+  min-height: 1.4em;
+  margin: 8px 0 0;
+  color: var(--ink-soft);
+  font: 600 13px/1.4 var(--font-body);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 /* The start's stages so far (ui/loadingStages.ts): name, progress, time; the running one in ink. */
