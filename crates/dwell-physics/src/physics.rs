@@ -109,6 +109,10 @@ pub struct PieceCell {
     pub mass: f64,
     /// What it collides with.
     pub collide: Collide,
+    /// A shaped cell (Phase 55 T2: a felled trunk's upside-down wood ramp): its collider is the
+    /// convex hull of this state's shape (`dwell_blocks::shape`) over the box, not the box. None:
+    /// the box. A shaped cell is never merged with its neighbours.
+    pub hull: Option<dwell_blocks::StateId>,
 }
 
 /// What a falling piece's cell collides with (docs/FELLING.md §3).
@@ -709,12 +713,20 @@ pub fn merged_boxes(cells: &[PieceCell]) -> Vec<PieceCell> {
     };
     let mut grid: HashMap<(Kind, [i64; 3]), usize> = HashMap::default();
     for (k, c) in cells.iter().enumerate() {
-        grid.insert((kind(c), index(c)), k);
+        if c.hull.is_none() {
+            grid.insert((kind(c), index(c)), k);
+        }
     }
     let mut used = vec![false; cells.len()];
     let mut out = Vec::new();
     for (k, c) in cells.iter().enumerate() {
         if used[k] {
+            continue;
+        }
+        if c.hull.is_some() {
+            // Shaped: its own collider, never merged.
+            used[k] = true;
+            out.push(*c);
             continue;
         }
         let (kd, [x0, y0, z0]) = (kind(c), index(c));
@@ -746,6 +758,7 @@ pub fn merged_boxes(cells: &[PieceCell]) -> Vec<PieceCell> {
             half: c.half * n,
             mass: c.mass * n.x * n.y * n.z,
             collide: c.collide,
+            hull: None,
         });
     }
     out
@@ -770,13 +783,46 @@ fn piece_collider(c: &PieceCell) -> Collider {
     // Each face drawn in by PIECE_SKIN, so pieces side by side (and a piece beside a wall) don't
     // touch until they move together.
     let half = (c.half - DVec3::splat(PIECE_SKIN)).max(c.half * 0.5);
-    ColliderBuilder::cuboid(half.x, half.y, half.z)
+    let hull = c.hull.and_then(|m| {
+        let pts = shape_hull_points(m, half);
+        ColliderBuilder::convex_hull(&pts)
+    });
+    hull.unwrap_or_else(|| ColliderBuilder::cuboid(half.x, half.y, half.z))
         .translation(c.center)
         .mass(c.mass)
         .friction(PIECE_FRICTION)
         .restitution(0.05)
         .collision_groups(groups)
         .build()
+}
+
+/// The hull a piece cell of state `m` collides as (`PieceCell::hull`): its shape when that is a
+/// convex shape other than the full cube (a ramp), else none (the box).
+pub fn piece_hull(m: dwell_blocks::StateId) -> Option<dwell_blocks::StateId> {
+    let s = dwell_blocks::shape::shape_of(m);
+    let cube = s.corners == [2, 2, 2, 2] && s.min_y == 0.0 && s.max_y == 1.0;
+    (s.convex && s.face_count > 0 && !cube && dwell_blocks::try_info(m).is_some_and(|i| i.solid))
+        .then_some(m)
+}
+
+/// The corners of state `m`'s shape (its faces' points, fractions of the cell) over a box of
+/// half-extents `half` about the origin: a shaped piece cell's convex hull (`PieceCell::hull`).
+pub fn shape_hull_points(m: dwell_blocks::StateId, half: DVec3) -> Vec<DVec3> {
+    let shape = dwell_blocks::shape::shape_of(m);
+    let mut out: Vec<DVec3> = Vec::new();
+    for f in dwell_blocks::shape::faces_of(shape) {
+        for p in &f.v[..usize::from(f.count)] {
+            let q = DVec3::new(
+                (f64::from(p[0]) * 2.0 - 1.0) * half.x,
+                (f64::from(p[1]) * 2.0 - 1.0) * half.y,
+                (f64::from(p[2]) * 2.0 - 1.0) * half.z,
+            );
+            if !out.iter().any(|o| (*o - q).length() < 1e-9) {
+                out.push(q);
+            }
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -789,10 +835,34 @@ mod piece_box_tests {
             half: DVec3::new(0.5, 0.25, 0.5),
             mass,
             collide,
+            hull: None,
         }
     }
 
     // face-a-only: the boxes are in the piece's own frame, which has no up.
+    #[test]
+    fn a_shaped_piece_cell_is_its_own_convex_hull_never_merged() {
+        let ramp = dwell_blocks::parse_state("dwell:log_ramp[facing=west,half=top,shape=ramp]")
+            .expect("the wood ramp");
+        let mut cells = vec![
+            cell(0.0, 0.0, 0.0, 100.0, Collide::All),
+            cell(0.0, 1.0, 0.0, 100.0, Collide::All),
+        ];
+        cells[0].hull = piece_hull(ramp);
+        let merged = merged_boxes(&cells);
+        assert_eq!(
+            merged.len(),
+            2,
+            "the shaped cell is not merged with the box above"
+        );
+        let c = piece_collider(&merged[0]);
+        assert!(
+            c.shape().as_convex_polyhedron().is_some(),
+            "a hull, not a box"
+        );
+        assert!(piece_collider(&merged[1]).shape().as_cuboid().is_some());
+    }
+
     #[test]
     fn a_pieces_cells_merge_into_fewer_boxes_of_the_same_mass_and_extent() {
         // 2026-11-06: a box per cell made a 1.5 m sand column three colliders, each touching the

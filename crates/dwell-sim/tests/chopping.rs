@@ -137,7 +137,8 @@ fn swings_to_fell(
 ) -> Option<usize> {
     for i in 0..limit {
         at_trunk(fx, f, band_of(i), vertical);
-        if cell_is(fx, f, [3, AT, 0]) == M.air {
+        // Felled: the log is gone (the stump's wedge in its place, Phase 55 T2).
+        if cell_is(fx, f, [3, AT, 0]) != log(f, "y") {
             return Some(i + 1);
         }
     }
@@ -149,23 +150,75 @@ dwell_world::both_faces!(
         let mut fx = scene(f, "adventure", true);
         let n = swings_to_fell(&mut fx, f, false, 20, |i| i % 2).expect("felled");
         assert!((8..=12).contains(&n), "{n} swings");
-        // The trunk above the cut is a piece, tipping toward the notch (−x, the player's side
-        // at x = 0.5): the uncut +x side is the hinge, as in real felling (owner, 2026-11-08).
+        // Phase 55 T2 (owner, 2026-11-09): the stump keeps the wood ramp rising away from the
+        // notch (the notch on −x, the player's side at x = 0.5; the uncut +x side the hinge), the
+        // trunk's new bottom is the upside-down ramp (the log's `fellWedge`, data), reaching down at
+        // the hinge: the notch's upper face, the two meeting on the hinge's edge.
+        let wood = dwell_protocol::chopping::wood("dwell:log").expect("log");
+        let (stump, top) = dwell_sim::felling::fell_wedges(
+            wood.fell_wedge.expect("the log's wedge"),
+            [-1.0, 0.0],
+            dwell_sim::felling::WedgeTrunk::Open,
+        )
+        .expect("the log's wedges");
+        assert_eq!(
+            cell_is(&mut fx, f, [3, AT, 0]),
+            f.state(stump),
+            "the stump's wedge"
+        );
+        let prop = dwell_blocks::state_property;
+        assert_eq!(
+            (prop(stump, "facing"), prop(stump, "half")),
+            (Some("west"), Some("bottom")),
+            "facing (falling toward) −x, the notch: rising away from it"
+        );
+        assert_eq!(
+            (prop(top, "facing"), prop(top, "half")),
+            (Some("west"), Some("top")),
+            "upside down, reaching down at the hinge"
+        );
         let sent = fx.take(1);
-        let id = sent
+        let spawn = sent
             .iter()
             .find_map(|(m, _)| match m {
-                Message::EntitySpawn(s) => Some(s.id),
+                Message::EntitySpawn(s) => Some(s.clone()),
                 _ => None,
             })
             .expect("a piece spawned");
-        for _ in 0..40 {
+        // Its bottom cell (face-local lowest) is the upside-down wedge.
+        let up = f.up()[1].signum() as i16;
+        let bottom = spawn
+            .cells
+            .iter()
+            .min_by_key(|c| c.offset[1] * up)
+            .expect("cells");
+        assert_eq!(
+            bottom.state,
+            f.state(top),
+            "the trunk's bottom is the inverted wedge"
+        );
+        // Released with no push (no scripted tip): the slanted contact alone tips it toward the
+        // notch (−x), and within four seconds it is down (leaning past 60°) on that side.
+        // A matching (parallel) wedge stood on the slope; a two-cell 45° one slid toward the
+        // notch and toppled back over the hinge (`WedgeTrunk`).
+        let id = spawn.id;
+        let mut lean = [0.0; 3];
+        let mut ticks = 0;
+        for _ in 0..4 * 60 {
             fx.server.step();
+            ticks += 1;
+            let Some((_, q)) = fx.server.body_pose(id) else {
+                break;
+            };
+            lean = f.vector((q * dwell_physics::DVec3::from(f.up())).to_array());
+            if lean[1] < 0.5 {
+                break;
+            }
         }
-        let (_, q) = fx.server.body_pose(id).expect("still falling");
-        let up = q * dwell_physics::DVec3::from(f.up());
-        let lean = f.vector(up.to_array());
-        assert!(lean[0] < -0.2, "leans toward −x, the notch: {lean:?}");
+        println!("{f:?}: lean {lean:?} after {ticks} ticks");
+        assert!(lean[1] < 0.5, "down within 4 s: {lean:?}");
+        assert!(lean[0] < -0.8, "toward −x, the notch: {lean:?}");
+        assert!(lean[2].abs() < 0.2, "not sideways: {lean:?}");
         // The stump stays; the client heard the cut and then its end.
         assert_ne!(cell_is(&mut fx, f, [3, AT - 1, 0]), M.air);
         assert!(

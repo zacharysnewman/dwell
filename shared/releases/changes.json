@@ -6,7 +6,8 @@
       "changes": [
         "A new compatibility line: worlds from 0.50 open after a warning.",
         "Tree trunks and logs are octagons now, round to the eye and to your feet: you slide off a lone log's corner.",
-        "Logs placed side by side join flat, full width where they meet, so log walls and piles stay smooth."
+        "Logs placed side by side join flat, full width where they meet, so log walls and piles stay smooth.",
+        "A felled tree leaves a sloped stump and tips over into the notch you cut, pivoting on the uncut side."
       ]
     },
     {

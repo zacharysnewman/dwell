@@ -2741,7 +2741,12 @@ along the look, toggled by Use with the axe held) and the grain, face-locally th
 both bands cut past the notch take the chunk out. The server (`dwell-sim` `server/chopping.rs`)
 checks the aimed hit (the client's ray into the cell: the face and point), keeps the cuts (saved in
 `cuts`), fells a standing wood cut past its fell fraction (its cell goes and FELLING's integrity
-tips what it held toward the notch, the uncut side its hinge, as real felling falls) and bucks a
+tips what it held toward the notch, the uncut side its hinge, as real felling falls; **[built,
+0.51.0]** a wood with a `fellWedge`, the log's `dwell:log_ramp`, splits instead: the stump keeps a
+wood ramp facing the notch, the log above becomes the trunk's upside-down ramp meeting it on the
+hinge's edge, and the trunk is released with no push, tipping into the notch by physics alone;
+ADR 0067 §5a, `felling::fell_wedges`; a piece's shaped cell collides as its shape's convex hull,
+`PieceCell::hull`) and bucks a
 lying one cut through (its cell goes; in a mode that uses items it drops its wood items). The
 client (`dwell-client` `chop.rs`) sends the swings, keeps the cuts and shows the swing in the HUD;
 the axe is held from the inventory in adventure or from the creative hotbar (`items.json`'s
@@ -3067,7 +3072,8 @@ Triggered when the server registers an explosion, a block removal, or a structur
 5. **Tier classification** (§7.2) by block count and materials.
 6. **Awakening (Tier 1 only).** One Rapier body per cluster (`dwell-physics`):
    - Shape: a compound collider of cuboids, the cells merged into boxes (built for felling,
-     0.49.29, above).
+     0.49.29, above); a shaped cell (a stored ramp, e.g. a felled trunk's upside-down wood ramp) is
+     its shape's convex hull, never merged (`PieceCell::hull`, 0.51.0).
    - Mass / center of mass / inertia from per-voxel material density.
    - Inherits impulse from the triggering explosion, if any.
    - Assigned a `NetworkEntityID` (`uint32`, never reused within a session) and added to the

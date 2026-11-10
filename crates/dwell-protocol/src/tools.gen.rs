@@ -5,15 +5,16 @@ use crate::inventory::{DropChoice, DropRule};
 
 /// The tools, by item name.
 pub static TOOLS: &[ToolDef] = &[
-    ToolDef { name: "dwell:stone_axe", kind: ToolKind::Axe, held: Some("stone_axe"), swing_seconds: 0.45, bite_m: 0.12, bind_m: 0.05, across: 1.0, along: 0.15, sharpness: 2.0, held_vertical: Some("stone_axe_vertical"), swing: SwingDef { windup_s: 0.12, active_s: 0.14, hit_stop_s: 0.08, recover_hit_s: 0.22, recover_miss_s: 0.36, reach_m: 2.2, arc_deg: 110.0, samples: 12, kick_deg: 1.6, stamina_cost: 8.0, swish: Some("axe_swish"), bounce: Some("axe_clank"), rustle: Some("axe_rustle"), rustle_leaves: 5 }, clears: &["dwell:leaves", "dwell:snowy_leaves"] },
+    ToolDef { name: "dwell:stone_axe", kind: ToolKind::Axe, held: Some("stone_axe"), swing_seconds: 0.45, bite_m: 0.12, bind_m: 0.05, across: 1.0, along: 0.15, sharpness: 2.0, held_vertical: Some("stone_axe_vertical"), swing: SwingDef { windup_s: 0.12, active_s: 0.14, hit_stop_s: 0.08, recover_hit_s: 0.22, recover_miss_s: 0.36, reach_m: 2.2, arc_deg: 110.0, samples: 12, kick_deg: 1.6, stamina_cost: 8.0, swish: Some("axe_swish"), bounce: Some("axe_clank"), rustle: Some("axe_rustle"), rustle_leaves: 5 }, clears: &["dwell:leaves", "dwell:snowy_leaves", "dwell:log_ramp"] },
 ];
 
 /// The blocks an axe cuts, by block name.
 pub static WOODS: &[WoodDef] = &[
-    WoodDef { block: "dwell:log", fell_fraction: 0.55, buck_fraction: 0.55, buck_drops: &[DropRule { chance: 1.0, choices: &[DropChoice { item: "dwell:wood", min: 2, max: 3, weight: 1.0 }] }], chips: Chips { count: 7, color: [217, 179, 122], speed: 2.6, size: 0.05 }, leaves: Leaves { block: Some("dwell:leaves"), count: 6, color: [95, 158, 62], radius_m: 3.0, height_m: 9.0 }, sway: Sway { from_fraction: 0.4, max_deg: 3.5 }, sounds: &[(0.0, "chop_bark"), (0.2, "chop_wood"), (0.4, "chop_creak")], cut: CutLook { tile: Some("logCut"), tint: [255, 226, 184], open: 2.5, kerf_width_m: 0.035 } },
+    WoodDef { block: "dwell:log", fell_fraction: 0.55, buck_fraction: 0.55, buck_drops: &[DropRule { chance: 1.0, choices: &[DropChoice { item: "dwell:wood", min: 2, max: 3, weight: 1.0 }] }], chips: Chips { count: 7, color: [217, 179, 122], speed: 2.6, size: 0.05 }, leaves: Leaves { block: Some("dwell:leaves"), count: 6, color: [95, 158, 62], radius_m: 3.0, height_m: 9.0 }, sway: Sway { from_fraction: 0.4, max_deg: 3.5 }, sounds: &[(0.0, "chop_bark"), (0.2, "chop_wood"), (0.4, "chop_creak")], cut: CutLook { tile: Some("logCut"), tint: [255, 226, 184], open: 2.5, kerf_width_m: 0.035 }, fell_wedge: Some("dwell:log_ramp"), fell_wedge_matching: false },
 ];
 
 /// Blocks a break needs a tool of a kind for, where blocks are not unlimited.
 pub static BREAK_WITH: &[(&str, ToolKind)] = &[
     ("dwell:log", ToolKind::Axe),
+    ("dwell:log_ramp", ToolKind::Axe),
 ];

@@ -29,6 +29,10 @@
       "crossSection": { "kind": "octagon", "chamfer": 0.15, "joins": "dwell:wood" }
     },
     {
+      "$comment": "A fell wedge by data alone (Phase 55 T2): the post's ramp, which the tools fixture names as its fellWedge.",
+      "name": "post_ramp", "family": "ramp", "of": "post", "support": "carrier"
+    },
+    {
       "name": "glass", "density": 2500, "shape": "full", "render": "translucent", "opacity": 0.4, "color": "#c8e8f0", "textures": "water"
     },
     {
