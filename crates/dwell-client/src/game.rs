@@ -2725,6 +2725,8 @@ impl<S: Scene> Game<S> {
         while self.accumulator >= TICK_MS {
             self.accumulator -= TICK_MS;
             self.tick(input, touch);
+            let predictor = &self.predictor;
+            self.pieces.tick_present(|id| predictor.piece_pose(id));
             self.drag_tick(input, now_ms - self.accumulator / self.tick_rate);
             telemetry::add("ticks.count", 1.0);
         }
@@ -3125,10 +3127,9 @@ impl<S: Scene> Game<S> {
             self.scene.borrow_mut().set_piece(id, None);
         }
         // Pieces near the player drawn at the present it is drawn in (docs/BUILT_BODIES.md §6).
+        // Between the stand-ins' last two ticks, as the player is drawn.
         let me = self.predictor.active().then(|| self.predictor.position());
-        let predictor = &self.predictor;
-        self.pieces
-            .set_present(|id| predictor.piece_pose(id), me, dt);
+        self.pieces.set_present(self.accumulator / TICK_MS, me, dt);
         let mut poses = self.pieces.poses(now_ms);
         poses.extend(self.glides.poses(now_ms));
         poses.extend(self.loose.poses(now_ms));
