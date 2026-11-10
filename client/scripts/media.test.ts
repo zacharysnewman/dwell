@@ -14,7 +14,8 @@ describe('media base', () => {
 describe('media files', () => {
   it('ship every sound sample beside the music', () => {
     const files = mediaSources();
-    for (const s of SOUND_DATA.sampleFiles) expect(files.get(s.file)).toMatch(/shared\/sounds\/samples\//);
+    for (const s of SOUND_DATA.sampleFiles)
+      expect(files.get(s.file)).toMatch(/shared\/sounds\/samples\//);
     expect(SOUND_DATA.sampleFiles.length).toBeGreaterThan(0);
   });
 });
