@@ -128,6 +128,7 @@ impl Scene for Recorder {
 
 struct Rig {
     generator: u32,
+    seed: u64,
     core: LocalCore,
     session: Session,
     key: SigningKey,
@@ -159,8 +160,12 @@ impl Rig {
     }
 
     fn with_generator(generator: u32) -> Self {
+        Self::with_seed(generator, SEED)
+    }
+
+    fn with_seed(generator: u32, seed: u64) -> Self {
         let mut core = LocalCore::create(
-            SEED,
+            seed,
             generator,
             None::<NoStorage>,
             Box::new(SeededEntropy(1)),
@@ -172,6 +177,7 @@ impl Rig {
         session.start(0.0);
         Self {
             generator,
+            seed,
             core,
             session,
             key,
@@ -305,7 +311,7 @@ impl Rig {
                 ..
             } = self.session.state().clone()
         {
-            let mut jobs = InlineJobs::new(Runner::world(self.generator, SEED));
+            let mut jobs = InlineJobs::new(Runner::world(self.generator, self.seed));
             jobs.per_poll = self.jobs_per_poll;
             let pool = Pool::new(Box::new(jobs));
             let c = ChunkCoord::from_array(verification_chunk);
@@ -2363,7 +2369,17 @@ fn riding_a_raft_streams_the_terrain_ahead_and_drops_it_behind() {
 /// longest wait (frames) of a chunk of the near ring (the 3 × 3 chunks of the ground's row around
 /// the player) to be drawn as a chunk after the first 20 s (the start's load), the frame and chunk, the distance
 /// flown, the chunks still drawn 14 or more behind, and a log every 30 s.
-fn long_trip(mut rig: Rig, seconds: u32) -> ((u32, u32, ChunkCoord), f64, usize, String) {
+fn long_trip(rig: Rig, seconds: u32) -> ((u32, u32, ChunkCoord), f64, usize, String) {
+    trip(rig, seconds, None)
+}
+
+/// [`long_trip`], the player carried at `carry` m/s along +x by setting its position every frame
+/// (40 m over its start, so no hill stops it) when given, instead of flying under its own power.
+fn trip(
+    mut rig: Rig,
+    seconds: u32,
+    carry: Option<f64>,
+) -> ((u32, u32, ChunkCoord), f64, usize, String) {
     rig.jobs_per_poll = 1;
     assert!(rig.run_until(60 * 30, |r| {
         r.game
@@ -2387,12 +2403,18 @@ fn long_trip(mut rig: Rig, seconds: u32) -> ((u32, u32, ChunkCoord), f64, usize,
     rig.input.set_key("Space", true);
     rig.run_until(90, |_| false);
     rig.input.set_key("Space", false);
-    rig.input.set_key("KeyW", true);
+    if carry.is_none() {
+        rig.input.set_key("KeyW", true);
+    }
     let start = rig.game.as_ref().unwrap().debug_state().feet;
     let mut waited: dwell_world::hash::HashMap<ChunkCoord, u32> = Default::default();
     let mut worst = (0, 0, ChunkCoord::new(0, 0, 0));
     let mut lines = Vec::new();
     for t in 1..=60 * seconds {
+        if let Some(v) = carry {
+            let x = start[0] + v * f64::from(t) / 60.0;
+            assert!(rig.core.teleport_local_player([x, start[1] + 40.0, start[2]]));
+        }
         rig.frame();
         // The ground under the player (the first solid cell down, within 64 m).
         let feet = rig.game.as_ref().unwrap().debug_state().feet;
@@ -2461,6 +2483,26 @@ fn a_long_trip_over_the_flat_world_keeps_the_near_ring_at_full_detail() {
     let (worst, flown, behind, log) =
         long_trip(Rig::with_generator(dwell_world::GENERATOR_FLAT), 180);
     assert!(flown > 1_300.0, "flew {flown} m\n{log}");
+    assert!(
+        worst.0 <= 120,
+        "a near chunk waited {} frames to be drawn as a chunk (frame {}, {:?})\n{log}",
+        worst.0,
+        worst.1,
+        worst.2
+    );
+    assert_eq!(behind, 0, "left behind and still drawn\n{log}");
+}
+
+/// The long trip over generated terrain (seed 7, the owner's river world), the player carried
+/// 5 m/s in a straight line 40 m over its start (BUGS #54): every near chunk is drawn as a chunk
+/// within 2 s of coming into the ring.
+/// face-a-only: the spawn is on face A; the trip's path is a world line.
+#[test]
+fn a_long_trip_over_the_terrain_keeps_the_near_ring_at_full_detail() {
+    let (worst, flown, behind, log) =
+        trip(Rig::with_seed(GENERATOR_TERRAIN, 7), 150, Some(5.0));
+    eprintln!("{log}");
+    assert!(flown > 700.0, "carried {flown} m\n{log}");
     assert!(
         worst.0 <= 120,
         "a near chunk waited {} frames to be drawn as a chunk (frame {}, {:?})\n{log}",
