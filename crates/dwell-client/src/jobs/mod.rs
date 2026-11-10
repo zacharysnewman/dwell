@@ -37,6 +37,8 @@ pub enum Job {
         light: Vec<u8>,
         mirror: bool,
         origin: [i32; 3],
+        /// Its cut wood cells, chunk-local (ADR 0067 §11): meshed carved.
+        cuts: Vec<([i32; 3], dwell_protocol::chopping::Cut)>,
     },
     /// An LOD section's meshes.
     MeshSection {
@@ -255,7 +257,8 @@ impl Runner {
                 light,
                 mirror,
                 origin,
-            } => match dwell_mesh::mesh_chunk_lit(&padded, &light, mirror, origin) {
+                cuts,
+            } => match dwell_mesh::mesh_chunk_cut(&padded, &light, mirror, origin, &cuts) {
                 Ok(m) => Output::ChunkMesh(Box::new(m)),
                 Err(e) => Output::Failed(format!("{e:?}")),
             },

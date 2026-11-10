@@ -38,16 +38,6 @@ pub enum PuffKind {
     Chip,
     /// A leaf shaken down from a tree by a hit (crate::chips; its wood's `leaves` colour).
     Leaf,
-    /// A gouge on a cut wood cell's side (crate::chips): not a billboard but a quad spanning `u`
-    /// and `v` (half extents, world) about `at`; `size` is its depth (0–1 across the cell).
-    Gouge {
-        u: [f64; 3],
-        v: [f64; 3],
-        kerf: bool,
-        /// The info word's high bits: the side's normal and the grain's way (`chips::Gouge::bits`),
-        /// so the shader lights each cut face by its own normal.
-        bits: u32,
-    },
 }
 
 /// One billboard to draw: its centre (world m), half size (m), opacity, kind and its explosive.

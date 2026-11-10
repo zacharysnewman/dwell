@@ -1464,6 +1464,7 @@ pub fn mesh_chunk_cut(
 }
 
 /// [`mesh_chunk_at`] over the registry `kinds` describes.
+#[cfg(test)]
 pub(crate) fn mesh_chunk_with(
     kinds: &Kinds,
     padded: &[u16],

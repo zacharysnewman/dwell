@@ -218,12 +218,19 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
             light,
             mirror,
             origin,
+            cuts,
         } => {
             w.u8(4);
             w.u8(u8::from(*mirror));
             origin.iter().for_each(|v| w.i32(*v));
             w.u16s(padded);
             w.bytes(light);
+            w.u32(cuts.len() as u32);
+            for (c, cut) in cuts {
+                c.iter().for_each(|v| w.i32(*v));
+                let f: Vec<f32> = cut.notch.iter().chain(cut.kerf.iter().flatten()).copied().collect();
+                w.f32s(&f);
+            }
         }
         Job::MeshSection {
             cells,
@@ -290,11 +297,29 @@ pub fn decode_job(bytes: &[u8]) -> Result<(u32, Job), DecodeError> {
         4 => {
             let mirror = r.u8()? != 0;
             let origin = [r.i32()?, r.i32()?, r.i32()?];
+            let padded = r.u16s()?;
+            let light = r.bytes()?;
+            let n = r.u32()? as usize;
+            let mut cuts = Vec::with_capacity(n.min(4096));
+            for _ in 0..n {
+                let c = [r.i32()?, r.i32()?, r.i32()?];
+                let f = r.f32s()?;
+                if f.len() != 12 {
+                    return Err(DecodeError);
+                }
+                let mut cut = dwell_protocol::chopping::Cut::default();
+                cut.notch.copy_from_slice(&f[..4]);
+                for (k, v) in cut.kerf.iter_mut().flatten().enumerate() {
+                    *v = f[4 + k];
+                }
+                cuts.push((c, cut));
+            }
             Job::MeshChunk {
                 mirror,
                 origin,
-                padded: r.u16s()?,
-                light: r.bytes()?,
+                padded,
+                light,
+                cuts,
             }
         }
         5 => {
@@ -492,6 +517,12 @@ mod tests {
             light: vec![0xf3; dwell_mesh::PADDED_VOLUME],
             mirror: true,
             origin: [-32, 64, 96],
+            cuts: vec![([1, 2, 3], {
+                let mut c = dwell_protocol::chopping::Cut::default();
+                c.notch[2] = 0.25;
+                c.kerf[2][1] = 0.04;
+                c
+            })],
         });
         jobs.push(Job::MeshSection {
             cells: vec![1; dwell_world::lod::VOLUME],
@@ -525,6 +556,7 @@ mod tests {
                 light: vec![7; 10],
                 mirror: false,
                 origin: [0; 3],
+                cuts: Vec::new(),
             },
         );
         for n in 0..bytes.len() {
