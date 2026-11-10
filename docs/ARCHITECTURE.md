@@ -3157,8 +3157,9 @@ drawn at the fill of the water beside it (0.44.5). The generator still draws riv
 stepped levels (`terrain.rs`) until G1b; **[built, G1a, 0.49.0]** without lips: a step is the water
 falling a row from one reach to the next (BUGS.md #29), the bed under each at its river's depth
 however steep (from 0.52.0 no dry chute beds, which stood over the pool above as grass humps across
-the channel: BUGS.md #62), so a channel's bed only falls downstream; the pool graph went with the
-basins.
+the channel: BUGS.md #62), so a channel's bed only falls downstream; where a river joins one lower
+than it reaches its surface steps down to the other's water a row a cell, as water (no wall of water,
+no dry bed); the pool graph went with the basins.
 
 **Planned (Phase 53):** G1b the generated water as a pure function of the seed, computed where the
 world loads as terrain is (no drawn beds or stepped levels: the map's lakes at their levels, each
