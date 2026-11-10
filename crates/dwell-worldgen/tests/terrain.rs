@@ -398,8 +398,9 @@ fn the_flat_world_and_retired_versions_are_unchanged_by_the_sandbox() {
 
 #[test]
 fn the_fill_grass_over_dirt_sand_at_the_shore_sea_to_its_level() {
-    use dwell_worldgen::terrain::{Band, bands};
+    use dwell_worldgen::terrain::Band;
     let g = TerrainGenerator::new(0);
+    let snow = require("dwell:snowy_grass");
     let (cx, cz) = coast_on_axis(&g);
     let (mut water, mut grass, mut sand, mut decorated) = (0, 0, 0, 0);
     // Depths and the shore in rows of cells.
@@ -446,11 +447,8 @@ fn the_fill_grass_over_dirt_sand_at_the_shore_sea_to_its_level() {
                         } else if col.band == Band::Rock {
                             assert_eq!(m, M.stone);
                         } else {
-                            let top = if col.band == Band::Snow {
-                                bands().snow
-                            } else {
-                                M.grass
-                            };
+                            // The default biome's upper band (over the snow line) is snow.
+                            let top = if col.palette == 1 { snow } else { M.grass };
                             let want = if depth == 0 {
                                 top
                             } else if depth <= r(3.0) {
@@ -1474,16 +1472,25 @@ dwell_world::both_faces!(
     /// another ground block) changes the generated columns' tops where the default puts its
     /// ground, and nothing else; the default biome is the generator's own.
     fn a_fixture_biome_changes_the_generated_columns(f: FaceFrame) {
-        use dwell_worldgen::terrain::{BIOMES, Biome, SURFACE, Surface, find_biome};
+        use dwell_worldgen::terrain::{BIOMES, Biome, ElevationBand, SURFACE, find_biome};
         let default = find_biome("dwell:default").expect("the default biome");
         assert_eq!(BIOMES[0], *default, "the default biome is first");
         assert_eq!(default.surface, SURFACE, "SURFACE is the default biome's");
+        let bands: Vec<ElevationBand> = default
+            .bands
+            .iter()
+            .map(|b| ElevationBand {
+                ground: if b.name == "meadow" {
+                    "dwell:sand"
+                } else {
+                    b.ground
+                },
+                ..*b
+            })
+            .collect();
         let fixture = Biome {
             name: "dwell:fixture",
-            surface: Surface {
-                ground: "dwell:sand",
-                ..default.surface
-            },
+            bands: Box::leak(bands.into_boxed_slice()),
             ..*default
         };
         let t = BifacialTerrain::height_field(7);
@@ -1517,5 +1524,105 @@ dwell_world::both_faces!(
             }
         }
         assert!(changed > 20, "grass tops found to change: {changed}");
+    }
+);
+
+dwell_world::both_faces!(
+    /// The biome map (ADR 0074 B2): with the desert fixture (`biomes/fixtures/desert.json`, added
+    /// by data alone) beside the default, both appear on one world, placed by geography; every
+    /// column's weights sum to 1; a transect from one to the other changes the weights gradually
+    /// (no single-column flip); the desert's highest band is tundra, its lowest dunes; the world
+    /// height field is the same under either (biomes add only their bounded fine relief).
+    fn a_second_biome_blends_in_by_geography(f: FaceFrame) {
+        use dwell_worldgen::terrain::{BIOMES, FIXTURE_BIOMES};
+        let desert = *FIXTURE_BIOMES
+            .iter()
+            .find(|b| b.name == "test:desert")
+            .expect("the desert fixture");
+        let t = BifacialTerrain::height_field(7);
+        let g = t.local(f.face).clone().with_biomes(&[BIOMES[0], desert]);
+        let r = i64::from(WORLD_RADIUS) * 9 / 10;
+        let step = 512;
+        let mut samples = Vec::new();
+        for x in (-r..=r).step_by(step) {
+            for z in (-r..=r).step_by(step) {
+                if x * x + z * z > r * r {
+                    continue;
+                }
+                let m = g.biome_mix(x, z);
+                let sum: f64 = m.iter().map(|(_, w)| w).sum();
+                assert!(
+                    (sum - 1.0).abs() < 1e-5,
+                    "weights sum to 1 at ({x}, {z}): {sum}"
+                );
+                samples.push((x, z, m.weight(1)));
+            }
+        }
+        let deserts = samples.iter().filter(|s| s.2 > 0.95).count();
+        let defaults = samples.iter().filter(|s| s.2 < 0.05).count();
+        assert!(
+            deserts > 20 && defaults > 20,
+            "both biomes appear: {deserts} desert, {defaults} default of {}",
+            samples.len()
+        );
+        // A transect from a default column to its nearest desert one, metre by metre.
+        let (ax, az, _) = *samples
+            .iter()
+            .find(|s| {
+                s.2 < 0.05
+                    && samples.iter().any(|d| {
+                        d.2 > 0.95 && (d.0 - s.0).abs() + (d.1 - s.1).abs() <= 2 * step as i64
+                    })
+            })
+            .expect("a border");
+        let &(bx, bz, _) = samples
+            .iter()
+            .filter(|d| d.2 > 0.95)
+            .min_by_key(|d| (d.0 - ax).abs() + (d.1 - az).abs())
+            .expect("a desert column");
+        let n = (bx - ax).abs().max((bz - az).abs());
+        let (mut last, mut biggest, mut between) = (g.biome_mix(ax, az).weight(1), 0.0f64, 0);
+        for k in 1..=n {
+            let (x, z) = (ax + (bx - ax) * k / n, az + (bz - az) * k / n);
+            let w = g.biome_mix(x, z).weight(1);
+            biggest = biggest.max((w - last).abs());
+            between += i32::from(w > 0.1 && w < 0.9);
+            last = w;
+        }
+        assert!(
+            biggest < 0.05,
+            "a gradual transition: the biggest step was {biggest}"
+        );
+        assert!(between > 30, "a wide transition: {between} columns between");
+        // The desert's bands by its columns' tops: dunes low, tundra high.
+        let (sand, tundra) = (require("dwell:sand"), require("dwell:snowy_grass"));
+        let first = BIOMES[0].bands.len() as u16;
+        let (mut dunes, mut cold) = (0, 0);
+        for &(x, z, w) in samples.iter().filter(|s| s.2 > 0.95) {
+            let _ = w;
+            let col = g.column_at(x as i32, z as i32);
+            if col.band != dwell_worldgen::terrain::Band::Ground
+                || col.water_row() > g.ground_y(x as i32, z as i32).unwrap_or(0) + 1
+            {
+                continue;
+            }
+            let y = g.ground_y(x as i32, z as i32).expect("inside");
+            let top = material(g.state_at(x as i32, y, z as i32));
+            match col.palette.checked_sub(first) {
+                Some(0) => {
+                    assert_eq!(top, sand, "dunes at ({x}, {z})");
+                    dunes += 1;
+                }
+                Some(2) => {
+                    assert_eq!(top, tundra, "tundra at ({x}, {z})");
+                    cold += 1;
+                }
+                _ => {}
+            }
+        }
+        assert!(dunes > 5, "dune columns: {dunes}");
+        assert!(cold > 0, "tundra columns on the desert's heights: {cold}");
+        // The world's height field is the biomes' input, not their output.
+        assert_eq!(g.map().digest(), t.local(f.face).map().digest());
     }
 );

@@ -5,6 +5,7 @@
 pub mod air_columns;
 pub mod base;
 pub mod bifacial;
+pub mod biomemap;
 pub mod decorations;
 pub mod hydrology;
 pub mod island;
