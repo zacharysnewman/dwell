@@ -451,6 +451,8 @@ interface App {
   fps: FpsMeter;
   /** The local world's loopback (its server's memory), while playing one. */
   loopback: LoopbackTransport | null;
+  /** Reads the player's view into the local world's picture (set while a local world plays). */
+  captureThumb: ((timeoutMs?: number) => Promise<void>) | null;
   /** The world being played (its seed and generator), once joined: for the block dump. */
   world: { seed: bigint; generatorVersion: number } | null;
   playing: boolean;
@@ -768,6 +770,7 @@ async function start(): Promise<App | null> {
     }),
     fps: new FpsMeter(),
     loopback: null,
+    captureThumb: null,
     minimap: null,
     mapShading: true,
     world: null,
@@ -1498,10 +1501,12 @@ function enableGameMenu(app: App, save: (() => Promise<boolean>) | null): void {
       lockPointer(app.canvas);
     },
     () => {
+      // The world's picture is the player's view as they quit (worldThumbs.ts captureNow).
+      const pictured = app.captureThumb ? app.captureThumb() : Promise.resolve();
       const saved = save ? save() : Promise.resolve(true);
       // Leave even if the save hangs; the world also saved every few seconds.
       const timeout = new Promise((resolve) => setTimeout(resolve, 5000));
-      void Promise.race([saved, timeout]).then(() => {
+      void Promise.all([pictured, Promise.race([saved, timeout])]).then(() => {
         go({});
       });
     },
@@ -1675,7 +1680,10 @@ async function connect(app: App): Promise<void> {
       local = await connectLocal(client, key, options);
       app.loopback = local.loopback;
       // The world card's picture: the world's view now and then, and when the page is left.
-      if (thumbId) startThumbnailCapture(app.canvas, new WorldThumbs(storage()), thumbId);
+      if (thumbId) {
+        const thumbs = startThumbnailCapture(app.canvas, new WorldThumbs(storage()), thumbId);
+        app.captureThumb = thumbs.captureNow;
+      }
       // The respawn preload (§6.3) off for the bench's comparison: the server's part.
       if (/[?&]respawnPreload=off(&|$)/.test(location.search)) {
         local.loopback.postToWorker({ t: 'respawnPreload', on: false });

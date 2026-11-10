@@ -142,22 +142,34 @@ export function captureThumbnail(canvas: HTMLCanvasElement): string | null {
   }
 }
 
+/** A running capture: `stop` ends it; `captureNow` reads the next drawn frame into the store. */
+export interface ThumbnailCapture {
+  stop: () => void;
+  /**
+   * The player's view now, as the world's picture (owner, 2026-11-10: "a screenshot of the last
+   * player view when you quit"): resolves once the next frame is read, or after `timeoutMs` if no
+   * frame comes (a hidden page), so a quit never waits on it.
+   */
+  captureNow: (timeoutMs?: number) => Promise<void>;
+}
+
 /**
- * Captures a playing world's view into the store now and then, and when the page is hidden or
- * closed (when the world saves too). Returns a stop function.
+ * Captures a playing world's view into the store now and then, when the page is hidden or closed
+ * (when the world saves too), and on demand (`captureNow`, on Quit to main menu).
  */
 export function startThumbnailCapture(
   canvas: HTMLCanvasElement,
   thumbs: WorldThumbs,
   id: string,
   now: () => number = Date.now,
-): () => void {
+): ThumbnailCapture {
+  const read = () => {
+    const image = captureThumbnail(canvas);
+    if (image) thumbs.put(id, image, now());
+  };
   const capture = () => {
     // The next frame's callback runs once it is drawn and shown: read it then.
-    requestAnimationFrame(() => {
-      const image = captureThumbnail(canvas);
-      if (image) thumbs.put(id, image, now());
-    });
+    requestAnimationFrame(read);
   };
   const hidden = () => {
     // Hidden: no frame comes, so read the last one shown now.
@@ -171,9 +183,20 @@ export function startThumbnailCapture(
   window.setTimeout(capture, 5000); // a first picture soon after the join
   window.addEventListener('pagehide', hidden);
   document.addEventListener('visibilitychange', onVisibility);
-  return () => {
-    window.clearInterval(timer);
-    window.removeEventListener('pagehide', hidden);
-    document.removeEventListener('visibilitychange', onVisibility);
+  return {
+    stop: () => {
+      window.clearInterval(timer);
+      window.removeEventListener('pagehide', hidden);
+      document.removeEventListener('visibilitychange', onVisibility);
+    },
+    captureNow: (timeoutMs = 500) =>
+      new Promise<void>((resolve) => {
+        const done = window.setTimeout(resolve, timeoutMs);
+        requestAnimationFrame(() => {
+          read();
+          window.clearTimeout(done);
+          resolve();
+        });
+      }),
   };
 }

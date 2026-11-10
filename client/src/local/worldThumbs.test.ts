@@ -4,6 +4,7 @@ import {
   encodeWithinCap,
   MAX_THUMB_CHARS,
   MAX_THUMBS,
+  startThumbnailCapture,
   THUMBS_KEY,
   WorldThumbs,
 } from './worldThumbs';
@@ -103,5 +104,80 @@ describe('capturing a thumbnail', () => {
     expect(
       encodeWithinCap((type) => `data:${type};base64,${'A'.repeat(MAX_THUMB_CHARS)}`),
     ).toBeNull();
+  });
+});
+
+// Owner, 2026-11-10: "a screenshot of the last player view when you quit". Quit asks for the view
+// now (captureNow) and leaves once it is read, or after a short wait if no frame comes.
+describe('the picture on quitting', () => {
+  function stubPage(frames: boolean) {
+    const g = globalThis as unknown as Record<string, unknown>;
+    const saved = { window: g.window, document: g.document, raf: g.requestAnimationFrame };
+    let view = 'first';
+    g.window = {
+      setTimeout: (f: () => void, ms: number) => setTimeout(f, ms),
+      clearTimeout: (t: ReturnType<typeof setTimeout>) => {
+        clearTimeout(t);
+      },
+      setInterval: () => 0,
+      clearInterval: () => undefined,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    };
+    g.document = {
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      createElement: () => ({
+        width: 0,
+        height: 0,
+        getContext: () => ({ drawImage: () => undefined }),
+        toDataURL: (type: string) => `data:${type};base64,${view}`,
+      }),
+    };
+    g.requestAnimationFrame = (f: () => void) => {
+      if (frames) setTimeout(f, 1);
+      return 0;
+    };
+    return {
+      setView: (v: string) => (view = v),
+      restore: () => {
+        g.window = saved.window;
+        g.document = saved.document;
+        g.requestAnimationFrame = saved.raf;
+      },
+    };
+  }
+
+  it('stores the view as it is when quitting', async () => {
+    const page = stubPage(true);
+    try {
+      const thumbs = new WorldThumbs(new MemoryStore());
+      const canvas = { width: 1280, height: 720 } as HTMLCanvasElement;
+      const capture = startThumbnailCapture(canvas, thumbs, 'w1', () => 5);
+      page.setView('quitting');
+      await capture.captureNow();
+      expect(thumbs.get('w1')).toBe('data:image/webp;base64,quitting');
+      capture.stop();
+    } finally {
+      page.restore();
+    }
+  });
+
+  it('never holds up the quit when no frame comes', async () => {
+    const page = stubPage(false);
+    try {
+      const thumbs = new WorldThumbs(new MemoryStore());
+      const capture = startThumbnailCapture(
+        { width: 1, height: 1 } as HTMLCanvasElement,
+        thumbs,
+        'w1',
+      );
+      const started = Date.now();
+      await capture.captureNow(30);
+      expect(Date.now() - started).toBeLessThan(1000);
+      capture.stop();
+    } finally {
+      page.restore();
+    }
   });
 });
