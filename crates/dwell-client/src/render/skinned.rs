@@ -11,7 +11,10 @@
 //!   half-Lambert wrap of the key light), built from the vertex's palette colour, lit by the frame's
 //!   flood light, sun or moon, shadow maps and point lights as the rigid characters are. No texture
 //!   and no per-pixel cost beyond the rigid characters' (no CPU-adapter tier needed).
-//! - **Shadows**: the bodies cast into the shadow maps as the rigid characters do.
+//! - **Shadows**: the bodies cast into the shadow maps as the rigid characters do; your own body
+//!   (`cast_only`, the shadow you see in first person) casts into the nearest cascade only.
+//! - **Held items** (§11.5): [`hand_frame`] gives the characters rig's hand bone's frame on the
+//!   model's hand joint (`hand` in models.json) this frame; the rigid renderer draws the item there.
 
 use dwell_characters::math::Affine;
 use dwell_models::anim::{self, Player};
@@ -47,6 +50,49 @@ pub struct SkinnedDraw {
     pub role: &'static str,
     /// The flood light it stands in (as `BodyDraw::light`).
     pub light: [f32; 2],
+    /// Drawn into the shadow maps only (your own body: your shadow).
+    pub cast_only: bool,
+}
+
+/// A model-space matrix as a rigid frame: its rotation's columns made orthonormal (the model's
+/// scale taken out), its translation kept.
+pub fn rigid(m: &Mat4) -> Affine {
+    let norm = |v: [f32; 3]| {
+        let l = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt().max(1e-9);
+        v.map(|x| x / l)
+    };
+    let dot = |a: [f32; 3], b: [f32; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    let col = |k: usize| [m[k][0], m[k][1], m[k][2]];
+    let x = norm(col(0));
+    let y = col(1);
+    let y = norm(std::array::from_fn(|k| y[k] - dot(x, y) * x[k]));
+    let z = col(2);
+    let z = norm(std::array::from_fn(|k| {
+        z[k] - dot(x, z) * x[k] - dot(y, z) * y[k]
+    }));
+    Affine {
+        m: [x, y, z],
+        t: [m[3][0], m[3][1], m[3][2]],
+    }
+}
+
+/// The characters rig's hand bone's frame on the model's hand joint under `globals` (each node's
+/// model-space transform, [`anim::globals`]), through `place` ([`body_matrix`]): where a held
+/// item is drawn. None: the model holds nothing.
+pub fn hand_frame(
+    data: &ModelData,
+    model: &Model,
+    globals: &[Mat4],
+    place: &Mat4,
+) -> Option<Affine> {
+    let h = data.hand?;
+    let node = *model.skin.get(h.joint)?;
+    let joint = rigid(&mm::mul(place, globals.get(node)?));
+    Some(
+        joint
+            .then(&Affine::translation(h.at))
+            .then(&Affine::euler(h.rot)),
+    )
 }
 
 /// The body's model space to eye-relative world space: its place (upside down on face B), the
@@ -193,6 +239,8 @@ struct Draw {
     /// Bit per scene pass it is drawn in.
     passes: u8,
     casts: bool,
+    /// Your own body: into the nearest cascade only (as the rigid `cast_only`).
+    cast_only: bool,
 }
 
 pub struct SkinnedRenderer {
@@ -412,7 +460,8 @@ impl SkinnedRenderer {
     }
 
     /// This frame's bodies (`now_s`: the frame's clock, seconds): advances each one's clip player
-    /// by its role and writes its joints.
+    /// by its role and writes its joints. Returns each body's [`hand_frame`] (None where it is not
+    /// drawn or holds nothing), in `bodies`' order.
     #[allow(clippy::too_many_arguments)]
     pub fn prepare(
         &mut self,
@@ -423,7 +472,7 @@ impl SkinnedRenderer {
         cast_m: f64,
         bodies: &[SkinnedDraw],
         now_s: f64,
-    ) {
+    ) -> Vec<Option<Affine>> {
         let dt = self
             .last_s
             .map_or(0.0, |l| (now_s - l).clamp(0.0, 0.25) as f32);
@@ -433,7 +482,8 @@ impl SkinnedRenderer {
         self.players
             .retain(|id, _| bodies.iter().any(|b| b.seed == *id));
         let mut floats: Vec<f32> = Vec::new();
-        for d in bodies {
+        let mut hands = vec![None; bodies.len()];
+        for (n, d) in bodies.iter().enumerate() {
             let p = self
                 .players
                 .entry(d.seed)
@@ -448,7 +498,7 @@ impl SkinnedRenderer {
             }
             let mut mask = 0u8;
             for (i, (near, far)) in passes.iter().enumerate() {
-                if dist + 3.0 >= *near && dist - 3.0 <= *far {
+                if !d.cast_only && dist + 3.0 >= *near && dist - 3.0 <= *far {
                     mask |= 1 << i;
                 }
             }
@@ -457,7 +507,14 @@ impl SkinnedRenderer {
                 continue;
             }
             let place = body_matrix(d, data, eye);
-            let joints = anim::joint_matrices(model, &p.pose(model));
+            let globals = anim::globals(model, &p.pose(model));
+            hands[n] = hand_frame(data, model, &globals, &place);
+            let joints: Vec<Mat4> = model
+                .skin
+                .iter()
+                .zip(&model.inverse_bind)
+                .map(|(&j, ib)| mm::mul(&globals[j], ib))
+                .collect();
             let at = floats.len();
             floats.resize(at + INSTANCE_FLOATS, 0.0);
             for (k, j) in joints.iter().take(MAX_JOINTS).enumerate() {
@@ -468,6 +525,7 @@ impl SkinnedRenderer {
                 instance: (at / INSTANCE_FLOATS) as u32,
                 passes: mask,
                 casts,
+                cast_only: d.cast_only,
             });
         }
         let count = (floats.len() / INSTANCE_FLOATS) as u64;
@@ -480,6 +538,12 @@ impl SkinnedRenderer {
         if !floats.is_empty() {
             queue.write_buffer(&self.instances, 0, bytemuck::cast_slice(&floats));
         }
+        hands
+    }
+
+    /// Where the model holds an item (models.json `hand`).
+    pub fn hand(&self) -> Option<dwell_models::Hand> {
+        self.data.hand
     }
 
     /// How many bodies are drawn this frame.
@@ -520,10 +584,21 @@ impl SkinnedRenderer {
         any
     }
 
-    /// Draws the bodies within the shadow distance into a shadow map's pass.
-    pub fn draw_shadows(&self, pass: &mut wgpu::RenderPass<'_>, calls: &mut u32, tris: &mut u64) {
+    /// Draws the bodies within the shadow distance into a shadow map's pass (your own into the
+    /// nearest cascade only, `nearest`).
+    pub fn draw_shadows(
+        &self,
+        pass: &mut wgpu::RenderPass<'_>,
+        nearest: bool,
+        calls: &mut u32,
+        tris: &mut u64,
+    ) {
         let mut first = true;
-        for d in self.draws.iter().filter(|d| d.casts) {
+        for d in self
+            .draws
+            .iter()
+            .filter(|d| d.casts && (nearest || !d.cast_only))
+        {
             if first {
                 pass.set_pipeline(&self.shadow_pipeline);
                 first = false;
@@ -556,6 +631,7 @@ mod tests {
                 dead: false,
                 role: "idle",
                 light: [1.0, 0.0],
+                cast_only: false,
             };
             let place = body_matrix(&d, data, [0.0; 3]);
             let joints: Vec<Mat4> = anim::joint_matrices(model, &anim::rest(model))
@@ -570,6 +646,72 @@ mod tests {
             let ahead = mm::point(&place, [0.0, 0.0, 1.0]);
             assert!((f64::from(ahead[0]) - d.feet[0] - f64::from(data.scale)).abs() < 1e-3, "{ahead:?}");
         }
+    }
+
+    fn walking_hand(face: FaceFrame, t: f32) -> (Affine, Affine) {
+        let (data, model) = dwell_models::player();
+        let d = SkinnedDraw {
+            seed: 1,
+            feet: face.point([4.0, 7.0, -2.0]),
+            yaw: 30.0,
+            face,
+            dead: false,
+            role: "walk",
+            light: [1.0, 0.0],
+            cast_only: false,
+        };
+        let place = body_matrix(&d, data, [0.0; 3]);
+        let mut p = Player::new(data, model, "walk");
+        p.update(data, model, "walk", t);
+        let globals = anim::globals(model, &p.pose(model));
+        let hand = hand_frame(data, model, &globals, &place).expect("the Peasant holds items");
+        let h = data.hand.unwrap();
+        let joint = rigid(&mm::mul(&place, &globals[model.skin[h.joint]]));
+        (hand, joint)
+    }
+
+    // A held item's frame follows the hand joint's world matrix as the clip plays: at the joint
+    // (plus the data's offset in its frame), turned with it, on both faces; and the hand hangs at
+    // about hip height over the feet, face-locally.
+    dwell_world::both_faces! {
+        fn the_held_item_follows_the_skinned_hand_joint(face: FaceFrame) {
+            let (_, model) = dwell_models::player();
+            let h = dwell_models::player().0.hand.unwrap();
+            let mut origins = Vec::new();
+            for t in [0.0, 0.3, 0.6] {
+                let (hand, joint) = walking_hand(face, t);
+                let want = joint.then(&Affine::translation(h.at)).then(&Affine::euler(h.rot));
+                for k in 0..3 {
+                    assert!((hand.t[k] - want.t[k]).abs() < 1e-5, "{t}: {hand:?} {want:?}");
+                    for r in 0..3 {
+                        assert!((hand.m[k][r] - want.m[k][r]).abs() < 1e-5);
+                    }
+                }
+                let at = joint.apply(h.at);
+                assert!((0..3).all(|k| (hand.t[k] - at[k]).abs() < 1e-5));
+                let up = face.y(f64::from(hand.t[1])) - face.y(face.point([4.0, 7.0, -2.0])[1]);
+                assert!((0.5..1.2).contains(&up), "hand {up} m over the feet");
+                origins.push(hand.t);
+            }
+            // The walk swings the hand: it moves between the samples.
+            let moved = (0..3).map(|k| (origins[0][k] - origins[1][k]).powi(2)).sum::<f32>().sqrt();
+            assert!(moved > 0.02, "{moved}");
+            let _ = model;
+        }
+    }
+
+    #[test]
+    fn a_hand_is_data_and_a_model_without_one_holds_nothing() {
+        // The fixture's hand comes from its models.json alone.
+        let two = dwell_models::find(dwell_models::fixture::MODELS, "two_bone").unwrap();
+        let h = two.hand.expect("the fixture names a hand");
+        assert_eq!((h.joint, h.bone), (1, "hand_r"));
+        // An animal has no hand: no held item frame.
+        let (_, model) = dwell_models::player();
+        let deer = dwell_models::find(dwell_models::MODELS, "deer").unwrap();
+        assert!(deer.hand.is_none());
+        let g = anim::globals(model, &anim::rest(model));
+        assert!(hand_frame(deer, model, &g, &mm::IDENTITY).is_none());
     }
 
     #[test]

@@ -30,6 +30,21 @@ pub struct RoleClip {
     pub speed: f32,
 }
 
+/// Where a model's hand holds an item (docs/CHARACTERS.md §11.5): the skin joint the item follows
+/// and the turn from that joint's frame to the characters rig's hand bone's (the frame the held
+/// items are authored in, shared/characters/characters.json).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Hand {
+    /// The joint: an index into the skin's joints.
+    pub joint: usize,
+    /// The characters rig's bone the items are authored on (`hand_r`).
+    pub bone: &'static str,
+    /// Metres in the joint's frame (unscaled).
+    pub at: [f32; 3],
+    /// Degrees, Euler XYZ (as characters.json).
+    pub rot: [f32; 3],
+}
+
 /// One model's data.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ModelData {
@@ -44,6 +59,8 @@ pub struct ModelData {
     /// The role played for a role it has no clip for.
     pub fallback: &'static str,
     pub roles: &'static [RoleClip],
+    /// Where it holds an item; None: it holds none.
+    pub hand: Option<Hand>,
 }
 
 impl ModelData {
