@@ -26,6 +26,10 @@ use dwell_blocks::{LIGHT_MAX, StateId};
 mod generated;
 pub use generated::LIGHT;
 
+#[path = "light_region.rs"]
+mod region;
+pub use region::{LightRegion, REGION, REGION_APRON, REGION_VOLUME};
+
 /// The flood light's tunables (shared/look/light.json).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LightTunables {
