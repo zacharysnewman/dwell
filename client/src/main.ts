@@ -91,7 +91,7 @@ import { FpsMeter } from './ui/fps';
 import { readDevice } from './ui/loadingEstimate';
 import { type LoadingHud, LoadingScreen, loadingScreenEnabled } from './ui/loadingScreen';
 import type { LoadingStageId } from './ui/loading.gen';
-import type { StageRun } from './ui/loadingStages';
+import { LAUNCH_AT_KEY, pageStartMs, type StageRun } from './ui/loadingStages';
 import { START_HINT, TOUCH_START_HINT } from './ui/controls';
 import { formatMemory, jsHeapBytes, type MemoryReport } from './ui/memory';
 import type { LoopbackTransport } from './net/loopback';
@@ -1910,7 +1910,18 @@ if (launchOf(location.search).kind === 'menu') {
   );
   const route = launchOf(location.search).kind;
   bootLoading.remote = route === 'code' || route === 'join';
-  bootLoading.stages.begin('page', 0);
+  // From the launcher's opening when it sent this page here (its stamp, read once).
+  let launchAt: string | null = null;
+  try {
+    launchAt = sessionStorage.getItem(LAUNCH_AT_KEY);
+    sessionStorage.removeItem(LAUNCH_AT_KEY);
+  } catch {
+    // no session storage: from this page's opening
+  }
+  bootLoading.stages.begin(
+    'page',
+    pageStartMs(launchAt, performance.timeOrigin, performance.timeOrigin + performance.now()),
+  );
   bootLoading.stages.end('page', performance.now());
   const bootStages = bootLoading.stages;
   window.__dwellStages = () => bootStages.timeline();

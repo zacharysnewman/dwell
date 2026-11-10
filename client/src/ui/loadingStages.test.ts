@@ -4,6 +4,7 @@ import {
   StageTracker,
   formatProgress,
   formatStageTime,
+  pageStartMs,
   stageFraction,
   stagesFromHud,
   type StageMarks,
@@ -178,5 +179,26 @@ describe('the loading stages', () => {
         slow: false,
       },
     ]);
+  });
+});
+
+describe('the page stage from the launcher', () => {
+  // Measured 2026-11-10 on dropkickarcade.com (warm): the launcher at /dwell/ ran 378 ms (its
+  // versions.json and build.json fetches) before going to v/<version>/, whose clock starts at 0,
+  // so that time was on no stage. The launcher stamps when it opened; the page stage begins there.
+  it('begins the page stage when the launcher opened, on this page clock', () => {
+    const origin = 1_000_000;
+    const t = new StageTracker([{ id: 'page', label: 'Loading the page' }] as LoadingStageDef[]);
+    t.begin('page', pageStartMs(String(origin - 378), origin, origin + 50));
+    t.end('page', 50);
+    // The whole span from opening the link: no gap over 100 ms before the first stage.
+    expect(t.timeline()[0]?.beganMs).toBe(-378);
+  });
+  it('ignores a missing, bad, future or stale stamp (0: this page opened)', () => {
+    const origin = 1_000_000;
+    expect(pageStartMs(null, origin, origin + 50)).toBe(0);
+    expect(pageStartMs('nope', origin, origin + 50)).toBe(0);
+    expect(pageStartMs(String(origin + 10), origin, origin + 50)).toBe(0);
+    expect(pageStartMs(String(origin - 120_000), origin, origin + 50)).toBe(0);
   });
 });
