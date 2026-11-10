@@ -21,7 +21,7 @@ const tags = (...names: string[]) => names.map((tagName) => ({ tagName }));
 
 /** A policy that keeps every stable release (newestOverall above any list here). */
 const policy = (over: Partial<RetentionPolicy> = {}): RetentionPolicy => ({
-  newestPerLine: false,
+  newestLines: 0,
   newestOverall: 1000,
   pinned: [],
   devKeep: 10,
@@ -108,8 +108,22 @@ describe('the retention policy', () => {
   );
 
   it('keeps the newest release of every compatibility line', () => {
-    const plan = planSite(releases, policy({ newestPerLine: true, newestOverall: 0, devKeep: 0 }));
+    const plan = planSite(releases, policy({ newestLines: 100, newestOverall: 0, devKeep: 0 }));
     expect(plan.keep).toEqual(['v1.1.0', 'v0.13.1', 'v0.12.2', 'v0.11.1', 'v0.10.2', 'v0.1.0']);
+  });
+
+  it('keeps the newest release of only the newest lines it is told to (owner, 2026-11-09: 20)', () => {
+    const plan = planSite(releases, policy({ newestLines: 3, newestOverall: 0, devKeep: 0 }));
+    expect(plan.keep).toEqual(['v1.1.0', 'v0.13.1', 'v0.12.2']);
+    expect(plan.retired).toContain('v0.1.0');
+  });
+
+  it('keeps the very first line when it is pinned, past the newest lines', () => {
+    const plan = planSite(
+      releases,
+      policy({ newestLines: 2, newestOverall: 0, pinned: ['0.1'], devKeep: 0 }),
+    );
+    expect(plan.keep).toEqual(['v1.1.0', 'v0.13.1', 'v0.1.0']);
   });
 
   it('keeps the newest stable releases overall, across lines', () => {
@@ -129,7 +143,7 @@ describe('the retention policy', () => {
   it('keeps the union of its rules and retires the rest, leaving the dev builds to devKeep', () => {
     const plan = planSite(
       releases,
-      policy({ newestPerLine: true, newestOverall: 2, pinned: ['0.10'], devKeep: 1 }),
+      policy({ newestLines: 100, newestOverall: 2, pinned: ['0.10'], devKeep: 1 }),
     );
     expect(plan.keep).toEqual([
       'v1.1.0',
@@ -151,11 +165,11 @@ describe('the retention policy', () => {
     expect(strict.prune).toEqual(plan.prune);
   });
 
-  it("is read from shared/version/site-retention.json: the owner's policy (2026-10-21)", () => {
+  it("is read from shared/version/site-retention.json: the owner's policy (2026-11-09)", () => {
     expect(loadRetention()).toEqual({
-      newestPerLine: true,
+      newestLines: 20,
       newestOverall: 10,
-      pinned: ['0.10'],
+      pinned: ['0.1', '0.10'],
       devKeep: 10,
       sizeBudgetMB: 900,
     });
@@ -167,7 +181,8 @@ describe('the retention policy', () => {
     const bad: [unknown, string][] = [
       [[], 'not an object'],
       [{ ...good, newestOveral: 3 }, 'unknown field "newestOveral"'],
-      [{ ...good, newestPerLine: 'yes' }, '"newestPerLine"'],
+      [{ ...good, newestLines: 'yes' }, '"newestLines"'],
+      [{ ...good, newestPerLine: true }, 'unknown field "newestPerLine"'],
       [{ ...good, newestOverall: -1 }, '"newestOverall"'],
       [{ ...good, devKeep: 1.5 }, '"devKeep"'],
       [{ ...good, pinned: '0.10' }, '"pinned" must be a list'],
