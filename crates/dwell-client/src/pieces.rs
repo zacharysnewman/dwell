@@ -225,6 +225,7 @@ impl Pieces {
         &mut self,
         states: &[PieceState],
         seq: u32,
+        server_tick: u32,
         now_ms: f64,
         sounds: &mut Vec<SoundEvent>,
     ) {
@@ -607,6 +608,7 @@ fn meshed_blocks(cells: &[([i32; 3], StateId)], mirror: bool) -> Vec<ChunkMeshes
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dwell_world::FaceFrame;
 
     #[test]
     fn a_one_cell_piece_meshes_one_block_not_the_blocks_whose_apron_holds_it() {
@@ -695,6 +697,116 @@ mod tests {
         let most = EXTRAPOLATE_MS / 1000.0;
         assert!((far.y - (10.0 - 4.0 * most)).abs() < 1e-9, "{far}");
     }
+
+    /// A flung one-cell piece as the server moves it at server time `t` (s): 6 m/s across,
+    /// gravity toward the face's ground, a 2 rad/s spin about the up axis (a turn about y is the
+    /// same on both faces: the mirror flips y alone, and the spin, an axial vector, stays).
+    fn flung(t: f64, f: FaceFrame) -> (DVec3, DQuat, DVec3, DVec3) {
+        let at = [6.0 * t, 40.0 + 4.0 * t - 4.9 * t * t, 0.0];
+        let v = [6.0, 4.0 - 9.8 * t, 0.0];
+        (
+            DVec3::from(f.point(at)),
+            DQuat::from_rotation_y(2.0 * t),
+            DVec3::from(f.vector(v)),
+            DVec3::new(0.0, 2.0, 0.0),
+        )
+    }
+
+    /// Plays the flung piece through `Pieces` as the game does (60 Hz server ticks, a snapshot
+    /// every 3; each read at the first frame after it arrives, a drawn pose a frame) for 3.5 s of
+    /// frames `frame_ms` apart (cycled), each snapshot delivered in 40 ms plus a deterministic
+    /// 0–20 ms of jitter. Returns the worst deviation of a frame's drawn speed across and spin
+    /// rate from the server's (fractions), after the first second.
+    fn drawn_jitter(frame_ms: &[f64], f: FaceFrame) -> (f64, f64) {
+        let stone = dwell_blocks::require("dwell:stone");
+        let mut pieces = Pieces::default();
+        let mut sounds = Vec::new();
+        // The local clock runs 1234.5 ms ahead of the server's.
+        let skew = 1234.5;
+        let mut seed = 7u32;
+        let mut jitter = move || {
+            seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            f64::from(seed >> 8) / f64::from(1u32 << 24) * 20.0
+        };
+        let tick_ms = 1000.0 / 60.0;
+        let snapshots: Vec<(u32, f64)> = (1..400)
+            .map(|k| 3 * k)
+            .map(|tick| (tick, f64::from(tick) * tick_ms + skew + 40.0 + jitter()))
+            .collect();
+        let (origin, r, _, _) = flung(0.0, f);
+        let spawn = EntitySpawn {
+            id: 1,
+            origin: origin.to_array(),
+            rotation: [r.x as f32, r.y as f32, r.z as f32, r.w as f32],
+            kind: 0,
+            carriers: 1,
+            cells: vec![dwell_protocol::PieceCellNet {
+                offset: [0, 0, 0],
+                state: stone,
+            }],
+        };
+        let mut now = skew + 40.0;
+        pieces.spawn(&spawn, now, &mut sounds);
+        let mut next = 0;
+        let mut drawn: Vec<(f64, DVec3, DQuat)> = Vec::new();
+        let mut i = 0;
+        while now < skew + 3500.0 {
+            let dt = frame_ms[i % frame_ms.len()];
+            now += dt;
+            i += 1;
+            while next < snapshots.len() && snapshots[next].1 <= now {
+                let tick = snapshots[next].0;
+                let (at, q, v, w) = flung(f64::from(tick) * tick_ms / 1000.0, f);
+                let state = PieceState {
+                    id: 1,
+                    position: at.to_array(),
+                    rotation: [q.x as f32, q.y as f32, q.z as f32, q.w as f32],
+                    velocity: v.as_vec3().to_array(),
+                    angular: w.as_vec3().to_array(),
+                };
+                pieces.on_snapshot(&[state], 0, tick, now, &mut sounds);
+                next += 1;
+            }
+            pieces.set_present(|_| None, None, dt / 1000.0);
+            let (_, at, q) = pieces.poses(now)[0];
+            drawn.push((now, DVec3::from(at), quat(q)));
+        }
+        let (mut speed, mut spin) = (0.0f64, 0.0f64);
+        for w in drawn.windows(2).filter(|w| w[0].0 > skew + 1000.0) {
+            let (a, b) = (w[0], w[1]);
+            let dt = (b.0 - a.0) / 1000.0;
+            let across = (b.1 - a.1).x / dt;
+            speed = speed.max((across / 6.0 - 1.0).abs());
+            let turned = (b.2 * a.2.inverse()).normalize().to_axis_angle().1;
+            let turned = turned.min(std::f64::consts::TAU - turned);
+            spin = spin.max((turned / dt / 2.0 - 1.0).abs());
+        }
+        (speed, spin)
+    }
+
+    dwell_world::both_faces!(
+        fn a_moving_piece_is_drawn_smoothly_however_its_snapshots_arrive(f: FaceFrame) {
+            // Owner, 2026-11-09: every moving piece shakes, even one alone. Its poses were timed
+            // by when a frame read their snapshot, not by the server tick they were taken at, so
+            // 50 ms of motion was drawn over 33 or 67 ms as an arrival fell either side of a
+            // frame. Red before: the drawn speed off by tens of percent at 60 and 120 Hz.
+            let worst: Vec<(&str, f64, f64)> = [
+                ("60 Hz", vec![1000.0 / 60.0]),
+                ("120 Hz", vec![1000.0 / 120.0]),
+                ("uneven", vec![9.0, 24.0, 14.0, 19.0]),
+            ]
+            .into_iter()
+            .map(|(name, frames)| {
+                let (speed, spin) = drawn_jitter(&frames, f);
+                (name, (speed * 100.0).round(), (spin * 100.0).round())
+            })
+            .collect();
+            assert!(
+                worst.iter().all(|&(_, speed, spin)| speed < 5.0 && spin < 5.0),
+                "drawn speed and spin off by (%): {worst:?}"
+            );
+        }
+    );
 
     #[test]
     fn the_ray_enters_the_nearest_cell_of_a_body_through_the_face_toward_it() {
@@ -837,7 +949,13 @@ mod tests {
             .into_iter()
             .enumerate()
         {
-            pieces.on_snapshot(&[state(vy)], 0, 50.0 * k as f64 + 50.0, &mut sounds);
+            pieces.on_snapshot(
+                &[state(vy)],
+                0,
+                3 * (k as u32 + 1),
+                50.0 * k as f64 + 50.0,
+                &mut sounds,
+            );
         }
         // -3 to -8 is a shove, not a stop: still a change over 2 m/s, so it sounds (a hit).
         assert_eq!(
@@ -848,8 +966,8 @@ mod tests {
         );
         sounds.clear();
         // It hits the ground: -8 → 0, a landing; the bounce right after stays quiet.
-        pieces.on_snapshot(&[state(0.0)], 0, 600.0, &mut sounds);
-        pieces.on_snapshot(&[state(-3.0)], 0, 650.0, &mut sounds);
+        pieces.on_snapshot(&[state(0.0)], 0, 36, 600.0, &mut sounds);
+        pieces.on_snapshot(&[state(-3.0)], 0, 39, 650.0, &mut sounds);
         assert_eq!(
             sounds
                 .iter()
