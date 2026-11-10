@@ -68,6 +68,4 @@ pub const SURFACE_CAUSTICS: SurfaceCaustics = SurfaceCaustics {
 pub const CAUSTIC_EVERY_FRAMES: u32 = 2;
 
 /// The GPU heightfield (`heightfield` tiers).
-pub const HEIGHTFIELD: Heightfield = Heightfield {
-    join_m: 0.2,
-};
+pub const HEIGHTFIELD: Heightfield = Heightfield { join_m: 0.2 };

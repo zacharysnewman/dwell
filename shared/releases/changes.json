@@ -2,6 +2,12 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions card. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.50.69",
+      "changes": [
+        "Groundwork for smoother, cheaper water: the water's surface can now be described as a height map, ready for the renderer to draw (nothing changes on screen yet)."
+      ]
+    },
+    {
       "version": "0.50.68",
       "changes": [
         "Sticks now lie on the ground under the trees, and stones gather at the feet of cliffs (a few on open grass too)",

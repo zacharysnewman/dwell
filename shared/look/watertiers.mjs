@@ -159,9 +159,11 @@ export function waterTiersRust(data) {
   rs.push(`pub const CAUSTIC_EVERY_FRAMES: u32 = ${data.causticEveryFrames};`);
   rs.push('');
   rs.push('/// The GPU heightfield (`heightfield` tiers).');
-  rs.push('pub const HEIGHTFIELD: Heightfield = Heightfield {');
-  for (const [k, spec] of Object.entries(HEIGHTFIELD)) rs.push(`    ${snake(k)}: ${value(data.heightfield[k], spec)},`);
-  rs.push('};');
+  // As rustfmt lays it out: one line while it fits in 100 columns.
+  const fields = Object.entries(HEIGHTFIELD).map(([k, spec]) => `${snake(k)}: ${value(data.heightfield[k], spec)}`);
+  const one = `pub const HEIGHTFIELD: Heightfield = Heightfield { ${fields.join(', ')} };`;
+  if (one.length <= 100) rs.push(one);
+  else rs.push('pub const HEIGHTFIELD: Heightfield = Heightfield {', ...fields.map((f) => `    ${f},`), '};');
   rs.push('');
   return rs.join('\n');
 }

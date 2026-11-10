@@ -1,9 +1,7 @@
 //! The heightfield's tile fill, corners, grid and atlas (proposals/WATER_GPU_SURFACE.md §3, C6a).
 
 use super::*;
-use crate::{
-    ChunkFlags, MeshArrays, PADDED_VOLUME, mesh_chunk_flags, mirror_padded, padded_index,
-};
+use crate::{ChunkFlags, MeshArrays, PADDED_VOLUME, mesh_chunk_flags, mirror_padded, padded_index};
 use dwell_blocks::{liquid_at_fill, require};
 use dwell_world::CELL_H;
 
@@ -136,11 +134,7 @@ fn up_quads(m: &MeshArrays, rise: f32) -> usize {
 fn the_flag_drops_only_the_waters_tops() {
     for mirror in [false, true] {
         let cells = voxels(&[(2, 3, 2, water()), (3, 3, 2, water()), (2, 2, 2, stone())]);
-        let cells = if mirror {
-            mirror_padded(&cells)
-        } else {
-            cells
-        };
+        let cells = if mirror { mirror_padded(&cells) } else { cells };
         let mesh = |water_tops| {
             let flags = ChunkFlags { water_tops };
             mesh_chunk_flags(&cells, &[], mirror, [0; 3], &[], None, flags).expect("padded")
@@ -177,7 +171,10 @@ fn a_rising_pool_changes_the_tile_not_the_mesh() {
         !atlas.set([0, 0, 0], water_levels(&low, false)),
         "unchanged: nothing to upload"
     );
-    assert!(atlas.set([0, 0, 0], water_levels(&high, false)), "the level rose");
+    assert!(
+        atlas.set([0, 0, 0], water_levels(&high, false)),
+        "the level rose"
+    );
     let slot = atlas.slot([0, 0, 0]).expect("a slot");
     let dirty = atlas.take_dirty();
     assert_eq!(dirty.len(), 1);

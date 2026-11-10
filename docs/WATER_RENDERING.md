@@ -93,6 +93,18 @@ tier names what it draws (`readsScene`, `opacity`, `surfaceCaustics`, `rippleLay
 tier is a data entry. Removed tiers are `aliases`: a stored or named `"high"` reads as Medium (the settings
 store keeps the stored value as it was, append-only).
 
+**The GPU heightfield (C6a, 0.50.69; proposals/WATER_GPU_SURFACE.md §3) [in progress].** A tier's
+`heightfield` switch (all off) will draw the near water's surface from a per-chunk tile of levels on
+one shared 16 × 16-column grid instead of meshed tops: `dwell-mesh` `heightfield.rs` fills a tile
+(18 × 18, the columns and a one-column apron, face-local chunk-local metres, `DRY` where no top
+shows) from the eighths the client already has, a corner takes the mean of the wet columns around it
+within `heightfield.joinM` (0.2 m) of the highest, and the chunk mesher's `ChunkFlags::water_tops`
+drops liquid tops only (sides, falls, pour slopes and flooded cells stay meshed). The vertex shader
+(`dwell-client` `render/heightfield.rs`) reads the tiles from an `r32float` atlas with `textureLoad`
+and crosses into the world with `face_y`. Not drawn yet: the water pass's draw over the grid, the
+atlas's fill on the client and the re-mesh skip are the rest of C6a; the CPU adapter's tier may not
+set it (a per-vertex fetch it doesn't need).
+
 | Tier | Contents |
 |---|---|
 | Opaque (the CPU adapter only, not in Settings) | Normal maps (one layer), Fresnel, glint, sky-only reflection, absorption at constant depth; underwater fog only. No copies (the old Low) |

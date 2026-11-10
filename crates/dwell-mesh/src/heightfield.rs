@@ -37,7 +37,11 @@ pub fn wet(h: f32) -> bool {
 /// A grid corner's height from the four columns around it: the mean of the wet ones within
 /// `join_m` of the highest (the lower ones are a real drop, C6b's skirts); `DRY` if none is wet.
 pub fn corner_height(columns: [f32; 4], join_m: f32) -> f32 {
-    let top = columns.iter().copied().filter(|h| wet(*h)).fold(DRY, f32::max);
+    let top = columns
+        .iter()
+        .copied()
+        .filter(|h| wet(*h))
+        .fold(DRY, f32::max);
     if !wet(top) {
         return DRY;
     }

@@ -1465,7 +1465,16 @@ pub fn mesh_chunk_cut(
     origin: [i32; 3],
     cuts: &[([i32; 3], Cut)],
 ) -> Result<ChunkMeshes, LengthError> {
-    mesh_chunk_full(Kinds::build(), padded, light, mirror, origin, cuts, None, ChunkFlags::default())
+    mesh_chunk_full(
+        Kinds::build(),
+        padded,
+        light,
+        mirror,
+        origin,
+        cuts,
+        None,
+        ChunkFlags::default(),
+    )
 }
 
 /// [`mesh_chunk_cut`] with the chunk's ground items (docs/adr/0071-ground-items.md) baked into its
@@ -1478,7 +1487,15 @@ pub fn mesh_chunk_ground(
     cuts: &[([i32; 3], Cut)],
     ground: Option<&GroundJob>,
 ) -> Result<ChunkMeshes, LengthError> {
-    mesh_chunk_flags(padded, light, mirror, origin, cuts, ground, ChunkFlags::default())
+    mesh_chunk_flags(
+        padded,
+        light,
+        mirror,
+        origin,
+        cuts,
+        ground,
+        ChunkFlags::default(),
+    )
 }
 
 /// What a chunk mesh leaves to other layers (proposals/WATER_GPU_SURFACE.md §3, item 6).
@@ -1505,7 +1522,16 @@ pub fn mesh_chunk_flags(
     ground: Option<&GroundJob>,
     flags: ChunkFlags,
 ) -> Result<ChunkMeshes, LengthError> {
-    mesh_chunk_full(Kinds::build(), padded, light, mirror, origin, cuts, ground, flags)
+    mesh_chunk_full(
+        Kinds::build(),
+        padded,
+        light,
+        mirror,
+        origin,
+        cuts,
+        ground,
+        flags,
+    )
 }
 
 /// [`mesh_chunk_at`] over the registry `kinds` describes.
@@ -1517,10 +1543,20 @@ pub(crate) fn mesh_chunk_with(
     mirror: bool,
     origin: [i32; 3],
 ) -> Result<ChunkMeshes, LengthError> {
-    mesh_chunk_full(kinds, padded, light, mirror, origin, &[], None, ChunkFlags::default())
+    mesh_chunk_full(
+        kinds,
+        padded,
+        light,
+        mirror,
+        origin,
+        &[],
+        None,
+        ChunkFlags::default(),
+    )
 }
 
 /// [`mesh_chunk_cut`] over the registry `kinds` describes.
+#[allow(clippy::too_many_arguments)] // the mesher's one internal entry: every public one passes through
 pub(crate) fn mesh_chunk_full(
     kinds: &Kinds,
     padded: &[u16],
@@ -1564,7 +1600,15 @@ pub(crate) fn mesh_chunk_full(
                 (at, carve::mirror_cut(grain, cut))
             })
             .collect();
-        let mut m = mesh_cells(kinds, &mirror_padded(&inner), &occ, &flood, local, &carved, flags);
+        let mut m = mesh_cells(
+            kinds,
+            &mirror_padded(&inner),
+            &occ,
+            &flood,
+            local,
+            &carved,
+            flags,
+        );
         ground_mesh::append(&mut m.opaque, kinds, &flood, &items, origin, true);
         ChunkMeshes {
             opaque: flip_arrays_y(m.opaque),
