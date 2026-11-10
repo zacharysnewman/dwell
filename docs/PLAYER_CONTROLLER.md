@@ -1104,8 +1104,10 @@ Owned by the `Predictor` (the same `Physics` settings as the server):
   the server never simulates, so every later snapshot snaps the player back: a server stalled
   generating terrain for a fast flyer once skipped them and rubber-banded the player (docs/BUGS.md 1,
   fixed 2026-10-26). So the **client holds its prediction** instead, while the server reports 30 or
-  more of its inputs queued (until it reports 6 or fewer) or while 45 of its inputs are
-  unacknowledged (a stalled server sends no snapshots): `BUFFER_HOLD`, `BUFFER_RESUME`,
+  more of its inputs queued (until it reports 6 or fewer) or while 90 of its inputs are
+  unacknowledged (a stalled server sends no snapshots; a slow frame's whole catch-up, 60, plus half a
+  second of round trip and snapshot lag, under the server's 96: at 45 a 48-tick frame dropped its last
+  3 ticks, the server repeated the last input for them, docs/BUGS.md 58): `BUFFER_HOLD`, `BUFFER_RESUME`,
   `UNACKED_HOLD` in dwell-client `game.rs`. The
   client catches up at most 60 ticks a frame (1 s; `MAX_TICKS_PER_FRAME`), so a device drawing
   1 fps or more keeps the server's time: one that dropped time would predict fewer ticks than the

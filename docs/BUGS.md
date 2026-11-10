@@ -186,6 +186,21 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 58. On a slow device a walk's start or stop was corrected by up to 3 ticks of walking (fixed in 0.51.2)
+
+Found 2026-11-10 in the bug 54 work: `a_device_at_under_two_frames_a_second_walks_and_jumps_without_snapping`
+(dwell-client `game_local.rs`, 48 server ticks a frame, CI's 800 ms frames) passed by luck. With 0, 1 or 3
+frames more on the ground before the slow frames its walk's correction was 0.08–0.17 m, with 2, 5 or 8 it
+was 0.25 m, over the 0.2 m bar. Cause: the client held its prediction while 45 of its inputs were
+unacknowledged (`UNACKED_HOLD`, for a stalled server that sends no snapshots), below a slow frame's 48
+ticks, so it predicted only 45 a frame and dropped the rest. The server starved for 3 ticks every frame
+and repeated the last input for them, so where the walk started and stopped among the starved ticks set
+how far the server walked past the prediction. Fixed: `UNACKED_HOLD` is `MAX_TICKS_PER_FRAME` + 30 (90,
+under the server's 96-input queue), so a frame's whole catch-up is predicted and sent. Pinned by
+`a_slow_devices_prediction_matches_whatever_the_phase_of_its_frames` (0–8 extra frames before the slow
+ones; red: a 0.25 m correction after 2, the server starving 3 ticks a frame; green: 48 ticks a frame, no
+starved ticks, no correction).
+
 ### 57. iOS Safari: touch stops doing anything (no look, taps neither break nor build)
 
 Owner, 2026-11-09: "a really random iOS Safari bug where tapping and dragging stops doing anything

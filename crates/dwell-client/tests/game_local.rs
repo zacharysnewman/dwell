@@ -1153,6 +1153,7 @@ fn a_device_at_under_two_frames_a_second_walks_and_jumps_without_snapping() {
     slow_device_keeps_the_servers_time(48, 0, 0);
 }
 
+// face-a-only: the input queue's timing on the default spawn; nothing in it depends on the face.
 #[test]
 fn a_slow_devices_prediction_matches_whatever_the_phase_of_its_frames() {
     // The test above passed only for some lengths of the wait before its slow frames (found
