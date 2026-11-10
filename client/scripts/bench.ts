@@ -466,6 +466,29 @@ async function step(run: Run, s: Step): Promise<void> {
     case 'releaseCamera':
       await call(page, 'd.releaseCamera()');
       return;
+    case 'creatureCamera': {
+      // The nearest creature to the feet, seen from 6 m off its side, 2.5 m up, looking at it.
+      const at = await call<number[] | null>(
+        page,
+        `(() => { const f = d.state().feet; const cs = d.creatures(); if (!cs.length) return null; cs.sort((a, b) => Math.hypot(a.x - f[0], a.z - f[2]) - Math.hypot(b.x - f[0], b.z - f[2])); const c = cs[0]; return [c.x, c.y, c.z, cs.length]; })()`,
+      );
+      if (!at) throw new Error('creatureCamera: no creature drawn');
+      const [cx, cy, cz, n] = at as [number, number, number, number];
+      const up = run.up;
+      const position: [number, number, number] = [cx - 4, cy + 2.5 * up, cz - 4.5];
+      const yaw = (Math.atan2(cx - position[0], cz - position[2]) * 180) / Math.PI;
+      const pitch = -20;
+      await until(
+        page,
+        `d.placeCamera(${JSON.stringify(position)}, ${String(yaw)}, ${String(pitch)})`,
+        30_000,
+      );
+      run.camera = { position, yaw, pitch };
+      console.log(
+        `  creatureCamera: ${String(n)} creatures, nearest at ${[cx, cy, cz].map((v) => f(v)).join(', ')}`,
+      );
+      return;
+    }
     case 'goto': {
       const find = s.find;
       const options = Object.fromEntries(

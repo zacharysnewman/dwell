@@ -11,7 +11,7 @@ pub mod math;
 mod table {
     include!("models.gen.rs");
 }
-pub use table::{MODELS, PLAYER, PLAYER_GLB};
+pub use table::{GLBS, MODELS, PLAYER, PLAYER_GLB};
 
 /// The fixture table (shared/models/fixtures): a model added by data alone, for tests.
 #[rustfmt::skip]
@@ -76,6 +76,22 @@ impl ModelData {
 /// A model's data by name in `table`.
 pub fn find(table: &'static [ModelData], name: &str) -> Option<&'static ModelData> {
     table.iter().find(|m| m.name == name)
+}
+
+/// A model's data and its GLB read once, by name; None: not in the table.
+pub fn model(name: &str) -> Option<(&'static ModelData, &'static glb::Model)> {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    static READ: OnceLock<Mutex<HashMap<&'static str, &'static glb::Model>>> = OnceLock::new();
+    let data = find(MODELS, name)?;
+    let mut read = READ.get_or_init(Default::default).lock().ok()?;
+    if let Some(m) = read.get(data.name) {
+        return Some((data, m));
+    }
+    let bytes = GLBS.iter().find(|(n, _)| *n == data.name)?.1;
+    let model: &'static glb::Model = Box::leak(Box::new(glb::parse(bytes).ok()?));
+    read.insert(data.name, model);
+    Some((data, model))
 }
 
 /// The player's model: its data and its GLB read once.

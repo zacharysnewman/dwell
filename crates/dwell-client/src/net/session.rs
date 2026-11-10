@@ -607,6 +607,8 @@ impl Session {
                     | Message::LodIndexUpdate(_)
                     | Message::LodData(_)
                     | Message::ItemDrops(_)
+                    | Message::Creatures(_)
+                    | Message::GroundGone(_)
                     | Message::Cuts(_)
                     | Message::HeldTools(_)
             ) && (self.joined() || matches!(self.state, SessionState::Confirming { .. }))
@@ -1297,6 +1299,16 @@ mod tests {
         s.on_reliable(Channel::World, &drops.encode(), 1000.0);
         assert!(matches!(s.next_game(), Some((Message::Inventory(_), _))));
         assert!(matches!(s.next_game(), Some((Message::ItemDrops(_), _))));
+        // Creatures (ADR 0073) and ground items gone (ADR 0071) reach the game too.
+        let creatures = Message::Creatures(dwell_protocol::CreaturesMessage::default());
+        s.on_reliable(Channel::World, &creatures.encode(), 1000.0);
+        assert!(matches!(s.next_game(), Some((Message::Creatures(_), _))));
+        s.on_reliable(
+            Channel::World,
+            &Message::GroundGone(vec![[1, 2, 3]]).encode(),
+            1000.0,
+        );
+        assert!(matches!(s.next_game(), Some((Message::GroundGone(_), _))));
     }
 
     #[test]

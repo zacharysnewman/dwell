@@ -101,6 +101,8 @@ pub const FULL_CELL: ([f32; 3], [f32; 3]) = ([0.0; 3], [1.0; 3]);
 /// outline, lines and stats.
 pub trait Scene: TerrainRenderer {
     fn set_player(&mut self, id: u32, view: Option<PlayerView>);
+    /// The creatures to draw this frame, each with its flood light (ADR 0073).
+    fn set_creatures(&mut self, _creatures: Vec<(crate::creatures::CreatureView, [f32; 2])>) {}
     /// The near water's surface is drawn from the GPU heightfield (its tier's `heightfield`):
     /// chunks are meshed without liquid tops (`dwell_mesh::ChunkFlags`).
     fn draws_heightfield(&self) -> bool {
@@ -569,6 +571,9 @@ pub struct Game<S: Scene> {
     /// The inventory and loose items the server sent (ADR 0066), and the hotbar slot held when
     /// the world uses items.
     pub loose: crate::loose_items::LooseItems,
+    /// The creatures the server tells of (ADR 0073), and whether it was told this client draws them.
+    pub creatures: crate::creatures::ClientCreatures,
+    creatures_on: bool,
     /// The world seed (Welcome), the ground items' scatter's (ADR 0071).
     world_seed: u64,
     /// The server keeps ground items and was told this client draws them (`GroundHello`).
@@ -887,6 +892,8 @@ impl<S: Scene> Game<S> {
             bodies: Bodies::default(),
             held_sent: None,
             loose: Default::default(),
+            creatures: Default::default(),
+            creatures_on: false,
             world_seed: 0,
             ground_on: false,
             ground_target: None,
@@ -1473,11 +1480,19 @@ impl<S: Scene> Game<S> {
                         )));
                     self.streamer.set_ground(self.world_seed);
                 }
+                // The server keeps creatures (ADR 0073): say so once, and draw them.
+                if i.flags & dwell_protocol::inventory_flags::CREATURES != 0 && !self.creatures_on {
+                    self.creatures_on = true;
+                    self.outbox
+                        .borrow_mut()
+                        .push(Send::Control(Message::CreaturesHello));
+                }
                 self.loose.inventory = Some((uses, i.inventory));
                 if uses {
                     self.select_inventory_slot(self.inventory_slot);
                 }
             }
+            Message::Creatures(m) => self.creatures.apply(m),
             Message::GroundGone(cells) => {
                 self.streamer.ground_gone(&cells);
             }
@@ -3063,6 +3078,17 @@ impl<S: Scene> Game<S> {
                 self.scene.borrow_mut().set_player(u32::from(id), None);
             }
         }
+        // The creatures, smoothed toward the server's points, lit where they stand (ADR 0073).
+        let creatures: Vec<_> = self
+            .creatures
+            .advance(dt)
+            .into_iter()
+            .map(|v| {
+                let light = self.body_light(0x4000_0000 | v.id, v.feet, v.face, dt);
+                (v, light)
+            })
+            .collect();
+        self.scene.borrow_mut().set_creatures(creatures);
         if let Some(mut p) = self.puppets {
             // Holding the hotbar's: a tool (the axe) as your hand shows it, else its block.
             let tool = (p.held == Puppets::HOTBAR)

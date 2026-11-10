@@ -3,6 +3,7 @@ use crate::{Hand, ModelData, RoleClip};
 
 pub const PLAYER: &str = "two_bone";
 pub static PLAYER_GLB: &[u8] = include_bytes!("../../../shared/models/fixtures/two_bone.glb");
+pub static GLBS: &[(&str, &[u8])] = &[("two_bone", include_bytes!("../../../shared/models/fixtures/two_bone.glb"))];
 pub static MODELS: &[ModelData] = &[
     ModelData { name: "two_bone", glb: "two_bone.glb", joints: 2, scale: 1.0, yaw: 0.0, fallback: "idle", roles: &[RoleClip { role: "idle", clip: "rest", speed: 1.0 }, RoleClip { role: "walk", clip: "bend", speed: 1.0 }, RoleClip { role: "sprint", clip: "bend", speed: 2.0 }], hand: Some(Hand { joint: 1, bone: "hand_r", at: [0.0, 0.1, 0.0], rot: [0.0, 0.0, 90.0] }) },
 ];

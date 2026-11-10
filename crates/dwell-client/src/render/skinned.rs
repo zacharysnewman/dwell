@@ -39,8 +39,10 @@ pub const VERTEX_BYTES: usize = 36;
 /// A skinned body to draw.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SkinnedDraw {
-    /// Its player's id: its clip player's key.
+    /// Its player's id (a creature's id): its clip player's key, with its model.
     pub seed: u32,
+    /// Its model's name (shared/models/models.json): the player's, or a creature's (ADR 0073).
+    pub model: &'static str,
     pub feet: V3,
     /// Degrees; 0 faces +z.
     pub yaw: f64,
@@ -236,6 +238,8 @@ pub fn source() -> String {
 
 struct Draw {
     instance: u32,
+    /// Its mesh: an index into `meshes`.
+    mesh: usize,
     /// Bit per scene pass it is drawn in.
     passes: u8,
     casts: bool,
@@ -243,20 +247,52 @@ struct Draw {
     cast_only: bool,
 }
 
-pub struct SkinnedRenderer {
+/// A model's mesh on the GPU.
+struct Mesh {
     data: &'static ModelData,
     model: &'static Model,
+    vertex: wgpu::Buffer,
+    index: wgpu::Buffer,
+    count: u32,
+}
+
+fn upload(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    data: &'static ModelData,
+    model: &'static Model,
+) -> Mesh {
+    let (v, i) = vertex_bytes(model);
+    let buffer = |usage, bytes: &[u8], label| {
+        let b = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(label),
+            size: (bytes.len() as u64).max(4).next_multiple_of(4),
+            usage: usage | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(&b, 0, bytes);
+        b
+    };
+    Mesh {
+        data,
+        model,
+        vertex: buffer(wgpu::BufferUsages::VERTEX, &v, "skinned vertices"),
+        index: buffer(wgpu::BufferUsages::INDEX, &i, "skinned indices"),
+        count: model.indices.len() as u32,
+    }
+}
+
+pub struct SkinnedRenderer {
+    /// The player's model first, then each creature model as it is first drawn.
+    meshes: Vec<Mesh>,
     pipeline: wgpu::RenderPipeline,
     shadow_pipeline: wgpu::RenderPipeline,
     layout: wgpu::BindGroupLayout,
     instances: wgpu::Buffer,
     capacity: u64,
     group: wgpu::BindGroup,
-    vertex: wgpu::Buffer,
-    index: wgpu::Buffer,
-    count: u32,
-    /// Each body's clip player, by its player's id.
-    players: HashMap<u32, Player>,
+    /// Each body's clip player, by its mesh and its player's (or creature's) id.
+    players: HashMap<(usize, u32), Player>,
     draws: Vec<Draw>,
     last_s: Option<f64>,
 }
@@ -420,34 +456,18 @@ impl SkinnedRenderer {
             multiview_mask: None,
             cache: None,
         });
-        let (v, i) = vertex_bytes(model);
-        let buffer = |usage, bytes: &[u8], label| {
-            let b = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some(label),
-                size: (bytes.len() as u64).max(4).next_multiple_of(4),
-                usage: usage | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
-            queue.write_buffer(&b, 0, bytes);
-            b
-        };
-        let vertex = buffer(wgpu::BufferUsages::VERTEX, &v, "skinned vertices");
-        let index = buffer(wgpu::BufferUsages::INDEX, &i, "skinned indices");
+        let player = upload(device, queue, data, model);
         let capacity = 4;
         let instances = instance_buffer(device, capacity);
         let group = bind_group(device, &layout, &instances);
         Self {
-            data,
-            model,
+            meshes: vec![player],
             pipeline,
             shadow_pipeline,
             layout,
             instances,
             capacity,
             group,
-            vertex,
-            index,
-            count: model.indices.len() as u32,
             players: HashMap::default(),
             draws: Vec::new(),
             last_s: None,
@@ -456,7 +476,10 @@ impl SkinnedRenderer {
 
     /// GPU bytes of the mesh.
     pub fn mesh_bytes(&self) -> u64 {
-        self.vertex.size() + self.index.size()
+        self.meshes
+            .iter()
+            .map(|m| m.vertex.size() + m.index.size())
+            .sum()
     }
 
     /// This frame's bodies (`now_s`: the frame's clock, seconds): advances each one's clip player
@@ -478,15 +501,31 @@ impl SkinnedRenderer {
             .map_or(0.0, |l| (now_s - l).clamp(0.0, 0.25) as f32);
         self.last_s = Some(now_s);
         self.draws.clear();
-        let (data, model) = (self.data, self.model);
-        self.players
-            .retain(|id, _| bodies.iter().any(|b| b.seed == *id));
+        for d in bodies {
+            if self.meshes.iter().all(|m| m.data.name != d.model)
+                && let Some((data, model)) = dwell_models::model(d.model)
+            {
+                self.meshes.push(upload(device, queue, data, model));
+            }
+        }
+        let mesh_of = |name: &str| self.meshes.iter().position(|m| m.data.name == name);
+        let keys: Vec<Option<usize>> = bodies.iter().map(|b| mesh_of(b.model)).collect();
+        self.players.retain(|(m, id), _| {
+            bodies
+                .iter()
+                .zip(&keys)
+                .any(|(b, k)| b.seed == *id && *k == Some(*m))
+        });
         let mut floats: Vec<f32> = Vec::new();
         let mut hands = vec![None; bodies.len()];
         for (n, d) in bodies.iter().enumerate() {
+            let Some(mesh) = keys[n] else {
+                continue;
+            };
+            let (data, model) = (self.meshes[mesh].data, self.meshes[mesh].model);
             let p = self
                 .players
-                .entry(d.seed)
+                .entry((mesh, d.seed))
                 .or_insert_with(|| Player::new(data, model, d.role));
             p.update(data, model, d.role, dt);
             let dist = (0..3)
@@ -523,6 +562,7 @@ impl SkinnedRenderer {
             floats[at + JOINT_FLOATS..at + JOINT_FLOATS + 2].copy_from_slice(&d.light);
             self.draws.push(Draw {
                 instance: (at / INSTANCE_FLOATS) as u32,
+                mesh,
                 passes: mask,
                 casts,
                 cast_only: d.cast_only,
@@ -543,7 +583,7 @@ impl SkinnedRenderer {
 
     /// Where the model holds an item (models.json `hand`).
     pub fn hand(&self) -> Option<dwell_models::Hand> {
-        self.data.hand
+        self.meshes[0].data.hand
     }
 
     /// How many bodies are drawn this frame.
@@ -553,16 +593,17 @@ impl SkinnedRenderer {
 
     /// The role → clip players (tests and telemetry).
     pub fn player_for(&self, seed: u32) -> Option<&Player> {
-        self.players.get(&seed)
+        self.players.get(&(0, seed))
     }
 
     fn draw(&self, pass: &mut wgpu::RenderPass<'_>, d: &Draw, calls: &mut u32, tris: &mut u64) {
         pass.set_bind_group(1, &self.group, &[d.instance * INSTANCE_BYTES as u32]);
-        pass.set_vertex_buffer(0, self.vertex.slice(..));
-        pass.set_index_buffer(self.index.slice(..), wgpu::IndexFormat::Uint32);
-        pass.draw_indexed(0..self.count, 0, 0..1);
+        let m = &self.meshes[d.mesh];
+        pass.set_vertex_buffer(0, m.vertex.slice(..));
+        pass.set_index_buffer(m.index.slice(..), wgpu::IndexFormat::Uint32);
+        pass.draw_indexed(0..m.count, 0, 0..1);
         *calls += 1;
-        *tris += u64::from(self.count / 3);
+        *tris += u64::from(m.count / 3);
     }
 
     /// Draws the bodies of scene pass `i`; whether any were (group 1 is then the skinned group's).
@@ -624,6 +665,7 @@ mod tests {
         fn a_skinned_body_stands_on_its_face(face: FaceFrame) {
             let (data, model) = dwell_models::player();
             let d = SkinnedDraw {
+                model: dwell_models::PLAYER,
                 seed: 1,
                 feet: face.point([10.0, 5.0, 0.0]),
                 yaw: 90.0,
@@ -651,6 +693,7 @@ mod tests {
     fn walking_hand(face: FaceFrame, t: f32) -> (Affine, Affine) {
         let (data, model) = dwell_models::player();
         let d = SkinnedDraw {
+            model: dwell_models::PLAYER,
             seed: 1,
             feet: face.point([4.0, 7.0, -2.0]),
             yaw: 30.0,

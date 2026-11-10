@@ -1705,6 +1705,20 @@ impl Client {
     }
     /// The blasts whose effects are still going (docs/EXPLOSIVES.md; DEV_TOOLS.md): 4 numbers each,
     /// its place (world x, y, z) and its age (s).
+    /// The creatures drawn (ADR 0073; DEV_TOOLS.md): 5 numbers each, the feet (world x, y, z),
+    /// the heading (degrees) and the speed (m/s).
+    #[wasm_bindgen(js_name = creatures)]
+    pub fn creatures(&self) -> Vec<f64> {
+        let s = self.inner.borrow();
+        let Some(g) = &s.game else {
+            return Vec::new();
+        };
+        g.creatures
+            .shown()
+            .into_iter()
+            .flat_map(|(p, yaw, speed)| [p[0], p[1], p[2], yaw, f64::from(speed)])
+            .collect()
+    }
     #[wasm_bindgen(js_name = blasts)]
     pub fn blasts(&self) -> Vec<f64> {
         let s = self.inner.borrow();

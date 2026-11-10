@@ -271,6 +271,7 @@ impl Server {
         }
         // Every server of this build keeps ground items (ADR 0071).
         let flags = inventory_flags::GROUND
+            | inventory_flags::CREATURES
             | if self.uses_items() {
                 inventory_flags::USES_ITEMS
             } else {

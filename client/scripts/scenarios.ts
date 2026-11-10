@@ -77,6 +77,8 @@ export type Step =
       maxS?: number;
     }
   | { do: 'releaseCamera' }
+  /** The camera placed 6 m from the creature nearest the player, looking at it (ADR 0073). */
+  | { do: 'creatureCamera' }
   /** The water quality, and/or its cost-isolation switches (`?waterdbg=` names; "" for none). */
   | { do: 'water'; quality?: string; debug?: string }
   /** The Shadows setting, for this page only (docs/DAY_NIGHT.md §10). */
@@ -322,6 +324,7 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
     'maxS',
   ],
   releaseCamera: [],
+  creatureCamera: [],
   water: ['quality', 'debug'],
   shadows: ['quality'],
   view: [
@@ -569,6 +572,7 @@ export function parseStep(where: string, v: unknown): Step {
       return { do: d, times, steps };
     }
     case 'releaseCamera':
+    case 'creatureCamera':
     case 'mark':
     case 'traceStart':
       return { do: d };

@@ -555,6 +555,34 @@ pub enum Message {
     /// S→C datagram, with each snapshot, only to a client that sent `VitalsHello` and while the
     /// world's mode has stamina or oxygen (ADR 0069).
     Vitals(VitalsMessage),
+    /// C→S reliable, control channel, only to a server whose `Inventory` has
+    /// `inventory_flags::CREATURES` (ADR 0073): this client draws creatures; send it `Creatures`.
+    CreaturesHello,
+    /// S→C reliable, world channel, only to a client that sent `CreaturesHello`: creatures that
+    /// appeared or moved, and those gone (ADR 0073).
+    Creatures(CreaturesMessage),
+}
+
+/// A creature as sent (ADR 0073): its skinned model (shared/models/models.json), its feet (world
+/// metres), its heading (degrees, 0 faces +z) and its speed (m/s; the client picks its clip by it).
+#[derive(Clone, Debug, PartialEq)]
+pub struct CreatureNet {
+    pub id: u32,
+    pub model: String,
+    pub position: [f32; 3],
+    pub yaw: f32,
+    pub speed: f32,
+}
+
+/// The most creatures one `Creatures` carries (more go in more messages).
+pub const MAX_CREATURES_PER_MESSAGE: usize = 512;
+/// The longest model name on the wire.
+pub const MAX_MODEL_NAME: usize = 64;
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CreaturesMessage {
+    pub creatures: Vec<CreatureNet>,
+    pub gone: Vec<u32>,
 }
 
 /// The local player's stamina and oxygen as of its input `seq` (`Message::Vitals`).
@@ -642,6 +670,8 @@ pub mod inventory_flags {
     pub const USES_ITEMS: u8 = 1;
     /// The server keeps ground items (ADR 0071): it takes `GroundHello` and `Pick`.
     pub const GROUND: u8 = 2;
+    /// The server keeps creatures (ADR 0073): it takes `CreaturesHello`.
+    pub const CREATURES: u8 = 4;
 }
 
 /// The most cells one `GroundGone` carries (more go in more messages).
@@ -720,6 +750,8 @@ impl Message {
             M::HeldTools(_) => MessageType::HeldTools,
             M::VitalsHello => MessageType::VitalsHello,
             M::Vitals(_) => MessageType::Vitals,
+            M::CreaturesHello => MessageType::CreaturesHello,
+            M::Creatures(_) => MessageType::Creatures,
             M::BodyEdit(_) => MessageType::BodyEdit,
         }
     }
@@ -1387,6 +1419,25 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
             }
         },
         M::VitalsHello => {}
+        M::CreaturesHello => {}
+        M::Creatures(m) => {
+            let n = m.creatures.len().min(MAX_CREATURES_PER_MESSAGE);
+            w.u16(n as u16);
+            for c in &m.creatures[..n] {
+                w.u32(c.id);
+                w.str(crate::bytes::clamp_str(&c.model, MAX_MODEL_NAME));
+                for v in c.position {
+                    w.f32(v);
+                }
+                w.f32(c.yaw);
+                w.f32(c.speed);
+            }
+            let n = m.gone.len().min(MAX_CREATURES_PER_MESSAGE);
+            w.u16(n as u16);
+            for &id in &m.gone[..n] {
+                w.u32(id);
+            }
+        }
         M::Vitals(m) => {
             w.u32(m.seq);
             w.f32(m.stamina);
@@ -1837,6 +1888,39 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
             _ => return None,
         }),
         T::VitalsHello => M::VitalsHello,
+        T::CreaturesHello => M::CreaturesHello,
+        T::Creatures => {
+            let n = usize::from(r.u16());
+            r.check(n <= MAX_CREATURES_PER_MESSAGE);
+            let mut creatures = Vec::new();
+            for _ in 0..n {
+                if !r.ok() {
+                    break;
+                }
+                let id = r.u32();
+                let model = r.str(MAX_MODEL_NAME);
+                let position = [r.f32(), r.f32(), r.f32()];
+                let (yaw, speed) = (r.f32(), r.f32());
+                r.check(position.iter().chain([&yaw, &speed]).all(|v| v.is_finite()));
+                creatures.push(CreatureNet {
+                    id,
+                    model,
+                    position,
+                    yaw,
+                    speed,
+                });
+            }
+            let n = usize::from(r.u16());
+            r.check(n <= MAX_CREATURES_PER_MESSAGE);
+            let mut gone = Vec::new();
+            for _ in 0..n {
+                if !r.ok() {
+                    break;
+                }
+                gone.push(r.u32());
+            }
+            M::Creatures(CreaturesMessage { creatures, gone })
+        }
         T::Vitals => {
             let m = VitalsMessage {
                 seq: r.u32(),
@@ -2113,4 +2197,33 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
         }
     };
     r.ok().then_some(m)
+}
+
+#[cfg(test)]
+mod creature_tests {
+    use super::*;
+
+    #[test]
+    fn creatures_round_trip_and_reject_bad_ones() {
+        let m = Message::Creatures(CreaturesMessage {
+            creatures: vec![CreatureNet {
+                id: 9,
+                model: "deer".into(),
+                position: [1.5, 64.25, -3.0],
+                yaw: 90.0,
+                speed: 1.3,
+            }],
+            gone: vec![2, 5],
+        });
+        let b = m.encode();
+        assert_eq!(Message::decode(&b), Some(m.clone()));
+        assert_eq!(Message::decode(&b[..b.len() - 1]), None);
+        let h = Message::CreaturesHello.encode();
+        assert_eq!(Message::decode(&h), Some(Message::CreaturesHello));
+        let mut nan = m.encode();
+        // The speed (the last f32 before the gone list: 2 + 2 x 4 bytes from the end) as NaN.
+        let at = nan.len() - 2 - 8 - 4;
+        nan[at..at + 4].copy_from_slice(&f32::NAN.to_le_bytes());
+        assert_eq!(Message::decode(&nan), None);
+    }
 }

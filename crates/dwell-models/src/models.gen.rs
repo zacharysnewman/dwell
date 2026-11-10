@@ -3,6 +3,7 @@ use crate::{Hand, ModelData, RoleClip};
 
 pub const PLAYER: &str = "peasant";
 pub static PLAYER_GLB: &[u8] = include_bytes!("../../../shared/models/glb/peasant.glb");
+pub static GLBS: &[(&str, &[u8])] = &[("peasant", include_bytes!("../../../shared/models/glb/peasant.glb")), ("deer", include_bytes!("../../../shared/models/glb/deer.glb")), ("dog", include_bytes!("../../../shared/models/glb/dog.glb")), ("kitty", include_bytes!("../../../shared/models/glb/kitty.glb")), ("horse", include_bytes!("../../../shared/models/glb/horse.glb")), ("tiger", include_bytes!("../../../shared/models/glb/tiger.glb")), ("chicken", include_bytes!("../../../shared/models/glb/chicken.glb")), ("penguin", include_bytes!("../../../shared/models/glb/penguin.glb"))];
 pub static MODELS: &[ModelData] = &[
     ModelData { name: "peasant", glb: "glb/peasant.glb", joints: 44, scale: 1.04, yaw: 0.0, fallback: "idle", roles: &[RoleClip { role: "idle", clip: "idle", speed: 1.0 }, RoleClip { role: "walk", clip: "walk", speed: 1.0 }, RoleClip { role: "crouch_walk", clip: "walk", speed: 0.6 }, RoleClip { role: "sprint", clip: "walk", speed: 1.8 }, RoleClip { role: "slide", clip: "walk", speed: 0.4 }], hand: Some(Hand { joint: 24, bone: "hand_r", at: [0.0, 0.05, 0.0], rot: [-2.0, 1.0, -175.0] }) },
     ModelData { name: "deer", glb: "glb/deer.glb", joints: 33, scale: 1.0, yaw: 0.0, fallback: "idle", roles: &[RoleClip { role: "idle", clip: "idle", speed: 1.0 }, RoleClip { role: "walk", clip: "walk", speed: 1.0 }, RoleClip { role: "sprint", clip: "run", speed: 1.0 }], hand: None },

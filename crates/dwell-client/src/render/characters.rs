@@ -279,6 +279,8 @@ pub struct CharacterRenderer {
     /// Other players' bodies and your shadow, skinned (docs/CHARACTERS.md §11): the rigid parts are
     /// kept for your first-person arms and body, and the held items (drawn on the skinned hand).
     skinned: super::skinned::SkinnedRenderer,
+    /// This frame's creatures and their light (ADR 0073), set by the game.
+    pub creatures: Vec<(crate::creatures::CreatureView, [f32; 2])>,
     pub stats: CharacterStats,
 }
 
@@ -853,6 +855,7 @@ impl CharacterRenderer {
         );
         Self {
             skinned,
+            creatures: Vec::new(),
             character,
             look: dwell_characters::DEFAULT_LOOK,
             pipeline,
@@ -1027,6 +1030,7 @@ impl CharacterRenderer {
             // skinned hand after (CHARACTERS.md §11.5).
             if !d.first_person {
                 skinned.push(super::skinned::SkinnedDraw {
+                    model: dwell_models::PLAYER,
                     // Your shadow's clip player apart from any other player's.
                     seed: if d.cast_only { u32::MAX } else { d.seed },
                     feet: d.feet,
@@ -1084,6 +1088,21 @@ impl CharacterRenderer {
                 passes: mask,
                 casts,
                 cast_only: d.cast_only,
+            });
+        }
+        // The creatures (ADR 0073): skinned bodies of their own models, after the players (whose
+        // held items take the first hands).
+        for (c, light) in &self.creatures {
+            skinned.push(super::skinned::SkinnedDraw {
+                model: c.model,
+                seed: c.id,
+                feet: c.feet,
+                yaw: c.yaw,
+                face: c.face,
+                dead: false,
+                role: c.role,
+                light: *light,
+                cast_only: false,
             });
         }
         let hands = self.skinned.prepare(

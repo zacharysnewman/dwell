@@ -2,6 +2,13 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.51.13",
+      "changes": [
+        "Animals in the world: deer, horses and chickens now roam the grass near you, idling and wandering about.",
+        "They keep to the ground they can walk on: no swimming, no stepping off cliffs."
+      ]
+    },
+    {
       "version": "0.51.12",
       "changes": [
         "Big chains of dynamite hitch less on the server: a blast's flying blocks now appear over a few ticks, nearest the blast first, instead of all at once."
