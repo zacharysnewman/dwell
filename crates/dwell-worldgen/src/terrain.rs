@@ -3569,3 +3569,50 @@ pub enum RiverNext {
         out: Vec<(u32, f64)>,
     },
 }
+
+#[cfg(test)]
+mod spawn_tests {
+    use super::*;
+
+    dwell_world::both_faces!(
+        /// WORLD_SCALE.md §3.2: past the origin's spiral, the spawn search's spread cells hold a
+        /// level dry patch, found in a bounded search (at most `SPAWN_SPREAD` cells, each 12 legs
+        /// round), so a world whose spiral finds none still spawns on level low ground.
+        fn spread_spawn_search_finds_level_ground(f: dwell_world::FaceFrame) {
+            let t = crate::BifacialTerrain::new(0);
+            let g = t.local(f.face);
+            let spread = g.spawn_spread(&g.spawn_cells(true), &g.spawn_cells(false));
+            assert!(!spread.is_empty() && spread.len() <= SPAWN_SPREAD);
+            let p = spread
+                .iter()
+                .find_map(|&(x, z)| g.spawn_near(x, z, 12, 0))
+                .expect("a level patch among the spread cells");
+            let (x, z) = (p[0].floor() as i32, p[2].floor() as i32);
+            assert!(g.level_patch(x, z, 0, |x, z| g.column(x, z, 1)), "{p:?}");
+            let above = p[1] - SEA_LEVEL_M;
+            assert!(
+                (S.spawn_min_height.min(1.0)..=2.0 * S.spawn_max_height).contains(&above),
+                "{p:?}: low ground, not a peak"
+            );
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// A patch's rise: 0 asks every top on one row, 1 or 2 within that many rows of the
+        /// centre's; a patch level at 0 is level at any rise.
+        fn a_patchs_rise_relaxes_its_level(f: dwell_world::FaceFrame) {
+            let t = crate::BifacialTerrain::height_field(0);
+            let g = t.local(f.face);
+            let (mut level, mut relaxed) = (0, 0);
+            for k in 0..4000 {
+                let (x, z) = (-8000 + (k % 64) * 250, -8000 + (k / 64) * 250);
+                let l = [0, 1, 2].map(|r| g.level_patch(x, z, r, |x, z| g.column(x, z, 1)));
+                assert!(!l[0] || l[1], "({x}, {z})");
+                assert!(!l[1] || l[2], "({x}, {z})");
+                level += usize::from(l[0]);
+                relaxed += usize::from(l[2]);
+            }
+            assert!(relaxed > level, "{level} level, {relaxed} within 2 rows");
+        }
+    );
+}
