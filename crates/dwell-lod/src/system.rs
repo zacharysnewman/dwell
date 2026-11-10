@@ -283,6 +283,28 @@ pub struct Selection {
     pub stand_ins: Vec<StandIn>,
 }
 
+/// A chunk's level-1 section as the LOD holds it ([`LodSystem::section_report`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SectionReport {
+    /// The section's coordinate: level, i, j, k.
+    pub section: [i32; 4],
+    /// The LOD holds a node for it.
+    pub known: bool,
+    /// Empty, buried or content, once known.
+    pub kind: Option<&'static str>,
+    /// Waits on the server's answer before it is known.
+    pub needs_answer: bool,
+    pub generating: bool,
+    pub meshing: bool,
+    pub meshed: bool,
+    /// The LOD shows the section's chunks as chunks (in full or fading).
+    pub shows_chunks: bool,
+    /// Drawable around the camera: the traversal always reaches it (its chunks drawn).
+    pub forced: bool,
+    /// Known empty or buried: its chunks need not be drawn.
+    pub shows_nothing: bool,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct StandIn {
     /// The region with nothing ready to draw (its box is what gets drawn).
@@ -522,6 +544,8 @@ pub struct LodSystem {
     /// Selections made, and frames that skipped theirs (the bench's `lod.skipped`).
     selections: u64,
     skipped: u64,
+    /// When the last selection ran (ms; `update`'s clock), for the streaming report.
+    selected_ms: Option<f64>,
 }
 
 impl LodSystem {
@@ -580,6 +604,7 @@ impl LodSystem {
             covering_soon: false,
             selections: 0,
             skipped: 0,
+            selected_ms: None,
         };
         s.request_credit = s.rate();
         s
@@ -629,6 +654,40 @@ impl LodSystem {
             self.second = area;
             self.second_since_ms = f64::NAN;
         }
+    }
+
+    /// How a chunk's level-1 section stands (the streaming report, docs/DEV_TOOLS.md): what the LOD
+    /// knows of it and whether it shows the chunk as a chunk.
+    pub fn section_report(&self, coord: ChunkCoord) -> SectionReport {
+        let c = parent(lod_of_chunk(coord));
+        let id = id_of(c);
+        let n = self.nodes.get(&id);
+        SectionReport {
+            section: [c.level, c.i, c.j, c.k],
+            known: n.is_some(),
+            kind: n.and_then(|n| n.kind).map(|k| match k {
+                LodKind::Empty => "empty",
+                LodKind::Buried => "buried",
+                LodKind::Content => "content",
+            }),
+            needs_answer: n.is_some_and(|n| n.needs_answer),
+            generating: n.is_some_and(|n| n.generating),
+            meshing: n.is_some_and(|n| n.meshing),
+            meshed: n.is_some_and(|n| n.meshed),
+            shows_chunks: self.chunk_visible(coord),
+            forced: self.covered.contains(&id),
+            shows_nothing: self.shows_nothing_at(coord),
+        }
+    }
+
+    /// The cache budget (bytes, the Distant memory setting).
+    pub fn cache_budget(&self) -> usize {
+        self.options.cache_bytes
+    }
+
+    /// When the last selection ran (ms, `update`'s clock), or None before the first.
+    pub fn selected_ms(&self) -> Option<f64> {
+        self.selected_ms
     }
 
     pub fn chunk_visible(&self, coord: ChunkCoord) -> bool {
@@ -762,6 +821,7 @@ impl LodSystem {
         }
         self.last_key = key;
         self.selections += 1;
+        self.selected_ms = Some(now_ms);
         let scale_before = self.error_scale;
         self.frame += 1;
         let p = camera.position;

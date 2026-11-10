@@ -416,6 +416,46 @@ were found with `water` at `scope: world` for `sea` then the nearest `dwell:sand
 
 **Random (0.50.44).** `menu-backgrounds.json`'s `default` may be `"random"` (the default since 0.50.44; owner, 2026-11-08): the menu picks a view at random (`nextRandomBackground`), and after each full turn (`turnS`) picks a different one and fades it in over 3 s on a second layer (`MenuPanorama`, `.mm-pano-layer`). Settings offers Random first.
 
+## Streaming report (F8)
+
+**[built, 0.51.23]** For the owner to send the state of a streaming bug from his own game (BUGS.md #54):
+**F8**, the Debug page's **Copy streaming report** or the F3 overlay's **Copy streaming** copies one
+JSON object (`"kind": "dwell-streaming-report"`), or shows it selected in a text box where the clipboard
+is refused; `await __dwell.streamingReport()` returns it (and copies it). Paste it into the bug report or
+the chat as it is. The game's part comes from `Game::streaming_report`
+(`crates/dwell-client/src/game/streaming_report.rs`, the wasm `Client.streamingReport()`), the shell adds
+the rest (`client/src/debug/streamingReport.ts`):
+
+- `version`, `sha`, `channel`, `time`; `device` (the user agent's first 160 characters,
+  `hardwareConcurrency`, `deviceMemory`, the GPU adapter's name, `cpuAdapter`, the screen and DPR);
+  `settings` (render scale, upscaler, Full detail, Distant detail, Distant memory, the preset or
+  `custom`); `world` (local, seed, generator version, the URL's `world` and `mode`, the compatibility
+  line); `flySpeedLevel` while flying.
+- `player`: feet, velocity, speed, face, flying, its chunk.
+- `nearRing`: every chunk within ±3 chunks (`NEAR_RING_CHUNKS`) of the player's in the world's rows,
+  `needed` and `drawnFull`; each chunk's coordinate `c`, distance `d` (m), `flags` (loaded, air,
+  generating, lit, meshed, meshing, dirty, drawable, drawn — as a chunk at full detail —, settling,
+  outsideVolume), its level-1 section's `lod` (known, kind, needsAnswer, generating, meshing, meshed,
+  showsChunks, forced, showsNothing), and for a chunk in the volume not drawn in full, `waits`: the
+  `reasons`, the face neighbours it waits on (generating or unlit) and those the server never sent, its
+  place in the dirty order, and its generation's and mesh job's place in the pool's queue (or
+  `"running"`).
+- `pool`: per kind of job (`chunk`, `chunk_mesh`, `section`, `section_mesh`, `bounds`, …) queued, in
+  flight and the oldest one's age (ms); the focus, `nearJobsM`, the slow-frame scale, the capacity.
+- `streamer`: loaded, generating, meshed, dirty, meshing, unlit, settling, resyncs, terrainReady, the
+  server's view and render radii, the unloads of the last 30 s and those within 48 m (the nearest 64
+  listed with distance and age).
+- `lod`: sections drawn by level, chunk sections, nodes, jobs, `cacheBytes` against `cacheBudget` (the
+  Distant memory), in-use bytes, the error scale, what the view waits for, the last selection's counts
+  and its age.
+- `frames`: over the last 10 s, the frame interval's p50/p95/max, frames a second, chunk and section
+  uploads a second and their time, jobs applied a second; `creatures`: how many the client holds.
+
+It stays under ~200 KB (`REPORT_MAX_BYTES`: indented where that fits, else one line, else the chunks
+drawn in full dropped and counted). Tests: `the_streaming_report_describes_the_near_ring_pool_streamer_and_lod`
+(`game_local.rs`), `a_chunk_status_names_the_neighbour_it_waits_on` (dwell-game, both faces),
+`streamingReport.test.ts`.
+
 ## Pausing the look
 
 A debug pause stops every drawn animation at one instant while the game runs on (owner,

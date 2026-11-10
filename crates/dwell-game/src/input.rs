@@ -94,7 +94,7 @@ pub enum EditAction {
 /// What a key press asks of the shell, besides the held key.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum InputEvent {
-    /// Debug toggles: F3 overlay, F4 terrain map, F6, F7 pause the look; Minus and Equal zoom the map.
+    /// Debug toggles: F3 overlay, F4 terrain map, F6 block info, F7 pause the look, F8 streaming report; Minus and Equal zoom the map.
     Toggle(String),
     /// Hotbar: a number key (its code, e.g. `Digit3`).
     Digit(String),
@@ -289,7 +289,7 @@ impl KeyboardMouseInput {
 
     /// A `keydown`: `code` is `KeyboardEvent.code`.
     pub fn key_down(&mut self, code: &str, repeat: bool, ctrl: bool, meta: bool) -> KeyDown {
-        if matches!(code, "F3" | "F4" | "F6" | "F7") {
+        if matches!(code, "F3" | "F4" | "F6" | "F7" | "F8") {
             return KeyDown {
                 prevent_default: true,
                 events: vec![InputEvent::Toggle(code.to_owned())],
@@ -717,7 +717,7 @@ mod tests {
             tool_for_key(key, false, false).is_none() && tool_for_key(key, false, true).is_none()
         );
         for taken in [
-            FLY_KEY, "KeyW", "KeyA", "KeyS", "KeyD", "KeyC", "Space", "F3", "F4", "F6", "F7",
+            FLY_KEY, "KeyW", "KeyA", "KeyS", "KeyD", "KeyC", "Space", "F3", "F4", "F6", "F7", "F8",
         ] {
             assert_ne!(key, taken);
         }
@@ -831,5 +831,13 @@ mod tests {
         input.gamepad_frame(&b, &[0.0, -1.0, 0.0, 0.0], 0.016, false, 1.0);
         let s = input.sample(None);
         assert!(!s.jump && s.move_y == 0.0);
+    }
+
+    #[test]
+    fn f8_asks_the_shell_for_the_streaming_report() {
+        let mut input = KeyboardMouseInput::new();
+        let down = input.key_down("F8", false, false, false);
+        assert!(down.prevent_default);
+        assert_eq!(down.events, vec![InputEvent::Toggle("F8".to_owned())]);
     }
 }

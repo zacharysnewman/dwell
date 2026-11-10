@@ -2,6 +2,14 @@ import { buildInfo, channelOf, formatBuildInfo, recordedVersion } from './buildI
 import { isGameMode } from './ui/modes';
 import { blockDump, formatBlockDump, type BlockDump, type BlockTarget } from './debug/blockDump';
 import {
+  deviceOf,
+  formatStreamingReport,
+  gpuName,
+  streamingReport,
+  type ReportSettings,
+  type StreamingReport,
+} from './debug/streamingReport';
+import {
   Client,
   hotbarSwatch,
   itemSwatch,
@@ -34,7 +42,7 @@ import { regenerateWorld } from './local/regenerate';
 import type { SessionReport } from './net/sessionState';
 import { rememberTrust, showRegistryPrompt, trustedHash } from './ui/registryPrompt';
 import { showUpgradePrompt } from './ui/upgradePrompt';
-import { sameLine } from './version/semver';
+import { compatibilityLine, sameLine } from './version/semver';
 import { isSpawn, parseLocalWorld, spawnOptions, type LocalWorld } from './local/world';
 import { cleanName, creatableType, parseSeed, WorldIndex } from './local/worldIndex';
 import { worldAccess } from './local/worldAccess';
@@ -68,7 +76,7 @@ import {
 import { displayScale } from './ui/displayScale';
 import type { CloudQuality } from './ui/viewSettings';
 import { UPSCALE, renderScaleFromQuery } from './ui/renderScaleSettings';
-import { presetFromQuery } from './ui/graphicsPresets';
+import { presetFromQuery, presetOf } from './ui/graphicsPresets';
 import { FlightSpeedControl } from './ui/flightSpeedControl';
 import { loadFlySpeedLevel, saveFlySpeedLevel } from './predict/flightSpeed';
 import { formatStatus } from './ui/statusOverlay';
@@ -243,6 +251,11 @@ interface DwellDebug {
   memory(): MemoryReport | null;
   /** The block dump around the target (debug/blockDump.ts), or null before playing. */
   blockDump(): BlockDump | null;
+  /**
+   * The streaming report (F8; debug/streamingReport.ts, docs/DEV_TOOLS.md): the near ring's
+   * chunks and what each waits on, the job pool, the streamer and the LOD; copied too.
+   */
+  streamingReport(): Promise<StreamingReport>;
   /**
    * The local server's figures over the last second (its ticks' time; the water's thread: run
    * time, owed time, queue; docs/DEV_TOOLS.md); null outside a local world or before the first.
@@ -608,6 +621,7 @@ function handleEvents(app: App): void {
     if (e.t === 'toggle') {
       if (e.value === 'F3') toggleDebug(app);
       if (e.value === 'F6') copyBlockDump(app);
+      if (e.value === 'F8') copyStreamingReport(app);
       if (e.value === 'F7') togglePauseLook(app);
       if (e.value === 'F4') toggleMap(app);
       if (e.value === 'Minus') zoomMap(app, 1);
@@ -858,6 +872,14 @@ async function start(): Promise<App | null> {
     client.setFov(s.fovDeg);
     client.setShowArms(s.showArms);
     client.setDetail(s.detail.distanceM, s.detail.pixelError, s.detail.memoryMb);
+    reportSettings = {
+      renderScale: rs.scale,
+      upscaler: rs.upscaler,
+      fullDetailM: s.detail.distanceM,
+      distantPixelError: s.detail.pixelError,
+      distantMemoryMb: s.detail.memoryMb,
+      preset: presetOf(s, mobile)?.id ?? 'custom',
+    };
   });
   app.settings = settings;
   // While the menu is open the touch controls step aside: they would take its taps.
@@ -937,6 +959,12 @@ async function start(): Promise<App | null> {
       },
     },
     {
+      key: 'F8',
+      run: () => {
+        copyStreamingReport(app);
+      },
+    },
+    {
       key: 'F7',
       run: () => {
         togglePauseLook(app);
@@ -980,6 +1008,9 @@ async function start(): Promise<App | null> {
   if (pauseFromQuery(location.search)) client.setLookPaused(true);
   app.hud.onCopyBlocks = () => {
     copyBlockDump(app);
+  };
+  app.hud.onCopyStreaming = () => {
+    copyStreamingReport(app);
   };
   client.flySpeed(loadFlySpeedLevel());
   app.flightSpeed.show(client.flySpeedLevel());
@@ -1092,6 +1123,11 @@ async function start(): Promise<App | null> {
     setCrossingRoll: (seconds) => client.setCrossingRoll(seconds),
     memory: () => memoryReport(app),
     blockDump: () => blockDumpOf(app),
+    streamingReport: async () => {
+      const r = await streamingReportOf(app);
+      copyText(app, Promise.resolve(formatStreamingReport(r)), 'Streaming report copied');
+      return r;
+    },
     telemetry: () => client.telemetry() as Telemetry,
     telemetryFrames: () => client.telemetryFrames() as { names: string[]; frames: number[][] },
     waterFlowAt: (x: number, y: number, z: number) => Array.from(client.waterFlowAt(x, y, z)),
@@ -1378,6 +1414,80 @@ async function waterReportOf(app: App): Promise<unknown> {
   }
 }
 
+/** The settings last applied, for the streaming report. */
+let reportSettings: ReportSettings | null = null;
+
+/** The streaming report (debug/streamingReport.ts): the game's part and the shell's. */
+async function streamingReportOf(app: App): Promise<StreamingReport> {
+  const gpu = await gpuName();
+  let game: Record<string, unknown> | null;
+  try {
+    game = JSON.parse(app.client.streamingReport()) as Record<string, unknown> | null;
+  } catch {
+    game = null;
+  }
+  const q = new URLSearchParams(location.search);
+  return streamingReport({
+    build: {
+      version: buildInfo.version,
+      sha: buildInfo.sha,
+      channel: channelOf(buildInfo.version),
+    },
+    game,
+    device: deviceOf(gpu, app.client.cpuAdapter()),
+    settings: reportSettings,
+    world: {
+      local: app.loopback !== null,
+      seed: app.world ? app.world.seed.toString() : null,
+      generatorVersion: app.world?.generatorVersion ?? null,
+      type: q.get('world'),
+      mode: q.get('mode'),
+      compatibilityLine: compatibilityLine(buildInfo.version),
+    },
+    ...(app.client.flying() ? { flySpeedLevel: app.client.flySpeedLevel() } : {}),
+  });
+}
+
+/** Copies the streaming report (F8, or the Debug page's button), or shows it to copy by hand. */
+function copyStreamingReport(app: App): void {
+  if (!app.client.debugState()) {
+    app.hud.flash('No world to report yet');
+    audio().ui('error');
+    return;
+  }
+  copyText(
+    app,
+    streamingReportOf(app).then((r) => formatStreamingReport(r)),
+    'Streaming report copied',
+  );
+}
+
+/**
+ * Copies `text` to the clipboard (given as a promise within the tap that asked: Safari's rule),
+ * or shows it in the HUD's text box to copy by hand where that is refused.
+ */
+function copyText(app: App, text: Promise<string>, done: string): void {
+  const shown = () => {
+    void text.then((t) => {
+      app.hud.showDump(t);
+    });
+  };
+  const copied = () => {
+    app.hud.flash(done);
+    audio().action('copy');
+  };
+  try {
+    if (typeof ClipboardItem !== 'undefined') {
+      const blob = text.then((t) => new Blob([t], { type: 'text/plain' }));
+      navigator.clipboard.write([new ClipboardItem({ 'text/plain': blob })]).then(copied, shown);
+    } else {
+      void text.then((t) => navigator.clipboard.writeText(t)).then(copied, shown);
+    }
+  } catch {
+    shown(); // no clipboard (an insecure context)
+  }
+}
+
 /** Copies the block dump to the clipboard, or shows it to copy by hand where that is refused. */
 function copyBlockDump(app: App): void {
   if (!blockDumpOf(app)) {
@@ -1391,25 +1501,7 @@ function copyBlockDump(app: App): void {
     const dump = blockDumpOf(app, water);
     return dump ? formatBlockDump(dump) : '';
   });
-  const shown = () => {
-    void text.then((t) => {
-      app.hud.showDump(t);
-    });
-  };
-  const copied = () => {
-    app.hud.flash('Block info copied');
-    audio().action('copy');
-  };
-  try {
-    if (typeof ClipboardItem !== 'undefined') {
-      const blob = text.then((t) => new Blob([t], { type: 'text/plain' }));
-      navigator.clipboard.write([new ClipboardItem({ 'text/plain': blob })]).then(copied, shown);
-    } else {
-      void text.then((t) => navigator.clipboard.writeText(t)).then(copied, shown);
-    }
-  } catch {
-    shown(); // no clipboard (an insecure context)
-  }
+  copyText(app, text, 'Block info copied');
 }
 
 /** Local storage, or null where it is blocked. */
