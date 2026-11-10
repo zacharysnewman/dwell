@@ -226,6 +226,7 @@
   },
   "sounds": {
     "stone_step": {
+      "samples": {"files": ["stone-step-1.m4a", "stone-step-2.m4a", "stone-step-3.m4a", "stone-step-4.m4a", "stone-step-5.m4a", "stone-step-6.m4a"], "gain": 0.5, "pitch": 1},
       "gain": 1.022,
       "reverb": 0.099,
       "variation": {"pitch": 1.5, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
@@ -272,6 +273,7 @@
       ]
     },
     "stone_land": {
+      "samples": {"files": ["stone-land-1.m4a", "stone-land-2.m4a", "stone-land-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 1.163,
       "reverb": 0.121,
       "variation": {"pitch": 1.5, "gain": 1.5, "cutoff": 0.12, "time": 0.12},
@@ -311,6 +313,7 @@
       ]
     },
     "stone_break": {
+      "samples": {"files": ["stone-break-1.m4a", "stone-break-2.m4a", "stone-break-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 0.729,
       "reverb": 0.138,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
@@ -359,6 +362,7 @@
       ]
     },
     "stone_place": {
+      "samples": {"files": ["stone-place-1.m4a", "stone-place-2.m4a", "stone-place-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 0.804,
       "reverb": 0.11,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.1, "time": 0.1},
@@ -394,6 +398,7 @@
       ]
     },
     "stone_hit": {
+      "samples": {"files": ["stone-hit-1.m4a", "stone-hit-2.m4a", "stone-hit-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 0.782,
       "reverb": 0.083,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.1, "time": 0.1},
@@ -414,6 +419,7 @@
       ]
     },
     "dirt_step": {
+      "samples": {"files": ["dirt-step-1.m4a", "dirt-step-2.m4a", "dirt-step-3.m4a", "dirt-step-4.m4a", "dirt-step-5.m4a", "dirt-step-6.m4a"], "gain": 0.5, "pitch": 1},
       "gain": 1.546,
       "reverb": 0.066,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.18, "time": 0.15},
@@ -439,6 +445,7 @@
       ]
     },
     "dirt_land": {
+      "samples": {"files": ["dirt-land-1.m4a", "dirt-land-2.m4a", "dirt-land-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 0.951,
       "reverb": 0.083,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.12},
@@ -473,6 +480,7 @@
       ]
     },
     "dirt_break": {
+      "samples": {"files": ["dirt-break-1.m4a", "dirt-break-2.m4a", "dirt-break-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 1.327,
       "reverb": 0.083,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
@@ -506,6 +514,7 @@
       ]
     },
     "dirt_place": {
+      "samples": {"files": ["dirt-place-1.m4a", "dirt-place-2.m4a", "dirt-place-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 1.174,
       "reverb": 0.066,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.12, "time": 0.1},
@@ -536,6 +545,7 @@
       ]
     },
     "dirt_hit": {
+      "samples": {"files": ["dirt-hit-1.m4a", "dirt-hit-2.m4a", "dirt-hit-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 1.56,
       "reverb": 0.055,
       "variation": {"pitch": 2, "gain": 1, "cutoff": 0.12, "time": 0.1},
@@ -557,6 +567,7 @@
       ]
     },
     "snow_step": {
+      "samples": {"files": ["snow-step-1.m4a", "snow-step-2.m4a", "snow-step-3.m4a", "snow-step-4.m4a", "snow-step-5.m4a", "snow-step-6.m4a"], "gain": 0.5, "pitch": 1},
       "gain": 1.902,
       "reverb": 0.055,
       "variation": {
@@ -646,6 +657,7 @@
       ]
     },
     "snow_land": {
+      "samples": {"files": ["snow-land-1.m4a", "snow-land-2.m4a", "snow-land-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 1.095,
       "reverb": 0.066,
       "variation": {
@@ -732,6 +744,7 @@
       ]
     },
     "grass_step": {
+      "samples": {"files": ["grass-step-1.m4a", "grass-step-2.m4a", "grass-step-3.m4a", "grass-step-4.m4a", "grass-step-5.m4a", "grass-step-6.m4a"], "gain": 0.5, "pitch": 1},
       "gain": 1.902,
       "reverb": 0.055,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.18, "time": 0.18},
@@ -766,6 +779,7 @@
       ]
     },
     "grass_land": {
+      "samples": {"files": ["grass-land-1.m4a", "grass-land-2.m4a", "grass-land-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 1.095,
       "reverb": 0.066,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.12},
@@ -801,6 +815,7 @@
       ]
     },
     "grass_break": {
+      "samples": {"files": ["grass-break-1.m4a", "grass-break-2.m4a", "grass-break-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 2.318,
       "reverb": 0.066,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
@@ -835,6 +850,7 @@
       ]
     },
     "grass_place": {
+      "samples": {"files": ["grass-place-1.m4a", "grass-place-2.m4a", "grass-place-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 1.359,
       "reverb": 0.066,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.12, "time": 0.1},
@@ -869,6 +885,7 @@
       ]
     },
     "sand_step": {
+      "samples": {"files": ["sand-step-1.m4a", "sand-step-2.m4a", "sand-step-3.m4a", "sand-step-4.m4a", "sand-step-5.m4a", "sand-step-6.m4a"], "gain": 0.5, "pitch": 1},
       "gain": 1.546,
       "reverb": 0.044,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.2},
@@ -894,6 +911,7 @@
       ]
     },
     "sand_land": {
+      "samples": {"files": ["sand-land-1.m4a", "sand-land-2.m4a", "sand-land-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 2.023,
       "reverb": 0.055,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
@@ -927,6 +945,7 @@
       ]
     },
     "sand_break": {
+      "samples": {"files": ["sand-break-1.m4a", "sand-break-2.m4a", "sand-break-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 1.511,
       "reverb": 0.055,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
@@ -959,6 +978,7 @@
       ]
     },
     "sand_place": {
+      "samples": {"files": ["sand-place-1.m4a", "sand-place-2.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 2.323,
       "reverb": 0.044,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.12, "time": 0.12},
@@ -988,6 +1008,7 @@
       ]
     },
     "sand_hit": {
+      "samples": {"files": ["sand-hit-1.m4a", "sand-hit-2.m4a", "sand-hit-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 2.296,
       "reverb": 0.044,
       "variation": {"pitch": 2, "gain": 1, "cutoff": 0.12, "time": 0.12},
@@ -1002,6 +1023,7 @@
       ]
     },
     "wood_step": {
+      "samples": {"files": ["wood-step-1.m4a", "wood-step-2.m4a", "wood-step-3.m4a", "wood-step-4.m4a", "wood-step-5.m4a", "wood-step-6.m4a"], "gain": 0.5, "pitch": 1},
       "gain": 0.88,
       "reverb": 0.11,
       "variation": {"pitch": 1.5, "gain": 1.5, "cutoff": 0.12, "time": 0.12},
@@ -1030,6 +1052,7 @@
       ]
     },
     "wood_land": {
+      "samples": {"files": ["wood-land-1.m4a", "wood-land-2.m4a", "wood-land-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 1.108,
       "reverb": 0.121,
       "variation": {"pitch": 1.5, "gain": 1.5, "cutoff": 0.12, "time": 0.12},
@@ -1058,6 +1081,7 @@
       ]
     },
     "wood_break": {
+      "samples": {"files": ["wood-break-1.m4a", "wood-break-2.m4a", "wood-break-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 1.434,
       "reverb": 0.121,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
@@ -1094,6 +1118,7 @@
       ]
     },
     "wood_place": {
+      "samples": {"files": ["wood-place-1.m4a", "wood-place-2.m4a", "wood-place-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 0.751,
       "reverb": 0.11,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.1, "time": 0.1},
@@ -1122,6 +1147,7 @@
       ]
     },
     "wood_hit": {
+      "samples": {"files": ["wood-hit-1.m4a", "wood-hit-2.m4a", "wood-hit-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 0.721,
       "reverb": 0.083,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.1, "time": 0.1},
@@ -1137,6 +1163,7 @@
       ]
     },
     "water_step": {
+      "samples": {"files": ["water-step-1.m4a", "water-step-2.m4a", "water-step-3.m4a", "water-step-4.m4a"], "gain": 0.5, "pitch": 1},
       "gain": 2.094,
       "reverb": 0.083,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.18, "time": 0.15},
@@ -1161,6 +1188,7 @@
       ]
     },
     "water_swim": {
+      "samples": {"files": ["water-swim-1.m4a", "water-swim-2.m4a", "water-swim-3.m4a", "water-swim-4.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 1.16,
       "reverb": 0.099,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.2, "time": 0.15},
@@ -1192,6 +1220,7 @@
       ]
     },
     "water_enter": {
+      "samples": {"files": ["water-enter-1.m4a", "water-enter-2.m4a", "water-enter-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 1.018,
       "reverb": 0.138,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
@@ -1235,6 +1264,7 @@
       ]
     },
     "water_exit": {
+      "samples": {"files": ["water-exit-1.m4a", "water-exit-2.m4a", "water-exit-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 1.49,
       "reverb": 0.11,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
@@ -1260,6 +1290,7 @@
       ]
     },
     "water_place": {
+      "samples": {"files": ["water-place-1.m4a", "water-place-2.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 2.793,
       "reverb": 0.11,
       "variation": {"pitch": 2, "gain": 1, "cutoff": 0.15, "time": 0.15},
@@ -1283,6 +1314,7 @@
       ]
     },
     "jump": {
+      "samples": {"files": ["jump-1.m4a", "jump-2.m4a", "jump-3.m4a"], "gain": 0.4, "pitch": 1.5},
       "gain": 1.135,
       "reverb": 0.028,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.12, "time": 0.12},
@@ -1491,6 +1523,7 @@
       ]
     },
     "deny": {
+      "samples": {"files": ["deny-1.m4a"], "gain": 0.4, "pitch": 0},
       "gain": 0.879,
       "reverb": 0.028,
       "variation": "none",
@@ -1959,6 +1992,7 @@
       ]
     },
     "chop_bark": {
+      "samples": {"files": ["chop-bark-1.m4a", "chop-bark-2.m4a", "chop-bark-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 0.9, "reverb": 0.08,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.1, "time": 0.1},
       "layers": [
@@ -1967,6 +2001,7 @@
       ]
     },
     "chop_wood": {
+      "samples": {"files": ["chop-wood-1.m4a", "chop-wood-2.m4a", "chop-wood-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 1.0, "reverb": 0.1,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.1, "time": 0.1},
       "layers": [
@@ -1975,6 +2010,7 @@
       ]
     },
     "chop_creak": {
+      "samples": {"files": ["chop-creak-1.m4a", "chop-creak-2.m4a", "chop-creak-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 1.05, "reverb": 0.18,
       "variation": {"pitch": 2, "gain": 1, "cutoff": 0.1, "time": 0.12},
       "layers": [
@@ -1984,6 +2020,7 @@
       ]
     },
     "axe_clank": {
+      "samples": {"files": ["axe-clank-1.m4a", "axe-clank-2.m4a", "axe-clank-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 0.9, "reverb": 0.1,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.1, "time": 0.1},
       "layers": [
@@ -2000,6 +2037,7 @@
       ]
     },
     "axe_swish": {
+      "samples": {"files": ["axe-swish-1.m4a", "axe-swish-2.m4a", "axe-swish-3.m4a"], "gain": 0.4, "pitch": 1.5},
       "gain": 0.5, "reverb": 0.04,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.15, "time": 0.1},
       "layers": [
@@ -2007,6 +2045,7 @@
       ]
     },
     "fell_crack": {
+      "samples": {"files": ["fell-crack-1.m4a", "fell-crack-2.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 1.2, "reverb": 0.25,
       "variation": {"pitch": 2, "gain": 1, "cutoff": 0.1, "time": 0.12},
       "layers": [
@@ -2017,6 +2056,7 @@
       ]
     },
     "body_thud": {
+      "samples": {"files": ["body-thud-1.m4a", "body-thud-2.m4a", "body-thud-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 0.6, "reverb": 0.08,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.12, "time": 0.12},
       "intensity": {"gain": [0.22, 1], "cutoff": [0.5, 1], "time": [0.75, 1.2]},
@@ -2027,6 +2067,7 @@
       ]
     },
     "hurt": {
+      "samples": {"files": ["hurt-1.m4a", "hurt-2.m4a", "hurt-3.m4a", "hurt-4.m4a"], "gain": 0.5, "pitch": 0.5},
       "gain": 0.8, "reverb": 0.06,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.08, "time": 0.08},
       "intensity": {"gain": [0.55, 1], "cutoff": [0.7, 1], "time": [0.85, 1.15]},
@@ -2037,6 +2078,7 @@
       ]
     },
     "death": {
+      "samples": {"files": ["death-1.m4a"], "gain": 0.5, "pitch": 0.5},
       "gain": 0.8, "reverb": 0.2,
       "variation": {"pitch": 0.5, "gain": 0.5},
       "layers": [
@@ -2110,6 +2152,7 @@
       ]
     },
     "dynamite_boom": {
+      "samples": {"files": ["dynamite-boom-1.m4a", "dynamite-boom-2.m4a", "dynamite-boom-3.m4a"], "gain": 1.0, "pitch": 1},
       "gain": 2.4, "reverb": 0.45,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.1, "time": 0.1},
       "intensity": {"gain": [0, 1], "cutoff": [0.35, 1]},

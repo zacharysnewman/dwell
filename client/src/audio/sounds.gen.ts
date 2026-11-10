@@ -562,6 +562,18 @@ export const SOUND_DATA: SoundData = {
   },
   "sounds": {
     "dwell:stone_step": {
+      "samples": {
+        "files": [
+          "stone-step-1-c59eeb14.m4a",
+          "stone-step-2-2906775e.m4a",
+          "stone-step-3-c168c956.m4a",
+          "stone-step-4-afeb28fc.m4a",
+          "stone-step-5-19afed25.m4a",
+          "stone-step-6-50d6fc07.m4a"
+        ],
+        "gain": 0.5,
+        "pitch": 1
+      },
       "gain": 1.022,
       "reverb": 0.099,
       "variation": {
@@ -680,6 +692,15 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:stone_land": {
+      "samples": {
+        "files": [
+          "stone-land-1-24450457.m4a",
+          "stone-land-2-d84bbc30.m4a",
+          "stone-land-3-531e94f8.m4a"
+        ],
+        "gain": 0.6,
+        "pitch": 1
+      },
       "gain": 1.163,
       "reverb": 0.121,
       "variation": {
@@ -778,6 +799,15 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:stone_break": {
+      "samples": {
+        "files": [
+          "stone-break-1-149f30ee.m4a",
+          "stone-break-2-4e5a2e88.m4a",
+          "stone-break-3-62b281b0.m4a"
+        ],
+        "gain": 0.6,
+        "pitch": 1
+      },
       "gain": 0.729,
       "reverb": 0.138,
       "variation": {
@@ -906,6 +936,15 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:stone_place": {
+      "samples": {
+        "files": [
+          "stone-place-1-2ee789d9.m4a",
+          "stone-place-2-43fcd098.m4a",
+          "stone-place-3-6778e6bd.m4a"
+        ],
+        "gain": 0.6,
+        "pitch": 1
+      },
       "gain": 0.804,
       "reverb": 0.11,
       "variation": {
@@ -982,6 +1021,15 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:stone_hit": {
+      "samples": {
+        "files": [
+          "stone-hit-1-51f3053c.m4a",
+          "stone-hit-2-f97febb5.m4a",
+          "stone-hit-3-b6b36794.m4a"
+        ],
+        "gain": 0.6,
+        "pitch": 1
+      },
       "gain": 0.782,
       "reverb": 0.083,
       "variation": {
@@ -1027,6 +1075,18 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:dirt_step": {
+      "samples": {
+        "files": [
+          "dirt-step-1-1b494792.m4a",
+          "dirt-step-2-f620358a.m4a",
+          "dirt-step-3-33f64fc6.m4a",
+          "dirt-step-4-74fb0116.m4a",
+          "dirt-step-5-a33f58f7.m4a",
+          "dirt-step-6-af200586.m4a"
+        ],
+        "gain": 0.5,
+        "pitch": 1
+      },
       "gain": 1.546,
       "reverb": 0.066,
       "variation": {
@@ -1087,6 +1147,15 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:dirt_land": {
+      "samples": {
+        "files": [
+          "dirt-land-1-e7b90d2a.m4a",
+          "dirt-land-2-fefa5acb.m4a",
+          "dirt-land-3-14cc5627.m4a"
+        ],
+        "gain": 0.6,
+        "pitch": 1
+      },
       "gain": 0.951,
       "reverb": 0.083,
       "variation": {
@@ -1172,6 +1241,15 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:dirt_break": {
+      "samples": {
+        "files": [
+          "dirt-break-1-0a1c3eae.m4a",
+          "dirt-break-2-ad4005cf.m4a",
+          "dirt-break-3-41077bcf.m4a"
+        ],
+        "gain": 0.6,
+        "pitch": 1
+      },
       "gain": 1.327,
       "reverb": 0.083,
       "variation": {
@@ -1243,6 +1321,15 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:dirt_place": {
+      "samples": {
+        "files": [
+          "dirt-place-1-af149ef2.m4a",
+          "dirt-place-2-29922c39.m4a",
+          "dirt-place-3-fa8057a3.m4a"
+        ],
+        "gain": 0.6,
+        "pitch": 1
+      },
       "gain": 1.174,
       "reverb": 0.066,
       "variation": {
@@ -1310,6 +1397,15 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:dirt_hit": {
+      "samples": {
+        "files": [
+          "dirt-hit-1-db70ff31.m4a",
+          "dirt-hit-2-d415d1db.m4a",
+          "dirt-hit-3-2fbf1114.m4a"
+        ],
+        "gain": 0.6,
+        "pitch": 1
+      },
       "gain": 1.56,
       "reverb": 0.055,
       "variation": {
@@ -1353,6 +1449,18 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:snow_step": {
+      "samples": {
+        "files": [
+          "snow-step-1-a8f68c0c.m4a",
+          "snow-step-2-74ae75e5.m4a",
+          "snow-step-3-da20f7c4.m4a",
+          "snow-step-4-373887f3.m4a",
+          "snow-step-5-d945327e.m4a",
+          "snow-step-6-791f407d.m4a"
+        ],
+        "gain": 0.5,
+        "pitch": 1
+      },
       "gain": 1.902,
       "reverb": 0.055,
       "variation": {
@@ -1442,6 +1550,15 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:snow_land": {
+      "samples": {
+        "files": [
+          "snow-land-1-5e6a6550.m4a",
+          "snow-land-2-c13795fd.m4a",
+          "snow-land-3-4111e9ef.m4a"
+        ],
+        "gain": 0.6,
+        "pitch": 1
+      },
       "gain": 1.095,
       "reverb": 0.066,
       "variation": {
@@ -1528,6 +1645,18 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:grass_step": {
+      "samples": {
+        "files": [
+          "grass-step-1-437e2e79.m4a",
+          "grass-step-2-4ab9ef08.m4a",
+          "grass-step-3-2f69fd0a.m4a",
+          "grass-step-4-6e1efa60.m4a",
+          "grass-step-5-14c021c5.m4a",
+          "grass-step-6-9e0addf8.m4a"
+        ],
+        "gain": 0.5,
+        "pitch": 1
+      },
       "gain": 1.902,
       "reverb": 0.055,
       "variation": {
@@ -1617,6 +1746,15 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:grass_land": {
+      "samples": {
+        "files": [
+          "grass-land-1-27fe37de.m4a",
+          "grass-land-2-5ae9e4b2.m4a",
+          "grass-land-3-8567f726.m4a"
+        ],
+        "gain": 0.6,
+        "pitch": 1
+      },
       "gain": 1.095,
       "reverb": 0.066,
       "variation": {
@@ -1703,6 +1841,15 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:grass_break": {
+      "samples": {
+        "files": [
+          "grass-break-1-82fe845a.m4a",
+          "grass-break-2-2588176e.m4a",
+          "grass-break-3-c52dc85d.m4a"
+        ],
+        "gain": 0.6,
+        "pitch": 1
+      },
       "gain": 2.318,
       "reverb": 0.066,
       "variation": {
@@ -1792,6 +1939,15 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:grass_place": {
+      "samples": {
+        "files": [
+          "grass-place-1-e1179d91.m4a",
+          "grass-place-2-af69d671.m4a",
+          "grass-place-3-77591c8c.m4a"
+        ],
+        "gain": 0.6,
+        "pitch": 1
+      },
       "gain": 1.359,
       "reverb": 0.066,
       "variation": {
@@ -1864,6 +2020,18 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:sand_step": {
+      "samples": {
+        "files": [
+          "sand-step-1-3c5e41c8.m4a",
+          "sand-step-2-8f347b63.m4a",
+          "sand-step-3-e7f160da.m4a",
+          "sand-step-4-3fce5489.m4a",
+          "sand-step-5-e7025885.m4a",
+          "sand-step-6-5295d35b.m4a"
+        ],
+        "gain": 0.5,
+        "pitch": 1
+      },
       "gain": 1.546,
       "reverb": 0.044,
       "variation": {
@@ -1924,6 +2092,15 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:sand_land": {
+      "samples": {
+        "files": [
+          "sand-land-1-91bdf3a3.m4a",
+          "sand-land-2-b36a96af.m4a",
+          "sand-land-3-520ef3cb.m4a"
+        ],
+        "gain": 0.6,
+        "pitch": 1
+      },
       "gain": 2.023,
       "reverb": 0.055,
       "variation": {
@@ -2012,6 +2189,15 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:sand_break": {
+      "samples": {
+        "files": [
+          "sand-break-1-125188d4.m4a",
+          "sand-break-2-6bd9d381.m4a",
+          "sand-break-3-2d2b5e9b.m4a"
+        ],
+        "gain": 0.6,
+        "pitch": 1
+      },
       "gain": 1.511,
       "reverb": 0.055,
       "variation": {
@@ -2089,6 +2275,14 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:sand_place": {
+      "samples": {
+        "files": [
+          "sand-place-1-265ed629.m4a",
+          "sand-place-2-db5b8a62.m4a"
+        ],
+        "gain": 0.6,
+        "pitch": 1
+      },
       "gain": 2.323,
       "reverb": 0.044,
       "variation": {
@@ -2161,6 +2355,15 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:sand_hit": {
+      "samples": {
+        "files": [
+          "sand-hit-1-395babfc.m4a",
+          "sand-hit-2-327cdbf7.m4a",
+          "sand-hit-3-3d17d21a.m4a"
+        ],
+        "gain": 0.6,
+        "pitch": 1
+      },
       "gain": 2.296,
       "reverb": 0.044,
       "variation": {
@@ -2189,6 +2392,18 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:wood_step": {
+      "samples": {
+        "files": [
+          "wood-step-1-2e02c8e6.m4a",
+          "wood-step-2-afa4aeae.m4a",
+          "wood-step-3-ddaf996c.m4a",
+          "wood-step-4-f13f83da.m4a",
+          "wood-step-5-e7ab06a5.m4a",
+          "wood-step-6-fabd98dc.m4a"
+        ],
+        "gain": 0.5,
+        "pitch": 1
+      },
       "gain": 0.88,
       "reverb": 0.11,
       "variation": {
@@ -2270,6 +2485,15 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:wood_land": {
+      "samples": {
+        "files": [
+          "wood-land-1-335d8e4b.m4a",
+          "wood-land-2-26b1afdd.m4a",
+          "wood-land-3-a3332300.m4a"
+        ],
+        "gain": 0.6,
+        "pitch": 1
+      },
       "gain": 1.108,
       "reverb": 0.121,
       "variation": {
@@ -2354,6 +2578,15 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:wood_break": {
+      "samples": {
+        "files": [
+          "wood-break-1-06876f71.m4a",
+          "wood-break-2-99c39506.m4a",
+          "wood-break-3-a122998d.m4a"
+        ],
+        "gain": 0.6,
+        "pitch": 1
+      },
       "gain": 1.434,
       "reverb": 0.121,
       "variation": {
@@ -2462,6 +2695,15 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:wood_place": {
+      "samples": {
+        "files": [
+          "wood-place-1-4d9a6052.m4a",
+          "wood-place-2-26681398.m4a",
+          "wood-place-3-7c9af0c9.m4a"
+        ],
+        "gain": 0.6,
+        "pitch": 1
+      },
       "gain": 0.751,
       "reverb": 0.11,
       "variation": {
@@ -2528,6 +2770,15 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:wood_hit": {
+      "samples": {
+        "files": [
+          "wood-hit-1-66f3c348.m4a",
+          "wood-hit-2-f93f3d05.m4a",
+          "wood-hit-3-8daa5cb1.m4a"
+        ],
+        "gain": 0.6,
+        "pitch": 1
+      },
       "gain": 0.721,
       "reverb": 0.083,
       "variation": {
@@ -2573,6 +2824,16 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:water_step": {
+      "samples": {
+        "files": [
+          "water-step-1-475ccfd9.m4a",
+          "water-step-2-015b4bae.m4a",
+          "water-step-3-8ba9fb61.m4a",
+          "water-step-4-7a242168.m4a"
+        ],
+        "gain": 0.5,
+        "pitch": 1
+      },
       "gain": 2.094,
       "reverb": 0.083,
       "variation": {
@@ -2626,6 +2887,16 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:water_swim": {
+      "samples": {
+        "files": [
+          "water-swim-1-334e94c3.m4a",
+          "water-swim-2-f40c6768.m4a",
+          "water-swim-3-de4830e5.m4a",
+          "water-swim-4-7c526fff.m4a"
+        ],
+        "gain": 0.6,
+        "pitch": 1
+      },
       "gain": 1.16,
       "reverb": 0.099,
       "variation": {
@@ -2695,6 +2966,15 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:water_enter": {
+      "samples": {
+        "files": [
+          "water-enter-1-2e5690cf.m4a",
+          "water-enter-2-0d5a27b2.m4a",
+          "water-enter-3-e124b703.m4a"
+        ],
+        "gain": 0.6,
+        "pitch": 1
+      },
       "gain": 1.018,
       "reverb": 0.138,
       "variation": {
@@ -2794,6 +3074,15 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:water_exit": {
+      "samples": {
+        "files": [
+          "water-exit-1-f2df4ed3.m4a",
+          "water-exit-2-7d0ccb1f.m4a",
+          "water-exit-3-c50470e1.m4a"
+        ],
+        "gain": 0.6,
+        "pitch": 1
+      },
       "gain": 1.49,
       "reverb": 0.11,
       "variation": {
@@ -2861,6 +3150,14 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:water_place": {
+      "samples": {
+        "files": [
+          "water-place-1-4d7fbd1f.m4a",
+          "water-place-2-64618dd1.m4a"
+        ],
+        "gain": 0.6,
+        "pitch": 1
+      },
       "gain": 2.793,
       "reverb": 0.11,
       "variation": {
@@ -2913,6 +3210,15 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:jump": {
+      "samples": {
+        "files": [
+          "jump-1-09195cd4.m4a",
+          "jump-2-a23981d5.m4a",
+          "jump-3-e4217472.m4a"
+        ],
+        "gain": 0.4,
+        "pitch": 1.5
+      },
       "gain": 1.135,
       "reverb": 0.028,
       "variation": {
@@ -3776,6 +4082,13 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:deny": {
+      "samples": {
+        "files": [
+          "deny-1-afb663fa.m4a"
+        ],
+        "gain": 0.4,
+        "pitch": 0
+      },
       "gain": 0.879,
       "reverb": 0.028,
       "variation": "none",
@@ -4708,6 +5021,15 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:chop_bark": {
+      "samples": {
+        "files": [
+          "chop-bark-1-88f2d509.m4a",
+          "chop-bark-2-cf56f8a1.m4a",
+          "chop-bark-3-83fb6981.m4a"
+        ],
+        "gain": 0.6,
+        "pitch": 1
+      },
       "gain": 0.9,
       "reverb": 0.08,
       "variation": {
@@ -4753,6 +5075,15 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:chop_wood": {
+      "samples": {
+        "files": [
+          "chop-wood-1-19ff1ae0.m4a",
+          "chop-wood-2-6cfa3f20.m4a",
+          "chop-wood-3-636c4eba.m4a"
+        ],
+        "gain": 0.6,
+        "pitch": 1
+      },
       "gain": 1,
       "reverb": 0.1,
       "variation": {
@@ -4803,6 +5134,15 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:chop_creak": {
+      "samples": {
+        "files": [
+          "chop-creak-1-cd28cfc7.m4a",
+          "chop-creak-2-b4919738.m4a",
+          "chop-creak-3-3dacefb3.m4a"
+        ],
+        "gain": 0.6,
+        "pitch": 1
+      },
       "gain": 1.05,
       "reverb": 0.18,
       "variation": {
@@ -4878,6 +5218,15 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:axe_clank": {
+      "samples": {
+        "files": [
+          "axe-clank-1-b079bc81.m4a",
+          "axe-clank-2-fc6a2347.m4a",
+          "axe-clank-3-3042b123.m4a"
+        ],
+        "gain": 0.6,
+        "pitch": 1
+      },
       "gain": 0.9,
       "reverb": 0.1,
       "variation": {
@@ -4985,6 +5334,15 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:axe_swish": {
+      "samples": {
+        "files": [
+          "axe-swish-1-219459ca.m4a",
+          "axe-swish-2-41e369f1.m4a",
+          "axe-swish-3-ffc9b2f3.m4a"
+        ],
+        "gain": 0.4,
+        "pitch": 1.5
+      },
       "gain": 0.5,
       "reverb": 0.04,
       "variation": {
@@ -5013,6 +5371,14 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:fell_crack": {
+      "samples": {
+        "files": [
+          "fell-crack-1-1909e3fe.m4a",
+          "fell-crack-2-bb267d79.m4a"
+        ],
+        "gain": 0.6,
+        "pitch": 1
+      },
       "gain": 1.2,
       "reverb": 0.25,
       "variation": {
@@ -5111,6 +5477,15 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:body_thud": {
+      "samples": {
+        "files": [
+          "body-thud-1-47264ef7.m4a",
+          "body-thud-2-cd5a9ba7.m4a",
+          "body-thud-3-62026f03.m4a"
+        ],
+        "gain": 0.6,
+        "pitch": 1
+      },
       "gain": 0.6,
       "reverb": 0.08,
       "variation": {
@@ -5180,6 +5555,16 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:hurt": {
+      "samples": {
+        "files": [
+          "hurt-1-608ea852.m4a",
+          "hurt-2-3f3e9f4e.m4a",
+          "hurt-3-6a61ad9d.m4a",
+          "hurt-4-592b9a06.m4a"
+        ],
+        "gain": 0.5,
+        "pitch": 0.5
+      },
       "gain": 0.8,
       "reverb": 0.06,
       "variation": {
@@ -5252,6 +5637,13 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:death": {
+      "samples": {
+        "files": [
+          "death-1-239f74ee.m4a"
+        ],
+        "gain": 0.5,
+        "pitch": 0.5
+      },
       "gain": 0.8,
       "reverb": 0.2,
       "variation": {
@@ -5774,6 +6166,15 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:dynamite_boom": {
+      "samples": {
+        "files": [
+          "dynamite-boom-1-b09dca8e.m4a",
+          "dynamite-boom-2-970f8e28.m4a",
+          "dynamite-boom-3-1443cd6d.m4a"
+        ],
+        "gain": 1,
+        "pitch": 1
+      },
       "gain": 2.4,
       "reverb": 0.45,
       "variation": {
@@ -5870,6 +6271,581 @@ export const SOUND_DATA: SoundData = {
       ]
     }
   },
+  "sampleFiles": [
+    {
+      "file": "stone-step-1-c59eeb14.m4a",
+      "source": "stone-step-1.m4a"
+    },
+    {
+      "file": "stone-step-2-2906775e.m4a",
+      "source": "stone-step-2.m4a"
+    },
+    {
+      "file": "stone-step-3-c168c956.m4a",
+      "source": "stone-step-3.m4a"
+    },
+    {
+      "file": "stone-step-4-afeb28fc.m4a",
+      "source": "stone-step-4.m4a"
+    },
+    {
+      "file": "stone-step-5-19afed25.m4a",
+      "source": "stone-step-5.m4a"
+    },
+    {
+      "file": "stone-step-6-50d6fc07.m4a",
+      "source": "stone-step-6.m4a"
+    },
+    {
+      "file": "stone-land-1-24450457.m4a",
+      "source": "stone-land-1.m4a"
+    },
+    {
+      "file": "stone-land-2-d84bbc30.m4a",
+      "source": "stone-land-2.m4a"
+    },
+    {
+      "file": "stone-land-3-531e94f8.m4a",
+      "source": "stone-land-3.m4a"
+    },
+    {
+      "file": "stone-break-1-149f30ee.m4a",
+      "source": "stone-break-1.m4a"
+    },
+    {
+      "file": "stone-break-2-4e5a2e88.m4a",
+      "source": "stone-break-2.m4a"
+    },
+    {
+      "file": "stone-break-3-62b281b0.m4a",
+      "source": "stone-break-3.m4a"
+    },
+    {
+      "file": "stone-place-1-2ee789d9.m4a",
+      "source": "stone-place-1.m4a"
+    },
+    {
+      "file": "stone-place-2-43fcd098.m4a",
+      "source": "stone-place-2.m4a"
+    },
+    {
+      "file": "stone-place-3-6778e6bd.m4a",
+      "source": "stone-place-3.m4a"
+    },
+    {
+      "file": "stone-hit-1-51f3053c.m4a",
+      "source": "stone-hit-1.m4a"
+    },
+    {
+      "file": "stone-hit-2-f97febb5.m4a",
+      "source": "stone-hit-2.m4a"
+    },
+    {
+      "file": "stone-hit-3-b6b36794.m4a",
+      "source": "stone-hit-3.m4a"
+    },
+    {
+      "file": "dirt-step-1-1b494792.m4a",
+      "source": "dirt-step-1.m4a"
+    },
+    {
+      "file": "dirt-step-2-f620358a.m4a",
+      "source": "dirt-step-2.m4a"
+    },
+    {
+      "file": "dirt-step-3-33f64fc6.m4a",
+      "source": "dirt-step-3.m4a"
+    },
+    {
+      "file": "dirt-step-4-74fb0116.m4a",
+      "source": "dirt-step-4.m4a"
+    },
+    {
+      "file": "dirt-step-5-a33f58f7.m4a",
+      "source": "dirt-step-5.m4a"
+    },
+    {
+      "file": "dirt-step-6-af200586.m4a",
+      "source": "dirt-step-6.m4a"
+    },
+    {
+      "file": "dirt-land-1-e7b90d2a.m4a",
+      "source": "dirt-land-1.m4a"
+    },
+    {
+      "file": "dirt-land-2-fefa5acb.m4a",
+      "source": "dirt-land-2.m4a"
+    },
+    {
+      "file": "dirt-land-3-14cc5627.m4a",
+      "source": "dirt-land-3.m4a"
+    },
+    {
+      "file": "dirt-break-1-0a1c3eae.m4a",
+      "source": "dirt-break-1.m4a"
+    },
+    {
+      "file": "dirt-break-2-ad4005cf.m4a",
+      "source": "dirt-break-2.m4a"
+    },
+    {
+      "file": "dirt-break-3-41077bcf.m4a",
+      "source": "dirt-break-3.m4a"
+    },
+    {
+      "file": "dirt-place-1-af149ef2.m4a",
+      "source": "dirt-place-1.m4a"
+    },
+    {
+      "file": "dirt-place-2-29922c39.m4a",
+      "source": "dirt-place-2.m4a"
+    },
+    {
+      "file": "dirt-place-3-fa8057a3.m4a",
+      "source": "dirt-place-3.m4a"
+    },
+    {
+      "file": "dirt-hit-1-db70ff31.m4a",
+      "source": "dirt-hit-1.m4a"
+    },
+    {
+      "file": "dirt-hit-2-d415d1db.m4a",
+      "source": "dirt-hit-2.m4a"
+    },
+    {
+      "file": "dirt-hit-3-2fbf1114.m4a",
+      "source": "dirt-hit-3.m4a"
+    },
+    {
+      "file": "snow-step-1-a8f68c0c.m4a",
+      "source": "snow-step-1.m4a"
+    },
+    {
+      "file": "snow-step-2-74ae75e5.m4a",
+      "source": "snow-step-2.m4a"
+    },
+    {
+      "file": "snow-step-3-da20f7c4.m4a",
+      "source": "snow-step-3.m4a"
+    },
+    {
+      "file": "snow-step-4-373887f3.m4a",
+      "source": "snow-step-4.m4a"
+    },
+    {
+      "file": "snow-step-5-d945327e.m4a",
+      "source": "snow-step-5.m4a"
+    },
+    {
+      "file": "snow-step-6-791f407d.m4a",
+      "source": "snow-step-6.m4a"
+    },
+    {
+      "file": "snow-land-1-5e6a6550.m4a",
+      "source": "snow-land-1.m4a"
+    },
+    {
+      "file": "snow-land-2-c13795fd.m4a",
+      "source": "snow-land-2.m4a"
+    },
+    {
+      "file": "snow-land-3-4111e9ef.m4a",
+      "source": "snow-land-3.m4a"
+    },
+    {
+      "file": "grass-step-1-437e2e79.m4a",
+      "source": "grass-step-1.m4a"
+    },
+    {
+      "file": "grass-step-2-4ab9ef08.m4a",
+      "source": "grass-step-2.m4a"
+    },
+    {
+      "file": "grass-step-3-2f69fd0a.m4a",
+      "source": "grass-step-3.m4a"
+    },
+    {
+      "file": "grass-step-4-6e1efa60.m4a",
+      "source": "grass-step-4.m4a"
+    },
+    {
+      "file": "grass-step-5-14c021c5.m4a",
+      "source": "grass-step-5.m4a"
+    },
+    {
+      "file": "grass-step-6-9e0addf8.m4a",
+      "source": "grass-step-6.m4a"
+    },
+    {
+      "file": "grass-land-1-27fe37de.m4a",
+      "source": "grass-land-1.m4a"
+    },
+    {
+      "file": "grass-land-2-5ae9e4b2.m4a",
+      "source": "grass-land-2.m4a"
+    },
+    {
+      "file": "grass-land-3-8567f726.m4a",
+      "source": "grass-land-3.m4a"
+    },
+    {
+      "file": "grass-break-1-82fe845a.m4a",
+      "source": "grass-break-1.m4a"
+    },
+    {
+      "file": "grass-break-2-2588176e.m4a",
+      "source": "grass-break-2.m4a"
+    },
+    {
+      "file": "grass-break-3-c52dc85d.m4a",
+      "source": "grass-break-3.m4a"
+    },
+    {
+      "file": "grass-place-1-e1179d91.m4a",
+      "source": "grass-place-1.m4a"
+    },
+    {
+      "file": "grass-place-2-af69d671.m4a",
+      "source": "grass-place-2.m4a"
+    },
+    {
+      "file": "grass-place-3-77591c8c.m4a",
+      "source": "grass-place-3.m4a"
+    },
+    {
+      "file": "sand-step-1-3c5e41c8.m4a",
+      "source": "sand-step-1.m4a"
+    },
+    {
+      "file": "sand-step-2-8f347b63.m4a",
+      "source": "sand-step-2.m4a"
+    },
+    {
+      "file": "sand-step-3-e7f160da.m4a",
+      "source": "sand-step-3.m4a"
+    },
+    {
+      "file": "sand-step-4-3fce5489.m4a",
+      "source": "sand-step-4.m4a"
+    },
+    {
+      "file": "sand-step-5-e7025885.m4a",
+      "source": "sand-step-5.m4a"
+    },
+    {
+      "file": "sand-step-6-5295d35b.m4a",
+      "source": "sand-step-6.m4a"
+    },
+    {
+      "file": "sand-land-1-91bdf3a3.m4a",
+      "source": "sand-land-1.m4a"
+    },
+    {
+      "file": "sand-land-2-b36a96af.m4a",
+      "source": "sand-land-2.m4a"
+    },
+    {
+      "file": "sand-land-3-520ef3cb.m4a",
+      "source": "sand-land-3.m4a"
+    },
+    {
+      "file": "sand-break-1-125188d4.m4a",
+      "source": "sand-break-1.m4a"
+    },
+    {
+      "file": "sand-break-2-6bd9d381.m4a",
+      "source": "sand-break-2.m4a"
+    },
+    {
+      "file": "sand-break-3-2d2b5e9b.m4a",
+      "source": "sand-break-3.m4a"
+    },
+    {
+      "file": "sand-place-1-265ed629.m4a",
+      "source": "sand-place-1.m4a"
+    },
+    {
+      "file": "sand-place-2-db5b8a62.m4a",
+      "source": "sand-place-2.m4a"
+    },
+    {
+      "file": "sand-hit-1-395babfc.m4a",
+      "source": "sand-hit-1.m4a"
+    },
+    {
+      "file": "sand-hit-2-327cdbf7.m4a",
+      "source": "sand-hit-2.m4a"
+    },
+    {
+      "file": "sand-hit-3-3d17d21a.m4a",
+      "source": "sand-hit-3.m4a"
+    },
+    {
+      "file": "wood-step-1-2e02c8e6.m4a",
+      "source": "wood-step-1.m4a"
+    },
+    {
+      "file": "wood-step-2-afa4aeae.m4a",
+      "source": "wood-step-2.m4a"
+    },
+    {
+      "file": "wood-step-3-ddaf996c.m4a",
+      "source": "wood-step-3.m4a"
+    },
+    {
+      "file": "wood-step-4-f13f83da.m4a",
+      "source": "wood-step-4.m4a"
+    },
+    {
+      "file": "wood-step-5-e7ab06a5.m4a",
+      "source": "wood-step-5.m4a"
+    },
+    {
+      "file": "wood-step-6-fabd98dc.m4a",
+      "source": "wood-step-6.m4a"
+    },
+    {
+      "file": "wood-land-1-335d8e4b.m4a",
+      "source": "wood-land-1.m4a"
+    },
+    {
+      "file": "wood-land-2-26b1afdd.m4a",
+      "source": "wood-land-2.m4a"
+    },
+    {
+      "file": "wood-land-3-a3332300.m4a",
+      "source": "wood-land-3.m4a"
+    },
+    {
+      "file": "wood-break-1-06876f71.m4a",
+      "source": "wood-break-1.m4a"
+    },
+    {
+      "file": "wood-break-2-99c39506.m4a",
+      "source": "wood-break-2.m4a"
+    },
+    {
+      "file": "wood-break-3-a122998d.m4a",
+      "source": "wood-break-3.m4a"
+    },
+    {
+      "file": "wood-place-1-4d9a6052.m4a",
+      "source": "wood-place-1.m4a"
+    },
+    {
+      "file": "wood-place-2-26681398.m4a",
+      "source": "wood-place-2.m4a"
+    },
+    {
+      "file": "wood-place-3-7c9af0c9.m4a",
+      "source": "wood-place-3.m4a"
+    },
+    {
+      "file": "wood-hit-1-66f3c348.m4a",
+      "source": "wood-hit-1.m4a"
+    },
+    {
+      "file": "wood-hit-2-f93f3d05.m4a",
+      "source": "wood-hit-2.m4a"
+    },
+    {
+      "file": "wood-hit-3-8daa5cb1.m4a",
+      "source": "wood-hit-3.m4a"
+    },
+    {
+      "file": "water-step-1-475ccfd9.m4a",
+      "source": "water-step-1.m4a"
+    },
+    {
+      "file": "water-step-2-015b4bae.m4a",
+      "source": "water-step-2.m4a"
+    },
+    {
+      "file": "water-step-3-8ba9fb61.m4a",
+      "source": "water-step-3.m4a"
+    },
+    {
+      "file": "water-step-4-7a242168.m4a",
+      "source": "water-step-4.m4a"
+    },
+    {
+      "file": "water-swim-1-334e94c3.m4a",
+      "source": "water-swim-1.m4a"
+    },
+    {
+      "file": "water-swim-2-f40c6768.m4a",
+      "source": "water-swim-2.m4a"
+    },
+    {
+      "file": "water-swim-3-de4830e5.m4a",
+      "source": "water-swim-3.m4a"
+    },
+    {
+      "file": "water-swim-4-7c526fff.m4a",
+      "source": "water-swim-4.m4a"
+    },
+    {
+      "file": "water-enter-1-2e5690cf.m4a",
+      "source": "water-enter-1.m4a"
+    },
+    {
+      "file": "water-enter-2-0d5a27b2.m4a",
+      "source": "water-enter-2.m4a"
+    },
+    {
+      "file": "water-enter-3-e124b703.m4a",
+      "source": "water-enter-3.m4a"
+    },
+    {
+      "file": "water-exit-1-f2df4ed3.m4a",
+      "source": "water-exit-1.m4a"
+    },
+    {
+      "file": "water-exit-2-7d0ccb1f.m4a",
+      "source": "water-exit-2.m4a"
+    },
+    {
+      "file": "water-exit-3-c50470e1.m4a",
+      "source": "water-exit-3.m4a"
+    },
+    {
+      "file": "water-place-1-4d7fbd1f.m4a",
+      "source": "water-place-1.m4a"
+    },
+    {
+      "file": "water-place-2-64618dd1.m4a",
+      "source": "water-place-2.m4a"
+    },
+    {
+      "file": "jump-1-09195cd4.m4a",
+      "source": "jump-1.m4a"
+    },
+    {
+      "file": "jump-2-a23981d5.m4a",
+      "source": "jump-2.m4a"
+    },
+    {
+      "file": "jump-3-e4217472.m4a",
+      "source": "jump-3.m4a"
+    },
+    {
+      "file": "deny-1-afb663fa.m4a",
+      "source": "deny-1.m4a"
+    },
+    {
+      "file": "chop-bark-1-88f2d509.m4a",
+      "source": "chop-bark-1.m4a"
+    },
+    {
+      "file": "chop-bark-2-cf56f8a1.m4a",
+      "source": "chop-bark-2.m4a"
+    },
+    {
+      "file": "chop-bark-3-83fb6981.m4a",
+      "source": "chop-bark-3.m4a"
+    },
+    {
+      "file": "chop-wood-1-19ff1ae0.m4a",
+      "source": "chop-wood-1.m4a"
+    },
+    {
+      "file": "chop-wood-2-6cfa3f20.m4a",
+      "source": "chop-wood-2.m4a"
+    },
+    {
+      "file": "chop-wood-3-636c4eba.m4a",
+      "source": "chop-wood-3.m4a"
+    },
+    {
+      "file": "chop-creak-1-cd28cfc7.m4a",
+      "source": "chop-creak-1.m4a"
+    },
+    {
+      "file": "chop-creak-2-b4919738.m4a",
+      "source": "chop-creak-2.m4a"
+    },
+    {
+      "file": "chop-creak-3-3dacefb3.m4a",
+      "source": "chop-creak-3.m4a"
+    },
+    {
+      "file": "axe-clank-1-b079bc81.m4a",
+      "source": "axe-clank-1.m4a"
+    },
+    {
+      "file": "axe-clank-2-fc6a2347.m4a",
+      "source": "axe-clank-2.m4a"
+    },
+    {
+      "file": "axe-clank-3-3042b123.m4a",
+      "source": "axe-clank-3.m4a"
+    },
+    {
+      "file": "axe-swish-1-219459ca.m4a",
+      "source": "axe-swish-1.m4a"
+    },
+    {
+      "file": "axe-swish-2-41e369f1.m4a",
+      "source": "axe-swish-2.m4a"
+    },
+    {
+      "file": "axe-swish-3-ffc9b2f3.m4a",
+      "source": "axe-swish-3.m4a"
+    },
+    {
+      "file": "fell-crack-1-1909e3fe.m4a",
+      "source": "fell-crack-1.m4a"
+    },
+    {
+      "file": "fell-crack-2-bb267d79.m4a",
+      "source": "fell-crack-2.m4a"
+    },
+    {
+      "file": "body-thud-1-47264ef7.m4a",
+      "source": "body-thud-1.m4a"
+    },
+    {
+      "file": "body-thud-2-cd5a9ba7.m4a",
+      "source": "body-thud-2.m4a"
+    },
+    {
+      "file": "body-thud-3-62026f03.m4a",
+      "source": "body-thud-3.m4a"
+    },
+    {
+      "file": "hurt-1-608ea852.m4a",
+      "source": "hurt-1.m4a"
+    },
+    {
+      "file": "hurt-2-3f3e9f4e.m4a",
+      "source": "hurt-2.m4a"
+    },
+    {
+      "file": "hurt-3-6a61ad9d.m4a",
+      "source": "hurt-3.m4a"
+    },
+    {
+      "file": "hurt-4-592b9a06.m4a",
+      "source": "hurt-4.m4a"
+    },
+    {
+      "file": "death-1-239f74ee.m4a",
+      "source": "death-1.m4a"
+    },
+    {
+      "file": "dynamite-boom-1-b09dca8e.m4a",
+      "source": "dynamite-boom-1.m4a"
+    },
+    {
+      "file": "dynamite-boom-2-970f8e28.m4a",
+      "source": "dynamite-boom-2.m4a"
+    },
+    {
+      "file": "dynamite-boom-3-1443cd6d.m4a",
+      "source": "dynamite-boom-3.m4a"
+    }
+  ],
+  "sampleBytes": 803744,
   "gaitOrder": [
     "walk",
     "run",

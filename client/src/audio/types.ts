@@ -90,7 +90,21 @@ export interface SoundDef {
   intensity?: IntensityDef;
   /** Sounds until stopped (a slide's scrape): sustained layers whose levels follow intensity. */
   loop?: boolean;
+  /** The procedural sound: played when it has no samples, they are not loaded, or `play` says so. */
   layers: LayerDef[];
+  /** Recorded variations (AUDIO.md §2b): one drawn per play, never the previous one. */
+  samples?: SamplesDef;
+  /** With samples: which to play (default `samples`). */
+  play?: 'samples' | 'procedural';
+}
+
+export interface SamplesDef {
+  /** Published names under the site's `media/` (`stone-step-1-<hash>.m4a`). */
+  files: string[];
+  /** Level (default 1), times the play's gain. */
+  gain?: number;
+  /** ± semitones per play. */
+  pitch?: number;
 }
 
 export type SetEvent =
@@ -147,4 +161,8 @@ export interface SoundData {
   controls: Record<string, ControlSounds>;
   ambient: AmbientDef;
   sounds: Record<string, SoundDef>;
+  /** Every sample file shipped: its published name and its file in shared/sounds/samples. */
+  sampleFiles: { file: string; source: string }[];
+  /** Their total size (bytes; the budget is validated). */
+  sampleBytes: number;
 }

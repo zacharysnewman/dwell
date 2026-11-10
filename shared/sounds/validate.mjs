@@ -1,6 +1,19 @@
 // Validation and resolution of the sound data (docs/AUDIO.md §2): shared by shared/sounds/gen.mjs,
 // shared/blocks/gen.mjs (the blocks' `sound` references) and the client's Vitest suites. A bad
 // entry throws an Error whose message names it.
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+/** Where a sound's recorded `samples` live (AUDIO.md §2b): beside the data, in `samples/`. */
+export const SAMPLES_DIR = join(dirname(fileURLToPath(import.meta.url)), "samples");
+/** A sample file: lower-case words and dashes, a format every browser decodes (AAC in MP4). */
+const SAMPLE_FILE = /^[a-z0-9][a-z0-9-]*\.(m4a|mp3)$/;
+/** Every sample shipped, together, may be at most this large (owner, 2026-11-10: ~5 MB). */
+export const SAMPLES_MAX_BYTES = 5_000_000;
+/** How a sound with samples plays: the recordings, or its procedural layers. */
+export const PLAY_MODES = ["samples", "procedural"];
 
 const NAME = /^[a-z0-9_]+$/;
 const ID = /^[a-z0-9_]+:[a-z0-9_]+$/;
@@ -74,6 +87,8 @@ const SOUND_KEYS = [
   "intensity",
   "loop",
   "layers",
+  "samples",
+  "play",
 ];
 const INTENSITY_KEYS = ["gain", "cutoff", "time", "pitch"];
 const TOP_KEYS = [
@@ -281,6 +296,56 @@ export function validateSound(where, s) {
   if (!Array.isArray(s.layers) || s.layers.length === 0 || s.layers.length > 12)
     fail(`${where}.layers`, "must list 1 to 12 layers");
   s.layers.forEach((l, i) => validateLayer(`${where}.layers[${i}]`, l, loop));
+  if (s.samples !== undefined) {
+    const sm = s.samples;
+    keysIn(`${where}.samples`, sm, ["files", "gain", "pitch"]);
+    if (loop) fail(`${where}.samples`, "loop sounds are procedural only");
+    if (!Array.isArray(sm.files) || sm.files.length === 0 || sm.files.length > 16)
+      fail(`${where}.samples.files`, "must list 1 to 16 files");
+    for (const f of sm.files)
+      if (typeof f !== "string" || !SAMPLE_FILE.test(f))
+        fail(`${where}.samples.files`, `"${f}" is not a lower-case .m4a or .mp3 name`);
+    number(`${where}.samples.gain`, sm.gain, 0, 4, { optional: true });
+    number(`${where}.samples.pitch`, sm.pitch, 0, 12, { optional: true });
+  }
+  if (s.play !== undefined) {
+    oneOf(`${where}.play`, s.play, PLAY_MODES);
+    if (s.samples === undefined) fail(`${where}.play`, "needs samples to choose between");
+  }
+}
+
+/** The file's content hash (8 hex digits): its published name changes with its bytes. */
+function contentHash(bytes) {
+  return createHash("sha256").update(bytes).digest("hex").slice(0, 8);
+}
+
+/**
+ * Checks every sound's sample files against `dir` (each exists; all of them fit the budget) and
+ * rewrites each to its published name (`name-<hash>.m4a`, served once per site under `media/`);
+ * returns the files to ship, `{ file, source }`, and their total size.
+ */
+function resolveSamples(sounds, dir) {
+  const ship = new Map();
+  let bytes = 0;
+  for (const [id, s] of Object.entries(sounds)) {
+    if (!s.samples) continue;
+    const files = s.samples.files.map((f) => {
+      const path = join(dir, f);
+      if (!existsSync(path))
+        fail(`sound ${id}.samples`, `no file "${f}" in shared/sounds/samples/`);
+      const data = readFileSync(path);
+      const published = f.replace(/\.(\w+)$/, `-${contentHash(data)}.$1`);
+      if (!ship.has(published)) {
+        ship.set(published, f);
+        bytes += data.length;
+      }
+      return published;
+    });
+    sounds[id] = { ...s, samples: { ...s.samples, files } };
+  }
+  if (bytes > SAMPLES_MAX_BYTES)
+    fail("samples", `${bytes} bytes is over the ${SAMPLES_MAX_BYTES}-byte budget`);
+  return { files: [...ship].map(([file, source]) => ({ file, source })), bytes };
 }
 
 /**
@@ -310,7 +375,7 @@ function qualify(ns, name) {
  * Validates every namespace's file and merges them into the data the client plays
  * (`client/src/audio/sounds.gen.ts`): names fully qualified, events in id order.
  */
-export function resolveSounds(files) {
+export function resolveSounds(files, samplesDir = SAMPLES_DIR) {
   const out = {
     fallback: "",
     gaits: {},
@@ -340,6 +405,7 @@ export function resolveSounds(files) {
       out.sounds[id] = s;
     }
   }
+  const samples = resolveSamples(out.sounds, samplesDir);
   const sound = (where, ns, name) => {
     if (typeof name !== "string") fail(where, "must name a sound");
     const id = qualify(ns, name);
@@ -497,6 +563,8 @@ export function resolveSounds(files) {
       if (!known) fail(where, `unknown sound reference "${r}"`);
     }
   }
+  out.sampleFiles = samples.files;
+  out.sampleBytes = samples.bytes;
   return out;
 }
 
