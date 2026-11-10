@@ -229,6 +229,19 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 66. Dashed gaps along a river's water steps seen from upstream (fixed pending release 0.52.6)
+
+Owner, 2026-11-10: "Top of water slopes from up river looking down, have some 'gap' artifacts" (thin
+see-through lines along the edges of the river's ½ m water steps). The step's faces met exactly, but
+the pools' tops were merged into long rectangles while each pour slope and riser is one cell wide:
+their corners lay inside the tops' long edges (T-junctions), and the rasterizer cracked along each
+crease. Fixed: tops within two columns of a step are drawn cell by cell (`mesher.rs` `top_on_step`,
+WATER_RENDERING.md §14). Red → green: `mesher_tests.rs`
+`a_water_step_has_no_t_junctions_along_its_creases` (both faces, 161 → 0); also
+`a_water_step_is_watertight_seen_from_upstream` (rays from upstream, green before and after: the
+geometry had no real hole). Not seen in the browser: the bench's river at seed 7 showed no step in
+view, so the fix is checked by the test only.
+
 ### 65. Below a dam, a dried river's chunk woke and slept for ever (fixed pending release 0.52.6)
 
 *Found 2026-11-10: `tests/water.rs` `the_river_below_a_dam_across_seed0s_river_dries_to_the_next_inflow`

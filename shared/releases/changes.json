@@ -2,6 +2,14 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.52.6",
+      "changes": [
+        "No more thin see-through lines along the edges of a river's water steps.",
+        "Foam at the shore is now a solid line where the water meets land or a block, with soft bands rolling out from it.",
+        "A river dried below a dam now goes fully still."
+      ]
+    },
+    {
       "version": "0.52.5",
       "changes": [
         "Wolves are smaller, in a soft blended coat: dark grey back, fawn flanks, cream belly and legs, pale muzzle; the collar blends in.",

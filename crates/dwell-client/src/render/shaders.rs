@@ -140,7 +140,7 @@ struct Fluid {
     // x a streak's length along the flow, y its width across (m), z the shore foam's bands, w the
     // seconds one takes to roll out
     flow_shape: vec4f,
-    // The shore foam (WATER_RENDERING.md §13): x the contact line's width (m), y a band's width
+    // The shore foam (WATER_RENDERING.md §14): x the contact line's width (m), y a band's width
     // as it is born (m), z the foam's most, w how far noise varies the bands (0..1)
     shore: vec4f,
     // Its underwater look (shared/look/underwater.json, WATER_RENDERING.md §12): x the lens (m
@@ -2806,7 +2806,7 @@ fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(
 
 const DEEP_M: f32 = 1e4;
 
-// Shore foam (WATER_RENDERING.md §13; owner, 2026-11-10: 'more like pulsing bands'): by `shore`,
+// Shore foam (WATER_RENDERING.md §14; owner, 2026-11-10: 'more like pulsing bands'): by `shore`,
 // the distance to the shore (the depth over a slope, the ray's path through the water to a wall),
 // a solid contact line where the water meets land or a block, and soft bands parallel to the
 // shore, each born at the edge and rolling out to the fluid's foam depth while it thins and fades,
