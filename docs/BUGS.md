@@ -29,6 +29,15 @@ is green too. Next: the `carry-flood` ride (a dug channel, the probe's `target` 
 larger window and a faster CPU, and the LOD's `errorScale` (4.65 with the default 256 MB cache at
 1280×800) on a bigger screen.
 
+**Repro detail (owner, 2026-11-09):** "I had traveled a long ways down a river at or greater than
+walking speed, loading all the chunks along the way at high detail." So it shows after a LONG trip,
+not at the start. Leads this points at: (1) the worker pool's FIFO queue backs up with jobs for
+chunks already passed, so new near chunks wait behind stale ones; (2) the chunk cache filling to its
+Distant-memory budget and the eviction keeping the trail behind (the "not unloaded behind you" half)
+while refusing new near chunks; (3) memory/upload pressure growing with the trail. Next: a bench
+scenario that travels several minutes down the seed-7 river at 4–6 m/s and logs the near ring's
+detail, the queue depth, the cache size and evictions over time.
+
 ### 52. A felled trunk landing on its chopper can fling them far
 
 Owner, 2026-11-08: "we shouldn't be capping player kick like that" — "the cap is removed". 0.50.37's
