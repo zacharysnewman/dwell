@@ -229,6 +229,19 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 65. Below a dam, a dried river's chunk woke and slept for ever (fixed pending release 0.52.6)
+
+*Found 2026-11-10: `tests/water.rs` `the_river_below_a_dam_across_seed0s_river_dries_to_the_next_inflow`
+failed on main from 0.52.0 ("the dry river's chunks sleep": 1 awake), no water cell left.* Since
+0.52.0's flat river beds (#62) the drained reach below seed 0's dam keeps a film of 0.1–0.5 mm on a
+level bed. Cut off from its rest, it runs off by `runs_on` in proportion to its depth, so it only
+thinned; its chunk fell asleep still owing that drain, woke ~90 s later to take it, stayed awake its
+10 s calm window and slept again, round and round (the test caught it awake at 600 s). Fixed: a river
+column out of its rest (`share` 0, a map flow, generated water) still draining under 1 mm soaks into
+its bed (`water.rs` `FILM_SOAK`); a wetting front (net inflow) and still water (the basin tests'
+conservation) are untouched. Red → green: that test (1 → 0 awake); the rest of `--test water` and
+the grid's unit tests pass.
+
 ### 64. A frame drop (60 → 45 fps) every ~13 s while moving (fixed pending release 0.52.3)
 
 Owner, 2026-11-10: "If I'm sprinting and hopping around I notice I get a periodic frame drop of about

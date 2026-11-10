@@ -61,6 +61,8 @@ const G: f32 = 9.81;
 const DRY: f32 = 1e-4;
 /// A film out of the rest falling this much in a calm window is still running off, not calm (m).
 const FILM_FALL: f32 = 1e-4;
+/// A draining film out of the rest thinner than this soaks into its bed (m; BUGS.md #41c).
+const FILM_SOAK: f32 = 1e-3;
 /// A sleeping chunk with less free water than this (m³) owing it doesn't wake for it.
 const OWED_MIN: f64 = 0.01;
 
@@ -1657,6 +1659,18 @@ impl Water {
                 k.share[l] = share;
                 bal += f64::from(net);
                 k.w.depth[l] = (k.w.depth[l] + net * dt).max(0.0);
+                // a river's film cut off from its rest (the reach below a dam) still draining soaks into
+                // its bed: run off by `runs_on` in proportion to its depth it would only thin, and
+                // a chunk of it fell asleep still owing its drain, woke to take it and slept again
+                // for ever (BUGS.md #41c); a wetting front (net inflow) is kept
+                if share == 0.0
+                    && net < 0.0
+                    && k.flow[l] != [0.0; 2]
+                    && k.r.depth[l] > DRY
+                    && k.w.depth[l] < FILM_SOAK
+                {
+                    k.w.depth[l] = 0.0;
+                }
                 if k.calm_t >= 0.0 {
                     // as a share of the band; in a reach out of the rest (cut off upstream), of
                     // a tenth of a shallow column's water too: its film still draining off the
