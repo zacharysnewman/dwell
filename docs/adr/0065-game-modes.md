@@ -87,3 +87,7 @@ fixed in code: the abilities and where each is checked. Scope: per world.
   server's `--mode` flag. Those are UI and CLI on a finished system.
 - Reversing it: drop the `MODE` field's reader; worlds keep the field, which builds without it
   skip.
+
+**0.50.71 (owner, 2026-11-09):** the main menu's world list shows each world's mode as a badge at the
+start of its details line (`worldModeLabel`: `WorldMeta.mode`, or the default mode for a world without
+one; an unknown mode by its name).

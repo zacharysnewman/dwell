@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { WorldMeta } from '../local/worldIndex';
-import { formatPlayed, nearbyLabel, worldDetails } from './mainMenu';
+import { formatPlayed, nearbyLabel, worldDetails, worldModeLabel } from './mainMenu';
 
 const MIN = 60_000;
 
@@ -42,5 +42,30 @@ describe('games on your network', () => {
       'Home server · 2/16 players',
     );
     expect(nearbyLabel({ name: 'Bravo' })).toBe('Bravo · friend world');
+  });
+});
+
+describe("the world list shows each world's game mode", () => {
+  const base = {
+    id: 'w',
+    name: 'Home',
+    type: 'terrain' as const,
+    seed: 42,
+    generatorVersion: 1,
+    createdAt: 0,
+    lastPlayedAt: 0,
+  };
+  it('names adventure and creative worlds', () => {
+    expect(worldModeLabel({ ...base, mode: 'adventure' })).toEqual({
+      name: 'adventure',
+      label: 'Adventure',
+    });
+    expect(worldModeLabel({ ...base, mode: 'creative' }).label).toBe('Creative');
+  });
+  it('shows a world made before modes, or in the default mode, as the default', () => {
+    expect(worldModeLabel(base)).toEqual({ name: 'creative', label: 'Creative' });
+  });
+  it('shows an unknown mode by its name', () => {
+    expect(worldModeLabel({ ...base, mode: 'mymod:hardcore' }).label).toBe('mymod:hardcore');
   });
 });
