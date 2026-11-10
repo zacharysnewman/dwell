@@ -1821,6 +1821,8 @@ fn mesh_cells(
     let mut opaque = Builder::default();
     let mut transparent = Builder::default();
     let cells = Cells::new(kinds, padded, occ, flood, origin);
+    // The heightfield's skirts draw the top water's sides to open air (W2): its runs, face-local.
+    let runs = (!flags.water_tops).then(|| water_runs(kinds, padded));
     let mut cutout = Builder::default();
     let n = N as usize;
     // Merge mask for one slice: material + 1 of a visible mergeable face, 0 for none.
@@ -1908,6 +1910,7 @@ fn mesh_cells(
                     if hidden(&k, &kn, m, cells.state(nx, ny, nz), face) {
                         continue;
                     }
+                    let ns = cells.state(nx, ny, nz);
                     // Face-local up (2): the heightfield draws the liquid's surface instead.
                     if face == 2 && k.liquid && !flags.water_tops {
                         continue;
@@ -1916,6 +1919,13 @@ fn mesh_cells(
                         continue;
                     }
                     let mut surface_row = 0;
+                    if k.liquid
+                        && axis != 1
+                        && let Some(runs) = &runs
+                        && crate::heightfield::skirt_covers(runs, [cx, cy, cz], [nx, nz], ns == 0)
+                    {
+                        continue;
+                    }
                     if k.liquid && axis != 1 {
                         let top = fluid_side_top(&cells, &k, m, cx, cy, cz);
                         if fluid_side_alone(&kn) {
@@ -2133,10 +2143,41 @@ pub(crate) fn water_levels_with(
     } else {
         padded
     };
-    let at = |x: i32, y: i32, z: i32| padded.get(padded_index(x, y, z)).copied().unwrap_or(0);
     let mut out = vec![crate::heightfield::DRY; PAD * PAD];
     let mut fluid = crate::NO_FLUID;
-    let mut lights = vec![crate::heightfield::pack_light([1.0, 0.0]); PAD * PAD];
+    let mut lights = vec![crate::heightfield::pack_column([1.0, 0.0], 0); PAD * PAD];
+    for (at, run) in water_runs(kinds, padded).into_iter().enumerate() {
+        let Some(run) = run else { continue };
+        let (x, z) = ((at % PAD) as i32 - 1, (at / PAD) as i32 - 1);
+        out[at] = run.level;
+        // The cell over it lights its top, as the mesher's top face takes the light of the
+        // cell it looks into; the run's floor rides with it (the skirts' bottom).
+        lights[at] = crate::heightfield::pack_column(flood.cell([x, run.top + 1, z]), run.floor);
+        if fluid == crate::NO_FLUID && in_chunk([x, 0, z]) {
+            fluid = run.fluid;
+        }
+    }
+    (out, lights, fluid)
+}
+
+/// A column's top water in the chunk, as the heightfield's tile holds it.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct WaterRun {
+    /// The cell whose surface shows (face-local row).
+    pub top: i32,
+    /// The lowest cell of the same water under it, in the chunk.
+    pub floor: i32,
+    /// The surface's height, face-local metres from the chunk's floor.
+    pub level: f32,
+    pub fluid: f32,
+}
+
+/// Each padded column's ([`PAD`]², x fastest) top water in face-local `padded`: the highest
+/// liquid cell, if its surface shows (nothing of the same fluid, flooded or occluding over it),
+/// and the run of the same fluid under it.
+pub(crate) fn water_runs(kinds: &Kinds, padded: &[u16]) -> Vec<Option<WaterRun>> {
+    let at = |x: i32, y: i32, z: i32| padded.get(padded_index(x, y, z)).copied().unwrap_or(0);
+    let mut out = vec![None; PAD * PAD];
     for z in -1..=N {
         for x in -1..=N {
             for y in (0..N).rev() {
@@ -2147,19 +2188,20 @@ pub(crate) fn water_levels_with(
                 let above = kinds.of(at(x, y + 1, z));
                 let shows = !(same_fluid(&k, &above) || above.flooded || above.occludes);
                 if shows {
-                    let top = fluid_top(y, &k.style, k.fill) * CELL_H;
-                    let at = (x + 1) as usize + PAD * (z + 1) as usize;
-                    out[at] = top as f32;
-                    // The cell over it lights its top, as the mesher's top face takes the light
-                    // of the cell it looks into.
-                    lights[at] = crate::heightfield::pack_light(flood.cell([x, y + 1, z]));
-                    if fluid == crate::NO_FLUID && in_chunk([x, 0, z]) {
-                        fluid = fluid_value(k.style.fluid);
+                    let mut floor = y;
+                    while floor > 0 && same_fluid(&k, &kinds.of(at(x, floor - 1, z))) {
+                        floor -= 1;
                     }
+                    out[(x + 1) as usize + PAD * (z + 1) as usize] = Some(WaterRun {
+                        top: y,
+                        floor,
+                        level: (fluid_top(y, &k.style, k.fill) * CELL_H) as f32,
+                        fluid: fluid_value(k.style.fluid),
+                    });
                 }
                 break;
             }
         }
     }
-    (out, lights, fluid)
+    out
 }

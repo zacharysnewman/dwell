@@ -13,7 +13,9 @@
 //! face-local floor; the shader crosses into the world through `FaceFrame::wgsl()`'s `face_y`, so
 //! one grid serves both faces (BIFACIAL_WORLD.md §11).
 
-use dwell_mesh::heightfield::{COLUMNS, DRY, HeightAtlas, TILE, WaterTile, column_corners};
+use dwell_mesh::heightfield::{
+    COLUMNS, DRY, HeightAtlas, LIGHT_SPAN, SIDES, TILE, WaterTile, column_corners, skirt_edge,
+};
 
 /// Tiles per row of the atlas texture (its width is this × [`TILE`] texels).
 pub const TILES_PER_ROW: usize = 64;
@@ -45,6 +47,7 @@ pub const GROUP: u32 = 3;
 pub fn wgsl() -> String {
     let join = dwell_look::water_tiers::HEIGHTFIELD.join_m as f32;
     let chunk_h = (f64::from(dwell_world::CHUNK_SIZE) * dwell_world::CELL_H) as f32;
+    let cell_h = dwell_world::CELL_H as f32;
     format!(
         "\n\
 const HF_TILE: i32 = {tile};\n\
@@ -52,15 +55,27 @@ const HF_COLUMNS: u32 = {columns}u;\n\
 const HF_DRY: f32 = {dry:?};\n\
 const HF_JOIN_M: f32 = {join:?};\n\
 const HF_CHUNK_H: f32 = {chunk_h:?};\n\
+const HF_CELL_H: f32 = {cell_h:?};\n\
+const HF_LIGHT_SPAN: f32 = {span:?};\n\
+const HF_GRID_VERTICES: u32 = {grid}u;\n\
 @group({group}) @binding(0) var hf_heights: texture_2d<f32>;\n\
 \n\
 fn hf_level(tile: vec2i, c: vec2i) -> f32 {{\n\
     return textureLoad(hf_heights, tile + clamp(c, vec2i(0), vec2i(HF_TILE - 1)), 0).r;\n\
 }}\n\
-// A column's flood light (sky, block as shares of 15), packed sky × 16 + block.\n\
+// A column's flood light (sky, block as shares of 15), packed sky × 16 + block under\n\
+// HF_LIGHT_SPAN, its water's floor row × HF_LIGHT_SPAN over it (dwell-mesh `pack_column`).\n\
+fn hf_packed(tile: vec2i, c: vec2i) -> f32 {{\n\
+    return textureLoad(hf_heights, tile + clamp(c, vec2i(0), vec2i(HF_TILE - 1)), 0).g;\n\
+}}\n\
 fn hf_light(tile: vec2i, c: vec2i) -> vec2f {{\n\
-    let p = textureLoad(hf_heights, tile + clamp(c, vec2i(0), vec2i(HF_TILE - 1)), 0).g;\n\
+    let q = hf_packed(tile, c);\n\
+    let p = q - HF_LIGHT_SPAN * floor(q / HF_LIGHT_SPAN);\n\
     return vec2f(floor(p / 16.0), p - 16.0 * floor(p / 16.0)) / 15.0;\n\
+}}\n\
+// A column's water floor, face-local metres (dwell-mesh `column_floor`).\n\
+fn hf_floor(tile: vec2i, c: vec2i) -> f32 {{\n\
+    return floor(hf_packed(tile, c) / HF_LIGHT_SPAN) * HF_CELL_H;\n\
 }}\n\
 // A corner's flood light: the brightest of its wet columns' (the water's light reaches across).\n\
 fn hf_corner_light(tile: vec2i, corner: vec2i) -> vec2f {{\n\
@@ -100,6 +115,34 @@ fn hf_normal(tile: vec2i, corner: vec2i, own: f32) -> vec3f {{\n\
     let dz = hf_or(tile, corner + vec2i(0, 1), own) - hf_or(tile, corner - vec2i(0, 1), own);\n\
     return normalize(vec3f(-0.5 * dx, 1.0, -0.5 * dz));\n\
 }}\n\
+// Skirt vertex `index` (past the grid's, dwell-mesh heightfield.rs `skirt_vertex`, the\n\
+// reference): side `side` of its column, the vertical quad from the surface's edge down to the\n\
+// neighbour's lower water or the column's floor (`skirt_bottom`); collapsed where none shows.\n\
+fn hf_skirt(tile: vec2i, index: u32, o: ptr<function, FluidOut>) -> bool {{\n\
+    let column = vec2i(i32((index / 24u) % HF_COLUMNS), i32((index / 24u) / HF_COLUMNS));\n\
+    let side = (index / 6u) % 4u;\n\
+    let sides = array<vec2i, 4>({sides});\n\
+    let edges = array<vec2i, 8>({edges});\n\
+    let own = column + vec2i(1);\n\
+    let level = hf_level(tile, own);\n\
+    let beside = hf_level(tile, own + sides[side]);\n\
+    if !hf_wet(level) || (hf_wet(beside) && level - beside <= HF_JOIN_M) {{ return false; }}\n\
+    var bottom = hf_floor(tile, own);\n\
+    if hf_wet(beside) {{ bottom = max(bottom, beside); }}\n\
+    if bottom >= level {{ return false; }}\n\
+    let k = index % 6u;\n\
+    let which = array<u32, 6>(0u, 1u, 1u, 0u, 1u, 0u);\n\
+    let up = array<bool, 6>(true, true, false, true, false, false);\n\
+    let corner = column + edges[side * 2u + which[k]];\n\
+    let top = hf_corner(tile, corner);\n\
+    var h = top;\n\
+    if !up[k] {{ h = min(bottom, top); }}\n\
+    (*o).normal = vec3f(f32(sides[side].x), 0.0, f32(sides[side].y));\n\
+    (*o).flood = hf_light(tile, own);\n\
+    (*o).wrapped = vec2f(f32(corner.x), f32(corner.y));\n\
+    (*o).rel = vec3f(f32(corner.x), h, f32(corner.y));\n\
+    return true;\n\
+}}\n\
 \n\
 @vertex\n\
 fn heightfield_vs(@builtin(vertex_index) index: u32, @builtin(instance_index) k: u32) -> FluidOut {{\n\
@@ -112,6 +155,23 @@ fn heightfield_vs(@builtin(vertex_index) index: u32, @builtin(instance_index) k:
     let column = vec2i(i32((index / 6u) % HF_COLUMNS), i32((index / 6u) / HF_COLUMNS));\n\
     var o: FluidOut;\n\
     o.draw = k;\n\
+    o.color = vec3f(1.0);\n\
+    o.fluid = u32(draw.quat.w + 0.5);\n\
+    if index >= HF_GRID_VERTICES {{\n\
+        // The skirts: placed face-local in `rel`, then into the world as the grid's corners.\n\
+        if !hf_skirt(tile, index - HF_GRID_VERTICES, &o) {{\n\
+            o.clip = vec4f(2.0, 2.0, 2.0, 1.0);\n\
+            return o;\n\
+        }}\n\
+        let p = o.rel;\n\
+        // face-boundary: as the grid's corners below.\n\
+        let sy = select(HF_CHUNK_H - p.y, p.y, face > 0.0);\n\
+        let local = vec3f(p.x, sy, p.z);\n\
+        o.rel = draw.offset.xyz + local * draw.offset.w;\n\
+        o.clip = frame.view_proj * vec4f(o.rel, 1.0);\n\
+        o.wrapped = draw.rotation.zw + o.wrapped * draw.offset.w;\n\
+        return o;\n\
+    }}\n\
     if !hf_wet(hf_level(tile, column + vec2i(1))) {{\n\
         o.clip = vec4f(2.0, 2.0, 2.0, 1.0);\n\
         return o;\n\
@@ -137,6 +197,18 @@ fn heightfield_vs(@builtin(vertex_index) index: u32, @builtin(instance_index) k:
         tile = TILE,
         columns = COLUMNS,
         dry = DRY,
+        span = LIGHT_SPAN,
+        grid = dwell_mesh::heightfield::GRID_VERTICES,
+        sides = SIDES
+            .iter()
+            .map(|[x, z]| format!("vec2i({x}, {z})"))
+            .collect::<Vec<_>>()
+            .join(", "),
+        edges = (0..SIDES.len())
+            .flat_map(skirt_edge)
+            .map(|[x, z]| format!("vec2i({x}, {z})"))
+            .collect::<Vec<_>>()
+            .join(", "),
         group = GROUP,
         offsets_a = wgsl_offsets(false),
         offsets_b = wgsl_offsets(true),
@@ -164,8 +236,9 @@ pub struct HeightfieldGpu {
     tiles: std::collections::HashMap<dwell_world::ChunkCoord, (f32, bool)>,
 }
 
-/// One grid draw's vertices (six a column, unshared; `dwell_mesh::heightfield::grid_vertex`).
-pub const GRID_VERTICES: u32 = dwell_mesh::heightfield::GRID_VERTICES as u32;
+/// One draw's vertices: the grid's (six a column, unshared; `dwell_mesh::heightfield::grid_vertex`)
+/// then the skirts' (24 a column; `skirt_vertex`).
+pub const GRID_VERTICES: u32 = dwell_mesh::heightfield::DRAW_VERTICES as u32;
 
 /// A heightfield draw's `quat`: its tile's texel origin, its face (+1 A, −1 B; face B's columns
 /// are re-wound in the shader) and its fluid.
@@ -410,6 +483,15 @@ mod tests {
         assert!(
             src.contains("o.clip = vec4f(2.0, 2.0, 2.0, 1.0)"),
             "a dry column collapses"
+        );
+        // The skirts' sides and edges are the reference's (`skirt_vertex`), after the grid's.
+        assert!(
+            src.contains("array<vec2i, 4>(vec2i(-1, 0), vec2i(1, 0), vec2i(0, -1), vec2i(0, 1))")
+        );
+        assert!(src.contains("array<vec2i, 8>(vec2i(0, 0), vec2i(0, 1), vec2i(1, 0), vec2i(1, 1)"));
+        assert_eq!(
+            GRID_VERTICES as usize,
+            dwell_mesh::heightfield::GRID_VERTICES + dwell_mesh::heightfield::SKIRT_VERTICES
         );
     }
 

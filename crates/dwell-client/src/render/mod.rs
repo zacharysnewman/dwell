@@ -5225,9 +5225,6 @@ impl crate::game::Scene for Renderer {
     fn draws_heightfield(&self) -> bool {
         heightfield_drawn(self.water().tier().heightfield, self.heightfield_override)
     }
-    fn has_water_tile(&self, coord: ChunkCoord) -> bool {
-        self.heightfield.draw_of(coord).is_some()
-    }
     fn set_water_tile(
         &mut self,
         coord: ChunkCoord,

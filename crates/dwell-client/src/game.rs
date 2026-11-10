@@ -106,11 +106,6 @@ pub trait Scene: TerrainRenderer {
     fn draws_heightfield(&self) -> bool {
         false
     }
-    /// Chunk `coord`'s water surface is drawn from a heightfield tile now (it was meshed
-    /// without tops and holds water): a level-only change can rewrite the tile alone.
-    fn has_water_tile(&self, _coord: ChunkCoord) -> bool {
-        false
-    }
     /// Rewrites chunk `coord`'s heightfield tile alone (none: its water is gone), its meshes kept.
     fn set_water_tile(
         &mut self,
@@ -261,7 +256,11 @@ impl<S: Scene> TerrainView<ChunkMeshes> for View<S> {
     ) -> bool {
         let mut scene = self.0.borrow_mut();
         let coord = ChunkCoord::from_array(coord);
-        if !scene.draws_heightfield() || !scene.has_water_tile(coord) {
+        // A water-only change (levels, or the wet front: W1, proposals/WATER_GPU_SURFACE.md §3)
+        // rewrites the tile, making one for the chunk's first water or freeing it on drying: the
+        // chunk's shown mesh (current, the streamer checks) was made without the water's tops
+        // and sides while the heightfield draws.
+        if !scene.draws_heightfield() {
             return false;
         }
         let tile = dwell_mesh::heightfield::water_tile(padded, light, mirror);

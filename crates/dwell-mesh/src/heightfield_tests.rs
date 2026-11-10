@@ -144,12 +144,14 @@ fn the_flag_drops_only_the_waters_tops() {
         let up = if mirror { -1.0 } else { 1.0 };
         assert!(up_quads(&on.transparent, up) > 0, "a water top meshed");
         assert_eq!(up_quads(&off.transparent, up), 0, "no water top");
+        // Its sides all face open air: the skirts draw them (W2). Its bottoms stay meshed.
         let quads = |m: &MeshArrays| m.positions.len() / 12;
         assert_eq!(
             quads(&off.transparent),
-            quads(&on.transparent) - up_quads(&on.transparent, up),
-            "the sides stay"
+            up_quads(&on.transparent, -up),
+            "only the bottoms stay"
         );
+        assert!(quads(&on.transparent) > quads(&off.transparent) + up_quads(&on.transparent, up));
         assert_eq!(
             on.opaque.positions, off.opaque.positions,
             "the ground is untouched"
@@ -208,7 +210,14 @@ fn the_meshes_carry_the_tile_only_without_tops() {
         assert_eq!(tile.levels, water_levels(&cells, mirror));
         assert_ne!(tile.fluid, crate::NO_FLUID);
         // Open sky: the packed light is full sky.
-        assert!(tile.lights.iter().all(|l| *l == pack_light([1.0, 0.0])));
+        assert!(
+            tile.lights
+                .iter()
+                .all(|l| column_light(*l) == pack_light([1.0, 0.0]))
+        );
+        // The basin's water (y 3) stands on its floor: the skirts' bottom.
+        let inside = 5 + TILE * 5;
+        assert_eq!(column_floor(tile.lights[inside]), 3.0 * CELL_H as f32);
     }
 }
 
@@ -247,4 +256,71 @@ fn a_columns_vertices_follow_the_grids_winding_on_both_faces() {
             assert_eq!(idx[first + k], *ox as u32 + c * *oz as u32);
         }
     }
+}
+
+/// A tile's floors ([`column_floor`]) from its packed lights.
+fn floors(tile: &WaterTile) -> Vec<f32> {
+    tile.lights.iter().map(|l| column_floor(*l)).collect()
+}
+
+/// The skirt's quads drawn: for each, its six vertices.
+fn skirts(levels: &[f32], floors: &[f32]) -> Vec<Vec<[f32; 3]>> {
+    (0..SKIRT_VERTICES / COLUMN_VERTICES)
+        .filter_map(|q| {
+            (0..COLUMN_VERTICES)
+                .map(|k| skirt_vertex(levels, floors, 0.2, q * COLUMN_VERTICES + k))
+                .collect::<Option<Vec<_>>>()
+        })
+        .collect()
+}
+
+// both-faces: the same face-local fixture as either face's chunk gives the same tile and skirts.
+#[test]
+fn a_lone_column_draws_four_skirts_down_to_its_floor_on_both_faces() {
+    // One water cell at (5, 3, 7) on stone, open air around: a skirt on each side from its
+    // surface (1.5 m + its top) down to its floor (row 3, 1.5 m).
+    let local = voxels(&[(5, 3, 7, water()), (5, 2, 7, stone())]);
+    for mirror in [false, true] {
+        let cells = if mirror {
+            mirror_padded(&local)
+        } else {
+            local.clone()
+        };
+        let tile = water_tile(&cells, &[], mirror).expect("a tile");
+        let quads = skirts(&tile.levels, &floors(&tile));
+        assert_eq!(quads.len(), 4, "mirror {mirror}");
+        let top = level(&tile.levels, 5, 7);
+        let floor = 3.0 * CELL_H as f32;
+        for q in &quads {
+            let ys: Vec<f32> = q.iter().map(|p| p[1]).collect();
+            assert!(ys.iter().all(|y| *y == top || *y == floor), "{ys:?}");
+            assert_eq!(ys.iter().filter(|y| **y == top).count(), 3);
+            // Vertical: two corners, each spanning floor to top, on the column's edge.
+            for p in q {
+                assert!((5.0..=6.0).contains(&p[0]) && (7.0..=8.0).contains(&p[2]));
+            }
+        }
+        // The chunk mesh leaves those sides to the skirts: only the bottom-less column's
+        // faces it still owns are none (stone under it hides its bottom).
+        let flags = ChunkFlags { water_tops: false };
+        let mesh = mesh_chunk_flags(&cells, &[], mirror, [0; 3], &[], None, flags).unwrap();
+        assert_eq!(mesh.transparent.positions.len(), 0, "mirror {mirror}");
+    }
+}
+
+#[test]
+fn a_calm_pool_and_a_joined_step_draw_no_skirts_but_a_drop_does() {
+    let flat = water_tile(&voxels(&basin(1.0, None)), &[], false).expect("a tile");
+    assert!(skirts(&flat.levels, &floors(&flat)).iter().all(|q| {
+        // Only along the basin's walls (the apron's stone columns are dry): hidden in the stone.
+        q.iter()
+            .any(|p| p[0] == 0.0 || p[2] == 0.0 || p[0] == COLUMNS as f32 || p[2] == COLUMNS as f32)
+    }));
+    // Within the join: no skirt between the two columns.
+    assert_eq!(skirt_bottom(2.0, 1.0, 1.9, 0.2), None);
+    // A real drop: down to the lower water; dry beside: down to the floor.
+    assert_eq!(skirt_bottom(2.0, 1.0, 1.5, 0.2), Some(1.5));
+    assert_eq!(skirt_bottom(2.0, 1.0, 0.5, 0.2), Some(1.0));
+    assert_eq!(skirt_bottom(2.0, 1.0, DRY, 0.2), Some(1.0));
+    assert_eq!(skirt_bottom(DRY, 1.0, DRY, 0.2), None);
 }

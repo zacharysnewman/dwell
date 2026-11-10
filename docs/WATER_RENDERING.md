@@ -115,7 +115,20 @@ job, and is re-meshed once after `WATER_SETTLE_PASSES` (60) quiet mesh passes so
 falls catch up. Still off in every tier: measured in 0.50.78 (`?heightfield=1`, the bench's `heightfield`
 configuration) about equal on the GPU on the river (`gpu.near.water` 2.51 → 2.64 ms) and only 18 %
 fewer chunk uploads in a flood (`water-flood`), whose re-meshes are mostly its wet front, which the
-skip doesn't cover (proposals/WATER_GPU_SURFACE.md C6a). The CPU
+skip doesn't cover (proposals/WATER_GPU_SURFACE.md C6a). 0.51.5 (W1, W2): the skip covers any
+water-only change (each changed cell air or a liquid before and after, the same liquid where both:
+the wet front advancing or drying too), a chunk's first water making its tile and drying freeing
+it; and the water's sides to open air are drawn from the tile as **skirts**: the same draw's
+vertices past the grid's (24 a column, four sides), each side a vertical quad from the surface's
+edge (its corners' heights) down to the neighbour's water where that is lower by more than
+`joinM`, else, where the neighbour is dry, to the column's own floor (the run of the same water
+under its surface, packed into the tile's second channel over the light: `heightfield::pack_column`,
+`column_floor`; `skirt_vertex` is the shader's reference, tested on both faces). The chunk mesher
+leaves those sides out under the same flag (`skirt_covers`: an open-air neighbour, a cell in its
+column's top water, above that side's skirt bottom); falls, pour slopes, the same water's steps and
+sides against shaped or see-through blocks stay meshed. Still off: measured in 0.51.5 the flood's
+chunk uploads only 10 % fewer and the near water's GPU time 0.7–1.1 ms dearer, with bright strips
+along shaped banks and holes in the flooding pit (proposals/WATER_GPU_SURFACE.md C6a). The CPU
 adapter's tier may not set it (a per-vertex fetch it doesn't need).
 
 | Tier | Contents |
