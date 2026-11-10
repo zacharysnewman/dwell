@@ -63,7 +63,7 @@ gates. Scope: per build (the data), switched per world by the mode.
 4. **In the controller, so prediction agrees.** `PlayerController::vitals` holds stamina, oxygen,
    exhaustion and the ticks since the last spend; `Players::set_vitals(stamina, oxygen)` switches
    the rule per world (the server from its mode; the client's predictor from Welcome/WorldSettings'
-   mode). The controller gates on it (PLAYER_CONTROLLER.md §6.12): exhausted, the run input reads as
+   mode). The controller gates on it (PLAYER_CONTROLLER.md §6.13): exhausted, the run input reads as
    not held (no sprint, no sprint slide), and in the water the buoyancy ("treading") is off, swim-up
    is ignored and the body sinks at `exhaustedSinkSpeed`, still able to swim sideways (which spends,
    so it stays exhausted). Rested, a swimmer floats as before. The step runs after the layers in the

@@ -3,10 +3,31 @@
 import { Players } from '../protocol/constants.gen';
 import { type SpyglassHud, spyglassStyle } from './spyglass';
 
+/** Stamina and air as shares of full (ADR 0069), from `Client.hud().vitals`; null parts: the
+ * world's mode has no such rule. */
+export interface VitalsHud {
+  stamina: number | null;
+  oxygen: number | null;
+  exhausted: boolean;
+}
+
+/** What one bar shows: its width (%) and whether it is shown (faded out when full). */
+export function vitalsBar(share: number | null): { width: string; shown: boolean } {
+  if (share === null) return { width: '100%', shown: false };
+  const s = Math.min(1, Math.max(0, share));
+  return { width: `${String(Math.round(s * 1000) / 10)}%`, shown: s < 0.999 };
+}
+
 export class Hud {
   private readonly root: HTMLDivElement;
   private readonly health: HTMLDivElement;
   private readonly healthFill: HTMLDivElement;
+  /** Stamina and air (ADR 0069), above the health bar; each faded out when full. */
+  private readonly vitals: HTMLDivElement;
+  private readonly staminaBar: HTMLDivElement;
+  private readonly staminaFill: HTMLDivElement;
+  private readonly airBar: HTMLDivElement;
+  private readonly airFill: HTMLDivElement;
   private readonly message: HTMLDivElement;
   private readonly status: HTMLDivElement;
   private readonly debug: HTMLDivElement;
@@ -41,6 +62,20 @@ export class Hud {
     this.health.id = 'health';
     this.healthFill = document.createElement('div');
     this.health.append(this.healthFill);
+    this.vitals = document.createElement('div');
+    this.vitals.id = 'vitals';
+    const bar = (kind: string, label: string): [HTMLDivElement, HTMLDivElement] => {
+      const b = document.createElement('div');
+      b.className = `vital ${kind}`;
+      b.title = label;
+      b.setAttribute('aria-label', label);
+      const f = document.createElement('div');
+      b.append(f);
+      return [b, f];
+    };
+    [this.airBar, this.airFill] = bar('air', 'Air');
+    [this.staminaBar, this.staminaFill] = bar('stamina', 'Stamina');
+    this.vitals.append(this.airBar, this.staminaBar);
     this.message = document.createElement('div');
     this.message.id = 'center-message';
     this.status = document.createElement('div');
@@ -107,6 +142,7 @@ export class Hud {
     this.root.append(
       this.spyglass,
       crosshair,
+      this.vitals,
       this.health,
       this.message,
       this.status,
@@ -136,6 +172,17 @@ export class Hud {
   setHealth(health: number, nowMs: number): void {
     this.healthFill.style.width = `${String((100 * health) / Players.maxHealth)}%`;
     this.health.classList.toggle('hurt', nowMs < this.damageUntil);
+  }
+
+  /** Stamina and air (null: a mode without them). */
+  setVitals(v: VitalsHud | null): void {
+    const stamina = vitalsBar(v?.stamina ?? null);
+    const air = vitalsBar(v?.oxygen ?? null);
+    this.staminaFill.style.width = stamina.width;
+    this.airFill.style.width = air.width;
+    this.staminaBar.classList.toggle('shown', stamina.shown);
+    this.airBar.classList.toggle('shown', air.shown);
+    this.staminaBar.classList.toggle('exhausted', v?.exhausted ?? false);
   }
 
   flashDamage(nowMs: number): void {

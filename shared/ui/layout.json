@@ -14,6 +14,7 @@
   "parts": [
     { "id": "crosshair", "selector": "#crosshair", "fixed": true, "clearPx": 24 },
     { "id": "health", "selector": "#health", "fixed": true, "clearPx": 0 },
+    { "id": "vitals", "selector": "#vitals", "fixed": true, "clearPx": 0 },
     { "id": "menu-button", "selector": "#menu-button", "anchor": "top-left", "priority": 0 },
     { "id": "info-button", "selector": "#touch-debug", "anchor": "top-right", "priority": 0 },
     { "id": "minimap", "selector": "#minimap", "anchor": "top-right", "priority": 1, "flush": true, "landscape": { "flush": false } },

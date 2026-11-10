@@ -28,6 +28,10 @@ body.hud-hide-health #health {
   display: none !important;
 }
 
+body.hud-hide-vitals #vitals {
+  display: none !important;
+}
+
 body.hud-hide-controls-hint #start-hint {
   display: none !important;
 }

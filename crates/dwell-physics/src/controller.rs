@@ -291,7 +291,7 @@ pub struct PlayerController {
     pub impact_normal: Vec3,
     /// The body last pushed, kept for a few ticks after its contact is lost (`step_push`).
     pub push: PushGrace,
-    /// ◆ Stamina and oxygen (§6.12, ADR 0069), stepped by `step_vitals` under the world's
+    /// ◆ Stamina and oxygen (§6.13, ADR 0069), stepped by `step_vitals` under the world's
     /// [`Players::set_vitals`] rules. Not on the wire's `ControllerState`: a replay keeps the
     /// predicted value, and the server's `Vitals` message corrects it.
     pub vitals: Vitals,
@@ -371,7 +371,7 @@ fn move_towards(current: Vec3, target: Vec3, max_delta: f32) -> Vec3 {
     current + delta * (max_delta / length)
 }
 
-/// The air's walking rule (◆ Dwell, PLAYER_CONTROLLER.md §6.12, owner 2026-11-06): input pushes
+/// The air's walking rule (◆ Dwell, PLAYER_CONTROLLER.md §6.13, owner 2026-11-06): input pushes
 /// `step` m/s a tick along `wish` (a unit vector), and the result is no faster than `target` or the
 /// speed `v` already had, whichever is more. Under the target it speeds the body up to it; at or
 /// past it, it only turns the velocity toward the input (at `step ÷ |v|` radians a tick), never
@@ -977,7 +977,7 @@ impl Players {
         let p = self.pl(i);
         p.c.previous_input = p.c.input;
         p.c.input = p.pending;
-        // Exhausted (§6.12): the run input reads as not held, so no sprint and no sprint slide.
+        // Exhausted (§6.13): the run input reads as not held, so no sprint and no sprint slide.
         if !p.c.vitals.can_exert(rules) {
             p.c.input.run = false;
         }
@@ -1750,7 +1750,7 @@ impl Players {
         );
         let mut wish = (forward * c.input.move_y + camera_right(c.input.look_yaw) * c.input.move_x)
             * cfg.swim.speed;
-        // Exhausted (§6.12): no treading water, so no rising and no buoyancy; the body sinks.
+        // Exhausted (§6.13): no treading water, so no rising and no buoyancy; the body sinks.
         let tired = !c.vitals.can_exert(rules);
         if c.input.jump && !tired {
             wish.y = cfg.swim.speed;
@@ -2884,7 +2884,7 @@ impl Players {
         };
     }
 
-    // ◆ Dwell — stamina and oxygen (§6.12, ADR 0069): this tick's activity spends stamina, a
+    // ◆ Dwell — stamina and oxygen (§6.13, ADR 0069): this tick's activity spends stamina, a
     // tick without one rests; the head under water spends air. After the state, so the server
     // and the prediction step it from the same tick's outcome.
     fn step_vitals(&mut self, i: usize, _: &mut VoxelWorld, _: &mut Physics) {

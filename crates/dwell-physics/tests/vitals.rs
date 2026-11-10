@@ -1,4 +1,4 @@
-//! Stamina and oxygen in the controller (PLAYER_CONTROLLER.md §6.12, ADR 0069). Like every suite
+//! Stamina and oxygen in the controller (PLAYER_CONTROLLER.md §6.13, ADR 0069). Like every suite
 //! here, run on face A and, with `DWELL_FACE=b`, on its mirror image.
 
 mod common;

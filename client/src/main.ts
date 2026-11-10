@@ -52,7 +52,7 @@ import { Backpack } from './ui/backpack';
 import type { BrushPanelState } from './ui/brushPanel';
 import { prefersReducedMotion } from './ui/motionSettings';
 import type { SpyglassHud } from './ui/spyglass';
-import { Hud } from './ui/hud';
+import { Hud, type VitalsHud } from './ui/hud';
 import { MAP_SIZE, MapOverlay } from './ui/mapOverlay';
 import { SettingsMenu } from './ui/settingsMenu';
 import { StructuresPanel } from './ui/structuresPanel';
@@ -614,6 +614,7 @@ function showHud(app: App, now: number): void {
     message?: string;
     status?: string;
     health?: number;
+    vitals?: VitalsHud | null;
     debug?: string | null;
     damaged?: boolean;
     region?: string;
@@ -631,6 +632,7 @@ function showHud(app: App, now: number): void {
   app.hud.setSpyglass(h.spyglass ?? null);
   if (h.damaged) app.hud.flashDamage(now);
   app.hud.setHealth(h.health ?? 0, now);
+  app.hud.setVitals(h.vitals ?? null);
   app.hud.setMessage(h.message);
   app.hud.setStatus(h.status ?? '');
   app.hotbar?.setRegion(h.chop || h.region || '');

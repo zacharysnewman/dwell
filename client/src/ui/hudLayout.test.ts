@@ -34,6 +34,8 @@ function measured(s: { w: number; h: number; touch: boolean }): Map<string, Meas
   m.set('crosshair', { rect: { x: s.w / 2 - 3, y: s.h / 2 - 3, w: 6, h: 6 } });
   const hw = s.touch ? 142 : 202;
   m.set('health', { rect: { x: s.w / 2 - hw / 2, y: s.h - 10 - 10, w: hw, h: 10 } });
+  // Stamina and air (ADR 0069), just above it.
+  m.set('vitals', { rect: { x: s.w / 2 - hw / 2, y: s.h - 10 - 14 - 8, w: hw, h: 8 } });
   m.set('menu-button', { w: 44, h: 44 });
   const map = minimapSize(s.w, s.h);
   m.set('minimap', { w: map, h: map });
@@ -136,6 +138,10 @@ describe('the HUD layout (shared/ui/layout.json)', () => {
     const health = r.get('health') as Rect;
     expect(hotbar.x + hotbar.w / 2).toBeCloseTo(640);
     expect(hotbar.y + hotbar.h).toBeLessThanOrEqual(health.y);
+    // And above the stamina and air bars, which sit on the health bar (ADR 0069).
+    const vitals = r.get('vitals') as Rect;
+    expect(hotbar.y + hotbar.h).toBeLessThanOrEqual(vitals.y);
+    expect(vitals.y + vitals.h).toBeLessThanOrEqual(health.y);
   });
 
   it('reflows when a part is hidden from Settings: no minimap, a wider hotbar', () => {
