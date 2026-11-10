@@ -120,9 +120,7 @@ pub fn look_mesh(look: &dwell_protocol::inventory::ItemLook) -> MeshArrays {
 type Polygon = Vec<[f64; 3]>;
 
 /// A look's faces, each with its own colour where it has one (a model look's palette colours).
-fn look_faces(
-    look: &dwell_protocol::inventory::ItemLook,
-) -> Vec<(Polygon, Option<[f64; 3]>)> {
+fn look_faces(look: &dwell_protocol::inventory::ItemLook) -> Vec<(Polygon, Option<[f64; 3]>)> {
     if look.shape == GroundShape::Model {
         return model_faces(look.model)
             .into_iter()
@@ -459,7 +457,11 @@ mod tests {
         assert_eq!(l.shape, GroundShape::Model);
         let (data, prop) = dwell_models::prop(l.model).expect("built in");
         let m = look_mesh(&l);
-        assert_eq!(m.indices.len(), prop.indices.len(), "every triangle of the prop");
+        assert_eq!(
+            m.indices.len(),
+            prop.indices.len(),
+            "every triangle of the prop"
+        );
         // Lying: its length along x, its base on y = 0.
         let (mut lo, mut hi) = ([f32::MAX; 3], [f32::MIN; 3]);
         for p in m.positions.chunks_exact(3) {

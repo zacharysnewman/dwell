@@ -215,7 +215,8 @@ fn read(bytes: &[u8], skinned: bool) -> Result<Model, String> {
                 }));
         } else {
             m.joints.extend(std::iter::repeat_n([0; 4], n));
-            m.weights.extend(std::iter::repeat_n([1.0, 0.0, 0.0, 0.0], n));
+            m.weights
+                .extend(std::iter::repeat_n([1.0, 0.0, 0.0, 0.0], n));
         }
         let idx = p["indices"].as_u64().ok_or_else(|| err("no indices"))?;
         m.indices.extend(
