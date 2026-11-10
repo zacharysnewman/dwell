@@ -892,7 +892,10 @@ dwell_world::both_faces!(
                     loaded += 1;
                 } else if i.abs() > 21 || k.abs() > 21 {
                     let want = (((i & 0xff) as u32) << 16) | (((k & 0xff) as u32) << 8) | 0x80;
-                    assert_eq!(c, want, "pixel ({qx}, {qy}) is cell ({i}, {k})'s own 1 m top");
+                    assert_eq!(
+                        c, want,
+                        "pixel ({qx}, {qy}) is cell ({i}, {k})'s own 1 m top"
+                    );
                     generated += 1;
                 }
             }

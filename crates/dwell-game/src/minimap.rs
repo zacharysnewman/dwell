@@ -679,8 +679,14 @@ impl Generated {
         let keep = reach + 2.0 * span;
         self.tiles
             .retain(|&(f, ti, tk), _| f == face && d2(ti, tk) <= keep * keep);
-        let (i0, i1) = (((x - reach) / span).floor() as i32, ((x + reach) / span).floor() as i32);
-        let (k0, k1) = (((z - reach) / span).floor() as i32, ((z + reach) / span).floor() as i32);
+        let (i0, i1) = (
+            ((x - reach) / span).floor() as i32,
+            ((x + reach) / span).floor() as i32,
+        );
+        let (k0, k1) = (
+            ((z - reach) / span).floor() as i32,
+            ((z + reach) / span).floor() as i32,
+        );
         let mut out = Vec::new();
         for tk in k0..=k1 {
             for ti in i0..=i1 {
