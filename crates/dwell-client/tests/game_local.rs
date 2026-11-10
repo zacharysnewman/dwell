@@ -2530,15 +2530,14 @@ fn a_long_trip_over_the_terrain_keeps_the_near_ring_at_full_detail() {
 }
 
 #[test]
-#[ignore = "open: with the LOD the near ring never all shows as chunks at a slow page's frame rate (e2e join.spec.ts:55 on CI)"]
 fn with_the_lod_the_loading_screen_opens_on_the_terrain_at_a_slow_pages_frame_rate() {
-    // CI's software renderer draws ~5 fps. On the flat world at 60 fps with the LOD the screen
-    // opens on the near ring in ~150 frames (2.5 s); at 5 fps (12 ticks a frame) it waits out the
-    // 20 s timeout with 168 of 179 shown: air chunks above the player and meshed ground chunks
-    // below, all drawable, whose level-1 sections the LOD neither shows as chunks nor knows to be
-    // empty. The page has ~30 s for the test (join.spec.ts:55), so the timeout plus the page's
-    // start and the fade overrun it. More LOD jobs in flight (4x) made it worse, not better: it is
-    // not the jobs' throughput.
+    // CI's software renderer draws ~5 fps, a slow phone not much more. On the flat world with the
+    // LOD the screen opened on the near ring in ~150 frames at 60 fps (2.5 s), but at 5 fps it
+    // waited out its 20 s timeout (e2e join.spec.ts:55 ran into its 30 s), with 168 of 179 shown:
+    // (1) air chunks above the player whose level-1 sections were made, unclassified, under an
+    // empty level-2 section on the way down to the forced chunks (`shows_nothing_at` stopped at
+    // them), and (2) ground chunks whose level-1 sections' partners beyond the ring were not yet
+    // meshed: a few mesh starts a frame, the workers idle most of each 200 ms frame.
     use dwell_game::loading::{LOADING, near_ring_offsets};
     let mut rig = Rig::with_generator(dwell_world::GENERATOR_FLAT);
     rig.loading_screen = true;
@@ -2584,11 +2583,12 @@ fn with_the_lod_the_loading_screen_opens_on_the_terrain_at_a_slow_pages_frame_ra
         }
     }
     let d = rig.game.as_ref().unwrap().debug_state();
+    let (how, after) = d.loading_opened.expect("opened");
     assert_eq!(
-        d.loading_opened.map(|o| o.0),
-        Some(dwell_game::loading::Opened::Ready),
-        "after {frames} frames: {:?}; not shown (offset, drawable): {missing:?}; lod {:?}",
-        d.loading_opened,
+        how,
+        dwell_game::loading::Opened::Ready,
+        "after {frames} frames ({after} s); not shown (offset, drawable): {missing:?}; lod {:?}",
         d.lod
     );
+    assert!(after < 10.0, "opened after {after} s ({frames} frames)");
 }
