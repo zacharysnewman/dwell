@@ -1,7 +1,8 @@
 # 0072 — Octagonal logs: a cross-section shape kind, squared where logs join
 
 **Status:** Accepted (2026-11-09; T1 built in 0.51.0, a new compatibility line; T2's felling as
-wedges built in 0.51.0; outstanding: the carved notch on the octagon, bodies). Builds on ADR 0042 (½ m cells, stored
+wedges built in 0.51.0; T4, felled bodies and the wood ramps as octagons, built in 0.51.0;
+outstanding: the carved notch on the octagon). Builds on ADR 0042 (½ m cells, stored
 shapes), ADR 0067 (chopping) and docs/SLOPE_BLOCKS.md (the shape mechanism).
 
 ## Context
@@ -69,7 +70,18 @@ the join rule (same group, same axis), the geometry.
   treat a log as its cube (the LOD at distance cannot tell).
 - **T2:** felling as wedges is built (0.51.0; ADR 0067 §5a): the cut cell becomes a wood ramp
   stump and the log above an upside-down wood ramp under the trunk, released with no push, tipping
-  toward the notch. The wood ramps (`dwell:log_ramp`) are square stored ramps, not octagonal: the
-  octagon is applied to full cells only. Outstanding: the carved notch on an octagon
-  (`crates/dwell-mesh/src/carve.rs` still carves a cut log as a cube); felled pieces' body colliders
-  and the wedges as octagons.
+  toward the notch.
+- **T4** (0.51.0; owner, 2026-11-09: "everything log/tree should be octagonal"): a felled piece's
+  logs collide as octagonal prisms (`dwell_physics::piece_hull` gives a log its octagon;
+  `merged_boxes` joins a cell's sides to the same axis's logs beside it in the piece, as the
+  terrain's, and merges a run of one log along its axis into one prism, `PieceCell::joined`,
+  `octagon_hull_points`); pieces were already meshed by the terrain mesher, so they draw the same
+  octagons and joins. A shaped state may carry a cross-section (the wood ramp's `crossSection: "of"`
+  takes the log's): `octagon::state_faces` clips the prism to the state's convex shape (the slant a
+  `Part::Cut`, drawn as end grain), so a wood ramp is the octagon cut by its slant in the mesh and
+  the terrain's collision; a non-convex shape stays square (`section_of`). A cap is hidden only
+  against a neighbour's *whole* cap (`cap_whole`), and sides join only cells of one shape. Deviation:
+  the trunk's riding wedge, a piece cell, keeps its square ramp's hull (with the octagon's narrower
+  hinge the felling test's trunk slid off the stump instead of tipping into the notch); it is drawn
+  octagonal. Outstanding: the carved notch on an octagon (`crates/dwell-mesh/src/carve.rs` still
+  carves a cut log as a cube).
