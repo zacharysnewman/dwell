@@ -1,6 +1,6 @@
 # 0069 — Stamina and oxygen: vitals as data, simulated in the controller, adventure only
 
-**Status:** Accepted (2026-11-09; built in 0.50.54). Spends the axe swing's `staminaCost` (ADR 0067),
+**Status:** Accepted (2026-11-09; built in 0.50.55). Spends the axe swing's `staminaCost` (ADR 0067),
 unused until now. Adds two mode abilities to ADR 0065's vocabulary.
 
 ## Context
