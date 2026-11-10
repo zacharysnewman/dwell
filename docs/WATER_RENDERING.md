@@ -112,8 +112,10 @@ is shaded and the surface ends at the wet columns' edges; a chunk whose only cha
 levels (each changed cell liquid before and after, the same liquid) gets its tile rewritten on the
 main thread (`heightfield::water_tile`, the streamer's `TerrainView::set_water_levels`) and no mesh
 job, and is re-meshed once after `WATER_SETTLE_PASSES` (60) quiet mesh passes so its sides and
-falls catch up. Still off in every tier: not yet re-measured after these, and the darker water past
-a step is not yet found (proposals/WATER_GPU_SURFACE.md C6a). The CPU
+falls catch up. Still off in every tier: measured in 0.50.78 (`?heightfield=1`, the bench's `heightfield`
+configuration) about equal on the GPU on the river (`gpu.near.water` 2.51 → 2.64 ms) and only 18 %
+fewer chunk uploads in a flood (`water-flood`), whose re-meshes are mostly its wet front, which the
+skip doesn't cover (proposals/WATER_GPU_SURFACE.md C6a). The CPU
 adapter's tier may not set it (a per-vertex fetch it doesn't need).
 
 | Tier | Contents |

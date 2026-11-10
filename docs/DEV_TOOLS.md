@@ -1325,6 +1325,16 @@ shading off, to attribute `gpu.*.water` and `gpu.frame` to them; a `--compare` c
 scenario's `water` step switches it mid-run. On a GPU shared with other processes, compare a pass's `min` (in
 every summary) rather than its p50. WATER_RENDERING.md §8 ("Cost") has the method and the numbers.
 
+## The GPU heightfield (`?heightfield=`)
+
+`?heightfield=1` draws the near water's surface from the GPU heightfield whatever the tier says
+(`shared/look/watertiers.json` `heightfield`), and `?heightfield=0` the meshed tops
+(proposals/WATER_GPU_SURFACE.md C6a); set at start, before the world streams in. The `heightfield`
+configuration in `client/bench/configs.json` sets it, so `npm run bench -- --compare water-river
+water-flood --configs heightfield` measures it against the tier's (`raster`). `water-flood` cuts a
+29 × 29 m pit under the river's level beside the seed-7 river and records the 12 s of the fill: chunk
+uploads (`upload.chunks`), `jobs.apply`, `frame.cpu` and `gpu.near.water` are its figures.
+
 ## Water cost (M1 Air)
 
 The owner's "cheaper water … break down what's most expensive" (2026-11-07). Main at 0.50.17, Chrome on
