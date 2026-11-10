@@ -25,7 +25,7 @@ block registry, CI stale check). An item names the block it places and its heigh
 a ½ m piece of a full block shows its tile's top half on its swatch's lower half (owner, 2026-10-28:
 the grass's fringe had been cropped away; `dwell_mesh::half_swatch`). In the hand (`shared/characters`
 items) a block is a ½ m piece carried on the upturned palm, its bottom face on the hand, its sides
-the tile's top half (`sideV`, the item's `pose` turning the hand); a ladder or a plant (`held: card` in the block's data) is a flat card of its tile. A block that brings its own other cells
+the tile's top half (`sideV`, the item's `pose` turning the hand); a block names its hand item with `held`, or takes it from its look (`HELD_BY_LOOK` in `shared/blocks/lights.mjs`, 0.50.73): a ladder (look `ladder`) is the `card`, one flat sheet of its tile, and a cross plant (look `cross`, tall grass) the `cross`, two crossed sheets, both drawn as the characters' `plane` part, seen from both sides with no edge faces (owner, 2026-11-09: they were a thin box with the tile on every side). An inventory item with a shaped `look` (a stick, a rock; `shared/inventory/inventory.json`) is held as its shape's item (`rod`, `lump`) in its look's tile and tint, at the hand's own size. A block that brings its own other cells
 (a torch, `extends`) is a 1-cell item. Adding a piece is a new entry. **0.38.8** (owner, 2026-10-28:
 "remove the 1m tall blocks"): every hotbar item is ½ m (11 items); `rows` stays for a taller piece
 later. `drag` says what holding Place does with it (§5): `modes` (the default; a plain block only),

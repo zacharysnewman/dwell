@@ -225,11 +225,18 @@ mod tests {
                 }
                 let ext: Vec<f64> = (0..3).map(|k| f64::from(hi[k] - lo[k])).collect();
                 for k in 0..3 {
-                    assert!((ext[k] - look.size[k]).abs() < 0.02, "{item} axis {k}: {ext:?}");
+                    assert!(
+                        (ext[k] - look.size[k]).abs() < 0.02,
+                        "{item} axis {k}: {ext:?}"
+                    );
                 }
                 assert!((size - look.size[0].max(look.size[1]).max(look.size[2])).abs() < 1e-9);
                 // From its point up its face's up.
-                let (top, bottom) = if f.is_b() { (-lo[1], -hi[1]) } else { (hi[1], lo[1]) };
+                let (top, bottom) = if f.is_b() {
+                    (-lo[1], -hi[1])
+                } else {
+                    (hi[1], lo[1])
+                };
                 assert!(bottom.abs() < 1e-5 && top > 0.0, "{item}: {bottom} {top}");
                 // Outward: the top face's normal is up its face's up.
                 let up = m

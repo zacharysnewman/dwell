@@ -2,6 +2,13 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions card. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.50.73",
+      "changes": [
+        "Sticks and rocks look the same everywhere: in your hand, on the hotbar and in the backpack, and when dropped, they're the stick and the rock you find on the ground.",
+        "Ladders and tall grass in your hand are flat like they are in the world: a ladder is one sheet and grass is two crossed sheets, with no thin box edges."
+      ]
+    },
+    {
       "version": "0.50.72",
       "changes": [
         "Groundwork for smoother water: the renderer can now draw the water's surface from a height map, still switched off while its look and cost are tuned."

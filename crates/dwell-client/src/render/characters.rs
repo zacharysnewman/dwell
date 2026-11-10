@@ -112,7 +112,9 @@ impl Held {
         {
             let block = dwell_blocks::find_block(l.texture).map_or(0, |b| b.first_state);
             let mut u = block_uniforms(block);
-            let tint = l.color.map(|c| dwell_look::srgb_to_linear(f64::from(c) / 255.0) as f32);
+            let tint = l
+                .color
+                .map(|c| dwell_look::srgb_to_linear(f64::from(c) / 255.0) as f32);
             u[3] = [tint[0], tint[1], tint[2], u[3][3]];
             return u;
         }
@@ -1382,7 +1384,9 @@ mod tests {
     /// The mesh a hand holding `held` shows (the item's parts).
     fn held_mesh(held: Held) -> dwell_characters::mesh::Mesh {
         let ch = dwell_characters::player();
-        let item = ch.item(item_shown(ch, held).expect("an item")).expect("in the data");
+        let item = ch
+            .item(item_shown(ch, held).expect("an item"))
+            .expect("in the data");
         dwell_characters::mesh::build(item.parts, View::Both, &[])
     }
 
@@ -1408,13 +1412,18 @@ mod tests {
             let held = Held::Look(item);
             assert_eq!(item_shown(ch, held), Some(shown), "{item}");
             assert!(!held_mesh(held).indices.is_empty());
-            let look = dwell_protocol::inventory::item(item).and_then(|d| d.look).expect(item);
+            let look = dwell_protocol::inventory::item(item)
+                .and_then(|d| d.look)
+                .expect(item);
             let u = held.uniforms();
             let side = dwell_blocks::try_info(dwell_blocks::require(look.texture))
                 .and_then(|i| i.textures)
                 .expect("a textured block")
                 .side;
-            assert!((f64::from(u[1][0]) - dwell_mesh::tile_rect(side).u0).abs() < 1e-6, "{item}");
+            assert!(
+                (f64::from(u[1][0]) - dwell_mesh::tile_rect(side).u0).abs() < 1e-6,
+                "{item}"
+            );
             // Tinted its look's colour (linear), textured (w 1).
             let r = dwell_look::srgb_to_linear(f64::from(look.color[0]) / 255.0) as f32;
             assert!((u[3][0] - r).abs() < 1e-6 && u[3][3] == 1.0, "{item}");

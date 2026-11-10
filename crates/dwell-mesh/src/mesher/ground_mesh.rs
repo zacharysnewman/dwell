@@ -102,7 +102,14 @@ pub fn look_mesh(look: &dwell_protocol::inventory::ItemLook) -> MeshArrays {
     let color = look.color.map(|v| f64::from(v) / 255.0);
     let mut m = MeshArrays::default();
     for face in polygons(look.shape, look.size, true) {
-        push_polygon(&mut m, &face, color, &crate::textures::tile_rect(tile), [1.0, 0.0], 1.0);
+        push_polygon(
+            &mut m,
+            &face,
+            color,
+            &crate::textures::tile_rect(tile),
+            [1.0, 0.0],
+            1.0,
+        );
     }
     m
 }
@@ -129,7 +136,10 @@ pub fn look_swatch(look: &dwell_protocol::inventory::ItemLook) -> Vec<u8> {
         // Screen x right, y up, depth toward the eye.
         [x, p[1] * tc + z * ts, z * tc - p[1] * ts]
     };
-    let pts: Vec<Vec<[f64; 3]>> = faces.iter().map(|f| f.iter().map(|&p| view(p)).collect()).collect();
+    let pts: Vec<Vec<[f64; 3]>> = faces
+        .iter()
+        .map(|f| f.iter().map(|&p| view(p)).collect())
+        .collect();
     let (mut lo, mut hi) = ([f64::MAX; 2], [f64::MIN; 2]);
     for p in pts.iter().flatten() {
         for k in 0..2 {
@@ -141,7 +151,13 @@ pub fn look_swatch(look: &dwell_protocol::inventory::ItemLook) -> Vec<u8> {
     let span = (hi[0] - lo[0]).max(hi[1] - lo[1]).max(1e-9);
     let scale = n * 0.86 / span;
     let mid = [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0];
-    let to_px = |p: [f64; 3]| [(p[0] - mid[0]) * scale + n / 2.0, n / 2.0 - (p[1] - mid[1]) * scale, p[2]];
+    let to_px = |p: [f64; 3]| {
+        [
+            (p[0] - mid[0]) * scale + n / 2.0,
+            n / 2.0 - (p[1] - mid[1]) * scale,
+            p[2],
+        ]
+    };
     let mut px = vec![0u8; TILE * TILE * 4];
     let mut depth = vec![f64::MIN; TILE * TILE];
     let tint = look.color.map(|c| f64::from(c) / 255.0);
@@ -357,7 +373,11 @@ mod tests {
             let m = look_mesh(&l);
             // Every side, the underside too (a loose item spins in the air).
             let triangles = m.indices.len() / 3;
-            let quads = if shape == GroundShape::Rod { faces * 2 } else { 12 * 2 + 4 * 2 };
+            let quads = if shape == GroundShape::Rod {
+                faces * 2
+            } else {
+                12 * 2 + 4 * 2
+            };
             assert_eq!(triangles, quads, "{item}");
             let (mut lo, mut hi) = ([f32::MAX; 3], [f32::MIN; 3]);
             for p in m.positions.chunks_exact(3) {
@@ -367,9 +387,15 @@ mod tests {
                 }
             }
             // In metres, its base at 0: as tall as its size, as long as its size (a rod).
-            assert!(lo[1].abs() < 1e-6 && (f64::from(hi[1]) - l.size[1]).abs() < 1e-6, "{item}");
+            assert!(
+                lo[1].abs() < 1e-6 && (f64::from(hi[1]) - l.size[1]).abs() < 1e-6,
+                "{item}"
+            );
             if shape == GroundShape::Rod {
-                assert!((f64::from(hi[0] - lo[0]) - l.size[0]).abs() < 1e-6, "{item}");
+                assert!(
+                    (f64::from(hi[0] - lo[0]) - l.size[0]).abs() < 1e-6,
+                    "{item}"
+                );
             }
             // Tinted its look's colour (times the face shading), on its texture's tile.
             let tile = crate::textures::tile_rect(look_tile(&l));
@@ -389,7 +415,10 @@ mod tests {
             for (x, y) in [(0, 0), (TILE - 1, 0), (0, TILE - 1), (TILE - 1, TILE - 1)] {
                 assert_eq!(px[(y * TILE + x) * 4 + 3], 0, "{item} corner {x},{y}");
             }
-            assert!(opaque > TILE * 2 && opaque < TILE * TILE * 3 / 4, "{item}: {opaque}");
+            assert!(
+                opaque > TILE * 2 && opaque < TILE * TILE * 3 / 4,
+                "{item}: {opaque}"
+            );
         }
         // The stick's grain is its log's bark, tinted: brown, red above blue.
         let px = look_swatch(&look("dwell:stick"));
