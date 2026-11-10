@@ -1692,7 +1692,9 @@ body.menu-open #menu-button {
   white-space: pre;
   padding: 3px 8px;
   border-radius: 4px;
-  font: 600 13px/1.2 system-ui, sans-serif;
+  font:
+    600 13px/1.2 system-ui,
+    sans-serif;
   color: #fff;
   background: rgb(0 0 0 / 45%);
   pointer-events: none;

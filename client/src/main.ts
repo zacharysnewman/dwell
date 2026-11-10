@@ -1249,7 +1249,13 @@ function play(app: App, joined: Extract<SessionReport, { phase: 'joined' }>): vo
       const b = app.backpack;
       if (!b || !app.playing) return;
       // E on a ground item picks it up (ADR 0071); otherwise it opens the backpack as before.
-      if (e.code === 'KeyE' && !e.repeat && !b.open && document.pointerLockElement && app.client.pickUp()) {
+      if (
+        e.code === 'KeyE' &&
+        !e.repeat &&
+        !b.open &&
+        document.pointerLockElement &&
+        app.client.pickUp()
+      ) {
         e.preventDefault();
         e.stopPropagation();
         return;
