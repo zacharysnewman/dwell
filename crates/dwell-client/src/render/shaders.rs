@@ -3039,7 +3039,7 @@ pub fn source(samples: u32) -> String {
         super::flow::wgsl(),
         scene_bindings(samples),
         water_slope()
-    )
+    ) + &super::heightfield::wgsl()
 }
 
 /// The flood light's shading constants (shared/look/light.json; docs/DAY_NIGHT.md §11).

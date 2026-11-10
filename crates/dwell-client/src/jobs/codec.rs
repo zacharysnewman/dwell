@@ -423,6 +423,15 @@ pub fn encode_output(id: u32, out: &Output) -> Vec<u8> {
             w.arrays(&m.opaque);
             w.arrays(&m.transparent);
             w.arrays(&m.cutout);
+            match &m.water {
+                Some(t) => {
+                    w.u8(1 | if t.face_b { 2 } else { 0 });
+                    w.f32s(&[t.fluid]);
+                    w.f32s(&t.levels);
+                    w.f32s(&t.lights);
+                }
+                None => w.u8(0),
+            }
         }
         Output::SectionMesh(m) => {
             w.u8(5);
@@ -478,11 +487,27 @@ pub fn decode_output(bytes: &[u8]) -> Result<(u32, Output), DecodeError> {
             surface_b: r.opt_f32s()?,
         },
         3 => Output::Map(if r.u8()? == 1 { Some(r.bytes()?) } else { None }),
-        4 => Output::ChunkMesh(Box::new(ChunkMeshes {
-            opaque: r.arrays()?,
-            transparent: r.arrays()?,
-            cutout: r.arrays()?,
-        })),
+        4 => {
+            let (opaque, transparent, cutout) = (r.arrays()?, r.arrays()?, r.arrays()?);
+            let bits = r.u8()?;
+            let water = if bits & 1 != 0 {
+                let fluid = *r.f32s()?.first().ok_or(DecodeError)?;
+                Some(dwell_mesh::heightfield::WaterTile {
+                    fluid,
+                    levels: r.f32s()?,
+                    lights: r.f32s()?,
+                    face_b: bits & 2 != 0,
+                })
+            } else {
+                None
+            };
+            Output::ChunkMesh(Box::new(ChunkMeshes {
+                opaque,
+                transparent,
+                cutout,
+                water,
+            }))
+        }
         5 => {
             let (opaque, water) = (r.flat()?, r.flat()?);
             let mut skirts: [FlatMesh; 6] = Default::default();

@@ -26,7 +26,51 @@ pub const CORNERS: usize = COLUMNS + 1;
 /// The chunk's surface levels from its padded voxels ([`crate::padded_index`] order), face-local
 /// (`mirror` for face B).
 pub fn water_levels(padded: &[u16], mirror: bool) -> Levels {
-    water_levels_with(Kinds::build(), padded, mirror)
+    water_levels_with(Kinds::build(), padded, &[], mirror).0
+}
+
+/// A flood light (sky, block as shares of 15; the meshes' `light` stream) packed into one float:
+/// sky × 16 + block, whole levels.
+pub fn pack_light(l: [f32; 2]) -> f32 {
+    (l[0] * 15.0).round() * 16.0 + (l[1] * 15.0).round()
+}
+
+/// A chunk's surface tile as the client's renderer takes it with the chunk's meshes.
+#[derive(Clone, Debug, PartialEq)]
+pub struct WaterTile {
+    /// [`TILE`]² face-local levels ([`water_levels`]).
+    pub levels: Levels,
+    /// Each column's flood light at its surface ([`pack_light`]; open sky where dry).
+    pub lights: Vec<f32>,
+    /// The fluid drawn (its id in the registry's fluid table, as the meshes' `fluids` stream):
+    /// the first wet column's in the chunk. A chunk holds one water today.
+    pub fluid: f32,
+    /// A face-B chunk (its tile face-local; the shader mirrors it back).
+    pub face_b: bool,
+}
+
+/// Chunk `padded`'s tile over `kinds`; none where no column inside the chunk is wet.
+pub(crate) fn tile_with(
+    kinds: &Kinds,
+    padded: &[u16],
+    light: &[u8],
+    mirror: bool,
+) -> Option<WaterTile> {
+    let (levels, lights, fluid) = water_levels_with(kinds, padded, light, mirror);
+    (fluid != crate::NO_FLUID).then_some(WaterTile {
+        levels,
+        lights,
+        fluid,
+        face_b: mirror,
+    })
+}
+
+/// The shared grid's indices for both faces: [`grid_indices`] (face A), then the same
+/// triangles re-wound (face B: the mirrored grid's up side is −y), each `COLUMNS² × 6` long.
+pub fn grid_indices_both() -> Vec<u32> {
+    let a = grid_indices();
+    let b: Vec<u32> = a.chunks_exact(3).flat_map(|t| [t[0], t[2], t[1]]).collect();
+    [a, b].concat()
 }
 
 /// Whether column level `h` is wet.

@@ -129,6 +129,8 @@ pub struct Pool {
     in_flight: [usize; 2],
     /// Results collected between frames ([`Jobs::on_done`]), for the next [`Self::poll`].
     ready: Vec<Done>,
+    /// Chunk meshes take their liquid tops (false while the scene draws the heightfield).
+    pub water_tops: bool,
 }
 
 pub type PoolRef = Rc<RefCell<Pool>>;
@@ -143,6 +145,7 @@ impl Pool {
             queued: Default::default(),
             in_flight: [0; 2],
             ready: Vec::new(),
+            water_tops: true,
         }));
         let weak = Rc::downgrade(&pool);
         // A result between frames: collected, and the worker given the next queued job. Never
@@ -274,6 +277,7 @@ impl Mesher for MeshJobs {
         2 * self.0.borrow().capacity(true)
     }
     fn mesh(&mut self, job: MeshJob) {
+        let water_tops = self.0.borrow().water_tops;
         self.0.borrow_mut().submit(
             Purpose::ChunkMesh(job.coord, job.token),
             Job::MeshChunk {
@@ -283,9 +287,7 @@ impl Mesher for MeshJobs {
                 origin: job.coord.map(|c| c * dwell_world::CHUNK_SIZE),
                 cuts: job.cuts,
                 ground: job.ground,
-                // The GPU heightfield's draw turns this off for its tiers (WATER_GPU_SURFACE.md
-                // C6a's rest); until then every chunk meshes its water's tops.
-                water_tops: true,
+                water_tops,
             },
         );
     }
