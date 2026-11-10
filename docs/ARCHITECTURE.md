@@ -1579,7 +1579,7 @@ ranges) and kept in the browser (`dwell.chisel`, append-only). A worker loads th
 parsed and put on it (`TerrainGenerator::with_biomes_on`, `BiomeField::with_params`), tiles rasterised
 by the big map's rules (`lod_map::raster_with_heights`, `tint_rgb`) or as overlays (biome weights,
 temperature, wetness, rainfall, rock), 64² then 256² per change; the edit may carry the geology
-(`rocks.json`'s shape: the Rock group's sliders). The texture tab (B6) and Chisel in the game (B7)
+(`rocks.json`'s shape: the Rock group's sliders). The world overview (0.52.11; owner, 2026-11-10: "a world map preview for this tool when we can blend between biomes"): beside the detail preview, the whole disc (island and sea, `WORLD_RADIUS`) from the same edit and overlay, 128² (~0.78 km texels) then 512² (~0.2 km), the frame from `chisel::overview_frame` (`ChiselPreview.overview_frame`); the worker runs the detail lane first, splits the overview's passes into 128² chunks, drops a lane's older generation when a newer edit arrives and caches the chunks by the edit state (`client/src/chisel/overview.ts`); the detail region drawn as a rectangle, a click or drag moving its centre. Face A only (Chisel has no face toggle; face B is its mirror). The texture tab (B6) and Chisel in the game (B7)
 follow.
 
 1. **Layout (2D).** The coast distance of the interim island (above).
