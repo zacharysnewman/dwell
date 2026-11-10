@@ -1018,7 +1018,7 @@ fn carved_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, cell: [i32; 3], cu
 /// squared off where it joins a neighbour. Bark on the sides and chamfers, end grain on the caps;
 /// each face lit by the sky its side sees (a chamfer: the mean of its two sides').
 fn octagon_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, m: StateId, cell: [i32; 3]) {
-    use dwell_blocks::octagon::{Part as Oct, open_faces};
+    use dwell_blocks::octagon::{Part as Oct, cap_pieces, joined_mask, open_faces, section_of};
     let [x, y, z] = cell;
     let at = |o: [i32; 3]| cells.state(x + o[0], y + o[1], z + o[2]);
     let covers = |n: StateId| {
@@ -1026,9 +1026,22 @@ fn octagon_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, m: StateId, cell:
         kn.occludes && kn.shape == Shape::Full
     };
     let pos = [f64::from(x), f64::from(y), f64::from(z)];
-    for f in open_faces(m, &at, &covers, [1.0, CELL_H, 1.0]) {
+    let size = [1.0, CELL_H, 1.0];
+    let Some((section, sec_axis)) = section_of(m) else {
+        return;
+    };
+    let joined = joined_mask(m, &at);
+    // Each open cap split into its bark ring along the octagon's unjoined edges and the heart
+    // inside (Phase 55 T3).
+    let pieces = open_faces(m, &at, &covers, size)
+        .into_iter()
+        .flat_map(|f| match f.part {
+            Oct::Cap(end) => cap_pieces(&section, sec_axis, joined, size, end),
+            _ => vec![f],
+        });
+    for f in pieces {
         let sides: [usize; 2] = match f.part {
-            Oct::Cap(end) => {
+            Oct::Cap(end) | Oct::Ring(end, _) => {
                 let face = face_of(k.style.axis, if end { 1 } else { -1 });
                 [face, face]
             }
@@ -1036,7 +1049,15 @@ fn octagon_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, m: StateId, cell:
             Oct::Chamfer(a, c) => [a, c],
         };
         let (axis, sign) = FACES[sides[0]];
-        let (color, tile) = surface(&k.style, axis, sign);
+        let (color, tile) = match (f.part, k.style.textures) {
+            // The ring: the bark (side) tile, laid flat on the cap.
+            (Oct::Ring(..), Some(t)) => (0xffffff, tile_rect(t.side)),
+            // The heart: its own tile when the data names one this build has.
+            (Oct::Cap(_), Some(_)) if section.heart.is_some_and(crate::textures::has_tile) => {
+                (0xffffff, tile_rect(section.heart.unwrap_or_default()))
+            }
+            _ => surface(&k.style, axis, sign),
+        };
         let normal = carve::normal(&f.pts);
         let tint = match f.part {
             Oct::Chamfer(..) => {

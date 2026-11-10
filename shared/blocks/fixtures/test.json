@@ -26,7 +26,7 @@
       "$comment": "An octagonal cross-section by data alone (ADR 0072): a post with a smaller chamfer that joins the logs (the dwell:wood group).",
       "name": "post", "density": 600, "shape": "full", "color": "#806040", "textures": "stone", "axisProperty": "axis",
       "properties": { "axis": ["y", "x", "z"] },
-      "crossSection": { "kind": "octagon", "chamfer": 0.15, "joins": "dwell:wood" }
+      "crossSection": { "kind": "octagon", "chamfer": 0.15, "joins": "dwell:wood", "ring": 0.1 }
     },
     {
       "$comment": "A fell wedge by data alone (Phase 55 T2): the post's ramp, which the tools fixture names as its fellWedge.",

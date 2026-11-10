@@ -62,7 +62,7 @@ pub mod tag {
     /// `u8` (0 ground, 1 carrier, 2 rider): what it counts as for holding things up
     /// (`StateInfo::support_role`, docs/FELLING.md), sent only when not ground.
     pub const SUPPORT_ROLE: u8 = 12;
-    /// `f32` chamfer, `str` join group: its octagonal cross-section (`StateInfo::cross_section`,
+    /// `f32` chamfer, `str` join group, `f32` ring, `str` heart tile (empty: none): its octagonal cross-section (`StateInfo::cross_section`,
     /// ADR 0072), sent only when it has one. A rule: it shapes collision.
     pub const CROSS_SECTION: u8 = 13;
     /// `str`.
@@ -338,6 +338,8 @@ pub fn state_fields(s: &StateInfo) -> Fields {
         out.push(field(tag::CROSS_SECTION, |w| {
             w.f32(c.chamfer);
             w.str(c.joins);
+            w.f32(c.ring);
+            w.str(c.heart.unwrap_or(""));
         }));
     }
     if s.near_fade > 0.0 {
@@ -821,10 +823,18 @@ fn apply_rules(
             tag::CROSS_SECTION => {
                 let chamfer = r.f32();
                 let joins = r.str(MAX_STR);
+                let ring = r.f32();
+                let heart = r.str(MAX_STR);
                 if r.ok() && chamfer.is_finite() {
                     row.cross_section = Some(CrossSection {
                         chamfer: chamfer.clamp(0.0, 0.45),
                         joins: intern(&joins),
+                        ring: if ring.is_finite() {
+                            ring.clamp(0.0, 0.25)
+                        } else {
+                            0.0
+                        },
+                        heart: (!heart.is_empty()).then(|| intern(&heart)),
                     });
                 }
             }

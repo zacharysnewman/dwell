@@ -335,11 +335,16 @@ for (const ns of namespaces) {
     if (def.crossSection !== undefined) {
       const c = def.crossSection;
       if (typeof c !== 'object' || c === null) fail(`${id}: crossSection must be an object`);
-      const known = ['$comment', 'kind', 'chamfer', 'joins'];
+      const known = ['$comment', 'kind', 'chamfer', 'joins', 'ring', 'heart'];
       for (const k of Object.keys(c)) if (!known.includes(k)) fail(`${id}: crossSection.${k} is not a field (${known.slice(1).join(', ')})`);
       if (c.kind !== 'octagon') fail(`${id}: crossSection.kind must be octagon`);
       if (typeof c.chamfer !== 'number' || !(c.chamfer > 0 && c.chamfer < 0.5)) fail(`${id}: crossSection.chamfer must be a number in (0, 0.5)`);
       if (typeof c.joins !== 'string' || c.joins === '') fail(`${id}: crossSection.joins must name a join group`);
+      // The caps' bark ring (Phase 55 T3): a band along the octagon's unjoined edges, `ring` wide
+      // (a fraction of the shorter side, less than half of it), with the `heart` tile inside it.
+      if (c.ring !== undefined && (typeof c.ring !== 'number' || !(c.ring > 0 && c.ring < 0.25))) fail(`${id}: crossSection.ring must be a number in (0, 0.25)`);
+      if (c.heart !== undefined && (typeof c.heart !== 'string' || c.heart === '')) fail(`${id}: crossSection.heart must name a texture tile`);
+      if (c.heart !== undefined && c.ring === undefined) fail(`${id}: crossSection.heart needs a ring (the heart is the tile inside it)`);
       if (def.shape !== 'full' || (def.look ?? 'cube') !== 'cube') fail(`${id}: crossSection needs shape full and look cube`);
       if (!def.axisProperty) fail(`${id}: crossSection needs an axisProperty (the octagon lies across its axis)`);
     }
@@ -769,7 +774,7 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
       `axis: Axis::${d.axisProperty ? st.values[d.axisProperty].toUpperCase() : 'Y'}`,
       `near_fade: ${rf(d.nearFade ?? 0)}`,
       `fill: ${rf(st.fill)}`,
-      `cross_section: ${d.crossSection ? `Some(CrossSection { chamfer: ${rf(d.crossSection.chamfer)}, joins: ${rstr(d.crossSection.joins)} })` : 'None'}`,
+      `cross_section: ${d.crossSection ? `Some(CrossSection { chamfer: ${rf(d.crossSection.chamfer)}, joins: ${rstr(d.crossSection.joins)}, ring: ${rf(d.crossSection.ring ?? 0)}, heart: ${d.crossSection.heart ? `Some(${rstr(d.crossSection.heart)})` : 'None'} })` : 'None'}`,
     ];
     rs.push(`    StateInfo { ${fields.join(', ')} },`);
   }

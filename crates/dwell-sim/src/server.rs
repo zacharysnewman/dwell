@@ -2710,6 +2710,16 @@ impl Server {
     /// cells are cleared in one `Collapse` modification, then each piece's `EntitySpawn` goes to
     /// every joined client. `settles` counts how often these cells settled unanchored before.
     fn fell(&mut self, changed: &[[i32; 3]], settles: u8, away_from: Option<DVec3>) {
+        self.fell_tipped(changed, settles, away_from.map(|p| (p, 1.0)));
+    }
+
+    /// [`Self::fell`] with the share of the topple spin a carrying piece tips away with.
+    pub(crate) fn fell_tipped(
+        &mut self,
+        changed: &[[i32; 3]],
+        settles: u8,
+        away_from: Option<(DVec3, f64)>,
+    ) {
         if changed.is_empty() {
             return;
         }

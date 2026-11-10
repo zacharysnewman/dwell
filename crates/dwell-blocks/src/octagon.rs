@@ -71,6 +71,10 @@ pub enum Part {
     Side(usize),
     /// A 45° chamfer between the cell faces `a` and `b` (bark).
     Chamfer(usize, usize),
+    /// A piece of an end cap's bark ring (`CrossSection::ring`, from [`cap_pieces`]), at the
+    /// positive or negative end of the axis, along the outline's edge on cell face `Some(face)` or
+    /// along a chamfer (`None`).
+    Ring(bool, Option<usize>),
 }
 
 /// One convex, outward-wound polygon of the prism, in cell coordinates.
@@ -198,8 +202,92 @@ pub fn open_faces(
             let same = section_of(n).map(|(c, _)| c) == Some(section);
             !(same && theirs & joined == joined)
         }
-        Part::Chamfer(..) => true,
+        Part::Chamfer(..) | Part::Ring(..) => true,
     });
+    out
+}
+
+/// An end cap split into its bark ring and the heart inside it (Phase 55 T3): the ring is a band
+/// `ring` wide (a fraction of the shorter side, in metres so it is even on ½ m cells) along each
+/// edge of the outline that is not joined, so it follows the octagon; along a joined side there is
+/// none, and the heart reaches the cell's edge there, so joined logs' caps read as one surface. The
+/// heart is `Part::Cap(end)`, the bands `Part::Ring(end, _)`; together they tile the cap. With no
+/// ring (0) the cap is returned whole.
+pub fn cap_pieces(
+    section: &CrossSection,
+    axis: usize,
+    joined: u8,
+    size_m: [f64; 3],
+    end: bool,
+) -> Vec<Face> {
+    let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
+    let ring = outline(f64::from(section.chamfer), axis, joined, size_m);
+    let w = if end { 1.0 } else { 0.0 };
+    let at = |p: [f64; 2]| {
+        let mut q = [0.0; 3];
+        q[u] = p[0];
+        q[v] = p[1];
+        q[axis] = w;
+        q
+    };
+    // Counter-clockwise round the axis at the positive end; reversed (outward) at the negative.
+    let wind = |mut pts: Vec<[f64; 3]>| {
+        if !end {
+            pts.reverse();
+        }
+        pts
+    };
+    let width = f64::from(section.ring) * size_m[u].min(size_m[v]);
+    if width <= 0.0 {
+        return vec![Face {
+            part: Part::Cap(end),
+            pts: wind(ring.iter().map(|(p, _)| at(*p)).collect()),
+        }];
+    }
+    // In metres: each edge's line moved inward by its band's width (0 where joined); the heart's
+    // corners are where consecutive moved lines meet.
+    let (su, sv) = (size_m[u], size_m[v]);
+    let n = ring.len();
+    let m: Vec<[f64; 2]> = ring.iter().map(|(p, _)| [p[0] * su, p[1] * sv]).collect();
+    let banded = |i: usize| match ring[i].1 {
+        Some(face) => joined & (1 << face) == 0,
+        None => true,
+    };
+    let line = |i: usize| {
+        let (a, b) = (m[i], m[(i + 1) % n]);
+        let e = [b[0] - a[0], b[1] - a[1]];
+        let len = (e[0] * e[0] + e[1] * e[1]).sqrt();
+        let d = if banded(i) { width } else { 0.0 };
+        // The inward normal of a counter-clockwise edge: its direction turned left.
+        let o = [a[0] - e[1] / len * d, a[1] + e[0] / len * d];
+        (o, e)
+    };
+    let cross = |a: [f64; 2], b: [f64; 2]| a[0] * b[1] - a[1] * b[0];
+    let inner: Vec<[f64; 2]> = (0..n)
+        .map(|i| {
+            let (a, ea) = line((i + n - 1) % n);
+            let (b, eb) = line(i);
+            let t = cross([b[0] - a[0], b[1] - a[1]], eb) / cross(ea, eb);
+            let p = [a[0] + ea[0] * t, a[1] + ea[1] * t];
+            [p[0] / su, p[1] / sv]
+        })
+        .collect();
+    let mut out = vec![Face {
+        part: Part::Cap(end),
+        pts: wind(inner.iter().map(|p| at(*p)).collect()),
+    }];
+    for i in (0..n).filter(|&i| banded(i)) {
+        let j = (i + 1) % n;
+        out.push(Face {
+            part: Part::Ring(end, ring[i].1),
+            pts: wind(vec![
+                at(ring[i].0),
+                at(ring[j].0),
+                at(inner[j]),
+                at(inner[i]),
+            ]),
+        });
+    }
     out
 }
 

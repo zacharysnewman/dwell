@@ -152,13 +152,18 @@ dwell_world::both_faces!(
         assert!((8..=12).contains(&n), "{n} swings");
         // Phase 55 T2 (owner, 2026-11-09): the stump keeps the wood ramp rising away from the
         // notch (the notch on −x, the player's side at x = 0.5; the uncut +x side the hinge), the
-        // trunk's new bottom is the upside-down ramp (the log's `fellWedge`, data), reaching down at
-        // the hinge: the notch's upper face, the two meeting on the hinge's edge.
+        // trunk's new bottom is the upside-down ramp (the log's `fellWedge`, data), lying parallel
+        // to the stump's (`fellWedgeTrunk: matching`, owner 2026-11-09: no lost half).
         let wood = dwell_protocol::chopping::wood("dwell:log").expect("log");
+        assert!(
+            wood.fell_wedge_matching,
+            "the log's trunk wedge is the matching one"
+        );
+        assert!(wood.fell_tip > 0.0, "the log tips when felled (`fellTip`)");
         let (stump, top) = dwell_sim::felling::fell_wedges(
             wood.fell_wedge.expect("the log's wedge"),
             [-1.0, 0.0],
-            dwell_sim::felling::WedgeTrunk::Open,
+            dwell_sim::felling::WedgeTrunk::Matching,
         )
         .expect("the log's wedges");
         assert_eq!(
@@ -174,8 +179,8 @@ dwell_world::both_faces!(
         );
         assert_eq!(
             (prop(top, "facing"), prop(top, "half")),
-            (Some("west"), Some("top")),
-            "upside down, reaching down at the hinge"
+            (Some("east"), Some("top")),
+            "upside down, parallel to the stump's slope"
         );
         let sent = fx.take(1);
         let spawn = sent
@@ -197,10 +202,11 @@ dwell_world::both_faces!(
             f.state(top),
             "the trunk's bottom is the inverted wedge"
         );
-        // Released with no push (no scripted tip): the slanted contact alone tips it toward the
-        // notch (−x), and within four seconds it is down (leaning past 60°) on that side.
-        // A matching (parallel) wedge stood on the slope; a two-cell 45° one slid toward the
-        // notch and toppled back over the hinge (`WedgeTrunk`).
+        // Released tipping toward the notch (−x) with the old scripted tip (the log's `fellTip`;
+        // owner 2026-11-09: "make the tree tip if needed, like we used to, maybe 3/4 of the
+        // force"): within four seconds it is down (leaning past 60°) on that side, not sideways.
+        // Without the tip a matching wedge stood on the stump's slope; at 0.75 and 0.85 of it this
+        // 3.5 m trunk leant ~5° and rocked back upright, so the log's share is 1.
         let id = spawn.id;
         let mut lean = [0.0; 3];
         let mut ticks = 0;

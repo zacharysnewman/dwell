@@ -160,4 +160,13 @@ test('a fixture wood with its own fell wedge by data alone; a bad wedge fails na
   const rows = loadTools();
   rows.woods[0].fellWedgeTrunk = 'flat';
   assert.throws(() => validateTools(rows, items, blocks), /woods\.dwell:log\.fellWedgeTrunk must be one of open, matching/);
+  // The trunk's tip (owner, 2026-11-09: "like we used to") is data: validated, 0 by default.
+  rows.woods[0].fellWedgeTrunk = 'open';
+  rows.woods[0].fellTip = -1;
+  assert.throws(() => validateTools(rows, items, blocks), /woods\.dwell:log\.fellTip must be a number in \[0, 2\]/);
+  const plain = loadTools();
+  delete plain.woods[0].fellTip;
+  delete plain.woods[0].fellWedgeTrunk;
+  assert.match(toolsRust(validateTools(plain, items, blocks)), /fell_wedge_matching: true, fell_tip: 0\.0 \}/);
+  assert.match(toolsRust(validateTools(loadTools(), items, blocks)), /block: "dwell:log", .*fell_tip: 1\.0 \}/);
 });
