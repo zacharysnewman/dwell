@@ -19,7 +19,7 @@
 use dwell_protocol::bytes::{ByteReader, ByteWriter};
 
 use crate::{
-    AIR, Axis, Cross, FLUIDS, Facing, Fade, Grid, Medium, NewBlock, Origin, RenderMode, SHAPES,
+    AIR, Axis, Cross, CrossSection, FLUIDS, Facing, Fade, Grid, Medium, NewBlock, Origin, RenderMode, SHAPES,
     STATES, ShapeInfo, SideUnder, StateId, StateInfo, Support, SupportRole, Textures, VoxelShape,
     Wind, blocks, build_state, info, intern, register, same_definition, shape::faces_of,
     state_count,
@@ -62,6 +62,9 @@ pub mod tag {
     /// `u8` (0 ground, 1 carrier, 2 rider): what it counts as for holding things up
     /// (`StateInfo::support_role`, docs/FELLING.md), sent only when not ground.
     pub const SUPPORT_ROLE: u8 = 12;
+    /// `f32` chamfer, `str` join group: its octagonal cross-section (`StateInfo::cross_section`,
+    /// ADR 0072), sent only when it has one. A rule: it shapes collision.
+    pub const CROSS_SECTION: u8 = 13;
     /// `str`.
     pub const LOOK: u8 = 0x81;
     /// `u32` sRGB, `f32` opacity.
@@ -329,6 +332,12 @@ pub fn state_fields(s: &StateInfo) -> Fields {
                 SupportRole::Rider => 2,
                 SupportRole::Falls => 3,
             })
+        }));
+    }
+    if let Some(c) = s.cross_section {
+        out.push(field(tag::CROSS_SECTION, |w| {
+            w.f32(c.chamfer);
+            w.str(c.joins);
         }));
     }
     if s.near_fade > 0.0 {
@@ -707,6 +716,7 @@ fn default_row(name: &str) -> StateInfo {
         axis: Axis::Y,
         near_fade: 0.0,
         fill: 1.0,
+        cross_section: None,
     }
 }
 
@@ -732,6 +742,7 @@ fn apply_rules(
     row.part_of = None;
     row.moldable = None;
     row.support_role = SupportRole::Ground;
+    row.cross_section = None;
     for (t, bytes) in fields {
         let mut r = ByteReader::new(bytes);
         match *t {
@@ -805,6 +816,16 @@ fn apply_rules(
                         notes.push(format!("support role {other} not in this version (ground)"));
                         SupportRole::Ground
                     }
+                }
+            }
+            tag::CROSS_SECTION => {
+                let chamfer = r.f32();
+                let joins = r.str(MAX_STR);
+                if r.ok() && chamfer.is_finite() {
+                    row.cross_section = Some(CrossSection {
+                        chamfer: chamfer.clamp(0.0, 0.45),
+                        joins: intern(&joins),
+                    });
                 }
             }
             t if t & tag::LOOK_BIT == 0 => {
@@ -1192,6 +1213,9 @@ fn changed_fields(a: &StateInfo, b: &StateInfo) -> Vec<String> {
     }
     if a.shape != b.shape || a.shape_index != b.shape_index {
         out.push("shape".into());
+    }
+    if a.cross_section != b.cross_section {
+        out.push("cross section".into());
     }
     if a.density_kg_m3.to_bits() != b.density_kg_m3.to_bits() {
         out.push("density".into());

@@ -23,6 +23,12 @@
       "name": "hedge", "density": 300, "shape": "full", "render": "cutout", "color": "#3a7a2a", "textures": "tallGrass"
     },
     {
+      "$comment": "An octagonal cross-section by data alone (ADR 0072): a post with a smaller chamfer that joins the logs (the dwell:wood group).",
+      "name": "post", "density": 600, "shape": "full", "color": "#806040", "textures": "stone", "axisProperty": "axis",
+      "properties": { "axis": ["y", "x", "z"] },
+      "crossSection": { "kind": "octagon", "chamfer": 0.15, "joins": "dwell:wood" }
+    },
+    {
       "name": "glass", "density": 2500, "shape": "full", "render": "translucent", "opacity": 0.4, "color": "#c8e8f0", "textures": "water"
     },
     {

@@ -94,6 +94,15 @@ pub struct Cross {
     pub sit_on_support: bool,
 }
 
+/// An octagonal cross-section (block data `crossSection`, ADR 0072): `chamfer` is the corners' cut,
+/// a fraction of the cross-section's shorter side; it joins (full-width sides) with neighbours of
+/// the same `joins` group and the same axis.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CrossSection {
+    pub chamfer: f32,
+    pub joins: &'static str,
+}
+
 /// Wind sway of a cross's top (block data `wind`): `strength` metres at the top, gusts at `speed`
 /// (1 = the default gust field's pace).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -238,6 +247,10 @@ pub struct StateInfo {
     /// A liquid's fill: how full its cell is (1 full, the default; `fillProperty`), its drawn
     /// surface that far up (docs/WATER_FLOW.md §15).
     pub fill: f32,
+    /// Its cross-section across its axis (block data `crossSection`, ADR 0072): an octagon whose
+    /// sides square off to full width where a neighbour of its join group lies on them
+    /// ([`crate::octagon`]); none for a plain cube.
+    pub cross_section: Option<CrossSection>,
 }
 
 /// A named light source (`lights` in `shared/blocks/*.json`; docs/LIGHTS.md §2): looks only.

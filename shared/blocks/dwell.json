@@ -239,6 +239,12 @@
       "properties": {
         "axis": ["y", "x", "z"]
       },
+      "crossSection": {
+        "$comment": "ADR 0072 (owner, 2026-11-09: \"trees should be octagons around. But smoothly connect when placed next to each other, full width sides where they meet\"): a regular octagon across its axis (chamfer 1/(2+√2) of the side); a side squares off to full width where a log of the same axis lies on it.",
+        "kind": "octagon",
+        "chamfer": 0.2929,
+        "joins": "dwell:wood"
+      },
       "color": "#7a5236",
       "textures": {
         "top": "logTop",
