@@ -13,8 +13,8 @@ use dwell_game::sound::{SoundEvent, SoundKind, speed_intensity};
 use dwell_mesh::{ChunkMeshes, PADDED_VOLUME, mesh_chunk, padded_index};
 use dwell_physics::{DQuat, DVec3, PieceCell};
 use dwell_protocol::{CHUNK_SIZE, EntitySpawn, PieceState, players};
-use dwell_world::CELL_H;
 use dwell_world::hash::HashMap;
+use dwell_world::{CELL_H, FaceFrame};
 
 /// How many snapshot poses a piece keeps (the interpolation needs the two round its draw time).
 const KEEP: usize = 8;
@@ -270,6 +270,20 @@ impl Pieces {
             }
         }
         best
+    }
+
+    /// The velocity (world, m/s) of the body a player on face `f` stands on with its feet at
+    /// `feet`, at the poses drawn at `now_ms`: the point under the feet moving with the body's
+    /// velocity and spin. None when no body's cell is within `GROUND_PROBE_M` under the feet (the
+    /// world's ground, which doesn't move). The ground a remote player's animator and footsteps
+    /// read its motion over (`bodies::over_its_ground`; owner, 2026-11-09).
+    pub fn ground_velocity(&self, feet: DVec3, f: FaceFrame, now_ms: f64) -> Option<DVec3> {
+        let down = -DVec3::from(f.up());
+        let from = feet - down * GROUND_PROBE_M;
+        let hit = self.raycast(from, down, 2.0 * GROUND_PROBE_M, now_ms)?;
+        let p = self.map.get(&hit.body)?;
+        let (velocity, angular) = motion_at(&p.poses, self.draw_ms(now_ms));
+        Some(velocity + angular.cross(feet - hit.position))
     }
 
     /// The body `id`'s kind (an index into the body kinds; 0 natural).
@@ -576,6 +590,21 @@ fn pose_at(poses: &VecDeque<Pose>, at: f64) -> (DVec3, DQuat) {
     )
 }
 
+/// How far (m) over and under a player's feet `Pieces::ground_velocity` looks for the body it
+/// stands on: past the controller's skin and a snapshot's lag, short of a body passing below.
+const GROUND_PROBE_M: f64 = 0.25;
+
+/// The velocity and spin at time `at` among `poses` (oldest first): the newest pose's at or
+/// before `at` (the first's before them all).
+fn motion_at(poses: &VecDeque<Pose>, at: f64) -> (DVec3, DVec3) {
+    let pose = poses
+        .iter()
+        .rev()
+        .find(|p| p.at_ms <= at)
+        .or_else(|| poses.front());
+    pose.map_or((DVec3::ZERO, DVec3::ZERO), |p| (p.velocity, p.angular))
+}
+
 /// The blocks (of up to a chunk each, from the piece's lowest corner `lo`) holding a cell of the
 /// piece, in order: only these are meshed. A block whose apron alone holds a cell has no faces of
 /// its own, but meshing it cost a whole chunk's mesh: a one-cell piece at a block's corner meshed
@@ -713,7 +742,6 @@ fn meshed_blocks(cells: &[([i32; 3], StateId)], mirror: bool) -> Vec<ChunkMeshes
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dwell_world::FaceFrame;
 
     #[test]
     fn a_one_cell_piece_meshes_one_block_not_the_blocks_whose_apron_holds_it() {
@@ -912,6 +940,59 @@ mod tests {
                     .all(|&(_, speed, spin)| speed < 5.0 && spin < 5.0),
                 "drawn speed and spin off by (%): {worst:?}"
             );
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// Owner, 2026-11-09: walking animations played while standing still on moving bodies.
+        /// A remote player's motion is read over the body under its feet: a 3 × 3 raft moving at
+        /// 2 m/s and turning at 1 rad/s, read at a point 1 m off its centre; nothing under
+        /// feet beside it or well above it.
+        fn the_ground_velocity_is_the_moving_body_under_the_feet(f: FaceFrame) {
+            let log = dwell_blocks::parse_state("dwell:log[axis=y]").expect("log");
+            let mut pieces = Pieces::default();
+            let mut sounds = Vec::new();
+            let origin = f.point([0.5, 40.25, 0.5]);
+            let r = [0.0, 0.0, 0.0, 1.0];
+            pieces.spawn(
+                &EntitySpawn {
+                    id: 4,
+                    kind: 1,
+                    origin,
+                    rotation: r,
+                    carriers: 1,
+                    cells: (-1..=1)
+                        .flat_map(|x| (-1..=1).map(move |z| (x, z)))
+                        .map(|(x, z)| dwell_protocol::PieceCellNet {
+                            offset: [x, 0, z],
+                            state: log,
+                        })
+                        .collect(),
+                },
+                0.0,
+                &mut sounds,
+            );
+            let state = PieceState {
+                id: 4,
+                position: origin,
+                rotation: r,
+                velocity: f.vector_f32([2.0, 0.0, 0.0]),
+                angular: [0.0, 1.0, 0.0],
+            };
+            for k in 0..6 {
+                pieces.on_snapshot(&[state], 0, 3 * k, 50.0 * f64::from(k), &mut sounds);
+            }
+            let now = 250.0; // drawn 100 ms back, between its snapshots
+            // On it, 1 m along +z from its centre: 2 m/s +x, and 1 rad/s about +y turns +z into
+            // +x (world: a spin is no face-local vector).
+            let feet = DVec3::from(f.point([0.5, 40.5, 1.5]));
+            let v = pieces.ground_velocity(feet, f, now).expect("on the raft");
+            assert!((v - DVec3::new(3.0, 0.0, 0.0)).length() < 1e-4, "{v:?}");
+            // Beside it, and a jump above it: the world's ground.
+            let beside = DVec3::from(f.point([3.5, 40.5, 0.5]));
+            assert!(pieces.ground_velocity(beside, f, now).is_none());
+            let above = DVec3::from(f.point([0.5, 41.5, 0.5]));
+            assert!(pieces.ground_velocity(above, f, now).is_none());
         }
     );
 

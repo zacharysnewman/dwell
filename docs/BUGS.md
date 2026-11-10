@@ -149,6 +149,21 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 55. Walking animations played while standing still on a moving body (fixed in 0.50.65)
+
+*Reported by the owner, 2026-11-09:* "For some reason walking animations play while standing still on
+moving physics objects." Two causes. The controller's state was its target velocity, which includes the
+platform's carry, so a player still on a raft was `Walking` (on the wire too, for everyone); and the
+animator's speed (the walk's choice and its clip rate) and the footsteps' strides were the world's
+velocity. Fixed: `step_state` takes the carry (`base_velocity`) off; the animator reads the velocity
+over the moving ground (your own less `base_velocity`; a remote's less the velocity of the drawn body
+under its feet, `Pieces::ground_velocity`); strides are walked over that ground (`MoverSample::carry`).
+Walking against a raft's motion, still in the world, walks and steps. Pinned by `dwell-physics`
+`standing_still_on_a_moving_platform_is_idle` and `walking_on_a_moving_platform_walks_even_against_its_motion`
+(red: `Walking` / `Idle`), `dwell-client` `a_remote_still_on_a_moving_body_is_idle_and_one_walking_on_it_walks`
+and `your_arms_still_on_a_moving_body_are_idle` (both faces; red: `walk`), `the_ground_velocity_is_the_moving_body_under_the_feet`,
+and `dwell-game` `footsteps_are_walked_over_the_moving_ground_carrying_the_mover` (both faces; red: 0 steps against the raft).
+
 ### 53. Edited ground looked speckled with dirt from far away (fixed in 0.50.51)
 
 *Reported by the owner, 2026-11-09:* chunks edited by water "look like they have speckled dirt instead

@@ -2856,7 +2856,9 @@ impl Players {
         let p = self.pl(i);
         let min_angle = p.cfg.slide.min_angle;
         let c = &mut p.c;
-        let v = c.target_velocity;
+        // Moving is relative to the ground carrying the player (its `base_velocity`): standing
+        // still on a moving body is idle, walking against its motion still walks.
+        let v = c.target_velocity - c.platform.base_velocity;
         c.state = if c.climb.climbing {
             State::Climbing
         } else if c.swim.swimming {

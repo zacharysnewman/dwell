@@ -169,7 +169,7 @@ The server tick (ARCHITECTURE §4.2) runs, for every player, **before** `Physics
 | 10b | `step_fall` | — (Dwell) | In a waterfall's sheet (`dwell_world::falls::push_at`): drawn down and out, never rising; on the ground carried out (§6.4) |
 | 10a | `step_impact` | — (Dwell) | This tick's hit from the new contacts, the landing and a ceiling cancel: `IMPACTED` (§6.10) |
 | 11 | `step_aggregate` | `PPCAggregateSystem` | `target = exclusive ? layer.velocity : horizontal.contribution + (0, vertical.target_y, 0)`; set the body's linear velocity |
-| 12 | `step_state` | `PPCStateSystem` | Priority: Climbing > Swimming > Flying > Sliding (§6.8, §6.9) > Crouching > Jumping/Falling > Running/Walking/Idle |
+| 12 | `step_state` | `PPCStateSystem` | Priority: Climbing > Swimming > Flying > Sliding (§6.8, §6.9) > Crouching > Jumping/Falling > Running/Walking/Idle; ◆ moving is the target velocity less the platform's carry (`base_velocity`): still on a moving body is `Idle`, walking against its motion `Walking` (0.50.65) |
 | 13 | `step_vitals` | — (Dwell) | Stamina and oxygen (§6.13): this tick's activity (running, swimming, treading water) spends stamina, else it rests; the head under water spends air |
 | — | *`Physics::step(1/60)`* | Quantum physics step | Contacts resolved; deviations are absorbed next tick |
 
