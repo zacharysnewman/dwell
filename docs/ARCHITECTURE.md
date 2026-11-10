@@ -2752,8 +2752,7 @@ wood ramp facing the notch, the log above becomes the trunk's upside-down ramp (
 trunk is released tipping toward the notch with the wood's `fellTip` share of the topple spin (the
 log's 1; 0: by physics alone);
 ADR 0067 §5a, `felling::fell_wedges`; a piece's shaped cell collides as its shape's convex hull,
-`PieceCell::hull`, its logs as octagonal prisms; the wood ramps are the log's octagon cut by their
-slant, ADR 0072 T4) and bucks a
+`PieceCell::hull`; the wood ramps are the octagon cut by their slant, ADR 0072 T4) and bucks a
 lying one cut through (its cell goes; in a mode that uses items it drops its wood items). The
 client (`dwell-client` `chop.rs`) sends the swings, keeps the cuts and shows the swing in the HUD;
 the axe is held from the inventory in adventure or from the creative hotbar (`items.json`'s
@@ -3080,10 +3079,12 @@ Triggered when the server registers an explosion, a block removal, or a structur
 6. **Awakening (Tier 1 only).** One Rapier body per cluster (`dwell-physics`):
    - Shape: a compound collider of cuboids, the cells merged into boxes (built for felling,
      0.49.29, above); a shaped cell (a stored ramp, e.g. a felled trunk's upside-down wood ramp) is
-     its shape's convex hull, never merged (`PieceCell::hull`, 0.51.0); **[built, 0.51.0]** an
-     octagonal log (ADR 0072, Phase 55 T4) is its octagon prism's hull, its sides joined to the same
-     axis's logs beside it in the piece as the terrain's (`PieceCell::joined`) and a run of one log
-     along its axis merged into one prism (`merged_boxes`, `octagon_hull_points`).
+     its shape's convex hull, never merged (`PieceCell::hull`, 0.51.0); **[in progress, 0.51.0]** a
+     cell whose hull is an octagonal log (ADR 0072, Phase 55 T4) is its octagon prism's hull, its
+     sides joined to the same axis's logs beside it in the piece as the terrain's
+     (`PieceCell::joined`) and a run of one log along its axis merged into one prism
+     (`merged_boxes`, `octagon_hull_points`); `piece_hull` doesn't give logs that hull yet (a
+     player's push didn't slide an octagonal log), so felled logs collide as boxes.
    - Mass / center of mass / inertia from per-voxel material density.
    - Inherits impulse from the triggering explosion, if any.
    - Assigned a `NetworkEntityID` (`uint32`, never reused within a session) and added to the

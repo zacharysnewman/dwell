@@ -128,7 +128,7 @@ fn a_player_standing_on_a_sliding_piece_rides_it() {
 #[test]
 fn a_felled_octagonal_trunk_falls_and_settles_on_a_flat_side() {
     // Phase 55 T4 (owner, 2026-11-09: "everything log/tree should be octagonal"): a felled trunk's
-    // logs collide as one octagonal prism (`merged_boxes`), not a box; dropped on the floor it still
+    // logs as one octagonal prism (`merged_boxes`; `piece_hull` doesn't give it yet), dropped on the floor, still
     // falls and comes to rest, lying on one of its flat sides (face-local: DWELL_FACE=b mirrors it).
     let mut w = PlayerTestWorld::new();
     w.floor();
@@ -141,7 +141,7 @@ fn a_felled_octagonal_trunk_falls_and_settles_on_a_flat_side() {
             half: DVec3::new(0.5, 0.25, 0.5),
             mass: 350.0,
             collide: dwell_physics::Collide::All,
-            hull: dwell_physics::piece_hull(log),
+            hull: Some(log),
             joined: 0,
         })
         .collect();

@@ -904,14 +904,16 @@ fn piece_collider(c: &PieceCell) -> Collider {
 }
 
 /// The hull a piece cell of state `m` collides as (`PieceCell::hull`): its shape when that is a
-/// convex shape other than the full cube (a ramp), or its octagon prism (a log or wood ramp, ADR
-/// 0072), else none (the box).
+/// convex shape other than the full cube (a ramp), else none (the box). A log stays its box for now
+/// (Phase 55 T4): with its octagon prism (`octagon_prisms`, built and tested, given by setting
+/// `hull: Some(log)`) a player's push no longer slid a log on land
+/// (`pushing_a_log_on_land_is_predicted_without_snaps_at_150_ms_rtt`: 0 m pushed square on, from
+/// 1.5–4 m), so the switch waits on that.
 pub fn piece_hull(m: dwell_blocks::StateId) -> Option<dwell_blocks::StateId> {
     let s = dwell_blocks::shape::shape_of(m);
     let cube = s.corners == [2, 2, 2, 2] && s.min_y == 0.0 && s.max_y == 1.0;
-    let solid = dwell_blocks::try_info(m).is_some_and(|i| i.solid);
-    let octagon = dwell_blocks::try_info(m).is_some() && dwell_blocks::octagon::is_octagon(m);
-    (solid && (octagon || (s.convex && s.face_count > 0 && !cube))).then_some(m)
+    (s.convex && s.face_count > 0 && !cube && dwell_blocks::try_info(m).is_some_and(|i| i.solid))
+        .then_some(m)
 }
 
 /// The corners of octagonal state `m`'s prism (`dwell_blocks::octagon::state_faces`, sides
@@ -1012,11 +1014,12 @@ mod piece_box_tests {
     fn a_felled_trunks_logs_collide_as_one_octagonal_prism() {
         // Phase 55 T4 (owner, 2026-11-09: "everything log/tree should be octagonal"): a felled
         // trunk's logs were boxes merged into one, so a lying trunk rested on square corners. Red
-        // before: the run merged into a cuboid and the ray past the cut corner hit it.
+        // before: the run merged into a cuboid and the ray past the cut corner hit it. (Not yet
+        // what `piece_hull` gives a log: see there.)
         let log = dwell_blocks::require("dwell:log[axis=x]");
         let cells: Vec<PieceCell> = (0..4)
             .map(|x| PieceCell {
-                hull: piece_hull(log),
+                hull: Some(log),
                 ..cell(f64::from(x), 0.0, 0.0, 350.0, Collide::All)
             })
             .collect();
@@ -1046,7 +1049,7 @@ mod piece_box_tests {
         // Two runs side by side join (as the terrain's do): the corner between them is squared.
         let mut two = cells.clone();
         two.extend((0..4).map(|x| PieceCell {
-            hull: piece_hull(log),
+            hull: Some(log),
             ..cell(f64::from(x), 0.0, 1.0, 350.0, Collide::All)
         }));
         let merged = merged_boxes(&two);
