@@ -1,6 +1,15 @@
 {
-  "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions card. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
+  "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
+    {
+      "version": "0.51.4",
+      "changes": [
+        "A new main menu: Dwell's logo greets you over the turning view, then a compact menu with Worlds and Play with others leaves the scenery in sight.",
+        "New world has its own page, with the extra options folded under More options.",
+        "Menu panels are see-through glass, and their text is easier to read.",
+        "Phones see the turning view behind the menu too."
+      ]
+    },
     {
       "version": "0.51.3",
       "changes": [

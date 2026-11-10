@@ -122,7 +122,10 @@ export function showMenu(options: MenuPageOptions): MainMenu {
   );
   addWorldPages(settings);
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && settings.isOpen) settings.setOpen(false);
+    if (e.key !== 'Escape') return;
+    // Esc (a controller's B) closes Settings, else goes back a page (ui/menuNav.ts).
+    if (settings.isOpen) settings.setOpen(false);
+    else menu?.back();
   });
   menu = new MainMenu(document.body, {
     background: settings.current.menuBackground,

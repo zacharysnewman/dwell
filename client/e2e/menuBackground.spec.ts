@@ -3,6 +3,7 @@
 // Settings button opens every pane, the world-only ones listed with a note; choosing another
 // background in Settings shows it and keeps it after a reload.
 import { expect, test, type Page } from '@playwright/test';
+import { openMenuPage } from './menuNav';
 
 const SHOTS = process.env.DWELL_MENU_SHOTS;
 
@@ -33,6 +34,7 @@ test('main menu: a turning panorama, and every setting from the Settings button'
   expect(shown.duration).toBe('mm-pano-turn');
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/desktop-${shown.name}.png` });
 
+  await openMenuPage(page, 'home');
   await page.locator('#menu-settings').click();
   const menu = page.locator('#settings-menu');
   await expect(menu).toBeVisible();
