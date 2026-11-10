@@ -792,7 +792,9 @@ const Rig = (() => {
 
 // ---- The engine's vocabulary: fixed in code (CHARACTERS.md §3) --------------------------------------
 /** Part shapes. Every kind is scaled to fill its `size` box (metres, x y z), axis along y. */
-const PART_KINDS = ['box', 'round_box', 'ellipsoid', 'cylinder', 'capsule', 'cone'];
+// `plane`: a flat sheet of its x × y, seen from both sides and with no edges (its z is unused): a
+// held ladder or plant drawn as the world draws it, never as a thin box.
+const PART_KINDS = ['box', 'round_box', 'ellipsoid', 'cylinder', 'capsule', 'cone', 'plane'];
 /** Joints: `ball` turns about x, y and z; `hinge` about its one `axis`; `fixed` never turns. */
 const JOINTS = ['ball', 'hinge', 'fixed'];
 const AXES = ['x', 'y', 'z'];
@@ -1400,7 +1402,7 @@ function partLocal(piv, p, v) {
 function outside(piv, p, v) {
   const l = partLocal(piv, p, v);
   const h = p.size.map((s) => s / 2);
-  if (p.kind === 'box' || p.kind === 'round_box') return Math.max(...l.map((x, k) => Math.abs(x) - h[k]));
+  if (p.kind === 'box' || p.kind === 'round_box' || p.kind === 'plane') return Math.max(...l.map((x, k) => Math.abs(x) - h[k]));
   const n = Math.hypot(l[0] / h[0], l[1] / h[1], l[2] / h[2]);
   return (n - 1) * Math.min(...h);
 }
@@ -5060,13 +5062,13 @@ const DATA = {
    ]
   },
   "card": {
-   "label": "A flat item of its block's tile (owner, 2026-10-28: a ladder or a plant held as an item, not a block with its texture on it): a block whose registry entry says held: card",
+   "label": "A flat item of its block's tile (owner, 2026-10-28: a ladder held as an item, not a block with its texture on it): a block whose registry entry says held: card. One sheet seen from both sides, no edges (owner, 2026-11-09: it was a thin box with its texture on every side)",
    "on": "grip_r",
    "parts": [
     {
      "id": "held_card",
      "on": "grip_r",
-     "kind": "box",
+     "kind": "plane",
      "size": [
       0.24,
       0.24,
@@ -5082,6 +5084,104 @@ const DATA = {
       0,
       0
      ],
+     "material": "$block"
+    }
+   ]
+  },
+  "cross": {
+   "label": "A plant held as the world draws it (a block whose registry entry says held: cross, a cross plant): two sheets of its tile crossed along the grip, seen from both sides, no edges",
+   "on": "grip_r",
+   "parts": [
+    {
+     "id": "held_cross_a",
+     "on": "grip_r",
+     "kind": "plane",
+     "size": [
+      0.24,
+      0.24,
+      0.006
+     ],
+     "at": [
+      0,
+      0.02,
+      0.17
+     ],
+     "rot": [
+      90,
+      0,
+      0
+     ],
+     "material": "$block"
+    },
+    {
+     "id": "held_cross_b",
+     "on": "grip_r",
+     "kind": "plane",
+     "size": [
+      0.24,
+      0.24,
+      0.006
+     ],
+     "at": [
+      0,
+      0.02,
+      0.17
+     ],
+     "rot": [
+      0,
+      90,
+      0
+     ],
+     "material": "$block"
+    }
+   ]
+  },
+  "rod": {
+   "label": "An item whose look is a rod (shared/inventory `look`: a stick), held along the grip: its look's tile and tint, the hand's own size",
+   "on": "grip_r",
+   "parts": [
+    {
+     "id": "held_rod",
+     "on": "grip_r",
+     "kind": "box",
+     "size": [
+      0.05,
+      0.42,
+      0.05
+     ],
+     "at": [
+      0,
+      0.02,
+      0.12
+     ],
+     "rot": [
+      90,
+      0,
+      0
+     ],
+     "material": "$block"
+    }
+   ]
+  },
+  "lump": {
+   "label": "An item whose look is a lump (shared/inventory `look`: a rock), in the fist: its look's tile and tint, the hand's own size",
+   "on": "grip_r",
+   "parts": [
+    {
+     "id": "held_lump",
+     "on": "grip_r",
+     "kind": "round_box",
+     "size": [
+      0.13,
+      0.1,
+      0.15
+     ],
+     "at": [
+      0,
+      0.02,
+      0.06
+     ],
+     "round": 0.4,
      "material": "$block"
     }
    ]

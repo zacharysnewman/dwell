@@ -101,6 +101,7 @@ fn add_part(m: &mut Mesh, p: &Part) {
         Kind::Cylinder => frustum(p.size, 1.0),
         Kind::Cone => frustum(p.size, p.tip),
         Kind::Capsule => capsule(p.size),
+        Kind::Plane => plane(p.size),
     };
     orient_outward(&mut s);
     let place = Affine::translation(p.at).then(&Affine::euler(p.rot));
@@ -161,6 +162,20 @@ fn orient_outward(s: &mut Shape) {
 
 /// A box of `size`, its edges rounded by `round` of its smallest side (0: sharp). Each face is a
 /// grid whose outer rows are pushed onto the rounding (the cube-sphere construction).
+/// A flat sheet of `size`'s x × y at z = 0: two quads back to back (+z and −z), no edges.
+fn plane(size: [f32; 3]) -> Shape {
+    let (x, y) = (size[0] / 2.0, size[1] / 2.0);
+    let mut s = Shape::default();
+    for nz in [1.0f32, -1.0] {
+        let first = s.positions.len() as u32;
+        for (px, py) in [(-x, -y), (x, -y), (-x, y), (x, y)] {
+            s.vertex([px, py, 0.0], [0.0, 0.0, nz]);
+        }
+        s.grid(first, 2, 2);
+    }
+    s
+}
+
 fn rounded_box(size: [f32; 3], round: f32) -> Shape {
     let h = size.map(|s| s / 2.0);
     let smallest = size.iter().copied().fold(f32::MAX, f32::min);
@@ -331,6 +346,32 @@ mod tests {
             let vn = m.normals[t[0] as usize];
             area < 1e-14 || n[0] * vn[0] + n[1] * vn[1] + n[2] * vn[2] > -1e-9
         })
+    }
+
+    #[test]
+    fn a_plane_is_one_sheet_seen_from_both_sides_with_no_edges() {
+        // Owner, 2026-11-09: a held ladder or plant was "a thin block with the texture rendering
+        // on every side". A plane is four triangles: two facing +z, two −z, all at z = 0.
+        let p = Part {
+            id: "p",
+            bone: 0,
+            kind: Kind::Plane,
+            size: [0.24, 0.24, 0.006],
+            at: [0.0; 3],
+            rot: [0.0; 3],
+            round: 0.0,
+            tip: 0.0,
+            side_v: [0.0, 1.0],
+            view: View::Both,
+            material: 0,
+        };
+        let m = build(&[p], View::Both, &[]);
+        assert_eq!(m.indices.len(), 12);
+        assert!(m.positions.iter().all(|v| v[2] == 0.0));
+        assert!(m.normals.iter().all(|n| n[2].abs() == 1.0));
+        // The sides it shows are +z and −z only (the held block's side tile), no edge sides.
+        assert!(m.faces.iter().all(|&f| f == 4 || f == 5));
+        assert!(wound_outward(&m));
     }
 
     #[test]

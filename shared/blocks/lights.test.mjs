@@ -99,3 +99,12 @@ test("the torch's light and the block light are warm: blue well under red (owner
     assert.ok(g / r <= 0.62, `${name} ${hex}: green/red ${(g / r).toFixed(2)}`);
   }
 });
+
+test("a cross plant or a ladder added by data alone is held as its sheets, not a box", () => {
+  const items = ["block", "card", "cross", "torch"];
+  assert.equal(blockHeld("test:fern", { look: "cross", render: "cutout" }, items), "cross");
+  assert.equal(blockHeld("test:rope_ladder", { look: "ladder", render: "cutout" }, items), "card");
+  assert.equal(blockHeld("test:stone", { look: "solid" }, items), null);
+  // An explicit `held` wins (the torch is crossed quads, held as a torch).
+  assert.equal(blockHeld("dwell:torch", { look: "cross", held: "torch" }, items), "torch");
+});

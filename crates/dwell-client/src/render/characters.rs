@@ -70,6 +70,18 @@ pub enum Held {
     Brush(u16),
     /// A tool (ADR 0067): the item of the characters data its hand shows (the axe's `held`).
     Tool(&'static str),
+    /// An inventory item with a shaped look (`shared/inventory` `look`: a stick, a rock), by name:
+    /// the hand shows the characters item of its look's shape (`rod`, `lump`) in its look's tile
+    /// and tint, the same look it has on the hotbar, loose and on the ground.
+    Look(&'static str),
+}
+
+/// The characters item a look's shape is held as.
+pub fn look_item(shape: dwell_protocol::inventory::LookShape) -> &'static str {
+    match shape {
+        dwell_protocol::inventory::LookShape::Rod => "rod",
+        dwell_protocol::inventory::LookShape::Lump => "lump",
+    }
 }
 
 impl Held {
@@ -86,7 +98,25 @@ impl Held {
             )),
             Held::Brush(b) => Some(("brush", b)),
             Held::Tool(item) => Some((item, 0)),
+            Held::Look(item) => dwell_protocol::inventory::item(item)
+                .and_then(|d| d.look)
+                .map(|l| (look_item(l.shape), 0)),
         }
+    }
+
+    /// The `$block` material's tiles and colour for the shader: the held block's, or a held look's
+    /// texture block's tinted its colour.
+    pub fn uniforms(self) -> [[f32; 4]; 4] {
+        if let Held::Look(item) = self
+            && let Some(l) = dwell_protocol::inventory::item(item).and_then(|d| d.look)
+        {
+            let block = dwell_blocks::find_block(l.texture).map_or(0, |b| b.first_state);
+            let mut u = block_uniforms(block);
+            let tint = l.color.map(|c| dwell_look::srgb_to_linear(f64::from(c) / 255.0) as f32);
+            u[3] = [tint[0], tint[1], tint[2], u[3][3]];
+            return u;
+        }
+        block_uniforms(self.item().map_or(0, |(_, b)| b))
     }
 
     /// The light source a hand holding it gives off (the block's `light`; not the brush's).
@@ -882,8 +912,7 @@ impl CharacterRenderer {
             for (k, b) in bones.iter().enumerate() {
                 data[at + k * 12..at + k * 12 + 12].copy_from_slice(&rows(b));
             }
-            let block = held.item().map(|(_, b)| b).unwrap_or(0);
-            let u = block_uniforms(block);
+            let u = held.uniforms();
             for (k, v) in u.iter().enumerate() {
                 data[at + BONE_FLOATS + k * 4..at + BONE_FLOATS + k * 4 + 4].copy_from_slice(v);
             }
@@ -1348,6 +1377,48 @@ mod tests {
 
     fn torch() -> Held {
         Held::Block(dwell_blocks::require("dwell:torch"))
+    }
+
+    /// The mesh a hand holding `held` shows (the item's parts).
+    fn held_mesh(held: Held) -> dwell_characters::mesh::Mesh {
+        let ch = dwell_characters::player();
+        let item = ch.item(item_shown(ch, held).expect("an item")).expect("in the data");
+        dwell_characters::mesh::build(item.parts, View::Both, &[])
+    }
+
+    #[test]
+    fn a_cross_plant_is_held_as_its_crossed_sheets_and_a_ladder_as_one_sheet_no_box() {
+        // face-a-only: the hand's item mesh, in the hand's frame (the arms view is face-local).
+        // Owner, 2026-11-09: "Transparent blocks like ladders and tall grass shouldn't have side
+        // renders" — they were a thin box (12 triangles, 6 sides). By their look's data: a cross
+        // plant two sheets, a ladder one; each sheet 4 triangles, both sides, no edge faces.
+        for (block, sheets) in [("dwell:tall_grass", 2), ("dwell:ladder", 1)] {
+            let m = held_mesh(Held::Block(dwell_blocks::require(block)));
+            assert_eq!(m.indices.len() / 3, sheets * 4, "{block}");
+            // Every vertex on its sheet's two faces: the part's sides +z and −z only.
+            assert!(m.faces.iter().all(|&f| f == 4 || f == 5), "{block}");
+        }
+    }
+
+    #[test]
+    fn a_stick_and_a_rock_are_held_as_their_looks_shape_tile_and_tint() {
+        // face-a-only: the hand's item and the shader's tiles, no world geometry.
+        let ch = dwell_characters::player();
+        for (item, shown) in [("dwell:stick", "rod"), ("dwell:rock", "lump")] {
+            let held = Held::Look(item);
+            assert_eq!(item_shown(ch, held), Some(shown), "{item}");
+            assert!(!held_mesh(held).indices.is_empty());
+            let look = dwell_protocol::inventory::item(item).and_then(|d| d.look).expect(item);
+            let u = held.uniforms();
+            let side = dwell_blocks::try_info(dwell_blocks::require(look.texture))
+                .and_then(|i| i.textures)
+                .expect("a textured block")
+                .side;
+            assert!((f64::from(u[1][0]) - dwell_mesh::tile_rect(side).u0).abs() < 1e-6, "{item}");
+            // Tinted its look's colour (linear), textured (w 1).
+            let r = dwell_look::srgb_to_linear(f64::from(look.color[0]) / 255.0) as f32;
+            assert!((u[3][0] - r).abs() < 1e-6 && u[3][3] == 1.0, "{item}");
+        }
     }
 
     #[test]

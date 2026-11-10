@@ -10,6 +10,9 @@ pub enum Kind {
     Cylinder,
     Capsule,
     Cone,
+    /// A flat sheet of its x × y in the part's xy plane, both sides drawn, no edge faces (its z is
+    /// unused): a held ladder or plant as the world draws it.
+    Plane,
 }
 
 /// Which view draws a part.

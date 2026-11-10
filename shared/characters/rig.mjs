@@ -6,7 +6,9 @@
 
 // ---- The engine's vocabulary: fixed in code (CHARACTERS.md §3) --------------------------------------
 /** Part shapes. Every kind is scaled to fill its `size` box (metres, x y z), axis along y. */
-export const PART_KINDS = ['box', 'round_box', 'ellipsoid', 'cylinder', 'capsule', 'cone'];
+// `plane`: a flat sheet of its x × y, seen from both sides and with no edges (its z is unused): a
+// held ladder or plant drawn as the world draws it, never as a thin box.
+export const PART_KINDS = ['box', 'round_box', 'ellipsoid', 'cylinder', 'capsule', 'cone', 'plane'];
 /** Joints: `ball` turns about x, y and z; `hinge` about its one `axis`; `fixed` never turns. */
 export const JOINTS = ['ball', 'hinge', 'fixed'];
 export const AXES = ['x', 'y', 'z'];
@@ -614,7 +616,7 @@ function partLocal(piv, p, v) {
 function outside(piv, p, v) {
   const l = partLocal(piv, p, v);
   const h = p.size.map((s) => s / 2);
-  if (p.kind === 'box' || p.kind === 'round_box') return Math.max(...l.map((x, k) => Math.abs(x) - h[k]));
+  if (p.kind === 'box' || p.kind === 'round_box' || p.kind === 'plane') return Math.max(...l.map((x, k) => Math.abs(x) - h[k]));
   const n = Math.hypot(l[0] / h[0], l[1] / h[1], l[2] / h[2]);
   return (n - 1) * Math.min(...h);
 }
