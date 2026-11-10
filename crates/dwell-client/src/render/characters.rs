@@ -76,12 +76,14 @@ pub enum Held {
     Look(&'static str),
 }
 
-/// The characters item a look's shape is held as.
-pub fn look_item(shape: dwell_protocol::inventory::LookShape) -> &'static str {
+/// The characters item a look's shape is held as; None for a model look (ADR 0070 §8: a prop's
+/// mesh on the hand is not drawn yet, so the hand shows it empty).
+pub fn look_item(shape: dwell_protocol::inventory::LookShape) -> Option<&'static str> {
     match shape {
-        dwell_protocol::inventory::LookShape::Rod => "rod",
-        dwell_protocol::inventory::LookShape::Lump => "lump",
-        dwell_protocol::inventory::LookShape::Cluster => "cluster",
+        dwell_protocol::inventory::LookShape::Rod => Some("rod"),
+        dwell_protocol::inventory::LookShape::Lump => Some("lump"),
+        dwell_protocol::inventory::LookShape::Cluster => Some("cluster"),
+        dwell_protocol::inventory::LookShape::Model => None,
     }
 }
 
@@ -101,7 +103,7 @@ impl Held {
             Held::Tool(item) => Some((item, 0)),
             Held::Look(item) => dwell_protocol::inventory::item(item)
                 .and_then(|d| d.look)
-                .map(|l| (look_item(l.shape), 0)),
+                .and_then(|l| Some((look_item(l.shape)?, 0))),
         }
     }
 

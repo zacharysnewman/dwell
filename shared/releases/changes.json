@@ -2,6 +2,13 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.51.24",
+      "changes": [
+        "A pack of 53 low-poly tools, weapons, containers, dishes, lamps and instruments, recoloured in Dwell's palette; browse them in the Model Viewer's Props view",
+        "Items can now look like one of these models, loose and on the hotbar: the first is a stone pickaxe, not obtainable yet"
+      ]
+    },
+    {
       "version": "0.51.23",
       "changes": [
         "Debug: F8 (or Copy streaming report on the Debug page) copies a picture of the chunks loading around you as JSON, to paste into a bug report when terrain near you stays blurry or missing"

@@ -155,6 +155,161 @@ export function validate(data, palette, dir, read = (p) => readFileSync(p)) {
   return out;
 }
 
+/** A GLB accessor's values as numbers (normalized integers read as 0..1), and its width. */
+export function glbAccessor(bytes, index) {
+  const b = Buffer.from(bytes);
+  const g = glbJson(b);
+  const jsonLen = b.readUInt32LE(12);
+  const binAt = 20 + jsonLen + 8;
+  const a = g.accessors[index];
+  const v = g.bufferViews[a.bufferView];
+  const width = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4 }[a.type];
+  const [size, readFn, max] = {
+    5126: [4, "readFloatLE", 1],
+    5123: [2, "readUInt16LE", 65535],
+    5121: [1, "readUInt8", 255],
+    5125: [4, "readUInt32LE", 1],
+  }[a.componentType];
+  const stride = v.byteStride ?? size * width;
+  const at = binAt + (v.byteOffset ?? 0) + (a.byteOffset ?? 0);
+  const out = [];
+  const scale = a.normalized ? max : 1;
+  for (let i = 0; i < a.count; i++)
+    for (let k = 0; k < width; k++)
+      out.push(b[readFn](at + i * stride + k * size) / scale);
+  return { values: out, width };
+}
+
+/** What a prop's GLB holds: its size (m, x y z), its colours (distinct, rounded) and its meshes. */
+export function propSummary(bytes) {
+  const g = glbJson(bytes);
+  const prims = g.meshes?.[0]?.primitives ?? [];
+  const lo = [Infinity, Infinity, Infinity];
+  const hi = [-Infinity, -Infinity, -Infinity];
+  const colours = new Set();
+  let colour0 = prims.length > 0;
+  for (const p of prims) {
+    const a = g.accessors[p.attributes.POSITION];
+    for (let k = 0; k < 3; k++) {
+      lo[k] = Math.min(lo[k], a.min[k]);
+      hi[k] = Math.max(hi[k], a.max[k]);
+    }
+    if (p.attributes.COLOR_0 === undefined) {
+      colour0 = false;
+      continue;
+    }
+    const { values, width } = glbAccessor(bytes, p.attributes.COLOR_0);
+    for (let i = 0; i < values.length; i += width)
+      colours.add(
+        values
+          .slice(i, i + 3)
+          .map((c) => Math.round(c * 255))
+          .join(","),
+      );
+  }
+  return {
+    meshes: (g.meshes ?? []).length,
+    skins: (g.skins ?? []).length,
+    clips: (g.animations ?? []).length,
+    colour0,
+    colours: colours.size,
+    size: hi.map((h, k) => h - lo[k]),
+    centre: hi.map((h, k) => (h + lo[k]) / 2),
+  };
+}
+
+/** Validates props.json (`dir`: where its GLB paths are relative to). Throws naming the bad entry. */
+export function validateProps(data, dir, read = (p) => readFileSync(p)) {
+  const fail = (msg) => {
+    throw new Error(`props.json: ${msg}`);
+  };
+  const cats = data.categories ?? {};
+  for (const [c, v] of Object.entries(cats))
+    if (!(
+      v.min > 0 &&
+      v.max >= v.min &&
+      v.length >= v.min &&
+      v.length <= v.max
+    ))
+      fail(`category ${c}: needs 0 < min <= length <= max`);
+  const out = {};
+  for (const [name, p] of Object.entries(data.props ?? {})) {
+    const at = `prop ${name}`;
+    if (!/^[a-z][a-z0-9_]*$/.test(name))
+      fail(`${at}: names are lower_snake_case`);
+    const cat = cats[p.category];
+    if (!cat)
+      fail(
+        `${at}: unknown category ${p.category} (${Object.keys(cats).join(", ")})`,
+      );
+    if (typeof p.glb !== "string") fail(`${at}: no glb`);
+    const path = join(dir, p.glb);
+    if (!existsSync(path)) fail(`${at}: missing GLB ${p.glb}`);
+    let s;
+    try {
+      s = propSummary(read(path));
+    } catch (e) {
+      fail(`${at}: ${p.glb}: ${e.message}`);
+    }
+    if (s.meshes !== 1) fail(`${at}: ${p.glb} has ${s.meshes} meshes, not one`);
+    if (s.skins || s.clips)
+      fail(`${at}: ${p.glb} has a skin or clips (a prop is static)`);
+    if (!s.colour0) fail(`${at}: ${p.glb} has no COLOR_0 (re-import it)`);
+    const length = p.length ?? cat.length;
+    if (!(length >= cat.min && length <= cat.max))
+      fail(
+        `${at}: length ${length} m is outside ${p.category}'s ${cat.min}..${cat.max} m`,
+      );
+    const longest = Math.max(...s.size);
+    if (Math.abs(longest - length) > 0.02 * length + 0.005)
+      fail(
+        `${at}: ${p.glb} is ${longest.toFixed(3)} m long, not its length ${length} m (re-import it)`,
+      );
+    if (
+      p.grip !== undefined &&
+      !(
+        Array.isArray(p.grip) &&
+        p.grip.length === 3 &&
+        p.grip.every(Number.isFinite)
+      )
+    )
+      fail(`${at}: grip is [x, y, z] metres`);
+    out[name] = {
+      ...p,
+      length,
+      size: s.size,
+      colours: s.colours,
+      grip: p.grip ?? [0, 0, 0],
+    };
+  }
+  return out;
+}
+
+/** The props an item's look names (shared/inventory `look.model`): the ones built into the game. */
+export function lookModels(inventory) {
+  return (inventory.items ?? []).map((i) => i.look?.model).filter(Boolean);
+}
+
+/** The props' Rust table; `built`: the props whose GLB bytes are built in. */
+export function rustProps(props, glbRoot, built) {
+  const v3 = (v) => `[${v.map((x) => f32(Number(x.toFixed(4)))).join(", ")}]`;
+  const lines = [
+    `pub static PROP_GLBS: &[(&str, &[u8])] = &[${built
+      .map(
+        (n) =>
+          `(${JSON.stringify(n)}, include_bytes!(${JSON.stringify(`${glbRoot}/${props[n].glb}`)}))`,
+      )
+      .join(", ")}];`,
+    "pub static PROPS: &[PropData] = &[",
+  ];
+  for (const [name, p] of Object.entries(props))
+    lines.push(
+      `    PropData { name: ${JSON.stringify(name)}, category: ${JSON.stringify(p.category)}, glb: ${JSON.stringify(p.glb)}, length: ${f32(p.length)}, size: ${v3(p.size)}, grip: ${v3(p.grip)} },`,
+    );
+  lines.push("];", "");
+  return lines.join("\n");
+}
+
 const f32 = (v) => (Number.isInteger(v) ? `${v}.0` : `${v}`);
 
 /** The Rust table (`glbRoot`: the GLB paths' directory, relative to the crate's src). */
@@ -174,7 +329,10 @@ export function rust(data, models, glbRoot) {
   // Every model's GLB, built in (ADR 0073: the creatures' models are drawn in the world).
   lines.push(
     `pub static GLBS: &[(&str, &[u8])] = &[${Object.entries(models)
-      .map(([name, m]) => `(${JSON.stringify(name)}, include_bytes!(${JSON.stringify(`${glbRoot}/${m.glb}`)}))`)
+      .map(
+        ([name, m]) =>
+          `(${JSON.stringify(name)}, include_bytes!(${JSON.stringify(`${glbRoot}/${m.glb}`)}))`,
+      )
       .join(", ")}];`,
   );
   lines.push("pub static MODELS: &[ModelData] = &[");
@@ -208,7 +366,26 @@ export function generate() {
   ]) {
     const data = readJson(join(src, "models.json"));
     const models = validate(data, palette, src);
-    outputs.push([join(CRATE, out), rust(data, models, relative(CRATE, src))]);
+    const propsData = readJson(join(src, "props.json"));
+    const props = validateProps(propsData, src);
+    // The game builds in the props an item's look names; the fixture, all of its own.
+    const built =
+      src === here
+        ? lookModels(readJson(join(root, "shared/inventory/inventory.json")))
+        : Object.keys(props);
+    for (const n of built)
+      if (!props[n])
+        throw new Error(
+          `inventory.json: look.model ${n} is not a prop of props.json`,
+        );
+    const glbRoot = relative(CRATE, src);
+    outputs.push([
+      join(CRATE, out),
+      rust(data, models, glbRoot).replace(
+        "use crate::{Hand, ModelData, RoleClip};",
+        "use crate::{Hand, ModelData, PropData, RoleClip};",
+      ) + rustProps(props, glbRoot, built),
+    ]);
   }
   return outputs;
 }

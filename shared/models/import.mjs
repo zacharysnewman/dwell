@@ -5,6 +5,8 @@
 // the clips named by their last word.
 //
 //   node shared/models/import.mjs --from <dir of unpacked Unity packages> [--blender <path>] [name ...]
+//   node shared/models/import.mjs --props --from <dir> [name ...]   (the static props, props.json:
+//   one Blender run, shared/models/blender_props.py)
 //
 // The packs are not in the repo (Unity Asset Store EULA): each package is unpacked as GUID folders
 // holding `pathname` and `asset`, and a model's `source` names its pack and the paths inside it.
@@ -12,6 +14,7 @@
 import { execFileSync } from "node:child_process";
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -33,6 +36,8 @@ const opt = (name, fallback) => {
   const [, v] = args.splice(i, 2);
   return v;
 };
+const props = args.includes("--props");
+if (props) args.splice(args.indexOf("--props"), 1);
 const from = opt("--from");
 const blender = opt("--blender", "/opt/homebrew/bin/blender");
 if (!from) {
@@ -69,8 +74,49 @@ const stops = paletteStops(palette, data.palette?.exclude ?? []).map((s) => [
   hexRgb(s.hex),
   hexRgb(resolveColor(palette, s.name.split(".")[0])),
 ]);
-const names = args.length ? args : Object.keys(data.models);
 const tmp = mkdtempSync(join(tmpdir(), "dwell-models-"));
+if (props) {
+  try {
+    const pd = JSON.parse(readFileSync(join(here, "props.json"), "utf8"));
+    const src = pd.source;
+    const want = args.length ? args : Object.keys(pd.props);
+    const job = {
+      texture: assetIn(src.pack, src.root + src.texture),
+      palette: stops,
+      props: want.map((name) => {
+        const p = pd.props[name];
+        if (!p) throw new Error(`no prop ${name}`);
+        const fbx = join(tmp, `${name}.fbx`);
+        execFileSync("ln", ["-sf", assetIn(src.pack, src.root + p.fbx), fbx]);
+        mkdirSync(dirname(join(here, p.glb)), { recursive: true });
+        return {
+          fbx,
+          out: join(here, p.glb),
+          length: p.length ?? pd.categories[p.category].length,
+        };
+      }),
+    };
+    const jobPath = join(tmp, "props.json");
+    writeFileSync(jobPath, JSON.stringify(job));
+    const out = execFileSync(
+      blender,
+      [
+        "-b",
+        "--factory-startup",
+        "-P",
+        join(here, "blender_props.py"),
+        "--",
+        jobPath,
+      ],
+      { encoding: "utf8", maxBuffer: 1 << 26 },
+    );
+    for (const l of out.split("\n")) if (l.startsWith("PROP")) console.log(l);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+  process.exit(0);
+}
+const names = args.length ? args : Object.keys(data.models);
 try {
   for (const name of names) {
     const m = data.models[name];

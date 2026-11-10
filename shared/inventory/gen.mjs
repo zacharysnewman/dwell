@@ -33,6 +33,7 @@ const ITEM_FIELDS = ['name', 'label', 'color', 'size', 'stack', 'value', 'look']
 const LOOK_FIELDS = ['shape', 'size', 'texture', 'color'];
 /** The looks' shapes (a fixed vocabulary: `dwell_protocol::inventory::LookShape`). */
 export const LOOK_SHAPES = ['rod', 'lump', 'cluster'];
+/** A model look's shape (`look: { model }`): not written in the data, implied by `model`. */
 /** A look shape's Rust variant (`rod` → `Rod`). */
 export const lookVariant = (s) => s[0].toUpperCase() + s.slice(1);
 const DROP_FIELDS = ['item', 'count', 'chance', 'pick'];
@@ -107,6 +108,14 @@ export function validateInventory(data, namespaces) {
     if (it.look !== undefined) {
       const l = it.look;
       if (typeof l !== 'object' || l === null || Array.isArray(l)) fail(`${at}.look must be an object`);
+      if (l.model !== undefined) {
+        // A model look (ADR 0070 §8): a prop of shared/models/props.json, its own size and colours.
+        if (Object.keys(l).some((k) => k !== 'model')) fail(`${at}.look: a model look has only \`model\``);
+        const props = loadProps();
+        const prop = props.props[l.model];
+        if (!prop) fail(`${at}.look: model ${JSON.stringify(l.model)} is not a prop of shared/models/props.json`);
+        return { name: it.name, label: it.label, color: it.color, size: it.size, stack: it.stack ?? data.stackSize, value: it.value ?? 0, look: { shape: 'model', model: l.model, size: Array(3).fill(prop.length ?? props.categories[prop.category].length), texture: '', color: '#ffffff' } };
+      }
       for (const k of Object.keys(l)) if (!LOOK_FIELDS.includes(k)) fail(`${at}.look: unknown field ${k} (${LOOK_FIELDS.join(', ')})`);
       if (!LOOK_SHAPES.includes(l.shape)) fail(`${at}.look: shape must be one of ${LOOK_SHAPES.join(', ')}`);
       if (!Array.isArray(l.size) || l.size.length !== 3 || !l.size.every((v) => num(v) && v > 0 && v <= 1)) fail(`${at}.look: size must be [x, y, z] metres in (0, 1]`);
@@ -207,6 +216,11 @@ export function loadBlocks(fixture = false) {
   return [...list(dir), ...(fixture ? list(join(dir, 'fixtures')) : [])];
 }
 
+/** shared/models/props.json: the props a model look may name. */
+export function loadProps() {
+  return JSON.parse(readFileSync(join(root, 'shared/models/props.json'), 'utf8'));
+}
+
 export function loadInventory() {
   return JSON.parse(readFileSync(join(here, 'inventory.json'), 'utf8'));
 }
@@ -244,7 +258,7 @@ export function inventoryRust(d) {
     const rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)).join(', ');
     const l = it.look;
     const look = l
-      ? `Some(ItemLook { shape: LookShape::${lookVariant(l.shape)}, size: [${l.size.map(f64).join(', ')}], texture: "${l.texture}", color: [${rgb(l.color)}] })`
+      ? `Some(ItemLook { shape: LookShape::${lookVariant(l.shape)}, size: [${l.size.map(f64).join(', ')}], texture: "${l.texture}", color: [${rgb(l.color)}], model: "${l.model ?? ''}" })`
       : 'None';
     rs.push(
       `    ItemDef { name: "${it.name}", label: ${JSON.stringify(it.label)}, color: [${rgb(it.color)}], size: ${f64(it.size)}, stack: ${it.stack}, value: ${it.value}, look: ${look} },`,

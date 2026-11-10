@@ -1,5 +1,5 @@
 {
-  "$comment": "Inventories and loose items (docs/adr/0066-inventory-and-drops.md). Every block is an item of its own name; `items` lists the items that are not blocks (prototype content, ARCHITECTURE.md §6.1): a label, and a simple look for the hotbar and a loose item (`color`, `size` in metres) or, with `look`, the item's one shaped look used everywhere it is drawn (in the hand, on the hotbar and backpack, loose, and lying on the ground as a ground item of shared/ground): `shape` rod or lump, `size` [x, y, z] metres, the `texture` of a block's side, tinted by `color`, optionally `value` (currency: picked up into the wallet), and optionally `stack` (at most stackSize). What a block drops is its `drops` in shared/blocks/*.json. Run `node shared/inventory/gen.mjs` after editing (it checks every block's drops too); CI fails if the generated files are stale.",
+  "$comment": "Inventories and loose items (docs/adr/0066-inventory-and-drops.md). Every block is an item of its own name; `items` lists the items that are not blocks (prototype content, ARCHITECTURE.md §6.1): a label, and a simple look for the hotbar and a loose item (`color`, `size` in metres) or, with `look`, the item's one shaped look used everywhere it is drawn (in the hand, on the hotbar and backpack, loose, and lying on the ground as a ground item of shared/ground): `shape` rod or lump, `size` [x, y, z] metres, the `texture` of a block's side, tinted by `color`, or instead `model`, a prop of shared/models/props.json (its own mesh and palette colours; ADR 0070 §8; the stone pickaxe proves the path and does nothing yet), optionally `value` (currency: picked up into the wallet), and optionally `stack` (at most stackSize). What a block drops is its `drops` in shared/blocks/*.json. Run `node shared/inventory/gen.mjs` after editing (it checks every block's drops too); CI fails if the generated files are stale.",
   "formatVersion": 1,
   "hotbarSlots": 9,
   "backpackSlots": 27,
@@ -33,7 +33,8 @@
     { "name": "dwell:gem", "label": "Gem", "color": "#4fb07a", "size": 0.14, "value": 1 },
     { "name": "dwell:gem_large", "label": "Large gem", "color": "#4f7fd0", "size": 0.2, "value": 5 },
     { "name": "dwell:wood", "label": "Wood", "color": "#a07446", "size": 0.24 },
-    { "name": "dwell:stone_axe", "label": "Stone axe", "color": "#7d7468", "size": 0.3, "stack": 1 }
+    { "name": "dwell:stone_axe", "label": "Stone axe", "color": "#7d7468", "size": 0.3, "stack": 1 },
+    { "name": "dwell:stone_pickaxe", "label": "Stone pickaxe", "color": "#8a7a66", "size": 0.6, "stack": 1, "look": { "model": "stone_pickaxes" } }
   ],
   "$wallets": "Currency items (with a `value`) go to the wallet, not a slot: a total up to its capacity (owner, 2026-11-08: the starting wallet holds 99; bigger wallets later).",
   "wallets": [{ "name": "dwell:pouch", "label": "Pouch", "capacity": 99 }],

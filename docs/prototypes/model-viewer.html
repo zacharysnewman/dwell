@@ -8,7 +8,9 @@
   Dwell's skinned models (docs/CHARACTERS.md §11, ADR 0070): every model of shared/models/models.json,
   its GLB as imported (palette colours, no texture), playing the clip each role maps to. Reads the
   data and the GLBs from the repo, so serve the repo's root (`python3 -m http.server` there) and open
-  /docs/prototypes/model-viewer.html. `?role=walk` picks the role on load.
+  /docs/prototypes/model-viewer.html. `?role=walk` picks the role on load. The Props view
+  (`?view=props`) lays out the static props of shared/models/props.json (ADR 0070 §8), one row per
+  category, each standing at its imported size; a prop with a `grip` shows it as a small red dot.
 -->
 <style>
   :root { --bg: #e9eff6; --ink: #241c28; --panel: #ffffffcc; }
@@ -28,7 +30,7 @@
 </script>
 </head>
 <body>
-<div id="bar"><strong>Model Viewer</strong><span id="roles"></span><span id="status"></span></div>
+<div id="bar"><strong>Model Viewer</strong><span id="views"></span><span id="roles"></span><span id="status"></span></div>
 <script type="module">
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -61,6 +63,66 @@ ground.rotation.x = -Math.PI / 2;
 ground.receiveShadow = true;
 scene.add(ground);
 
+const models = new THREE.Group();
+scene.add(models);
+const props = new THREE.Group();
+scene.add(props);
+const propData = await (await fetch(new URL('props.json', base))).json();
+const loader = new GLTFLoader();
+const byCat = {};
+for (const [name, p] of Object.entries(propData.props)) (byCat[p.category] ??= []).push([name, p]);
+let row = 0;
+const labels = [];
+for (const [cat, list] of Object.entries(byCat)) {
+  const z = -row * 1.2;
+  await Promise.all(list.map(async ([name, p], i) => {
+    const gltf = await loader.loadAsync(new URL(p.glb, base).href);
+    const root = gltf.scene;
+    const box = new THREE.Box3().setFromObject(root);
+    root.position.set((i - (list.length - 1) / 2) * 0.62, -box.min.y, z);
+    root.traverse((o) => {
+      if (o.isMesh) {
+        o.material = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+        o.castShadow = true;
+      }
+    });
+    if (p.grip) {
+      const dot = new THREE.Mesh(new THREE.SphereGeometry(0.02), new THREE.MeshBasicMaterial({ color: 0xd04040 }));
+      dot.position.set(...p.grip);
+      root.add(dot);
+    }
+    root.userData.name = name;
+    props.add(root);
+  }));
+  labels.push([cat, z]);
+  row++;
+}
+let view = new URLSearchParams(location.search).get('view') ?? 'models';
+function show(v) {
+  view = v;
+  models.visible = v === 'models';
+  props.visible = v === 'props';
+  document.querySelector('#roles').style.display = v === 'models' ? '' : 'none';
+  if (v === 'props') {
+    camera.position.set(0, 3.6, 4.2);
+    controls.target.set(0, 0.2, -(row - 1) * 0.6);
+  } else {
+    camera.position.set(0, 3.2, 9.5);
+    controls.target.set(0, 0.7, 0);
+  }
+  for (const b of document.querySelectorAll('#views button')) b.classList.toggle('on', b.dataset.view === v);
+  document.querySelector('#status').textContent = v === 'props'
+    ? ` ${props.children.length} props: ${labels.map(([c]) => propData.categories[c].label).join(', ')} (rows, front to back)`
+    : ` ${loaded.length} models`;
+}
+for (const [v, label] of [['models', 'Models'], ['props', 'Props']]) {
+  const b = document.createElement('button');
+  b.textContent = label;
+  b.dataset.view = v;
+  b.onclick = () => show(v);
+  document.querySelector('#views').appendChild(b);
+}
+
 const roles = [...new Set(Object.values(data.models).flatMap((m) => Object.keys(m.roles)))];
 let role = new URLSearchParams(location.search).get('role') ?? 'idle';
 const loaded = [];
@@ -79,11 +141,11 @@ await Promise.all(names.map(async (name, i) => {
       o.castShadow = true;
     }
   });
-  scene.add(root);
+  models.add(root);
   const mixer = new THREE.AnimationMixer(root);
   loaded.push({ name, m, mixer, clips: gltf.animations, action: null });
 }));
-document.querySelector('#status').textContent = ` ${loaded.length} models`;
+show(view);
 
 function play(r) {
   role = r;

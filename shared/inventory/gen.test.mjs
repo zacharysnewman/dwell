@@ -47,8 +47,22 @@ test('an item with a look added by data alone carries it (one look for hand, hot
   const [inv, blocks] = fresh();
   inv.items.push({ name: 'test:twig', label: 'Twig', color: '#aaccff', size: 0.1, look: { shape: 'rod', size: [0.3, 0.02, 0.02], texture: 'dwell:log', color: '#ffffff' } });
   const rs = inventoryRust(validateInventory(inv, blocks));
-  assert.match(rs, /name: "test:twig".*look: Some\(ItemLook \{ shape: LookShape::Rod, size: \[0.3, 0.02, 0.02\], texture: "dwell:log", color: \[255, 255, 255\] \}\)/);
+  assert.match(rs, /name: "test:twig".*look: Some\(ItemLook \{ shape: LookShape::Rod, size: \[0.3, 0.02, 0.02\], texture: "dwell:log", color: \[255, 255, 255\], model: "" \}\)/);
   assert.match(rs, /name: "dwell:stick".*look: Some\(ItemLook \{ shape: LookShape::Rod/);
+});
+
+test('a model look added by data alone names a prop (ADR 0070 §8); the stone pickaxe is one', () => {
+  const [inv, blocks] = fresh();
+  inv.items.push({ name: 'test:mug', label: 'Mug', color: '#aaccff', size: 0.2, look: { model: 'fixed_simple_mug' } });
+  const rs = inventoryRust(validateInventory(inv, blocks));
+  assert.match(rs, /name: "test:mug".*look: Some\(ItemLook \{ shape: LookShape::Model, size: \[0.25, 0.25, 0.25\], texture: "", color: \[255, 255, 255\], model: "fixed_simple_mug" \}\)/);
+  assert.match(rs, /name: "dwell:stone_pickaxe".*shape: LookShape::Model.*model: "stone_pickaxes"/);
+  const bad = fresh()[0];
+  bad.items.push({ name: 'test:ghost', label: 'Ghost', color: '#aaccff', size: 0.2, look: { model: 'nothing' } });
+  assert.throws(() => validateInventory(bad, blocks), /items\.test:ghost\.look: model "nothing" is not a prop/);
+  const mixed = fresh()[0];
+  mixed.items.push({ name: 'test:odd', label: 'Odd', color: '#aaccff', size: 0.2, look: { model: 'chest', shape: 'rod' } });
+  assert.throws(() => validateInventory(mixed, blocks), /items\.test:odd\.look: a model look has only `model`/);
 });
 
 test('a cluster look added by data alone carries it; the grass seed is one', () => {

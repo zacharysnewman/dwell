@@ -48,6 +48,9 @@ pub enum LookShape {
     /// A small heap of tiny lumps (several, in the look's footprint, the middle one on top):
     /// seeds.
     Cluster,
+    /// A prop's own mesh (`look: { model }`, a prop of shared/models/props.json; ADR 0070 §8):
+    /// its triangles and palette colours, untextured.
+    Model,
 }
 
 /// An item's shaped look (`inventory.json` `look`).
@@ -60,6 +63,8 @@ pub struct ItemLook {
     pub texture: &'static str,
     /// sRGB tint on the texture.
     pub color: [u8; 3],
+    /// The prop a [`LookShape::Model`] look draws (`dwell_models::prop`); empty for the others.
+    pub model: &'static str,
 }
 
 /// A wallet: how much currency it holds.

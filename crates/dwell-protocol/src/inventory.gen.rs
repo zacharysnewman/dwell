@@ -27,13 +27,14 @@ pub static STARTING_ITEMS: &[(&str, u16)] = &[("dwell:stone_axe", 1)];
 
 /// The items that are not blocks.
 pub static ITEMS: &[ItemDef] = &[
-    ItemDef { name: "dwell:rock", label: "Rock", color: [143, 138, 132], size: 0.18, stack: 64, value: 0, look: Some(ItemLook { shape: LookShape::Lump, size: [0.16, 0.09, 0.13], texture: "dwell:stone", color: [230, 226, 220] }) },
-    ItemDef { name: "dwell:stick", label: "Stick", color: [122, 86, 52], size: 0.22, stack: 64, value: 0, look: Some(ItemLook { shape: LookShape::Rod, size: [0.42, 0.05, 0.05], texture: "dwell:log", color: [201, 162, 122] }) },
-    ItemDef { name: "dwell:grass_seed", label: "Grass seed", color: [185, 180, 90], size: 0.12, stack: 64, value: 0, look: Some(ItemLook { shape: LookShape::Cluster, size: [0.12, 0.05, 0.11], texture: "dwell:sand", color: [244, 220, 120] }) },
+    ItemDef { name: "dwell:rock", label: "Rock", color: [143, 138, 132], size: 0.18, stack: 64, value: 0, look: Some(ItemLook { shape: LookShape::Lump, size: [0.16, 0.09, 0.13], texture: "dwell:stone", color: [230, 226, 220], model: "" }) },
+    ItemDef { name: "dwell:stick", label: "Stick", color: [122, 86, 52], size: 0.22, stack: 64, value: 0, look: Some(ItemLook { shape: LookShape::Rod, size: [0.42, 0.05, 0.05], texture: "dwell:log", color: [201, 162, 122], model: "" }) },
+    ItemDef { name: "dwell:grass_seed", label: "Grass seed", color: [185, 180, 90], size: 0.12, stack: 64, value: 0, look: Some(ItemLook { shape: LookShape::Cluster, size: [0.12, 0.05, 0.11], texture: "dwell:sand", color: [244, 220, 120], model: "" }) },
     ItemDef { name: "dwell:gem", label: "Gem", color: [79, 176, 122], size: 0.14, stack: 64, value: 1, look: None },
     ItemDef { name: "dwell:gem_large", label: "Large gem", color: [79, 127, 208], size: 0.2, stack: 64, value: 5, look: None },
     ItemDef { name: "dwell:wood", label: "Wood", color: [160, 116, 70], size: 0.24, stack: 64, value: 0, look: None },
     ItemDef { name: "dwell:stone_axe", label: "Stone axe", color: [125, 116, 104], size: 0.3, stack: 1, value: 0, look: None },
+    ItemDef { name: "dwell:stone_pickaxe", label: "Stone pickaxe", color: [138, 122, 102], size: 0.6, stack: 1, value: 0, look: Some(ItemLook { shape: LookShape::Model, size: [0.6, 0.6, 0.6], texture: "", color: [255, 255, 255], model: "stone_pickaxes" }) },
 ];
 
 /// What every block drops when broken without unlimited blocks, and what placing it uses up.

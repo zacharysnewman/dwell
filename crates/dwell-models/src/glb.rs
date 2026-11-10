@@ -142,6 +142,16 @@ fn chunks<const N: usize>(v: &[f32]) -> Vec<[f32; N]> {
 /// Reads a GLB. Fails with a message on anything it doesn't read (more than one mesh or skin, a
 /// missing attribute).
 pub fn parse(bytes: &[u8]) -> Result<Model, String> {
+    read(bytes, true)
+}
+
+/// Reads a static GLB (a prop, shared/models/props.json): one mesh with a colour per vertex, no
+/// skin or clips (every vertex on joint 0 at weight 1, so the skinned paths can draw it too).
+pub fn parse_static(bytes: &[u8]) -> Result<Model, String> {
+    read(bytes, false)
+}
+
+fn read(bytes: &[u8], skinned: bool) -> Result<Model, String> {
     if u32_at(bytes, 0)? != 0x4654_6c67 {
         return Err(err("not a GLB"));
     }
@@ -188,20 +198,26 @@ pub fn parse(bytes: &[u8]) -> Result<Model, String> {
             }
             None => m.colors.extend(std::iter::repeat_n([1.0; 3], n)),
         }
-        m.joints.extend(
-            chunks::<4>(&get("JOINTS_0")?)
-                .into_iter()
-                .map(|j| j.map(|v| v as u8)),
-        );
-        m.weights
-            .extend(chunks::<4>(&get("WEIGHTS_0")?).into_iter().map(|w| {
-                let s: f32 = w.iter().sum();
-                if s > 0.0 {
-                    w.map(|v| v / s)
-                } else {
-                    [1.0, 0.0, 0.0, 0.0]
-                }
-            }));
+        if skinned {
+            m.joints.extend(
+                chunks::<4>(&get("JOINTS_0")?)
+                    .into_iter()
+                    .map(|j| j.map(|v| v as u8)),
+            );
+            m.weights
+                .extend(chunks::<4>(&get("WEIGHTS_0")?).into_iter().map(|w| {
+                    let s: f32 = w.iter().sum();
+                    if s > 0.0 {
+                        w.map(|v| v / s)
+                    } else {
+                        [1.0, 0.0, 0.0, 0.0]
+                    }
+                }));
+        } else {
+            m.joints.extend(std::iter::repeat_n([0; 4], n));
+            m.weights
+                .extend(std::iter::repeat_n([1.0, 0.0, 0.0, 0.0], n));
+        }
         let idx = p["indices"].as_u64().ok_or_else(|| err("no indices"))?;
         m.indices.extend(
             floats(&json, bin, idx as usize)?
@@ -232,6 +248,12 @@ pub fn parse(bytes: &[u8]) -> Result<Model, String> {
         }
     }
 
+    if !skinned {
+        if json["skins"].as_array().is_some_and(|s| !s.is_empty()) {
+            return Err(err("a static model with a skin"));
+        }
+        return Ok(m);
+    }
     let skin = &json["skins"][0];
     m.skin = skin["joints"]
         .as_array()
