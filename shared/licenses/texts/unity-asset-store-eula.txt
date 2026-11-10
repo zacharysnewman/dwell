@@ -1,0 +1,7 @@
+Licensed to the Dwell project's owner under the Unity Asset Store End User License Agreement
+(Standard Unity Asset Store EULA), https://unity.com/legal/as-terms. The publisher's own terms
+are those of the Asset Store listing; the pack ships no separate licence file.
+
+Dwell ships these models converted (FBX to GLB, recoloured to Dwell's palette, textures removed)
+inside its builds. They are not licensed for reuse outside Dwell: obtain the pack from the Unity
+Asset Store to use it elsewhere.

@@ -823,6 +823,7 @@ dependencies = [
  "dwell-lod",
  "dwell-look",
  "dwell-mesh",
+ "dwell-models",
  "dwell-physics",
  "dwell-protocol",
  "dwell-sim",
@@ -881,6 +882,13 @@ dependencies = [
  "dwell-protocol",
  "dwell-world",
  "dwell-worldgen",
+]
+
+[[package]]
+name = "dwell-models"
+version = "0.0.0"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]

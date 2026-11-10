@@ -403,6 +403,9 @@ choices.
 
 ### 9.2 Remote players
 
+**Since Phase 54 S1 (§11) another player's body is drawn as the skinned Peasant** from its role;
+the pose below still drives its held light, your arms and your own body.
+
 The capsule is gone: `PlayerView` carries the feet, face, yaw, death, the look's name, the pose the
 game animated (`bodies.rs`, one `Animator` per remote player from its interpolated snapshot) and
 what the hand holds. A frame samples one moment of the snapshots, so a jump also starts when its
@@ -539,3 +542,59 @@ body is the crouch clip as drawn, poking above a 1-block crawlspace (Q4); creatu
 10. **Legs in a level slide** (§5.1). Your legs show sliding from about 15° down; looking level they
     are just below the frame. Keep, or add a slide camera (lower or pitched a little down) or raise
     the slide clip's lead leg so they show looking level?
+
+## 11. Skinned models **[in progress, Phase 54: S1 built]**
+
+[ADR 0070](./adr/0070-skinned-models.md). The owner's decision (2026-11-09): **skinned models from
+the Unity Asset Store packs replace the rigid-part characters**, restyled first by **remapping**
+their colours to the palette (repainting with the painterly textures is a later consideration);
+characters and animals first, the tools pack after.
+
+### 11.1 The pipeline
+
+- **Import** (`shared/models/import.mjs` → `blender_import.py`, Blender headless; run by hand with
+  `--from <unpacked packs>`): FBX → GLB in `shared/models/glb/`, the GLBs checked in as the source of
+  truth. The meshes are joined into one; every face takes one palette colour (§11.2); texture and UVs
+  are dropped; four joints a vertex; clips named by their last word and sampled at 15 keys a second.
+- **Data** (`shared/models/models.json`): per model its GLB, `source` (pack and paths, to rerun the
+  import), `scale`, `yaw`, `remap`, `fallback`, and `roles` (role → `{clip, speed}`); `player` names the
+  model other players are drawn as. Edit it, then `node shared/models/gen.mjs`.
+- **Generator** (`gen.mjs`): validates against the GLBs and the palette and writes
+  `crates/dwell-models/src/models.gen.rs` (and `fixture.gen.rs` from `fixtures/`: the two-joint test
+  model, made by `fixtures/make_two_bone.mjs`). CI runs it and `gen.test.mjs` and fails on a diff.
+
+### 11.2 The palette remap
+
+A face's colour is the median of five samples of the pack's texture (its centre and halfway to each
+corner), snapped to the nearest stop of `shared/textures/palette.json` in Lab, and replaced by that
+stop's **ramp's base**: the renderer paints the shadow and light. `palette.exclude` keeps utility and
+effect ramps out; a model's `remap` (`"#rrggbb": "ramp.stop"`) overrides a colour within 12 ΔE. The
+Peasant's greens land on `wool_green` and `leaf`, its skin on `skin_fair`, its hat on `heartwood`;
+small painted detail inside one face (its eyes) is lost.
+
+### 11.3 Clips and roles
+
+`dwell-models`' `Player` plays the clip for the body's role (`body_role`'s names) at its speed, the
+`fallback` role's for roles a model has none for; a change of clip cross-fades over 0.2 s
+(`anim::BLEND_S`), a change of speed on the same clip keeps its phase. The Peasant has `idle` and
+`walk`: `sprint` is the walk at 1.8×, `crouch_walk` 0.6×, `slide` 0.4×; jump, fall, land, crouch,
+swim, climb and fly play idle until clips are added. The animals map `idle`, `walk` and `sprint`
+(their `run`).
+
+### 11.4 Drawing
+
+`render/skinned.rs`, inside `CharacterRenderer`: GPU skinning (a 64-joint block per body), the
+characters' ramp from the vertex's palette colour, the same lights and shadow maps; both faces through
+`place_frame`. ARCHITECTURE.md §5.3 has the details and sizes.
+
+### 11.5 What phase 1 leaves (next)
+
+- Your **first-person arms**, your **own body** in first person and your **shadow** are still the
+  rigid parts of §3–§5 (so your shadow is not the Peasant's).
+- **Held items** on the skinned hand (a socket on a joint, `hand.R`); the held light already follows
+  the rigid hand's place.
+- The **animals** in the world (Phase 40's C3 creatures move here); jump, swim and climb clips for
+  the player; looks per player (§9.4) as models.
+- The **tools pack**; repainting with the painterly textures.
+- The **Model Viewer** (`docs/prototypes/model-viewer.html`) plays every model's clips by role; the
+  Character Lab stays for the rigid parts until they go.

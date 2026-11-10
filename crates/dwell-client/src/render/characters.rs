@@ -160,6 +160,9 @@ pub struct BodyDraw {
     pub light: [f32; 2],
     /// A stable id (its player's): the phase of a held light's flicker.
     pub seed: u32,
+    /// The base role playing (`walk`, `sprint`): another player's skinned body plays its clip
+    /// (render/skinned.rs).
+    pub role: &'static str,
 }
 
 /// The first-person arms to draw.
@@ -239,6 +242,9 @@ pub struct CharacterRenderer {
     /// arms' light when the arms are drawn: where flames burn (render/flames.rs).
     others_lights: usize,
     arms_light: Option<HeldLight>,
+    /// Other players' bodies, skinned (docs/CHARACTERS.md §11): the rigid parts are kept for your
+    /// own arms, body and shadow this phase.
+    skinned: super::skinned::SkinnedRenderer,
     pub stats: CharacterStats,
 }
 
@@ -491,18 +497,20 @@ fn rows(a: &Affine) -> [f32; 12] {
 /// A body's frame in eye-relative world space: turned to its yaw, upside down on face B (a half
 /// turn about its forward axis, so it stays a proper rotation), lying on its back when dead.
 pub fn body_frame(d: &BodyDraw, eye: V3) -> Affine {
-    let (s, c) = (
-        d.yaw.to_radians().sin() as f32,
-        d.yaw.to_radians().cos() as f32,
-    );
+    place_frame(d.feet, d.yaw, d.face, d.dead, eye)
+}
+
+/// [`body_frame`] from its parts (the skinned bodies' too, render/skinned.rs).
+pub fn place_frame(feet: V3, yaw: f64, face: FaceFrame, dead: bool, eye: V3) -> Affine {
+    let (s, c) = (yaw.to_radians().sin() as f32, yaw.to_radians().cos() as f32);
     // The face's up (FaceFrame): on face B the body's up and left both turn over.
-    let up = d.face.up();
+    let up = face.up();
     let f = up[1] as f32;
     let place = Affine {
         m: [[f * c, 0.0, -f * s], [0.0, f, 0.0], [s, 0.0, c]],
-        t: std::array::from_fn(|k| (d.feet[k] - eye[k]) as f32),
+        t: std::array::from_fn(|k| (feet[k] - eye[k]) as f32),
     };
-    if d.dead {
+    if dead {
         place
             .then(&Affine::translation([0.0, 0.18, 0.0]))
             .then(&Affine::euler([-90.0, 0.0, 0.0]))
@@ -760,7 +768,15 @@ impl CharacterRenderer {
         let capacity = 8;
         let instances = instance_buffer(device, capacity);
         let group = bind_group(device, &layout, &instances, &materials, &tiles, &sampler);
+        let skinned = super::skinned::SkinnedRenderer::new(
+            device,
+            queue,
+            frame_layout,
+            shadow_frame_layout,
+            samples,
+        );
         Self {
+            skinned,
             character,
             look: dwell_characters::DEFAULT_LOOK,
             pipeline,
@@ -883,6 +899,7 @@ impl CharacterRenderer {
             (at / INSTANCE_FLOATS) as u32
         };
         let mut keys = Vec::new();
+        let mut skinned = Vec::new();
         for d in bodies {
             let dist = (0..3)
                 .map(|k| (d.feet[k] - eye[k]).powi(2))
@@ -930,6 +947,23 @@ impl CharacterRenderer {
                 None => body_frame(d, eye),
             };
             let bones = posed.map(|b| frame.then(&b));
+            // Another player: the skinned body (its held light still from the rigid hand; the
+            // held item in the skinned hand is the next phase, CHARACTERS.md §11.5).
+            if !d.first_person && !d.cast_only {
+                if let Some(l) = light_at(d.held, &bones, d.seed) {
+                    self.held_lights.push(l);
+                }
+                skinned.push(super::skinned::SkinnedDraw {
+                    seed: d.seed,
+                    feet: d.feet,
+                    yaw: d.yaw,
+                    face: d.face,
+                    dead: d.dead,
+                    role: d.role,
+                    light: d.light,
+                });
+                continue;
+            }
             let discard = own.map_or(0.0, |b| own_discard_m(&b));
             let instance = push(&bones, d.held, !far, false, discard, d.light);
             let body = MeshKey {
@@ -1001,6 +1035,15 @@ impl CharacterRenderer {
                 cast_only: false,
             });
         }
+        self.skinned.prepare(
+            device,
+            queue,
+            eye,
+            passes,
+            cast_m,
+            &skinned,
+            crate::render_clock::now_ms() / 1000.0,
+        );
         self.others_lights = self.held_lights.len();
         self.held_lights.extend(own_light);
         for k in keys {
@@ -1023,7 +1066,7 @@ impl CharacterRenderer {
         if !data.is_empty() {
             queue.write_buffer(&self.instances, 0, bytemuck::cast_slice(&data));
         }
-        self.stats.bodies = self.draws.len() as u32;
+        self.stats.bodies = (self.draws.len() + self.skinned.bodies()) as u32;
         self.stats.arms = self.arms.is_some();
         self.stats.upload_bytes = data.len() as u64 * 4;
     }
@@ -1083,7 +1126,7 @@ impl CharacterRenderer {
             self.record(pass, d, calls, tris);
             any = true;
         }
-        any
+        self.skinned.draw_bodies(pass, i, calls, tris) || any
     }
 
     /// Draws the bodies within the shadow distance into a shadow map's pass (group 0 bound to its
@@ -1117,6 +1160,7 @@ impl CharacterRenderer {
                 *tris += u64::from(m.count / 3);
             }
         }
+        self.skinned.draw_shadows(pass, calls, tris);
     }
 
     /// Draws the arms (group 0 bound to the arms' frame, over a cleared depth buffer).
@@ -1359,6 +1403,7 @@ mod tests {
                 first_person: false,
                 light: [1.0, 0.0],
                 seed: 7,
+                role: "idle",
             };
             let posed = bone_transforms(ch, &d.pose);
             let frame = body_frame(&d, [0.0; 3]);
@@ -1389,6 +1434,7 @@ mod tests {
                 first_person: false,
                 light: [1.0, 0.0],
                 seed: 0,
+                role: "idle",
             };
             let f = body_frame(&d, [0.0; 3]);
             // Yaw 90° faces +x on either face.
@@ -1623,6 +1669,7 @@ mod tests {
                                 first_person: true,
                                 light: [1.0, 0.0],
                                 seed: 0,
+                                role: "idle",
                             };
                             let r = |v: V3| v.map(|c| c as f32);
                             let (right, up, fwd) = (r(basis.right), r(basis.up), r(basis.forward()));

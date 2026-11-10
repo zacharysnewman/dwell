@@ -1,0 +1,77 @@
+# 0070 — Skinned models from the Asset Store packs replace the rigid-part characters
+
+**Status:** Accepted (2026-11-09; phase 1 built: other players drawn as the Peasant, the animals in
+the data and the model viewer). Supersedes part of [ADR 0041](0041-characters.md): characters are no
+longer made only of rigid parts from `shared/characters/characters.json`; that system stays for your
+first-person arms, your own body and your shadow until they move over.
+
+## Context
+
+Phase 40 (ADR 0041) built characters procedurally from chunky rigid parts. The owner has bought
+Unity Asset Store packs of skinned, animated low-poly models (ithappy's *Animals FREE*: seven animals
+with idle, walk and run; Winged Boots' *Stylized NPC – Peasant Nolant* demo: one humanoid with idle and
+walk) and decided (2026-11-09):
+
+- **Skinned models replace the rigid-part characters.**
+- **Restyle by remapping** the packs' colours and textures to Dwell's palette first; repainting them
+  with the painterly textures is a later consideration.
+- **Characters and animals first**, the tools pack after.
+
+The packs ship FBX and textures in Unity package layout, with no licence files (the Asset Store
+EULA covers them). The game reads neither FBX nor Unity data, and the web build has no image decoder.
+
+What gets added later, by whom, with what (CLAUDE.md's questions, answered from the brief): more
+models of the same kind (more packs, more animals, the tools) by the team, with the import script
+and the data file; new roles mapped to clips in the data; new kinds of rule (attachments, IK, morphs)
+are code and rare. Per build: the models ship with a release, like the block registry.
+
+## Decision
+
+1. **The GLBs are the source of truth, made once by a checked-in script.**
+   `node shared/models/import.mjs --from <unpacked packs>` drives Blender headless
+   (`shared/models/blender_import.py`) for each model: FBX in, GLB out (`shared/models/glb/`), the
+   meshes joined into one, at most four joints a vertex, the clips named by their last word
+   (`Deer_001_idle` → `idle`) and sampled at 15 keys a second. The packs themselves are not in the
+   repo; `models.json` records each model's pack and paths inside it, so the import can be rerun.
+2. **The palette remap, at import.** Each face takes one colour: the pack's texture sampled at the
+   face (the median of five points, so a stray texel such as a watermark doesn't win), snapped to the
+   nearest stop of `shared/textures/palette.json` in Lab and replaced by **its ramp's base** (the
+   packs' painted shading is the renderer's to do), unless the model's `remap` names the colour.
+   Utility and effect ramps are excluded (`palette.exclude`). The texture and UVs are dropped: no
+   image decoding at run time, small GLBs (113–325 KB). Small painted detail (the Peasant's eyes
+   inside one face) can be lost; repainting is the later step.
+3. **Data, one generator, validation.** `shared/models/models.json`: each model's GLB, scale, yaw,
+   the clip (and speed) for each role it plays (the roles of `dwell_characters::animator::body_role`),
+   a `fallback` role, the remap; and which model is the player. `shared/models/gen.mjs` validates it
+   against the GLBs and the palette (missing GLB, a clip the GLB lacks, an unknown role, a fallback
+   not among the roles, more than 64 joints, bad remaps, all failing with the entry named) and writes
+   `crates/dwell-models/src/models.gen.rs` (and `fixture.gen.rs` from `shared/models/fixtures`, a
+   two-joint model added by data alone); CI fails on stale output. Only the player's GLB is built
+   into the client (`include_bytes!`); the animals are data until they spawn.
+4. **A crate of its own, `dwell-models`**: a small GLB reader (no new dependency: `serde_json`), clip
+   sampling (linear and step), blending (nlerp), joint matrices, and a role → clip `Player` that
+   cross-fades 0.2 s when the clip changes and keeps the phase when only the speed does.
+5. **The renderer** (`render/skinned.rs`, owned by `CharacterRenderer` so the frame's call sites are
+   unchanged): GPU skinning in the vertex shader (four joints from a 64-joint uniform block per body,
+   a dynamic offset), the rigid characters' ramp shading built from the vertex's palette colour,
+   lit by the same flood light, sun, moon, shadow maps and point lights; bodies cast shadows. The
+   body is placed by the same frame as the rigid bodies (`place_frame`: face-local, upside down on
+   face B by a half turn about its forward axis).
+6. **Phase 1's scope**: other players are the Peasant, driven by their existing roles (idle and walk
+   clips; sprint, crouch-walk and slide play the walk at another speed; the rest fall back to idle).
+   Your first-person arms, your own body and your shadow stay rigid this phase. The animals are
+   imported, in the data and in the model viewer (`docs/prototypes/model-viewer.html`), not spawned.
+
+## Consequences
+
+- Characters now come from bought art; adding one is: unpack, add an entry, run the import and the
+  generator. The palette keeps them in Dwell's colours.
+- The rigid-part system (ADR 0041) is still used by the arms and your own body; the two systems
+  coexist until those move over (Phase 54's next steps), then `dwell-characters`' meshes go.
+- **Licence**: the packs are under the Unity Asset Store EULA (Standard); `shared/licenses` lists
+  them. The owner should confirm that redistribution inside a public web build is allowed for these
+  packs (the GLBs are fetchable from the site).
+- Held items aren't attached to the skinned hand yet; the Peasant has no jump, fall, swim, climb or
+  fly clips (those roles play idle); its eyes are lost to the per-face colours.
+- Reversing: drop `skinned` from `CharacterRenderer::prepare`'s remote-body branch and the rigid
+  bodies draw again.

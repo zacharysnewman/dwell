@@ -276,6 +276,10 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
                      materials; characters.tiles: the brush tiles; fixture.gen.rs for tests), part
                      meshes (rigid, one bone a vertex), clip sampling, layering and cross-fades,
                      and the animator: clip selection from the controller state.
+  /dwell-models      Skinned models (§5.3, CHARACTERS.md §11, ADR 0070): the table generated from
+                     shared/models (models.gen.rs; fixture.gen.rs for tests), the player model's GLB
+                     built in, a GLB reader (one skinned mesh, its skin, its clips), clip sampling
+                     and blending, joint matrices, and the role → clip player.
   /dwell-game        Client game logic: input and touch state machines, flight, the eye and face
                      flip, remote players, block interaction, the chunk streamer, HUD text, sound
                      events (sound.rs, with sound.gen.rs from shared/sounds).
@@ -344,6 +348,12 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
                      Character Lab page, docs/prototypes/character-lab.html, and the Rust tables
                      for dwell-characters), fixtures/ (test-only parts), gen.test.mjs
                      (CHARACTERS.md, ADR 0041).
+/shared/models       models.json (each skinned model's GLB, scale, yaw, role → clip map, palette
+                     remap; the player model) + glb/ (the checked-in GLBs, the source of truth) +
+                     import.mjs and blender_import.py (FBX → GLB with the palette remap, Blender
+                     headless, run by hand from the unpacked packs) + gen.mjs (validates against
+                     the GLBs and the palette, → Rust for dwell-models), fixtures/ (the two-joint
+                     test model and its maker), gen.test.mjs (CHARACTERS.md §11, ADR 0070).
 /shared/brushes      brushes.json (brush presets and the game modes' brush policy) + gen.mjs
                      (→ Rust for dwell-world brushes.gen.rs, TS for the shell's controls table; §6.5).
 /shared/version      vectors.txt: version precedence, compatibility lines and "may open" cases that the
@@ -690,7 +700,35 @@ suite and the bench). The file is served once per site at `/dwell/media/<name>-<
 than in each version directory: release builds load it from the site root (`__MEDIA_BASE__`,
 `client/scripts/media.ts`), and the Pages workflow moves each build's copy there (`site.ts media`).
 
-### 5.3 Characters and creatures **[in progress; Phase 40: the design, data and prototype built; players in the game built (C1, C2's held item and swings); looks at join and creatures planned]**
+### 5.3 Characters and creatures **[in progress; Phase 40: the design, data and prototype built; players in the game built (C1, C2's held item and swings); looks at join and creatures planned. Phase 54: other players drawn as skinned models (S1); the arms, your own body and the creatures in game to follow]**
+
+**Skinned models [in progress, Phase 54 S1]** ([ADR 0070](./adr/0070-skinned-models.md),
+[`CHARACTERS.md`](./CHARACTERS.md) §11). Skinned models from the owner's Unity Asset Store packs
+replace the rigid-part characters, starting with **other players' bodies**: they are drawn as the
+Peasant model (`shared/models/models.json` `player`); your first-person arms, your own body in first
+person and your own shadow stay the rigid parts below for now. The data (`shared/models/models.json`)
+lists each model's GLB (`shared/models/glb/`, checked in: the source of truth), scale, yaw, which of
+its clips plays each role (`body_role`'s names, with a speed; a `fallback` role for the rest) and a
+palette remap. `shared/models/import.mjs` makes the GLBs once from the packs' FBX with Blender
+headless (`blender_import.py`): one mesh, each face one colour (the pack's texture sampled at the face
+and snapped to the nearest palette stop, taking its ramp's base, or a `remap` entry), no texture or
+UVs, at most four joints a vertex, clips named by their last word, sampled at 15 keys a second.
+`gen.mjs` validates the data against the GLBs (clips present, ≤ 64 joints, one mesh, known roles,
+palette names) and writes `dwell-models`' table; CI fails on stale output. `dwell-models` reads the
+GLB (`glb.rs`: positions, normals, colours, joints, weights, the node tree, the skin's inverse bind
+matrices, linear and step channels), samples and blends clips (`anim.rs`: nlerp, looped by the
+player) and gives the joint matrices; its `Player` maps a role to its clip and cross-fades 0.2 s
+when the clip changes (the same clip at another speed keeps its phase).
+**Drawing** (`render/skinned.rs`, inside `CharacterRenderer`): the model's one mesh (36-byte
+vertices: position, normal, sRGB colour, 4 × u8 joints, 4 × unorm8 weights; the Peasant 1,834
+vertices, 66 KB), per body one block of uniforms (3,328 bytes, a dynamic offset: 64 joints' 3 × 4
+matrices to eye-relative world space, and its flood light) and one indexed draw, both sides (the
+packs' meshes aren't closed). The vertex shader sums its four joints; the fragment shader builds the
+characters' ramp from the vertex's palette colour (cool shadow, warm light, half-Lambert key light,
+the flood light, shadow maps and point lights, `CHARACTER_EXPOSURE`); no per-pixel cost beyond the
+rigid characters', so no CPU-adapter tier. Bodies cast into the shadow maps. The body's frame is
+`place_frame` (upside down on face B, lying on its back when dead). A remote player's held item is
+not drawn on the skinned body yet (its held light still is, from the rigid hand).
 
 ([ADR 0041](./adr/0041-characters.md), [`CHARACTERS.md`](./CHARACTERS.md).) Characters (the
 player's full body, its first-person arms, and creatures: a wolf and a deer so far) are **data**
@@ -738,7 +776,8 @@ tests only); CI fails on stale output. Code names characters, looks, items and r
   and each foot is planted on the render-side ground under it (`bodies.rs` `ground_at`,
   `MoveInput::foot_ground`, the animator's two-bone `plant_feet`); `Bodies::step_started` is
   the hook for a step pose.
-- **Drawing** (`render/characters.rs`): per character one block of uniforms (1,280 bytes, a dynamic
+- **Drawing** (`render/characters.rs`; since Phase 54 S1 your arms, your own body and your shadow
+  only, other players being skinned, above): per character one block of uniforms (1,280 bytes, a dynamic
   offset: 24 bones' 3 × 4 transforms to eye-relative world space, the held block's atlas tiles,
   settings) and two indexed draws (body and item), each with an **inverted-hull outline** in
   `ink_soft` (front faces culled, pushed out ~6 mm along the normal, widening a little with
@@ -3095,6 +3134,7 @@ in the code yet.
 | explosives (`shared/explosives/explosives.json`) | see [`EXPLOSIVES.md`](./EXPLOSIVES.md) §2 | Dynamite: a 3 s fuse, 5 m radius, the inner 2 m destroyed outright (0.49.38; 4 m and no core before), impulse 9,000 N·s, falloff 1.5, lift 0.5, at most 22 m/s; players within 7 m: 22 m/s knockback by (1 − d / 7)^1.5; 160 damage by (1 − d / 2)^1.5, none past 2 m; water blown out within 3 m; a wave of 3 m/s outward within 6 m, held water freed within 24 m (0.49.48); chained fuses 0.15–0.6 s; at most 1 blast a tick and 1,200 pieces a blast; the clients' smoke and dust at most 64 puffs at once, each blast at least 0.15 of its own (0.50.16); the effects' numbers **[built, 0.49.32]** |
 | felling tunables (`shared/physics/felling.json`) | see [`FELLING.md`](./FELLING.md) §5 | The support search's reach and bounds, a falling piece's topple spin (about its foot, its farthest point at most `toppleTipSpeed` 4 m/s, 0.40.6), sleep (`sleepSeconds` 1 s, `restDrift` 0.1 m, 0.49.29) and timeouts, settles batched every `settleEveryTicks` (6), hit damage (`hitSpeed` 4 m/s, `hitDamagePerSpeed` 6), held from players' contacts while slower than `holdSpeed` (1 m/s) or pushed in the last `pushHoldSeconds` (0.25 s), moved by their push (0.41.5); a piece settles once and stays (`maxSettles` 1, 0.41.5) **[built, 0.37.1]**; the clients' settle glide (`settleGlideSeconds` 0.3 s, `settleBounce` 0.12) **[built, 0.40.3]**; terrain collision built round pieces at most `terrainChunksPerTick` (4) chunks a tick **[built, 0.40.5]** |
 | vitals (`shared/vitals/vitals.json`) | see ADR 0069 | Stamina: 100 points; sprint 12, swim 6, tread 4 a second; regen 20 a second after 1 s without spending; exhausted at 0 until back to 25 %; an exhausted swimmer sinks at 1.2 m/s; an axe swing its tool's `staminaCost` (8). Oxygen: 20 s with the head under (0.9 of the capsule submerged), refilled 10 s a second; out of air, 10 damage a second **[built, 0.50.57]** |
+| skinned models (`shared/models/models.json`, `dwell-models`) | see ADR 0070 | Per model: scale, yaw, each role's clip and speed (the Peasant's sprint is its walk at 1.8×), the fallback role; in code: 0.2 s cross-fade (`anim::BLEND_S`), at most 64 joints (`MAX_JOINTS`), 4 joints a vertex, clips sampled at 15 keys a second by the import **[built, Phase 54 S1]** |
 | `SNAPSHOT_HZ` | 20 | Snapshot broadcast rate |
 | `probes.max_slope_angle` (`config.rs`) | 56° | The steepest ground (above the 45° ramps); steeper faces are walls (PLAYER_CONTROLLER.md §6.2) |
 | `slide.min_angle` / `friction` / `terminal_speed` (`config.rs`) | 44° / 0.3 / 14 m/s | Ground under the player steeper than this slides (owner, 2026-10-15), pulled by `g (sin θ − friction cos θ)` up to the terminal speed along the slope (PLAYER_CONTROLLER.md §6.8) |
