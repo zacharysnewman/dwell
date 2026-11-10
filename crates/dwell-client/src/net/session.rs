@@ -105,6 +105,8 @@ pub struct Session {
     /// The world's settings as the server sent them (before Welcome), and as read.
     world_fields: Option<world_settings::SettingsFields>,
     world: Option<world_settings::WorldSettings>,
+    /// The server simulates stamina and oxygen (Welcome's `VITALS`, ADR 0069).
+    vitals_server: bool,
     /// The Welcome waiting on the player's answer (Confirming).
     pending: Option<Welcome>,
     /// A definitions hash the player said not to ask about again for this server.
@@ -148,6 +150,7 @@ impl Session {
             mapping: None,
             world_fields: None,
             world: None,
+            vitals_server: false,
             pending: None,
             trusted_registry: None,
             sent_edits: VecDeque::new(),
@@ -170,6 +173,19 @@ impl Session {
     /// The world's settings (its clock, its water speed), once Welcome has arrived.
     pub fn world_settings(&self) -> Option<world_settings::WorldSettings> {
         self.world
+    }
+
+    /// The stamina and oxygen rules to predict (ADR 0069): the world's mode's, on a server that
+    /// simulates them (an older one doesn't, whatever its mode is called).
+    pub fn vitals_rules(&self) -> dwell_protocol::vitals::VitalsRules {
+        use dwell_protocol::modes::Ability;
+        match self.world {
+            Some(w) if self.vitals_server => dwell_protocol::vitals::VitalsRules {
+                stamina: w.allows(Ability::Stamina),
+                oxygen: w.allows(Ability::Oxygen),
+            },
+            _ => Default::default(),
+        }
     }
 
     /// The player chose Continue in the join prompt.
@@ -212,6 +228,11 @@ impl Session {
         // A server that chops (ADR 0067) sends its cuts once told (it answers with a `Cuts`).
         if w.flags & welcome_flags::CHOPPING != 0 {
             self.send(&Message::Chop(dwell_protocol::ChopAction::Hello));
+        }
+        // A server that simulates stamina and oxygen (ADR 0069) sends `Vitals` once told.
+        self.vitals_server = w.flags & welcome_flags::VITALS != 0;
+        if self.vitals_server {
+            self.send(&Message::VitalsHello);
         }
         // A server that sweeps swings along their path and passes held tools on (ADR 0067) says so
         // with CHOP_SWEEP; it answers a first `Held` with the others' (`HeldTools`, at least one).
@@ -640,6 +661,12 @@ impl Session {
                 if self.joined() {
                     self.game
                         .push_back((Message::PhysicsSnapshot(s), bytes.to_vec()));
+                }
+            }
+            // The local player's stamina and oxygen (ADR 0069): an optional datagram.
+            Some(Message::Vitals(v)) => {
+                if self.joined() {
+                    self.game.push_back((Message::Vitals(v), bytes.to_vec()));
                 }
             }
             // The water's currents (Phase 53 G3a): an optional datagram.
@@ -1191,6 +1218,48 @@ mod tests {
     /// flight policy allows it).
     /// ADR 0066: a client says `Hello` only to a server whose Welcome has `INVENTORY` (an older
     /// server rejects the message), and passes the inventory messages on to the game once joined.
+    #[test]
+    fn vitals_hello_and_rules_only_with_a_server_that_simulates_them() {
+        // ADR 0069: an older server (no VITALS) predicts no vitals, whatever its mode is called.
+        let Message::Welcome(w) = welcome(0) else {
+            unreachable!()
+        };
+        for flag in [0, welcome_flags::VITALS] {
+            let (_, mut s) = setup();
+            send_registry(&mut s, &build_registry(), 1 << 16);
+            let _ = s.take_out();
+            let flags = w.flags | flag;
+            s.on_reliable(
+                Channel::Control,
+                &Message::Welcome(Welcome { flags, ..w.clone() }).encode(),
+                1000.0,
+            );
+            let hello = sent(&s.take_out())
+                .iter()
+                .any(|m| matches!(m, Message::VitalsHello));
+            assert_eq!(hello, flag != 0, "flags {flags}");
+            // The suite's world is creative: no rules either way.
+            assert!(!s.vitals_rules().any());
+            let adventure = world_settings::WorldSettings {
+                mode: "adventure",
+                ..s.world_settings().unwrap()
+            };
+            let f = world_settings::SettingsFields::default().with(adventure);
+            s.on_reliable(
+                Channel::Control,
+                &Message::WorldSettings(f).encode(),
+                1000.0,
+            );
+            assert_eq!(s.vitals_rules().any(), flag != 0, "flags {flags}");
+            // A Vitals datagram reaches the game once joined.
+            s.on_datagram(
+                &Message::Vitals(dwell_protocol::VitalsMessage::default()).encode(),
+                1000.0,
+            );
+            assert!(matches!(s.next_game(), Some((Message::Vitals(_), _))));
+        }
+    }
+
     #[test]
     fn hello_goes_only_to_a_server_that_keeps_inventories() {
         let Message::Welcome(w) = welcome(0) else {

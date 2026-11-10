@@ -449,10 +449,32 @@ pub struct Hud {
     pub message: String,
     pub status: String,
     pub health: u8,
+    /// Stamina and air as shares of full, and exhaustion (ADR 0069): None in a mode without them.
+    pub vitals: Option<HudVitals>,
     /// The F3 overlay's text, while it is shown.
     pub debug: Option<String>,
     /// Damage taken since the last frame (the HUD flashes).
     pub damaged: bool,
+}
+
+/// The HUD's stamina and air bars (ADR 0069): each a share of full, None where the mode has no
+/// such rule.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct HudVitals {
+    pub stamina: Option<f32>,
+    pub oxygen: Option<f32>,
+    pub exhausted: bool,
+}
+
+impl HudVitals {
+    pub fn of(v: &dwell_protocol::vitals::Vitals, rules: dwell_protocol::vitals::VitalsRules) -> Option<Self> {
+        use dwell_protocol::vitals::VITALS;
+        rules.any().then(|| HudVitals {
+            stamina: rules.stamina.then(|| (v.stamina / VITALS.max_stamina).clamp(0.0, 1.0)),
+            oxygen: rules.oxygen.then(|| (v.oxygen / VITALS.oxygen_seconds).clamp(0.0, 1.0)),
+            exhausted: rules.stamina && v.exhausted,
+        })
+    }
 }
 
 /// A camera a tool places (tests, the views runner, ARCHITECTURE.md §6.6): the renderer and the
@@ -526,6 +548,8 @@ pub struct Game<S: Scene> {
     holding: bool,
     tick_rate: f64,
     health: u8,
+    /// The world's stamina and oxygen rules the prediction runs (ADR 0069).
+    vitals_rules: dwell_protocol::vitals::VitalsRules,
     dead: bool,
     death_feet: [f64; 3],
     /// The streaming probe's last feet and heading (`probe_stream`).
@@ -731,6 +755,7 @@ impl<S: Scene> Game<S> {
             holding: false,
             tick_rate: 1.0,
             health: 0,
+            vitals_rules: Default::default(),
             dead: false,
             death_feet: [0.0; 3],
             probe: ([0.0; 3], [0.0, 1.0]),
@@ -1166,6 +1191,17 @@ impl<S: Scene> Game<S> {
     pub fn on_game_message(&mut self, m: Message, byte_len: usize, now_ms: f64) {
         match m {
             Message::WaterCurrents(c) => self.on_currents(&c, now_ms),
+            // The server's vitals as of an input (ADR 0069): the prediction is corrected to them.
+            Message::Vitals(v) => {
+                let vitals = dwell_protocol::vitals::Vitals {
+                    stamina: v.stamina,
+                    oxygen: v.oxygen,
+                    exhausted: v.flags & dwell_protocol::vitals_flags::EXHAUSTED != 0,
+                    rest_ticks: self.predictor.controller().vitals.rest_ticks,
+                };
+                self.predictor
+                    .on_vitals(self.streamer.store_mut(), v.seq, vitals);
+            }
             Message::ChunkData(d) => {
                 // The server's data for the chunk: predictions in it are its business now.
                 self.prediction.forget_chunk(d.coord);
@@ -2022,6 +2058,12 @@ impl<S: Scene> Game<S> {
     /// What the server announced it takes (Welcome flags, and the world's game mode when the host
     /// changes it): region edits, and brush strokes with the brush reach where the mode allows
     /// brushes (BRUSHES.md, ADR 0065).
+    /// The world's stamina and oxygen rules (ADR 0069), from its mode on a server with them.
+    pub fn set_vitals_rules(&mut self, rules: dwell_protocol::vitals::VitalsRules) {
+        self.vitals_rules = rules;
+        self.predictor.set_vitals_rules(rules);
+    }
+
     pub fn set_capabilities(&mut self, region_edits: bool, brushes: bool) {
         self.region.enabled = region_edits;
         self.region.keep = brushes;
@@ -3124,6 +3166,8 @@ impl<S: Scene> Game<S> {
         self.scene.borrow_mut().set_falls(shown);
 
         self.hud.health = self.health;
+        self.hud.vitals = HudVitals::of(&self.predictor.controller().vitals, self.vitals_rules)
+            .filter(|_| !self.dead);
         if self.debug_visible {
             let mut lines = vec![format_debug(
                 &c,
@@ -3645,6 +3689,15 @@ impl<S: Scene> Game<S> {
             return false;
         };
         if !self.chop.ready(tool, now_ms) {
+            return false;
+        }
+        // Exhausted (ADR 0069 §5): no swing until stamina is back to the recover share.
+        if !self
+            .predictor
+            .controller()
+            .vitals
+            .can_exert(self.vitals_rules)
+        {
             return false;
         }
         let look = self.view_dir;
