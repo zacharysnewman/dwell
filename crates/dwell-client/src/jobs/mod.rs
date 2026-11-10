@@ -39,6 +39,8 @@ pub enum Job {
         origin: [i32; 3],
         /// Its cut wood cells, chunk-local (ADR 0067 §11): meshed carved.
         cuts: Vec<([i32; 3], dwell_protocol::chopping::Cut)>,
+        /// Its ground items (ADR 0071): the world seed and its gone cells, chunk-local.
+        ground: Option<(u64, Vec<[i32; 3]>)>,
     },
     /// An LOD section's meshes.
     MeshSection {
@@ -258,7 +260,17 @@ impl Runner {
                 mirror,
                 origin,
                 cuts,
-            } => match dwell_mesh::mesh_chunk_cut(&padded, &light, mirror, origin, &cuts) {
+                ground,
+            } => match dwell_mesh::mesh_chunk_ground(
+                &padded,
+                &light,
+                mirror,
+                origin,
+                &cuts,
+                ground
+                    .map(|(seed, gone)| dwell_mesh::GroundJob { seed, gone })
+                    .as_ref(),
+            ) {
                 Ok(m) => Output::ChunkMesh(Box::new(m)),
                 Err(e) => Output::Failed(format!("{e:?}")),
             },

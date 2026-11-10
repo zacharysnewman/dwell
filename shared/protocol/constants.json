@@ -126,7 +126,8 @@
     "Cuts": 89,
     "HeldTools": 90,
     "VitalsHello": 91,
-    "Vitals": 92
+    "Vitals": 92,
+    "GroundGone": 93
   },
   "rejectReasons": {
     "ProtocolVersion": 1,

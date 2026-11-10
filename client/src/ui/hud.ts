@@ -47,6 +47,8 @@ export class Hud {
   private readonly spyglass: HTMLDivElement;
   /** The held tool's swing line (`setSwing`). */
   private readonly swingLine: HTMLDivElement;
+  /** The pick-up prompt under the crosshair (ADR 0071). */
+  private readonly pickUp: HTMLDivElement;
 
   constructor(parent: HTMLElement) {
     this.root = document.createElement('div');
@@ -58,6 +60,10 @@ export class Hud {
     this.swingLine.className = 'swing-line';
     this.swingLine.hidden = true;
     crosshair.append(this.swingLine);
+    this.pickUp = document.createElement('div');
+    this.pickUp.className = 'pick-up';
+    this.pickUp.hidden = true;
+    crosshair.append(this.pickUp);
     this.health = document.createElement('div');
     this.health.id = 'health';
     this.healthFill = document.createElement('div');
@@ -160,6 +166,13 @@ export class Hud {
 
   toggleDebug(): void {
     this.debug.hidden = !this.debug.hidden;
+  }
+
+  /** The ground item under the crosshair (its label: "Stick"), or none: the pick-up prompt. */
+  setPickUp(label: string | null): void {
+    this.pickUp.hidden = label === null;
+    const text = label === null ? '' : `E  Pick up ${label}`;
+    if (this.pickUp.textContent !== text) this.pickUp.textContent = text;
   }
 
   /** The held tool's swing line through the crosshair: level, vertical, or none. */

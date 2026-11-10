@@ -568,6 +568,12 @@ mod tests {
                 }],
                 gone: vec![3, 4],
             }),
+            // Ground items (ADR 0071).
+            Message::InventoryAction(InventoryAction::GroundHello),
+            Message::InventoryAction(InventoryAction::Pick {
+                cell: [-3, 520, 17],
+            }),
+            Message::GroundGone(vec![[1, 2, 3], [-4, 600, 9]]),
         ];
         for m in all {
             let b = m.encode();

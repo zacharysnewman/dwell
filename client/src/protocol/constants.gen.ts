@@ -136,6 +136,7 @@ export const MessageType = {
   HeldTools: 90,
   VitalsHello: 91,
   Vitals: 92,
+  GroundGone: 93,
 } as const;
 export type MessageType = (typeof MessageType)[keyof typeof MessageType];
 

@@ -173,6 +173,7 @@ pub enum MessageType {
     HeldTools = 90,
     VitalsHello = 91,
     Vitals = 92,
+    GroundGone = 93,
 }
 
 impl MessageType {
@@ -224,6 +225,7 @@ impl MessageType {
             90 => Some(Self::HeldTools),
             91 => Some(Self::VitalsHello),
             92 => Some(Self::Vitals),
+            93 => Some(Self::GroundGone),
             _ => None,
         }
     }

@@ -535,6 +535,10 @@ pub enum Message {
     /// S→C reliable, world channel, only to a client that sent `InventoryAction::Hello`: loose
     /// items that appeared or moved, and those gone (ADR 0066).
     ItemDrops(ItemDrops),
+    /// S→C reliable, world channel, only to a client that sent `InventoryAction::GroundHello`
+    /// (ADR 0071): ground items gone (picked up or knocked loose), by world cell; at the hello,
+    /// all of them.
+    GroundGone(Vec<[i32; 3]>),
     /// C→S reliable, world channel, only to a server whose Welcome has `welcome_flags::CHOPPING`
     /// (ADR 0067): `Hello` first, then swings.
     Chop(ChopAction),
@@ -622,13 +626,24 @@ pub enum InventoryAction {
     Move { from: u8, to: u8, count: u16 },
     /// The held hotbar slot.
     Select { slot: u8 },
+    /// This client understands ground items (ADR 0071): send it `GroundGone` from now on. Sent only
+    /// to a server whose `Inventory` has `inventory_flags::GROUND`.
+    GroundHello,
+    /// Pick up the ground item in world cell `cell` (ADR 0071): the server checks it lies there and
+    /// is within reach. Only to a server whose `Inventory` has `inventory_flags::GROUND`.
+    Pick { cell: [i32; 3] },
 }
 
 /// `Inventory`'s flags.
 pub mod inventory_flags {
     /// The world's mode uses items (no `unlimitedBlocks`): show the inventory, not the creative items.
     pub const USES_ITEMS: u8 = 1;
+    /// The server keeps ground items (ADR 0071): it takes `GroundHello` and `Pick`.
+    pub const GROUND: u8 = 2;
 }
+
+/// The most cells one `GroundGone` carries (more go in more messages).
+pub const MAX_GROUND_GONE_PER_MESSAGE: usize = 4096;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct InventoryMessage {
@@ -697,6 +712,7 @@ impl Message {
             M::InventoryAction(_) => MessageType::InventoryAction,
             M::Inventory(_) => MessageType::Inventory,
             M::ItemDrops(_) => MessageType::ItemDrops,
+            M::GroundGone(_) => MessageType::GroundGone,
             M::Chop(_) => MessageType::Chop,
             M::Cuts(_) => MessageType::Cuts,
             M::HeldTools(_) => MessageType::HeldTools,
@@ -1284,7 +1300,19 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
                 w.u8(2);
                 w.u8(slot);
             }
+            InventoryAction::GroundHello => w.u8(3),
+            InventoryAction::Pick { cell } => {
+                w.u8(4);
+                cell.iter().for_each(|v| w.i32(*v));
+            }
         },
+        M::GroundGone(cells) => {
+            let n = cells.len().min(MAX_GROUND_GONE_PER_MESSAGE);
+            w.u16(n as u16);
+            for c in &cells[..n] {
+                c.iter().for_each(|v| w.i32(*v));
+            }
+        }
         M::Inventory(m) => {
             w.u8(m.flags);
             m.inventory.write(w);
@@ -1718,8 +1746,24 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
                 count: r.u16(),
             },
             2 => InventoryAction::Select { slot: r.u8() },
+            3 => InventoryAction::GroundHello,
+            4 => InventoryAction::Pick {
+                cell: [r.i32(), r.i32(), r.i32()],
+            },
             _ => return None,
         }),
+        T::GroundGone => {
+            let n = usize::from(r.u16());
+            r.check(n <= MAX_GROUND_GONE_PER_MESSAGE);
+            let mut cells = Vec::new();
+            for _ in 0..n {
+                if !r.ok() {
+                    break;
+                }
+                cells.push([r.i32(), r.i32(), r.i32()]);
+            }
+            M::GroundGone(cells)
+        }
         T::Inventory => {
             let flags = r.u8();
             let inventory = crate::inventory::Inventory::read(r)?;
