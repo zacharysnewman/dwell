@@ -13,6 +13,7 @@ mod face;
 pub mod falls;
 pub mod flow;
 pub mod fluid;
+pub mod ground;
 pub mod hash;
 pub mod light;
 pub mod lod;
