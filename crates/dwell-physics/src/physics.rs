@@ -1001,7 +1001,7 @@ mod piece_box_tests {
 
     /// Whether a ray from `o` along `d` (the collider's own frame, about its centre) hits `c`.
     fn ray_hits(c: &Collider, o: DVec3, d: DVec3) -> bool {
-        use rapier3d_f64::parry::query::{Ray, RayCast};
+        use rapier3d_f64::parry::query::Ray;
         let ray = Ray::new(o - c.translation(), d);
         c.shape().cast_local_ray(&ray, 10.0, true).is_some()
     }
