@@ -163,8 +163,11 @@ fn build(world: &mut VoxelWorld, c: ChunkCoord) -> Built {
             v.iter().any(|&m| collides(m)),
             // Full cubes only: a shaped cell's faces are culled against its neighbours, which a
             // buried chunk doesn't read (a ramp placed in a dug cell deep down panicked here).
-            v.iter()
-                .all(|&m| collides(m) && is_cube(dwell_blocks::shape::shape_of(m))),
+            v.iter().all(|&m| {
+                collides(m)
+                    && is_cube(dwell_blocks::shape::shape_of(m))
+                    && !dwell_blocks::octagon::is_octagon(m)
+            }),
         )
     };
     if !any_solid {
@@ -198,6 +201,30 @@ fn build(world: &mut VoxelWorld, c: ChunkCoord) -> Built {
         } else {
             shape_at(x, y, z)
         };
+        // An octagonal log (ADR 0072): its prism's open faces, squared where it joins its
+        // neighbours (a buried chunk's are cubes: nothing reaches them).
+        if !buried && dwell_blocks::octagon::is_octagon(m) {
+            out.shaped = true;
+            let near = |o: [i32; 3]| {
+                let n = at(x + o[0], y + o[1], z + o[2]);
+                if collides(n) { n } else { dwell_world::M.air }
+            };
+            let covers = |n| collides(n) && is_cube(dwell_blocks::shape::shape_of(n));
+            for f in dwell_blocks::octagon::open_faces(m, &near, &covers, [1.0, CELL_H, 1.0]) {
+                let base = out.vertices.len() as u32;
+                for p in &f.pts {
+                    out.vertices.push(DVec3::new(
+                        f64::from(x) + p[0],
+                        (f64::from(y) + p[1]) * CELL_H,
+                        f64::from(z) + p[2],
+                    ));
+                }
+                for k in 1..f.pts.len() as u32 - 1 {
+                    out.triangles.push([base, base + k, base + k + 1]);
+                }
+            }
+            continue;
+        }
         if is_cube(shape) {
             out.solid
                 .get_or_insert_with(|| Box::new([0u64; CHUNK_VOLUME / 64]))[i / 64] |=
@@ -727,6 +754,57 @@ mod rebuild_tests {
         terrain.sync(&mut physics, &mut world);
         (world, physics, terrain)
     }
+
+    /// Whether a ray from `o` along `d` (world metres) hits chunk `c`'s collision triangles.
+    fn ray_hits(b: &Built, c: ChunkCoord, o: [f64; 3], d: [f64; 3]) -> bool {
+        let base = DVec3::from_array(chunk_origin_m(c));
+        let (o, d) = (DVec3::from_array(o) - base, DVec3::from_array(d));
+        b.triangles.iter().any(|t| {
+            let [p, q, r] = t.map(|i| b.vertices[i as usize]);
+            // Moller-Trumbore, both sides.
+            let (e1, e2) = (q - p, r - p);
+            let h = d.cross(e2);
+            let a = e1.dot(h);
+            if a.abs() < 1e-12 {
+                return false;
+            }
+            let s = o - p;
+            let u = s.dot(h) / a;
+            let qv = s.cross(e1);
+            let v = d.dot(qv) / a;
+            let t = e2.dot(qv) / a;
+            (0.0..=1.0).contains(&u) && v >= 0.0 && u + v <= 1.0 && t > 0.0
+        })
+    }
+
+    dwell_world::both_faces!(
+        /// A lone log collides as its octagon (ADR 0072): a ray down past its cut corner misses
+        /// it (a player there slides off the chamfer), while beside a joined log the corner at the
+        /// join is squared, solid and flat across.
+        fn a_log_collides_as_its_octagon_squared_where_it_joins(f: FaceFrame) {
+            let log = dwell_blocks::require("dwell:log[axis=y]");
+            let row = 40;
+            let mut world = VoxelWorld::new(dwell_world::empty_generator(), None);
+            let [x, y, z] = f.cell([4, row, 4]);
+            world.set_voxel(x, y, z, log);
+            let c = dwell_world::chunk_of(x, y, z);
+            let top = f.y(f64::from(row + 2) * CELL_H);
+            let down = f.vector([0.0, -1.0, 0.0]);
+            // The +X, +Z corner of the cell, 2 cm in from both edges; and the middle of its +X side.
+            let corner = [4.98, top, 4.98];
+            let side = [4.98, top, 4.5];
+            let b = build(&mut world, c);
+            assert!(!ray_hits(&b, c, corner, down), "a lone log's corner is cut");
+            assert!(ray_hits(&b, c, side, down), "its side is solid");
+            world.set_voxel(x + 1, y, z, log);
+            let b = build(&mut world, c);
+            assert!(ray_hits(&b, c, corner, down), "the corner at the join is squared");
+            // A log of another axis beside it does not join: the corner stays cut.
+            world.set_voxel(x + 1, y, z, dwell_blocks::require("dwell:log[axis=z]"));
+            let b = build(&mut world, c);
+            assert!(!ray_hits(&b, c, corner, down), "different axes do not join");
+        }
+    );
 
     // face-a-only: which chunks are rebuilt has no up; one block of chunks round the origin.
     #[test]
