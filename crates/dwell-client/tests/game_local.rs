@@ -1140,7 +1140,7 @@ fn a_slow_device_walks_without_snapping() {
     // A device drawing ~5.5 frames a second (CI's software renderer with two pages,
     // e2e/play.spec.ts): each frame covers 11 of the server's 60 Hz ticks, over a 150 ms round
     // trip (as the e2e test's B page: `?netsim=150,…`).
-    slow_device_keeps_the_servers_time(11, 5);
+    slow_device_keeps_the_servers_time(11, 5, 0);
 }
 
 #[test]
@@ -1150,14 +1150,25 @@ fn a_device_at_under_two_frames_a_second_walks_and_jumps_without_snapping() {
     // catch up. It dropped the rest, the starved server repeated the held input (a held jump flew
     // and landed there), and the snapshot replays put the player back on the ground one predicted
     // tick into the jump (the test read a 0.112 m peak).
-    slow_device_keeps_the_servers_time(48, 0);
+    slow_device_keeps_the_servers_time(48, 0, 0);
+}
+
+// face-a-only: the input queue's timing on the default spawn; nothing in it depends on the face.
+#[test]
+fn a_slow_devices_prediction_matches_whatever_the_phase_of_its_frames() {
+    // The test above passed only for some lengths of the wait before its slow frames (found
+    // 2026-11-10): how a slow device's frames line up with the server's ticks must not matter.
+    // Each wait puts the walk's first input at a different point of the frames' bursts.
+    for extra in 0..=8 {
+        slow_device_keeps_the_servers_time(48, 0, extra);
+    }
 }
 
 /// A device whose frames each cover `steps` of the server's 60 Hz ticks walks, then holds jump.
 /// Its prediction must keep the server's time, or the server fills the missing ticks by repeating
 /// the last input (walking further, or jumping earlier, than the player did) and the replays drag
 /// the player along, snapping it once a correction passes RECONCILE_SNAP_DISTANCE.
-fn slow_device_keeps_the_servers_time(steps: usize, latency_steps: u32) {
+fn slow_device_keeps_the_servers_time(steps: usize, latency_steps: u32, extra_frames: usize) {
     let mut rig = Rig::new();
     assert!(
         rig.run_until(60 * 30, |r| r
@@ -1167,7 +1178,7 @@ fn slow_device_keeps_the_servers_time(steps: usize, latency_steps: u32) {
         "the player is placed and the terrain around them arrives"
     );
     // Settle on the ground at full speed, then slow down.
-    rig.run_until(60, |_| false);
+    rig.run_until(60 + extra_frames, |_| false);
     rig.latency_steps = latency_steps;
     let stats = |r: &Rig| r.game.as_ref().unwrap().debug_state().stats;
     let mut worst = 0.0f32;
@@ -1209,10 +1220,13 @@ fn slow_device_keeps_the_servers_time(steps: usize, latency_steps: u32) {
     });
     assert!(peak - ground > 1.0, "jumped {} m", peak - ground);
     let after = stats(&rig);
+    let pid = rig.game.as_ref().unwrap().debug_state().player_id;
+    let server = rig.core.server().stats_of(pid).unwrap();
     // The prediction matches the server: no correction to speak of, so no snap.
     assert!(
         worst < 0.2,
-        "a {worst} m correction: {before:?} -> {after:?}"
+        "a {worst} m correction after {extra_frames} extra frames: {before:?} -> {after:?}; \
+         server {server:?}"
     );
     assert_eq!(after.snaps, before.snaps);
     // Predicted ticks keep up with the server's.

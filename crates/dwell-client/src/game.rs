@@ -84,7 +84,11 @@ const BUFFER_HOLD: u8 = 30;
 const BUFFER_RESUME: u8 = 6;
 /// ... and holds, too, while this many of our inputs are unacknowledged: a stalled server sends no
 /// snapshots to report its queue, and a longer burst overflows its queue (96) and input rate limit.
-const UNACKED_HOLD: u32 = 45;
+/// It is above a slow frame's whole catch-up (`MAX_TICKS_PER_FRAME`) plus half a second of round
+/// trip and snapshot lag: at 45 a frame of 48 ticks (CI's 800 ms frames) held its last ticks every
+/// frame, the server repeated our last input for them, and a walk's correction depended on how the
+/// frames lined up with the server's ticks (up to 3 ticks of walking, 0.25 m; docs/BUGS.md 58).
+const UNACKED_HOLD: u32 = MAX_TICKS_PER_FRAME as u32 + 30;
 /// The region tools' outlines: the selection, and where a paste would go.
 const REGION_SELECTION_COLOR: u32 = 0xffffff;
 const REGION_GHOST_COLOR: u32 = 0x6fd3ff;
