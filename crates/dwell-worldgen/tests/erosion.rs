@@ -5,7 +5,9 @@
 
 use dwell_world::*;
 use dwell_worldgen::bifacial::BifacialTerrain;
-use dwell_worldgen::geology::{Cut, Erosion, GEOLOGY, Geology, Jointing, Layer, Rock, Stack, eroded};
+use dwell_worldgen::geology::{
+    Cut, Erosion, GEOLOGY, Geology, Jointing, Layer, Rock, Stack, eroded,
+};
 use dwell_worldgen::terrain::{BIOMES, Biome, TerrainGenerator};
 
 /// A fixture mesa stack by data alone: a hard cap over a soft one, 20 m and 30 m.
@@ -177,7 +179,12 @@ fn the_profile_is_a_floor_a_talus_skirt_a_wall_and_the_top() {
     assert!((foot - (floor + e.talus_share * 80.0)).abs() < 1e-9);
     // The wall rises the hill's height less the skirt over `wall` m.
     let (top, _) = eroded(&e, h, floor, e.wall - 1e-6);
-    assert!(top - foot > 4.0 * e.wall, "sheer: {} m over {} m", top - foot, e.wall);
+    assert!(
+        top - foot > 4.0 * e.wall,
+        "sheer: {} m over {} m",
+        top - foot,
+        e.wall
+    );
     assert_eq!(eroded(&e, h, floor, -0.5 * e.talus_width).1, Cut::Talus);
 }
 
@@ -225,7 +232,11 @@ dwell_world::both_faces!(
             share(between)
         );
         assert!(land > 20_000, "enough land: {land}");
-        assert!(share(on_floor) > 0.5, "mostly floor: {:.3}", share(on_floor));
+        assert!(
+            share(on_floor) > 0.5,
+            "mostly floor: {:.3}",
+            share(on_floor)
+        );
         assert!(share(between) < 0.15, "few between: {:.3}", share(between));
         assert!(remnants >= 5, "separate remnants: {remnants}");
         assert!(walls >= 50, "walls (≥ 8 m over 4 m): {walls}");
@@ -259,14 +270,7 @@ dwell_world::both_faces!(
     /// The cut-back follows the data: more reach cuts more of the land down to the floor.
     fn more_reach_cuts_more(f: FaceFrame) {
         let cut = |reach: f64| {
-            let g = generator(
-                f,
-                Erosion {
-                    reach,
-                    ..strong()
-                },
-                biome(1.0, 0.0),
-            );
+            let g = generator(f, Erosion { reach, ..strong() }, biome(1.0, 0.0));
             let mut n = 0;
             for x in (-1600..0).step_by(16) {
                 for z in (200..1800).step_by(16) {

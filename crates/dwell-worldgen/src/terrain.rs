@@ -1094,11 +1094,11 @@ impl TerrainGenerator {
         use crate::geology::{Cut, Part};
         let st = &geo.geology.stacks[stack];
         let cap = geo.geology.rock(st.layers[0].rock);
-        let soft = st
-            .layers
-            .iter()
-            .rev()
-            .find_map(|l| geo.geology.rock(l.rock).filter(|&r| geo.geology.rocks[r].hardness < 0.5));
+        let soft = st.layers.iter().rev().find_map(|l| {
+            geo.geology
+                .rock(l.rock)
+                .filter(|&r| geo.geology.rocks[r].hardness < 0.5)
+        });
         let rock = match cut {
             Cut::Wall => cap.map(|r| (r, Part::Wall)),
             Cut::Talus => soft.or(cap).map(|r| (r, Part::Talus)),

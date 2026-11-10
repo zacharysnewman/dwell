@@ -122,6 +122,28 @@ rainfall is small (mostly 0–0.15), so the river wetness dominates the moisture
 weakly until `baseRain`/`rainShare` are tuned. The blocks view at 64 m texels shows little canopy (the
 canopy tint is faint at that zoom).
 
+## T4, rule-based erosion (built, 0.52.16)
+
+T2's shaping maps height alone, so it steps every contour. T4 adds the plan view: rule-based erosion from the world map's plan view (`rocks.json` `erosion`, `geology::DrainageField`, `geology::eroded`): drainage lines are map cells with at least `threshold` cells of flow accumulation (or the sea); a column nearer a line than the scarp's retreat (`reach` × (1 − `resist` × the cap rock's hardness) × (1 + `valley` × log2 of the line's accumulation over the threshold) × (1 ± `outline` noise) − `relief` × the hill's height over the floor) is cut down to the floor (the line's height, `snap` of the way down to the stack's lowest soft layer's top), farther it stands; a `wall` m sheer wall at the edge (the cap rock's face) and a `talusWidth` m skirt (the soft rock's scree) below; a biome's `gullies` cuts short-wavelength rills (`gullyWavelength`, `gullyDepth`). A biome opts in with `erosion` 0..1 (absent 0: the default world and goldens unchanged); the red-rock mesa preset at 1, badlands at 1 with gullies 1.
+The drainage field (accumulation by D8 flow, then a Dijkstra distance to the nearest line carrying that
+line's height and accumulation) is built once per generator over the map's 100 m cells, and only when a
+biome erodes. Data in `rocks.json` `erosion` (checked by `validateRocks`, emitted in `rocks.gen.rs`); the
+biome fields by `validateBiome`. Face-local (distances and heights over the sea), so both faces
+(`tests/erosion.rs`). Chisel: an "Erosion" group of sliders, the biome's erosion and gullies sliders, and
+an erosion overlay (tan cut to the floor, dark red at a remnant's wall, pale where it stands).
+
+First look (Chisel, seed 7, the mesa preset at erosion 1 with its climate `where` cleared so it covers
+the view, 4 km): isolated grey caprock remnants — large mesas, small buttes, a few spires — edged by a
+thin sand talus ring, separated by wide red floors along the rivers; at reach 700 the land was nearly all
+floor (a few buttes), at 350 broad connected plateaus; the build ships 450. Fixture numbers (1.6 km patch,
+4 m steps): ~97 % of the land within 3 m of the floor, < 1 % between levels, 6–7 separate remnants, walls
+of ≥ 8 m over 4 m at their edges. It reads like Monument Valley from above; the Chisel blocks view has no
+relief shading, so the walls' height and the gullies are verified by the tests, not by eye, and the
+floor's shade in the erosion overlay shows the 100 m map cells (the distance field is bilinear between
+them; the outlines, from the noise and the threshold, are smooth enough). Not yet: an in-game look, the
+remnants' tops are the height field's (gently tilted, not snapped to the cap's level), the floor between
+two drainage lines of different heights is their blend, and a simulated erosion pass to compare.
+
 ## Consequences
 
 - The biome map's wetness can be climate-driven; a desert can now follow a rain shadow rather than a

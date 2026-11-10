@@ -691,7 +691,11 @@ pub fn preview(g: &TerrainGenerator, x0: i64, z0: i64, n: i64, texel: i64, o: Ov
                 Some((s, margin, _)) => {
                     let wall = g.geology().erosion.wall.max(1.0);
                     let c = if margin < 0.0 {
-                        lerp3([0.9, 0.78, 0.55], [0.75, 0.6, 0.4], (-margin / 200.0).min(1.0))
+                        lerp3(
+                            [0.9, 0.78, 0.55],
+                            [0.75, 0.6, 0.4],
+                            (-margin / 200.0).min(1.0),
+                        )
                     } else if margin < 4.0 * wall {
                         [0.55, 0.12, 0.08]
                     } else {

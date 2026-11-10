@@ -376,7 +376,13 @@ impl DrainageField {
         }
         let height = src
             .iter()
-            .map(|&s| if s == usize::MAX { 0.0 } else { map.height[s].max(0.0) })
+            .map(|&s| {
+                if s == usize::MAX {
+                    0.0
+                } else {
+                    map.height[s].max(0.0)
+                }
+            })
             .collect();
         let accumulation = src
             .iter()
