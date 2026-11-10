@@ -4,13 +4,15 @@ use crate::creatures::{CreatureDef, Limits, MixPart, SpawnRule};
 
 pub const LIMITS: Limits = Limits { spawn_chunks: 2, despawn_m: 128.0, max: 64 };
 
-pub const CREATURES: [CreatureDef; 4] = [
+pub const CREATURES: [CreatureDef; 5] = [
     CreatureDef { name: "dwell:deer", model: "deer", walk_speed: 1.3, wander_m: 10.0, idle_seconds: [3.0, 8.0], rows: 3, climb_rows: 2, drop_rows: 2 },
     CreatureDef { name: "dwell:doe", model: "doe", walk_speed: 1.3, wander_m: 10.0, idle_seconds: [3.0, 8.0], rows: 3, climb_rows: 2, drop_rows: 2 },
+    CreatureDef { name: "dwell:wolf", model: "wolf", walk_speed: 1.6, wander_m: 14.0, idle_seconds: [2.0, 6.0], rows: 3, climb_rows: 2, drop_rows: 2 },
     CreatureDef { name: "dwell:horse", model: "horse", walk_speed: 1.5, wander_m: 12.0, idle_seconds: [4.0, 10.0], rows: 4, climb_rows: 2, drop_rows: 2 },
     CreatureDef { name: "dwell:chicken", model: "chicken", walk_speed: 0.7, wander_m: 5.0, idle_seconds: [1.0, 4.0], rows: 1, climb_rows: 1, drop_rows: 2 },
 ];
 
-pub const RULES: [SpawnRule; 1] = [
+pub const RULES: [SpawnRule; 2] = [
     SpawnRule { creature: 1, on: &["dwell:grass"], chance: 0.12, group: [2, 4], mix: &[MixPart { creature: 0, chance: 0.4, max: 1 }] },
+    SpawnRule { creature: 2, on: &["dwell:grass"], chance: 0.04, group: [2, 4], mix: &[] },
 ];

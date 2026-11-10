@@ -97,6 +97,30 @@
         "sprint": { "clip": "run" }
       }
     },
+    "wolf": {
+      "$comment": "The wolf is the dog recoloured and twice its size (owner, 2026-11-10: \"use the dog recolored. Make it twice as big\"): the dog's FBX with the pack's colours remapped to the wolf ramps.",
+      "glb": "glb/wolf.glb",
+      "source": {
+        "pack": "Animals_FREE_-_Animated_Low_Poly_3D_Models",
+        "fbx": "Assets/ithappy/Animals_FREE/Meshes/Dog_001.fbx",
+        "texture": "Assets/ithappy/Animals_FREE/Textures/Texture.png"
+      },
+      "scale": 2,
+      "yaw": 0,
+      "remap": {
+        "#f9f9f9": "wolf",
+        "#b4b4b4": "wolf_pale",
+        "#676767": "wolf.shadow",
+        "#353535": "hair_black",
+        "#155cc0": "wolf.shadow"
+      },
+      "fallback": "idle",
+      "roles": {
+        "idle": { "clip": "idle" },
+        "walk": { "clip": "walk" },
+        "sprint": { "clip": "run" }
+      }
+    },
     "kitty": {
       "glb": "glb/kitty.glb",
       "source": {

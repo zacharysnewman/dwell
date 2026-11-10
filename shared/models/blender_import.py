@@ -206,4 +206,8 @@ bpy.ops.export_scene.gltf(
     export_active_vertex_color_when_no_material=True,
     export_influence_nb=4,
 )
+# The source colours seen and what each became (for writing a model's `remap`).
+for k, v in cache.items():
+    print('COLOUR', '#%02x%02x%02x' % tuple(int(round(c * 255)) for c in k), '->',
+          '#%02x%02x%02x' % tuple(int(round(c * 255)) for c in v))
 print('IMPORTED', job['out'], [len(o.data.polygons) for o in outs], 'faces', [a.name for a in bpy.data.actions])

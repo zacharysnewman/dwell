@@ -228,3 +228,32 @@ fn the_doe_is_the_deer_without_antlers_on_the_same_skin_and_clips() {
     }
     assert!(doe.positions.len() < deer.positions.len());
 }
+
+// Owner, 2026-11-10: "use the dog recolored. Make it twice as big for default too." The wolf is the
+// dog's mesh and clips, its colours greys (none of the dog's white or blue), drawn at twice its size.
+#[test]
+fn the_wolf_is_the_dog_recoloured_grey_at_twice_its_size() {
+    let find = |n: &str| MODELS.iter().find(|m| m.name == n).unwrap();
+    let (dog_data, wolf_data) = (find("dog"), find("wolf"));
+    let (dog, wolf) = (read("", dog_data.glb), read("", wolf_data.glb));
+    assert_eq!(dog.positions, wolf.positions, "the dog's mesh");
+    let clips = |m: &glb::Model| -> Vec<String> { m.clips.iter().map(|c| c.name.clone()).collect() };
+    assert_eq!(clips(&dog), clips(&wolf));
+    assert_eq!(wolf_data.scale, 2.0 * dog_data.scale);
+    let rgb = |c: &[f32; 3]| c.map(|v| (v * 255.0).round() as i32);
+    // The dog's coat (its commonest colour) and its collar's blue are gone; most of it is grey.
+    let dog_rgb: Vec<_> = dog.colors.iter().map(rgb).collect();
+    let wolf_rgb: Vec<_> = wolf.colors.iter().map(rgb).collect();
+    let coat = *dog_rgb
+        .iter()
+        .max_by_key(|c| dog_rgb.iter().filter(|d| d == c).count())
+        .unwrap();
+    assert!(!wolf_rgb.contains(&coat), "the dog's coat {coat:?}");
+    let blue = dog_rgb.iter().find(|c| c[2] > c[0] + 60).expect("the dog's collar");
+    assert!(!wolf_rgb.contains(blue));
+    let grey = wolf_rgb
+        .iter()
+        .filter(|c| (c[0] - c[2]).abs() < 24 && (c[1] - c[2]).abs() < 24)
+        .count();
+    assert!(grey * 10 > wolf_rgb.len() * 8, "grey {grey} of {}", wolf_rgb.len());
+}

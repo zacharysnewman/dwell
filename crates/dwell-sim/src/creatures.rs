@@ -485,6 +485,27 @@ mod tests {
         }
     );
 
+    // Owner, 2026-11-10: "let's disable all the animals except wolves and deer for now". The rules
+    // spawn only deer (does, the stag by the mix) and wolves, in packs of 2-4 rarer than the herds.
+    #[test]
+    fn only_deer_and_wolves_spawn_the_wolves_in_small_rarer_packs() {
+        let t = Table::SHIPPED;
+        let name = |k: usize| t.creatures[k].name;
+        let mut spawned: Vec<_> = t
+            .rules
+            .iter()
+            .flat_map(|r| std::iter::once(r.creature).chain(r.mix.iter().map(|m| m.creature)))
+            .map(name)
+            .collect();
+        spawned.sort_unstable();
+        assert_eq!(spawned, ["dwell:deer", "dwell:doe", "dwell:wolf"]);
+        let rule = |n: &str| t.rules.iter().find(|r| name(r.creature) == n).unwrap();
+        let (wolf, doe) = (rule("dwell:wolf"), rule("dwell:doe"));
+        assert_eq!(wolf.group, [2, 4]);
+        assert!(wolf.chance < doe.chance);
+        assert_eq!(t.creatures[wolf.creature].model, "wolf");
+    }
+
     // Owner, 2026-11-10: herds "mostly does with sometimes one stag", as data: the game's deer rule
     // spawns does, a share of its groups (the mix's chance) with one stag, never two.
     #[test]
