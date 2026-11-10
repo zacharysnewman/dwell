@@ -20,6 +20,16 @@ AMD FidelityFX Super Resolution 1 (EASU and RCAS, ported to WGSL) 1.0
   Used in: web client (crates/dwell-client/src/render/upscale.wgsl)
   Source:  https://github.com/GPUOpen-Effects/FidelityFX-FSR
 
+Animals FREE - Animated Low Poly 3D Models (ithappy), 7 animals converted to GLB Asset Store pack
+  License: Unity Asset Store EULA (Standard), ithappy, Animals FREE - Animated Low Poly 3D Models
+  Used in: shared/models/glb (model viewer; not in the game yet)
+  Source:  https://assetstore.unity.com/publishers/ithappy
+
+Stylized NPC - Peasant Nolant (Winged Boots), converted to GLB Asset Store pack (DEMO)
+  License: Unity Asset Store EULA (Standard), Winged Boots, Stylized NPC - Peasant Nolant DEMO
+  Used in: web client (other players' bodies, shared/models/glb/peasant.glb)
+  Source:  https://assetstore.unity.com/
+
 aead 0.5.2
   License: MIT
   Used in: native server (Rust crate)
@@ -497,7 +507,7 @@ is 0.11.1
 
 itoa 1.0.18
   License: MIT
-  Used in: native server (Rust crate)
+  Used in: native server and browser client (WASM) (Rust crate)
   Source:  https://github.com/dtolnay/itoa
 
 js-sys 0.3.106
@@ -557,7 +567,7 @@ matrixmultiply 0.3.11
 
 memchr 2.8.3
   License: MIT
-  Used in: native server (Rust crate)
+  Used in: native server and browser client (WASM) (Rust crate)
   Source:  https://github.com/BurntSushi/memchr
 
 minimal-lexical 0.2.1
@@ -902,7 +912,7 @@ serde_derive 1.0.229
 
 serde_json 1.0.154
   License: MIT
-  Used in: native server (Rust crate)
+  Used in: native server and browser client (WASM) (Rust crate)
   Source:  https://github.com/serde-rs/json
 
 sha2 0.11.1
@@ -1267,7 +1277,7 @@ zerovec-derive 0.11.6
 
 zmij 1.0.23
   License: MIT
-  Used in: native server (Rust crate)
+  Used in: native server and browser client (WASM) (Rust crate)
   Source:  https://github.com/dtolnay/zmij
 
 ===============================================================================
@@ -1323,6 +1333,18 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
+
+-------------------------------------------------------------------------------
+Applies to: Animals FREE - Animated Low Poly 3D Models (ithappy), 7 animals converted to GLB Asset Store pack, Stylized NPC - Peasant Nolant (Winged Boots), converted to GLB Asset Store pack (DEMO)
+-------------------------------------------------------------------------------
+
+Licensed to the Dwell project's owner under the Unity Asset Store End User License Agreement
+(Standard Unity Asset Store EULA), https://unity.com/legal/as-terms. The publisher's own terms
+are those of the Asset Store listing; the pack ships no separate licence file.
+
+Dwell ships these models converted (FBX to GLB, recoloured to Dwell's palette, textures removed)
+inside its builds. They are not licensed for reuse outside Dwell: obtain the pack from the Unity
+Asset Store to use it elsewhere.
 
 -------------------------------------------------------------------------------
 Applies to: aead 0.5.2

@@ -26,6 +26,7 @@ pub mod reflection;
 pub mod seam;
 pub mod shaders;
 pub mod shadows;
+pub mod skinned;
 pub mod timing;
 pub mod upscale;
 pub mod water;
@@ -3423,6 +3424,7 @@ impl Renderer {
                 first_person,
                 light: v.light,
                 seed,
+                role: v.role,
             };
         let bodies: Vec<characters::BodyDraw> = self
             .players
