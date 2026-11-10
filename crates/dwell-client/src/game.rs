@@ -1675,6 +1675,15 @@ impl<S: Scene> Game<S> {
         if self.dead || !self.terrain_ready() {
             return false;
         }
+        // A ground item aimed at, nearer than the block behind it: the break (a click, the touch
+        // Break button, the controller's, an axe's swing) knocks it loose (ADR 0071).
+        if action == EditAction::Break
+            && !self.brush.active()
+            && !self.region.pasting()
+            && self.hit_ground()
+        {
+            return true;
+        }
         // The axe held (ADR 0067): Use turns the swing, Break swings at wood aimed at.
         if let Some(tool) = self.held_tool() {
             return self.chop_with(tool, action, now_ms);
@@ -3913,28 +3922,27 @@ impl<S: Scene> Game<S> {
         )
     }
 
-    /// E or X (ADR 0071): picks up the ground item under the crosshair (the server decides);
-    /// false when there is none, and the key does what it did before.
-    pub fn pick_ground(&mut self) -> bool {
-        let Some(it) = self.ground_target else {
+    /// The break action on the ground item under the crosshair (ADR 0071, amended 2026-11-09:
+    /// "if you hit the rock or stick they drop as the spinning item that auto picks up"), when it
+    /// is nearer than the block the crosshair is on (the ground under it): the server knocks it
+    /// loose (`InventoryAction::Pick`). False when the break goes to the block as before.
+    fn hit_ground(&mut self) -> bool {
+        let (Some(it), Some(eye)) = (self.ground_target, self.target_eye) else {
             return false;
         };
+        let block = self.interaction.target().map(|t| t.cell);
+        if !dwell_world::ground::Rules::shipped().hit_before(&it, eye, self.view_dir, block) {
+            return false;
+        }
         self.outbox
             .borrow_mut()
             .push(Send::Control(Message::InventoryAction(
                 dwell_protocol::InventoryAction::Pick { cell: it.cell },
             )));
+        self.bodies
+            .swing_arms(dwell_characters::animator::Swing::Break);
         self.sound(dwell_game::sound::SoundKind::Tool);
         true
-    }
-
-    /// The label of the ground item under the crosshair ("Stick"), for the pick-up prompt.
-    pub fn ground_prompt(&self) -> Option<&'static str> {
-        let it = self.ground_target?;
-        let k = dwell_world::ground::Rules::shipped()
-            .kind(it.kind)
-            .copied()?;
-        dwell_protocol::inventory::item(k.item).map(|d| d.label)
     }
 
     /// Moves items between inventory slots (the backpack screen's drag): the server decides.

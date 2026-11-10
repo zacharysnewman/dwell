@@ -228,10 +228,10 @@ ADR 0071. Sticks lie under the trees and rocks at the cliffs' feet (rarely on op
 over each chunk as it loads from the world seed and the cell by `shared/ground/ground.json` (kinds:
 the item each gives, a rod or lump look; rules: the blocks it lies on, the canopy above, a wall
 beside, a density) → `shared/ground/gen.mjs` → `dwell-world` `ground.gen.rs`. They are drawn in the
-chunk mesh and have no collision. **E** (or **X**, the spyglass button, on a controller) with the
-crosshair on one picks it up into the same item a drop gives (`dwell:stick`, `dwell:rock`: they
-stack); elsewhere E opens the backpack as before. The server keeps the picked ones gone (the world's
-`ground_gone` table); breaking the block under one knocks it loose as a loose item.
-
-On touch (0.50.70) a **Pick up** button appears under the crosshair while it is on a ground item; a tap
-picks it up. The keyboard's "E  Pick up …" prompt is hidden there.
+chunk mesh and have no collision. **Hit one** (0.50.74; the break action: the mouse's break
+click, the touch Break button, the controller's break, an axe's swing) and it is knocked loose as
+the spinning loose item of the same item a drop gives (`dwell:stick`, `dwell:rock`: they stack),
+which walking near collects; in creative, where breaking drops nothing, it simply vanishes. The hit
+goes to the item when it is nearer than the block behind it, so the ground under it isn't broken.
+There is no pick-up button: E is the backpack, X the spyglass. The server keeps the knocked ones gone
+(the world's `ground_gone` table); breaking the block under one knocks it loose too.

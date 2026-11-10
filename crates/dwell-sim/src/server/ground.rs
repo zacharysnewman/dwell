@@ -1,6 +1,6 @@
 //! The server's side of ground items (docs/adr/0071-ground-items.md): the scatter is the shared
-//! `dwell_world::ground` function over the server's blocks; the server keeps the gone ones (picked
-//! up or knocked loose), saves them with the world, checks and applies picks, and tells clients
+//! `dwell_world::ground` function over the server's blocks; the server keeps the gone ones (knocked
+//! loose), saves them with the world, checks and applies hits, and tells clients
 //! that said `GroundHello`.
 
 use super::{Server, SessionId};
@@ -9,7 +9,7 @@ use dwell_protocol::{Channel, MAX_GROUND_GONE_PER_MESSAGE, Message};
 use dwell_world::FaceFrame;
 use dwell_world::ground::{Placed, Rules};
 
-/// How far from the eye a ground item may be picked up (m): the block reach and a little.
+/// How far from the eye a ground item may be hit (m): the block reach and a little.
 pub const PICK_REACH_M: f64 = dwell_protocol::players::REACH_DISTANCE as f64 + 0.5;
 
 impl Server {
@@ -53,37 +53,40 @@ impl Server {
         }
     }
 
-    /// `InventoryAction::Pick`: the item in `cell` goes into the player's inventory if it lies there,
-    /// within reach of their eye, and fits; otherwise nothing changes (the client is sent its
-    /// inventory again either way). Creative picks up too (ADR 0066 §7: loose things can always be
-    /// taken).
+    /// `InventoryAction::Pick`, the break action aimed at a ground item (ADR 0071, amended
+    /// 2026-11-09): the item in `cell` is knocked loose if it lies there within reach of the eye
+    /// of a player who may edit. It is gone from the scatter and, as a broken block's drops are,
+    /// becomes a loose item where it lay in a mode that uses items (walking near collects it); in
+    /// creative, where breaking drops nothing (ADR 0066), it simply vanishes.
     pub(super) fn pick_ground(&mut self, id: SessionId, cell: [i32; 3]) -> bool {
-        let Some(handle) = self
+        let Some((handle, may_edit)) = self
             .sessions
             .get(&id)
             .filter(|s| s.joined())
-            .and_then(|s| s.handle)
+            .and_then(|s| s.handle.map(|h| (h, self.may_edit(s))))
         else {
             return false;
         };
         let eye = self.eye_of(handle);
-        let Some(it) = self.ground_item(cell, None) else {
-            self.sessions.get_mut(&id).expect("session").inventory_dirty = true;
+        let Some(it) = self.ground_item(cell, None).filter(|_| may_edit) else {
             return false;
         };
         let p = it.point();
         let d = (0..3).map(|k| (p[k] - eye[k]).powi(2)).sum::<f64>().sqrt();
-        let kind = Rules::shipped().kind(it.kind).copied();
-        let s = self.sessions.get_mut(&id).expect("session");
-        s.inventory_dirty = true;
-        let Some(kind) = kind.filter(|_| d <= PICK_REACH_M) else {
+        let Some(kind) = Rules::shipped().kind(it.kind).copied() else {
             return false;
         };
-        if s.inventory.add(kind.item, 1) > 0 {
-            return false; // no room: it stays
+        if d > PICK_REACH_M {
+            return false;
         }
+        let s = self.sessions.get_mut(&id).expect("session");
+        s.swing = super::next_swing(s.swing, true);
         self.ground.cells.insert(cell);
         self.broadcast_ground_gone(vec![cell]);
+        if self.uses_items() {
+            self.loose
+                .drop(dwell_protocol::inventory::Stack::new(kind.item, 1), p);
+        }
         true
     }
 

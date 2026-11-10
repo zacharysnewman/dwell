@@ -1701,23 +1701,6 @@ body.menu-open #menu-button {
   box-shadow: 0 0 0 1.5px rgb(0 0 0 / 35%);
 }
 
-/* The pick-up prompt under the crosshair (ADR 0071): a ground item aimed at. */
-#crosshair .pick-up {
-  position: absolute;
-  left: 50%;
-  top: 18px;
-  transform: translateX(-50%);
-  white-space: pre;
-  padding: 3px 8px;
-  border-radius: 4px;
-  font:
-    600 13px/1.2 system-ui,
-    sans-serif;
-  color: #fff;
-  background: rgb(0 0 0 / 45%);
-  pointer-events: none;
-}
-
 /* A held tool's swing line (ADR 0067): its path through the crosshair, level or vertical, fading
    at its ends. */
 #crosshair .swing-line {
@@ -2342,29 +2325,6 @@ body:has(#main-menu) #build-info {
 #touch-look {
   right: 0;
   width: 55%;
-}
-
-/* The pick-up button (ADR 0071): under the crosshair while it is on a stick or rock; a tap picks it up. */
-#touch-pick {
-  position: absolute;
-  left: 50%;
-  top: calc(50% + 22px);
-  transform: translateX(-50%);
-  z-index: 1;
-  min-height: 44px;
-  padding: 0 16px;
-  border: 1.5px solid rgb(255 255 255 / 70%);
-  border-radius: 22px;
-  font:
-    600 15px/1 system-ui,
-    sans-serif;
-  color: #fff;
-  background: rgb(0 0 0 / 50%);
-  touch-action: none;
-}
-
-#touch-pick[hidden] {
-  display: none;
 }
 
 /* The debug overlay's button (F3 on touch): top right, clear of the hotbar. */

@@ -1,6 +1,8 @@
-# 0071 — Ground items: sticks and stones scattered at chunk load, picked up with E/X
+# 0071 — Ground items: sticks and stones scattered at chunk load, knocked loose by hitting them
 
-**Status:** Accepted (2026-11-09; built in 0.50.68). Builds on ADR 0066 (items, drops, inventory).
+**Status:** Accepted (2026-11-09; built in 0.50.68; amended 0.50.73, one look per item, and 0.50.74,
+hit instead of picked up: see the amendments at the end, which replace Decision 5). Builds on ADR
+0066 (items, drops, inventory).
 
 ## Context
 
@@ -70,10 +72,9 @@ gone set.
 ## Questions (parked; defaults chosen)
 
 1. **Densities**: 8 % under canopies, 12 % at cliff feet, 0.3 % on open grass. More or fewer?
-2. **The prompt says "E"** whatever the device; show "X" when the last input was a controller?
-3. ~~**Touch**~~ answered (owner, 2026-11-09, "Do it"): from 0.50.70 a **Pick up** button shows under
-   the crosshair while it is on a ground item, and a tap picks it up (`TouchControls.setPickUp`);
-   the keyboard prompt hides on touch.
+2. ~~**The prompt says "E"**~~ moot from 0.50.74: no prompt (hit them instead).
+3. ~~**Touch**~~ answered (owner, 2026-11-09, "Do it"): from 0.50.70 a **Pick up** button showed under
+   the crosshair while it was on a ground item; removed in 0.50.74, where touch's Break hits it.
 4. **Sending all gone cells at the hello** grows with play; per chunk with the chunk later if it
    ever matters.
 5. **Leaves broken over sticks** make the sticks vanish (the canopy rule fails). Keep them instead
@@ -102,3 +103,37 @@ names only its item (and its `scale`), and `shared/ground/gen.mjs` copies the it
 (`dwell_mesh::look_swatch`, the shape rasterised in its tinted tile) and the hand (`Held::Look`: the
 characters item `rod` or `lump` in the look's tile and tint). Deviation: the hand holds the shape at
 its own size (characters.json), not the look's `size`, as the hand's items are fixed meshes.
+
+## Amendment (0.50.74): hit them, no pick-up button
+
+Owner, 2026-11-09, replacing the pick-up controls: "make it so if you hit the rock or stick they
+drop as the spinning item that auto picks up, no special button to pick up." This replaces
+Decision 5's E / X / touch pick-up and the prompt:
+
+1. **The break action** (the mouse's break click, the touch Break button, the controller's break,
+   an axe's swing) aimed at a ground item **knocks it loose** when the item is nearer along the
+   crosshair's ray than where the ray enters the block the block targeting found
+   (`dwell_world::ground::Rules::hit_before`), so a hit on a stick doesn't break the ground under it;
+   a block in front of it is broken as before. With the axe held the click knocks it at once (not
+   through the swing's sweep). The brush and paste mode keep their own meaning of break.
+2. **The server** (`server/ground.rs` `pick_ground`) checks that it lies there, not gone, within 5.5
+   m of the eye of a player who may edit, records it gone (`ground_gone`, `GroundGone` to the
+   clients) and, in a mode that uses items, drops a **loose item** of its kind's item where it lay
+   (ADR 0066's spinning item, collected by walking near it after the pickup delay). **Creative**:
+   ADR 0066's rule that breaking drops nothing applies, so the item **simply vanishes** (as one
+   knocked loose by breaking its ground already did, Decision 6). The other players see the arms'
+   break swing.
+3. **Removed**: E's pick-up (E is the backpack only again), the controller's X pick-up (X is the
+   spyglass only), the touch **Pick up** button (0.50.70, Question 3) and the "E  Pick up …" prompt,
+   with `Client.pickUp` / `groundPrompt` and the HUD's `pickUp` field.
+4. **Wire: unchanged and compatible.** The client still sends `InventoryAction` 4 (`Pick { cell }`,
+   the name kept from when it picked up) for the hit; only the server's meaning changed. An older
+   client on the line pressing E now knocks the item loose instead of taking it; a newer client on
+   an older server picks it up as before. No new compatibility line.
+
+Tests: hitting a rock knocks it loose (a loose rock where it lay, not into the inventory, gone from
+the scatter, the client told) and walking over it collects it, stacking with a dropped one; a second
+hit, one out of reach and one at nothing are refused; creative's hit makes it vanish with no loose
+item; the gone set across a reload (both faces where it matters); the break action hits a nearer
+item before the block behind it, and a block in front of it first (both faces); E is the backpack's
+key only (`backpackKey`).

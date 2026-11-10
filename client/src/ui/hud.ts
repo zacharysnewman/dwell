@@ -47,8 +47,6 @@ export class Hud {
   private readonly spyglass: HTMLDivElement;
   /** The held tool's swing line (`setSwing`). */
   private readonly swingLine: HTMLDivElement;
-  /** The pick-up prompt under the crosshair (ADR 0071). */
-  private readonly pickUp: HTMLDivElement;
 
   constructor(parent: HTMLElement) {
     this.root = document.createElement('div');
@@ -60,10 +58,6 @@ export class Hud {
     this.swingLine.className = 'swing-line';
     this.swingLine.hidden = true;
     crosshair.append(this.swingLine);
-    this.pickUp = document.createElement('div');
-    this.pickUp.className = 'pick-up';
-    this.pickUp.hidden = true;
-    crosshair.append(this.pickUp);
     this.health = document.createElement('div');
     this.health.id = 'health';
     this.healthFill = document.createElement('div');
@@ -168,14 +162,6 @@ export class Hud {
     this.debug.hidden = !this.debug.hidden;
   }
 
-  /** The ground item under the crosshair (its label: "Stick"), or none: the pick-up prompt. */
-  setPickUp(label: string | null, touch = false): void {
-    // On touch the prompt is the tappable button (TouchControls.setPickUp), not this line.
-    const text = pickUpPrompt(label, touch);
-    this.pickUp.hidden = text === null;
-    if (text !== null && this.pickUp.textContent !== text) this.pickUp.textContent = text;
-  }
-
   /** The held tool's swing line through the crosshair: level, vertical, or none. */
   setSwing(mode: 'level' | 'vertical' | null): void {
     this.swingLine.hidden = mode === null;
@@ -253,18 +239,4 @@ export class Hud {
       if (this.note.textContent === text) this.note.textContent = '';
     }, ms);
   }
-}
-
-/**
- * The pick-up prompt under the crosshair for a ground item aimed at (ADR 0071): the key to press
- * with a keyboard; none on touch, where the prompt is a button to tap instead. Null: no prompt.
- */
-export function pickUpPrompt(label: string | null, touch: boolean): string | null {
-  if (label === null || touch) return null;
-  return `E  Pick up ${label}`;
-}
-
-/** The touch pick-up button's text for a ground item aimed at; null hides the button. */
-export function pickUpButton(label: string | null): string | null {
-  return label === null ? null : `Pick up ${label}`;
 }
