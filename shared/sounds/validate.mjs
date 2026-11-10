@@ -301,7 +301,7 @@ export function validateSound(where, s) {
   s.layers.forEach((l, i) => validateLayer(`${where}.layers[${i}]`, l, loop));
   if (s.samples !== undefined) {
     const sm = s.samples;
-    keysIn(`${where}.samples`, sm, ["files", "gain", "pitch"]);
+    keysIn(`${where}.samples`, sm, ["files", "gain", "pitch", "reverb"]);
     if (loop) fail(`${where}.samples`, "loop sounds are procedural only");
     if (
       !Array.isArray(sm.files) ||
@@ -317,6 +317,7 @@ export function validateSound(where, s) {
         );
     number(`${where}.samples.gain`, sm.gain, 0, 4, { optional: true });
     number(`${where}.samples.pitch`, sm.pitch, 0, 12, { optional: true });
+    number(`${where}.samples.reverb`, sm.reverb, 0, 1, { optional: true });
   }
   if (s.play !== undefined) {
     oneOf(`${where}.play`, s.play, PLAY_MODES);

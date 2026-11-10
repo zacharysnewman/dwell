@@ -210,8 +210,8 @@ export class AudioEngine {
       panner = this.panner(ctx);
       setPosition(panner, at);
     }
-    const input = soundInput(ctx, mixer, req.bus, sound.reverb ?? 0, panner);
     const sample = this.samples.pick(id, sound);
+    const input = soundInput(ctx, mixer, req.bus, roomSend(sound, sample !== null), panner);
     let end: number;
     if (sample) {
       end = playSample(
@@ -324,6 +324,15 @@ export function sampleGain(sound: SoundDef, req: Pick<PlayRequest, 'gain' | 'int
   const k = req.intensity ?? 1;
   const intensity = g ? g[0] + (g[1] - g[0]) * Math.min(1, Math.max(0, k)) : 1;
   return (sound.samples?.gain ?? 1) * (req.gain ?? 1) * intensity;
+}
+
+/**
+ * The share of a play sent to the room: a recording is dry unless its samples ask for the room (its
+ * own room is in the file, and the sound's `reverb` is for its procedural layers); a procedural play
+ * takes the sound's `reverb`.
+ */
+export function roomSend(sound: SoundDef, sampled: boolean): number {
+  return sampled ? (sound.samples?.reverb ?? 0) : (sound.reverb ?? 0);
 }
 
 function playSample(
