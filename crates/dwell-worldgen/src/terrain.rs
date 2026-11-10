@@ -1216,6 +1216,24 @@ impl TerrainGenerator {
         c
     }
 
+    /// The river whose channel holds full-detail column (x, z), and its surface row (none off a
+    /// channel, or at the sea's level).
+    fn river_row_at(&self, x: i64, z: i64) -> Option<(u32, i32)> {
+        if !inside_world_disc(x, z) || !self.map.channels.near(x as f64, z as f64, 0.0) {
+            return None;
+        }
+        let (wx, wz) = self.warp(
+            self.meander_seeds,
+            x,
+            z,
+            S.river_meander,
+            S.river_meander_wavelength,
+        );
+        let r = self.map.channels.query(wx, wz, 0.0, f64::INFINITY)?;
+        (r.d < r.half && r.level > CELL_H)
+            .then(|| (r.river, surface_row((SEA_LEVEL_M + r.level) as f32)))
+    }
+
     /// The row a river's or lake's water surface lies on at full-detail column (x, z) (the rows
     /// below it water); none where no river channel or lake is. A light lookup for the waterline
     /// (docs/WATER_FLOW.md §17).
@@ -1343,15 +1361,35 @@ impl TerrainGenerator {
                 // The channel: its bed below the water, deepest on the centreline.
                 let f = r.d / r.half;
                 let depth = (r.depth * (1.0 - f * f)).max(S.river_min_depth);
+                // Where a river joins one lower than it reaches (another river's water two rows
+                // or more under it within two cells along an axis), its surface steps down to
+                // that water a row a cell, as water: no wall of water and no dry bed (BUGS.md #62).
+                let mut lvl = r.level;
+                if cell == 1 {
+                    let row = surface_row((SEA_LEVEL_M + r.level) as f32);
+                    let mut cap = row;
+                    for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                        for d in 1..=2 {
+                            if let Some((n, k)) = self.river_row_at(x + d * dx, z + d * dz)
+                                && n != r.river
+                            {
+                                cap = cap.min(k + d as i32);
+                            }
+                        }
+                    }
+                    if cap < row {
+                        lvl = f64::from(cap) * CELL_H - SEA_LEVEL_M - 0.25 * CELL_H;
+                    }
+                }
                 // Below the surface as drawn (its row), so a channel always holds water cells.
                 let drawn =
-                    f64::from(surface_row((SEA_LEVEL_M + r.level) as f32)) * CELL_H - SEA_LEVEL_M;
-                h = h.min(drawn.min(r.level) - depth);
+                    f64::from(surface_row((SEA_LEVEL_M + lvl) as f32)) * CELL_H - SEA_LEVEL_M;
+                h = h.min(drawn.min(lvl) - depth);
                 // In a lake the lake's flat surface wins (a river running into it ends there).
                 if water != Water::Lake {
                     water = Water::River;
-                    level = r.level;
-                    // No lips (BUGS.md #29, Phase 53 G1a) and no dry chutes (BUGS.md #57): a step
+                    level = lvl;
+                    // No lips (BUGS.md #29, Phase 53 G1a) and no dry chutes (BUGS.md #62): a step
                     // is the water falling a row from one reach to the next, the bed under each
                     // at its own depth, so the bed only falls downstream however steep the river;
                     // the water grid rests what is drawn (WATER_SURFACE_GRID.md §2b).
@@ -3482,7 +3520,7 @@ mod tests {
         assert!(checked >= 1000, "channel columns checked: {checked}");
     }
 
-    /// BUGS.md #57 (owner, 2026-11-10: "grass sections a few blocks higher than the river bed,
+    /// BUGS.md #62 (owner, 2026-11-10: "grass sections a few blocks higher than the river bed,
     /// water kinda waterfalls over them"): a chute's bed stood dry a row under its surface, over
     /// the pool's bed above it, and its first column was raised a row over that pool's water (the
     /// waterline). Along rivers of seeds 0 and 7, on both faces, the owner's site among them, a
