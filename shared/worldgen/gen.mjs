@@ -332,9 +332,12 @@ const TERRAIN = {
 /** The bands' blocks, by name: each must be a full block of the registry. */
 const BAND_BLOCKS = ['ground', 'under', 'snow', 'rock', 'shoreBlock'];
 
-/** The world-scale groups (terrain.json); the rest of `TERRAIN` is each biome's (ADR 0074). */
-const WORLD_GROUPS = ['inland', 'spawn'];
-/** A biome's groups (shared/worldgen/biomes/*.json): the per-landscape knobs. */
+/**
+ * The world's elevation and water (terrain.json): one world-scale system, not per biome (ADR 0074;
+ * owner, 2026-11-10). The rest of `TERRAIN` is each biome's.
+ */
+const WORLD_GROUPS = ['inland', 'seaFloor', 'hills', 'bumps', 'rivers', 'mouths', 'lakes', 'spawn'];
+/** A biome's groups (shared/worldgen/biomes/*.json): layered on the elevation. */
 export const BIOME_GROUPS = Object.keys(TERRAIN).filter((g) => !WORLD_GROUPS.includes(g));
 /** A biome's reference fields beside its groups. */
 const BIOME_REFS = ['decorations', 'placements', 'water'];
@@ -375,7 +378,6 @@ export function validateBiome(data, blocks = registryBlocks(), refs = biomeRefs(
   const extra = Object.keys(data).filter((k) => !['$comment', 'name', ...BIOME_GROUPS, ...BIOME_REFS].includes(k));
   if (extra.length) fail(`unknown ${extra.join(', ')}`);
   checkGroups(data, BIOME_GROUPS, fail);
-  if (!(data.hills.fadeTo > data.hills.fadeFrom)) fail('hills.fadeTo must be greater than hills.fadeFrom');
   if (!(data.detail.mountainFull > data.detail.mountainFrom)) {
     fail('detail.mountainFull must be greater than detail.mountainFrom');
   }
@@ -414,7 +416,7 @@ export function loadBiomes(dir = join(here, 'biomes')) {
 }
 
 /**
- * Checks the world-scale terrain (terrain.json: `inland`, `spawn`, `defaultBiome`) and its biomes;
+ * Checks the world's elevation and water (terrain.json, its `defaultBiome`) and the biomes;
  * returns `{ world, biomes }` with the default biome first. Throws naming the file, group and key.
  */
 export function validateTerrainAndBiomes(world, biomes, blocks = registryBlocks(), refs = biomeRefs()) {
@@ -425,6 +427,7 @@ export function validateTerrainAndBiomes(world, biomes, blocks = registryBlocks(
   const extra = Object.keys(world).filter((k) => !['$comment', 'defaultBiome', ...WORLD_GROUPS].includes(k));
   if (extra.length) fail(`unknown ${extra.join(', ')}`);
   checkGroups(world, WORLD_GROUPS, fail);
+  if (!(world.hills.fadeTo > world.hills.fadeFrom)) fail('hills.fadeTo must be greater than hills.fadeFrom');
   if (!(world.spawn.maxHeight > world.spawn.minHeight)) fail('spawn.maxHeight must be greater than spawn.minHeight');
   for (const b of biomes) validateBiome(b, blocks, refs);
   const names = biomes.map((b) => b.name);
@@ -435,7 +438,7 @@ export function validateTerrainAndBiomes(world, biomes, blocks = registryBlocks(
   return { world, biomes: [def, ...biomes.filter((b) => b !== def)] };
 }
 
-/** One biome's fields (merged with the world's groups) as Rust: the base field's and the surface's. */
+/** The world's groups and one biome's, merged, as Rust: the base field's and the surface's. */
 function biomeFields(t) {
   const fields = [
     ['inland_rise', rf(t.inland.rise)],
@@ -509,20 +512,23 @@ function biomeFields(t) {
 
 /**
  * The Rust for validated terrain and biomes (`validateTerrainAndBiomes`, the default first): the
- * biomes' table, and `HEIGHT` and `SURFACE`, the default biome's, which the generator reads.
+ * world's height field `HEIGHT`, the biomes' table (each surface merged with the world's water
+ * shaping), and `SURFACE`, the default biome's, which the generator reads.
  */
 export function terrainRust({ world, biomes }) {
   const rs = [`// ${terrainHeader}`, '', 'use crate::terrain::{Biome, HeightField, Surface};', ''];
+  rs.push("/// The base height field, the world map's input: the world's elevation (terrain.json).");
+  rs.push('pub const HEIGHT: HeightField = HeightField {');
+  for (const [k, v] of biomeFields({ ...biomes[0], ...world }).fields) rs.push(`    ${k}: ${v},`);
+  rs.push('};');
+  rs.push('');
   rs.push('/// The biomes (shared/worldgen/biomes/*.json), the default (terrain.json `defaultBiome`) first.');
   rs.push('pub const BIOMES: &[Biome] = &[');
   const list = (xs) => `&[${xs.map((x) => JSON.stringify(x)).join(', ')}]`;
   for (const b of biomes) {
-    const { fields, surface } = biomeFields({ ...b, ...world });
+    const { surface } = biomeFields({ ...b, ...world });
     rs.push('    Biome {');
     rs.push(`        name: ${JSON.stringify(b.name)},`);
-    rs.push('        height: HeightField {');
-    for (const [k, v] of fields) rs.push(`            ${k}: ${v},`);
-    rs.push('        },');
     rs.push('        surface: Surface {');
     for (const [k, v] of surface) rs.push(`            ${k}: ${v},`);
     rs.push('        },');
@@ -532,9 +538,6 @@ export function terrainRust({ world, biomes }) {
     rs.push('    },');
   }
   rs.push('];');
-  rs.push('');
-  rs.push("/// The base height field, the world map's input: the default biome's.");
-  rs.push('pub const HEIGHT: HeightField = BIOMES[0].height;');
   rs.push('');
   rs.push("/// How columns are shaped from the world map: the default biome's.");
   rs.push('pub const SURFACE: Surface = BIOMES[0].surface;');

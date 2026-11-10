@@ -146,16 +146,16 @@ pub struct Surface {
     pub spawn_near_river: f64,
 }
 
-/// A biome (data: `shared/worldgen/biomes/<name>.json`, ADR 0074): what makes a landscape read
-/// as one place, its height field and surface merged with the world-scale fields of `terrain.json`.
-/// Every world is shaped by the default biome ([`BIOMES`]`[0]`) today; B1 reads the biome's surface
-/// blocks per generator ([`TerrainGenerator::with_biome`]), the rest is read through [`HEIGHT`] and
-/// [`SURFACE`] (the default's) until the biome map (B2) weights biomes across a world.
+/// A biome (data: `shared/worldgen/biomes/<name>.json`, ADR 0074): what is layered on the world's
+/// elevation (`terrain.json`, one world-scale system: [`HEIGHT`] and the rivers' and lakes'
+/// shaping) to make a landscape read as one place: its fine relief and surface bands, merged in
+/// `surface` with the world's water shaping. Every world is the default biome ([`BIOMES`]`[0]`)
+/// today; B1 reads the biome's surface blocks per generator ([`TerrainGenerator::with_biome`]), the
+/// rest through [`SURFACE`] (the default's) until the biome map (B2) blends biomes across a world.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Biome {
     /// The biome's name (`namespace:name`).
     pub name: &'static str,
-    pub height: HeightField,
     pub surface: Surface,
     /// The decoration rules (`decorations.json`, by name) that may grow here.
     pub decorations: &'static [&'static str],
@@ -2144,7 +2144,9 @@ impl TerrainGenerator {
         });
         let shape = ramps_rule::top_of(&around, rows_for_m(1.0));
         // Dry pieces: `generate` floods each one under the water (`under_water`).
-        let cells = self.ramps.cells(fill(&self.bands, col.band, top, 0), shape, false);
+        let cells = self
+            .ramps
+            .cells(fill(&self.bands, col.band, top, 0), shape, false);
         // A 1 m ramp needs two cells of ground; a column one cell deep takes none.
         if (cells.len() as i32) > top + 1 - FACE_MIN_Y {
             return &[];
@@ -2490,7 +2492,13 @@ impl TerrainGenerator {
                         *m = if empty(a - cell) {
                             M.stone
                         } else {
-                            fill_soil(&self.bands, col.band, top as i32, depth.min(1000), lod_soil(x, z))
+                            fill_soil(
+                                &self.bands,
+                                col.band,
+                                top as i32,
+                                depth.min(1000),
+                                lod_soil(x, z),
+                            )
                         };
                         continue;
                     }

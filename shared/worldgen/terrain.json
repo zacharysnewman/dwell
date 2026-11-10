@@ -1,8 +1,59 @@
 {
-  "$comment": "The world-scale terrain (ARCHITECTURE.md §6.3, docs/WORLD_GENERATION.md, ADR 0049, ADR 0074). Heights in metres above sea level, distances in metres. `inland` is the land's rise away from the coast, part of the base height field the world map samples on its 100 m grid before the uplift layer and the erosion (shared/worldgen/hydrology.json); `spawn` where players start; `defaultBiome` the biome (shared/worldgen/biomes/*.json, by name) that shapes the rest: its sea floor, hills, bumps, detail, rivers, mouths, lakes and surface bands. Prototype content (§6.1). Changing any value changes the terrain a seed generates: regenerate the goldens (`cargo run -p dwell-worldgen --example goldens`) and ship it on a new compatibility line. Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output.",
+  "$comment": "The world's elevation and its water (ARCHITECTURE.md §6.3, docs/WORLD_GENERATION.md, ADR 0049, ADR 0074): one world-scale system, not per biome (owner, 2026-11-10: \"the elevation separate from biomes\"; mountains come from the elevation). Heights in metres above sea level, distances and wavelengths in metres, slopes in m per m. `inland`, `seaFloor`, `hills` and `bumps` are the base height field: the input the world map samples on its 100 m grid before the uplift layer and the erosion (shared/worldgen/hydrology.json); chunks never read it directly. `rivers` the channels carved from the map's river polylines, `mouths` their deltas and estuaries, `lakes` the lake shores, `spawn` where players start. `defaultBiome` names the biome (shared/worldgen/biomes/*.json) layered on the elevation: its surface bands and fine relief. Prototype content (§6.1). Changing any value changes the terrain a seed generates: regenerate the goldens (`cargo run -p dwell-worldgen --example goldens`) and ship it on a new compatibility line. Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output.",
   "inland": {
     "rise": 320,
     "halfDistance": 6000
+  },
+  "seaFloor": {
+    "depth": 20,
+    "shelf": 2500
+  },
+  "hills": {
+    "amplitude": 225,
+    "wavelength": 1024,
+    "octaves": 5,
+    "fadeFrom": 500,
+    "fadeTo": 4000
+  },
+  "bumps": {
+    "amplitude": 5,
+    "wavelength": 128,
+    "octaves": 3
+  },
+  "rivers": {
+    "$comment": "Channels from the map's river polylines (smoothed `smooth` times, corner cutting). A column's nearest river by its channel's edge: inside the channel the bed lies depth (the map's width curve) below the water at the centre, at least minDepth; beyond it the ground is cut down to a valley rising valleySlope m per m from bank m over the water, out to reach m plus reachPerWidth × the width, where it meets the land; where the land is lower than the water the banks are raised to bank m over it (levees), falling away leveeFall m per m to the land, a broad bank rather than a ridge; none where the river is at sea level (its water is the sea's). Where a river joins another it reaches the other's level joinMargin m plus its own half-width outside the other's channel, and falls to it at most joinSlope m per m upstream of there (a short gorge where it hangs above the other). Meander: the banks are traced through a warp of about ±meander m at meanderWavelength. The LOD widens a river at least lodMinShare of its cell size wide to lodWidth × its cell size, at cells up to lodMaxCell m, so rivers show from afar. Where a river's surface steps down a row, the water falls a row from one pool to the next, the bed under each at its own depth: no lips (BUGS.md #29, Phase 53 G1a; the water surface grid rests the water as drawn). A chute (its steps closer than a row every 2.5 m) has a dry bed a row under its surface and a stream down its middle as wide as its river's flow needs.",
+    "smooth": 3,
+    "minDepth": 1,
+    "bank": 0.5,
+    "valleySlope": 0.45,
+    "joinMargin": 3,
+    "leveeFall": 0.15,
+    "joinSlope": 0.25,
+    "reach": 30,
+    "reachPerWidth": 2,
+    "meander": 5,
+    "meanderWavelength": 96,
+    "lodWidth": 0.75,
+    "lodMinShare": 0.125,
+    "lodMaxCell": 128
+  },
+  "mouths": {
+    "$comment": "Where a big river meets the sea (the map marks deltas and estuaries): over its last reach m its channel widens, an estuary's to estuaryWiden × its width and estuaryDeepen × its depth (a funnel), a delta's to deltaWiden × its width, and a delta splits into deltaBranches distributaries at deltaSplit m from the sea, spreading deltaSpread degrees either side, each deltaBranchWidth of the river's width.",
+    "reach": 1500,
+    "estuaryWiden": 4,
+    "estuaryDeepen": 1.5,
+    "deltaWiden": 1.6,
+    "deltaBranches": 2,
+    "deltaSplit": 1600,
+    "deltaSpread": 30,
+    "deltaBranchWidth": 0.55
+  },
+  "lakes": {
+    "$comment": "A lake is flat at its level, inside its cells of the map (traced through a warp of ±shoreNoise m at shoreWavelength); round it the ground stands at least bank m over the water for levee m, so the water never stands open beside lower ground.",
+    "bank": 0.5,
+    "levee": 40,
+    "shoreNoise": 15,
+    "shoreWavelength": 160
   },
   "spawn": {
     "$comment": "Players spawn on level dry land between minHeight and maxHeight m above sea level, preferring a river within nearRiver m: the map's cells are ranked by their distance from the disc's centre (the land nearest it first), and the first that suits is searched for a level patch.",

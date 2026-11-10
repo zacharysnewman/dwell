@@ -1,22 +1,6 @@
 {
-  "$comment": "A biome (docs/proposals/BIOME_SANDBOX.md, ADR 0074; Chisel, the biome editor, edits these files): everything that makes a landscape read as one place, grouped from what was terrain.json's per-landscape knobs. `seaFloor`, `hills` and `bumps` are the base height field the world map samples (with terrain.json's world-scale `inland`); `detail` the fine relief over the map's height; `rivers`, `mouths` and `lakes` how channels, river mouths and lake shores are cut; `bands` the surface blocks by height and slope; `decorations` and `placements` the rules (by name, shared/worldgen/decorations.json and placements.json) that may grow here; `water` the fluid block the biome's water is drawn as. The groups' fields keep terrain.json's meanings (its comments and gen.mjs's ranges). Prototype content (ARCHITECTURE.md §6.1). The world's default biome (terrain.json `defaultBiome`) shapes every world today: changing any value changes the terrain a seed generates (regenerate the goldens and ship it on a new compatibility line). Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output.",
+  "$comment": "A biome (docs/proposals/BIOME_SANDBOX.md, ADR 0074; Chisel, the biome editor, edits these files): what is layered on the world's elevation (terrain.json, one world-scale system: the height field, the coast's taper, mountains, rivers and lakes) to make a landscape read as one place. `detail` the fine relief over the map's height (more of it at altitude: mountains get their look from the elevation); `bands` the surface blocks by height and slope (the snow line, bare rock on steep faces, the shore); `decorations` and `placements` the rules (by name, shared/worldgen/decorations.json and placements.json) that may grow here; `water` the fluid block its water is drawn as. The fields keep their former terrain.json meanings (its comments' units, gen.mjs's ranges). Prototype content (ARCHITECTURE.md §6.1). The world's default biome (terrain.json `defaultBiome`) shapes every world today: changing any value changes the terrain a seed generates (regenerate the goldens, a new compatibility line). Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output.",
   "name": "dwell:default",
-  "seaFloor": {
-    "depth": 20,
-    "shelf": 2500
-  },
-  "hills": {
-    "amplitude": 225,
-    "wavelength": 1024,
-    "octaves": 5,
-    "fadeFrom": 500,
-    "fadeTo": 4000
-  },
-  "bumps": {
-    "amplitude": 5,
-    "wavelength": 128,
-    "octaves": 3
-  },
   "detail": {
     "$comment": "Fine relief over the map's bicubic height: a fractal sum of `wavelength` and `octaves`, about ±amplitude m in the lowlands, rising to ±mountainAmplitude between mountainFrom and mountainFull m; faded to nothing within waterFade m of a river's channel or a lake's shore.",
     "amplitude": 2,
@@ -26,41 +10,6 @@
     "mountainFrom": 300,
     "mountainFull": 1800,
     "waterFade": 30
-  },
-  "rivers": {
-    "$comment": "Channels from the map's river polylines (smoothed `smooth` times, corner cutting). A column's nearest river by its channel's edge: inside the channel the bed lies depth (the map's width curve) below the water at the centre, at least minDepth; beyond it the ground is cut down to a valley rising valleySlope m per m from bank m over the water, out to reach m plus reachPerWidth × the width, where it meets the land; where the land is lower than the water the banks are raised to bank m over it (levees), falling away leveeFall m per m to the land, a broad bank rather than a ridge; none where the river is at sea level (its water is the sea's). Where a river joins another it reaches the other's level joinMargin m plus its own half-width outside the other's channel, and falls to it at most joinSlope m per m upstream of there (a short gorge where it hangs above the other). Meander: the banks are traced through a warp of about ±meander m at meanderWavelength. The LOD widens a river at least lodMinShare of its cell size wide to lodWidth × its cell size, at cells up to lodMaxCell m, so rivers show from afar. Where a river's surface steps down a row, the water falls a row from one pool to the next, the bed under each at its own depth: no lips (BUGS.md #29, Phase 53 G1a; the water surface grid rests the water as drawn). A chute (its steps closer than a row every 2.5 m) has a dry bed a row under its surface and a stream down its middle as wide as its river's flow needs.",
-    "smooth": 3,
-    "minDepth": 1,
-    "bank": 0.5,
-    "valleySlope": 0.45,
-    "joinMargin": 3,
-    "leveeFall": 0.15,
-    "joinSlope": 0.25,
-    "reach": 30,
-    "reachPerWidth": 2,
-    "meander": 5,
-    "meanderWavelength": 96,
-    "lodWidth": 0.75,
-    "lodMinShare": 0.125,
-    "lodMaxCell": 128
-  },
-  "mouths": {
-    "$comment": "Where a big river meets the sea (the map marks deltas and estuaries): over its last reach m its channel widens, an estuary's to estuaryWiden × its width and estuaryDeepen × its depth (a funnel), a delta's to deltaWiden × its width, and a delta splits into deltaBranches distributaries at deltaSplit m from the sea, spreading deltaSpread degrees either side, each deltaBranchWidth of the river's width.",
-    "reach": 1500,
-    "estuaryWiden": 4,
-    "estuaryDeepen": 1.5,
-    "deltaWiden": 1.6,
-    "deltaBranches": 2,
-    "deltaSplit": 1600,
-    "deltaSpread": 30,
-    "deltaBranchWidth": 0.55
-  },
-  "lakes": {
-    "$comment": "A lake is flat at its level, inside its cells of the map (traced through a warp of ±shoreNoise m at shoreWavelength); round it the ground stands at least bank m over the water for levee m, so the water never stands open beside lower ground.",
-    "bank": 0.5,
-    "levee": 40,
-    "shoreNoise": 15,
-    "shoreWavelength": 160
   },
   "bands": {
     "$comment": "The surface material by height and slope: snow above the snow line (snowLine m, moved ±snowNoise m by a noise of snowWavelength m, raised snowSlopeLift m per unit of slope, so it is not a flat contour), bare rock where the landform is steep (snow too: steep faces stay rock): its slope taken over ± rockWindow m (a hillside's, not a map cell's, so rock comes as whole faces and cliff bands, not splotches along the map's grid; owner 2026-10-26), against a threshold easing from rockSlope at sea level to rockSlopeHigh at the snow line (the soil thins with height, so the upper slopes go bare first), the shore block up to shore m above sea level and under water, the ground block elsewhere, with the under block below a top block to underDepth m. Blocks by name.",

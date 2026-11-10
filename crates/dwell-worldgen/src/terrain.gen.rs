@@ -2,24 +2,26 @@
 
 use crate::terrain::{Biome, HeightField, Surface};
 
+/// The base height field, the world map's input: the world's elevation (terrain.json).
+pub const HEIGHT: HeightField = HeightField {
+    inland_rise: 320.0,
+    rise_half: 6000.0,
+    sea_floor: -20.0,
+    shelf: 2500.0,
+    hill_height: 225.0,
+    hill_wavelength: 1024,
+    hill_octaves: 5,
+    hill_fade_from: 500.0,
+    hill_fade_to: 4000.0,
+    bump_height: 5.0,
+    bump_wavelength: 128,
+    bump_octaves: 3,
+};
+
 /// The biomes (shared/worldgen/biomes/*.json), the default (terrain.json `defaultBiome`) first.
 pub const BIOMES: &[Biome] = &[
     Biome {
         name: "dwell:default",
-        height: HeightField {
-            inland_rise: 320.0,
-            rise_half: 6000.0,
-            sea_floor: -20.0,
-            shelf: 2500.0,
-            hill_height: 225.0,
-            hill_wavelength: 1024,
-            hill_octaves: 5,
-            hill_fade_from: 500.0,
-            hill_fade_to: 4000.0,
-            bump_height: 5.0,
-            bump_wavelength: 128,
-            bump_octaves: 3,
-        },
         surface: Surface {
             detail_amplitude: 2.0,
             detail_wavelength: 128,
@@ -77,9 +79,6 @@ pub const BIOMES: &[Biome] = &[
         water: "dwell:water",
     },
 ];
-
-/// The base height field, the world map's input: the default biome's.
-pub const HEIGHT: HeightField = BIOMES[0].height;
 
 /// How columns are shaped from the world map: the default biome's.
 pub const SURFACE: Surface = BIOMES[0].surface;
