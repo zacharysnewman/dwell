@@ -574,6 +574,13 @@
       "light": "dwell:fuse",
       "color": "#d8b03a",
       "textures": { "top": "dynamiteYellowTop", "side": "dynamiteYellow", "bottom": "dynamiteYellowTop" }
+    },
+    {
+      "$comment": "The wood ramp (ADR 0067 §5a, Phase 55 T2; owner, 2026-11-09): a felled log's cut cell split along its diagonal, never placed (not in the palette, not on the hotbar). The stump keeps the upright ramp (`half: bottom`, rising away from the notch); the falling trunk's new bottom is the matching upside-down ramp (`half: top`). A carrier like the log (the inverted one rides the trunk as a carrier, the stump's stands on the stump). shared/tools names it as the log's `fellWedge`. Square, not octagonal (ADR 0072's octagon is not applied to shaped cells yet).",
+      "name": "log_ramp",
+      "family": "ramp",
+      "of": "log",
+      "support": "carrier"
     }
   ]
 }

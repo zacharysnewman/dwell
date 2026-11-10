@@ -16,6 +16,7 @@ test("the build's data validates: the stone axe and the log", () => {
   const log = d.woods.find((w) => w.block === 'dwell:log');
   assert.deepEqual(log.buckDrops, [{ item: 'dwell:wood', min: 2, max: 3, chance: 1 }]);
   assert.match(toolsRust(d), /ToolDef \{ name: "dwell:stone_axe", kind: ToolKind::Axe/);
+  assert.match(toolsRust(d), /fell_wedge: Some\("dwell:log_ramp"\)/);
   assert.match(toolsTs(d), /dwell:stone_axe/);
 });
 
@@ -140,4 +141,20 @@ test("the axe clears leaves; a fixture tool clearing another block by data alone
   bad((d) => (d.tools[0].clears = ['dwell:log']), /clears: dwell:log is a wood/);
   bad((d) => (d.tools[0].swing.rustle = 'nope'), /swing\.rustle: no sound event "nope"/);
   bad((d) => (d.tools[0].swing.rustleLeaves = 99), /rustleLeaves must be a whole number/);
+});
+
+test('a fixture wood with its own fell wedge by data alone; a bad wedge fails naming it', () => {
+  const { items, blocks } = loadNames(true);
+  const data = loadTools();
+  data.woods.push({ ...data.woods[0], block: 'test:post', fellWedge: 'test:post_ramp', leaves: { block: null } });
+  const d = validateTools(data, items, blocks);
+  assert.match(toolsRust(d), /block: "test:post", .*fell_wedge: Some\("test:post_ramp"\)/);
+  const bad = (wedge, re) => {
+    const data = loadTools();
+    data.woods[0].fellWedge = wedge;
+    assert.throws(() => validateTools(data, items, blocks), re);
+  };
+  bad('dwell:nope', /woods\.dwell:log\.fellWedge: no block named "dwell:nope"/);
+  bad('dwell:stone', /fellWedge: dwell:stone is not a ramp block/);
+  bad('dwell:stone_ramp', /fellWedge: dwell:stone_ramp must be a carrier/);
 });

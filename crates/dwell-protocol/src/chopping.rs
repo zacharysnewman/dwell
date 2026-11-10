@@ -170,6 +170,9 @@ pub struct WoodDef {
     pub sounds: &'static [(f64, &'static str)],
     /// How its cuts are carved into its cell's mesh (the client's, `dwell-mesh`).
     pub cut: CutLook,
+    /// The stored-ramp block a felled cell splits into (Phase 55 T2): the stump keeps its ramp
+    /// rising away from the notch, the trunk's bottom its upside-down ramp. None: the cell goes.
+    pub fell_wedge: Option<&'static str>,
 }
 
 /// How a wood's cuts are carved into its cell's mesh (`cut` in the data): the notch as a V across
