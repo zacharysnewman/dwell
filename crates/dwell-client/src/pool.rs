@@ -139,11 +139,10 @@ pub struct Pool {
 }
 
 /// Chunk generations (and the ground items' bases) within this distance (m) of the focus start
-/// before every other queued generation job, nearest first; chunk meshes (at most the streamer's
-/// mesher capacity, `MeshJobs::capacity`) start before the LOD's section meshes, in the streamer's
-/// order; the rest start in the order they were queued. BUGS #54: on a long trip the chunks coming into the
-/// near ring waited seconds behind far chunks' and the LOD's jobs queued first, and the streamer's
-/// mesh slots were held by chunk meshes queued behind section meshes.
+/// before every other queued generation job, nearest first; the rest, and every mesh job (the
+/// streamer starts its chunk meshes nearest first), start in the order they were queued. BUGS #54:
+/// on a long trip the chunks coming into the near ring waited seconds behind far chunks' and the
+/// LOD's generations queued first.
 pub const NEAR_JOBS_M: f64 = 128.0;
 
 pub type PoolRef = Rc<RefCell<Pool>>;
@@ -209,25 +208,25 @@ impl Pool {
         true
     }
 
-    /// Sets where the player is (m): queued chunk jobs within [`NEAR_JOBS_M`] of it start first,
-    /// nearest first.
-    pub fn set_focus(&mut self, at: [f64; 3]) {
-        self.focus = Some(at);
+    /// Sets where the player is (m): queued chunk generations within [`NEAR_JOBS_M`] of it start
+    /// first, nearest first. None: every job in the order queued (the respawn preload, whose
+    /// second ring the streamer and the LOD order).
+    pub fn set_focus(&mut self, at: Option<[f64; 3]>) {
+        self.focus = at;
     }
 
-    /// The queued job of `kind` to start next: the oldest chunk mesh (the streamer starts them in
-    /// its own order, nearest first), else the chunk generation within [`NEAR_JOBS_M`] nearest the
-    /// focus, else the oldest.
+    /// The queued job of `kind` to start next: the chunk generation within [`NEAR_JOBS_M`] nearest
+    /// the focus, else the oldest.
     fn next_of(&mut self, kind: usize) -> Option<(u32, Job)> {
+        let Some(f) = self.focus else {
+            return self.queued[kind].pop_front();
+        };
         let q = &self.queued[kind];
         let first = q
             .iter()
             .enumerate()
             .filter_map(|(at, (id, _))| match self.purposes.get(id)?.0 {
-                // First of all, in their order (`min_by` keeps the first of equals).
-                Purpose::ChunkMesh(..) => Some((f64::NEG_INFINITY, at)),
                 Purpose::Chunk(c, _) | Purpose::Base(c) => {
-                    let f = self.focus?;
                     let m = dwell_world::chunk_centre_m(dwell_world::ChunkCoord::from_array(c));
                     let d: f64 = (0..3).map(|i| (m[i] - f[i]).powi(2)).sum();
                     (d <= NEAR_JOBS_M * NEAR_JOBS_M).then_some((d, at))
@@ -497,7 +496,7 @@ mod tests {
             ..Default::default()
         }));
         let pool = Pool::new(Box::new(held.clone()));
-        pool.borrow_mut().set_focus([16.0, 8.0, 16.0]);
+        pool.borrow_mut().set_focus(Some([16.0, 8.0, 16.0]));
         let mut source = ChunkJobs(pool.clone());
         source.generate([0, 0, 0], 1); // id 1, started at once
         dwell_lod::SectionSource::lod_bounds(&mut source, 1, 0, 0); // id 2
@@ -513,31 +512,5 @@ mod tests {
             vec![1, 5, 4, 2, 3],
             "near nearest first, then in order"
         );
-    }
-
-    #[test]
-    fn chunk_meshes_start_before_section_meshes() {
-        let held = Rc::new(RefCell::new(Held {
-            cap: 1,
-            ..Default::default()
-        }));
-        let pool = Pool::new(Box::new(held.clone()));
-        pool.borrow_mut().set_focus([0.0; 3]);
-        let mesh = |pool: &PoolRef, purpose| {
-            pool.borrow_mut().submit(
-                purpose,
-                Job::MeshSection {
-                    cells: Vec::new(),
-                    surface: None,
-                    water_drop: 0.0,
-                    mirror: false,
-                },
-            );
-        };
-        mesh(&pool, Purpose::SectionMesh(1)); // id 1, started
-        mesh(&pool, Purpose::SectionMesh(2)); // id 2
-        mesh(&pool, Purpose::ChunkMesh([30, 0, 0], 3)); // id 3: queued last, started first
-        finish(&held, 1);
-        assert_eq!(held.borrow().started, vec![1, 3]);
     }
 }
