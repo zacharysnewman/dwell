@@ -2690,9 +2690,11 @@ server, the client's crosshair and the client's mesh jobs run the same function 
 (the mesh jobs on their sky volume: rules look at most 16 rows and 6 cells away, the apron). The
 client bakes them into the chunk's opaque mesh (`dwell-mesh` `mesher/ground_mesh.rs`: a rod or a
 lump of a few polygons with a block's side tile, turned and scaled per item): no draw call, no
-collision. E (X, the spyglass button, on a controller) on one sends `Pick`; the server checks and
-adds the kind's item (`dwell:stick`, `dwell:rock`: the drops' items, so they stack), keeps the cell
-in its gone set (`server/ground.rs`, saved in `ground_gone`) and tells clients, which mesh the chunk
+collision. The break action aimed at one, when it is nearer than the block behind it
+(`Rules::hit_before`; a click, touch's Break, the controller's, an axe's swing), sends `Pick`
+(0.50.74: no pick-up key or button); the server checks and knocks it loose as a loose item of the
+kind's item (`dwell:stick`, `dwell:rock`: the drops' items, so they stack; walking near collects it;
+in creative it vanishes, as breaking drops nothing), keeps the cell in its gone set (`server/ground.rs`, saved in `ground_gone`) and tells clients, which mesh the chunk
 again without it. Breaking the block under one knocks it loose (a loose item in adventure; gone in
 creative); it vanishes with no write when its ground or canopy goes by other edits (regions,
 blasts, felling), and may come back if the same cells return.
@@ -3553,10 +3555,11 @@ The Welcome flags byte is full, so the server says it keeps ground items in `Inv
 only to a server that set it, and the server sends `GroundGone` only to a client that said
 `GroundHello`.
 ```
-C→S  InventoryAction 0x55 kinds: 3 GroundHello (send me GroundGone); 4 Pick: i32×3 cell (the
-                     server checks an item lies there, not gone, within 5.5 m of the eye, and fits)
-S→C  GroundGone      0x5d, world: u16 n (at most 4,096), each i32×3 cell gone (picked up or
-                     knocked loose); all of them (at least one message) after GroundHello
+C→S  InventoryAction 0x55 kinds: 3 GroundHello (send me GroundGone); 4 Pick: i32×3 cell, the
+                     break action on it (the server checks an item lies there, not gone, within
+                     5.5 m of the eye, and knocks it loose: a loose item, or gone in creative)
+S→C  GroundGone      0x5d, world: u16 n (at most 4,096), each i32×3 cell gone (knocked loose);
+                     all of them (at least one message) after GroundHello
 ```
 
 **Chopping: `Chop`, `Cuts`, `HeldTools` (reliable) [built, 0.50.34; Sweep, Held, HeldTools

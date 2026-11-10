@@ -383,7 +383,12 @@ dwell_world::both_faces!(
         assert_eq!(loose_rocks(&fx), 1, "a second hit knocks nothing");
         // Walking over it collects it.
         let l = f.cell(near);
-        fx.move_to_local(f, f64::from(l[0]) + 0.5, m_of_row(BASE), f64::from(l[2]) + 0.5);
+        fx.move_to_local(
+            f,
+            f64::from(l[0]) + 0.5,
+            m_of_row(BASE),
+            f64::from(l[2]) + 0.5,
+        );
         step(&mut fx, 60);
         let inv = fx.server.inventory_of(1).unwrap();
         assert_eq!(inv.count_of("dwell:rock"), 2, "collected");
