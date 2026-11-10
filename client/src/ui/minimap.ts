@@ -16,6 +16,7 @@ import { GAMEPAD } from '../input/gamepad.gen';
 import { MAP } from './map.gen';
 import { compatibilityLine } from '../version/semver';
 import { World } from '../protocol/constants.gen';
+import { ExploredChanges, type ExploredStore } from './exploredStore';
 
 /** An explored cell's key: its face (0 A, 1 B) and its index along face-local x and z. */
 export function cellKey(face: number, i: number, k: number): string {
@@ -80,9 +81,6 @@ export function parseHeights(stored: unknown): ExploredHeights {
   return out;
 }
 
-/** The record's format (append-only: unknown fields and cells kept on rewrite). */
-export const EXPLORED_FORMAT = 1;
-
 /** The stored record as cells: those of this build's cell size (another size's are kept, unread). */
 export function parseExplored(stored: unknown): ExploredCells {
   const cells: ExploredCells = new Map();
@@ -99,83 +97,13 @@ export function parseExplored(stored: unknown): ExploredCells {
   return cells;
 }
 
-/**
- * The record to store: the stored one's other fields kept, its cells merged under ours (a newer
- * build's or another tab's cells survive), or, for a record of another cell size, left as it was
- * with ours kept beside it under `cellsByM`.
- */
-export function exploredRecord(
-  stored: unknown,
-  cells: ExploredCells,
-  heights: ExploredHeights = new Map(),
-): Record<string, unknown> {
-  const base =
-    typeof stored === 'object' && stored !== null && !Array.isArray(stored)
-      ? (stored as Record<string, unknown>)
-      : {};
-  const ours = Object.fromEntries(cells);
-  if (base.cellM !== undefined && base.cellM !== MAP.explored.cellM) {
-    const by =
-      typeof base.cellsByM === 'object' && base.cellsByM !== null
-        ? (base.cellsByM as Record<string, unknown>)
-        : {};
-    return { ...base, cellsByM: { ...by, [String(MAP.explored.cellM)]: ours } };
-  }
-  const kept =
-    typeof base.cells === 'object' && base.cells !== null && !Array.isArray(base.cells)
-      ? (base.cells as Record<string, unknown>)
-      : {};
-  const keptHeights =
-    typeof base.heights === 'object' && base.heights !== null && !Array.isArray(base.heights)
-      ? (base.heights as Record<string, unknown>)
-      : {};
-  return {
-    ...base,
-    format: base.format ?? EXPLORED_FORMAT,
-    cellM: MAP.explored.cellM,
-    cells: { ...kept, ...ours },
-    heights: { ...keptHeights, ...Object.fromEntries(heights) },
-  };
-}
-
-/** A store of records by world (IndexedDB in the browser, a memory one in tests). */
-export interface ExploredStore {
-  get(world: string): Promise<unknown>;
-  put(world: string, record: unknown): Promise<void>;
-}
-
-/** The browser's store: `dwell-explored`, one record per world key. Null where there is none. */
-export function indexedDbExplored(): ExploredStore | null {
-  if (typeof indexedDB === 'undefined') return null;
-  const open = (): Promise<IDBDatabase> =>
-    new Promise((resolve, reject) => {
-      const req = indexedDB.open('dwell-explored', 1);
-      req.onupgradeneeded = () => req.result.createObjectStore('worlds');
-      req.onsuccess = () => {
-        resolve(req.result);
-      };
-      req.onerror = () => {
-        reject(req.error ?? new Error('indexedDB'));
-      };
-    });
-  const run = <T>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBRequest<T>) =>
-    open().then(
-      (db) =>
-        new Promise<T>((resolve, reject) => {
-          const req = f(db.transaction('worlds', mode).objectStore('worlds'));
-          req.onsuccess = () => {
-            resolve(req.result);
-          };
-          req.onerror = () => {
-            reject(req.error ?? new Error('indexedDB'));
-          };
-        }),
-    );
-  return {
-    get: (world) => run<unknown>('readonly', (s) => s.get(world)),
-    put: (world, record) => run('readwrite', (s) => s.put(record, world)).then(() => undefined),
-  };
-}
+export {
+  EXPLORED_FORMAT,
+  ExploredChanges,
+  exploredRecord,
+  indexedDbExplored,
+  type ExploredStore,
+} from './exploredStore';
 
 /**
  * The big map's view: the face-local point at its centre (m), its zoom (pixels a metre) and its
@@ -1106,7 +1034,8 @@ export class MapUi {
   private readonly heights: ExploredHeights = new Map();
   /** The explored cells at each zoom level (the fog). */
   private readonly levels = new ExploredLevels(this.cells, this.heights);
-  private dirty = false;
+  /** The explored cells changed since the last save (only they are saved). */
+  private readonly unsaved = new ExploredChanges();
   private lastSave = 0;
   private dots: ArrayLike<number> = [];
   private lastUpdate = -Infinity;
@@ -1385,25 +1314,24 @@ export class MapUi {
     }
     const changed: string[] = [];
     if (addExplored(this.cells, this.client.takeExplored(), this.heights, changed)) {
-      for (const k of changed) this.noteCell(k);
-      this.dirty = true;
+      for (const k of changed) {
+        this.noteCell(k);
+        this.unsaved.note(k, this.cells.get(k) ?? 0, this.heights.get(k) ?? NO_HEIGHT);
+      }
       if (this.bigOpen) this.bigStale = true;
     }
-    if (this.dirty && now - this.lastSave > 10_000) this.save(now);
+    if (this.unsaved.size > 0 && now - this.lastSave > 10_000) this.save(now);
   }
 
-  /** Keeps the explored cells now (also on leaving the page). */
-  save(now: number): void {
-    if (!this.store || !this.dirty) return;
-    this.dirty = false;
+  /** Keeps the explored cells now; `leaving` (the page closing) merges them on the page. */
+  save(now: number, leaving = false): void {
+    if (!this.store || this.unsaved.size === 0) return;
     this.lastSave = now;
-    const store = this.store;
-    void store
-      .get(this.world)
-      .then((r) => store.put(this.world, exploredRecord(r, this.cells, this.heights)))
-      .catch(() => {
-        this.dirty = true;
-      });
+    const taken = this.unsaved.take();
+    // Only the changes go: the store merges them into the record off the page (exploredStore.ts).
+    this.store.add(this.world, taken.cells, taken.heights, leaving).catch(() => {
+      this.unsaved.restore(taken);
+    });
   }
 
   /**
