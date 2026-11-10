@@ -1,6 +1,7 @@
 //! The JS API (`wasm-bindgen`): what the page calls.
 
 pub mod app;
+pub mod chisel;
 pub mod jobs;
 pub mod local_worker;
 pub mod server_jobs;
