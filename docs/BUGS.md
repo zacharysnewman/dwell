@@ -229,6 +229,21 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 62. River beds rose into dry grass humps across the channel (fixed pending release 0.52.0)
+
+Owner, 2026-11-10 (0.51.18, seed "0"): "On rivers there's a bug where they don't go all the way
+through, there's these grass sections that are a few blocks higher than the river bed, water kinda
+waterfalls over them a little." At (-3845, 20041) the water grid's floor ran 397.5 m, rose to 399 m,
+then stepped down a row at a time to 394.5 m. Cause: a **chute** (ADR 0059: a reach whose surface
+falls faster than a row every 2.5 m, `river_rows.rs`; also a river's column two rows over another's
+water beside it) was drawn as a dry bed a row under its surface, over the pool above's bed (its
+river's depth, 1-3 m) and, being dry beside water, raised a row over that pool's water by the
+waterline rule. Fixed: no chutes; every column of a channel is cut to its river's depth under its
+own row like any reach, wet, so the bed only falls downstream (`river_rows.rs` removed). Changes the
+terrain a seed generates near steep rivers: a new compatibility line, 0.52.0. Test:
+`a_rivers_bed_never_rises_downstream` (dwell-worldgen `terrain.rs`; seeds 0 and 7, both faces, the
+owner's site; red: "(-3846, 20043) in river 42's channel is dry at 399").
+
 ### 61. Chickens drawn pure white
 
 Owner, 2026-11-10: "Chickens are showing up pure white." The chicken's (and the kitty's) source mesh
