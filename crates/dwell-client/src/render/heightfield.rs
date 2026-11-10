@@ -397,6 +397,14 @@ mod tests {
     }
 
     #[test]
+    fn a_draw_names_its_tile_face_and_fluid() {
+        assert_eq!(draw_quat(1, 3.0, false), [TILE as f32, 0.0, 1.0, 3.0]);
+        assert_eq!(draw_quat(0, 0.0, true)[2], -1.0);
+        assert_eq!(grid_range(false), 0..GRID_INDICES);
+        assert_eq!(grid_range(true), GRID_INDICES..2 * GRID_INDICES);
+    }
+
+    #[test]
     fn tiles_pack_in_rows() {
         assert_eq!(tile_origin(0), [0, 0]);
         assert_eq!(tile_origin(1), [TILE as u32, 0]);

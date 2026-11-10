@@ -2014,9 +2014,9 @@ pub(crate) fn water_levels_with(
                     let top = fluid_top(y, &k.style, k.fill) * CELL_H;
                     let at = (x + 1) as usize + PAD * (z + 1) as usize;
                     out[at] = top as f32;
-                    // The water's own cell's light: what its top face is lit by where it shows
-                    // (the cell over it may lie outside the volume).
-                    lights[at] = crate::heightfield::pack_light(flood.cell([x, y, z]));
+                    // The cell over it lights its top, as the mesher's top face takes the light
+                    // of the cell it looks into.
+                    lights[at] = crate::heightfield::pack_light(flood.cell([x, y + 1, z]));
                     if fluid == crate::NO_FLUID && in_chunk([x, 0, z]) {
                         fluid = fluid_value(k.style.fluid);
                     }

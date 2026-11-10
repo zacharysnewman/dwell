@@ -191,3 +191,23 @@ fn a_rising_pool_changes_the_tile_not_the_mesh() {
     atlas.set([1, 0, 0], water_levels(&high, false));
     assert_eq!(atlas.capacity(), 1);
 }
+
+// both-faces: the tile rides with either face's chunk meshes, its face named.
+#[test]
+fn the_meshes_carry_the_tile_only_without_tops() {
+    for mirror in [false, true] {
+        let cells = voxels(&basin(1.0, None));
+        let cells = if mirror { mirror_padded(&cells) } else { cells };
+        let mesh = |water_tops| {
+            let flags = ChunkFlags { water_tops };
+            mesh_chunk_flags(&cells, &[], mirror, [0; 3], &[], None, flags).expect("padded")
+        };
+        assert_eq!(mesh(true).water, None);
+        let tile = mesh(false).water.expect("a tile");
+        assert_eq!(tile.face_b, mirror);
+        assert_eq!(tile.levels, water_levels(&cells, mirror));
+        assert_ne!(tile.fluid, crate::NO_FLUID);
+        // Open sky: the packed light is full sky.
+        assert!(tile.lights.iter().all(|l| *l == pack_light([1.0, 0.0])));
+    }
+}

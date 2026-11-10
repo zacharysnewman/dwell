@@ -3213,7 +3213,9 @@ impl Renderer {
             });
         }
         for d in &mut out {
-            d.page = self.mesh_of(&d.mesh).0.region.page;
+            if !matches!(d.mesh, DrawMesh::Heightfield(_)) {
+                d.page = self.mesh_of(&d.mesh).0.region.page;
+            }
             d.key = draw_order(d);
         }
         // One stable sort by a precomputed key (draw_order), then each pass takes its draws in that
@@ -5180,7 +5182,7 @@ fn downsample(src: &[u8], size: usize) -> Vec<u8> {
 
 impl TerrainRenderer for Renderer {
     fn set_chunk(&mut self, coord: ChunkCoord, payload: Option<&ChunkMeshes>) {
-        self.terrain.set_chunk(coord, payload);
+        self.set_terrain_chunk(coord, payload);
     }
     fn set_section(
         &mut self,
