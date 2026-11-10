@@ -126,6 +126,7 @@ pub fn cracking(
     shell: &[[i32; 3]],
     down: [i32; 3],
     over_cleared: bool,
+    vertical_only: bool,
     mut open: impl FnMut([i32; 3]) -> bool,
     destroyed: impl Fn([i32; 3]) -> bool,
 ) -> Vec<bool> {
@@ -141,7 +142,13 @@ pub fn cracking(
         .iter()
         .map(|&c| {
             let at = |o: [i32; 3]| [c[0] + o[0], c[1] + o[1], c[2] + o[2]];
-            (over_cleared && destroyed(at(down))) || SIDES.iter().any(|&o| open(at(o)))
+            let up = [-down[0], -down[1], -down[2]];
+            let open_side = if vertical_only {
+                open(at(up)) || open(at(down))
+            } else {
+                SIDES.iter().any(|&o| open(at(o)))
+            };
+            (over_cleared && destroyed(at(down))) || open_side
         })
         .collect()
 }
@@ -197,6 +204,10 @@ pub struct ExplosiveData {
     /// With [`ShellRule::Crack`]: a shell cell whose cell below (the face's down) the core destroys
     /// cracks too, so a roof over the blast drops.
     pub crack_over_cleared: bool,
+    /// With [`ShellRule::Crack`]: only cells open ABOVE or BELOW (the face's up and down) before
+    /// the blast count as exposed; a cell open only to its sides stays (owner, 2026-11-09: "anything
+    /// touching air on top or bottom, exclude blocks that are only touching 'side' air").
+    pub crack_vertical_only: bool,
     /// A charge touching water (any of its six neighbours, or its own cell, a liquid) destroys and
     /// dislodges no blocks: its wave, knockback, damage and chain reactions still happen (owner,
     /// 2026-11-07: "not destroy or dislodge (physics) blocks when it's touching water").
@@ -805,21 +816,21 @@ mod tests {
         assert!(!behind_water([0, 0, 0], water));
     }
     #[test]
-    fn yellow_pushes_with_a_quarter_of_reds_force() {
+    fn yellow_pushes_with_an_eighth_of_reds_force() {
         // Owner (2026-11-07): "Reduce the explosion force by half", and again (2026-11-09): "halve
-        // the explosion physics force of the Yellow dynamite". Yellow's pieces fly at a quarter of
-        // the speed red's would (light and heavy cells, at and under the cap), and players are
-        // knocked back a quarter as hard.
+        // the explosion physics force of the Yellow dynamite", and once more ("And half the force
+        // again"). Yellow's pieces fly at an eighth of the speed red's would (light and heavy
+        // cells, at and under the cap), and players are knocked back an eighth as hard.
         let find = |n: &str| EXPLOSIVES.iter().find(|e| e.name == n).expect(n);
         let (red, yellow) = (find("dwell:dynamite"), find("dwell:dynamite_yellow"));
         for b in ["dwell:stone", "dwell:dirt", "dwell:sand"] {
             let m = dwell_blocks::parse_state(b).expect(b);
             let (r, y) = (fling_speed(red, m, 4.5), fling_speed(yellow, m, 4.5));
             assert!(
-                (y - r / 4.0).abs() < 1e-9,
+                (y - r / 8.0).abs() < 1e-9,
                 "{b}: yellow {y:.2} m/s, red {r:.2} m/s"
             );
         }
-        assert_eq!(yellow.knockback_ms, red.knockback_ms / 4.0);
+        assert_eq!(yellow.knockback_ms, red.knockback_ms / 8.0);
     }
 }

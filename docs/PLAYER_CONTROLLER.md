@@ -970,7 +970,7 @@ jump with nothing held went 8 → 6.5 m/s in 0.5 s, and holding sideways halved 
   differed far from the origin. Both faces, far from the origin, and bit-exact under
   `wasm32-wasip1`.
 
-### 6.13 Stamina and oxygen (Dwell addition) **[built, 0.50.55]**
+### 6.13 Stamina and oxygen (Dwell addition) **[built, 0.50.57]**
 
 ADR 0069. In a world whose mode has the `stamina` and `oxygen` abilities (adventure), the
 controller carries `PlayerController::vitals` (`dwell_protocol::vitals::Vitals`: stamina, seconds
