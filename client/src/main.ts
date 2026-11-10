@@ -324,6 +324,8 @@ interface DwellDebug {
   }[];
   /** The blasts whose effects are still going (docs/EXPLOSIVES.md): each one's place and age (s). */
   blasts(): { x: number; y: number; z: number; age: number }[];
+  /** The creatures drawn (docs/adr/0073-creatures.md): each one's feet, heading (deg) and speed (m/s). */
+  creatures(): { x: number; y: number; z: number; yaw: number; speed: number }[];
   /** The kept player controller ticks, oldest first. */
   ticks(): TickSample[];
   /** The latest sounds played (ids, newest last; docs/AUDIO.md). */
@@ -1111,6 +1113,15 @@ async function start(): Promise<App | null> {
       const out = [];
       for (let i = 0; i + 4 <= v.length; i += 4) {
         out.push({ x: at(i), y: at(i + 1), z: at(i + 2), age: at(i + 3) });
+      }
+      return out;
+    },
+    creatures: () => {
+      const v = Array.from(client.creatures());
+      const at = (k: number) => v[k] ?? 0;
+      const out = [];
+      for (let i = 0; i + 5 <= v.length; i += 5) {
+        out.push({ x: at(i), y: at(i + 1), z: at(i + 2), yaw: at(i + 3), speed: at(i + 4) });
       }
       return out;
     },

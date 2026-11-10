@@ -103,6 +103,17 @@ impl ClientCreatures {
         out
     }
 
+    /// Each creature's drawn feet (world m), heading (degrees) and speed (m/s), by id.
+    pub fn shown(&self) -> Vec<([f64; 3], f64, f32)> {
+        let mut v: Vec<_> = self
+            .seen
+            .values()
+            .map(|s| (s.net.id, s.shown, s.yaw, s.net.speed))
+            .collect();
+        v.sort_by_key(|x| x.0);
+        v.into_iter().map(|(_, p, y, s)| (p, y, s)).collect()
+    }
+
     pub fn len(&self) -> usize {
         self.seen.len()
     }

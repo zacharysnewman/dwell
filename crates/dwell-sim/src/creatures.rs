@@ -49,6 +49,9 @@ pub struct SpawnRule {
     pub group: [u32; 2],
 }
 
+/// The cells of a spawn column tried for a rule's ground.
+const TRIES: u64 = 12;
+
 /// The data a world's creatures follow.
 #[derive(Clone, Copy, Debug)]
 pub struct Table {
@@ -237,17 +240,29 @@ impl Creatures {
                 continue;
             }
             let def = self.table.creatures[rule.creature];
-            let x = key[0] * CHUNK_SIZE + (h(1) * f64::from(CHUNK_SIZE)) as i32;
-            let z = key[2] * CHUNK_SIZE + (h(2) * f64::from(CHUNK_SIZE)) as i32;
-            // The surface near the player's row: the search reads up to 48 rows either way.
-            let Some(y) = feet_row(get, f, [x, z], row, 48, 48, def.rows) else {
-                return get(f.cell([x, row, z])).is_some();
-            };
             let on: Vec<_> = rule.on.iter().filter_map(|n| find_block(n)).collect();
-            let under = get(f.cell([x, y - 1, z])).unwrap_or(0);
-            if !on.iter().any(|b| b.states().contains(&usize::from(under))) {
-                continue;
+            let on_ground = |c: [i32; 3]| {
+                get(c).is_some_and(|m| on.iter().any(|b| b.states().contains(&usize::from(m))))
+            };
+            // Up to `TRIES` cells of the column, the first on the rule's ground: the surface near
+            // the player's row (the search reads up to 48 rows either way).
+            let mut found = None;
+            for t in 0..TRIES {
+                let x = key[0] * CHUNK_SIZE + (h(100 + 2 * t) * f64::from(CHUNK_SIZE)) as i32;
+                let z = key[2] * CHUNK_SIZE + (h(101 + 2 * t) * f64::from(CHUNK_SIZE)) as i32;
+                if get(f.cell([x, row, z])).is_none() {
+                    return false; // not loaded: roll again later
+                }
+                if let Some(y) = feet_row(get, f, [x, z], row, 48, 48, def.rows)
+                    && on_ground(f.cell([x, y - 1, z]))
+                {
+                    found = Some((x, y, z));
+                    break;
+                }
             }
+            let Some((x, y, z)) = found else {
+                continue;
+            };
             let [lo, hi] = rule.group;
             let n = lo + ((h(3) * f64::from(hi - lo + 1)) as u32).min(hi - lo);
             for k in 0..n {
@@ -258,7 +273,9 @@ impl Creatures {
                     (h(10 + u64::from(k)) * 5.0) as i32 - 2,
                     (h(30 + u64::from(k)) * 5.0) as i32 - 2,
                 );
-                let Some(yy) = feet_row(get, f, [x + dx, z + dz], y, 2, 2, def.rows) else {
+                let Some(yy) = feet_row(get, f, [x + dx, z + dz], y, 2, 2, def.rows)
+                    .filter(|&yy| on_ground(f.cell([x + dx, yy - 1, z + dz])))
+                else {
                     continue;
                 };
                 self.next_id = self.next_id.wrapping_add(1).max(1);
@@ -382,7 +399,7 @@ mod tests {
     use dwell_world::both_faces;
 
     /// A stone floor (face-local row 9 the ground, feet at row 10) over x, z in [-64, 64), with a
-    /// pool of water at x >= 6 and a 6-row wall at x <= -6.
+    /// strip of water at 20 <= x < 24 and a 6-row wall at x <= -6.
     fn world(f: FaceFrame) -> impl Fn([i32; 3]) -> Option<StateId> {
         let stone = find_block("dwell:stone").unwrap().first_state;
         let water = find_block("dwell:water").unwrap().first_state;
@@ -393,7 +410,7 @@ mod tests {
             }
             Some(if y <= 9 || (x <= -6 && y <= 15) {
                 stone
-            } else if x >= 6 && y <= 11 {
+            } else if (20..24).contains(&x) && y <= 11 {
                 water
             } else {
                 0
@@ -455,7 +472,7 @@ mod tests {
                         "on the floor, not in the pool or on the wall: {l:?}"
                     );
                     assert!(
-                        l[0] < 6.0 && l[0] > -5.0,
+                        !(20.0..24.0).contains(&l[0]) && l[0] > -5.0,
                         "out of the water and off the wall: {l:?}"
                     );
                 }
