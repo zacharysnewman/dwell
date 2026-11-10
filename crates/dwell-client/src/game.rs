@@ -555,8 +555,13 @@ pub struct LodSettings {
     pub full_mode: bool,
 }
 
+pub mod streaming_report;
+
 pub struct Game<S: Scene> {
     pub player_id: u16,
+    /// The server's chunk unloads of the last 30 s (when, chunk, distance from the feet, m): the
+    /// streaming report's (`streaming_report.rs`).
+    unloads: std::collections::VecDeque<(f64, [i32; 3], f64)>,
     /// The world's portals: their axes (world x, z) and mote look (`set_world`).
     portals: (Vec<[f64; 2]>, &'static str),
     predictor: Predictor,
@@ -844,6 +849,7 @@ impl<S: Scene> Game<S> {
             character_lights: Default::default(),
             target_eye: None,
             lod: None,
+            unloads: Default::default(),
             lod_map: None,
             lod_map_on: false,
             viewport_css: (1280.0, 720.0),
@@ -1282,6 +1288,7 @@ impl<S: Scene> Game<S> {
                 for &c in &u.coords {
                     self.prediction.forget_chunk(c);
                 }
+                self.note_unloads(&u.coords, now_ms);
                 self.streamer.on_chunk_unload(&u.coords)
             }
             Message::VoxelModification(mut v) => {

@@ -310,6 +310,67 @@ impl Pool {
         self.jobs.memory()
     }
 
+    /// The pool for the streaming report (docs/DEV_TOOLS.md): per kind of job (`chunk`,
+    /// `chunk_mesh`, `section`, …) how many are queued and running, and the oldest one's age (ms,
+    /// from `now_ms`); the focus, the slow-frame scale and the workers' capacity.
+    pub fn report(&self, now_ms: f64) -> serde_json::Value {
+        use serde_json::json;
+        let mut kinds: std::collections::BTreeMap<&str, [f64; 3]> = Default::default();
+        let queued: std::collections::HashSet<u32> =
+            self.queued.iter().flatten().map(|(id, _)| *id).collect();
+        for (id, (purpose, _)) in &self.purposes {
+            let name = purpose.telemetry_names().0;
+            let name = name
+                .strip_prefix("job.")
+                .and_then(|n| n.strip_suffix(".wait"))
+                .unwrap_or(name);
+            let e = kinds.entry(name).or_default();
+            e[usize::from(!queued.contains(id))] += 1.0;
+            if let Some((at, _)) = self.times.get(id) {
+                e[2] = e[2].max(now_ms - at);
+            }
+        }
+        let queues: serde_json::Map<String, serde_json::Value> = kinds
+            .into_iter()
+            .map(|(k, [q, f, age])| {
+                (
+                    k.to_string(),
+                    json!({ "queued": q, "inFlight": f, "oldestMs": age.round() }),
+                )
+            })
+            .collect();
+        json!({
+            "queues": queues,
+            "queued": [self.queued[0].len(), self.queued[1].len()],
+            "inFlight": self.in_flight,
+            "capacity": [self.jobs.capacity(false), self.jobs.capacity(true)],
+            "focus": self.focus,
+            "nearJobsM": NEAR_JOBS_M,
+            "slowFrameScale": self.frame_scale,
+            "workers": self.jobs.memory().len(),
+        })
+    }
+
+    /// Where a chunk's generation (`mesh` false) or mesh job stands: Some((position in its queue,
+    /// or None once started, kind)) while the pool holds one.
+    pub fn chunk_job(&self, coord: Coord, mesh: bool) -> Option<Option<usize>> {
+        let is = |p: &Purpose| match p {
+            Purpose::Chunk(c, _) | Purpose::Base(c) => !mesh && *c == coord,
+            Purpose::ChunkMesh(c, _) => mesh && *c == coord,
+            _ => false,
+        };
+        let id = self
+            .purposes
+            .iter()
+            .find(|(_, (p, _))| is(p))
+            .map(|(id, _)| *id)?;
+        Some(
+            self.queued[usize::from(mesh)]
+                .iter()
+                .position(|(q, _)| *q == id),
+        )
+    }
+
     /// Jobs queued or running: generation, meshing.
     pub fn pending(&self) -> [usize; 2] {
         [

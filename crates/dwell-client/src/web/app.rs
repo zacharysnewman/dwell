@@ -2355,6 +2355,17 @@ impl Client {
         o.into()
     }
 
+    /// The streaming report's game part as JSON (`Game::streaming_report`, docs/DEV_TOOLS.md), or
+    /// "null" before playing: the shell adds the device, settings and world and copies it.
+    #[wasm_bindgen(js_name = streamingReport)]
+    pub fn streaming_report(&self) -> String {
+        let s = self.inner.borrow();
+        s.game.as_ref().map_or_else(
+            || "null".to_string(),
+            |g| g.streaming_report(crate::telemetry::now_ms()).to_string(),
+        )
+    }
+
     /// Whether the GPU adapter is a CPU (software) one: the shell's quick loading fade (§6.3).
     #[wasm_bindgen(js_name = cpuAdapter)]
     pub fn cpu_adapter(&self) -> bool {

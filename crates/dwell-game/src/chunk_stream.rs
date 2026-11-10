@@ -421,6 +421,38 @@ pub struct StreamStats {
     pub resyncs: u32,
 }
 
+/// How the streamer holds one chunk ([`ChunkStreamer::chunk_status`], the streaming report,
+/// docs/DEV_TOOLS.md).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ChunkStatus {
+    /// The server sent it (or its generation was announced and arrived).
+    pub loaded: bool,
+    /// Sent as Air: known empty.
+    pub air: bool,
+    /// Announced as generated and still generating in a worker.
+    pub generating: bool,
+    /// Arrived and lit (or the store keeps no light).
+    pub lit: bool,
+    /// Has a mesh drawn.
+    pub meshed: bool,
+    /// A mesh job in flight.
+    pub meshing: bool,
+    /// Waiting to be (re-)meshed.
+    pub dirty: bool,
+    /// Its place in the dirty set's marking order (0 first), when dirty.
+    pub dirty_position: Option<usize>,
+    /// Loaded and drawable (meshed, or all air).
+    pub drawable: bool,
+    /// The six face neighbours a dirty chunk waits on before it is meshed: still generating or
+    /// not lit yet.
+    pub waits_on: Vec<Coord>,
+    /// Face neighbours inside the build volume that are not loaded (meshed without them, their
+    /// borders read as air until they arrive).
+    pub missing: Vec<Coord>,
+    /// Its water surface was redrawn and is re-meshed once it settles.
+    pub settling: bool,
+}
+
 /// The 26 chunks around a chunk.
 const AROUND: [Coord; 26] = {
     let mut out = [[0; 3]; 26];
@@ -1251,6 +1283,48 @@ where
             !self.loaded.contains_key(&k)
                 || !(self.dirty.contains(&k) || self.meshing.contains_key(&k))
         })
+    }
+
+    /// How the streamer holds `coord` (the streaming report).
+    pub fn chunk_status(&self, coord: Coord) -> ChunkStatus {
+        let loaded = self.loaded.contains_key(&coord);
+        let dirty = self.dirty.contains(&coord);
+        let in_volume = |c: Coord| {
+            (MIN_CHUNK_Y..=MAX_CHUNK_Y).contains(&c[1])
+                && BUILD_VOLUME.chunk_may_hold(ChunkCoord::from_array(c))
+        };
+        let neighbours = NEIGHBOURS.iter().map(|d| add(coord, *d));
+        ChunkStatus {
+            loaded,
+            air: self.air.contains(&coord),
+            generating: self.generating.contains_key(&coord),
+            lit: loaded && !self.unlit_set.contains(&coord),
+            meshed: self.meshed.contains(&coord),
+            meshing: self.meshing.contains_key(&coord),
+            dirty,
+            dirty_position: dirty
+                .then(|| self.dirty.in_order().iter().position(|c| *c == coord))
+                .flatten(),
+            drawable: self.drawable(coord),
+            waits_on: neighbours
+                .clone()
+                .filter(|n| self.generating.contains_key(n) || self.unlit_set.contains(n))
+                .collect(),
+            missing: neighbours
+                .filter(|n| in_volume(*n) && !self.loaded.contains_key(n))
+                .collect(),
+            settling: self.settling.contains_key(&coord),
+        }
+    }
+
+    /// Chunks waiting to be lit (`mesh_dirty` lights them nearest first).
+    pub fn unlit_len(&self) -> usize {
+        self.unlit_set.len()
+    }
+
+    /// Chunks whose water surface waits to settle before a re-mesh.
+    pub fn settling_len(&self) -> usize {
+        self.settling.len()
     }
 
     pub fn stats(&self) -> StreamStats {
