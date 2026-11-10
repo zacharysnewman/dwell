@@ -688,7 +688,7 @@ pub fn preview(g: &TerrainGenerator, x0: i64, z0: i64, n: i64, texel: i64, o: Ov
             }),
             Overlay::Erosion => bytes(match g.erosion_at(x, z) {
                 None => [0.5; 3],
-                Some((s, margin)) => {
+                Some((s, margin, _)) => {
                     let wall = g.geology().erosion.wall.max(1.0);
                     let c = if margin < 0.0 {
                         lerp3([0.9, 0.78, 0.55], [0.75, 0.6, 0.4], (-margin / 200.0).min(1.0))

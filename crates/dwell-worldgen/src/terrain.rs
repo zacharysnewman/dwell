@@ -1113,14 +1113,14 @@ impl TerrainGenerator {
         &self.biomes.geology.geology
     }
 
-    /// The erosion's strength and cut-back margin (m past the retreated scarp; below 0 cut down to
-    /// the floor) at face-local (x, z), by the height field's ground (Chisel's erosion overlay;
-    /// systemic terrain T4). None where nothing erodes.
-    pub fn erosion_at(&self, x: i64, z: i64) -> Option<(f64, f64)> {
+    /// The erosion's strength, cut-back margin (m past the retreated scarp; below 0 cut down to
+    /// the floor) and floor (m over the sea) at face-local (x, z), by the height field's ground
+    /// (Chisel's erosion overlay; systemic terrain T4). None where nothing erodes.
+    pub fn erosion_at(&self, x: i64, z: i64) -> Option<(f64, f64, f64)> {
         let (base, _, _) = self.map.height_at(x as f64, z as f64);
         let mix = self.biomes.mix(x, z, base);
         self.cut_back(&mix, x, z, base)
-            .map(|(s, margin, _, _)| (s, margin))
+            .map(|(s, margin, floor, _)| (s, margin, floor))
     }
 
     /// The rock at the surface of face-local (x, z) and the part of its stack's profile there,
