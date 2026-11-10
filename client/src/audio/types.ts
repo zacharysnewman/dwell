@@ -105,6 +105,12 @@ export interface SamplesDef {
   gain?: number;
   /** ± semitones per play. */
   pitch?: number;
+  /**
+   * The share sent to the room (default 0: dry). Recordings carry their own room in them, so the
+   * sound's `reverb` (for its procedural layers) would add a second, echoey room on top (owner,
+   * 2026-11-10: "they've got some reverb-like feel").
+   */
+  reverb?: number;
 }
 
 export type SetEvent =

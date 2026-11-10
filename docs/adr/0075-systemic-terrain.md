@@ -122,7 +122,7 @@ rainfall is small (mostly 0–0.15), so the river wetness dominates the moisture
 weakly until `baseRain`/`rainShare` are tuned. The blocks view at 64 m texels shows little canopy (the
 canopy tint is faint at that zoom).
 
-## T4, rule-based erosion (built, 0.52.16)
+## T4, rule-based erosion (built, 0.52.17)
 
 T2's shaping maps height alone, so it steps every contour. T4 adds the plan view: rule-based erosion from the world map's plan view (`rocks.json` `erosion`, `geology::DrainageField`, `geology::eroded`): drainage lines are map cells with at least `threshold` cells of flow accumulation (or the sea); a column nearer a line than the scarp's retreat (`reach` × (1 − `resist` × the cap rock's hardness) × (1 + `valley` × log2 of the line's accumulation over the threshold) × (1 ± `outline` noise) − `relief` × the hill's height over the floor) is cut down to the floor (the line's height, `snap` of the way down to the stack's lowest soft layer's top), farther it stands; a `wall` m sheer wall at the edge (the cap rock's face) and a `talusWidth` m skirt (the soft rock's scree) below; a biome's `gullies` cuts short-wavelength rills (`gullyWavelength`, `gullyDepth`). A biome opts in with `erosion` 0..1 (absent 0: the default world and goldens unchanged); the red-rock mesa preset at 1, badlands at 1 with gullies 1.
 The drainage field (accumulation by D8 flow, then a Dijkstra distance to the nearest line carrying that
