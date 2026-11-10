@@ -3295,6 +3295,7 @@ in the code yet.
 | `MAX_CHUNKS_PER_TICK` | 32 | Chunk messages per client per tick |
 | `STREAM_DEADLINE_MS` (client, `dwell-game` `stream_budget.rs`) | 8 ms | When a frame's terrain loading (the flood light of arrived chunks, then the mesh job starts) stops, after the frame's start: ~9 ms of `frame.cpu` with the LOD and the draw after it (measured: 9.0–9.6 ms mean in flight, 7 ms gave 8.2–8.5). One budget for both (0.50.14; before, 4 ms each, `mesh_dirty` 6–7.5 ms a frame in flight, docs/DEV_TOOLS.md "Flight loading") |
 | `STREAM_MIN_MS` / `STREAM_FRAME_SHARE` / `STREAM_MIN_MAX_MS` (client, `stream_budget.rs`) | 2 ms / 0.15 / 50 ms | The least a frame's loading gets however late the frame: 2 ms, or 0.15 of the last frame's interval on a slow page (CI's ~5 fps: 30 ms), at most 50 ms |
+| `SLOW_FRAME_MESHES_MAX` (client, `pool.rs`) | 8× | A slow page keeps more chunk meshes in flight: the usual number × its frame interval / 16.7 ms, at most 8×, queued in the pool and started as workers free between frames (at CI's ~5 fps a few starts a frame left the workers idle and the loading screen waited its 20 s timeout) |
 | `STREAM_MESH_SHARE` (client, `stream_budget.rs`) | 0.4 | The budget's share the light leaves to the mesh starts while chunks wait to be meshed |
 | **LOD (§6.6), Phase 4** | | |
 | `LOD_SECTION_CELLS` | 32 | Cells per LOD section edge (level 0 = a chunk) |

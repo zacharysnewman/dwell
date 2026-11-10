@@ -405,6 +405,16 @@ impl dwell_lod::SectionMesher for MeshJobs {
 mod tests {
     use super::*;
 
+    #[test]
+    fn a_slow_page_keeps_more_chunk_meshes_in_flight() {
+        assert_eq!(slow_frame_scale(8.3), 1);
+        assert_eq!(slow_frame_scale(16.7), 1);
+        assert_eq!(slow_frame_scale(40.0), 2);
+        assert_eq!(slow_frame_scale(200.0), 8, "CI's ~5 fps: the most");
+        assert_eq!(slow_frame_scale(1500.0), 8);
+        assert_eq!(slow_frame_scale(f64::NAN), 1);
+    }
+
     #[derive(Default)]
     struct Held {
         cap: usize,
