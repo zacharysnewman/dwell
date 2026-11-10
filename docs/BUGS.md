@@ -229,6 +229,24 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 64. A frame drop (60 → 45 fps) every ~13 s while moving (fixed pending release 0.52.3)
+
+Owner, 2026-11-10: "If I'm sprinting and hopping around I notice I get a periodic frame drop of about
+15FPS from 60 to 45 about every 13 seconds or so", later "while walking and standing still too" (M1
+Air, Chrome, a local world). Not distance-periodic and not in a fresh world: the bench's 58 s runs
+standing, sprinting with hops and at a Retina window size on seed 7 had no frame over 18.8 ms. It
+grows with the world explored: the explored map (ADR 0068) saved every 10 s while cells change by
+reading the world's whole record from IndexedDB, merging every explored cell into it and writing it
+back, all on the page (structured clone both ways). With 100 000 explored cells (a few hours' play)
+a walk dropped frames of 134 and 151 ms, ~10 s apart (frame.cpu 2–23 ms: the stall fell between
+frames, in the IndexedDB callbacks). Fixed: a save hands the store only the cells changed since the
+last one, and the store merges them in its own worker (`client/src/ui/exploredStore.ts`,
+`exploredWorker.ts`); the same 40 s walk on the same 100 000-cell record: max 18.8 ms, the cells
+still saved. Tests: `exploredStore.test.ts` (one more cell saves one cell; saves merged one at a time
+give the whole save's record; a record of another cell size keeps earlier saves under `cellsByM`, red
+before the fix: it kept only the last save's cells). The stall itself is browser timing, measured with
+a scratch Playwright repro that seeds the record (no bench step seeds explored cells yet).
+
 ### 63. Fallen logs settled with mismatched half rings (fixed pending release 0.52.2)
 
 Owner, 2026-11-10: "sometimes when trees fall and settle, the rings/logs end up offset, so it's

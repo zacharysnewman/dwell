@@ -599,7 +599,12 @@ height** (owner, 2026-11-09; replacing 0.50.52's height bands, which hid the san
 already); the minimap's height-shading toggle shows the same look. The shell hands each tile's
 screen-order cells (inside a one-cell border, unread) to `shadeMap` (`shade_grid`). Explored
 cells and their heights are kept per world in this browser (IndexedDB `dwell-explored`, append-only:
-`heights` beside `cells`), not on the server. Cost (`minimap.scan`, `minimap.draw`
+`heights` beside `cells`), not on the server. **[built, 0.52.3]** A save (every 10 s while cells
+change) hands the store only the cells changed since the last one (`ExploredChanges`,
+`client/src/ui/exploredStore.ts`), and the store merges them into the record in its own worker
+(`exploredWorker.ts`; on the page only when the page is closing or has no workers): the merge reads
+and writes the whole record, ~150 ms of structured clone at 100 000 cells, which on the page was a
+dropped frame every ~10 s on a well-explored world. Cost (`minimap.scan`, `minimap.draw`
 samples, DEV_TOOLS.md): ~1 ms a read with its draw flying at 8 m/s, the 2 s refresh 5–9 ms.
 **[built, 0.50.76] The closest levels from the loaded terrain** (owner, 2026-11-09: "big map closest
 zooms should use 1m"): a level whose `cellM` is at most `revealed.liveMaxCellM` (the 1 m and 2 m levels)
