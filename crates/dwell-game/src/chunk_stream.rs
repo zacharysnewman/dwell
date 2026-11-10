@@ -349,8 +349,9 @@ pub trait TerrainView<M> {
     /// Shows a chunk's meshes at `origin`, or removes the chunk (`None`).
     fn set_terrain_chunk(&mut self, coord: Coord, origin: [i32; 3], meshes: Option<M>);
     /// Redraws only chunk `coord`'s water surface from its new padded voxels and flood light
-    /// (the GPU heightfield's tile, proposals/WATER_GPU_SURFACE.md §3), when only its water's
-    /// levels changed; whether that stands in for a re-mesh (false: the chunk is re-meshed).
+    /// (the GPU heightfield's tile, proposals/WATER_GPU_SURFACE.md §3), when only its water
+    /// changed (levels, or cells wetting or drying; a tile made or freed); whether that stands in
+    /// for a re-mesh (false: the chunk is re-meshed).
     fn set_water_levels(
         &mut self,
         _coord: Coord,
@@ -372,6 +373,18 @@ fn is_liquid(m: u16) -> bool {
     dwell_blocks::STATES
         .get(usize::from(m))
         .is_some_and(|s| s.liquid)
+}
+
+/// Whether a cell going from `old` to `new` changes only the water: each air or a liquid, the same
+/// liquid where both are, and at least one a liquid (the GPU heightfield's tile holds it,
+/// proposals/WATER_GPU_SURFACE.md §3, W1).
+fn water_only(old: u16, new: u16) -> bool {
+    let wet_or_air = |m: u16| m == dwell_blocks::AIR || is_liquid(m);
+    wet_or_air(old)
+        && wet_or_air(new)
+        && (is_liquid(old) || is_liquid(new))
+        && (!(is_liquid(old) && is_liquid(new))
+            || dwell_blocks::liquid_full(old) == dwell_blocks::liquid_full(new))
 }
 
 /// A ChunkData message's parts the streamer reads.
@@ -1367,15 +1380,14 @@ where
             // Its first edit: its voxels till now are its generation (ADR 0071's rules read it).
             self.generated.insert(key, v);
         }
-        // Only the water's levels change (each cell liquid before and after, the same liquid):
-        // the chunk and the neighbours it touches may redraw their surface tiles instead.
+        // Only the water changes (each cell air or liquid before and after, one liquid where both
+        // are: a level, or the wet front advancing or drying, no block placed or broken): the
+        // chunk and the neighbours it touches may redraw their surface tiles instead.
         let levels_only = !changes.changes.is_empty()
             && changes.changes.iter().all(|v| {
-                self.store.voxel(key, v.index).is_some_and(|old| {
-                    is_liquid(old)
-                        && is_liquid(v.material)
-                        && dwell_blocks::liquid_full(old) == dwell_blocks::liquid_full(v.material)
-                })
+                self.store
+                    .voxel(key, v.index)
+                    .is_some_and(|old| water_only(old, v.material))
             });
         self.store.edit_chunk(changes);
         self.loaded.insert(key, changes.revision);
@@ -1691,6 +1703,8 @@ mod tests {
         tiles: bool,
         /// Each tile redrawn without a re-mesh.
         tiled: Vec<Coord>,
+        /// Each redraw's mirror (face B).
+        mirrors: Vec<bool>,
     }
     impl TerrainView<()> for FakeView {
         fn set_terrain_chunk(&mut self, coord: Coord, origin: [i32; 3], meshes: Option<()>) {
@@ -1699,9 +1713,10 @@ mod tests {
                 None => self.chunks.remove(&coord),
             };
         }
-        fn set_water_levels(&mut self, coord: Coord, _: &[u16], _: &[u8], _: bool) -> bool {
+        fn set_water_levels(&mut self, coord: Coord, _: &[u16], _: &[u8], mirror: bool) -> bool {
             if self.tiles {
                 self.tiled.push(coord);
+                self.mirrors.push(mirror);
             }
             self.tiles
         }
@@ -2271,6 +2286,45 @@ mod tests {
         s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
         assert_eq!(jobs(&s), vec![[0, 0, 0]]);
     }
+
+    dwell_world::both_faces!(
+        /// W1 (proposals/WATER_GPU_SURFACE.md §3): the wet front advancing (air → water) or
+        /// drying (water → air) in a chunk drawn from tiles rewrites its tile (on its face's
+        /// mirror) and queues no mesh job; a block placed in the water still re-meshes at once.
+        fn the_wet_front_redraws_the_tile_without_a_re_mesh(f: FaceFrame) {
+            let water = dwell_blocks::require("dwell:water");
+            let low = dwell_blocks::liquid_at_fill(water, 0.5);
+            let stone = dwell_blocks::require("dwell:stone");
+            let c = [0, f.row(16).div_euclid(CHUNK_SIZE), 0];
+            let (mut s, _) = setup();
+            s.view_mut().tiles = true;
+            // A dry chunk (no tile yet): its first water makes one.
+            s.on_chunk_data(explicit(c, 3, dwell_blocks::AIR));
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+            flush(&mut s);
+            let cell = 5 | (5 << 5) | (5 << 10);
+            s.on_voxel_modification(&[modification(c, 4, &[cell, low])]);
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+            assert!(s.mesher().jobs.is_empty(), "air → water: no re-mesh");
+            assert_eq!(s.view().tiled, vec![c]);
+            assert_eq!(s.view().mirrors, vec![f.face == Face::B]);
+            // Drying: water → air in a water chunk, its tile rewritten (freed by the view once
+            // dry), no re-mesh. (The fake store reads every cell as its chunk's fill.)
+            let d = [3, c[1], 0];
+            s.on_chunk_data(explicit(d, 3, water));
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+            flush(&mut s);
+            s.on_voxel_modification(&[modification(d, 4, &[cell, dwell_blocks::AIR])]);
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+            assert!(s.mesher().jobs.is_empty(), "water → air: no re-mesh");
+            assert_eq!(s.view().tiled, vec![c, d]);
+            // A change mixing a block with water re-meshes at once.
+            s.on_voxel_modification(&[modification(c, 5, &[cell, water, cell + 1, stone])]);
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+            assert_eq!(jobs(&s), vec![c]);
+            assert_eq!(s.view().tiled.len(), 2);
+        }
+    );
 
     #[test]
     fn applies_voxel_modifications_in_revision_order_and_re_meshes_the_chunk_and_its_neighbours() {
