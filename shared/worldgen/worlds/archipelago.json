@@ -1,0 +1,10 @@
+{
+  "$comment": "An example world setting (ADR 0074 B4), never a world's own: terrain.json's elevation with the archipelago's knobs, many small islands in a shallow sea. The island's coast capped near the shore and broken by a broad noise (`islands`), a shallow shelf (`seaFloor`), a gentle rise inland. Tests build it by data alone (FIXTURE_WORLDS, WorldMap::for_height); Chisel offers it as a preset. Prototype content.",
+  "name": "test:archipelago",
+  "overrides": {
+    "islands": { "amplitude": 1400, "wavelength": 4096, "octaves": 3, "cap": 150 },
+    "seaFloor": { "depth": 10, "shelf": 2500 },
+    "inland": { "rise": 120, "halfDistance": 1200 },
+    "hills": { "amplitude": 40 }
+  }
+}

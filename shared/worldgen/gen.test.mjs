@@ -158,7 +158,7 @@ test('a bad biome or world terrain fails with the key and the problem', () => {
     [(t) => (t.bumps.wavelength = 2), /bumps\.wavelength/],
     [(t) => (t.hills.fadeTo = 100), /hills\.fadeTo must be greater than hills\.fadeFrom/],
     [(t) => delete t.seaFloor, /seaFloor must be an object/],
-    [(t) => (t.rivers.valleySlope = 0), /rivers\.valleySlope must be in \(0, 10\]/],
+    [(t) => (t.rivers.leveeFall = 0), /rivers\.leveeFall must be in \(0, 10\]/],
     [(t) => (t.bands = {}), /terrain\.json: unknown bands/],
     [(t) => (t.biomeMap.wetReach = 0), /terrain\.json: biomeMap\.wetReach must be in \(0, 100000\]/],
     [(t) => (t.spawn.maxHeight = 1), /spawn\.maxHeight must be greater than spawn\.minHeight/],

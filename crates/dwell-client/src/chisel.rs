@@ -11,7 +11,8 @@
 use dwell_game::minimap::{MAP, decode_height, tint_rgb};
 use dwell_look::lod_map::LOD_MAP;
 use dwell_worldgen::terrain::{
-    BIOME_MAP, BIOMES, Biome, BiomeMap, ElevationBand, TerrainGenerator, Where, WhereRange,
+    BIOME_MAP, BIOMES, Biome, BiomeMap, ElevationBand, HEIGHT, HeightField, TerrainGenerator,
+    WaterLook, Where, WhereRange, water_tint_of,
 };
 use serde_json::Value;
 
@@ -125,6 +126,11 @@ pub fn biome_from_json(v: &Value) -> Result<Biome, String> {
         s.rock_window = sh("rockWindow")?;
         s.shore = sh("shore")?;
         s.under_depth = sh("underDepth")?;
+        let k = |key: &str| num(v, &format!("banks.{key}"));
+        s.river_valley_slope = k("riverSlope")?;
+        s.lake_bank = k("lake")?;
+        s.lake_bank_slope = k("lakeSlope")?;
+        s.beach = k("beach")?;
         Ok(())
     })()
     .map_err(at)?;
@@ -174,7 +180,71 @@ pub fn biome_from_json(v: &Value) -> Result<Biome, String> {
         decorations: names(v, "decorations").map_err(at)?,
         placements: names(v, "placements").map_err(at)?,
         water: text(v, "water").map_err(at)?,
+        water_look: water_look(v).map_err(at)?,
     })
+}
+
+/// A biome's optional `waterLook` (`scatter` "#rrggbb", `absorption` three numbers).
+fn water_look(v: &Value) -> Result<Option<WaterLook>, String> {
+    let Some(l) = v.get("waterLook") else {
+        return Ok(None);
+    };
+    let scatter = match l.get("scatter") {
+        None => None,
+        Some(c) => Some(
+            c.as_str()
+                .and_then(|c| c.strip_prefix('#'))
+                .and_then(|h| u32::from_str_radix(h, 16).ok())
+                .ok_or("waterLook.scatter must be a colour \"#rrggbb\"")?,
+        ),
+    };
+    let absorption = match l.get("absorption").map(Value::as_array) {
+        None => None,
+        Some(Some(a)) if a.len() == 3 => {
+            let mut out = [0.0f32; 3];
+            for (o, x) in out.iter_mut().zip(a) {
+                *o = x.as_f64().ok_or("waterLook.absorption must be numbers")? as f32;
+            }
+            Some(out)
+        }
+        Some(_) => return Err("waterLook.absorption must be three numbers".into()),
+    };
+    Ok(Some(WaterLook {
+        scatter,
+        absorption,
+    }))
+}
+
+/// The world's height field with an edit's world knobs (`{ "islands": {...}, "seaFloor": {...},
+/// "inland": {...} }`, terrain.json's groups, any key left out as the build's): the archipelago's
+/// knobs (ADR 0074 B4).
+pub fn height_from_json(v: &Value) -> Result<HeightField, String> {
+    let mut h = HEIGHT;
+    let get = |g: &str, k: &str| v.get(g).and_then(|g| g.get(k)).and_then(Value::as_f64);
+    let set = |slot: &mut f32, g: &str, k: &str| {
+        if let Some(x) = get(g, k) {
+            *slot = x as f32;
+        }
+    };
+    set(&mut h.island_amplitude, "islands", "amplitude");
+    set(&mut h.island_cap, "islands", "cap");
+    if let Some(x) = get("islands", "wavelength") {
+        h.island_wavelength = x as i32;
+    }
+    if let Some(x) = get("islands", "octaves") {
+        h.island_octaves = x as u32;
+    }
+    if let Some(x) = get("seaFloor", "depth") {
+        h.sea_floor = -x as f32;
+    }
+    set(&mut h.shelf, "seaFloor", "shelf");
+    set(&mut h.inland_rise, "inland", "rise");
+    set(&mut h.rise_half, "inland", "halfDistance");
+    set(&mut h.hill_height, "hills", "amplitude");
+    if !(h.island_wavelength >= 64 && h.island_octaves >= 1 && h.shelf > 0.0 && h.rise_half > 0.0) {
+        return Err("world: a knob is out of range".into());
+    }
+    Ok(h)
 }
 
 /// The biome map's geography from `terrain.json`'s `biomeMap` group.
@@ -190,8 +260,16 @@ pub fn biome_map_from_json(v: &Value) -> Result<BiomeMap, String> {
     })
 }
 
-/// A Chisel edit (`{ "biomes": [...], "biomeMap": {...} }`, the default biome first) parsed.
-pub fn edit_from_json(text: &str) -> Result<(Vec<Biome>, BiomeMap), String> {
+/// A Chisel edit parsed: the biomes (the default first), the biome map, and the world's height
+/// field when the edit changes its knobs (`world`).
+pub struct Edit {
+    pub biomes: Vec<Biome>,
+    pub map: BiomeMap,
+    pub height: Option<HeightField>,
+}
+
+/// A Chisel edit (`{ "biomes": [...], "biomeMap": {...}, "world": {...} }`) parsed.
+pub fn edit_from_json(text: &str) -> Result<Edit, String> {
     let v: Value = serde_json::from_str(text).map_err(|e| e.to_string())?;
     let list = v
         .get("biomes")
@@ -203,7 +281,42 @@ pub fn edit_from_json(text: &str) -> Result<(Vec<Biome>, BiomeMap), String> {
         Some(m) => biome_map_from_json(m)?,
         None => BIOME_MAP,
     };
-    Ok((biomes?, map))
+    let height = match v.get("world") {
+        Some(w) => Some(height_from_json(w)?).filter(|h| *h != HEIGHT),
+        None => None,
+    };
+    Ok(Edit {
+        biomes: biomes?,
+        map,
+        height,
+    })
+}
+
+/// A water texel's colour moved toward its look's scatter colour by how far the look differs
+/// from the default water's (none where it is the default's).
+fn water_tinted(
+    c: [u8; 3],
+    plain: dwell_worldgen::terrain::WaterTint,
+    at: dwell_worldgen::terrain::WaterTint,
+) -> [u8; 3] {
+    let diff: f32 = (0..3)
+        .map(|i| (at.scatter[i] - plain.scatter[i]).abs())
+        .sum();
+    if diff < 1e-4 {
+        return c;
+    }
+    let srgb = |l: f32| {
+        let l = l.clamp(0.0, 1.0);
+        if l <= 0.003_130_8 {
+            l * 12.92
+        } else {
+            1.055 * l.powf(1.0 / 2.4) - 0.055
+        }
+    };
+    let t = f64::from((diff * 2.0).min(0.7));
+    let target = [0, 1, 2].map(|i| f64::from(srgb(at.scatter[i])));
+    let base = c.map(|v| f64::from(v) / 255.0);
+    bytes(lerp3(base, target, t))
 }
 
 fn lerp3(a: [f64; 3], b: [f64; 3], t: f64) -> [f64; 3] {
@@ -218,6 +331,9 @@ fn bytes(c: [f64; 3]) -> [u8; 3] {
 /// A preview tile: `n` × `n` texels of `texel` m from face-local (x0, z0) (snapped to the texel
 /// grid), RGBA rows of x from z0 (alpha 0 beyond the disc).
 pub fn preview(g: &TerrainGenerator, x0: i64, z0: i64, n: i64, texel: i64, o: Overlay) -> Vec<u8> {
+    // The default water's look: water drawn otherwise (a biome's `waterLook`) is tinted.
+    let plain = water_tint_of(&BIOMES[0]);
+    let tinted = g.biomes().iter().any(|b| b.water_look.is_some());
     let (gx0, gz0) = (x0.div_euclid(texel), z0.div_euclid(texel));
     let rect = Rect {
         x0: gx0,
@@ -241,11 +357,16 @@ pub fn preview(g: &TerrainGenerator, x0: i64, z0: i64, n: i64, texel: i64, o: Ov
             Overlay::Blocks => {
                 let code = i16::from_le_bytes([heights[k * 2], heights[k * 2 + 1]]);
                 let rgb = (u32::from(px[0]) << 16) | (u32::from(px[1]) << 8) | u32::from(px[2]);
-                let c = match decode_height(i32::from(code)) {
-                    Some((h, wet)) => tint_rgb(&MAP, rgb, h, wet),
-                    None => rgb,
+                let (c, wet) = match decode_height(i32::from(code)) {
+                    Some((h, wet)) => (tint_rgb(&MAP, rgb, h, wet), wet),
+                    None => (rgb, false),
                 };
-                [(c >> 16) as u8, (c >> 8) as u8, c as u8]
+                let c = [(c >> 16) as u8, (c >> 8) as u8, c as u8];
+                if wet && tinted {
+                    water_tinted(c, plain, g.water_look_at(x, z))
+                } else {
+                    c
+                }
             }
             Overlay::Biomes => {
                 let mut c = [0.0; 3];

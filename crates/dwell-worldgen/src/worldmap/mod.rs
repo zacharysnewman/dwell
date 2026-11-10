@@ -125,6 +125,13 @@ impl WorldMap {
         Self::from_hydrology(seed, &hydrology::generate_seed(seed, p))
     }
 
+    /// [`WorldMap::compute`] over a base height field of other parameters (a fixture world such
+    /// as the archipelago, `FIXTURE_WORLDS`; Chisel's world knobs).
+    pub fn for_height(seed: u64, h: crate::terrain::HeightField) -> Self {
+        let p = hydrology::default_profile();
+        Self::from_hydrology(seed, &hydrology::generate_with_height(seed, p, h))
+    }
+
     /// The kept map of a hydrology map.
     pub fn from_hydrology(seed: u64, m: &HydrologyMap) -> Self {
         let n = m.grid.n;

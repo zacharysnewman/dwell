@@ -27,6 +27,13 @@
     "shore": 2,
     "underDepth": 3
   },
+  "banks": {
+    "$comment": "How the banks of the world's rivers and lakes look here (ADR 0074 B4; the elevation decides where the water is): the river valley's rise from its bank (riverSlope m per m: steep rocky banks high, wide gentle ones low), the ground round a lake at least lake m over its water, falling lakeSlope m per m from 2 m out, and a beach: the shore block on dry ground within beach m of a river's or lake's water (0: none beyond the shore height). Blended by the biomes' weights along the banks.",
+    "riverSlope": 0.45,
+    "lake": 0.5,
+    "lakeSlope": 0.25,
+    "beach": 0
+  },
   "bands": [
     {
       "name": "meadow",

@@ -80,6 +80,31 @@ pub struct HeightField {
     pub bump_height: f32,
     pub bump_wavelength: i32,
     pub bump_octaves: u32,
+    /// The coast broken into islands (`terrain.json` `islands`, ADR 0074 B4, the archipelago's
+    /// knob): with `island_amplitude` > 0 the coast distance is capped at `island_cap` m and offset
+    /// by a fractal noise of about ±`island_amplitude` m (`island_wavelength` m, `island_octaves`);
+    /// 0 leaves the one island as it was.
+    pub island_amplitude: f32,
+    pub island_wavelength: i32,
+    pub island_octaves: u32,
+    pub island_cap: f32,
+}
+
+/// A biome's water look over its fluid's (`waterLook`, ADR 0074 B4): its colour (`scatter`, sRGB
+/// 0xRRGGBB) and clarity (`absorption`, per metre of red, green, blue); a field left out keeps the
+/// fluid's (`shared/blocks/dwell.json` `fluids`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WaterLook {
+    pub scatter: Option<u32>,
+    pub absorption: Option<[f32; 3]>,
+}
+
+/// The water's look resolved at a column: its scatter colour (linear 0..1) and absorption (per
+/// m), blended by the biomes' weights there (`TerrainGenerator::water_look_at`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WaterTint {
+    pub scatter: [f32; 3],
+    pub absorption: [f32; 3],
 }
 
 /// How columns are shaped from the world map (data: `terrain.json`; its comments give the units
@@ -119,7 +144,13 @@ pub struct Surface {
     pub delta_split: f64,
     pub delta_spread: f64,
     pub delta_branch_width: f64,
+    /// The ground round a lake stands at least `lake_bank` m over its water, falling
+    /// `lake_bank_slope` m per m from 2 m out (the biome's `banks`).
     pub lake_bank: f64,
+    pub lake_bank_slope: f64,
+    /// Dry ground within this many m of a river's or lake's water takes the shore band (a beach;
+    /// the biome's `banks.beach`, 0 none).
+    pub beach: f64,
     pub lake_levee: f64,
     pub lake_shore_noise: f64,
     pub lake_shore_wavelength: i32,
@@ -215,12 +246,14 @@ pub struct Biome {
     pub placements: &'static [&'static str],
     /// The fluid block the biome's water is drawn as.
     pub water: &'static str,
+    /// Its water's colour and clarity over the fluid's look (none: the fluid's own).
+    pub water_look: Option<WaterLook>,
 }
 
 mod table {
     include!("terrain.gen.rs");
 }
-pub use table::{BIOME_MAP, BIOMES, FIXTURE_BIOMES, HEIGHT, SURFACE};
+pub use table::{BIOME_MAP, BIOMES, FIXTURE_BIOMES, FIXTURE_WORLDS, HEIGHT, SURFACE};
 
 /// The biome named `name` (`shared/worldgen/biomes`), if the build has it.
 pub fn find_biome(name: &str) -> Option<&'static Biome> {
@@ -369,6 +402,56 @@ pub struct Column {
     pub lip: bool,
     /// In a chute's stream (ADR 0059): running water over its top, no still water.
     pub stream: bool,
+}
+
+/// A column's bank shaping (a biome's `banks`, or the biomes' blend at a column).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct Banks {
+    river_slope: f64,
+    lake: f64,
+    lake_slope: f64,
+    beach: f64,
+}
+
+impl Banks {
+    fn of(s: &Surface) -> Self {
+        Self {
+            river_slope: s.river_valley_slope,
+            lake: s.lake_bank,
+            lake_slope: s.lake_bank_slope,
+            beach: s.beach,
+        }
+    }
+}
+
+/// An sRGB 0xRRGGBB colour, linear 0..1.
+fn linear_rgb(c: u32) -> [f32; 3] {
+    let ch = |v: u32| {
+        let s = (v & 0xff) as f32 / 255.0;
+        if s <= 0.04045 {
+            s / 12.92
+        } else {
+            ((s + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    [ch(c >> 16), ch(c >> 8), ch(c)]
+}
+
+/// A biome's water look: its `waterLook` over its fluid block's look (the registry's `fluids`).
+pub fn water_tint_of(b: &Biome) -> WaterTint {
+    let fluid = dwell_blocks::state(b.water)
+        .and_then(|id| dwell_blocks::STATES[usize::from(id)].fluid)
+        .map(|f| &dwell_blocks::FLUIDS[usize::from(f)])
+        .unwrap_or_else(|| dwell_blocks::require_fluid("dwell:water"));
+    let (scatter, absorption) = (fluid.scatter, fluid.absorption);
+    let l = b.water_look.unwrap_or(WaterLook {
+        scatter: None,
+        absorption: None,
+    });
+    WaterTint {
+        scatter: linear_rgb(l.scatter.unwrap_or(scatter)),
+        absorption: l.absorption.unwrap_or(absorption),
+    }
 }
 
 /// A column's `shore` with no river valley or lake shore reaching it.
@@ -816,6 +899,44 @@ impl TerrainGenerator {
             .sum()
     }
 
+    /// The biomes' bank shaping at a column, blended by their weights (`mix`): exactly the
+    /// biome's own where one biome is everywhere.
+    fn blended_banks(&self, mix: &crate::biomemap::Mix) -> Banks {
+        let of = |i: usize| Banks::of(&self.biomes.list[i].surface);
+        if mix.len == 1 {
+            return of(usize::from(mix.weights[0].0));
+        }
+        let mut b = Banks::default();
+        for (i, w) in mix.iter() {
+            let o = of(i);
+            b.river_slope += w * o.river_slope;
+            b.lake += w * o.lake;
+            b.lake_slope += w * o.lake_slope;
+            b.beach += w * o.beach;
+        }
+        b
+    }
+
+    /// The water's look at face-local (x, z) (ADR 0074 B4): each biome's `waterLook` over its
+    /// fluid's look, blended by the biomes' weights there (so it eases across a border). Clients
+    /// compute it from the build's biome data as they generate terrain; nothing is sent.
+    pub fn water_look_at(&self, x: i64, z: i64) -> WaterTint {
+        let (base, _, _) = self.map.height_at(x as f64, z as f64);
+        let mix = self.biomes.mix(x, z, base);
+        let mut t = WaterTint {
+            scatter: [0.0; 3],
+            absorption: [0.0; 3],
+        };
+        for (i, w) in mix.iter() {
+            let o = water_tint_of(&self.biomes.list[i]);
+            for k in 0..3 {
+                t.scatter[k] += w as f32 * o.scatter[k];
+                t.absorption[k] += w as f32 * o.absorption[k];
+            }
+        }
+        t
+    }
+
     /// The generator with these structure placements in place of the build's (tests add one by
     /// data alone).
     pub fn with_placements(mut self, rules: &[placements::Placement]) -> Self {
@@ -1166,6 +1287,9 @@ impl TerrainGenerator {
         let bs = &biome.surface;
         // The fine detail, stronger on mountains, blended by the biomes' weights.
         let detail = self.blended_detail(&mix, x, z, base, cell);
+        // How the banks look here (the biomes' `banks`, blended by weight; the elevation placed
+        // the water).
+        let banks = self.blended_banks(&mix);
         // The nearest river channel, through the meander warp (none far from every river).
         let (min_half, min_width) = if cell > 1 && cell <= S.river_lod_max_cell {
             (
@@ -1221,7 +1345,7 @@ impl TerrainGenerator {
             } else {
                 // Round the shore: never lower than the bank over the water near it.
                 let out = -l.sdf;
-                let required = l.level + S.lake_bank - (out - 2.0).max(0.0) * 0.25;
+                let required = l.level + banks.lake - (out - 2.0).max(0.0) * banks.lake_slope;
                 h = h.max(required);
             }
         }
@@ -1274,7 +1398,7 @@ impl TerrainGenerator {
                 // the ground never steps where the nearest changes (docs/BUGS.md 14).
                 let valley_of = |r: &worldmap::Hit, h: f64| {
                     let edge = (r.d - r.half).max(0.0);
-                    let valley = r.level + S.river_bank + edge * S.river_valley_slope;
+                    let valley = r.level + S.river_bank + edge * banks.river_slope;
                     let carved = smooth_min(h, valley, 2.0);
                     carved + (h - carved) * smooth01(edge / r.valley.max(1e-6))
                 };
@@ -1323,7 +1447,15 @@ impl TerrainGenerator {
         // blocks those of the biome's elevation band at h (each band's edge moved by a noise and
         // raised on slopes, so the snow line, say, is no flat contour).
         let slope = (gx * gx + gz * gz).sqrt();
-        let band = if wet || h < bs.shore {
+        // A beach: dry ground within the biomes' `beach` m of a river's or lake's water.
+        let on_beach = banks.beach > 0.0 && {
+            let edge = river
+                .as_ref()
+                .map_or(f64::INFINITY, |r| r.d - r.half)
+                .min(lake.as_ref().map_or(f64::INFINITY, |l| -l.sdf));
+            edge < banks.beach
+        };
+        let band = if wet || h < bs.shore || on_beach {
             Band::Shore
         } else if self.rock_at(bs, map, x as f64, z as f64, h, cell) {
             Band::Rock

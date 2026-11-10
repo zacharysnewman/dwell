@@ -11,8 +11,11 @@ use dwell_worldgen::terrain::TerrainGenerator;
 /// A preview generator for one world seed.
 #[wasm_bindgen]
 pub struct ChiselPreview {
+    seed: u64,
     base: TerrainGenerator,
     current: TerrainGenerator,
+    /// The world knobs' generator (the archipelago's, ADR 0074 B4), kept while the knobs stay.
+    shaped: Option<(dwell_worldgen::terrain::HeightField, TerrainGenerator)>,
 }
 
 #[wasm_bindgen]
@@ -24,16 +27,33 @@ impl ChiselPreview {
             .local(dwell_world::Face::A)
             .clone();
         Self {
+            seed: dwell_worldgen::bifacial::face_seed(seed, dwell_world::Face::A),
             current: base.clone(),
             base,
+            shaped: None,
         }
     }
 
     /// Puts an edit (`{ biomes: [...], biomeMap: {...} }`, the default biome first) on the world;
     /// throws the parse error.
     pub fn edit(&mut self, json: &str) -> Result<(), JsError> {
-        let (biomes, map) = edit_from_json(json).map_err(|e| JsError::new(&e))?;
-        self.current = self.base.clone().with_biomes_on(&biomes, map);
+        let e = edit_from_json(json).map_err(|e| JsError::new(&e))?;
+        // World knobs changed: the map rebuilt over the edited height field (seconds), once.
+        let ground = match e.height {
+            None => self.base.clone(),
+            Some(h) => {
+                if self.shaped.as_ref().is_none_or(|(k, _)| *k != h) {
+                    let map = dwell_worldgen::worldmap::WorldMap::for_height(self.seed, h);
+                    let g = TerrainGenerator::with_map(self.seed, std::sync::Arc::new(map));
+                    self.shaped = Some((h, g));
+                }
+                self.shaped
+                    .as_ref()
+                    .map(|(_, g)| g.clone())
+                    .unwrap_or_else(|| self.base.clone())
+            }
+        };
+        self.current = ground.with_biomes_on(&e.biomes, e.map);
         Ok(())
     }
 
