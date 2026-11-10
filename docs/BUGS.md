@@ -70,8 +70,13 @@ slots; and (2) the re-meshes of drawn chunks, which every arriving chunk marks a
 starts chunk meshes before section meshes and chunk generations within 128 m of the player before
 the other generation jobs, nearest first (`Pool::set_focus`, `NEAR_JOBS_M`), and the streamer meshes chunks in the view not drawn
 yet before re-meshes. Green: the worst wait 120 frames (2 s; the LOD's own `FORCE_CHUNKS_AFTER_MS`
-wait for its level-1 section accounts for up to 1 s of it). **Left:** the owner's check on the river in
-the browser, and the report's other half (edited chunks refined only up close), not looked at here.
+wait for its level-1 section accounts for up to 1 s of it). **Left:** two `game_local.rs` tests this
+change turns red (green on main): `with_the_lod_a_preloaded_respawn_opens_its_loading_screen_at_once`
+(opened after 39 frames, bar 3; bisected to chunk meshes going before section meshes: the preload's
+level-1 sections wait behind them) and `a_device_at_under_two_frames_a_second_walks_and_jumps_without_snapping`
+(a 0.25 m correction, bar 0.2; bisected to the near-first generation order, cause not found). Without
+the near-first generations the terrain trip is red again (218 frames). Then the owner's check on the
+river in the browser, and the report's other half (edited chunks refined only up close).
 
 ### 52. A felled trunk landing on its chopper can fling them far
 
