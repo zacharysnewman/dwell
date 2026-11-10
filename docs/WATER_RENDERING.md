@@ -101,7 +101,7 @@ shows) from the eighths the client already has, a corner takes the mean of the w
 within `heightfield.joinM` (0.2 m) of the highest, and the chunk mesher's `ChunkFlags::water_tops`
 drops liquid tops only (sides, falls, pour slopes and flooded cells stay meshed). The vertex shader
 (`dwell-client` `render/heightfield.rs`) reads the tiles from an `r32float` atlas with `textureLoad`
-and crosses into the world with `face_y`. The draw is built (0.50.71): chunk meshes meshed without tops carry their tile
+and crosses into the world with `face_y`. The draw is built (0.50.72): chunk meshes meshed without tops carry their tile
 (`ChunkMeshes::water`, with each column's flood light), the renderer's `HeightfieldGpu` keeps them in
 an `rg32float` atlas (group 3 of the water pipelines) and draws a tiled chunk as one `heightfield_vs`
 grid draw feeding `water_fs`/`water_scene_fs`; the streamer meshes without tops while the tier has

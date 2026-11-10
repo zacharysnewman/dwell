@@ -677,6 +677,24 @@ body:has(#main-menu) .game-menu {
   font-size: 13px;
 }
 
+/* The world's game mode (ADR 0065) at the start of its details line, so creative and adventure
+   worlds tell apart at a glance. */
+.world-mode {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 7px;
+  border-radius: 9px;
+  font-weight: 700;
+  font-size: 12px;
+  color: #fff;
+  background: #5b7fa8;
+  vertical-align: 1px;
+}
+
+.world-mode[data-mode='adventure'] {
+  background: #b0703a;
+}
+
 .world-actions {
   display: flex;
   flex-wrap: wrap;
