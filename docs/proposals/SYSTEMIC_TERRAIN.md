@@ -124,6 +124,14 @@ sheer walls, massive rock unstepped; `strength` 0 by default. The rule-based sha
 first (§6 q3) is T2's; T4 keeps the isolated buttes and the simulated comparison. First look: stepped
 hills following the contours rather than isolated mesas.
 
+## 7e. T5, tectonics at realistic scale (built, 0.52.18)
+
+One plate boundary crossing the island and a hotspot chain offshore (ADR 0075 T5, `terrain.json`
+`tectonics`): a convergent range and trench, a divergent rift, or transform offset ridges; a dormant arc
+of cratered stratovolcanoes behind a convergent line; shield islands rising from the sea, lower and
+broader down the chain; volcanoes on basalt, the old core granite. Off by default; tuned in Chisel (the
+tectonics overlay). Eruptions (§5 q5) still open.
+
 ## 7d. T4, rule-based erosion (built, 0.52.17)
 
 Isolated mesas, buttes and spires on a flat floor, from the world map's plan view (ADR 0075 T4): scarps
