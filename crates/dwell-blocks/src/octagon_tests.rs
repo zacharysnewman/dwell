@@ -143,3 +143,108 @@ fn a_cross_section_added_by_data_alone_joins_the_logs() {
     assert_eq!(ring.len(), 8);
     assert!((ring[1].0[0] - 0.15).abs() < 1e-6);
 }
+
+/// The cap's pieces in one plane: its heart and the bark ring's bands. Their areas sum to the
+/// whole cap, each piece outward along the axis.
+fn cap_split(joined: u8, axis: usize, end: bool) -> Vec<Face> {
+    let (c, _) = section_of(log("y")).expect("logs have a cross-section");
+    let pieces = cap_pieces(&c, axis, joined, CELL, end);
+    let whole = faces(&c, axis, joined, CELL)
+        .into_iter()
+        .find(|f| f.part == Part::Cap(end))
+        .expect("a cap");
+    let sum: f64 = pieces.iter().map(|f| area(&f.pts)[axis]).sum();
+    let want = area(&whole.pts)[axis];
+    assert!((sum - want).abs() < 1e-9, "pieces {sum} vs cap {want}");
+    let sign = if end { 1.0 } else { -1.0 };
+    for f in &pieces {
+        assert!(area(&f.pts)[axis] * sign > 0.0, "{:?} faces inward", f.part);
+    }
+    pieces
+}
+
+#[test]
+fn a_lone_logs_bark_ring_follows_the_octagon() {
+    // Owner, 2026-11-09: "the outside bark ring should follow the octagon, it doesn't, it gets
+    // cut off on the corners." Every one of the octagon's eight edges carries a band of the
+    // ring's width, the chamfers too, and the heart is the octagon moved in by that width.
+    let (c, _) = section_of(log("y")).unwrap();
+    assert!(
+        c.ring > 0.0 && c.heart.is_some(),
+        "the log's data names a ring and a heart"
+    );
+    for axis in 0..3 {
+        for end in [true, false] {
+            let p = cap_split(0, axis, end);
+            assert_eq!(count(&p, |x| matches!(x, Part::Ring(_, Some(_)))), 4);
+            assert_eq!(
+                count(&p, |x| matches!(x, Part::Ring(_, None))),
+                4,
+                "chamfers banded"
+            );
+            let heart = p.iter().find(|f| f.part == Part::Cap(end)).unwrap();
+            assert_eq!(heart.pts.len(), 8, "the heart is an octagon");
+            let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
+            let w_m = f64::from(c.ring) * CELL[u].min(CELL[v]);
+            // In metres every heart corner is at least the ring's width in from the cell's edges.
+            for q in &heart.pts {
+                for (a, t) in [(u, q[u]), (v, q[v])] {
+                    let d = t.min(1.0 - t) * CELL[a];
+                    assert!(
+                        d >= w_m - 1e-9,
+                        "axis {axis}: corner {q:?} {d} m from the edge"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn joined_sides_have_no_ring() {
+    // Logs joined on a side: no band along it (the joined wall's top is one surface of end
+    // grain), and the heart reaches the cell's edge there, while the open sides keep theirs.
+    let pu = face_index(2, true); // axis y: u = z, v = x; +u is +z.
+    for end in [true, false] {
+        let p = cap_split(1 << pu, 1, end);
+        assert!(
+            !p.iter().any(|f| f.part == Part::Ring(end, Some(pu))),
+            "a band along the joined side"
+        );
+        assert!(
+            p.iter()
+                .any(|f| matches!(f.part, Part::Ring(_, Some(s)) if s != pu))
+        );
+        let heart = p.iter().find(|f| f.part == Part::Cap(end)).unwrap();
+        assert_eq!(
+            heart
+                .pts
+                .iter()
+                .filter(|q| (q[2] - 1.0).abs() < 1e-9)
+                .count(),
+            2,
+            "the heart runs to the joined edge"
+        );
+    }
+    // Joined all round: no ring at all, the heart is the whole square cap.
+    let all = (1 << face_index(0, true))
+        | (1 << face_index(0, false))
+        | (1 << face_index(2, true))
+        | (1 << face_index(2, false));
+    let p = cap_split(all, 1, true);
+    assert_eq!(p.len(), 1);
+    assert_eq!(p[0].part, Part::Cap(true));
+}
+
+#[test]
+fn no_ring_returns_the_cap_whole() {
+    let c = CrossSection {
+        chamfer: 0.2,
+        joins: "x",
+        ring: 0.0,
+        heart: None,
+    };
+    let p = cap_pieces(&c, 1, 0, CELL, true);
+    assert_eq!(p.len(), 1);
+    assert_eq!(p[0].pts.len(), 8);
+}

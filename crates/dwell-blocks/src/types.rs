@@ -96,11 +96,16 @@ pub struct Cross {
 
 /// An octagonal cross-section (block data `crossSection`, ADR 0072): `chamfer` is the corners' cut,
 /// a fraction of the cross-section's shorter side; it joins (full-width sides) with neighbours of
-/// the same `joins` group and the same axis.
+/// the same `joins` group and the same axis. `ring` is the bark band round its end caps (a
+/// fraction of the shorter side, 0 for none; drawn with the side tile along the octagon's edges
+/// that are not joined, Phase 55 T3), and `heart` the tile inside the band (the caps' own tile when
+/// `None`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CrossSection {
     pub chamfer: f32,
     pub joins: &'static str,
+    pub ring: f32,
+    pub heart: Option<&'static str>,
 }
 
 /// Wind sway of a cross's top (block data `wind`): `strength` metres at the top, gusts at `speed`

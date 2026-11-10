@@ -1636,12 +1636,15 @@ fn a_log_lying_along_x_shows_its_end_grain_on_its_ends_and_its_bark_along_it() {
                 assert_eq!(tile, rect("logSide"), "axis {axis}, chamfer {n:?}");
                 continue;
             };
-            let want = if along == end_normal {
-                "logTop"
-            } else {
-                "logSide"
-            };
-            assert_eq!(tile, rect(want), "axis {axis}, face normal {n:?}");
+            if along == end_normal {
+                // The cap: the heart's end grain inside the bark ring (Phase 55 T3).
+                assert!(
+                    tile == rect("logHeart") || tile == rect("logSide"),
+                    "axis {axis}, cap tile {tile:?}"
+                );
+                continue;
+            }
+            assert_eq!(tile, rect("logSide"), "axis {axis}, face normal {n:?}");
             if along != end_normal {
                 // The bark's v runs along the log: over the face, v spans the log's own length
                 // (1 m along x or z, a half-metre cell along y), u the other way.
@@ -2166,6 +2169,72 @@ dwell_world::both_faces!(
             crossed.iter().filter(|(_, n)| diagonal(*n)).count(),
             16,
             "4 chamfers each"
+        );
+    }
+);
+
+/// The face-local top caps' triangles of logs (as `log_triangles`) with each one's tile.
+fn log_top_tiles(f: FaceFrame, logs: &[(i32, i32, i32, &str)]) -> Vec<([f64; 3], [f32; 2])> {
+    let c = ChunkCoord::new(0, 2, 0);
+    let n = CHUNK_SIZE;
+    let mut source = dwell_world::VoxelWorld::new(dwell_world::empty_generator(), None);
+    for &(x, y, z, axis) in logs {
+        let m = require(&format!("dwell:log[axis={axis}]"));
+        source.set_voxel(x, c.y * n + y, z, m);
+    }
+    let m = local_mesh(f, mesh_on_face(&mut source, c, f).opaque);
+    m.indices
+        .chunks_exact(3)
+        .filter(|t| vertex(&m.normals, t[0])[1] > 0.5)
+        .map(|t| {
+            let p: Vec<[f64; 3]> = t.iter().map(|&i| vertex(&m.positions, i)).collect();
+            let mid = std::array::from_fn(|a| (p[0][a] + p[1][a] + p[2][a]) / 3.0);
+            let i = t[0] as usize;
+            (mid, [m.tiles[i * 4], m.tiles[i * 4 + 1]])
+        })
+        .collect()
+}
+
+dwell_world::both_faces!(
+    /// Phase 55 T3 (owner, 2026-11-09: "the outside bark ring should follow the octagon, it
+    /// doesn't, it gets cut off on the corners"): a lone log's top is end grain (the ringless
+    /// heart tile) inside a band of bark that runs along all eight edges, the chamfers too. Red
+    /// before: the whole cap was the square-ringed end tile, its ring clipped at the corners.
+    fn a_lone_logs_cap_rings_the_octagon_in_bark(f: FaceFrame) {
+        let tris = log_top_tiles(f, &[(8, 8, 8, "y")]);
+        assert!(
+            tris.iter().any(|(_, t)| *t == rect_of("logHeart")),
+            "no heart"
+        );
+        let bark: Vec<_> = tris
+            .iter()
+            .filter(|(_, t)| *t == rect_of("logSide"))
+            .collect();
+        // Bark at a chamfer: near the cut corner (u + v about the chamfer), on all four.
+        for (cu, cv) in [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)] {
+            let near = bark.iter().any(|(m, _)| {
+                let (u, v) = ((m[0] - 8.0 - cu).abs(), (m[2] - 8.0 - cv).abs());
+                (0.2..0.45).contains(&(u + v)) && u < 0.4 && v < 0.4
+            });
+            assert!(near, "no bark along the chamfer at corner ({cu}, {cv})");
+        }
+    }
+);
+
+dwell_world::both_faces!(
+    /// Joined logs' tops have no bark between them: no ring runs along the joined side, so a
+    /// joined wall's top reads as continuous wood; the open sides keep their ring.
+    fn joined_logs_tops_have_no_ring_between_them(f: FaceFrame) {
+        let tris = log_top_tiles(f, &[(8, 8, 8, "y"), (9, 8, 8, "y")]);
+        let bark: Vec<_> = tris
+            .iter()
+            .filter(|(_, t)| *t == rect_of("logSide"))
+            .collect();
+        assert!(!bark.is_empty(), "the open sides keep their ring");
+        assert!(
+            bark.iter().all(|(m, _)| (m[0] - 9.0).abs() > 0.15),
+            "bark along the joined side x = 9: {:?}",
+            bark.iter().map(|b| b.0).collect::<Vec<_>>()
         );
     }
 );
