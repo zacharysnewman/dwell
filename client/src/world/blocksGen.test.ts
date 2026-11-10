@@ -1,7 +1,15 @@
 // The block generator (shared/blocks/gen.mjs) over fixture data: a copy runs in a temporary tree
 // with its own block files, so entries are added by data alone and its validation is exercised.
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -37,6 +45,8 @@ function generate(blocks: object[]): { status: number | null; output: string; ru
   mkdirSync(sounds, { recursive: true });
   for (const f of ['load.mjs', 'validate.mjs', 'dwell.json'])
     copyFileSync(join(soundsDir, f), join(sounds, f));
+  // ... and the recorded samples its sounds name (AUDIO.md §2b).
+  cpSync(join(soundsDir, 'samples'), join(sounds, 'samples'), { recursive: true });
   const air = { name: 'air', density: 0, shape: 'empty', color: '#000000', opacity: 0 };
   writeFileSync(
     join(here, 'dwell.json'),

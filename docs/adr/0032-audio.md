@@ -1,6 +1,7 @@
 # 0032. Procedural, data-driven sound effects in plain Web Audio
 
-- Status: Accepted
+- Status: Accepted; "no recorded assets" superseded in part by [0076](0076-recorded-sound-samples.md)
+  (2026-11-10: most effects also play recorded samples)
 - Date: 2026-10-14
 - Builds on: [0015](0015-block-registry.md) (blocks by name, the registry generator),
   [0028](0028-rust-port.md) (the Rust game and the TS shell)

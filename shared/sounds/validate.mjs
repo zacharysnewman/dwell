@@ -7,7 +7,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** Where a sound's recorded `samples` live (AUDIO.md §2b): beside the data, in `samples/`. */
-export const SAMPLES_DIR = join(dirname(fileURLToPath(import.meta.url)), "samples");
+export const SAMPLES_DIR = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "samples",
+);
 /** A sample file: lower-case words and dashes, a format every browser decodes (AAC in MP4). */
 const SAMPLE_FILE = /^[a-z0-9][a-z0-9-]*\.(m4a|mp3)$/;
 /** Every sample shipped, together, may be at most this large (owner, 2026-11-10: ~5 MB). */
@@ -300,17 +303,25 @@ export function validateSound(where, s) {
     const sm = s.samples;
     keysIn(`${where}.samples`, sm, ["files", "gain", "pitch"]);
     if (loop) fail(`${where}.samples`, "loop sounds are procedural only");
-    if (!Array.isArray(sm.files) || sm.files.length === 0 || sm.files.length > 16)
+    if (
+      !Array.isArray(sm.files) ||
+      sm.files.length === 0 ||
+      sm.files.length > 16
+    )
       fail(`${where}.samples.files`, "must list 1 to 16 files");
     for (const f of sm.files)
       if (typeof f !== "string" || !SAMPLE_FILE.test(f))
-        fail(`${where}.samples.files`, `"${f}" is not a lower-case .m4a or .mp3 name`);
+        fail(
+          `${where}.samples.files`,
+          `"${f}" is not a lower-case .m4a or .mp3 name`,
+        );
     number(`${where}.samples.gain`, sm.gain, 0, 4, { optional: true });
     number(`${where}.samples.pitch`, sm.pitch, 0, 12, { optional: true });
   }
   if (s.play !== undefined) {
     oneOf(`${where}.play`, s.play, PLAY_MODES);
-    if (s.samples === undefined) fail(`${where}.play`, "needs samples to choose between");
+    if (s.samples === undefined)
+      fail(`${where}.play`, "needs samples to choose between");
   }
 }
 
@@ -344,8 +355,14 @@ function resolveSamples(sounds, dir) {
     sounds[id] = { ...s, samples: { ...s.samples, files } };
   }
   if (bytes > SAMPLES_MAX_BYTES)
-    fail("samples", `${bytes} bytes is over the ${SAMPLES_MAX_BYTES}-byte budget`);
-  return { files: [...ship].map(([file, source]) => ({ file, source })), bytes };
+    fail(
+      "samples",
+      `${bytes} bytes is over the ${SAMPLES_MAX_BYTES}-byte budget`,
+    );
+  return {
+    files: [...ship].map(([file, source]) => ({ file, source })),
+    bytes,
+  };
 }
 
 /**

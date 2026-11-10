@@ -1,5 +1,5 @@
 {
-  "$comment": "Sound effects of the built-in `dwell` namespace (docs/AUDIO.md). Every sound is procedural: layers of noise, oscillators and modal partials through filters and envelopes, composed here from a small fixed vocabulary that the client's synth (client/src/audio/synth.ts) understands. Blocks name a sound set with `\"sound\"` in shared/blocks/*.json. Run `node shared/sounds/gen.mjs` after editing; CI fails if the generated files are stale. The content is prototype (ARCHITECTURE.md §6.1).",
+  "$comment": "Sound effects of the built-in `dwell` namespace (docs/AUDIO.md). Every sound has a procedural form, and most also recorded `samples` (files in samples/, AUDIO.md §2b) played instead: layers of noise, oscillators and modal partials through filters and envelopes, composed here from a small fixed vocabulary that the client's synth (client/src/audio/synth.ts) understands. Blocks name a sound set with `\"sound\"` in shared/blocks/*.json. Run `node shared/sounds/gen.mjs` after editing; CI fails if the generated files are stale. The content is prototype (ARCHITECTURE.md §6.1).",
   "namespace": "dwell",
   "fallback": "stone",
   "gaits": {

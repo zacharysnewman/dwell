@@ -2,6 +2,12 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.52.15",
+      "changes": [
+        "Recorded sound effects: footsteps, landings, digging, placing and hits now sound like the block underfoot (stone, dirt, grass, sand, snow, wood, water), with real splashes, axe chops, grunts and explosions. Sliding keeps its sound."
+      ]
+    },
+    {
       "version": "0.52.14",
       "changes": [
         "Chisel: soil and vegetation from climate. Trees thin out above a tree line set by temperature and vanish in dry ground; new soil and vegetation views and sliders. Five presets use it; the default world is unchanged."

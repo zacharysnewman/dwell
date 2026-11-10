@@ -25,6 +25,11 @@ Animals FREE - Animated Low Poly 3D Models (ithappy), 7 animals converted to GLB
   Used in: shared/models/glb (model viewer; not in the game yet)
   Source:  https://assetstore.unity.com/publishers/ithappy
 
+Universal Sound FX (Imphenzia), selected sounds converted to mono AAC Asset Store pack
+  License: Unity Asset Store EULA (Standard), Imphenzia, Universal Sound FX
+  Used in: web client (sound effects, shared/sounds/samples)
+  Source:  https://assetstore.unity.com/
+
 Stylized NPC - Peasant Nolant (Winged Boots), converted to GLB Asset Store pack (DEMO)
   License: Unity Asset Store EULA (Standard), Winged Boots, Stylized NPC - Peasant Nolant DEMO
   Used in: web client (other players' bodies, shared/models/glb/peasant.glb)
@@ -1340,7 +1345,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 -------------------------------------------------------------------------------
-Applies to: Animals FREE - Animated Low Poly 3D Models (ithappy), 7 animals converted to GLB Asset Store pack, Stylized NPC - Peasant Nolant (Winged Boots), converted to GLB Asset Store pack (DEMO), 3D Low Poly Tools Weapons Containers (NexusArcadeStudios), 53 static models converted to GLB Asset Store pack
+Applies to: Animals FREE - Animated Low Poly 3D Models (ithappy), 7 animals converted to GLB Asset Store pack, Universal Sound FX (Imphenzia), selected sounds converted to mono AAC Asset Store pack, Stylized NPC - Peasant Nolant (Winged Boots), converted to GLB Asset Store pack (DEMO), 3D Low Poly Tools Weapons Containers (NexusArcadeStudios), 53 static models converted to GLB Asset Store pack
 -------------------------------------------------------------------------------
 
 Licensed to the Dwell project's owner under the Unity Asset Store End User License Agreement
