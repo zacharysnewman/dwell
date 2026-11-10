@@ -830,6 +830,9 @@ async function start(): Promise<App | null> {
     // ?waterdbg=caustics,foam,… turns pieces of the water's shading off (a dev tool, DEV_TOOLS.md).
     const waterDebug = new URLSearchParams(location.search).get('waterdbg');
     if (waterDebug) client.setWaterDebug(waterDebug);
+    // ?heightfield=1|0 forces the near water's GPU heightfield on or off (a dev tool, DEV_TOOLS.md).
+    const heightfield = new URLSearchParams(location.search).get('heightfield');
+    if (heightfield === '1' || heightfield === '0') client.setHeightfield(Number(heightfield));
     client.setClouds(s.clouds);
     // The light shafts (ADR 0064); ?shafts=off|low|high overrides them (the bench).
     client.setShafts(new URLSearchParams(location.search).get('shafts') ?? s.shafts);
