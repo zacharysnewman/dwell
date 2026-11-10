@@ -5210,6 +5210,16 @@ impl crate::game::Scene for Renderer {
     fn draws_heightfield(&self) -> bool {
         self.water().tier().heightfield
     }
+    fn has_water_tile(&self, coord: ChunkCoord) -> bool {
+        self.heightfield.draw_of(coord).is_some()
+    }
+    fn set_water_tile(
+        &mut self,
+        coord: ChunkCoord,
+        tile: Option<&dwell_mesh::heightfield::WaterTile>,
+    ) {
+        self.heightfield.set(coord, tile);
+    }
     fn set_piece(&mut self, id: u32, meshes: Option<(&[ChunkMeshes], f64)>) {
         Renderer::set_piece(self, id, meshes);
     }

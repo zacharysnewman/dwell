@@ -49,6 +49,13 @@ pub struct WaterTile {
     pub face_b: bool,
 }
 
+/// Chunk `padded`'s tile with its flood light (`light`: the mesh job's; empty: open sky), as the
+/// mesher makes it; none where no column inside the chunk is wet. The client's re-mesh skip: a
+/// chunk whose only changes are its water's levels gets its tile from this, not a mesh job.
+pub fn water_tile(padded: &[u16], light: &[u8], mirror: bool) -> Option<WaterTile> {
+    tile_with(crate::mesher::Kinds::build(), padded, light, mirror)
+}
+
 /// Chunk `padded`'s tile over `kinds`; none where no column inside the chunk is wet.
 pub(crate) fn tile_with(
     kinds: &Kinds,
