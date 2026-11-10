@@ -200,6 +200,7 @@ fn piece_box(offset: [i32; 3], m: StateId, carrier: bool, riders_only: bool) -> 
             Collide::None
         },
         hull: dwell_physics::piece_hull(m),
+        joined: 0,
     }
 }
 
@@ -1831,6 +1832,7 @@ mod tests {
                 mass: 300.0,
                 collide: Collide::All,
                 hull: None,
+                joined: 0,
             })
             .collect();
         let body = physics.add_piece(at, &boxes, true);

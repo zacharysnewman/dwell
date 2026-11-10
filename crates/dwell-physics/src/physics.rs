@@ -111,8 +111,13 @@ pub struct PieceCell {
     pub collide: Collide,
     /// A shaped cell (Phase 55 T2: a felled trunk's upside-down wood ramp): its collider is the
     /// convex hull of this state's shape (`dwell_blocks::shape`) over the box, not the box. None:
-    /// the box. A shaped cell is never merged with its neighbours.
+    /// the box. A shaped cell is never merged with its neighbours, except an octagonal log's
+    /// (ADR 0072, Phase 55 T4): its hull is the octagon prism, merged along a run of the same log.
     pub hull: Option<dwell_blocks::StateId>,
+    /// An octagonal hull's sides joined to the same axis's logs beside it in the piece
+    /// (`dwell_blocks::octagon::joined_mask`, squared off as the terrain's are); set by
+    /// [`merged_boxes`] from the piece's cells (0 on the way in).
+    pub joined: u8,
 }
 
 /// What a falling piece's cell collides with (docs/FELLING.md §3).
@@ -719,6 +724,7 @@ pub fn merged_boxes(cells: &[PieceCell]) -> Vec<PieceCell> {
     }
     let mut used = vec![false; cells.len()];
     let mut out = Vec::new();
+    octagon_prisms(cells, &index, &mut used, &mut out);
     for (k, c) in cells.iter().enumerate() {
         if used[k] {
             continue;
@@ -759,9 +765,103 @@ pub fn merged_boxes(cells: &[PieceCell]) -> Vec<PieceCell> {
             mass: c.mass * n.x * n.y * n.z,
             collide: c.collide,
             hull: None,
+            joined: 0,
         });
     }
     out
+}
+
+/// The octagonal cells of a piece (ADR 0072, Phase 55 T4: a felled trunk's logs and wood ramps) as
+/// prisms: each cell's sides joined where a log of its axis lies beside it in the piece (as the
+/// terrain's are), and a log's run along its axis of the same state, join and collision one prism.
+/// Marks them `used` and pushes them to `out`.
+fn octagon_prisms(
+    cells: &[PieceCell],
+    index: &dyn Fn(&PieceCell) -> [i64; 3],
+    used: &mut [bool],
+    out: &mut Vec<PieceCell>,
+) {
+    use dwell_blocks::octagon;
+    use dwell_world::hash::HashMap;
+    let oct = |c: &PieceCell| c.hull.filter(|&m| octagon::is_octagon(m));
+    let grid: HashMap<[i64; 3], usize> = cells
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| oct(c).is_some())
+        .map(|(k, c)| (index(c), k))
+        .collect();
+    if grid.is_empty() {
+        return;
+    }
+    let state_at = |p: [i64; 3]| grid.get(&p).and_then(|&k| oct(&cells[k]));
+    let joined: Vec<u8> = cells
+        .iter()
+        .map(|c| {
+            let Some(m) = oct(c) else { return 0 };
+            let p = index(c);
+            octagon::joined_mask(m, &|o| {
+                state_at([
+                    p[0] + i64::from(o[0]),
+                    p[1] + i64::from(o[1]),
+                    p[2] + i64::from(o[2]),
+                ])
+                .unwrap_or(dwell_blocks::AIR)
+            })
+        })
+        .collect();
+    for (k, c) in cells.iter().enumerate() {
+        let Some(m) = oct(c) else { continue };
+        if used[k] {
+            continue;
+        }
+        used[k] = true;
+        let Some((_, axis)) = octagon::section_of(m) else {
+            continue;
+        };
+        if octagon::full(m) {
+            // The run along the axis from here (cells visited in any order: extend both ways).
+            let p = index(c);
+            let same = |j: usize| {
+                cells[j].hull == c.hull
+                    && joined[j] == joined[k]
+                    && cells[j].collide == c.collide
+                    && cells[j].half == c.half
+                    && cells[j].mass == c.mass
+            };
+            let at = |d: i64| {
+                let mut q = p;
+                q[axis] += d;
+                grid.get(&q).copied()
+            };
+            let (mut lo, mut hi) = (0i64, 0i64);
+            while let Some(j) = at(lo - 1).filter(|&j| !used[j] && same(j)) {
+                used[j] = true;
+                lo -= 1;
+            }
+            while let Some(j) = at(hi + 1).filter(|&j| !used[j] && same(j)) {
+                used[j] = true;
+                hi += 1;
+            }
+            let n = hi - lo + 1;
+            let mut off = DVec3::ZERO;
+            off[axis] = (lo + hi) as f64 * c.half[axis];
+            let mut half = c.half;
+            half[axis] *= n as f64;
+            out.push(PieceCell {
+                center: c.center + off,
+                half,
+                mass: c.mass * n as f64,
+                collide: c.collide,
+                hull: c.hull,
+                joined: joined[k],
+            });
+            continue;
+        }
+        out.push(PieceCell {
+            joined: joined[k],
+            ..*c
+        });
+    }
 }
 
 /// How far (m) each face of a piece cell's box is drawn in from the cell's. Cells detached together
@@ -784,7 +884,11 @@ fn piece_collider(c: &PieceCell) -> Collider {
     // touch until they move together.
     let half = (c.half - DVec3::splat(PIECE_SKIN)).max(c.half * 0.5);
     let hull = c.hull.and_then(|m| {
-        let pts = shape_hull_points(m, half);
+        let pts = if dwell_blocks::octagon::is_octagon(m) {
+            octagon_hull_points(m, c.joined, c.half, half)
+        } else {
+            shape_hull_points(m, half)
+        };
         ColliderBuilder::convex_hull(&pts)
     });
     hull.unwrap_or_else(|| ColliderBuilder::cuboid(half.x, half.y, half.z))
@@ -797,12 +901,40 @@ fn piece_collider(c: &PieceCell) -> Collider {
 }
 
 /// The hull a piece cell of state `m` collides as (`PieceCell::hull`): its shape when that is a
-/// convex shape other than the full cube (a ramp), else none (the box).
+/// convex shape other than the full cube (a ramp), or its octagon prism (a log or wood ramp, ADR
+/// 0072), else none (the box).
 pub fn piece_hull(m: dwell_blocks::StateId) -> Option<dwell_blocks::StateId> {
     let s = dwell_blocks::shape::shape_of(m);
     let cube = s.corners == [2, 2, 2, 2] && s.min_y == 0.0 && s.max_y == 1.0;
-    (s.convex && s.face_count > 0 && !cube && dwell_blocks::try_info(m).is_some_and(|i| i.solid))
-        .then_some(m)
+    let solid = dwell_blocks::try_info(m).is_some_and(|i| i.solid);
+    let octagon = dwell_blocks::try_info(m).is_some() && dwell_blocks::octagon::is_octagon(m);
+    (solid && (octagon || (s.convex && s.face_count > 0 && !cube))).then_some(m)
+}
+
+/// The corners of octagonal state `m`'s prism (`dwell_blocks::octagon::state_faces`, sides
+/// `joined`), its cell `size` half-extents (`PieceCell::half`, the run's along the axis) drawn in to
+/// `half` about the origin: the chamfer square in metres, as the terrain's.
+pub fn octagon_hull_points(
+    m: dwell_blocks::StateId,
+    joined: u8,
+    size: DVec3,
+    half: DVec3,
+) -> Vec<DVec3> {
+    let size_m = [2.0 * size.x, 2.0 * size.y, 2.0 * size.z];
+    let mut out: Vec<DVec3> = Vec::new();
+    for f in dwell_blocks::octagon::state_faces(m, joined, size_m) {
+        for p in &f.pts {
+            let q = DVec3::new(
+                (p[0] * 2.0 - 1.0) * half.x,
+                (p[1] * 2.0 - 1.0) * half.y,
+                (p[2] * 2.0 - 1.0) * half.z,
+            );
+            if !out.iter().any(|o| (*o - q).length() < 1e-9) {
+                out.push(q);
+            }
+        }
+    }
+    out
 }
 
 /// The corners of state `m`'s shape (its faces' points, fractions of the cell) over a box of
@@ -836,6 +968,7 @@ mod piece_box_tests {
             mass,
             collide,
             hull: None,
+            joined: 0,
         }
     }
 

@@ -497,6 +497,7 @@ fn piece_boxes(cells: &[([i32; 3], StateId)], kind: u8) -> Vec<PieceCell> {
                     dwell_physics::Collide::None
                 },
                 hull: dwell_physics::piece_hull(m),
+                joined: 0,
             }
         })
         .collect()

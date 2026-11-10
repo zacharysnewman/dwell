@@ -578,12 +578,13 @@
       "textures": { "top": "dynamiteYellowTop", "side": "dynamiteYellow", "bottom": "dynamiteYellowTop" }
     },
     {
-      "$comment": "The wood ramp (ADR 0067 §5a, Phase 55 T2; owner, 2026-11-09): a felled log's cut cell split along its diagonal, never placed (not in the palette, not on the hotbar). The stump keeps the upright ramp (`half: bottom`, rising away from the notch); the falling trunk's new bottom is the matching upside-down ramp (`half: top`). A carrier like the log (the inverted one rides the trunk as a carrier, the stump's stands on the stump). shared/tools names it as the log's `fellWedge`; the axe's swing clears it (its `clears`: broken, dropping a log where blocks are not unlimited) and, like the log, hands can't break it there (`breakWith`). Square, not octagonal (ADR 0072's octagon is not applied to shaped cells yet).",
+      "$comment": "The wood ramp (ADR 0067 §5a, Phase 55 T2; owner, 2026-11-09): a felled log's cut cell split along its diagonal, never placed (not in the palette, not on the hotbar). The stump keeps the upright ramp (`half: bottom`, rising away from the notch); the falling trunk's new bottom is the matching upside-down ramp (`half: top`). A carrier like the log (the inverted one rides the trunk as a carrier, the stump's stands on the stump). shared/tools names it as the log's `fellWedge`; the axe's swing clears it (its `clears`: broken, dropping a log where blocks are not unlimited) and, like the log, hands can't break it there (`breakWith`). Octagonal (Phase 55 T4; owner, 2026-11-09: \"everything log/tree should be octagonal\"): `crossSection: \"of\"` takes the log's, so the wedge is the log's octagon prism cut by its slant, in the mesh and in collision, its full end flush with the log beside it.",
       "name": "log_ramp",
       "family": "ramp",
       "of": "log",
       "support": "carrier",
-      "breakWith": "axe"
+      "breakWith": "axe",
+      "crossSection": "of"
     }
   ]
 }

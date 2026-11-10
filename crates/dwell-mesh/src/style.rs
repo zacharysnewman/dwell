@@ -127,7 +127,12 @@ pub(crate) fn style_of(s: &StateInfo, fluids: &[FluidInfo]) -> MaterialStyle {
             dwell_blocks::Axis::Y => 1,
             dwell_blocks::Axis::Z => 2,
         },
-        octagon: s.cross_section.is_some(),
+        // A shaped state (a wood ramp) is octagonal only when its shape is convex
+        // (`dwell_blocks::octagon::section_of`).
+        octagon: s.cross_section.is_some()
+            && SHAPES
+                .get(usize::from(s.shape_index))
+                .is_some_and(|sh| sh.convex),
     }
 }
 
