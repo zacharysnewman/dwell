@@ -424,6 +424,11 @@ bed a talus slope, vertical jointing one sheer wall, massive rock unstepped; the
 a wall shows its rock's face, talus its scree, a tread its cap. Tuned in Chisel (the Rock group and the
 rock overlay). Prototype content (§6.1 of the architecture): today's blocks stand in for the rocks.
 
+## Rule-based erosion (2026-11-10, ADR 0075 T4)
+
+Systemic terrain's erosion layer, from the world map's plan view: rule-based erosion from the world map's plan view (`rocks.json` `erosion`, `geology::DrainageField`, `geology::eroded`): drainage lines are map cells with at least `threshold` cells of flow accumulation (or the sea); a column nearer a line than the scarp's retreat (`reach` × (1 − `resist` × the cap rock's hardness) × (1 + `valley` × log2 of the line's accumulation over the threshold) × (1 ± `outline` noise) − `relief` × the hill's height over the floor) is cut down to the floor (the line's height, `snap` of the way down to the stack's lowest soft layer's top), farther it stands; a `wall` m sheer wall at the edge (the cap rock's face) and a `talusWidth` m skirt (the soft rock's scree) below; a biome's `gullies` cuts short-wavelength rills (`gullyWavelength`, `gullyDepth`). A biome opts in with `erosion` 0..1 (absent 0: the default world and goldens unchanged); the red-rock mesa preset at 1, badlands at 1 with gullies 1. Tuned in Chisel
+(the Erosion group, a biome's erosion and gullies, the erosion overlay).
+
 ## Soil and vegetation from climate (2026-11-10, ADR 0075 T3)
 
 Systemic terrain's life layer: `shared/worldgen/vegetation.json` holds the climate's °C scale, each

@@ -270,6 +270,11 @@ pub struct Biome {
     /// How much the climate rules its placements (`vegetation.json`'s kinds; systemic terrain T3):
     /// 0 none (the default biome), 1 fully.
     pub vegetation: f64,
+    /// How far its scarps have retreated from the drainage (`rocks.json` `erosion`; systemic
+    /// terrain T4): 0 none (the default biome), 1 fully: isolated mesas and buttes on a floor.
+    pub erosion: f64,
+    /// Its rills (T4, the badlands'): 0 none, 1 the erosion's `gullyDepth`.
+    pub gullies: f64,
 }
 
 mod table {
@@ -599,6 +604,10 @@ pub struct BiomeSet {
     /// The rocks' palettes from here: rock r's scree palette at `rock_first + 2r` (ground and
     /// under its scree, rock its face), its cap palette at `+ 1` (ground and under its cap).
     rock_first: u16,
+    /// The drainage seen from above (T4), built only where a biome erodes.
+    drainage: Option<crate::geology::DrainageField>,
+    /// Each stack's lowest soft layer's top (m within its period; T4's base level).
+    soft_tops: Vec<f64>,
 }
 
 impl BiomeSet {
@@ -668,6 +677,14 @@ impl BiomeSet {
             geology: crate::geology::Resolved::new(geology, world_seed),
             biome_stack,
             rock_first,
+            drainage: (geology.erosion.strength > 0.0
+                && list.iter().any(|b| b.erosion > 0.0 || b.gullies > 0.0))
+            .then(|| crate::geology::DrainageField::of(map, geology.erosion.threshold)),
+            soft_tops: geology
+                .stacks
+                .iter()
+                .map(|s| crate::geology::soft_top(&geology, s))
+                .collect(),
         }
     }
 
@@ -977,6 +994,133 @@ impl TerrainGenerator {
             }
         }
         (h + reach * dh, chosen)
+    }
+
+    /// The cut-back at face-local (x, z) (systemic terrain T4): the biomes' erosion strength there
+    /// and the margin (m) past the retreated scarp (below 0: cut down to the floor), with the
+    /// floor's height and the stack. None where nothing erodes.
+    pub fn cut_back(
+        &self,
+        mix: &crate::biomemap::Mix,
+        x: i64,
+        z: i64,
+        h: f64,
+    ) -> Option<(f64, f64, f64, usize)> {
+        let field = self.biomes.drainage.as_ref()?;
+        let geo = &self.biomes.geology;
+        let e = &geo.geology.erosion;
+        let s: f64 = mix
+            .iter()
+            .map(|(i, w)| w * self.biomes.list[i].erosion)
+            .sum::<f64>()
+            * e.strength;
+        if s <= 0.0 {
+            return None;
+        }
+        let stack = match self.biomes.biome_stack[usize::from(mix.chosen)] {
+            Some(k) => k,
+            None => geo.province(x, z).0,
+        };
+        let st = &geo.geology.stacks[stack];
+        let cap = geo
+            .geology
+            .rock(st.layers[0].rock)
+            .map_or(0.5, |r| geo.geology.rocks[r].hardness);
+        let (dist, line, acc) = field.at(x as f64, z as f64);
+        let period = geo.profiles[stack].period().max(1.0);
+        let top = self.biomes.soft_tops[stack];
+        let snapped = ((line - top) / period).floor() * period + top;
+        let floor = line + e.snap * (snapped.min(line) - line);
+        let hill = (h - floor).max(0.0);
+        let n = crate::noise::fbm2(
+            crate::noise::seed_word(self.world_seed, 0x6E01_0004),
+            x,
+            z,
+            e.outline_wavelength.max(1.0) as i32,
+            3,
+            None,
+        );
+        let retreat = e.reach
+            * (1.0 - e.resist * cap).max(0.0)
+            * (1.0 + e.valley * (acc / e.threshold.max(1.0)).max(1.0).log2())
+            * (1.0 + e.outline * 2.0 * f64::from(n)).max(0.0)
+            - e.relief * hill;
+        Some((s.min(1.0), dist - retreat, floor, stack))
+    }
+
+    /// The ground at `h` m eroded from the plan view (systemic terrain T4): cut down to the floor
+    /// nearer the drainage than the retreated scarp, a wall and a talus skirt at the edge, the
+    /// badlands' rills by the biomes' `gullies`, all `strength` of the way and faded at the water.
+    /// Its walls show the cap rock's face, its talus the soft rock's scree.
+    fn erosion_shaping(
+        &self,
+        mix: &crate::biomemap::Mix,
+        x: i64,
+        z: i64,
+        h: f64,
+        fade: f64,
+        rock: Option<(usize, crate::geology::Part)>,
+    ) -> (f64, Option<(usize, crate::geology::Part)>) {
+        if h <= 0.0 {
+            return (h, rock);
+        }
+        let Some((s, margin, floor, stack)) = self.cut_back(mix, x, z, h) else {
+            return (h, rock);
+        };
+        let geo = &self.biomes.geology;
+        let e = &geo.geology.erosion;
+        let (mut g, cut) = crate::geology::eroded(e, h, floor, margin);
+        let gullies: f64 = mix
+            .iter()
+            .map(|(i, w)| w * self.biomes.list[i].gullies)
+            .sum();
+        if gullies > 0.0 && e.gully_depth > 0.0 {
+            let v = crate::noise::fbm2(
+                crate::noise::seed_word(self.world_seed, 0x6E01_0005),
+                x,
+                z,
+                e.gully_wavelength.max(1.0) as i32,
+                3,
+                None,
+            );
+            let rill = 1.0 - smooth01(f64::from(v).abs() / 0.12);
+            g = (g - gullies.min(1.0) * e.gully_depth * rill).max(floor.min(g) - 1.0);
+        }
+        let reach = s * fade * smooth01(h / 8.0);
+        let out = h + reach * (g - h);
+        if reach < 0.5 {
+            return (out, rock);
+        }
+        use crate::geology::{Cut, Part};
+        let st = &geo.geology.stacks[stack];
+        let cap = geo.geology.rock(st.layers[0].rock);
+        let soft = st.layers.iter().rev().find_map(|l| {
+            geo.geology
+                .rock(l.rock)
+                .filter(|&r| geo.geology.rocks[r].hardness < 0.5)
+        });
+        let rock = match cut {
+            Cut::Wall => cap.map(|r| (r, Part::Wall)),
+            Cut::Talus => soft.or(cap).map(|r| (r, Part::Talus)),
+            Cut::Floor => soft.or(cap).map(|r| (r, Part::Tread)),
+            Cut::Standing => rock,
+        };
+        (out, rock)
+    }
+
+    /// This generator's geology (`rocks.json`).
+    pub fn geology(&self) -> &crate::geology::Geology {
+        &self.biomes.geology.geology
+    }
+
+    /// The erosion's strength, cut-back margin (m past the retreated scarp; below 0 cut down to
+    /// the floor) and floor (m over the sea) at face-local (x, z), by the height field's ground
+    /// (Chisel's erosion overlay; systemic terrain T4). None where nothing erodes.
+    pub fn erosion_at(&self, x: i64, z: i64) -> Option<(f64, f64, f64)> {
+        let (base, _, _) = self.map.height_at(x as f64, z as f64);
+        let mix = self.biomes.mix(x, z, base);
+        self.cut_back(&mix, x, z, base)
+            .map(|(s, margin, floor, _)| (s, margin, floor))
     }
 
     /// The rock at the surface of face-local (x, z) and the part of its stack's profile there,
@@ -1503,6 +1647,9 @@ impl TerrainGenerator {
         // The rock's shaping (systemic terrain T2; none at strength 0).
         let (shaped, rock) = self.rock_shaping(&mix, x, z, h, fade);
         h = shaped;
+        // The erosion's plan view (systemic terrain T4; none where no biome erodes).
+        let (eroded, rock) = self.erosion_shaping(&mix, x, z, h, fade, rock);
+        h = eroded;
         let on_lip = false;
         let stream = false;
         let mut water = Water::None;

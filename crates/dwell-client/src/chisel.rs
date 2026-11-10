@@ -10,7 +10,7 @@
 
 use dwell_game::minimap::{MAP, decode_height, tint_rgb};
 use dwell_look::lod_map::LOD_MAP;
-use dwell_worldgen::geology::{GEOLOGY, Geology, Jointing, Layer, Rock, Stack};
+use dwell_worldgen::geology::{Erosion, GEOLOGY, Geology, Jointing, Layer, Rock, Stack};
 use dwell_worldgen::terrain::{
     BIOME_MAP, BIOMES, Biome, BiomeMap, ElevationBand, HEIGHT, HeightField, TerrainGenerator,
     WaterLook, Where, WhereRange, water_tint_of,
@@ -40,6 +40,9 @@ pub enum Overlay {
     Soil,
     /// The vegetation's density (systemic terrain T3) for the column's biome: tan (none) to green.
     Vegetation,
+    /// The erosion's cut-back (systemic terrain T4): tan where cut down to the floor, dark red at a
+    /// remnant's wall, pale where it stands; grey where nothing erodes.
+    Erosion,
 }
 
 impl Overlay {
@@ -52,6 +55,7 @@ impl Overlay {
             5 => Self::Rock,
             6 => Self::Soil,
             7 => Self::Vegetation,
+            8 => Self::Erosion,
             _ => Self::Blocks,
         }
     }
@@ -198,6 +202,8 @@ pub fn biome_from_json(v: &Value) -> Result<Biome, String> {
         water_look: water_look(v).map_err(at)?,
         rock_stack: v.get("rockStack").and_then(Value::as_str).map(leak),
         vegetation: v.get("vegetation").and_then(Value::as_f64).unwrap_or(0.0),
+        erosion: v.get("erosion").and_then(Value::as_f64).unwrap_or(0.0),
+        gullies: v.get("gullies").and_then(Value::as_f64).unwrap_or(0.0),
     })
 }
 
@@ -365,6 +371,32 @@ pub fn geology_from_json(v: &Value) -> Result<Geology, String> {
         strength: g("shaping", "strength")?.clamp(0.0, 1.0),
         tread: g("shaping", "tread")?,
         sheer: g("shaping", "sheer")?,
+        erosion: erosion_from_json(v.get("erosion"))?,
+    })
+}
+
+/// The erosion (rocks.json `erosion`, systemic terrain T4); absent (an edit stored before T4):
+/// the build's.
+fn erosion_from_json(v: Option<&Value>) -> Result<Erosion, String> {
+    let Some(v) = v else {
+        return Ok(GEOLOGY.erosion);
+    };
+    let g = |k: &str| num(v, k).map_err(|e| format!("rocks.json: erosion.{e}"));
+    Ok(Erosion {
+        strength: g("strength")?.clamp(0.0, 1.0),
+        reach: g("reach")?.max(0.0),
+        valley: g("valley")?,
+        resist: g("resist")?.clamp(0.0, 1.0),
+        relief: g("relief")?,
+        threshold: g("threshold")?.max(1.0),
+        snap: g("snap")?.clamp(0.0, 1.0),
+        wall: g("wall")?.max(0.5),
+        talus_width: g("talusWidth")?.max(0.0),
+        talus_share: g("talusShare")?.clamp(0.0, 1.0),
+        outline: g("outline")?,
+        outline_wavelength: g("outlineWavelength")?.max(16.0),
+        gully_wavelength: g("gullyWavelength")?.max(4.0),
+        gully_depth: g("gullyDepth")?,
     })
 }
 
@@ -653,6 +685,24 @@ pub fn preview(g: &TerrainGenerator, x0: i64, z0: i64, n: i64, texel: i64, o: Ov
             Overlay::Vegetation => bytes(match g.vegetation_at(x, z) {
                 None => [0.5; 3],
                 Some(d) => lerp3([0.86, 0.78, 0.58], [0.1, 0.42, 0.16], d),
+            }),
+            Overlay::Erosion => bytes(match g.erosion_at(x, z) {
+                None => [0.5; 3],
+                Some((s, margin, _)) => {
+                    let wall = g.geology().erosion.wall.max(1.0);
+                    let c = if margin < 0.0 {
+                        lerp3(
+                            [0.9, 0.78, 0.55],
+                            [0.75, 0.6, 0.4],
+                            (-margin / 200.0).min(1.0),
+                        )
+                    } else if margin < 4.0 * wall {
+                        [0.55, 0.12, 0.08]
+                    } else {
+                        [0.93, 0.9, 0.85]
+                    };
+                    lerp3([0.5; 3], c, s)
+                }
             }),
             Overlay::Rainfall => bytes(match g.biome_rainfall(x, z) {
                 None => [0.5; 3],

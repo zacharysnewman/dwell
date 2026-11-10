@@ -71,6 +71,8 @@ pub struct Geology {
     pub tread: f64,
     /// How narrow a hard wall is: a bed's rise takes (1 − hardness)^sheer of its height as input.
     pub sheer: f64,
+    /// The rule-based erosion (T4).
+    pub erosion: Erosion,
 }
 
 mod table {
@@ -254,4 +256,211 @@ impl Resolved {
         let edge = (t - lo).min(hi - t);
         (i, (edge / PROVINCE_FADE).clamp(0.0, 1.0))
     }
+}
+
+/// The rule-based erosion (systemic terrain T4, ADR 0075; rocks.json `erosion`): how far the
+/// scarps have retreated from the world map's drainage lines. A biome opts in with its `erosion`
+/// (and its `gullies`), absent 0, so the default world is unchanged.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Erosion {
+    /// Scales every biome's `erosion` (0: none).
+    pub strength: f64,
+    /// How far (m) a drainage line's scarps have retreated, before the rock and the hill.
+    pub reach: f64,
+    /// The extra retreat per doubling of the line's flow accumulation over the threshold (a bigger
+    /// valley cuts back further).
+    pub valley: f64,
+    /// The retreat × (1 − resist × the stack's cap rock's hardness): soft rock retreats faster.
+    pub resist: f64,
+    /// The retreat lost per m of the hill's height over the floor (taller ground survives).
+    pub relief: f64,
+    /// The flow accumulation (map cells) that makes a drainage line: lower, denser drainage.
+    pub threshold: f64,
+    /// 0..1 of the way from the drainage line's height down to the top of the stack's lowest soft
+    /// layer (the base level).
+    pub snap: f64,
+    /// The wall's width (m) at a remnant's edge.
+    pub wall: f64,
+    /// The talus skirt's width (m) below a wall.
+    pub talus_width: f64,
+    /// The share of the hill's height the talus skirt rises to.
+    pub talus_share: f64,
+    /// The outline noise's amplitude (a share of the retreat).
+    pub outline: f64,
+    /// The outline noise's wavelength (m).
+    pub outline_wavelength: f64,
+    /// The badlands' rills (a biome's `gullies`): their noise's wavelength (m).
+    pub gully_wavelength: f64,
+    /// The rills' depth (m).
+    pub gully_depth: f64,
+}
+
+/// The world map's drainage seen from above (T4): per map cell, the distance (m) to the nearest
+/// drainage line (a cell with at least `threshold` cells of flow accumulation, or the sea), that
+/// line's height and accumulation. Built once per generator, only where a biome erodes.
+#[derive(Clone, Debug)]
+pub struct DrainageField {
+    n: usize,
+    cell: f64,
+    x0: f64,
+    dist: Vec<f32>,
+    height: Vec<f32>,
+    accumulation: Vec<f32>,
+}
+
+impl DrainageField {
+    /// The field of `map` with drainage lines at `threshold` cells of accumulation.
+    pub fn of(map: &crate::worldmap::WorldMap, threshold: f64) -> Self {
+        let n = map.n;
+        let len = n * n;
+        // Flow accumulation: each cell passes its count to its receiver, highest first.
+        let mut order: Vec<usize> = (0..len).collect();
+        order.sort_by(|&a, &b| map.height[b].total_cmp(&map.height[a]).then(a.cmp(&b)));
+        let mut acc = vec![1.0f32; len];
+        for &c in &order {
+            if let Some((dx, dz)) = map.flow(c) {
+                let (i, j) = (
+                    (c % n) as i64 + i64::from(dx),
+                    (c / n) as i64 + i64::from(dz),
+                );
+                if i >= 0 && j >= 0 && (i as usize) < n && (j as usize) < n {
+                    let r = j as usize * n + i as usize;
+                    if r != c {
+                        acc[r] += acc[c];
+                    }
+                }
+            }
+        }
+        // Distance to the nearest drainage cell: a Dijkstra over the grid's 8 neighbours.
+        let mut dist = vec![f32::INFINITY; len];
+        let mut src = vec![usize::MAX; len];
+        let mut heap = std::collections::BinaryHeap::new();
+        for c in 0..len {
+            if map.is_sea(c) || f64::from(acc[c]) >= threshold {
+                dist[c] = 0.0;
+                src[c] = c;
+                heap.push(std::cmp::Reverse((0u32, c)));
+            }
+        }
+        let s2 = std::f32::consts::SQRT_2;
+        let moves = [
+            (1i64, 0i64, 1.0f32),
+            (-1, 0, 1.0),
+            (0, 1, 1.0),
+            (0, -1, 1.0),
+            (1, 1, s2),
+            (1, -1, s2),
+            (-1, 1, s2),
+            (-1, -1, s2),
+        ];
+        // Non-negative f32s order as their bits.
+        while let Some(std::cmp::Reverse((bits, c))) = heap.pop() {
+            let d = f32::from_bits(bits);
+            if d > dist[c] {
+                continue;
+            }
+            let (ci, cj) = ((c % n) as i64, (c / n) as i64);
+            for (dx, dz, w) in moves {
+                let (i, j) = (ci + dx, cj + dz);
+                if i < 0 || j < 0 || i as usize >= n || j as usize >= n {
+                    continue;
+                }
+                let r = j as usize * n + i as usize;
+                let nd = d + w * map.cell as f32;
+                if nd < dist[r] {
+                    dist[r] = nd;
+                    src[r] = src[c];
+                    heap.push(std::cmp::Reverse((nd.to_bits(), r)));
+                }
+            }
+        }
+        let height = src
+            .iter()
+            .map(|&s| {
+                if s == usize::MAX {
+                    0.0
+                } else {
+                    map.height[s].max(0.0)
+                }
+            })
+            .collect();
+        let accumulation = src
+            .iter()
+            .map(|&s| if s == usize::MAX { 1.0 } else { acc[s] })
+            .collect();
+        let dist = dist.into_iter().map(|d| d.min(1.0e9)).collect();
+        Self {
+            n,
+            cell: map.cell,
+            x0: map.centre(0).0,
+            dist,
+            height,
+            accumulation,
+        }
+    }
+
+    /// At face-local (x, z), bilinear between the cells' centres: the distance (m) to the nearest
+    /// drainage line, that line's height (m over the sea) and its accumulation (cells).
+    pub fn at(&self, x: f64, z: f64) -> (f64, f64, f64) {
+        let n = self.n as i64;
+        let fx = ((x - self.x0) / self.cell).clamp(0.0, (n - 1) as f64);
+        let fz = ((z - self.x0) / self.cell).clamp(0.0, (n - 1) as f64);
+        let (i, j) = (fx.floor() as i64, fz.floor() as i64);
+        let (tx, tz) = (fx - i as f64, fz - j as f64);
+        let mut out = [0.0f64; 3];
+        for (dj, wz) in [(0, 1.0 - tz), (1, tz)] {
+            for (di, wx) in [(0, 1.0 - tx), (1, tx)] {
+                let c = ((j + dj).min(n - 1) * n + (i + di).min(n - 1)) as usize;
+                let w = wx * wz;
+                out[0] += w * f64::from(self.dist[c]);
+                out[1] += w * f64::from(self.height[c]);
+                out[2] += w * f64::from(self.accumulation[c]);
+            }
+        }
+        (out[0], out[1], out[2])
+    }
+}
+
+/// Where a column falls on an eroded profile (T4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Cut {
+    /// Cut down to the floor.
+    Floor,
+    /// The talus skirt below a wall.
+    Talus,
+    /// A remnant's wall.
+    Wall,
+    /// Standing: a remnant's top.
+    Standing,
+}
+
+/// The eroded height of ground at `h` m given the erosion's `margin` (m past the retreated
+/// scarp: below 0 cut away) and its `floor`: the floor with a talus skirt, a wall `wall` m wide,
+/// then the ground as it was. A pure rule over its inputs (face-local heights).
+pub fn eroded(e: &Erosion, h: f64, floor: f64, margin: f64) -> (f64, Cut) {
+    let floor = floor.min(h);
+    let hill = h - floor;
+    let foot = floor + e.talus_share * hill;
+    if margin >= e.wall {
+        (h, Cut::Standing)
+    } else if margin >= 0.0 {
+        (foot + (h - foot) * (margin / e.wall.max(1e-6)), Cut::Wall)
+    } else if e.talus_width > 0.0 && margin > -e.talus_width {
+        let t = 1.0 + margin / e.talus_width;
+        (floor + (foot - floor) * t * t, Cut::Talus)
+    } else {
+        (floor, Cut::Floor)
+    }
+}
+
+/// The top (m within a period) of `stack`'s lowest soft layer (hardness under ½), or 0.
+pub fn soft_top(g: &Geology, stack: &Stack) -> f64 {
+    let mut below = 0.0;
+    for l in stack.layers.iter().rev() {
+        below += l.thickness;
+        if g.rock(l.rock).is_some_and(|r| g.rocks[r].hardness < 0.5) {
+            return below;
+        }
+    }
+    0.0
 }

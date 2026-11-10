@@ -102,7 +102,7 @@ export const WORLD_GROUPS = ['inland', 'seaFloor', 'islands', 'hills', 'bumps', 
 /** A biome's groups (shared/worldgen/biomes/*.json): layered on the elevation. */
 export const BIOME_GROUPS = Object.keys(TERRAIN).filter((g) => !WORLD_GROUPS.includes(g));
 /** A biome's reference fields beside its groups. */
-const BIOME_REFS = ['where', 'bands', 'decorations', 'placements', 'water', 'waterLook', 'rockStack', 'vegetation'];
+const BIOME_REFS = ['where', 'bands', 'decorations', 'placements', 'water', 'waterLook', 'rockStack', 'vegetation', 'erosion', 'gullies'];
 /** A biome's optional words for people (Chisel's lists): a short label and a one-line description. */
 export const BIOME_TEXT = { label: 40, description: 200 };
 const BIOME_NAME = /^[a-z0-9_]+:[a-z0-9_]+$/;
@@ -174,6 +174,9 @@ export function validateBiome(data, blocks, refs) {
   }
   if (data.vegetation !== undefined && !(isNum(data.vegetation) && data.vegetation >= 0 && data.vegetation <= 1)) {
     fail('vegetation must be in [0, 1]');
+  }
+  for (const k of ['erosion', 'gullies']) {
+    if (data[k] !== undefined && !(isNum(data[k]) && data[k] >= 0 && data[k] <= 1)) fail(`${k} must be in [0, 1]`);
   }
   return data;
 }
@@ -272,6 +275,22 @@ export const JOINTING = ['bedded', 'vertical', 'massive'];
 export const GEOLOGY = {
   provinces: { wavelength: [256, 1_000_000, true] },
   shaping: { strength: [0, 1], tread: [0, 10], sheer: [0, 10] },
+  erosion: {
+    strength: [0, 1],
+    reach: [0, 10_000],
+    valley: [0, 4],
+    resist: [0, 1],
+    relief: [0, 100],
+    threshold: [1, 100_000, true],
+    snap: [0, 1],
+    wall: [0.5, 50],
+    talusWidth: [0, 500],
+    talusShare: [0, 1],
+    outline: [0, 1],
+    outlineWavelength: [16, 100_000, true],
+    gullyWavelength: [4, 10_000, true],
+    gullyDepth: [0, 100],
+  },
 };
 
 /**
@@ -284,7 +303,7 @@ export function validateRocks(data, blocks) {
     throw new Error(`rocks.json: ${m}`);
   };
   if (typeof data !== 'object' || data === null) fail('must be an object');
-  const extra = Object.keys(data).filter((k) => !['$comment', 'rocks', 'stacks', 'provinces', 'shaping'].includes(k));
+  const extra = Object.keys(data).filter((k) => !['$comment', 'rocks', 'stacks', 'provinces', 'shaping', 'erosion'].includes(k));
   if (extra.length) fail(`unknown ${extra.join(', ')}`);
   const between = (v, lo, hi) => isNum(v) && v >= lo && v <= hi;
   if (!Array.isArray(data.rocks) || data.rocks.length === 0) fail('rocks must be a list of at least one rock');
