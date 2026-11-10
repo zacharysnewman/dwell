@@ -190,6 +190,13 @@ island stands above the sea where the plain map is sea, lower down the chain. `g
 off, a fixture world with tectonics validates, bad keys and stacks named. Chisel: the knobs round trip,
 the overlay colours.
 
+First look (Chisel, seed 7, the fixture's knobs): the world overview shows the range as a pale band
+across the island along the line and four volcanic islands offshore, smaller down the chain; the
+tectonics overlay shows the two plates, the line, the three arc cones and the chain. In the blocks view the
+arc cones read weakly (a faint radial cone with bare stone at its summit): the blocks view has no relief
+shading and the eroded cones stand ~100–150 m over the range's slope, so a Rainier-like peak needs a taller
+`coneHeight` or the in-game look to judge.
+
 Not yet: one boundary and one chain (a list of either is a later data change); `kind` is a number, not a
 name; at the 100 m map cells and after the erosion the cones keep less relief than their profile (the
 fixture's 700 m cone's rim ~100–150 m over its surroundings on the range's slope); eruptions, lava
