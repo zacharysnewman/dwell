@@ -2,6 +2,12 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.51.11",
+      "changes": [
+        "Dynamite's smoke and dust cost less to draw: each puff is lit once instead of pixel by pixel, so big blasts (most of all by water) run smoother, looking the same."
+      ]
+    },
+    {
       "version": "0.51.10",
       "changes": [
         "Switch a world between Creative and Adventure while playing: the game menu's Host page has a Mode choice.",

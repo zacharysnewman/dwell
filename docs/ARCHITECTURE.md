@@ -3125,7 +3125,7 @@ felling's bodies. An explosives table as data (`shared/explosives/explosives.jso
 → `dwell-world` `explosives.gen.rs`, validated against the registry, CI stale check): each explosive's
 placed and lit blocks (`dwell:dynamite`, `dwell:lit_dynamite`), what lights it, its fuse, radius, destroy radius
 (**[built, 0.49.38]**), impulse, falloff, lift, speed cap, players' reach, knockback and damage, water radius, chain delay range and
-the clients' effects; `limits` (blasts a tick, pieces a blast, and the clients' puffs at once, shared by the blasts in flight, 0.50.16). A Place with a torch held, aimed at
+the clients' effects; `limits` (blasts a tick, pieces a blast, and the clients' puffs at once, shared by the blasts in flight, 0.50.16). The clients' smoke and dust puffs are lit once each, at their centre in the vertex shader (the shadow maps read there; the frame group's shadow bindings visible to the vertex stage), the shape per pixel (0.51.11, [`EXPLOSIVES.md`](./EXPLOSIVES.md) §4). A Place with a torch held, aimed at
 dynamite, lights it (`check_block_edit` → `explosives::ignites`, shared with the prediction). The server
 (`dwell-sim` `blasts.rs` `Fuses`, `Server::blast`) burns fuses after the tick's edits and blows the
 ones out (at most `blastsPerTick`): one `Explosion` modification clears the explosive and every cell in
