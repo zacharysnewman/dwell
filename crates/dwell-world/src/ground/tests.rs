@@ -35,6 +35,10 @@ impl Fixture {
     fn get(&self) -> impl FnMut([i32; 3]) -> Option<StateId> + '_ {
         |c| Some(self.cells.get(&c).copied().unwrap_or(M.air))
     }
+    /// Reads it now and as generated alike (an unedited world).
+    fn both(&self) -> impl FnMut([i32; 3], bool) -> Option<StateId> + '_ {
+        |c, _| Some(self.cells.get(&c).copied().unwrap_or(M.air))
+    }
     /// Every item over the field (the rows just above the ground), face-local cells.
     fn scatter(&self, rules: &Rules<'_>, seed: u64, size: i32) -> Vec<([i32; 3], Placed)> {
         let mut get = self.get();
@@ -261,10 +265,10 @@ crate::both_faces!(
         let len = to.iter().map(|v| v * v).sum::<f64>().sqrt();
         let dir = to.map(|v| v / len);
         let none = HashSet::default();
-        let got = r.target(&mut w.get(), 2, eye, dir, 4.0, &none);
+        let got = r.target(&mut w.both(), 2, eye, dir, 4.0, &none);
         assert_eq!(got.map(|g| g.cell), Some(cell));
         let gone: HashSet<[i32; 3]> = [cell].into_iter().collect();
-        let behind = r.target(&mut w.get(), 2, eye, dir, 4.0, &gone);
+        let behind = r.target(&mut w.both(), 2, eye, dir, 4.0, &gone);
         assert_ne!(behind.map(|g| g.cell), Some(cell));
         // A wall between: nothing.
         let mid = f.point([eye_local[0] + 1.0, f.point(p)[1] + 0.8, eye_local[2]]);
@@ -273,7 +277,7 @@ crate::both_faces!(
         for y in G + 1..G + 6 {
             w.set([ml[0], y, ml[2]], M.stone);
         }
-        assert!(r.target(&mut w.get(), 2, eye, dir, 4.0, &none).is_none());
+        assert!(r.target(&mut w.both(), 2, eye, dir, 4.0, &none).is_none());
     }
 );
 

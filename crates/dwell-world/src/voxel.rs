@@ -788,7 +788,11 @@ impl VoxelWorld {
         cache: &mut crate::hash::HashMap<ChunkCoord, Box<Chunk>>,
     ) -> StateId {
         let c = chunk_of(x, y, z);
-        let l = (x - c.x * CHUNK_SIZE, y - c.y * CHUNK_SIZE, z - c.z * CHUNK_SIZE);
+        let l = (
+            x - c.x * CHUNK_SIZE,
+            y - c.y * CHUNK_SIZE,
+            z - c.z * CHUNK_SIZE,
+        );
         let k = self.read(c);
         let now = k.get(l.0, l.1, l.2);
         if k.revision() == 0 {

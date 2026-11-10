@@ -13,6 +13,9 @@ use dwell_world::{CELL_H, SKY_APRON, SKY_EXTENT, SKY_VOLUME};
 pub struct GroundJob {
     pub seed: u64,
     pub gone: Vec<[i32; 3]>,
+    /// The sky volume as generated (empty: as the job's): the rules read the terrain as
+    /// generated, so the leaves cleared over a stick leave it (owner, 2026-11-09).
+    pub generated: Vec<u16>,
 }
 
 /// The ground items of the chunk at `origin` (world cells), read from its world-oriented sky
@@ -23,17 +26,23 @@ pub fn scatter(padded: &[u16], origin: [i32; 3], job: &GroundJob) -> Vec<Placed>
     }
     let [ex, ey, ez] = SKY_EXTENT;
     let [ax, ay, az] = SKY_APRON;
-    let mut get = |c: [i32; 3]| {
+    let generated = if job.generated.len() == SKY_VOLUME {
+        &job.generated[..]
+    } else {
+        padded
+    };
+    let mut get = |c: [i32; 3], gen_: bool| {
         let (x, y, z) = (
             c[0] - origin[0] + ax,
             c[1] - origin[1] + ay,
             c[2] - origin[2] + az,
         );
+        let v = if gen_ { generated } else { padded };
         ((0..ex).contains(&x) && (0..ey).contains(&y) && (0..ez).contains(&z))
-            .then(|| padded[(x + ex * (z + ez * y)) as usize])
+            .then(|| v[(x + ex * (z + ez * y)) as usize])
     };
     let c = dwell_world::ChunkCoord::from_array(origin.map(|v| v.div_euclid(N)));
-    let mut out = Rules::shipped().scatter_chunk(&mut get, job.seed, c);
+    let mut out = Rules::shipped().scatter_over(&mut get, job.seed, c);
     if !job.gone.is_empty() {
         out.retain(|p| {
             let l = [

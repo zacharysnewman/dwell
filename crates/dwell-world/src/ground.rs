@@ -267,7 +267,7 @@ impl<'a> Rules<'a> {
     /// block: the crosshair's. Gone ones (`gone`) are passed over.
     pub fn target(
         &self,
-        get: &mut impl FnMut([i32; 3]) -> Option<StateId>,
+        get: &mut impl FnMut([i32; 3], bool) -> Option<StateId>,
         seed: u64,
         eye: [f64; 3],
         dir: [f64; 3],
@@ -282,11 +282,11 @@ impl<'a> Rules<'a> {
             let cell = crate::cell_of_pos(p);
             if last != Some(cell) {
                 last = Some(cell);
-                if get(cell).is_some_and(solid) {
+                if get(cell, false).is_some_and(solid) {
                     return None;
                 }
                 if !gone.contains(&cell)
-                    && let Some(it) = self.item_at(get, seed, cell)
+                    && let Some(it) = self.item_over(get, seed, cell)
                     && self.hit(&it, eye, dir, reach)
                 {
                     return Some(it);

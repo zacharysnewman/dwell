@@ -79,6 +79,10 @@ pub trait ChunkStore {
     fn edit_chunk(&mut self, changes: &ChunkChanges);
     /// The chunk's voxels with a one-voxel apron (the mesher's layout).
     fn padded_chunk(&mut self, coord: Coord) -> Vec<u16>;
+    /// The chunk's own voxels (none: not stored).
+    fn chunk_voxels(&mut self, _coord: Coord) -> Option<Vec<u16>> {
+        None
+    }
     /// What a mesh job meshes: the chunk with the sky apron (`dwell_world::SKY_APRON`, for the
     /// baked ambient light's rays), or the one-voxel padded block (rays past it count as open).
     fn mesh_block(&mut self, coord: Coord) -> Vec<u16> {
@@ -113,6 +117,10 @@ pub trait ChunkStore {
 /// The client sim's voxel world is the store.
 /// With [`VoxelWorld::enable_light`] (the client) it keeps the flood light of what it holds.
 impl ChunkStore for VoxelWorld {
+    fn chunk_voxels(&mut self, coord: Coord) -> Option<Vec<u16>> {
+        self.find(ChunkCoord::from_array(coord))
+            .map(|c| c.voxels().to_vec())
+    }
     fn set_chunk(&mut self, coord: Coord, revision: u32, voxels: &[u16]) {
         if let Some(chunk) = Chunk::from_voxels(voxels, revision) {
             self.put(ChunkCoord::from_array(coord), chunk);
@@ -290,6 +298,10 @@ pub trait ChunkSource {
     fn generate(&mut self, coord: Coord, token: u64);
     /// Drops a queued job; true if it was still queued.
     fn cancel(&mut self, coord: Coord) -> bool;
+    /// Starts generating `coord` as generated, for the ground items' rules (ADR 0071: they read
+    /// the terrain as generated) of a chunk that arrived edited; the shell answers with
+    /// [`ChunkStreamer::on_generated_base`]. Nothing where the client does not generate.
+    fn generate_base(&mut self, _coord: Coord) {}
 }
 
 /// A mesh job: the voxels of `coord` with their apron ([`ChunkStore::mesh_block`]), meshed
@@ -307,6 +319,9 @@ pub struct MeshJob {
     /// Its ground items (docs/adr/0071-ground-items.md): the world seed and its gone cells,
     /// chunk-local; none: the server keeps no ground items, none are drawn.
     pub ground: Option<(u64, Vec<[i32; 3]>)>,
+    /// `padded` as generated, where a chunk it reads is edited (the ground items' rules read the
+    /// terrain as generated); empty: as `padded`.
+    pub generated: Vec<u16>,
 }
 
 /// The meshing workers.
@@ -536,6 +551,11 @@ pub struct ChunkStreamer<S, G, M: Mesher, V> {
     cuts: HashMap<[i32; 3], dwell_protocol::chopping::Cut>,
     /// The ground items (ADR 0071): the world seed and the gone cells, once the server keeps them.
     ground: Option<(u64, dwell_world::ground::GroundGone)>,
+    /// Loaded chunks as generated and not edited since (their voxels are their generation).
+    pristine: HashSet<Coord>,
+    /// Edited loaded chunks' voxels as generated (copied before their first edit, or generated
+    /// again when one arrived edited): the ground items' rules read them (ADR 0071).
+    generated: HashMap<Coord, Vec<u16>>,
     /// Chunks whose mesh job in flight began before a cell in them was hidden or shown: its result
     /// is dropped (the chunk is dirty again).
     stale: HashSet<Coord>,
@@ -587,6 +607,8 @@ where
             hidden: HashSet::default(),
             cuts: HashMap::default(),
             ground: None,
+            pristine: HashSet::default(),
+            generated: HashMap::default(),
             stale: HashSet::default(),
             error: None,
         }
@@ -629,9 +651,22 @@ where
         self.forget(key);
         self.resyncing.remove(&key);
         match m.form {
-            ChunkForm::Air => self.put_air(key),
+            ChunkForm::Air => {
+                self.pristine.remove(&key);
+                self.generated.remove(&key);
+                self.put_air(key);
+            }
             ChunkForm::Explicit => {
                 if let Some(voxels) = &m.voxels {
+                    // Edited: its generation is asked for (kept if known: a resync's).
+                    if self.pristine.remove(&key)
+                        && let Some(v) = self.store.chunk_voxels(key)
+                    {
+                        self.generated.insert(key, v);
+                    }
+                    if !self.generated.contains_key(&key) && self.ground.is_some() {
+                        self.source.generate_base(key);
+                    }
                     self.put(key, m.revision, voxels);
                 }
             }
@@ -652,10 +687,46 @@ where
             return; // replaced meanwhile
         }
         self.generating.remove(&coord);
+        self.generated.remove(&coord);
+        self.pristine.insert(coord);
         self.put(coord, revision, voxels);
         for changes in self.held_edits.remove(&coord).unwrap_or_default() {
             self.apply(coord, &changes);
         }
+    }
+
+    /// A chunk generated for the ground items' rules ([`ChunkSource::generate_base`]): kept while
+    /// it is loaded and edited, and the chunks whose mesh reads it meshed again.
+    pub fn on_generated_base(&mut self, coord: Coord, voxels: &[u16]) {
+        if !self.loaded.contains_key(&coord)
+            || self.pristine.contains(&coord)
+            || self.air.contains(&coord)
+            || self.generated.contains_key(&coord)
+            || voxels.len() != CHUNK_VOLUME
+        {
+            return;
+        }
+        self.generated.insert(coord, voxels.to_vec());
+        for dy in -1..=1 {
+            for dz in -1..=1 {
+                for dx in -1..=1 {
+                    let n = add(coord, [dx, dy, dz]);
+                    if self.meshed.contains(&n) || self.meshing.contains_key(&n) {
+                        self.dirty.mark(n);
+                    }
+                }
+            }
+        }
+    }
+
+    /// The voxel in world cell `c` as generated where its chunk is edited (its kept generation;
+    /// the ground items' rules, ADR 0071). None: not edited (its voxel now is its generation) or
+    /// not kept.
+    pub fn generated_voxel(&self, c: [i32; 3]) -> Option<u16> {
+        let key = c.map(|v| v.div_euclid(CHUNK_SIZE));
+        let v = self.generated.get(&key)?;
+        let l = c.map(|v| v.rem_euclid(CHUNK_SIZE));
+        v.get(local_index(l[0], l[1], l[2])).copied()
     }
 
     /// A generation job failed: the workers are unusable. As in the TS, this drops the chunk's
@@ -675,6 +746,8 @@ where
             self.resyncing.remove(&key);
             self.unlit_set.remove(&key);
             self.drawn_revision += 1;
+            self.pristine.remove(&key);
+            self.generated.remove(&key);
             if self.loaded.remove(&key).is_some() {
                 if self.air.remove(&key) {
                     air.push(key);
@@ -899,8 +972,14 @@ where
                 .ground
                 .as_ref()
                 .map(|(seed, gone)| (*seed, gone.in_chunk(c)));
+            let generated = if ground.is_some() {
+                self.generated_block(c, &padded)
+            } else {
+                Vec::new()
+            };
             self.mesher.mesh(MeshJob {
                 ground,
+                generated,
                 coord: c,
                 token: self.token,
                 padded,
@@ -914,6 +993,52 @@ where
             t = t1;
         }
         count
+    }
+
+    /// `padded` (chunk `c`'s sky volume, `dwell_world::SKY_EXTENT` from `SKY_APRON` below its
+    /// corner) with the edited chunks it reads as generated; empty where none is edited or it is
+    /// not a sky volume.
+    fn generated_block(&self, c: Coord, padded: &[u16]) -> Vec<u16> {
+        use dwell_world::{SKY_APRON, SKY_EXTENT, SKY_VOLUME};
+        if padded.len() != SKY_VOLUME || self.generated.is_empty() {
+            return Vec::new();
+        }
+        let o: [i32; 3] = std::array::from_fn(|k| c[k] * CHUNK_SIZE - SKY_APRON[k]);
+        let lo: [i32; 3] = std::array::from_fn(|k| o[k].div_euclid(CHUNK_SIZE));
+        let hi: [i32; 3] =
+            std::array::from_fn(|k| (o[k] + SKY_EXTENT[k] - 1).div_euclid(CHUNK_SIZE));
+        let mut out: Option<Vec<u16>> = None;
+        for cy in lo[1]..=hi[1] {
+            for cz in lo[2]..=hi[2] {
+                for cx in lo[0]..=hi[0] {
+                    let Some(v) = self.generated.get(&[cx, cy, cz]) else {
+                        continue;
+                    };
+                    let out = out.get_or_insert_with(|| padded.to_vec());
+                    let base = [cx * CHUNK_SIZE, cy * CHUNK_SIZE, cz * CHUNK_SIZE];
+                    for y in 0..SKY_EXTENT[1] {
+                        let ly = o[1] + y - base[1];
+                        if !(0..CHUNK_SIZE).contains(&ly) {
+                            continue;
+                        }
+                        for z in 0..SKY_EXTENT[2] {
+                            let lz = o[2] + z - base[2];
+                            if !(0..CHUNK_SIZE).contains(&lz) {
+                                continue;
+                            }
+                            for x in 0..SKY_EXTENT[0] {
+                                let lx = o[0] + x - base[0];
+                                if (0..CHUNK_SIZE).contains(&lx) {
+                                    out[(x + SKY_EXTENT[0] * (z + SKY_EXTENT[2] * y)) as usize] =
+                                        v[local_index(lx, ly, lz)];
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        out.unwrap_or_default()
     }
 
     /// A mesh job finished.
@@ -1169,6 +1294,12 @@ where
         self.drawn_revision += 1;
         if self.air.remove(&key) {
             self.store.set_chunk(changes.coord, 0, &[0; CHUNK_VOLUME]);
+            self.generated.insert(key, vec![0; CHUNK_VOLUME]);
+        } else if self.pristine.remove(&key)
+            && let Some(v) = self.store.chunk_voxels(key)
+        {
+            // Its first edit: its voxels till now are its generation (ADR 0071's rules read it).
+            self.generated.insert(key, v);
         }
         self.store.edit_chunk(changes);
         self.loaded.insert(key, changes.revision);
@@ -1355,6 +1486,8 @@ mod tests {
     struct ManualSource {
         jobs: HashMap<Coord, u64>,
         cancelled: Vec<Coord>,
+        /// Chunks asked for as generated (`generate_base`).
+        bases: Vec<Coord>,
     }
     impl ManualSource {
         fn pending(&self) -> usize {
@@ -1368,6 +1501,9 @@ mod tests {
         fn cancel(&mut self, coord: Coord) -> bool {
             self.cancelled.push(coord);
             self.jobs.remove(&coord).is_some()
+        }
+        fn generate_base(&mut self, coord: Coord) {
+            self.bases.push(coord);
         }
     }
 
@@ -1617,6 +1753,68 @@ mod tests {
                 .find(|j| j.coord == ground)
                 .expect("re-meshed");
             assert_eq!(light_at(job, floor) >> 4, 15);
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// The ground items' rules read the terrain as generated (owner, 2026-11-09: "keep sticks
+        /// under cleared leaves"): a mesh job carries its sky volume as generated once a chunk in
+        /// it is edited (the voxels before the first edit), and a chunk that arrives edited is
+        /// generated again for it.
+        fn mesh_jobs_carry_the_terrain_as_generated_once_edited(f: dwell_world::FaceFrame) {
+            let row = dwell_world::MIDPLANE_Y.div_euclid(CHUNK_SIZE) + 2;
+            let c = f.chunk(ChunkCoord::new(0, row, 0)).to_array();
+            let leaves = dwell_blocks::require("dwell:leaves");
+            let cell = f.cell([5, row * CHUNK_SIZE + 20, 7]);
+            let l = [0, 1, 2].map(|a| cell[a] - c[a] * CHUNK_SIZE);
+            let mut voxels = vec![0u16; CHUNK_VOLUME];
+            voxels[local_index(l[0], l[1], l[2])] = leaves;
+            let mut s = ChunkStreamer::new(
+                VoxelWorld::streamed(),
+                ManualSource::default(),
+                FakeMesher::default(),
+                FakeView::default(),
+            );
+            s.set_ground(7);
+            s.on_chunk_data(generated(c));
+            let token = s.source_mut().jobs.remove(&c).expect("generating");
+            s.on_generated(c, token, &voxels);
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+            let job = s
+                .mesher()
+                .jobs
+                .iter()
+                .find(|j| j.coord == c)
+                .expect("meshed");
+            assert!(job.generated.is_empty(), "unedited: as it is");
+            for job in std::mem::take(&mut s.mesher_mut().jobs) {
+                s.on_meshed(job.coord, job.token, ());
+            }
+            // The leaves cleared: meshed with them gone, its rules reading them as generated.
+            assert_eq!(s.set_local(&[(cell, 0)]), 1);
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+            let job = s
+                .mesher()
+                .jobs
+                .iter()
+                .find(|j| j.coord == c)
+                .expect("re-meshed");
+            let [ax, ay, az] = dwell_world::SKY_APRON;
+            let [ex, _, ez] = dwell_world::SKY_EXTENT;
+            let at = (l[0] + ax + ex * (l[2] + az + ez * (l[1] + ay))) as usize;
+            assert_eq!(job.padded[at], 0, "cleared now");
+            assert_eq!(job.generated[at], leaves, "leaves as generated");
+            assert_eq!(s.generated_voxel(cell), Some(leaves));
+            for job in std::mem::take(&mut s.mesher_mut().jobs) {
+                s.on_meshed(job.coord, job.token, ());
+            }
+            // A chunk that arrives edited is generated again for its rules.
+            let d = f.chunk(ChunkCoord::new(1, row, 0)).to_array();
+            s.on_chunk_data(explicit(d, 3, 0));
+            assert_eq!(s.source_mut().bases, vec![d]);
+            s.on_generated_base(d, &voxels);
+            let other = [cell[0] + CHUNK_SIZE, cell[1], cell[2]];
+            assert_eq!(s.generated_voxel(other), Some(leaves));
         }
     );
 

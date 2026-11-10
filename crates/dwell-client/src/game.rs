@@ -1529,6 +1529,9 @@ impl<S: Scene> Game<S> {
                     self.streamer.on_generated(c, token, &voxels)
                 }
                 (Purpose::Chunk(c, _), Output::Failed(e)) => self.streamer.on_generate_failed(c, e),
+                (Purpose::Base(c), Output::Chunk { voxels, .. }) => {
+                    self.streamer.on_generated_base(c, &voxels)
+                }
                 (Purpose::ChunkMesh(c, token), Output::ChunkMesh(m)) => {
                     self.streamer.on_meshed(c, token, *m)
                 }
@@ -3908,7 +3911,11 @@ impl<S: Scene> Game<S> {
     ) -> Option<dwell_world::ground::Placed> {
         let (seed, gone) = self.streamer.ground()?;
         let world = self.streamer.store();
-        let mut get = |c: [i32; 3]| {
+        // The rules read the terrain as generated (an edited chunk's kept generation).
+        let mut get = |c: [i32; 3], generated: bool| {
+            if generated && let Some(m) = self.streamer.generated_voxel(c) {
+                return Some(m);
+            }
             world.find(dwell_world::chunk_of(c[0], c[1], c[2]))?;
             Some(world.get_voxel_if_loaded(c))
         };

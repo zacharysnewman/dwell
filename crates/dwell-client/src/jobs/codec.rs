@@ -241,11 +241,12 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
             }
             match ground {
                 None => w.u8(0),
-                Some((seed, gone)) => {
+                Some((seed, gone, generated)) => {
                     w.u8(1);
                     w.u64(*seed);
                     w.u32(gone.len() as u32);
                     gone.iter().flatten().for_each(|v| w.i32(*v));
+                    w.u16s(generated);
                 }
             }
         }
@@ -341,7 +342,7 @@ pub fn decode_job(bytes: &[u8]) -> Result<(u32, Job), DecodeError> {
                     for _ in 0..n {
                         gone.push([r.i32()?, r.i32()?, r.i32()?]);
                     }
-                    Some((seed, gone))
+                    Some((seed, gone, r.u16s()?))
                 }
                 _ => return Err(DecodeError),
             };
@@ -581,7 +582,7 @@ mod tests {
                 c.kerf[2][1] = 0.04;
                 c
             })],
-            ground: Some((0x1234_5678_9abc, vec![[1, 2, 3], [4, 5, 6]])),
+            ground: Some((0x1234_5678_9abc, vec![[1, 2, 3], [4, 5, 6]], vec![3, 4])),
             water_tops: false,
         });
         jobs.push(Job::MeshSection {
@@ -617,7 +618,7 @@ mod tests {
                 mirror: false,
                 origin: [0; 3],
                 cuts: Vec::new(),
-                ground: Some((7, vec![[1, 2, 3]])),
+                ground: Some((7, vec![[1, 2, 3]], vec![9])),
                 water_tops: true,
             },
         );
