@@ -18,6 +18,23 @@ export function moveFor(
   return [from, to, half ? Math.ceil(s.count / 2) : 0];
 }
 
+/**
+ * What a key does to the backpack screen: E toggles it (where the world uses items), Escape closes
+ * it; the new open state, or null when the key is not the backpack's. E does nothing else: a
+ * ground item is knocked loose by the break action, not picked up with E (ADR 0071, amended
+ * 2026-11-09).
+ */
+export function backpackKey(
+  code: string,
+  repeat: boolean,
+  open: boolean,
+  usable: boolean,
+): boolean | null {
+  if (code === 'KeyE' && !repeat && usable) return !open;
+  if (code === 'Escape' && open) return false;
+  return null;
+}
+
 /** The slots in screen order: the backpack's rows, then the hotbar's. */
 export function screenOrder(): number[] {
   const back = Array.from({ length: BACKPACK_SLOTS }, (_, i) => HOTBAR_SLOTS + i);

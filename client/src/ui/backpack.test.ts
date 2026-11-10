@@ -1,6 +1,6 @@
 // The backpack screen's moves and order, and item labels (ADR 0066).
 import { describe, expect, it } from 'vitest';
-import { moveFor, screenOrder } from './backpack';
+import { backpackKey, moveFor, screenOrder } from './backpack';
 import { itemLabel, type InventoryHud } from './hotbar';
 import { BACKPACK_SLOTS, HOTBAR_SLOTS, ITEMS, STACK_SIZE } from './inventory.gen';
 
@@ -30,5 +30,25 @@ describe('backpack', () => {
     expect(ITEMS.find((i) => i.name === 'dwell:gem')?.value).toBe(1);
     expect(itemLabel('dwell:rock')).toBe('Rock');
     expect(itemLabel('dwell:snowy_grass')).toBe('Snowy grass');
+  });
+});
+
+// E is the backpack's only (ADR 0071, amended 2026-11-09): ground items are knocked loose by the
+// break action, so E no longer picks one up first.
+describe('the backpack key', () => {
+  it('E opens and closes the backpack where the world uses items', () => {
+    expect(backpackKey('KeyE', false, false, true)).toBe(true);
+    expect(backpackKey('KeyE', false, true, true)).toBe(false);
+  });
+
+  it('a held E, E in creative, and other keys leave it', () => {
+    expect(backpackKey('KeyE', true, false, true)).toBeNull();
+    expect(backpackKey('KeyE', false, false, false)).toBeNull();
+    expect(backpackKey('KeyQ', false, false, true)).toBeNull();
+  });
+
+  it('Escape closes it, and only when open', () => {
+    expect(backpackKey('Escape', false, true, true)).toBe(false);
+    expect(backpackKey('Escape', false, false, true)).toBeNull();
   });
 });
