@@ -10,6 +10,7 @@ import {
   layoutTs,
   mapRs,
   mapTs,
+  levelSpans,
   menuBackgroundsTs,
   validateHud,
   validateLayout,
@@ -110,20 +111,26 @@ test('a changed look or size reaches both outputs by data alone', () => {
   assert.match(mapTs(validateMap(d)), /otherColor: '#00ff88',/);
 });
 
-test("the height bands' stops and the map's controller buttons are data", () => {
+test("the zoom levels, the height tint and the map's controller buttons are data", () => {
   const d = mapData();
-  // A fixture stop added by data alone: a 5000 m peak colour above the last.
-  d.heightBands.land.push({ heightM: 4000, color: '#ffeeff' });
-  d.heightBands.water.push({ depthM: 60, color: '#000033' });
+  // A fixture level by data alone: a sixth would be too many, so a 3-level map with its own sizes.
+  d.bigMap.levels = [{ cellM: 1 }, { cellM: 16 }, { cellM: 512 }];
+  d.bigMap.startLevel = 2;
+  d.heightTint.brightest = 1.3;
   d.bigMap.padCenter = 'x';
   d.bigMap.panelFraction = 0.9;
   const rs = mapRs(validateMap(d));
-  assert.match(rs, /height_bands_land: &\[\(0\.0, 0x[0-9a-f]{6}\),.*\(4000\.0, 0xffeeff\)\],/);
-  assert.match(rs, /height_bands_water: &\[.*\(60\.0, 0x000033\)\],/);
-  assert.match(mapTs(validateMap(d)), /\{ heightM: 4000, color: '#ffeeff' \},/);
+  // The spans: the minimap's diameter, the island's, the geometric mean between.
+  const mid = Math.round(Math.sqrt(128 * 50000));
+  assert.deepEqual(levelSpans(d), [128, mid, 50000]);
+  assert.match(rs, new RegExp(`big_map_levels: &\\[\\(1\\.0, 128\\.0\\), \\(16\\.0, ${mid}\\.0\\), \\(512\\.0, 50000\\.0\\)\\],`));
+  assert.match(rs, /big_map_start_level: 2\.0,/);
+  assert.match(rs, /height_tint_brightest: 1\.3,/);
+  const ts = mapTs(validateMap(d));
+  assert.match(ts, /\{ cellM: 16, spanM: \d+ \},/);
   assert.match(rs, /big_map_pad_center: "x",/);
-  assert.match(mapTs(validateMap(d)), /padCenter: 'x',/);
-  assert.match(mapTs(validateMap(d)), /panelFraction: 0\.9,/);
+  assert.match(ts, /padCenter: 'x',/);
+  assert.match(ts, /panelFraction: 0\.9,/);
 });
 
 test('bad map entries fail naming them', () => {
@@ -132,18 +139,19 @@ test('bad map entries fail naming them', () => {
     [(d) => (d.minimap.playerColor = 'red'), /minimap\.playerColor must be a #rrggbb colour/],
     [(d) => (d.heightShading.default = 1), /heightShading\.default must be true or false/],
     [(d) => (d.explored.cellM = 7), /cellM must divide/],
-    [(d) => (d.bigMap.startPxPerCell = 100), /minPxPerCell ≤ startPxPerCell ≤ maxPxPerCell/],
+    [(d) => (d.bigMap.levels = [{ cellM: 1 }]), /bigMap\.levels must be a list of 2 to 5 levels/],
+    [(d) => d.bigMap.levels.push({ cellM: 1024 }), /bigMap\.levels must be a list of 2 to 5 levels/],
+    [(d) => (d.bigMap.levels[1].cellM = 3), /bigMap\.levels\[1\]\.cellM must be a whole power of two/],
+    [(d) => (d.bigMap.levels[2].cellM = 2), /bigMap\.levels\[2\]\.cellM must be above the level before it/],
+    [(d) => (d.bigMap.levels[0].spanM = 9), /unknown entry bigMap\.levels\[0\]\.spanM/],
+    [(d) => (d.bigMap.startLevel = 4) && (d.bigMap.levels = [{ cellM: 1 }, { cellM: 2 }]), /bigMap\.startLevel must name a level/],
+    [(d) => (d.heightTint.highM = d.heightTint.lowM), /heightTint: lowM must be below highM/],
+    [(d) => (d.heightTint.darkest = 0.1), /heightTint\.darkest must be within/],
     [(d) => (d.minimap.extra = 1), /unknown entry minimap\.extra/],
     [(d) => delete d.bigMap.fogColor, /missing entry bigMap\.fogColor/],
     [(d) => (d.bigMap.padClose = 'z'), /bigMap\.padClose must be a controller button/],
     [(d) => (d.bigMap.padCenter = d.bigMap.padClose), /controller buttons must differ/],
     [(d) => (d.bigMap.padZoomIn = 'view'), /controller buttons must differ/],
-    [(d) => (d.heightBands.land = []), /heightBands\.land must be a list of at least one \{ heightM, color \}/],
-    [(d) => (d.heightBands.land[1].heightM = d.heightBands.land[0].heightM), /heightBands\.land\[1\]\.heightM must be above the stop before it/],
-    [(d) => (d.heightBands.water[0].color = 'blue'), /heightBands\.water\[0\]\.color must be a #rrggbb colour/],
-    [(d) => (d.heightBands.water[0].depthM = -1), /heightBands\.water\[0\]\.depthM must be a number within/],
-    [(d) => (d.heightBands.land[0].depth = 1), /unknown entry heightBands\.land\[0\]\.depth/],
-    [(d) => (d.heightBands.stepM = -1), /heightBands\.stepM must be within/],
   ]) {
     const d = mapData();
     change(d);

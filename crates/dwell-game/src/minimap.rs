@@ -9,7 +9,7 @@
 //!   every `refreshSeconds` (every column, from its last top: edits).
 //! - **The disc** ([`MapFrame`], [`render_disc`]): the tops sampled into a round RGBA image turned
 //!   so the player's heading is up and their right is right (on face B too, where the mirror makes
-//!   the face-local frame's left the player's right), in the height bands when the setting is on. Drawn
+//!   the face-local frame's left the player's right), its colours tinted by height when the setting is on. Drawn
 //!   again only when the player moves `moveTexels` or turns `turnDegrees`.
 //! - **Explored** ([`Explored`]): `cellM` cells whose centres have been inside the disc, per face,
 //!   each with its average colour; [`Explored::mark`] gives the new or changed ones for the shell
@@ -39,18 +39,17 @@ pub struct MapTunables {
     pub minimap_cpu_update_ms: f64,
     pub height_shading_default: bool,
     pub height_shading_water_depth_m: f64,
-    pub height_bands_step_m: f64,
-    /// (height above sea level m, `0xRRGGBB`), the heights rising.
-    pub height_bands_land: &'static [(f64, u32)],
-    pub height_bands_water_step_m: f64,
-    /// (depth below sea level m, `0xRRGGBB`), the depths rising.
-    pub height_bands_water: &'static [(f64, u32)],
+    pub height_tint_low_m: f64,
+    pub height_tint_high_m: f64,
+    pub height_tint_darkest: f64,
+    pub height_tint_brightest: f64,
     pub explored_cell_m: f64,
     pub explored_pending_color: u32,
-    pub big_map_start_px_per_cell: f64,
-    pub big_map_min_px_per_cell: f64,
-    pub big_map_max_px_per_cell: f64,
-    pub big_map_zoom_step: f64,
+    /// The zoom levels, closest first: (cell side m, span across the panel m).
+    pub big_map_levels: &'static [(f64, f64)],
+    pub big_map_start_level: f64,
+    pub big_map_wheel_step_px: f64,
+    pub big_map_pinch_step: f64,
     pub big_map_fog_color: u32,
     pub big_map_panel_fraction: f64,
     pub big_map_phone_margin_px: f64,
@@ -59,7 +58,6 @@ pub struct MapTunables {
     pub big_map_scale_bar_max_px: f64,
     pub big_map_frame_color: u32,
     pub big_map_pad_pan_px_per_s: f64,
-    pub big_map_pad_zoom_per_s: f64,
     pub big_map_pad_zoom_in: &'static str,
     pub big_map_pad_zoom_out: &'static str,
     pub big_map_pad_zoom_in_alt: &'static str,
@@ -68,6 +66,8 @@ pub struct MapTunables {
     pub big_map_pad_close: &'static str,
     pub revealed_tile_cells: f64,
     pub revealed_jobs_in_flight: f64,
+    pub revealed_background_jobs: f64,
+    pub revealed_prebuild_spans: f64,
     pub revealed_budget_ms: f64,
     pub revealed_redraw_ms: f64,
 }
@@ -142,7 +142,7 @@ pub struct TopGrid {
     pub texel_m: f64,
     pub colour: Vec<u32>,
     pub height: Vec<f32>,
-    /// Whether the top is a liquid's (coloured by its depth in the height bands).
+    /// Whether the top is a liquid's (its colour darkened by its depth).
     pub water: Vec<bool>,
     /// A liquid top's depth (m) down to its bed, as far as `heightShading.waterDepthM` (0 on land).
     pub depth: Vec<f32>,
@@ -300,57 +300,27 @@ pub fn scale_rgb(c: u32, k: f64) -> u32 {
     ch(16) | ch(8) | ch(0)
 }
 
-/// The colour at `v` through `stops` ((value, `0xRRGGBB`), the values rising): interpolated
-/// between the stops and held past the ends, `v` first rounded down to a multiple of `step` (gentle
-/// steps; 0: smooth). No stops: black.
-pub fn stop_rgb(stops: &[(f64, u32)], step: f64, v: f64) -> u32 {
-    let v = if step > 0.0 {
-        (v / step).floor() * step
-    } else {
-        v
-    };
-    let Some(&(first, c0)) = stops.first() else {
-        return 0;
-    };
-    if v <= first {
-        return c0;
-    }
-    for w in stops.windows(2) {
-        let ((a, ca), (b, cb)) = (w[0], w[1]);
-        if v < b {
-            let s = ((v - a) / (b - a)).clamp(0.0, 1.0);
-            let ch = |c: u32, sh: u32| f64::from((c >> sh) & 0xff);
-            return [16, 8, 0].iter().fold(0, |out, &sh| {
-                let x = ch(ca, sh) + (ch(cb, sh) - ch(ca, sh)) * s;
-                out | ((x.round().clamp(0.0, 255.0) as u32) << sh)
-            });
-        }
-    }
-    stops[stops.len() - 1].1
-}
-
-/// The maps' height colour (`heightBands`; owner, 2026-11-09: "colour bands by height", no
-/// lighting): land at face-local height `h` by its height above sea level through the land stops;
-/// water (`h` its bed's) by the bed's depth below sea level through the water stops (water above
-/// sea level, a river or a lake, the first stop). The block colour and the slope play no part.
-pub fn band_rgb(t: &MapTunables, h: f64, water: bool) -> u32 {
-    let sea = dwell_world::SEA_LEVEL_M;
+/// The maps' look (`heightTint`; owner, 2026-11-09: block colours "lightly tinted by height",
+/// after the height bands hid the sand): `rgb` scaled in brightness by face-local height `h`'s
+/// height above sea level, `darkest` at or below `lowM`, `brightest` at or above `highM`, linear
+/// between, so a cell keeps its block's hue. Water (`h` its bed's) keeps its colour: the
+/// generator and the minimap's scan already darken it by its depth.
+pub fn tint_rgb(t: &MapTunables, rgb: u32, h: f64, water: bool) -> u32 {
     if water {
-        stop_rgb(
-            t.height_bands_water,
-            t.height_bands_water_step_m,
-            (sea - h).max(0.0),
-        )
-    } else {
-        stop_rgb(t.height_bands_land, t.height_bands_step_m, h - sea)
+        return rgb & 0xff_ffff;
     }
+    let s = ((h - dwell_world::SEA_LEVEL_M - t.height_tint_low_m)
+        / (t.height_tint_high_m - t.height_tint_low_m))
+        .clamp(0.0, 1.0);
+    let k = t.height_tint_darkest + (t.height_tint_brightest - t.height_tint_darkest) * s;
+    scale_rgb(rgb, k)
 }
 
 /// No height in a cell (a fogged or pending cell; [`height_code`]).
 pub const NO_HEIGHT: i32 = i32::MIN;
 
 /// A cell's height as the shell keeps it: half-metres times two, plus 1 for water (a water cell's
-/// height is its bed's, for [`band_rgb`]'s depth).
+/// height is its bed's).
 pub fn height_code(h: f64, water: bool) -> i32 {
     ((h * 2.0).round() as i32) * 2 + i32::from(water)
 }
@@ -360,12 +330,13 @@ pub fn decode_height(code: i32) -> Option<(f64, bool)> {
     (code != NO_HEIGHT).then(|| (f64::from(code >> 1) / 2.0, code & 1 == 1))
 }
 
-/// The big map's cells coloured by height (`shadeMap`, `client/src/ui/minimap.ts`): a `w` × `h`
+/// The big map's cells tinted by height (`shadeMap`, `client/src/ui/minimap.ts`): a `w` × `h`
 /// grid in screen order (rows from the top, columns from the left) inside a border of one cell, so
 /// `(w + 2) × (h + 2)` colours (`0xRRGGBB`; top byte 0xff: nothing there, drawn transparent) and
-/// [`height_code`]s; out, the `w` × `h` cells' RGBA. A cell with a height is [`band_rgb`]'s colour
-/// for it alone (no neighbours: no lighting); one without keeps its colour. The border is the
-/// shell's layout, unread since the hill-shade went.
+/// [`height_code`]s; out, the `w` × `h` cells' RGBA. A cell with a height is its colour
+/// [`tint_rgb`]ed by it alone (no neighbours: no lighting); one without keeps its colour. The
+/// border is the shell's layout, unread since the hill-shade went (kept for the stair-step shading
+/// docs/FUTURE.md names).
 pub fn shade_grid(t: &MapTunables, colours: &[u32], codes: &[i32], w: usize, h: usize) -> Vec<u8> {
     let mut out = vec![0u8; w * h * 4];
     let stride = w + 2;
@@ -379,8 +350,8 @@ pub fn shade_grid(t: &MapTunables, colours: &[u32], codes: &[i32], w: usize, h: 
             if col >> 24 == 0xff {
                 continue;
             }
-            let rgb =
-                decode_height(codes[j]).map_or(col & 0xff_ffff, |(hm, wet)| band_rgb(t, hm, wet));
+            let rgb = decode_height(codes[j])
+                .map_or(col & 0xff_ffff, |(hm, wet)| tint_rgb(t, col, hm, wet));
             let o = (r * w + c) * 4;
             out[o] = (rgb >> 16) as u8;
             out[o + 1] = (rgb >> 8) as u8;
@@ -391,12 +362,12 @@ pub fn shade_grid(t: &MapTunables, colours: &[u32], codes: &[i32], w: usize, h: 
     out
 }
 
-/// The disc: `px`² RGBA pixels covering the minimap's radius, turned by `frame`, in the height
-/// bands ([`band_rgb`]) when `shading`, else the blocks' colours; transparent outside the circle.
+/// The disc: `px`² RGBA pixels covering the minimap's radius, turned by `frame`, its blocks'
+/// colours tinted by height ([`tint_rgb`], the big map's look) when `shading`, else plain; transparent outside the circle.
 /// Where the tops found nothing (ground past the scan's reach below, a valley seen from a hilltop
 /// or high flight, or not loaded) a pixel takes `under`'s colour and [`height_code`] for its
 /// face-local (x, z) (the explored cell's: the generator's, or the terrain's from an earlier look),
-/// banded by that height when `shading` and it has one; else it is transparent.
+/// tinted by that height when `shading` and it has one; else it is transparent.
 #[allow(clippy::too_many_arguments)]
 pub fn render_disc(
     grid: &TopGrid,
@@ -429,14 +400,14 @@ pub fn render_disc(
                     continue;
                 };
                 match decode_height(code) {
-                    Some((h, wet)) if shading => band_rgb(t, h, wet),
+                    Some((h, wet)) if shading => tint_rgb(t, c, h, wet),
                     _ => c,
                 }
             } else if shading && grid.height[i].is_finite() {
                 let wet = grid.water.get(i).copied().unwrap_or(false);
                 let bed = f64::from(grid.height[i])
                     - f64::from(grid.depth.get(i).copied().unwrap_or(0.0));
-                band_rgb(t, bed, wet)
+                tint_rgb(t, c, bed, wet)
             } else {
                 c
             };

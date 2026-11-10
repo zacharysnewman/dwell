@@ -1038,16 +1038,17 @@ impl<S: Scene> Game<S> {
     pub fn take_map(&mut self) -> Option<Vec<u8>> {
         self.map.take()
     }
-    /// Asks for tile (`ti`, `tk`) of the revealed big map on `face` (0 A, 1 B; `crate::map_reveal`).
-    pub fn request_reveal(&mut self, face: u8, ti: i32, tk: i32) {
+    /// Asks for tile (`ti`, `tk`) of the big map's zoom level of `cell_m` cells on `face` (0 A,
+    /// 1 B; `crate::map_reveal`).
+    pub fn request_reveal(&mut self, face: u8, ti: i32, tk: i32, cell_m: i32) {
         let f = if face == 1 {
             FaceFrame::B
         } else {
             FaceFrame::A
         };
         self.pool.borrow_mut().submit(
-            Purpose::Reveal(face, ti, tk),
-            crate::map_reveal::reveal_job(f, ti, tk, &dwell_game::minimap::MAP),
+            Purpose::Reveal(face, ti, tk, cell_m),
+            crate::map_reveal::reveal_job(f, ti, tk, cell_m, &dwell_game::minimap::MAP),
         );
     }
     /// Asks for the generated colours of the explored cells in tile `key` (face, ti, tk;
@@ -1061,7 +1062,13 @@ impl<S: Scene> Game<S> {
         };
         self.pool.borrow_mut().submit(
             Purpose::ExploreTile(face, ti, tk),
-            crate::map_reveal::reveal_job(f, ti, tk, &dwell_game::minimap::MAP),
+            crate::map_reveal::reveal_job(
+                f,
+                ti,
+                tk,
+                dwell_game::minimap::MAP.explored_cell_m as i32,
+                &dwell_game::minimap::MAP,
+            ),
         );
     }
     /// The oldest finished explored-cell tile, once.
@@ -1501,13 +1508,13 @@ impl<S: Scene> Game<S> {
                     self.verify(hash)
                 }
                 (Purpose::Map, Output::Map(bytes)) => self.map = Some(bytes.unwrap_or_default()),
-                (Purpose::Reveal(face, ti, tk), out) => {
+                (Purpose::Reveal(face, ti, tk, cell_m), out) => {
                     let rgba = match &out {
                         Output::LodMap(Some(p)) => Some(p.as_slice()),
                         _ => None,
                     };
                     self.reveal
-                        .push_back(crate::map_reveal::encode_tile(face, ti, tk, rgba));
+                        .push_back(crate::map_reveal::encode_tile(face, ti, tk, cell_m, rgba));
                 }
                 (Purpose::ExploreTile(face, ti, tk), out) => {
                     let rgba = match out {

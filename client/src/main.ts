@@ -76,7 +76,7 @@ import { formatPerf, TickRate } from './ui/perfLine';
 import { applyHud } from './ui/hudSettings';
 import { LayoutRunner } from './ui/hudLayout';
 import { HUD_LAYOUT } from './ui/layout.gen';
-import { MapUi, indexedDbExplored } from './ui/minimap';
+import { MapUi, indexedDbExplored, indexedDbTiles } from './ui/minimap';
 import { hasWasmSimd } from './engine/simd';
 import { NEEDS_SIMD, startupMessage } from './ui/startupError';
 import { FpsMeter } from './ui/fps';
@@ -282,6 +282,17 @@ interface DwellDebug {
   setPixelArt(name: string): boolean;
   /** The LOD colour map preview on or off (`?lodmap=on` starts it on; off on a CPU adapter); true when on. */
   setLodMap(on: boolean): boolean;
+  /**
+   * The big map's tiles (ADR 0068): the open map's zoom level (null: shut), tiles kept, built this
+   * session, in flight and still to build in the background.
+   */
+  mapTiles(): {
+    level: number | null;
+    tiles: number;
+    built: number;
+    inFlight: number;
+    backgroundLeft: number;
+  } | null;
   /** Draws the distant terrain (LOD) or not, live (a debug switch); true in a world. */
   setLod(on: boolean): boolean;
   /** Fixed points (x, y, z triples) the streaming probe reports (`probe.target`, `probe.control`). */
@@ -449,7 +460,14 @@ interface App {
  */
 function startMinimap(app: App, world: string): void {
   if (app.minimap) return;
-  const ui = new MapUi(document, app.client, world, indexedDbExplored());
+  const ui = new MapUi(
+    document,
+    app.client,
+    world,
+    indexedDbExplored(),
+    indexedDbTiles(),
+    recordedVersion(),
+  );
   app.minimap = ui;
   // While the big map is open the game holds still, as under the game menu (the keys and the
   // controller drive the map).
@@ -1044,6 +1062,18 @@ async function start(): Promise<App | null> {
     pixelArt: () => client.pixelArt(),
     setPixelArt: (name) => client.setPixelArt(name),
     setLodMap: (on) => client.setLodMap(on),
+    mapTiles: () => {
+      const m = app.minimap;
+      if (!m) return null;
+      const r = m.reveal;
+      return {
+        level: m.level,
+        tiles: r.tiles.size,
+        built: r.built,
+        inFlight: r.inFlight,
+        backgroundLeft: r.backgroundLeft,
+      };
+    },
     setLod: (on) => client.setLod(on),
     setProbe: (points) => client.setProbe(new Float64Array(points)),
     crossingRoll: () => client.crossingRoll(),

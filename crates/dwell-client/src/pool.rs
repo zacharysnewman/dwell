@@ -87,8 +87,9 @@ pub enum Purpose {
     Diff(Coord),
     /// A strip of the LOD colour map (`crate::lod_map`).
     LodMap(crate::lod_map::TileJob),
-    /// A tile of the revealed big map (`crate::map_reveal`): face (0 A, 1 B) and tile indices.
-    Reveal(u8, i32, i32),
+    /// A tile of the big map (`crate::map_reveal`): face (0 A, 1 B), tile indices and its zoom
+    /// level's cell side (m).
+    Reveal(u8, i32, i32, i32),
     /// A tile of generated colours for explored cells the terrain has not shown (ADR 0068):
     /// face (0 A, 1 B) and tile indices, the same job as [`Purpose::Reveal`]'s.
     ExploreTile(u8, i32, i32),

@@ -558,24 +558,30 @@ its reach) from its cell's colour. The client's `minimapFrame`, `minimapDots`,
 On screen), the dots, and the big map (M, a tap or the controller's View; M, Esc, B or its ✕ closes):
 **[built, 0.50.48]** a framed panel over the game (`bigMap.panelFraction` of the screen, nearly full
 screen inside the safe area on a phone, bigger buttons there) with a title bar, + / − zoom buttons
-(stopping at the zoom range), "Center on me", a scale bar (1, 2 or 5 × 10ⁿ m), drag to pan with a grab
-cursor, scroll, pinch or + / − to zoom about the pointer, and the controller (stick and D-pad pan,
-triggers and bumpers zoom, Y centres; `bigMap.pad*`, button names from `shared/input/gamepad.json`); the
+(stepping between **[built, 0.50.61] five fixed zoom levels**, `bigMap.levels`: the closest the
+minimap's area at 1 m a cell, the widest the whole island centred, geometric between, each its own
+cell size), "Center on me", a scale bar (1, 2 or 5 × 10ⁿ m), drag to pan with a grab
+cursor, scroll, pinch or + / − to step a level about the pointer, and the controller (stick and D-pad pan,
+a trigger or bumper press steps a level, Y centres; `bigMap.pad*`, button names from `shared/input/gamepad.json`); the
 game holds still while it is open (`setMenuOpen`). Its state and controls are a page-free
-`BigMapState`. It draws explored cells on fog as tile images (`revealed.tileCells`² cells, made
-again when a cell in or bordering them changes): **[built, 0.50.52] height bands** (owner,
-2026-11-09: "colour bands by height", no lighting; replacing 0.50.48's hill-shade) — the maps' one
-height colouring, `dwell_game::minimap::band_rgb` (the minimap's height-shading toggle shows it too):
-a hypsometric tint, land by its height above sea level through `heightBands.land`'s colour stops
-(`{heightM, color}`, interpolated, in `stepM` steps), water by its bed's depth below sea level
-through `heightBands.water`'s (`{depthM, color}`; water above sea level the first stop), the block
-colours and the slope ignored; a water cell's height code is its bed's. The shell hands each tile's
+`BigMapState`. It draws each level's cells on fog as tile images (`revealed.tileCells`² cells of the level, made
+again when a cell in or bordering them changes) in **[built, 0.50.61] block colours lightly tinted by
+height** (owner, 2026-11-09; replacing 0.50.52's height bands, which hid the sand):
+`dwell_game::minimap::tint_rgb` scales a cell's colour in brightness by its height above sea level
+(`heightTint`: `darkest` at `lowM` to `brightest` at `highM`), water untinted (darkened by depth
+already); the minimap's height-shading toggle shows the same look. The shell hands each tile's
 screen-order cells (inside a one-cell border, unread) to `shadeMap` (`shade_grid`). Explored
 cells and their heights are kept per world in this browser (IndexedDB `dwell-explored`, append-only:
 `heights` beside `cells`), not on the server. Cost (`minimap.scan`, `minimap.draw`
 samples, DEV_TOOLS.md): ~1 ms a read with its draw flying at 8 m/s, the 2 s refresh 5–9 ms.
-**[built, 0.50.46] The revealed big map** (owner, 2026-11-08: "big map should be fully explored on
-creative"): in a mode with the `mapRevealed` ability (creative; `mapRevealed()`) nothing is fogged.
+**[built, 0.50.46; per level and kept, 0.50.61] The big map's tiles** (owner, 2026-11-08: "big map should be fully explored on
+creative"; 2026-11-09: built "only once", "invisibly"): every level's ground comes from the generator, a
+tile at the level's cell size at a time (`requestReveal(face, ti, tk, cellM)`), kept per world and build in
+IndexedDB `dwell-map-tiles` (append-only, a tile written once) and built in the **background**
+(`revealed.backgroundJobs` at a time, each level within `prebuildSpans` of its span round the player,
+the widest the whole island, once the kept tiles are read), so opening or zooming the map waits for
+nothing and a return to the world builds nothing; adventure fogs every level by the explored cells
+(`ExploredLevels`), which draw their own colours at 8 m and coarser. In a mode with the `mapRevealed` ability (creative; `mapRevealed()`) nothing is fogged.
 Ground not yet explored takes its colour from the terrain generator the client already runs from the
 seed: the shell's `RevealCache` asks for the view's tiles (`revealed.tileCells`² explored cells, nearest
 the view's centre first, at most `revealed.jobsInFlight` at once) with `requestReveal`, which
@@ -584,7 +590,7 @@ explored cell: its column's top block's LOD colour — the colour explored cells
 by depth, rivers from their polylines; with `heights`, each cell's height code after the colours,
 `raster_with_heights`); `takeReveal` returns finished tiles, which the shell takes for
 at most `revealed.budgetMs` a frame and draws as images under the explored cells (redrawn at most every
-`redrawMs`; beyond the world's edge transparent). Kept for the session, not stored. The main thread
+`redrawMs`; beyond the world's edge transparent). The main thread
 generates nothing (`job.reveal.run` p50 ~36 ms a 32² tile on a worker; the open map's worst frame
 17.7 ms while filling, a Mac). Adventure keeps the fog as before.
 

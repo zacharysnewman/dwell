@@ -118,19 +118,22 @@ export const MAP_FIELDS = {
     default: ['bool'],
     waterDepthM: ['num', 0.5, 128],
   },
-  // Stops: a list of { <key>: number within lo–hi, color }, the keys rising (at least one).
-  heightBands: {
-    stepM: ['num', 0, 256],
-    land: ['stops', 'heightM', -1024, 4096],
-    waterStepM: ['num', 0, 256],
-    water: ['stops', 'depthM', 0, 1024],
+  // The block colours lightly tinted by height (owner, 2026-11-09): a brightness factor from
+  // `darkest` at `lowM` above sea level to `brightest` at `highM`.
+  heightTint: {
+    lowM: ['num', -1024, 4096],
+    highM: ['num', -1024, 4096],
+    darkest: ['num', 0.25, 1],
+    brightest: ['num', 1, 2],
   },
   explored: { cellM: ['int', 1, 128], pendingColor: ['color'] },
   bigMap: {
-    startPxPerCell: ['num', 0.1, 256],
-    minPxPerCell: ['num', 0.1, 256],
-    maxPxPerCell: ['num', 0.1, 256],
-    zoomStep: ['num', 1.01, 4],
+    // The zoom levels, closest first: [{ cellM }], 2 to MAX_LEVELS of them; each level's span
+    // across the panel is computed (`levelSpans`).
+    levels: ['levels'],
+    startLevel: ['int', 0, 4],
+    wheelStepPx: ['num', 1, 2000],
+    pinchStep: ['num', 1.05, 8],
     fogColor: ['color'],
     panelFraction: ['num', 0.3, 1],
     phoneMarginPx: ['int', 0, 64],
@@ -139,7 +142,6 @@ export const MAP_FIELDS = {
     scaleBarMaxPx: ['int', 40, 400],
     frameColor: ['color'],
     padPanPxPerS: ['num', 50, 5000],
-    padZoomPerS: ['num', 1.01, 16],
     padZoomIn: ['button'],
     padZoomInAlt: ['button'],
     padZoomOut: ['button'],
@@ -150,10 +152,31 @@ export const MAP_FIELDS = {
   revealed: {
     tileCells: ['int', 4, 256],
     jobsInFlight: ['int', 1, 16],
+    backgroundJobs: ['int', 0, 16],
+    prebuildSpans: ['num', 1, 8],
     budgetMs: ['num', 0.1, 16],
     redrawMs: ['num', 0, 2000],
   },
 };
+
+/** The most zoom levels the big map has (owner, 2026-11-09: "at most 5 zoom levels"). */
+export const MAX_LEVELS = 5;
+
+/** The island's radius (m; shared/protocol/constants.json), the widest zoom level's half span. */
+export const ISLAND_RADIUS_M = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../protocol/constants.json'), 'utf8')).world.islandRadius;
+
+const isPow2 = (v) => Number.isInteger(v) && v > 0 && (v & (v - 1)) === 0;
+
+/**
+ * Each level's span across the panel's short side (m, whole metres): the closest the minimap's
+ * diameter, the widest the island's, the levels between spaced geometrically.
+ */
+export function levelSpans(data, islandRadiusM = ISLAND_RADIUS_M) {
+  const n = data.bigMap.levels.length;
+  const near = 2 * data.minimap.radiusM;
+  const far = 2 * islandRadiusM;
+  return data.bigMap.levels.map((_, i) => Math.round(near * (far / near) ** (i / (n - 1))));
+}
 
 /** The controller's button names (shared/input/gamepad.json), for the map's controller buttons. */
 const PAD_BUTTONS = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../input/gamepad.json'), 'utf8')).buttons.map((b) => b.name);
@@ -178,6 +201,15 @@ export function validateMap(data) {
         if (typeof v !== 'boolean') mapFail(`${where} must be true or false`);
       } else if (kind === 'button') {
         if (!PAD_BUTTONS.includes(v)) mapFail(`${where} must be a controller button (${PAD_BUTTONS.join(', ')}), got ${JSON.stringify(v)}`);
+      } else if (kind === 'levels') {
+        if (!Array.isArray(v) || v.length < 2 || v.length > MAX_LEVELS) mapFail(`${where} must be a list of 2 to ${MAX_LEVELS} levels, closest first`);
+        v.forEach((lv, i) => {
+          const at = `${where}[${i}]`;
+          if (typeof lv !== 'object' || lv === null || Array.isArray(lv)) mapFail(`${at} must be an object`);
+          for (const lk of Object.keys(lv)) if (lk !== '$comment' && lk !== 'cellM') mapFail(`unknown entry ${at}.${lk}`);
+          if (!isPow2(lv.cellM) || lv.cellM > 1024) mapFail(`${at}.cellM must be a whole power of two within 1–1024, got ${JSON.stringify(lv.cellM)}`);
+          if (i > 0 && !(lv.cellM > v[i - 1].cellM)) mapFail(`${at}.cellM must be above the level before it (${v[i - 1].cellM})`);
+        });
       } else if (kind === 'stops') {
         const [, key, from, to] = fields[k];
         if (!Array.isArray(v) || v.length === 0) mapFail(`${where} must be a list of at least one { ${key}, color }`);
@@ -200,10 +232,11 @@ export function validateMap(data) {
     }
   }
   const b = data.bigMap;
-  if (!(b.minPxPerCell <= b.startPxPerCell && b.startPxPerCell <= b.maxPxPerCell)) {
-    mapFail('bigMap: minPxPerCell ≤ startPxPerCell ≤ maxPxPerCell');
-  }
+  if (b.startLevel >= b.levels.length) mapFail(`bigMap.startLevel must name a level (0–${b.levels.length - 1})`);
+  if (!(data.heightTint.lowM < data.heightTint.highM)) mapFail('heightTint: lowM must be below highM');
   if (data.minimap.radiusM % data.explored.cellM !== 0) mapFail('explored.cellM must divide minimap.radiusM');
+  // The zoom levels' cells and the explored cells nest (fog per level).
+  if (!isPow2(data.explored.cellM)) mapFail('explored.cellM must be a whole power of two');
   const pad = ['padZoomIn', 'padZoomInAlt', 'padZoomOut', 'padZoomOutAlt', 'padCenter', 'padClose'].map((k) => b[k]);
   if (new Set(pad).size !== pad.length || pad.includes('view')) mapFail('bigMap: the controller buttons must differ (View closes the map)');
   return data;
@@ -226,7 +259,9 @@ export function mapRs(data) {
             ? `0x${v.slice(1).toLowerCase()}`
             : kind === 'button'
               ? JSON.stringify(v)
-              : kind === 'stops'
+              : kind === 'levels'
+                ? `&[${v.map((lv, i) => `(${rsNum(lv.cellM)}, ${rsNum(levelSpans(data)[i])})`).join(', ')}]`
+                : kind === 'stops'
                 ? `&[${v.map((s) => `(${rsNum(s[fields[k][1]])}, 0x${s.color.slice(1).toLowerCase()})`).join(', ')}]`
                 : rsNum(v);
       rs.push(`    ${name}: ${val},`);
@@ -236,6 +271,8 @@ export function mapRs(data) {
   return rs.join('\n');
 }
 
+const kind0 = ([kind]) => kind;
+
 /** The TypeScript for the shell (written as Prettier writes it: CI checks both). */
 export function mapTs(data) {
   const ts = [`// ${mapHeader}`, '', '/** The minimap and the explored map (shared/ui/map.json). */', 'export const MAP = {'];
@@ -243,7 +280,10 @@ export function mapTs(data) {
     ts.push(`  ${section}: {`);
     for (const k of Object.keys(fields)) {
       const v = data[section][k];
-      if (Array.isArray(v)) {
+      if (kind0(fields[k]) === 'levels') {
+        const spans = levelSpans(data);
+        ts.push(`    ${k}: [`, ...v.map((lv, i) => `      { cellM: ${lv.cellM}, spanM: ${spans[i]} },`), '    ],');
+      } else if (Array.isArray(v)) {
         const key = fields[k][1];
         ts.push(`    ${k}: [`, ...v.map((s) => `      { ${key}: ${s[key]}, color: '${s.color}' },`), '    ],');
       } else {

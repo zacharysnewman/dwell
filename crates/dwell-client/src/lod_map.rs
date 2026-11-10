@@ -140,7 +140,7 @@ pub fn raster(
 /// [`raster`], then each texel's height code (`dwell_game::minimap::height_code` as i16 LE, rows
 /// of x from `z0`; i16::MIN beyond the disc): the ground's face-local height (where the texel is
 /// water, its bed's: a river's under its channel) and the water bit (a river's where it covers half
-/// the texel), for the big map's height bands (`dwell_game::minimap::band_rgb`). The big
+/// the texel), for the big map's height tint (`dwell_game::minimap::tint_rgb`). The big
 /// map's tiles and the explored cells' generated colours (`map_reveal`).
 pub fn raster_with_heights(
     terrain: &TerrainGenerator,

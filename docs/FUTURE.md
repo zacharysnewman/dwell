@@ -121,3 +121,12 @@ size of blast it should allow past today's piece cap; and whether it applies to 
 (collapses, felled trees, falling ceilings). 1 and 3 together would let blasts grow far past the cap
 at a fraction of the cost; the first step would be prototyping 1 on the yellow blast and measuring
 server time before and after.
+
+## Stair-step shading on the big map (owner, 2026-11-09)
+
+"Save trying the MC way later on." Minecraft's map shades each pixel light, normal or dark by its
+height compared with its north neighbour's (higher: light; lower: dark), so slopes and terraces read
+at a glance. The big map's tiles already reach `shade_grid` (`dwell_game::minimap`) inside a
+one-cell border of their neighbours' cells, so it would be a rule there with its three factors as
+data in `shared/ui/map.json` (beside `heightTint`), "north" taken face-locally (+z, up the screen on
+both faces). Not now: 0.50.61 shows block colours lightly tinted by height (ADR 0068).

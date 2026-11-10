@@ -1,11 +1,12 @@
-//! The revealed big map (ADR 0068; owner, 2026-11-08: "big map should be fully explored on
-//! creative"). In a mode with the `mapRevealed` ability the big map shows the whole world: ground
-//! the minimap has not explored is coloured from the terrain generator the client already runs
-//! from the seed, one tile of `revealed.tileCells`² explored cells at a time, as a job in the
-//! generation workers (the LOD colour map's raster, [`crate::lod_map::raster`]: each cell its
+//! The big map's tiles (ADR 0068; owner, 2026-11-08: "big map should be fully explored on
+//! creative"; 2026-11-09: five zoom levels, each its own detail). Each zoom level's ground is
+//! coloured from the terrain generator the client already runs from the seed, one tile of
+//! `revealed.tileCells`² cells of that level's `cellM` at a time, as a job in the generation
+//! workers; the shell keeps them per world (IndexedDB) and fogs what is unexplored outside a mode
+//! with the `mapRevealed` ability (the LOD colour map's raster, [`crate::lod_map::raster`]: each cell its
 //! column's top block's LOD colour, the colour the minimap's explored cells average, water
 //! darkened by depth, rivers drawn from their polylines), and after the colours each cell's height
-//! code (`dwell_game::minimap::height_code`, i16 LE: the big map's height bands,
+//! code (`dwell_game::minimap::height_code`, i16 LE: the big map's height tint,
 //! `shadeMap`). The shell asks for the tiles the map's
 //! view needs and caches them (`client/src/ui/minimap.ts`); the main thread does no generation.
 
@@ -18,14 +19,20 @@ pub fn tile_cells(t: &MapTunables) -> i32 {
     t.revealed_tile_cells as i32
 }
 
-/// The job generating tile (`ti`, `tk`) of face `f`: explored cells `ti·n .. (ti+1)·n` along
-/// face-local x (and `tk` along z), one texel each, a cell's texel its column at the cell's centre.
-pub fn reveal_job(f: FaceFrame, ti: i32, tk: i32, t: &MapTunables) -> Job {
+/// Whether `cell_m` is a zoom level's cell side (`bigMap.levels`) or the explored cells'.
+pub fn is_level(cell_m: i32, t: &MapTunables) -> bool {
+    cell_m == t.explored_cell_m as i32 || t.big_map_levels.iter().any(|&(c, _)| c as i32 == cell_m)
+}
+
+/// The job generating tile (`ti`, `tk`) of face `f` at cells of `cell_m`: cells `ti·n .. (ti+1)·n`
+/// along face-local x (and `tk` along z), one texel each, a cell's texel its column at the cell's
+/// centre.
+pub fn reveal_job(f: FaceFrame, ti: i32, tk: i32, cell_m: i32, t: &MapTunables) -> Job {
     let n = tile_cells(t);
     Job::LodMap {
         face: u8::from(f.is_b()),
         heights: true,
-        texel_m: t.explored_cell_m as i32,
+        texel_m: cell_m,
         x0: ti * n,
         z0: tk * n,
         w: n,
@@ -33,14 +40,15 @@ pub fn reveal_job(f: FaceFrame, ti: i32, tk: i32, t: &MapTunables) -> Job {
     }
 }
 
-/// A finished tile for the shell: face (0 A, 1 B), `ti` and `tk` (i32 LE), then the tile's RGBA
-/// rows of x from its least z, then its i16 LE height codes (none without a terrain: a world the
-/// client does not generate).
-pub fn encode_tile(face: u8, ti: i32, tk: i32, rgba: Option<&[u8]>) -> Vec<u8> {
-    let mut out = Vec::with_capacity(9 + rgba.map_or(0, <[u8]>::len));
+/// A finished tile for the shell: face (0 A, 1 B), `ti`, `tk` and its level's cell side (i32 LE),
+/// then the tile's RGBA rows of x from its least z, then its i16 LE height codes (none without a
+/// terrain: a world the client does not generate).
+pub fn encode_tile(face: u8, ti: i32, tk: i32, cell_m: i32, rgba: Option<&[u8]>) -> Vec<u8> {
+    let mut out = Vec::with_capacity(13 + rgba.map_or(0, <[u8]>::len));
     out.push(face);
     out.extend_from_slice(&ti.to_le_bytes());
     out.extend_from_slice(&tk.to_le_bytes());
+    out.extend_from_slice(&cell_m.to_le_bytes());
     if let Some(p) = rgba {
         out.extend_from_slice(p);
     }
@@ -60,7 +68,7 @@ mod tests {
             let n = tile_cells(&MAP);
             let cell = MAP.explored_cell_m as i32;
             let (ti, tk) = (-1, 0);
-            let Output::LodMap(Some(tile)) = r.run(reveal_job(f, ti, tk, &MAP)) else {
+            let Output::LodMap(Some(tile)) = r.run(reveal_job(f, ti, tk, cell, &MAP)) else {
                 panic!("a terrain world reveals its tiles")
             };
             // The colours, then a height code a cell.
@@ -136,7 +144,9 @@ mod tests {
                 for key in asked {
                     let (face, ti, tk) = key;
                     assert_eq!(face, u8::from(f.is_b()));
-                    let Output::LodMap(rgba) = r.run(reveal_job(f, ti, tk, &MAP)) else {
+                    let Output::LodMap(rgba) =
+                        r.run(reveal_job(f, ti, tk, MAP.explored_cell_m as i32, &MAP))
+                    else {
                         panic!()
                     };
                     tiles.push((key, rgba.clone().expect("a terrain world")));
@@ -162,15 +172,61 @@ mod tests {
         }
     );
 
+    both_faces!(
+        fn each_zoom_levels_tile_is_its_own_cell_size(f: FaceFrame) {
+            // The closest level and the widest (owner, 2026-11-09: each level its own detail):
+            // a tile's cell (i, k) is the column at the centre of that level's cell, as one cell
+            // generated alone at that size gives.
+            let r = Runner::world(GENERATOR_TERRAIN, 1);
+            let n = tile_cells(&MAP);
+            for &(cell, _) in [
+                MAP.big_map_levels[0],
+                MAP.big_map_levels[MAP.big_map_levels.len() - 1],
+            ]
+            .iter()
+            {
+                let cell = cell as i32;
+                let Output::LodMap(Some(tile)) = r.run(reveal_job(f, 0, -1, cell, &MAP)) else {
+                    panic!("a terrain world builds its tiles")
+                };
+                assert_eq!(tile.len(), (n * n * 6) as usize);
+                for (i, k) in [(0, -1), (n - 1, -n), (n / 2, -3)] {
+                    let Output::LodMap(Some(one)) = r.run(Job::LodMap {
+                        face: u8::from(f.is_b()),
+                        heights: true,
+                        texel_m: cell,
+                        x0: i,
+                        z0: k,
+                        w: 1,
+                        h: 1,
+                    }) else {
+                        panic!()
+                    };
+                    let j = ((k + n) * n + i) as usize;
+                    assert_eq!(
+                        &tile[j * 4..j * 4 + 4],
+                        &one[..4],
+                        "{cell} m cell ({i}, {k})"
+                    );
+                }
+            }
+        }
+    );
+
     #[test]
     fn a_world_without_a_terrain_reveals_nothing_and_the_tile_says_where_it_is() {
         // face-a-only: no generation is involved, only the encoding.
-        let Output::LodMap(None) = Runner::world(0, 1).run(reveal_job(FaceFrame::A, 0, 0, &MAP))
+        let Output::LodMap(None) = Runner::world(0, 1).run(reveal_job(FaceFrame::A, 0, 0, 8, &MAP))
         else {
             panic!("a flat world has no terrain to reveal from")
         };
-        let e = encode_tile(1, -3, 7, None);
-        assert_eq!(e, [1, 0xfd, 0xff, 0xff, 0xff, 7, 0, 0, 0]);
-        assert_eq!(encode_tile(0, 0, 0, Some(&[1, 2, 3, 4])).len(), 13);
+        let e = encode_tile(1, -3, 7, 32, None);
+        assert_eq!(e, [1, 0xfd, 0xff, 0xff, 0xff, 7, 0, 0, 0, 32, 0, 0, 0]);
+        assert_eq!(encode_tile(0, 0, 0, 1, Some(&[1, 2, 3, 4])).len(), 17);
+        // The zoom levels' cell sizes are asked for; others are not.
+        for &(c, _) in MAP.big_map_levels {
+            assert!(is_level(c as i32, &MAP));
+        }
+        assert!(!is_level(3, &MAP));
     }
 }
