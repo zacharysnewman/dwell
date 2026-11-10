@@ -1,4 +1,4 @@
-# Proposal: the biome sandbox (tune a biome with sliders, preview live, export JSON)
+# Proposal: the biome sandbox and texture lab (tune with sliders, preview live, export JSON)
 
 **Status:** recorded 2026-11-09 from the owner's request; queued **after the current work queue is
 done**. Not architecture until an ADR adopts it. The owner asked for no further questions about it
@@ -66,6 +66,26 @@ The sandbox groups them per biome and puts a slider on each, rather than inventi
 5. **Compatibility:** a changed default biome changes what a seed generates (a new line); biome
    files a world picks at creation and saves avoid that for later edits.
 6. **Water hue per biome:** per-world fluid look overrides (sent at join like `WorldSettings`).
+
+## 5b. A texture lab beside it (owner, 2026-11-09)
+
+"I talked about a biome lab, we also want a texture lab." A start exists: the **Painterly Texture
+Lab** (`docs/prototypes/painterly-texture-lab.html`, published at
+https://claude.ai/artifact/4CTkNW4G6p8p67MkSNMUJA, Phase 39, ADR 0040). It runs the game's own painter
+(`shared/textures/paint.mjs`): you pick a material, edit its brush layers and the palette with
+sliders and colour chips, see the tile, a 3 × 3 repeat, a lit block and its far colour, and copy the
+JSON back into `shared/textures/`. What a texture lab next to the biome lab would add (to settle when
+the queue is done, with the biome questions):
+
+- **Live in the biome preview:** a material edited in the texture lab repaints the biome patch
+  straight away (one page, or two pages sharing the data).
+- **Export like the biome:** download/import the material JSON as a file, not only copy and paste.
+- **New materials, not only edits:** add a material and a block that uses it, by data, and see it in
+  the preview (the block registry's add-by-data path).
+- **Water and sky colours** from the palette (PAINTERLY_TEXTURES.md §9: the fluid's colours are
+  separate data today), so a biome's water hue and its textures are tuned in one place.
+- **Item and model textures:** the skinned models' palette remap (ADR 0070) and item looks
+  (`shared/inventory/inventory.json` `look`) shown and tuned in the same lab.
 
 ## 6. Rough phases (each ≤ 45 min for an agent, to be refined)
 

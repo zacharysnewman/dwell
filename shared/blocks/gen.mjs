@@ -162,6 +162,12 @@ for (const ns of namespaces) {
     if (!def.family) return def;
     declared.add(`${def.of}:${def.family}`);
     const { family, of, name, ...rest } = def;
+    // `crossSection: "of"` (Phase 55 T4): the family member takes its base block's cross-section
+    // (the wood ramp is the log's octagon cut by its slant, ADR 0072).
+    if (rest.crossSection === 'of') {
+      if (!base(of)?.crossSection) fail(`${name}: crossSection "of" but ${of} has none`);
+      rest.crossSection = base(of).crossSection;
+    }
     return familyBlock(base(of), family, { ...rest, name });
   });
   const generated = [];
@@ -345,8 +351,11 @@ for (const ns of namespaces) {
       if (c.ring !== undefined && (typeof c.ring !== 'number' || !(c.ring > 0 && c.ring < 0.25))) fail(`${id}: crossSection.ring must be a number in (0, 0.25)`);
       if (c.heart !== undefined && (typeof c.heart !== 'string' || c.heart === '')) fail(`${id}: crossSection.heart must name a texture tile`);
       if (c.heart !== undefined && c.ring === undefined) fail(`${id}: crossSection.heart needs a ring (the heart is the tile inside it)`);
-      if (def.shape !== 'full' || (def.look ?? 'cube') !== 'cube') fail(`${id}: crossSection needs shape full and look cube`);
-      if (!def.axisProperty) fail(`${id}: crossSection needs an axisProperty (the octagon lies across its axis)`);
+      // A ramp may have one (Phase 55 T4): the octagon prism along y cut by its convex shape's
+      // slant (a ramp state whose shape isn't convex stays square: `octagon::section_of`).
+      const ramp = def.slopeFamily === 'ramp';
+      if (!ramp && (def.shape !== 'full' || (def.look ?? 'cube') !== 'cube')) fail(`${id}: crossSection needs shape full and look cube (or a ramp family)`);
+      if (!ramp && !def.axisProperty) fail(`${id}: crossSection needs an axisProperty (the octagon lies across its axis)`);
     }
     // A liquid's fill (docs/WATER_FLOW.md §15): how full its cell is, in parts of the largest value,
     // the first (full) its default, so a liquid placed or generated fills its cell.

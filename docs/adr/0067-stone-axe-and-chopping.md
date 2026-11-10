@@ -82,8 +82,11 @@ felling (FELLING.md). Scope: tools and woods are per build; cuts are per world, 
    ½ m onto the slope). The cut cell's notch-side half is chips. `dwell_sim::felling::fell_wedges`
    picks the states face-locally (the notch's direction from the deepest side; a ramp faces the way
    it falls) and the server turns them over on face B (`FaceFrame::state`). The wedges collide: the
-   stump in the terrain mesh as any stored ramp, the trunk's in its body as its shape's convex hull
-   (`PieceCell::hull`, never merged into a box). The axe's swing clears a wood ramp (the axe's
+   stump in the terrain mesh as the log's octagon cut by its slant (Phase 55 T4, ADR 0072: the wood
+   ramp's `crossSection: "of"`; drawn so too), the trunk's in its body as its square shape's convex
+   hull (`PieceCell::hull`, never merged into a box; drawn octagonal; the octagon's hinge let the
+   trunk slide off the stump, ADR 0072 T4), the logs above it as boxes (their octagon prisms are
+   built but not switched on, ADR 0072 T4). The axe's swing clears a wood ramp (the axe's
    `clears`), and hands can't break one where blocks are not unlimited (`breakWith: axe`, as the
    log); broken, it drops a log. A wood without `fellWedge` falls as item 5. Measured (2026-11-09,
    `tests/chopping.rs`): `matching` stood on its 26.6° slope (friction 0.8); a 45° two-cell split

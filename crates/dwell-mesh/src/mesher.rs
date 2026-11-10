@@ -1033,10 +1033,15 @@ fn octagon_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, m: StateId, cell:
     let joined = joined_mask(m, &at);
     // Each open cap split into its bark ring along the octagon's unjoined edges and the heart
     // inside (Phase 55 T3).
+    // A cut cap (a wood ramp's, Phase 55 T4) is drawn whole, its ring not split off.
+    let whole = |f: &dwell_blocks::octagon::Face| {
+        let n = dwell_blocks::octagon::outline(f64::from(section.chamfer), sec_axis, joined, size);
+        f.pts.len() == n.len()
+    };
     let pieces = open_faces(m, &at, &covers, size)
         .into_iter()
         .flat_map(|f| match f.part {
-            Oct::Cap(end) => cap_pieces(&section, sec_axis, joined, size, end),
+            Oct::Cap(end) if whole(&f) => cap_pieces(&section, sec_axis, joined, size, end),
             _ => vec![f],
         });
     for f in pieces {
@@ -1047,20 +1052,31 @@ fn octagon_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, m: StateId, cell:
             }
             Oct::Side(face) => [face, face],
             Oct::Chamfer(a, c) => [a, c],
+            // The cut: lit from the cell face its normal leans to most.
+            Oct::Cut => {
+                let n = carve::normal(&f.pts);
+                let a = (0..3)
+                    .max_by(|&i, &j| n[i].abs().total_cmp(&n[j].abs()))
+                    .unwrap_or(1);
+                let face = face_of(a, if n[a] >= 0.0 { 1 } else { -1 });
+                [face, face]
+            }
         };
         let (axis, sign) = FACES[sides[0]];
         let (color, tile) = match (f.part, k.style.textures) {
             // The ring: the bark (side) tile, laid flat on the cap.
             (Oct::Ring(..), Some(t)) => (0xffffff, tile_rect(t.side)),
             // The heart: its own tile when the data names one this build has.
-            (Oct::Cap(_), Some(_)) if section.heart.is_some_and(crate::textures::has_tile) => {
+            (Oct::Cap(_) | Oct::Cut, Some(_))
+                if section.heart.is_some_and(crate::textures::has_tile) =>
+            {
                 (0xffffff, tile_rect(section.heart.unwrap_or_default()))
             }
             _ => surface(&k.style, axis, sign),
         };
         let normal = carve::normal(&f.pts);
         let tint = match f.part {
-            Oct::Chamfer(..) => {
+            Oct::Chamfer(..) | Oct::Cut => {
                 let n = normal_to_m(normal);
                 normal_tint(n[0], n[1], n[2])
             }
@@ -2029,7 +2045,8 @@ fn mesh_cells(
                     continue;
                 }
                 let k = cells.kind(cx, cy, cz);
-                if k.shape == Shape::Shaped {
+                // A wood ramp with the log's octagon (Phase 55 T4) is drawn as its cut prism below.
+                if k.shape == Shape::Shaped && !k.style.octagon {
                     shaped_voxel(&mut opaque, &cells, &k, cx, cy, cz);
                 }
                 if let Some(cut) = (!carved.is_empty())

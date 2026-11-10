@@ -2104,11 +2104,19 @@ dwell_world::both_faces!(
 /// The opaque mesh of logs (`(x, y, z, axis)`, chunk-local) in chunk (0, 2, 0) of face `f`,
 /// read back face-local: each triangle's (centroid, normal).
 fn log_triangles(f: FaceFrame, logs: &[(i32, i32, i32, &str)]) -> Vec<([f64; 3], [f64; 3])> {
+    let states: Vec<(i32, i32, i32, StateId)> = logs
+        .iter()
+        .map(|&(x, y, z, axis)| (x, y, z, require(&format!("dwell:log[axis={axis}]"))))
+        .collect();
+    state_triangles(f, &states)
+}
+
+/// As `log_triangles`, for face-local states.
+fn state_triangles(f: FaceFrame, cells: &[(i32, i32, i32, StateId)]) -> Vec<([f64; 3], [f64; 3])> {
     let c = ChunkCoord::new(0, 2, 0);
     let n = CHUNK_SIZE;
     let mut source = dwell_world::VoxelWorld::new(dwell_world::empty_generator(), None);
-    for &(x, y, z, axis) in logs {
-        let m = require(&format!("dwell:log[axis={axis}]"));
+    for &(x, y, z, m) in cells {
         source.set_voxel(x, c.y * n + y, z, m);
     }
     let m = local_mesh(f, mesh_on_face(&mut source, c, f).opaque);
@@ -2236,5 +2244,38 @@ dwell_world::both_faces!(
             "bark along the joined side x = 9: {:?}",
             bark.iter().map(|b| b.0).collect::<Vec<_>>()
         );
+    }
+);
+
+dwell_world::both_faces!(
+    /// Phase 55 T4 (owner, 2026-11-09: "everything log/tree should be octagonal"): a stump's wood
+    /// ramp is the log's octagon prism cut by its slant: its slant and sides stay inside the
+    /// octagon (nothing at the cell's cut corners), and it meets the log below flat (neither cap
+    /// between them drawn). Red before: the square ramp drew its corners.
+    fn a_stumps_wood_ramp_is_the_octagon_cut_by_its_slant(f: FaceFrame) {
+        let log = require("dwell:log[axis=y]");
+        let ramp = require("dwell:log_ramp[facing=west,flooded=false,half=bottom,shape=ramp]");
+        let tris = state_triangles(f, &[(8, 8, 8, log), (8, 9, 8, ramp)]);
+        let slant = |n: [f64; 3]| n[1].abs() > 0.1 && n[1].abs() < 0.99;
+        assert!(tris.iter().any(|(_, n)| slant(*n)), "a slant");
+        // The log's four chamfers are 8 triangles; the ramp's run on up its sides.
+        let chamfers = tris
+            .iter()
+            .filter(|(_, n)| n[1].abs() < 0.01 && diagonal(*n))
+            .count();
+        assert!(chamfers > 8, "the ramp's chamfers too: {chamfers}");
+        for (mid, n) in &tris {
+            let (u, v) = (mid[0] - 8.0, mid[2] - 8.0);
+            let corner = |a: f64| !(0.05..=0.95).contains(&a);
+            assert!(
+                !(corner(u) && corner(v)),
+                "a corner face at {mid:?} ({n:?})"
+            );
+        }
+        assert!(
+            !tris.iter().any(|(_, n)| n[1] > 0.99),
+            "no flat top: the log's cap is covered and the ramp's is its slant"
+        );
+        assert!(tris.iter().any(|(_, n)| n[1] < -0.99), "the log's bottom");
     }
 );

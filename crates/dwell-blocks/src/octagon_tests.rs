@@ -1,5 +1,5 @@
 use super::*;
-use crate::{AIR, state};
+use crate::{AIR, info, state};
 
 const CELL: [f64; 3] = [1.0, 0.5, 1.0];
 
@@ -247,4 +247,40 @@ fn no_ring_returns_the_cap_whole() {
     let p = cap_pieces(&c, 1, 0, CELL, true);
     assert_eq!(p.len(), 1);
     assert_eq!(p[0].pts.len(), 8);
+}
+
+#[test]
+fn a_wood_ramp_is_the_log_octagon_cut_by_its_slant() {
+    // Phase 55 T4 (owner, 2026-11-09: "everything log/tree should be octagonal"): the wood ramp
+    // takes the log's cross-section by data (`crossSection: "of"`), and its faces are the prism
+    // clipped to the ramp: every point inside the octagon, the slant a `Cut`, the uncut end whole.
+    let m = state("dwell:log_ramp[facing=west,flooded=false,half=bottom,shape=ramp]").unwrap();
+    assert!(is_octagon(m), "the wood ramp has the log's octagon");
+    let fs = state_faces(m, 0, CELL);
+    assert!(fs.iter().any(|f| f.part == Part::Cut), "the slant is a cut");
+    let c = 0.2929 * 0.5 + 1e-6;
+    for f in &fs {
+        for p in &f.pts {
+            let (du, dv) = (p[0].min(1.0 - p[0]), p[2].min(1.0 - p[2]));
+            assert!(
+                du + dv >= c - 2e-6,
+                "{:?} point {p:?} outside the octagon",
+                f.part
+            );
+        }
+    }
+    assert!(
+        cap_whole(m, 0, CELL, false),
+        "its bottom is the whole octagon"
+    );
+    assert!(!cap_whole(m, 0, CELL, true), "its top is cut away");
+    // A log under it: its top is covered by the ramp.s whole bottom.
+    let log = log("y");
+    let up = world(vec![([0, 1, 0], m)]);
+    assert!(
+        !open_faces(log, &up, &|_| false, CELL)
+            .iter()
+            .any(|f| f.part == Part::Cap(true)),
+        "the log's top under the ramp's whole end is hidden"
+    );
 }
