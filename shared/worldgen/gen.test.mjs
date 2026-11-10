@@ -12,11 +12,12 @@ import {
   registryBlocks,
   registryStructures,
   terrainRust,
+  loadBiomes,
   validateDecorations,
   validateHydrology,
   validateMidplane,
   validatePlacements,
-  validateTerrain,
+  validateTerrainAndBiomes,
   validateVolume,
   volumeRust,
 } from './gen.mjs';
@@ -67,43 +68,93 @@ test('a bad entry fails with its name and the problem', () => {
 });
 
 const loadTerrain = () => JSON.parse(readFileSync(join(here, 'terrain.json'), 'utf8'));
+const loadDefault = () => JSON.parse(readFileSync(join(here, 'biomes/default.json'), 'utf8'));
+const terrainOf = (world, biomes) => validateTerrainAndBiomes(world, biomes, blocks);
 
-test('the checked-in height field is valid and generates the checked-in Rust', () => {
-  const rs = terrainRust(validateTerrain(loadTerrain()));
+test('the checked-in terrain and biomes are valid and generate the checked-in Rust', () => {
+  const rs = terrainRust(terrainOf(loadTerrain(), loadBiomes()));
   const checkedIn = readFileSync(join(here, '../../crates/dwell-worldgen/src/terrain.gen.rs'), 'utf8');
   assert.equal(rs, checkedIn, 'run `node shared/worldgen/gen.mjs`');
 });
 
+test("the default biome is today's terrain: HEIGHT and SURFACE are its fields", () => {
+  const rs = terrainRust(terrainOf(loadTerrain(), loadBiomes()));
+  assert.match(rs, /BIOMES: &\[Biome\] = &\[\n {4}Biome \{\n {8}name: "dwell:default",/);
+  assert.match(rs, /pub const HEIGHT: HeightField = HeightField \{\n {4}inland_rise: 320\.0,/);
+  assert.match(rs, /pub const SURFACE: Surface = BIOMES\[0\]\.surface;/);
+  assert.match(rs, /hill_height: 225\.0,/);
+  assert.match(rs, /detail_mountain_amplitude: 14\.0,/);
+});
+
 test('a height-field value changed by data alone is emitted', () => {
-  const t = loadTerrain();
-  t.hills.amplitude = 75;
-  t.bumps.wavelength = 256;
-  t.seaFloor.depth = 12.5;
-  const rs = terrainRust(validateTerrain(t));
+  const w = loadTerrain();
+  w.hills.amplitude = 75;
+  w.bumps.wavelength = 256;
+  w.seaFloor.depth = 12.5;
+  const rs = terrainRust(terrainOf(w, [loadDefault()]));
   assert.match(rs, /hill_height: 75\.0,/);
   assert.match(rs, /bump_wavelength: 256,/);
   assert.match(rs, /sea_floor: -12\.5,/);
 });
 
-test('a bad height field fails with the key and the problem', () => {
+test('a fixture biome added by data alone is emitted after the default, which stays first', () => {
+  const fixture = { ...loadDefault(), name: 'dwell:fixture_dunes', placements: [], water: 'dwell:water' };
+  fixture.bands = { ...fixture.bands, ground: 'dwell:sand' };
+  fixture.detail = { ...fixture.detail, amplitude: 4 };
+  const w = loadTerrain();
+  const t = terrainOf(w, [fixture, loadDefault()]);
+  assert.deepEqual(
+    t.biomes.map((b) => b.name),
+    ['dwell:default', 'dwell:fixture_dunes'],
+  );
+  const rs = terrainRust(t);
+  assert.match(rs, /name: "dwell:fixture_dunes",[\s\S]*detail_amplitude: 4\.0,[\s\S]*ground: "dwell:sand",[\s\S]*placements: &\[\],/);
+  // The elevation and the water's shaping are the world's, in every biome.
+  assert.equal(rs.match(/inland_rise: 320\.0,/g).length, 1);
+  assert.equal(rs.match(/river_bank: 0\.5,/g).length, 2);
+  // It can be the default by data alone too.
+  const rs2 = terrainRust(terrainOf({ ...w, defaultBiome: 'dwell:fixture_dunes' }, [loadDefault(), fixture]));
+  assert.match(rs2, /&\[\n {4}Biome \{\n {8}name: "dwell:fixture_dunes",/);
+});
+
+test('a bad biome or world terrain fails with the key and the problem', () => {
   const cases = [
-    [(t) => (t.hills.amplitude = -1), /hills\.amplitude must be in \[0, 1000\]/],
-    [(t) => (t.hills.octaves = 2.5), /hills\.octaves must be a whole number in \[1, 8\]/],
-    [(t) => (t.inland.halfDistance = 0), /inland\.halfDistance must be in \(0, 100000\]/],
-    [(t) => (t.bumps.wavelength = 2), /bumps\.wavelength/],
-    [(t) => (t.hills.fadeTo = 100), /hills\.fadeTo must be greater than hills\.fadeFrom/],
-    [(t) => (t.hills.roughness = 1), /hills: unknown roughness/],
-    [(t) => (t.mountains = {}), /unknown mountains/],
-    [(t) => delete t.seaFloor, /seaFloor must be an object/],
-    [(t) => (t.detail.mountainFull = 10), /detail\.mountainFull must be greater than detail\.mountainFrom/],
-    [(t) => (t.bands.snow = 'dwell:moss'), /bands\.snow "dwell:moss" is not in the registry/],
-    [(t) => (t.rivers.valleySlope = 0), /rivers\.valleySlope must be in \(0, 10\]/],
+    [(b) => (b.detail.amplitude = -1), /biome dwell:default: detail\.amplitude must be in \[0, 100\]/],
+    [(b) => (b.detail.octaves = 2.5), /detail\.octaves must be a whole number in \[1, 8\]/],
+    [(b) => (b.bands.roughness = 1), /bands: unknown roughness/],
+    [(b) => (b.mountains = {}), /unknown mountains/],
+    [(b) => delete b.bands, /bands must be an object/],
+    [(b) => (b.hills = {}), /biome dwell:default: unknown hills/],
+    [(b) => (b.detail.mountainFull = 10), /detail\.mountainFull must be greater than detail\.mountainFrom/],
+    [(b) => (b.bands.snow = 'dwell:moss'), /bands\.snow "dwell:moss" is not in the registry/],
+    [(b) => (b.name = 'default'), /name must be "namespace:name"/],
+    [(b) => (b.decorations = ['palms']), /decorations: "palms" is not a rule of decorations\.json/],
+    [(b) => (b.placements = ['pine_groves', 'pine_groves']), /placements: a rule is listed twice/],
+    [(b) => (b.water = 'dwell:stone'), /water dwell:stone must be a fluid block/],
+    [(b) => (b.inland = { rise: 1, halfDistance: 1 }), /unknown inland/],
   ];
   for (const [edit, message] of cases) {
+    const b = loadDefault();
+    edit(b);
+    assert.throws(() => terrainOf(loadTerrain(), [b]), message);
+  }
+  const worldCases = [
+    [(t) => (t.inland.halfDistance = 0), /terrain\.json: inland\.halfDistance must be in \(0, 100000\]/],
+    [(t) => (t.defaultBiome = 'dwell:moor'), /defaultBiome "dwell:moor" is not a biome/],
+    [(t) => (t.hills.amplitude = -1), /terrain\.json: hills\.amplitude must be in \[0, 1000\]/],
+    [(t) => (t.bumps.wavelength = 2), /bumps\.wavelength/],
+    [(t) => (t.hills.fadeTo = 100), /hills\.fadeTo must be greater than hills\.fadeFrom/],
+    [(t) => delete t.seaFloor, /seaFloor must be an object/],
+    [(t) => (t.rivers.valleySlope = 0), /rivers\.valleySlope must be in \(0, 10\]/],
+    [(t) => (t.bands = {}), /terrain\.json: unknown bands/],
+    [(t) => (t.spawn.maxHeight = 1), /spawn\.maxHeight must be greater than spawn\.minHeight/],
+  ];
+  for (const [edit, message] of worldCases) {
     const t = loadTerrain();
     edit(t);
-    assert.throws(() => validateTerrain(t), message);
+    assert.throws(() => terrainOf(t, [loadDefault()]), message);
   }
+  assert.throws(() => terrainOf(loadTerrain(), [loadDefault(), loadDefault()]), /biome dwell:default is defined twice/);
 });
 
 const loadPlacements = () => JSON.parse(readFileSync(join(here, 'placements.json'), 'utf8'));

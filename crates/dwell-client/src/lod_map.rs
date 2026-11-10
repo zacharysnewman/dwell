@@ -188,7 +188,7 @@ fn raster_into(
                 let k = shade(f64::from(col.level - col.height));
                 water.map(|v| v * k)
             } else {
-                top_rgb(TerrainGenerator::top_state(&col))
+                top_rgb(terrain.top_state(&col))
             };
             if let Some(r) = terrain.river_hit(x, z, min_half) {
                 // Coverage of the texel by the channel (its edge anti-aliased over one texel).

@@ -1,0 +1,38 @@
+{
+  "$comment": "A biome (docs/proposals/BIOME_SANDBOX.md, ADR 0074; Chisel, the biome editor, edits these files): what is layered on the world's elevation (terrain.json, one world-scale system: the height field, the coast's taper, mountains, rivers and lakes) to make a landscape read as one place. `detail` the fine relief over the map's height (more of it at altitude: mountains get their look from the elevation); `bands` the surface blocks by height and slope (the snow line, bare rock on steep faces, the shore); `decorations` and `placements` the rules (by name, shared/worldgen/decorations.json and placements.json) that may grow here; `water` the fluid block its water is drawn as. The fields keep their former terrain.json meanings (its comments' units, gen.mjs's ranges). Prototype content (ARCHITECTURE.md §6.1). The world's default biome (terrain.json `defaultBiome`) shapes every world today: changing any value changes the terrain a seed generates (regenerate the goldens, a new compatibility line). Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output.",
+  "name": "dwell:default",
+  "detail": {
+    "$comment": "Fine relief over the map's bicubic height: a fractal sum of `wavelength` and `octaves`, about ±amplitude m in the lowlands, rising to ±mountainAmplitude between mountainFrom and mountainFull m; faded to nothing within waterFade m of a river's channel or a lake's shore.",
+    "amplitude": 2,
+    "wavelength": 128,
+    "octaves": 4,
+    "mountainAmplitude": 14,
+    "mountainFrom": 300,
+    "mountainFull": 1800,
+    "waterFade": 30
+  },
+  "bands": {
+    "$comment": "The surface material by height and slope: snow above the snow line (snowLine m, moved ±snowNoise m by a noise of snowWavelength m, raised snowSlopeLift m per unit of slope, so it is not a flat contour), bare rock where the landform is steep (snow too: steep faces stay rock): its slope taken over ± rockWindow m (a hillside's, not a map cell's, so rock comes as whole faces and cliff bands, not splotches along the map's grid; owner 2026-10-26), against a threshold easing from rockSlope at sea level to rockSlopeHigh at the snow line (the soil thins with height, so the upper slopes go bare first), the shore block up to shore m above sea level and under water, the ground block elsewhere, with the under block below a top block to underDepth m. Blocks by name.",
+    "snowLine": 1550,
+    "snowNoise": 150,
+    "snowWavelength": 320,
+    "snowSlopeLift": 350,
+    "rockSlope": 0.85,
+    "rockSlopeHigh": 0.55,
+    "rockWindow": 150,
+    "shore": 2,
+    "underDepth": 3,
+    "ground": "dwell:grass",
+    "under": "dwell:dirt",
+    "snow": "dwell:snowy_grass",
+    "rock": "dwell:stone",
+    "shoreBlock": "dwell:sand"
+  },
+  "decorations": [
+    "meadow_grass"
+  ],
+  "placements": [
+    "pine_groves"
+  ],
+  "water": "dwell:water"
+}

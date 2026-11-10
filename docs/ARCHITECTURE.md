@@ -339,7 +339,7 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
 /shared/music        Music (music.json: tracks — title, author, file, volume, loop, fades, when —
                      and their audio files, the owner's Starry Sunshine) + gen.mjs (→ TS
                      music.gen.ts, each file's published name with its content hash), validate.mjs.
-/shared/worldgen     golden/: chunk and LOD-section hashes of generator version 23 (§6.3); terrain.json: the height field's parameters, decorations.json: the terrain's decoration rules, placements.json: the structure placements (the pines, ADR 0043), midplane.json: the bedrock between the faces and the portals through it, gen.mjs (→ Rust tables for dwell-worldgen) (§6.3).
+/shared/worldgen     golden/: chunk and LOD-section hashes of generator version 23 (§6.3); terrain.json: the world's elevation and water (the height field, rivers, lakes, spawn, the `defaultBiome`), biomes/: the biomes layered on it (fine relief, surface bands, rule references; ADR 0074), decorations.json: the terrain's decoration rules, placements.json: the structure placements (the pines, ADR 0043), midplane.json: the bedrock between the faces and the portals through it, gen.mjs (→ Rust tables for dwell-worldgen) (§6.3).
 /shared/structures   Structure files (*.json; test/ holds fixtures) + gen.mjs (→ Rust tables for
                      dwell-world) and gen.test.mjs; format.mjs, the format's rules, shared by gen.mjs
                      and the client's structures store; playground.json is the movement playground
@@ -1152,7 +1152,9 @@ current *content* — one island, its heights and surface materials — is proto
 the generator down to an **interim** one: one island at the origin, a 2D height field and a fill by
 depth — no continents, plates, rivers, lakes, climate, biomes, tints, mountain cascade, 3D density,
 caves, ores, trees, boulders or slope stage (their ADRs 0017–0022 are superseded). Its height
-field's parameters are data (`shared/worldgen/terrain.json`, since generator version 15); the island
+field's parameters are data (`shared/worldgen/terrain.json`, since generator version 15; since 0.51.14
+the fine relief and surface bands live in the default biome, `shared/worldgen/biomes/default.json`, see
+"Biomes" below); the island
 layout's and the fill's are code constants. Phase 17 replaces it with an evaluator of terrain
 definitions (data, [ADR 0026](./adr/0026-terrain-definitions.md)). **[built, Phase 16]** The world is the 50 km disc
 with the midplane at 0, the 10-layer core and sea level `h` = 32 (generator version 14); the island
@@ -1491,6 +1493,17 @@ Executed per chunk. Every stage reads only noise of world coordinates, never ano
 so chunks can be generated in any order and in parallel. The 2D fields are sampled on a 4-column
 lattice and interpolated bilinearly; the chunk path and the point queries (`column_at`, `solid_at`,
 `ground_y`) share that arithmetic.
+
+**Biomes [in progress; B1 built, 0.51.14]** (ADR 0074, Phase 56). A biome is one data file,
+`shared/worldgen/biomes/<name>.json` (`namespace:name`), layered on the world's elevation: `detail`
+(bounded fine relief), `bands` (surface blocks by height and slope) and references by name (`decorations`,
+`placements` rule names, the `water` fluid). The elevation and water (`inland`, `seaFloor`, `hills`,
+`bumps`, `rivers`, `mouths`, `lakes`) and `spawn` stay one world-scale system in `terrain.json`, which
+names the `defaultBiome`. `shared/worldgen/gen.mjs` validates them and emits `HEIGHT` (the world's),
+`BIOMES` (the default first, each surface merged with the world's water shaping) and `SURFACE` (the
+default's) into `terrain.gen.rs`; every world is the default biome today (the goldens unchanged).
+`TerrainGenerator::with_biome` puts a biome's surface blocks in the generator's place; the biome map
+and blending (B2), Chisel the editor (B3, B6, B7) and the rest follow.
 
 1. **Layout (2D).** The coast distance of the interim island (above).
 2. **Height (2D).** On land the ground rises from sea level at the coast toward 320 m inland

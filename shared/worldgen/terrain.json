@@ -1,5 +1,5 @@
 {
-  "$comment": "The terrain (ARCHITECTURE.md §6.3, docs/WORLD_GENERATION.md, ADR 0049). Heights in metres above sea level, distances and wavelengths in metres, slopes in m per m. `inland`, `seaFloor`, `hills` and `bumps` are the base height field: the input the world map samples on its 100 m grid before the uplift layer and the erosion (shared/worldgen/hydrology.json); chunks never read it directly. The rest shapes each column from the map: `detail` the fine noise over the map's smooth height, `rivers` the channels carved from the map's river polylines, `mouths` their deltas and estuaries, `lakes` the lake shores, `bands` the surface materials by height and slope (the snow line), `spawn` where players start. Prototype content (§6.1). Changing any value changes the terrain a seed generates: regenerate the goldens (`cargo run -p dwell-worldgen --example goldens`) and ship it on a new compatibility line. Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output.",
+  "$comment": "The world's elevation and its water (ARCHITECTURE.md §6.3, docs/WORLD_GENERATION.md, ADR 0049, ADR 0074): one world-scale system, not per biome (owner, 2026-11-10: \"the elevation separate from biomes\"; mountains come from the elevation). Heights in metres above sea level, distances and wavelengths in metres, slopes in m per m. `inland`, `seaFloor`, `hills` and `bumps` are the base height field: the input the world map samples on its 100 m grid before the uplift layer and the erosion (shared/worldgen/hydrology.json); chunks never read it directly. `rivers` the channels carved from the map's river polylines, `mouths` their deltas and estuaries, `lakes` the lake shores, `spawn` where players start. `defaultBiome` names the biome (shared/worldgen/biomes/*.json) layered on the elevation: its surface bands and fine relief. Prototype content (§6.1). Changing any value changes the terrain a seed generates: regenerate the goldens (`cargo run -p dwell-worldgen --example goldens`) and ship it on a new compatibility line. Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output.",
   "inland": {
     "rise": 320,
     "halfDistance": 6000
@@ -19,16 +19,6 @@
     "amplitude": 5,
     "wavelength": 128,
     "octaves": 3
-  },
-  "detail": {
-    "$comment": "Fine relief over the map's bicubic height: a fractal sum of `wavelength` and `octaves`, about ±amplitude m in the lowlands, rising to ±mountainAmplitude between mountainFrom and mountainFull m; faded to nothing within waterFade m of a river's channel or a lake's shore.",
-    "amplitude": 2,
-    "wavelength": 128,
-    "octaves": 4,
-    "mountainAmplitude": 14,
-    "mountainFrom": 300,
-    "mountainFull": 1800,
-    "waterFade": 30
   },
   "rivers": {
     "$comment": "Channels from the map's river polylines (smoothed `smooth` times, corner cutting). A column's nearest river by its channel's edge: inside the channel the bed lies depth (the map's width curve) below the water at the centre, at least minDepth; beyond it the ground is cut down to a valley rising valleySlope m per m from bank m over the water, out to reach m plus reachPerWidth × the width, where it meets the land; where the land is lower than the water the banks are raised to bank m over it (levees), falling away leveeFall m per m to the land, a broad bank rather than a ridge; none where the river is at sea level (its water is the sea's). Where a river joins another it reaches the other's level joinMargin m plus its own half-width outside the other's channel, and falls to it at most joinSlope m per m upstream of there (a short gorge where it hangs above the other). Meander: the banks are traced through a warp of about ±meander m at meanderWavelength. The LOD widens a river at least lodMinShare of its cell size wide to lodWidth × its cell size, at cells up to lodMaxCell m, so rivers show from afar. Where a river's surface steps down a row, the water falls a row from one pool to the next, the bed under each at its own depth: no lips (BUGS.md #29, Phase 53 G1a; the water surface grid rests the water as drawn). A chute (its steps closer than a row every 2.5 m) has a dry bed a row under its surface and a stream down its middle as wide as its river's flow needs.",
@@ -65,27 +55,11 @@
     "shoreNoise": 15,
     "shoreWavelength": 160
   },
-  "bands": {
-    "$comment": "The surface material by height and slope: snow above the snow line (snowLine m, moved ±snowNoise m by a noise of snowWavelength m, raised snowSlopeLift m per unit of slope, so it is not a flat contour), bare rock where the landform is steep (snow too: steep faces stay rock): its slope taken over ± rockWindow m (a hillside's, not a map cell's, so rock comes as whole faces and cliff bands, not splotches along the map's grid; owner 2026-10-26), against a threshold easing from rockSlope at sea level to rockSlopeHigh at the snow line (the soil thins with height, so the upper slopes go bare first), the shore block up to shore m above sea level and under water, the ground block elsewhere, with the under block below a top block to underDepth m. Blocks by name.",
-    "snowLine": 1550,
-    "snowNoise": 150,
-    "snowWavelength": 320,
-    "snowSlopeLift": 350,
-    "rockSlope": 0.85,
-    "rockSlopeHigh": 0.55,
-    "rockWindow": 150,
-    "shore": 2,
-    "underDepth": 3,
-    "ground": "dwell:grass",
-    "under": "dwell:dirt",
-    "snow": "dwell:snowy_grass",
-    "rock": "dwell:stone",
-    "shoreBlock": "dwell:sand"
-  },
   "spawn": {
     "$comment": "Players spawn on level dry land between minHeight and maxHeight m above sea level, preferring a river within nearRiver m: the map's cells are ranked by their distance from the disc's centre (the land nearest it first), and the first that suits is searched for a level patch.",
     "minHeight": 3,
     "maxHeight": 80,
     "nearRiver": 400
-  }
+  },
+  "defaultBiome": "dwell:default"
 }

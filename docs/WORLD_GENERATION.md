@@ -14,7 +14,9 @@
 > ADRs, 0017–0022, superseded); `ARCHITECTURE.md` §6.3 describes what is built.
 >
 > **The interim height field's relief (generator version 16, owner 2026-10-19: "I want terrain
-> steep enough to slide on").** Its parameters are data, `shared/worldgen/terrain.json`: the inland
+> steep enough to slide on").** Its parameters are data, `shared/worldgen/terrain.json` and (since
+> 0.51.14, ADR 0074) the default biome `shared/worldgen/biomes/default.json`, which holds the fine relief
+> (`detail`) and the surface `bands`: the inland
 > rise (320 m, half done 6 km inland), the sea floor (−20 m over 2.5 km), hills (±225 m, 1,024 m,
 > 5 octaves, faded in 0.5–4 km inland) and bumps (±5 m, 128 m, 3 octaves). The owner's targets:
 > steeper hills everywhere (not mountain regions), about 15 % of the land's surface steeper than
@@ -246,7 +248,7 @@ rivers, etc … in game", mountains "up to 8000ft", snowy grass and snowy leaves
 0049](./adr/0049-world-map-terrain.md); ARCHITECTURE.md §6.3 (*The world map*). The hydrology
 prototype's map (proposal layers 0–1) is the terrain: per face, the base field on a 100 m grid,
 uplifted into ranges and eroded, its lakes and rivers found. Columns take its height (bicubic),
-fine detail (`terrain.json` `detail`), river channels and valleys (`rivers`, `mouths`), flat lakes
+fine detail (the default biome's `detail`), river channels and valleys (`rivers`, `mouths`), flat lakes
 (`lakes`) and their surface bands (`bands`: snow line 1,550 m ± 150 m, raised on slopes; sand to
 2 m above sea and under water; rock where the landform is steep — generator 24, owner 2026-10-26:
 "no random splotchy stone … structured random systems rooted in realism": the slope over ±

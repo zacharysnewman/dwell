@@ -1468,3 +1468,54 @@ fn no_seam_at_the_reported_meeting_of_valleys() {
         &steps[..steps.len().min(5)]
     );
 }
+
+dwell_world::both_faces!(
+    /// Biomes (ADR 0074, B1): a fixture biome made by data alone (the default's fields with
+    /// another ground block) changes the generated columns' tops where the default puts its
+    /// ground, and nothing else; the default biome is the generator's own.
+    fn a_fixture_biome_changes_the_generated_columns(f: FaceFrame) {
+        use dwell_worldgen::terrain::{BIOMES, Biome, SURFACE, Surface, find_biome};
+        let default = find_biome("dwell:default").expect("the default biome");
+        assert_eq!(BIOMES[0], *default, "the default biome is first");
+        assert_eq!(default.surface, SURFACE, "SURFACE is the default biome's");
+        let fixture = Biome {
+            name: "dwell:fixture",
+            surface: Surface {
+                ground: "dwell:sand",
+                ..default.surface
+            },
+            ..*default
+        };
+        let t = BifacialTerrain::height_field(7);
+        let g = t.local(f.face).clone();
+        let same = g.clone().with_biome(default);
+        let other = g.clone().with_biome(&fixture);
+        let (grass, sand) = (require("dwell:grass"), require("dwell:sand"));
+        let mut changed = 0;
+        for i in 0..400 {
+            let (x, z) = (21_000 + (i % 20) * 37, 2_000 + (i / 20) * 41);
+            let Some(y) = g.ground_y(x, z) else { continue };
+            for dy in [-1, 0] {
+                let base = g.state_at(x, y + dy, z);
+                assert_eq!(
+                    same.state_at(x, y + dy, z),
+                    base,
+                    "the default biome is the generator's"
+                );
+                let got = other.state_at(x, y + dy, z);
+                if base == grass {
+                    assert_eq!(got, sand, "the fixture's ground at ({x}, {}, {z})", y + dy);
+                    changed += 1;
+                } else {
+                    assert_eq!(
+                        got,
+                        base,
+                        "only the ground block changes at ({x}, {}, {z})",
+                        y + dy
+                    );
+                }
+            }
+        }
+        assert!(changed > 20, "grass tops found to change: {changed}");
+    }
+);

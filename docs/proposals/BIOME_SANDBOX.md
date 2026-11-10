@@ -1,8 +1,8 @@
-# Proposal: the biome sandbox and texture lab (tune with sliders, preview live, export JSON)
+# Proposal: Chisel, the biome sandbox and texture lab (tune with sliders, preview live, export JSON)
 
-**Status:** recorded 2026-11-09 from the owner's request; queued **after the current work queue is
-done**. Not architecture until an ADR adopts it. The owner asked for no further questions about it
-until the other queued work is finished; the open questions below wait until then.
+**Status:** recorded 2026-11-09 from the owner's request; **adopted by [ADR 0074](../adr/0074-biomes-and-chisel.md)**
+(2026-11-10) with the owner's answers in §5, as Phase 56 of `IMPLEMENTATION_PLAN.md`. The editor is
+called **Chisel** (owner, 2026-11-10). B1 (the biome file format) is built (0.51.14).
 
 ## 1. The request (owner, 2026-11-09)
 
@@ -53,7 +53,22 @@ The sandbox groups them per biome and puts a slider on each, rather than inventi
   structures sandbox) to try it at player scale.
 - **Live in the game too, later:** the in-game sandbox could reload a biome file while running.
 
-## 5. Things to settle when the queue is done (not asked yet, by request)
+## 5. The owner's answers (2026-11-10)
+
+- **Blended biomes from the start:** a biome map with transitions across one world.
+- **The editor lives in both places:** a `docs/prototypes/` page first (`chisel.html`), then folded
+  into the game like the structures sandbox.
+- **Heightfield biomes first** (archipelago, Mount Rainier); arches and overhangs later.
+- **The texture lab is one tool with the biome sandbox:** textures are a tab of Chisel.
+- **The name:** the editor is called **Chisel**.
+- **Cohesive, elevation first, bands by height** (owner, 2026-11-10; ADR 0074's design goals): the
+  world's elevation and water are one world-scale system computed first; biomes layer bounded fine
+  relief, surface and features on it, each with elevation bands (a desert's dunes, mesas, frozen
+  tundra), and are placed by where they belong (elevation, coast, wetness, climate) with wide,
+  gradual transitions, not a noise patchwork.
+
+The questions as they were asked (3, 5 and 6 are settled by the plan: content picked from the
+existing sets first, B5; a world names its biomes at creation, B7; the water hue per biome, B4):
 
 1. **One biome per world, or several blended across the map?** Blending (a biome map with
    transitions) is far more work than one-biome worlds and a per-world biome choice.
@@ -87,12 +102,16 @@ the queue is done, with the biome questions):
 - **Item and model textures:** the skinned models' palette remap (ADR 0070) and item looks
   (`shared/inventory/inventory.json` `look`) shown and tuned in the same lab.
 
-## 6. Rough phases (each ≤ 45 min for an agent, to be refined)
+## 6. Phases (each ≤ 45 min for an agent; Phase 56, ADR 0074)
 
-1. **B1:** the biome file format, its generator and validation; today's terrain expressed as the
-   default biome (same output, a golden test).
-2. **B2:** the editor page with the preview patch (heights + surface), Export/Import.
-3. **B3:** water bank steepness, hue, the archipelago sliders.
-4. **B4:** trees, ground items, structures in the biome.
-5. **B5:** the in-game "new world from biome" choice.
-6. **B6+:** 3D features for arches, blended biomes, per the answers to §5.
+1. **B1 (built, 0.51.14):** the biome file format (`shared/worldgen/biomes/<name>.json`), its
+   generator and validation; today's terrain expressed as the default biome (goldens byte-identical).
+2. **B2:** the biome map and blending: a world's biomes weighted across the map; a one-biome world
+   golden-equal.
+3. **B3 (Chisel: the prototype page):** `docs/prototypes/chisel.html`, the live preview patch,
+   sliders, Export/Import JSON.
+4. **B4:** water banks and hue, the archipelago.
+5. **B5:** trees, ground items and structures per biome.
+6. **B6 (Chisel: the texture tab).**
+7. **B7 (Chisel in the game):** the in-game editor and the new-world biome choice.
+8. **B8:** arches (3D density, overhangs).
