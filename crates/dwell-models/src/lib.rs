@@ -171,7 +171,9 @@ mod detail_tests {
             DETAIL_LEVELS[0].ratio, 1.0,
             "the first level is the full mesh"
         );
-        assert_eq!(DETAIL_LEVELS[DETAIL_DEFAULT].id, "full");
+        // Owner, 2026-11-10: "make 60% the default".
+        assert_eq!(DETAIL_LEVELS[DETAIL_DEFAULT].id, "high");
+        assert_eq!(DETAIL_LEVELS[DETAIL_DEFAULT].ratio, 0.6);
         let low = detail_level(DETAIL_LEVELS, "low", DETAIL_DEFAULT);
         assert_eq!(DETAIL_LEVELS[low].id, "low");
         assert_eq!(

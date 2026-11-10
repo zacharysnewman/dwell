@@ -7,6 +7,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { applyCoat, validateCoat } from "./coat.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..");
@@ -163,6 +164,22 @@ export function validate(data, palette, dir, read = (p) => readFileSync(p)) {
       } catch (e) {
         fail(`${at}: remap ${src}: ${e.message}`);
       }
+    }
+    if (m.coat !== undefined) {
+      try {
+        validateCoat(m.coat, palette);
+      } catch (e) {
+        fail(`${at}: ${e.message}`);
+      }
+      const bytes = read(path);
+      if (
+        !Buffer.from(applyCoat(bytes, m.coat, palette)).equals(
+          Buffer.from(bytes),
+        )
+      )
+        fail(
+          `${at}: ${m.glb} is not painted by its coat: run node shared/models/import.mjs --coat ${name}`,
+        );
     }
     const roles = Object.entries(m.roles ?? {});
     if (!roles.length) fail(`${at}: no roles`);

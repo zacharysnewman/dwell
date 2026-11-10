@@ -4,8 +4,11 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { applyCoat, coatColour, validateCoat } from "./coat.mjs";
 import {
   generate,
+  glbAccessor,
+  glbJson,
   glbSummary,
   lookModels,
   propSummary,
@@ -206,4 +209,165 @@ test("palette references resolve; excluded ramps are left out of the snap", () =
   const names = paletteStops(palette, ["chalk"]).map((s) => s.name);
   assert.ok(names.includes("soil.shadow"));
   assert.ok(!names.some((n) => n.startsWith("chalk.")));
+});
+
+// The coat (shared/models/coat.mjs, ADR 0070 §11): a model's colour as a few key colours by body
+// region, blended softly, instead of a colour a face.
+const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
+const srgb = (c) =>
+  c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055;
+const coatFixture = () => ({
+  head: "+z",
+  base: "sand",
+  keep: [],
+  patches: [{ colour: "bedrock.shadow", height: [0.5, 1], blend: 0.2 }],
+});
+
+/** A mesh's faces' mean sRGB colours (faces with a `skip`ped corner left out) and the pairs sharing an edge. */
+function faceColours(bytes, level = 0, skip = () => false) {
+  const g = glbJson(bytes);
+  const p = g.meshes[level].primitives[0];
+  const pos = glbAccessor(bytes, p.attributes.POSITION).values;
+  const col = glbAccessor(bytes, p.attributes.COLOR_0);
+  const idx = glbAccessor(bytes, p.indices).values;
+  const key = (i) => [0, 1, 2].map((k) => pos[i * 3 + k].toFixed(4)).join(",");
+  const faces = [];
+  const edges = new Map();
+  for (let f = 0; f < idx.length / 3; f++) {
+    const vs = [idx[f * 3], idx[f * 3 + 1], idx[f * 3 + 2]];
+    const cs = vs.map((v) =>
+      [0, 1, 2].map((k) => srgb(col.values[v * col.width + k])),
+    );
+    if (cs.some(skip)) continue;
+    faces.push(cs.reduce((a, c) => a.map((x, k) => x + c[k] / 3), [0, 0, 0]));
+    for (let e = 0; e < 3; e++) {
+      const ek = [key(vs[e]), key(vs[(e + 1) % 3])].sort().join("|");
+      edges.set(ek, [...(edges.get(ek) ?? []), faces.length - 1]);
+    }
+  }
+  return { faces, pairs: [...edges.values()].filter((fs) => fs.length === 2) };
+}
+
+/** The largest colour step (one channel, sRGB 0..1) between two faces sharing an edge. */
+function maxNeighbourStep(bytes, level, skip) {
+  const { faces, pairs } = faceColours(bytes, level, skip);
+  let most = 0;
+  for (const [a, b] of pairs)
+    for (let k = 0; k < 3; k++)
+      most = Math.max(most, Math.abs(faces[a][k] - faces[b][k]));
+  return most;
+}
+
+// The owner's bar (2026-11-10): no "harsh color changes" between neighbouring faces. The per-face
+// wolf (0.52.4) stepped by up to 0.62 from face to face; a blended coat's steps stay small.
+const STEP = 0.2;
+
+test("the wolf's coat is smooth on every detail level, with no red or blue left", () => {
+  const m = data().models.wolf;
+  const bytes = readFileSync(join(here, m.glb));
+  const keep = (m.coat.keep ?? []).flatMap((r) =>
+    Object.values(palette.ramps[r]).map(hex),
+  );
+  const kept = (c) =>
+    keep.some((k) => k.every((v, i) => Math.abs(v - c[i]) < 2 / 255));
+  for (let level = 0; level < glbJson(bytes).meshes.length; level++) {
+    const step = maxNeighbourStep(bytes, level, kept);
+    assert.ok(
+      step < STEP,
+      `level ${level}: neighbouring faces step by ${step.toFixed(3)}`,
+    );
+    for (const c of faceColours(bytes, level).faces) {
+      assert.ok(!(c[0] > c[1] + 0.15 && c[0] > c[2] + 0.15), `a red face ${c}`);
+      assert.ok(!(c[2] > c[0] + 0.15), `a blue face ${c}`);
+    }
+  }
+});
+
+test("a coat is added by data alone: the fixture's coat paints its GLB", () => {
+  const coat = coatFixture();
+  const raw = readFileSync(join(fixtures, "two_bone.glb"));
+  const painted = applyCoat(raw, coat, palette);
+  // Painting again changes nothing (the check gen.mjs runs over a coated model's GLB).
+  assert.ok(Buffer.from(applyCoat(painted, coat, palette)).equals(painted));
+  const g = glbJson(painted);
+  const p = g.meshes[0].primitives[0];
+  const pos = glbAccessor(painted, p.attributes.POSITION).values;
+  const col = glbAccessor(painted, p.attributes.COLOR_0);
+  const ys = pos.filter((_, i) => i % 3 === 1);
+  const [lo, hi] = [Math.min(...ys), Math.max(...ys)];
+  const at = (i) => [0, 1, 2].map((k) => srgb(col.values[i * col.width + k]));
+  const near = (a, b) => a.every((v, k) => Math.abs(v - b[k]) < 2 / 255);
+  for (let i = 0; i < ys.length; i++) {
+    const h = (ys[i] - lo) / (hi - lo);
+    if (h < 0.35)
+      assert.ok(near(at(i), hex(palette.ramps.sand.base)), `low vertex ${i}`);
+    if (h > 0.65)
+      assert.ok(
+        near(at(i), hex(palette.ramps.bedrock.shadow)),
+        `high vertex ${i}`,
+      );
+  }
+  // Through the data: the fixture model with the coat validates over its painted GLB, and fails
+  // naming the fix over the unpainted one.
+  const f = fixture();
+  f.models.two_bone.coat = coat;
+  const read = (path) =>
+    path.endsWith("two_bone.glb") ? painted : readFileSync(path);
+  validate(f, palette, fixtures, read);
+  assert.throws(
+    () => validate(f, palette, fixtures),
+    /model two_bone: two_bone\.glb is not painted by its coat: run node shared\/models\/import\.mjs --coat two_bone/,
+  );
+  // A patch's blend, amount and covered middle (coatColour at the body point).
+  const q = { along: 0.5, height: 0.9, side: 0 };
+  assert.deepEqual(
+    coatColour(coat, palette, q).map((v) => Math.round(v * 255)),
+    hex(palette.ramps.bedrock.shadow).map((v) => Math.round(v * 255)),
+  );
+  coat.patches[0].amount = 0.5;
+  const half = coatColour(coat, palette, q);
+  const [a, b] = [
+    hex(palette.ramps.sand.base),
+    hex(palette.ramps.bedrock.shadow),
+  ];
+  assert.ok(half.every((v, k) => Math.abs(v - (a[k] + b[k]) / 2) < 1e-9));
+});
+
+test("bad coats fail naming the model and the problem", () => {
+  const bad = (edit, re) => {
+    const coat = coatFixture();
+    edit(coat);
+    assert.throws(() => validateCoat(coat, palette, "model x: coat"), re);
+  };
+  bad((c) => (c.head = "up"), /model x: coat: head is an axis/);
+  bad((c) => (c.base = "nope"), /base: no palette colour nope/);
+  bad((c) => (c.keep = ["nope"]), /keep: no ramp nope/);
+  bad((c) => (c.fur = 1), /unknown key fur/);
+  bad(
+    (c) => (c.patches[0].colour = "wolf.dark"),
+    /patch 0: no palette colour wolf\.dark/,
+  );
+  bad(
+    (c) => (c.patches[0].height = [0.6, 0.2]),
+    /patch 0: height is \[from, to\]/,
+  );
+  bad(
+    (c) => (c.patches[0].height = [0, 1.5]),
+    /patch 0: height is \[from, to\]/,
+  );
+  bad((c) => delete c.patches[0].height, /patch 0: no range/);
+  bad((c) => (c.patches[0].blend = 0), /patch 0: blend must be in/);
+  bad((c) => (c.patches[0].amount = 2), /patch 0: amount must be in/);
+  bad((c) => (c.patches[0].width = 2), /patch 0: unknown key width/);
+  bad((c) => {
+    c.keep = ["hair_black"];
+    c.patches[0].colour = "hair_black.light";
+  }, /patch 0: hair_black\.light is a kept ramp's colour/);
+  // Through the data: a model's bad coat fails validate, naming the model.
+  const f = fixture();
+  f.models.two_bone.coat = { ...coatFixture(), head: "y" };
+  assert.throws(
+    () => validate(f, palette, fixtures),
+    /model two_bone: coat: head is an axis/,
+  );
 });

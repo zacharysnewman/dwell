@@ -118,7 +118,11 @@ are code and rare. Per build: the models ship with a release, like the block reg
    Graphics → Look's **Model detail** slider runs through the levels (stored as the level's id,
    `dwell.modelDetail`, a default/pin setting like the others; not in the graphics presets: a look, not
    a cost they trade); `setModelDetail` re-uploads every skinned mesh at the level, live, the clip
-   players untouched. Flat shading is on at every level, not a separate toggle: it is what makes a
+   players untouched. **Since 0.52.5 the slider is gone** (owner, 2026-11-10: "Keep the logic for
+   changing the detail. But we can remove the slider and make 60% the default"): `detail.default` is
+   `high` (60 %); the setting, `setModelDetail`, `?modeldetail=` and the Model Viewer's buttons stay,
+   and a pin stored before still applies (it has no control to change it now; clearing site data or
+   Settings → Reset drops it). Flat shading is on at every level, not a separate toggle: it is what makes a
    level read as low-poly. Cost: the flat corners split the vertices, so the ten GLBs are ~5.6 MB
    (were ~1.8 MB), all built into the WASM. Seen in the Model Viewer: 60 % and 35 % read as clean
    low-poly; 20 % breaks the small models (the wolf's and the dog's heads collapse, the stag loses
@@ -128,8 +132,30 @@ are code and rare. Per build: the models ship with a release, like the block reg
    without its antlers (the two antler parts on `scull`, above 1.7 model units; the ears end at 1.61),
    the same skeleton and clips. The **wolf** is the dog's FBX with a `remap` of the pack's colours to
    the palette's wolf ramps (owner: "use the dog recolored. Make it twice as big for default too"),
-   `scale` 2. `import.mjs --colours` prints each source colour seen and what it became, for writing a
-   remap.
+   `scale` 2, then 1.5 (0.52.5, owner: "The wolf should be shrunk about 75% of its size").
+   `import.mjs --colours` prints each source colour seen and what it became, for writing a remap.
+12. **Coats (0.52.5).** The per-face colours read as "very harsh color changes" on the wolf ("those
+   wolves look like Balto"; owner, 2026-11-10, with a grey wolf's photo: "this is more the blend").
+   A model's optional `coat` in `models.json` paints it by body region instead: a `base` colour and
+   `patches` laid over it in order, each a box in the body's normalised coordinates (`along` 0 the
+   nose → 1 the tail's tip, `height` 0 the feet → 1 the top, `side` 0 the centre line → 1 the widest;
+   `head` names the GLB axis the head points along) with soft edges (`blend`, a smoothstep centred on
+   each edge) and a cover (`amount`). `keep` names ramps whose imported colours stay (the wolf's black
+   eyes and nose); everything else, the dog's blue collar and red tongue included, takes the coat.
+   `shared/models/coat.mjs` runs after Blender (`import.mjs`, or `import.mjs --coat` over the
+   checked-in GLBs, no packs needed): every vertex of every detail level takes the coat's colour at
+   its bind-pose position (bounds over all levels together), so faces stay flat-shaded (their own
+   normals, the vertices still split per face) while the colour runs smoothly across the body, the
+   renderer interpolating it inside each face. Colours are palette references, mixed in sRGB: a
+   vertex may hold a colour **between** palette stops (a deliberate departure from §11's snapped
+   per-face colours, for coats only). `gen.mjs` validates a coat (unknown keys, ranges, blends,
+   colours, a patch painting a kept ramp) and fails when a coated model's GLB is not its coat's
+   output; tests pin the wolf's smoothness (neighbouring faces step by under 0.2 a channel; 0.62
+   before), no red or blue, a back darker than its belly, and a fixture model coated by data alone.
+   The wolf's coat: fawn flanks (`sand.shadow`), a dark saddle (`flint.shadow`) and grey shoulders
+   and head (`wolf`), a cream belly, legs and throat and a pale muzzle (`wolf_pale`), a grey tail with
+   a dark tip (`bedrock.shadow`). The collar is part of the dog's one mesh (not a loose part a
+   `remove` could drop), so it is fur-coloured but its raised ring still shows at full detail.
 
 ## Consequences
 
