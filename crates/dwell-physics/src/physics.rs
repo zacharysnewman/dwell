@@ -884,7 +884,10 @@ fn piece_collider(c: &PieceCell) -> Collider {
     // touch until they move together.
     let half = (c.half - DVec3::splat(PIECE_SKIN)).max(c.half * 0.5);
     let hull = c.hull.and_then(|m| {
-        let pts = if dwell_blocks::octagon::is_octagon(m) {
+        // A log's run is its octagon prism; a wood ramp riding a felled trunk keeps its square
+        // ramp's hull (Phase 55 T4 deviation: on the octagon's narrower hinge the felling test's
+        // trunk slid and rolled off the stump instead of tipping into the notch).
+        let pts = if dwell_blocks::octagon::is_octagon(m) && dwell_blocks::octagon::full(m) {
             octagon_hull_points(m, c.joined, c.half, half)
         } else {
             shape_hull_points(m, half)
@@ -1057,32 +1060,6 @@ mod piece_box_tests {
             ray_hits(&piece_collider(near), corner, along),
             "the corner at the join is squared"
         );
-    }
-
-    // face-a-only: as above.
-    #[test]
-    fn a_felled_wedge_collides_as_the_octagon_cut_by_its_slant() {
-        // Phase 55 T4: the trunk's upside-down wood ramp was its square ramp's hull.
-        let ramp = dwell_blocks::parse_state("dwell:log_ramp[facing=west,half=top,shape=ramp]")
-            .expect("the wood ramp");
-        let mut c = cell(0.0, 0.0, 0.0, 100.0, Collide::All);
-        c.hull = piece_hull(ramp);
-        let merged = merged_boxes(&[c]);
-        let col = piece_collider(&merged[0]);
-        let up = DVec3::new(0.0, 1.0, 0.0);
-        // Up from below at a cut corner of the full (top) end, and up through its middle.
-        assert!(
-            !ray_hits(&col, DVec3::new(0.48, -1.0, 0.48), up),
-            "the corner is cut"
-        );
-        assert!(
-            ray_hits(&col, DVec3::new(0.0, -1.0, 0.0), up),
-            "its middle is solid"
-        );
-        // Somewhere its slant leaves it: across the cell at mid height, one half is open.
-        let across = DVec3::new(0.0, 0.0, 1.0);
-        let hits = [-0.3, 0.3].map(|x| ray_hits(&col, DVec3::new(x, 0.0, -1.0), across));
-        assert!(hits[0] != hits[1], "the slant cuts one side: {hits:?}");
     }
 
     #[test]

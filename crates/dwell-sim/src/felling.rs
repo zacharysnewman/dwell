@@ -1523,12 +1523,12 @@ mod tests {
         let (s2, _) = fell_wedges(wedge, [0.0, 1.0], WedgeTrunk::Open).expect("wedges");
         assert_eq!(state_property(s2, "facing"), Some("south"));
         assert!(fell_wedges("dwell:stone", [-1.0, 0.0], WedgeTrunk::Open).is_none());
-        // A shaped piece cell collides as its hull, a full one as its box.
+        // A shaped piece cell collides as its hull, a log as its octagon prism (Phase 55 T4), a
+        // full cube as its box.
         assert_eq!(dwell_physics::piece_hull(stump), Some(stump));
-        assert_eq!(
-            dwell_physics::piece_hull(dwell_blocks::require("dwell:log")),
-            None
-        );
+        let log = dwell_blocks::require("dwell:log");
+        assert_eq!(dwell_physics::piece_hull(log), Some(log));
+        assert_eq!(dwell_physics::piece_hull(M.stone), None);
         assert_eq!(dwell_physics::piece_hull(M.air), None);
     }
 

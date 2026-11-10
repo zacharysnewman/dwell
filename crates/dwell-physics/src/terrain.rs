@@ -809,6 +809,36 @@ mod rebuild_tests {
         }
     );
 
+    dwell_world::both_faces!(
+        /// Phase 55 T4: a stump's wood ramp collides as the log's octagon cut by its slant (ray
+        /// down past its cut corner misses; red before: the square ramp's corner was solid), and
+        /// on the log below it the log's corner is cut too.
+        fn a_wood_ramp_collides_as_the_octagon_cut_by_its_slant(f: FaceFrame) {
+            let log = dwell_blocks::require("dwell:log[axis=y]");
+            let ramp = dwell_blocks::require(
+                "dwell:log_ramp[facing=west,flooded=false,half=bottom,shape=ramp]",
+            );
+            let row = 40;
+            let mut world = VoxelWorld::new(dwell_world::empty_generator(), None);
+            let [x, y, z] = f.cell([4, row, 4]);
+            world.set_voxel(x, y, z, f.state(log));
+            let [x, y, z] = f.cell([4, row + 1, 4]);
+            world.set_voxel(x, y, z, f.state(ramp));
+            let c = dwell_world::chunk_of(x, y, z);
+            let top = f.y(f64::from(row + 3) * CELL_H);
+            let down = f.vector([0.0, -1.0, 0.0]);
+            let b = build(&mut world, c);
+            assert!(
+                !ray_hits(&b, c, [4.98, top, 4.98], down),
+                "the corner is cut"
+            );
+            assert!(
+                ray_hits(&b, c, [4.5, top, 4.5], down),
+                "its middle is solid"
+            );
+        }
+    );
+
     // face-a-only: which chunks are rebuilt has no up; one block of chunks round the origin.
     #[test]
     fn a_cell_changed_rebuilds_its_chunk_not_the_full_cube_chunks_round_it() {
