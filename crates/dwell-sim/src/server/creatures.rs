@@ -94,6 +94,13 @@ impl Server {
 
     // --- for tests and tools ---
 
+    /// Replaces the creatures' data (tests: the fixture table) and removes those there are.
+    pub fn set_creature_table(&mut self, table: crate::creatures::Table) {
+        let gone: Vec<u32> = self.creatures.list.iter().map(|c| c.id).collect();
+        self.creatures = crate::creatures::Creatures::new(table);
+        self.creatures.removed = gone;
+    }
+
     /// The creatures in the world.
     pub fn creatures(&self) -> &[crate::creatures::Creature] {
         &self.creatures.list

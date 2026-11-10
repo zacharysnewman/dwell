@@ -115,7 +115,8 @@ fn ground(m: StateId) -> bool {
 
 /// The face-local row of the feet of a creature `rows` tall standing in the column at face-local
 /// `(x, z)`, searched from `row + up` down to `row - down`: the first row whose ground is a solid
-/// full block with `rows` open, dry cells over it. None: no such row (a cliff, water, unloaded).
+/// full block with `rows` open, dry cells over it. None: no such row (a cliff, water, unloaded:
+/// a cell not loaded is neither ground nor open).
 pub fn feet_row(
     get: Get,
     f: FaceFrame,
@@ -127,7 +128,7 @@ pub fn feet_row(
 ) -> Option<i32> {
     let at = |y: i32| get(f.cell([x, y, z]));
     for y in (row - down..=row + up).rev() {
-        if !ground(at(y - 1)?) {
+        if !at(y - 1).is_some_and(ground) {
             continue;
         }
         if (0..rows).all(|k| at(y + k).is_some_and(open)) {
