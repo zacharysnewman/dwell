@@ -629,8 +629,10 @@ pub enum InventoryAction {
     /// This client understands ground items (ADR 0071): send it `GroundGone` from now on. Sent only
     /// to a server whose `Inventory` has `inventory_flags::GROUND`.
     GroundHello,
-    /// Pick up the ground item in world cell `cell` (ADR 0071): the server checks it lies there and
-    /// is within reach. Only to a server whose `Inventory` has `inventory_flags::GROUND`.
+    /// The break action aimed at the ground item in world cell `cell` (ADR 0071, amended
+    /// 2026-11-09; the name is from when it picked the item up): the server checks it lies there
+    /// and is within reach, and knocks it loose (a loose item in a mode that uses items; in
+    /// creative it vanishes). Only to a server whose `Inventory` has `inventory_flags::GROUND`.
     Pick { cell: [i32; 3] },
 }
 

@@ -320,15 +320,28 @@ fn wall_and_rocks(fx: &mut Fixture, f: FaceFrame) -> Vec<[i32; 3]> {
     found
 }
 
-fn pick(fx: &mut Fixture, cell: [i32; 3]) {
+/// The break action aimed at the ground item in `cell` (ADR 0071 amendment, 2026-11-09): the
+/// client sends it as `InventoryAction::Pick`.
+fn hit(fx: &mut Fixture, cell: [i32; 3]) {
     fx.send(1, Message::InventoryAction(InventoryAction::Pick { cell }));
     step(fx, 2);
 }
 
+fn loose_rocks(fx: &Fixture) -> usize {
+    fx.server
+        .loose_items()
+        .iter()
+        .filter(|it| it.stack.item == "dwell:rock")
+        .count()
+}
+
 dwell_world::both_faces!(
-    /// A rock within reach is picked up into the inventory, stacking with a dropped rock, and is
-    /// gone from the scatter; a second pick of it, or one out of reach, is refused.
-    fn a_ground_rock_in_reach_is_picked_up_and_stacks_with_drops(f: FaceFrame) {
+    /// Hitting a rock within reach knocks it loose (owner, 2026-11-09: "if you hit the rock or
+    /// stick they drop as the spinning item that auto picks up"): a loose rock where it lay, not
+    /// straight into the inventory, and gone from the scatter; walking over it collects it,
+    /// stacking with a dropped rock. A second hit of it, one out of reach, or one at nothing is
+    /// refused.
+    fn hitting_a_ground_rock_knocks_it_loose_and_walking_over_collects_it(f: FaceFrame) {
         let mut fx = scene(f, "adventure");
         fx.send(1, Message::InventoryAction(InventoryAction::GroundHello));
         step(&mut fx, 1);
@@ -339,9 +352,41 @@ dwell_world::both_faces!(
             .iter()
             .find(|c| f.cell(**c)[0] < 4)
             .expect("one on the near side");
-        pick(&mut fx, near);
+        let lay = fx.server.ground_item_at(near).unwrap().point();
+        hit(&mut fx, near);
+        assert_eq!(
+            fx.server.inventory_of(1).unwrap().count_of("dwell:rock"),
+            1,
+            "not straight into the inventory"
+        );
+        assert_eq!(loose_rocks(&fx), 1, "a loose rock");
+        let it = fx
+            .server
+            .loose_items()
+            .iter()
+            .find(|it| it.stack.item == "dwell:rock")
+            .unwrap();
+        let d = (0..3)
+            .map(|k| (it.position[k] - lay[k]).powi(2))
+            .sum::<f64>()
+            .sqrt();
+        assert!(d < 1.0, "where it lay: {d} m off");
+        assert!(fx.server.ground_item_at(near).is_none());
+        assert!(fx.server.ground_gone().cells.contains(&near));
+        assert!(
+            fx.take(1)
+                .iter()
+                .any(|(m, _)| matches!(m, Message::GroundGone(c) if c == &vec![near])),
+            "the client is told"
+        );
+        hit(&mut fx, near);
+        assert_eq!(loose_rocks(&fx), 1, "a second hit knocks nothing");
+        // Walking over it collects it.
+        let l = f.cell(near);
+        fx.move_to_local(f, f64::from(l[0]) + 0.5, m_of_row(BASE), f64::from(l[2]) + 0.5);
+        step(&mut fx, 60);
         let inv = fx.server.inventory_of(1).unwrap();
-        assert_eq!(inv.count_of("dwell:rock"), 2, "picked up");
+        assert_eq!(inv.count_of("dwell:rock"), 2, "collected");
         assert_eq!(
             inv.slots
                 .iter()
@@ -351,27 +396,37 @@ dwell_world::both_faces!(
             1,
             "one stack with the dropped rock"
         );
-        assert!(fx.server.ground_item_at(near).is_none());
-        assert!(fx.server.ground_gone().cells.contains(&near));
-        assert!(
-            fx.take(1)
-                .iter()
-                .any(|(m, _)| matches!(m, Message::GroundGone(c) if c == &vec![near])),
-            "the client is told"
-        );
-        pick(&mut fx, near);
-        assert_eq!(fx.server.inventory_of(1).unwrap().count_of("dwell:rock"), 2);
         // Out of reach: the player 40 m off.
         let other = rocks.iter().copied().find(|c| *c != near);
         fx.move_to_local(f, -40.5, m_of_row(BASE + 40), 0.5);
         if let Some(other) = other {
-            pick(&mut fx, other);
-            assert_eq!(fx.server.inventory_of(1).unwrap().count_of("dwell:rock"), 2);
+            hit(&mut fx, other);
+            assert_eq!(loose_rocks(&fx), 0);
             assert!(fx.server.ground_item_at(other).is_some());
         }
         // Nothing lies here: refused.
-        pick(&mut fx, f.cell([0, BASE, 0]));
-        assert_eq!(fx.server.inventory_of(1).unwrap().count_of("dwell:rock"), 2);
+        hit(&mut fx, f.cell([0, BASE, 0]));
+        assert_eq!(loose_rocks(&fx), 0);
+    }
+);
+
+dwell_world::both_faces!(
+    /// In creative, where breaking drops nothing (ADR 0066), a ground rock hit simply vanishes:
+    /// gone from the scatter, no loose rock, nothing in the inventory.
+    fn hitting_a_ground_rock_in_creative_makes_it_vanish(f: FaceFrame) {
+        let mut fx = scene(f, "creative");
+        let rocks = wall_and_rocks(&mut fx, f);
+        let near = *rocks
+            .iter()
+            .find(|c| f.cell(**c)[0] < 4)
+            .expect("one on the near side");
+        hit(&mut fx, near);
+        assert!(fx.server.ground_gone().cells.contains(&near));
+        assert!(fx.server.ground_item_at(near).is_none());
+        assert_eq!(loose_rocks(&fx), 0, "nothing dropped");
+        step(&mut fx, 60);
+        let inv = fx.server.inventory_of(1).unwrap();
+        assert_eq!(inv.count_of("dwell:rock"), 0, "nothing taken");
     }
 );
 
@@ -409,8 +464,8 @@ dwell_world::both_faces!(
 );
 
 #[test]
-fn picked_up_ground_items_stay_gone_across_a_reload() {
-    // face-a-only: a byte format (both faces' picks are pinned above).
+fn hit_ground_items_stay_gone_across_a_reload() {
+    // face-a-only: a byte format (both faces' hits are pinned above).
     let f = FaceFrame::A;
     let db = WorldDb::in_memory().expect("db");
     let cfg = || ServerConfig {
@@ -422,10 +477,10 @@ fn picked_up_ground_items_stay_gone_across_a_reload() {
         let mut fx = scene_with(f, cfg(), true);
         let rocks = wall_and_rocks(&mut fx, f);
         cell = *rocks.iter().find(|c| c[0] < 4).expect("near side");
-        pick(&mut fx, cell);
+        hit(&mut fx, cell);
         assert!(
             fx.server.ground_gone().cells.contains(&cell),
-            "creative picks up too"
+            "creative's hit takes it too"
         );
         fx.server.save_now();
         fx.server.flush_store();
@@ -448,7 +503,7 @@ fn ground_messages_go_only_to_a_client_that_said_ground_hello() {
         if i.flags & inventory_flags::GROUND != 0)));
     let rocks = wall_and_rocks(&mut fx, f);
     let cell = *rocks.iter().find(|c| c[0] < 4).expect("near side");
-    pick(&mut fx, cell);
+    hit(&mut fx, cell);
     assert!(
         fx.take(1)
             .iter()
