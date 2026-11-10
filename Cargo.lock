@@ -884,6 +884,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "dwell-models"
+version = "0.0.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "dwell-native"
 version = "0.0.0"
 dependencies = [

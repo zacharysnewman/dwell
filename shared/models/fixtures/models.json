@@ -1,0 +1,18 @@
+{
+  "$comment": "The tests' fixture models (shared/models/gen.mjs writes them as crates/dwell-models/src/fixture.gen.rs): a model added by data alone.",
+  "player": "two_bone",
+  "models": {
+    "two_bone": {
+      "glb": "two_bone.glb",
+      "scale": 1,
+      "yaw": 0,
+      "remap": {},
+      "fallback": "idle",
+      "roles": {
+        "idle": { "clip": "rest" },
+        "walk": { "clip": "bend" },
+        "sprint": { "clip": "bend", "speed": 2 }
+      }
+    }
+  }
+}
