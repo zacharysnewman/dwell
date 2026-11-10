@@ -11,6 +11,12 @@
       ]
     },
     {
+      "version": "0.50.79",
+      "changes": [
+        "iPhone and iPad: touch no longer stops responding (no looking, taps doing nothing) after a finger's lift goes missing"
+      ]
+    },
+    {
       "version": "0.50.78",
       "changes": [
         "Behind the scenes: measured the new water surface on a river and a flood; it stays switched off for now (the water looks as before)."
