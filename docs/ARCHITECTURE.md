@@ -122,7 +122,13 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
    type, seed, generator, when it was last played and **[built, Phase 6]** the app version that
    last played it (§6.4); per-seed files it doesn't list (saved before the menu) are adopted when
    the menu opens, as worlds saved before versioned releases, which are listed only to be deleted. The game menu's Quit to main menu asks the worker to
-   save (answered with `saved`) before leaving.
+   save (answered with `saved`) before leaving. **[built, 0.51.6]** The Worlds page shows each world as a card with
+   a thumbnail of its last view: while a local world plays, `local/worldThumbs.ts` copies the canvas's last frame
+   into a 320×180 WebP (JPEG where WebP can't be encoded) every 30 s and when the page is hidden or closed, at the
+   best quality under a 28 000-character data URL (~20 KB), into a second local-storage store, `dwell.worldThumbs`
+   (`{ <world id>: { image, at } }`, at most 48, the oldest captured dropped first; deleting a world drops its
+   picture). Like the index it is append-only: unknown fields of a record and records it can't read are kept on
+   rewrite. A world without one shows a placeholder painted by its type.
 5. **One Rust codebase, one WASM module.** `npm run build:wasm` builds `dwell-client` for
    `wasm32-unknown-unknown` (release) and runs `wasm-bindgen --target web` into `client/src/pkg`
    (not committed); Vite bundles that one module, and the page (the game client), every job worker

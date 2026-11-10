@@ -110,6 +110,7 @@ import {
 } from './input/gamepadSettings';
 import { ControllerPanel } from './ui/controllerPanel';
 import { workerCount } from './workerCount';
+import { startThumbnailCapture, WorldThumbs } from './local/worldThumbs';
 import { pauseFromQuery, togglePause } from './debug/pause';
 
 type Vec3 = [number, number, number];
@@ -1526,6 +1527,8 @@ async function connect(app: App): Promise<void> {
   }
   let localWorld: LocalWorld | null = null;
   let worldName = 'Local world';
+  /** The local world's id in the index, for its thumbnail (local/worldThumbs.ts). */
+  let thumbId: string | null = null;
   if (launch.kind === 'play') {
     const world = index.get(launch.id);
     if (!world) {
@@ -1578,6 +1581,7 @@ async function connect(app: App): Promise<void> {
       ...(playing.mode && isGameMode(playing.mode) ? { mode: playing.mode } : {}),
     };
     worldName = playing.name;
+    thumbId = playing.id;
     index.touch(playing.id, Date.now());
   } else if (launch.kind === 'link') {
     app.loading.stages.begin('worldFile', performance.now());
@@ -1604,6 +1608,7 @@ async function connect(app: App): Promise<void> {
     }
     if (world) {
       worldName = world.name;
+      thumbId = world.id;
       index.touch(world.id, Date.now());
     }
   }
@@ -1655,6 +1660,8 @@ async function connect(app: App): Promise<void> {
     } else {
       local = await connectLocal(client, key, options);
       app.loopback = local.loopback;
+      // The world card's picture: the world's view now and then, and when the page is left.
+      if (thumbId) startThumbnailCapture(app.canvas, new WorldThumbs(storage()), thumbId);
       // The respawn preload (§6.3) off for the bench's comparison: the server's part.
       if (/[?&]respawnPreload=off(&|$)/.test(location.search)) {
         local.loopback.postToWorker({ t: 'respawnPreload', on: false });

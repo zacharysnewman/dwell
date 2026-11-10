@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { WorldMeta } from '../local/worldIndex';
-import { formatPlayed, nearbyLabel, worldDetails, worldModeLabel } from './mainMenu';
+import { formatPlayed, nearbyLabel, worldCardData, worldDetails, worldModeLabel } from './mainMenu';
 
 const MIN = 60_000;
 
@@ -67,5 +67,36 @@ describe("the world list shows each world's game mode", () => {
   });
   it('shows an unknown mode by its name', () => {
     expect(worldModeLabel({ ...base, mode: 'mymod:hardcore' }).label).toBe('mymod:hardcore');
+  });
+});
+
+describe("a world's card", () => {
+  const world: WorldMeta = {
+    id: 'wabc',
+    name: 'Home',
+    type: 'flat',
+    seed: 42,
+    generatorVersion: 5,
+    createdAt: 0,
+    lastPlayedAt: 0,
+  };
+  it('shows the mode badge, the type and when it was played; the seed and version under ⋯', () => {
+    const now = 10 * 60 * MIN;
+    const played = {
+      ...world,
+      appVersion: '0.51.6',
+      mode: 'adventure',
+      lastPlayedAt: now - 3 * 60 * MIN,
+    };
+    expect(worldCardData(played, now)).toEqual({
+      mode: 'adventure',
+      modeLabel: 'Adventure',
+      details: 'Flat · played 3 h ago',
+      note: 'Seed 42 · last played in v0.51.6',
+    });
+    const card = worldCardData(world, now);
+    expect(card.mode).toBe('creative');
+    expect(card.details).toBe('Flat · never played');
+    expect(card.note).toBe('Seed 42');
   });
 });

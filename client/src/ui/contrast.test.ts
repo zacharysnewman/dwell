@@ -53,6 +53,19 @@ describe('the main menu text contrast', () => {
     expect(contrast(hex('#ffffff'), behind)).toBeGreaterThanOrEqual(4.5);
   });
 
+  it("the world cards' mode badges carry white text at 4.5:1", () => {
+    const white = hex('#ffffff');
+    expect(contrast(white, hex(token('mm-mode-creative')))).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(white, hex(token('mm-mode-adventure')))).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("the small wordmark's dark edge stands out from the glass at 3:1 (large text) over snow", () => {
+    const panel = over(glass.rgb, glass.alpha, BACKDROPS.snow ?? hex('#ffffff'));
+    expect(contrast(hex(token('mm-wordmark-edge')), panel)).toBeGreaterThanOrEqual(3);
+    // ...and from the wordmark's white top, so the letters keep their shape.
+    expect(contrast(hex(token('mm-wordmark-edge')), hex('#ffffff'))).toBeGreaterThanOrEqual(4.5);
+  });
+
   it('computes known ratios', () => {
     expect(contrast(hex('#000000'), hex('#ffffff'))).toBeCloseTo(21, 5);
     expect(contrast(hex('#777777'), hex('#ffffff'))).toBeCloseTo(4.48, 2);

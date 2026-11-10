@@ -58,6 +58,8 @@ export interface MainMenuDeps {
   background?: string;
   /** Opens Settings (every pane; ui/menuPage.ts), from the Settings button. */
   openSettings?: () => void;
+  /** The worlds' thumbnails (local/worldThumbs.ts); without it every card shows its placeholder. */
+  thumbs?: { get(id: string): string | null; remove(id: string): void };
   /** Whether a world can be regenerated (the build that opens it carries out `?regenerate=`). */
   canRegenerate?(world: WorldMeta): boolean;
   /** The master server (Phase 5d), when this build has one: addresses and nearby games. */
@@ -107,6 +109,21 @@ export function worldModeLabel(world: WorldMeta): { name: string; label: string 
 export function worldDetails(world: WorldMeta, now: number): string {
   const version = world.appVersion ? ` · v${world.appVersion}` : '';
   return `${typeLabel(world.type)} · seed ${String(world.seed)} · ${formatPlayed(world.lastPlayedAt, now)}${version}`;
+}
+
+/** What a world's card shows: the mode badge, "Terrain · played 3 h ago", and its seed and version. */
+export function worldCardData(
+  world: WorldMeta,
+  now: number,
+): { mode: string; modeLabel: string; details: string; note: string } {
+  const mode = worldModeLabel(world);
+  const version = world.appVersion ? ` · last played in v${world.appVersion}` : '';
+  return {
+    mode: mode.name,
+    modeLabel: mode.label,
+    details: `${typeLabel(world.type)} · ${formatPlayed(world.lastPlayedAt, now)}`,
+    note: `Seed ${String(world.seed)}${version}`,
+  };
 }
 
 function button(label: string, className: string, onClick: () => void): HTMLButtonElement {
@@ -198,6 +215,8 @@ export class MainMenu {
   private view: MenuView;
   private readonly views = new Map<MenuView, HTMLElement>();
   private readonly shell = document.createElement('div');
+  /** The Worlds page's own New world, hidden while the empty state offers its big one. */
+  private newWorldHead!: HTMLButtonElement;
 
   constructor(
     parent: HTMLElement,
@@ -387,6 +406,7 @@ export class MainMenu {
     });
     create.id = 'new-world';
     create.dataset.opens = 'new-world';
+    this.newWorldHead = create;
     return this.page(
       'menu-page-worlds',
       pageHead(
@@ -649,6 +669,14 @@ export class MainMenu {
       }
     });
     section.append(form);
+    if (!this.deps.master && this.deps.recent.length === 0) {
+      // Nothing else to list here: say what to join with, so the page reads as finished.
+      const help = document.createElement('p');
+      help.className = 'menu-join-help';
+      help.textContent =
+        'A host shows a join code like KQ7-XM4. A server prints its code and an invite link when it starts. Paste either above.';
+      section.append(help);
+    }
     if (this.deps.master) section.append(this.nearbySection(this.deps.master));
     if (this.deps.recent.length > 0) {
       const recent = document.createElement('ul');
@@ -728,49 +756,104 @@ export class MainMenu {
     const now = this.deps.now();
     this.renderLegacy();
     this.list.replaceChildren();
+    this.list.classList.toggle('world-cards', worlds.length > 0);
+    this.newWorldHead.hidden = worlds.length === 0;
     if (worlds.length === 0) {
-      const empty = document.createElement('li');
-      empty.className = 'menu-empty';
-      empty.textContent = 'No worlds yet. Press New world to make one.';
-      this.list.append(empty);
+      this.list.append(this.emptyState());
       return;
     }
-    for (const world of worlds) {
-      const item = document.createElement('li');
-      item.className = 'world-item';
-      item.dataset.id = world.id;
-      const info = document.createElement('div');
-      info.className = 'world-info';
-      const name = document.createElement('span');
-      name.className = 'world-name';
-      name.textContent = world.name;
-      const mode = worldModeLabel(world);
-      const badge = document.createElement('span');
-      badge.className = 'world-mode';
-      badge.dataset.mode = mode.name;
-      badge.textContent = mode.label;
-      const details = document.createElement('span');
-      details.className = 'world-details';
-      details.append(badge, worldDetails(world, now));
-      info.append(name, details);
-      const actions = document.createElement('div');
-      actions.className = 'world-actions';
-      actions.append(
-        button('Play', 'block-button world-play', () => {
-          this.deps.go({ play: world.id });
-        }),
-        ...((this.deps.canRegenerate?.(world) ?? true)
-          ? [
-              confirmButton('Regenerate', 'Lose all changes?', () => {
-                this.deps.go({ regenerate: world.id });
-              }),
-            ]
-          : []),
-        confirmButton('Delete', 'Delete forever?', () => void this.remove(world)),
-      );
-      item.append(info, actions);
-      this.list.append(item);
-    }
+    for (const world of worlds) this.list.append(this.worldCard(world, now));
+  }
+
+  /** No worlds yet: a line and a big New world, not a strip. */
+  private emptyState(): HTMLElement {
+    const empty = document.createElement('li');
+    empty.className = 'menu-empty';
+    const art = document.createElement('div');
+    art.className = 'menu-empty-art';
+    art.setAttribute('aria-hidden', 'true');
+    const line = document.createElement('p');
+    line.className = 'menu-empty-line';
+    line.textContent = 'No worlds yet.';
+    const sub = document.createElement('p');
+    sub.className = 'menu-empty-sub';
+    sub.textContent = 'Make one: pick a name and a type, or keep the defaults.';
+    const create = button('New world', 'block-button menu-empty-create', () => {
+      this.show('new-world');
+    });
+    create.dataset.opens = 'new-world';
+    empty.append(art, line, sub, create);
+    return empty;
+  }
+
+  /** A world's card: its last view (or a placeholder by type), name, mode, type and Play. */
+  private worldCard(world: WorldMeta, now: number): HTMLElement {
+    const card = worldCardData(world, now);
+    const item = document.createElement('li');
+    item.className = 'world-item world-card';
+    item.dataset.id = world.id;
+    const thumb = document.createElement('div');
+    thumb.className = 'world-thumb';
+    thumb.dataset.type = world.type;
+    const image = this.deps.thumbs?.get(world.id) ?? null;
+    if (image) {
+      const img = document.createElement('img');
+      img.src = image;
+      img.alt = '';
+      img.decoding = 'async';
+      thumb.append(img);
+    } else thumb.classList.add('world-thumb-empty');
+    const badge = document.createElement('span');
+    badge.className = 'world-mode';
+    badge.dataset.mode = card.mode;
+    badge.textContent = card.modeLabel;
+    thumb.append(badge);
+    const info = document.createElement('div');
+    info.className = 'world-info';
+    const name = document.createElement('span');
+    name.className = 'world-name';
+    name.textContent = world.name;
+    const details = document.createElement('span');
+    details.className = 'world-details';
+    details.textContent = card.details;
+    info.append(name, details);
+
+    // Play is the card's action; the rest sit under the "⋯" button.
+    const more = document.createElement('div');
+    more.className = 'world-menu';
+    more.hidden = true;
+    more.id = `world-menu-${world.id}`;
+    const about = document.createElement('p');
+    about.className = 'world-menu-note';
+    about.textContent = card.note;
+    more.append(
+      about,
+      ...((this.deps.canRegenerate?.(world) ?? true)
+        ? [
+            confirmButton('Regenerate', 'Lose all changes?', () => {
+              this.deps.go({ regenerate: world.id });
+            }),
+          ]
+        : []),
+      confirmButton('Delete', 'Delete forever?', () => void this.remove(world)),
+    );
+    const toggle = button('⋯', 'world-more', () => {
+      more.hidden = !more.hidden;
+      toggle.setAttribute('aria-expanded', String(!more.hidden));
+    });
+    toggle.setAttribute('aria-label', `More for ${world.name}`);
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.setAttribute('aria-controls', more.id);
+    const actions = document.createElement('div');
+    actions.className = 'world-actions';
+    actions.append(
+      button('Play', 'block-button world-play', () => {
+        this.deps.go({ play: world.id });
+      }),
+      toggle,
+    );
+    item.append(thumb, info, actions, more);
+    return item;
   }
 
   private renderLegacy(): void {
@@ -807,6 +890,7 @@ export class MainMenu {
       return;
     }
     this.deps.index.remove(world.id);
+    this.deps.thumbs?.remove(world.id);
     this.say(`Deleted "${world.name}".`);
     this.render();
   }

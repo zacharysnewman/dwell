@@ -1,6 +1,7 @@
 // The main menu as a page (RELEASES.md §5): the launcher shows it at `/dwell/`; a build served at
 // the launcher's path (a local or preview build, the e2e suite) shows it itself. DOM only, no WASM:
 // pinging a server is passed in (the build's own client, or the latest build's `tools.js`).
+import { WorldThumbs } from '../local/worldThumbs';
 import { IndexedDbKeyStore, loadOrCreateDeviceKey } from '../identity/deviceKey';
 import { WorldIndex, type WorldMeta } from '../local/worldIndex';
 import { deleteWorldFiles, listWorldFiles } from '../local/worldFiles';
@@ -133,6 +134,7 @@ export function showMenu(options: MenuPageOptions): MainMenu {
       settings.setOpen(true);
     },
     index: new WorldIndex(storage()),
+    thumbs: new WorldThumbs(storage()),
     recent: loadRecent(storage()),
     listFiles: listWorldFiles,
     deleteFiles: deleteWorldFiles,

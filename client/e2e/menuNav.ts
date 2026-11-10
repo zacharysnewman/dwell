@@ -22,7 +22,8 @@ export async function openMenuPage(page: Page, target: MenuPage): Promise<void> 
   if (target === 'home') return;
   if (target === 'new-world') {
     await page.locator(OPENER.worlds).click();
-    await page.locator('#new-world').click();
+    // The page's New world, or with no worlds yet the empty state's big one.
+    await page.locator('#new-world:visible, .menu-empty-create:visible').first().click();
     return;
   }
   await page.locator(OPENER[target]).click();
