@@ -334,6 +334,26 @@ fn the_flat_worlds_lod_equals_the_downsample_of_its_chunks() {
     );
 }
 
+// face-a-only: the flat test world is one face (its bounds are not bifacial).
+#[test]
+fn the_flat_worlds_ground_is_content_kilometres_from_the_axis() {
+    // BUGS #54 (found reproducing it): the bounds judged a column inside the world by its bottom
+    // row's section, where the build sphere is a few kilometres across, so past ~1 km from the axis
+    // every flat-world column read as outside: its ground sections Empty, the chunks there never
+    // shown (the LOD drew level 2 over them) after a long trip.
+    for x in [5, 1_100, 1_500, 8_000, 40_000] {
+        for level in 1..=6 {
+            let c = section_at(level, x, i64::from(FLAT_TOP_Y) - 1, 3);
+            let b = flat_lod_bounds(level, c.i, c.k);
+            assert!(b.any_inside, "x {x}, level {level}");
+            assert_eq!(kind_from_bounds(c, &b), LodKind::Content, "x {x}, level {level}");
+        }
+    }
+    // Beyond the rim: outside.
+    let c = section_at(1, i64::from(WORLD_RADIUS) + 500, i64::from(FLAT_TOP_Y) - 1, 0);
+    assert!(!flat_lod_bounds(1, c.i, c.k).any_inside);
+}
+
 #[test]
 fn the_sandbox_lod_is_its_floor_and_equals_the_downsample_of_its_chunks() {
     let chunks = generator_for(GENERATOR_SANDBOX, 0);

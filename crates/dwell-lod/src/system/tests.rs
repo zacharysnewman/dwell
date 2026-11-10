@@ -2110,7 +2110,7 @@ fn a_long_trip_keeps_the_near_ring_at_full_detail_and_the_cache_and_queue_bounde
     let budget = 256 * 1_048_576;
     let mut lod = system(4.0, 256, 8, 8);
     lod.set_detail_distance(Some(64.0));
-    let speed = 5.0;
+    let speed = 8.0;
     let fps = 60.0;
     let frames = (4.0 * 60.0 * fps) as u32;
     // Frames each near-ring chunk (the 3×3 columns around the camera's chunk, its row) has
@@ -2176,4 +2176,13 @@ fn a_long_trip_keeps_the_near_ring_at_full_detail_and_the_cache_and_queue_bounde
         worst.2
     );
     eprintln!("{log}");
+}
+
+#[test]
+fn zz_probe_flat_kind() {
+    for i in [1020, 1030, 1040, 1044, 1060] {
+        let c = LodCoord::new(1, i, 1024, 1024);
+        let b = dwell_world::lod::flat_lod_bounds(1, i, 1024);
+        eprintln!("{i}: {:?} {:?}", kind_from_bounds(c, &b), b);
+    }
 }
