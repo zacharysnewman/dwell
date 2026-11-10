@@ -258,6 +258,35 @@ it's done, while the map is open."
   before, `minimap.draw` ~0.5 ms; frame CPU p50 3.6 vs 3.5 ms (noise). The fill is a hash lookup a
   pixel where the scan found nothing.
 
+### Amendment (0.52.13): three levels, the coarse ones built whole
+
+Owner, 2026-11-10, of 0.52.10's open-map build: "It's not continuing to map sections you can't see
+while you're not there. Ideally it should expand out from where you are looking. Or if you're on a
+higher zoom level that is already loaded, it should be loading the finer ones." A tandem build by
+shares across five levels was agreed, then replaced the same day: "Maybe we just have 3 zoom levels.
+The two coarse ones load along with the area around you in 1m. The 1m is always streamed."
+
+- **Three levels** (`bigMap.levels`, data): 1 m (the minimap's area), 16 m (3.6 km across, geometric
+  between) and 256 m (the whole world disc). The 2 and 64 m levels are gone; their kept tiles stay in
+  the store unread (keyed by cell size, append-only). `startLevel` 1 (16 m); `liveMaxCellM` 1.
+- **Each level's `reach`** (data: `player`, `island`, `disc`; `shared/ui/gen.mjs` validates it)
+  says where the background builds it, map open or shut: the 1 m level within `prebuildSpans` of its
+  span round the player (always streamed; while the map is open the loaded terrain shows over it,
+  0.50.76), the 16 m level every tile touching the island (`islandRadius` 25 km: ~7 500 tiles; 32 m
+  was not needed), the 256 m level every tile touching the world disc (~120 tiles).
+- **Order.** The open view's tiles are all asked for before anything else; then the player level, then
+  the coarse levels coarsest first (the whole world in ~120 tiles, then the island's detail), each
+  nearest the open view's centre (else the player) first, listed again when that centre moves four of
+  the level's tiles (panning re-centres it). `jobsInFlight` at once while the map is open,
+  `backgroundJobs` while it is shut; at most 4 096 kept tiles passed over a frame (a reopened world).
+- **The count** ("Mapping · N tiles") is each coarse level's reach total less its kept tiles (counted as
+  they arrive or are read, no scan) plus the player level's missing ones.
+- **Tests.** `minimap.test.ts`: three levels and their reaches (the 1 m round the player, the coarse
+  ones the whole island and the whole disc, in that order); with the map open the view's tiles all
+  asked first, then the 1 m round the player, then the disc, then the island nearest the view, until
+  none is left; panning re-centres the island build; shut, it carries on round the player a job at a
+  time. `gen.test.mjs`: a bad `reach` fails naming it.
+
 ## Consequences
 
 - The minimap's cost, measured in the browser (Chrome, a Mac's GPU; the bench flying at 8 m/s for
