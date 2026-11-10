@@ -74,6 +74,11 @@ def snap(c):
 
 
 uvs = mesh.uv_layers.active.data
+# A pack's mesh may carry its own (white) vertex colours; ours must be the first and only layer,
+# or the glTF exporter writes it as COLOR_1 and the game, which reads COLOR_0, draws the model white
+# (the chicken and the kitty, 2026-11-10).
+for old in list(mesh.color_attributes):
+    mesh.color_attributes.remove(old)
 col = mesh.color_attributes.new('Col', 'BYTE_COLOR', 'CORNER')
 cache = {}
 for poly in mesh.polygons:
