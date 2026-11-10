@@ -10,6 +10,12 @@
       ]
     },
     {
+      "version": "0.50.67",
+      "changes": [
+        "The versions page now keeps the newest build of the last 20 versions, plus the very first; every build stays on GitHub Releases"
+      ]
+    },
+    {
       "version": "0.50.66",
       "changes": [
         "Other players now look like a proper animated character: a skinned, walking peasant in a sun hat, in the world's colours",

@@ -220,14 +220,18 @@ the site **from the releases** and deploys it with `actions/deploy-pages`, as to
 - **Which releases: the retention policy (owner, 2026-10-21).** The site had grown to 1,168 MB
   with 140 builds, over Pages' 1 GB limit. The owner chose: *keep the newest patch of every
   compatibility line, so every old world still opens, plus the 10 newest builds; keep all of 0.10*.
+  Owner, 2026-11-09, as the site passed 60 builds and Pages deploys began stalling: *keep only
+  the newest of the last 20 minor versions, and keep the very first minor* (`newestLines`
+  replaced `newestPerLine`). A world from a retired line opens in a newer build after a warning
+  (0.49.2+), or in its own build from GitHub Releases; the launcher's messages say so.
   The policy is data, `shared/version/site-retention.json`, which `site.ts plan` validates (an
   unknown field or a bad pin fails the workflow, naming it) and applies:
 
   | Field | Value | Keeps |
   | --- | --- | --- |
-  | `newestPerLine` | `true` | the newest release of every compatibility line (0.16.5, 0.17.2, …) |
+  | `newestLines` | `20` | the newest release of each of the 20 newest compatibility lines (owner, 2026-11-09) |
   | `newestOverall` | `10` | the 10 newest stable releases, across lines |
-  | `pinned` | `["0.10"]` | every release of a line (`"0.10"`, `"1"`) or one exact release (`"0.17.1"`) |
+  | `pinned` | `["0.1", "0.10"]` | every release of a line (`"0.10"`, `"1"`) or one exact release (`"0.17.1"`); `0.1` is the very first line (owner, 2026-11-09) |
   | `devKeep` | `10` | the newest dev pre-releases; older ones and their tags are **deleted** |
   | `sizeBudgetMB` | `900` | not a rule: the size check's warning line (below) |
 
