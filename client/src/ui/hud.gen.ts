@@ -18,6 +18,7 @@ export const HUD_ELEMENTS: readonly HudElement[] = [
   {"id":"hotbar","label":"Hotbar","hint":"The items, the one held and the build mode","selector":"#hotbar","shown":true,"phone":true},
   {"id":"crosshair","label":"Crosshair","hint":"The dot in the middle of the view","selector":"#crosshair","shown":true,"phone":true},
   {"id":"health","label":"Health bar","hint":"Your health, under the hotbar","selector":"#health","shown":true,"phone":true},
+  {"id":"vitals","label":"Stamina and air","hint":"Your stamina and air bars above the health bar, shown while not full (adventure)","selector":"#vitals","shown":true,"phone":true},
   {"id":"controls-hint","label":"Controls hint","hint":"The keys shown when a game starts","selector":"#start-hint","shown":true,"phone":true},
   {"id":"notices","label":"Notices","hint":"Short notes under the crosshair (what can't be placed, and why)","selector":"#hud-note","shown":true,"phone":true},
   {"id":"minimap","label":"Minimap","hint":"The round map in the top corner (M or a tap opens the explored map)","selector":"#minimap","shown":true,"phone":true},

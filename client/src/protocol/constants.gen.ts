@@ -134,6 +134,8 @@ export const MessageType = {
   Chop: 88,
   Cuts: 89,
   HeldTools: 90,
+  VitalsHello: 91,
+  Vitals: 92,
 } as const;
 export type MessageType = (typeof MessageType)[keyof typeof MessageType];
 
@@ -190,6 +192,7 @@ export const DamageCause = {
   Fall: 1,
   Crush: 2,
   Explosion: 3,
+  Drown: 4,
 } as const;
 export type DamageCause = (typeof DamageCause)[keyof typeof DamageCause];
 
@@ -277,6 +280,7 @@ export const WelcomeFlags = {
   inventory: 16,
   chopping: 32,
   chopSweep: 64,
+  vitals: 128,
 } as const;
 
 export const HeldItem = {

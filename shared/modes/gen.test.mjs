@@ -12,7 +12,7 @@ test("the build's data validates: creative is the default, adventure is experime
   // The big map shows everything in creative; adventure explores it (owner, 2026-11-08).
   assert.ok(!adventure.abilities.includes('mapRevealed'));
   assert.match(modesRust(d), /Ability::Map\.bit\(\) \| Ability::MapRevealed\.bit\(\)/);
-  assert.deepEqual(adventure.abilities, ['damage', 'map']);
+  assert.deepEqual(adventure.abilities, ['damage', 'map', 'stamina', 'oxygen']);
   assert.equal(adventure.experimental, true);
   assert.match(modesRust(d), /pub const DEFAULT_MODE: &str = "creative";/);
   assert.match(modesTs(d), /export const GAME_MODES/);

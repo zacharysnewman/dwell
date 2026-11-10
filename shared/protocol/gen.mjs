@@ -256,5 +256,7 @@ rsFlags('held_item', 'u16', c.heldItem);
 // A remote player's last swing (v17): a count stepping with each edit the server takes from it,
 // and whether it broke or placed.
 rsFlags('swing_flags', 'u8', c.swingFlags);
+// `Vitals`' flags (ADR 0069).
+rsFlags('vitals_flags', 'u8', c.vitalsFlags);
 rs.push('');
 writeFileSync(join(root, 'crates/dwell-protocol/src/constants.gen.rs'), rs.join('\n'));

@@ -15,6 +15,7 @@ use crate::frame::{FaceQuery, Frame};
 use crate::physics::{BodyHandle, DVec3, Layer, Physics, Vec3, groups};
 use crate::query::{Capsule, GroundRef, ProbeHit, VoxelQuery};
 use crate::terrain::TerrainCollision;
+pub use dwell_protocol::vitals::{Activity, VITALS, Vitals, VitalsRules};
 
 const DT: f32 = PlayerControllerConfig::dt();
 const RAD_TO_DEG: f32 = 180.0 / std::f32::consts::PI;
@@ -290,6 +291,10 @@ pub struct PlayerController {
     pub impact_normal: Vec3,
     /// The body last pushed, kept for a few ticks after its contact is lost (`step_push`).
     pub push: PushGrace,
+    /// ◆ Stamina and oxygen (§6.13, ADR 0069), stepped by `step_vitals` under the world's
+    /// [`Players::set_vitals`] rules. Not on the wire's `ControllerState`: a replay keeps the
+    /// predicted value, and the server's `Vitals` message corrects it.
+    pub vitals: Vitals,
 }
 
 /// How many ticks a push outlasts its contact (`Players::step_push`).
@@ -326,6 +331,7 @@ impl Default for PlayerController {
             impact_speed: 0.0,
             impact_normal: Vec3::ZERO,
             push: PushGrace::default(),
+            vitals: Vitals::default(),
         }
     }
 }
@@ -365,7 +371,7 @@ fn move_towards(current: Vec3, target: Vec3, max_delta: f32) -> Vec3 {
     current + delta * (max_delta / length)
 }
 
-/// The air's walking rule (◆ Dwell, PLAYER_CONTROLLER.md §6.12, owner 2026-11-06): input pushes
+/// The air's walking rule (◆ Dwell, PLAYER_CONTROLLER.md §6.13, owner 2026-11-06): input pushes
 /// `step` m/s a tick along `wish` (a unit vector), and the result is no faster than `target` or the
 /// speed `v` already had, whichever is more. Under the target it speeds the body up to it; at or
 /// past it, it only turns the velocity toward the input (at `step ÷ |v|` radians a tick), never
@@ -548,6 +554,8 @@ pub struct Players {
     /// This tick's pushes: each body a player pushed, and the velocity it gave it (world, m/s).
     pushes: Vec<(BodyHandle, DVec3)>,
     ring: [Vec3; RING_RAYS],
+    /// The world's stamina and oxygen rules (its mode's abilities, ADR 0069): off by default.
+    vitals: VitalsRules,
 }
 
 impl Players {
@@ -561,7 +569,17 @@ impl Players {
             ticks: 0,
             pushes: Vec::new(),
             ring: ring(),
+            vitals: VitalsRules::default(),
         }
+    }
+
+    /// The world's stamina and oxygen rules (ADR 0069): the server's from its mode, the client's
+    /// prediction from the mode it was told.
+    pub fn set_vitals(&mut self, rules: VitalsRules) {
+        self.vitals = rules;
+    }
+    pub fn vitals(&self) -> VitalsRules {
+        self.vitals
     }
 
     pub fn terrain(&self) -> Option<&TerrainCollision> {
@@ -922,7 +940,7 @@ impl Players {
         self.pushes.clear();
         // Pass-major, like the PPC's Quantum system group.
         type Pass = fn(&mut Players, usize, &mut VoxelWorld, &mut Physics);
-        const PASSES: [Pass; 15] = [
+        const PASSES: [Pass; 16] = [
             Players::step_input,
             Players::step_probe,
             Players::step_platform,
@@ -938,6 +956,7 @@ impl Players {
             Players::step_aggregate,
             Players::step_push,
             Players::step_state,
+            Players::step_vitals,
         ];
         for pass in PASSES {
             for i in 0..self.players.len() {
@@ -954,9 +973,14 @@ impl Players {
 
     // 1 — PPCInputSystem
     fn step_input(&mut self, i: usize, _: &mut VoxelWorld, physics: &mut Physics) {
+        let rules = self.vitals;
         let p = self.pl(i);
         p.c.previous_input = p.c.input;
         p.c.input = p.pending;
+        // Exhausted (§6.13): the run input reads as not held, so no sprint and no sprint slide.
+        if !p.c.vitals.can_exert(rules) {
+            p.c.input.run = false;
+        }
         let crossed = Self::update_face(physics, p);
         let c = &mut p.c;
         if crossed {
@@ -1666,6 +1690,7 @@ impl Players {
 
     // 7 — Swim (Dwell, §6.4): exclusive layer in water; also the flip band near the midplane.
     fn step_swim(&mut self, i: usize, world: &mut VoxelWorld, physics: &mut Physics) {
+        let rules = self.vitals;
         let p = self.players[i].as_mut().expect("live");
         let cfg = p.cfg;
         let position = Self::pos(physics, p);
@@ -1725,8 +1750,13 @@ impl Players {
         );
         let mut wish = (forward * c.input.move_y + camera_right(c.input.look_yaw) * c.input.move_x)
             * cfg.swim.speed;
-        if c.input.jump {
+        // Exhausted (§6.13): no treading water, so no rising and no buoyancy; the body sinks.
+        let tired = !c.vitals.can_exert(rules);
+        if c.input.jump && !tired {
             wish.y = cfg.swim.speed;
+        }
+        if tired {
+            wish.y = wish.y.min(0.0) - VITALS.exhausted_sink_speed;
         }
         if c.input.crouch {
             wish.y = -cfg.swim.speed;
@@ -1745,7 +1775,7 @@ impl Players {
         }
         let mut velocity =
             body_velocity + (wish - body_velocity) * (1.0 - libm::expf(-cfg.swim.drag * DT));
-        if !dry || !band {
+        if (!dry || !band) && !tired {
             velocity +=
                 Vec3::Y * (cfg.swim.buoyancy * (c.swim.submerged - cfg.swim.float_fraction) * DT);
         }
@@ -2852,5 +2882,37 @@ impl Players {
         } else {
             State::Idle
         };
+    }
+
+    // ◆ Dwell — stamina and oxygen (§6.13, ADR 0069): this tick's activity spends stamina, a
+    // tick without one rests; the head under water spends air. After the state, so the server
+    // and the prediction step it from the same tick's outcome.
+    fn step_vitals(&mut self, i: usize, _: &mut VoxelWorld, _: &mut Physics) {
+        let rules = self.vitals;
+        let p = self.pl(i);
+        let cfg = p.cfg;
+        let c = &mut p.c;
+        let wet = c.swim.swimming && c.swim.submerged > cfg.swim.enter_fraction;
+        let activity = if wet {
+            // Swim-up is ignored while exhausted, so holding it then doesn't count.
+            let up = c.input.jump && c.vitals.can_exert(rules);
+            let moving = c.input.move_x != 0.0 || c.input.move_y != 0.0 || up;
+            Some(if moving {
+                Activity::Swim
+            } else {
+                Activity::Tread
+            })
+        } else if c.state == State::Running {
+            Some(Activity::Sprint)
+        } else {
+            None
+        };
+        // An exhausted swimmer isn't treading: it sinks, resting (swimming on still spends).
+        let activity = match activity {
+            Some(Activity::Tread) if !c.vitals.can_exert(rules) => None,
+            a => a,
+        };
+        let head_under = c.swim.submerged >= VITALS.head_fraction;
+        c.vitals.step(&VITALS, rules, activity, head_under, DT);
     }
 }

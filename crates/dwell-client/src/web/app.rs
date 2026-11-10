@@ -585,6 +585,7 @@ impl Client {
                 } = session.state().clone()
             {
                 game.set_capabilities(region_edits, brushes);
+                game.set_vitals_rules(session.vitals_rules());
                 if let Some(v) = s.input.flight.set_allowed(may_fly) {
                     s.shell_events.push(shell_event("flightAllowed", v));
                 }
@@ -2017,6 +2018,18 @@ impl Client {
             set(&o, "message", g.hud.message.as_str());
             set(&o, "status", g.hud.status.as_str());
             set(&o, "health", g.hud.health);
+            // Stamina and air (ADR 0069), shares of full: null in a mode without them.
+            match g.hud.vitals {
+                Some(v) => {
+                    let b = Object::new();
+                    let share = |x: Option<f32>| x.map_or(JsValue::NULL, JsValue::from);
+                    set(&b, "stamina", share(v.stamina));
+                    set(&b, "oxygen", share(v.oxygen));
+                    set(&b, "exhausted", v.exhausted);
+                    set(&o, "vitals", b);
+                }
+                None => set(&o, "vitals", JsValue::NULL),
+            }
             set(
                 &o,
                 "debug",
@@ -2775,6 +2788,9 @@ impl Inner {
         game.day_override = self.options.day;
         if let Some(w) = self.session.as_ref().and_then(|s| s.world_settings()) {
             game.set_world_clock(w.clock);
+        }
+        if let Some(s) = self.session.as_ref() {
+            game.set_vitals_rules(s.vitals_rules());
         }
         game.set_loading_screen(self.options.loading_screen);
         game.set_crossing_roll(self.crossing_roll);

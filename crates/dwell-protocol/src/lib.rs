@@ -9,6 +9,7 @@ pub mod fragment;
 pub mod inventory;
 mod messages;
 pub mod modes;
+pub mod vitals;
 pub mod world_settings;
 
 #[rustfmt::skip]

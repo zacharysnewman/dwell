@@ -545,6 +545,23 @@ pub enum Message {
     /// understands): the tools other players hold, by item name (ADR 0067; the held-item wire
     /// carries blocks only). Each changed player's entry; an empty tool: none.
     HeldTools(Vec<HeldTool>),
+    /// C→S reliable, control channel, only to a server whose Welcome has `welcome_flags::VITALS`:
+    /// this client understands `Vitals` and the `Drown` damage cause (ADR 0069).
+    VitalsHello,
+    /// S→C datagram, with each snapshot, only to a client that sent `VitalsHello` and while the
+    /// world's mode has stamina or oxygen (ADR 0069).
+    Vitals(VitalsMessage),
+}
+
+/// The local player's stamina and oxygen as of its input `seq` (`Message::Vitals`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct VitalsMessage {
+    pub seq: u32,
+    pub stamina: f32,
+    /// Seconds of air left.
+    pub oxygen: f32,
+    /// `vitals_flags`: exhausted, and the mode's stamina and oxygen switches.
+    pub flags: u8,
 }
 
 /// A player's held tool (`Message::HeldTools`).
@@ -683,6 +700,8 @@ impl Message {
             M::Chop(_) => MessageType::Chop,
             M::Cuts(_) => MessageType::Cuts,
             M::HeldTools(_) => MessageType::HeldTools,
+            M::VitalsHello => MessageType::VitalsHello,
+            M::Vitals(_) => MessageType::Vitals,
             M::BodyEdit(_) => MessageType::BodyEdit,
         }
     }
@@ -1337,6 +1356,13 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
                 w.u8(u8::from(*vertical));
             }
         },
+        M::VitalsHello => {}
+        M::Vitals(m) => {
+            w.u32(m.seq);
+            w.f32(m.stamina);
+            w.f32(m.oxygen);
+            w.u8(m.flags);
+        }
         M::HeldTools(list) => {
             let n = list.len().min(MAX_HELD_TOOLS);
             w.u16(n as u16);
@@ -1764,6 +1790,17 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
             },
             _ => return None,
         }),
+        T::VitalsHello => M::VitalsHello,
+        T::Vitals => {
+            let m = VitalsMessage {
+                seq: r.u32(),
+                stamina: r.f32(),
+                oxygen: r.f32(),
+                flags: r.u8(),
+            };
+            r.check(m.stamina.is_finite() && m.oxygen.is_finite());
+            M::Vitals(m)
+        }
         T::HeldTools => {
             let n = usize::from(r.u16());
             r.check(n <= MAX_HELD_TOOLS);

@@ -561,6 +561,45 @@ impl Predictor {
         }
     }
 
+    /// The world's stamina and oxygen rules (ADR 0069), from its mode.
+    pub fn set_vitals_rules(&mut self, rules: crate::controller::VitalsRules) {
+        self.players.set_vitals(rules);
+    }
+
+    /// The server's vitals as of input `seq` (`Message::Vitals`, ADR 0069 §7): where the
+    /// prediction differs at that tick (a swing's cost, which isn't predicted, or a misprediction),
+    /// the tick is patched and the inputs since replayed, as a knockback is.
+    pub fn on_vitals(&mut self, world: &mut VoxelWorld, seq: u32, v: crate::controller::Vitals) {
+        let Some(h) = self.handle else { return };
+        if seq > self.latest_seq {
+            return;
+        }
+        let i = (seq % HISTORY) as usize;
+        let e = self.history[i];
+        if e.seq != seq {
+            // Too old to replay: take it as now's.
+            self.players.controller_mut(h).vitals = v;
+            return;
+        }
+        if !e.controller.vitals.differs(&v) {
+            return;
+        }
+        let before = self.position();
+        let mut c = e.controller;
+        c.vitals = v;
+        self.history[i].controller = c;
+        self.players
+            .restore(&mut self.physics, h, &c, e.position, e.velocity);
+        self.replay(world, seq + 1);
+        let correction = (before - self.position()).as_vec3();
+        if correction.length() > RECONCILE_SNAP_DISTANCE {
+            self.offset = Vec3::ZERO;
+            self.stats.snaps += 1;
+        } else {
+            self.offset += correction;
+        }
+    }
+
     fn remote_shape(&self, crouched: bool) -> SharedShape {
         let r = f64::from(self.config.body.radius);
         let half = f64::from(self.config.half_height(crouched));
