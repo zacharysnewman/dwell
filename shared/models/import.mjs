@@ -131,6 +131,10 @@ try {
         hexRgb(resolveColor(palette, to)),
       ]),
       frame_step: 2,
+      levels: data.detail.levels.map((l) => l.ratio),
+      remove: m.source.remove
+        ? { joint: m.source.remove.joint, above: m.source.remove.above }
+        : null,
     };
     // Blender's FBX importer wants the extension.
     execFileSync("ln", ["-sf", assetIn(m.source.pack, m.source.fbx), job.fbx]);

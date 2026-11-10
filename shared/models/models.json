@@ -4,6 +4,16 @@
     "$comment": "Palette ramps a remap never snaps to: utility and effect colours.",
     "exclude": ["chalk", "flame", "flame_core", "water", "cloud", "snow"]
   },
+  "detail": {
+    "$comment": "Model detail (Settings → Graphics, Model detail; ADR 0070 §10): the import bakes every skinned model at each level, decimated (Blender Decimate, collapse) to `ratio` of its faces and shaded flat, as GLB meshes detail_0, detail_1, … on the one skin; the setting picks one level for every skinned model, live. The first level is the full mesh (ratio 1). `default` is the level a new player starts on (100 % until the owner picks one). Re-import (shared/models/import.mjs) after changing a ratio.",
+    "levels": [
+      { "id": "full", "label": "100 %", "ratio": 1 },
+      { "id": "high", "label": "60 %", "ratio": 0.6 },
+      { "id": "medium", "label": "35 %", "ratio": 0.35 },
+      { "id": "low", "label": "20 %", "ratio": 0.2 }
+    ],
+    "default": "full"
+  },
   "player": "peasant",
   "models": {
     "peasant": {
@@ -37,6 +47,28 @@
         "pack": "Animals_FREE_-_Animated_Low_Poly_3D_Models",
         "fbx": "Assets/ithappy/Animals_FREE/Meshes/Deer_001.fbx",
         "texture": "Assets/ithappy/Animals_FREE/Textures/Texture.png"
+      },
+      "scale": 1,
+      "yaw": 0,
+      "remap": {},
+      "fallback": "idle",
+      "roles": {
+        "idle": { "clip": "idle" },
+        "walk": { "clip": "walk" },
+        "sprint": { "clip": "run" }
+      }
+    },
+    "doe": {
+      "glb": "glb/doe.glb",
+      "source": {
+        "pack": "Animals_FREE_-_Animated_Low_Poly_3D_Models",
+        "fbx": "Assets/ithappy/Animals_FREE/Meshes/Deer_001.fbx",
+        "texture": "Assets/ithappy/Animals_FREE/Textures/Texture.png",
+        "remove": {
+          "$comment": "The doe is the deer without its antlers: the loose parts weighted wholly to the skull that reach above the ears (model units, up).",
+          "joint": "scull",
+          "above": 1.7
+        }
       },
       "scale": 1,
       "yaw": 0,
