@@ -2486,6 +2486,36 @@ impl Client {
             g.request_reveal(face, ti, tk, cell_m);
         }
     }
+    /// Tile (`ti`, `tk`) of the big map's level of `cell_m` cells on `face` read now from the
+    /// loaded terrain (`crate::map_reveal::live_tile`: the closest levels' real blocks, ADR 0068),
+    /// in `takeReveal`'s bytes; undefined for a level not drawn so or nothing loaded there.
+    #[wasm_bindgen(js_name = liveTile)]
+    pub fn live_tile(&self, face: u8, ti: i32, tk: i32, cell_m: i32) -> Option<Vec<u8>> {
+        let mut s = self.inner.borrow_mut();
+        let g = s.game.as_mut()?;
+        let pos = g.position();
+        let me = dwell_world::FaceFrame::at_height(pos[1]);
+        let f = if face == 1 {
+            dwell_world::FaceFrame::B
+        } else {
+            dwell_world::FaceFrame::A
+        };
+        // The eye's face-local height on its own face; on the other face its ground round the
+        // midplane's distance is the same (a tile there is rarely loaded).
+        let eye_y = me.point(pos)[1];
+        let t0 = crate::telemetry::now_ms();
+        let out = crate::map_reveal::live_tile(
+            g.world(),
+            f,
+            ti,
+            tk,
+            cell_m,
+            eye_y,
+            &dwell_game::minimap::MAP,
+        );
+        crate::telemetry::sample("map.liveTile", crate::telemetry::now_ms() - t0);
+        out
+    }
     /// A finished tile of the big map, or undefined: face, ti, tk and its level's cell side (i32
     /// LE), then RGBA and height codes (none: no terrain to reveal from).
     #[wasm_bindgen(js_name = takeReveal)]

@@ -49,4 +49,7 @@ pub const MAP: MapTunables = MapTunables {
     revealed_prebuild_spans: 2.5,
     revealed_budget_ms: 2.0,
     revealed_redraw_ms: 150.0,
+    revealed_live_max_cell_m: 2.0,
+    revealed_live_tiles_per_frame: 2.0,
+    revealed_live_refresh_ms: 2000.0,
 };

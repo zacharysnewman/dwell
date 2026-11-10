@@ -55,6 +55,44 @@ pub fn encode_tile(face: u8, ti: i32, tk: i32, cell_m: i32, rgba: Option<&[u8]>)
     out
 }
 
+/// Whether the level of `cell_m` cells is drawn from the loaded terrain where it is loaded
+/// (`revealed.liveMaxCellM`; owner, 2026-11-09: "big map closest zooms should use 1m").
+pub fn is_live(cell_m: i32, t: &MapTunables) -> bool {
+    cell_m >= 1 && f64::from(cell_m) <= t.revealed_live_max_cell_m && is_level(cell_m, t)
+}
+
+/// Tile (`ti`, `tk`) of face `f` at cells of `cell_m` read from the loaded terrain (the minimap's
+/// read, [`dwell_game::minimap::scan_tile`], each cell its column's top block's LOD colour; a
+/// placed or broken block shows), round face-local eye height `eye_y`, in [`encode_tile`]'s
+/// bytes: alpha 0 where nothing is loaded. None for a level not [`is_live`] or a tile with
+/// nothing loaded (the generator's tile shows).
+pub fn live_tile(
+    world: &dwell_world::VoxelWorld,
+    f: FaceFrame,
+    ti: i32,
+    tk: i32,
+    cell_m: i32,
+    eye_y: f64,
+    t: &MapTunables,
+) -> Option<Vec<u8>> {
+    if !is_live(cell_m, t) {
+        return None;
+    }
+    let n = tile_cells(t);
+    let px = dwell_game::minimap::scan_tile(
+        world,
+        f,
+        ti * n * cell_m,
+        tk * n * cell_m,
+        n as usize,
+        cell_m,
+        eye_y,
+        t,
+        &|m| (m != dwell_world::M.air).then(|| dwell_mesh::lod_color(m, 0)),
+    )?;
+    Some(encode_tile(u8::from(f.is_b()), ti, tk, cell_m, Some(&px)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -229,4 +267,104 @@ mod tests {
         }
         assert!(!is_level(3, &MAP));
     }
+    /// A grass floor at face-local row `ground − 1` over columns 0..`span` a side, loaded in a
+    /// world that generates nothing.
+    fn loaded_floor(f: FaceFrame, ground: i32, span: i32) -> dwell_world::VoxelWorld {
+        let grass = dwell_blocks::parse_state("dwell:grass").expect("grass");
+        let mut w = dwell_world::VoxelWorld::new(dwell_world::empty_generator(), None);
+        for x in 0..span {
+            for z in 0..span {
+                let [x, y, z] = f.cell([x, ground - 1, z]);
+                w.set_voxel(x, y, z, grass);
+            }
+        }
+        w
+    }
+
+    fn rgb(tile: &[u8], n: i32, i: i32, k: i32) -> Option<[u8; 3]> {
+        let o = (13 + (k * n + i) * 4) as usize;
+        (tile[o + 3] == 255).then(|| [tile[o], tile[o + 1], tile[o + 2]])
+    }
+
+    fn lod_rgb(m: dwell_blocks::StateId) -> [u8; 3] {
+        let c = dwell_mesh::lod_color(m, 0);
+        [(c >> 16) as u8, (c >> 8) as u8, c as u8]
+    }
+
+    both_faces!(
+        fn the_closest_levels_tile_shows_the_loaded_blocks_and_an_edit(f: FaceFrame) {
+            // Owner, 2026-11-09: "big map closest zooms should use 1m", the real top blocks.
+            let ground = dwell_world::FLAT_TOP_Y + 20;
+            let eye = dwell_world::m_of_row(ground) + 1.6;
+            let n = tile_cells(&MAP);
+            let mut w = loaded_floor(f, ground, n);
+            let cell = MAP.big_map_levels[0].0 as i32;
+            assert_eq!(cell, 1);
+            assert!(is_live(cell, &MAP));
+            let tile = live_tile(&w, f, 0, 0, cell, eye, &MAP).expect("loaded ground");
+            assert_eq!(tile.len(), 13 + (n * n * 6) as usize);
+            assert_eq!(tile[0], u8::from(f.is_b()));
+            let grass = dwell_blocks::parse_state("dwell:grass").expect("grass");
+            let sand = dwell_blocks::parse_state("dwell:sand").expect("sand");
+            let g = lod_rgb(grass);
+            assert!((0..n).all(|k| (0..n).all(|i| rgb(&tile, n, i, k) == Some(g))));
+            // A block placed on the ground at (5, 7) shows in its own pixel, and only there.
+            let [x, y, z] = f.cell([5, ground, 7]);
+            w.set_voxel(x, y, z, sand);
+            let again = live_tile(&w, f, 0, 0, cell, eye, &MAP).expect("loaded ground");
+            assert_eq!(rgb(&again, n, 5, 7), Some(lod_rgb(sand)));
+            assert_eq!(rgb(&again, n, 6, 7), Some(g));
+            assert_eq!(rgb(&again, n, 5, 6), Some(g));
+            // Its height code is the block's top, a row over the floor.
+            let cells = (n * n) as usize;
+            let code = dwell_game::minimap::tile_cell(&again[13..], cells, (7 * n + 5) as usize)
+                .expect("a cell")
+                .1;
+            let floor = dwell_game::minimap::tile_cell(&again[13..], cells, 0)
+                .expect("a cell")
+                .1;
+            assert!(code > floor, "{code} over {floor}");
+        }
+    );
+
+    both_faces!(
+        fn the_second_level_reads_a_column_every_two_metres(f: FaceFrame) {
+            let ground = dwell_world::FLAT_TOP_Y + 20;
+            let eye = dwell_world::m_of_row(ground) + 1.6;
+            let n = tile_cells(&MAP);
+            let cell = MAP.big_map_levels[1].0 as i32;
+            assert_eq!(cell, 2);
+            assert!(is_live(cell, &MAP));
+            let mut w = loaded_floor(f, ground, n * cell);
+            let sand = dwell_blocks::parse_state("dwell:sand").expect("sand");
+            // Cell (3, 4) of 2 m is columns 6–7 × 8–9; its centre column (7, 9) is the one read.
+            let [x, y, z] = f.cell([7, ground, 9]);
+            w.set_voxel(x, y, z, sand);
+            let tile = live_tile(&w, f, 0, 0, cell, eye, &MAP).expect("loaded ground");
+            assert_eq!(rgb(&tile, n, 3, 4), Some(lod_rgb(sand)));
+            assert_ne!(rgb(&tile, n, 3, 3), rgb(&tile, n, 3, 4));
+            // The whole tile covers n × 2 m: its far corner is still the floor.
+            assert!(rgb(&tile, n, n - 1, n - 1).is_some());
+        }
+    );
+
+    both_faces!(
+        fn unloaded_ground_falls_back_to_the_generators_tile(f: FaceFrame) {
+            let ground = dwell_world::FLAT_TOP_Y + 20;
+            let eye = dwell_world::m_of_row(ground) + 1.6;
+            let n = tile_cells(&MAP);
+            // Half the tile loaded: the other half's cells are alpha 0 (the generator's show).
+            let w = loaded_floor(f, ground, n / 2);
+            let tile = live_tile(&w, f, 0, 0, 1, eye, &MAP).expect("some loaded");
+            assert!(rgb(&tile, n, 0, 0).is_some());
+            assert!(rgb(&tile, n, n - 1, 0).is_none());
+            assert!(rgb(&tile, n, 0, n - 1).is_none());
+            // Nothing loaded: no tile at all.
+            assert!(live_tile(&w, f, 5, 5, 1, eye, &MAP).is_none());
+            // A coarser level is never read from the terrain.
+            let coarse = MAP.big_map_levels[2].0 as i32;
+            assert!(!is_live(coarse, &MAP));
+            assert!(live_tile(&w, f, 0, 0, coarse, eye, &MAP).is_none());
+        }
+    );
 }
