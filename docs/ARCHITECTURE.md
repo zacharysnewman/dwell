@@ -585,6 +585,14 @@ screen-order cells (inside a one-cell border, unread) to `shadeMap` (`shade_grid
 cells and their heights are kept per world in this browser (IndexedDB `dwell-explored`, append-only:
 `heights` beside `cells`), not on the server. Cost (`minimap.scan`, `minimap.draw`
 samples, DEV_TOOLS.md): ~1 ms a read with its draw flying at 8 m/s, the 2 s refresh 5–9 ms.
+**[built, 0.50.76] The closest levels from the loaded terrain** (owner, 2026-11-09: "big map closest
+zooms should use 1m"): a level whose `cellM` is at most `revealed.liveMaxCellM` (the 1 m and 2 m levels)
+is drawn, while the map is open, from the loaded chunks as the minimap reads them
+(`dwell_game::minimap::scan_tile`, the wasm `liveTile`, `map_reveal::live_tile`: each cell its column's
+top block, builds and edits included), at most `revealed.liveTilesPerFrame` tiles a frame and each again
+every `revealed.liveRefreshMs` (`RevealCache.pumpLive`), kept in memory only; cells not loaded (or whose
+top lies under a chunk not yet streamed) show the generator's tile below. ADR 0068's 0.50.76 amendment.
+
 **[built, 0.50.46; per level and kept, 0.50.61] The big map's tiles** (owner, 2026-11-08: "big map should be fully explored on
 creative"; 2026-11-09: built "only once", "invisibly"): every level's ground comes from the generator, a
 tile at the level's cell size at a time (`requestReveal(face, ti, tk, cellM)`), kept per world and compatibility line (0.50.75: a new patch reuses them) in

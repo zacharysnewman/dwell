@@ -156,6 +156,9 @@ export const MAP_FIELDS = {
     prebuildSpans: ['num', 1, 8],
     budgetMs: ['num', 0.1, 16],
     redrawMs: ['num', 0, 2000],
+    liveMaxCellM: ['int', 0, 256],
+    liveTilesPerFrame: ['int', 0, 16],
+    liveRefreshMs: ['num', 100, 60000],
   },
 };
 

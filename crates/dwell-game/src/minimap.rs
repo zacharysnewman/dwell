@@ -70,6 +70,9 @@ pub struct MapTunables {
     pub revealed_prebuild_spans: f64,
     pub revealed_budget_ms: f64,
     pub revealed_redraw_ms: f64,
+    pub revealed_live_max_cell_m: f64,
+    pub revealed_live_tiles_per_frame: f64,
+    pub revealed_live_refresh_ms: f64,
 }
 
 #[rustfmt::skip]
@@ -208,76 +211,13 @@ pub fn scan_tops(
                 .map_or(top_row, |h| {
                     (row_of_m(f64::from(h)) + HINT_ROWS).clamp(bottom_row, top_row)
                 });
-            let mut row = start;
-            // The chunk the row is in, looked up once per chunk down the column; a chunk not
-            // held (all air, or not streamed) is skipped whole.
-            let mut held: Option<(ChunkCoord, Option<&Chunk>)> = None;
-            while row >= bottom_row {
-                let [wx, wy, wz] = f.cell([cx, row, cz]);
-                let coord = chunk_of(wx, wy, wz);
-                let chunk = match held {
-                    Some((c, ch)) if c == coord => ch,
-                    _ => {
-                        let ch = world.find(coord);
-                        held = Some((coord, ch));
-                        ch
-                    }
-                };
-                let Some(chunk) = chunk else {
-                    // Down to the next chunk's first row, face-locally.
-                    let ly = wy.rem_euclid(CHUNK_SIZE);
-                    row -= if f.is_b() { CHUNK_SIZE - ly } else { ly + 1 };
-                    continue;
-                };
-                let m = chunk.get(
-                    wx.rem_euclid(CHUNK_SIZE),
-                    wy.rem_euclid(CHUNK_SIZE),
-                    wz.rem_euclid(CHUNK_SIZE),
-                );
-                if m != M.air && row == start {
-                    // Ground over the scan's top (a hill above the eye): up to its surface, not
-                    // its inside (the 0.50.37 browser check showed hills as their stone).
-                    let mut up = row;
-                    let mut top = m;
-                    while up < start + CLIMB_ROWS {
-                        let [wx, wy, wz] = f.cell([cx, up + 1, cz]);
-                        let above = world.get_voxel_if_loaded([wx, wy, wz]);
-                        if above == M.air || colour_of(above).is_none() {
-                            break;
-                        }
-                        up += 1;
-                        top = above;
-                    }
-                    if let Some(c) = colour_of(top) {
-                        colour[k * n + i] = c;
-                        height[k * n + i] = dwell_world::m_of_row(up + 1) as f32;
-                    }
-                    break;
-                }
-                if m != M.air
-                    && let Some(c) = colour_of(m)
-                {
-                    let info = dwell_blocks::info(m);
-                    let mut c = c;
-                    if info.liquid {
-                        // Darkened by the depth under it, to the deepest at `waterDepthM`.
-                        let mut depth = 1;
-                        while depth < water_rows {
-                            let [wx, wy, wz] = f.cell([cx, row - depth, cz]);
-                            if !dwell_blocks::info(world.get_voxel_if_loaded([wx, wy, wz])).liquid {
-                                break;
-                            }
-                            depth += 1;
-                        }
-                        c = scale_rgb(c, 1.0 - 0.55 * f64::from(depth) / f64::from(water_rows));
-                        water[k * n + i] = true;
-                        depth_m[k * n + i] = (f64::from(depth) * dwell_world::CELL_H) as f32;
-                    }
-                    colour[k * n + i] = c;
-                    height[k * n + i] = dwell_world::m_of_row(row + 1) as f32;
-                    break;
-                }
-                row -= 1;
+            if let Some(top) = column_top(
+                world, f, cx, cz, start, bottom_row, water_rows, colour_of, false,
+            ) {
+                colour[k * n + i] = top.colour;
+                height[k * n + i] = top.height;
+                water[k * n + i] = top.water;
+                depth_m[k * n + i] = top.depth;
             }
         }
     }
@@ -292,6 +232,180 @@ pub fn scan_tops(
         depth: depth_m,
         eye_y,
     }
+}
+
+/// A column's top as the maps read it.
+struct Top {
+    colour: u32,
+    height: f32,
+    water: bool,
+    depth: f32,
+}
+
+/// The top of face-local column (`cx`, `cz`) on face `f`, read down from row `start` (ground at
+/// `start` is followed up to its surface) to `bottom_row`; a liquid's colour darkened by its depth
+/// to `water_rows`. None: no top loaded there.
+#[allow(clippy::too_many_arguments)]
+fn column_top(
+    world: &VoxelWorld,
+    f: FaceFrame,
+    cx: i32,
+    cz: i32,
+    start: i32,
+    bottom_row: i32,
+    water_rows: i32,
+    colour_of: &dyn Fn(StateId) -> Option<u32>,
+    strict: bool,
+) -> Option<Top> {
+    // Strict (the big map's tiles, read far from the player): a top whose cell above starts a
+    // chunk not held is unknown, not the top (that chunk may be ground still streaming: a hill's
+    // stone showed under its unloaded grass in 0.50.76's browser check).
+    let unsure = |row: i32| {
+        strict && {
+            let a = f.cell([cx, row, cz]);
+            let b = f.cell([cx, row + 1, cz]);
+            let cb = chunk_of(b[0], b[1], b[2]);
+            chunk_of(a[0], a[1], a[2]) != cb && world.find(cb).is_none()
+        }
+    };
+    let mut row = start;
+    // The chunk the row is in, looked up once per chunk down the column; a chunk not
+    // held (all air, or not streamed) is skipped whole.
+    let mut held: Option<(ChunkCoord, Option<&Chunk>)> = None;
+    while row >= bottom_row {
+        let [wx, wy, wz] = f.cell([cx, row, cz]);
+        let coord = chunk_of(wx, wy, wz);
+        let chunk = match held {
+            Some((c, ch)) if c == coord => ch,
+            _ => {
+                let ch = world.find(coord);
+                held = Some((coord, ch));
+                ch
+            }
+        };
+        let Some(chunk) = chunk else {
+            // Down to the next chunk's first row, face-locally.
+            let ly = wy.rem_euclid(CHUNK_SIZE);
+            row -= if f.is_b() { CHUNK_SIZE - ly } else { ly + 1 };
+            continue;
+        };
+        let m = chunk.get(
+            wx.rem_euclid(CHUNK_SIZE),
+            wy.rem_euclid(CHUNK_SIZE),
+            wz.rem_euclid(CHUNK_SIZE),
+        );
+        if m != M.air && row == start {
+            // Ground over the scan's top (a hill above the eye): up to its surface, not
+            // its inside (the 0.50.37 browser check showed hills as their stone).
+            let mut up = row;
+            let mut top = m;
+            while up < start + CLIMB_ROWS {
+                let [wx, wy, wz] = f.cell([cx, up + 1, cz]);
+                let above = world.get_voxel_if_loaded([wx, wy, wz]);
+                if above == M.air || colour_of(above).is_none() {
+                    break;
+                }
+                up += 1;
+                top = above;
+            }
+            if unsure(up) {
+                return None;
+            }
+            if let Some(c) = colour_of(top) {
+                return Some(Top {
+                    colour: c,
+                    height: dwell_world::m_of_row(up + 1) as f32,
+                    water: false,
+                    depth: 0.0,
+                });
+            }
+            return None;
+        }
+        if m != M.air
+            && let Some(c) = colour_of(m)
+        {
+            if unsure(row) {
+                return None;
+            }
+            let info = dwell_blocks::info(m);
+            let mut c = c;
+            let mut wet = None;
+            if info.liquid {
+                // Darkened by the depth under it, to the deepest at `waterDepthM`.
+                let mut depth = 1;
+                while depth < water_rows {
+                    let [wx, wy, wz] = f.cell([cx, row - depth, cz]);
+                    if !dwell_blocks::info(world.get_voxel_if_loaded([wx, wy, wz])).liquid {
+                        break;
+                    }
+                    depth += 1;
+                }
+                c = scale_rgb(c, 1.0 - 0.55 * f64::from(depth) / f64::from(water_rows));
+                wet = Some((f64::from(depth) * dwell_world::CELL_H) as f32);
+            }
+            return Some(Top {
+                colour: c,
+                height: dwell_world::m_of_row(row + 1) as f32,
+                water: wet.is_some(),
+                depth: wet.unwrap_or(0.0),
+            });
+        }
+        row -= 1;
+    }
+    None
+}
+
+/// The big map's closest levels from the loaded terrain (ADR 0068; owner, 2026-11-09: "big map
+/// closest zooms should use 1m"): `n`² cells of `cell_m` m from face-local cell (`x0`, `z0`) on
+/// face `f`, each its column at the cell's centre read as the minimap reads it (scanned from
+/// `minimap.scanUpM` over `eye_y` to `scanDownM` under it), as a tile's RGBA rows of x from its
+/// least z (alpha 0 where nothing is loaded: the generator's tile shows there) and then its i16 LE
+/// [`height_code`]s (`i16::MIN` none; water's its bed's). None when no cell has a loaded top.
+#[allow(clippy::too_many_arguments)]
+pub fn scan_tile(
+    world: &VoxelWorld,
+    f: FaceFrame,
+    x0: i32,
+    z0: i32,
+    n: usize,
+    cell_m: i32,
+    eye_y: f64,
+    t: &MapTunables,
+    colour_of: &dyn Fn(StateId) -> Option<u32>,
+) -> Option<Vec<u8>> {
+    let top_row = row_of_m(eye_y + t.minimap_scan_up_m);
+    let bottom_row = row_of_m(eye_y - t.minimap_scan_down_m);
+    let water_rows = row_of_m(t.height_shading_water_depth_m).max(1);
+    let mut out = vec![0u8; n * n * 6];
+    let mut any = false;
+    for k in 0..n {
+        for i in 0..n {
+            let j = k * n + i;
+            let cx = x0 + i as i32 * cell_m + cell_m / 2;
+            let cz = z0 + k as i32 * cell_m + cell_m / 2;
+            let code = match column_top(
+                world, f, cx, cz, top_row, bottom_row, water_rows, colour_of, true,
+            ) {
+                Some(top) => {
+                    any = true;
+                    let c = top.colour;
+                    out[j * 4..j * 4 + 4].copy_from_slice(&[
+                        (c >> 16) as u8,
+                        (c >> 8) as u8,
+                        c as u8,
+                        255,
+                    ]);
+                    let h = f64::from(top.height - top.depth);
+                    height_code(h, top.water).clamp(i32::from(i16::MIN) + 1, i32::from(i16::MAX))
+                        as i16
+                }
+                None => i16::MIN,
+            };
+            let o = n * n * 4 + j * 2;
+            out[o..o + 2].copy_from_slice(&code.to_le_bytes());
+        }
+    }
+    any.then_some(out)
 }
 
 /// `0xRRGGBB` scaled in brightness by `k` (clamped).

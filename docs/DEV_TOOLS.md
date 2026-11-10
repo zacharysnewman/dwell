@@ -220,6 +220,7 @@ What is recorded now:
 | `net` | the session's network pumping (twice a frame) |
 | `jobs.poll`, `jobs.apply`, `jobs.done` | collecting finished jobs; applying them (chunks into the world, meshes to the GPU); how many |
 | `minimap.scan`, `minimap.draw` | the minimap (ADR 0068): a read of the columns' tops round the player with its draw (on a move of a texel, or every `refreshSeconds`), and a draw alone (a turn); samples, so only the frames that did one |
+| `map.liveTile` | the big map's closest levels (ADR 0068, 0.50.76): a tile read from the loaded terrain (`liveTile`), at most `revealed.liveTilesPerFrame` a frame while the map is open at those levels |
 | `ticks`, `ticks.count` | the fixed-rate prediction ticks (controller + physics) and how many ran |
 | `pieces.standIns` (samples) | the pieces stood in for in the prediction at each snapshot: those that could touch the local player soon ([`EXPLOSIVES.md`](./EXPLOSIVES.md) §3) |
 | `game.draw` | the game's draw step: `mesh_dirty` and `lod` inside it |

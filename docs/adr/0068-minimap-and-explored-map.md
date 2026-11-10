@@ -197,6 +197,33 @@ steps against the fog where the sea should go on. So:
   Kept tiles of the old cell sizes are never read again (their key carries the cell size); a new build
   makes its own anyway.
 
+### Amendment (0.50.76): the closest levels' real blocks
+
+Owner, 2026-11-09: "Yes big map closest zooms should use 1m". The 0.50.61 report found levels 0–1 almost
+flat green: the generator's map colours have no trees, no single blocks and no edits.
+
+- **Loaded terrain first.** A level whose `cellM` is at most `revealed.liveMaxCellM` (2: the 1 m and
+  2 m levels) is drawn, while the map is open, from the **loaded terrain** as the minimap reads it:
+  `dwell_game::minimap::scan_tile` (the minimap's column read, `column_top`, shared) gives each cell
+  its column's top block at the cell's centre, its LOD colour (grass, sand, water darkened by depth,
+  leaves, paths, the player's builds and edits), and its height code, so the light height tint
+  (`heightTint`) applies as before. The wasm `liveTile(face, ti, tk, cellM)` returns it in
+  `takeReveal`'s bytes, alpha 0 where nothing is loaded; `map_reveal::live_tile`.
+- **The generator's tile shows elsewhere.** `RevealCache.live` holds those tiles in memory only (never
+  the store: they change with edits); a cell with a loaded top shows over the generator's tile, the
+  rest (not loaded, beyond the streamed chunks) is the generator's tile at that cell size as before.
+  A top whose cell above starts a chunk not held is **unknown**, not the top (the browser check showed
+  a hill's stone where its grass chunk had not streamed yet), so it falls back too.
+- **Budget.** `RevealCache.pumpLive` reads at most `revealed.liveTilesPerFrame` (2) tiles a frame, the
+  nearest the view's centre first, each again once `revealed.liveRefreshMs` (2 s) old, which is how an
+  edit shows; a tile that reads the same is not redrawn. A 32² tile is 1024 columns, the minimap's
+  read is ~16k (~5 ms in the browser), so a frame's reads are well under a millisecond
+  (DEV_TOOLS.md `map.liveTile`). Nothing is read while the map is shut or at the coarser levels.
+- **Fog is unchanged**: adventure fogs unexplored cells at every level; creative reveals all.
+- **Not done:** the generator's fallback at these levels is still its map colour (the LOD raster's
+  column top), without trees; a top-block sampler for the tree layer was not cheap enough to add in
+  this change. Beyond the loaded chunks the 1–2 m levels still read as plain ground.
+
 ## Consequences
 
 - The minimap's cost, measured in the browser (Chrome, a Mac's GPU; the bench flying at 8 m/s for

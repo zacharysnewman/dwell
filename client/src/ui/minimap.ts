@@ -279,6 +279,20 @@ export interface RevealClient {
 }
 
 /**
+ * The closest levels' real blocks (owner, 2026-11-09: "big map closest zooms should use 1m"):
+ * a tile read now from the loaded terrain (`crates/dwell-client/src/map_reveal.rs` `live_tile`),
+ * `takeReveal`'s bytes, alpha 0 where nothing is loaded; undefined for nothing loaded there.
+ */
+export interface LiveClient {
+  liveTile(face: number, ti: number, tk: number, cellM: number): Uint8Array | undefined;
+}
+
+/** Whether the level of `cellM` cells is drawn from the loaded terrain where loaded. */
+export function isLive(cellM: number): boolean {
+  return cellM >= 1 && cellM <= MAP.revealed.liveMaxCellM;
+}
+
+/**
  * A finished tile: face, tile indices, its level's cell side, its RGBA (null: no terrain to
  * reveal from) and its cells' height codes (null: none sent).
  */
@@ -408,6 +422,12 @@ export type TileAt = [number, number, number, number];
  */
 export class RevealCache {
   readonly tiles = new Map<string, RevealTile>();
+  /**
+   * The closest levels' tiles read from the loaded terrain (never kept in the store): a cell they
+   * hold (alpha 255) shows over the generator's; when each was read (ms).
+   */
+  readonly live = new Map<string, RevealTile>();
+  private readonly liveAt = new Map<string, number>();
   private readonly pending = new Set<string>();
   /** Tiles still to ask for, the nearest last (the last view's). */
   private wanted: TileAt[] = [];
@@ -602,10 +622,54 @@ export class RevealCache {
   private cell(cellM: number, face: number, i: number, k: number) {
     const n = this.tileCells;
     const [ti, tk] = [Math.floor(i / n), Math.floor(k / n)];
-    return {
-      t: this.tiles.get(RevealCache.key(cellM, face, ti, tk)),
-      j: (k - tk * n) * n + (i - ti * n),
-    };
+    const key = RevealCache.key(cellM, face, ti, tk);
+    const j = (k - tk * n) * n + (i - ti * n);
+    // The loaded terrain's block where it was read, else the generator's.
+    const l = this.live.get(key);
+    if (l?.rgba && (l.rgba[j * 4 + 3] ?? 0) === 255) return { t: l, j };
+    return { t: this.tiles.get(key), j };
+  }
+
+  /**
+   * One frame's read of the closest levels' tiles from the loaded terrain (the open view `v`'s,
+   * a level with `isLive`): at most `perFrame` of them, the nearest the view's centre first,
+   * each again once `refreshMs` old (for edits). The tiles whose cells changed.
+   */
+  pumpLive(
+    client: LiveClient,
+    v: BigView | null,
+    w: number,
+    h: number,
+    nowMs: number,
+    perFrame: number = MAP.revealed.liveTilesPerFrame,
+    refreshMs: number = MAP.revealed.liveRefreshMs,
+  ): TileAt[] {
+    if (!v || !isLive(levelCellM(v.level))) return [];
+    const changed: TileAt[] = [];
+    let read = 0;
+    for (const t of this.tilesFor(v, w, h)) {
+      if (read >= perFrame) break;
+      const [cellM, face, ti, tk] = t;
+      const key = RevealCache.key(cellM, face, ti, tk);
+      const at = this.liveAt.get(key);
+      if (at !== undefined && nowMs - at < refreshMs) continue;
+      read++;
+      this.liveAt.set(key, nowMs);
+      const bytes = client.liveTile(face, ti, tk, cellM);
+      const had = this.live.get(key);
+      if (!bytes) {
+        if (had) {
+          this.live.delete(key);
+          changed.push(t);
+        }
+        continue;
+      }
+      const tile = parseRevealTile(bytes, this.tileCells);
+      if (had && sameTile(had, tile)) continue;
+      this.live.set(key, tile);
+      changed.push(t);
+    }
+    return changed;
   }
 
   /**
@@ -627,6 +691,17 @@ export class RevealCache {
     const v = t?.heights?.[j];
     return v === undefined || v === -32768 ? NO_HEIGHT : v;
   }
+}
+
+/** Whether two tiles hold the same colours and heights. */
+function sameTile(a: RevealTile, b: RevealTile): boolean {
+  const eq = (x: ArrayLike<number> | null, y: ArrayLike<number> | null) => {
+    if (x === null || y === null) return x === y;
+    if (x.length !== y.length) return false;
+    for (let j = 0; j < x.length; j++) if (x[j] !== y[j]) return false;
+    return true;
+  };
+  return eq(a.rgba, b.rgba) && eq(a.heights, b.heights);
 }
 
 /**
@@ -742,7 +817,7 @@ export function minimapSize(width: number, height: number): number {
 }
 
 /** What the map needs from the client (the wasm `Client`). */
-export interface MapClient extends RevealClient {
+export interface MapClient extends RevealClient, LiveClient {
   minimapFrame(nowMs: number, shading: boolean): Uint8Array | undefined;
   minimapPixels(): number;
   minimapDots(): Float64Array;
@@ -1357,6 +1432,21 @@ export class MapUi {
       this.client.mapPose(),
     );
     if (taken > 0) this.bigStale = true;
+    // The closest levels' real blocks where the terrain is loaded (`liveTilesPerFrame` a frame).
+    for (const [cellM, face, ti, tk] of this.reveal.pumpLive(
+      this.client,
+      v,
+      w,
+      h,
+      performance.now(),
+    )) {
+      for (let di = -1; di <= 1; di++) {
+        for (let dk = -1; dk <= 1; dk++) {
+          this.staleTiles.add(RevealCache.key(cellM, face, ti + di, tk + dk));
+        }
+      }
+      this.bigStale = true;
+    }
   }
 
   private drawDisc(): void {

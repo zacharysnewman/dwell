@@ -66,5 +66,8 @@ export const MAP = {
     prebuildSpans: 2.5,
     budgetMs: 2,
     redrawMs: 150,
+    liveMaxCellM: 2,
+    liveTilesPerFrame: 2,
+    liveRefreshMs: 2000,
   },
 } as const;
