@@ -76,3 +76,18 @@ saved presets.
    system — or active from the start?
 6. Erosion: a cheap rule-based shaping per rock (terraces, caprock) first, or a simulated erosion pass
    on the world map (slower to generate, more natural)?
+
+## 6. The owner's answers (2026-11-10)
+
+1. **After the rain shadow: rock types next** (rock provinces and types shaping landforms), then soil
+   and vegetation.
+2. **The default world stays as today until the systems are tuned** in Chisel: each new layer ships
+   neutral in the default data (no terrain change, goldens equal), and they are adopted together on
+   one new compatibility line.
+3. **Erosion: rule-based shaping first** (per-rock rules: caprock terraces, cliff faces, scree), "but
+   we will need to compare with erosion later likely" — a simulated erosion pass to compare against
+   later.
+4. **Tectonics at realistic scale:** one plate boundary crossing the island, hotspots offshore making
+   island chains (not several small plates inside the island).
+
+Still open: volcanoes dormant first or active (§5 q5).
