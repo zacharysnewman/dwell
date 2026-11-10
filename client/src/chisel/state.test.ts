@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ARCHIPELAGO_FIXTURE,
   ARCHIPELAGO_WORLD,
+  BUILD_GEOLOGY,
   DESERT_FIXTURE,
   PRESETS,
   STORE_KEY,
@@ -141,5 +142,28 @@ describe('Chisel state', () => {
     expect(stored()).toEqual({ later: { x: 1 } });
     expect(loadEdit(s)).toEqual(buildEdit());
     expect(loadEdit(memory({ [STORE_KEY]: 'nonsense' }))).toEqual(buildEdit());
+  });
+
+  it('the red-rock mesa with strong rock shaping round-trips, and a bad rock is named', () => {
+    const mesa = PRESETS.find((p) => p.name === 'preset:red_rock_mesa');
+    expect(mesa?.rockStack).toBe('dwell:red_beds');
+    if (!mesa) throw new Error('the mesa preset');
+    const base = addBiome(buildEdit(), mesa);
+    const geology = structuredClone(BUILD_GEOLOGY);
+    geology.shaping.strength = 0.9;
+    geology.provinces.wavelength = 4000;
+    const e = { ...base, geology };
+    expect(validateEdit(e)).toEqual([]);
+    expect(fromJson(toJson(e))).toEqual({ edit: e });
+    // An edit without its geology (an older Chisel's) still loads: the build's is used.
+    const old = { ...e };
+    delete (old as { geology?: unknown }).geology;
+    expect(fromJson(JSON.stringify(old))).toEqual({ edit: old });
+    const bad = structuredClone(geology);
+    bad.rocks[0] = { ...(bad.rocks[0] ?? { name: '?' }), jointing: 'wobbly' };
+    expect(validateEdit({ ...e, geology: bad }).join()).toContain('jointing must be one of');
+    const lost = structuredClone(geology);
+    lost.stacks = lost.stacks.filter((s) => s.name !== 'dwell:red_beds');
+    expect(validateEdit({ ...e, geology: lost }).join()).toContain('rockStack');
   });
 });

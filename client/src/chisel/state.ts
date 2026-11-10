@@ -7,6 +7,7 @@ import {
   validateBiomeMap,
   validatePresets,
   validateWorldKnobs,
+  validateRocks,
   type BlockInfo,
 } from '../../../shared/worldgen/biomes.mjs';
 import defaultBiome from '../../../shared/worldgen/biomes/default.json';
@@ -14,6 +15,7 @@ import desert from '../../../shared/worldgen/biomes/fixtures/desert.json';
 import archipelago from '../../../shared/worldgen/biomes/fixtures/archipelago.json';
 import archipelagoWorld from '../../../shared/worldgen/worlds/archipelago.json';
 import terrain from '../../../shared/worldgen/terrain.json';
+import rocks from '../../../shared/worldgen/rocks.json';
 import decorations from '../../../shared/worldgen/decorations.json';
 import placements from '../../../shared/worldgen/placements.json';
 import blocksDwell from '../../../shared/blocks/dwell.json';
@@ -32,12 +34,28 @@ export type BiomeMapJson = Record<string, number | string>;
 /** World knobs (terrain.json's groups, `WORLD_KNOBS`' keys): the archipelago's (ADR 0074 B4). */
 export type WorldJson = Record<string, Record<string, number>>;
 
-/** What Chisel edits: the biomes (the default first), the biome map, and optional world knobs. */
+/** The geology as rocks.json holds it (systemic terrain T2): rocks, stacks, provinces, shaping. */
+export interface GeologyJson {
+  rocks: { name: string; [k: string]: unknown }[];
+  stacks: { name: string; [k: string]: unknown }[];
+  provinces: Record<string, number>;
+  shaping: Record<string, number>;
+  [k: string]: unknown;
+}
+
+/**
+ * What Chisel edits: the biomes (the default first), the biome map, optional world knobs, and the
+ * geology (rocks.json; optional in a stored or imported edit: the build's).
+ */
 export interface Edit {
   biomes: BiomeJson[];
   biomeMap: BiomeMapJson;
   world?: WorldJson;
+  geology?: GeologyJson;
 }
+
+/** The build's geology (shared/worldgen/rocks.json). */
+export const BUILD_GEOLOGY = rocks as unknown as GeologyJson;
 
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
@@ -53,6 +71,7 @@ export const FULL_BLOCKS = [...BLOCKS].filter(([, b]) => b.shape === 'full').map
 const REFS = {
   decorations: new Set(decorations.decorations.map((r) => r.name)),
   placements: new Set(placements.placements.map((r) => r.name)),
+  stacks: new Set(BUILD_GEOLOGY.stacks.map((s) => s.name)),
 };
 
 /** The biomes a world can start from: the build's default and the fixtures. */
@@ -99,9 +118,13 @@ export function validateEdit(e: Edit): string[] {
   const errors: string[] = [];
   if (!Array.isArray(e.biomes) || e.biomes.length === 0)
     return ['biomes: a world has at least one biome'];
+  const stacks = e.geology?.stacks;
+  const refs = Array.isArray(stacks)
+    ? { ...REFS, stacks: new Set(stacks.map((s) => s.name)) }
+    : REFS;
   for (const b of e.biomes) {
     try {
-      validateBiome(b, BLOCKS, REFS);
+      validateBiome(b, BLOCKS, refs);
     } catch (err) {
       errors.push((err as Error).message);
     }
@@ -112,6 +135,7 @@ export function validateEdit(e: Edit): string[] {
   try {
     validateBiomeMap(e.biomeMap);
     if (e.world !== undefined) validateWorldKnobs(e.world);
+    if (e.geology !== undefined) validateRocks(e.geology, BLOCKS);
   } catch (err) {
     errors.push((err as Error).message);
   }
@@ -122,6 +146,7 @@ export function validateEdit(e: Edit): string[] {
 export function toJson(e: Edit): string {
   const out: Edit = { biomes: e.biomes, biomeMap: e.biomeMap };
   if (e.world) out.world = e.world;
+  if (e.geology) out.geology = e.geology;
   return JSON.stringify(out, null, 2);
 }
 
@@ -142,11 +167,13 @@ export function fromJson(
       ? {
           biomes: [...base.biomes.filter((b) => b.name !== o.name), v as BiomeJson],
           biomeMap: base.biomeMap,
+          ...(base.geology ? { geology: base.geology } : {}),
         }
       : {
           biomes: o.biomes as BiomeJson[],
           biomeMap: withNewKeys(o.biomeMap ?? base.biomeMap),
           ...(o.world ? { world: o.world } : {}),
+          ...(o.geology ? { geology: o.geology } : {}),
         };
   const errors = validateEdit(edit);
   return errors.length ? { errors } : { edit };

@@ -9,6 +9,8 @@ import {
   hydrologyRust,
   midplaneRust,
   placementsRust,
+  rocksRust,
+  validateRocks,
   registryBlocks,
   registryStructures,
   terrainRust,
@@ -546,4 +548,28 @@ test('the preset biomes validate, each labelled and described, and stay off the 
   // A fixture preset by data alone validates.
   const extra = { ...structuredClone(one), name: 'preset:test_extra', label: 'Test extra' };
   assert.equal(validatePresetBiomes([...presets, extra], blocks).length, presets.length + 1);
+});
+
+test('the checked-in rocks are valid, generate the checked-in Rust, and take a rock by data alone', () => {
+  const rocks = () => JSON.parse(readFileSync(join(here, 'rocks.json'), 'utf8'));
+  const rs = readFileSync(join(here, '../../crates/dwell-worldgen/src/rocks.gen.rs'), 'utf8');
+  assert.equal(rocksRust(validateRocks(rocks(), blocks)), rs);
+  assert.equal(rocks().shaping.strength, 0, 'the default world is unshaped');
+  const d = rocks();
+  d.rocks.push({ name: 'test:cap', hardness: 1, jointing: 'vertical', bed: 5, solubility: 0, face: 'dwell:stone', cap: 'dwell:stone', scree: 'dwell:sand', color: '#ff0000' });
+  d.stacks.push({ name: 'test:capped', weight: 0, layers: [{ rock: 'test:cap', thickness: 10 }] });
+  const out = rocksRust(validateRocks(d, blocks));
+  assert.match(out, /name: "test:cap",\n {8}hardness: 1\.0,\n {8}jointing: Jointing::Vertical/);
+  assert.match(out, /Layer \{ rock: "test:cap", thickness: 10\.0 \}/);
+  const bad = (f, msg) => {
+    const x = rocks();
+    f(x);
+    assert.throws(() => validateRocks(x, blocks), msg);
+  };
+  bad((x) => (x.rocks[0].jointing = 'wobbly'), /rock dwell:sandstone: jointing must be one of/);
+  bad((x) => (x.rocks[0].hardness = 2), /rock dwell:sandstone: hardness must be in \[0, 1\]/);
+  bad((x) => (x.rocks[1].face = 'dwell:nothing'), /rock dwell:shale: face "dwell:nothing" is not in the registry/);
+  bad((x) => (x.stacks[0].layers[0].rock = 'dwell:nothing'), /stack dwell:red_beds: layer rock "dwell:nothing"/);
+  bad((x) => (x.shaping.strength = 3), /shaping.strength must be in \[0, 1\]/);
+  bad((x) => (x.extra = 1), /unknown extra/);
 });
