@@ -996,6 +996,95 @@ mod piece_box_tests {
         assert!(piece_collider(&merged[1]).shape().as_cuboid().is_some());
     }
 
+    /// Whether a ray from `o` along `d` (the collider's own frame, about its centre) hits `c`.
+    fn ray_hits(c: &Collider, o: DVec3, d: DVec3) -> bool {
+        use rapier3d_f64::parry::query::{Ray, RayCast};
+        let ray = Ray::new(o - c.translation(), d);
+        c.shape().cast_local_ray(&ray, 10.0, true).is_some()
+    }
+
+    // face-a-only: the prism is in the piece's own frame, which has no up (the octagon is
+    // symmetric in y; tests/pieces.rs drops one on both faces).
+    #[test]
+    fn a_felled_trunks_logs_collide_as_one_octagonal_prism() {
+        // Phase 55 T4 (owner, 2026-11-09: "everything log/tree should be octagonal"): a felled
+        // trunk's logs were boxes merged into one, so a lying trunk rested on square corners. Red
+        // before: the run merged into a cuboid and the ray past the cut corner hit it.
+        let log = dwell_blocks::require("dwell:log[axis=x]");
+        let cells: Vec<PieceCell> = (0..4)
+            .map(|x| PieceCell {
+                hull: piece_hull(log),
+                ..cell(f64::from(x), 0.0, 0.0, 350.0, Collide::All)
+            })
+            .collect();
+        let merged = merged_boxes(&cells);
+        assert_eq!(
+            merged.len(),
+            1,
+            "a run of one log along its axis is one prism"
+        );
+        assert_eq!(merged[0].mass, 1400.0);
+        assert_eq!(merged[0].half, DVec3::new(2.0, 0.25, 0.5));
+        let c = piece_collider(&merged[0]);
+        assert!(
+            c.shape().as_convex_polyhedron().is_some(),
+            "a hull, not a box"
+        );
+        let down = DVec3::new(0.0, -1.0, 0.0);
+        let along = DVec3::new(1.0, 0.0, 0.0);
+        // Along the trunk 2 cm in from its top and +z edges: past the chamfer, inside the box.
+        let corner = DVec3::new(-5.0, 0.22, 0.47);
+        assert!(!ray_hits(&c, corner, along), "the corner is cut");
+        assert!(
+            ray_hits(&c, DVec3::new(-5.0, 0.0, 0.0), along),
+            "its middle is solid"
+        );
+        assert!(ray_hits(&c, DVec3::new(1.5, 1.0, 0.0), down));
+        // Two runs side by side join (as the terrain's do): the corner between them is squared.
+        let mut two = cells.clone();
+        two.extend((0..4).map(|x| PieceCell {
+            hull: piece_hull(log),
+            ..cell(f64::from(x), 0.0, 1.0, 350.0, Collide::All)
+        }));
+        let merged = merged_boxes(&two);
+        assert_eq!(merged.len(), 2);
+        let near = merged
+            .iter()
+            .find(|m| m.center.z < 0.5)
+            .expect("the z = 0 run");
+        assert_ne!(near.joined, 0, "joined to its neighbour");
+        assert!(
+            ray_hits(&piece_collider(near), corner, along),
+            "the corner at the join is squared"
+        );
+    }
+
+    // face-a-only: as above.
+    #[test]
+    fn a_felled_wedge_collides_as_the_octagon_cut_by_its_slant() {
+        // Phase 55 T4: the trunk's upside-down wood ramp was its square ramp's hull.
+        let ramp = dwell_blocks::parse_state("dwell:log_ramp[facing=west,half=top,shape=ramp]")
+            .expect("the wood ramp");
+        let mut c = cell(0.0, 0.0, 0.0, 100.0, Collide::All);
+        c.hull = piece_hull(ramp);
+        let merged = merged_boxes(&[c]);
+        let col = piece_collider(&merged[0]);
+        let up = DVec3::new(0.0, 1.0, 0.0);
+        // Up from below at a cut corner of the full (top) end, and up through its middle.
+        assert!(
+            !ray_hits(&col, DVec3::new(0.48, -1.0, 0.48), up),
+            "the corner is cut"
+        );
+        assert!(
+            ray_hits(&col, DVec3::new(0.0, -1.0, 0.0), up),
+            "its middle is solid"
+        );
+        // Somewhere its slant leaves it: across the cell at mid height, one half is open.
+        let across = DVec3::new(0.0, 0.0, 1.0);
+        let hits = [-0.3, 0.3].map(|x| ray_hits(&col, DVec3::new(x, 0.0, -1.0), across));
+        assert!(hits[0] != hits[1], "the slant cuts one side: {hits:?}");
+    }
+
     #[test]
     fn a_pieces_cells_merge_into_fewer_boxes_of_the_same_mass_and_extent() {
         // 2026-11-06: a box per cell made a 1.5 m sand column three colliders, each touching the

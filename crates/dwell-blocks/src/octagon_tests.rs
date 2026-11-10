@@ -1,5 +1,5 @@
 use super::*;
-use crate::{AIR, state};
+use crate::{AIR, info, state};
 
 const CELL: [f64; 3] = [1.0, 0.5, 1.0];
 
