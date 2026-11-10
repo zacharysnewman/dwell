@@ -138,10 +138,12 @@ pub struct Pool {
     focus: Option<[f64; 3]>,
 }
 
-/// Chunk jobs (generation, the ground items' base, meshing) within this distance (m) of the focus
-/// start before every other queued job of their kind, nearest first; the rest start in the order
-/// they were queued. BUGS #54: a long trip queued far chunks' and the LOD's jobs ahead of the
-/// chunks coming into the near ring, which waited behind them seconds at a time.
+/// Chunk generations (and the ground items' bases) within this distance (m) of the focus start
+/// before every other queued generation job, nearest first; chunk meshes (at most the streamer's
+/// mesher capacity, `MeshJobs::capacity`) start before the LOD's section meshes, nearest first; the
+/// rest start in the order they were queued. BUGS #54: on a long trip the chunks coming into the
+/// near ring waited seconds behind far chunks' and the LOD's jobs queued first, and the streamer's
+/// mesh slots were held by chunk meshes queued behind section meshes.
 pub const NEAR_JOBS_M: f64 = 128.0;
 
 pub type PoolRef = Rc<RefCell<Pool>>;
@@ -213,26 +215,27 @@ impl Pool {
         self.focus = Some(at);
     }
 
-    /// The queued job of `kind` to start next: the chunk job nearest the focus within
-    /// [`NEAR_JOBS_M`], else the oldest.
+    /// The queued job of `kind` to start next: the chunk mesh, or the chunk generation within
+    /// [`NEAR_JOBS_M`], nearest the focus, else the oldest.
     fn next_of(&mut self, kind: usize) -> Option<(u32, Job)> {
         let q = &self.queued[kind];
-        let near = self.focus.and_then(|f| {
+        let first = self.focus.and_then(|f| {
             q.iter()
                 .enumerate()
                 .filter_map(|(at, (id, _))| {
-                    let c = match self.purposes.get(id)?.0 {
-                        Purpose::Chunk(c, _) | Purpose::ChunkMesh(c, _) | Purpose::Base(c) => c,
+                    let (c, any_distance) = match self.purposes.get(id)?.0 {
+                        Purpose::ChunkMesh(c, _) => (c, true),
+                        Purpose::Chunk(c, _) | Purpose::Base(c) => (c, false),
                         _ => return None,
                     };
                     let m = dwell_world::chunk_centre_m(dwell_world::ChunkCoord::from_array(c));
                     let d: f64 = (0..3).map(|i| (m[i] - f[i]).powi(2)).sum();
-                    (d <= NEAR_JOBS_M * NEAR_JOBS_M).then_some((d, at))
+                    (any_distance || d <= NEAR_JOBS_M * NEAR_JOBS_M).then_some((d, at))
                 })
                 .min_by(|a, b| a.0.total_cmp(&b.0))
                 .map(|(_, at)| at)
         });
-        match near {
+        match first {
             Some(at) => self.queued[kind].remove(at),
             None => self.queued[kind].pop_front(),
         }

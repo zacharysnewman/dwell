@@ -2410,6 +2410,7 @@ fn trip(
     let mut waited: dwell_world::hash::HashMap<ChunkCoord, u32> = Default::default();
     let mut worst = (0, 0, ChunkCoord::new(0, 0, 0));
     let mut lines = Vec::new();
+    let mut first_loaded: dwell_world::hash::HashMap<ChunkCoord, u32> = Default::default();
     for t in 1..=60 * seconds {
         if let Some(v) = carry {
             let x = start[0] + v * f64::from(t) / 60.0;
@@ -2429,6 +2430,18 @@ fn trip(
         };
         let game = rig.game.as_ref().unwrap();
         let me = dwell_world::chunk_of(x, ground, z);
+        if std::env::var("TRIP_DEBUG").is_ok() {
+            for dx in -3..=3 {
+                for dz in -3..=3 {
+                    for dy in -1..=1 {
+                        let k = ChunkCoord::new(me.x + dx, me.y + dy, me.z + dz);
+                        if game.chunk_detail(k) != 2 {
+                            first_loaded.entry(k).or_insert(t);
+                        }
+                    }
+                }
+            }
+        }
         let ring: Vec<ChunkCoord> = (-1..=1)
             .flat_map(|dx| (-1..=1).map(move |dz| ChunkCoord::new(me.x + dx, me.y, me.z + dz)))
             .collect();
@@ -2451,7 +2464,12 @@ fn trip(
                     for o in 0..8 {
                         let k = [b[0] + (o & 1), b[1] + ((o >> 1) & 1), b[2] + ((o >> 2) & 1)];
                         if !game.chunk_drawable(k) {
-                            sib.push((k, game.chunk_detail(ChunkCoord::from_array(k))));
+                            sib.push((
+                                k,
+                                game.chunk_detail(ChunkCoord::from_array(k)),
+                                first_loaded.get(&ChunkCoord::from_array(k)).copied(),
+                                game.chunk_wait_reason(k),
+                            ));
                         }
                     }
                     eprintln!(

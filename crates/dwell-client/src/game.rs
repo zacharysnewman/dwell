@@ -1241,6 +1241,9 @@ impl<S: Scene> Game<S> {
         self.streamer.revision(c)
     }
     /// Loaded and meshed (or all air): drawable as full detail.
+    pub fn chunk_wait_reason(&self, c: Coord) -> &'static str {
+        self.streamer.wait_reason(c)
+    }
     pub fn chunk_drawable(&self, c: Coord) -> bool {
         self.streamer.drawable(c)
     }
