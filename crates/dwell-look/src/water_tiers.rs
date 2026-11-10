@@ -5,7 +5,7 @@
 //! reads the same JSON for the Water setting's choices.
 
 pub use crate::water_tiers_gen::{
-    BANK_BAND, CAUSTIC_EVERY_FRAMES, SURFACE_CAUSTICS, WATER_TIER_ALIASES, WATER_TIERS,
+    BANK_BAND, CAUSTIC_EVERY_FRAMES, HEIGHTFIELD, SURFACE_CAUSTICS, WATER_TIER_ALIASES, WATER_TIERS,
 };
 
 /// One water quality tier.
@@ -32,6 +32,16 @@ pub struct WaterTier {
     pub flow_streaks: bool,
     /// The bank band where the land isn't marched.
     pub bank_band: bool,
+    /// The near water's surface is drawn from the GPU heightfield (proposals/WATER_GPU_SURFACE.md
+    /// §3), not meshed from blocks.
+    pub heightfield: bool,
+}
+
+/// The GPU heightfield's tunables (`heightfield` tiers).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Heightfield {
+    /// A grid corner takes the mean of the wet columns around it within this of the highest (m).
+    pub join_m: f64,
 }
 
 /// The bank band: the land reflected along the water's edge without a march.

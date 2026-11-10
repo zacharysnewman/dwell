@@ -58,6 +58,9 @@ test('bad entries fail with their path named', () => {
     [(d) => (d.band.darken = 2), /band\.darken must be a number in \[0, 1\]/],
     [(d) => (d.causticEveryFrames = 0), /causticEveryFrames must be a number in \[1, 8\]/],
     [(d) => (d.tiers = []), /tiers must be a non-empty list/],
+    [(d) => (d.tiers[0].heightfield = true), /heightfield: the CPU adapter's tier draws the meshed water/],
+    [(d) => (d.heightfield.joinM = 0), /heightfield\.joinM must be a number in \[0\.01, 2\]/],
+    [(d) => delete d.tiers[1].heightfield, /missing entry tiers\[1\]\.heightfield/],
   ];
   for (const [edit, message] of cases) {
     const d = data();

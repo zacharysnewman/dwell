@@ -15,6 +15,7 @@ pub const WATER_TIERS: &[WaterTier] = &[
         ripple_layers: 1,
         flow_streaks: false,
         bank_band: false,
+        heightfield: false,
     },
     WaterTier {
         id: "low",
@@ -27,6 +28,7 @@ pub const WATER_TIERS: &[WaterTier] = &[
         ripple_layers: 1,
         flow_streaks: false,
         bank_band: false,
+        heightfield: false,
     },
     WaterTier {
         id: "medium",
@@ -39,6 +41,7 @@ pub const WATER_TIERS: &[WaterTier] = &[
         ripple_layers: 3,
         flow_streaks: true,
         bank_band: false,
+        heightfield: false,
     },
 ];
 
@@ -63,3 +66,8 @@ pub const SURFACE_CAUSTICS: SurfaceCaustics = SurfaceCaustics {
 
 /// The caustic tile is redrawn every this many frames.
 pub const CAUSTIC_EVERY_FRAMES: u32 = 2;
+
+/// The GPU heightfield (`heightfield` tiers).
+pub const HEIGHTFIELD: Heightfield = Heightfield {
+    join_m: 0.2,
+};
