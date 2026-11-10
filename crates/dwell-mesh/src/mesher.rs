@@ -108,6 +108,9 @@ pub struct ChunkMeshes {
     /// Cutout materials (ladders, plants): alpha-tested, depth-writing, drawn from both sides,
     /// with the `plants` stream.
     pub cutout: MeshArrays,
+    /// The water's surface tile for the GPU heightfield (`crate::heightfield`), when meshed
+    /// without liquid tops ([`ChunkFlags::water_tops`] false) and some column is wet.
+    pub water: Option<crate::heightfield::WaterTile>,
 }
 
 /// Face index → (axis, sign): 0 +X, 1 −X, 2 +Y, 3 −Y, 4 +Z, 5 −Z.
@@ -1614,6 +1617,7 @@ pub(crate) fn mesh_chunk_full(
             opaque: flip_arrays_y(m.opaque),
             transparent: flip_arrays_y(m.transparent),
             cutout: flip_arrays_y(m.cutout),
+            water: None,
         }
     } else {
         let carved = cuts
@@ -1625,10 +1629,14 @@ pub(crate) fn mesh_chunk_full(
         ground_mesh::append(&mut m.opaque, kinds, &flood, &items, origin, false);
         m
     };
+    let water = (!flags.water_tops)
+        .then(|| crate::heightfield::tile_with(kinds, &inner, mirror))
+        .flatten();
     Ok(ChunkMeshes {
         opaque: to_metres(m.opaque),
         transparent: to_metres(m.transparent),
         cutout: to_metres(m.cutout),
+        water,
     })
 }
 
@@ -1961,6 +1969,7 @@ fn mesh_cells(
         opaque: opaque.m,
         transparent: transparent.m,
         cutout: cutout.m,
+        water: None,
     }
 }
 
@@ -1974,7 +1983,7 @@ mod tests;
 /// the chunk whose top shows (the mesher's drawn surface: `fill` and `surface_drop`), or
 /// [`crate::heightfield::DRY`] where none does (no liquid, the water going on up into the chunk
 /// above, or a solid or flooded block over it). A face-B chunk (`mirror`) is read face-local.
-pub(crate) fn water_levels_with(kinds: &Kinds, padded: &[u16], mirror: bool) -> Vec<f32> {
+pub(crate) fn water_levels_with(kinds: &Kinds, padded: &[u16], mirror: bool) -> (Vec<f32>, f32) {
     let local;
     let padded = if mirror {
         local = mirror_padded(padded);
@@ -1984,6 +1993,7 @@ pub(crate) fn water_levels_with(kinds: &Kinds, padded: &[u16], mirror: bool) -> 
     };
     let at = |x: i32, y: i32, z: i32| padded.get(padded_index(x, y, z)).copied().unwrap_or(0);
     let mut out = vec![crate::heightfield::DRY; PAD * PAD];
+    let mut fluid = crate::NO_FLUID;
     for z in -1..=N {
         for x in -1..=N {
             for y in (0..N).rev() {
@@ -1996,10 +2006,13 @@ pub(crate) fn water_levels_with(kinds: &Kinds, padded: &[u16], mirror: bool) -> 
                 if shows {
                     let top = fluid_top(y, &k.style, k.fill) * CELL_H;
                     out[(x + 1) as usize + PAD * (z + 1) as usize] = top as f32;
+                    if fluid == crate::NO_FLUID && in_chunk([x, 0, z]) {
+                        fluid = fluid_value(k.style.fluid);
+                    }
                 }
                 break;
             }
         }
     }
-    out
+    (out, fluid)
 }
