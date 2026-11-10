@@ -32,6 +32,9 @@ use dwell_world::{CELL_H, SKY_APRON, SKY_EXTENT, SKY_VOLUME, normal_to_m};
 
 const N: i32 = CHUNK_SIZE;
 
+mod ground_mesh;
+pub use ground_mesh::{GroundJob, scatter as ground_scatter};
+
 /// Edge of the padded voxel block: the chunk plus one voxel on each side.
 pub const PAD: usize = CHUNK_SIZE as usize + 2;
 pub const PADDED_VOLUME: usize = PAD * PAD * PAD;
@@ -1462,7 +1465,20 @@ pub fn mesh_chunk_cut(
     origin: [i32; 3],
     cuts: &[([i32; 3], Cut)],
 ) -> Result<ChunkMeshes, LengthError> {
-    mesh_chunk_full(Kinds::build(), padded, light, mirror, origin, cuts)
+    mesh_chunk_full(Kinds::build(), padded, light, mirror, origin, cuts, None)
+}
+
+/// [`mesh_chunk_cut`] with the chunk's ground items (docs/adr/0071-ground-items.md) baked into its
+/// opaque mesh: scattered from `padded` (a sky volume) by `ground`'s seed, less its gone cells.
+pub fn mesh_chunk_ground(
+    padded: &[u16],
+    light: &[u8],
+    mirror: bool,
+    origin: [i32; 3],
+    cuts: &[([i32; 3], Cut)],
+    ground: Option<&GroundJob>,
+) -> Result<ChunkMeshes, LengthError> {
+    mesh_chunk_full(Kinds::build(), padded, light, mirror, origin, cuts, ground)
 }
 
 /// [`mesh_chunk_at`] over the registry `kinds` describes.
@@ -1474,7 +1490,7 @@ pub(crate) fn mesh_chunk_with(
     mirror: bool,
     origin: [i32; 3],
 ) -> Result<ChunkMeshes, LengthError> {
-    mesh_chunk_full(kinds, padded, light, mirror, origin, &[])
+    mesh_chunk_full(kinds, padded, light, mirror, origin, &[], None)
 }
 
 /// [`mesh_chunk_cut`] over the registry `kinds` describes.
@@ -1485,7 +1501,9 @@ pub(crate) fn mesh_chunk_full(
     mirror: bool,
     origin: [i32; 3],
     cuts: &[([i32; 3], Cut)],
+    ground: Option<&GroundJob>,
 ) -> Result<ChunkMeshes, LengthError> {
+    let items = ground.map_or(Vec::new(), |g| ground_mesh::scatter(padded, origin, g));
     // The one-voxel apron, or the sky volume's deeper one (the client's jobs): the faces are
     // meshed from the one-voxel block inside it, the ambient light from all of it.
     let (inner, ext, apron) = match padded.len() {
@@ -1518,7 +1536,8 @@ pub(crate) fn mesh_chunk_full(
                 (at, carve::mirror_cut(grain, cut))
             })
             .collect();
-        let m = mesh_cells(kinds, &mirror_padded(&inner), &occ, &flood, local, &carved);
+        let mut m = mesh_cells(kinds, &mirror_padded(&inner), &occ, &flood, local, &carved);
+        ground_mesh::append(&mut m.opaque, kinds, &flood, &items, origin, true);
         ChunkMeshes {
             opaque: flip_arrays_y(m.opaque),
             transparent: flip_arrays_y(m.transparent),
@@ -1530,7 +1549,9 @@ pub(crate) fn mesh_chunk_full(
             .filter(|(c, _)| in_chunk(*c))
             .map(|(c, cut)| (*c, *cut))
             .collect();
-        mesh_cells(kinds, &inner, &occ, &flood, origin, &carved)
+        let mut m = mesh_cells(kinds, &inner, &occ, &flood, origin, &carved);
+        ground_mesh::append(&mut m.opaque, kinds, &flood, &items, origin, false);
+        m
     };
     Ok(ChunkMeshes {
         opaque: to_metres(m.opaque),

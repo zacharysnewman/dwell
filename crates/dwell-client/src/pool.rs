@@ -282,6 +282,7 @@ impl Mesher for MeshJobs {
                 mirror: job.mirror,
                 origin: job.coord.map(|c| c * dwell_world::CHUNK_SIZE),
                 cuts: job.cuts,
+                ground: job.ground,
             },
         );
     }

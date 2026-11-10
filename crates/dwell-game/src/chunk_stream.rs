@@ -304,6 +304,9 @@ pub struct MeshJob {
     pub mirror: bool,
     /// Its cut wood cells (ADR 0067 §11), chunk-local and world-oriented: meshed carved.
     pub cuts: Vec<([i32; 3], dwell_protocol::chopping::Cut)>,
+    /// Its ground items (docs/adr/0071-ground-items.md): the world seed and its gone cells,
+    /// chunk-local; none: the server keeps no ground items, none are drawn.
+    pub ground: Option<(u64, Vec<[i32; 3]>)>,
 }
 
 /// The meshing workers.
@@ -531,6 +534,8 @@ pub struct ChunkStreamer<S, G, M: Mesher, V> {
     hidden: HashSet<[i32; 3]>,
     /// The server's cuts on wood cells (`set_cut`, ADR 0067 §11), by world cell: meshed carved.
     cuts: HashMap<[i32; 3], dwell_protocol::chopping::Cut>,
+    /// The ground items (ADR 0071): the world seed and the gone cells, once the server keeps them.
+    ground: Option<(u64, dwell_world::ground::GroundGone)>,
     /// Chunks whose mesh job in flight began before a cell in them was hidden or shown: its result
     /// is dropped (the chunk is dirty again).
     stale: HashSet<Coord>,
@@ -581,6 +586,7 @@ where
             second: None,
             hidden: HashSet::default(),
             cuts: HashMap::default(),
+            ground: None,
             stale: HashSet::default(),
             error: None,
         }
@@ -889,7 +895,12 @@ where
             let padded = mask_hidden(&self.hidden, c, self.store.mesh_block(c));
             let light = self.store.mesh_light(c);
             let cuts = self.cuts_in(c);
+            let ground = self
+                .ground
+                .as_ref()
+                .map(|(seed, gone)| (*seed, gone.in_chunk(c)));
             self.mesher.mesh(MeshJob {
+                ground,
                 coord: c,
                 token: self.token,
                 padded,
@@ -934,6 +945,53 @@ where
             return;
         }
         let k = cell.map(|v| v.div_euclid(CHUNK_SIZE));
+        if self.loaded.contains_key(&k) && !self.air.contains(&k) {
+            self.dirty.mark(k);
+            if self.meshing.contains_key(&k) {
+                self.stale.insert(k);
+            }
+        }
+    }
+
+    /// Draws the ground items scattered from `seed` (ADR 0071; the server keeps them): every
+    /// chunk is meshed again with them.
+    pub fn set_ground(&mut self, seed: u64) {
+        if self.ground.as_ref().is_some_and(|(s, _)| *s == seed) {
+            return;
+        }
+        let gone = self.ground.take().map(|(_, g)| g).unwrap_or_default();
+        self.ground = Some((seed, gone));
+        let all: Vec<Coord> = self.loaded.keys().copied().collect();
+        for k in all {
+            self.remesh(k);
+        }
+    }
+
+    /// The ground items' seed and gone cells (none: not drawn).
+    pub fn ground(&self) -> Option<&(u64, dwell_world::ground::GroundGone)> {
+        self.ground.as_ref()
+    }
+
+    /// Ground items gone (the server's `GroundGone`): their chunks are meshed again without them.
+    pub fn ground_gone(&mut self, cells: &[[i32; 3]]) {
+        let Some((_, gone)) = &mut self.ground else {
+            return;
+        };
+        let mut chunks = Vec::new();
+        for &c in cells {
+            if gone.cells.insert(c) {
+                chunks.push(c.map(|v| v.div_euclid(CHUNK_SIZE)));
+            }
+        }
+        chunks.sort_unstable();
+        chunks.dedup();
+        for k in chunks {
+            self.remesh(k);
+        }
+    }
+
+    /// Chunk `k` is meshed again (a job in flight for it is superseded).
+    fn remesh(&mut self, k: Coord) {
         if self.loaded.contains_key(&k) && !self.air.contains(&k) {
             self.dirty.mark(k);
             if self.meshing.contains_key(&k) {

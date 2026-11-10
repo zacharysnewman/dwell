@@ -1167,7 +1167,10 @@ impl Client {
                     }
                 }
                 A::Spyglass => {
-                    if let Some(g) = s.game.as_mut() {
+                    // On a ground item, its button picks it up instead (ADR 0071: X).
+                    if let Some(g) = s.game.as_mut()
+                        && !g.pick_ground()
+                    {
                         g.spyglass.toggle(&dwell_look::spyglass::SPYGLASS);
                         g.sound(dwell_game::sound::SoundKind::Tool);
                     }
@@ -1477,6 +1480,22 @@ impl Client {
             let slot = g.select_hotbar(i64::from(slot));
             s.shell_events.push(shell_event("slot", slot as u32));
         }
+    }
+    /// E (ADR 0071): picks up the ground item under the crosshair; false when there is none (E
+    /// then opens the backpack as before).
+    #[wasm_bindgen(js_name = pickUp)]
+    pub fn pick_up(&self) -> bool {
+        self.inner
+            .borrow_mut()
+            .game
+            .as_mut()
+            .is_some_and(|g| g.pick_ground())
+    }
+    /// The ground item under the crosshair's label ("Stick"), for the pick-up prompt, or none.
+    #[wasm_bindgen(js_name = groundPrompt)]
+    pub fn ground_prompt(&self) -> Option<String> {
+        let s = self.inner.borrow();
+        s.game.as_ref()?.ground_prompt().map(str::to_owned)
     }
     /// Moves items between inventory slots (the backpack screen; ADR 0066): `count` 0 moves all.
     #[wasm_bindgen(js_name = moveItems)]
@@ -2042,6 +2061,12 @@ impl Client {
                 &o,
                 "chop",
                 g.chop_hint().map_or(JsValue::NULL, JsValue::from),
+            );
+            // The ground item under the crosshair (ADR 0071): its label for the pick-up prompt.
+            set(
+                &o,
+                "pickUp",
+                g.ground_prompt().map_or(JsValue::NULL, JsValue::from),
             );
             // The swing's line through the crosshair (`level`, `vertical`; null: no tool held).
             set(

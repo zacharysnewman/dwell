@@ -533,6 +533,12 @@ pub struct Game<S: Scene> {
     /// The inventory and loose items the server sent (ADR 0066), and the hotbar slot held when
     /// the world uses items.
     pub loose: crate::loose_items::LooseItems,
+    /// The world seed (Welcome), the ground items' scatter's (ADR 0071).
+    world_seed: u64,
+    /// The server keeps ground items and was told this client draws them (`GroundHello`).
+    ground_on: bool,
+    /// The ground item under the crosshair (ADR 0071): E or X picks it up.
+    pub ground_target: Option<dwell_world::ground::Placed>,
     /// The held axe's swing and the server's cuts (ADR 0067).
     pub chop: crate::chop::Chopping,
     /// The axe's chips in flight (crate::chips; draw-only).
@@ -845,6 +851,9 @@ impl<S: Scene> Game<S> {
             bodies: Bodies::default(),
             held_sent: None,
             loose: Default::default(),
+            world_seed: 0,
+            ground_on: false,
+            ground_target: None,
             chop: Default::default(),
             chips: Default::default(),
             inventory_slot: 0,
@@ -1418,10 +1427,23 @@ impl<S: Scene> Game<S> {
             }
             Message::Inventory(i) => {
                 let uses = i.flags & dwell_protocol::inventory_flags::USES_ITEMS != 0;
+                // The server keeps ground items (ADR 0071): say so once, and draw them.
+                if i.flags & dwell_protocol::inventory_flags::GROUND != 0 && !self.ground_on {
+                    self.ground_on = true;
+                    self.outbox
+                        .borrow_mut()
+                        .push(Send::Control(Message::InventoryAction(
+                            dwell_protocol::InventoryAction::GroundHello,
+                        )));
+                    self.streamer.set_ground(self.world_seed);
+                }
                 self.loose.inventory = Some((uses, i.inventory));
                 if uses {
                     self.select_inventory_slot(self.inventory_slot);
                 }
+            }
+            Message::GroundGone(cells) => {
+                self.streamer.ground_gone(&cells);
             }
             Message::ItemDrops(d) => {
                 let changed = self.loose.apply(d);
@@ -2084,6 +2106,7 @@ impl<S: Scene> Game<S> {
     /// and seed the server announced, for the motes drawn in their shafts.
     pub fn set_world(&mut self, generator_version: u32, world_seed: u64) {
         self.portals = dwell_worldgen::portal_axes_for(generator_version, world_seed);
+        self.world_seed = world_seed;
     }
 
     /// What the server announced it takes (Welcome flags, and the world's game mode when the host
@@ -3535,6 +3558,7 @@ impl<S: Scene> Game<S> {
         self.target_eye = eye;
         let dir = view_direction(input.look.yaw, input.look.pitch, face);
         self.view_dir = dir;
+        self.ground_target = eye.and_then(|e| self.ground_under_crosshair(e, dir));
         // A moving body's cell nearer than the block aimed at (docs/BUILT_BODIES.md §4).
         self.body_target = eye.filter(|_| !self.brush.active()).and_then(|e| {
             let (o, d) = (DVec3::from(e), DVec3::from(dir));
@@ -3840,6 +3864,51 @@ impl<S: Scene> Game<S> {
         }
         (step != 0)
             .then(|| self.select_hotbar(self.inventory_slot as i64 + i64::from(step.signum())))
+    }
+
+    /// The ground item a ray from `eye` along `dir` meets within reach (ADR 0071), if the server
+    /// keeps them.
+    fn ground_under_crosshair(
+        &self,
+        eye: [f64; 3],
+        dir: [f64; 3],
+    ) -> Option<dwell_world::ground::Placed> {
+        let (seed, gone) = self.streamer.ground()?;
+        let world = self.streamer.store();
+        let mut get = |c: [i32; 3]| {
+            world.find(dwell_world::chunk_of(c[0], c[1], c[2]))?;
+            Some(world.get_voxel_if_loaded(c))
+        };
+        dwell_world::ground::Rules::shipped().target(
+            &mut get,
+            *seed,
+            eye,
+            dir,
+            f64::from(players::REACH_DISTANCE),
+            &gone.cells,
+        )
+    }
+
+    /// E or X (ADR 0071): picks up the ground item under the crosshair (the server decides);
+    /// false when there is none, and the key does what it did before.
+    pub fn pick_ground(&mut self) -> bool {
+        let Some(it) = self.ground_target else {
+            return false;
+        };
+        self.outbox
+            .borrow_mut()
+            .push(Send::Control(Message::InventoryAction(
+                dwell_protocol::InventoryAction::Pick { cell: it.cell },
+            )));
+        self.sound(dwell_game::sound::SoundKind::Tool);
+        true
+    }
+
+    /// The label of the ground item under the crosshair ("Stick"), for the pick-up prompt.
+    pub fn ground_prompt(&self) -> Option<&'static str> {
+        let it = self.ground_target?;
+        let k = dwell_world::ground::Rules::shipped().kind(it.kind).copied()?;
+        dwell_protocol::inventory::item(k.item).map(|d| d.label)
     }
 
     /// Moves items between inventory slots (the backpack screen's drag): the server decides.

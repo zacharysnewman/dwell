@@ -219,6 +219,7 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
             mirror,
             origin,
             cuts,
+            ground,
         } => {
             w.u8(4);
             w.u8(u8::from(*mirror));
@@ -235,6 +236,15 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
                     .copied()
                     .collect();
                 w.f32s(&f);
+            }
+            match ground {
+                None => w.u8(0),
+                Some((seed, gone)) => {
+                    w.u8(1);
+                    w.u64(*seed);
+                    w.u32(gone.len() as u32);
+                    gone.iter().flatten().for_each(|v| w.i32(*v));
+                }
             }
         }
         Job::MeshSection {
@@ -319,12 +329,26 @@ pub fn decode_job(bytes: &[u8]) -> Result<(u32, Job), DecodeError> {
                 }
                 cuts.push((c, cut));
             }
+            let ground = match r.u8()? {
+                0 => None,
+                1 => {
+                    let seed = r.u64()?;
+                    let n = r.u32()? as usize;
+                    let mut gone = Vec::with_capacity(n.min(4096));
+                    for _ in 0..n {
+                        gone.push([r.i32()?, r.i32()?, r.i32()?]);
+                    }
+                    Some((seed, gone))
+                }
+                _ => return Err(DecodeError),
+            };
             Job::MeshChunk {
                 mirror,
                 origin,
                 padded,
                 light,
                 cuts,
+                ground,
             }
         }
         5 => {
@@ -528,6 +552,7 @@ mod tests {
                 c.kerf[2][1] = 0.04;
                 c
             })],
+            ground: Some((0x1234_5678_9abc, vec![[1, 2, 3], [4, 5, 6]])),
         });
         jobs.push(Job::MeshSection {
             cells: vec![1; dwell_world::lod::VOLUME],
@@ -562,6 +587,7 @@ mod tests {
                 mirror: false,
                 origin: [0; 3],
                 cuts: Vec::new(),
+                ground: Some((7, vec![[1, 2, 3]])),
             },
         );
         for n in 0..bytes.len() {

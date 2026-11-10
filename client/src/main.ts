@@ -639,6 +639,7 @@ function showHud(app: App, now: number): void {
     /** The held axe's swing hint (ADR 0067), else null. */
     chop?: string | null;
     swing?: 'level' | 'vertical' | null;
+    pickUp?: string | null;
     brush?: BrushPanelState | null;
     spyglass?: SpyglassHud | null;
     loading?: LoadingHud | null;
@@ -655,6 +656,7 @@ function showHud(app: App, now: number): void {
   app.hud.setStatus(h.status ?? '');
   app.hotbar?.setRegion(h.chop || h.region || '');
   app.hud.setSwing(h.swing ?? null);
+  app.hud.setPickUp(h.pickUp ?? null);
   app.hotbar?.setBrush(h.brush ?? null);
   app.hotbar?.setInventory(h.inventory ?? null, itemPicture);
   app.backpack?.set(h.inventory ?? null);
@@ -1246,6 +1248,12 @@ function play(app: App, joined: Extract<SessionReport, { phase: 'joined' }>): vo
     (e) => {
       const b = app.backpack;
       if (!b || !app.playing) return;
+      // E on a ground item picks it up (ADR 0071); otherwise it opens the backpack as before.
+      if (e.code === 'KeyE' && !e.repeat && !b.open && document.pointerLockElement && app.client.pickUp()) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       const toggle = e.code === 'KeyE' && !e.repeat && b.usable;
       if (!toggle && !(e.code === 'Escape' && b.open)) return;
       b.open = !b.open;
