@@ -1,10 +1,11 @@
 // Touch controls for phones and tablets (iOS Safari, Android, Capacitor): a floating joystick on the
 // left half of the screen, drag-to-look on the right half, and Break/Place, build mode, Fly, Run,
-// Crouch and Jump buttons. The DOM is here; what the pointers mean (stick deflection, taps, latched buttons)
+// Crouch and Jump buttons, and a Pick up button under the crosshair while it is on a ground item. The DOM is here; what the pointers mean (stick deflection, taps, latched buttons)
 // is the Rust client's (dwell-game's touch.rs), which these elements forward their events to.
 import { audio } from '../audio/engine';
 import type { Client } from '../engine/wasm';
 import { BUILD_MODES } from './buildModes.gen';
+import { pickUpButton } from './hud';
 
 /** The on-screen buttons (touch.rs `TouchButton`), left to right; `debug` sits top right. */
 const BUTTONS = [
@@ -28,6 +29,8 @@ export class TouchControls {
   private readonly stickKnob: HTMLDivElement;
   private readonly flyButton: HTMLButtonElement;
   private readonly buildButton: HTMLButtonElement;
+  /** Shown under the crosshair while it is on a ground item: a tap picks it up (ADR 0071). */
+  private readonly pickButton: HTMLButtonElement;
 
   constructor(
     parent: HTMLElement,
@@ -55,7 +58,15 @@ export class TouchControls {
     buttons.append(...made);
     const debug = this.button('debug', 'i', 'touch-debug');
     debug.setAttribute('aria-label', 'Debug overlay');
-    this.root.append(moveZone, lookZone, this.stickBase, buttons, debug);
+    this.pickButton = document.createElement('button');
+    this.pickButton.type = 'button';
+    this.pickButton.id = 'touch-pick';
+    this.pickButton.hidden = true;
+    this.pickButton.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      client.pickUp();
+    });
+    this.root.append(moveZone, lookZone, this.stickBase, buttons, debug, this.pickButton);
     parent.append(this.root);
 
     moveZone.addEventListener('pointerdown', (e) => {
@@ -100,6 +111,18 @@ export class TouchControls {
 
   set visible(v: boolean) {
     this.root.hidden = !v;
+  }
+
+  /** Whether the touch controls are on screen (a phone, or a tablet touched). */
+  get shown(): boolean {
+    return !this.root.hidden;
+  }
+
+  /** The ground item the crosshair is on (its name), or null: shows or hides the pick-up button. */
+  setPickUp(label: string | null): void {
+    const text = pickUpButton(label);
+    this.pickButton.hidden = text === null;
+    if (text !== null && this.pickButton.textContent !== text) this.pickButton.textContent = text;
   }
 
   /** The build mode's label on its button (a `buildMode` event). */
