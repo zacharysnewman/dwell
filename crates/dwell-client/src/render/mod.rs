@@ -5255,6 +5255,9 @@ impl crate::game::Scene for Renderer {
     fn set_player(&mut self, id: u32, view: Option<PlayerView>) {
         Renderer::set_player(self, id, view);
     }
+    fn set_creatures(&mut self, creatures: Vec<(crate::creatures::CreatureView, [f32; 2])>) {
+        self.characters.creatures = creatures;
+    }
     fn set_arms(&mut self, arms: Option<ArmsView>) {
         Renderer::set_arms(self, arms);
     }

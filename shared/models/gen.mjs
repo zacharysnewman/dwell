@@ -171,6 +171,12 @@ export function rust(data, models, glbRoot) {
       ? `pub static PLAYER_GLB: &[u8] = include_bytes!(${JSON.stringify(`${glbRoot}/${player.glb}`)});`
       : "pub static PLAYER_GLB: &[u8] = &[];",
   );
+  // Every model's GLB, built in (ADR 0073: the creatures' models are drawn in the world).
+  lines.push(
+    `pub static GLBS: &[(&str, &[u8])] = &[${Object.entries(models)
+      .map(([name, m]) => `(${JSON.stringify(name)}, include_bytes!(${JSON.stringify(`${glbRoot}/${m.glb}`)}))`)
+      .join(", ")}];`,
+  );
   lines.push("pub static MODELS: &[ModelData] = &[");
   for (const [name, m] of Object.entries(models)) {
     const roles = Object.entries(m.roles)
