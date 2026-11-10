@@ -332,15 +332,19 @@ mod tests {
             let ground = dwell_world::FLAT_TOP_Y + 20;
             let eye = dwell_world::m_of_row(ground) + 1.6;
             let n = tile_cells(&MAP);
-            let cell = MAP.big_map_levels[1].0 as i32;
-            assert_eq!(cell, 2);
-            assert!(is_live(cell, &MAP));
+            // A fixture map by data alone (the shipped one's coarse levels are never live): a
+            // 2 m level read from the terrain.
+            let mut t = MAP;
+            t.big_map_levels = &[(1.0, 128.0), (2.0, 512.0), (256.0, 100_000.0)];
+            t.revealed_live_max_cell_m = 2.0;
+            let cell = t.big_map_levels[1].0 as i32;
+            assert!(is_live(cell, &t));
             let mut w = loaded_floor(f, ground, n * cell);
             let sand = dwell_blocks::parse_state("dwell:sand").expect("sand");
             // Cell (3, 4) of 2 m is columns 6–7 × 8–9; its centre column (7, 9) is the one read.
             let [x, y, z] = f.cell([7, ground, 9]);
             w.set_voxel(x, y, z, sand);
-            let tile = live_tile(&w, f, 0, 0, cell, eye, &MAP).expect("loaded ground");
+            let tile = live_tile(&w, f, 0, 0, cell, eye, &t).expect("loaded ground");
             assert_eq!(rgb(&tile, n, 3, 4), Some(lod_rgb(sand)));
             assert_ne!(rgb(&tile, n, 3, 3), rgb(&tile, n, 3, 4));
             // The whole tile covers n × 2 m: its far corner is still the floor.

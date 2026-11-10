@@ -35,11 +35,9 @@ export const MAP = {
   },
   bigMap: {
     levels: [
-      { cellM: 1, spanM: 128 },
-      { cellM: 2, spanM: 677 },
-      { cellM: 16, spanM: 3578 },
-      { cellM: 64, spanM: 18915 },
-      { cellM: 256, spanM: 100000 },
+      { cellM: 1, spanM: 128, reach: 'player' },
+      { cellM: 16, spanM: 3578, reach: 'island' },
+      { cellM: 256, spanM: 100000, reach: 'disc' },
     ],
     startLevel: 1,
     wheelStepPx: 100,
@@ -66,7 +64,7 @@ export const MAP = {
     prebuildSpans: 2.5,
     budgetMs: 2,
     redrawMs: 150,
-    liveMaxCellM: 2,
+    liveMaxCellM: 1,
     liveTilesPerFrame: 2,
     liveRefreshMs: 2000,
   },

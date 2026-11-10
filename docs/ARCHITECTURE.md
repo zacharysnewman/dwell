@@ -588,10 +588,10 @@ of anything (`RevealCache.feedMinimap`); loaded columns override them. The clien
 On screen), the dots, and the big map (M, a tap or the controller's View; M, Esc, B or its ✕ closes):
 **[built, 0.50.48]** a framed panel over the game (`bigMap.panelFraction` of the screen, nearly full
 screen inside the safe area on a phone, bigger buttons there) with a title bar, + / − zoom buttons
-(stepping between **[built, 0.50.61] five fixed zoom levels**, `bigMap.levels`: the closest the
+(stepping between **[built, 0.52.13] three fixed zoom levels**, `bigMap.levels` (five from 0.50.61 to 0.52.12): the closest the
 minimap's area at 1 m a cell, the widest **[built, 0.50.63]** the whole world disc centred
 (`worldRadius` × 2 across the panel's short side, at any aspect, its sea included), geometric between,
-each its own cell size: 1, 2, 16, 64, 256 m), "Center on me", a scale bar (1, 2 or 5 × 10ⁿ m), drag to pan with a grab
+each its own cell size: 1, 16, 256 m), "Center on me", a scale bar (1, 2 or 5 × 10ⁿ m), drag to pan with a grab
 cursor, scroll, pinch or + / − to step a level about the pointer, and the controller (stick and D-pad pan,
 a trigger or bumper press steps a level, Y centres; `bigMap.pad*`, button names from `shared/input/gamepad.json`); the
 game holds still while it is open (`setMenuOpen`). Its state and controls are a page-free
@@ -617,19 +617,26 @@ is drawn, while the map is open, from the loaded chunks as the minimap reads the
 top block, builds and edits included), at most `revealed.liveTilesPerFrame` tiles a frame and each again
 every `revealed.liveRefreshMs` (`RevealCache.pumpLive`), kept in memory only; cells not loaded (or whose
 top lies under a chunk not yet streamed) show the generator's tile below. ADR 0068's 0.50.76 amendment.
-**[built, 0.52.10] The open map keeps building** (owner, 2026-11-10): while the big map is open and its
-view's tiles are in, `RevealCache.pump` builds every level's tiles round the view's centre (the open
-level first, then the finer and coarser ones) and then round the player, up to `revealed.jobsInFlight`
-at once, until none in range is left; a quiet count of the tiles still to build shows in the panel's
-bottom-right corner (`.map-progress`). With the map shut the background runs round the player at
-`revealed.backgroundJobs` as before. ADR 0068's 0.52.10 amendment.
+**[built, 0.52.13] Three levels, the coarse ones built whole** (owner, 2026-11-10: "Maybe we just have 3
+zoom levels. The two coarse ones load along with the area around you in 1m. The 1m is always streamed"):
+each level's `reach` (data) says where the background builds it, map open or shut: the 1 m level
+(`player`) within `prebuildSpans` of its span round the player (from the loaded terrain while the map
+is open, the generator's tiles below), the 16 m level (`island`, ~7 500 tiles) every tile touching the
+island (`islandRadius`), the 256 m level (`disc`, ~120 tiles) every tile touching the world disc. The
+open view's tiles are asked for before anything; then `RevealCache.pump` builds the player level, then
+the coarse levels coarsest first, each nearest the open view's centre (else the player) first, listed
+again when that centre moves four of the level's tiles; up to `revealed.jobsInFlight` at once while
+the map is open, `revealed.backgroundJobs` while it is shut, passing over at most 4 096 kept tiles a
+frame. The count left needs no scan (each coarse level's reach total less its kept tiles); a quiet
+"Mapping · N tiles" count shows in the panel's bottom-right corner (`.map-progress`) while any are left.
+ADR 0068's 0.52.13 amendment (replacing 0.52.10's every-level build round the view).
 
 **[built, 0.50.46; per level and kept, 0.50.61] The big map's tiles** (owner, 2026-11-08: "big map should be fully explored on
 creative"; 2026-11-09: built "only once", "invisibly"): every level's ground comes from the generator, a
 tile at the level's cell size at a time (`requestReveal(face, ti, tk, cellM)`), kept per world and compatibility line (0.50.75: a new patch reuses them) in
 IndexedDB `dwell-map-tiles` (append-only, a tile written once) and built in the **background**
-(`revealed.backgroundJobs` at a time, each level within `prebuildSpans` of its span round the player,
-the widest the whole world disc, once the kept tiles are read; every level's tiles clipped to the world
+(`revealed.backgroundJobs` at a time, each level by its `reach`: the 1 m round the player, the 16 m the
+whole island, the 256 m the whole world disc, once the kept tiles are read; every level's tiles clipped to the world
 disc only, the sea's built too, so no holes inside the world; off the disc the panel shows `fogColor`), so opening or zooming the map waits for
 nothing and a return to the world builds nothing; adventure fogs every level by the explored cells
 (`ExploredLevels`), which draw their own colours at 8 m and coarser. In a mode with the `mapRevealed` ability (creative; `mapRevealed()`) nothing is fogged.
