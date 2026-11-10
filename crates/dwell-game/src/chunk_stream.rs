@@ -852,29 +852,6 @@ where
         self.drawn_revision
     }
 
-    /// DEBUG (bug 54): why a chunk is not drawn.
-    pub fn wait_reason(&self, c: Coord) -> &'static str {
-        if !self.loaded.contains_key(&c) {
-            if self.generating.contains_key(&c) { "generating" } else { "absent" }
-        } else if self.meshing.contains_key(&c) {
-            "meshing"
-        } else if self.unlit_set.contains(&c) {
-            "unlit"
-        } else if self.dirty.contains(&c) {
-            if NEIGHBOURS.iter().any(|d| self.generating.contains_key(&add(c, *d))) {
-                "dirty-gen"
-            } else if NEIGHBOURS.iter().any(|d| self.unlit_set.contains(&add(c, *d))) {
-                "dirty-unlit"
-            } else {
-                "dirty"
-            }
-        } else if self.meshed.contains(&c) {
-            "meshed"
-        } else {
-            "loaded"
-        }
-    }
-
     pub fn drawable(&self, coord: Coord) -> bool {
         self.loaded.contains_key(&coord)
             && (self.air.contains(&coord) || self.meshed.contains(&coord))

@@ -57,6 +57,22 @@ and ~90 generations were queued — the pool's generation queue is FIFO (`pool.r
 meshed while a neighbour is still being generated, so lead (1) remains the suspect. Next: the long trip
 over terrain on a fixed path (teleport along a line, or a raft on a river) and the bench's river ride.
 
+**Reproduced over the terrain and fixed (2026-11-10, 0.51.2):** `game_local.rs`'s
+`a_long_trip_over_the_terrain_keeps_the_near_ring_at_full_detail` carries the player 5 m/s in a straight
+line 40 m over seed 7's ground for 150 s (750 m; the position set every frame, so no hill stops it), the
+same LOD settings and one job a poll. Red on 0.51.1: a near-ring chunk waited 356 frames (~6 s) to be drawn
+as a chunk, the mesh backlog growing to ~1,000 chunks. The near chunk was meshed; the LOD keeps a level-1
+section (2 × 2 × 2 chunks) drawn until all 8 of its chunks are, and the near ring's sections reach
+chunks 2 out, which the server sends only as they come into its view (`VIEW_RADIUS_CHUNKS` 3), just
+as the ring reaches them. Those then waited behind (1) the pool's FIFO queues: far chunks' generations,
+the LOD's section jobs, and chunk meshes queued behind section meshes, which held the streamer's 8 mesh
+slots; and (2) the re-meshes of drawn chunks, which every arriving chunk marks around it. Fix: the pool
+starts chunk generations within 128 m of the player first and chunk meshes before section meshes,
+nearest first (`Pool::set_focus`, `NEAR_JOBS_M`), and the streamer meshes chunks in the view not drawn
+yet before re-meshes. Green: the worst wait 120 frames (2 s; the LOD's own `FORCE_CHUNKS_AFTER_MS`
+wait for its level-1 section accounts for up to 1 s of it). **Left:** the owner's check on the river in
+the browser, and the report's other half (edited chunks refined only up close), not looked at here.
+
 ### 52. A felled trunk landing on its chopper can fling them far
 
 Owner, 2026-11-08: "we shouldn't be capping player kick like that" — "the cap is removed". 0.50.37's

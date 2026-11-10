@@ -2,6 +2,12 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions card. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.51.2",
+      "changes": [
+        "On long trips over the terrain, the ground close by is drawn in full detail again within moments, instead of staying blurry for seconds."
+      ]
+    },
+    {
       "version": "0.51.1",
       "changes": [
         "Flat worlds: the ground more than a kilometre from the centre is drawn in full detail up close again, instead of as blurry distant terrain."

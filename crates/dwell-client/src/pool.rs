@@ -486,4 +486,57 @@ mod tests {
             "the next queued job starts"
         );
     }
+
+    #[test]
+    fn near_chunk_jobs_start_before_older_far_and_lod_ones_nearest_first() {
+        // BUGS #54: FIFO queues left the chunks coming into the near ring behind far chunks' and
+        // the LOD's jobs queued first.
+        let held = Rc::new(RefCell::new(Held {
+            cap: 1,
+            ..Default::default()
+        }));
+        let pool = Pool::new(Box::new(held.clone()));
+        pool.borrow_mut().set_focus([16.0, 8.0, 16.0]);
+        let mut source = ChunkJobs(pool.clone());
+        source.generate([0, 0, 0], 1); // id 1, started at once
+        dwell_lod::SectionSource::lod_bounds(&mut source, 1, 0, 0); // id 2
+        source.generate([40, 0, 0], 2); // id 3: past NEAR_JOBS_M
+        source.generate([2, 0, 0], 3); // id 4
+        source.generate([1, 0, 0], 4); // id 5
+        for id in 1..=4 {
+            finish(&held, id);
+        }
+        let started = held.borrow().started.clone();
+        assert_eq!(
+            started,
+            vec![1, 5, 4, 2, 3],
+            "near nearest first, then in order"
+        );
+    }
+
+    #[test]
+    fn chunk_meshes_start_before_section_meshes() {
+        let held = Rc::new(RefCell::new(Held {
+            cap: 1,
+            ..Default::default()
+        }));
+        let pool = Pool::new(Box::new(held.clone()));
+        pool.borrow_mut().set_focus([0.0; 3]);
+        let mesh = |pool: &PoolRef, purpose| {
+            pool.borrow_mut().submit(
+                purpose,
+                Job::MeshSection {
+                    cells: Vec::new(),
+                    surface: None,
+                    water_drop: 0.0,
+                    mirror: false,
+                },
+            );
+        };
+        mesh(&pool, Purpose::SectionMesh(1)); // id 1, started
+        mesh(&pool, Purpose::SectionMesh(2)); // id 2
+        mesh(&pool, Purpose::ChunkMesh([30, 0, 0], 3)); // id 3: far, still first
+        finish(&held, 1);
+        assert_eq!(held.borrow().started, vec![1, 3]);
+    }
 }
