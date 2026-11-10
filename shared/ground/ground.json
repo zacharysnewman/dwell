@@ -1,23 +1,15 @@
 {
-  "$comment": "Ground items (docs/adr/0071-ground-items.md): small physical things lying on the ground that the player picks up (E, or X on a controller, with the crosshair on one). They are not saved terrain: they are scattered over each chunk as it loads, deterministically from the world seed and the cell, by `rules` (the first rule whose conditions hold and whose roll hits places its kind; one item a cell at most); the ones picked up are kept gone with the world. `kinds`: the item each gives (an item of shared/inventory/inventory.json, the same as a drop's, so they stack together) and its look, a small mesh baked into the chunk's mesh (`shape` rod or lump, `size` in metres, the `texture` of a block's side, tinted by `color`), turned at random about up and scaled within `scale`. A rule's conditions: `on` (the full block under the cell), `under` (one of `blocks` within `withinRows` rows above: the canopy), `nearWall` (a column `reach` cells away in a compass direction solid for `rows` rows up from the cell: a cliff's foot); `density` is the share of the cells that pass that get one. Prototype content (ARCHITECTURE.md §6.1). Run `node shared/ground/gen.mjs` after editing; CI fails if crates/dwell-world/src/ground.gen.rs is stale.",
+  "$comment": "Ground items (docs/adr/0071-ground-items.md): small physical things lying on the ground that the player picks up (E, or X on a controller, with the crosshair on one). They are not saved terrain: they are scattered over each chunk as it loads, deterministically from the world seed and the cell, by `rules` (the first rule whose conditions hold and whose roll hits places its kind; one item a cell at most); the ones picked up are kept gone with the world. `kinds`: the item each gives (an item of shared/inventory/inventory.json, the same as a drop's, so they stack together); its look is that item's `look` (one look per item, the same in the hand, on the hotbar and loose), a small mesh baked into the chunk's mesh, turned at random about up and scaled within `scale`. A rule's conditions: `on` (the full block under the cell), `under` (one of `blocks` within `withinRows` rows above: the canopy), `nearWall` (a column `reach` cells away in a compass direction solid for `rows` rows up from the cell: a cliff's foot); `density` is the share of the cells that pass that get one. Prototype content (ARCHITECTURE.md §6.1). Run `node shared/ground/gen.mjs` after editing; CI fails if crates/dwell-world/src/ground.gen.rs is stale.",
   "formatVersion": 1,
   "kinds": [
     {
       "name": "dwell:ground_stick",
       "item": "dwell:stick",
-      "shape": "rod",
-      "size": [0.42, 0.05, 0.05],
-      "texture": "dwell:log",
-      "color": "#c9a27a",
       "scale": [0.75, 1.15]
     },
     {
       "name": "dwell:ground_rock",
       "item": "dwell:rock",
-      "shape": "lump",
-      "size": [0.16, 0.09, 0.13],
-      "texture": "dwell:stone",
-      "color": "#e6e2dc",
       "scale": [0.7, 1.4]
     }
   ],

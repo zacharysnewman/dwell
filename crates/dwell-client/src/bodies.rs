@@ -96,7 +96,8 @@ pub fn with_tool(held: Held, tool: Option<(&str, bool)>) -> Held {
 pub fn held_to_wire(held: Held, to_server: impl Fn(u16) -> Option<u16>) -> u16 {
     let (brush, block) = match held {
         // A tool has no wire form yet (protocol v17 carries blocks): the others see an empty hand.
-        Held::Empty | Held::Tool(_) => return 0,
+        // A held look neither (it is an item, not a block).
+        Held::Empty | Held::Tool(_) | Held::Look(_) => return 0,
         Held::Block(b) => (0, b),
         Held::Brush(b) => (held_item::BRUSH, b),
     };

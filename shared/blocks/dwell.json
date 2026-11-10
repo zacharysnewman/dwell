@@ -132,7 +132,6 @@
     },
     {
       "name": "ladder",
-      "held": "card",
       "sound": "dwell:wood",
       "density": 600,
       "shape": "empty",
@@ -271,7 +270,6 @@
         { "item": "dwell:grass_seed", "chance": 0.5 },
         { "chance": 0.125, "pick": [{ "item": "dwell:gem", "weight": 95 }, { "item": "dwell:gem_large", "weight": 5 }] }
       ],
-      "held": "card",
       "sound": "dwell:grass",
       "density": 200,
       "shape": "empty",

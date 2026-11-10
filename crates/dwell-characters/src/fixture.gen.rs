@@ -964,7 +964,17 @@ pub static CHARACTERS: &[Character] = &[
                 Part { id: "held_block", bone: 9, kind: Kind::Box, size: [0.2, 0.1, 0.2], at: [0.1, -0.07, 0.02], rot: [0.0, 0.0, -90.0], round: 0.0, tip: 0.0, side_v: [0.5, 1.0], view: View::Both, material: 65535 },
             ] },
             Item { name: "card", light: None, pose: &[], parts: &[
-                Part { id: "held_card", bone: 9, kind: Kind::Box, size: [0.24, 0.24, 0.006], at: [0.0, -0.08, 0.19], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 65535 },
+                Part { id: "held_card", bone: 9, kind: Kind::Plane, size: [0.24, 0.24, 0.006], at: [0.0, -0.08, 0.19], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 65535 },
+            ] },
+            Item { name: "cross", light: None, pose: &[], parts: &[
+                Part { id: "held_cross_a", bone: 9, kind: Kind::Plane, size: [0.24, 0.24, 0.006], at: [0.0, -0.08, 0.19], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 65535 },
+                Part { id: "held_cross_b", bone: 9, kind: Kind::Plane, size: [0.24, 0.24, 0.006], at: [0.0, -0.08, 0.19], rot: [0.0, 90.0, 0.0], round: 0.0, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 65535 },
+            ] },
+            Item { name: "rod", light: None, pose: &[], parts: &[
+                Part { id: "held_rod", bone: 9, kind: Kind::Box, size: [0.05, 0.42, 0.05], at: [0.0, -0.08, 0.14], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 65535 },
+            ] },
+            Item { name: "lump", light: None, pose: &[], parts: &[
+                Part { id: "held_lump", bone: 9, kind: Kind::RoundBox, size: [0.13, 0.1, 0.15], at: [0.0, -0.08, 0.08], rot: [0.0, 0.0, 0.0], round: 0.4, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 65535 },
             ] },
             Item { name: "torch", light: Some((9, [0.0, -0.08, 0.29])), pose: &[], parts: &[
                 Part { id: "torch_stick", bone: 9, kind: Kind::Box, size: [0.05, 0.38, 0.05], at: [0.0, -0.08, 0.09], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 17 },

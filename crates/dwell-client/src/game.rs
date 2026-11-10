@@ -3678,8 +3678,24 @@ impl<S: Scene> Game<S> {
         // In a world that uses items the hand shows the held inventory slot's block, so an empty
         // slot shows an empty hand (owner, 2026-11-08: "When you run out of a block in adventure it
         // shouldn't be shown in your hand anymore"); the palette's selection otherwise.
+        // An item with a shaped look (a stick, a rock) shows that look in the hand.
+        if let Some(item) = self.held_look_item() {
+            return Held::Look(item);
+        }
         let slot_empty = self.loose.uses_items() && self.held_palette_slot().is_none();
         held_of(slot_empty, self.selected_material(), self.brush.active())
+    }
+
+    /// The held inventory slot's item when it has a shaped look (a world that uses items).
+    fn held_look_item(&self) -> Option<&'static str> {
+        if !self.loose.uses_items() {
+            return None;
+        }
+        let (_, inv) = self.loose.inventory.as_ref()?;
+        let s = inv.slots.get(self.inventory_slot)?.as_ref()?;
+        dwell_protocol::inventory::item(&s.item)
+            .filter(|d| d.look.is_some())
+            .map(|d| d.name)
     }
 
     /// Tells the server what you hold when it changes (`Message::HeldItem`, protocol v17), so the

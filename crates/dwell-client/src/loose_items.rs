@@ -1,7 +1,7 @@
 //! The client's side of inventories and loose items (docs/adr/0066-inventory-and-drops.md): the
 //! inventory the server last sent, which palette slot a hotbar slot places, and the loose items
-//! drawn as small spinning copies of their block (an item that isn't a block as a small block in
-//! its colour) through the pieces' renderer.
+//! drawn as small spinning copies of their block (an item with a shaped `look` as that look, a
+//! stick as a rod and a rock as a lump; any other item as a small block in its colour) through the pieces' renderer.
 
 use dwell_blocks::{StateId, find_block};
 use dwell_mesh::ChunkMeshes;
@@ -48,6 +48,20 @@ fn look_of(item: &str) -> Option<(StateId, Option<[f32; 3]>)> {
 /// The meshes of a loose item: its block's one-cell meshes scaled to its size about their centre,
 /// the centre at half its size above its point (face-local; mirrored on face B).
 pub fn item_meshes(item: &str, face: FaceFrame) -> Option<(Vec<ChunkMeshes>, f64)> {
+    // An item with a shaped look (a stick, a rock) is that look, at its own size: the same shape,
+    // tile and tint as one lying on the ground (shared/inventory `look`).
+    if let Some(look) = inv::item(item).and_then(|d| d.look) {
+        let mut m = dwell_mesh::look_mesh(&look);
+        if face.is_b() {
+            mirror_y(&mut m);
+        }
+        let size = look.size.iter().copied().fold(0.0, f64::max);
+        let meshes = vec![ChunkMeshes {
+            opaque: m,
+            ..ChunkMeshes::default()
+        }];
+        return Some((meshes, size));
+    }
     let (m, tint) = look_of(item)?;
     let size = inv::item(item).map_or(BLOCK_SIZE_M, |d| d.size);
     let (mut meshes, _) = crate::pieces::piece_meshes_mirrored(&[([0, 0, 0], m)], face.is_b());
@@ -90,6 +104,20 @@ pub fn item_meshes(item: &str, face: FaceFrame) -> Option<(Vec<ChunkMeshes>, f64
         }
     }
     Some((meshes, size))
+}
+
+/// `m` mirrored through y = 0, face B's copy of a face-local item mesh (as the pieces' meshes are
+/// mirrored): positions and normals flipped, each triangle's winding turned so it still faces out.
+fn mirror_y(m: &mut dwell_mesh::MeshArrays) {
+    for p in m.positions.chunks_exact_mut(3) {
+        p[1] = -p[1];
+    }
+    for n in m.normals.chunks_exact_mut(3) {
+        n[1] = -n[1];
+    }
+    for t in m.indices.chunks_exact_mut(3) {
+        t.swap(1, 2);
+    }
 }
 
 /// The inventory and loose items as the server last sent them.
@@ -179,8 +207,51 @@ mod tests {
     }
 
     dwell_world::both_faces!(
+        fn a_stick_and_a_rock_are_drawn_loose_as_their_look_not_a_cube(f: FaceFrame) {
+            // Owner, 2026-11-09: "Why don't sticks and rocks in your hand and hotbar look like
+            // sticks and rocks on the ground?" A loose one is its look's shape: a rod long along
+            // x, a lump of 14 faces; not the stand-in block's cube.
+            for (item, triangles) in [("dwell:stick", 12), ("dwell:rock", 32)] {
+                let look = inv::item(item).and_then(|d| d.look).expect(item);
+                let (meshes, size) = item_meshes(item, f).expect(item);
+                let m = &meshes[0].opaque;
+                assert_eq!(m.indices.len() / 3, triangles, "{item}");
+                let (mut lo, mut hi) = ([f32::MAX; 3], [f32::MIN; 3]);
+                for p in m.positions.chunks_exact(3) {
+                    for k in 0..3 {
+                        lo[k] = lo[k].min(p[k]);
+                        hi[k] = hi[k].max(p[k]);
+                    }
+                }
+                let ext: Vec<f64> = (0..3).map(|k| f64::from(hi[k] - lo[k])).collect();
+                for k in 0..3 {
+                    assert!(
+                        (ext[k] - look.size[k]).abs() < 0.02,
+                        "{item} axis {k}: {ext:?}"
+                    );
+                }
+                assert!((size - look.size[0].max(look.size[1]).max(look.size[2])).abs() < 1e-9);
+                // From its point up its face's up.
+                let (top, bottom) = if f.is_b() {
+                    (-lo[1], -hi[1])
+                } else {
+                    (hi[1], lo[1])
+                };
+                assert!(bottom.abs() < 1e-5 && top > 0.0, "{item}: {bottom} {top}");
+                // Outward: the top face's normal is up its face's up.
+                let up = m
+                    .normals
+                    .chunks_exact(3)
+                    .map(|n| n[1] * f.sign_f32())
+                    .fold(f32::MIN, f32::max);
+                assert!(up > 0.99, "{item}");
+            }
+        }
+    );
+
+    dwell_world::both_faces!(
         fn a_loose_item_is_drawn_small_and_above_its_point(f: FaceFrame) {
-            for item in ["dwell:dirt", "dwell:rock"] {
+            for item in ["dwell:dirt", "dwell:gem"] {
                 let (meshes, size) = item_meshes(item, f).expect(item);
                 let ys: Vec<f32> = meshes
                     .iter()

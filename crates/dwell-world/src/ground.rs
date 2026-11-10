@@ -13,16 +13,11 @@ use crate::hash::HashSet;
 use crate::{CHUNK_SIZE, ChunkCoord, FaceFrame, m_of_row};
 use dwell_blocks::{StateId, VoxelShape, find_block, try_info};
 
-/// A kind's mesh: a fixed vocabulary, sized by the data.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum GroundShape {
-    /// A box, long along its x: a twig.
-    Rod,
-    /// A rounded lump (a squat, tapered hexagonal prism): a stone.
-    Lump,
-}
+/// A kind's mesh: its item's look's shape (`shared/inventory` `look`, one look per item).
+pub use dwell_protocol::inventory::LookShape as GroundShape;
 
-/// A ground item's kind (`ground.json` `kinds`).
+/// A ground item's kind (`ground.json` `kinds`); its look (shape, size, texture, colour) is copied
+/// from its item's `look` by `shared/ground/gen.mjs`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GroundKind {
     pub name: &'static str,

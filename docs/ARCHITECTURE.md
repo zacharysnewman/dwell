@@ -2697,6 +2697,17 @@ again without it. Breaking the block under one knocks it loose (a loose item in 
 creative); it vanishes with no write when its ground or canopy goes by other edits (regions,
 blasts, felling), and may come back if the same cells return.
 
+**Item looks [built, 0.50.73]** (ADRs 0066, 0071). An inventory item may carry one shaped `look`
+(`shared/inventory/inventory.json`: `shape` rod or lump, `size`, a block's `texture`, a `color`
+tint), generated into `dwell_protocol::inventory::ItemDef::look`; a ground kind takes its item's
+look (`shared/ground/gen.mjs` copies it and fails when the item has none). The one look is drawn
+everywhere: on the ground (`mesher/ground_mesh.rs`), loose (`dwell_mesh::look_mesh`, every side, in
+`loose_items.rs`), on the hotbar and backpack (`dwell_mesh::look_swatch`, the shape rasterised in
+its tinted tile, through `itemSwatch`) and in the hand (`Held::Look`: the characters item of its
+shape, `rod` or `lump`, its `$block` material the look's tile and tint). A block's hand item is its
+`held`, or by its look (`HELD_BY_LOOK`, `shared/blocks/lights.mjs`): a ladder the `card`, a cross
+plant the `cross`, drawn with the characters' `plane` part kind (one sheet, both sides, no edges).
+
 **Tools and chopping [built, 0.50.34–0.50.39]** (ADR 0067). Tools are items
 with data in `shared/tools/tools.json` (a `kind` from a fixed vocabulary, `axe`; its swing wait,
 bite, bind and its share across and along the grain), and so are the woods an axe cuts (a block

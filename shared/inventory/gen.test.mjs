@@ -35,12 +35,20 @@ test('an item and a block with a custom drop added by data alone are emitted', (
   });
   const d = validateInventory(inv, blocks);
   const rs = inventoryRust(d);
-  assert.match(rs, /ItemDef \{ name: "dwell:crystal", label: "Crystal", color: \[170, 204, 255\], size: 0.1, stack: 16, value: 0 \}/);
+  assert.match(rs, /ItemDef \{ name: "dwell:crystal", label: "Crystal", color: \[170, 204, 255\], size: 0.1, stack: 16, value: 0, look: None \}/);
   assert.match(
     rs,
     /BlockDrops \{ block: "test:ore", cost: "test:ore", drops: &\[DropRule \{ chance: 0.25, choices: &\[DropChoice \{ item: "dwell:crystal", min: 1, max: 3, weight: 1.0 \}\] \}\] \}/,
   );
   assert.match(inventoryTs(d), /name: "dwell:crystal"/);
+});
+
+test('an item with a look added by data alone carries it (one look for hand, hotbar, loose, ground)', () => {
+  const [inv, blocks] = fresh();
+  inv.items.push({ name: 'test:twig', label: 'Twig', color: '#aaccff', size: 0.1, look: { shape: 'rod', size: [0.3, 0.02, 0.02], texture: 'dwell:log', color: '#ffffff' } });
+  const rs = inventoryRust(validateInventory(inv, blocks));
+  assert.match(rs, /name: "test:twig".*look: Some\(ItemLook \{ shape: LookShape::Rod, size: \[0.3, 0.02, 0.02\], texture: "dwell:log", color: \[255, 255, 255\] \}\)/);
+  assert.match(rs, /name: "dwell:stick".*look: Some\(ItemLook \{ shape: LookShape::Rod/);
 });
 
 test('bad entries fail naming the entry and the problem', () => {
@@ -52,6 +60,10 @@ test('bad entries fail naming the entry and the problem', () => {
     [(i) => (i.items[0].name = 'dwell:dirt'), /a block of that name is already an item/],
     [(i) => (i.items[1].stack = 65), /items\.dwell:stick: stack must be/],
     [(i) => (i.items[3].value = 0), /items\.dwell:gem: value must be/],
+    [(i) => (i.items[0].look.shape = 'cube'), /items\.dwell:rock\.look: shape must be one of rod, lump/],
+    [(i) => (i.items[0].look.size = [0.1, 0, 0.1]), /items\.dwell:rock\.look: size must be/],
+    [(i) => (i.items[1].look.texture = 'dwell:marble'), /items\.dwell:stick\.look: texture "dwell:marble" is not a block/],
+    [(i) => (i.items[1].look.colour = '#000000'), /items\.dwell:stick\.look: unknown field colour/],
     [(i) => (i.startingWallet = 'dwell:bag'), /startingWallet must name one of the wallets/],
     [(i) => (i.wallets[0].capacity = 0), /wallets\.dwell:pouch: capacity must be/],
     [(i, b) => (b[0].blocks.find((x) => x.name === 'dirt').drops = [{ item: 'dwell:diamond' }]), /dwell:dirt: drops\[0\]: item dwell:diamond is neither/],

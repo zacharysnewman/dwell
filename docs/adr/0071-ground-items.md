@@ -90,3 +90,15 @@ gone set.
   gone set across a reload; the messages only after the hellos; the protocol round trips; the mesh
   job codec; the meshes' faces outward.
 - Reversing it: clear the server's `GROUND` flag; the table stays, unread.
+
+## Amendment (0.50.73): one look per item
+
+Owner, 2026-11-09: "Why don't sticks and rocks in your hand and hotbar look like sticks and rocks on
+the ground?" The look (`shape` rod or lump, `size`, `texture`, `color`) moved from the ground kind to
+the inventory item (`shared/inventory/inventory.json` `look`), the one source of truth: a ground kind
+names only its item (and its `scale`), and `shared/ground/gen.mjs` copies the item's look into
+`KINDS`, failing when the item has none. The same look draws the loose item
+(`dwell_mesh::look_mesh`, every side, the underside too), the hotbar and backpack picture
+(`dwell_mesh::look_swatch`, the shape rasterised in its tinted tile) and the hand (`Held::Look`: the
+characters item `rod` or `lump` in the look's tile and tint). Deviation: the hand holds the shape at
+its own size (characters.json), not the look's `size`, as the hand's items are fixed meshes.

@@ -170,3 +170,9 @@ player new to a world starts with, in a mode that uses items: one `dwell:stone_a
 saved inventory keeps it; creative players start with nothing (`Inventory::starting`,
 `Server::load_inventory`; tests `an_adventure_player_starts_with_an_axe_and_a_creative_one_with_nothing`
 and the generator's starting-items test).
+
+## Amendment (0.50.73)
+
+An item may carry a shaped `look` (ADR 0071's rod or lump: shape, size, texture, colour); it is
+then drawn as that look everywhere (hand, hotbar, backpack, loose, on the ground). Items without one
+keep the colour-and-size look.

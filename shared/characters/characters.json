@@ -463,10 +463,32 @@
       ]
     },
     "card": {
-      "label": "A flat item of its block's tile (owner, 2026-10-28: a ladder or a plant held as an item, not a block with its texture on it): a block whose registry entry says held: card",
+      "label": "A flat item of its block's tile (owner, 2026-10-28: a ladder held as an item, not a block with its texture on it): a block whose registry entry says held: card. One sheet seen from both sides, no edges (owner, 2026-11-09: it was a thin box with its texture on every side)",
       "on": "grip_r",
       "parts": [
-        { "id": "held_card", "on": "grip_r", "kind": "box", "size": [0.24, 0.24, 0.006], "at": [0, 0.02, 0.17], "rot": [90, 0, 0], "material": "$block" }
+        { "id": "held_card", "on": "grip_r", "kind": "plane", "size": [0.24, 0.24, 0.006], "at": [0, 0.02, 0.17], "rot": [90, 0, 0], "material": "$block" }
+      ]
+    },
+    "cross": {
+      "label": "A plant held as the world draws it (a block whose registry entry says held: cross, a cross plant): two sheets of its tile crossed along the grip, seen from both sides, no edges",
+      "on": "grip_r",
+      "parts": [
+        { "id": "held_cross_a", "on": "grip_r", "kind": "plane", "size": [0.24, 0.24, 0.006], "at": [0, 0.02, 0.17], "rot": [90, 0, 0], "material": "$block" },
+        { "id": "held_cross_b", "on": "grip_r", "kind": "plane", "size": [0.24, 0.24, 0.006], "at": [0, 0.02, 0.17], "rot": [0, 90, 0], "material": "$block" }
+      ]
+    },
+    "rod": {
+      "label": "An item whose look is a rod (shared/inventory `look`: a stick), held along the grip: its look's tile and tint, the hand's own size",
+      "on": "grip_r",
+      "parts": [
+        { "id": "held_rod", "on": "grip_r", "kind": "box", "size": [0.05, 0.42, 0.05], "at": [0, 0.02, 0.12], "rot": [90, 0, 0], "material": "$block" }
+      ]
+    },
+    "lump": {
+      "label": "An item whose look is a lump (shared/inventory `look`: a rock), in the fist: its look's tile and tint, the hand's own size",
+      "on": "grip_r",
+      "parts": [
+        { "id": "held_lump", "on": "grip_r", "kind": "round_box", "size": [0.13, 0.1, 0.15], "at": [0, 0.02, 0.06], "round": 0.4, "material": "$block" }
       ]
     },
     "torch": {
