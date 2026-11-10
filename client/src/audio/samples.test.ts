@@ -10,7 +10,7 @@ import {
   SAMPLES_MAX_BYTES,
 } from '../../../shared/sounds/validate.mjs';
 import { BLOCK_DEFS, STATE_DEFS } from '../world/blocks.gen';
-import { sampleGain } from './engine';
+import { roomSend, sampleGain } from './engine';
 import { soundsFor, type Registry } from './events';
 import { SampleBank, usesSamples } from './samples';
 import { SOUND_DATA } from './sounds.gen';
@@ -189,5 +189,25 @@ describe('sound samples: a material by data alone', () => {
     const range = s.intensity?.gain ?? [1, 1];
     expect(sampleGain(s, { intensity: 0, gain: 2 })).toBeCloseTo(0.5 * 2 * range[0]);
     expect(sampleGain(s, { intensity: 1 })).toBeCloseTo(0.5 * range[1]);
+  });
+});
+
+// Owner, 2026-11-10: the recorded effects sounded "like they're in an echoey room": the recordings
+// carry their own room, and the sound's `reverb` (made for its procedural layers) put them in a
+// second one. A recording plays dry unless its samples ask for the room.
+describe('recordings play dry', () => {
+  const sound = {
+    reverb: 0.12,
+    samples: { files: ['a.m4a'] },
+  } as unknown as Parameters<typeof roomSend>[0];
+  it('sends a recorded play nothing to the room by default', () => {
+    expect(roomSend(sound, true)).toBe(0);
+  });
+  it('keeps the room for the procedural layers', () => {
+    expect(roomSend(sound, false)).toBe(0.12);
+  });
+  it('lets a sample set ask for some room by data', () => {
+    const wet = { ...sound, samples: { files: ['a.m4a'], reverb: 0.05 } } as typeof sound;
+    expect(roomSend(wet, true)).toBe(0.05);
   });
 });

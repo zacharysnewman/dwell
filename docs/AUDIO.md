@@ -424,3 +424,5 @@ simulation, and it reads only the predicted state the game already has.
 8. Music: is Starry Sunshine's level right (`volume` 0.45 under a 60 % Music default)? Should it
    play in the main menu too (it does), or only once in a world? When more tracks come, what
    decides which plays (biome, time of day, menus)?
+
+**Recordings play dry (0.52.16, owner: "they've got some reverb-like feel"):** a recorded play sends nothing to the room unless its `samples.reverb` asks for some (`roomSend`, `client/src/audio/engine.ts`); a sound's `reverb` is for its procedural layers. Test: samples.test.ts "recordings play dry".
