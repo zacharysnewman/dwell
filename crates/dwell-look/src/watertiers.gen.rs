@@ -41,7 +41,7 @@ pub const WATER_TIERS: &[WaterTier] = &[
         ripple_layers: 3,
         flow_streaks: true,
         bank_band: false,
-        heightfield: false,
+        heightfield: true,
     },
 ];
 

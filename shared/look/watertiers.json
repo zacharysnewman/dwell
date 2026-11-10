@@ -38,7 +38,7 @@
       "rippleLayers": 3,
       "flowStreaks": true,
       "bankBand": false,
-      "heightfield": false
+      "heightfield": true
     }
   ],
   "aliases": {

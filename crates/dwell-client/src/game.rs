@@ -97,6 +97,11 @@ pub const FULL_CELL: ([f32; 3], [f32; 3]) = ([0.0; 3], [1.0; 3]);
 /// outline, lines and stats.
 pub trait Scene: TerrainRenderer {
     fn set_player(&mut self, id: u32, view: Option<PlayerView>);
+    /// The near water's surface is drawn from the GPU heightfield (its tier's `heightfield`):
+    /// chunks are meshed without liquid tops (`dwell_mesh::ChunkFlags`).
+    fn draws_heightfield(&self) -> bool {
+        false
+    }
     /// Your first-person arms this frame (docs/CHARACTERS.md §5), or none.
     fn set_arms(&mut self, _arms: Option<ArmsView>) {}
     /// Your own body this frame, cast into the shadow maps only (none while it is drawn).
@@ -2748,6 +2753,9 @@ impl<S: Scene> Game<S> {
         // Queued region edits (a brush stroke) as the server's cell rate allows.
         self.pump_region(now_ms);
         self.expire_currents(now_ms);
+        // Chunks meshed from now on leave their water's tops to the heightfield where it draws.
+        let water_tops = !self.scene.borrow().draws_heightfield();
+        self.pool.borrow_mut().water_tops = water_tops;
         let done = telemetry::span("jobs.poll", || self.pool.borrow_mut().poll());
         telemetry::add("jobs.done", done.len() as f64);
         telemetry::span("jobs.apply", || self.on_jobs(done));

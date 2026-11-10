@@ -1630,7 +1630,7 @@ pub(crate) fn mesh_chunk_full(
         m
     };
     let water = (!flags.water_tops)
-        .then(|| crate::heightfield::tile_with(kinds, &inner, mirror))
+        .then(|| crate::heightfield::tile_with(kinds, &inner, light, mirror))
         .flatten();
     Ok(ChunkMeshes {
         opaque: to_metres(m.opaque),
@@ -1983,7 +1983,13 @@ mod tests;
 /// the chunk whose top shows (the mesher's drawn surface: `fill` and `surface_drop`), or
 /// [`crate::heightfield::DRY`] where none does (no liquid, the water going on up into the chunk
 /// above, or a solid or flooded block over it). A face-B chunk (`mirror`) is read face-local.
-pub(crate) fn water_levels_with(kinds: &Kinds, padded: &[u16], mirror: bool) -> (Vec<f32>, f32) {
+pub(crate) fn water_levels_with(
+    kinds: &Kinds,
+    padded: &[u16],
+    light: &[u8],
+    mirror: bool,
+) -> (Vec<f32>, Vec<f32>, f32) {
+    let flood = Flood::new(light, mirror);
     let local;
     let padded = if mirror {
         local = mirror_padded(padded);
@@ -1994,6 +2000,7 @@ pub(crate) fn water_levels_with(kinds: &Kinds, padded: &[u16], mirror: bool) -> 
     let at = |x: i32, y: i32, z: i32| padded.get(padded_index(x, y, z)).copied().unwrap_or(0);
     let mut out = vec![crate::heightfield::DRY; PAD * PAD];
     let mut fluid = crate::NO_FLUID;
+    let mut lights = vec![crate::heightfield::pack_light([1.0, 0.0]); PAD * PAD];
     for z in -1..=N {
         for x in -1..=N {
             for y in (0..N).rev() {
@@ -2005,7 +2012,11 @@ pub(crate) fn water_levels_with(kinds: &Kinds, padded: &[u16], mirror: bool) -> 
                 let shows = !(same_fluid(&k, &above) || above.flooded || above.occludes);
                 if shows {
                     let top = fluid_top(y, &k.style, k.fill) * CELL_H;
-                    out[(x + 1) as usize + PAD * (z + 1) as usize] = top as f32;
+                    let at = (x + 1) as usize + PAD * (z + 1) as usize;
+                    out[at] = top as f32;
+                    // The water's own cell's light: what its top face is lit by where it shows
+                    // (the cell over it may lie outside the volume).
+                    lights[at] = crate::heightfield::pack_light(flood.cell([x, y, z]));
                     if fluid == crate::NO_FLUID && in_chunk([x, 0, z]) {
                         fluid = fluid_value(k.style.fluid);
                     }
@@ -2014,5 +2025,5 @@ pub(crate) fn water_levels_with(kinds: &Kinds, padded: &[u16], mirror: bool) -> 
             }
         }
     }
-    (out, fluid)
+    (out, lights, fluid)
 }

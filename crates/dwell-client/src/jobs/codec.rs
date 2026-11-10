@@ -428,6 +428,7 @@ pub fn encode_output(id: u32, out: &Output) -> Vec<u8> {
                     w.u8(1 | if t.face_b { 2 } else { 0 });
                     w.f32s(&[t.fluid]);
                     w.f32s(&t.levels);
+                    w.f32s(&t.lights);
                 }
                 None => w.u8(0),
             }
@@ -494,6 +495,7 @@ pub fn decode_output(bytes: &[u8]) -> Result<(u32, Output), DecodeError> {
                 Some(dwell_mesh::heightfield::WaterTile {
                     fluid,
                     levels: r.f32s()?,
+                    lights: r.f32s()?,
                     face_b: bits & 2 != 0,
                 })
             } else {

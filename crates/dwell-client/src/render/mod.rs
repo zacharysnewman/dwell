@@ -920,6 +920,8 @@ enum DrawMesh {
     Region(usize),
     /// The brush preview's ghost (true) or lines.
     Brush(bool),
+    /// A chunk's water surface on the shared grid (`heightfield.rs`), face B's re-wound (true).
+    Heightfield(bool),
 }
 
 /// A line's width on screen in CSS pixels (the block outline, the region boxes, the brush preview,
@@ -1051,6 +1053,9 @@ pub struct Renderer {
     /// The water that reads the scene (W3, Medium and High): its pipeline, drawn in each raster
     /// scene pass's water half, and its view of the scene (`frame::under_layout`) with the sampler.
     water_scene_pipeline: wgpu::RenderPipeline,
+    /// The water's GPU heightfield (proposals/WATER_GPU_SURFACE.md §3): the near chunks' surface
+    /// tiles and the water pipelines over the shared grid.
+    heightfield: heightfield::HeightfieldGpu,
     under_layout: wgpu::BindGroupLayout,
     under_sampler: wgpu::Sampler,
     /// The terrain's chunks and LOD sections (seam.rs).
@@ -1502,6 +1507,20 @@ impl Renderer {
             multiview_mask: None,
             cache: None,
         });
+        let heightfield = heightfield::HeightfieldGpu::new(
+            &device,
+            &heightfield::PipelineParts {
+                module: &module,
+                frame_layout: &frame_layout,
+                draw_layout: &draw_layout,
+                under_layout: &under_layout,
+                hdr: HDR,
+                view_depth: VIEW_DEPTH,
+                depth: DEPTH,
+                depth_compare: DEPTH_COMPARE,
+                samples,
+            },
+        );
         // The shadow passes' casters (shadows.rs): the scene's vertex stages from the light, depth
         // only; a fragment stage only for what keeps some texels (`shadow_pipeline_key`).
         let shadow_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -1795,6 +1814,7 @@ impl Renderer {
             finished_layout,
             finished: None,
             water_scene_pipeline,
+            heightfield,
             under_layout,
             under_sampler,
             terrain: RasterTerrain::new(arena.clone()),
@@ -2046,6 +2066,8 @@ impl Renderer {
     /// Replaces (or, with `None`, removes) a raster terrain chunk; meshes are chunk-local.
     pub fn set_terrain_chunk(&mut self, coord: ChunkCoord, meshes: Option<&ChunkMeshes>) {
         self.terrain.set_chunk(coord, meshes);
+        self.heightfield
+            .set(coord, meshes.and_then(|m| m.water.as_ref()));
     }
     /// A falling piece's meshes (docs/FELLING.md §3), their positions relative to its reference
     /// cell's centre, reaching `radius` m from it; `None` removes it. Drawn where `show_pieces`
@@ -2855,6 +2877,7 @@ impl Renderer {
                 let m = self.debug.as_ref().expect("collected");
                 (m, vec![m.parts[0].clone()])
             }
+            DrawMesh::Heightfield(_) => unreachable!("drawn from the grid, not the arena"),
         }
     }
 
@@ -2937,6 +2960,23 @@ impl Renderer {
                     passes,
                     key: 0,
                     mesh: DrawMesh::Chunk(coord, Part::Water),
+                });
+            }
+            if let Some((quat, range)) = self.heightfield.draw_of(coord) {
+                out.push(DrawItem {
+                    kind: Kind::Fluid,
+                    water: true,
+                    no_depth: false,
+                    offset,
+                    clip: None,
+                    fade,
+                    tint: plain,
+                    rotation: fluid_rotation(c.origin),
+                    quat,
+                    page: 0,
+                    passes,
+                    key: 0,
+                    mesh: DrawMesh::Heightfield(range.start > 0),
                 });
             }
         }
@@ -3244,6 +3284,8 @@ impl Renderer {
         let eye = self.eye;
         self.pixel_shift = [0.0; 2];
         self.adapt_eye(crate::render_clock::now_ms());
+        let tiles = self.heightfield.upload(&self.queue);
+        crate::telemetry::add("water.tiles", tiles as f64);
         if let (Some(p), Some(g)) = (self.pixel_preset(), self.pixel_grid)
             && p.snap_camera
         {
@@ -3968,6 +4010,18 @@ impl Renderer {
         let mut bound_page: Option<(usize, usize)> = None;
         for (k, d) in draws.iter().enumerate() {
             let instance = (first_slot + k as u64) as u32;
+            if let DrawMesh::Heightfield(face_b) = d.mesh {
+                let hf = &self.heightfield;
+                pass.set_pipeline(if water_scene { &hf.scene } else { &hf.blended });
+                pass.set_bind_group(heightfield::GROUP, &hf.group, &[]);
+                pass.set_index_buffer(hf.index.slice(..), wgpu::IndexFormat::Uint32);
+                bound = None;
+                bound_page = None;
+                *triangles += u64::from(heightfield::GRID_INDICES / 3);
+                pass.draw_indexed(heightfield::grid_range(face_b), 0, instance..instance + 1);
+                *calls += 1;
+                continue;
+            }
             let (mesh, ranges) = self.mesh_of(&d.mesh);
             // Each WebGPU call crosses from WASM to JS: set only what changes.
             let key = (d.kind, d.water, d.no_depth);
@@ -5152,6 +5206,9 @@ impl TerrainRenderer for Renderer {
 }
 
 impl crate::game::Scene for Renderer {
+    fn draws_heightfield(&self) -> bool {
+        self.water().tier().heightfield
+    }
     fn set_piece(&mut self, id: u32, meshes: Option<(&[ChunkMeshes], f64)>) {
         Renderer::set_piece(self, id, meshes);
     }

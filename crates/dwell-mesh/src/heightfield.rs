@@ -26,7 +26,13 @@ pub const CORNERS: usize = COLUMNS + 1;
 /// The chunk's surface levels from its padded voxels ([`crate::padded_index`] order), face-local
 /// (`mirror` for face B).
 pub fn water_levels(padded: &[u16], mirror: bool) -> Levels {
-    water_levels_with(Kinds::build(), padded, mirror).0
+    water_levels_with(Kinds::build(), padded, &[], mirror).0
+}
+
+/// A flood light (sky, block as shares of 15; the meshes' `light` stream) packed into one float:
+/// sky × 16 + block, whole levels.
+pub fn pack_light(l: [f32; 2]) -> f32 {
+    (l[0] * 15.0).round() * 16.0 + (l[1] * 15.0).round()
 }
 
 /// A chunk's surface tile as the client's renderer takes it with the chunk's meshes.
@@ -34,6 +40,8 @@ pub fn water_levels(padded: &[u16], mirror: bool) -> Levels {
 pub struct WaterTile {
     /// [`TILE`]² face-local levels ([`water_levels`]).
     pub levels: Levels,
+    /// Each column's flood light at its surface ([`pack_light`]; open sky where dry).
+    pub lights: Vec<f32>,
     /// The fluid drawn (its id in the registry's fluid table, as the meshes' `fluids` stream):
     /// the first wet column's in the chunk. A chunk holds one water today.
     pub fluid: f32,
@@ -42,10 +50,16 @@ pub struct WaterTile {
 }
 
 /// Chunk `padded`'s tile over `kinds`; none where no column inside the chunk is wet.
-pub(crate) fn tile_with(kinds: &Kinds, padded: &[u16], mirror: bool) -> Option<WaterTile> {
-    let (levels, fluid) = water_levels_with(kinds, padded, mirror);
+pub(crate) fn tile_with(
+    kinds: &Kinds,
+    padded: &[u16],
+    light: &[u8],
+    mirror: bool,
+) -> Option<WaterTile> {
+    let (levels, lights, fluid) = water_levels_with(kinds, padded, light, mirror);
     (fluid != crate::NO_FLUID).then_some(WaterTile {
         levels,
+        lights,
         fluid,
         face_b: mirror,
     })
