@@ -205,6 +205,22 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 59. On a slow device the loading screen waited its whole 20 s timeout (fixed in 0.51.8)
+
+Found 2026-11-10 from CI: `e2e/join.spec.ts:55` and `:113` ran into their 30 s test timeout on most main runs
+since 2026-11-08 (before 0.51.3, which was first suspected), and the few that passed took 29.2-29.8 s: the
+screen never opened on the terrain, only on its 20 s `timeoutS`, and the page's start and the fade at CI's
+~5 fps took the rest. Natively, on the flat world with the LOD, it opened on the near ring in ~150 frames
+at 60 fps but timed out at 5 fps with 168 of 179 chunks shown. Two causes: (1) above the player, the level-1
+sections made on the way down to the forced chunks (`FORCE_CHUNKS_AFTER_MS`, which a slow page reaches
+before the LOD's levels have loaded) sat unclassified under an empty level-2 section, and
+`shows_nothing_at` stopped at them instead of the empty one above; (2) below, the ground chunks' level-1
+sections waited for their partners beyond the ring to be meshed, and the streamer kept only a few meshes
+in flight a frame, the workers idle most of each 200 ms frame. Fixed: `shows_nothing_at` skips sections not
+yet classified, and a slow page keeps up to 8x the chunk meshes in flight (`SLOW_FRAME_MESHES_MAX`,
+`pool.rs`). Pinned by `with_the_lod_the_loading_screen_opens_on_the_terrain_at_a_slow_pages_frame_rate`
+(dwell-client `game_local.rs`; red: timed out at 20 s with 168/179; green: opens on the near ring).
+
 ### 58. On a slow device a walk's start or stop was corrected by up to 3 ticks of walking (fixed in 0.51.2)
 
 Found 2026-11-10 in the bug 54 work: `a_device_at_under_two_frames_a_second_walks_and_jumps_without_snapping`

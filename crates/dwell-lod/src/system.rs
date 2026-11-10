@@ -642,7 +642,11 @@ impl LodSystem {
     pub fn shows_nothing_at(&self, coord: ChunkCoord) -> bool {
         let mut c = parent(lod_of_chunk(coord));
         loop {
-            if let Some(n) = self.nodes.get(&id_of(c)) {
+            // A node not yet classified (made on the way down to forced chunks, under an empty
+            // parent that never classifies its children) defers to the nearest one known.
+            if let Some(n) = self.nodes.get(&id_of(c))
+                && (n.kind.is_some() || n.needs_answer)
+            {
                 return !n.needs_answer && matches!(n.kind, Some(LodKind::Empty | LodKind::Buried));
             }
             if c.level >= MAX_LEVEL {

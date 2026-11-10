@@ -136,6 +136,8 @@ pub struct Pool {
     pub water_tops: bool,
     /// Where the player is (m; [`Self::set_focus`]): chunk jobs near it start first.
     focus: Option<[f64; 3]>,
+    /// How many times the usual chunk meshes are in flight (`set_frame_ms`).
+    frame_scale: usize,
 }
 
 /// Chunk generations (and the ground items' bases) within this distance (m) of the focus start
@@ -144,6 +146,22 @@ pub struct Pool {
 /// on a long trip the chunks coming into the near ring waited seconds behind far chunks' and the
 /// LOD's generations queued first.
 pub const NEAR_JOBS_M: f64 = 128.0;
+
+/// A slow page's chunk meshes in flight grow with its frame interval, up to this many times the
+/// usual (`Pool::set_frame_ms`): the streamer starts its meshes in the frame and takes them in at
+/// the next, so at CI's ~5 fps (or a slow phone's) the usual few a frame left the workers idle most
+/// of each frame, and the loading screen waited its whole timeout for the near ring's level-1
+/// sections (their chunks beyond the ring included) to be meshed. The pool queues the extra and
+/// starts each as a worker frees, between frames.
+pub const SLOW_FRAME_MESHES_MAX: f64 = 8.0;
+/// The frame interval (ms) at which the usual number is in flight.
+const USUAL_FRAME_MS: f64 = 1000.0 / 60.0;
+
+/// How many times the usual chunk meshes a frame interval of `frame_ms` keeps in flight.
+pub fn slow_frame_scale(frame_ms: f64) -> usize {
+    let s = (frame_ms / USUAL_FRAME_MS).clamp(1.0, SLOW_FRAME_MESHES_MAX);
+    if s.is_finite() { s.floor() as usize } else { 1 }
+}
 
 pub type PoolRef = Rc<RefCell<Pool>>;
 
@@ -159,6 +177,7 @@ impl Pool {
             ready: Vec::new(),
             water_tops: true,
             focus: None,
+            frame_scale: 1,
         }));
         let weak = Rc::downgrade(&pool);
         // A result between frames: collected, and the worker given the next queued job. Never
@@ -213,6 +232,12 @@ impl Pool {
     /// second ring the streamer and the LOD order).
     pub fn set_focus(&mut self, at: Option<[f64; 3]>) {
         self.focus = at;
+    }
+
+    /// Sets the last frame's interval (ms): a slow page keeps more chunk meshes in flight
+    /// ([`SLOW_FRAME_MESHES_MAX`]).
+    pub fn set_frame_ms(&mut self, frame_ms: f64) {
+        self.frame_scale = slow_frame_scale(frame_ms);
     }
 
     /// The queued job of `kind` to start next: the chunk generation within [`NEAR_JOBS_M`] nearest
@@ -327,8 +352,10 @@ pub struct MeshJobs(pub PoolRef);
 impl Mesher for MeshJobs {
     type Meshes = dwell_mesh::ChunkMeshes;
     fn capacity(&self) -> usize {
-        // Enough in flight to keep every worker busy while results travel back.
-        2 * self.0.borrow().capacity(true)
+        // Enough in flight to keep every worker busy while results travel back, and on a slow
+        // page through the frame (`SLOW_FRAME_MESHES_MAX`).
+        let pool = self.0.borrow();
+        2 * pool.capacity(true) * pool.frame_scale
     }
     fn mesh(&mut self, job: MeshJob) {
         let water_tops = self.0.borrow().water_tops;
@@ -377,6 +404,16 @@ impl dwell_lod::SectionMesher for MeshJobs {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_slow_page_keeps_more_chunk_meshes_in_flight() {
+        assert_eq!(slow_frame_scale(8.3), 1);
+        assert_eq!(slow_frame_scale(16.7), 1);
+        assert_eq!(slow_frame_scale(40.0), 2);
+        assert_eq!(slow_frame_scale(200.0), 8, "CI's ~5 fps: the most");
+        assert_eq!(slow_frame_scale(1500.0), 8);
+        assert_eq!(slow_frame_scale(f64::NAN), 1);
+    }
 
     #[derive(Default)]
     struct Held {
