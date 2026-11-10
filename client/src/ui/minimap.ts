@@ -215,6 +215,18 @@ export interface LiveClient {
   liveTile(face: number, ti: number, tk: number, cellM: number): Uint8Array | undefined;
 }
 
+/**
+ * The minimap's fill (owner, 2026-11-10: it "should always show the full width and height of
+ * what's around you" and "shouldn't ever be coarse"): the generated 1 m tiles under its disc
+ * (`dwell_game::minimap::Generated`), the big map's closest level's, named by the client and
+ * handed over from the tile cache.
+ */
+export interface MinimapFeed {
+  /** The tiles wanted: [face, ti, tk] each, the nearest first. */
+  minimapWants(): Int32Array;
+  minimapTile(face: number, ti: number, tk: number, rgba: Uint8Array, heights: Int16Array): void;
+}
+
 /** Whether the level of `cellM` cells is drawn from the loaded terrain where loaded. */
 export function isLive(cellM: number): boolean {
   return cellM >= 1 && cellM <= MAP.revealed.liveMaxCellM;
@@ -363,6 +375,9 @@ export class RevealCache {
   /** The background's tiles still to ask for, the first last. */
   private background: TileAt[] = [];
   private backgroundAt = '';
+  /** The minimap's tiles handed over and asked for (`feedMinimap`). */
+  minimapGiven = 0;
+  minimapAsked = 0;
   /** Whether the kept tiles have been read (the background waits: nothing is built twice). */
   loaded: boolean;
   /** Tiles built this session (not read from the store). */
@@ -441,12 +456,17 @@ export class RevealCache {
   }
 
   /**
-   * The background's tiles round a player at (x, z) on `face`: each level's within
-   * `prebuildSpans` of its span (a square, so the widest level's is the whole world disc), those
-   * touching the disc only (no holes inside the world); the start level first, then outward, nearest first in each.
+   * The background's tiles round a player (or the open view's centre) at (x, z) on `face`: each
+   * level's within `prebuildSpans` of its span (a square, so the widest level's is the whole
+   * world disc), those touching the disc only (no holes inside the world); level `start` first
+   * (the map's start level, or the open one), then outward, nearest first in each.
    */
-  backgroundFor(face: number, x: number, z: number): TileAt[] {
-    const start = MAP.bigMap.startLevel;
+  backgroundFor(
+    face: number,
+    x: number,
+    z: number,
+    start: number = MAP.bigMap.startLevel,
+  ): TileAt[] {
     const order = LEVELS.map((_, l) => l).sort(
       (a, b) => Math.abs(a - start) - Math.abs(b - start) || b - a,
     );
@@ -480,10 +500,36 @@ export class RevealCache {
   }
 
   /**
+   * The minimap's tiles (`MinimapFeed`): each it wants that is kept here is handed over; the rest
+   * are asked for first of anything (up to `jobsInFlight` pending), the nearest first. Before
+   * `pump`, each frame.
+   */
+  feedMinimap(client: RevealClient & MinimapFeed): void {
+    const wants = client.minimapWants();
+    const cellM = levelCellM(0);
+    for (let n = 0; n + 2 < wants.length; n += 3) {
+      const t: TileAt = [cellM, wants[n] ?? 0, wants[n + 1] ?? 0, wants[n + 2] ?? 0];
+      const [, face, ti, tk] = t;
+      const kept = this.tiles.get(RevealCache.key(cellM, face, ti, tk));
+      if (kept?.rgba) {
+        client.minimapTile(face, ti, tk, kept.rgba, kept.heights ?? new Int16Array(0));
+        this.minimapGiven++;
+      } else if (!kept && this.loaded && !this.noTerrain) {
+        if (this.known(t) || this.pending.size >= this.jobsInFlight) continue;
+        this.ask(client, t);
+        this.minimapAsked++;
+      }
+    }
+  }
+
+  /**
    * One frame's fill: takes finished tiles (keeping each, handing it to `onTile`) while under
    * `budgetMs` by `now`; asks for the open view `v`'s missing tiles up to `jobsInFlight` pending;
-   * then, with the kept tiles read and the view whole, the background's round the player `pose`
-   * ([face, x, z]) up to `backgroundJobs` pending. The tiles taken.
+   * then, with the kept tiles read and the view whole, the background's: while the map is open
+   * (owner, 2026-11-10: "Preferably it should do that until it's done, while the map is open")
+   * every level's round the view's centre, the open level first, then round the player `pose`
+   * ([face, x, z]), up to `jobsInFlight` pending; while it is shut, round the player up to
+   * `backgroundJobs` pending. The tiles taken.
    */
   pump(
     client: RevealClient,
@@ -521,16 +567,38 @@ export class RevealCache {
         if (t && !this.known(t)) this.ask(client, t);
       }
     }
-    if (!this.loaded || this.noTerrain || !pose || (v && this.wanted.length > 0)) return taken;
-    const [face = 0, x = 0, z = 0] = Array.from(pose);
-    // Again once the player has moved a closest-level tile.
+    if (!this.loaded || this.noTerrain || (!pose && !v) || (v && this.wanted.length > 0)) {
+      return taken;
+    }
+    const [face = 0, x = 0, z = 0] = pose ? Array.from(pose) : [];
+    // Again once the player (or the open view's centre) has moved a closest-level tile.
     const step = this.span(levelCellM(0));
-    const at = [face, Math.floor(x / step), Math.floor(z / step)].join(',');
+    const here = pose ? [face, Math.floor(x / step), Math.floor(z / step)] : [];
+    const at = (
+      v
+        ? ['open', v.face, v.level, Math.floor(v.cx / step), Math.floor(v.cz / step), ...here]
+        : here
+    ).join(',');
     if (at !== this.backgroundAt) {
       this.backgroundAt = at;
-      this.background = this.backgroundFor(face, x, z).reverse();
+      const list = v
+        ? [
+            ...this.backgroundFor(v.face, v.cx, v.cz, v.level),
+            ...(pose ? this.backgroundFor(face, x, z, v.level) : []),
+          ]
+        : this.backgroundFor(face, x, z);
+      const seen = new Set<string>();
+      this.background = list
+        .filter(([c, f, i, k]) => {
+          const key = RevealCache.key(c, f, i, k);
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        })
+        .reverse();
     }
-    while (this.pending.size < this.backgroundJobs && this.background.length > 0) {
+    const cap = v ? this.jobsInFlight : this.backgroundJobs;
+    while (this.pending.size < cap && this.background.length > 0) {
       const t = this.background.pop();
       if (t && !this.known(t)) this.ask(client, t);
     }
@@ -745,7 +813,7 @@ export function minimapSize(width: number, height: number): number {
 }
 
 /** What the map needs from the client (the wasm `Client`). */
-export interface MapClient extends RevealClient, LiveClient {
+export interface MapClient extends RevealClient, LiveClient, MinimapFeed {
   minimapFrame(nowMs: number, shading: boolean): Uint8Array | undefined;
   minimapPixels(): number;
   minimapDots(): Float64Array;
@@ -1029,6 +1097,8 @@ export class MapUi {
   private readonly zoomOut: HTMLButtonElement;
   private readonly scaleEl: HTMLDivElement;
   private readonly scaleLabel: HTMLSpanElement;
+  /** The tiles still building while the map is open (a quiet count). */
+  private readonly progress: HTMLDivElement;
   readonly state: BigMapState;
   private readonly cells: ExploredCells = new Map();
   private readonly heights: ExploredHeights = new Map();
@@ -1129,7 +1199,10 @@ export class MapUi {
     this.scaleEl.className = 'map-scale';
     this.scaleLabel = doc.createElement('span');
     this.scaleEl.append(doc.createElement('i'), this.scaleLabel);
-    body.append(this.bigCanvas, controls, this.scaleEl);
+    this.progress = doc.createElement('div');
+    this.progress.className = 'map-progress';
+    this.progress.hidden = true;
+    body.append(this.bigCanvas, controls, this.scaleEl, this.progress);
     this.panel.append(bar, body);
     this.big.append(this.panel);
     doc.body.append(this.root, this.big);
@@ -1343,6 +1416,8 @@ export class MapUi {
     const c = this.bigCanvas;
     const w = Math.max(1, Math.round(c.clientWidth || 800));
     const h = Math.max(1, Math.round(c.clientHeight || 600));
+    // The minimap's 1 m tiles first: handed over from the cache, else built before anything.
+    this.reveal.feedMinimap(this.client);
     const taken = this.reveal.pump(
       this.client,
       v,
@@ -1360,6 +1435,11 @@ export class MapUi {
       this.client.mapPose(),
     );
     if (taken > 0) this.bigStale = true;
+    if (v) {
+      const left = this.reveal.backgroundLeft + this.reveal.inFlight;
+      this.progress.hidden = left === 0;
+      if (left > 0) this.progress.textContent = `Mapping · ${String(left)} tiles`;
+    }
     // The closest levels' real blocks where the terrain is loaded (`liveTilesPerFrame` a frame).
     for (const [cellM, face, ti, tk] of this.reveal.pumpLive(
       this.client,

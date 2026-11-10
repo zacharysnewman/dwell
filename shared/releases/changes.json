@@ -2,6 +2,13 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.52.10",
+      "changes": [
+        "The minimap stays sharp and whole when you move fast: ground not loaded yet shows at 1 m from the world's map, never black or blocky.",
+        "The open map keeps filling in every zoom level until it's done, with a small count while it works."
+      ]
+    },
+    {
       "version": "0.52.9",
       "changes": [
         "Chisel, the terrain tool, has rock types: hard rock over soft steps into cliffs, flat caps and scree slopes, with a rock map and strength sliders. The mesa and badlands presets use their own rock. The game's world is unchanged."

@@ -527,7 +527,11 @@ dwell_world::both_faces!(
             "every cell coloured again"
         );
         assert!(fresh.iter().all(|&(_, c)| c == BLUE), "from the generator");
-        // The disc shows the valley it cannot reach in the generated colour, not a gap.
+        // The disc shows the valley it cannot reach in the generator's 1 m colour (red here),
+        // not a gap and not the explored cells' 8 m one.
+        for key in map.generated.wants(face, 0.5, 0.5, &t) {
+            map.generated.fill(key, tile_all(&t, RED));
+        }
         map.update(
             &w,
             f.point([0.5, high, 0.5]),
@@ -537,7 +541,7 @@ dwell_world::both_faces!(
             &t,
             &colour_of,
         );
-        assert_eq!(pixel(&map.image, &t, 20.0, 20.0), BLUE);
+        assert_eq!(pixel(&map.image, &t, 20.0, 20.0), RED);
         // Down in the valley the loaded terrain's tops replace it (at the next whole read):
         // reported again, green.
         let low = m_of_row(GROUND) + 1.6;
@@ -815,5 +819,90 @@ dwell_world::both_faces!(
             assert_eq!(c, BLUE);
             assert_eq!(map.explored.height_of(key), height_code(30.0, false));
         }
+    }
+);
+
+/// A generated 1 m tile (`revealed.tileCells`² cells) whose every cell's colour names its own
+/// face-local cell (i, k): red its i, green its k (each & 0xff), blue 0x80; no heights.
+fn tile_named(t: &MapTunables, ti: i32, tk: i32) -> Vec<u8> {
+    let n = t.revealed_tile_cells as i32;
+    let mut out = Vec::new();
+    for j in 0..n * n {
+        let (i, k) = (ti * n + j % n, tk * n + j / n);
+        out.extend([(i & 0xff) as u8, (k & 0xff) as u8, 0x80, 255]);
+    }
+    out
+}
+
+dwell_world::both_faces!(
+    fn the_disc_shows_unloaded_ground_at_one_metre_never_coarse_or_black(f: FaceFrame) {
+        // The owner's report (2026-11-10): sprinting left the minimap "fragmented" with "black
+        // edges" and "a coarse view sometimes". Only 20 m round the player is loaded: the rest of
+        // the disc is the generator's 1 m tops, each pixel its own metre's, none transparent and
+        // none an 8 m explored cell's.
+        let t = MAP;
+        assert_eq!(Generated::cell_m(&t), 1.0, "the closest level is 1 m cells");
+        let w = floor(f, 20);
+        let (px, pz, yaw) = (3.5, -2.5, 37.0);
+        let pos = f.point([px, m_of_row(GROUND) + 1.6, pz]);
+        let mut map = Minimap::default();
+        map.update(&w, pos, yaw, 0.0, false, &t, &colour_of);
+        // The explored cells' generated colours are there too (blue), and must not show.
+        let face = u8::from(f.is_b());
+        loop {
+            let asked = map.explored.ask(&t);
+            if asked.is_empty() {
+                break;
+            }
+            for tk in asked {
+                map.explored.fill(tk, Some(tile_all(&t, BLUE)), &t);
+            }
+        }
+        let wants = map.generated.wants(face, px, pz, &t);
+        assert!(!wants.is_empty());
+        // Nearest first, and every tile the disc touches.
+        assert_eq!(wants[0], (face, 0, -1));
+        for key in wants {
+            map.generated.fill(key, tile_named(&t, key.1, key.2));
+        }
+        assert!(map.generated.wants(face, px, pz, &t).is_empty(), "all held");
+        let up = map.update(&w, pos, yaw, 0.1, false, &t, &colour_of);
+        assert!(up.drawn, "a tile's arrival draws the disc again");
+        let n = Minimap::pixels(&t);
+        let per = 2.0 * t.minimap_radius_m / n as f64;
+        let half = n as f64 / 2.0;
+        let frame = MapFrame::new(f, px, pz, yaw);
+        let (mut loaded, mut generated) = (0, 0);
+        for qy in 0..n {
+            for qx in 0..n {
+                let sx = (qx as f64 + 0.5 - half) * per;
+                let sy = (half - (qy as f64 + 0.5)) * per;
+                if sx * sx + sy * sy > (t.minimap_radius_m - 1.0).powi(2) {
+                    continue;
+                }
+                let o = (qy * n + qx) * 4;
+                let p = &map.image[o..o + 4];
+                assert_eq!(p[3], 255, "pixel ({qx}, {qy}) inside the disc is drawn");
+                let c = (u32::from(p[0]) << 16) | (u32::from(p[1]) << 8) | u32::from(p[2]);
+                assert_ne!(c, BLUE, "no explored cell's colour");
+                let [lx, lz] = frame.to_local([sx, sy]);
+                let (i, k) = (lx.floor() as i32, lz.floor() as i32);
+                if i.abs() <= 19 && k.abs() <= 19 {
+                    assert_eq!(c, GREEN, "loaded ground is its blocks'");
+                    loaded += 1;
+                } else if i.abs() > 21 || k.abs() > 21 {
+                    let want = (((i & 0xff) as u32) << 16) | (((k & 0xff) as u32) << 8) | 0x80;
+                    assert_eq!(
+                        c, want,
+                        "pixel ({qx}, {qy}) is cell ({i}, {k})'s own 1 m top"
+                    );
+                    generated += 1;
+                }
+            }
+        }
+        assert!(loaded > 1000 && generated > 5000, "{loaded} {generated}");
+        // Far tiles are let go.
+        map.generated.wants(face, px + 1000.0, pz, &t);
+        assert!(!map.generated.has((face, 0, -1)));
     }
 );
