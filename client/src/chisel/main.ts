@@ -790,6 +790,7 @@ function viewBar() {
     'soil',
     'vegetation',
     'erosion',
+    'tectonics',
   ].forEach((t, i) => {
     overlay.append(
       el('option', { value: String(i), textContent: t, selected: i === view.overlay }),

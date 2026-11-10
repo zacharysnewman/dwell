@@ -88,6 +88,9 @@ pub struct HeightField {
     pub island_wavelength: i32,
     pub island_octaves: u32,
     pub island_cap: f32,
+    /// Tectonics at realistic scale (`terrain.json` `tectonics`, systemic terrain T5): one plate
+    /// boundary, its volcanic arc and a hotspot chain, added to the field; off by default.
+    pub tectonics: crate::tectonics::Tectonics,
 }
 
 /// A biome's water look over its fluid's (`waterLook`, ADR 0074 B4): its colour (`scatter`, sRGB
@@ -674,7 +677,8 @@ impl BiomeSet {
             first,
             field,
             params,
-            geology: crate::geology::Resolved::new(geology, world_seed),
+            geology: crate::geology::Resolved::new(geology, world_seed)
+                .with_tectonics(map.tectonics),
             biome_stack,
             rock_first,
             drainage: (geology.erosion.strength > 0.0

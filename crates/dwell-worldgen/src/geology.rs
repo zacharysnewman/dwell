@@ -73,6 +73,9 @@ pub struct Geology {
     pub sheer: f64,
     /// The rule-based erosion (T4).
     pub erosion: Erosion,
+    /// The tectonic provinces' stacks (T5, `rocks.json` `tectonic`): a volcano's, the old core's.
+    pub volcanic_stack: &'static str,
+    pub core_stack: &'static str,
 }
 
 mod table {
@@ -206,7 +209,17 @@ pub struct Resolved {
     /// The stacks' cumulative weights over 0..1 (the provinces' thresholds).
     cumulative: Vec<f64>,
     seed: u32,
+    /// The tectonics (T5) and their volcanoes, when on: the stacks they place, by index.
+    tectonic: Option<Tectonic>,
 }
+
+/// The tectonics, their volcanoes, and the volcanic and core stacks (indices).
+type Tectonic = (
+    crate::tectonics::Tectonics,
+    Vec<crate::tectonics::Volcano>,
+    usize,
+    usize,
+);
 
 /// How near (in the provinces' noise) to a border between stacks the shaping fades out, so a
 /// province's edge is no cliff.
@@ -234,11 +247,35 @@ impl Resolved {
             profiles,
             cumulative,
             seed: crate::noise::seed_word(world_seed, 0x6E01_0001),
+            tectonic: None,
         }
+    }
+
+    /// With the tectonic provinces of `t` (T5): a volcano's ground is the volcanic stack, the old
+    /// core's the core stack. Off (`t` disabled): the noise's provinces alone.
+    pub fn with_tectonics(mut self, t: crate::tectonics::Tectonics) -> Self {
+        if t.enabled() {
+            let find = |n: &str| {
+                self.geology
+                    .stack(n)
+                    .unwrap_or_else(|| panic!("rocks.json tectonic: no stack {n}"))
+            };
+            let (v, c) = (
+                find(self.geology.volcanic_stack),
+                find(self.geology.core_stack),
+            );
+            self.tectonic = Some((t, t.volcanoes(), v, c));
+        }
+        self
     }
 
     /// The province's stack at (x, z) and how fully it shapes there (fading to 0 at a border).
     pub fn province(&self, x: i64, z: i64) -> (usize, f64) {
+        if let Some((t, v, volcanic, core)) = &self.tectonic
+            && let Some(on_volcano) = t.province(v, x as f64, z as f64)
+        {
+            return (if on_volcano { *volcanic } else { *core }, 1.0);
+        }
         let n = crate::noise::fbm2(self.seed, x, z, self.geology.province_wavelength, 2, None);
         // fbm2 is about ±0.5: spread to 0..1.
         let t = (0.5 + 1.6 * f64::from(n)).clamp(0.0, 1.0);

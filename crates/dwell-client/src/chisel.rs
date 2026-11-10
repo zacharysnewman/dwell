@@ -43,6 +43,9 @@ pub enum Overlay {
     /// The erosion's cut-back (systemic terrain T4): tan where cut down to the floor, dark red at a
     /// remnant's wall, pale where it stands; grey where nothing erodes.
     Erosion,
+    /// The tectonics (systemic terrain T5): the two plates (the overriding tan, the other blue-grey,
+    /// the old core darker), the boundary dark, the volcanoes red by height; grey when off.
+    Tectonics,
 }
 
 impl Overlay {
@@ -56,9 +59,43 @@ impl Overlay {
             6 => Self::Soil,
             7 => Self::Vegetation,
             8 => Self::Erosion,
+            9 => Self::Tectonics,
             _ => Self::Blocks,
         }
     }
+}
+
+/// The tectonics overlay's colour at face-local (x, z) (systemic terrain T5), `texel` m wide.
+pub fn tectonics_rgb(t: &dwell_worldgen::tectonics::Tectonics, x: i64, z: i64, texel: i64) -> [f64; 3] {
+    if !t.enabled() {
+        return [0.5; 3];
+    }
+    let (x, z) = (x as f64, z as f64);
+    let (_, across) = t.frame(x, z);
+    let mut c = if t.kind == dwell_worldgen::tectonics::NONE {
+        [0.55, 0.65, 0.8]
+    } else if across > t.core_distance && t.kind == dwell_worldgen::tectonics::CONVERGENT {
+        [0.62, 0.5, 0.4]
+    } else if across > 0.0 {
+        [0.86, 0.74, 0.58]
+    } else {
+        [0.55, 0.65, 0.8]
+    };
+    if t.kind != dwell_worldgen::tectonics::NONE && across.abs() < 1.5 * texel as f64 {
+        c = [0.15, 0.1, 0.1];
+    }
+    for v in t.volcanoes() {
+        let r = ((x - v.x).powi(2) + (z - v.z).powi(2)).sqrt();
+        if r < v.radius {
+            let k = (dwell_worldgen::tectonics::Tectonics::cone(&v, r) / v.height.max(1.0))
+                .clamp(0.0, 1.0);
+            c = lerp3([0.6, 0.25, 0.15], [0.95, 0.2, 0.1], k);
+            if v.crater_radius > 0.0 && r < v.crater_radius {
+                c = [0.25, 0.05, 0.05];
+            }
+        }
+    }
+    c
 }
 
 /// The biome overlay's colours, by biome index (the default first), repeating.
@@ -264,6 +301,58 @@ pub fn height_from_json(v: &Value) -> Result<HeightField, String> {
     set(&mut h.inland_rise, "inland", "rise");
     set(&mut h.rise_half, "inland", "halfDistance");
     set(&mut h.hill_height, "hills", "amplitude");
+    // Tectonics (systemic terrain T5): terrain.json `tectonics`, any key left out as the build's.
+    if let Some(t) = v.get("tectonics") {
+        let k = &mut h.tectonics;
+        let f = |key: &str| t.get(key).and_then(Value::as_f64);
+        let whole = |slot: &mut u32, key: &str| {
+            if let Some(x) = f(key) {
+                *slot = x.max(0.0) as u32;
+            }
+        };
+        whole(&mut k.kind, "kind");
+        whole(&mut k.arc_count, "arcCount");
+        whole(&mut k.hotspot_count, "hotspotCount");
+        for (key, slot) in [
+            ("angle", &mut k.angle),
+            ("offset", &mut k.offset),
+            ("width", &mut k.width),
+            ("rangeHeight", &mut k.range_height),
+            ("trenchDepth", &mut k.trench_depth),
+            ("riftDepth", &mut k.rift_depth),
+            ("shift", &mut k.shift),
+            ("arcDistance", &mut k.arc_distance),
+            ("arcSpacing", &mut k.arc_spacing),
+            ("coneHeight", &mut k.cone_height),
+            ("coneRadius", &mut k.cone_radius),
+            ("craterRadius", &mut k.crater_radius),
+            ("craterDepth", &mut k.crater_depth),
+            ("hotspotX", &mut k.hotspot_x),
+            ("hotspotZ", &mut k.hotspot_z),
+            ("hotspotHeading", &mut k.hotspot_heading),
+            ("hotspotSpacing", &mut k.hotspot_spacing),
+            ("hotspotHeight", &mut k.hotspot_height),
+            ("hotspotRadius", &mut k.hotspot_radius),
+            ("hotspotDecay", &mut k.hotspot_decay),
+            ("hotspotWiden", &mut k.hotspot_widen),
+            ("coreDistance", &mut k.core_distance),
+        ] {
+            if let Some(x) = f(key) {
+                *slot = x;
+            }
+        }
+        if !(k.kind <= 3
+            && k.arc_count <= 32
+            && k.hotspot_count <= 32
+            && k.width > 0.0
+            && k.arc_spacing > 0.0
+            && k.cone_radius > 0.0
+            && k.hotspot_spacing > 0.0
+            && k.hotspot_radius > 0.0)
+        {
+            return Err("world: a tectonics knob is out of range".into());
+        }
+    }
     if !(h.island_wavelength >= 64 && h.island_octaves >= 1 && h.shelf > 0.0 && h.rise_half > 0.0) {
         return Err("world: a knob is out of range".into());
     }
@@ -372,6 +461,17 @@ pub fn geology_from_json(v: &Value) -> Result<Geology, String> {
         tread: g("shaping", "tread")?,
         sheer: g("shaping", "sheer")?,
         erosion: erosion_from_json(v.get("erosion"))?,
+        // The tectonic provinces' stacks (T5); absent (an edit stored before T5): the build's.
+        volcanic_stack: v
+            .get("tectonic")
+            .and_then(|t| t.get("volcanic"))
+            .and_then(Value::as_str)
+            .map_or(GEOLOGY.volcanic_stack, leak),
+        core_stack: v
+            .get("tectonic")
+            .and_then(|t| t.get("core"))
+            .and_then(Value::as_str)
+            .map_or(GEOLOGY.core_stack, leak),
     })
 }
 
@@ -663,6 +763,7 @@ pub fn preview(g: &TerrainGenerator, x0: i64, z0: i64, n: i64, texel: i64, o: Ov
                 }
                 Some(geo) => lerp3([0.82, 0.72, 0.5], [0.15, 0.35, 0.85], geo.wetness),
             }),
+            Overlay::Tectonics => bytes(tectonics_rgb(&g.map().tectonics, x, z, texel)),
             Overlay::Rock => {
                 let (rock, part) = g.rock_at_surface(x, z);
                 let c = rock.color;
