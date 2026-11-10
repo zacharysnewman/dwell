@@ -30,7 +30,7 @@ larger window and a faster CPU, and the LOD's `errorScale` (4.65 with the defaul
 1280×800) on a bigger screen.
 
 **Repro detail (owner, 2026-11-09):** "I had traveled a long ways down a river at or greater than
-walking speed, loading all the chunks along the way at high detail." So it shows after a LONG trip,
+walking speed, loading all the chunks along the way at high detail" … "for several minutes at or greater than walking speed." So it shows after a LONG trip,
 not at the start. Leads this points at: (1) the worker pool's FIFO queue backs up with jobs for
 chunks already passed, so new near chunks wait behind stale ones; (2) the chunk cache filling to its
 Distant-memory budget and the eviction keeping the trail behind (the "not unloaded behind you" half)
