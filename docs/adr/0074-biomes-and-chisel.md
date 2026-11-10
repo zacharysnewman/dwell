@@ -1,6 +1,6 @@
 # ADR 0074: Biomes as data, and Chisel, the biome and texture editor
 
-- **Status:** Accepted (2026-11-10; Phase 56 B1 built in 0.51.14). Adopts
+- **Status:** Accepted (2026-11-10; Phase 56 B1 built in 0.51.14, B2 in 0.51.15). Adopts
   [`proposals/BIOME_SANDBOX.md`](../proposals/BIOME_SANDBOX.md) with the owner's answers (its §5).
 - **Context:** The owner asked for a biome sandbox (2026-11-09): sliders for a landscape's surface
   blocks, relief, banks, water hue, trees, rocks and structures, a live preview, and export to JSON,
@@ -66,7 +66,22 @@
    column).
 4. **Ground items** (`shared/ground/ground.json`) are not in the biome yet: they come with trees and
    structures in B5. Bank steepness (`rivers.bank`, `lakes.bank`, world-level now) is revisited in B4.
-5. **Compatibility:** a changed default biome, or a new biome on the map, changes what a seed
+5. **The biome map (B2, built 0.51.15).** A biome's `where` places it in the geography: a `weight`
+   and optional ranges (`min`, `max`, eased over ± `blend`) of `temperature` (a slow climate gradient
+   across the island, along a seeded direction and bent by a noise, less `lapseRate` per 1,000 m of
+   elevation: a warm biome's heights are cold), `wetness` (1 at a river or lake, 0 `wetReach` m away),
+   `elevation` (m, the world height field's) and `coast` (m to the sea); `terrain.json` `biomeMap` holds
+   the world's parameters. Its weight in a column is `weight` × each range's fit, normalised. `bands` is
+   a list of elevation bands (each its blocks by slope: `ground`, `under`, `rock`, `shoreBlock`; the
+   lowest without a `from`), their edges moved by the biome's `shaping` noise and raised on slopes;
+   `shaping` also holds the rock band (`rockSlope` easing to `rockSlopeHigh` at `rockHigh` m, today's
+   snow line for the default), the shore and the soil depth. The column's fine relief is the weighted
+   sum of its biomes'; its surface, rock band and band edges are one biome's, chosen by a dithered
+   threshold on the weights (no straight borders). The height field is computed first and is never
+   read back. One biome: no map, golden-equal. Not yet per band (deviations, Phase 56): a band's own
+   fine relief and decoration/placement rules (the biome's `detail`, `decorations`, `placements` are
+   per biome; per band with B5), and the soil depth is the default's world-wide (`soil_rows`).
+6. **Compatibility:** a changed default biome, or a new biome on the map, changes what a seed
    generates: a new compatibility line, unless a world names its biomes at creation (B7).
 
 ## The plan (each sub-phase ≤ 45 min; Phase 56, `IMPLEMENTATION_PLAN.md`)
@@ -74,7 +89,8 @@
 - **B1** the biome file format, the generator and validation, today's terrain as the default biome,
   goldens unchanged. *(built, 0.51.14)*
 - **B2** the biome map and blending: biomes placed by where they belong (elevation, coast, wetness,
-  climate), wide transitions, elevation bands per biome; a one-biome world is golden-equal.
+  climate), wide transitions, elevation bands per biome; a one-biome world is golden-equal. *(built,
+  0.51.15)*
 - **B3** Chisel's prototype page (`docs/prototypes/chisel.html`): a live preview patch, sliders,
   Export/Import JSON.
 - **B4** water banks and hue, and the archipelago.
@@ -87,5 +103,5 @@
 
 - A biome can be added by data alone (a test does, with a fixture biome that changes the generated
   columns' tops); Chisel will edit the same files.
-- `HEIGHT`/`SURFACE` stay as the default's for the code that reads them as constants; B2 replaces
-  those reads with the biome map's weighted fields.
+- `HEIGHT`/`SURFACE` stay as the default's for the code that reads them as constants (the world's
+  water shaping, the soil depth); the column's relief, rock band and bands read the biome map's.
