@@ -39,6 +39,30 @@ fn every_model_reads_with_its_joints_and_clips() {
     }
 }
 
+// Owner, 2026-11-10: "Chickens are showing up pure white." The chicken's and the kitty's GLBs had
+// the palette colours in COLOR_1 behind the pack's own white COLOR_0, which is the layer the game
+// reads. Every model's colours are its palette remap: more than one colour, none of them all white.
+#[test]
+fn every_model_is_coloured_not_plain_white() {
+    for m in MODELS {
+        let model = read("", m.glb);
+        assert_eq!(model.colors.len(), model.positions.len(), "{}", m.name);
+        let mut distinct: Vec<[u32; 3]> = model
+            .colors
+            .iter()
+            .map(|c| c.map(|v| (v * 255.0).round() as u32))
+            .collect();
+        distinct.sort_unstable();
+        distinct.dedup();
+        assert!(
+            distinct.len() > 1,
+            "{}: one colour only, {:?} — the palette colours aren't in COLOR_0",
+            m.name,
+            distinct
+        );
+    }
+}
+
 #[test]
 fn the_player_model_is_the_peasant_standing_about_player_height() {
     let (data, model) = player();
