@@ -39,7 +39,7 @@ the fizz). Both one state (no properties): the generator refuses one with proper
 `fuseSeconds`, `radiusM`, `destroyRadiusM` (0 to `radiusM`, the generator refuses more), `loosenRadiusM`
 (at least `radiusM`, the generator refuses less), `impulse`, `falloff`, `flingFalloff`, `lift`, `maxSpeedMs`, `reachM`, `knockbackMs`,
 `damage`, `waterRadiusM`, `noPieceContactS` (0–10 s), `openSenseM`, `openBlend`, `openPathM`, `openSpreadMin` (0–1), `shell` (optional: `fling`, the default, or `crack`) and `crackOverCleared` (optional, only with `crack`; §3.6), `chainDelaySeconds` and `effects` (§4); `limits` (`blastsPerTick`,
-`maxPieces`, and the clients' `maxPuffs` and `minPuffShare`, §4). The `$comment` says what each means.
+`maxPieces`, `piecesPerTick` (§3.12), and the clients' `maxPuffs` and `minPuffShare`, §4). The `$comment` says what each means.
 
 **Lighting** (the existing input model, no new action): **Place with a torch held, aimed at dynamite,
 lights it** instead of placing the torch — `dwell_world::edit::check_block_edit` turns the target cell
@@ -56,7 +56,7 @@ it as usual. The server starts the fuse for every lit explosive an edit writes.
   (nearest first, at most `maxPieces` pieces) are cleared in one `Explosion` modification (its own cell
   first). A block within `destroyRadiusM` (`explosives::destroys`) is gone, no piece; each one beyond
   becomes a one-cell natural piece (felling's bodies, `Felling::spawn_body`, an
-  `EntitySpawn` each) flung along the line from the blast lifted toward the face's up by `lift`, at
+  `EntitySpawn` each; at most `piecesPerTick` of all blasts' pieces spawn a tick, the rest wait, §3.12) flung along the line from the blast lifted toward the face's up by `lift`, at
   `impulse` × (1 − d / radiusM)^`flingFalloff` over its mass (½ m³ × density), at most `maxSpeedMs`
   (0.49.46: `flingFalloff` 0, every piece alike; players and bodies keep `falloff`). Liquids
   within `waterRadiusM` are blown out (cleared; the water host refills the crater from round it),
@@ -469,3 +469,32 @@ an `EntityDespawn` to clients; kinds that can't be broken are kept). Test: `test
 `a_chained_column_of_yellow_destroys_the_pieces_left_in_each_later_blasts_core` — the owner's case, a
 1-wide, 10-tall column of yellow going down into the ground: 253 pieces survived inside a later blast's
 core on 0.50.57, none now.
+
+### 3.12 A big blast's pieces spread over ticks (0.51.12)
+
+A blast clears all its cells in its one `Explosion` modification (the clients' flash and boom once), but
+its pieces join a queue (`Fuses::queued`, nearest the centre first, the blasts in order) and at most
+`limits.piecesPerTick` (64) of them spawn a tick (`Server::spawn_queued`, after the tick's blasts, so the
+first share is in that tick's physics step); a 1 200-piece blast takes 19 ticks (0.3 s). A piece waits
+at its cleared cell with its velocity: a later blast destroys a waiting one whose cell is within its
+`destroyRadiusM` and adds its push to the others' velocity, as it does to spawned bodies (§3.11). A
+world saved with pieces waiting (a few ticks at most) loses them. Merging tiny adjacent pieces into one
+body was not done: neighbours fly alike (`flingFalloff` 0) but spread and tumble apart, so a merged
+body would look like a lump; not measured.
+
+Measured natively (`tests/explosives.rs` `measure_chain_ticks`, release, M-series Mac, flat world, every
+tick until the pieces settle; `DWELL_PIECES_PER_TICK` overrides the budget):
+
+| Chain | Pieces | Most spawned a tick, unspread → 64 | Worst spawning tick (ms) | Worst within 0.5 s of a spawn (ms) | Worst tick (ms) |
+|---|---|---|---|---|---|
+| Red 3 × 9 block, flush | 276 | 119 → 64 | 9.2 → 8.8 (32: 6.9) | 14.9 → 8.8 | 34.5 → 36.2 (`terrain`) |
+| Yellow 10-tall column, down | 922 | 157 → 64 | 12.8 → 13.3 (32: 11.4) | 12.8 → 13.3 | 12.8 → 13.3 (`physics`) |
+
+On this machine no blast tick was over the 16.7 ms budget even unspread; the spread caps the spawning
+tick's work by count (machine-independent). The chain's worst tick is elsewhere: in the red block's
+case the `terrain` phase ~15 s in (the settling pieces' terrain colliders, 33–35 ms, unchanged by the
+spread), in the yellow column's the `physics` step with ~900 bodies in flight. Test (both faces):
+`a_chains_pieces_spawn_within_the_tick_budget_to_the_same_end` — the red block
+chained, no tick spawns more than the budget (red on the unspread code: 119 a tick), the same
+`Explosion` cells and blasts as with no budget, and the same pieces within 2% (a waiting piece a later
+core destroys is judged at its cell, not where it would have flown).

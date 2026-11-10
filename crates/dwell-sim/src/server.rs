@@ -1633,6 +1633,7 @@ impl Server {
         for fuse in self.fuses.tick() {
             self.blast(fuse);
         }
+        self.spawn_queued();
         self.phase_ms[1] += watch.lap_ms();
 
         // 2. One input per player per tick, in sequence order (§9.3). Starved: repeat the last one.
@@ -2952,36 +2953,13 @@ impl Server {
                     free: e.wave_free_m,
                 }));
         }
-        for &(c, m, _, d, dir) in &flung {
-            let dir = DVec3::from(dir);
-            let i = self.felling.spawn_body(
-                &mut self.physics,
-                None,
-                0,
-                0,
-                vec![([0, 0, 0], m)],
-                crate::felling::cell_centre(c),
-                dwell_physics::DQuat::IDENTITY,
-                dir * fling_speed(&e, m, d),
-                DVec3::ZERO,
-            );
-            if e.no_piece_contact_s > 0.0 {
-                // Its pieces fly out packed: kept apart from one another for the window, they
-                // touch only the terrain, players and other bodies (docs/EXPLOSIVES.md §3).
-                let body = self.felling.pieces[i].body;
-                self.physics.set_apart(body, true);
-                self.fuses
-                    .apart
-                    .push((body, crate::blasts::ticks_of(e.no_piece_contact_s)));
-            }
-            let spawn = self.spawn_message(i);
-            self.broadcast_world(&spawn);
-        }
         // Pieces already moving within the destroy radius are destroyed, as blocks there are
         // (owner, 2026-11-09: chained dynamite left "a ton of physics blocks that are affected by
-        // multiple explosion forces"); a piece is judged by its body's centre.
-        let new_from = self.felling.pieces.len() - flung.len();
-        let doomed: Vec<u32> = self.felling.pieces[..new_from]
+        // multiple explosion forces"); a piece is judged by its body's centre, a queued one by its
+        // cell's.
+        let doomed: Vec<u32> = self
+            .felling
+            .pieces
             .iter()
             .filter(|p| (self.physics.position(p.body) - centre).length() <= e.destroy_radius_m)
             .map(|p| p.id)
@@ -2991,9 +2969,12 @@ impl Server {
                 self.broadcast_world(&Message::EntityDespawn(id));
             }
         }
-        // Bodies already moving are pushed by the same falloff (their mass resists).
-        let new_from = self.felling.pieces.len() - flung.len();
-        for k in 0..new_from {
+        self.fuses.queued.retain(|q| {
+            (crate::felling::cell_centre(q.cell) - centre).length() > e.destroy_radius_m
+        });
+        // Bodies already moving are pushed by the same falloff (their mass resists), and the
+        // earlier blasts' pieces still waiting to spawn take the push in their velocity.
+        for k in 0..self.felling.pieces.len() {
             let body = self.felling.pieces[k].body;
             let p = self.physics.position(body);
             let sh = share((p - centre).length(), e.reach_m, e.falloff);
@@ -3004,6 +2985,32 @@ impl Server {
             let dv = (e.impulse * sh / self.physics.mass(body).max(1.0)).min(e.max_speed_ms);
             let v = self.physics.velocity(body);
             self.physics.set_velocity(body, v + dir * dv);
+        }
+        for q in &mut self.fuses.queued {
+            let p = crate::felling::cell_centre(q.cell);
+            let sh = share((p - centre).length(), e.reach_m, e.falloff);
+            if sh <= 0.0 {
+                continue;
+            }
+            let dir = DVec3::from(push_dir(centre_a, p.to_array(), e.lift));
+            let mass = (f64::from(info(q.state).density_kg_m3) * dwell_world::CELL_H).max(1.0);
+            q.velocity += dir * (e.impulse * sh / mass).min(e.max_speed_ms);
+        }
+        // This blast's pieces wait their turn (`limits.piecesPerTick`, docs/EXPLOSIVES.md §3.12):
+        // their cells are already cleared; the nearest spawn first, this tick's share in this
+        // tick's physics step (`spawn_queued`, after the blasts).
+        let apart_ticks = if e.no_piece_contact_s > 0.0 {
+            crate::blasts::ticks_of(e.no_piece_contact_s)
+        } else {
+            0
+        };
+        for &(c, m, _, d, dir) in &flung {
+            self.fuses.queued.push_back(crate::blasts::Queued {
+                cell: c,
+                state: m,
+                velocity: DVec3::from(dir) * fling_speed(&e, m, d),
+                apart_ticks,
+            });
         }
         // Players: knocked back and hurt by their distance from it (to the nearest point of the
         // body's capsule).
@@ -3037,6 +3044,45 @@ impl Server {
         }
         // What the blast left without support falls (a trunk cut through, sand undermined).
         self.fell(&cleared, 0, Some(centre));
+    }
+
+    /// Spawns the blasts' waiting pieces, at most `limits.piecesPerTick` a tick (docs/EXPLOSIVES.md
+    /// §3.12), each at its cleared cell with its velocity.
+    fn spawn_queued(&mut self) {
+        let n = self.fuses.pieces_per_tick.min(self.fuses.queued.len());
+        let ready: Vec<crate::blasts::Queued> = self.fuses.queued.drain(..n).collect();
+        for q in ready {
+            let i = self.felling.spawn_body(
+                &mut self.physics,
+                None,
+                0,
+                0,
+                vec![([0, 0, 0], q.state)],
+                crate::felling::cell_centre(q.cell),
+                dwell_physics::DQuat::IDENTITY,
+                q.velocity,
+                DVec3::ZERO,
+            );
+            if q.apart_ticks > 0 {
+                // Its pieces fly out packed: kept apart from one another for the window, they
+                // touch only the terrain, players and other bodies (docs/EXPLOSIVES.md §3).
+                let body = self.felling.pieces[i].body;
+                self.physics.set_apart(body, true);
+                self.fuses.apart.push((body, q.apart_ticks));
+            }
+            let spawn = self.spawn_message(i);
+            self.broadcast_world(&spawn);
+        }
+    }
+
+    /// Sets the most blast pieces spawned a tick (tests and measurements; `limits.piecesPerTick`).
+    pub fn set_pieces_per_tick(&mut self, n: usize) {
+        self.fuses.pieces_per_tick = n.max(1);
+    }
+
+    /// The blasts' pieces waiting to spawn (tests).
+    pub fn queued_pieces(&self) -> usize {
+        self.fuses.queued.len()
     }
 
     /// Counts down the blasts' pieces kept apart (`noPieceContactS`): past its window each lets
