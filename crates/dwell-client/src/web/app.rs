@@ -1749,6 +1749,22 @@ impl Client {
             .borrow_mut()
             .set_water_debug(crate::render::water::debug_mask(names));
     }
+    /// Forces the near water's GPU heightfield on (1) or off (0) whatever the tier says, or back
+    /// to the tier's (any other value): `?heightfield=`, a dev tool (docs/DEV_TOOLS.md). Chunks
+    /// meshed after it follow it, so it is set before the world streams in.
+    #[wasm_bindgen(js_name = setHeightfield)]
+    pub fn set_heightfield(&self, mode: i32) {
+        let on = match mode {
+            0 => Some(false),
+            1 => Some(true),
+            _ => None,
+        };
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_heightfield_override(on);
+    }
     /// The ink outline's mode by name (`shared/look/outline.json`; docs/ART_DIRECTION.md §7), as
     /// `?outline=` takes it; `off` or an unknown name turns it off. True when a mode is on.
     #[wasm_bindgen(js_name = setOutline)]

@@ -108,6 +108,12 @@ pub fn water_for(device_type: wgpu::DeviceType, quality: WaterQuality) -> WaterQ
     }
 }
 
+/// Whether the near water's surface is drawn from the GPU heightfield: the tier's switch, unless the
+/// dev override (`?heightfield=0|1`) forces it.
+pub fn heightfield_drawn(tier: bool, forced: Option<bool>) -> bool {
+    forced.unwrap_or(tier)
+}
+
 /// Whether the wind's edge blur draws (four more loads of the finished image per pixel): not on a
 /// CPU adapter. The streaks and vignette still do.
 pub fn motion_blur_for(device_type: wgpu::DeviceType) -> bool {
@@ -1164,6 +1170,9 @@ pub struct Renderer {
     phone: bool,
     /// The water's cost-isolation switches (`water::debug_mask`, `?waterdbg=`; 0 in play).
     water_debug: u32,
+    /// `?heightfield=0|1` (a dev tool, docs/DEV_TOOLS.md): forces the near water's GPU heightfield
+    /// off or on whatever the tier says; `None` follows the tier (`watertiers.json` `heightfield`).
+    heightfield_override: Option<bool>,
     /// The water's flow shown (flow.rs `FLOW_RIPPLES`, `FLOW_FOAM`; the Water flow settings).
     flow_switches: u32,
     /// The water's noise and caustic tiles (water_tiles.rs).
@@ -1877,6 +1886,7 @@ impl Renderer {
             water_quality: WaterQuality::default(),
             phone: false,
             water_debug: 0,
+            heightfield_override: None,
             flow_switches: 0,
             water_tiles,
             pacer: pacing::FramePacer::default(),
@@ -2322,6 +2332,11 @@ impl Renderer {
 
     pub fn set_water_debug(&mut self, mask: u32) {
         self.water_debug = mask;
+    }
+    /// Forces the GPU heightfield on or off (`?heightfield=`), or back to the tier's (`None`).
+    /// Chunks meshed from then on follow it; set it before the world streams in.
+    pub fn set_heightfield_override(&mut self, on: Option<bool>) {
+        self.heightfield_override = on;
     }
     /// The water this adapter draws: the setting's, Low on a CPU adapter (`water_for`).
     fn water(&self) -> WaterQuality {
@@ -5208,7 +5223,7 @@ impl TerrainRenderer for Renderer {
 
 impl crate::game::Scene for Renderer {
     fn draws_heightfield(&self) -> bool {
-        self.water().tier().heightfield
+        heightfield_drawn(self.water().tier().heightfield, self.heightfield_override)
     }
     fn has_water_tile(&self, coord: ChunkCoord) -> bool {
         self.heightfield.draw_of(coord).is_some()
@@ -5327,6 +5342,14 @@ impl crate::game::Scene for Renderer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_heightfield_override_wins_over_the_tier() {
+        assert!(!heightfield_drawn(false, None));
+        assert!(heightfield_drawn(true, None));
+        assert!(heightfield_drawn(false, Some(true)));
+        assert!(!heightfield_drawn(true, Some(false)));
+    }
 
     #[test]
     fn loose_items_alone_do_not_redraw_the_far_shadow_cascades() {

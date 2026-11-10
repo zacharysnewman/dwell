@@ -137,6 +137,13 @@
       "params": {
         "mode": "adventure"
       }
+    },
+    {
+      "name": "heightfield",
+      "notes": "The near water's surface drawn from the GPU heightfield whatever the tier says (`?heightfield=1`, proposals/WATER_GPU_SURFACE.md C6a); compare with `raster`, the tier's (off in every tier but where `watertiers.json` turns it on).",
+      "params": {
+        "heightfield": "1"
+      }
     }
   ]
 }

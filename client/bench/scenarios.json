@@ -854,6 +854,81 @@
       ]
     },
     {
+      "name": "water-flood",
+      "notes": "A flood for the water's re-mesh cost (proposals/WATER_GPU_SURFACE.md C6a): goes to the seed-7 spawn's nearest running river as water-river does, then clears a 29 × 29 m box from 1 m to 5 m under the feet (the river's bed and both banks under its level), so the river pours in from up- and downstream and fills the pit, viewed from 12 m up looking down. Records the 12 s of the fill; compare with the `heightfield` configuration (the near water from the GPU heightfield: level-only changes rewrite tiles instead of re-meshing).",
+      "settings": {
+        "timeOfDay": 0.45
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "goto",
+          "find": "water",
+          "scope": "world",
+          "water": "river",
+          "minDepth": 0.5,
+          "minCurrent": 0.1,
+          "aim": "downstream",
+          "height": 2,
+          "pitch": -15,
+          "maxS": 120
+        },
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "before"
+        },
+        {
+          "do": "region",
+          "op": "clear",
+          "from": [-14, -5, -14],
+          "to": [14, -1, 14]
+        },
+        {
+          "do": "goto",
+          "find": "water",
+          "minCurrent": 0.1,
+          "aim": "downstream",
+          "height": 12,
+          "pitch": -70,
+          "maxS": 10
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 12
+        },
+        {
+          "do": "record",
+          "name": "flood"
+        },
+        {
+          "do": "shot",
+          "name": "flooding"
+        },
+        {
+          "do": "wait",
+          "s": 10
+        },
+        {
+          "do": "shot",
+          "name": "after"
+        }
+      ]
+    },
+    {
       "name": "jump-in-place",
       "notes": "Jumps on flat ground at the spawn: the controller trace shows the jump's peak.",
       "steps": [
