@@ -11,6 +11,7 @@
     "water": "water",
     "logSide": "bark",
     "logTop": "log_end",
+    "logCut": "fresh_wood",
     "leaves": "leaves",
     "tallGrass": "tall_grass",
     "ladder": "ladder_wood",
@@ -135,6 +136,15 @@
         { "kind": "ring", "at": [[16, 16, 3.5], [16, 16, 7.5], [16, 16, 11]], "colors": ["@shadow"], "width": 1.4, "length": 1, "arc": 300, "angle": 60, "angleJitter": 180, "opacity": 0.55 },
         { "kind": "edgeLight", "edge": "all", "color": "bark.base", "width": 2.6, "ragged": 0.5 },
         { "kind": "edgeLight", "edge": "all", "color": "bark.shadow", "width": 1, "opacity": 0.6, "seed": 1 }
+      ]
+    },
+    "fresh_wood": {
+      "$comment": "Wood freshly cut by an axe (a notch's faces, ADR 0067): the pale heartwood, lighter than the end grain, with soft grain streaks and a few chop marks.",
+      "use": "block", "ramp": "heartwood", "overlay": 1,
+      "layers": [
+        { "kind": "fill", "color": "@light" },
+        { "kind": "streak", "count": 9, "colors": ["@base"], "width": [1, 1.8], "length": [14, 28], "angle": 90, "angleJitter": 4, "bend": [-1, 1], "opacity": 0.45 },
+        { "kind": "streak", "count": 5, "colors": ["@shadow"], "width": [0.8, 1.2], "length": [6, 12], "angle": 0, "angleJitter": 10, "opacity": 0.3, "seed": 1 }
       ]
     },
     "leaves": {

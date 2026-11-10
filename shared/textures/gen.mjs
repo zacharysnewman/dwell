@@ -33,9 +33,14 @@ export function registryTiles(blocks) {
  */
 export const ENGINE_TILES = ['plain', 'missing'];
 
-/** Every atlas tile the texture set must paint: the registry's tiles and the engine's. */
-export function atlasTiles(blocks) {
-  return [...ENGINE_TILES, ...registryTiles(blocks)];
+/** The tiles the woods' cut faces draw with (shared/tools/tools.json's `woods[].cut.tile`, ADR 0067). */
+export function toolTiles(tools = readJson(join(root, 'shared', 'tools', 'tools.json'))) {
+  return (tools.woods ?? []).map((w) => w.cut?.tile).filter((t) => typeof t === 'string');
+}
+
+/** Every atlas tile the texture set must paint: the registry's tiles, the woods' cut tiles and the engine's. */
+export function atlasTiles(blocks, tools = toolTiles()) {
+  return [...new Set([...ENGINE_TILES, ...registryTiles(blocks), ...tools])];
 }
 
 /** Validates and paints: every atlas tile (`tiles`), in `materials.tiles` order, as { names, texels }. */

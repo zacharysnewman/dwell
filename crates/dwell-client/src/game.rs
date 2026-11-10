@@ -1381,6 +1381,13 @@ impl<S: Scene> Game<S> {
             }
             Message::Cuts(c) => {
                 self.chop.on = true;
+                // Carved into the terrain mesh (ADR 0067 §11): each changed cell's chunk again.
+                for cell in &c.gone {
+                    self.streamer.set_cut(*cell, None);
+                }
+                for (cell, cut) in &c.cuts {
+                    self.streamer.set_cut(*cell, Some(*cut));
+                }
                 self.chop.apply(c);
             }
             Message::HeldTools(list) => {
@@ -2381,7 +2388,7 @@ impl<S: Scene> Game<S> {
 
     /// The blasts' effects this frame (docs/EXPLOSIVES.md §4): their puffs and flash lights to the
     /// scene, and the camera's shake at `eye` (yaw, pitch degrees).
-    /// The axe's chips and the cut wood's gouges (crate::chips) ride the same billboard pass.
+    /// The axe's chips (crate::chips) ride the same billboard pass.
     fn update_blasts(&mut self, eye: [f64; 3], now_ms: f64) -> (f64, f64) {
         let (swing_yaw, swing_pitch) = self.update_swing(eye, now_ms);
         let (y, p) = self.update_blast_effects(eye, now_ms);
@@ -2472,8 +2479,7 @@ impl<S: Scene> Game<S> {
         let now = now_ms / 1000.0;
         self.blasts.prune(now);
         self.chips.prune(now);
-        let mut extra = self.chips.puffs(now);
-        extra.extend(self.gouge_puffs(eye));
+        let extra = self.chips.puffs(now);
         if self.blasts.list.is_empty() {
             self.scene.borrow_mut().set_blasts(extra, Vec::new());
             return (0.0, 0.0);
@@ -2483,39 +2489,6 @@ impl<S: Scene> Game<S> {
         let lights = self.blasts.lights(now);
         self.scene.borrow_mut().set_blasts(puffs, lights);
         self.blasts.shake(eye, now)
-    }
-
-    /// The gouges of the cut wood cells within `GOUGE_DRAW_M` of `eye`, from the server's cuts.
-    fn gouge_puffs(&mut self, eye: [f64; 3]) -> Vec<crate::blasts::Puff> {
-        const GOUGE_DRAW_M: f64 = 48.0;
-        let mut out = Vec::new();
-        let cuts: Vec<([i32; 3], dwell_protocol::chopping::Cut)> =
-            self.chop.cuts.iter().map(|(c, k)| (*c, *k)).collect();
-        for (cell, cut) in cuts {
-            let c = dwell_world::centre_of_cell(cell);
-            if (0..3).map(|k| (c[k] - eye[k]).powi(2)).sum::<f64>() > GOUGE_DRAW_M * GOUGE_DRAW_M {
-                continue;
-            }
-            let m = self.voxel(cell[0], cell[1], cell[2]);
-            let name = dwell_blocks::block_of(m).name;
-            let Some(wood) = dwell_protocol::chopping::WOODS
-                .iter()
-                .position(|w| w.block == name)
-            else {
-                continue;
-            };
-            let grain = match dwell_blocks::state_property(m, "axis") {
-                Some("x") => 0,
-                Some("z") => 2,
-                _ => 1,
-            };
-            let gs = crate::chips::gouges(cell, grain, &cut);
-            let seed = (cell[0] as u32).wrapping_mul(73_856_093)
-                ^ (cell[1] as u32).wrapping_mul(19_349_663)
-                ^ (cell[2] as u32).wrapping_mul(83_492_791);
-            out.extend(crate::chips::gouge_puffs(&gs, wood, seed));
-        }
-        out
     }
 
     /// A swing's chips out of `face` at `point` of the wood `block` (the server cuts; these show).

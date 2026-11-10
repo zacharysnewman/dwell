@@ -294,7 +294,7 @@ pub trait ChunkSource {
 
 /// A mesh job: the voxels of `coord` with their apron ([`ChunkStore::mesh_block`]), meshed
 /// mirrored for face B's chunks.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct MeshJob {
     pub coord: Coord,
     pub token: u64,
@@ -302,6 +302,8 @@ pub struct MeshJob {
     /// The flood light around it ([`ChunkStore::mesh_light`]; empty: open sky).
     pub light: Vec<u8>,
     pub mirror: bool,
+    /// Its cut wood cells (ADR 0067 §11), chunk-local and world-oriented: meshed carved.
+    pub cuts: Vec<([i32; 3], dwell_protocol::chopping::Cut)>,
 }
 
 /// The meshing workers.
@@ -527,6 +529,8 @@ pub struct ChunkStreamer<S, G, M: Mesher, V> {
     /// World cells meshed as air while held here (`hide_cells`): a settling piece's blocks while
     /// its glide draws them (docs/FELLING.md §4). The world holds them (collision, targeting).
     hidden: HashSet<[i32; 3]>,
+    /// The server's cuts on wood cells (`set_cut`, ADR 0067 §11), by world cell: meshed carved.
+    cuts: HashMap<[i32; 3], dwell_protocol::chopping::Cut>,
     /// Chunks whose mesh job in flight began before a cell in them was hidden or shown: its result
     /// is dropped (the chunk is dirty again).
     stale: HashSet<Coord>,
@@ -576,6 +580,7 @@ where
             mesh_cost: ItemCost::default(),
             second: None,
             hidden: HashSet::default(),
+            cuts: HashMap::default(),
             stale: HashSet::default(),
             error: None,
         }
@@ -883,12 +888,14 @@ where
             self.meshing.insert(c, self.token);
             let padded = mask_hidden(&self.hidden, c, self.store.mesh_block(c));
             let light = self.store.mesh_light(c);
+            let cuts = self.cuts_in(c);
             self.mesher.mesh(MeshJob {
                 coord: c,
                 token: self.token,
                 padded,
                 light,
                 mirror: face_of_chunk_y(c[1]) == Face::B,
+                cuts,
             });
             count += 1;
             let t1 = now();
@@ -914,6 +921,41 @@ where
             .set_terrain_chunk(coord, coord.map(|c| c * CHUNK_SIZE), Some(meshes));
         self.drawn_revision += 1;
         self.meshed.insert(coord);
+    }
+
+    /// Sets world cell `cell`'s cut (none: uncut), as the server sent it (ADR 0067 §11): its
+    /// chunk is meshed again with the cell carved (a job in flight for it is dropped).
+    pub fn set_cut(&mut self, cell: [i32; 3], cut: Option<dwell_protocol::chopping::Cut>) {
+        let changed = match cut.filter(|c| !c.is_empty()) {
+            Some(c) => self.cuts.insert(cell, c) != Some(c),
+            None => self.cuts.remove(&cell).is_some(),
+        };
+        if !changed {
+            return;
+        }
+        let k = cell.map(|v| v.div_euclid(CHUNK_SIZE));
+        if self.loaded.contains_key(&k) && !self.air.contains(&k) {
+            self.dirty.mark(k);
+            if self.meshing.contains_key(&k) {
+                self.stale.insert(k);
+            }
+        }
+    }
+
+    /// The cuts in chunk `c`, chunk-local (a mesh job's `cuts`).
+    fn cuts_in(&self, c: Coord) -> Vec<([i32; 3], dwell_protocol::chopping::Cut)> {
+        if self.cuts.is_empty() {
+            return Vec::new();
+        }
+        let o = c.map(|v| v * CHUNK_SIZE);
+        let mut out: Vec<_> = self
+            .cuts
+            .iter()
+            .filter(|(w, _)| (0..3).all(|k| w[k].div_euclid(CHUNK_SIZE) == c[k]))
+            .map(|(w, cut)| ([w[0] - o[0], w[1] - o[1], w[2] - o[2]], *cut))
+            .collect();
+        out.sort_by_key(|(l, _)| *l);
+        out
     }
 
     /// Leaves world `cells` out of the terrain meshes (`hide`), or draws them again: the chunks
@@ -1884,6 +1926,45 @@ mod tests {
         assert_eq!(job.padded[padded_index(3, 4, 5)], 7);
         s.on_meshed(job.coord, job.token, ());
         assert!(s.cells_drawn(&[cell]));
+    }
+
+    #[test]
+    fn a_cut_change_meshes_its_chunk_again_with_the_cut_and_drops_a_job_in_flight() {
+        // ADR 0067 §11: a cut wood cell is carved into its chunk's mesh, so each cut the server
+        // sends meshes that chunk again (only that one), its job carrying the chunk's cuts.
+        use dwell_protocol::chopping::Cut;
+        let (mut s, _) = setup();
+        s.on_chunk_data(explicit([0, 0, 0], 0, 0));
+        s.on_chunk_data(explicit([1, 0, 0], 0, 0));
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+        flush(&mut s);
+        let mut cut = Cut::default();
+        cut.notch[0] = 0.1;
+        let cell = [33, 4, 5];
+        s.set_cut(cell, Some(cut));
+        assert!(!s.cells_drawn(&[cell]));
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+        let job = s.mesher_mut().jobs.pop().expect("a job");
+        assert!(s.mesher_mut().jobs.is_empty(), "only the cell's chunk");
+        assert_eq!(job.coord, [1, 0, 0]);
+        assert_eq!(job.cuts, vec![([1, 4, 5], cut)], "chunk-local");
+        // Deeper while that job is in flight: its result is dropped and the chunk meshed again.
+        cut.notch[0] = 0.2;
+        s.set_cut(cell, Some(cut));
+        s.on_meshed(job.coord, job.token, ());
+        assert!(!s.cells_drawn(&[cell]));
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+        let job = s.mesher_mut().jobs.pop().expect("a job");
+        assert_eq!(job.cuts, vec![([1, 4, 5], cut)]);
+        s.on_meshed(job.coord, job.token, ());
+        assert!(s.cells_drawn(&[cell]));
+        // The same cut again changes nothing; gone, the chunk meshes without it.
+        s.set_cut(cell, Some(cut));
+        assert!(s.cells_drawn(&[cell]));
+        s.set_cut(cell, None);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+        let job = s.mesher_mut().jobs.pop().expect("a job");
+        assert!(job.cuts.is_empty());
     }
 
     #[test]
