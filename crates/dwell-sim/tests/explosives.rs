@@ -1352,3 +1352,148 @@ fn a_chained_column_of_yellow_destroys_the_pieces_left_in_each_later_blasts_core
         "no piece inside a later blast's destroy radius survives it"
     );
 }
+
+/// A chain in face `f`'s scene (none: the flat world, face A's, endless ground): `charges` (face-local) of `e` set in stone 24 rows deep, the first
+/// lit, run until every charge has blown, no piece is queued and none spawned for half a second, or
+/// `max` ticks (with `settle`, until the pieces have settled too): each tick's (ms, pieces spawned, phases), the cells the chain cleared within 12 m and
+/// the pieces spawned.
+struct Chain {
+    ticks: Vec<(f64, usize, [(&'static str, f64); 14])>,
+    cleared: usize,
+    pieces: usize,
+}
+
+fn solid_round(s: &mut Scene) -> usize {
+    let mut n = 0;
+    for x in -12..=12 {
+        for z in -12..=12 {
+            for r in -24..4 {
+                let m = s.get([x, r, z]);
+                if m != M.air && !info(m).liquid {
+                    n += 1;
+                }
+            }
+        }
+    }
+    n
+}
+
+fn chain(
+    f: Option<FaceFrame>,
+    e: ExplosiveData,
+    charges: &[[i32; 3]],
+    max: usize,
+    settle: bool,
+) -> Chain {
+    let mut s = match f {
+        Some(f) => Scene::new(f, 1),
+        None => Scene::flat(1),
+    };
+    s.fx.server.set_explosives(vec![e]);
+    s.put(1, 0.5, -3.5);
+    s.run(2);
+    if f.is_some() {
+        // Deeper stone than the scene's six rows, so a chain going down stays in rock.
+        let stone = require("dwell:stone");
+        for x in -14..=14 {
+            for z in -14..=14 {
+                for r in -24..-6 {
+                    s.set([x, r, z], stone);
+                }
+            }
+        }
+    }
+    for &c in charges {
+        s.set(c, require(e.block));
+    }
+    let before = solid_round(&mut s);
+    s.light(charges[0]);
+    s.run(1);
+    s.put(1, 0.5, -13.5);
+    s.fx.server.tick_phases();
+    let mut ticks = Vec::new();
+    let mut ids = std::collections::HashSet::new();
+    let mut quiet = 0;
+    for _ in 0..max {
+        let t = std::time::Instant::now();
+        let out = s.run(1);
+        let ms = t.elapsed().as_secs_f64() * 1000.0;
+        let new = spawns(&out).iter().filter(|p| ids.insert(p.id)).count();
+        ticks.push((ms, new, s.fx.server.tick_phases()));
+        let done = s.fx.server.fuses().is_empty() && s.fx.server.queued_pieces() == 0;
+        quiet = if done && new == 0 { quiet + 1 } else { 0 };
+        if quiet > 30 && (!settle || s.fx.server.body_count() == 0) {
+            break;
+        }
+    }
+    let after = solid_round(&mut s);
+    Chain {
+        ticks,
+        cleared: before - after,
+        pieces: ids.len(),
+    }
+}
+
+/// The 3 × 9 block of red dynamite on the ground.
+fn red_block() -> Vec<[i32; 3]> {
+    let mut v = vec![[0, 0, 0]];
+    for z in 0..9 {
+        for x in -1..=1 {
+            if [x, z] != [0, 0] {
+                v.push([x, 0, z]);
+            }
+        }
+    }
+    v
+}
+
+/// The 10-tall column of yellow going down into the ground.
+fn yellow_column() -> Vec<[i32; 3]> {
+    (0..10).map(|k| [0, -2 * k, 0]).collect()
+}
+
+#[test]
+#[ignore = "a measurement: cargo test --release -p dwell-sim --test explosives measure_chain_ticks -- --ignored --nocapture"]
+fn measure_chain_ticks() {
+    // face-a-only: a measurement; the parity is in the chained tests.
+    for (name, e, charges) in [
+        ("red 3x9", dynamite(), red_block()),
+        ("yellow column", yellow(), yellow_column()),
+    ] {
+        let c = chain(None, e, &charges, 30 * 60, true);
+        let (wi, w) = c
+            .ticks
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.0.total_cmp(&b.1.0))
+            .expect("ticks");
+        let mut sorted: Vec<f64> = c.ticks.iter().map(|t| t.0).collect();
+        sorted.sort_by(f64::total_cmp);
+        let over = sorted.iter().filter(|&&m| m > 16.7).count();
+        let most = c.ticks.iter().map(|t| t.1).max().unwrap_or(0);
+        // The worst tick that spawned pieces, and the worst of the half second after one.
+        let spawning = c.ticks.iter().filter(|t| t.1 > 0).map(|t| t.0);
+        let worst_spawn = spawning.fold(0.0f64, f64::max);
+        let near = (0..c.ticks.len())
+            .filter(|&k| c.ticks[k.saturating_sub(30)..=k].iter().any(|t| t.1 > 0))
+            .map(|k| c.ticks[k].0)
+            .fold(0.0f64, f64::max);
+        println!("{name}: worst spawning tick {worst_spawn:.1} ms, worst within 0.5 s of a spawn {near:.1} ms");
+        let phases: Vec<String> = w
+            .2
+            .iter()
+            .filter(|p| p.1 > 0.5)
+            .map(|p| format!("{} {:.1}", p.0, p.1))
+            .collect();
+        println!(
+            "{name}: {} pieces, {} cells cleared, {} ticks, worst {:.1} ms at tick {wi} ({} spawned; {}), p95 {:.1}, over 16.7 ms {over}, most spawned a tick {most}",
+            c.pieces,
+            c.cleared,
+            c.ticks.len(),
+            w.0,
+            w.1,
+            phases.join(", "),
+            sorted[sorted.len() * 95 / 100],
+        );
+    }
+}

@@ -17,6 +17,8 @@ pub struct ExplosiveLimits {
     pub blasts_per_tick: u32,
     /// The most cells one blast flings (the nearest first).
     pub max_pieces: u32,
+    /// The most of the blasts' pieces spawned a tick; the rest wait, the nearest a blast first.
+    pub pieces_per_tick: u32,
     /// The clients' most smoke and dust puffs at once, shared by the blasts in flight.
     pub max_puffs: u32,
     /// The least share of its puffs a blast draws, however many are in the air.

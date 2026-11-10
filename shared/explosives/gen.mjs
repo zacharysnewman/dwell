@@ -85,9 +85,10 @@ export function validateExplosives(data, blocks = registryBlocks()) {
   object(data, '(root)');
   keys(data, '(root)', ['limits', 'explosives']);
   object(data.limits, 'limits');
-  keys(data.limits, 'limits', ['blastsPerTick', 'maxPieces', 'maxPuffs', 'minPuffShare']);
+  keys(data.limits, 'limits', ['blastsPerTick', 'maxPieces', 'piecesPerTick', 'maxPuffs', 'minPuffShare']);
   number(data.limits.blastsPerTick, 'limits.blastsPerTick', 1, 64, true);
   number(data.limits.maxPieces, 'limits.maxPieces', 1, 65536, true);
+  number(data.limits.piecesPerTick, 'limits.piecesPerTick', 1, 65536, true);
   number(data.limits.maxPuffs, 'limits.maxPuffs', 1, 65536, true);
   number(data.limits.minPuffShare, 'limits.minPuffShare', 0, 1);
   if (!Array.isArray(data.explosives) || data.explosives.length === 0) bad('explosives must be a non-empty list');
@@ -154,7 +155,7 @@ const rgb = (hex) => {
 export function explosivesRust(data) {
   const lines = [`// ${header}`, ''];
   lines.push('/// The explosives table (shared/explosives/explosives.json).');
-  lines.push(`pub const LIMITS: ExplosiveLimits = ExplosiveLimits { blasts_per_tick: ${data.limits.blastsPerTick}, max_pieces: ${data.limits.maxPieces}, max_puffs: ${data.limits.maxPuffs}, min_puff_share: ${rf(data.limits.minPuffShare)} };`);
+  lines.push(`pub const LIMITS: ExplosiveLimits = ExplosiveLimits { blasts_per_tick: ${data.limits.blastsPerTick}, max_pieces: ${data.limits.maxPieces}, pieces_per_tick: ${data.limits.piecesPerTick}, max_puffs: ${data.limits.maxPuffs}, min_puff_share: ${rf(data.limits.minPuffShare)} };`);
   lines.push('');
   lines.push('pub const EXPLOSIVES: &[ExplosiveData] = &[');
   for (const e of data.explosives) {
