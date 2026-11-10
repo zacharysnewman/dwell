@@ -39,6 +39,7 @@ use dwell_protocol::auth::verify_ed25519;
 
 mod chopping;
 mod items;
+mod vitals;
 
 use crate::app_version::APP_VERSION;
 use crate::entropy::Entropy;
@@ -562,6 +563,10 @@ struct Session {
     /// swing may land.
     chop_hello: bool,
     chop_ready: u32,
+    /// Whether its client understands `Vitals` and the `Drown` cause (`VitalsHello`, ADR 0069),
+    /// and the ticks it has been out of air since the last drowning damage.
+    vitals_hello: bool,
+    drown_ticks: u32,
     /// The tool it holds (item name, the hold's plane), from `ChopAction::Held`; having sent one,
     /// it understands `HeldTools` (ADR 0067).
     held_tool: Option<(String, bool)>,
@@ -611,6 +616,8 @@ impl Session {
             inventory_unread: false,
             chop_hello: false,
             chop_ready: 0,
+            vitals_hello: false,
+            drown_ticks: 0,
             held_tool: None,
             primed: false,
             low_water: usize::MAX,
@@ -848,6 +855,8 @@ pub struct Server {
     departed: Vec<PlayerRecord>,
     /// Inventories of players who left since the last save (ADR 0066).
     departed_inventories: Vec<([u8; 32], Vec<u8>)>,
+    /// Vitals records of players who left since the last save (ADR 0069).
+    departed_vitals: Vec<([u8; 32], Vec<u8>)>,
     /// The loose items lying in the world (ADR 0066), and the moved ones not yet sent.
     loose: crate::loose_items::LooseItems,
     loose_moved: HashSet<u32>,
@@ -974,6 +983,7 @@ impl Server {
             in_flight: HashMap::default(),
             departed: Vec::new(),
             departed_inventories: Vec::new(),
+            departed_vitals: Vec::new(),
             loose: Default::default(),
             loose_moved: HashSet::default(),
             cuts: Default::default(),
@@ -1059,6 +1069,8 @@ impl Server {
                 self.departed_inventories
                     .push((s.public_key, s.inventory.to_bytes()));
             }
+            let record = self.vitals_record(&s);
+            self.departed_vitals.push((s.public_key, record));
         }
         if let Some(h) = s.handle {
             self.players.despawn(&mut self.physics, h);
@@ -1268,6 +1280,7 @@ impl Server {
                 | welcome_flags::INVENTORY
                 | welcome_flags::CHOPPING
                 | welcome_flags::CHOP_SWEEP
+                | welcome_flags::VITALS
                 | if flight { welcome_flags::FLIGHT } else { 0 }
                 | if flight_policy {
                     welcome_flags::FLIGHT_POLICY
@@ -1310,13 +1323,16 @@ impl Server {
             .as_ref()
             .and_then(|st| st.db().load_player(&key));
         self.load_inventory(id, &key);
-        match saved {
+        match &saved {
             Some(p) if p.health > 0 => {
                 let feet = (!self.config.join_at_spawn).then_some(p.feet);
                 self.spawn_player(id, feet);
                 self.sessions.get_mut(&id).expect("session").health = p.health;
             }
             _ => self.spawn_player(id, None),
+        }
+        if saved.as_ref().is_some_and(|p| p.health > 0) {
+            self.load_vitals(id, &key);
         }
     }
 
@@ -1424,6 +1440,7 @@ impl Server {
             }
             Message::InventoryAction(a) => self.inventory_action(id, a),
             Message::Chop(a) => self.chop_action(id, a),
+            Message::VitalsHello => s.vitals_hello = true,
             Message::ChunkResync(coords) => self.resync(id, &coords),
             Message::ChunkRequest(coords) => self.request_chunks(id, &coords),
             Message::LodRequest(sections) => {
@@ -1503,7 +1520,7 @@ impl Server {
         let mut e = self.event(PlayerEventKind::Damage, &self.sessions[&id]);
         e.amount = amount.min(255) as u8;
         e.cause = cause;
-        self.broadcast_world(&Message::PlayerEvent(e));
+        self.broadcast_event(e);
         if self.sessions[&id].health == 0 {
             self.kill(id, cause);
         }
@@ -1539,7 +1556,7 @@ impl Server {
         s.preload_complete = false;
         let mut e = self.event(PlayerEventKind::Death, &self.sessions[&id]);
         e.cause = cause;
-        self.broadcast_world(&Message::PlayerEvent(e));
+        self.broadcast_event(e);
     }
 
     /// Server-side effects of the controller tick: impact damage (a hit on the ground, a floor or a
@@ -1553,6 +1570,7 @@ impl Server {
             let amount = self.config.player_config.impact_damage(c.impact_speed);
             self.damage(id, amount, DamageCause::Fall);
         }
+        self.drown(id);
     }
 
     /// Advances the simulation by one 1/SIM_HZ step.
@@ -1645,6 +1663,9 @@ impl Server {
         self.players
             .tick_terrain(&mut self.world, &mut self.physics);
         self.phase_ms[2] += watch.lap_ms();
+        // The mode's stamina and oxygen (ADR 0069), as it is this tick.
+        let rules = self.vitals_rules();
+        self.players.set_vitals(rules);
         self.players
             .tick_controllers(&mut self.world, &mut self.physics);
         self.phase_ms[3] += watch.lap_ms();
@@ -1712,6 +1733,7 @@ impl Server {
         self.phase_ms[8] += watch.lap_ms();
         if self.tick.is_multiple_of(SNAPSHOT_EVERY) {
             self.send_snapshots();
+            self.send_vitals();
         }
         if self.tick.is_multiple_of(CURRENTS_EVERY) {
             self.send_currents();
@@ -4085,6 +4107,10 @@ impl Server {
             batch
                 .inventories
                 .push((s.public_key, s.inventory.to_bytes()));
+        }
+        batch.vitals = std::mem::take(&mut self.departed_vitals);
+        for s in self.sessions.values().filter(|s| s.joined()) {
+            batch.vitals.push((s.public_key, self.vitals_record(s)));
         }
         batch.loose_items = Some(self.loose.to_bytes());
         if !self.cuts_unread {

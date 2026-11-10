@@ -61,6 +61,9 @@ impl Server {
                     self.send_reliable(id, &m, Channel::World);
                 }
             }
+            // An exhausted player's swing is refused; a swing draws its cost (ADR 0069 §5).
+            ChopAction::Swing { ref tool, .. } | ChopAction::Sweep { ref tool, .. }
+                if !self.swing_stamina(id, tool) => {}
             ChopAction::Swing {
                 tool,
                 cell,
