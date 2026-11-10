@@ -162,19 +162,22 @@ export const MAP_FIELDS = {
 /** The most zoom levels the big map has (owner, 2026-11-09: "at most 5 zoom levels"). */
 export const MAX_LEVELS = 5;
 
-/** The island's radius (m; shared/protocol/constants.json), the widest zoom level's half span. */
-export const ISLAND_RADIUS_M = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../protocol/constants.json'), 'utf8')).world.islandRadius;
+/**
+ * The world disc's radius (m; shared/protocol/constants.json's worldRadius), the widest zoom
+ * level's half span: the whole world, its sea included (owner, 2026-11-09), not the island.
+ */
+export const WORLD_RADIUS_M = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../protocol/constants.json'), 'utf8')).world.worldRadius;
 
 const isPow2 = (v) => Number.isInteger(v) && v > 0 && (v & (v - 1)) === 0;
 
 /**
  * Each level's span across the panel's short side (m, whole metres): the closest the minimap's
- * diameter, the widest the island's, the levels between spaced geometrically.
+ * diameter, the widest the world disc's, the levels between spaced geometrically.
  */
-export function levelSpans(data, islandRadiusM = ISLAND_RADIUS_M) {
+export function levelSpans(data, worldRadiusM = WORLD_RADIUS_M) {
   const n = data.bigMap.levels.length;
   const near = 2 * data.minimap.radiusM;
-  const far = 2 * islandRadiusM;
+  const far = 2 * worldRadiusM;
   return data.bigMap.levels.map((_, i) => Math.round(near * (far / near) ** (i / (n - 1))));
 }
 

@@ -275,13 +275,13 @@ fn the_map_data_is_consistent() {
     assert_eq!(MAP.minimap_radius_m % MAP.explored_cell_m, 0.0);
     let t = std::hint::black_box(MAP);
     // The zoom levels (owner, 2026-11-09): at most five, the closest the minimap's area at 1 m a
-    // cell, the widest the whole island, geometric between, each level coarser.
+    // cell, the widest the whole world disc (its sea too), geometric between, each level coarser.
     let levels = t.big_map_levels;
     assert!((2..=5).contains(&levels.len()));
     assert_eq!(levels[0], (1.0, 2.0 * t.minimap_radius_m));
     assert_eq!(
         levels[levels.len() - 1].1,
-        2.0 * dwell_protocol::world::ISLAND_RADIUS as f64
+        2.0 * dwell_protocol::world::WORLD_RADIUS as f64
     );
     for w in levels.windows(2) {
         assert!(w[1].0 > w[0].0 && w[1].1 > w[0].1);

@@ -559,8 +559,9 @@ On screen), the dots, and the big map (M, a tap or the controller's View; M, Esc
 **[built, 0.50.48]** a framed panel over the game (`bigMap.panelFraction` of the screen, nearly full
 screen inside the safe area on a phone, bigger buttons there) with a title bar, + / − zoom buttons
 (stepping between **[built, 0.50.61] five fixed zoom levels**, `bigMap.levels`: the closest the
-minimap's area at 1 m a cell, the widest the whole island centred, geometric between, each its own
-cell size), "Center on me", a scale bar (1, 2 or 5 × 10ⁿ m), drag to pan with a grab
+minimap's area at 1 m a cell, the widest **[built, 0.50.63]** the whole world disc centred
+(`worldRadius` × 2 across the panel's short side, at any aspect, its sea included), geometric between,
+each its own cell size: 1, 2, 16, 64, 256 m), "Center on me", a scale bar (1, 2 or 5 × 10ⁿ m), drag to pan with a grab
 cursor, scroll, pinch or + / − to step a level about the pointer, and the controller (stick and D-pad pan,
 a trigger or bumper press steps a level, Y centres; `bigMap.pad*`, button names from `shared/input/gamepad.json`); the
 game holds still while it is open (`setMenuOpen`). Its state and controls are a page-free
@@ -579,7 +580,8 @@ creative"; 2026-11-09: built "only once", "invisibly"): every level's ground com
 tile at the level's cell size at a time (`requestReveal(face, ti, tk, cellM)`), kept per world and build in
 IndexedDB `dwell-map-tiles` (append-only, a tile written once) and built in the **background**
 (`revealed.backgroundJobs` at a time, each level within `prebuildSpans` of its span round the player,
-the widest the whole island, once the kept tiles are read), so opening or zooming the map waits for
+the widest the whole world disc, once the kept tiles are read; every level's tiles clipped to the world
+disc only, the sea's built too, so no holes inside the world; off the disc the panel shows `fogColor`), so opening or zooming the map waits for
 nothing and a return to the world builds nothing; adventure fogs every level by the explored cells
 (`ExploredLevels`), which draw their own colours at 8 m and coarser. In a mode with the `mapRevealed` ability (creative; `mapRevealed()`) nothing is fogged.
 Ground not yet explored takes its colour from the terrain generator the client already runs from the

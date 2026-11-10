@@ -36,10 +36,10 @@ export const MAP = {
   bigMap: {
     levels: [
       { cellM: 1, spanM: 128 },
-      { cellM: 2, spanM: 569 },
-      { cellM: 8, spanM: 2530 },
-      { cellM: 32, spanM: 11247 },
-      { cellM: 128, spanM: 50000 },
+      { cellM: 2, spanM: 677 },
+      { cellM: 16, spanM: 3578 },
+      { cellM: 64, spanM: 18915 },
+      { cellM: 256, spanM: 100000 },
     ],
     startLevel: 1,
     wheelStepPx: 100,
