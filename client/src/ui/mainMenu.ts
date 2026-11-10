@@ -82,6 +82,17 @@ export function formatPlayed(at: number, now: number): string {
   return `played ${String(days)} day${days === 1 ? '' : 's'} ago`;
 }
 
+/**
+ * A world's game mode as the world list shows it (owner, 2026-11-09: "The world should show in the
+ * menu as creative or adventure so you can tell"): the mode it was created in (`WorldMeta.mode`,
+ * ADR 0065), the default mode when it has none; a mode this build doesn't know shows its name.
+ */
+export function worldModeLabel(world: WorldMeta): { name: string; label: string } {
+  const name = world.mode ?? DEFAULT_MODE;
+  const mode = GAME_MODES.find((m) => m.name === name);
+  return { name, label: mode ? mode.label : name };
+}
+
 /** A world's details line: "Terrain · seed 42 · played 3 h ago · v0.1.0". */
 export function worldDetails(world: WorldMeta, now: number): string {
   const version = world.appVersion ? ` · v${world.appVersion}` : '';
@@ -522,9 +533,14 @@ export class MainMenu {
       const name = document.createElement('span');
       name.className = 'world-name';
       name.textContent = world.name;
+      const mode = worldModeLabel(world);
+      const badge = document.createElement('span');
+      badge.className = 'world-mode';
+      badge.dataset.mode = mode.name;
+      badge.textContent = mode.label;
       const details = document.createElement('span');
       details.className = 'world-details';
-      details.textContent = worldDetails(world, now);
+      details.append(badge, worldDetails(world, now));
       info.append(name, details);
       const actions = document.createElement('div');
       actions.className = 'world-actions';
