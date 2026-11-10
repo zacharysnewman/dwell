@@ -1,0 +1,64 @@
+{
+  "name": "preset:wetland",
+  "label": "Wetland / marsh",
+  "description": "Flat, waterlogged lowland round the rivers and lakes: low banks, tall grass, murky green water.",
+  "where": {
+    "weight": 1,
+    "wetness": {
+      "min": 0.75,
+      "blend": 0.1
+    },
+    "elevation": {
+      "max": 200,
+      "blend": 60
+    }
+  },
+  "detail": {
+    "amplitude": 0.5,
+    "wavelength": 128,
+    "octaves": 3,
+    "mountainAmplitude": 14,
+    "mountainFrom": 300,
+    "mountainFull": 1800,
+    "waterFade": 60
+  },
+  "shaping": {
+    "edgeNoise": 150,
+    "edgeWavelength": 320,
+    "edgeSlopeLift": 350,
+    "rockSlope": 0.85,
+    "rockSlopeHigh": 0.55,
+    "rockHigh": 1550,
+    "rockWindow": 150,
+    "shore": 1,
+    "underDepth": 3
+  },
+  "banks": {
+    "riverSlope": 0.08,
+    "lake": 0.2,
+    "lakeSlope": 0.05,
+    "beach": 0
+  },
+  "bands": [
+    {
+      "name": "marsh",
+      "ground": "dwell:grass",
+      "under": "dwell:dirt",
+      "rock": "dwell:stone",
+      "shoreBlock": "dwell:dirt"
+    }
+  ],
+  "decorations": [
+    "meadow_grass"
+  ],
+  "placements": [],
+  "water": "dwell:water",
+  "waterLook": {
+    "scatter": "#4a5a2a",
+    "absorption": [
+      0.8,
+      0.45,
+      0.9
+    ]
+  }
+}

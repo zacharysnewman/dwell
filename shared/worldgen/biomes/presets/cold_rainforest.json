@@ -1,0 +1,71 @@
+{
+  "name": "preset:cold_rainforest",
+  "label": "Cold rainforest",
+  "description": "Wet, cool, dense lowland forest by the rivers and the coast, with dark still water.",
+  "where": {
+    "weight": 1,
+    "temperature": {
+      "min": 0.2,
+      "max": 0.45,
+      "blend": 0.08
+    },
+    "wetness": {
+      "min": 0.6,
+      "blend": 0.12
+    },
+    "elevation": {
+      "max": 400,
+      "blend": 100
+    }
+  },
+  "detail": {
+    "amplitude": 2,
+    "wavelength": 96,
+    "octaves": 4,
+    "mountainAmplitude": 14,
+    "mountainFrom": 300,
+    "mountainFull": 1800,
+    "waterFade": 30
+  },
+  "shaping": {
+    "edgeNoise": 150,
+    "edgeWavelength": 320,
+    "edgeSlopeLift": 350,
+    "rockSlope": 0.85,
+    "rockSlopeHigh": 0.55,
+    "rockHigh": 1550,
+    "rockWindow": 150,
+    "shore": 2,
+    "underDepth": 3
+  },
+  "banks": {
+    "riverSlope": 0.3,
+    "lake": 0.5,
+    "lakeSlope": 0.15,
+    "beach": 0
+  },
+  "bands": [
+    {
+      "name": "rainforest",
+      "ground": "dwell:grass",
+      "under": "dwell:dirt",
+      "rock": "dwell:stone",
+      "shoreBlock": "dwell:sand"
+    }
+  ],
+  "decorations": [
+    "meadow_grass"
+  ],
+  "placements": [
+    "pine_groves"
+  ],
+  "water": "dwell:water",
+  "waterLook": {
+    "scatter": "#1f4a3a",
+    "absorption": [
+      0.9,
+      0.35,
+      0.4
+    ]
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "name": "preset:red_rock_mesa",
+  "label": "Red-rock canyon / mesa",
+  "description": "Sand floors under stone mesas, cliff bands on every steep face (stone stands in for red rock until rock types).",
+  "where": {
+    "weight": 1,
+    "temperature": {
+      "min": 0.55,
+      "blend": 0.1
+    },
+    "wetness": {
+      "max": 0.3,
+      "blend": 0.1
+    },
+    "elevation": {
+      "min": 120,
+      "max": 1400,
+      "blend": 100
+    }
+  },
+  "detail": {
+    "amplitude": 2,
+    "wavelength": 64,
+    "octaves": 4,
+    "mountainAmplitude": 12,
+    "mountainFrom": 300,
+    "mountainFull": 1800,
+    "waterFade": 30
+  },
+  "shaping": {
+    "edgeNoise": 40,
+    "edgeWavelength": 320,
+    "edgeSlopeLift": 80,
+    "rockSlope": 0.35,
+    "rockSlopeHigh": 0.3,
+    "rockHigh": 1550,
+    "rockWindow": 80,
+    "shore": 2,
+    "underDepth": 3
+  },
+  "banks": {
+    "riverSlope": 0.9,
+    "lake": 0.5,
+    "lakeSlope": 0.25,
+    "beach": 0
+  },
+  "bands": [
+    {
+      "name": "canyon_floor",
+      "ground": "dwell:sand",
+      "under": "dwell:sand",
+      "rock": "dwell:stone",
+      "shoreBlock": "dwell:sand"
+    },
+    {
+      "name": "mesa",
+      "from": 260,
+      "ground": "dwell:stone",
+      "under": "dwell:stone",
+      "rock": "dwell:stone",
+      "shoreBlock": "dwell:sand"
+    }
+  ],
+  "decorations": [],
+  "placements": [],
+  "water": "dwell:water"
+}

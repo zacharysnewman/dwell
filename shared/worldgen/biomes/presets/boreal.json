@@ -1,0 +1,75 @@
+{
+  "name": "preset:boreal",
+  "label": "Pine / boreal",
+  "description": "Cold pine forest on rolling uplands, snowy above 900 m.",
+  "where": {
+    "weight": 1,
+    "temperature": {
+      "max": 0.35,
+      "blend": 0.08
+    },
+    "elevation": {
+      "min": 150,
+      "max": 1500,
+      "blend": 150
+    }
+  },
+  "detail": {
+    "amplitude": 2,
+    "wavelength": 128,
+    "octaves": 4,
+    "mountainAmplitude": 14,
+    "mountainFrom": 300,
+    "mountainFull": 1800,
+    "waterFade": 30
+  },
+  "shaping": {
+    "edgeNoise": 100,
+    "edgeWavelength": 320,
+    "edgeSlopeLift": 350,
+    "rockSlope": 0.85,
+    "rockSlopeHigh": 0.55,
+    "rockHigh": 1550,
+    "rockWindow": 150,
+    "shore": 2,
+    "underDepth": 3
+  },
+  "banks": {
+    "riverSlope": 0.45,
+    "lake": 0.5,
+    "lakeSlope": 0.25,
+    "beach": 0
+  },
+  "bands": [
+    {
+      "name": "taiga",
+      "ground": "dwell:grass",
+      "under": "dwell:dirt",
+      "rock": "dwell:stone",
+      "shoreBlock": "dwell:sand"
+    },
+    {
+      "name": "snowy_taiga",
+      "from": 900,
+      "ground": "dwell:snowy_grass",
+      "under": "dwell:dirt",
+      "rock": "dwell:stone",
+      "shoreBlock": "dwell:sand"
+    }
+  ],
+  "decorations": [
+    "meadow_grass"
+  ],
+  "placements": [
+    "pine_groves"
+  ],
+  "water": "dwell:water",
+  "waterLook": {
+    "scatter": "#2a5a6a",
+    "absorption": [
+      0.6,
+      0.2,
+      0.15
+    ]
+  }
+}

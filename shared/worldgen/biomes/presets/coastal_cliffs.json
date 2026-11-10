@@ -1,0 +1,68 @@
+{
+  "name": "preset:coastal_cliffs",
+  "label": "Coastal cliffs",
+  "description": "Rocky headlands over the sea: grass tops, stone faces, no beaches.",
+  "where": {
+    "weight": 1,
+    "temperature": {
+      "max": 0.6,
+      "blend": 0.1
+    },
+    "elevation": {
+      "min": 25,
+      "blend": 15
+    },
+    "coast": {
+      "max": 500,
+      "blend": 200
+    }
+  },
+  "detail": {
+    "amplitude": 3,
+    "wavelength": 80,
+    "octaves": 4,
+    "mountainAmplitude": 14,
+    "mountainFrom": 300,
+    "mountainFull": 1800,
+    "waterFade": 30
+  },
+  "shaping": {
+    "edgeNoise": 150,
+    "edgeWavelength": 320,
+    "edgeSlopeLift": 350,
+    "rockSlope": 0.45,
+    "rockSlopeHigh": 0.4,
+    "rockHigh": 1550,
+    "rockWindow": 60,
+    "shore": 0,
+    "underDepth": 3
+  },
+  "banks": {
+    "riverSlope": 0.9,
+    "lake": 0.5,
+    "lakeSlope": 0.25,
+    "beach": 0
+  },
+  "bands": [
+    {
+      "name": "headland",
+      "ground": "dwell:grass",
+      "under": "dwell:dirt",
+      "rock": "dwell:stone",
+      "shoreBlock": "dwell:sand"
+    }
+  ],
+  "decorations": [
+    "meadow_grass"
+  ],
+  "placements": [],
+  "water": "dwell:water",
+  "waterLook": {
+    "scatter": "#1a5a8a",
+    "absorption": [
+      0.5,
+      0.1,
+      0.06
+    ]
+  }
+}

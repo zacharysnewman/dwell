@@ -12,7 +12,15 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { loadDir, registryFromVector } from '../structures/gen.mjs';
 import { loadMotes, moteNames } from '../look/motes.mjs';
-import { BIOME_GROUPS, TERRAIN, WHERE_FIELDS, WORLD_GROUPS, checkGroups, validateBiome as checkBiome } from './biomes.mjs';
+import {
+  BIOME_GROUPS,
+  TERRAIN,
+  WHERE_FIELDS,
+  WORLD_GROUPS,
+  checkGroups,
+  validateBiome as checkBiome,
+  validatePresets as checkPresets,
+} from './biomes.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
@@ -309,6 +317,11 @@ export function validateTerrainAndBiomes(world, biomes, blocks = registryBlocks(
   return { world, biomes: [def, ...biomes.filter((b) => b !== def)] };
 }
 
+/** Checks the preset biomes (biomes/presets/*.json): biomes.mjs's `validatePresets`. */
+export function validatePresetBiomes(presets, blocks = registryBlocks(), refs = biomeRefs(), taken = []) {
+  return checkPresets(presets, blocks, refs, taken);
+}
+
 /** Checks the fixture biomes (biomes/fixtures/*.json, for tests): each a valid biome, no duplicates. */
 export function validateFixtureBiomes(fixtures, blocks = registryBlocks(), refs = biomeRefs()) {
   for (const b of fixtures) validateBiome(b, blocks, refs);
@@ -419,7 +432,7 @@ function biomeFields(t) {
  * world's height field `HEIGHT`, the biomes' table (each surface merged with the world's water
  * shaping), and `SURFACE`, the default biome's, which the generator reads.
  */
-export function terrainRust({ world, biomes, fixtures = [], worlds = [] }) {
+export function terrainRust({ world, biomes, fixtures = [], presets = [], worlds = [] }) {
   const rs = [
     `// ${terrainHeader}`,
     '',
@@ -509,6 +522,13 @@ export function terrainRust({ world, biomes, fixtures = [], worlds = [] }) {
   rs.push('#[doc(hidden)]');
   rs.push('pub const FIXTURE_BIOMES: &[Biome] = &[');
   table(fixtures);
+  rs.push('];');
+  rs.push('');
+  rs.push('/// The preset biomes (shared/worldgen/biomes/presets/*.json): starting points for Chisel and');
+  rs.push("/// tests, never on the default world's map.");
+  rs.push('#[doc(hidden)]');
+  rs.push('pub const PRESET_BIOMES: &[Biome] = &[');
+  table(presets);
   rs.push('];');
   rs.push('');
   rs.push("/// Test fixture world settings (shared/worldgen/worlds/*.json): terrain.json's elevation with");
@@ -1153,6 +1173,12 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const world = JSON.parse(readFileSync(join(here, 'terrain.json'), 'utf8'));
   const terrain = validateTerrainAndBiomes(world, loadBiomes());
   terrain.fixtures = validateFixtureBiomes(loadBiomes(join(here, 'biomes/fixtures')));
+  terrain.presets = validatePresetBiomes(
+    loadBiomes(join(here, 'biomes/presets')),
+    registryBlocks(),
+    biomeRefs(),
+    [...terrain.biomes, ...terrain.fixtures].map((b) => b.name),
+  );
   terrain.worlds = validateFixtureWorlds(loadBiomes(join(here, 'worlds')), world);
   writeFileSync(join(root, 'crates/dwell-worldgen/src/terrain.gen.rs'), terrainRust(terrain));
   const placements = validatePlacements(
@@ -1168,6 +1194,6 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const volume = validateVolume(JSON.parse(readFileSync(join(here, 'volume.json'), 'utf8')), registryBlocks());
   writeFileSync(join(root, 'crates/dwell-worldgen/src/volume.gen.rs'), volumeRust(volume));
   console.log(
-    `worldgen: ${data.decorations.length} decorations, ${placements.placements.length} placements, the height field and ${terrain.biomes.length} biome(s), ${hydrology.profiles.length} hydrology profiles, the bedrock and the portals, ${volume.volumes.length} volumes generated`,
+    `worldgen: ${data.decorations.length} decorations, ${placements.placements.length} placements, the height field and ${terrain.biomes.length} biome(s) (${terrain.presets.length} presets), ${hydrology.profiles.length} hydrology profiles, the bedrock and the portals, ${volume.volumes.length} volumes generated`,
   );
 }

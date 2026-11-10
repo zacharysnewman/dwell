@@ -21,3 +21,10 @@ export function validateBiomeMap<T>(bm: T): T;
 export const WORLD_KNOBS: Record<string, readonly string[]>;
 export const WATER_LOOK_FIELDS: readonly string[];
 export function validateWorldKnobs<T>(w: T): T;
+export const BIOME_TEXT: Record<'label' | 'description', number>;
+export function validatePresets<T>(
+  presets: T[],
+  blocks: Map<string, BlockInfo>,
+  refs: BiomeRefs,
+  taken?: readonly string[],
+): T[];
