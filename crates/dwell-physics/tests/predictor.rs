@@ -372,3 +372,67 @@ fn only_the_pieces_that_could_touch_the_player_soon_are_stood_in_for() {
     assert!(p.piece_pose(100).is_some());
     assert_eq!(p.stand_ins(), 2);
 }
+
+#[test]
+fn prediction_runs_stamina_out_as_the_server_does_and_takes_its_corrections() {
+    // ADR 0069: the vitals step in the controller on both sides, so a sprint run out to
+    // exhaustion (its sprint then refused) predicts without a replay; a cost the client didn't
+    // predict (an axe swing, server-side) comes back in `Vitals` and is replayed in.
+    use dwell_physics::controller::{Vitals, VitalsRules};
+    let rules = VitalsRules {
+        stamina: true,
+        oxygen: true,
+    };
+    let mut server = Server::new();
+    server.players.set_vitals(rules);
+    let mut world = VoxelWorld::flat();
+    let mut p = Predictor::new(PlayerControllerConfig::default());
+    p.set_vitals_rules(rules);
+    p.on_snapshot(&mut world, &server.snapshot(0));
+    let sprint = |seq: u32| Input {
+        move_y: 1.0,
+        run: true,
+        look_yaw: ((seq / 120) * 90 % 360) as f32,
+        ..Input::default()
+    };
+    let delay = 9;
+    let mut in_flight: VecDeque<(PhysicsSnapshot, u32, Vitals)> = VecDeque::new();
+    let mut exhausted_at = None;
+    let mut swing_seen = false;
+    for seq in 1..=900 {
+        let input = quantize_input(&sprint(seq), seq);
+        p.tick(&mut world, &input);
+        server.step(&input, None);
+        if seq == 700 {
+            // A swing's cost on the server only.
+            server.players.controller_mut(server.h).vitals.spend(8.0);
+        }
+        let v = server.players.controller(server.h).vitals;
+        if v.exhausted && exhausted_at.is_none() {
+            exhausted_at = Some(seq);
+        }
+        in_flight.push_back((server.snapshot(seq), seq, v));
+        if in_flight.len() > delay {
+            let (s, at, v) = in_flight.pop_front().unwrap();
+            p.on_snapshot(&mut world, &s);
+            p.on_vitals(&mut world, at, v);
+            if at == 700 {
+                swing_seen = true;
+            }
+        }
+        if !swing_seen && seq >= 700 {
+            continue;
+        }
+        // Once heard of, the prediction agrees with the server at every tick.
+        assert!(
+            !p.controller().vitals.differs(&v),
+            "tick {seq}: {:?} vs {v:?}",
+            p.controller().vitals
+        );
+    }
+    let at = exhausted_at.expect("the sprint ran stamina out");
+    assert!(at < 700, "exhausted at {at}");
+    assert_eq!(p.stats().replays, 0, "{:?}", p.stats());
+    let error = (p.position() - server.players.position(&server.physics, server.h)).length();
+    assert!(error <= f64::from(Predictor::POSITION_TOLERANCE), "{error}");
+}
