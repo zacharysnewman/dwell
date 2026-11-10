@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chisel</title>
+    <style>
+      :root {
+        --bg: #f4efe4;
+        --panel: #fffaf0;
+        --ink: #2b2620;
+        --muted: #7a6f60;
+        --line: #d9cfbd;
+        --accent: #8a5a2b;
+        --bad: #a3322a;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1d1b18;
+          --panel: #26231f;
+          --ink: #ece4d6;
+          --muted: #a49886;
+          --line: #3b362f;
+          --accent: #d69a5c;
+          --bad: #ef7b70;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font:
+          13px/1.35 system-ui,
+          sans-serif;
+      }
+      main {
+        display: grid;
+        grid-template-columns: minmax(300px, 400px) 1fr;
+        height: 100vh;
+      }
+      aside {
+        overflow-y: auto;
+        background: var(--panel);
+        border-right: 1px solid var(--line);
+        padding: 12px 14px;
+      }
+      h1 {
+        font-size: 18px;
+        margin: 0 0 2px;
+        letter-spacing: 0.02em;
+      }
+      h2 {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+        margin: 14px 0 6px;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 120px 1fr 64px;
+        gap: 6px;
+        align-items: center;
+        margin: 2px 0;
+      }
+      .row input[type='number'] {
+        width: 64px;
+      }
+      .bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+        margin: 6px 0;
+      }
+      button,
+      select,
+      input {
+        font: inherit;
+        color: inherit;
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        padding: 2px 6px;
+      }
+      button {
+        cursor: pointer;
+      }
+      button.on {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      #errors {
+        color: var(--bad);
+        white-space: pre-wrap;
+      }
+      section.preview {
+        display: grid;
+        place-items: center;
+        padding: 12px;
+        overflow: hidden;
+      }
+      canvas {
+        width: min(calc(100vh - 80px), calc(100vw - 440px));
+        aspect-ratio: 1;
+        image-rendering: pixelated;
+        border: 1px solid var(--line);
+        background: #0b1a2b;
+      }
+      #status,
+      .sub {
+        color: var(--muted);
+        margin-top: 6px;
+      }
+      .num {
+        width: 80px;
+      }
+      details {
+        border-top: 1px solid var(--line);
+        padding: 4px 0;
+      }
+      summary {
+        cursor: pointer;
+        font-weight: 600;
+      }
+      @media (max-width: 760px) {
+        main {
+          grid-template-columns: 1fr;
+          height: auto;
+        }
+        canvas {
+          width: calc(100vw - 32px);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <aside id="panel"></aside>
+      <section class="preview">
+        <div>
+          <div class="bar" id="view"></div>
+          <canvas id="map" width="256" height="256"></canvas>
+          <div id="status"></div>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="/src/chisel/main.ts"></script>
+  </body>
+</html>

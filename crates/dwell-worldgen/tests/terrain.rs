@@ -1626,3 +1626,55 @@ dwell_world::both_faces!(
         assert_eq!(g.map().digest(), t.local(f.face).map().digest());
     }
 );
+
+/// The default biome is a fallback (ADR 0074 B3): a biome that fits a place takes it at an ordinary
+/// weight of 1 (before B3 the default, fitting everywhere at weight 1, kept half of it, so a new
+/// biome needed weight 100 to dominate), the default takes only what is left, and where nothing
+/// else fits the default has it all.
+#[test]
+fn the_default_biome_takes_only_the_weight_left() {
+    // both-faces: pure arithmetic over a geography, no face.
+    use dwell_worldgen::biomemap::{Geography, fallback_weights};
+    use dwell_worldgen::terrain::{BIOMES, FIXTURE_BIOMES};
+    let desert = *FIXTURE_BIOMES
+        .iter()
+        .find(|b| b.name == "test:desert")
+        .expect("the desert fixture");
+    assert_eq!(
+        desert.place.weight, 1.0,
+        "the fixture is at an ordinary weight"
+    );
+    let set = [BIOMES[0], desert];
+    let hot_dry = Geography {
+        temperature: 0.9,
+        wetness: 0.0,
+        elevation: 50.0,
+        coast: 500.0,
+    };
+    let w = fallback_weights(&set, &hot_dry);
+    assert_eq!(
+        w[0].1, 0.0,
+        "the default takes none where the desert fits fully: {w:?}"
+    );
+    assert_eq!(w[1].1, 1.0);
+    let cold = Geography {
+        temperature: 0.0,
+        ..hot_dry
+    };
+    let w = fallback_weights(&set, &cold);
+    assert_eq!(
+        (w[0].1, w[1].1),
+        (1.0, 0.0),
+        "nothing fits: the default has it"
+    );
+    // On the desert's eased edge the two share it.
+    let edge = Geography {
+        temperature: 0.4,
+        ..hot_dry
+    };
+    let w = fallback_weights(&set, &edge);
+    assert!(
+        (w[0].1 + w[1].1 - 1.0).abs() < 1e-9 && w[1].1 > 0.2 && w[1].1 < 0.8,
+        "{w:?}"
+    );
+}

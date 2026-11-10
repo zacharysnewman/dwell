@@ -91,6 +91,23 @@ pub fn raw_weight(b: &Biome, g: &Geography) -> f64 {
         * fit(&p.coast, g.coast)
 }
 
+/// Every biome's weight at `g` (ADR 0074 B3): a biome other than the default (`biomes[0]`) takes
+/// its raw weight ([`raw_weight`]: how well `g` fits its `where`, × its `weight`); the default is a
+/// fallback, taking only what is left of 1 (× its own raw weight), so a biome that fits a place
+/// takes it at an ordinary weight of 1 and the default fills the rest.
+pub fn fallback_weights(biomes: &[Biome], g: &Geography) -> Vec<(u8, f64)> {
+    let mut ws: Vec<(u8, f64)> = biomes
+        .iter()
+        .enumerate()
+        .map(|(i, b)| (i as u8, raw_weight(b, g)))
+        .collect();
+    if let Some((first, rest)) = ws.split_first_mut() {
+        let others: f64 = rest.iter().map(|w| w.1).sum();
+        first.1 *= (1.0 - others).max(0.0);
+    }
+    ws
+}
+
 /// The biome field of one face's map: its distance grids, built once per generator.
 #[derive(Debug)]
 pub struct BiomeField {
@@ -144,6 +161,12 @@ fn chamfer(n: usize, cell: f64, seed: impl Fn(usize) -> bool) -> Vec<f32> {
 impl BiomeField {
     /// The field of `map`, for a world of seed `world_seed`.
     pub fn new(map: &WorldMap, world_seed: u64) -> Self {
+        Self::with_params(map, world_seed, BIOME_MAP)
+    }
+
+    /// [`BiomeField::new`] with the biome map's geography `params` in place of the build's
+    /// (`terrain.json` `biomeMap`; Chisel's edits).
+    pub fn with_params(map: &WorldMap, world_seed: u64, params: BiomeMap) -> Self {
         let (n, cell, x0) = (map.n, map.cell, map.x0);
         let coast = chamfer(n, cell, |c| map.is_sea(c));
         let mut wet = vec![false; n * n];
@@ -159,7 +182,7 @@ impl BiomeField {
         let a = f64::from(seed_word(world_seed, 0xB10E_0001)) / f64::from(u32::MAX)
             * std::f64::consts::TAU;
         Self {
-            params: BIOME_MAP,
+            params,
             n,
             cell,
             x0,
@@ -212,12 +235,8 @@ impl BiomeField {
     /// mingling, never a line.
     pub fn mix(&self, biomes: &[Biome], x: i64, z: i64, elevation: f64) -> Mix {
         let g = self.geography(x, z, elevation);
-        let mut ws: Vec<(u8, f64)> = biomes
-            .iter()
-            .enumerate()
-            .map(|(i, b)| (i as u8, raw_weight(b, &g)))
-            .filter(|&(_, w)| w > 0.0)
-            .collect();
+        let mut ws = fallback_weights(biomes, &g);
+        ws.retain(|&(_, w)| w > 0.0);
         ws.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
         ws.truncate(MAX_BLEND);
         let total: f64 = ws.iter().map(|w| w.1).sum();

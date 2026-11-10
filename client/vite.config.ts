@@ -99,8 +99,8 @@ export default defineConfig({
     target: 'es2022',
     sourcemap: true,
     rollupOptions: {
-      // The game's page, and `tools.js` at a fixed name for the launcher (src/tools.ts).
-      input: { index: 'index.html', tools: 'src/tools.ts' },
+      // The game's page, Chisel (the biome editor, ADR 0074 B3), and `tools.js` at a fixed name for the launcher (src/tools.ts).
+      input: { index: 'index.html', chisel: 'chisel.html', tools: 'src/tools.ts' },
       // Keep `tools.js`'s exports: nothing in the build imports them.
       preserveEntrySignatures: 'exports-only',
       output: {

@@ -1438,3 +1438,14 @@ owner's `?renderscale=0.5&upscaler=stretch`, `--unthrottled --cpu-throttle 4 --t
   loose items only spin in place and the nearest cascade (drawn every frame) holds them. After:
   99 k vs 99 k, gpu.frame 3.36 vs 3.36 ms, frame.cpu 4.40 vs 4.21 ms (adventure first; the second
   page of a compare runs ~0.5–1 ms CPU slower under throttling, so swap the order to check a gap).
+
+## Chisel, the biome editor (`client/chisel.html`)
+
+A second page of the client build (Phase 56 B3, ADR 0074): `npm run build:wasm`, `npm run dev`, then
+`/dwell/chisel.html` (query `?seed=7&size=16384&overlay=1&cx=0&cz=0` sets the view: size in m, overlay
+0 blocks, 1 biome weights, 2 temperature, 3 wetness). The left panel edits the biomes (sliders made from
+`shared/worldgen/biomes.mjs`'s ranges, block pickers from the registry); the right shows the region
+from the real generator in a worker, 64² texels then 256², redrawn ~60 ms after a drag (each pass
+~0.1 s on an M1). Export writes `{ biomes, biomeMap }`; Import takes that or one biome file; both are
+validated by the rules `gen.mjs` uses. Edits persist in the browser (`dwell.chisel`); Reset returns to
+the build's. `document.body.dataset.tiles` counts the tiles drawn, for a script waiting on the preview.

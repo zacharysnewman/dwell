@@ -117,7 +117,7 @@ pub const FIXTURE_BIOMES: &[Biome] = &[
     Biome {
         name: "test:desert",
         place: Where {
-            weight: 100.0,
+            weight: 1.0,
             temperature: WhereRange {
                 min: 0.4,
                 max: f64::INFINITY,
