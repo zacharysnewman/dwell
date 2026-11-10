@@ -400,7 +400,7 @@ const BG_TOP = ['$comment', 'default', 'turnS', 'capture', 'backgrounds'];
 /** The capture's fields (client/scripts/panoramas.ts): [min, max, whole]. */
 export const CAPTURE_FIELDS = {
   steps: [8, 64, true],
-  sizePx: [256, 2048, true],
+  sizePx: [256, 4096, true],
   fovDeg: [60, 100, false],
   span: [0.5, 1, false],
   quality: [0.3, 1, false],
@@ -449,7 +449,8 @@ export function validateMenuBackgrounds(data, hasImage = () => true) {
       bgFail(`${where}.image must be a file name like beach.webp (webp, jpg or avif), got ${JSON.stringify(b.image)}`);
     if (names.has(b.name)) bgFail(`${where}.name: "${b.name}" is listed twice`);
     if (images.has(b.image)) bgFail(`${where}.image: "${b.image}" is listed twice`);
-    if (!hasImage(b.image)) bgFail(`${where}.image: shared/ui/menu-backgrounds/${b.image} is missing (render it: npm run panoramas -- ${b.name})`);
+    for (const file of [b.image, smallImage(b.image)])
+      if (!hasImage(file)) bgFail(`${where}.image: shared/ui/menu-backgrounds/${file} is missing (render it: npm run panoramas -- ${b.name})`);
     names.add(b.name);
     images.add(b.image);
   });
@@ -458,11 +459,17 @@ export function validateMenuBackgrounds(data, hasImage = () => true) {
   return data;
 }
 
-/** The TypeScript for validated backgrounds: each image imported, so the build ships it. */
+/** The small copy of a background's image (half each way, for phones; `npm run panoramas` writes both): `beach.webp` → `beach-small.webp`. */
+export const smallImage = (image) => image.replace(/\.(\w+)$/, '-small.$1');
+
+/** The TypeScript for validated backgrounds: each image and its small copy imported, so the build ships them. */
 export function menuBackgroundsTs(data) {
   const ident = (name) => `IMAGE_${name.replace(/-/g, '_').toUpperCase()}`;
   const ts = [`// ${backgroundsHeader}`, ''];
-  for (const b of data.backgrounds) ts.push(`import ${ident(b.name)} from '../../../shared/ui/menu-backgrounds/${b.image}';`);
+  for (const b of data.backgrounds) {
+    ts.push(`import ${ident(b.name)} from '../../../shared/ui/menu-backgrounds/${b.image}';`);
+    ts.push(`import ${ident(b.name)}_SMALL from '../../../shared/ui/menu-backgrounds/${smallImage(b.image)}';`);
+  }
   ts.push('');
   ts.push('/** A main-menu background: a 360° panorama of a real spot (shared/ui/menu-backgrounds.json). */');
   ts.push('export interface MenuBackground {');
@@ -470,12 +477,14 @@ export function menuBackgroundsTs(data) {
   ts.push('  label: string;');
   ts.push('  /** The image (bundled): a level 360° strip whose two ends meet. */');
   ts.push('  url: string;');
+  ts.push('  /** The same strip at half the size each way, for phones (a quarter of the memory). */');
+  ts.push('  smallUrl: string;');
   ts.push('}');
   ts.push('');
   ts.push('// prettier-ignore');
   ts.push('export const MENU_BACKGROUNDS: readonly MenuBackground[] = [');
   for (const b of data.backgrounds)
-    ts.push(`  { name: ${JSON.stringify(b.name)}, label: ${JSON.stringify(b.label)}, url: ${ident(b.name)} },`);
+    ts.push(`  { name: ${JSON.stringify(b.name)}, label: ${JSON.stringify(b.label)}, url: ${ident(b.name)}, smallUrl: ${ident(b.name)}_SMALL },`);
   ts.push('];');
   ts.push('');
   ts.push('// prettier-ignore');

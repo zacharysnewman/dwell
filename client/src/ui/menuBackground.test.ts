@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import data from '../../../shared/ui/menu-backgrounds.json';
 import {
   BACKGROUNDS,
+  backgroundUrl,
   DEFAULT_MENU_BACKGROUND,
   findBackground,
   MENU_BACKGROUNDS,
@@ -33,7 +34,7 @@ describe('menu backgrounds', () => {
     const list = {
       backgrounds: [
         ...BACKGROUNDS.backgrounds,
-        { name: 'sky-island', label: 'Sky island', url: 'x.webp' },
+        { name: 'sky-island', label: 'Sky island', url: 'x.webp', smallUrl: 'x-small.webp' },
       ],
       default: BACKGROUNDS.default,
     };
@@ -42,6 +43,15 @@ describe('menu backgrounds', () => {
     expect(choice.labels['sky-island']).toBe('Sky island');
     expect(sanitizeMenuBackground({ background: 'sky-island' }, list)).toBe('sky-island');
     expect(findBackground('sky-island', list).url).toBe('x.webp');
+  });
+
+  it('a phone gets the small copy, a tablet or desktop the full one', () => {
+    const bg = { name: 'sky-island', label: 'Sky island', url: 'x.webp', smallUrl: 'x-small.webp' };
+    expect(backgroundUrl(bg, 390, 844)).toBe('x-small.webp');
+    expect(backgroundUrl(bg, 844, 390)).toBe('x-small.webp');
+    expect(backgroundUrl(bg, 820, 1180)).toBe('x.webp');
+    expect(backgroundUrl(bg, 1440, 900)).toBe('x.webp');
+    for (const b of MENU_BACKGROUNDS) expect(b.smallUrl).toMatch(/-small\.webp/);
   });
 
   it('turn once in turnS seconds, and hold still with reduced motion', () => {

@@ -406,8 +406,12 @@ blends the two shots either side of it, each reprojected from its own perspectiv
 ray (`shotPoint`), with a smoothstep weight from 1 at a shot's centre to 0 at its neighbours'
 (`columnShots`), so the feather spans the whole 22.5° step and there is no hard join; any
 view-dependent difference (a reflection) fades across the step instead. Encoded as WebP at
-`capture.quality` into `shared/ui/menu-backgrounds/` (the shots stay in `--out`). With the defaults
-(16 shots, 1080 px at 90°) a strip is 3393 × 972, 105–225 KB.
+`capture.quality` into `shared/ui/menu-backgrounds/`, with a copy at half the size each way
+(`<name>-small.webp`, `smallImage`) that the menu loads on a phone (the screen's shorter side under
+600 px, `backgroundUrl`: a quarter of the decoded memory); the shots stay in `--out`. With the
+defaults (16 shots, 2160 px at 90°, since 0.52.4; 1080 px before) a strip is 6786 × 1944 (the small
+copy 3393 × 972), 335–685 KB (the small 135–300 KB). The window is `sizePx` square at a device scale of 1, so it can be larger
+than the screen; a run of the three takes ~3½ minutes on the M1.
 
 A new background: find the spot (a `goto` scenario, [Finding places](#finding-places): the three
 were found with `water` at `scope: world` for `sea` then the nearest `dwell:sand`, `river` and

@@ -53,6 +53,11 @@ export function stripSize(c: Capture): { width: number; height: number; focal: n
   };
 }
 
+/** The small copy's file (half the strip each way, for phones): `beach.webp` → `beach-small.webp`. */
+export function smallImage(image: string): string {
+  return image.replace(/\.(\w+)$/, '-small.$1');
+}
+
 /** The yaw of each shot (degrees), each next one turned left (yaw falls to the right), so each lands to the right of the last in the strip. */
 export function shotYaws(b: Background, c: Capture): number[] {
   return Array.from({ length: c.steps }, (_, k) => (b.yaw + 360 - (360 * k) / c.steps) % 360);
@@ -164,10 +169,18 @@ const STITCH = `async (shots, size, w, h, focal, quality) => {
     }
     const cv = new OffscreenCanvas(w, h);
     cv.getContext('2d').putImageData(out, 0, 0);
-    const buf = new Uint8Array(await (await cv.convertToBlob({ type: 'image/webp', quality })).arrayBuffer());
-    let s = '';
-    for (let i = 0; i < buf.length; i += 0x8000) s += String.fromCharCode(...buf.subarray(i, i + 0x8000));
-    return btoa(s);
+    // The small copy for phones: half each way, resampled smoothly.
+    const sm = new OffscreenCanvas(Math.round(w / 2), Math.round(h / 2));
+    const sx = sm.getContext('2d');
+    sx.imageSmoothingQuality = 'high';
+    sx.drawImage(cv, 0, 0, sm.width, sm.height);
+    const encode = async (c) => {
+      const buf = new Uint8Array(await (await c.convertToBlob({ type: 'image/webp', quality })).arrayBuffer());
+      let s = '';
+      for (let i = 0; i < buf.length; i += 0x8000) s += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+      return btoa(s);
+    };
+    return [await encode(cv), await encode(sm)];
   }`;
 
 function call<T>(page: Page, expression: string): Promise<T> {
@@ -297,13 +310,21 @@ async function main(): Promise<void> {
       const webp = await page.evaluate(
         `(${STITCH})(${JSON.stringify(shots)}, ${String(c.sizePx)}, ${String(strip.width)}, ${String(strip.height)}, ${String(strip.focal)}, ${String(c.quality)})`,
       );
-      const bytes = Buffer.from(webp as string, 'base64');
       mkdirSync(IMAGES, { recursive: true });
-      writeFileSync(join(IMAGES, b.image), bytes);
-      writeFileSync(join(dir, b.image), bytes);
-      console.log(
-        `  ${b.image}: ${String(strip.width)}×${String(strip.height)}, ${String(Math.round(bytes.length / 1024))} KB`,
-      );
+      const [full, small] = webp as [string, string];
+      for (const [file, b64, size] of [
+        [b.image, full, `${String(strip.width)}×${String(strip.height)}`],
+        [
+          smallImage(b.image),
+          small,
+          `${String(Math.round(strip.width / 2))}×${String(Math.round(strip.height / 2))}`,
+        ],
+      ] as const) {
+        const bytes = Buffer.from(b64, 'base64');
+        writeFileSync(join(IMAGES, file), bytes);
+        writeFileSync(join(dir, file), bytes);
+        console.log(`  ${file}: ${size}, ${String(Math.round(bytes.length / 1024))} KB`);
+      }
       await context.close();
     }
   } finally {
