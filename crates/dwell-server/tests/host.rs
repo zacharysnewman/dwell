@@ -268,3 +268,63 @@ fn the_binary_starts_prints_its_invite_link_and_saves_on_sigint() {
     let db = WorldDb::open(std::path::Path::new(&world)).unwrap();
     assert_eq!(db.load_meta().unwrap().app_version_last, APP_VERSION);
 }
+
+/// Opens `world` with `extra` options and starts a server on it; the `--mode` line it logs.
+fn start_in(world: &str, extra: &[&str]) -> (dwell_sim::server::Server, String) {
+    let mut list = vec!["--world", world, "--generator", "0"];
+    list.extend_from_slice(extra);
+    let mut o = parse_options(&args(&list)).unwrap();
+    open_world(&mut o).unwrap();
+    let mode = o.mode.clone();
+    let config = std::mem::take(&mut o.server);
+    let mut server =
+        dwell_sim::server::Server::new(config, Box::new(dwell_sim::entropy::SystemEntropy));
+    let line = switch_mode(&mut server, mode.as_deref());
+    (server, line)
+}
+
+fn save_and_close(mut server: dwell_sim::server::Server) {
+    server.save_now();
+    server.flush_store();
+}
+
+#[test]
+fn the_mode_option_makes_a_new_world_in_it_and_switches_a_saved_one() {
+    let s = Scratch::new("mode");
+    let world = s.file("m.dwellworld");
+    // A new world in adventure.
+    let (server, line) = start_in(&world, &["--mode", "adventure"]);
+    assert_eq!(server.world_settings().mode, "adventure");
+    assert_eq!(line, "world: game mode adventure");
+    save_and_close(server);
+    // Reopened without it: still adventure (the world keeps its mode).
+    let (server, _) = start_in(&world, &[]);
+    assert_eq!(server.world_settings().mode, "adventure");
+    save_and_close(server);
+    // Reopened with --mode creative: switched, logged, and saved.
+    let (server, line) = start_in(&world, &["--mode", "creative"]);
+    assert_eq!(server.world_settings().mode, "creative");
+    assert_eq!(
+        line,
+        "world: game mode creative (switched from adventure by --mode)"
+    );
+    save_and_close(server);
+    let (server, _) = start_in(&world, &[]);
+    assert_eq!(server.world_settings().mode, "creative");
+}
+
+#[test]
+fn a_mode_name_not_in_the_data_fails_with_a_message() {
+    let s = Scratch::new("badmode");
+    let world = s.file("b.dwellworld");
+    let mut o = parse_options(&args(&["--world", &world, "--mode", "survival"])).unwrap();
+    let e = open_world(&mut o).unwrap_err();
+    assert!(
+        e.contains("\"survival\" is not a game mode") && e.contains("creative, adventure"),
+        "{e}"
+    );
+    assert!(
+        !std::path::Path::new(&world).exists(),
+        "nothing is written for a bad mode"
+    );
+}

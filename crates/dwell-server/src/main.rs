@@ -71,6 +71,7 @@ fn main() {
     let server_key = options.server_key;
     let world_config = std::mem::take(&mut options.server);
     let mut server = Server::new(world_config, Box::new(SystemEntropy));
+    println!("{}", switch_mode(&mut server, options.mode.as_deref()));
 
     println!("dwell-server {APP_VERSION} | protocol v{PROTOCOL_VERSION}");
     println!(

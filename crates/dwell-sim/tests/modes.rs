@@ -113,6 +113,63 @@ dwell_world::both_faces!(
     }
 );
 
+/// Sends player 1's inputs for `ticks` ticks (one a tick, numbered from `*seq`), stepping the server.
+fn hold(fx: &mut Fixture, seq: &mut u32, input: dwell_physics::controller::Input, ticks: u32) {
+    for _ in 0..ticks {
+        *seq += 1;
+        let m = Message::PlayerInput(PlayerInput {
+            last_snapshot_tick: 0,
+            inputs: vec![dwell_physics::net::quantize_input(&input, *seq)],
+        });
+        fx.server.on_datagram(1, &m.encode());
+        fx.server.step();
+    }
+}
+
+/// Player 1's height above the scene's ground (face-local metres).
+fn height(fx: &Fixture, f: FaceFrame) -> f64 {
+    let feet = fx.server.feet_of(1).expect("a live player");
+    f.point(feet)[1] - m_of_row(BASE)
+}
+
+dwell_world::both_faces!(
+    /// The owner's switch (2026-11-08): creative → adventure → creative live. A player flying when
+    /// flight goes falls and lands unhurt (the host's doing), later falls hurt; the adventure
+    /// inventory is the player's through the creative spell and back.
+    fn switching_modes_live_lands_the_flyer_unhurt_and_keeps_the_inventory(f: FaceFrame) {
+        let full = players::MAX_HEALTH as i32;
+        let mut fx = scene(f, "adventure");
+        assert_eq!(fx.server.give(1, "dwell:dirt", 5), 5);
+        assert!(fx.server.set_mode("creative"));
+        let fly = dwell_physics::controller::Input {
+            fly: true,
+            jump: true,
+            ..Default::default()
+        };
+        let mut seq = 0;
+        hold(&mut fx, &mut seq, fly, 120);
+        let up = height(&fx, f);
+        assert!(up > 12.0, "flying in creative: {up} m up");
+        // Creative neither used nor dropped the inventory.
+        let dirt = |fx: &Fixture| fx.server.inventory_of(1).unwrap().count_of("dwell:dirt");
+        assert_eq!(dirt(&fx), 5);
+        assert!(fx.server.set_mode("adventure"));
+        // Still holding fly: the server clears it, the player falls and lands unhurt.
+        hold(&mut fx, &mut seq, fly, 300);
+        assert!(height(&fx, f) < 1.0, "landed: {} m up", height(&fx, f));
+        assert_eq!(fx.server.health_of(1), full, "the host's fall hurts nothing");
+        assert_eq!(dirt(&fx), 5, "the adventure inventory kept");
+        // The grace was that one landing: a later hard fall hurts.
+        let h = drop_from(&mut fx, f, 15.0);
+        assert!(h < full, "a later fall hurts: {h}");
+        // And back to creative: flight again, the inventory as it was.
+        assert!(fx.server.set_mode("creative"));
+        hold(&mut fx, &mut seq, fly, 60);
+        assert!(height(&fx, f) > 3.0, "flies again");
+        assert_eq!(dirt(&fx), 5);
+    }
+);
+
 /// A brush stroke's paste (a `KEEP` cell beside a stone one) beside player 1.
 fn stroke(fx: &mut Fixture) -> RegionCheck {
     let [x, y, z] = FaceFrame::A.cell([2, BASE, 0]);
