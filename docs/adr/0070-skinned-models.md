@@ -118,7 +118,11 @@ are code and rare. Per build: the models ship with a release, like the block reg
    Graphics → Look's **Model detail** slider runs through the levels (stored as the level's id,
    `dwell.modelDetail`, a default/pin setting like the others; not in the graphics presets: a look, not
    a cost they trade); `setModelDetail` re-uploads every skinned mesh at the level, live, the clip
-   players untouched. Flat shading is on at every level, not a separate toggle: it is what makes a
+   players untouched. **Since 0.52.5 the slider is gone** (owner, 2026-11-10: "Keep the logic for
+   changing the detail. But we can remove the slider and make 60% the default"): `detail.default` is
+   `high` (60 %); the setting, `setModelDetail`, `?modeldetail=` and the Model Viewer's buttons stay,
+   and a pin stored before still applies (it has no control to change it now; clearing site data or
+   Settings → Reset drops it). Flat shading is on at every level, not a separate toggle: it is what makes a
    level read as low-poly. Cost: the flat corners split the vertices, so the ten GLBs are ~5.6 MB
    (were ~1.8 MB), all built into the WASM. Seen in the Model Viewer: 60 % and 35 % read as clean
    low-poly; 20 % breaks the small models (the wolf's and the dog's heads collapse, the stag loses

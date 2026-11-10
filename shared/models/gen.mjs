@@ -172,7 +172,11 @@ export function validate(data, palette, dir, read = (p) => readFileSync(p)) {
         fail(`${at}: ${e.message}`);
       }
       const bytes = read(path);
-      if (!Buffer.from(applyCoat(bytes, m.coat, palette)).equals(Buffer.from(bytes)))
+      if (
+        !Buffer.from(applyCoat(bytes, m.coat, palette)).equals(
+          Buffer.from(bytes),
+        )
+      )
         fail(
           `${at}: ${m.glb} is not painted by its coat: run node shared/models/import.mjs --coat ${name}`,
         );

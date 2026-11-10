@@ -23,8 +23,6 @@ import { DEFAULT_EXPOSURE, EXPOSURE_LIMITS, sanitizeExposure } from './viewSetti
 import {
   MODEL_DETAIL,
   MODEL_DETAIL_KEY,
-  detailAt,
-  detailIndex,
   sanitizeModelDetail,
 } from './modelDetailSettings';
 import {
@@ -646,20 +644,9 @@ function panes(mobile: boolean): Record<SettingsPane, Group[]> {
               with: (s, v) => ({ ...s, exposure: v }),
             },
           },
-          {
-            // The levels are data (shared/models/models.json `detail`), full detail first.
-            slider: {
-              label: 'Model detail',
-              pin: 'modelDetail',
-              hint: 'How many faces the people and animals have; lower is more low-poly',
-              min: 0,
-              max: Math.max(1, MODEL_DETAIL.levels.length - 1),
-              log: false,
-              format: (v) => detailAt(v).label,
-              get: (s) => detailIndex(s.modelDetail),
-              with: (s, v) => ({ ...s, modelDetail: detailAt(v).id }),
-            },
-          },
+          // No Model detail slider (owner, 2026-11-10: "Keep the logic for changing the detail. But
+          // we can remove the slider and make 60% the default"): the level is models.json's
+          // `detail.default`, a pin stored before still applies, and ?modeldetail= overrides it.
           ...WATER_FLOW_TOGGLES.map((toggle) => ({ toggle })),
         ],
       },

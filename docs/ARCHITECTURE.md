@@ -744,9 +744,11 @@ full mesh and Decimate-collapsed copies at each level's `ratio`, all on one skin
 `detail_1`, …; ADR 0070 §10), each face one colour (the pack's texture sampled at the face and snapped
 to the nearest palette stop, taking its ramp's base, or a `remap` entry), **flat shaded** (a normal a
 face), no texture or UVs, at most four joints a vertex, clips named by their last word, sampled at 15
-keys a second; a `source.remove` rule deletes parts (the doe: the deer without antlers). Settings →
-Graphics → **Model detail** picks the level every skinned model draws (`setModelDetail`, the meshes
-re-uploaded live; stored as the level's id). `gen.mjs` validates the data against the GLBs (clips
+keys a second; a `source.remove` rule deletes parts (the doe: the deer without antlers); a `coat`
+paints a model by body region with soft blends instead of a colour a face (`coat.mjs`, ADR 0070 §12).
+Every skinned model draws `detail.default`'s level (60 % since 0.52.5; no Settings control any more,
+a pin stored before still applies, `?modeldetail=<id>` overrides it; `setModelDetail` re-uploads the
+meshes live). `gen.mjs` validates the data against the GLBs (clips
 present, ≤ 64 joints, a mesh per detail level, the levels themselves, known roles, palette names) and writes `dwell-models`' table; CI fails on stale output. `dwell-models` reads the
 GLB (`glb.rs`: positions, normals, colours, joints, weights, the node tree, the skin's inverse bind
 matrices, linear and step channels), samples and blends clips (`anim.rs`: nlerp, looped by the

@@ -615,8 +615,8 @@ characters' ramp from the vertex's palette colour, the same lights and shadow ma
   open questions are in ADR 0073.
 
 - **Model detail and variants** (0.52.1, ADR 0070 §10–11): every skinned GLB holds one mesh per
-  `models.json` `detail` level (decimated, flat shaded); Settings → Graphics → Model detail picks the
-  level for all of them, live. The doe is the deer without antlers (`source.remove`), the wolf the dog
+  `models.json` `detail` level (decimated, flat shaded); all of them draw `detail.default`'s level,
+  60 % since 0.52.5 (the Settings slider removed; `?modeldetail=<id>` overrides it, live). The doe is the deer without antlers (`source.remove`), the wolf the dog
   recoloured (`remap`) at `scale` 1.5 (0.52.5; 2 before). The Model Viewer's detail buttons
   (`?detail=low`) show each level; `?focus=wolf&yaw=90` frames one model from a side.
 - **Coats** (0.52.5, ADR 0070 §12): a model's optional `coat` (`models.json`) paints it by body

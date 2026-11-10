@@ -5,14 +5,14 @@
     "exclude": ["chalk", "flame", "flame_core", "water", "cloud", "snow"]
   },
   "detail": {
-    "$comment": "Model detail (Settings → Graphics, Model detail; ADR 0070 §10): the import bakes every skinned model at each level, decimated (Blender Decimate, collapse) to `ratio` of its faces and shaded flat, as GLB meshes detail_0, detail_1, … on the one skin; the setting picks one level for every skinned model, live. The first level is the full mesh (ratio 1). `default` is the level a new player starts on (100 % until the owner picks one). Re-import (shared/models/import.mjs) after changing a ratio.",
+    "$comment": "Model detail (ADR 0070 §10; no Settings control since 0.52.5, owner 2026-11-10: \"remove the slider and make 60% the default\"; `?modeldetail=<id>` overrides it): the import bakes every skinned model at each level, decimated (Blender Decimate, collapse) to `ratio` of its faces and shaded flat, as GLB meshes detail_0, detail_1, … on the one skin; the level is one for every skinned model, changed live by `setModelDetail`. The first level is the full mesh (ratio 1). `default` is the level every player draws (60 %, the owner's pick, 2026-11-10). Re-import (shared/models/import.mjs) after changing a ratio.",
     "levels": [
       { "id": "full", "label": "100 %", "ratio": 1 },
       { "id": "high", "label": "60 %", "ratio": 0.6 },
       { "id": "medium", "label": "35 %", "ratio": 0.35 },
       { "id": "low", "label": "20 %", "ratio": 0.2 }
     ],
-    "default": "full"
+    "default": "high"
   },
   "player": "peasant",
   "models": {

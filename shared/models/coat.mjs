@@ -21,7 +21,13 @@
 import { resolveColor } from "./gen.mjs";
 
 export const COAT_AXES = ["along", "height", "side"];
-const PATCH_KEYS = new Set([...COAT_AXES, "colour", "blend", "amount", "$comment"]);
+const PATCH_KEYS = new Set([
+  ...COAT_AXES,
+  "colour",
+  "blend",
+  "amount",
+  "$comment",
+]);
 const COAT_KEYS = new Set(["head", "base", "keep", "patches", "$comment"]);
 
 const hexRgb = (hex) =>
@@ -59,7 +65,9 @@ export function validateCoat(coat, palette, at = "coat") {
       if (!PATCH_KEYS.has(key)) fail(`${pat}: unknown key ${key}`);
     colour(p.colour, pat);
     if (keep.includes(String(p.colour).split(".")[0]))
-      fail(`${pat}: ${p.colour} is a kept ramp's colour (a coat never paints one)`);
+      fail(
+        `${pat}: ${p.colour} is a kept ramp's colour (a coat never paints one)`,
+      );
     const axes = COAT_AXES.filter((a) => p[a] !== undefined);
     if (!axes.length) fail(`${pat}: no range (${COAT_AXES.join(", ")})`);
     for (const a of axes) {
@@ -72,7 +80,8 @@ export function validateCoat(coat, palette, at = "coat") {
       )
         fail(`${pat}: ${a} is [from, to] with 0 <= from < to <= 1`);
     }
-    if (!(p.blend > 0 && p.blend <= 0.5)) fail(`${pat}: blend must be in (0, 0.5]`);
+    if (!(p.blend > 0 && p.blend <= 0.5))
+      fail(`${pat}: blend must be in (0, 0.5]`);
     if (p.amount !== undefined && !(p.amount > 0 && p.amount <= 1))
       fail(`${pat}: amount must be in (0, 1]`);
   });
@@ -141,7 +150,10 @@ function view(b, json, binAt, index) {
     set: (i, k, x) =>
       max === 1
         ? b[`write${fn}`](x, off(i, k))
-        : b[`write${fn}`](Math.round(Math.min(1, Math.max(0, x)) * max), off(i, k)),
+        : b[`write${fn}`](
+            Math.round(Math.min(1, Math.max(0, x)) * max),
+            off(i, k),
+          ),
   };
 }
 
@@ -191,7 +203,10 @@ export function applyCoat(bytes, coat, palette) {
         continue;
       const h = pos.get(i, axis);
       const q = {
-        along: sign > 0 ? (hi[axis] - h) / (hi[axis] - lo[axis]) : (h - lo[axis]) / (hi[axis] - lo[axis]),
+        along:
+          sign > 0
+            ? (hi[axis] - h) / (hi[axis] - lo[axis])
+            : (h - lo[axis]) / (hi[axis] - lo[axis]),
         height: (pos.get(i, up) - lo[up]) / (hi[up] - lo[up]),
         side: Math.abs(pos.get(i, across) - centre) / half,
       };

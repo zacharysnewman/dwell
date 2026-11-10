@@ -214,7 +214,8 @@ test("palette references resolve; excluded ramps are left out of the snap", () =
 // The coat (shared/models/coat.mjs, ADR 0070 §11): a model's colour as a few key colours by body
 // region, blended softly, instead of a colour a face.
 const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
-const srgb = (c) => (c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055);
+const srgb = (c) =>
+  c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055;
 const coatFixture = () => ({
   head: "+z",
   base: "sand",
@@ -234,7 +235,9 @@ function faceColours(bytes, level = 0, skip = () => false) {
   const edges = new Map();
   for (let f = 0; f < idx.length / 3; f++) {
     const vs = [idx[f * 3], idx[f * 3 + 1], idx[f * 3 + 2]];
-    const cs = vs.map((v) => [0, 1, 2].map((k) => srgb(col.values[v * col.width + k])));
+    const cs = vs.map((v) =>
+      [0, 1, 2].map((k) => srgb(col.values[v * col.width + k])),
+    );
     if (cs.some(skip)) continue;
     faces.push(cs.reduce((a, c) => a.map((x, k) => x + c[k] / 3), [0, 0, 0]));
     for (let e = 0; e < 3; e++) {
@@ -250,7 +253,8 @@ function maxNeighbourStep(bytes, level, skip) {
   const { faces, pairs } = faceColours(bytes, level, skip);
   let most = 0;
   for (const [a, b] of pairs)
-    for (let k = 0; k < 3; k++) most = Math.max(most, Math.abs(faces[a][k] - faces[b][k]));
+    for (let k = 0; k < 3; k++)
+      most = Math.max(most, Math.abs(faces[a][k] - faces[b][k]));
   return most;
 }
 
@@ -261,11 +265,17 @@ const STEP = 0.2;
 test("the wolf's coat is smooth on every detail level, with no red or blue left", () => {
   const m = data().models.wolf;
   const bytes = readFileSync(join(here, m.glb));
-  const keep = (m.coat.keep ?? []).flatMap((r) => Object.values(palette.ramps[r]).map(hex));
-  const kept = (c) => keep.some((k) => k.every((v, i) => Math.abs(v - c[i]) < 2 / 255));
+  const keep = (m.coat.keep ?? []).flatMap((r) =>
+    Object.values(palette.ramps[r]).map(hex),
+  );
+  const kept = (c) =>
+    keep.some((k) => k.every((v, i) => Math.abs(v - c[i]) < 2 / 255));
   for (let level = 0; level < glbJson(bytes).meshes.length; level++) {
     const step = maxNeighbourStep(bytes, level, kept);
-    assert.ok(step < STEP, `level ${level}: neighbouring faces step by ${step.toFixed(3)}`);
+    assert.ok(
+      step < STEP,
+      `level ${level}: neighbouring faces step by ${step.toFixed(3)}`,
+    );
     for (const c of faceColours(bytes, level).faces) {
       assert.ok(!(c[0] > c[1] + 0.15 && c[0] > c[2] + 0.15), `a red face ${c}`);
       assert.ok(!(c[2] > c[0] + 0.15), `a blue face ${c}`);
@@ -289,14 +299,20 @@ test("a coat is added by data alone: the fixture's coat paints its GLB", () => {
   const near = (a, b) => a.every((v, k) => Math.abs(v - b[k]) < 2 / 255);
   for (let i = 0; i < ys.length; i++) {
     const h = (ys[i] - lo) / (hi - lo);
-    if (h < 0.35) assert.ok(near(at(i), hex(palette.ramps.sand.base)), `low vertex ${i}`);
-    if (h > 0.65) assert.ok(near(at(i), hex(palette.ramps.bedrock.shadow)), `high vertex ${i}`);
+    if (h < 0.35)
+      assert.ok(near(at(i), hex(palette.ramps.sand.base)), `low vertex ${i}`);
+    if (h > 0.65)
+      assert.ok(
+        near(at(i), hex(palette.ramps.bedrock.shadow)),
+        `high vertex ${i}`,
+      );
   }
   // Through the data: the fixture model with the coat validates over its painted GLB, and fails
   // naming the fix over the unpainted one.
   const f = fixture();
   f.models.two_bone.coat = coat;
-  const read = (path) => (path.endsWith("two_bone.glb") ? painted : readFileSync(path));
+  const read = (path) =>
+    path.endsWith("two_bone.glb") ? painted : readFileSync(path);
   validate(f, palette, fixtures, read);
   assert.throws(
     () => validate(f, palette, fixtures),
@@ -310,7 +326,10 @@ test("a coat is added by data alone: the fixture's coat paints its GLB", () => {
   );
   coat.patches[0].amount = 0.5;
   const half = coatColour(coat, palette, q);
-  const [a, b] = [hex(palette.ramps.sand.base), hex(palette.ramps.bedrock.shadow)];
+  const [a, b] = [
+    hex(palette.ramps.sand.base),
+    hex(palette.ramps.bedrock.shadow),
+  ];
   assert.ok(half.every((v, k) => Math.abs(v - (a[k] + b[k]) / 2) < 1e-9));
 });
 
@@ -324,9 +343,18 @@ test("bad coats fail naming the model and the problem", () => {
   bad((c) => (c.base = "nope"), /base: no palette colour nope/);
   bad((c) => (c.keep = ["nope"]), /keep: no ramp nope/);
   bad((c) => (c.fur = 1), /unknown key fur/);
-  bad((c) => (c.patches[0].colour = "wolf.dark"), /patch 0: no palette colour wolf\.dark/);
-  bad((c) => (c.patches[0].height = [0.6, 0.2]), /patch 0: height is \[from, to\]/);
-  bad((c) => (c.patches[0].height = [0, 1.5]), /patch 0: height is \[from, to\]/);
+  bad(
+    (c) => (c.patches[0].colour = "wolf.dark"),
+    /patch 0: no palette colour wolf\.dark/,
+  );
+  bad(
+    (c) => (c.patches[0].height = [0.6, 0.2]),
+    /patch 0: height is \[from, to\]/,
+  );
+  bad(
+    (c) => (c.patches[0].height = [0, 1.5]),
+    /patch 0: height is \[from, to\]/,
+  );
   bad((c) => delete c.patches[0].height, /patch 0: no range/);
   bad((c) => (c.patches[0].blend = 0), /patch 0: blend must be in/);
   bad((c) => (c.patches[0].amount = 2), /patch 0: amount must be in/);
@@ -338,5 +366,8 @@ test("bad coats fail naming the model and the problem", () => {
   // Through the data: a model's bad coat fails validate, naming the model.
   const f = fixture();
   f.models.two_bone.coat = { ...coatFixture(), head: "y" };
-  assert.throws(() => validate(f, palette, fixtures), /model two_bone: coat: head is an axis/);
+  assert.throws(
+    () => validate(f, palette, fixtures),
+    /model two_bone: coat: head is an axis/,
+  );
 });

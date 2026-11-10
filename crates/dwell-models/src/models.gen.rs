@@ -3,7 +3,7 @@ use crate::{DetailLevel, Hand, ModelData, PropData, RoleClip};
 
 pub const PLAYER: &str = "peasant";
 pub static DETAIL_LEVELS: &[DetailLevel] = &[DetailLevel { id: "full", label: "100 %", ratio: 1.0 }, DetailLevel { id: "high", label: "60 %", ratio: 0.6 }, DetailLevel { id: "medium", label: "35 %", ratio: 0.35 }, DetailLevel { id: "low", label: "20 %", ratio: 0.2 }];
-pub const DETAIL_DEFAULT: usize = 0;
+pub const DETAIL_DEFAULT: usize = 1;
 pub static PLAYER_GLB: &[u8] = include_bytes!("../../../shared/models/glb/peasant.glb");
 pub static GLBS: &[(&str, &[u8])] = &[("peasant", include_bytes!("../../../shared/models/glb/peasant.glb")), ("deer", include_bytes!("../../../shared/models/glb/deer.glb")), ("doe", include_bytes!("../../../shared/models/glb/doe.glb")), ("dog", include_bytes!("../../../shared/models/glb/dog.glb")), ("wolf", include_bytes!("../../../shared/models/glb/wolf.glb")), ("kitty", include_bytes!("../../../shared/models/glb/kitty.glb")), ("horse", include_bytes!("../../../shared/models/glb/horse.glb")), ("tiger", include_bytes!("../../../shared/models/glb/tiger.glb")), ("chicken", include_bytes!("../../../shared/models/glb/chicken.glb")), ("penguin", include_bytes!("../../../shared/models/glb/penguin.glb"))];
 pub static MODELS: &[ModelData] = &[
