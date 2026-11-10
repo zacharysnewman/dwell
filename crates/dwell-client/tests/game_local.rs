@@ -2445,6 +2445,23 @@ fn trip(
                 if t > 1200 && *n > worst.0 {
                     worst = (*n, t, c);
                 }
+                if std::env::var("TRIP_DEBUG").is_ok() && *n > 0 && *n % 60 == 0 {
+                    let b = [c.x, c.y, c.z].map(|v| v.div_euclid(2) * 2);
+                    let mut sib = Vec::new();
+                    for o in 0..8 {
+                        let k = [b[0] + (o & 1), b[1] + ((o >> 1) & 1), b[2] + ((o >> 2) & 1)];
+                        if !game.chunk_drawable(k) {
+                            sib.push((k, game.chunk_detail(ChunkCoord::from_array(k))));
+                        }
+                    }
+                    eprintln!(
+                        "t {t} {c:?} waited {n}: undrawable siblings {sib:?} feet {feet:?} loaded {} drawable {} visible {} stats {:?}",
+                        game.chunk_detail(c) != 2,
+                        game.chunk_drawable(c.to_array()),
+                        game.chunk_visible(c),
+                        game.terrain_stats()
+                    );
+                }
             }
         }
         if t % (60 * 30) == 0 {

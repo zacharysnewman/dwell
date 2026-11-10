@@ -134,7 +134,15 @@ pub struct Pool {
     ready: Vec<Done>,
     /// Chunk meshes take their liquid tops (false while the scene draws the heightfield).
     pub water_tops: bool,
+    /// Where the player is (m; [`Self::set_focus`]): chunk jobs near it start first.
+    focus: Option<[f64; 3]>,
 }
+
+/// Chunk jobs (generation, the ground items' base, meshing) within this distance (m) of the focus
+/// start before every other queued job of their kind, nearest first; the rest start in the order
+/// they were queued. BUGS #54: a long trip queued far chunks' and the LOD's jobs ahead of the
+/// chunks coming into the near ring, which waited behind them seconds at a time.
+pub const NEAR_JOBS_M: f64 = 128.0;
 
 pub type PoolRef = Rc<RefCell<Pool>>;
 
@@ -149,6 +157,7 @@ impl Pool {
             in_flight: [0; 2],
             ready: Vec::new(),
             water_tops: true,
+            focus: None,
         }));
         let weak = Rc::downgrade(&pool);
         // A result between frames: collected, and the worker given the next queued job. Never
@@ -198,10 +207,41 @@ impl Pool {
         true
     }
 
+    /// Sets where the player is (m): queued chunk jobs within [`NEAR_JOBS_M`] of it start first,
+    /// nearest first.
+    pub fn set_focus(&mut self, at: [f64; 3]) {
+        self.focus = Some(at);
+    }
+
+    /// The queued job of `kind` to start next: the chunk job nearest the focus within
+    /// [`NEAR_JOBS_M`], else the oldest.
+    fn next_of(&mut self, kind: usize) -> Option<(u32, Job)> {
+        let q = &self.queued[kind];
+        let near = self.focus.and_then(|f| {
+            q.iter()
+                .enumerate()
+                .filter_map(|(at, (id, _))| {
+                    let c = match self.purposes.get(id)?.0 {
+                        Purpose::Chunk(c, _) | Purpose::ChunkMesh(c, _) | Purpose::Base(c) => c,
+                        _ => return None,
+                    };
+                    let m = dwell_world::chunk_centre_m(dwell_world::ChunkCoord::from_array(c));
+                    let d: f64 = (0..3).map(|i| (m[i] - f[i]).powi(2)).sum();
+                    (d <= NEAR_JOBS_M * NEAR_JOBS_M).then_some((d, at))
+                })
+                .min_by(|a, b| a.0.total_cmp(&b.0))
+                .map(|(_, at)| at)
+        });
+        match near {
+            Some(at) => self.queued[kind].remove(at),
+            None => self.queued[kind].pop_front(),
+        }
+    }
+
     fn pump(&mut self) {
         for kind in 0..2 {
             while self.in_flight[kind] < self.jobs.capacity(kind == 1) {
-                let Some((id, job)) = self.queued[kind].pop_front() else {
+                let Some((id, job)) = self.next_of(kind) else {
                     break;
                 };
                 self.in_flight[kind] += 1;

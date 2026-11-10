@@ -2991,6 +2991,7 @@ impl<S: Scene> Game<S> {
             [0.5, 64.0, 0.5]
         };
         // What is left of the frame's loading budget after the jobs taken in and the ticks.
+        self.pool.borrow_mut().set_focus(around);
         let budget = StreamBudget::for_frame(now() - self.frame_start_ms, dt * 1000.0);
         telemetry::span("mesh_dirty", || {
             self.streamer.mesh_dirty(around, budget, &mut *now);
