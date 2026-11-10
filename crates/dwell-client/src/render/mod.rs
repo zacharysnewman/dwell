@@ -16,6 +16,7 @@ pub mod flames;
 pub mod flow;
 pub mod frame;
 pub mod geometry;
+pub mod heightfield;
 pub mod lights;
 pub mod lod_map;
 pub mod lod_shadows;
