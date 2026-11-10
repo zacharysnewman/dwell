@@ -140,8 +140,8 @@ pub struct Pool {
 
 /// Chunk generations (and the ground items' bases) within this distance (m) of the focus start
 /// before every other queued generation job, nearest first; chunk meshes (at most the streamer's
-/// mesher capacity, `MeshJobs::capacity`) start before the LOD's section meshes, nearest first; the
-/// rest start in the order they were queued. BUGS #54: on a long trip the chunks coming into the
+/// mesher capacity, `MeshJobs::capacity`) start before the LOD's section meshes, in the streamer's
+/// order; the rest start in the order they were queued. BUGS #54: on a long trip the chunks coming into the
 /// near ring waited seconds behind far chunks' and the LOD's jobs queued first, and the streamer's
 /// mesh slots were held by chunk meshes queued behind section meshes.
 pub const NEAR_JOBS_M: f64 = 128.0;
@@ -215,26 +215,27 @@ impl Pool {
         self.focus = Some(at);
     }
 
-    /// The queued job of `kind` to start next: the chunk mesh, or the chunk generation within
-    /// [`NEAR_JOBS_M`], nearest the focus, else the oldest.
+    /// The queued job of `kind` to start next: the oldest chunk mesh (the streamer starts them in
+    /// its own order, nearest first), else the chunk generation within [`NEAR_JOBS_M`] nearest the
+    /// focus, else the oldest.
     fn next_of(&mut self, kind: usize) -> Option<(u32, Job)> {
         let q = &self.queued[kind];
-        let first = self.focus.and_then(|f| {
-            q.iter()
-                .enumerate()
-                .filter_map(|(at, (id, _))| {
-                    let (c, any_distance) = match self.purposes.get(id)?.0 {
-                        Purpose::ChunkMesh(c, _) => (c, true),
-                        Purpose::Chunk(c, _) | Purpose::Base(c) => (c, false),
-                        _ => return None,
-                    };
+        let first = q
+            .iter()
+            .enumerate()
+            .filter_map(|(at, (id, _))| match self.purposes.get(id)?.0 {
+                // First of all, in their order (`min_by` keeps the first of equals).
+                Purpose::ChunkMesh(..) => Some((f64::NEG_INFINITY, at)),
+                Purpose::Chunk(c, _) | Purpose::Base(c) => {
+                    let f = self.focus?;
                     let m = dwell_world::chunk_centre_m(dwell_world::ChunkCoord::from_array(c));
                     let d: f64 = (0..3).map(|i| (m[i] - f[i]).powi(2)).sum();
-                    (any_distance || d <= NEAR_JOBS_M * NEAR_JOBS_M).then_some((d, at))
-                })
-                .min_by(|a, b| a.0.total_cmp(&b.0))
-                .map(|(_, at)| at)
-        });
+                    (d <= NEAR_JOBS_M * NEAR_JOBS_M).then_some((d, at))
+                }
+                _ => None,
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|(_, at)| at);
         match first {
             Some(at) => self.queued[kind].remove(at),
             None => self.queued[kind].pop_front(),
@@ -535,7 +536,7 @@ mod tests {
         };
         mesh(&pool, Purpose::SectionMesh(1)); // id 1, started
         mesh(&pool, Purpose::SectionMesh(2)); // id 2
-        mesh(&pool, Purpose::ChunkMesh([30, 0, 0], 3)); // id 3: far, still first
+        mesh(&pool, Purpose::ChunkMesh([30, 0, 0], 3)); // id 3: queued last, started first
         finish(&held, 1);
         assert_eq!(held.borrow().started, vec![1, 3]);
     }

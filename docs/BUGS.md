@@ -67,8 +67,8 @@ chunks 2 out, which the server sends only as they come into its view (`VIEW_RADI
 as the ring reaches them. Those then waited behind (1) the pool's FIFO queues: far chunks' generations,
 the LOD's section jobs, and chunk meshes queued behind section meshes, which held the streamer's 8 mesh
 slots; and (2) the re-meshes of drawn chunks, which every arriving chunk marks around it. Fix: the pool
-starts chunk generations within 128 m of the player first and chunk meshes before section meshes,
-nearest first (`Pool::set_focus`, `NEAR_JOBS_M`), and the streamer meshes chunks in the view not drawn
+starts chunk meshes before section meshes and chunk generations within 128 m of the player before
+the other generation jobs, nearest first (`Pool::set_focus`, `NEAR_JOBS_M`), and the streamer meshes chunks in the view not drawn
 yet before re-meshes. Green: the worst wait 120 frames (2 s; the LOD's own `FORCE_CHUNKS_AFTER_MS`
 wait for its level-1 section accounts for up to 1 s of it). **Left:** the owner's check on the river in
 the browser, and the report's other half (edited chunks refined only up close), not looked at here.
