@@ -400,7 +400,7 @@ const BG_TOP = ['$comment', 'default', 'turnS', 'capture', 'backgrounds'];
 /** The capture's fields (client/scripts/panoramas.ts): [min, max, whole]. */
 export const CAPTURE_FIELDS = {
   steps: [8, 64, true],
-  sizePx: [256, 2048, true],
+  sizePx: [256, 4096, true],
   fovDeg: [60, 100, false],
   span: [0.5, 1, false],
   quality: [0.3, 1, false],
