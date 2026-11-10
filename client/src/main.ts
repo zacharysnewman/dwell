@@ -80,6 +80,7 @@ import { MapUi, indexedDbExplored, indexedDbTiles } from './ui/minimap';
 import { hasWasmSimd } from './engine/simd';
 import { NEEDS_SIMD, startupMessage } from './ui/startupError';
 import { FpsMeter } from './ui/fps';
+import { readDevice } from './ui/loadingEstimate';
 import { type LoadingHud, LoadingScreen, loadingScreenEnabled } from './ui/loadingScreen';
 import type { LoadingStageId } from './ui/loading.gen';
 import type { StageRun } from './ui/loadingStages';
@@ -407,6 +408,8 @@ declare global {
     __dwellTools?: DwellTools;
     /** The loading screen's stages so far (§6.3; docs/DEV_TOOLS.md): when each began and ended. */
     __dwellStages?: () => StageRun[];
+    /** The loading bar's estimate: its fill, the "About N s" label, and whether it holds (§6.3). */
+    __dwellLoadingBar?: () => { fill: number; label: string; holding: boolean };
   }
 }
 
@@ -1796,10 +1799,21 @@ if (launchOf(location.search).kind === 'menu') {
     prefersReducedMotion(),
   );
   // The page itself, from opening it to this script running (the HTML and the script's download).
+  // The bar's opening guess (§6.3): the device as the browser reads it, and the route (joining a
+  // server runs no local world).
+  bootLoading.device = readDevice(
+    navigator,
+    prefersTouch(),
+    workerCount(location.search, navigator.hardwareConcurrency, prefersTouch()),
+  );
+  const route = launchOf(location.search).kind;
+  bootLoading.remote = route === 'code' || route === 'join';
   bootLoading.stages.begin('page', 0);
   bootLoading.stages.end('page', performance.now());
   const bootStages = bootLoading.stages;
   window.__dwellStages = () => bootStages.timeline();
+  const bootScreen = bootLoading;
+  window.__dwellLoadingBar = () => bootScreen.barState;
   void routeMadeWorld().then(async (ok) => {
     if (!ok) return;
     const app = await start();

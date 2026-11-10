@@ -36,3 +36,41 @@ export const LOADING_STAGES: readonly LoadingStageDef[] = [
 
 /** A stage running longer than this (s) is marked slow. */
 export const LOADING_STAGE_SLOW_S = 3;
+
+/** A stage's opening cost on the reference desktop (shared/look/loading.json `estimate.stages`). */
+export interface LoadingStageCost {
+  scales: 'device' | 'network';
+  baseS: number;
+  perItemS?: number;
+  totalGuess?: number;
+  bytesPerS?: number;
+  local?: boolean;
+  remote?: boolean;
+  perWorker?: boolean;
+}
+
+/** The loading bar's per-device time estimate (ARCHITECTURE.md §6.3). */
+export const LOADING_ESTIMATE = {
+  holdFraction: 0.95,
+  easeS: 0.5,
+  labelEveryS: 0.5,
+  labelHysteresisS: 0.75,
+  hideBelowS: 1,
+  roundAboveS: 10,
+  minSamples: 4,
+  overrunFraction: 0.2,
+  device: { referenceCores: 8, minFactor: 0.6, maxFactor: 3, phoneFactor: 2, lowMemoryGB: 4, lowMemoryFactor: 1.4, cpuFactor: 4 },
+  /** The near ring's chunks (radiusChunks 3): the terrain's count. */
+  ringChunks: 179,
+  stages: {
+    game: { scales: 'network', baseS: 0.2, totalGuess: 9000000, bytesPerS: 4000000 },
+    graphics: { scales: 'device', baseS: 0.4 },
+    worldFile: { scales: 'device', baseS: 0.2, local: true },
+    worldMap: { scales: 'device', baseS: 0.2, perItemS: 0.3, totalGuess: 4 },
+    server: { scales: 'device', baseS: 0.8, local: true },
+    spawn: { scales: 'device', baseS: 1.2, local: true },
+    connect: { scales: 'network', baseS: 1, remote: true },
+    join: { scales: 'device', baseS: 0.4 },
+    terrain: { scales: 'device', baseS: 0.4, perItemS: 0.05, perWorker: true },
+  } as Partial<Record<LoadingStageId, LoadingStageCost>>,
+};

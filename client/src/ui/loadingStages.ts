@@ -170,6 +170,11 @@ export class StageTracker {
     return [...this.history, ...this.runs.filter((r) => r.endedMs === null).map((r) => ({ ...r }))];
   }
 
+  /** This wait's runs (since the last `clear`), in the order they began: the estimate reads them. */
+  runsNow(): readonly StageRun[] {
+    return this.runs;
+  }
+
   /** Whether `id` is running. */
   running(id: string): boolean {
     return this.run(id)?.endedMs === null;
