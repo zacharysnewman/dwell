@@ -5,6 +5,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 import { CODE_FILE, INVITE_FILE, MASTER_URL, startServer } from './global-setup';
+import { openMenuPage } from './menuNav';
 
 const master = `master=${encodeURIComponent(MASTER_URL)}`;
 
@@ -19,6 +20,7 @@ test('joins a dedicated server by typing its address in the Join box', async ({ 
   const port = /join=[^&]*:(\d+)/.exec(query)?.[1];
   expect(port).toBeTruthy();
   await page.goto(`./?${master}`);
+  await openMenuPage(page, 'online');
   await page.locator('#join-input').fill(`127.0.0.1:${String(port)}`);
   await page.locator('.menu-join-form button[type=submit]').click();
   await expect(page).toHaveURL(/[?&]join=/);
@@ -39,6 +41,7 @@ test('lists servers on the same network, and drops one that stops within two hea
   const temp = await startServer(['--port', '0', '--name', 'E2E temp', '--world', '']);
   try {
     await page.goto(`./?${master}`);
+    await openMenuPage(page, 'online');
     const list = page.locator('#nearby-list');
     await expect(list).toContainText('E2E temp · 0/', { timeout: 10_000 });
     await expect(list).toContainText('E2E · ');

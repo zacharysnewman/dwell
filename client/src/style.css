@@ -651,6 +651,15 @@ kbd.phrase {
   font-size: 16px;
 }
 
+/* The pages' green buttons take the actions' darker green: white text at 4.5:1. */
+.mm-page .block-button {
+  background: linear-gradient(180deg, var(--mm-action-top), var(--mm-action));
+}
+
+.mm-page .block-button:hover {
+  filter: brightness(1.08);
+}
+
 .mm-page .menu-hint,
 .mm-home .menu-hint,
 .mm-page .world-details,
@@ -708,13 +717,23 @@ kbd.phrase {
   display: none;
 }
 
+/* Why the menu came up, or what an action did: a note at the foot, over whichever page shows. */
 #menu-message {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--safe-bottom) + 16px);
+  z-index: 1;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: min(560px, calc(100vw - 32px));
   margin: 0;
-  padding: 10px 14px;
-  border-radius: 10px;
+  padding: 12px 16px;
+  border-radius: 12px;
   background: var(--paper-solid);
+  box-shadow: 0 10px 28px rgb(31 43 56 / 28%);
   color: var(--ink);
-  font-size: 14px;
+  font-size: 16px;
+  transform: translateX(-50%);
 }
 
 .mm-version-current {
@@ -766,6 +785,7 @@ kbd.phrase {
   }
 
   .mm-pages {
+    flex: none;
     max-width: none;
   }
 

@@ -232,7 +232,7 @@ export class MainMenu {
     add('new-world', this.newWorldPage());
     add('online', this.onlinePage());
     add('versions', this.versionsPage());
-    this.shell.append(home, pages);
+    this.shell.append(home, pages, this.message);
     const logo = this.logoView();
     this.views.set('logo', logo);
     this.root.append(backdrop, logo, this.shell);
@@ -367,7 +367,7 @@ export class MainMenu {
     versions.id = 'home-versions';
     versions.dataset.opens = 'versions';
     links.append(versions);
-    nav.append(title, tagline, this.message, actions, links, this.aboutSection());
+    nav.append(title, tagline, actions, links, this.aboutSection());
     return nav;
   }
 

@@ -39,12 +39,8 @@ describe('the main menu navigation (menu redesign M1)', () => {
     expect(back('versions')).toBe('home');
     expect(back('home')).toBe('home');
     // logo → home → Worlds → New world → Back → Back
-    let view = afterIntro(firstView(false));
-    view = 'worlds';
-    view = 'new-world';
-    view = back(view);
-    expect(view).toBe('worlds');
-    expect(back(view)).toBe('home');
+    expect(afterIntro(firstView(false))).toBe('home');
+    expect(back(back('new-world'))).toBe('home');
   });
 
   it('skips the logo screen on later visits in the same session', () => {

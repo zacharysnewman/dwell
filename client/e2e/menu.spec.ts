@@ -2,6 +2,7 @@
 // play it, quit to the menu (saving), reopen it, regenerate it and delete it; and a world saved
 // before versioned releases is ignored and can be deleted.
 import { expect, test, type Page } from '@playwright/test';
+import { openMenuPage } from './menuNav';
 
 type Vec3 = [number, number, number];
 interface DebugState {
@@ -69,9 +70,11 @@ test('main menu: create a world with a seed, quit, reopen, regenerate and delete
   test.setTimeout(120_000);
   await page.goto('./');
   await expect(page.locator('#main-menu')).toBeVisible();
+  await openMenuPage(page, 'worlds');
   await expect(page.locator('.menu-empty')).toBeVisible();
 
-  // Create: the form is open when there are no worlds.
+  // Create: New world opens the form on its own page.
+  await page.locator('#new-world').click();
   await page.locator('#world-name').fill('Test world');
   await page.locator('#world-seed').fill('1234');
   await page.locator('#world-type').selectOption('flat');
@@ -87,6 +90,7 @@ test('main menu: create a world with a seed, quit, reopen, regenerate and delete
   expect(await call<boolean>(page, `d.edit('break')`)).toBe(true);
   await expect.poll(() => voxel(page, cell), { timeout: 5_000 }).toBe(0);
   await quit(page);
+  await openMenuPage(page, 'worlds');
   await expect(world(page, 'Test world')).toContainText('Flat · seed 1234 · played');
 
   // Reopen: the edit is there.
@@ -94,6 +98,7 @@ test('main menu: create a world with a seed, quit, reopen, regenerate and delete
   await ready(page);
   await expect.poll(() => voxel(page, cell), { timeout: 10_000 }).toBe(0);
   await quit(page);
+  await openMenuPage(page, 'worlds');
 
   // Regenerate (asks first): same seed, the edit is gone.
   const regenerate = world(page, 'Test world').getByRole('button', { name: 'Regenerate' });
@@ -102,6 +107,7 @@ test('main menu: create a world with a seed, quit, reopen, regenerate and delete
   await ready(page);
   expect(await voxel(page, cell)).toBe(before);
   await quit(page);
+  await openMenuPage(page, 'worlds');
 
   // Delete (asks first).
   await world(page, 'Test world').getByRole('button', { name: 'Delete' }).click();
@@ -126,6 +132,7 @@ test('main menu: a world file without a versioned entry is ignored, and can be d
   });
 
   await page.goto('./');
+  await openMenuPage(page, 'worlds');
   // Not a world to play: listed apart, to delete.
   await expect(page.locator('.menu-empty')).toBeVisible();
   const old = page.locator('#legacy-worlds .world-item', { hasText: 'Flat world 77' });
@@ -142,6 +149,7 @@ test('main menu: shows the app version, and the licence notices from About', asy
   request,
 }) => {
   await page.goto('./');
+  await openMenuPage(page, 'home');
   await expect(page.locator('#app-version')).toContainText(/Dwell \d+\.\d+\.\d+/);
   await page.getByRole('button', { name: 'About' }).click();
   const notices = page.getByRole('link', { name: 'Third-party notices' });
@@ -173,6 +181,7 @@ test('main menu: a world from before versioned releases is listed to delete, nev
     );
   });
   await page.reload();
+  await openMenuPage(page, 'worlds');
   await expect(page.locator('#legacy-worlds')).toContainText('Ancient');
   await expect(page.locator('#legacy-worlds .world-play')).toHaveCount(0);
   // Opening it by link is refused with the reason.
@@ -183,6 +192,7 @@ test('main menu: a world from before versioned releases is listed to delete, nev
 
 test('main menu: joining asks for a join code, an address or an invite link', async ({ page }) => {
   await page.goto('./?debug=1');
+  await openMenuPage(page, 'online');
   await page.locator('#join-input').fill('not a link');
   await page.locator('.menu-join-form button').click();
   await expect(page.locator('#menu-message')).toContainText(

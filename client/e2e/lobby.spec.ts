@@ -4,6 +4,7 @@
 // verify it; the friend world is listed with its players.
 import { expect, test, type Page } from '@playwright/test';
 import { MASTER_URL, startServer } from './global-setup';
+import { openMenuPage } from './menuNav';
 
 const master = `master=${encodeURIComponent(MASTER_URL)}`;
 
@@ -51,6 +52,7 @@ test('a public server and a public friend world are listed, and joined from the 
 
     // A third browser's server browser lists the friend world, with its players…
     await player.goto(`./?${master}`);
+    await openMenuPage(player, 'online');
     const world = player.locator(`#lobby-list [data-code="${worldCode}"]`);
     await expect(world).toContainText('friend world · 1/', { timeout: 15_000 });
     // …and the new server under "New servers", found by a tag, pinged over WebTransport.
@@ -74,6 +76,7 @@ test('a public server and a public friend world are listed, and joined from the 
 
     // Back to the menu; joining the friend world from the list.
     await player.goto(`./?${master}`);
+    await openMenuPage(player, 'online');
     await world.locator('.lobby-join').click();
     await expect(player).toHaveURL(new RegExp(`[?&]code=${worldCode}`));
     await expect(player.locator('#net-status')).toContainText('(WebRTC) · player', {

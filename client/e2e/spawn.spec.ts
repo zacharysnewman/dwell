@@ -4,6 +4,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { World } from '../src/protocol/constants.gen';
 import { untilTicking } from './ticking';
+import { openMenuPage } from './menuNav';
 
 type Vec3 = [number, number, number];
 
@@ -74,6 +75,7 @@ test('a spawn link puts the player back at its spawn when the world is opened ag
 test('a new world starts at the spawn chosen for it', async ({ page }) => {
   test.setTimeout(120_000);
   await page.goto('./');
+  await openMenuPage(page, 'new-world');
   await page.locator('#world-name').fill('Under');
   await page.locator('#world-spawn').selectOption('b');
   await page.locator('#create-world button[type=submit]').click();

@@ -5,6 +5,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { stateId } from '../src/world/blocks';
 import { MASTER_URL } from './global-setup';
+import { openMenuPage } from './menuNav';
 
 type Vec3 = [number, number, number];
 interface DebugState {
@@ -112,6 +113,7 @@ test('friend world: host from the game menu, join by code, play together, stop h
 
   // The guest types the code on the main menu.
   await guest.goto(`./?${master}`);
+  await openMenuPage(guest, 'online');
   await guest.locator('#join-input').fill(code.toLowerCase());
   await guest.locator('.menu-join-form button[type=submit]').click();
   await expect(guest.locator('#net-status')).toContainText(`${code} (WebRTC) · player`, {
