@@ -630,6 +630,9 @@ const RULE_SHIFT: u32 = 17;
 const STATE_MASK: i32 = (1 << RULE_SHIFT) - 1;
 /// Merge-mask flag: a fluid's side face in its surface's row, which stops at the drawn surface.
 const SURFACE_BIT: i32 = 1 << 30;
+/// Merge-mask flag: a face drawn on its own, merged with none (a fluid's top by a step,
+/// [`top_on_step`]).
+const ALONE_BIT: i32 = 1 << 29;
 
 /// The side-tile rule (an index into `k.style.side_under`, block data `sideUnder`) that side face
 /// `face` of the cell at (x, y, z) takes: the first naming the block in the cell above, unless that
@@ -1156,6 +1159,39 @@ fn fluid_side_top(cells: &Cells<'_>, k: &Kind, m: StateId, x: i32, y: i32, z: i3
     } else {
         k.fill * (1.0 - k.style.surface_drop)
     }
+}
+
+/// Whether a fluid cell's top, drawn at `own` (cells above its floor), is within two columns of a
+/// step in the same water: a neighbour in its row drawn at another height (a riser between two
+/// fills, or the column of a pool over it), or an open cell over the same water below it (a pour
+/// slope's cell). Such a top is drawn cell by cell, not merged: the slopes and risers of a step are
+/// one cell wide, and a merged top's long edge had their corners inside it (T-junctions), where the
+/// rasterizer left a dashed crack along the step's crease (owner, 2026-11-10; BUGS.md #66).
+fn top_on_step(cells: &Cells<'_>, k: &Kind, own: f64, [x, y, z]: [i32; 3]) -> bool {
+    let inside = |c: i32| (-1..=N).contains(&c);
+    for dz in -2..=2 {
+        for dx in -2..=2 {
+            let (nx, nz) = (x + dx, z + dz);
+            if (dx == 0 && dz == 0) || !inside(nx) || !inside(nz) {
+                continue;
+            }
+            let kn = cells.kind(nx, y, nz);
+            if same_fluid(k, &kn) {
+                let m = cells.state(nx, y, nz);
+                if (fluid_side_top(cells, &kn, m, nx, y, nz) - own).abs() > 1e-9 {
+                    return true;
+                }
+            } else if kn.shape == Shape::Empty
+                && !kn.liquid
+                && !kn.flooded
+                && inside(y - 1)
+                && same_fluid(k, &cells.kind(nx, y - 1, nz))
+            {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// Whether a fluid's side face must be drawn cell by cell ([`fluid_side`]) rather than merged:
@@ -1949,8 +1985,16 @@ fn mesh_cells(
                         }
                     }
                     let rule = side_rule(&cells, &k, cx, cy, cz, face).map_or(0, |r| r as i32 + 1);
+                    let alone = if face == 2
+                        && k.liquid
+                        && top_on_step(&cells, &k, k.fill * (1.0 - k.style.surface_drop), cell)
+                    {
+                        ALONE_BIT
+                    } else {
+                        0
+                    };
                     mask[i as usize + n * j as usize] =
-                        (i32::from(m) + 1) | (rule << RULE_SHIFT) | surface_row;
+                        (i32::from(m) + 1) | (rule << RULE_SHIFT) | surface_row | alone;
                     light_mask[i as usize + n * j as usize] =
                         if k.style.render == RenderMode::Translucent {
                             flood_keys(&cells, face, [nx, ny, nz])
@@ -1980,7 +2024,7 @@ fn mesh_cells(
                     }
                     let lkey = light_mask[i + n * j];
                     let m = ((key & STATE_MASK) - 1) as StateId;
-                    let rule = ((key & !SURFACE_BIT) >> RULE_SHIFT)
+                    let rule = ((key & !(SURFACE_BIT | ALONE_BIT)) >> RULE_SHIFT)
                         .checked_sub(1)
                         .map(|r| r as usize);
                     let style = kinds.of(m).style;
@@ -1988,7 +2032,9 @@ fn mesh_cells(
                     let (color, tile) = side_surface(&style, face, rule);
                     // A hanging tile runs from each block's top: its quads stay one cell tall.
                     let hang = tile.hang && axis != 1;
-                    let same = |at: usize| mask[at] == key && light_mask[at] == lkey;
+                    let same = |at: usize| {
+                        key & ALONE_BIT == 0 && mask[at] == key && light_mask[at] == lkey
+                    };
                     let mut w = 1;
                     while i + w < n && !(hang && u == 1) && same(i + w + n * j) {
                         w += 1;
