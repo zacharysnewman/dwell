@@ -176,3 +176,10 @@ and the generator's starting-items test).
 An item may carry a shaped `look` (ADR 0071's rod or lump: shape, size, texture, colour); it is
 then drawn as that look everywhere (hand, hotbar, backpack, loose, on the ground). Items without one
 keep the colour-and-size look.
+
+## Amendment (0.50.75)
+
+The look vocabulary gains `cluster` (a small heap of tiny lumps: seeds). The grass seed has one
+(owner, 2026-11-09: "Seeds also look like a block, instead of a cluster of grass seeds"), held as the
+characters item `cluster` (a few seeds in the fist), and drawn the same on the hotbar, loose and on
+the ground.

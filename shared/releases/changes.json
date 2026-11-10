@@ -2,6 +2,14 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions card. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.50.75",
+      "changes": [
+        "Sticks stay on the ground when you clear the leaves above them.",
+        "Grass seed now looks like a little heap of seeds, in your hand, in your hotbar and on the ground.",
+        "The big map keeps the ground it has drawn across updates, and only redraws it when worlds change."
+      ]
+    },
+    {
       "version": "0.50.74",
       "changes": [
         "Hit a stick or rock on the ground to knock it loose, then walk over it to pick it up, just like anything else you break. No more pick-up key or button: E opens the backpack again.",

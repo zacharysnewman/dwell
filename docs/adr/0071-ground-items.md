@@ -77,8 +77,8 @@ gone set.
    the crosshair while it was on a ground item; removed in 0.50.74, where touch's Break hits it.
 4. **Sending all gone cells at the hello** grows with play; per chunk with the chunk later if it
    ever matters.
-5. **Leaves broken over sticks** make the sticks vanish (the canopy rule fails). Keep them instead
-   (e.g. rules read against the generated terrain)?
+5. ~~**Leaves broken over sticks**~~ answered (owner, 2026-11-09, "Keep sticks under cleared
+   leaves"): the rules read the generated terrain (amendment 0.50.75 below).
 
 ## Consequences
 
@@ -137,3 +137,32 @@ hit, one out of reach and one at nothing are refused; creative's hit makes it va
 item; the gone set across a reload (both faces where it matters); the break action hits a nearer
 item before the block behind it, and a block in front of it first (both faces); E is the backpack's
 key only (`backpackKey`).
+
+## Amendment (2026-11-09, 0.50.75): the rules read the generated terrain
+
+Owner: "Keep sticks under cleared leaves." The axe clears leaves (0.50.62), and Decision 3's rules
+read the current blocks, so clearing a canopy made its sticks vanish. Now **the rules (`on`,
+`under`, `nearWall`) read the terrain as the chunk was generated**; only the item's own cell (open)
+and its ground (a solid full block) are read as they are now. So leaves cleared over a stick, or a
+cliff broken away beside a rock, leave it; a broken ground still knocks it loose (Decision 6) and a
+hit still takes it, and a block built where it lies still hides it. A wall a player builds grows no
+rocks.
+
+- `dwell_world::ground::Rules::item_over` / `scatter_over` take `get(cell, generated)`; `item_at` /
+  `scatter_chunk` are the same with one reading for both (an unedited world). `target` reads both.
+- **Server**: `VoxelWorld::generated_voxel`: an unedited chunk's voxel, else its chunk generated
+  again from the world's generator, cached (`Server::ground_generated`, 64 chunks; not saved).
+- **Client**: the streamer keeps every edited loaded chunk as generated: a generated chunk's voxels
+  are copied before its first edit (a server modification or a prediction); one that arrives
+  edited (`ChunkForm::Explicit`) is generated again in a generation worker
+  (`ChunkSource::generate_base`, `Purpose::Base`, `on_generated_base`, which re-meshes the chunks
+  reading it). A mesh job gets its sky volume as generated (`MeshJob::generated`, `GroundJob`'s,
+  empty when nothing in it is edited); the crosshair reads `ChunkStreamer::generated_voxel`. Only
+  edited chunks cost memory (64 KiB each while loaded). A client that cannot generate (a native
+  server's world) reads them as they are now, as before.
+- Wire, saves and worldgen unchanged: no new compatibility line.
+
+Tests: a stick stays under cleared leaves and goes with its ground (`dwell-world`, both faces); a
+rock at a generated wall's foot stays when the wall is broken (`dwell-sim` `items`, both faces; the
+ground scene's floor and wall are now generated); mesh jobs carry the sky volume as generated once
+edited, and an edited arrival is generated again (`dwell-game` `chunk_stream`, both faces).
