@@ -76,9 +76,23 @@ pub fn joined_mask(m: StateId, at: &dyn Fn([i32; 3]) -> StateId) -> u8 {
     let Some((_, axis)) = section_of(m) else {
         return 0;
     };
+    // A lying log (axis x or z) is two ½ m cells, its lower and upper half, each knowing which by
+    // the log cells it joins above and below. Beside it (across a level side), a cell joins only
+    // the same half: a log lying one row higher or lower is a separate octagon, not its upper half
+    // squared off against the other's lower one (BUGS.md #63).
+    let half = |o: [i32; 3]| {
+        let here = at(o);
+        let up = joins(here, at([o[0], o[1] + 1, o[2]]));
+        let down = joins(here, at([o[0], o[1] - 1, o[2]]));
+        (up, down)
+    };
     let mut mask = 0;
     for face in 0..6 {
-        if face / 2 != axis && joins(m, at(face_offset(face))) {
+        let d = face_offset(face);
+        if face / 2 != axis
+            && joins(m, at(d))
+            && (axis == 1 || face / 2 == 1 || half([0; 3]) == half(d))
+        {
             mask |= 1 << face;
         }
     }

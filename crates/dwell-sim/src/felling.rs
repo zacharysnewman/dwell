@@ -1885,4 +1885,75 @@ mod tests {
         assert_eq!(r.support.rider_reach, FELLING.rider_reach);
         assert_eq!(r.hold_speed, FELLING.hold_speed);
     }
+
+    dwell_world::both_faces!(
+        /// Two trunks felled side by side, one settled a row (½ m) higher than the other (owner,
+        /// 2026-11-10: "an upward facing half ring stacked on a downward facing half ring"; BUGS.md
+        /// #63): each lying log is two ½ m cells, its lower and upper half, and they must draw one
+        /// octagon centred on the log. The higher log's lower half used to join the lower log's
+        /// upper half beside it, squaring their corners, so the rings broke into offset halves. A
+        /// third trunk settled level with the first still joins it, full width.
+        fn trunks_settled_side_by_side_a_row_apart_keep_whole_octagons(f: dwell_world::FaceFrame) {
+            use dwell_blocks::octagon::{face_index, joined_mask, outline};
+            let tipped = {
+                let a = DQuat::from_rotation_z(-std::f64::consts::FRAC_PI_2);
+                if f.is_b() {
+                    DQuat::from_xyzw(-a.x, a.y, -a.z, a.w)
+                } else {
+                    a
+                }
+            };
+            let trunk: Vec<([i32; 3], StateId)> = (0..6)
+                .map(|y| ([0, if f.is_b() { -y } else { y }, 0], f.state(log())))
+                .collect();
+            let mut world = std::collections::HashMap::new();
+            // At z 3 on rows 40-41; at z 4 a row higher (41-42, the odd ½ m); at z 2 level with z 3.
+            for (oy, z) in [(20.25, 3.5), (20.75, 4.5), (20.25, 2.5)] {
+                let origin = DVec3::from_array(f.point([10.5, oy, z]));
+                for (c, m) in resample(&trunk, origin, tipped).1 {
+                    world.insert(c, m);
+                }
+            }
+            assert_eq!(world.len(), 18, "three trunks of six cells");
+            let section = dwell_blocks::octagon::section_of(log()).expect("a log's section").0;
+            for (&c, &m) in &world {
+                assert_eq!(info(m).axis, Axis::X, "lying along x: {c:?}");
+                let at = |o: [i32; 3]| {
+                    *world
+                        .get(&[c[0] + o[0], c[1] + o[1], c[2] + o[2]])
+                        .unwrap_or(&M.air)
+                };
+                let joined = joined_mask(m, &at);
+                let local = f.cell(c);
+                // Its partner, the log's other half: above it face-locally from the lower row.
+                let lower = if local[2] == 4 { 41 } else { 40 };
+                let partner_up = local[1] == lower;
+                let partner_face = face_index(1, partner_up != f.is_b());
+                assert_ne!(joined & (1 << partner_face), 0, "joins its other half: {local:?}");
+                // Never squared toward the offset log at z 4 (or, from it, toward z 3).
+                let toward_offset = match local[2] {
+                    3 => Some(face_index(2, true)),
+                    4 => Some(face_index(2, false)),
+                    _ => None,
+                };
+                if let Some(face) = toward_offset {
+                    assert_eq!(
+                        joined & (1 << face),
+                        0,
+                        "a half squared against the offset log's other half: {local:?}"
+                    );
+                }
+                // The level neighbours (z 2 and z 3) still join, full width.
+                if local[2] == 2 {
+                    assert_ne!(joined & (1 << face_index(2, true)), 0, "level logs join");
+                }
+                // The z 4 log stands alone: each half is half an octagon (two corners cut, two
+                // squared at its partner): six points.
+                if local[2] == 4 {
+                    let n = outline(f64::from(section.chamfer), 0, joined, [1.0, CELL_H, 1.0]);
+                    assert_eq!(n.len(), 6, "half an octagon: {local:?}");
+                }
+            }
+        }
+    );
 }
