@@ -120,8 +120,8 @@ pub fn tool_swatch(item: &str) -> Vec<u8> {
     px
 }
 
-/// An inventory item's picture (ADR 0066): a block item's swatch, a non-block item's colour (a
-/// tool's drawn as one); empty for an item this build doesn't know.
+/// An inventory item's picture (ADR 0066): a block item's swatch, a non-block item's shaped look
+/// (`dwell_mesh::look_swatch`) or else its colour (a tool's drawn as one); empty for an item this build doesn't know.
 #[wasm_bindgen(js_name = itemSwatch)]
 pub fn item_swatch(item: &str) -> Vec<u8> {
     if dwell_protocol::chopping::tool(item).is_some() {
@@ -136,6 +136,10 @@ pub fn item_swatch(item: &str) -> Vec<u8> {
     let Some(def) = dwell_protocol::inventory::item(item) else {
         return Vec::new();
     };
+    // An item with a shaped look is drawn as that look: a stick as its rod, a rock as its lump.
+    if let Some(look) = def.look {
+        return dwell_mesh::look_swatch(&look);
+    }
     let n = dwell_mesh::TILE;
     let mut px = vec![0u8; n * n * 4];
     // A rounded blob in its colour, so it doesn't read as a block.
