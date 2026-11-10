@@ -98,14 +98,14 @@
       }
     },
     "wolf": {
-      "$comment": "The wolf is the dog recoloured and twice its size (owner, 2026-11-10: \"use the dog recolored. Make it twice as big\"): the dog's FBX with the pack's colours remapped to the wolf ramps.",
+      "$comment": "The wolf is the dog recoloured and 1.5 times its size (owner, 2026-11-10: \"use the dog recolored. Make it twice as big\", then \"The wolf should be shrunk about 75% of its size\": 75 % of 2): the dog's FBX with the pack's colours remapped to the wolf ramps (the eyes and nose stay black), then painted by its `coat` (shared/models/coat.mjs), which also covers the dog's blue collar and red tongue with fur. The collar is part of the dog's one mesh, not a loose part a `remove` could drop.",
       "glb": "glb/wolf.glb",
       "source": {
         "pack": "Animals_FREE_-_Animated_Low_Poly_3D_Models",
         "fbx": "Assets/ithappy/Animals_FREE/Meshes/Dog_001.fbx",
         "texture": "Assets/ithappy/Animals_FREE/Textures/Texture.png"
       },
-      "scale": 2,
+      "scale": 1.5,
       "yaw": 0,
       "remap": {
         "#f9f9f9": "wolf",

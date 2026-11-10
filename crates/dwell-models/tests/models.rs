@@ -250,10 +250,12 @@ fn the_doe_is_the_deer_without_antlers_on_the_same_skin_and_clips() {
     assert!(doe.positions.len() < deer.positions.len());
 }
 
-// Owner, 2026-11-10: "use the dog recolored. Make it twice as big for default too." The wolf is the
-// dog's mesh and clips, its colours greys (none of the dog's white or blue), drawn at twice its size.
+// Owner, 2026-11-10: "use the dog recolored. Make it twice as big for default too", then "The wolf
+// should be shrunk about 75% of its size" (1.5 times the dog), and its coat blended (models.json
+// `coat`): the dog's mesh and clips, none of the dog's white, blue collar or red tongue, a dark back
+// over a pale belly. The coat's smoothness is shared/models/gen.test.mjs's.
 #[test]
-fn the_wolf_is_the_dog_recoloured_grey_at_twice_its_size() {
+fn the_wolf_is_the_dog_in_a_wolf_coat_at_one_and_a_half_times_its_size() {
     let find = |n: &str| MODELS.iter().find(|m| m.name == n).unwrap();
     let (dog_data, wolf_data) = (find("dog"), find("wolf"));
     let (dog, wolf) = (read("", dog_data.glb), read("", wolf_data.glb));
@@ -261,7 +263,7 @@ fn the_wolf_is_the_dog_recoloured_grey_at_twice_its_size() {
     let clips =
         |m: &glb::Model| -> Vec<String> { m.clips.iter().map(|c| c.name.clone()).collect() };
     assert_eq!(clips(&dog), clips(&wolf));
-    assert_eq!(wolf_data.scale, 2.0 * dog_data.scale);
+    assert_eq!(wolf_data.scale, 1.5 * dog_data.scale);
     let rgb = |c: &[f32; 3]| c.map(|v| (v * 255.0).round() as i32);
     // The dog's coat (its commonest colour) and its collar's blue are gone; most of it is grey.
     let dog_rgb: Vec<_> = dog.colors.iter().map(rgb).collect();
@@ -276,13 +278,25 @@ fn the_wolf_is_the_dog_recoloured_grey_at_twice_its_size() {
         .find(|c| c[2] > c[0] + 60)
         .expect("the dog's collar");
     assert!(!wolf_rgb.contains(blue));
-    let grey = wolf_rgb
-        .iter()
-        .filter(|c| c.iter().max().unwrap() - c.iter().min().unwrap() < 40)
-        .count();
-    assert!(
-        grey * 10 > wolf_rgb.len() * 9,
-        "grey {grey} of {}",
-        wolf_rgb.len()
-    );
+    // No collar or tongue colour: nothing blue or red (linear colours, the GLB's).
+    for c in &wolf.colors {
+        assert!(c[2] <= c[0] * 1.6 + 0.01, "a blue vertex {c:?}");
+        assert!(c[0] <= c[1] * 1.8 + 0.01, "a red vertex {c:?}");
+    }
+    // The back (the saddle, high over the middle of the body) is darker than the belly.
+    let luma = |c: &[f32; 3]| 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2];
+    let mean = |keep: &dyn Fn(&[f32; 3]) -> bool| {
+        let v: Vec<f32> = wolf
+            .positions
+            .iter()
+            .zip(&wolf.colors)
+            .filter(|(p, _)| keep(p))
+            .map(|(_, c)| luma(c))
+            .collect();
+        v.iter().sum::<f32>() / v.len() as f32
+    };
+    let mid = |p: &[f32; 3]| p[2].abs() < 0.15;
+    let back = mean(&|p| mid(p) && p[1] > 0.5);
+    let belly = mean(&|p| mid(p) && p[1] > 0.2 && p[1] < 0.3);
+    assert!(back * 2.0 < belly, "back {back} belly {belly}");
 }

@@ -201,7 +201,14 @@ const focused = loaded.find((l) => l.name === focus.get('focus'));
 if (focused) {
   for (const l of loaded) l.mixer.getRoot().visible = l === focused;
   const root = focused.mixer.getRoot();
-  const box = new THREE.Box3().setFromObject(root);
+  root.position.set(0, 0, 0);
+  // The bind pose's bounds (a skinned mesh's world box follows its bones), at the model's scale.
+  let mesh;
+  root.traverse((o) => { if (o.isMesh && !mesh) mesh = o; });
+  mesh.geometry.computeBoundingBox();
+  const box = mesh.geometry.boundingBox.clone();
+  box.min.multiplyScalar(focused.m.scale);
+  box.max.multiplyScalar(focused.m.scale);
   const c = box.getCenter(new THREE.Vector3());
   const r = box.getSize(new THREE.Vector3()).length();
   const a = THREE.MathUtils.degToRad(Number(focus.get('yaw') ?? 90) + (focused.m.yaw ?? 0));
