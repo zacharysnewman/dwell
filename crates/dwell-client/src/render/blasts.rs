@@ -46,7 +46,9 @@ pub fn blast_quads(puffs: &[Puff], eye: [f64; 3], basis: &Basis) -> (Vec<f32>, u
                 })
             },
             |x, y| [(2.0 * x - 1.0) as f32, (2.0 * y - 1.0) as f32],
-            [leaf, p.alpha as f32, 0.0],
+            // z the puff's half size (m): the vertex shader finds its centre from it
+            // (`puff_centre`) and lights the puff there once.
+            [leaf, p.alpha as f32, size as f32],
             (p.explosive as u32 & 0xff) | kind << 8,
             p.seed,
         );
@@ -54,7 +56,8 @@ pub fn blast_quads(puffs: &[Puff], eye: [f64; 3], basis: &Basis) -> (Vec<f32>, u
     (out, far.len())
 }
 
-/// The puffs' shading in WGSL: `blast_colour(kind, look, uv, rest, rel, seed)`, premultiplied; the
+/// The puffs' shading in WGSL: `blast_colour(kind, look, uv, rest, rel, seed, bits, light)`,
+/// premultiplied, `light` the puff's (`puff_light` at its centre, from the vertex shader); the
 /// fireball's alpha 0 (added).
 pub fn wgsl() -> String {
     let lin = |c: [f32; 3]| -> String {
@@ -110,7 +113,22 @@ fn blast_noise(p: vec2f) -> f32 {{
 }}
 // A blast's puff (render/blasts.rs): kind 8 smoke, 9 dust (lit, over what is behind), 10 the
 // fireball (self-lit, added: alpha 0). uv −1 to 1; rest y its opacity; a ragged edge from its seed.
-fn blast_colour(kind: u32, look: u32, uv: vec2f, rest: vec3f, rel: vec3f, seed: u32, bits: u32) -> vec4f {{
+// A puff's centre (eye-relative) from one of its corners: the corner less its offset along the
+// camera's axes (`blast_quads`: `right`·u + `up`·v times the half size in rest z).
+fn puff_centre(rel: vec3f, uv: vec2f, size: f32) -> vec3f {{
+    return rel - (frame.right.xyz * uv.x + frame.up.xyz * uv.y) * size;
+}}
+// The light on a smoke or dust puff, once per puff at its centre (the vertex shader; docs/
+// EXPLOSIVES.md §4): the sky light, the sun's and moon's by the shadow maps there, facing the
+// face's up. `lambert_lit` is linear in the albedo, so a pixel's colour is its albedo times this.
+fn puff_light(rel: vec3f) -> vec3f {{
+    let y = frame.eye.x + rel.y;
+    let up = face_up(face_at(y));
+    var l = terrain_light(1.0, vec2f(1.0, 0.0));
+    l.direct = shadow_light(rel, up, l.direct);
+    return lambert_lit(vec3f(1.0), up, y, l);
+}}
+fn blast_colour(kind: u32, look: u32, uv: vec2f, rest: vec3f, rel: vec3f, seed: u32, bits: u32, light: vec3f) -> vec4f {{
     if (kind >= 11u) {{
         return chip_colour(kind, min(look, {last_wood}u), uv, rest, rel, seed, bits);
     }}
@@ -130,11 +148,9 @@ fn blast_colour(kind: u32, look: u32, uv: vec2f, rest: vec3f, rel: vec3f, seed: 
     if (kind == 9u) {{
         c = BLAST_DUSTS[k];
     }}
-    let y = frame.eye.x + rel.y;
-    let up = face_up(face_at(y));
-    var l = terrain_light(1.0, vec2f(1.0, 0.0));
-    l.direct = shadow_light(rel, up, l.direct);
-    let lit = lambert_lit(c * (0.85 + 0.3 * blast_noise(uv * 3.0 + s)), up, y, l);
+    // Lit once per puff (`puff_light`, in the vertex shader): the soft shape and its mottling per
+    // pixel, the light flat over it.
+    let lit = c * (0.85 + 0.3 * blast_noise(uv * 3.0 + s)) * light;
     return vec4f(lit * a, a);
 }}
 // An axe's chip (kind 11: a flat splinter, turned by its seed, tumbling; rest x 1: a leaf, rounder
@@ -216,5 +232,95 @@ mod tests {
         // The first quad is the farther (the fireball).
         assert_eq!(v[8].to_bits() >> 8, KIND_FIRE);
         assert_eq!(v[6 * VERTEX_FLOATS + 8].to_bits() >> 8, KIND_SMOKE);
+    }
+
+    dwell_world::both_faces!(
+        /// Lit once per puff (docs/EXPLOSIVES.md §4): every vertex of a smoke or dust puff finds
+        /// the same point, the puff's centre, by the shader's `puff_centre` (mirrored here on the
+        /// CPU: the corner less right·u + up·v times rest z), so the light it gets there is the
+        /// light a pixel lit at the centre got before; from any view on either face.
+        fn every_vertex_of_a_puff_finds_its_centre(f: FaceFrame) {
+            use crate::render::camera::aim;
+            let eye = f.point([3.0, 70.0, -4.0]);
+            for (yaw, pitch) in [(0.0, 0.0), (37.0, -50.0), (210.0, 25.0), (300.0, 80.0)] {
+                let basis = aim(yaw, pitch, f, 0.0);
+                let puffs = [
+                    Puff {
+                        at: f.point([5.0, 72.5, 1.0]),
+                        size: 2.25,
+                        alpha: 0.6,
+                        kind: PuffKind::Smoke,
+                        explosive: 0,
+                        seed: 7,
+                    },
+                    Puff {
+                        at: f.point([-8.0, 69.0, 3.0]),
+                        size: 0.8,
+                        alpha: 0.4,
+                        kind: PuffKind::Dust,
+                        explosive: 0,
+                        seed: 9,
+                    },
+                ];
+                let (v, n) = blast_quads(&puffs, eye, &basis);
+                assert_eq!(n, 2);
+                for vert in v.chunks_exact(VERTEX_FLOATS) {
+                    let at = |k: usize| f64::from(vert[k]);
+                    let (u, w, size) = (at(3), at(4), at(7));
+                    let centre: [f64; 3] = std::array::from_fn(|k| {
+                        at(k) - (basis.right[k] * u + basis.up[k] * w) * size + eye[k]
+                    });
+                    let puff = puffs
+                        .iter()
+                        .find(|p| (p.size - size).abs() < 1e-6)
+                        .expect("its puff");
+                    for k in 0..3 {
+                        assert!(
+                            (centre[k] - puff.at[k]).abs() < 1e-4,
+                            "{centre:?} vs {:?} at yaw {yaw} pitch {pitch}",
+                            puff.at
+                        );
+                    }
+                }
+            }
+        }
+    );
+
+    #[test]
+    fn smoke_and_dust_are_lit_in_the_vertex_shader_not_per_pixel() {
+        // face-a-only: reads the shader's text, which has no face.
+        let src = wgsl();
+        let colour = src
+            .split("fn blast_colour")
+            .nth(1)
+            .unwrap()
+            .split("fn wood_lit")
+            .next()
+            .unwrap();
+        // The fragment's path takes the flat light; no shadow lookup or lighting per pixel.
+        assert!(!colour.contains("shadow_light"));
+        assert!(!colour.contains("lambert_lit"));
+        assert!(colour.contains("* light;"));
+        // `puff_light` is the light the fragment shader computed before, with a white albedo
+        // (`lambert_lit` is linear in it).
+        let light = src.split("fn puff_light").nth(1).unwrap();
+        let light = light.split("fn blast_colour").next().unwrap();
+        for line in [
+            "var l = terrain_light(1.0, vec2f(1.0, 0.0));",
+            "l.direct = shadow_light(rel, up, l.direct);",
+            "return lambert_lit(vec3f(1.0), up, y, l);",
+        ] {
+            assert!(light.contains(line), "{line}");
+        }
+        // The vertex shader lights smoke and dust at the centre, flat to the fragments.
+        let flames = include_str!("flames.rs");
+        assert!(flames.contains("o.lit = puff_light(puff_centre(v.rel, v.uv, v.rest.z));"));
+        assert!(flames.contains("@location(5) @interpolate(flat) lit: vec3f,"));
+        // Its shadow lookups are visible to the vertex stage.
+        for src in [include_str!("shadows.rs"), include_str!("lod_shadows.rs")] {
+            let entries = src.split("pub fn layout_entries()").nth(1).unwrap();
+            let entries = entries.split("\n}\n").next().unwrap();
+            assert_eq!(entries.matches("ShaderStages::VERTEX_FRAGMENT").count(), 3);
+        }
     }
 }

@@ -339,6 +339,19 @@ A client sees a blast where an `Explosion` modification turns a lit explosive's 
 - **Smoke and dust** (Smoke and dust): `smoke` puffs spreading out and rising (`spreadM`, `riseMs`),
   `dust` thrown out and falling (`speedMs`), each with its colour, sizes, lives and opacity; billboards
   through the flames' pass (`render/blasts.rs`, kinds 8–10), lit. A CPU adapter draws `cpuCount`.
+  **Lit once per puff** (0.51.11): the vertex shader finds each smoke or dust puff's centre from its corner
+  (`puff_centre`: the corner less the camera's right·u + up·v times its half size, carried in the vertex's
+  rest z) and lights it there (`puff_light`: the sky light, the sun and moon by the shadow maps and the
+  distant terrain's shadow, facing the face's up), passed flat to the fragments, which keep the soft ragged
+  shape, the mottling and the opacity per pixel: colour × mottling × the puff's light, exactly what the
+  per-pixel `lambert_lit` gave at the centre (it is linear in the albedo). Before, every pixel of the large,
+  overlapping billboards ran the shadow maps' filtered taps and the lighting. The frame group's shadow
+  bindings (8–13) are visible to the vertex stage for it. The fireball stays self-lit; an axe's chips stay
+  lit per pixel (small, few). Measured on the M1 Air (bench, Chrome with vsync, 2560×1600 at 50 % Stretch,
+  default settings, noon, one run each): a 3 × 9 block of red dynamite at the seed-0 spawn lit with the
+  torch, 12 s recorded from the lighting, up to 337 billboards a frame: `gpu.frame` mean 12.3 → 11.5 ms, p95
+  17.4 → 15.5, p99 19.5 → 16.2 (`gpu.near` p95 7.83 → 7.64); 60 fps either way, the look unchanged. Tests: `render/blasts.rs` `every_vertex_of_a_puff_finds_its_centre` (both
+  faces, four views) and `smoke_and_dust_are_lit_in_the_vertex_shader_not_per_pixel`.
   **They follow the blast's direction** (0.49.51; owner, 2026-11-07: "Make the smoke particles follow
   explosion direction"): the client reads the blast's way out from its own cells round the charge,
   before the modification clears them (`blasts::open_way`, the server's `explosives::open_dir`; no

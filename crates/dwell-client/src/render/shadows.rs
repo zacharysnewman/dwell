@@ -563,12 +563,13 @@ pub fn uniforms(t: &ShadowTunables, plan: Option<(&Plan, &Frame)>) -> [f32; UNIF
 }
 
 /// The frame group's shadow entries (bindings 8–10: the uniform block, the maps, the compare
-/// sampler), for the scene's fragment shaders.
+/// sampler), for the scene's shaders (the fragment's, and the vertex shader that lights a blast's
+/// puffs once each, render/blasts.rs `puff_light`).
 pub fn layout_entries() -> [wgpu::BindGroupLayoutEntry; 3] {
     [
         wgpu::BindGroupLayoutEntry {
             binding: 8,
-            visibility: wgpu::ShaderStages::FRAGMENT,
+            visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
             ty: wgpu::BindingType::Buffer {
                 ty: wgpu::BufferBindingType::Uniform,
                 has_dynamic_offset: false,
@@ -578,7 +579,7 @@ pub fn layout_entries() -> [wgpu::BindGroupLayoutEntry; 3] {
         },
         wgpu::BindGroupLayoutEntry {
             binding: 9,
-            visibility: wgpu::ShaderStages::FRAGMENT,
+            visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
             ty: wgpu::BindingType::Texture {
                 sample_type: wgpu::TextureSampleType::Depth,
                 view_dimension: wgpu::TextureViewDimension::D2Array,
@@ -588,7 +589,7 @@ pub fn layout_entries() -> [wgpu::BindGroupLayoutEntry; 3] {
         },
         wgpu::BindGroupLayoutEntry {
             binding: 10,
-            visibility: wgpu::ShaderStages::FRAGMENT,
+            visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
             ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
             count: None,
         },
