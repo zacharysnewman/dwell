@@ -388,3 +388,13 @@ only." Shipped to iterate on (owner: "Deploy as a release and we'll iterate on i
 - **Known gaps, to iterate on:** a 3 m soil band shows under each grass lip on a cliff face (the
   terrain's soil depth; `soilDepth` can't go below `underDepth`); the LOD has no undersides;
   overhangs have no ramps under them; caves and floating islands are not started.
+
+## Banks, water looks and the archipelago (2026-11-10, ADR 0074 B4)
+
+The elevation places the rivers and lakes; a biome shapes their banks (`banks`: the valley's rise from a
+river's bank, a lake's bank and its fall, a beach of the shore block on dry ground near the water),
+blended by the biomes' weights. A biome may tint its water (`waterLook`, over the fluid's look). The
+world's coast takes an `islands` knob in terrain.json (off by default): the coast distance capped and
+broken by a broad noise, so the land comes as many islands in a shallow sea
+(`shared/worldgen/worlds/archipelago.json`, with the `test:archipelago` fixture biome). Keep the sea the
+larger share: the world map fills sea pockets enclosed by land as depressions.

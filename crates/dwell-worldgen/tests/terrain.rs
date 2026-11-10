@@ -1678,3 +1678,165 @@ fn the_default_biome_takes_only_the_weight_left() {
         "{w:?}"
     );
 }
+
+dwell_world::both_faces!(
+    /// Banks per biome (ADR 0074 B4): the elevation places the rivers, the biome shapes their
+    /// banks. The default biome with a beach and gentler valley sides (data alone, as a fixture
+    /// biome would set them) turns dry bank columns to its shore block and reshapes the valley,
+    /// on the same rivers; the map is the same.
+    fn a_biomes_banks_change_the_bank_columns(f: FaceFrame) {
+        use dwell_worldgen::terrain::{BIOMES, Band};
+        let t = BifacialTerrain::height_field(7);
+        let g0 = t.local(f.face).clone();
+        let mut sandy = BIOMES[0];
+        sandy.surface.beach = 8.0;
+        sandy.surface.river_valley_slope = 0.12;
+        let g1 = g0.clone().with_biome(&sandy);
+        let (mut beach0, mut beach1, mut reshaped, mut seen) = (0, 0, 0, 0);
+        for river in g0.map().rivers.iter().take(12) {
+            for v in river.path.iter().step_by(8).take(12) {
+                if v.surface < 2.0 {
+                    continue;
+                }
+                for dx in -40..=40 {
+                    let (x, z) = (v.x as i32 + dx, v.z as i32);
+                    let (a, b) = (g0.column_at(x, z), g1.column_at(x, z));
+                    seen += 1;
+                    beach0 += i32::from(a.band == Band::Shore && !a.wet());
+                    beach1 += i32::from(b.band == Band::Shore && !b.wet());
+                    reshaped += i32::from(a.height != b.height);
+                }
+            }
+        }
+        assert!(seen > 500, "bank columns sampled: {seen}");
+        assert!(
+            beach1 > beach0 + 50,
+            "the beach turns dry bank columns to shore: {beach0} -> {beach1}"
+        );
+        assert!(
+            reshaped > 50,
+            "the gentler valley reshapes the banks: {reshaped}"
+        );
+        assert_eq!(g0.map().digest(), g1.map().digest());
+    }
+);
+
+dwell_world::both_faces!(
+    /// Water looks per biome (ADR 0074 B4): the default water is the fluid's own look exactly; the
+    /// archipelago fixture's `waterLook` resolves where it is, and the look blends across its
+    /// border (the archipelago's weight between 0 and 1 gives a look between the two).
+    fn a_biomes_water_look_resolves_and_blends(f: FaceFrame) {
+        use dwell_worldgen::terrain::{BIOMES, FIXTURE_BIOMES, water_tint_of};
+        let fluid = dwell_blocks::require_fluid("dwell:water");
+        let plain = water_tint_of(&BIOMES[0]);
+        assert_eq!(
+            plain.absorption, fluid.absorption,
+            "the default water is today's"
+        );
+        let isles = *FIXTURE_BIOMES
+            .iter()
+            .find(|b| b.name == "test:archipelago")
+            .expect("the archipelago fixture");
+        let teal = water_tint_of(&isles);
+        assert_ne!(teal.scatter, plain.scatter);
+        let t = BifacialTerrain::height_field(7);
+        let g0 = t.local(f.face).clone();
+        let g = g0.clone().with_biomes(&[BIOMES[0], isles]);
+        let r = i64::from(WORLD_RADIUS) * 9 / 10;
+        let (mut full, mut between) = (0, 0);
+        for x in (-r..=r).step_by(256) {
+            for z in (-r..=r).step_by(256) {
+                if x * x + z * z > r * r {
+                    continue;
+                }
+                assert_eq!(
+                    g0.water_look_at(x, z),
+                    plain,
+                    "one biome: the default's look"
+                );
+                let w = g.biome_mix(x, z).weight(1) as f32;
+                let at = g.water_look_at(x, z);
+                for k in 0..3 {
+                    let want = plain.scatter[k] * (1.0 - w) + teal.scatter[k] * w;
+                    assert!(
+                        (at.scatter[k] - want).abs() < 1e-4,
+                        "blended by weight at ({x}, {z})"
+                    );
+                }
+                full += i32::from(w > 0.99);
+                between += i32::from(w > 0.05 && w < 0.95);
+            }
+        }
+        assert!(
+            full > 0 && between > 0,
+            "the look appears and blends: {full} full, {between} between"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    /// The archipelago (ADR 0074 B4): the example world setting (`shared/worldgen/worlds/
+    /// archipelago.json`, the coast's `islands` knob, a shallow shelf) breaks the land into many
+    /// islands in a shallow sea, where the default world's knobs give the one island.
+    fn the_archipelago_setting_makes_many_islands(f: FaceFrame) {
+        use dwell_worldgen::base::BaseField;
+        use dwell_worldgen::terrain::{FIXTURE_WORLDS, HEIGHT};
+        let (_, h) = *FIXTURE_WORLDS
+            .iter()
+            .find(|(n, _)| *n == "test:archipelago")
+            .expect("the archipelago world");
+        let seed = bifacial::face_seed(7, f.face);
+        let islands = |field: &BaseField| {
+            // A 24 km square round the centre on a 100 m grid (the world map's), land's components.
+            let (n, cell) = (240i64, 100i64);
+            let land: Vec<bool> = (0..n * n)
+                .map(|k| {
+                    let (x, z) = ((k % n - n / 2) * cell, (k / n - n / 2) * cell);
+                    field
+                        .height_lod(x, z, cell)
+                        .is_some_and(|y| f64::from(y) > SEA_LEVEL_M)
+                })
+                .collect();
+            let mut seen = vec![false; land.len()];
+            let (mut count, mut shallow) = (0, 0usize);
+            for s in 0..land.len() {
+                if !land[s] || seen[s] {
+                    continue;
+                }
+                let mut stack = vec![s];
+                seen[s] = true;
+                let mut size = 0;
+                while let Some(k) = stack.pop() {
+                    size += 1;
+                    let (i, j) = ((k as i64) % n, (k as i64) / n);
+                    for (di, dj) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                        let (a, b) = (i + di, j + dj);
+                        if a < 0 || b < 0 || a >= n || b >= n {
+                            continue;
+                        }
+                        let q = (b * n + a) as usize;
+                        if land[q] && !seen[q] {
+                            seen[q] = true;
+                            stack.push(q);
+                        }
+                    }
+                }
+                count += i32::from(size >= 4);
+            }
+            for (k, l) in land.iter().enumerate() {
+                let (x, z) = ((k as i64 % n - n / 2) * cell, (k as i64 / n - n / 2) * cell);
+                let y = field.height_lod(x, z, cell).unwrap_or(0.0);
+                shallow += usize::from(!l && f64::from(y) > SEA_LEVEL_M - 12.0);
+            }
+            (count, shallow, land.iter().filter(|l| !**l).count())
+        };
+        let (many, shallow, sea) = islands(&BaseField::with_height(seed, h));
+        let (one, _, _) = islands(&BaseField::with_height(seed, HEIGHT));
+        assert!(many >= 12, "the archipelago's islands: {many}");
+        assert!(one <= 2, "the default world's: {one}");
+        assert!(
+            sea > 0 && shallow * 10 >= sea * 9,
+            "a shallow sea: {shallow} of {sea} sea cells"
+        );
+    }
+);

@@ -18,6 +18,7 @@ import {
   validateMidplane,
   validatePlacements,
   validateTerrainAndBiomes,
+  validateFixtureWorlds,
   validateFixtureBiomes,
   validateVolume,
   volumeRust,
@@ -74,7 +75,8 @@ const terrainOf = (world, biomes) => validateTerrainAndBiomes(world, biomes, blo
 
 test('the checked-in terrain and biomes are valid and generate the checked-in Rust', () => {
   const fixtures = validateFixtureBiomes(loadBiomes(join(here, 'biomes/fixtures')), blocks);
-  const rs = terrainRust({ ...terrainOf(loadTerrain(), loadBiomes()), fixtures });
+  const worlds = validateFixtureWorlds(loadBiomes(join(here, 'worlds')), loadTerrain());
+  const rs = terrainRust({ ...terrainOf(loadTerrain(), loadBiomes()), fixtures, worlds });
   const checkedIn = readFileSync(join(here, '../../crates/dwell-worldgen/src/terrain.gen.rs'), 'utf8');
   assert.equal(rs, checkedIn, 'run `node shared/worldgen/gen.mjs`');
 });
@@ -158,7 +160,7 @@ test('a bad biome or world terrain fails with the key and the problem', () => {
     [(t) => (t.bumps.wavelength = 2), /bumps\.wavelength/],
     [(t) => (t.hills.fadeTo = 100), /hills\.fadeTo must be greater than hills\.fadeFrom/],
     [(t) => delete t.seaFloor, /seaFloor must be an object/],
-    [(t) => (t.rivers.valleySlope = 0), /rivers\.valleySlope must be in \(0, 10\]/],
+    [(t) => (t.rivers.leveeFall = 0), /rivers\.leveeFall must be in \(0, 10\]/],
     [(t) => (t.bands = {}), /terrain\.json: unknown bands/],
     [(t) => (t.biomeMap.wetReach = 0), /terrain\.json: biomeMap\.wetReach must be in \(0, 100000\]/],
     [(t) => (t.spawn.maxHeight = 1), /spawn\.maxHeight must be greater than spawn\.minHeight/],
@@ -474,4 +476,35 @@ test('an identical subtree is one node', () => {
   const rust = volumeRust(validateVolume(data));
   assert.equal(rust.match(/Node::Noise/g)?.length, 1);
   assert.equal(rust.match(/Node::Surface/g)?.length, 1);
+});
+
+test('a biome water look and the bank fields are checked; the archipelago fixtures load', async () => {
+  const { biomeRefs } = await import('./gen.mjs');
+  const { validateBiome } = await import('./biomes.mjs');
+  const { readFileSync } = await import('node:fs');
+  const here = new URL('.', import.meta.url).pathname;
+  const world = JSON.parse(readFileSync(`${here}terrain.json`, 'utf8'));
+  const [w] = validateFixtureWorlds(loadBiomes(`${here}worlds`), world);
+  assert.equal(w.name, 'test:archipelago');
+  assert.equal(w.world.islands.amplitude, 1400);
+  assert.equal(world.islands.amplitude, 0, "the default world's islands knob is off");
+  assert.throws(
+    () => validateFixtureWorlds([{ name: 'test:x', overrides: { islands: { amplitude: -1 } } }], world),
+    /islands\.amplitude must be in/,
+  );
+  const blocks = registryBlocks();
+  const refs = biomeRefs();
+  const isles = JSON.parse(readFileSync(`${here}biomes/fixtures/archipelago.json`, 'utf8'));
+  validateBiome(isles, blocks, refs);
+  for (const [mut, msg] of [
+    [(b) => (b.waterLook = {}), /waterLook needs a scatter or an absorption/],
+    [(b) => (b.waterLook.absorption = [1, 2]), /waterLook\.absorption must be three numbers/],
+    [(b) => (b.waterLook.tint = 1), /waterLook: unknown tint/],
+    [(b) => (b.banks.beach = -1), /banks\.beach must be in/],
+    [(b) => delete b.banks, /banks must be an object/],
+  ]) {
+    const b = structuredClone(isles);
+    mut(b);
+    assert.throws(() => validateBiome(b, blocks, refs), msg);
+  }
 });

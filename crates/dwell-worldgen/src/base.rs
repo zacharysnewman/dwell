@@ -9,7 +9,7 @@ use dwell_world::inside_world_disc;
 
 use crate::island::{self, IslandLayout};
 use crate::noise::{clamp01, fbm2, noise_offset, octaves_resolved, seed_word, smooth_step};
-use crate::terrain::HEIGHT as H;
+use crate::terrain::{HEIGHT, HeightField};
 
 /// The input field of one face (its generator's seed).
 #[derive(Clone, Debug)]
@@ -19,11 +19,21 @@ pub struct BaseField {
     offset_x: i64,
     offset_z: i64,
     island: IslandLayout,
+    islands_seed: u32,
+    /// The field's parameters (the build's `HEIGHT` unless `with_height`).
+    h: HeightField,
 }
 
 impl BaseField {
     pub fn new(seed: u64) -> Self {
+        Self::with_height(seed, HEIGHT)
+    }
+
+    /// The field of face seed `seed` with these parameters (a fixture world, Chisel's edit).
+    pub fn with_height(seed: u64, h: HeightField) -> Self {
         Self {
+            islands_seed: seed_word(seed, 0x1514_A010),
+            h,
             hills_seed: seed_word(seed, 1),
             bumps_seed: seed_word(seed, 2),
             offset_x: noise_offset(seed_word(seed, 3)),
@@ -48,8 +58,9 @@ impl BaseField {
         if !inside_world_disc(x, z) {
             return None;
         }
+        let h = &self.h;
         let (nx, nz) = (x + self.offset_x, z + self.offset_z);
-        let coast = self.island.coast_at(
+        let mut coast = self.island.coast_at(
             x,
             z,
             Some(octaves_resolved(
@@ -58,30 +69,47 @@ impl BaseField {
                 cell,
             )),
         );
+        // The archipelago's knob (ADR 0074 B4): the coast capped and broken by a broad noise, so
+        // the land comes as many islands, each rising from its own coast. Off at 0 (the default).
+        if h.island_amplitude > 0.0 {
+            let n = fbm2(
+                self.islands_seed,
+                nx,
+                nz,
+                h.island_wavelength,
+                h.island_octaves,
+                Some(octaves_resolved(
+                    h.island_wavelength,
+                    h.island_octaves,
+                    cell,
+                )),
+            );
+            coast = coast.min(h.island_cap) + h.island_amplitude * 2.0 * n;
+        }
         let hills = fbm2(
             self.hills_seed,
             nx,
             nz,
-            H.hill_wavelength,
-            H.hill_octaves,
-            Some(octaves_resolved(H.hill_wavelength, H.hill_octaves, cell)),
+            h.hill_wavelength,
+            h.hill_octaves,
+            Some(octaves_resolved(h.hill_wavelength, h.hill_octaves, cell)),
         );
         let bumps = fbm2(
             self.bumps_seed,
             nx,
             nz,
-            H.bump_wavelength,
-            H.bump_octaves,
-            Some(octaves_resolved(H.bump_wavelength, H.bump_octaves, cell)),
+            h.bump_wavelength,
+            h.bump_octaves,
+            Some(octaves_resolved(h.bump_wavelength, h.bump_octaves, cell)),
         );
         // Fractal sums rarely leave ±0.5: × 2 brings the amplitudes to about their nominal values.
         let base = if coast > 0.0 {
-            H.inland_rise * (coast / (coast + H.rise_half))
+            h.inland_rise * (coast / (coast + h.rise_half))
         } else {
-            H.sea_floor * clamp01(-coast * (1.0 / H.shelf))
+            h.sea_floor * clamp01(-coast * (1.0 / h.shelf))
         };
-        let land = smooth_step(H.hill_fade_from, H.hill_fade_to, coast);
-        let relief = base + land * H.hill_height * 2.0 * hills + H.bump_height * 2.0 * bumps;
+        let land = smooth_step(h.hill_fade_from, h.hill_fade_to, coast);
+        let relief = base + land * h.hill_height * 2.0 * hills + h.bump_height * 2.0 * bumps;
         Some(
             (dwell_world::SEA_LEVEL_M as f32 + relief)
                 .max((dwell_world::MIDPLANE_M + dwell_world::CORE_M) as f32),

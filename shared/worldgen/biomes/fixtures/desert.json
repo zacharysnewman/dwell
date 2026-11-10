@@ -3,8 +3,14 @@
   "name": "test:desert",
   "where": {
     "weight": 1,
-    "temperature": { "min": 0.4, "blend": 0.12 },
-    "wetness": { "max": 0.35, "blend": 0.15 }
+    "temperature": {
+      "min": 0.4,
+      "blend": 0.12
+    },
+    "wetness": {
+      "max": 0.35,
+      "blend": 0.15
+    }
   },
   "detail": {
     "amplitude": 3,
@@ -25,6 +31,12 @@
     "rockWindow": 120,
     "shore": 2,
     "underDepth": 3
+  },
+  "banks": {
+    "riverSlope": 0.45,
+    "lake": 0.5,
+    "lakeSlope": 0.25,
+    "beach": 0
   },
   "bands": [
     {

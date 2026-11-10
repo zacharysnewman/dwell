@@ -14,6 +14,7 @@ Open proposals:
 | [`WATER_GPU_SURFACE.md`](./WATER_GPU_SURFACE.md) | Cheaper water that stays pretty: what each water feature costs on the M1 Air (measured), cheaper-but-pretty options per costly piece, a phone tier, the water surface as a GPU heightfield (smooth, no re-meshing, an optional levels message), waterfalls like the owner's reference | Written 2026-11-07; open questions for the owner |
 | [`TERRAIN_HYDROLOGY_AND_VOLUMES.md`](./TERRAIN_HYDROLOGY_AND_VOLUMES.md) | A world-scale hydrology map per seed and face (stream-power erosion, priority-flood lakes, rivers to the sea), then a 3D density function for rich caves, cliffs, arches, sea stacks, cross-face caves and floating islands | Hydrology prototype built (a viewer of images, not wired into generation); open questions for the owner |
 | [`BIOME_SANDBOX.md`](./BIOME_SANDBOX.md) | A biome sandbox and a texture lab: sliders for the top blocks, relief, water banks and hue, trees, rocks and structures, a live preview patch, export to JSON (archipelago, Arches, Mount Rainier as biomes) | Recorded 2026-11-09; queued after the current work, questions parked until then by the owner's request |
+| [`SYSTEMIC_TERRAIN.md`](./SYSTEMIC_TERRAIN.md) | Systemic terrain: world shape → geology (rock types: hardness, jointing) → climate (temperature, prevailing wind and rain shadow) → weathering/erosion style → soil and life; biomes as labels and Chisel presets | Recorded 2026-11-10; extends ADR 0074; questions before B5 |
 
 Adopted proposals, and where they went:
 

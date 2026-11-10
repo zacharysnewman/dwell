@@ -368,7 +368,21 @@ pub fn sample(terrain: &BifacialTerrain, face: FaceFrame, cell: i32) -> (Grid, f
 
 /// [`sample`] for the face whose generator's seed is `seed`.
 pub fn sample_seed(seed: u64, cell: i32) -> (Grid, f64, Vec<f64>) {
-    let g = BaseField::new(seed);
+    sample_field(&BaseField::new(seed), cell)
+}
+
+/// The map of face seed `seed` over a base field of other parameters (a fixture world, Chisel).
+pub fn generate_with_height(
+    seed: u64,
+    p: &HydrologyParams,
+    h: crate::terrain::HeightField,
+) -> HydrologyMap {
+    let (grid, x0, hs) = sample_field(&BaseField::with_height(seed, h), p.cell);
+    from_heights(grid, f64::from(p.cell), x0, &hs, seed, p)
+}
+
+/// [`sample_seed`] of a given base field.
+fn sample_field(g: &BaseField, cell: i32) -> (Grid, f64, Vec<f64>) {
     let (grid, x0) = grid_for(cell);
     let n = grid.n;
     let cell = i64::from(cell);

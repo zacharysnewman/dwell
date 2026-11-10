@@ -318,6 +318,29 @@ export function validateFixtureBiomes(fixtures, blocks = registryBlocks(), refs 
   return fixtures;
 }
 
+/**
+ * Checks fixture world settings (worlds/*.json, for tests and Chisel's examples: `name` and
+ * `overrides`, terrain.json's world groups with some keys changed); returns each merged over
+ * `world` (terrain.json), checked by the same ranges.
+ */
+export function validateFixtureWorlds(fixtures, world) {
+  return fixtures.map((f) => {
+    const fail = (m) => {
+      throw new Error(`world fixture ${f?.name ?? '?'}: ${m}`);
+    };
+    if (typeof f?.name !== 'string' || !/^[a-z0-9_]+:[a-z0-9_]+$/.test(f.name)) fail('name must be "namespace:name"');
+    const extra = Object.keys(f).filter((k) => !['$comment', 'name', 'overrides'].includes(k));
+    if (extra.length) fail(`unknown ${extra.join(', ')}`);
+    const merged = structuredClone(world);
+    for (const [g, keys] of Object.entries(f.overrides ?? {})) {
+      if (!WORLD_GROUPS.includes(g)) fail(`overrides: ${g} is not a world group`);
+      Object.assign(merged[g], keys);
+    }
+    checkGroups(merged, WORLD_GROUPS, fail);
+    return { name: f.name, world: merged };
+  });
+}
+
 /** The world's groups and one biome's, merged, as Rust: the base field's and the surface's. */
 function biomeFields(t) {
   const fields = [
@@ -333,8 +356,12 @@ function biomeFields(t) {
     ['bump_height', rf(t.bumps.amplitude)],
     ['bump_wavelength', `${t.bumps.wavelength}`],
     ['bump_octaves', `${t.bumps.octaves}`],
+    ['island_amplitude', rf(t.islands.amplitude)],
+    ['island_wavelength', `${t.islands.wavelength}`],
+    ['island_octaves', `${t.islands.octaves}`],
+    ['island_cap', rf(t.islands.cap)],
   ];
-  const { detail: d, rivers: r, mouths: m, lakes: l, shaping: b, spawn: s } = t;
+  const { detail: d, rivers: r, mouths: m, lakes: l, shaping: b, banks: k, spawn: s } = t;
   const surface = [
     ['detail_amplitude', rf(d.amplitude)],
     ['detail_wavelength', `${d.wavelength}`],
@@ -346,7 +373,7 @@ function biomeFields(t) {
     ['river_smooth', `${r.smooth}`],
     ['river_min_depth', rf(r.minDepth)],
     ['river_bank', rf(r.bank)],
-    ['river_valley_slope', rf(r.valleySlope)],
+    ['river_valley_slope', rf(k.riverSlope)],
     ['river_join_margin', rf(r.joinMargin)],
     ['river_levee_fall', rf(r.leveeFall)],
     ['river_join_slope', rf(r.joinSlope)],
@@ -365,7 +392,9 @@ function biomeFields(t) {
     ['delta_split', rf(m.deltaSplit)],
     ['delta_spread', rf(m.deltaSpread)],
     ['delta_branch_width', rf(m.deltaBranchWidth)],
-    ['lake_bank', rf(l.bank)],
+    ['lake_bank', rf(k.lake)],
+    ['lake_bank_slope', rf(k.lakeSlope)],
+    ['beach', rf(k.beach)],
     ['lake_levee', rf(l.levee)],
     ['lake_shore_noise', rf(l.shoreNoise)],
     ['lake_shore_wavelength', `${l.shoreWavelength}`],
@@ -390,11 +419,11 @@ function biomeFields(t) {
  * world's height field `HEIGHT`, the biomes' table (each surface merged with the world's water
  * shaping), and `SURFACE`, the default biome's, which the generator reads.
  */
-export function terrainRust({ world, biomes, fixtures = [] }) {
+export function terrainRust({ world, biomes, fixtures = [], worlds = [] }) {
   const rs = [
     `// ${terrainHeader}`,
     '',
-    'use crate::terrain::{Biome, BiomeMap, ElevationBand, HeightField, Surface, Where, WhereRange};',
+    'use crate::terrain::{Biome, BiomeMap, ElevationBand, HeightField, Surface, WaterLook, Where, WhereRange};',
     '',
   ];
   rs.push("/// The base height field, the world map's input: the world's elevation (terrain.json).");
@@ -453,6 +482,13 @@ export function terrainRust({ world, biomes, fixtures = [] }) {
       rs.push(`        decorations: ${list(b.decorations)},`);
       rs.push(`        placements: ${list(b.placements)},`);
       rs.push(`        water: ${JSON.stringify(b.water)},`);
+      const wl = b.waterLook;
+      if (!wl) rs.push('        water_look: None,');
+      else {
+        const sc = wl.scatter === undefined ? 'None' : `Some(0x${wl.scatter.slice(1).toLowerCase()})`;
+        const ab = wl.absorption === undefined ? 'None' : `Some([${wl.absorption.map(rf).join(', ')}])`;
+        rs.push(`        water_look: Some(WaterLook { scatter: ${sc}, absorption: ${ab} }),`);
+      }
       rs.push('    },');
     }
   };
@@ -466,6 +502,17 @@ export function terrainRust({ world, biomes, fixtures = [] }) {
   rs.push('#[doc(hidden)]');
   rs.push('pub const FIXTURE_BIOMES: &[Biome] = &[');
   table(fixtures);
+  rs.push('];');
+  rs.push('');
+  rs.push("/// Test fixture world settings (shared/worldgen/worlds/*.json): terrain.json's elevation with");
+  rs.push("/// some knobs changed (the archipelago); never a world's own.");
+  rs.push('#[doc(hidden)]');
+  rs.push('pub const FIXTURE_WORLDS: &[(&str, HeightField)] = &[');
+  for (const w of worlds) {
+    rs.push(`    (${JSON.stringify(w.name)}, HeightField {`);
+    for (const [k, v] of biomeFields({ ...biomes[0], ...w.world }).fields) rs.push(`        ${k}: ${v},`);
+    rs.push('    }),');
+  }
   rs.push('];');
   rs.push('');
   rs.push("/// How columns are shaped from the world map: the default biome's.");
@@ -1099,6 +1146,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const world = JSON.parse(readFileSync(join(here, 'terrain.json'), 'utf8'));
   const terrain = validateTerrainAndBiomes(world, loadBiomes());
   terrain.fixtures = validateFixtureBiomes(loadBiomes(join(here, 'biomes/fixtures')));
+  terrain.worlds = validateFixtureWorlds(loadBiomes(join(here, 'worlds')), world);
   writeFileSync(join(root, 'crates/dwell-worldgen/src/terrain.gen.rs'), terrainRust(terrain));
   const placements = validatePlacements(
     JSON.parse(readFileSync(join(here, 'placements.json'), 'utf8')),

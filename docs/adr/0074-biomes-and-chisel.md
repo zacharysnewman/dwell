@@ -94,7 +94,16 @@
 - **B3** Chisel's page: a live preview, sliders, Export/Import JSON. *(built, 0.51.16: served by the
   client build as `client/chisel.html`, not a standalone `docs/prototypes/` file, since it runs the
   generator's WASM; the validation shared as `shared/worldgen/biomes.mjs`.)*
-- **B4** water banks and hue, and the archipelago.
+- **B4** water banks and hue, and the archipelago. *(built, 0.51.17: a biome's `banks` group
+  (`riverSlope`, `lake`, `lakeSlope`, `beach`; `rivers.valleySlope` and `lakes.bank` moved from
+  terrain.json into it, same values), blended by weight along the banks; an optional `waterLook`
+  (`scatter`, `absorption`) over its fluid's look, resolved and blended per column by
+  `TerrainGenerator::water_look_at` from the build's biome data that clients already generate with
+  (nothing on the wire: a world's biomes are the build's, so no `WorldSettings` tag); terrain.json's
+  world group `islands` (`amplitude`, `wavelength`, `octaves`, `cap`; amplitude 0, off, by default) breaks
+  the coast into islands; the example world setting `shared/worldgen/worlds/archipelago.json` and the
+  `test:archipelago` fixture biome (sand beaches, turquoise water, the pines as placeholder trees).
+  Deviation: the game's water shader does not take the per-column look yet; Chisel's preview does.)*
 - **B5** trees, ground items and structures per biome.
 - **B6** Chisel's texture tab (the Painterly Texture Lab folded in).
 - **B7** Chisel in the game, and the new-world biome choice.

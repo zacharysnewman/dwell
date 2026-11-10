@@ -11,6 +11,7 @@ const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 export const TERRAIN = {
   inland: { rise: [0, 1000], halfDistance: [{ above: 0 }, 100_000] },
   seaFloor: { depth: [0, 1000], shelf: [{ above: 0 }, 100_000] },
+  islands: { amplitude: [0, 10_000], wavelength: [64, 65_536, true], octaves: [1, 8, true], cap: [-10_000, 100_000] },
   hills: {
     amplitude: [0, 1000],
     wavelength: [8, 65_536, true],
@@ -32,7 +33,6 @@ export const TERRAIN = {
     smooth: [0, 6, true],
     minDepth: [0.5, 50],
     bank: [0, 20],
-    valleySlope: [{ above: 0 }, 10],
     joinMargin: [0, 50],
     leveeFall: [{ above: 0 }, 10],
     joinSlope: [{ above: 0 }, 10],
@@ -55,7 +55,6 @@ export const TERRAIN = {
     deltaBranchWidth: [{ above: 0 }, 1],
   },
   lakes: {
-    bank: [0, 20],
     levee: [0, 1000],
     shoreNoise: [0, 200],
     shoreWavelength: [4, 4096, true],
@@ -71,6 +70,7 @@ export const TERRAIN = {
     shore: [0, 100],
     underDepth: [0, 100],
   },
+  banks: { riverSlope: [{ above: 0 }, 10], lake: [0, 20], lakeSlope: [{ above: 0 }, 10], beach: [0, 100] },
   biomeMap: {
     climateWavelength: [64, 1_000_000, true],
     climateNoise: [0, 1],
@@ -91,11 +91,11 @@ const BAND_NAME = /^[a-z0-9_]+$/;
  * The world's elevation and water (terrain.json): one world-scale system, not per biome (ADR 0074;
  * owner, 2026-11-10). The rest of `TERRAIN` is each biome's.
  */
-export const WORLD_GROUPS = ['inland', 'seaFloor', 'hills', 'bumps', 'rivers', 'mouths', 'lakes', 'spawn', 'biomeMap'];
+export const WORLD_GROUPS = ['inland', 'seaFloor', 'islands', 'hills', 'bumps', 'rivers', 'mouths', 'lakes', 'spawn', 'biomeMap'];
 /** A biome's groups (shared/worldgen/biomes/*.json): layered on the elevation. */
 export const BIOME_GROUPS = Object.keys(TERRAIN).filter((g) => !WORLD_GROUPS.includes(g));
 /** A biome's reference fields beside its groups. */
-const BIOME_REFS = ['where', 'bands', 'decorations', 'placements', 'water'];
+const BIOME_REFS = ['where', 'bands', 'decorations', 'placements', 'water', 'waterLook'];
 const BIOME_NAME = /^[a-z0-9_]+:[a-z0-9_]+$/;
 
 /** Checks `groups` of `data` against `TERRAIN`'s ranges; `fail` throws with the group and key. */
@@ -148,7 +148,33 @@ export function validateBiome(data, blocks, refs) {
   const w = blocks.get(data.water);
   if (!w) fail(`water ${JSON.stringify(data.water)} is not in the registry`);
   if (!w.fluid) fail(`water ${data.water} must be a fluid block`);
+  if (data.waterLook !== undefined) checkWaterLook(data.waterLook, fail);
   return data;
+}
+
+/** The fluid look's fields a biome's `waterLook` may set (its water's colour and clarity, ADR 0074 B4). */
+export const WATER_LOOK_FIELDS = ['scatter', 'absorption'];
+const HEX = /^#[0-9a-f]{6}$/i;
+
+/**
+ * Checks a biome's optional `waterLook`: its water's colour (`scatter`, sRGB "#rrggbb") and clarity
+ * (`absorption`, per metre of red, green, blue in [0, 10]) over its fluid's look
+ * (shared/blocks/dwell.json `fluids`); at least one, nothing else.
+ */
+function checkWaterLook(l, fail) {
+  if (typeof l !== 'object' || l === null || Array.isArray(l)) fail('waterLook must be an object');
+  const extra = Object.keys(l).filter((k) => !['$comment', ...WATER_LOOK_FIELDS].includes(k));
+  if (extra.length) fail(`waterLook: unknown ${extra.join(', ')}`);
+  if (!WATER_LOOK_FIELDS.some((k) => k in l)) fail('waterLook needs a scatter or an absorption');
+  if (l.scatter !== undefined && !(typeof l.scatter === 'string' && HEX.test(l.scatter))) {
+    fail('waterLook.scatter must be a colour "#rrggbb"');
+  }
+  if (
+    l.absorption !== undefined &&
+    !(Array.isArray(l.absorption) && l.absorption.length === 3 && l.absorption.every((v) => isNum(v) && v >= 0 && v <= 10))
+  ) {
+    fail('waterLook.absorption must be three numbers in [0, 10]');
+  }
 }
 
 /** Checks a biome's `where` (its place in the geography): a weight and optional eased ranges. */
@@ -213,4 +239,33 @@ export function validateBiomeMap(bm) {
     throw new Error(`terrain.json: ${m}`);
   });
   return bm;
+}
+
+/**
+ * The world knobs Chisel may change (ADR 0074 B4, the archipelago's: the coast's islands, the sea
+ * floor's shelf, the inland rise, the hills' height): terrain.json's groups and keys.
+ */
+export const WORLD_KNOBS = {
+  islands: ['amplitude', 'wavelength', 'octaves', 'cap'],
+  seaFloor: ['depth', 'shelf'],
+  inland: ['rise', 'halfDistance'],
+  hills: ['amplitude'],
+};
+
+/** Checks Chisel's world knobs (`{ group: { key: v } }`, `WORLD_KNOBS`'s) by `TERRAIN`'s ranges. */
+export function validateWorldKnobs(w) {
+  const fail = (m) => {
+    throw new Error(`world: ${m}`);
+  };
+  if (typeof w !== 'object' || w === null || Array.isArray(w)) fail('must be an object');
+  for (const [g, keys] of Object.entries(w)) {
+    if (!(g in WORLD_KNOBS)) fail(`${g} is not a world knob`);
+    for (const [k, v] of Object.entries(keys ?? {})) {
+      if (!WORLD_KNOBS[g].includes(k)) fail(`${g}.${k} is not a world knob`);
+      const [min, max, whole] = TERRAIN[g][k];
+      const low = typeof min === 'object' ? v > min.above : v >= min;
+      if (!(isNum(v) && low && v <= max && (!whole || Number.isInteger(v)))) fail(`${g}.${k} is out of range`);
+    }
+  }
+  return w;
 }
