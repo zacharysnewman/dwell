@@ -436,7 +436,10 @@ mod tests {
             );
         }
         // The presets, as Chisel sends them (their label and description are the page's alone).
-        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../shared/worldgen/biomes/presets");
+        let dir = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../shared/worldgen/biomes/presets"
+        );
         let mut presets = 0;
         for e in std::fs::read_dir(dir).unwrap() {
             let v: Value =

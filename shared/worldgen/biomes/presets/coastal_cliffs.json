@@ -52,17 +52,11 @@
       "shoreBlock": "dwell:sand"
     }
   ],
-  "decorations": [
-    "meadow_grass"
-  ],
+  "decorations": ["meadow_grass"],
   "placements": [],
   "water": "dwell:water",
   "waterLook": {
     "scatter": "#1a5a8a",
-    "absorption": [
-      0.5,
-      0.1,
-      0.06
-    ]
+    "absorption": [0.5, 0.1, 0.06]
   }
 }

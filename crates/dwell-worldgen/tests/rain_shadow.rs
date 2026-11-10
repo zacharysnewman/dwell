@@ -192,7 +192,10 @@ fn a_whole_range_shadows_a_wide_band_of_its_lee() {
     // The wind sees the ground smoothed over 3 km: every lee cell for 2.3 km behind the crest is
     // drier than half the windward flank's mean, hillsides facing the wind included.
     let (windward, lee) = range_shadow(3000.0);
-    assert!(lee < 0.5 * windward, "smoothed: windward {windward}, wettest lee cell {lee}");
+    assert!(
+        lee < 0.5 * windward,
+        "smoothed: windward {windward}, wettest lee cell {lee}"
+    );
     // On the raw map each hillside facing the wind in the lee saturates the uplift and stripes.
     let (w0, l0) = range_shadow(0.0);
     assert!(l0 >= 0.5 * w0, "raw: windward {w0}, wettest lee cell {l0}");

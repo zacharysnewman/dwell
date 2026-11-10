@@ -53,11 +53,7 @@
       "shoreBlock": "dwell:sand"
     }
   ],
-  "decorations": [
-    "meadow_grass"
-  ],
-  "placements": [
-    "pine_groves"
-  ],
+  "decorations": ["meadow_grass"],
+  "placements": ["pine_groves"],
   "water": "dwell:water"
 }

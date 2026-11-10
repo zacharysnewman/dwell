@@ -59,13 +59,15 @@ dwell_world::both_faces!(
                     continue;
                 }
                 let add = |s: &mut (f64, f64, f64, u32)| {
-                    *s = (s.0 + geo.temperature, s.1 + geo.wetness, s.2 + geo.elevation, s.3 + 1);
+                    *s = (
+                        s.0 + geo.temperature,
+                        s.1 + geo.wetness,
+                        s.2 + geo.elevation,
+                        s.3 + 1,
+                    );
                 };
                 add(&mut all);
-                if let Some((i, w)) = g
-                    .biome_mix(x, z)
-                    .iter()
-                    .max_by(|a, b| a.1.total_cmp(&b.1))
+                if let Some((i, w)) = g.biome_mix(x, z).iter().max_by(|a, b| a.1.total_cmp(&b.1))
                     && w > 0.6
                 {
                     add(&mut won[i]);
@@ -78,7 +80,13 @@ dwell_world::both_faces!(
         };
         let land = mean(all);
         for (i, s) in won.iter().enumerate().skip(1) {
-            assert!(s.3 > 10, "{} wins somewhere: {} columns ({:?})", list[i].name, s.3, f.face);
+            assert!(
+                s.3 > 10,
+                "{} wins somewhere: {} columns ({:?})",
+                list[i].name,
+                s.3,
+                f.face
+            );
         }
         let desert = mean(won[1]);
         assert!(
