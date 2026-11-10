@@ -116,10 +116,13 @@ pub fn look_mesh(look: &dwell_protocol::inventory::ItemLook) -> MeshArrays {
     m
 }
 
+/// A face: its points, counter-clockwise from outside.
+type Polygon = Vec<[f64; 3]>;
+
 /// A look's faces, each with its own colour where it has one (a model look's palette colours).
 fn look_faces(
     look: &dwell_protocol::inventory::ItemLook,
-) -> Vec<(Vec<[f64; 3]>, Option<[f64; 3]>)> {
+) -> Vec<(Polygon, Option<[f64; 3]>)> {
     if look.shape == GroundShape::Model {
         return model_faces(look.model)
             .into_iter()

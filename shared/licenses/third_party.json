@@ -32,6 +32,14 @@
       "license": "Unity Asset Store EULA (Standard), Winged Boots, Stylized NPC - Peasant Nolant DEMO",
       "text": "unity-asset-store-eula.txt",
       "used_in": "web client (other players' bodies, shared/models/glb/peasant.glb)"
+    },
+    {
+      "name": "3D Low Poly Tools Weapons Containers (NexusArcadeStudios), 53 static models converted to GLB",
+      "version": "Asset Store pack",
+      "url": "https://assetstore.unity.com/",
+      "license": "Unity Asset Store EULA (Standard), NexusArcadeStudios, 3D Low Poly Tools Weapons Containers",
+      "text": "unity-asset-store-eula.txt",
+      "used_in": "shared/models/glb/props (model viewer); web client (the stone pickaxe's look, shared/models/glb/props/stone_pickaxes.glb)"
     }
   ]
 }

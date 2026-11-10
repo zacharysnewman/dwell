@@ -30,6 +30,11 @@ Stylized NPC - Peasant Nolant (Winged Boots), converted to GLB Asset Store pack 
   Used in: web client (other players' bodies, shared/models/glb/peasant.glb)
   Source:  https://assetstore.unity.com/
 
+3D Low Poly Tools Weapons Containers (NexusArcadeStudios), 53 static models converted to GLB Asset Store pack
+  License: Unity Asset Store EULA (Standard), NexusArcadeStudios, 3D Low Poly Tools Weapons Containers
+  Used in: shared/models/glb/props (model viewer); web client (the stone pickaxe's look, shared/models/glb/props/stone_pickaxes.glb)
+  Source:  https://assetstore.unity.com/
+
 aead 0.5.2
   License: MIT
   Used in: native server (Rust crate)
@@ -1335,7 +1340,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 -------------------------------------------------------------------------------
-Applies to: Animals FREE - Animated Low Poly 3D Models (ithappy), 7 animals converted to GLB Asset Store pack, Stylized NPC - Peasant Nolant (Winged Boots), converted to GLB Asset Store pack (DEMO)
+Applies to: Animals FREE - Animated Low Poly 3D Models (ithappy), 7 animals converted to GLB Asset Store pack, Stylized NPC - Peasant Nolant (Winged Boots), converted to GLB Asset Store pack (DEMO), 3D Low Poly Tools Weapons Containers (NexusArcadeStudios), 53 static models converted to GLB Asset Store pack
 -------------------------------------------------------------------------------
 
 Licensed to the Dwell project's owner under the Unity Asset Store End User License Agreement
