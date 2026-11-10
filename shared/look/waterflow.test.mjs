@@ -19,6 +19,7 @@ test('a liquid added by data alone reaches the Rust table (a fixture oil, slow a
   const d = data();
   d.liquids['test:oil'] = {
     ripples: { advect: 0.5, cycleS: 4 },
+    shore: { bands: 1, periodS: 9, lineM: 0, widthM: 0.3, strength: 0.4, wobble: 0 },
     foam: { fromMs: 1, toMs: 3, color: '#403010', strength: 0.2, lengthM: 2, widthM: 0.5 },
     particles: {
       count: 0,
@@ -66,6 +67,17 @@ test('bad entries fail with their path', () => {
   bad(p((q) => (q.lumps = 2.5)), /particles\.lumps must be a whole number/);
   bad(p((q) => (q.ragged = 2)), /particles\.ragged must be a number in \[0, 1\]/);
   bad(p((q) => delete q.minPixels), /missing entry liquids\.dwell:water\.particles\.minPixels/);
+  const s = (edit) => (d) => edit(d.liquids['dwell:water'].shore);
+  bad(s((q) => (q.bands = 1.5)), /shore\.bands must be a whole number/);
+  bad(s((q) => (q.bands = 9)), /shore\.bands must be/);
+  bad(s((q) => delete q.periodS), /missing entry liquids\.dwell:water\.shore\.periodS/);
+});
+
+test('shore foam is pulsing bands with a solid contact line (owner, 2026-11-10)', () => {
+  const s = validateWaterFlow(data()).liquids['dwell:water'].shore;
+  assert.ok(s.bands >= 2 && s.bands <= 3 && s.lineM > 0 && s.widthM > s.lineM, JSON.stringify(s));
+  // slow: a band takes seconds to roll out, and the noise only varies it (no holes)
+  assert.ok(s.periodS >= 3 && s.wobble < 1 && s.strength > 0, JSON.stringify(s));
 });
 
 test("the flecks read as foam, not white discs (owner, 2026-11-06)", () => {

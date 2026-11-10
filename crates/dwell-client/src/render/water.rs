@@ -11,7 +11,7 @@ use dwell_look::water_tiers::{WATER_TIERS, WaterTier, tier_bits};
 use dwell_look::{hex, srgb_to_linear};
 
 /// vec4s per fluid in the buffer (`Fluid` in the WGSL).
-pub const FLUID_VEC4S: usize = 15;
+pub const FLUID_VEC4S: usize = 16;
 /// Bytes per fluid.
 pub const FLUID_STRIDE: u64 = (FLUID_VEC4S * 16) as u64;
 
@@ -237,9 +237,20 @@ pub fn pack_fluids(fluids: &[FluidInfo]) -> Vec<f32> {
                     l.foam_to_ms as f32,
                 ]);
                 out.extend_from_slice(&[c[0], c[1], c[2], l.foam_strength as f32]);
-                out.extend_from_slice(&[l.foam_length_m as f32, l.foam_width_m as f32, 0.0, 0.0]);
+                out.extend_from_slice(&[
+                    l.foam_length_m as f32,
+                    l.foam_width_m as f32,
+                    l.shore_bands as f32,
+                    l.shore_period_s as f32,
+                ]);
+                out.extend_from_slice(&[
+                    l.shore_line_m as f32,
+                    l.shore_width_m as f32,
+                    l.shore_strength as f32,
+                    l.shore_wobble as f32,
+                ]);
             }
-            None => out.extend_from_slice(&[0.0; 12]),
+            None => out.extend_from_slice(&[0.0; 16]),
         }
         // Its underwater look by name (shared/look/underwater.json; none: the default).
         let u = dwell_look::underwater::underwater_look(f.name);
@@ -1026,24 +1037,35 @@ mod tests {
                 u.band_line_px,
                 u.band_line_glow,
             ];
-            assert_eq!(v[36..40], under.map(|x| x as f32));
-            assert_eq!(v[40..44], line.map(|x| x as f32));
-            assert_eq!(v[47], u.band_streaks as f32);
-            assert_eq!(v[48..52], rim.map(|x| x as f32));
+            // the shore foam's bands (shared/look/waterflow.json `shore`)
+            if let Some(l) = dwell_look::waterflow::flow_look(f.name) {
+                assert_eq!(v[34..36], [l.shore_bands as f32, l.shore_period_s as f32]);
+                let shore = [
+                    l.shore_line_m,
+                    l.shore_width_m,
+                    l.shore_strength,
+                    l.shore_wobble,
+                ];
+                assert_eq!(v[36..40], shore.map(|x| x as f32));
+            }
+            assert_eq!(v[40..44], under.map(|x| x as f32));
+            assert_eq!(v[44..48], line.map(|x| x as f32));
+            assert_eq!(v[51], u.band_streaks as f32);
+            assert_eq!(v[52..56], rim.map(|x| x as f32));
             let extra = [
                 u.band_glints,
                 u.band_breakup,
                 u.band_mirror_warp_px,
                 u.band_mirror,
             ];
-            assert_eq!(v[52..56], extra.map(|x| x as f32));
+            assert_eq!(v[56..60], extra.map(|x| x as f32));
             let under = [
                 u.underside_breakup,
                 u.underside_sun_patch,
                 u.underside_sun_power,
                 u.underside_cell_scale,
             ];
-            assert_eq!(v[56..60], under.map(|x| x as f32));
+            assert_eq!(v[60..64], under.map(|x| x as f32));
         }
         // A fluid with no look of its own takes the default's (fog from the eye, the registry's rates).
         assert_eq!(underwater_look("test:oil"), &DEFAULT_UNDERWATER);
