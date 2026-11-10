@@ -1897,11 +1897,17 @@ mod tests {
             s.on_chunk_data(generated(east));
             s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
             let st = s.chunk_status(me);
-            assert!(st.loaded && st.dirty && !st.meshing && !st.drawable, "{st:?}");
+            assert!(
+                st.loaded && st.dirty && !st.meshing && !st.drawable,
+                "{st:?}"
+            );
             assert_eq!(st.dirty_position, Some(0));
             assert_eq!(st.waits_on, vec![east], "waits on the generating neighbour");
             assert!(st.missing.contains(&west), "{:?}", st.missing);
-            assert!(!st.missing.contains(&east), "a generating chunk is announced");
+            assert!(
+                !st.missing.contains(&east),
+                "a generating chunk is announced"
+            );
             assert!(s.chunk_status(east).generating);
             // The neighbour arrives: the chunk is meshed and drawable.
             let token = s.source().jobs[&east];

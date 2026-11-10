@@ -43,6 +43,16 @@ is green too. Next: the `carry-flood` ride (a dug channel, the probe's `target` 
 larger window and a faster CPU, and the LOD's `errorScale` (4.65 with the default 256 MB cache at
 1280×800) on a bigger screen.
 
+**How to capture it (0.51.23; owner, 2026-11-10: still seen while flying round loading a lot):** when
+close chunks stay low detail or missing, press **F8** (or Menu → Debug → Copy streaming report, or the F3
+overlay's Copy streaming) at that moment and paste the copied JSON into the report; where the clipboard is
+refused it shows selected in a text box to copy by hand. It lists each chunk within ±3 chunks of the
+player with its streamer and LOD state and, for one not drawn in full, what it waits on (`waits.reasons`:
+`notLoaded`, `generating`, `unlit`, `neighbourGeneratingOrUnlit`, `dirty` with its place, `meshing`,
+`lodNotShowingChunks`, …, and its job's place in the pool's queue), the pool's queues and oldest jobs,
+the streamer, the server's unloads within 48 m in the last 30 s, the LOD's cache against its budget and
+the last 10 s of frames (docs/DEV_TOOLS.md § Streaming report).
+
 **Repro detail (owner, 2026-11-09):** "I had traveled a long ways down a river at or greater than
 walking speed, loading all the chunks along the way at high detail" … "for several minutes at or greater than walking speed." So it shows after a LONG trip,
 not at the start. Leads this points at: (1) the worker pool's FIFO queue backs up with jobs for

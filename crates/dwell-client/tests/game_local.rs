@@ -2612,10 +2612,11 @@ fn the_streaming_report_describes_the_near_ring_pool_streamer_and_lod() {
             detail_distance_m: Some(256.0),
             full_mode: false,
         });
-    assert!(rig.run_until(60 * 30, |r| r
-        .game
-        .as_ref()
-        .is_some_and(|g| g.debug_state().terrain_ready)));
+    assert!(rig.run_until(60 * 30, |r| {
+        r.game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)
+    }));
     let report = rig
         .game
         .as_ref()
@@ -2639,7 +2640,12 @@ fn the_streaming_report_describes_the_near_ring_pool_streamer_and_lod() {
     for key in ["queues", "focus", "nearJobsM", "slowFrameScale", "inFlight"] {
         assert!(report["pool"].get(key).is_some(), "pool.{key} missing");
     }
-    for key in ["cacheBytes", "cacheBudget", "drawnByLevel", "selectionAgeMs"] {
+    for key in [
+        "cacheBytes",
+        "cacheBudget",
+        "drawnByLevel",
+        "selectionAgeMs",
+    ] {
         assert!(report["lod"].get(key).is_some(), "lod.{key} missing");
     }
     assert!(report["streamer"]["loaded"].as_u64().unwrap() > 0);
