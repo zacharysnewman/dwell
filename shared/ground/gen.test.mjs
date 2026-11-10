@@ -14,21 +14,22 @@ test('the shipped data validates and emits the kinds and rules', () => {
   assert.match(rs, /near_wall: Some\(NearWall \{ rows: 6, reach: 2 \}\)/);
 });
 
-test('a kind and a rule added by data alone are emitted', () => {
+test('a kind and a rule added by data alone are emitted, drawn with its item\'s look', () => {
   const [g, b, i] = fresh();
-  g.kinds.push({ name: 'test:pebble', item: 'dwell:rock', shape: 'lump', size: [0.05, 0.03, 0.05], texture: 'dwell:sand', color: '#ffffff' });
+  i.items.push({ name: 'test:pebble', label: 'Pebble', color: '#ffffff', size: 0.05, look: { shape: 'lump', size: [0.05, 0.03, 0.05], texture: 'dwell:sand', color: '#ffffff' } });
+  g.kinds.push({ name: 'test:pebble', item: 'test:pebble' });
   g.rules.push({ kind: 'test:pebble', on: ['dwell:sand'], density: 0.5 });
   const rs = groundRust(validateGround(g, b, i));
-  assert.match(rs, /GroundKind \{ name: "test:pebble", item: "dwell:rock", shape: GroundShape::Lump, size: \[0.05, 0.03, 0.05\], texture: "dwell:sand", color: \[255, 255, 255\], scale: \[1.0, 1.0\] \}/);
+  assert.match(rs, /GroundKind \{ name: "test:pebble", item: "test:pebble", shape: GroundShape::Lump, size: \[0.05, 0.03, 0.05\], texture: "dwell:sand", color: \[255, 255, 255\], scale: \[1.0, 1.0\] \}/);
   assert.match(rs, /GroundRule \{ kind: 2, on: &\["dwell:sand"\], under: None, near_wall: None, density: 0.5 \}/);
 });
 
 test('bad entries fail naming the entry and the problem', () => {
   const cases = [
-    [(g) => (g.kinds[0].item = 'dwell:diamond'), /kinds\.dwell:ground_stick: item "dwell:diamond" is neither/],
-    [(g) => (g.kinds[0].shape = 'cube'), /kinds\.dwell:ground_stick: shape must be one of rod, lump/],
-    [(g) => (g.kinds[1].size = [0.1, 0, 0.1]), /kinds\.dwell:ground_rock: size must be/],
-    [(g) => (g.kinds[1].texture = 'dwell:marble'), /kinds\.dwell:ground_rock\.texture: "dwell:marble" is not a block/],
+    [(g) => (g.kinds[0].item = 'dwell:diamond'), /kinds\.dwell:ground_stick: item "dwell:diamond" is not an inventory item/],
+    [(g) => (g.kinds[0].item = 'dwell:gem'), /kinds\.dwell:ground_stick: item dwell:gem has no look/],
+    [(g) => (g.kinds[0].shape = 'rod'), /kinds\.dwell:ground_stick: unknown field shape/],
+    [(g, i) => (i.items[0].look.texture = 'dwell:marble'), /kinds\.dwell:ground_rock: dwell:rock's look\.texture: "dwell:marble" is not a block/],
     [(g) => (g.kinds[0].colour = '#000000'), /kinds\.dwell:ground_stick: unknown field colour/],
     [(g) => (g.rules[0].kind = 'dwell:twig'), /rules\[0\]: kind "dwell:twig" is not in kinds/],
     [(g) => (g.rules[0].on = ['dwell:moss']), /rules\[0\]\.on\[0\]: "dwell:moss" is not a block/],
@@ -38,7 +39,7 @@ test('bad entries fail naming the entry and the problem', () => {
   ];
   for (const [edit, message] of cases) {
     const [g, b, i] = fresh();
-    edit(g);
+    edit(g, i);
     assert.throws(() => validateGround(g, b, i), message);
   }
 });

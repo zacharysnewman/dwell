@@ -29,7 +29,10 @@ const TOP_FIELDS = [
   'startingWallet',
   'startingItems',
 ];
-const ITEM_FIELDS = ['name', 'label', 'color', 'size', 'stack', 'value'];
+const ITEM_FIELDS = ['name', 'label', 'color', 'size', 'stack', 'value', 'look'];
+const LOOK_FIELDS = ['shape', 'size', 'texture', 'color'];
+/** The looks' shapes (a fixed vocabulary: `dwell_protocol::inventory::LookShape`). */
+export const LOOK_SHAPES = ['rod', 'lump'];
 const DROP_FIELDS = ['item', 'count', 'chance', 'pick'];
 const PICK_FIELDS = ['item', 'count', 'weight'];
 const WALLET_FIELDS = ['name', 'label', 'capacity'];
@@ -96,7 +99,20 @@ export function validateInventory(data, namespaces) {
     if (it.value !== undefined && (!isInt(it.value) || it.value < 1 || it.value > 9999)) {
       fail(`${at}: value must be a whole number in [1, 9999] (a currency item's worth in the wallet)`);
     }
-    return { name: it.name, label: it.label, color: it.color, size: it.size, stack: it.stack ?? data.stackSize, value: it.value ?? 0 };
+    // `look`: the item's one look (ADR 0071's rod or lump), drawn the same in the hand, on the
+    // hotbar, loose and lying on the ground (shared/ground names the item, not a look of its own).
+    let look = null;
+    if (it.look !== undefined) {
+      const l = it.look;
+      if (typeof l !== 'object' || l === null || Array.isArray(l)) fail(`${at}.look must be an object`);
+      for (const k of Object.keys(l)) if (!LOOK_FIELDS.includes(k)) fail(`${at}.look: unknown field ${k} (${LOOK_FIELDS.join(', ')})`);
+      if (!LOOK_SHAPES.includes(l.shape)) fail(`${at}.look: shape must be one of ${LOOK_SHAPES.join(', ')}`);
+      if (!Array.isArray(l.size) || l.size.length !== 3 || !l.size.every((v) => num(v) && v > 0 && v <= 1)) fail(`${at}.look: size must be [x, y, z] metres in (0, 1]`);
+      if (!blockIds.has(l.texture)) fail(`${at}.look: texture ${JSON.stringify(l.texture)} is not a block`);
+      if (typeof l.color !== 'string' || !COLOR.test(l.color)) fail(`${at}.look: color must be #rrggbb`);
+      look = { shape: l.shape, size: l.size, texture: l.texture, color: l.color };
+    }
+    return { name: it.name, label: it.label, color: it.color, size: it.size, stack: it.stack ?? data.stackSize, value: it.value ?? 0, look };
   });
   // Wallets (currency's holder, separate from the slots): a capacity each; players start with one.
   if (!Array.isArray(data.wallets) || data.wallets.length === 0) fail('wallets: at least one wallet');
@@ -196,7 +212,7 @@ export function loadInventory() {
 const f64 = (v) => (Number.isInteger(v) ? `${v}.0` : `${v}`);
 
 export function inventoryRust(d) {
-  const rs = [`// ${header}`, '', 'use crate::inventory::{BlockDrops, DropChoice, DropRule, ItemDef, WalletDef};', ''];
+  const rs = [`// ${header}`, '', 'use crate::inventory::{BlockDrops, DropChoice, DropRule, ItemDef, ItemLook, LookShape, WalletDef};', ''];
   rs.push('/// Hotbar slots: the inventory\'s first slots.');
   rs.push(`pub const HOTBAR_SLOTS: usize = ${d.hotbarSlots};`);
   rs.push('/// Backpack slots, after the hotbar\'s.');
@@ -223,9 +239,13 @@ export function inventoryRust(d) {
   rs.push('/// The items that are not blocks.');
   rs.push('pub static ITEMS: &[ItemDef] = &[');
   for (const it of d.items) {
-    const c = [1, 3, 5].map((i) => parseInt(it.color.slice(i, i + 2), 16));
+    const rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)).join(', ');
+    const l = it.look;
+    const look = l
+      ? `Some(ItemLook { shape: LookShape::${l.shape === 'rod' ? 'Rod' : 'Lump'}, size: [${l.size.map(f64).join(', ')}], texture: "${l.texture}", color: [${rgb(l.color)}] })`
+      : 'None';
     rs.push(
-      `    ItemDef { name: "${it.name}", label: ${JSON.stringify(it.label)}, color: [${c.join(', ')}], size: ${f64(it.size)}, stack: ${it.stack}, value: ${it.value} },`,
+      `    ItemDef { name: "${it.name}", label: ${JSON.stringify(it.label)}, color: [${rgb(it.color)}], size: ${f64(it.size)}, stack: ${it.stack}, value: ${it.value}, look: ${look} },`,
     );
   }
   rs.push('];');

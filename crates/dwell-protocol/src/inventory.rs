@@ -33,6 +33,30 @@ pub struct ItemDef {
     pub stack: u16,
     /// A currency item's worth in the wallet; 0 for an ordinary item.
     pub value: u16,
+    /// Its one shaped look (`look`), drawn the same in the hand, on the hotbar, loose and lying on
+    /// the ground (a ground item's look is its item's); none: a small block in `color`.
+    pub look: Option<ItemLook>,
+}
+
+/// An item look's shape: a fixed vocabulary, sized by the data.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LookShape {
+    /// A box, long along its x: a twig.
+    Rod,
+    /// A rounded lump (a squat, tapered hexagonal prism): a stone.
+    Lump,
+}
+
+/// An item's shaped look (`inventory.json` `look`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ItemLook {
+    pub shape: LookShape,
+    /// Metres: x (its length), y (up), z.
+    pub size: [f64; 3],
+    /// The block whose side tile it is drawn with.
+    pub texture: &'static str,
+    /// sRGB tint on the texture.
+    pub color: [u8; 3],
 }
 
 /// A wallet: how much currency it holds.

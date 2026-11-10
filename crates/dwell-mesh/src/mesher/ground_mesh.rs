@@ -87,16 +87,129 @@ pub(super) fn append(
             [base[0] + x, base[1] + p[1], base[2] + z]
         };
         let color = k.color.map(|v| f64::from(v) / 255.0);
-        for face in polygons(k.shape, size) {
+        for face in polygons(k.shape, size, false) {
             let pts: Vec<[f64; 3]> = face.iter().map(|&p| place(p)).collect();
-            push_polygon(m, &pts, color, &tile, lit);
+            push_polygon(m, &pts, color, &tile, lit, CELL_H);
         }
     }
 }
 
+/// An item's look (`shared/inventory` `look`) as a mesh in metres, item-local (its base's middle at
+/// the origin, +y up), every side drawn (the underside too: a loose item spins in the air): the
+/// same shape, tile and tint a ground item of it is drawn with, for the loose item.
+pub fn look_mesh(look: &dwell_protocol::inventory::ItemLook) -> MeshArrays {
+    let tile = look_tile(look);
+    let color = look.color.map(|v| f64::from(v) / 255.0);
+    let mut m = MeshArrays::default();
+    for face in polygons(look.shape, look.size, true) {
+        push_polygon(&mut m, &face, color, &crate::textures::tile_rect(tile), [1.0, 0.0], 1.0);
+    }
+    m
+}
+
+/// The tile a look is drawn with: its texture block's side tile.
+fn look_tile(look: &dwell_protocol::inventory::ItemLook) -> &'static str {
+    find_block(look.texture)
+        .and_then(|b| crate::style::material_style(b.first_state).textures)
+        .map_or("plain", |t| t.side)
+}
+
+/// An item look's picture for the hotbar and the backpack (`TILE` × `TILE` RGBA8, sRGB, top row
+/// first): the look's shape seen from above and the side at a slant, filled with its tile tinted
+/// its colour and shaded by each face's slope, as the world draws it; clear around it.
+pub fn look_swatch(look: &dwell_protocol::inventory::ItemLook) -> Vec<u8> {
+    use crate::textures::TILE;
+    let tile = look_tile(look);
+    let faces = polygons(look.shape, look.size, true);
+    // The view: turned 35° about up (a rod lies across the picture's diagonal), tilted 30° down.
+    let (ys, yc) = (35f64.to_radians().sin(), 35f64.to_radians().cos());
+    let (ts, tc) = (30f64.to_radians().sin(), 30f64.to_radians().cos());
+    let view = |p: [f64; 3]| -> [f64; 3] {
+        let (x, z) = (p[0] * yc - p[2] * ys, p[0] * ys + p[2] * yc);
+        // Screen x right, y up, depth toward the eye.
+        [x, p[1] * tc + z * ts, z * tc - p[1] * ts]
+    };
+    let pts: Vec<Vec<[f64; 3]>> = faces.iter().map(|f| f.iter().map(|&p| view(p)).collect()).collect();
+    let (mut lo, mut hi) = ([f64::MAX; 2], [f64::MIN; 2]);
+    for p in pts.iter().flatten() {
+        for k in 0..2 {
+            lo[k] = lo[k].min(p[k]);
+            hi[k] = hi[k].max(p[k]);
+        }
+    }
+    let n = TILE as f64;
+    let span = (hi[0] - lo[0]).max(hi[1] - lo[1]).max(1e-9);
+    let scale = n * 0.86 / span;
+    let mid = [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0];
+    let to_px = |p: [f64; 3]| [(p[0] - mid[0]) * scale + n / 2.0, n / 2.0 - (p[1] - mid[1]) * scale, p[2]];
+    let mut px = vec![0u8; TILE * TILE * 4];
+    let mut depth = vec![f64::MIN; TILE * TILE];
+    let tint = look.color.map(|c| f64::from(c) / 255.0);
+    for (face, world) in pts.iter().zip(&faces) {
+        let n3 = newell(world);
+        // Faces away from the eye (in view space) are hidden.
+        let nv = view(n3);
+        if nv[2] <= 0.0 {
+            continue;
+        }
+        let shade = dwell_look::normal_tint(n3[0], n3[1], n3[2]);
+        let q: Vec<[f64; 3]> = face.iter().map(|&p| to_px(p)).collect();
+        for i in 1..q.len() - 1 {
+            let (a, b, c) = (q[0], q[i], q[i + 1]);
+            let area = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+            if area.abs() < 1e-12 {
+                continue;
+            }
+            for y in 0..TILE {
+                for x in 0..TILE {
+                    let (fx, fy) = (x as f64 + 0.5, y as f64 + 0.5);
+                    let w0 = ((b[0] - fx) * (c[1] - fy) - (b[1] - fy) * (c[0] - fx)) / area;
+                    let w1 = ((c[0] - fx) * (a[1] - fy) - (c[1] - fy) * (a[0] - fx)) / area;
+                    let w2 = 1.0 - w0 - w1;
+                    if w0 < 0.0 || w1 < 0.0 || w2 < 0.0 {
+                        continue;
+                    }
+                    let d = w0 * a[2] + w1 * b[2] + w2 * c[2];
+                    let at = y * TILE + x;
+                    if d <= depth[at] {
+                        continue;
+                    }
+                    depth[at] = d;
+                    // The tile's grain at the item's scale (a few texels across, as on the ground).
+                    let t = crate::textures::texel_of(
+                        tile,
+                        ((x * 3 + y) % TILE) as i64,
+                        ((TILE - 1 - y) * 2 % TILE) as i64,
+                    );
+                    let o = at * 4;
+                    for k in 0..3 {
+                        let lin = crate::textures::srgb_to_linear(t[k]) * tint[k] * shade[k];
+                        px[o + k] = crate::textures::linear_to_srgb_byte(lin);
+                    }
+                    px[o + 3] = 255;
+                }
+            }
+        }
+    }
+    px
+}
+
+/// A polygon's unit normal from Newell's sum.
+fn newell(pts: &[[f64; 3]]) -> [f64; 3] {
+    let mut n = [0.0f64; 3];
+    for i in 0..pts.len() {
+        let (a, b) = (pts[i], pts[(i + 1) % pts.len()]);
+        n[0] += (a[1] - b[1]) * (a[2] + b[2]);
+        n[1] += (a[2] - b[2]) * (a[0] + b[0]);
+        n[2] += (a[0] - b[0]) * (a[1] + b[1]);
+    }
+    let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt().max(1e-12);
+    n.map(|v| v / len)
+}
+
 /// The shape's faces (convex, counter-clockwise from outside), item-local metres: its base's
-/// middle at the origin, +y up. The underside is left out: it lies on the ground.
-fn polygons(shape: GroundShape, [sx, sy, sz]: [f64; 3]) -> Vec<Vec<[f64; 3]>> {
+/// middle at the origin, +y up. The underside only with `base` (lying on the ground it is hidden).
+fn polygons(shape: GroundShape, [sx, sy, sz]: [f64; 3], base: bool) -> Vec<Vec<[f64; 3]>> {
     match shape {
         GroundShape::Rod => {
             let (x, z) = (sx / 2.0, sz / 2.0);
@@ -107,13 +220,17 @@ fn polygons(shape: GroundShape, [sx, sy, sz]: [f64; 3]) -> Vec<Vec<[f64; 3]>> {
                     if i & 4 != 0 { z } else { -z },
                 ]
             };
-            vec![
+            let mut out = vec![
                 vec![c(2), c(6), c(7), c(3)], // top
                 vec![c(1), c(3), c(7), c(5)], // +x
                 vec![c(0), c(4), c(6), c(2)], // −x
                 vec![c(4), c(5), c(7), c(6)], // +z
                 vec![c(0), c(2), c(3), c(1)], // −z
-            ]
+            ];
+            if base {
+                out.push(vec![c(0), c(1), c(5), c(4)]); // −y
+            }
+            out
         }
         GroundShape::Lump => {
             // Three rings of a squat hexagon: a lump wider at its middle, rounded at the top.
@@ -133,6 +250,9 @@ fn polygons(shape: GroundShape, [sx, sy, sz]: [f64; 3]) -> Vec<Vec<[f64; 3]>> {
                 out.push(vec![mid[i], hi[i], hi[j], mid[j]]);
             }
             out.push(hi.iter().rev().copied().collect());
+            if base {
+                out.push(lo.clone());
+            }
             out
         }
     }
@@ -144,23 +264,16 @@ fn push_polygon(
     color: [f64; 3],
     tile: &crate::textures::TileRect,
     lit: [f32; 2],
+    row_m: f64,
 ) {
-    // Its normal in metres (the points are), from Newell's sum.
-    let mut n = [0.0f64; 3];
-    for i in 0..pts.len() {
-        let (a, b) = (pts[i], pts[(i + 1) % pts.len()]);
-        n[0] += (a[1] - b[1]) * (a[2] + b[2]);
-        n[1] += (a[2] - b[2]) * (a[0] + b[0]);
-        n[2] += (a[0] - b[0]) * (a[1] + b[1]);
-    }
-    let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt().max(1e-12);
-    let n = n.map(|v| v / len);
+    // Its normal in metres (the points are).
+    let n = newell(pts);
     let tint = dwell_look::normal_tint(n[0], n[1], n[2]);
     let base = (m.positions.len() / 3) as u32;
     for p in pts {
-        // Cell space: rows up (the mesh is turned into metres after).
+        // A chunk's cell space: rows up (the mesh is turned into metres after); `row_m` 1: metres.
         m.positions
-            .extend([p[0] as f32, (p[1] / CELL_H) as f32, p[2] as f32]);
+            .extend([p[0] as f32, (p[1] / row_m) as f32, p[2] as f32]);
         m.normals.extend(n.map(|v| v as f32));
         m.colors.extend([
             (color[0] * tint[0]) as f32,
@@ -200,7 +313,7 @@ mod tests {
         // both-faces: item-local geometry, mirrored with the chunk's mesh.
         for shape in [GroundShape::Rod, GroundShape::Lump] {
             let size = [0.4, 0.1, 0.2];
-            let faces = polygons(shape, size);
+            let faces = polygons(shape, size, true);
             let mut m = MeshArrays::default();
             for f in &faces {
                 push_polygon(
@@ -209,6 +322,7 @@ mod tests {
                     [1.0; 3],
                     &crate::textures::tile_rect("plain"),
                     [1.0, 0.0],
+                    1.0,
                 );
             }
             // Each face's normal points away from the shape's middle.
@@ -217,11 +331,71 @@ mod tests {
                 let c: [f64; 3] =
                     std::array::from_fn(|k| f.iter().map(|p| p[k]).sum::<f64>() / f.len() as f64);
                 let n = &m.normals[at * 3..at * 3 + 3];
-                let out = [c[0], c[1] - size[1] / 2.0, c[2]];
+                let out = [c[0], c[1] - size[1] * 0.4, c[2]];
                 let dot: f64 = (0..3).map(|k| f64::from(n[k]) * out[k]).sum();
                 assert!(dot > 0.0, "{shape:?} face {f:?} normal {n:?}");
                 at += f.len();
             }
         }
+    }
+
+    fn look(item: &str) -> dwell_protocol::inventory::ItemLook {
+        dwell_protocol::inventory::item(item)
+            .and_then(|d| d.look)
+            .expect(item)
+    }
+
+    #[test]
+    fn an_items_look_mesh_is_its_shape_at_its_size_closed_all_round() {
+        // both-faces: item-local geometry; the loose item mirrors it with its face.
+        for (item, shape, faces) in [
+            ("dwell:stick", GroundShape::Rod, 6),
+            ("dwell:rock", GroundShape::Lump, 14),
+        ] {
+            let l = look(item);
+            assert_eq!(l.shape, shape, "{item}");
+            let m = look_mesh(&l);
+            // Every side, the underside too (a loose item spins in the air).
+            let triangles = m.indices.len() / 3;
+            let quads = if shape == GroundShape::Rod { faces * 2 } else { 12 * 2 + 4 * 2 };
+            assert_eq!(triangles, quads, "{item}");
+            let (mut lo, mut hi) = ([f32::MAX; 3], [f32::MIN; 3]);
+            for p in m.positions.chunks_exact(3) {
+                for k in 0..3 {
+                    lo[k] = lo[k].min(p[k]);
+                    hi[k] = hi[k].max(p[k]);
+                }
+            }
+            // In metres, its base at 0: as tall as its size, as long as its size (a rod).
+            assert!(lo[1].abs() < 1e-6 && (f64::from(hi[1]) - l.size[1]).abs() < 1e-6, "{item}");
+            if shape == GroundShape::Rod {
+                assert!((f64::from(hi[0] - lo[0]) - l.size[0]).abs() < 1e-6, "{item}");
+            }
+            // Tinted its look's colour (times the face shading), on its texture's tile.
+            let tile = crate::textures::tile_rect(look_tile(&l));
+            assert!((f64::from(m.tiles[0]) - tile.u0).abs() < 1e-6, "{item}");
+        }
+    }
+
+    #[test]
+    fn an_items_picture_draws_its_shape_not_a_square() {
+        // face-a-only: a picture, no world geometry.
+        use crate::textures::TILE;
+        for item in ["dwell:stick", "dwell:rock"] {
+            let px = look_swatch(&look(item));
+            assert_eq!(px.len(), TILE * TILE * 4);
+            let opaque = px.chunks_exact(4).filter(|p| p[3] == 255).count();
+            // Clear around it (the corners), and drawn: a rod a thin diagonal, a rock a lump.
+            for (x, y) in [(0, 0), (TILE - 1, 0), (0, TILE - 1), (TILE - 1, TILE - 1)] {
+                assert_eq!(px[(y * TILE + x) * 4 + 3], 0, "{item} corner {x},{y}");
+            }
+            assert!(opaque > TILE * 2 && opaque < TILE * TILE * 3 / 4, "{item}: {opaque}");
+        }
+        // The stick's grain is its log's bark, tinted: brown, red above blue.
+        let px = look_swatch(&look("dwell:stick"));
+        let lit: Vec<&[u8]> = px.chunks_exact(4).filter(|p| p[3] == 255).collect();
+        let r: u32 = lit.iter().map(|p| u32::from(p[0])).sum();
+        let b: u32 = lit.iter().map(|p| u32::from(p[2])).sum();
+        assert!(r > b, "a stick reads brown");
     }
 }
