@@ -105,8 +105,15 @@ and crosses into the world with `face_y`. The draw is built (0.50.72): chunk mes
 (`ChunkMeshes::water`, with each column's flood light), the renderer's `HeightfieldGpu` keeps them in
 an `rg32float` atlas (group 3 of the water pipelines) and draws a tiled chunk as one `heightfield_vs`
 grid draw feeding `water_fs`/`water_scene_fs`; the streamer meshes without tops while the tier has
-`heightfield` (`Scene::draws_heightfield`). Still off in every tier: on the river it cost ~1 ms more
-than the meshed water and read darker past a step (proposals/WATER_GPU_SURFACE.md C6a). The CPU
+`heightfield` (`Scene::draws_heightfield`). 0.50.77: the grid is drawn unindexed, six vertices a
+column, and a dry column's six collapse to one point outside the view (`dwell-mesh`
+`heightfield::grid_vertex` is the shader's reference), so nothing under the ground or past the shore
+is shaded and the surface ends at the wet columns' edges; a chunk whose only changes are its water's
+levels (each changed cell liquid before and after, the same liquid) gets its tile rewritten on the
+main thread (`heightfield::water_tile`, the streamer's `TerrainView::set_water_levels`) and no mesh
+job, and is re-meshed once after `WATER_SETTLE_PASSES` (60) quiet mesh passes so its sides and
+falls catch up. Still off in every tier: not yet re-measured after these, and the darker water past
+a step is not yet found (proposals/WATER_GPU_SURFACE.md C6a). The CPU
 adapter's tier may not set it (a per-vertex fetch it doesn't need).
 
 | Tier | Contents |
