@@ -96,7 +96,7 @@ export function validateExplosives(data, blocks = registryBlocks()) {
   data.explosives.forEach((e, i) => {
     const at = `explosives[${i}]`;
     object(e, at);
-    keys(e, at, ['name', 'block', 'lit', 'ignitedBy', 'chainDelaySeconds', 'effects', 'shell', 'crackOverCleared', 'waterSparesBlocks', 'waterShields', ...Object.keys(EXPLOSIVE_RANGES)]);
+    keys(e, at, ['name', 'block', 'lit', 'ignitedBy', 'chainDelaySeconds', 'effects', 'shell', 'crackOverCleared', 'crackVerticalOnly', 'waterSparesBlocks', 'waterShields', ...Object.keys(EXPLOSIVE_RANGES)]);
     if (typeof e.name !== 'string' || !/^[a-z][a-z0-9_]*:[a-z][a-z0-9_]*$/.test(e.name)) bad(`${at}.name must be a namespaced name`);
     if (names.has(e.name)) bad(`${at}.name ${e.name} is listed twice`);
     names.add(e.name);
@@ -119,6 +119,8 @@ export function validateExplosives(data, blocks = registryBlocks()) {
     if (e.shell !== undefined && !Object.hasOwn(SHELL_RULES, e.shell)) bad(`${at}.shell ${JSON.stringify(e.shell)} must be one of ${Object.keys(SHELL_RULES).join(', ')}`);
     if (e.crackOverCleared !== undefined && typeof e.crackOverCleared !== 'boolean') bad(`${at}.crackOverCleared must be true or false`);
     if (e.crackOverCleared && (e.shell ?? 'fling') !== 'crack') bad(`${at}.crackOverCleared is only for shell "crack"`);
+    if (e.crackVerticalOnly !== undefined && typeof e.crackVerticalOnly !== 'boolean') bad(`${at}.crackVerticalOnly must be true or false`);
+    if (e.crackVerticalOnly && (e.shell ?? 'fling') !== 'crack') bad(`${at}.crackVerticalOnly is only for shell "crack"`);
     if (e.waterSparesBlocks !== undefined && typeof e.waterSparesBlocks !== 'boolean') bad(`${at}.waterSparesBlocks must be true or false`);
     if (e.waterShields !== undefined && typeof e.waterShields !== 'boolean') bad(`${at}.waterShields must be true or false`);
     object(e.effects, `${at}.effects`);
@@ -164,6 +166,7 @@ export function explosivesRust(data) {
     for (const k of Object.keys(EXPLOSIVE_RANGES)) lines.push(`        ${snake(k)}: ${rf(e[k])},`);
     lines.push(`        shell: ShellRule::${SHELL_RULES[e.shell ?? 'fling']},`);
     lines.push(`        crack_over_cleared: ${e.crackOverCleared ? 'true' : 'false'},`);
+    lines.push(`        crack_vertical_only: ${e.crackVerticalOnly ? 'true' : 'false'},`);
     lines.push(`        water_spares_blocks: ${e.waterSparesBlocks ? 'true' : 'false'},`);
     lines.push(`        water_shields: ${e.waterShields ? 'true' : 'false'},`);
     lines.push(`        chain_delay_seconds: [${e.chainDelaySeconds.map(rf).join(', ')}],`);

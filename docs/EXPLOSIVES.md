@@ -255,7 +255,7 @@ like red's, `shared/textures/materials.json`):
 | `dwell:dynamite` (red) | 2 m | 2–5 m flung (`shell` `fling`), along the open side | 2026-11-06 |
 | `dwell:dynamite_blue` | 4 m | none (`radiusM` = `destroyRadiusM` = 4) | 2026-11-06: "just blows up 4m" |
 | `dwell:dynamite_green` | 4 m | 4–5 m flung as red's | 2026-11-06: "destroys 4m and adds force like red on 4-5m" |
-| `dwell:dynamite_yellow` | 4 m | 4–7 m cracked (`shell` `crack`, `crackOverCleared`; 4–5 m until 0.50.8) | 2026-11-07: "destroys 4m radius, and cracks anything touching air"; "anything touching air in 5m not queued for destruction"; "increase the radius … by 2 meters, for cracking range only" (flush on flat ground: 280 destroyed, pieces 114 → 366, surface cells 32 → 100); "reduce the explosion force by half" (0.50.9: impulse 13 500 N·s, speed cap 16.5 m/s, knockback 16.5 m/s, half of red's); "halve the explosion physics force of the Yellow dynamite" (0.50.54: impulse 6 750 N·s, speed cap 8.25 m/s, knockback 8.25 m/s, a quarter of red's); "to make cave collapses cooler where the ceiling drops" |
+| `dwell:dynamite_yellow` | 4 m | 4–7 m cracked (`shell` `crack`, `crackOverCleared`; 4–5 m until 0.50.8) | 2026-11-07: "destroys 4m radius, and cracks anything touching air"; "anything touching air in 5m not queued for destruction"; "increase the radius … by 2 meters, for cracking range only" (flush on flat ground: 280 destroyed, pieces 114 → 366, surface cells 32 → 100); "reduce the explosion force by half" (0.50.9: impulse 13 500 N·s, speed cap 16.5 m/s, knockback 16.5 m/s, half of red's); "halve the explosion physics force of the Yellow dynamite" (0.50.54: impulse 6 750 N·s, speed cap 8.25 m/s, knockback 8.25 m/s, a quarter of red's); "and half the force again" (0.50.56: impulse 3 375 N·s, speed cap 4.125 m/s, knockback 4.125 m/s, an eighth of red's); and "anything touching air on top or bottom, exclude blocks that are only touching 'side' air" (0.50.56, `crackVerticalOnly`: only shell cells open above or below before the blast crack, plus the roof over the cleared core); "to make cave collapses cooler where the ceiling drops" |
 
 **Crack** (`ShellRule::Crack`, `Server::blast`, `dwell_world::explosives::cracking`): the open (air,
 liquid) cells round the charge are read before any cell clears; a shell cell cracks if one of its six
@@ -430,3 +430,18 @@ The streaming's cost (0.49.36) was the air test's: a chunk column's sky floor (i
 requests reached. It is now computed in the server-jobs worker (a thread natively, or within 1 ms a
 tick without either), the chunks waiting for it (ARCHITECTURE.md §6.3, *Sky floors off the tick*):
 in the browser `stream` went from 25–367 ms a second at a join to at most 1.5 ms.
+
+### 3.10 Pieces ignoring each other for 1 s: measured (2026-11-09)
+
+Owner: "Try performance with and without the ignore each other for 1s rule." `measure_blast_cost`
+(natively, flat world, `DWELL_LEVER_NOCONTACT`), `noPieceContactS` 0 against 1:
+
+| Blast | Physics + terrain (ms total) 0 s → 1 s | Worst tick (ms) 0 s → 1 s | Settled in (s) 0 s → 1 s |
+|---|---|---|---|
+| Red flush (186 pieces) | 318 → 927 | 15.2 → 6.8 | 11.0 → 16.6 |
+| Red buried (510) | 2 282 → 2 484 | 27.1 → 17.3 | 8.6 → 10.0 |
+| Yellow flush (100) | 44 → 2 117 | 2.9 → 11.9 | 6.5 → 29.8 |
+
+The window cuts the worst tick of the big red blasts but costs more in total and settles later; for
+yellow it costs ~50× more (pieces pass into each other, then fight once they collide). Not adopted:
+every explosive stays at 0.

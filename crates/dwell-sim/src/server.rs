@@ -2830,6 +2830,7 @@ impl Server {
                 &cells,
                 down,
                 e.crack_over_cleared,
+                e.crack_vertical_only,
                 |c| open_before.contains(&c),
                 |c| destroyed.contains(&c),
             );
