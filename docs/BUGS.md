@@ -6,6 +6,20 @@ pins it.
 
 ## Open
 
+### 60. On the software renderer the page draws no frame for ~6 s just after the first torch is placed
+
+Found 2026-11-10 chasing main's e2e failure on 0.51.8: `edit.spec.ts`'s every-palette-block test failed
+3/3 on CI with a look or a hotbar key not taken within 5 s (the target still the ground cell under
+the placed block; slot 4 selected after Digit6), both waits for the next frame. Locally (SwiftShader,
+the CPU throttled 6× by CDP) the page drew no `requestAnimationFrame` for 6.0–6.2 s right after the
+torch (slot 12) was placed, in two of three runs, while `page.evaluate` still answered (the main thread
+free: the frame or the GPU process stalls, not a long task). The thumbnail capture (0.51.6) was
+ruled out (its drawImage/toDataURL ran at other times, ~200 ms). On CI the stall hit earlier slots,
+so the trigger there is not certain. The spec now waits up to 20 s for a frame (`FRAME_STALL_MS`,
+0.51.9). Suspects: a pipeline first compiled for the torch's light or flame, or the light update a
+torch starts. Next: a bench run that places a torch on `?world=flat` under SwiftShader and reads the
+frame phases around it.
+
 ### 56. A second water surface layer under the water, strange to be between
 
 Owner, 2026-11-09 (on 0.50.76–0.50.78): "There's a weird underwater double surface layer, and it

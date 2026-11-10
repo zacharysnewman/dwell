@@ -70,6 +70,15 @@ async function aim(page: Page, pitch = -45): Promise<Target> {
 const add = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 
 const EYE_HEIGHT = 1.62;
+
+/**
+ * How long the page may take to show a look, a key or an edit. The game answers within a frame,
+ * but on the software renderer (SwiftShader, the suite's CI adapter) the page has drawn no frame
+ * for 6 s at a time mid-test (measured locally with the CPU throttled 6×: just after the first
+ * torch is placed; BUGS.md #49 is the same stall after a join), and a look, a hotbar key (taken in
+ * the frame) or a re-target waits for the next frame; the expect default of 5 s failed there on CI.
+ */
+const FRAME_STALL_MS = 20_000;
 const feet = (page: Page) => call<Vec3>(page, 'd.state().feet');
 
 /**
@@ -90,7 +99,9 @@ async function lookAt(page: Page, cell: Vec3, height = 0.5): Promise<void> {
   const yaw = (Math.atan2(d[0] ?? 0, d[2] ?? 0) * 180) / Math.PI;
   const pitch = (Math.atan2(d[1] ?? 0, Math.hypot(d[0] ?? 0, d[2] ?? 0)) * 180) / Math.PI;
   await call(page, `d.look(${String(yaw)}, ${String(pitch)})`);
-  await expect.poll(async () => (await state(page))?.target?.cell.join() ?? '').toBe(cell.join());
+  await expect
+    .poll(async () => (await state(page))?.target?.cell.join() ?? '', { timeout: FRAME_STALL_MS })
+    .toBe(cell.join());
 }
 
 /**
@@ -166,6 +177,7 @@ test('local mode: every palette block can be picked from the hotbar, placed, and
     await expect(page.locator('#hotbar .hotbar-slot.selected:visible')).toHaveAttribute(
       'data-slot',
       String(slot),
+      { timeout: FRAME_STALL_MS },
     );
     // A ladder hangs on a block's side, never on the ground's top (docs/ITEMS.md; the placement
     // rules' tests, dwell-world tests/placement.rs, hang it).
@@ -181,14 +193,20 @@ test('local mode: every palette block can be picked from the hotbar, placed, and
     // (aimed at the block just broken, so past it now) until the next frame re-targets.
     await call(page, 'd.look(0, -45)');
     await expect
-      .poll(async () => {
-        const t = (await state(page))?.target;
-        return t ? `${t.cell.join()}/${String(t.face)}` : '';
-      })
+      .poll(
+        async () => {
+          const t = (await state(page))?.target;
+          return t ? `${t.cell.join()}/${String(t.face)}` : '';
+        },
+        { timeout: FRAME_STALL_MS },
+      )
       .toBe(`${ground.cell.join()}/${String(ground.face)}`);
     expect(await call<boolean>(page, `d.edit('place')`)).toBe(true);
     await expect
-      .poll(() => voxel(page, cell), { message: `slot ${String(slot)} placed`, timeout: 5_000 })
+      .poll(() => voxel(page, cell), {
+        message: `slot ${String(slot)} placed`,
+        timeout: FRAME_STALL_MS,
+      })
       .not.toBe(0);
     const placed = await voxel(page, cell);
     // Breaking targets the new block itself: looked at, as tall grass is aimed at by a box
