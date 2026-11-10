@@ -445,3 +445,14 @@ Owner: "Try performance with and without the ignore each other for 1s rule." `me
 The window cuts the worst tick of the big red blasts but costs more in total and settles later; for
 yellow it costs ~50× more (pieces pass into each other, then fight once they collide). Not adopted:
 every explosive stays at 0.
+
+### 3.11 A blast destroys the pieces in its destroy radius (0.50.58)
+
+Owner, 2026-11-09: "Dynamite doesn't destroy nearby physics blocks in its destroy area, so chained
+dynamite still results in a ton of physics blocks that are affected by multiple explosion forces. Make
+it so physics blocks in the destroy radius are destroyed too." Before a blast pushes the moving bodies
+round it, every piece whose body centre is within `destroyRadiusM` is removed (`Felling::destroy_piece`,
+an `EntityDespawn` to clients; kinds that can't be broken are kept). Test: `tests/explosives.rs`
+`a_chained_column_of_yellow_destroys_the_pieces_left_in_each_later_blasts_core` — the owner's case, a
+1-wide, 10-tall column of yellow going down into the ground: 253 pieces survived inside a later blast's
+core on 0.50.57, none now.

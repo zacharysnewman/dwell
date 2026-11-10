@@ -1283,3 +1283,72 @@ fn measure_blast_cost() {
         );
     }
 }
+
+#[test]
+fn a_chained_column_of_yellow_destroys_the_pieces_left_in_each_later_blasts_core() {
+    // face-a-only: the flat world's fixture; the destroy rule is a distance test in world space.
+    // Owner (2026-11-09): "Dynamite doesn't destroy nearby physics blocks in its destroy area, so
+    // chained dynamite still results in a ton of physics blocks that are affected by multiple
+    // explosion forces. Make it so physics blocks in the destroy radius are destroyed too." The
+    // owner's case: a 1-wide, 10-tall stack of yellow dynamite going down into the ground.
+    let e = yellow();
+    let mut s = Scene::flat(1);
+    s.fx.server.set_explosives(vec![e]);
+    s.put(1, 0.5, -3.5);
+    s.run(2);
+    let column: Vec<[i32; 3]> = (0..10).map(|k| [0, -2 * k, 0]).collect();
+    for &c in &column {
+        s.set(c, require(e.block));
+    }
+    s.light(column[0]);
+    s.run(1);
+    assert!(!s.fx.server.fuses().is_empty(), "the top charge is lit");
+    s.put(1, 0.5, -30.0);
+    let mut live: std::collections::HashSet<u32> = std::collections::HashSet::new();
+    let mut charges: Vec<[i32; 3]> = column.iter().map(|&c| s.cell(c)).collect();
+    let mut survivors = 0;
+    for _ in 0..(20 * 60) {
+        // Where every live piece is just before this tick (a blast this tick judges them there).
+        let before: Vec<(u32, DVec3)> = live
+            .iter()
+            .filter_map(|&id| {
+                let h = s.fx.server.body_handle(id)?;
+                Some((id, s.fx.server.physics().position(h)))
+            })
+            .collect();
+        let out = s.run(1);
+        for sp in spawns(&out) {
+            live.insert(sp.id);
+        }
+        for m in &out {
+            if let Message::EntityDespawn(id) = m {
+                live.remove(id);
+            }
+        }
+        // The charges that blew this tick: their cells no longer hold the explosive.
+        let blown: Vec<[i32; 3]> = charges
+            .iter()
+            .copied()
+            .filter(|&c| {
+                let m = s.fx.server.world().get_voxel(c[0], c[1], c[2]);
+                dwell_world::explosives::explosive_of(&[e], m).is_none()
+            })
+            .collect();
+        charges.retain(|c| !blown.contains(c));
+        for c in blown {
+            let centre = dwell_sim::felling::cell_centre(c);
+            survivors += before
+                .iter()
+                .filter(|(id, p)| (*p - centre).length() <= e.destroy_radius_m && live.contains(id))
+                .count();
+        }
+        if charges.is_empty() {
+            break;
+        }
+    }
+    assert!(charges.is_empty(), "the whole column blew");
+    assert_eq!(
+        survivors, 0,
+        "no piece inside a later blast's destroy radius survives it"
+    );
+}
