@@ -61,5 +61,14 @@
     "maxHeight": 80,
     "nearRiver": 400
   },
-  "defaultBiome": "dwell:default"
+  "defaultBiome": "dwell:default",
+  "biomeMap": {
+    "$comment": "The biome map's geography (ADR 0074 B2): a slow climate gradient across the island (0..1 from one side to the other, along a direction from the seed, bent by a noise of climateWavelength m and ±climateNoise), temperature = climate − lapseRate per 1000 m of elevation; wetness easing from 1 at a river or lake to 0 wetReach m away; a biome border dithered by a noise of ditherWavelength m (±dither of the weights), so edges are not lines. Only read where a world has more than one biome.",
+    "climateWavelength": 6000,
+    "climateNoise": 0.15,
+    "lapseRate": 0.3,
+    "wetReach": 600,
+    "ditherWavelength": 24,
+    "dither": 0.25
+  }
 }
