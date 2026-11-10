@@ -841,6 +841,22 @@ mod piece_box_tests {
 
     // face-a-only: the boxes are in the piece's own frame, which has no up.
     #[test]
+    fn a_shaped_piece_cell_is_its_own_convex_hull_never_merged() {
+        let ramp = dwell_blocks::parse_state("dwell:log_ramp[facing=west,half=top,shape=ramp]")
+            .expect("the wood ramp");
+        let mut cells = vec![
+            cell(0.0, 0.0, 0.0, 100.0, Collide::All),
+            cell(0.0, 1.0, 0.0, 100.0, Collide::All),
+        ];
+        cells[0].hull = piece_hull(ramp);
+        let merged = merged_boxes(&cells);
+        assert_eq!(merged.len(), 2, "the shaped cell is not merged with the box above");
+        let c = piece_collider(&merged[0]);
+        assert!(c.shape().as_convex_polyhedron().is_some(), "a hull, not a box");
+        assert!(piece_collider(&merged[1]).shape().as_cuboid().is_some());
+    }
+
+    #[test]
     fn a_pieces_cells_merge_into_fewer_boxes_of_the_same_mass_and_extent() {
         // 2026-11-06: a box per cell made a 1.5 m sand column three colliders, each touching the
         // terrain and its neighbours: a pit's 177 columns cost the server's physics 2.5 ms a
