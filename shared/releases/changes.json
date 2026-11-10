@@ -8,6 +8,12 @@
       ]
     },
     {
+      "version": "0.52.15",
+      "changes": [
+        "Recorded sound effects: footsteps, landings, digging, placing and hits now sound like the block underfoot (stone, dirt, grass, sand, snow, wood, water), with real splashes, axe chops, grunts and explosions. Sliding keeps its sound."
+      ]
+    },
+    {
       "version": "0.52.14",
       "changes": [
         "Chisel: soil and vegetation from climate. Trees thin out above a tree line set by temperature and vanish in dry ground; new soil and vegetation views and sliders. Five presets use it; the default world is unchanged."

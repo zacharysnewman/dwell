@@ -6,9 +6,11 @@
 import { buildMixer, DEFAULT_VOLUMES, soundInput, type Mixer, type Volumes } from './mixer';
 import { SOUND_DATA } from './sounds.gen';
 import { makeNoise, playSound, startLoop, type LoopVoice, type NoiseBank } from './synth';
-import { Variation } from './variation';
+import { SampleBank } from './samples';
+import { mulberry32, Variation } from './variation';
 import type { MusicElement } from './music';
-import type { SoundData } from './types';
+import type { SamplePlay } from './samples';
+import type { SoundData, SoundDef } from './types';
 
 export type Vec3 = [number, number, number];
 
@@ -42,10 +44,14 @@ export class AudioEngine {
   /** The latest plays' ids, newest last (the `window.__dwell.sounds()` debug hook). */
   readonly recent: string[] = [];
   private hidden = false;
+  /** The recorded samples (AUDIO.md §2b), decoded on the first gesture. */
+  readonly samples = new SampleBank<AudioBuffer>(mulberry32((Date.now() & 0xffff) + 7));
 
   constructor(
     private readonly data: SoundData = SOUND_DATA,
     private readonly mobile = false,
+    /** Where the samples are served (the site's `media/`); null: procedural only. */
+    private readonly mediaBase: string | null = null,
   ) {}
 
   /** Listens for the first gestures (to start audio) and for the tab hiding. Idempotent. */
@@ -88,6 +94,7 @@ export class AudioEngine {
         silent.buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
         silent.connect(ctx.destination);
         silent.start();
+        this.loadSamples(ctx);
       }
       // 'interrupted' (iOS, after a call or another app's audio) resumes the same way.
       if (this.ctx.state !== 'running' && !this.hidden)
@@ -95,6 +102,17 @@ export class AudioEngine {
     } catch {
       // No audio on this page: everything else still works.
     }
+  }
+
+  /** Fetches and decodes every sample once (they are small: the budget is ~5 MB, validated). */
+  private loadSamples(ctx: AudioContext): void {
+    const base = this.mediaBase;
+    if (base === null || typeof fetch === 'undefined') return;
+    void this.samples.load(this.data, async (file) => {
+      const res = await fetch(`${base}${file}`);
+      if (!res.ok) throw new Error(`${file}: ${String(res.status)}`);
+      return ctx.decodeAudioData(await res.arrayBuffer());
+    });
   }
 
   get running(): boolean {
@@ -193,11 +211,24 @@ export class AudioEngine {
       setPosition(panner, at);
     }
     const input = soundInput(ctx, mixer, req.bus, sound.reverb ?? 0, panner);
-    const params = this.variation.draw(id, sound, req.intensity ?? 1);
-    const end = playSound(ctx, noise, input, sound, params, now + 0.005, {
-      ...(req.pan !== undefined && !at ? { pan: req.pan } : {}),
-      ...(req.gain !== undefined ? { gain: req.gain } : {}),
-    });
+    const sample = this.samples.pick(id, sound);
+    let end: number;
+    if (sample) {
+      end = playSample(
+        ctx,
+        input,
+        sample,
+        sampleGain(sound, req),
+        now + 0.005,
+        at ? undefined : req.pan,
+      );
+    } else {
+      const params = this.variation.draw(id, sound, req.intensity ?? 1);
+      end = playSound(ctx, noise, input, sound, params, now + 0.005, {
+        ...(req.pan !== undefined && !at ? { pan: req.pan } : {}),
+        ...(req.gain !== undefined ? { gain: req.gain } : {}),
+      });
+    }
     this.ends.push(end);
     this.recent.push(id);
     if (this.recent.length > 64) this.recent.shift();
@@ -287,6 +318,40 @@ export class AudioEngine {
   }
 }
 
+/** A sample's level: its data's, the play's, and the sound's intensity range (a landing's impact). */
+export function sampleGain(sound: SoundDef, req: Pick<PlayRequest, 'gain' | 'intensity'>): number {
+  const g = sound.intensity?.gain;
+  const k = req.intensity ?? 1;
+  const intensity = g ? g[0] + (g[1] - g[0]) * Math.min(1, Math.max(0, k)) : 1;
+  return (sound.samples?.gain ?? 1) * (req.gain ?? 1) * intensity;
+}
+
+function playSample(
+  ctx: AudioContext,
+  input: AudioNode,
+  sample: SamplePlay<AudioBuffer>,
+  gain: number,
+  at: number,
+  pan: number | undefined,
+): number {
+  const src = ctx.createBufferSource();
+  src.buffer = sample.buffer;
+  src.playbackRate.value = sample.rate;
+  const level = ctx.createGain();
+  level.gain.value = gain;
+  src.connect(level);
+  if (pan !== undefined && typeof ctx.createStereoPanner === 'function') {
+    const p = ctx.createStereoPanner();
+    p.pan.value = pan;
+    level.connect(p);
+    p.connect(input);
+  } else {
+    level.connect(input);
+  }
+  src.start(at);
+  return at + sample.buffer.duration / sample.rate;
+}
+
 function setPosition(p: PannerNode, at: Vec3): void {
   p.positionX.value = at[0];
   p.positionY.value = at[1];
@@ -304,7 +369,8 @@ export function audio(): AudioEngine {
   if (!shared) {
     const mobile =
       typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-    shared = new AudioEngine(SOUND_DATA, mobile);
+    const media = typeof __MEDIA_BASE__ === 'undefined' ? null : __MEDIA_BASE__;
+    shared = new AudioEngine(SOUND_DATA, mobile, media);
   }
   return shared;
 }

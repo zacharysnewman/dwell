@@ -11,7 +11,10 @@ export const GAITS: string[];
 export const UI_KINDS: string[];
 export function validateSound(where: string, sound: unknown): void;
 /** The data the client plays (without `gaitOrder`, which the generator adds). */
-export function resolveSounds(files: unknown[]): Omit<SoundData, 'gaitOrder'>;
+export const SAMPLES_DIR: string;
+export const SAMPLES_MAX_BYTES: number;
+export const PLAY_MODES: string[];
+export function resolveSounds(files: unknown[], samplesDir?: string): Omit<SoundData, 'gaitOrder'>;
 export function checkBlockSounds(
   blocks: { id: string; sound?: unknown }[],
   resolved: Omit<SoundData, 'gaitOrder'>,
