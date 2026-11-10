@@ -38,6 +38,8 @@ export class Hud {
   private damageUntil = 0;
   /** The debug overlay's "Copy block info" button (or F6): dump the blocks around the target. */
   onCopyBlocks: (() => void) | null = null;
+  /** The debug overlay's "Copy streaming" button (or F8): the streaming report. */
+  onCopyStreaming: (() => void) | null = null;
   /** Its Map (F4) and Close (F3) buttons. */
   onToggleMap: (() => void) | null = null;
   onCloseDebug: (() => void) | null = null;
@@ -113,6 +115,13 @@ export class Hud {
         'F6',
         'The targeted block and its neighbours as JSON',
         () => this.onCopyBlocks?.(),
+      ),
+      tool(
+        'debug-copy-streaming',
+        'Copy streaming',
+        'F8',
+        'The chunks loading round you, as JSON for a bug report',
+        () => this.onCopyStreaming?.(),
       ),
       tool('', 'Map', 'F4', 'The terrain map around you (− and = zoom)', () =>
         this.onToggleMap?.(),

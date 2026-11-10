@@ -154,6 +154,11 @@ export const DEBUG_KEYS: Control[] = [
   { action: 'Map zoom', keys: ['−', '='], when: 'while the map is open' },
   { action: 'Copy block info', keys: ['F6'], when: 'the targeted block, as JSON' },
   {
+    action: 'Copy streaming report',
+    keys: ['F8'],
+    when: 'the chunks loading round you, as JSON for a bug report',
+  },
+  {
     action: 'Pause the look',
     keys: ['F7'],
     when: 'clouds, water, plants and flames stand still; the game runs on',
