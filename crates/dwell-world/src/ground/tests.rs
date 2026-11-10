@@ -324,3 +324,44 @@ fn the_gone_set_round_trips_and_a_newer_record_is_not_read() {
     assert_eq!(GroundGone::from_bytes(&b[..b.len() - 1]), None);
     assert_eq!(g.in_chunk([1, 15, -1]), vec![[8, 20, 25]]);
 }
+
+crate::both_faces!(
+    /// The rules read the terrain as generated (owner, 2026-11-09: "keep sticks under cleared
+    /// leaves"): the leaves cleared over a stick leave it; its ground broken takes it.
+    fn a_stick_stays_under_cleared_leaves(f: FaceFrame) {
+        let mut generated = Fixture::field(f, 8);
+        for x in 0..8 {
+            for z in 0..8 {
+                generated.set([x, G + 6, z], state("dwell:leaves"));
+            }
+        }
+        let rules = [GroundRule {
+            density: 1.0,
+            ..RULES[0]
+        }];
+        let r = Rules::new(&KINDS, &rules);
+        let cell = f.cell([3, G + 1, 3]);
+        let mut now = Fixture {
+            f,
+            cells: generated.cells.clone(),
+        };
+        for x in 0..8 {
+            for z in 0..8 {
+                now.set([x, G + 6, z], M.air);
+            }
+        }
+        let mut get = |c: [i32; 3], gen_: bool| {
+            let w = if gen_ { &generated } else { &now };
+            Some(w.cells.get(&c).copied().unwrap_or(M.air))
+        };
+        let it = r.item_over(&mut get, 4, cell).expect("the stick stays");
+        assert_eq!(KINDS[it.kind].name, "dwell:ground_stick");
+        // Its ground broken (as now): gone.
+        now.set([3, G, 3], M.air);
+        let mut get = |c: [i32; 3], gen_: bool| {
+            let w = if gen_ { &generated } else { &now };
+            Some(w.cells.get(&c).copied().unwrap_or(M.air))
+        };
+        assert!(r.item_over(&mut get, 4, cell).is_none());
+    }
+);

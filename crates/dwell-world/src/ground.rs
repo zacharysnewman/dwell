@@ -1,7 +1,8 @@
 //! Ground items (docs/adr/0071-ground-items.md): sticks under the trees, rocks at the cliffs' feet,
 //! small things lying on the ground that a player picks up. They are not saved terrain: a chunk's
-//! are scattered from its blocks as it loads, deterministically from the world seed and the cell
-//! ([`item_at`], [`scatter_chunk`]), by `shared/ground/ground.json`'s rules (`ground.gen.rs`). The
+//! are scattered from its blocks as generated (so an edit round one, the leaves cleared over a
+//! stick, leaves it), deterministically from the world seed and the cell
+//! ([`Rules::item_over`], [`Rules::scatter_over`]), by `shared/ground/ground.json`'s rules (`ground.gen.rs`). The
 //! picked-up ones are kept gone ([`GroundGone`], saved with the world, like tree tombstones in
 //! docs/TREE_GROWTH.md §5a). The server, the client's crosshair and the client's mesh jobs all
 //! read the same function, so they agree on what lies where.
@@ -158,37 +159,52 @@ impl<'a> Rules<'a> {
         self.kinds.get(i)
     }
 
-    /// The ground item in world cell `cell`, if any: `get` reads a world cell (None: not known,
-    /// and a rule that needs it does not hold).
+    /// The ground item in world cell `cell`, if any, where the world is as generated: `get` reads
+    /// a world cell (None: not known, and a rule that needs it does not hold).
     pub fn item_at(
         &self,
         get: &mut impl FnMut([i32; 3]) -> Option<StateId>,
         seed: u64,
         cell: [i32; 3],
     ) -> Option<Placed> {
+        self.item_over(&mut |c, _| get(c), seed, cell)
+    }
+
+    /// The ground item in world cell `cell`, if any: `get(c, generated)` reads world cell `c` as
+    /// it is now (`generated` false) or as the chunk was generated (true; None: not known, and a
+    /// rule that needs it does not hold). The rules (`on`, `under`, `nearWall`) read the generated
+    /// terrain, so later edits round an item (the leaves cleared over a stick) do not take it
+    /// (owner, 2026-11-09); only its own cell, open, and its ground, flat, are read as they are
+    /// now (a broken ground knocks it loose, `GroundGone`).
+    pub fn item_over(
+        &self,
+        get: &mut impl FnMut([i32; 3], bool) -> Option<StateId>,
+        seed: u64,
+        cell: [i32; 3],
+    ) -> Option<Placed> {
         let f = FaceFrame::at_row(cell[1]);
         let [x, y, z] = f.cell(cell);
-        let mut at = |dx: i32, dy: i32, dz: i32| get(f.cell([x + dx, y + dy, z + dz]));
-        if !open(at(0, 0, 0)?) {
+        let mut at = |dx: i32, dy: i32, dz: i32, generated: bool| {
+            get(f.cell([x + dx, y + dy, z + dz]), generated)
+        };
+        if !open(at(0, 0, 0, false)?) || !flat_ground(at(0, -1, 0, false)?) {
             return None;
         }
-        let below = at(0, -1, 0)?;
-        if !flat_ground(below) {
-            return None;
-        }
+        let below = at(0, -1, 0, true)?;
         for (i, (rule, on, under)) in self.rules.iter().enumerate() {
             if !among(below, on) {
                 continue;
             }
             if let Some(u) = rule.under
-                && !(1..=u.within_rows).any(|k| at(0, k, 0).is_some_and(|m| among(m, under)))
+                && !(1..=u.within_rows).any(|k| at(0, k, 0, true).is_some_and(|m| among(m, under)))
             {
                 continue;
             }
             if let Some(w) = rule.near_wall
                 && !COMPASS.iter().any(|[dx, dz]| {
-                    (1..=w.reach)
-                        .any(|d| (0..w.rows).all(|k| at(dx * d, k, dz * d).is_some_and(solid)))
+                    (1..=w.reach).any(|d| {
+                        (0..w.rows).all(|k| at(dx * d, k, dz * d, true).is_some_and(solid))
+                    })
                 })
             {
                 continue;
@@ -214,10 +230,21 @@ impl<'a> Rules<'a> {
         None
     }
 
-    /// Every ground item in chunk `c`, in cell order (x fastest, then z, then y).
+    /// Every ground item in chunk `c`, in cell order (x fastest, then z, then y), where the world
+    /// is as generated.
     pub fn scatter_chunk(
         &self,
         get: &mut impl FnMut([i32; 3]) -> Option<StateId>,
+        seed: u64,
+        c: ChunkCoord,
+    ) -> Vec<Placed> {
+        self.scatter_over(&mut |c, _| get(c), seed, c)
+    }
+
+    /// Every ground item in chunk `c`, `get` reading cells now and as generated ([`Self::item_over`]).
+    pub fn scatter_over(
+        &self,
+        get: &mut impl FnMut([i32; 3], bool) -> Option<StateId>,
         seed: u64,
         c: ChunkCoord,
     ) -> Vec<Placed> {
@@ -227,7 +254,7 @@ impl<'a> Rules<'a> {
             for lz in 0..CHUNK_SIZE {
                 for lx in 0..CHUNK_SIZE {
                     let cell = [o[0] + lx, o[1] + ly, o[2] + lz];
-                    if let Some(p) = self.item_at(get, seed, cell) {
+                    if let Some(p) = self.item_over(get, seed, cell) {
                         out.push(p);
                     }
                 }
