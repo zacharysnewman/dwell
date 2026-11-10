@@ -117,9 +117,9 @@ pub const FIXTURE_BIOMES: &[Biome] = &[
     Biome {
         name: "test:desert",
         place: Where {
-            weight: 4.0,
+            weight: 100.0,
             temperature: WhereRange {
-                min: 0.5,
+                min: 0.4,
                 max: f64::INFINITY,
                 blend: 0.12,
             },
@@ -170,7 +170,7 @@ pub const FIXTURE_BIOMES: &[Biome] = &[
             edge_slope_lift: 200.0,
             rock_slope: 0.6,
             rock_slope_high: 0.4,
-            rock_high: 900.0,
+            rock_high: 600.0,
             rock_window: 120.0,
             shore: 2.0,
             under_depth: 3.0,
@@ -189,7 +189,7 @@ pub const FIXTURE_BIOMES: &[Biome] = &[
             },
             ElevationBand {
                 name: "mesa",
-                from: 250.0,
+                from: 150.0,
                 ground: "dwell:stone",
                 under: "dwell:stone",
                 rock: "dwell:stone",
@@ -197,7 +197,7 @@ pub const FIXTURE_BIOMES: &[Biome] = &[
             },
             ElevationBand {
                 name: "tundra",
-                from: 700.0,
+                from: 400.0,
                 ground: "dwell:snowy_grass",
                 under: "dwell:dirt",
                 rock: "dwell:stone",
