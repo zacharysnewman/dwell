@@ -7,6 +7,10 @@ import { fileURLToPath } from "node:url";
 import {
   generate,
   glbSummary,
+  lookModels,
+  propSummary,
+  rustProps,
+  validateProps,
   paletteStops,
   resolveColor,
   rust,
@@ -98,6 +102,61 @@ test("unknown roles, bad fallbacks, scales and remaps fail", () => {
   bad((m) => (m.hand.joint = "paw"), /hand: no joint paw/);
   bad((m) => (m.hand.bone = ""), /hand: bone names/);
   bad((m) => (m.hand.rot = [0, 0]), /hand: rot is \[x, y, z\]/);
+});
+
+const props = () => JSON.parse(readFileSync(join(here, "props.json"), "utf8"));
+const fixtureProps = () =>
+  JSON.parse(readFileSync(join(fixtures, "props.json"), "utf8"));
+
+test("every prop GLB loads: one static mesh, palette colours in COLOR_0, its length", () => {
+  const out = validateProps(props(), here);
+  assert.ok(Object.keys(out).length >= 53);
+  for (const [name, p] of Object.entries(out)) {
+    assert.ok(p.colours > 1, `${name}: ${p.colours} colour(s)`);
+    assert.ok(Math.max(...p.size) <= 1.8 && Math.max(...p.size) >= 0.05, name);
+    const s = propSummary(readFileSync(join(here, p.glb)));
+    assert.equal(s.skins + s.clips, 0, name);
+    // Centred on its origin (a grip is measured from there).
+    for (const c of s.centre)
+      assert.ok(Math.abs(c) < 0.01, `${name}: ${s.centre}`);
+  }
+});
+
+test("a prop is added by data alone: the fixture validates and lands in the table", () => {
+  const out = validateProps(fixtureProps(), fixtures);
+  assert.equal(out.plate.category, "dishes");
+  const rs = rustProps(out, "../../../shared/models/fixtures", ["plate"]);
+  assert.match(
+    rs,
+    /PropData \{ name: "plate", category: "dishes", glb: "plate\.glb", length: 0\.25/,
+  );
+  assert.match(rs, /grip: \[0\.0, 0\.01, 0\.0\]/);
+  assert.match(
+    rs,
+    /\("plate", include_bytes!\("\.\.\/\.\.\/\.\.\/shared\/models\/fixtures\/plate\.glb"\)\)/,
+  );
+});
+
+test("bad props fail naming the entry and the problem", () => {
+  const bad = (edit, re) => {
+    const f = fixtureProps();
+    edit(f.props.plate, f);
+    assert.throws(() => validateProps(f, fixtures), re);
+  };
+  bad((p) => (p.glb = "nope.glb"), /prop plate: missing GLB nope\.glb/);
+  bad((p) => (p.category = "food"), /prop plate: unknown category food/);
+  bad((p) => (p.length = 2), /length 2 m is outside dishes's/);
+  bad((p) => (p.length = 0.4), /is 0\.250 m long, not its length 0\.4 m/);
+  bad((p) => (p.grip = [0, 1]), /grip is \[x, y, z\]/);
+  bad((p) => (p.glb = "two_bone.glb"), /a skin or clips/);
+  bad((_, f) => (f.categories.dishes.min = 0), /category dishes: needs/);
+  // The game's item looks may only name a prop.
+  assert.deepEqual(
+    lookModels({
+      items: [{ look: { model: "a" } }, { look: { shape: "rod" } }, {}],
+    }),
+    ["a"],
+  );
 });
 
 test("palette references resolve; excluded ramps are left out of the snap", () => {

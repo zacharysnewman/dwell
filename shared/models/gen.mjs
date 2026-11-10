@@ -225,7 +225,12 @@ export function validateProps(data, dir, read = (p) => readFileSync(p)) {
   };
   const cats = data.categories ?? {};
   for (const [c, v] of Object.entries(cats))
-    if (!(v.min > 0 && v.max >= v.min && v.length >= v.min && v.length <= v.max))
+    if (!(
+      v.min > 0 &&
+      v.max >= v.min &&
+      v.length >= v.min &&
+      v.length <= v.max
+    ))
       fail(`category ${c}: needs 0 < min <= length <= max`);
   const out = {};
   for (const [name, p] of Object.entries(data.props ?? {})) {
@@ -234,7 +239,9 @@ export function validateProps(data, dir, read = (p) => readFileSync(p)) {
       fail(`${at}: names are lower_snake_case`);
     const cat = cats[p.category];
     if (!cat)
-      fail(`${at}: unknown category ${p.category} (${Object.keys(cats).join(", ")})`);
+      fail(
+        `${at}: unknown category ${p.category} (${Object.keys(cats).join(", ")})`,
+      );
     if (typeof p.glb !== "string") fail(`${at}: no glb`);
     const path = join(dir, p.glb);
     if (!existsSync(path)) fail(`${at}: missing GLB ${p.glb}`);
@@ -245,20 +252,35 @@ export function validateProps(data, dir, read = (p) => readFileSync(p)) {
       fail(`${at}: ${p.glb}: ${e.message}`);
     }
     if (s.meshes !== 1) fail(`${at}: ${p.glb} has ${s.meshes} meshes, not one`);
-    if (s.skins || s.clips) fail(`${at}: ${p.glb} has a skin or clips (a prop is static)`);
+    if (s.skins || s.clips)
+      fail(`${at}: ${p.glb} has a skin or clips (a prop is static)`);
     if (!s.colour0) fail(`${at}: ${p.glb} has no COLOR_0 (re-import it)`);
     const length = p.length ?? cat.length;
     if (!(length >= cat.min && length <= cat.max))
-      fail(`${at}: length ${length} m is outside ${p.category}'s ${cat.min}..${cat.max} m`);
+      fail(
+        `${at}: length ${length} m is outside ${p.category}'s ${cat.min}..${cat.max} m`,
+      );
     const longest = Math.max(...s.size);
     if (Math.abs(longest - length) > 0.02 * length + 0.005)
-      fail(`${at}: ${p.glb} is ${longest.toFixed(3)} m long, not its length ${length} m (re-import it)`);
+      fail(
+        `${at}: ${p.glb} is ${longest.toFixed(3)} m long, not its length ${length} m (re-import it)`,
+      );
     if (
       p.grip !== undefined &&
-      !(Array.isArray(p.grip) && p.grip.length === 3 && p.grip.every(Number.isFinite))
+      !(
+        Array.isArray(p.grip) &&
+        p.grip.length === 3 &&
+        p.grip.every(Number.isFinite)
+      )
     )
       fail(`${at}: grip is [x, y, z] metres`);
-    out[name] = { ...p, length, size: s.size, colours: s.colours, grip: p.grip ?? [0, 0, 0] };
+    out[name] = {
+      ...p,
+      length,
+      size: s.size,
+      colours: s.colours,
+      grip: p.grip ?? [0, 0, 0],
+    };
   }
   return out;
 }
@@ -273,7 +295,10 @@ export function rustProps(props, glbRoot, built) {
   const v3 = (v) => `[${v.map((x) => f32(Number(x.toFixed(4)))).join(", ")}]`;
   const lines = [
     `pub static PROP_GLBS: &[(&str, &[u8])] = &[${built
-      .map((n) => `(${JSON.stringify(n)}, include_bytes!(${JSON.stringify(`${glbRoot}/${props[n].glb}`)}))`)
+      .map(
+        (n) =>
+          `(${JSON.stringify(n)}, include_bytes!(${JSON.stringify(`${glbRoot}/${props[n].glb}`)}))`,
+      )
       .join(", ")}];`,
     "pub static PROPS: &[PropData] = &[",
   ];
@@ -304,7 +329,10 @@ export function rust(data, models, glbRoot) {
   // Every model's GLB, built in (ADR 0073: the creatures' models are drawn in the world).
   lines.push(
     `pub static GLBS: &[(&str, &[u8])] = &[${Object.entries(models)
-      .map(([name, m]) => `(${JSON.stringify(name)}, include_bytes!(${JSON.stringify(`${glbRoot}/${m.glb}`)}))`)
+      .map(
+        ([name, m]) =>
+          `(${JSON.stringify(name)}, include_bytes!(${JSON.stringify(`${glbRoot}/${m.glb}`)}))`,
+      )
       .join(", ")}];`,
   );
   lines.push("pub static MODELS: &[ModelData] = &[");
@@ -346,7 +374,10 @@ export function generate() {
         ? lookModels(readJson(join(root, "shared/inventory/inventory.json")))
         : Object.keys(props);
     for (const n of built)
-      if (!props[n]) throw new Error(`inventory.json: look.model ${n} is not a prop of props.json`);
+      if (!props[n])
+        throw new Error(
+          `inventory.json: look.model ${n} is not a prop of props.json`,
+        );
     const glbRoot = relative(CRATE, src);
     outputs.push([
       join(CRATE, out),
