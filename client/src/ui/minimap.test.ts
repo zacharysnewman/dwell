@@ -259,7 +259,7 @@ describe('the zoom levels (owner, 2026-11-09)', () => {
     expect(LEVELS.length).toBeLessThanOrEqual(5);
     const first = LEVELS[0];
     const last = LEVELS[LEVELS.length - 1];
-    expect(first).toEqual({ cellM: 1, spanM: 2 * MAP.minimap.radiusM });
+    expect(first).toEqual({ cellM: 1, spanM: 2 * MAP.minimap.radiusM, reach: 'player' });
     // shared/protocol/constants.json's worldRadius: the whole world, its sea too.
     expect(last?.spanM).toBe(2 * World.worldRadius);
     const ratios = LEVELS.slice(1).map((l, i) => l.spanM / (LEVELS[i]?.spanM ?? 1));
@@ -288,8 +288,14 @@ describe('the zoom levels (owner, 2026-11-09)', () => {
 });
 
 /** The tiles of side `span` (m) that intersect the world disc and the square [x0, x1] × [z0, z1]. */
-const discTiles = (span: number, x0: number, x1: number, z0: number, z1: number): string[] => {
-  const r = World.worldRadius;
+const discTiles = (
+  span: number,
+  x0: number,
+  x1: number,
+  z0: number,
+  z1: number,
+  r: number = World.worldRadius,
+): string[] => {
   const out: string[] = [];
   for (let k = Math.floor(z0 / span); k <= Math.floor(z1 / span); k++) {
     for (let i = Math.floor(x0 / span); i <= Math.floor(x1 / span); i++) {
@@ -342,26 +348,32 @@ describe('the widest level shows the whole world (owner, 2026-11-09: "Including 
     });
   }
 
-  it("the background builds every tile of the widest level on the disc, and no level's square has holes in the world", () => {
+  it('three levels (owner, 2026-11-10): 1 m round the player, the coarse ones the whole island and the whole disc', () => {
+    expect(LEVELS.map((l) => l.reach)).toEqual(['player', 'island', 'disc']);
     const cache = new RevealCache(32, 2, 1000, 1);
     // Out at sea, beyond the island's coast but well inside the world.
     const [x, z] = [33_000, -9_000];
     const list = cache.backgroundFor(1, x, z);
-    const r = World.worldRadius;
     for (let l = 0; l < LEVELS.length; l++) {
-      const { cellM, spanM } = LEVELS[l] ?? { cellM: 1, spanM: 1 };
+      const { cellM, spanM, reach } = LEVELS[l] ?? { cellM: 1, spanM: 1, reach: 'player' };
       const span = 32 * cellM;
       const got = list
         .filter(([c]) => c === cellM)
         .map(([, , i, k]) => `${String(i)},${String(k)}`)
         .sort();
       const half = (spanM * MAP.revealed.prebuildSpans) / 2;
+      const r = reach === 'island' ? World.islandRadius : World.worldRadius;
       const want =
-        l === LEVELS.length - 1
-          ? discTiles(span, -r, r, -r, r)
-          : discTiles(span, x - half, x + half, z - half, z + half);
-      expect(got).toEqual(want);
+        reach === 'player'
+          ? discTiles(span, x - half, x + half, z - half, z + half)
+          : discTiles(span, -r, r, -r, r, r);
+      expect(got, `level ${String(l)}`).toEqual(want);
     }
+    // The 1 m level first (always streamed round the player), then the coarsest, then the island's.
+    const order = [...new Set(list.map(([c]) => c))];
+    expect(order).toEqual([LEVELS[0]?.cellM, LEVELS[2]?.cellM, LEVELS[1]?.cellM]);
+    // The island's 16 m tiles: a few thousand, each built once.
+    expect(list.filter(([c]) => c === LEVELS[1]?.cellM).length).toBeLessThan(10_000);
   });
 });
 
@@ -461,8 +473,8 @@ describe("the big map's tiles", () => {
       }
     }
     expect(by.get(widest)).toBe(island);
-    // The start level's first, nearest the player first.
-    const start = LEVELS[MAP.bigMap.startLevel]?.cellM ?? 1;
+    // The 1 m level's first, nearest the player first.
+    const start = LEVELS[0]?.cellM ?? 1;
     expect(list[0]?.[0]).toBe(start);
     const s = 32 * start;
     expect(list[0]?.slice(2)).toEqual([Math.floor(300 / s), Math.floor(-200 / s)]);
@@ -883,10 +895,9 @@ describe("the closest levels' real blocks (owner, 2026-11-09: closest zooms use 
     };
   };
 
-  it('the two closest levels are read from the terrain, the others never', () => {
+  it('the 1 m level is read from the terrain, the coarse ones never', () => {
     expect(isLive(LEVELS[0]?.cellM ?? 0)).toBe(true);
-    expect(isLive(LEVELS[1]?.cellM ?? 0)).toBe(true);
-    for (const { cellM } of LEVELS.slice(2)) expect(isLive(cellM)).toBe(false);
+    for (const { cellM } of LEVELS.slice(1)) expect(isLive(cellM)).toBe(false);
   });
 
   it("a loaded cell shows the terrain's block, an unloaded one the generator's, within the budget", () => {
@@ -985,12 +996,10 @@ describe('the minimap and the open map keep building (owner, 2026-11-10)', () =>
     const [w, h] = [800, 600];
     const v: BigView = { face: 0, cx: 900, cz: -700, level: 1, pxPerM: levelPxPerM(1, w, h) };
     const pose = [0, 0, 0];
-    const inRange = [
-      ...cache.backgroundFor(0, v.cx, v.cz, v.level),
-      ...cache.backgroundFor(0, 0, 0, v.level),
-    ];
+    const visible = cache.tilesFor(v, w, h).map(([c, f, i, k]) => RevealCache.key(c, f, i, k));
+    const inRange = cache.backgroundFor(0, 0, 0, [0, v.cx, v.cz]);
     let frames = 0;
-    for (; frames < 20000; frames++) {
+    for (; frames < 40000; frames++) {
       cache.pump(client, v, w, h, () => 0, undefined, pose);
       if (frames > 0 && cache.backgroundLeft === 0 && cache.inFlight === 0) break;
     }
@@ -1002,10 +1011,78 @@ describe('the minimap and the open map keep building (owner, 2026-11-10)', () =>
         `${String(c)} m tile ${String(i)},${String(k)}`,
       ).toBe(true);
     }
-    // Every level, the coarser and the finer, not only the open one.
+    // Every level.
     const levels = new Set([...cache.tiles.values()].map((t) => t.cellM));
     expect([...levels].sort((a, b) => a - b)).toEqual(LEVELS.map((l) => l.cellM));
-    // The open level's came first.
-    expect(client.asked[0]?.startsWith(`${String(levelCellM(1))}|`)).toBe(true);
+    // The view's tiles were all asked for before anything else.
+    expect(client.asked.slice(0, visible.length).sort()).toEqual([...visible].sort());
+    // Then the 1 m area round the player, then the whole disc, then the island, nearest the view.
+    const after = client.asked.slice(visible.length);
+    const firstOf = (cellM: number) => after.findIndex((k) => k.startsWith(`${String(cellM)}|`));
+    const [near, mid, wide] = LEVELS.map((l) => l.cellM);
+    expect(after[0]?.startsWith(`${String(near)}|0,0,`) || after[0] === `${String(near)}|0,-1,-1`).toBe(true);
+    expect(firstOf(near ?? 0)).toBeLessThan(firstOf(wide ?? 0));
+    expect(firstOf(wide ?? 0)).toBeLessThan(firstOf(mid ?? 0));
+    const midAsked = after.filter((k) => k.startsWith(`${String(mid)}|`));
+    const span = 32 * (mid ?? 1);
+    const dist = (k: string) => {
+      const [, , i = 0, kk = 0] = k.split(/[|,]/).map(Number);
+      return Math.hypot((i + 0.5) * span - v.cx, (kk + 0.5) * span - v.cz);
+    };
+    // The island's are nearest the view's centre first (the visible ones were built already).
+    for (let n = 1; n < midAsked.length; n++) {
+      expect(dist(midAsked[n] ?? '')).toBeGreaterThanOrEqual(dist(midAsked[n - 1] ?? '') - span * 6);
+    }
+    expect(dist(midAsked[0] ?? '')).toBeLessThan(dist(midAsked[midAsked.length - 1] ?? ''));
+  });
+
+  it('panning re-centres the island build on the view; shut, it carries on round the player a job at a time', () => {
+    const cache = new RevealCache(32, 2, 1000, 1);
+    const client = fakeClient(32);
+    const [w, h] = [800, 600];
+    const mid = LEVELS[1]?.cellM ?? 16;
+    const span = 32 * mid;
+    const pose = [0, 0, 0];
+    const run = (v: BigView | null, frames: number) => {
+      const from = client.asked.length;
+      for (let f = 0; f < frames; f++) cache.pump(client, v, w, h, () => 0, undefined, pose);
+      return client.asked.slice(from).filter((k) => k.startsWith(`${String(mid)}|`));
+    };
+    const at = (k: string) => k.split(/[|,]/).map(Number).slice(2) as [number, number];
+    const view = (cx: number, cz: number): BigView => ({
+      face: 0,
+      cx,
+      cz,
+      level: 0,
+      pxPerM: levelPxPerM(0, w, h),
+    });
+    // Open at the 1 m level well away: once the near tiles are done, the island's go nearest it.
+    run(view(10_000, 0), 200);
+    const east = run(view(10_000, 0), 50);
+    expect(east.length).toBeGreaterThan(0);
+    for (const k of east) expect(Math.abs(at(k)[0] * span - 10_000)).toBeLessThan(15 * span);
+    // Panned to the far side: the next ones are there.
+    run(view(-10_000, 0), 20);
+    const west = run(view(-10_000, 0), 50);
+    expect(west.length).toBeGreaterThan(0);
+    for (const k of west) expect(Math.abs(at(k)[0] * span + 10_000)).toBeLessThan(15 * span);
+    // Shut: one job at a time (backgroundJobs), round the player.
+    const held: Uint8Array[] = [];
+    const slow = {
+      requestReveal: (face: number, ti: number, tk: number, cellM: number) => {
+        client.requestReveal(face, ti, tk, cellM);
+        const done = client.takeReveal();
+        if (done) held.push(done);
+      },
+      takeReveal: () => held.shift() ?? client.takeReveal(),
+    };
+    const from = client.asked.length;
+    for (let f = 0; f < 30; f++) {
+      cache.pump(slow, null, 0, 0, () => 0, undefined, pose);
+      expect(cache.inFlight).toBeLessThanOrEqual(1);
+    }
+    const shut = client.asked.slice(from).filter((k) => k.startsWith(`${String(mid)}|`));
+    expect(shut.length).toBeGreaterThan(0);
+    for (const k of shut) expect(Math.hypot(...at(k)) * span).toBeLessThan(15 * span);
   });
 });

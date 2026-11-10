@@ -117,8 +117,12 @@ test('a changed look or size reaches both outputs by data alone', () => {
 
 test("the zoom levels, the height tint and the map's controller buttons are data", () => {
   const d = mapData();
-  // A fixture level by data alone: a sixth would be too many, so a 3-level map with its own sizes.
-  d.bigMap.levels = [{ cellM: 1 }, { cellM: 16 }, { cellM: 512 }];
+  // A fixture map by data alone: three levels with their own sizes and reaches.
+  d.bigMap.levels = [
+    { cellM: 1, reach: 'player' },
+    { cellM: 16, reach: 'player' },
+    { cellM: 512, reach: 'island' },
+  ];
   d.bigMap.startLevel = 2;
   d.heightTint.brightest = 1.3;
   d.bigMap.padCenter = 'x';
@@ -131,7 +135,8 @@ test("the zoom levels, the height tint and the map's controller buttons are data
   assert.match(rs, /big_map_start_level: 2\.0,/);
   assert.match(rs, /height_tint_brightest: 1\.3,/);
   const ts = mapTs(validateMap(d));
-  assert.match(ts, /\{ cellM: 16, spanM: \d+ \},/);
+  assert.match(ts, /\{ cellM: 16, spanM: \d+, reach: 'player' \},/);
+  assert.match(ts, /\{ cellM: 512, spanM: 100000, reach: 'island' \},/);
   assert.match(rs, /big_map_pad_center: "x",/);
   assert.match(ts, /padCenter: 'x',/);
   assert.match(ts, /panelFraction: 0\.9,/);
@@ -144,11 +149,12 @@ test('bad map entries fail naming them', () => {
     [(d) => (d.heightShading.default = 1), /heightShading\.default must be true or false/],
     [(d) => (d.explored.cellM = 7), /cellM must divide/],
     [(d) => (d.bigMap.levels = [{ cellM: 1 }]), /bigMap\.levels must be a list of 2 to 5 levels/],
-    [(d) => d.bigMap.levels.push({ cellM: 1024 }), /bigMap\.levels must be a list of 2 to 5 levels/],
+    [(d) => d.bigMap.levels.push({ cellM: 512, reach: 'disc' }, { cellM: 1024, reach: 'disc' }, { cellM: 1024, reach: 'disc' }), /bigMap\.levels must be a list of 2 to 5 levels/],
+    [(d) => (d.bigMap.levels[1].reach = 'everywhere'), /bigMap\.levels\[1\]\.reach must be one of player, island, disc/],
     [(d) => (d.bigMap.levels[1].cellM = 3), /bigMap\.levels\[1\]\.cellM must be a whole power of two/],
     [(d) => (d.bigMap.levels[2].cellM = 2), /bigMap\.levels\[2\]\.cellM must be above the level before it/],
     [(d) => (d.bigMap.levels[0].spanM = 9), /unknown entry bigMap\.levels\[0\]\.spanM/],
-    [(d) => (d.bigMap.startLevel = 4) && (d.bigMap.levels = [{ cellM: 1 }, { cellM: 2 }]), /bigMap\.startLevel must name a level/],
+    [(d) => (d.bigMap.startLevel = 4) && (d.bigMap.levels = [{ cellM: 1, reach: 'player' }, { cellM: 2, reach: 'disc' }]), /bigMap\.startLevel must name a level/],
     [(d) => (d.heightTint.highM = d.heightTint.lowM), /heightTint: lowM must be below highM/],
     [(d) => (d.heightTint.darkest = 0.1), /heightTint\.darkest must be within/],
     [(d) => (d.minimap.extra = 1), /unknown entry minimap\.extra/],

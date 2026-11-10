@@ -187,6 +187,13 @@ export function levelSpans(data, worldRadiusM = WORLD_RADIUS_M) {
 /** The controller's button names (shared/input/gamepad.json), for the map's controller buttons. */
 const PAD_BUTTONS = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../input/gamepad.json'), 'utf8')).buttons.map((b) => b.name);
 
+/**
+ * Where the background builds a level's tiles (ADR 0068; owner, 2026-11-10): `player` round the
+ * player (revealed.prebuildSpans of its span), `island` every tile touching the island
+ * (constants.json's islandRadius), `disc` every tile touching the world disc.
+ */
+export const REACHES = ['player', 'island', 'disc'];
+
 const mapFail = (m) => {
   throw new Error(`map.json: ${m}`);
 };
@@ -212,7 +219,8 @@ export function validateMap(data) {
         v.forEach((lv, i) => {
           const at = `${where}[${i}]`;
           if (typeof lv !== 'object' || lv === null || Array.isArray(lv)) mapFail(`${at} must be an object`);
-          for (const lk of Object.keys(lv)) if (lk !== '$comment' && lk !== 'cellM') mapFail(`unknown entry ${at}.${lk}`);
+          for (const lk of Object.keys(lv)) if (lk !== '$comment' && lk !== 'cellM' && lk !== 'reach') mapFail(`unknown entry ${at}.${lk}`);
+          if (!REACHES.includes(lv.reach)) mapFail(`${at}.reach must be one of ${REACHES.join(', ')}, got ${JSON.stringify(lv.reach)}`);
           if (!isPow2(lv.cellM) || lv.cellM > 1024) mapFail(`${at}.cellM must be a whole power of two within 1–1024, got ${JSON.stringify(lv.cellM)}`);
           if (i > 0 && !(lv.cellM > v[i - 1].cellM)) mapFail(`${at}.cellM must be above the level before it (${v[i - 1].cellM})`);
         });
@@ -288,7 +296,7 @@ export function mapTs(data) {
       const v = data[section][k];
       if (kind0(fields[k]) === 'levels') {
         const spans = levelSpans(data);
-        ts.push(`    ${k}: [`, ...v.map((lv, i) => `      { cellM: ${lv.cellM}, spanM: ${spans[i]} },`), '    ],');
+        ts.push(`    ${k}: [`, ...v.map((lv, i) => `      { cellM: ${lv.cellM}, spanM: ${spans[i]}, reach: '${lv.reach}' },`), '    ],');
       } else if (Array.isArray(v)) {
         const key = fields[k][1];
         ts.push(`    ${k}: [`, ...v.map((s) => `      { ${key}: ${s[key]}, color: '${s.color}' },`), '    ],');

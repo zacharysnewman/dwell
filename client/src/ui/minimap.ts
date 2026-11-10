@@ -120,7 +120,13 @@ export interface BigView {
 }
 
 /** The zoom levels, closest first (shared/ui/map.json): each its cell side and span (m). */
-export const LEVELS: readonly { cellM: number; spanM: number }[] = MAP.bigMap.levels;
+export const LEVELS: readonly { cellM: number; spanM: number; reach: Reach }[] = MAP.bigMap.levels;
+
+/**
+ * Where the background builds a level's tiles (`bigMap.levels[].reach`; owner, 2026-11-10): round
+ * the player, the whole island, or the whole world disc.
+ */
+export type Reach = 'player' | 'island' | 'disc';
 
 /** `level` within the levels. */
 export function clampLevel(level: number): number {
@@ -356,8 +362,8 @@ export type TileAt = [number, number, number, number];
  * in the job workers from the seed, kept in the store per world and build, so each is built once.
  * Each frame `pump` takes finished tiles for at most `budgetMs`, asks for the open view's missing
  * tiles (nearest its centre first, at most `jobsInFlight` at once) and, once the kept tiles are
- * read and the view has what it needs, builds the background's (`backgroundJobs` at once): each
- * level's round the player, the widest level's the whole world disc. Opening or zooming the map never
+ * read and the view has what it needs, builds the background's: the 1 m level round the player,
+ * the coarse levels' whole island and whole disc (each level's `reach`). Opening or zooming the map never
  * waits for generation.
  */
 export class RevealCache {
@@ -372,9 +378,19 @@ export class RevealCache {
   /** Tiles still to ask for, the nearest last (the last view's). */
   private wanted: TileAt[] = [];
   private wantedFor = '';
-  /** The background's tiles still to ask for, the first last. */
-  private background: TileAt[] = [];
-  private backgroundAt = '';
+  /**
+   * The background's lanes, one a level in `backgroundOrder`: its tiles still to ask for (the
+   * nearest last) and what they were listed round. An island or disc level's count left is its
+   * reach's tiles less those built (`reachBuilt`), so it needs no scan.
+   */
+  private readonly lanes: { l: number; at: string; list: TileAt[] }[] =
+    RevealCache.backgroundOrder().map((l) => ({ l, at: '', list: [] }));
+  private readonly reachTotal = new Map<number, number>();
+  private readonly reachBuilt = new Map<string, number>();
+  /** The player levels' tiles listed round the player (for the count left). */
+  private playerKeys = new Set<string>();
+  /** The face the island and disc levels are being built on. */
+  private laneFace = 0;
   /** The minimap's tiles handed over and asked for (`feedMinimap`). */
   minimapGiven = 0;
   minimapAsked = 0;
@@ -410,6 +426,7 @@ export class RevealCache {
         const key = RevealCache.key(t.cellM, t.face, t.ti, t.tk);
         if (key !== rest || this.tiles.has(key) || !t.rgba) continue;
         this.tiles.set(key, t);
+        this.noteKept(t);
         read++;
       }
     } catch {
@@ -455,37 +472,87 @@ export class RevealCache {
     return out.sort((a, b) => d(a) - d(b));
   }
 
+  /** Whether tile (i, k) of level `l` is in its island or disc reach (a player level: the disc). */
+  inReach(l: number, i: number, k: number): boolean {
+    const { cellM, reach } = LEVELS[l] ?? { cellM: 1, reach: 'disc' };
+    if (reach !== 'island') return this.onWorld(cellM, i, k);
+    const span = this.span(cellM);
+    const r = World.islandRadius;
+    const nx = Math.max(i * span, Math.min(0, (i + 1) * span));
+    const nz = Math.max(k * span, Math.min(0, (k + 1) * span));
+    return nx * nx + nz * nz <= r * r;
+  }
+
   /**
-   * The background's tiles round a player (or the open view's centre) at (x, z) on `face`: each
-   * level's within `prebuildSpans` of its span (a square, so the widest level's is the whole
-   * world disc), those touching the disc only (no holes inside the world); level `start` first
-   * (the map's start level, or the open one), then outward, nearest first in each.
+   * Level `l`'s background tiles on `face`, the nearest (x, z) first: a player level's within
+   * `prebuildSpans` of its span round (x, z) (a square, on the world disc only: no holes in the
+   * world), an island or disc level's every tile touching it.
+   */
+  levelTiles(l: number, face: number, x: number, z: number): TileAt[] {
+    const { cellM, spanM, reach } = LEVELS[l] ?? { cellM: 1, spanM: 1, reach: 'player' };
+    const span = this.span(cellM);
+    const out: TileAt[] = [];
+    if (reach === 'player') {
+      const half = (spanM * MAP.revealed.prebuildSpans) / 2;
+      const [i0, i1] = [Math.floor((x - half) / span), Math.floor((x + half) / span)];
+      const [k0, k1] = [Math.floor((z - half) / span), Math.floor((z + half) / span)];
+      for (let k = k0; k <= k1; k++) {
+        for (let i = i0; i <= i1; i++)
+          if (this.onWorld(cellM, i, k)) out.push([cellM, face, i, k]);
+      }
+    } else {
+      const n = Math.ceil((reach === 'island' ? World.islandRadius : worldRadiusM()) / span);
+      for (let k = -n; k < n; k++) {
+        for (let i = -n; i < n; i++) if (this.inReach(l, i, k)) out.push([cellM, face, i, k]);
+      }
+    }
+    const d = ([, , i, k]: TileAt) => ((i + 0.5) * span - x) ** 2 + ((k + 0.5) * span - z) ** 2;
+    return out.sort((a, b) => d(a) - d(b));
+  }
+
+  /**
+   * The background's levels in the order built: the player levels first (the 1 m area round the
+   * player, always streamed), then the island and disc levels, the coarsest first (the whole
+   * world in a few tiles, then the island's detail).
+   */
+  static backgroundOrder(): number[] {
+    const rank = (l: number) => (LEVELS[l]?.reach === 'player' ? 0 : 1);
+    return LEVELS.map((_, l) => l).sort((a, b) => rank(a) - rank(b) || b - a);
+  }
+
+  /**
+   * Every background tile in the order built, for the player at (x, z) on `face`; the island and
+   * disc levels nearest `at` ([face, x, z], the open view's centre) first when given.
    */
   backgroundFor(
     face: number,
     x: number,
     z: number,
-    start: number = MAP.bigMap.startLevel,
+    at: readonly [number, number, number] | null = null,
   ): TileAt[] {
-    const order = LEVELS.map((_, l) => l).sort(
-      (a, b) => Math.abs(a - start) - Math.abs(b - start) || b - a,
+    return RevealCache.backgroundOrder().flatMap((l) =>
+      LEVELS[l]?.reach === 'player' || !at
+        ? this.levelTiles(l, face, x, z)
+        : this.levelTiles(l, at[0], at[1], at[2]),
     );
-    const out: TileAt[] = [];
-    for (const l of order) {
-      const { cellM, spanM } = LEVELS[l] ?? { cellM: 1, spanM: 1 };
-      const span = this.span(cellM);
-      const half = (spanM * MAP.revealed.prebuildSpans) / 2;
-      const [i0, i1] = [Math.floor((x - half) / span), Math.floor((x + half) / span)];
-      const [k0, k1] = [Math.floor((z - half) / span), Math.floor((z + half) / span)];
-      const level: TileAt[] = [];
-      for (let k = k0; k <= k1; k++) {
-        for (let i = i0; i <= i1; i++)
-          if (this.onWorld(cellM, i, k)) level.push([cellM, face, i, k]);
-      }
-      const d = ([, , i, k]: TileAt) => ((i + 0.5) * span - x) ** 2 + ((k + 0.5) * span - z) ** 2;
-      out.push(...level.sort((a, b) => d(a) - d(b)));
+  }
+
+  /** Counts a tile kept (built or read) towards its level's reach. */
+  private noteKept(t: RevealTile): void {
+    const l = LEVELS.findIndex((lv) => lv.cellM === t.cellM);
+    if (l < 0 || LEVELS[l]?.reach === 'player' || !this.inReach(l, t.ti, t.tk)) return;
+    const key = `${String(l)}|${String(t.face)}`;
+    this.reachBuilt.set(key, (this.reachBuilt.get(key) ?? 0) + 1);
+  }
+
+  /** How many tiles an island or disc level's reach holds (on either face). */
+  private reachCount(l: number): number {
+    let n = this.reachTotal.get(l);
+    if (n === undefined) {
+      n = this.levelTiles(l, 0, 0, 0).length;
+      this.reachTotal.set(l, n);
     }
-    return out;
+    return n;
   }
 
   /** Whether tile `t` is built (or read) or on its way. */
@@ -525,11 +592,12 @@ export class RevealCache {
   /**
    * One frame's fill: takes finished tiles (keeping each, handing it to `onTile`) while under
    * `budgetMs` by `now`; asks for the open view `v`'s missing tiles up to `jobsInFlight` pending;
-   * then, with the kept tiles read and the view whole, the background's: while the map is open
-   * (owner, 2026-11-10: "Preferably it should do that until it's done, while the map is open")
-   * every level's round the view's centre, the open level first, then round the player `pose`
-   * ([face, x, z]), up to `jobsInFlight` pending; while it is shut, round the player up to
-   * `backgroundJobs` pending. The tiles taken.
+   * then, with the kept tiles read and the view's all asked for, the background's, map open or
+   * shut (owner, 2026-11-10: "The two coarse ones load along with the area around you in 1m. The
+   * 1m is always streamed"): the player levels round the player `pose` ([face, x, z]), then the
+   * island and disc levels whole, the coarsest first, nearest the open view's centre (else the
+   * player) first; up to `jobsInFlight` pending while the map is open, `backgroundJobs` while it
+   * is shut. The tiles taken.
    */
   pump(
     client: RevealClient,
@@ -548,6 +616,7 @@ export class RevealCache {
       const t = parseRevealTile(bytes, this.tileCells);
       const key = RevealCache.key(t.cellM, t.face, t.ti, t.tk);
       this.pending.delete(key);
+      if (!this.tiles.has(key)) this.noteKept(t);
       this.tiles.set(key, t);
       if (t.rgba) {
         this.built++;
@@ -571,36 +640,35 @@ export class RevealCache {
       return taken;
     }
     const [face = 0, x = 0, z = 0] = pose ? Array.from(pose) : [];
-    // Again once the player (or the open view's centre) has moved a closest-level tile.
-    const step = this.span(levelCellM(0));
-    const here = pose ? [face, Math.floor(x / step), Math.floor(z / step)] : [];
-    const at = (
-      v
-        ? ['open', v.face, v.level, Math.floor(v.cx / step), Math.floor(v.cz / step), ...here]
-        : here
-    ).join(',');
-    if (at !== this.backgroundAt) {
-      this.backgroundAt = at;
-      const list = v
-        ? [
-            ...this.backgroundFor(v.face, v.cx, v.cz, v.level),
-            ...(pose ? this.backgroundFor(face, x, z, v.level) : []),
-          ]
-        : this.backgroundFor(face, x, z);
-      const seen = new Set<string>();
-      this.background = list
-        .filter(([c, f, i, k]) => {
-          const key = RevealCache.key(c, f, i, k);
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        })
-        .reverse();
+    // The island and disc levels nearest the open view's centre, else the player.
+    const [cf, cx, cz] = v ? [v.face, v.cx, v.cz] : [face, x, z];
+    this.laneFace = cf;
+    for (const lane of this.lanes) {
+      const { cellM, reach } = LEVELS[lane.l] ?? { cellM: 1, reach: 'player' };
+      const player = reach === 'player';
+      if (player && !pose) continue;
+      // Listed again once the player has moved one of the level's tiles, or the centre four.
+      const step = this.span(cellM) * (player ? 1 : 4);
+      const [f, px, pz] = player ? [face, x, z] : [cf, cx, cz];
+      const at = [f, Math.floor(px / step), Math.floor(pz / step)].join(',');
+      if (at === lane.at) continue;
+      lane.at = at;
+      lane.list = this.levelTiles(lane.l, f, px, pz).reverse();
+      if (player) {
+        this.playerKeys = new Set(lane.list.map(([c, tf, i, k]) => RevealCache.key(c, tf, i, k)));
+      }
     }
     const cap = v ? this.jobsInFlight : this.backgroundJobs;
-    while (this.pending.size < cap && this.background.length > 0) {
-      const t = this.background.pop();
-      if (t && !this.known(t)) this.ask(client, t);
+    // At most this many known tiles passed over a frame (a reopened world's kept ones).
+    let skips = 4096;
+    for (const lane of this.lanes) {
+      while (this.pending.size < cap && lane.list.length > 0 && skips > 0) {
+        const t = lane.list.pop();
+        if (!t) break;
+        if (this.known(t)) skips--;
+        else this.ask(client, t);
+      }
+      if (this.pending.size >= cap || skips <= 0) break;
     }
     return taken;
   }
@@ -612,7 +680,21 @@ export class RevealCache {
 
   /** The background's tiles still to build (after the last pump). */
   get backgroundLeft(): number {
-    return this.background.filter((t) => !this.known(t)).length;
+    if (this.noTerrain) return 0;
+    let left = 0;
+    for (const key of this.playerKeys) if (!this.tiles.has(key) && !this.pending.has(key)) left++;
+    for (const { l } of this.lanes) {
+      if (LEVELS[l]?.reach === 'player') continue;
+      const cellM = LEVELS[l]?.cellM ?? 1;
+      let pending = 0;
+      for (const key of this.pending) {
+        const [c, f, i, k] = key.split(/[|,]/).map(Number);
+        if (c === cellM && f === this.laneFace && this.inReach(l, i ?? 0, k ?? 0)) pending++;
+      }
+      const built = this.reachBuilt.get(`${String(l)}|${String(this.laneFace)}`) ?? 0;
+      left += Math.max(0, this.reachCount(l) - built - pending);
+    }
+    return left;
   }
 
   private cell(cellM: number, face: number, i: number, k: number) {

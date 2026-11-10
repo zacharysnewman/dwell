@@ -25,7 +25,7 @@ pub const MAP: MapTunables = MapTunables {
     height_tint_brightest: 1.15,
     explored_cell_m: 8.0,
     explored_pending_color: 0x4e4c44,
-    big_map_levels: &[(1.0, 128.0), (2.0, 677.0), (16.0, 3578.0), (64.0, 18915.0), (256.0, 100000.0)],
+    big_map_levels: &[(1.0, 128.0), (16.0, 3578.0), (256.0, 100000.0)],
     big_map_start_level: 1.0,
     big_map_wheel_step_px: 100.0,
     big_map_pinch_step: 1.6,
@@ -49,7 +49,7 @@ pub const MAP: MapTunables = MapTunables {
     revealed_prebuild_spans: 2.5,
     revealed_budget_ms: 2.0,
     revealed_redraw_ms: 150.0,
-    revealed_live_max_cell_m: 2.0,
+    revealed_live_max_cell_m: 1.0,
     revealed_live_tiles_per_frame: 2.0,
     revealed_live_refresh_ms: 2000.0,
 };
