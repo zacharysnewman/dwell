@@ -137,7 +137,8 @@ export function fromJson(
  * terrain.json's values, so it still loads.
  */
 export function withNewKeys(bm: BiomeMapJson | undefined): BiomeMapJson {
-  if (bm === undefined || typeof bm !== 'object' || bm === null) return bm as unknown as BiomeMapJson;
+  // Not an object: left for the validation to name.
+  if (typeof bm !== 'object') return bm as unknown as BiomeMapJson;
   return { ...(terrain.biomeMap as BiomeMapJson), ...bm };
 }
 

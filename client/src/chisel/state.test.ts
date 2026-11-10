@@ -62,11 +62,21 @@ describe('Chisel state', () => {
     const windy = { ...e, biomeMap: { ...e.biomeMap, windDirection: 90, rainShare: 0.8 } };
     expect(fromJson(toJson(windy))).toEqual({ edit: windy });
     // An edit saved before the rain shadow: the new keys come back at terrain.json's values.
-    const old: Record<string, number | string> = { ...e.biomeMap };
-    for (const k of ['windDirection', 'windReach', 'baseRain', 'upliftRain', 'leeDry', 'rainShare'])
-      delete old[k];
+    const rainKeys = [
+      'windDirection',
+      'windReach',
+      'baseRain',
+      'upliftRain',
+      'leeDry',
+      'rainShare',
+    ];
+    const old = Object.fromEntries(
+      Object.entries(e.biomeMap).filter(([k]) => !rainKeys.includes(k)),
+    );
     expect(fromJson(JSON.stringify({ biomes: e.biomes, biomeMap: old }))).toEqual({ edit: e });
-    const store = memory({ [STORE_KEY]: JSON.stringify({ edit: { biomes: e.biomes, biomeMap: old } }) });
+    const store = memory({
+      [STORE_KEY]: JSON.stringify({ edit: { biomes: e.biomes, biomeMap: old } }),
+    });
     expect(loadEdit(store)).toEqual(e);
   });
 
