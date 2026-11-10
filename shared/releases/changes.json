@@ -2,6 +2,12 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.52.11",
+      "changes": [
+        "Chisel shows the whole world beside its preview: the island and sea with the same overlay, redrawn as you edit. Click or drag on it to move the preview."
+      ]
+    },
+    {
       "version": "0.52.10",
       "changes": [
         "The minimap stays sharp and whole when you move fast: ground not loaded yet shows at 1 m from the world's map, never black or blocky.",

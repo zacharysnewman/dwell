@@ -93,7 +93,7 @@
   0.51.15)*
 - **B3** Chisel's page: a live preview, sliders, Export/Import JSON. *(built, 0.51.16: served by the
   client build as `client/chisel.html`, not a standalone `docs/prototypes/` file, since it runs the
-  generator's WASM; the validation shared as `shared/worldgen/biomes.mjs`.)*
+  generator's WASM; the validation shared as `shared/worldgen/biomes.mjs`. The world overview (0.52.11; owner, 2026-11-10: "a world map preview for this tool when we can blend between biomes"): beside the detail preview, the whole disc (island and sea, `WORLD_RADIUS`) from the same edit and overlay, 128² (~0.78 km texels) then 512² (~0.2 km), the frame from `chisel::overview_frame` (`ChiselPreview.overview_frame`); the worker runs the detail lane first, splits the overview's passes into 128² chunks, drops a lane's older generation when a newer edit arrives and caches the chunks by the edit state (`client/src/chisel/overview.ts`); the detail region drawn as a rectangle, a click or drag moving its centre. Face A only (Chisel has no face toggle; face B is its mirror).)*
 - **B4** water banks and hue, and the archipelago. *(built, 0.51.17: a biome's `banks` group
   (`riverSlope`, `lake`, `lakeSlope`, `beach`; `rivers.valleySlope` and `lakes.bank` moved from
   terrain.json into it, same values), blended by weight along the banks; an optional `waterLook`

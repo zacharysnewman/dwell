@@ -1495,3 +1495,12 @@ from the real generator in a worker, 64² texels then 256², redrawn ~60 ms afte
 with its description beneath) as a starting point. Export writes `{ biomes, biomeMap }`; Import takes that or one biome file; both are
 validated by the rules `gen.mjs` uses. Edits persist in the browser (`dwell.chisel`); Reset returns to
 the build's. `document.body.dataset.tiles` counts the tiles drawn, for a script waiting on the preview.
+
+**The world overview** (right of the preview): the whole 100 km disc, island and sea, from the same edit
+and overlay, 128² then 512² texels (~0.2 km), redrawn after the detail preview on every edit (the worker
+runs the detail first, the overview in 128² chunks that a newer edit cancels, cached by the edit state,
+so switching back to an overlay is instant). The white rectangle is the detail region; click or drag on
+the overview to move it there. Its status line gives each pass's time (M1, headless Chromium, the
+build biomes plus six presets: 128² in 25–34 ms, 512² in 120–290 ms);
+`document.body.dataset.overview` is `<pass>:<ms>` once a pass is whole, for a script waiting on it.
+Face A only, like the detail preview.
