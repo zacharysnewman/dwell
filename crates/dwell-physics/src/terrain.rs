@@ -798,7 +798,10 @@ mod rebuild_tests {
             assert!(ray_hits(&b, c, side, down), "its side is solid");
             world.set_voxel(x + 1, y, z, log);
             let b = build(&mut world, c);
-            assert!(ray_hits(&b, c, corner, down), "the corner at the join is squared");
+            assert!(
+                ray_hits(&b, c, corner, down),
+                "the corner at the join is squared"
+            );
             // A log of another axis beside it does not join: the corner stays cut.
             world.set_voxel(x + 1, y, z, dwell_blocks::require("dwell:log[axis=z]"));
             let b = build(&mut world, c);

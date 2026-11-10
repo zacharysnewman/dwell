@@ -2133,7 +2133,11 @@ dwell_world::both_faces!(
             .map(|(_, n)| n.map(|c| (c * 100.0).round() as i64))
             .collect();
         assert_eq!(normals.len(), 10, "8 sides and 2 caps: {normals:?}");
-        assert_eq!(tris.iter().filter(|(_, n)| diagonal(*n)).count(), 8, "4 chamfer quads");
+        assert_eq!(
+            tris.iter().filter(|(_, n)| diagonal(*n)).count(),
+            8,
+            "4 chamfer quads"
+        );
         // The chamfers cut the corners: nothing is drawn at a corner column of the cell.
         for (mid, _) in &tris {
             let (u, v) = (mid[0] - 8.0, mid[2] - 8.0);
@@ -2152,8 +2156,16 @@ dwell_world::both_faces!(
             joined.iter().all(|(m, _)| (m[0] - 9.0).abs() > 1e-6),
             "a face on the shared plane x = 9"
         );
-        assert_eq!(joined.iter().filter(|(_, n)| diagonal(*n)).count(), 8, "2 chamfers each");
+        assert_eq!(
+            joined.iter().filter(|(_, n)| diagonal(*n)).count(),
+            8,
+            "2 chamfers each"
+        );
         let crossed = log_triangles(f, &[(8, 8, 8, "y"), (9, 8, 8, "z")]);
-        assert_eq!(crossed.iter().filter(|(_, n)| diagonal(*n)).count(), 16, "4 chamfers each");
+        assert_eq!(
+            crossed.iter().filter(|(_, n)| diagonal(*n)).count(),
+            16,
+            "4 chamfers each"
+        );
     }
 );

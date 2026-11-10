@@ -51,10 +51,17 @@ fn a_lone_log_is_an_octagonal_prism_with_outward_faces() {
         // Outward: every face's normal points away from the cell's centre.
         for face in &f {
             let n = area(&face.pts);
-            let mid = face.pts.iter().fold([0.0; 3], |s, p| [s[0] + p[0], s[1] + p[1], s[2] + p[2]]);
+            let mid = face
+                .pts
+                .iter()
+                .fold([0.0; 3], |s, p| [s[0] + p[0], s[1] + p[1], s[2] + p[2]]);
             let k = face.pts.len() as f64;
             let out = [mid[0] / k - 0.5, mid[1] / k - 0.5, mid[2] / k - 0.5];
-            assert!(n[0] * out[0] + n[1] * out[1] + n[2] * out[2] > 0.0, "{axis} {:?}", face.part);
+            assert!(
+                n[0] * out[0] + n[1] * out[1] + n[2] * out[2] > 0.0,
+                "{axis} {:?}",
+                face.part
+            );
         }
     }
 }
@@ -77,7 +84,10 @@ fn two_same_axis_logs_share_a_full_width_side_and_draw_no_face_between() {
     assert_eq!(count(&f, |p| *p == Part::Side(0)), 0);
     assert_eq!(count(&f, |p| matches!(p, Part::Chamfer(..))), 2);
     // The +Z and −Z sides reach the +X edge of the cell: full width on that end.
-    for side in f.iter().filter(|x| matches!(x.part, Part::Side(4) | Part::Side(5))) {
+    for side in f
+        .iter()
+        .filter(|x| matches!(x.part, Part::Side(4) | Part::Side(5)))
+    {
         assert!(side.pts.iter().any(|p| p[0] == 1.0), "{:?}", side.pts);
     }
     // The neighbour is the mirror image: no face on its −X.

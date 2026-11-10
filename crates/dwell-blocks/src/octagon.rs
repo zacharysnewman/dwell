@@ -83,7 +83,12 @@ pub struct Face {
 /// The cross-section's outline: counter-clockwise points (u, v) round the axis (u = axis+1,
 /// v = axis+2, so u × v points along the axis), each with the cell face its edge to the next lies
 /// on (or `None`: a chamfer).
-pub fn outline(chamfer: f64, axis: usize, joined: u8, size_m: [f64; 3]) -> Vec<([f64; 2], Option<usize>)> {
+pub fn outline(
+    chamfer: f64,
+    axis: usize,
+    joined: u8,
+    size_m: [f64; 3],
+) -> Vec<([f64; 2], Option<usize>)> {
     let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
     let c_m = chamfer * size_m[u].min(size_m[v]);
     let (cu, cv) = (c_m / size_m[u], c_m / size_m[v]);

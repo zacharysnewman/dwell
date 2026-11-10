@@ -1060,9 +1060,30 @@ fn octagon_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, m: StateId, cell:
                 (lit(sides[0]) + lit(sides[1])) / 2.0
             })
             .collect();
-        let (a, s) = FACES[sides[0]];
-        let lit = cells.flood.cell(neighbour_of(x, y, z, a, s));
-        let flood = vec![lit; f.pts.len()];
+        // Each corner's flood light as a cube face's corner takes it (the front layer's cells
+        // round it, `Flood::corner`), brightest of the sides it looks out of (a chamfer: two).
+        let flood: Vec<[f32; 2]> = f
+            .pts
+            .iter()
+            .map(|p| {
+                let one = |face: usize| {
+                    let (a, s) = FACES[face];
+                    let front = neighbour_of(x, y, z, a, s);
+                    let (u, v) = ((a + 1) % 3, (a + 2) % 3);
+                    let toward = |c: f64| if c < 0.5 { -1 } else { 1 };
+                    let (sky, block) =
+                        cells
+                            .flood
+                            .corner(cells.occ, front, u, toward(p[u]), v, toward(p[v]));
+                    [
+                        f32::from(sky) / crate::flood::QUARTERS,
+                        f32::from(block) / crate::flood::QUARTERS,
+                    ]
+                };
+                let (l0, l1) = (one(sides[0]), one(sides[1]));
+                [l0[0].max(l1[0]), l0[1].max(l1[1])]
+            })
+            .collect();
         let first = b.m.uvs.len();
         b.polygon(
             &f.pts,

@@ -72,6 +72,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 52 — Water flow | ✖ Replaced by Phase 53 (ADR 0060): its basins, outlets and pool graph were removed from the game in 0.48.2, when the water surface grid's runtime (G2a) took their place; what was built is in its section below, and its outstanding items (G4–G6, W3–W5) are carried by Phase 53 |
 | 53 — Water surface grid | 🚧 In progress — G2a built (0.48.2): the runtime grid in `dwell-sim` replaces the basins; generated water held at rest as found, edits free it, a rest layer keeps drawn rivers exactly at rest under the law, sleeping chunks with a 5 mm sleep and 5 cm wake band and smooth waking, written as blocks, saved as `DWG1`; both faces tested; a dam across seed 0's river backs it up 0.5 m in the browser. G0's prototype done but for the owner's look at the eroded rivers. G1a built (0.49.0): no river lips (BUGS.md #29 fixed), the pool graph removed. G3a and G3b built: currents for swimmers and floating bodies, free water's by the law and untouched rivers' by the map, sent as optional `WaterCurrents` datagrams. G3d built: the flow shown (carried ripples, foam streaks, drifting flecks, each a setting). Outstanding: G1b (the water computed from the map where the world loads: no beds or stepped levels; replaces the design's whole-world fill, measured too slow), G1c (erosion), G2b (pools, the held sea, the water layer's own storage), G3c (the water's own client layer, deferred); G4a built (0.49.1: the grid's settings and liquids as data), G4's pools, sources and per-world values follow G2b and G1b. G5 built: the water off the tick thread (ADR 0062: its own native thread, a browser water worker; a flood no longer slows the water or the tick); its follow-up built: the LOD of the chunks the water rewrites held and from kept bases, and the browser server's generation and LOD in a server-jobs worker (a dam's ticks 58 → 13 ms at worst). Follow-up (0.49.19, BUGS.md #38): generated rivers carry the map's flow through both layers, so a dam on a level reach backs the river up (seed 0's dam site 139.50 → 140.07 m in 20 water minutes; saved worlds fixed on load) and level and shallow reaches have a current. Follow-up (0.49.20, BUGS.md #39): the slope over a river's step is a closed wedge, so a diagonal river's staircase steps show no triangle holes. Follow-up (0.49.23, BUGS.md #40): a column built up into a dam no longer keeps its rest-layer spring, so water stops standing on a raised dam. Follow-up (0.49.24, BUGS.md #42): a river reach held level runs on its course's mean fall, and currents are sent as far as the flow is drawn (4 chunks). Follow-up (0.49.25, BUGS.md #41): the reach below a dam leaves the rest layer down the rest's own flow (`restCut`/`restBack`), so it dries completely to the next inflow and sleeps (seed 0's dam site: 575 water columns left → none). G6 built (0.49.31): waterfalls (a sheet with foam and spray, a push down and out, a rushing sound, the Waterfalls setting). Follow-up (0.49.43, BUGS.md #47): a freed river column still in the rest shows the map's current (`riverCurrentBandM`), so the river no longer slows beside an edit. Follow-up (0.49.44, BUGS.md #41b, partly): a sleeping chunk passes its edges' flow on, so a fixture reservoir spilling over its dam sleeps; deep water's slosh (seed 0's reservoirs) still keeps them awake. Tuning (0.50.50, owner 2026-11-09): river currents doubled (`riverCurrentScale` 2, `riverCurrentMaxMs` 3 m/s) |
 | 54 — Skinned characters | 🚧 In progress — S1 built and tested natively and in Chrome on the GPU (ADR 0070, `CHARACTERS.md` §11): the import pipeline (Blender headless, FBX → GLB with the palette remap), `shared/models` (data, generator, validation, a fixture model), `dwell-models` (GLB reader, clips, blending, role → clip player), GPU skinning in the renderer, other players drawn as the Peasant on both faces, the seven animals in the data and the Model Viewer. Outstanding: CI; the owner's look and confirmation that the packs may ship in a web build; S2 (your arms, own body and shadow as the model; held items on the skinned hand), S3 (the animals in the world), the tools pack |
+| 55 — Octagonal logs | 🚧 In progress — T1 built (0.51.0, a new compatibility line; ADR 0072): `crossSection` as block data, the octagon squared where same-axis logs join, drawn and collided (terrain) on both faces. Outstanding: T1's bench check by the owner; T2 (the carved notch on the octagon, felling as wedges, felled pieces as octagons) |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -5485,3 +5486,37 @@ skinned model; held items on a joint socket; the rigid-part meshes removed.
 **Deviations:** the Peasant pack has only idle and walk: sprint, crouch-walk and slide play the walk
 at other speeds and the other roles idle. A remote player's held item isn't drawn on the skinned body
 this phase (its held light is).
+
+## Phase 55 — Octagonal Logs
+
+**Status:** 🚧 In progress — T1 built in 0.51.0 (a new compatibility line); T2 not started.
+
+Owner (2026-11-09): "trees should be octagons around. But smoothly connect when placed next to each
+other, full width sides where they meet." A real shape with collision (owner's choice).
+[ADR 0072](./adr/0072-octagonal-logs.md).
+
+**T1 — the shape, drawn and collided** [built, 0.51.0]
+
+- [x] `crossSection` block data (`kind: octagon`, `chamfer`, `joins`), validated by
+  `shared/blocks/gen.mjs`, emitted as `StateInfo::cross_section`, carried by the registry sync (rule
+  tag 13); `dwell:log` a regular octagon in the `dwell:wood` group; the fixture's `test:post` by data
+  alone (`a_cross_section_added_by_data_alone_joins_the_logs`).
+- [x] One geometry (`dwell_blocks::octagon`): the outline, the prism and its open faces, the join rule
+  (same group, same axis) read from the neighbours, no new states (`octagon_tests.rs`).
+- [x] Mesher: logs drawn whole as their prism, bark sides and chamfers, end-grain caps, squared and
+  unseamed where they join (`a_lone_log_meshes_as_an_octagonal_prism`,
+  `two_same_axis_logs_join_full_width_and_different_axes_do_not`, both faces).
+- [x] Terrain collision: logs in the chunk's triangle mesh as their prism
+  (`a_log_collides_as_its_octagon_squared_where_it_joins`, both faces: a ray past a lone log's cut
+  corner misses; at a join it hits; different axes don't join).
+- [ ] Bench screenshots of a trunk and a log wall checked by the owner.
+
+**T2 — cutting and felling on the octagon** [planned]
+
+- [ ] The carved notch on an octagonal log (`crates/dwell-mesh/src/carve.rs` carves the cube today).
+- [ ] Felling as wedges: the cut cell splits into a wood ramp stump and an upside-down wood ramp under
+  the trunk, which falls straight down and tips toward the notch from the slant (owner, 2026-11-09).
+- [ ] Felled pieces' body colliders as octagons (`Physics::add_piece` boxes them today).
+
+**Deviations:** targeting, the selection box and the LOD treat a log as its cube (T1 changes the
+drawn and collided shape only).

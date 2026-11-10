@@ -2,6 +2,14 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions card. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.51.0",
+      "changes": [
+        "A new compatibility line: worlds from 0.50 open after a warning.",
+        "Tree trunks and logs are octagons now, round to the eye and to your feet: you slide off a lone log's corner.",
+        "Logs placed side by side join flat, full width where they meet, so log walls and piles stay smooth."
+      ]
+    },
+    {
       "version": "0.50.78",
       "changes": [
         "Behind the scenes: measured the new water surface on a river and a flood; it stays switched off for now (the water looks as before)."
