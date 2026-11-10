@@ -641,7 +641,7 @@ export class ExploredLevels {
       if (cellM <= e) continue;
       const r = cellM / e;
       let m = this.coarse.get(cellM);
-      if (!m) this.coarse.set(cellM, (m = new Map()));
+      if (!m) this.coarse.set(cellM, (m = new Map<string, string>()));
       m.set(cellKey(face, Math.floor(i / r), Math.floor(k / r)), key);
     }
   }

@@ -22,7 +22,7 @@ world; the minimap is per build, its looks the same for every world.
 1. **Data.** `shared/ui/map.json`: the minimap's radius (64 m), texel (1 m), size (168 px), redraw
    thresholds (a texel's move, 2° of turn), the full re-read interval (2 s, for edits), the scan
    window above and below the eye, the dots' colours and size; the height shading's default (on); the
-   height bands' colour stops (0.50.52, below); the explored cell (8 m); the big map's zoom range and step and fog colour.
+   height bands' colour stops (0.50.52, below); the explored cell (8 m); the big map's zoom levels and fog colour.
    `shared/ui/gen.mjs` (with the HUD's parts) validates it (ranges, colours, unknown and missing
    fields, a message naming the entry) and emits `crates/dwell-game/src/map.gen.rs` and
    `client/src/ui/map.gen.ts`; CI regenerates and fails on a diff; `gen.test.mjs` changes a look by
@@ -132,6 +132,46 @@ The stops were picked for the generator's range (sampled at seeds 0 and 7, face 
 spawn is mostly 280–330 m above sea level (seed 7's hills to ~850 m), the whole disc 0–2600 m, the
 sea at most ~22 m deep; so the stops are dense between 200 and 400 m (a change every 40–60 m), then
 wider to the peaks.
+
+### Five zoom levels, tiles built once, block colours tinted by height (0.50.61; owner, 2026-11-09)
+
+"The big map should have at most 5 zoom levels. The most zoomed out should be the entire
+world/island." "The closest zoom should be the mini map size." "If the map loads I'd love if it only
+did it once. And preferably invisibly to you." And, after the bands hid the sand: block colours,
+lightly tinted by height. So:
+
+- **Levels as data** (`bigMap.levels`, 2–5 `{cellM}`, closest first; `startLevel`): each level shows a
+  fixed span across the map's short side, computed by `shared/ui/gen.mjs` — the closest the
+  minimap's diameter (128 m), the widest the island's (`islandRadius` × 2, 50 km), the rest spaced
+  geometrically (569 m, 2.5 km, 11 km) — and has its **own cell size** (1, 2, 8, 32, 128 m: 1 m a cell
+  up close; a whole power of two, rising). + / −, the keys, the wheel (`wheelStepPx` of scroll a
+  level), a pinch (`pinchStep` of spread a level) and a controller zoom-button press step one level,
+  clamped at the ends (no free zoom; `padZoomPerS` and the px-per-cell range are gone). The widest
+  level is centred on the island.
+- **Tiles per level, built once.** A tile is `revealed.tileCells`² cells of one level, the same
+  `Job::LodMap` raster as before at the level's cell size (`requestReveal(face, ti, tk, cellM)`; the
+  tile's bytes now carry its cell size). `RevealCache` keeps them per world **and build** in this
+  browser (IndexedDB `dwell-map-tiles`, a new database, key `<world>|<version>|<tileCells>|<cellM>|<face>,<ti>,<tk>`,
+  each tile written once: append-only; another build builds its own once, since the generator and
+  the looks are the build's). Once the kept tiles are read, the **background** builds each level's
+  tiles within `prebuildSpans` (2.5) of its span round the player (the widest level's the whole
+  island), clipped to the island, the start level first, `backgroundJobs` (1) at a time in the job
+  workers, while the map is shut or its view is whole; the open view's missing tiles still come
+  first (`jobsInFlight`). A world the client does not generate (a native server) stops the
+  background at its first empty tile. Measured (Chrome, a Mac): a fresh seed 0 world builds its
+  ~1600 tiles in ~65 s of background; a reload builds nothing (`__dwell.mapTiles()`).
+- **Fog per level** (`ExploredLevels`): adventure fogs a level's cell unless an explored 8 m cell
+  covers it (a finer level) or lies in it (a coarser one). Explored ground shows the generator's
+  detail at levels finer than the explored cells and the explored cell's own colour (the loaded
+  terrain's, with edits) at 8 m and coarser; an explored cell's change makes its tiles at every
+  level stale (redrawn, not regenerated). Edits finer than 8 m do not show at the 1 and 2 m levels
+  (the generator's ground stands there).
+- **The look** (`heightTint`, replacing `heightBands`): each cell its block colour scaled in
+  brightness by its height above sea level, `darkest` (0.8) at `lowM` (0) to `brightest` (1.15) at
+  `highM` (400 m), linear between, so sand stays sand and grass grass; water keeps its colour (already
+  darkened by depth). `dwell_game::minimap::tint_rgb`; the minimap's height-shading toggle shows the
+  same tinted look (off: plain block colours). Minecraft's per-pixel stair-step shading is left for
+  later (docs/FUTURE.md).
 
 ## Consequences
 

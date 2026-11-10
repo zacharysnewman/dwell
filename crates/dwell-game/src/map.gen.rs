@@ -46,7 +46,7 @@ pub const MAP: MapTunables = MapTunables {
     revealed_tile_cells: 32.0,
     revealed_jobs_in_flight: 2.0,
     revealed_background_jobs: 1.0,
-    revealed_prebuild_spans: 2.0,
+    revealed_prebuild_spans: 2.5,
     revealed_budget_ms: 2.0,
     revealed_redraw_ms: 150.0,
 };

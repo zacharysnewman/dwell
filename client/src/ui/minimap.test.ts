@@ -388,7 +388,12 @@ describe("the big map's tiles", () => {
     // tiles are read.
     const client = fakeClient(32);
     const held: Uint8Array[] = [];
-    const slow = { requestReveal: client.requestReveal, takeReveal: () => held.shift() };
+    const slow = {
+      requestReveal: (face: number, ti: number, tk: number, cellM: number) => {
+        client.requestReveal(face, ti, tk, cellM);
+      },
+      takeReveal: () => held.shift(),
+    };
     cache.pump(slow, null, 0, 0, () => 0, undefined, [0, 300, -200]);
     expect(cache.inFlight).toBe(1);
     cache.pump(slow, null, 0, 0, () => 0, undefined, [0, 300, -200]);

@@ -63,7 +63,7 @@ export const MAP = {
     tileCells: 32,
     jobsInFlight: 2,
     backgroundJobs: 1,
-    prebuildSpans: 2,
+    prebuildSpans: 2.5,
     budgetMs: 2,
     redrawMs: 150,
   },
