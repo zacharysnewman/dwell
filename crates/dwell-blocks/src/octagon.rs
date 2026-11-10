@@ -28,7 +28,7 @@ pub fn face_index(axis: usize, positive: bool) -> usize {
 /// The unit offset of face `face`.
 pub fn face_offset(face: usize) -> [i32; 3] {
     let mut d = [0; 3];
-    d[face / 2] = if face % 2 == 0 { 1 } else { -1 };
+    d[face / 2] = if face.is_multiple_of(2) { 1 } else { -1 };
     d
 }
 
@@ -80,6 +80,10 @@ pub struct Face {
     pub pts: Vec<[f64; 3]>,
 }
 
+/// A corner of the outline: its point, the side arriving at it, the side leaving it, and the
+/// chamfer's two points that replace it when cut.
+type Corner = ([f64; 2], usize, usize, [[f64; 2]; 2]);
+
 /// The cross-section's outline: counter-clockwise points (u, v) round the axis (u = axis+1,
 /// v = axis+2, so u × v points along the axis), each with the cell face its edge to the next lies
 /// on (or `None`: a chamfer).
@@ -101,7 +105,7 @@ pub fn outline(
     );
     // Corners CCW: (0,0) between −u and −v, (1,0) −v and +u, (1,1) +u and +v, (0,1) +v and −u.
     // Each: (corner, the side arriving at it, the side leaving it, the chamfer's two points).
-    let corners: [([f64; 2], usize, usize, [[f64; 2]; 2]); 4] = [
+    let corners: [Corner; 4] = [
         ([0.0, 0.0], nu, nv, [[0.0, cv], [cu, 0.0]]),
         ([1.0, 0.0], nv, pu, [[1.0 - cu, 0.0], [1.0, cv]]),
         ([1.0, 1.0], pu, pv, [[1.0, 1.0 - cv], [1.0 - cu, 1.0]]),
