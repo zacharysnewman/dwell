@@ -656,7 +656,9 @@ function showHud(app: App, now: number): void {
   app.hud.setStatus(h.status ?? '');
   app.hotbar?.setRegion(h.chop || h.region || '');
   app.hud.setSwing(h.swing ?? null);
-  app.hud.setPickUp(h.pickUp ?? null);
+  const touchShown = app.touch?.shown ?? false;
+  app.hud.setPickUp(h.pickUp ?? null, touchShown);
+  app.touch?.setPickUp(touchShown ? (h.pickUp ?? null) : null);
   app.hotbar?.setBrush(h.brush ?? null);
   app.hotbar?.setInventory(h.inventory ?? null, itemPicture);
   app.backpack?.set(h.inventory ?? null);

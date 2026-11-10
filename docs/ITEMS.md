@@ -232,3 +232,6 @@ chunk mesh and have no collision. **E** (or **X**, the spyglass button, on a con
 crosshair on one picks it up into the same item a drop gives (`dwell:stick`, `dwell:rock`: they
 stack); elsewhere E opens the backpack as before. The server keeps the picked ones gone (the world's
 `ground_gone` table); breaking the block under one knocks it loose as a loose item.
+
+On touch (0.50.70) a **Pick up** button appears under the crosshair while it is on a ground item; a tap
+picks it up. The keyboard's "E  Pick up …" prompt is hidden there.
