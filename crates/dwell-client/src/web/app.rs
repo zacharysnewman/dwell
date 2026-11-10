@@ -1270,6 +1270,12 @@ impl Client {
         s.touch_used = true;
         s.touch.stick_down(id, x, y);
     }
+    /// No finger is on the screen (or the page lost focus): fingers whose lift never arrived are
+    /// released (BUGS #57, `TouchControls::all_lifted`).
+    #[wasm_bindgen(js_name = touchesLifted)]
+    pub fn touches_lifted(&self) {
+        self.inner.borrow_mut().touch.all_lifted();
+    }
     #[wasm_bindgen(js_name = stickMove)]
     pub fn stick_move(&self, id: i32, x: f64, y: f64) {
         self.inner.borrow_mut().touch.stick_move(id, x, y);
