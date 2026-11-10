@@ -1554,6 +1554,13 @@ sum of each biome's; its rock band, shore and band edges are the chosen biome's;
 picks a **palette** (`Column::palette`, the biome's band's resolved blocks) the fill reads. A world with
 one biome builds no map: its weight is 1 everywhere and its columns are exactly that biome's (the
 goldens byte-identical).
+**Geology [built, Phase 57 T2, 0.52.9; ADR 0075]** (`shared/worldgen/rocks.json` → `rocks.gen.rs`,
+`dwell-worldgen` `geology.rs`): rock types (hardness, jointing, bed, solubility, face/cap/scree blocks, a
+colour), strata stacks, rock provinces (a noise picks a stack by weight; a biome's `rockStack` wins where
+it is) and a rule-based shaping: each stack a monotone profile of height (hard beds walls and treads,
+soft beds talus), the column's ground moved `shaping.strength` of the way to it before the rivers and
+lakes cut it, its walls, talus and treads showing the rock's blocks (rock palettes after the biomes'). The
+strength is 0 in the default world, so it changes nothing (goldens byte-identical) until tuned in Chisel.
 **Chisel [built, B3]** (`client/chisel.html`, a second page of the client build; `client/src/chisel/`):
 the biome editor. Its state is the biomes' JSON (the default first) and `terrain.json`'s `biomeMap`,
 checked by `shared/worldgen/biomes.mjs` (the same rules `gen.mjs` applies; the sliders are made from its
@@ -1561,7 +1568,8 @@ ranges) and kept in the browser (`dwell.chisel`, append-only). A worker loads th
 (`ChiselPreview`, `dwell-client` `chisel.rs`): the face A height field built once per seed, the edit
 parsed and put on it (`TerrainGenerator::with_biomes_on`, `BiomeField::with_params`), tiles rasterised
 by the big map's rules (`lod_map::raster_with_heights`, `tint_rgb`) or as overlays (biome weights,
-temperature, wetness, rainfall), 64² then 256² per change. The texture tab (B6) and Chisel in the game (B7)
+temperature, wetness, rainfall, rock), 64² then 256² per change; the edit may carry the geology
+(`rocks.json`'s shape: the Rock group's sliders). The texture tab (B6) and Chisel in the game (B7)
 follow.
 
 1. **Layout (2D).** The coast distance of the interim island (above).

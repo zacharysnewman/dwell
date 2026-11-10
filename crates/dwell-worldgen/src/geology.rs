@@ -212,7 +212,11 @@ const PROVINCE_FADE: f64 = 0.03;
 
 impl Resolved {
     pub fn new(geology: Geology, world_seed: u64) -> Self {
-        let profiles = geology.stacks.iter().map(|s| Profile::of(&geology, s)).collect();
+        let profiles = geology
+            .stacks
+            .iter()
+            .map(|s| Profile::of(&geology, s))
+            .collect();
         let total: f64 = geology.stacks.iter().map(|s| s.weight).sum();
         let mut c = 0.0;
         let cumulative = geology

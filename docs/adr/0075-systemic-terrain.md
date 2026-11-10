@@ -64,6 +64,32 @@ low and coastal, the marsh wet and low, …), its bands, relief, banks and water
 and climate-driven soil (T3) will let the canyon and badlands presets read as their own rock; today
 stone stands in.
 
+## T2, rock types and shaping (built, 0.52.9)
+
+`shared/worldgen/rocks.json` (checked by `biomes.mjs` `validateRocks`, emitted as `rocks.gen.rs`):
+**rock types** (hardness 0..1; jointing `bedded` | `vertical` | `massive`; bed thickness; solubility,
+unused yet; the `face`, `cap` and `scree` blocks; a colour), **stacks** (layers top to bottom, each a rock
+and a thickness, repeating with height from sea level; a weight), **provinces** (a noise of `wavelength`
+m picks a stack by weight, fading the shaping out at a border) and the **shaping** (`strength`, 0 in the
+default world; `tread`, `sheer`). A biome's optional `rockStack` takes the province's place (the red-rock
+mesa preset `dwell:red_beds`, sandstone over shale; badlands `dwell:badland_beds`, thin sandstone over
+thick shale).
+
+The shaping is rule-based (the owner's §6 q3): each stack is a monotone piecewise-linear profile over its
+period: a hard bed rises over (1 − hardness)^sheer of its thickness of input height (a near-vertical wall)
+and then holds over hardness² × tread of it (a flat tread: caprock); a soft bed rises over more (talus);
+vertical jointing makes one wall the unit's height (×¼ the input); massive rock rises unstepped. The
+column's ground moves `strength` of the way to the profile's height, so the change is bounded by a period,
+blended by the biomes' weights and faded at the sea, rivers and lakes. Where the shaping is at least half
+strength, a wall shows its rock's face block, talus its scree, a tread its cap (per-rock palettes after the
+biomes'). Face-local (it maps the height over the sea), so both faces. Chisel adds a Rock group of sliders
+and a rock overlay.
+
+First look (Chisel, the mesa preset at 0.9): the ground reads as contour terraces — stone caps and walls,
+sand talus — of stepped hills, not Monument Valley's isolated buttes on a flat floor: a height-only rule
+steps every contour. Isolated buttes need the erosion's plan view (T4), which keeps the simulated pass to
+compare; massive rock is unstepped, not yet domed.
+
 ## Consequences
 
 - The biome map's wetness can be climate-driven; a desert can now follow a rain shadow rather than a

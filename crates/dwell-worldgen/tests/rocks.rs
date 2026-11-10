@@ -89,8 +89,7 @@ fn heights(g: &TerrainGenerator) -> Vec<(i32, i32, f32, dwell_blocks::StateId)> 
     for x in (-3000..3000).step_by(2) {
         let z = 1500;
         let c = g.column_at(x, z);
-        if c.water == dwell_worldgen::terrain::Water::None && c.height > 70.0 + SEA_LEVEL_M as f32
-        {
+        if c.water == dwell_worldgen::terrain::Water::None && c.height > 70.0 + SEA_LEVEL_M as f32 {
             out.push((x, z, c.height, g.top_state(&c)));
         }
     }
@@ -188,7 +187,10 @@ dwell_world::both_faces!(
             caps > 0.2 && caps > 5.0 * mid,
             "the caps' levels gather the ground: {caps:.3} on the caps, {mid:.3} mid-slope"
         );
-        assert!(mid < plain_mid, "the slopes between are steepened: {mid:.3} vs {plain_mid:.3}");
+        assert!(
+            mid < plain_mid,
+            "the slopes between are steepened: {mid:.3} vs {plain_mid:.3}"
+        );
         // Walls: a step of ≥ 4 m between columns 2 m apart, its top the cap's face block.
         let hs = heights(&g);
         let stone = dwell_blocks::require("dwell:stone");
@@ -197,7 +199,10 @@ dwell_world::both_faces!(
             .windows(2)
             .filter(|w| (w[0].2 - w[1].2).abs() >= 4.0 && w[0].0 + 2 == w[1].0)
             .count();
-        assert!(walls >= 3, "near-vertical walls at the caps' edges: {walls}");
+        assert!(
+            walls >= 3,
+            "near-vertical walls at the caps' edges: {walls}"
+        );
         assert!(
             hs.iter().any(|c| c.3 == sand),
             "the soft rock's talus shows its scree"

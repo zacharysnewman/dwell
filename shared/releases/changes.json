@@ -2,6 +2,12 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.52.9",
+      "changes": [
+        "Chisel, the terrain tool, has rock types: hard rock over soft steps into cliffs, flat caps and scree slopes, with a rock map and strength sliders. The mesa and badlands presets use their own rock. The game's world is unchanged."
+      ]
+    },
+    {
       "version": "0.52.8",
       "changes": [
         "Chisel, the terrain tool, has 14 preset biomes to start from (meadow, boreal forest, tundra, desert, mesa, beach, marsh and more), each placed by climate and height.",

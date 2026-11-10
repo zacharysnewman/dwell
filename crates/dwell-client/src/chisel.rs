@@ -10,11 +10,11 @@
 
 use dwell_game::minimap::{MAP, decode_height, tint_rgb};
 use dwell_look::lod_map::LOD_MAP;
+use dwell_worldgen::geology::{GEOLOGY, Geology, Jointing, Layer, Rock, Stack};
 use dwell_worldgen::terrain::{
     BIOME_MAP, BIOMES, Biome, BiomeMap, ElevationBand, HEIGHT, HeightField, TerrainGenerator,
     WaterLook, Where, WhereRange, water_tint_of,
 };
-use dwell_worldgen::geology::{GEOLOGY, Geology, Jointing, Layer, Rock, Stack};
 use serde_json::Value;
 
 use crate::lod_map::{Rect, raster_with_heights};
