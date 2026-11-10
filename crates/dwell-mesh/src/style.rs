@@ -54,6 +54,9 @@ pub(crate) struct MaterialStyle {
     /// The axis its ends lie along (0 x, 1 y, 2 z; block data `axisProperty`): its top and bottom
     /// tiles face along it.
     pub axis: usize,
+    /// An octagonal prism along `axis` (block data `crossSection`, ADR 0072), drawn whole by
+    /// `dwell_blocks::octagon` with its sides squared where it joins its neighbours.
+    pub octagon: bool,
 }
 
 /// The per-vertex fluid id of see-through faces that are not a fluid's ([`crate::NO_FLUID`]), or
@@ -124,6 +127,7 @@ pub(crate) fn style_of(s: &StateInfo, fluids: &[FluidInfo]) -> MaterialStyle {
             dwell_blocks::Axis::Y => 1,
             dwell_blocks::Axis::Z => 2,
         },
+        octagon: s.cross_section.is_some(),
     }
 }
 
@@ -176,6 +180,7 @@ fn fallback_style(shape: usize, flooded: bool) -> MaterialStyle {
         surface_drop: 0.0,
         fluid: None,
         axis: 1,
+        octagon: false,
     }
 }
 

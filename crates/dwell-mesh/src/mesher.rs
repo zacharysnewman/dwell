@@ -282,8 +282,14 @@ pub fn face_covered(shape: &ShapeInfo, face: usize, neighbour: Option<&ShapeInfo
 }
 
 /// The geometry a neighbour covers faces with: none if it is see-through (cutout, translucent).
+/// An octagonal log (ADR 0072) covers nothing: its chamfers leave its cell's corners open, and
+/// where it joins a neighbour it draws (and hides) the shared side itself.
 fn cover(k: &Kind) -> Option<&'static ShapeInfo> {
-    if k.occludes { k.def } else { None }
+    if k.occludes && !k.style.octagon {
+        k.def
+    } else {
+        None
+    }
 }
 
 /// The light keys of the corners of the face cell (i, j) (u, v) on plane `plane` of the face
@@ -993,6 +999,74 @@ fn carved_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, cell: [i32; 3], cu
         b.polygon(
             &f.pts,
             at,
+            normal,
+            tint,
+            color,
+            &tile,
+            None,
+            Some((&light, &flood)),
+        );
+        if tile.turn {
+            for uv in b.m.uvs[first..].chunks_exact_mut(2) {
+                uv.swap(0, 1);
+            }
+        }
+    }
+}
+
+/// An octagonal log (ADR 0072, `dwell_blocks::octagon`): its prism's faces that nothing covers,
+/// squared off where it joins a neighbour. Bark on the sides and chamfers, end grain on the caps;
+/// each face lit by the sky its side sees (a chamfer: the mean of its two sides').
+fn octagon_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, m: StateId, cell: [i32; 3]) {
+    use dwell_blocks::octagon::{Part as Oct, open_faces};
+    let [x, y, z] = cell;
+    let at = |o: [i32; 3]| cells.state(x + o[0], y + o[1], z + o[2]);
+    let covers = |n: StateId| {
+        let kn = cells.kinds.of(n);
+        kn.occludes && kn.shape == Shape::Full
+    };
+    let pos = [f64::from(x), f64::from(y), f64::from(z)];
+    for f in open_faces(m, &at, &covers, [1.0, CELL_H, 1.0]) {
+        let sides: [usize; 2] = match f.part {
+            Oct::Cap(end) => {
+                let face = face_of(k.style.axis, if end { 1 } else { -1 });
+                [face, face]
+            }
+            Oct::Side(face) => [face, face],
+            Oct::Chamfer(a, c) => [a, c],
+        };
+        let (axis, sign) = FACES[sides[0]];
+        let (color, tile) = surface(&k.style, axis, sign);
+        let normal = carve::normal(&f.pts);
+        let tint = match f.part {
+            Oct::Chamfer(..) => {
+                let n = normal_to_m(normal);
+                normal_tint(n[0], n[1], n[2])
+            }
+            _ => face_tint(axis, sign),
+        };
+        let light: Vec<f32> = f
+            .pts
+            .iter()
+            .map(|p| {
+                let lit = |face: usize| {
+                    let (a, s) = FACES[face];
+                    let mut q = *p;
+                    q[a] = if s > 0 { 1.0 } else { 0.0 };
+                    let mut n = [0.0; 3];
+                    n[a] = f64::from(s);
+                    vertex_light(AO_OPEN, cells.sky_rays(cell, q, n, 20 + face as i64))
+                };
+                (lit(sides[0]) + lit(sides[1])) / 2.0
+            })
+            .collect();
+        let (a, s) = FACES[sides[0]];
+        let lit = cells.flood.cell(neighbour_of(x, y, z, a, s));
+        let flood = vec![lit; f.pts.len()];
+        let first = b.m.uvs.len();
+        b.polygon(
+            &f.pts,
+            pos,
             normal,
             tint,
             color,
@@ -1742,6 +1816,7 @@ fn mesh_cells(
                     }
                     if k.shape == Shape::Shaped
                         || k.style.look == Look::Cross
+                        || k.style.octagon
                         || (!carved.is_empty() && carved.contains_key(&cell))
                     {
                         continue; // drawn whole, below
@@ -1920,6 +1995,8 @@ fn mesh_cells(
                     .flatten()
                 {
                     carved_voxel(&mut opaque, &cells, &k, [cx, cy, cz], cut);
+                } else if k.style.octagon {
+                    octagon_voxel(&mut opaque, &cells, &k, m, [cx, cy, cz]);
                 }
                 if k.liquid {
                     fall_into(&mut transparent, &cells, &k, cx, cy, cz);
