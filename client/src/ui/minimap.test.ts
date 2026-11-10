@@ -15,6 +15,7 @@ import {
   zoomAt,
   parseRevealTile,
   RevealCache,
+  isLive,
   ExploredLevels,
   LEVELS,
   Steps,
@@ -852,5 +853,85 @@ describe('the big map tinted by height', () => {
     expect(cache.height(8, 0, 5, 5)).toBe(NO_HEIGHT);
     // Another level's cell is another tile.
     expect(cache.height(2, 0, 1, 0)).toBe(NO_HEIGHT);
+  });
+});
+
+describe("the closest levels' real blocks (owner, 2026-11-09: closest zooms use 1 m)", () => {
+  /** A client whose loaded terrain covers tiles with ti ≥ 0 only, the left half of each. */
+  const liveClient = (n: number) => {
+    const reads: string[] = [];
+    let mark = 0;
+    return {
+      reads,
+      place() {
+        mark++;
+      },
+      liveTile(face: number, ti: number, tk: number, cellM: number) {
+        reads.push(RevealCache.key(cellM, face, ti, tk));
+        if (ti < 0) return undefined;
+        const b = tileBytes(n, face, ti, tk, cellM);
+        for (let k = 0; k < n; k++) {
+          for (let i = 0; i < n; i++) {
+            const o = 13 + (k * n + i) * 4;
+            if (i >= n / 2) b[o + 3] = 0;
+            else b[o + 2] = 200 + mark;
+          }
+        }
+        return b;
+      },
+    };
+  };
+
+  it('the two closest levels are read from the terrain, the others never', () => {
+    expect(isLive(LEVELS[0]?.cellM ?? 0)).toBe(true);
+    expect(isLive(LEVELS[1]?.cellM ?? 0)).toBe(true);
+    for (const { cellM } of LEVELS.slice(2)) expect(isLive(cellM)).toBe(false);
+  });
+
+  it("a loaded cell shows the terrain's block, an unloaded one the generator's, within the budget", () => {
+    const n = 8;
+    const cache = new RevealCache(n, 2, 1000, 0);
+    const gen = fakeClient(n);
+    const live = liveClient(n);
+    for (const face of [0, 1]) {
+      const v: BigView = { face, cx: 0, cz: 0, level: 0, pxPerM: 8 };
+      cache.pump(gen, v, 800, 600, () => 0);
+      for (let f = 0; f < 10; f++) cache.pump(gen, v, 800, 600, () => 0);
+      live.reads.length = 0;
+      const changed = cache.pumpLive(live, v, 800, 600, 0, 2, 1000);
+      // At most the budget's tiles a frame.
+      expect(live.reads.length).toBe(2);
+      expect(changed.length).toBeLessThanOrEqual(2);
+      // Every view tile is read within a few frames (nearest first), not again until refreshMs.
+      for (let f = 1; f < 100; f++) cache.pumpLive(live, v, 800, 600, f, 2, 1000);
+      const all = cache.tilesFor(v, 800, 600).length;
+      expect(new Set(live.reads).size).toBe(all);
+      expect(live.reads.length).toBe(all);
+      // Tile (0, 0)'s left half is the terrain's, its right half the generator's.
+      expect((cache.colour(1, face, 1, 1) ?? 0) & 0xff).toBe(200);
+      expect((cache.colour(1, face, n - 1, 1) ?? 0) & 0xff).toBe(face);
+      // A tile with nothing loaded keeps the generator's.
+      expect((cache.colour(1, face, -1, 1) ?? 0) & 0xff).toBe(face);
+    }
+  });
+
+  it('an edit shows once the tile is read again, and a coarse level is never read', () => {
+    const n = 8;
+    const cache = new RevealCache(n, 2, 1000, 0);
+    const live = liveClient(n);
+    const v: BigView = { face: 0, cx: n / 2, cz: n / 2, level: 0, pxPerM: 200 };
+    expect(cache.pumpLive(live, v, 10, 10, 0, 1, 1000).length).toBe(1);
+    expect((cache.colour(1, 0, 1, 1) ?? 0) & 0xff).toBe(200);
+    live.place();
+    // Not yet: the refresh is a second.
+    expect(cache.pumpLive(live, v, 10, 10, 500, 1, 1000)).toEqual([]);
+    expect(cache.pumpLive(live, v, 10, 10, 1000, 1, 1000)).toEqual([[1, 0, 0, 0]]);
+    expect((cache.colour(1, 0, 1, 1) ?? 0) & 0xff).toBe(201);
+    // Read again unchanged: nothing to redraw.
+    expect(cache.pumpLive(live, v, 10, 10, 2000, 1, 1000)).toEqual([]);
+    live.reads.length = 0;
+    const far: BigView = { ...v, level: 2 };
+    expect(cache.pumpLive(live, far, 800, 600, 5000, 2, 1000)).toEqual([]);
+    expect(live.reads).toEqual([]);
   });
 });
