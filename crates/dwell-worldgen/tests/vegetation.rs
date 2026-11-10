@@ -89,16 +89,28 @@ dwell_world::both_faces!(
         assert!(kept.len() < free.len(), "{} of {}", kept.len(), free.len());
         for a in &kept {
             let c = g.climate_at(a[0].into(), a[2].into()).unwrap();
-            assert!(c.temperature_c >= line, "a tree at {:.1} °C", c.temperature_c);
+            assert!(
+                c.temperature_c >= line,
+                "a tree at {:.1} °C",
+                c.temperature_c
+            );
         }
         // Above the line: every column that free placement grew a tree in, but colder, has none.
         let cold = free
             .iter()
-            .filter(|a| g.climate_at(a[0].into(), a[2].into()).unwrap().temperature_c < line)
+            .filter(|a| {
+                g.climate_at(a[0].into(), a[2].into())
+                    .unwrap()
+                    .temperature_c
+                    < line
+            })
             .count();
         assert!(cold > 5, "{cold} trees above the line without the climate");
         let mean = |v: &[[i32; 3]]| v.iter().map(|a| f64::from(a[1])).sum::<f64>() / v.len() as f64;
-        assert!(mean(&kept) < mean(&free), "the tree line lowers the mean anchor");
+        assert!(
+            mean(&kept) < mean(&free),
+            "the tree line lowers the mean anchor"
+        );
     }
 );
 
@@ -109,7 +121,12 @@ dwell_world::both_faces!(
         let g = world(f, 1.0).with_vegetation(with_kind(pines([-80.0, 80.0], [wet, 1.0])));
         let kept = trees_over(&g, 1200);
         let free = trees_over(&world(f, 0.0), 1200);
-        assert!(!kept.is_empty() && kept.len() < free.len(), "{} of {}", kept.len(), free.len());
+        assert!(
+            !kept.is_empty() && kept.len() < free.len(),
+            "{} of {}",
+            kept.len(),
+            free.len()
+        );
         for a in &kept {
             let c = g.climate_at(a[0].into(), a[2].into()).unwrap();
             assert!(c.moisture >= wet, "a tree at wetness {:.2}", c.moisture);
@@ -123,7 +140,10 @@ dwell_world::both_faces!(
         let v = VEGETATION;
         let (steep, _) = v.soil("dwell:granite", 30.0, 0.0);
         let (floor, _) = v.soil("dwell:shale", 2.0, 1.0);
-        assert!(steep * 5.0 < floor, "granite at 30°: {steep} m; a shale floor: {floor} m");
+        assert!(
+            steep * 5.0 < floor,
+            "granite at 30°: {steep} m; a shale floor: {floor} m"
+        );
         // On seed 7's land: the mean soil of steep columns under that of flat wet ones.
         let g = world(f, 1.0);
         let (mut s, mut fl) = ((0.0, 0u32), (0.0, 0u32));
@@ -143,7 +163,12 @@ dwell_world::both_faces!(
                 }
             }
         }
-        assert!(s.1 > 10 && fl.1 > 10, "{} steep, {} floor samples", s.1, fl.1);
+        assert!(
+            s.1 > 10 && fl.1 > 10,
+            "{} steep, {} floor samples",
+            s.1,
+            fl.1
+        );
         let (ms, mf) = (s.0 / f64::from(s.1), fl.0 / f64::from(fl.1));
         assert!(ms < mf * 0.5, "steep {ms:.2} m, floors {mf:.2} m");
     }

@@ -90,6 +90,38 @@ sand talus — of stepped hills, not Monument Valley's isolated buttes on a flat
 steps every contour. Isolated buttes need the erosion's plan view (T4), which keeps the simulated pass to
 compare; massive rock is unstepped, not yet domed.
 
+## T3, soil and vegetation from climate (built, 0.52.14)
+
+`shared/worldgen/vegetation.json` (checked by `biomes.mjs` `validateVegetation`, emitted as
+`vegetation.gen.rs`; `dwell-worldgen` `vegetation.rs`): the **climate in °C** (the biome map's
+temperature, which already falls by `lapseRate` per km, × `climate.perUnitC` + `zeroC`: 0.3/km × 21.7 ≈
+6.5 °C/km), **soil** per rock (`rockSoils`: a depth on flat ground and a soil type of `soilTypes`; a rock
+not listed takes `fallback`), thinning to 0 at `soil.flatSlopeDeg` and deepened by `soil.valley` × the
+wetness on valley floors, and **vegetation kinds**: each gives one placement (`placements.json`, by name)
+a climate envelope: a temperature range (°C), a moisture range (the biome map's wetness: the rivers, and
+T1's rainfall by `rainShare`), a least soil depth, a steepest slope, optional soil types, each edge faded
+over `fade`, times `density`. A biome's `vegetation` (0..1, absent = 0) is the climate's share of its
+placements: the factor on a candidate's chance is 1 − s + s × the kind's density (`Vegetation::factor`),
+asked only of a candidate its other rolls keep (`placements::trees_in_with`) and of the LOD's canopy tint
+(`Planter::canopy_at_with`). So the **tree line** emerges where the temperature falls below a kind's least
+(the build's conifers: 6.5 °C, the growing-season ≈ 6–7 °C), and a **dry lee** has no trees. The default
+biome has none (and a world of one biome builds no biome map, so no climate): the default world and the
+goldens are byte-identical. The boreal, cold rainforest, savanna, sand desert and alpine tundra presets
+opt in (`vegetation: 1`; savanna and tundra now list the pine groves, which the climate thins). Chisel:
+a "Soil and vegetation" group (the °C scale, the soil rules, each kind's tree-line temperature and least
+moisture), a per-biome vegetation slider, soil and vegetation overlays; the edit may carry `vegetation`.
+
+Not yet: the soil changes no block (the dirt's depth is still the bands' `underDepth`), the snow line
+is still the bands' fixed height (a temperature-driven snow line is T3b), decorations (grass) and ground
+items are not governed by kinds yet, and the climate needs the biome map (two or more biomes).
+
+First look (Chisel, seed 7, the default and boreal both at 1, `rainShare` 0.7): trees follow the river
+corridors and the wetter windward ground; with the moisture floor at 0 and a 9 °C tree line, the
+vegetation overlay thins with altitude and on thin granite soil. At the default rain field the
+rainfall is small (mostly 0–0.15), so the river wetness dominates the moisture: the rain shadow reads
+weakly until `baseRain`/`rainShare` are tuned. The blocks view at 64 m texels shows little canopy (the
+canopy tint is faint at that zoom).
+
 ## Consequences
 
 - The biome map's wetness can be climate-driven; a desert can now follow a rain shadow rather than a

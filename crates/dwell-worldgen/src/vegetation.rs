@@ -175,10 +175,13 @@ mod tests {
         };
         assert_eq!(v.density(k, &dry), 0.0, "too dry");
         assert_eq!(
-            v.factor(k, &Climate {
-                strength: 0.0,
-                ..cold
-            }),
+            v.factor(
+                k,
+                &Climate {
+                    strength: 0.0,
+                    ..cold
+                }
+            ),
             1.0,
             "strength 0 changes nothing"
         );

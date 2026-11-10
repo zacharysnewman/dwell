@@ -436,7 +436,9 @@ pub fn vegetation_from_json(v: &Value) -> Result<Vegetation, String> {
             .iter()
             .any(|p| p.name == placement)
         {
-            return Err(kf(format!("placement {placement} is not a rule of placements.json")));
+            return Err(kf(format!(
+                "placement {placement} is not a rule of placements.json"
+            )));
         }
         kinds.push(Kind {
             name,
@@ -503,7 +505,10 @@ pub fn edit_from_json(text: &str) -> Result<Edit, String> {
     };
     for r in vegetation.rock_soils {
         if !geology.rocks.iter().any(|k| k.name == r.rock) {
-            return Err(format!("vegetation.json: rockSoils: {} is not a rock", r.rock));
+            return Err(format!(
+                "vegetation.json: rockSoils: {} is not a rock",
+                r.rock
+            ));
         }
     }
     let biomes = biomes?;
@@ -955,7 +960,8 @@ mod tests {
         let mut map = file("terrain.json")["biomeMap"].clone();
         map["rainShare"] = 0.5.into();
         let edit = |veg: &Value| {
-            let e = serde_json::json!({ "biomes": [d, boreal], "biomeMap": map, "vegetation": veg });
+            let e =
+                serde_json::json!({ "biomes": [d, boreal], "biomeMap": map, "vegetation": veg });
             edit_from_json(&e.to_string()).unwrap()
         };
         let t = BifacialTerrain::height_field(7);
@@ -966,7 +972,11 @@ mod tests {
                 .with_vegetation(e.vegetation)
         };
         let (x0, n, texel) = (-6144, 48, 256);
-        let green = |tile: &[u8]| tile.chunks(4).filter(|p| p[3] > 0 && u16::from(p[1]) > u16::from(p[0]) + 60).count();
+        let green = |tile: &[u8]| {
+            tile.chunks(4)
+                .filter(|p| p[3] > 0 && u16::from(p[1]) > u16::from(p[0]) + 60)
+                .count()
+        };
         let g = gen_of(edit(&file("vegetation.json")));
         let build = green(&preview(&g, x0, x0, n, texel, Overlay::Vegetation));
         assert!(build > 0, "the build's conifers grow somewhere");
@@ -985,7 +995,11 @@ mod tests {
         let soil = preview(&g, x0, x0, n, texel, Overlay::Soil);
         assert!(soil.chunks(4).any(|p| p[3] > 0));
         v["kinds"][0]["placement"] = "test:nothing".into();
-        assert!(vegetation_from_json(&v).unwrap_err().contains("test:nothing"));
+        assert!(
+            vegetation_from_json(&v)
+                .unwrap_err()
+                .contains("test:nothing")
+        );
         let mut v = file("vegetation.json");
         v["kinds"][0]["soils"] = serde_json::json!(["test:clay"]);
         assert!(vegetation_from_json(&v).unwrap_err().contains("test:clay"));

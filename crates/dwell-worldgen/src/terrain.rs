@@ -3242,7 +3242,11 @@ impl TerrainGenerator {
                 // The climate (systemic terrain T3) on the canopy's share, the slope from the LOD's
                 // own gradient.
                 let plane = |x: i64, z: i64| {
-                    Some(col.height + gx * (x - i64::from(wx)) as f32 + gz * (z - i64::from(wz)) as f32)
+                    Some(
+                        col.height
+                            + gx * (x - i64::from(wx)) as f32
+                            + gz * (z - i64::from(wz)) as f32,
+                    )
                 };
                 let Some(p) = self.planters.iter().find(|p| {
                     let f = || {
