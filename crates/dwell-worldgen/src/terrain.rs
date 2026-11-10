@@ -267,6 +267,9 @@ pub struct Biome {
     /// The strata stack (`rocks.json`, by name) its ground is made of, in place of the rock
     /// province's (systemic terrain T2); none: the province's.
     pub rock_stack: Option<&'static str>,
+    /// How much the climate rules its placements (`vegetation.json`'s kinds; systemic terrain T3):
+    /// 0 none (the default biome), 1 fully.
+    pub vegetation: f64,
 }
 
 mod table {
@@ -766,6 +769,9 @@ pub struct TerrainGenerator {
     ramps: Arc<RampPieces>,
     /// The structure placements (data), resolved for this world.
     planters: Vec<Planter>,
+    /// Soil and vegetation from climate (`vegetation.json`; systemic terrain T3): read only where a
+    /// biome's `vegetation` is above 0.
+    vegetation: crate::vegetation::Vegetation,
     /// This generator's biomes (the build's unless `with_biomes`) and their surface palettes.
     biomes: Arc<BiomeSet>,
     /// The portals between the faces (`portals.rs`), shared by both faces' generators; none for a
@@ -872,6 +878,7 @@ impl TerrainGenerator {
             decorations: Placer::resolve(&DECORATIONS, world_seed),
             ramps: Arc::new(RampPieces::resolve(&biomes.palettes)),
             planters: Vec::new(),
+            vegetation: crate::vegetation::VEGETATION,
             biomes,
             portals: None,
             rise: DECORATION_RISE as f32,
@@ -2163,6 +2170,78 @@ impl TerrainGenerator {
         })
     }
 
+    /// The generator with `vegetation` (`vegetation.json`) in place of the build's.
+    pub fn with_vegetation(mut self, vegetation: crate::vegetation::Vegetation) -> Self {
+        self.vegetation = vegetation;
+        self.cache_id = next_cache_id();
+        self
+    }
+
+    /// This generator's soil and vegetation.
+    pub fn vegetation(&self) -> &crate::vegetation::Vegetation {
+        &self.vegetation
+    }
+
+    /// How much the climate rules placement at (x, z): the biomes' `vegetation` by their weights
+    /// (0 with one biome: no biome map, no climate).
+    fn vegetation_strength(&self, x: i64, z: i64, base: f64) -> f64 {
+        if self.biomes.field.is_none() || self.biomes.list.iter().all(|b| b.vegetation <= 0.0) {
+            return 0.0;
+        }
+        self.biomes
+            .mix(x, z, base)
+            .iter()
+            .map(|(i, w)| self.biomes.list[i].vegetation * w)
+            .sum()
+    }
+
+    /// The climate and soil at face-local (x, z) (systemic terrain T3), the ground's slope from
+    /// `height` (m, any column; central differences over ±2 m); None with one biome (no biome map).
+    pub fn climate_with(
+        &self,
+        x: i64,
+        z: i64,
+        height: &dyn Fn(i64, i64) -> Option<f32>,
+    ) -> Option<crate::vegetation::Climate> {
+        let (base, _, _) = self.map.height_at(x as f64, z as f64);
+        let geo = self.biomes.geography(x, z, base)?;
+        let at = |dx: i64, dz: i64| height(x + dx, z + dz);
+        let slope_deg = match (at(2, 0), at(-2, 0), at(0, 2), at(0, -2)) {
+            (Some(e), Some(w), Some(s), Some(n)) => {
+                let (gx, gz) = (f64::from(e - w) * 0.25, f64::from(s - n) * 0.25);
+                (gx * gx + gz * gz).sqrt().atan().to_degrees()
+            }
+            _ => 90.0,
+        };
+        let v = &self.vegetation;
+        let (rock, _) = self.rock_at_surface(x, z);
+        let (soil_depth, soil_type) = v.soil(rock.name, slope_deg, geo.wetness);
+        Some(crate::vegetation::Climate {
+            temperature_c: v.celsius(geo.temperature),
+            moisture: geo.wetness,
+            soil_depth,
+            soil_type,
+            slope_deg,
+            strength: self.vegetation_strength(x, z, base),
+        })
+    }
+
+    /// [`TerrainGenerator::climate_with`] over the generated columns' heights (Chisel's overlays, tests).
+    pub fn climate_at(&self, x: i64, z: i64) -> Option<crate::vegetation::Climate> {
+        let h = |x: i64, z: i64| {
+            let c = self.column_at(x as i32, z as i32);
+            (!c.outside).then_some(c.height)
+        };
+        self.climate_with(x, z, &h)
+    }
+
+    /// Whether any biome lets the climate rule its placements (else `trees_in` asks nothing of it).
+    fn climate_rules(&self) -> bool {
+        self.biomes.field.is_some()
+            && self.biomes.list.iter().any(|b| b.vegetation > 0.0)
+            && !self.vegetation.kinds.is_empty()
+    }
+
     /// The structures placed reaching columns [x0, x1] × [z0, z1] (face-local), the ground they
     /// ask for computed once for the rectangle and its margin.
     pub fn trees_in(&self, (x0, z0): (i32, i32), (x1, z1): (i32, i32)) -> Vec<Tree> {
@@ -2181,7 +2260,24 @@ impl TerrainGenerator {
                 self.ground_of(&self.column_at(x, z))
             }
         };
-        let mut trees = placements::trees_in(&self.planters, (x0, z0), (x1, z1), &ground);
+        // The climate's factor on each candidate (systemic terrain T3): none unless a biome opts in,
+        // so the default world asks nothing of it.
+        let kinds: Vec<Option<usize>> = self
+            .planters
+            .iter()
+            .map(|p| self.vegetation.kind_for(p.rule().name))
+            .collect();
+        let height = |x: i64, z: i64| ground(x as i32, z as i32).map(|g| g.height);
+        let factor = |i: usize, x: i32, z: i32| -> f32 {
+            let Some(k) = kinds[i] else { return 1.0 };
+            match self.climate_with(i64::from(x), i64::from(z), &height) {
+                Some(c) => self.vegetation.factor(k, &c) as f32,
+                None => 1.0,
+            }
+        };
+        let factor: Option<&placements::Factor<'_>> = self.climate_rules().then_some(&factor);
+        let mut trees =
+            placements::trees_in_with(&self.planters, (x0, z0), (x1, z1), &ground, factor);
         // No structure stands over a portal's opening or its clear ground round the rim.
         if let Some(p) = &self.portals {
             trees.retain(|t| {

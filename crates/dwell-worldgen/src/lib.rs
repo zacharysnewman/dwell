@@ -15,6 +15,7 @@ pub mod placements;
 pub mod portals;
 pub mod ramps;
 pub mod terrain;
+pub mod vegetation;
 pub mod volume;
 pub mod worldmap;
 

@@ -302,6 +302,18 @@ impl Planter {
         (gx, gz): (i32, i32),
         ground: &dyn Fn(i32, i32) -> Option<Ground>,
     ) -> Option<Tree> {
+        self.candidate_with(index, (gx, gz), ground, None)
+    }
+
+    /// [`Planter::candidate`] with the climate's `factor` (planter index, x, z → 0..1) on its
+    /// chance (systemic terrain T3, `vegetation.rs`), asked only of a candidate its other rolls keep.
+    pub fn candidate_with(
+        &self,
+        index: u8,
+        (gx, gz): (i32, i32),
+        ground: &dyn Fn(i32, i32) -> Option<Ground>,
+        factor: Option<&Factor<'_>>,
+    ) -> Option<Tree> {
         let (x, z) = self.point(gx, gz);
         // The roll against the chance without its height factor (at most 1) first: most cells
         // end here without asking for ground.
@@ -315,6 +327,11 @@ impl Planter {
             return None;
         }
         if roll >= open * self.rise_factor(g.above_sea) {
+            return None;
+        }
+        if let Some(f) = factor
+            && roll >= open * self.rise_factor(g.above_sea) * f(index as usize, x, z)
+        {
             return None;
         }
         let mut pick = self.h(gx, gz, 3) % self.total_weight.max(1);
@@ -452,13 +469,27 @@ pub fn max_rise(planters: &[Planter]) -> i32 {
     planters.iter().map(Planter::rise).max().unwrap_or(0)
 }
 
+/// The climate's factor on a placement's chance: (planter index, x, z) → 0..1 (`vegetation.rs`).
+pub type Factor<'a> = dyn Fn(usize, i32, i32) -> f32 + 'a;
+
 /// Every placed structure whose box reaches the columns [x0, x1] × [z0, z1], in a fixed order
 /// (planter, then grid cell). `ground` must answer columns up to `ground_margin` beyond them.
 pub fn trees_in(
     planters: &[Planter],
+    lo: (i32, i32),
+    hi: (i32, i32),
+    ground: &dyn Fn(i32, i32) -> Option<Ground>,
+) -> Vec<Tree> {
+    trees_in_with(planters, lo, hi, ground, None)
+}
+
+/// [`trees_in`] with the climate's `factor` on each candidate's chance (systemic terrain T3).
+pub fn trees_in_with(
+    planters: &[Planter],
     (x0, z0): (i32, i32),
     (x1, z1): (i32, i32),
     ground: &dyn Fn(i32, i32) -> Option<Ground>,
+    factor: Option<&Factor<'_>>,
 ) -> Vec<Tree> {
     let reach = planters.iter().map(Planter::reach).max().unwrap_or(0);
     let spacing = planters.iter().map(|p| p.rule.spacing).max().unwrap_or(0);
@@ -474,7 +505,7 @@ pub fn trees_in(
                 if x < x0 - near || x > x1 + near || z < z0 - near || z > z1 + near {
                     continue;
                 }
-                if let Some(t) = p.candidate(i as u8, (gx, gz), ground) {
+                if let Some(t) = p.candidate_with(i as u8, (gx, gz), ground, factor) {
                     all.push(t);
                 }
             }
@@ -592,5 +623,14 @@ mod tests {
             trees_in(&p, (0, 0), (99, 99), &wet).is_empty(),
             "under water"
         );
+        // The climate's factor: 1 everywhere places the same; 0 west of x = 50 none there.
+        let one = |_: usize, _: i32, _: i32| 1.0;
+        assert_eq!(
+            trees_in_with(&p, (0, 0), (99, 99), &dirt, Some(&one)),
+            trees
+        );
+        let east = |_: usize, x: i32, _: i32| f32::from(u8::from(x >= 50));
+        let half = trees_in_with(&p, (0, 0), (99, 99), &dirt, Some(&east));
+        assert!(!half.is_empty() && half.iter().all(|t| t.anchor[0] >= 50));
     }
 }

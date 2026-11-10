@@ -190,6 +190,7 @@ pub fn biome_from_json(v: &Value) -> Result<Biome, String> {
         water: text(v, "water").map_err(at)?,
         water_look: water_look(v).map_err(at)?,
         rock_stack: v.get("rockStack").and_then(Value::as_str).map(leak),
+        vegetation: v.get("vegetation").and_then(Value::as_f64).unwrap_or(0.0),
     })
 }
 
