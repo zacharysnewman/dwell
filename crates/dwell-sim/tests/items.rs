@@ -290,3 +290,155 @@ fn an_adventure_player_starts_with_an_axe_and_a_creative_one_with_nothing() {
     let cre = scene(FaceFrame::A, "creative");
     assert!(cre.server.inventory_of(1).unwrap().is_empty());
 }
+
+// --- Ground items (docs/adr/0071-ground-items.md) ---
+
+/// A stone wall 6 rows tall across x = 4 on the scene's ground: its feet are a cliff base. Returns
+/// the cells (world) beside it where the shipped scatter put a rock.
+fn wall_and_rocks(fx: &mut Fixture, f: FaceFrame) -> Vec<[i32; 3]> {
+    let stone = f.state(require("dwell:stone"));
+    for z in -6..=6 {
+        for r in 0..6 {
+            let [x, y, z] = f.cell([4, BASE + r, z]);
+            fx.server.world().set_voxel(x, y, z, stone);
+        }
+    }
+    let mut found = Vec::new();
+    for x in [2, 3, 5, 6] {
+        for z in -6..=6 {
+            let cell = f.cell([x, BASE, z]);
+            if let Some(p) = fx.server.ground_item_at(cell) {
+                assert_eq!(p.cell, cell);
+                found.push(cell);
+            }
+        }
+    }
+    assert!(!found.is_empty(), "the scatter put rocks at the wall's feet");
+    found
+}
+
+fn pick(fx: &mut Fixture, cell: [i32; 3]) {
+    fx.send(1, Message::InventoryAction(InventoryAction::Pick { cell }));
+    step(fx, 2);
+}
+
+dwell_world::both_faces!(
+    /// A rock within reach is picked up into the inventory, stacking with a dropped rock, and is
+    /// gone from the scatter; a second pick of it, or one out of reach, is refused.
+    fn a_ground_rock_in_reach_is_picked_up_and_stacks_with_drops(f: FaceFrame) {
+        let mut fx = scene(f, "adventure");
+        fx.send(1, Message::InventoryAction(InventoryAction::GroundHello));
+        step(&mut fx, 1);
+        let rocks = wall_and_rocks(&mut fx, f);
+        fx.server.give(1, "dwell:rock", 1);
+        fx.take_all();
+        let near = *rocks
+            .iter()
+            .find(|c| f.cell(**c)[0] < 4)
+            .expect("one on the near side");
+        pick(&mut fx, near);
+        let inv = fx.server.inventory_of(1).unwrap();
+        assert_eq!(inv.count_of("dwell:rock"), 2, "picked up");
+        assert_eq!(
+            inv.slots
+                .iter()
+                .flatten()
+                .filter(|s| s.item == "dwell:rock")
+                .count(),
+            1,
+            "one stack with the dropped rock"
+        );
+        assert!(fx.server.ground_item_at(near).is_none());
+        assert!(fx.server.ground_gone().cells.contains(&near));
+        assert!(
+            fx.take(1)
+                .iter()
+                .any(|(m, _)| matches!(m, Message::GroundGone(c) if c == &vec![near])),
+            "the client is told"
+        );
+        pick(&mut fx, near);
+        assert_eq!(fx.server.inventory_of(1).unwrap().count_of("dwell:rock"), 2);
+        // Out of reach: the player 40 m off.
+        let other = rocks.iter().copied().find(|c| *c != near);
+        fx.move_to_local(f, -40.5, m_of_row(BASE + 40), 0.5);
+        if let Some(other) = other {
+            pick(&mut fx, other);
+            assert_eq!(fx.server.inventory_of(1).unwrap().count_of("dwell:rock"), 2);
+            assert!(fx.server.ground_item_at(other).is_some());
+        }
+        // Nothing lies here: refused.
+        pick(&mut fx, f.cell([0, BASE, 0]));
+        assert_eq!(fx.server.inventory_of(1).unwrap().count_of("dwell:rock"), 2);
+    }
+);
+
+dwell_world::both_faces!(
+    /// Breaking the block under a ground rock knocks it loose: a loose rock where it lay
+    /// (adventure), and it does not come back when the cell is filled again.
+    fn breaking_the_ground_under_a_rock_knocks_it_loose(f: FaceFrame) {
+        let mut fx = scene(f, "adventure");
+        let rocks = wall_and_rocks(&mut fx, f);
+        let cell = *rocks
+            .iter()
+            .find(|c| f.cell(**c)[0] == 3)
+            .or(rocks.first())
+            .unwrap();
+        let l = f.cell(cell);
+        let before = fx.server.loose_items().len();
+        edit(&mut fx, f, BlockEditAction::Break, [l[0], l[1] - 1, l[2]], 0);
+        let loose = fx.server.loose_items();
+        assert!(
+            loose.iter().any(|it| it.stack.item == "dwell:rock"),
+            "{loose:?}"
+        );
+        assert!(loose.len() > before);
+        let stone = f.state(require("dwell:stone"));
+        let [x, y, z] = f.cell([l[0], l[1] - 1, l[2]]);
+        fx.server.world().set_voxel(x, y, z, stone);
+        assert!(fx.server.ground_item_at(cell).is_none(), "stays gone");
+    }
+);
+
+#[test]
+fn picked_up_ground_items_stay_gone_across_a_reload() {
+    // face-a-only: a byte format (both faces' picks are pinned above).
+    let f = FaceFrame::A;
+    let db = WorldDb::in_memory().expect("db");
+    let cfg = || ServerConfig {
+        store: Some(WorldStore::new(db.clone(), false)),
+        ..config(f, "creative")
+    };
+    let cell;
+    {
+        let mut fx = scene_with(f, cfg(), true);
+        let rocks = wall_and_rocks(&mut fx, f);
+        cell = *rocks.iter().find(|c| c[0] < 4).expect("near side");
+        pick(&mut fx, cell);
+        assert!(fx.server.ground_gone().cells.contains(&cell), "creative picks up too");
+        fx.server.save_now();
+        fx.server.flush_store();
+    }
+    let mut fx = scene_with(f, cfg(), true);
+    wall_and_rocks(&mut fx, f);
+    assert!(fx.server.ground_gone().cells.contains(&cell));
+    assert!(fx.server.ground_item_at(cell).is_none());
+}
+
+#[test]
+fn ground_messages_go_only_to_a_client_that_said_ground_hello() {
+    // face-a-only: a wire rule.
+    let f = FaceFrame::A;
+    let mut fx = scene(f, "adventure");
+    fx.server.give(1, "dwell:dirt", 1);
+    step(&mut fx, 2);
+    let got = fx.take(1);
+    assert!(got.iter().any(|(m, _)| matches!(m, Message::Inventory(i)
+        if i.flags & inventory_flags::GROUND != 0)));
+    let rocks = wall_and_rocks(&mut fx, f);
+    let cell = *rocks.iter().find(|c| c[0] < 4).expect("near side");
+    pick(&mut fx, cell);
+    assert!(fx.take(1).iter().all(|(m, _)| !matches!(m, Message::GroundGone(_))));
+    fx.send(1, Message::InventoryAction(InventoryAction::GroundHello));
+    step(&mut fx, 1);
+    assert!(fx.take(1).iter().any(|(m, _)| matches!(m, Message::GroundGone(c) if c == &vec![cell])));
+}

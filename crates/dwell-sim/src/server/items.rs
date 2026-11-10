@@ -143,6 +143,10 @@ impl Server {
                     s.inventory.held = slot;
                 }
             }
+            InventoryAction::GroundHello => self.ground_hello(id),
+            InventoryAction::Pick { cell } => {
+                self.pick_ground(id, cell);
+            }
         }
     }
 
@@ -265,11 +269,13 @@ impl Server {
                 }
             }
         }
-        let flags = if self.uses_items() {
-            inventory_flags::USES_ITEMS
-        } else {
-            0
-        };
+        // Every server of this build keeps ground items (ADR 0071).
+        let flags = inventory_flags::GROUND
+            | if self.uses_items() {
+                inventory_flags::USES_ITEMS
+            } else {
+                0
+            };
         for id in hello {
             let s = self.sessions.get_mut(&id).expect("session");
             if !s.inventory_dirty {

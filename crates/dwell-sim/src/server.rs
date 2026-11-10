@@ -38,6 +38,7 @@ use dwell_world::{
 use dwell_protocol::auth::verify_ed25519;
 
 mod chopping;
+mod ground;
 mod items;
 mod vitals;
 
@@ -557,6 +558,8 @@ struct Session {
     /// the saved record couldn't be read (a newer build's: it is kept, not overwritten).
     inventory: dwell_protocol::inventory::Inventory,
     inventory_hello: bool,
+    /// It said `GroundHello` (ADR 0071): it is sent `GroundGone`.
+    ground_hello: bool,
     inventory_dirty: bool,
     inventory_unread: bool,
     /// Whether its client understands cuts (`ChopAction::Hello`, ADR 0067), and the tick its next
@@ -612,6 +615,7 @@ impl Session {
             currents_wait: CURRENTS_AFTER_JOIN,
             inventory: Default::default(),
             inventory_hello: false,
+            ground_hello: false,
             inventory_dirty: false,
             inventory_unread: false,
             chop_hello: false,
@@ -863,6 +867,10 @@ pub struct Server {
     /// The wood cells cut by axes (ADR 0067).
     cuts: dwell_protocol::chopping::Cuts,
     cuts_unread: bool,
+    /// The ground items gone (picked up or knocked loose; ADR 0071), saved with the world.
+    ground: dwell_world::ground::GroundGone,
+    /// The saved gone set is a newer build's: kept, not written over.
+    ground_unread: bool,
     next_save_tick: u32,
     save_stats: SaveStats,
     // Level of detail: sections, index entries changed since the last LodIndexUpdate, sections to
@@ -988,6 +996,8 @@ impl Server {
             loose_moved: HashSet::default(),
             cuts: Default::default(),
             cuts_unread: false,
+            ground: Default::default(),
+            ground_unread: false,
             next_save_tick: 0,
             save_stats: SaveStats::default(),
             lod: if config.jobs_remote {
@@ -2359,6 +2369,8 @@ impl Server {
         // Without unlimited blocks (ADR 0066): placing takes an item, breaking drops the block's.
         let uses_items = self.uses_items();
         let mut broken: Vec<([i32; 3], dwell_blocks::StateId)> = Vec::new();
+        // Every broken cell and what it was, in any mode: ground items on them are knocked loose.
+        let mut under_ground: Vec<([i32; 3], dwell_blocks::StateId)> = Vec::new();
         let ids: Vec<SessionId> = self.sessions.keys().copied().collect();
         for id in ids {
             let s = &self.sessions[&id];
@@ -2446,8 +2458,12 @@ impl Server {
                 }
                 // Every cell of the piece (a 1 m block's two; docs/ITEMS.md) in one set of writes.
                 for (at, m) in outcome.writes(&mut self.world, medium_kept) {
-                    if uses_items && edit.action == BlockEditAction::Break {
-                        broken.push((at, self.world.get_voxel(at[0], at[1], at[2])));
+                    if edit.action == BlockEditAction::Break {
+                        let was = self.world.get_voxel(at[0], at[1], at[2]);
+                        under_ground.push((at, was));
+                        if uses_items {
+                            broken.push((at, was));
+                        }
                     }
                     changes.set(&mut self.world, at, m);
                 }
@@ -2567,6 +2583,7 @@ impl Server {
         for (cell, was) in broken {
             self.drop_block(was, dwell_world::centre_of_cell(cell));
         }
+        self.knock_ground(&under_ground);
         // An explosive lit by an edit (a torch held against it) starts its fuse (docs/EXPLOSIVES.md).
         for &c in &edited {
             let m = self.world.get_voxel_if_loaded(c);
@@ -4018,6 +4035,12 @@ impl Server {
                 None => self.cuts_unread = true,
             }
         }
+        if let Some(b) = db.ground_gone() {
+            match dwell_world::ground::GroundGone::from_bytes(&b) {
+                Some(g) => self.ground = g,
+                None => self.ground_unread = true,
+            }
+        }
         let bodies = db.bodies();
         self.world.set_saved(Box::new(StoreChunks {
             db,
@@ -4130,6 +4153,9 @@ impl Server {
         batch.loose_items = Some(self.loose.to_bytes());
         if !self.cuts_unread {
             batch.cuts = Some(self.cuts.to_bytes());
+        }
+        if !self.ground_unread {
+            batch.ground_gone = Some(self.ground.to_bytes());
         }
         // The world's moving bodies, all of them each save (docs/BUILT_BODIES.md §7).
         batch.bodies = Some(self.felling.saved(&self.physics));

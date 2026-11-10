@@ -69,7 +69,6 @@ pub struct GroundRule {
 
 // Included (not a `#[path]` module) so rustfmt leaves the generated file as written.
 mod ground_generated {
-    use super::*;
     include!("ground.gen.rs");
 }
 pub use ground_generated::{KINDS, RULES};
