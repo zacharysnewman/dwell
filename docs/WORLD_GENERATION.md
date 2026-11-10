@@ -400,3 +400,12 @@ world's coast takes an `islands` knob in terrain.json (off by default): the coas
 broken by a broad noise, so the land comes as many islands in a shallow sea
 (`shared/worldgen/worlds/archipelago.json`, with the `test:archipelago` fixture biome). Keep the sea the
 larger share: the world map fills sea pockets enclosed by land as depressions.
+
+## The rain shadow (2026-11-10, ADR 0075 T1)
+
+Systemic terrain's first layer: a prevailing wind carries moisture in from the sea and drops it where
+the ground rises along it, so the lee of high ground is dry (`terrain.json` `biomeMap`: `windDirection`,
+`windReach`, `baseRain`, `upliftRain`, `leeDry`, `rainShare`; `biomemap::rainfall`). It feeds the biome
+map's wetness by `rainShare`, 0 in the default world, so the terrain a seed generates is unchanged
+until the systemic layers are tuned in Chisel and adopted together on a new compatibility line.
+

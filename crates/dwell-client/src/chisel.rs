@@ -570,7 +570,11 @@ mod tests {
                 shades.insert(tile[k * 4 + 1]);
             }
         }
-        assert!(shades.len() > 20, "the rainfall varies: {} shades", shades.len());
+        assert!(
+            shades.len() > 20,
+            "the rainfall varies: {} shades",
+            shades.len()
+        );
         // The wetness is the rain's now: it differs from the build's where the rain does.
         let plain = t
             .local(dwell_world::Face::A)

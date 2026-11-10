@@ -117,9 +117,16 @@ dwell_world::both_faces!(
                 }
             }
         }
-        assert!(up.1 > 20 && down.1 > 20, "slopes both ways: {up:?} {down:?}");
+        assert!(
+            up.1 > 20 && down.1 > 20,
+            "slopes both ways: {up:?} {down:?}"
+        );
         let (wet, dry) = (up.0 / f64::from(up.1), down.0 / f64::from(down.1));
-        assert!(wet > 2.0 * dry, "windward {wet} vs lee {dry} ({:?})", f.face);
+        assert!(
+            wet > 2.0 * dry,
+            "windward {wet} vs lee {dry} ({:?})",
+            f.face
+        );
         // Neutral: rainShare 0 is the rivers' wetness, whatever the wind.
         let plain = BiomeField::with_params(map, world_seed, BIOME_MAP);
         let windy = BiomeField::with_params(
