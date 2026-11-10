@@ -2592,3 +2592,84 @@ fn with_the_lod_the_loading_screen_opens_on_the_terrain_at_a_slow_pages_frame_ra
     );
     assert!(after < 10.0, "opened after {after} s ({frames} frames)");
 }
+
+/// The streaming report (docs/DEV_TOOLS.md, BUGS.md #54) of a joined client with the LOD: every
+/// part is there, the near ring lists each chunk within ±3 chunks (in the world's rows), a chunk
+/// not drawn in full says why, and the JSON reads back as it was written.
+// face-a-only: the shape of the report; the per-chunk wait reasons are tested on both faces in
+// dwell-game's `a_chunk_status_names_the_neighbour_it_waits_on`.
+#[test]
+fn the_streaming_report_describes_the_near_ring_pool_streamer_and_lod() {
+    use dwell_client::game::streaming_report::NEAR_RING_CHUNKS;
+    let mut rig = Rig::new();
+    assert!(rig.run_until(60 * 30, |r| r.game.is_some()));
+    rig.game
+        .as_mut()
+        .unwrap()
+        .enable_lod(dwell_client::game::LodSettings {
+            pixel_error: 4.0,
+            cache_bytes: 256 << 20,
+            detail_distance_m: Some(256.0),
+            full_mode: false,
+        });
+    assert!(rig.run_until(60 * 30, |r| r
+        .game
+        .as_ref()
+        .is_some_and(|g| g.debug_state().terrain_ready)));
+    let report = rig
+        .game
+        .as_ref()
+        .unwrap()
+        .streaming_report(dwell_client::telemetry::now_ms());
+    for key in [
+        "player",
+        "nearRing",
+        "pool",
+        "streamer",
+        "lod",
+        "frames",
+        "creatures",
+    ] {
+        assert!(report.get(key).is_some(), "{key} missing");
+    }
+    for key in ["feet", "velocity", "speed", "face", "flying"] {
+        assert!(report["player"].get(key).is_some(), "player.{key} missing");
+    }
+    assert_eq!(report["player"]["face"], "A");
+    for key in ["queues", "focus", "nearJobsM", "slowFrameScale", "inFlight"] {
+        assert!(report["pool"].get(key).is_some(), "pool.{key} missing");
+    }
+    for key in ["cacheBytes", "cacheBudget", "drawnByLevel", "selectionAgeMs"] {
+        assert!(report["lod"].get(key).is_some(), "lod.{key} missing");
+    }
+    assert!(report["streamer"]["loaded"].as_u64().unwrap() > 0);
+    // Every chunk of the ±3 cube in the world's rows.
+    let me = report["player"]["chunk"].as_array().unwrap()[1]
+        .as_i64()
+        .unwrap() as i32;
+    let rows = (me - NEAR_RING_CHUNKS..=me + NEAR_RING_CHUNKS)
+        .filter(|y| (dwell_world::MIN_CHUNK_Y..=dwell_world::MAX_CHUNK_Y).contains(y))
+        .count();
+    let side = (2 * NEAR_RING_CHUNKS + 1) as usize;
+    let chunks = report["nearRing"]["chunks"].as_array().unwrap();
+    assert_eq!(chunks.len(), rows * side * side);
+    for c in chunks {
+        let flags: Vec<&str> = c["flags"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| f.as_str().unwrap())
+            .collect();
+        assert!(c.get("lod").is_some(), "the LOD's view of {c}");
+        if flags.contains(&"drawn") || flags.contains(&"outsideVolume") {
+            assert!(c.get("waits").is_none(), "{c}");
+        } else {
+            let reasons = c["waits"]["reasons"].as_array().expect("why it waits");
+            assert!(!reasons.is_empty(), "a chunk not drawn says why: {c}");
+        }
+    }
+    let text = report.to_string();
+    assert!(text.len() < 200_000, "{} bytes", text.len());
+    let back: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(back, report);
+}

@@ -446,8 +446,8 @@ pub struct ChunkStatus {
     /// The six face neighbours a dirty chunk waits on before it is meshed: still generating or
     /// not lit yet.
     pub waits_on: Vec<Coord>,
-    /// Face neighbours inside the build volume that are not loaded (meshed without them, their
-    /// borders read as air until they arrive).
+    /// Face neighbours inside the build volume neither loaded nor generating: the server has not
+    /// sent them (meshed without them, their borders read as air until they arrive).
     pub missing: Vec<Coord>,
     /// Its water surface was redrawn and is re-meshed once it settles.
     pub settling: bool,
@@ -1311,7 +1311,11 @@ where
                 .filter(|n| self.generating.contains_key(n) || self.unlit_set.contains(n))
                 .collect(),
             missing: neighbours
-                .filter(|n| in_volume(*n) && !self.loaded.contains_key(n))
+                .filter(|n| {
+                    in_volume(*n)
+                        && !self.loaded.contains_key(n)
+                        && !self.generating.contains_key(n)
+                })
                 .collect(),
             settling: self.settling.contains_key(&coord),
         }
@@ -1872,6 +1876,45 @@ mod tests {
             voxels: Some(vec![fill; CHUNK_VOLUME]),
         }
     }
+
+    dwell_world::both_faces!(
+        /// The streaming report's chunk status (docs/DEV_TOOLS.md): a chunk whose neighbour is
+        /// still generating says it waits on that neighbour, and one whose neighbour never came
+        /// names it missing; once the neighbour arrives and it is meshed it is drawable.
+        fn a_chunk_status_names_the_neighbour_it_waits_on(f: dwell_world::FaceFrame) {
+            let row = dwell_world::MIDPLANE_Y.div_euclid(CHUNK_SIZE) + 2;
+            let me = f.chunk(ChunkCoord::new(0, row, 0)).to_array();
+            let east = f.chunk(ChunkCoord::new(1, row, 0)).to_array();
+            let west = f.chunk(ChunkCoord::new(-1, row, 0)).to_array();
+            let rock = dwell_blocks::require("dwell:sandbox_floor");
+            let mut s = ChunkStreamer::new(
+                VoxelWorld::streamed(),
+                ManualSource::default(),
+                FakeMesher::default(),
+                FakeView::default(),
+            );
+            s.on_chunk_data(explicit(me, 1, rock));
+            s.on_chunk_data(generated(east));
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+            let st = s.chunk_status(me);
+            assert!(st.loaded && st.dirty && !st.meshing && !st.drawable, "{st:?}");
+            assert_eq!(st.dirty_position, Some(0));
+            assert_eq!(st.waits_on, vec![east], "waits on the generating neighbour");
+            assert!(st.missing.contains(&west), "{:?}", st.missing);
+            assert!(!st.missing.contains(&east), "a generating chunk is announced");
+            assert!(s.chunk_status(east).generating);
+            // The neighbour arrives: the chunk is meshed and drawable.
+            let token = s.source().jobs[&east];
+            s.on_generated(east, token, &vec![rock; CHUNK_VOLUME]);
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+            let jobs = std::mem::take(&mut s.mesher_mut().jobs);
+            for job in jobs {
+                s.on_meshed(job.coord, job.token, ());
+            }
+            let st = s.chunk_status(me);
+            assert!(st.waits_on.is_empty() && st.meshed && st.drawable, "{st:?}");
+        }
+    );
 
     fn sorted(mut v: Vec<Coord>) -> Vec<Coord> {
         v.sort();
