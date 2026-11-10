@@ -55,7 +55,7 @@ test('main menu: a turning panorama, and every setting from the Settings button'
   await expect(menu.locator('.gm-page[data-page="host"]')).toContainText('Open one of your worlds');
   await menu.locator('.gm-tab[data-page="screen"]').click();
   const choices = menu.locator('.settings-choices[aria-label="Menu background"] button');
-  await expect(choices).toHaveText(['Beach and peaks', 'River valley', 'Lake shore']);
+  await expect(choices).toHaveText(['Random', 'Beach and peaks', 'River valley', 'Lake shore']);
   await choices.filter({ hasText: 'Lake shore' }).click();
   await page.keyboard.press('Escape');
   await expect(menu).toBeHidden();

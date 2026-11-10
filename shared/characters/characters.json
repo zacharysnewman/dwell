@@ -491,6 +491,16 @@
         { "id": "held_lump", "on": "grip_r", "kind": "round_box", "size": [0.13, 0.1, 0.15], "at": [0, 0.02, 0.06], "round": 0.4, "material": "$block" }
       ]
     },
+    "cluster": {
+      "label": "An item whose look is a cluster (shared/inventory `look`: grass seed), a few seeds in the cupped fist: its look's tile and tint, the hand's own size",
+      "on": "grip_r",
+      "parts": [
+        { "id": "held_seed_a", "on": "grip_r", "kind": "round_box", "size": [0.04, 0.03, 0.045], "at": [-0.025, 0.035, 0.05], "round": 0.5, "material": "$block" },
+        { "id": "held_seed_b", "on": "grip_r", "kind": "round_box", "size": [0.04, 0.03, 0.045], "at": [0.025, 0.035, 0.06], "round": 0.5, "material": "$block" },
+        { "id": "held_seed_c", "on": "grip_r", "kind": "round_box", "size": [0.04, 0.03, 0.045], "at": [0.0, 0.035, 0.1], "round": 0.5, "material": "$block" },
+        { "id": "held_seed_d", "on": "grip_r", "kind": "round_box", "size": [0.04, 0.03, 0.045], "at": [0.0, 0.06, 0.07], "round": 0.5, "material": "$block" }
+      ]
+    },
     "torch": {
       "label": "A torch (a block whose registry entry says held: torch; docs/LIGHTS.md): the placed torch's look, a square bark stick with a dark bark wrap at its tip (owner, 2026-10-28: the round stick under a pale wrap looked like a marshmallow on fire)",
       "on": "grip_r",

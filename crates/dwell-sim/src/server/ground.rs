@@ -25,11 +25,15 @@ impl Server {
         }
         let seed = self.config.world_seed;
         let world = &mut self.world;
-        let mut get = |c: [i32; 3]| match instead {
-            Some((at, m)) if at == c => Some(m),
+        let cache = &mut self.ground_generated;
+        // The rules read the terrain as generated (the leaves cleared over a stick leave it); the
+        // item's own cell and ground as they are now.
+        let mut get = |c: [i32; 3], generated: bool| match instead {
+            Some((at, m)) if at == c && !generated => Some(m),
+            _ if generated => Some(world.generated_voxel(c, cache)),
             _ => Some(world.get_voxel(c[0], c[1], c[2])),
         };
-        Rules::shipped().item_at(&mut get, seed, cell)
+        Rules::shipped().item_over(&mut get, seed, cell)
     }
 
     /// `InventoryAction::GroundHello`: the client draws ground items; it is sent every gone one.

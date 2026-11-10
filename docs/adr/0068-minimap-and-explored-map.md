@@ -150,10 +150,11 @@ lightly tinted by height. So:
   level is centred on the island.
 - **Tiles per level, built once.** A tile is `revealed.tileCells`² cells of one level, the same
   `Job::LodMap` raster as before at the level's cell size (`requestReveal(face, ti, tk, cellM)`; the
-  tile's bytes now carry its cell size). `RevealCache` keeps them per world **and build** in this
-  browser (IndexedDB `dwell-map-tiles`, a new database, key `<world>|<version>|<tileCells>|<cellM>|<face>,<ti>,<tk>`,
-  each tile written once: append-only; another build builds its own once, since the generator and
-  the looks are the build's). Once the kept tiles are read, the **background** builds each level's
+  tile's bytes now carry its cell size). `RevealCache` keeps them per world **and compatibility
+  line** in this browser (IndexedDB `dwell-map-tiles`, a new database, key `<world>|<line>|<tileCells>|<cellM>|<face>,<ti>,<tk>`,
+  each tile written once: append-only; a new line builds its own once, since the generated terrain
+  is the line's. Amended 2026-11-09, 0.50.75, owner: "rebuild once per compatibility line change";
+  from 0.50.61 to 0.50.74 the key held the build's version, and those keys are left in the store). Once the kept tiles are read, the **background** builds each level's
   tiles within `prebuildSpans` (2.5) of its span round the player (the widest level's the whole
   island), clipped to the island, the start level first, `backgroundJobs` (1) at a time in the job
   workers, while the map is shut or its view is whole; the open view's missing tiles still come

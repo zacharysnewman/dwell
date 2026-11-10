@@ -976,6 +976,12 @@ pub static CHARACTERS: &[Character] = &[
             Item { name: "lump", light: None, pose: &[], parts: &[
                 Part { id: "held_lump", bone: 9, kind: Kind::RoundBox, size: [0.13, 0.1, 0.15], at: [0.0, -0.08, 0.08], rot: [0.0, 0.0, 0.0], round: 0.4, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 65535 },
             ] },
+            Item { name: "cluster", light: None, pose: &[], parts: &[
+                Part { id: "held_seed_a", bone: 9, kind: Kind::RoundBox, size: [0.04, 0.03, 0.045], at: [-0.025, -0.065, 0.07], rot: [0.0, 0.0, 0.0], round: 0.5, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 65535 },
+                Part { id: "held_seed_b", bone: 9, kind: Kind::RoundBox, size: [0.04, 0.03, 0.045], at: [0.025, -0.065, 0.08], rot: [0.0, 0.0, 0.0], round: 0.5, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 65535 },
+                Part { id: "held_seed_c", bone: 9, kind: Kind::RoundBox, size: [0.04, 0.03, 0.045], at: [0.0, -0.065, 0.12], rot: [0.0, 0.0, 0.0], round: 0.5, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 65535 },
+                Part { id: "held_seed_d", bone: 9, kind: Kind::RoundBox, size: [0.04, 0.03, 0.045], at: [0.0, -0.04, 0.09], rot: [0.0, 0.0, 0.0], round: 0.5, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 65535 },
+            ] },
             Item { name: "torch", light: Some((9, [0.0, -0.08, 0.29])), pose: &[], parts: &[
                 Part { id: "torch_stick", bone: 9, kind: Kind::Box, size: [0.05, 0.38, 0.05], at: [0.0, -0.08, 0.09], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 17 },
                 Part { id: "torch_wrap", bone: 9, kind: Kind::Box, size: [0.058, 0.07, 0.058], at: [0.0, -0.08, 0.255], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 18 },

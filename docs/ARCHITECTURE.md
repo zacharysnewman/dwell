@@ -587,7 +587,7 @@ cells and their heights are kept per world in this browser (IndexedDB `dwell-exp
 samples, DEV_TOOLS.md): ~1 ms a read with its draw flying at 8 m/s, the 2 s refresh 5–9 ms.
 **[built, 0.50.46; per level and kept, 0.50.61] The big map's tiles** (owner, 2026-11-08: "big map should be fully explored on
 creative"; 2026-11-09: built "only once", "invisibly"): every level's ground comes from the generator, a
-tile at the level's cell size at a time (`requestReveal(face, ti, tk, cellM)`), kept per world and build in
+tile at the level's cell size at a time (`requestReveal(face, ti, tk, cellM)`), kept per world and compatibility line (0.50.75: a new patch reuses them) in
 IndexedDB `dwell-map-tiles` (append-only, a tile written once) and built in the **background**
 (`revealed.backgroundJobs` at a time, each level within `prebuildSpans` of its span round the player,
 the widest the whole world disc, once the kept tiles are read; every level's tiles clipped to the world
@@ -2687,7 +2687,15 @@ cells, and a density; the first rule that holds and whose roll hits wins), rolle
 the world seed and the face-local cell (face B mirrors face A). `shared/ground/gen.mjs` checks the
 names against the blocks and the inventory items and emits `dwell-world` `ground.gen.rs`. The
 server, the client's crosshair and the client's mesh jobs run the same function on their own blocks
-(the mesh jobs on their sky volume: rules look at most 16 rows and 6 cells away, the apron). The
+(the mesh jobs on their sky volume: rules look at most 16 rows and 6 cells away, the apron). **The
+rules read the terrain as generated** (0.50.75, owner: "keep sticks under cleared leaves";
+`Rules::item_over(get(cell, generated))`); only the item's own cell (open) and its ground (a flat
+full block) are read as they are now. The server reads an edited chunk's generation from its
+generator (`VoxelWorld::generated_voxel`, cached in `ground_generated`); the client's streamer keeps
+each edited loaded chunk as generated (`ChunkStreamer::generated`: the voxels before its first edit,
+or, for one that arrived edited, a `Job::Generate` for it, `ChunkSource::generate_base` /
+`on_generated_base`) and hands mesh jobs their sky volume as generated (`MeshJob::generated`, empty
+when no chunk in it is edited). The
 client bakes them into the chunk's opaque mesh (`dwell-mesh` `mesher/ground_mesh.rs`: a rod or a
 lump of a few polygons with a block's side tile, turned and scaled per item): no draw call, no
 collision. The break action aimed at one, when it is nearer than the block behind it
@@ -2696,17 +2704,17 @@ collision. The break action aimed at one, when it is nearer than the block behin
 kind's item (`dwell:stick`, `dwell:rock`: the drops' items, so they stack; walking near collects it;
 in creative it vanishes, as breaking drops nothing), keeps the cell in its gone set (`server/ground.rs`, saved in `ground_gone`) and tells clients, which mesh the chunk
 again without it. Breaking the block under one knocks it loose (a loose item in adventure; gone in
-creative); it vanishes with no write when its ground or canopy goes by other edits (regions,
-blasts, felling), and may come back if the same cells return.
+creative); it vanishes with no write when its ground goes by other edits (regions, blasts,
+felling), and may come back if the same cells return. Edits round it (its canopy, a cliff) leave it.
 
 **Item looks [built, 0.50.73]** (ADRs 0066, 0071). An inventory item may carry one shaped `look`
-(`shared/inventory/inventory.json`: `shape` rod or lump, `size`, a block's `texture`, a `color`
-tint), generated into `dwell_protocol::inventory::ItemDef::look`; a ground kind takes its item's
+(`shared/inventory/inventory.json`: `shape` rod, lump or cluster (0.50.75: a heap of six tiny
+lumps, the grass seed), `size`, a block's `texture`, a `color` tint), generated into `dwell_protocol::inventory::ItemDef::look`; a ground kind takes its item's
 look (`shared/ground/gen.mjs` copies it and fails when the item has none). The one look is drawn
 everywhere: on the ground (`mesher/ground_mesh.rs`), loose (`dwell_mesh::look_mesh`, every side, in
 `loose_items.rs`), on the hotbar and backpack (`dwell_mesh::look_swatch`, the shape rasterised in
 its tinted tile, through `itemSwatch`) and in the hand (`Held::Look`: the characters item of its
-shape, `rod` or `lump`, its `$block` material the look's tile and tint). A block's hand item is its
+shape, `rod`, `lump` or `cluster`, its `$block` material the look's tile and tint). A block's hand item is its
 `held`, or by its look (`HELD_BY_LOOK`, `shared/blocks/lights.mjs`): a ladder the `card`, a cross
 plant the `cross`, drawn with the characters' `plane` part kind (one sheet, both sides, no edges).
 

@@ -85,6 +85,8 @@ pub enum Purpose {
     Map,
     /// The F3 overlay's regenerate-and-diff of a chunk.
     Diff(Coord),
+    /// An edited chunk as generated, for the ground items' rules (ADR 0071).
+    Base(Coord),
     /// A strip of the LOD colour map (`crate::lod_map`).
     LodMap(crate::lod_map::TileJob),
     /// A tile of the big map (`crate::map_reveal`): face (0 A, 1 B), tile indices and its zoom
@@ -108,6 +110,7 @@ impl Purpose {
             Purpose::Verify => ("job.verify.wait", "job.verify.run"),
             Purpose::Map => ("job.map.wait", "job.map.run"),
             Purpose::Diff(..) => ("job.diff.wait", "job.diff.run"),
+            Purpose::Base(..) => ("job.base.wait", "job.base.run"),
             Purpose::LodMap(..) => ("job.lod_map.wait", "job.lod_map.run"),
             Purpose::Reveal(..) => ("job.reveal.wait", "job.reveal.run"),
             Purpose::ExploreTile(..) => ("job.explore_tile.wait", "job.explore_tile.run"),
@@ -264,6 +267,14 @@ impl ChunkSource for ChunkJobs {
     fn cancel(&mut self, coord: Coord) -> bool {
         self.0.borrow_mut().cancel_chunk(coord)
     }
+    fn generate_base(&mut self, coord: Coord) {
+        self.0.borrow_mut().submit(
+            Purpose::Base(coord),
+            Job::Generate {
+                coord: dwell_world::ChunkCoord::from_array(coord),
+            },
+        );
+    }
 }
 
 /// The streamer's mesher.
@@ -286,7 +297,7 @@ impl Mesher for MeshJobs {
                 mirror: job.mirror,
                 origin: job.coord.map(|c| c * dwell_world::CHUNK_SIZE),
                 cuts: job.cuts,
-                ground: job.ground,
+                ground: job.ground.map(|(seed, gone)| (seed, gone, job.generated)),
                 water_tops,
             },
         );

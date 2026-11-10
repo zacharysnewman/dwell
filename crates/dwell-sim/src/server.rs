@@ -871,6 +871,8 @@ pub struct Server {
     ground: dwell_world::ground::GroundGone,
     /// The saved gone set is a newer build's: kept, not written over.
     ground_unread: bool,
+    /// Edited chunks as generated, for the ground items' rules (ADR 0071; not saved).
+    ground_generated: dwell_world::hash::HashMap<dwell_world::ChunkCoord, Box<dwell_world::Chunk>>,
     next_save_tick: u32,
     save_stats: SaveStats,
     // Level of detail: sections, index entries changed since the last LodIndexUpdate, sections to
@@ -998,6 +1000,7 @@ impl Server {
             cuts_unread: false,
             ground: Default::default(),
             ground_unread: false,
+            ground_generated: Default::default(),
             next_save_tick: 0,
             save_stats: SaveStats::default(),
             lod: if config.jobs_remote {

@@ -81,6 +81,7 @@ pub fn look_item(shape: dwell_protocol::inventory::LookShape) -> &'static str {
     match shape {
         dwell_protocol::inventory::LookShape::Rod => "rod",
         dwell_protocol::inventory::LookShape::Lump => "lump",
+        dwell_protocol::inventory::LookShape::Cluster => "cluster",
     }
 }
 
@@ -1408,7 +1409,11 @@ mod tests {
     fn a_stick_and_a_rock_are_held_as_their_looks_shape_tile_and_tint() {
         // face-a-only: the hand's item and the shader's tiles, no world geometry.
         let ch = dwell_characters::player();
-        for (item, shown) in [("dwell:stick", "rod"), ("dwell:rock", "lump")] {
+        for (item, shown) in [
+            ("dwell:stick", "rod"),
+            ("dwell:rock", "lump"),
+            ("dwell:grass_seed", "cluster"),
+        ] {
             let held = Held::Look(item);
             assert_eq!(item_shown(ch, held), Some(shown), "{item}");
             assert!(!held_mesh(held).indices.is_empty());

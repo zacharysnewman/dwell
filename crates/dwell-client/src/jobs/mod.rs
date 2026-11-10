@@ -39,8 +39,9 @@ pub enum Job {
         origin: [i32; 3],
         /// Its cut wood cells, chunk-local (ADR 0067 §11): meshed carved.
         cuts: Vec<([i32; 3], dwell_protocol::chopping::Cut)>,
-        /// Its ground items (ADR 0071): the world seed and its gone cells, chunk-local.
-        ground: Option<(u64, Vec<[i32; 3]>)>,
+        /// Its ground items (ADR 0071): the world seed, its gone cells (chunk-local) and `padded`
+        /// as generated (empty: as `padded`; the rules read the terrain as generated).
+        ground: Option<(u64, Vec<[i32; 3]>, Vec<u16>)>,
         /// Liquid tops are meshed (false: the GPU heightfield draws them; `dwell_mesh::ChunkFlags`).
         water_tops: bool,
     },
@@ -271,7 +272,11 @@ impl Runner {
                 origin,
                 &cuts,
                 ground
-                    .map(|(seed, gone)| dwell_mesh::GroundJob { seed, gone })
+                    .map(|(seed, gone, generated)| dwell_mesh::GroundJob {
+                        seed,
+                        gone,
+                        generated,
+                    })
                     .as_ref(),
                 dwell_mesh::ChunkFlags { water_tops },
             ) {

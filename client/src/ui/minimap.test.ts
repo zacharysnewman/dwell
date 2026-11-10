@@ -508,9 +508,22 @@ describe("the big map's tiles", () => {
     }
     expect(c2.asked).toEqual([]);
     expect(second.built).toBe(0);
-    // Another build (or another world) has its own tiles.
-    const other = new RevealCache(32, 2, 1000, 4, store, tilePrefix('local:seed-7', '0.50.62'));
-    expect(await other.load()).toBe(0);
+    // A new patch on the same compatibility line reuses them (owner, 2026-11-09).
+    const patch = new RevealCache(32, 2, 1000, 4, store, tilePrefix('local:seed-7', '0.50.62'));
+    expect(await patch.load()).toBe(first.built);
+    // A new line (or another world) builds its own.
+    const line = new RevealCache(32, 2, 1000, 4, store, tilePrefix('local:seed-7', '0.51.0'));
+    expect(await line.load()).toBe(0);
+    const world = new RevealCache(32, 2, 1000, 4, store, tilePrefix('local:seed-8', '0.50.61'));
+    expect(await world.load()).toBe(0);
+  });
+
+  it("a tile prefix is the world's and the compatibility line's, not the build's", () => {
+    expect(tilePrefix('w', '0.50.74')).toBe(tilePrefix('w', '0.50.75'));
+    expect(tilePrefix('w', '0.50.74')).not.toBe(tilePrefix('w', '0.51.0'));
+    expect(tilePrefix('w', '1.2.0')).toBe(tilePrefix('w', '1.3.4'));
+    // A pre-release promises nothing: its own tiles.
+    expect(tilePrefix('w', '0.50.75-dev.3')).not.toBe(tilePrefix('w', '0.50.75-dev.4'));
   });
 
   it('a world without a terrain builds no background', () => {
