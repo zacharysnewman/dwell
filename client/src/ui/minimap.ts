@@ -14,6 +14,7 @@
 
 import { GAMEPAD } from '../input/gamepad.gen';
 import { MAP } from './map.gen';
+import { compatibilityLine } from '../version/semver';
 import { World } from '../protocol/constants.gen';
 
 /** An explored cell's key: its face (0 A, 1 B) and its index along face-local x and z. */
@@ -318,7 +319,7 @@ export function parseRevealTile(b: Uint8Array, n: number = MAP.revealed.tileCell
 
 /**
  * The built tiles kept in this browser (IndexedDB `dwell-map-tiles` in the browser, a memory one
- * in tests): each a tile's `takeReveal` bytes under its key, a world's and build's under one
+ * in tests): each a tile's `takeReveal` bytes under its key, a world's and line's under one
  * prefix ([`tilePrefix`]). Append-only: a key is a tile, written once, never rewritten.
  */
 export interface TileStore {
@@ -328,11 +329,13 @@ export interface TileStore {
 }
 
 /**
- * The prefix of a world's tiles for this build: the world, the build's version (the generator and
- * the looks are the build's; another build builds its own once) and the tile size.
+ * The prefix of a world's tiles for this build: the world, the build's compatibility line (its
+ * generated terrain is the line's, so a new patch reuses the tiles and a new line builds its own
+ * once; owner, 2026-11-09) and the tile size. Keys of the per-version prefix before 0.50.75
+ * (`world|0.50.74|…`) are left where they are: the store is append-only.
  */
 export function tilePrefix(world: string, version: string, n: number = MAP.revealed.tileCells) {
-  return `${world}|${version}|${String(n)}|`;
+  return `${world}|${compatibilityLine(version) ?? version}|${String(n)}|`;
 }
 
 /** The browser's tile store: `dwell-map-tiles`. Null where there is none. */

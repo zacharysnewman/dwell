@@ -587,7 +587,7 @@ cells and their heights are kept per world in this browser (IndexedDB `dwell-exp
 samples, DEV_TOOLS.md): ~1 ms a read with its draw flying at 8 m/s, the 2 s refresh 5–9 ms.
 **[built, 0.50.46; per level and kept, 0.50.61] The big map's tiles** (owner, 2026-11-08: "big map should be fully explored on
 creative"; 2026-11-09: built "only once", "invisibly"): every level's ground comes from the generator, a
-tile at the level's cell size at a time (`requestReveal(face, ti, tk, cellM)`), kept per world and build in
+tile at the level's cell size at a time (`requestReveal(face, ti, tk, cellM)`), kept per world and compatibility line (0.50.75: a new patch reuses them) in
 IndexedDB `dwell-map-tiles` (append-only, a tile written once) and built in the **background**
 (`revealed.backgroundJobs` at a time, each level within `prebuildSpans` of its span round the player,
 the widest the whole world disc, once the kept tiles are read; every level's tiles clipped to the world
