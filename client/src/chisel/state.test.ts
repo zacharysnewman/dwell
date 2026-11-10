@@ -3,6 +3,7 @@ import {
   ARCHIPELAGO_FIXTURE,
   ARCHIPELAGO_WORLD,
   DESERT_FIXTURE,
+  PRESETS,
   STORE_KEY,
   addBiome,
   buildEdit,
@@ -69,6 +70,7 @@ describe('Chisel state', () => {
       'upliftRain',
       'leeDry',
       'rainShare',
+      'windSmoothM',
     ];
     const old = Object.fromEntries(
       Object.entries(e.biomeMap).filter(([k]) => !rainKeys.includes(k)),
@@ -106,6 +108,20 @@ describe('Chisel state', () => {
       'dwell:default',
       'test:desert',
     ]);
+  });
+
+  it('lists the preset biomes by label, each valid and addable by data alone', () => {
+    expect(PRESETS.length).toBeGreaterThanOrEqual(12);
+    const labels = PRESETS.map((p) => p.label);
+    expect(labels).toEqual([...labels].sort((a, b) => a.localeCompare(b)));
+    expect(labels).toContain('Sand desert');
+    expect(labels).toContain('Alpine tundra');
+    for (const p of PRESETS) expect(p.description.length).toBeGreaterThan(0);
+    let e = buildEdit();
+    for (const p of PRESETS) e = addBiome(e, p);
+    expect(e.biomes.length).toBe(PRESETS.length + 1);
+    expect(validateEdit(e)).toEqual([]);
+    expect(fromJson(toJson(e))).toEqual({ edit: e });
   });
 
   it('a duplicated biome takes a fresh name', () => {

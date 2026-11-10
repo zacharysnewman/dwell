@@ -266,6 +266,7 @@ pub fn biome_map_from_json(v: &Value) -> Result<BiomeMap, String> {
         uplift_rain: n("upliftRain")?,
         lee_dry: n("leeDry")?,
         rain_share: n("rainShare")?,
+        wind_smooth_m: n("windSmoothM")?,
     })
 }
 
@@ -409,7 +410,7 @@ pub fn preview(g: &TerrainGenerator, x0: i64, z0: i64, n: i64, texel: i64, o: Ov
 mod tests {
     use super::*;
     use dwell_worldgen::bifacial::BifacialTerrain;
-    use dwell_worldgen::terrain::{FIXTURE_BIOMES, FIXTURE_WORLDS};
+    use dwell_worldgen::terrain::{FIXTURE_BIOMES, FIXTURE_WORLDS, PRESET_BIOMES};
 
     fn file(path: &str) -> Value {
         let p = format!(
@@ -434,6 +435,25 @@ mod tests {
                 "{f}"
             );
         }
+        // The presets, as Chisel sends them (their label and description are the page's alone).
+        let dir = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../shared/worldgen/biomes/presets"
+        );
+        let mut presets = 0;
+        for e in std::fs::read_dir(dir).unwrap() {
+            let v: Value =
+                serde_json::from_str(&std::fs::read_to_string(e.unwrap().path()).unwrap()).unwrap();
+            let b = biome_from_json(&v).unwrap();
+            assert_eq!(
+                Some(&b),
+                PRESET_BIOMES.iter().find(|x| x.name == b.name),
+                "{}",
+                b.name
+            );
+            presets += 1;
+        }
+        assert_eq!(presets, PRESET_BIOMES.len());
         // The archipelago's world knobs, as Chisel sends them, are the fixture world's.
         let w = file("worlds/archipelago.json");
         let (_, want) = FIXTURE_WORLDS[0];

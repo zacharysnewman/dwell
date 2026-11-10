@@ -237,6 +237,9 @@ pub struct BiomeMap {
     pub lee_dry: f64,
     /// The rainfall's share of the wetness (0: the river/lake wetness alone, the default).
     pub rain_share: f64,
+    /// The wind sees the ground low-passed over about this many metres (0: the map's own), so the
+    /// rain follows whole ranges, not each hillside.
+    pub wind_smooth_m: f64,
 }
 
 /// A biome (data: `shared/worldgen/biomes/<name>.json`, ADR 0074): what is layered on the world's
@@ -266,7 +269,9 @@ pub struct Biome {
 mod table {
     include!("terrain.gen.rs");
 }
-pub use table::{BIOME_MAP, BIOMES, FIXTURE_BIOMES, FIXTURE_WORLDS, HEIGHT, SURFACE};
+pub use table::{
+    BIOME_MAP, BIOMES, FIXTURE_BIOMES, FIXTURE_WORLDS, HEIGHT, PRESET_BIOMES, SURFACE,
+};
 
 /// The biome named `name` (`shared/worldgen/biomes`), if the build has it.
 pub fn find_biome(name: &str) -> Option<&'static Biome> {

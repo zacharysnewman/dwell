@@ -407,5 +407,15 @@ Systemic terrain's first layer: a prevailing wind carries moisture in from the s
 the ground rises along it, so the lee of high ground is dry (`terrain.json` `biomeMap`: `windDirection`,
 `windReach`, `baseRain`, `upliftRain`, `leeDry`, `rainShare`; `biomemap::rainfall`). It feeds the biome
 map's wetness by `rainShare`, 0 in the default world, so the terrain a seed generates is unchanged
-until the systemic layers are tuned in Chisel and adopted together on a new compatibility line.
+until the systemic layers are tuned in Chisel and adopted together on a new compatibility line. The wind
+sees the ground smoothed over `windSmoothM` (3 km), so the shadow falls behind whole ranges, not each
+hillside (0.52.8).
+
+## Preset biomes (2026-11-10, ADR 0075)
+
+Starting points for a world's biomes: `shared/worldgen/biomes/presets/*.json` (14: temperate meadow,
+mixed forest, pine/boreal, cold rainforest, alpine tundra, snowfield, steppe, savanna, sand desert,
+red-rock canyon/mesa, badlands, tropical beach, wetland/marsh, coastal cliffs), each a biome file with a
+`label` and a `description`, placed by its `where` (temperature, wetness, elevation, coast). Chisel adds
+them ("Add from preset"); none is on the default world's map. Prototype content (ARCHITECTURE.md §6.1).
 

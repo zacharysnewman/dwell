@@ -1,0 +1,54 @@
+{
+  "name": "preset:sand_desert",
+  "label": "Sand desert",
+  "description": "Hot and dry: dunes of sand to the horizon, rock only on the steepest faces.",
+  "where": {
+    "weight": 1,
+    "temperature": {
+      "min": 0.6,
+      "blend": 0.1
+    },
+    "wetness": {
+      "max": 0.25,
+      "blend": 0.1
+    }
+  },
+  "detail": {
+    "amplitude": 4,
+    "wavelength": 40,
+    "octaves": 3,
+    "mountainAmplitude": 14,
+    "mountainFrom": 300,
+    "mountainFull": 1800,
+    "waterFade": 30
+  },
+  "shaping": {
+    "edgeNoise": 150,
+    "edgeWavelength": 320,
+    "edgeSlopeLift": 350,
+    "rockSlope": 1.2,
+    "rockSlopeHigh": 1.0,
+    "rockHigh": 1550,
+    "rockWindow": 150,
+    "shore": 2,
+    "underDepth": 3
+  },
+  "banks": {
+    "riverSlope": 0.45,
+    "lake": 0.5,
+    "lakeSlope": 0.25,
+    "beach": 0
+  },
+  "bands": [
+    {
+      "name": "dunes",
+      "ground": "dwell:sand",
+      "under": "dwell:sand",
+      "rock": "dwell:stone",
+      "shoreBlock": "dwell:sand"
+    }
+  ],
+  "decorations": [],
+  "placements": [],
+  "water": "dwell:water"
+}

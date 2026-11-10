@@ -5,6 +5,7 @@
 import {
   validateBiome,
   validateBiomeMap,
+  validatePresets,
   validateWorldKnobs,
   type BlockInfo,
 } from '../../../shared/worldgen/biomes.mjs';
@@ -59,6 +60,25 @@ export const DEFAULT_BIOME: BiomeJson = defaultBiome;
 export const DESERT_FIXTURE: BiomeJson = desert;
 export const ARCHIPELAGO_FIXTURE: BiomeJson = archipelago;
 export const TEMPLATES: readonly BiomeJson[] = [DEFAULT_BIOME, DESERT_FIXTURE, ARCHIPELAGO_FIXTURE];
+
+/** A preset biome (shared/worldgen/biomes/presets/*.json): a starting point with words for people. */
+export type PresetJson = BiomeJson & { label: string; description: string };
+/**
+ * The preset biomes, by label: starting points for a world's biomes (never on the default world's
+ * map), checked by the same rules gen.mjs applies (biomes.mjs `validatePresets`).
+ */
+export const PRESETS: readonly PresetJson[] = validatePresets(
+  Object.entries(
+    import.meta.glob<PresetJson>('../../../shared/worldgen/biomes/presets/*.json', {
+      eager: true,
+      import: 'default',
+    }),
+  )
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([, b]) => b),
+  BLOCKS,
+  REFS,
+).sort((a, b) => a.label.localeCompare(b.label));
 /** The archipelago example's world knobs (shared/worldgen/worlds/archipelago.json). */
 export const ARCHIPELAGO_WORLD: WorldJson = archipelagoWorld.overrides;
 

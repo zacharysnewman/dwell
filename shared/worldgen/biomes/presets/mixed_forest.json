@@ -1,0 +1,59 @@
+{
+  "name": "preset:mixed_forest",
+  "label": "Mixed forest",
+  "description": "Groves on gentle hills, mild and wet near rivers and lakes (the pine groves stand in for broadleaf trees).",
+  "where": {
+    "weight": 1,
+    "temperature": {
+      "min": 0.3,
+      "max": 0.6,
+      "blend": 0.1
+    },
+    "wetness": {
+      "min": 0.45,
+      "blend": 0.15
+    },
+    "elevation": {
+      "max": 900,
+      "blend": 150
+    }
+  },
+  "detail": {
+    "amplitude": 2.5,
+    "wavelength": 112,
+    "octaves": 4,
+    "mountainAmplitude": 14,
+    "mountainFrom": 300,
+    "mountainFull": 1800,
+    "waterFade": 30
+  },
+  "shaping": {
+    "edgeNoise": 150,
+    "edgeWavelength": 320,
+    "edgeSlopeLift": 350,
+    "rockSlope": 0.85,
+    "rockSlopeHigh": 0.55,
+    "rockHigh": 1550,
+    "rockWindow": 150,
+    "shore": 2,
+    "underDepth": 3
+  },
+  "banks": {
+    "riverSlope": 0.45,
+    "lake": 0.5,
+    "lakeSlope": 0.25,
+    "beach": 0
+  },
+  "bands": [
+    {
+      "name": "forest",
+      "ground": "dwell:grass",
+      "under": "dwell:dirt",
+      "rock": "dwell:stone",
+      "shoreBlock": "dwell:sand"
+    }
+  ],
+  "decorations": ["meadow_grass"],
+  "placements": ["pine_groves"],
+  "water": "dwell:water"
+}

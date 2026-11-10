@@ -84,6 +84,7 @@ export const TERRAIN = {
     upliftRain: [0, 10],
     leeDry: [0, 10],
     rainShare: [0, 1],
+    windSmoothM: [0, 50_000],
   },
   spawn: { minHeight: [0, 10_000], maxHeight: [0, 10_000], nearRiver: [0, 100_000] },
 };
@@ -102,6 +103,8 @@ export const WORLD_GROUPS = ['inland', 'seaFloor', 'islands', 'hills', 'bumps', 
 export const BIOME_GROUPS = Object.keys(TERRAIN).filter((g) => !WORLD_GROUPS.includes(g));
 /** A biome's reference fields beside its groups. */
 const BIOME_REFS = ['where', 'bands', 'decorations', 'placements', 'water', 'waterLook'];
+/** A biome's optional words for people (Chisel's lists): a short label and a one-line description. */
+export const BIOME_TEXT = { label: 40, description: 200 };
 const BIOME_NAME = /^[a-z0-9_]+:[a-z0-9_]+$/;
 
 /** Checks `groups` of `data` against `TERRAIN`'s ranges; `fail` throws with the group and key. */
@@ -135,8 +138,16 @@ export function validateBiome(data, blocks, refs) {
   };
   if (typeof data !== 'object' || data === null) fail('must be an object');
   if (typeof data.name !== 'string' || !BIOME_NAME.test(data.name)) fail('name must be "namespace:name"');
-  const extra = Object.keys(data).filter((k) => !['$comment', 'name', ...BIOME_GROUPS, ...BIOME_REFS].includes(k));
+  const extra = Object.keys(data).filter(
+    (k) => !['$comment', 'name', ...BIOME_GROUPS, ...BIOME_REFS, ...Object.keys(BIOME_TEXT)].includes(k),
+  );
   if (extra.length) fail(`unknown ${extra.join(', ')}`);
+  for (const [k, max] of Object.entries(BIOME_TEXT)) {
+    const t = data[k];
+    if (t !== undefined && !(typeof t === 'string' && t.trim().length > 0 && t.length <= max)) {
+      fail(`${k} must be text of 1 to ${max} characters`);
+    }
+  }
   checkGroups(data, BIOME_GROUPS, fail);
   if (!(data.detail.mountainFull > data.detail.mountainFrom)) {
     fail('detail.mountainFull must be greater than detail.mountainFrom');
@@ -156,6 +167,26 @@ export function validateBiome(data, blocks, refs) {
   if (!w.fluid) fail(`water ${data.water} must be a fluid block`);
   if (data.waterLook !== undefined) checkWaterLook(data.waterLook, fail);
   return data;
+}
+
+/**
+ * Checks the preset biomes (shared/worldgen/biomes/presets/*.json, starting points for Chisel, never
+ * on the default world's map): each a valid biome with a `label` and a `description`, the names and
+ * labels distinct, none named as a world biome (`taken`). Throws naming the preset.
+ */
+export function validatePresets(presets, blocks, refs, taken = []) {
+  for (const b of presets) {
+    validateBiome(b, blocks, refs);
+    if (b.label === undefined || b.description === undefined) {
+      throw new Error(`biome ${b.name}: a preset needs a label and a description`);
+    }
+  }
+  for (const k of ['name', 'label']) {
+    const vs = presets.map((b) => b[k]);
+    const dup = vs.find((v, i) => vs.indexOf(v) !== i || (k === 'name' && taken.includes(v)));
+    if (dup !== undefined) throw new Error(`preset ${k} ${dup} is used twice`);
+  }
+  return presets;
 }
 
 /** The fluid look's fields a biome's `waterLook` may set (its water's colour and clarity, ADR 0074 B4). */

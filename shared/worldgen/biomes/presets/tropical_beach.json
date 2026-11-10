@@ -1,0 +1,62 @@
+{
+  "name": "preset:tropical_beach",
+  "label": "Tropical beach",
+  "description": "Warm low coasts and islands: wide sand beaches, gentle banks, shallow turquoise water.",
+  "where": {
+    "weight": 1,
+    "temperature": {
+      "min": 0.5,
+      "blend": 0.1
+    },
+    "elevation": {
+      "max": 50,
+      "blend": 20
+    },
+    "coast": {
+      "max": 600,
+      "blend": 200
+    }
+  },
+  "detail": {
+    "amplitude": 1,
+    "wavelength": 96,
+    "octaves": 3,
+    "mountainAmplitude": 6,
+    "mountainFrom": 300,
+    "mountainFull": 1800,
+    "waterFade": 40
+  },
+  "shaping": {
+    "edgeNoise": 60,
+    "edgeWavelength": 256,
+    "edgeSlopeLift": 200,
+    "rockSlope": 1.2,
+    "rockSlopeHigh": 0.8,
+    "rockHigh": 800,
+    "rockWindow": 120,
+    "shore": 4,
+    "underDepth": 3
+  },
+  "banks": {
+    "riverSlope": 0.12,
+    "lake": 0.5,
+    "lakeSlope": 0.08,
+    "beach": 8
+  },
+  "bands": [
+    {
+      "name": "beach",
+      "ground": "dwell:grass",
+      "under": "dwell:sand",
+      "rock": "dwell:stone",
+      "shoreBlock": "dwell:sand"
+    }
+  ],
+  "decorations": ["meadow_grass"],
+  "placements": [],
+  "water": "dwell:water",
+  "waterLook": {
+    "scatter": "#19d4c0",
+    "absorption": [0.55, 0.05, 0.06]
+  }
+}

@@ -43,6 +43,27 @@ bounded, the air losing exactly what rained; each face's map of seed 7 with a st
 slopes > 2× the lee's rain; `rainShare` 0 leaves the geography identical whatever the wind; the
 goldens.
 
+### Follow-up: the regional shadow (0.52.8)
+
+T1's first look was dominated by per-slope striping: at the map's 100 m cells the intensity saturates
+near a 7 % grade, so each hillside facing the wind took full rain and a whole range's lee read weakly.
+The wind now sees the ground low-passed over `windSmoothM` m (`biomeMap`, 3 km by default; a tent of
+two box passes, `biomemap::smooth_ground`; 0 is the raw map), so rain follows ranges. Still neutral
+(`rainShare` 0). Test: behind a broad range with ±25 m hillsides, every lee cell for 2.3 km is drier
+than half the windward flank's mean; on the raw map a lee hillside is not.
+
+## Presets (built, 0.52.8)
+
+The owner (2026-11-10): "We need a lot of prefabbed biomes as options to use as starting points." A
+folder of preset biomes, `shared/worldgen/biomes/presets/` (14, prototype content on today's blocks):
+the biome format plus a `label` and a `description` (optional for any biome, required of a preset),
+validated by the same rules (`biomes.mjs` `validatePresets`), emitted as `PRESET_BIOMES` for tests,
+listed by Chisel ("Add from preset"), and never in the default world's biome list (the goldens
+unchanged). Each sets a cohesive `where` (the desert warm and dry, the tundra high and cold, the beach
+low and coastal, the marsh wet and low, …), its bands, relief, banks and water look. Rock types (T2)
+and climate-driven soil (T3) will let the canyon and badlands presets read as their own rock; today
+stone stands in.
+
 ## Consequences
 
 - The biome map's wetness can be climate-driven; a desert can now follow a rain shadow rather than a

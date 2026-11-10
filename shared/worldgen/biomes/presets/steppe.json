@@ -1,0 +1,60 @@
+{
+  "name": "preset:steppe",
+  "label": "Steppe",
+  "description": "Dry, windswept grassland: flat to rolling, short grass, few rivers.",
+  "where": {
+    "weight": 1,
+    "temperature": {
+      "min": 0.35,
+      "max": 0.65,
+      "blend": 0.1
+    },
+    "wetness": {
+      "max": 0.35,
+      "blend": 0.12
+    },
+    "elevation": {
+      "min": 40,
+      "max": 900,
+      "blend": 120
+    }
+  },
+  "detail": {
+    "amplitude": 1,
+    "wavelength": 256,
+    "octaves": 3,
+    "mountainAmplitude": 14,
+    "mountainFrom": 300,
+    "mountainFull": 1800,
+    "waterFade": 30
+  },
+  "shaping": {
+    "edgeNoise": 150,
+    "edgeWavelength": 320,
+    "edgeSlopeLift": 350,
+    "rockSlope": 0.85,
+    "rockSlopeHigh": 0.55,
+    "rockHigh": 1550,
+    "rockWindow": 150,
+    "shore": 2,
+    "underDepth": 3
+  },
+  "banks": {
+    "riverSlope": 0.2,
+    "lake": 0.5,
+    "lakeSlope": 0.25,
+    "beach": 0
+  },
+  "bands": [
+    {
+      "name": "steppe",
+      "ground": "dwell:grass",
+      "under": "dwell:dirt",
+      "rock": "dwell:stone",
+      "shoreBlock": "dwell:sand"
+    }
+  ],
+  "decorations": ["meadow_grass"],
+  "placements": [],
+  "water": "dwell:water"
+}

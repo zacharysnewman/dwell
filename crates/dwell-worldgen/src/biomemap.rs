@@ -148,7 +148,9 @@ pub struct Rain {
 /// rain is the air's moisture × an intensity (`base_rain` per km, more by `uplift_rain` per 10 %
 /// grade the ground rises along the wind, less by `lee_dry` per 10 % grade it falls; within 0..1),
 /// and the air loses that rain × the step over `wind_reach`, so its moisture only falls inland:
-/// what rained on a windward slope is gone behind it. One pass, O(n² log n) for the order.
+/// what rained on a windward slope is gone behind it. The wind sees the ground (the sea's at 0)
+/// low-passed over `wind_smooth_m` m ([`smooth_ground`]), so a whole range lifts and shadows the
+/// air, not each hillside. One pass, O(n² log n) for the order.
 pub fn rainfall(n: usize, cell: f64, height: &[f32], sea: &[bool], params: &BiomeMap) -> Rain {
     let a = params.wind_direction.to_radians();
     let up = (a.cos(), a.sin());
@@ -159,13 +161,11 @@ pub fn rainfall(n: usize, cell: f64, height: &[f32], sea: &[bool], params: &Biom
     };
     let mut order: Vec<u32> = (0..(n * n) as u32).collect();
     order.sort_by(|&a, &b| key(a).total_cmp(&key(b)));
-    let ground = |c: usize| {
-        if sea[c] {
-            0.0
-        } else {
-            f64::from(height[c]).max(0.0)
-        }
-    };
+    let raw: Vec<f32> = (0..n * n)
+        .map(|c| if sea[c] { 0.0 } else { height[c].max(0.0) })
+        .collect();
+    let smoothed = smooth_ground(n, cell, &raw, params.wind_smooth_m);
+    let ground = |c: usize| f64::from(smoothed[c]);
     let mut moisture = vec![1.0f32; n * n];
     let mut rain = vec![0.0f32; n * n];
     let step = 2.0 * cell;
@@ -201,6 +201,36 @@ pub fn rainfall(n: usize, cell: f64, height: &[f32], sea: &[bool], params: &Biom
         moisture[c] = (m_up * (1.0 - r * dry)) as f32;
     }
     Rain { rain, moisture }
+}
+
+/// `ground` on an `n` × `n` grid of `cell` m low-passed over about `width` m: two passes of a
+/// separable box filter of `width` / 2 m each (a tent of `width` m), the edges clamped; a width
+/// under two cells is the ground as it is.
+pub fn smooth_ground(n: usize, cell: f64, ground: &[f32], width: f64) -> Vec<f32> {
+    let k = (width / (4.0 * cell)).round() as usize;
+    if k == 0 || n == 0 {
+        return ground.to_vec();
+    }
+    let mut a: Vec<f64> = ground.iter().map(|&v| f64::from(v)).collect();
+    let mut b = vec![0f64; n * n];
+    let span = (2 * k + 1) as f64;
+    // One box pass along rows (`along` 1) or columns (`along` n), a running sum, clamped edges.
+    let pass = |src: &[f64], dst: &mut [f64], along: usize, across: usize| {
+        for line in 0..n {
+            let at = |t: usize| line * across + t * along;
+            let get = |t: i64| src[at(t.clamp(0, n as i64 - 1) as usize)];
+            let mut sum: f64 = (-(k as i64)..=k as i64).map(get).sum();
+            for t in 0..n {
+                dst[at(t)] = sum / span;
+                sum += get(t as i64 + k as i64 + 1) - get(t as i64 - k as i64);
+            }
+        }
+    };
+    for _ in 0..2 {
+        pass(&a, &mut b, 1, n);
+        pass(&b, &mut a, n, 1);
+    }
+    a.into_iter().map(|v| v as f32).collect()
 }
 
 /// A two-pass chamfer distance (m) on an `n` × `n` grid of `cell` m from the cells `seed` marks.

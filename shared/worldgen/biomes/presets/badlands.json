@@ -1,0 +1,67 @@
+{
+  "name": "preset:badlands",
+  "label": "Badlands",
+  "description": "Eroded, barren dirt hills cut by gullies, bare stone wherever they steepen.",
+  "where": {
+    "weight": 1,
+    "temperature": {
+      "min": 0.5,
+      "blend": 0.1
+    },
+    "wetness": {
+      "max": 0.2,
+      "blend": 0.08
+    },
+    "elevation": {
+      "min": 60,
+      "max": 1000,
+      "blend": 100
+    }
+  },
+  "detail": {
+    "amplitude": 5,
+    "wavelength": 32,
+    "octaves": 4,
+    "mountainAmplitude": 14,
+    "mountainFrom": 300,
+    "mountainFull": 1800,
+    "waterFade": 30
+  },
+  "shaping": {
+    "edgeNoise": 150,
+    "edgeWavelength": 320,
+    "edgeSlopeLift": 350,
+    "rockSlope": 0.3,
+    "rockSlopeHigh": 0.25,
+    "rockHigh": 1550,
+    "rockWindow": 60,
+    "shore": 2,
+    "underDepth": 3
+  },
+  "banks": {
+    "riverSlope": 0.8,
+    "lake": 0.5,
+    "lakeSlope": 0.25,
+    "beach": 0
+  },
+  "bands": [
+    {
+      "name": "badlands",
+      "ground": "dwell:dirt",
+      "under": "dwell:dirt",
+      "rock": "dwell:stone",
+      "shoreBlock": "dwell:sand"
+    },
+    {
+      "name": "caprock",
+      "from": 500,
+      "ground": "dwell:stone",
+      "under": "dwell:dirt",
+      "rock": "dwell:stone",
+      "shoreBlock": "dwell:sand"
+    }
+  ],
+  "decorations": [],
+  "placements": [],
+  "water": "dwell:water"
+}

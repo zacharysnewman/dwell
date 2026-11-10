@@ -1,0 +1,54 @@
+{
+  "name": "preset:alpine_tundra",
+  "label": "Alpine tundra",
+  "description": "Bare, frosty ground above the trees: snowy turf over rock, stone on every steep face.",
+  "where": {
+    "weight": 1,
+    "temperature": {
+      "max": 0.3,
+      "blend": 0.08
+    },
+    "elevation": {
+      "min": 1000,
+      "blend": 200
+    }
+  },
+  "detail": {
+    "amplitude": 3,
+    "wavelength": 128,
+    "octaves": 4,
+    "mountainAmplitude": 16,
+    "mountainFrom": 300,
+    "mountainFull": 1800,
+    "waterFade": 30
+  },
+  "shaping": {
+    "edgeNoise": 150,
+    "edgeWavelength": 320,
+    "edgeSlopeLift": 350,
+    "rockSlope": 0.5,
+    "rockSlopeHigh": 0.35,
+    "rockHigh": 1400,
+    "rockWindow": 150,
+    "shore": 2,
+    "underDepth": 3
+  },
+  "banks": {
+    "riverSlope": 0.45,
+    "lake": 0.5,
+    "lakeSlope": 0.25,
+    "beach": 0
+  },
+  "bands": [
+    {
+      "name": "tundra",
+      "ground": "dwell:snowy_grass",
+      "under": "dwell:dirt",
+      "rock": "dwell:stone",
+      "shoreBlock": "dwell:sand"
+    }
+  ],
+  "decorations": [],
+  "placements": [],
+  "water": "dwell:water"
+}

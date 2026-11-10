@@ -76,7 +76,12 @@ fn flat_land_dries_steadily_inland() {
     let (n, cell) = (64usize, 100.0);
     let height = vec![10f32; n * n];
     let sea: Vec<bool> = (0..n * n).map(|c| c % n >= 60).collect();
-    let r = rainfall(n, cell, &height, &sea, &strong_wind());
+    // The raw map: smoothed, the sea's 0 m blurred into the 10 m shore is a rise the air climbs.
+    let wind = BiomeMap {
+        wind_smooth_m: 0.0,
+        ..strong_wind()
+    };
+    let r = rainfall(n, cell, &height, &sea, &wind);
     let row = 30 * n;
     for i in 0..57 {
         assert!(r.rain[row + i] <= r.rain[row + i + 1] + 1e-7, "{i}");
@@ -145,3 +150,53 @@ dwell_world::both_faces!(
         assert!(differs > 0, "rainShare 1 changes the wetness");
     }
 );
+
+/// A whole range's rain shadow on a face-local grid of 100 m cells: the sea upwind (x ≥ 110 cells,
+/// the wind from +x), a broad 700 m range peaking at x = 70 with 30 % flanks, and hillsides on it
+/// (±25 m every 400 m). Returns the mean rain on the windward flank and
+/// the most any lee cell within 2.3 km of the crest takes.
+fn range_shadow(smooth: f64) -> (f64, f64) {
+    let (n, cell) = (128usize, 100.0);
+    let mut height = vec![0f32; n * n];
+    let mut sea = vec![false; n * n];
+    for j in 0..n {
+        for i in 0..n {
+            let c = j * n + i;
+            if i >= 110 {
+                sea[c] = true;
+                height[c] = -20.0;
+            } else {
+                let d = (i as f64 - 70.0).abs();
+                let hill = 25.0 * (i as f64 * std::f64::consts::TAU / 4.0).sin();
+                height[c] = ((700.0 - 30.0 * d).max(20.0) + hill) as f32;
+            }
+        }
+    }
+    let p = BiomeMap {
+        wind_direction: 0.0,
+        rain_share: 1.0,
+        wind_smooth_m: smooth,
+        ..BIOME_MAP
+    };
+    let r = rainfall(n, cell, &height, &sea, &p);
+    let row = 64 * n;
+    let at = |i: usize| f64::from(r.rain[row + i]);
+    let windward = (72..106).map(at).sum::<f64>() / 34.0;
+    let lee = (45..68).map(at).fold(0.0, f64::max);
+    (windward, lee)
+}
+
+#[test]
+fn a_whole_range_shadows_a_wide_band_of_its_lee() {
+    // both-faces: a face-local grid of its own, no face.
+    // The wind sees the ground smoothed over 3 km: every lee cell for 2.3 km behind the crest is
+    // drier than half the windward flank's mean, hillsides facing the wind included.
+    let (windward, lee) = range_shadow(3000.0);
+    assert!(
+        lee < 0.5 * windward,
+        "smoothed: windward {windward}, wettest lee cell {lee}"
+    );
+    // On the raw map each hillside facing the wind in the lee saturates the uplift and stripes.
+    let (w0, l0) = range_shadow(0.0);
+    assert!(l0 >= 0.5 * w0, "raw: windward {w0}, wettest lee cell {l0}");
+}

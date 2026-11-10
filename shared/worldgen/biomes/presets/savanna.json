@@ -1,0 +1,63 @@
+{
+  "name": "preset:savanna",
+  "label": "Savanna",
+  "description": "Warm and dry: grass on sandy soil, wide flat plains, sandy river banks.",
+  "where": {
+    "weight": 1,
+    "temperature": {
+      "min": 0.6,
+      "blend": 0.1
+    },
+    "wetness": {
+      "min": 0.15,
+      "max": 0.45,
+      "blend": 0.1
+    },
+    "elevation": {
+      "max": 600,
+      "blend": 120
+    }
+  },
+  "detail": {
+    "amplitude": 1,
+    "wavelength": 200,
+    "octaves": 3,
+    "mountainAmplitude": 14,
+    "mountainFrom": 300,
+    "mountainFull": 1800,
+    "waterFade": 30
+  },
+  "shaping": {
+    "edgeNoise": 150,
+    "edgeWavelength": 320,
+    "edgeSlopeLift": 350,
+    "rockSlope": 0.85,
+    "rockSlopeHigh": 0.55,
+    "rockHigh": 1550,
+    "rockWindow": 150,
+    "shore": 2,
+    "underDepth": 3
+  },
+  "banks": {
+    "riverSlope": 0.15,
+    "lake": 0.5,
+    "lakeSlope": 0.25,
+    "beach": 3
+  },
+  "bands": [
+    {
+      "name": "savanna",
+      "ground": "dwell:grass",
+      "under": "dwell:sand",
+      "rock": "dwell:stone",
+      "shoreBlock": "dwell:sand"
+    }
+  ],
+  "decorations": ["meadow_grass"],
+  "placements": [],
+  "water": "dwell:water",
+  "waterLook": {
+    "scatter": "#5a7a40",
+    "absorption": [0.5, 0.25, 0.4]
+  }
+}

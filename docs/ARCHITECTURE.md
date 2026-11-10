@@ -1532,7 +1532,9 @@ names the `defaultBiome`. `shared/worldgen/gen.mjs` validates them and emits `HE
 default's) into `terrain.gen.rs`; every world is the default biome today (the goldens unchanged).
 **The biome map [built, B2]** (`dwell-worldgen` `biomemap.rs`): a generator's biomes (the build's
 `BIOMES`, or `TerrainGenerator::with_biomes`; tests add `FIXTURE_BIOMES`, `shared/worldgen/biomes/fixtures/`,
-never on a world's map) are weighted per column from its geography, computed from the face's world map
+never on a world's map; **the presets [built, Phase 57, 0.52.8]**, `shared/worldgen/biomes/presets/`, are
+starting points Chisel offers by their `label` and `description` (validated by `biomes.mjs`
+`validatePresets`, emitted as `PRESET_BIOMES` for tests), never on the default world's map either) are weighted per column from its geography, computed from the face's world map
 after the height field (which biomes never change beyond their bounded fine relief): the elevation (the
 map's height), the distance to the sea and to the nearest river or lake cell (two chamfer distance grids
 on the map's 100 m cells, built once per generator), and the temperature, a slow climate gradient across
@@ -1541,7 +1543,9 @@ the island (along a direction from the seed, bent by a noise) less a lapse rate 
 0.52.7; ADR 0075]**): `biomemap::rainfall` marches a prevailing wind (`biomeMap.windDirection`) across
 the face's map once per biome field, upwind cells first, the sea refilling the air, rising ground
 raining it out (`baseRain`, `upliftRain`), falling ground raining less (`leeDry`), the air losing what
-rained over `windReach`, so the lee of high ground is dry; the wetness is `(1 − rainShare)` × the
+rained over `windReach`, so the lee of high ground is dry; the wind sees the ground low-passed over
+`windSmoothM` m (a tent filter, `biomemap::smooth_ground`; 3 km), so whole ranges lift and shadow the air,
+not each hillside; the wetness is `(1 − rainShare)` × the
 rivers' + `rainShare` × the rainfall, `rainShare` 0 in the default world (neutral). A biome's weight is its `weight` × each range's smoothstep fit over ± its
 `blend`; the world's default biome is a **fallback** taking only what is left of 1 after the others (`fallback_weights`, B3), so a fitting biome takes its place at an ordinary weight of 1; then normalised (at most four per column; the default takes a column nothing fits). The column takes
 its surface from one biome, chosen against the cumulative weights by a dithered threshold (a noise and a
