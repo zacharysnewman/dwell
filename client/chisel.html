@@ -103,17 +103,28 @@
         white-space: pre-wrap;
       }
       section.preview {
-        display: grid;
-        place-items: center;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+        align-items: center;
+        justify-content: center;
         padding: 12px;
         overflow: hidden;
       }
       canvas {
-        width: min(calc(100vh - 80px), calc(100vw - 440px));
+        width: min(calc(100vh - 80px), calc(100vw - 760px));
         aspect-ratio: 1;
         image-rendering: pixelated;
         border: 1px solid var(--line);
         background: #0b1a2b;
+      }
+      .world {
+        width: 288px;
+      }
+      #overview {
+        width: 288px;
+        cursor: crosshair;
+        touch-action: none;
       }
       #status,
       .sub {
@@ -136,7 +147,9 @@
           grid-template-columns: 1fr;
           height: auto;
         }
-        canvas {
+        canvas,
+        .world,
+        #overview {
           width: calc(100vw - 32px);
         }
       }
@@ -150,6 +163,11 @@
           <div class="bar" id="view"></div>
           <canvas id="map" width="256" height="256"></canvas>
           <div id="status"></div>
+        </div>
+        <div class="world">
+          <h2>World</h2>
+          <canvas id="overview" width="512" height="512"></canvas>
+          <div id="overview-status" class="sub"></div>
         </div>
       </section>
     </main>

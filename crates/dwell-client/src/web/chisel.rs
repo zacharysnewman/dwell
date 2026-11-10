@@ -4,7 +4,7 @@
 
 use wasm_bindgen::prelude::*;
 
-use crate::chisel::{Overlay, edit_from_json, preview};
+use crate::chisel::{Overlay, edit_from_json, overview_frame, preview};
 use dwell_worldgen::bifacial::BifacialTerrain;
 use dwell_worldgen::terrain::TerrainGenerator;
 
@@ -68,5 +68,12 @@ impl ChiselPreview {
             i64::from(texel.max(1)),
             Overlay::from_index(overlay),
         )
+    }
+
+    /// The world overview's frame for `n` texels a side: `[x0, texel]` (x0 also the frame's z0),
+    /// the whole disc inside (`chisel::overview_frame`).
+    pub fn overview_frame(n: u32) -> Vec<i32> {
+        let (x0, texel) = overview_frame(i64::from(n));
+        vec![x0 as i32, texel as i32]
     }
 }
