@@ -507,7 +507,7 @@ function startMinimap(app: App, world: string): void {
     else ui.key(e.code);
   });
   window.addEventListener('pagehide', () => {
-    ui.save(performance.now() + 1e9);
+    ui.save(performance.now() + 1e9, true);
   });
 }
 
