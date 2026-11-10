@@ -823,6 +823,7 @@ dependencies = [
  "dwell-lod",
  "dwell-look",
  "dwell-mesh",
+ "dwell-models",
  "dwell-physics",
  "dwell-protocol",
  "dwell-sim",

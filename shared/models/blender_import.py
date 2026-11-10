@@ -6,7 +6,9 @@
 #
 #   blender -b --factory-startup -P shared/models/blender_import.py -- <job.json>
 #
-# The job (written by import.mjs): {fbx, texture, out, palette: [[r, g, b], ...] (sRGB 0..1),
+# The job (written by import.mjs): {fbx, texture, out, palette: [[[r, g, b], [r, g, b]], ...] (each
+# palette stop and its ramp's base, sRGB 0..1: a colour snaps to the nearest stop and takes its
+# ramp's base, the shading being the renderer's),
 # remap: [[[r, g, b], [r, g, b]], ...] (from, to; sRGB 0..1), tolerance, frame_step}.
 import json
 import sys
@@ -47,7 +49,8 @@ def srgb_to_lab(c):
     return np.stack([116 * f[..., 1] - 16, 500 * (f[..., 0] - f[..., 1]), 200 * (f[..., 1] - f[..., 2])], -1)
 
 
-palette = np.array(job['palette'], dtype=np.float64)
+palette = np.array([p[0] for p in job['palette']], dtype=np.float64)
+palette_out = np.array([p[1] for p in job['palette']], dtype=np.float64)
 palette_lab = srgb_to_lab(palette)
 remap_from = srgb_to_lab(np.array([r[0] for r in job['remap']], dtype=np.float64).reshape(-1, 3))
 remap_to = np.array([r[1] for r in job['remap']], dtype=np.float64).reshape(-1, 3)
@@ -67,7 +70,7 @@ def snap(c):
         k = int(np.argmin(d))
         if d[k] <= tolerance:
             return remap_to[k]
-    return palette[int(np.argmin(np.linalg.norm(palette_lab - lab, axis=1)))]
+    return palette_out[int(np.argmin(np.linalg.norm(palette_lab - lab, axis=1)))]
 
 
 uvs = mesh.uv_layers.active.data

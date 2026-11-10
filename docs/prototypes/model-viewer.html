@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Model Viewer</title>
+<!--
+  Dwell's skinned models (docs/CHARACTERS.md §11, ADR 0070): every model of shared/models/models.json,
+  its GLB as imported (palette colours, no texture), playing the clip each role maps to. Reads the
+  data and the GLBs from the repo, so serve the repo's root (`python3 -m http.server` there) and open
+  /docs/prototypes/model-viewer.html. `?role=walk` picks the role on load.
+-->
+<style>
+  :root { --bg: #e9eff6; --ink: #241c28; --panel: #ffffffcc; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #2a2530; --ink: #f0f8f8; --panel: #241c28cc; } }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 14px system-ui, sans-serif; }
+  #bar { position: fixed; top: 12px; left: 12px; right: 12px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+    background: var(--panel); padding: 8px 10px; border-radius: 10px; }
+  #bar button { font: inherit; border: 1px solid #43354a55; background: transparent; color: inherit; border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+  #bar button.on { background: #82bd45; color: #241c28; }
+  canvas { display: block; }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="bar"><strong>Model Viewer</strong><span id="roles"></span><span id="status"></span></div>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const base = new URL('../../shared/models/', location.href);
+const data = await (await fetch(new URL('models.json', base))).json();
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(devicePixelRatio);
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(getComputedStyle(document.documentElement).getPropertyValue('--bg').trim());
+const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.05, 200);
+camera.position.set(0, 3.2, 9.5);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.7, 0);
+scene.add(new THREE.HemisphereLight(0xcfe3ff, 0x8e5d3d, 1.1));
+const sun = new THREE.DirectionalLight(0xfff1c2, 2.2);
+sun.position.set(4, 8, 6);
+sun.castShadow = true;
+sun.shadow.camera.left = sun.shadow.camera.bottom = -8;
+sun.shadow.camera.right = sun.shadow.camera.top = 8;
+scene.add(sun);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshLambertMaterial({ color: 0x82bd45 }));
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const roles = [...new Set(Object.values(data.models).flatMap((m) => Object.keys(m.roles)))];
+let role = new URLSearchParams(location.search).get('role') ?? 'idle';
+const loaded = [];
+const names = Object.keys(data.models);
+const cols = 4;
+await Promise.all(names.map(async (name, i) => {
+  const m = data.models[name];
+  const gltf = await new GLTFLoader().loadAsync(new URL(m.glb, base).href);
+  const root = gltf.scene;
+  root.scale.setScalar(m.scale);
+  root.rotation.y = THREE.MathUtils.degToRad(m.yaw ?? 0);
+  root.position.set(((i % cols) - (cols - 1) / 2) * 2.6, 0, (Math.floor(i / cols) - 0.5) * 3);
+  root.traverse((o) => {
+    if (o.isMesh) {
+      o.material = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+      o.castShadow = true;
+    }
+  });
+  scene.add(root);
+  const mixer = new THREE.AnimationMixer(root);
+  loaded.push({ name, m, mixer, clips: gltf.animations, action: null });
+}));
+document.querySelector('#status').textContent = ` ${loaded.length} models`;
+
+function play(r) {
+  role = r;
+  for (const l of loaded) {
+    const rc = l.m.roles[r] ?? l.m.roles[l.m.fallback];
+    const clip = l.clips.find((c) => c.name === rc.clip);
+    const next = l.mixer.clipAction(clip);
+    next.timeScale = rc.speed ?? 1;
+    if (l.action !== next) {
+      next.reset().play();
+      if (l.action) l.action.crossFadeTo(next, 0.2, false);
+      l.action = next;
+    }
+  }
+  for (const b of document.querySelectorAll('#roles button')) b.classList.toggle('on', b.textContent === r);
+}
+for (const r of roles) {
+  const b = document.createElement('button');
+  b.textContent = r;
+  b.onclick = () => play(r);
+  document.querySelector('#roles').appendChild(b);
+}
+play(role);
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  const dt = clock.getDelta();
+  for (const l of loaded) l.mixer.update(dt);
+  controls.update();
+  renderer.render(scene, camera);
+});
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+window.viewerReady = true;
+</script>
+</body>
+</html>

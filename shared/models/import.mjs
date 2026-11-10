@@ -48,7 +48,12 @@ function assetIn(pack, path) {
 const hexRgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
 const data = JSON.parse(readFileSync(join(here, 'models.json'), 'utf8'));
 const palette = JSON.parse(readFileSync(join(root, 'shared/textures/palette.json'), 'utf8'));
-const stops = paletteStops(palette, data.palette?.exclude ?? []).map((s) => hexRgb(s.hex));
+// Each stop and its ramp's base: a colour takes the base of the ramp it is nearest (the painted
+// shading in the packs' textures is the renderer's to do).
+const stops = paletteStops(palette, data.palette?.exclude ?? []).map((s) => [
+  hexRgb(s.hex),
+  hexRgb(resolveColor(palette, s.name.split('.')[0])),
+]);
 const names = args.length ? args : Object.keys(data.models);
 const tmp = mkdtempSync(join(tmpdir(), 'dwell-models-'));
 try {
