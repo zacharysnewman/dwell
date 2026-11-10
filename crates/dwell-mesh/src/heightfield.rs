@@ -35,6 +35,23 @@ pub fn pack_light(l: [f32; 2]) -> f32 {
     (l[0] * 15.0).round() * 16.0 + (l[1] * 15.0).round()
 }
 
+/// A tile texel's second channel: the column's packed light ([`pack_light`], under
+/// [`LIGHT_SPAN`]) plus [`LIGHT_SPAN`] × the face-local cell row of its water's floor (the run of
+/// the same water under its surface, in the chunk): the skirts' bottom.
+pub fn pack_column(l: [f32; 2], floor_cell: i32) -> f32 {
+    pack_light(l) + LIGHT_SPAN * floor_cell as f32
+}
+/// The packed light's span in a texel's second channel ([`pack_column`]).
+pub const LIGHT_SPAN: f32 = 256.0;
+/// A texel's packed light ([`pack_light`]) from its second channel.
+pub fn column_light(packed: f32) -> f32 {
+    packed - LIGHT_SPAN * (packed / LIGHT_SPAN).floor()
+}
+/// A texel's water floor, face-local metres, from its second channel.
+pub fn column_floor(packed: f32) -> f32 {
+    (packed / LIGHT_SPAN).floor() * dwell_world::CELL_H as f32
+}
+
 /// A chunk's surface tile as the client's renderer takes it with the chunk's meshes.
 #[derive(Clone, Debug, PartialEq)]
 pub struct WaterTile {
@@ -249,6 +266,81 @@ pub fn grid_vertex(levels: &[f32], join_m: f32, vertex: usize, face_b: bool) -> 
     let (i, j) = (cx + ox, cz + oz);
     let h = corner_height([l(i, j), l(i + 1, j), l(i, j + 1), l(i + 1, j + 1)], join_m);
     Some([i as f32, h, j as f32])
+}
+
+/// A column's sides (W2): −x, +x, −z, +z, each a skirt quad of six vertices.
+pub const SIDES: [[i32; 2]; 4] = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+/// The skirts' vertices per column: four sides of [`COLUMN_VERTICES`].
+pub const SKIRT_COLUMN_VERTICES: usize = SIDES.len() * COLUMN_VERTICES;
+/// The skirts' vertices in one draw, after the grid's [`GRID_VERTICES`].
+pub const SKIRT_VERTICES: usize = COLUMNS * COLUMNS * SKIRT_COLUMN_VERTICES;
+/// One heightfield draw's vertices: the grid's, then the skirts'.
+pub const DRAW_VERTICES: usize = GRID_VERTICES + SKIRT_VERTICES;
+
+/// The bottom (face-local metres) of the skirt of a column at `level` with water floor `floor`
+/// beside a neighbour column at `beside` (its level, or [`DRY`]): none where the neighbour's water
+/// joins this one (within `join_m`, the shared corners draw the step) or none shows. Down to the
+/// neighbour's lower water, else to the column's own floor (a bank in front hides the rest).
+pub fn skirt_bottom(level: f32, floor: f32, beside: f32, join_m: f32) -> Option<f32> {
+    if !wet(level) || (wet(beside) && level - beside <= join_m) {
+        return None;
+    }
+    let bottom = if wet(beside) { beside.max(floor) } else { floor };
+    (bottom < level).then_some(bottom)
+}
+
+/// Skirt vertex `vertex` (of [`SKIRT_VERTICES`]) of a tile, face-local (x, height, z in
+/// chunk-local metres), as `heightfield_vs` places it past the grid's vertices: the vertical
+/// quad from the column's surface edge (its two corners' [`corner_height`]s) down to its
+/// [`skirt_bottom`] on that side; none (collapsed) where the side has no skirt. `floors` is each
+/// texel's [`column_floor`]. The shader's reference.
+pub fn skirt_vertex(levels: &[f32], floors: &[f32], join_m: f32, vertex: usize) -> Option<[f32; 3]> {
+    let column = vertex / SKIRT_COLUMN_VERTICES;
+    let side = (vertex / COLUMN_VERTICES) % SIDES.len();
+    let (cx, cz) = ((column % COLUMNS) as i32, (column / COLUMNS) as i32);
+    let texel = |x: i32, z: i32| (x + 1) as usize + TILE * (z + 1) as usize;
+    let own = texel(cx, cz);
+    let [dx, dz] = SIDES[side];
+    let bottom = skirt_bottom(levels[own], floors[own], levels[texel(cx + dx, cz + dz)], join_m)?;
+    let [a, b] = skirt_edge(side);
+    let corner = [a, b, b, a, b, a][vertex % COLUMN_VERTICES];
+    let up = [true, true, false, true, false, false][vertex % COLUMN_VERTICES];
+    let (i, j) = (cx as usize + corner[0], cz as usize + corner[1]);
+    let l = |x: usize, z: usize| levels[x + TILE * z];
+    let top = corner_height([l(i, j), l(i + 1, j), l(i, j + 1), l(i + 1, j + 1)], join_m);
+    Some([i as f32, if up { top } else { bottom.min(top) }, j as f32])
+}
+
+/// The two corners (offsets from the column's own corner) of side `side`'s edge.
+pub fn skirt_edge(side: usize) -> [[usize; 2]; 2] {
+    match side {
+        0 => [[0, 0], [0, 1]],
+        1 => [[1, 0], [1, 1]],
+        2 => [[0, 0], [1, 0]],
+        _ => [[0, 1], [1, 1]],
+    }
+}
+
+/// Whether the skirts draw the side face of liquid cell `cell` (face-local, chunk-local) toward
+/// neighbour column `beside` (padded x, z), so the chunk mesher leaves it out while the
+/// heightfield draws: the neighbour cell is open air (`open`), the cell is in its column's top
+/// water ([`crate::mesher::water_runs`]), and it lies wholly above that side's skirt bottom.
+pub(crate) fn skirt_covers(
+    runs: &[Option<crate::mesher::WaterRun>],
+    [x, y, z]: [i32; 3],
+    [bx, bz]: [i32; 2],
+    open: bool,
+) -> bool {
+    let run = |x: i32, z: i32| runs[(x + 1) as usize + TILE * (z + 1) as usize];
+    let Some(own) = run(x, z) else { return false };
+    if !open || y < own.floor || y > own.top {
+        return false;
+    }
+    let beside = run(bx, bz).map_or(DRY, |r| r.level);
+    let floor = own.floor as f32 * dwell_world::CELL_H as f32;
+    let join = dwell_look::water_tiers::HEIGHTFIELD.join_m as f32;
+    skirt_bottom(own.level, floor, beside, join)
+        .is_some_and(|b| y as f32 * dwell_world::CELL_H as f32 >= b - 1e-4)
 }
 
 #[cfg(test)]
