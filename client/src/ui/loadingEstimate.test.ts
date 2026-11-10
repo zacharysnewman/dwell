@@ -49,7 +49,9 @@ describe('the opening guess per device', () => {
     expect(deviceFactor(desktop)).toBe(1);
     expect(deviceFactor({ phone: false, cpuAdapter: false, workers: 4 })).toBe(1);
     // 6 cores: 8/6; a phone ×2; 3 GB under 4: ×1.4.
-    expect(deviceFactor(phone)).toBeCloseTo((8 / 6) * T.device.phoneFactor * T.device.lowMemoryFactor);
+    expect(deviceFactor(phone)).toBeCloseTo(
+      (8 / 6) * T.device.phoneFactor * T.device.lowMemoryFactor,
+    );
     expect(deviceFactor(software)).toBeCloseTo(2 * T.device.cpuFactor);
     // Many cores are clamped: no device is guessed faster than minFactor.
     expect(deviceFactor({ ...desktop, cores: 64 })).toBe(T.device.minFactor);
@@ -61,8 +63,12 @@ describe('the opening guess per device', () => {
     const remote = estimate(input(t, desktop, 0, true)).leftS;
     const cost = (id: keyof typeof T.stages) => stageGuessS(id, C(id), 1, 4);
     // Joining a server: no world file, server or spawn search; its connection instead.
-    expect(local - remote).toBeCloseTo(cost('worldFile') + cost('server') + cost('spawn') - cost('connect'));
-    expect(cost('terrain')).toBeCloseTo(C('terrain').baseS + (T.ringChunks * (C('terrain').perItemS ?? 0)) / 4);
+    expect(local - remote).toBeCloseTo(
+      cost('worldFile') + cost('server') + cost('spawn') - cost('connect'),
+    );
+    expect(cost('terrain')).toBeCloseTo(
+      C('terrain').baseS + (T.ringChunks * (C('terrain').perItemS ?? 0)) / 4,
+    );
     // A phone guesses longer than the desktop, a software adapter longer still per stage.
     expect(estimate(input(t, phone, 0)).leftS).toBeGreaterThan(local);
   });
@@ -82,7 +88,13 @@ describe('refinement as rates arrive', () => {
     t.progress('game', 1e6, 9e6, 1000); // 1 MB/s measured, 8 MB to go
     const runs = t.runsNow();
     const e = estimate({ runs, history: [], device: desktop, remote: false, nowMs: 1000 });
-    const rest = estimate({ runs: [], history: [], device: desktop, remote: false, nowMs: 0 }).leftS;
+    const rest = estimate({
+      runs: [],
+      history: [],
+      device: desktop,
+      remote: false,
+      nowMs: 0,
+    }).leftS;
     const gameGuess = stageGuessS('game', C('game'), 1, 4);
     expect(e.leftS).toBeCloseTo(8 + (rest - gameGuess));
     expect(e.elapsedS).toBe(1);
@@ -93,7 +105,9 @@ describe('refinement as rates arrive', () => {
     t.begin('terrain', 0);
     // 4 chunks (minSamples) in 2 s: 0.5 s a chunk measured, 175 to go.
     t.progress('terrain', T.minSamples, 179, 2000);
-    expect(estimate(input(t, desktop, 2000)).leftS).toBeCloseTo((179 - T.minSamples) * (2 / T.minSamples));
+    expect(estimate(input(t, desktop, 2000)).leftS).toBeCloseTo(
+      (179 - T.minSamples) * (2 / T.minSamples),
+    );
     // One chunk: a quarter measured, three quarters the guess.
     const u = new StageTracker();
     u.begin('terrain', 0);
@@ -107,18 +121,33 @@ describe('refinement as rates arrive', () => {
     const t = new StageTracker();
     t.begin('graphics', 0);
     t.end('graphics', 4000); // 10× its 0.4 s guess
-    expect(calibration(t.history, desktop)).toBe(8); // clamped
-    const fresh = estimate({ runs: [], history: [], device: desktop, remote: false, nowMs: 0 }).leftS;
-    expect(estimate({ runs: [], history: t.history, device: desktop, remote: false, nowMs: 0 }).leftS).toBeGreaterThan(
-      fresh,
+    // Damped: 10× slower measured rescales the rest by 10^calibrationPower, not 10.
+    expect(calibration(t.history, desktop)).toBeCloseTo(10 ** T.calibrationPower);
+    // One fast stage likewise only nudges them, within the clamp.
+    const fast = new StageTracker();
+    fast.begin('graphics', 0);
+    fast.end('graphics', 4);
+    expect(calibration(fast.history, desktop)).toBeCloseTo(
+      Math.max(0.25, 0.01 ** T.calibrationPower),
     );
+    const fresh = estimate({
+      runs: [],
+      history: [],
+      device: desktop,
+      remote: false,
+      nowMs: 0,
+    }).leftS;
+    expect(
+      estimate({ runs: [], history: t.history, device: desktop, remote: false, nowMs: 0 }).leftS,
+    ).toBeGreaterThan(fresh);
   });
 
   it('a running stage without progress past its guess still has some time left', () => {
     const t = new StageTracker();
     t.begin('spawn', 0);
     const guess = C('spawn').baseS;
-    const at = (ms: number) => estimate(input(t, desktop, ms)).leftS - estimate(input(t, desktop, 0)).leftS + guess;
+    const at = (ms: number) =>
+      estimate(input(t, desktop, ms)).leftS - estimate(input(t, desktop, 0)).leftS + guess;
     expect(at(500)).toBeCloseTo(guess - 0.5);
     expect(at(10_000)).toBeCloseTo(T.overrunFraction * 10);
   });

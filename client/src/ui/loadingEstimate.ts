@@ -84,7 +84,8 @@ export function stageGuessS(
 
 /**
  * The device's speed as measured so far: each ended 'device' stage's time against its guess, as one
- * ratio (1 with nothing ended), within [0.25, 8]. It rescales the guesses still to come.
+ * ratio (1 with nothing ended) raised to `calibrationPower` (damped: one slow stage does not swing
+ * the rest), within [0.25, 8]. It rescales the guesses still to come.
  */
 export function calibration(
   ended: readonly StageRun[],
@@ -100,8 +101,8 @@ export function calibration(
     guessed += stageGuessS(r.id, c, scale, device.workers, r.total, t);
     took += (r.endedMs - r.beganMs) / 1000;
   }
-  if (guessed < 0.05) return 1;
-  return Math.min(8, Math.max(0.25, took / guessed));
+  if (guessed < 0.05 || took <= 0) return 1;
+  return Math.min(8, Math.max(0.25, (took / guessed) ** t.calibrationPower));
 }
 
 /** A running stage's time left (s) at `nowMs`, from its progress where it has some. */
@@ -232,7 +233,11 @@ export class SecondsLabel {
     if (nowMs - this.atMs >= this.t.labelEveryS * 1000) {
       this.atMs = nowMs;
       if (leftS < this.t.hideBelowS) this.value = null;
-      else if (this.value === null || Math.abs(leftS - this.value) >= this.t.labelHysteresisS) {
+      else if (
+        this.value === null ||
+        Math.abs(leftS - this.value) >=
+          Math.max(this.t.labelHysteresisS, this.t.labelHysteresisFraction * this.value)
+      ) {
         this.value = leftS;
       }
     }

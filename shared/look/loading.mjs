@@ -147,9 +147,11 @@ const ESTIMATE = {
   easeS: [0, 5],
   labelEveryS: [0, 5],
   labelHysteresisS: [0, 10],
+  labelHysteresisFraction: [0, 1],
   hideBelowS: [0, 10],
   roundAboveS: [1, 600],
   minSamples: [1, 1000],
+  calibrationPower: [0, 1],
   overrunFraction: [0, 2],
 };
 const DEVICE = {
