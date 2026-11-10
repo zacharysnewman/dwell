@@ -157,7 +157,11 @@ dwell_world::both_faces!(
         // Still holding fly: the server clears it, the player falls and lands unhurt.
         hold(&mut fx, &mut seq, fly, 300);
         assert!(height(&fx, f) < 1.0, "landed: {} m up", height(&fx, f));
-        assert_eq!(fx.server.health_of(1), full, "the host's fall hurts nothing");
+        assert_eq!(
+            fx.server.health_of(1),
+            full,
+            "the host's fall hurts nothing"
+        );
         assert_eq!(dirt(&fx), 5, "the adventure inventory kept");
         // The grace was that one landing: a later hard fall hurts.
         let h = drop_from(&mut fx, f, 15.0);

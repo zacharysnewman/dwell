@@ -185,7 +185,10 @@ pub fn parse_hex<const N: usize>(text: &str) -> Option<[u8; N]> {
 pub fn open_world(o: &mut Options) -> Result<Vec<String>, String> {
     if let Some(name) = &o.mode {
         let m = dwell_protocol::modes::mode(name).ok_or_else(|| {
-            let names: Vec<&str> = dwell_protocol::modes::MODES.iter().map(|m| m.name).collect();
+            let names: Vec<&str> = dwell_protocol::modes::MODES
+                .iter()
+                .map(|m| m.name)
+                .collect();
             format!(
                 "--mode {name:?} is not a game mode (shared/modes/modes.json has: {})",
                 names.join(", ")
