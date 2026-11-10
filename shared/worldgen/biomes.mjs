@@ -78,6 +78,12 @@ export const TERRAIN = {
     wetReach: [{ above: 0 }, 100_000],
     ditherWavelength: [4, 65_536, true],
     dither: [0, 1],
+    windDirection: [0, 360],
+    windReach: [{ above: 0 }, 1_000_000],
+    baseRain: [0, 1],
+    upliftRain: [0, 10],
+    leeDry: [0, 10],
+    rainShare: [0, 1],
   },
   spawn: { minHeight: [0, 10_000], maxHeight: [0, 10_000], nearRiver: [0, 100_000] },
 };

@@ -58,7 +58,7 @@ impl ChiselPreview {
     }
 
     /// An `n` × `n` RGBA tile of `texel` m from face-local (x0, z0): `overlay` 0 blocks, 1 biome
-    /// weights, 2 temperature, 3 wetness.
+    /// weights, 2 temperature, 3 wetness, 4 rainfall.
     pub fn tile(&self, x0: i32, z0: i32, n: u32, texel: u32, overlay: u32) -> Vec<u8> {
         preview(
             &self.current,

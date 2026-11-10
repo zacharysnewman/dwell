@@ -2,6 +2,12 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.52.7",
+      "changes": [
+        "Chisel, the terrain tool, has a rain shadow: wind carries rain in from the sea and drops it on rising ground, leaving the far side of hills dry. New wind sliders and a rainfall overlay; the game's world is unchanged."
+      ]
+    },
+    {
       "version": "0.52.6",
       "changes": [
         "No more thin see-through lines along the edges of a river's water steps.",

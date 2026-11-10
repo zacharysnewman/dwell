@@ -29,6 +29,8 @@ pub enum Overlay {
     Temperature,
     /// The biome map's wetness, tan (0) to blue (1).
     Wetness,
+    /// The rain shadow's rainfall (systemic terrain T1), tan (0) to green (1).
+    Rainfall,
 }
 
 impl Overlay {
@@ -37,6 +39,7 @@ impl Overlay {
             1 => Self::Biomes,
             2 => Self::Temperature,
             3 => Self::Wetness,
+            4 => Self::Rainfall,
             _ => Self::Blocks,
         }
     }
@@ -257,6 +260,12 @@ pub fn biome_map_from_json(v: &Value) -> Result<BiomeMap, String> {
         wet_reach: n("wetReach")?,
         dither_wavelength: n("ditherWavelength")? as i32,
         dither: n("dither")?,
+        wind_direction: n("windDirection")?,
+        wind_reach: n("windReach")?,
+        base_rain: n("baseRain")?,
+        uplift_rain: n("upliftRain")?,
+        lee_dry: n("leeDry")?,
+        rain_share: n("rainShare")?,
     })
 }
 
@@ -384,6 +393,11 @@ pub fn preview(g: &TerrainGenerator, x0: i64, z0: i64, n: i64, texel: i64, o: Ov
                     lerp3([0.2, 0.35, 0.9], [0.9, 0.25, 0.15], geo.temperature)
                 }
                 Some(geo) => lerp3([0.82, 0.72, 0.5], [0.15, 0.35, 0.85], geo.wetness),
+            }),
+            Overlay::Rainfall => bytes(match g.biome_rainfall(x, z) {
+                None => [0.5; 3],
+                // Square-root eased: the dry lee's small values stay readable.
+                Some(r) => lerp3([0.86, 0.74, 0.5], [0.1, 0.5, 0.25], r.max(0.0).sqrt()),
             }),
         };
         out.extend_from_slice(&[rgb[0], rgb[1], rgb[2], 255]);

@@ -125,11 +125,20 @@ export function fromJson(
         }
       : {
           biomes: o.biomes as BiomeJson[],
-          biomeMap: o.biomeMap ?? base.biomeMap,
+          biomeMap: withNewKeys(o.biomeMap ?? base.biomeMap),
           ...(o.world ? { world: o.world } : {}),
         };
   const errors = validateEdit(edit);
   return errors.length ? { errors } : { edit };
+}
+
+/**
+ * A biome map saved by an older Chisel (before the rain shadow's keys) with the keys it lacks at
+ * terrain.json's values, so it still loads.
+ */
+export function withNewKeys(bm: BiomeMapJson | undefined): BiomeMapJson {
+  if (bm === undefined || typeof bm !== 'object' || bm === null) return bm as unknown as BiomeMapJson;
+  return { ...(terrain.biomeMap as BiomeMapJson), ...bm };
 }
 
 /** The browser record's key (append-only: new fields optional, unknown ones kept). */
@@ -141,7 +150,8 @@ export function loadEdit(store: Pick<Storage, 'getItem'> | undefined): Edit {
     const raw = store?.getItem(STORE_KEY);
     if (raw) {
       const rec = JSON.parse(raw) as { edit?: Edit };
-      if (rec.edit && validateEdit(rec.edit).length === 0) return rec.edit;
+      const edit = rec.edit && { ...rec.edit, biomeMap: withNewKeys(rec.edit.biomeMap) };
+      if (edit && validateEdit(edit).length === 0) return edit;
     }
   } catch {
     // Private mode or an unreadable record: the build's.
