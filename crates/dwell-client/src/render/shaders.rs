@@ -137,8 +137,12 @@ struct Fluid {
     flow: vec4f,
     // The streaks' colour (linear), a their strength at full
     flow_foam: vec4f,
-    // x a streak's length along the flow, y its width across (m)
+    // x a streak's length along the flow, y its width across (m), z the shore foam's bands, w the
+    // seconds one takes to roll out
     flow_shape: vec4f,
+    // The shore foam (WATER_RENDERING.md §14): x the contact line's width (m), y a band's width
+    // as it is born (m), z the foam's most, w how far noise varies the bands (0..1)
+    shore: vec4f,
     // Its underwater look (shared/look/underwater.json, WATER_RENDERING.md §12): x the lens (m
     // ahead of the eye: the plane where under or above is decided), y the fog's clear distance
     // (m), z the fog's density (× its rates), w the band's depth (m on the lens plane)
@@ -2786,7 +2790,7 @@ fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(
     // Shoreline foam where the water is thin.
     var foam = 0.0;
     if (!water_off(DBG_FOAM)) {
-        foam = foam_amount(i.wrapped, under, f);
+        foam = foam_amount(i.wrapped, min(under, length_in), f);
     }
     if (foam > 0.0) {
         let lit = lambert_lit(f.foam.rgb, vec3f(0.0, s.up, 0.0), s.frag_y, TerrainLight(s.light.ambient, s.shadow, s.light.glow, s.light.points));
@@ -2802,33 +2806,44 @@ fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(
 
 const DEEP_M: f32 = 1e4;
 
-// Shoreline foam: where the water over what is behind is under the
-// fluid's foam depth, thin drifting lines lapping toward the shore, broken up by noise, densest at
-// the waterline.
-fn foam_amount(xz: vec2f, under: f32, f: Fluid) -> f32 {
-    let depth = f.foam.a;
-    if (depth <= 0.0 || under >= depth) {
+// Shore foam (WATER_RENDERING.md §14; owner, 2026-11-10: 'more like pulsing bands'): by `shore`,
+// the distance to the shore (the depth over a slope, the ray's path through the water to a wall),
+// a solid contact line where the water meets land or a block, and soft bands parallel to the
+// shore, each born at the edge and rolling out to the fluid's foam depth while it thins and fades,
+// a new one forming as the last goes. Slow noise shifts each band's timing and width along the
+// shore; it never multiplies the foam, so it cuts no holes.
+fn foam_amount(xz: vec2f, shore: f32, f: Fluid) -> f32 {
+    let reach = f.foam.a;
+    let most = f.shore.z;
+    if (reach <= 0.0 || most <= 0.0 || shore >= reach + f.shore.y) {
         return 0.0;
     }
-    let edge = 1.0 - under / depth;
     let t = frame.fog.z;
+    // slow noise along the shore, in -1..1 or so
     let n_cells = tile_cells(FOAM_CELL, NOISE_TILE);
     let cell = WRAP_M / n_cells;
-    let drift = vec2f(0.13, 0.09) * t / cell;
+    let drift = vec2f(0.03, 0.02) * t / cell;
     let q = xz / cell + (drift - n_cells * floor(drift / n_cells));
     let n = noise_t(q).x + 0.5 * noise_t(q * 2.0 + vec2f(0.5, 0.25)).x;
-    // Lines that move toward the shore (edge rises toward it) as time passes.
-    let lap = fract(edge * FOAM_LINES - t * FOAM_LAP_SPEED + n * 0.8);
-    let line = smoothstep(0.0, 0.18, lap) * (1.0 - smoothstep(0.3, 0.55, lap));
-    let breakup = smoothstep(-0.15, 0.35, n);
-    // At the waterline (where the water meets the bank, a thin line on screen): a soft rim.
-    let rim = smoothstep(0.55, 1.0, edge) * smoothstep(-0.35, 0.25, n);
-    return clamp(line * breakup * 0.45 * edge + rim * 0.8, 0.0, 0.8);
+    let wob = f.shore.w;
+    // the contact line: solid, a hair wider or narrower along the shore
+    let line_w = f.shore.x * (1.0 + 0.4 * wob * n);
+    var foam = 1.0 - smoothstep(line_w * 0.5, max(line_w, 1e-3), shore);
+    let bands = u32(f.flow_shape.z);
+    let period = max(f.flow_shape.w, 0.1);
+    for (var k = 0u; k < min(bands, 4u); k++) {
+        // its age (0 born at the edge, 1 gone at the reach), shifted along the shore by the noise
+        let age = fract(t / period + f32(k) / f32(bands) + 0.25 * wob * n);
+        let at = f.shore.x + age * reach;
+        let w = f.shore.y * (1.0 - 0.7 * age) * (1.0 + 0.5 * wob * n);
+        let shape = 1.0 - smoothstep(w * 0.25, w * 0.5, abs(shore - at));
+        let fade = smoothstep(0.0, 0.12, age) * (1.0 - age) * (1.0 - age);
+        foam = max(foam, shape * fade * 0.8);
+    }
+    return clamp(foam * most, 0.0, 1.0);
 }
 
 const FOAM_CELL: f32 = 0.9;
-const FOAM_LINES: f32 = 1.6;
-const FOAM_LAP_SPEED: f32 = 0.12;
 
 // Caustics (WATER_RENDERING.md W3, brought forward from W4): the light the ripples focus on what is
 // `under` metres below the surface, at wrapped world `xz`, as a multiplier of its light (1: none).

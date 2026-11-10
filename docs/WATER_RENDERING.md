@@ -325,7 +325,7 @@ colour by depth, which is what makes the shallows work.
 - **Shoreline foam:** where the water over what is behind is under the foam depth, thin drifting
   lines lap toward the shore, broken up by noise, with a soft rim where the water meets the bank
   (at most 0.8). On voxel shores the bank is a step, so the rim shows as a thin line along the
-  waterline.
+  waterline. *Replaced in 0.52.6 by pulsing bands with a solid contact line (§14).*
 - **Sparkle** (all tiers): a tight highlight (power 2,400) off a fine, fast ripple layer
   (0.06 × `waveScale`, faded by the footprint), × the fluid's `sparkle`. The glint breaks into
   glitter on the ripples.
@@ -997,3 +997,36 @@ blended by the biomes' weights, from the build's biome data (clients generate te
 data, so nothing is sent). The default biome has none: today's water exactly. Not yet drawn: the water
 shader still takes one look per fluid; feeding it the per-column look (a vertex tint or a look texture)
 is outstanding. Chisel's preview tints its water by it.
+
+## 14. River step seams and shore foam as pulsing bands (2026-11-10, 0.52.6)
+
+**Step seams.** Owner, 2026-11-10: "Top of water slopes from up river looking down, have some 'gap'
+artifacts": dashed see-through hairlines along a river's ½ m water steps. The step was watertight in
+exact arithmetic (`a_water_step_is_watertight_seen_from_upstream`), but the tops of the pools were
+greedy-merged into long rectangles while each pour slope (§10, `slope_over`) and each riser between
+two fills is one cell wide, so along the step the slopes' and risers' corners fell inside the tops'
+long edges (T-junctions), and the rasterizer left a crack at each where the two surfaces meet at an
+angle. Now a liquid top within two columns of a step in the same water (a neighbour in its row drawn
+at another height, or an open cell over the same water below it; `mesher.rs` `top_on_step`) is drawn
+cell by cell (`ALONE_BIT` in the merge mask), so every crease's vertices are shared. Test:
+`a_water_step_has_no_t_junctions_along_its_creases` (both faces; red 161 T-junctions, green none).
+Tops away from steps still merge. A step that falls on a chunk's border can still have T-junctions
+against the neighbour chunk's merged top (the mesher sees one column past its chunk).
+
+**Shore foam as pulsing bands.** Owner, 2026-11-10: the threshold-noise foam (W3's lapping lines
+broken up by noise) left gaps; "It should be more like pulsing bands I think". `foam_amount` now takes
+the distance to the shore: the depth under the surface over a slope, or the view ray's path through
+the water where that is shorter (a wall or a block in the water facing the eye; no extra pass or
+texture, the ray thickness the absorption already uses). It draws a solid contact line
+(`shore.lineM`) where the water meets land or a block, and `shore.bands` soft bands parallel to the
+shore, each born at the edge and rolling out to the fluid's foam depth (block registry `foam.depth`)
+over `shore.periodS` while it thins (from `shore.widthM`) and fades, a new one forming as the last
+goes. Slow noise shifts each band's timing and width along the shore by up to `shore.wobble`; it never
+multiplies the foam, so it cuts no holes. All in `shared/look/waterflow.json` per liquid (`shore`,
+validated, the fixture oil adds one by data), packed into the fluid table (`flow_shape.zw`, `shore`;
+16 vec4 a fluid). The CPU adapter's tier (and Low) reads no scene, so it draws no shore foam, the
+cheapest form. Limits: the wall distance is view-dependent (the far side of a block, seen past it, has
+the bed's depth, not the block's distance), so foam behind a block shows where the depth is shallow.
+Screenshots: the river banks at seed 7's nearest river from the spawn (bench `goto` river, 2.5 m up,
+pitch −25): a solid line along each bank and two thinner bands beside it, no gaps.
+

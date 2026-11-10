@@ -37,5 +37,11 @@ pub static LIQUID_FLOWS: [LiquidFlowLook; 1] = [
         particle_ragged: 0.6,
         particle_lumps: 3,
         particle_min_pixels: 3.0,
+        shore_bands: 3,
+        shore_period_s: 6.0,
+        shore_line_m: 0.06,
+        shore_width_m: 0.16,
+        shore_strength: 0.8,
+        shore_wobble: 0.5,
     },
 ];

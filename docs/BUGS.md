@@ -229,6 +229,32 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 66. Dashed gaps along a river's water steps seen from upstream (fixed pending release 0.52.6)
+
+Owner, 2026-11-10: "Top of water slopes from up river looking down, have some 'gap' artifacts" (thin
+see-through lines along the edges of the river's ½ m water steps). The step's faces met exactly, but
+the pools' tops were merged into long rectangles while each pour slope and riser is one cell wide:
+their corners lay inside the tops' long edges (T-junctions), and the rasterizer cracked along each
+crease. Fixed: tops within two columns of a step are drawn cell by cell (`mesher.rs` `top_on_step`,
+WATER_RENDERING.md §14). Red → green: `mesher_tests.rs`
+`a_water_step_has_no_t_junctions_along_its_creases` (both faces, 161 → 0); also
+`a_water_step_is_watertight_seen_from_upstream` (rays from upstream, green before and after: the
+geometry had no real hole). Not seen in the browser: the bench's river at seed 7 showed no step in
+view, so the fix is checked by the test only.
+
+### 65. Below a dam, a dried river's chunk woke and slept for ever (fixed pending release 0.52.6)
+
+*Found 2026-11-10: `tests/water.rs` `the_river_below_a_dam_across_seed0s_river_dries_to_the_next_inflow`
+failed on main from 0.52.0 ("the dry river's chunks sleep": 1 awake), no water cell left.* Since
+0.52.0's flat river beds (#62) the drained reach below seed 0's dam keeps a film of 0.1–0.5 mm on a
+level bed. Cut off from its rest, it runs off by `runs_on` in proportion to its depth, so it only
+thinned; its chunk fell asleep still owing that drain, woke ~90 s later to take it, stayed awake its
+10 s calm window and slept again, round and round (the test caught it awake at 600 s). Fixed: a river
+column out of its rest (`share` 0, a map flow, generated water) still draining under 1 mm soaks into
+its bed (`water.rs` `FILM_SOAK`); a wetting front (net inflow) and still water (the basin tests'
+conservation) are untouched. Red → green: that test (1 → 0 awake); the rest of `--test water` and
+the grid's unit tests pass.
+
 ### 64. A frame drop (60 → 45 fps) every ~13 s while moving (fixed pending release 0.52.3)
 
 Owner, 2026-11-10: "If I'm sprinting and hopping around I notice I get a periodic frame drop of about

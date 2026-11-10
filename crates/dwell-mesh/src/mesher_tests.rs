@@ -2279,3 +2279,141 @@ dwell_world::both_faces!(
         assert!(tris.iter().any(|(_, n)| n[1] < -0.99), "the log's bottom");
     }
 );
+
+dwell_world::both_faces!(
+    /// Owner, 2026-11-10: "Top of water slopes from up river looking down, have some 'gap'
+    /// artifacts": thin see-through lines along a river's ½ m water steps seen from upstream. A
+    /// water step is watertight from above: every ray from the air over the upper pool down into
+    /// the water beyond the step (the upper top, the pour slope, the lower top) meets a water face
+    /// from its front first, never nothing or a face's back.
+    fn a_water_step_is_watertight_seen_from_upstream(f: FaceFrame) {
+        let n = CHUNK_SIZE;
+        let c = ChunkCoord::new(0, 2, 0);
+        let o = [c.x * n, c.y * n, c.z * n];
+        let mut source = dwell_world::VoxelWorld::new(dwell_world::empty_generator(), None);
+        // Stone at row 4, the lower pool at row 5, the upper pool at row 6 where x ≤ 12.
+        for z in 2..=26 {
+            for x in 2..=26 {
+                source.set_voxel(o[0] + x, o[1] + 4, o[2] + z, stone());
+                source.set_voxel(o[0] + x, o[1] + 5, o[2] + z, water());
+                if x <= 12 {
+                    source.set_voxel(o[0] + x, o[1] + 6, o[2] + z, water());
+                }
+            }
+        }
+        let m = local_mesh(f, mesh_on_face(&mut source, c, f).transparent);
+        let mut rays = 0;
+        let mut holes = Vec::new();
+        for eye in [
+            [4.5, 9.0, 14.5],
+            [6.2, 7.6, 11.3],
+            [8.5, 12.0, 17.5],
+            [3.0, 7.2, 14.0],
+        ] {
+            for i in 0..=80 {
+                let x = 11.0 + f64::from(i) * 0.05;
+                for z in [6.37, 10.5, 13.01, 14.99, 15.0, 15.5, 18.73, 22.2] {
+                    // a point under both surfaces (in the stone's row), so the ray crosses one
+                    let target = [x, 4.6, z];
+                    let d = [target[0] - eye[0], target[1] - eye[1], target[2] - eye[2]];
+                    rays += 1;
+                    match first_hit(&m, eye, d) {
+                        None => holes.push((eye, target, "nothing")),
+                        Some((_, nrm)) => {
+                            if nrm[0] * d[0] + nrm[1] * d[1] + nrm[2] * d[2] > 0.0 {
+                                holes.push((eye, target, "a back"));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(
+            holes.is_empty(),
+            "{:?}: {} of {rays} rays from upstream met no water front first, e.g. {:?}",
+            f.face,
+            holes.len(),
+            &holes[..holes.len().min(6)]
+        );
+    }
+);
+
+/// The T-junctions of `m` across a crease: a vertex of one triangle lying inside an edge of
+/// another whose plane differs (where two surfaces meet at an angle, the rasterizer leaves a crack
+/// along such an edge: the sky or the bed shows through in a dashed hairline).
+fn crease_t_junctions(m: &MeshArrays) -> Vec<[f64; 3]> {
+    let tris: Vec<([[f64; 3]; 3], [f32; 3])> = m
+        .indices
+        .chunks_exact(3)
+        .map(|t| {
+            let ps = [t[0], t[1], t[2]].map(|i| vertex(&m.positions, i));
+            let i = t[0] as usize * 3;
+            (ps, [m.normals[i], m.normals[i + 1], m.normals[i + 2]])
+        })
+        .collect();
+    let mut out = Vec::new();
+    for (ps, n) in &tris {
+        for p in ps {
+            for (qs, nq) in &tris {
+                if n[0] * nq[0] + n[1] * nq[1] + n[2] * nq[2] > 0.999 {
+                    continue;
+                }
+                for e in 0..3 {
+                    let (a, b) = (qs[e], qs[(e + 1) % 3]);
+                    let ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+                    let ap = [p[0] - a[0], p[1] - a[1], p[2] - a[2]];
+                    let len2 = ab[0] * ab[0] + ab[1] * ab[1] + ab[2] * ab[2];
+                    let t = (ap[0] * ab[0] + ap[1] * ab[1] + ap[2] * ab[2]) / len2;
+                    if t <= 1e-6 || t >= 1.0 - 1e-6 {
+                        continue;
+                    }
+                    let off = [ap[0] - t * ab[0], ap[1] - t * ab[1], ap[2] - t * ab[2]];
+                    if off[0] * off[0] + off[1] * off[1] + off[2] * off[2] < 1e-12 {
+                        out.push(*p);
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+dwell_world::both_faces!(
+    /// Owner, 2026-11-10 (the dashed hairlines along a river's steps): where a pool's top meets
+    /// its pour slope, and the slope the lower top, no vertex of one lies inside an edge of the
+    /// other. The tops were merged into long rectangles while each slope is one cell wide, so
+    /// along the step the slopes' corners fell inside the tops' edges (T-junctions), and the
+    /// rasterizer left a crack at each that showed the bed through the water.
+    fn a_water_step_has_no_t_junctions_along_its_creases(f: FaceFrame) {
+        let n = CHUNK_SIZE;
+        let c = ChunkCoord::new(0, 2, 0);
+        let o = [c.x * n, c.y * n, c.z * n];
+        let mut source = dwell_world::VoxelWorld::new(dwell_world::empty_generator(), None);
+        // Stone at row 4, the lower pool at row 5, the upper pool at row 6 where x ≤ 8; a second
+        // step in fill within row 5 (x ≥ 12 a lower fill), its riser vertical.
+        let low_fill = require("dwell:water[fill=4]");
+        for z in 2..=13 {
+            for x in 2..=13 {
+                source.set_voxel(o[0] + x, o[1] + 4, o[2] + z, stone());
+                let lower = if x >= 12 { low_fill } else { water() };
+                source.set_voxel(o[0] + x, o[1] + 5, o[2] + z, lower);
+                if x <= 8 {
+                    source.set_voxel(o[0] + x, o[1] + 6, o[2] + z, water());
+                }
+            }
+        }
+        let m = local_mesh(f, mesh_on_face(&mut source, c, f).transparent);
+        // along the steps, away from the pool's open sides (a river's are banks)
+        let ts: Vec<[f64; 3]> = crease_t_junctions(&m)
+            .into_iter()
+            .filter(|p| p[2] > 2.5 && p[2] < 13.5 && p[0] > 2.5 && p[0] < 13.5)
+            .collect();
+        assert!(
+            ts.is_empty(),
+            "{:?}: {} T-junctions along the step's creases, e.g. {:?}",
+            f.face,
+            ts.len(),
+            &ts[..ts.len().min(6)]
+        );
+    }
+);

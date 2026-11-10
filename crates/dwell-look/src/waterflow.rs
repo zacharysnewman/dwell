@@ -61,6 +61,17 @@ pub struct LiquidFlowLook {
     pub particle_ragged: f64,
     pub particle_lumps: u32,
     pub particle_min_pixels: f64,
+    /// Shore foam (WATER_RENDERING.md §14): a solid contact line `shore_line_m` wide where the
+    /// water meets land or a block, and `shore_bands` soft bands parallel to the shore, each born
+    /// at the edge every `shore_period_s`, rolling out over the fluid's foam depth while it thins
+    /// (from `shore_width_m`) and fades; slow noise shifts each band's timing and width along the
+    /// shore by up to `shore_wobble` (0–1) without cutting holes; at most `shore_strength`.
+    pub shore_bands: u32,
+    pub shore_period_s: f64,
+    pub shore_line_m: f64,
+    pub shore_width_m: f64,
+    pub shore_strength: f64,
+    pub shore_wobble: f64,
 }
 
 /// Liquid `fluid`'s flow look, if it has one (none: its water shows no flow).
