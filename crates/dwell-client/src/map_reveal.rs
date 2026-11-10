@@ -367,4 +367,32 @@ mod tests {
             assert!(live_tile(&w, f, 0, 0, coarse, eye, &MAP).is_none());
         }
     );
+    both_faces!(
+        fn ground_up_to_an_unloaded_chunk_is_unknown_not_its_stone(f: FaceFrame) {
+            // 0.50.76's browser check: a hill whose grass was in a chunk not yet streamed showed
+            // as the stone under it. Such a column falls back to the generator's tile.
+            let ground = dwell_world::FLAT_TOP_Y + 20;
+            let eye = dwell_world::m_of_row(ground) + 1.6;
+            let n = tile_cells(&MAP);
+            let mut w = loaded_floor(f, ground, n);
+            let stone = dwell_blocks::parse_state("dwell:stone").expect("stone");
+            let chunk = |r: i32| {
+                let [x, y, z] = f.cell([3, r, 3]);
+                dwell_world::chunk_of(x, y, z)
+            };
+            let mut r = ground;
+            loop {
+                let [x, y, z] = f.cell([3, r, 3]);
+                w.set_voxel(x, y, z, stone);
+                if chunk(r + 1) != chunk(r) {
+                    break;
+                }
+                r += 1;
+            }
+            assert!(w.find(chunk(r + 1)).is_none());
+            let tile = live_tile(&w, f, 0, 0, 1, eye, &MAP).expect("loaded ground");
+            assert_eq!(rgb(&tile, n, 3, 3), None);
+            assert!(rgb(&tile, n, 4, 3).is_some());
+        }
+    );
 }

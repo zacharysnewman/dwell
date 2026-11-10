@@ -211,9 +211,9 @@ pub fn scan_tops(
                 .map_or(top_row, |h| {
                     (row_of_m(f64::from(h)) + HINT_ROWS).clamp(bottom_row, top_row)
                 });
-            if let Some(top) =
-                column_top(world, f, cx, cz, start, bottom_row, water_rows, colour_of)
-            {
+            if let Some(top) = column_top(
+                world, f, cx, cz, start, bottom_row, water_rows, colour_of, false,
+            ) {
                 colour[k * n + i] = top.colour;
                 height[k * n + i] = top.height;
                 water[k * n + i] = top.water;
@@ -255,7 +255,19 @@ fn column_top(
     bottom_row: i32,
     water_rows: i32,
     colour_of: &dyn Fn(StateId) -> Option<u32>,
+    strict: bool,
 ) -> Option<Top> {
+    // Strict (the big map's tiles, read far from the player): a top whose cell above starts a
+    // chunk not held is unknown, not the top (that chunk may be ground still streaming: a hill's
+    // stone showed under its unloaded grass in 0.50.76's browser check).
+    let unsure = |row: i32| {
+        strict && {
+            let a = f.cell([cx, row, cz]);
+            let b = f.cell([cx, row + 1, cz]);
+            let cb = chunk_of(b[0], b[1], b[2]);
+            chunk_of(a[0], a[1], a[2]) != cb && world.find(cb).is_none()
+        }
+    };
     let mut row = start;
     // The chunk the row is in, looked up once per chunk down the column; a chunk not
     // held (all air, or not streamed) is skipped whole.
@@ -296,6 +308,9 @@ fn column_top(
                 up += 1;
                 top = above;
             }
+            if unsure(up) {
+                return None;
+            }
             if let Some(c) = colour_of(top) {
                 return Some(Top {
                     colour: c,
@@ -309,6 +324,9 @@ fn column_top(
         if m != M.air
             && let Some(c) = colour_of(m)
         {
+            if unsure(row) {
+                return None;
+            }
             let info = dwell_blocks::info(m);
             let mut c = c;
             let mut wet = None;
@@ -365,24 +383,24 @@ pub fn scan_tile(
             let j = k * n + i;
             let cx = x0 + i as i32 * cell_m + cell_m / 2;
             let cz = z0 + k as i32 * cell_m + cell_m / 2;
-            let code =
-                match column_top(world, f, cx, cz, top_row, bottom_row, water_rows, colour_of) {
-                    Some(top) => {
-                        any = true;
-                        let c = top.colour;
-                        out[j * 4..j * 4 + 4].copy_from_slice(&[
-                            (c >> 16) as u8,
-                            (c >> 8) as u8,
-                            c as u8,
-                            255,
-                        ]);
-                        let h = f64::from(top.height - top.depth);
-                        height_code(h, top.water)
-                            .clamp(i32::from(i16::MIN) + 1, i32::from(i16::MAX))
-                            as i16
-                    }
-                    None => i16::MIN,
-                };
+            let code = match column_top(
+                world, f, cx, cz, top_row, bottom_row, water_rows, colour_of, true,
+            ) {
+                Some(top) => {
+                    any = true;
+                    let c = top.colour;
+                    out[j * 4..j * 4 + 4].copy_from_slice(&[
+                        (c >> 16) as u8,
+                        (c >> 8) as u8,
+                        c as u8,
+                        255,
+                    ]);
+                    let h = f64::from(top.height - top.depth);
+                    height_code(h, top.water).clamp(i32::from(i16::MIN) + 1, i32::from(i16::MAX))
+                        as i16
+                }
+                None => i16::MIN,
+            };
             let o = n * n * 4 + j * 2;
             out[o..o + 2].copy_from_slice(&code.to_le_bytes());
         }
