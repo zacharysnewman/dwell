@@ -38,6 +38,7 @@ use dwell_world::{
 use dwell_protocol::auth::verify_ed25519;
 
 mod chopping;
+mod creatures;
 mod ground;
 mod items;
 mod vitals;
@@ -573,6 +574,8 @@ struct Session {
     /// and the ticks it has been out of air since the last drowning damage.
     vitals_hello: bool,
     drown_ticks: u32,
+    /// Whether its client draws creatures (`CreaturesHello`, ADR 0073).
+    creatures_hello: bool,
     /// The tool it holds (item name, the hold's plane), from `ChopAction::Held`; having sent one,
     /// it understands `HeldTools` (ADR 0067).
     held_tool: Option<(String, bool)>,
@@ -626,6 +629,7 @@ impl Session {
             chop_ready: 0,
             vitals_hello: false,
             drown_ticks: 0,
+            creatures_hello: false,
             held_tool: None,
             primed: false,
             low_water: usize::MAX,
@@ -868,6 +872,8 @@ pub struct Server {
     /// The loose items lying in the world (ADR 0066), and the moved ones not yet sent.
     loose: crate::loose_items::LooseItems,
     loose_moved: HashSet<u32>,
+    /// The creatures wandering near players (ADR 0073).
+    creatures: crate::creatures::Creatures,
     /// The wood cells cut by axes (ADR 0067).
     cuts: dwell_protocol::chopping::Cuts,
     cuts_unread: bool,
@@ -1000,6 +1006,7 @@ impl Server {
             departed_vitals: Vec::new(),
             loose: Default::default(),
             loose_moved: HashSet::default(),
+            creatures: Default::default(),
             cuts: Default::default(),
             cuts_unread: false,
             ground: Default::default(),
@@ -1458,6 +1465,7 @@ impl Server {
             Message::InventoryAction(a) => self.inventory_action(id, a),
             Message::Chop(a) => self.chop_action(id, a),
             Message::VitalsHello => s.vitals_hello = true,
+            Message::CreaturesHello => self.creatures_hello(id),
             Message::ChunkResync(coords) => self.resync(id, &coords),
             Message::ChunkRequest(coords) => self.request_chunks(id, &coords),
             Message::LodRequest(sections) => {
@@ -1738,6 +1746,8 @@ impl Server {
 
         // Loose items fall, are picked up and despawn (ADR 0066); inventories changed are sent.
         self.step_items();
+        // Creatures spawn near players, wander and despawn far away (ADR 0073).
+        self.step_creatures();
 
         // 5. Respawns, then snapshots at SNAPSHOT_HZ.
         for &id in &ids {
