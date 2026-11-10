@@ -93,12 +93,15 @@ describe('capturing a thumbnail', () => {
   });
 
   it('lowers the quality until it fits the cap, and falls back to JPEG without WebP', () => {
-    const big = (type: string, q: number) => `data:${type};base64,${'A'.repeat(q > 0.5 ? MAX_THUMB_CHARS : 10)}`;
+    const big = (type: string, q: number) =>
+      `data:${type};base64,${'A'.repeat(q > 0.5 ? MAX_THUMB_CHARS : 10)}`;
     expect(encodeWithinCap(big)).toBe(`data:image/webp;base64,${'A'.repeat(10)}`);
     // A browser that can't encode WebP hands back PNG.
     const noWebp = (type: string) =>
       type === 'image/webp' ? 'data:image/png;base64,AAAA' : 'data:image/jpeg;base64,AAAA';
     expect(encodeWithinCap(noWebp)).toBe('data:image/jpeg;base64,AAAA');
-    expect(encodeWithinCap((type) => `data:${type};base64,${'A'.repeat(MAX_THUMB_CHARS)}`)).toBeNull();
+    expect(
+      encodeWithinCap((type) => `data:${type};base64,${'A'.repeat(MAX_THUMB_CHARS)}`),
+    ).toBeNull();
   });
 });

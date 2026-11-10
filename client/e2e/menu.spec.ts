@@ -71,10 +71,12 @@ test('main menu: create a world with a seed, quit, reopen, regenerate and delete
   await page.goto('./');
   await expect(page.locator('#main-menu')).toBeVisible();
   await openMenuPage(page, 'worlds');
+  // No worlds: the empty state's own big New world, the page's small one hidden.
   await expect(page.locator('.menu-empty')).toBeVisible();
+  await expect(page.locator('#new-world')).toBeHidden();
 
   // Create: New world opens the form on its own page.
-  await page.locator('#new-world').click();
+  await page.locator('.menu-empty-create').click();
   await page.locator('#world-name').fill('Test world');
   await page.locator('#world-seed').fill('1234');
   await page.locator('#world-type').selectOption('flat');
@@ -91,7 +93,12 @@ test('main menu: create a world with a seed, quit, reopen, regenerate and delete
   await expect.poll(() => voxel(page, cell), { timeout: 5_000 }).toBe(0);
   await quit(page);
   await openMenuPage(page, 'worlds');
-  await expect(world(page, 'Test world')).toContainText('Flat · seed 1234 · played');
+  // The world's card: its type and when it was played, and the view it was left at (captured
+  // when the page went), with the seed under its ⋯ menu.
+  await expect(world(page, 'Test world')).toContainText('Flat · played');
+  await expect(world(page, 'Test world').locator('.world-thumb img')).toHaveCount(1);
+  await world(page, 'Test world').getByRole('button', { name: 'More for Test world' }).click();
+  await expect(world(page, 'Test world').locator('.world-menu')).toContainText('Seed 1234');
 
   // Reopen: the edit is there.
   await world(page, 'Test world').locator('.world-play').click();
@@ -100,7 +107,8 @@ test('main menu: create a world with a seed, quit, reopen, regenerate and delete
   await quit(page);
   await openMenuPage(page, 'worlds');
 
-  // Regenerate (asks first): same seed, the edit is gone.
+  // Regenerate (asks first, under ⋯): same seed, the edit is gone.
+  await world(page, 'Test world').getByRole('button', { name: 'More for Test world' }).click();
   const regenerate = world(page, 'Test world').getByRole('button', { name: 'Regenerate' });
   await regenerate.click();
   await world(page, 'Test world').getByRole('button', { name: 'Lose all changes?' }).click();
@@ -109,7 +117,8 @@ test('main menu: create a world with a seed, quit, reopen, regenerate and delete
   await quit(page);
   await openMenuPage(page, 'worlds');
 
-  // Delete (asks first).
+  // Delete (asks first, under ⋯).
+  await world(page, 'Test world').getByRole('button', { name: 'More for Test world' }).click();
   await world(page, 'Test world').getByRole('button', { name: 'Delete' }).click();
   await world(page, 'Test world').getByRole('button', { name: 'Delete forever?' }).click();
   await expect(page.locator('#menu-message')).toHaveText('Deleted "Test world".');
