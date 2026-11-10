@@ -339,7 +339,7 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
 /shared/music        Music (music.json: tracks — title, author, file, volume, loop, fades, when —
                      and their audio files, the owner's Starry Sunshine) + gen.mjs (→ TS
                      music.gen.ts, each file's published name with its content hash), validate.mjs.
-/shared/worldgen     golden/: chunk and LOD-section hashes of generator version 23 (§6.3); terrain.json: the world's elevation and water (the height field, rivers, lakes, spawn, the `defaultBiome`), biomes/: the biomes layered on it (fine relief, surface bands, rule references; ADR 0074), decorations.json: the terrain's decoration rules, placements.json: the structure placements (the pines, ADR 0043), midplane.json: the bedrock between the faces and the portals through it, gen.mjs (→ Rust tables for dwell-worldgen) (§6.3).
+/shared/worldgen     golden/: chunk and LOD-section hashes of generator version 23 (§6.3); terrain.json: the world's elevation and water (the height field, rivers, lakes, spawn, the `defaultBiome`), biomes/: the biomes layered on it (where they belong, fine relief, elevation bands, rule references; fixtures/ for tests; ADR 0074), decorations.json: the terrain's decoration rules, placements.json: the structure placements (the pines, ADR 0043), midplane.json: the bedrock between the faces and the portals through it, gen.mjs (→ Rust tables for dwell-worldgen) (§6.3).
 /shared/structures   Structure files (*.json; test/ holds fixtures) + gen.mjs (→ Rust tables for
                      dwell-world) and gen.test.mjs; format.mjs, the format's rules, shared by gen.mjs
                      and the client's structures store; playground.json is the movement playground
@@ -1494,16 +1494,33 @@ so chunks can be generated in any order and in parallel. The 2D fields are sampl
 lattice and interpolated bilinearly; the chunk path and the point queries (`column_at`, `solid_at`,
 `ground_y`) share that arithmetic.
 
-**Biomes [in progress; B1 built, 0.51.14]** (ADR 0074, Phase 56). A biome is one data file,
-`shared/worldgen/biomes/<name>.json` (`namespace:name`), layered on the world's elevation: `detail`
-(bounded fine relief), `bands` (surface blocks by height and slope) and references by name (`decorations`,
-`placements` rule names, the `water` fluid). The elevation and water (`inland`, `seaFloor`, `hills`,
+**Biomes [in progress; B1 built, 0.51.14; B2 built, 0.51.15]** (ADR 0074, Phase 56). A biome is one data file,
+`shared/worldgen/biomes/<name>.json` (`namespace:name`), layered on the world's elevation: `where` (where
+it belongs: a `weight` and optional eased ranges of `temperature`, `wetness`, `elevation`, `coast`),
+`detail` (bounded fine relief), `shaping` (the band edges' noise and slope lift, the rock band, the
+shore, the soil depth), `bands` (its **elevation bands**, lowest first: each a `name`, a `from` height
+but the lowest, and its `ground`, `under`, `rock`, `shoreBlock` blocks; the default's are `meadow` and
+`snow` from 1,550 m, today's snow line) and references by name (`decorations`, `placements` rule names,
+the `water` fluid). The elevation and water (`inland`, `seaFloor`, `hills`,
 `bumps`, `rivers`, `mouths`, `lakes`) and `spawn` stay one world-scale system in `terrain.json`, which
 names the `defaultBiome`. `shared/worldgen/gen.mjs` validates them and emits `HEIGHT` (the world's),
 `BIOMES` (the default first, each surface merged with the world's water shaping) and `SURFACE` (the
 default's) into `terrain.gen.rs`; every world is the default biome today (the goldens unchanged).
-`TerrainGenerator::with_biome` puts a biome's surface blocks in the generator's place; the biome map
-and blending (B2), Chisel the editor (B3, B6, B7) and the rest follow.
+**The biome map [built, B2]** (`dwell-worldgen` `biomemap.rs`): a generator's biomes (the build's
+`BIOMES`, or `TerrainGenerator::with_biomes`; tests add `FIXTURE_BIOMES`, `shared/worldgen/biomes/fixtures/`,
+never on a world's map) are weighted per column from its geography, computed from the face's world map
+after the height field (which biomes never change beyond their bounded fine relief): the elevation (the
+map's height), the distance to the sea and to the nearest river or lake cell (two chamfer distance grids
+on the map's 100 m cells, built once per generator), and the temperature, a slow climate gradient across
+the island (along a direction from the seed, bent by a noise) less a lapse rate with height
+(`terrain.json` `biomeMap`). A biome's weight is its `weight` × each range's smoothstep fit over ± its
+`blend`, normalised (at most four per column; the default takes a column nothing fits). The column takes
+its surface from one biome, chosen against the cumulative weights by a dithered threshold (a noise and a
+per-column hash, `biomeMap.dither`), so borders are ragged and gradual; its fine relief is the weighted
+sum of each biome's; its rock band, shore and band edges are the chosen biome's; its elevation band
+picks a **palette** (`Column::palette`, the biome's band's resolved blocks) the fill reads. A world with
+one biome builds no map: its weight is 1 everywhere and its columns are exactly that biome's (the
+goldens byte-identical). Chisel the editor (B3, B6, B7) and the rest follow.
 
 1. **Layout (2D).** The coast distance of the interim island (above).
 2. **Height (2D).** On land the ground rises from sea level at the coast toward 320 m inland

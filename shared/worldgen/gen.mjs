@@ -316,31 +316,42 @@ const TERRAIN = {
     shoreNoise: [0, 200],
     shoreWavelength: [4, 4096, true],
   },
-  bands: {
-    snowLine: [0, 100_000],
-    snowNoise: [0, 10_000],
-    snowWavelength: [4, 65_536, true],
-    snowSlopeLift: [0, 10_000],
+  shaping: {
+    edgeNoise: [0, 10_000],
+    edgeWavelength: [4, 65_536, true],
+    edgeSlopeLift: [0, 10_000],
     rockSlope: [{ above: 0 }, 100],
     rockSlopeHigh: [{ above: 0 }, 100],
+    rockHigh: [{ above: 0 }, 100_000],
     rockWindow: [{ above: 0 }, 2000],
     shore: [0, 100],
     underDepth: [0, 100],
   },
+  biomeMap: {
+    climateWavelength: [64, 1_000_000, true],
+    climateNoise: [0, 1],
+    lapseRate: [0, 10],
+    wetReach: [{ above: 0 }, 100_000],
+    ditherWavelength: [4, 65_536, true],
+    dither: [0, 1],
+  },
   spawn: { minHeight: [0, 10_000], maxHeight: [0, 10_000], nearRiver: [0, 100_000] },
 };
-/** The bands' blocks, by name: each must be a full block of the registry. */
-const BAND_BLOCKS = ['ground', 'under', 'snow', 'rock', 'shoreBlock'];
+/** An elevation band's blocks, by name: each must be a full block of the registry. */
+const BAND_BLOCKS = ['ground', 'under', 'rock', 'shoreBlock'];
+/** The geography fields a biome's `where` ranges may name (B2's biome map; code, a fixed vocabulary). */
+export const WHERE_FIELDS = ['temperature', 'wetness', 'elevation', 'coast'];
+const BAND_NAME = /^[a-z0-9_]+$/;
 
 /**
  * The world's elevation and water (terrain.json): one world-scale system, not per biome (ADR 0074;
  * owner, 2026-11-10). The rest of `TERRAIN` is each biome's.
  */
-const WORLD_GROUPS = ['inland', 'seaFloor', 'hills', 'bumps', 'rivers', 'mouths', 'lakes', 'spawn'];
+const WORLD_GROUPS = ['inland', 'seaFloor', 'hills', 'bumps', 'rivers', 'mouths', 'lakes', 'spawn', 'biomeMap'];
 /** A biome's groups (shared/worldgen/biomes/*.json): layered on the elevation. */
 export const BIOME_GROUPS = Object.keys(TERRAIN).filter((g) => !WORLD_GROUPS.includes(g));
 /** A biome's reference fields beside its groups. */
-const BIOME_REFS = ['decorations', 'placements', 'water'];
+const BIOME_REFS = ['where', 'bands', 'decorations', 'placements', 'water'];
 const BIOME_NAME = /^[a-z0-9_]+:[a-z0-9_]+$/;
 
 /** Checks `groups` of `data` against `TERRAIN`'s ranges; `fail` throws with the group and key. */
@@ -349,8 +360,7 @@ function checkGroups(data, groups, fail) {
     const keys = TERRAIN[group];
     const g = data[group];
     if (typeof g !== 'object' || g === null) fail(`${group} must be an object`);
-    const allowed = group === 'bands' ? BAND_BLOCKS : [];
-    const ge = Object.keys(g).filter((k) => k !== '$comment' && !(k in keys) && !allowed.includes(k));
+    const ge = Object.keys(g).filter((k) => k !== '$comment' && !(k in keys));
     if (ge.length) fail(`${group}: unknown ${ge.join(', ')}`);
     for (const [key, [min, max, whole]] of Object.entries(keys)) {
       const v = g[key];
@@ -381,12 +391,8 @@ export function validateBiome(data, blocks = registryBlocks(), refs = biomeRefs(
   if (!(data.detail.mountainFull > data.detail.mountainFrom)) {
     fail('detail.mountainFull must be greater than detail.mountainFrom');
   }
-  for (const k of BAND_BLOCKS) {
-    const id = data.bands[k];
-    const b = blocks.get(id);
-    if (!b) fail(`bands.${k} ${JSON.stringify(id)} is not in the registry`);
-    if (b.shape !== 'full') fail(`bands.${k} ${id} must be a full block`);
-  }
+  checkWhere(data.where, fail);
+  checkBands(data.bands, blocks, fail);
   for (const k of ['decorations', 'placements']) {
     const names = data[k];
     if (!Array.isArray(names)) fail(`${k} must be a list of rule names`);
@@ -399,6 +405,59 @@ export function validateBiome(data, blocks = registryBlocks(), refs = biomeRefs(
   if (!w) fail(`water ${JSON.stringify(data.water)} is not in the registry`);
   if (!w.fluid) fail(`water ${data.water} must be a fluid block`);
   return data;
+}
+
+/** Checks a biome's `where` (its place in the geography): a weight and optional eased ranges. */
+function checkWhere(w, fail) {
+  if (typeof w !== 'object' || w === null || Array.isArray(w)) fail('where must be an object');
+  const extra = Object.keys(w).filter((k) => !['$comment', 'weight', ...WHERE_FIELDS].includes(k));
+  if (extra.length) fail(`where: unknown ${extra.join(', ')}`);
+  if (!(isNum(w.weight) && w.weight > 0 && w.weight <= 1000)) fail('where.weight must be in (0, 1000]');
+  for (const f of WHERE_FIELDS) {
+    const r = w[f];
+    if (r === undefined) continue;
+    if (typeof r !== 'object' || r === null) fail(`where.${f} must be an object`);
+    const re = Object.keys(r).filter((k) => !['min', 'max', 'blend'].includes(k));
+    if (re.length) fail(`where.${f}: unknown ${re.join(', ')}`);
+    for (const k of ['min', 'max']) {
+      if (r[k] !== undefined && !(isNum(r[k]) && Math.abs(r[k]) <= 1_000_000)) fail(`where.${f}.${k} must be a number`);
+    }
+    if (r.min === undefined && r.max === undefined) fail(`where.${f} needs a min or a max`);
+    if (r.min !== undefined && r.max !== undefined && !(r.max > r.min)) {
+      fail(`where.${f}.max must be greater than its min`);
+    }
+    if (!(isNum(r.blend) && r.blend >= 0 && r.blend <= 1_000_000)) fail(`where.${f}.blend must be in [0, 1000000]`);
+  }
+}
+
+/** Checks a biome's elevation bands: the lowest without `from`, each next one higher. */
+function checkBands(bands, blocks, fail) {
+  if (!Array.isArray(bands) || bands.length === 0) fail('bands must be a list of elevation bands');
+  if (bands.length > 16) fail('bands: at most 16');
+  let below = -Infinity;
+  const names = new Set();
+  bands.forEach((band, i) => {
+    const at = `bands[${i}]`;
+    if (typeof band !== 'object' || band === null) fail(`${at} must be an object`);
+    const extra = Object.keys(band).filter((k) => !['$comment', 'name', 'from', ...BAND_BLOCKS].includes(k));
+    if (extra.length) fail(`${at}: unknown ${extra.join(', ')}`);
+    if (typeof band.name !== 'string' || !BAND_NAME.test(band.name)) fail(`${at}.name must be a lowercase name`);
+    if (names.has(band.name)) fail(`bands: ${band.name} is listed twice`);
+    names.add(band.name);
+    if (i === 0) {
+      if (band.from !== undefined) fail(`${at} (the lowest) has no from: it starts at the sea floor`);
+    } else {
+      if (!(isNum(band.from) && band.from >= 0 && band.from <= 100_000)) fail(`${at}.from must be in [0, 100000]`);
+      if (!(band.from > below)) fail(`${at}.from must be higher than the band below's`);
+      below = band.from;
+    }
+    for (const k of BAND_BLOCKS) {
+      const id = band[k];
+      const b = blocks.get(id);
+      if (!b) fail(`${at}.${k} ${JSON.stringify(id)} is not in the registry`);
+      if (b.shape !== 'full') fail(`${at}.${k} ${id} must be a full block`);
+    }
+  });
 }
 
 /** The decoration and placement rule names a biome may reference, from the checked-in files. */
@@ -438,6 +497,15 @@ export function validateTerrainAndBiomes(world, biomes, blocks = registryBlocks(
   return { world, biomes: [def, ...biomes.filter((b) => b !== def)] };
 }
 
+/** Checks the fixture biomes (biomes/fixtures/*.json, for tests): each a valid biome, no duplicates. */
+export function validateFixtureBiomes(fixtures, blocks = registryBlocks(), refs = biomeRefs()) {
+  for (const b of fixtures) validateBiome(b, blocks, refs);
+  const names = fixtures.map((b) => b.name);
+  const dup = names.find((n, i) => names.indexOf(n) !== i);
+  if (dup) throw new Error(`biome fixture ${dup} is defined twice`);
+  return fixtures;
+}
+
 /** The world's groups and one biome's, merged, as Rust: the base field's and the surface's. */
 function biomeFields(t) {
   const fields = [
@@ -454,7 +522,7 @@ function biomeFields(t) {
     ['bump_wavelength', `${t.bumps.wavelength}`],
     ['bump_octaves', `${t.bumps.octaves}`],
   ];
-  const { detail: d, rivers: r, mouths: m, lakes: l, bands: b, spawn: s } = t;
+  const { detail: d, rivers: r, mouths: m, lakes: l, shaping: b, spawn: s } = t;
   const surface = [
     ['detail_amplitude', rf(d.amplitude)],
     ['detail_wavelength', `${d.wavelength}`],
@@ -489,20 +557,15 @@ function biomeFields(t) {
     ['lake_levee', rf(l.levee)],
     ['lake_shore_noise', rf(l.shoreNoise)],
     ['lake_shore_wavelength', `${l.shoreWavelength}`],
-    ['snow_line', rf(b.snowLine)],
-    ['snow_noise', rf(b.snowNoise)],
-    ['snow_wavelength', `${b.snowWavelength}`],
-    ['snow_slope_lift', rf(b.snowSlopeLift)],
+    ['edge_noise', rf(b.edgeNoise)],
+    ['edge_wavelength', `${b.edgeWavelength}`],
+    ['edge_slope_lift', rf(b.edgeSlopeLift)],
     ['rock_slope', rf(b.rockSlope)],
     ['rock_slope_high', rf(b.rockSlopeHigh)],
+    ['rock_high', rf(b.rockHigh)],
     ['rock_window', rf(b.rockWindow)],
     ['shore', rf(b.shore)],
     ['under_depth', rf(b.underDepth)],
-    ['ground', JSON.stringify(b.ground)],
-    ['under', JSON.stringify(b.under)],
-    ['snow', JSON.stringify(b.snow)],
-    ['rock', JSON.stringify(b.rock)],
-    ['shore_block', JSON.stringify(b.shoreBlock)],
     ['spawn_min_height', rf(s.minHeight)],
     ['spawn_max_height', rf(s.maxHeight)],
     ['spawn_near_river', rf(s.nearRiver)],
@@ -515,28 +578,82 @@ function biomeFields(t) {
  * world's height field `HEIGHT`, the biomes' table (each surface merged with the world's water
  * shaping), and `SURFACE`, the default biome's, which the generator reads.
  */
-export function terrainRust({ world, biomes }) {
-  const rs = [`// ${terrainHeader}`, '', 'use crate::terrain::{Biome, HeightField, Surface};', ''];
+export function terrainRust({ world, biomes, fixtures = [] }) {
+  const rs = [
+    `// ${terrainHeader}`,
+    '',
+    'use crate::terrain::{Biome, BiomeMap, ElevationBand, HeightField, Surface, Where, WhereRange};',
+    '',
+  ];
   rs.push("/// The base height field, the world map's input: the world's elevation (terrain.json).");
   rs.push('pub const HEIGHT: HeightField = HeightField {');
   for (const [k, v] of biomeFields({ ...biomes[0], ...world }).fields) rs.push(`    ${k}: ${v},`);
   rs.push('};');
   rs.push('');
+  rs.push("/// The biome map's geography (terrain.json `biomeMap`).");
+  rs.push('pub const BIOME_MAP: BiomeMap = BiomeMap {');
+  const bm = world.biomeMap;
+  rs.push(`    climate_wavelength: ${bm.climateWavelength},`);
+  rs.push(`    climate_noise: ${rf(bm.climateNoise)},`);
+  rs.push(`    lapse_rate: ${rf(bm.lapseRate)},`);
+  rs.push(`    wet_reach: ${rf(bm.wetReach)},`);
+  rs.push(`    dither_wavelength: ${bm.ditherWavelength},`);
+  rs.push(`    dither: ${rf(bm.dither)},`);
+  rs.push('};');
+  rs.push('');
+  const list = (xs) => `&[${xs.map((x) => JSON.stringify(x)).join(', ')}]`;
+  const bound = (v, inf) => (v === undefined ? inf : rf(v));
+  const table = (bs) => {
+    for (const b of bs) {
+      const { surface } = biomeFields({ ...b, ...world });
+      rs.push('    Biome {');
+      rs.push(`        name: ${JSON.stringify(b.name)},`);
+      rs.push('        place: Where {');
+      rs.push(`            weight: ${rf(b.where.weight)},`);
+      for (const f of WHERE_FIELDS) {
+        const r = b.where[f];
+        if (!r) {
+          rs.push(`            ${f}: WhereRange::ANY,`);
+          continue;
+        }
+        rs.push(`            ${f}: WhereRange {`);
+        rs.push(`                min: ${bound(r.min, 'f64::NEG_INFINITY')},`);
+        rs.push(`                max: ${bound(r.max, 'f64::INFINITY')},`);
+        rs.push(`                blend: ${rf(r.blend)},`);
+        rs.push('            },');
+      }
+      rs.push('        },');
+      rs.push('        surface: Surface {');
+      for (const [k, v] of surface) rs.push(`            ${k}: ${v},`);
+      rs.push('        },');
+      rs.push('        bands: &[');
+      for (const band of b.bands) {
+        rs.push('            ElevationBand {');
+        rs.push(`                name: ${JSON.stringify(band.name)},`);
+        rs.push(`                from: ${band.from === undefined ? 'f64::NEG_INFINITY' : rf(band.from)},`);
+        rs.push(`                ground: ${JSON.stringify(band.ground)},`);
+        rs.push(`                under: ${JSON.stringify(band.under)},`);
+        rs.push(`                rock: ${JSON.stringify(band.rock)},`);
+        rs.push(`                shore_block: ${JSON.stringify(band.shoreBlock)},`);
+        rs.push('            },');
+      }
+      rs.push('        ],');
+      rs.push(`        decorations: ${list(b.decorations)},`);
+      rs.push(`        placements: ${list(b.placements)},`);
+      rs.push(`        water: ${JSON.stringify(b.water)},`);
+      rs.push('    },');
+    }
+  };
   rs.push('/// The biomes (shared/worldgen/biomes/*.json), the default (terrain.json `defaultBiome`) first.');
   rs.push('pub const BIOMES: &[Biome] = &[');
-  const list = (xs) => `&[${xs.map((x) => JSON.stringify(x)).join(', ')}]`;
-  for (const b of biomes) {
-    const { surface } = biomeFields({ ...b, ...world });
-    rs.push('    Biome {');
-    rs.push(`        name: ${JSON.stringify(b.name)},`);
-    rs.push('        surface: Surface {');
-    for (const [k, v] of surface) rs.push(`            ${k}: ${v},`);
-    rs.push('        },');
-    rs.push(`        decorations: ${list(b.decorations)},`);
-    rs.push(`        placements: ${list(b.placements)},`);
-    rs.push(`        water: ${JSON.stringify(b.water)},`);
-    rs.push('    },');
-  }
+  table(biomes);
+  rs.push('];');
+  rs.push('');
+  rs.push("/// Test fixture biomes (shared/worldgen/biomes/fixtures/*.json): never on a world's map; tests");
+  rs.push('/// add them by data alone (`TerrainGenerator::with_biomes`).');
+  rs.push('#[doc(hidden)]');
+  rs.push('pub const FIXTURE_BIOMES: &[Biome] = &[');
+  table(fixtures);
   rs.push('];');
   rs.push('');
   rs.push("/// How columns are shaped from the world map: the default biome's.");
@@ -1167,7 +1284,9 @@ export function volumeRust(data) {
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const data = validateDecorations(JSON.parse(readFileSync(join(here, 'decorations.json'), 'utf8')), registryBlocks());
   writeFileSync(join(root, 'crates/dwell-worldgen/src/decorations.gen.rs'), decorationsRust(data));
-  const terrain = validateTerrainAndBiomes(JSON.parse(readFileSync(join(here, 'terrain.json'), 'utf8')), loadBiomes());
+  const world = JSON.parse(readFileSync(join(here, 'terrain.json'), 'utf8'));
+  const terrain = validateTerrainAndBiomes(world, loadBiomes());
+  terrain.fixtures = validateFixtureBiomes(loadBiomes(join(here, 'biomes/fixtures')));
   writeFileSync(join(root, 'crates/dwell-worldgen/src/terrain.gen.rs'), terrainRust(terrain));
   const placements = validatePlacements(
     JSON.parse(readFileSync(join(here, 'placements.json'), 'utf8')),

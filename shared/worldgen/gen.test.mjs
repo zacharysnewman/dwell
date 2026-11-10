@@ -18,6 +18,7 @@ import {
   validateMidplane,
   validatePlacements,
   validateTerrainAndBiomes,
+  validateFixtureBiomes,
   validateVolume,
   volumeRust,
 } from './gen.mjs';
@@ -72,7 +73,8 @@ const loadDefault = () => JSON.parse(readFileSync(join(here, 'biomes/default.jso
 const terrainOf = (world, biomes) => validateTerrainAndBiomes(world, biomes, blocks);
 
 test('the checked-in terrain and biomes are valid and generate the checked-in Rust', () => {
-  const rs = terrainRust(terrainOf(loadTerrain(), loadBiomes()));
+  const fixtures = validateFixtureBiomes(loadBiomes(join(here, 'biomes/fixtures')), blocks);
+  const rs = terrainRust({ ...terrainOf(loadTerrain(), loadBiomes()), fixtures });
   const checkedIn = readFileSync(join(here, '../../crates/dwell-worldgen/src/terrain.gen.rs'), 'utf8');
   assert.equal(rs, checkedIn, 'run `node shared/worldgen/gen.mjs`');
 });
@@ -99,7 +101,7 @@ test('a height-field value changed by data alone is emitted', () => {
 
 test('a fixture biome added by data alone is emitted after the default, which stays first', () => {
   const fixture = { ...loadDefault(), name: 'dwell:fixture_dunes', placements: [], water: 'dwell:water' };
-  fixture.bands = { ...fixture.bands, ground: 'dwell:sand' };
+  fixture.bands = fixture.bands.map((b, i) => (i === 0 ? { ...b, ground: 'dwell:sand' } : b));
   fixture.detail = { ...fixture.detail, amplitude: 4 };
   const w = loadTerrain();
   const t = terrainOf(w, [fixture, loadDefault()]);
@@ -121,12 +123,23 @@ test('a bad biome or world terrain fails with the key and the problem', () => {
   const cases = [
     [(b) => (b.detail.amplitude = -1), /biome dwell:default: detail\.amplitude must be in \[0, 100\]/],
     [(b) => (b.detail.octaves = 2.5), /detail\.octaves must be a whole number in \[1, 8\]/],
-    [(b) => (b.bands.roughness = 1), /bands: unknown roughness/],
+    [(b) => (b.shaping.roughness = 1), /shaping: unknown roughness/],
+    [(b) => (b.bands[0].from = 10), /bands\[0\] \(the lowest\) has no from/],
+    [(b) => (b.bands[1].from = -5), /bands\[1\]\.from must be in \[0, 100000\]/],
+    [(b) => b.bands.push({ ...b.bands[1], from: 100 }), /bands: snow is listed twice/],
+    [(b) => b.bands.push({ ...b.bands[1], name: 'peak', from: 100 }), /bands\[2\]\.from must be higher/],
+    [(b) => (b.bands[0].roughness = 1), /bands\[0\]: unknown roughness/],
+    [(b) => (b.bands = []), /bands must be a list of elevation bands/],
+    [(b) => (b.where.weight = 0), /where\.weight must be in \(0, 1000\]/],
+    [(b) => (b.where.rain = { min: 0, blend: 0 }), /where: unknown rain/],
+    [(b) => (b.where.wetness = { min: 0.5, max: 0.2, blend: 0 }), /where\.wetness\.max must be greater/],
+    [(b) => (b.where.coast = { blend: 1 }), /where\.coast needs a min or a max/],
+    [(b) => (b.where.elevation = { min: 0 }), /where\.elevation\.blend must be/],
     [(b) => (b.mountains = {}), /unknown mountains/],
-    [(b) => delete b.bands, /bands must be an object/],
+    [(b) => delete b.shaping, /shaping must be an object/],
     [(b) => (b.hills = {}), /biome dwell:default: unknown hills/],
     [(b) => (b.detail.mountainFull = 10), /detail\.mountainFull must be greater than detail\.mountainFrom/],
-    [(b) => (b.bands.snow = 'dwell:moss'), /bands\.snow "dwell:moss" is not in the registry/],
+    [(b) => (b.bands[1].ground = 'dwell:moss'), /bands\[1\]\.ground "dwell:moss" is not in the registry/],
     [(b) => (b.name = 'default'), /name must be "namespace:name"/],
     [(b) => (b.decorations = ['palms']), /decorations: "palms" is not a rule of decorations\.json/],
     [(b) => (b.placements = ['pine_groves', 'pine_groves']), /placements: a rule is listed twice/],
@@ -147,6 +160,7 @@ test('a bad biome or world terrain fails with the key and the problem', () => {
     [(t) => delete t.seaFloor, /seaFloor must be an object/],
     [(t) => (t.rivers.valleySlope = 0), /rivers\.valleySlope must be in \(0, 10\]/],
     [(t) => (t.bands = {}), /terrain\.json: unknown bands/],
+    [(t) => (t.biomeMap.wetReach = 0), /terrain\.json: biomeMap\.wetReach must be in \(0, 100000\]/],
     [(t) => (t.spawn.maxHeight = 1), /spawn\.maxHeight must be greater than spawn\.minHeight/],
   ];
   for (const [edit, message] of worldCases) {

@@ -123,40 +123,92 @@ pub struct Surface {
     pub lake_levee: f64,
     pub lake_shore_noise: f64,
     pub lake_shore_wavelength: i32,
-    pub snow_line: f64,
-    pub snow_noise: f64,
-    pub snow_wavelength: i32,
-    pub snow_slope_lift: f64,
+    /// An elevation band's lower edge is moved ± this (m) by a noise of `edge_wavelength` m, and
+    /// raised `edge_slope_lift` m per unit of slope.
+    pub edge_noise: f64,
+    pub edge_wavelength: i32,
+    pub edge_slope_lift: f64,
     pub rock_slope: f64,
-    /// The rock band's slope threshold at the snow line (soil thins with height): it eases from
+    /// The rock band's slope threshold at `rock_high` m (soil thins with height): it eases from
     /// `rock_slope` at sea level to this.
     pub rock_slope_high: f64,
+    pub rock_high: f64,
     /// The landform's slope for the rock band is taken over ± this many metres (a hillside, not
     /// a map cell), so rock comes in whole faces, not along the map's grid.
     pub rock_window: f64,
     pub shore: f64,
     pub under_depth: f64,
-    pub ground: &'static str,
-    pub under: &'static str,
-    pub snow: &'static str,
-    pub rock: &'static str,
-    pub shore_block: &'static str,
     pub spawn_min_height: f64,
     pub spawn_max_height: f64,
     pub spawn_near_river: f64,
 }
 
+/// One of a biome's elevation bands (ADR 0074 B2): from `from` m above the sea (its edge moved by
+/// the biome's `edge_*` noise and slope lift) to the next band's, its surface blocks by slope.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ElevationBand {
+    pub name: &'static str,
+    /// The band's lower edge (m above the sea); the lowest band's is `-inf`.
+    pub from: f64,
+    pub ground: &'static str,
+    pub under: &'static str,
+    pub rock: &'static str,
+    pub shore_block: &'static str,
+}
+
+/// A range of one geography field a biome belongs in (`where`), eased over ± `blend` at each
+/// finite bound.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WhereRange {
+    pub min: f64,
+    pub max: f64,
+    pub blend: f64,
+}
+
+impl WhereRange {
+    /// No bound: fits everywhere.
+    pub const ANY: Self = Self {
+        min: f64::NEG_INFINITY,
+        max: f64::INFINITY,
+        blend: 0.0,
+    };
+}
+
+/// Where a biome belongs in the world's geography (`biomemap.rs`): its weight and ranges.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Where {
+    pub weight: f64,
+    pub temperature: WhereRange,
+    pub wetness: WhereRange,
+    pub elevation: WhereRange,
+    pub coast: WhereRange,
+}
+
+/// The biome map's geography (`terrain.json` `biomeMap`; `biomemap.rs`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BiomeMap {
+    pub climate_wavelength: i32,
+    pub climate_noise: f64,
+    pub lapse_rate: f64,
+    pub wet_reach: f64,
+    pub dither_wavelength: i32,
+    pub dither: f64,
+}
+
 /// A biome (data: `shared/worldgen/biomes/<name>.json`, ADR 0074): what is layered on the world's
 /// elevation (`terrain.json`, one world-scale system: [`HEIGHT`] and the rivers' and lakes'
-/// shaping) to make a landscape read as one place: its fine relief and surface bands, merged in
-/// `surface` with the world's water shaping. Every world is the default biome ([`BIOMES`]`[0]`)
-/// today; B1 reads the biome's surface blocks per generator ([`TerrainGenerator::with_biome`]), the
-/// rest through [`SURFACE`] (the default's) until the biome map (B2) blends biomes across a world.
+/// shaping) to make a landscape read as one place: where it belongs (`place`, read by the biome
+/// map), its bounded fine relief and surface shaping (merged in `surface` with the world's water
+/// shaping) and its elevation bands. A generator's biomes ([`TerrainGenerator::with_biomes`]; the
+/// build's [`BIOMES`] by default) are weighted per column by the biome map (`biomemap.rs`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Biome {
     /// The biome's name (`namespace:name`).
     pub name: &'static str,
+    pub place: Where,
     pub surface: Surface,
+    /// The elevation bands, lowest first.
+    pub bands: &'static [ElevationBand],
     /// The decoration rules (`decorations.json`, by name) that may grow here.
     pub decorations: &'static [&'static str],
     /// The structure placement rules (`placements.json`, by name) that may stand here.
@@ -168,7 +220,7 @@ pub struct Biome {
 mod table {
     include!("terrain.gen.rs");
 }
-pub use table::{BIOMES, HEIGHT, SURFACE};
+pub use table::{BIOME_MAP, BIOMES, FIXTURE_BIOMES, HEIGHT, SURFACE};
 
 /// The biome named `name` (`shared/worldgen/biomes`), if the build has it.
 pub fn find_biome(name: &str) -> Option<&'static Biome> {
@@ -286,7 +338,6 @@ pub enum Water {
 pub enum Band {
     #[default]
     Ground,
-    Snow,
     Rock,
     Shore,
 }
@@ -303,6 +354,9 @@ pub struct Column {
     pub water: Water,
     /// The surface's band.
     pub band: Band,
+    /// The generator's surface palette the column takes its blocks from (its biome's elevation
+    /// band, `BiomeSet::palettes`).
+    pub palette: u16,
     /// Beyond the world's disc: nothing is generated.
     pub outside: bool,
     /// How far (m) the nearest river channel's edge or lake shore lies: 0 in the water, `FAR_WATER`
@@ -388,34 +442,65 @@ fn bedrock() -> StateId {
     *BEDROCK
 }
 
-/// The bands' blocks, resolved by name once.
+/// An elevation band's blocks, resolved by name once.
 #[derive(Clone, Copy, Debug)]
 pub struct Bands {
     pub ground: StateId,
     pub under: StateId,
-    pub snow: StateId,
     pub rock: StateId,
     pub shore: StateId,
 }
 
 impl Bands {
-    /// A surface's band blocks, resolved by name (panics on a name the registry lacks: the
-    /// generator's validation checks the checked-in biomes).
-    pub fn of(s: &Surface) -> Self {
+    /// A band's blocks, resolved by name (panics on a name the registry lacks: the generator's
+    /// validation checks the checked-in biomes).
+    pub fn of(b: &ElevationBand) -> Self {
         Self {
-            ground: dwell_blocks::require(s.ground),
-            under: dwell_blocks::require(s.under),
-            snow: dwell_blocks::require(s.snow),
-            rock: dwell_blocks::require(s.rock),
-            shore: dwell_blocks::require(s.shore_block),
+            ground: dwell_blocks::require(b.ground),
+            under: dwell_blocks::require(b.under),
+            rock: dwell_blocks::require(b.rock),
+            shore: dwell_blocks::require(b.shore_block),
         }
     }
 }
 
-/// The default biome's band blocks.
-pub fn bands() -> &'static Bands {
-    static BANDS: std::sync::LazyLock<Bands> = std::sync::LazyLock::new(|| Bands::of(&S));
-    &BANDS
+/// A generator's biomes: each one's elevation bands resolved as palettes, and the biome map
+/// weighting them (none with one biome: it is everywhere).
+#[derive(Debug)]
+pub struct BiomeSet {
+    pub list: Vec<Biome>,
+    /// Every biome's bands' blocks, biome by biome (`first[i]` is biome i's lowest band).
+    pub palettes: Vec<Bands>,
+    first: Vec<u16>,
+    field: Option<crate::biomemap::BiomeField>,
+}
+
+impl BiomeSet {
+    /// `list` (the world's default first) over `map`.
+    pub fn new(list: &[Biome], map: &WorldMap, world_seed: u64) -> Self {
+        assert!(!list.is_empty(), "a world has at least one biome");
+        let mut palettes = Vec::new();
+        let mut first = Vec::new();
+        for b in list {
+            first.push(palettes.len() as u16);
+            palettes.extend(b.bands.iter().map(Bands::of));
+        }
+        let field = (list.len() > 1).then(|| crate::biomemap::BiomeField::new(map, world_seed));
+        Self {
+            list: list.to_vec(),
+            palettes,
+            first,
+            field,
+        }
+    }
+
+    /// The biomes' weights at (x, z) over the world height field's `elevation` m.
+    pub fn mix(&self, x: i64, z: i64, elevation: f64) -> crate::biomemap::Mix {
+        match &self.field {
+            None => crate::biomemap::Mix::only(0),
+            Some(f) => f.mix(&self.list, x, z, elevation),
+        }
+    }
 }
 
 /// The material `depth` rows below the surface of a column whose top voxel is `top` and band
@@ -456,9 +541,9 @@ fn fill_soil(b: &Bands, band: Band, top: i32, depth: i64, soil: i64) -> StateId 
             }
         }
         Band::Rock => b.rock,
-        Band::Ground | Band::Snow => {
+        Band::Ground => {
             if depth == 0 {
-                if band == Band::Snow { b.snow } else { b.ground }
+                b.ground
             } else if depth <= soil {
                 b.under
             } else {
@@ -501,8 +586,8 @@ pub struct TerrainGenerator {
     ramps: Arc<RampPieces>,
     /// The structure placements (data), resolved for this world.
     planters: Vec<Planter>,
-    /// The surface blocks of this generator's biome (the default's unless `with_biome`).
-    bands: Bands,
+    /// This generator's biomes (the build's unless `with_biomes`) and their surface palettes.
+    biomes: Arc<BiomeSet>,
     /// The portals between the faces (`portals.rs`), shared by both faces' generators; none for a
     /// face's generator on its own.
     portals: Option<Arc<Portals>>,
@@ -533,9 +618,15 @@ struct RampPieces {
 }
 
 impl RampPieces {
-    fn resolve(b: &Bands) -> Self {
+    fn resolve(palettes: &[Bands]) -> Self {
         let mut by = HashMap::default();
-        for m in [b.ground, b.shore, b.under, b.rock, b.snow] {
+        let mut ms: Vec<StateId> = palettes
+            .iter()
+            .flat_map(|b| [b.ground, b.shore, b.under, b.rock])
+            .collect();
+        ms.sort_unstable();
+        ms.dedup();
+        for m in ms {
             let base = dwell_blocks::block_of(m).name;
             for facing in RampFacing::ALL {
                 for flooded in [false, true] {
@@ -584,6 +675,7 @@ impl TerrainGenerator {
     pub fn with_map(world_seed: u64, map: Arc<WorldMap>) -> Self {
         let base = BaseField::new(world_seed);
         let (offset_x, offset_z) = base.offset();
+        let biomes = Arc::new(BiomeSet::new(BIOMES, &map, world_seed));
         Self {
             base,
             map,
@@ -600,9 +692,9 @@ impl TerrainGenerator {
             offset_x,
             offset_z,
             decorations: Placer::resolve(&DECORATIONS, world_seed),
-            ramps: Arc::new(RampPieces::resolve(bands())),
+            ramps: Arc::new(RampPieces::resolve(&biomes.palettes)),
             planters: Vec::new(),
-            bands: *bands(),
+            biomes,
             portals: None,
             rise: DECORATION_RISE as f32,
             lod_valleys: None,
@@ -624,13 +716,80 @@ impl TerrainGenerator {
         &self.map
     }
 
-    /// The generator with `biome`'s surface blocks in place of the default biome's (B1: the bands
-    /// only; ADR 0074).
-    pub fn with_biome(mut self, biome: &Biome) -> Self {
-        self.bands = Bands::of(&biome.surface);
-        self.ramps = Arc::new(RampPieces::resolve(&self.bands));
+    /// The generator with `biome` alone in place of the build's biomes (everywhere).
+    pub fn with_biome(self, biome: &Biome) -> Self {
+        self.with_biomes(std::slice::from_ref(biome))
+    }
+
+    /// The generator with `biomes` (the first the world's default, taking a column no biome
+    /// fits) in place of the build's, weighted per column by the biome map (ADR 0074 B2).
+    pub fn with_biomes(mut self, biomes: &[Biome]) -> Self {
+        let set = BiomeSet::new(biomes, &self.map, self.world_seed);
+        self.ramps = Arc::new(RampPieces::resolve(&set.palettes));
+        self.biomes = Arc::new(set);
         self.cache_id = next_cache_id();
         self
+    }
+
+    /// This generator's biomes.
+    pub fn biomes(&self) -> &[Biome] {
+        &self.biomes.list
+    }
+
+    /// The biomes' weights at face-local (x, z) (biome index, weight; summing to 1) and the one
+    /// whose surface the column takes.
+    pub fn biome_mix(&self, x: i64, z: i64) -> crate::biomemap::Mix {
+        let (base, _, _) = self.map.height_at(x as f64, z as f64);
+        self.biomes.mix(x, z, base)
+    }
+
+    /// A column's surface palette.
+    fn palette(&self, col: impl std::borrow::Borrow<Column>) -> &Bands {
+        &self.biomes.palettes[usize::from(col.borrow().palette)]
+    }
+
+    /// The fine relief of `s` at (x, z) over the height field's `base` m, at a cell of `cell` m.
+    fn detail_of(&self, s: &Surface, x: i64, z: i64, base: f64, cell: i64) -> f64 {
+        let amplitude = s.detail_amplitude
+            + (s.detail_mountain_amplitude - s.detail_amplitude)
+                * f64::from(smooth_step(
+                    s.detail_mountain_from as f32,
+                    s.detail_mountain_full as f32,
+                    base as f32,
+                ));
+        let kept = octaves_resolved(s.detail_wavelength, s.detail_octaves, cell);
+        if kept == 0 {
+            0.0
+        } else {
+            2.0 * amplitude
+                * f64::from(fbm2(
+                    self.detail_seed,
+                    x + self.offset_x,
+                    z + self.offset_z,
+                    s.detail_wavelength,
+                    s.detail_octaves,
+                    Some(kept),
+                ))
+        }
+    }
+
+    /// The fine relief at (x, z) blended by the biomes' weights (`mix`): each biome's own,
+    /// weighted; one biome's alone where it is the only one.
+    fn blended_detail(
+        &self,
+        mix: &crate::biomemap::Mix,
+        x: i64,
+        z: i64,
+        base: f64,
+        cell: i64,
+    ) -> f64 {
+        if mix.len == 1 {
+            let s = &self.biomes.list[usize::from(mix.weights[0].0)].surface;
+            return self.detail_of(s, x, z, base, cell);
+        }
+        mix.iter()
+            .map(|(i, w)| w * self.detail_of(&self.biomes.list[i].surface, x, z, base, cell))
+            .sum()
     }
 
     /// The generator with these structure placements in place of the build's (tests add one by
@@ -724,13 +883,21 @@ impl TerrainGenerator {
     /// snow line, as the soil thins with height (owner, 2026-10-26: structured, rooted in realism).
     /// A cell of `cell` m (the LOD's coarser ones) takes the slope over at least its own width,
     /// so a rock face narrower than a cell is not drawn as a dotted line of single cells.
-    fn rock_at(&self, map: &crate::worldmap::WorldMap, x: f64, z: f64, h: f64, cell: i64) -> bool {
-        let w = S.rock_window.max(cell as f64);
+    fn rock_at(
+        &self,
+        s: &Surface,
+        map: &crate::worldmap::WorldMap,
+        x: f64,
+        z: f64,
+        h: f64,
+        cell: i64,
+    ) -> bool {
+        let w = s.rock_window.max(cell as f64);
         let hx = map.height_at(x + w, z).0 - map.height_at(x - w, z).0;
         let hz = map.height_at(x, z + w).0 - map.height_at(x, z - w).0;
         let slope = hx.hypot(hz) / (2.0 * w);
-        let t = (h / S.snow_line).clamp(0.0, 1.0);
-        let threshold = S.rock_slope + (S.rock_slope_high - S.rock_slope) * t * t * (3.0 - 2.0 * t);
+        let t = (h / s.rock_high).clamp(0.0, 1.0);
+        let threshold = s.rock_slope + (s.rock_slope_high - s.rock_slope) * t * t * (3.0 - 2.0 * t);
         slope >= threshold
     }
 
@@ -968,28 +1135,13 @@ impl TerrainGenerator {
         }
         let map = &*self.map;
         let (base, gx, gz) = map.height_at(x as f64, z as f64);
-        // The fine detail, stronger on mountains.
-        let amplitude = S.detail_amplitude
-            + (S.detail_mountain_amplitude - S.detail_amplitude)
-                * f64::from(smooth_step(
-                    S.detail_mountain_from as f32,
-                    S.detail_mountain_full as f32,
-                    base as f32,
-                ));
-        let kept = octaves_resolved(S.detail_wavelength, S.detail_octaves, cell);
-        let detail = if kept == 0 {
-            0.0
-        } else {
-            2.0 * amplitude
-                * f64::from(fbm2(
-                    self.detail_seed,
-                    x + self.offset_x,
-                    z + self.offset_z,
-                    S.detail_wavelength,
-                    S.detail_octaves,
-                    Some(kept),
-                ))
-        };
+        // The biomes here (by the world height field, which they never change beyond their fine
+        // relief) and the one whose surface the column takes.
+        let mix = self.biomes.mix(x, z, base);
+        let biome = &self.biomes.list[usize::from(mix.chosen)];
+        let bs = &biome.surface;
+        // The fine detail, stronger on mountains, blended by the biomes' weights.
+        let detail = self.blended_detail(&mix, x, z, base, cell);
         // The nearest river channel, through the meander warp (none far from every river).
         let (min_half, min_width) = if cell > 1 && cell <= S.river_lod_max_cell {
             (
@@ -1026,10 +1178,10 @@ impl TerrainGenerator {
         };
         let mut fade: f64 = 1.0;
         if let Some(r) = &river {
-            fade = fade.min(smooth01((r.d - r.half) / S.detail_water_fade.max(1e-6)));
+            fade = fade.min(smooth01((r.d - r.half) / bs.detail_water_fade.max(1e-6)));
         }
         if let Some(l) = &lake {
-            fade = fade.min(smooth01(-l.sdf / S.detail_water_fade.max(1e-6)));
+            fade = fade.min(smooth01(-l.sdf / bs.detail_water_fade.max(1e-6)));
         }
         let mut h = base + detail * fade;
         let mut on_lip = false;
@@ -1143,31 +1295,36 @@ impl TerrainGenerator {
         if !wet {
             water = Water::None;
         }
-        // The band: shore (and every bed under water), rock where steep, snow over the snow line.
+        // The band: shore (and every bed under water), rock where steep, else the ground; its
+        // blocks those of the biome's elevation band at h (each band's edge moved by a noise and
+        // raised on slopes, so the snow line, say, is no flat contour).
         let slope = (gx * gx + gz * gz).sqrt();
-        let band = if wet || h < S.shore {
+        let band = if wet || h < bs.shore {
             Band::Shore
-        } else if self.rock_at(map, x as f64, z as f64, h, cell) {
+        } else if self.rock_at(bs, map, x as f64, z as f64, h, cell) {
             Band::Rock
-        } else if h + S.snow_noise >= S.snow_line {
+        } else {
+            Band::Ground
+        };
+        let mut level_band = 0usize;
+        if biome.bands.len() > 1 && h + bs.edge_noise >= biome.bands[1].from {
             let noise = 2.0
-                * S.snow_noise
+                * bs.edge_noise
                 * f64::from(fbm2(
                     self.snow_seed,
                     x + self.offset_x,
                     z + self.offset_z,
-                    S.snow_wavelength,
+                    bs.edge_wavelength,
                     3,
-                    Some(octaves_resolved(S.snow_wavelength, 3, cell)),
+                    Some(octaves_resolved(bs.edge_wavelength, 3, cell)),
                 ));
-            if h >= S.snow_line + noise + S.snow_slope_lift * slope {
-                Band::Snow
-            } else {
-                Band::Ground
+            for (k, b) in biome.bands.iter().enumerate().skip(1) {
+                if h >= b.from + noise + bs.edge_slope_lift * slope {
+                    level_band = k;
+                }
             }
-        } else {
-            Band::Ground
-        };
+        }
+        let palette = self.biomes.first[usize::from(mix.chosen)] + level_band as u16;
         let mut shore = FAR_WATER;
         if let Some(r) = &river {
             shore = shore.min((r.d - r.half).max(0.0) as f32);
@@ -1183,6 +1340,7 @@ impl TerrainGenerator {
             level,
             water,
             band,
+            palette,
             outside: false,
             shore,
             base: height,
@@ -1466,27 +1624,8 @@ impl TerrainGenerator {
             return None;
         }
         let (base, _, _) = self.map.height_at(x as f64, z as f64);
-        let amplitude = S.detail_amplitude
-            + (S.detail_mountain_amplitude - S.detail_amplitude)
-                * f64::from(smooth_step(
-                    S.detail_mountain_from as f32,
-                    S.detail_mountain_full as f32,
-                    base as f32,
-                ));
-        let kept = octaves_resolved(S.detail_wavelength, S.detail_octaves, 1);
-        let detail = if kept == 0 {
-            0.0
-        } else {
-            2.0 * amplitude
-                * f64::from(fbm2(
-                    self.detail_seed,
-                    x + self.offset_x,
-                    z + self.offset_z,
-                    S.detail_wavelength,
-                    S.detail_octaves,
-                    Some(kept),
-                ))
-        };
+        let mix = self.biomes.mix(x, z, base);
+        let detail = self.blended_detail(&mix, x, z, base, 1);
         let h = base + detail;
         Some(((SEA_LEVEL_M + h).max(dwell_world::MIDPLANE_M + dwell_world::CORE_M)) as f32)
     }
@@ -1566,7 +1705,7 @@ impl TerrainGenerator {
         let top = top_voxel(col.height);
         let water = col.water_row();
         if y <= top {
-            let m = fill_soil(&self.bands, col.band, top, i64::from(top - y), soil);
+            let m = fill_soil(self.palette(col), col.band, top, i64::from(top - y), soil);
             if y == top {
                 under_water(m, y, col.flood_row())
             } else {
@@ -1678,7 +1817,11 @@ impl TerrainGenerator {
         // The top block as generated: under water it takes its flooded state. Rows of cells for
         // the top; metres for the height band (placements.json's) and the slope.
         let water = col.water_row();
-        let block = under_water(fill(&self.bands, col.band, top, 0), top, col.flood_row());
+        let block = under_water(
+            fill(self.palette(col), col.band, top, 0),
+            top,
+            col.flood_row(),
+        );
         Some(Ground {
             top,
             above_sea: (m_of_row(top) - SEA_LEVEL_M).floor() as i32,
@@ -1870,9 +2013,9 @@ impl TerrainGenerator {
                     } else if y <= top && y >= first_piece {
                         *v = under_water(pieces[(y - first_piece) as usize], y, flood_at(y));
                     } else if y == top {
-                        *v = under_water(fill(&self.bands, col.band, top, 0), y, flood);
+                        *v = under_water(fill(self.palette(col), col.band, top, 0), y, flood);
                     } else if y < top {
-                        *v = fill_soil(&self.bands, col.band, top, i64::from(top - y), soil);
+                        *v = fill_soil(self.palette(col), col.band, top, i64::from(top - y), soil);
                     } else if y < water {
                         *v = M.water;
                     } else if col.stream && y == top + 1 {
@@ -1997,7 +2140,7 @@ impl TerrainGenerator {
                         *cell = if y < water { M.water } else { M.air };
                     } else if full && !solid(y + 1) {
                         *cell = if sky_near(y) {
-                            under_water(fill(&self.bands, col.band, y, 0), y, col.flood_row())
+                            under_water(fill(self.palette(col), col.band, y, 0), y, col.flood_row())
                         } else {
                             v.material
                         };
@@ -2146,7 +2289,7 @@ impl TerrainGenerator {
         // Dry pieces: `generate` floods each one under the water (`under_water`).
         let cells = self
             .ramps
-            .cells(fill(&self.bands, col.band, top, 0), shape, false);
+            .cells(fill(self.palette(col), col.band, top, 0), shape, false);
         // A 1 m ramp needs two cells of ground; a column one cell deep takes none.
         if (cells.len() as i32) > top + 1 - FACE_MIN_Y {
             return &[];
@@ -2172,7 +2315,8 @@ impl TerrainGenerator {
             return None;
         }
         let (x, z) = (x0 + lx, z0 + lz);
-        let ground = fill(&self.bands, cols[(lz * S + lx) as usize].band, top, 0);
+        let here = &cols[(lz * S + lx) as usize];
+        let ground = fill(self.palette(here), here.band, top, 0);
         let neighbour_top = |nx: i32, nz: i32| {
             let (ix, iz) = (nx - x0, nz - z0);
             let col = if (0..S).contains(&ix) && (0..S).contains(&iz) {
@@ -2257,7 +2401,7 @@ impl TerrainGenerator {
 
     /// The block on top of a column (dry, as the LOD and the colour map show it).
     pub fn top_state(&self, col: &Column) -> StateId {
-        fill(&self.bands, col.band, top_voxel(col.height), 0)
+        fill(self.palette(col), col.band, top_voxel(col.height), 0)
     }
 
     fn lod_columns(&self, o: lod::LodOrigin, level: i32) -> Vec<Column> {
@@ -2493,7 +2637,7 @@ impl TerrainGenerator {
                             M.stone
                         } else {
                             fill_soil(
-                                &self.bands,
+                                self.palette(col),
                                 col.band,
                                 top as i32,
                                 depth.min(1000),
@@ -2508,14 +2652,14 @@ impl TerrainGenerator {
                     *m = if wet && !water_above {
                         M.water
                     } else {
-                        fill(&self.bands, col.band, top as i32, 0)
+                        fill(self.palette(col), col.band, top as i32, 0)
                     };
                     if let Some(s) = surface.as_deref_mut() {
                         s[lod::column_index(x, z)] = LodSurface {
                             valid: true,
                             wet,
                             height: rows(col.height).min((a + cell) as f32),
-                            material: fill(&self.bands, col.band, top as i32, 0),
+                            material: fill(self.palette(col), col.band, top as i32, 0),
                             water: if wet { water as f32 } else { 0.0 },
                         };
                     }
@@ -3140,12 +3284,16 @@ mod tests {
         // HALF_HEIGHT_GRID.md §4: on 1 m cells the generator writes what it always has (its
         // goldens are unchanged); on ½ m cells every natural surface material has its pieces, a
         // ½ m ramp in one cell and a 45° ramp in two.
-        let pieces = RampPieces::resolve(bands());
+        let palettes: Vec<Bands> = BIOMES
+            .iter()
+            .flat_map(|b| b.bands.iter().map(Bands::of))
+            .collect();
+        let pieces = RampPieces::resolve(&palettes);
         if CELL_H == 1.0 {
             assert!(pieces.by.is_empty());
             return;
         }
-        for m in [M.grass, M.sand, M.dirt, M.stone, bands().snow] {
+        for m in [M.grass, M.sand, M.dirt, M.stone, palettes[1].ground] {
             for facing in RampFacing::ALL {
                 for flooded in [false, true] {
                     assert_eq!(pieces.cells(m, Top::Gentle(facing), flooded).len(), 1);

@@ -126,7 +126,7 @@ fn main() {
             let shade = (1.0 - 0.6 * (dx - dz) / (2.0 * step as f32)).clamp(0.3, 1.6);
             let above = c.height - SEA_LEVEL_M as f32;
             let mut rgb = match c.band {
-                Band::Snow => [235.0, 240.0, 248.0],
+                Band::Ground if c.palette > 0 => [235.0, 240.0, 248.0],
                 Band::Rock => [150.0, 140.0, 135.0],
                 Band::Shore => [225.0, 205.0, 150.0],
                 Band::Ground => {
