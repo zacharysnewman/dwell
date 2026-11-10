@@ -485,7 +485,9 @@ mod tests {
             "a dry column collapses"
         );
         // The skirts' sides and edges are the reference's (`skirt_vertex`), after the grid's.
-        assert!(src.contains("array<vec2i, 4>(vec2i(-1, 0), vec2i(1, 0), vec2i(0, -1), vec2i(0, 1))"));
+        assert!(
+            src.contains("array<vec2i, 4>(vec2i(-1, 0), vec2i(1, 0), vec2i(0, -1), vec2i(0, 1))")
+        );
         assert!(src.contains("array<vec2i, 8>(vec2i(0, 0), vec2i(0, 1), vec2i(1, 0), vec2i(1, 1)"));
         assert_eq!(
             GRID_VERTICES as usize,

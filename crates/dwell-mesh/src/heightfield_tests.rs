@@ -281,7 +281,11 @@ fn a_lone_column_draws_four_skirts_down_to_its_floor_on_both_faces() {
     // surface (1.5 m + its top) down to its floor (row 3, 1.5 m).
     let local = voxels(&[(5, 3, 7, water()), (5, 2, 7, stone())]);
     for mirror in [false, true] {
-        let cells = if mirror { mirror_padded(&local) } else { local.clone() };
+        let cells = if mirror {
+            mirror_padded(&local)
+        } else {
+            local.clone()
+        };
         let tile = water_tile(&cells, &[], mirror).expect("a tile");
         let quads = skirts(&tile.levels, &floors(&tile));
         assert_eq!(quads.len(), 4, "mirror {mirror}");
@@ -309,7 +313,8 @@ fn a_calm_pool_and_a_joined_step_draw_no_skirts_but_a_drop_does() {
     let flat = water_tile(&voxels(&basin(1.0, None)), &[], false).expect("a tile");
     assert!(skirts(&flat.levels, &floors(&flat)).iter().all(|q| {
         // Only along the basin's walls (the apron's stone columns are dry): hidden in the stone.
-        q.iter().any(|p| p[0] == 0.0 || p[2] == 0.0 || p[0] == COLUMNS as f32 || p[2] == COLUMNS as f32)
+        q.iter()
+            .any(|p| p[0] == 0.0 || p[2] == 0.0 || p[0] == COLUMNS as f32 || p[2] == COLUMNS as f32)
     }));
     // Within the join: no skirt between the two columns.
     assert_eq!(skirt_bottom(2.0, 1.0, 1.9, 0.2), None);

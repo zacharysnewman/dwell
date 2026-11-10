@@ -285,7 +285,11 @@ pub fn skirt_bottom(level: f32, floor: f32, beside: f32, join_m: f32) -> Option<
     if !wet(level) || (wet(beside) && level - beside <= join_m) {
         return None;
     }
-    let bottom = if wet(beside) { beside.max(floor) } else { floor };
+    let bottom = if wet(beside) {
+        beside.max(floor)
+    } else {
+        floor
+    };
     (bottom < level).then_some(bottom)
 }
 
@@ -294,14 +298,24 @@ pub fn skirt_bottom(level: f32, floor: f32, beside: f32, join_m: f32) -> Option<
 /// quad from the column's surface edge (its two corners' [`corner_height`]s) down to its
 /// [`skirt_bottom`] on that side; none (collapsed) where the side has no skirt. `floors` is each
 /// texel's [`column_floor`]. The shader's reference.
-pub fn skirt_vertex(levels: &[f32], floors: &[f32], join_m: f32, vertex: usize) -> Option<[f32; 3]> {
+pub fn skirt_vertex(
+    levels: &[f32],
+    floors: &[f32],
+    join_m: f32,
+    vertex: usize,
+) -> Option<[f32; 3]> {
     let column = vertex / SKIRT_COLUMN_VERTICES;
     let side = (vertex / COLUMN_VERTICES) % SIDES.len();
     let (cx, cz) = ((column % COLUMNS) as i32, (column / COLUMNS) as i32);
     let texel = |x: i32, z: i32| (x + 1) as usize + TILE * (z + 1) as usize;
     let own = texel(cx, cz);
     let [dx, dz] = SIDES[side];
-    let bottom = skirt_bottom(levels[own], floors[own], levels[texel(cx + dx, cz + dz)], join_m)?;
+    let bottom = skirt_bottom(
+        levels[own],
+        floors[own],
+        levels[texel(cx + dx, cz + dz)],
+        join_m,
+    )?;
     let [a, b] = skirt_edge(side);
     let corner = [a, b, b, a, b, a][vertex % COLUMN_VERTICES];
     let up = [true, true, false, true, false, false][vertex % COLUMN_VERTICES];
