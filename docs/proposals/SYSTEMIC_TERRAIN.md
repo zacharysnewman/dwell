@@ -112,3 +112,16 @@ dominated by per-slope aspect at the map's 100 m cells (the intensity saturates 
 `upliftRain` 1.5); a regional shadow behind a range is weaker than the slope striping. Tuning in Chisel
 (lower `upliftRain`, longer reach), or smoothing the ground the wind sees, is the next step.
 
+Follow-up (0.52.8): the wind sees the ground smoothed over `windSmoothM` (3 km, a tent low-pass of the
+map's heights), so the rain follows ranges: the windward flank of a range is wet and its lee dry over
+kilometres, hillsides included (`tests/rain_shadow.rs` `a_whole_range_shadows_a_wide_band_of_its_lee`).
+
+## 8. Presets (built, 0.52.8)
+
+Owner (2026-11-10): "We need a lot of prefabbed biomes as options to use as starting points." Fourteen
+preset biomes in `shared/worldgen/biomes/presets/` (meadow, mixed forest, boreal, cold rainforest,
+alpine tundra, snowfield, steppe, savanna, sand desert, red-rock mesa, badlands, tropical beach,
+wetland, coastal cliffs), each with a `label` and `description`, validated like any biome, listed by
+Chisel's "Add from preset", never in the default world. They use today's blocks; T2's rock types and
+T3's soil will give the mesa, badlands and tundra their own materials.
+

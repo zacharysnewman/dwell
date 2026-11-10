@@ -1491,6 +1491,7 @@ A second page of the client build (Phase 56 B3, ADR 0074): `npm run build:wasm`,
 and rain sliders are in the biome map group; overlays other than blocks need two biomes). The left panel edits the biomes (sliders made from
 `shared/worldgen/biomes.mjs`'s ranges, block pickers from the registry); the right shows the region
 from the real generator in a worker, 64² texels then 256², redrawn ~60 ms after a drag (each pass
-~0.1 s on an M1). Export writes `{ biomes, biomeMap }`; Import takes that or one biome file; both are
+~0.1 s on an M1). "Add from preset" adds one of the preset biomes (`shared/worldgen/biomes/presets/`, listed by label
+with its description beneath) as a starting point. Export writes `{ biomes, biomeMap }`; Import takes that or one biome file; both are
 validated by the rules `gen.mjs` uses. Edits persist in the browser (`dwell.chisel`); Reset returns to
 the build's. `document.body.dataset.tiles` counts the tiles drawn, for a script waiting on the preview.
