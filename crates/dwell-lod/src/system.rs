@@ -635,28 +635,6 @@ impl LodSystem {
         self.chunk_fade(coord).is_some()
     }
 
-    #[doc(hidden)]
-    pub fn debug_node(&self, c: LodCoord) -> String {
-        let mut out = String::new();
-        let mut a = c;
-        loop {
-            let id = id_of(a);
-            match self.nodes.get(&id) {
-                Some(n) => out.push_str(&format!(
-                    "\n    L{} {:?} kind {:?} ready {} meshed {} culled {} covered {} anc {} lo {:?} hi {:?} pos {:?} split {} frame {}",
-                    a.level, (a.i, a.j, a.k), n.kind, ready_node(n), n.meshed, self.culled_node(n),
-                    self.covered.contains(&id), self.covered_ancestors.contains(&id), n.lo, n.hi, self.position, n.split_frame, self.frame
-                )),
-                None => out.push_str(&format!("\n    L{} {:?} no node", a.level, (a.i, a.j, a.k))),
-            }
-            if a.level >= 8 {
-                break;
-            }
-            a = parent(a);
-        }
-        out
-    }
-
     /// Whether the LOD knows the chunk's level-1 section has nothing to draw (empty or buried rock):
     /// its chunks are not shown and need not be (the loading screen's near ring, §6.3).
     /// The deepest section known on the way down decides: an empty or buried one is not descended

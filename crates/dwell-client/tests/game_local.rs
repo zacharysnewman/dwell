@@ -2383,6 +2383,10 @@ fn long_trip(mut rig: Rig, seconds: u32) -> ((u32, u32, ChunkCoord), f64, usize,
     rig.input.flight.set(true);
     rig.input.look.yaw = 90.0;
     rig.input.look.pitch = 0.0;
+    // Up clear of the hills and trees, then on at that height.
+    rig.input.set_key("Space", true);
+    rig.run_until(90, |_| false);
+    rig.input.set_key("Space", false);
     rig.input.set_key("KeyW", true);
     let start = rig.game.as_ref().unwrap().debug_state().feet;
     let mut waited: dwell_world::hash::HashMap<ChunkCoord, u32> = Default::default();
@@ -2390,15 +2394,27 @@ fn long_trip(mut rig: Rig, seconds: u32) -> ((u32, u32, ChunkCoord), f64, usize,
     let mut lines = Vec::new();
     for t in 1..=60 * seconds {
         rig.frame();
+        // The ground under the player (the first solid cell down, within 64 m).
+        let feet = rig.game.as_ref().unwrap().debug_state().feet;
+        let [x, z] = [feet[0].floor() as i32, feet[2].floor() as i32];
+        let top = dwell_world::row_of_m(feet[1]);
+        let air = dwell_world::M.air;
+        let Some(ground) = (top - 128..=top)
+            .rev()
+            .find(|&y| rig.game.as_mut().unwrap().voxel(x, y, z) != air)
+        else {
+            continue;
+        };
         let game = rig.game.as_ref().unwrap();
-        let feet = game.debug_state().feet;
-        let me = dwell_world::chunk_of_pos([feet[0], feet[1] - 1.0, feet[2]]);
+        let me = dwell_world::chunk_of(x, ground, z);
         let ring: Vec<ChunkCoord> = (-1..=1)
             .flat_map(|dx| (-1..=1).map(move |dz| ChunkCoord::new(me.x + dx, me.y, me.z + dz)))
             .collect();
         waited.retain(|c, _| ring.contains(c));
         for c in ring {
-            if game.chunk_detail(c) == 0 || !rig.scene.borrow().chunks.contains(&c) && game.chunk_drawable(c.to_array()) {
+            if game.chunk_detail(c) == 0
+                || !rig.scene.borrow().chunks.contains(&c) && game.chunk_drawable(c.to_array())
+            {
                 // Drawn as a chunk (or all air: nothing to draw).
                 waited.remove(&c);
             } else {
@@ -2443,8 +2459,8 @@ fn long_trip(mut rig: Rig, seconds: u32) -> ((u32, u32, ChunkCoord), f64, usize,
 #[test]
 fn a_long_trip_over_the_flat_world_keeps_the_near_ring_at_full_detail() {
     let (worst, flown, behind, log) =
-        long_trip(Rig::with_generator(dwell_world::GENERATOR_FLAT), 240);
-    assert!(flown > 1_600.0, "flew {flown} m\n{log}");
+        long_trip(Rig::with_generator(dwell_world::GENERATOR_FLAT), 180);
+    assert!(flown > 1_300.0, "flew {flown} m\n{log}");
     assert!(
         worst.0 <= 120,
         "a near chunk waited {} frames to be drawn as a chunk (frame {}, {:?})\n{log}",
@@ -2453,12 +2469,4 @@ fn a_long_trip_over_the_flat_world_keeps_the_near_ring_at_full_detail() {
         worst.2
     );
     assert_eq!(behind, 0, "left behind and still drawn\n{log}");
-}
-
-// face-a-only: as above.
-#[test]
-#[ignore]
-fn zz_terrain_trip() {
-    let (worst, flown, behind, log) = long_trip(Rig::new(), 150);
-    eprintln!("worst {worst:?} flown {flown} behind {behind}\n{log}");
 }

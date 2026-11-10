@@ -346,11 +346,20 @@ fn the_flat_worlds_ground_is_content_kilometres_from_the_axis() {
             let c = section_at(level, x, i64::from(FLAT_TOP_Y) - 1, 3);
             let b = flat_lod_bounds(level, c.i, c.k);
             assert!(b.any_inside, "x {x}, level {level}");
-            assert_eq!(kind_from_bounds(c, &b), LodKind::Content, "x {x}, level {level}");
+            assert_eq!(
+                kind_from_bounds(c, &b),
+                LodKind::Content,
+                "x {x}, level {level}"
+            );
         }
     }
     // Beyond the rim: outside.
-    let c = section_at(1, i64::from(WORLD_RADIUS) + 500, i64::from(FLAT_TOP_Y) - 1, 0);
+    let c = section_at(
+        1,
+        i64::from(WORLD_RADIUS) + 500,
+        i64::from(FLAT_TOP_Y) - 1,
+        0,
+    );
     assert!(!flat_lod_bounds(1, c.i, c.k).any_inside);
 }
 
