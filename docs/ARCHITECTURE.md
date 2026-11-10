@@ -577,8 +577,12 @@ of the player (a 2D distance on their face, whatever the height or what is loade
 coloured by the loaded terrain's tops, else the generator's (the revealed map's tiles below, asked for
 at most `revealed.jobsInFlight` at once in the job workers), else `explored.pendingColor`, reporting
 new and changed ones with their colour and their height (a height code, the same source as the colour;
-0.50.48); the disc draws a texel the scan found nothing in (ground below
-its reach) from its cell's colour. The client's `minimapFrame`, `minimapDots`,
+0.50.48); **[built, 0.52.10]** the disc draws a texel the scan found nothing in (not loaded yet,
+only the LOD drawn, or ground below its reach) from the **generator's 1 m top** there, never coarser
+(owner, 2026-11-10: "It shouldn't ever be coarse"): `minimap::Generated` holds the big map's closest
+level's tiles (1 m cells, below) within the disc's radius and a tile of the player, named by the
+wasm `minimapWants` and handed over by the shell (`minimapTile`) from its tile cache, or built first
+of anything (`RevealCache.feedMinimap`); loaded columns override them. The client's `minimapFrame`, `minimapDots`,
 `mapPose`, `takeExplored`, `shadeMap` and `mapAllowed` (the mode's `map` ability) feed the shell's
 `ui/minimap.ts`: the disc top right (placed by the HUD's layout, `shared/ui/layout.json`; compact when the screen's short side is under `compactBelowPx`, a phone either way up; a `hud.json` part; the height shading a toggle in Settings →
 On screen), the dots, and the big map (M, a tap or the controller's View; M, Esc, B or its ✕ closes):
@@ -613,6 +617,12 @@ is drawn, while the map is open, from the loaded chunks as the minimap reads the
 top block, builds and edits included), at most `revealed.liveTilesPerFrame` tiles a frame and each again
 every `revealed.liveRefreshMs` (`RevealCache.pumpLive`), kept in memory only; cells not loaded (or whose
 top lies under a chunk not yet streamed) show the generator's tile below. ADR 0068's 0.50.76 amendment.
+**[built, 0.52.10] The open map keeps building** (owner, 2026-11-10): while the big map is open and its
+view's tiles are in, `RevealCache.pump` builds every level's tiles round the view's centre (the open
+level first, then the finer and coarser ones) and then round the player, up to `revealed.jobsInFlight`
+at once, until none in range is left; a quiet count of the tiles still to build shows in the panel's
+bottom-right corner (`.map-progress`). With the map shut the background runs round the player at
+`revealed.backgroundJobs` as before. ADR 0068's 0.52.10 amendment.
 
 **[built, 0.50.46; per level and kept, 0.50.61] The big map's tiles** (owner, 2026-11-08: "big map should be fully explored on
 creative"; 2026-11-09: built "only once", "invisibly"): every level's ground comes from the generator, a

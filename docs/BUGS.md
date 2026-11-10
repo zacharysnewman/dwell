@@ -229,6 +229,19 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 67. The minimap fragmented, black-edged and coarse when moving fast (fixed pending release 0.52.10)
+
+Owner, 2026-11-10: "The mini map gets all fragmented when moving fast, it should always show the full
+width and height of what's around you, it's leaving black edges" and "the mini map is showing a coarse
+view sometimes. It shouldn't ever be coarse." Columns the scan found no top in (not streamed yet, LOD
+only, or past its reach) were drawn from the 8 m explored cells (coarse), or left transparent until
+their 8 m generated tile came (black). Fixed: they are drawn from the generator's 1 m tops, the big
+map's closest level's tiles, prefetched a tile ahead of the disc (`minimap::Generated`, ADR 0068's
+0.52.10 amendment). Red → green: `minimap_tests.rs`
+`the_disc_shows_unloaded_ground_at_one_metre_never_coarse_or_black` (both faces; failed on an explored
+cell's colour with the old fill). With it, the big map open now keeps building every level's tiles
+until done (`minimap.test.ts`, red → green).
+
 ### 66. Dashed gaps along a river's water steps seen from upstream (fixed pending release 0.52.6)
 
 Owner, 2026-11-10: "Top of water slopes from up river looking down, have some 'gap' artifacts" (thin

@@ -224,6 +224,40 @@ flat green: the generator's map colours have no trees, no single blocks and no e
   column top), without trees; a top-block sampler for the tree layer was not cheap enough to add in
   this change. Beyond the loaded chunks the 1–2 m levels still read as plain ground.
 
+### Amendment (0.52.10): the minimap always 1 m and whole; the open map keeps building
+
+Owner, 2026-11-10: "The mini map gets all fragmented when moving fast, it should always show the full
+width and height of what's around you, it's leaving black edges", "the mini map is showing a coarse
+view sometimes. It shouldn't ever be coarse", and of the big map: "Preferably it should do that until
+it's done, while the map is open."
+
+- **The minimap's fill is the generator's 1 m tops.** Where the scan found no top (columns not
+  streamed yet when moving fast, LOD-only ground, or ground past the scan's reach) the disc drew the
+  8 m explored cell's colour (coarse), or nothing (black) until that cell's 8 m tile came. It now draws
+  `dwell_game::minimap::Generated`: the big map's closest level's tiles (`bigMap.levels[0]`, 1 m cells,
+  the generator's top block and height, the tiles the big map already builds once per world and line
+  and keeps in `dwell-map-tiles`). The client names the tiles it lacks within the disc's radius and one
+  tile (32 m) of the player, nearest first (`minimapWants`), and lets go of those three tiles past it;
+  the shell hands each over from its cache (`minimapTile`) or asks for it before the open view's and
+  the background's (`RevealCache.feedMinimap`, within `revealed.jobsInFlight`). A tile's arrival
+  redraws the disc. Loaded columns override it as before (real blocks, edits); the explored cells are
+  still marked and coloured as before for the big map's fog, but the disc never reads them.
+- **Fog** on the minimap is unchanged: the disc is always explored ground (its cells are explored as it
+  covers them).
+- **The open map keeps building.** Before, with the map open, the background ran round the player
+  only, one job at a time, the start level first. Now, once the view's tiles are asked for, it builds
+  every level's tiles within `prebuildSpans` round the view's centre (the open level first, then
+  outward to the finer and coarser levels) and then round the player, at `jobsInFlight`, until none in
+  range is left, with a quiet "Mapping · N tiles" count in the panel's corner while any are.
+- **Tests.** `minimap_tests.rs` `the_disc_shows_unloaded_ground_at_one_metre_never_coarse_or_black`
+  (both faces: a disc with 20 m loaded, every pixel inside drawn, each unloaded one its own metre's
+  generated colour, none an explored cell's; red on the old fill), `minimap.test.ts` "the minimap and
+  the open map keep building" (the 1 m tiles asked first and handed over, kept ones without a build;
+  every level's tiles round a panned view built over frames until none remain; red before).
+- **Cost.** The bench flying at 64 m/s (scratch scenario): `minimap.scan` p50 1.2 ms after vs 1.5 ms
+  before, `minimap.draw` ~0.5 ms; frame CPU p50 3.6 vs 3.5 ms (noise). The fill is a hash lookup a
+  pixel where the scan found nothing.
+
 ## Consequences
 
 - The minimap's cost, measured in the browser (Chrome, a Mac's GPU; the bench flying at 8 m/s for

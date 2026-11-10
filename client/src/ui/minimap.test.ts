@@ -997,7 +997,10 @@ describe('the minimap and the open map keep building (owner, 2026-11-10)', () =>
     // Over many frames, a few jobs at a time.
     expect(frames).toBeGreaterThan(50);
     for (const [c, f, i, k] of inRange) {
-      expect(cache.tiles.has(RevealCache.key(c, f, i, k)), `${String(c)} m tile ${String(i)},${String(k)}`).toBe(true);
+      expect(
+        cache.tiles.has(RevealCache.key(c, f, i, k)),
+        `${String(c)} m tile ${String(i)},${String(k)}`,
+      ).toBe(true);
     }
     // Every level, the coarser and the finer, not only the open one.
     const levels = new Set([...cache.tiles.values()].map((t) => t.cellM));
