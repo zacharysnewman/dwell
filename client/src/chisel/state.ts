@@ -8,6 +8,7 @@ import {
   validatePresets,
   validateWorldKnobs,
   validateRocks,
+  validateVegetation,
   type BlockInfo,
 } from '../../../shared/worldgen/biomes.mjs';
 import defaultBiome from '../../../shared/worldgen/biomes/default.json';
@@ -16,6 +17,7 @@ import archipelago from '../../../shared/worldgen/biomes/fixtures/archipelago.js
 import archipelagoWorld from '../../../shared/worldgen/worlds/archipelago.json';
 import terrain from '../../../shared/worldgen/terrain.json';
 import rocks from '../../../shared/worldgen/rocks.json';
+import vegetation from '../../../shared/worldgen/vegetation.json';
 import decorations from '../../../shared/worldgen/decorations.json';
 import placements from '../../../shared/worldgen/placements.json';
 import blocksDwell from '../../../shared/blocks/dwell.json';
@@ -43,19 +45,40 @@ export interface GeologyJson {
   [k: string]: unknown;
 }
 
+/** A vegetation kind as vegetation.json holds it (systemic terrain T3): a placement's envelope. */
+export interface KindJson {
+  name: string;
+  placement: string;
+  temperature: [number, number];
+  moisture: [number, number];
+  [k: string]: unknown;
+}
+
+/** The soil and vegetation as vegetation.json holds it (systemic terrain T3). */
+export interface VegetationJson {
+  climate: Record<string, number>;
+  soil: Record<string, number>;
+  kinds: KindJson[];
+  [k: string]: unknown;
+}
+
 /**
- * What Chisel edits: the biomes (the default first), the biome map, optional world knobs, and the
- * geology (rocks.json; optional in a stored or imported edit: the build's).
+ * What Chisel edits: the biomes (the default first), the biome map, optional world knobs, the
+ * geology (rocks.json) and the soil and vegetation (vegetation.json; each optional in a stored or
+ * imported edit: the build's).
  */
 export interface Edit {
   biomes: BiomeJson[];
   biomeMap: BiomeMapJson;
   world?: WorldJson;
   geology?: GeologyJson;
+  vegetation?: VegetationJson;
 }
 
 /** The build's geology (shared/worldgen/rocks.json). */
 export const BUILD_GEOLOGY = rocks as unknown as GeologyJson;
+/** The build's soil and vegetation (shared/worldgen/vegetation.json). */
+export const BUILD_VEGETATION = vegetation as unknown as VegetationJson;
 
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
@@ -136,6 +159,10 @@ export function validateEdit(e: Edit): string[] {
     validateBiomeMap(e.biomeMap);
     if (e.world !== undefined) validateWorldKnobs(e.world);
     if (e.geology !== undefined) validateRocks(e.geology, BLOCKS);
+    if (e.vegetation !== undefined) {
+      const rockNames = new Set((e.geology ?? BUILD_GEOLOGY).rocks.map((r) => r.name));
+      validateVegetation(e.vegetation, rockNames, REFS.placements);
+    }
   } catch (err) {
     errors.push((err as Error).message);
   }
@@ -147,6 +174,7 @@ export function toJson(e: Edit): string {
   const out: Edit = { biomes: e.biomes, biomeMap: e.biomeMap };
   if (e.world) out.world = e.world;
   if (e.geology) out.geology = e.geology;
+  if (e.vegetation) out.vegetation = e.vegetation;
   return JSON.stringify(out, null, 2);
 }
 
@@ -168,12 +196,14 @@ export function fromJson(
           biomes: [...base.biomes.filter((b) => b.name !== o.name), v as BiomeJson],
           biomeMap: base.biomeMap,
           ...(base.geology ? { geology: base.geology } : {}),
+          ...(base.vegetation ? { vegetation: base.vegetation } : {}),
         }
       : {
           biomes: o.biomes as BiomeJson[],
           biomeMap: withNewKeys(o.biomeMap ?? base.biomeMap),
           ...(o.world ? { world: o.world } : {}),
           ...(o.geology ? { geology: o.geology } : {}),
+          ...(o.vegetation ? { vegetation: o.vegetation } : {}),
         };
   const errors = validateEdit(edit);
   return errors.length ? { errors } : { edit };

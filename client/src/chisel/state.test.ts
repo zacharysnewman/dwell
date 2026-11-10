@@ -3,6 +3,7 @@ import {
   ARCHIPELAGO_FIXTURE,
   ARCHIPELAGO_WORLD,
   BUILD_GEOLOGY,
+  BUILD_VEGETATION,
   DESERT_FIXTURE,
   PRESETS,
   STORE_KEY,
@@ -165,5 +166,30 @@ describe('Chisel state', () => {
     const lost = structuredClone(geology);
     lost.stacks = lost.stacks.filter((s) => s.name !== 'dwell:red_beds');
     expect(validateEdit({ ...e, geology: lost }).join()).toContain('rockStack');
+  });
+  it('the boreal and desert presets opt in to the climate, a tuned tree line round-trips, a bad kind is named', () => {
+    for (const n of ['boreal', 'cold_rainforest', 'savanna', 'sand_desert', 'alpine_tundra']) {
+      expect(PRESETS.find((p) => p.name === `preset:${n}`)?.vegetation).toBe(1);
+    }
+    const boreal = PRESETS.find((p) => p.name === 'preset:boreal');
+    if (!boreal) throw new Error('the boreal preset');
+    const vegetation = structuredClone(BUILD_VEGETATION);
+    const kind = vegetation.kinds[0];
+    if (!kind) throw new Error('a kind');
+    kind.temperature[0] = 9;
+    kind.moisture[0] = 0.1;
+    const e = { ...addBiome(buildEdit(), boreal), vegetation };
+    expect(validateEdit(e)).toEqual([]);
+    expect(fromJson(toJson(e))).toEqual({ edit: e });
+    // An edit without its vegetation (an older Chisel's) still loads: the build's is used.
+    const old = { ...e };
+    delete (old as { vegetation?: unknown }).vegetation;
+    expect(fromJson(JSON.stringify(old))).toEqual({ edit: old });
+    const bad = structuredClone(vegetation);
+    if (bad.kinds[0]) bad.kinds[0].placement = 'no_such_rule';
+    expect(validateEdit({ ...e, vegetation: bad }).join()).toContain('no_such_rule');
+    const upside = structuredClone(vegetation);
+    if (upside.kinds[0]) upside.kinds[0].temperature = [20, 10];
+    expect(validateEdit({ ...e, vegetation: upside }).join()).toContain('least below most');
   });
 });

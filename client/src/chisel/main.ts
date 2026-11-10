@@ -5,6 +5,7 @@
 import {
   GEOLOGY,
   TERRAIN,
+  VEGETATION,
   WHERE_FIELDS,
   WORLD_KNOBS,
   type Range,
@@ -12,6 +13,7 @@ import {
 import {
   ARCHIPELAGO_WORLD,
   BUILD_GEOLOGY,
+  BUILD_VEGETATION,
   FULL_BLOCKS,
   PRESETS,
   TEMPLATES,
@@ -47,6 +49,67 @@ const WHERE_SPAN: Record<string, [number, number, number]> = {
   coast: [0, 10000, 50],
 };
 const BAND_BLOCKS = ['ground', 'under', 'rock', 'shoreBlock'] as const;
+
+/** The edit's soil and vegetation, the build's (a copy) put on the edit the first time it is tuned. */
+function vegetation() {
+  edit.vegetation ??= JSON.parse(JSON.stringify(BUILD_VEGETATION)) as typeof BUILD_VEGETATION;
+  return edit.vegetation;
+}
+
+/**
+ * The soil and vegetation's sliders (vegetation.json, systemic terrain T3): the °C scale, the soil
+ * rules and each kind's key numbers, its least temperature (the tree line) and least moisture.
+ */
+function vegetationEditor() {
+  const v = vegetation();
+  const box = el(
+    'div',
+    {},
+    el('p', {
+      className: 'about',
+      textContent:
+        "Only biomes with Vegetation above 0 use these (the boreal, rainforest, savanna, desert and alpine presets); the default biome doesn't.",
+    }),
+  );
+  for (const [group, keys] of Object.entries(VEGETATION)) {
+    const obj = v[group as 'climate' | 'soil'];
+    for (const [key, [lo, hi]] of Object.entries(keys)) {
+      const min = typeof lo === 'object' ? lo.above : lo;
+      box.append(
+        slider(
+          `${group}.${key}`,
+          min,
+          hi,
+          0.1,
+          () => Number(obj[key]),
+          (x) => (obj[key] = x),
+        ),
+      );
+    }
+  }
+  for (const k of v.kinds) {
+    box.append(el('h2', { textContent: `${k.name} (${k.placement})` }));
+    box.append(
+      slider(
+        'tree line °C',
+        -20,
+        30,
+        0.5,
+        () => k.temperature[0],
+        (x) => (k.temperature[0] = Math.min(x, k.temperature[1] - 0.5)),
+      ),
+      slider(
+        'least moisture',
+        0,
+        1,
+        0.01,
+        () => k.moisture[0],
+        (x) => (k.moisture[0] = Math.min(x, k.moisture[1] - 0.01)),
+      ),
+    );
+  }
+  return box;
+}
 
 /** The edit's geology, the build's (a copy) put on the edit the first time it is shaped. */
 function geology() {
@@ -240,6 +303,16 @@ function biomeEditor(b: BiomeJson, isDefault: boolean) {
       ),
     );
   }
+  box.append(
+    slider(
+      'vegetation (climate share)',
+      0,
+      1,
+      0.05,
+      () => Number(b.vegetation ?? 0),
+      (v) => (b.vegetation = v),
+    ),
+  );
   box.append(waterEditor(b));
   const bands = el('details', { open: true }, el('summary', { textContent: 'Bands' }));
   b.bands.forEach((band, i) => {
@@ -422,6 +495,12 @@ function render() {
       }),
       groupSliders('shaping', geology().shaping, GEOLOGY),
       groupSliders('provinces', geology().provinces, GEOLOGY),
+    ),
+    el(
+      'details',
+      {},
+      el('summary', { textContent: 'Soil and vegetation (vegetation.json)' }),
+      vegetationEditor(),
     ),
   );
   const file = input({ type: 'file', accept: 'application/json' });
@@ -658,7 +737,16 @@ function viewBar() {
     regenerate(false);
   };
   const overlay = select();
-  ['blocks', 'biome weights', 'temperature', 'wetness', 'rainfall', 'rock'].forEach((t, i) => {
+  [
+    'blocks',
+    'biome weights',
+    'temperature',
+    'wetness',
+    'rainfall',
+    'rock',
+    'soil',
+    'vegetation',
+  ].forEach((t, i) => {
     overlay.append(
       el('option', { value: String(i), textContent: t, selected: i === view.overlay }),
     );
