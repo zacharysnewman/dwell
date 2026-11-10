@@ -61,7 +61,8 @@ fn num(v: &Value, path: &str) -> Result<f64, String> {
     for k in path.split('.') {
         at = at.get(k).ok_or_else(|| format!("{path} is missing"))?;
     }
-    at.as_f64().ok_or_else(|| format!("{path} must be a number"))
+    at.as_f64()
+        .ok_or_else(|| format!("{path} must be a number"))
 }
 
 fn text(v: &Value, k: &str) -> Result<&'static str, String> {
@@ -127,7 +128,9 @@ pub fn biome_from_json(v: &Value) -> Result<Biome, String> {
         Ok(())
     })()
     .map_err(at)?;
-    let w = v.get("where").ok_or_else(|| at("where is missing".into()))?;
+    let w = v
+        .get("where")
+        .ok_or_else(|| at("where is missing".into()))?;
     let place = Where {
         weight: num(w, "weight").map_err(|e| at(format!("where.{e}")))?,
         temperature: range(w, "temperature").map_err(at)?,

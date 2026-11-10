@@ -71,7 +71,7 @@
    across the island, along a seeded direction and bent by a noise, less `lapseRate` per 1,000 m of
    elevation: a warm biome's heights are cold), `wetness` (1 at a river or lake, 0 `wetReach` m away),
    `elevation` (m, the world height field's) and `coast` (m to the sea); `terrain.json` `biomeMap` holds
-   the world's parameters. Its weight in a column is `weight` × each range's fit, normalised. `bands` is
+   the world's parameters. Its weight in a column is `weight` × each range's fit; **the default biome is a fallback** (B3, 0.51.16): it takes only what is left of 1 after the others (× its own fit), so a biome that fits a place takes it at an ordinary weight of 1; the weights are then normalised. `bands` is
    a list of elevation bands (each its blocks by slope: `ground`, `under`, `rock`, `shoreBlock`; the
    lowest without a `from`), their edges moved by the biome's `shaping` noise and raised on slopes;
    `shaping` also holds the rock band (`rockSlope` easing to `rockSlopeHigh` at `rockHigh` m, today's
@@ -91,8 +91,9 @@
 - **B2** the biome map and blending: biomes placed by where they belong (elevation, coast, wetness,
   climate), wide transitions, elevation bands per biome; a one-biome world is golden-equal. *(built,
   0.51.15)*
-- **B3** Chisel's prototype page (`docs/prototypes/chisel.html`): a live preview patch, sliders,
-  Export/Import JSON.
+- **B3** Chisel's page: a live preview, sliders, Export/Import JSON. *(built, 0.51.16: served by the
+  client build as `client/chisel.html`, not a standalone `docs/prototypes/` file, since it runs the
+  generator's WASM; the validation shared as `shared/worldgen/biomes.mjs`.)*
 - **B4** water banks and hue, and the archipelago.
 - **B5** trees, ground items and structures per biome.
 - **B6** Chisel's texture tab (the Painterly Texture Lab folded in).

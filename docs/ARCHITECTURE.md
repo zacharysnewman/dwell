@@ -1514,13 +1514,22 @@ map's height), the distance to the sea and to the nearest river or lake cell (tw
 on the map's 100 m cells, built once per generator), and the temperature, a slow climate gradient across
 the island (along a direction from the seed, bent by a noise) less a lapse rate with height
 (`terrain.json` `biomeMap`). A biome's weight is its `weight` × each range's smoothstep fit over ± its
-`blend`, normalised (at most four per column; the default takes a column nothing fits). The column takes
+`blend`; the world's default biome is a **fallback** taking only what is left of 1 after the others (`fallback_weights`, B3), so a fitting biome takes its place at an ordinary weight of 1; then normalised (at most four per column; the default takes a column nothing fits). The column takes
 its surface from one biome, chosen against the cumulative weights by a dithered threshold (a noise and a
 per-column hash, `biomeMap.dither`), so borders are ragged and gradual; its fine relief is the weighted
 sum of each biome's; its rock band, shore and band edges are the chosen biome's; its elevation band
 picks a **palette** (`Column::palette`, the biome's band's resolved blocks) the fill reads. A world with
 one biome builds no map: its weight is 1 everywhere and its columns are exactly that biome's (the
-goldens byte-identical). Chisel the editor (B3, B6, B7) and the rest follow.
+goldens byte-identical).
+**Chisel [built, B3]** (`client/chisel.html`, a second page of the client build; `client/src/chisel/`):
+the biome editor. Its state is the biomes' JSON (the default first) and `terrain.json`'s `biomeMap`,
+checked by `shared/worldgen/biomes.mjs` (the same rules `gen.mjs` applies; the sliders are made from its
+ranges) and kept in the browser (`dwell.chisel`, append-only). A worker loads the client's WASM
+(`ChiselPreview`, `dwell-client` `chisel.rs`): the face A height field built once per seed, the edit
+parsed and put on it (`TerrainGenerator::with_biomes_on`, `BiomeField::with_params`), tiles rasterised
+by the big map's rules (`lod_map::raster_with_heights`, `tint_rgb`) or as overlays (biome weights,
+temperature, wetness), 64² then 256² per change. The texture tab (B6) and Chisel in the game (B7)
+follow.
 
 1. **Layout (2D).** The coast distance of the interim island (above).
 2. **Height (2D).** On land the ground rises from sea level at the coast toward 320 m inland

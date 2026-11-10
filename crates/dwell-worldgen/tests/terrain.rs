@@ -1640,7 +1640,10 @@ fn the_default_biome_takes_only_the_weight_left() {
         .iter()
         .find(|b| b.name == "test:desert")
         .expect("the desert fixture");
-    assert_eq!(desert.place.weight, 1.0, "the fixture is at an ordinary weight");
+    assert_eq!(
+        desert.place.weight, 1.0,
+        "the fixture is at an ordinary weight"
+    );
     let set = [BIOMES[0], desert];
     let hot_dry = Geography {
         temperature: 0.9,
@@ -1649,19 +1652,29 @@ fn the_default_biome_takes_only_the_weight_left() {
         coast: 500.0,
     };
     let w = fallback_weights(&set, &hot_dry);
-    assert_eq!(w[0].1, 0.0, "the default takes none where the desert fits fully: {w:?}");
+    assert_eq!(
+        w[0].1, 0.0,
+        "the default takes none where the desert fits fully: {w:?}"
+    );
     assert_eq!(w[1].1, 1.0);
     let cold = Geography {
         temperature: 0.0,
         ..hot_dry
     };
     let w = fallback_weights(&set, &cold);
-    assert_eq!((w[0].1, w[1].1), (1.0, 0.0), "nothing fits: the default has it");
+    assert_eq!(
+        (w[0].1, w[1].1),
+        (1.0, 0.0),
+        "nothing fits: the default has it"
+    );
     // On the desert's eased edge the two share it.
     let edge = Geography {
         temperature: 0.4,
         ..hot_dry
     };
     let w = fallback_weights(&set, &edge);
-    assert!((w[0].1 + w[1].1 - 1.0).abs() < 1e-9 && w[1].1 > 0.2 && w[1].1 < 0.8, "{w:?}");
+    assert!(
+        (w[0].1 + w[1].1 - 1.0).abs() < 1e-9 && w[1].1 > 0.2 && w[1].1 < 0.8,
+        "{w:?}"
+    );
 }

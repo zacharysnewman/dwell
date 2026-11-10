@@ -490,7 +490,8 @@ impl BiomeSet {
             first.push(palettes.len() as u16);
             palettes.extend(b.bands.iter().map(Bands::of));
         }
-        let field = (list.len() > 1).then(|| crate::biomemap::BiomeField::with_params(map, world_seed, params));
+        let field = (list.len() > 1)
+            .then(|| crate::biomemap::BiomeField::with_params(map, world_seed, params));
         Self {
             list: list.to_vec(),
             palettes,
