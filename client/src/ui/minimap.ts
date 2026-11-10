@@ -497,8 +497,7 @@ export class RevealCache {
       const [i0, i1] = [Math.floor((x - half) / span), Math.floor((x + half) / span)];
       const [k0, k1] = [Math.floor((z - half) / span), Math.floor((z + half) / span)];
       for (let k = k0; k <= k1; k++) {
-        for (let i = i0; i <= i1; i++)
-          if (this.onWorld(cellM, i, k)) out.push([cellM, face, i, k]);
+        for (let i = i0; i <= i1; i++) if (this.onWorld(cellM, i, k)) out.push([cellM, face, i, k]);
       }
     } else {
       const n = Math.ceil((reach === 'island' ? World.islandRadius : worldRadiusM()) / span);

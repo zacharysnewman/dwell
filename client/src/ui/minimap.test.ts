@@ -1020,7 +1020,9 @@ describe('the minimap and the open map keep building (owner, 2026-11-10)', () =>
     const after = client.asked.slice(visible.length);
     const firstOf = (cellM: number) => after.findIndex((k) => k.startsWith(`${String(cellM)}|`));
     const [near, mid, wide] = LEVELS.map((l) => l.cellM);
-    expect(after[0]?.startsWith(`${String(near)}|0,0,`) || after[0] === `${String(near)}|0,-1,-1`).toBe(true);
+    expect(
+      after[0]?.startsWith(`${String(near)}|0,0,`) || after[0] === `${String(near)}|0,-1,-1`,
+    ).toBe(true);
     expect(firstOf(near ?? 0)).toBeLessThan(firstOf(wide ?? 0));
     expect(firstOf(wide ?? 0)).toBeLessThan(firstOf(mid ?? 0));
     const midAsked = after.filter((k) => k.startsWith(`${String(mid)}|`));
@@ -1031,7 +1033,9 @@ describe('the minimap and the open map keep building (owner, 2026-11-10)', () =>
     };
     // The island's are nearest the view's centre first (the visible ones were built already).
     for (let n = 1; n < midAsked.length; n++) {
-      expect(dist(midAsked[n] ?? '')).toBeGreaterThanOrEqual(dist(midAsked[n - 1] ?? '') - span * 6);
+      expect(dist(midAsked[n] ?? '')).toBeGreaterThanOrEqual(
+        dist(midAsked[n - 1] ?? '') - span * 6,
+      );
     }
     expect(dist(midAsked[0] ?? '')).toBeLessThan(dist(midAsked[midAsked.length - 1] ?? ''));
   });
