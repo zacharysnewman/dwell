@@ -233,9 +233,10 @@ export function validateMap(data) {
   }
   const b = data.bigMap;
   if (b.startLevel >= b.levels.length) mapFail(`bigMap.startLevel must name a level (0–${b.levels.length - 1})`);
-  if (!isPow2(data.explored.cellM)) mapFail('explored.cellM must be a whole power of two');
   if (!(data.heightTint.lowM < data.heightTint.highM)) mapFail('heightTint: lowM must be below highM');
   if (data.minimap.radiusM % data.explored.cellM !== 0) mapFail('explored.cellM must divide minimap.radiusM');
+  // The zoom levels' cells and the explored cells nest (fog per level).
+  if (!isPow2(data.explored.cellM)) mapFail('explored.cellM must be a whole power of two');
   const pad = ['padZoomIn', 'padZoomInAlt', 'padZoomOut', 'padZoomOutAlt', 'padCenter', 'padClose'].map((k) => b[k]);
   if (new Set(pad).size !== pad.length || pad.includes('view')) mapFail('bigMap: the controller buttons must differ (View closes the map)');
   return data;

@@ -350,8 +350,8 @@ pub fn shade_grid(t: &MapTunables, colours: &[u32], codes: &[i32], w: usize, h: 
             if col >> 24 == 0xff {
                 continue;
             }
-            let rgb =
-                decode_height(codes[j]).map_or(col & 0xff_ffff, |(hm, wet)| tint_rgb(t, col, hm, wet));
+            let rgb = decode_height(codes[j])
+                .map_or(col & 0xff_ffff, |(hm, wet)| tint_rgb(t, col, hm, wet));
             let o = (r * w + c) * 4;
             out[o] = (rgb >> 16) as u8;
             out[o + 1] = (rgb >> 8) as u8;

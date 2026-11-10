@@ -529,11 +529,15 @@ describe('the big map panel (owner, 2026-11-09)', () => {
     while (s.zoomStep(-1)) seen.push(s.view?.level ?? -1);
     expect(seen).toEqual(LEVELS.map((_, l) => l));
     expect((s.view?.pxPerM ?? 0) * 50_000).toBeCloseTo(600, 6);
+    // The widest is centred on the island, the whole of it in view.
+    expect(s.view).toMatchObject({ cx: 0, cz: 0 });
     expect(s.canZoom(-1)).toBe(false);
     // A big wheel spin is a few levels at most, never past the ends.
     s.zoomStep(40);
     expect(s.view?.level).toBe(0);
     // The buttons zoom about the centre: the place in the middle stays put.
+    s.center();
+    s.zoomStep(1);
     expect(s.view?.cx).toBeCloseTo(12);
     expect(s.view?.cz).toBeCloseTo(-30);
     s.close();

@@ -282,6 +282,17 @@ interface DwellDebug {
   setPixelArt(name: string): boolean;
   /** The LOD colour map preview on or off (`?lodmap=on` starts it on; off on a CPU adapter); true when on. */
   setLodMap(on: boolean): boolean;
+  /**
+   * The big map's tiles (ADR 0068): the open map's zoom level (null: shut), tiles kept, built this
+   * session, in flight and still to build in the background.
+   */
+  mapTiles(): {
+    level: number | null;
+    tiles: number;
+    built: number;
+    inFlight: number;
+    backgroundLeft: number;
+  } | null;
   /** Draws the distant terrain (LOD) or not, live (a debug switch); true in a world. */
   setLod(on: boolean): boolean;
   /** Fixed points (x, y, z triples) the streaming probe reports (`probe.target`, `probe.control`). */
@@ -1051,6 +1062,18 @@ async function start(): Promise<App | null> {
     pixelArt: () => client.pixelArt(),
     setPixelArt: (name) => client.setPixelArt(name),
     setLodMap: (on) => client.setLodMap(on),
+    mapTiles: () => {
+      const m = app.minimap;
+      if (!m) return null;
+      const r = m.reveal;
+      return {
+        level: m.level,
+        tiles: r.tiles.size,
+        built: r.built,
+        inFlight: r.inFlight,
+        backgroundLeft: r.backgroundLeft,
+      };
+    },
     setLod: (on) => client.setLod(on),
     setProbe: (points) => client.setProbe(new Float64Array(points)),
     crossingRoll: () => client.crossingRoll(),

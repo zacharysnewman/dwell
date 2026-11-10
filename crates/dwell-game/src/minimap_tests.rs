@@ -279,7 +279,10 @@ fn the_map_data_is_consistent() {
     let levels = t.big_map_levels;
     assert!((2..=5).contains(&levels.len()));
     assert_eq!(levels[0], (1.0, 2.0 * t.minimap_radius_m));
-    assert_eq!(levels[levels.len() - 1].1, 2.0 * dwell_protocol::world::ISLAND_RADIUS as f64);
+    assert_eq!(
+        levels[levels.len() - 1].1,
+        2.0 * dwell_protocol::world::ISLAND_RADIUS as f64
+    );
     for w in levels.windows(2) {
         assert!(w[1].0 > w[0].0 && w[1].1 > w[0].1);
     }
@@ -746,7 +749,11 @@ fn the_big_maps_grid_has_no_lighting_a_slope_and_a_flat_at_one_height_match() {
     let rgb = |p: &[u8]| (u32::from(p[0]) << 16) | (u32::from(p[1]) << 8) | u32::from(p[2]);
     assert_eq!(rgb(&slope[4..8]), tint_rgb(&t, grey, mid, false));
     assert_eq!(rgb(&flat[4..8]), rgb(&slope[4..8]));
-    assert_eq!(rgb(&sand[4..8]), tint_rgb(&t, SAND, mid, false), "sand stays sand");
+    assert_eq!(
+        rgb(&sand[4..8]),
+        tint_rgb(&t, SAND, mid, false),
+        "sand stays sand"
+    );
     assert_eq!(slope[11], 0, "nothing there: transparent");
     assert_eq!(
         &slope[0..4],

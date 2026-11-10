@@ -172,11 +172,51 @@ mod tests {
         }
     );
 
+    both_faces!(
+        fn each_zoom_levels_tile_is_its_own_cell_size(f: FaceFrame) {
+            // The closest level and the widest (owner, 2026-11-09: each level its own detail):
+            // a tile's cell (i, k) is the column at the centre of that level's cell, as one cell
+            // generated alone at that size gives.
+            let r = Runner::world(GENERATOR_TERRAIN, 1);
+            let n = tile_cells(&MAP);
+            for &(cell, _) in [
+                MAP.big_map_levels[0],
+                MAP.big_map_levels[MAP.big_map_levels.len() - 1],
+            ]
+            .iter()
+            {
+                let cell = cell as i32;
+                let Output::LodMap(Some(tile)) = r.run(reveal_job(f, 0, -1, cell, &MAP)) else {
+                    panic!("a terrain world builds its tiles")
+                };
+                assert_eq!(tile.len(), (n * n * 6) as usize);
+                for (i, k) in [(0, -1), (n - 1, -n), (n / 2, -3)] {
+                    let Output::LodMap(Some(one)) = r.run(Job::LodMap {
+                        face: u8::from(f.is_b()),
+                        heights: true,
+                        texel_m: cell,
+                        x0: i,
+                        z0: k,
+                        w: 1,
+                        h: 1,
+                    }) else {
+                        panic!()
+                    };
+                    let j = ((k + n) * n + i) as usize;
+                    assert_eq!(
+                        &tile[j * 4..j * 4 + 4],
+                        &one[..4],
+                        "{cell} m cell ({i}, {k})"
+                    );
+                }
+            }
+        }
+    );
+
     #[test]
     fn a_world_without_a_terrain_reveals_nothing_and_the_tile_says_where_it_is() {
         // face-a-only: no generation is involved, only the encoding.
-        let Output::LodMap(None) =
-            Runner::world(0, 1).run(reveal_job(FaceFrame::A, 0, 0, 8, &MAP))
+        let Output::LodMap(None) = Runner::world(0, 1).run(reveal_job(FaceFrame::A, 0, 0, 8, &MAP))
         else {
             panic!("a flat world has no terrain to reveal from")
         };

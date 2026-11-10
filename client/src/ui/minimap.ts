@@ -885,6 +885,8 @@ export class BigMapState {
     const level = clampLevel(this.view.level - Math.sign(steps) * Math.min(Math.abs(steps), 4));
     if (level === this.view.level) return false;
     this.view = { ...zoomAt(this.view, levelPxPerM(level, ...this.size()), sx, sy), level };
+    // The widest level shows the whole island: centred on it, not on the player.
+    if (level === LEVELS.length - 1) this.view = { ...this.view, cx: 0, cz: 0 };
     return true;
   }
 

@@ -25,8 +25,8 @@ export const MAP = {
   },
   heightTint: {
     lowM: 0,
-    highM: 600,
-    darkest: 0.82,
+    highM: 400,
+    darkest: 0.8,
     brightest: 1.15,
   },
   explored: {
@@ -63,7 +63,7 @@ export const MAP = {
     tileCells: 32,
     jobsInFlight: 2,
     backgroundJobs: 1,
-    prebuildSpans: 1.5,
+    prebuildSpans: 2,
     budgetMs: 2,
     redrawMs: 150,
   },
