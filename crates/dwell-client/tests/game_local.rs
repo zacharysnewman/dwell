@@ -2528,3 +2528,67 @@ fn a_long_trip_over_the_terrain_keeps_the_near_ring_at_full_detail() {
     );
     assert_eq!(behind, 0, "left behind and still drawn\n{log}");
 }
+
+#[test]
+#[ignore = "open: with the LOD the near ring never all shows as chunks at a slow page's frame rate (e2e join.spec.ts:55 on CI)"]
+fn with_the_lod_the_loading_screen_opens_on_the_terrain_at_a_slow_pages_frame_rate() {
+    // CI's software renderer draws ~5 fps. On the flat world at 60 fps with the LOD the screen
+    // opens on the near ring in ~150 frames (2.5 s); at 5 fps (12 ticks a frame) it waits out the
+    // 20 s timeout with 168 of 179 shown: air chunks above the player and meshed ground chunks
+    // below, all drawable, whose level-1 sections the LOD neither shows as chunks nor knows to be
+    // empty. The page has ~30 s for the test (join.spec.ts:55), so the timeout plus the page's
+    // start and the fade overrun it. More LOD jobs in flight (4x) made it worse, not better: it is
+    // not the jobs' throughput.
+    use dwell_game::loading::{LOADING, near_ring_offsets};
+    let mut rig = Rig::with_generator(dwell_world::GENERATOR_FLAT);
+    rig.loading_screen = true;
+    assert!(rig.run_until(60 * 30, |r| r.game.is_some()));
+    rig.game
+        .as_mut()
+        .unwrap()
+        .enable_lod(dwell_client::game::LodSettings {
+            pixel_error: 4.0,
+            cache_bytes: 256 << 20,
+            detail_distance_m: Some(256.0),
+            full_mode: false,
+        });
+    let mut frames = 0;
+    while rig
+        .game
+        .as_ref()
+        .unwrap()
+        .debug_state()
+        .loading_opened
+        .is_none()
+        && frames < 200
+    {
+        rig.slow_frame(12);
+        frames += 1;
+    }
+    let pos = rig.game.as_ref().unwrap().position();
+    let me = dwell_world::chunk_of_pos(pos);
+    let mut missing = Vec::new();
+    for o in near_ring_offsets(LOADING.radius_chunks) {
+        let k = [me.x + o[0], me.y + o[1], me.z + o[2]];
+        let c = ChunkCoord::from_array(k);
+        if !dwell_world::BUILD_VOLUME.chunk_may_hold(c) {
+            continue;
+        }
+        let g = rig.game.as_mut().unwrap();
+        let drawable = g.chunk_drawable(k);
+        let shown = g
+            .lod()
+            .is_none_or(|l| l.chunk_visible(c) || l.shows_nothing_at(c));
+        if !(drawable && shown) {
+            missing.push((o, drawable));
+        }
+    }
+    let d = rig.game.as_ref().unwrap().debug_state();
+    assert_eq!(
+        d.loading_opened.map(|o| o.0),
+        Some(dwell_game::loading::Opened::Ready),
+        "after {frames} frames: {:?}; not shown (offset, drawable): {missing:?}; lod {:?}",
+        d.loading_opened,
+        d.lod
+    );
+}
