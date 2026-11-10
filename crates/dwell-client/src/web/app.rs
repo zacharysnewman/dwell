@@ -2443,8 +2443,8 @@ impl Client {
         }
         out
     }
-    /// The big map's cells coloured by their heights (`dwell_game::minimap::shade_grid`, the
-    /// height bands, the minimap's too when its toggle is on): a `w` × `h` grid in screen order inside a one-cell border, colours
+    /// The big map's cells tinted by their heights (`dwell_game::minimap::shade_grid`, the
+    /// minimap's look too when its toggle is on): a `w` × `h` grid in screen order inside a one-cell border, colours
     /// (top byte 0xff: nothing there) and height codes; out, the cells' RGBA.
     #[wasm_bindgen(js_name = shadeMap)]
     pub fn shade_map(&self, colours: Vec<u32>, codes: Vec<i32>, w: u32, h: u32) -> Vec<u8> {
@@ -2474,16 +2474,20 @@ impl Client {
             .and_then(|s| s.world_settings())
             .is_some_and(|w| w.allows(dwell_protocol::modes::Ability::MapRevealed))
     }
-    /// Asks for tile (`ti`, `tk`) of the revealed big map on `face` (`revealed.tileCells`² explored
-    /// cells); `takeReveal` returns it once generated.
+    /// Asks for tile (`ti`, `tk`) of the big map's zoom level of `cell_m` cells on `face`
+    /// (`revealed.tileCells`² of them; a level of `bigMap.levels`); `takeReveal` returns it once
+    /// generated. Another cell size is ignored.
     #[wasm_bindgen(js_name = requestReveal)]
-    pub fn request_reveal(&self, face: u8, ti: i32, tk: i32) {
+    pub fn request_reveal(&self, face: u8, ti: i32, tk: i32, cell_m: i32) {
+        if !crate::map_reveal::is_level(cell_m, &dwell_game::minimap::MAP) {
+            return;
+        }
         if let Some(g) = &mut self.inner.borrow_mut().game {
-            g.request_reveal(face, ti, tk);
+            g.request_reveal(face, ti, tk, cell_m);
         }
     }
-    /// A finished tile of the revealed big map, or undefined: face, ti and tk (i32 LE), then
-    /// RGBA (none: no terrain to reveal from).
+    /// A finished tile of the big map, or undefined: face, ti, tk and its level's cell side (i32
+    /// LE), then RGBA and height codes (none: no terrain to reveal from).
     #[wasm_bindgen(js_name = takeReveal)]
     pub fn take_reveal(&self) -> Option<Vec<u8>> {
         self.inner

@@ -158,17 +158,20 @@ dwell_world::both_faces!(
         plain.update(&w, pos, 0.0, 0.0, false, &t, &colour_of);
         let mut shaded = Minimap::default();
         shaded.update(&w, pos, 0.0, 0.0, true, &t, &colour_of);
-        // Off: the ground's own colour everywhere; on: the height bands' colours for the hill's
-        // top and the floor's, the blocks' colour ignored (the big map's colours).
+        // Off: the ground's own colour everywhere; on: its block colour tinted by height for the
+        // hill's top and the floor's (the big map's look).
         let frame = MapFrame::new(f, 0.5, 0.5, 0.0);
         let s = frame.to_screen([15.5, 0.5]);
         assert_eq!(pixel(&plain.image, &t, s[0], s[1]), GREEN);
         assert_eq!(pixel(&plain.image, &t, -s[0], s[1]), GREEN);
         let hill = pixel(&shaded.image, &t, s[0], s[1]);
         let flat = pixel(&shaded.image, &t, -s[0], s[1]);
-        assert_eq!(hill, band_rgb(&t, m_of_row(GROUND + 12), false));
-        assert_eq!(flat, band_rgb(&t, m_of_row(GROUND), false));
-        assert_ne!(hill, flat, "6 m higher is another band");
+        assert_eq!(hill, tint_rgb(&t, GREEN, m_of_row(GROUND + 12), false));
+        assert_eq!(flat, tint_rgb(&t, GREEN, m_of_row(GROUND), false));
+        assert!(
+            lum(hill) > lum(flat),
+            "6 m higher is a little brighter: {hill:06x} vs {flat:06x}"
+        );
         // Toggling redraws even standing still.
         let up = plain.update(&w, pos, 0.0, 0.1, true, &t, &colour_of);
         assert!(up.drawn && !up.scanned);
@@ -271,8 +274,16 @@ fn the_map_data_is_consistent() {
     // face-a-only: tunables, no up.
     assert_eq!(MAP.minimap_radius_m % MAP.explored_cell_m, 0.0);
     let t = std::hint::black_box(MAP);
-    assert!(t.big_map_min_px_per_cell <= t.big_map_start_px_per_cell);
-    assert!(t.big_map_start_px_per_cell <= t.big_map_max_px_per_cell);
+    // The zoom levels (owner, 2026-11-09): at most five, the closest the minimap's area at 1 m a
+    // cell, the widest the whole island, geometric between, each level coarser.
+    let levels = t.big_map_levels;
+    assert!((2..=5).contains(&levels.len()));
+    assert_eq!(levels[0], (1.0, 2.0 * t.minimap_radius_m));
+    assert_eq!(levels[levels.len() - 1].1, 2.0 * dwell_protocol::world::ISLAND_RADIUS as f64);
+    for w in levels.windows(2) {
+        assert!(w[1].0 > w[0].0 && w[1].1 > w[0].1);
+    }
+    assert!((t.big_map_start_level as usize) < levels.len());
     assert_eq!(Minimap::pixels(&MAP), 128);
 }
 
@@ -597,123 +608,89 @@ dwell_world::both_faces!(
     }
 );
 
-// The maps' height bands (owner, 2026-11-09, after the hill-shade of 0.50.48: "That looks like
-// lighting, not elevation shading?"; asked for colour bands by height and no lighting).
+// The maps' look (owner, 2026-11-09, after the height bands of 0.50.53 hid the sand: block
+// colours "lightly tinted by height").
 
-#[test]
-fn a_height_maps_to_its_colour_through_the_stops() {
-    // face-a-only: stops and numbers, no face.
-    let stops = [(0.0, 0x00_0000), (100.0, 0xc8_6400), (200.0, 0xc8_c8c8)];
-    // Held past the ends; interpolated between.
-    assert_eq!(stop_rgb(&stops, 0.0, -50.0), 0x00_0000);
-    assert_eq!(stop_rgb(&stops, 0.0, 0.0), 0x00_0000);
-    assert_eq!(stop_rgb(&stops, 0.0, 50.0), 0x64_3200);
-    assert_eq!(stop_rgb(&stops, 0.0, 100.0), 0xc8_6400);
-    assert_eq!(stop_rgb(&stops, 0.0, 150.0), 0xc8_9664);
-    assert_eq!(stop_rgb(&stops, 0.0, 900.0), 0xc8_c8c8);
-    // Gentle steps: rounded down to a multiple of the step first.
-    assert_eq!(stop_rgb(&stops, 25.0, 74.0), stop_rgb(&stops, 0.0, 50.0));
-    assert_eq!(stop_rgb(&stops, 25.0, 75.0), stop_rgb(&stops, 0.0, 75.0));
-    // One stop: its colour everywhere; none: black.
-    assert_eq!(stop_rgb(&[(10.0, 0x12_3456)], 0.0, -3.0), 0x12_3456);
-    assert_eq!(stop_rgb(&[(10.0, 0x12_3456)], 0.0, 99.0), 0x12_3456);
-    assert_eq!(stop_rgb(&[], 0.0, 5.0), 0);
+/// A colour's brightness (the channels' sum).
+fn lum(c: u32) -> u32 {
+    ((c >> 16) & 0xff) + ((c >> 8) & 0xff) + (c & 0xff)
 }
 
+const SAND: u32 = 0xd8_c27a;
+
 #[test]
-fn the_land_bands_follow_the_stops_monotonely_above_sea_level() {
-    // face-a-only: heights are face-local and the bands read them alone (the disc's both-face
+fn a_sand_cell_stays_sand_coloured_and_height_changes_its_brightness_gently() {
+    // face-a-only: heights are face-local and the tint reads them alone (the disc's both-face
     // test goes through FaceFrame).
-    let t = MapTunables {
-        height_bands_step_m: 0.0,
-        ..MAP
-    };
+    let t = MAP;
     let sea = dwell_world::SEA_LEVEL_M;
-    let ch = |c: u32, sh: u32| ((c >> sh) & 0xff) as i32;
-    for w in t.height_bands_land.windows(2) {
-        let ((a, ca), (b, cb)) = (w[0], w[1]);
-        // Each stop's own colour at its height above sea level.
-        assert_eq!(band_rgb(&t, sea + a, false), ca, "at {a} m");
-        assert_eq!(band_rgb(&t, sea + b, false), cb, "at {b} m");
-        // Between them each channel moves one way only, from one stop's toward the next's.
-        for sh in [16, 8, 0] {
-            let dir = (ch(cb, sh) - ch(ca, sh)).signum();
-            let mut last = ch(ca, sh);
-            for i in 1..=20 {
-                let c = ch(
-                    band_rgb(&t, sea + a + (b - a) * f64::from(i) / 20.0, false),
-                    sh,
-                );
-                assert!(
-                    (c - last) * dir >= 0,
-                    "{a}..{b} m, channel {sh}: {last} then {c}"
-                );
-                last = c;
-            }
+    let ch = |c: u32, sh: u32| f64::from((c >> sh) & 0xff);
+    let mut last = 0;
+    for h in [-50.0, 0.0, 100.0, 300.0, 600.0, 2000.0] {
+        let c = tint_rgb(&t, SAND, sea + h, false);
+        // Its hue kept: each channel the same factor of sand's, within rounding.
+        let k = ch(c, 16) / ch(SAND, 16);
+        for sh in [8, 0] {
+            assert!(
+                (ch(c, sh) - ch(SAND, sh) * k).abs() <= 1.5,
+                "{h} m: {c:06x} is sand {k}×"
+            );
         }
+        // Gently: never past the data's darkest and brightest.
+        assert!(k >= t.height_tint_darkest - 0.01 && k <= t.height_tint_brightest + 0.01);
+        // Brighter, never darker, going up.
+        assert!(lum(c) >= last, "{h} m");
+        last = lum(c);
     }
-    // Ground below sea level (a dry hollow) is the first stop's; above the last, the last's.
-    let (first, last) = (
-        t.height_bands_land[0],
-        t.height_bands_land[t.height_bands_land.len() - 1],
+    // Held past the ends; sea-level sand the darkest, high sand the brightest.
+    assert_eq!(
+        tint_rgb(&t, SAND, sea - 50.0, false),
+        scale_rgb(SAND, t.height_tint_darkest)
     );
-    assert_eq!(band_rgb(&t, sea + first.0 - 20.0, false), first.1);
-    assert_eq!(band_rgb(&t, sea + last.0 + 500.0, false), last.1);
-    // The stops cover the generator's ordinary ground (seeds 0 and 7 round spawn: ~280–330 m above
-    // sea level, peaks past 2000 m): over the spawn plains 40 m makes a visible difference.
-    let near = |a: u32, b: u32| {
-        [16, 8, 0]
-            .iter()
-            .all(|&sh| (ch(a, sh) - ch(b, sh)).abs() < 12)
-    };
-    assert!(!near(
-        band_rgb(&MAP, sea + 285.0, false),
-        band_rgb(&MAP, sea + 325.0, false)
-    ));
+    assert_eq!(
+        tint_rgb(&t, SAND, sea + 5000.0, false),
+        scale_rgb(SAND, t.height_tint_brightest)
+    );
+    // A few metres make little difference (no bands): 8 m changes no channel by more than 4.
+    let (a, b) = (
+        tint_rgb(&t, SAND, sea + 300.0, false),
+        tint_rgb(&t, SAND, sea + 308.0, false),
+    );
+    for sh in [16, 8, 0] {
+        assert!((ch(a, sh) - ch(b, sh)).abs() <= 4.0);
+    }
 }
 
 #[test]
-fn water_is_coloured_by_its_depth_below_sea_level() {
-    // face-a-only: depths are face-local heights' differences (the bands read them alone).
-    let t = MapTunables {
-        height_bands_water_step_m: 0.0,
-        ..MAP
-    };
+fn water_keeps_its_colour() {
+    // face-a-only: the tint reads a colour and a height alone.
     let sea = dwell_world::SEA_LEVEL_M;
-    let stops = t.height_bands_water;
-    // A water cell's height is its bed's: the depth is the sea level less it.
-    for &(d, c) in stops {
-        assert_eq!(band_rgb(&t, sea - d, true), c, "{d} m deep");
+    for h in [sea - 20.0, sea, sea + 250.0] {
+        assert_eq!(tint_rgb(&MAP, 0x3f_8bc2, h, true), 0x3f_8bc2);
     }
-    // Deeper is darker with the shipped stops.
-    let lum = |c: u32| ((c >> 16) & 0xff) + ((c >> 8) & 0xff) + (c & 0xff);
-    let mut last = u32::MAX;
-    for d in 0..=30 {
-        let l = lum(band_rgb(&t, sea - f64::from(d), true));
-        assert!(l <= last, "{d} m: {l} after {last}");
-        last = l;
-    }
-    // Water above sea level (a river or a lake in the hills) is the shallowest stop's, never a
-    // land colour at the same height.
-    assert_eq!(band_rgb(&t, sea + 250.0, true), stops[0].1);
-    assert_ne!(
-        band_rgb(&t, sea + 250.0, true),
-        band_rgb(&t, sea + 250.0, false)
-    );
 }
 
 #[test]
-fn a_stop_added_by_data_alone_colours_its_heights() {
+fn the_tints_strength_is_data() {
     // face-a-only: data, no face.
-    static LAND: [(f64, u32); 3] = [(0.0, 0x10_2010), (100.0, 0x20_4020), (3000.0, 0xff_00ff)];
     let t = MapTunables {
-        height_bands_land: &LAND,
-        height_bands_step_m: 0.0,
+        height_tint_low_m: 0.0,
+        height_tint_high_m: 100.0,
+        height_tint_darkest: 0.5,
+        height_tint_brightest: 1.0,
         ..MAP
     };
     let sea = dwell_world::SEA_LEVEL_M;
-    assert_eq!(band_rgb(&t, sea + 3000.0, false), 0xff_00ff);
-    assert_eq!(band_rgb(&t, sea + 50.0, false), 0x18_3018);
+    assert_eq!(tint_rgb(&t, 0x80_8080, sea, false), 0x40_4040);
+    assert_eq!(tint_rgb(&t, 0x80_8080, sea + 50.0, false), 0x60_6060);
+    assert_eq!(tint_rgb(&t, 0x80_8080, sea + 100.0, false), 0x80_8080);
+    // No strength: the block colours as they are.
+    let none = MapTunables {
+        height_tint_darkest: 1.0,
+        height_tint_brightest: 1.0,
+        ..MAP
+    };
+    assert_eq!(tint_rgb(&none, SAND, sea + 321.0, false), SAND);
 }
 
 #[test]
@@ -745,8 +722,8 @@ fn height_codes_round_trip_and_tiles_carry_them() {
 fn the_big_maps_grid_has_no_lighting_a_slope_and_a_flat_at_one_height_match() {
     // face-a-only: the grid is the shell's screen-order cells, face-free.
     // A 3 × 1 grid (with its border): once rising to the right, once flat, the middle cell at the
-    // same height in both: the same colour (no hill-shade), its height band's, whatever its own
-    // colour. The empty cell stays transparent; a cell with no height is its own colour.
+    // same height in both: the same colour (no hill-shade), its own colour tinted by its height.
+    // The empty cell stays transparent; a cell with no height is its own colour.
     let t = MAP;
     let (w, h) = (3, 1);
     let grey = 0x80_8080;
@@ -764,11 +741,12 @@ fn the_big_maps_grid_has_no_lighting_a_slope_and_a_flat_at_one_height_match() {
         shade_grid(&t, &colours, &codes, w, h)
     };
     let slope = grid(1.0, grey);
-    let flat = grid(0.0, 0x20_a020);
-    let band = band_rgb(&t, mid, false);
+    let flat = grid(0.0, grey);
+    let sand = grid(0.0, SAND);
     let rgb = |p: &[u8]| (u32::from(p[0]) << 16) | (u32::from(p[1]) << 8) | u32::from(p[2]);
-    assert_eq!(rgb(&slope[4..8]), band);
-    assert_eq!(rgb(&flat[4..8]), band);
+    assert_eq!(rgb(&slope[4..8]), tint_rgb(&t, grey, mid, false));
+    assert_eq!(rgb(&flat[4..8]), rgb(&slope[4..8]));
+    assert_eq!(rgb(&sand[4..8]), tint_rgb(&t, SAND, mid, false), "sand stays sand");
     assert_eq!(slope[11], 0, "nothing there: transparent");
     assert_eq!(
         &slope[0..4],
