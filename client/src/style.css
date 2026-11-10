@@ -659,6 +659,10 @@ kbd.phrase {
 }
 
 /* The pages' green buttons take the actions' darker green: white text at 4.5:1. */
+#new-world {
+  white-space: nowrap;
+}
+
 .mm-page .block-button {
   background: linear-gradient(180deg, var(--mm-action-top), var(--mm-action));
 }
@@ -825,6 +829,16 @@ kbd.phrase {
 
   .mm-page {
     padding: 12px 16px 20px;
+  }
+
+  .mm-page-head {
+    gap: 8px;
+  }
+
+  .mm-page-head .block-button,
+  .mm-page-head .quiet-button,
+  .mm-versions #versions-link {
+    padding: 0 12px;
   }
 }
 
@@ -1091,7 +1105,9 @@ body:has(#main-menu) .game-menu {
 
 #world-list .world-card {
   display: grid;
+  grid-template-columns: 100%;
   grid-template-rows: auto 1fr auto;
+  justify-content: stretch;
   align-items: start;
   gap: 0;
   padding: 0;
@@ -1219,7 +1235,8 @@ body:has(#main-menu) .game-menu {
 }
 
 .mm-page #nearby:has(#nearby-list:empty) > .menu-hint,
-.mm-page #lobby-status:not(:empty) {
+.mm-page #lobby-status:not(:empty),
+.mm-page .menu-join-help {
   margin: 12px 0 0;
   padding: 12px 14px;
   border-radius: 12px;

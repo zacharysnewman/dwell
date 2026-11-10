@@ -669,6 +669,14 @@ export class MainMenu {
       }
     });
     section.append(form);
+    if (!this.deps.master && this.deps.recent.length === 0) {
+      // Nothing else to list here: say what to join with, so the page reads as finished.
+      const help = document.createElement('p');
+      help.className = 'menu-join-help';
+      help.textContent =
+        'A host shows a join code like KQ7-XM4. A server prints its code and an invite link when it starts. Paste either above.';
+      section.append(help);
+    }
     if (this.deps.master) section.append(this.nearbySection(this.deps.master));
     if (this.deps.recent.length > 0) {
       const recent = document.createElement('ul');
