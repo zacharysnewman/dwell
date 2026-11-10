@@ -604,13 +604,20 @@ characters' ramp from the vertex's palette colour, the same lights and shadow ma
 
 ### 11.6 The animals in the world (phase 3, ADR 0073)
 
-- **Creatures** (`shared/creatures/creatures.json`, ADR 0073): the deer, the horse and the chicken spawn
-  in groups on grass (the chicken on dirt too) near players, rolled once per chunk column from the seed;
+- **Creatures** (`shared/creatures/creatures.json`, ADR 0073): since 0.52.1 only deer and wolves spawn
+  (the owner's, until their simulation is worked on): herds of does, sometimes with one stag (a rule's
+  `mix`), and packs of 2–4 wolves, on grass near players (the horse and the chicken are listed, with no
+  rule), rolled once per chunk column from the seed;
   they idle and walk between random nearby points on ground they can stand on (no water, no step
   steeper than their `climbRows`/`dropRows`), and go when no player is within 128 m. Server entities,
   sent as `Creatures` to clients that said `CreaturesHello`; drawn with the skinned renderer (a mesh per
   model), idle or walk (run above 3 m/s) by their speed. No damage, hunting or other behaviour yet: the
   open questions are in ADR 0073.
+
+- **Model detail and variants** (0.52.1, ADR 0070 §10–11): every skinned GLB holds one mesh per
+  `models.json` `detail` level (decimated, flat shaded); Settings → Graphics → Model detail picks the
+  level for all of them, live. The doe is the deer without antlers (`source.remove`), the wolf the dog
+  recoloured (`remap`) at `scale` 2. The Model Viewer's detail buttons (`?detail=low`) show each level.
 
 ### 11.7 What is left (next)
 

@@ -2182,6 +2182,12 @@ impl Renderer {
     pub fn set_clouds(&mut self, quality: CloudQuality) {
         self.clouds = quality;
     }
+    /// The Model detail setting (ADR 0070 §10): every skinned model at `level`
+    /// (`dwell_models::DETAIL_LEVELS`).
+    pub fn set_model_detail(&mut self, level: usize) {
+        self.characters
+            .set_model_detail(&self.device, &self.queue, level);
+    }
     /// The Light shafts setting (Off, Low, High; ADR 0064).
     pub fn set_shafts(&mut self, quality: ShaftQuality) {
         self.shafts = quality;

@@ -1,6 +1,7 @@
 //! A GLB reader for what the import writes (shared/models/blender_import.py): one skinned mesh
-//! (positions, normals, a colour per vertex, four joints and weights), its skin, the node tree and
-//! the clips (translation, rotation and scale channels, linear or step).
+//! (positions, normals, a colour per vertex, four joints and weights) or one per model-detail level
+//! (meshes `detail_0`, `detail_1`, …, ADR 0070 §10), its skin, the node tree and the clips
+//! (translation, rotation and scale channels, linear or step).
 
 use serde_json::Value;
 
@@ -41,8 +42,45 @@ pub struct Clip {
     pub channels: Vec<Channel>,
 }
 
+/// One model-detail level's mesh (ADR 0070 §10): the same skin and clips as the model's.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Geometry {
+    pub positions: Vec<[f32; 3]>,
+    pub normals: Vec<[f32; 3]>,
+    /// sRGB, 0..1.
+    pub colors: Vec<[f32; 3]>,
+    pub joints: Vec<[u8; 4]>,
+    pub weights: Vec<[f32; 4]>,
+    pub indices: Vec<u32>,
+}
+
+/// A level's mesh, borrowed (level 0 is the model's own fields).
+#[derive(Clone, Copy, Debug)]
+pub struct View<'a> {
+    pub positions: &'a [[f32; 3]],
+    pub normals: &'a [[f32; 3]],
+    pub colors: &'a [[f32; 3]],
+    pub joints: &'a [[u8; 4]],
+    pub weights: &'a [[f32; 4]],
+    pub indices: &'a [u32],
+}
+
+impl Geometry {
+    fn view(&self) -> View<'_> {
+        View {
+            positions: &self.positions,
+            normals: &self.normals,
+            colors: &self.colors,
+            joints: &self.joints,
+            weights: &self.weights,
+            indices: &self.indices,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Model {
+    /// Level 0's mesh (the full one).
     pub positions: Vec<[f32; 3]>,
     pub normals: Vec<[f32; 3]>,
     /// sRGB, 0..1.
@@ -55,9 +93,31 @@ pub struct Model {
     pub skin: Vec<usize>,
     pub inverse_bind: Vec<Mat4>,
     pub clips: Vec<Clip>,
+    /// The model-detail levels after the first (detail_1, detail_2, …); empty: one mesh only.
+    pub levels: Vec<Geometry>,
 }
 
 impl Model {
+    /// How many detail levels it has (1: one mesh).
+    pub fn level_count(&self) -> usize {
+        1 + self.levels.len()
+    }
+
+    /// Level `k`'s mesh; a level past its last draws its last (the coarsest it has).
+    pub fn level(&self, k: usize) -> View<'_> {
+        match k.min(self.levels.len()) {
+            0 => View {
+                positions: &self.positions,
+                normals: &self.normals,
+                colors: &self.colors,
+                joints: &self.joints,
+                weights: &self.weights,
+                indices: &self.indices,
+            },
+            k => self.levels[k - 1].view(),
+        }
+    }
+
     pub fn clip(&self, name: &str) -> Option<usize> {
         self.clips.iter().position(|c| c.name == name)
     }
@@ -171,61 +231,43 @@ fn read(bytes: &[u8], skinned: bool) -> Result<Model, String> {
         .get(bin_at + 8..bin_at + 8 + bin_len)
         .ok_or_else(|| err("GLB truncated"))?;
 
-    let meshes = json["meshes"].as_array().map_or(0, Vec::len);
-    if meshes != 1 {
-        return Err(format!("{meshes} meshes, not one"));
+    let meshes = json["meshes"].as_array().map(Vec::as_slice).unwrap_or(&[]);
+    // The levels: meshes detail_0, detail_1, … in order; else the one mesh.
+    let mut order: Vec<&Value> = Vec::new();
+    while let Some(m) = meshes
+        .iter()
+        .find(|m| m["name"].as_str() == Some(&format!("detail_{}", order.len())))
+    {
+        order.push(m);
     }
-    let prims = json["meshes"][0]["primitives"]
-        .as_array()
-        .ok_or_else(|| err("no primitives"))?;
-    let mut m = Model::default();
-    for p in prims {
-        let at = &p["attributes"];
-        let get = |name: &str| -> Result<Vec<f32>, String> {
-            let i = at[name].as_u64().ok_or_else(|| format!("no {name}"))?;
-            Ok(floats(&json, bin, i as usize)?.0)
-        };
-        let base = m.positions.len() as u32;
-        let pos = chunks::<3>(&get("POSITION")?);
-        let n = pos.len();
-        m.positions.extend(pos);
-        m.normals.extend(chunks::<3>(&get("NORMAL")?));
-        match at["COLOR_0"].as_u64() {
-            Some(i) => {
-                let (c, w) = floats(&json, bin, i as usize)?;
-                m.colors
-                    .extend(c.chunks_exact(w).map(|c| [c[0], c[1], c[2]]));
-            }
-            None => m.colors.extend(std::iter::repeat_n([1.0; 3], n)),
+    if order.is_empty() {
+        if meshes.len() != 1 {
+            return Err(format!("{} meshes, not one", meshes.len()));
         }
-        if skinned {
-            m.joints.extend(
-                chunks::<4>(&get("JOINTS_0")?)
-                    .into_iter()
-                    .map(|j| j.map(|v| v as u8)),
-            );
-            m.weights
-                .extend(chunks::<4>(&get("WEIGHTS_0")?).into_iter().map(|w| {
-                    let s: f32 = w.iter().sum();
-                    if s > 0.0 {
-                        w.map(|v| v / s)
-                    } else {
-                        [1.0, 0.0, 0.0, 0.0]
-                    }
-                }));
-        } else {
-            m.joints.extend(std::iter::repeat_n([0; 4], n));
-            m.weights
-                .extend(std::iter::repeat_n([1.0, 0.0, 0.0, 0.0], n));
-        }
-        let idx = p["indices"].as_u64().ok_or_else(|| err("no indices"))?;
-        m.indices.extend(
-            floats(&json, bin, idx as usize)?
-                .0
-                .into_iter()
-                .map(|i| base + i as u32),
-        );
+        order.push(&meshes[0]);
+    } else if order.len() != meshes.len() {
+        return Err(format!(
+            "{} meshes, {} of them detail_0.. in order",
+            meshes.len(),
+            order.len()
+        ));
     }
+    let mut geoms = order
+        .iter()
+        .map(|mesh| geometry(&json, bin, mesh, skinned))
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter();
+    let g = geoms.next().ok_or_else(|| err("no mesh"))?;
+    let mut m = Model {
+        positions: g.positions,
+        normals: g.normals,
+        colors: g.colors,
+        joints: g.joints,
+        weights: g.weights,
+        indices: g.indices,
+        levels: geoms.collect(),
+        ..Model::default()
+    };
 
     let nodes = json["nodes"].as_array().ok_or_else(|| err("no nodes"))?;
     m.nodes = nodes
@@ -271,11 +313,13 @@ fn read(bytes: &[u8], skinned: bool) -> Result<Model, String> {
             .collect(),
         None => vec![crate::math::IDENTITY; m.skin.len()],
     };
-    if m.joints
-        .iter()
-        .flatten()
-        .any(|&j| usize::from(j) >= m.skin.len())
-    {
+    if (0..m.level_count()).any(|k| {
+        m.level(k)
+            .joints
+            .iter()
+            .flatten()
+            .any(|&j| usize::from(j) >= m.skin.len())
+    }) {
         return Err(err("a vertex on a joint past the skin"));
     }
 
@@ -314,6 +358,62 @@ fn read(bytes: &[u8], skinned: bool) -> Result<Model, String> {
             });
         }
         m.clips.push(clip);
+    }
+    Ok(m)
+}
+
+/// One mesh's primitives, joined.
+fn geometry(json: &Value, bin: &[u8], mesh: &Value, skinned: bool) -> Result<Geometry, String> {
+    let prims = mesh["primitives"]
+        .as_array()
+        .ok_or_else(|| err("no primitives"))?;
+    let mut m = Geometry::default();
+    for p in prims {
+        let at = &p["attributes"];
+        let get = |name: &str| -> Result<Vec<f32>, String> {
+            let i = at[name].as_u64().ok_or_else(|| format!("no {name}"))?;
+            Ok(floats(json, bin, i as usize)?.0)
+        };
+        let base = m.positions.len() as u32;
+        let pos = chunks::<3>(&get("POSITION")?);
+        let n = pos.len();
+        m.positions.extend(pos);
+        m.normals.extend(chunks::<3>(&get("NORMAL")?));
+        match at["COLOR_0"].as_u64() {
+            Some(i) => {
+                let (c, w) = floats(json, bin, i as usize)?;
+                m.colors
+                    .extend(c.chunks_exact(w).map(|c| [c[0], c[1], c[2]]));
+            }
+            None => m.colors.extend(std::iter::repeat_n([1.0; 3], n)),
+        }
+        if skinned {
+            m.joints.extend(
+                chunks::<4>(&get("JOINTS_0")?)
+                    .into_iter()
+                    .map(|j| j.map(|v| v as u8)),
+            );
+            m.weights
+                .extend(chunks::<4>(&get("WEIGHTS_0")?).into_iter().map(|w| {
+                    let s: f32 = w.iter().sum();
+                    if s > 0.0 {
+                        w.map(|v| v / s)
+                    } else {
+                        [1.0, 0.0, 0.0, 0.0]
+                    }
+                }));
+        } else {
+            m.joints.extend(std::iter::repeat_n([0; 4], n));
+            m.weights
+                .extend(std::iter::repeat_n([1.0, 0.0, 0.0, 0.0], n));
+        }
+        let idx = p["indices"].as_u64().ok_or_else(|| err("no indices"))?;
+        m.indices.extend(
+            floats(json, bin, idx as usize)?
+                .0
+                .into_iter()
+                .map(|i| base + i as u32),
+        );
     }
     Ok(m)
 }

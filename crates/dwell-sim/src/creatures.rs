@@ -47,6 +47,33 @@ pub struct SpawnRule {
     pub on: &'static [&'static str],
     pub chance: f64,
     pub group: [u32; 2],
+    /// Other creatures a group may hold in place of the rule's own (a herd's stag).
+    pub mix: &'static [MixPart],
+}
+
+/// A part of a rule's group mix (shared/creatures/creatures.json `mix`, ADR 0073): rolled once a
+/// group with `chance`, it puts up to `max` of `creature` in the group in place of the rule's own.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MixPart {
+    pub creature: usize,
+    pub chance: f64,
+    pub max: u32,
+}
+
+/// The kinds of a group of `n` under `rule`: the rule's creature, with each mix part that rolls
+/// under its chance (`roll(part)`, 0..1) taking up to its `max` places from the group's end.
+pub fn group_kinds(rule: &SpawnRule, n: u32, roll: impl Fn(usize) -> f64) -> Vec<usize> {
+    let mut kinds = vec![rule.creature; n as usize];
+    let mut end = kinds.len();
+    for (j, part) in rule.mix.iter().enumerate() {
+        if roll(j) < part.chance {
+            for _ in 0..part.max.min(end as u32) {
+                end -= 1;
+                kinds[end] = part.creature;
+            }
+        }
+    }
+    kinds
 }
 
 /// The cells of a spawn column tried for a rule's ground.
@@ -265,7 +292,10 @@ impl Creatures {
             };
             let [lo, hi] = rule.group;
             let n = lo + ((h(3) * f64::from(hi - lo + 1)) as u32).min(hi - lo);
+            let kinds = group_kinds(rule, n, |j| h(200 + j as u64));
             for k in 0..n {
+                let kind = kinds[k as usize];
+                let def = self.table.creatures[kind];
                 if self.list.len() >= self.table.limits.max {
                     break;
                 }
@@ -286,7 +316,7 @@ impl Creatures {
                 ];
                 let mut c = Creature {
                     id: self.next_id,
-                    kind: rule.creature,
+                    kind,
                     position: f.point(at),
                     yaw: h(50 + u64::from(k)) * 360.0,
                     speed: 0.0,
@@ -430,8 +460,14 @@ mod tests {
         fn the_fixture_creature_spawns_by_data_on_its_ground(f: FaceFrame) {
             let cs = spawn(f);
             assert_eq!(cs.list.len(), 3, "the fixture's group of 3");
+            // The mix by data: two walkers and their leader.
+            let names: Vec<_> = cs
+                .list
+                .iter()
+                .map(|c| cs.table.creatures[c.kind].name)
+                .collect();
+            assert_eq!(names, ["test:walker", "test:walker", "test:leader"]);
             for c in &cs.list {
-                assert_eq!(cs.table.creatures[c.kind].name, "test:walker");
                 let l = f.point(c.position);
                 assert!(
                     (l[1] - m_of_row(10)).abs() < 1e-9,
@@ -452,6 +488,56 @@ mod tests {
             assert_eq!(a, here);
         }
     );
+
+    // Owner, 2026-11-10: "let's disable all the animals except wolves and deer for now". The rules
+    // spawn only deer (does, the stag by the mix) and wolves, in packs of 2-4 rarer than the herds.
+    #[test]
+    fn only_deer_and_wolves_spawn_the_wolves_in_small_rarer_packs() {
+        let t = Table::SHIPPED;
+        let name = |k: usize| t.creatures[k].name;
+        let mut spawned: Vec<_> = t
+            .rules
+            .iter()
+            .flat_map(|r| std::iter::once(r.creature).chain(r.mix.iter().map(|m| m.creature)))
+            .map(name)
+            .collect();
+        spawned.sort_unstable();
+        assert_eq!(spawned, ["dwell:deer", "dwell:doe", "dwell:wolf"]);
+        let rule = |n: &str| t.rules.iter().find(|r| name(r.creature) == n).unwrap();
+        let (wolf, doe) = (rule("dwell:wolf"), rule("dwell:doe"));
+        assert_eq!(wolf.group, [2, 4]);
+        assert!(wolf.chance < doe.chance);
+        assert_eq!(t.creatures[wolf.creature].model, "wolf");
+    }
+
+    // Owner, 2026-11-10: herds "mostly does with sometimes one stag", as data: the game's deer rule
+    // spawns does, a share of its groups (the mix's chance) with one stag, never two.
+    #[test]
+    fn a_herd_is_mostly_does_with_sometimes_one_stag() {
+        let t = Table::SHIPPED;
+        let name = |k: usize| t.creatures[k].name;
+        let rule = t
+            .rules
+            .iter()
+            .find(|r| name(r.creature) == "dwell:doe")
+            .expect("a doe rule");
+        let (mut with, mut groups) = (0usize, 0u32);
+        for g in 0..400u64 {
+            let roll = |j: usize| unit(mix(g, [0, 0, 0], 200 + j as u64));
+            let kinds = group_kinds(rule, 4, roll);
+            assert_eq!(kinds, group_kinds(rule, 4, roll), "deterministic");
+            let stags = kinds.iter().filter(|&&k| name(k) == "dwell:deer").count();
+            assert!(stags <= 1, "{stags} stags");
+            assert!(kinds.iter().filter(|&&k| name(k) == "dwell:doe").count() >= 3);
+            with += stags;
+            groups += 1;
+        }
+        let share = with as f64 / f64::from(groups);
+        assert!(
+            (0.25..0.55).contains(&share),
+            "a stag in {share} of the herds"
+        );
+    }
 
     both_faces!(
         fn wandering_stays_on_walkable_ground_out_of_water_and_off_the_wall(f: FaceFrame) {

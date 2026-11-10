@@ -1,5 +1,13 @@
 {
   "$comment": "The tests' fixture models (shared/models/gen.mjs writes them as crates/dwell-models/src/fixture.gen.rs): a model added by data alone.",
+  "detail": {
+    "$comment": "A fixture level beside the full one: the setting's steps and default come from this data.",
+    "levels": [
+      { "id": "full", "label": "Full", "ratio": 1 },
+      { "id": "coarse", "label": "Coarse", "ratio": 0.5 }
+    ],
+    "default": "coarse"
+  },
   "player": "two_bone",
   "models": {
     "two_bone": {

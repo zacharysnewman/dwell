@@ -169,3 +169,120 @@ fn a_bad_glb_fails_with_a_message() {
     bytes.truncate(40);
     assert!(glb::parse(&bytes).is_err());
 }
+
+// Owner, 2026-11-10: "The animal models are too smooth": every model is baked at each model-detail
+// level (ADR 0070 §10), fewer triangles level by level on the same skin and clips, its colours in
+// COLOR_0 and its normals flat (one a face: a triangle's three corners share it).
+#[test]
+fn every_model_has_each_detail_level_flat_shaded_on_one_skin() {
+    use dwell_models::DETAIL_LEVELS;
+    for m in MODELS {
+        let model = read("", m.glb);
+        assert_eq!(model.level_count(), DETAIL_LEVELS.len(), "{}", m.name);
+        let mut last = usize::MAX;
+        for k in 0..model.level_count() {
+            let l = model.level(k);
+            let tris = l.indices.len() / 3;
+            assert!(
+                tris > 50 && tris < last,
+                "{} level {k}: {tris} triangles",
+                m.name
+            );
+            last = tris;
+            assert_eq!(l.positions.len(), l.colors.len(), "{} level {k}", m.name);
+            let mut colours: Vec<[u32; 3]> = l
+                .colors
+                .iter()
+                .map(|c| c.map(|v| (v * 255.0).round() as u32))
+                .collect();
+            colours.sort_unstable();
+            colours.dedup();
+            assert!(
+                colours.len() > 1,
+                "{} level {k}: one colour (COLOR_0 lost?)",
+                m.name
+            );
+            assert!(
+                l.joints
+                    .iter()
+                    .flatten()
+                    .all(|&j| usize::from(j) < model.skin.len()),
+                "{} level {k}",
+                m.name
+            );
+            for t in l.indices.chunks_exact(3) {
+                let n = l.normals[t[0] as usize];
+                for &i in &t[1..] {
+                    assert!(
+                        near(l.normals[i as usize], n),
+                        "{} level {k}: smooth",
+                        m.name
+                    );
+                }
+            }
+        }
+    }
+}
+
+// Owner, 2026-11-10: "we need a deer model with the antlers taken off for a female deer". The doe
+// is the deer's FBX without the antlers: no vertices above the ears, the same skeleton and clips.
+#[test]
+fn the_doe_is_the_deer_without_antlers_on_the_same_skin_and_clips() {
+    let find = |n: &str| MODELS.iter().find(|m| m.name == n).unwrap();
+    let (deer, doe) = (read("", find("deer").glb), read("", find("doe").glb));
+    let joints = |m: &glb::Model| -> Vec<String> {
+        m.skin.iter().map(|&j| m.nodes[j].name.clone()).collect()
+    };
+    assert_eq!(joints(&deer), joints(&doe));
+    let clips =
+        |m: &glb::Model| -> Vec<String> { m.clips.iter().map(|c| c.name.clone()).collect() };
+    assert_eq!(clips(&deer), clips(&doe));
+    // The ears reach 1.61 (model units, +y up); the antlers rise to 1.97.
+    for k in 0..deer.level_count() {
+        let above = |m: &glb::Model| m.level(k).positions.iter().filter(|p| p[1] > 1.65).count();
+        assert!(
+            above(&deer) > 20,
+            "level {k}: the deer's antlers: {}",
+            above(&deer)
+        );
+        assert_eq!(above(&doe), 0, "level {k}: the doe has antler vertices");
+    }
+    assert!(doe.positions.len() < deer.positions.len());
+}
+
+// Owner, 2026-11-10: "use the dog recolored. Make it twice as big for default too." The wolf is the
+// dog's mesh and clips, its colours greys (none of the dog's white or blue), drawn at twice its size.
+#[test]
+fn the_wolf_is_the_dog_recoloured_grey_at_twice_its_size() {
+    let find = |n: &str| MODELS.iter().find(|m| m.name == n).unwrap();
+    let (dog_data, wolf_data) = (find("dog"), find("wolf"));
+    let (dog, wolf) = (read("", dog_data.glb), read("", wolf_data.glb));
+    assert_eq!(dog.positions, wolf.positions, "the dog's mesh");
+    let clips =
+        |m: &glb::Model| -> Vec<String> { m.clips.iter().map(|c| c.name.clone()).collect() };
+    assert_eq!(clips(&dog), clips(&wolf));
+    assert_eq!(wolf_data.scale, 2.0 * dog_data.scale);
+    let rgb = |c: &[f32; 3]| c.map(|v| (v * 255.0).round() as i32);
+    // The dog's coat (its commonest colour) and its collar's blue are gone; most of it is grey.
+    let dog_rgb: Vec<_> = dog.colors.iter().map(rgb).collect();
+    let wolf_rgb: Vec<_> = wolf.colors.iter().map(rgb).collect();
+    let coat = *dog_rgb
+        .iter()
+        .max_by_key(|c| dog_rgb.iter().filter(|d| d == c).count())
+        .unwrap();
+    assert!(!wolf_rgb.contains(&coat), "the dog's coat {coat:?}");
+    let blue = dog_rgb
+        .iter()
+        .find(|c| c[2] > c[0] + 60)
+        .expect("the dog's collar");
+    assert!(!wolf_rgb.contains(blue));
+    let grey = wolf_rgb
+        .iter()
+        .filter(|c| c.iter().max().unwrap() - c.iter().min().unwrap() < 40)
+        .count();
+    assert!(
+        grey * 10 > wolf_rgb.len() * 9,
+        "grey {grey} of {}",
+        wolf_rgb.len()
+    );
+}

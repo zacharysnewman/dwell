@@ -11,7 +11,9 @@ pub mod math;
 mod table {
     include!("models.gen.rs");
 }
-pub use table::{GLBS, MODELS, PLAYER, PLAYER_GLB, PROP_GLBS, PROPS};
+pub use table::{
+    DETAIL_DEFAULT, DETAIL_LEVELS, GLBS, MODELS, PLAYER, PLAYER_GLB, PROP_GLBS, PROPS,
+};
 
 /// The fixture table (shared/models/fixtures): a model added by data alone, for tests.
 #[rustfmt::skip]
@@ -21,6 +23,20 @@ pub mod fixture {
 
 /// The most joints a skin may have (the shader's joint block; shared/models/gen.mjs `MAX_JOINTS`).
 pub const MAX_JOINTS: usize = 64;
+
+/// One model-detail level (models.json `detail.levels`, ADR 0070 §10): every skinned GLB holds a
+/// mesh for it (`detail_<k>`, decimated to `ratio` of the faces and flat shaded at import).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DetailLevel {
+    pub id: &'static str,
+    pub label: &'static str,
+    pub ratio: f32,
+}
+
+/// The level named `id` in `levels` (its index, the mesh it draws); an unknown name: `fallback`.
+pub fn detail_level(levels: &[DetailLevel], id: &str, fallback: usize) -> usize {
+    levels.iter().position(|l| l.id == id).unwrap_or(fallback)
+}
 
 /// Which clip plays a role, at what speed.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -143,6 +159,39 @@ pub fn prop_in(
     let model: &'static glb::Model = Box::leak(Box::new(glb::parse_static(bytes).ok()?));
     read.insert(key, model);
     Some((data, model))
+}
+
+#[cfg(test)]
+mod detail_tests {
+    use super::*;
+
+    #[test]
+    fn the_setting_picks_a_level_by_name_from_the_data() {
+        assert_eq!(
+            DETAIL_LEVELS[0].ratio, 1.0,
+            "the first level is the full mesh"
+        );
+        assert_eq!(DETAIL_LEVELS[DETAIL_DEFAULT].id, "full");
+        let low = detail_level(DETAIL_LEVELS, "low", DETAIL_DEFAULT);
+        assert_eq!(DETAIL_LEVELS[low].id, "low");
+        assert_eq!(
+            detail_level(DETAIL_LEVELS, "nonsense", DETAIL_DEFAULT),
+            DETAIL_DEFAULT
+        );
+    }
+
+    #[test]
+    fn a_level_is_added_by_data_alone() {
+        // The fixture's models.json lists a level of its own and makes it the default.
+        let levels = fixture::DETAIL_LEVELS;
+        assert_eq!(levels[fixture::DETAIL_DEFAULT].id, "coarse");
+        assert_eq!(detail_level(levels, "coarse", 0), 1);
+        let m = glb::parse(fixture::PLAYER_GLB).unwrap();
+        assert_eq!(m.level_count(), levels.len());
+        assert_eq!(m.level(1).indices.len(), 3);
+        // A level past the model's last draws its coarsest.
+        assert_eq!(m.level(9).positions.len(), m.level(1).positions.len());
+    }
 }
 
 #[cfg(test)]

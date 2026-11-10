@@ -21,6 +21,13 @@ import {
 } from './renderScaleSettings';
 import { DEFAULT_EXPOSURE, EXPOSURE_LIMITS, sanitizeExposure } from './viewSettings';
 import {
+  MODEL_DETAIL,
+  MODEL_DETAIL_KEY,
+  detailAt,
+  detailIndex,
+  sanitizeModelDetail,
+} from './modelDetailSettings';
+import {
   CLOUD_QUALITIES,
   DEFAULT_SHAFTS,
   SHAFT_QUALITIES,
@@ -161,6 +168,8 @@ export interface Settings {
   renderScale: RenderScaleSettings;
   /** The main menu's background (ui/menuBackground.ts, shared/ui/menu-backgrounds.json). */
   menuBackground: string;
+  /** The skinned models' detail level, by id (ui/modelDetailSettings.ts, shared/models/models.json). */
+  modelDetail: string;
 }
 
 /**
@@ -188,6 +197,7 @@ export function baseSettings(mobile: boolean, reducedMotion = false): Settings {
     hud: defaultHud(),
     renderScale: defaultRenderScale(),
     menuBackground: DEFAULT_MENU_BACKGROUND,
+    modelDetail: MODEL_DETAIL.default,
   };
 }
 
@@ -227,6 +237,7 @@ export function settingsJson(s: Settings): string {
     hud: { shown: { ...s.hud.shown }, mapShading: s.hud.mapShading },
     renderScale: { ...s.renderScale },
     menuBackground: s.menuBackground,
+    modelDetail: s.modelDetail,
   };
   return JSON.stringify(rounded, null, 2);
 }
@@ -244,6 +255,7 @@ export const SETTING_FIELDS: readonly SettingField[] = settingFields({
   view: VIEW_KEY,
   renderScale: RENDER_SCALE_KEY,
   audio: AUDIO_KEY,
+  modelDetail: MODEL_DETAIL_KEY,
 });
 
 /** The graphics settings a preset sets: changing one by hand pins it and reads Custom. */
@@ -317,6 +329,7 @@ export function storedSettings(mobile: boolean, defaults: Settings): Settings {
     hud: sanitizeHud(load(HUD_KEY)),
     renderScale: sanitizeRenderScale(load(RENDER_SCALE_KEY), UPSCALE, defaults.renderScale),
     menuBackground: sanitizeMenuBackground(load(MENU_KEY)),
+    modelDetail: sanitizeModelDetail(load(MODEL_DETAIL_KEY) ?? defaults.modelDetail),
   };
 }
 
@@ -378,6 +391,7 @@ function writeSettings(s: Settings, pins: ReadonlySet<string>): void {
     [RENDER_SCALE_KEY, renderScaleRecord(load(RENDER_SCALE_KEY), s.renderScale)],
     [EXPLOSIONS_KEY, explosionRecord(load(EXPLOSIONS_KEY), s.explosions)],
     [MENU_KEY, menuRecord(load(MENU_KEY), s.menuBackground)],
+    [MODEL_DETAIL_KEY, s.modelDetail],
   ];
   for (const [key, value] of full) {
     try {
@@ -630,6 +644,20 @@ function panes(mobile: boolean): Record<SettingsPane, Group[]> {
               format: (v) => `${v.toFixed(2)}×`,
               get: (s) => s.exposure,
               with: (s, v) => ({ ...s, exposure: v }),
+            },
+          },
+          {
+            // The levels are data (shared/models/models.json `detail`), full detail first.
+            slider: {
+              label: 'Model detail',
+              pin: 'modelDetail',
+              hint: 'How many faces the people and animals have; lower is more low-poly',
+              min: 0,
+              max: Math.max(1, MODEL_DETAIL.levels.length - 1),
+              log: false,
+              format: (v) => detailAt(v).label,
+              get: (s) => detailIndex(s.modelDetail),
+              with: (s, v) => ({ ...s, modelDetail: detailAt(v).id }),
             },
           },
           ...WATER_FLOW_TOGGLES.map((toggle) => ({ toggle })),

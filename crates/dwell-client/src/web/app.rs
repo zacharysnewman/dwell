@@ -1616,6 +1616,21 @@ impl Client {
             .borrow_mut()
             .set_clouds(CloudQuality::from_name(quality).unwrap_or(CloudQuality::High));
     }
+    /// The Model detail setting: a level of shared/models/models.json's `detail.levels`, by id
+    /// (anything else: the data's default; ADR 0070 §10).
+    #[wasm_bindgen(js_name = setModelDetail)]
+    pub fn set_model_detail(&self, level: &str) {
+        let k = dwell_models::detail_level(
+            dwell_models::DETAIL_LEVELS,
+            level,
+            dwell_models::DETAIL_DEFAULT,
+        );
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_model_detail(k);
+    }
     /// The Light shafts setting: `off`, `low` or `high` (anything else: high; ADR 0064).
     #[wasm_bindgen(js_name = setShafts)]
     pub fn set_shafts(&self, quality: &str) {

@@ -111,8 +111,9 @@ pub fn body_matrix(d: &SkinnedDraw, data: &ModelData, eye: V3) -> Mat4 {
     mm::mul(&p, &mm::trs([0.0; 3], turn, [data.scale; 3]))
 }
 
-/// The interleaved vertices of a model and its indices.
-pub fn vertex_bytes(m: &Model) -> (Vec<u8>, Vec<u8>) {
+/// The interleaved vertices of a model's detail level `level` (ADR 0070 §10) and its indices.
+pub fn vertex_bytes(model: &Model, level: usize) -> (Vec<u8>, Vec<u8>) {
+    let m = model.level(level);
     let mut v = Vec::with_capacity(m.positions.len() * VERTEX_BYTES);
     for i in 0..m.positions.len() {
         for f in m.positions[i].iter().chain(&m.normals[i]) {
@@ -261,8 +262,9 @@ fn upload(
     queue: &wgpu::Queue,
     data: &'static ModelData,
     model: &'static Model,
+    level: usize,
 ) -> Mesh {
-    let (v, i) = vertex_bytes(model);
+    let (v, i) = vertex_bytes(model, level);
     let buffer = |usage, bytes: &[u8], label| {
         let b = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some(label),
@@ -278,7 +280,7 @@ fn upload(
         model,
         vertex: buffer(wgpu::BufferUsages::VERTEX, &v, "skinned vertices"),
         index: buffer(wgpu::BufferUsages::INDEX, &i, "skinned indices"),
-        count: model.indices.len() as u32,
+        count: (i.len() / 4) as u32,
     }
 }
 
@@ -295,6 +297,8 @@ pub struct SkinnedRenderer {
     players: HashMap<(usize, u32), Player>,
     draws: Vec<Draw>,
     last_s: Option<f64>,
+    /// The Model detail setting's level (`dwell_models::DETAIL_LEVELS`), every mesh drawn at it.
+    level: usize,
 }
 
 fn instance_buffer(device: &wgpu::Device, capacity: u64) -> wgpu::Buffer {
@@ -456,7 +460,8 @@ impl SkinnedRenderer {
             multiview_mask: None,
             cache: None,
         });
-        let player = upload(device, queue, data, model);
+        let level = dwell_models::DETAIL_DEFAULT;
+        let player = upload(device, queue, data, model, level);
         let capacity = 4;
         let instances = instance_buffer(device, capacity);
         let group = bind_group(device, &layout, &instances);
@@ -471,7 +476,25 @@ impl SkinnedRenderer {
             players: HashMap::default(),
             draws: Vec::new(),
             last_s: None,
+            level,
         }
+    }
+
+    /// The Model detail setting: every skinned model drawn at `level` (an index into
+    /// `dwell_models::DETAIL_LEVELS`), its meshes re-uploaded; the clip players keep playing.
+    pub fn set_level(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, level: usize) {
+        if level == self.level {
+            return;
+        }
+        self.level = level;
+        for m in &mut self.meshes {
+            *m = upload(device, queue, m.data, m.model, level);
+        }
+    }
+
+    /// The level drawn (`set_level`'s).
+    pub fn level(&self) -> usize {
+        self.level
     }
 
     /// GPU bytes of the mesh.
@@ -505,7 +528,8 @@ impl SkinnedRenderer {
             if self.meshes.iter().all(|m| m.data.name != d.model)
                 && let Some((data, model)) = dwell_models::model(d.model)
             {
-                self.meshes.push(upload(device, queue, data, model));
+                self.meshes
+                    .push(upload(device, queue, data, model, self.level));
             }
         }
         let mesh_of = |name: &str| self.meshes.iter().position(|m| m.data.name == name);
@@ -760,9 +784,17 @@ mod tests {
     #[test]
     fn the_vertex_bytes_carry_colours_joints_and_weights() {
         let (_, model) = dwell_models::player();
-        let (v, i) = vertex_bytes(model);
+        let (v, i) = vertex_bytes(model, 0);
         assert_eq!(v.len(), model.positions.len() * VERTEX_BYTES);
         assert_eq!(i.len(), model.indices.len() * 4);
+        // Each Model detail level its own mesh, fewer triangles a level (ADR 0070 §10).
+        let mut last = i.len();
+        for k in 1..dwell_models::DETAIL_LEVELS.len() {
+            let (v, i) = vertex_bytes(model, k);
+            assert_eq!(v.len(), model.level(k).positions.len() * VERTEX_BYTES);
+            assert!(i.len() < last, "level {k}");
+            last = i.len();
+        }
         // The first vertex's weights sum to about 255.
         let w: u32 = v[32..36].iter().map(|&b| u32::from(b)).sum();
         assert!((253..=257).contains(&w), "{w}");

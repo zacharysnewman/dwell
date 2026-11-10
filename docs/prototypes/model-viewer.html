@@ -11,6 +11,8 @@
   /docs/prototypes/model-viewer.html. `?role=walk` picks the role on load. The Props view
   (`?view=props`) lays out the static props of shared/models/props.json (ADR 0070 §8), one row per
   category, each standing at its imported size; a prop with a `grip` shows it as a small red dot.
+  The Detail buttons (`?detail=low`) show each model at one of models.json's `detail.levels` (the
+  GLB's meshes detail_0, detail_1, …: decimated and flat shaded, ADR 0070 §10).
 -->
 <style>
   :root { --bg: #e9eff6; --ink: #241c28; --panel: #ffffffcc; }
@@ -30,7 +32,7 @@
 </script>
 </head>
 <body>
-<div id="bar"><strong>Model Viewer</strong><span id="views"></span><span id="roles"></span><span id="status"></span></div>
+<div id="bar"><strong>Model Viewer</strong><span id="views"></span><span id="roles"></span><span id="detail"></span><span id="status"></span></div>
 <script type="module">
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -126,6 +128,9 @@ for (const [v, label] of [['models', 'Models'], ['props', 'Props']]) {
 const roles = [...new Set(Object.values(data.models).flatMap((m) => Object.keys(m.roles)))];
 let role = new URLSearchParams(location.search).get('role') ?? 'idle';
 const loaded = [];
+const levelMeshes = [];
+const levels = data.detail?.levels ?? [{ id: 'full', label: '100 %' }];
+let detail = new URLSearchParams(location.search).get('detail') ?? data.detail?.default ?? 'full';
 const names = Object.keys(data.models);
 const cols = 4;
 await Promise.all(names.map(async (name, i) => {
@@ -138,6 +143,7 @@ await Promise.all(names.map(async (name, i) => {
   root.traverse((o) => {
     if (o.isMesh) {
       o.material = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+      levelMeshes.push(o);
       o.castShadow = true;
     }
   });
@@ -169,6 +175,25 @@ for (const r of roles) {
   document.querySelector('#roles').appendChild(b);
 }
 play(role);
+/** Shows each model's mesh for one detail level (a GLB without levels: its one mesh). */
+function showDetail(id) {
+  detail = id;
+  const k = Math.max(0, levels.findIndex((l) => l.id === id));
+  for (const o of levelMeshes) {
+    let n = o;
+    while (n && !/^detail_\d+$/.test(n.name)) n = n.parent;
+    o.visible = !n || n.name === `detail_${k}`;
+  }
+  for (const b of document.querySelectorAll('#detail button')) b.classList.toggle('on', b.dataset.id === id);
+}
+for (const l of levels) {
+  const b = document.createElement('button');
+  b.textContent = l.label;
+  b.dataset.id = l.id;
+  b.onclick = () => showDetail(l.id);
+  document.querySelector('#detail').appendChild(b);
+}
+showDetail(detail);
 const clock = new THREE.Clock();
 renderer.setAnimationLoop(() => {
   const dt = clock.getDelta();

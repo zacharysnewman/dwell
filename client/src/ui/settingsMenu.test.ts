@@ -71,6 +71,7 @@ describe('settings JSON', () => {
       renderScale: { scale: 0.67, upscaler: 'sharpen' },
       shafts: 'low',
       menuBackground: 'lake-shore',
+      modelDetail: 'medium',
     });
     const parsed = JSON.parse(json) as { detail: unknown };
     expect(parsed).toEqual({
@@ -94,6 +95,7 @@ describe('settings JSON', () => {
       renderScale: { scale: 0.67, upscaler: 'sharpen' },
       shafts: 'low',
       menuBackground: 'lake-shore',
+      modelDetail: 'medium',
     });
     expect(sanitizeDetail(parsed.detail, defaultDetail(false))).toEqual({
       distanceM: 200,

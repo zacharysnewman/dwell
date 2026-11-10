@@ -102,6 +102,34 @@ are code and rare. Per build: the models ship with a release, like the block reg
    renderer, whose vertices carry a material index, not a colour; drawing a prop there needs a
    `model` part kind with per-vertex colours (or the skinned renderer drawing the prop on the
    `hand_frame`, its joint 0 the grip).
+10. **Model detail (0.52.1).** Owner, 2026-11-10: "The animal models are too smooth I think. Can we use
+   some tools to make them lower poly style? Can you make this a slider in the graphics and then later
+   we'll set an opinionated value." The levels are data: `models.json` `detail` (`levels`: an id, a
+   label and a `ratio` of the faces kept, the first 1; `default`, `full` until the owner picks). The
+   import (`blender_import.py`) makes one mesh per level from the joined mesh with Blender's Decimate
+   (collapse, triangulated; the vertex groups, so the skin weights, carried), paints each level's faces
+   from the texture as before (the pack's own colour layers removed first, so the palette colours are
+   `COLOR_0`) and shades every level **flat** (one normal a face, custom normals cleared: most of the
+   "too smooth" look was the smooth normals). The GLB holds the levels as meshes `detail_0`,
+   `detail_1`, … on the one skin, sharing the clips. `gen.mjs` validates the levels (ids, the first
+   ratio 1, falling ratios, the default one of them) and that each model has a mesh per level, and
+   writes `DETAIL_LEVELS`/`DETAIL_DEFAULT`; the fixture adds a level of its own by data.
+   `dwell_models::glb::Model::level(k)` reads a level (past the last: the coarsest). Settings →
+   Graphics → Look's **Model detail** slider runs through the levels (stored as the level's id,
+   `dwell.modelDetail`, a default/pin setting like the others; not in the graphics presets: a look, not
+   a cost they trade); `setModelDetail` re-uploads every skinned mesh at the level, live, the clip
+   players untouched. Flat shading is on at every level, not a separate toggle: it is what makes a
+   level read as low-poly. Cost: the flat corners split the vertices, so the ten GLBs are ~5.6 MB
+   (were ~1.8 MB), all built into the WASM. Seen in the Model Viewer: 60 % and 35 % read as clean
+   low-poly; 20 % breaks the small models (the wolf's and the dog's heads collapse, the stag loses
+   antler tines), so the owner's pick is likely 35 % or 60 %.
+11. **Variants by import (0.52.1).** A model's `source.remove` (`{ joint, above }`) deletes the loose
+   parts weighted wholly to that joint that rise above that height: the **doe** is the deer's FBX
+   without its antlers (the two antler parts on `scull`, above 1.7 model units; the ears end at 1.61),
+   the same skeleton and clips. The **wolf** is the dog's FBX with a `remap` of the pack's colours to
+   the palette's wolf ramps (owner: "use the dog recolored. Make it twice as big for default too"),
+   `scale` 2. `import.mjs --colours` prints each source colour seen and what it became, for writing a
+   remap.
 
 ## Consequences
 

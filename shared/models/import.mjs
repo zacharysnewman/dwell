@@ -36,6 +36,9 @@ const opt = (name, fallback) => {
   const [, v] = args.splice(i, 2);
   return v;
 };
+// --colours prints each source colour seen and the palette colour it became (to write a `remap`).
+const verbose = args.includes("--colours");
+if (verbose) args.splice(args.indexOf("--colours"), 1);
 const props = args.includes("--props");
 if (props) args.splice(args.indexOf("--props"), 1);
 const from = opt("--from");
@@ -131,6 +134,10 @@ try {
         hexRgb(resolveColor(palette, to)),
       ]),
       frame_step: 2,
+      levels: data.detail.levels.map((l) => l.ratio),
+      remove: m.source.remove
+        ? { joint: m.source.remove.joint, above: m.source.remove.above }
+        : null,
     };
     // Blender's FBX importer wants the extension.
     execFileSync("ln", ["-sf", assetIn(m.source.pack, m.source.fbx), job.fbx]);
@@ -152,7 +159,13 @@ try {
       },
     );
     console.log(
-      out.split("\n").find((l) => l.startsWith("IMPORTED")) ?? out.slice(-2000),
+      out
+        .split("\n")
+        .filter(
+          (l) =>
+            l.startsWith("IMPORTED") || (verbose && l.startsWith("COLOUR")),
+        )
+        .join("\n") || out.slice(-2000),
     );
   }
 } finally {
