@@ -114,6 +114,22 @@
         "#353535": "hair_black",
         "#155cc0": "wolf.shadow"
       },
+      "coat": {
+        "$comment": "A grey wolf's coat, blended (owner, 2026-11-10: the per-face colours read as Balto, \"very harsh color changes\"; a wolf is \"more the blend\"): fawn flanks, a dark grizzled saddle and grey shoulders, a cream belly, legs and throat, a pale muzzle, a grey tail with a dark tip. The eyes and the nose keep their black. Coordinates: along 0 the nose → 1 the tail's tip, height 0 the feet → 1 the ears' tips (the back is about 0.7).",
+        "head": "+z",
+        "base": "canvas",
+        "keep": ["hair_black"],
+        "patches": [
+          { "colour": "wolf", "height": [0.5, 1], "blend": 0.14, "amount": 0.75 },
+          { "colour": "flint.shadow", "height": [0.6, 1], "along": [0.3, 0.74], "blend": 0.12, "amount": 0.85 },
+          { "colour": "wolf_pale", "height": [0, 0.4], "blend": 0.12 },
+          { "colour": "wolf_pale", "along": [0.12, 0.3], "height": [0, 0.62], "blend": 0.1, "amount": 0.9 },
+          { "colour": "wolf", "along": [0, 0.3], "height": [0.62, 1], "blend": 0.1, "amount": 0.6 },
+          { "colour": "wolf_pale", "along": [0, 0.13], "blend": 0.08, "amount": 0.85 },
+          { "colour": "wolf", "along": [0.76, 1], "height": [0.2, 0.75], "blend": 0.08, "amount": 0.7 },
+          { "colour": "bedrock.shadow", "along": [0.93, 1], "blend": 0.06 }
+        ]
+      },
       "fallback": "idle",
       "roles": {
         "idle": { "clip": "idle" },

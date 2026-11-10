@@ -7,6 +7,8 @@
 //   node shared/models/import.mjs --from <dir of unpacked Unity packages> [--blender <path>] [name ...]
 //   node shared/models/import.mjs --props --from <dir> [name ...]   (the static props, props.json:
 //   one Blender run, shared/models/blender_props.py)
+//   node shared/models/import.mjs --coat [name ...]   (paints the models' `coat`s over the
+//   checked-in GLBs again, no packs or Blender needed: shared/models/coat.mjs)
 //
 // The packs are not in the repo (Unity Asset Store EULA): each package is unpacked as GUID folders
 // holding `pathname` and `asset`, and a model's `source` names its pack and the paths inside it.
@@ -24,6 +26,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { applyCoat } from "./coat.mjs";
 import { paletteStops, resolveColor } from "./gen.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -41,9 +44,11 @@ const verbose = args.includes("--colours");
 if (verbose) args.splice(args.indexOf("--colours"), 1);
 const props = args.includes("--props");
 if (props) args.splice(args.indexOf("--props"), 1);
+const coatOnly = args.includes("--coat");
+if (coatOnly) args.splice(args.indexOf("--coat"), 1);
 const from = opt("--from");
 const blender = opt("--blender", "/opt/homebrew/bin/blender");
-if (!from) {
+if (!from && !coatOnly) {
   console.error(
     "usage: node shared/models/import.mjs --from <unpacked packs> [--blender <path>] [name ...]",
   );
@@ -77,6 +82,18 @@ const stops = paletteStops(palette, data.palette?.exclude ?? []).map((s) => [
   hexRgb(s.hex),
   hexRgb(resolveColor(palette, s.name.split(".")[0])),
 ]);
+/** Paints model `name`'s coat (if it has one) over its GLB (shared/models/coat.mjs). */
+function coat(name) {
+  const m = data.models[name];
+  if (!m?.coat) return;
+  const path = join(here, m.glb);
+  writeFileSync(path, applyCoat(readFileSync(path), m.coat, palette));
+  console.log("COAT", path);
+}
+if (coatOnly) {
+  for (const name of args.length ? args : Object.keys(data.models)) coat(name);
+  process.exit(0);
+}
 const tmp = mkdtempSync(join(tmpdir(), "dwell-models-"));
 if (props) {
   try {
@@ -167,6 +184,7 @@ try {
         )
         .join("\n") || out.slice(-2000),
     );
+    coat(name);
   }
 } finally {
   rmSync(tmp, { recursive: true, force: true });
