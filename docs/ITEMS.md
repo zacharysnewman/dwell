@@ -221,3 +221,14 @@ work in cells; no survival inventory (creative only).
 with the torch held, aimed at it, lights it** instead of placing the torch (the explosives table's
 `ignitedBy`, `dwell_world::explosives::ignites` in `check_block_edit`); lit it can't be broken. Its fuse,
 blast and effects: [`EXPLOSIVES.md`](./EXPLOSIVES.md).
+
+## 8. Ground items **[built, 0.50.68]**
+
+ADR 0071. Sticks lie under the trees and rocks at the cliffs' feet (rarely on open grass), scattered
+over each chunk as it loads from the world seed and the cell by `shared/ground/ground.json` (kinds:
+the item each gives, a rod or lump look; rules: the blocks it lies on, the canopy above, a wall
+beside, a density) → `shared/ground/gen.mjs` → `dwell-world` `ground.gen.rs`. They are drawn in the
+chunk mesh and have no collision. **E** (or **X**, the spyglass button, on a controller) with the
+crosshair on one picks it up into the same item a drop gives (`dwell:stick`, `dwell:rock`: they
+stack); elsewhere E opens the backpack as before. The server keeps the picked ones gone (the world's
+`ground_gone` table); breaking the block under one knocks it loose as a loose item.

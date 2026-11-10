@@ -313,7 +313,10 @@ fn wall_and_rocks(fx: &mut Fixture, f: FaceFrame) -> Vec<[i32; 3]> {
             }
         }
     }
-    assert!(!found.is_empty(), "the scatter put rocks at the wall's feet");
+    assert!(
+        !found.is_empty(),
+        "the scatter put rocks at the wall's feet"
+    );
     found
 }
 
@@ -385,7 +388,13 @@ dwell_world::both_faces!(
             .unwrap();
         let l = f.cell(cell);
         let before = fx.server.loose_items().len();
-        edit(&mut fx, f, BlockEditAction::Break, [l[0], l[1] - 1, l[2]], 0);
+        edit(
+            &mut fx,
+            f,
+            BlockEditAction::Break,
+            [l[0], l[1] - 1, l[2]],
+            0,
+        );
         let loose = fx.server.loose_items();
         assert!(
             loose.iter().any(|it| it.stack.item == "dwell:rock"),
@@ -414,7 +423,10 @@ fn picked_up_ground_items_stay_gone_across_a_reload() {
         let rocks = wall_and_rocks(&mut fx, f);
         cell = *rocks.iter().find(|c| c[0] < 4).expect("near side");
         pick(&mut fx, cell);
-        assert!(fx.server.ground_gone().cells.contains(&cell), "creative picks up too");
+        assert!(
+            fx.server.ground_gone().cells.contains(&cell),
+            "creative picks up too"
+        );
         fx.server.save_now();
         fx.server.flush_store();
     }
@@ -437,8 +449,16 @@ fn ground_messages_go_only_to_a_client_that_said_ground_hello() {
     let rocks = wall_and_rocks(&mut fx, f);
     let cell = *rocks.iter().find(|c| c[0] < 4).expect("near side");
     pick(&mut fx, cell);
-    assert!(fx.take(1).iter().all(|(m, _)| !matches!(m, Message::GroundGone(_))));
+    assert!(
+        fx.take(1)
+            .iter()
+            .all(|(m, _)| !matches!(m, Message::GroundGone(_)))
+    );
     fx.send(1, Message::InventoryAction(InventoryAction::GroundHello));
     step(&mut fx, 1);
-    assert!(fx.take(1).iter().any(|(m, _)| matches!(m, Message::GroundGone(c) if c == &vec![cell])));
+    assert!(
+        fx.take(1)
+            .iter()
+            .any(|(m, _)| matches!(m, Message::GroundGone(c) if c == &vec![cell]))
+    );
 }

@@ -103,10 +103,13 @@ impl Placed {
 /// client syncs may grow).
 pub struct Rules<'a> {
     kinds: &'a [GroundKind],
-    rules: Vec<(&'a GroundRule, Vec<std::ops::Range<usize>>, Vec<std::ops::Range<usize>>)>,
+    rules: Vec<(&'a GroundRule, StateRanges, StateRanges)>,
 }
 
-fn ranges(names: &[&str]) -> Vec<std::ops::Range<usize>> {
+/// State id ranges (a block's states each).
+type StateRanges = Vec<std::ops::Range<usize>>;
+
+fn ranges(names: &[&str]) -> StateRanges {
     names
         .iter()
         .filter_map(|n| find_block(n))
@@ -145,7 +148,13 @@ impl<'a> Rules<'a> {
             kinds,
             rules: rules
                 .iter()
-                .map(|r| (r, ranges(r.on), r.under.map_or(Vec::new(), |u| ranges(u.blocks))))
+                .map(|r| {
+                    (
+                        r,
+                        ranges(r.on),
+                        r.under.map_or(Vec::new(), |u| ranges(u.blocks)),
+                    )
+                })
                 .collect(),
         }
     }
@@ -183,9 +192,8 @@ impl<'a> Rules<'a> {
             }
             if let Some(w) = rule.near_wall
                 && !COMPASS.iter().any(|[dx, dz]| {
-                    (1..=w.reach).any(|d| {
-                        (0..w.rows).all(|k| at(dx * d, k, dz * d).is_some_and(solid))
-                    })
+                    (1..=w.reach)
+                        .any(|d| (0..w.rows).all(|k| at(dx * d, k, dz * d).is_some_and(solid)))
                 })
             {
                 continue;
@@ -279,7 +287,10 @@ impl<'a> Rules<'a> {
         let c: [f64; 3] = std::array::from_fn(|i| base[i] + up[i] * h);
         let r = k.size[0].max(k.size[2]) * it.scale / 2.0 + 0.08;
         let to: [f64; 3] = std::array::from_fn(|i| c[i] - eye[i]);
-        let along = (0..3).map(|i| to[i] * dir[i]).sum::<f64>().clamp(0.0, reach);
+        let along = (0..3)
+            .map(|i| to[i] * dir[i])
+            .sum::<f64>()
+            .clamp(0.0, reach);
         let d2 = (0..3)
             .map(|i| (to[i] - dir[i] * along).powi(2))
             .sum::<f64>();

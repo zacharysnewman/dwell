@@ -24,7 +24,11 @@ pub fn scatter(padded: &[u16], origin: [i32; 3], job: &GroundJob) -> Vec<Placed>
     let [ex, ey, ez] = SKY_EXTENT;
     let [ax, ay, az] = SKY_APRON;
     let mut get = |c: [i32; 3]| {
-        let (x, y, z) = (c[0] - origin[0] + ax, c[1] - origin[1] + ay, c[2] - origin[2] + az);
+        let (x, y, z) = (
+            c[0] - origin[0] + ax,
+            c[1] - origin[1] + ay,
+            c[2] - origin[2] + az,
+        );
         ((0..ex).contains(&x) && (0..ey).contains(&y) && (0..ez).contains(&z))
             .then(|| padded[(x + ex * (z + ez * y)) as usize])
     };
@@ -32,7 +36,11 @@ pub fn scatter(padded: &[u16], origin: [i32; 3], job: &GroundJob) -> Vec<Placed>
     let mut out = Rules::shipped().scatter_chunk(&mut get, job.seed, c);
     if !job.gone.is_empty() {
         out.retain(|p| {
-            let l = [p.cell[0] - origin[0], p.cell[1] - origin[1], p.cell[2] - origin[2]];
+            let l = [
+                p.cell[0] - origin[0],
+                p.cell[1] - origin[1],
+                p.cell[2] - origin[2],
+            ];
             !job.gone.contains(&l)
         });
     }
@@ -195,7 +203,13 @@ mod tests {
             let faces = polygons(shape, size);
             let mut m = MeshArrays::default();
             for f in &faces {
-                push_polygon(&mut m, f, [1.0; 3], &crate::textures::tile_rect("plain"), [1.0, 0.0]);
+                push_polygon(
+                    &mut m,
+                    f,
+                    [1.0; 3],
+                    &crate::textures::tile_rect("plain"),
+                    [1.0, 0.0],
+                );
             }
             // Each face's normal points away from the shape's middle.
             let mut at = 0;

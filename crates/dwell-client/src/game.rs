@@ -3907,7 +3907,9 @@ impl<S: Scene> Game<S> {
     /// The label of the ground item under the crosshair ("Stick"), for the pick-up prompt.
     pub fn ground_prompt(&self) -> Option<&'static str> {
         let it = self.ground_target?;
-        let k = dwell_world::ground::Rules::shipped().kind(it.kind).copied()?;
+        let k = dwell_world::ground::Rules::shipped()
+            .kind(it.kind)
+            .copied()?;
         dwell_protocol::inventory::item(k.item).map(|d| d.label)
     }
 

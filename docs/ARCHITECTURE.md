@@ -1825,6 +1825,7 @@ lives in side files. Chunk and LOD blobs are the protocol's palette + RLE compre
 | `inventories` | **[built, 0.50.33]** Keyed by device public key: the player's inventory record (`Inventory::to_bytes`, version 1: held slot, wallet and money, each non-empty slot's index, item name and count; ADR 0066). Optional: older builds leave it; an unreadable record is kept, not overwritten |
 | `vitals` | **[built, 0.50.57]** Keyed by device public key: the player's stamina and oxygen (version 1: f32 stamina, f32 seconds of air, u8 exhausted; ADR 0069), rewritten each save. Optional: older builds leave it; a player without one, or with a record this build can't read, starts rested |
 | `loose_items` | **[built, 0.50.33]** One record (key 0), rewritten each save: the loose items lying in the world (version 1: item name, count, point, age each; ADR 0066) |
+| `ground_gone` | **[built, 0.50.68]** One record (key 0), rewritten each save: the ground items gone from the scatter (`dwell_world::ground::GroundGone::to_bytes`, version 1: a count, then each cell as i32×3, sorted; ADR 0071), the scatter's tombstones. Optional: older builds leave it; an unreadable record is kept, not overwritten |
 | `cuts` | **[built, 0.50.34]** One record (key 0), rewritten each save: the axes' cuts in wood cells (`dwell_protocol::chopping::Cuts::to_bytes`, version 1: each cell, then per side its notch and two kerfs as f32; ADR 0067). Optional: older builds leave it; an unreadable record is kept, not overwritten |
 | `water` | **[built, 0.48.2]** The water surface grid's free water (§6.7, WATER_SURFACE_GRID.md): one LZ4 record of `Water::save` (`DWG1`): each water chunk with free columns, their floors, depths and flows (and the rest layer's), and what the chunk owes; held water is found again from the blocks. An older basin record (`DWW5`) is ignored |
 | `tree_tombstones` | **[planned, Phase 30]** Per chunk: the sparse set of chopped procedural tree ids `(chunk, procedural index)` and the pruned node sets of partly cut ones (§6.3 tree growth) |
@@ -2677,6 +2678,25 @@ capacity. The client draws loose items as small turning copies of their block th
 renderer (`dwell-client` `loose_items.rs`), and in such a world its hotbar is the inventory's first
 nine slots with counts and the wallet, and E opens the backpack screen (`client/src/ui/backpack.ts`).
 
+**Ground items [built, 0.50.68]** (ADR 0071). Sticks under the trees and rocks at the cliffs' feet
+(and rarely on open grass) are scattered over each chunk as it loads, not saved terrain and not a
+worldgen change: `dwell_world::ground` (`Rules::item_at`, `scatter_chunk`) puts at most one in an
+open cell over a full block, by the rules in `shared/ground/ground.json` (each a kind, the blocks it
+lies on, optionally the canopy blocks within some rows above or a wall some rows tall within some
+cells, and a density; the first rule that holds and whose roll hits wins), rolled from a hash of
+the world seed and the face-local cell (face B mirrors face A). `shared/ground/gen.mjs` checks the
+names against the blocks and the inventory items and emits `dwell-world` `ground.gen.rs`. The
+server, the client's crosshair and the client's mesh jobs run the same function on their own blocks
+(the mesh jobs on their sky volume: rules look at most 16 rows and 6 cells away, the apron). The
+client bakes them into the chunk's opaque mesh (`dwell-mesh` `mesher/ground_mesh.rs`: a rod or a
+lump of a few polygons with a block's side tile, turned and scaled per item): no draw call, no
+collision. E (X, the spyglass button, on a controller) on one sends `Pick`; the server checks and
+adds the kind's item (`dwell:stick`, `dwell:rock`: the drops' items, so they stack), keeps the cell
+in its gone set (`server/ground.rs`, saved in `ground_gone`) and tells clients, which mesh the chunk
+again without it. Breaking the block under one knocks it loose (a loose item in adventure; gone in
+creative); it vanishes with no write when its ground or canopy goes by other edits (regions,
+blasts, felling), and may come back if the same cells return.
+
 **Tools and chopping [built, 0.50.34–0.50.39]** (ADR 0067). Tools are items
 with data in `shared/tools/tools.json` (a `kind` from a fixed vocabulary, `axe`; its swing wait,
 bite, bind and its share across and along the grain), and so are the woods an axe cuts (a block
@@ -3514,6 +3534,18 @@ S→C  Inventory       0x56, control, when it changes: u8 flags (1 = the mode us
 S→C  ItemDrops       0x57, world: u16 n, each u32 id, str item, u16 count, f32×3 point; then
                      u16 n gone ids (at most 512 each); all of them after Hello, then what
                      appeared, changed or moved (moves 20 times a second) and what went
+```
+
+**Ground items: `InventoryAction` 3 and 4, `GroundGone` (reliable) [built, 0.50.68]** (ADR 0071).
+The Welcome flags byte is full, so the server says it keeps ground items in `Inventory`'s flags
+(2 = `GROUND`; older clients ignore the bit). A client sends the two new `InventoryAction` kinds
+only to a server that set it, and the server sends `GroundGone` only to a client that said
+`GroundHello`.
+```
+C→S  InventoryAction 0x55 kinds: 3 GroundHello (send me GroundGone); 4 Pick: i32×3 cell (the
+                     server checks an item lies there, not gone, within 5.5 m of the eye, and fits)
+S→C  GroundGone      0x5d, world: u16 n (at most 4,096), each i32×3 cell gone (picked up or
+                     knocked loose); all of them (at least one message) after GroundHello
 ```
 
 **Chopping: `Chop`, `Cuts`, `HeldTools` (reliable) [built, 0.50.34; Sweep, Held, HeldTools
