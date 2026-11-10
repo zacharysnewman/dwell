@@ -74,6 +74,34 @@ are code and rare. Per build: the models ship with a release, like the block reg
    the whole-body mesh (no separate arms mesh, the sleeves and hands skinned to the shoulders), and
    drawn at the eye they would need their own view and clips the pack doesn't have. There is no
    third-person view in the game yet; a bench `camera` view shows only your shadow.
+8. **Props: static models** (2026-11-10, 0.51.24; the owner: "Let's do tools", and "All the models are
+   good for commercial use"). The NexusArcadeStudios pack *3D Low Poly Tools Weapons Containers*
+   (53 FBX, one gradient texture) is imported by the same pipeline as static models:
+   `node shared/models/import.mjs --props --from <unpacked packs>` runs one Blender process
+   (`shared/models/blender_props.py`) over every prop: meshes joined, transforms applied, scaled so
+   the longest side is the prop's `length` (else its category's), origin at the bounds' centre, the
+   same per-face palette remap, and the pack's own colour layers removed before ours is added (the
+   chicken bug of 0.51.22: a pack's white `COLOR_0` pushed ours to `COLOR_1`). No skin, clips, UVs
+   or materials; 7.9 MB for all 53. The data is `shared/models/props.json`: `categories` (tools,
+   weapons, instruments, containers, tableware, lamps: a label, a default `length` and the `min`/`max`
+   a prop of it may be) and `props` (category, GLB, optional `length` and `grip`, metres from the
+   origin where a hand holds it). `gen.mjs` validates it (missing GLB, more than one mesh, a skin or
+   clips, no `COLOR_0`, an unknown category, a length outside its category's or not the GLB's) and
+   writes `PROPS` into `models.gen.rs` (`fixture.gen.rs` from `fixtures/props.json`, a plate added by
+   data alone). Only the props an item's look names (`shared/inventory` `look.model`) are built into
+   the client (`PROP_GLBS`); the rest are data for the Model Viewer's Props view until the owner makes
+   them items. `dwell_models::glb::parse_static` reads one (every vertex on joint 0 at weight 1).
+   Multi-object files (`axes`, `katanas_swords`, `golf_bats`, …) are one prop each, their variants
+   side by side; splitting them is a later data step (an `object` filter in the import).
+9. **An item's look may be a prop** (`look: { "model": "stone_pickaxes" }`, `LookShape::Model`, ADR
+   0066): the loose item and the hotbar and backpack picture are the prop's triangles in their palette
+   colours (`dwell_mesh::model_faces`, lying along +x on y = 0; `look_mesh`, `look_swatch`). The first
+   is `dwell:stone_pickaxe`, which proves the path: no one is given it and it does nothing.
+   **Not built yet:** the prop in the hand (the skinned hand and the first-person arms); the hand
+   shows empty for a model look. The held items are `characters.json` parts drawn by the rigid
+   renderer, whose vertices carry a material index, not a colour; drawing a prop there needs a
+   `model` part kind with per-vertex colours (or the skinned renderer drawing the prop on the
+   `hand_frame`, its joint 0 the grip).
 
 ## Consequences
 

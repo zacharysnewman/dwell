@@ -616,6 +616,21 @@ characters' ramp from the vertex's palette colour, the same lights and shadow ma
 
 - Animal behaviour beyond wandering (ADR 0073's questions); jump, swim and climb clips for the
   player; looks per player (§9.4) as models.
-- The **tools pack**; repainting with the painterly textures.
+- The tools pack's props in the hand (§11.8); which props become items (the owner's); repainting
+  with the painterly textures.
 - The **Model Viewer** (`docs/prototypes/model-viewer.html`) plays every model's clips by role; the
   Character Lab stays for the rigid parts until they go.
+
+### 11.8 Props: static models (0.51.24, ADR 0070 §8–9)
+
+The NexusArcadeStudios *3D Low Poly Tools Weapons Containers* pack's 53 models are **props**: static
+GLBs in `shared/models/glb/props/`, listed by category in `shared/models/props.json` (tools, weapons,
+instruments, containers, tableware, lamps; each category a default length and the sizes allowed),
+imported with `node shared/models/import.mjs --props --from <unpacked packs>` (one Blender run,
+`blender_props.py`: joined, scaled to the length, centred, the per-face palette remap, the pack's own
+colour layers dropped first). `gen.mjs` validates them (one static mesh, palette colours in
+`COLOR_0`, the length) and writes `PROPS`; a prop's optional `grip` is where a hand holds it. The
+Model Viewer's **Props** view (`?view=props`) lays them out by category. An inventory item's look may
+name one (`look: { "model": … }`): the stone pickaxe (`dwell:stone_pickaxe`, not given to anyone)
+proves it, drawn loose and on the hotbar from the prop's triangles. In the hand it shows nothing yet:
+the held items are rigid parts with material indices, and a prop needs a part with its own colours.

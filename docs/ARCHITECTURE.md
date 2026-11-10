@@ -284,8 +284,10 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
                      and the animator: clip selection from the controller state.
   /dwell-models      Skinned models (§5.3, CHARACTERS.md §11, ADR 0070): the table generated from
                      shared/models (models.gen.rs; fixture.gen.rs for tests), the player model's GLB
-                     built in, a GLB reader (one skinned mesh, its skin, its clips), clip sampling
-                     and blending, joint matrices, and the role → clip player.
+                     built in, a GLB reader (one skinned mesh, its skin, its clips; or a static
+                     prop's, `parse_static`), clip sampling and blending, joint matrices, the role →
+                     clip player, and the props' table (`PROPS`; the GLBs of the props an item's
+                     look names built in, `PROP_GLBS`; ADR 0070 §8).
   /dwell-game        Client game logic: input and touch state machines, flight, the eye and face
                      flip, remote players, block interaction, the chunk streamer, HUD text, sound
                      events (sound.rs, with sound.gen.rs from shared/sounds).
@@ -361,7 +363,9 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
                      import.mjs and blender_import.py (FBX → GLB with the palette remap, Blender
                      headless, run by hand from the unpacked packs) + gen.mjs (validates against
                      the GLBs and the palette, → Rust for dwell-models), fixtures/ (the two-joint
-                     test model and its maker), gen.test.mjs (CHARACTERS.md §11, ADR 0070).
+                     test model and its maker), gen.test.mjs (CHARACTERS.md §11, ADR 0070);
+                     props.json + glb/props/ (the static props: tools, weapons, containers, … by
+                     category, sizes validated; import.mjs --props with blender_props.py; ADR 0070 §8).
 /shared/brushes      brushes.json (brush presets and the game modes' brush policy) + gen.mjs
                      (→ Rust for dwell-world brushes.gen.rs, TS for the shell's controls table; §6.5).
 /shared/version      vectors.txt: version precedence, compatibility lines and "may open" cases that the
@@ -738,7 +742,11 @@ palette names) and writes `dwell-models`' table; CI fails on stale output. `dwel
 GLB (`glb.rs`: positions, normals, colours, joints, weights, the node tree, the skin's inverse bind
 matrices, linear and step channels), samples and blends clips (`anim.rs`: nlerp, looped by the
 player) and gives the joint matrices; its `Player` maps a role to its clip and cross-fades 0.2 s
-when the clip changes (the same clip at another speed keeps its phase).
+when the clip changes (the same clip at another speed keeps its phase). **Props** (static models,
+ADR 0070 §8, `shared/models/props.json`): the tools pack's 53 models, imported by the same pipeline
+without skin or clips, scaled to their category's lengths, validated by `gen.mjs`; an inventory item's
+look may name one (`look.model`, `LookShape::Model`), drawn loose and on the hotbar from its
+triangles (`dwell_mesh::model_faces`); not yet in the hand.
 **Drawing** (`render/skinned.rs`, inside `CharacterRenderer`): the model's one mesh (36-byte
 vertices: position, normal, sRGB colour, 4 × u8 joints, 4 × unorm8 weights; the Peasant 1,834
 vertices, 66 KB), per body one block of uniforms (3,328 bytes, a dynamic offset: 64 joints' 3 × 4
