@@ -39,6 +39,12 @@ the join rule (same group, same axis), the geometry.
    the same axis (`dwell_blocks::octagon::joins`). For each side across the axis whose neighbour
    joins, the side is full width: both its corners square off to the cell's edge. A corner is cut
    only when neither of its sides joins.
+   **Lying logs' halves** (0.52.2, BUGS.md #63): a 1 m log lying along x or z is two ½ m cells,
+   its lower and upper half, each knowing which by the log cells it joins above and below (none is
+   stored). Across a level side a cell joins only a cell of the same half (both lower, both upper,
+   both lone or both in the middle of a stack), so a log lying a row higher or lower beside it stays
+   its own octagon, not its upper half squared against the other's lower one. The rule reads one
+   cell up and down beside the cell too (offsets on up to three axes, inside the mesher's apron).
 3. **One geometry** (`dwell_blocks::octagon`): `outline` (the cross-section), `faces` (the prism:
    two caps, the sides, the chamfers) and `open_faces` (culled: a joined side is shared and drawn by
    neither cell; a side or cap against a plain opaque cube is hidden; a cap against a joined log

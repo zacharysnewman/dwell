@@ -1915,7 +1915,9 @@ mod tests {
                 }
             }
             assert_eq!(world.len(), 18, "three trunks of six cells");
-            let section = dwell_blocks::octagon::section_of(log()).expect("a log's section").0;
+            let section = dwell_blocks::octagon::section_of(log())
+                .expect("a log's section")
+                .0;
             for (&c, &m) in &world {
                 assert_eq!(info(m).axis, Axis::X, "lying along x: {c:?}");
                 let at = |o: [i32; 3]| {
@@ -1929,7 +1931,11 @@ mod tests {
                 let lower = if local[2] == 4 { 41 } else { 40 };
                 let partner_up = local[1] == lower;
                 let partner_face = face_index(1, partner_up != f.is_b());
-                assert_ne!(joined & (1 << partner_face), 0, "joins its other half: {local:?}");
+                assert_ne!(
+                    joined & (1 << partner_face),
+                    0,
+                    "joins its other half: {local:?}"
+                );
                 // Never squared toward the offset log at z 4 (or, from it, toward z 3).
                 let toward_offset = match local[2] {
                     3 => Some(face_index(2, true)),
