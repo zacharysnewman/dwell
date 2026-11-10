@@ -224,6 +224,19 @@ pub struct BiomeMap {
     pub wet_reach: f64,
     pub dither_wavelength: i32,
     pub dither: f64,
+    /// The rain shadow (`biomemap::rainfall`): where the prevailing wind blows from (degrees,
+    /// face-local, from +x toward +z).
+    pub wind_direction: f64,
+    /// Metres of full rain that dry the air out.
+    pub wind_reach: f64,
+    /// The share of the air's moisture rained per km on flat land.
+    pub base_rain: f64,
+    /// More rain per 10 % grade the ground rises along the wind.
+    pub uplift_rain: f64,
+    /// Less rain per 10 % grade the ground falls along the wind (the lee).
+    pub lee_dry: f64,
+    /// The rainfall's share of the wetness (0: the river/lake wetness alone, the default).
+    pub rain_share: f64,
 }
 
 /// A biome (data: `shared/worldgen/biomes/<name>.json`, ADR 0074): what is layered on the world's
@@ -849,6 +862,14 @@ impl TerrainGenerator {
     pub fn biome_mix(&self, x: i64, z: i64) -> crate::biomemap::Mix {
         let (base, _, _) = self.map.height_at(x as f64, z as f64);
         self.biomes.mix(x, z, base)
+    }
+
+    /// The rain shadow's rainfall at face-local (x, z), 0..1 (None with one biome: no map).
+    pub fn biome_rainfall(&self, x: i64, z: i64) -> Option<f64> {
+        self.biomes
+            .field
+            .as_ref()
+            .map(|f| f.rainfall(x as f64, z as f64))
     }
 
     /// The geography at face-local (x, z) the biome map reads (None with one biome).

@@ -1537,7 +1537,12 @@ after the height field (which biomes never change beyond their bounded fine reli
 map's height), the distance to the sea and to the nearest river or lake cell (two chamfer distance grids
 on the map's 100 m cells, built once per generator), and the temperature, a slow climate gradient across
 the island (along a direction from the seed, bent by a noise) less a lapse rate with height
-(`terrain.json` `biomeMap`). A biome's weight is its `weight` × each range's smoothstep fit over ± its
+(`terrain.json` `biomeMap`). The wetness may also take rain (**the rain shadow [built, Phase 57 T1,
+0.52.7; ADR 0075]**): `biomemap::rainfall` marches a prevailing wind (`biomeMap.windDirection`) across
+the face's map once per biome field, upwind cells first, the sea refilling the air, rising ground
+raining it out (`baseRain`, `upliftRain`), falling ground raining less (`leeDry`), the air losing what
+rained over `windReach`, so the lee of high ground is dry; the wetness is `(1 − rainShare)` × the
+rivers' + `rainShare` × the rainfall, `rainShare` 0 in the default world (neutral). A biome's weight is its `weight` × each range's smoothstep fit over ± its
 `blend`; the world's default biome is a **fallback** taking only what is left of 1 after the others (`fallback_weights`, B3), so a fitting biome takes its place at an ordinary weight of 1; then normalised (at most four per column; the default takes a column nothing fits). The column takes
 its surface from one biome, chosen against the cumulative weights by a dithered threshold (a noise and a
 per-column hash, `biomeMap.dither`), so borders are ragged and gradual; its fine relief is the weighted
@@ -1552,7 +1557,7 @@ ranges) and kept in the browser (`dwell.chisel`, append-only). A worker loads th
 (`ChiselPreview`, `dwell-client` `chisel.rs`): the face A height field built once per seed, the edit
 parsed and put on it (`TerrainGenerator::with_biomes_on`, `BiomeField::with_params`), tiles rasterised
 by the big map's rules (`lod_map::raster_with_heights`, `tint_rgb`) or as overlays (biome weights,
-temperature, wetness), 64² then 256² per change. The texture tab (B6) and Chisel in the game (B7)
+temperature, wetness, rainfall), 64² then 256² per change. The texture tab (B6) and Chisel in the game (B7)
 follow.
 
 1. **Layout (2D).** The coast distance of the interim island (above).

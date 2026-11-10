@@ -440,6 +440,12 @@ export function terrainRust({ world, biomes, fixtures = [], worlds = [] }) {
   rs.push(`    wet_reach: ${rf(bm.wetReach)},`);
   rs.push(`    dither_wavelength: ${bm.ditherWavelength},`);
   rs.push(`    dither: ${rf(bm.dither)},`);
+  rs.push(`    wind_direction: ${rf(bm.windDirection)},`);
+  rs.push(`    wind_reach: ${rf(bm.windReach)},`);
+  rs.push(`    base_rain: ${rf(bm.baseRain)},`);
+  rs.push(`    uplift_rain: ${rf(bm.upliftRain)},`);
+  rs.push(`    lee_dry: ${rf(bm.leeDry)},`);
+  rs.push(`    rain_share: ${rf(bm.rainShare)},`);
   rs.push('};');
   rs.push('');
   const list = (xs) => `&[${xs.map((x) => JSON.stringify(x)).join(', ')}]`;

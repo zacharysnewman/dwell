@@ -163,6 +163,9 @@ test('a bad biome or world terrain fails with the key and the problem', () => {
     [(t) => (t.rivers.leveeFall = 0), /rivers\.leveeFall must be in \(0, 10\]/],
     [(t) => (t.bands = {}), /terrain\.json: unknown bands/],
     [(t) => (t.biomeMap.wetReach = 0), /terrain\.json: biomeMap\.wetReach must be in \(0, 100000\]/],
+    [(t) => (t.biomeMap.rainShare = 2), /terrain\.json: biomeMap\.rainShare must be in \[0, 1\]/],
+    [(t) => (t.biomeMap.windDirection = 400), /terrain\.json: biomeMap\.windDirection must be in \[0, 360\]/],
+    [(t) => delete t.biomeMap.windReach, /terrain\.json: biomeMap\.windReach must be in \(0, 1000000\]/],
     [(t) => (t.spawn.maxHeight = 1), /spawn\.maxHeight must be greater than spawn\.minHeight/],
   ];
   for (const [edit, message] of worldCases) {

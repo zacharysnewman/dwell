@@ -490,7 +490,7 @@ function viewBar() {
     regenerate();
   };
   const overlay = select();
-  ['blocks', 'biome weights', 'temperature', 'wetness'].forEach((t, i) => {
+  ['blocks', 'biome weights', 'temperature', 'wetness', 'rainfall'].forEach((t, i) => {
     overlay.append(
       el('option', { value: String(i), textContent: t, selected: i === view.overlay }),
     );

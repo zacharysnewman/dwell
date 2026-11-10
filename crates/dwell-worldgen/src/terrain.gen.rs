@@ -30,6 +30,12 @@ pub const BIOME_MAP: BiomeMap = BiomeMap {
     wet_reach: 600.0,
     dither_wavelength: 24,
     dither: 0.25,
+    wind_direction: 270.0,
+    wind_reach: 5000.0,
+    base_rain: 0.15,
+    uplift_rain: 1.5,
+    lee_dry: 1.0,
+    rain_share: 0.0,
 };
 
 /// The biomes (shared/worldgen/biomes/*.json), the default (terrain.json `defaultBiome`) first.

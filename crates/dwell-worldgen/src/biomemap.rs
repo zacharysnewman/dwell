@@ -4,6 +4,11 @@
 //! meet in wide, gradual transitions. The world's height field is computed first and never read
 //! back from here: biomes only choose surface blocks and blend their bounded fine relief.
 //!
+//! The wetness is the rivers' and lakes' blended with the rain shadow's rainfall ([`rainfall`],
+//! systemic terrain T1): a prevailing wind marched across the map, carrying moisture from the sea
+//! and dropping it where the ground rises, so the lee of high ground is dry. `rainShare` 0 (the
+//! default world's) leaves the wetness the rivers' alone.
+//!
 //! A world with one biome never builds a map (`BiomeSet::single`): its weight is 1 everywhere and
 //! its columns are exactly the one biome's (the goldens).
 
@@ -123,6 +128,79 @@ pub struct BiomeField {
     dither_seed: u32,
     /// The climate gradient's direction (a unit vector from the seed).
     dir: (f64, f64),
+    /// Per map cell: the rain shadow's rainfall (0..1, [`rainfall`]).
+    rain: Vec<f32>,
+}
+
+/// The rain shadow on a map's grid ([`rainfall`]): per cell, the rain that falls (0..1) and the
+/// moisture the air still carries after it (0..1).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Rain {
+    pub rain: Vec<f32>,
+    pub moisture: Vec<f32>,
+}
+
+/// The rain shadow (systemic terrain T1) on an `n` × `n` grid of `cell` m whose ground is
+/// `height` m (the sea where `sea` marks it): the prevailing wind (`params.wind_direction`, the
+/// way it blows from) is marched across the grid, upwind cells first, each cell taking the air of
+/// the point two cells upwind (bilinear, so every corner it reads is already done; off the grid,
+/// the open sea's). Over the sea the air is refilled to 1 and rains the flat rate; over land the
+/// rain is the air's moisture × an intensity (`base_rain` per km, more by `uplift_rain` per 10 %
+/// grade the ground rises along the wind, less by `lee_dry` per 10 % grade it falls; within 0..1),
+/// and the air loses that rain × the step over `wind_reach`, so its moisture only falls inland:
+/// what rained on a windward slope is gone behind it. One pass, O(n² log n) for the order.
+pub fn rainfall(n: usize, cell: f64, height: &[f32], sea: &[bool], params: &BiomeMap) -> Rain {
+    let a = params.wind_direction.to_radians();
+    let up = (a.cos(), a.sin());
+    // Downwind is -up: cells by their projection on it, upwind first.
+    let key = |c: u32| {
+        let (i, j) = ((c as usize % n) as f64, (c as usize / n) as f64);
+        -(i * up.0 + j * up.1)
+    };
+    let mut order: Vec<u32> = (0..(n * n) as u32).collect();
+    order.sort_by(|&a, &b| key(a).total_cmp(&key(b)));
+    let ground = |c: usize| {
+        if sea[c] {
+            0.0
+        } else {
+            f64::from(height[c]).max(0.0)
+        }
+    };
+    let mut moisture = vec![1.0f32; n * n];
+    let mut rain = vec![0.0f32; n * n];
+    let step = 2.0 * cell;
+    let dry = (step / params.wind_reach.max(1e-9)).min(1.0);
+    let flat = (params.base_rain * step / 1000.0).clamp(0.0, 1.0);
+    let last = (n - 1) as f64;
+    for &c in &order {
+        let c = c as usize;
+        if sea[c] {
+            moisture[c] = 1.0;
+            rain[c] = flat as f32;
+            continue;
+        }
+        let (u, v) = ((c % n) as f64 + 2.0 * up.0, (c / n) as f64 + 2.0 * up.1);
+        let (m_up, h_up) = if u < 0.0 || v < 0.0 || u > last || v > last {
+            (1.0, 0.0)
+        } else {
+            let (i, j) = (u.floor() as usize, v.floor() as usize);
+            let (i1, j1) = ((i + 1).min(n - 1), (j + 1).min(n - 1));
+            let (fu, fv) = (u - i as f64, v - j as f64);
+            let bl = |g: &dyn Fn(usize) -> f64| {
+                let a = g(j * n + i) + (g(j * n + i1) - g(j * n + i)) * fu;
+                let b = g(j1 * n + i) + (g(j1 * n + i1) - g(j1 * n + i)) * fu;
+                a + (b - a) * fv
+            };
+            (bl(&|k| f64::from(moisture[k])), bl(&ground))
+        };
+        let grade = (ground(c) - h_up) / step * 10.0;
+        let r = (flat + params.uplift_rain * grade.max(0.0) - params.lee_dry * (-grade).max(0.0))
+            .clamp(0.0, 1.0);
+        let m_up = m_up.clamp(0.0, 1.0);
+        rain[c] = (m_up * r) as f32;
+        moisture[c] = (m_up * (1.0 - r * dry)) as f32;
+    }
+    Rain { rain, moisture }
 }
 
 /// A two-pass chamfer distance (m) on an `n` × `n` grid of `cell` m from the cells `seed` marks.
@@ -179,6 +257,8 @@ impl BiomeField {
             }
         }
         let fresh = chamfer(n, cell, |c| wet[c]);
+        let sea: Vec<bool> = (0..n * n).map(|c| map.is_sea(c)).collect();
+        let rain = rainfall(n, cell, &map.height, &sea, &params).rain;
         let a = f64::from(seed_word(world_seed, 0xB10E_0001)) / f64::from(u32::MAX)
             * std::f64::consts::TAU;
         Self {
@@ -191,6 +271,7 @@ impl BiomeField {
             climate_seed: seed_word(world_seed, 0xB10E_0002),
             dither_seed: seed_word(world_seed, 0xB10E_0003),
             dir: (a.cos(), a.sin()),
+            rain,
         }
     }
 
@@ -207,6 +288,11 @@ impl BiomeField {
         a + (b - a) * fv
     }
 
+    /// The rain shadow's rainfall at face-local (x, z), 0..1 ([`rainfall`]).
+    pub fn rainfall(&self, x: f64, z: f64) -> f64 {
+        self.sample(&self.rain, x, z)
+    }
+
     /// The geography at face-local (x, z), whose world height field is `elevation` m.
     pub fn geography(&self, x: i64, z: i64, elevation: f64) -> Geography {
         let p = &self.params;
@@ -221,9 +307,13 @@ impl BiomeField {
         let temperature = climate - p.lapse_rate * elevation.max(0.0) / 1000.0;
         let fresh = self.sample(&self.fresh, xf, zf);
         let t = (fresh / p.wet_reach).clamp(0.0, 1.0);
+        let mut wetness = 1.0 - t * t * (3.0 - 2.0 * t);
+        if p.rain_share > 0.0 {
+            wetness += (self.rainfall(xf, zf) - wetness) * p.rain_share;
+        }
         Geography {
             temperature,
-            wetness: 1.0 - t * t * (3.0 - 2.0 * t),
+            wetness,
             elevation,
             coast: self.sample(&self.coast, xf, zf),
         }

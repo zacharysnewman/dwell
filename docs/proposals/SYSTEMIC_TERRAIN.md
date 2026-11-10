@@ -1,8 +1,9 @@
 # Proposal: systemic terrain — rock, climate and life, with biomes as results
 
 **Status:** recorded 2026-11-10 from the owner's direction; extends ADR 0074 (biomes and Chisel) and
-[`TERRAIN_HYDROLOGY_AND_VOLUMES.md`](./TERRAIN_HYDROLOGY_AND_VOLUMES.md). Not architecture until an ADR
-adopts it.
+[`TERRAIN_HYDROLOGY_AND_VOLUMES.md`](./TERRAIN_HYDROLOGY_AND_VOLUMES.md). **Adopted by
+[ADR 0075](../adr/0075-systemic-terrain.md)** (2026-11-10), Phase 57 T1–T5; **T1, the rain shadow, built
+in 0.52.7** (§7).
 
 ## 1. The owner's direction (2026-11-10)
 
@@ -91,3 +92,23 @@ saved presets.
    island chains (not several small plates inside the island).
 
 Still open: volcanoes dormant first or active (§5 q5).
+
+## 7. T1, the rain shadow (built, 0.52.7)
+
+The climate layer's wind, as data in `terrain.json` `biomeMap` (`windDirection`, `windReach`,
+`baseRain`, `upliftRain`, `leeDry`, `rainShare`; validated by `biomes.mjs`, emitted into `BIOME_MAP`).
+`biomemap::rainfall` marches the wind over each face's world map once per biome field: the sea refills
+the air, rising ground (along the wind) rains it out, falling ground rains less, and what rained is gone
+from the air, so the lee of high ground is dry. A biome's wetness is `(1 − rainShare)` × the river/lake
+wetness + `rainShare` × the rainfall; `rainShare` is 0 in the default world (neutral, goldens
+byte-identical). Chisel: sliders for the keys (the biome map group), a **rainfall** overlay (index 4),
+recomputed with the biome field per edit (~70–90 ms per 256² tile at 16 km). Not done: a wind chosen
+from the seed; rain feeding rivers' flow (the hydrology still uses its own runoff).
+
+First look (seed 7, wind from +x, `windReach` 8 km, `rainShare` 1): every hill shows a green windward
+face and a tan lee, and a broad wet region where the wind meets the high ground first; with a short
+reach (1.5 km) the interior is uniformly dry and only the windward coast is wet. The pattern is
+dominated by per-slope aspect at the map's 100 m cells (the intensity saturates near a 7 % grade with
+`upliftRain` 1.5); a regional shadow behind a range is weaker than the slope striping. Tuning in Chisel
+(lower `upliftRain`, longer reach), or smoothing the ground the wind sees, is the next step.
+
