@@ -224,7 +224,7 @@ impl Kinds {
     }
 
     /// The build's registry; flooded cells are drawn as `dwell:water`.
-    fn build() -> &'static Self {
+    pub(crate) fn build() -> &'static Self {
         static KINDS: OnceLock<Kinds> = OnceLock::new();
         KINDS.get_or_init(|| Self::new(&STATES, &FLUIDS, dwell_blocks::state("dwell:water")))
     }
@@ -1465,7 +1465,16 @@ pub fn mesh_chunk_cut(
     origin: [i32; 3],
     cuts: &[([i32; 3], Cut)],
 ) -> Result<ChunkMeshes, LengthError> {
-    mesh_chunk_full(Kinds::build(), padded, light, mirror, origin, cuts, None)
+    mesh_chunk_full(
+        Kinds::build(),
+        padded,
+        light,
+        mirror,
+        origin,
+        cuts,
+        None,
+        ChunkFlags::default(),
+    )
 }
 
 /// [`mesh_chunk_cut`] with the chunk's ground items (docs/adr/0071-ground-items.md) baked into its
@@ -1478,7 +1487,51 @@ pub fn mesh_chunk_ground(
     cuts: &[([i32; 3], Cut)],
     ground: Option<&GroundJob>,
 ) -> Result<ChunkMeshes, LengthError> {
-    mesh_chunk_full(Kinds::build(), padded, light, mirror, origin, cuts, ground)
+    mesh_chunk_flags(
+        padded,
+        light,
+        mirror,
+        origin,
+        cuts,
+        ground,
+        ChunkFlags::default(),
+    )
+}
+
+/// What a chunk mesh leaves to other layers (proposals/WATER_GPU_SURFACE.md §3, item 6).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ChunkFlags {
+    /// Liquid cells' top faces are meshed (false: the GPU heightfield draws the water's surface;
+    /// its sides, falls and pour slopes, and flooded cells' water, are meshed as before).
+    pub water_tops: bool,
+}
+
+impl Default for ChunkFlags {
+    fn default() -> Self {
+        Self { water_tops: true }
+    }
+}
+
+/// [`mesh_chunk_ground`] with `flags`.
+pub fn mesh_chunk_flags(
+    padded: &[u16],
+    light: &[u8],
+    mirror: bool,
+    origin: [i32; 3],
+    cuts: &[([i32; 3], Cut)],
+    ground: Option<&GroundJob>,
+    flags: ChunkFlags,
+) -> Result<ChunkMeshes, LengthError> {
+    mesh_chunk_full(
+        Kinds::build(),
+        padded,
+        light,
+        mirror,
+        origin,
+        cuts,
+        ground,
+        flags,
+    )
 }
 
 /// [`mesh_chunk_at`] over the registry `kinds` describes.
@@ -1490,10 +1543,20 @@ pub(crate) fn mesh_chunk_with(
     mirror: bool,
     origin: [i32; 3],
 ) -> Result<ChunkMeshes, LengthError> {
-    mesh_chunk_full(kinds, padded, light, mirror, origin, &[], None)
+    mesh_chunk_full(
+        kinds,
+        padded,
+        light,
+        mirror,
+        origin,
+        &[],
+        None,
+        ChunkFlags::default(),
+    )
 }
 
 /// [`mesh_chunk_cut`] over the registry `kinds` describes.
+#[allow(clippy::too_many_arguments)] // the mesher's one internal entry: every public one passes through
 pub(crate) fn mesh_chunk_full(
     kinds: &Kinds,
     padded: &[u16],
@@ -1502,6 +1565,7 @@ pub(crate) fn mesh_chunk_full(
     origin: [i32; 3],
     cuts: &[([i32; 3], Cut)],
     ground: Option<&GroundJob>,
+    flags: ChunkFlags,
 ) -> Result<ChunkMeshes, LengthError> {
     let items = ground.map_or(Vec::new(), |g| ground_mesh::scatter(padded, origin, g));
     // The one-voxel apron, or the sky volume's deeper one (the client's jobs): the faces are
@@ -1536,7 +1600,15 @@ pub(crate) fn mesh_chunk_full(
                 (at, carve::mirror_cut(grain, cut))
             })
             .collect();
-        let mut m = mesh_cells(kinds, &mirror_padded(&inner), &occ, &flood, local, &carved);
+        let mut m = mesh_cells(
+            kinds,
+            &mirror_padded(&inner),
+            &occ,
+            &flood,
+            local,
+            &carved,
+            flags,
+        );
         ground_mesh::append(&mut m.opaque, kinds, &flood, &items, origin, true);
         ChunkMeshes {
             opaque: flip_arrays_y(m.opaque),
@@ -1549,7 +1621,7 @@ pub(crate) fn mesh_chunk_full(
             .filter(|(c, _)| in_chunk(*c))
             .map(|(c, cut)| (*c, *cut))
             .collect();
-        let mut m = mesh_cells(kinds, &inner, &occ, &flood, origin, &carved);
+        let mut m = mesh_cells(kinds, &inner, &occ, &flood, origin, &carved, flags);
         ground_mesh::append(&mut m.opaque, kinds, &flood, &items, origin, false);
         m
     };
@@ -1595,6 +1667,7 @@ fn mesh_cells(
     flood: &Flood,
     origin: [i32; 3],
     carved: &HashMap<[i32; 3], Cut>,
+    flags: ChunkFlags,
 ) -> ChunkMeshes {
     // A cut cell is carved only if it is drawn as an opaque cube.
     let carved: HashMap<[i32; 3], Cut> = carved
@@ -1692,6 +1765,10 @@ fn mesh_cells(
                         continue;
                     }
                     if hidden(&k, &kn, m, cells.state(nx, ny, nz), face) {
+                        continue;
+                    }
+                    // Face-local up (2): the heightfield draws the liquid's surface instead.
+                    if face == 2 && k.liquid && !flags.water_tops {
                         continue;
                     }
                     if k.liquid && slope_over(&mut transparent, &cells, &k, cell, face) {
@@ -1890,3 +1967,39 @@ fn mesh_cells(
 #[cfg(test)]
 #[path = "mesher_tests.rs"]
 mod tests;
+
+/// Each column's drawn water surface in a chunk (proposals/WATER_GPU_SURFACE.md §3, item 2): for
+/// the [`PAD`] × [`PAD`] columns of `padded` (the chunk's 16 and its one-column apron, x fastest,
+/// then z), the face-local height in chunk-local metres of the top of its topmost liquid cell in
+/// the chunk whose top shows (the mesher's drawn surface: `fill` and `surface_drop`), or
+/// [`crate::heightfield::DRY`] where none does (no liquid, the water going on up into the chunk
+/// above, or a solid or flooded block over it). A face-B chunk (`mirror`) is read face-local.
+pub(crate) fn water_levels_with(kinds: &Kinds, padded: &[u16], mirror: bool) -> Vec<f32> {
+    let local;
+    let padded = if mirror {
+        local = mirror_padded(padded);
+        &local[..]
+    } else {
+        padded
+    };
+    let at = |x: i32, y: i32, z: i32| padded.get(padded_index(x, y, z)).copied().unwrap_or(0);
+    let mut out = vec![crate::heightfield::DRY; PAD * PAD];
+    for z in -1..=N {
+        for x in -1..=N {
+            for y in (0..N).rev() {
+                let k = kinds.of(at(x, y, z));
+                if !k.liquid {
+                    continue;
+                }
+                let above = kinds.of(at(x, y + 1, z));
+                let shows = !(same_fluid(&k, &above) || above.flooded || above.occludes);
+                if shows {
+                    let top = fluid_top(y, &k.style, k.fill) * CELL_H;
+                    out[(x + 1) as usize + PAD * (z + 1) as usize] = top as f32;
+                }
+                break;
+            }
+        }
+    }
+    out
+}

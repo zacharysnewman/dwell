@@ -220,9 +220,11 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
             origin,
             cuts,
             ground,
+            water_tops,
         } => {
             w.u8(4);
-            w.u8(u8::from(*mirror));
+            // Bit 0 the mirror, bit 1 no water tops.
+            w.u8(u8::from(*mirror) | if *water_tops { 0 } else { 2 });
             origin.iter().for_each(|v| w.i32(*v));
             w.u16s(padded);
             w.bytes(light);
@@ -310,7 +312,8 @@ pub fn decode_job(bytes: &[u8]) -> Result<(u32, Job), DecodeError> {
             face: r.u8()?,
         },
         4 => {
-            let mirror = r.u8()? != 0;
+            let bits = r.u8()?;
+            let (mirror, water_tops) = (bits & 1 != 0, bits & 2 == 0);
             let origin = [r.i32()?, r.i32()?, r.i32()?];
             let padded = r.u16s()?;
             let light = r.bytes()?;
@@ -349,6 +352,7 @@ pub fn decode_job(bytes: &[u8]) -> Result<(u32, Job), DecodeError> {
                 light,
                 cuts,
                 ground,
+                water_tops,
             }
         }
         5 => {
@@ -553,6 +557,7 @@ mod tests {
                 c
             })],
             ground: Some((0x1234_5678_9abc, vec![[1, 2, 3], [4, 5, 6]])),
+            water_tops: false,
         });
         jobs.push(Job::MeshSection {
             cells: vec![1; dwell_world::lod::VOLUME],
@@ -588,6 +593,7 @@ mod tests {
                 origin: [0; 3],
                 cuts: Vec::new(),
                 ground: Some((7, vec![[1, 2, 3]])),
+                water_tops: true,
             },
         );
         for n in 0..bytes.len() {

@@ -283,6 +283,9 @@ impl Mesher for MeshJobs {
                 origin: job.coord.map(|c| c * dwell_world::CHUNK_SIZE),
                 cuts: job.cuts,
                 ground: job.ground,
+                // The GPU heightfield's draw turns this off for its tiers (WATER_GPU_SURFACE.md
+                // C6a's rest); until then every chunk meshes its water's tops.
+                water_tops: true,
             },
         );
     }

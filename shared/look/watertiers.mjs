@@ -29,6 +29,10 @@ const TIER = {
   rippleLayers: ['count', 1, MAX_LAYERS],
   flowStreaks: 'bool',
   bankBand: 'bool',
+  heightfield: 'bool',
+};
+const HEIGHTFIELD = {
+  joinM: [0.01, 2],
 };
 const BAND = {
   reachM: [0.1, 100],
@@ -79,7 +83,7 @@ function checkValue(where, v, spec) {
 
 /** Checks the tiers against the schema and each other; returns them. Throws naming the entry. */
 export function validateWaterTiers(data) {
-  checkKeys('(root)', data, ['tiers', 'aliases', 'band', 'caustics', 'causticEveryFrames']);
+  checkKeys('(root)', data, ['tiers', 'aliases', 'band', 'caustics', 'causticEveryFrames', 'heightfield']);
   if (!Array.isArray(data.tiers) || data.tiers.length === 0) fail('tiers must be a non-empty list');
   if (data.tiers.length > MAX_TIERS) fail(`tiers: at most ${MAX_TIERS}`);
   const ids = new Set();
@@ -91,6 +95,7 @@ export function validateWaterTiers(data) {
     ids.add(t.id);
     if (t.cpu && t.readsScene) fail(`${where} (${t.id}): the CPU adapter's tier may not read the scene`);
     if (t.surfaceCaustics && t.readsScene) fail(`${where} (${t.id}).surfaceCaustics is for a tier that reads no scene (it draws the floor's own)`);
+    if (t.heightfield && t.cpu) fail(`${where} (${t.id}).heightfield: the CPU adapter's tier draws the meshed water (its per-vertex fetch is a GPU's)`);
     if (t.bankBand && !t.readsScene) fail(`${where} (${t.id}).bankBand needs readsScene (it samples the scene copy)`);
   });
   const cpu = data.tiers.filter((t) => t.cpu);
@@ -109,6 +114,8 @@ export function validateWaterTiers(data) {
   checkKeys('caustics', data.caustics, Object.keys(CAUSTICS));
   for (const [k, spec] of Object.entries(CAUSTICS)) checkValue(`caustics.${k}`, data.caustics[k], spec);
   checkValue('causticEveryFrames', data.causticEveryFrames, ['count', 1, 8]);
+  checkKeys('heightfield', data.heightfield, Object.keys(HEIGHTFIELD));
+  for (const [k, spec] of Object.entries(HEIGHTFIELD)) checkValue(`heightfield.${k}`, data.heightfield[k], spec);
   return data;
 }
 
@@ -150,6 +157,13 @@ export function waterTiersRust(data) {
   rs.push('');
   rs.push('/// The caustic tile is redrawn every this many frames.');
   rs.push(`pub const CAUSTIC_EVERY_FRAMES: u32 = ${data.causticEveryFrames};`);
+  rs.push('');
+  rs.push('/// The GPU heightfield (`heightfield` tiers).');
+  // As rustfmt lays it out: one line while it fits in 100 columns.
+  const fields = Object.entries(HEIGHTFIELD).map(([k, spec]) => `${snake(k)}: ${value(data.heightfield[k], spec)}`);
+  const one = `pub const HEIGHTFIELD: Heightfield = Heightfield { ${fields.join(', ')} };`;
+  if (one.length <= 100) rs.push(one);
+  else rs.push('pub const HEIGHTFIELD: Heightfield = Heightfield {', ...fields.map((f) => `    ${f},`), '};');
   rs.push('');
   return rs.join('\n');
 }

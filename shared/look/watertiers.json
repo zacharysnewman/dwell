@@ -11,7 +11,8 @@
       "surfaceCaustics": false,
       "rippleLayers": 1,
       "flowStreaks": false,
-      "bankBand": false
+      "bankBand": false,
+      "heightfield": false
     },
     {
       "id": "low",
@@ -23,7 +24,8 @@
       "surfaceCaustics": true,
       "rippleLayers": 1,
       "flowStreaks": false,
-      "bankBand": false
+      "bankBand": false,
+      "heightfield": false
     },
     {
       "id": "medium",
@@ -35,7 +37,8 @@
       "surfaceCaustics": false,
       "rippleLayers": 3,
       "flowStreaks": true,
-      "bankBand": false
+      "bankBand": false,
+      "heightfield": false
     }
   ],
   "aliases": {
@@ -56,5 +59,9 @@
     "depthM": 0.6,
     "gain": 0.3
   },
-  "causticEveryFrames": 2
+  "causticEveryFrames": 2,
+  "heightfield": {
+    "$comment": "The GPU heightfield (proposals/WATER_GPU_SURFACE.md §3, C6a): a tier with heightfield true draws the near water's surface from a per-chunk height atlas (18 × 18 levels per chunk, the 16 columns and a one-column apron, filled from the eighths the client has: dwell-mesh heightfield.rs) on one shared grid mesh, and the chunk mesher stops emitting liquid tops (its sides and falls stay). joinM: a grid corner takes the mean of the wet columns around it within joinM of the highest; a column further below keeps its own level (a real drop, C6b's skirts). Off in every tier until the renderer draws it (C6a is the data, the atlas fill, the grid and its vertex shader, and the mesher's flag).",
+    "joinM": 0.2
+  }
 }
