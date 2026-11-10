@@ -269,7 +269,9 @@ pub struct Biome {
 mod table {
     include!("terrain.gen.rs");
 }
-pub use table::{BIOME_MAP, BIOMES, FIXTURE_BIOMES, FIXTURE_WORLDS, HEIGHT, SURFACE};
+pub use table::{
+    BIOME_MAP, BIOMES, FIXTURE_BIOMES, FIXTURE_WORLDS, HEIGHT, PRESET_BIOMES, SURFACE,
+};
 
 /// The biome named `name` (`shared/worldgen/biomes`), if the build has it.
 pub fn find_biome(name: &str) -> Option<&'static Biome> {

@@ -20,6 +20,7 @@ import {
   validateTerrainAndBiomes,
   validateFixtureWorlds,
   validateFixtureBiomes,
+  validatePresetBiomes,
   validateVolume,
   volumeRust,
 } from './gen.mjs';
@@ -76,7 +77,8 @@ const terrainOf = (world, biomes) => validateTerrainAndBiomes(world, biomes, blo
 test('the checked-in terrain and biomes are valid and generate the checked-in Rust', () => {
   const fixtures = validateFixtureBiomes(loadBiomes(join(here, 'biomes/fixtures')), blocks);
   const worlds = validateFixtureWorlds(loadBiomes(join(here, 'worlds')), loadTerrain());
-  const rs = terrainRust({ ...terrainOf(loadTerrain(), loadBiomes()), fixtures, worlds });
+  const presets = validatePresetBiomes(loadBiomes(join(here, 'biomes/presets')), blocks);
+  const rs = terrainRust({ ...terrainOf(loadTerrain(), loadBiomes()), fixtures, presets, worlds });
   const checkedIn = readFileSync(join(here, '../../crates/dwell-worldgen/src/terrain.gen.rs'), 'utf8');
   assert.equal(rs, checkedIn, 'run `node shared/worldgen/gen.mjs`');
 });
@@ -510,4 +512,38 @@ test('a biome water look and the bank fields are checked; the archipelago fixtur
     mut(b);
     assert.throws(() => validateBiome(b, blocks, refs), msg);
   }
+});
+
+test('the preset biomes validate, each labelled and described, and stay off the default world', () => {
+  const presets = validatePresetBiomes(loadBiomes(join(here, 'biomes/presets')), blocks);
+  assert.ok(presets.length >= 12, `${presets.length} presets`);
+  for (const p of presets) {
+    assert.match(p.name, /^preset:/);
+    assert.ok(p.label.length <= 40 && p.description.length <= 200, p.name);
+  }
+  // Not one of the world's biomes: the default world is unchanged.
+  const { biomes } = terrainOf(loadTerrain(), loadBiomes());
+  assert.deepEqual(
+    biomes.map((b) => b.name),
+    ['dwell:default'],
+  );
+  const one = presets[0];
+  const bad = [
+    [(b) => delete b.label, /a preset needs a label and a description/],
+    [(b) => (b.label = ''), /label must be text of 1 to 40 characters/],
+    [(b) => (b.description = 'x'.repeat(201)), /description must be text of 1 to 200 characters/],
+    [(b) => (b.label = presets[1].label), /preset label .* is used twice/],
+  ];
+  for (const [edit, want] of bad) {
+    const b = structuredClone(one);
+    edit(b);
+    assert.throws(() => validatePresetBiomes([b, ...presets.slice(1)], blocks), want);
+  }
+  assert.throws(
+    () => validatePresetBiomes(presets, blocks, undefined, [one.name]),
+    /preset name .* is used twice/,
+  );
+  // A fixture preset by data alone validates.
+  const extra = { ...structuredClone(one), name: 'preset:test_extra', label: 'Test extra' };
+  assert.equal(validatePresetBiomes([...presets, extra], blocks).length, presets.length + 1);
 });
