@@ -433,7 +433,14 @@ Poses are **not sent** **[built]**. Each client animates others from what snapsh
 airborne and rising faster than 0.5 m/s along the face's up, else fall; the landing one-shot when
 touching down slower than 1.5 m/s (faster goes straight into the gait, so the feet don't slide);
 slide (the steep slide and the sprint slide are both `Sliding`), sprint, walk, crouch and
-crouch-walk by speed (0.4 m/s). The rest, as built:
+crouch-walk by speed (0.4 m/s). **The speed is over the ground carrying the player** (0.50.65; owner,
+2026-11-09: walking played while standing still on moving bodies): the controller's state is its motion
+less the carry (`PLAYER_CONTROLLER.md` §3, `step_state`), and the animator's velocity, the gait's clip
+rate and the footsteps' strides are the velocity less the moving ground's. Your own take off the
+controller's `base_velocity` (`ClientState::carry`); a remote's is the drawn body under its feet, found
+by the client from the pieces' snapshots (`Pieces::ground_velocity`: a ray ¼ m either side of the feet,
+the body's velocity and spin at that point; `bodies::over_its_ground`), so nothing new is sent. A
+remote over a body the client no longer draws reads as on the world's ground. The rest, as built:
 
 - **The look** **[planned, C2]**: which character, variant, accessories and slot overrides a player
   wears, by name. Everyone wears the default look (`wanderer`) for now: sending it is a message, a

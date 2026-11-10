@@ -83,6 +83,7 @@ fn into_the_wall(f: FaceFrame, kick: f32, input: Option<Input>, seconds: f32) ->
             crouched: c.crouching,
             face: f,
             submerged: 0.0,
+            carry: [0.0; 3],
             ground: near.ground,
             body: near.body,
             walls: near.walls,
