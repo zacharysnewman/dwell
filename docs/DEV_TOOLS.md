@@ -139,6 +139,7 @@ stretching a scaled canvas) and page parameters (`params`: dev switches such as 
 | Config | Scale | Params |
 | --- | --- | --- |
 | `raster` (baseline) | 1 | — |
+| `mapbuild-off` | 1 | `?mapbuild=off`: no big-map background build while the map is shut (ADR 0068, 0.52.13), to measure its cost |
 | `outline-silhouette`, `outline-creases`, `outline-blocks` | 1 | `?outline=` (ART_DIRECTION.md §7) |
 | `raster-half` | 0.5 | — |
 | `loading-off` | 1 | `?loading=off` (no loading screen on joining, ARCHITECTURE.md §6.3) |

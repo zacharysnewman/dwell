@@ -1224,7 +1224,11 @@ export class MapUi {
       MAP.revealed.tileCells,
       MAP.revealed.jobsInFlight,
       MAP.revealed.budgetMs,
-      MAP.revealed.backgroundJobs,
+      // `?mapbuild=off` (DEV_TOOLS.md): no background build with the map shut, to measure its cost.
+      typeof location !== 'undefined' &&
+        new URLSearchParams(location.search).get('mapbuild') === 'off'
+        ? 0
+        : MAP.revealed.backgroundJobs,
       tiles,
       tilePrefix(world, version),
     );

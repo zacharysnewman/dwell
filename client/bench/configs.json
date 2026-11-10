@@ -4,6 +4,13 @@
   "deltaE": 2.3,
   "configs": [
     {
+      "name": "mapbuild-off",
+      "notes": "No big-map background build with the map shut (ADR 0068, 0.52.13): its cost against the default.",
+      "params": {
+        "mapbuild": "off"
+      }
+    },
+    {
       "name": "raster",
       "notes": "The mesher at full resolution."
     },
