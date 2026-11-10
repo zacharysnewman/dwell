@@ -711,8 +711,6 @@ pub struct TerrainGenerator {
     /// none for the plain terrain. Chunks only: the LOD draws the height field's top.
     volume: Option<Arc<Volume>>,
     world_seed: u64,
-    /// Each river's rows (`RiverRows`: which are a chute's), built on demand.
-    rows: Arc<std::sync::RwLock<HashMap<u32, Arc<RiverRows>>>>,
 }
 
 /// The ramp pieces of the natural surface materials, resolved by name once: for each material,
@@ -806,7 +804,6 @@ impl TerrainGenerator {
             volume: None,
             cache_id: next_cache_id(),
             world_seed,
-            rows: Arc::default(),
         }
         .with_placements(&PLACEMENTS)
     }
@@ -1219,28 +1216,9 @@ impl TerrainGenerator {
         c
     }
 
-    /// The height field's column at (x, z) (`column` without the volume).
     /// The row a river's or lake's water surface lies on at full-detail column (x, z) (the rows
     /// below it water); none where no river channel or lake is. A light lookup for the waterline
     /// (docs/WATER_FLOW.md §17).
-    /// The river whose channel holds full-detail column (x, z), and its surface row (none off a
-    /// channel, or at the sea's level).
-    fn river_row_at(&self, x: i64, z: i64) -> Option<(u32, i32)> {
-        if !inside_world_disc(x, z) || !self.map.channels.near(x as f64, z as f64, 0.0) {
-            return None;
-        }
-        let (wx, wz) = self.warp(
-            self.meander_seeds,
-            x,
-            z,
-            S.river_meander,
-            S.river_meander_wavelength,
-        );
-        let r = self.map.channels.query(wx, wz, 0.0, f64::INFINITY)?;
-        (r.d < r.half && r.level > CELL_H)
-            .then(|| (r.river, surface_row((SEA_LEVEL_M + r.level) as f32)))
-    }
-
     fn water_row_at(&self, x: i64, z: i64) -> Option<i32> {
         if !inside_world_disc(x, z) {
             return None;
@@ -1342,8 +1320,8 @@ impl TerrainGenerator {
             fade = fade.min(smooth01(-l.sdf / bs.detail_water_fade.max(1e-6)));
         }
         let mut h = base + detail * fade;
-        let mut on_lip = false;
-        let mut stream = false;
+        let on_lip = false;
+        let stream = false;
         let mut water = Water::None;
         let mut level = 0.0f64;
         if let Some(l) = &lake {
@@ -1373,34 +1351,10 @@ impl TerrainGenerator {
                 if water != Water::Lake {
                     water = Water::River;
                     level = r.level;
-                    // No lips (BUGS.md #29, Phase 53 G1a): a step is the water falling a row from
-                    // one pool to the next, the bed under each at its own depth; the water grid
-                    // rests what is drawn (WATER_SURFACE_GRID.md §2b), so nothing holds a pool up.
-                    // A chute (G2, ADR 0059): steps too close for pools; its bed a row under its
-                    // surface, dry but for a stream running down its middle as wide as its river's
-                    // flow's cells (on any heading).
-                    // So is a column of a river standing two rows or more over another's water
-                    // beside it (where a river joins one lower than it reaches): no wall of water.
-                    let row = surface_row((SEA_LEVEL_M + r.level) as f32);
-                    let over_another = || {
-                        [(1, 0), (-1, 0), (0, 1), (0, -1)]
-                            .into_iter()
-                            .any(|(dx, dz)| {
-                                self.river_row_at(x + dx, z + dz)
-                                    .is_some_and(|(n, k)| n != r.river && k <= row - 2)
-                            })
-                    };
-                    if cell == 1
-                        && (self.river_rows(r.river).steep.contains(&row) || over_another())
-                    {
-                        h = drawn - CELL_H;
-                        water = Water::None;
-                        level = 0.0;
-                        on_lip = true;
-                        let faces = (r.dir.0.abs() + r.dir.1.abs()).max(1.0);
-                        let half = (0.5 * f64::from(lip_cells(r.q)) / faces).max(0.71);
-                        stream = r.d < half;
-                    }
+                    // No lips (BUGS.md #29, Phase 53 G1a) and no dry chutes (BUGS.md #57): a step
+                    // is the water falling a row from one reach to the next, the bed under each
+                    // at its own depth, so the bed only falls downstream however steep the river;
+                    // the water grid rests what is drawn (WATER_SURFACE_GRID.md §2b).
                 }
             } else if water != Water::Lake {
                 // The valley down to the banks, blended back into the land at its reach: by every
@@ -3226,9 +3180,10 @@ fn smooth_min(a: f64, b: f64, k: f64) -> f64 {
     b + (a - b) * h - k * h * (1.0 - h)
 }
 
-#[path = "river_rows.rs"]
-mod river_rows;
-pub use river_rows::*;
+/// The flow (m³/s) one lip cell passes: water's weir at a full row's head (`lip_cells`).
+pub fn lip_cell_flow() -> f64 {
+    dwell_world::flow::sill_flow(dwell_world::flow::water_weir(), 1.0, CELL_H)
+}
 
 #[cfg(test)]
 mod tests {
@@ -3473,8 +3428,8 @@ mod tests {
 
     /// BUGS.md #29 (owner, 2026-11-05: "dirt walls extending into the river, usually at step
     /// downs"): the lips stood the channel's columns at a step `lipRise` rows over the water. Near
-    /// rivers of seeds 0 and 1 no column inside a river's channel stands dry over its water but a
-    /// chute's (a stream down a dry bed a row under its surface). Red before: the lips' walls.
+    /// rivers of seeds 0 and 1 no column inside a river's channel stands dry over its water (no
+    /// chute's dry bed either since BUGS.md #57). Red before: the lips' walls.
     #[test]
     fn no_dry_wall_stands_in_a_rivers_channel() {
         // face-a-only: the generator's columns are face-local; face B is generated by the same
@@ -3510,9 +3465,6 @@ mod tests {
                             continue;
                         }
                         let row = surface_row((SEA_LEVEL_M + r.level) as f32);
-                        if g.river_rows(r.river).steep.contains(&row) {
-                            continue; // a chute's dry bed, a row under its surface
-                        }
                         let col = g.base_column(x, z, 1);
                         if col.water == Water::Lake {
                             continue; // in a lake, the lake's surface
@@ -3523,6 +3475,90 @@ mod tests {
                             "seed {seed}: ({x}, {z}) stands at row {} over its river's water at row {row}",
                             top_voxel(col.height)
                         );
+                    }
+                }
+            }
+        }
+        assert!(checked >= 1000, "channel columns checked: {checked}");
+    }
+
+    /// BUGS.md #57 (owner, 2026-11-10: "grass sections a few blocks higher than the river bed,
+    /// water kinda waterfalls over them"): a chute's bed stood dry a row under its surface, over
+    /// the pool's bed above it, and its first column was raised a row over that pool's water (the
+    /// waterline). Along rivers of seeds 0 and 7, on both faces, the owner's site among them, a
+    /// channel's bed (its columns near the centreline) never rises downstream by more than
+    /// 0.25 m, and every column in a channel holds water. Red before: the chutes' dry humps.
+    #[test]
+    fn a_rivers_bed_never_rises_downstream() {
+        // both-faces: each face's own generator (face-local), the faces' seeds.
+        let mut checked = 0;
+        for seed in [0u64, 7] {
+            for face in [dwell_world::Face::A, dwell_world::Face::B] {
+                let g = TerrainGenerator::new(crate::bifacial::face_seed(seed, face));
+                let mut picks = Vec::new();
+                if seed == 0 && face == dwell_world::Face::A {
+                    picks.push((-3850, 20040)); // the owner's site (river 42)
+                }
+                for r in &g.map.rivers {
+                    for (i, v) in r.path.iter().enumerate() {
+                        if i % 40 == 20 && v.surface > 3.0 {
+                            picks.push((v.x as i64, v.z as i64));
+                        }
+                    }
+                }
+                picks.truncate(30);
+                for (px, pz) in picks {
+                    // (−level, height) of the centre columns, by river
+                    let mut beds: dwell_world::hash::HashMap<u32, Vec<(f64, f32)>> =
+                        Default::default();
+                    for dx in -20..=20 {
+                        for dz in -20..=20 {
+                            let (x, z) = (px + dx, pz + dz);
+                            let (wx, wz) = g.warp(
+                                g.meander_seeds,
+                                x,
+                                z,
+                                S.river_meander,
+                                S.river_meander_wavelength,
+                            );
+                            let Some(r) = g.map.channels.query(wx, wz, 0.0, f64::INFINITY) else {
+                                continue;
+                            };
+                            if r.d >= r.half || r.level <= CELL_H {
+                                continue;
+                            }
+                            let col = g.base_column(x, z, 1);
+                            if col.water == Water::Lake || col.water == Water::Sea {
+                                continue;
+                            }
+                            checked += 1;
+                            assert!(
+                                col.water == Water::River,
+                                "seed {seed} {face:?}: ({x}, {z}) in river {}'s channel is dry at {}",
+                                r.river,
+                                col.height
+                            );
+                            // Downstream by the river's own level (it only falls along its
+                            // course; the projection's distance along wanders across a bend).
+                            if r.d < 0.1 * r.half {
+                                beds.entry(r.river)
+                                    .or_default()
+                                    .push((-r.level, col.height));
+                            }
+                        }
+                    }
+                    for (river, mut bed) in beds {
+                        bed.sort_by(|a, b| a.0.total_cmp(&b.0));
+                        let mut lowest = f32::INFINITY;
+                        for (s, h) in bed {
+                            assert!(
+                                h <= lowest + 0.25,
+                                "seed {seed} {face:?}: river {river}'s bed rises to {h} under its level \
+                                 {:.2}, over {lowest} upstream (near {px}, {pz})",
+                                -s
+                            );
+                            lowest = lowest.min(h);
+                        }
                     }
                 }
             }
