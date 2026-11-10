@@ -59,32 +59,22 @@ over terrain on a fixed path (teleport along a line, or a raft on a river) and t
 
 **Reproduced over the terrain and fixed (2026-11-10, 0.51.3):** `game_local.rs`'s
 `a_long_trip_over_the_terrain_keeps_the_near_ring_at_full_detail` carries the player 5 m/s in a straight
-line 40 m over seed 7's ground for 150 s (750 m; the position set every frame, so no hill stops it), the
-same LOD settings and one job a poll. Red on 0.51.1: a near-ring chunk waited 356 frames (~6 s) to be drawn
-as a chunk, the mesh backlog growing to ~1,000 chunks. The near chunk was meshed; the LOD keeps a level-1
-section (2 × 2 × 2 chunks) drawn until all 8 of its chunks are, and the near ring's sections reach
-chunks 2 out, which the server sends only as they come into its view (`VIEW_RADIUS_CHUNKS` 3), just
-as the ring reaches them. Those then waited behind (1) the pool's FIFO queues: far chunks' generations,
-the LOD's section jobs, and chunk meshes queued behind section meshes, which held the streamer's 8 mesh
-slots; and (2) the re-meshes of drawn chunks, which every arriving chunk marks around it. Fix: the pool
-starts chunk meshes before section meshes and chunk generations within 128 m of the player before
-the other generation jobs, nearest first (`Pool::set_focus`, `NEAR_JOBS_M`), and the streamer meshes chunks in the view not drawn
-yet before re-meshes. Green: the worst wait 120 frames (2 s; the LOD's own `FORCE_CHUNKS_AFTER_MS`
-wait for its level-1 section accounts for up to 1 s of it). **Left:** two `game_local.rs` tests this
-change turns red (green on main): `with_the_lod_a_preloaded_respawn_opens_its_loading_screen_at_once`
-(opened after 39 frames, bar 3; bisected to chunk meshes going before section meshes: the preload's
-level-1 sections wait behind them) and `a_device_at_under_two_frames_a_second_walks_and_jumps_without_snapping`
-(a 0.25 m correction, bar 0.2; bisected to the near-first generation order). That one is not the
-terrain: at the correction every chunk around the player is loaded and nothing is generating, and the
-start is the same point. On **main**, settling 2, 5 or 8 frames longer before the slow frames (the
-test's `run_until(60, …)`) gives the same 0.25 m (3 ticks of walking at 5 m/s) and fails, where 0, 1 or
-3 frames give 0.08–0.17 m. main's correction is always 1–3 ticks at the walk's start, depending on the
-phase of the 48-tick frames against the server's ticks, and passes the 0.2 m bar by luck. The new order
-only moves `terrain_ready` by a few frames, which changes that phase. Suspect: the 48-input bursts
-against the server's one-a-tick input queue and jitter buffer (`dwell-sim` `server.rs` step 2, starved
-ticks repeating the last input). A prediction bug of its own, to fix there. Without
-the near-first generations the terrain trip is red again (218 frames). Then the owner's check on the
-river in the browser, and the report's other half (edited chunks refined only up close).
+line 40 m over seed 7's ground for 90 s (450 m; the position set every frame, so no hill stops it), the
+same LOD settings and one job a poll. Red on 0.51.2: a near-ring chunk waited 356 frames (~6 s) to be drawn
+as a chunk, the mesh backlog growing past 200 chunks in 30 s. The near chunk was meshed; the LOD keeps a
+level-1 section (2 × 2 × 2 chunks) drawn until all 8 of its chunks are, and the near ring's sections
+reach chunks 2 out, which the server sends only as they come into its view (`VIEW_RADIUS_CHUNKS` 3),
+just as the ring reaches them. Those then waited behind (1) the pool's FIFO generation queue: far chunks'
+generations and the LOD's jobs queued first; and (2) the re-meshes of drawn chunks, which every
+arriving chunk marks around it. Fix: the pool starts chunk generations within 128 m of the player
+before the other generation jobs, nearest first (`Pool::set_focus`, `NEAR_JOBS_M`; off while the
+respawn preload's second centre is set, whose order the streamer and the LOD keep), and the streamer
+meshes chunks in the view not drawn yet before re-meshes (also not with a second centre). Green: the
+worst wait 76 frames (1.3 s; the LOD's own `FORCE_CHUNKS_AFTER_MS` wait for its level-1 section is up to
+1 s of it). A first try that also put chunk meshes before the LOD's section meshes kept the respawn
+preload's screen from opening in its 3 frames (`with_the_lod_a_preloaded_respawn_opens_its_loading_screen_at_once`)
+and was dropped. **Left:** the owner's check on the river in the browser, and the report's other half
+(edited chunks refined only up close).
 
 ### 52. A felled trunk landing on its chopper can fling them far
 

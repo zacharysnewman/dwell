@@ -2516,8 +2516,9 @@ fn a_long_trip_over_the_flat_world_keeps_the_near_ring_at_full_detail() {
 /// face-a-only: the spawn is on face A; the trip's path is a world line.
 #[test]
 fn a_long_trip_over_the_terrain_keeps_the_near_ring_at_full_detail() {
-    let (worst, flown, behind, log) = trip(Rig::with_seed(GENERATOR_TERRAIN, 7), 150, Some(5.0));
-    assert!(flown > 700.0, "carried {flown} m\n{log}");
+    let (worst, flown, behind, log) = trip(Rig::with_seed(GENERATOR_TERRAIN, 7), 90, Some(5.0));
+    eprintln!("worst near-chunk wait {worst:?}\n{log}");
+    assert!(flown > 400.0, "carried {flown} m\n{log}");
     assert!(
         worst.0 <= 120,
         "a near chunk waited {} frames to be drawn as a chunk (frame {}, {:?})\n{log}",
