@@ -31,6 +31,9 @@ export class LoopbackTransport implements Transport {
   /** The local server's last second: its ticks, and their mean time (ms; null before a tick). */
   serverTicks: number | null = null;
   serverTickMs: number | null = null;
+  /** The world's game mode (ADR 0065) as the local server last said ('' before it did). */
+  mode = '';
+  private readonly modeWaits: ((mode: string) => void)[] = [];
   /** Callers waiting for a save to finish, oldest first (the worker answers in order). */
   private readonly saving: ((ok: boolean) => void)[] = [];
   private readonly reports: ((report: string | null) => void)[] = [];
@@ -59,6 +62,7 @@ export class LoopbackTransport implements Transport {
           onStage?.(e.data.id, e.data.phase, e.data.atMs - performance.timeOrigin);
         } else if (e.data.t === 'ready') {
           const transport = new LoopbackTransport(worker);
+          transport.mode = e.data.mode ?? '';
           transport.post({
             t: 'connect',
             session: SESSION,
@@ -138,6 +142,18 @@ export class LoopbackTransport implements Transport {
     });
   }
 
+  /**
+   * The host switches the world's game mode (ADR 0065); resolves with the mode the world is in
+   * after it (the old one if the name was refused, or once the transport is closed).
+   */
+  setMode(name: string): Promise<string> {
+    if (this.closed) return Promise.resolve(this.mode);
+    return new Promise((resolve) => {
+      this.modeWaits.push(resolve);
+      this.post({ t: 'setMode', mode: name });
+    });
+  }
+
   close(): void {
     if (this.closed) return;
     this.post({ t: 'disconnect', session: SESSION });
@@ -158,6 +174,7 @@ export class LoopbackTransport implements Transport {
     for (const resolve of this.saving.splice(0)) resolve(false);
     for (const resolve of this.reports.splice(0)) resolve(null);
     for (const resolve of this.mapFinds.splice(0)) resolve(null);
+    for (const resolve of this.modeWaits.splice(0)) resolve(this.mode);
     this.handlers?.onClose({ message });
     this.handlers = null;
   }
@@ -182,6 +199,10 @@ export class LoopbackTransport implements Transport {
         break;
       case 'saved':
         this.saving.shift()?.(msg.ok);
+        break;
+      case 'mode':
+        this.mode = msg.mode;
+        this.modeWaits.shift()?.(msg.mode);
         break;
       case 'waterReport':
         this.reports.shift()?.(msg.report);

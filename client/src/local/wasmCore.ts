@@ -117,6 +117,14 @@ export class LocalCore {
   datagram(session: number, bytes: Uint8Array): void {
     this.world.datagram(session, bytes);
   }
+  /** The host switches the world's game mode by name (ADR 0065); false for an unknown one. */
+  setMode(name: string): boolean {
+    return this.world.setMode(name);
+  }
+  /** The world's game mode's name. */
+  get mode(): string {
+    return this.world.mode;
+  }
   host(maxPlayers: number, edits: HostPolicy, flight: HostPolicy, hostKey: Uint8Array): void {
     this.world.host(maxPlayers, edits, flight, hostKey);
   }

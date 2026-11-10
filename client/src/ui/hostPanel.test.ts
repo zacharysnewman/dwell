@@ -1,11 +1,30 @@
 import { describe, expect, it } from 'vitest';
-import { guestsText, qrModules } from './hostPanel';
+import { guestsText, modeOptions, modeSwitchedText, qrModules } from './hostPanel';
+import { GAME_MODES } from './modes.gen';
 
 describe('host panel', () => {
   it('counts guests against the limit', () => {
     expect(guestsText(0, 8)).toBe('No guests yet (up to 8)');
     expect(guestsText(1, 8)).toBe('1 of 8 guests playing');
     expect(guestsText(3, 4)).toBe('3 of 4 guests playing');
+  });
+
+  it('offers the modes from the data, experimental ones marked', () => {
+    expect(modeOptions().map((o) => o.value)).toEqual(GAME_MODES.map((m) => m.name));
+    expect(modeOptions()).toContainEqual({ value: 'adventure', label: 'Adventure (experimental)' });
+    // A mode added by data alone is offered.
+    const fixture = [
+      ...GAME_MODES,
+      {
+        name: 'test:peaceful',
+        label: 'Peaceful',
+        description: '',
+        experimental: false,
+        abilities: ['map'] as const,
+      },
+    ];
+    expect(modeOptions(fixture).at(-1)).toEqual({ value: 'test:peaceful', label: 'Peaceful' });
+    expect(modeSwitchedText('test:peaceful', fixture)).toContain('now Peaceful');
   });
 
   it('draws a square QR code with finder patterns for the invite link', () => {

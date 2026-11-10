@@ -139,7 +139,7 @@ dwell_world::both_faces!(
     fn switching_modes_live_lands_the_flyer_unhurt_and_keeps_the_inventory(f: FaceFrame) {
         let full = players::MAX_HEALTH as i32;
         let mut fx = scene(f, "adventure");
-        assert_eq!(fx.server.give(1, "dwell:dirt", 5), 5);
+        assert_eq!(fx.server.give(1, "dwell:dirt", 5), 0, "all of it fits");
         assert!(fx.server.set_mode("creative"));
         let fly = dwell_physics::controller::Input {
             fly: true,

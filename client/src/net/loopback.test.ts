@@ -44,6 +44,22 @@ describe('loopback transport', () => {
     expect(await second).toBe(false);
   });
 
+  it('switches the game mode through the worker and keeps the mode it reports', async () => {
+    const worker = new FakeWorker();
+    const pending = LoopbackTransport.start(worker as unknown as Worker, {
+      worldSeed: 7,
+      generatorVersion: 0,
+    });
+    worker.reply({ t: 'ready', persisted: true, mode: 'creative' });
+    const transport = await pending;
+    expect(transport.mode).toBe('creative');
+    const switched = transport.setMode('adventure');
+    expect(worker.sent).toContainEqual({ t: 'setMode', mode: 'adventure' });
+    worker.reply({ t: 'mode', mode: 'adventure' });
+    expect(await switched).toBe('adventure');
+    expect(transport.mode).toBe('adventure');
+  });
+
   it('answers pending and later saves with false once closed', async () => {
     const { worker, transport } = await started();
     const pending = transport.save();

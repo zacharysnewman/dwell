@@ -70,6 +70,18 @@ describe('world index', () => {
     expect(index.list().map((w) => w.name)).toEqual(['Alpha', 'Beta']);
   });
 
+  it('records the host’s mode switch, keeping fields it doesn’t know', () => {
+    const store = memoryStore();
+    const index = new WorldIndex(store);
+    const w = index.create({ name: 'M', type: 'terrain', seed: 1, mode: 'adventure' }, 1);
+    const raw = JSON.parse(store.data[INDEX_KEY] ?? '[]') as Record<string, unknown>[];
+    store.setItem(INDEX_KEY, JSON.stringify([{ ...raw[0], future: 42 }]));
+    new WorldIndex(store).setMode(w.id, 'creative');
+    expect(new WorldIndex(store).get(w.id)?.mode).toBe('creative');
+    const [stored] = JSON.parse(store.data[INDEX_KEY] ?? '[]') as Record<string, unknown>[];
+    expect(stored?.future).toBe(42);
+  });
+
   it('keeps a new world’s chosen spawn, and none for the usual one', () => {
     const store = memoryStore();
     const index = new WorldIndex(store);

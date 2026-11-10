@@ -1,8 +1,10 @@
 // Host… in the game menu (ARCHITECTURE.md §10.2, Phase 5c): opens this local world to friends. The
 // form sets the guest limit (by platform), who may edit and who may fly; once hosting, the panel
 // shows the join code, an invite link to copy, a QR code for phones, the guests connected, and
-// Stop hosting.
+// Stop hosting. Both views also offer the world's game Mode (ADR 0065), switched live.
 import { audio } from '../audio/engine';
+import { modeLabel } from './modes';
+import { GAME_MODES, type GameMode } from './modes.gen';
 import qrcode from 'qrcode-generator';
 import { HostPolicy, maxGuestsFor, type HostSettings, type HostVisibility } from '../net/hosting';
 
@@ -22,6 +24,23 @@ export interface HostPanelDeps {
   /** Starts hosting; rejects with a message for the player. */
   start: (settings: HostSettings) => Promise<Hosted>;
   stop: () => void;
+  /** The world's game mode now (ADR 0065), by name. */
+  mode: string;
+  /** Switches the running world's mode; resolves with the mode it is in after (refused: the old). */
+  setMode: (name: string) => Promise<string>;
+}
+
+/** The Mode choice's options, from the modes data (shared/modes/modes.json): experimental marked. */
+export function modeOptions(
+  modes: readonly GameMode[] = GAME_MODES,
+): { value: string; label: string }[] {
+  return modes.map((m) => ({ value: m.name, label: modeLabel(m) }));
+}
+
+/** What the panel says after a switch. */
+export function modeSwitchedText(name: string, modes: readonly GameMode[] = GAME_MODES): string {
+  const m = modes.find((x) => x.name === name);
+  return `The world is now ${m ? m.label : name}: everyone in it plays by its rules.`;
 }
 
 const POLICIES: { value: HostPolicy; label: string }[] = [
@@ -99,9 +118,11 @@ export class HostPanel {
   private max: number;
   private guests = 0;
   private readonly status = document.createElement('p');
+  private mode: string;
 
   constructor(private readonly deps: HostPanelDeps) {
     this.element.id = 'host-panel';
+    this.mode = deps.mode;
     this.max = maxGuestsFor(deps.mobile);
     this.showForm();
   }
@@ -116,6 +137,41 @@ export class HostPanel {
   /** A notice for the host (e.g. the code stopped working). */
   say(message: string): void {
     this.status.textContent = message;
+  }
+
+  /** The Mode row: switching it changes the running world's mode at once (ADR 0065). */
+  private modeRow(): HTMLLabelElement {
+    const el = document.createElement('select');
+    el.id = 'host-mode';
+    const options = modeOptions();
+    if (!options.some((o) => o.value === this.mode)) {
+      options.push({ value: this.mode, label: this.mode }); // a mode this build doesn't know
+    }
+    for (const o of options) {
+      const option = document.createElement('option');
+      option.value = o.value;
+      option.textContent = o.label;
+      option.selected = o.value === this.mode;
+      el.append(option);
+    }
+    el.addEventListener('change', () => {
+      el.disabled = true;
+      this.deps.setMode(el.value).then(
+        (now) => {
+          el.disabled = false;
+          el.value = now;
+          const changed = now !== this.mode;
+          this.mode = now;
+          if (changed) this.status.textContent = modeSwitchedText(now);
+          audio().ui(changed ? 'success' : 'error');
+        },
+        () => {
+          el.disabled = false;
+          el.value = this.mode;
+        },
+      );
+    });
+    return labelled('Mode', el);
   }
 
   private showForm(message = ''): void {
@@ -166,6 +222,7 @@ export class HostPanel {
     title.textContent = 'Host';
     this.element.replaceChildren(
       title,
+      this.modeRow(),
       labelled('Guests', guests),
       labelled('Who can build', edits),
       labelled('Who can fly', flight),
@@ -215,6 +272,16 @@ export class HostPanel {
       this.guests = 0;
       this.showForm('Stopped hosting: your guests were disconnected.');
     });
-    this.element.replaceChildren(title, code, link, copy, qr, guests, this.status, stop);
+    this.element.replaceChildren(
+      title,
+      code,
+      link,
+      copy,
+      qr,
+      guests,
+      this.modeRow(),
+      this.status,
+      stop,
+    );
   }
 }

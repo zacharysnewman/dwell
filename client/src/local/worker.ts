@@ -196,6 +196,13 @@ function handle(msg: ToWorker): void {
     case 'disconnect':
       core.disconnected(msg.session);
       break;
+    case 'setMode':
+      // The host's switch (ADR 0065): the server applies it to every player and the world is
+      // saved with it at once, so a reload finds the new mode.
+      core.setMode(msg.mode);
+      scope.postMessage({ t: 'mode', mode: core.mode });
+      void save();
+      break;
     case 'save':
       void save().then((ok) => {
         scope.postMessage({ t: 'saved', ok });
@@ -274,7 +281,7 @@ async function start(
   if (files && !core.persisted) {
     console.warn(`Dwell: the local world file could not be opened (${core.storageError}).`);
   }
-  scope.postMessage({ t: 'ready', persisted: core.persisted });
+  scope.postMessage({ t: 'ready', persisted: core.persisted, mode: core.mode });
   for (const msg of queued.splice(0)) handle(msg);
 
   // Fixed-step simulation clock (the core accumulates real time into 60 Hz steps).

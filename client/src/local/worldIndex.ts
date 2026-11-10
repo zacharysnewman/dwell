@@ -34,9 +34,10 @@ export interface WorldMeta {
    */
   spawn?: Spawn;
   /**
-   * The game mode the world was created in (the New world form's Mode, ADR 0065, by name):
-   * read only when its file is created; the world file keeps the mode after that. Absent:
-   * creative (`DEFAULT_MODE`).
+   * The world's game mode (ADR 0065, by name): the New world form's Mode, read only when its
+   * file is created (the world file keeps the mode after that), then updated when the host
+   * switches it (the Host page's Mode) so the world list's badge shows it. Absent: creative
+   * (`DEFAULT_MODE`).
    */
   mode?: string;
 }
@@ -180,6 +181,12 @@ export class WorldIndex {
     const stored = entries.find((e) => hasId(e, world.id));
     const merged = typeof stored === 'object' && stored !== null ? { ...stored, ...world } : world;
     this.write([merged, ...entries.filter((e) => !hasId(e, world.id))]);
+  }
+
+  /** The host switched a world's mode (ADR 0065): its entry says so, other fields kept. */
+  setMode(id: string, mode: string): void {
+    const world = this.get(id);
+    if (world) this.put({ ...world, mode });
   }
 
   remove(id: string): void {
