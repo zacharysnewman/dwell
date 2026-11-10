@@ -32,7 +32,8 @@ test('a menu background added by data alone reaches the output', () => {
   d.backgrounds.push({ name: 'sky-island', label: 'Sky island', about: 'A fixture.', seed: 7, position: [1, 2, 3], yaw: 90, timeOfDay: 0.75, image: 'sky-island.webp' });
   const ts = menuBackgroundsTs(validateMenuBackgrounds(d));
   assert.match(ts, /import IMAGE_SKY_ISLAND from '\.\.\/\.\.\/\.\.\/shared\/ui\/menu-backgrounds\/sky-island\.webp';/);
-  assert.match(ts, /\{ name: "sky-island", label: "Sky island", url: IMAGE_SKY_ISLAND \}/);
+  assert.match(ts, /import IMAGE_SKY_ISLAND_SMALL from '\.\.\/\.\.\/\.\.\/shared\/ui\/menu-backgrounds\/sky-island-small\.webp';/);
+  assert.match(ts, /\{ name: "sky-island", label: "Sky island", url: IMAGE_SKY_ISLAND, smallUrl: IMAGE_SKY_ISLAND_SMALL \}/);
 });
 
 test('bad menu backgrounds fail with their path named', () => {
@@ -46,6 +47,7 @@ test('bad menu backgrounds fail with their path named', () => {
     [(d) => (d.backgrounds[0].colour = 'red'), /unknown entry backgrounds\[0\]\.colour/],
     [(d) => d.backgrounds.push({ ...d.backgrounds[0] }), /is listed twice/],
     [(d) => (d.capture.steps = 3), /capture\.steps must be a whole number within 8–64/],
+    [(d) => (d.capture.sizePx = 8192), /capture\.sizePx must be a whole number within 256–4096/],
     [(d) => (d.turnS = 5), /turnS must be a number within 30–1200/],
   ];
   for (const [change, message] of cases) {
@@ -54,6 +56,8 @@ test('bad menu backgrounds fail with their path named', () => {
     assert.throws(() => validateMenuBackgrounds(d), message);
   }
   assert.throws(() => validateMenuBackgrounds(backgroundsData(), () => false), /menu-backgrounds\/beach-peaks\.webp is missing/);
+  // The small copy for phones is checked too.
+  assert.throws(() => validateMenuBackgrounds(backgroundsData(), (f) => !f.endsWith('-small.webp')), /menu-backgrounds\/beach-peaks-small\.webp is missing/);
 });
 
 const here = dirname(fileURLToPath(import.meta.url));

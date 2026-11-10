@@ -94,6 +94,25 @@ export function panoramaStyle(
   };
 }
 
+/**
+ * The screen's shorter side (CSS px) below which the menu loads a background's small copy: a phone.
+ * The full strip (shots of 2160 px, ~6800 × 1950) decodes to ~53 MB, two of them while one fades
+ * into the next; the small one is a quarter of that, and a phone's screen is small enough not to miss it.
+ */
+export const SMALL_SCREEN_PX = 600;
+
+/** The image to load for a screen of `width` × `height` CSS px: the small copy on a phone. */
+export function backgroundUrl(bg: MenuBackground, width: number, height: number): string {
+  return Math.min(width, height) < SMALL_SCREEN_PX ? bg.smallUrl : bg.url;
+}
+
+/** The screen's size (CSS px), for `backgroundUrl`; a desktop's when there is no screen. */
+function screenSize(): [number, number] {
+  return typeof screen === 'object' && screen.width > 0
+    ? [screen.width, screen.height]
+    : [1920, 1080];
+}
+
 /** Whether the player asked for reduced motion (the OS setting). */
 function reducedMotion(): boolean {
   return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -170,12 +189,13 @@ export class MenuPanorama {
     const back = this.front === 0 ? 1 : 0;
     const [layer, old] = back === 0 ? this.layers : [this.layers[1], this.layers[0]];
     const strip = layer.firstElementChild as HTMLDivElement;
+    const url = backgroundUrl(bg, ...screenSize());
     const img = new Image();
     img.onload = () => {
       if (this.shown !== bg.name) return;
       const style = panoramaStyle(img.naturalWidth / img.naturalHeight, reducedMotion());
       // From script: the page's CSP takes no inline style sheet (element styles are allowed).
-      strip.style.backgroundImage = `url("${bg.url}")`;
+      strip.style.backgroundImage = `url("${url}")`;
       strip.style.aspectRatio = style.aspectRatio;
       strip.style.animationDuration = style.animationDuration;
       strip.style.animationName = 'none';
@@ -187,6 +207,6 @@ export class MenuPanorama {
       this.root.classList.add('loaded');
       this.schedule();
     };
-    img.src = bg.url;
+    img.src = url;
   }
 }

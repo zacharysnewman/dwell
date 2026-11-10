@@ -314,7 +314,11 @@ async function main(): Promise<void> {
       const [full, small] = webp as [string, string];
       for (const [file, b64, size] of [
         [b.image, full, `${String(strip.width)}×${String(strip.height)}`],
-        [smallImage(b.image), small, `${String(Math.round(strip.width / 2))}×${String(Math.round(strip.height / 2))}`],
+        [
+          smallImage(b.image),
+          small,
+          `${String(Math.round(strip.width / 2))}×${String(Math.round(strip.height / 2))}`,
+        ],
       ] as const) {
         const bytes = Buffer.from(b64, 'base64');
         writeFileSync(join(IMAGES, file), bytes);
