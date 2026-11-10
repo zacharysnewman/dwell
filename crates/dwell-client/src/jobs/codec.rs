@@ -228,7 +228,12 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
             w.u32(cuts.len() as u32);
             for (c, cut) in cuts {
                 c.iter().for_each(|v| w.i32(*v));
-                let f: Vec<f32> = cut.notch.iter().chain(cut.kerf.iter().flatten()).copied().collect();
+                let f: Vec<f32> = cut
+                    .notch
+                    .iter()
+                    .chain(cut.kerf.iter().flatten())
+                    .copied()
+                    .collect();
                 w.f32s(&f);
             }
         }

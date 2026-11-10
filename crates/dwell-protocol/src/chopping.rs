@@ -167,6 +167,8 @@ pub struct WoodDef {
 pub struct CutLook {
     /// The atlas tile of the cut faces (none: the block's end-grain tile).
     pub tile: Option<&'static str>,
+    /// A colour multiplying the tile (sRGB).
+    pub tint: [u8; 3],
     /// The notch's opening along the grain per metre of its depth.
     pub open: f64,
     /// The kerf slits' width along the grain (m).

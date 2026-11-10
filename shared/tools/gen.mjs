@@ -22,7 +22,7 @@ const SWING_FIELDS = ['windupS', 'activeS', 'hitStopS', 'recoverHitS', 'recoverM
 /** A swing's defaults (a tool without `swing`): a short wind-up, a committed arc, a hit-stop. */
 export const SWING_DEFAULTS = { windupS: 0.12, activeS: 0.14, hitStopS: 0.07, recoverHitS: 0.22, recoverMissS: 0.36, reachM: 2.2, arcDeg: 110, samples: 12, kickDeg: 1.5, staminaCost: 0, swish: null, bounce: null };
 const WOOD_FIELDS = ['block', 'fellFraction', 'buckFraction', 'buckDrops', 'chips', 'leaves', 'sway', 'sounds', 'cut'];
-const CUT_FIELDS = ['tile', 'open', 'kerfWidthM'];
+const CUT_FIELDS = ['tile', 'tint', 'open', 'kerfWidthM'];
 const LEAF_FIELDS = ['block', 'count', 'color', 'radiusM', 'heightM'];
 const SWAY_FIELDS = ['fromFraction', 'maxDeg'];
 const CHIP_FIELDS = ['count', 'color', 'speed', 'size'];
@@ -131,11 +131,12 @@ export function validateTools(data, items, blocks, heldItems = loadHeldItems(), 
     inRange(chips, 'speed', 0, 10, `${at}.chips`, true);
     inRange(chips, 'size', 0, 0.2, `${at}.chips`, true);
     // How a cut is carved into the cell's mesh (the client's): the cut faces' atlas tile (a tile of
-    // shared/textures/materials.json), the notch's opening along the grain per metre of depth and
+    // shared/textures/materials.json) and a tint multiplying it, the notch's opening along the grain per metre of depth and
     // the kerf slits' width.
     const k = w.cut ?? {};
     known(k, CUT_FIELDS, `${at}.cut`);
-    const cut = { tile: k.tile ?? null, open: k.open ?? 2.5, kerfWidthM: k.kerfWidthM ?? 0.03 };
+    const cut = { tile: k.tile ?? null, tint: k.tint ?? '#ffffff', open: k.open ?? 2.5, kerfWidthM: k.kerfWidthM ?? 0.03 };
+    if (typeof cut.tint !== 'string' || !COLOR.test(cut.tint)) fail(`${at}.cut.tint must be #rrggbb`);
     if (cut.tile !== null && !tiles.has(cut.tile)) fail(`${at}.cut.tile: no atlas tile named ${cut.tile}`);
     inRange(cut, 'open', 0.2, 8, `${at}.cut`, true);
     inRange(cut, 'kerfWidthM', 0.005, 0.2, `${at}.cut`, true);
@@ -233,7 +234,7 @@ export function toolsRust(d) {
       (x) => `DropRule { chance: ${f64(x.chance)}, choices: &[DropChoice { item: "${x.item}", min: ${x.min}, max: ${x.max}, weight: 1.0 }] }`,
     );
     rs.push(
-      `    WoodDef { block: "${w.block}", fell_fraction: ${f64(w.fellFraction)}, buck_fraction: ${f64(w.buckFraction)}, buck_drops: &[${drops.join(', ')}], chips: Chips { count: ${w.chips.count}, color: [${rgb(w.chips.color).join(', ')}], speed: ${f64(w.chips.speed)}, size: ${f64(w.chips.size)} }, leaves: Leaves { block: ${optStr(w.leaves.block)}, count: ${w.leaves.count}, color: [${rgb(w.leaves.color).join(', ')}], radius_m: ${f64(w.leaves.radiusM)}, height_m: ${f64(w.leaves.heightM)} }, sway: Sway { from_fraction: ${f64(w.sway.fromFraction)}, max_deg: ${f64(w.sway.maxDeg)} }, sounds: &[${w.sounds.map((x) => `(${f64(x.from)}, "${x.event}")`).join(', ')}], cut: CutLook { tile: ${optStr(w.cut.tile)}, open: ${f64(w.cut.open)}, kerf_width_m: ${f64(w.cut.kerfWidthM)} } },`,
+      `    WoodDef { block: "${w.block}", fell_fraction: ${f64(w.fellFraction)}, buck_fraction: ${f64(w.buckFraction)}, buck_drops: &[${drops.join(', ')}], chips: Chips { count: ${w.chips.count}, color: [${rgb(w.chips.color).join(', ')}], speed: ${f64(w.chips.speed)}, size: ${f64(w.chips.size)} }, leaves: Leaves { block: ${optStr(w.leaves.block)}, count: ${w.leaves.count}, color: [${rgb(w.leaves.color).join(', ')}], radius_m: ${f64(w.leaves.radiusM)}, height_m: ${f64(w.leaves.heightM)} }, sway: Sway { from_fraction: ${f64(w.sway.fromFraction)}, max_deg: ${f64(w.sway.maxDeg)} }, sounds: &[${w.sounds.map((x) => `(${f64(x.from)}, "${x.event}")`).join(', ')}], cut: CutLook { tile: ${optStr(w.cut.tile)}, tint: [${rgb(w.cut.tint).join(', ')}], open: ${f64(w.cut.open)}, kerf_width_m: ${f64(w.cut.kerfWidthM)} } },`,
     );
   }
   rs.push('];');

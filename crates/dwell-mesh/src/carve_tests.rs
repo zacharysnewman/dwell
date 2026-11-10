@@ -4,6 +4,7 @@ use super::*;
 
 const LOOK: CutLook = CutLook {
     tile: Some("logCut"),
+    tint: [255; 3],
     open: 2.5,
     kerf_width_m: 0.035,
 };
@@ -50,8 +51,11 @@ fn a_notch_is_a_v_its_depth_and_opening_from_the_cut() {
     let f = carve(1, &notch(0, 0.08), &LOOK);
     let apex = [0.08, 0.5, 0.0];
     let has = |p: [f64; 3]| {
-        f.iter()
-            .any(|f| f.pts.iter().any(|q| (0..3).all(|k| (q[k] - p[k]).abs() < 1e-6)))
+        f.iter().any(|f| {
+            f.pts
+                .iter()
+                .any(|q| (0..3).all(|k| (q[k] - p[k]).abs() < 1e-6))
+        })
     };
     assert!(has(apex) && has([0.08, 0.5, 1.0]), "the apex line");
     assert!(has([0.0, 0.3, 0.0]) && has([0.0, 0.7, 1.0]), "the mouth");
@@ -60,13 +64,25 @@ fn a_notch_is_a_v_its_depth_and_opening_from_the_cut() {
     assert_eq!(cuts.len(), 2);
     for c in &cuts {
         let n = normal(&c.pts);
-        assert!(n[0] < -0.5 && n[1].abs() > 0.1, "slopes out of the side: {n:?}");
+        assert!(
+            n[0] < -0.5 && n[1].abs() > 0.1,
+            "slopes out of the side: {n:?}"
+        );
     }
     for b in f.iter().filter(|f| f.part == Part::Bark(0)) {
         let ys: Vec<f64> = b.pts.iter().map(|p| p[1]).collect();
-        let (lo, hi) = (ys.iter().copied().fold(1.0, f64::min), ys.iter().copied().fold(0.0, f64::max));
-        assert!(hi <= 0.3 + 1e-6 || lo >= 0.7 - 1e-6, "bark over the notch: {ys:?}");
-        assert!(b.pts.iter().all(|p| p[0].abs() < 1e-12), "bark on the side's plane");
+        let (lo, hi) = (
+            ys.iter().copied().fold(1.0, f64::min),
+            ys.iter().copied().fold(0.0, f64::max),
+        );
+        assert!(
+            hi <= 0.3 + 1e-6 || lo >= 0.7 - 1e-6,
+            "bark over the notch: {ys:?}"
+        );
+        assert!(
+            b.pts.iter().all(|p| p[0].abs() < 1e-12),
+            "bark on the side's plane"
+        );
     }
     // The wedge cut out: ½ × 0.4 (cells along the grain) × 0.08 (cells in) × 1 across.
     assert_closed(&f, 1.0 - 0.5 * 0.4 * 0.08);
@@ -76,10 +92,16 @@ fn a_notch_is_a_v_its_depth_and_opening_from_the_cut() {
 fn a_deep_notch_opens_over_the_whole_row_and_stays_closed() {
     let f = carve(1, &notch(3, 0.45), &LOOK);
     // Side 3 is +z; its apex 0.45 m in from z = 1.
-    assert!(f.iter().any(|f| f.pts.iter().any(|p| (p[2] - 0.55).abs() < 1e-6)));
+    assert!(
+        f.iter()
+            .any(|f| f.pts.iter().any(|p| (p[2] - 0.55).abs() < 1e-6))
+    );
     // Opened as wide as the row (clamped): the V's mouth is the row's ends.
     assert_closed(&f, 1.0 - 0.5 * 1.0 * 0.45);
-    assert!(!f.iter().any(|f| f.part == Part::Bark(3)), "no bark left on the cut side");
+    assert!(
+        !f.iter().any(|f| f.part == Part::Bark(3)),
+        "no bark left on the cut side"
+    );
 }
 
 #[test]
@@ -118,7 +140,11 @@ fn a_lying_log_is_cut_across_its_length() {
         .map(|p| p[1])
         .fold(1.0, f64::min);
     assert!((apex - 0.0).abs() < 1e-6, "the bottom stays");
-    assert!(f.iter().any(|f| f.pts.iter().any(|p| (p[1] - 0.8).abs() < 1e-6 && (p[0] - 0.5).abs() < 1e-6)));
+    assert!(f.iter().any(|f| {
+        f.pts
+            .iter()
+            .any(|p| (p[1] - 0.8).abs() < 1e-6 && (p[0] - 0.5).abs() < 1e-6)
+    }));
     assert_closed(&f, 1.0 - 0.5 * 0.25 * 0.2);
     // Along z the same, by its side 3 (+y).
     let g = carve(2, &notch(3, 0.1), &LOOK);
@@ -146,7 +172,11 @@ fn opposite_sides_never_cut_the_cell_in_two() {
     assert!(v > 0.0);
     let xs: Vec<f64> = f.iter().flat_map(|f| f.pts.iter()).map(|p| p[0]).collect();
     // The waist left is at least MIN_LEFT.
-    assert!(f.iter().all(|f| f.pts.iter().all(|p| p[0] >= 0.0 && p[0] <= 1.0)), "{xs:?}");
+    assert!(
+        f.iter()
+            .all(|f| f.pts.iter().all(|p| p[0] >= 0.0 && p[0] <= 1.0)),
+        "{xs:?}"
+    );
 }
 
 #[test]

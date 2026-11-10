@@ -928,13 +928,15 @@ fn carved_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, cell: [i32; 3], cu
     let look = wood.map_or(
         dwell_protocol::chopping::CutLook {
             tile: None,
+            tint: [255; 3],
             open: 2.5,
             kerf_width_m: 0.035,
         },
         |w| w.cut,
     );
+    let [tr, tg, tb] = look.tint.map(u32::from);
     let fresh = match look.tile.filter(|t| crate::textures::has_tile(t)) {
-        Some(t) => (0xffffff, tile_rect(t)),
+        Some(t) => (tr << 16 | tg << 8 | tb, tile_rect(t)),
         None => surface(&k.style, grain, 1),
     };
     let [x, y, z] = cell;

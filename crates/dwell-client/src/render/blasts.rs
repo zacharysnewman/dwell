@@ -217,5 +217,4 @@ mod tests {
         assert_eq!(v[8].to_bits() >> 8, KIND_FIRE);
         assert_eq!(v[6 * VERTEX_FLOATS + 8].to_bits() >> 8, KIND_SMOKE);
     }
-
 }

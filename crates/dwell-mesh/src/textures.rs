@@ -10,6 +10,8 @@
 
 use std::sync::OnceLock;
 
+// Laid out by its generator (as rustfmt would, but rustfmt packs a long array its own way).
+#[rustfmt::skip]
 #[path = "painterly.gen.rs"]
 mod painterly;
 pub use painterly::{PAINTERLY_TILE, PAINTERLY_TILES};

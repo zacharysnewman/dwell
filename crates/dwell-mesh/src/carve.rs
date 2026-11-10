@@ -193,12 +193,12 @@ pub(crate) fn carve(grain: usize, cut: &Cut, look: &CutLook) -> Vec<Face> {
         let mid = 0.5 * (t0 + t1);
         let r0 = rect(&profiles, grain, t0, mid);
         let r1 = rect(&profiles, grain, t1, mid);
-        for s in 0..SIDES {
+        for (s, profile) in profiles.iter().enumerate() {
             let j = s / 2;
             let k = 1 - j;
             let hi = s % 2;
-            let d0 = profiles[s].depth(t0, mid);
-            let d1 = profiles[s].depth(t1, mid);
+            let d0 = profile.depth(t0, mid);
+            let d1 = profile.depth(t1, mid);
             let part = if d0 <= TINY && d1 <= TINY {
                 Part::Bark(s)
             } else {

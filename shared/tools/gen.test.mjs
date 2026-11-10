@@ -100,3 +100,21 @@ test('a block needing a tool kind by data alone (breakWith) is emitted, an unkno
   blocks.set('test:hard_wood', { breakWith: 'pick' });
   assert.throws(() => validateTools(data, items, blocks), /test:hard_wood\.breakWith must be one of axe/);
 });
+
+test("a wood's cut look (its carved faces, ADR 0067 §11) is validated and reaches the Rust table", () => {
+  const rs = toolsRust(validateTools(...fresh()));
+  assert.match(rs, /block: "dwell:log", .*cut: CutLook \{ tile: Some\("logCut"\), tint: \[255, 226, 184\], open: 2\.5, kerf_width_m: 0\.035 \}/);
+  const bad = (edit, re) => {
+    const [data, items, blocks] = fresh();
+    edit(data);
+    assert.throws(() => validateTools(data, items, blocks), re);
+  };
+  bad((d) => (d.woods[0].cut.tile = 'noTile'), /woods\.dwell:log\.cut\.tile: no atlas tile named noTile/);
+  bad((d) => (d.woods[0].cut.tint = 'tan'), /woods\.dwell:log\.cut\.tint must be #rrggbb/);
+  bad((d) => (d.woods[0].cut.open = 20), /cut.*open must be a number/);
+  bad((d) => (d.woods[0].cut.depth = 1), /cut: unknown field depth/);
+  // Without a cut look: the defaults (the end-grain tile, untinted).
+  const [data, items, blocks] = fresh();
+  delete data.woods[0].cut;
+  assert.match(toolsRust(validateTools(data, items, blocks)), /cut: CutLook \{ tile: None, tint: \[255, 255, 255\], open: 2\.5, kerf_width_m: 0\.03 \}/);
+});

@@ -1,7 +1,8 @@
 # 0067 — The stone axe: aimed chopping, notches, felling past half and bucking
 
 **Status:** Accepted (2026-11-08; data, server and client input built in 0.50.34; the owner's
-answers, the gouges, chips, arms and the axe on the creative hotbar in 0.50.36, see "Built so far"). Builds on ADR 0066 (items by
+answers, the gouges, chips, arms and the axe on the creative hotbar in 0.50.36, see "Built so far";
+the cuts carved into the chunk mesh in 0.50.60). Builds on ADR 0066 (items by
 name, drops, the Welcome-flag message pattern) and docs/FELLING.md (how a cut trunk falls).
 
 ## Context
@@ -99,13 +100,27 @@ felling (FELLING.md). Scope: tools and woods are per build; cuts are per world, 
 10. **Save: a new table, append-only.** `cuts`: one record (key 0, version 1, each cell and its
     sides' notch and kerfs as f32), the whole set each save. Older builds leave it; a record this
     build can't read is kept, not overwritten.
-11. **The client draws** (0.50.36, `dwell-client` `chips.rs`, draw-only), all through the
-    billboard pass the blasts' puffs use (render/blasts.rs, `PuffKind::Chip` and `Gouge`):
-    - **Gouges** (chosen as the cheapest that reads: a decal, not a remesh): per cut cell and side,
-      the notch as a quad lying on that side's face (lifted 4 mm), centred along the grain and
-      opened 2.5× its depth, shaded as a wedge (its upper cut face in shadow, its lower lit, darker
-      along the deep middle and the deeper it is), and each band's kerf past the notch as a dark
-      slit at the band's middle; in the wood's `chips.color`. Face-local through `FaceFrame`.
+11. **The client draws** (0.50.36; the cuts carved into the mesh since 0.50.60):
+    - **Cuts are real geometry** (0.50.60, replacing 0.50.36–0.50.59's decal gouges; the owner,
+      2026-11-09: "our chopping display on logs doesn't look anything like a 3D chop, it just looks
+      like a backless texture?"; a normal map would give no real depth either). A cut wood cell is
+      meshed in the chunk mesh path as the block with its cut carved in (`dwell-mesh` `carve.rs`,
+      `mesh_chunk_cut`), and its cube's faces are not drawn. What is left at a point along the grain
+      is the cell's cross-section trimmed by each side's depth there, so the cell is a stack of
+      spans over which each side is one planar face: each side's **notch** a V across the whole side
+      (its apex its depth at the cell's middle, opened along the grain `open` (2.5) × its depth,
+      at most the cell's length), each band's **kerf** past it a slit `kerfWidthM` (0.035 m) wide
+      and as deep as the notch and the kerf, half way out along the V's arm in its band, its walls
+      square to the grain; opposite sides never meet (a 2 cm waist is left). The faces cut in are
+      fresh wood: the wood's `cut.tile` (`logCut`, painted as `fresh_wood` from the heartwood ramp,
+      shared/textures/materials.json) times `cut.tint` (`#ffe2b8`, warm so it stays tan in shade),
+      lit by the sky the cut side sees and darker the deeper they lie; the bark left on each side and
+      the end grain are the cube's faces, trimmed, and hidden where a neighbour covers them. As
+      chunk geometry it takes the terrain's lighting, shadows and the CPU adapter's tier for free.
+      The client's `ChunkStreamer::set_cut` meshes the cell's chunk again whenever a cut changes
+      (cuts are few). Face-local: a face-B chunk is meshed mirrored, its cuts' sides along y swapped
+      (`carve::mirror_cut`). `cut` is per wood in `shared/tools/tools.json` (validated: the tile
+      against the atlas, the tint, the ranges).
     - **Chips**: each swing the client sends knocks out the wood's `chips.count` (a CPU adapter a
       third) flat splinters out of the hit face, carried along the swing (a level swing sweeps from
       the look's right to its left, a vertical one down), falling toward the face's ground for
@@ -168,7 +183,8 @@ Still parked (defaults chosen):
   in adventure, leaves still break, creative breaks it; both faces); tool entries in
   `items.json` with the stone axe on the creative hotbar (generator validation, a fixture tool
   entry by data alone).
-- **Visuals:** `chips.rs` (gouges for a known cut, both faces; chips per swing: count, out of the
+- **Visuals:** `chips.rs` (gouges for a known cut, both faces, replaced by the carved mesh in
+  0.50.60; chips per swing: count, out of the
   face, along the swing, falling, a CPU third), `PuffKind::Chip`/`Gouge` through the billboard
   pass and its shader (`chip_colour`, validated with naga in both tiers), the chop clips and the
   held axe (`shared/characters`), the hotbar picture.
@@ -201,7 +217,7 @@ weighty first-person physical swings (the mechanics only). Built:
   `tests/axe.rs` failed with the blade at (−0.24, −0.30, −0.92) in view space (toward the eye);
   now it faces away in both holds, the holds differ and the edge leads the strike. The head is the
   `flint` material (a warm grey-brown ramp), not the ground stone's violet shadow.
-- **Cuts that read as cuts**: the notch is a V, each face lit by its own normal (`Gouge::cut_normals`,
+- **Cuts that read as cuts** (decals; replaced by real geometry in 0.50.60, §11): the notch is a V, each face lit by its own normal (`Gouge::cut_normals`,
   packed into the billboard's info bits; both faces tested), fresh tan wood (`#d9b37a`) keeping its
   hue in shade, end-grain rings, a crease at the apex darkening with depth, a bark lip; it opens
   wider and deeper as the notch deepens. Chosen over a remesh as the cheapest that reads as depth.
@@ -211,6 +227,26 @@ weighty first-person physical swings (the mechanics only). Built:
 - **The reticle** draws the swing's line (level or vertical) through the crosshair.
 - **Others see the held axe**: `Chop::Held` (tool by name, the hold) and S→C `HeldTools` (90),
   only to clients that sent a `Held`; tested on the server and the client's drawing.
+
+## Built in 0.50.60: cuts carved into the mesh
+
+- **Data:** a wood's `cut` (`tile`, `tint`, `open`, `kerfWidthM`; `CutLook`), validated by
+  `shared/tools/gen.mjs` (the tile against `shared/textures/materials.json`'s tiles; a test adds
+  and breaks it by data alone); the `logCut` atlas tile (`fresh_wood`), which the texture generator
+  paints because a wood names it (`toolTiles`).
+- **Mesher:** `dwell-mesh` `carve.rs` and `mesh_chunk_cut`: tests pin a notch's apex and mouth from
+  its depth and `open`, a deep notch opened over the row, kerfs as slits with walls, a lying log's
+  cut along x and z, two sides cut together, the surface closed (its area vectors sum to zero and
+  its volume is the cube's less the wedge), and, both faces, a standing trunk's notch and kerf and a
+  lying log's cut from the face's up through the chunk mesher with no bark left in the notch.
+- **Client:** `MeshJob::cuts`/`Job::MeshChunk` (coded for the workers, round-trip tested),
+  `ChunkStreamer::set_cut` (a cut change meshes only its chunk, a job in flight dropped; tested),
+  `Cuts` messages fed to it; the decal gouges (`PuffKind::Gouge`, its shader branch) removed, the
+  chips kept.
+- **Seen in the browser** (bench, a trunk notched by 7 swings): the V reads as a real notch from
+  the front, in profile and at an angle, its lower face lit tan, its upper face in shadow (it faces
+  down: the ground's green bounce still tints it olive-brown; a terrain-lighting matter, not the
+  carve).
 
 **Next:** cuts on bodies (chopping a felled piece before it settles), a give command, stamina; the
 falling trunk's fling onto its chopper fixed at its root (BUGS.md #52: 0.50.37's `max_body_kick`
