@@ -64,5 +64,6 @@
   "decorations": [],
   "placements": [],
   "water": "dwell:water",
-  "rockStack": "dwell:red_beds"
+  "rockStack": "dwell:red_beds",
+  "erosion": 1
 }

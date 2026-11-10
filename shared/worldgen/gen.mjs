@@ -14,6 +14,7 @@ import { loadDir, registryFromVector } from '../structures/gen.mjs';
 import { loadMotes, moteNames } from '../look/motes.mjs';
 import {
   BIOME_GROUPS,
+  GEOLOGY,
   TERRAIN,
   WHERE_FIELDS,
   WORLD_GROUPS,
@@ -325,7 +326,7 @@ export function vegetationRust(data) {
 
 /** The Rust for the validated geology (rocks.json, `validateRocks`; systemic terrain T2). */
 export function rocksRust(data) {
-  const rs = [`// ${rocksHeader}`, '', 'use crate::geology::{Geology, Jointing, Layer, Rock, Stack};', ''];
+  const rs = [`// ${rocksHeader}`, '', 'use crate::geology::{Erosion, Geology, Jointing, Layer, Rock, Stack};', ''];
   const joint = { bedded: 'Bedded', vertical: 'Vertical', massive: 'Massive' };
   rs.push('/// The rock types (rocks.json `rocks`).');
   rs.push('pub const ROCKS: &[Rock] = &[');
@@ -365,6 +366,10 @@ export function rocksRust(data) {
   rs.push(`    strength: ${rf(data.shaping.strength)},`);
   rs.push(`    tread: ${rf(data.shaping.tread)},`);
   rs.push(`    sheer: ${rf(data.shaping.sheer)},`);
+  rs.push('    erosion: Erosion {');
+  const snake = (k) => k.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+  for (const k of Object.keys(GEOLOGY.erosion)) rs.push(`        ${snake(k)}: ${rf(data.erosion[k])},`);
+  rs.push('    },');
   rs.push('};');
   rs.push('');
   return rs.join('\n');
@@ -606,6 +611,8 @@ export function terrainRust({ world, biomes, fixtures = [], presets = [], worlds
       rs.push(`        water: ${JSON.stringify(b.water)},`);
       rs.push(`        rock_stack: ${b.rockStack === undefined ? 'None' : `Some(${JSON.stringify(b.rockStack)})`},`);
       rs.push(`        vegetation: ${rf(b.vegetation ?? 0)},`);
+      rs.push(`        erosion: ${rf(b.erosion ?? 0)},`);
+      rs.push(`        gullies: ${rf(b.gullies ?? 0)},`);
       const wl = b.waterLook;
       if (!wl) rs.push('        water_look: None,');
       else {

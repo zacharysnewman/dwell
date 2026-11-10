@@ -64,5 +64,7 @@
   "decorations": [],
   "placements": [],
   "water": "dwell:water",
-  "rockStack": "dwell:badland_beds"
+  "rockStack": "dwell:badland_beds",
+  "erosion": 1,
+  "gullies": 1
 }
