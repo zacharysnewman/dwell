@@ -32,7 +32,9 @@ const TOP_FIELDS = [
 const ITEM_FIELDS = ['name', 'label', 'color', 'size', 'stack', 'value', 'look'];
 const LOOK_FIELDS = ['shape', 'size', 'texture', 'color'];
 /** The looks' shapes (a fixed vocabulary: `dwell_protocol::inventory::LookShape`). */
-export const LOOK_SHAPES = ['rod', 'lump'];
+export const LOOK_SHAPES = ['rod', 'lump', 'cluster'];
+/** A look shape's Rust variant (`rod` → `Rod`). */
+export const lookVariant = (s) => s[0].toUpperCase() + s.slice(1);
 const DROP_FIELDS = ['item', 'count', 'chance', 'pick'];
 const PICK_FIELDS = ['item', 'count', 'weight'];
 const WALLET_FIELDS = ['name', 'label', 'capacity'];
@@ -99,7 +101,7 @@ export function validateInventory(data, namespaces) {
     if (it.value !== undefined && (!isInt(it.value) || it.value < 1 || it.value > 9999)) {
       fail(`${at}: value must be a whole number in [1, 9999] (a currency item's worth in the wallet)`);
     }
-    // `look`: the item's one look (ADR 0071's rod or lump), drawn the same in the hand, on the
+    // `look`: the item's one look (ADR 0071's rod or lump, or a cluster of seeds), drawn the same in the hand, on the
     // hotbar, loose and lying on the ground (shared/ground names the item, not a look of its own).
     let look = null;
     if (it.look !== undefined) {
@@ -242,7 +244,7 @@ export function inventoryRust(d) {
     const rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)).join(', ');
     const l = it.look;
     const look = l
-      ? `Some(ItemLook { shape: LookShape::${l.shape === 'rod' ? 'Rod' : 'Lump'}, size: [${l.size.map(f64).join(', ')}], texture: "${l.texture}", color: [${rgb(l.color)}] })`
+      ? `Some(ItemLook { shape: LookShape::${lookVariant(l.shape)}, size: [${l.size.map(f64).join(', ')}], texture: "${l.texture}", color: [${rgb(l.color)}] })`
       : 'None';
     rs.push(
       `    ItemDef { name: "${it.name}", label: ${JSON.stringify(it.label)}, color: [${rgb(it.color)}], size: ${f64(it.size)}, stack: ${it.stack}, value: ${it.value}, look: ${look} },`,

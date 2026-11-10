@@ -23,7 +23,13 @@
       "size": 0.22,
       "look": { "shape": "rod", "size": [0.42, 0.05, 0.05], "texture": "dwell:log", "color": "#c9a27a" }
     },
-    { "name": "dwell:grass_seed", "label": "Grass seed", "color": "#b9b45a", "size": 0.12 },
+    {
+      "name": "dwell:grass_seed",
+      "label": "Grass seed",
+      "color": "#b9b45a",
+      "size": 0.12,
+      "look": { "shape": "cluster", "size": [0.12, 0.05, 0.11], "texture": "dwell:sand", "color": "#f4dc78" }
+    },
     { "name": "dwell:gem", "label": "Gem", "color": "#4fb07a", "size": 0.14, "value": 1 },
     { "name": "dwell:gem_large", "label": "Large gem", "color": "#4f7fd0", "size": 0.2, "value": 5 },
     { "name": "dwell:wood", "label": "Wood", "color": "#a07446", "size": 0.24 },

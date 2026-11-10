@@ -45,6 +45,9 @@ pub enum LookShape {
     Rod,
     /// A rounded lump (a squat, tapered hexagonal prism): a stone.
     Lump,
+    /// A small heap of tiny lumps (several, in the look's footprint, the middle one on top):
+    /// seeds.
+    Cluster,
 }
 
 /// An item's shaped look (`inventory.json` `look`).

@@ -227,6 +227,41 @@ fn newell(pts: &[[f64; 3]]) -> [f64; 3] {
 /// middle at the origin, +y up. The underside only with `base` (lying on the ground it is hidden).
 fn polygons(shape: GroundShape, [sx, sy, sz]: [f64; 3], base: bool) -> Vec<Vec<[f64; 3]>> {
     match shape {
+        GroundShape::Cluster => {
+            // Tiny lumps heaped in the footprint (fractions of it): a ring of five on the
+            // ground, a sixth on top in the middle; each a lump a third of the footprint across.
+            const SEEDS: [[f64; 3]; 6] = [
+                [-0.3, 0.0, -0.22],
+                [0.28, 0.0, -0.26],
+                [0.34, 0.0, 0.2],
+                [-0.06, 0.0, 0.32],
+                [-0.34, 0.0, 0.12],
+                [0.0, 0.45, 0.0],
+            ];
+            let one = [sx * 0.34, sy * 0.55, sz * 0.3];
+            let mut out = Vec::new();
+            for (i, [ox, oy, oz]) in SEEDS.into_iter().enumerate() {
+                // Each turned its own way, so they don't line up.
+                let a = i as f64 * 1.1;
+                let (s, c) = a.sin_cos();
+                // The top one rests on the ring: its base always drawn (it is seen from below
+                // between them).
+                for face in polygons(GroundShape::Lump, one, base || oy > 0.0) {
+                    out.push(
+                        face.into_iter()
+                            .map(|[x, y, z]| {
+                                [
+                                    ox * sx + x * c - z * s,
+                                    oy * sy + y,
+                                    oz * sz + x * s + z * c,
+                                ]
+                            })
+                            .collect(),
+                    );
+                }
+            }
+            out
+        }
         GroundShape::Rod => {
             let (x, z) = (sx / 2.0, sz / 2.0);
             let c = |i: usize| -> [f64; 3] {
@@ -328,6 +363,7 @@ mod tests {
     fn every_face_of_both_shapes_faces_outward() {
         // both-faces: item-local geometry, mirrored with the chunk's mesh.
         for shape in [GroundShape::Rod, GroundShape::Lump] {
+            // (The cluster is lumps; a lump's faces are checked here.)
             let size = [0.4, 0.1, 0.2];
             let faces = polygons(shape, size, true);
             let mut m = MeshArrays::default();
@@ -401,6 +437,48 @@ mod tests {
             let tile = crate::textures::tile_rect(look_tile(&l));
             assert!((f64::from(m.tiles[0]) - tile.u0).abs() < 1e-6, "{item}");
         }
+    }
+
+    #[test]
+    fn the_grass_seed_draws_a_cluster_of_seeds_not_a_cube() {
+        // both-faces: item-local geometry; the loose item and the ground mirror it with its face.
+        let l = look("dwell:grass_seed");
+        assert_eq!(l.shape, GroundShape::Cluster);
+        let m = look_mesh(&l);
+        // Six lumps, each closed all round (12 side quads, a hexagon top and base: 32 triangles).
+        assert_eq!(m.indices.len() / 3, 6 * 32);
+        // Its base at 0, no taller than its size, and in its footprint.
+        let (mut lo, mut hi) = ([f32::MAX; 3], [f32::MIN; 3]);
+        for p in m.positions.chunks_exact(3) {
+            for k in 0..3 {
+                lo[k] = lo[k].min(p[k]);
+                hi[k] = hi[k].max(p[k]);
+            }
+        }
+        assert!(lo[1].abs() < 1e-6 && f64::from(hi[1]) <= l.size[1] + 1e-6);
+        for k in [0, 2] {
+            assert!(f64::from(hi[k] - lo[k]) <= l.size[k] + 1e-6, "axis {k}");
+        }
+        // The picture is the heap: drawn, with gaps (not a filled square's outline).
+        let px = look_swatch(&l);
+        let opaque = px.chunks_exact(4).filter(|p| p[3] == 255).count();
+        let t = crate::textures::TILE;
+        assert!(opaque > t * 2 && opaque < t * t * 3 / 4, "{opaque}");
+    }
+
+    #[test]
+    fn a_cluster_look_given_by_data_alone_draws_a_heap() {
+        // both-faces: item-local geometry. A fixture look, not the shipped data.
+        let l = dwell_protocol::inventory::ItemLook {
+            shape: GroundShape::Cluster,
+            size: [0.2, 0.06, 0.2],
+            texture: "dwell:sand",
+            color: [200, 190, 90],
+        };
+        let faces = polygons(l.shape, l.size, false);
+        // Five on the ground with no base, the top one with its base: 5 × 13 + 14.
+        assert_eq!(faces.len(), 5 * 13 + 14);
+        assert!(!look_mesh(&l).indices.is_empty());
     }
 
     #[test]

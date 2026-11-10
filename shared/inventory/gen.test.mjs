@@ -51,6 +51,14 @@ test('an item with a look added by data alone carries it (one look for hand, hot
   assert.match(rs, /name: "dwell:stick".*look: Some\(ItemLook \{ shape: LookShape::Rod/);
 });
 
+test('a cluster look added by data alone carries it; the grass seed is one', () => {
+  const [inv, blocks] = fresh();
+  inv.items.push({ name: 'test:barley', label: 'Barley', color: '#aaccff', size: 0.1, look: { shape: 'cluster', size: [0.1, 0.04, 0.1], texture: 'dwell:sand', color: '#ffffff' } });
+  const rs = inventoryRust(validateInventory(inv, blocks));
+  assert.match(rs, /name: "test:barley".*look: Some\(ItemLook \{ shape: LookShape::Cluster, size: \[0.1, 0.04, 0.1\]/);
+  assert.match(rs, /name: "dwell:grass_seed".*look: Some\(ItemLook \{ shape: LookShape::Cluster/);
+});
+
 test('bad entries fail naming the entry and the problem', () => {
   const cases = [
     [(i) => (i.stackSize = 0), /stackSize must be a whole number/],
@@ -60,7 +68,7 @@ test('bad entries fail naming the entry and the problem', () => {
     [(i) => (i.items[0].name = 'dwell:dirt'), /a block of that name is already an item/],
     [(i) => (i.items[1].stack = 65), /items\.dwell:stick: stack must be/],
     [(i) => (i.items[3].value = 0), /items\.dwell:gem: value must be/],
-    [(i) => (i.items[0].look.shape = 'cube'), /items\.dwell:rock\.look: shape must be one of rod, lump/],
+    [(i) => (i.items[0].look.shape = 'cube'), /items\.dwell:rock\.look: shape must be one of rod, lump, cluster/],
     [(i) => (i.items[0].look.size = [0.1, 0, 0.1]), /items\.dwell:rock\.look: size must be/],
     [(i) => (i.items[1].look.texture = 'dwell:marble'), /items\.dwell:stick\.look: texture "dwell:marble" is not a block/],
     [(i) => (i.items[1].look.colour = '#000000'), /items\.dwell:stick\.look: unknown field colour/],

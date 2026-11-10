@@ -8,7 +8,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { LOOK_SHAPES, loadBlocks, loadInventory } from '../inventory/gen.mjs';
+import { LOOK_SHAPES, loadBlocks, loadInventory, lookVariant } from '../inventory/gen.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
@@ -56,7 +56,7 @@ export function validateGround(data, namespaces, inventory) {
     if (!item) fail(`${at}: item ${JSON.stringify(k.item)} is not an inventory item`);
     const look = item.look;
     if (!look) fail(`${at}: item ${k.item} has no look (shared/inventory/inventory.json \`look\`)`);
-    if (!LOOK_SHAPES.includes(look.shape)) fail(`${at}: ${k.item}'s look.shape must be rod or lump`);
+    if (!LOOK_SHAPES.includes(look.shape)) fail(`${at}: ${k.item}'s look.shape must be one of ${LOOK_SHAPES.join(', ')}`);
     block(look.texture, `${at}: ${k.item}'s look.texture`);
     if (typeof look.color !== 'string' || !COLOR.test(look.color)) fail(`${at}: ${k.item}'s look.color must be #rrggbb`);
     const s = k.scale ?? [1, 1];
@@ -109,7 +109,7 @@ export function groundRust(d) {
   rs.push('/// The ground items\' kinds, in data order (a kind\'s index is its id in the mesh and on the wire).');
   rs.push(`pub const KINDS: [GroundKind; ${d.kinds.length}] = [`);
   for (const k of d.kinds) {
-    const shape = k.shape === 'rod' ? 'Rod' : 'Lump';
+    const shape = lookVariant(k.shape);
     rs.push(
       `    GroundKind { name: ${JSON.stringify(k.name)}, item: ${JSON.stringify(k.item)}, shape: GroundShape::${shape}, size: [${k.size.map(f).join(', ')}], texture: ${JSON.stringify(k.texture)}, color: ${rgb(k.color)}, scale: [${k.scale.map(f).join(', ')}] },`,
     );
