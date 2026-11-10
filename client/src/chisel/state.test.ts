@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ARCHIPELAGO_FIXTURE,
+  ARCHIPELAGO_WORLD,
   DESERT_FIXTURE,
   STORE_KEY,
   addBiome,
   buildEdit,
   fromJson,
+  knob,
   loadEdit,
   saveEdit,
   toJson,
@@ -21,6 +24,24 @@ function memory(init: Record<string, string> = {}) {
 }
 
 describe('Chisel state', () => {
+  it('the archipelago (world knobs, a water hue, banks) round-trips and validates', () => {
+    const e = { ...addBiome(buildEdit(), ARCHIPELAGO_FIXTURE), world: structuredClone(ARCHIPELAGO_WORLD) };
+    expect(validateEdit(e)).toEqual([]);
+    expect(knob(e, 'islands', 'amplitude')).toBe(1400);
+    expect(knob(buildEdit(), 'islands', 'amplitude')).toBe(0);
+    const back = fromJson(toJson(e));
+    expect(back).toEqual({ edit: e });
+    const bad = structuredClone(e);
+    bad.world = { ...bad.world, islands: { amplitude: -1 } };
+    expect(validateEdit(bad).join()).toMatch(/islands\.amplitude is out of range/);
+    const hue = structuredClone(e);
+    hue.biomes[1] = { ...ARCHIPELAGO_FIXTURE, name: 'test:archipelago', waterLook: { scatter: 'teal' } };
+    expect(validateEdit(hue).join()).toMatch(/waterLook\.scatter must be a colour/);
+    const unknown = structuredClone(e);
+    (unknown.world as Record<string, unknown>).rivers = { bank: 1 };
+    expect(validateEdit(unknown).join()).toMatch(/rivers is not a world knob/);
+  });
+
   it('the build edit is valid and round-trips through its JSON', () => {
     const e = addBiome(buildEdit(), DESERT_FIXTURE);
     expect(validateEdit(e)).toEqual([]);

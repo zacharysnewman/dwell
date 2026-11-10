@@ -5,10 +5,13 @@
 import {
   validateBiome,
   validateBiomeMap,
+  validateWorldKnobs,
   type BlockInfo,
 } from '../../../shared/worldgen/biomes.mjs';
 import defaultBiome from '../../../shared/worldgen/biomes/default.json';
 import desert from '../../../shared/worldgen/biomes/fixtures/desert.json';
+import archipelago from '../../../shared/worldgen/biomes/fixtures/archipelago.json';
+import archipelagoWorld from '../../../shared/worldgen/worlds/archipelago.json';
 import terrain from '../../../shared/worldgen/terrain.json';
 import decorations from '../../../shared/worldgen/decorations.json';
 import placements from '../../../shared/worldgen/placements.json';
@@ -25,11 +28,14 @@ export interface BandJson {
   shoreBlock: string;
 }
 export type BiomeMapJson = Record<string, number | string>;
+/** World knobs (terrain.json's groups, `WORLD_KNOBS`' keys): the archipelago's (ADR 0074 B4). */
+export type WorldJson = Record<string, Record<string, number>>;
 
-/** What Chisel edits: the biomes (the default first) and the biome map. */
+/** What Chisel edits: the biomes (the default first), the biome map, and optional world knobs. */
 export interface Edit {
   biomes: BiomeJson[];
   biomeMap: BiomeMapJson;
+  world?: WorldJson;
 }
 
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
@@ -51,7 +57,17 @@ const REFS = {
 /** The biomes a world can start from: the build's default and the fixtures. */
 export const DEFAULT_BIOME: BiomeJson = defaultBiome;
 export const DESERT_FIXTURE: BiomeJson = desert;
-export const TEMPLATES: readonly BiomeJson[] = [DEFAULT_BIOME, DESERT_FIXTURE];
+export const ARCHIPELAGO_FIXTURE: BiomeJson = archipelago;
+export const TEMPLATES: readonly BiomeJson[] = [DEFAULT_BIOME, DESERT_FIXTURE, ARCHIPELAGO_FIXTURE];
+/** The archipelago example's world knobs (shared/worldgen/worlds/archipelago.json). */
+export const ARCHIPELAGO_WORLD: WorldJson = archipelagoWorld.overrides;
+
+/** A world knob's value: the edit's, else terrain.json's. */
+export function knob(e: Edit, group: string, key: string): number {
+  const own = e.world?.[group]?.[key];
+  if (own !== undefined) return own;
+  return Number((terrain as unknown as Record<string, Record<string, unknown>>)[group]?.[key]);
+}
 
 /** The build's edit: its default biome alone, the build's biome map. */
 export function buildEdit(): Edit {
@@ -75,15 +91,18 @@ export function validateEdit(e: Edit): string[] {
   if (dup) errors.push(`biome ${dup} is defined twice`);
   try {
     validateBiomeMap(e.biomeMap);
+    if (e.world !== undefined) validateWorldKnobs(e.world);
   } catch (err) {
     errors.push((err as Error).message);
   }
   return errors;
 }
 
-/** The edit as one JSON file: `{ biomes, biomeMap }` (each biome a biomes/<name>.json). */
+/** The edit as one JSON file: `{ biomes, biomeMap, world? }` (each biome a biomes/<name>.json). */
 export function toJson(e: Edit): string {
-  return JSON.stringify({ biomes: e.biomes, biomeMap: e.biomeMap }, null, 2);
+  const out: Edit = { biomes: e.biomes, biomeMap: e.biomeMap };
+  if (e.world) out.world = e.world;
+  return JSON.stringify(out, null, 2);
 }
 
 /** An edit from `toJson`'s text (or one biome file alone); errors when it is not valid. */
@@ -104,7 +123,11 @@ export function fromJson(
           biomes: [...base.biomes.filter((b) => b.name !== o.name), v as BiomeJson],
           biomeMap: base.biomeMap,
         }
-      : { biomes: o.biomes as BiomeJson[], biomeMap: o.biomeMap ?? base.biomeMap };
+      : {
+          biomes: o.biomes as BiomeJson[],
+          biomeMap: o.biomeMap ?? base.biomeMap,
+          ...(o.world ? { world: o.world } : {}),
+        };
   const errors = validateEdit(edit);
   return errors.length ? { errors } : { edit };
 }

@@ -395,7 +395,7 @@ pub fn preview(g: &TerrainGenerator, x0: i64, z0: i64, n: i64, texel: i64, o: Ov
 mod tests {
     use super::*;
     use dwell_worldgen::bifacial::BifacialTerrain;
-    use dwell_worldgen::terrain::FIXTURE_BIOMES;
+    use dwell_worldgen::terrain::{FIXTURE_BIOMES, FIXTURE_WORLDS};
 
     fn file(path: &str) -> Value {
         let p = format!(
@@ -412,10 +412,19 @@ mod tests {
             biome_from_json(&file("biomes/default.json")).unwrap(),
             BIOMES[0]
         );
-        assert_eq!(
-            biome_from_json(&file("biomes/fixtures/desert.json")).unwrap(),
-            FIXTURE_BIOMES[0]
-        );
+        for f in ["desert", "archipelago"] {
+            let b = biome_from_json(&file(&format!("biomes/fixtures/{f}.json"))).unwrap();
+            assert_eq!(
+                Some(&b),
+                FIXTURE_BIOMES.iter().find(|x| x.name == b.name),
+                "{f}"
+            );
+        }
+        // The archipelago's world knobs, as Chisel sends them, are the fixture world's.
+        let w = file("worlds/archipelago.json");
+        let (_, want) = FIXTURE_WORLDS[0];
+        assert_eq!(height_from_json(&w["overrides"]).unwrap(), want);
+        assert_eq!(height_from_json(&serde_json::json!({})).unwrap(), HEIGHT);
         assert_eq!(
             biome_map_from_json(&file("terrain.json")["biomeMap"]).unwrap(),
             BIOME_MAP

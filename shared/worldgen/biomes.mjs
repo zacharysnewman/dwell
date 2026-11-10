@@ -240,3 +240,32 @@ export function validateBiomeMap(bm) {
   });
   return bm;
 }
+
+/**
+ * The world knobs Chisel may change (ADR 0074 B4, the archipelago's: the coast's islands, the sea
+ * floor's shelf, the inland rise, the hills' height): terrain.json's groups and keys.
+ */
+export const WORLD_KNOBS = {
+  islands: ['amplitude', 'wavelength', 'octaves', 'cap'],
+  seaFloor: ['depth', 'shelf'],
+  inland: ['rise', 'halfDistance'],
+  hills: ['amplitude'],
+};
+
+/** Checks Chisel's world knobs (`{ group: { key: v } }`, `WORLD_KNOBS`'s) by `TERRAIN`'s ranges. */
+export function validateWorldKnobs(w) {
+  const fail = (m) => {
+    throw new Error(`world: ${m}`);
+  };
+  if (typeof w !== 'object' || w === null || Array.isArray(w)) fail('must be an object');
+  for (const [g, keys] of Object.entries(w)) {
+    if (!(g in WORLD_KNOBS)) fail(`${g} is not a world knob`);
+    for (const [k, v] of Object.entries(keys ?? {})) {
+      if (!WORLD_KNOBS[g].includes(k)) fail(`${g}.${k} is not a world knob`);
+      const [min, max, whole] = TERRAIN[g][k];
+      const low = typeof min === 'object' ? v > min.above : v >= min;
+      if (!(isNum(v) && low && v <= max && (!whole || Number.isInteger(v)))) fail(`${g}.${k} is out of range`);
+    }
+  }
+  return w;
+}
