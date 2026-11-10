@@ -24,7 +24,13 @@ fn every_model_reads_with_its_joints_and_clips() {
         assert!(!model.indices.is_empty(), "{}", m.name);
         assert_eq!(model.positions.len(), model.weights.len(), "{}", m.name);
         for r in m.roles {
-            assert!(model.clip(r.clip).is_some(), "{}: role {} → {}", m.name, r.role, r.clip);
+            assert!(
+                model.clip(r.clip).is_some(),
+                "{}: role {} → {}",
+                m.name,
+                r.role,
+                r.clip
+            );
         }
         // The weights are normalised and every vertex is on the skin.
         for w in &model.weights {

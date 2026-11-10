@@ -76,7 +76,9 @@ fn u32_at(b: &[u8], at: usize) -> Result<u32, String> {
 /// An accessor's elements as floats (normalised integers to 0..1, plain ones as they are).
 fn floats(json: &Value, bin: &[u8], index: usize) -> Result<(Vec<f32>, usize), String> {
     let a = &json["accessors"][index];
-    let count = a["count"].as_u64().ok_or_else(|| err("accessor without count"))? as usize;
+    let count = a["count"]
+        .as_u64()
+        .ok_or_else(|| err("accessor without count"))? as usize;
     let width = match a["type"].as_str() {
         Some("SCALAR") => 1,
         Some("VEC2") => 2,
@@ -95,9 +97,10 @@ fn floats(json: &Value, bin: &[u8], index: usize) -> Result<(Vec<f32>, usize), S
     };
     let view = &json["bufferViews"][a["bufferView"]
         .as_u64()
-        .ok_or_else(|| err("sparse accessors aren't read"))? as usize];
-    let start =
-        view["byteOffset"].as_u64().unwrap_or(0) as usize + a["byteOffset"].as_u64().unwrap_or(0) as usize;
+        .ok_or_else(|| err("sparse accessors aren't read"))?
+        as usize];
+    let start = view["byteOffset"].as_u64().unwrap_or(0) as usize
+        + a["byteOffset"].as_u64().unwrap_or(0) as usize;
     let stride = view["byteStride"]
         .as_u64()
         .map_or(width * size, |s| s as usize);
@@ -169,9 +172,7 @@ pub fn parse(bytes: &[u8]) -> Result<Model, String> {
     for p in prims {
         let at = &p["attributes"];
         let get = |name: &str| -> Result<Vec<f32>, String> {
-            let i = at[name]
-                .as_u64()
-                .ok_or_else(|| format!("no {name}"))?;
+            let i = at[name].as_u64().ok_or_else(|| format!("no {name}"))?;
             Ok(floats(&json, bin, i as usize)?.0)
         };
         let base = m.positions.len() as u32;
@@ -182,7 +183,8 @@ pub fn parse(bytes: &[u8]) -> Result<Model, String> {
         match at["COLOR_0"].as_u64() {
             Some(i) => {
                 let (c, w) = floats(&json, bin, i as usize)?;
-                m.colors.extend(c.chunks_exact(w).map(|c| [c[0], c[1], c[2]]));
+                m.colors
+                    .extend(c.chunks_exact(w).map(|c| [c[0], c[1], c[2]]));
             }
             None => m.colors.extend(std::iter::repeat_n([1.0; 3], n)),
         }
@@ -191,10 +193,15 @@ pub fn parse(bytes: &[u8]) -> Result<Model, String> {
                 .into_iter()
                 .map(|j| j.map(|v| v as u8)),
         );
-        m.weights.extend(chunks::<4>(&get("WEIGHTS_0")?).into_iter().map(|w| {
-            let s: f32 = w.iter().sum();
-            if s > 0.0 { w.map(|v| v / s) } else { [1.0, 0.0, 0.0, 0.0] }
-        }));
+        m.weights
+            .extend(chunks::<4>(&get("WEIGHTS_0")?).into_iter().map(|w| {
+                let s: f32 = w.iter().sum();
+                if s > 0.0 {
+                    w.map(|v| v / s)
+                } else {
+                    [1.0, 0.0, 0.0, 0.0]
+                }
+            }));
         let idx = p["indices"].as_u64().ok_or_else(|| err("no indices"))?;
         m.indices.extend(
             floats(&json, bin, idx as usize)?
@@ -242,7 +249,11 @@ pub fn parse(bytes: &[u8]) -> Result<Model, String> {
             .collect(),
         None => vec![crate::math::IDENTITY; m.skin.len()],
     };
-    if m.joints.iter().flatten().any(|&j| usize::from(j) >= m.skin.len()) {
+    if m.joints
+        .iter()
+        .flatten()
+        .any(|&j| usize::from(j) >= m.skin.len())
+    {
         return Err(err("a vertex on a joint past the skin"));
     }
 

@@ -66,11 +66,7 @@ pub fn nlerp(a: Quat, b: Quat, t: f32) -> Quat {
     let s = if d < 0.0 { -1.0 } else { 1.0 };
     let q: Quat = std::array::from_fn(|k| a[k] * (1.0 - t) + b[k] * s * t);
     let n = q.iter().map(|v| v * v).sum::<f32>().sqrt();
-    if n < 1e-8 {
-        a
-    } else {
-        q.map(|v| v / n)
-    }
+    if n < 1e-8 { a } else { q.map(|v| v / n) }
 }
 
 /// The rotation by `deg` degrees about the unit `axis`.

@@ -16,6 +16,7 @@ futures-channel = "0.3"
 bytemuck = "1"
 dwell-blocks = { path = "../dwell-blocks" }
 dwell-characters = { path = "../dwell-characters" }
+dwell-models = { path = "../dwell-models" }
 dwell-game = { path = "../dwell-game" }
 dwell-lod = { path = "../dwell-lod" }
 dwell-look = { path = "../dwell-look" }
