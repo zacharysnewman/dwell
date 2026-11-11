@@ -1,6 +1,6 @@
 # ADR 0078: Block damage — hits to break by tool, as block data
 
-**Status:** Accepted (2026-11-10; D1 built in 0.52.28)
+**Status:** Accepted (2026-11-10; D1 and D2 built in 0.52.28)
 
 ## Context
 
@@ -23,9 +23,12 @@ and default values". The design is [`docs/BLOCK_DAMAGE.md`](../BLOCK_DAMAGE.md).
   refused; the last hit breaks it. Half the block's certain drops are spread over the hits, the rest on
   the destroy, totalling the block's drops.
 - **Compatibility:** the damage is saved in a new optional table (`block_damage`) of the world file;
-  older builds on the 0.52 line never open it, a world without it loads undamaged. No protocol message
-  changes in D1 (the client learns the counts from the same data; the damage itself is sent to clients
-  in D2 with its look). Not a breaking change: no new compatibility line.
+  older builds on the 0.52 line never open it, a world without it loads undamaged. On the wire it is
+  optional, as the creatures' (ADR 0073): the server sets `inventory_flags::DAMAGE` (older clients ignore
+  the bit), only a client that sends `DamageHello` is sent `Damage`, and only a client that saw the bit
+  adds the struck point to its break requests. Not a breaking change: no new compatibility line.
+- **The look (D2):** per block `damage.look` (shards, scoops, chips; size and colours), drawn by the
+  mesher as decals on the struck faces with cracks growing with the damage; collision unchanged.
 
 ## Consequences
 

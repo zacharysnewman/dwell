@@ -76,7 +76,8 @@ a block's `damage` (block data) gives its hits to break by bare hands (`default`
 tool class or item; a class's count is divided by the held tool's tier speed. Stone takes 5 hits with the
 stone pickaxe, 3 with the metal one and can't be broken by hand; soil and sand take 5 with the wooden
 shovel, 3 with the metal one and 11 by hand. Same in creative (the hotbar's tool) and adventure (the
-held slot's). Half a block's drops come out over the hits, the rest on the last.
+held slot's). Half a block's drops come out over the hits, the rest on the last. Each hit shows where it
+struck (a shard knocked off stone, a scoop out of soil) and cracks grow until the block breaks.
 
 **How a tool sits in the hand (0.52.22).** Owner, 2026-11-10: the tools were far too big and held
 bolt upright, filling the right third of the screen, the double axe's flat face to the camera. Each

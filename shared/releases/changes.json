@@ -4,7 +4,7 @@
     {
       "version": "0.52.28",
       "changes": [
-        "Blocks take several hits to break: a pickaxe cracks stone in 5 (metal 3), a shovel digs soil in 5 (metal 3), bare hands take 11 and can't break stone. Damage stays until the block breaks, also in saved worlds."
+        "Blocks take several hits to break: a pickaxe chips shards off stone in 5 (metal 3), a shovel scoops soil in 5 (metal 3), bare hands take 11 and can't break stone. Cracks grow with each hit and stay until the block breaks."
       ]
     },
     {

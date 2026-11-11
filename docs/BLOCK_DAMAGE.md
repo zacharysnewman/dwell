@@ -1,7 +1,7 @@
 # Block damage: pickaxe shards, shovel scoops
 
-**Status:** adopted ([ADR 0078](adr/0078-block-damage.md), 2026-11-10); D1 built (0.52.28, §5), D2 (the
-looks) and D3 (tuning) to come. The owner's direction and answers are §1; §2 was the proposal's sketch,
+**Status:** adopted ([ADR 0078](adr/0078-block-damage.md), 2026-11-10); D1 and D2 built (0.52.28, §5–6),
+D3 (tuning) to come. The owner's direction and answers are §1; §2 was the proposal's sketch,
 §5 is what D1 built.
 
 ## 1. The owner's direction
@@ -101,9 +101,32 @@ looks) and D3 (tuning) to come. The owner's direction and answers are §1; §2 w
 - **Test switch:** `ServerConfig::one_hit_breaks` (the tests' `flat()` turns it on) breaks every block in
   one hit, for tests that break blocks with one click.
 
-**Not in D1 (deferred):** sending the damage to clients (in the chunk and as an edit) — nothing draws it
-until D2, and a new S→C message needs the protocol's optional handling, so D2 adds it with the look; the
-struck point in the edit request; the crack overlay placeholder. e2e: `edit.spec.ts`'s `breakBlock` and
-`menu.spec.ts` now hit until the cell breaks; a palette block that needs a pickaxe (stone) in creative is
-broken by hand in `edit.spec.ts` and needs the pickaxe selected or a page switch (not yet run).
+## 6. As built (D2, 0.52.28)
+
+- **Sync** (optional, as the creatures'): a server keeping damage sets `inventory_flags::DAMAGE` in
+  `Inventory`; a client that sees it sends `DamageHello` and is sent every damaged cell, then each change
+  (`Damage`: per cell its fraction 0..255 and marks; and the cells gone). An older client never sees the
+  bit and is never sent `Damage` (an unknown reliable message would close it); an older server never gets
+  `DamageHello`. Rather than a section in the chunk message, the damaged cells come in `Damage` after the
+  hello, as the axe's `Cuts` do (the chunk message has no optional sections).
+- **The struck point:** a break request's optional three bytes (1/255ths of the cell, world-oriented),
+  sent only to a DAMAGE server (an older one would read trailing bytes as malformed); the client finds it
+  where the aim meets the targeted face. The server records it in the hit mark (the face centre without it).
+- **The look:** `damage.look` in the block data: `kind` (`shards` | `scoops` | `chips`), `size` (a mark's
+  width in cells at full damage), `color` (the fresh face inside), `crack` (the cracks); validated by
+  `shared/tools/gen.mjs`. Stone: shards in a pale fresh rock tone; dirt, grass, snowy grass: dark damp
+  scoops; sand: a darker sand scoop. The mesher (`mesher/damage_mesh.rs`) draws each mark as decals 4 mm
+  off the face in the opaque mesh: a shard's uneven five-sided facet with a darker inner facet, a scoop's
+  rim and darker middle, and past 20 % damage three crack wedges that grow with it, kept on the face.
+  Face-local: a face-B chunk's cells, faces and points are turned over as its cuts are (`both_faces` test).
+  Collision is unchanged.
+- **Feedback:** a hit short of breaking plays the material's recorded `Hit` sound at the struck point
+  (a one-hit break keeps its break sound).
+- **e2e:** `edit.spec.ts`'s `breakBlock` and `menu.spec.ts` hit until the cell breaks; the palette test
+  picks the stone pickaxe before breaking a stone piece.
+
+**Not done:** hit particles (the chips are the woods' only; a material's chip colour needs the puff
+colours as data); remote players' hits are silent (the sound plays on the hitter's client); the e2e
+specs are not run locally; the look's tuning with the owner (the cracks read strong, the soil scoop as a
+dark patch more than a bowl).
 

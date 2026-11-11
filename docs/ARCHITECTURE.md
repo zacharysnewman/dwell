@@ -808,7 +808,13 @@ default; none: can't); the server keeps each damaged cell's state, hits and up t
 (`dwell_protocol::damage::Damage`), acks a hit short of the count as refused (the block stays), breaks
 it on the last, spreads half its certain drops over the hits, and clears a changed cell's damage; the
 client predicts only one-hit breaks and tells the server its held pickaxe or shovel by
-`ChopAction::Held`. Not yet sent to clients (D2, with the look).
+`ChopAction::Held`. **The look [built, D2 0.52.28]:** the client keeps the server's `Damage` per cell
+(`ChunkStream::set_damage`), the chunk's mesh job carries its damaged cells
+(`dwell_mesh::mesh_chunk_damaged`), and the mesher draws each hit mark as decals just off the struck
+face in the opaque mesh (`mesher/damage_mesh.rs`: stone an angular shard in a fresher tone, soils a
+round darker scoop, cracks growing with the damage fraction; face-local through the face-B turn-over;
+collision unchanged), from the block's `damage.look` data. A hit short of breaking plays the
+material's `Hit` sound at the struck point.
 **Drawing** (`render/skinned.rs`, inside `CharacterRenderer`): the model's one mesh (36-byte
 vertices: position, normal, sRGB colour, 4 × u8 joints, 4 × unorm8 weights; the Peasant 1,834
 vertices, 66 KB), per body one block of uniforms (3,328 bytes, a dynamic offset: 64 joints' 3 × 4
@@ -3843,6 +3849,20 @@ C→S  Chop  0x58: u8 kind — 0 Hello (send me cuts; answered with at least one
 S→C  HeldTools 0x5A, world: u16 n, each u16 player id, str tool (empty: none), u8 vertical
 S→C  Cuts  0x59, world: u16 n, each i32×3 cell and its cut (per side f32 notch, f32×2 kerfs);
            then u16 n gone cells (at most 512 each); all of them after Hello, then each change
+```
+
+**Block damage: `DamageHello`, `Damage` (reliable), a break's struck point [built, 0.52.28]**
+(ADR 0078, docs/BLOCK_DAMAGE.md). Optional, as the creatures': a server that keeps damage sets
+`inventory_flags::DAMAGE` (8) in `Inventory` (older clients ignore the bit); a client that sees it
+sends `DamageHello` and adds the struck point to its breaks; the server sends `Damage` only to a
+client that said it. An older server never sees either; an older client is never sent `Damage`.
+```
+C→S  DamageHello      0x60: empty (send me damage; answered with every damaged cell)
+C→S  BlockEditRequest … then, optional (only to a DAMAGE server), u8×3 the struck point
+                      (1/255ths of the cell, world-oriented)
+S→C  Damage           0x61, world: u16 n (at most 512), each i32×3 cell, u8 fraction (hits /
+                      hits to break, 0..255), u8 marks (at most 4), each u8 face, u8×3 point;
+                      then u16 n gone cells; all of them after DamageHello, then each change
 ```
 
 **Vitals: `VitalsHello` (reliable), `Vitals` (datagram) [built, 0.50.57]** (ADR 0069). As the
