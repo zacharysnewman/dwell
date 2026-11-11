@@ -3,13 +3,14 @@
 //! log cells (block data `crossSection`) are drawn whole, as the chunk mesher draws them at their
 //! coarser cell: leaves chamfered where exposed, their normals and face shading leaning out of the
 //! crown (`mesher::leaves`, the same `Crowns` over the section's grid), logs as octagonal columns.
-//! The colours are the LOD's flat tile averages. Face-local, like the rest of the section mesher.
+//! The colours are the LOD's flat tile averages, a leaf's tinted by its tree (ADR 0079). Face-local, like the rest of the section mesher.
 
 use std::sync::OnceLock;
 
 use dwell_blocks::{STATES, StateId};
 use dwell_look::leaves::LEAVES;
 use dwell_look::normal_tint;
+use dwell_world::tree_tint::Tint;
 use dwell_world::{CELL_H, normal_to_m};
 
 use crate::mesher::leaves::{Crowns, Piece, canopy_normal, column_pieces, pieces};
@@ -36,6 +37,12 @@ pub(crate) fn tree_kind(m: StateId) -> u8 {
     t.get(usize::from(m)).copied().unwrap_or_else(|| of(m))
 }
 
+/// Whether `cells` (a padded chunk or a section) hold any leaf: the mesh jobs ask the generator
+/// for the trees' tints (ADR 0079) only then.
+pub fn has_leaves(cells: &[u16]) -> bool {
+    cells.iter().any(|&m| tree_kind(m) == 1)
+}
+
 const FACES: [(usize, i32); 6] = [(0, 1), (0, -1), (1, 1), (1, -1), (2, 1), (2, -1)];
 
 /// Draws the section's tree cells into `out` (positions in cells, normals in cell space, linear
@@ -45,6 +52,7 @@ pub(crate) fn tree_cells(
     skip: impl Fn(i32, i32, i32) -> bool,
     color: impl Fn(StateId, usize) -> u32,
     out: &mut crate::lod_mesher::FlatMesh,
+    tint: &dyn Fn(i32, i32, i32) -> Tint,
 ) {
     let at = |x: i32, y: i32, z: i32| cells[dwell_world::lod::cell_index(x, y, z)];
     let mut any = false;
@@ -118,6 +126,9 @@ pub(crate) fn tree_cells(
                     column_pieces(ex, OCTAGON_CUT)
                 };
                 let canopy = if kind == 1 { crowns.as_ref() } else { None };
+                // A leaf takes its tree's tint (ADR 0079), as the chunk mesher's leaves do.
+                let t = if kind == 1 { tint(x, y, z) } else { Tint::NONE };
+                let color = |m: StateId, g: usize| t.apply_rgb8(color(m, g));
                 for p in &list {
                     emit(out, c, m, p, canopy, &color);
                 }
@@ -173,9 +184,13 @@ fn emit(
 
 #[cfg(test)]
 mod tests {
-    use crate::lod_mesher::{MeshSectionOptions, mesh_section};
+    use crate::lod_mesher::{MeshSectionOptions, mesh_section, mesh_section_tinted};
     use crate::mesher::{ChunkFlags, mesh_chunk_flags};
     use dwell_blocks::require;
+    use dwell_world::FaceFrame;
+    use dwell_world::tree_tint::{Tint, TreeTint};
+
+    const N: i32 = dwell_protocol::CHUNK_SIZE;
 
     /// A tree fixture in the 34³ padded layout (chunks' and sections' alike): a log column 8 cells
     /// tall and a 5 × 6 × 5 crown round its top, corners cut.
@@ -258,6 +273,124 @@ mod tests {
                     && (n[2].abs() - std::f32::consts::FRAC_1_SQRT_2).abs() < 0.01
             });
             assert!(diagonal, "the trunk is an octagon at LOD");
+        }
+    );
+
+    /// The tree fixture with a lone placed leaf beside it, as face `f`'s world cells (face B's rows
+    /// reversed: the meshers mirror them back), and the leaf's column.
+    fn tree_and_placed_leaf(f: FaceFrame) -> (Vec<u16>, i32) {
+        let mut local = tree();
+        local[dwell_world::lod::cell_index(4, 20, 4)] = require("dwell:leaves");
+        let cells = if f.is_b() {
+            crate::lod_mesher::mirror_rows(&local)
+        } else {
+            local
+        };
+        (cells, 4)
+    }
+
+    const DARKER: Tint = Tint {
+        hue: 0.0,
+        lightness: 0.8,
+    };
+
+    /// Per vertex: the tinted mesh's colours against the plain one's (same geometry), and whether
+    /// any vertex in the placed leaf's column `x0` (positions in metres) changed.
+    fn compare(plain: &[f32], tinted: &[f32], pos: &[f32], x0: i32) -> (usize, usize) {
+        assert_eq!(plain.len(), tinted.len(), "the tint changes no geometry");
+        let (mut darker, mut placed) = (0, 0);
+        for (i, (a, b)) in plain
+            .chunks_exact(3)
+            .zip(tinted.chunks_exact(3))
+            .enumerate()
+        {
+            let x = pos[i * 3];
+            if a == b {
+                continue;
+            }
+            assert!(
+                (0..3).all(|c| b[c] <= a[c]) && b.iter().sum::<f32>() < a.iter().sum::<f32>(),
+                "a tinted vertex is darker: {a:?} → {b:?}"
+            );
+            darker += 1;
+            if x >= x0 as f32 - 0.01 && x <= x0 as f32 + 1.01 {
+                placed += 1;
+            }
+        }
+        (darker, placed)
+    }
+
+    dwell_world::both_faces!(
+        /// Per-tree leaf tints (ADR 0079): a tree's leaves and cards take its tint near (the chunk
+        /// mesher, the tree listed face-local) and far (the section mesher, its cells listed in
+        /// the section's rows), its trunk does not, and a placed leaf no tree owns keeps the
+        /// plain colour.
+        fn a_trees_tint_darkens_its_leaves_near_and_far_but_not_a_placed_leaf(f: FaceFrame) {
+            use crate::mesher::mesh_chunk_trees;
+            let (cells, x0) = tree_and_placed_leaf(f);
+            // The chunk meshed is face-local chunk (0, 3, 0): the tree's anchor and bounds there.
+            let local = dwell_world::ChunkCoord::new(0, 3, 0);
+            let world = f.chunk(local);
+            let origin = [world.x * N, world.y * N, world.z * N];
+            let y0 = local.y * N;
+            let oak = TreeTint {
+                anchor: [16, y0 + 4, 16],
+                min: [14, y0 + 4, 14],
+                max: [18, y0 + 15, 18],
+                tint: DARKER,
+            };
+            let flags = ChunkFlags {
+                water_tops: true,
+                cards: true,
+            };
+            let near = |trees: &[TreeTint]| {
+                mesh_chunk_trees(&cells, &[], f.is_b(), origin, &[], None, flags, &[], trees)
+                    .expect("padded")
+            };
+            let (plain, tinted) = (near(&[]), near(&[oak]));
+            assert_eq!(plain.opaque, tinted.opaque, "the trunk keeps its colour");
+            let (darker, placed) = compare(
+                &plain.cutout.colors,
+                &tinted.cutout.colors,
+                &plain.cutout.positions,
+                x0,
+            );
+            assert!(darker > 100, "the crown and its cards are tinted: {darker}");
+            assert_eq!(placed, 0, "the placed leaf is not");
+            // The cards too: their stream's vertices (bare 1) are among the darker.
+            let cards_darker = plain
+                .cutout
+                .bare
+                .iter()
+                .enumerate()
+                .filter(|&(i, &b)| {
+                    b == 1.0
+                        && plain.cutout.colors[i * 3..i * 3 + 3]
+                            != tinted.cutout.colors[i * 3..i * 3 + 3]
+                })
+                .count();
+            assert!(cards_darker > 0, "the cards take the tint");
+
+            // Far: every leaf of the crown listed in the section's own (world) rows.
+            let leaf = require("dwell:leaves");
+            let tints: Vec<(u32, Tint)> = (0..cells.len())
+                .filter(|&i| cells[i] == leaf && (i % 34) as i32 - 1 != x0)
+                .map(|i| (i as u32, DARKER))
+                .collect();
+            let options = MeshSectionOptions {
+                mirror: f.is_b(),
+                ..Default::default()
+            };
+            let plain = mesh_section(&cells, &options).expect("cells");
+            let tinted = mesh_section_tinted(&cells, &options, &tints).expect("cells");
+            let (darker, placed) = compare(
+                &plain.opaque.colors,
+                &tinted.opaque.colors,
+                &plain.opaque.positions,
+                x0,
+            );
+            assert!(darker > 50, "the far crown is tinted: {darker}");
+            assert_eq!(placed, 0, "the far placed leaf is not");
         }
     );
 }

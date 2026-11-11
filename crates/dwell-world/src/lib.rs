@@ -22,6 +22,7 @@ pub mod region;
 pub mod structure;
 pub mod support;
 pub mod swing;
+pub mod tree_tint;
 mod voxel;
 
 pub use bounds::{BUILD_VOLUME, BoundsShape, BuildVolume, Overlap, inside_build_volume};

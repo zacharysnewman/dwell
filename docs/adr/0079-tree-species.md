@@ -1,6 +1,7 @@
 # 0079 — Tree species: trees grown from data by (species, seed, stage)
 
 **Status:** Accepted (2026-11-11; S1 built in 0.52.58: species data, the builder, worldgen placement in
+the starter world; S2, thin trunks, in 0.52.59; S3, growth over time, in 0.52.60; S4, per-tree leaf tints). Builds on ADR 0033 (tree growth), ADR 0043 (placements), ADR 0072 (octagonal logs),
 the starter world; S2, thin trunks, in 0.52.59; S3, growth over time, in 0.52.60; S4, saplings, in the next release). Builds on ADR 0033 (tree growth), ADR 0043 (placements), ADR 0072 (octagonal logs),
 ADR 0074 (biomes) and docs/TREE_GROWTH.md §9–§11.
 
@@ -21,8 +22,8 @@ editing `shared/trees/*.json`. Fixed in code: the trunk, branch (`heavy`, `whorl
 
 1. **Data.** `shared/trees/<name>.json`, one species per file: its blocks (log, leaf), trunk heights
    (sapling, the mature range a seed draws from, the ½ m step), trunk widths (drawn as the log's
-   widths from 0.52.59), a palm's lean, branches, crown, `variety` (crown scale; lightness and hue kept for
-   per-tree tints, not drawn yet) and `growth` (`stages`, `daysPerStage`, `wild`: each stage's weight
+   widths from 0.52.59), a palm's lean, branches, crown, `variety` (crown scale; lightness and hue: per-tree leaf
+   tints, drawn since S4) and `growth` (`stages`, `daysPerStage`, `wild`: each stage's weight
    among generated trees, `variants`: seeds per placement). `shared/trees/gen.mjs` validates every
    field (a bad entry fails naming the species and field) and emits `species.gen.rs`; the fixture
    `shared/trees/fixtures/shrub.json` is a species added by data alone (Rust and node tests).
@@ -61,10 +62,29 @@ editing `shared/trees/*.json`. Fixed in code: the trunk, branch (`heavy`, `whorl
   the widest reach), and `trees_in` computed every column of it: the starter's tree spots took 1.3 s
   for 256 chunks against 0.85 s at 0.52.57. It now asks each column only when a candidate needs it,
   cached: 0.5 s (`starter_world.rs` `time_tree_spots`), the trees unchanged.
-- Outstanding: growth over time (below); per-tree leaf tint (`variety.lightness`, `hue`: the mesher
-  draws leaves by cell and does not know a cell's tree; needs a per-tree tint the chunk carries, e.g.
-  the placed tree's seed in the generated chunk's tree list, read by the leaf mesher; not cheap); frond
-  blades; a pine needle block; climate-fitted palms (a warm-coast vegetation kind).
+- Outstanding: frond blades; a pine needle block; climate-fitted palms (a warm-coast vegetation kind).
+- **Per-tree leaf tints (S4, built):** `species::tint(species, seed)` draws a tree's tint as the
+  prototype's `growTree` does (the variety stream after the crown's scale: hue, then lightness), the
+  same at every stage; `gen.mjs` now emits `lightness` and `hue`. `TerrainGenerator::tree_tints(lo, hi)`
+  lists the species trees reaching the columns as `dwell_world::tree_tint::TreeTint` (anchor, placed
+  bounds, tint; face-local), none when no placement stands a species (the default world: its pines
+  are hand-built) or the variety draws none. A cell's tree is `tree_tint::owner`: of the trees whose
+  bounds hold it, the nearest anchor across (x, z), then along y, then the least anchor — a pure
+  function of the cell and the trees reaching it, so the two chunks at a border (each listing the trees
+  reaching its own columns) agree. The client's mesh worker asks its generator for a chunk holding
+  leaves (`BifacialTerrain::tree_tints`, in the frame face B's chunk is meshed in) and passes the list to
+  `dwell_mesh::mesh_chunk_trees`: the leaf faces and cards take `Tint::apply_rgb8` of their colour (HSL
+  hue turned, then scaled). LOD sections at the tree levels (1 m, 2 m) get `BifacialTerrain::lod_tints`
+  at generation (each tree cell's owner asked at its centre voxel, the chunks' own question), carried
+  with the cells (`GeneratedSection`, the `MeshSection` job) to `mesh_section_tinted`, so a far tree has
+  its near tint. Placed leaves (no tree owns them) keep the plain colour. Not breaking: mesh colour
+  only; the job messages are a build's own; the goldens (worldgen hashes) are unaffected. Tests:
+  `tree_tint.rs` (the owner whatever the order, the tint's colour), `species.rs` (seeds draw different
+  tints inside the ranges; the fixture `fixtures/tinted.json` by data alone; `test:shrub` draws none),
+  `tests/leaf_tints.rs` (starter world, both faces: border cells get the same tree from either chunk;
+  LOD and chunk tints match; the default world lists none), `lod_trees.rs` (both faces: a tree's tint
+  darkens its leaves and cards near and far, not its trunk nor a placed leaf). The in-game look is to
+  be checked on a GPU. Not yet: coarser LOD levels' canopy-coloured column tops are untinted.
 - **Growth over time (S3, built in 0.52.60):** `dwell_worldgen::growth`. A `Record` per species tree,
   keyed by its anchor (world cell): face, species, seed, stage, `since` (the world day it reached the
   stage; generated trees day 0), turn, planter and variant (its block swaps), `stopped`. `Record::due`:

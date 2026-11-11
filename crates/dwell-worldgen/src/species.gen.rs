@@ -17,6 +17,8 @@ pub static SPECIES: [Species; 3] = [
         crown: Crown::Lumpy { centre: 1.2, radius: [2.4, 1.7, 2.4], lump_radius: (1.2, 1.8), lump_height: (0.9, 1.3), roughness: 0.3 },
         crown_scale: (0.3, 1.0),
         crown_variety: (0.8, 1.2),
+        lightness: (0.72, 1.18),
+        hue: (-0.045, 0.045),
         stages: 8,
         days_per_stage: 3.0,
         wild: &[0, 1, 1, 1, 2, 3, 5, 12],
@@ -36,6 +38,8 @@ pub static SPECIES: [Species; 3] = [
         crown: Crown::Fronds { fronds: (8.0, 11.0), length: (2.8, 3.6), lift: 0.55, droop: 1.25 },
         crown_scale: (0.3, 1.0),
         crown_variety: (0.85, 1.15),
+        lightness: (0.88, 1.1),
+        hue: (-0.03, 0.03),
         stages: 8,
         days_per_stage: 3.0,
         wild: &[0, 1, 1, 1, 2, 3, 5, 12],
@@ -55,6 +59,8 @@ pub static SPECIES: [Species; 3] = [
         crown: Crown::Cone { base: 0.28, top: 1.5, radius: 3.2, taper: 1.3, tier_period: 2.0, tier_upper: 0.6, roughness: 0.25 },
         crown_scale: (0.3, 1.0),
         crown_variety: (0.8, 1.2),
+        lightness: (0.78, 1.15),
+        hue: (-0.035, 0.035),
         stages: 8,
         days_per_stage: 3.0,
         wild: &[0, 1, 1, 1, 2, 3, 5, 12],
@@ -65,7 +71,7 @@ pub static SPECIES: [Species; 3] = [
 
 /// The test fixtures (shared/trees/fixtures): species added by data alone.
 #[cfg(test)]
-pub static FIXTURES: [Species; 1] = [
+pub static FIXTURES: [Species; 2] = [
     Species {
         name: "test:shrub",
         log: "dwell:log",
@@ -79,10 +85,32 @@ pub static FIXTURES: [Species; 1] = [
         crown: Crown::Lumpy { centre: 0.5, radius: [1.2, 0.8, 1.2], lump_radius: (0.5, 0.6), lump_height: (1.0, 1.0), roughness: 0.0 },
         crown_scale: (0.5, 1.0),
         crown_variety: (1.0, 1.0),
+        lightness: (1.0, 1.0),
+        hue: (0.0, 0.0),
         stages: 3,
         days_per_stage: 1.0,
         wild: &[1, 1, 1],
         variants: 2,
         sapling: Some(Sapling { item: "dwell:tall_grass", plant_on: &["dwell:stone"], drop_chance: 1.0 }),
+    },
+    Species {
+        name: "test:tinted",
+        log: "dwell:log",
+        leaf: "dwell:leaves",
+        sapling_height: 0.5,
+        mature_height: (1.0, 1.5),
+        height_step: 0.5,
+        width: (0.25, 0.5, 0.25),
+        lean: (0.0, 0.0),
+        branches: Branches::None,
+        crown: Crown::Lumpy { centre: 0.5, radius: [1.2, 0.8, 1.2], lump_radius: (0.5, 0.6), lump_height: (1.0, 1.0), roughness: 0.0 },
+        crown_scale: (0.5, 1.0),
+        crown_variety: (1.0, 1.0),
+        lightness: (0.5, 0.6),
+        hue: (0.2, 0.25),
+        stages: 3,
+        days_per_stage: 1.0,
+        wild: &[1, 1, 1],
+        variants: 4,
     },
 ];

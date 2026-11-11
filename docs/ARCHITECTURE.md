@@ -1832,8 +1832,17 @@ follow. **The Textures tab (B6, 0.52.42):** the painterly materials and palette 
    unchanged). **[built, 0.52.59]** trunks stand on the log's narrower widths by stage; `trees_in` asks
    the ground columns of its margin lazily (cached), not all up front. **[built, 0.52.60]**
    growth over time (`dwell_worldgen::growth`, the server's growers step every 5 s over loaded
-   chunks, records in the world's optional `tree_growth` table; ADR 0079 S3). Not built: per-tree
-   leaf tints, frond blades.
+   chunks, records in the world's optional `tree_growth` table; ADR 0079 S3). **[built]** per-tree
+   leaf tints (ADR 0079): `TerrainGenerator::tree_tints` lists the species trees reaching a chunk's
+   columns (anchor, placed bounds, the seed's tint from its species' `variety`: a hue shift and a
+   lightness factor; `dwell_world::tree_tint`), the client's mesh worker asks it for a chunk holding
+   leaves and passes it to `dwell_mesh::mesh_chunk_trees`; a leaf cell (and its cards) takes the tint
+   of its owning tree (`tree_tint::owner`: the nearest anchor across, of the trees whose bounds hold
+   it), so chunks agree at a border. LOD sections at the tree levels carry `lod_tints` (cell index,
+   tint) from generation through `GeneratedSection` and the `MeshSection` job to
+   `mesh_section_tinted`, each cell's owner asked at its centre voxel, so the far tree matches the
+   near one. Placed leaves (no tree) and the default world (no species) are untinted. Not built:
+   frond blades.
    Ground items follow a biome's `ground` the same way (§ Ground items, 0.52.41).
    `trees_sparse` finds the same trees asking columns per candidate (Chisel's 3D section). The sky test (step 3) leaves room
    for the tallest structure over the highest ground; the spawn's level patch is clear of trees.

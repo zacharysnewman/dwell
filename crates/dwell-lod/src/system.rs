@@ -16,6 +16,7 @@
 //! results whose token is no longer current are ignored.
 
 use dwell_world::hash::{HashMap, HashSet};
+use dwell_world::tree_tint::Tint;
 use std::collections::VecDeque;
 
 use dwell_mesh::{SURFACE_STRIDE, SectionMeshes, section_bytes};
@@ -50,6 +51,9 @@ pub struct GeneratedSection {
     pub cells: Vec<u16>,
     pub surface: Option<Vec<f32>>,
     pub surface_b: Option<Vec<f32>>,
+    /// Its tree cells' leaf tints (ADR 0079; `dwell_worldgen::BifacialTerrain::lod_tints`):
+    /// (`cell_index`, tint) in the cells' own rows; empty for none.
+    pub tints: Vec<(u32, Tint)>,
 }
 
 /// The section generator (the worldgen pool). Each call starts a job; the host answers it later.
@@ -70,6 +74,8 @@ pub struct LodMeshJob {
     pub surface: Option<Vec<f32>>,
     pub water_drop: f64,
     pub mirror: bool,
+    /// The cells' leaf tints (`dwell_mesh::mesh_section_tinted`).
+    pub tints: Vec<(u32, Tint)>,
 }
 
 /// The section mesher (the worker pool).
@@ -453,6 +459,8 @@ struct Node {
     /// Each column's exact surface, as generated (a modified section's too: the mesher draws the
     /// columns its content still tops where generation did at their exact height, BUGS.md #43).
     surface: Option<Vec<f32>>,
+    /// Its generated tree cells' leaf tints (ADR 0079), kept with the cells.
+    tints: Vec<(u32, Tint)>,
     /// A modified section whose generated surface is still to be computed (`generate_surface`).
     wants_surface: bool,
     meshed: bool,
@@ -1045,6 +1053,7 @@ impl LodSystem {
         }
         self.set_cells(id, Some(s.cells));
         let n = self.nodes.get_mut(&id).expect("node");
+        n.tints = s.tints;
         // A face-B section's surfaces are face-local, those of its mirror image. A section that
         // may hold rows of both faces (level ≥ 7) keeps face A's: it is meshed for the viewer's
         // face, without surfaces on face B (see mesh).
@@ -1662,6 +1671,7 @@ impl LodSystem {
                     meshing: false,
                     cells: None,
                     surface: None,
+                    tints: Vec::new(),
                     wants_surface: false,
                     meshed: false,
                     remesh: false,
@@ -1962,6 +1972,7 @@ impl LodSystem {
             water_drop: chunk_water_drop_rows() / cell_size(coord.level) as f64,
             // Face B's terrain faces down: meshed as its mirror image, turned back.
             mirror: is_face_b_section(coord),
+            tints: self.n(id).tints.clone(),
         };
         self.mesh_jobs.insert(token, id);
         host.mesh_section(job, token);
@@ -1973,6 +1984,7 @@ impl LodSystem {
         self.cache_bytes = (self.cache_bytes + new).saturating_sub(n.cell_bytes());
         if cells.is_none() {
             n.surface = None;
+            n.tints = Vec::new();
         }
         n.cells = cells;
     }

@@ -197,6 +197,8 @@ function speciesRust(s) {
     `        crown: ${crown},`,
     `        crown_scale: ${pair(c.scale)},`,
     `        crown_variety: ${pair(s.variety.crown)},`,
+    `        lightness: ${pair(s.variety.lightness)},`,
+    `        hue: ${pair(s.variety.hue)},`,
     `        stages: ${s.growth.stages},`,
     `        days_per_stage: ${f(s.growth.daysPerStage)},`,
     `        wild: &[${s.growth.wild.join(", ")}],`,
