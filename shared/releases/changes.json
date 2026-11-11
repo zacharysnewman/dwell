@@ -2,6 +2,13 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.52.20",
+      "changes": [
+        "Quiet ambience: wind up high, waves, rivers, streams, birds by day, leaves; an Ambience volume in Settings → Sound.",
+        "Wolves howl and growl, deer snort; heavy breathing, a gasp on surfacing, a new tree crash."
+      ]
+    },
+    {
       "version": "0.52.19",
       "changes": [
         "Chisel: a 3D view of a square of the world (256 m to 8 km) with blocky ½ m steps, sun shadows and water, rebuilt as you edit; hill shading on the 2D views so walls and cones read."

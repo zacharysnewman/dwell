@@ -199,6 +199,74 @@ Still procedural: the slides and slide stops, `rise`, `dive`, `crouch_on`/`off`,
 `respawn`, `axe_rustle`, the torch's place and break, the fuse, the loops (fire, fuse fizz,
 waterfall), the game actions and the menu vocabulary.
 
+Since 0.52.20 (§2c, §2d) the samples are about 1.45 MB in all.
+
+### 2c. Ambience: `ambience`
+
+Owner (2026-11-10): wind stronger up high and in open ground, the sea near the coast, rivers and
+streams near moving water, birds in daytime forests and quieter at night, leaves near trees —
+*"Ongoing/ambient/looping sounds should be quieter so they're not really disruptive, more flavor
+than function."* ([ADR 0077](./adr/0077-ambience-beds.md).)
+
+```json
+"ambience": { "volume": 0.35, "fadeS": 2.5, "cap": 0.4,
+  "probe": {"radiusM": 16, "trees": ["dwell:leaves", "dwell:snowy_leaves", "dwell:log"]},
+  "beds": { "wind": {"files": ["wind-loop-1.m4a"], "gain": 0.3, "when": [
+    {"input": "altitude", "from": 0, "full": 60, "floor": 0.2}, {"input": "open", "from": 0.2, "full": 1}]} } }
+```
+
+- `volume`: the **Ambience** volume's default (Settings → Sound; the beds' own bus, per browser in
+  `dwell.audio`); `fadeS`: the time constant each bed glides to its level with; `cap`: no bed is
+  louder (validated against each bed's `gain`).
+- A **bed**: 1–4 looping files in `shared/sounds/samples/` (one drawn when it starts, at a random
+  point), its `gain`, and `when`: conditions, each a ramp over one **input** — 0 at `from`, 1 at
+  `full` (either way round), at least `floor`. Its level is `gain` × every ramp, capped. A bed below
+  0.003 is stopped (faded out), and started again when it is heard.
+- **Inputs** (the Rust probe, `dwell-game` `ambience.rs`, four times a second, face-local):
+  `altitude` (m above the sea), `height` (m above the ground under the listener), `open` (share of
+  a 9 × 9 grid of columns over `probe.radiusM` open to the sky), `waterShare` (share whose top is
+  water), `waterM` (m to the nearest), `flow` (the fastest current over it, m/s), `trees` (share
+  whose top is one of `probe.trees`), `day` (0 night – 1 day, the sun over the face), `fireM` (m to
+  the nearest burning light source). The vocabulary is code; the beds and their conditions data.
+- Sea, river and stream are told apart by the water's share and current: wide water near (the sea
+  or a lake), running water (a river), a narrow strip (a stream).
+
+| Bed | Universal Sound FX file | Conditions |
+|---|---|---|
+| `wind` | `WIND_Storm_Blowing_Deep_01_loop` | up high (a floor of 0.2 at sea level) × open sky |
+| `sea` | `WATER_Sea_Waves_Small_15sec_loop` | wide water (share ≥ 0.15) × near (≤ 40 m) |
+| `river` | `STREAM_FOUNTAIN_Wide_Outlet_Smooth_loop` | a current ≥ 0.1 m/s × near (≤ 24 m) |
+| `stream` | `STREAM_FOUNTAIN_Trickling_loop` | narrow water × near (≤ 12 m) |
+| `birds` | `ANIMAL_Birds_01_loop` | trees × daylight (a floor of 0.1 at night) |
+| `leaves` | `AMBIENCE_Summer_Broadleaf_Forest_Wind_loop` | trees × open sky (a floor of 0.3) |
+
+The loops were converted whole (mono AAC 64 kbps; no trimming, which would break the loop). The fire
+crackle near torches stays the procedural `burn` loop of §2 (ADR 0076's exception); a `fireM` bed
+can be added by data.
+
+### 2d. Creatures and the body
+
+- **`creatures`**: `radiusM` (heard within) and `models` by the creature's model name
+  (`shared/creatures/creatures.json`): `stride` (m between footsteps), `step`, `startle` (when it
+  breaks into a run), `call` sounds and `callEveryS` [min, max] (a call's interval, drawn). Events
+  `creature_step`, `creature_startle`, `creature_call` (`"creature": "step"` …) play the model's
+  sound; the event's block field is the model's index in the data (emitted into `sound.gen.rs`
+  `creature_sounds::MODELS`). A model without a part's sound is silent for it.
+  Picks: wolf — `step` the grass footsteps, quiet and higher; `startle` `ANIMAL_Dog_Growl_01_RR01–02`;
+  `call` `ANIMAL_Wolf_Howl_01–02` (every 50–140 s); deer and doe — `step` the dirt footsteps, quiet
+  (the pack's `ANIMAL_Horse_Walk` is a whole walk, not single hooves); `startle`
+  `ANIMAL_Horse_Snort_01–02_Dry`.
+- **The body** (`VitalSounds`): `exhausted` → `breath_heavy` (`MONSTER_Exhausted_05`, `_07`) once
+  stamina runs out; `gasp` (`GRUNT_Male_Hurt_With_Cough`) when the air rises again after falling
+  under 0.7 (surfacing from a long dive); `strain` (`GRUNT_Male_Subtle_Hurt`) as the air crosses 0.25.
+- **Felling**: `fell_crack` now plays `TREE_Falling_Tree_Crack_Then_Impact_02`, `_08`.
+
+Not built this round (0.52.20): leaves rustling as the player brushes through them, cracking sticks
+on ground items, piece impacts by material beyond the set's `land` (already played with `body_thud`),
+a separate debris rattle after a blast (the `dynamite_boom` picks carry debris), wolf footsteps
+proper. Saved for later by the owner: rain and thunder, pickup/inventory/UI/coins, eating and
+drinking, the ladder's creak.
+
 ## 3. Synthesis (`client/src/audio/synth.ts`)
 
 Plain Web Audio, no library (ADR 0032 §Library). Each play builds a short-lived node graph: a
