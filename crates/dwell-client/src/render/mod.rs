@@ -1111,6 +1111,9 @@ pub struct Renderer {
     draw_group: wgpu::BindGroup,
     draw_capacity: u64,
     level_colors: bool,
+    /// `?loddebug=` switches (debug; BUGS #68): bit 0 no skirts, 1 skirts tinted magenta, 2 no
+    /// per-section culling, 3 no stand-ins.
+    lod_debug: u8,
     players: HashMap<u32, PlayerView>,
     /// Your own body, drawn into the shadow maps only (a shadow even in first person).
     own_shadow: Option<PlayerView>,
@@ -1853,6 +1856,7 @@ impl Renderer {
             draw_group,
             draw_capacity: 1024,
             level_colors: false,
+            lod_debug: 0,
             players: HashMap::default(),
             own_shadow: None,
             own_body: None,
@@ -2126,6 +2130,14 @@ impl Renderer {
     }
     pub fn set_lod_level_colors(&mut self, on: bool) {
         self.level_colors = on;
+    }
+    /// The `?loddebug=` switches (see `lod_debug`): `noskirts`, `skirts`, `nocull`, `nostandins`.
+    pub fn set_lod_debug(&mut self, query: &str) {
+        let has = |w: &str| query.split(',').any(|q| q == w);
+        self.lod_debug = u8::from(has("noskirts"))
+            | u8::from(has("skirts")) << 1
+            | u8::from(has("nocull")) << 2
+            | u8::from(has("nostandins")) << 3;
     }
     /// The time of day: the sun, moon and stars, each face's sky and lights (`seconds` drives the
     /// stars' twinkle).
@@ -2875,7 +2887,12 @@ impl Renderer {
                     s.opaque.as_ref()
                 }
                 .expect("collected");
-                let mut r = vec![m.parts[0].clone()];
+                // Bit 7: the skirts alone (the `skirts` debug tint's second draw).
+                let mut r = if mask & 0x80 != 0 {
+                    Vec::new()
+                } else {
+                    vec![m.parts[0].clone()]
+                };
                 r.extend(
                     (0..6)
                         .filter(|f| mask & (1 << f) != 0)
@@ -3050,7 +3067,7 @@ impl Renderer {
             };
             [t[0], t[1], t[2], alpha]
         };
-        for &(id, mask, fade) in &self.terrain.shown {
+        for &(id, full_mask, fade) in &self.terrain.shown {
             let Some(s) = self.terrain.sections.get(&id) else {
                 continue;
             };
@@ -3059,10 +3076,24 @@ impl Renderer {
             }
             let fade = fade.shader_value();
             let side = s.cell * 32.0;
-            let passes = reaches(s.origin, [side, side * CELL_H, side]);
+            let passes = if self.lod_debug & 4 != 0 {
+                3
+            } else {
+                reaches(s.origin, [side, side * CELL_H, side])
+            };
             if passes == 0 {
                 continue;
             }
+            let mask = if self.lod_debug & 3 != 0 {
+                0
+            } else {
+                full_mask
+            };
+            let skirt_mask = if self.lod_debug & 2 != 0 {
+                full_mask
+            } else {
+                0
+            };
             let r = self.rel(s.origin);
             let offset = [r[0], r[1], r[2], s.cell as f32];
             if s.opaque.is_some() {
@@ -3081,6 +3112,23 @@ impl Renderer {
                     key: 0,
                     mesh: DrawMesh::Section(id, false, mask),
                 });
+                if skirt_mask != 0 {
+                    out.push(DrawItem {
+                        kind: Kind::Flat,
+                        water: false,
+                        no_depth: false,
+                        offset,
+                        clip: None,
+                        fade,
+                        tint: [4.0, 0.0, 4.0, 1.0],
+                        rotation: LOD_ROTATION,
+                        quat: IDENTITY_QUAT,
+                        page: 0,
+                        passes,
+                        key: 0,
+                        mesh: DrawMesh::Section(id, false, skirt_mask | 0x80),
+                    });
+                }
             }
             if s.water.is_some() {
                 out.push(DrawItem {
@@ -3105,7 +3153,7 @@ impl Renderer {
             .terrain
             .stand_ins
             .iter()
-            .filter(|s| !s.fade.is_hidden())
+            .filter(|s| !s.fade.is_hidden() && self.lod_debug & 8 == 0)
             .take(MAX_STAND_INS)
         {
             let passes = 3;
