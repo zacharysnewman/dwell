@@ -1761,10 +1761,11 @@ impl<S: Scene> Game<S> {
         if let Some(tool) = self.held_tool() {
             return self.chop_with(tool, action, now_ms);
         }
-        // In a world that uses items (ADR 0066) a place needs the held slot to hold a block.
+        // In a world that uses items (ADR 0066) a place needs the held slot to hold a block; a
+        // hotbar tool that does not chop (a pickaxe, a shovel) places nothing either.
         if action == EditAction::Place
-            && self.loose.uses_items()
-            && self.held_palette_slot().is_none()
+            && ((self.loose.uses_items() && self.held_palette_slot().is_none())
+                || self.palette_tool().is_some())
         {
             self.sounds.push(sound_event(SoundKind::Deny));
             return false;
@@ -3136,7 +3137,7 @@ impl<S: Scene> Game<S> {
             // Holding the hotbar's: a tool (the axe) as your hand shows it, else its block.
             let tool = (p.held == Puppets::HOTBAR)
                 .then(|| self.held())
-                .filter(|h| matches!(h, Held::Tool(_)));
+                .filter(|h| matches!(h, Held::Tool(_) | Held::Model { .. }));
             if p.held == Puppets::HOTBAR {
                 p.held = self.selected_material();
             }
@@ -3834,17 +3835,32 @@ impl<S: Scene> Game<S> {
     /// is on (an empty slot: an empty hand).
     pub fn held(&self) -> Held {
         if let Some(t) = self.held_tool() {
-            return Held::Tool(t.held_for(self.chop.vertical).unwrap_or("block"));
+            let hold = t.held_for(self.chop.vertical).unwrap_or("block");
+            return crate::render::characters::held_item(t.name, Some(hold));
         }
         // In a world that uses items the hand shows the held inventory slot's block, so an empty
         // slot shows an empty hand (owner, 2026-11-08: "When you run out of a block in adventure it
         // shouldn't be shown in your hand anymore"); the palette's selection otherwise.
         // An item with a shaped look (a stick, a rock) shows that look in the hand.
-        if let Some(item) = self.held_look_item() {
-            return Held::Look(item);
+        if let Some(item) = self.held_look_item().or_else(|| self.palette_tool()) {
+            return crate::render::characters::held_item(item, None);
         }
         let slot_empty = self.loose.uses_items() && self.held_palette_slot().is_none();
         held_of(slot_empty, self.selected_material(), self.brush.active())
+    }
+
+    /// The creative hotbar's selected tool when it does not chop (a pickaxe, a shovel: a breaking
+    /// tool of shared/tools `breaking`); None in a world that uses items (its slots say).
+    fn palette_tool(&self) -> Option<&'static str> {
+        if self.loose.uses_items() {
+            return None;
+        }
+        let slot = self
+            .interaction
+            .palette()
+            .get(self.interaction.selected())?;
+        slot.tool
+            .filter(|t| dwell_protocol::chopping::tool(t).is_none() || !self.chop.on)
     }
 
     /// The held inventory slot's item when it has a shaped look (a world that uses items).

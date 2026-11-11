@@ -87,7 +87,10 @@ pub fn with_tool(held: Held, tool: Option<(&str, bool)>) -> Held {
     match tool
         .and_then(|(name, vertical)| dwell_protocol::chopping::tool(name).map(|t| (t, vertical)))
     {
-        Some((t, vertical)) => Held::Tool(t.held_for(vertical).unwrap_or("block")),
+        Some((t, vertical)) => crate::render::characters::held_item(
+            t.name,
+            Some(t.held_for(vertical).unwrap_or("block")),
+        ),
         None => held,
     }
 }
@@ -97,7 +100,7 @@ pub fn held_to_wire(held: Held, to_server: impl Fn(u16) -> Option<u16>) -> u16 {
     let (brush, block) = match held {
         // A tool has no wire form yet (protocol v17 carries blocks): the others see an empty hand.
         // A held look neither (it is an item, not a block).
-        Held::Empty | Held::Tool(_) | Held::Look(_) => return 0,
+        Held::Empty | Held::Tool(_) | Held::Look(_) | Held::Model { .. } => return 0,
         Held::Block(b) => (0, b),
         Held::Brush(b) => (held_item::BRUSH, b),
     };
@@ -493,11 +496,17 @@ mod tests {
         // Others' held axe (by name, `HeldTools`) is drawn in its hold; no tool: the wire's.
         assert_eq!(
             with_tool(Held::Empty, Some(("dwell:stone_axe", false))),
-            Held::Tool("stone_axe")
+            Held::Model {
+                hold: "stone_axe",
+                model: "stone_axes"
+            }
         );
         assert_eq!(
             with_tool(Held::Empty, Some(("dwell:stone_axe", true))),
-            Held::Tool("stone_axe_vertical")
+            Held::Model {
+                hold: "stone_axe_vertical",
+                model: "stone_axes"
+            }
         );
         assert_eq!(with_tool(Held::Block(4), None), Held::Block(4));
         assert_eq!(

@@ -954,45 +954,45 @@ pub static CHARACTERS: &[Character] = &[
             ] },
         ],
         items: &[
-            Item { name: "block", light: None, pose: &[(8, [-12.0, 0.0, 0.0]), (9, [0.0, -90.0, 0.0])], parts: &[
+            Item { name: "block", light: None, socket: (9, [0.0, -0.1, 0.02]), pose: &[(8, [-12.0, 0.0, 0.0]), (9, [0.0, -90.0, 0.0])], parts: &[
                 Part { id: "held_block", bone: 9, kind: Kind::Box, size: [0.2, 0.1, 0.2], at: [0.1, -0.07, 0.02], rot: [0.0, 0.0, -90.0], round: 0.0, tip: 0.0, side_v: [0.5, 1.0], view: View::Both, material: 65535 },
             ] },
-            Item { name: "card", light: None, pose: &[], parts: &[
+            Item { name: "card", light: None, socket: (9, [0.0, -0.1, 0.02]), pose: &[], parts: &[
                 Part { id: "held_card", bone: 9, kind: Kind::Plane, size: [0.24, 0.24, 0.006], at: [0.0, -0.08, 0.19], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 65535 },
             ] },
-            Item { name: "cross", light: None, pose: &[], parts: &[
+            Item { name: "cross", light: None, socket: (9, [0.0, -0.1, 0.02]), pose: &[], parts: &[
                 Part { id: "held_cross_a", bone: 9, kind: Kind::Plane, size: [0.24, 0.24, 0.006], at: [0.0, -0.08, 0.19], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 65535 },
                 Part { id: "held_cross_b", bone: 9, kind: Kind::Plane, size: [0.24, 0.24, 0.006], at: [0.0, -0.08, 0.19], rot: [0.0, 90.0, 0.0], round: 0.0, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 65535 },
             ] },
-            Item { name: "rod", light: None, pose: &[], parts: &[
+            Item { name: "rod", light: None, socket: (9, [0.0, -0.1, 0.02]), pose: &[], parts: &[
                 Part { id: "held_rod", bone: 9, kind: Kind::Box, size: [0.05, 0.42, 0.05], at: [0.0, -0.08, 0.14], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 65535 },
             ] },
-            Item { name: "lump", light: None, pose: &[], parts: &[
+            Item { name: "lump", light: None, socket: (9, [0.0, -0.1, 0.02]), pose: &[], parts: &[
                 Part { id: "held_lump", bone: 9, kind: Kind::RoundBox, size: [0.13, 0.1, 0.15], at: [0.0, -0.08, 0.08], rot: [0.0, 0.0, 0.0], round: 0.4, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 65535 },
             ] },
-            Item { name: "cluster", light: None, pose: &[], parts: &[
+            Item { name: "cluster", light: None, socket: (9, [0.0, -0.1, 0.02]), pose: &[], parts: &[
                 Part { id: "held_seed_a", bone: 9, kind: Kind::RoundBox, size: [0.04, 0.03, 0.045], at: [-0.025, -0.065, 0.07], rot: [0.0, 0.0, 0.0], round: 0.5, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 65535 },
                 Part { id: "held_seed_b", bone: 9, kind: Kind::RoundBox, size: [0.04, 0.03, 0.045], at: [0.025, -0.065, 0.08], rot: [0.0, 0.0, 0.0], round: 0.5, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 65535 },
                 Part { id: "held_seed_c", bone: 9, kind: Kind::RoundBox, size: [0.04, 0.03, 0.045], at: [0.0, -0.065, 0.12], rot: [0.0, 0.0, 0.0], round: 0.5, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 65535 },
                 Part { id: "held_seed_d", bone: 9, kind: Kind::RoundBox, size: [0.04, 0.03, 0.045], at: [0.0, -0.04, 0.09], rot: [0.0, 0.0, 0.0], round: 0.5, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 65535 },
             ] },
-            Item { name: "torch", light: Some((9, [0.0, -0.08, 0.29])), pose: &[], parts: &[
+            Item { name: "torch", light: Some((9, [0.0, -0.08, 0.29])), socket: (9, [0.0, -0.1, 0.02]), pose: &[], parts: &[
                 Part { id: "torch_stick", bone: 9, kind: Kind::Box, size: [0.05, 0.38, 0.05], at: [0.0, -0.08, 0.09], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 17 },
                 Part { id: "torch_wrap", bone: 9, kind: Kind::Box, size: [0.058, 0.07, 0.058], at: [0.0, -0.08, 0.255], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 18 },
             ] },
-            Item { name: "stone_axe", light: None, pose: &[(9, [0.0, 0.0, -55.0]), (8, [0.0, -10.0, 0.0])], parts: &[
+            Item { name: "stone_axe", light: None, socket: (9, [0.0, -0.1, 0.02]), pose: &[(9, [0.0, 0.0, -55.0]), (8, [0.0, -10.0, 0.0])], parts: &[
                 Part { id: "axe_handle", bone: 9, kind: Kind::Box, size: [0.045, 0.5, 0.045], at: [0.0, -0.08, 0.15], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 19 },
                 Part { id: "axe_head", bone: 9, kind: Kind::RoundBox, size: [0.06, 0.1, 0.1], at: [0.0, -0.135, 0.35], rot: [0.0, 0.0, 0.0], round: 0.3, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 20 },
                 Part { id: "axe_blade", bone: 9, kind: Kind::RoundBox, size: [0.028, 0.08, 0.14], at: [0.0, -0.215, 0.35], rot: [0.0, 0.0, 0.0], round: 0.2, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 21 },
                 Part { id: "axe_lashing", bone: 9, kind: Kind::Box, size: [0.062, 0.06, 0.07], at: [0.0, -0.08, 0.35], rot: [0.0, 0.0, 0.0], round: 0.0, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 6 },
             ] },
-            Item { name: "stone_axe_vertical", light: None, pose: &[(8, [-14.0, 0.0, 0.0]), (9, [-12.0, 0.0, 0.0])], parts: &[
+            Item { name: "stone_axe_vertical", light: None, socket: (9, [0.0, -0.1, 0.02]), pose: &[(8, [-14.0, 0.0, 0.0]), (9, [-12.0, 0.0, 0.0])], parts: &[
                 Part { id: "axe_handle", bone: 9, kind: Kind::Box, size: [0.045, 0.5, 0.045], at: [0.0, -0.08, 0.15], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 19 },
                 Part { id: "axe_head", bone: 9, kind: Kind::RoundBox, size: [0.06, 0.1, 0.1], at: [0.0, -0.135, 0.35], rot: [0.0, 0.0, 0.0], round: 0.3, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 20 },
                 Part { id: "axe_blade", bone: 9, kind: Kind::RoundBox, size: [0.028, 0.08, 0.14], at: [0.0, -0.215, 0.35], rot: [0.0, 0.0, 0.0], round: 0.2, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 21 },
                 Part { id: "axe_lashing", bone: 9, kind: Kind::Box, size: [0.062, 0.06, 0.07], at: [0.0, -0.08, 0.35], rot: [0.0, 0.0, 0.0], round: 0.0, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 6 },
             ] },
-            Item { name: "brush", light: None, pose: &[], parts: &[
+            Item { name: "brush", light: None, socket: (9, [0.0, -0.1, 0.02]), pose: &[], parts: &[
                 Part { id: "brush_handle", bone: 9, kind: Kind::Cylinder, size: [0.04, 0.32, 0.04], at: [0.0, -0.08, 0.08], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 19 },
                 Part { id: "brush_pommel", bone: 9, kind: Kind::Ellipsoid, size: [0.06, 0.06, 0.06], at: [0.0, -0.08, -0.08], rot: [0.0, 0.0, 0.0], round: 0.0, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 7 },
                 Part { id: "brush_ferrule", bone: 9, kind: Kind::Cylinder, size: [0.058, 0.07, 0.058], at: [0.0, -0.08, 0.25], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 7 },

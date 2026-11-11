@@ -479,7 +479,10 @@ mod tests {
                 break_speed(block, Some(metal)),
             );
             assert_eq!(bare, 1.0, "{block} by hand is as before");
-            assert!(s > bare && m > s, "{block}: hand {bare}, {stone} {s}, {metal} {m}");
+            assert!(
+                s > bare && m > s,
+                "{block}: hand {bare}, {stone} {s}, {metal} {m}"
+            );
         }
         // The wrong tool, or a block no class names, is as before.
         assert_eq!(break_speed("dwell:stone", Some("dwell:metal_shovel")), 1.0);
@@ -499,10 +502,21 @@ mod tests {
     #[test]
     fn a_fixture_tool_class_and_tier_by_data_alone_breaks_faster() {
         let classes = [("test:clay", "trowel")];
-        let tools = [BreakTool { item: "test:trowel", class: "trowel", tier: "bronze", speed: 2.0 }];
-        assert_eq!(break_speed_in(&classes, &tools, "test:clay", Some("test:trowel")), 2.0);
+        let tools = [BreakTool {
+            item: "test:trowel",
+            class: "trowel",
+            tier: "bronze",
+            speed: 2.0,
+        }];
+        assert_eq!(
+            break_speed_in(&classes, &tools, "test:clay", Some("test:trowel")),
+            2.0
+        );
         assert_eq!(break_speed_in(&classes, &tools, "test:clay", None), 1.0);
-        assert_eq!(break_speed_in(&classes, &tools, "test:rock", Some("test:trowel")), 1.0);
+        assert_eq!(
+            break_speed_in(&classes, &tools, "test:rock", Some("test:trowel")),
+            1.0
+        );
     }
     const UP: [f64; 3] = [0.0, 1.0, 0.0];
     const Y: usize = 1;

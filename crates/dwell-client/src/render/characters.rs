@@ -74,10 +74,37 @@ pub enum Held {
     /// the hand shows the characters item of its look's shape (`rod`, `lump`) in its look's tile
     /// and tint, the same look it has on the hotbar, loose and on the ground.
     Look(&'static str),
+    /// A tool with a model look (the tool models: shared/models/props.json): the characters item
+    /// `hold` gives the hand's pose (the axe's `held` for its swing, `stone_axe` for the others)
+    /// and the prop `model` is drawn on that hold's bone at its `grip`.
+    Model {
+        hold: &'static str,
+        model: &'static str,
+    },
 }
 
-/// The characters item a look's shape is held as; None for a model look (ADR 0070 §8: a prop's
-/// mesh on the hand is not drawn yet, so the hand shows it empty).
+/// The hold a model look's tool is held in when no tool names one (a pickaxe, a shovel): the axe's
+/// level hold, a one-handed tool held toward its foot.
+pub const MODEL_HOLD: &str = "stone_axe";
+
+/// What a hand shows holding item `item` (by name) in `hold` (its tool's `held`, if it has one):
+/// its model on the hold when its look is a model, else the tool's hold or its look.
+pub fn held_item(item: &'static str, hold: Option<&'static str>) -> Held {
+    let look = dwell_protocol::inventory::item(item).and_then(|d| d.look);
+    match (look, hold) {
+        (Some(l), _) if !l.model.is_empty() && dwell_models::prop(l.model).is_some() => {
+            Held::Model {
+                hold: hold.unwrap_or(MODEL_HOLD),
+                model: l.model,
+            }
+        }
+        (_, Some(h)) => Held::Tool(h),
+        _ => Held::Look(item),
+    }
+}
+
+/// The characters item a look's shape is held as; None for a model look (drawn as
+/// [`Held::Model`] instead).
 pub fn look_item(shape: dwell_protocol::inventory::LookShape) -> Option<&'static str> {
     match shape {
         dwell_protocol::inventory::LookShape::Rod => Some("rod"),
@@ -101,6 +128,7 @@ impl Held {
             )),
             Held::Brush(b) => Some(("brush", b)),
             Held::Tool(item) => Some((item, 0)),
+            Held::Model { hold, .. } => Some((hold, 0)),
             Held::Look(item) => dwell_protocol::inventory::item(item)
                 .and_then(|d| d.look)
                 .and_then(|l| Some((look_item(l.shape)?, 0))),
@@ -122,6 +150,14 @@ impl Held {
             return u;
         }
         block_uniforms(self.item().map_or(0, |(_, b)| b))
+    }
+
+    /// The prop drawn in the hand ([`Held::Model`]), if any.
+    pub fn model(self) -> Option<&'static str> {
+        match self {
+            Held::Model { model, .. } => Some(model),
+            _ => None,
+        }
     }
 
     /// The light source a hand holding it gives off (the block's `light`; not the brush's).
@@ -219,6 +255,8 @@ struct MeshKey {
     far: bool,
     /// Your own body in first person (`own::build`).
     own: bool,
+    /// A held model (a prop, [`Held::Model`]) drawn in place of the item's parts.
+    model: Option<&'static str>,
 }
 
 struct GpuMesh {
@@ -505,6 +543,101 @@ fn material_rows() -> Vec<f32> {
         }
         out.extend([m.overlay, m.tile as f32, m.emissive, 0.0]);
     }
+    // The held models' colours (each a palette ramp's base, linear), after the data's: a shade
+    // darker in shadow and a touch lighter lit, no overlay, tile or glow.
+    for c in prop_colours() {
+        for k in [PROP_SHADOW, 1.0, PROP_LIGHT] {
+            out.extend(c.map(|v| (v * k).min(1.0)));
+            out.push(1.0);
+        }
+        out.extend([0.0, -1.0, 0.0, 0.0]);
+    }
+    out
+}
+
+/// A held model's shadow and lit tones, as multiples of its colour (linear).
+const PROP_SHADOW: f32 = 0.62;
+const PROP_LIGHT: f32 = 1.18;
+
+/// Every colour of the props an item's look names (linear), in a fixed order: material rows
+/// `TABLES.materials.len() + k`.
+fn prop_colours() -> &'static [[f32; 3]] {
+    static COLOURS: std::sync::OnceLock<Vec<[f32; 3]>> = std::sync::OnceLock::new();
+    COLOURS.get_or_init(|| {
+        let mut out: Vec<[f32; 3]> = Vec::new();
+        for item in dwell_protocol::inventory::ITEMS {
+            let Some(l) = item.look.filter(|l| !l.model.is_empty()) else {
+                continue;
+            };
+            let Some((_, m)) = dwell_models::prop(l.model) else {
+                continue;
+            };
+            for c in &m.colors {
+                if !out.iter().any(|o| same_colour(o, c)) {
+                    out.push(*c);
+                }
+            }
+        }
+        out
+    })
+}
+
+fn same_colour(a: &[f32; 3], b: &[f32; 3]) -> bool {
+    (0..3).all(|k| (a[k] - b[k]).abs() < 1e-4)
+}
+
+/// The mesh of prop `model` held in characters item `hold`: on the bone of the hold's first part
+/// (the grip), its `grip` point at the bone's origin and its far end along the bone's +z (the
+/// way the axe's handle runs from the hand to its head), flat shaded, each face its colour's
+/// material row ([`prop_colours`]).
+pub fn prop_mesh(character: &Character, hold: &str, model: &str) -> Mesh {
+    let mut out = Mesh::default();
+    let Some((data, m)) = dwell_models::prop(model) else {
+        return out;
+    };
+    let Some((bone, at)) = character.item(hold).map(|i| i.socket) else {
+        return out;
+    };
+    let g = data.grip;
+    // The far end is the one away from the grip along the length (+y in the GLB): a grip below
+    // the middle (an axe, a pickaxe) points +y ahead, one above it (a shovel) turns it over.
+    let flip = if g[1] > 0.0 { -1.0 } else { 1.0 };
+    // GLB +y (the length) to the bone's +z, its +z to −y (a turn of 90° about x), the grip on
+    // the hold's socket.
+    let place = |p: [f32; 3]| {
+        let q = [(p[0] - g[0]) * flip, (p[1] - g[1]) * flip, p[2] - g[2]];
+        [at[0] + q[0], at[1] - q[2], at[2] + q[1]]
+    };
+    let base = TABLES.materials.len();
+    for t in m.indices.chunks_exact(3) {
+        let [a, b, c] = [t[0], t[1], t[2]].map(|i| place(m.positions[i as usize]));
+        let e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+        let e2 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+        let n = [
+            e1[1] * e2[2] - e1[2] * e2[1],
+            e1[2] * e2[0] - e1[0] * e2[2],
+            e1[0] * e2[1] - e1[1] * e2[0],
+        ];
+        let l = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt().max(1e-12);
+        let n = n.map(|v| v / l);
+        let colour = m.colors[t[0] as usize];
+        let mat = base
+            + prop_colours()
+                .iter()
+                .position(|o| same_colour(o, &colour))
+                .unwrap_or(0);
+        let first = out.positions.len() as u32;
+        for p in [a, b, c] {
+            out.positions.push(p);
+            out.normals.push(n);
+            out.uvs.push([0.0, 0.0]);
+            out.bones.push(bone as u8);
+            out.materials.push(mat as u16);
+            out.faces.push(0);
+        }
+        out.indices.extend([first, first + 1, first + 2]);
+    }
+    out.parts.push("model");
     out
 }
 
@@ -897,8 +1030,9 @@ impl CharacterRenderer {
             .filter(|p| !key.far || p.size.iter().copied().fold(0.0, f32::max) >= SMALL_PART_M)
             .collect();
         let body = self.character.first_person.and_then(|f| f.body);
-        let m = match body {
-            Some(b) if key.own => own::build(&kept, &b),
+        let m = match (key.model, body) {
+            (Some(model), _) => prop_mesh(self.character, key.name, model),
+            (None, Some(b)) if key.own => own::build(&kept, &b),
             _ => mesh::build(&kept, key.view, chain),
         };
         let (v, i) = vertex_bytes(&m);
@@ -1065,6 +1199,7 @@ impl CharacterRenderer {
                 view: View::Body,
                 far,
                 own: own.is_some(),
+                model: None,
             });
             if d.first_person || d.cast_only {
                 own_light = own_light.or_else(|| light_at(d.held, &bones, d.seed));
@@ -1079,6 +1214,7 @@ impl CharacterRenderer {
                     view: View::Body,
                     far,
                     own: false,
+                    model: d.held.model(),
                 });
             keys.extend(body);
             keys.extend(item);
@@ -1137,6 +1273,7 @@ impl CharacterRenderer {
                 view: View::Body,
                 far: h.far,
                 own: false,
+                model: h.held.model(),
             };
             let instance = push(&bones, h.held, !h.far, false, 0.0, h.light);
             keys.push(item);
@@ -1166,6 +1303,7 @@ impl CharacterRenderer {
                 view: View::Arms,
                 far: false,
                 own: false,
+                model: None,
             };
             let item = item_name(a.held).map(|name| MeshKey {
                 name,
@@ -1173,6 +1311,7 @@ impl CharacterRenderer {
                 view: View::Arms,
                 far: false,
                 own: false,
+                model: a.held.model(),
             });
             keys.push(body);
             keys.extend(item);
@@ -1574,6 +1713,68 @@ mod tests {
             // Every vertex on its sheet's two faces: the part's sides +z and −z only.
             assert!(m.faces.iter().all(|&f| f == 4 || f == 5), "{block}");
         }
+    }
+
+    #[test]
+    fn every_tool_is_held_as_its_model_at_the_grip_its_head_ahead() {
+        // face-a-only: the hand's item mesh, in the grip bone's frame (the arms view is face-local).
+        let ch = dwell_characters::player();
+        let (grip, socket) = ch.item(MODEL_HOLD).expect("the tools' hold").socket;
+        let base = TABLES.materials.len();
+        for t in dwell_protocol::chopping::BREAK_TOOLS {
+            let held = held_item(t.item, None);
+            let Held::Model { hold, model } = held else {
+                panic!("{} is held as {held:?}, not its model", t.item);
+            };
+            let (data, _) = dwell_models::prop(model).expect("its prop is built in");
+            let m = prop_mesh(ch, hold, model);
+            assert!(
+                m.indices.len() >= 3 * 50,
+                "{}: {} triangles",
+                t.item,
+                m.indices.len() / 3
+            );
+            assert!(
+                m.bones.iter().all(|&b| usize::from(b) == grip),
+                "{}",
+                t.item
+            );
+            assert!(
+                m.materials.iter().all(
+                    |&k| usize::from(k) >= base && usize::from(k) < base + prop_colours().len()
+                ),
+                "{}: its colours are the props' material rows",
+                t.item
+            );
+            // The grip on the hold's socket, the far end ahead along +z: from the grip to the
+            // head is most of the tool's length, behind it the handle's end.
+            let (lo, hi) = m
+                .positions
+                .iter()
+                .fold((f32::MAX, f32::MIN), |(lo, hi), p| {
+                    (lo.min(p[2] - socket[2]), hi.max(p[2] - socket[2]))
+                });
+            assert!(
+                hi > 0.4 * data.length && lo > -0.4 * data.length,
+                "{}: z {lo}..{hi}",
+                t.item
+            );
+        }
+        // The axe keeps its swing's holds, drawn as its model.
+        assert_eq!(
+            held_item("dwell:stone_axe", Some("stone_axe_vertical")),
+            Held::Model {
+                hold: "stone_axe_vertical",
+                model: "stone_axes"
+            }
+        );
+        // A look that is not a model, as before.
+        assert_eq!(held_item("dwell:stick", None), Held::Look("dwell:stick"));
+        // The held model's mesh is its own: the axe's hold mesh is not reused for it.
+        assert_eq!(
+            held_item("dwell:stone_axe", Some("stone_axe")).model(),
+            Some("stone_axes")
+        );
     }
 
     #[test]

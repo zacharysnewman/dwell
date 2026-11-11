@@ -34,6 +34,39 @@
         "dwell:snowy_leaves",
         "dwell:log_ramp"
       ]
+    },
+    {
+      "name": "dwell:metal_axe",
+      "kind": "axe",
+      "swingSeconds": 0.45,
+      "biteM": 0.2,
+      "bindM": 0.05,
+      "across": 1,
+      "along": 0.15,
+      "sharpness": 2,
+      "held": "stone_axe",
+      "heldVertical": "stone_axe_vertical",
+      "swing": {
+        "windupS": 0.12,
+        "activeS": 0.14,
+        "hitStopS": 0.08,
+        "recoverHitS": 0.22,
+        "recoverMissS": 0.36,
+        "reachM": 2.2,
+        "arcDeg": 110,
+        "samples": 12,
+        "kickDeg": 1.6,
+        "staminaCost": 8,
+        "swish": "axe_swish",
+        "bounce": "axe_clank",
+        "rustle": "axe_rustle",
+        "rustleLeaves": 5
+      },
+      "clears": [
+        "dwell:leaves",
+        "dwell:snowy_leaves",
+        "dwell:log_ramp"
+      ]
     }
   ],
   "woods": [

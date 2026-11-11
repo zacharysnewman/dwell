@@ -171,7 +171,7 @@ export function rustTables(data, textures, { header, tilesFile }) {
       const bone = bones.indexOf(so ? so.bone : on);
       const turns = Object.entries(data.items[it].pose ?? {}).filter(([b]) => bones.includes(b));
       const pose = `&[${turns.map(([b, r]) => `(${bones.indexOf(b)}, ${v3(r)})`).join(', ')}]`;
-      return `Item { name: ${str(it)}, light: ${light ? `Some((${bone}, ${v3(at)}))` : 'None'}, pose: ${pose}, parts: ${parts(m.parts.filter((p) => p.from === `item:${it}`), bones)} }`;
+      return `Item { name: ${str(it)}, light: ${light ? `Some((${bone}, ${v3(at)}))` : 'None'}, socket: (${bone}, ${v3(so ? so.at : [0, 0, 0])}), pose: ${pose}, parts: ${parts(m.parts.filter((p) => p.from === `item:${it}`), bones)} }`;
     });
     const fb = ch.firstPerson?.body;
     const fpBody = fb
