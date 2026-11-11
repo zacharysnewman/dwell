@@ -246,6 +246,12 @@ game; bulk edits stressing streaming and save size.
 
 ## 8. Worldgen placement (S4), built 2026-10-20
 
+*Per biome (0.52.39, ADR 0074 B5): a biome lists the placement rules that stand where it has weight,
+with densities; `boulders` places the store's `dwell:proto_rock` and `broadleaf_groves` its
+`dwell:proto_tree`, so a structure in `shared/structures` reaches worldgen by a rule in
+`placements.json` and a biome naming it. The sandbox's saved structures (players') are not placement
+sources yet.*
+
 The owner asked for the two hand-built pines (`dwell:pine_tree`, `dwell:tall_pine_tree`) in the
 generated world; the answers and the measurements are in
 [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §2, the decision in

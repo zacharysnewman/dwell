@@ -341,7 +341,7 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
 /shared/music        Music (music.json: tracks — title, author, file, volume, loop, fades, when —
                      and their audio files, the owner's Starry Sunshine) + gen.mjs (→ TS
                      music.gen.ts, each file's published name with its content hash), validate.mjs.
-/shared/worldgen     golden/: chunk and LOD-section hashes of generator version 23 (§6.3); terrain.json: the world's elevation and water (the height field, rivers, lakes, spawn, the `defaultBiome`), biomes/: the biomes layered on it (where they belong, fine relief, banks, water look, elevation bands, rule references; fixtures/ for tests; ADR 0074), worlds/: example world settings (the archipelago), decorations.json: the terrain's decoration rules, placements.json: the structure placements (the pines, ADR 0043), midplane.json: the bedrock between the faces and the portals through it, gen.mjs (→ Rust tables for dwell-worldgen) (§6.3).
+/shared/worldgen     golden/: chunk and LOD-section hashes of generator version 23 (§6.3); terrain.json: the world's elevation and water (the height field, rivers, lakes, spawn, the `defaultBiome`), biomes/: the biomes layered on it (where they belong, fine relief, banks, water look, elevation bands, rule references; fixtures/ for tests; ADR 0074), worlds/: example world settings (the archipelago), decorations.json: the terrain's decoration rules, placements.json: the structure placements (the pines, ADR 0043; broadleaf trees and boulders that preset biomes list, ADR 0074 B5), midplane.json: the bedrock between the faces and the portals through it, gen.mjs (→ Rust tables for dwell-worldgen) (§6.3).
 /shared/structures   Structure files (*.json; test/ holds fixtures) + gen.mjs (→ Rust tables for
                      dwell-world) and gen.test.mjs; format.mjs, the format's rules, shared by gen.mjs
                      and the client's structures store; playground.json is the movement playground
@@ -1588,7 +1588,7 @@ it belongs: a `weight` and optional eased ranges of `temperature`, `wetness`, `e
 `detail` (bounded fine relief), `shaping` (the band edges' noise and slope lift, the rock band, the
 shore, the soil depth), `bands` (its **elevation bands**, lowest first: each a `name`, a `from` height
 but the lowest, and its `ground`, `under`, `rock`, `shoreBlock` blocks; the default's are `meadow` and
-`snow` from 1,550 m, today's snow line) and references by name (`decorations`, `placements` rule names,
+`snow` from 1,550 m, today's snow line) and references by name (`decorations`, `placements` rule names with their `trees` densities,
 the `water` fluid). The elevation and water (`inland`, `seaFloor`, `hills`,
 `bumps`, `rivers`, `mouths`, `lakes`) and `spawn` stay one world-scale system in `terrain.json`, which
 names the `defaultBiome`. `shared/worldgen/gen.mjs` validates them and emits `HEIGHT` (the world's),
@@ -1745,7 +1745,13 @@ follow.
    spacing; the ground for them is the height field over the chunk and a 15 m margin), in any
    order. A tree's voxels go over air and replaceable cells only. Today one rule: the owner's two
    pines in groves on grass, at most 400 m up, more on higher ground, a random quarter turn and a
-   60/40 mix ([`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §2). The sky test (step 3) leaves room
+   60/40 mix ([`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §2). **Per biome [built, 0.52.39,
+   ADR 0074 B5]:** a rule stands only where a biome that lists it in `placements` has weight, its
+   chance times the biomes' `trees` densities by weight (0–3, 1 when not given;
+   `TerrainGenerator::tree_density_at`, with the climate's factor on candidates and the LOD canopy);
+   a rule no biome of the world lists stands nowhere. Two more rules, `broadleaf_groves` and
+   `boulders`, are listed by preset biomes only, so the default world (the pines at 1) is unchanged.
+   `trees_sparse` finds the same trees asking columns per candidate (Chisel's 3D section). The sky test (step 3) leaves room
    for the tallest structure over the highest ground; the spawn's level patch is clear of trees.
    The trees are voxels of the generated chunk — seed terrain, saved whole with the chunk once it
    is edited, as any edit is — not TREE_GROWTH.md §5a's layer (they don't grow). The LOD draws the

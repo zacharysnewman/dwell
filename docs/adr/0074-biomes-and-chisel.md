@@ -112,7 +112,24 @@
   the coast into islands; the example world setting `shared/worldgen/worlds/archipelago.json` and the
   `test:archipelago` fixture biome (sand beaches, turquoise water, the pines as placeholder trees).
   Deviation: the game's water shader does not take the per-column look yet; Chisel's preview does.)*
-- **B5** trees, ground items and structures per biome.
+- **B5** trees, ground items and structures per biome. *(built in part, 0.52.39: a biome's
+  `placements` are now the rules that stand where it has weight, a placement no biome of the world
+  lists standing nowhere, and its optional `trees` (placement name → density in [0, 3], 1 when not
+  given, 0 none) multiplies that placement's chance by the biomes' weights (`TerrainGenerator::
+  tree_density_at`, folded into the climate's factor on candidates and the LOD canopy; a planter's
+  `boost`, the most any biome gives, raises its first roll's ceiling, 1 by default). The default world
+  lists only the pines at 1, so it asks nothing new (goldens byte-identical). Two placement rules by
+  data: `broadleaf_groves` (the prototype broadleaf `dwell:proto_tree`) and `boulders`
+  (`dwell:proto_rock`, the "structures" a biome can pick from the structures store), listed by presets
+  only; the presets pick (desert and mesa boulders, boreal and cold rainforest dense pines, meadow,
+  savanna, wetland and tropical beach sparse broadleaf as the palm's placeholder). Chisel: a density
+  slider per placement rule per biome, a `placements` overlay (structures expected per hectare,
+  `placement_density_at`), and the 3D section draws trees and boulders as trunk and canopy boxes for
+  squares up to 1 km (`trees_sparse`, the chunks' trees exactly). Deviations, left for later: ground
+  items per biome (the scatter runs in the mesher and the server from voxels alone, with no biome at
+  hand: it needs a per-chunk biome table on `GroundJob` and the server's pick-up check); spacing per
+  biome (the overlap test is per rule); the player's saved structures (the sandbox store) as placement
+  sources (placement reads the build's `shared/structures` only).)*
 - **B6** Chisel's texture tab (the Painterly Texture Lab folded in).
 - **B7** Chisel in the game, and the new-world biome choice. *(Started 0.52.27: Chisel's **Play in
   game** opens a new local world on the edit's world knobs, its record keeping the edit as its
