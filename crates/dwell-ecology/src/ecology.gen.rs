@@ -6,7 +6,7 @@ use crate::data::{Data, Diet, Disperse, Flee, GroundDef, GroupRules, IslandParam
 pub const DATA: Data = Data {
     island: IslandParams { cell_m: 200.0, step_days: 5.0 },
     regrow_per_day: 0.05,
-    near: NearParams { spawn_m: 64.0, fold_m: 96.0, think_s: 0.5 },
+    near: NearParams { spawn_m: 64.0, fold_m: 96.0, think_s: 0.5, max_slope_deg: 40.0, search_m: 24.0 },
     grounds: &[
         GroundDef { name: "meadow", max_height_m: 120.0, max_slope_deg: 18.0, max: 40.0, refuge: 0.0 },
         GroundDef { name: "upland", max_height_m: 400.0, max_slope_deg: 30.0, max: 16.0, refuge: 0.0 },

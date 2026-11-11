@@ -145,6 +145,8 @@ export const MessageType = {
   WorldgenRequest: 98,
   WorldgenConfig: 99,
   CausesHello: 100,
+  EcologyHello: 101,
+  Ecology: 102,
 } as const;
 export type MessageType = (typeof MessageType)[keyof typeof MessageType];
 
