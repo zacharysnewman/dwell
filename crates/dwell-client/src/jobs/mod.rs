@@ -279,6 +279,8 @@ impl Runner {
                         seed,
                         gone,
                         generated,
+                        // The chunk's biomes, from the generator this worker runs (ADR 0074 B5).
+                        density: self.ground_density(origin),
                     })
                     .as_ref(),
                 dwell_mesh::ChunkFlags { water_tops },
@@ -304,6 +306,16 @@ impl Runner {
                 }
             }
         }
+    }
+
+    /// The ground densities of the chunk at `origin` (world cells) from its face's biomes (ADR
+    /// 0074 B5): the server's and the crosshair's, so all agree; empty with no terrain.
+    fn ground_density(&self, origin: [i32; 3]) -> dwell_world::ground::GroundDensity {
+        self.terrain.as_ref().map_or_else(Default::default, |t| {
+            t.ground_density(dwell_world::ChunkCoord::from_array(
+                origin.map(|v| v.div_euclid(dwell_world::CHUNK_SIZE)),
+            ))
+        })
     }
 
     fn lod(&self, c: LodCoord) -> Output {

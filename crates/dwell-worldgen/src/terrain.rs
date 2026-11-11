@@ -267,6 +267,10 @@ pub struct Biome {
     /// chance where the biome has weight; a placement not named here takes 1. A placement the
     /// biome does not list does not stand where it has weight.
     pub trees: &'static [(&'static str, f64)],
+    /// Its ground items (ADR 0074 B5): kind (`shared/ground` `kinds`) → a multiplier on that kind's
+    /// rules where the biome has weight. None: every kind 1 (the default biome); given, a kind it
+    /// does not name lies nowhere it rules.
+    pub ground: Option<&'static [(&'static str, f64)]>,
     /// The fluid block the biome's water is drawn as.
     pub water: &'static str,
     /// Its water's colour and clarity over the fluid's look (none: the fluid's own).
@@ -301,6 +305,16 @@ pub fn tree_density_of(b: &Biome, name: &str) -> f32 {
         .iter()
         .find(|(n, _)| *n == name)
         .map_or(1.0, |&(_, d)| d as f32)
+}
+
+/// Biome `b`'s density for the ground item kind `name` (ADR 0074 B5): 1 without a `ground`, else
+/// its entry, 0 when it does not name the kind.
+pub fn ground_density_of(b: &Biome, name: &str) -> f32 {
+    b.ground.map_or(1.0, |g| {
+        g.iter()
+            .find(|(n, _)| *n == name)
+            .map_or(0.0, |&(_, d)| d as f32)
+    })
 }
 
 /// The biome named `name` (`shared/worldgen/biomes`), if the build has it.
@@ -2556,17 +2570,74 @@ impl TerrainGenerator {
             .sum()
     }
 
+    /// Whether the biomes' `ground` varies the ground items (ADR 0074 B5; else they ask nothing of
+    /// the biomes: the default world).
+    pub fn ground_varies(&self) -> bool {
+        self.ground_biomes().iter().any(|b| b.ground.is_some())
+    }
+
+    /// The biomes whose weights count (one biome without a biome map).
+    fn ground_biomes(&self) -> &[Biome] {
+        if self.biomes.field.is_none() {
+            &self.biomes.list[..1.min(self.biomes.list.len())]
+        } else {
+            &self.biomes.list[..]
+        }
+    }
+
+    /// Ground item kind `name`'s density at face-local column (x, z) from the biomes' `ground` by
+    /// their weights (ADR 0074 B5; 1 where it does not vary).
+    pub fn ground_density_at(&self, name: &str, x: i64, z: i64) -> f32 {
+        let list = self.ground_biomes();
+        if !list.iter().any(|b| b.ground.is_some()) {
+            return 1.0;
+        }
+        if self.biomes.field.is_none() {
+            return ground_density_of(&list[0], name);
+        }
+        let (base, _, _) = self.map.height_at(x as f64, z as f64);
+        self.biomes
+            .mix(x, z, base)
+            .iter()
+            .map(|(b, w)| ground_density_of(&self.biomes.list[b], name) * w as f32)
+            .sum()
+    }
+
+    /// Chunk column (cx, cz)'s ground densities (face-local), each kind's at its four corners
+    /// (`dwell_world::ground::GroundDensity`); empty where they do not vary.
+    pub fn ground_density_chunk(&self, cx: i32, cz: i32) -> dwell_world::ground::GroundDensity {
+        if !self.ground_varies() {
+            return Default::default();
+        }
+        let n = i64::from(dwell_world::CHUNK_SIZE);
+        let (x0, z0) = (i64::from(cx) * n, i64::from(cz) * n);
+        let corners = dwell_world::ground::KINDS
+            .iter()
+            .map(|k| {
+                [(x0, z0), (x0 + n, z0), (x0, z0 + n), (x0 + n, z0 + n)]
+                    .map(|(x, z)| self.ground_density_at(k.name, x, z))
+            })
+            .collect();
+        dwell_world::ground::GroundDensity { corners }
+    }
+
     /// The structures expected per hectare at (x, z) by the placement rules, the biomes' `trees`
     /// and the climate, before the slope, footprint and spacing tests (Chisel's placement overlay,
     /// ADR 0074 B5); None beyond the rim. `boulders` and every other rule count alike.
     pub fn placement_density_at(&self, x: i64, z: i64) -> Option<f64> {
+        self.placement_densities_at(x, z).map(|d| d.iter().sum())
+    }
+
+    /// [`TerrainGenerator::placement_density_at`] per planter (in [`TerrainGenerator::planters`]'
+    /// order): Chisel's overlay colours each by its structure's canopy block.
+    pub fn placement_densities_at(&self, x: i64, z: i64) -> Option<Vec<f64>> {
         let col = self.column_at(x as i32, z as i32);
         let g = self.ground_of(&col)?;
+        let mut out = vec![0.0; self.planters.len()];
         if !g.dry {
-            return Some(0.0);
+            return Some(out);
         }
         let climate = self.climate_at(x, z);
-        let mut sum = 0.0;
         for (i, p) in self.planters.iter().enumerate() {
             if !p.active() || !p.stands_on(g.block) {
                 continue;
@@ -2579,9 +2650,9 @@ impl TerrainGenerator {
                 c *= self.vegetation.factor(k, cl);
             }
             let grid = f64::from(p.rule().grid);
-            sum += c.min(1.0) * 10_000.0 / (grid * grid);
+            out[i] = c.min(1.0) * 10_000.0 / (grid * grid);
         }
-        Some(sum)
+        Some(out)
     }
 
     /// Whether any biome lets the climate rule its placements (else `trees_in` asks nothing of it).

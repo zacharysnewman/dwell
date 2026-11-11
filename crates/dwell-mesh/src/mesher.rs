@@ -113,6 +113,9 @@ pub struct ChunkMeshes {
     /// The water's surface tile for the GPU heightfield (`crate::heightfield`), when meshed
     /// without liquid tops ([`ChunkFlags::water_tops`] false) and some column is wet.
     pub water: Option<crate::heightfield::WaterTile>,
+    /// The ground densities the chunk's items were scattered with (its [`GroundJob`]'s, ADR 0074
+    /// B5), handed back so the client's crosshair rolls the same.
+    pub ground: dwell_world::ground::GroundDensity,
 }
 
 /// Face index → (axis, sign): 0 +X, 1 −X, 2 +Y, 3 −Y, 4 +Z, 5 −Z.
@@ -1837,6 +1840,7 @@ pub(crate) fn mesh_chunk_full(
             transparent: flip_arrays_y(m.transparent),
             cutout: flip_arrays_y(m.cutout),
             water: None,
+            ground: Default::default(),
         }
     } else {
         let carved = cuts
@@ -1858,6 +1862,7 @@ pub(crate) fn mesh_chunk_full(
         transparent: to_metres(m.transparent),
         cutout: to_metres(m.cutout),
         water,
+        ground: ground.map(|g| g.density.clone()).unwrap_or_default(),
     })
 }
 
@@ -2215,6 +2220,7 @@ fn mesh_cells(
         transparent: transparent.m,
         cutout: cutout.m,
         water: None,
+        ground: Default::default(),
     }
 }
 

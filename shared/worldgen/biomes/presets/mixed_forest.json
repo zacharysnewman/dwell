@@ -55,6 +55,7 @@
   ],
   "decorations": ["meadow_grass"],
   "placements": ["pine_groves", "broadleaf_groves"],
+  "ground": {"dwell:ground_stick": 2, "dwell:ground_rock": 1},
   "trees": {"pine_groves": 0.5},
   "water": "dwell:water"
 }

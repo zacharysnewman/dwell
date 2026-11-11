@@ -142,6 +142,7 @@ pub fn biome_from_json(v: &Value) -> Result<Biome, String> {
         decorations: names(v, "decorations").map_err(at)?,
         placements,
         trees: trees(v, placements).map_err(at)?,
+        ground: ground(v).map_err(at)?,
         water: text(v, "water").map_err(at)?,
         water_look: water_look(v).map_err(at)?,
         rock_stack: v.get("rockStack").and_then(Value::as_str).map(leak),
@@ -173,6 +174,34 @@ fn trees(v: &Value, placements: &[&'static str]) -> Result<&'static [(&'static s
         }
     }
     Ok(Box::leak(out.into_boxed_slice()))
+}
+
+/// A biome's optional `ground` (ADR 0074 B5): ground item kind (`shared/ground` `kinds`) →
+/// density in [0, 3].
+fn ground(v: &Value) -> Result<Option<&'static [(&'static str, f64)]>, String> {
+    let Some(g) = v.get("ground") else {
+        return Ok(None);
+    };
+    let g = g
+        .as_object()
+        .ok_or("ground must map ground item kinds to densities")?;
+    let mut out = Vec::new();
+    // In the kinds' order, as the generated table has them.
+    if let Some(k) = g.keys().find(|k| {
+        !dwell_world::ground::KINDS
+            .iter()
+            .any(|g| g.name == k.as_str())
+    }) {
+        return Err(format!("ground: {k:?} is not a kind of ground.json"));
+    }
+    for k in dwell_world::ground::KINDS.iter() {
+        let Some(d) = g.get(k.name) else { continue };
+        match d.as_f64() {
+            Some(d) if (0.0..=3.0).contains(&d) => out.push((k.name, d)),
+            _ => return Err(format!("ground.{} must be in [0, 3]", k.name)),
+        }
+    }
+    Ok(Some(Box::leak(out.into_boxed_slice())))
 }
 
 /// A biome's optional `waterLook` (`scatter` "#rrggbb", `absorption` three numbers).

@@ -565,3 +565,39 @@ dwell_world::both_faces!(
         }
     }
 );
+
+dwell_world::both_faces!(
+    /// The server's ground items follow the biomes' densities (ADR 0074 B5): rocks ×0 where a
+    /// biome names no rocks leaves none at the wall's feet, nor one to knock loose; ×1 everywhere
+    /// is the scatter as without densities.
+    fn the_servers_ground_items_follow_the_biomes_densities(f: FaceFrame) {
+        use dwell_world::ground::{GroundDensity, KINDS};
+        let mut fx = ground_scene(f, "adventure");
+        step(&mut fx, 1);
+        let rocks = wall_and_rocks(&mut fx, f);
+        let even = |rock: f32| -> dwell_worldgen::GroundDensityFn {
+            std::sync::Arc::new(move |_| GroundDensity {
+                corners: KINDS
+                    .iter()
+                    .map(|k| {
+                        [if k.name == "dwell:ground_rock" {
+                            rock
+                        } else {
+                            1.0
+                        }; 4]
+                    })
+                    .collect(),
+            })
+        };
+        fx.server.set_ground_density(Some(even(1.0)));
+        for &cell in &rocks {
+            assert!(fx.server.ground_item_at(cell).is_some(), "{cell:?} at ×1");
+        }
+        fx.server.set_ground_density(Some(even(0.0)));
+        for &cell in &rocks {
+            assert_eq!(fx.server.ground_item_at(cell), None, "{cell:?} at ×0");
+        }
+        fx.server.set_ground_density(None);
+        assert!(fx.server.ground_item_at(rocks[0]).is_some());
+    }
+);

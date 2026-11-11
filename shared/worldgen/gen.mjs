@@ -393,6 +393,7 @@ export function biomeRefs() {
     decorations: names('decorations.json', 'decorations'),
     placements: names('placements.json', 'placements'),
     stacks: names('rocks.json', 'stacks'),
+    ground: new Set(JSON.parse(readFileSync(join(here, '../ground/ground.json'), 'utf8')).kinds.map((k) => k.name)),
   };
 }
 
@@ -622,6 +623,7 @@ export function terrainRust({ world, biomes, fixtures = [], presets = [], worlds
       rs.push(`        decorations: ${list(b.decorations)},`);
       rs.push(`        placements: ${list(b.placements)},`);
       rs.push(`        trees: &[${b.placements.filter((k) => b.trees?.[k] !== undefined).map((k) => `(${JSON.stringify(k)}, ${rf(b.trees[k])})`).join(', ')}],`);
+      rs.push(`        ground: ${b.ground === undefined ? 'None' : `Some(&[${Object.entries(b.ground).map(([k, d]) => `(${JSON.stringify(k)}, ${rf(d)})`).join(', ')}])`},`);
       rs.push(`        water: ${JSON.stringify(b.water)},`);
       rs.push(`        rock_stack: ${b.rockStack === undefined ? 'None' : `Some(${JSON.stringify(b.rockStack)})`},`);
       rs.push(`        vegetation: ${rf(b.vegetation ?? 0)},`);

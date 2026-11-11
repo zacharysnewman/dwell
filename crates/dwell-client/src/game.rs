@@ -716,6 +716,9 @@ pub struct Game<S: Scene> {
     remote_sounds: dwell_world::hash::HashMap<u16, MoverSounds>,
     /// The tools others hold, by player id (`HeldTools`, ADR 0067): its item name and hold.
     remote_tools: dwell_world::hash::HashMap<u16, (&'static str, bool)>,
+    /// The ground densities the chunk meshes were scattered with (ADR 0074 B5), by chunk, where
+    /// the biomes vary them: the crosshair's rolls are the mesh's.
+    ground_density: dwell_world::hash::HashMap<[i32; 3], dwell_world::ground::GroundDensity>,
     /// The tool and hold last told the server (`ChopAction::Held`).
     held_tool_sent: Option<(&'static str, bool)>,
     /// The standing tree the axe last bit, and when (s): it sways as it is cut (`TreeLean`).
@@ -887,6 +890,7 @@ impl<S: Scene> Game<S> {
             mover_sounds: MoverSounds::new(),
             remote_sounds: Default::default(),
             remote_tools: Default::default(),
+            ground_density: Default::default(),
             held_tool_sent: None,
             lean_at: None,
             fire_sounds: FireSounds::new(),
@@ -1645,7 +1649,9 @@ impl<S: Scene> Game<S> {
                 (Purpose::Base(c), Output::Chunk { voxels, .. }) => {
                     self.streamer.on_generated_base(c, &voxels)
                 }
-                (Purpose::ChunkMesh(c, token), Output::ChunkMesh(m)) => {
+                (Purpose::ChunkMesh(c, token), Output::ChunkMesh(mut m)) => {
+                    let ground = std::mem::take(&mut m.ground);
+                    self.keep_ground_density(c, ground);
                     self.streamer.on_meshed(c, token, *m)
                 }
                 (Purpose::Verify, Output::Chunk { hash, voxels }) => {
@@ -2844,7 +2850,13 @@ impl<S: Scene> Game<S> {
             world.find(dwell_world::chunk_of(c[0], c[1], c[2]))?;
             Some(world.get_voxel_if_loaded(c))
         };
+        let density = |k: usize, cell: [i32; 3]| self.ground_density_at(k, cell);
         let rules = dwell_world::ground::Rules::shipped();
+        let rules = if self.ground_density.is_empty() {
+            rules
+        } else {
+            rules.with_density(&density)
+        };
         let it = rules.item_over(&mut get, *seed, cell)?;
         let name = which(rules.kind(it.kind)?)?;
         let ev = SoundKind::ALL.into_iter().find(|k| k.name() == name)?;
@@ -4282,6 +4294,26 @@ impl<S: Scene> Game<S> {
 
     /// The ground item a ray from `eye` along `dir` meets within reach (ADR 0071), if the server
     /// keeps them.
+    /// Keeps chunk `c`'s ground densities from its mesh (only where they vary; bounded).
+    fn keep_ground_density(&mut self, c: [i32; 3], d: dwell_world::ground::GroundDensity) {
+        if d.is_uniform() {
+            self.ground_density.remove(&c);
+            return;
+        }
+        if self.ground_density.len() >= 16_384 {
+            self.ground_density.clear();
+        }
+        self.ground_density.insert(c, d);
+    }
+
+    /// Kind `kind`'s ground density in world cell `cell` (1 where its chunk's mesh had none).
+    fn ground_density_at(&self, kind: usize, cell: [i32; 3]) -> f64 {
+        let c = cell.map(|v| v.div_euclid(dwell_world::CHUNK_SIZE));
+        self.ground_density
+            .get(&c)
+            .map_or(1.0, |d| d.at(kind, cell))
+    }
+
     fn ground_under_crosshair(
         &self,
         eye: [f64; 3],
@@ -4297,7 +4329,14 @@ impl<S: Scene> Game<S> {
             world.find(dwell_world::chunk_of(c[0], c[1], c[2]))?;
             Some(world.get_voxel_if_loaded(c))
         };
-        dwell_world::ground::Rules::shipped().target(
+        let density = |k: usize, cell: [i32; 3]| self.ground_density_at(k, cell);
+        let rules = dwell_world::ground::Rules::shipped();
+        let rules = if self.ground_density.is_empty() {
+            rules
+        } else {
+            rules.with_density(&density)
+        };
+        rules.target(
             &mut get,
             *seed,
             eye,

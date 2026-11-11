@@ -60,6 +60,7 @@
   "decorations": ["meadow_grass"],
   "vegetation": 1,
   "placements": ["pine_groves"],
+  "ground": {"dwell:ground_stick": 1.5, "dwell:ground_rock": 1},
   "trees": {"pine_groves": 1.5},
   "water": "dwell:water",
   "waterLook": {

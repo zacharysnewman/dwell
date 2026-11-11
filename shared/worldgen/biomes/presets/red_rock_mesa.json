@@ -63,6 +63,7 @@
   ],
   "decorations": [],
   "placements": ["boulders"],
+  "ground": {"dwell:ground_rock": 2.5},
   "trees": {"boulders": 1.5},
   "water": "dwell:water",
   "rockStack": "dwell:red_beds",
