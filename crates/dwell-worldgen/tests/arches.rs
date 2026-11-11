@@ -185,6 +185,14 @@ fn arch_slices() {
     let t = BifacialTerrain::mirrored_with_biomes(7, &[fixture()]);
     let g = t.local(Face::A);
     let all = sites(g);
+    // The game's world has the terrain volume (the cliffs) over the ground: its sites, for a look
+    // in game (`?worldgen=` an edit of the fixture, `at=` near one).
+    if let Some(v) = dwell_worldgen::volume::terrain_volume() {
+        let gv = g.clone().with_volume(v);
+        for s in sites(&gv).iter().filter(|s| s.through).take(3) {
+            println!("in game (volume): {s:?}");
+        }
+    }
     let mut cells = Cells {
         t: &t,
         chunks: HashMap::new(),

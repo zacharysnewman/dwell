@@ -5,9 +5,9 @@
 //! stands a fin above the ground `fin`/2 m to either side along its axis (the erosion's cut-back
 //! leaves such fins between the drainage lines, ADR 0075). Everything is a function of the world
 //! position and the height field, so neighbouring chunks carve the same cells. Face-local: face B's
-//! chunks are generated face-local and mirrored (`bifacial.rs`). The column tops never change (a
-//! `lintel` m of rock stays over every carved cell), so the LOD, spawn, the maps and the water read
-//! the height field as before; the LOD does not show the opening (WORLD_GENERATION.md §5).
+//! chunks are generated face-local and mirrored (`bifacial.rs`). A column top changes only at a
+//! mouth (`Site::carves`: cut down to the floor; elsewhere a `lintel` of rock stays over the cut),
+//! and the LOD, spawn, the maps and the water read the height field as before (WORLD_GENERATION.md §5a).
 
 use dwell_world::CELL_H;
 

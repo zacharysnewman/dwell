@@ -392,7 +392,9 @@ function archesEditor(b: BiomeJson) {
       dhi,
       1,
       () => archesOf(b).density,
-      (v) => setArches(b, 'density', v),
+      (v) => {
+        setArches(b, 'density', v);
+      },
     ),
   );
   for (const key of ['span', 'rise', 'lintel'] as const) {
@@ -405,7 +407,9 @@ function archesEditor(b: BiomeJson) {
           hi,
           0.5,
           () => archesOf(b)[key][end],
-          (v) => setArches(b, key, v, end),
+          (v) => {
+            setArches(b, key, v, end);
+          },
         ),
       );
     }
@@ -418,7 +422,9 @@ function archesEditor(b: BiomeJson) {
       fhi,
       0.5,
       () => archesOf(b).fin,
-      (v) => setArches(b, 'fin', v),
+      (v) => {
+        setArches(b, 'fin', v);
+      },
     ),
   );
   return box;
