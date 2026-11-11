@@ -856,6 +856,13 @@ fn feature_spots() {
 fn tall_grass_counts() {
     // face-a-only: the tour's spots are face A's.
     let (g, _) = generator(FaceFrame::A, 0);
+    let game = {
+        let e = world_config(NAME).unwrap().unwrap();
+        let map = WorldMap::for_height(face_seed(0, Face::A), e.height.unwrap())
+            .with_worldgen(NAME)
+            .unwrap();
+        TerrainGenerator::with_map(face_seed(0, Face::A), Arc::new(map))
+    };
     let tall = dwell_blocks::require("dwell:tall_grass");
     let grass = dwell_blocks::require("dwell:grass");
     for (label, x, z) in [
@@ -864,7 +871,7 @@ fn tall_grass_counts() {
         ("broadleaf", 22300, 100),
         ("mixed", -18100, -6500),
     ] {
-        let (mut on, mut tufts) = (0, 0);
+        let (mut on, mut tufts, mut game_tufts) = (0, 0, 0);
         for cz in -4..4 {
             for cx in -4..4 {
                 let (wx, wz) = (x / CHUNK_SIZE + cx, z / CHUNK_SIZE + cz);
@@ -875,9 +882,58 @@ fn tall_grass_counts() {
                     g.generate(ChunkCoord::new(wx, cy, wz), &mut c);
                     tufts += c.voxels().iter().filter(|&&m| m == tall).count();
                     on += c.voxels().iter().filter(|&&m| m == grass).count();
+                    let mut c = Chunk::default();
+                    game.generate(ChunkCoord::new(wx, cy, wz), &mut c);
+                    game_tufts += c.voxels().iter().filter(|&&m| m == tall).count();
                 }
             }
         }
-        println!("{label}: {tufts} tall grass cells over {on} grass cells");
+        println!(
+            "{label}: {tufts} tall grass cells over {on} grass cells; game's generator {game_tufts}"
+        );
+        let mut shares = Vec::new();
+        for (dx, dz) in [(0, 0), (40, 0), (0, 40), (-40, -40), (60, -20)] {
+            shares.push(g.grass_envelope("meadow_grass", x + dx, z + dz).unwrap().1);
+        }
+        println!(
+            "  climate {:?}; shares {shares:.2?}",
+            g.climate_at(x.into(), z.into())
+        );
     }
+}
+
+/// The steppe keeps sparse tall grass (the visual pass, 2026-11-11): its dry lee (wetness ~0.01) is
+/// under the meadow grass's moisture envelope, so at `undergrowth` 1 its climate share was 0 and the
+/// tour's steppe spot had none of 50,545 grass cells. Its `undergrowth` < 1 keeps a floor of
+/// 1 − undergrowth: thinner than the meadow, never bare.
+#[test]
+fn the_steppe_keeps_sparse_tall_grass() {
+    // face-a-only: the tour's steppe spot is face A's.
+    let (g, _) = generator(FaceFrame::A, 0);
+    let (x, z) = (-4100, 8300);
+    let share = g.grass_envelope("meadow_grass", x, z).unwrap().1;
+    assert!(
+        share > 0.1 && share < 0.5,
+        "the steppe's climate share of tall grass: {share}"
+    );
+    let meadow = g
+        .grass_envelope("meadow_grass", 10100 + 40, 16300)
+        .unwrap()
+        .1;
+    assert!(share < meadow, "thinner than the meadow ({meadow})");
+    let tall = dwell_blocks::require("dwell:tall_grass");
+    let mut tufts = 0;
+    for cz in -2..2 {
+        for cx in -2..2 {
+            let (wx, wz) = (x / CHUNK_SIZE + cx, z / CHUNK_SIZE + cz);
+            let h = f64::from(g.column_at(wx * CHUNK_SIZE, wz * CHUNK_SIZE).height);
+            let row = rows_for_m(h).div_euclid(CHUNK_SIZE);
+            for cy in row - 1..=row + 1 {
+                let mut c = Chunk::default();
+                g.generate(ChunkCoord::new(wx, cy, wz), &mut c);
+                tufts += c.voxels().iter().filter(|&&m| m == tall).count();
+            }
+        }
+    }
+    assert!(tufts > 0, "tall grass round the steppe spot");
 }

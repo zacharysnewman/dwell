@@ -277,14 +277,23 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
 - **Visual pass (2026-11-11), found in game** (spots `starter:*` in `client/bench/spots.json`, found by
   `starter_world` `feature_spots`; shots named `starter-<spot>.png`):
-  - **Tall grass nearly absent in game.** Natively the starter's meadow spot has 7914 tall grass cells
-    over 48849 grass cells (`tall_grass_counts`; broadleaf 7464, mixed 6505), but in game
-    (`starter-meadow-grass`, `tall-grass-close`) a 2.5 m-high view shows almost no tufts, and the nearest
-    to the spot (`goto dwell:tall_grass`) is one cell 10 m off, drawn pale. Something between the
-    generator and the screen loses them: the server's grass step, the chunk sent, or the cross mesh/fade.
-  - **The steppe has no tall grass at all** (`tall_grass_counts`: 0 over 50545 grass cells at the tour's
-    steppe spot; `starter-steppe-grass`): its climate share is 0 there. A steppe reads as grassland;
-    the dry-lee thinning goes all the way to none.
+  - **Tall grass nearly absent in game: not a loss (checked 2026-11-11, `claude/tall-grass-missing`).**
+    Counted at the meadow spot three ways, they agree: the generator (`tall_grass_counts`, 7914),
+    the game's own generator path (`TerrainGenerator::with_map` over the starter's map, the same 7914),
+    the server's chunks round a player after 1 and 10 s (`dwell-sim` `starter_grass`: 938 of 938 within
+    48 m; grass growth only adds) and the page (`__dwell.voxel`: 294 tufts in a 40 x 30 m patch 30-60 m
+    ahead, as natively). The spot itself stands in a gap: tall grass grows in patches (decorations.json
+    `meadow_grass`: wavelength 40 m, coverage 0.45, density 0.55, on flat `dwell:grass` only, so the ~40%
+    of the meadow's columns that are 1/2 m grass ramps hold none), and the 20 x 20 m round the spot has 0
+    tufts over 108 flat grass and 152 ramp tops, natively as in game. Open for the owner (tuning, not a
+    bug; changing the decoration changes the default world's terrain, a compatibility break): denser or
+    wider patches, tufts on grass ramps (`dwell:tall_grass` already allows `placeOn` ramps), and the
+    tufts reading pale against the grass (whitish-green blades at a patch edge).
+  - **The steppe had no tall grass at all: fixed (data).** Its lee's wetness (~0.01) is under
+    `dwell:meadow_grass`'s moisture envelope ([0.05, 1], fade 0.3), so at `undergrowth` 1 its climate
+    share was 0 (0 over 50545 grass cells). The starter's steppe now has `undergrowth` 0.75: a floor of
+    a quarter, 2591 tufts over the same 50545 (~5%; the meadow ~16%); `the_steppe_keeps_sparse_tall_grass`
+    (red at 1, green at 0.75).
   - **Arches:** `starter-arch-2` reads (a hole through a red wall, sky beyond); `arch-1`'s opening sits at
     the foot of a ~100 m fin with a pale sandstone heap in front of it, `arch-3`'s is a slit in a long
     wall (the "fin" is a wall, not a narrow fin). Arches are tunnels through broad walls more than
