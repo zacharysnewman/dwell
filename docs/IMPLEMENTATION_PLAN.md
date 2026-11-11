@@ -3418,7 +3418,7 @@ Deliverables
   and prune at obstacles; cuts by Phase 20; skeleton-jitter variation, no grafting, no space
   colonization; the owner's persistence model; procedural and planted trees; compatibility); the
   owner's answers recorded (`TREE_GROWTH.md` §7).
-- [x] **G0** — The prototype page `docs/prototypes/tree-growth.html`: load an exported structure,
+- [x] **G0** — The prototype page `docs/prototypes/tree-growth.html` (now `tree-growth-skeleton.html`; since 0.52.50 `tree-growth.html` shows species and growth stages): load an exported structure,
   show its extracted skeleton, scrub the age, roll variant seeds, place obstacles, export the
   `growth` and `variants` sections; three sample trees whose mature stages equal their models
   (checked in the page); verified in Playwright's Chromium (samples, ages, variants, an obstacle,
