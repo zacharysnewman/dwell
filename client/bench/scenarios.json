@@ -7415,7 +7415,7 @@
         },
         {
           "do": "select",
-          "slot": 5
+          "slot": 3
         },
         {
           "do": "pick",
@@ -7459,7 +7459,7 @@
         },
         {
           "do": "select",
-          "slot": 6
+          "slot": 4
         },
         {
           "do": "pick",
@@ -7520,7 +7520,7 @@
         },
         {
           "do": "select",
-          "slot": 7
+          "slot": 5
         },
         {
           "do": "pick",

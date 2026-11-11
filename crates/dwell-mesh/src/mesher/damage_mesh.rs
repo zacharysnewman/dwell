@@ -211,7 +211,13 @@ fn decal(
                 at(r * t * wobble, th, 0.0)
             };
             let cap = |t: f64| depth * (1.0 - t * t);
-            let tones = [0.62, 0.85];
+            // The look's colour as a hue (its brightest channel 1), so the bowl keeps the tile's
+            // grain and reads by its shading: a dark damp rim, lighter walls and floor.
+            let hue = |mul: f64| {
+                let top = look.color.iter().copied().max().unwrap_or(1).max(1);
+                look.color.map(|c| f64::from(c) / f64::from(top) * mul)
+            };
+            let tones = [0.5, 0.95];
             for (i, w) in rings.windows(2).enumerate() {
                 for k in 0..SEG {
                     let pts = vec![
@@ -220,7 +226,7 @@ fn decal(
                         (ring(w[1], k + 1), cap(w[1])),
                         (ring(w[1], k), cap(w[1])),
                     ];
-                    out.push(cut(pts, srgb(look.color, tones[i])));
+                    out.push(cut(pts, hue(tones[i])));
                 }
             }
             // The floor: a fan to the deepest point.
@@ -231,7 +237,7 @@ fn decal(
                     (ring(last, k), cap(last)),
                     (ring(last, k + 1), cap(last)),
                 ];
-                out.push(cut(pts, srgb(look.color, 0.75)));
+                out.push(cut(pts, hue(0.85)));
             }
         }
         DamageLookKind::Chips => {

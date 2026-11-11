@@ -134,9 +134,9 @@ damage update's changed cell, at its newest mark, and skips its own hits' echoes
 
 **Scoops and shards as dents (scoops-and-herds):** the owner's note that a scoop read "more as a dark
 stain than a shallow bowl". A scoop and a shard are now modelled cut into the face, `damage.look.depth`
-deep (cells; optional, default 0.1, validated in [0, 0.5]; dirt and grass 0.14, sand 0.12, stone 0.06),
+deep (cells; optional, default 0.1, validated in [0, 0.5]; dirt and grass 0.14, sand 0.12, stone 0.1),
 growing with the damage like the mark's width: a scoop is a spherical cap of two rings of quads and a
-floor fan (12 segments), darkest at its damp rim; a shard is five angular facets round an off-centre
+floor fan (12 segments) in the look colour's hue over the tile, darkest at its damp rim; a shard is five angular facets round an off-centre
 apex knocked in (one mark in five a flake left proud). Each piece is still drawn flat 4 mm off the face
 (the face's own greedy quad stays whole and collision is unchanged) but lit by its modelled normal
 (`ground_mesh::push_polygon_shaded`), so the bowl's far wall catches the light and its near wall falls
