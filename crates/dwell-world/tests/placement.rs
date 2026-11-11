@@ -50,6 +50,7 @@ fn place(
         material: f.state(m),
         rows,
         down,
+        point: None,
     };
     check_block_edit(w, &r, f.point([0.5, 1.62, 0.5]), &[], DEFAULT_REACH)
 }
@@ -228,6 +229,7 @@ dwell_world::both_faces!(
                 material: 0,
                 rows,
                 down,
+                point: None,
             };
             check_block_edit(w, &r, f.point([0.5, 1.62, -0.5]), &[], DEFAULT_REACH)
         };
@@ -318,6 +320,7 @@ dwell_world::both_faces!(
             material: 0,
             rows: 1,
             down: false,
+            point: None,
         };
         let o = check_block_edit(&mut w, &r, f.point([0.5, 1.62, 0.5]), &[], DEFAULT_REACH);
         assert_eq!(o.check, EditCheck::Unbreakable);

@@ -169,6 +169,10 @@ pub struct BlockEditRequest {
     pub material: u16,
     pub rows: u8,
     pub down: bool,
+    /// Where a break struck the face (docs/BLOCK_DAMAGE.md): each axis in 1/255ths of the cell,
+    /// world-oriented. Optional on the wire (three bytes after the piece), sent only to a server
+    /// whose `Inventory` has `inventory_flags::DAMAGE`: an older server reads none.
+    pub point: Option<[u8; 3]>,
 }
 
 /// The tallest piece a place request may ask for (cells).
@@ -558,6 +562,13 @@ pub enum Message {
     /// C→S reliable, control channel, only to a server whose `Inventory` has
     /// `inventory_flags::CREATURES` (ADR 0073): this client draws creatures; send it `Creatures`.
     CreaturesHello,
+    /// C→S reliable, control channel, only to a server whose `Inventory` has
+    /// `inventory_flags::DAMAGE` (docs/BLOCK_DAMAGE.md): this client draws block damage; send it
+    /// `Damage` (every damaged cell now, then each change).
+    DamageHello,
+    /// S→C reliable, world channel, only to a client that sent `DamageHello`: damaged cells and
+    /// cells no longer damaged.
+    Damage(DamageMessage),
     /// S→C reliable, world channel, only to a client that sent `CreaturesHello`: creatures that
     /// appeared or moved, and those gone (ADR 0073).
     Creatures(CreaturesMessage),
@@ -672,6 +683,20 @@ pub mod inventory_flags {
     pub const GROUND: u8 = 2;
     /// The server keeps creatures (ADR 0073): it takes `CreaturesHello`.
     pub const CREATURES: u8 = 4;
+    /// The server keeps block damage (docs/BLOCK_DAMAGE.md): it takes `DamageHello` and a break
+    /// request's struck point.
+    pub const DAMAGE: u8 = 8;
+}
+
+/// The most cells one `Damage` carries (more go in more messages).
+pub const MAX_DAMAGE_PER_MESSAGE: usize = 512;
+
+/// `Damage`'s cells (docs/BLOCK_DAMAGE.md): each damaged cell's damage, and the cells whose damage
+/// is gone (broken, replaced).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DamageMessage {
+    pub cells: Vec<([i32; 3], crate::damage::DamageView)>,
+    pub gone: Vec<[i32; 3]>,
 }
 
 /// The most cells one `GroundGone` carries (more go in more messages).
@@ -751,6 +776,8 @@ impl Message {
             M::VitalsHello => MessageType::VitalsHello,
             M::Vitals(_) => MessageType::Vitals,
             M::CreaturesHello => MessageType::CreaturesHello,
+            M::DamageHello => MessageType::DamageHello,
+            M::Damage(_) => MessageType::Damage,
             M::Creatures(_) => MessageType::Creatures,
             M::BodyEdit(_) => MessageType::BodyEdit,
         }
@@ -1252,6 +1279,11 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
             }
             // The piece: rows in the low bits, `down` the top bit.
             w.u8(m.rows | if m.down { 0x80 } else { 0 });
+            if let Some(p) = m.point {
+                for v in p {
+                    w.u8(v);
+                }
+            }
         }
         M::VoxelModification(m) => {
             w.u8(m.reason as u8);
@@ -1419,7 +1451,24 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
             }
         },
         M::VitalsHello => {}
-        M::CreaturesHello => {}
+        M::CreaturesHello | M::DamageHello => {}
+        M::Damage(m) => {
+            let n = m.cells.len().min(MAX_DAMAGE_PER_MESSAGE);
+            w.u16(n as u16);
+            for (c, d) in &m.cells[..n] {
+                for &v in c {
+                    w.i32(v);
+                }
+                d.write(w);
+            }
+            let n = m.gone.len().min(MAX_DAMAGE_PER_MESSAGE);
+            w.u16(n as u16);
+            for c in &m.gone[..n] {
+                for &v in c {
+                    w.i32(v);
+                }
+            }
+        }
         M::Creatures(m) => {
             let n = m.creatures.len().min(MAX_CREATURES_PER_MESSAGE);
             w.u16(n as u16);
@@ -1889,6 +1938,29 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
         }),
         T::VitalsHello => M::VitalsHello,
         T::CreaturesHello => M::CreaturesHello,
+        T::DamageHello => M::DamageHello,
+        T::Damage => {
+            let n = usize::from(r.u16());
+            r.check(n <= MAX_DAMAGE_PER_MESSAGE);
+            let mut cells = Vec::new();
+            for _ in 0..n {
+                if !r.ok() {
+                    break;
+                }
+                let c = [r.i32(), r.i32(), r.i32()];
+                cells.push((c, crate::damage::DamageView::read(r)));
+            }
+            let n = usize::from(r.u16());
+            r.check(n <= MAX_DAMAGE_PER_MESSAGE);
+            let mut gone = Vec::new();
+            for _ in 0..n {
+                if !r.ok() {
+                    break;
+                }
+                gone.push([r.i32(), r.i32(), r.i32()]);
+            }
+            M::Damage(DamageMessage { cells, gone })
+        }
         T::Creatures => {
             let n = usize::from(r.u16());
             r.check(n <= MAX_CREATURES_PER_MESSAGE);
@@ -2083,6 +2155,7 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
             let rows = piece & 0x7f;
             r.check((1..=MAX_PIECE_ROWS).contains(&rows));
             let down = piece & 0x80 != 0;
+            let point = (r.ok() && !r.at_end()).then(|| [r.u8(), r.u8(), r.u8()]);
             M::BlockEditRequest(BlockEditRequest {
                 action,
                 cell,
@@ -2090,6 +2163,7 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
                 material,
                 rows,
                 down,
+                point,
             })
         }
         T::VoxelModification => {

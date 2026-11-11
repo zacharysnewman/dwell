@@ -62,6 +62,7 @@ fn place(cell: [i32; 3], face: u8, m: u16) -> Message {
         material: m,
         rows: 1,
         down: false,
+        point: None,
     })
 }
 
@@ -471,6 +472,7 @@ fn the_waters_free_water_survives_a_server_restart() {
                 material: 0,
                 rows: 1,
                 down: false,
+                point: None,
             }),
         );
         for _ in 0..240 {

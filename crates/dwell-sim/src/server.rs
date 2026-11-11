@@ -580,6 +580,8 @@ struct Session {
     drown_ticks: u32,
     /// Whether its client draws creatures (`CreaturesHello`, ADR 0073).
     creatures_hello: bool,
+    /// Whether its client draws block damage (`DamageHello`, docs/BLOCK_DAMAGE.md).
+    damage_hello: bool,
     /// The tool it holds (item name, the hold's plane), from `ChopAction::Held`; having sent one,
     /// it understands `HeldTools` (ADR 0067).
     held_tool: Option<(String, bool)>,
@@ -634,6 +636,7 @@ impl Session {
             vitals_hello: false,
             drown_ticks: 0,
             creatures_hello: false,
+            damage_hello: false,
             held_tool: None,
             primed: false,
             low_water: usize::MAX,
@@ -1476,6 +1479,7 @@ impl Server {
             Message::Chop(a) => self.chop_action(id, a),
             Message::VitalsHello => s.vitals_hello = true,
             Message::CreaturesHello => self.creatures_hello(id),
+            Message::DamageHello => self.damage_hello(id),
             Message::ChunkResync(coords) => self.resync(id, &coords),
             Message::ChunkRequest(coords) => self.request_chunks(id, &coords),
             Message::LodRequest(sections) => {
@@ -2408,6 +2412,8 @@ impl Server {
         // and the cells a last hit broke, with their hits (the destroy drops what is left).
         let mut hits: Vec<([i32; 3], dwell_blocks::StateId, u32, u32)> = Vec::new();
         let mut destroyed_after: HashMap<[i32; 3], u32> = HashMap::default();
+        // Cells a hit damaged this tick, for the clients that draw damage.
+        let mut damaged: Vec<[i32; 3]> = Vec::new();
         // Every broken cell and what it was, in any mode: ground items on them are knocked loose.
         let mut under_ground: Vec<([i32; 3], dwell_blocks::StateId)> = Vec::new();
         let ids: Vec<SessionId> = self.sessions.keys().copied().collect();
@@ -2494,20 +2500,25 @@ impl Server {
                         Some(n) if n > 1 => {
                             let mark = dwell_protocol::damage::HitMark {
                                 face: edit.face,
-                                point: [128; 3],
+                                point: edit.point.unwrap_or([128; 3]),
                             };
-                            let k = u32::from(self.damage.hit(outcome.cell, state, mark));
+                            let k = u32::from(self.damage.hit(
+                                outcome.cell,
+                                state,
+                                n.min(u32::from(u16::MAX)) as u16,
+                                mark,
+                            ));
                             s.edit_credit -= 1.0;
                             s.stats.edits_applied += 1;
                             if k < n {
                                 if uses_items {
                                     hits.push((outcome.cell, state, n, k));
                                 }
+                                damaged.push(outcome.cell);
                                 s.edit_refused.push(seq);
                                 continue;
                             }
                             destroyed_after.insert(outcome.cell, n);
-                            self.damage.clear(outcome.cell);
                         }
                         Some(_) => {
                             s.edit_credit -= 1.0;
@@ -2663,6 +2674,7 @@ impl Server {
         }
         let edited = changes.cells();
         self.broadcast_changes(changes, VoxelModificationReason::Edit);
+        self.send_damage(&damaged, Vec::new());
         for (cell, was, n, k) in hits {
             self.drop_hit(was, dwell_world::centre_of_cell(cell), n, k);
         }
@@ -2741,8 +2753,13 @@ impl Server {
         }
         // A changed cell's cut goes with its wood (ADR 0067), and its damage with its block.
         self.cuts_dropped(&before);
-        for &(cell, _) in &before {
-            self.damage.clear(cell);
+        if !self.damage.cells.is_empty() {
+            let gone: Vec<[i32; 3]> = before
+                .iter()
+                .filter(|(c, _)| self.damage.cells.remove(c).is_some())
+                .map(|(c, _)| *c)
+                .collect();
+            self.send_damage(&[], gone);
         }
         if changed.is_empty() {
             return;
@@ -4693,6 +4710,69 @@ impl Server {
 pub fn spawn_spread(player_id: u16) -> [f64; 2] {
     let slot = (i32::from(player_id) - 1).rem_euclid(8);
     [f64::from(slot % 4) - 1.5, f64::from(slot / 4) * 1.5 - 0.75]
+}
+
+impl Server {
+    /// A client draws block damage (`DamageHello`): every damaged cell now, then each change.
+    fn damage_hello(&mut self, id: SessionId) {
+        let Some(s) = self.sessions.get_mut(&id) else {
+            return;
+        };
+        s.damage_hello = true;
+        let all: Vec<_> = self
+            .damage
+            .sorted()
+            .into_iter()
+            .map(|(c, d)| (c, d.view()))
+            .collect();
+        for part in all.chunks(dwell_protocol::MAX_DAMAGE_PER_MESSAGE) {
+            let m = Message::Damage(dwell_protocol::DamageMessage {
+                cells: part.to_vec(),
+                gone: Vec::new(),
+            });
+            self.send_reliable(id, &m, Channel::World);
+        }
+    }
+
+    /// Tells the clients that draw damage of `cells`' damage now and of the cells `gone`.
+    fn send_damage(&mut self, cells: &[[i32; 3]], gone: Vec<[i32; 3]>) {
+        let cells: Vec<_> = cells
+            .iter()
+            .filter_map(|c| self.damage.cells.get(c).map(|d| (*c, d.view())))
+            .collect();
+        if cells.is_empty() && gone.is_empty() {
+            return;
+        }
+        let to: Vec<SessionId> = self
+            .sessions
+            .iter()
+            .filter(|(_, s)| s.damage_hello)
+            .map(|(&id, _)| id)
+            .collect();
+        for part in cells.chunks(dwell_protocol::MAX_DAMAGE_PER_MESSAGE.max(1)) {
+            let m = Message::Damage(dwell_protocol::DamageMessage {
+                cells: part.to_vec(),
+                gone: Vec::new(),
+            });
+            for &id in &to {
+                self.send_reliable(id, &m, Channel::World);
+            }
+        }
+        for part in gone.chunks(dwell_protocol::MAX_DAMAGE_PER_MESSAGE) {
+            let m = Message::Damage(dwell_protocol::DamageMessage {
+                cells: Vec::new(),
+                gone: part.to_vec(),
+            });
+            for &id in &to {
+                self.send_reliable(id, &m, Channel::World);
+            }
+        }
+    }
+
+    /// A cell's damage (tests, the bench).
+    pub fn damage_of(&self, cell: [i32; 3]) -> Option<&dwell_protocol::damage::CellDamage> {
+        self.damage.cells.get(&cell)
+    }
 }
 
 /// The item a session's break is made with (docs/BLOCK_DAMAGE.md): the held inventory slot's

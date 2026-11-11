@@ -369,6 +369,7 @@ impl BlockInteraction {
             material,
             rows: 1,
             down: false,
+            point: None,
         }))
     }
 
@@ -425,6 +426,7 @@ impl BlockInteraction {
             rows,
             // Against a side, centred on the aim: down when it is in the cell's lower half.
             down: rows > 1 && t.face != 2 && t.face != 3 && t.aim_up < 0.5,
+            point: None,
         }))
     }
 }
@@ -511,6 +513,7 @@ mod tests {
             Message::BlockEditRequest(r) => r,
             other => panic!("not a BlockEditRequest: {other:?}"),
         }
+        point: None,
     }
 
     #[test]
@@ -557,6 +560,7 @@ mod tests {
                     material: 0,
                     rows: 1,
                     down: false,
+                    point: None,
                 }),
                 Message::BlockEditRequest(BlockEditRequest {
                     action: BlockEditAction::Place,
@@ -565,6 +569,7 @@ mod tests {
                     material: require("dwell:dirt"),
                     rows: 1,
                     down: false,
+                    point: None,
                 }),
             ]
         );

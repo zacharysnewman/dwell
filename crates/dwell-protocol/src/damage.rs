@@ -96,7 +96,55 @@ pub struct HitMark {
 pub struct CellDamage {
     pub state: u16,
     pub hits: u16,
+    /// The hits to break it by the tool of the last hit (its damage's fraction is `hits / need`).
+    pub need: u16,
     pub marks: Vec<HitMark>,
+}
+
+impl CellDamage {
+    /// What a client draws of it.
+    pub fn view(&self) -> DamageView {
+        let f = f64::from(self.hits) / f64::from(self.need.max(1));
+        DamageView {
+            fraction: (f.clamp(0.0, 1.0) * 255.0).round() as u8,
+            marks: self.marks.clone(),
+        }
+    }
+}
+
+/// A damaged cell as a client draws it (`Damage` messages, the mesh job): how far it is to
+/// breaking (0..255) and its hit marks.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DamageView {
+    pub fraction: u8,
+    pub marks: Vec<HitMark>,
+}
+
+impl DamageView {
+    pub fn write(&self, w: &mut ByteWriter) {
+        w.u8(self.fraction);
+        let n = self.marks.len().min(MAX_HIT_MARKS);
+        w.u8(n as u8);
+        for m in &self.marks[..n] {
+            w.u8(m.face);
+            for p in m.point {
+                w.u8(p);
+            }
+        }
+    }
+
+    pub fn read(r: &mut ByteReader) -> DamageView {
+        let fraction = r.u8();
+        let n = usize::from(r.u8());
+        r.check(n <= MAX_HIT_MARKS);
+        let marks = (0..n.min(MAX_HIT_MARKS))
+            .map(|_| HitMark {
+                face: r.u8(),
+                point: [r.u8(), r.u8(), r.u8()],
+            })
+            .collect();
+        DamageView { fraction, marks }
+    }
 }
 
 /// The damaged cells of a world.
@@ -117,20 +165,24 @@ impl Damage {
             .map_or(0, |d| d.hits)
     }
 
-    /// Records a hit on `cell` (now `state`) at `mark`; the hits it has taken now.
-    pub fn hit(&mut self, cell: [i32; 3], state: u16, mark: HitMark) -> u16 {
+    /// Records a hit on `cell` (now `state`) at `mark`, by a tool that breaks it in `need`; the hits
+    /// it has taken now.
+    pub fn hit(&mut self, cell: [i32; 3], state: u16, need: u16, mark: HitMark) -> u16 {
         let d = self.cells.entry(cell).or_insert(CellDamage {
             state,
             hits: 0,
+            need,
             marks: Vec::new(),
         });
         if d.state != state {
             *d = CellDamage {
                 state,
                 hits: 0,
+                need,
                 marks: Vec::new(),
             };
         }
+        d.need = need;
         d.hits = d.hits.saturating_add(1);
         d.marks.push(mark);
         if d.marks.len() > MAX_HIT_MARKS {
@@ -163,6 +215,7 @@ impl Damage {
             }
             w.u16(d.state);
             w.u16(d.hits);
+            w.u16(d.need);
             w.u8(d.marks.len() as u8);
             for m in &d.marks {
                 w.u8(m.face);
@@ -182,11 +235,12 @@ impl Damage {
         }
         let n = r.u32() as usize;
         let mut cells = HashMap::new();
-        // Each cell is at least 17 bytes: a corrupt count can't allocate past the record.
-        for _ in 0..n.min(bytes.len() / 17 + 1) {
+        // Each cell is at least 19 bytes: a corrupt count can't allocate past the record.
+        for _ in 0..n.min(bytes.len() / 19 + 1) {
             let c = [r.i32(), r.i32(), r.i32()];
             let state = r.u16();
             let hits = r.u16();
+            let need = r.u16();
             let k = usize::from(r.u8()).min(MAX_HIT_MARKS);
             let marks = (0..k)
                 .map(|_| HitMark {
@@ -194,7 +248,15 @@ impl Damage {
                     point: [r.u8(), r.u8(), r.u8()],
                 })
                 .collect();
-            cells.insert(c, CellDamage { state, hits, marks });
+            cells.insert(
+                c,
+                CellDamage {
+                    state,
+                    hits,
+                    need,
+                    marks,
+                },
+            );
         }
         (r.ok() && r.at_end()).then_some(Damage { cells })
     }

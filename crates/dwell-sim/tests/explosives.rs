@@ -125,6 +125,7 @@ impl Scene {
                 material: require("dwell:torch"),
                 rows: 1,
                 down: false,
+                point: None,
             }),
         );
     }
@@ -797,6 +798,7 @@ fn a_world_saved_with_a_fuse_burning_lights_it_again_when_it_loads() {
             material: m,
             rows: 1,
             down: false,
+            point: None,
         })
     };
     {

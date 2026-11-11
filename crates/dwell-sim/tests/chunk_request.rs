@@ -94,6 +94,7 @@ fn a_modified_chunk_arrives_explicitly_and_its_edits_follow() {
             material: M.stone,
             rows: 1,
             down: false,
+            point: None,
         }),
     );
     f.server.step();
@@ -117,6 +118,7 @@ fn a_modified_chunk_arrives_explicitly_and_its_edits_follow() {
             material: M.sand,
             rows: 1,
             down: false,
+            point: None,
         }),
     );
     f.server.step();

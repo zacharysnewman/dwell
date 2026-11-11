@@ -26,6 +26,7 @@ fn brk(cell: [i32; 3], face: u8) -> Message {
         material: 0,
         rows: 1,
         down: false,
+        point: None,
     })
 }
 fn place(cell: [i32; 3], face: u8, m: u16) -> Message {
@@ -36,6 +37,7 @@ fn place(cell: [i32; 3], face: u8, m: u16) -> Message {
         material: m,
         rows: 1,
         down: false,
+        point: None,
     })
 }
 

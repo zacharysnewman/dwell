@@ -92,6 +92,7 @@ fn hit(fx: &mut Fixture, f: FaceFrame, local: [i32; 3]) {
             material: 0,
             rows: 1,
             down: false,
+            point: None,
         }),
     );
     // Within the edit rate (10 a second): one hit every 7 ticks.
