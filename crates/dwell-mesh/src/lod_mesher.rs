@@ -80,7 +80,7 @@ fn fill_of(m: StateId) -> f64 {
     dwell_blocks::try_info(m).map_or(1.0, |s| f64::from(s.fill).clamp(0.0, 1.0))
 }
 
-fn is_liquid(m: StateId) -> bool {
+pub(crate) fn is_liquid(m: StateId) -> bool {
     static LIQUID: OnceLock<Vec<bool>> = OnceLock::new();
     let table = LIQUID.get_or_init(|| {
         (0..STATES.len())
@@ -189,7 +189,7 @@ fn ramp_tint_ratio(axis: usize, sign: i32) -> [f64; 3] {
     std::array::from_fn(|i| ramp[i] / wall[i])
 }
 
-fn linear_rgb(color: u32, tint: [f64; 3]) -> [f32; 3] {
+pub(crate) fn linear_rgb(color: u32, tint: [f64; 3]) -> [f32; 3] {
     [
         (srgb_to_linear(((color >> 16) & 0xff) as u8) * tint[0]) as f32,
         (srgb_to_linear(((color >> 8) & 0xff) as u8) * tint[1]) as f32,
@@ -461,6 +461,10 @@ fn mesh_section_above(
                     let wc = col(c[0], c[2]);
                     // A column's surface cell: its top and sides are drawn at the surface (below).
                     let sy = i32::from(special.y[wc]);
+                    // Leaves and logs are drawn whole as the chunks draw them (`lod_trees`).
+                    if sy != c[1] && crate::lod_trees::tree_kind(m) != 0 {
+                        continue;
+                    }
                     if face != 3 && sy == c[1] {
                         continue;
                     }
@@ -595,6 +599,12 @@ fn mesh_section_above(
             }
         }
     }
+    crate::lod_trees::tree_cells(
+        cells,
+        |x, y, z| i32::from(special.y[col(x, z)]) == y,
+        lod_color,
+        &mut opaque.m,
+    );
     emit_surfaces(
         cells,
         &special,

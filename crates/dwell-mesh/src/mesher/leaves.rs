@@ -56,6 +56,11 @@ pub(crate) struct Plane {
 
 /// The cut planes of a cell exposed on the faces `ex` (index as [`FACES`]), cut back by `s` cells.
 pub(crate) fn planes(ex: [bool; 6], s: f64) -> Vec<Plane> {
+    planes_of(ex, s, false)
+}
+
+/// [`planes`], or with `upright` the vertical edges' cuts alone (an octagonal column: a log at LOD).
+fn planes_of(ex: [bool; 6], s: f64, upright: bool) -> Vec<Plane> {
     let mut out = Vec::new();
     if s <= 0.005 {
         return out;
@@ -65,6 +70,9 @@ pub(crate) fn planes(ex: [bool; 6], s: f64) -> Vec<Plane> {
             if FACES[i].0 == FACES[j].0 || !ex[i] || !ex[j] {
                 continue;
             }
+            if upright && (FACES[i].0 == 1 || FACES[j].0 == 1) {
+                continue;
+            }
             let n = normalise(std::array::from_fn(|a| unit(i)[a] + unit(j)[a])).unwrap_or_default();
             out.push(Plane {
                 n,
@@ -72,6 +80,9 @@ pub(crate) fn planes(ex: [bool; 6], s: f64) -> Vec<Plane> {
                 sides: [Some(i), Some(j), None],
             });
         }
+    }
+    if upright {
+        return out;
     }
     for sx in [0, 1] {
         for sy in [2, 3] {
@@ -189,7 +200,23 @@ pub(crate) struct Piece {
 /// The polygons of a leaf cell exposed on `ex`, with `leafy[i]` whether the neighbour on face `i`
 /// is a leaf and `nb_ex[i]` that neighbour's exposure, cut back by `s` (see the module docs).
 pub(crate) fn pieces(ex: [bool; 6], leafy: [bool; 6], nb_ex: [[bool; 6]; 6], s: f64) -> Vec<Piece> {
-    let mine = planes(ex, s);
+    pieces_of(ex, leafy, nb_ex, s, false)
+}
+
+/// The polygons of an octagonal column (a log cell at LOD) exposed on `ex`: its vertical edges cut
+/// by `s` where both sides are open, its open faces drawn.
+pub(crate) fn column_pieces(ex: [bool; 6], s: f64) -> Vec<Piece> {
+    pieces_of(ex, [false; 6], [[false; 6]; 6], s, true)
+}
+
+fn pieces_of(
+    ex: [bool; 6],
+    leafy: [bool; 6],
+    nb_ex: [[bool; 6]; 6],
+    s: f64,
+    upright: bool,
+) -> Vec<Piece> {
+    let mine = planes_of(ex, s, upright);
     let mut out = Vec::new();
     for i in 0..6 {
         let mut face = square(i);
@@ -260,7 +287,7 @@ const P1: usize = PAD + 1;
 
 impl Crowns {
     /// None when the padded chunk holds no leaves.
-    pub(crate) fn new(cells: &Cells<'_>) -> Option<Self> {
+    pub(super) fn new(cells: &Cells<'_>) -> Option<Self> {
         Self::from_fn(|x, y, z| cells.kind(x, y, z).style.leafy)
     }
 
