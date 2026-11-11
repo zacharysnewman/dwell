@@ -86,22 +86,34 @@ Last updated: 2026-11-11 (0.52.68).
    the remaining leftover sections (owner, 2026-11-11: "Let's implement lava", "Into our queue"): lava as
    a fluid — flows slowly, cools into rock, gives light, damages, steam where it meets water. The other
    volcano phases stay under Future. Lava's danger (owner): heavy damage while in it, a moment of burning after.
-9. **Loading-time display bug.** Owner: "the loading game (xMB) step still takes like 10+ seconds sometimes and
-   shows as 0.0s [or 0.1s] on the loading screen." Find what the 10 s is, show its real time, speed it up if
-   possible; red → green test. (Runs before lava.)
+9. ~~**Loading-time display bug.**~~ Done (0.52.71): the 10 s was the graphics' start (one long task on the
+   main thread making the renderer's pipelines) begun in the same task that ended the game's load, so the
+   screen never painted "Starting the graphics…" and stood on "Loading the game… x MB 0.0 s". Each stage is
+   now painted before its work (`ui/startStages.ts`). 0.52.75 measured it cold (fresh Chrome profile,
+   `--disable-gpu-shader-disk-cache`, M1): the main-thread task was ~90 ms, ~40 of it the atlas mips'
+   `powf` (now a table: ~50–65 ms); the pipelines compile in Chrome's GPU process, a ~270 ms frame stall
+   after the stage, not in the task. Open: that GPU-process stall (seconds on a slow GPU?) needs
+   `createRenderPipelineAsync`, which wgpu 30 lacks: a wgpu patch, or warming Dawn's pipeline cache
+   with the same descriptors through `Device::as_webgpu`.
 10. **Speed-ups 1–6** (owner: "Implement 1-6 now"): the version out of build scripts (dwell-sim's build.rs reads
    client/package.json → every release recompiles), version + release note assigned at merge, an agent
    quickstart doc, a reliable browser kit (warm prebuilt client, exact camera goto, stall retries, saved
    spots), per-area check commands, lighter paperwork for small changes. (Runs before lava.)
-   Built (2026-11-11): 1 (local builds read `shared/version/line.json`, `<line>.0-dev.local`) and 2 (pending
-   release notes, `shared/releases/pending/`, assigned by the Release workflow; RELEASES.md §3); outstanding
-   3–6 and the workflow's first run on `main`.
+   Done: 1 (local builds read `shared/version/line.json`, `<line>.0-dev.local`), 2 (pending release notes,
+   `shared/releases/pending/`, assigned by the Release workflow; RELEASES.md §3; its first run on `main`
+   still to watch), 3 (`docs/AGENT_QUICKSTART.md`), 5 (`npm run check:<area>`) and 6 (CLAUDE.md "lighter
+   paperwork"), with `docs/CLOUD_SESSIONS.md`; 4 (the browser kit) running locally.
 11. **Deer/wolf ecology simulation, first slice** (owner 2026-11-11, with a mockup:
    docs/proposals/ECOSYSTEM_MOCKUP_NOTES.md). "Simulate at a data level only when you're not nearby, render
    simply from afar, and exactly when close by." Answers: far = herds and packs (one record each;
    individuals made when near); deer eat tall grass, but "it shouldn't affect the world until you are close
    enough to see" — a grazing value per area is the truth far away, applied to real tall grass near
    players; watch only for now (no player interaction); the whole island, coarse (fast-forwarded like water).
+   Tuning (owner): resistant to complete destruction, quick to replicate up to each group's cap, slow to
+   starve, and no runaway (the island's total bounded by grazing for deer, by prey for wolves).
+   **Started 2026-11-11:** the data-level core is built — `crates/dwell-ecology`, `shared/ecology/ecology.json`,
+   docs/ECOLOGY.md (herds and packs, forage per cell, the day step, 15 tests). Next (ECOLOGY.md §5): the
+   server's tick and saving, individuals near players, simple far rendering, grazing on the real tall grass.
 12. **Players' saved structures as placement sources** (owner 2026-11-11): per player (their library, usable
    in any world they create); placed copies editable, not protected; 32³ for now (may change), or larger
    structures as a grid of 32³ tiles. Sharing between players: Future.

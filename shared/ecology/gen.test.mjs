@@ -1,0 +1,65 @@
+// node --test shared/ecology/gen.test.mjs: the far ecology's data (docs/ECOLOGY.md).
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
+import { ecologyRust, generate, validateEcology } from './gen.mjs';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const data = () => JSON.parse(readFileSync(join(here, 'ecology.json'), 'utf8'));
+
+test('the data validates and the generated tables are current', () => {
+  const v = validateEcology(data());
+  assert.deepEqual(v.species.map((s) => s.name), ['dwell:deer', 'dwell:wolf']);
+  for (const [path, text] of generate()) assert.equal(readFileSync(path, 'utf8'), text, `${path} is stale: run node shared/ecology/gen.mjs`);
+});
+
+test('species refer to each other by name, emitted as indices', () => {
+  const v = validateEcology(data());
+  assert.deepEqual(v.species[0].flee.from, [1]);
+  assert.deepEqual(v.species[1].diet.prey.species, [0]);
+  const rs = ecologyRust(v, 'x');
+  assert.match(rs, /Diet::Prey \{ species: &\[0\]/);
+  assert.match(rs, /flee: Some\(Flee \{ from: &\[1\]/);
+});
+
+test('a fixture species is added by data alone', () => {
+  const d = JSON.parse(readFileSync(join(here, 'fixtures/ecology.json'), 'utf8'));
+  const v = validateEcology(d);
+  assert.deepEqual(v.species.map((s) => s.name), ['test:hare', 'test:fox']);
+  // A third species by data alone: a grazer with no predators.
+  d.species.push({ ...d.species[0], name: 'test:vole', flee: undefined });
+  delete d.species[2].flee;
+  assert.equal(validateEcology(d).species[2].diet.graze.perHeadPerDay, 0.2);
+});
+
+test('bad entries fail with a message naming them', () => {
+  const bad = (edit, re) => {
+    const d = data();
+    edit(d);
+    assert.throws(() => validateEcology(d), re);
+  };
+  bad((d) => (d.formatVersion = 2), /formatVersion must be 1/);
+  bad((d) => (d.island.stepDays = 0), /island\.stepDays must be a number in \(0, 30\]/);
+  bad((d) => (d.grazing.grounds[0].max = -1), /grazing\.grounds\.meadow\.max/);
+  bad((d) => d.grazing.grounds.push({ ...d.grazing.grounds[0] }), /grazing\.grounds\.meadow: listed twice/);
+  bad((d) => (d.species[0].group.cap = 3), /species\.dwell:deer\.group: cap must be at least twice floor/);
+  bad((d) => (d.species[0].start.size = 40), /species\.dwell:deer\.start\.size/);
+  bad((d) => (d.species[0].start.groups = 99), /species\.dwell:deer\.start\.groups/);
+  bad((d) => (d.species[0].flee.from = ['dwell:bear']), /species\.dwell:deer\.flee\.from\[0\]: "dwell:bear" is not a species/);
+  bad((d) => (d.species[1].diet.prey.species = ['dwell:wolf']), /a species cannot hunt itself/);
+  bad((d) => (d.species[0].diet = { graze: { perHeadPerDay: 1 }, prey: {} }), /diet must name exactly one/);
+  bad((d) => (d.species[0].disperse = { aboveHunger: 0.5, speedFactor: 2, leavePerDay: 0.01 }), /only a hunter disperses/);
+  bad((d) => (d.species[0].wings = 2), /species\.dwell:deer: unknown field wings/);
+  bad((d) => (d.species[1].name = 'Wolf'), /species\[1\]: name must be namespace:name/);
+  bad((d) => (d.species[0].starvePerDay = 0.5), /species\.dwell:deer\.starvePerDay/);
+  bad(
+    (d) => {
+      d.species.push({ ...d.species[1], name: 'dwell:bear', disperse: undefined });
+      delete d.species[2].disperse;
+      d.species[2].diet = { prey: { ...d.species[1].diet.prey, species: ['dwell:wolf'] } };
+    },
+    /"dwell:wolf" must graze/,
+  );
+});

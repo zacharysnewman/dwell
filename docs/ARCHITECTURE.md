@@ -282,6 +282,9 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
                      sky and its WGSL, height fog, exposure, the sky's clouds (tunables generated
                      from shared/look/clouds.json), the spyglass's zoom (shared/look/spyglass.json),
                      the dynamic lights' falloff, flicker and choice (shared/look/lights.json).
+  /dwell-ecology     The far ecology (§5.4, ECOLOGY.md): herds and packs as records on a face's
+                     island grid, the forage per cell, the day step (ecology.gen.rs from
+                     shared/ecology; a fixture for tests). No dependency on the server core.
   /dwell-characters  Characters (§5.3, CHARACTERS.md): the tables generated from shared/characters
                      (characters.gen.rs: rigs, looks composed into parts on bones, items, clips,
                      materials; characters.tiles: the brush tiles; fixture.gen.rs for tests), part
@@ -365,6 +368,9 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
                      (CHARACTERS.md, ADR 0041).
 /shared/creatures    creatures.json (the animals: model, speeds, wandering, spawn rules with a group mix, limits; ADR 0073),
                      gen.mjs → dwell-sim creatures.gen.rs, a fixture creature
+/shared/ecology      ecology.json (the far ecology: island grid, forage grounds, species' group,
+                     breeding, hunger, diet, flee and disperse rules; §5.4) + gen.mjs →
+                     dwell-ecology ecology.gen.rs, fixtures/ (test-only species), gen.test.mjs
 /shared/models       models.json (the model-detail levels, ADR 0070 §10; each skinned model's GLB, scale, yaw, role → clip map, palette
                      remap; the player model) + glb/ (the checked-in GLBs, the source of truth) +
                      import.mjs and blender_import.py (FBX → GLB with the palette remap, Blender
@@ -936,6 +942,24 @@ tests only); CI fails on stale output. Code names characters, looks, items and r
 - **Cost** (Apple GPU, Chrome, unthrottled, `__dwell.puppets`): 32 bodies in view add ~730 k
   triangles and 4 draws each, within the noise of `gpu.frame` (12.4–13.1 ms with 0–32 bodies on a
   busy machine); 41 KB of instance uniforms a frame at 32.
+
+### 5.4 The far ecology **[in progress: the data-level core built (`dwell-ecology`); not yet in the server, saved, drawn or near players]**
+
+([`ECOLOGY.md`](./ECOLOGY.md), WORK_QUEUE item 11.) Away from players the deer and wolves are
+**data only**: one record per herd or pack (`dwell_ecology::Group`: face-local position, size,
+hunger and energy averages, activity) on a coarse grid of the face's island (`Island`, 200 m cells
+sampled once from its world map: sea and lakes unwalked, each land cell's most forage by its height
+and slope). Each cell's **forage** is a number grazing depletes and time regrows; the real tall grass
+is not touched. `step(island, data, eco, days)` fast-forwards the whole island over days in steps
+of at most `stepDays` (5), each rate integrated in closed form, so 100 days at once land within a
+few percent of 100 single days; deterministic from the seed (hashes, no carried generator). Deer
+move to the best forage away from packs, packs close on herds and kill within reach, groups split
+above their cap and merge when small, never drop below their floor; breeding slows to nothing as a
+species nears its island **carrying capacity** (deer: the forage regrown a day; wolves: that over
+their prey a head), so no species dies out or runs away. Data: `shared/ecology/ecology.json`
+(`gen.mjs` → `ecology.gen.rs`, a fixture with species added by data alone). Face-local: one
+ecology per face, on that face's map. The 5.3 creatures (ADR 0073) are still spawned near players by
+their own rules; making individuals from the herds near players is the next slice (ECOLOGY.md §5).
 
 ---
 
@@ -1982,7 +2006,14 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
   once by `pageStartMs`, a negative time on the page's clock; else from the page's opening), `game` (the
   WASM's download, counted as it streams by `engine/wasm.ts` `countedResponse`: of the total when
   the response is not compressed, else MB so far; and its instantiation), `graphics`
-  (`Client.create`), `worldFile` (from the page's `?fresh=1` deletion to the worker's OPFS open),
+  (`Client.create`: one task on the main thread, ~50–65 ms on an M1 with a cold shader cache since
+  0.52.75, mostly the block atlas and its mips (`atlas_levels`; the mips convert bytes to linear light
+  through a 256-entry table, `srgb_linear_table`, rather than a `powf` per channel, which was ~40 of
+  ~90 ms). The pipelines' compiling is not in this task: Chrome makes them in its GPU process, which
+  then stalls the page's frames (~270 ms there, cold) after the stage ends; wgpu 30 has no
+  `createRenderPipelineAsync`. So `ui/startStages.ts` `runStartStages` paints each of `game` and
+  `graphics` (`LoadingScreen.painted`: a frame and the task after it) before its work starts, and
+  the screen names the stage that holds the thread rather than the one before it), `worldFile` (from the page's `?fresh=1` deletion to the worker's OPFS open),
   `worldMap` (the maps' faces, `worldMaps`' `onProgress`; a cached map ends it in milliseconds),
   `server` (the worker's WASM), `spawn` (the maps installed and `LocalWorld::new`: the world file
   read, the spawn found and its region pre-generated), `connect` (a dedicated server or friend
