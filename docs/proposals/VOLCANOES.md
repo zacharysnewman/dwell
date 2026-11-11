@@ -158,14 +158,21 @@ look and the in-game check come next, locally). ARCHITECTURE.md §6.8 has the mo
   glass with a violet sheen), replacing the tinted stone placeholder. Their `color` (the LOD's) is the
   tiles' base.
 - **Spots:** `starter:lava-lake` and `starter:lava-lake-night` (`client/bench/spots.json`) aim at the
-  vent site (30000, −8000). **Not yet seen in game:** on the warm bench (2026-11-11) the shots there
-  showed no lava: from 600 m straight down the site is low red-brown ground (the bench's ground ~32–64 m,
-  not a 420 m shield summit), and a 2 m³/s lake takes minutes to show. Whether the browser's local
-  world places the vent where the native test does (`tests/lava_world.rs`) is the first thing to check
-  next. The shader and tiles loaded and ran (60 fps, no WGSL error).
+  vent site (30000, −8000) from over the summit (its ground ~232 m at seed 0, 189 m at the native
+  test's seed). The first look found no lava only because the shots were badly placed (the eye under
+  the summit's ground, or far over it): `__dwell.lava()` in the page lists both faces' fields round
+  the vent with molten columns, as the native test does (`tests/lava_world.rs`, which prints the site).
+  Not a placement bug.
+- **Dev tools:** `__dwell.lava(op, args)` (`report`, `rate` [k], `vent` [x, y, z, rate, depth],
+  `ventNear` [dx, dz, rate, depth]), the bench's `lava` step and a scenario's `query`; `npm run bench --
+  --warm lava-lake` fills the summit lake ×30, shoots it by day and night, then a vent by the sea.
+- **Steam to the clients:** `SteamHello` / `Steam` (ARCHITECTURE.md, the wire), gated by
+  `inventory_flags::STEAM`, so an older client never gets it (tested both faces); the client draws a
+  rising puff over each cell (`steam.rs`, a third on a CPU adapter). Puffs use the explosions' smoke
+  colour for now.
 - **Outstanding:** heat per cell (brighter where hotter/thicker: the field's heat isn't in the cells);
-  steam to the clients (a `Steam` message gated by a hello like `CausesHello`) with puffs and a hiss; the
-  burning screen edge and sizzle.
+  steam's own look as data (white, not the explosions' smoke) and its hiss; the burning screen edge and
+  sizzle.
 
 **Next:** the rest of the look (steam, burning feedback, heat per cell); the water grid's columns as the
 fields' water; then V2's vents on the hotspot cones (rivers to the sea, eruptions).

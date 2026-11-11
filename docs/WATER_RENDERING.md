@@ -1175,14 +1175,14 @@ both data-driven:
 - **Molten** (`"molten": true` on a material, checked by `paint.mjs`: it needs `emissive` > 0): the
   generator emits `PAINTERLY_MOLTEN`, and `dwell-mesh` `tile_glow_entry` stores such a tile's glow
   **negated** in the tile table (`tile_grids`' z), so the terrain shader finds it from the tile with
-  nothing added to the vertex. `terrain_fs` then drifts the tile's uv by `MOLTEN_DRIFT` (blocks a
+  nothing added to the vertex. `terrain_fs` then shifts each block's tile by a hash of the block (so the crust plates do not line up in a grid, as the first in-game shots showed) and drifts it by `MOLTEN_DRIFT` (blocks a
   second, slow) and multiplies the glow of its bright texels (the cracks, not the crust plates) by
   `molten_heat`: two slow world-space waves, 0.7–1.4 ×.
 - **The CPU tier** draws it flat: the water tier's bit 10 (`dwell-look` `tier_bits`, every tier but the
   CPU's; WGSL `water_tier_molten`) gates the drift and heat, so the CPU adapter shows the still glowing
   tile (tested: `only_the_cpu_tier_draws_molten_surfaces_still`).
 - **Not built yet:** heat per cell (brighter where hotter or deeper: the field's heat is not in the chunk
-  cells), steam puffs and hiss where water boils away (the server's `Steam` events are still queued, not
-  sent), the burning screen edge and sizzle, and lava as a translucent fluid surface (it stays opaque by
+  cells), steam's hiss where water boils away (the server's `Steam` events are
+  sent since §6.3 as `Steam`, drawn as puffs; their hiss is not), the burning screen edge and sizzle, and lava as a translucent fluid surface (it stays opaque by
   design: no transparency).
 

@@ -4121,6 +4121,16 @@ client as `Fall`, as it does `Drown` to a client without `VitalsHello`; a later 
 C→S  CausesHello 0x64, control: u8 the last DamageCause this client knows
 ```
 
+**Steam: `SteamHello` / `Steam` (reliable) [built]** (VOLCANOES.md §6.3). A client sends `SteamHello`
+only to a server whose `Inventory` has `inventory_flags::STEAM` (64); from then on, each tick lava
+boiled water away, the server sends it `Steam`: the world cells whose water went (at most 256), drawn
+as rising puffs (`dwell-client` `steam.rs`, through the blasts' puffs). A client that never said it
+(an older build) never gets the message.
+```
+C→S  SteamHello 0x65, control: (empty)
+S→C  Steam 0x66, control: u16 count, then count × (i32 x, i32 y, i32 z) world cells
+```
+
 **Client → Server: `BlockEditRequest` (reliable, `control`) [built, Phase 3d]** (§6.5)
 ```
 u8   type = 0x4A

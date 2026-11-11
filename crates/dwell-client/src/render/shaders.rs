@@ -688,7 +688,11 @@ fn terrain_fs(i: TerrainOut, @builtin(front_facing) front: bool) -> SceneOut {
     let draw = draws[i.draw];
     // A molten tile (lava) drifts its crust slowly and breathes its cracks' heat.
     let molten = tile_molten(i.tile.xy);
-    let drift = select(vec2f(0.0), MOLTEN_DRIFT * frame.fog.z, molten);
+    // Each block's tile shifted by its own hash too, so the crust plates don't line up block to
+    // block (a regular grid read as tiling in the bench's shots).
+    let block = floor(i.uv);
+    let shift = fract(sin(vec2f(dot(block, vec2f(12.9898, 78.233)), dot(block, vec2f(39.346, 11.135)))) * 43758.5453);
+    let drift = select(vec2f(0.0), MOLTEN_DRIFT * frame.fog.z + shift, molten);
     let atlas_uv = i.tile.xy + fract(i.uv + drift) * i.tile.zw;
     let grads = atlas_grads(dpdx(i.uv) * i.tile.zw, dpdy(i.uv) * i.tile.zw);
     let texel = textureSampleGrad(atlas, atlas_sampler, atlas_crisp(atlas_uv), grads[0], grads[1]);
