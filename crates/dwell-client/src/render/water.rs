@@ -466,7 +466,13 @@ pub fn water_exit(f: dwell_world::FaceFrame, dir: [f64; 3], ior: f64) -> Option<
 /// sky mixed toward the window's glow (shafts.json `window`: colour `glow_srgb` × the zenith's
 /// brightest channel, its share `glow` × (0.55 + 0.45 × `inside`)). With no glow the window shows the
 /// sky above unchanged (WATER_RENDERING.md §16).
-pub fn window_sky(sky: [f64; 3], zenith: [f64; 3], glow_srgb: [f64; 3], glow: f64, inside: f64) -> [f64; 3] {
+pub fn window_sky(
+    sky: [f64; 3],
+    zenith: [f64; 3],
+    glow_srgb: [f64; 3],
+    glow: f64,
+    inside: f64,
+) -> [f64; 3] {
     let bright = zenith[0].max(zenith[1]).max(zenith[2]);
     let share = glow * (0.55 + 0.45 * inside);
     std::array::from_fn(|k| sky[k] + (srgb_to_linear(glow_srgb[k]) * bright - sky[k]) * share)
@@ -1557,7 +1563,11 @@ mod tests {
             // The fog's clear distance covers the window's whole cone from 0.3 m under: the rim's
             // ray to the surface is 0.3 / cos(critical angle) long.
             let rim = 0.3 / critical_angle(ior).cos();
-            assert!(water.fog_clear_m > rim, "{} m clear, the rim {rim} m", water.fog_clear_m);
+            assert!(
+                water.fog_clear_m > rim,
+                "{} m clear, the rim {rim} m",
+                water.fog_clear_m
+            );
         }
     );
 
@@ -1606,7 +1616,10 @@ mod tests {
         let at = src.find("fn moonlit(").expect("moonlit");
         assert!(src[at..].contains("frame.day.horizon.a);"));
         let at = src.find("fn scene_display(").expect("scene_display");
-        assert!(src[at..].contains("frame.day.horizon.a"), "the scene's saturation is the same");
+        assert!(
+            src[at..].contains("frame.day.horizon.a"),
+            "the scene's saturation is the same"
+        );
         assert!(
             b.contains("let window = display(underwater(sky_in * mix(1.0, look.x, f.window.x), to_surface, f));"),
             "the underside's cells over the window's sky at the look's share"
@@ -1711,7 +1724,7 @@ mod tests {
         // over its distance (underside_contrast), the sun patch along sun_through.
         assert!(src.contains("rim_above = 1.0 + (band_edge(0.0, f) - 1.0) * clamp(1.0 - d / waterline_across(f).x, 0.0, 1.0);"));
         assert!(src.contains(
-            "let mirror = display(underwater(underwater(vec3f(0.0), 1e6, f) * light, to_surface, f));"
+            "let mirror = moonlit(display(underwater(underwater(vec3f(0.0), 1e6, f) * light, to_surface, f)));"
         ));
         assert!(src.contains("let h = (sun - up * face_rise(face, sun)) / max(ior, 1.0);"));
         assert!(src.contains("return h + up * sqrt(max(1.0 - dot(h, h), 0.0));"));
