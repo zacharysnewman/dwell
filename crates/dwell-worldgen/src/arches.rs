@@ -96,8 +96,9 @@ pub fn site(a: &Arches, d: &Draw, ground: impl Fn(f64, f64) -> Option<f64>) -> O
     let h = std::f64::consts::FRAC_1_SQRT_2;
     let axes = [[1.0, 0.0], [h, h], [0.0, 1.0], [-h, h]];
     let first = (d.hashes[0] % 4) as usize;
-    let (mut arch, mut overhang): (Option<(f64, [f64; 2], f64)>, Option<(f64, [f64; 2], f64)>) =
-        (None, None);
+    // The best axis of each kind: its drop, the axis, the opening's floor.
+    type Best = Option<(f64, [f64; 2], f64)>;
+    let (mut arch, mut overhang): (Best, Best) = (None, None);
     for k in 0..4 {
         let axis = axes[(first + k) % 4];
         let s1 = ground(cx - axis[0] * half_fin, cz - axis[1] * half_fin)?;
@@ -196,6 +197,11 @@ mod tests {
         let a = Arches { density: 0.0, ..A };
         let d = draw(7, 3, 4);
         let [cx, cz] = d.centre;
-        assert!(site(&a, &d, |x, z| Some(30.0 - 2.0 * ((x - cx).powi(2) + (z - cz).powi(2)).sqrt())).is_none());
+        assert!(
+            site(&a, &d, |x, z| Some(
+                30.0 - 2.0 * ((x - cx).powi(2) + (z - cz).powi(2)).sqrt()
+            ))
+            .is_none()
+        );
     }
 }

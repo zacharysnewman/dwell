@@ -41,7 +41,7 @@ impl Cells<'_> {
 }
 
 fn rows_of(m: f64) -> i32 {
-    (m / f64::from(CELL_H)).floor() as i32
+    (m / CELL_H).floor() as i32
 }
 
 #[test]
@@ -80,12 +80,14 @@ dwell_world::both_faces!(
             };
             let air: Vec<i32> = (floor..top).filter(|&y| !solid(&mut cells, y)).collect();
             let rock_over = solid(&mut cells, top) && air.last().is_some_and(|&a| a < top);
-            if air.len() as f64 * f64::from(CELL_H) >= 2.0 && rock_over && solid(&mut cells, floor - 1)
-            {
+            if air.len() as f64 * CELL_H >= 2.0 && rock_over && solid(&mut cells, floor - 1) {
                 arches += 1;
             }
         }
-        assert!(arches >= 3, "{arches} of 8 sites show rock over air over rock");
+        assert!(
+            arches >= 3,
+            "{arches} of 8 sites show rock over air over rock"
+        );
     }
 );
 
@@ -117,7 +119,7 @@ fn arches_agree_across_chunk_seams() {
                 let top = g.ground_y(x, z).unwrap();
                 // Every site's predicted air in this column (sites may overlap).
                 let predicted = |y: i32| {
-                    let mid = (f64::from(y) + 0.5) * f64::from(CELL_H);
+                    let mid = (f64::from(y) + 0.5) * CELL_H;
                     all.iter().any(|o| {
                         o.roof(mx, mz).is_some_and(|roof| {
                             mid >= o.floor && mid <= roof.min(f64::from(col.height) - o.lintel)
@@ -153,7 +155,11 @@ fn arches_are_validated() {
     let text = include_str!("../../../shared/worldgen/biomes/fixtures/arches.json");
     let good: serde_json::Value = serde_json::from_str(text).unwrap();
     let b = biome_from_json(&good).expect("the fixture parses");
-    assert_eq!(b.arches, fixture().arches, "the parser reads what gen.mjs emits");
+    assert_eq!(
+        b.arches,
+        fixture().arches,
+        "the parser reads what gen.mjs emits"
+    );
     for (k, v) in [
         ("span", serde_json::json!([18, 6])),
         ("rise", serde_json::json!([0, 4])),

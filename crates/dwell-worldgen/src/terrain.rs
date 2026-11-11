@@ -3085,14 +3085,20 @@ impl TerrainGenerator {
     /// Carves the arches' openings (ADR 0074 B8) in a chunk filled to its columns' tops: a cell
     /// under an opening's roof, over its floor and at least its lintel under the column's top
     /// becomes air (dry columns only; the top and the cells over it stay).
-    fn carve_arches(&self, coord: ChunkCoord, cols: &[Column], overlap: Overlap, chunk: &mut Chunk) {
+    fn carve_arches(
+        &self,
+        coord: ChunkCoord,
+        cols: &[Column],
+        overlap: Overlap,
+        chunk: &mut Chunk,
+    ) {
         const S: i32 = CHUNK_SIZE;
         let (x0, y0, z0) = (coord.x * S, coord.y * S, coord.z * S);
         let sites = self.arches_near((x0, z0), (x0 + S - 1, z0 + S - 1));
         if sites.is_empty() {
             return;
         }
-        let ch = f64::from(CELL_H);
+        let ch = CELL_H;
         let voxels = chunk.voxels_mut();
         for z in 0..S {
             for x in 0..S {
