@@ -86,6 +86,13 @@ describe('graphics presets data', () => {
 });
 
 describe('applying a preset', () => {
+  it('Low turns the leaf cards off (the owner plays on Low, BUGS.md #72); every other preset keeps them', () => {
+    const start = defaultSettings(false);
+    expect(start.leafCards).toBe(true);
+    for (const p of GRAPHICS_PRESETS.presets)
+      expect(applyPreset(start, p, false).leafCards, p.id).toBe(p.id !== 'low');
+  });
+
   // Every setting but the preset's fields, to see that nothing else moves.
   const others = (s: Settings) => ({
     ...s,
@@ -94,6 +101,7 @@ describe('applying a preset', () => {
     shadows: null,
     shafts: null,
     clouds: null,
+    leafCards: null,
     detail: null,
   });
 

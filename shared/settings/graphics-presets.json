@@ -1,5 +1,5 @@
 {
-  "$comment": "Graphics presets (ARCHITECTURE.md §6, the settings row; docs/DEV_TOOLS.md, Graphics presets). Settings → Graphics's Preset slider runs through `presets` in order, cheapest first; moving it applies one, and any graphics setting changed by hand shows Custom. Each preset sets every field of the fixed vocabulary the loader knows (client/src/ui/graphicsPresets.ts `PRESET_FIELDS`), by name: `renderScale` one of shared/render/upscale.json's scales and `upscaler` one of its upscalers, `water` a Settings water tier of shared/look/watertiers.json (low/medium), `shadows` and `torchShadows` off/low/high, `shafts` off/low/high, `clouds` off/low/medium/high (High, the half-resolution volume, only on Ultra: over its GPU budget from above, docs/CLOUDS.md §8.3), `distanceM`/`pixelError`/`memoryMb` the detail sliders (a phone clamps them to its ranges). The cuts are ordered by GPU time saved per beauty lost, from the measured costs (docs/DEV_TOOLS.md, Cost profile and Water cost): the render scale first, then torch shadows, sun shadows, light shafts, clouds, and the draw distance last; water Medium (the whole look) is kept down to Medium, and Low and Mobile keep the see-through Low (blended with no scene copy, so no pass split on a phone's tile GPU; caustic lines on the water, one ripple layer, no land reflections or flow streaks; owner, 2026-11-07). `default` names the preset a new player starts on, per device.",
+  "$comment": "Graphics presets (ARCHITECTURE.md §6, the settings row; docs/DEV_TOOLS.md, Graphics presets). Settings → Graphics's Preset slider runs through `presets` in order, cheapest first; moving it applies one, and any graphics setting changed by hand shows Custom. Each preset sets every field of the fixed vocabulary the loader knows (client/src/ui/graphicsPresets.ts `PRESET_FIELDS`), by name: `renderScale` one of shared/render/upscale.json's scales and `upscaler` one of its upscalers, `water` a Settings water tier of shared/look/watertiers.json (low/medium), `shadows` and `torchShadows` off/low/high, `shafts` off/low/high, `clouds` off/low/medium/high (High, the half-resolution volume, only on Ultra: over its GPU budget from above, docs/CLOUDS.md §8.3), `leafCards` on/off (shared/look/leaves.json `cards`; off on Low, owner 2026-11-11, who plays on Low: BUGS.md #72; a phone never draws them whatever this says), `distanceM`/`pixelError`/`memoryMb` the detail sliders (a phone clamps them to its ranges). The cuts are ordered by GPU time saved per beauty lost, from the measured costs (docs/DEV_TOOLS.md, Cost profile and Water cost): the render scale first, then torch shadows, sun shadows, light shafts, clouds, and the draw distance last; water Medium (the whole look) is kept down to Medium, and Low and Mobile keep the see-through Low (blended with no scene copy, so no pass split on a phone's tile GPU; caustic lines on the water, one ripple layer, no land reflections or flow streaks; owner, 2026-11-07). `default` names the preset a new player starts on, per device.",
   "presets": [
     {
       "id": "low",
@@ -12,6 +12,7 @@
         "torchShadows": "off",
         "shafts": "off",
         "clouds": "off",
+        "leafCards": "off",
         "distanceM": 96,
         "pixelError": 3,
         "memoryMb": 64
@@ -28,6 +29,7 @@
         "torchShadows": "off",
         "shafts": "low",
         "clouds": "low",
+        "leafCards": "on",
         "distanceM": 128,
         "pixelError": 3,
         "memoryMb": 96
@@ -44,6 +46,7 @@
         "torchShadows": "off",
         "shafts": "low",
         "clouds": "medium",
+        "leafCards": "on",
         "distanceM": 192,
         "pixelError": 3,
         "memoryMb": 192
@@ -60,6 +63,7 @@
         "torchShadows": "low",
         "shafts": "high",
         "clouds": "medium",
+        "leafCards": "on",
         "distanceM": 256,
         "pixelError": 3,
         "memoryMb": 256
@@ -76,6 +80,7 @@
         "torchShadows": "high",
         "shafts": "high",
         "clouds": "high",
+        "leafCards": "on",
         "distanceM": 352,
         "pixelError": 3,
         "memoryMb": 512

@@ -16,9 +16,12 @@ Last updated: 2026-11-11 (0.52.108).
 0. **P0: the phone's frame rate at Low** (owner, 2026-11-11: "~23 fps on mobile … used to get 60 fps"; BUGS.md #72).
    - Done (branch `claude/mobile-fps`): leaf cards off on the phone tier by data (`leaves.json` `cards.tiers`), a
      `?cards=` override, no card into a trunk (the z-fighting). On the bench's phone page in a forest −0.4 ms of 4.8 ms GPU.
-   - Next: toggle the remaining large passes on the phone page at Low (`gpu.composite` ~3 ms, `gpu.arms` ~2 ms,
-     `gpu.water.tiles` 1.1–1.7 ms with no water in view) and compare with a pre-0.52.56 release once one starts under
-     the bench; a real iPhone check.
+   - Done (branch `claude/mobile-fps-2`): the Low preset turns the cards off (`leafCards`, a Leaf cards setting);
+     the bench opens released builds (`--base …/dwell/v/<version>/`). 0.51.24, 0.52.77-dev and now measure the same
+     on the desktop phone page (CPU 4×): no regression there (BUGS.md #72's table).
+   - Next: the owner's iPhone on a build with the cards off. If still slow: the arms pass (its own pass: a store and
+     reload on a tile GPU), the composite (~2.2 ms), the caustic tile (0.9 ms every other frame); why 0.52.101+
+     releases still 404 under the bench.
 
 5. **Leaves, option 5, with matching far trees.**
    - Leaf Lab option 5 at its defaults ("#5 looks really good with defaults"): canopy normals 75 %,

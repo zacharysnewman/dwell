@@ -5,6 +5,7 @@ import {
   clipStripSheet,
   clipStripTimes,
   parseScenarios,
+  buildPage,
   scenarioUrl,
   scenarioView,
   swingClip,
@@ -519,5 +520,22 @@ describe('clip-strip', () => {
     expect(html.match(/<tr>/g)).toHaveLength(2);
     expect(html).toContain('0.310 s');
     expect(html).toContain('s &lt;1>');
+  });
+});
+
+describe('buildPage', () => {
+  it('opens a root at /dwell/ and a build path as it is', () => {
+    expect(buildPage('http://localhost:4173')).toBe('http://localhost:4173/dwell/');
+    expect(buildPage('http://localhost:4174/')).toBe('http://localhost:4174/dwell/');
+    expect(buildPage('https://dropkickarcade.com/dwell/')).toBe(
+      'https://dropkickarcade.com/dwell/',
+    );
+    // A released build behind the launcher (it 404'd as …/v/0.51.24/dwell/).
+    expect(buildPage('https://dropkickarcade.com/dwell/v/0.51.24/')).toBe(
+      'https://dropkickarcade.com/dwell/v/0.51.24/',
+    );
+    expect(buildPage('https://dropkickarcade.com/dwell/v/0.51.24')).toBe(
+      'https://dropkickarcade.com/dwell/v/0.51.24/',
+    );
   });
 });

@@ -30,6 +30,7 @@ import { CODEC, compare, decode, type ScenarioReport } from './compare.ts';
 import { flickerOf, type Flicker } from './compareReport.ts';
 import { formatProfile, profileOf, work } from './profile.ts';
 import {
+  buildPage,
   parseScenarios,
   scenarioUrl,
   spotScenario,
@@ -143,8 +144,9 @@ async function reachable(url: string): Promise<boolean> {
 
 /** A served build: `--base`, one already on :4173, or `vite preview` started for the run. */
 async function serve(base: string | null): Promise<{ url: string; server: ChildProcess | null }> {
-  // The server's root; a base given with the build's path (`…/dwell/`) works too.
-  if (base) return { url: base.replace(/\/$/, '').replace(/\/dwell$/, ''), server: null };
+  // The server's root, or a build's path (`…/dwell/`, a release's `…/dwell/v/<version>/`):
+  // `buildPage` opens either.
+  if (base) return { url: base.replace(/\/+$/, ''), server: null };
   const url = 'http://localhost:4173';
   if (await reachable(`${url}/dwell/`)) return { url, server: null };
   const server = spawn('npx', ['vite', 'preview', '--port', '4173', '--strictPort'], {
@@ -1045,7 +1047,7 @@ async function runScenario(
   params: Record<string, string> = {},
 ): Promise<ScenarioReport> {
   mkdirSync(dir, { recursive: true });
-  const url = scenarioUrl(`${base}/dwell/`, sc, params);
+  const url = scenarioUrl(buildPage(base), sc, params);
   // A load that isn't playing within the stall bar (`--stall-s`) is retried once in a fresh page
   // (fresh loads at far spots have stalled now and then); the report lists it in `stalls`.
   const stalls: { stalledS: number; errors: string[] }[] = [];
