@@ -91,6 +91,9 @@ impl Server {
         for face in [dwell_world::Face::A, dwell_world::Face::B] {
             let f = FaceFrame::of(face);
             for (v, [x, z]) in &sites {
+                if !v.faces[usize::from(f.is_b())] {
+                    continue;
+                }
                 let column = [x.floor() as i32, z.floor() as i32];
                 let Some(y) = terrain.local(face).surface_y_at(column[0], column[1]) else {
                     continue;

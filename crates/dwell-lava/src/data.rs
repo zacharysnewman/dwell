@@ -27,6 +27,9 @@ pub struct HotFluid {
     /// The depth (m) that cools in `cooling_seconds`: thinner faster, deeper slower, in proportion
     /// (it cools from its top).
     pub thin_depth_m: f32,
+    /// Moving lava keeps its heat under its crust (a tube): its cooling is divided by
+    /// `1 + speed / tube_speed_ms` (speed m/s), so a running river stays molten far from its vent.
+    pub tube_speed_ms: f32,
     /// The light its block gives (0–15).
     pub light: u8,
     /// Health a second to a player standing in it.
@@ -88,6 +91,11 @@ pub struct LavaData {
     pub cfl: f32,
     /// The most substeps one run takes.
     pub max_substeps: u32,
+    /// A substep is sized for lava up to this deep (m); deeper ponds level through the flux limit
+    /// instead of shrinking every substep.
+    pub step_depth_m: f32,
+    /// A growing field's most tiles (`dwell_lava::field::TILE` square each): the cap on its area.
+    pub max_tiles: u32,
     pub fluids: &'static [HotFluid],
     pub vents: &'static [VentDef],
 }

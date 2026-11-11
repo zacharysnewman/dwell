@@ -18,16 +18,31 @@
 //! A lake vent keeps the lava joined to it below its level molten (a lava lake convects); what
 //! runs over the rim cools.
 //!
-//! **Quench.** Lava in or beside a water column turns to the quench rock at once, with a steam
-//! event that takes `steamWaterM` of that water (the water grid applies it once wired).
+//! **Quench.** Lava in a water column turns to the quench rock at once, with a steam event (one per
+//! quench row) that takes `steamWaterM` of that water (the water grid applies it once wired).
 //!
 //! **Schedule.** Like the water: a field with a player within `nearRadiusM` runs every lava tick;
 //! a far one owes its time and runs it in one go once it owes `farEverySeconds` (fast-forward). A
 //! run substeps at the stable step either way, so the two agree.
 //!
+//! **Tiles (V2).** A field's columns live in tiles of [`TILE`] × [`TILE`], keyed by tile, so it
+//! covers the ground its lava actually occupies: a growing field ([`Field::growing`]) asks for the
+//! tile past an edge its lava reaches (read from the world by the run's [`Ground`]), up to the data's
+//! `maxTiles` (the cap on its area), and drops tiles that are all rock again ([`Field::trim`]). A
+//! step only visits the tiles holding lava (molten) and the columns its flow reaches out of them, so
+//! its cost follows the molten area, not the field's size. A fixed field ([`Field::new`], V1's
+//! rectangle) never grows: its edges are walls.
+//!
+//! **Tubes and the sea (V2).** Moving lava keeps its heat (a crust roofs it over: a lava tube):
+//! a column's cooling is divided by `1 + speed / tubeSpeedMs`, its speed the lava's outflow over its
+//! depth, so a river carries molten lava far and its front, once it stops, cools at the full rate.
+//! Lava that runs into a water column quenches there, raising the sea floor; once the rock stands
+//! above the water's surface the column is dry land: the coastline moves out.
+//!
 //! Face-local: a field's columns, beds and depths are face-local (+y up); a world point or cell
 //! crosses through [`FaceFrame`] only ([`Field::submerged`], [`Field::is_near`], [`LavaEvent::cells`]).
 
+use std::collections::{BTreeSet, HashMap};
 use std::ops::Range;
 
 use dwell_world::FaceFrame;
@@ -36,6 +51,14 @@ use crate::data::{HotFluid, LavaData, VentDef, VentKind};
 
 const G: f32 = 9.81;
 
+/// A tile's side (columns): a field grows and trims by whole tiles of `TILE × TILE`.
+pub const TILE: usize = 8;
+const TN: usize = TILE * TILE;
+const NONE: u32 = u32::MAX;
+/// The four directions: +x, −x, +z, −z.
+const DX: [i32; 4] = [1, -1, 0, 0];
+const DZ: [i32; 4] = [0, 0, 1, -1];
+
 /// The cell row boundary nearest a face-local height (m): rows are `CELL_H` tall (½ m,
 /// HALF_HEIGHT_GRID.md §2), so a column's lava and rock are written in whole rows.
 pub fn row_at(m: f32) -> i32 {
@@ -43,13 +66,28 @@ pub fn row_at(m: f32) -> i32 {
 }
 /// A depth below which a column holds no lava (m).
 const FILM: f32 = 1e-4;
+/// No water over a column (its water's surface): above anything.
+pub const DRY: f32 = f32::MAX;
 
-/// A vent in a field: its column and what it does.
+/// A column of the world as a growing field reads it: its bed's top and its water's surface, if
+/// water stands over it (face-local m).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Column {
+    pub bed: f32,
+    pub water: Option<f32>,
+}
+
+/// What a growing field reads a new tile's columns from: a field-local column (x, z) to its
+/// [`Column`], `None` where there is no ground (the column is a wall). `near_m` is the bed of the
+/// column asking (face-local m), to look for the ground round it.
+pub type Ground<'a> = &'a mut dyn FnMut(i32, i32, f32) -> Option<Column>;
+
+/// A vent in a field: its column (field-local) and what it does.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Vent {
     pub kind: VentKind,
-    pub x: usize,
-    pub z: usize,
+    pub x: i32,
+    pub z: i32,
     pub rate_m3s: f32,
     /// A lake's held surface (face-local m).
     pub level_m: f32,
@@ -59,8 +97,8 @@ impl From<&VentDef> for Vent {
     fn from(v: &VentDef) -> Self {
         Self {
             kind: v.kind,
-            x: v.x as usize,
-            z: v.z as usize,
+            x: v.x as i32,
+            z: v.z as i32,
             rate_m3s: v.rate_m3s,
             level_m: v.level_m,
         }
@@ -70,16 +108,16 @@ impl From<&VentDef> for Vent {
 /// What a step did that the world (blocks, the water grid, the clients) applies.
 #[derive(Clone, Debug, PartialEq)]
 pub enum LavaEvent {
-    /// Lava turned to `rock` in a column (face-local column of the field): the face-local rows
-    /// `rows` are now that block.
+    /// Lava turned to `rock` in a column (field-local): the face-local rows `rows` are now that
+    /// block.
     Rock {
-        x: usize,
-        z: usize,
+        x: i32,
+        z: i32,
         rows: Range<i32>,
         rock: &'static str,
     },
     /// Lava met water in a column: `water_m` of the water's depth there becomes steam.
-    Steam { x: usize, z: usize, water_m: f32 },
+    Steam { x: i32, z: i32, water_m: f32 },
 }
 
 impl LavaEvent {
@@ -88,21 +126,41 @@ impl LavaEvent {
         match self {
             Self::Rock { x, z, rows, .. } => rows
                 .clone()
-                .map(|r| f.cell([origin[0] + *x as i32, r, origin[1] + *z as i32]))
+                .map(|r| f.cell([origin[0] + *x, r, origin[1] + *z]))
                 .collect(),
             Self::Steam { .. } => Vec::new(),
         }
     }
 }
 
-/// One hot fluid's surface grid.
+/// A per-column vector, moved and grown a tile at a time.
+trait Cols {
+    fn add_tile(&mut self);
+    fn move_tile(&mut self, from: usize, to: usize);
+    fn pop_tile(&mut self);
+}
+
+impl<T: Clone + Default> Cols for Vec<T> {
+    fn add_tile(&mut self) {
+        self.resize(self.len() + TN, T::default());
+    }
+    fn move_tile(&mut self, from: usize, to: usize) {
+        for r in 0..TN {
+            self[to * TN + r] = self[from * TN + r].clone();
+        }
+    }
+    fn pop_tile(&mut self) {
+        self.truncate(self.len() - TN);
+    }
+}
+
+/// One hot fluid's surface grid, in tiles.
 #[derive(Clone, Debug)]
 pub struct Field {
-    pub w: usize,
-    pub h: usize,
-    /// The face-local x, z of column (0, 0).
+    /// The face-local x, z of field-local column (0, 0).
     pub origin: [i32; 2],
-    /// Bed top (face-local m): the ground, raised as lava cools on it.
+    /// Bed top (face-local m): the ground, raised as lava cools on it. Indexed by slot
+    /// ([`Field::slot`], [`Field::at`]), as are the other per-column vectors.
     pub ground: Vec<f32>,
     /// Lava depth (m).
     pub depth: Vec<f32>,
@@ -110,51 +168,428 @@ pub struct Field {
     pub heat: Vec<f32>,
     /// Columns where water stands (the water grid's, once wired).
     pub water: Vec<bool>,
+    /// The water's surface over a water column (face-local m; [`DRY`] when unknown): quenched rock
+    /// raised above it makes the column land.
+    pub water_top: Vec<f32>,
+    /// Columns that are part of the field (a closed one is a wall: no ground, or past a fixed
+    /// field's edge).
+    pub open: Vec<bool>,
+    /// The rows of each column last written into the world as lava (the server's).
+    pub written: Vec<Range<i32>>,
     pub vents: Vec<Vent>,
     pub fluid: &'static HotFluid,
     pub rules: LavaData,
+    /// Whether the field grows and trims ([`Field::growing`]).
+    pub grows: bool,
     /// Lava time owed while far (s).
     pub owed_s: f32,
     /// m³ the vents brought, m³ turned to rock.
     pub brought: f64,
     pub rocked: f64,
+    /// Tiles the cap refused (a growing field at `maxTiles`).
+    pub refused: u64,
+    /// Columns the steps visited (a cost meter: it follows the molten area), and the substeps.
+    pub work: u64,
+    pub substeps: u64,
     /// What steps did since the world last took them.
     pub events: Vec<LavaEvent>,
+    tiles: Vec<[i32; 2]>,
+    index: HashMap<[i32; 2], u32>,
+    nb: Vec<[u32; 4]>,
+    molten: Vec<bool>,
+    touched: Vec<bool>,
+    mid_y: Vec<f32>,
+    want: BTreeSet<[i32; 2]>,
     qx: Vec<f32>,
     qz: Vec<f32>,
     scale: Vec<f32>,
+    content: Vec<f32>,
+    speed: Vec<f32>,
     /// This step's lake columns (held molten by their vent).
     held: Vec<bool>,
+    held_list: Vec<usize>,
+    outside: Vec<usize>,
+    visit: Vec<usize>,
+    /// Each column's open neighbour toward each direction (`NONE`: a wall or a missing tile).
+    links: Vec<[u32; 4]>,
+}
+
+fn tile_of(x: i32, z: i32) -> [i32; 2] {
+    [x.div_euclid(TILE as i32), z.div_euclid(TILE as i32)]
 }
 
 impl Field {
-    /// A dry field of `w × h` columns on flat ground at 0, of the fluid `fluid` (by name) under
-    /// `rules`. An error names a fluid the data doesn't have.
-    pub fn new(rules: &LavaData, fluid: &str, w: usize, h: usize) -> Result<Self, String> {
+    /// An empty field of the fluid `fluid` (by name) under `rules`.
+    fn empty(rules: &LavaData, fluid: &str, grows: bool) -> Result<Self, String> {
         let fluid = rules
             .fluid(fluid)
             .ok_or_else(|| format!("no hot fluid named {fluid:?}"))?;
-        let n = w * h;
         Ok(Self {
-            w,
-            h,
             origin: [0, 0],
-            ground: vec![0.0; n],
-            depth: vec![0.0; n],
-            heat: vec![0.0; n],
-            water: vec![false; n],
+            ground: Vec::new(),
+            depth: Vec::new(),
+            heat: Vec::new(),
+            water: Vec::new(),
+            water_top: Vec::new(),
+            open: Vec::new(),
+            written: Vec::new(),
             vents: Vec::new(),
             fluid,
             rules: *rules,
+            grows,
             owed_s: 0.0,
             brought: 0.0,
             rocked: 0.0,
+            refused: 0,
+            work: 0,
+            substeps: 0,
             events: Vec::new(),
-            qx: vec![0.0; n],
-            qz: vec![0.0; n],
-            scale: vec![1.0; n],
-            held: vec![false; n],
+            tiles: Vec::new(),
+            index: HashMap::new(),
+            nb: Vec::new(),
+            molten: Vec::new(),
+            touched: Vec::new(),
+            mid_y: Vec::new(),
+            want: BTreeSet::new(),
+            qx: Vec::new(),
+            qz: Vec::new(),
+            scale: Vec::new(),
+            content: Vec::new(),
+            speed: Vec::new(),
+            held: Vec::new(),
+            held_list: Vec::new(),
+            outside: Vec::new(),
+            visit: Vec::new(),
+            links: Vec::new(),
         })
+    }
+
+    /// A fixed dry field of `w × h` columns on flat ground at 0 (V1's rectangle: it never grows),
+    /// of the fluid `fluid` (by name) under `rules`. An error names a fluid the data doesn't have.
+    pub fn new(rules: &LavaData, fluid: &str, w: usize, h: usize) -> Result<Self, String> {
+        let mut f = Self::empty(rules, fluid, false)?;
+        let (w, h) = (w as i32, h as i32);
+        for tz in 0..(h + TILE as i32 - 1) / TILE as i32 {
+            for tx in 0..(w + TILE as i32 - 1) / TILE as i32 {
+                f.insert_tile([tx, tz], &mut |x, z, _| {
+                    (x < w && z < h).then_some(Column {
+                        bed: 0.0,
+                        water: None,
+                    })
+                });
+            }
+        }
+        Ok(f)
+    }
+
+    /// An empty growing field (V2): tiles are added by [`Field::cover`] and as its lava reaches
+    /// their edges in a run, up to `maxTiles`, and dropped once all rock ([`Field::trim`]).
+    pub fn growing(rules: &LavaData, fluid: &str) -> Result<Self, String> {
+        Self::empty(rules, fluid, true)
+    }
+
+    fn per_column(&mut self) -> [&mut dyn Cols; 14] {
+        [
+            &mut self.ground,
+            &mut self.depth,
+            &mut self.heat,
+            &mut self.water,
+            &mut self.water_top,
+            &mut self.open,
+            &mut self.written,
+            &mut self.qx,
+            &mut self.qz,
+            &mut self.scale,
+            &mut self.content,
+            &mut self.speed,
+            &mut self.held,
+            &mut self.links,
+        ]
+    }
+
+    /// Adds tile `t` with its columns read through `ground` (no cap). Returns its slot.
+    fn insert_tile(
+        &mut self,
+        t: [i32; 2],
+        ground: &mut dyn FnMut(i32, i32, f32) -> Option<Column>,
+    ) -> usize {
+        self.insert_tile_near(t, ground, 0.0)
+    }
+
+    fn insert_tile_near(
+        &mut self,
+        t: [i32; 2],
+        ground: &mut dyn FnMut(i32, i32, f32) -> Option<Column>,
+        near_m: f32,
+    ) -> usize {
+        let k = self.tiles.len();
+        for c in self.per_column() {
+            c.add_tile();
+        }
+        self.tiles.push(t);
+        self.index.insert(t, k as u32);
+        self.molten.push(false);
+        self.touched.push(false);
+        let mut nb = [NONE; 4];
+        for d in 0..4 {
+            if let Some(&n) = self.index.get(&[t[0] + DX[d], t[1] + DZ[d]]) {
+                nb[d] = n;
+                self.nb[n as usize][d ^ 1] = k as u32;
+            }
+        }
+        self.nb.push(nb);
+        let (mut sum, mut n) = (0.0f64, 0usize);
+        for r in 0..TN {
+            let i = k * TN + r;
+            let (x, z) = (
+                t[0] * TILE as i32 + (r % TILE) as i32,
+                t[1] * TILE as i32 + (r / TILE) as i32,
+            );
+            self.water_top[i] = DRY;
+            self.scale[i] = 1.0;
+            if let Some(c) = ground(x, z, near_m) {
+                self.open[i] = true;
+                self.ground[i] = c.bed;
+                self.water[i] = c.water.is_some_and(|w| w > c.bed);
+                if let Some(w) = c.water {
+                    self.water_top[i] = w;
+                }
+                let g = row_at(c.bed);
+                self.written[i] = g..g;
+                sum += f64::from(c.bed);
+                n += 1;
+            }
+        }
+        self.mid_y
+            .push(if n > 0 { (sum / n as f64) as f32 } else { 0.0 });
+        self.relink_round(k);
+        k
+    }
+
+    /// Rebuilds the link cache of tile `k`'s columns.
+    fn relink(&mut self, k: usize) {
+        for i in k * TN..(k + 1) * TN {
+            let mut l = [NONE; 4];
+            for (d, l) in l.iter_mut().enumerate() {
+                if let Ok(j) = self.nbr(i, d)
+                    && self.open[i]
+                    && self.open[j]
+                {
+                    *l = j as u32;
+                }
+            }
+            self.links[i] = l;
+        }
+    }
+
+    /// Rebuilds the link cache of tile `k` and its neighbours.
+    fn relink_round(&mut self, k: usize) {
+        self.relink(k);
+        for d in 0..4 {
+            let n = self.nb[k][d];
+            if n != NONE {
+                self.relink(n as usize);
+            }
+        }
+    }
+
+    /// A saved tile (its columns' bed, depth, heat, water's surface, water and open flags), for
+    /// the save's reader. Returns its slot.
+    pub(crate) fn load_tile(
+        &mut self,
+        t: [i32; 2],
+        cols: &[(f32, f32, f32, f32, bool, bool)],
+    ) -> usize {
+        let k = self.insert_tile(t, &mut |_, _, _| None);
+        let (mut sum, mut n) = (0.0f64, 0usize);
+        for (r, &(g, d, h, top, wet, open)) in cols.iter().enumerate().take(TN) {
+            let i = k * TN + r;
+            self.ground[i] = g;
+            self.depth[i] = d;
+            self.heat[i] = h;
+            self.water_top[i] = top;
+            self.water[i] = wet;
+            self.open[i] = open;
+            self.written[i] = self.lava_rows(i);
+            if open {
+                sum += f64::from(g);
+                n += 1;
+            }
+            self.molten[k] |= d > 0.0;
+        }
+        self.mid_y[k] = if n > 0 { (sum / n as f64) as f32 } else { 0.0 };
+        self.relink_round(k);
+        k
+    }
+
+    /// Removes tile slot `k` (the last tile moves into its slot).
+    fn remove_tile(&mut self, k: usize) {
+        // The held lake columns are reckoned again next step (their slots move).
+        for i in std::mem::take(&mut self.held_list) {
+            self.held[i] = false;
+        }
+        let last = self.tiles.len() - 1;
+        let t = self.tiles[k];
+        let mut round: Vec<[i32; 2]> = Vec::new();
+        for d in 0..4 {
+            let n = self.nb[k][d];
+            if n != NONE {
+                self.nb[n as usize][d ^ 1] = NONE;
+                round.push(self.tiles[n as usize]);
+            }
+        }
+        self.index.remove(&t);
+        if k != last {
+            for c in self.per_column() {
+                c.move_tile(last, k);
+            }
+            let moved = self.tiles[last];
+            self.tiles[k] = moved;
+            self.index.insert(moved, k as u32);
+            self.nb[k] = self.nb[last];
+            self.molten[k] = self.molten[last];
+            self.touched[k] = self.touched[last];
+            self.mid_y[k] = self.mid_y[last];
+            for d in 0..4 {
+                let n = self.nb[k][d];
+                if n != NONE {
+                    self.nb[n as usize][d ^ 1] = k as u32;
+                }
+            }
+        }
+        for c in self.per_column() {
+            c.pop_tile();
+        }
+        self.tiles.pop();
+        self.nb.pop();
+        self.molten.pop();
+        self.touched.pop();
+        self.mid_y.pop();
+        if k < self.tiles.len() {
+            // The moved tile's slots changed: its and its neighbours' links.
+            self.relink_round(k);
+        }
+        for t in round {
+            if let Some(&n) = self.index.get(&t) {
+                self.relink(n as usize);
+            }
+        }
+    }
+
+    /// Adds the tiles covering field-local columns `x0..=x1`, `z0..=z1` that it lacks, read through
+    /// `ground`, within the cap. Returns whether all fit.
+    pub fn cover(
+        &mut self,
+        [x0, z0]: [i32; 2],
+        [x1, z1]: [i32; 2],
+        ground: Ground<'_>,
+        near_m: f32,
+    ) -> bool {
+        let (a, b) = (tile_of(x0, z0), tile_of(x1, z1));
+        let mut all = true;
+        for tz in a[1]..=b[1] {
+            for tx in a[0]..=b[0] {
+                all &= self.grow_tile([tx, tz], ground, near_m);
+            }
+        }
+        all
+    }
+
+    /// Recomputes each tile's molten flag and mean bed (after its columns were set directly).
+    pub fn settle(&mut self) {
+        for k in 0..self.tiles.len() {
+            let (mut sum, mut n) = (0.0f64, 0usize);
+            let mut molten = false;
+            for i in k * TN..(k + 1) * TN {
+                if self.open[i] {
+                    sum += f64::from(self.ground[i]);
+                    n += 1;
+                    molten |= self.depth[i] > 0.0;
+                }
+            }
+            self.molten[k] = molten;
+            self.mid_y[k] = if n > 0 { (sum / n as f64) as f32 } else { 0.0 };
+        }
+    }
+
+    /// Whether the field has tile `t`.
+    pub fn has_tile(&self, t: [i32; 2]) -> bool {
+        self.index.contains_key(&t)
+    }
+
+    /// Adds tile `t` if it lacks it and the cap allows; whether it is there now.
+    fn grow_tile(&mut self, t: [i32; 2], ground: Ground<'_>, near_m: f32) -> bool {
+        if self.index.contains_key(&t) {
+            return true;
+        }
+        if self.tiles.len() >= self.rules.max_tiles as usize {
+            self.refused += 1;
+            return false;
+        }
+        self.insert_tile_near(t, ground, near_m);
+        true
+    }
+
+    /// The tiles (tile x, z: field-local columns `TILE × t ..`), in slot order.
+    pub fn tiles(&self) -> &[[i32; 2]] {
+        &self.tiles
+    }
+
+    /// The tiles holding lava now.
+    pub fn molten_tiles(&self) -> usize {
+        self.molten.iter().filter(|&&m| m).count()
+    }
+
+    /// The slot of field-local column (x, z), if the field has its tile (open or not).
+    pub fn slot_any(&self, x: i32, z: i32) -> Option<usize> {
+        let t = tile_of(x, z);
+        let k = *self.index.get(&t)? as usize;
+        let (lx, lz) = (
+            x.rem_euclid(TILE as i32) as usize,
+            z.rem_euclid(TILE as i32) as usize,
+        );
+        Some(k * TN + lz * TILE + lx)
+    }
+
+    /// The slot of field-local column (x, z), if it is part of the field.
+    pub fn slot(&self, x: i32, z: i32) -> Option<usize> {
+        self.slot_any(x, z).filter(|&i| self.open[i])
+    }
+
+    /// The slot of field-local column (x, z) of the field (panics on one it lacks).
+    pub fn at(&self, x: usize, z: usize) -> usize {
+        self.slot(x as i32, z as i32)
+            .unwrap_or_else(|| panic!("column ({x}, {z}) is not in the field"))
+    }
+
+    /// The field-local column of slot `i`.
+    pub fn col(&self, i: usize) -> [i32; 2] {
+        let t = self.tiles[i / TN];
+        let r = i % TN;
+        [
+            t[0] * TILE as i32 + (r % TILE) as i32,
+            t[1] * TILE as i32 + (r / TILE) as i32,
+        ]
+    }
+
+    /// The field's columns (slots of open columns).
+    pub fn columns(&self) -> impl Iterator<Item = usize> + '_ {
+        (0..self.open.len()).filter(|&i| self.open[i])
+    }
+
+    /// The columns of tile slot `k`.
+    pub fn tile_columns(&self, k: usize) -> impl Iterator<Item = usize> + '_ {
+        (k * TN..(k + 1) * TN).filter(|&i| self.open[i])
+    }
+
+    /// The tiles any step visited since the last call (their slots): the ones whose lava may
+    /// have changed.
+    pub fn take_touched(&mut self) -> Vec<usize> {
+        let out = (0..self.touched.len())
+            .filter(|&k| self.touched[k])
+            .collect();
+        self.touched.iter_mut().for_each(|t| *t = false);
+        out
     }
 
     /// Adds a vent from data; an error names a vent of another fluid or off the field.
@@ -165,18 +600,14 @@ impl Field {
                 v.name, v.fluid, self.fluid.name
             ));
         }
-        if v.x as usize >= self.w || v.z as usize >= self.h {
+        if self.slot(v.x as i32, v.z as i32).is_none() {
             return Err(format!(
-                "vent {}: column ({}, {}) is off the {}×{} field",
-                v.name, v.x, v.z, self.w, self.h
+                "vent {}: column ({}, {}) is off the field",
+                v.name, v.x, v.z
             ));
         }
         self.vents.push(Vent::from(v));
         Ok(())
-    }
-
-    pub fn at(&self, x: usize, z: usize) -> usize {
-        z * self.w + x
     }
 
     /// The lava surface of column `i` (face-local m).
@@ -218,28 +649,87 @@ impl Field {
 
     /// The longest stable substep now (s).
     pub fn max_step(&self) -> f32 {
-        let deepest = self.depth.iter().copied().fold(0.0f32, f32::max);
-        let he = (deepest - self.fluid.yield_depth_m).max(0.05);
+        let mut deepest = 0.0f32;
+        for k in 0..self.tiles.len() {
+            if self.molten[k] {
+                for i in k * TN..(k + 1) * TN {
+                    deepest = deepest.max(self.depth[i]);
+                }
+            }
+        }
+        let he = (deepest.min(self.rules.step_depth_m) - self.fluid.yield_depth_m).max(0.05);
         let d = G * he * he * he / (3.0 * self.fluid.viscosity_m2s);
         (self.rules.cfl / (4.0 * d)).min(5.0)
     }
 
-    fn neighbours(&self, i: usize) -> impl Iterator<Item = Option<usize>> + '_ {
-        let (x, z) = (i % self.w, i / self.w);
-        [
-            (x > 0).then(|| i - 1),
-            (x + 1 < self.w).then_some(i + 1),
-            (z > 0).then(|| i - self.w),
-            (z + 1 < self.h).then_some(i + self.w),
-        ]
-        .into_iter()
+    /// Column `i`'s neighbour toward `d`: its slot (open or not), or the missing tile it is in.
+    fn nbr(&self, i: usize, d: usize) -> Result<usize, [i32; 2]> {
+        let k = i / TN;
+        let r = i % TN;
+        let (nx, nz) = ((r % TILE) as i32 + DX[d], (r / TILE) as i32 + DZ[d]);
+        let t = TILE as i32;
+        if (0..t).contains(&nx) && (0..t).contains(&nz) {
+            return Ok(k * TN + nz as usize * TILE + nx as usize);
+        }
+        let n = self.nb[k][d];
+        if n == NONE {
+            let me = self.tiles[k];
+            return Err([me[0] + DX[d], me[1] + DZ[d]]);
+        }
+        Ok(n as usize * TN + nz.rem_euclid(t) as usize * TILE + nx.rem_euclid(t) as usize)
     }
 
-    /// Turns column `i`'s lava into `rock`, raising its bed.
-    fn solidify(&mut self, i: usize, rock: &'static str) {
+    /// Checks the link cache and tile links against the tiles (tests).
+    pub fn check_links(&self) -> Result<(), String> {
+        for i in 0..self.open.len() {
+            for d in 0..4 {
+                let want = self
+                    .nbr(i, d)
+                    .ok()
+                    .filter(|&j| self.open[i] && self.open[j])
+                    .map_or(NONE, |j| j as u32);
+                if self.links[i][d] != want {
+                    return Err(format!(
+                        "column {:?} toward {d}: {} not {want}",
+                        self.col(i),
+                        self.links[i][d]
+                    ));
+                }
+            }
+        }
+        for (k, t) in self.tiles.iter().enumerate() {
+            if self.index.get(t) != Some(&(k as u32)) {
+                return Err(format!("tile {t:?} index"));
+            }
+            for d in 0..4 {
+                let want = self
+                    .index
+                    .get(&[t[0] + DX[d], t[1] + DZ[d]])
+                    .copied()
+                    .unwrap_or(NONE);
+                if self.nb[k][d] != want {
+                    return Err(format!(
+                        "tile {t:?} toward {d}: {} not {want}",
+                        self.nb[k][d]
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Column `i`'s open neighbour toward `d`.
+    #[inline]
+    fn link(&self, i: usize, d: usize) -> Option<usize> {
+        let j = self.links[i][d];
+        (j != NONE).then_some(j as usize)
+    }
+
+    /// Turns column `i`'s lava into `rock`, raising its bed. Whether whole rows turned (an event).
+    fn solidify(&mut self, i: usize, rock: &'static str) -> bool {
         let d = self.depth[i];
         if d <= 0.0 {
-            return;
+            return false;
         }
         let from = self.ground[i];
         self.ground[i] += d;
@@ -247,22 +737,22 @@ impl Field {
         self.heat[i] = 0.0;
         self.rocked += f64::from(d);
         let rows = row_at(from)..row_at(self.ground[i]);
-        if !rows.is_empty() {
-            self.events.push(LavaEvent::Rock {
-                x: i % self.w,
-                z: i / self.w,
-                rows,
-                rock,
-            });
+        if rows.is_empty() {
+            return false;
         }
+        let [x, z] = self.col(i);
+        self.events.push(LavaEvent::Rock { x, z, rows, rock });
+        true
     }
 
-    /// One substep of `dt` lava seconds (at most [`Field::max_step`]).
+    /// One substep of `dt` lava seconds (at most [`Field::max_step`]). Visits the molten tiles'
+    /// columns and the columns their flow reaches, no others.
     pub fn step(&mut self, dt: f32) {
-        let (w, h) = (self.w, self.h);
         for k in 0..self.vents.len() {
             let v = self.vents[k];
-            let i = self.at(v.x, v.z);
+            let Some(i) = self.slot(v.x, v.z) else {
+                continue;
+            };
             let add = match v.kind {
                 VentKind::River => v.rate_m3s * dt,
                 VentKind::Lake => (v.level_m - self.surface(i)).clamp(0.0, v.rate_m3s * dt),
@@ -274,130 +764,170 @@ impl Field {
             // The vent's own column is as hot as the vent: a lake's stays molten as it crusts.
             if self.depth[i] > 0.0 {
                 self.heat[i] = 1.0;
+                self.molten[i / TN] = true;
             }
         }
-        let mut qx = std::mem::take(&mut self.qx);
-        let mut qz = std::mem::take(&mut self.qz);
-        let mut scale = std::mem::take(&mut self.scale);
-        for z in 0..h {
-            for x in 0..w {
-                let i = z * w + x;
-                qx[i] = if x + 1 < w && (self.depth[i] > 0.0 || self.depth[i + 1] > 0.0) {
-                    self.face(i, i + 1)
-                } else {
-                    0.0
-                };
-                qz[i] = if z + 1 < h && (self.depth[i] > 0.0 || self.depth[i + w] > 0.0) {
-                    self.face(i, i + w)
-                } else {
-                    0.0
-                };
+        let act: Vec<usize> = (0..self.tiles.len()).filter(|&k| self.molten[k]).collect();
+        let mut outside = std::mem::take(&mut self.outside);
+        outside.clear();
+        let mut want = std::mem::take(&mut self.want);
+        // The faces: each column's +x and +z face, and its −x and −z ones into a dry tile (whose
+        // columns are not visited), so every face with lava on a side is reckoned once.
+        // The flux limit: no face moves more than the explicit law's stable share of the two
+        // surfaces' difference in a substep (it binds only where lava is deeper than a step is
+        // sized for, `stepDepthM`: a pond levels instead of ringing).
+        let lim = self.rules.cfl / (4.0 * dt);
+        for &k in &act {
+            for i in k * TN..(k + 1) * TN {
+                if !self.open[i] {
+                    continue;
+                }
+                let wet = self.depth[i] > 0.0;
+                let l = self.links[i];
+                for (d, &j) in l.iter().enumerate() {
+                    if j == NONE {
+                        if wet
+                            && self.grows
+                            && let Err(t) = self.nbr(i, d)
+                        {
+                            want.insert(t);
+                        }
+                        continue;
+                    }
+                    let j = j as usize;
+                    let inner = self.molten[j / TN];
+                    if d % 2 == 0 {
+                        if wet || self.depth[j] > 0.0 {
+                            let cap = (self.surface(i) - self.surface(j)).abs() * lim;
+                            let q = self.face(i, j).clamp(-cap, cap);
+                            if d == 0 {
+                                self.qx[i] = q;
+                            } else {
+                                self.qz[i] = q;
+                            }
+                            if !inner && q != 0.0 {
+                                outside.push(j);
+                            }
+                        }
+                    } else if !inner && wet {
+                        let cap = (self.surface(i) - self.surface(j)).abs() * lim;
+                        let q = self.face(j, i).clamp(-cap, cap);
+                        if d == 1 {
+                            self.qx[j] = q;
+                        } else {
+                            self.qz[j] = q;
+                        }
+                        if q != 0.0 {
+                            outside.push(j);
+                        }
+                    }
+                }
             }
         }
+        self.want = want;
+        outside.sort_unstable();
+        outside.dedup();
+        let mut visit = std::mem::take(&mut self.visit);
+        visit.clear();
+        for &k in &act {
+            visit.extend((k * TN..(k + 1) * TN).filter(|&i| self.open[i]));
+        }
+        visit.extend_from_slice(&outside);
+        self.work += visit.len() as u64;
+        self.substeps += 1;
         // No column sends more than it holds.
-        for z in 0..h {
-            for x in 0..w {
-                let i = z * w + x;
-                let mut out = qx[i].max(0.0) + qz[i].max(0.0);
-                if x > 0 {
-                    out += (-qx[i - 1]).max(0.0);
-                }
-                if z > 0 {
-                    out += (-qz[i - w]).max(0.0);
-                }
-                let out = out * dt;
-                scale[i] = if out > self.depth[i] {
-                    self.depth[i] / out
+        for &i in &visit {
+            let mut out = self.qx[i].max(0.0) + self.qz[i].max(0.0);
+            if let Some(w) = self.link(i, 1) {
+                out += (-self.qx[w]).max(0.0);
+            }
+            if let Some(n) = self.link(i, 3) {
+                out += (-self.qz[n]).max(0.0);
+            }
+            let sent = out * dt;
+            let d = self.depth[i];
+            self.scale[i] = if sent > d { d / sent } else { 1.0 };
+            self.speed[i] = if d > 0.0 { out.min(d / dt) / d } else { 0.0 };
+        }
+        for &i in &visit {
+            if self.qx[i] != 0.0 {
+                self.qx[i] *= if self.qx[i] > 0.0 {
+                    self.scale[i]
                 } else {
-                    1.0
+                    self.link(i, 0).map_or(1.0, |j| self.scale[j])
                 };
             }
-        }
-        for z in 0..h {
-            for x in 0..w {
-                let i = z * w + x;
-                qx[i] *= if qx[i] > 0.0 {
-                    scale[i]
-                } else if x + 1 < w {
-                    scale[i + 1]
+            if self.qz[i] != 0.0 {
+                self.qz[i] *= if self.qz[i] > 0.0 {
+                    self.scale[i]
                 } else {
-                    1.0
-                };
-                qz[i] *= if qz[i] > 0.0 {
-                    scale[i]
-                } else if z + 1 < h {
-                    scale[i + w]
-                } else {
-                    1.0
+                    self.link(i, 2).map_or(1.0, |j| self.scale[j])
                 };
             }
         }
         // Depth and heat content, the heat carried upwind.
-        let mut content: Vec<f32> = (0..w * h).map(|i| self.depth[i] * self.heat[i]).collect();
-        let heat = &self.heat;
-        let mut moved = |a: usize, b: usize, q: f32, depth: &mut [f32]| {
-            let v = q * dt;
-            let t = if v > 0.0 { heat[a] } else { heat[b] };
-            depth[a] -= v;
-            depth[b] += v;
-            content[a] -= v * t;
-            content[b] += v * t;
-        };
-        let mut depth = std::mem::take(&mut self.depth);
-        for z in 0..h {
-            for x in 0..w {
-                let i = z * w + x;
-                if qx[i] != 0.0 {
-                    moved(i, i + 1, qx[i], &mut depth);
+        for &i in &visit {
+            self.content[i] = self.depth[i] * self.heat[i];
+        }
+        for &i in &visit {
+            for (d, q) in [(0, self.qx[i]), (2, self.qz[i])] {
+                if q == 0.0 {
+                    continue;
                 }
-                if qz[i] != 0.0 {
-                    moved(i, i + w, qz[i], &mut depth);
-                }
+                let Some(j) = self.link(i, d) else {
+                    continue;
+                };
+                let v = q * dt;
+                let t = if v > 0.0 { self.heat[i] } else { self.heat[j] };
+                self.depth[i] -= v;
+                self.depth[j] += v;
+                self.content[i] -= v * t;
+                self.content[j] += v * t;
             }
         }
-        for i in 0..w * h {
-            if depth[i] <= FILM {
+        for &i in &visit {
+            let d = self.depth[i];
+            if d <= FILM {
                 // A film too thin to hold: it cools on the bed.
-                self.ground[i] += depth[i].max(0.0);
-                self.rocked += f64::from(depth[i].max(0.0));
-                depth[i] = 0.0;
+                self.ground[i] += d.max(0.0);
+                self.rocked += f64::from(d.max(0.0));
+                self.depth[i] = 0.0;
                 self.heat[i] = 0.0;
             } else {
-                self.heat[i] = (content[i] / depth[i]).clamp(0.0, 1.0);
+                self.heat[i] = (self.content[i] / d).clamp(0.0, 1.0);
             }
+            self.qx[i] = 0.0;
+            self.qz[i] = 0.0;
+            self.content[i] = 0.0;
         }
-        self.depth = depth;
-        self.qx = qx;
-        self.qz = qz;
-        self.scale = scale;
-        self.held.iter_mut().for_each(|h| *h = false);
         self.hold_lakes();
         // Quench, then cooling.
         let fl = self.fluid;
-        for i in 0..w * h {
+        for &i in &visit {
             if self.depth[i] <= 0.0 {
                 continue;
             }
-            let wet = std::iter::once(Some(i))
-                .chain(self.neighbours(i))
-                .flatten()
-                .find(|&j| self.water[j]);
-            if let Some(j) = wet {
-                self.solidify(i, fl.quench.rock);
-                self.events.push(LavaEvent::Steam {
-                    x: j % w,
-                    z: j / w,
-                    water_m: fl.quench.steam_water_m,
-                });
+            if self.water[i] {
+                let rose = self.solidify(i, fl.quench.rock);
+                if self.ground[i] >= self.water_top[i] {
+                    // Built up out of the water: new land.
+                    self.water[i] = false;
+                }
+                if rose {
+                    let [x, z] = self.col(i);
+                    self.events.push(LavaEvent::Steam {
+                        x,
+                        z,
+                        water_m: fl.quench.steam_water_m,
+                    });
+                }
                 continue;
             }
             if self.held[i] {
                 continue;
             }
-            let dry = self
-                .neighbours(i)
-                .map(|n| n.is_none_or(|j| self.depth[j] <= 0.0))
-                .filter(|&d| d)
+            let dry = (0..4)
+                .filter(|&d| self.link(i, d).is_none_or(|j| self.depth[j] <= 0.0))
                 .count() as f32;
             // From its top: its top's share of it, so deep lava keeps its heat longer.
             let thin = if fl.thin_depth_m > 0.0 {
@@ -405,46 +935,74 @@ impl Field {
             } else {
                 1.0
             };
-            let rate = (1.0 + fl.edge_cooling * dry) * thin / fl.cooling_seconds;
+            // Moving lava keeps its heat under its crust (a tube).
+            let tube = 1.0 + self.speed[i] / fl.tube_speed_ms;
+            let rate = (1.0 + fl.edge_cooling * dry) * thin / fl.cooling_seconds / tube;
             self.heat[i] -= rate * dt;
             if self.heat[i] <= 0.0 {
                 self.solidify(i, fl.rock);
             }
         }
+        for &i in &outside {
+            self.molten[i / TN] |= self.depth[i] > 0.0;
+            self.touched[i / TN] = true;
+        }
+        for &k in &act {
+            self.touched[k] = true;
+            self.molten[k] = (k * TN..(k + 1) * TN).any(|i| self.depth[i] > 0.0);
+        }
+        self.outside = outside;
+        self.visit = visit;
     }
 
     /// A lake vent keeps its lake molten (it convects): every molten column joined to the vent
-    /// through columns whose bed is below the lake's level is as hot as the vent and does not cool. A flow over the
-    /// rim leaves the lake there and cools as any other.
+    /// through columns whose bed is below the lake's level is as hot as the vent and does not
+    /// cool. A flow over the rim leaves the lake there and cools as any other.
     fn hold_lakes(&mut self) {
+        for i in std::mem::take(&mut self.held_list) {
+            self.held[i] = false;
+        }
+        let mut list = Vec::new();
         for k in 0..self.vents.len() {
             let v = self.vents[k];
             if v.kind != VentKind::Lake {
                 continue;
             }
-            let start = self.at(v.x, v.z);
-            if self.depth[start] <= 0.0 {
+            let Some(start) = self.slot(v.x, v.z) else {
+                continue;
+            };
+            if self.depth[start] <= 0.0 || self.held[start] {
                 continue;
             }
-            let mut seen = std::mem::take(&mut self.held);
             let mut stack = vec![start];
-            seen[start] = true;
+            self.held[start] = true;
+            list.push(start);
             while let Some(i) = stack.pop() {
                 self.heat[i] = 1.0;
-                for j in self.neighbours(i).flatten().collect::<Vec<_>>() {
-                    if !seen[j] && self.depth[j] > 0.0 && self.ground[j] < v.level_m {
-                        seen[j] = true;
+                for d in 0..4 {
+                    let Some(j) = self.link(i, d) else {
+                        continue;
+                    };
+                    if !self.held[j] && self.depth[j] > 0.0 && self.ground[j] < v.level_m {
+                        self.held[j] = true;
+                        list.push(j);
                         stack.push(j);
                     }
                 }
             }
-            self.held = seen;
         }
+        self.held_list = list;
     }
 
-    /// Runs `t` lava seconds in stable substeps (at most `maxSubsteps`; the rest is lost).
-    /// Returns the lava seconds run.
+    /// Runs `t` lava seconds in stable substeps (at most `maxSubsteps`; the rest is lost), on a
+    /// fixed footprint. Returns the lava seconds run.
     pub fn run(&mut self, t: f32) -> f32 {
+        self.run_on(t, None)
+    }
+
+    /// Runs `t` lava seconds, a growing field adding the tiles its lava reaches through `ground`
+    /// (none: its edges are walls this run) and dropping the ones all rock at the end.
+    pub fn run_on(&mut self, t: f32, mut ground: Option<Ground<'_>>) -> f32 {
         let mut left = t;
         let mut n = 0;
         while left > 1e-6 && n < self.rules.max_substeps {
@@ -452,33 +1010,82 @@ impl Field {
             self.step(dt);
             left -= dt;
             n += 1;
+            if !self.want.is_empty() {
+                let want = std::mem::take(&mut self.want);
+                if let Some(g) = ground.as_deref_mut() {
+                    for t in want {
+                        let near = self.near_bed(t);
+                        self.grow_tile(t, g, near);
+                    }
+                }
+            }
+        }
+        if self.grows {
+            self.trim();
         }
         t - left
+    }
+
+    /// A bed beside missing tile `t` (the mean of its present neighbours'), to read it round.
+    fn near_bed(&self, t: [i32; 2]) -> f32 {
+        (0..4)
+            .find_map(|d| self.index.get(&[t[0] - DX[d], t[1] - DZ[d]]))
+            .map_or(0.0, |&k| self.mid_y[k as usize])
+    }
+
+    /// Drops the tiles that are all rock: no lava in them or beside them, no vent, nothing written
+    /// as lava left in the world. Returns how many.
+    pub fn trim(&mut self) -> usize {
+        let vents: BTreeSet<[i32; 2]> = self.vents.iter().map(|v| tile_of(v.x, v.z)).collect();
+        let mut n = 0;
+        for k in (0..self.tiles.len()).rev() {
+            if self.molten[k]
+                || vents.contains(&self.tiles[k])
+                || self.nb[k]
+                    .iter()
+                    .any(|&j| j != NONE && self.molten[j as usize])
+                || (k * TN..(k + 1) * TN).any(|i| !self.written[i].is_empty())
+            {
+                continue;
+            }
+            self.remove_tile(k);
+            n += 1;
+        }
+        n
     }
 
     /// A lava tick of `real_s` real seconds: run now when near a player, else owe it and run what
     /// is owed in one go once it reaches `farEverySeconds`. Returns the lava seconds run.
     pub fn advance(&mut self, real_s: f32, near: bool) -> f32 {
+        self.advance_on(real_s, near, None)
+    }
+
+    /// [`Field::advance`], growing through `ground` ([`Field::run_on`]).
+    pub fn advance_on(&mut self, real_s: f32, near: bool, ground: Option<Ground<'_>>) -> f32 {
         self.owed_s += real_s * self.rules.speed;
         if near || self.owed_s >= self.rules.far_every_seconds {
             let t = std::mem::take(&mut self.owed_s);
-            self.run(t)
+            self.run_on(t, ground)
         } else {
             0.0
         }
     }
 
-    /// Whether a player (world points) is within `nearRadiusM` of the field on face `f`.
+    /// Whether a player (world points) is within `nearRadiusM` of any of the field's tiles on face
+    /// `f`.
     pub fn is_near(&self, f: FaceFrame, players: &[[f64; 3]]) -> bool {
-        let cx = f64::from(self.origin[0]) + self.w as f64 / 2.0;
-        let cz = f64::from(self.origin[1]) + self.h as f64 / 2.0;
-        let cy = self.ground.iter().map(|&g| f64::from(g)).sum::<f64>() / self.ground.len() as f64;
         let r = f64::from(self.rules.near_radius_m);
-        let reach = r + (self.w.max(self.h) as f64) / 2.0;
+        let s = TILE as f64;
         players.iter().any(|&p| {
             let [x, y, z] = f.point(p);
-            let (dx, dy, dz) = (x - cx, y - cy, z - cz);
-            dx * dx + dy * dy + dz * dz <= reach * reach
+            let (x, z) = (x - f64::from(self.origin[0]), z - f64::from(self.origin[1]));
+            self.tiles.iter().zip(&self.mid_y).any(|(t, &my)| {
+                let (x0, z0) = (f64::from(t[0]) * s, f64::from(t[1]) * s);
+                let dx = (x0 - x).max(0.0).max(x - (x0 + s));
+                let dz = (z0 - z).max(0.0).max(z - (z0 + s));
+                let dy = y - f64::from(my);
+                dx * dx + dy * dy + dz * dz <= r * r
+            })
         })
     }
 
@@ -487,10 +1094,12 @@ impl Field {
         let [x, y, z] = f.point(feet);
         let cx = x.floor() as i64 - i64::from(self.origin[0]);
         let cz = z.floor() as i64 - i64::from(self.origin[1]);
-        if cx < 0 || cz < 0 || cx as usize >= self.w || cz as usize >= self.h {
+        let (Ok(cx), Ok(cz)) = (i32::try_from(cx), i32::try_from(cz)) else {
             return false;
-        }
-        let i = self.at(cx as usize, cz as usize);
+        };
+        let Some(i) = self.slot(cx, cz) else {
+            return false;
+        };
         let y = y as f32;
         self.depth[i] > 0.0 && y >= self.ground[i] - 0.25 && y < self.surface(i)
     }

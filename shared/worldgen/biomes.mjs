@@ -245,7 +245,7 @@ export function checkLavaVents(list, g, fail) {
   list.forEach((v, i) => {
     const at = (m) => fail(`[${i}]: ${m}`);
     if (typeof v !== "object" || v === null) at("must be an object");
-    const known = ["cone", "index", "kind", "fluid", "rateM3s", "depthM", "radius", "distance", "angle"];
+    const known = ["cone", "index", "kind", "fluid", "rateM3s", "depthM", "radius", "distance", "angle", "faces"];
     const extra = Object.keys(v).filter((k) => !known.includes(k));
     if (extra.length) at(`unknown ${extra.join(", ")}`);
     const index = v.index ?? 0;
@@ -260,6 +260,16 @@ export function checkLavaVents(list, g, fail) {
       at('fluid must be a hot fluid\'s "namespace:name"');
     if (!(isNum(v.rateM3s) && v.rateM3s > 0 && v.rateM3s <= 1000))
       at("rateM3s must be in (0, 1000]");
+    if (
+      v.faces !== undefined &&
+      !(
+        Array.isArray(v.faces) &&
+        v.faces.length > 0 &&
+        v.faces.every((f) => f === "a" || f === "b") &&
+        new Set(v.faces).size === v.faces.length
+      )
+    )
+      at('faces must list "a" and/or "b" (each face generates its own cone)');
     if (!(Number.isInteger(v.radius) && v.radius >= 1 && v.radius <= 64))
       at("radius must be a whole number in [1, 64]");
     for (const [k, lo, hi] of [

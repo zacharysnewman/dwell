@@ -136,6 +136,9 @@ pub struct LavaVent {
     /// The vent's offset from the cone's summit (m) toward `angle` degrees (0: on the summit).
     pub distance: f64,
     pub angle: f64,
+    /// The faces it is placed on (`faces`, default both: each face generates its own cone, so a
+    /// river's way to the sea can suit one face only): face A, face B.
+    pub faces: [bool; 2],
 }
 
 /// `ice_above`'s off value (no crater is ever that high).

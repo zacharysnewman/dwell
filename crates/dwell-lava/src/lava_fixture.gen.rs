@@ -11,6 +11,8 @@ pub const FIXTURE: LavaData = LavaData {
     far_every_seconds: 30.0,
     cfl: 0.8,
     max_substeps: 20000,
+    step_depth_m: 1000.0,
+    max_tiles: 2048,
     fluids: &[
         HotFluid {
             name: "test:magma",
@@ -19,6 +21,7 @@ pub const FIXTURE: LavaData = LavaData {
             cooling_seconds: 600.0,
             edge_cooling: 0.5,
             thin_depth_m: 0.2,
+            tube_speed_ms: 1000.0,
             light: 15,
             damage_per_second: 80.0,
             burn_seconds: 5.0,
@@ -26,9 +29,25 @@ pub const FIXTURE: LavaData = LavaData {
             rock: "dwell:obsidian",
             quench: Quench { rock: "dwell:obsidian", steam_water_m: 0.25 },
         },
+        HotFluid {
+            name: "test:runny",
+            viscosity_m2s: 0.5,
+            yield_depth_m: 0.05,
+            cooling_seconds: 90.0,
+            edge_cooling: 1.5,
+            thin_depth_m: 0.3,
+            tube_speed_ms: 0.002,
+            light: 13,
+            damage_per_second: 40.0,
+            burn_seconds: 3.0,
+            burn_damage_per_second: 8.0,
+            rock: "dwell:basalt",
+            quench: Quench { rock: "dwell:obsidian", steam_water_m: 0.5 },
+        },
     ],
     vents: &[
         VentDef { name: "test:crater_lake", fluid: "dwell:lava", kind: VentKind::Lake, x: 16, z: 16, rate_m3s: 2.0, level_m: 10.0 },
         VentDef { name: "test:river", fluid: "dwell:lava", kind: VentKind::River, x: 3, z: 8, rate_m3s: 1.5, level_m: 0.0 },
+        VentDef { name: "test:flank_river", fluid: "test:runny", kind: VentKind::River, x: 0, z: 0, rate_m3s: 1.0, level_m: 0.0 },
     ],
 };

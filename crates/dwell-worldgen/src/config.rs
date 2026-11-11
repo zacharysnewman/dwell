@@ -820,6 +820,23 @@ pub fn lava_vents_from_json(world: &Value) -> Result<Vec<crate::tectonics::LavaV
             let (Some(rate), Some(radius)) = (rate, radius) else {
                 return Err(fail("rateM3s must be over 0 and radius a whole 1..64"));
             };
+            let faces = match v.get("faces") {
+                None => [true, true],
+                Some(list) => {
+                    let names: Option<Vec<&str>> = list
+                        .as_array()
+                        .map(|l| l.iter().filter_map(Value::as_str).collect());
+                    let names = names.filter(|n| {
+                        !n.is_empty()
+                            && n.len() == list.as_array().map_or(0, Vec::len)
+                            && n.iter().all(|f| *f == "a" || *f == "b")
+                    });
+                    let Some(names) = names else {
+                        return Err(fail("faces must list \"a\" and/or \"b\""));
+                    };
+                    [names.contains(&"a"), names.contains(&"b")]
+                }
+            };
             Ok(LavaVent {
                 cone,
                 kind,
@@ -829,6 +846,7 @@ pub fn lava_vents_from_json(world: &Value) -> Result<Vec<crate::tectonics::LavaV
                 radius: radius as u32,
                 distance: n("distance").unwrap_or(0.0),
                 angle: n("angle").unwrap_or(0.0),
+                faces,
             })
         })
         .collect()
