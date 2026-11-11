@@ -11,6 +11,7 @@ import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { loadDir, registryFromVector } from "../structures/gen.mjs";
+import { loadSpecies } from "../trees/gen.mjs";
 import { loadMotes, moteNames } from "../look/motes.mjs";
 import {
   BIOME_GROUPS,
@@ -207,7 +208,17 @@ export function reach(s) {
 }
 
 /** Checks the placements against `blocks` and `structures` (name → structure); throws naming the entry. */
-export function validatePlacements(data, blocks, structures) {
+/** The build's tree species' names (shared/trees, ADR 0079): placeable like structures. */
+export function registrySpecies() {
+  return new Set(loadSpecies(join(root, "shared/trees")).map((s) => s.name));
+}
+
+export function validatePlacements(
+  data,
+  blocks,
+  structures,
+  species = registrySpecies(),
+) {
   const fail = (m) => {
     throw new Error(`placements.json: ${m}`);
   };
@@ -232,7 +243,13 @@ export function validatePlacements(data, blocks, structures) {
     }
     for (const [n, w] of ss) {
       const s = structures.get(n);
-      if (!s) fail(`${at}: structure ${n} is not in shared/structures`);
+      if (!s && species.has(n)) {
+        if (!(Number.isInteger(w) && w >= 1 && w <= 1_000_000))
+          fail(`${at}: structures.${n} weight must be a whole number in [1, 1000000]`);
+        continue;
+      }
+      if (!s)
+        fail(`${at}: structure ${n} is not in shared/structures or shared/trees`);
       if (s.kind !== "voxels")
         fail(`${at}: structure ${n} is not of kind voxels`);
       if (reach(s) > MAX_REACH)

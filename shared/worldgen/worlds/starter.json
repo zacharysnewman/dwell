@@ -1,5 +1,5 @@
 {
-  "$comment": "The starter world (a candidate default, for the owner to react to; never a world's own yet): the systemic terrain layers (ADR 0075) and the preset biomes (ADR 0074) in one world. The world knobs: one convergent plate boundary with its range and an arc of two cones, Rainier-shaped (tall_peak's keys; the arc's cones share one height today), the snow and ice lines on; a hotspot chain of islands offshore. The biome map: the rain shadow on (rainShare 0.6, the westerly wind's rain), dithered borders. The biomes: the default (a low weight, the fallback where no preset fits) and the presets by climate, each with vegetation, rocks, ground and trees opted in; a broadleaf forest is the mixed forest's preset with broadleaf groves (oaks stand in), the warm coast the tropical beach's with broadleaf groves (palms are not in the game yet). `biomes` names a biome or preset (`{ \"biome\": name, ...keys }` replaces those keys); `biomeMap` keys over terrain.json's; `geology` keys over rocks.json's. Play it at ?worldgen=test:starter. Prototype content.",
+  "$comment": "The starter world (a candidate default, for the owner to react to; never a world's own yet): the systemic terrain layers (ADR 0075) and the preset biomes (ADR 0074) in one world. The world knobs: one convergent plate boundary with its range and an arc of two cones, Rainier-shaped (tall_peak's keys; the arc's cones share one height today), the snow and ice lines on; a hotspot chain of islands offshore. The biome map: the rain shadow on (rainShare 0.6, the westerly wind's rain), dithered borders. The biomes: the default (a low weight, the fallback where no preset fits) and the presets by climate, each with vegetation, rocks, ground and trees opted in; the tree species (shared/trees, ADR 0079) opted in: oaks in the broadleaf groves, the pine species' conifer groves in place of the default's pine groves, palms on the warm coast (the tropical beach's `palm_coasts`). `biomes` names a biome or preset (`{ \"biome\": name, ...keys }` replaces those keys); `biomeMap` keys over terrain.json's; `geology` keys over rocks.json's. Play it at ?worldgen=test:starter. Prototype content.",
   "name": "test:starter",
   "overrides": {
     "tectonics": {
@@ -84,14 +84,18 @@
       "vegetation": 1,
       "trees": {
         "broadleaf_groves": 1.5,
-        "pine_groves": 0.1
-      }
+        "conifer_groves": 0.1
+      },
+      "placements": [
+        "conifer_groves",
+        "broadleaf_groves"
+      ]
     },
     {
       "biome": "preset:mixed_forest",
       "vegetation": 1,
       "trees": {
-        "pine_groves": 0.8,
+        "conifer_groves": 0.8,
         "broadleaf_groves": 0.8
       },
       "where": {
@@ -109,7 +113,11 @@
           "max": 1000,
           "blend": 150
         }
-      }
+      },
+      "placements": [
+        "conifer_groves",
+        "broadleaf_groves"
+      ]
     },
     {
       "biome": "preset:boreal",
@@ -128,6 +136,12 @@
           "max": 1500,
           "blend": 150
         }
+      },
+      "placements": [
+        "conifer_groves"
+      ],
+      "trees": {
+        "conifer_groves": 1.5
       }
     },
     {
@@ -166,6 +180,12 @@
       "vegetation": 1,
       "ground": {
         "dwell:ground_rock": 0.5
+      },
+      "placements": [
+        "palm_coasts"
+      ],
+      "trees": {
+        "palm_coasts": 0.8
       }
     },
     {
@@ -200,6 +220,13 @@
       "biome": "preset:alpine_tundra",
       "ground": {
         "dwell:ground_rock": 1.5
+      },
+      "placements": [
+        "conifer_groves",
+        "boulders"
+      ],
+      "trees": {
+        "conifer_groves": 0.3
       }
     },
     {
