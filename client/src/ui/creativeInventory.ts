@@ -101,6 +101,36 @@ function picture(slot: HotbarSlot): HTMLCanvasElement {
   return canvas;
 }
 
+/** What a drag carries: a catalogue item (palette index) or a hotbar slot's pick. */
+export type DragSource = { item: number } | { slot: number };
+
+/**
+ * The slot assignments a drop makes ([slot, palette index] pairs, in order): an item dropped on a slot
+ * fills it; a slot dropped on another swaps their picks (owner, 2026-11-10: dragging between the
+ * creative slots "is really important, since that limits what you can place"). Nothing for a slot
+ * dropped on itself or an empty source.
+ */
+export function dropAssignments(
+  source: DragSource,
+  target: number,
+  picks: readonly number[],
+): [number, number][] {
+  if ('item' in source) return [[target, source.item]];
+  if (source.slot === target) return [];
+  const from = picks[source.slot];
+  const to = picks[target];
+  if (from === undefined) return [];
+  return to === undefined
+    ? [[target, from]]
+    : [
+        [target, from],
+        [source.slot, to],
+      ];
+}
+
+/** How far (px) a press travels before it is a drag, not a click. */
+const DRAG_PX = 6;
+
 export class CreativeInventory {
   private readonly root: HTMLDivElement;
   private readonly groups: HTMLDivElement;
@@ -108,6 +138,8 @@ export class CreativeInventory {
   private readonly slots: HTMLButtonElement[] = [];
   private picks: number[] = [];
   private selected = 0;
+  /** True from a drag's start until the click that ends it (so a drag is not also a click). */
+  private dragged = false;
 
   constructor(
     parent: HTMLElement,
@@ -150,16 +182,10 @@ export class CreativeInventory {
       b.className = 'hotbar-slot backpack-slot';
       b.dataset.slot = String(i);
       b.addEventListener('click', () => {
+        if (this.dragged) return;
         this.select(i);
       });
-      b.addEventListener('dragover', (e) => {
-        e.preventDefault();
-      });
-      b.addEventListener('drop', (e) => {
-        e.preventDefault();
-        const index = Number(e.dataTransfer?.getData('text/plain'));
-        if (Number.isInteger(index) && index >= 0) this.pick(i, index);
-      });
+      this.draggable(b, () => ({ slot: i }));
       this.slots.push(b);
       bar.append(b);
     }
@@ -227,18 +253,97 @@ export class CreativeInventory {
         b.className = 'hotbar-slot backpack-slot';
         b.dataset.item = it.name;
         b.title = it.label;
-        b.draggable = true;
         b.append(picture(this.swatchOf(it.index)));
         b.addEventListener('click', () => {
+          if (this.dragged) return;
           this.pick(this.selected, it.index);
         });
-        b.addEventListener('dragstart', (e) => {
-          e.dataTransfer?.setData('text/plain', String(it.index));
-        });
+        this.draggable(b, () => ({ item: it.index }));
         grid.append(b);
       }
       section.append(h, grid);
       this.groups.append(section);
     }
+  }
+
+  /** Drops `source` on slot `target`: fills it, or swaps two slots' picks. */
+  drop(source: DragSource, target: number): void {
+    const moves = dropAssignments(source, target, this.picks);
+    if (moves.length === 0) return;
+    let picks: readonly number[] = this.picks;
+    for (const [slot, index] of moves) picks = this.assign(slot, index);
+    this.picks = [];
+    this.set(picks, this.selected);
+  }
+
+  /**
+   * Pointer dragging (mouse, touch and pen alike; HTML drag-and-drop does not work on touch): a press
+   * that travels DRAG_PX lifts a ghost of the button under the finger, and the release over a hotbar
+   * slot of this view drops `source()` there.
+   */
+  private draggable(b: HTMLButtonElement, source: () => DragSource): void {
+    b.style.touchAction = 'none';
+    b.addEventListener('pointerdown', (down) => {
+      if (down.button !== 0) return;
+      const start = { x: down.clientX, y: down.clientY };
+      let ghost: HTMLElement | null = null;
+      this.dragged = false;
+      const move = (e: PointerEvent): void => {
+        if (!ghost) {
+          if (Math.hypot(e.clientX - start.x, e.clientY - start.y) < DRAG_PX) return;
+          this.dragged = true;
+          ghost = b.cloneNode(true) as HTMLElement;
+          const from = b.querySelector('canvas');
+          const to = ghost.querySelector('canvas');
+          if (from && to) to.getContext('2d')?.drawImage(from, 0, 0);
+          ghost.className = 'hotbar-slot backpack-slot inventory-ghost';
+          Object.assign(ghost.style, {
+            position: 'fixed',
+            pointerEvents: 'none',
+            zIndex: '1000',
+            opacity: '0.85',
+            margin: '0',
+          });
+          document.body.append(ghost);
+        }
+        ghost.style.left = `${String(e.clientX - 22)}px`;
+        ghost.style.top = `${String(e.clientY - 22)}px`;
+        const over = this.slotAt(e.clientX, e.clientY);
+        this.slots.forEach((s, i) => s.classList.toggle('drop-target', i === over));
+      };
+      const end = (e: PointerEvent): void => {
+        b.removeEventListener('pointermove', move);
+        b.removeEventListener('pointerup', end);
+        b.removeEventListener('pointercancel', end);
+        this.slots.forEach((s) => {
+          s.classList.remove('drop-target');
+        });
+        if (!ghost) return;
+        ghost.remove();
+        const target = e.type === 'pointerup' ? this.slotAt(e.clientX, e.clientY) : null;
+        if (target !== null) this.drop(source(), target);
+        // The click that follows a drag is swallowed; clear the flag after it.
+        setTimeout(() => {
+          this.dragged = false;
+        }, 0);
+      };
+      try {
+        b.setPointerCapture(down.pointerId);
+      } catch {
+        // A synthetic or already-released pointer: the drag still follows the button's events.
+      }
+      b.addEventListener('pointermove', move);
+      b.addEventListener('pointerup', end);
+      b.addEventListener('pointercancel', end);
+    });
+  }
+
+  /** The view's hotbar slot under a screen point, or null. */
+  private slotAt(x: number, y: number): number | null {
+    for (let i = 0; i < this.slots.length; i++) {
+      const r = this.slots[i]?.getBoundingClientRect();
+      if (r && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return i;
+    }
+    return null;
   }
 }

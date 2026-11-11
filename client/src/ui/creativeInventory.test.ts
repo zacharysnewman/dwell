@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GamepadInput } from '../input/gamepad';
 import { CREATIVE } from './buildModes.gen';
-import { catalogue, loadPicks, PICKS_KEY, savePicks } from './creativeInventory';
+import { catalogue, dropAssignments, loadPicks, PICKS_KEY, savePicks } from './creativeInventory';
 import { HOTBAR_SLOTS } from './inventory.gen';
 
 const palette = CREATIVE.items.map((i) => i.name);
@@ -145,5 +145,26 @@ describe('the inventory by controller', () => {
     input.poll(32);
     expect(back).toHaveBeenCalledOnce();
     expect(open).toBe(false);
+  });
+});
+
+// Owner, 2026-11-10: dragging between the creative slots "is really important, since that limits what
+// you can place". A drop fills a slot from the catalogue, and a slot dropped on another swaps them.
+describe('dragging onto the creative slots', () => {
+  const picks = [10, 11, 12, 13, 14, 15];
+  it('fills a slot with a catalogue item', () => {
+    expect(dropAssignments({ item: 7 }, 2, picks)).toEqual([[2, 7]]);
+  });
+  it('swaps two slots', () => {
+    expect(dropAssignments({ slot: 0 }, 4, picks)).toEqual([
+      [4, 10],
+      [0, 14],
+    ]);
+  });
+  it('does nothing for a slot dropped on itself', () => {
+    expect(dropAssignments({ slot: 3 }, 3, picks)).toEqual([]);
+  });
+  it('moves into an empty slot', () => {
+    expect(dropAssignments({ slot: 1 }, 5, [10, 11])).toEqual([[5, 11]]);
   });
 });
