@@ -222,7 +222,7 @@ describe('sounds round 2b (AUDIO.md §5)', () => {
       'dwell:stone_impact',
       'dwell:body_thud',
     ]);
-    expect(plays('piece_land', state('dwell:log[axis=y]'))).toEqual([
+    expect(plays('piece_land', state('dwell:log[axis=y,width=4]'))).toEqual([
       'dwell:wood_impact',
       'dwell:body_thud',
     ]);

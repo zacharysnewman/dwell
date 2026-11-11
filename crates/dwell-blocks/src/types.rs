@@ -106,6 +106,10 @@ pub struct CrossSection {
     pub joins: &'static str,
     pub ring: f32,
     pub heart: Option<&'static str>,
+    /// The octagon's width across a vertical cell, a fraction of the cell (1: the full log; a
+    /// `crossSection.widths` property's value, ADR 0079): a narrower trunk centred in its cell,
+    /// joining nothing. A log lying along x or z is drawn full width.
+    pub width: f32,
 }
 
 /// Wind sway of a cross's top (block data `wind`): `strength` metres at the top, gusts at `speed`

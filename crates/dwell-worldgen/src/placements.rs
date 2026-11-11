@@ -667,10 +667,14 @@ mod tests {
             shapes.len() >= 6,
             "seeded oaks of several heights: {shapes:?}"
         );
-        let log = dwell_blocks::require("dwell:log");
         for t in &trees {
             let placed = p[0].place(t);
-            assert_eq!(placed.at(t.anchor), Some(log), "a trunk at the anchor");
+            let foot = placed.at(t.anchor).expect("a trunk at the anchor");
+            assert_eq!(
+                dwell_blocks::block_of(foot).name,
+                "dwell:log",
+                "a trunk at the anchor"
+            );
         }
     }
 

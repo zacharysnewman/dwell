@@ -1730,7 +1730,7 @@ pub static PRESETS: &[Preset] = &[
             jitter: 1,
             growth: 0.5,
             structures: &[],
-            wood: "dwell:log[axis=y]",
+            wood: "dwell:log[axis=y,width=4]",
             leaves: "dwell:leaves[flooded=false]",
             branches: 4,
             branch_length: 4,

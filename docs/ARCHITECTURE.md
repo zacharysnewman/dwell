@@ -1109,7 +1109,7 @@ field's half-height top and follows a slope; sent as an optional last byte of th
 field, only when false). Normals lean up (0.8) so plants are lit like the ground from every side; the tint is
 that normal's face tint. Crosses need `"shape": "empty"`: no collider. **Placement rules** are block
 data too, checked by the server (§6.5): `placeOn` (block ids the block below must be),
-`needsSupport` (`"below"`: removed with what it stands on, in the same modification), **[built, 0.51.0]** `crossSection` (`{ kind: "octagon", chamfer, joins, ring?, heart? }`: an octagonal prism across the block's axis, its sides squared where a neighbour of the same `joins` group and axis lies; logs; on a `family: ramp` entry `"of"` takes its base block's, the prism cut by the ramp's convex shape (the wood ramps, Phase 55 T4); a rule, registry-sync tag 13; [ADR 0072](./adr/0072-octagonal-logs.md)), **[built, 0.36.0]** `support` and `passable` (what a block counts as for holding things up — logs carry, leaves ride — and players passing through it: leaves; BLOCK_REGISTRY.md, [`FELLING.md`](./FELLING.md)), `replaceable`
+`needsSupport` (`"below"`: removed with what it stands on, in the same modification), **[built, 0.51.0]** `crossSection` (`{ kind: "octagon", chamfer, joins, ring?, heart? }`: an octagonal prism across the block's axis, its sides squared where a neighbour of the same `joins` group and axis lies; logs; on a `family: ramp` entry `"of"` takes its base block's, the prism cut by the ramp's convex shape (the wood ramps, Phase 55 T4); a rule, registry-sync tag 13; **[built, 0.52.59]** `widths: { property, metres }` names a property whose values narrow a standing log's octagon about its cell's centre (`CrossSection::width`, sync tag 14; the log's `width`, ¼ m steps, default full; a narrow log joins nothing; [ADR 0079](./adr/0079-tree-species.md)); [ADR 0072](./adr/0072-octagonal-logs.md)), **[built, 0.36.0]** `support` and `passable` (what a block counts as for holding things up — logs carry, leaves ride — and players passing through it: leaves; BLOCK_REGISTRY.md, [`FELLING.md`](./FELLING.md)), `replaceable`
 (placing into its cell replaces it) `selectionBox` (a smaller box in the cell for targeting,
 line of sight and the outline, `dwell_world::edit::target_box`; on a block with a `facingProperty`
 written for facing north and turned per facing by `gen.mjs` (the ladder's is its plate, ⅛ m against
@@ -1768,7 +1768,9 @@ follow. **The Textures tab (B6, 0.52.42):** the painterly materials and palette 
    species at stages drawn by `growth.wild` into ordinary `Structure`s (`Structure::from_cells`).
    `broadleaf_groves` stands oaks (presets only); `conifer_groves` (pines) and `palm_coasts` (palms)
    are listed by the starter world only; the default world keeps its hand-built pines (goldens
-   unchanged). Not built: growth over time, thin trunks (no log width), per-tree leaf tints, frond blades.
+   unchanged). **[built, 0.52.59]** trunks stand on the log's narrower widths by stage; `trees_in` asks
+   the ground columns of its margin lazily (cached), not all up front. Not built: growth over time,
+   per-tree leaf tints, frond blades.
    Ground items follow a biome's `ground` the same way (§ Ground items, 0.52.41).
    `trees_sparse` finds the same trees asking columns per candidate (Chisel's 3D section). The sky test (step 3) leaves room
    for the tallest structure over the highest ground; the spawn's level patch is clear of trees.

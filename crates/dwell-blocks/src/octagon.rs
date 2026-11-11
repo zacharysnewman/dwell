@@ -55,6 +55,8 @@ pub fn joins(a: StateId, b: StateId) -> bool {
         (Some((ca, aa)), Some((cb, ab))) => {
             aa == ab
                 && ca.joins == cb.joins
+                && ca.width >= 1.0
+                && cb.width >= 1.0
                 && crate::info(a).shape_index == crate::info(b).shape_index
         }
         _ => false,
@@ -138,6 +140,34 @@ pub fn outline(
     joined: u8,
     size_m: [f64; 3],
 ) -> Vec<([f64; 2], Option<usize>)> {
+    outline_width(chamfer, 1.0, axis, joined, size_m)
+}
+
+/// [`outline`] of a cross-section `width` of the cell across (ADR 0079): along y, a narrower
+/// octagon centred in the cell (its sides then touch no cell face); lying logs stay full width.
+pub fn outline_width(
+    chamfer: f64,
+    width: f64,
+    axis: usize,
+    joined: u8,
+    size_m: [f64; 3],
+) -> Vec<([f64; 2], Option<usize>)> {
+    let ring = outline_full(chamfer, axis, joined, size_m);
+    if axis != 1 || width >= 1.0 {
+        return ring;
+    }
+    let k = width.clamp(0.05, 1.0);
+    ring.into_iter()
+        .map(|(p, side)| ([0.5 + (p[0] - 0.5) * k, 0.5 + (p[1] - 0.5) * k], side))
+        .collect()
+}
+
+fn outline_full(
+    chamfer: f64,
+    axis: usize,
+    joined: u8,
+    size_m: [f64; 3],
+) -> Vec<([f64; 2], Option<usize>)> {
     let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
     let c_m = chamfer * size_m[u].min(size_m[v]);
     let (cu, cv) = (c_m / size_m[u], c_m / size_m[v]);
@@ -172,7 +202,13 @@ pub fn outline(
 /// each corner neither of whose sides is joined. Culling against neighbours is the caller's.
 pub fn faces(section: &CrossSection, axis: usize, joined: u8, size_m: [f64; 3]) -> Vec<Face> {
     let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
-    let ring = outline(f64::from(section.chamfer), axis, joined, size_m);
+    let ring = outline_width(
+        f64::from(section.chamfer),
+        f64::from(section.width),
+        axis,
+        joined,
+        size_m,
+    );
     let at = |p: [f64; 2], w: f64| {
         let mut q = [0.0; 3];
         q[u] = p[0];
@@ -226,6 +262,10 @@ pub fn open_faces(
     let mut out = state_faces(m, joined, size_m);
     out.retain(|f| match f.part {
         Part::Side(face) => {
+            // A narrow standing log's sides are inside its cell: no neighbour covers them.
+            if axis == 1 && section.width < 1.0 {
+                return true;
+            }
             let n = at(face_offset(face));
             joined & (1 << face) == 0 && !(covers(n) && section_of(n).is_none())
         }
@@ -417,7 +457,13 @@ pub fn cap_pieces(
     end: bool,
 ) -> Vec<Face> {
     let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
-    let ring = outline(f64::from(section.chamfer), axis, joined, size_m);
+    let ring = outline_width(
+        f64::from(section.chamfer),
+        f64::from(section.width),
+        axis,
+        joined,
+        size_m,
+    );
     let w = if end { 1.0 } else { 0.0 };
     let at = |p: [f64; 2]| {
         let mut q = [0.0; 3];

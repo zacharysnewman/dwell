@@ -73,9 +73,11 @@ export function validateSpecies(s, blocks, file = "(species)") {
   num(t.heightStep, 0.5, 4, "trunk.heightStep");
   if (Math.abs(t.heightStep * 2 - Math.round(t.heightStep * 2)) > 1e-9) fail("trunk.heightStep must be whole ½ m cells");
   only(t.width, ["sapling", "mature", "step"], "trunk.width");
-  num(t.width.sapling, 0.125, 1, "trunk.width.sapling");
+  num(t.width.sapling, 0.25, 1, "trunk.width.sapling");
   num(t.width.mature, t.width.sapling, 1, "trunk.width.mature");
-  num(t.width.step, 0.0625, 1, "trunk.width.step");
+  num(t.width.step, 0.25, 1, "trunk.width.step");
+  for (const k of ["sapling", "mature", "step"])
+    if (Math.abs(t.width[k] * 4 - Math.round(t.width[k] * 4)) > 1e-9) fail(`trunk.width.${k} must be whole ¼ m (the log's widths)`);
   if (t.lean !== undefined) range(t.lean, 0, 8, "trunk.lean");
   const b = s.branches;
   if (!BRANCHES[b?.kind]) fail(`branches.kind must be one of ${Object.keys(BRANCHES).join(", ")}`);
@@ -177,6 +179,7 @@ function speciesRust(s) {
     `        sapling_height: ${f(s.trunk.height.sapling)},`,
     `        mature_height: ${pair(s.trunk.height.mature)},`,
     `        height_step: ${f(s.trunk.heightStep)},`,
+    `        width: (${f(s.trunk.width.sapling)}, ${f(s.trunk.width.mature)}, ${f(s.trunk.width.step)}),`,
     `        lean: ${pair(s.trunk.lean ?? [0, 0])},`,
     `        branches: ${branches},`,
     `        crown: ${crown},`,
