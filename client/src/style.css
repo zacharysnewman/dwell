@@ -3432,9 +3432,11 @@ body.loading-wait #brush-panel {
 
 /* The touch bag button (docs/ITEMS.md §6a): top left; while the inventory view is open the other
    touch controls step aside and the bag closes it. */
+/* Below the menu button (both 44 px at the safe corner): 0.52.23 put it exactly under the menu button,
+   so on a phone it was hidden behind it (owner, 2026-11-10: "How to open inventory on mobile?"). */
 #touch-bag {
   position: absolute;
-  top: var(--safe-top);
+  top: calc(var(--safe-top) + 54px);
   left: var(--safe-left);
   z-index: 1;
   height: 44px;
