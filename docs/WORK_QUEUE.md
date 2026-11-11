@@ -239,7 +239,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   shrunk exactly: stored by their exceptions over the sea (`grid::SparseGrid`), the drainage's height
   copy read from the world map, scratch dropped early: 53.6 → 15.9 MB a process natively
   (`tests/starter_memory.rs`, with the starter's terrain pinned bit for bit). Left: re-measure the page
-  on the bench; one copy per process remains.
+  on the bench; one copy per process remains. The pin was re-recorded 2026-11-11: it had been taken on code from
+  before the steppe's `undergrowth` 1 → 0.75, so it failed on main (stale, not a float difference: with
+  the steppe at 1 the old hashes match).
 
 - **Terrain leftovers, round 1** (0.52.66): arches from erosion-grown fins (a biome's `arches.fins`, the
   fin rule in T4's cut-back; sites slide to a fin within 12 m) and arches in a chosen rock
