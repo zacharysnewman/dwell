@@ -26,12 +26,18 @@ Narrowed further after 0.52.92 (session scratchpad `lod-bugs/`): it is the **dis
 their colours (`run1/v69/east-levels.png`), so it is a shade, not a surface. It stays put in the world
 when the view turns (yaw −80: it moves right of the centre, `run2/v69yaw/yaw-80.png`): a streak along
 the light's direction (the world's opening time; the sun low in the east), not tied to the screen. At
-the spots' time 0.45 it is not there (`run3/v69t/west.png`). Suspect: the horizon sweep's max mips — a
-far step reads the highest texel of a footprint ~⅓ of its distance wide, so a narrow tall caster (a
-badlands pillar: the terrain volume, drawn in the 4 m map by its chunks) shades a band that wide for
-kilometres, where the sun's ½° disc would let a pillar a few metres wide shade only a few hundred
-metres. Next: the caster (the heightmap's texels along the streak's line east of it), then cap a
-caster's reach by its width or blend the mips.
+the spots' time 0.45 it is not there (`run3/v69t/west.png`). It is fixed in the world on the line
+z ≈ −4866 (the spot's z, 15 km due east of the cone; along the low eastern sun): from 100 m north it stands right of the centre
+(`side/v69m/z4766.png`), and it does not follow where the player started (`player/v69p/`). Not the
+sweep's max mips (with every step reading mip 0 it stays, `nomip/v69a/west.png`). So a caster stands
+east of the hill on that line, narrow across it, in the heightmaps (the chunks' and sections' tops):
+suspect a thin ridge along the cone's +X ray — the arc cones' column detail (`peak_relief`, radial
+cleavers: an angle seam at 0?) or a section's sliver. Next: the heightmaps' texels along z = −4866 east
+of the hill (a dev readback). A native probe (seed 0, face A; not kept) finds such a line: a narrow
+ridge on the cone's east ray, z ≈ −4880…−4850 from x ≈ −2200 to −1500, its crest 15–25 m over the
+ground 24 m north and south and a few metres wide (a radial cleaver, `peak_relief`). Whether its
+shade should reach the hill is the question: the sweep has no sun disc across the light, so a ridge a
+few metres wide shades as a wall would.
 
 ### 60. On the software renderer the page draws no frame for ~6 s just after the first torch is placed
 
