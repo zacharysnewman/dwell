@@ -56,6 +56,18 @@ pub fn blast_quads(puffs: &[Puff], eye: [f64; 3], basis: &Basis) -> (Vec<f32>, u
     (out, far.len())
 }
 
+/// The smoke look index of steam's puffs (crate::steam): after the explosives' smokes.
+pub fn steam_look() -> usize {
+    EXPLOSIVES.len()
+}
+
+/// Steam's colour (sRGB 0–1) from shared/fluids/lava.json `steam.color`.
+pub fn steam_color() -> [f32; 3] {
+    let h = dwell_lava::DATA.steam.color.trim_start_matches('#');
+    let c = |i: usize| f32::from(u8::from_str_radix(&h[i..i + 2], 16).unwrap_or(255)) / 255.0;
+    [c(0), c(2), c(4)]
+}
+
 /// The puffs' shading in WGSL: `blast_colour(kind, look, uv, rest, rel, seed, bits, light)`,
 /// premultiplied, `light` the puff's (`puff_light` at its centre, from the vertex shader); the
 /// fireball's alpha 0 (added).
@@ -95,12 +107,21 @@ pub fn wgsl() -> String {
     } else {
         woods.join(", ")
     };
-    let smokes = list(&|e| lin(e.effects.smoke.color));
+    // The smokes, then steam's (shared/fluids/lava.json `steam`, VOLCANOES.md §6.3) at
+    // `steam_look()`: crate::steam's puffs are smoke puffs of that look.
+    let smokes = {
+        let mut v: Vec<String> = EXPLOSIVES
+            .iter()
+            .map(|e| lin(e.effects.smoke.color))
+            .collect();
+        v.push(lin(steam_color()));
+        v.join(", ")
+    };
     let dusts = list(&|e| lin(e.effects.dust.color));
     let fires = list(&|e| lin(e.effects.flash.color));
     let n = EXPLOSIVES.len().max(1);
     format!(
-        "const BLAST_SMOKES = array<vec3f, {n}>({smokes});
+        "const BLAST_SMOKES = array<vec3f, {ns}>({smokes});
 const BLAST_DUSTS = array<vec3f, {n}>({dusts});
 const BLAST_FIRES = array<vec3f, {n}>({fires});
 const CHIP_WOODS = array<vec3f, {nw}>({woods});
@@ -148,7 +169,7 @@ fn blast_colour(kind: u32, look: u32, uv: vec2f, rest: vec3f, rel: vec3f, seed: 
         let c = mix(BLAST_FIRES[k], vec3f(1.0, 0.97, 0.85), core) * (1.6 * a);
         return vec4f(flame_light(c), 0.0);
     }}
-    var c = BLAST_SMOKES[k];
+    var c = BLAST_SMOKES[min(look, {steam}u)];
     if (kind == 9u) {{
         c = BLAST_DUSTS[k];
     }}
@@ -203,6 +224,8 @@ fn chip_colour(kind: u32, k: u32, uv: vec2f, rest: vec3f, rel: vec3f, seed: u32,
 }}
 ",
         last = n - 1,
+        ns = EXPLOSIVES.len() + 1,
+        steam = steam_look(),
         last_wood = nw - 1,
     )
 }

@@ -38,6 +38,13 @@ export const FLUID_RANGES = {
 export const VENT_KINDS = ['lake', 'river'];
 const VENT_FIELDS = ['name', 'fluid', 'kind', 'x', 'z', 'rateM3s', 'levelM'];
 const NAMESPACED = /^[a-z][a-z0-9_]*:[a-z][a-z0-9_]*$/;
+const COLOR = /^#[0-9a-f]{6}$/;
+/** The clients' looks (VOLCANOES.md §6.3), optional (a fixture takes these): steam's puffs where
+ * lava boils water away, and the screen's edge while a player burns. */
+export const LOOK_DEFAULTS = {
+  steam: { color: '#f2f4f6', seconds: 1.6, riseMs: 1.6, sizeM: [0.4, 1.6], opacity: 0.75 },
+  burnEdge: { color: '#ff5a1e', opacity: 0.6, seconds: 0.9 },
+};
 
 /** The registry's block names, from shared/blocks/dwell.json. */
 export function registryBlocks() {
@@ -68,7 +75,27 @@ export function validateLava(data, { blocks = registryBlocks(), known = [], file
   const block = (at, v) => {
     if (!blocks.has(v)) bad(`${at}: ${JSON.stringify(v)} is not a block of the registry`);
   };
-  keys(data, '(root)', ['formatVersion', ...Object.keys(TOP_RANGES), 'fluids', 'vents']);
+  keys(data, '(root)', ['formatVersion', ...Object.keys(TOP_RANGES), 'fluids', 'vents', 'steam', 'burnEdge']);
+  const color = (at, v) => {
+    if (typeof v !== 'string' || !COLOR.test(v)) bad(`${at} must be a colour #rrggbb, got ${JSON.stringify(v)}`);
+  };
+  if (data.steam !== undefined) {
+    keys(data.steam, 'steam', ['color', 'seconds', 'riseMs', 'sizeM', 'opacity']);
+    color('steam.color', data.steam.color);
+    range(data.steam, 'steam', 'seconds', [0.1, 20, false]);
+    range(data.steam, 'steam', 'riseMs', [0, 20, false]);
+    range(data.steam, 'steam', 'opacity', [0, 1, false]);
+    const z = data.steam.sizeM;
+    if (!Array.isArray(z) || z.length !== 2 || !z.every((v) => typeof v === 'number' && v > 0 && v <= 10) || z[0] > z[1]) {
+      bad(`steam.sizeM must be [birth, end] metres (0, 10], birth ≤ end, got ${JSON.stringify(z)}`);
+    }
+  }
+  if (data.burnEdge !== undefined) {
+    keys(data.burnEdge, 'burnEdge', ['color', 'opacity', 'seconds']);
+    color('burnEdge.color', data.burnEdge.color);
+    range(data.burnEdge, 'burnEdge', 'opacity', [0, 1, false]);
+    range(data.burnEdge, 'burnEdge', 'seconds', [0.05, 10, false]);
+  }
   if (data.formatVersion !== 1) bad(`formatVersion must be 1, not ${JSON.stringify(data.formatVersion)}`);
   for (const [k, r] of Object.entries(TOP_RANGES)) range(data, '(root)', k, r);
   if (!Array.isArray(data.fluids) || data.fluids.length === 0) bad('fluids must be a non-empty list');
@@ -112,7 +139,7 @@ const kind = (k) => k[0].toUpperCase() + k.slice(1);
 
 /** The Rust source for validated lava data, as the constant `name`. */
 export function lavaRust(data, { name = 'DATA', src = 'shared/fluids/lava.json' } = {}) {
-  const lines = [`// ${header(src)}`, '', '#[allow(unused_imports)]', 'use crate::data::{HotFluid, LavaData, Quench, VentDef, VentKind};', ''];
+  const lines = [`// ${header(src)}`, '', '#[allow(unused_imports)]', 'use crate::data::{BurnEdge, HotFluid, LavaData, Quench, SteamLook, VentDef, VentKind};', ''];
   lines.push(`/// Lava's data (${src}).`);
   lines.push(`pub const ${name}: LavaData = LavaData {`);
   for (const [k, [, , int]] of Object.entries(TOP_RANGES)) lines.push(`    ${snake(k)}: ${int ? String(data[k]) : rf(data[k])},`);
@@ -133,6 +160,12 @@ export function lavaRust(data, { name = 'DATA', src = 'shared/fluids/lava.json' 
     );
   }
   lines.push('    ],');
+  const st = data.steam ?? LOOK_DEFAULTS.steam;
+  const be = data.burnEdge ?? LOOK_DEFAULTS.burnEdge;
+  lines.push(
+    `    steam: SteamLook { color: ${JSON.stringify(st.color)}, seconds: ${rf(st.seconds)}, rise_ms: ${rf(st.riseMs)}, size_m: [${rf(st.sizeM[0])}, ${rf(st.sizeM[1])}], opacity: ${rf(st.opacity)} },`,
+  );
+  lines.push(`    burn_edge: BurnEdge { color: ${JSON.stringify(be.color)}, opacity: ${rf(be.opacity)}, seconds: ${rf(be.seconds)} },`);
   lines.push('};', '');
   return lines.join('\n');
 }

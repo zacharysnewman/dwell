@@ -90,6 +90,30 @@ pub struct LavaData {
     pub max_substeps: u32,
     pub fluids: &'static [HotFluid],
     pub vents: &'static [VentDef],
+    /// Steam's puffs on the clients (VOLCANOES.md §6.3).
+    pub steam: SteamLook,
+    /// The screen's edge while the player burns.
+    pub burn_edge: BurnEdge,
+}
+
+/// Steam's puffs where lava boils water away (`steam`): colour (sRGB), life (s), rise (m/s), size
+/// at birth and at the end (m), peak opacity.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SteamLook {
+    pub color: &'static str,
+    pub seconds: f32,
+    pub rise_ms: f32,
+    pub size_m: [f32; 2],
+    pub opacity: f32,
+}
+
+/// The red-orange screen edge while the player burns (`burnEdge`): colour (sRGB), opacity at its
+/// strongest, how long it lasts after a burn hit (s).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BurnEdge {
+    pub color: &'static str,
+    pub opacity: f32,
+    pub seconds: f32,
 }
 
 impl LavaData {

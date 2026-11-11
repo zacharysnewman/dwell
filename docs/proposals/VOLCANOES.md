@@ -170,9 +170,9 @@ look and the in-game check come next, locally). ARCHITECTURE.md §6.8 has the mo
   `inventory_flags::STEAM`, so an older client never gets it (tested both faces); the client draws a
   rising puff over each cell (`steam.rs`, a third on a CPU adapter). Puffs use the explosions' smoke
   colour for now.
-- **Outstanding:** heat per cell (brighter where hotter/thicker: the field's heat isn't in the cells);
-  steam's own look as data (white, not the explosions' smoke) and its hiss; the burning screen edge and
-  sizzle.
+- **Round 3:** world-space crust plates with glowing seams (WATER_RENDERING.md §17.1); steam's own look
+  as data, a hiss, the burning screen edge and a sizzle (§17.2).
+- **Outstanding:** heat per cell (brighter where hotter/thicker: the field's heat isn't in the cells).
 
 **Next:** the rest of the look (steam, burning feedback, heat per cell); the water grid's columns as the
 fields' water; then V2's vents on the hotspot cones (rivers to the sea, eruptions).

@@ -1,14 +1,17 @@
 //! Steam where lava boils water away (docs/proposals/VOLCANOES.md §6.3): the server's `Steam`
 //! cells (sent only to a client that said `SteamHello`) as rising puffs through the blasts' puff
-//! system (crate::blasts `Puff`, drawn with the explosions' smoke). A CPU adapter draws a third.
+//! system (crate::blasts `Puff`, a smoke puff of steam's own look, render/blasts.rs `steam_look`),
+//! its look from shared/fluids/lava.json `steam`. A CPU adapter draws a third.
 
 use crate::blasts::{Puff, PuffKind};
 use dwell_world::FaceFrame;
 
-/// How long a puff lives (s), how fast it rises (m/s), its size at birth and at the end (m).
-const SECONDS: f64 = 2.6;
-const RISE: f64 = 1.3;
-const SIZE: [f64; 2] = [0.45, 1.5];
+/// Steam's look (shared/fluids/lava.json `steam`): life (s), rise (m/s), size at birth and end
+/// (m), peak opacity.
+const LOOK: dwell_lava::data::SteamLook = dwell_lava::DATA.steam;
+const SECONDS: f64 = LOOK.seconds as f64;
+const RISE: f64 = LOOK.rise_ms as f64;
+const SIZE: [f64; 2] = [LOOK.size_m[0] as f64, LOOK.size_m[1] as f64];
 /// The most puffs alive at once (a lake boiling a sea away sends many cells).
 const MAX_LIVE: usize = 240;
 
@@ -83,9 +86,9 @@ impl Steam {
                 Some(Puff {
                     at,
                     size: SIZE[0] + (SIZE[1] - SIZE[0]) * u.sqrt(),
-                    alpha: 0.7 * (1.0 - u).powi(2) * (t * 8.0).min(1.0),
+                    alpha: f64::from(LOOK.opacity) * (1.0 - u).powi(2) * (t * 8.0).min(1.0),
                     kind: PuffKind::Smoke,
-                    explosive: 0,
+                    explosive: crate::render::blasts::steam_look(),
                     seed: p.seed,
                 })
             })
@@ -103,17 +106,25 @@ mod tests {
             let cell = f.cell([3, 200, -4]);
             s.add(&[cell], 10.0);
             let early = s.puffs(10.2);
-            let late = s.puffs(12.0);
+            let late = s.puffs(10.0 + SECONDS * 0.8);
             assert_eq!((early.len(), late.len()), (1, 1));
             // Rises along the face's up; the later puff is bigger and fainter.
             let up = f.up();
             let rise: f64 = (0..3)
                 .map(|k| (late[0].at[k] - early[0].at[k]) * up[k])
                 .sum();
-            assert!(rise > 1.5, "{rise}");
+            assert!(rise > 0.5 * RISE * SECONDS, "{rise}");
             assert!(late[0].size > early[0].size && late[0].alpha < early[0].alpha);
-            s.prune(13.0);
-            assert!(s.puffs(13.0).is_empty(), "gone after its life");
+            s.prune(10.0 + SECONDS + 0.1);
+            assert!(
+                s.puffs(10.0 + SECONDS + 0.1).is_empty(),
+                "gone after its life"
+            );
+            assert_eq!(
+                early[0].explosive,
+                crate::render::blasts::steam_look(),
+                "steam's own look"
+            );
         }
     );
 
@@ -132,5 +143,21 @@ mod tests {
             s.add(&cells, 0.0);
         }
         assert_eq!(s.puffs(0.1).len(), MAX_LIVE);
+    }
+
+    #[test]
+    fn the_burning_edge_is_full_at_a_burn_hit_and_fades_over_its_data_seconds() {
+        // face-a-only: a screen effect, no direction.
+        let span = f64::from(dwell_lava::DATA.burn_edge.seconds) * 1000.0;
+        let until = 5000.0 + span;
+        assert_eq!(crate::game::burn_edge_strength(until, 5000.0), 1.0);
+        let half = crate::game::burn_edge_strength(until, 5000.0 + span / 2.0);
+        assert!((half - 0.5).abs() < 1e-9, "{half}");
+        assert_eq!(crate::game::burn_edge_strength(until, until + 1.0), 0.0);
+        assert_eq!(
+            crate::game::burn_edge_strength(0.0, 5000.0),
+            0.0,
+            "never burned"
+        );
     }
 }

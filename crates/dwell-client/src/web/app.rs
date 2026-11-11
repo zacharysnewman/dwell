@@ -2197,6 +2197,10 @@ impl Client {
                 g.hud.debug.as_deref().map_or(JsValue::NULL, JsValue::from),
             );
             set(&o, "damaged", std::mem::take(&mut g.hud.damaged));
+            // The burning edge (shared/fluids/lava.json `burnEdge`): its opacity now and colour.
+            let edge = dwell_lava::DATA.burn_edge;
+            set(&o, "burn", g.hud.burn * f64::from(edge.opacity));
+            set(&o, "burnColor", edge.color);
             set(&o, "region", g.region.status().as_str());
             // The held axe's swing hint (ADR 0067): null without one.
             set(

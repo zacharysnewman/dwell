@@ -948,6 +948,8 @@ pub struct Server {
     lava_unread: bool,
     /// Steam from lava meeting water since the last `take_lava_steam` (the clients' puffs, later).
     lava_steam: Vec<crate::lava::Steam>,
+    /// Steam cells sent since the server started (the dev report's `steamCells`).
+    lava_steam_cells: u64,
     /// The trees' growth records (ADR 0079 S3), saved with the world.
     growth: dwell_worldgen::growth::Records,
     /// The saved records are a newer build's: kept, not written over.
@@ -1116,6 +1118,7 @@ impl Server {
             lava: Default::default(),
             lava_unread: false,
             lava_steam: Vec::new(),
+            lava_steam_cells: 0,
             growth: Default::default(),
             growth_unread: false,
             ecology: ecology::Ecology::new(

@@ -110,9 +110,9 @@ Last updated: 2026-11-11 (0.52.68).
    built:** the painterly lava tile (self-lit, crust drifting and cracks breathing by `molten` material
    data, flat on the CPU tier) and basalt and obsidian tiles; VOLCANOES.md §6.3, WATER_RENDERING.md §17.
    **Part 2:** `__dwell.lava` dev tools (the summit lake was there: the first shots were misplaced),
-   steam sent to clients that say `SteamHello` and drawn as puffs. **Next:** the hiss, the burning screen
-   edge and sizzle, heat
-   per cell; then the water grid's columns as the fields' water and V2's vents.
+   steam sent to clients that say `SteamHello` and drawn as puffs. **Round 3:** world-space crust plates
+   with glowing seams, steam's look as data and a hiss, the burning screen edge and a sizzle
+   (WATER_RENDERING.md §17.1–17.2). **Next:** heat per cell; then the water grid's columns as the fields' water and V2's vents.
 9. ~~**Loading-time display bug.**~~ Done (0.52.71): the 10 s was the graphics' start (one long task on the
    main thread making the renderer's pipelines) begun in the same task that ended the game's load, so the
    screen never painted "Starting the graphics…" and stood on "Loading the game… x MB 0.0 s". Each stage is

@@ -503,6 +503,15 @@ pub struct Hud {
     pub debug: Option<String>,
     /// Damage taken since the last frame (the HUD flashes).
     pub damaged: bool,
+    /// The burning edge's strength, 0–1 (shared/fluids/lava.json `burnEdge`; VOLCANOES.md §6.3).
+    pub burn: f64,
+}
+
+/// The burning edge's strength at `now_ms` for a burn that shows until `until_ms`: 1 at a burn
+/// hit, fading to 0 over `burnEdge.seconds`.
+pub fn burn_edge_strength(until_ms: f64, now_ms: f64) -> f64 {
+    let span = f64::from(dwell_lava::DATA.burn_edge.seconds) * 1000.0;
+    ((until_ms - now_ms) / span).clamp(0.0, 1.0)
 }
 
 /// The HUD's stamina and air bars (ADR 0069): each a share of full, None where the mode has no
@@ -614,6 +623,8 @@ pub struct Game<S: Scene> {
     pub chips: crate::chips::Chips,
     /// Steam where lava boils water away (crate::steam; the server's `Steam`, VOLCANOES.md §6.3).
     pub steam: crate::steam::Steam,
+    /// When the burning edge has faded (ms; a `Burn` hit sets it).
+    burn_until_ms: f64,
     /// Said `SteamHello` (the server has `inventory_flags::STEAM`).
     steam_on: bool,
     pub inventory_slot: usize,
@@ -969,6 +980,7 @@ impl<S: Scene> Game<S> {
             chop: Default::default(),
             chips: Default::default(),
             steam: Default::default(),
+            burn_until_ms: 0.0,
             steam_on: false,
             inventory_slot: 0,
             creative: dwell_game::creative_hotbar::CreativeHotbar::new(
@@ -1532,6 +1544,16 @@ impl<S: Scene> Game<S> {
             Message::Steam(cells) => {
                 // Lava boiled water away (VOLCANOES.md §6.3): a puff over each cell.
                 self.steam.add(&cells, now_ms / 1000.0);
+                // And its hiss, once a message, at the first cell (shared/sounds `steam_hiss`).
+                if let Some(c) = cells.first() {
+                    let at = [
+                        f64::from(c[0]) + 0.5,
+                        dwell_world::m_of_row(c[1]) + 0.25,
+                        f64::from(c[2]) + 0.5,
+                    ];
+                    self.sounds
+                        .push(SoundEvent::new(SoundKind::SteamHiss, 0, 1.0, Some(at)));
+                }
             }
             Message::Damage(d) => {
                 // Another player's hit: its material's hit and chips at the struck point.
@@ -1670,7 +1692,17 @@ impl<S: Scene> Game<S> {
                         self.predictor
                             .on_knockback(self.streamer.store_mut(), e.input_seq, v);
                     }
-                    PlayerEventKind::Damage => self.hud.damaged = true,
+                    PlayerEventKind::Damage => {
+                        self.hud.damaged = true;
+                        // Burning (lava, VOLCANOES.md §6.3): the screen's red-orange edge for
+                        // `burnEdge.seconds` and a sizzle.
+                        if e.cause == dwell_protocol::DamageCause::Burn {
+                            self.burn_until_ms =
+                                now_ms + f64::from(dwell_lava::DATA.burn_edge.seconds) * 1000.0;
+                            self.sounds
+                                .push(SoundEvent::new(SoundKind::Sizzle, 0, 1.0, None));
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -3670,6 +3702,7 @@ impl<S: Scene> Game<S> {
         self.scene.borrow_mut().set_falls(shown);
 
         self.hud.health = self.health;
+        self.hud.burn = burn_edge_strength(self.burn_until_ms, now_ms);
         self.hud.vitals = HudVitals::of(&self.predictor.controller().vitals, self.vitals_rules)
             .filter(|_| !self.dead);
         if self.debug_visible {

@@ -174,8 +174,9 @@ impl Server {
             &self.worldgen_text
         };
         format!(
-            r#"{{"worldgen":{:?},"fields":[{}]}}"#,
+            r#"{{"worldgen":{:?},"steamCells":{},"fields":[{}]}}"#,
             worldgen,
+            self.lava_steam_cells,
             fields.join(",")
         )
     }
@@ -215,6 +216,7 @@ impl Server {
         if self.lava_steam.is_empty() {
             return;
         }
+        self.lava_steam_cells += self.lava_steam.len() as u64;
         let cells: Vec<[i32; 3]> = self
             .take_lava_steam()
             .into_iter()
@@ -229,7 +231,7 @@ impl Server {
             .collect();
         let m = Message::Steam(cells);
         for id in to {
-            self.send_reliable(id, &m, Channel::Control);
+            self.send_reliable(id, &m, Channel::World);
         }
     }
 }

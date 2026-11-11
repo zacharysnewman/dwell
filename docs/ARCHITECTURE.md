@@ -4144,7 +4144,7 @@ as rising puffs (`dwell-client` `steam.rs`, through the blasts' puffs). A client
 (an older build) never gets the message.
 ```
 C→S  SteamHello 0x67, control: (empty)
-S→C  Steam 0x68, control: u16 count, then count × (i32 x, i32 y, i32 z) world cells
+S→C  Steam 0x68, world: u16 count, then count × (i32 x, i32 y, i32 z) world cells
 ```
 
 **Client → Server: `BlockEditRequest` (reliable, `control`) [built, Phase 3d]** (§6.5)
