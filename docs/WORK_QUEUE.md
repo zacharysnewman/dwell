@@ -289,6 +289,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    grass ramps (~40 % of the meadow), drawn pale. Denser patches or tufts on ramps change the default world's
    terrain (a new compatibility line); a less pale tuft is a look change only. Asked the owner which.
 
+   Owner, 2026-11-11, asked whether it rides along with 0.53: "What's this meadow grass change?" — explained;
+   waiting on the answer.
 22. **Settings and version buttons look like web links** (owner 2026-11-11: "I thought we had settings and
    version buttons changed queued, is that true?" — it wasn't recorded anywhere; then "The buttons should be
    aligned to match the design of the others instead of looking like web links"). Restyle them as the menu's
