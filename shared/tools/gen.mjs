@@ -216,6 +216,8 @@ export function validateTools(data, items, blocks, heldItems = loadHeldItems(), 
  * tool and default values"): `default` the hits to destroy it with bare hands or a tool not listed
  * (null: it can't be broken so), and per tool class (`breaking.classes`' keys) or item its hits, an
  * item's over its class's. A block without `damage` breaks in one hit, as before. */
+const LOOKS = ['shards', 'scoops', 'chips'];
+
 export function validateDamage(blocks, items, breaking) {
   const classes = new Set(Object.keys(breaking?.classes ?? {}).filter((k) => k[0] !== '$'));
   const hits = (v, at) => {
@@ -231,12 +233,25 @@ export function validateDamage(blocks, items, breaking) {
     if (!Object.hasOwn(d, 'default')) fail(`${at} needs a default (hits with bare hands; null: can't)`);
     const dflt = d.default === null ? null : hits(d.default, `${at}.default`);
     const tools = [];
+    // The look of its damage (D2): shards (stone), scoops (soils) or chips (wood) at each hit mark,
+    // `size` the mark's width (cells) at full damage, `color` the fresh face inside, `crack` the
+    // cracks that grow with the damage.
+    let look = null;
+    if (d.look !== undefined) {
+      const lat = `${at}.look`;
+      if (d.look === null || typeof d.look !== 'object' || Array.isArray(d.look)) fail(`${lat} must be an object`);
+      known(d.look, ['kind', 'size', 'color', 'crack'], lat);
+      if (!LOOKS.includes(d.look.kind)) fail(`${lat}.kind must be one of ${LOOKS.join(', ')}`);
+      if (!(num(d.look.size) && d.look.size >= 0.05 && d.look.size <= 0.9)) fail(`${lat}.size must be a number in [0.05, 0.9]`);
+      for (const c of ['color', 'crack']) if (!/^#[0-9a-f]{6}$/i.test(d.look[c] ?? '')) fail(`${lat}.${c} must be a #rrggbb colour`);
+      look = d.look;
+    }
     for (const [k, v] of Object.entries(d)) {
-      if (k === 'default' || k[0] === '$') continue;
+      if (k === 'default' || k === 'look' || k[0] === '$') continue;
       if (!classes.has(k) && !items.has(k)) fail(`${at}.${k}: no tool class or item ${JSON.stringify(k)} (classes: ${[...classes].join(', ')})`);
       tools.push({ tool: k, hits: hits(v, `${at}.${k}`) });
     }
-    out.push({ block: name, default: dflt, tools });
+    out.push({ block: name, default: dflt, tools, look });
   }
   return out;
 }
@@ -319,7 +334,7 @@ const swingRust = (s) =>
   `SwingDef { windup_s: ${f64(s.windupS)}, active_s: ${f64(s.activeS)}, hit_stop_s: ${f64(s.hitStopS)}, recover_hit_s: ${f64(s.recoverHitS)}, recover_miss_s: ${f64(s.recoverMissS)}, reach_m: ${f64(s.reachM)}, arc_deg: ${f64(s.arcDeg)}, samples: ${s.samples}, kick_deg: ${f64(s.kickDeg)}, stamina_cost: ${f64(s.staminaCost)}, swish: ${optStr(s.swish)}, bounce: ${optStr(s.bounce)}, rustle: ${optStr(s.rustle)}, rustle_leaves: ${s.rustleLeaves} }`;
 
 export function toolsRust(d) {
-  const rs = [`// ${header}`, '', 'use crate::chopping::{BlockDamageDef, BreakTool, Chips, CutLook, Leaves, Sway, SwingDef, ToolDef, ToolKind, WoodDef};', 'use crate::inventory::{DropChoice, DropRule};', ''];
+  const rs = [`// ${header}`, '', 'use crate::chopping::{BlockDamageDef, BreakTool, DamageLook, DamageLookKind, Chips, CutLook, Leaves, Sway, SwingDef, ToolDef, ToolKind, WoodDef};', 'use crate::inventory::{DropChoice, DropRule};', ''];
   rs.push('/// The tools, by item name.');
   rs.push('pub static TOOLS: &[ToolDef] = &[');
   for (const t of d.tools) {
@@ -354,7 +369,7 @@ export function toolsRust(d) {
   rs.push('');
   rs.push("/// Each block's hits to destroy (its `damage`): by bare hands, and by tool class or item.");
   rs.push('pub static BLOCK_DAMAGE: &[BlockDamageDef] = &[');
-  for (const b of d.damage) rs.push(`    BlockDamageDef { block: "${b.block}", default: ${b.default === null ? 'None' : `Some(${b.default})`}, tools: &[${b.tools.map((t) => `("${t.tool}", ${t.hits})`).join(', ')}] },`);
+  for (const b of d.damage) rs.push(`    BlockDamageDef { block: "${b.block}", default: ${b.default === null ? 'None' : `Some(${b.default})`}, tools: &[${b.tools.map((t) => `("${t.tool}", ${t.hits})`).join(', ')}], look: ${b.look === null ? 'None' : `Some(DamageLook { kind: DamageLookKind::${b.look.kind[0].toUpperCase() + b.look.kind.slice(1)}, size: ${f64(b.look.size)}, color: [${rgb(b.look.color).join(', ')}], crack: [${rgb(b.look.crack).join(', ')}] })`} },`);
   rs.push('];');
   rs.push('');
   rs.push("/// Each tool item's class, tier and that tier's break speed (`breaking.tools`).");

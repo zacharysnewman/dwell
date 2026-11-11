@@ -16,6 +16,7 @@ use dwell_blocks::{
 };
 use dwell_protocol::CHUNK_SIZE;
 use dwell_protocol::chopping::Cut;
+use dwell_protocol::damage::DamageView;
 use dwell_world::FaceFrame;
 
 use crate::LengthError;
@@ -32,6 +33,7 @@ use dwell_world::{CELL_H, SKY_APRON, SKY_EXTENT, SKY_VOLUME, normal_to_m};
 
 const N: i32 = CHUNK_SIZE;
 
+mod damage_mesh;
 mod ground_mesh;
 pub use ground_mesh::{GroundJob, look_mesh, look_swatch, scatter as ground_scatter};
 
@@ -1645,6 +1647,7 @@ pub fn mesh_chunk_cut(
         cuts,
         None,
         ChunkFlags::default(),
+        &[],
     )
 }
 
@@ -1667,6 +1670,49 @@ pub fn mesh_chunk_ground(
         ground,
         ChunkFlags::default(),
     )
+}
+
+/// [`mesh_chunk_flags`] with the chunk's damaged cells (docs/BLOCK_DAMAGE.md, chunk-local and
+/// world-oriented) drawn on their struck faces.
+#[allow(clippy::too_many_arguments)]
+pub fn mesh_chunk_damaged(
+    padded: &[u16],
+    light: &[u8],
+    mirror: bool,
+    origin: [i32; 3],
+    cuts: &[([i32; 3], Cut)],
+    ground: Option<&GroundJob>,
+    flags: ChunkFlags,
+    damage: &[([i32; 3], DamageView)],
+) -> Result<ChunkMeshes, LengthError> {
+    mesh_chunk_full(
+        Kinds::build(),
+        padded,
+        light,
+        mirror,
+        origin,
+        cuts,
+        ground,
+        flags,
+        damage,
+    )
+}
+
+/// The damaged cells in the chunk with their states, face-local for a mirrored (face-B) chunk.
+fn damaged_cells(
+    inner: &[u16],
+    damage: &[([i32; 3], DamageView)],
+    mirror: bool,
+) -> Vec<([i32; 3], u16, DamageView)> {
+    damage
+        .iter()
+        .filter(|(c, _)| in_chunk(*c))
+        .map(|(c, v)| {
+            let state = inner[padded_index(c[0], c[1], c[2])];
+            let (at, v) = damage_mesh::face_local(*c, v, mirror);
+            (at, state, v)
+        })
+        .collect()
 }
 
 /// What a chunk mesh leaves to other layers (proposals/WATER_GPU_SURFACE.md §3, item 6).
@@ -1702,6 +1748,7 @@ pub fn mesh_chunk_flags(
         cuts,
         ground,
         flags,
+        &[],
     )
 }
 
@@ -1723,6 +1770,7 @@ pub(crate) fn mesh_chunk_with(
         &[],
         None,
         ChunkFlags::default(),
+        &[],
     )
 }
 
@@ -1737,6 +1785,7 @@ pub(crate) fn mesh_chunk_full(
     cuts: &[([i32; 3], Cut)],
     ground: Option<&GroundJob>,
     flags: ChunkFlags,
+    damage: &[([i32; 3], DamageView)],
 ) -> Result<ChunkMeshes, LengthError> {
     let items = ground.map_or(Vec::new(), |g| ground_mesh::scatter(padded, origin, g));
     // The one-voxel apron, or the sky volume's deeper one (the client's jobs): the faces are
@@ -1781,6 +1830,8 @@ pub(crate) fn mesh_chunk_full(
             flags,
         );
         ground_mesh::append(&mut m.opaque, kinds, &flood, &items, origin, true);
+        let damaged = damaged_cells(&inner, damage, true);
+        damage_mesh::append(&mut m.opaque, kinds, &flood, &damaged);
         ChunkMeshes {
             opaque: flip_arrays_y(m.opaque),
             transparent: flip_arrays_y(m.transparent),
@@ -1795,6 +1846,8 @@ pub(crate) fn mesh_chunk_full(
             .collect();
         let mut m = mesh_cells(kinds, &inner, &occ, &flood, origin, &carved, flags);
         ground_mesh::append(&mut m.opaque, kinds, &flood, &items, origin, false);
+        let damaged = damaged_cells(&inner, damage, false);
+        damage_mesh::append(&mut m.opaque, kinds, &flood, &damaged);
         m
     };
     let water = (!flags.water_tops)

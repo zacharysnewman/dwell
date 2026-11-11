@@ -16,6 +16,38 @@ pub struct BlockDamageDef {
     pub default: Option<u32>,
     /// Per tool class (`pickaxe`, …) or item (`dwell:metal_pickaxe`), an item's over its class's.
     pub tools: &'static [(&'static str, u32)],
+    /// How its damage is drawn (D2); none: not drawn.
+    pub look: Option<DamageLook>,
+}
+
+/// How a block's damage is drawn at each hit mark (`damage.look` in the block data).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DamageLookKind {
+    /// An angular shard knocked off (stone).
+    Shards,
+    /// A roundish scoop (soils).
+    Scoops,
+    /// Small chips (wood).
+    Chips,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DamageLook {
+    pub kind: DamageLookKind,
+    /// A mark's width (cells) at full damage.
+    pub size: f64,
+    /// sRGB: the fresh face inside a mark.
+    pub color: [u8; 3],
+    /// sRGB: the cracks, growing with the damage.
+    pub crack: [u8; 3],
+}
+
+/// The damage look of a block, by name.
+pub fn look_of(block: &str) -> Option<DamageLook> {
+    BLOCK_DAMAGE
+        .iter()
+        .find(|d| d.block == block)
+        .and_then(|d| d.look)
 }
 
 /// The hits to destroy `block` holding `held` (an item name; none: an empty hand), from tables
@@ -306,6 +338,7 @@ mod tests {
             block: "test:clay",
             default: Some(9),
             tools: &[("trowel", 6), ("test:golden_trowel", 1)],
+            look: None,
         }];
         let tools = [
             BreakTool {
