@@ -14,7 +14,7 @@ mod table {
 
 pub use table::{
     BACKPACK_SLOTS, DESPAWN_SECONDS, DROPS, HOTBAR_SLOTS, ITEMS, MAX_DROPS, PICKUP_DELAY_SECONDS,
-    PICKUP_RADIUS_M, STACK_SIZE, STARTING_ITEMS, STARTING_WALLET, WALLETS,
+    PICKUP_RADIUS_M, RECIPES, STACK_SIZE, STARTING_ITEMS, STARTING_WALLET, WALLETS,
 };
 
 /// Every slot: the hotbar's first, then the backpack's.
@@ -97,6 +97,38 @@ pub struct BlockDrops {
     pub block: &'static str,
     pub cost: &'static str,
     pub drops: &'static [DropRule],
+}
+
+/// A recipe (combining, owner 2026-11-11): its `inputs` (item, count) make its `output`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Recipe {
+    pub name: &'static str,
+    pub inputs: &'static [(&'static str, u16)],
+    pub output: (&'static str, u16),
+}
+
+/// A recipe's id on the wire (`InventoryAction::Combine`): its name's FNV-1a hash, the same in
+/// every build that has the recipe, whatever order the data lists them in.
+pub fn recipe_id(name: &str) -> u32 {
+    name.bytes().fold(0x811c_9dc5_u32, |h, b| {
+        (h ^ u32::from(b)).wrapping_mul(0x0100_0193)
+    })
+}
+
+/// The recipe of that id in `table` (the data's, or a test's fixture).
+pub fn recipe_in(table: &[Recipe], id: u32) -> Option<&Recipe> {
+    table.iter().find(|r| recipe_id(r.name) == id)
+}
+
+/// The request to make recipe `name` once, if the server (its `Inventory`'s `flags`) takes it:
+/// `None` for an older server without `inventory_flags::COMBINE` (it would read the action as
+/// malformed) or a recipe this build doesn't have.
+pub fn combine_request(server_flags: u8, name: &str) -> Option<crate::messages::InventoryAction> {
+    (server_flags & crate::messages::inventory_flags::COMBINE != 0
+        && RECIPES.iter().any(|r| r.name == name))
+    .then(|| crate::messages::InventoryAction::Combine {
+        recipe: recipe_id(name),
+    })
 }
 
 /// The non-block item of that name.
@@ -259,6 +291,48 @@ impl Inventory {
             .filter(|s| s.item == item)
             .map(|s| u32::from(s.count))
             .sum()
+    }
+
+    /// How many times `recipe` can be made from what it holds (each input's count over its need).
+    pub fn can_make(&self, recipe: &Recipe) -> u32 {
+        recipe
+            .inputs
+            .iter()
+            .map(|&(item, n)| self.count_of(item) / u32::from(n.max(1)))
+            .min()
+            .unwrap_or(0)
+    }
+
+    /// Makes `recipe` once: takes its inputs (from anywhere, the backpack's last slots first so the
+    /// hotbar keeps its stacks) and adds its output. False, changing nothing, if an input is short or
+    /// the output has no room (counting the slots the inputs free).
+    pub fn combine(&mut self, recipe: &Recipe) -> bool {
+        if self.can_make(recipe) == 0 {
+            return false;
+        }
+        let before = self.clone();
+        for &(item, n) in recipe.inputs {
+            let mut left = n;
+            for slot in self.slots.iter_mut().rev() {
+                if left == 0 {
+                    break;
+                }
+                if let Some(s) = slot.as_mut().filter(|s| s.item == item) {
+                    let k = s.count.min(left);
+                    s.count -= k;
+                    left -= k;
+                    if s.count == 0 {
+                        *slot = None;
+                    }
+                }
+            }
+        }
+        let (item, count) = recipe.output;
+        if self.add(item, count) > 0 {
+            *self = before;
+            return false;
+        }
+        true
     }
 
     /// Takes one `item`: from the held slot if it holds it, otherwise the first slot that does.

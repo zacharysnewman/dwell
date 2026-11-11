@@ -1539,6 +1539,19 @@ impl Client {
             g.move_items(from, to, count);
         }
     }
+    /// Makes recipe `name` once (the backpack's Combine section); false if the server doesn't make
+    /// recipes (an older server) or there is no game.
+    pub fn combine(&self, name: &str) -> bool {
+        self.inner
+            .borrow_mut()
+            .game
+            .as_mut()
+            .is_some_and(|g| g.combine(name))
+    }
+    /// Whether the server makes recipes (shows the Combine section).
+    pub fn combines(&self) -> bool {
+        self.inner.borrow().game.as_ref().is_some_and(|g| g.combines())
+    }
     /// The hotbar's block names (the palette, in slot order).
     pub fn palette(&self) -> Vec<String> {
         dwell_game::block_interaction::palette()
