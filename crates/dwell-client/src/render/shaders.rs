@@ -343,11 +343,12 @@ fn molten_heat(world_xz: vec2f, t: f32) -> f32 {
 // y a per-plate value (0–1, to vary the crust's darkness).
 const MOLTEN_CELL: f32 = 1.7;
 const MOLTEN_SEAM: f32 = 0.11;
+const MOLTEN_OPEN: f32 = 0.35;
 fn molten_hash2(c: vec2f) -> vec2f {
     let p = vec2f(dot(c, vec2f(127.1, 311.7)), dot(c, vec2f(269.5, 183.3)));
     return fract(sin(p) * 43758.5453);
 }
-fn molten_plates(world: vec2f, t: f32) -> vec2f {
+fn molten_plates(world: vec2f, t: f32, crust_cover: f32) -> vec2f {
     let warp = vec2f(sin(world.y * 0.9 + t * 0.21), sin(world.x * 0.8 - t * 0.17)) * 0.22;
     let p = (world + warp) / MOLTEN_CELL;
     let base = floor(p);
@@ -370,7 +371,9 @@ fn molten_plates(world: vec2f, t: f32) -> vec2f {
         }
     }
     let gap = (d2 - d1) * MOLTEN_CELL;
-    let w = MOLTEN_SEAM * (0.7 + 0.6 * id.y);
+    // The seams widen as the crust thins (its stop's `crust`): hot lava is mostly molten channels
+    // between small plates, crusting lava all plate with hairline seams.
+    let w = (MOLTEN_SEAM + MOLTEN_OPEN * (1.0 - crust_cover)) * (0.7 + 0.6 * id.y);
     return vec2f(1.0 - smoothstep(w * 0.4, w, gap), id.x);
 }
 
@@ -740,7 +743,14 @@ fn terrain_fs(i: TerrainOut, @builtin(front_facing) front: bool) -> SceneOut {
         discard;
     }
     let alpha = select(draw.tint.a * texel.a, 1.0, draw.tint.a >= 1.0);
-    var albedo = i.color * texel.rgb * shade * draw.tint.rgb;
+    // A molten block's faces carry its heat stop in their colour (k, −1, −1; dwell-mesh
+    // `vertex_rgb`, VOLCANOES.md §6.5) and are white otherwise.
+    let coded = i.color.g < 0.0;
+    let vcol = select(i.color, vec3f(1.0), coded);
+    let stop = select(0u, min(u32(max(i.color.r, 0.0)), LAVA_STOPS - 1u), coded);
+    let look = lava_stop_look[stop];
+    let core = lava_stop_core[stop];
+    var albedo = vcol * texel.rgb * shade * draw.tint.rgb;
     // Lava (§17.1): world-space crust plates over the painted tile, thin glowing seams between
     // them, continuous across blocks; a top face takes the world's x z, a side its along and y.
     var crack = smoothstep(0.25, 0.75, max(texel.r, texel.g));
@@ -748,21 +758,26 @@ fn terrain_fs(i: TerrainOut, @builtin(front_facing) front: bool) -> SceneOut {
         let world = vec3f(i.rel.x + frame.tan.z, i.rel.y + frame.eye.x, i.rel.z + frame.tan.w);
         let side = abs(n.y) < 0.5;
         let plane = select(world.xz, vec2f(world.x + world.z, world.y * 1.3), side);
-        let plate = molten_plates(plane, frame.fog.z);
+        let plate = molten_plates(plane, frame.fog.z, core.w);
         // The tile's hue (orange) for the seams; the crust its darkest, one shade per plate with
         // the painted strokes faint in it.
+        // The seams glow in the heat stop's colour (shared/fluids/lava.json `heat`); the crust is
+        // darker the more of the surface it covers.
         let hue = texel.rgb / max(max(texel.r, texel.g), 0.05);
-        let seam = mix(hue, vec3f(1.0, 0.62, 0.2), 0.5);
+        // The stop's core colour only at the middle of the seams.
+        let seam = mix(look.rgb, core.rgb, smoothstep(0.75, 1.0, plate.x) * (1.0 - core.w));
         let grain = dot(texel.rgb, vec3f(0.3, 0.5, 0.2));
-        let crust = hue * (0.05 + 0.04 * plate.y) * (0.7 + 0.6 * grain);
-        albedo = mix(crust, seam, plate.x) * i.color * draw.tint.rgb;
+        let crust = look.rgb * (0.04 + 0.03 * plate.y + 0.12 * (1.0 - core.w)) * (0.7 + 0.6 * grain);
+        albedo = mix(crust, seam, plate.x) * vcol * draw.tint.rgb;
         crack = plate.x;
     }
     var o = scene_out(albedo, normalize(n), i.rel, alpha, terrain_light(i.light, i.flood));
     // The heat brightens the glowing seams (or a still tile's bright cracks), not the crust.
     let heat = select(1.0, mix(0.15, 1.1 * molten_heat(i.rel.xz + frame.tan.zw, frame.fog.z), crack), molten);
-    let shine = tile_glow(i.tile.xy) * heat;
-    o.color = vec4f(emitted(o.color.rgb, albedo * alpha, shine), o.color.a);
+    let shine = tile_glow(i.tile.xy) * heat * select(1.0, mix(1.0, look.w, crack), molten);
+    // Lava keeps its hue as it glows (the tone curve would wash a hot orange to mustard).
+    let glowing = select(emitted(o.color.rgb, albedo * alpha, shine), emitted_hue(o.color.rgb, albedo * alpha, shine), molten);
+    o.color = vec4f(glowing, o.color.a);
     o.depth = self_lit_depth(frame_depth(o.depth, fade_inked(draw)), tile_glow(i.tile.xy) >= 1.0);
     return o;
 }
@@ -3386,6 +3401,26 @@ fn light_wgsl() -> String {
     )
 }
 
+/// Lava's look by heat (shared/fluids/lava.json `heat`, VOLCANOES.md §6.5), one row per stop, the
+/// hottest first: `lava_stop_look` the seams' colour (linear) and emissive, `lava_stop_core` the
+/// seams' core colour and the crust's cover. A molten cell's faces name their stop (dwell-mesh
+/// `vertex_rgb`).
+pub fn lava_wgsl() -> String {
+    let stops = dwell_lava::DATA.heat;
+    let row = |c: [f32; 3], w: f32| format!("vec4f({:?}, {:?}, {:?}, {w:?})", c[0], c[1], c[2]);
+    let look: Vec<String> = stops.iter().map(|s| row(s.linear(), s.intensity)).collect();
+    let core: Vec<String> = stops
+        .iter()
+        .map(|s| row(s.core_linear(), s.crust))
+        .collect();
+    let n = stops.len();
+    format!(
+        "const LAVA_STOPS: u32 = {n}u;\nvar<private> lava_stop_look: array<vec4f, {n}> = array<vec4f, {n}>({});\nvar<private> lava_stop_core: array<vec4f, {n}> = array<vec4f, {n}>({});\n",
+        look.join(", "),
+        core.join(", ")
+    )
+}
+
 /// The shared lighting: the constants, the fluids, the frame uniforms (group 0: `frame`, `atlas`,
 /// `atlas_sampler`), the sky, the clouds and the shading functions, without any pass's bindings or
 /// entry points.
@@ -3396,7 +3431,7 @@ pub fn lighting_source() -> String {
         super::face_shading::WGSL,
         world::SEA_LEVEL_M,
         dwell_look::ambient::AMBIENT.floor as f32,
-        light_wgsl(),
+        format!("{}{}", light_wgsl(), lava_wgsl()),
         dwell_mesh::ATLAS_CELLS,
         dwell_mesh::ATLAS_TILES,
         dwell_mesh::GUTTER,
@@ -3414,6 +3449,26 @@ pub fn lighting_source() -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn molten_lava_draws_its_stop_hottest_bright_orange_red_past_white() {
+        // Owner, 2026-11-11: "Lava looks dark red instead of bright red/orange." The seams glowed
+        // in a fixed mix of the tile's hue; now in each cell's heat stop's colour and emissive.
+        let src = super::lighting_source();
+        let stops = dwell_lava::DATA.heat;
+        assert!(src.contains(&format!("const LAVA_STOPS: u32 = {}u;", stops.len())));
+        let hot = stops[0];
+        assert!(hot.intensity > 1.0);
+        let [r, g, b] = hot.linear();
+        assert!(
+            r > 0.9 && g > 0.05 && g < 0.4 && b < 0.05,
+            "orange-red, not mustard: {r} {g} {b}"
+        );
+        assert!(
+            src.contains("emitted_hue("),
+            "lava keeps its hue as it glows"
+        );
+    }
+
     #[test]
     fn the_block_outline_turns_with_its_draw_as_meshes_do() {
         // Owner, 2026-11-02: a moving body's hover outline was "tilted at uneven angles": the line

@@ -82,7 +82,7 @@ fn ground_at(
                 water,
             });
         }
-        if s.liquid && m != f.state(lava) && water.is_none() {
+        if s.liquid && !same_block(m, lava) && water.is_none() {
             water = Some(((f64::from(local) + 1.0) * CELL_H) as f32);
         }
     }
@@ -106,7 +106,24 @@ pub struct Lava {
 /// block), or lava already.
 fn open_for_lava(m: StateId, lava: StateId) -> bool {
     let s = info(m);
-    m == 0 || m == lava || (s.replaceable && !s.solid && !s.liquid)
+    m == 0 || same_block(m, lava) || (s.replaceable && !s.solid && !s.liquid)
+}
+
+/// Whether two states are of one block (lava's cells are any of its `heat` states).
+fn same_block(a: StateId, b: StateId) -> bool {
+    info(a).block == info(b).block
+}
+
+/// The fluid's block's state for each heat stop (`dwell_lava::DATA.heat`, VOLCANOES.md §6.5): its
+/// `heat` property set to the stop's name, or the block's own state for a fluid whose block has no
+/// such property (each stop then writes the same state).
+pub fn heat_states(fluid: &str) -> Vec<StateId> {
+    let base = dwell_blocks::require(fluid);
+    dwell_lava::DATA
+        .heat
+        .iter()
+        .map(|h| dwell_blocks::state(&format!("{fluid}[heat={}]", h.name)).unwrap_or(base))
+        .collect()
 }
 
 /// The world's reads during a tick, with this tick's writes over them.
@@ -340,7 +357,7 @@ impl Placed {
             }
             let top = (bed..bed + SCAN_ROWS).rev().find(|&r| {
                 let m = view.get(f.cell([wx, r, wz]));
-                m != lava && info(m).liquid
+                !same_block(m, lava) && info(m).liquid
             });
             self.field.water[i] = top.is_some();
             self.field.water_top[i] = top.map_or(dwell_lava::field::DRY, |r| {
@@ -402,6 +419,12 @@ impl Placed {
                 }
             }
         }
+        // Each column's cells show its heat stop; a column is rewritten when its rows change or
+        // its heat crosses a stop (with the data's hysteresis: once per stop as it cools).
+        let stops: Vec<StateId> = heat_states(self.field.fluid.name)
+            .into_iter()
+            .map(|m| f.state(m))
+            .collect();
         let touched = self.field.take_touched();
         let cols: Vec<usize> = touched
             .iter()
@@ -410,21 +433,29 @@ impl Placed {
         for i in cols {
             let now = self.field.lava_rows(i);
             let was = std::mem::replace(&mut self.field.written[i], now.clone());
-            if now == was {
-                continue;
-            }
             let [x, z] = self.field.col(i);
             let (wx, wz) = (origin[0] + x, origin[1] + z);
+            let current = if was.is_empty() {
+                None
+            } else {
+                let m = view.get(f.cell([wx, was.start, wz]));
+                stops.iter().position(|&s| s == m)
+            };
+            let stop = dwell_lava::DATA.heat_stop(self.field.heat[i], current);
+            let state = stops.get(stop).copied().unwrap_or(lava);
+            if now == was && (now.is_empty() || current == Some(stop)) {
+                continue;
+            }
             let lo = now.start.min(was.start);
             let hi = now.end.max(was.end);
             for r in lo..hi {
                 let c = f.cell([wx, r, wz]);
                 let m = view.get(c);
                 if now.contains(&r) {
-                    if m != lava && open_for_lava(m, lava) {
-                        view.set(c, lava);
+                    if m != state && open_for_lava(m, lava) {
+                        view.set(c, state);
                     }
-                } else if m == lava {
+                } else if same_block(m, lava) {
                     view.set(c, air);
                 }
             }

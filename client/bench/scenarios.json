@@ -15,6 +15,28 @@
       ]
     },
     {
+      "name": "lava-glow",
+      "notes": "Lava's look by heat (VOLCANOES.md §6.5): every vent ×30 for 45 s, the summit lake by day and night, the face-B river running (hot), then the vents all but stopped for 40 s so the river cools by stop (warm, cooling, crusting).",
+      "query": { "worldgen": "test:starter", "seed": "0", "fresh": "1", "at": "30008.5,200,-8000.5" },
+      "steps": [
+        { "do": "settle", "maxS": 60 },
+        { "do": "lava", "op": "rate", "args": [30] },
+        { "do": "wait", "s": 45 },
+        { "do": "shot", "name": "lake-day", "at": [30006.5, 250, -8006.5], "yaw": -45, "pitch": -50, "maxS": 20 },
+        { "do": "shot", "name": "lake-close", "at": [30000.5, 240, -8000.5], "yaw": -45, "pitch": -65, "maxS": 20 },
+        { "do": "time", "t": 0.02 },
+        { "do": "shot", "name": "lake-night", "at": [30006.5, 250, -8006.5], "yaw": -45, "pitch": -50, "maxS": 20 },
+        { "do": "time", "t": 0.45 },
+        { "do": "spot", "spot": "starter:lava-river", "name": "river-hot" },
+        { "do": "lava", "op": "rate", "args": [0.001] },
+        { "do": "wait", "s": 40 },
+        { "do": "lava", "op": "report" },
+        { "do": "spot", "spot": "starter:lava-river", "name": "river-cooling" },
+        { "do": "time", "t": 0.02 },
+        { "do": "spot", "spot": "starter:lava-river", "name": "river-night" }
+      ]
+    },
+    {
       "name": "lava-lake",
       "notes": "Lava's look (VOLCANOES.md §6.3): the starter world's summit lava lake, its vent's rate × 30 (the dev `lava` step) so it fills in seconds, by day and by night, the frame near it; then a dev vent by the sea for lava meeting water (obsidian, steam).",
       "query": { "worldgen": "test:starter", "seed": "0", "fresh": "1", "at": "30008.5,200,-8000.5" },

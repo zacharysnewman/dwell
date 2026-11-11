@@ -122,7 +122,10 @@ Last updated: 2026-11-11 (0.52.68).
    hold; tested that a strong vent on a steep flank reaches the sea and builds land and a weak one on a
    shallow slope crusts and stops short; the starter river runs ~600 m of its 1.3 km and crusts (no land;
    the ignored long test reports it, `DWELL_LAVA_TUNE` for tuning). Lava stiffening as it cools was
-   tried and only slowed the whole flow (§6.4).
+   tried and only slowed the whole flow (§6.4). **Lava glow (owner, 2026-11-11: bloom, bright red-orange, darker as it
+   solidifies):** heat stops as data (`lava.json` `heat`), a `heat` property on `dwell:lava` written by the
+   server as a column cools past a stop and drawn per cell, orange-red stops that keep their hue; **left:**
+   the bloom pass (VOLCANOES.md §6.5).
    **Next:** heat per cell; the water grid's columns as the fields' water; eruptions.
 9. ~~**Loading-time display bug.**~~ Done (0.52.71): the 10 s was the graphics' start (one long task on the
    main thread making the renderer's pipelines) begun in the same task that ended the game's load, so the
