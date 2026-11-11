@@ -227,6 +227,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   colours, item and model textures); players' saved structures as placement sources (plan in ADR 0074);
   BUGS.md #69.
 
+- **LOD bugs** (leftovers section 3, after 0.52.92): BUGS.md #68 fixed — the holes round the tall peak's
+  crater were the renderer's far pass clipping terrain over a fixed 1024 m top from above it
+  (`far_pass_near`, `drawn_top`); `?loddebug=levels` tints sections by level. #69 narrowed to the
+  distant shadows (gone with `?lodshadows=off`; a world-fixed streak along the low sun on the cone's
+  z, not the sweep's max mips; suspect a thin caster on that line); still open.
+
 - **Underwater at night** (0.52.53, WATER_RENDERING.md §16.1): Snell's window shows the sky pass's own
   sky (one function: the stars, the moon, the sun, the clouds), no white-cyan glow over it, fewer cells;
   the water seen from inside takes the moonlight's grey as the scene above does. Owner, 2026-11-11:

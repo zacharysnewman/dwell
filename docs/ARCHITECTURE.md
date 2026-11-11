@@ -2775,8 +2775,10 @@ chunks), keeps the last selection (`LodSystem::update`; ~1 ms a frame standing s
   test by straight-line distance could miss terrain toward the sides of the view, where it is
   nearer than the split in depth but farther in distance), so a section straddling the split is clipped at it.
   The far pass's near plane is just inside the split (0.95 × `LOD_NEAR_SPLIT_M`) and moves out to
-  0.8 × the camera's face-local altitude when that is farther (nothing is nearer up there),
-  keeping depth precise from orbit.
+  0.8 × the camera's face-local altitude over the terrain's top when that is farther (nothing is
+  nearer up there), keeping depth precise from orbit. The top is the higher of 1024 m and the
+  highest box of the sections, stand-ins and chunks shown (`render/mod.rs` `far_pass_near`,
+  `drawn_top`; after 0.52.92, BUGS.md #68: over a 4800 m peak a fixed 1024 m clipped the cone).
   **Reversed depth [built, 2026-10-21]** (`render/camera.rs` `perspective_reversed`, `frame.rs`
   `DEPTH_CLEAR`, `DEPTH_COMPARE`): both passes map their near plane to 1 and their far plane to 0
   in the `depth32float` buffer, cleared to 0 and tested greater-or-equal, so a float's dense end
@@ -2988,7 +2990,8 @@ chunks), keeps the last selection (`LodSystem::update`; ~1 ms a frame standing s
   error's scale and LOD bytes/s, and the frame's draw calls and triangles over both passes;
   `?lodcolors=1` tints sections by level, `?lod=0` turns the LOD off; `?loddebug=` takes a comma list of
   renderer switches — `skirts` (the shown skirts drawn magenta), `noskirts`, `nocull` (no per-section
-  culling), `nostandins` — to tell which part draws a seam (BUGS.md #68). (Before the port, the
+  culling), `nostandins`, `levels` (sections tinted by level, as `?lodcolors=1`) — to tell which part
+  draws a seam (BUGS.md #68). (Before the port, the
   TypeScript selection measured ~2–4 ms per frame for ~2,800 drawn sections under Node; the Rust
   one has not been measured yet.)
 - **Memory (F3, `ui/memory.ts`):** a phone's browser closes a tab that uses too much, without

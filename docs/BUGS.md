@@ -20,53 +20,24 @@ of a coarse level whose surface or colour comes from a log, e.g. a tree folded i
 cell past the build volume), or the cone's crater ice dome at a coarse level. Next: a level tint switch (there is none yet in
 `?loddebug=`) to see its level, then the section's cells natively at that level. Not fixed.
 
-### 68. LOD holes and tall walls near a 4400 m summit
-
-Found 2026-11-10 (0.52.27) looking at the tall peak in game: `?worldgen=test:tall_peak&seed=7&fresh=1&at=500,5000,-866`,
-camera at (500, 5300, 34) looking down 45° toward −Z into the crater (bench `--compare`, the `summit`
-configuration). The cone's flank shows a hole (the sky and stars through it, lower right) and tall
-vertical grey walls where LOD sections at different levels meet, around the crater. From 20 km and
-from the cloud deck the cone is whole. Suspects: the LOD sections' bounds or skirts at heights the
-default world never reaches (~4400 m, ~8800 rows), or the selection near a camera far above the
-full-detail chunks. Next: `__dwell.state().lod` at that view, and `tests/tall_peaks.rs`'s LOD levels
-checked for neighbouring sections' seams.
-
-Narrowed 0.52.29 (natively, `dwell-lod` `the_lod_covers_a_4800_m_cone_seen_from_its_summit`, both faces;
-passes): the summit view over the real tall-peak terrain, generated and meshed for real with the player's
-chunks streamed on the rim, settles with every column of the cone in view (3.2 km each way, 8 m apart)
-covered in plan by a drawn surface, a shown skirt or drawn chunks. So the selection leaves no hole there,
-and the one seam it finds — ~100 columns (face A) where the ground crosses a horizontal section boundary
-between a coarse section and the finer ones over it (e.g. level 5 j 70 under level 4 j 142 at 3584 m) —
-is closed by the coarse section's top skirt. Ruled out: the column bounds (the bounds and the cells come
-from the same columns), the build volume (the summit is inside it), the selection. Still suspect: what
-the plan view can't see — a skirt or surface drawn but facing away (culled) or clipped, the side skirts
-as the "walls" (on 128 m cells a side skirt stands up to the column's surface, tens of metres on the
-cone's slope, in the riser's colour), the renderer's per-section culling bounds at ~9000 rows, and a
-stand-in drawn clipped.
-
-In Chrome on the GPU (0.52.29, `?loddebug=` switches; screenshots in the session's `peaks2/run1`): at
-the summit view the grey walls and the flat grey planes around the crater are all **skirts**: `skirts`
-draws them magenta, and with `noskirts` the sky shows through where they were. So the ground is
-missing over those areas and the skirts are only what shows in the gap. Per-section culling
-(`nocull`) and stand-ins (`nostandins`) change nothing, so neither is the cause. The level tints put the
-planes at level 6. The LOD's own state in game: every column within 2.4 km of the crater has drawn
-sections stacked through its ground (levels 3–5), nothing is waiting, the cache is at 252 of 256 MB and
-the error scale is 3.06. Natively the same view settles with every column drawn up to its ground, at
-the game's options (3 px, 128 m, 256 MB) and at a 48 MB budget too. Over a 3.2 km box, levels 2–6, the
-column bounds never call a section empty that has solid cells. So the selection, the bounds and the
-generator agree natively, and the game differs. Next suspect: what the game's sections are made from.
-The job pool is created only once the test world's maps are installed (`world_maps`, `WebJobs::new`), so
-the plain race is ruled out. But any instance that builds a generator without them would compute the
-seed's own ground, which has no cone. After that, the meshes as uploaded. Next: in the
-page, compare a drawn section's mesh (or its column surface) at a hole column with the native one.
-
-Checked 0.52.37 (ADR 0074 B7): an instance that already held the seed's own map ignored a test world's
-installed map (`worldmap::cache::install` kept the first), and the portal sites were cached by seed
-alone; both fixed (an install replaces a map whose worldgen config differs, `tests/worldgen_config.rs`
-red → green; sites keyed by the faces' configs). **Not the cause:** in Chrome on the GPU, a fresh
-`?worldgen=test:tall_peak&seed=7&fresh=1&at=500,5000,-866&loddebug=skirts`, camera (500, 5300, 34)
-looking 45° down, still shows the stars through the crater's flank and magenta skirts around it
-(session scratchpad `chisel-b7/tall-peak-summit-skirts.png`). Still open; next as above.
+Narrowed further after 0.52.92 (session scratchpad `lod-bugs/`): it is the **distant shadows** (DAY_NIGHT.md
+§12), not the LOD's geometry. With `?lodshadows=off` it is gone (`run2/v69ns/noshadow.png`); with
+`?loddebug=levels` it darkens whatever lies behind it, across sections of different levels, keeping
+their colours (`run1/v69/east-levels.png`), so it is a shade, not a surface. It stays put in the world
+when the view turns (yaw −80: it moves right of the centre, `run2/v69yaw/yaw-80.png`): a streak along
+the light's direction (the world's opening time; the sun low in the east), not tied to the screen. At
+the spots' time 0.45 it is not there (`run3/v69t/west.png`). It is fixed in the world on the line
+z ≈ −4866 (the spot's z, 15 km due east of the cone; along the low eastern sun): from 100 m north it stands right of the centre
+(`side/v69m/z4766.png`), and it does not follow where the player started (`player/v69p/`). Not the
+sweep's max mips (with every step reading mip 0 it stays, `nomip/v69a/west.png`). So a caster stands
+east of the hill on that line, narrow across it, in the heightmaps (the chunks' and sections' tops):
+suspect a thin ridge along the cone's +X ray — the arc cones' column detail (`peak_relief`, radial
+cleavers: an angle seam at 0?) or a section's sliver. Next: the heightmaps' texels along z = −4866 east
+of the hill (a dev readback). A native probe (seed 0, face A; not kept) finds such a line: a narrow
+ridge on the cone's east ray, z ≈ −4880…−4850 from x ≈ −2200 to −1500, its crest 15–25 m over the
+ground 24 m north and south and a few metres wide (a radial cleaver, `peak_relief`). Whether its
+shade should reach the hill is the question: the sweep has no sun disc across the light, so a ridge a
+few metres wide shades as a wall would.
 
 ### 60. On the software renderer the page draws no frame for ~6 s just after the first torch is placed
 
@@ -290,6 +261,66 @@ face, or the placement check against its shape.
 
 
 ## Fixed
+
+### 68. LOD holes and tall walls near a 4400 m summit (fixed after 0.52.92)
+
+**Cause:** the renderer's far pass, not the LOD. Its near plane moved out with the eye's altitude over a
+fixed 1024 m "terrain top" (`TERRAIN_TOP_M`): with the eye at 5300 m it sat at 0.8 × 4276 = 3421 m, so
+the cone 0.9–2 km away was clipped from the far pass, and the near pass reaches only 1024 m — the sky
+showed through, the coarse sections' skirts beyond it stood as walls. It moved with the camera (from
+(500, 7000, 1500) the hole was the whole near half of the cone). Now the top is the higher of 1024 m and
+the highest box of the sections, stand-ins and chunks shown (`render/mod.rs` `far_pass_near`,
+`drawn_top`). Test: `dwell-client` `render::tests::the_far_pass_keeps_terrain_drawn_over_the_default_top_from_above_it`
+(red: near plane 3420.8 m; green after); `dwell-lod` `the_lod_covers_the_cone_with_the_player_flying_over_the_summit`
+(both faces) pins the selection with the player in the air as in game (passes before and after: the
+selection was never the cause). In Chrome on the GPU the summit view is whole (session scratchpad
+`lod-bugs/run4/v68b/summit.png` before, `lod-bugs/after68/v68b/summit.png`, `high.png` after).
+
+Found 2026-11-10 (0.52.27) looking at the tall peak in game: `?worldgen=test:tall_peak&seed=7&fresh=1&at=500,5000,-866`,
+camera at (500, 5300, 34) looking down 45° toward −Z into the crater (bench `--compare`, the `summit`
+configuration). The cone's flank shows a hole (the sky and stars through it, lower right) and tall
+vertical grey walls where LOD sections at different levels meet, around the crater. From 20 km and
+from the cloud deck the cone is whole. Suspects: the LOD sections' bounds or skirts at heights the
+default world never reaches (~4400 m, ~8800 rows), or the selection near a camera far above the
+full-detail chunks. Next: `__dwell.state().lod` at that view, and `tests/tall_peaks.rs`'s LOD levels
+checked for neighbouring sections' seams.
+
+Narrowed 0.52.29 (natively, `dwell-lod` `the_lod_covers_a_4800_m_cone_seen_from_its_summit`, both faces;
+passes): the summit view over the real tall-peak terrain, generated and meshed for real with the player's
+chunks streamed on the rim, settles with every column of the cone in view (3.2 km each way, 8 m apart)
+covered in plan by a drawn surface, a shown skirt or drawn chunks. So the selection leaves no hole there,
+and the one seam it finds — ~100 columns (face A) where the ground crosses a horizontal section boundary
+between a coarse section and the finer ones over it (e.g. level 5 j 70 under level 4 j 142 at 3584 m) —
+is closed by the coarse section's top skirt. Ruled out: the column bounds (the bounds and the cells come
+from the same columns), the build volume (the summit is inside it), the selection. Still suspect: what
+the plan view can't see — a skirt or surface drawn but facing away (culled) or clipped, the side skirts
+as the "walls" (on 128 m cells a side skirt stands up to the column's surface, tens of metres on the
+cone's slope, in the riser's colour), the renderer's per-section culling bounds at ~9000 rows, and a
+stand-in drawn clipped.
+
+In Chrome on the GPU (0.52.29, `?loddebug=` switches; screenshots in the session's `peaks2/run1`): at
+the summit view the grey walls and the flat grey planes around the crater are all **skirts**: `skirts`
+draws them magenta, and with `noskirts` the sky shows through where they were. So the ground is
+missing over those areas and the skirts are only what shows in the gap. Per-section culling
+(`nocull`) and stand-ins (`nostandins`) change nothing, so neither is the cause. The level tints put the
+planes at level 6. The LOD's own state in game: every column within 2.4 km of the crater has drawn
+sections stacked through its ground (levels 3–5), nothing is waiting, the cache is at 252 of 256 MB and
+the error scale is 3.06. Natively the same view settles with every column drawn up to its ground, at
+the game's options (3 px, 128 m, 256 MB) and at a 48 MB budget too. Over a 3.2 km box, levels 2–6, the
+column bounds never call a section empty that has solid cells. So the selection, the bounds and the
+generator agree natively, and the game differs. Next suspect: what the game's sections are made from.
+The job pool is created only once the test world's maps are installed (`world_maps`, `WebJobs::new`), so
+the plain race is ruled out. But any instance that builds a generator without them would compute the
+seed's own ground, which has no cone. After that, the meshes as uploaded. Next: in the
+page, compare a drawn section's mesh (or its column surface) at a hole column with the native one.
+
+Checked 0.52.37 (ADR 0074 B7): an instance that already held the seed's own map ignored a test world's
+installed map (`worldmap::cache::install` kept the first), and the portal sites were cached by seed
+alone; both fixed (an install replaces a map whose worldgen config differs, `tests/worldgen_config.rs`
+red → green; sites keyed by the faces' configs). **Not the cause:** in Chrome on the GPU, a fresh
+`?worldgen=test:tall_peak&seed=7&fresh=1&at=500,5000,-866&loddebug=skirts`, camera (500, 5300, 34)
+looking 45° down, still shows the stars through the crater's flank and magenta skirts around it
+(session scratchpad `chisel-b7/tall-peak-summit-skirts.png`). Still open; next as above.
 
 ### 70. The starter world reloads the tab on iPhone while loading the terrain (fixed 0.52.68)
 
