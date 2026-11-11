@@ -21,6 +21,8 @@ export const TOP_RANGES = {
   farEverySeconds: [0.1, 3600, false],
   cfl: [0.05, 1, false],
   maxSubsteps: [1, 1000000, true],
+  stepDepthM: [0.1, 1000, false],
+  maxTiles: [1, 65536, true],
 };
 /** Fluid field → [min, max, integer?]. */
 export const FLUID_RANGES = {
@@ -29,6 +31,8 @@ export const FLUID_RANGES = {
   coolingSeconds: [1, 86400, false],
   edgeCooling: [0, 20, false],
   thinDepthM: [0, 4, false],
+  tubeSpeedMs: [0.0001, 1000, false],
+  breakoutDepthM: [0, 100, false],
   light: [0, 15, true],
   damagePerSecond: [0, 1000, false],
   burnSeconds: [0, 60, false],

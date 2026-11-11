@@ -1,5 +1,5 @@
 {
-  "$comment": "Tests only (crates/dwell-lava): a fluid and vents added by data alone. test:magma is the build's lava's fixture twin, thinner and hotter; the vents are a lake (held at its level, at most `rateM3s`) and a river (a steady `rateM3s`) on the tests' patches, at face-local columns (x, z) of their field.",
+  "$comment": "Tests only (crates/dwell-lava): a fluid and vents added by data alone. test:magma is the build's lava's fixture twin, thinner and hotter; the vents are a lake (held at its level, at most `rateM3s`) and a river (a steady `rateM3s`) on the tests' patches, at face-local columns (x, z) of their field. test:runny and test:flank_river (V2, crates/dwell-lava/tests/rivers.rs): a thin, runny lava with tubes (the build's lava's law, cheaper per kilometre: thinner, so its stable step is longer) and a river vent feeding it, for the long river to the sea.",
   "formatVersion": 1,
   "speed": 1,
   "tickEvery": 6,
@@ -7,6 +7,8 @@
   "farEverySeconds": 30,
   "cfl": 0.8,
   "maxSubsteps": 20000,
+  "stepDepthM": 1000,
+  "maxTiles": 2048,
   "fluids": [
     {
       "name": "test:magma",
@@ -15,16 +17,35 @@
       "coolingSeconds": 600,
       "edgeCooling": 0.5,
       "thinDepthM": 0.2,
+      "tubeSpeedMs": 1000,
+      "breakoutDepthM": 0,
       "rock": "dwell:obsidian",
       "quench": { "rock": "dwell:obsidian", "steamWaterM": 0.25 },
       "light": 15,
       "damagePerSecond": 80,
       "burnSeconds": 5,
       "burnDamagePerSecond": 4
+    },
+    {
+      "name": "test:runny",
+      "viscosityM2s": 0.5,
+      "yieldDepthM": 0.05,
+      "coolingSeconds": 90,
+      "edgeCooling": 1.5,
+      "thinDepthM": 0.3,
+      "tubeSpeedMs": 0.002,
+      "breakoutDepthM": 0,
+      "rock": "dwell:basalt",
+      "quench": { "rock": "dwell:obsidian", "steamWaterM": 0.5 },
+      "light": 13,
+      "damagePerSecond": 40,
+      "burnSeconds": 3,
+      "burnDamagePerSecond": 8
     }
   ],
   "vents": [
     { "name": "test:crater_lake", "fluid": "dwell:lava", "kind": "lake", "x": 16, "z": 16, "rateM3s": 2, "levelM": 10 },
-    { "name": "test:river", "fluid": "dwell:lava", "kind": "river", "x": 3, "z": 8, "rateM3s": 1.5 }
+    { "name": "test:river", "fluid": "dwell:lava", "kind": "river", "x": 3, "z": 8, "rateM3s": 1.5 },
+    { "name": "test:flank_river", "fluid": "test:runny", "kind": "river", "x": 0, "z": 0, "rateM3s": 1 }
   ]
 }

@@ -808,7 +808,9 @@ test('lava vents on a cone are fixture-world data: checked, and a new one added 
   assert.equal(w.world.tectonics.lavaVents[0].kind, 'river');
   assert.equal(world.tectonics.lavaVents, undefined, 'the default world lists none');
   const starter = validateFixtureWorlds(loadBiomes(join(here, 'worlds')), world).find((w) => w.name === 'test:starter');
-  assert.equal(starter.world.tectonics.lavaVents.length, 1, 'the starter world has its vent');
+  assert.equal(starter.world.tectonics.lavaVents.length, 2, 'the starter world has its lake and its river');
+  const [w2] = validateFixtureWorlds(of({ ...vent, faces: ['b'] }), world);
+  assert.deepEqual(w2.world.tectonics.lavaVents[0].faces, ['b'], 'a vent on one face');
   for (const [v, msg] of [
     [{ ...vent, index: 2 }, /no hotspot cone 2/],
     [{ ...vent, cone: 'arc' }, /no arc cone 0/],
@@ -817,6 +819,8 @@ test('lava vents on a cone are fixture-world data: checked, and a new one added 
     [{ ...vent, radius: 0 }, /radius must be a whole number/],
     [{ ...vent, rateM3s: 0 }, /rateM3s must be in/],
     [{ ...vent, heat: 1 }, /unknown heat/],
+    [{ ...vent, faces: ['c'] }, /faces must list "a" and\/or "b"/],
+    [{ ...vent, faces: [] }, /faces must list "a" and\/or "b"/],
   ])
     assert.throws(() => validateFixtureWorlds(of(v), world), msg);
 });

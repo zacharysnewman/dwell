@@ -112,7 +112,15 @@ Last updated: 2026-11-11 (0.52.68).
    **Part 2:** `__dwell.lava` dev tools (the summit lake was there: the first shots were misplaced),
    steam sent to clients that say `SteamHello` and drawn as puffs. **Round 3:** world-space crust plates
    with glowing seams, steam's look as data and a hiss, the burning screen edge and a sizzle
-   (WATER_RENDERING.md §17.1–17.2). **Next:** heat per cell; then the water grid's columns as the fields' water and V2's vents.
+   (WATER_RENDERING.md §17.1–17.2). **V2 built (logic):** rivers to the sea: fields that grow with their
+   flow (tiles added as lava reaches them, dropped when all rock, capped by `maxTiles`), cost by molten
+   area, lava tubes (`tubeSpeedMs`), lava running into the sea and building land above it, save record
+   version 2 (version 1 still loads), and a river vent on the starter island's flank on face B whose way
+   to the sea is 1.3 km (lavaVents `faces`), and breakouts through crust dams (`breakoutDepthM`);
+   VOLCANOES.md §6.4. **Open:** on the generated terrain the starter river no longer dams itself but
+   spreads into a sheet and reaches ~630 m in 18 world days (it reaches the sea on the fixture flank
+   only); channelling or the lava's tuning next (§6.4, the owner's call).
+   **Next:** heat per cell; the water grid's columns as the fields' water; eruptions.
 9. ~~**Loading-time display bug.**~~ Done (0.52.71): the 10 s was the graphics' start (one long task on the
    main thread making the renderer's pipelines) begun in the same task that ended the game's load, so the
    screen never painted "Starting the graphics…" and stood on "Loading the game… x MB 0.0 s". Each stage is

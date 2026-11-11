@@ -11,6 +11,8 @@ pub const DATA: LavaData = LavaData {
     far_every_seconds: 30.0,
     cfl: 0.8,
     max_substeps: 20000,
+    step_depth_m: 2.0,
+    max_tiles: 2048,
     fluids: &[
         HotFluid {
             name: "dwell:lava",
@@ -19,6 +21,8 @@ pub const DATA: LavaData = LavaData {
             cooling_seconds: 90.0,
             edge_cooling: 1.5,
             thin_depth_m: 0.6,
+            tube_speed_ms: 0.002,
+            breakout_depth_m: 3.0,
             light: 13,
             damage_per_second: 40.0,
             burn_seconds: 3.0,

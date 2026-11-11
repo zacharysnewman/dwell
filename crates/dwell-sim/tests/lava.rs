@@ -340,6 +340,66 @@ dwell_world::both_faces!(
     }
 );
 
+dwell_world::both_faces!(
+    // V2 (VOLCANOES.md §6.4): a field grows with its flow. A river vent at the top of a stone ramp,
+    // its field covering 3 columns round it to start, runs down the ramp: the field reads the
+    // tiles its lava reaches from the world, and the lava and its basalt are in the chunks well
+    // past where the field started.
+    fn a_river_vents_field_grows_down_a_ramp_and_writes_its_lava_there(f: FaceFrame) {
+        let stone = f.state(require("dwell:stone"));
+        let (lava, basalt) = (
+            f.state(require("dwell:lava")),
+            f.state(require("dwell:basalt")),
+        );
+        let top = |x: i32| BASE + ((70 - x) as f64 * 0.6) as i32;
+        let mut fx = Fixture::new(ServerConfig {
+            spawn: Some(f.point([20.5, m_of_row(top(20)) + 1.0, 4.5])),
+            ..config(f, "creative")
+        });
+        for x in -4..=72 {
+            for z in -3..=3 {
+                for r in BASE - 4..top(x) {
+                    let [x, y, z] = f.cell([x, r, z]);
+                    fx.server.world().set_voxel(x, y, z, stone);
+                }
+            }
+        }
+        fx.join(1, &Client::new(1));
+        let river = VentSpot {
+            fluid: "dwell:lava".into(),
+            kind: VentKind::River,
+            rate_m3s: 1.0,
+            depth_m: 0.0,
+            radius: 3,
+        };
+        fx.server
+            .place_lava_vent(f, [0, 0], top(0), &river)
+            .expect("a vent at the ramp's top");
+        let start = fx.server.lava().fields[0].field.tiles().len();
+        step(&mut fx, 120 * SECOND);
+        let field = &fx.server.lava().fields[0].field;
+        assert!(
+            field.tiles().len() > start,
+            "grew from {start} tiles to {}",
+            field.tiles().len()
+        );
+        let far = (16..=72)
+            .filter(|&x| {
+                (-3..=3).any(|z| {
+                    (top(x) - 2..top(x) + 6).any(|r| {
+                        let m = at(&mut fx, f, [x, r, z]);
+                        m == lava || m == basalt
+                    })
+                })
+            })
+            .max();
+        assert!(
+            far.is_some_and(|x| x >= 12),
+            "lava in the chunks down to x {far:?}, past the field's start (x 7)"
+        );
+    }
+);
+
 #[test]
 fn the_default_world_has_no_lava() {
     // face-a-only: the default world's generator places no vent on either face.

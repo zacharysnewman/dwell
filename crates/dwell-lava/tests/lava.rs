@@ -22,9 +22,9 @@ fn slope(w: usize, h: usize, top: f32, fall: f32) -> Field {
 
 /// The furthest column toward +x with lava or new rock on it.
 fn front(f: &Field, bed: &[f32]) -> usize {
-    (0..f.w * f.h)
+    f.columns()
         .filter(|&i| f.depth[i] > 0.0 || f.ground[i] > bed[i] + 1e-3)
-        .map(|i| i % f.w)
+        .map(|i| f.col(i)[0] as usize)
         .max()
         .unwrap_or(0)
 }
@@ -47,7 +47,7 @@ fn check_cells(f: FaceFrame, field: &Field, events: &[LavaEvent]) {
             let back: Vec<[i32; 3]> = world.iter().map(|&c| f.cell(c)).collect();
             let want: Vec<[i32; 3]> = rows
                 .clone()
-                .map(|r| [field.origin[0] + *x as i32, r, field.origin[1] + *z as i32])
+                .map(|r| [field.origin[0] + *x, r, field.origin[1] + *z])
                 .collect();
             assert_eq!(back, want);
             assert_eq!(
@@ -148,7 +148,8 @@ both_faces!(
         let vent = FIXTURE.vent("test:river").expect("fixture vent");
         field.add_vent(vent).unwrap();
         let bed = field.ground.clone();
-        let events = near(&mut field, 240.0);
+        // Long enough for its front to stop and crust (moving lava keeps its heat: a tube).
+        let events = near(&mut field, 480.0);
         check_cells(f, &field, &events);
         let reach = front(&field, &bed);
         assert!(
@@ -164,13 +165,16 @@ both_faces!(
             .collect();
         assert!(rock.iter().all(|&(_, r)| r == "dwell:basalt"));
         assert!(
-            rock.iter().any(|&(x, _)| x < reach),
+            rock.iter().any(|&(x, _)| (x as usize) < reach),
             "basalt behind the front"
         );
-        let land = (0..field.w * field.h)
+        let land = field
+            .columns()
             .map(|i| field.ground[i] - bed[i])
             .fold(0.0, f32::max);
-        assert!(land >= 1.0, "new land: {land} m");
+        // Half a metre and more (it was 1 m before ponds broke out through their crust dams,
+        // breakoutDepthM: the rock no longer piles behind them).
+        assert!(land >= 0.5, "new land: {land} m");
     }
 );
 
@@ -301,9 +305,9 @@ both_faces!(
         assert_eq!(back.depth, field.depth, "and runs on alike");
         let feet = f.point([-7.0 + 2.5, 10.0 - 0.4 + 0.1, 304.5]);
         assert_eq!(back.submerged(f, feet), field.submerged(f, feet));
-        let mut v2 = rec.clone();
-        v2[0] = 2;
-        assert!(field_of(&v2, &DATA).is_none(), "a newer version");
+        let mut v3 = rec.clone();
+        v3[0] = 3;
+        assert!(field_of(&v3, &DATA).is_none(), "a newer version");
         assert!(field_of(&rec[..rec.len() - 1], &DATA).is_none(), "damaged");
         assert!(
             field_of(&[rec.clone(), vec![0]].concat(), &DATA).is_none(),
@@ -373,7 +377,7 @@ both_faces!(
         );
         assert_eq!(
             field.add_vent(&VentDef { x: 9, ..RIVER }),
-            Err("vent test:here: column (9, 4) is off the 4×4 field".into())
+            Err("vent test:here: column (9, 4) is off the field".into())
         );
         assert!(
             DATA.fluid("dwell:lava").unwrap().rock_state()
@@ -432,6 +436,7 @@ both_faces!(
         let i = 0;
         field.depth[i] = 1.0;
         field.heat[i] = 0.001;
+        field.settle();
         field.step(1.0);
         let rows: Vec<_> = field
             .take_events()
