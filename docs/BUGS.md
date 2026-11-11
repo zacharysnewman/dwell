@@ -291,6 +291,37 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 70. The starter world reloads the tab on iPhone while loading the terrain (fixed 0.52.68)
+
+Owner, 2026-11-11 (iPhone 17, iOS Safari, 0.52.65): "I can't load the game on mobile, it restarts partway
+through loading map chunks steps. Also sometimes it'll say 'a problem repeatedly occurred'"; then "it's
+the starter world that's broken not the game". Safari kills a tab over its memory limit (~1–1.5 GB with
+the GPU's share). Measured on the bench (`--touch`, a 393 × 852 at 3× phone page, the mobile tier, Chrome
+on the M1's GPU; the F3 memory line's `memory()` at the end of loading and 30 s later):
+
+| World | Total at load | Server | World workers (2) | Core | GPU meshes (LOD cache) |
+| --- | --- | --- | --- | --- | --- |
+| Default, 0.52.67 | 746 MB | 62 | 79 + 77 | 98 | 363 (240) |
+| Starter, 0.52.67 | **1,467 MB** | **284** | **277 + 277** | 115 | 440 (309) |
+| Starter, shared biome set | 995 MB | 114 | 114 + 114 | 139 | 442 (311) |
+| Starter, 0.52.68 (both fixes) | **850 MB** | 114 | 114 + 114 | 138 | 299 (168) |
+| Default, 0.52.68 | 676 MB | 59 | 77 + 77 | 97 | 295 (173) |
+
+Two causes. (1) A many-biome world's biome set holds whole-map grids (the biome field's coast, fresh
+water and rain, the erosion's drainage: ~60 MB a face natively, more in a WASM memory, which never
+shrinks), and every generator built its own: a job worker makes four of the world (its terrain, the
+chunk, LOD and bounds generators), each with both faces, each face's set built twice (the build's, then
+the worldgen config's): 20 sets in a worker (`tests/shared_biomes.rs`, red: 20). The default world's one
+biome has no grids, so only test worlds paid. Fixed: `terrain::shared_biomes` builds a map's set once per
+process and every generator shares it (red 20 → green ≤ 2). (2) The LOD's error scale coarsened ×1.15 a
+second from 1, so a phone's 96 MB cache held 3.4× its budget (326 MB of sections) at the end of loading
+and fit only ~18 s later; it now steps by the overshoot, ×√(in use / budget) between 1.15 and 2
+(`dwell-lod` `coarser_step`; `a_fresh_view_far_over_the_cache_budget_fits_it_within_seconds_…`, red:
+13.5 s → green). Left: the 850 MB is not measured on the iPhone itself (Safari has no memory readout
+the page can read; the F3 memory line is the game's own count); the starter's grids could shrink further
+(f16 grids, the drainage's height copy of the map), and the server and the world workers still hold one
+copy each.
+
 ### 67. The minimap fragmented, black-edged and coarse when moving fast (fixed pending release 0.52.10)
 
 Owner, 2026-11-10: "The mini map gets all fragmented when moving fast, it should always show the full

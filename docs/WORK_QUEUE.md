@@ -4,7 +4,7 @@ The owner's ordered queue of work, with the decisions behind each item, so it su
 ending. Update it in the same change that starts, finishes, re-orders or re-scopes an item. The phase
 status lives in `docs/IMPLEMENTATION_PLAN.md`; this file is the order and the owner's words.
 
-Last updated: 2026-11-11 (0.52.52).
+Last updated: 2026-11-11 (0.52.68).
 
 ## Next, in order
 
@@ -88,6 +88,13 @@ Last updated: 2026-11-11 (0.52.52).
    volcano phases stay under Future.
 
 ## Done
+
+- **Starter world on iPhone (P0, 0.52.68, BUGS.md #70):** the tab reloaded while loading the terrain.
+  Every generator of a many-biome world built its own whole-map biome grids (20 sets in a job worker);
+  now one per map and process (`terrain::shared_biomes`), and the LOD coarsens by its overshoot so a
+  phone's loading view fits its 96 MB within seconds. Bench (`memory-phone --touch`): starter 1,467 →
+  850 MB at load, default 746 → 676. Owner to check on the iPhone 17; left: smaller grids (f16, the
+  drainage's copy of the heights), one copy per instance.
 
 - **Terrain leftovers, round 1** (0.52.66): arches from erosion-grown fins (a biome's `arches.fins`, the
   fin rule in T4's cut-back; sites slide to a fin within 12 m) and arches in a chosen rock

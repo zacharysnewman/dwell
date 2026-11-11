@@ -1328,7 +1328,11 @@ noisy, slope-aware snow line, rock where the landform is steep over a hillside's
 (`$DWELL_MAP_CACHE`, else the temp directory); in the browser built in two job workers
 (`buildMap`), kept in IndexedDB (`client/src/world/worldMaps.ts`, `dwell-world-maps`, the 8 most
 recent) and installed in every WASM instance (the page, the job workers, the local world's server)
-before its generator is made, while the loading screen lists "Shaping the world map" with the faces ready (§6.3, *The start's stages*). The bytes
+before its generator is made, while the loading screen lists "Shaping the world map" with the faces ready (§6.3, *The start's stages*). A map's
+biome set (the biomes' palettes and, with more than one biome, the whole-map grids of the biome field and
+the drainage: ~60 MB a face for the starter world) is likewise built once per map and process
+(`terrain::shared_biomes`, keyed by the map's `Arc` and seed) and shared by every generator made of it (a
+job worker makes four: 0.52.68, BUGS.md #70). The bytes
 (`worldmap::codec`) are lossless, end in a checksum and carry the build's map fingerprint
 (`build.rs`, over the inputs' sources and data) and a generation-settings hash slot (constant until
 per-world settings); a seed's map digest is pinned and checked natively and under WASM. The
@@ -2546,7 +2550,9 @@ chunks), keeps the last selection (`LodSystem::update`; ~1 ms a frame standing s
   at 1440 × 900 at 2×, standing still: 8,700 drawn sections and a 1.7 GB heap after 150 s, still
   growing, and 70 ms of script per frame with drawing off — the playtest's falling frame rate and
   growing memory). So while the bytes of the sections the walk reaches exceed `LOD_CACHE_MB`,
-  the pixel error is multiplied by 1.15 (at most once a second, up to ×16), and divided again
+  the pixel error is multiplied (at most once a second, up to ×16) by √(in use / budget), between
+  1.15 and 2 (`coarser_step`: the sections go as 1 / scale², so a view far over the budget, a
+  phone's at the end of loading, fits within seconds; 0.52.68, BUGS.md #70), and divided by 1.15 again
   when they use under 60% of it (at most every 10 s); a finer step that overflows (the sections
   needed change in jumps, a band of distance refining at once) is not retried until the camera
   has moved 512 m, so it settles instead of swinging. The same view now holds at ~1,000–1,500
@@ -3596,7 +3602,7 @@ in the code yet.
 | `LOD_MAX_LEVEL` | 12 | Root level (131 km); one section holds the whole disc and build volume (Phase 16, was 19) |
 | `LOD_INDEX_LEVEL` | 8 | Level of the modified-section index sent to clients |
 | `LOD_PIXEL_ERROR` | 4 px (desktop) / 8 px (mobile), CSS pixels; a setting (1–16) | Refine a node while its cells project larger than this (ADR 0012's 2 px drew ~3× the sections, §6.6), times the error scale below |
-| LOD error scale (client, `dwell-lod` `system.rs`) | ×1.15 steps, 1–16 | Coarser (≤ 1/s) while the view's sections exceed `LOD_CACHE_MB`, finer (≤ 1/10 s) under 60% of it; an overflowing finer step is retried after 512 m (§6.6) |
+| LOD error scale (client, `dwell-lod` `system.rs`) | ×1.15 steps finer, ×√(in use / budget) in 1.15–2 coarser (`MAX_COARSER_STEP`), 1–16 | Coarser (≤ 1/s) while the view's sections exceed `LOD_CACHE_MB`, finer (≤ 1/10 s) under 60% of it; an overflowing finer step is retried after 512 m (§6.6) |
 | LOD cross-fade (`shared/look/lodblend.json` `fadeS`, `pattern`) | 0.4 s, `bayer4` | How long a swap between levels cross-fades, and the per-pixel dither it fades by (0 s: in one frame; §6.6 Swaps) |
 | LOD hysteresis (`shared/look/lodblend.json` `coarsenRatio`) | 1.3 | A refined node coarsens only once its cells project under the pixel error / this (and chunks within the full-detail distance stay out to this × it; 1: none) |
 | Full-detail distance (client, `dwell-lod` `detail.rs`) | 256 m desktop / 128 m mobile (96–352 m) | Chunks are drawn out to it (a setting; §6.6) |
