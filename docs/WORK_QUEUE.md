@@ -102,7 +102,10 @@ Last updated: 2026-11-11 (0.52.68).
    Done: 1 (local builds read `shared/version/line.json`, `<line>.0-dev.local`), 2 (pending release notes,
    `shared/releases/pending/`, assigned by the Release workflow; RELEASES.md §3; its first run on `main`
    still to watch), 3 (`docs/AGENT_QUICKSTART.md`), 5 (`npm run check:<area>`) and 6 (CLAUDE.md "lighter
-   paperwork"), with `docs/CLOUD_SESSIONS.md`; 4 (the browser kit) running locally.
+   paperwork"), with `docs/CLOUD_SESSIONS.md`; 4, the browser kit (`claude/browser-kit`, in review): the
+   warm prebuilt client (`npm run bench:warm`, `--warm`), placed `shot`s (`at` / `above`, face-checked,
+   settled), `look` turning a placed camera, stall retries, saved spots (`client/bench/spots.json`,
+   `--spot`); DEV_TOOLS.md "Screenshots of a place".
 11. **Deer/wolf ecology simulation, first slice** (owner 2026-11-11, with a mockup:
    docs/proposals/ECOSYSTEM_MOCKUP_NOTES.md). "Simulate at a data level only when you're not nearby, render
    simply from afar, and exactly when close by." Answers: far = herds and packs (one record each;

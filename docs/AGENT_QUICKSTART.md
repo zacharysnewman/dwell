@@ -43,6 +43,21 @@ areas. The table is `client/scripts/checks.ts`; `checks.test.ts` fails when a ge
 test file belongs to no area — add it there. TS changes also need `npm run typecheck`, `npm run
 lint` and `npx prettier --check <files>`.
 
+## Screenshots and browser checks
+
+Local machine only (cloud sessions have no GPU, [CLOUD_SESSIONS.md](CLOUD_SESSIONS.md)). In `client/`:
+
+- **Don't build the client per check:** `npm run bench -- --warm …` builds the WASM and client only when
+  their sources changed (cached by the sources' git tree hash in the main checkout's
+  `target/bench-client/`; a docs- or bench-only change reuses it) and serves it on a long-lived
+  preview at `:4174`. **Stop it when done:** `npm run bench:warm -- --stop`.
+- **A place:** `npm run bench -- --warm --spot starter:broadleaf` (saved spots, `client/bench/spots.json`;
+  add yours there). In a scenario, `{ "do": "shot", "name": "x", "above": [x, z, 6], "yaw": 90,
+  "pitch": -10 }` puts the eye exactly 6 m over the ground at x, z (or `at`: an exact eye), waits for the
+  view to settle and shoots. An `at` y on the wrong face's side of y 0 fails the parse.
+- `look` turns a placed camera too; a load not playing within 60 s is retried once (`stalls` in the
+  report). Details: `docs/DEV_TOOLS.md` "Screenshots of a place".
+
 ## Must-follow rules
 
 - **Extendable systems:** a new feature is data + one generator + names, not constants; ask the
