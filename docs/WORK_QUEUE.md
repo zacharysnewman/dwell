@@ -62,8 +62,12 @@ Last updated: 2026-11-11 (0.52.52).
      faces). Outstanding: the hinge's flat break is cell-sized (the whole cut cell is the stump's
      wedge); the notch is still carved as today's V and kerf; adjacent sides don't add up (only
      opposite ones do); the swing animation is the arc's (timed to the middle of the arc), not aimed
-     at the bite; the dedicated server has no switch yet; in-game screenshots (the bench's flat-world
-     trunk didn't draw in this run, on main's build too) and the owner's review.
+     at the bite; the crosshair reaches as far as the swing (`reachM`, 2.2 m), less than the target
+     outline; the dedicated server has no switch yet; the owner's review. In game (bench, `?chop=v2`,
+     config `chop-v2`): the notch at the crosshair and its deepening shown, the fall taken; the stump's
+     and trunk's wedge faces not yet shown in game (the bench's placed logs didn't stack; the server
+     test checks them). The bench's `axe` scenario no longer builds its trunk (`region fill` of logs
+     refused): needs a fix.
 
 ## Done
 
