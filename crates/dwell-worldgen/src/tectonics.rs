@@ -45,6 +45,9 @@ pub struct Tectonics {
     pub cone_radius: f64,
     pub crater_radius: f64,
     pub crater_depth: f64,
+    /// How much the arc's cones resist the erosion (0..1: their erodibility × 1 − this toward the
+    /// summit), so a tall cone keeps its relief through the world map's erosion.
+    pub cone_hardness: f64,
     pub hotspot_count: u32,
     pub hotspot_x: f64,
     pub hotspot_z: f64,
@@ -198,6 +201,21 @@ impl Tectonics {
             cones = cones.max(Self::cone(v, r));
         }
         self.boundary(x, z, coast) + cones
+    }
+
+    /// How much the erosion is held off at (x, z) (0..`cone_hardness`): the arc's cones, fully at
+    /// the summit and fading to none at the foot (a smooth step), so a tall cone keeps its relief.
+    pub fn shield(&self, volcanoes: &[Volcano], x: f64, z: f64) -> f64 {
+        if self.cone_hardness <= 0.0 {
+            return 0.0;
+        }
+        let mut s = 0.0f64;
+        for v in volcanoes.iter().filter(|v| v.chain == 0) {
+            let r = ((x - v.x).powi(2) + (z - v.z).powi(2)).sqrt();
+            let t = (1.0 - r / v.radius.max(1.0)).clamp(0.0, 1.0);
+            s = s.max(t * t * (3.0 - 2.0 * t));
+        }
+        self.cone_hardness.clamp(0.0, 1.0) * s
     }
 
     /// The tectonic rock province at (x, z): `Some(true)` on a volcano (its lava rock), `Some(false)`

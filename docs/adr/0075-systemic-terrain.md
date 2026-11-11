@@ -160,6 +160,11 @@ into `HeightField::tectonics`; `dwell-worldgen` `tectonics.rs`):
 - **The volcanic arc** (convergent only): `arcCount` stratovolcanoes `arcDistance` m behind the line,
   `arcSpacing` m apart: a concave cone (`coneHeight` × (1 − r/`coneRadius`)^1.8, steeper near the top)
   with a crater `craterRadius` m wide and `craterDepth` m deep. Dormant: a landform only.
+  `coneHardness` (0..1, 0 by default; 0.52.25, owner 2026-11-10: "at least 5000m tall elevations like
+  mount rainier") shields the cones from the erosion: their erodibility × 1 − hardness × a smooth step
+  toward each summit (`Tectonics::shield`), and on a shielded cell nothing settles above its uneroded
+  ground, so the crater stays open. Without it a 4800 m cone (12 km radius) ends at ~4300 m; at 0.95 it
+  keeps ≥ 4400 m (the fixture world `test:tall_peak`, `tests/tall_peaks.rs`, red at 0 and green at 0.95).
 - **The hotspot chain**: `hotspotCount` shield islands from (`hotspotX`, `hotspotZ`) along the plate's
   motion (`hotspotHeading`), `hotspotSpacing` m apart; each older one `hotspotDecay` of the last's height
   and `hotspotWiden` broader (eroded with age).

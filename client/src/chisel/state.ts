@@ -15,6 +15,7 @@ import defaultBiome from '../../../shared/worldgen/biomes/default.json';
 import desert from '../../../shared/worldgen/biomes/fixtures/desert.json';
 import archipelago from '../../../shared/worldgen/biomes/fixtures/archipelago.json';
 import archipelagoWorld from '../../../shared/worldgen/worlds/archipelago.json';
+import tallPeakWorld from '../../../shared/worldgen/worlds/tall_peak.json';
 import terrain from '../../../shared/worldgen/terrain.json';
 import rocks from '../../../shared/worldgen/rocks.json';
 import vegetation from '../../../shared/worldgen/vegetation.json';
@@ -125,6 +126,8 @@ export const PRESETS: readonly PresetJson[] = validatePresets(
 ).sort((a, b) => a.label.localeCompare(b.label));
 /** The archipelago example's world knobs (shared/worldgen/worlds/archipelago.json). */
 export const ARCHIPELAGO_WORLD: WorldJson = archipelagoWorld.overrides;
+/** The tall peak example's world knobs (shared/worldgen/worlds/tall_peak.json): a 4800 m cone. */
+export const TALL_PEAK_WORLD: WorldJson = tallPeakWorld.overrides;
 
 /** A world knob's value: the edit's, else terrain.json's. */
 export function knob(e: Edit, group: string, key: string): number {

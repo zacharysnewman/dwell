@@ -1,0 +1,20 @@
+{
+  "$comment": "An example world setting (owner, 2026-11-10: \"at least 5000m tall elevations like mount rainier is 4392m tall\"), never a world's own: terrain.json's elevation with one convergent plate boundary and one dormant stratovolcano behind it, 4800 m high and 12 km in radius with a 400 m crater, hardened against the erosion (coneHardness) so it keeps its relief on the 100 m map. Tests build it by data alone (FIXTURE_WORLDS, WorldMap::for_height); Chisel offers it as a preset. Prototype content.",
+  "name": "test:tall_peak",
+  "overrides": {
+    "tectonics": {
+      "kind": 1,
+      "angle": 30,
+      "offset": -9000,
+      "width": 3500,
+      "rangeHeight": 220,
+      "arcCount": 1,
+      "arcDistance": 8000,
+      "coneHeight": 4800,
+      "coneRadius": 12000,
+      "craterRadius": 400,
+      "craterDepth": 150,
+      "coneHardness": 0.95
+    }
+  }
+}
