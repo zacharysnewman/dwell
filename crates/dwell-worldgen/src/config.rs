@@ -731,6 +731,13 @@ pub fn world_config(config: &str) -> Result<Option<Edit>, String> {
             return edit_from_json(c).map(Some);
         }
     }
+    // A fixture world with its own biomes (the starter world): the edit it stands for.
+    if let Some((_, text)) = crate::terrain::FIXTURE_WORLD_EDITS
+        .iter()
+        .find(|(n, _)| *n == c)
+    {
+        return edit_from_json(text).map(Some);
+    }
     Ok(worldgen_height(c)?.map(|h| Edit {
         biomes: BIOMES.to_vec(),
         map: BIOME_MAP,
