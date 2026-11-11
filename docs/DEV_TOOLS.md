@@ -139,6 +139,7 @@ fields, ranges and names fail with the entry named):
 | `view {clouds?, speedEffects?, distanceM?, pixelError?, smoke?, flowParticles?, flowRipples?, flowFoam?, waterfalls?}` | sets other settings mid-run, not stored (`__dwell.setView`): the clouds (`off`, `low`, `high`), the speed effects (motion blur and streaks), the full-detail distance (m) and the LOD's pixel error, the blasts' smoke, the water's flecks, flow ripples, flow foam and waterfalls; each one given replaces the menu's value. With `water` and `shadows`, one page can record every feature on and off in turn ([Cost profile](#cost-profile-m1-air)) |
 | `water {quality?, debug?}` | sets the water quality (`low`, `medium`, `high`) and/or its cost-isolation switches (`?waterdbg=` names, `""` for none) mid-run, through `__dwell.setWater` |
 | `burst {name, frames, clock?, maxFlicker?}` | a still camera's burst: `frames` screenshots `<name>-00.png`… back to back (the HUD hidden) and their **flicker** (`flickerOf`: the share of pixels whose brightness moves more than 3 of 255 from one frame to the next, and the mean move), printed and saved in `report.json`'s `bursts`; over `maxFlicker` (a share) the run fails. With `clock` the time of day runs on from it at the world clock's rate, set every animation frame (the bench's is otherwise held), so the light moves as in play. `shadows-still` reads the shadows' flicker against Off's (DAY_NIGHT.md §10). With `drift {position, yaw, pitch}` (after a `camera` step) the camera moves on by that much each frame (metres and degrees, at most 1 m and 1°): z-fighting shows only while the view moves (it stops with the camera), and a drift of millimetres and thousandths of a degree moves the view under a pixel by a fraction of a pixel, so surfaces swap only where they fight in depth. Such a burst is read by its **hue flips** (`hueFlipsOf`, also in every burst's result: the share of pixels, coloured in both frames, whose hue moves over 40° from one frame to the next — grass becoming dirt); over `maxHueFlips` the run fails. `lod-zfight` holds the LOD's z-fighting under a bar (ARCHITECTURE.md §6.6, "Known bug class") |
+| `clip-strip {name, vertical?, frames?, views?, at?}` | one axe swing frame by frame (see "Clip probe and clip strip" below): the level (or `vertical`) chop held at `frames` (2–24, default 8) clip times from 0 to the clip's end (`__dwell.holdSwing`), each shot from the `views` (`fp` your eyes; `tp-behind`, `tp-side`: a stand-in 4 m ahead of `at` holding your tool, standing still facing +Z, seen from behind-right and from its right side), `<name>-<view>-00.png`…, and a contact sheet `<name>-sheet.png` (a row per view, each frame labelled with its clip time). Hold the axe first (`give`, `pick`) |
 | `repeat {times, steps}` | runs `steps` `times` times (e.g. `edit-burst`'s 300 edits); no `mark`, `record`, `shot`, `timelapse` or trace steps inside |
 
 Scenarios for comparing configurations, besides `idle-spawn`, `fly-low-fast`, `fly-low-faster` and
@@ -470,6 +471,64 @@ How agents take screenshots: an exact camera, a settled view, a saved spot.
   (`crates/dwell-client/src/web/app.rs`).
 - A kind of place to find: a filter on `find.rs`'s `Query` (with a both-faces test), its option
   in `client/src/debug/find.ts` and the `goto` step's parser.
+
+## Clip probe and clip strip
+
+Owner, 2026-11-11: "Make yourself some tools to properly observe animations, movement directions,
+positions over time" and "may need to see multiple perspectives to see animation and understand it".
+
+**The clip probe** (native, no browser; `crates/dwell-client/src/clip_probe.rs`, CLI
+`examples/clip_probe.rs`) samples a clip through the same posing the game draws with: the arms'
+animator (`Space::Arms`, the swing on its action layer driven to clip time as `Bodies::drive_arms`
+does), the held item's turns (`with_item`), `arm_transforms`, the tool drawn as its model on the hold
+(`prop_mesh`, `held_item`) and the arms pass's projection (the first person `fov`); and the body's
+animator (`Space::Body`, `bone_transforms`: the rig pose the skinned player model retargets) for
+third person. It follows points — `tool_head` (the far tenth of the model along the handle),
+`tool_tip`, `grip`, `elbow`, `shoulder`, any bone by name, or a part of the held characters item
+(`axe_blade`) — and reports them in five views of the same swing:
+
+| View | What | Axes |
+| --- | --- | --- |
+| `fp` | the first-person screen, what the player sees | NDC x right, y up (−1..1), and the depth |
+| `top` | the player's frame from above | right, ahead |
+| `side` | from the player's right | ahead, up |
+| `front` | facing the player | the player's right on the left, up |
+| `tp` | the whole body from behind and to its right (perspective, the rest skeleton drawn) | screen |
+
+```sh
+cargo run -p dwell-client --example clip_probe -- chop_level                # table + phases
+cargo run -p dwell-client --example clip_probe -- chop_vertical --part tool_head,grip,elbow \
+  --svg /tmp/v.svg --views fp,top,side,front,tp                              # the panel sheet
+cargo run -p dwell-client --example clip_probe -- fp_break --item none --part grip --csv
+```
+
+The clip is an arms role (`chop_level`) or a clip name (`fp_chop_level`); `--item` the inventory item
+in hand (default `dwell:stone_axe`, `none` empty-handed); `--samples` (default 31); `--face a|b`,
+`--yaw`, `--pitch` place the world space output (`--csv` prints every sample in every space: screen,
+the player's frame, eye-relative world, the body). The table gives each sample's first-person screen
+place and body place, then the **phases** — from the tool's `swing` timings for a chop (wind-up
+`windupS`, strike the arc's `activeS`, recovery), else thirds — each with its travel and dominant way
+(`right→left`, `top→bottom`) on screen and on the body, the **peak** screen speed and when, and the
+**contact**: where the head is at the arc's middle step (a centred hit), which should be the
+crosshair. The SVG draws each view as a panel: every point's path with a dot per sample, a time label
+every fifth, arrows along the travel, the phases coloured (amber wind-up, red strike, blue recovery),
+the contact circled, the screen's edge dashed in `fp`. Saved before/after sheets of the 2026-11-11 fix:
+`docs/clip_probe/`.
+
+Tests over it (`clip_probe::chop_swing_tests`) pin the axe: the level strike right → left on screen,
+the vertical one top → bottom (monotonic through the strike), the head on the crosshair at contact and
+the peak speed inside the strike, the wind-up the other way, the recovery back to rest, nothing behind
+the eye; in the world on both faces (`both_faces!`) along the view's left and down at any heading; and
+on the body (third person) across from its right to its left, or down, in front of it. A new swing
+clip gets the same checks by adding a case.
+
+**The clip strip** (browser, the bench's `clip-strip` step) is the visual check after the probe: it
+holds a swing at K clip times (`__dwell.holdSwing(vertical, t)`, which poses your arms and every
+stand-in at that clip time until released with a negative `t`; stand-ins then stand still facing +Z)
+and shoots each from first person and from two third-person cameras (`clipStripCamera`: behind-right,
+and the right side) into one contact sheet. Local machine only (a GPU); e.g. a scratch scenario with
+`{ "do": "give", "item": "dwell:stone_axe" }`, a `pick` of it, and `{ "do": "clip-strip", "name":
+"level" }`. Its face B cameras are mirrored by the unit test only, not yet seen in game.
 
 ## Menu panoramas
 

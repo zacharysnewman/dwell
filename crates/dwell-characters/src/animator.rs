@@ -522,40 +522,24 @@ mod tests {
     }
 
     #[test]
-    fn the_axe_swings_play_their_own_arms_clips_and_the_body_falls_back_to_break() {
-        // The arms (first person) have a level and a vertical chop clip (ADR 0067).
-        for (s, role) in [
-            (Swing::ChopLevel, "chop_level"),
-            (Swing::ChopVertical, "chop_vertical"),
-        ] {
-            let mut a = Animator::new(&TABLES, player(), Space::Arms);
-            a.update(&input(PlayerState::Idle, [0.0; 3]), 0.1);
-            a.swing(s);
-            a.update(&input(PlayerState::Idle, [0.0; 3]), 0.1);
-            assert_eq!(a.action(), Some(role));
+    fn the_axe_swings_play_their_own_clips_on_the_arms_and_the_body() {
+        // The arms (first person) and the body (third person) each have a level and a vertical
+        // chop clip (ADR 0067; the body's since 2026-11-11, before which others saw a break). Which
+        // way they carry the axe is pinned on the drawn head by dwell-client's clip probe tests
+        // (`clip_probe::chop_swing_tests`), not by joint angles here: an arm-yaw check passed
+        // while the level swing ran left to right on screen.
+        for space in [Space::Arms, Space::Body] {
+            for (s, role) in [
+                (Swing::ChopLevel, "chop_level"),
+                (Swing::ChopVertical, "chop_vertical"),
+            ] {
+                let mut a = Animator::new(&TABLES, player(), space);
+                a.update(&input(PlayerState::Idle, [0.0; 3]), 0.1);
+                a.swing(s);
+                a.update(&input(PlayerState::Idle, [0.0; 3]), 0.1);
+                assert_eq!(a.action(), Some(role), "{space:?}");
+            }
         }
-        // The level swing sweeps the arm across (yaw), the vertical one up and down (pitch).
-        let arm = player().bone("arm_r").unwrap();
-        let level = TABLES.clip(player().arms_clip("chop_level").unwrap());
-        let vertical = TABLES.clip(player().arms_clip("chop_vertical").unwrap());
-        let span = |c: &Clip, k: usize| {
-            let (lo, hi) = (0..=20).fold((f32::MAX, f32::MIN), |(lo, hi), i| {
-                let v = sample(c, c.duration * i as f32 / 20.0).rot[arm][k];
-                (lo.min(v), hi.max(v))
-            });
-            hi - lo
-        };
-        assert!(span(level, 1) > 2.0 * span(level, 0), "level: a yaw sweep");
-        assert!(
-            span(vertical, 0) > 2.0 * span(vertical, 1),
-            "vertical: a pitch sweep"
-        );
-        // The body has no chop clips: it plays its break.
-        let mut b = Animator::new(&TABLES, player(), Space::Body);
-        b.update(&input(PlayerState::Idle, [0.0; 3]), 0.1);
-        b.swing(Swing::ChopLevel);
-        b.update(&input(PlayerState::Idle, [0.0; 3]), 0.1);
-        assert_eq!(b.action(), Some("break"));
     }
 
     #[test]

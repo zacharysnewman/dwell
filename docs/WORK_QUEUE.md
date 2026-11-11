@@ -226,6 +226,18 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
 ## Done
 
+- **Axe swing directions and animation tools (owner 2026-11-11: "The axe animations are still trash.
+  They don't swing in the right direction at all. Make yourself some tools to properly observe
+  animations"):** the clip probe (`cargo run -p dwell-client --example clip_probe`, DEV_TOOLS.md "Clip
+  probe and clip strip": a clip's points over time through the game's own posing, in first person,
+  top, side, front and third-person views, as a table, CSV or an SVG panel sheet) showed the level
+  strike going bottom → top and left → right on screen and both wind-ups taking the head behind the
+  eye. The arms' chop clips were refitted to head targets (level right → left, vertical top → bottom,
+  through the crosshair at contact) and the body got its own chop clips; pinned by
+  `clip_probe::chop_swing_tests` (red on the old clips, both faces in the world). The bench's
+  `clip-strip` step (K frames of one swing from first person and two third-person cameras, one
+  contact sheet) is for the local browser check, not run yet. Outstanding: that browser check; remote
+  players still see a `break` (the wire's swing byte has no chop kind).
 - **"Starting the graphics" frozen (BUGS.md #71):** not a main-thread task: on a cold Metal shader
   cache the GPU process compiled the renderer's 38 pipelines for ~9 s with the page painting no frame.
   Now the compile is its own stage (`shaders`), the pipelines are lazy (`render/pipeline.rs`) and

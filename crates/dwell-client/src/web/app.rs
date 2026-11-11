@@ -1269,6 +1269,16 @@ impl Client {
         }));
         true
     }
+    /// Holds the axe's swing (`vertical` or level) at clip time `t` s on your arms and every
+    /// stand-in body for the dev tools (`__dwell.holdSwing`, the bench's `clip-strip`); a negative
+    /// `t` releases it.
+    #[wasm_bindgen(js_name = holdSwing)]
+    pub fn hold_swing(&self, vertical: bool, t: f64) -> bool {
+        let mut s = self.inner.borrow_mut();
+        let Some(g) = &mut s.game else { return false };
+        g.hold_swing((t >= 0.0).then_some((vertical, t)));
+        true
+    }
     /// Stand-in players for the dev tools (`__dwell.puppets`): `count` bodies ahead of `x, y, z`
     /// (feet) on `face` (its sign: negative for face B) holding block `held` (0: none); 0 removes
     /// them.
