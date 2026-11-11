@@ -4,7 +4,12 @@ The owner's ordered queue of work, with the decisions behind each item, so it su
 ending. Update it in the same change that starts, finishes, re-orders or re-scopes an item. The phase
 status lives in `docs/IMPLEMENTATION_PLAN.md`; this file is the order and the owner's words.
 
-Last updated: 2026-11-11 (0.52.68).
+**Rule (owner, 2026-11-11: "This is why we need to be documenting these as we go"):** every request, answer
+or decision the owner gives goes into this file **in the same turn it arrives**, before or alongside starting
+the work, quoting the owner's words; never only in a session's memory or an agent's brief. An item nobody
+recorded doesn't exist for the next session.
+
+Last updated: 2026-11-11 (0.52.108).
 
 ## Next, in order
 
@@ -224,6 +229,44 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    for now; R5 uses today's blocks (stone, basalt, sandstone, red sandstone, sand, dirt) named in data, so
    new ones can replace them later.
 
+16. **Phone frame rate (P0)** (owner 2026-11-11, iPhone 17, Safari, setting Low: "I'm only getting ~23 fps on
+   mobile, seeing lots of z-fighting on tree trunks with the leaf cards. What might be dropping frames since the
+   last while. Used to get 60 fps"). Suspect: leaf cards are on in every tier but CPU, Low included; cards lying
+   on trunk faces z-fight. In progress (local): measure each feature's cost on the `--touch` page at Low (default
+   and starter worlds) against an older release; cards off on Low/phone, no cards against log faces, a Low tier
+   for every new visual; tier pins and a z-fight test.
+17. **Axe swing directions and animation tools** (owner 2026-11-11: "The axe animations are still trash. They
+   don't swing in the right direction at all. Make yourself some tools to properly observe animations, movement
+   directions, positions over time, etc. Should swing right to left for horizontal and up to down for vertical";
+   "May need to see multiple perspectives to see animation and understand it"). In progress (cloud): a
+   `clip_probe` CLI sampling a clip through the game's posing code (tool head, hand, elbow over time; first
+   person, top, side, front and third-person views in one SVG), direction tests (horizontal strike right → left
+   on screen, vertical top → bottom, the head at the crosshair at contact), the clips fixed, a bench
+   `clip-strip` contact sheet from first and third person.
+18. **Digging marks that look carved** (owner 2026-11-11: "the 'chunks' of dirt aren't at all what we
+   discussed. It should be like a normal map change (do we support normal/bump maps)? It's completely flat
+   should look like mesh deformation (preferably without actually doing it for performance)"; "That part was
+   about digging"). No normal or bump maps today; 0.52.9x's scoop is a flat decal lit by a modelled bowl.
+   Planned (local, after item 16): each mark's height computed per pixel in the shader (its gradient bends the
+   normal; the texture shifted inside the dent for depth; the rim's shadow and damp floor), growing with damage,
+   data-driven, a cheap Low tier; collision unchanged. Stone shards on the same mechanism after.
+19. **Lava glow, remaining** (owner 2026-11-11: "Lava should have bloom glow"; "Lava looks dark red instead of
+   bright red/orange"; "It should darken as it solidifies though"). Built 0.52.107: colour by heat stops, heat in
+   cells. Left: the bloom pass (keyed on emissive; tiers, off on CPU/Low); the crust covering less of hot lava
+   (one number, `crust` of the hot stop, waiting on the owner's look); the cooling river not yet seen in game.
+20. **Starter world on iPhone, again** (owner 2026-11-11: "iOS can't handle the starter world. It crashes and
+   restarts quite often. What's so much heavier about it?"). 0.52.99–0.52.104: ecology 12.5 → 0.9 MB, starter
+   biome grids 53.6 → 15.9 MB a process. Left: re-measure on the `--touch` page; if still near the limit, one
+   world worker on phones.
+21. **Meadow tall grass** (owner's call pending, 2026-11-11): the meadow's grass grows in patches, never on ½ m
+   grass ramps (~40 % of the meadow), drawn pale. Denser patches or tufts on ramps change the default world's
+   terrain (a new compatibility line); a less pale tuft is a look change only. Asked the owner which.
+
+22. **Settings and version buttons look like web links** (owner 2026-11-11: "I thought we had settings and
+   version buttons changed queued, is that true?" — it wasn't recorded anywhere; then "The buttons should be
+   aligned to match the design of the others instead of looking like web links"). Restyle them as the menu's
+   own buttons, aligned with the others.
+
 ## Done
 
 - **"Starting the graphics" frozen (BUGS.md #71):** not a main-thread task: on a cold Metal shader
@@ -374,7 +417,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 - **A 10× map** — docs/proposals/BIG_MAP.md (owner 2026-11-11: "we will test out a 10x size map soon (could
   start whenever)"). Study written: 10× area (158 km radius) runs natively today (62 s, 871 MB a face here)
   once the radius is one value (M0–M2, a desktop test); a phone needs coarse whole-disc grids and 100 m
-  regions on demand (R1–R6). Open: which 10× (area or radius), per build or per world, desktop first.
+  regions on demand (R1–R6). Owner's answers (2026-11-11): 10× **radius** (500 km); a desktop test first, phones after the regional maps;
+  the size a **world setting**; the plates decide the land; "Perhaps even scope it as a 2x, 4x, 8x or 10x" —
+  sizes 1×/2×/4×/8×/10× as data. At 10× radius the whole-map grids run at a coarser cell (~1 km) until the
+  regional maps. M0 (the radius as a per-world setting) in progress (cloud).
 
 - **Sharing saved structures between players** (owner 2026-11-11: "eventually shareable").
 
