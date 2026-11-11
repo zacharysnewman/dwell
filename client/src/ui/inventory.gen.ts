@@ -21,7 +21,10 @@ export const ITEMS: readonly ItemDef[] = [
   { name: "dwell:grass_seed", label: "Grass seed", color: "#b9b45a", size: 0.12, stack: 64, value: 0 },
   { name: "dwell:gem", label: "Gem", color: "#4fb07a", size: 0.14, stack: 64, value: 1 },
   { name: "dwell:gem_large", label: "Large gem", color: "#4f7fd0", size: 0.2, stack: 64, value: 5 },
-  { name: "dwell:wood", label: "Wood", color: "#a07446", size: 0.24, stack: 64, value: 0 },
+  { name: "dwell:wood", label: "Wood chunk", color: "#a07446", size: 0.24, stack: 64, value: 0 },
+  { name: "dwell:rock_shard", label: "Rock shard", color: "#8f8a84", size: 0.1, stack: 64, value: 0 },
+  { name: "dwell:dirt_clump", label: "Dirt clump", color: "#8a5a3a", size: 0.1, stack: 64, value: 0 },
+  { name: "dwell:grass_fiber", label: "Grass fiber", color: "#9fbf4a", size: 0.12, stack: 64, value: 0 },
   { name: "dwell:stone_axe", label: "Stone axe", color: "#7d7468", size: 0.6, stack: 1, value: 0 },
   { name: "dwell:metal_axe", label: "Metal axe", color: "#8c8f96", size: 0.65, stack: 1, value: 0 },
   { name: "dwell:stone_pickaxe", label: "Stone pickaxe", color: "#8a7a66", size: 0.6, stack: 1, value: 0 },
@@ -34,3 +37,18 @@ export const WALLETS: readonly { name: string; label: string; capacity: number }
   { name: "dwell:pouch", label: "Pouch", capacity: 99 },
 ];
 export const STARTING_WALLET = "dwell:pouch";
+
+/** A recipe (combining): its inputs make its output (the server applies it). */
+export interface Recipe {
+  name: string;
+  inputs: readonly { item: string; count: number }[];
+  output: { item: string; count: number };
+}
+
+export const RECIPES: readonly Recipe[] = [
+  {"name":"dwell:stone_slab","inputs":[{"item":"dwell:rock_shard","count":8}],"output":{"item":"dwell:stone","count":1}},
+  {"name":"dwell:dirt_slab","inputs":[{"item":"dwell:dirt_clump","count":8}],"output":{"item":"dwell:dirt","count":1}},
+  {"name":"dwell:log_slab","inputs":[{"item":"dwell:wood","count":8}],"output":{"item":"dwell:log","count":1}},
+  {"name":"dwell:stone_axe","inputs":[{"item":"dwell:stick","count":2},{"item":"dwell:rock_shard","count":2},{"item":"dwell:grass_fiber","count":2}],"output":{"item":"dwell:stone_axe","count":1}},
+  {"name":"dwell:stone_pickaxe","inputs":[{"item":"dwell:stick","count":2},{"item":"dwell:rock_shard","count":2},{"item":"dwell:grass_fiber","count":2}],"output":{"item":"dwell:stone_pickaxe","count":1}},
+];

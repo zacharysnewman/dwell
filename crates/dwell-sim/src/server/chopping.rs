@@ -295,6 +295,10 @@ impl Server {
         let wood = chop::wood(block_of(m).name).expect("a wood");
         let s = self.sessions.get_mut(&id).expect("session");
         s.chop_ready = self.tick + (t.swing_seconds * f64::from(dwell_protocol::SIM_HZ)) as u32;
+        // A chop wears the axe (owner, 2026-11-11: "It should survive 32 hits of durability").
+        if super::wear_tool(&mut s.inventory, uses_items) != inv::Wear::None {
+            s.inventory_dirty = true;
+        }
         // Face-local: the swing's plane from the look (eye to the hit), the grain, the band.
         let f = FaceFrame::at_row(cell[1]);
         let look = f.vector(to.normalize_or_zero().to_array());

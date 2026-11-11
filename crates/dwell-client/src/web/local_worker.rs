@@ -261,6 +261,10 @@ impl LocalWorld {
     pub fn carry(&mut self, speed: f64, yaw: f64, seconds: f64, lift: f64) -> bool {
         self.core.carry_local_player(speed, yaw, seconds, lift)
     }
+    /// Gives the local player `count` of `item` (the bench's `give` step); what didn't fit.
+    pub fn give(&mut self, item: &str, count: u16) -> u16 {
+        self.core.give_local_player(item, count)
+    }
     /// Kills the local player (the bench's `die` step).
     pub fn kill(&mut self) {
         self.core.kill_local_player();

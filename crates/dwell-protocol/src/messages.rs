@@ -680,6 +680,11 @@ pub enum InventoryAction {
     /// and is within reach, and knocks it loose (a loose item in a mode that uses items; in
     /// creative it vanishes). Only to a server whose `Inventory` has `inventory_flags::GROUND`.
     Pick { cell: [i32; 3] },
+    /// Make the recipe of this id once (`inventory::recipe_id`; owner, 2026-11-11: combining): the
+    /// server takes the inputs and adds the output, or changes nothing. Only to a server whose
+    /// `Inventory` has `inventory_flags::COMBINE` (an older one would read an unknown action as
+    /// malformed).
+    Combine { recipe: u32 },
 }
 
 /// `Inventory`'s flags.
@@ -693,6 +698,8 @@ pub mod inventory_flags {
     /// The server keeps block damage (docs/BLOCK_DAMAGE.md): it takes `DamageHello` and a break
     /// request's struck point.
     pub const DAMAGE: u8 = 8;
+    /// The server makes recipes (shared/inventory `recipes`): it takes `InventoryAction::Combine`.
+    pub const COMBINE: u8 = 16;
 }
 
 /// The most cells one `Damage` carries (more go in more messages).
@@ -1380,6 +1387,10 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
                 w.u8(4);
                 cell.iter().for_each(|v| w.i32(*v));
             }
+            InventoryAction::Combine { recipe } => {
+                w.u8(5);
+                w.u32(recipe);
+            }
         },
         M::GroundGone(cells) => {
             let n = cells.len().min(MAX_GROUND_GONE_PER_MESSAGE);
@@ -1871,6 +1882,7 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
             4 => InventoryAction::Pick {
                 cell: [r.i32(), r.i32(), r.i32()],
             },
+            5 => InventoryAction::Combine { recipe: r.u32() },
             _ => return None,
         }),
         T::GroundGone => {

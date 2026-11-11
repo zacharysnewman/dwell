@@ -621,6 +621,15 @@ async function step(run: Run, s: Step): Promise<void> {
       await page.waitForTimeout(s.s * 1000);
       return;
     }
+    case 'give': {
+      const ok = await call<boolean | null>(
+        page,
+        `d.give(${JSON.stringify(s.item)}, ${String(s.count)})`,
+      );
+      if (ok !== true) throw new Error('give: not a local world');
+      await page.waitForTimeout(300);
+      return;
+    }
     case 'die': {
       // The respawn's timeline (ARCHITECTURE.md §6.3): killed, the death screen (the respawn
       // preload streams the spawn meanwhile), the respawn, then playing behind the loading screen.

@@ -176,11 +176,75 @@ dwell_world::both_faces!(
             hit(&mut fx, f, STONE);
         }
         assert_eq!(block_at(&mut fx, f, STONE), "dwell:stone");
-        // Stone drops one stone: half of it (none) over the hits, the rest on the destroy.
-        assert_eq!(loose(&fx, "dwell:stone"), 0);
+        // Owner, 2026-11-11: a ½ m stone cell breaks into 8 rock shards, half (4) over the hits
+        // (one each of the four before the last), the rest on the destroy.
+        assert_eq!(loose(&fx, "dwell:rock_shard"), 4);
+        assert_eq!(loose(&fx, "dwell:stone"), 0, "no longer the block itself");
         hit(&mut fx, f, STONE);
         assert_eq!(block_at(&mut fx, f, STONE), "dwell:air");
-        assert_eq!(loose(&fx, "dwell:stone"), 1, "the block's drops, once");
+        assert_eq!(
+            loose(&fx, "dwell:rock_shard"),
+            8,
+            "the cell's 8 pieces, once"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    fn dirt_breaks_into_eight_clumps_and_may_turn_up_a_rock(f: FaceFrame) {
+        // Owner, 2026-11-11: 8 dirt clumps a cell, half over the hits; rocks still found at random.
+        let mut rocks = 0;
+        for _ in 0..12 {
+            let mut fx = scene_with(f, config(f, "adventure"));
+            hold(&mut fx, "adventure", "dwell:wooden_shovel");
+            let n = hits_to_break(&mut fx, f, DIRT);
+            assert_eq!(n, 5, "a stone-tier shovel");
+            assert_eq!(loose(&fx, "dwell:dirt_clump"), 8);
+            assert_eq!(loose(&fx, "dwell:dirt"), 0);
+            rocks += loose(&fx, "dwell:rock");
+        }
+        assert!(
+            rocks > 0,
+            "the random rock (chance 0.5) turned up in 12 cells"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    fn each_hit_with_the_stone_axe_wears_it_and_creative_does_not(f: FaceFrame) {
+        // Owner, 2026-11-11: "It should survive 32 hits of durability"; a break hit with it counts.
+        assert_eq!(chopping::durability("dwell:stone_axe"), Some(32));
+        let mut fx = scene_with(f, config(f, "adventure"));
+        // Adventure starts holding the axe (slot 0).
+        let wear = |fx: &Fixture| {
+            fx.server.inventory_of(1).unwrap().slots[0]
+                .as_ref()
+                .map(|s| (s.item.clone(), s.wear))
+        };
+        assert_eq!(wear(&fx), Some(("dwell:stone_axe".into(), 0)));
+        fx.take_all();
+        let n = hits_to_break(&mut fx, f, DIRT);
+        assert_eq!(n, 11, "the axe is no shovel");
+        assert_eq!(
+            wear(&fx),
+            Some(("dwell:stone_axe".into(), 11)),
+            "one per hit"
+        );
+        // A refused hit (stone with an axe) doesn't count.
+        hit(&mut fx, f, STONE);
+        assert_eq!(wear(&fx), Some(("dwell:stone_axe".into(), 11)));
+        // The client is sent the wear.
+        let sent = fx.take(1);
+        assert!(sent.iter().any(|(m, _)| matches!(m, Message::Inventory(i)
+            if i.inventory.slots[0].as_ref().is_some_and(|s| s.wear == 11))));
+        // Creative (`creativeWear` false): the hotbar's tool doesn't wear.
+        const { assert!(!chopping::CREATIVE_WEAR) };
+        let mut fx = scene_with(f, config(f, "creative"));
+        hold(&mut fx, "creative", "dwell:stone_axe");
+        fx.server.give(1, "dwell:stone_axe", 1);
+        hits_to_break(&mut fx, f, DIRT);
+        let inv = fx.server.inventory_of(1).unwrap();
+        assert!(inv.slots.iter().flatten().all(|s| s.wear == 0));
     }
 );
 

@@ -198,7 +198,7 @@ impl LooseItems {
             if count > 0 && !item.is_empty() {
                 out.push(LooseItem {
                     id: 0,
-                    stack: Stack { item, count },
+                    stack: Stack::new(&item, count),
                     position,
                     fall: 0.0,
                     resting: false,

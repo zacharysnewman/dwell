@@ -54,6 +54,13 @@ pub static BLOCK_DAMAGE: &[BlockDamageDef] = &[
     BlockDamageDef { block: "dwell:glacier_ice_ramp", default: None, tools: &[("pickaxe", 4)], look: Some(DamageLook { kind: DamageLookKind::Shards, size: 0.3, color: [238, 246, 250], crack: [79, 127, 184] }), chips: Some(Chips { count: 8, color: [207, 230, 242], speed: 2.8, size: 0.04 }) },
 ];
 
+/// Tools that wear (`durability.items`): (item, hits it survives).
+pub static DURABILITY: &[(&str, u16)] = &[("dwell:stone_axe", 32)];
+/// Whether tools wear where blocks are unlimited (creative).
+pub const CREATIVE_WEAR: bool = false;
+/// The sound event of a tool breaking from wear.
+pub const WEAR_BREAK_SOUND: Option<&str> = Some("stick_snap");
+
 /// Each tool item's class, tier and that tier's break speed (`breaking.tools`).
 pub static BREAK_TOOLS: &[BreakTool] = &[
     BreakTool { item: "dwell:stone_axe", class: "axe", tier: "stone", speed: 1.5 },

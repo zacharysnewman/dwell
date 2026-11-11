@@ -582,6 +582,8 @@ pub struct Game<S: Scene> {
     /// The server keeps block damage (`inventory_flags::DAMAGE`): `DamageHello` sent, struck
     /// points sent with breaks.
     damage_on: bool,
+    /// The last `Inventory`'s flags (`inventory_flags`): whether the server takes `Combine`.
+    inventory_flags: u8,
     /// Other players' hits seen in the damage updates (docs/BLOCK_DAMAGE.md §6).
     remote_hits: crate::hit_feedback::RemoteHits,
     /// Foliage brushed through and ground items stepped onto (AUDIO.md §5).
@@ -932,6 +934,7 @@ impl<S: Scene> Game<S> {
             creatures: Default::default(),
             creatures_on: false,
             damage_on: false,
+            inventory_flags: 0,
             remote_hits: Default::default(),
             brush_sounds: Default::default(),
             ground_steps: Default::default(),
@@ -1533,6 +1536,7 @@ impl<S: Scene> Game<S> {
             }
             Message::Inventory(i) => {
                 let uses = i.flags & dwell_protocol::inventory_flags::USES_ITEMS != 0;
+                self.inventory_flags = i.flags;
                 // The server keeps ground items (ADR 0071): say so once, and draw them.
                 if i.flags & dwell_protocol::inventory_flags::GROUND != 0 && !self.ground_on {
                     self.ground_on = true;
@@ -1557,6 +1561,14 @@ impl<S: Scene> Game<S> {
                     self.outbox
                         .borrow_mut()
                         .push(Send::Control(Message::CreaturesHello));
+                }
+                // A tool that broke from wear (owner, 2026-11-11): its break sound.
+                if let Some((_, old)) = &self.loose.inventory
+                    && old.tool_broke(&i.inventory, dwell_protocol::chopping::durability)
+                    && let Some(ev) = dwell_protocol::chopping::WEAR_BREAK_SOUND
+                        .and_then(|n| SoundKind::ALL.into_iter().find(|k| k.name() == n))
+                {
+                    self.sounds.push(SoundEvent::new(ev, 0, 1.0, None));
                 }
                 self.loose.inventory = Some((uses, i.inventory));
                 if uses {
@@ -4385,6 +4397,23 @@ impl<S: Scene> Game<S> {
             .push(Send::Control(Message::InventoryAction(
                 dwell_protocol::InventoryAction::Move { from, to, count },
             )));
+    }
+
+    /// Makes recipe `name` once (the backpack's Combine section): the server decides. False, sending
+    /// nothing, to a server that doesn't make recipes (`inventory_flags::COMBINE`).
+    pub fn combine(&mut self, name: &str) -> bool {
+        let Some(a) = dwell_protocol::inventory::combine_request(self.inventory_flags, name) else {
+            return false;
+        };
+        self.outbox
+            .borrow_mut()
+            .push(Send::Control(Message::InventoryAction(a)));
+        true
+    }
+
+    /// Whether the server makes recipes (`inventory_flags::COMBINE`).
+    pub fn combines(&self) -> bool {
+        self.inventory_flags & dwell_protocol::inventory_flags::COMBINE != 0
     }
 
     /// The arms' base role and swing (tests, telemetry).

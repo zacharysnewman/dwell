@@ -133,3 +133,15 @@ damage update's changed cell, at its newest mark, and skips its own hits' echoes
 **Not done:** the e2e specs are not run locally; the look's tuning with the owner (the cracks read strong, the soil scoop as a
 dark patch more than a bowl).
 
+## 7. Pieces (0.52.46)
+
+- **Pieces** (owner, 2026-11-11: "8 Rock shards make a rock slab, 8 dirt clumps make a dirt slab, 8 wood
+  chunks to make a log slab"): a ½ m cell breaks into 8 pieces of its material, as its block's `drops`
+  (`{ "item": "dwell:rock_shard", "count": 8 }`): stone and its ramp → `dwell:rock_shard`; dirt, grass,
+  snowy grass and their ramps → `dwell:dirt_clump`; log → `dwell:wood`, relabelled "Wood chunk" (its
+  name kept: saves hold it; the bucked log's `buckDrops` keep it too). BLOCK_DAMAGE's split applies:
+  half (4) over the hits before the last, the rest on the destroy (stone pickaxe: 1 a hit, 4 on the
+  break). Grass, snowy grass and now dirt keep (dirt: gain) the random rock (chance 0.5, "we still
+  want rocks to be found in grass and dirt at random"); leaves keep their sticks; tall grass drops a
+  `dwell:grass_fiber` every time (owner: "2 grass fibers would be the final ingredient for stone
+  tools"). Felled pieces (bodies), sand, snow, ice and the rest keep their drops.

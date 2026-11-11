@@ -27,3 +27,8 @@ export const BLOCK_DAMAGE: readonly {
   { block: 'dwell:glacier_ice', default: null, tools: { pickaxe: 4 } },
   { block: 'dwell:glacier_ice_ramp', default: null, tools: { pickaxe: 4 } },
 ];
+
+/** Tools that wear (`durability.items`): the hits each survives (the slot's wear bar). */
+export const DURABILITY: Readonly<Record<string, number>> = {
+  'dwell:stone_axe': 32,
+};

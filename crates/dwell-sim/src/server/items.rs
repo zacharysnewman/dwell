@@ -182,6 +182,13 @@ impl Server {
             InventoryAction::Pick { cell } => {
                 self.pick_ground(id, cell);
             }
+            InventoryAction::Combine { recipe } => {
+                // Made or not, the client is sent the truth.
+                if let Some(r) = inv::recipe_in(inv::RECIPES, recipe) {
+                    s.inventory.combine(r);
+                }
+                s.inventory_dirty = true;
+            }
         }
     }
 
@@ -308,6 +315,7 @@ impl Server {
         let flags = inventory_flags::GROUND
             | inventory_flags::CREATURES
             | inventory_flags::DAMAGE
+            | inventory_flags::COMBINE
             | if self.uses_items() {
                 inventory_flags::USES_ITEMS
             } else {

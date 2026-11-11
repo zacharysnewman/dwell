@@ -137,6 +137,10 @@ export class LocalCore {
   kill(): void {
     this.world.kill();
   }
+  /** Gives the local player items (the bench's `give` step). */
+  give(item: string, count: number): void {
+    this.world.give(item, count);
+  }
   /** Carries the local player on a moving raft (the bench's `carry` step). */
   carry(speed: number, yaw: number, seconds: number, lift: number): boolean {
     return this.world.carry(speed, yaw, seconds, lift);

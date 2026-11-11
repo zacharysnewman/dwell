@@ -8,6 +8,14 @@
       ]
     },
     {
+      "version": "0.52.46",
+      "changes": [
+        "Blocks break into 8 rock shards, dirt clumps or wood chunks; tall grass gives grass fiber",
+        "Combine in the backpack: 8 pieces make a slab; sticks, shards and fiber make stone tools",
+        "The stone axe wears out after 32 hits"
+      ]
+    },
+    {
       "version": "0.52.45",
       "changes": [
         "New blocks: snow and glacier ice, in the creative catalogue",

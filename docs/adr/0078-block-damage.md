@@ -37,3 +37,17 @@ and default values". The design is [`docs/BLOCK_DAMAGE.md`](../BLOCK_DAMAGE.md).
 - A break that takes several hits is not predicted on the client; it shows when the server's change
   arrives.
 - With today's one-item drops a hit drops nothing until a block drops more (tuning, D3).
+
+## Amendment, 2026-11-11: pieces (0.52.46)
+
+- **Pieces** (owner, 2026-11-11: "8 Rock shards make a rock slab, 8 dirt clumps make a dirt slab, 8 wood
+  chunks to make a log slab"): a ½ m cell breaks into 8 pieces of its material, as its block's `drops`
+  (`{ "item": "dwell:rock_shard", "count": 8 }`): stone and its ramp → `dwell:rock_shard`; dirt, grass,
+  snowy grass and their ramps → `dwell:dirt_clump`; log → `dwell:wood`, relabelled "Wood chunk" (its
+  name kept: saves hold it; the bucked log's `buckDrops` keep it too). BLOCK_DAMAGE's split applies:
+  half (4) over the hits before the last, the rest on the destroy (stone pickaxe: 1 a hit, 4 on the
+  break). Grass, snowy grass and now dirt keep (dirt: gain) the random rock (chance 0.5, "we still
+  want rocks to be found in grass and dirt at random"); leaves keep their sticks; tall grass drops a
+  `dwell:grass_fiber` every time (owner: "2 grass fibers would be the final ingredient for stone
+  tools"). Felled pieces (bodies), sand, snow, ice and the rest keep their drops.
+- `hit_share`/`destroy_share` unchanged: with 8 pieces a cell the per-hit drops now show.
