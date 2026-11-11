@@ -1081,6 +1081,10 @@ async function start(): Promise<App | null> {
     brush: (command) => client.brush(command, performance.now()),
     select: (slot) => {
       client.select(slot);
+      // The creative view follows at once (its `slot` event comes a frame later): a `pick` right
+      // after a `select` (the bench's steps) fills the slot just selected, not the one before
+      // (the `axe` scenario's trunk was put in slot 1 and filled with the pickaxe: nothing).
+      app.creative?.set([...client.creativeHotbar()], slot);
     },
     pick: (item) => app.creative?.pickItem(item) ?? false,
     placement: () =>
