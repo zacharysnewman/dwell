@@ -130,8 +130,8 @@ export function showMenu(options: MenuPageOptions): MainMenu {
   });
   menu = new MainMenu(document.body, {
     background: settings.current.menuBackground,
-    openSettings: () => {
-      settings.setOpen(true);
+    openSettings: (open) => {
+      settings.setOpen(open);
     },
     index: new WorldIndex(storage()),
     thumbs: new WorldThumbs(storage()),
@@ -150,6 +150,10 @@ export function showMenu(options: MenuPageOptions): MainMenu {
     ...(master ? { master } : {}),
     ...(options.canRegenerate ? { canRegenerate: options.canRegenerate } : {}),
   });
+  // Settings' own Back (or a click beside it) closes it: the menu leaves its page for the home.
+  settings.onOpenChange = (open) => {
+    if (!open) menu?.settingsClosed();
+  };
   return menu;
 }
 

@@ -5,7 +5,14 @@
 // Pure state, no DOM, so the flow is tested (menuNav.test.ts); ui/mainMenu.ts draws it.
 
 /** The menu's views: the intro screens, the home, and the pages the home opens. */
-export type MenuView = 'logo' | 'home' | 'worlds' | 'new-world' | 'online' | 'versions';
+export type MenuView =
+  | 'logo'
+  | 'home'
+  | 'worlds'
+  | 'new-world'
+  | 'online'
+  | 'settings'
+  | 'versions';
 
 /**
  * The intro screens in order, before the home. A studio intro (Dropkick) goes before `logo` when
@@ -18,6 +25,8 @@ const PARENT: Partial<Record<MenuView, MenuView>> = {
   worlds: 'home',
   'new-world': 'worlds',
   online: 'home',
+  // Settings (menu M3): a full page over the panorama, ui/settingsMenu.ts's, Back to the home.
+  settings: 'home',
   versions: 'home',
 };
 

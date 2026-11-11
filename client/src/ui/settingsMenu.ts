@@ -945,6 +945,56 @@ const PAGE_TITLES: Record<Page, string> = {
   host: 'Host',
 };
 
+/** A setting's row as the Settings page draws it: its label, the setting it changes, its kind. */
+export interface SettingsRowModel {
+  label: string;
+  pin: string;
+  kind: 'slider' | 'choice' | 'toggle';
+  /** Reads the row's value, and sets it (the same functions the drawn row calls). */
+  get: (s: Settings) => number | string | boolean;
+  with: (s: Settings, v: never) => Settings;
+  /** The values it offers: a choice's, a toggle's two, a slider's ends. */
+  values: readonly (number | string | boolean)[];
+}
+
+/**
+ * The Settings page's structure (menu M3): each settings pane in order, its title, and the rows
+ * it draws. Pure data from the same `panes()` the page is built from, so a test checks every
+ * stored setting has a row and every row is wired to its setting.
+ */
+export function settingsPageModel(
+  mobile: boolean,
+): { pane: SettingsPane; title: string; rows: SettingsRowModel[] }[] {
+  const groups = panes(mobile);
+  return SETTINGS_PANES.map((pane) => ({
+    pane,
+    title: PAGE_TITLES[pane],
+    rows: groups[pane].flatMap((g) =>
+      g.rows.map((row): SettingsRowModel => {
+        if ('slider' in row) {
+          const r = row.slider;
+          return { ...pick(r), kind: 'slider', values: [r.min, r.max] };
+        }
+        if ('choice' in row) {
+          const r = row.choice;
+          return { ...pick(r), kind: 'choice', values: r.choices };
+        }
+        const r = row.toggle;
+        return { ...pick(r), kind: 'toggle', values: [false, true] };
+      }),
+    ),
+  }));
+}
+
+function pick(r: {
+  label: string;
+  pin: string;
+  get: (s: Settings) => number | string | boolean;
+  with: (s: Settings, v: never) => Settings;
+}): Pick<SettingsRowModel, 'label' | 'pin' | 'get' | 'with'> {
+  return { label: r.label, pin: r.pin, get: r.get, with: r.with };
+}
+
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   className?: string,
@@ -1043,7 +1093,9 @@ export class SettingsMenu {
 
     this.panel = document.createElement('div');
     this.panel.id = 'settings-menu';
-    this.panel.className = 'game-menu';
+    // From the main menu a full page over its panorama (menu M3); in a world, the same page over
+    // the dimmed game.
+    this.panel.className = world ? 'game-menu' : 'game-menu gm-full-page';
     this.panel.hidden = true;
     this.panel.setAttribute('role', 'dialog');
     this.panel.setAttribute('aria-modal', 'true');
@@ -1054,15 +1106,16 @@ export class SettingsMenu {
     const titles = el('div', 'gm-titles');
     titles.append(el('h1', 'gm-title', world ? 'Paused' : 'Settings'), this.subtitle);
     if (!world) this.panel.setAttribute('aria-label', 'Settings');
-    const close = el('button', 'gm-close');
+    // Back, as on every menu page (ui/mainMenu.ts's page head): closes the page (Esc, B too).
+    const close = el('button', 'gm-close mm-back', 'Back');
     close.type = 'button';
-    close.setAttribute('aria-label', 'Close menu');
-    close.title = 'Close (Esc)';
+    close.setAttribute('aria-label', world ? 'Back to the game' : 'Back');
+    close.title = 'Back (Esc)';
     close.dataset.sound = 'none';
     close.addEventListener('click', () => {
       this.setOpen(false);
     });
-    head.append(titles, close);
+    head.append(close, titles);
     this.tabs.setAttribute('role', 'tablist');
     sheet.append(head, this.tabs, this.pagesBox, this.footer);
     this.panel.append(sheet);
@@ -1100,8 +1153,11 @@ export class SettingsMenu {
     this.panel.hidden = !open;
     this.button.setAttribute('aria-expanded', String(open));
     document.body.classList.toggle('menu-open', open);
-    if (open) this.refreshDebug();
-    else this.leaveController?.();
+    if (open) {
+      this.refreshDebug();
+      // Keyboard and controller start on the page shown's tab (GAMEPAD.md: menus by controller).
+      this.tabs.querySelector<HTMLElement>('.gm-tab[aria-selected="true"]')?.focus();
+    } else this.leaveController?.();
     this.onOpenChange?.(open);
   }
 
