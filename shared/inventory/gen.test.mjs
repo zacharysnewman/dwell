@@ -138,5 +138,23 @@ test('a recipe added by data alone is emitted, and a bad one fails with a messag
   bad({ name: 'test:x', inputs: [], output: { item: 'dwell:stone', count: 1 } }, /inputs must be a list/);
   bad({ name: 'test:x', inputs: [{ item: 'dwell:rock', count: 0 }], output: { item: 'dwell:stone', count: 1 } }, /count must be/);
   bad({ name: 'test:x', inputs: [{ item: 'dwell:gem', count: 1 }], output: { item: 'dwell:stone', count: 1 } }, /currency/);
+  bad({ name: 'test:x', label: '', inputs: [{ item: 'dwell:rock', count: 1 }], output: { item: 'dwell:stone', count: 1 } }, /label must be/);
   bad({ name: 'dwell:stone_axe', inputs: [{ item: 'dwell:rock', count: 1 }], output: { item: 'dwell:stone', count: 1 } }, /listed twice/);
+});
+
+test("the slab recipes name their ½ m piece by a label of their own, not the block's (\"Stone slab\")", () => {
+  const d = validateInventory(...fresh());
+  const label = (n) => d.recipes.find((r) => r.name === n).label;
+  assert.deepEqual(['dwell:stone_slab', 'dwell:dirt_slab', 'dwell:log_slab'].map(label), ['Stone slab', 'Dirt slab', 'Log slab']);
+  assert.match(inventoryTs(d), /"name":"dwell:log_slab","label":"Log slab"/);
+  // A tool's recipe has none: its button says the item's own label.
+  assert.equal(label('dwell:stone_axe'), undefined);
+  const [inv, blocks] = fresh();
+  inv.recipes.push({ name: 'test:cairn', label: 'Cairn', inputs: [{ item: 'dwell:rock', count: 4 }], output: { item: 'dwell:stone', count: 1 } });
+  assert.match(inventoryTs(validateInventory(inv, blocks)), /"name":"test:cairn","label":"Cairn"/);
+});
+
+test('the wood chunk has a shaped look (a lump of log), not a plain dot', () => {
+  const rs = inventoryRust(validateInventory(...fresh()));
+  assert.match(rs, /name: "dwell:wood".*look: Some\(ItemLook \{ shape: LookShape::Lump, size: \[[^\]]+\], texture: "dwell:log"/);
 });

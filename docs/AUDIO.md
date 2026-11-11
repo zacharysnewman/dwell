@@ -279,6 +279,9 @@ Owner (2026-11-10): ongoing, ambient and looping sounds stay quiet ("more flavor
   brush). The local player's body in a passable block (`foliage_at`: shins, waist or head; leaves,
   tall grass) rustles every `BRUSH_EVERY_M` (0.8 m) moved through it, at most every `BRUSH_MIN_S`
   (0.18 s), intensity by speed (`speed: [0.4, 6]`); standing still is silent (`BrushSounds`).
+  **Other players** brush and snap too, at their feet, from their drawn (interpolated) snapshot
+  positions — no wire message (`RemoteContacts`: each player its own `ContactSounds`, the local
+  player's id passed over). A body snaps at most one stick every `SNAP_MIN_S` (0.15 s).
 - **Fire bed.** An ambience bed `fire` (§2c) on `fireM`: nothing beyond 8 m, full at 1.5 m, gain
   0.2 (under the 0.4 cap, below every other bed's gain). It sits under the per-source `burn` loops.
 - **Felling timed.** `fell` (the tip) now plays the crack alone (`TREE_Falling_Tree_Only_Cracking`);
@@ -370,8 +373,8 @@ tick and each remote player's interpolated state each frame, and turns changes i
 | `fell` | a tree begins to fall: a carrying piece spawns (`EntitySpawn`, [`FELLING.md`](./FELLING.md)), at its origin | `fell_crack` | — |
 | `piece_land` | a falling piece hits something: its velocity changes by over 2 m/s between snapshots, at most every 250 ms a piece and 45 ms for all (`dwell-client` `pieces.rs`) | its first cell's `impact` + a body thud | from that change (2 → 20 m/s) |
 | `fell_land` | a felled trunk comes to a stop (§2e), once | `fell_impact` | from that change, by the trunk's size |
-| `brush` | moving through foliage (§2e), every 0.8 m, at most every 0.18 s | the foliage (its `brush`; none: silent) | from speed (0.4 → 6 m/s) |
-| `stick_snap` | stepping onto or knocking loose a ground item whose kind names it (§2e) | — | 1 |
+| `brush` | any player moving through foliage (§2e), every 0.8 m, at most every 0.18 s | the foliage (its `brush`; none: silent) | from speed (0.4 → 6 m/s) |
+| `stick_snap` | stepping onto (any player, at most every 0.15 s) or knocking loose a ground item whose kind names it (§2e) | — | 1 |
 | `hurt` | the server's `PlayerEvent` Damage, any player's | — | from the damage (0 → 80 points) |
 | `death` / `respawn` | the server's `PlayerEvent` Death / Respawn, any player's | — | 1 |
 | `burn` / `burn_level` / `burn_end` | a burning light source's loop voice starting, moving, stopping (below) | the source's block (its `burn`) | by distance |

@@ -1238,6 +1238,126 @@ impl GroundSteps {
     }
 }
 
+/// At most one ground item's snap (a stick stepped onto) a body this often (s): a run over a
+/// heap of sticks doesn't crackle on every cell.
+pub const SNAP_MIN_S: f64 = 0.15;
+
+/// A body brushing through foliage and stepping onto ground items (AUDIO.md §5 `brush`,
+/// `stick_snap`): the local player's (at the listener) and each remote player's (at its feet,
+/// `RemoteContacts`), one rule for both.
+#[derive(Clone, Copy, Debug)]
+pub struct ContactSounds {
+    brush: BrushSounds,
+    steps: GroundSteps,
+    /// Seconds since the last snap.
+    snap_since: f64,
+}
+
+impl Default for ContactSounds {
+    fn default() -> Self {
+        Self {
+            brush: BrushSounds::default(),
+            steps: GroundSteps::default(),
+            snap_since: SNAP_MIN_S,
+        }
+    }
+}
+
+impl ContactSounds {
+    /// One update: the foliage the body is in (`foliage_at`), its speed (m/s), the time since the
+    /// last update (s), the open cell its feet stand in while on the ground (None: off it), and
+    /// `ground_item(cell)`: the point and step event of a ground item there that has one. A
+    /// rustle sounds at `at` (None: the listener), a step at its item.
+    #[allow(clippy::too_many_arguments)]
+    pub fn update(
+        &mut self,
+        foliage: StateId,
+        speed: f64,
+        dt: f64,
+        feet_cell: Option<[i32; 3]>,
+        at: Option<[f64; 3]>,
+        ground_item: impl FnOnce([i32; 3]) -> Option<([f64; 3], SoundKind)>,
+        out: &mut Vec<SoundEvent>,
+    ) {
+        self.brush.update(foliage, speed, dt, at, out);
+        self.snap_since += dt;
+        if let Some(cell) = self.steps.update(feet_cell)
+            && self.snap_since >= SNAP_MIN_S
+            && let Some((point, kind)) = ground_item(cell)
+        {
+            self.snap_since = 0.0;
+            out.push(SoundEvent::new(kind, 0, 1.0, Some(point)));
+        }
+    }
+}
+
+/// A remote player as its contact sounds read it (the replicated snapshot's, interpolated).
+#[derive(Clone, Copy, Debug)]
+pub struct ContactSample {
+    pub player_id: u16,
+    pub feet: [f64; 3],
+    pub face: FaceFrame,
+    /// m/s.
+    pub speed: f64,
+    pub grounded: bool,
+    /// The body's height (m): foliage is looked for below it.
+    pub height: f64,
+}
+
+/// The open cell a body's feet stand in (just above the ground's top) on `face`.
+pub fn feet_cell(feet: [f64; 3], face: FaceFrame) -> [i32; 3] {
+    dwell_world::cell_of_pos([feet[0], face.y(face.y(feet[1]) + 0.1), feet[2]])
+}
+
+/// Other players brushing through leaves and snapping sticks (AUDIO.md §2e), heard at their
+/// positions from the replicated snapshots alone (no wire message): each player its own
+/// `ContactSounds`, so each is rate-limited by itself. The local player is never one of them
+/// (its own sounds come from its prediction): a sample with `local`'s id is passed over.
+#[derive(Clone, Debug, Default)]
+pub struct RemoteContacts {
+    players: dwell_world::hash::HashMap<u16, ContactSounds>,
+}
+
+impl RemoteContacts {
+    /// One update of every remote player drawn (`samples`; those gone are forgotten), `dt` (s)
+    /// since the last; `voxel` reads the world, `ground_item` as `ContactSounds::update`'s.
+    pub fn update(
+        &mut self,
+        local: u16,
+        samples: &[ContactSample],
+        dt: f64,
+        mut voxel: impl FnMut([i32; 3]) -> StateId,
+        mut ground_item: impl FnMut([i32; 3]) -> Option<([f64; 3], SoundKind)>,
+        out: &mut Vec<SoundEvent>,
+    ) {
+        let samples = || samples.iter().filter(|s| s.player_id != local);
+        self.players
+            .retain(|id, _| samples().any(|s| s.player_id == *id));
+        for s in samples() {
+            let foliage = foliage_at(s.feet, s.face, s.height, &mut voxel);
+            let cell = s.grounded.then(|| feet_cell(s.feet, s.face));
+            self.players.entry(s.player_id).or_default().update(
+                foliage,
+                s.speed,
+                dt,
+                cell,
+                Some(s.feet),
+                &mut ground_item,
+                out,
+            );
+        }
+    }
+
+    /// The players being followed (for tests).
+    pub fn len(&self) -> usize {
+        self.players.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.players.is_empty()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2371,5 +2491,69 @@ mod tests {
             let e = e.expect("a stick sounds");
             assert!(SoundKind::ALL.iter().any(|k| k.name() == e), "{e}");
         }
+    }
+    dwell_world::both_faces! {
+        /// WORK_QUEUE (block damage follow-ups): remote players' leaf brushing and stick snaps were
+        /// silent. A remote player walking through leaves rustles at its own feet; one walking
+        /// onto a stick snaps it there; the local player's id is never sounded as a remote one.
+        fn a_remote_player_moving_through_leaves_rustles_at_its_position(f: FaceFrame) {
+            let leaves = dwell_blocks::parse_state("dwell:leaves").expect("leaves");
+            let dt = 1.0 / 60.0;
+            // Leaves a metre deep at the waist everywhere x < 20; a stick in the cell at x = 25.
+            let voxel = |c: [i32; 3]| {
+                let p = dwell_world::pos_of_cell(c);
+                let up = f.y(p[1] + 0.25) - 40.0;
+                if p[0] < 20.0 && (0.5..1.0).contains(&up) { leaves } else { 0 }
+            };
+            let stick = feet_cell(f.point([25.25, 40.0, 0.25]), f);
+            let item = |c: [i32; 3]| (c == stick).then(|| (dwell_world::pos_of_cell(c), SoundKind::StickSnap));
+            let sample = |id, x: f64| ContactSample {
+                player_id: id,
+                feet: f.point([x, 40.0, 0.25]),
+                face: f,
+                speed: 4.0,
+                grounded: true,
+                height: 1.8,
+            };
+            let mut r = RemoteContacts::default();
+            let mut out = Vec::new();
+            // Players 2 (remote) and 1 (local) walk side by side through the leaves for 2 s.
+            for i in 0..120 {
+                let x = 10.0 + 4.0 * dt * f64::from(i);
+                r.update(1, &[sample(2, x), sample(1, x)], dt, voxel, item, &mut out);
+            }
+            assert!((9..=11).contains(&out.len()), "{out:?}");
+            for e in &out {
+                assert_eq!((e.kind, e.block), (SoundKind::Brush, leaves));
+                let at = e.at.expect("at the remote player, not the listener");
+                assert!(at[0] >= 10.0 && at[0] < 18.1, "{at:?}");
+                assert!((f.y(at[1]) - 40.0).abs() < 1e-9, "at its feet: {at:?}");
+            }
+            assert_eq!(r.len(), 1, "the local player is not followed as a remote one");
+            // Out of the leaves and onto the stick: one snap at the stick, none again standing on it.
+            out.clear();
+            for i in 0..90 {
+                let x = 22.0 + 4.0 * dt * f64::from(i);
+                r.update(1, &[sample(2, x.min(25.25))], dt, voxel, item, &mut out);
+            }
+            assert_eq!(kinds(&out), vec![SoundKind::StickSnap], "{out:?}");
+            assert_eq!(out[0].at, Some(dwell_world::pos_of_cell(stick)));
+            // Gone from view: forgotten.
+            r.update(1, &[], dt, voxel, item, &mut out);
+            assert!(r.is_empty());
+        }
+    }
+
+    #[test]
+    fn stick_snaps_are_rate_limited_per_body() {
+        let mut c = ContactSounds::default();
+        let mut out = Vec::new();
+        let snap = |cell: [i32; 3]| Some(([f64::from(cell[0]), 0.0, 0.0], SoundKind::StickSnap));
+        // A new stick cell every tick for half a second: at most one per SNAP_MIN_S.
+        for i in 0..30 {
+            c.update(0, 10.0, 1.0 / 60.0, Some([i, 0, 0]), None, snap, &mut out);
+        }
+        let n = out.len();
+        assert!(n >= 3 && n <= (0.5 / SNAP_MIN_S) as usize + 1, "{n}");
     }
 }

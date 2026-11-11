@@ -218,12 +218,13 @@ export function validateInventory(data, namespaces) {
   const recipes = (data.recipes ?? []).map((r, i) => {
     const at = typeof r?.name === 'string' ? `recipes.${r.name}` : `recipes[${i}]`;
     if (typeof r !== 'object' || r === null) fail(`${at} must be an object`);
-    for (const k of Object.keys(r)) if (!['name', 'inputs', 'output'].includes(k)) fail(`${at}: unknown field ${k} (name, inputs, output)`);
+    for (const k of Object.keys(r)) if (!['name', 'label', 'inputs', 'output'].includes(k)) fail(`${at}: unknown field ${k} (name, label, inputs, output)`);
+    if (r.label !== undefined && (typeof r.label !== 'string' || r.label.trim() === '' || r.label.length > 40)) fail(`${at}: label must be a non-empty string of at most 40 characters`);
     if (typeof r.name !== 'string' || !NAMESPACED.test(r.name) || r.name.length > MAX_NAME) fail(`${at}: name must be namespace:name`);
     if (!Array.isArray(r.inputs) || r.inputs.length === 0 || r.inputs.length > 8) fail(`${at}: inputs must be a list of 1–8 { item, count }`);
     const inputs = r.inputs.map((v, j) => amount(v, `${at}.inputs[${j}]`));
     if (new Set(inputs.map((v) => v.item)).size !== inputs.length) fail(`${at}: an input item is listed twice`);
-    return { name: r.name, inputs, output: amount(r.output, `${at}.output`) };
+    return { name: r.name, ...(r.label !== undefined ? { label: r.label } : {}), inputs, output: amount(r.output, `${at}.output`) };
   });
   if (new Set(recipes.map((r) => r.name)).size !== recipes.length) fail('recipes: a name is listed twice');
   return { ...data, items, wallets, drops, startingItems, recipes };
@@ -344,6 +345,8 @@ export function inventoryTs(d) {
   ts.push('/** A recipe (combining): its inputs make its output (the server applies it). */');
   ts.push('export interface Recipe {');
   ts.push('  name: string;');
+  ts.push("  /** The Combine button's name (else the output item's label). */");
+  ts.push('  label?: string;');
   ts.push('  inputs: readonly { item: string; count: number }[];');
   ts.push('  output: { item: string; count: number };');
   ts.push('}');
