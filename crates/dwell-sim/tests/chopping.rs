@@ -939,3 +939,14 @@ dwell_world::both_faces!(
         assert_eq!(swings_to_fell(&mut fx, f, false, 13, |_| 0), None);
     }
 );
+
+dwell_world::both_faces!(
+    fn chop2_reaches_as_far_as_the_target_outline(f: FaceFrame) {
+        // Round 2: a trunk you can outline you can chop. From x = 0.5 the trunk's face at x = 3
+        // is 2.5 m off, past the swing's 2.2 m reach but within the outline's.
+        // Red before: the aim reached only `swing.reachM`, and nothing was cut.
+        let mut fx = scene2(f);
+        sweep(&mut fx, f, [1.0, 0.0, 0.0], false);
+        assert_eq!(cut_rows(&fx, f).len(), 1, "{:?}", cut_rows(&fx, f));
+    }
+);

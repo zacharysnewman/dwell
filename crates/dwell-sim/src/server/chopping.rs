@@ -123,7 +123,7 @@ impl Server {
         }
     }
 
-    /// The first solid cell the look from `eye` meets within the arc's reach, past the blocks
+    /// The first solid cell the look from `eye` meets within the target outline's reach, past the blocks
     /// `t` clears (leaves): the cell, the face met (the chopping wire's `axis × 2 + positive`)
     /// and the point (the chopping prototype's aim).
     fn crosshair_hit(
@@ -137,7 +137,8 @@ impl Server {
             &mut self.world,
             eye,
             dir,
-            t.swing.reach_m as f32,
+            // As far as the block-target outline (round 2: a trunk you can outline you can chop).
+            dwell_protocol::players::REACH_DISTANCE,
             |_, m| t.clears_block(block_of(m).name),
         )?;
         let d = f64::from(hit.distance);
