@@ -26,6 +26,8 @@ export const BLOCK_DAMAGE: readonly {
   { block: 'dwell:snow_ramp', default: 6, tools: { shovel: 3 } },
   { block: 'dwell:glacier_ice', default: null, tools: { pickaxe: 4 } },
   { block: 'dwell:glacier_ice_ramp', default: null, tools: { pickaxe: 4 } },
+  { block: 'dwell:red_sandstone', default: null, tools: { pickaxe: 7 } },
+  { block: 'dwell:red_sandstone_ramp', default: null, tools: { pickaxe: 7 } },
 ];
 
 /** Tools that wear (`durability.items`): the hits each survives (the slot's wear bar). */

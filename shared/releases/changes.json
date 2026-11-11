@@ -2,6 +2,13 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.52.66",
+      "changes": [
+        "Starter world: the mesas show red sandstone beds at every height, a new rock block",
+        "Mesa arches stand on fins the erosion leaves between valleys, so they outnumber overhangs"
+      ]
+    },
+    {
       "version": "0.52.65",
       "changes": [
         "World makers: a biome can set how far apart its trees stand (spacing per biome)"

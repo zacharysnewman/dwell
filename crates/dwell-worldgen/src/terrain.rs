@@ -3214,7 +3214,8 @@ impl TerrainGenerator {
                     continue;
                 };
                 if let Some(s) = site_near(&a, &d, ground)
-                    && a.rock.is_none_or(|r| self.rock_name_at(biome, x, z, s.floor + s.rise / 2.0) == r)
+                    && a.rock
+                        .is_none_or(|r| self.rock_name_at(biome, x, z, s.floor + s.rise / 2.0) == r)
                 {
                     out.push(s);
                 }

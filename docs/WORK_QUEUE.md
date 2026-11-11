@@ -89,6 +89,13 @@ Last updated: 2026-11-11 (0.52.52).
 
 ## Done
 
+- **Terrain leftovers, round 1** (0.52.66): arches from erosion-grown fins (a biome's `arches.fins`, the
+  fin rule in T4's cut-back; sites slide to a fin within 12 m) and arches in a chosen rock
+  (`arches.rock`); the starter's mesa 1 arch / 15 overhangs → 10 / 6 (12 km square, face A). The mesa's
+  red layers at height: `dwell:red_sandstone` as sandstone's face and cap, and a biome's own stack shows
+  its bed on walls and standing tops at any height (grey band stone over ~700 m before; ~64 % → ≥ 85 %
+  of high mesa tops show the beds). Not yet seen in game (no screenshots this round).
+
 - **Starter world** (0.52.54, WORLD_GENERATION.md): `test:starter`, a candidate default from the
   systemic terrain layers and eleven biome presets placed by climate, for the owner to react to at
   `?worldgen=test:starter`; fixture worlds may carry their own biomes. Left: in-game screenshots of the
@@ -143,8 +150,11 @@ Last updated: 2026-11-11 (0.52.52).
 
 - **BUGS.md #68:** holes and walls in the far terrain on a 4800 m cone seen from its summit (parked
   after two rounds; leads in BUGS.md).
-- **Arches:** erosion growing real fins so arches are common; arches in a chosen rock only; the
-  openings in the LOD and in Chisel's 3D view; caprock lips.
+- **Arches:** the openings in the LOD and in Chisel's 3D view; caprock lips; an arch on a fin seen in
+  game (fins and the rock filter built, 0.52.66).
+- **Terrain leftovers (0.52.66 round 1 left):** T3b in normal biomes (a snow line from temperature for
+  any biome, soil blocks by soil type, grass and ground items by climate; the starter opts in); Rainier
+  detail (below); in-game screenshots of an arch on a fin, the red mesa and a snowy biome edge.
 - **Pieces follow-ups (0.52.46):** the Combine buttons say "Stone"/"Log", not "slab"; the wood chunk's
   icon is a plain dot; a dead player's dropped tools lose their wear; the worn axe not yet seen in game.
 - **Block damage follow-ups:** scoops read as dark stains (flat decals); remote players' leaf brushing

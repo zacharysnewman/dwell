@@ -256,10 +256,24 @@ mod tests {
         // Lines 400 m apart, fronts retreated 190 m: a 20 m gap, the crest 200 m from each.
         assert_eq!(f.margin(200.0, 200.0, 190.0), Some(5.0));
         assert_eq!(f.margin(198.0, 202.0, 190.0), Some(3.0));
-        assert!(f.margin(190.0, 210.0, 190.0).unwrap() < 0.0, "beside the fin: cut");
-        assert_eq!(f.margin(200.0, 200.0, 100.0), None, "fronts far apart: no fin");
-        assert_eq!(f.margin(200.0, 200.0, 300.0), None, "fronts long past: no fin");
-        assert!(f.margin(200.0, 200.0, 240.0).is_some(), "fronts just past: a fin");
+        assert!(
+            f.margin(190.0, 210.0, 190.0).unwrap() < 0.0,
+            "beside the fin: cut"
+        );
+        assert_eq!(
+            f.margin(200.0, 200.0, 100.0),
+            None,
+            "fronts far apart: no fin"
+        );
+        assert_eq!(
+            f.margin(200.0, 200.0, 300.0),
+            None,
+            "fronts long past: no fin"
+        );
+        assert!(
+            f.margin(200.0, 200.0, 240.0).is_some(),
+            "fronts just past: a fin"
+        );
     }
 
     #[test]

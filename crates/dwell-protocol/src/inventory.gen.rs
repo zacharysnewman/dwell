@@ -91,4 +91,6 @@ pub static DROPS: &[BlockDrops] = &[
     BlockDrops { block: "dwell:snow_ramp", cost: "dwell:snow", drops: &[DropRule { chance: 1.0, choices: &[DropChoice { item: "dwell:snow", min: 1, max: 1, weight: 1.0 }] }] },
     BlockDrops { block: "dwell:glacier_ice", cost: "dwell:glacier_ice", drops: &[DropRule { chance: 1.0, choices: &[DropChoice { item: "dwell:glacier_ice", min: 1, max: 1, weight: 1.0 }] }] },
     BlockDrops { block: "dwell:glacier_ice_ramp", cost: "dwell:glacier_ice", drops: &[DropRule { chance: 1.0, choices: &[DropChoice { item: "dwell:glacier_ice", min: 1, max: 1, weight: 1.0 }] }] },
+    BlockDrops { block: "dwell:red_sandstone", cost: "dwell:red_sandstone", drops: &[DropRule { chance: 1.0, choices: &[DropChoice { item: "dwell:rock_shard", min: 8, max: 8, weight: 1.0 }] }] },
+    BlockDrops { block: "dwell:red_sandstone_ramp", cost: "dwell:red_sandstone", drops: &[DropRule { chance: 1.0, choices: &[DropChoice { item: "dwell:rock_shard", min: 8, max: 8, weight: 1.0 }] }] },
 ];

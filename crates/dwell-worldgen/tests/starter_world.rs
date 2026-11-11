@@ -725,7 +725,10 @@ dwell_world::both_faces!(
         }
         assert!(high >= 30, "{high} high mesa columns");
         let share = f64::from(rock) / f64::from(high);
-        assert!(share >= 0.85, "{rock} of {high} high mesa tops show the beds");
+        assert!(
+            share >= 0.85,
+            "{rock} of {high} high mesa tops show the beds"
+        );
         assert!(reds > 0, "no red sandstone top in {high}");
     }
 );

@@ -359,7 +359,9 @@ export function checkArches(a, fail, rocks) {
     const f = a.fins;
     if (typeof f !== "object" || f === null || Array.isArray(f))
       fail("arches.fins must be an object");
-    const extra = Object.keys(f).filter((k) => k !== "$comment" && !(k in FINS));
+    const extra = Object.keys(f).filter(
+      (k) => k !== "$comment" && !(k in FINS),
+    );
     if (extra.length) fail(`arches.fins: unknown ${extra.join(", ")}`);
     for (const [k, [lo, hi]] of Object.entries(FINS)) {
       const v = f[k];
@@ -371,7 +373,9 @@ export function checkArches(a, fail, rocks) {
   if (a.rock !== undefined) {
     if (typeof a.rock !== "string") fail("arches.rock must be a rock name");
     if (rocks && !rocks.has(a.rock))
-      fail(`arches.rock: ${JSON.stringify(a.rock)} is not a rock of rocks.json`);
+      fail(
+        `arches.rock: ${JSON.stringify(a.rock)} is not a rock of rocks.json`,
+      );
   }
 }
 
@@ -406,7 +410,11 @@ export const SPACING_MAX = 32;
  */
 export function checkSpacing(spacing, placements, fail) {
   if (spacing === undefined) return;
-  if (typeof spacing !== "object" || spacing === null || Array.isArray(spacing)) {
+  if (
+    typeof spacing !== "object" ||
+    spacing === null ||
+    Array.isArray(spacing)
+  ) {
     fail("spacing must map placement names to blocks");
   }
   for (const [p, d] of Object.entries(spacing)) {
@@ -738,8 +746,7 @@ export function validateRocks(data, blocks) {
   if (sb.shape !== "full") fail(`tectonic.snow ${t.snow} must be a full block`);
   // The glacier's cover (terrain.json tectonics.iceBelowC): a full block.
   const ib = blocks.get(t.ice);
-  if (!ib)
-    fail(`tectonic.ice ${JSON.stringify(t.ice)} is not in the registry`);
+  if (!ib) fail(`tectonic.ice ${JSON.stringify(t.ice)} is not in the registry`);
   if (ib.shape !== "full") fail(`tectonic.ice ${t.ice} must be a full block`);
   return data;
 }
@@ -927,7 +934,15 @@ export function validateWorldKnobs(w) {
  * `world` is terrain.json (its `defaultBiome`, `biomeMap`); `pool` the biomes and presets; gen.mjs and
  * Chisel ("Open starter world") both use it.
  */
-export function fixtureWorldEdit(f, world, pool, rocksJson, blocks, refs, fail) {
+export function fixtureWorldEdit(
+  f,
+  world,
+  pool,
+  rocksJson,
+  blocks,
+  refs,
+  fail,
+) {
   if (!Array.isArray(f.biomes) || f.biomes.length < 1)
     fail("biomes must be a list of at least one biome");
   const biomes = f.biomes.map((e, i) => {
@@ -953,7 +968,8 @@ export function fixtureWorldEdit(f, world, pool, rocksJson, blocks, refs, fail) 
   const dup = names.find((n, i) => names.indexOf(n) !== i);
   if (dup) fail(`biome ${dup} is listed twice`);
   for (const k of Object.keys(f.biomeMap ?? {}))
-    if (k === "$comment" || !(k in world.biomeMap)) fail(`biomeMap: unknown ${k}`);
+    if (k === "$comment" || !(k in world.biomeMap))
+      fail(`biomeMap: unknown ${k}`);
   const biomeMap = { ...world.biomeMap, ...(f.biomeMap ?? {}) };
   delete biomeMap.$comment;
   const edit = { biomes, biomeMap };
