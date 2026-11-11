@@ -5,6 +5,7 @@
 import {
   GEOLOGY,
   TERRAIN,
+  TREE_DENSITY_MAX,
   VEGETATION,
   WHERE_FIELDS,
   WORLD_KNOBS,
@@ -16,6 +17,7 @@ import {
   BUILD_GEOLOGY,
   BUILD_VEGETATION,
   FULL_BLOCKS,
+  PLACEMENT_NAMES,
   PRESETS,
   TEMPLATES,
   addBiome,
@@ -25,7 +27,9 @@ import {
   loadEdit,
   playInGame,
   saveEdit,
+  setTreeDensity,
   toJson,
+  treeDensity,
   validateEdit,
   type BiomeJson,
   type Edit,
@@ -321,6 +325,33 @@ function whereEditor(where: Record<string, unknown>, isDefault: boolean) {
   return w;
 }
 
+/**
+ * A biome's trees and structures (ADR 0074 B5): a density per placement rule (placements.json),
+ * 0 not listed, 1 the rule's own, up to `TREE_DENSITY_MAX`.
+ */
+function treesEditor(b: BiomeJson) {
+  const box = el(
+    'details',
+    {},
+    el('summary', { textContent: 'Trees and structures (placements.json)' }),
+  );
+  for (const name of PLACEMENT_NAMES) {
+    box.append(
+      slider(
+        name,
+        0,
+        TREE_DENSITY_MAX,
+        0.05,
+        () => treeDensity(b, name),
+        (v) => {
+          setTreeDensity(b, name, v);
+        },
+      ),
+    );
+  }
+  return box;
+}
+
 function biomeEditor(b: BiomeJson, isDefault: boolean) {
   const box = el('div', {}, whereEditor(b.where as Record<string, unknown>, isDefault));
   for (const g of ['detail', 'shaping', 'banks']) {
@@ -359,6 +390,7 @@ function biomeEditor(b: BiomeJson, isDefault: boolean) {
       (v) => (b.gullies = v),
     ),
   );
+  box.append(treesEditor(b));
   box.append(waterEditor(b));
   const bands = el('details', { open: true }, el('summary', { textContent: 'Bands' }));
   b.bands.forEach((band, i) => {
@@ -924,6 +956,7 @@ function viewBar() {
     'vegetation',
     'erosion',
     'tectonics',
+    'placements',
   ].forEach((t, i) => {
     overlay.append(
       el('option', { value: String(i), textContent: t, selected: i === view.overlay }),

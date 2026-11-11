@@ -101,6 +101,37 @@ const REFS = {
   stacks: new Set(BUILD_GEOLOGY.stacks.map((s) => s.name)),
 };
 
+/** The placement rules a biome may list (placements.json, in its order): trees, boulders, … */
+export const PLACEMENT_NAMES: readonly string[] = placements.placements.map((r) => r.name);
+
+/**
+ * Biome `b`'s density for placement `name` (ADR 0074 B5, as the generator reads it): 0 when it does
+ * not list it, its `trees` entry when given, else 1.
+ */
+export function treeDensity(b: BiomeJson, name: string): number {
+  const listed = (b.placements as string[] | undefined) ?? [];
+  if (!listed.includes(name)) return 0;
+  return (b.trees as Record<string, number> | undefined)?.[name] ?? 1;
+}
+
+/**
+ * Sets biome `b`'s density for placement `name`: 0 unlists it (and drops its entry), 1 lists it
+ * with no entry (the default's form), any other value lists it with that entry.
+ */
+export function setTreeDensity(b: BiomeJson, name: string, d: number): void {
+  const listed = ((b.placements as string[] | undefined) ?? []).filter((n) => n !== name);
+  const trees = { ...((b.trees as Record<string, number> | undefined) ?? {}) };
+  delete trees[name];
+  if (d > 0) {
+    listed.push(name);
+    if (d !== 1) trees[name] = d;
+  }
+  // Kept in placements.json's order (the generated table's).
+  b.placements = PLACEMENT_NAMES.filter((n) => listed.includes(n));
+  if (Object.keys(trees).length) b.trees = trees;
+  else delete b.trees;
+}
+
 /** The biomes a world can start from: the build's default and the fixtures. */
 export const DEFAULT_BIOME: BiomeJson = defaultBiome;
 export const DESERT_FIXTURE: BiomeJson = desert;
