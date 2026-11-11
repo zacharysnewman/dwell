@@ -385,10 +385,24 @@ impl BiomeField {
                 ))
             + 0.5 * p.dither * (hash - 0.5))
             .clamp(0.0, 1.0 - 1e-9);
+        // The pick reads the weights to the power `sharpen` (1: as they are, the same arithmetic).
+        let ws = &mix.weights[..usize::from(mix.len)];
+        let sharp = p.sharpen != 1.0;
+        let scale = if sharp {
+            ws.iter()
+                .map(|&(_, w)| f64::from(w).powf(p.sharpen))
+                .sum::<f64>()
+        } else {
+            1.0
+        };
         let mut acc = 0.0;
-        mix.chosen = mix.weights[usize::from(mix.len) - 1].0;
-        for &(i, w) in &mix.weights[..usize::from(mix.len)] {
-            acc += f64::from(w);
+        mix.chosen = ws[ws.len() - 1].0;
+        for &(i, w) in ws {
+            acc += if sharp {
+                f64::from(w).powf(p.sharpen) / scale
+            } else {
+                f64::from(w)
+            };
             if u < acc {
                 mix.chosen = i;
                 break;

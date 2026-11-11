@@ -1,5 +1,5 @@
 {
-  "$comment": "Soil and vegetation from climate (systemic terrain T3, ADR 0075). The climate in °C: the biome map's temperature (0..1-ish, less lapseRate per km) × perUnitC + zeroC (0.3/km × 21.7 ≈ 6.5 °C/km). Soil depth (m) per rock (rockSoils; a rock not listed takes `fallback`): its depth on flat ground, thinning to 0 at soil.flatSlopeDeg, deepened by soil.valley × the wetness on valley floors; its type one of soilTypes. Each vegetation kind gives a placement (placements.json) a climate envelope: temperature (°C) and moisture ranges (moisture: the biome map's wetness, rivers and the rain shadow by rainShare), a least soil depth (m), a steepest slope and optional soil types, each edge faded in over `fade`, times `density`. Only a biome with `vegetation` above 0 uses it, by that share (none in the default biome: the default world unchanged); there the tree line is where the temperature falls below the kind's least, and a dry lee has no trees. `dwell:conifer_species` is the conifers' envelope for the pine species' groves (`conifer_groves`, ADR 0079). Prototype content. Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output.",
+  "$comment": "Soil and vegetation from climate (systemic terrain T3, ADR 0075). The climate in °C: the biome map's temperature (0..1-ish, less lapseRate per km) × perUnitC + zeroC (0.3/km × 21.7 ≈ 6.5 °C/km). Soil depth (m) per rock (rockSoils; a rock not listed takes `fallback`): its depth on flat ground, thinning to 0 at soil.flatSlopeDeg, deepened by soil.valley × the wetness on valley floors; its type one of soilTypes. Each vegetation kind gives a placement (placements.json) a climate envelope: temperature (°C) and moisture ranges (moisture: the biome map's wetness, rivers and the rain shadow by rainShare), a least soil depth (m), a steepest slope and optional soil types, each edge faded in over `fade`, times `density`. Only a biome with `vegetation` above 0 uses it, by that share (none in the default biome: the default world unchanged); there the tree line is where the temperature falls below the kind's least, and a dry lee has no trees. `dwell:conifer_species` is the conifers' envelope for the pine species' groves (`conifer_groves`, ADR 0079), hardier than `dwell:conifers` (down to -1 °C, 0.52.63: at 6.5 °C the starter's boreal uplands stood above the tree line, no pines). Prototype content. Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output.",
   "climate": { "zeroC": 2, "perUnitC": 21.7 },
   "soil": { "flatSlopeDeg": 40, "valley": 1 },
   "soilTypes": [
@@ -30,7 +30,7 @@
     {
       "name": "dwell:conifer_species",
       "placement": "conifer_groves",
-      "temperature": [6.5, 28],
+      "temperature": [-1, 28],
       "moisture": [0.04, 1],
       "minSoil": 0.15,
       "maxSlopeDeg": 40,

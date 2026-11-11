@@ -21,6 +21,7 @@ import {
   TALL_PEAK_WORLD,
   toJson,
   validateEdit,
+  starterEdit,
 } from './state';
 import { WorldIndex } from '../local/worldIndex';
 
@@ -85,6 +86,20 @@ describe('Chisel state', () => {
     expect(back).toEqual({ edit: e });
   });
 
+  it('opens the starter world as a valid edit (biomes.mjs fixtureWorldEdit, as gen.mjs)', () => {
+    const e = starterEdit();
+    expect(validateEdit(e)).toEqual([]);
+    expect(e.biomes[0]?.name).toBe('dwell:default');
+    expect(e.biomes.map((b) => b.name)).toContain('starter:broadleaf_forest');
+    expect(e.biomes.length).toBeGreaterThanOrEqual(11);
+    expect(e.biomeMap.sharpen).toBe(2);
+    expect(e.world?.tectonics?.arcDecay).toBe(0.72);
+    expect(e.geology?.shaping.strength).toBe(0.25);
+    // A fresh copy each time: tuning one never changes the next.
+    expect(starterEdit()).toEqual(e);
+    expect(starterEdit()).not.toBe(e);
+  });
+
   it('round-trips the rain shadow’s wind and loads an older edit without its keys', () => {
     const e = buildEdit();
     expect(e.biomeMap.rainShare).toBe(0);
@@ -99,6 +114,7 @@ describe('Chisel state', () => {
       'leeDry',
       'rainShare',
       'windSmoothM',
+      'sharpen',
     ];
     const old = Object.fromEntries(
       Object.entries(e.biomeMap).filter(([k]) => !rainKeys.includes(k)),

@@ -243,6 +243,8 @@ pub struct BiomeMap {
     /// The wind sees the ground low-passed over about this many metres (0: the map's own), so the
     /// rain follows whole ranges, not each hillside.
     pub wind_smooth_m: f64,
+    /// The pick's exponent on each weight (`biomemap::BiomeField::mix`; 1: the weights as they are).
+    pub sharpen: f64,
 }
 
 /// A biome (data: `shared/worldgen/biomes/<name>.json`, ADR 0074): what is layered on the world's
@@ -663,6 +665,11 @@ struct SnowLine {
 }
 
 impl BiomeSet {
+    /// The biome whose band palette `p` is (None for the rocks' and the snow's palettes).
+    pub fn biome_of_palette(&self, p: u16) -> Option<usize> {
+        (p < self.rock_first).then(|| self.first.partition_point(|&f| f <= p) - 1)
+    }
+
     /// `list` (the world's default first) over `map`.
     pub fn new(list: &[Biome], map: &WorldMap, world_seed: u64) -> Self {
         Self::with_map(list, map, world_seed, BIOME_MAP)
@@ -3347,8 +3354,17 @@ impl TerrainGenerator {
             }
         };
         let noise = (i64::from(x) + self.offset_x, i64::from(z) + self.offset_z);
+        // With more than one biome, only the rules the column's biome lists (its `decorations`,
+        // 0.52.63); a world of one biome asks nothing (the default world as before).
+        let listed = (self.biomes.list.len() > 1)
+            .then(|| self.biomes.biome_of_palette(here.palette))
+            .flatten()
+            .map(|b| self.biomes.list[b].decorations);
         self.decorations
             .iter()
+            .enumerate()
+            .filter(|(i, _)| listed.is_none_or(|d| d.contains(&DECORATIONS[*i].name)))
+            .map(|(_, p)| p)
             // The rules' heights are metres above sea level.
             .find(|p| {
                 p.places((x, z), noise, ground, top - SEA_LEVEL, |nx, nz| {

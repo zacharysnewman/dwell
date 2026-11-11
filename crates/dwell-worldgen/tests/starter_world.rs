@@ -219,7 +219,7 @@ fn write_png(path: &str, w: u32, h: u32, rgb: &[u8]) {
 }
 
 /// The tour's spots (`cargo test … -- --ignored --nocapture tour`): for each listed biome the 200 m
-/// sample of it (over 0.6 of the mix) nearest the centre of its cells, as an `at=` world point on face A (feet 2 m over
+/// sample of it (over 0.6 of the mix) nearest the centre of its cells (else its strongest sample), as an `at=` world point on face A (feet 2 m over
 /// the ground), the volcano 15 km off its summit and the shore facing the hotspot chain.
 #[test]
 #[ignore = "prints the tour's links"]
@@ -229,12 +229,22 @@ fn tour() {
     let (g, names) = generator(f, 0);
     let r = i64::from(WORLD_RADIUS) * 3 / 4;
     let mut cells: Vec<Vec<(i64, i64)>> = vec![Vec::new(); names.len()];
+    // A biome that never holds 0.6 of a mix (the mesa beside the badlands): its strongest chosen
+    // sample instead.
+    let mut best: Vec<(f32, i64, i64)> = vec![(0.0, 0, 0); names.len()];
     for z in (-r..=r).step_by(200) {
         for x in (-r..=r).step_by(200) {
             if g.biome_geography(x, z).is_none_or(|g| g.coast < 300.0) {
                 continue;
             }
             let m = g.biome_mix(x, z);
+            if let Some(&(_, w)) = m.weights[..m.len as usize]
+                .iter()
+                .find(|(i, _)| *i == m.chosen)
+                && w > best[m.chosen as usize].0
+            {
+                best[m.chosen as usize] = (w, x, z);
+            }
             if m.weights[..m.len as usize]
                 .iter()
                 .any(|(i, w)| *i == m.chosen && *w > 0.6)
@@ -249,6 +259,10 @@ fn tour() {
     };
     for (i, c) in cells.iter().enumerate() {
         if c.is_empty() {
+            let (w, x, z) = best[i];
+            if w > 0.0 {
+                println!("{} (at most {w:.2} of a mix) at={}", names[i], at(x, z));
+            }
             continue;
         }
         let n = c.len() as f64;
@@ -335,3 +349,167 @@ fn time_tree_spots() {
         );
     }
 }
+
+/// The blocks round a spot: the log voxels standing in the 8 × 8 chunks round it and the surface
+/// blocks of their top voxels, by name.
+fn spot_blocks(
+    g: &TerrainGenerator,
+    x: i32,
+    z: i32,
+) -> (usize, std::collections::BTreeMap<&'static str, usize>) {
+    let log = dwell_blocks::block_of(dwell_blocks::require("dwell:log")).name;
+    let mut logs = 0;
+    let mut tops = std::collections::BTreeMap::new();
+    for cz in -4..4 {
+        for cx in -4..4 {
+            let (wx, wz) = (x / CHUNK_SIZE + cx, z / CHUNK_SIZE + cz);
+            let h = f64::from(g.column_at(wx * CHUNK_SIZE, wz * CHUNK_SIZE).height);
+            let row = rows_for_m(h).div_euclid(CHUNK_SIZE);
+            let mut cs = Vec::new();
+            for cy in row - 2..=row + 3 {
+                let mut c = Chunk::default();
+                g.generate(ChunkCoord::new(wx, cy, wz), &mut c);
+                cs.push(c);
+            }
+            for c in &cs {
+                logs += c
+                    .voxels()
+                    .iter()
+                    .filter(|&&m| m != 0 && dwell_blocks::block_of(m).name == log)
+                    .count();
+            }
+            // The top voxel of the chunk column's corner, by its block's name.
+            let col = g.column_at(wx * CHUNK_SIZE, wz * CHUNK_SIZE);
+            let r = rows_for_m(f64::from(col.height)) - 1;
+            let ci = (r.div_euclid(CHUNK_SIZE) - (row - 2)) as usize;
+            if let Some(c) = cs.get(ci) {
+                let m = c.get(0, r.rem_euclid(CHUNK_SIZE), 0);
+                if m != 0 {
+                    *tops.entry(dwell_blocks::block_of(m).name).or_insert(0) += 1;
+                }
+            }
+        }
+    }
+    (logs, tops)
+}
+
+/// The 0.52.55 tour's boreal spot (terraced uplands in the range's dry lee) stood no pines: the pine
+/// species' climate floor (6.5 °C) put it above the tree line and its moisture was 0. The conifer
+/// species is hardier (vegetation.json) and the starter's boreal keeps off the driest lee.
+#[test]
+fn the_boreal_spot_stands_pines() {
+    // face-a-only: the tour's spot is face A's (the placement is face-local, both faces alike).
+    let (g, _) = generator(FaceFrame::A, 0);
+    let (logs, tops) = spot_blocks(&g, -9300, 2900);
+    println!("boreal: {logs} log voxels, tops {tops:?}");
+    assert!(logs > 200, "the boreal spot's logs: {logs}, tops {tops:?}");
+}
+
+dwell_world::both_faces!(
+    /// The pick's `sharpen` (biomeMap, 0.52.63): with the starter's 2 the strongest biome takes more
+    /// of the mixed columns than with 1 (the weights as they are), so two biomes sharing a climate
+    /// (the mesa and the badlands) speckle less; the weights themselves are the same.
+    fn sharpen_gives_the_strongest_biome_more_columns(f: FaceFrame) {
+        let e = world_config(NAME).unwrap().unwrap();
+        assert!(e.map.sharpen > 1.0, "the starter sharpens");
+        let h = e.height.unwrap();
+        let map = Arc::new(
+            WorldMap::for_height(face_seed(0, f.face), h)
+                .with_worldgen(NAME)
+                .unwrap(),
+        );
+        let gen_with = |sharpen: f64| {
+            let mut m = e.map;
+            m.sharpen = sharpen;
+            TerrainGenerator::with_map(face_seed(0, f.face), map.clone())
+                .with_biomes_and_geology(&e.biomes, m, e.geology)
+        };
+        let (plain, sharp) = (gen_with(1.0), gen_with(e.map.sharpen));
+        let (mut top_plain, mut top_sharp, mut mixed) = (0u32, 0u32, 0u32);
+        for z in (-12000..=12000).step_by(97) {
+            for x in (-12000..=12000).step_by(97) {
+                let (a, b) = (plain.biome_mix(x, z), sharp.biome_mix(x, z));
+                assert_eq!(a.weights, b.weights, "the weights are the same at {x}, {z}");
+                if a.len < 2 {
+                    continue;
+                }
+                mixed += 1;
+                let top = a.weights[..a.len as usize]
+                    .iter()
+                    .max_by(|p, q| p.1.total_cmp(&q.1))
+                    .unwrap()
+                    .0;
+                top_plain += u32::from(a.chosen == top);
+                top_sharp += u32::from(b.chosen == top);
+            }
+        }
+        println!(
+            "{mixed} mixed columns: the strongest picked {top_plain} (1), {top_sharp} (sharpened)"
+        );
+        assert!(mixed > 1000, "{mixed}");
+        assert!(
+            f64::from(top_sharp) > 1.05 * f64::from(top_plain),
+            "{top_sharp} vs {top_plain}"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    /// A biome's `decorations` (0.52.63): tall grass grows only where the column's biome lists it.
+    /// The starter with its broadleaf forest listing none: round the tour's broadleaf spot no tall
+    /// grass stands in a column of that biome, and some stands in its neighbours' grass.
+    fn decorations_follow_the_biome(f: FaceFrame) {
+        let mut e = world_config(NAME).unwrap().unwrap();
+        let broadleaf = e
+            .biomes
+            .iter()
+            .position(|b| b.name == "starter:broadleaf_forest")
+            .unwrap();
+        assert!(!e.biomes[broadleaf].decorations.is_empty());
+        e.biomes[broadleaf].decorations = &[];
+        let h = e.height.unwrap();
+        let map = WorldMap::for_height(face_seed(0, f.face), h)
+            .with_worldgen(NAME)
+            .unwrap();
+        let g = TerrainGenerator::with_map(face_seed(0, f.face), Arc::new(map))
+            .with_biomes_and_geology(&e.biomes, e.map, e.geology)
+            .with_vegetation(e.vegetation);
+        let grass = dwell_blocks::block_of(dwell_blocks::require("dwell:tall_grass")).name;
+        let (mut unlisted, mut listed) = (0, 0);
+        let (x, z) = (22300, 100);
+        for cz in -3..3 {
+            for cx in -3..3 {
+                let (wx, wz) = (x / CHUNK_SIZE + cx, z / CHUNK_SIZE + cz);
+                let h = f64::from(g.column_at(wx * CHUNK_SIZE, wz * CHUNK_SIZE).height);
+                let row = rows_for_m(h).div_euclid(CHUNK_SIZE);
+                for cy in row - 2..=row + 2 {
+                    let mut c = Chunk::default();
+                    g.generate(ChunkCoord::new(wx, cy, wz), &mut c);
+                    for lz in 0..CHUNK_SIZE {
+                        for lx in 0..CHUNK_SIZE {
+                            for ly in 0..CHUNK_SIZE {
+                                let m = c.get(lx, ly, lz);
+                                if m == 0 || dwell_blocks::block_of(m).name != grass {
+                                    continue;
+                                }
+                                let (px, pz) = (wx * CHUNK_SIZE + lx, wz * CHUNK_SIZE + lz);
+                                let b = g.biome_mix(i64::from(px), i64::from(pz)).chosen;
+                                if e.biomes[b as usize].decorations.is_empty() {
+                                    unlisted += 1;
+                                } else {
+                                    listed += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        println!("tall grass: {listed} where listed, {unlisted} where not");
+        assert_eq!(
+            unlisted, 0,
+            "tall grass in biomes that list none ({listed} listed)"
+        );
+        assert!(listed > 0, "tall grass where listed");
+    }
+);

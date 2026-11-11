@@ -319,6 +319,7 @@ pub fn height_from_json(v: &Value) -> Result<HeightField, String> {
             ("arcDistance", &mut k.arc_distance),
             ("arcSpacing", &mut k.arc_spacing),
             ("coneHeight", &mut k.cone_height),
+            ("arcDecay", &mut k.arc_decay),
             ("coneRadius", &mut k.cone_radius),
             ("craterRadius", &mut k.crater_radius),
             ("craterDepth", &mut k.crater_depth),
@@ -393,6 +394,7 @@ pub fn biome_map_from_json(v: &Value) -> Result<BiomeMap, String> {
         lee_dry: n("leeDry")?,
         rain_share: n("rainShare")?,
         wind_smooth_m: n("windSmoothM")?,
+        sharpen: n("sharpen")?,
     })
 }
 
