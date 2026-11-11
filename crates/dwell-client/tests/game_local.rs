@@ -2732,3 +2732,197 @@ fn the_streaming_report_describes_the_near_ring_pool_streamer_and_lod() {
     let back: serde_json::Value = serde_json::from_str(&text).unwrap();
     assert_eq!(back, report);
 }
+
+// The far ecology in a local world (docs/ECOLOGY.md §6, §9): the browser's local server runs the
+// same `Server` with the world maps the worker installed (`installWorldMap`), so its ecology runs,
+// is saved in the world file's `ecology` table and reaches its own client and its guests.
+
+/// Installs both faces' maps from their bytes, as the local worker does before the world starts
+/// (worker.ts: `installWorldMap`, the bytes the page built or kept).
+fn install_maps_as_the_worker_does(seed: u64) {
+    for f in [dwell_world::Face::A, dwell_world::Face::B] {
+        let bytes =
+            dwell_worldgen::worldmap::build_bytes(dwell_worldgen::bifacial::face_seed(seed, f));
+        dwell_worldgen::worldmap::install(&bytes).expect("the map installs");
+    }
+}
+
+/// A local world as the worker opens it (jobs in the server-jobs worker, so nothing on the tick
+/// computes a map), its ecology a world day a tick.
+fn ecology_core(file: dwell_storage::BytesFile) -> LocalCore {
+    let day_ticks = dwell_sim::server::default_settings(1.0)
+        .clock
+        .day_length_s()
+        * f64::from(dwell_protocol::SIM_HZ);
+    LocalCore::create_tuned(
+        dwell_world::Face::A,
+        false,
+        None,
+        false,
+        false,
+        SEED,
+        GENERATOR_TERRAIN,
+        Some(file),
+        Box::new(SeededEntropy(1)),
+        dwell_sim::water::host::Placement::Inline,
+        true,
+        |c| c.ecology_speed = day_ticks,
+    )
+    .unwrap()
+}
+
+#[test]
+fn a_local_world_runs_the_far_ecology_on_both_faces_saves_and_reloads_it() {
+    // both-faces: the ecology holds both faces' ecosystems, each checked here.
+    install_maps_as_the_worker_does(SEED);
+    let file = dwell_storage::BytesFile::default();
+    let mut core = ecology_core(file.clone());
+    assert!(core.persisted);
+    // Nobody online: it waits until 10 days behind, then catches up in big steps (§6). Run until
+    // it has stepped and is under 8 days behind (so the reload's first tick steps nothing).
+    let (mut ticks, mut slowest) = (0, 0.0f64);
+    loop {
+        core.advance(1.0 / 60.0);
+        ticks += 1;
+        slowest = slowest.max(core.server().ecology_stats().1);
+        let s = core.server().ecology_snapshot();
+        if s.running && s.day >= 30.0 && s.clock_day - s.day < 8.0 {
+            break;
+        }
+        assert!(ticks < 200, "the ecology steps by the world's days: {s:?}");
+    }
+    let before = core.server().ecology_snapshot();
+    assert!(before.enabled && before.running);
+    for face in [dwell_world::Face::A, dwell_world::Face::B] {
+        let herds = before.groups.iter().filter(|g| g.face == face);
+        assert!(
+            herds.clone().any(|g| g.species == "dwell:deer"),
+            "deer on face {face:?}"
+        );
+        assert!(
+            herds.clone().any(|g| g.species == "dwell:wolf"),
+            "wolves on face {face:?}"
+        );
+        assert_eq!(core.server().ecosystem(face).unwrap().day, before.day);
+    }
+
+    // Memory: the islands (walkable, most forage, refuge per cell) and the ecosystems (forage per
+    // cell, the groups) of both faces; the world maps themselves are the installed ones, shared.
+    let mut bytes = 0;
+    for face in [dwell_world::Face::A, dwell_world::Face::B] {
+        let eco = core.server().ecosystem(face).unwrap();
+        let cells = eco.grazing.len();
+        bytes += cells * (1 + 8 + 8) + cells * 8;
+        bytes += eco
+            .groups
+            .iter()
+            .chain(&eco.near)
+            .map(std::mem::size_of_val)
+            .sum::<usize>();
+    }
+    println!(
+        "ecology: {bytes} bytes for both faces ({} groups); slowest tick {slowest:.1} ms",
+        before.groups.len()
+    );
+    // Measured 12.5 MB on seed 1: each face's island is the whole world map's span at 200 m
+    // (~190 000 cells a face).
+    assert!(
+        bytes < 16 << 20,
+        "the ecology adds under 16 MB: {bytes} bytes"
+    );
+
+    // Saved in the world file's `ecology` table; a save with nothing stepped since writes nothing
+    // (the record is megabytes and a local world saves every 5 s); a reload continues exactly.
+    assert!(core.save());
+    let writes = core.server().ecology_writes();
+    assert!(writes >= 1);
+    assert!(core.save());
+    assert_eq!(
+        core.server().ecology_writes(),
+        writes,
+        "an unchanged record is not written again"
+    );
+    drop(core);
+    let mut reloaded = ecology_core(dwell_storage::BytesFile::new(file.bytes()));
+    reloaded.advance(1.0 / 60.0);
+    let after = reloaded.server().ecology_snapshot();
+    assert!(after.running);
+    assert_eq!(after.day, before.day);
+    assert_eq!(
+        after.groups, before.groups,
+        "the herds and packs reload as saved"
+    );
+    // And it goes on stepping by the world's days.
+    for _ in 0..30 {
+        reloaded.advance(1.0 / 60.0);
+    }
+    assert!(reloaded.server().ecology_snapshot().day > before.day);
+    assert_eq!(reloaded.server().ecology_writes(), 0);
+    assert!(reloaded.save());
+    assert_eq!(
+        reloaded.server().ecology_writes(),
+        1,
+        "a stepped ecology is saved"
+    );
+}
+
+#[test]
+fn a_local_worlds_far_herds_reach_its_own_client_and_a_guest() {
+    // both-faces: one snapshot carries both faces' groups, each checked here.
+    install_maps_as_the_worker_does(SEED);
+    let mut rig = Rig::new();
+    rig.add_guest();
+    let mut asked = false;
+    let told = rig.run_until(60 * 30, |r| {
+        if !asked
+            && let Some((g, _, _)) = &mut r.guest
+            && matches!(g.state(), SessionState::Joined { .. })
+        {
+            // A guest's client asks as the host's does (on the Inventory's ECOLOGY flag).
+            g.send_control(&dwell_protocol::Message::EcologyHello);
+            asked = true;
+        }
+        let host = r.game.as_ref().is_some_and(|g| g.ecology.is_some());
+        let guest = r.guest.as_ref().is_some_and(|(_, _, got)| {
+            got.iter()
+                .any(|m| matches!(m, dwell_protocol::Message::Ecology(_)))
+        });
+        host && guest
+    });
+    assert!(told, "the local client and the guest get the far groups");
+    let host = rig.game.as_ref().unwrap().ecology.clone().unwrap();
+    for face in [0u8, 1] {
+        assert!(
+            host.groups
+                .iter()
+                .any(|g| g.face == face && g.species == "dwell:deer"),
+            "the host's client sees deer on face {face}"
+        );
+        assert!(
+            host.groups
+                .iter()
+                .any(|g| g.face == face && g.species == "dwell:wolf"),
+            "and wolves on face {face}"
+        );
+    }
+    // The client's read-out lists the server's far groups (the near ones are creatures).
+    let snap = rig.core.server().ecology_snapshot();
+    assert!(snap.running);
+    assert!(!host.groups.is_empty() && host.groups.len() <= snap.groups.len());
+}
+
+#[test]
+fn a_test_generator_local_world_has_no_ecology() {
+    // face-a-only: a world with no ecology has none on either face; nothing face-local to compare.
+    let mut rig = Rig::with_generator(GENERATOR_SANDBOX);
+    assert!(rig.run_until(60 * 5, |r| r.game.is_some()));
+    for _ in 0..(60 * 3) {
+        rig.frame();
+    }
+    let snap = rig.core.server().ecology_snapshot();
+    assert!(!snap.running && snap.groups.is_empty());
+    assert!(
+        rig.game.as_ref().unwrap().ecology.is_none(),
+        "no far groups are sent"
+    );
+}

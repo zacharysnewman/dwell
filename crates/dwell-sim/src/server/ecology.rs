@@ -19,8 +19,12 @@
 //!
 //! Worlds without a world map (the flat world, test generators) have no island and no ecology,
 //! unless a test hands the server islands (`ServerConfig::ecology_islands`). The browser's local
-//! server waits for the map to be computed in its own instance (it is computed in the server-jobs
-//! worker today, so a local world's ecology does not run yet: docs/ECOLOGY.md §7).
+//! server runs it too: its worker installs both faces' maps in its own instance before the world
+//! starts (`installWorldMap`), and the islands are made from those (docs/ECOLOGY.md §6).
+//!
+//! **Saving**: the record is megabytes (each face's forage grid over the whole map), so a save
+//! writes it only when it changed since the store last held it ([`Ecology::record_to_save`]); a
+//! local world saves every few seconds, the ecology steps once a world day.
 
 use super::{Server, SessionId};
 use dwell_ecology::{DATA, Ecosystem, Island};
@@ -84,6 +88,12 @@ pub struct Ecology {
     /// The grass's climate share of a cell's most forage at (face index, face-local x, z), applied
     /// to the world maps' islands as they are made (docs/ECOLOGY.md §10; none: as the ground's).
     pub grass_share: Option<GrassShare>,
+    /// A hash of the record the store holds (last restored or handed to a save), so a save whose
+    /// record is unchanged writes nothing: the record is megabytes (each face's forage grid), and a
+    /// local world saves every few seconds while the ecology steps once a world day.
+    written: Option<u64>,
+    /// Records handed to saves since the server started.
+    pub writes: u64,
 }
 
 /// One herd or pack in the dev read-out.
@@ -136,11 +146,14 @@ impl Ecology {
             world_seed,
             near: crate::herds::Near::default(),
             grass_share: None,
+            written: None,
+            writes: 0,
         }
     }
 
     /// Restores a saved record (`init_storage`).
     pub(super) fn restore(&mut self, bytes: Vec<u8>) {
+        self.written = Some(record_hash(&bytes));
         match decode_record(&bytes) {
             Some((enabled, speed, faces)) => {
                 self.enabled = enabled;
@@ -173,6 +186,24 @@ impl Ecology {
             (None, None) => [Vec::new(), Vec::new()],
         };
         encode_record(self.enabled, self.speed, &faces)
+    }
+
+    /// The record to save, or None when the store already holds it (nothing stepped, nothing near
+    /// changed since the last save).
+    pub(super) fn record_to_save(&mut self) -> Option<Vec<u8>> {
+        let r = self.record();
+        let h = record_hash(&r);
+        if self.written == Some(h) {
+            return None;
+        }
+        self.written = Some(h);
+        self.writes += 1;
+        Some(r)
+    }
+
+    /// A save failed: the next one writes the record whatever it holds.
+    pub(super) fn save_failed(&mut self) {
+        self.written = None;
     }
 
     /// The islands, once known: a test's, or both faces' world maps once this process has them
@@ -249,6 +280,13 @@ pub fn night_on(clock: crate::server::WorldClock, world_s: f64, face: Face) -> b
     let day_a = (t - 0.5).abs() < f64::from(clock.day_s) / len / 2.0;
     // face-boundary: the two faces' days are opposite (one sun between them).
     day_a == (face == Face::B)
+}
+
+fn record_hash(bytes: &[u8]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    bytes.hash(&mut h);
+    h.finish()
 }
 
 fn encode_record(enabled: bool, speed: f64, faces: &[Vec<u8>; 2]) -> Vec<u8> {
@@ -475,6 +513,11 @@ impl Server {
     pub fn ecosystem(&self, face: Face) -> Option<&Ecosystem> {
         let k = FACES.iter().position(|&f| f == face)?;
         self.ecology.faces.as_ref().map(|f| &f[k])
+    }
+
+    /// Ecology records handed to saves since the server started (an unchanged one is not written).
+    pub fn ecology_writes(&self) -> u64 {
+        self.ecology.writes
     }
 
     /// The last tick's ecology steps and their time (ms), and the steps since the start.

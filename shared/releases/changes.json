@@ -2,6 +2,30 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.52.97",
+      "changes": [
+        "Shovel scoops look like shallow bowls and pickaxe marks like chipped facets",
+        "Distant deer herds and wolf packs show as small shapes across the land"
+      ]
+    },
+    {
+      "version": "0.52.96",
+      "changes": [
+        "Lava rivers: a river vent's lava now runs as far as its flow takes it, kilometres if need be, instead of stopping at the edge of a fixed patch",
+        "Lava that reaches the sea quenches to obsidian on the sea floor and builds new land above the water",
+        "Running lava stays molten under its crust and cools once it stops",
+        "A lava pond held back by its own crust breaks out through it and runs on",
+        "The starter world's youngest island has a lava river vent on its flank, on one face"
+      ]
+    },
+    {
+      "version": "0.52.95",
+      "changes": [
+        "Far-off deer herds and wolf packs show in the distance again, in your own worlds, worlds you host for friends and on dedicated servers: the game had been throwing away the herd updates the world sent",
+        "Behind the scenes: a world saves its herds only when they have changed, so autosaves write megabytes less"
+      ]
+    },
+    {
       "version": "0.52.94",
       "changes": [
         "Flying high over a tall mountain no longer cuts a hole in it",
