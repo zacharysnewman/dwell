@@ -17,9 +17,10 @@ export function sanitizeExposure(value: unknown): number {
 export const CLOUD_QUALITIES = ['off', 'low', 'medium', 'high'] as const;
 export type CloudQuality = (typeof CLOUD_QUALITIES)[number];
 
-/** High on desktops, Low on phones (the GPU time a phone can spare). */
+/** Medium on desktops (High, the half-resolution volume, is opt-in: over its GPU budget seen from
+ * above, docs/CLOUDS.md §8.3), Low on phones (the GPU time a phone can spare). */
 export function defaultClouds(mobile: boolean): CloudQuality {
-  return mobile ? 'low' : 'high';
+  return mobile ? 'low' : 'medium';
 }
 
 /** A stored Clouds setting; anything else (missing, unknown) takes the device's default. */

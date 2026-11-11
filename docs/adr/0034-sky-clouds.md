@@ -65,8 +65,10 @@ volcano smoke. So they need to be performant." The original decision ("not 3D") 
   into the shader.
 - The deck stays the cheap path wherever the sky is sampled outside the composite (Snell's window,
   the water's reflections, the other face's sky).
-- First slice: the march is per pixel in the composite. A half-resolution pass with temporal
-  reprojection is the next step, to bring the cost from above into budget (`CLOUDS.md` §8.3, §8.5).
+- The march runs in its own pass at a reduced resolution (High ½, Medium ¼, data), accumulated over
+  frames by reprojection and upsampled by depth in the composite (`CLOUDS.md` §8.6). A Medium value
+  joins the setting and is the desktops' default; High is opt-in, at its 1.5 ms budget seen from
+  above (`CLOUDS.md` §8.3).
 
 Consequences: High costs more GPU time where much of the screen is cloud (`CLOUDS.md` §8.3); the
 setting's stored values are unchanged (no store change); client-side visuals only.

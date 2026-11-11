@@ -57,14 +57,14 @@ pub const CLOUDS: CloudTunables = CloudTunables {
     },
     tiers: VolumeTiers {
         high: VolumeTier {
-            steps: 24,
-            light_steps: 2,
+            steps: 16,
+            light_steps: 1,
             divisor: 2,
             history_blend: 0.2,
         },
         medium: VolumeTier {
-            steps: 16,
-            light_steps: 1,
+            steps: 10,
+            light_steps: 0,
             divisor: 4,
             history_blend: 0.2,
         },

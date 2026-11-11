@@ -1,6 +1,6 @@
 {
   "changes": [
-    "Clouds on High are now volumetric: real 3D clouds you can fly up to, over and through, lit by the sun and the moon",
-    "Low keeps the lighter flat cloud layer, for phones"
+    "Volumetric clouds: real 3D clouds you can fly up to, over and through, lit by the sun and the moon",
+    "A new Medium clouds setting is the desktop default; High is sharper and costs more; Low keeps the lighter flat layer, for phones"
   ]
 }

@@ -5965,7 +5965,12 @@ mod tests {
             assert_eq!(shafts_for(wgpu::DeviceType::Cpu, q), ShaftQuality::Off);
             assert_eq!(shafts_for(wgpu::DeviceType::DiscreteGpu, q), q);
         }
-        for q in [CloudQuality::Off, CloudQuality::Low, CloudQuality::High] {
+        for q in [
+            CloudQuality::Off,
+            CloudQuality::Low,
+            CloudQuality::Medium,
+            CloudQuality::High,
+        ] {
             assert_eq!(clouds_for(wgpu::DeviceType::Cpu, q), CloudQuality::Off);
             assert_eq!(clouds_for(wgpu::DeviceType::DiscreteGpu, q), q);
             assert_eq!(clouds_for(wgpu::DeviceType::IntegratedGpu, q), q);
@@ -6817,6 +6822,49 @@ mod tests {
         let narrow = PassView::new([0.0; 3], [0.0, 0.0, 1.0], vertical_fov(aspect), aspect);
         let wide = PassView::new([0.0; 3], [0.0, 0.0, 1.0], 80.0, aspect);
         assert!(wide.stretch > narrow.stretch);
+    }
+
+    #[test]
+    fn the_volume_clouds_buffer_takes_the_tiers_divisor() {
+        // docs/CLOUDS.md §8.6: the march runs at the tier's reduced size, rounded up.
+        let tier = |divisor| dwell_look::clouds::VolumeTier {
+            steps: 16,
+            light_steps: 1,
+            divisor,
+            history_blend: 0.2,
+        };
+        assert_eq!(cloud_buffer_size((1280, 720), Some(tier(2))), (640, 360));
+        assert_eq!(cloud_buffer_size((1281, 721), Some(tier(4))), (321, 181));
+        assert_eq!(cloud_buffer_size((1280, 720), None), (1, 1));
+        // The shipped tiers: High at half size, Medium at a quarter, Low none (the deck).
+        let at = |q: CloudQuality| q.volume(&CLOUDS);
+        assert_eq!(at(CloudQuality::High).divisor, 2);
+        assert_eq!(at(CloudQuality::Medium).divisor, 4);
+        assert_eq!(at(CloudQuality::Low).steps, 0);
+        assert!(at(CloudQuality::Medium).steps < at(CloudQuality::High).steps);
+    }
+
+    #[test]
+    fn the_clouds_history_starts_over_without_a_last_frame_or_after_a_jump() {
+        let view = [[1.0, 0.0, 0.0, 0.0]; 4];
+        let then = [[0.0, 1.0, 0.0, 0.0]; 4];
+        // The first frame: this frame's camera and the new frame only.
+        let first = cloud_prev_block(None, view, [0.0; 3], 0.2, 7);
+        assert_eq!(first[0], view[0]);
+        assert_eq!(first[4], [1.0, 7.0, 0.0, 0.0]);
+        // A small move: the last frame's camera and the tier's blend, with the move.
+        let next = cloud_prev_block(Some((then, [0.0; 3])), view, [3.0, 4.0, 0.0], 0.2, 8);
+        assert_eq!(next[0], then[0]);
+        assert_eq!(next[4], [0.2, 8.0, 5.0, 0.0]);
+        // A jump (a teleport): the history is dropped.
+        let jump = cloud_prev_block(
+            Some((then, [0.0; 3])),
+            view,
+            [CLOUD_HISTORY_JUMP_M + 1.0, 0.0, 0.0],
+            0.2,
+            9,
+        );
+        assert_eq!(jump[4][0], 1.0);
     }
 
     #[test]

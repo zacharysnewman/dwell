@@ -90,6 +90,7 @@ const PLUME = {
   baseM: [-1e5, 1e5],
   topM: [-1e5, 1e5],
   density: [0, 4],
+  color: 'color',
 };
 export const MAX_PLUMES = 8;
 
@@ -216,8 +217,16 @@ export function cloudsRust(data) {
   for (const p of data.plumes) {
     rs.push('        Plume {');
     rs.push(`            name: ${JSON.stringify(p.name)},`);
-    for (const k of Object.keys(PLUME))
-      if (k !== 'name') rs.push(`            ${snake(k)}: ${rf(p[k])},`);
+    for (const k of Object.keys(PLUME)) {
+      if (k === 'name') continue;
+      if (k === 'color')
+        rs.push(
+          `            color: [${rgb(p.color)
+            .map((c) => rf(+c.toFixed(6)))
+            .join(', ')}],`,
+        );
+      else rs.push(`            ${snake(k)}: ${rf(p[k])},`);
+    }
     rs.push('        },');
   }
   if (data.plumes.length) rs.push('    ],');

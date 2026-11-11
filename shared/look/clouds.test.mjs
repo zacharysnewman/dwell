@@ -17,6 +17,7 @@ const ASH = {
   baseM: 300,
   topM: 3500,
   density: 1,
+  color: '#6e6a66',
 };
 const data = () => JSON.parse(readFileSync(join(here, 'clouds.json'), 'utf8'));
 
@@ -72,5 +73,6 @@ test('a plume and a tier added by data reach the Rust', () => {
   const rs = cloudsRust(validateClouds(d));
   assert.match(rs, /name: "test:ash",/);
   assert.match(rs, /radius_m: 200\.0,/);
+  assert.match(rs, /color: \[0\.431373, 0\.415686, 0\.4\],/);
   assert.match(rs, /steps: 32,/);
 });

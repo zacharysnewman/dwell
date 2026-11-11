@@ -116,6 +116,8 @@ pub struct Plume {
     pub base_m: f64,
     pub top_m: f64,
     pub density: f64,
+    /// Its colour (sRGB), tinting the lit cloud where it is the plume (ash grey, smoke).
+    pub color: Rgb,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -540,9 +542,10 @@ pub fn plume_density(p: &Plume, dx: f64, dz: f64, h: f64) -> f64 {
 fn plumes_wgsl(plumes: &[Plume]) -> String {
     let mut src = String::from(
         "// The plumes (clouds.json `plumes`): `rel` the point's offset from the eye (m, across), `h` its
-// face-local height, `eye` the eye's x and z modulo CLOUD_WRAP. The densest wins.
-fn cloud_plumes(rel: vec2f, h: f32, eye: vec2f) -> f32 {
-	var d = 0.0;
+// face-local height, `eye` the eye's x and z modulo CLOUD_WRAP. The densest wins: its colour (rgb)
+// and density (w).
+fn cloud_plumes(rel: vec2f, h: f32, eye: vec2f) -> vec4f {
+	var d = vec4f(1.0, 1.0, 1.0, 0.0);
 ",
     );
     for p in plumes {
@@ -554,7 +557,9 @@ fn cloud_plumes(rel: vec2f, h: f32, eye: vec2f) -> f32 {
 			let axis = o - CLOUD_WRAP * round(o / CLOUD_WRAP);
 			let r = {radius} * (1.0 + {spread} * u);
 			let k = {density} * (1.0 - smoothstep(0.5 * r, r, length(rel - axis))) * smoothstep(0.0, 0.08, u) * (1.0 - smoothstep(0.85, 1.0, u));
-			d = max(d, k);
+			if (k > d.w) {{
+				d = vec4f({color}, k);
+			}}
 		}}
 	}}
 ",
@@ -566,6 +571,7 @@ fn cloud_plumes(rel: vec2f, h: f32, eye: vec2f) -> f32 {
             radius = f(p.radius_m),
             spread = f(p.spread),
             density = f(p.density),
+            color = vec3(p.color),
         ));
     }
     src.push_str("\treturn d;\n}\n");
@@ -612,7 +618,7 @@ fn dwell_cloud_density(q: vec2f, h: f32, rel: vec2f, coverage: f32, warp_off: ve
 		let cut = 1.0 - coverage + (1.0 - CLOUD_VOL_TOP_FLOOR) * y * y + 0.15 * (1.0 - smoothstep(0.0, 0.12, y));
 		d = smoothstep(cut, cut + CLOUD_SOFTNESS, n);
 	}
-	d = max(d, cloud_plumes(rel, h, eye));
+	d = max(d, cloud_plumes(rel, h, eye).w);
 	if (detail && d > 0.0) {
 		let n = cloud_value3(vec3f(q.x * CLOUD_VOL_DETAIL, h / CLOUD_VOL_CELL, q.y * CLOUD_VOL_DETAIL));
 		d = clamp((d - CLOUD_VOL_EROSION * (1.0 - n)) / max(1.0 - CLOUD_VOL_EROSION, 0.05), 0.0, 1.0);
@@ -702,8 +708,11 @@ fn dwell_cloud_march(clear: vec3f, dir: vec3f, face: f32, max_t: f32, jitter: f3
 		}
 		// Beer toward the light, with the powder term darkening the thin, unlit edges a little.
 		let beer = exp(-CLOUD_ABSORPTION * CLOUD_VOL_EXTINCTION * od);
+		// A plume's own colour where it is the plume (ash grey, smoke).
+		let plume = cloud_plumes(rel, h, inside.yz);
+		let tint = mix(vec3f(1.0), plume.rgb, clamp(plume.w, 0.0, 1.0));
 		let powder = mix(1.0, 1.0 - exp(-4.0 * CLOUD_VOL_EXTINCTION * od), CLOUD_VOL_POWDER);
-		let col = mix(shade_col, lit_col, CLOUD_VOL_AMBIENT + (1.0 - CLOUD_VOL_AMBIENT) * beer * powder);
+		let col = tint * mix(shade_col, lit_col, CLOUD_VOL_AMBIENT + (1.0 - CLOUD_VOL_AMBIENT) * beer * powder);
 		let a = 1.0 - exp(-CLOUD_VOL_EXTINCTION * d * dt);
 		energy += trans * a * col;
 		trans *= 1.0 - a;
@@ -1327,6 +1336,7 @@ mod volume_tests {
         base_m: 300.0,
         top_m: 3500.0,
         density: 1.0,
+        color: [0.43, 0.42, 0.4],
     };
     const WITH_ASH: CloudTunables = CloudTunables {
         plumes: &[ASH],
