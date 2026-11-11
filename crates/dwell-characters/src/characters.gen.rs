@@ -980,6 +980,8 @@ pub static CHARACTERS: &[Character] = &[
                 Part { id: "torch_stick", bone: 9, kind: Kind::Box, size: [0.05, 0.38, 0.05], at: [0.0, -0.08, 0.09], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 17 },
                 Part { id: "torch_wrap", bone: 9, kind: Kind::Box, size: [0.058, 0.07, 0.058], at: [0.0, -0.08, 0.255], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 18 },
             ] },
+            Item { name: "tool", light: None, socket: (9, [0.0, -0.1, 0.02]), pose: &[(9, [-20.0, -45.0, 10.0]), (8, [0.0, -10.0, 0.0])], parts: &[
+            ] },
             Item { name: "stone_axe", light: None, socket: (9, [0.0, -0.1, 0.02]), pose: &[(9, [0.0, 0.0, -55.0]), (8, [0.0, -10.0, 0.0])], parts: &[
                 Part { id: "axe_handle", bone: 9, kind: Kind::Box, size: [0.045, 0.5, 0.045], at: [0.0, -0.08, 0.15], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 19 },
                 Part { id: "axe_head", bone: 9, kind: Kind::RoundBox, size: [0.06, 0.1, 0.1], at: [0.0, -0.135, 0.35], rot: [0.0, 0.0, 0.0], round: 0.3, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 20 },

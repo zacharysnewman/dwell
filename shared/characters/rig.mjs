@@ -274,7 +274,7 @@ export function validate(data, style) {
     if (!NAME.test(id)) fail(w, 'item names are lower_snake_case');
     keysOf(it, ITEM_KEYS, w);
     if (typeof it.on !== 'string') fail(`${w}.on`, 'must name a socket');
-    if (!Array.isArray(it.parts) || it.parts.length === 0) fail(`${w}.parts`, 'must be a non-empty list');
+    if (!Array.isArray(it.parts)) fail(`${w}.parts`, 'must be a list (empty: a hold only, its model drawn instead)');
     // `light` (docs/LIGHTS.md): where the light a held block gives off sits, on the item's socket
     // (metres in its frame): a torch's flame.
     if (it.light !== undefined) vec3(it.light, `${w}.light`);

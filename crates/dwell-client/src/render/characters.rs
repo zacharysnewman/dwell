@@ -85,7 +85,7 @@ pub enum Held {
 
 /// The hold a model look's tool is held in when no tool names one (a pickaxe, a shovel): the axe's
 /// level hold, a one-handed tool held toward its foot.
-pub const MODEL_HOLD: &str = "stone_axe";
+pub const MODEL_HOLD: &str = "tool";
 
 /// What a hand shows holding item `item` (by name) in `hold` (its tool's `held`, if it has one):
 /// its model on the hold when its look is a model, else the tool's hold or its look.
@@ -1875,6 +1875,75 @@ mod tests {
             b = [b[0].min(x), b[1].min(y), b[2].max(x), b[3].max(y)];
         }
         (b, near)
+    }
+
+    #[test]
+    #[ignore]
+    fn tune_tool_pose() {
+        let ch = dwell_characters::player();
+        let fp = ch.bone("forearm_r").unwrap();
+        let hb = ch.bone("hand_r").unwrap();
+        let models: Vec<&str> = dwell_protocol::chopping::BREAK_TOOLS
+            .iter()
+            .map(|t| held_item(t.item, None).model().unwrap())
+            .collect();
+        let meshes: Vec<Mesh> = models.iter().map(|m| prop_mesh(ch, MODEL_HOLD, m)).collect();
+        let fov = ch.first_person.map_or(62.0, |f| f64::from(f.fov));
+        let tan = (fov.to_radians() / 2.0).tan();
+        let clip = |n: &str| TABLES.clips.iter().find(|c| c.name == n).unwrap();
+        let bounds = |m: &Mesh, c: &str, t: f32, extra: [[f32; 3]; 2], aspect: f64| {
+            let mut pose = dwell_characters::anim::sample(clip(c), t);
+            for k in 0..3 {
+                pose.rot[hb][k] += extra[0][k];
+                pose.rot[fp][k] += extra[1][k];
+            }
+            pose.keyed |= 1 << hb | 1 << fp;
+            let bones = arm_transforms(ch, &pose);
+            let mut b = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
+            let mut near = f64::MAX;
+            for (p, &bone) in m.positions.iter().zip(&m.bones) {
+                let v = bones[usize::from(bone)].apply(*p).map(f64::from);
+                let z = v[2].max(1e-3);
+                let (x, y) = (-v[0] / (z * tan * aspect), v[1] / (z * tan));
+                if v[2] > 0.0 && x.abs() <= 1.0 && y.abs() <= 1.0 {
+                    near = near.min(v[2]);
+                }
+                b = [b[0].min(x), b[1].min(y), b[2].max(x), b[3].max(y)];
+            }
+            (b, near)
+        };
+        let mut best: Vec<(f64, String)> = Vec::new();
+        for hx in (-60..=60).step_by(10) {
+            for hy in (-60..=60).step_by(15) {
+                for hz in (-40..=40).step_by(10) {
+                    for fy in [-20, -10, 0, 10] {
+                        let e = [[hx as f32, hy as f32, hz as f32], [0.0, fy as f32, 0.0]];
+                        let mut worst_area = f64::MAX;
+                        let mut ok = true;
+                        let mut maxy = f64::MIN;
+                        for m in &meshes {
+                            for aspect in [16.0 / 9.0, 2880.0 / 1324.0] {
+                                let ([x0, y0, x1, y1], _) = bounds(m, "fp_idle", 0.0, e, aspect);
+                                let area = (x1.min(1.0) - x0) * (y1.min(1.0) - y0.max(-1.0));
+                                worst_area = worst_area.min(area);
+                                maxy = maxy.max(y1);
+                                if x0 < 0.05 {
+                                    ok = false;
+                                }
+                            }
+                        }
+                        if ok {
+                            best.push((worst_area - (maxy - 0.45).max(0.0) * 2.0, format!("{e:?} area {worst_area:.2} maxy {maxy:.2}")));
+                        }
+                    }
+                }
+            }
+        }
+        best.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+        for (_, s) in best.iter().take(15) {
+            eprintln!("{s}");
+        }
+        let _ = (clip("fp_break"), &meshes);
     }
 
     #[test]

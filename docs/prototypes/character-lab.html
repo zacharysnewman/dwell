@@ -1060,7 +1060,7 @@ function validate(data, style) {
     if (!NAME.test(id)) fail(w, 'item names are lower_snake_case');
     keysOf(it, ITEM_KEYS, w);
     if (typeof it.on !== 'string') fail(`${w}.on`, 'must name a socket');
-    if (!Array.isArray(it.parts) || it.parts.length === 0) fail(`${w}.parts`, 'must be a non-empty list');
+    if (!Array.isArray(it.parts)) fail(`${w}.parts`, 'must be a list (empty: a hold only, its model drawn instead)');
     // `light` (docs/LIGHTS.md): where the light a held block gives off sits, on the item's socket
     // (metres in its frame): a torch's flame.
     if (it.light !== undefined) vec3(it.light, `${w}.light`);
@@ -5312,6 +5312,23 @@ const DATA = {
      "material": "bark.shadow"
     }
    ]
+  },
+  "tool": {
+   "label": "A tool drawn as its model held at rest (dwell-client `MODEL_HOLD`; props.json `hand`): no parts of its own, the prop's handle lies along the closed fist's grip axis and this pose of the hand leans it in toward the crosshair, low and right, at full size (owner, 2026-11-11: \"properly align them to the hand\")",
+   "on": "grip_r",
+   "pose": {
+    "hand_r": [
+     -20,
+     -45,
+     10
+    ],
+    "forearm_r": [
+     0,
+     -10,
+     0
+    ]
+   },
+   "parts": []
   },
   "stone_axe": {
    "label": "The stone axe held for a level swing (docs/adr/0067-stone-axe-and-chopping.md; shared/tools names it as the axe's `held`): a stick handle held toward its foot, a knapped flint head lashed across its tip with a leather wrap, its edge (`axe_blade`) away from the eye and turned toward the swing's way, across to the left (owner, 2026-11-08: it was held backwards, the blade at the player)",
