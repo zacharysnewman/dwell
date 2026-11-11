@@ -4,17 +4,17 @@
     "starter:lava-lake": {
       "notes": "The starter's lava lake on its youngest hotspot island's summit (shared/worldgen/worlds/starter.json lavaVents; VOLCANOES.md §6.2)",
       "world": "test:starter",
-      "at": [30012.5, 110, -8012.5],
+      "at": [30006.5, 250, -8006.5],
       "yaw": -45,
-      "pitch": -30
+      "pitch": -50
     },
     "starter:lava-lake-night": {
       "notes": "The starter's lava lake by night: its glow and its light on the summit",
       "world": "test:starter",
       "time": 0.95,
-      "at": [30012.5, 110, -8012.5],
+      "at": [30006.5, 250, -8006.5],
       "yaw": -45,
-      "pitch": -30
+      "pitch": -50
     },
     "starter:broadleaf": {
       "notes": "The broadleaf forest's heart (tour: starter:broadleaf_forest)",

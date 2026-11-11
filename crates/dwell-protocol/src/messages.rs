@@ -584,7 +584,18 @@ pub enum Message {
     /// damage cause up to this one (`DamageCause::MAX` as it was built); a cause past it (or `Drown`
     /// without `VitalsHello`) goes to it as `Fall`.
     CausesHello(u8),
+    /// C→S reliable, control channel, only to a server whose `Inventory` has
+    /// `inventory_flags::STEAM` (docs/proposals/VOLCANOES.md §6.3): send this client the steam
+    /// where lava boils water away.
+    SteamHello,
+    /// S→C reliable, control channel, only to a client that sent `SteamHello`: the world cells
+    /// whose water lava just boiled away (the clients' puffs and hiss). u16 count (at most
+    /// `MAX_STEAM_PER_MESSAGE`), each cell three i32.
+    Steam(Vec<[i32; 3]>),
 }
+
+/// The most cells one `Steam` carries (more are dropped: a puff each is plenty).
+pub const MAX_STEAM_PER_MESSAGE: usize = 256;
 
 /// A creature as sent (ADR 0073): its skinned model (shared/models/models.json), its feet (world
 /// metres), its heading (degrees, 0 faces +z) and its speed (m/s; the client picks its clip by it).
@@ -708,6 +719,9 @@ pub mod inventory_flags {
     /// The server takes `CausesHello` (docs/proposals/VOLCANOES.md §6.2): it sends a damage cause
     /// past the client's last known one (`Burn`, …) only to a client that said it knows it.
     pub const CAUSES: u8 = 32;
+    /// The server has lava (docs/proposals/VOLCANOES.md §6.3): it takes `SteamHello` and then
+    /// sends `Steam`.
+    pub const STEAM: u8 = 64;
 }
 
 /// The most cells one `Damage` carries (more go in more messages).
@@ -802,6 +816,8 @@ impl Message {
             M::WorldgenRequest => MessageType::WorldgenRequest,
             M::WorldgenConfig(_) => MessageType::WorldgenConfig,
             M::CausesHello(_) => MessageType::CausesHello,
+            M::SteamHello => MessageType::SteamHello,
+            M::Steam(_) => MessageType::Steam,
             M::Damage(_) => MessageType::Damage,
             M::Creatures(_) => MessageType::Creatures,
             M::BodyEdit(_) => MessageType::BodyEdit,
@@ -1481,7 +1497,16 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
         },
         M::VitalsHello => {}
         M::CausesHello(n) => w.u8(*n),
-        M::CreaturesHello | M::DamageHello | M::WorldgenRequest => {}
+        M::CreaturesHello | M::DamageHello | M::WorldgenRequest | M::SteamHello => {}
+        M::Steam(cells) => {
+            let n = cells.len().min(MAX_STEAM_PER_MESSAGE);
+            w.u16(n as u16);
+            for c in &cells[..n] {
+                for &v in c {
+                    w.i32(v);
+                }
+            }
+        }
         M::WorldgenConfig(t) => {
             // Too long to send: none (the guest's hash check then refuses, with a message).
             let b: &[u8] = if t.len() <= limits::WORLDGEN_CONFIG_MAX_BYTES {
@@ -1979,6 +2004,19 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
         }),
         T::VitalsHello => M::VitalsHello,
         T::CausesHello => M::CausesHello(r.u8()),
+        T::SteamHello => M::SteamHello,
+        T::Steam => {
+            let n = usize::from(r.u16());
+            r.check(n <= MAX_STEAM_PER_MESSAGE);
+            let mut cells = Vec::new();
+            for _ in 0..n {
+                if !r.ok() {
+                    break;
+                }
+                cells.push([r.i32(), r.i32(), r.i32()]);
+            }
+            M::Steam(cells)
+        }
         T::CreaturesHello => M::CreaturesHello,
         T::DamageHello => M::DamageHello,
         T::WorldgenRequest => M::WorldgenRequest,

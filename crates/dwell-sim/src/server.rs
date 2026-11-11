@@ -617,6 +617,8 @@ struct Session {
     creatures_hello: bool,
     /// Whether its client draws block damage (`DamageHello`, docs/BLOCK_DAMAGE.md).
     damage_hello: bool,
+    /// Whether its client draws steam (`SteamHello`, VOLCANOES.md §6.3).
+    steam_hello: bool,
     /// The tool it holds (item name, the hold's plane), from `ChopAction::Held`; having sent one,
     /// it understands `HeldTools` (ADR 0067).
     held_tool: Option<(String, bool)>,
@@ -674,6 +676,7 @@ impl Session {
             burn: dwell_lava::Burn::default(),
             creatures_hello: false,
             damage_hello: false,
+            steam_hello: false,
             held_tool: None,
             primed: false,
             low_water: usize::MAX,
@@ -1567,6 +1570,7 @@ impl Server {
             Message::CausesHello(n) => s.known_cause = n,
             Message::CreaturesHello => self.creatures_hello(id),
             Message::DamageHello => self.damage_hello(id),
+            Message::SteamHello => s.steam_hello = true,
             Message::WorldgenRequest => {
                 let m = Message::WorldgenConfig(self.worldgen_text.clone());
                 self.send_reliable(id, &m, Channel::Control);
@@ -1852,6 +1856,7 @@ impl Server {
         self.flow_water();
         // Lava flows, cools and quenches (docs/proposals/VOLCANOES.md §6).
         self.flow_lava();
+        self.send_lava_steam();
         // Trees grow by the world's days (ADR 0079 S3).
         self.grow_trees();
         // The far ecology steps by them too (docs/ECOLOGY.md §6).

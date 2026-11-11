@@ -135,7 +135,9 @@
     "Damage": 97,
     "WorldgenRequest": 98,
     "WorldgenConfig": 99,
-    "CausesHello": 100
+    "CausesHello": 100,
+    "SteamHello": 101,
+    "Steam": 102
   },
   "rejectReasons": {
     "ProtocolVersion": 1,

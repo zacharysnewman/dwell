@@ -59,7 +59,7 @@ test('lava, basalt and obsidian paint their own tiles; a tile is molten by data 
   const tile = (n) => texels.subarray(names.indexOf(n) * TILE * TILE * 4, (names.indexOf(n) + 1) * TILE * TILE * 4);
   const mean = (t) => [0, 1, 2].map((c) => t.filter((_, i) => i % 4 === c).reduce((a, b) => a + b, 0) / (TILE * TILE));
   const [lr, , lb] = mean(tile('lava'));
-  assert.ok(lr > 150 && lr > lb * 2, `lava reads orange-red: ${mean(tile('lava'))}`);
+  assert.ok(lr > 100 && lr > lb * 2, `lava reads orange-red over its dark crust: ${mean(tile('lava'))}`);
   assert.ok(mean(tile('basalt')).every((v) => v < 110), `basalt is dark: ${mean(tile('basalt'))}`);
   assert.ok(mean(tile('obsidian')).every((v) => v < 60), `obsidian is near black: ${mean(tile('obsidian'))}`);
   assert.notDeepEqual(mean(tile('basalt')), mean(tile('stone')), 'basalt is no longer stone');

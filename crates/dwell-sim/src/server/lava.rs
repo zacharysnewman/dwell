@@ -204,8 +204,32 @@ impl Server {
             .is_some_and(|id| self.sessions[&id].burn.burning())
     }
 
-    /// The steam since the last call (lava meeting water; the clients' puffs, later).
+    /// The steam since the last call (lava meeting water; what `send_lava_steam` sends).
     pub fn take_lava_steam(&mut self) -> Vec<Steam> {
         std::mem::take(&mut self.lava_steam)
+    }
+
+    /// Each tick: the steam since the last as `Steam` to every client that said `SteamHello`
+    /// (an older client never gets the message), at most `MAX_STEAM_PER_MESSAGE` cells.
+    pub(super) fn send_lava_steam(&mut self) {
+        if self.lava_steam.is_empty() {
+            return;
+        }
+        let cells: Vec<[i32; 3]> = self
+            .take_lava_steam()
+            .into_iter()
+            .map(|s| s.cell)
+            .take(dwell_protocol::MAX_STEAM_PER_MESSAGE)
+            .collect();
+        let to: Vec<SessionId> = self
+            .sessions
+            .iter()
+            .filter(|(_, s)| s.steam_hello)
+            .map(|(&id, _)| id)
+            .collect();
+        let m = Message::Steam(cells);
+        for id in to {
+            self.send_reliable(id, &m, Channel::Control);
+        }
     }
 }
