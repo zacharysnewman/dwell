@@ -667,6 +667,59 @@ pub fn edit_from_json(text: &str) -> Result<Edit, String> {
     })
 }
 
+/// A world's worldgen config (a test world, docs/DEV_TOOLS.md "Play a test world"): its height
+/// field when not the build's. `""` is the build's (`None`); a fixture world's name
+/// (`test:tall_peak`, `FIXTURE_WORLDS`) is that fixture's; a JSON object is a Chisel edit, whose
+/// world knobs (`world`, `height_from_json`) shape the ground. The world's record keeps the config,
+/// so the world reopens on the same maps.
+pub fn worldgen_height(config: &str) -> Result<Option<HeightField>, String> {
+    let config = config.trim();
+    if config.is_empty() {
+        return Ok(None);
+    }
+    if config.starts_with('{') {
+        let v: Value = serde_json::from_str(config).map_err(|e| format!("worldgen: {e}"))?;
+        return match v.get("world") {
+            Some(w) => Ok(Some(height_from_json(w)?).filter(|h| *h != HEIGHT)),
+            None => Ok(None),
+        };
+    }
+    dwell_worldgen::terrain::FIXTURE_WORLDS
+        .iter()
+        .find(|(n, _)| *n == config)
+        .map(|(_, h)| Some(*h))
+        .ok_or_else(|| format!("worldgen: no fixture world named {config}"))
+}
+
+/// The world map cache key of face seed `seed` under worldgen `config` (`worldgen_height`): the
+/// build's key for the build's ground, else that key with the config's hash, so a test world's
+/// maps never stand in for the seed's own.
+pub fn worldgen_map_key(seed: u64, config: &str) -> String {
+    let key = dwell_worldgen::worldmap::cache::key(seed);
+    match worldgen_height(config) {
+        Ok(Some(_)) => {
+            // FNV-1a of the config's text.
+            let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+            for b in config.trim().bytes() {
+                h = (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3);
+            }
+            format!("{key}-w{h:016x}")
+        }
+        _ => key,
+    }
+}
+
+/// Face seed `seed`'s world map under worldgen `config`, as bytes (`worldmap::build_bytes` for the
+/// build's ground; `WorldMap::for_height` for a test world's).
+pub fn worldgen_map_bytes(seed: u64, config: &str) -> Result<Vec<u8>, String> {
+    Ok(match worldgen_height(config)? {
+        None => dwell_worldgen::worldmap::build_bytes(seed),
+        Some(h) => dwell_worldgen::worldmap::codec::encode(
+            &dwell_worldgen::worldmap::WorldMap::for_height(seed, h),
+        ),
+    })
+}
+
 /// A water texel's colour moved toward its look's scatter colour by how far the look differs
 /// from the default water's (none where it is the default's).
 fn water_tinted(
@@ -880,6 +933,31 @@ mod tests {
             env!("CARGO_MANIFEST_DIR")
         );
         serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn a_worldgen_config_names_a_fixture_or_carries_an_edits_knobs() {
+        // both-faces: config parsing only, no face.
+        assert_eq!(worldgen_height("").unwrap(), None, "the build's ground");
+        let peak = worldgen_height("test:tall_peak").unwrap().unwrap();
+        assert_eq!(peak.tectonics.cone_height, 4800.0);
+        assert!(worldgen_height("test:nowhere").is_err());
+        // A Chisel edit's world knobs: the tall peak's own JSON is the same height field.
+        let edit = serde_json::json!({ "world": file("worlds/tall_peak.json")["overrides"] });
+        assert_eq!(worldgen_height(&edit.to_string()).unwrap(), Some(peak));
+        // An edit that leaves the world alone is the build's ground.
+        assert_eq!(worldgen_height(r#"{"biomes":[]}"#).unwrap(), None);
+    }
+
+    #[test]
+    fn a_test_worlds_maps_are_keyed_apart_and_the_default_key_is_unchanged() {
+        // both-faces: cache keys only, no face.
+        let key = dwell_worldgen::worldmap::cache::key(7);
+        assert_eq!(worldgen_map_key(7, ""), key);
+        assert_eq!(worldgen_map_key(7, r#"{"biomes":[]}"#), key);
+        let peak = worldgen_map_key(7, "test:tall_peak");
+        assert!(peak.starts_with(&key) && peak != key);
+        assert_ne!(peak, worldgen_map_key(7, "test:archipelago"));
     }
 
     #[test]

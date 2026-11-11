@@ -2,6 +2,12 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.52.26",
+      "changes": [
+        "Test worlds are playable: Chisel's Play in game opens a new world on the edit's ground, and a ?worldgen=test:tall_peak link opens the tall peak. The world remembers its terrain when reopened."
+      ]
+    },
+    {
       "version": "0.52.25",
       "changes": [
         "Worlds can hold peaks over 4400 m: a volcano's cone can resist erosion and keep its height and crater. Chisel has a Tall peak example with a 4800 m stratovolcano."

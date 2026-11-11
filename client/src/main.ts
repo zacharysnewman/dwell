@@ -43,8 +43,8 @@ import type { SessionReport } from './net/sessionState';
 import { rememberTrust, showRegistryPrompt, trustedHash } from './ui/registryPrompt';
 import { showUpgradePrompt } from './ui/upgradePrompt';
 import { compatibilityLine, sameLine } from './version/semver';
-import { isSpawn, parseLocalWorld, spawnOptions, type LocalWorld } from './local/world';
-import { cleanName, creatableType, parseSeed, WorldIndex } from './local/worldIndex';
+import { GENERATORS, isSpawn, parseLocalWorld, spawnOptions, type LocalWorld } from './local/world';
+import { cleanName, creatableType, parseSeed, testWorldId, WorldIndex } from './local/worldIndex';
 import { worldAccess } from './local/worldAccess';
 import {
   copyWorldFile,
@@ -701,10 +701,17 @@ function makeJobWorker(): Worker {
 
 let maps: MapDeps | null = null;
 
+/**
+ * The local world's worldgen config, when it is a test world (docs/DEV_TOOLS.md "Play a test
+ * world": a `?worldgen=` link or Chisel's Play in game, kept in its record): its maps are built
+ * from it. Empty: the build's terrain.
+ */
+let worldgenConfig = '';
+
 /** How this page gets a terrain world's maps (ADR 0049; `world/worldMaps.ts`). */
 function mapDeps(): MapDeps {
   maps ??= {
-    keys: (seed) => worldMapKeys(seed),
+    keys: (seed, worldgen) => worldMapKeys(seed, worldgen || undefined),
     build: workerBuilder(makeJobWorker),
     store: typeof indexedDB === 'undefined' ? null : new IndexedDbMapStore(),
     onProgress: (ready, needed) => {
@@ -748,7 +755,7 @@ async function start(): Promise<App | null> {
       makeWorker: makeJobWorker,
       // A terrain world's maps (ADR 0049): cached, or built in workers, never on this thread.
       prepareWorld: (seed: bigint, version: number) =>
-        worldMaps(seed, version, mapDeps()) ?? Promise.resolve(null),
+        worldMaps(seed, version, mapDeps(), worldgenConfig) ?? Promise.resolve(null),
       // Per pool (generation, meshing); ?workers=N overrides it (docs/DEV_TOOLS.md).
       workers: workerCount(location.search, navigator.hardwareConcurrency, mobile),
       // ?lod=0 or ?lod=off: no distant terrain at all (a debug switch; __dwell.setLod hides it live).
@@ -1767,10 +1774,23 @@ async function connect(app: App): Promise<void> {
     };
     worldName = playing.name;
     thumbId = playing.id;
+    // A test world (Chisel's Play in game): its maps from its recorded worldgen config.
+    worldgenConfig = playing.worldgen ?? '';
     index.touch(playing.id, Date.now());
   } else if (launch.kind === 'link') {
     app.loading.stages.begin('worldFile', performance.now());
     localWorld = parseLocalWorld(location.search);
+    // Dev link `?worldgen=test:tall_peak` (docs/DEV_TOOLS.md "Play a test world"): a terrain world
+    // of the fixture's ground, its own file and record (which keeps the config).
+    const worldgen = params.get('worldgen') ?? '';
+    if (worldgen) {
+      localWorld = {
+        ...localWorld,
+        generatorVersion: GENERATORS.terrain,
+        file: testWorldId(worldgen, localWorld.worldSeed),
+      };
+      worldgenConfig = worldgen;
+    }
     // A link to a world file that is already there opens a world saved before versioned releases
     // (ignored); a new one is this build's.
     const name =
@@ -1785,7 +1805,9 @@ async function connect(app: App): Promise<void> {
       index.remove(name);
     }
     const existed = (await listWorldFiles()).includes(name);
-    const world = index.adopt(name, Date.now(), existed ? undefined : recordedVersion());
+    const world = worldgen
+      ? index.adoptTest(worldgen, localWorld.worldSeed, Date.now())
+      : index.adopt(name, Date.now(), existed ? undefined : recordedVersion());
     const access = world ? worldAccess(world, buildInfo.version) : null;
     if (access && !access.ok) {
       openMainMenu(app, access.message);
@@ -1816,7 +1838,7 @@ async function connect(app: App): Promise<void> {
     clientVersion: recordedVersion(),
     transport: preference,
     ...(localWorld ? { localWorld } : {}),
-    worldMaps: (seed, version) => worldMaps(seed, version, mapDeps()),
+    worldMaps: (seed, version) => worldMaps(seed, version, mapDeps(), worldgenConfig),
     // The local world's worker's stages (the world file, its server, the spawn), on this clock.
     onStage: (id, phase, atMs) => {
       // By id from the worker: an unknown one is ignored (the tracker checks it against the data).

@@ -8,6 +8,7 @@ import {
   INDEX_KEY,
   newWorldId,
   parseSeed,
+  testWorldId,
   typeOfGenerator,
   WorldIndex,
   type KeyValueStore,
@@ -54,6 +55,30 @@ describe('world seeds', () => {
   it('hashes with FNV-1a', () => {
     expect(hashSeed('')).toBe(0x811c9dc5);
     expect(hashSeed('a')).toBe(0xe40c292c);
+  });
+});
+
+describe('test worlds (docs/DEV_TOOLS.md "Play a test world")', () => {
+  it("a ?worldgen= link's world has its own id and record, which keeps the config", () => {
+    const store = memoryStore();
+    expect(testWorldId('test:tall_peak', 7)).toBe('test-test-tall-peak-s7');
+    const w = new WorldIndex(store).adoptTest('test:tall_peak', 7, 1000);
+    expect(w.id).toBe(testWorldId('test:tall_peak', 7));
+    expect(w).toMatchObject({ type: 'terrain', seed: 7, worldgen: 'test:tall_peak' });
+    expect(w.generatorVersion).toBe(GENERATORS.terrain);
+    // Reopened (a later page, then played, copied): the same config.
+    const again = new WorldIndex(store);
+    expect(again.adoptTest('test:tall_peak', 7, 2000)).toEqual(w);
+    again.touch(w.id, 3000);
+    expect(again.get(w.id)?.worldgen).toBe('test:tall_peak');
+    expect(again.copy(w, 4000, sequence(0.5)).worldgen).toBe('test:tall_peak');
+  });
+
+  it("the New world form's worlds have no worldgen config (the build's terrain)", () => {
+    const index = new WorldIndex(memoryStore());
+    const w = index.create({ name: 'Plain', type: 'terrain', seed: 7 }, 1000, sequence(0.1));
+    expect('worldgen' in w).toBe(false);
+    expect('worldgen' in (index.adopt('local-g8-s7', 1000) ?? {})).toBe(false);
   });
 });
 

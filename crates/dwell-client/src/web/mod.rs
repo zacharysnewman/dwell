@@ -285,11 +285,16 @@ pub fn set_world_file_version(bytes: Vec<u8>, version: &str) -> Result<Vec<u8>, 
 /// The cache keys of a terrain world's maps, faces A then B (ADR 0049): the build's map fingerprint
 /// and each face's seed, so a map kept by another build is never read.
 #[wasm_bindgen(js_name = worldMapKeys)]
-pub fn world_map_keys(world_seed: u64) -> Vec<String> {
+/// A test world's worldgen config (`worldgen`, `chisel::worldgen_height`) keys its maps apart.
+pub fn world_map_keys(world_seed: u64, worldgen: Option<String>) -> Vec<String> {
+    let config = worldgen.unwrap_or_default();
     [dwell_world::Face::A, dwell_world::Face::B]
         .into_iter()
         .map(|f| {
-            dwell_worldgen::worldmap::cache::key(dwell_worldgen::bifacial::face_seed(world_seed, f))
+            crate::chisel::worldgen_map_key(
+                dwell_worldgen::bifacial::face_seed(world_seed, f),
+                &config,
+            )
         })
         .collect()
 }
@@ -297,13 +302,22 @@ pub fn world_map_keys(world_seed: u64) -> Vec<String> {
 /// Computes face `face`'s (0: A, 1: B) world map of a terrain world and returns its bytes (a
 /// builder worker's job: ~1.3 s).
 #[wasm_bindgen(js_name = buildWorldMap)]
-pub fn build_world_map(world_seed: u64, face: u8) -> Vec<u8> {
+/// A test world's (`worldgen`) is built over its height field; throws when the config is bad.
+pub fn build_world_map(
+    world_seed: u64,
+    face: u8,
+    worldgen: Option<String>,
+) -> Result<Vec<u8>, JsError> {
     let face = if face == 1 {
         dwell_world::Face::B
     } else {
         dwell_world::Face::A
     };
-    dwell_worldgen::worldmap::build_bytes(dwell_worldgen::bifacial::face_seed(world_seed, face))
+    crate::chisel::worldgen_map_bytes(
+        dwell_worldgen::bifacial::face_seed(world_seed, face),
+        &worldgen.unwrap_or_default(),
+    )
+    .map_err(|e| JsError::new(&e))
 }
 
 /// Installs a world map's bytes in this instance, so its generators use it rather than computing

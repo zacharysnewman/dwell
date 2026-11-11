@@ -76,8 +76,10 @@ export function launchOf(search: string): Launch {
   if (regenerate) return { kind: 'regenerate', id: regenerate };
   const play = params.get('play');
   if (play) return { kind: 'play', id: play };
-  // A world link; the dev spawn links (`?spawn=portal`, `b`) alone open one too (seed 0).
-  if (params.has('world') || params.has('seed') || params.has('spawn')) return { kind: 'link' };
+  // A world link; the dev spawn and test-world links (`?spawn=portal`, `?worldgen=`) alone open
+  // one too (seed 0).
+  if (params.has('world') || params.has('seed') || params.has('spawn') || params.has('worldgen'))
+    return { kind: 'link' };
   return { kind: 'menu' };
 }
 
