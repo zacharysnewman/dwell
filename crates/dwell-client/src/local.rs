@@ -377,6 +377,15 @@ impl LocalCore {
         physics.set_rotation(h, dwell_physics::DQuat::IDENTITY);
     }
 
+    /// Gives the local player `count` of `item` (the bench's `give` step; dev tools): what didn't
+    /// fit (all of it without a local player).
+    pub fn give_local_player(&mut self, item: &str, count: u16) -> u16 {
+        match self.server.player_of_session(LOCAL_SESSION) {
+            Some(p) => self.server.give(p, item, count),
+            None => count,
+        }
+    }
+
     /// Kills the local player (the bench's `die` step; dev tools).
     pub fn kill_local_player(&mut self) {
         if let Some(p) = self.server.player_of_session(LOCAL_SESSION) {

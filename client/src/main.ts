@@ -354,6 +354,8 @@ interface DwellDebug {
   sounds(): string[];
   /** Kills the local player (a local world only; false otherwise): the bench's `die` step. */
   die(): boolean;
+  /** Gives the local player `count` of `item` (a local world only): the bench's `give` step. */
+  give(item: string, count: number): boolean;
   /**
    * Carries the local player on a raft moved at `speed` m/s toward `yaw` (degrees, 0 = +Z) for
    * `seconds`, `lift` m above its feet (a local world only; false otherwise): the bench's `carry`.
@@ -1057,6 +1059,9 @@ async function start(): Promise<App | null> {
       client.press(code, down);
       // The map's key is the shell's (ADR 0068), as a real key press is.
       if (down && code === 'KeyM') app.minimap?.toggleBig();
+      // The backpack's key is the shell's too (ADR 0066 §10).
+      else if (down && code === 'KeyE' && app.backpack?.usable)
+        setInventoryOpen(app, !inventoryOpen(app));
       else if (down) app.minimap?.key(code);
     },
     look: (yaw, pitch) => {
@@ -1215,6 +1220,10 @@ async function start(): Promise<App | null> {
       app.loopback?.waterReport([x, y, z], radius ?? WATER_REPORT_RADIUS) ?? Promise.resolve(null),
     die: () => {
       app.loopback?.postToWorker({ t: 'kill' });
+      return app.loopback !== null;
+    },
+    give: (item, count) => {
+      app.loopback?.postToWorker({ t: 'give', item, count });
       return app.loopback !== null;
     },
     carry: (speed, yaw, seconds, lift) => {

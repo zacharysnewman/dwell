@@ -166,6 +166,9 @@ function handle(msg: ToWorker): void {
     case 'kill':
       core.kill();
       break;
+    case 'give':
+      core.give(msg.item, msg.count);
+      break;
     case 'carry':
       core.carry(msg.speed, msg.yaw, msg.seconds, msg.lift);
       break;
