@@ -411,7 +411,10 @@ mod tests {
     /// was; a held slot past the new hotbar is the first.
     #[test]
     fn a_nine_slot_hotbar_save_loads_with_slots_7_to_9_in_the_backpack() {
-        assert_eq!(SLOTS, 36, "the slot indices of a saved record stay where they were");
+        assert_eq!(
+            SLOTS, 36,
+            "the slot indices of a saved record stay where they were"
+        );
         // The old build's record: version 1, held 8, the pouch, 3 gems, four stacks.
         let mut old = Vec::new();
         let mut w = ByteWriter::new(&mut old);
@@ -435,7 +438,11 @@ mod tests {
         assert_eq!(inv.money, 3);
         let at = |i: usize| inv.slots[i].as_ref().map(|s| (s.item.as_str(), s.count));
         assert_eq!(at(0), Some(("dwell:stone_axe", 1)));
-        for (i, want) in [(6, ("dwell:dirt", 12)), (7, ("dwell:stick", 5)), (8, ("dwell:rock", 64))] {
+        for (i, want) in [
+            (6, ("dwell:dirt", 12)),
+            (7, ("dwell:stick", 5)),
+            (8, ("dwell:rock", 64)),
+        ] {
             assert!(i >= HOTBAR_SLOTS, "slot {i} is the backpack's now");
             assert_eq!(at(i), Some(want));
         }

@@ -78,7 +78,10 @@ mod tests {
     #[test]
     fn number_keys_1_to_6_pick_the_six_slots_and_7_to_0_nothing() {
         for d in 1..=6 {
-            assert_eq!(slot_for_digit(&format!("Digit{d}"), HOTBAR_SLOTS), Some(d - 1));
+            assert_eq!(
+                slot_for_digit(&format!("Digit{d}"), HOTBAR_SLOTS),
+                Some(d - 1)
+            );
         }
         for d in [7, 8, 9, 0] {
             assert_eq!(slot_for_digit(&format!("Digit{d}"), HOTBAR_SLOTS), None);

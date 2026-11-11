@@ -102,7 +102,7 @@ build (data), inventories per player per world, the rules per mode.
    item name and count), and loose items a new
    `loose_items` table (one record, the whole set each save, like bodies). Older builds don't open the tables and
    keep them; a record they can't read is left out and preserved. Player records are unchanged.
-10. **The UI.** In a world that uses items, the hotbar shows the inventory's first 9 slots with a
+10. **The UI.** In a world that uses items, the hotbar shows the inventory's first slots (9; 6 since the amendment below) with a
     count on each, instead of the creative items, and the wallet's total beside it; an empty slot
     or a non-block item places nothing. `E` opens the **backpack screen**: the 36 slots in a 9 × 4
     grid, the hotbar's row last; a press picks a stack up and a press (or release, a drag) on
@@ -183,3 +183,15 @@ The look vocabulary gains `cluster` (a small heap of tiny lumps: seeds). The gra
 (owner, 2026-11-09: "Seeds also look like a block, instead of a cluster of grass seeds"), held as the
 characters item `cluster` (a few seeds in the fist), and drawn the same on the hotbar, loose and on
 the ground.
+
+## Amendment, 2026-11-10: a 6-slot hotbar and the inventory view (0.52.23)
+
+Owner: "Cap the hotbar at 6 slots. We need inventory view. For both adventure and creative."
+`hotbarSlots` is 6 and `backpackSlots` 30 (5 rows of 6, the hotbar's width): 36 slots as before, so
+every saved slot keeps its index and the record and the wire are unchanged (no new compatibility
+line). A player saved with 9 hotbar slots loads with old slots 7–9 (indices 6–8) as the backpack's
+first three: nothing moves, nothing is lost or dropped, and a held slot past the hotbar becomes the
+first (`dwell-protocol` `inventory.rs` `a_nine_slot_hotbar_save_loads_with_slots_7_to_9_in_the_backpack`).
+Deviation from the brief (27 backpack slots, the old 7–9 moved into free backpack slots on load): the
+same outcome with no load-time move and no full-backpack drop. The creative hotbar has the same 6
+slots, picked in the creative inventory view (docs/ITEMS.md §6a).

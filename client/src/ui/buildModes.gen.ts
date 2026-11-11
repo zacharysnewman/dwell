@@ -50,5 +50,12 @@ export const CREATIVE = {
     { name: 'dwell:snowy_grass', label: 'Snowy grass', category: 'blocks' },
     { name: 'dwell:snowy_leaves', label: 'Snowy leaves', category: 'plants' },
   ],
-  hotbar: ['dwell:stone', 'dwell:dirt', 'dwell:grass', 'dwell:log', 'dwell:stone_axe', 'dwell:stone_pickaxe'],
+  hotbar: [
+    'dwell:stone',
+    'dwell:dirt',
+    'dwell:grass',
+    'dwell:log',
+    'dwell:stone_axe',
+    'dwell:stone_pickaxe',
+  ],
 } as const;

@@ -258,7 +258,10 @@ export function buildModesTs(data) {
   ts.push('  items: [');
   for (const it of data.items) ts.push(`    { name: ${q(it.name)}, label: ${q(it.label)}, category: ${q(it.category)} },`);
   ts.push('  ],');
-  ts.push(`  hotbar: [${data.inventory.hotbar.map(q).join(', ')}],`);
+  // One per line, as the client's Prettier writes a list too long for one.
+  ts.push('  hotbar: [');
+  for (const n of data.inventory.hotbar) ts.push(`    ${q(n)},`);
+  ts.push('  ],');
   ts.push('} as const;', '');
   return ts.join('\n');
 }

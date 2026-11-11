@@ -1505,9 +1505,13 @@ impl Client {
     /// The creative hotbar's picks (docs/ITEMS.md §6a): each slot's palette index.
     #[wasm_bindgen(js_name = creativeHotbar)]
     pub fn creative_hotbar(&self) -> Vec<u32> {
-        self.inner.borrow().game.as_ref().map_or_else(Vec::new, |g| {
-            g.creative.picks().iter().map(|&i| i as u32).collect()
-        })
+        self.inner
+            .borrow()
+            .game
+            .as_ref()
+            .map_or_else(Vec::new, |g| {
+                g.creative.picks().iter().map(|&i| i as u32).collect()
+            })
     }
     /// Puts palette item `palette_index` in creative hotbar slot `slot` (the creative inventory
     /// view); false if either is out of range.
