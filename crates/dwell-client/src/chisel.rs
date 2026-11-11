@@ -1026,6 +1026,12 @@ mod tests {
         assert!(
             height_from_json(&serde_json::json!({ "tectonics": { "coneRadius": 0 } })).is_err()
         );
+        // The tall peak's knob (a hardened cone): read, and out of 0..1 refused.
+        let hard = height_from_json(&serde_json::json!({ "tectonics": { "coneHardness": 0.95 } }));
+        assert_eq!(hard.unwrap().tectonics.cone_hardness, 0.95);
+        assert!(
+            height_from_json(&serde_json::json!({ "tectonics": { "coneHardness": 2 } })).is_err()
+        );
         assert_eq!(
             tectonics_rgb(&HEIGHT.tectonics, 0, 0, 64),
             [0.5; 3],

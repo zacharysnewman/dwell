@@ -12,6 +12,7 @@ import {
 } from '../../../shared/worldgen/biomes.mjs';
 import {
   ARCHIPELAGO_WORLD,
+  TALL_PEAK_WORLD,
   BUILD_GEOLOGY,
   BUILD_VEGETATION,
   FULL_BLOCKS,
@@ -434,6 +435,10 @@ function worldEditor() {
       { className: 'bar' },
       button('Archipelago', () => {
         edit = { ...edit, world: structuredClone(ARCHIPELAGO_WORLD) };
+        restructure();
+      }),
+      button('Tall peak', () => {
+        edit = { ...edit, world: structuredClone(TALL_PEAK_WORLD) };
         restructure();
       }),
       button('One island', () => {

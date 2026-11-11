@@ -92,8 +92,7 @@ dwell_world::both_faces!(
         let mut chunk = Chunk::default();
         g.generate(c, &mut chunk);
         let s = CHUNK_SIZE;
-        let solid =
-            (0..s * s * s).any(|i| chunk.get(i % s, (i / s) % s, i / (s * s)) != M.air);
+        let solid = (0..s * s * s).any(|i| chunk.get(i % s, (i / s) % s, i / (s * s)) != M.air);
         assert!(solid, "{c:?} holds the summit's ground");
     }
 );
