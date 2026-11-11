@@ -605,6 +605,62 @@ test('a biome opts in to erosion and gullies in [0, 1]; the default biome does n
   assert.throws(() => validateBiome({ ...mesa, gullies: 2 }, blocks, refs), /gullies must be in \[0, 1\]/);
 });
 
+test("a biome's arches.fins and arches.rock (0.52.66) pass when valid and fail naming the field", async () => {
+  const { biomeRefs } = await import('./gen.mjs');
+  const { validateBiome } = await import('./biomes.mjs');
+  const blocks = registryBlocks();
+  const refs = biomeRefs();
+  const fixture = () => JSON.parse(readFileSync(join(here, 'biomes/fixtures/arches.json'), 'utf8'));
+  // Valid: the fin rule with and without its optional overrun, at its ranges' ends, and a rock
+  // of the fixture's stack (dwell:red_beds: sandstone over shale).
+  for (const [fins, rock] of [
+    [{ approach: 150, width: 12 }, 'dwell:sandstone'],
+    [{ approach: 0, width: 2, overrun: 0 }, 'dwell:shale'],
+    [{ $comment: 'the ends', approach: 1000, width: 64, overrun: 2000 }, undefined],
+  ]) {
+    const b = fixture();
+    b.arches.fins = fins;
+    if (rock !== undefined) b.arches.rock = rock;
+    assert.doesNotThrow(() => validateBiome(b, blocks, refs), JSON.stringify({ fins, rock }));
+  }
+  // A biome without its own rockStack takes the province's: any rock of rocks.json may be named.
+  const noStack = fixture();
+  delete noStack.rockStack;
+  noStack.arches.rock = 'dwell:granite';
+  assert.doesNotThrow(() => validateBiome(noStack, blocks, refs));
+  const at = /^biome test:arches: /;
+  const cases = [
+    [(a) => (a.fins = { approach: -1, width: 12 }), /arches\.fins\.approach must be in \[0, 1000\]/],
+    [(a) => (a.fins = { approach: 1001, width: 12 }), /arches\.fins\.approach must be in \[0, 1000\]/],
+    [(a) => (a.fins = { width: 12 }), /arches\.fins\.approach must be in \[0, 1000\]/],
+    [(a) => (a.fins = { approach: '150', width: 12 }), /arches\.fins\.approach must be in \[0, 1000\]/],
+    [(a) => (a.fins = { approach: 150, width: 1 }), /arches\.fins\.width must be in \[2, 64\]/],
+    [(a) => (a.fins = { approach: 150, width: 65 }), /arches\.fins\.width must be in \[2, 64\]/],
+    [(a) => (a.fins = { approach: 150, width: -12 }), /arches\.fins\.width must be in \[2, 64\]/],
+    [(a) => (a.fins = { approach: 150 }), /arches\.fins\.width must be in \[2, 64\]/],
+    [(a) => (a.fins = { approach: 150, width: 12, overrun: -1 }), /arches\.fins\.overrun must be in \[0, 2000\]/],
+    [(a) => (a.fins = { approach: 150, width: 12, overrun: 2001 }), /arches\.fins\.overrun must be in \[0, 2000\]/],
+    [(a) => (a.fins = { approach: 150, width: 12, overrun: true }), /arches\.fins\.overrun must be in \[0, 2000\]/],
+    [(a) => (a.fins = { approach: 150, width: 12, reach: 3 }), /arches\.fins: unknown reach/],
+    [(a) => (a.fins = [150, 12]), /arches\.fins must be an object/],
+    [(a) => (a.fins = 150), /arches\.fins must be an object/],
+    [(a) => (a.fins = null), /arches\.fins must be an object/],
+    [(a) => (a.rock = 'dwell:moonrock'), /arches\.rock: "dwell:moonrock" is not a rock of rocks\.json/],
+    [(a) => (a.rock = 'dwell:granite'), /arches\.rock: "dwell:granite" is not a layer of the biome's rockStack/],
+    [(a) => (a.rock = 3), /arches\.rock must be a rock name/],
+    [(a) => (a.rock = ['dwell:sandstone']), /arches\.rock must be a rock name/],
+  ];
+  for (const [edit, message] of cases) {
+    const b = fixture();
+    edit(b.arches);
+    assert.throws(
+      () => validateBiome(b, blocks, refs),
+      (e) => at.test(e.message) && message.test(e.message),
+      `${JSON.stringify(b.arches.fins ?? null)} / ${JSON.stringify(b.arches.rock ?? null)}: ${message}`,
+    );
+  }
+});
+
 test('the checked-in vegetation is valid, generates the checked-in Rust, and takes a kind by data alone', () => {
   const veg = () => JSON.parse(readFileSync(join(here, 'vegetation.json'), 'utf8'));
   const rs = readFileSync(join(here, '../../crates/dwell-worldgen/src/vegetation.gen.rs'), 'utf8');

@@ -12,6 +12,9 @@ export interface BiomeRefs {
   decorations: Set<string>;
   placements: Set<string>;
   stacks?: Set<string>;
+  rocks?: Set<string>;
+  /** Each stack's rocks (stack name → its layers' rocks), for `arches.rock`. */
+  stackRocks?: Map<string, Set<string>>;
   ground?: Set<string>;
 }
 export const GEOLOGY: Record<string, Record<string, Range>>;
@@ -56,7 +59,12 @@ export const ARCHES: {
   lintel: readonly [number, number];
   fin: readonly [number, number];
 };
-export function checkArches(a: unknown, fail: (m: string) => never): void;
+export function checkArches(
+  a: unknown,
+  fail: (m: string) => never,
+  rocks?: Set<string>,
+  stackRocks?: Set<string>,
+): void;
 export const GROUND_DENSITY_MAX: number;
 export function checkGround(
   ground: unknown,

@@ -91,6 +91,75 @@ dwell_world::both_faces!(
     }
 );
 
+/// The fixture with its `arches.rock` set to `rock` (by data, not through the parser, so a rock
+/// the validator would refuse can be tried too).
+fn fixture_in(rock: &'static str) -> Biome {
+    let mut b = fixture();
+    let mut a = b.arches.expect("the fixture has arches");
+    a.rock = Some(rock);
+    b.arches = Some(a);
+    b
+}
+
+/// The rock of the fixture's stack (`rockStack`) at face-local height `h` m.
+fn rock_at(g: &TerrainGenerator, h: f64) -> &'static str {
+    use dwell_worldgen::geology::Profile;
+    let geo = g.geology();
+    let name = fixture().rock_stack.expect("the fixture names its stack");
+    let stack = &geo.stacks[geo.stack(name).expect("a stack of rocks.json")];
+    geo.rocks[Profile::of(geo, stack).map(h.max(0.0)).1].name
+}
+
+dwell_world::both_faces!(
+    /// `arches.rock` keeps an arch only where the opening's mid-height (its floor plus half its
+    /// rise) lies in the named rock of the biome's stack: with each of the stack's rocks every
+    /// kept site's mid-height is in it, the rocks' sites split the unfiltered ones between them,
+    /// and face B's are face A's (the same sites through the frame).
+    fn the_rock_filter_keeps_arches_in_that_rock(f: FaceFrame) {
+        let all = sites(BifacialTerrain::mirrored_with_biomes(7, &[fixture()]).local(f.face));
+        assert!(all.len() >= 5, "unfiltered sites: {}", all.len());
+        let mut kept = 0;
+        for rock in ["dwell:sandstone", "dwell:shale"] {
+            let t = BifacialTerrain::mirrored_with_biomes(7, &[fixture_in(rock)]);
+            let g = t.local(f.face);
+            let found = sites(g);
+            assert!(!found.is_empty(), "arches in {rock}");
+            for s in &found {
+                let mid = s.floor + s.rise / 2.0;
+                assert_eq!(
+                    rock_at(g, mid),
+                    rock,
+                    "site at {:?}, mid-height {mid} m",
+                    s.centre
+                );
+                assert!(all.contains(s), "a kept site is one of the unfiltered");
+            }
+            assert_eq!(
+                found,
+                sites(t.local(Face::A)),
+                "face {:?} is face A's",
+                f.face
+            );
+            kept += found.len();
+        }
+        assert_eq!(kept, all.len(), "the stack's two rocks split the sites");
+    }
+);
+
+dwell_world::both_faces!(
+    /// A rock the biome's stack never shows at an arch's height (granite, not in the red beds)
+    /// keeps no arches, though the same biome without it has many.
+    fn a_rock_absent_at_arch_heights_keeps_none(f: FaceFrame) {
+        let t = BifacialTerrain::mirrored_with_biomes(7, &[fixture_in("dwell:granite")]);
+        assert!(sites(t.local(f.face)).is_empty());
+        let t = BifacialTerrain::mirrored_with_biomes(7, &[fixture()]);
+        assert!(
+            !sites(t.local(f.face)).is_empty(),
+            "the unfiltered fixture has arches"
+        );
+    }
+);
+
 /// An opening that crosses a chunk border is carved the same from both chunks: every column of
 /// its footprint holds exactly the air its roof predicts, whichever chunk generated it.
 #[test]
