@@ -93,11 +93,12 @@ label.s output { font-variant-numeric: tabular-nums; color: var(--ink-soft); }
     <h2>Scene</h2>
     <label class="s">Time of day <output id="timeV"></output><input id="time" type="range" min="0" max="100" value="38"></label>
     <div class="row"><label><input id="grid" type="checkbox"> Show grid (ground and leaf cells)</label></div>
+    <div class="row"><label><input id="gameTex" type="checkbox"> Game textures (the game's leaves, bark and grass tiles)</label></div>
 
     <div class="note">
       <p><b>Cost and gameplay.</b> Options 0–5 keep leaves as blocks: each cell is still one 1 m leaf block for collision, breaking, placing, growth and the tree record. 1 is a vertex-normal change only (free in the mesher: one centre per tree, which the tree layer already knows). 2 adds a few triangles per exposed cell, derived from the neighbours like the octagon's joins (no new states). 3 adds alpha-cut quads (overdraw, a second draw pass); cards are a look and never collide.</p>
       <p>Option 6 is a reference only: one special mesh per crown, not blocks. Breaking a leaf would have to remesh the crown, and it does not match the grid you collide with.</p>
-      <p>Content is prototype: the colours are the palette's <code>leaf</code>, <code>bark</code> and <code>meadow</code> ramps; the textures are painted here, not the game's.</p>
+      <p>Content is prototype. With <b>Game textures</b> on (the default) the leaf blocks, trunks and grass use the game's own baked tiles (shared/textures), drawn unfiltered as in the game; off, simpler textures painted here. The leaf cards (3, 5) and the blob (6) are always painted here: the game has no equivalent.</p>
     </div>
   </div>
 </div>
@@ -142,6 +143,7 @@ const S = {
   cardSize: +(q.get('cardSize') ?? 95) / 100,
   time: +(q.get('time') ?? 38) / 100,
   grid: q.get('grid') === '1',
+  gameTex: q.get('tex') !== 'painted',
 };
 if (S.set.length < 2) S.set = [0, 4, 5, 6];
 
@@ -212,6 +214,17 @@ const grassTex = canvasTex(128, (g, n) => {
   }
 }, { repeat: true });
 
+// the game's own tiles (shared/textures, baked by gen.mjs's painter; 32 × 32, drawn unfiltered like the game)
+const GAME_TILES = {"leaves": "data:image/png;base64,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", "logSide": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAFMElEQVR4nIWXeV/aShSG+ViTkIVIS1FBWSSKqGzutO4KKFaty71ttf3I5/7emRwyWeD+Ma0kM5MnZ97znpPMyZKgST0c16uCmragRtagQcmO3ONxVxO0k1MDv997OXrbUnOPvqjru58EfVsK512tRPcYVtT1zHExeuOiLGjTEbTpmnRdd1MBMHjjcVXQ765LP5pZeX2/oK7vfRb0dTGchxfT19+sBgAHheiN02UFsO2ZNGl6MwHantpgVBH0s+3Q94ZBZyVB+5/V9f0YAN44HmkJgFDpNxC2lgTI0mPLkxunAXQCgJuKoOfg7Q+/qIHreLFBMRqpVIDuQvQGFm25KgIvOx49rZupAFgnAbTQdvPhQ6GF4+BvRCu+/nolAIjfxEIAtHImve5407ONj14+CnAbCBNhxz38zwD9/BwA/IPFfAOh284JWrdNemt79LJppQL0YwAcUn7weSnMiMPC/wDo58MiqpuGBHhtRQHw+3HdlGmmiwvZg9+DRQWFVGU9fFtKAVjVAHSF7gUbV4RIBfjVceilZck00+GRPQzAcxkg7gEJAF1IuxrA81aOXreiAB+9HP2zbU8jdRccH6fcQPOVs3J2albxcaMDXGuE/QCgKgQ9Np1EBP7ueTLvoZWOlkEsOAZAag7rNsV9JuGEeoiQ84dFU4qwbgi6a9gREeI+AOB8EJjuIUcBADsrojTxbbospwOMdIDLAOBty6LzVUsC+FlBFytmxAcefAXw3nPlmwLgohymrw7wu+PSS8uZ6aTQTghQZoG5dF2zpQ+sW2pTfRHUDwDoAMqGG3LIGYDX/Onn5FHNAmDfiABg0XDNkbUAEYifnw6ANwcoz2ENQPn3a6FWZgHcxQF40bjhyHJ8UXVlqumLnjQAVjHrgLMApsNHNQ9gEhS0qQZ40W3DoZZr0Hjdo/2CkRoB1H9UPqztBTZ7shQWoacNNe/fnfkAyKJpFvDbAaD3KUsj36OjYrQQPfrmNAsGwRtzMTsvhWUYKYh5MhPqKrppAIDPcLPwYyM7PYKDoiUBBkvRQsRpCDc8DBqPTlDMrlbC3/e+Jedxl/QS2HccAMc3teIpwJpNg2VbAhzHAFgnCC1bMVfT774pf7dcQcOaAmATw/znlKqK7kkCjKohwKhu0dmqEwAkKyEyBX7BjskASGH8vWELuqwoADwU6YYjizsqp26G/ZyFM6pl6aqmAA4Xk4tgMOgRuB9ggL+7Hh0UDPItQacrttwLYcdRfWhNqz6QOdOGhAV2WzNo3HAlwEExGTZshKPQAXjtacmgRlYBfPQ9GtcMOedP30sFQAXNcLeCTZFe0nKbCmC3kN4NTbSOCKJj1Q+rJq2Zgk7KFv3s5FTT4Qn61Q0zQh/wn0hXzEJhgO6n9H4QAy4oARZUkwKAB9+kuinoa8mi55YrH9BeUH1FWgQg/kz8w0QqekNpQLbmMwoJxCZ9IK8qnwIwVA1ZzMpKCrsG4PO2l+greGRSH9BwaOh7tGGnt+TIGjxoO2g4YbkAgE9AE908vhFMaU5SI63ZvWUqwGXFpqt6TgpqFgAigKIFP0AKAuB+zZBvzFWR7fphM727RoqmAgyWLRqUnbkAeDggoKH3rivTcKJ9L+D6WdAn3jdzdN9IHifmpAK0Fwxq57MzAaAB2bRYqh9A9sCg9OxATeBGdey7NKomj1NWw/g3GwbKMZpSfw4ANkYE8BAYDdxuojW1OJqTAOCy6iQ+Tqf9wEU5uTkA0JSiLKcBcDeDVMRxAIBrP38dA+Rkzuc5v8R/CWbusf9rs2oAAAAASUVORK5CYII=", "logTop": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAD2ElEQVR4nMWX51KTQRSGvSwrYBkZwIaAYgjBSBFMJJAAYwEUG0VpdgygMUNoFhgREGfU0VGKICKWyznOs8kiybdKU/nxZja7p7ynbPk2OBI2ynpiAz+VaeuDKAKXsrZJ19kDEqpMlVBVqnRXHZTu6giqUqWrMlWCZ/ZL4NQ+eVCxVzrL90hHWQS+PdLuS5F2b4r4vclyrzRZ7pUkS1sE/GcN2fvle6Upf6eVQE3mFpm8X/BfcNeTZCVQnbFpWcrv/XlrJvDw9H4rATDR+XulN3eOyXBjtgzW29ZM4NGFDDOBD+3W6MY78mW02SEDdTYZac6Wt225MhUolI8Pi2Q6AsYfA4Uy9eD4sggMNRwxE3jvz7Wke+iaXZ5dzVKOcTQTPCGfulwyHXTJZKBIgTFzrCGzmIipZKNN9t8RyIuKHOfPG+0y3lkg08qxW975C+TFdacMNTqiwNyHzkIlgywZGW1xKBvYWpJAbBOSdiLHOZERqXb8+m6+TARcMhPyKDBm7ktviXzuKZbZkFvpoIsNbEWXwGYlUJ+TENVw1Jy0T0ecDzfnyNiNY8rhtydl8v1pufwYqFBgzNzXRz6Z7yuVuR6PIoEuNrCFTW3/yaVDVgK33YkLAnQ7DUc9SSmR43y+3xvleK7PqxBF5HGYBJlAFxvYwqa2z6FmIcApp5tGR08aqTlpJ3LtfCpYLGM3cmWkxanAmDlNgkxQjtnQSWVDZ0H3WIcvxUpg4MphtfjqllMG6m1qq9HZRE99SbF2jtN37UUy21OqwJg5TQLZ+X6dBZeyhU1s4+OmK9FKYKw1nKKx1hzV+WqfB10qeppMR0+0ONRp12COtV9Z8Mpcr2ehDNjENj6a8gx3wZvbzoXup2YcMDSfTr+uOZESdSwB5ljTPYEO2VPnRKQP9G5ocCYYCNz5+wTQNRGoP2og8LLV8VdLgA662IgtgZHAYF3mippwIuCOch7bhOiga2rCBhMBHiIr2YaLoyfti7ehTj+6pm1o7IE2T9KKD6JYsIYMsuHozQeRkUBj3o41H8WsIYNs+JY0H8VGAhdtW9d8GelbEdk/XUYNzu1L34aruY5Z09cxOuiarmMjgap065twtQ8SZNFB1/QgWVYGVvokY441ZJBFJzbyBQKmbXj+8OY/vuP0oxTj7GnSizPAmDnWkFnccCbU5cSv/ruAlHKgcKoRJWDM3HKf7LWOuKV3wb/EZbuBwGX7NrnlTpSWgl1y1bldarPj1OcaqHPEq3Pipmu3+L0p6sOip/qg9NekK/TVpEvvuTT1GRf+hDugZPiMMwGbxlfxun2crid+As+aJ06tgfEcAAAAAElFTkSuQmCC", "grass": "data:image/png;base64,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"};
+function gameTex(name) {
+  const t = new THREE.TextureLoader().load(GAME_TILES[name]);
+  t.colorSpace = THREE.SRGBColorSpace; t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestMipmapLinearFilter;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4;
+  return t;
+}
+const GAME = { leaves: gameTex('leaves'), bark: gameTex('logSide'), grass: gameTex('grass') };
+GAME.grass.repeat.set(26, 26);
+
 // ---------- renderer / scene ----------
 const view = document.getElementById('view');
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
@@ -270,6 +283,13 @@ const M = {
   cell: new THREE.LineBasicMaterial({ color: 0x241c28, transparent: true, opacity: .35 }),
 };
 leafSolidTex.repeat.set(10, 10);
+function applyTextures() {
+  M.leafCube.map = S.gameTex ? GAME.leaves : leafCubeTex;
+  M.bark.map = S.gameTex ? GAME.bark : barkTex;
+  ground.material.map = S.gameTex ? GAME.grass : grassTex;
+  for (const m of [M.leafCube, M.bark, ground.material]) m.needsUpdate = true;
+}
+applyTextures();
 
 // ---------- tree generation ----------
 const key = (x, y, z) => `${x},${y},${z}`;
@@ -604,6 +624,8 @@ slider('cardSize', 'cardSize', v => (v / 100).toFixed(2) + ' m', invalidate);
 slider('time', 'time', v => { const h = 6 + v * .12; return `${Math.floor(h)}:${String(Math.round((h % 1) * 60)).padStart(2, '0')}`; }, setSky);
 $('grid').checked = S.grid;
 $('grid').onchange = () => { S.grid = $('grid').checked; };
+$('gameTex').checked = S.gameTex;
+$('gameTex').onchange = () => { S.gameTex = $('gameTex').checked; applyTextures(); };
 
 function shown() { return S.compare ? S.set : [S.opt]; }
 function syncUI() {
