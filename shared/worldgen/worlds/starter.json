@@ -87,10 +87,7 @@
         "broadleaf_groves": 1.5,
         "conifer_groves": 0.1
       },
-      "placements": [
-        "conifer_groves",
-        "broadleaf_groves"
-      ]
+      "placements": ["conifer_groves", "broadleaf_groves"]
     },
     {
       "biome": "preset:mixed_forest",
@@ -115,10 +112,7 @@
           "blend": 150
         }
       },
-      "placements": [
-        "conifer_groves",
-        "broadleaf_groves"
-      ]
+      "placements": ["conifer_groves", "broadleaf_groves"]
     },
     {
       "biome": "preset:boreal",
@@ -142,9 +136,7 @@
           "blend": 0.06
         }
       },
-      "placements": [
-        "conifer_groves"
-      ],
+      "placements": ["conifer_groves"],
       "trees": {
         "conifer_groves": 1.5
       }
@@ -202,9 +194,7 @@
       "ground": {
         "dwell:ground_rock": 0.5
       },
-      "placements": [
-        "palm_coasts"
-      ],
+      "placements": ["palm_coasts"],
       "trees": {
         "palm_coasts": 0.8
       }
@@ -258,10 +248,7 @@
       "ground": {
         "dwell:ground_rock": 1.5
       },
-      "placements": [
-        "conifer_groves",
-        "boulders"
-      ],
+      "placements": ["conifer_groves", "boulders"],
       "trees": {
         "conifer_groves": 0.3
       }

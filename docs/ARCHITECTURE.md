@@ -1621,7 +1621,7 @@ not each hillside; the wetness is `(1 − rainShare)` × the
 rivers' + `rainShare` × the rainfall, `rainShare` 0 in the default world (neutral). A biome's weight is its `weight` × each range's smoothstep fit over ± its
 `blend`; the world's default biome is a **fallback** taking only what is left of 1 after the others (`fallback_weights`, B3), so a fitting biome takes its place at an ordinary weight of 1; then normalised (at most four per column; the default takes a column nothing fits). The column takes
 its surface from one biome, chosen against the cumulative weights by a dithered threshold (a noise and a
-per-column hash, `biomeMap.dither`), so borders are ragged and gradual; its fine relief is the weighted
+per-column hash, `biomeMap.dither`; the pick reads each weight to the power `biomeMap.sharpen`, 1 by default, the weights as they are, so a higher one gives the strongest biome more of a shared climate and less speckle, 0.52.63), so borders are ragged and gradual; its fine relief is the weighted
 sum of each biome's; its rock band, shore and band edges are the chosen biome's; its elevation band
 picks a **palette** (`Column::palette`, the biome's band's resolved blocks) the fill reads. A world with
 one biome builds no map: its weight is 1 everywhere and its columns are exactly that biome's (the
