@@ -86,6 +86,10 @@ Last updated: 2026-11-11 (0.52.68).
    the remaining leftover sections (owner, 2026-11-11: "Let's implement lava", "Into our queue"): lava as
    a fluid — flows slowly, cools into rock, gives light, damages, steam where it meets water. The other
    volcano phases stay under Future. Lava's danger (owner): heavy damage while in it, a moment of burning after.
+   **Core built (V1, `crates/dwell-lava`):** lava's own surface grid (viscous, cooling to basalt, obsidian
+   and steam with water, lake and river vents, burning, saves, near/far), as data in
+   `shared/fluids/lava.json`; VOLCANOES.md §6. Look + in-game check next (local): the server's fields,
+   cells in chunks, the damage hook, the lava block's look.
 9. ~~**Loading-time display bug.**~~ Done (0.52.71): the 10 s was the graphics' start (one long task on the
    main thread making the renderer's pipelines) begun in the same task that ended the game's load, so the
    screen never painted "Starting the graphics…" and stood on "Loading the game… x MB 0.0 s". Each stage is

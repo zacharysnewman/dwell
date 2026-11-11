@@ -3391,6 +3391,43 @@ prototype's 4 km² window: an hour on one core); later, water as its own layer o
 the surface meshed from depth; deferred by the owner, 2026-11-05: clients keep water as blocks); G4 the grid's settings as data
 (`shared/water/*.json`), pools for still water and the held sea as in the prototype.
 
+### 6.8 Lava **[in progress: the simulation core built (`dwell-lava`, V1); not yet in the server, the chunks, the saves or drawn]**
+
+([`proposals/VOLCANOES.md`](./proposals/VOLCANOES.md) §6, WORK_QUEUE item 8.) Lava is a **hot fluid
+on its own surface grid** (`dwell_lava::Field`), not a second liquid on the water grid (§6.7): the
+water grid holds one depth and one law per column across 2,000 lines of sleeping chunks, the held sea
+and its own thread, and lava needs a heat per column and a different law. A field is a rectangle of
+face-local 1 m columns (bed, lava depth, heat 0–1, a water flag), its vents and its schedule.
+
+- **The law:** a viscous gravity current, flow per metre of width `g h³ × slope / 3ν` through the depth
+  above the higher bed less the fluid's yield depth (a Bingham plug: a thin front stands as a lobe);
+  explicit, each substep at most `cfl × cell² / (4 g h³ / 3ν)`, outflow limited to what a column holds.
+- **Heat and cooling:** heat carried upwind with the flow; a column loses it at `1 / coolingSeconds`,
+  faster per dry neighbour (`edgeCooling`) and by `thinDepthM / depth` (its top's share); at 0 its lava
+  joins its bed as the fluid's `rock` (`dwell:basalt`), and the rows whose centres it covers are a
+  `LavaEvent::Rock`: a river crusts behind its front and builds land. A lake vent keeps the molten
+  columns joined to it below its level hot (a lake convects); what overflows the rim cools.
+- **Quench:** lava in or beside a water column turns at once to `quench.rock` (`dwell:obsidian`) with
+  a `LavaEvent::Steam` taking `steamWaterM` of that water.
+- **Vents** (`VentDef`, data): `lake` (holds its column's surface at `levelM`, at most `rateM3s`) or
+  `river` (a steady `rateM3s`). V2 places them on cones; V1's are test fixtures.
+- **Schedule (as the water):** a field with a player within `nearRadiusM` runs every lava tick; a far
+  one owes its time and runs it at once when it owes `farEverySeconds`, at the same stable substeps,
+  so the far run lands where the near one does (tested).
+- **Damage:** `Burn` gives `damagePerSecond` while a player's feet are in it (`Field::submerged`) and
+  `burnDamagePerSecond` for `burnSeconds` after, as whole points for the server's `damage`.
+- **Saves:** `record_of` / `field_of`, a versioned record (fluid by name, columns, vents) for an
+  optional `lava` table; another version, an unknown fluid or a damaged record reads as none.
+- **Data:** `shared/fluids/lava.json` (`lava.mjs` → `crates/dwell-lava/src/lava.gen.rs`, validated: ranges,
+  names, the rocks against the block registry; a fixture with a fluid and vents added by data alone).
+- **Faces:** face-local; world points and cells cross only through `FaceFrame` (`submerged`,
+  `is_near`, `LavaEvent::cells`); the crate is in the both-faces scan.
+
+**Not yet:** the server's fields and tick, the rock and lava cells written into chunks, the water
+grid's columns and steam applied to it, the damage on the server (a `Burn` damage cause, sent as
+`Fall` to older clients as `Drown` is), the save table, the lava block (light, the look) and the
+steam's particles and sound.
+
 ## 7. Physics Pipeline
 
 ### 7.1 Voxel Awakening & Clustering **[in progress: built for felling, 0.37.0]**
