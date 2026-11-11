@@ -420,7 +420,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   regions on demand (R1–R6). Owner's answers (2026-11-11): 10× **radius** (500 km); a desktop test first, phones after the regional maps;
   the size a **world setting**; the plates decide the land; "Perhaps even scope it as a 2x, 4x, 8x or 10x" —
   sizes 1×/2×/4×/8×/10× as data. At 10× radius the whole-map grids run at a coarser cell (~1 km) until the
-  regional maps. M0 (the radius as a per-world setting) in progress (cloud).
+  regional maps. **M0 built:** the size is a per-world setting (optional tag, today's worlds unchanged) and the
+  LOD levels, big map cells, hydrology cell (≤ 1 M cells at every size), island shape and uplift counts derive
+  from it. Next: M1 (the LOD root per size).
 
 - **Sharing saved structures between players** (owner 2026-11-11: "eventually shareable").
 

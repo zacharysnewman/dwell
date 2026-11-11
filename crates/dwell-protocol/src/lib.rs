@@ -12,6 +12,7 @@ mod messages;
 pub mod modes;
 pub mod vitals;
 pub mod world_settings;
+pub mod world_size;
 
 #[rustfmt::skip]
 mod constants {

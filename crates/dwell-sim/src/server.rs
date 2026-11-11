@@ -318,6 +318,11 @@ pub struct ServerConfig {
     /// A new world's game mode (ADR 0065, `shared/modes/modes.json`; a name not there is the
     /// default, creative). A saved world keeps its own; one saved before modes is creative.
     pub mode: String,
+    /// A new world's size (`dwell_protocol::world_size`, BIG_MAP.md M0): saved with it and sent at
+    /// join (`WorldSettings` tag `WORLD_SIZE`). A saved world keeps its own; one saved before sizes
+    /// is the default, today's. The generators don't read it yet (BIG_MAP.md M1–M2): only the
+    /// default size is playable in this build.
+    pub world_size: dwell_protocol::world_size::WorldSize,
     /// Every block breaks in one hit, as before block damage (docs/BLOCK_DAMAGE.md): a test
     /// world's switch, for tests and e2e specs that break blocks with one click. Off: the data's.
     pub one_hit_breaks: bool,
@@ -352,6 +357,7 @@ pub fn default_settings(water_speed: f64) -> WorldSettings {
         },
         water_speed: water_speed as f32,
         mode: dwell_protocol::modes::DEFAULT_MODE,
+        size: dwell_protocol::world_size::WorldSize::DEFAULT,
     }
 }
 
@@ -359,6 +365,7 @@ pub fn default_settings(water_speed: f64) -> WorldSettings {
 fn new_world_settings(config: &ServerConfig) -> WorldSettings {
     WorldSettings {
         mode: dwell_protocol::modes::mode_or_default(&config.mode).name,
+        size: config.world_size,
         ..default_settings(config.water_speed)
     }
 }
@@ -398,6 +405,7 @@ impl Default for ServerConfig {
             growth_speed: 1.0,
             water: crate::water::host::Placement::Inline,
             mode: dwell_protocol::modes::DEFAULT_MODE.into(),
+            world_size: dwell_protocol::world_size::WorldSize::DEFAULT,
             one_hit_breaks: false,
             chop2: dwell_protocol::chopping::CHOP2_DEFAULT,
             ecology: true,
@@ -4352,8 +4360,10 @@ impl Server {
             self.tick = m.world_tick;
             // A world saved with settings keeps them (a world from before them takes this build's).
             if let Some(f) = m.settings.as_deref().and_then(SettingsFields::from_bytes) {
+                // A world from before modes is creative, and one from before sizes today's size.
                 let before = WorldSettings {
                     mode: dwell_protocol::modes::DEFAULT_MODE,
+                    size: dwell_protocol::world_size::WorldSize::DEFAULT,
                     ..self.settings
                 };
                 match f.settings(before) {

@@ -1,0 +1,5 @@
+{
+  "changes": [
+    "Behind the scenes: a world can now record its size (today's, or 2×, 4×, 8× or 10× wider) for the coming big-map test; every world plays exactly as before"
+  ]
+}

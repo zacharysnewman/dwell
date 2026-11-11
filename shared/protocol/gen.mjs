@@ -50,6 +50,29 @@ function validateBounds(b) {
   return b;
 }
 validateBounds(c.bounds);
+// The world sizes (BIG_MAP.md §6 M0): named whole multiples of today's radii, the default today's.
+const MAX_RADIUS_SCALE = 16;
+function validateWorldSizes(w) {
+  const fail = (m) => {
+    throw new Error(`constants.json worldSizes: ${m}`);
+  };
+  if (!w || !Array.isArray(w.sizes) || w.sizes.length === 0) fail('needs a non-empty sizes list');
+  const names = new Set();
+  for (const s of w.sizes) {
+    if (typeof s.name !== 'string' || !/^[a-z0-9_]{1,16}$/.test(s.name)) fail(`bad name ${JSON.stringify(s.name)}`);
+    if (names.has(s.name)) fail(`"${s.name}" twice`);
+    names.add(s.name);
+    if (!Number.isInteger(s.radiusScale) || s.radiusScale < 1 || s.radiusScale > MAX_RADIUS_SCALE) {
+      fail(`"${s.name}".radiusScale must be a whole number 1..${MAX_RADIUS_SCALE}`);
+    }
+    for (const k of Object.keys(s)) if (!['name', 'radiusScale'].includes(k)) fail(`"${s.name}" has no field "${k}"`);
+  }
+  const d = w.sizes.find((s) => s.name === w.default);
+  if (!d) fail(`default "${w.default}" is not a size`);
+  if (d.radiusScale !== 1) fail('the default size must have radiusScale 1 (today\'s worlds unchanged)');
+  return w;
+}
+validateWorldSizes(c.worldSizes);
 // A WebRTC fragment (ARCHITECTURE.md §8.2) is told from a whole message by its first byte.
 if (Object.values(c.messageTypes).includes(c.webrtcFragmentTag)) {
   throw new Error(`constants.json webrtcFragmentTag ${c.webrtcFragmentTag} is a message type`);
@@ -139,6 +162,14 @@ tsFlags('WelcomeFlags', c.welcomeFlags);
 tsFlags('HeldItem', c.heldItem);
 tsFlags('SwingFlags', c.swingFlags);
 ts.push('');
+ts.push('/** The world sizes (BIG_MAP.md §6 M0): each a whole multiple of `World`\'s radii. */');
+ts.push('export const WorldSizes = {');
+ts.push(`  default: '${c.worldSizes.default}',`);
+ts.push('  sizes: [');
+for (const s of c.worldSizes.sizes) ts.push(`    { name: '${s.name}', radiusScale: ${s.radiusScale} },`);
+ts.push('  ],');
+ts.push('} as const;');
+ts.push('');
 writeFileSync(join(root, 'client/src/protocol/constants.gen.ts'), ts.join('\n'));
 
 
@@ -181,6 +212,16 @@ for (const [k, name] of Object.entries(WORLD_ROWS)) {
 }
 rs.push('}');
 rsGroup('lod', c.lod, () => 'i64');
+rs.push('');
+rs.push('/// The world sizes (BIG_MAP.md §6 M0): `(name, radius scale)`, each a whole multiple of');
+rs.push('/// `world`\'s radii; `DEFAULT` is today\'s (scale 1).');
+rs.push('pub mod world_sizes {');
+rs.push(`    pub const DEFAULT: &str = "${c.worldSizes.default}";`);
+rs.push(`    pub const MAX_RADIUS_SCALE: u32 = ${MAX_RADIUS_SCALE};`);
+rs.push('    pub const SIZES: &[(&str, u32)] = &[');
+for (const s of c.worldSizes.sizes) rs.push(`        ("${s.name}", ${s.radiusScale}),`);
+rs.push('    ];');
+rs.push('}');
 rs.push('');
 rs.push('/// The build volume (ARCHITECTURE.md §6.3, ADR 0025): one shape of a closed set, its parameters');
 rs.push('/// from `constants.json` (`dwell_world::BuildVolume` evaluates it).');

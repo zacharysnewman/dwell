@@ -1,6 +1,8 @@
 # A 10× map: feasibility
 
-**Status:** written 2026-11-11, not adopted. Nothing in the game changes. The owner (2026-11-11): "we
+**Status:** written 2026-11-11; the owner answered §7 the same day (10× radius, a world setting of
+named sizes, desktop first). **M0 built** (the size as one per-world value, every derived value at
+1× unchanged); M1 onward not started. The owner (2026-11-11): "we
 will test out a 10x size map soon (could start whenever)". This study adds two things to
 [`WORLD_SCALE.md`](./WORLD_SCALE.md) (2026-11-10, which measured a disc 10× *across*): the case of 10×
 the *area*, measured, and the whole-map grids built since then (the biome field, the geology's
@@ -135,16 +137,49 @@ desktop test of 10× area.
 The cost of part 3 is the seams (erosion that agrees across region edges, lakes that straddle them),
 and a new compatibility line. `WORLD_SCALE.md` §4 option 2 is the same design for 10× radius.
 
+**The owner's answers (§7) change part 2's role.** The test is 10× *radius* (500 km, 100 M cells
+a face at 100 m: ~9 minutes and many GB a face, §2–§3), so a desktop test can't wait for the
+regional maps to run its whole-map grids at 100 m. Until R1–R4, a bigger world runs its whole-map
+grids at a **coarser cell that scales with the radius**: the hydrology `grid.cell` × the size's
+scale (1 000 m at 10×: 1 002² = 1 M cells, today's cost and memory), the big map's coarse levels'
+cells × the next power of two (no level builds more tiles than today's), the ecology's island the
+same way; the fine detail comes from the per-chunk generators, as it does between today's 100 m
+cells. What that loses until the regional maps: rivers and lakes smaller than a map cell (a 1 km
+cell carries only rivers whose catchment spans many cells; brooks, ponds and small lakes vanish), the
+erosion's valleys narrower than ~2 cells, and the coast's and shores' detail between cells; the big
+rivers, ranges and climate stay. The sizes are data: `constants.json` `worldSizes` (1×, 2×, 4×, 8×,
+10×), each a whole radius scale, so the test steps up through them.
+
 ## 6. Phases (each ≤ 45 minutes)
 
-- **M0 — the radius as one value.** Derive `lod.maxLevel` and the big map's `cellM`s from the radius
-  in their generators; scale the island's shape tunables by `islandRadius`; a test that a radius of
-  158 km passes every assertion. No change at today's radius (goldens unchanged).
-- **M1 — the LOD root for a big disc.** `maxLevel` 14 with the section keys and `CHUNK_OFFSET_Y`
-  reworked; a new protocol version; tests at 158 km on both faces.
-- **M2 — a 10×-area test build.** A dev build (`?bigmap` or a branch) at 158 km; measure world
-  creation, memory and the big map in the browser on the M1 (`npm run bench`); the owner plays it.
-- **M3 — audit the shaders** for absolute f32 world coordinates; a test that feeds one at 158 km.
+- **M0 — the radius as one value, per world. [built]** The named sizes as data
+  (`constants.json` `worldSizes`: 1×, 2×, 4×, 8×, 10×, generated into `dwell_protocol::world_sizes`
+  and the TS `WorldSizes`, validated by `shared/protocol/gen.mjs`); a world's size in its settings
+  (`WorldSettings` tag `WORLD_SIZE` 0x83, optional, `u16` scale: saved with the world, sent at join,
+  written only for a size above 1× so today's worlds' bytes are unchanged; a world without it is 1×;
+  the server's `ServerConfig::world_size` for a new world). Derived from it in
+  `dwell_protocol::world_size::WorldSize`: `lod_max_level` (12, 13, 14, 15, 15; `dwell-world`
+  asserts the compiled `lod.maxLevel` is 1×'s), the big map's coarse cells
+  (`MapTunables::big_map_levels_sized`: 10× is 1, 256, 4 096 m), the hydrology cell and the uplift
+  counts (`HydrologyParams::sized`: 1 000 m and × 100 at 10×), the island's shape
+  (`IslandShape::sized`, `IslandLayout::sized`), the disc for the hydrology grid
+  (`grid_for_radius`). Tested at every named size; at 1× every derived value is today's (goldens
+  unchanged). **Left for M1–M2:** the compiled LOD root holds only 1× (`WorldSize::fits_lod_root`;
+  the ignored test `every_named_size_fits_the_lod_root` is the failing check M1 turns on), the build
+  volume (`bounds.radius`) and `WORLD_RADIUS` readers (fog, Chisel, the LOD's rim) are still the
+  build's, and the generators still build 1×: the sized constructors are not yet called from a
+  world's settings.
+- **M1 — the LOD root for a big disc.** The root, the section keys and `CHUNK_OFFSET_Y` per size
+  (`lod_max_level` up to 15); the build volume per size; a new protocol version; turn on
+  `every_named_size_fits_the_lod_root`; tests at 2× and 10× on both faces.
+- **M2 — a big dev world at a coarse map cell.** The generators built from the world's size (the
+  sized constructors called from its settings, the world map and the biome and drainage fields on
+  the scaled grid). Start at 2× (100 km, a 200 m map cell) and step up through 4× and 8× to the
+  owner's 10× (500 km at a 1 km map cell, 1 M cells, today's cost); measure world creation, memory
+  and the big map in the browser on the M1 (`npm run bench`) at each; the owner plays it. Desktop
+  only (owner, 2026-11-11).
+- **M3 — audit the shaders** for absolute f32 world coordinates; a test that feeds one at 500 km
+  (3.1 cm steps).
 - **M4 — slimmer grids.** f16 for the biome and drainage grids, one shared drainage height copy;
   measure the starter world on the phone tier before and after (BUGS.md #70's table).
 - **R1 — the coarse map.** A 1 km whole-disc map from the same hydrology at `cell` 1000, kept beside
@@ -165,11 +200,21 @@ line only once it ships in the default world.
 
 ## 7. Questions for the owner
 
-1. Which 10×: the area (a 158 km radius, recommended for the first test) or the radius (500 km,
-   100× the area)?
+Answered by the owner, 2026-11-11:
+
+1. Which 10×: the area (a 158 km radius) or the radius (500 km, 100× the area)? — **10× radius**: a
+   500 km disc and a 250 km island. Added the same day: "Perhaps even scope it as a 2x, 4x, 8x or
+   10x": the size is one of a list of named sizes (data), each a radius multiplier, 1× today's.
 2. Is a desktop-only test first acceptable (M0–M2), with the phone after the regional maps (R1–R6)?
-3. Per build or per world: should the radius be a world setting (ADR 0054, an optional tag), so a
-   big world sits beside today's on the same line, or one value per build?
-4. Should the island grow with the disc (one 79 km island), or more islands across a wider sea?
+   — **Yes**: desktop first, phones after the regional maps.
+3. Per build or per world? — **A world setting** (ADR 0054, an optional tag), so a big world sits
+   beside today's on the same line.
+4. Should the island grow with the disc, or more islands across a wider sea? — **The plates decide
+   land and sea** ([`REALISTIC_WORLD.md`](./REALISTIC_WORLD.md), whose R1 plate generator is being
+   built in parallel). M0 only scales the uplift layer's plate and range counts with the area; the
+   plates' generator itself is not touched here.
+
+Open:
+
 5. Is a fraction of a second's wait for a new region's map acceptable when a player first nears it?
 6. Is 1–2 minutes to create a 10×-area world acceptable for the test, before the regional maps?
