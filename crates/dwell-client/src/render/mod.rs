@@ -23,6 +23,7 @@ pub mod lights;
 pub mod lod_map;
 pub mod lod_shadows;
 pub mod pacing;
+pub mod pipeline;
 pub mod pixel_art;
 pub mod point_shadows;
 pub mod reflection;
@@ -877,7 +878,7 @@ impl TerrainRenderer for RasterTerrain {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 enum Kind {
     Terrain,
     Flat,
@@ -1159,31 +1160,33 @@ pub struct Renderer {
     targets: Option<Targets>,
     samples: u32,
     draw_layout: wgpu::BindGroupLayout,
-    pipelines: HashMap<(Kind, bool, bool), wgpu::RenderPipeline>,
+    pipelines: HashMap<(Kind, bool, bool), pipeline::Lazy>,
     /// The scene targets as the composite and lines read them (`frame::scene_layout`).
     scene_layout: wgpu::BindGroupLayout,
     /// The light shafts (ADR 0064): the setting, the scene targets as their pass reads them
     /// (`frame::scene_read_layout`) and the pass's pipeline.
     shafts: ShaftQuality,
     scene_read_layout: wgpu::BindGroupLayout,
-    shafts_pipeline: wgpu::RenderPipeline,
+    shafts_pipeline: pipeline::Lazy,
     /// The volumetric clouds pass (docs/CLOUDS.md §8.6): its group layout, uniform, pipeline, the
     /// last frame's camera (right, up, forward, tangents; the eye) and the frame count (jitter).
     cloud_layout: wgpu::BindGroupLayout,
     cloud_prev_buffer: wgpu::Buffer,
-    clouds_pipeline: wgpu::RenderPipeline,
+    clouds_pipeline: pipeline::Lazy,
     cloud_prev: std::cell::Cell<Option<([[f32; 4]; 4], V3)>>,
     cloud_frames: std::cell::Cell<u32>,
-    composite_pipeline: wgpu::RenderPipeline,
+    /// The pipelines' warm-up while the loading screen is up (pipeline.rs, bug #71).
+    warmup: pipeline::Warmup,
+    composite_pipeline: pipeline::Lazy,
     /// While the wind is on (`motion_pass`): the composite into the finished image, the motion
     /// pass from it into the canvas, the image's layout, and the image (made when first needed).
-    finished_pipeline: wgpu::RenderPipeline,
-    motion_pipeline: wgpu::RenderPipeline,
+    finished_pipeline: pipeline::Lazy,
+    motion_pipeline: pipeline::Lazy,
     finished_layout: wgpu::BindGroupLayout,
     finished: Option<frame::Finished>,
     /// The water that reads the scene (W3, Medium and High): its pipeline, drawn in each raster
     /// scene pass's water half, and its view of the scene (`frame::under_layout`) with the sampler.
-    water_scene_pipeline: wgpu::RenderPipeline,
+    water_scene_pipeline: pipeline::Lazy,
     /// The water's GPU heightfield (proposals/WATER_GPU_SURFACE.md §3): the near chunks' surface
     /// tiles and the water pipelines over the shared grid.
     heightfield: heightfield::HeightfieldGpu,
@@ -1207,7 +1210,7 @@ pub struct Renderer {
     /// The sun's or moon's shadow maps (shadows.rs; a 1×1 stand-in while the setting is Off), the
     /// casters' pipelines by (kind, with a fragment stage), and the Shadows setting.
     shadow_maps: shadows::ShadowMaps,
-    shadow_pipelines: HashMap<(Kind, bool), wgpu::RenderPipeline>,
+    shadow_pipelines: HashMap<(Kind, bool), pipeline::Lazy>,
     shadow_quality: ShadowQuality,
     /// The last frame's shadow plan (the cascades as drawn: `shadows::stagger`) and a frame count
     /// for the far cascades' turns.
@@ -1223,7 +1226,7 @@ pub struct Renderer {
     lod_map: Option<crate::lod_map::LodMap>,
     lod_map_full: bool,
     lod_schedule: lod_shadows::Schedule,
-    height_pipelines: HashMap<(Kind, bool), wgpu::RenderPipeline>,
+    height_pipelines: HashMap<(Kind, bool), pipeline::Lazy>,
     lod_shadows_off: bool,
     /// Torch shadows (point_shadows.rs; docs/LIGHTS.md §4): the maps (a 1×1 stand-in while Off),
     /// the setting, which light each slot holds, and this frame's placed lights near the eye
@@ -1526,127 +1529,152 @@ impl Renderer {
                 Kind::Fluid => ("fluid_vs", "water_fs", &fluid_attrs),
                 Kind::Cutout => ("cutout_vs", "cutout_fs", &cutout_attrs),
             };
-            let buffers = [Some(wgpu::VertexBufferLayout {
-                array_stride: a.0,
-                step_mode: wgpu::VertexStepMode::Vertex,
-                attributes: &a.1,
-            })];
-            let blend = (water || line).then_some(wgpu::BlendState::ALPHA_BLENDING);
-            // The scene's draws write colour and (opaque only) view depth into the frame;
-            // lines draw into the canvas over the composite, depth-tested in the shader.
-            let scene_targets = [
-                Some(wgpu::ColorTargetState {
-                    format: HDR,
+            let (device, module, layout, overlay_layout, a) = (
+                device.clone(),
+                module.clone(),
+                layout.clone(),
+                overlay_layout.clone(),
+                a.clone(),
+            );
+            let pipeline = pipeline::Lazy::new(move || {
+                let buffers = [Some(wgpu::VertexBufferLayout {
+                    array_stride: a.0,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &a.1,
+                })];
+                let blend = (water || line).then_some(wgpu::BlendState::ALPHA_BLENDING);
+                // The scene's draws write colour and (opaque only) view depth into the frame;
+                // lines draw into the canvas over the composite, depth-tested in the shader.
+                let scene_targets = [
+                    Some(wgpu::ColorTargetState {
+                        format: HDR,
+                        blend,
+                        write_mask: wgpu::ColorWrites::ALL,
+                    }),
+                    Some(wgpu::ColorTargetState {
+                        format: VIEW_DEPTH,
+                        blend: None,
+                        write_mask: if water {
+                            wgpu::ColorWrites::empty()
+                        } else {
+                            wgpu::ColorWrites::ALL
+                        },
+                    }),
+                ];
+                let line_targets = [Some(wgpu::ColorTargetState {
+                    format,
                     blend,
                     write_mask: wgpu::ColorWrites::ALL,
-                }),
-                Some(wgpu::ColorTargetState {
-                    format: VIEW_DEPTH,
-                    blend: None,
-                    write_mask: if water {
-                        wgpu::ColorWrites::empty()
-                    } else {
-                        wgpu::ColorWrites::ALL
+                })];
+                crate::render::pipeline::create(
+                    &device,
+                    &wgpu::RenderPipelineDescriptor {
+                        label: Some(fs),
+                        layout: Some(if line { &overlay_layout } else { &layout }),
+                        vertex: wgpu::VertexState {
+                            module: &module,
+                            entry_point: Some(vs),
+                            compilation_options: Default::default(),
+                            buffers: &buffers,
+                        },
+                        fragment: Some(wgpu::FragmentState {
+                            module: &module,
+                            entry_point: Some(fs),
+                            compilation_options: Default::default(),
+                            targets: if line { &line_targets } else { &scene_targets },
+                        }),
+                        primitive: wgpu::PrimitiveState {
+                            // Lines are quads too (`line_vs` widens them on screen).
+                            topology: wgpu::PrimitiveTopology::TriangleList,
+                            front_face: wgpu::FrontFace::Ccw,
+                            // Water and cutout faces are seen from both sides; opaque faces are culled
+                            // from behind.
+                            cull_mode: (!water && !cutout && kind != Kind::Line)
+                                .then_some(wgpu::Face::Back),
+                            ..Default::default()
+                        },
+                        depth_stencil: (!line).then(|| wgpu::DepthStencilState {
+                            format: DEPTH,
+                            depth_write_enabled: Some(!water),
+                            depth_compare: Some(if no_depth {
+                                wgpu::CompareFunction::Always
+                            } else {
+                                DEPTH_COMPARE
+                            }),
+                            stencil: Default::default(),
+                            bias: Default::default(),
+                        }),
+                        multisample: wgpu::MultisampleState {
+                            count: if line { 1 } else { samples },
+                            ..Default::default()
+                        },
+                        multiview_mask: None,
+                        cache: None,
                     },
-                }),
-            ];
-            let line_targets = [Some(wgpu::ColorTargetState {
-                format,
-                blend,
-                write_mask: wgpu::ColorWrites::ALL,
-            })];
-            let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some(fs),
-                layout: Some(if line { &overlay_layout } else { &layout }),
-                vertex: wgpu::VertexState {
-                    module: &module,
-                    entry_point: Some(vs),
-                    compilation_options: Default::default(),
-                    buffers: &buffers,
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &module,
-                    entry_point: Some(fs),
-                    compilation_options: Default::default(),
-                    targets: if line { &line_targets } else { &scene_targets },
-                }),
-                primitive: wgpu::PrimitiveState {
-                    // Lines are quads too (`line_vs` widens them on screen).
-                    topology: wgpu::PrimitiveTopology::TriangleList,
-                    front_face: wgpu::FrontFace::Ccw,
-                    // Water and cutout faces are seen from both sides; opaque faces are culled
-                    // from behind.
-                    cull_mode: (!water && !cutout && kind != Kind::Line)
-                        .then_some(wgpu::Face::Back),
-                    ..Default::default()
-                },
-                depth_stencil: (!line).then(|| wgpu::DepthStencilState {
-                    format: DEPTH,
-                    depth_write_enabled: Some(!water),
-                    depth_compare: Some(if no_depth {
-                        wgpu::CompareFunction::Always
-                    } else {
-                        DEPTH_COMPARE
-                    }),
-                    stencil: Default::default(),
-                    bias: Default::default(),
-                }),
-                multisample: wgpu::MultisampleState {
-                    count: if line { 1 } else { samples },
-                    ..Default::default()
-                },
-                multiview_mask: None,
-                cache: None,
+                )
             });
             pipelines.insert((kind, water, no_depth), pipeline);
         }
         // The water that reads the scene: drawn in a pass's water half, which attaches the colour
         // and the depth buffer only (the view depth is read, not written). Its output is the whole
         // view through the surface (alpha 1, except seen from below).
-        let fluid_buffers = [Some(wgpu::VertexBufferLayout {
-            array_stride: fluid_attrs.0,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &fluid_attrs.1,
-        })];
-        let water_scene_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("water_scene_fs"),
-            layout: Some(&water_scene_layout),
-            vertex: wgpu::VertexState {
-                module: &module,
-                entry_point: Some("fluid_vs"),
-                compilation_options: Default::default(),
-                buffers: &fluid_buffers,
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &module,
-                entry_point: Some("water_scene_fs"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: HDR,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                ..Default::default()
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: DEPTH,
-                depth_write_enabled: Some(false),
-                depth_compare: Some(DEPTH_COMPARE),
-                stencil: Default::default(),
-                bias: Default::default(),
-            }),
-            multisample: wgpu::MultisampleState {
-                count: samples,
-                ..Default::default()
-            },
-            multiview_mask: None,
-            cache: None,
-        });
+        let water_scene_pipeline = {
+            let (device, module, water_scene_layout, fluid_attrs) = (
+                device.clone(),
+                module.clone(),
+                water_scene_layout.clone(),
+                fluid_attrs.clone(),
+            );
+            pipeline::Lazy::new(move || {
+                let fluid_buffers = [Some(wgpu::VertexBufferLayout {
+                    array_stride: fluid_attrs.0,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &fluid_attrs.1,
+                })];
+                crate::render::pipeline::create(
+                    &device,
+                    &wgpu::RenderPipelineDescriptor {
+                        label: Some("water_scene_fs"),
+                        layout: Some(&water_scene_layout),
+                        vertex: wgpu::VertexState {
+                            module: &module,
+                            entry_point: Some("fluid_vs"),
+                            compilation_options: Default::default(),
+                            buffers: &fluid_buffers,
+                        },
+                        fragment: Some(wgpu::FragmentState {
+                            module: &module,
+                            entry_point: Some("water_scene_fs"),
+                            compilation_options: Default::default(),
+                            targets: &[Some(wgpu::ColorTargetState {
+                                format: HDR,
+                                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                                write_mask: wgpu::ColorWrites::ALL,
+                            })],
+                        }),
+                        primitive: wgpu::PrimitiveState {
+                            topology: wgpu::PrimitiveTopology::TriangleList,
+                            front_face: wgpu::FrontFace::Ccw,
+                            cull_mode: None,
+                            ..Default::default()
+                        },
+                        depth_stencil: Some(wgpu::DepthStencilState {
+                            format: DEPTH,
+                            depth_write_enabled: Some(false),
+                            depth_compare: Some(DEPTH_COMPARE),
+                            stencil: Default::default(),
+                            bias: Default::default(),
+                        }),
+                        multisample: wgpu::MultisampleState {
+                            count: samples,
+                            ..Default::default()
+                        },
+                        multiview_mask: None,
+                        cache: None,
+                    },
+                )
+            })
+        };
         crate::telemetry::mark("dwell:create:scene-pipelines");
         let heightfield = heightfield::HeightfieldGpu::new(
             &device,
@@ -1689,39 +1717,47 @@ impl Renderer {
                 (Kind::Flat, false) => ("shadow_flat_vs", vec![a.1[0]]),
                 _ => (vs, a.1.clone()),
             };
-            let buffers = [Some(wgpu::VertexBufferLayout {
-                array_stride: a.0,
-                step_mode: wgpu::VertexStepMode::Vertex,
-                attributes: &attributes,
-            })];
-            let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some(if fs { entry } else { vs }),
-                layout: Some(&shadow_layout),
-                vertex: wgpu::VertexState {
-                    module: &module,
-                    entry_point: Some(vs),
-                    compilation_options: Default::default(),
-                    buffers: &buffers,
-                },
-                fragment: fs.then(|| wgpu::FragmentState {
-                    module: &module,
-                    entry_point: Some(entry),
-                    compilation_options: Default::default(),
-                    targets: &[],
-                }),
-                // Opaque casters draw the faces toward the light (the light's view keeps the
-                // scene's handedness, so they are its front faces): half the triangles, and a
-                // face's own back never shades it. Plants cast from both sides.
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleList,
-                    front_face: wgpu::FrontFace::Ccw,
-                    cull_mode: (kind != Kind::Cutout).then_some(wgpu::Face::Back),
-                    ..Default::default()
-                },
-                depth_stencil: Some(shadows::caster_depth(&SHADOWS)),
-                multisample: Default::default(),
-                multiview_mask: None,
-                cache: None,
+            let stride = a.0;
+            let (device, module, shadow_layout) =
+                (device.clone(), module.clone(), shadow_layout.clone());
+            let pipeline = pipeline::Lazy::new(move || {
+                let buffers = [Some(wgpu::VertexBufferLayout {
+                    array_stride: stride,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &attributes,
+                })];
+                crate::render::pipeline::create(
+                    &device,
+                    &wgpu::RenderPipelineDescriptor {
+                        label: Some(if fs { entry } else { vs }),
+                        layout: Some(&shadow_layout),
+                        vertex: wgpu::VertexState {
+                            module: &module,
+                            entry_point: Some(vs),
+                            compilation_options: Default::default(),
+                            buffers: &buffers,
+                        },
+                        fragment: fs.then(|| wgpu::FragmentState {
+                            module: &module,
+                            entry_point: Some(entry),
+                            compilation_options: Default::default(),
+                            targets: &[],
+                        }),
+                        // Opaque casters draw the faces toward the light (the light's view keeps the
+                        // scene's handedness, so they are its front faces): half the triangles, and a
+                        // face's own back never shades it. Plants cast from both sides.
+                        primitive: wgpu::PrimitiveState {
+                            topology: wgpu::PrimitiveTopology::TriangleList,
+                            front_face: wgpu::FrontFace::Ccw,
+                            cull_mode: (kind != Kind::Cutout).then_some(wgpu::Face::Back),
+                            ..Default::default()
+                        },
+                        depth_stencil: Some(shadows::caster_depth(&SHADOWS)),
+                        multisample: Default::default(),
+                        multiview_mask: None,
+                        cache: None,
+                    },
+                )
             });
             shadow_pipelines.insert((kind, fs), pipeline);
         }
@@ -1737,92 +1773,92 @@ impl Renderer {
                 Kind::Terrain => ("terrain_vs", "shadow_terrain_fs", &terrain_attrs),
                 _ => ("flat_vs", "shadow_flat_fs", &flat_attrs),
             };
-            let buffers = [Some(wgpu::VertexBufferLayout {
-                array_stride: a.0,
-                step_mode: wgpu::VertexStepMode::Vertex,
-                attributes: &a.1,
-            })];
-            let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("lod shadow heights"),
-                layout: Some(&shadow_layout),
-                vertex: wgpu::VertexState {
-                    module: &module,
-                    entry_point: Some(vs),
-                    compilation_options: Default::default(),
-                    buffers: &buffers,
-                },
-                fragment: fs.then(|| wgpu::FragmentState {
-                    module: &module,
-                    entry_point: Some(entry),
-                    compilation_options: Default::default(),
-                    targets: &[],
-                }),
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleList,
-                    front_face: wgpu::FrontFace::Ccw,
-                    cull_mode: None,
-                    ..Default::default()
-                },
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: lod_shadows::HEIGHT_DEPTH,
-                    depth_write_enabled: Some(true),
-                    depth_compare: Some(wgpu::CompareFunction::LessEqual),
-                    stencil: Default::default(),
-                    bias: Default::default(),
-                }),
-                multisample: Default::default(),
-                multiview_mask: None,
-                cache: None,
+            let (device, module, shadow_layout, a) = (
+                device.clone(),
+                module.clone(),
+                shadow_layout.clone(),
+                a.clone(),
+            );
+            let pipeline = pipeline::Lazy::new(move || {
+                let buffers = [Some(wgpu::VertexBufferLayout {
+                    array_stride: a.0,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &a.1,
+                })];
+                crate::render::pipeline::create(
+                    &device,
+                    &wgpu::RenderPipelineDescriptor {
+                        label: Some("lod shadow heights"),
+                        layout: Some(&shadow_layout),
+                        vertex: wgpu::VertexState {
+                            module: &module,
+                            entry_point: Some(vs),
+                            compilation_options: Default::default(),
+                            buffers: &buffers,
+                        },
+                        fragment: fs.then(|| wgpu::FragmentState {
+                            module: &module,
+                            entry_point: Some(entry),
+                            compilation_options: Default::default(),
+                            targets: &[],
+                        }),
+                        primitive: wgpu::PrimitiveState {
+                            topology: wgpu::PrimitiveTopology::TriangleList,
+                            front_face: wgpu::FrontFace::Ccw,
+                            cull_mode: None,
+                            ..Default::default()
+                        },
+                        depth_stencil: Some(wgpu::DepthStencilState {
+                            format: lod_shadows::HEIGHT_DEPTH,
+                            depth_write_enabled: Some(true),
+                            depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                            stencil: Default::default(),
+                            bias: Default::default(),
+                        }),
+                        multisample: Default::default(),
+                        multiview_mask: None,
+                        cache: None,
+                    },
+                )
             });
             height_pipelines.insert((kind, fs), pipeline);
         }
-        // The composite: a full-screen triangle into the canvas.
-        let composite_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("composite"),
-            layout: Some(&overlay_layout),
-            vertex: wgpu::VertexState {
-                module: &module,
-                entry_point: Some("sky_vs"),
-                compilation_options: Default::default(),
-                buffers: &[],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &module,
-                entry_point: Some("composite_fs"),
-                compilation_options: Default::default(),
-                targets: &[Some(format.into())],
-            }),
-            primitive: Default::default(),
-            depth_stencil: None,
-            multisample: Default::default(),
-            multiview_mask: None,
-            cache: None,
-        });
-        // With the wind on: the composite into the finished image, and the motion pass from it
-        // (group 3) into the canvas, where the lines follow it.
-        let full_screen = |label, layout, entry, target: wgpu::ColorTargetState| {
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some(label),
-                layout: Some(layout),
-                vertex: wgpu::VertexState {
-                    module: &module,
-                    entry_point: Some("sky_vs"),
-                    compilation_options: Default::default(),
-                    buffers: &[],
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &module,
-                    entry_point: Some(entry),
-                    compilation_options: Default::default(),
-                    targets: &[Some(target)],
-                }),
-                primitive: Default::default(),
-                depth_stencil: None,
-                multisample: Default::default(),
-                multiview_mask: None,
-                cache: None,
+        // Full-screen passes (the composite into the canvas; with the wind on, the composite into
+        // the finished image and the motion pass from it, group 3, into the canvas).
+        let full_screen = |label: &'static str,
+                           layout: &wgpu::PipelineLayout,
+                           entry: &'static str,
+                           target: wgpu::ColorTargetState| {
+            let (device, module, layout) = (device.clone(), module.clone(), layout.clone());
+            pipeline::Lazy::new(move || {
+                crate::render::pipeline::create(
+                    &device,
+                    &wgpu::RenderPipelineDescriptor {
+                        label: Some(label),
+                        layout: Some(&layout),
+                        vertex: wgpu::VertexState {
+                            module: &module,
+                            entry_point: Some("sky_vs"),
+                            compilation_options: Default::default(),
+                            buffers: &[],
+                        },
+                        fragment: Some(wgpu::FragmentState {
+                            module: &module,
+                            entry_point: Some(entry),
+                            compilation_options: Default::default(),
+                            targets: &[Some(target)],
+                        }),
+                        primitive: Default::default(),
+                        depth_stencil: None,
+                        multisample: Default::default(),
+                        multiview_mask: None,
+                        cache: None,
+                    },
+                )
             })
         };
+        let composite_pipeline =
+            full_screen("composite", &overlay_layout, "composite_fs", format.into());
         let finished_pipeline = full_screen("finished", &overlay_layout, "finished_fs", HDR.into());
         // The light shafts pass (ADR 0064): the scene's colour and depth (not its own buffer) into
         // the shafts' buffer.
@@ -1861,27 +1897,36 @@ impl Renderer {
             ],
             immediate_size: 0,
         });
-        let clouds_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("clouds"),
-            layout: Some(&clouds_layout),
-            vertex: wgpu::VertexState {
-                module: &module,
-                entry_point: Some("sky_vs"),
-                compilation_options: Default::default(),
-                buffers: &[],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &module,
-                entry_point: Some("clouds_fs"),
-                compilation_options: Default::default(),
-                targets: &[Some(frame::CLOUDS.into()), Some(frame::CLOUD_DIST.into())],
-            }),
-            primitive: Default::default(),
-            depth_stencil: None,
-            multisample: Default::default(),
-            multiview_mask: None,
-            cache: None,
-        });
+        let clouds_pipeline = {
+            let (device, module, clouds_layout) =
+                (device.clone(), module.clone(), clouds_layout.clone());
+            pipeline::Lazy::new(move || {
+                crate::render::pipeline::create(
+                    &device,
+                    &wgpu::RenderPipelineDescriptor {
+                        label: Some("clouds"),
+                        layout: Some(&clouds_layout),
+                        vertex: wgpu::VertexState {
+                            module: &module,
+                            entry_point: Some("sky_vs"),
+                            compilation_options: Default::default(),
+                            buffers: &[],
+                        },
+                        fragment: Some(wgpu::FragmentState {
+                            module: &module,
+                            entry_point: Some("clouds_fs"),
+                            compilation_options: Default::default(),
+                            targets: &[Some(frame::CLOUDS.into()), Some(frame::CLOUD_DIST.into())],
+                        }),
+                        primitive: Default::default(),
+                        depth_stencil: None,
+                        multisample: Default::default(),
+                        multiview_mask: None,
+                        cache: None,
+                    },
+                )
+            })
+        };
         let finished_layout = frame::finished_layout(&device);
         let motion_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("motion"),
@@ -2087,6 +2132,7 @@ impl Renderer {
             clouds_pipeline,
             cloud_prev: std::cell::Cell::new(None),
             cloud_frames: std::cell::Cell::new(0),
+            warmup: pipeline::Warmup::default(),
             adapter: wgpu::DeviceType::Other,
             cloud_coverage: CLOUDS.shape.coverage,
             cloud_seconds: 0.0,
@@ -2557,6 +2603,47 @@ impl Renderer {
             .split('&')
             .any(|kv| kv == "lodshadows=off");
     }
+
+    /// Builds the next few of the pipelines a frame draws (bug #71, pipeline.rs); whether all are
+    /// built. Called once a frame before drawing; a frame is drawn only once it is done.
+    pub fn warm_pipelines(&mut self) -> bool {
+        self.warmup.step(self.warm_set())
+    }
+
+    /// The pipelines the warm-up builds, in the order a frame needs them: the scene's, the
+    /// composite and the wind's, then the passes the chosen tiers draw (shadows, distant shadows,
+    /// clouds, light shafts). A tier that is off is left out: its pipelines are made if it is
+    /// switched on, on first use.
+    fn warm_set(&self) -> Vec<&pipeline::Lazy> {
+        let mut set: Vec<&pipeline::Lazy> = Vec::new();
+        let mut scene: Vec<_> = self.pipelines.iter().collect();
+        scene.sort_by_key(|(k, _)| **k);
+        set.extend(scene.into_iter().map(|(_, p)| p));
+        set.push(&self.water_scene_pipeline);
+        set.extend([
+            &self.composite_pipeline,
+            &self.finished_pipeline,
+            &self.motion_pipeline,
+        ]);
+        if self.shadows() != ShadowQuality::Off {
+            let mut casters: Vec<_> = self.shadow_pipelines.iter().collect();
+            casters.sort_by_key(|(k, _)| **k);
+            set.extend(casters.into_iter().map(|(_, p)| p));
+            if !self.lod_shadows_off {
+                let mut heights: Vec<_> = self.height_pipelines.iter().collect();
+                heights.sort_by_key(|(k, _)| **k);
+                set.extend(heights.into_iter().map(|(_, p)| p));
+            }
+        }
+        if self.cloud_tier().is_some() {
+            set.push(&self.clouds_pipeline);
+        }
+        if self.shaft_tier().is_some() {
+            set.push(&self.shafts_pipeline);
+        }
+        set
+    }
+
     /// Whether a frame may be drawn at `now_ms` (pacing.rs): not while `pacing::MAX_IN_FLIGHT`
     /// frames are still on the GPU.
     pub fn ready_to_draw(&mut self, now_ms: f64) -> bool {
@@ -6384,6 +6471,30 @@ mod tests {
             r.flames.mask_range(flames::Group::Scene).is_empty(),
             "and not in the mask"
         );
+    }
+
+    /// Bug #71: a renderer compiles almost no pipeline up front (each one held the page's paints
+    /// while the GPU process compiled it, ~9 s in all on a cold cache); they are made on first use
+    /// or by the warm-up a few a frame, and the warm-up builds what a frame draws.
+    #[test]
+    fn a_renderer_makes_its_pipelines_lazily_and_warms_them_in_batches() {
+        let before = pipeline::created();
+        let mut r = noop_renderer();
+        let up_front = pipeline::created() - before;
+        assert!(up_front <= 4, "{up_front} pipelines made up front");
+        let mut steps = 0;
+        while !r.warm_pipelines() {
+            steps += 1;
+            let warmed = pipeline::created() - before - up_front;
+            assert!(
+                warmed <= steps * pipeline::Warmup::PER_FRAME,
+                "{warmed} by step {steps}"
+            );
+            assert!(steps < 200, "the warm-up ends");
+        }
+        let warmed = pipeline::created() - before;
+        assert!(steps >= 2, "in batches: {steps} steps for {warmed}");
+        draws_cleanly(r);
     }
 
     fn noop_renderer() -> Renderer {

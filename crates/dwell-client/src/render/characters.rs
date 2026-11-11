@@ -891,35 +891,38 @@ impl CharacterRenderer {
             }),
         ];
         let make = |vs: &str, fs: &str, cull: wgpu::Face| {
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some(fs),
-                layout: Some(&pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &module,
-                    entry_point: Some(vs),
-                    compilation_options: Default::default(),
-                    buffers: &buffers,
+            crate::render::pipeline::create(
+                device,
+                &wgpu::RenderPipelineDescriptor {
+                    label: Some(fs),
+                    layout: Some(&pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        module: &module,
+                        entry_point: Some(vs),
+                        compilation_options: Default::default(),
+                        buffers: &buffers,
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &module,
+                        entry_point: Some(fs),
+                        compilation_options: Default::default(),
+                        targets: &targets,
+                    }),
+                    primitive: wgpu::PrimitiveState {
+                        topology: wgpu::PrimitiveTopology::TriangleList,
+                        front_face: wgpu::FrontFace::Ccw,
+                        cull_mode: Some(cull),
+                        ..Default::default()
+                    },
+                    depth_stencil: Some(depth_state()),
+                    multisample: wgpu::MultisampleState {
+                        count: samples,
+                        ..Default::default()
+                    },
+                    multiview_mask: None,
+                    cache: None,
                 },
-                fragment: Some(wgpu::FragmentState {
-                    module: &module,
-                    entry_point: Some(fs),
-                    compilation_options: Default::default(),
-                    targets: &targets,
-                }),
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleList,
-                    front_face: wgpu::FrontFace::Ccw,
-                    cull_mode: Some(cull),
-                    ..Default::default()
-                },
-                depth_stencil: Some(depth_state()),
-                multisample: wgpu::MultisampleState {
-                    count: samples,
-                    ..Default::default()
-                },
-                multiview_mask: None,
-                cache: None,
-            })
+            )
         };
         let pipeline = make("character_vs", "character_fs", wgpu::Face::Back);
         let shadow_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -927,27 +930,30 @@ impl CharacterRenderer {
             bind_group_layouts: &[Some(shadow_frame_layout), Some(&layout)],
             immediate_size: 0,
         });
-        let shadow_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("character shadows"),
-            layout: Some(&shadow_layout),
-            vertex: wgpu::VertexState {
-                module: &module,
-                entry_point: Some("character_vs"),
-                compilation_options: Default::default(),
-                buffers: &buffers,
+        let shadow_pipeline = crate::render::pipeline::create(
+            device,
+            &wgpu::RenderPipelineDescriptor {
+                label: Some("character shadows"),
+                layout: Some(&shadow_layout),
+                vertex: wgpu::VertexState {
+                    module: &module,
+                    entry_point: Some("character_vs"),
+                    compilation_options: Default::default(),
+                    buffers: &buffers,
+                },
+                fragment: None,
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: Some(super::shadows::caster_depth(&dwell_look::shadows::SHADOWS)),
+                multisample: Default::default(),
+                multiview_mask: None,
+                cache: None,
             },
-            fragment: None,
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                ..Default::default()
-            },
-            depth_stencil: Some(super::shadows::caster_depth(&dwell_look::shadows::SHADOWS)),
-            multisample: Default::default(),
-            multiview_mask: None,
-            cache: None,
-        });
+        );
         let outline_pipeline = make(
             "character_outline_vs",
             "character_outline_fs",

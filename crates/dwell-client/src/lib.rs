@@ -74,27 +74,30 @@ pub fn triangle_pipeline(
         label: Some("probe"),
         source: wgpu::ShaderSource::Wgsl(include_str!("triangle.wgsl").into()),
     });
-    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("probe"),
-        layout: None,
-        vertex: wgpu::VertexState {
-            module: &module,
-            entry_point: Some("vs_main"),
-            compilation_options: Default::default(),
-            buffers: &[],
+    crate::render::pipeline::create(
+        device,
+        &wgpu::RenderPipelineDescriptor {
+            label: Some("probe"),
+            layout: None,
+            vertex: wgpu::VertexState {
+                module: &module,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &[],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &module,
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &[Some(format.into())],
+            }),
+            primitive: Default::default(),
+            depth_stencil: None,
+            multisample: Default::default(),
+            multiview_mask: None,
+            cache: None,
         },
-        fragment: Some(wgpu::FragmentState {
-            module: &module,
-            entry_point: Some("fs_main"),
-            compilation_options: Default::default(),
-            targets: &[Some(format.into())],
-        }),
-        primitive: Default::default(),
-        depth_stencil: None,
-        multisample: Default::default(),
-        multiview_mask: None,
-        cache: None,
-    })
+    )
 }
 
 /// Records the probe's pass: clear, then the triangle.

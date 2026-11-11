@@ -327,49 +327,52 @@ impl HeightfieldGpu {
                 blend,
                 write_mask: wgpu::ColorWrites::ALL,
             })];
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some(if scene {
-                    "heightfield water_scene_fs"
-                } else {
-                    "heightfield water_fs"
-                }),
-                layout: Some(&pl),
-                vertex: wgpu::VertexState {
-                    module: p.module,
-                    entry_point: Some("heightfield_vs"),
-                    compilation_options: Default::default(),
-                    buffers: &[],
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: p.module,
-                    entry_point: Some(if scene { "water_scene_fs" } else { "water_fs" }),
-                    compilation_options: Default::default(),
-                    targets: if scene {
-                        &scene_targets
+            crate::render::pipeline::create(
+                device,
+                &wgpu::RenderPipelineDescriptor {
+                    label: Some(if scene {
+                        "heightfield water_scene_fs"
                     } else {
-                        &blended_targets
+                        "heightfield water_fs"
+                    }),
+                    layout: Some(&pl),
+                    vertex: wgpu::VertexState {
+                        module: p.module,
+                        entry_point: Some("heightfield_vs"),
+                        compilation_options: Default::default(),
+                        buffers: &[],
                     },
-                }),
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleList,
-                    front_face: wgpu::FrontFace::Ccw,
-                    cull_mode: None,
-                    ..Default::default()
+                    fragment: Some(wgpu::FragmentState {
+                        module: p.module,
+                        entry_point: Some(if scene { "water_scene_fs" } else { "water_fs" }),
+                        compilation_options: Default::default(),
+                        targets: if scene {
+                            &scene_targets
+                        } else {
+                            &blended_targets
+                        },
+                    }),
+                    primitive: wgpu::PrimitiveState {
+                        topology: wgpu::PrimitiveTopology::TriangleList,
+                        front_face: wgpu::FrontFace::Ccw,
+                        cull_mode: None,
+                        ..Default::default()
+                    },
+                    depth_stencil: Some(wgpu::DepthStencilState {
+                        format: p.depth,
+                        depth_write_enabled: Some(false),
+                        depth_compare: Some(p.depth_compare),
+                        stencil: Default::default(),
+                        bias: Default::default(),
+                    }),
+                    multisample: wgpu::MultisampleState {
+                        count: p.samples,
+                        ..Default::default()
+                    },
+                    multiview_mask: None,
+                    cache: None,
                 },
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: p.depth,
-                    depth_write_enabled: Some(false),
-                    depth_compare: Some(p.depth_compare),
-                    stencil: Default::default(),
-                    bias: Default::default(),
-                }),
-                multisample: wgpu::MultisampleState {
-                    count: p.samples,
-                    ..Default::default()
-                },
-                multiview_mask: None,
-                cache: None,
-            })
+            )
         };
         Self {
             texture,

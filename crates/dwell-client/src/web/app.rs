@@ -3190,6 +3190,12 @@ impl Inner {
 
     /// Draws the frame; whether it did (not while the GPU is behind, nor without a surface).
     fn draw(&mut self) -> bool {
+        // Not until the pipelines are made, a few a frame (render/pipeline.rs, bug #71): on a cold
+        // shader cache each compiles for a while in the GPU process, which paints no frame then.
+        if !self.renderer.borrow_mut().warm_pipelines() {
+            telemetry::count("draw.warming", 1.0);
+            return false;
+        }
         // Not while the GPU is still behind on earlier frames (render/pacing.rs): recording now
         // would block this thread until it caught up.
         if !self

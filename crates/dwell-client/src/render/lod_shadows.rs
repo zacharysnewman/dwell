@@ -709,33 +709,36 @@ fn full_screen_pipeline(
             write_mask: wgpu::ColorWrites::ALL,
         })]
     });
-    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some(label),
-        layout: Some(&pipeline_layout),
-        vertex: wgpu::VertexState {
-            module: &module,
-            entry_point: Some(vs),
-            compilation_options: Default::default(),
-            buffers: &[],
+    crate::render::pipeline::create(
+        device,
+        &wgpu::RenderPipelineDescriptor {
+            label: Some(label),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &module,
+                entry_point: Some(vs),
+                compilation_options: Default::default(),
+                buffers: &[],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &module,
+                entry_point: Some(fs),
+                compilation_options: Default::default(),
+                targets: targets.as_ref().map_or(&[], |t| &t[..]),
+            }),
+            primitive: Default::default(),
+            depth_stencil: color.is_none().then_some(wgpu::DepthStencilState {
+                format: HEIGHT_DEPTH,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Always),
+                stencil: Default::default(),
+                bias: Default::default(),
+            }),
+            multisample: Default::default(),
+            multiview_mask: None,
+            cache: None,
         },
-        fragment: Some(wgpu::FragmentState {
-            module: &module,
-            entry_point: Some(fs),
-            compilation_options: Default::default(),
-            targets: targets.as_ref().map_or(&[], |t| &t[..]),
-        }),
-        primitive: Default::default(),
-        depth_stencil: color.is_none().then_some(wgpu::DepthStencilState {
-            format: HEIGHT_DEPTH,
-            depth_write_enabled: Some(true),
-            depth_compare: Some(wgpu::CompareFunction::Always),
-            stencil: Default::default(),
-            bias: Default::default(),
-        }),
-        multisample: Default::default(),
-        multiview_mask: None,
-        cache: None,
-    })
+    )
 }
 
 /// The sweep's WGSL: its module with the horizon's range.
