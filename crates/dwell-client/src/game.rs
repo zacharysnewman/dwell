@@ -712,6 +712,14 @@ pub struct Game<S: Scene> {
     lean_at: Option<([i32; 3], f64)>,
     /// The crackle of torches near the listener, and the wind and the night (docs/AUDIO.md §5).
     fire_sounds: FireSounds,
+    /// The body's breathing, gasps and strain from the vitals (docs/AUDIO.md §5).
+    vital_sounds: dwell_game::sound::VitalSounds,
+    /// The creatures' footsteps, startles and calls (docs/AUDIO.md §2d).
+    creature_sounds: dwell_game::sound::CreatureSounds,
+    /// The listener's surroundings for the ambience beds (AUDIO.md §2c), read a few times a second.
+    ambience: dwell_game::ambience::Listening,
+    ambience_due_s: f64,
+    ambience_trees: Vec<usize>,
     /// Other players' health events, held until their bodies are drawn at that moment (the
     /// interpolation delay), so a hurt sounds with the hit that caused it: (local ms, event).
     pending_player_events: Vec<(f64, dwell_protocol::PlayerEvent)>,
@@ -872,6 +880,15 @@ impl<S: Scene> Game<S> {
             held_tool_sent: None,
             lean_at: None,
             fire_sounds: FireSounds::new(),
+            vital_sounds: dwell_game::sound::VitalSounds::new(),
+            creature_sounds: dwell_game::sound::CreatureSounds::new(0x5eed),
+            ambience: dwell_game::ambience::Listening {
+                fire_m: dwell_game::ambience::FAR_M,
+                water_m: dwell_game::ambience::FAR_M,
+                ..Default::default()
+            },
+            ambience_due_s: 0.0,
+            ambience_trees: dwell_game::ambience::tree_blocks(),
             pending_player_events: Vec::new(),
             remote_impacts: Default::default(),
             pending_sounds: Vec::new(),
@@ -2451,6 +2468,12 @@ impl<S: Scene> Game<S> {
         std::mem::take(&mut self.sounds)
     }
 
+    /// The listener's surroundings for the ambience beds (AUDIO.md §2c), in
+    /// `dwell_game::ambience::INPUTS` order.
+    pub fn ambience(&self) -> [f64; 9] {
+        self.ambience.to_array()
+    }
+
     /// The camera at the last draw, for the audio listener: eye, forward, up.
     pub fn listener(&self) -> [f64; 9] {
         self.listener
@@ -3095,6 +3118,19 @@ impl<S: Scene> Game<S> {
                 (v, light)
             })
             .collect();
+        // Their footsteps, startles and calls (docs/AUDIO.md §2d), at the listener.
+        let samples: Vec<_> = creatures
+            .iter()
+            .map(|(v, _)| dwell_game::sound::CreatureSample {
+                id: v.id,
+                model: v.model,
+                feet: v.feet,
+                running: v.role == "sprint",
+            })
+            .collect();
+        let ear = [self.listener[0], self.listener[1], self.listener[2]];
+        self.creature_sounds
+            .update(ear, &samples, dt, &mut self.sounds);
         self.scene.borrow_mut().set_creatures(creatures);
         if let Some(mut p) = self.puppets {
             // Holding the hotbar's: a tool (the axe) as your hand shows it, else its block.
@@ -3470,6 +3506,43 @@ impl<S: Scene> Game<S> {
             });
         }
         self.fire_sounds.update(eye, &fires, dt, &mut self.sounds);
+        // The ambience beds' surroundings (AUDIO.md §2c), four times a second.
+        self.ambience_due_s -= dt;
+        if self.ambience_due_s <= 0.0 {
+            self.ambience_due_s = 0.25;
+            let fire_m = fires
+                .iter()
+                .filter(|f| dwell_game::sound::burns(f.block))
+                .map(|f| {
+                    let d: [f64; 3] = std::array::from_fn(|k| f.pos[k] - eye[k]);
+                    (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
+                })
+                .fold(dwell_game::ambience::FAR_M, f64::min);
+            let face = FaceFrame::at_row(dwell_world::cell_of_pos(eye)[1]);
+            let store = self.streamer.store();
+            let trees = &self.ambience_trees;
+            let mut l = dwell_game::ambience::probe(
+                eye,
+                face,
+                ambient::AMBIENCE_RADIUS_M,
+                |c| store.get_voxel_if_loaded(c),
+                |id| trees.contains(&dwell_blocks::info(id).block),
+                |p| {
+                    let c = store.currents.at(p);
+                    f64::from(c[0].hypot(c[1]))
+                },
+            );
+            l.day = dwell_game::ambience::daylight(self.day.sun, face);
+            l.fire_m = fire_m;
+            self.ambience = l;
+        }
+        let vitals = HudVitals::of(&self.predictor.controller().vitals, self.vitals_rules)
+            .filter(|_| !self.dead);
+        self.vital_sounds.update(
+            vitals.is_some_and(|v| v.exhausted),
+            vitals.and_then(|v| v.oxygen).map(f64::from),
+            &mut self.sounds,
+        );
         // Each waterfall near the listener rushes, louder with more flow and nearer.
         let falls: Vec<dwell_game::sound::FallSource> = self
             .falls

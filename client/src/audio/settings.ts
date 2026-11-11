@@ -16,6 +16,7 @@ export function sanitizeVolumes(value: unknown): Volumes {
     effects: clamp01(v.effects, DEFAULT_VOLUMES.effects),
     ui: clamp01(v.ui, DEFAULT_VOLUMES.ui),
     music: clamp01(v.music, DEFAULT_VOLUMES.music),
+    ambience: clamp01(v.ambience, DEFAULT_VOLUMES.ambience),
   };
 }
 

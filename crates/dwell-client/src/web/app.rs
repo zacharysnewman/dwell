@@ -1348,6 +1348,16 @@ impl Client {
 
     /// The game's sound events since the last call (docs/AUDIO.md §5): 7 numbers each (kind,
     /// block state, intensity, x, y, z, flags), for the shell's audio (`client/src/audio`).
+    /// The listener's surroundings for the ambience beds (docs/AUDIO.md §2c): 9 numbers in
+    /// `dwell_game::ambience::INPUTS` order; empty before the game runs.
+    pub fn ambience(&self) -> Vec<f64> {
+        self.inner
+            .borrow()
+            .game
+            .as_ref()
+            .map_or_else(Vec::new, |g| g.ambience().to_vec())
+    }
+
     #[wasm_bindgen(js_name = takeSounds)]
     pub fn take_sounds(&self) -> Vec<f64> {
         let mut s = self.inner.borrow_mut();

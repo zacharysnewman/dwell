@@ -971,6 +971,162 @@ impl FallSounds {
 /// flags: bit 0 spatial, bits 1–3 the gait + 1, bits 4 and up the voice + 1).
 pub const FLOATS_PER_EVENT: usize = 7;
 
+/// A creature as the sounds see it: its id, model, feet (world) and whether it runs.
+#[derive(Clone, Copy, Debug)]
+pub struct CreatureSample<'a> {
+    pub id: u32,
+    pub model: &'a str,
+    pub feet: [f64; 3],
+    pub running: bool,
+}
+
+#[derive(Clone, Debug)]
+struct CreatureTrack {
+    last: [f64; 3],
+    walked: f64,
+    running: bool,
+    call_in: f64,
+}
+
+/// The creatures' sounds (docs/AUDIO.md §2d): a footstep every stride walked, a startle when one
+/// breaks into a run, a call now and then; within `creature_sounds::RADIUS_M` of the listener, by
+/// the model's data (`creature_sounds::MODELS`). Events carry the model's index as their `block`.
+#[derive(Clone, Debug, Default)]
+pub struct CreatureSounds {
+    seen: std::collections::HashMap<u32, CreatureTrack>,
+    rng: u64,
+}
+
+impl CreatureSounds {
+    pub fn new(seed: u64) -> Self {
+        Self {
+            seen: Default::default(),
+            rng: seed | 1,
+        }
+    }
+
+    fn draw(&mut self, (lo, hi): (f64, f64)) -> f64 {
+        // xorshift64*: the calls' spacing only.
+        self.rng ^= self.rng >> 12;
+        self.rng ^= self.rng << 25;
+        self.rng ^= self.rng >> 27;
+        let u = (self.rng.wrapping_mul(0x2545_F491_4F6C_DD1D) >> 11) as f64 / (1u64 << 53) as f64;
+        lo + (hi - lo) * u
+    }
+
+    pub fn update(
+        &mut self,
+        eye: [f64; 3],
+        creatures: &[CreatureSample<'_>],
+        dt: f64,
+        out: &mut Vec<SoundEvent>,
+    ) {
+        use creature_sounds::{MODELS, RADIUS_M};
+        for c in creatures {
+            let Some(index) = MODELS.iter().position(|m| m.0 == c.model) else {
+                continue;
+            };
+            let (_, stride, call) = MODELS[index];
+            let d: [f64; 3] = std::array::from_fn(|k| c.feet[k] - eye[k]);
+            let near = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt() <= RADIUS_M;
+            let first_call = call.map_or(f64::INFINITY, |r| self.draw(r));
+            let t = self.seen.entry(c.id).or_insert(CreatureTrack {
+                last: c.feet,
+                walked: 0.0,
+                running: c.running,
+                call_in: first_call,
+            });
+            let m: [f64; 3] = std::array::from_fn(|k| c.feet[k] - t.last[k]);
+            let moved = (m[0] * m[0] + m[1] * m[1] + m[2] * m[2]).sqrt();
+            t.last = c.feet;
+            // A jump of more than a few metres (a first sight, a teleport) is no walk.
+            if moved < 4.0 {
+                t.walked += moved;
+            }
+            let block = index as StateId;
+            let mut events = Vec::new();
+            if t.walked >= stride {
+                t.walked %= stride;
+                events.push(SoundKind::CreatureStep);
+            }
+            if c.running && !t.running {
+                events.push(SoundKind::CreatureStartle);
+            }
+            t.running = c.running;
+            t.call_in -= dt;
+            let called = t.call_in <= 0.0;
+            if called {
+                events.push(SoundKind::CreatureCall);
+            }
+            if near {
+                out.extend(
+                    events
+                        .into_iter()
+                        .map(|k| SoundEvent::new(k, block, 1.0, Some(c.feet))),
+                );
+            }
+            if called {
+                let next = call.map_or(f64::INFINITY, |r| self.draw(r));
+                if let Some(t) = self.seen.get_mut(&c.id) {
+                    t.call_in = next;
+                }
+            }
+        }
+        self.seen
+            .retain(|id, _| creatures.iter().any(|c| c.id == *id));
+    }
+}
+
+/// The air share under which surfacing gasps (a breath held long), and under which the body strains.
+pub const GASP_BELOW: f64 = 0.7;
+pub const STRAIN_BELOW: f64 = 0.25;
+
+/// The player's body (docs/AUDIO.md §5): heavy breathing as stamina runs out, a gasp on surfacing
+/// short of air, a strain as the air runs low. Read from the vitals each frame (ADR 0069).
+#[derive(Clone, Debug, Default)]
+pub struct VitalSounds {
+    exhausted: bool,
+    last_air: Option<f64>,
+    /// The air fell below `GASP_BELOW` and has not come back yet.
+    held: bool,
+    strained: bool,
+}
+
+impl VitalSounds {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// `exhausted`: out of stamina; `air`: the oxygen's share of full (None where the mode has none).
+    pub fn update(&mut self, exhausted: bool, air: Option<f64>, out: &mut Vec<SoundEvent>) {
+        if exhausted && !self.exhausted {
+            out.push(SoundEvent::new(SoundKind::Exhausted, 0, 1.0, None));
+        }
+        self.exhausted = exhausted;
+        let Some(air) = air else {
+            self.last_air = None;
+            return;
+        };
+        if let Some(last) = self.last_air {
+            if air < GASP_BELOW && air < last {
+                self.held = true;
+            }
+            if self.held && air > last + 1e-6 {
+                out.push(SoundEvent::new(SoundKind::Gasp, 0, 1.0, None));
+                self.held = false;
+            }
+            if air < STRAIN_BELOW && last >= STRAIN_BELOW && !self.strained {
+                out.push(SoundEvent::new(SoundKind::Strain, 0, 1.0, None));
+                self.strained = true;
+            }
+        }
+        if air >= STRAIN_BELOW {
+            self.strained = false;
+        }
+        self.last_air = Some(air);
+    }
+}
+
 pub fn encode(events: &[SoundEvent]) -> Vec<f64> {
     let mut v = Vec::with_capacity(events.len() * FLOATS_PER_EVENT);
     for e in events {
@@ -1961,5 +2117,84 @@ mod tests {
         burn.voice = Some(FIRE_VOICE + 2);
         let v = encode(&[burn]);
         assert_eq!(v[6], f64::from((FIRE_VOICE + 3) << 4));
+    }
+
+    #[test]
+    fn running_out_of_stamina_breathes_and_air_running_low_strains_then_gasps() {
+        // face-a-only: the vitals have no up.
+        let mut v = VitalSounds::new();
+        let mut out = Vec::new();
+        v.update(false, Some(1.0), &mut out);
+        v.update(true, Some(1.0), &mut out);
+        v.update(true, Some(1.0), &mut out);
+        assert_eq!(kinds(&out), vec![SoundKind::Exhausted]);
+        out.clear();
+        // Under water: the air falls past the strain line once, then surfacing gasps once.
+        for k in (10..=100).rev() {
+            v.update(false, Some(f64::from(k) / 100.0), &mut out);
+        }
+        assert_eq!(kinds(&out), vec![SoundKind::Strain]);
+        out.clear();
+        v.update(false, Some(0.12), &mut out);
+        v.update(false, Some(0.15), &mut out);
+        assert_eq!(kinds(&out), vec![SoundKind::Gasp]);
+        out.clear();
+        // A short dip (never under the gasp line) is silent.
+        for a in [1.0, 0.9, 0.8, 0.85, 0.9] {
+            v.update(false, Some(a), &mut out);
+        }
+        assert!(out.is_empty(), "{out:?}");
+    }
+
+    #[test]
+    fn creatures_step_by_their_stride_startle_into_a_run_and_call_only_near() {
+        // face-a-only: distances along x only; the creatures' events are not face-dependent.
+        let mut s = CreatureSounds::new(7);
+        let mut out = Vec::new();
+        let wolf = |x: f64, running: bool| CreatureSample {
+            id: 1,
+            model: "wolf",
+            feet: [x, 0.0, 0.0],
+            running,
+        };
+        let stride = creature_sounds::MODELS[0].1;
+        // 10 strides' walk at 1 cm a frame.
+        let frames = (10.0 * stride / 0.01).round() as usize;
+        for i in 0..=frames {
+            s.update(
+                [0.0; 3],
+                &[wolf(i as f64 * 0.01, false)],
+                1.0 / 60.0,
+                &mut out,
+            );
+        }
+        let steps = out
+            .iter()
+            .filter(|e| e.kind == SoundKind::CreatureStep)
+            .count();
+        assert!((9..=10).contains(&steps), "{steps}");
+        assert!(out.iter().all(|e| e.block == 0 && e.at.is_some()));
+        out.clear();
+        let x = frames as f64 * 0.01;
+        s.update([0.0; 3], &[wolf(x, true)], 0.0, &mut out);
+        assert_eq!(kinds(&out), vec![SoundKind::CreatureStartle]);
+        // It calls within its interval, but not heard from far away.
+        out.clear();
+        let far = [1000.0, 0.0, 0.0];
+        s.update(far, &[wolf(x, true)], 200.0, &mut out);
+        assert!(out.is_empty());
+        let mut near = Vec::new();
+        s.update([0.0; 3], &[wolf(x, true)], 200.0, &mut near);
+        assert_eq!(kinds(&near), vec![SoundKind::CreatureCall]);
+        // An unknown model is silent.
+        out.clear();
+        let fox = CreatureSample {
+            id: 2,
+            model: "fox",
+            feet: [0.0; 3],
+            running: true,
+        };
+        s.update([0.0; 3], &[fox], 500.0, &mut out);
+        assert!(out.is_empty());
     }
 }

@@ -678,7 +678,7 @@ each worker keeps two jobs (one running, one waiting). Pool sizes are capped, lo
 
 ### 5.2 Sound effects **[in progress, Phase 28]**
 
-([ADR 0032](./adr/0032-audio.md), [ADR 0076](./adr/0076-recorded-sound-samples.md), [`AUDIO.md`](./AUDIO.md).) Every sound has a **procedural**
+([ADR 0032](./adr/0032-audio.md), [ADR 0076](./adr/0076-recorded-sound-samples.md), [ADR 0077](./adr/0077-ambience-beds.md), [`AUDIO.md`](./AUDIO.md).) Every sound has a **procedural**
 form, synthesised at play time in plain Web Audio (no library); since 0.52.15 most also have
 **recorded samples** (AUDIO.md §2b: the owner's Imphenzia *Universal Sound FX* pack, a few mono AAC
 variations each in `shared/sounds/samples/`, ≤ 5 MB in all, validated): a sound with `samples` plays
@@ -698,6 +698,17 @@ vocabulary (hover, click, back, tab, toggle on/off, slider, error, success — n
 sounds of every control of `ui/controls.ts` (a test fails on an action without one).
 `shared/sounds/gen.mjs` validates it and generates `client/src/audio/sounds.gen.ts` and
 `crates/dwell-game/src/sound.gen.rs`; CI fails on stale output.
+**Ambience [built, 0.52.20]** (ADR 0077, AUDIO.md §2c): the data's `ambience` beds — recorded loops
+(wind, sea, river, stream, birds, leaves) on their own ambience bus under the **Ambience** volume
+(default 0.35) — each at its `gain` × its conditions' ramps over the listener's surroundings, capped
+(`cap`) and glided (`fadeS`) by `client/src/audio/ambience.ts`. The surroundings come from
+`dwell-game` `ambience.rs`'s probe (four times a second, face-local: a 9 × 9 grid of columns over
+`probe.radiusM` — the height above the sea and the ground, the share open to the sky, the water's
+share, distance and fastest current, the share of `probe.trees` blocks — plus daylight from the clock
+and the nearest fire), handed over as 9 numbers by `Client.ambience()`. **Creatures** (AUDIO.md §2d):
+`sound.rs` `CreatureSounds` emits `creature_step` / `creature_startle` / `creature_call` per the
+data's `creatures` models (stride, sounds, call interval; within `radiusM`), the event's block field
+carrying the model's index; `VitalSounds` emits `exhausted`, `gasp` and `strain` from the vitals.
 
 **Events** come from the Rust game (`dwell-game` `sound.rs`): footsteps by distance per gait,
 landing by impact speed, jump, water, crouch, sprint, flight, edits (ours on the request,

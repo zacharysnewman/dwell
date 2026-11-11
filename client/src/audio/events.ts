@@ -70,6 +70,13 @@ export function soundsFor(
   const gaitName = e.gait !== null ? data.gaitOrder[e.gait] : undefined;
   const gain = gaitName ? (data.gaits[gaitName]?.gain ?? 1) : 1;
   const out: ResolvedPlay[] = [];
+  if (def.creature) {
+    // A creature's event: its model by index (the Rust game's order of the data's `creatures`).
+    const model = Object.values(data.creatures.models)[e.block];
+    const sound = model?.[def.creature];
+    if (sound) out.push({ sound, gain: 1 });
+    return out;
+  }
   if (def.set) {
     const set = data.sets[setOfState(e.block, data, registry)];
     const sound =

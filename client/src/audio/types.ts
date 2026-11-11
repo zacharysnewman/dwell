@@ -142,6 +142,8 @@ export interface EventDef {
   loop?: LoopPart;
   /** false: a set without this event's sound plays nothing (not the fallback set's). */
   fallback?: false;
+  /** A creature's event (AUDIO.md §2d): the event's `block` is the model's index in `creatures`. */
+  creature?: 'step' | 'startle' | 'call';
 }
 
 /** The ambient sounds' tunables (AUDIO.md §2), read by the Rust game. */
@@ -149,6 +151,33 @@ export interface AmbientDef {
   fire: { radiusM: number; max: number };
   /** Waterfalls (docs/WATER_SURFACE_GRID.md §2e): within `radiusM`, the nearest `max`, full at `fullM3s`. */
   falls: { radiusM: number; max: number; fullM3s: number };
+}
+
+/** A bed's condition (AUDIO.md §2c): 0 at `from`, 1 at `full`, at least `floor`. */
+export interface BedCondition {
+  input: string;
+  from: number;
+  full: number;
+  floor?: number;
+}
+
+/** A looping ambience bed: its files (published names), level and conditions. */
+export interface BedDef {
+  files: string[];
+  gain: number;
+  when: BedCondition[];
+}
+
+/** The ambience (AUDIO.md §2c). */
+export interface AmbienceDef {
+  /** The Ambience volume's default. */
+  volume: number;
+  /** The beds' glide time constant (s). */
+  fadeS: number;
+  /** No bed is louder than this (before the Ambience volume). */
+  cap: number;
+  probe: { radiusM: number; trees: string[] };
+  beds: Record<string, BedDef>;
 }
 
 export type ControlSounds = string[] | { silent: string };
@@ -166,6 +195,21 @@ export interface SoundData {
   ui: Record<string, string>;
   controls: Record<string, ControlSounds>;
   ambient: AmbientDef;
+  ambience: AmbienceDef;
+  /** Each creature model's sounds (AUDIO.md §2d), in the Rust game's order. */
+  creatures: {
+    radiusM: number;
+    models: Record<
+      string,
+      {
+        stride: number;
+        step?: string;
+        startle?: string;
+        call?: string;
+        callEveryS?: [number, number];
+      }
+    >;
+  };
   sounds: Record<string, SoundDef>;
   /** Every sample file shipped: its published name and its file in shared/sounds/samples. */
   sampleFiles: { file: string; source: string }[];

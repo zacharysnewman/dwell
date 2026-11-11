@@ -108,6 +108,7 @@ import {
 import type { ServerStats } from './local/messages';
 import { audio } from './audio/engine';
 import { decodeSounds, EventPlayer } from './audio/events';
+import { AmbiencePlayer, decodeSurroundings } from './audio/ambience';
 import { installPageSounds } from './audio/page';
 import { SOUND_DATA } from './audio/sounds.gen';
 import { GamepadInput } from './input/gamepad';
@@ -546,8 +547,9 @@ function zoomMap(app: App, delta: number): void {
 }
 
 /** The game's sound events since the last frame, and the listener at the camera (docs/AUDIO.md). */
-function playSounds(app: App, player: EventPlayer): void {
+function playSounds(app: App, player: EventPlayer, beds: AmbiencePlayer): void {
   player.playAll(decodeSounds(app.client.takeSounds()));
+  beds.update(decodeSurroundings(app.client.ambience()));
   const l = app.client.listener();
   if (l.length === 9) {
     const v = (i: number): [number, number, number] => [l[i] ?? 0, l[i + 1] ?? 0, l[i + 2] ?? 0];
@@ -806,6 +808,7 @@ async function start(): Promise<App | null> {
   forwardInput(app);
   // Sound (docs/AUDIO.md): started by the first gesture; menus sound by delegation.
   const sfx = installPageSounds();
+  const beds = new AmbiencePlayer(SOUND_DATA.ambience, sfx.bedOutput);
   const sounds = new EventPlayer(
     SOUND_DATA,
     (sound, o) => {
@@ -1205,7 +1208,7 @@ async function start(): Promise<App | null> {
     // Only the frames drawn count (one is skipped while the GPU is behind).
     app.fps.frame(now, client.frame(now));
     handleEvents(app);
-    playSounds(app, sounds);
+    playSounds(app, sounds, beds);
     showHud(app, now);
     if (app.minimap) {
       app.minimap.shading = app.mapShading;

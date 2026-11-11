@@ -290,6 +290,44 @@ export class AudioEngine {
     this.loops.delete(voice);
   }
 
+  /** The ambience beds playing, by id: a looping sample under its own gain (AUDIO.md §2c). */
+  private readonly beds = new Map<string, { src: AudioBufferSourceNode; gain: GainNode }>();
+
+  /** The ambience's output (ambience.ts `BedOutput`) on the ambience bus. */
+  readonly bedOutput = {
+    start: (id: string, files: string[]): boolean => {
+      const { ctx, mixer } = this;
+      if (!ctx || !mixer || this.hidden || ctx.state !== 'running') return false;
+      const ready = files.filter((f) => this.samples.get(f));
+      const file = ready[Math.floor(Math.random() * ready.length)];
+      const buffer = file === undefined ? undefined : this.samples.get(file);
+      if (!buffer) return false;
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      src.loop = true;
+      const gain = ctx.createGain();
+      gain.gain.value = 0;
+      src.connect(gain);
+      gain.connect(mixer.ambience);
+      // A random start point: two beds from one recording never line up.
+      src.start(ctx.currentTime + 0.01, Math.random() * buffer.duration);
+      this.beds.set(id, { src, gain });
+      return true;
+    },
+    level: (id: string, gain: number, fadeS: number): void => {
+      const b = this.beds.get(id);
+      if (b && this.ctx) b.gain.gain.setTargetAtTime(gain, this.ctx.currentTime, fadeS);
+    },
+    stop: (id: string, fadeS: number): void => {
+      const b = this.beds.get(id);
+      if (!b || !this.ctx) return;
+      const now = this.ctx.currentTime;
+      b.gain.gain.setTargetAtTime(0, now, fadeS);
+      b.src.stop(now + fadeS * 5);
+      this.beds.delete(id);
+    },
+  };
+
   /** The loop voices playing (the debug hook). */
   get loopVoices(): string[] {
     return [...this.loops.keys()];
