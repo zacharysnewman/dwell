@@ -1752,8 +1752,8 @@ mod tests {
                 for tri in m.indices.chunks_exact(3) {
                     for (i, j) in [(0, 1), (1, 2), (2, 0)] {
                         let (u, w) = (m.positions[tri[i] as usize], m.positions[tri[j] as usize]);
-                        for k in 0..=20 {
-                            let f = k as f32 / 20.0;
+                        for k in 0..=200 {
+                            let f = k as f32 / 200.0;
                             let q = [0, 1, 2].map(|c| u[c] + (w[c] - u[c]) * f);
                             let s = (0..3)
                                 .map(|c| (q[c] - hand.at[c]) * hand.axis[c])
@@ -1811,9 +1811,10 @@ mod tests {
                 .fold((f32::MAX, f32::MIN), |(lo, hi), p| {
                     (lo.min(along(p)), hi.max(along(p)))
                 });
+            // A shovel is held mid-shaft: its top up to 0.45 of its length behind the fist.
             let length = data.length * data.hold.scale;
             assert!(
-                hi > 0.4 * length && lo > -0.4 * length,
+                hi > 0.4 * length && lo > -0.45 * length,
                 "{}: {lo}..{hi}",
                 t.item
             );
