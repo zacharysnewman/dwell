@@ -102,6 +102,42 @@ test('a block needing a tool kind by data alone (breakWith) is emitted, an unkno
   assert.throws(() => validateTools(data, items, blocks), /test:hard_wood\.breakWith must be one of axe/);
 });
 
+test('breaking: the right tool class per material and a speed per tier reach the Rust table', () => {
+  const d = validateTools(...fresh());
+  const cls = (b) => d.breaking.classes.find((c) => c.block === b)?.class;
+  assert.equal(cls('dwell:stone'), 'pickaxe');
+  assert.equal(cls('dwell:dirt'), 'shovel');
+  assert.equal(cls('dwell:sand'), 'shovel');
+  assert.equal(cls('dwell:log'), 'axe');
+  const speed = (i) => d.breaking.tools.find((t) => t.item === i).speed;
+  assert.ok(speed('dwell:metal_pickaxe') > speed('dwell:stone_pickaxe') && speed('dwell:stone_pickaxe') > 1);
+  const rs = toolsRust(d);
+  assert.match(rs, /\("dwell:stone", "pickaxe"\)/);
+  assert.match(rs, /BreakTool \{ item: "dwell:metal_shovel", class: "shovel", tier: "metal", speed: 2\.5 \}/);
+});
+
+test('breaking: a fixture tool class and tier by data alone, and bad entries fail naming them', () => {
+  const [data, items, blocks] = fresh();
+  items.add('test:trowel');
+  blocks.set('test:clay', {});
+  data.breaking.tiers.bronze = 2;
+  data.breaking.classes.trowel = ['test:clay'];
+  data.breaking.tools.push({ item: 'test:trowel', class: 'trowel', tier: 'bronze' });
+  assert.match(toolsRust(validateTools(data, items, blocks)), /BreakTool \{ item: "test:trowel", class: "trowel", tier: "bronze", speed: 2\.0 \}/);
+  const bad = (edit, re) => {
+    const [d, i, b] = fresh();
+    edit(d.breaking);
+    assert.throws(() => validateTools(d, i, b), re);
+  };
+  bad((b) => b.tools.push({ item: 'test:nope', class: 'axe', tier: 'stone' }), /no item "test:nope"/);
+  bad((b) => (b.tools[0].class = 'hammer'), /unknown class "hammer" \(pickaxe, shovel, axe\)/);
+  bad((b) => (b.tools[0].tier = 'gold'), /unknown tier "gold" \(stone, metal\)/);
+  bad((b) => b.classes.axe.push('dwell:stone'), /dwell:stone is in both pickaxe and axe/);
+  bad((b) => b.classes.axe.push('dwell:nope'), /breaking\.classes\.axe: no block "dwell:nope"/);
+  bad((b) => (b.tiers.stone = 0), /breaking\.tiers\.stone is a speed above 0/);
+  bad((b) => b.tools.push({ ...b.tools[0] }), /dwell:stone_axe is listed twice/);
+});
+
 test("a wood's cut look (its carved faces, ADR 0067 §11) is validated and reaches the Rust table", () => {
   const rs = toolsRust(validateTools(...fresh()));
   assert.match(rs, /block: "dwell:log", .*cut: CutLook \{ tile: Some\("logCut"\), tint: \[255, 226, 184\], open: 2\.5, kerf_width_m: 0\.035 \}/);

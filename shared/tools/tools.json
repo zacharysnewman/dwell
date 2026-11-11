@@ -29,11 +29,7 @@
         "rustle": "axe_rustle",
         "rustleLeaves": 5
       },
-      "clears": [
-        "dwell:leaves",
-        "dwell:snowy_leaves",
-        "dwell:log_ramp"
-      ]
+      "clears": ["dwell:leaves", "dwell:snowy_leaves", "dwell:log_ramp"]
     },
     {
       "name": "dwell:metal_axe",
@@ -62,11 +58,7 @@
         "rustle": "axe_rustle",
         "rustleLeaves": 5
       },
-      "clears": [
-        "dwell:leaves",
-        "dwell:snowy_leaves",
-        "dwell:log_ramp"
-      ]
+      "clears": ["dwell:leaves", "dwell:snowy_leaves", "dwell:log_ramp"]
     }
   ],
   "woods": [
@@ -77,10 +69,7 @@
       "buckDrops": [
         {
           "item": "dwell:wood",
-          "count": [
-            2,
-            3
-          ]
+          "count": [2, 3]
         }
       ],
       "chips": {
@@ -132,10 +121,7 @@
       "metal": 2.5
     },
     "classes": {
-      "pickaxe": [
-        "dwell:stone",
-        "dwell:stone_ramp"
-      ],
+      "pickaxe": ["dwell:stone", "dwell:stone_ramp"],
       "shovel": [
         "dwell:dirt",
         "dwell:dirt_ramp",
@@ -146,10 +132,7 @@
         "dwell:sand",
         "dwell:sand_ramp"
       ],
-      "axe": [
-        "dwell:log",
-        "dwell:log_ramp"
-      ]
+      "axe": ["dwell:log", "dwell:log_ramp"]
     },
     "tools": [
       {

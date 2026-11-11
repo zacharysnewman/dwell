@@ -165,6 +165,33 @@ test("every prop GLB loads: one static mesh, palette colours in COLOR_0, its len
   }
 });
 
+test("a prop of a stacked FBX keeps only its named objects: the metal axe has no fire-axe red", () => {
+  // The axes FBX stacks SingleHeadedAxe (the red fire axe), DoubleHeadedAxe and the MetalAxe
+  // handle; the metal axe is the double-headed head on the handle (owner, 2026-11-10).
+  const p = props().props.metal_axe;
+  assert.deepEqual(p.objects, ["DoubleHeadedAxe", "MetalAxe"]);
+  const red = (c) => {
+    const [r, g, b] = c.split(",").map(Number);
+    return r > 60 && r > 3 * g && r > 3 * b;
+  };
+  const s = propSummary(readFileSync(join(here, p.glb)));
+  assert.deepEqual(s.palette.filter(red), [], `metal_axe: ${s.palette}`);
+  // The other tools are whole files of one tool, or a head and its handle.
+  for (const n of ["stone_axes", "stone_pickaxes", "metal_pickaxes", "wooden_shovel", "metal_shovel"])
+    assert.ok(props().props[n], n);
+});
+
+test("a prop's objects are a list of names, each once", () => {
+  for (const objects of [[], "DoubleHeadedAxe", [""], ["A", "A"], [1]]) {
+    const f = fixtureProps();
+    f.props.plate.objects = objects;
+    assert.throws(() => validateProps(f, fixtures), /prop plate: objects is a list of its FBX's mesh object names, each once/);
+  }
+  const f = fixtureProps();
+  f.props.plate.objects = ["Plate"];
+  assert.equal(validateProps(f, fixtures).plate.objects[0], "Plate");
+});
+
 test("a prop is added by data alone: the fixture validates and lands in the table", () => {
   const out = validateProps(fixtureProps(), fixtures);
   assert.equal(out.plate.category, "dishes");

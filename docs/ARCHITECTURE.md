@@ -791,7 +791,14 @@ when the clip changes (the same clip at another speed keeps its phase). **Props*
 ADR 0070 §8, `shared/models/props.json`): the tools pack's 53 models, imported by the same pipeline
 without skin or clips, scaled to their category's lengths, validated by `gen.mjs`; an inventory item's
 look may name one (`look.model`, `LookShape::Model`), drawn loose and on the hotbar from its
-triangles (`dwell_mesh::model_faces`); not yet in the hand.
+triangles (`dwell_mesh::model_faces`) and in the hand as `Held::Model` (0.52.21: the prop's
+triangles on its hold item's socket at the prop's `grip`, its far end along the hand's +z, each
+colour a character material row after the data's; `render/characters.rs` `prop_mesh`). A prop's
+`objects` (optional) names the FBX objects it keeps, for the pack's files that stack alternates (the
+axes file's three axes); the import fails on an unknown name. The six tools (stone and metal axe,
+pickaxe, shovel) carry a class and tier in `shared/tools/tools.json` `breaking` (block → class, tier →
+speed; `dwell_protocol::chopping::break_speed`, 1 for anything else); breaks are instant, so the speed
+has no effect until a break takes time.
 **Drawing** (`render/skinned.rs`, inside `CharacterRenderer`): the model's one mesh (36-byte
 vertices: position, normal, sRGB colour, 4 × u8 joints, 4 × unorm8 weights; the Peasant 1,834
 vertices, 66 KB), per body one block of uniforms (3,328 bytes, a dynamic offset: 64 joints' 3 × 4

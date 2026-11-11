@@ -283,6 +283,8 @@ export function propSummary(bytes) {
     clips: (g.animations ?? []).length,
     colour0,
     colours: colours.size,
+    /** Its colours, each "r,g,b" (COLOR_0 × 255, rounded). */
+    palette: [...colours].sort(),
     size: hi.map((h, k) => h - lo[k]),
     centre: hi.map((h, k) => (h + lo[k]) / 2),
   };

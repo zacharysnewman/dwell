@@ -1,7 +1,7 @@
 // The items' validation and output (shared/items/gen.mjs).
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildModesTs, itemsRust, loadItems, registryBlocks, validateItems } from './gen.mjs';
+import { buildModesTs, itemsRust, loadItems, registryBlocks, toolNames, validateItems } from './gen.mjs';
 
 const blocks = registryBlocks();
 
@@ -69,9 +69,9 @@ test('bad items fail with the entry and the problem', () => {
     [(d) => (d.buildModes.modes = []), /buildModes\.modes must be a non-empty list/],
     [(d) => (d.buildModes.clearance = 2), /buildModes\.clearance must be 0\.\.0\.5/],
     [(d) => (d.buildModes.holdMs = -1), /buildModes\.holdMs must be 0\.\.2000/],
-    [(d) => d.items.push({ name: 'test:saw', label: 'Saw', tool: 'test:saw' }), /items\[19\]\.tool "test:saw" is not a tool of shared\/tools\/tools\.json/],
-    [(d) => d.items.push({ name: 'test:axe2', label: 'Axe', tool: 'dwell:stone_axe', block: 'dwell:stone' }), /items\[19\]: give block or tool \(not both\)/],
-    [(d) => d.items.push({ name: 'test:axe3', label: 'Axe', tool: 'dwell:stone_axe', rows: 1 }), /items\[19\]: a tool places nothing \(rows\)/],
+    [(d) => d.items.push({ name: 'test:saw', label: 'Saw', tool: 'test:saw' }), /items\[24\]\.tool "test:saw" is not a tool of shared\/tools\/tools\.json/],
+    [(d) => d.items.push({ name: 'test:axe2', label: 'Axe', tool: 'dwell:stone_axe', block: 'dwell:stone' }), /items\[24\]: give block or tool \(not both\)/],
+    [(d) => d.items.push({ name: 'test:axe3', label: 'Axe', tool: 'dwell:stone_axe', rows: 1 }), /items\[24\]: a tool places nothing \(rows\)/],
   ];
   for (const [change, message] of cases) {
     const d = loadItems();
@@ -101,8 +101,8 @@ test('a slope item added by data alone is generated with its state, facing and u
 test('a tool item added by data alone is emitted (a fixture tool of the tools data)', () => {
   const d = loadItems();
   d.items.push({ name: 'test:flint_axe', label: 'Flint axe', tool: 'test:flint_axe' });
-  const tools = new Set(['dwell:stone_axe', 'test:flint_axe']);
+  const tools = new Set([...toolNames(), 'test:flint_axe']);
   const rs = itemsRust(validateItems(d, blocks, undefined, tools));
-  assert.match(rs, /ITEMS: \[ItemDef; 20\]/);
+  assert.match(rs, /ITEMS: \[ItemDef; 25\]/);
   assert.match(rs, /name: "test:flint_axe", label: "Flint axe", block: "", tool: Some\("test:flint_axe"\)/);
 });

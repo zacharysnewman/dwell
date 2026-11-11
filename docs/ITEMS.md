@@ -25,7 +25,7 @@ block registry, CI stale check). An item names the block it places and its heigh
 a ½ m piece of a full block shows its tile's top half on its swatch's lower half (owner, 2026-10-28:
 the grass's fringe had been cropped away; `dwell_mesh::half_swatch`). In the hand (`shared/characters`
 items) a block is a ½ m piece carried on the upturned palm, its bottom face on the hand, its sides
-the tile's top half (`sideV`, the item's `pose` turning the hand); a block names its hand item with `held`, or takes it from its look (`HELD_BY_LOOK` in `shared/blocks/lights.mjs`, 0.50.73): a ladder (look `ladder`) is the `card`, one flat sheet of its tile, and a cross plant (look `cross`, tall grass) the `cross`, two crossed sheets, both drawn as the characters' `plane` part, seen from both sides with no edge faces (owner, 2026-11-09: they were a thin box with the tile on every side). An inventory item with a shaped `look` (a stick, a rock, the grass seed's `cluster` of seeds since 0.50.75; `shared/inventory/inventory.json`) is held as its shape's item (`rod`, `lump`, `cluster`) in its look's tile and tint, at the hand's own size; a look that names a prop (`look: { "model": … }`, 0.51.24, ADR 0070 §9: the stone pickaxe) is drawn loose and on the hotbar from the prop's own mesh and colours, and not yet in the hand. A block that brings its own other cells
+the tile's top half (`sideV`, the item's `pose` turning the hand); a block names its hand item with `held`, or takes it from its look (`HELD_BY_LOOK` in `shared/blocks/lights.mjs`, 0.50.73): a ladder (look `ladder`) is the `card`, one flat sheet of its tile, and a cross plant (look `cross`, tall grass) the `cross`, two crossed sheets, both drawn as the characters' `plane` part, seen from both sides with no edge faces (owner, 2026-11-09: they were a thin box with the tile on every side). An inventory item with a shaped `look` (a stick, a rock, the grass seed's `cluster` of seeds since 0.50.75; `shared/inventory/inventory.json`) is held as its shape's item (`rod`, `lump`, `cluster`) in its look's tile and tint, at the hand's own size; a look that names a prop (`look: { "model": … }`, 0.51.24, ADR 0070 §9: the stone pickaxe) is drawn loose, on the hotbar and (0.52.21) in the hand from the prop's own mesh and colours (§1a). A block that brings its own other cells
 (a torch, `extends`) is a 1-cell item. Adding a piece is a new entry. **0.38.8** (owner, 2026-10-28:
 "remove the 1m tall blocks"): every hotbar item is ½ m (11 items); `rows` stays for a taller piece
 later. `drag` says what holding Place does with it (§5): `modes` (the default; a plain block only),
@@ -61,6 +61,17 @@ naming the entry, as does an unknown tool or giving both). The generator emits `
 palette's slot is a tool (`PaletteSlot.tool`, material 0) drawn as a handle and a head. The stone
 axe (`dwell:stone_axe`) sits after the log: held in creative, left click swings it and right click
 toggles level and vertical swings, as the inventory's axe does in adventure. Owner, 2026-11-08.
+
+The six tools (0.52.21; owner, 2026-11-10: "pickaxe, shovel, and axe. Stone and Metal variants")
+follow it: the metal axe (a chopping tool of its own, biting 0.2 m to the stone axe's 0.12), the
+stone and metal pickaxe and the wooden and metal shovel. A `tool` may also name a **breaking tool**
+(`shared/tools/tools.json` `breaking.tools`): it places nothing (Place is refused) and Break breaks as
+a bare hand does. Every tool's item has a model look (`shared/inventory` `look.model`, a prop of
+`shared/models/props.json`), so the hotbar, the backpack, a loose item and the hand all show its
+model (`Held::Model`: the axe in its swing's hold, the others in the axe's level hold). `breaking`
+gives each tool a class (`pickaxe`: stone; `shovel`: dirt, grass, sand; `axe`: wood) and a tier
+(`stone` 1.5, `metal` 2.5, a multiple of the bare hand's speed); `break_speed(block, held)` is that
+speed for the right class and 1 otherwise. Breaks are instant today, so it has nothing to shorten yet.
 
 ## 2. Pieces on the wire
 
