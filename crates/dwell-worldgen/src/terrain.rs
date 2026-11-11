@@ -1916,9 +1916,7 @@ impl TerrainGenerator {
             None
         } else {
             self.biomes
-                .snow_cover(i64::from(x), i64::from(z), h, slope, |t| {
-                    self.vegetation.celsius(t)
-                })
+                .snow_cover(x, z, h, slope, |t| self.vegetation.celsius(t))
         };
         if snow == Some(None) {
             band = Band::Rock;
