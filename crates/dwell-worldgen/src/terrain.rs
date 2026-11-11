@@ -701,6 +701,18 @@ struct SnowLine {
 }
 
 impl BiomeSet {
+    /// The bytes each of its whole-map grids holds (BUGS.md #70; `tests/starter_memory.rs`).
+    pub fn grid_bytes(&self) -> Vec<(&'static str, usize)> {
+        let mut out = Vec::new();
+        if let Some(f) = &self.field {
+            out.extend(f.grid_bytes());
+        }
+        if let Some(d) = &self.drainage {
+            out.extend(d.grid_bytes());
+        }
+        out
+    }
+
     /// The biome whose band palette `p` is, its soil palettes too (None for the rocks' and the
     /// snow's palettes).
     pub fn biome_of_palette(&self, p: u16) -> Option<usize> {
@@ -1347,7 +1359,7 @@ impl TerrainGenerator {
             .geology
             .rock(st.layers[0].rock)
             .map_or(0.5, |r| geo.geology.rocks[r].hardness);
-        let (dist, line, acc) = field.at(x as f64, z as f64);
+        let (dist, line, acc) = field.at(&self.map, x as f64, z as f64);
         let period = geo.profiles[stack].period().max(1.0);
         let top = self.biomes.soft_tops[stack];
         let snapped = ((line - top) / period).floor() * period + top;

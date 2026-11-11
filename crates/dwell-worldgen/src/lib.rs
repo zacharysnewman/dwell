@@ -11,6 +11,7 @@ pub mod config;
 pub mod decorations;
 pub mod geology;
 pub mod grass;
+pub mod grid;
 pub mod growth;
 pub mod hydrology;
 pub mod island;
@@ -188,4 +189,9 @@ pub fn lod_bounds_for(version: u32, world_seed: u64) -> LodBoundsFn {
         return Arc::new(move |level, i, k| terrain.lod_bounds_at(level, i, k));
     }
     Arc::new(lod::flat_lod_bounds)
+}
+
+/// The bytes a vector's allocation holds (`BiomeSet::grid_bytes`).
+pub(crate) fn vec_bytes<T>(v: &Vec<T>) -> usize {
+    v.capacity() * std::mem::size_of::<T>()
 }
