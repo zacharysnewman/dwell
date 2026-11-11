@@ -6,9 +6,9 @@
 //! elsewhere ([`Field::advance`]). The tuning is data (`shared/fluids/lava.json`, generated into
 //! [`DATA`]); fluids and vents are found by name.
 //!
-//! Not yet (the next slices): the server's fields and tick, writing the rock and lava cells into
-//! chunks, the water grid's columns and its steam, the damage hooked into the server's vitals, the
-//! save table, the lava block and its look (docs/proposals/VOLCANOES.md §6).
+//! The server holds and ticks the world's fields, writes their cells and saves them (`dwell-sim`
+//! `lava.rs`). Not yet: the water grid's own columns as a field's water, the look
+//! (docs/proposals/VOLCANOES.md §6.1).
 
 pub mod burn;
 pub mod data;

@@ -421,3 +421,40 @@ both_faces!(
         );
     }
 );
+
+both_faces!(
+    // A rock event's rows are cell rows (½ m tall, HALF_HEIGHT_GRID.md §2), not metres: 1 m of lava
+    // cooled on a bed at 2 m is rows 4..6.
+    fn a_rock_events_rows_are_half_metre_cell_rows(f: FaceFrame) {
+        // One column: nowhere to flow.
+        let mut field = Field::new(&DATA, "dwell:lava", 1, 1).expect("dwell:lava");
+        field.ground[0] = 2.0;
+        let i = 0;
+        field.depth[i] = 1.0;
+        field.heat[i] = 0.001;
+        field.step(1.0);
+        let rows: Vec<_> = field
+            .take_events()
+            .into_iter()
+            .filter_map(|e| match e {
+                LavaEvent::Rock {
+                    x: 0, z: 0, rows, ..
+                } => Some(rows),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(rows, vec![4..6], "one rock event over the two ½ m rows");
+        assert_eq!(field.lava_rows(i), 6..6, "no lava left above the rock");
+        let cells = LavaEvent::Rock {
+            x: 1,
+            z: 1,
+            rows: 4..6,
+            rock: "dwell:basalt",
+        }
+        .cells(f, [0, 0]);
+        assert_eq!(
+            cells.iter().map(|&c| f.cell(c)[1]).collect::<Vec<_>>(),
+            vec![4, 5]
+        );
+    }
+);
