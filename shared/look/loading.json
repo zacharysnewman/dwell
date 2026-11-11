@@ -39,6 +39,7 @@
     "stages": {
       "game": { "scales": "network", "baseS": 0.2, "totalGuess": 9000000, "bytesPerS": 4000000 },
       "graphics": { "scales": "device", "baseS": 0.4 },
+      "shaders": { "scales": "device", "baseS": 0.2 },
       "worldFile": { "scales": "device", "baseS": 1.5, "local": true },
       "worldMap": { "scales": "device", "baseS": 0.3, "totalGuess": 2, "perItemS": 1 },
       "server": { "scales": "device", "baseS": 0.3, "local": true },
@@ -55,6 +56,7 @@
       { "id": "page", "label": "Loading the page" },
       { "id": "game", "label": "Loading the game", "progress": "bytes" },
       { "id": "graphics", "label": "Starting the graphics" },
+      { "id": "shaders", "label": "Preparing the shaders" },
       { "id": "worldFile", "label": "Opening the world file" },
       { "id": "worldMap", "label": "Shaping the world map", "progress": "count" },
       { "id": "server", "label": "Starting the world's server" },

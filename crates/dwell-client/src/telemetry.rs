@@ -264,6 +264,18 @@ pub fn now_ms() -> f64 {
     }
 }
 
+/// A User Timing mark `name` on the page's Performance timeline (a Chrome trace's Timings track,
+/// `performance.getEntriesByName`); nothing natively. The renderer's start marks its groups
+/// (`dwell:create:<group>`, docs/DEV_TOOLS.md).
+pub fn mark(name: &str) {
+    #[cfg(target_arch = "wasm32")]
+    if let Some(p) = web_sys::window().and_then(|w| w.performance()) {
+        let _ = p.mark(name);
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = name;
+}
+
 /// Runs `f`, adding its time to this frame's `name`.
 pub fn span<R>(name: &'static str, f: impl FnOnce() -> R) -> R {
     let t0 = now_ms();

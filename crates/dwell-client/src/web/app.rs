@@ -363,6 +363,7 @@ impl Client {
         let (adapter, device, queue) = crate::request_device(&instance, Some(&surface))
             .await
             .map_err(|e| JsError::new(&e))?;
+        crate::telemetry::mark("dwell:create:device");
         let caps = surface.get_capabilities(&adapter);
         // Encoding to sRGB is done in the shader (tone mapping first), so the canvas is linear.
         let format = caps
@@ -398,6 +399,7 @@ impl Client {
             format,
             crate::render::samples_for(device_type, options.samples),
         );
+        crate::telemetry::mark("dwell:create:renderer");
         renderer.set_adapter(device_type);
         renderer.resize(width, height, 1.0);
         renderer.set_lod_level_colors(options.lod_colors);
@@ -456,6 +458,21 @@ impl Client {
         Ok(Client {
             last_end: std::cell::Cell::new(None),
             inner: Rc::new(RefCell::new(inner)),
+        })
+    }
+
+    /// Resolves once the GPU has done the work sent so far: on a cold shader cache the browser
+    /// compiles the renderer's pipelines for seconds after `create` (bug #71), the loading screen's
+    /// 'shaders' stage (`client/src/ui/startStages.ts`).
+    #[wasm_bindgen(js_name = gpuSettled)]
+    pub fn gpu_settled(&self) -> js_sys::Promise {
+        let queue = self.inner.borrow().renderer.borrow().queue.clone();
+        js_sys::Promise::new(&mut |resolve, _reject| {
+            queue.on_submitted_work_done(move || {
+                let _ = resolve.call0(&JsValue::NULL);
+            });
+            // A fence even with nothing submitted yet: the callback answers after the pipelines.
+            queue.submit([]);
         })
     }
 

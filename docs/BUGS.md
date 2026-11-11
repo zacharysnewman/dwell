@@ -6,6 +6,28 @@ pins it.
 
 ## Open
 
+### 71. "Starting the graphics" takes a long time with no elapsed time shown
+
+Owner, 2026-11-11: "'Starting the graphics' now takes a long time without showing elapsed time." The stage is
+painted before its work (`client/src/ui/startStages.ts`), but `Client.create` then makes the renderer in one
+long main-thread task, so the screen can't repaint and the stage's timer stands still until it is done.
+
+Measured 2026-11-11 (bench `idle-spawn`, M-series Mac, Chrome's Metal shader cache emptied for a cold
+start; the bench now prints the start's frame gaps, long tasks and `dwell:create:*` marks): the
+premise above is wrong. `create` holds the main thread ~40 ms (the atlas 25, the characters 8, the
+rest ≤ 2 ms each; no long task in the stage). Cold, the stage is 1.8 s, of which the device request
+is 1.5–1.75 s (warm 7–125 ms), and the page's frames stutter (gaps of 170–800 ms). Then the GPU
+process compiles the renderer's pipelines for **9.0 s** with the page painting **no frame at all**
+(one 8.9–9.0 s frame gap, warm: none over 400 ms), so the screen stands on its last paint, "Starting
+the graphics… 1.8 s"; the join waits on the compile (5.2–11.4 s cold vs 0.1–0.2 s warm). First step
+(this change): the compile is its own stage, `shaders` "Preparing the shaders", from `create`'s end
+to `Client.gpuSettled` (a queue fence), beside the world's stages, so the timeline and the frozen
+screen name it (test `startStages.test.ts` "shows the GPU's compile after create as its own stage",
+red then green). **Still open:** the frozen screen. The page can't paint while the GPU process
+compiles in one go; the fix is to send the pipelines in groups with a painted frame between them
+(a renderer built in steps), or async pipeline creation once wgpu has it, and to make fewer
+pipelines up front (water tiers, clouds High, debug ones on first use).
+
 ### 69. A dark vertical column in the far terrain before the starter world's volcano
 
 Found 2026-11-11 (0.52.64) on the starter world's tour: `?worldgen=test:starter&fresh=1&at=8571.5,350,-4866.5`

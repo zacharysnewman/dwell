@@ -772,6 +772,7 @@ async function start(): Promise<App | null> {
     client = await runStartStages(loading.stages, {
       now: () => performance.now(),
       painted: () => loading.painted(),
+      settled: (c) => c.gpuSettled(),
       load: (onBytes) => loadTools(onBytes),
       create: () =>
         Client.create(canvas, {

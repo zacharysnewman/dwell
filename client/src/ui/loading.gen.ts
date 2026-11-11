@@ -11,7 +11,7 @@ export const LOADING_FADE = {
 } as const;
 
 /** A start stage's id (shared/look/loading.json `stages.list`): what code reports it by. */
-export type LoadingStageId = 'page' | 'game' | 'graphics' | 'worldFile' | 'worldMap' | 'server' | 'spawn' | 'connect' | 'join' | 'terrain';
+export type LoadingStageId = 'page' | 'game' | 'graphics' | 'shaders' | 'worldFile' | 'worldMap' | 'server' | 'spawn' | 'connect' | 'join' | 'terrain';
 
 /** One stage's definition. */
 export interface LoadingStageDef {
@@ -25,6 +25,7 @@ export const LOADING_STAGES: readonly LoadingStageDef[] = [
   { id: 'page', label: "Loading the page" },
   { id: 'game', label: "Loading the game", progress: 'bytes' },
   { id: 'graphics', label: "Starting the graphics" },
+  { id: 'shaders', label: "Preparing the shaders" },
   { id: 'worldFile', label: "Opening the world file" },
   { id: 'worldMap', label: "Shaping the world map", progress: 'count' },
   { id: 'server', label: "Starting the world's server" },
@@ -67,6 +68,7 @@ export const LOADING_ESTIMATE = {
   stages: {
     game: { scales: 'network', baseS: 0.2, totalGuess: 9000000, bytesPerS: 4000000 },
     graphics: { scales: 'device', baseS: 0.4 },
+    shaders: { scales: 'device', baseS: 0.2 },
     worldFile: { scales: 'device', baseS: 1.5, local: true },
     worldMap: { scales: 'device', baseS: 0.3, perItemS: 1, totalGuess: 2 },
     server: { scales: 'device', baseS: 0.3, local: true },

@@ -214,6 +214,18 @@ const LONG_TASKS = `
       for (const e of list.getEntries()) globalThis.__benchLongTasks.push([e.startTime, e.duration]);
     }).observe({ type: 'longtask', buffered: true });
   } catch {}
+  // The page's frame gaps over 100 ms in its first 30 s ([startMs, ms]): a screen that did not
+  // repaint (the main thread held, or the browser's compositor waiting on the GPU process).
+  globalThis.__benchFrameGaps = [];
+  try {
+    let last = null;
+    const tick = (t) => {
+      if (last !== null && t - last > 100) globalThis.__benchFrameGaps.push([last, t - last]);
+      last = t;
+      if (t < 30000) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  } catch {}
 `;
 
 interface Telemetry {
@@ -993,8 +1005,33 @@ async function runScenario(
     stages: await page.evaluate<StageTime[]>(
       '(globalThis.__dwellStages?.() ?? []).map((s) => ({ id: s.id, beganMs: s.beganMs, endedMs: s.endedMs, firstMs: s.firstMs }))',
     ),
+    // The main thread's long tasks (> 50 ms) from the page's start to playing: [startMs, ms].
+    longTasks: await page.evaluate<number[][]>('globalThis.__benchLongTasks ?? []'),
+    frameGaps: await page.evaluate<number[][]>('globalThis.__benchFrameGaps ?? []'),
+    // The renderer's start, group by group (`dwell:create:<group>` marks, each at its group's end).
+    createMarks: await page.evaluate<[string, number][]>(
+      "performance.getEntriesByType('mark').filter((m) => m.name.startsWith('dwell:create:')).map((m) => [m.name.slice(13), m.startTime])",
+    ),
   };
   if (joined.stages.length) console.log(`  stages: ${formatStageTimes(joined.stages)}`);
+  if (joined.createMarks.length) {
+    // Each group's time since the one before (the first: since the graphics stage began).
+    const began = joined.stages.find((s) => s.id === 'graphics')?.beganMs ?? 0;
+    const steps = joined.createMarks.map(
+      ([n, t], i) => `${n} ${f(t - (i ? joined.createMarks[i - 1][1] : began))}`,
+    );
+    console.log(`  create (ms): ${steps.join(', ')}`);
+  }
+  if (joined.frameGaps.length) {
+    const gaps = joined.frameGaps.map(([t, ms]) => `${f(ms)} ms at ${f(t / 1000)} s`);
+    console.log(`  start's frame gaps > 100 ms: ${gaps.join(', ')}`);
+  }
+  if (joined.longTasks.length) {
+    const longest = joined.longTasks.reduce((a, b) => (b[1] > a[1] ? b : a));
+    console.log(
+      `  start's long tasks: ${String(joined.longTasks.length)}, longest ${f(longest[1])} ms at ${f(longest[0] / 1000)} s`,
+    );
+  }
   console.log(
     `  playing ${f(joined.playingS)} s after opening the page${typeof joined.loading?.openedS === 'number' ? ` (loading screen ${f(joined.loading.openedS)} s${joined.loading.timedOut ? ', timed out' : ''})` : ''}`,
   );

@@ -294,7 +294,13 @@ page's first moment, before `__dwell`) gives each loading stage that ran — `id
 running) and `firstMs` (when its count first moved: the wait before the terrain counts) on the page's clock —
 and every stage is a User Timing measure `dwell:stage:<id>` in a Chrome trace's Timings track. Every bench run
 prints them after the join (`stages: page 0.00–0.03 s, game 0.03–0.08 s, …`) and saves them in
-`report.json`'s `join.stages`.
+`report.json`'s `join.stages`, with the start's main-thread long tasks (`join.longTasks`), its frame
+gaps over 100 ms in the first 30 s (`join.frameGaps`: a screen that did not repaint, the main thread
+held or the GPU process busy) and the renderer's start group by group (`join.createMarks`, the
+`dwell:create:<group>` User Timing marks, each at its group's end: `device`, `module`, `layouts`,
+`scene-pipelines`, `passes`, `atlas`, `bindings`, `characters`, `renderer`). A cold start: empty
+Chrome's Metal shader cache (`$(getconf DARWIN_USER_CACHE_DIR)com.google.Chrome.helper/com.apple.metal`)
+before the run; the bench's fresh profile alone is not cold.
 
 ## Interactive use
 
