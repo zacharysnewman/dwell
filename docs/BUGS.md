@@ -46,6 +46,14 @@ the plain race is ruled out. But any instance that builds a generator without th
 seed's own ground, which has no cone. After that, the meshes as uploaded. Next: in the
 page, compare a drawn section's mesh (or its column surface) at a hole column with the native one.
 
+Checked 0.52.37 (ADR 0074 B7): an instance that already held the seed's own map ignored a test world's
+installed map (`worldmap::cache::install` kept the first), and the portal sites were cached by seed
+alone; both fixed (an install replaces a map whose worldgen config differs, `tests/worldgen_config.rs`
+red → green; sites keyed by the faces' configs). **Not the cause:** in Chrome on the GPU, a fresh
+`?worldgen=test:tall_peak&seed=7&fresh=1&at=500,5000,-866&loddebug=skirts`, camera (500, 5300, 34)
+looking 45° down, still shows the stars through the crater's flank and magenta skirts around it
+(session scratchpad `chisel-b7/tall-peak-summit-skirts.png`). Still open; next as above.
+
 ### 60. On the software renderer the page draws no frame for ~6 s just after the first torch is placed
 
 Found 2026-11-10 chasing main's e2e failure on 0.51.8: `edit.spec.ts`'s every-palette-block test failed

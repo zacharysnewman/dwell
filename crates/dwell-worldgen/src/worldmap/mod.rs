@@ -119,6 +119,10 @@ pub struct WorldMap {
     /// The tectonics its base field was made with (systemic terrain T5; not stored: a map from
     /// bytes is the build's), for the rock provinces.
     pub tectonics: crate::tectonics::Tectonics,
+    /// A test world's worldgen config (ADR 0074 B7, `config::world_config`), stored with the map:
+    /// every generator over the map puts its biomes, geology and vegetation on the ground, and its
+    /// tectonics are the map's. `None` for the build's maps (their bytes as before).
+    pub worldgen: Option<std::sync::Arc<crate::config::Worldgen>>,
 }
 
 impl WorldMap {
@@ -300,10 +304,29 @@ impl WorldMap {
             channels: Channels::default(),
             shores: Shores::default(),
             tectonics: crate::terrain::HEIGHT.tectonics,
+            worldgen: None,
         };
         map.channels = Channels::build(&map);
         map.shores = Shores::build(&map);
         map
+    }
+
+    /// The map carrying worldgen config `text` (ADR 0074 B7): its tectonics the config's.
+    pub fn with_worldgen(mut self, text: &str) -> Result<Self, String> {
+        let Some(edit) = crate::config::world_config(text)? else {
+            return Ok(self);
+        };
+        self.tectonics = edit.height.unwrap_or(crate::terrain::HEIGHT).tectonics;
+        self.worldgen = Some(std::sync::Arc::new(crate::config::Worldgen {
+            text: text.trim().to_owned(),
+            edit,
+        }));
+        Ok(self)
+    }
+
+    /// The worldgen config's text (`""` for the build's map).
+    pub fn worldgen_text(&self) -> &str {
+        self.worldgen.as_ref().map_or("", |w| w.text.as_str())
     }
 
     /// The map's digest: equal digests on two targets mean bit-identical maps (the codec's

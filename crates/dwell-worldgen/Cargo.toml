@@ -11,6 +11,7 @@ license-file.workspace = true
 dwell-blocks = { path = "../dwell-blocks" }
 dwell-protocol = { path = "../dwell-protocol" }
 dwell-world = { path = "../dwell-world" }
+serde_json = "1"
 
 [lints]
 workspace = true
