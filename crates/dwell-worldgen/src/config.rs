@@ -149,6 +149,7 @@ pub fn biome_from_json(v: &Value) -> Result<Biome, String> {
         vegetation: v.get("vegetation").and_then(Value::as_f64).unwrap_or(0.0),
         erosion: v.get("erosion").and_then(Value::as_f64).unwrap_or(0.0),
         gullies: v.get("gullies").and_then(Value::as_f64).unwrap_or(0.0),
+        arches: arches(v).map_err(at)?,
     })
 }
 
@@ -202,6 +203,33 @@ fn ground(v: &Value) -> Result<Option<&'static [(&'static str, f64)]>, String> {
         }
     }
     Ok(Some(Box::leak(out.into_boxed_slice())))
+}
+
+/// A biome's optional `arches` (ADR 0074 B8; ranges as `shared/worldgen/biomes.mjs` `ARCHES`);
+/// density 0 is none.
+fn arches(v: &Value) -> Result<Option<crate::arches::Arches>, String> {
+    let Some(a) = v.get("arches") else {
+        return Ok(None);
+    };
+    let one = |k: &str, lo: f64, hi: f64| match a.get(k).and_then(Value::as_f64) {
+        Some(x) if (lo..=hi).contains(&x) => Ok(x),
+        _ => Err(format!("arches.{k} must be in [{lo}, {hi}]")),
+    };
+    let pair = |k: &str, lo: f64, hi: f64| {
+        let r = a.get(k).and_then(Value::as_array).and_then(|r| {
+            let (x, y) = (r.first()?.as_f64()?, r.get(1)?.as_f64()?);
+            (r.len() == 2 && lo <= x && x <= y && y <= hi).then_some([x, y])
+        });
+        r.ok_or_else(|| format!("arches.{k} must be [min, max] in [{lo}, {hi}], min <= max"))
+    };
+    let out = crate::arches::Arches {
+        density: one("density", 0.0, crate::arches::DENSITY_MAX)?,
+        span: pair("span", 2.0, 64.0)?,
+        rise: pair("rise", 1.0, 48.0)?,
+        lintel: pair("lintel", 1.0, 32.0)?,
+        fin: one("fin", 2.0, 64.0)?,
+    };
+    Ok((out.density > 0.0).then_some(out))
 }
 
 /// A biome's optional `waterLook` (`scatter` "#rrggbb", `absorption` three numbers).

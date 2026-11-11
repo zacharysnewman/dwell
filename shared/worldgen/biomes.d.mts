@@ -36,6 +36,8 @@ export function validatePresets<T>(
   taken?: readonly string[],
 ): T[];
 export const TREE_DENSITY_MAX: number;
+export const ARCHES: Record<string, readonly [number, number]>;
+export function checkArches(a: unknown, fail: (m: string) => never): void;
 export const GROUND_DENSITY_MAX: number;
 export function checkGround(
   ground: unknown,

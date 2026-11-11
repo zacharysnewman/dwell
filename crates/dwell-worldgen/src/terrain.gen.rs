@@ -127,6 +127,7 @@ pub const BIOMES: &[Biome] = &[
         vegetation: 0.0,
         erosion: 0.0,
         gullies: 0.0,
+        arches: None,
         water_look: None,
     },
 ];
@@ -135,6 +136,94 @@ pub const BIOMES: &[Biome] = &[
 /// add them by data alone (`TerrainGenerator::with_biomes`).
 #[doc(hidden)]
 pub const FIXTURE_BIOMES: &[Biome] = &[
+    Biome {
+        name: "test:arches",
+        place: Where {
+            weight: 1.0,
+            temperature: WhereRange::ANY,
+            wetness: WhereRange::ANY,
+            elevation: WhereRange::ANY,
+            coast: WhereRange::ANY,
+        },
+        surface: Surface {
+            detail_amplitude: 2.0,
+            detail_wavelength: 64,
+            detail_octaves: 4,
+            detail_mountain_amplitude: 12.0,
+            detail_mountain_from: 300.0,
+            detail_mountain_full: 1800.0,
+            detail_water_fade: 30.0,
+            river_smooth: 3,
+            river_min_depth: 1.0,
+            river_bank: 0.5,
+            river_valley_slope: 0.9,
+            river_join_margin: 3.0,
+            river_levee_fall: 0.15,
+            river_join_slope: 0.25,
+            river_reach: 30.0,
+            river_reach_per_width: 2.0,
+            river_meander: 5.0,
+            river_meander_wavelength: 96,
+            river_lod_width: 0.75,
+            river_lod_min_share: 0.125,
+            river_lod_max_cell: 128,
+            mouth_reach: 1500.0,
+            estuary_widen: 4.0,
+            estuary_deepen: 1.5,
+            delta_widen: 1.6,
+            delta_branches: 2,
+            delta_split: 1600.0,
+            delta_spread: 30.0,
+            delta_branch_width: 0.55,
+            lake_bank: 0.5,
+            lake_bank_slope: 0.25,
+            beach: 0.0,
+            lake_levee: 40.0,
+            lake_shore_noise: 15.0,
+            lake_shore_wavelength: 160,
+            edge_noise: 40.0,
+            edge_wavelength: 320,
+            edge_slope_lift: 80.0,
+            rock_slope: 0.35,
+            rock_slope_high: 0.3,
+            rock_high: 1550.0,
+            rock_window: 80.0,
+            shore: 2.0,
+            under_depth: 3.0,
+            spawn_min_height: 3.0,
+            spawn_max_height: 80.0,
+            spawn_near_river: 400.0,
+        },
+        bands: &[
+            ElevationBand {
+                name: "canyon_floor",
+                from: f64::NEG_INFINITY,
+                ground: "dwell:sand",
+                under: "dwell:sand",
+                rock: "dwell:stone",
+                shore_block: "dwell:sand",
+            },
+            ElevationBand {
+                name: "mesa",
+                from: 260.0,
+                ground: "dwell:stone",
+                under: "dwell:stone",
+                rock: "dwell:stone",
+                shore_block: "dwell:sand",
+            },
+        ],
+        decorations: &[],
+        placements: &["boulders"],
+        trees: &[("boulders", 1.5)],
+        ground: Some(&[("dwell:ground_rock", 2.5)]),
+        water: "dwell:water",
+        rock_stack: Some("dwell:red_beds"),
+        vegetation: 0.0,
+        erosion: 1.0,
+        gullies: 0.0,
+        arches: Some(crate::arches::Arches { density: 400.0, span: [6.0, 18.0], rise: [4.0, 12.0], lintel: [2.0, 6.0], fin: 14.0 }),
+        water_look: None,
+    },
     Biome {
         name: "test:archipelago",
         place: Where {
@@ -220,6 +309,7 @@ pub const FIXTURE_BIOMES: &[Biome] = &[
         vegetation: 0.0,
         erosion: 0.0,
         gullies: 0.0,
+        arches: None,
         water_look: Some(WaterLook { scatter: Some(0x19d4c0), absorption: Some([0.55, 0.05, 0.06]) }),
     },
     Biome {
@@ -323,6 +413,7 @@ pub const FIXTURE_BIOMES: &[Biome] = &[
         vegetation: 0.0,
         erosion: 0.0,
         gullies: 0.0,
+        arches: None,
         water_look: None,
     },
 ];
@@ -416,6 +507,7 @@ pub const PRESET_BIOMES: &[Biome] = &[
         vegetation: 1.0,
         erosion: 0.0,
         gullies: 0.0,
+        arches: None,
         water_look: None,
     },
     Biome {
@@ -515,6 +607,7 @@ pub const PRESET_BIOMES: &[Biome] = &[
         vegetation: 0.0,
         erosion: 1.0,
         gullies: 1.0,
+        arches: None,
         water_look: None,
     },
     Biome {
@@ -610,6 +703,7 @@ pub const PRESET_BIOMES: &[Biome] = &[
         vegetation: 1.0,
         erosion: 0.0,
         gullies: 0.0,
+        arches: None,
         water_look: Some(WaterLook { scatter: Some(0x2a5a6a), absorption: Some([0.6, 0.2, 0.15]) }),
     },
     Biome {
@@ -701,6 +795,7 @@ pub const PRESET_BIOMES: &[Biome] = &[
         vegetation: 0.0,
         erosion: 0.0,
         gullies: 0.0,
+        arches: None,
         water_look: Some(WaterLook { scatter: Some(0x1a5a8a), absorption: Some([0.5, 0.1, 0.06]) }),
     },
     Biome {
@@ -792,6 +887,7 @@ pub const PRESET_BIOMES: &[Biome] = &[
         vegetation: 1.0,
         erosion: 0.0,
         gullies: 0.0,
+        arches: None,
         water_look: Some(WaterLook { scatter: Some(0x1f4a3a), absorption: Some([0.9, 0.35, 0.4]) }),
     },
     Biome {
@@ -883,6 +979,7 @@ pub const PRESET_BIOMES: &[Biome] = &[
         vegetation: 0.0,
         erosion: 0.0,
         gullies: 0.0,
+        arches: None,
         water_look: None,
     },
     Biome {
@@ -982,6 +1079,7 @@ pub const PRESET_BIOMES: &[Biome] = &[
         vegetation: 0.0,
         erosion: 1.0,
         gullies: 0.0,
+        arches: Some(crate::arches::Arches { density: 40.0, span: [6.0, 18.0], rise: [4.0, 12.0], lintel: [2.0, 6.0], fin: 14.0 }),
         water_look: None,
     },
     Biome {
@@ -1069,6 +1167,7 @@ pub const PRESET_BIOMES: &[Biome] = &[
         vegetation: 1.0,
         erosion: 0.0,
         gullies: 0.0,
+        arches: None,
         water_look: None,
     },
     Biome {
@@ -1160,6 +1259,7 @@ pub const PRESET_BIOMES: &[Biome] = &[
         vegetation: 1.0,
         erosion: 0.0,
         gullies: 0.0,
+        arches: None,
         water_look: Some(WaterLook { scatter: Some(0x5a7a40), absorption: Some([0.5, 0.25, 0.4]) }),
     },
     Biome {
@@ -1247,6 +1347,7 @@ pub const PRESET_BIOMES: &[Biome] = &[
         vegetation: 0.0,
         erosion: 0.0,
         gullies: 0.0,
+        arches: None,
         water_look: None,
     },
     Biome {
@@ -1338,6 +1439,7 @@ pub const PRESET_BIOMES: &[Biome] = &[
         vegetation: 0.0,
         erosion: 0.0,
         gullies: 0.0,
+        arches: None,
         water_look: None,
     },
     Biome {
@@ -1429,6 +1531,7 @@ pub const PRESET_BIOMES: &[Biome] = &[
         vegetation: 0.0,
         erosion: 0.0,
         gullies: 0.0,
+        arches: None,
         water_look: None,
     },
     Biome {
@@ -1520,6 +1623,7 @@ pub const PRESET_BIOMES: &[Biome] = &[
         vegetation: 0.0,
         erosion: 0.0,
         gullies: 0.0,
+        arches: None,
         water_look: Some(WaterLook { scatter: Some(0x19d4c0), absorption: Some([0.55, 0.05, 0.06]) }),
     },
     Biome {
@@ -1607,6 +1711,7 @@ pub const PRESET_BIOMES: &[Biome] = &[
         vegetation: 0.0,
         erosion: 0.0,
         gullies: 0.0,
+        arches: None,
         water_look: Some(WaterLook { scatter: Some(0x4a5a2a), absorption: Some([0.8, 0.45, 0.9]) }),
     },
 ];

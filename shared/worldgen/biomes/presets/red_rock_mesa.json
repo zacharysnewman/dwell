@@ -67,5 +67,6 @@
   "trees": {"boulders": 1.5},
   "water": "dwell:water",
   "rockStack": "dwell:red_beds",
-  "erosion": 1
+  "erosion": 1,
+  "arches": {"$comment": "Arches (ADR 0074 B8): openings carved through narrow fins of the bedded sandstone the cut-back leaves (Arches NP): density sites per km² (one chance per 32 m square), span across the fin, rise of its crown over the floor, lintel the rock left above (each [min, max] m), fin the thickest fin cut through (m). Absent or density 0: none.", "density": 40, "span": [6, 18], "rise": [4, 12], "lintel": [2, 6], "fin": 14}
 }

@@ -286,6 +286,8 @@ pub struct Biome {
     pub erosion: f64,
     /// Its rills (T4, the badlands'): 0 none, 1 the erosion's `gullyDepth`.
     pub gullies: f64,
+    /// Its arches (ADR 0074 B8, `arches.rs`): openings through narrow fins; none in the default.
+    pub arches: Option<crate::arches::Arches>,
 }
 
 mod table {
@@ -324,6 +326,9 @@ pub fn find_biome(name: &str) -> Option<&'static Biome> {
 
 const S: Surface = SURFACE;
 /// Sand at the shore and under water to SAND_DEPTH (rows, from metres).
+/// The arches' site draws' seed stream (ADR 0074 B8).
+const ARCH_STREAM: u32 = 0xA2C4_0001;
+
 const SAND_DEPTH: i64 = (3.0 / CELL_H) as i64;
 
 /// The deepest a lake's bed is forced below its level near its shore (m): deeper beds are the map's.
@@ -2912,6 +2917,7 @@ impl TerrainGenerator {
         if let Some(v) = &self.volume {
             self.carve_volume(v, coord, &cols, volume, chunk);
         }
+        self.carve_arches(coord, &cols, volume, chunk);
         self.stamp_trees(coord, &cols, volume, chunk);
         self.stamp_monuments(coord, volume, chunk);
     }
@@ -3019,6 +3025,104 @@ impl TerrainGenerator {
                         };
                     } else if full && !solid(y - 1) {
                         *cell = v.material;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Whether a biome of this generator has arches (ADR 0074 B8; none in the default world).
+    fn has_arches(&self) -> bool {
+        self.biomes
+            .list
+            .iter()
+            .any(|b| b.arches.is_some_and(|a| a.density > 0.0))
+    }
+
+    /// The arches (ADR 0074 B8, `arches.rs`) whose openings may reach columns `lo..=hi` (x, z):
+    /// each site square's draw under the biome its centre's column chose, kept where the height
+    /// field stands a fin there. A function of the world position alone, so every chunk agrees.
+    pub fn arches_near(&self, lo: (i32, i32), hi: (i32, i32)) -> Vec<crate::arches::Site> {
+        use crate::arches::{CELL, draw, site};
+        if !self.has_arches() {
+            return Vec::new();
+        }
+        let reach = self
+            .biomes
+            .list
+            .iter()
+            .filter_map(|b| b.arches)
+            .map(|a| (a.fin * a.fin + a.span[1] * a.span[1]).sqrt() / 2.0)
+            .fold(0.0_f64, f64::max);
+        let r = reach.ceil() as i32 + CELL;
+        let seed = seed_word(self.world_seed, ARCH_STREAM);
+        let ground = |x: f64, z: f64| {
+            let c = self.column_at(x.floor() as i32, z.floor() as i32);
+            (!c.outside && c.water == Water::None).then_some(f64::from(c.height))
+        };
+        let mut out = Vec::new();
+        for gz in (lo.1 - r).div_euclid(CELL)..=(hi.1 + r).div_euclid(CELL) {
+            for gx in (lo.0 - r).div_euclid(CELL)..=(hi.0 + r).div_euclid(CELL) {
+                let d = draw(seed, gx, gz);
+                let (x, z) = (d.centre[0].floor() as i64, d.centre[1].floor() as i64);
+                let biome = if self.biomes.field.is_none() {
+                    0
+                } else {
+                    let (base, _, _) = self.map.height_at(x as f64, z as f64);
+                    usize::from(self.biomes.mix(x, z, base).chosen)
+                };
+                let Some(a) = self.biomes.list.get(biome).and_then(|b| b.arches) else {
+                    continue;
+                };
+                if let Some(s) = site(&a, &d, ground) {
+                    out.push(s);
+                }
+            }
+        }
+        out
+    }
+
+    /// Carves the arches' openings (ADR 0074 B8) in a chunk filled to its columns' tops: a cell
+    /// under an opening's roof, over its floor and at least its lintel under the column's top
+    /// becomes air (dry columns only; the top and the cells over it stay).
+    fn carve_arches(&self, coord: ChunkCoord, cols: &[Column], overlap: Overlap, chunk: &mut Chunk) {
+        const S: i32 = CHUNK_SIZE;
+        let (x0, y0, z0) = (coord.x * S, coord.y * S, coord.z * S);
+        let sites = self.arches_near((x0, z0), (x0 + S - 1, z0 + S - 1));
+        if sites.is_empty() {
+            return;
+        }
+        let ch = f64::from(CELL_H);
+        let voxels = chunk.voxels_mut();
+        for z in 0..S {
+            for x in 0..S {
+                let col = cols[(z * S + x) as usize];
+                if col.outside || col.water != Water::None {
+                    continue;
+                }
+                let (wx, wz) = (x0 + x, z0 + z);
+                let (cx, cz) = (f64::from(wx) + 0.5, f64::from(wz) + 0.5);
+                let top = top_voxel(col.height);
+                for s in &sites {
+                    let Some(roof) = s.roof(cx, cz) else { continue };
+                    let roof = roof.min(f64::from(col.height) - s.lintel);
+                    for ly in 0..S {
+                        let y = y0 + ly;
+                        let mid = (f64::from(y) + 0.5) * ch;
+                        if y >= top
+                            || mid < s.floor
+                            || mid > roof
+                            || !(FACE_MIN_Y..FACE_MAX_Y).contains(&y)
+                            || (overlap == Overlap::Partial
+                                && !BUILD_VOLUME.contains_voxel(
+                                    i64::from(wx),
+                                    i64::from(y),
+                                    i64::from(wz),
+                                ))
+                        {
+                            continue;
+                        }
+                        voxels[local_index(x, ly, z)] = M.air;
                     }
                 }
             }

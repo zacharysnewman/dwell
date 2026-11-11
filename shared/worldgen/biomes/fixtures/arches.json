@@ -1,0 +1,82 @@
+{
+  "name": "test:arches",
+  "label": "Arches (test)",
+  "description": "A test fixture: the red rock mesa with many arches, for the B8 tests and screenshots.",
+  "where": {
+    "weight": 1
+  },
+  "detail": {
+    "amplitude": 2,
+    "wavelength": 64,
+    "octaves": 4,
+    "mountainAmplitude": 12,
+    "mountainFrom": 300,
+    "mountainFull": 1800,
+    "waterFade": 30
+  },
+  "shaping": {
+    "edgeNoise": 40,
+    "edgeWavelength": 320,
+    "edgeSlopeLift": 80,
+    "rockSlope": 0.35,
+    "rockSlopeHigh": 0.3,
+    "rockHigh": 1550,
+    "rockWindow": 80,
+    "shore": 2,
+    "underDepth": 3
+  },
+  "banks": {
+    "riverSlope": 0.9,
+    "lake": 0.5,
+    "lakeSlope": 0.25,
+    "beach": 0
+  },
+  "bands": [
+    {
+      "name": "canyon_floor",
+      "ground": "dwell:sand",
+      "under": "dwell:sand",
+      "rock": "dwell:stone",
+      "shoreBlock": "dwell:sand"
+    },
+    {
+      "name": "mesa",
+      "from": 260,
+      "ground": "dwell:stone",
+      "under": "dwell:stone",
+      "rock": "dwell:stone",
+      "shoreBlock": "dwell:sand"
+    }
+  ],
+  "decorations": [],
+  "placements": [
+    "boulders"
+  ],
+  "ground": {
+    "dwell:ground_rock": 2.5
+  },
+  "trees": {
+    "boulders": 1.5
+  },
+  "water": "dwell:water",
+  "rockStack": "dwell:red_beds",
+  "erosion": 1,
+  "arches": {
+    "$comment": "Arches (ADR 0074 B8): openings carved through narrow fins of the bedded sandstone the cut-back leaves (Arches NP): density sites per km² (one chance per 32 m square), span across the fin, rise of its crown over the floor, lintel the rock left above (each [min, max] m), fin the thickest fin cut through (m). Absent or density 0: none.",
+    "density": 400,
+    "span": [
+      6,
+      18
+    ],
+    "rise": [
+      4,
+      12
+    ],
+    "lintel": [
+      2,
+      6
+    ],
+    "fin": 14
+  },
+  "$comment": "A test fixture (ADR 0074 B8): the red rock mesa preset with dense arches; tests build it by data alone (FIXTURE_BIOMES). Prototype content."
+}

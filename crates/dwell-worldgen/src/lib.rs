@@ -3,6 +3,7 @@
 //! generator lookup by version that the server, the client and the tools share.
 
 pub mod air_columns;
+pub mod arches;
 pub mod base;
 pub mod bifacial;
 pub mod biomemap;

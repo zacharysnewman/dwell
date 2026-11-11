@@ -149,7 +149,7 @@ export const WORLD_GROUPS = ['inland', 'seaFloor', 'islands', 'tectonics', 'hill
 /** A biome's groups (shared/worldgen/biomes/*.json): layered on the elevation. */
 export const BIOME_GROUPS = Object.keys(TERRAIN).filter((g) => !WORLD_GROUPS.includes(g));
 /** A biome's reference fields beside its groups. */
-const BIOME_REFS = ['where', 'bands', 'decorations', 'placements', 'trees', 'ground', 'water', 'waterLook', 'rockStack', 'vegetation', 'erosion', 'gullies'];
+const BIOME_REFS = ['where', 'bands', 'decorations', 'placements', 'trees', 'ground', 'water', 'waterLook', 'rockStack', 'vegetation', 'erosion', 'gullies', 'arches'];
 /** A biome's optional words for people (Chisel's lists): a short label and a one-line description. */
 export const BIOME_TEXT = { label: 40, description: 200 };
 const BIOME_NAME = /^[a-z0-9_]+:[a-z0-9_]+$/;
@@ -227,7 +227,38 @@ export function validateBiome(data, blocks, refs) {
   for (const k of ['erosion', 'gullies']) {
     if (data[k] !== undefined && !(isNum(data[k]) && data[k] >= 0 && data[k] <= 1)) fail(`${k} must be in [0, 1]`);
   }
+  checkArches(data.arches, fail);
   return data;
+}
+
+/**
+ * A biome's optional `arches` (ADR 0074 B8): openings carved through narrow fins of rock. `density`
+ * sites per km² (one chance per 32 m square, so at most `ARCHES.density[1]`), each range a `[min, max]`
+ * pair in m: `span` the opening across the fin, `rise` its crown over the floor, `lintel` the rock left
+ * above it; `fin` the thickest fin (m, along the way through) it cuts. Absent or density 0: none.
+ */
+export const ARCHES = {
+  density: [0, 976.5625],
+  span: [2, 64],
+  rise: [1, 48],
+  lintel: [1, 32],
+  fin: [2, 64],
+};
+
+/** Checks a biome's optional `arches` (`ARCHES`'s ranges; each range's min at most its max). */
+export function checkArches(a, fail) {
+  if (a === undefined) return;
+  if (typeof a !== 'object' || a === null || Array.isArray(a)) fail('arches must be an object');
+  const extra = Object.keys(a).filter((k) => k !== '$comment' && !(k in ARCHES));
+  if (extra.length) fail(`arches: unknown ${extra.join(', ')}`);
+  for (const [k, [lo, hi]] of Object.entries(ARCHES)) {
+    const v = a[k];
+    if (k === 'density' || k === 'fin') {
+      if (!(isNum(v) && v >= lo && v <= hi)) fail(`arches.${k} must be in [${lo}, ${hi}]`);
+    } else if (!(Array.isArray(v) && v.length === 2 && v.every((x) => isNum(x) && x >= lo && x <= hi) && v[0] <= v[1])) {
+      fail(`arches.${k} must be [min, max] in [${lo}, ${hi}], min ≤ max`);
+    }
+  }
 }
 
 /** The most a biome's `trees` may multiply a placement's chance by (ADR 0074 B5). */
