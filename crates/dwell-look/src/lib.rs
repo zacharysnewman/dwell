@@ -11,6 +11,7 @@ mod clouds_gen;
 pub mod daynight;
 pub mod flames;
 pub mod fog;
+pub mod leaves;
 pub mod lights;
 pub mod lod_blend;
 pub mod lod_colour;

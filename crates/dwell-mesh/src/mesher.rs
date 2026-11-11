@@ -34,6 +34,7 @@ use dwell_world::{CELL_H, SKY_APRON, SKY_EXTENT, SKY_VOLUME, normal_to_m};
 const N: i32 = CHUNK_SIZE;
 
 mod damage_mesh;
+mod leaves;
 mod ground_mesh;
 pub use ground_mesh::{GroundJob, look_mesh, look_swatch, scatter as ground_scatter};
 
@@ -1971,6 +1972,7 @@ fn mesh_cells(
                     if k.shape == Shape::Shaped
                         || k.style.look == Look::Cross
                         || k.style.octagon
+                        || k.style.leafy
                         || (!carved.is_empty() && carved.contains_key(&cell))
                     {
                         continue; // drawn whole, below
@@ -2150,6 +2152,8 @@ fn mesh_cells(
             }
         }
     }
+    // Leaves (shared/look/leaves.json): whole cells, chamfered where exposed, lit as a crown.
+    let crowns = leaves::Crowns::new(&cells);
     // Shaped blocks (the generated ramps): whole voxels, not slices.
     for cy in 0..N {
         for cz in 0..N {
@@ -2170,6 +2174,16 @@ fn mesh_cells(
                     carved_voxel(&mut opaque, &cells, &k, [cx, cy, cz], cut);
                 } else if k.style.octagon {
                     octagon_voxel(&mut opaque, &cells, &k, m, [cx, cy, cz]);
+                }
+                if k.style.leafy
+                    && let Some(crowns) = &crowns
+                {
+                    let target = match k.style.render {
+                        RenderMode::Opaque => &mut opaque,
+                        RenderMode::Translucent => &mut transparent,
+                        RenderMode::Cutout => &mut cutout,
+                    };
+                    leaves::leaf_voxel(target, &cells, crowns, &k, [cx, cy, cz]);
                 }
                 if k.liquid {
                     fall_into(&mut transparent, &cells, &k, cx, cy, cz);

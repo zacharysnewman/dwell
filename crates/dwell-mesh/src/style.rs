@@ -57,6 +57,9 @@ pub(crate) struct MaterialStyle {
     /// An octagonal prism along `axis` (block data `crossSection`, ADR 0072), drawn whole by
     /// `dwell_blocks::octagon` with its sides squared where it joins its neighbours.
     pub octagon: bool,
+    /// Drawn as a canopy (shared/look/leaves.json `blocks`, by name): chamfered where exposed,
+    /// its normals leaning out of the crown (`mesher/leaves.rs`). Full cubes only.
+    pub leafy: bool,
 }
 
 /// The per-vertex fluid id of see-through faces that are not a fluid's ([`crate::NO_FLUID`]), or
@@ -133,6 +136,7 @@ pub(crate) fn style_of(s: &StateInfo, fluids: &[FluidInfo]) -> MaterialStyle {
             && SHAPES
                 .get(usize::from(s.shape_index))
                 .is_some_and(|sh| sh.convex),
+        leafy: look == Look::Cube && dwell_look::leaves::LEAVES.blocks.contains(&block_id(s.name)),
     }
 }
 
@@ -186,6 +190,7 @@ fn fallback_style(shape: usize, flooded: bool) -> MaterialStyle {
         fluid: None,
         axis: 1,
         octagon: false,
+        leafy: false,
     }
 }
 
