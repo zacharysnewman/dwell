@@ -298,10 +298,12 @@ at clearly different heights, young ones among them; a branch's tip can poke out
 The palms lean and step as on the prototype's grid, but their leaf-cell fronds read as clumps, not
 blades. Pines stand in the mixed forest; the boreal spot has none (its climate, as before).
 
-Not built: **growth over time** (needs a per-tree record, its stage and the cells players edited,
+**Thin trunks (0.52.59):** saplings stand on narrow logs (`dwell:log[width]`, ¼ m steps; ADR 0079),
+the trunk thickening by stage to the species' `trunk.width.mature`.
+
+Not built: **growth over time** (planned in ADR 0079) (needs a per-tree record, its stage and the cells players edited,
 and the `growers` layer of §5: the stage advanced every `growth.daysPerStage` world days, the cells
-regenerated where nobody edited), thin trunks (no log width property; saplings are 1 m logs), per-tree
-leaf tints (`variety.lightness`, `hue`), frond blades (a `dwell:palm_frond` block), a pine needle block.
+regenerated where nobody edited), per-tree leaf tints (`variety.lightness`, `hue`), frond blades (a `dwell:palm_frond` block), a pine needle block.
 
 ## Sources
 
