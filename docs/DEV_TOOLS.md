@@ -300,7 +300,9 @@ menu's list and opens it.
 **Play a test world** (0.52.27): `?worldgen=test:tall_peak` (any fixture world's name,
 `shared/worldgen/worlds/*.json`; with `seed=`, `fresh=1`, `at=` as above, alone seed 0) opens a
 terrain world on the fixture's ground, its own world file and record (`test-<name>-s<seed>`, never the
-seed's own `local-g8-s<seed>`). Chisel's **Play in game** (its File group) does the same for the
+seed's own `local-g8-s<seed>`). Chisel's **Open starter world** (its File group, 0.52.63) replaces the edit with
+the starter world (`starter.json` resolved by biomes.mjs `fixtureWorldEdit`, as gen.mjs does for the game), to tune it
+and play it. Chisel's **Play in game** (its File group) does the same for the
 current edit: a new local world of the view's seed in a new tab (`?play=<id>`), listed in the menu.
 The world's record (`dwell.worlds`, `WorldMeta.worldgen`, optional: append-only) keeps the config, the
 fixture's name or the edit's JSON, so the world reopens on the same terrain. Only the height field

@@ -16,6 +16,7 @@ import {
 import {
   ARCHIPELAGO_WORLD,
   TALL_PEAK_WORLD,
+  starterEdit,
   BUILD_GEOLOGY,
   BUILD_VEGETATION,
   FULL_BLOCKS,
@@ -797,6 +798,17 @@ function render() {
         selected = 0;
         saveEdit(store, null);
         restructure();
+      }),
+      // The starter world (shared/worldgen/worlds/starter.json) as an edit, to tune and play.
+      el('button', {
+        textContent: 'Open starter world',
+        title:
+          'Replaces the edit with the starter world (test:starter): its biomes, biome map, geology and world knobs',
+        onclick: () => {
+          edit = starterEdit();
+          selected = 0;
+          restructure();
+        },
       }),
       // A new local world on this edit's ground (docs/DEV_TOOLS.md "Play a test world"): its
       // record keeps the edit, so it reopens the same. The world knobs only, not the biomes yet.

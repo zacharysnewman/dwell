@@ -219,7 +219,7 @@ fn write_png(path: &str, w: u32, h: u32, rgb: &[u8]) {
 }
 
 /// The tour's spots (`cargo test … -- --ignored --nocapture tour`): for each listed biome the 200 m
-/// sample of it (over 0.6 of the mix) nearest the centre of its cells, as an `at=` world point on face A (feet 2 m over
+/// sample of it (over 0.6 of the mix) nearest the centre of its cells (else its strongest sample), as an `at=` world point on face A (feet 2 m over
 /// the ground), the volcano 15 km off its summit and the shore facing the hotspot chain.
 #[test]
 #[ignore = "prints the tour's links"]
@@ -229,12 +229,22 @@ fn tour() {
     let (g, names) = generator(f, 0);
     let r = i64::from(WORLD_RADIUS) * 3 / 4;
     let mut cells: Vec<Vec<(i64, i64)>> = vec![Vec::new(); names.len()];
+    // A biome that never holds 0.6 of a mix (the mesa beside the badlands): its strongest chosen
+    // sample instead.
+    let mut best: Vec<(f32, i64, i64)> = vec![(0.0, 0, 0); names.len()];
     for z in (-r..=r).step_by(200) {
         for x in (-r..=r).step_by(200) {
             if g.biome_geography(x, z).is_none_or(|g| g.coast < 300.0) {
                 continue;
             }
             let m = g.biome_mix(x, z);
+            if let Some(&(_, w)) = m.weights[..m.len as usize]
+                .iter()
+                .find(|(i, _)| *i == m.chosen)
+                && w > best[m.chosen as usize].0
+            {
+                best[m.chosen as usize] = (w, x, z);
+            }
             if m.weights[..m.len as usize]
                 .iter()
                 .any(|(i, w)| *i == m.chosen && *w > 0.6)
@@ -249,6 +259,10 @@ fn tour() {
     };
     for (i, c) in cells.iter().enumerate() {
         if c.is_empty() {
+            let (w, x, z) = best[i];
+            if w > 0.0 {
+                println!("{} (at most {w:.2} of a mix) at={}", names[i], at(x, z));
+            }
             continue;
         }
         let n = c.len() as f64;

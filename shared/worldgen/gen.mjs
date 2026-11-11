@@ -20,6 +20,7 @@ import {
   WHERE_FIELDS,
   WORLD_GROUPS,
   checkGroups,
+  fixtureWorldEdit as fixtureWorldEditOf,
   validateBiome as checkBiome,
   validatePresets as checkPresets,
   validateRocks as validateRocksData,
@@ -700,56 +701,10 @@ export function biomePool() {
   return [...loadBiomes(), ...loadBiomes(join(here, "biomes/presets"))];
 }
 
-/**
- * A fixture world with its own biomes (ADR 0074 B7, the starter world): the Chisel edit it stands
- * for (`{ biomes, biomeMap, geology, world }`, `dwell_worldgen::config::edit_from_json`'s input).
- * `biomes` lists biomes by name (the build's default first, then presets), each a name or
- * `{ "biome": name, ...keys }` with those top-level keys replaced; `biomeMap` keys over
- * terrain.json's; `geology` groups' keys over rocks.json's. Each biome is checked as a biome.
- */
+/** A fixture world's Chisel edit (biomes.mjs `fixtureWorldEdit`, with the registry's blocks). */
 function fixtureWorldEdit(f, world, pool, fail) {
-  if (!Array.isArray(f.biomes) || f.biomes.length < 1)
-    fail("biomes must be a list of at least one biome");
-  const blocks = registryBlocks();
-  const refs = biomeRefs();
-  const biomes = f.biomes.map((e, i) => {
-    const name = typeof e === "string" ? e : e?.biome;
-    const base = pool.find((b) => b.name === name);
-    if (!base)
-      fail(`biomes[${i}]: ${JSON.stringify(name)} is not a biome or preset`);
-    const b = structuredClone(base);
-    delete b.$comment;
-    if (typeof e === "object") {
-      for (const [k, v] of Object.entries(e)) if (k !== "biome") b[k] = v;
-    }
-    try {
-      validateBiome(b, blocks, refs);
-    } catch (err) {
-      fail(`biomes[${i}] (${name}): ${err.message}`);
-    }
-    return b;
-  });
-  if (biomes[0].name !== world.defaultBiome)
-    fail(`biomes must start with the default biome ${world.defaultBiome}`);
-  const names = biomes.map((b) => b.name);
-  const dup = names.find((n, i) => names.indexOf(n) !== i);
-  if (dup) fail(`biome ${dup} is listed twice`);
-  for (const k of Object.keys(f.biomeMap ?? {}))
-    if (k === "$comment" || !(k in world.biomeMap)) fail(`biomeMap: unknown ${k}`);
-  const biomeMap = { ...world.biomeMap, ...(f.biomeMap ?? {}) };
-  delete biomeMap.$comment;
-  const edit = { biomes, biomeMap };
-  if (f.geology !== undefined) {
-    const rocks = JSON.parse(readFileSync(join(here, "rocks.json"), "utf8"));
-    for (const [g, keys] of Object.entries(f.geology)) {
-      if (typeof rocks[g] !== "object" || Array.isArray(rocks[g]))
-        fail(`geology: ${g} is not a rocks.json group`);
-      Object.assign(rocks[g], keys);
-    }
-    edit.geology = rocks;
-  }
-  edit.world = f.overrides ?? {};
-  return edit;
+  const rocks = JSON.parse(readFileSync(join(here, "rocks.json"), "utf8"));
+  return fixtureWorldEditOf(f, world, pool, rocks, registryBlocks(), biomeRefs(), fail);
 }
 
 /** terrain.json `tectonics` (systemic terrain T5) as Rust: the keys in camelCase become snake_case. */
