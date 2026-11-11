@@ -150,3 +150,19 @@ fn the_presets_pick_their_trees() {
     assert!(tree_density_of(&p("mixed_forest"), "broadleaf_groves") > 0.0);
     assert!(tree_density_of(&p("tropical_beach"), "broadleaf_groves") > 0.0);
 }
+
+dwell_world::both_faces!(
+    /// The sparse search (Chisel's 3D section) finds exactly the chunks' trees.
+    fn the_sparse_search_finds_the_same_trees(f: FaceFrame) {
+        let t = BifacialTerrain::height_field(7);
+        let biome = Biome {
+            placements: &["pine_groves", "boulders"],
+            trees: &[("boulders", 2.0)],
+            ..BIOMES[0]
+        };
+        let g = t.local(f.face).clone().with_biome(&biome);
+        let a = g.trees_in((-300, -100), (99, 299));
+        assert!(a.len() > 10, "{}", a.len());
+        assert_eq!(g.trees_sparse((-300, -100), (99, 299)), a);
+    }
+);

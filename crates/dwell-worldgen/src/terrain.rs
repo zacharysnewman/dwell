@@ -2549,6 +2549,27 @@ impl TerrainGenerator {
                 self.ground_of(&self.column_at(x, z))
             }
         };
+        self.trees_over((x0, z0), (x1, z1), &ground)
+    }
+
+    /// [`TerrainGenerator::trees_in`] asking each column only as a candidate needs it (no
+    /// rectangle computed up front): the same trees, cheaper over a large square where few cells
+    /// pass their rolls (Chisel's 3D section, ADR 0074 B5).
+    pub fn trees_sparse(&self, lo: (i32, i32), hi: (i32, i32)) -> Vec<Tree> {
+        if self.planters.is_empty() {
+            return Vec::new();
+        }
+        let ground = |x: i32, z: i32| self.ground_of(&self.column_at(x, z));
+        self.trees_over(lo, hi, &ground)
+    }
+
+    /// The structures placed reaching [x0, x1] × [z0, z1], `ground` answering any column.
+    fn trees_over(
+        &self,
+        (x0, z0): (i32, i32),
+        (x1, z1): (i32, i32),
+        ground: &dyn Fn(i32, i32) -> Option<Ground>,
+    ) -> Vec<Tree> {
         // The climate's factor on each candidate (systemic terrain T3): none unless a biome opts in,
         // so the default world asks nothing of it.
         let kinds: Vec<Option<usize>> = self
@@ -2570,7 +2591,7 @@ impl TerrainGenerator {
         let factor: Option<&placements::Factor<'_>> =
             (climate || self.tree_density.1).then_some(&factor);
         let mut trees =
-            placements::trees_in_with(&self.planters, (x0, z0), (x1, z1), &ground, factor);
+            placements::trees_in_with(&self.planters, (x0, z0), (x1, z1), ground, factor);
         // No structure stands over a portal's opening or its clear ground round the rim.
         if let Some(p) = &self.portals {
             trees.retain(|t| {
