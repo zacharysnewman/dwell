@@ -169,9 +169,26 @@ mod tests {
         let [cx, cz] = d.centre;
         let cone = |x: f64, z: f64| Some(30.0 - 2.0 * ((x - cx).powi(2) + (z - cz).powi(2)).sqrt());
         let s = site(&A, &d, cone).expect("a fin makes an arch");
+        assert!(s.through, "low on both sides: an arch");
         assert!((s.floor - 18.0).abs() < 1e-9);
-        assert_eq!(s.roof(cx, cz), Some(22.0));
+        assert!((s.roof(cx, cz).unwrap() - (s.floor + 4.0)).abs() < 1e-9);
         assert!(s.roof(cx + 100.0, cz).is_none());
+    }
+
+    #[test]
+    fn a_scarp_makes_an_overhang_only_when_asked() {
+        let d = draw(7, 3, 4);
+        let [cx, _] = d.centre;
+        // High at x < cx + 3, a 20 m drop past it.
+        let scarp = |x: f64, _: f64| Some(if x < cx + 3.0 { 30.0 } else { 10.0 });
+        assert!(site(&A, &d, scarp).is_none(), "overhangs off: none");
+        let o = Arches {
+            overhangs: true,
+            ..A
+        };
+        let s = site(&o, &d, scarp).expect("an overhang");
+        assert!(!s.through);
+        assert_eq!(s.floor, 10.0);
     }
 
     #[test]

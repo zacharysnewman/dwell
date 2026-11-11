@@ -397,6 +397,11 @@ only." Shipped to iterate on (owner: "Deploy as a release and we'll iterate on i
   terrain's soil depth; `soilDepth` can't go below `underDepth`); the LOD has no undersides;
   overhangs have no ramps under them; caves and floating islands are not started.
 
+
+### 5a. Arches and overhangs (ADR 0074 B8) **[built in part, 0.52.43]**
+
+A biome's `arches` (opt-in; the default world has none): openings carved after the volume, each a half ellipse `span` m across and `rise` m high on a floor, `fin` m long, with at least `lintel` m of rock left over every carved cell, so a column's top never moves and the LOD draws the top as before (it does not show the opening). A site (32 m grid, `density` per km²) tries four axes: ground low on both sides is a fin, cut through (an arch, Arches NP's bedded sandstone fins); low on one side a scarp, cut into from below (an overhang, with `overhangs`). Dry columns only. Today's terrain has many scarps and few fins, so most sites are overhangs; fins grown by the erosion are left for later.
+
 ## Banks, water looks and the archipelago (2026-11-10, ADR 0074 B4)
 
 The elevation places the rivers and lakes; a biome shapes their banks (`banks`: the valley's rise from a

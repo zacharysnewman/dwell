@@ -2,6 +2,12 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.52.43",
+      "changes": [
+        "Biomes can grow rock arches and overhangs: openings cut through narrow rock fins and under cliff edges. The red rock mesa has them; Chisel has sliders for them (see them with Play in game)."
+      ]
+    },
+    {
       "version": "0.52.42",
       "changes": [
         "Chisel has a Textures tab: edit a block's painterly texture and the palette with sliders, see the tile, its repeat and the block, and watch the 3D view take the new colours. Export the files for the game."
