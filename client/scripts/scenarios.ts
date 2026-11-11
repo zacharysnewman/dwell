@@ -4,6 +4,7 @@
 // adding a benchmark or a repro is a new entry in the data file. Pure: no Node or browser imports.
 
 import { AIMS, MAP_WATERS, type Aim, type FaceChoice, type MapWater } from '../src/debug/find.ts';
+import { HOTBAR_SLOTS } from '../src/ui/inventory.gen.ts';
 import { ViewError, viewUrl, WATER_TIER_NAMES, type View } from './views.ts';
 
 export type Vec3 = [number, number, number];
@@ -98,6 +99,13 @@ export type Step =
   /** Breaks or places at the crosshair, as a click does; selects a hotbar slot. */
   | { do: 'edit'; action: 'break' | 'place' }
   | { do: 'select'; slot: number }
+  /**
+   * Creative: puts the item named `item` (shared/items/items.json, e.g. `"dwell:torch"`) in the
+   * selected hotbar slot (`__dwell.pick`), as a click in the inventory view does; fails the run if
+   * it is not a creative item. Reach an item this way, not by a `select` of its old slot: the
+   * hotbar holds `hotbarSlots` picks (shared/inventory/inventory.json), not the whole item list.
+   */
+  | { do: 'pick'; item: string }
   /**
    * Drives the brush tool (`__dwell.brush`, docs/BRUSHES.md) as its keys and clicks do:
    * `toggle`, `preset:<name>`, `size:<n>`, `apply`, … (in worlds that allow brushes: sandbox).
@@ -340,6 +348,7 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   ],
   edit: ['action'],
   select: ['slot'],
+  pick: ['item'],
   brush: ['command'],
   region: ['op', 'from', 'to', 'up'],
   puppets: ['count', 'at', 'face', 'held'],
@@ -494,8 +503,18 @@ export function parseStep(where: string, v: unknown): Step {
         throw new ViewError(`${at('action')}: expected "break" or "place"`);
       }
       return { do: d, action: o.action };
-    case 'select':
-      return { do: d, slot: num(at('slot'), o.slot, 0, 63) };
+    case 'select': {
+      // Past the hotbar a number key wraps onto another slot (0.52.23's six slots moved the
+      // ladder, sand, torch and axe off theirs): fail loudly instead.
+      const slot = num(at('slot'), o.slot, 0, HOTBAR_SLOTS - 1);
+      if (!Number.isInteger(slot)) throw new ViewError(`${at('slot')}: expected a whole number`);
+      return { do: d, slot };
+    }
+    case 'pick':
+      if (typeof o.item !== 'string' || !/^[a-z0-9_]+:[a-z0-9_]+$/.test(o.item)) {
+        throw new ViewError(`${at('item')}: expected an item name (e.g. "dwell:torch")`);
+      }
+      return { do: d, item: o.item };
     case 'region': {
       if (o.op !== 'fill' && o.op !== 'clear')
         throw new ViewError(`${at('op')}: expected "fill" or "clear"`);

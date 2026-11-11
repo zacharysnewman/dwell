@@ -5904,7 +5904,7 @@
     },
     {
       "name": "torch-cave-a",
-      "notes": "A hill with a tunnel into a room (as tunnel-a), at midnight: walked into the dark, then holding the torch (slot 9) and placing it on the floor (docs/LIGHTS.md). Shots: dark-no-torch, held-torch, held-torch-wall, placed-torch, placed-torch-room.",
+      "notes": "A hill with a tunnel into a room (as tunnel-a), at midnight: walked into the dark, then holding the torch (picked into slot 6) and placing it on the floor (docs/LIGHTS.md). Shots: dark-no-torch, held-torch, held-torch-wall, placed-torch, placed-torch-room.",
       "settings": {
         "timeOfDay": 0.0
       },
@@ -5970,10 +5970,8 @@
           "do": "shot",
           "name": "dark-no-torch"
         },
-        {
-          "do": "select",
-          "slot": 8
-        },
+        { "do": "select", "slot": 5 },
+        { "do": "pick", "item": "dwell:torch" },
         {
           "do": "wait",
           "s": 0.8
@@ -6051,7 +6049,7 @@
     },
     {
       "name": "torch-cave-b",
-      "notes": "A hill with a tunnel into a room (as tunnel-a), at midnight: walked into the dark, then holding the torch (slot 9) and placing it on the floor (docs/LIGHTS.md). Shots: dark-no-torch, held-torch, held-torch-wall, placed-torch, placed-torch-room. On face B (its midnight is time 0.5).",
+      "notes": "A hill with a tunnel into a room (as tunnel-a), at midnight: walked into the dark, then holding the torch (picked into slot 6) and placing it on the floor (docs/LIGHTS.md). Shots: dark-no-torch, held-torch, held-torch-wall, placed-torch, placed-torch-room. On face B (its midnight is time 0.5).",
       "face": "b",
       "settings": {
         "timeOfDay": 0.5
@@ -6121,10 +6119,8 @@
           "do": "shot",
           "name": "dark-no-torch"
         },
-        {
-          "do": "select",
-          "slot": 8
-        },
+        { "do": "select", "slot": 5 },
+        { "do": "pick", "item": "dwell:torch" },
         {
           "do": "wait",
           "s": 0.8
@@ -6211,10 +6207,8 @@
           "do": "settle",
           "maxS": 120
         },
-        {
-          "do": "select",
-          "slot": 8
-        },
+        { "do": "select", "slot": 5 },
+        { "do": "pick", "item": "dwell:torch" },
         {
           "do": "time",
           "t": 0
@@ -6285,10 +6279,8 @@
           "do": "settle",
           "maxS": 120
         },
-        {
-          "do": "select",
-          "slot": 8
-        },
+        { "do": "select", "slot": 5 },
+        { "do": "pick", "item": "dwell:torch" },
         {
           "do": "look",
           "yaw": 90,
@@ -6443,10 +6435,8 @@
           "do": "wait",
           "s": 0.8
         },
-        {
-          "do": "select",
-          "slot": 8
-        },
+        { "do": "select", "slot": 5 },
+        { "do": "pick", "item": "dwell:torch" },
         {
           "do": "look",
           "yaw": 90,
@@ -6497,10 +6487,8 @@
           "do": "shot",
           "name": "placed-pillar"
         },
-        {
-          "do": "select",
-          "slot": 8
-        },
+        { "do": "select", "slot": 5 },
+        { "do": "pick", "item": "dwell:torch" },
         {
           "do": "look",
           "yaw": 75,
@@ -6602,10 +6590,8 @@
           "do": "wait",
           "s": 0.8
         },
-        {
-          "do": "select",
-          "slot": 8
-        },
+        { "do": "select", "slot": 5 },
+        { "do": "pick", "item": "dwell:torch" },
         {
           "do": "look",
           "yaw": 90,
@@ -6656,10 +6642,8 @@
           "do": "shot",
           "name": "placed-pillar"
         },
-        {
-          "do": "select",
-          "slot": 8
-        },
+        { "do": "select", "slot": 5 },
+        { "do": "pick", "item": "dwell:torch" },
         {
           "do": "look",
           "yaw": 75,
@@ -7044,7 +7028,7 @@
     },
     {
       "name": "felling",
-      "notes": "Felling (docs/FELLING.md): on the flat world, a log trunk (slot 6) with a leaf crown (slot 7) built before the player, its trunk broken near the base: it tips away, falls and settles as logs lying on the ground. Shots: tree, fall-a, fall-b, fall-c, settled.",
+      "notes": "Felling (docs/FELLING.md): on the flat world, a log trunk with a leaf crown (picked into slot 6) built before the player, its trunk broken near the base: it tips away, falls and settles as logs lying on the ground. Shots: tree, fall-a, fall-b, fall-c, settled.",
       "world": "flat",
       "steps": [
         {
@@ -7060,10 +7044,8 @@
           "yaw": 0,
           "pitch": 0
         },
-        {
-          "do": "select",
-          "slot": 5
-        },
+        { "do": "select", "slot": 5 },
+        { "do": "pick", "item": "dwell:log" },
         {
           "do": "region",
           "op": "fill",
@@ -7074,10 +7056,8 @@
           "do": "wait",
           "s": 2
         },
-        {
-          "do": "select",
-          "slot": 6
-        },
+        { "do": "select", "slot": 5 },
+        { "do": "pick", "item": "dwell:leaves" },
         {
           "do": "region",
           "op": "fill",
@@ -7194,16 +7174,18 @@
     },
     {
       "name": "axe",
-      "notes": "The stone axe as weighty melee (ADR 0067, 0.50.38): on the flat world a log trunk 1.5 m ahead with a leaf crown; the axe (slot 9) held in both grips, a free swing at the sky, a bounce off the ground, notching swings with shots of the impact, the deep notch, the lean, the leaves, and the fall.",
+      "notes": "The stone axe as weighty melee (ADR 0067, 0.50.38): on the flat world a log trunk 1.5 m ahead with a leaf crown; the axe (picked into slot 6) held in both grips, a free swing at the sky, a bounce off the ground, notching swings with shots of the impact, the deep notch, the lean, the leaves, and the fall.",
       "world": "flat",
       "steps": [
         { "do": "settle", "maxS": 60 },
         { "do": "time", "t": 0.45 },
         { "do": "look", "yaw": 0, "pitch": 0 },
-        { "do": "select", "slot": 7 },
+        { "do": "select", "slot": 5 },
+        { "do": "pick", "item": "dwell:log" },
         { "do": "region", "op": "fill", "from": [0, 0, 2], "to": [0, 9, 2] },
         { "do": "wait", "s": 2 },
-        { "do": "select", "slot": 9 },
+        { "do": "select", "slot": 5 },
+        { "do": "pick", "item": "dwell:leaves" },
         { "do": "region", "op": "fill", "from": [-1, 7, 1], "to": [-1, 9, 3] },
         { "do": "wait", "s": 1.5 },
         { "do": "region", "op": "fill", "from": [1, 7, 1], "to": [1, 9, 3] },
@@ -7212,7 +7194,8 @@
         { "do": "wait", "s": 1.5 },
         { "do": "region", "op": "fill", "from": [0, 7, 3], "to": [0, 9, 3] },
         { "do": "wait", "s": 1.5 },
-        { "do": "select", "slot": 8 },
+        { "do": "select", "slot": 5 },
+        { "do": "pick", "item": "dwell:stone_axe" },
         { "do": "wait", "s": 1 },
         { "do": "shot", "name": "01-idle-level" },
         { "do": "edit", "action": "place" },

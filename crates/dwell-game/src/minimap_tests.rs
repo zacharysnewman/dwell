@@ -966,10 +966,8 @@ dwell_world::both_faces!(
             }
         }
         let depth_m = m_of_row(GROUND + rows) - m_of_row(GROUND);
-        let generated = dwell_look::lod_map::shade_srgb(
-            SEA,
-            dwell_look::lod_map::LOD_MAP.water_shade(depth_m),
-        );
+        let generated =
+            dwell_look::lod_map::shade_srgb(SEA, dwell_look::lod_map::LOD_MAP.water_shade(depth_m));
         for (what, eye) in [
             ("from over the surface", m_of_row(GROUND + rows) + 1.6),
             ("from the sea bottom", m_of_row(GROUND) + 1.6),

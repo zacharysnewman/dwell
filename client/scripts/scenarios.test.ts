@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parseScenarios, scenarioUrl, scenarioView, timelapseTimes } from './scenarios.ts';
+import { HOTBAR_SLOTS } from '../src/ui/inventory.gen.ts';
 import { viewUrl } from './views.ts';
 
 const file = (scenarios: unknown[]): unknown => ({ scenarios });
@@ -59,6 +60,48 @@ describe('scenarios', () => {
     expect(bad({ do: 'view', clouds: 'medium' })).toThrow(/"off", "low" or "high"/);
     expect(bad({ do: 'view', pixelError: 40 })).toThrow(/pixelError/);
     expect(bad({ do: 'view', fog: false })).toThrow(/fog/);
+  });
+
+  it('picks an item by name, and a select past the hotbar fails', () => {
+    // 0.52.23's six-slot hotbar: a `select` of the old slots 6–9 (the torch, the axe, …) wrapped
+    // onto another slot and the scenario placed the wrong thing without a word.
+    const [s] = parseScenarios(
+      file([
+        {
+          name: 'a',
+          steps: [
+            { do: 'select', slot: HOTBAR_SLOTS - 1 },
+            { do: 'pick', item: 'dwell:torch' },
+          ],
+        },
+      ]),
+    );
+    expect(s.steps).toEqual([
+      { do: 'select', slot: HOTBAR_SLOTS - 1 },
+      { do: 'pick', item: 'dwell:torch' },
+    ]);
+    const bad =
+      (step: unknown): (() => unknown) =>
+      () =>
+        parseScenarios(file([{ name: 'a', steps: [step] }]));
+    expect(bad({ do: 'select', slot: HOTBAR_SLOTS })).toThrow(/slot: 6 is outside 0–5/);
+    expect(bad({ do: 'select', slot: 8 })).toThrow(/slot/);
+    expect(bad({ do: 'select', slot: 1.5 })).toThrow(/whole number/);
+    expect(bad({ do: 'pick', item: 'torch' })).toThrow(/item name/);
+    expect(bad({ do: 'pick' })).toThrow(/item/);
+    expect(bad({ do: 'pick', item: 'dwell:torch', slot: 2 })).toThrow(/slot/);
+  });
+
+  it('the checked-in scenarios reach items by pick, not past the hotbar', () => {
+    const json = JSON.parse(
+      readFileSync(new URL('../bench/scenarios.json', import.meta.url), 'utf8'),
+    ) as unknown;
+    const picks = parseScenarios(json).flatMap((s) =>
+      s.steps.flatMap((t) => (t.do === 'pick' ? [t.item] : [])),
+    );
+    expect(new Set(picks)).toEqual(
+      new Set(['dwell:log', 'dwell:leaves', 'dwell:stone_axe', 'dwell:torch']),
+    );
   });
 
   it('fills defaults and makes a local-world address', () => {

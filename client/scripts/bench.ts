@@ -527,6 +527,11 @@ async function step(run: Run, s: Step): Promise<void> {
     case 'select':
       await call(page, `d.select(${String(s.slot)})`);
       return;
+    case 'pick':
+      if ((await call<boolean | null>(page, `d.pick(${JSON.stringify(s.item)})`)) !== true) {
+        throw new Error(`pick: ${s.item} is not a creative item here`);
+      }
+      return;
     case 'brush':
       await call(page, `d.brush(${JSON.stringify(s.command)})`);
       return;

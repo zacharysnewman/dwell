@@ -29,7 +29,9 @@ world; the minimap is per build, its looks the same for every world.
    data alone.
 2. **The minimap is the client crate's** (`dwell-game` `minimap.rs`, platform-free and tested
    natively): it reads each column's top within the disc from the client's streamed voxels (its
-   colour: the block's LOD colour, `dwell_mesh::lod_color`; water darkened by its depth; a hill over
+   colour: the block's LOD colour, `dwell_mesh::lod_color`; water darkened by its depth as the generated map darkens it, `LOD_MAP.water_shade`, a sea deeper
+   than `scanUpM` over the eye read from its surface (0.52.36: the scan's own steeper ramp painted an
+   explored sea bottom near-black blue); a hill over
    the scan's top followed up to its surface), on the player's own face through `FaceFrame` (face B's
    ground on face B), into a face-local grid; a move of a texel reads it again starting a little over
    each column's last top (a whole read every 2 s), and the round RGBA disc is drawn from the grid
