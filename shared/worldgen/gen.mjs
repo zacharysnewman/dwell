@@ -246,11 +246,15 @@ export function validatePlacements(
       const s = structures.get(n);
       if (!s && species.has(n)) {
         if (!(Number.isInteger(w) && w >= 1 && w <= 1_000_000))
-          fail(`${at}: structures.${n} weight must be a whole number in [1, 1000000]`);
+          fail(
+            `${at}: structures.${n} weight must be a whole number in [1, 1000000]`,
+          );
         continue;
       }
       if (!s)
-        fail(`${at}: structure ${n} is not in shared/structures or shared/trees`);
+        fail(
+          `${at}: structure ${n} is not in shared/structures or shared/trees`,
+        );
       if (s.kind !== "voxels")
         fail(`${at}: structure ${n} is not of kind voxels`);
       if (reach(s) > MAX_REACH)
@@ -580,6 +584,7 @@ export function biomeRefs() {
     decorations: names("decorations.json", "decorations"),
     placements: names("placements.json", "placements"),
     stacks: names("rocks.json", "stacks"),
+    rocks: names("rocks.json", "rocks"),
     ground: new Set(
       JSON.parse(
         readFileSync(join(here, "../ground/ground.json"), "utf8"),
@@ -683,11 +688,20 @@ export function validateFixtureWorlds(fixtures, world, pool = null) {
     // Offered in the New world form (0.52.64): a label and a line for people.
     if (f.newWorld !== undefined) {
       const n = f.newWorld;
-      if (typeof n?.label !== "string" || n.label.length < 1 || n.label.length > 40)
+      if (
+        typeof n?.label !== "string" ||
+        n.label.length < 1 ||
+        n.label.length > 40
+      )
         fail("newWorld.label must be 1 to 40 characters");
-      if (n.description !== undefined && (typeof n.description !== "string" || n.description.length > 200))
+      if (
+        n.description !== undefined &&
+        (typeof n.description !== "string" || n.description.length > 200)
+      )
         fail("newWorld.description must be at most 200 characters");
-      const more = Object.keys(n).filter((k) => !["label", "description"].includes(k));
+      const more = Object.keys(n).filter(
+        (k) => !["label", "description"].includes(k),
+      );
       if (more.length) fail(`newWorld: unknown ${more.join(", ")}`);
     }
     const merged = structuredClone(world);
@@ -716,7 +730,15 @@ export function biomePool() {
 /** A fixture world's Chisel edit (biomes.mjs `fixtureWorldEdit`, with the registry's blocks). */
 function fixtureWorldEdit(f, world, pool, fail) {
   const rocks = JSON.parse(readFileSync(join(here, "rocks.json"), "utf8"));
-  return fixtureWorldEditOf(f, world, pool, rocks, registryBlocks(), biomeRefs(), fail);
+  return fixtureWorldEditOf(
+    f,
+    world,
+    pool,
+    rocks,
+    registryBlocks(),
+    biomeRefs(),
+    fail,
+  );
 }
 
 /** terrain.json `tectonics` (systemic terrain T5) as Rust: the keys in camelCase become snake_case. */
@@ -931,7 +953,7 @@ export function terrainRust({
       rs.push(`        gullies: ${rf(b.gullies ?? 0)},`);
       const a = b.arches;
       rs.push(
-        `        arches: ${a === undefined || a.density === 0 ? "None" : `Some(crate::arches::Arches { density: ${rf(a.density)}, span: [${rf(a.span[0])}, ${rf(a.span[1])}], rise: [${rf(a.rise[0])}, ${rf(a.rise[1])}], lintel: [${rf(a.lintel[0])}, ${rf(a.lintel[1])}], fin: ${rf(a.fin)}, overhangs: ${a.overhangs === true} })`},`,
+        `        arches: ${a === undefined || a.density === 0 ? "None" : `Some(crate::arches::Arches { density: ${rf(a.density)}, span: [${rf(a.span[0])}, ${rf(a.span[1])}], rise: [${rf(a.rise[0])}, ${rf(a.rise[1])}], lintel: [${rf(a.lintel[0])}, ${rf(a.lintel[1])}], fin: ${rf(a.fin)}, overhangs: ${a.overhangs === true}, fins: ${a.fins === undefined ? "None" : `Some(crate::arches::Fins { approach: ${rf(a.fins.approach)}, width: ${rf(a.fins.width)}, overrun: ${rf(a.fins.overrun ?? 0)} })`}, rock: ${a.rock === undefined ? "None" : `Some(${JSON.stringify(a.rock)})`} })`},`,
       );
       const wl = b.waterLook;
       if (!wl) rs.push("        water_look: None,");
@@ -999,7 +1021,9 @@ export function terrainRust({
   rs.push("#[doc(hidden)]");
   rs.push("pub const FIXTURE_WORLD_EDITS: &[(&str, &str)] = &[");
   for (const w of worlds.filter((w) => w.edit))
-    rs.push(`    (${JSON.stringify(w.name)}, r##"${JSON.stringify(w.edit)}"##),`);
+    rs.push(
+      `    (${JSON.stringify(w.name)}, r##"${JSON.stringify(w.edit)}"##),`,
+    );
   rs.push("];");
   rs.push("");
   rs.push(

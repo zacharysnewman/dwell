@@ -260,6 +260,28 @@ fn arches(v: &Value) -> Result<Option<crate::arches::Arches>, String> {
             Some(Value::Bool(b)) => *b,
             Some(_) => return Err("arches.overhangs must be true or false".into()),
         },
+        fins: match a.get("fins") {
+            None => None,
+            Some(f) => {
+                let n = |k: &str, lo: f64, hi: f64, or: Option<f64>| match (f.get(k), or) {
+                    (None, Some(d)) => Ok(d),
+                    (v, _) => match v.and_then(Value::as_f64) {
+                        Some(x) if (lo..=hi).contains(&x) => Ok(x),
+                        _ => Err(format!("arches.fins.{k} must be in [{lo}, {hi}]")),
+                    },
+                };
+                Some(crate::arches::Fins {
+                    approach: n("approach", 0.0, 1000.0, None)?,
+                    width: n("width", 2.0, 64.0, None)?,
+                    overrun: n("overrun", 0.0, 2000.0, Some(0.0))?,
+                })
+            }
+        },
+        rock: match a.get("rock") {
+            None => None,
+            Some(Value::String(r)) => Some(leak(r)),
+            Some(_) => return Err("arches.rock must be a rock name".into()),
+        },
     };
     Ok((out.density > 0.0).then_some(out))
 }

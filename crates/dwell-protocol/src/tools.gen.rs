@@ -55,6 +55,8 @@ pub static BLOCK_DAMAGE: &[BlockDamageDef] = &[
     BlockDamageDef { block: "dwell:snow_ramp", default: Some(6), tools: &[("shovel", 3)], look: Some(DamageLook { kind: DamageLookKind::Scoops, size: 0.36, color: [185, 201, 222], crack: [143, 163, 192] }), chips: Some(Chips { count: 6, color: [233, 239, 246], speed: 1.6, size: 0.05 }) },
     BlockDamageDef { block: "dwell:glacier_ice", default: None, tools: &[("pickaxe", 4)], look: Some(DamageLook { kind: DamageLookKind::Shards, size: 0.3, color: [238, 246, 250], crack: [79, 127, 184] }), chips: Some(Chips { count: 8, color: [207, 230, 242], speed: 2.8, size: 0.04 }) },
     BlockDamageDef { block: "dwell:glacier_ice_ramp", default: None, tools: &[("pickaxe", 4)], look: Some(DamageLook { kind: DamageLookKind::Shards, size: 0.3, color: [238, 246, 250], crack: [79, 127, 184] }), chips: Some(Chips { count: 8, color: [207, 230, 242], speed: 2.8, size: 0.04 }) },
+    BlockDamageDef { block: "dwell:red_sandstone", default: None, tools: &[("pickaxe", 7)], look: Some(DamageLook { kind: DamageLookKind::Shards, size: 0.34, color: [239, 198, 164], crack: [122, 62, 40] }), chips: Some(Chips { count: 7, color: [181, 100, 63], speed: 2.6, size: 0.045 }) },
+    BlockDamageDef { block: "dwell:red_sandstone_ramp", default: None, tools: &[("pickaxe", 7)], look: Some(DamageLook { kind: DamageLookKind::Shards, size: 0.34, color: [239, 198, 164], crack: [122, 62, 40] }), chips: Some(Chips { count: 7, color: [181, 100, 63], speed: 2.6, size: 0.045 }) },
 ];
 
 /// Tools that wear (`durability.items`): (item, hits it survives).

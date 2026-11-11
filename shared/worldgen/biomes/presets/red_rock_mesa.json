@@ -75,6 +75,13 @@
     "rise": [4, 12],
     "lintel": [2, 6],
     "fin": 14,
-    "overhangs": true
+    "overhangs": true,
+    "fins": {
+      "$comment": "The erosion's fin rule (0.52.66): where the cut-back fronts from drainage lines on either side come within approach m of meeting, or have met by at most overrun m, a fin width m wide stands on the crest between them, so the arches find fins.",
+      "approach": 150,
+      "width": 12,
+      "overrun": 400
+    },
+    "rock": "dwell:sandstone"
   }
 }
