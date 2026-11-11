@@ -44,6 +44,9 @@ pub enum Overlay {
     /// The tectonics (systemic terrain T5): the two plates (the overriding tan, the other blue-grey,
     /// the old core darker), the boundary dark, the volcanoes red by height; grey when off.
     Tectonics,
+    /// The structures placed (ADR 0074 B5): trees, boulders and every placement rule, expected per
+    /// hectare by the biomes' `trees` and the climate; pale (none) to dark green (about 60).
+    Placements,
 }
 
 impl Overlay {
@@ -58,6 +61,7 @@ impl Overlay {
             7 => Self::Vegetation,
             8 => Self::Erosion,
             9 => Self::Tectonics,
+            10 => Self::Placements,
             _ => Self::Blocks,
         }
     }
@@ -276,6 +280,14 @@ pub fn preview_shaded(
             Overlay::Vegetation => bytes(match g.vegetation_at(x, z) {
                 None => [0.5; 3],
                 Some(d) => lerp3([0.86, 0.78, 0.58], [0.1, 0.42, 0.16], d),
+            }),
+            Overlay::Placements => bytes(match g.placement_density_at(x, z) {
+                None => [0.5; 3],
+                Some(d) => lerp3(
+                    [0.93, 0.88, 0.74],
+                    [0.05, 0.3, 0.1],
+                    1.0 - (-d / 30.0).exp(),
+                ),
             }),
             Overlay::Erosion => bytes(match g.erosion_at(x, z) {
                 None => [0.5; 3],
@@ -654,6 +666,39 @@ mod tests {
         b["rockStack"] = "test:none".into();
         let bad = serde_json::json!({ "biomes": [b] }).to_string();
         assert!(edit_from_json(&bad).err().unwrap().contains("test:none"));
+    }
+
+    #[test]
+    fn the_placement_overlay_follows_the_biomes_trees() {
+        // face-a-only: Chisel previews face A (the placements' faces are dwell-worldgen's
+        // tests/trees.rs).
+        let t = BifacialTerrain::height_field(7);
+        let base = t.local(dwell_world::Face::A).clone();
+        let (x0, n, texel) = (-2048, 32, 128);
+        let shade = |b: Value| {
+            let e = serde_json::json!({ "biomes": [b] });
+            let e = edit_from_json(&e.to_string()).unwrap();
+            let g = base
+                .clone()
+                .with_biomes_and_geology(&e.biomes, e.map, e.geology);
+            let tile = preview(&g, x0, x0, n, texel, Overlay::Placements);
+            // The darker, the denser: the sum of (255 - green) over the land drawn.
+            tile.chunks(4)
+                .filter(|p| p[3] > 0)
+                .map(|p| u64::from(255 - p[1]))
+                .sum::<u64>()
+        };
+        let mut d = file("biomes/default.json");
+        let plain = shade(d.clone());
+        d["trees"] = serde_json::json!({ "pine_groves": 0.2 });
+        let sparse = shade(d.clone());
+        d["placements"] = serde_json::json!([]);
+        d.as_object_mut().unwrap().remove("trees");
+        let bare = shade(d);
+        assert!(
+            plain > sparse && sparse > bare,
+            "{plain} > {sparse} > {bare}"
+        );
     }
 
     #[test]

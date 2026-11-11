@@ -160,13 +160,15 @@ fn trees(v: &Value, placements: &[&'static str]) -> Result<&'static [(&'static s
     let t = t
         .as_object()
         .ok_or("trees must map placement names to densities")?;
+    if let Some(k) = t.keys().find(|k| !placements.contains(&k.as_str())) {
+        return Err(format!("trees: {k:?} is not one of its placements"));
+    }
+    // In the placements' order, as the generated table has them.
     let mut out = Vec::new();
-    for (k, d) in t {
-        if !placements.contains(&k.as_str()) {
-            return Err(format!("trees: {k:?} is not one of its placements"));
-        }
+    for &k in placements {
+        let Some(d) = t.get(k) else { continue };
         match d.as_f64() {
-            Some(d) if (0.0..=3.0).contains(&d) => out.push((leak(k), d)),
+            Some(d) if (0.0..=3.0).contains(&d) => out.push((k, d)),
             _ => return Err(format!("trees.{k} must be in [0, 3]")),
         }
     }
