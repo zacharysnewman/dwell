@@ -48,6 +48,32 @@ pub struct Tectonics {
     /// How much the arc's cones resist the erosion (0..1: their erodibility × 1 − this toward the
     /// summit), so a tall cone keeps its relief through the world map's erosion.
     pub cone_hardness: f64,
+    /// The arc cones' radial ridges (0.52.40, Rainier): how many, how deep (m) the glacier-cut
+    /// valleys between them, and how irregular their spacing (radians of angular warp).
+    pub ridge_count: u32,
+    pub ridge_depth: f64,
+    pub ridge_warp: f64,
+    /// The summit's offset (m) from the cone's centre toward `summit_angle` degrees (the foot
+    /// stays put: an asymmetric cone).
+    pub summit_offset: f64,
+    pub summit_angle: f64,
+    /// A shoulder peak (m high, m from the summit, toward degrees, m wide).
+    pub shoulder_height: f64,
+    pub shoulder_distance: f64,
+    pub shoulder_angle: f64,
+    pub shoulder_radius: f64,
+    /// Parasitic flank cones: how many, m high, m wide, m from the centre.
+    pub vent_count: u32,
+    pub vent_height: f64,
+    pub vent_radius: f64,
+    pub vent_distance: f64,
+    /// A crater whose rim stands above `ice_above` m holds an ice dome `ice_dome` m over its rim
+    /// instead of a hollow (no crater lake up there).
+    pub ice_above: f64,
+    pub ice_dome: f64,
+    /// The snow line: cover below `snow_below_c` °C where no steeper than `snow_max_slope`.
+    pub snow_below_c: f64,
+    pub snow_max_slope: f64,
     pub hotspot_count: u32,
     pub hotspot_x: f64,
     pub hotspot_z: f64,
@@ -72,6 +98,11 @@ pub struct Volcano {
     pub crater_depth: f64,
     /// 0 the arc's, or the hotspot chain's age index + 1.
     pub chain: u32,
+}
+
+/// `ice_above`'s off value (no crater is ever that high).
+const fn v_max() -> f64 {
+    100_000.0
 }
 
 /// A smooth bump: 1 at 0, 0 from |t| ≥ 1.
@@ -193,12 +224,111 @@ impl Tectonics {
         }
     }
 
+    /// Whether the arc's cones take the Rainier shape (ridges, an offset summit, a shoulder,
+    /// vents, an ice-filled crater); else [`Tectonics::cone`]'s plain profile.
+    pub fn shaped(&self) -> bool {
+        (self.ridge_count > 0 && self.ridge_depth > 0.0)
+            || self.summit_offset > 0.0
+            || self.shoulder_height > 0.0
+            || (self.vent_count > 0 && self.vent_height > 0.0)
+            || self.ice_above < v_max()
+    }
+
+    /// Whether the snow line is on (`snow_below_c` above −100 °C).
+    pub fn snow_line(&self) -> bool {
+        self.snow_below_c > -100.0
+    }
+
+    /// An arc cone's summit (face-local m): `summit_offset` m from its centre toward `summit_angle`.
+    pub fn summit(&self, v: &Volcano) -> (f64, f64) {
+        let a = self.summit_angle * PI / 180.0;
+        (
+            v.x + self.summit_offset * a.cos(),
+            v.z + self.summit_offset * a.sin(),
+        )
+    }
+
+    /// An arc cone shaped like Rainier at (x, z) (m added): the concave profile measured from the
+    /// offset summit out to the unmoved foot circle, the crater cut (or domed with ice) round the
+    /// summit, radial valleys cut between sharp ridges, then the shoulder and the flank vents.
+    pub fn shaped_cone(&self, v: &Volcano, x: f64, z: f64) -> f64 {
+        let (ax, az) = self.summit(v);
+        let (dx, dz) = (x - ax, z - az);
+        let r = (dx * dx + dz * dz).sqrt();
+        let big_r = v.radius.max(1.0);
+        // The distance from the summit to the foot circle along the ray through (x, z).
+        let (ox, oz) = (ax - v.x, az - v.z);
+        let (ux, uz) = if r > 1e-9 { (dx / r, dz / r) } else { (1.0, 0.0) };
+        let od = ox * ux + oz * uz;
+        let foot = -od + (od * od - (ox * ox + oz * oz) + big_r * big_r).max(0.0).sqrt();
+        let foot = foot.max(1.0);
+        let u = r / foot;
+        let mut h = 0.0f64;
+        if u < 1.0 {
+            h = v.height * (1.0 - u).powf(1.8);
+            if v.crater_radius > 0.0 && r < v.crater_radius {
+                let rim = v.height * (1.0 - v.crater_radius / foot).max(0.0).powf(1.8);
+                let t = r / v.crater_radius;
+                h = if rim > self.ice_above {
+                    rim + self.ice_dome * (1.0 - t * t)
+                } else {
+                    rim - v.crater_depth * (1.0 - t * t)
+                };
+            }
+            if self.ridge_count > 0 && self.ridge_depth > 0.0 {
+                let th = dz.atan2(dx);
+                let w = th
+                    + self.ridge_warp * (3.0 * th + 1.3).sin()
+                    + 0.5 * self.ridge_warp * (5.0 * th + 0.4).sin();
+                // |sin| has its cusps at the ridges' crests (sharp cleavers) and round floors
+                // between (glacier-cut valleys); each valley's depth varies round the cone.
+                let valley = (0.5 * f64::from(self.ridge_count) * w).sin().abs().powf(0.6);
+                let deep = 0.7 + 0.3 * (2.0 * th + 0.9).sin();
+                let s = (u / 0.2).clamp(0.0, 1.0);
+                let env = s * s * (3.0 - 2.0 * s) * ((1.0 - u) / 0.8).min(1.0);
+                h -= self.ridge_depth * env * valley * deep;
+            }
+        }
+        if self.shoulder_height > 0.0 {
+            let a = self.shoulder_angle * PI / 180.0;
+            let (sx, sz) = (
+                ax + self.shoulder_distance * a.cos(),
+                az + self.shoulder_distance * a.sin(),
+            );
+            let t = ((x - sx).powi(2) + (z - sz).powi(2)).sqrt() / self.shoulder_radius.max(1.0);
+            if t < 1.0 {
+                h += self.shoulder_height * (1.0 - t).powf(1.5);
+            }
+        }
+        if self.vent_count > 0 && self.vent_height > 0.0 {
+            for k in 0..self.vent_count {
+                // Round the cone by the golden angle from the summit's side.
+                let a = (self.summit_angle + 40.0 + 137.5 * f64::from(k)) * PI / 180.0;
+                let (cx, cz) = (
+                    v.x + self.vent_distance * a.cos(),
+                    v.z + self.vent_distance * a.sin(),
+                );
+                let t = ((x - cx).powi(2) + (z - cz).powi(2)).sqrt() / self.vent_radius.max(1.0);
+                if t < 1.0 {
+                    h += self.vent_height * (1.0 - t).powf(1.5);
+                }
+            }
+        }
+        h.max(0.0)
+    }
+
     /// Everything the layer adds at (x, z) (m), given the island's coast distance there.
     pub fn height(&self, volcanoes: &[Volcano], x: f64, z: f64, coast: f64) -> f64 {
+        let shaped = self.shaped();
         let mut cones = 0.0f64;
         for v in volcanoes {
-            let r = ((x - v.x).powi(2) + (z - v.z).powi(2)).sqrt();
-            cones = cones.max(Self::cone(v, r));
+            let c = if shaped && v.chain == 0 {
+                self.shaped_cone(v, x, z)
+            } else {
+                let r = ((x - v.x).powi(2) + (z - v.z).powi(2)).sqrt();
+                Self::cone(v, r)
+            };
+            cones = cones.max(c);
         }
         self.boundary(x, z, coast) + cones
     }

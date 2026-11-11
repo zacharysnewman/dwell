@@ -130,4 +130,5 @@ pub const GEOLOGY: Geology = Geology {
     },
     volcanic_stack: "dwell:basalt_flows",
     core_stack: "dwell:granite_core",
+    snow_block: "dwell:snowy_grass",
 };

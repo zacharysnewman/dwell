@@ -31,6 +31,23 @@ export const TERRAIN = {
     craterRadius: [0, 5000],
     craterDepth: [0, 1000],
     coneHardness: [0, 1],
+    ridgeCount: [0, 64, true],
+    ridgeDepth: [0, 3000],
+    ridgeWarp: [0, 2],
+    summitOffset: [0, 10_000],
+    summitAngle: [-360, 360],
+    shoulderHeight: [0, 3000],
+    shoulderDistance: [0, 20_000],
+    shoulderAngle: [-360, 360],
+    shoulderRadius: [{ above: 0 }, 20_000],
+    ventCount: [0, 16, true],
+    ventHeight: [0, 2000],
+    ventRadius: [{ above: 0 }, 10_000],
+    ventDistance: [0, 20_000],
+    iceAbove: [0, 100_000],
+    iceDome: [0, 1000],
+    snowBelowC: [-100, 50],
+    snowMaxSlope: [0, 10],
     hotspotCount: [0, 32, true],
     hotspotX: [-50_000, 50_000],
     hotspotZ: [-50_000, 50_000],
@@ -416,11 +433,15 @@ export function validateRocks(data, blocks) {
   // The tectonic provinces (systemic terrain T5): the stacks of the volcanoes and the old core.
   const t = data.tectonic;
   if (typeof t !== 'object' || t === null) fail('tectonic must be an object');
-  const te = Object.keys(t).filter((k) => !['$comment', 'volcanic', 'core'].includes(k));
+  const te = Object.keys(t).filter((k) => !['$comment', 'volcanic', 'core', 'snow'].includes(k));
   if (te.length) fail(`tectonic: unknown ${te.join(', ')}`);
   for (const k of ['volcanic', 'core']) {
     if (!stacks.has(t[k])) fail(`tectonic.${k} must name a stack (${String(t[k])} is none)`);
   }
+  // The snow line's cover (terrain.json tectonics.snowBelowC): a full block.
+  const sb = blocks.get(t.snow);
+  if (!sb) fail(`tectonic.snow ${JSON.stringify(t.snow)} is not in the registry`);
+  if (sb.shape !== 'full') fail(`tectonic.snow ${t.snow} must be a full block`);
   return data;
 }
 
