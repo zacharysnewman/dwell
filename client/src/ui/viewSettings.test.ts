@@ -40,7 +40,7 @@ describe('clouds setting', () => {
       expect(sanitizeClouds(bad, false)).toBe('high');
       expect(sanitizeClouds(bad, true)).toBe('low');
     }
-    expect(CLOUD_QUALITIES).toEqual(['off', 'low', 'high']);
+    expect(CLOUD_QUALITIES).toEqual(['off', 'low', 'medium', 'high']);
   });
 });
 

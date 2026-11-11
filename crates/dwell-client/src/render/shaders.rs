@@ -1238,8 +1238,7 @@ fn composited(p: vec2i, ndc: vec2f, decks: Decks) -> Composited {
     }
     var vol = vec4f(0.0);
     if (volume) {
-        let max_t = select(1e9, depth * length(ray), c.a > 0.0 && depth > 0.0);
-        vol = dwell_cloud_volume(clear, dir, face, max_t, cloud_jitter(p), frame.clouds, frame.cloud_cfg, frame.cloud_inside, lights);
+        vol = upsampled_clouds(ndc, ray, select(0.0, depth, c.a > 0.0));
     }
     var back = clear;
     if (c.a < 1.0) {
@@ -1254,10 +1253,74 @@ fn composited(p: vec2i, ndc: vec2f, decks: Decks) -> Composited {
     return s;
 }
 
-// The volume march's per-pixel step offset (interleaved gradient noise): the steps' banding becomes
-// a fine, stable dither.
-fn cloud_jitter(p: vec2i) -> f32 {
-    return fract(52.9829189 * fract(0.06711056 * f32(p.x) + 0.00583715 * f32(p.y)));
+// The volume march's per-pixel step offset (interleaved gradient noise), turned each frame (a
+// golden-ratio step over 16 frames) so the accumulation averages the steps' dither away.
+fn cloud_jitter(p: vec2i, frame_index: u32) -> f32 {
+    let ign = fract(52.9829189 * fract(0.06711056 * f32(p.x) + 0.00583715 * f32(p.y)));
+    return fract(ign + f32(frame_index % 16u) * 0.618034);
+}
+
+// The volumetric clouds' accumulation (docs/CLOUDS.md §8.6): the last frame's camera (right, up,
+// forward, the half-angle tangents) and params: x the share of the new frame (1: no history),
+// y the frame index, z how far the eye moved since the last frame (m).
+struct CloudPrev {
+    right: vec4f,
+    up: vec4f,
+    forward: vec4f,
+    tan: vec4f,
+    params: vec4f,
+};
+
+struct CloudOut {
+    @location(0) color: vec4f,
+    @location(1) dist: vec4f,
+};
+
+// The clouds pass (docs/CLOUDS.md §8.6): the volume marched at the tier's reduced resolution, to
+// the end of the layer (not the scene: the composite puts the scene in front by the distance),
+// blended with the last frame's result reprojected by direction (the clouds are far; where they
+// are near, the eye's move over their distance hands over to the new frame). Colour premultiplied
+// by its cover; the distance to the first cloud (65000: none).
+@fragment
+fn clouds_fs(i: SkyOut) -> CloudOut {
+    let dir = normalize(view_ray(i.ndc));
+    let p = vec2i(i.clip.xy);
+    let m = dwell_cloud_march(sky(dir), dir, frame.eye.y, 1e9, cloud_jitter(p, u32(cloud_prev.params.y)), frame.clouds, frame.cloud_cfg, frame.cloud_inside, cloud_lighting());
+    let cur = vec4f(m.layer.rgb * m.layer.a, m.layer.a);
+    let first = select(65000.0, m.first, m.first >= 0.0);
+    var out = cur;
+    let f = dot(dir, cloud_prev.forward.xyz);
+    if (cloud_prev.params.x < 1.0 && f > 1e-3) {
+        let pn = vec2f(dot(dir, cloud_prev.right.xyz) / (f * cloud_prev.tan.x), dot(dir, cloud_prev.up.xyz) / (f * cloud_prev.tan.y));
+        if (abs(pn.x) < 1.0 && abs(pn.y) < 1.0) {
+            let uv = vec2f(pn.x * 0.5 + 0.5, 0.5 - pn.y * 0.5);
+            let hist = textureSampleLevel(cloud_history, cloud_history_sampler, uv, 0.0);
+            let parallax = cloud_prev.params.z / max(min(first, 20000.0), 1.0);
+            let w = mix(cloud_prev.params.x, 1.0, smoothstep(0.001, 0.01, parallax));
+            out = mix(hist, cur, w);
+        }
+    }
+    return CloudOut(out, vec4f(first, 0.0, 0.0, 0.0));
+}
+
+// The clouds pass's result at a full-resolution pixel (`ndc`, its `ray`, the scene's view depth
+// `depth`, 0: the sky) as a layer for dwell_cloud_over: filtered from the reduced buffer, and hidden
+// where the scene is nearer than the nearest of the four texels' first cloud (depth-aware: no cloud
+// bleeds over a mountain in front of it).
+fn upsampled_clouds(ndc: vec2f, ray: vec3f, depth: f32) -> vec4f {
+    let uv = vec2f(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+    let c = textureSampleLevel(clouds_tex, scene_sampler, uv, 0.0);
+    if (c.a <= 0.001) {
+        return vec4f(0.0);
+    }
+    var a = c.a;
+    if (depth > 0.0) {
+        let d = textureGather(0, cloud_dist_tex, scene_sampler, uv);
+        let first = min(min(d.x, d.y), min(d.z, d.w));
+        let scene = depth * length(ray);
+        a *= 1.0 - smoothstep(0.95, 1.05, first / scene);
+    }
+    return vec4f(c.rgb / c.a, a);
 }
 
 // The sky behind the world toward `dir` with both faces' clouds, the world's and not the viewer's
@@ -3199,7 +3262,12 @@ fn scene_bindings(samples: u32) -> String {
          @group(2) @binding(1) var scene_depth: {depth};\n\
          @group(3) @binding(0) var finished: texture_2d<f32>;\n\
          @group(2) @binding(2) var scene_sampler: sampler;\n\
-         @group(2) @binding(3) var shafts_tex: texture_2d<f32>;\n",
+         @group(2) @binding(3) var shafts_tex: texture_2d<f32>;\n\
+         @group(2) @binding(4) var clouds_tex: texture_2d<f32>;\n\
+         @group(2) @binding(5) var cloud_dist_tex: texture_2d<f32>;\n\
+         @group(3) @binding(1) var cloud_history: texture_2d<f32>;\n\
+         @group(3) @binding(2) var cloud_history_sampler: sampler;\n\
+         @group(3) @binding(3) var<uniform> cloud_prev: CloudPrev;\n",
     )
 }
 
@@ -4062,10 +4130,15 @@ mod tests {
             src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
         };
         let c = body("composited");
-        assert_eq!(c.matches("dwell_cloud_volume(").count(), 1);
+        assert!(c.contains("vol = upsampled_clouds(ndc, ray,"));
         assert!(c.contains("deck = vec4f(deck.xy, 0.0, 0.0);"));
-        assert!(c.contains("max_t = select(1e9, depth * length(ray)"));
-        assert_eq!(src.matches("dwell_cloud_volume(clear, dir,").count(), 1);
-        assert!(!body("sky_above_with_clouds").contains("dwell_cloud_volume"));
+        // The march runs in the clouds pass only (at the tier's resolution), accumulated.
+        assert_eq!(src.matches("= dwell_cloud_march(").count(), 1);
+        assert!(body("clouds_fs").contains("= dwell_cloud_march("));
+        assert!(body("clouds_fs").contains("textureSampleLevel(cloud_history"));
+        let cheap = body("sky_above_with_clouds");
+        assert!(!cheap.contains("dwell_cloud_march") && !cheap.contains("upsampled_clouds"));
+        // The upsample hides clouds behind the scene by the nearest texel's first cloud.
+        assert!(body("upsampled_clouds").contains("textureGather(0, cloud_dist_tex"));
     }
 }

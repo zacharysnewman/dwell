@@ -57,14 +57,24 @@
     "maxDistanceM": 22000
   },
   "tiers": {
-    "$comment": "Per Clouds setting value: the march's steps per pixel (0: the 2D deck, as before) and the light samples per step (0-4). The CPU adapter draws no clouds (clouds_for).",
+    "$comment": "Per Clouds setting value: the march's steps per pixel (0: the 2D deck, as before), the light samples per step (0-4), the march's resolution divisor (1 full, 2 half, 4 quarter: the march draws into a buffer that size, accumulated over frames and upsampled by the composite) and how much of each new frame goes into the accumulated picture (historyBlend: lower is smoother, slower to follow). The CPU adapter draws no clouds (clouds_for).",
     "high": {
-      "steps": 20,
-      "lightSteps": 1
+      "steps": 24,
+      "lightSteps": 2,
+      "divisor": 2,
+      "historyBlend": 0.2
+    },
+    "medium": {
+      "steps": 16,
+      "lightSteps": 1,
+      "divisor": 4,
+      "historyBlend": 0.2
     },
     "low": {
       "steps": 0,
-      "lightSteps": 0
+      "lightSteps": 0,
+      "divisor": 1,
+      "historyBlend": 1
     }
   },
   "plumes": []

@@ -86,17 +86,21 @@ pub struct VolumeTunables {
     pub max_distance_m: f64,
 }
 
-/// One Clouds setting value's march (`tiers`): steps per pixel (0: the 2D deck) and light samples
-/// per step.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// One Clouds setting value's march (`tiers`): steps per pixel (0: the 2D deck), light samples
+/// per step, the march's resolution divisor and the share of each new frame in the accumulated
+/// picture.
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct VolumeTier {
     pub steps: u32,
     pub light_steps: u32,
+    pub divisor: u32,
+    pub history_blend: f64,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct VolumeTiers {
     pub high: VolumeTier,
+    pub medium: VolumeTier,
     pub low: VolumeTier,
 }
 
@@ -137,11 +141,13 @@ pub const LACUNARITY: f64 = 2.236_067_977_499_79;
 /// `coverage` is close to the share of the sky covered.
 const CONTRAST: f64 = 1.9;
 
-/// The Clouds setting: Off, Low (fewer octaves, no self-shadow) or High.
+/// The Clouds setting: Off, Low (the 2D deck: fewer octaves, no self-shadow), Medium or High (the
+/// volume at their `tiers`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CloudQuality {
     Off,
     Low,
+    Medium,
     High,
 }
 
@@ -151,6 +157,7 @@ impl CloudQuality {
         match name {
             "off" => Some(Self::Off),
             "low" => Some(Self::Low),
+            "medium" => Some(Self::Medium),
             "high" => Some(Self::High),
             _ => None,
         }
@@ -159,7 +166,7 @@ impl CloudQuality {
         match self {
             Self::Off => 0,
             Self::Low => t.shape.low_octaves,
-            Self::High => t.shape.octaves,
+            Self::Medium | Self::High => t.shape.octaves,
         }
     }
     pub fn self_shadow(self) -> bool {
@@ -171,8 +178,11 @@ impl CloudQuality {
             Self::Off => VolumeTier {
                 steps: 0,
                 light_steps: 0,
+                divisor: 1,
+                history_blend: 1.0,
             },
             Self::Low => t.tiers.low,
+            Self::Medium => t.tiers.medium,
             Self::High => t.tiers.high,
         }
     }
@@ -617,10 +627,23 @@ fn dwell_cloud_density(q: vec2f, h: f32, rel: vec2f, coverage: f32, warp_off: ve
 // Lit by the sun or the moon over the face: Beer's law along a few light samples, a powder term for
 // dark edges, the sky's light in the shade, a silver lining toward the light.
 fn dwell_cloud_volume(clear: vec3f, dir: vec3f, face: f32, max_t: f32, jitter: f32, offsets: vec4f, cfg: vec4f, inside: vec4f, lights: CloudLighting) -> vec4f {
+	return dwell_cloud_march(clear, dir, face, max_t, jitter, offsets, cfg, inside, lights).layer;
+}
+
+// The march's layer and the distance (m) along the ray to the first cloud it met (-1: none).
+struct CloudMarch {
+	layer: vec4f,
+	first: f32,
+};
+
+// dwell_cloud_volume with the distance to the first cloud: the half-resolution pass keeps it, so
+// the composite can put the scene in front of clouds behind it.
+fn dwell_cloud_march(clear: vec3f, dir: vec3f, face: f32, max_t: f32, jitter: f32, offsets: vec4f, cfg: vec4f, inside: vec4f, lights: CloudLighting) -> CloudMarch {
+	let none = CloudMarch(vec4f(0.0), -1.0);
 	let steps = i32(floor(inside.w));
 	let light_steps = i32(round(fract(inside.w) * 8.0));
 	if (steps <= 0 || cfg.y <= 0.0) {
-		return vec4f(0.0);
+		return none;
 	}
 	let eye_h = CLOUD_ALTITUDE - cfg.w;
 	let rise = face_rise(face, dir);
@@ -632,10 +655,10 @@ fn dwell_cloud_volume(clear: vec3f, dir: vec3f, face: f32, max_t: f32, jitter: f
 		t0 = max(t0, min(a, b));
 		t1 = min(t1, max(a, b));
 	} else if (eye_h < CLOUD_VOL_LO || eye_h > CLOUD_VOL_HI) {
-		return vec4f(0.0);
+		return none;
 	}
 	if (t1 <= t0) {
-		return vec4f(0.0);
+		return none;
 	}
 	let up = face_up(face);
 	let sun_up = dot(lights.sun, up);
@@ -687,7 +710,7 @@ fn dwell_cloud_volume(clear: vec3f, dir: vec3f, face: f32, max_t: f32, jitter: f
 	}
 	let cover = 1.0 - trans;
 	if (cover <= 0.0) {
-		return vec4f(0.0);
+		return none;
 	}
 	var col = energy / cover;
 	// The silver lining: thin cloud toward the light glows.
@@ -696,7 +719,7 @@ fn dwell_cloud_volume(clear: vec3f, dir: vec3f, face: f32, max_t: f32, jitter: f
 	// Far cloud takes the sky's haze behind it, and fades out with the deck's distance fade.
 	let fade = dwell_cloud_fade(cfg.w);
 	col = mix(col, clear, 0.85 * smoothstep(0.0, fade.y, first));
-	return vec4f(col, cover * CLOUD_OPACITY * (1.0 - smoothstep(fade.x, fade.y, first)));
+	return CloudMarch(vec4f(col, cover * CLOUD_OPACITY * (1.0 - smoothstep(fade.x, fade.y, first))), first);
 }
 ";
 

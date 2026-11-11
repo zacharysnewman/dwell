@@ -143,6 +143,55 @@ pub fn clouds_for(device_type: wgpu::DeviceType, quality: CloudQuality) -> Cloud
     }
 }
 
+/// The volumetric clouds' buffer size for a drawing buffer of `size` at `tier` (its resolution
+/// divisor, rounded up); 1 × 1 without the volume.
+pub fn cloud_buffer_size(
+    size: (u32, u32),
+    tier: Option<dwell_look::clouds::VolumeTier>,
+) -> (u32, u32) {
+    tier.map_or((1, 1), |t| {
+        let d = t.divisor.max(1);
+        (size.0.div_ceil(d).max(1), size.1.div_ceil(d).max(1))
+    })
+}
+
+/// How far (m) the eye may move in one frame and keep the clouds' history: past it (a teleport, a
+/// respawn) the accumulation starts over.
+pub const CLOUD_HISTORY_JUMP_M: f64 = 200.0;
+
+/// The clouds pass's uniform (`CloudPrev`, docs/CLOUDS.md §8.6): the last frame's camera `prev`
+/// (none: this frame's, with no history), the share `blend` of the new frame, the frame index and
+/// how far the eye moved.
+pub fn cloud_prev_block(
+    prev: Option<([[f32; 4]; 4], V3)>,
+    view: [[f32; 4]; 4],
+    eye: V3,
+    blend: f64,
+    frame_index: u32,
+) -> [[f32; 4]; 5] {
+    let (camera, moved, share) = match prev {
+        Some((camera, then)) => {
+            let d = ((eye[0] - then[0]).powi(2)
+                + (eye[1] - then[1]).powi(2)
+                + (eye[2] - then[2]).powi(2))
+            .sqrt();
+            (
+                camera,
+                d,
+                if d > CLOUD_HISTORY_JUMP_M { 1.0 } else { blend },
+            )
+        }
+        None => (view, 0.0, 1.0),
+    };
+    [
+        camera[0],
+        camera[1],
+        camera[2],
+        camera[3],
+        [share as f32, (frame_index % 4096) as f32, moved as f32, 0.0],
+    ]
+}
+
 /// The water a frame draws with the Water setting `quality`: the data's CPU tier on a CPU adapter
 /// (opaque: no scene copy, one layer of ripples; shared/look/watertiers.json `cpu`).
 pub fn water_for(device_type: wgpu::DeviceType, quality: WaterQuality) -> WaterQuality {
@@ -1107,6 +1156,13 @@ pub struct Renderer {
     shafts: ShaftQuality,
     scene_read_layout: wgpu::BindGroupLayout,
     shafts_pipeline: wgpu::RenderPipeline,
+    /// The volumetric clouds pass (docs/CLOUDS.md §8.6): its group layout, uniform, pipeline, the
+    /// last frame's camera (right, up, forward, tangents; the eye) and the frame count (jitter).
+    cloud_layout: wgpu::BindGroupLayout,
+    cloud_prev_buffer: wgpu::Buffer,
+    clouds_pipeline: wgpu::RenderPipeline,
+    cloud_prev: std::cell::Cell<Option<([[f32; 4]; 4], V3)>>,
+    cloud_frames: std::cell::Cell<u32>,
     composite_pipeline: wgpu::RenderPipeline,
     /// While the wind is on (`motion_pass`): the composite into the finished image, the motion
     /// pass from it into the canvas, the image's layout, and the image (made when first needed).
@@ -1771,6 +1827,46 @@ impl Renderer {
             "shafts_fs",
             frame::SHAFTS.into(),
         );
+        // The volumetric clouds pass (docs/CLOUDS.md §8.6): the march into the clouds buffer and
+        // its distances, at the tier's reduced size, over the last frame's (group 3).
+        let cloud_layout = frame::cloud_history_layout(&device);
+        let cloud_prev_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("cloud history"),
+            size: frame::CLOUD_PREV_BYTES,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let clouds_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("clouds"),
+            bind_group_layouts: &[
+                Some(&frame_layout),
+                Some(&draw_layout),
+                Some(&scene_read_layout),
+                Some(&cloud_layout),
+            ],
+            immediate_size: 0,
+        });
+        let clouds_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("clouds"),
+            layout: Some(&clouds_layout),
+            vertex: wgpu::VertexState {
+                module: &module,
+                entry_point: Some("sky_vs"),
+                compilation_options: Default::default(),
+                buffers: &[],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &module,
+                entry_point: Some("clouds_fs"),
+                compilation_options: Default::default(),
+                targets: &[Some(frame::CLOUDS.into()), Some(frame::CLOUD_DIST.into())],
+            }),
+            primitive: Default::default(),
+            depth_stencil: None,
+            multisample: Default::default(),
+            multiview_mask: None,
+            cache: None,
+        });
         let finished_layout = frame::finished_layout(&device);
         let motion_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("motion"),
@@ -1967,6 +2063,11 @@ impl Renderer {
             shafts: ShaftQuality::High,
             scene_read_layout,
             shafts_pipeline,
+            cloud_layout,
+            cloud_prev_buffer,
+            clouds_pipeline,
+            cloud_prev: std::cell::Cell::new(None),
+            cloud_frames: std::cell::Cell::new(0),
             adapter: wgpu::DeviceType::Other,
             cloud_coverage: CLOUDS.shape.coverage,
             cloud_seconds: 0.0,
@@ -2267,6 +2368,22 @@ impl Renderer {
     /// The Clouds setting (Off, Low, High).
     pub fn set_clouds(&mut self, quality: CloudQuality) {
         self.clouds = quality;
+    }
+    /// The volumetric clouds' tier this frame draws (`clouds_for`, then the data's `tiers`); none
+    /// for the 2D deck or no clouds.
+    fn cloud_tier(&self) -> Option<dwell_look::clouds::VolumeTier> {
+        Some(clouds_for(self.adapter, self.clouds).volume(&CLOUDS)).filter(|t| t.steps > 0)
+    }
+    /// The clouds pass's uniform (`CloudPrev`) for this frame's camera `view` (right, up, forward,
+    /// tangents) and eye, and the tier's history blend: the last frame's camera, the share of the
+    /// new frame (1 with no history: the first frame, new buffers, a jump), the frame index and how
+    /// far the eye moved. Remembers this frame's for the next.
+    fn cloud_prev_uniform(&self, view: [[f32; 4]; 4], blend: f64) -> [[f32; 4]; 5] {
+        let eye = self.eye;
+        let prev = self.cloud_prev.replace(Some((view, eye)));
+        let n = self.cloud_frames.get().wrapping_add(1);
+        self.cloud_frames.set(n);
+        cloud_prev_block(prev, view, eye, blend, n)
     }
     /// The Model detail setting (ADR 0070 §10): every skinned model at `level`
     /// (`dwell_models::DETAIL_LEVELS`).
@@ -3398,15 +3515,16 @@ impl Renderer {
         let shafts = self
             .shaft_tier()
             .map_or((1, 1), |t| dwell_look::shafts::buffer_size(self.size, t));
-        if self
-            .targets
-            .as_ref()
-            .is_some_and(|t| t.under.is_some() == under && t.shafts_size() == shafts)
-        {
+        let clouds = cloud_buffer_size(self.size, self.cloud_tier());
+        if self.targets.as_ref().is_some_and(|t| {
+            t.under.is_some() == under && t.shafts_size() == shafts && t.clouds_size() == clouds
+        }) {
             return;
         }
         // Dropped first: their textures are destroyed before the new ones are made.
         self.targets = None;
+        // New buffers start without history.
+        self.cloud_prev.set(None);
         self.targets = Some(Targets::new(
             &self.device,
             self.size,
@@ -3416,6 +3534,9 @@ impl Renderer {
                 read_layout: &self.scene_read_layout,
                 sampler: &self.under_sampler,
                 shafts,
+                clouds,
+                cloud_layout: &self.cloud_layout,
+                cloud_prev: &self.cloud_prev_buffer,
             },
             under.then_some((&self.under_layout, &self.under_sampler)),
         ));
@@ -4009,6 +4130,60 @@ impl Renderer {
             // Your own torch's flame over your arms.
             self.flames
                 .draw_colour(&mut pass, flames::Group::Arms, true, &mut calls);
+        }
+        // The volumetric clouds (docs/CLOUDS.md §8.6) into their reduced buffer, over the last
+        // frame's, which then keeps a copy for the next.
+        if let Some(tier) = self.cloud_tier() {
+            let aspect = f64::from(self.size.0) / f64::from(self.size.1.max(1));
+            let tan_y = (self.frame_fov().to_radians() / 2.0).tan();
+            let f4 = |v: [f64; 3]| [v[0] as f32, v[1] as f32, v[2] as f32, 0.0];
+            let view = [
+                f4(basis.right),
+                f4(basis.up),
+                f4(basis.forward()),
+                [(tan_y * aspect) as f32, tan_y as f32, 0.0, 0.0],
+            ];
+            let block = self.cloud_prev_uniform(view, tier.history_blend);
+            self.queue
+                .write_buffer(&self.cloud_prev_buffer, 0, floats(block.as_flattened()));
+            let query = self.timer.as_mut().and_then(|t| t.pass(timing::CLOUDS));
+            let clear = wgpu::Operations {
+                load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                store: wgpu::StoreOp::Store,
+            };
+            {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("clouds"),
+                    color_attachments: &[
+                        Some(wgpu::RenderPassColorAttachment {
+                            view: &targets.clouds.1,
+                            depth_slice: None,
+                            resolve_target: None,
+                            ops: clear,
+                        }),
+                        Some(wgpu::RenderPassColorAttachment {
+                            view: &targets.cloud_dist.1,
+                            depth_slice: None,
+                            resolve_target: None,
+                            ops: clear,
+                        }),
+                    ],
+                    timestamp_writes: self.timer.as_ref().and_then(|t| t.writes(query)),
+                    ..Default::default()
+                });
+                pass.set_bind_group(0, &self.frame_groups[scene_passes - 1], &[]);
+                pass.set_bind_group(1, &self.draw_group, &[]);
+                pass.set_bind_group(2, &targets.scene_read, &[]);
+                pass.set_bind_group(3, &targets.cloud_group, &[]);
+                pass.set_pipeline(&self.clouds_pipeline);
+                pass.draw(0..3, 0..1);
+                calls += 1;
+            }
+            encoder.copy_texture_to_texture(
+                targets.clouds.0.as_image_copy(),
+                targets.cloud_history.0.as_image_copy(),
+                targets.clouds.0.size(),
+            );
         }
         // The light shafts (ADR 0064) into their buffer at the tier's size, from the finished
         // scene, when the frame draws some (the composite reads them).
