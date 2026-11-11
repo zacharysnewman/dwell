@@ -20,6 +20,8 @@
     "dirtSkirt": "dirt_skirt",
     "snow": "snow_top",
     "snowSide": "snow_side",
+    "glacierIceTop": "glacier_ice_top",
+    "glacierIceSide": "glacier_ice_side",
     "dirtSnowSkirt": "dirt_snow_skirt",
     "snowyLeavesTop": "snowy_leaves_top",
     "snowyLeavesSide": "snowy_leaves_side",
@@ -175,6 +177,28 @@
         { "kind": "dab", "count": 6, "colors": ["@shadow"], "width": [8, 12], "length": [12, 18], "angle": 15, "angleJitter": 25, "opacity": 0.3, "softness": 4 },
         { "kind": "streak", "count": 7, "colors": ["@light"], "width": [2.5, 3.5], "length": [12, 18], "angle": 10, "angleJitter": 10, "bend": [-1.5, 1.5], "opacity": 0.6, "seed": 1 },
         { "kind": "dab", "count": 6, "colors": ["@light"], "width": [1.2, 1.8], "length": [1.2, 1.8], "angle": 0, "angleJitter": 90, "opacity": 0.9, "seed": 2 }
+      ]
+    },
+    "glacier_ice_top": {
+      "$comment": "Glacier ice from above (dwell:glacier_ice): pale blue-white, broad cool planes of deeper ice, a painted sheen (long bright strokes at one angle, so it reads glossy without a new render path), thin deep-blue cracks and a few glints.",
+      "use": "block", "ramp": "ice", "overlay": 1,
+      "layers": [
+        { "kind": "fill", "color": "@base" },
+        { "kind": "slab", "count": 4, "colors": ["@shadow"], "width": [8, 12], "length": [12, 18], "angle": 20, "angleJitter": 30, "opacity": 0.22, "softness": 3 },
+        { "kind": "streak", "count": 5, "colors": ["@light"], "width": [2.5, 4], "length": [14, 22], "angle": 35, "angleJitter": 6, "opacity": 0.7, "softness": 1.5, "seed": 1 },
+        { "kind": "streak", "count": 3, "colors": ["@shadow"], "width": [0.8, 1.2], "length": [8, 14], "angle": -20, "angleJitter": 50, "bend": [-1, 1], "opacity": 0.75, "seed": 2 },
+        { "kind": "dab", "count": 5, "colors": ["@light"], "width": [1.2, 1.8], "length": [1.2, 1.8], "angle": 0, "angleJitter": 90, "opacity": 0.95, "seed": 3 }
+      ]
+    },
+    "glacier_ice_side": {
+      "$comment": "Glacier ice from the side: the top's planes and sheen with the ice's layering, deeper blue bands that run across the face, and cracks falling through them.",
+      "use": "block", "ramp": "ice", "overlay": 1,
+      "layers": [
+        { "kind": "fill", "color": "@base" },
+        { "kind": "streak", "count": 4, "colors": ["@shadow"], "width": [2.5, 4], "length": [20, 30], "angle": 0, "angleJitter": 5, "bend": [-1, 1], "opacity": 0.3, "softness": 2.5 },
+        { "kind": "streak", "count": 5, "colors": ["@light"], "width": [2.5, 3.5], "length": [12, 20], "angle": 60, "angleJitter": 6, "opacity": 0.6, "softness": 1.5, "seed": 1 },
+        { "kind": "streak", "count": 3, "colors": ["@shadow"], "width": [0.8, 1.2], "length": [9, 15], "angle": 80, "angleJitter": 20, "bend": [-1, 1], "opacity": 0.75, "seed": 2 },
+        { "kind": "dab", "count": 4, "colors": ["@light"], "width": [1.2, 1.8], "length": [1.2, 1.8], "angle": 0, "angleJitter": 90, "opacity": 0.95, "seed": 3 }
       ]
     },
     "snow_side": {

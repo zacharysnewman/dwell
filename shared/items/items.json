@@ -179,6 +179,20 @@
       "rows": 1
     },
     {
+      "name": "dwell:snow",
+      "category": "blocks",
+      "label": "Snow",
+      "block": "dwell:snow",
+      "rows": 1
+    },
+    {
+      "name": "dwell:glacier_ice",
+      "category": "blocks",
+      "label": "Glacier ice",
+      "block": "dwell:glacier_ice",
+      "rows": 1
+    },
+    {
       "name": "dwell:snowy_leaves",
       "category": "plants",
       "label": "Snowy leaves",

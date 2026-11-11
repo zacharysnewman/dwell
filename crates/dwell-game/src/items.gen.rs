@@ -4,7 +4,7 @@ use crate::build_drag::{BuildModeDef, DragKind};
 use crate::items::{ItemDef, ItemDrag, ItemFacing};
 
 /// The creative hotbar's items, in its order (shared/items/items.json).
-pub const ITEMS: [ItemDef; 24] = [
+pub const ITEMS: [ItemDef; 26] = [
     ItemDef { name: "dwell:stone", label: "Stone", block: "dwell:stone", tool: None, rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
     ItemDef { name: "dwell:stone_slope", label: "Stone slope", block: "dwell:stone_ramp", tool: None, rows: 1, drag: ItemDrag::Modes, state: &[("flooded", "false"), ("half", "bottom"), ("shape", "ramp")], facing: ItemFacing::Toward, upper: &[] },
     ItemDef { name: "dwell:stone_steep_slope", label: "Stone steep slope", block: "dwell:stone_ramp", tool: None, rows: 2, drag: ItemDrag::Modes, state: &[("flooded", "false"), ("half", "bottom"), ("shape", "steep_lower")], facing: ItemFacing::Toward, upper: &[("shape", "steep_upper")] },
@@ -28,6 +28,8 @@ pub const ITEMS: [ItemDef; 24] = [
     ItemDef { name: "dwell:dynamite_green", label: "Green dynamite", block: "dwell:dynamite_green", tool: None, rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
     ItemDef { name: "dwell:dynamite_yellow", label: "Yellow dynamite", block: "dwell:dynamite_yellow", tool: None, rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
     ItemDef { name: "dwell:snowy_grass", label: "Snowy grass", block: "dwell:snowy_grass", tool: None, rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
+    ItemDef { name: "dwell:snow", label: "Snow", block: "dwell:snow", tool: None, rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
+    ItemDef { name: "dwell:glacier_ice", label: "Glacier ice", block: "dwell:glacier_ice", tool: None, rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
     ItemDef { name: "dwell:snowy_leaves", label: "Snowy leaves", block: "dwell:snowy_leaves", tool: None, rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
 ];
 

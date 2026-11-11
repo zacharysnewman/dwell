@@ -4,6 +4,7 @@
     "meadow":      { "shadow": "#4a8a45", "base": "#82bd45", "light": "#c8e06a" },
     "leaf":        { "shadow": "#2e6450", "base": "#5f9e3e", "light": "#a6cf52" },
     "snow":        { "shadow": "#b9c9de", "base": "#e9eff6", "light": "#ffffff" },
+    "ice":         { "shadow": "#5d8cc2", "base": "#b4d6ea", "light": "#e6efe9" },
     "soil":        { "shadow": "#5b3a3c", "base": "#8e5d3d", "light": "#b98352" },
     "stone":       { "shadow": "#817e8e", "base": "#a9a3a3", "light": "#dcd0b9" },
     "flint":       { "shadow": "#5e5249", "base": "#8a7d70", "light": "#b9ab98" },
