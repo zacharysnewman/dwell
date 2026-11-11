@@ -1,7 +1,9 @@
 //! Lava in the server (docs/proposals/VOLCANOES.md §6, V1 slice 2), on both faces: a vent placed in
 //! a fixture world fills its crater and the chunks (and the clients' modifications) show lava;
 //! cooled lava is basalt in the chunks; a player in lava loses health and burns on after; the lava
-//! is saved with the world and loads again; the default world has none.
+//! is saved with the world and loads again; the default world has none; lava's damage is `Burn` to a
+//! client that knows it and `Fall` to an older one; an edit inside a field changes its bed (a dug
+//! channel lets the lava in).
 
 mod common;
 
@@ -243,6 +245,98 @@ dwell_world::both_faces!(
         fx.join(1, &Client::new(1));
         step(&mut fx, 5 * SECOND);
         assert_eq!(at(&mut fx, f, [0, BASE - CRATER_ROWS, 0]), lava);
+    }
+);
+
+/// The damage causes a client heard.
+fn damage_causes(
+    all: &std::collections::BTreeMap<SessionId, Vec<Message>>,
+    id: SessionId,
+) -> Vec<DamageCause> {
+    all.get(&id)
+        .into_iter()
+        .flatten()
+        .filter_map(|m| match m {
+            Message::PlayerEvent(e) if e.kind == PlayerEventKind::Damage => Some(e.cause),
+            _ => None,
+        })
+        .collect()
+}
+
+dwell_world::both_faces!(
+    fn lava_hurts_as_burn_and_an_older_client_never_hears_burn(f: FaceFrame) {
+        let mut fx = filled(f, "adventure", 30, None);
+        // Client 1 knows every cause of this build; client 2 is an older one (no `CausesHello`).
+        fx.send(1, Message::CausesHello(DamageCause::MAX));
+        fx.join(2, &Client::new(2));
+        fx.take_all();
+        let h = fx.server.player_handle_of(1).expect("a live player");
+        let (_, physics, players) = fx.server.sim();
+        let half = f64::from(players.half_height(h));
+        let into = f.point([0.5, m_of_row(BASE - CRATER_ROWS) + half + 0.05, 0.5]);
+        players.teleport(physics, h, DVec3::from(into), Vec3::ZERO);
+        step(&mut fx, SECOND / 2);
+        let all = fx.take_all();
+        let heard = damage_causes(&all, 1);
+        assert!(!heard.is_empty(), "hurt in the lava");
+        assert!(heard.iter().all(|c| *c == DamageCause::Burn), "{heard:?}");
+        let older = damage_causes(&all, 2);
+        assert_eq!(older.len(), heard.len());
+        assert!(older.iter().all(|c| *c == DamageCause::Fall), "{older:?}");
+        // A client that says it knows only the causes before `Burn` (`Drown`'s build) hears `Fall`.
+        fx.send(1, Message::CausesHello(DamageCause::Drown as u8));
+        step(&mut fx, SECOND / 2);
+        let heard = damage_causes(&fx.take_all(), 1);
+        assert!(!heard.is_empty() && heard.iter().all(|c| *c == DamageCause::Fall));
+    }
+);
+
+dwell_world::both_faces!(
+    fn a_channel_dug_from_the_crater_lets_the_lava_flow_into_it(f: FaceFrame) {
+        let lava = f.state(require("dwell:lava"));
+        let mut fx = filled(f, "creative", 30, None);
+        // The crater's rim at z = 0 is x = 4; the channel: x 4..=6 down to the crater's floor.
+        let field_bed = |fx: &Fixture, x: i32| {
+            let p = &fx.server.lava().fields[0];
+            let o = p.field.origin;
+            p.field.ground[p.field.at((x - o[0]) as usize, (0 - o[1]) as usize)]
+        };
+        assert_eq!(field_bed(&fx, 5), m_of_row(BASE) as f32, "the stone's top");
+        assert_ne!(at(&mut fx, f, [5, BASE - CRATER_ROWS, 0]), lava);
+        // Dug nearest the player first, in passes (a cell is broken once the player sees it).
+        for (x, r) in (0..3).flat_map(|_| {
+            (4..=6)
+                .rev()
+                .flat_map(|x| (BASE - CRATER_ROWS..BASE).rev().map(move |r| (x, r)))
+        }) {
+            let [wx, wy, wz] = f.cell([x, r, 0]);
+            let face = f.cell_face(2) as u8; // its top
+            fx.send(
+                1,
+                Message::BlockEditRequest(BlockEditRequest {
+                    action: BlockEditAction::Break,
+                    cell: [wx, wy, wz],
+                    face,
+                    material: 0,
+                    rows: 1,
+                    down: false,
+                    point: None,
+                }),
+            );
+            step(&mut fx, 2);
+        }
+        assert_eq!(at(&mut fx, f, [5, BASE - CRATER_ROWS, 0]), 0, "dug out");
+        step(&mut fx, 20 * SECOND);
+        assert_eq!(
+            field_bed(&fx, 5),
+            m_of_row(BASE - CRATER_ROWS) as f32,
+            "the field read the dug bed"
+        );
+        assert_eq!(
+            at(&mut fx, f, [5, BASE - CRATER_ROWS, 0]),
+            lava,
+            "the lava flowed into the channel"
+        );
     }
 );
 

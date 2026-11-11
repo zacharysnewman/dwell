@@ -282,6 +282,22 @@ mod tests {
     }
 
     #[test]
+    fn causes_hello_round_trips_and_burn_is_the_last_cause() {
+        use crate::{DamageCause, Message, inventory_flags};
+        let m = Message::CausesHello(DamageCause::MAX);
+        let b = m.encode();
+        assert_eq!(Message::decode(&b), Some(m));
+        assert_eq!(
+            Message::decode(&b[..b.len() - 1]),
+            None,
+            "the cause cut off"
+        );
+        assert_eq!(DamageCause::from_u8(5), Some(DamageCause::Burn));
+        assert_eq!(DamageCause::MAX, DamageCause::Burn as u8);
+        assert_eq!(inventory_flags::CAUSES, 32);
+    }
+
+    #[test]
     fn without_the_rules_nothing_drains() {
         let mut v = Vitals::default();
         for _ in 0..600 {

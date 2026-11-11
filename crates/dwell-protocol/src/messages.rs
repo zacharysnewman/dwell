@@ -579,6 +579,11 @@ pub enum Message {
     /// worldgen config text (`dwell_worldgen::config::world_config`), whose hash the `WORLDGEN`
     /// tag names. u32 length (at most `limits::WORLDGEN_CONFIG_MAX_BYTES`), UTF-8.
     WorldgenConfig(String),
+    /// C→S reliable, control channel, only to a server whose `Inventory` has
+    /// `inventory_flags::CAUSES` (docs/proposals/VOLCANOES.md §6.2): this client understands every
+    /// damage cause up to this one (`DamageCause::MAX` as it was built); a cause past it (or `Drown`
+    /// without `VitalsHello`) goes to it as `Fall`.
+    CausesHello(u8),
 }
 
 /// A creature as sent (ADR 0073): its skinned model (shared/models/models.json), its feet (world
@@ -700,6 +705,9 @@ pub mod inventory_flags {
     pub const DAMAGE: u8 = 8;
     /// The server makes recipes (shared/inventory `recipes`): it takes `InventoryAction::Combine`.
     pub const COMBINE: u8 = 16;
+    /// The server takes `CausesHello` (docs/proposals/VOLCANOES.md §6.2): it sends a damage cause
+    /// past the client's last known one (`Burn`, …) only to a client that said it knows it.
+    pub const CAUSES: u8 = 32;
 }
 
 /// The most cells one `Damage` carries (more go in more messages).
@@ -793,6 +801,7 @@ impl Message {
             M::DamageHello => MessageType::DamageHello,
             M::WorldgenRequest => MessageType::WorldgenRequest,
             M::WorldgenConfig(_) => MessageType::WorldgenConfig,
+            M::CausesHello(_) => MessageType::CausesHello,
             M::Damage(_) => MessageType::Damage,
             M::Creatures(_) => MessageType::Creatures,
             M::BodyEdit(_) => MessageType::BodyEdit,
@@ -1471,6 +1480,7 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
             }
         },
         M::VitalsHello => {}
+        M::CausesHello(n) => w.u8(*n),
         M::CreaturesHello | M::DamageHello | M::WorldgenRequest => {}
         M::WorldgenConfig(t) => {
             // Too long to send: none (the guest's hash check then refuses, with a message).
@@ -1968,6 +1978,7 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
             _ => return None,
         }),
         T::VitalsHello => M::VitalsHello,
+        T::CausesHello => M::CausesHello(r.u8()),
         T::CreaturesHello => M::CreaturesHello,
         T::DamageHello => M::DamageHello,
         T::WorldgenRequest => M::WorldgenRequest,

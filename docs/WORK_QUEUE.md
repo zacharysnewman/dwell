@@ -91,8 +91,13 @@ Last updated: 2026-11-11 (0.52.68).
    `shared/fluids/lava.json`; VOLCANOES.md §6. **Server built:** the fields per face in `dwell-sim`
    (near/far like the water), lava, basalt and obsidian cells written into chunks through the edit sync,
    steam taking the water, players burning through the server's damage, the optional `lava` save table,
-   `dwell:lava` block, `Server::place_lava_vent` (dev). **The look next, local** (light, glow, crust, steam
-   puffs, the in-game check), then the starter world's summit vent as data and a `Burn` cause.
+   `dwell:lava` block, `Server::place_lava_vent` (dev). **Slice 3 built (logic):** the starter world's lake
+   vent on its youngest hotspot island's summit as worldgen data (`tectonics.lavaVents`, opt-in per cone,
+   placed by the server when the world is created or first loaded; the default world lists none), a `Burn`
+   damage cause sent only to clients that say `CausesHello` (older ones hear `Fall`), and fields re-reading
+   an edited column's bed and water (a dug channel takes the lava); VOLCANOES.md §6.2. **The look next,
+   local** (light, glow, crust, steam puffs, the in-game check), then the water grid's columns as the
+   fields' water and V2's vents.
 9. ~~**Loading-time display bug.**~~ Done (0.52.71): the 10 s was the graphics' start (one long task on the
    main thread making the renderer's pipelines) begun in the same task that ended the game's load, so the
    screen never painted "Starting the graphics…" and stood on "Loading the game… x MB 0.0 s". Each stage is

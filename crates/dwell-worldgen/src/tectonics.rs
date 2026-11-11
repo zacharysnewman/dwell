@@ -105,6 +105,39 @@ pub struct Volcano {
     pub chain: u32,
 }
 
+/// The cone a lava vent sits on (`tectonics.lavaVents[].cone` and `index`): the arc's `index`-th
+/// cone, or the hotspot chain's, youngest first (docs/proposals/VOLCANOES.md §6.2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Cone {
+    Arc(u32),
+    Hotspot(u32),
+}
+
+/// A lava vent's kind (`kind`): a lake held at its level, or a steady river.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LavaVentKind {
+    Lake,
+    River,
+}
+
+/// A lava vent on a cone (`terrain.json` `tectonics.lavaVents`, opt-in per world: none by default),
+/// placed by the server when its world is created or first loaded (docs/proposals/VOLCANOES.md §6.2).
+#[derive(Clone, Debug, PartialEq)]
+pub struct LavaVent {
+    pub cone: Cone,
+    pub kind: LavaVentKind,
+    /// The hot fluid (`shared/fluids/lava.json` `fluids`), by name.
+    pub fluid: String,
+    pub rate_m3s: f32,
+    /// A lake's held surface over the vent column's bed (m).
+    pub depth_m: f32,
+    /// Its field reaches this many columns each way from the vent.
+    pub radius: u32,
+    /// The vent's offset from the cone's summit (m) toward `angle` degrees (0: on the summit).
+    pub distance: f64,
+    pub angle: f64,
+}
+
 /// `ice_above`'s off value (no crater is ever that high).
 const fn v_max() -> f64 {
     100_000.0
@@ -180,6 +213,23 @@ impl Tectonics {
             });
         }
         v
+    }
+
+    /// Where vent `v` stands (face-local m): its cone's summit (an arc cone's offset summit, a
+    /// hotspot island's centre), moved `distance` m toward `angle`; `None` for a cone the layer
+    /// doesn't have.
+    pub fn vent_site(&self, v: &LavaVent) -> Option<(f64, f64)> {
+        let all = self.volcanoes();
+        let cone = match v.cone {
+            Cone::Arc(i) => all.iter().filter(|c| c.chain == 0).nth(i as usize),
+            Cone::Hotspot(i) => all.iter().find(|c| c.chain == i + 1),
+        }?;
+        let (x, z) = match v.cone {
+            Cone::Arc(_) if self.shaped() => self.summit(cone),
+            _ => (cone.x, cone.z),
+        };
+        let a = v.angle * PI / 180.0;
+        Some((x + v.distance * a.cos(), z + v.distance * a.sin()))
     }
 
     /// The boundary's landform at (x, z) (m added), faded offshore by `coast` (the island's signed

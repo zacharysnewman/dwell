@@ -134,7 +134,8 @@
     "DamageHello": 96,
     "Damage": 97,
     "WorldgenRequest": 98,
-    "WorldgenConfig": 99
+    "WorldgenConfig": 99,
+    "CausesHello": 100
   },
   "rejectReasons": {
     "ProtocolVersion": 1,
@@ -236,7 +237,8 @@
     "Fall": 1,
     "Crush": 2,
     "Explosion": 3,
-    "Drown": 4
+    "Drown": 4,
+    "Burn": 5
   },
   "chunkForms": {
     "Generated": 0,

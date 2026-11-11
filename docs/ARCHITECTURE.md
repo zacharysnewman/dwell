@@ -3471,15 +3471,24 @@ of any edit): each column's molten rows (`Field::lava_rows`, ½ m cell rows) are
 cells and cleared to air where the lava has gone; a `Rock` event's rows become the rock; a `Steam` event
 takes `steamWaterM` off the top of that column's water and is queued for the clients
 (`take_lava_steam`; not on the wire yet). A player whose feet are in lava burns (`Burn` per session,
-reset at death) through the server's `damage` (none in creative), sent as cause `Fall`: a `Burn` cause
-needs the clients to know it first (an older client refuses an unknown cause). Saved with the world
+reset at death) through the server's `damage` (none in creative), cause `Burn` (5), sent as `Fall` to a
+client that never said it knows `Burn` (`CausesHello`, on the wire below). Saved with the world
 as one record in an optional `lava` table (`Lava::to_bytes`: each field's face and `record_of`),
 written only when the world has lava; a record this build can't read is kept, not written over.
 
+**A world's vents [built, slice 3]:** worldgen data on the cones (`terrain.json` `tectonics.lavaVents`,
+opt-in, none by default: each a cone by kind and index, lake or river, fluid by name, rate, depth, field
+radius, offset from the summit; checked by `biomes.mjs` `checkLavaVents`, read by
+`dwell_worldgen::config::lava_vent_sites`), placed by the server on each face when its world is created
+or first loaded with no lava (`place_world_vents`, at the cone's summit as generated). The starter world
+lists a lake vent on its youngest hotspot island (VOLCANOES.md §6.2). **Edits:** every change through the
+edit path but the lava's own (`TickChanges::lava`) marks its column in a field over it (`Lava::touch`);
+the field reads that column's bed (up through blocks set on it, down through cells dug out) and water
+again at its next lava tick, so a dug channel takes the lava.
+
 **Not yet:** the lava's look (light, glow, crust) and the steam's particles and sound on the clients;
-the water grid's own columns as the fields' water flags (a field reads them once, at placement) and
-edits to a field's bed after placement; a `Burn` cause on the wire; vents placed by worldgen (V2's
-hotspot summits).
+the water grid's own columns as the fields' water flags (a field reads them from the world's cells);
+V2's river vents to the sea and eruptions.
 
 ## 7. Physics Pipeline
 
@@ -4087,6 +4096,14 @@ C→S  VitalsHello 0x5B, control: empty (send me Vitals; I know the Drown cause)
 S→C  Vitals      0x5C, datagram with each snapshot while the mode has stamina or oxygen: u32 seq
                  (the input it is as of), f32 stamina, f32 seconds of air, u8 flags
                  (VitalsFlags: 1 exhausted, 2 the stamina rule, 4 the oxygen rule)
+```
+
+**Damage causes: `CausesHello` (reliable) [built, slice 3]** (VOLCANOES.md §6.2). A client sends
+`CausesHello` only to a server whose `Inventory` has `inventory_flags::CAUSES` (32): the last damage
+cause it knows (`DamageCause::MAX` as built). The server sends a cause past it (from `Burn`, 5) to that
+client as `Fall`, as it does `Drown` to a client without `VitalsHello`; a later cause needs no new hello.
+```
+C→S  CausesHello 0x64, control: u8 the last DamageCause this client knows
 ```
 
 **Client → Server: `BlockEditRequest` (reliable, `control`) [built, Phase 3d]** (§6.5)
