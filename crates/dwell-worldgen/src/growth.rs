@@ -164,6 +164,14 @@ fn placed(r: &Record, stage: u8, swaps: &[(StateId, StateId)]) -> Option<Placed>
     Some(p)
 }
 
+/// The cells (world cells and states) of the record's tree at `stage`, no variant (tests, tools).
+pub fn cells_at(r: &Record, stage: u8) -> Vec<([i32; 3], StateId)> {
+    let f = FaceFrame { face: r.face };
+    placed(r, stage, &[]).map_or(Vec::new(), |p| {
+        p.cells().map(|(c, m)| (f.cell(c), f.state(m))).collect()
+    })
+}
+
 /// The step from the record's stage to `target`: the writes, reading the world with `read` (world
 /// cells). A pure function of the record, the target and the world it reads.
 pub fn step(

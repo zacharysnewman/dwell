@@ -64,6 +64,10 @@ const GROUND_GONE: TableDefinition<u32, &[u8]> = TableDefinition::new("ground_go
 /// ADR 0072): one record (key 0), rewritten on each save that carries it. Optional, as `cuts`: a
 /// world without it loads undamaged, and an older build on the line never opens it.
 const DAMAGE: TableDefinition<u32, &[u8]> = TableDefinition::new("block_damage");
+/// The trees' growth records (`dwell_worldgen::growth::Records::to_bytes`; ADR 0079): one record
+/// (key 0), rewritten on each save that carries it. Optional, as `block_damage`: a world without it
+/// grows its generated trees from their drawn stages, and an older build ignores it.
+const TREE_GROWTH: TableDefinition<u32, &[u8]> = TableDefinition::new("tree_growth");
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct WorldMeta {
@@ -226,6 +230,8 @@ pub struct SaveBatch {
     pub ground_gone: Option<Vec<u8>>,
     /// The blocks' damage now, replacing what was saved before (None: leave it; ADR 0072).
     pub damage: Option<Vec<u8>>,
+    /// The trees' growth records now, replacing those saved before (None: leave them; ADR 0079).
+    pub tree_growth: Option<Vec<u8>>,
 }
 
 /// A [`SaveBatch`] being encoded for its commit (`WorldDb::prepare`): its chunks mapped to the
@@ -677,6 +683,14 @@ impl WorldDb {
         Some(v.value().to_vec())
     }
 
+    /// The trees' growth records as last saved (ADR 0079), if any.
+    pub fn tree_growth(&self) -> Option<Vec<u8>> {
+        let txn = self.db.begin_read().ok()?;
+        let t = txn.open_table(TREE_GROWTH).ok()?;
+        let v = t.get(0).ok()??;
+        Some(v.value().to_vec())
+    }
+
     /// The ground items gone as last saved (ADR 0071), if any.
     pub fn ground_gone(&self) -> Option<Vec<u8>> {
         let txn = self.db.begin_read().ok()?;
@@ -1001,6 +1015,10 @@ impl WorldDb {
         if let Some(damage) = &batch.damage {
             let mut t = txn.open_table(DAMAGE).map_err(err)?;
             t.insert(0, damage.as_slice()).map_err(err)?;
+        }
+        if let Some(growth) = &batch.tree_growth {
+            let mut t = txn.open_table(TREE_GROWTH).map_err(err)?;
+            t.insert(0, growth.as_slice()).map_err(err)?;
         }
         if let Some(hook) = &self.before_commit {
             hook()?; // dropping the transaction aborts it

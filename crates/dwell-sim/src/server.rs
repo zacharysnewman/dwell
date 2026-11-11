@@ -41,6 +41,7 @@ use dwell_protocol::auth::verify_ed25519;
 mod chopping;
 mod creatures;
 mod ground;
+mod growth;
 mod items;
 mod vitals;
 
@@ -297,6 +298,9 @@ pub struct ServerConfig {
     /// A new world's water speed (docs/WATER_FLOW.md §4.1): × game time; `shared/fluids/flow.json`'s
     /// `speed` by default. A saved world keeps its own (its settings, DAY_NIGHT.md §2).
     pub water_speed: f64,
+    /// Trees' growth speed (ADR 0079 S3): × the world's days, 1 by default; more for a time-lapse
+    /// (dev: the page's `?growth=`), tests.
+    pub growth_speed: f64,
     /// Where the water grid runs (ADR 0062, docs/WATER_SURFACE_GRID.md §2d): inline on the tick's
     /// thread (the default: tests, a fallback), on its own native thread (the dedicated server), or
     /// remote (the browser's water worker, its messages carried by the embedder).
@@ -364,6 +368,7 @@ impl Default for ServerConfig {
             air_test_override: None,
             player_config: PlayerControllerConfig::default(),
             water_speed: crate::water::FLOW.speed,
+            growth_speed: 1.0,
             water: crate::water::host::Placement::Inline,
             mode: dwell_protocol::modes::DEFAULT_MODE.into(),
             one_hit_breaks: false,
@@ -892,6 +897,14 @@ pub struct Server {
     damage: dwell_protocol::damage::Damage,
     /// The saved damage is a newer build's: kept, not written over.
     damage_unread: bool,
+    /// The trees' growth records (ADR 0079 S3), saved with the world.
+    growth: dwell_worldgen::growth::Records,
+    /// The saved records are a newer build's: kept, not written over.
+    growth_unread: bool,
+    /// The world's growers (none: no species trees), built on first use.
+    growers: Option<Option<Arc<dwell_worldgen::growth::Growers>>>,
+    /// The loaded chunks already looked at for trees (not saved: looked at again after a load).
+    growth_scanned: HashSet<ChunkCoord>,
     /// The ground items gone (picked up or knocked loose; ADR 0071), saved with the world.
     ground: dwell_world::ground::GroundGone,
     /// The saved gone set is a newer build's: kept, not written over.
@@ -1038,6 +1051,10 @@ impl Server {
             cuts_unread: false,
             damage: Default::default(),
             damage_unread: false,
+            growth: Default::default(),
+            growth_unread: false,
+            growers: None,
+            growth_scanned: Default::default(),
             ground: Default::default(),
             ground_unread: false,
             ground_generated: Default::default(),
@@ -1779,6 +1796,8 @@ impl Server {
         self.settle_pieces();
         self.phase_ms[7] += watch.lap_ms();
         self.flow_water();
+        // Trees grow by the world's days (ADR 0079 S3).
+        self.grow_trees();
 
         // Loose items fall, are picked up and despawn (ADR 0066); inventories changed are sent.
         self.step_items();
@@ -4268,6 +4287,12 @@ impl Server {
                 None => self.damage_unread = true,
             }
         }
+        if let Some(b) = db.tree_growth() {
+            match dwell_worldgen::growth::Records::from_bytes(&b) {
+                Some(g) => self.growth = g,
+                None => self.growth_unread = true,
+            }
+        }
         if let Some(b) = db.ground_gone() {
             match dwell_world::ground::GroundGone::from_bytes(&b) {
                 Some(g) => self.ground = g,
@@ -4386,6 +4411,9 @@ impl Server {
         batch.loose_items = Some(self.loose.to_bytes());
         if !self.cuts_unread {
             batch.cuts = Some(self.cuts.to_bytes());
+        }
+        if !self.growth_unread {
+            batch.tree_growth = Some(self.growth.to_bytes());
         }
         if !self.ground_unread {
             batch.ground_gone = Some(self.ground.to_bytes());
