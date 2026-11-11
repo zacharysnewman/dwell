@@ -1,0 +1,654 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Leaf Lab</title>
+<style>
+:root {
+  --bg: #efe2c0; --panel: #f7f2e4; --ink: #241c28; --ink-soft: #43354a; --line: #cbb48e;
+  --accent: #5f9e3e; --accent-ink: #f7f6f0; --btn: #e8dcc0;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1f1b28; --panel: #2a2433; --ink: #f2ead6; --ink-soft: #c9bda6; --line: #4a3f55;
+    --accent: #82bd45; --accent-ink: #1f1b28; --btn: #3a3145;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #1f1b28; --panel: #2a2433; --ink: #f2ead6; --ink-soft: #c9bda6; --line: #4a3f55;
+  --accent: #82bd45; --accent-ink: #1f1b28; --btn: #3a3145;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+  font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+#app { display: flex; height: 100%; }
+#view { position: relative; flex: 1; min-width: 0; }
+#view canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+#labels { position: absolute; inset: 0; pointer-events: none; }
+#labels div { position: absolute; padding: 3px 8px; margin: 6px; border-radius: 6px;
+  background: rgba(36, 28, 40, .72); color: #f7f6f0; font-size: 12px; font-weight: 600; }
+#panel { width: 330px; overflow-y: auto; padding: 14px 16px 24px; background: var(--panel);
+  border-left: 1px solid var(--line); }
+h1 { font-size: 18px; margin: 0 0 2px; }
+.sub { color: var(--ink-soft); font-size: 12px; margin: 0 0 12px; }
+h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-soft);
+  margin: 16px 0 6px; }
+.opts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.opts button, .row button { font: inherit; font-size: 13px; padding: 7px 8px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--btn); color: var(--ink); cursor: pointer; text-align: left; }
+.opts button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.opts button.wide { grid-column: span 2; }
+.desc { font-size: 12.5px; color: var(--ink-soft); margin: 8px 0 0; }
+.desc b { color: var(--ink); }
+label.s { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; margin: 8px 0; font-size: 13px; }
+label.s input[type=range] { grid-column: span 2; width: 100%; accent-color: var(--accent); }
+label.s output { font-variant-numeric: tabular-nums; color: var(--ink-soft); }
+.row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
+.row input[type=number] { width: 80px; font: inherit; padding: 5px; border-radius: 6px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+.row button.on { background: var(--accent); color: var(--accent-ink); }
+.note { font-size: 12px; color: var(--ink-soft); border-top: 1px solid var(--line); margin-top: 14px; padding-top: 10px; }
+.note p { margin: 0 0 6px; }
+@media (max-width: 760px) {
+  #app { flex-direction: column; }
+  #view { flex: none; height: 56vh; }
+  #panel { width: auto; flex: 1; border-left: 0; border-top: 1px solid var(--line); padding: 12px 16px 24px; }
+}
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="app">
+  <div id="view"><div id="labels"></div></div>
+  <div id="panel">
+    <h1>Leaf Lab</h1>
+    <p class="sub">Ways to make 1 m leaf cells sit better beside octagonal trunks (ADR 0072). Drag to orbit, scroll or pinch to zoom.</p>
+
+    <h2>Look</h2>
+    <div class="opts" id="opts"></div>
+    <div class="row" style="margin-top:8px">
+      <button id="compare">Compare (pick 2–4)</button>
+    </div>
+    <p class="desc" id="desc"></p>
+
+    <h2>Tree</h2>
+    <label class="s">Growth <output id="growthV"></output><input id="growth" type="range" min="0" max="100" value="100"></label>
+    <div class="row">Trees
+      <button data-trees="1">1</button><button data-trees="2">2</button><button data-trees="3">3</button>
+    </div>
+    <div class="row">Seed <input id="seed" type="number" value="7"> <button id="reroll">New seed</button></div>
+
+    <h2>Options</h2>
+    <label class="s">Canopy normals blend (1, 4, 5 and the cards) <output id="blendV"></output><input id="blend" type="range" min="0" max="100" value="75"></label>
+    <label class="s">Chamfer size (2, 4, 5) <output id="chamferV"></output><input id="chamfer" type="range" min="0" max="45" value="28"></label>
+    <label class="s">Card density (3, 5) <output id="densityV"></output><input id="density" type="range" min="0" max="100" value="55"></label>
+    <label class="s">Card size (3, 5) <output id="cardSizeV"></output><input id="cardSize" type="range" min="40" max="160" value="95"></label>
+
+    <h2>Scene</h2>
+    <label class="s">Time of day <output id="timeV"></output><input id="time" type="range" min="0" max="100" value="38"></label>
+    <div class="row"><label><input id="grid" type="checkbox"> Show grid (ground and leaf cells)</label></div>
+
+    <div class="note">
+      <p><b>Cost and gameplay.</b> Options 0–5 keep leaves as blocks: each cell is still one 1 m leaf block for collision, breaking, placing, growth and the tree record. 1 is a vertex-normal change only (free in the mesher: one centre per tree, which the tree layer already knows). 2 adds a few triangles per exposed cell, derived from the neighbours like the octagon's joins (no new states). 3 adds alpha-cut quads (overdraw, a second draw pass); cards are a look and never collide.</p>
+      <p>Option 6 is a reference only: one special mesh per crown, not blocks. Breaking a leaf would have to remesh the crown, and it does not match the grid you collide with.</p>
+      <p>Content is prototype: the colours are the palette's <code>leaf</code>, <code>bark</code> and <code>meadow</code> ramps; the textures are painted here, not the game's.</p>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { MarchingCubes } from 'three/addons/objects/MarchingCubes.js';
+
+// ---------- palette (shared/textures/palette.json) ----------
+const PAL = {
+  leaf: { shadow: '#2e6450', base: '#5f9e3e', light: '#a6cf52' },
+  bark: { shadow: '#4a3438', base: '#7c5338', light: '#a77a4c' },
+  heartwood: { shadow: '#9c7650', base: '#c99f66', light: '#ecc98e' },
+  meadow: { shadow: '#4a8a45', base: '#82bd45', light: '#c8e06a' },
+  soil: { shadow: '#5b3a3c', base: '#8e5d3d', light: '#b98352' },
+  sun: '#fff1c2', ink: '#241c28',
+};
+
+const OPTIONS = [
+  { name: '0 Current', desc: '<b>Current.</b> Plain 1 m cube leaf blocks with a cut-out leaf texture, lit by their face normals.' },
+  { name: '1 Canopy normals', desc: '<b>Canopy normals.</b> The same cubes, lit as if the crown were one round shape: normals point out from an ellipsoid fitted to each crown, blended with the face normals.' },
+  { name: '2 Rounded edges', desc: '<b>Rounded edges.</b> Exposed edges and corners chamfered where a cell has no leaf neighbour (cut back like the octagon); cells inside the crown stay full cubes.' },
+  { name: '3 Leaf cards', desc: '<b>Leaf cards.</b> Painted leaf-clump cards (alpha-cut quads) on the exposed faces, jutting past the block edges to break the outline; the cards use the canopy normals.' },
+  { name: '4 Normals + rounded', desc: '<b>1 + 2.</b> Chamfered exposed cells, lit with the canopy normals.' },
+  { name: '5 All three', desc: '<b>1 + 2 + 3.</b> Chamfered cells with canopy normals, plus leaf cards.' },
+  { name: '6 Smooth blob', desc: '<b>Smooth blob (reference).</b> One smoothed mesh around each crown: marching cubes on a blurred leaf-occupancy field. Not blocks.' },
+];
+
+// ---------- state & URL ----------
+const q = new URLSearchParams(location.search);
+const S = {
+  opt: +(q.get('opt') ?? 0),
+  compare: q.has('compare'),
+  set: (q.get('compare') || '0,4,5,6').split(',').map(Number).filter(n => n >= 0 && n < 7).slice(0, 4),
+  growth: +(q.get('growth') ?? 100) / 100,
+  trees: +(q.get('trees') ?? 1),
+  seed: +(q.get('seed') ?? 7),
+  blend: +(q.get('blend') ?? 75) / 100,
+  chamfer: +(q.get('chamfer') ?? 28) / 100,
+  density: +(q.get('density') ?? 55) / 100,
+  cardSize: +(q.get('cardSize') ?? 95) / 100,
+  time: +(q.get('time') ?? 38) / 100,
+  grid: q.get('grid') === '1',
+};
+if (S.set.length < 2) S.set = [0, 4, 5, 6];
+
+// ---------- RNG ----------
+function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a);
+  t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+
+// ---------- painted textures ----------
+function canvasTex(size, paint, { repeat = false, alpha = false } = {}) {
+  const c = document.createElement('canvas'); c.width = c.height = size;
+  const g = c.getContext('2d'); paint(g, size);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  if (repeat) t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+function dab(g, x, y, rx, ry, rot, col, a = 1) {
+  g.save(); g.translate(x, y); g.rotate(rot); g.globalAlpha = a; g.fillStyle = col;
+  g.beginPath(); g.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2); g.fill(); g.restore();
+}
+function leafShape(g, x, y, len, wid, rot, col, a = 1) {
+  g.save(); g.translate(x, y); g.rotate(rot); g.globalAlpha = a; g.fillStyle = col;
+  g.beginPath(); g.moveTo(0, 0);
+  g.quadraticCurveTo(wid, len * .45, 0, len); g.quadraticCurveTo(-wid, len * .45, 0, 0); g.fill(); g.restore();
+}
+const rngT = mulberry32(99);
+// cube leaf: dense painted leaves on a dark ground, a few small cut-out holes
+const leafCubeTex = canvasTex(128, (g, n) => {
+  g.fillStyle = PAL.leaf.shadow; g.fillRect(0, 0, n, n);
+  const cols = [PAL.leaf.shadow, PAL.leaf.base, PAL.leaf.base, PAL.leaf.light];
+  for (let i = 0; i < 260; i++) {
+    const c = cols[Math.floor(rngT() * cols.length)];
+    leafShape(g, rngT() * n, rngT() * n, 10 + rngT() * 12, 5 + rngT() * 4, rngT() * 6.28, c, .95);
+  }
+  g.globalCompositeOperation = 'destination-out';
+  for (let i = 0; i < 9; i++) dab(g, rngT() * n, rngT() * n, 3 + rngT() * 4, 2 + rngT() * 3, rngT() * 3, '#000');
+}, { repeat: true });
+const leafSolidTex = canvasTex(128, (g, n) => {
+  g.fillStyle = PAL.leaf.base; g.fillRect(0, 0, n, n);
+  const cols = [PAL.leaf.shadow, PAL.leaf.base, PAL.leaf.light];
+  for (let i = 0; i < 200; i++) leafShape(g, rngT() * n, rngT() * n, 10 + rngT() * 12, 5 + rngT() * 4, rngT() * 6.28,
+    cols[Math.floor(rngT() * 3)], .9);
+}, { repeat: true });
+// leaf card: a clump of leaves radiating from below, lighter on top, transparent ground
+const leafCardTex = canvasTex(128, (g, n) => {
+  g.clearRect(0, 0, n, n);
+  for (let i = 0; i < 46; i++) {
+    const a = -Math.PI / 2 + (rngT() - .5) * 3.6;
+    const r = 8 + rngT() * 36;
+    const x = n / 2 + Math.cos(a) * r * .9, y = n * .55 + Math.sin(a) * r * .75;
+    const top = 1 - y / n;
+    const c = top > .62 ? PAL.leaf.light : top > .38 ? PAL.leaf.base : PAL.leaf.shadow;
+    leafShape(g, x, y, 16 + rngT() * 14, 7 + rngT() * 4, a - Math.PI / 2 + (rngT() - .5) * .8, c, 1);
+  }
+});
+const barkTex = canvasTex(64, (g, n) => {
+  g.fillStyle = PAL.bark.base; g.fillRect(0, 0, n, n);
+  for (let i = 0; i < 70; i++) {
+    const c = [PAL.bark.shadow, PAL.bark.light, PAL.bark.shadow][i % 3];
+    dab(g, rngT() * n, rngT() * n, 1.5 + rngT() * 2, 6 + rngT() * 10, (rngT() - .5) * .2, c, .7);
+  }
+}, { repeat: true });
+const grassTex = canvasTex(128, (g, n) => {
+  g.fillStyle = PAL.meadow.base; g.fillRect(0, 0, n, n);
+  for (let i = 0; i < 420; i++) {
+    const c = [PAL.meadow.shadow, PAL.meadow.light, PAL.meadow.base][i % 3];
+    dab(g, rngT() * n, rngT() * n, 1.5 + rngT() * 2.5, 3 + rngT() * 4, (rngT() - .5) * .9, c, .6);
+  }
+}, { repeat: true });
+
+// ---------- renderer / scene ----------
+const view = document.getElementById('view');
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+view.prepend(renderer.domElement);
+renderer.setScissorTest(true);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 300);
+camera.position.set(11, 8, 13);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 4, 0); controls.enableDamping = true; controls.maxPolarAngle = Math.PI * .495;
+
+const hemi = new THREE.HemisphereLight(0xcfe3ff, 0x6a7a40, 0.9);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(PAL.sun, 2.6);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -16, right: 16, top: 16, bottom: -16, near: 1, far: 80 });
+sun.shadow.radius = 4; sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.04;
+scene.add(sun, sun.target);
+
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(26, 26),
+  new THREE.MeshStandardMaterial({ map: grassTex, roughness: 1 }));
+grassTex.repeat.set(13, 13);
+ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+// soil edge so the plot reads as a block of ground
+const soil = new THREE.Mesh(new THREE.BoxGeometry(26, 1, 26), new THREE.MeshStandardMaterial({ color: PAL.soil.base, roughness: 1 }));
+soil.position.y = -0.501; scene.add(soil);
+
+const gridHelper = new THREE.GridHelper(26, 26, 0x241c28, 0x241c28);
+gridHelper.material.opacity = .22; gridHelper.material.transparent = true; gridHelper.position.y = 0.005;
+scene.add(gridHelper);
+
+function setSky() {
+  // time 0..1: sunrise -> noon -> sunset; elevation 6..72 deg, azimuth sweeps
+  const t = S.time, el = THREE.MathUtils.degToRad(6 + 66 * Math.sin(Math.PI * t)), az = Math.PI * (0.15 + 1.1 * t);
+  sun.position.set(Math.cos(az) * Math.cos(el) * 40, Math.sin(el) * 40, Math.sin(az) * Math.cos(el) * 40);
+  const low = 1 - Math.sin(Math.PI * t);
+  sun.color.set(PAL.sun).lerp(new THREE.Color('#ffb070'), low * low * .8);
+  sun.intensity = 1.4 + 1.4 * Math.sin(el);
+  const sky = new THREE.Color('#9ccbf0').lerp(new THREE.Color('#f2c4a0'), low * low * .7);
+  scene.background = sky; hemi.color.copy(sky).lerp(new THREE.Color('#ffffff'), .3);
+}
+
+// ---------- materials ----------
+const M = {
+  leafCube: new THREE.MeshStandardMaterial({ map: leafCubeTex, alphaTest: .5, side: THREE.DoubleSide, roughness: .95 }),
+  leafCard: new THREE.MeshStandardMaterial({ map: leafCardTex, alphaTest: .45, side: THREE.DoubleSide, roughness: .95 }),
+  blob: new THREE.MeshStandardMaterial({ map: leafSolidTex, roughness: .95 }),
+  bark: new THREE.MeshStandardMaterial({ map: barkTex, roughness: 1 }),
+  end: new THREE.MeshStandardMaterial({ color: PAL.heartwood.base, roughness: 1 }),
+  cell: new THREE.LineBasicMaterial({ color: 0x241c28, transparent: true, opacity: .35 }),
+};
+leafSolidTex.repeat.set(10, 10);
+
+// ---------- tree generation ----------
+const key = (x, y, z) => `${x},${y},${z}`;
+function makeTree(seed, ox, oz, g) {
+  const r = mulberry32(seed * 7919 + 13);
+  const fullH = 5 + Math.floor(r() * 3);               // 5..7 m of trunk under the crown
+  const H = Math.max(1, Math.round(THREE.MathUtils.lerp(1.5, fullH, g)));
+  const w = THREE.MathUtils.lerp(0.12, 0.5, Math.min(1, g * 1.15)); // octagon half-width
+  const s = THREE.MathUtils.lerp(0.32, 1, g);          // crown scale
+  // blobs: one main body and a few lumps, in metres relative to the crown centre
+  const blobs = [{ x: 0, y: 0, z: 0, rx: 2.3, ry: 1.7, rz: 2.3 }];
+  const nb = 3 + Math.floor(r() * 3);
+  for (let i = 0; i < nb; i++) {
+    const a = r() * Math.PI * 2, d = 1.1 + r() * .7;
+    blobs.push({ x: Math.cos(a) * d, y: (r() - .35) * 1.3, z: Math.sin(a) * d, rx: 1.1 + r() * .7, ry: .9 + r() * .6, rz: 1.1 + r() * .7 });
+  }
+  const noise = mulberry32(seed * 31 + 5);
+  const cy = H + 1.2 * s;                               // crown centre height (world)
+  const cx = ox + .5, cz = oz + .5;
+  const leaves = new Set();
+  const R = 5;
+  for (let x = -R; x <= R; x++) for (let y = -R; y <= R; y++) for (let z = -R; z <= R; z++) {
+    const px = ox + x, py = Math.floor(cy) + y, pz = oz + z;
+    if (py < 1) continue;
+    const ux = px + .5 - cx, uy = py + .5 - cy, uz = pz + .5 - cz;
+    let f = -1e9;
+    for (const b of blobs) {
+      const dx = (ux - b.x * s) / (b.rx * s + .35), dy = (uy - b.y * s) / (b.ry * s + .35), dz = (uz - b.z * s) / (b.rz * s + .35);
+      f = Math.max(f, 1 - (dx * dx + dy * dy + dz * dz));
+    }
+    if (f + (noise() - .5) * .3 > 0) leaves.add(key(px, py, pz));
+  }
+  for (let y = 0; y < H; y++) leaves.delete(key(ox, y, oz));
+  leaves.add(key(ox, H, oz));
+  // branch stubs: short horizontal octagons below the crown
+  const stubs = [];
+  if (g > .35) {
+    const n = 2, a0 = r() * 4 | 0;
+    for (let i = 0; i < n; i++) {
+      const dir = [[1, 0], [0, 1], [-1, 0], [0, -1]][(a0 + i * 2 + (r() < .5 ? 1 : 0)) % 4];
+      const y = Math.max(2, H - 1 - i - (r() < .5 ? 1 : 0));
+      if (y >= H) continue;
+      stubs.push({ x: ox, y, z: oz, dx: dir[0], dz: dir[1], len: 1 + (g > .75 ? 1 : 0) });
+    }
+  }
+  // ellipsoid fitted to the crown: centroid and sqrt(5 var) per axis (a solid ellipsoid's var is r²/5)
+  let n = 0, mx = 0, my = 0, mz = 0;
+  const cells = [...leaves].map(k => k.split(',').map(Number));
+  for (const [x, y, z] of cells) { mx += x + .5; my += y + .5; mz += z + .5; n++; }
+  mx /= n; my /= n; mz /= n;
+  let vx = 0, vy = 0, vz = 0;
+  for (const [x, y, z] of cells) { vx += (x + .5 - mx) ** 2; vy += (y + .5 - my) ** 2; vz += (z + .5 - mz) ** 2; }
+  const ell = { c: new THREE.Vector3(mx, my, mz),
+    r: new THREE.Vector3(Math.sqrt(5 * vx / n) + .5, Math.sqrt(5 * vy / n) + .5, Math.sqrt(5 * vz / n) + .5) };
+  return { ox, oz, H, w, leaves, cells, stubs, ell };
+}
+
+// ---------- geometry helpers ----------
+const DIRS = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+function octPrism(w, len, axis) {
+  // a regular octagon (flats at half-width w) extruded; flat-shaded
+  const g = new THREE.CylinderGeometry(w / Math.cos(Math.PI / 8), w / Math.cos(Math.PI / 8), len, 8, 1, false, Math.PI / 8).toNonIndexed();
+  const uv = g.attributes.uv;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 4 * w * 2, uv.getY(i) * len);
+  g.computeVertexNormals();
+  if (axis === 'x') g.rotateZ(Math.PI / 2); else if (axis === 'z') g.rotateX(Math.PI / 2);
+  return g;
+}
+function trunkGroup(t) {
+  const grp = new THREE.Group();
+  const trunk = new THREE.Mesh(octPrism(t.w, t.H + 0.5, 'y'), M.bark);
+  trunk.position.set(t.ox + .5, (t.H + .5) / 2, t.oz + .5);
+  grp.add(trunk);
+  for (const st of t.stubs) {
+    const len = st.len + t.w;
+    const m = new THREE.Mesh(octPrism(t.w * .62, len, st.dx ? 'x' : 'z'), M.bark);
+    m.position.set(t.ox + .5 + st.dx * len / 2, st.y + .5, t.oz + .5 + st.dz * len / 2);
+    grp.add(m);
+    // end grain cap
+    const cap = new THREE.Mesh(new THREE.CircleGeometry(t.w * .62 / Math.cos(Math.PI / 8) * .97, 8, Math.PI / 8), M.end);
+    cap.position.set(t.ox + .5 + st.dx * (len + .002), st.y + .5, t.oz + .5 + st.dz * (len + .002));
+    cap.lookAt(cap.position.x + st.dx, cap.position.y, cap.position.z + st.dz);
+    grp.add(cap);
+  }
+  grp.traverse(o => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; } });
+  return grp;
+}
+
+// clip a convex polyhedron (list of faces {v:[Vector3], tag}) by n·p <= d
+function clip(faces, n, d) {
+  const out = [], cap = [], eps = 1e-6;
+  for (const f of faces) {
+    const v = f.v, nv = [];
+    for (let i = 0; i < v.length; i++) {
+      const a = v[i], b = v[(i + 1) % v.length];
+      const da = n.dot(a) - d, db = n.dot(b) - d;
+      if (da <= eps) nv.push(a);
+      if (Math.abs(da) <= eps) cap.push(a);
+      if ((da < -eps && db > eps) || (da > eps && db < -eps)) {
+        const p = a.clone().lerp(b, da / (da - db)); nv.push(p); cap.push(p);
+      }
+    }
+    if (nv.length >= 3) out.push({ v: nv, tag: f.tag, n: f.n });
+  }
+  // cap polygon: unique points sorted around their centroid
+  const u = [];
+  for (const p of cap) if (!u.some(q => q.distanceToSquared(p) < 1e-9)) u.push(p);
+  if (u.length >= 3) {
+    const c = u.reduce((s, p) => s.add(p), new THREE.Vector3()).multiplyScalar(1 / u.length);
+    const ax = new THREE.Vector3().subVectors(u[0], c).normalize(), ay = new THREE.Vector3().crossVectors(n, ax);
+    const ang = p => { const d = p.clone().sub(c); return Math.atan2(ay.dot(d), ax.dot(d)); };
+    u.sort((p, q) => ang(p) - ang(q));
+    out.push({ v: u, tag: -1, n: n.clone() });
+  }
+  return out;
+}
+const CUBE = (() => {
+  const f = [];
+  for (let i = 0; i < 6; i++) {
+    const n = new THREE.Vector3(...DIRS[i]);
+    const a = Math.abs(n.x) ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+    const b = new THREE.Vector3().crossVectors(n, a);
+    const c = n.clone().multiplyScalar(.5);
+    f.push({ tag: i, n, v: [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([s, t]) =>
+      c.clone().addScaledVector(a, s * .5).addScaledVector(b, t * .5)) });
+  }
+  return f;
+})();
+
+class Builder {
+  constructor() { this.p = []; this.n = []; this.uv = []; }
+  tri(a, b, c, na, nb, nc, ua, ub, uc) {
+    this.p.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+    this.n.push(na.x, na.y, na.z, nb.x, nb.y, nb.z, nc.x, nc.y, nc.z);
+    this.uv.push(ua[0], ua[1], ub[0], ub[1], uc[0], uc[1]);
+  }
+  geometry() {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(this.p, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(this.n, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
+    return g;
+  }
+}
+function canopyNormal(ell, p, faceN, t) {
+  const g = new THREE.Vector3((p.x - ell.c.x) / (ell.r.x * ell.r.x), (p.y - ell.c.y) / (ell.r.y * ell.r.y), (p.z - ell.c.z) / (ell.r.z * ell.r.z));
+  if (g.lengthSq() < 1e-8) g.copy(faceN); else g.normalize();
+  return faceN.clone().lerp(g, t).normalize();
+}
+function faceUV(p, n) {
+  const ax = Math.abs(n.x), ay = Math.abs(n.y), az = Math.abs(n.z);
+  if (ax >= ay && ax >= az) return [p.z + .5, p.y + .5];
+  if (ay >= az) return [p.x + .5, p.z + .5];
+  return [p.x + .5, p.y + .5];
+}
+
+// the leaf blocks: per cell a cube, optionally chamfered on the edges/corners whose faces are exposed
+function leafBlocks(t, chamfer, blend) {
+  const B = new Builder(), has = (x, y, z) => t.leaves.has(key(x, y, z));
+  const s = chamfer;
+  for (const [x, y, z] of t.cells) {
+    const ex = DIRS.map(([dx, dy, dz]) => !has(x + dx, y + dy, z + dz));
+    if (!ex.some(Boolean)) continue;
+    let faces = CUBE;
+    if (s > 0.005) {
+      for (let i = 0; i < 6; i++) for (let j = i + 1; j < 6; j++) {
+        if ((i >> 1) === (j >> 1) || !ex[i] || !ex[j]) continue;
+        const n = new THREE.Vector3(...DIRS[i]).add(new THREE.Vector3(...DIRS[j])).normalize();
+        faces = clip(faces, n, (1 - s) / Math.SQRT2);
+      }
+      for (const sx of [0, 1]) for (const sy of [2, 3]) for (const sz of [4, 5]) {
+        if (!ex[sx] || !ex[sy] || !ex[sz]) continue;
+        const n = new THREE.Vector3(...DIRS[sx]).add(new THREE.Vector3(...DIRS[sy])).add(new THREE.Vector3(...DIRS[sz])).normalize();
+        faces = clip(faces, n, (1.5 - 2 * s) / Math.sqrt(3));
+      }
+    }
+    const o = new THREE.Vector3(x + .5, y + .5, z + .5);
+    for (const f of faces) {
+      if (f.tag >= 0 && !ex[f.tag]) continue;
+      const v = f.v;
+      // winding: make it counter-clockwise seen from outside
+      const cr = new THREE.Vector3().subVectors(v[1], v[0]).cross(new THREE.Vector3().subVectors(v[2], v[0]));
+      const vv = cr.dot(f.n) < 0 ? [...v].reverse() : v;
+      const wp = vv.map(p => p.clone().add(o));
+      const ns = wp.map(p => blend > 0 ? canopyNormal(t.ell, p, f.n, blend) : f.n);
+      const uvs = vv.map(p => faceUV(p, f.n));
+      for (let i = 1; i + 1 < vv.length; i++) B.tri(wp[0], wp[i], wp[i + 1], ns[0], ns[i], ns[i + 1], uvs[0], uvs[i], uvs[i + 1]);
+    }
+  }
+  const m = new THREE.Mesh(B.geometry(), M.leafCube);
+  m.castShadow = m.receiveShadow = true;
+  return m;
+}
+
+function leafCards(t, density, size, blend, seed) {
+  const B = new Builder(), has = (x, y, z) => t.leaves.has(key(x, y, z));
+  const r = mulberry32(seed * 17 + 3);
+  const tmp = new THREE.Vector3();
+  for (const [x, y, z] of t.cells) {
+    for (let d = 0; d < 6; d++) {
+      const [dx, dy, dz] = DIRS[d];
+      if (has(x + dx, y + dy, z + dz)) continue;
+      const want = density * (d === 3 ? 1.2 : d === 2 ? 2.6 : 2.2);
+      let k = Math.floor(want) + (r() < want % 1 ? 1 : 0);
+      const fn = new THREE.Vector3(dx, dy, dz);
+      const a = Math.abs(dx) ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+      const b = new THREE.Vector3().crossVectors(fn, a);
+      while (k-- > 0) {
+        const sz = size * (.75 + r() * .5);
+        const c = new THREE.Vector3(x + .5, y + .5, z + .5).addScaledVector(fn, .5 + sz * (.05 + r() * .2))
+          .addScaledVector(a, (r() - .5) * .9).addScaledVector(b, (r() - .5) * .9);
+        // the card faces roughly out of the face, tilted toward the crown's outward direction
+        const out = canopyNormal(t.ell, c, fn, .5);
+        const cn = out.clone().add(tmp.set(r() - .5, r() - .5, r() - .5).multiplyScalar(.9)).normalize();
+        let up = Math.abs(cn.y) > .9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
+        up.applyAxisAngle(cn, (r() - .5) * 1.2);
+        const ux = new THREE.Vector3().crossVectors(up, cn).normalize(), uy = new THREE.Vector3().crossVectors(cn, ux);
+        const h = sz / 2;
+        const pts = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([s, tt]) => c.clone().addScaledVector(ux, s * h).addScaledVector(uy, tt * h));
+        const ns = pts.map(p => canopyNormal(t.ell, p, cn, Math.max(blend, .6)));
+        const uv = [[0, 0], [1, 0], [1, 1], [0, 1]];
+        B.tri(pts[0], pts[1], pts[2], ns[0], ns[1], ns[2], uv[0], uv[1], uv[2]);
+        B.tri(pts[0], pts[2], pts[3], ns[0], ns[2], ns[3], uv[0], uv[2], uv[3]);
+      }
+    }
+  }
+  const m = new THREE.Mesh(B.geometry(), M.leafCard);
+  m.castShadow = m.receiveShadow = true;
+  return m;
+}
+
+function blob(t) {
+  const res = 36;
+  let lo = new THREE.Vector3(1e9, 1e9, 1e9), hi = new THREE.Vector3(-1e9, -1e9, -1e9);
+  for (const [x, y, z] of t.cells) { lo.min(tmpV.set(x, y, z)); hi.max(tmpV.set(x + 1, y + 1, z + 1)); }
+  const centre = lo.clone().add(hi).multiplyScalar(.5);
+  const L = Math.max(hi.x - lo.x, hi.y - lo.y, hi.z - lo.z) + 4;
+  const mc = new MarchingCubes(res, M.blob, true, false, 60000);
+  mc.isolation = 1;
+  const sig = .65, inv = 1 / (2 * sig * sig), norm = 1 / (Math.pow(2 * Math.PI, 1.5) * sig ** 3) / .5; // half density = surface
+  const field = mc.field, hs = mc.halfsize;
+  for (let k = 0; k < res; k++) for (let j = 0; j < res; j++) for (let i = 0; i < res; i++) {
+    const px = centre.x + (i - hs) / hs * L / 2, py = centre.y + (j - hs) / hs * L / 2, pz = centre.z + (k - hs) / hs * L / 2;
+    let f = 0;
+    for (const [x, y, z] of t.cells) {
+      const dx = px - x - .5, dy = py - y - .5, dz = pz - z - .5, d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 < 4.5) f += Math.exp(-d2 * inv);
+    }
+    field[i + j * mc.yd + k * mc.zd] = f * norm;
+  }
+  mc.update();
+  mc.position.copy(centre); mc.scale.setScalar(L / 2);
+  mc.castShadow = mc.receiveShadow = true;
+  return mc;
+}
+const tmpV = new THREE.Vector3();
+
+function cellLines(t) {
+  const pts = [];
+  for (const [x, y, z] of t.cells) {
+    for (const [a, b] of [[[0,0,0],[1,0,0]],[[0,0,0],[0,1,0]],[[0,0,0],[0,0,1]],[[1,1,1],[0,1,1]],[[1,1,1],[1,0,1]],[[1,1,1],[1,1,0]],
+      [[1,0,0],[1,1,0]],[[1,0,0],[1,0,1]],[[0,1,0],[1,1,0]],[[0,1,0],[0,1,1]],[[0,0,1],[1,0,1]],[[0,0,1],[0,1,1]]])
+      pts.push(x + a[0], y + a[1], z + a[2], x + b[0], y + b[1], z + b[2]);
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  return new THREE.LineSegments(g, M.cell);
+}
+
+// ---------- build ----------
+const SITES = [[0, 0], [-5, 2], [5, -2]];
+let trees = [], trunks = new THREE.Group(), grids = new THREE.Group();
+const looks = []; // per option: Group or null (built lazily)
+scene.add(trunks, grids);
+function dispose(o) { if (!o) return; scene.remove(o); o.traverse(c => { if (c.geometry) c.geometry.dispose(); }); }
+function rebuildTrees() {
+  trees = SITES.slice(0, S.trees).map(([x, z], i) => makeTree(S.seed + i * 101, x, z, S.growth));
+  dispose(trunks); trunks = new THREE.Group(); trees.forEach(t => trunks.add(trunkGroup(t))); scene.add(trunks);
+  dispose(grids); grids = new THREE.Group(); trees.forEach(t => grids.add(cellLines(t))); scene.add(grids);
+  invalidate();
+}
+function invalidate() { for (let i = 0; i < 7; i++) { dispose(looks[i]); looks[i] = null; } }
+function look(i) {
+  if (looks[i]) return looks[i];
+  const g = new THREE.Group();
+  trees.forEach((t, ti) => {
+    const ch = S.chamfer, bl = S.blend;
+    if (i === 0) g.add(leafBlocks(t, 0, 0));
+    if (i === 1) g.add(leafBlocks(t, 0, bl));
+    if (i === 2) g.add(leafBlocks(t, ch, 0));
+    if (i === 3) { g.add(leafBlocks(t, 0, 0)); g.add(leafCards(t, S.density, S.cardSize, bl, S.seed + ti)); }
+    if (i === 4) g.add(leafBlocks(t, ch, bl));
+    if (i === 5) { g.add(leafBlocks(t, ch, bl)); g.add(leafCards(t, S.density, S.cardSize, bl, S.seed + ti)); }
+    if (i === 6) g.add(blob(t));
+  });
+  g.visible = false; scene.add(g); looks[i] = g;
+  return g;
+}
+
+// ---------- UI ----------
+const $ = id => document.getElementById(id);
+const optsEl = $('opts');
+OPTIONS.forEach((o, i) => {
+  const b = document.createElement('button'); b.textContent = o.name; b.dataset.i = i;
+  if (i === 6) b.classList.add('wide');
+  b.onclick = () => {
+    if (S.compare) {
+      const at = S.set.indexOf(i);
+      if (at >= 0) { if (S.set.length > 2) S.set.splice(at, 1); }
+      else { S.set.push(i); if (S.set.length > 4) S.set.shift(); }
+    } else S.opt = i;
+    syncUI();
+  };
+  optsEl.appendChild(b);
+});
+$('compare').onclick = () => { S.compare = !S.compare; syncUI(); };
+document.querySelectorAll('[data-trees]').forEach(b => b.onclick = () => { S.trees = +b.dataset.trees; syncUI(); rebuildTrees(); });
+$('seed').value = S.seed;
+$('seed').onchange = () => { S.seed = +$('seed').value | 0; rebuildTrees(); };
+$('reroll').onclick = () => { S.seed = (Math.random() * 1e4) | 0; $('seed').value = S.seed; rebuildTrees(); };
+function slider(id, keyName, fmt, onChange) {
+  const el = $(id), out = $(id + 'V');
+  el.value = Math.round(S[keyName] * 100);
+  const show = () => out.textContent = fmt(+el.value);
+  show();
+  el.oninput = () => { S[keyName] = +el.value / 100; show(); onChange(); };
+}
+slider('growth', 'growth', v => v + '%', rebuildTrees);
+slider('blend', 'blend', v => v + '%', invalidate);
+slider('chamfer', 'chamfer', v => (v / 100).toFixed(2) + ' m', invalidate);
+slider('density', 'density', v => v + '%', invalidate);
+slider('cardSize', 'cardSize', v => (v / 100).toFixed(2) + ' m', invalidate);
+slider('time', 'time', v => { const h = 6 + v * .12; return `${Math.floor(h)}:${String(Math.round((h % 1) * 60)).padStart(2, '0')}`; }, setSky);
+$('grid').checked = S.grid;
+$('grid').onchange = () => { S.grid = $('grid').checked; };
+
+function shown() { return S.compare ? S.set : [S.opt]; }
+function syncUI() {
+  const sh = shown();
+  optsEl.querySelectorAll('button').forEach(b => b.classList.toggle('on', sh.includes(+b.dataset.i)));
+  $('compare').classList.toggle('on', S.compare);
+  $('compare').textContent = S.compare ? 'Compare on: tap to add or remove (2–4)' : 'Compare (pick 2–4)';
+  document.querySelectorAll('[data-trees]').forEach(b => b.classList.toggle('on', +b.dataset.trees === S.trees));
+  $('desc').innerHTML = sh.map(i => OPTIONS[i].desc).join('<br>');
+}
+
+// ---------- render ----------
+const labels = $('labels');
+function layout(n, W, H) {
+  if (n === 1) return [[0, 0, W, H]];
+  if (n === 2) return W >= H ? [[0, 0, W / 2, H], [W / 2, 0, W / 2, H]] : [[0, H / 2, W, H / 2], [0, 0, W, H / 2]];
+  const w = W / 2, h = H / 2;
+  return [[0, h, w, h], [w, h, w, h], [0, 0, w, h], [w, 0, w, h]].slice(0, n);
+}
+function resize() {
+  const W = view.clientWidth, H = view.clientHeight;
+  renderer.setSize(W, H, false);
+}
+new ResizeObserver(resize).observe(view);
+let lastLabels = '';
+function frame() {
+  controls.update();
+  const W = view.clientWidth, H = view.clientHeight, sh = shown(), rects = layout(sh.length, W, H);
+  gridHelper.visible = grids.visible = S.grid;
+  const lab = sh.map((i, k) => { const [x, y, w, h] = rects[k]; return `<div style="left:${x}px;top:${H - y - h}px">${OPTIONS[i].name}</div>`; }).join('');
+  if (lab !== lastLabels) { labels.innerHTML = lab; lastLabels = lab; }
+  sh.forEach((i, k) => {
+    const [x, y, w, h] = rects[k];
+    for (let j = 0; j < 7; j++) if (looks[j]) looks[j].visible = false;
+    look(i).visible = true;
+    camera.aspect = w / h; camera.updateProjectionMatrix();
+    renderer.setViewport(x, y, w, h); renderer.setScissor(x, y, w, h);
+    renderer.render(scene, camera);
+  });
+  requestAnimationFrame(frame);
+}
+setSky(); syncUI(); rebuildTrees(); resize();
+if (S.trees > 1) { camera.position.set(19, 12, 23); }
+requestAnimationFrame(frame);
+window.__leafLab = { S, syncUI, rebuildTrees, invalidate, setSky, camera, controls, get trees() { return trees; } };
+</script>
+</body>
+</html>
