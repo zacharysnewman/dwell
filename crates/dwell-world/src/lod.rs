@@ -119,6 +119,12 @@ const _: () = assert!(
         && -ORIGIN_X >= WORLD_RADIUS as i64,
     "the root holds the disc and the build volume"
 );
+// BIG_MAP.md M0: the compiled root is the one today's world size derives (`lod.maxLevel`, the fewest
+// levels that hold the disc). A bigger size derives more and needs M1's root rework.
+const _: () = assert!(
+    dwell_protocol::world_size::WorldSize::DEFAULT.lod_max_level() as i32 == MAX_LEVEL,
+    "lod.maxLevel is the default world size's"
+);
 
 /// The level-0 section that is this chunk.
 pub fn lod_of_chunk(c: ChunkCoord) -> LodCoord {

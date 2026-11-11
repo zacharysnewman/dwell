@@ -42,6 +42,17 @@
     "autosaveSeconds": 30,
     "pos64Limit": 33554432
   },
+  "worldSizes": {
+    "$comment": "The world sizes a world can be made at (docs/proposals/BIG_MAP.md §6 M0; owner, 2026-11-11: \"Perhaps even scope it as a 2x, 4x, 8x or 10x\"): each a whole radiusScale times world.worldRadius and world.islandRadius. A world's size is its own (WorldSettings tag WORLD_SIZE, optional, ADR 0054): a world without the tag is the default size, today's disc. Everything that follows the radius (the LOD's levels, the big map's cells, the hydrology grid's cell, the island's shape, the uplift's counts) is derived from it by dwell_protocol::world_size, the same at scale 1 as before. The default must have radiusScale 1. Changing a size's scale changes that size's worlds' terrain: give it a new name instead.",
+    "default": "1x",
+    "sizes": [
+      { "name": "1x", "radiusScale": 1 },
+      { "name": "2x", "radiusScale": 2 },
+      { "name": "4x", "radiusScale": 4 },
+      { "name": "8x", "radiusScale": 8 },
+      { "name": "10x", "radiusScale": 10 }
+    ]
+  },
   "bounds": { "shape": "sphere", "center": [0, 0, 0], "radius": 50000 },
   "lod": {
     "sectionCells": 32,

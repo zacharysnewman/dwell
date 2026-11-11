@@ -209,6 +209,23 @@ mod table {
 }
 pub use table::{DEFAULT, PROFILES};
 
+impl HydrologyParams {
+    /// This profile for a world of `size` (BIG_MAP.md M0): the grid's cell × the scale, so the
+    /// whole-map grid keeps today's ~1 M cells (1 km at 10×; rivers and lakes smaller than a cell
+    /// wait for the regional maps, R1–R4), and the uplift layer's range and plate counts × the
+    /// area, so the land keeps today's density of them. At today's size, `self` exactly. (The
+    /// plates' own generator, REALISTIC_WORLD.md R1, is not touched: only its count is.)
+    pub fn sized(&self, size: dwell_protocol::world_size::WorldSize) -> Self {
+        let mut p = *self;
+        p.cell = size.hydrology_cell_m(self.cell);
+        if let Some(t) = &mut p.tectonics {
+            t.ranges.count = size.uplift_count(t.ranges.count);
+            t.plates.count = size.uplift_count(t.plates.count);
+        }
+        p
+    }
+}
+
 /// A profile by name.
 pub fn profile(name: &str) -> Option<&'static HydrologyParams> {
     PROFILES.iter().find(|p| p.name == name)
@@ -333,7 +350,12 @@ pub struct HydrologyMap {
 
 /// The grid for a cell size: square, covering the world's disc, with a border of sea.
 pub fn grid_for(cell: i32) -> (Grid, f64) {
-    let r = i64::from(WORLD_RADIUS);
+    grid_for_radius(cell, i64::from(WORLD_RADIUS))
+}
+
+/// [`grid_for`] over a disc of `radius` m (a world size's, `WorldSize::world_radius_m`).
+pub fn grid_for_radius(cell: i32, radius: i64) -> (Grid, f64) {
+    let r = radius;
     let c = i64::from(cell);
     let n = ((2 * r + c - 1) / c + 2) as usize;
     let x0 = -((n as i64 - 1) * c) as f64 * 0.5;

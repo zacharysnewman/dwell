@@ -154,6 +154,7 @@ fn decoded_fields_are_the_vectors_values() {
         },
         water_speed: 9.0,
         mode: "creative",
+        size: dwell_protocol::world_size::WorldSize::DEFAULT,
     };
     let s = f
         .settings(d)

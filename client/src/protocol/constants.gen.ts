@@ -307,3 +307,15 @@ export const SwingFlags = {
   break: 64,
   place: 128,
 } as const;
+
+/** The world sizes (BIG_MAP.md §6 M0): each a whole multiple of `World`'s radii. */
+export const WorldSizes = {
+  default: '1x',
+  sizes: [
+    { name: '1x', radiusScale: 1 },
+    { name: '2x', radiusScale: 2 },
+    { name: '4x', radiusScale: 4 },
+    { name: '8x', radiusScale: 8 },
+    { name: '10x', radiusScale: 10 },
+  ],
+} as const;

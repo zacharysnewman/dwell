@@ -548,3 +548,39 @@ fn the_uplift_layer_gathers_the_water_into_larger_rivers_than_the_height_field()
     }
     assert!(big > 1.25 * big0, "{big:.1} vs {big0:.1} m³/s");
 }
+
+#[test]
+fn every_world_size_keeps_the_hydrology_grid_at_todays_cell_count() {
+    // BIG_MAP.md M0: a profile at today's size is itself; at each named size the grid's cell grows
+    // with the radius so the whole-map grid over the bigger disc has no more cells than today's
+    // (1 002² at 1×; 1 km cells at 10×), and the uplift's counts grow with the island's area.
+    use dwell_protocol::world_size::WorldSize;
+    for p in hydrology::PROFILES.iter() {
+        assert_eq!(&p.sized(WorldSize::DEFAULT), p, "{}", p.name);
+        let (today, _) = hydrology::grid_for(p.cell);
+        assert_eq!(
+            hydrology::grid_for_radius(p.cell, WorldSize::DEFAULT.world_radius_m())
+                .0
+                .n,
+            today.n
+        );
+        for (n, size) in WorldSize::all() {
+            let q = p.sized(size);
+            let (g, x0) = hydrology::grid_for_radius(q.cell, size.world_radius_m());
+            assert!(g.n <= today.n, "{} at {n}: {} > {}", p.name, g.n, today.n);
+            assert!(
+                -x0 >= size.world_radius_m() as f64,
+                "{} at {n}: covers the disc",
+                p.name
+            );
+            let s2 = size.radius_scale * size.radius_scale;
+            if let (Some(a), Some(b)) = (&p.tectonics, &q.tectonics) {
+                assert_eq!(b.ranges.count, a.ranges.count * s2, "{} at {n}", p.name);
+                assert_eq!(b.plates.count, a.plates.count * s2, "{} at {n}", p.name);
+            }
+        }
+    }
+    let ten = WorldSize::named("10x").unwrap();
+    let p = hydrology::profile(hydrology::DEFAULT).unwrap();
+    assert_eq!(p.sized(ten).cell, 1000);
+}

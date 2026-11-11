@@ -360,7 +360,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 - **A 10× map** — docs/proposals/BIG_MAP.md (owner 2026-11-11: "we will test out a 10x size map soon (could
   start whenever)"). Study written: 10× area (158 km radius) runs natively today (62 s, 871 MB a face here)
   once the radius is one value (M0–M2, a desktop test); a phone needs coarse whole-disc grids and 100 m
-  regions on demand (R1–R6). Open: which 10× (area or radius), per build or per world, desktop first.
+  regions on demand (R1–R6). Owner answers (2026-11-11): 10× radius (500 km), named sizes 1×/2×/4×/8×/10×
+  as a world setting, desktop first, the plates decide land and sea. **M0 built:** the size is a per-world
+  setting (optional tag, today's worlds unchanged) and the LOD levels, big map cells, hydrology cell (≤ 1 M
+  cells at every size), island shape and uplift counts derive from it. Next: M1 (the LOD root per size).
 
 - **Sharing saved structures between players** (owner 2026-11-11: "eventually shareable").
 
