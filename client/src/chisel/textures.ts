@@ -65,7 +65,9 @@ export function blockMaterials(m: Materials): string[] {
 
 /** The atlas tiles `material` paints (materials.json's `tiles`). */
 export function tilesOf(m: Materials, material: string): string[] {
-  return Object.entries(m.tiles).filter(([, v]) => v === material).map(([k]) => k);
+  return Object.entries(m.tiles)
+    .filter(([, v]) => v === material)
+    .map(([k]) => k);
 }
 
 const lin = (b: number) => {
@@ -136,8 +138,10 @@ export function paletteWarnings(p: Palette): PaletteWarning[] {
   const out: PaletteWarning[] = [];
   const range = (ref: string, h: string) => {
     const v = sum(rgb(h)) / 765;
-    if (v < ALBEDO[0]) out.push({ ref, message: `${h} is darker than the albedo range (${String(ALBEDO[0])})` });
-    if (v > ALBEDO[1]) out.push({ ref, message: `${h} is brighter than the albedo range (${String(ALBEDO[1])})` });
+    if (v < ALBEDO[0])
+      out.push({ ref, message: `${h} is darker than the albedo range (${String(ALBEDO[0])})` });
+    if (v > ALBEDO[1])
+      out.push({ ref, message: `${h} is brighter than the albedo range (${String(ALBEDO[1])})` });
   };
   const cool = (h: string) => {
     const c = rgb(h);
@@ -151,7 +155,10 @@ export function paletteWarnings(p: Palette): PaletteWarning[] {
     if (UNCHECKED.includes(name)) continue;
     for (const s of RAMP_STOPS) range(`${name}.${s}`, ramp[s]);
     if (cool(ramp.shadow) < cool(ramp.base) - HUE_SLACK) {
-      out.push({ ref: `${name}.shadow`, message: 'warmer than its base (shift it toward blue-violet)' });
+      out.push({
+        ref: `${name}.shadow`,
+        message: 'warmer than its base (shift it toward blue-violet)',
+      });
     }
     if (warm(ramp.light) < warm(ramp.base) - HUE_SLACK) {
       out.push({ ref: `${name}.light`, message: 'cooler than its base (shift it toward yellow)' });
@@ -193,7 +200,8 @@ export const LAYER_RANGES: Record<string, readonly [number, number, number]> = {
 };
 /** `width` and `length` by layer kind (an edge light's width is to TILE / 2). */
 export function rangeOf(layer: Layer, key: string): readonly [number, number, number] | undefined {
-  if (key === 'width') return layer.kind === 'edgeLight' ? [0.25, TILE / 2, 0.25] : [0.25, TILE, 0.25];
+  if (key === 'width')
+    return layer.kind === 'edgeLight' ? [0.25, TILE / 2, 0.25] : [0.25, TILE, 0.25];
   if (key === 'length') return [0.25, 2 * TILE, 0.25];
   return LAYER_RANGES[key];
 }
@@ -201,7 +209,20 @@ export function rangeOf(layer: Layer, key: string): readonly [number, number, nu
 /** The number fields a layer of `kind` takes (paint.mjs's keys), in the editor's order. */
 export function layerFields(kind: string): string[] {
   if (STROKE_KINDS.includes(kind)) {
-    return ['count', 'band', 'jitter', 'width', 'length', 'angle', 'angleJitter', 'bend', 'softness', 'opacity', ...(kind === 'ring' ? ['arc'] : []), 'seed'];
+    return [
+      'count',
+      'band',
+      'jitter',
+      'width',
+      'length',
+      'angle',
+      'angleJitter',
+      'bend',
+      'softness',
+      'opacity',
+      ...(kind === 'ring' ? ['arc'] : []),
+      'seed',
+    ];
   }
   if (kind === 'gradient') return ['start', 'end', 'steps', 'opacity'];
   if (kind === 'edgeLight') return ['width', 'ragged', 'opacity', 'seed'];
@@ -221,7 +242,11 @@ export function textureToParams(v: TextureView, p: URLSearchParams) {
 }
 
 /** Read back from the URL; an unknown material keeps `base`'s. */
-export function textureFromParams(p: URLSearchParams, m: Materials, base: TextureView): TextureView {
+export function textureFromParams(
+  p: URLSearchParams,
+  m: Materials,
+  base: TextureView,
+): TextureView {
   const tex = p.get('tex');
   return {
     on: p.get('tab') === 'textures',
@@ -247,7 +272,8 @@ export function loadTextures(store: Pick<Storage, 'getItem'> | undefined): Textu
     const raw = store?.getItem(TEXTURE_KEY);
     if (raw) {
       const s = JSON.parse(raw) as Partial<TextureEdit> & { stamp?: number };
-      if (s.stamp === STAMP && s.materials && s.palette) return { materials: s.materials, palette: s.palette };
+      if (s.stamp === STAMP && s.materials && s.palette)
+        return { materials: s.materials, palette: s.palette };
     }
   } catch {
     /* storage unavailable */
@@ -261,4 +287,46 @@ export function saveTextures(store: Pick<Storage, 'setItem'> | undefined, e: Tex
   } catch {
     /* not saved */
   }
+}
+
+interface BlockDef {
+  name: string;
+  textures?: string | { top: string; side: string; bottom: string };
+}
+const buildFar = new Map<string, [number, number, number]>();
+
+/**
+ * The 3D section's tints for the edit (`ChiselPreview.set_tints`): for each block whose top tile's
+ * material paints a different far colour than the build's, the edited colour over the built one
+ * per channel in linear light, by block id (`"dwell:stone"`). Unedited blocks are left out, so the
+ * section keeps the build's colours exactly.
+ */
+export function blockTints(
+  e: TextureEdit,
+  blocks: { namespace?: string; blocks: BlockDef[] },
+): Record<string, [number, number, number]> {
+  const build = { materials: BUILD_MATERIALS, palette: BUILD_PALETTE };
+  const out: Record<string, [number, number, number]> = {};
+  if (validateTextures(e).length) return out;
+  for (const b of blocks.blocks) {
+    const t = b.textures;
+    if (t === undefined) continue;
+    const tile = typeof t === 'string' ? t : t.top;
+    const now = e.materials.tiles[tile];
+    const was = BUILD_MATERIALS.tiles[tile];
+    if (!now || !was) continue;
+    let base = buildFar.get(was);
+    if (!base) {
+      base = farColour(paintTile(build, was));
+      buildFar.set(was, base);
+    }
+    const from = base;
+    const edited = farColour(paintTile(e, now));
+    if (edited.every((c, i) => c === from[i])) continue;
+    out[`${blocks.namespace ?? 'dwell'}:${b.name}`] = [0, 1, 2].map((i) => {
+      const w = lin(from[i] ?? 0);
+      return w > 0 ? lin(edited[i] ?? 0) / w : 1;
+    }) as [number, number, number];
+  }
+  return out;
 }

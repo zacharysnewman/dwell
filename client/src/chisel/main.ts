@@ -50,6 +50,17 @@ import {
   sectionToParams,
   type SectionView,
 } from './section';
+import blocksDwell from '../../../shared/blocks/dwell.json';
+import {
+  blockTints,
+  loadTextures,
+  saveTextures,
+  textureFromParams,
+  textureToParams,
+  type TextureEdit,
+  type TextureView,
+} from './textures';
+import { drawPreview, renderTextures, type TexturePreview } from './texturesTab';
 
 const store = (() => {
   try {
@@ -63,6 +74,9 @@ let selected = 0;
 const view = { seed: 1, cx: 0, cz: 0, size: 2048, overlay: 0, relief: 1 };
 /** The 3D section (ADR 0074, the 3D section, 0.52.19): off until asked for, centred on the detail's centre. */
 let sec: SectionView = { on: false, x: 0, z: 0, size: 1024 };
+/** The Textures tab (ADR 0074 B6): the painterly materials and palette, and the picked material. */
+let textures: TextureEdit = loadTextures(store);
+let tex: TextureView = { on: false, material: 'grass_top' };
 /** Where each `where` field's slider runs (the data's range is wider; the number box takes any). */
 const WHERE_SPAN: Record<string, [number, number, number]> = {
   temperature: [-0.5, 1.5, 0.01],
@@ -518,12 +532,80 @@ function download(name: string, text: string) {
   URL.revokeObjectURL(href);
 }
 
+/** The tab bar: Biomes (the generator) and Textures (the painterly materials). */
+function tabs() {
+  const pick = (on: boolean) => {
+    tex = { ...tex, on };
+    textureUrl();
+    render();
+  };
+  const biomes = button('Biomes', () => {
+    pick(false);
+  });
+  const texturesTab = button('Textures', () => {
+    pick(true);
+  });
+  (tex.on ? texturesTab : biomes).className = 'on';
+  return el('div', { className: 'bar tabs' }, biomes, texturesTab);
+}
+
+const texturePreview: TexturePreview = {
+  tile: byId('tex-tile') as HTMLCanvasElement,
+  repeat: byId('tex-repeat') as HTMLCanvasElement,
+  cube: byId('tex-cube') as HTMLCanvasElement,
+  status: byId('tex-status'),
+};
+
+function textureUrl() {
+  const p = new URLSearchParams(location.search);
+  textureToParams(tex, p);
+  history.replaceState(null, '', `${location.pathname}?${p.toString()}`);
+}
+
+let texTimer = 0;
+function textureChanged() {
+  saveTextures(store, textures);
+  textureUrl();
+  drawPreview(texturePreview, textures, tex.material);
+  // The 3D section repainted with the edit's tints (its colours are the blocks' far colours).
+  clearTimeout(texTimer);
+  if (sec.on) texTimer = window.setTimeout(requestSection, 150);
+}
+
 function render() {
   panel.replaceChildren(
     el('h1', { textContent: 'Chisel' }),
-    el('div', { className: 'sub', textContent: 'Biomes on the real generator' }),
-    el('h2', { textContent: 'Biomes' }),
+    el('div', {
+      className: 'sub',
+      textContent: tex.on
+        ? "Painterly textures with the build's painter"
+        : 'Biomes on the real generator',
+    }),
+    tabs(),
   );
+  byId('textures-box').hidden = !tex.on;
+  for (const id of ['map-box', 'world-box']) byId(id).hidden = tex.on;
+  secBox.hidden = !sec.on;
+  if (tex.on) {
+    renderTextures(
+      panel,
+      {
+        edit: () => textures,
+        setEdit: (e) => {
+          textures = e;
+        },
+        view: () => tex,
+        setView: (v) => {
+          tex = v;
+        },
+        changed: textureChanged,
+        download,
+      },
+      texturePreview,
+    );
+    return;
+  }
+  panel.append(el('h2', { textContent: 'Biomes' }));
   const list = el('div', { className: 'bar' });
   edit.biomes.forEach((b, i) => {
     const pick = button(i === 0 ? `${b.name} (default)` : b.name, () => {
@@ -770,6 +852,7 @@ function requestSection() {
       texel,
       overlay: 0,
       relief: false,
+      tints: JSON.stringify(blockTints(textures, blocksDwell)),
     };
     worker.postMessage(req);
   }
@@ -1042,6 +1125,7 @@ for (const k of ['seed', 'cx', 'cz', 'size', 'overlay', 'relief'] as const) {
   if (v !== null && Number.isFinite(Number(v))) view[k] = Number(v);
 }
 sec = sectionFromParams(params, { ...sec, x: view.cx, z: view.cz });
+tex = textureFromParams(params, textures.materials, tex);
 viewBar();
 render();
 errors.textContent = validateEdit(edit).join('\n');

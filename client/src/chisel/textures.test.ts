@@ -3,9 +3,11 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { bake } from '../../../shared/textures/gen.mjs';
+import blocksDwell from '../../../shared/blocks/dwell.json';
 import {
   TILE,
   blockMaterials,
+  blockTints,
   buildTextures,
   exportMaterials,
   exportPalette,
@@ -18,7 +20,9 @@ import {
   validateTextures,
 } from './textures';
 
-const baked = readFileSync(new URL('../../../crates/dwell-mesh/src/painterly.rgba', import.meta.url));
+const baked = readFileSync(
+  new URL('../../../crates/dwell-mesh/src/painterly.rgba', import.meta.url),
+);
 
 describe('the Textures tab', () => {
   it('previews every atlas tile bit-identical to the baked atlas at the build data', () => {
@@ -69,7 +73,10 @@ describe('the Textures tab', () => {
   it('flags colours off the art direction; the build palette only its known deviations', () => {
     const e = buildTextures();
     // Snow's top and the deer's cream belly are near white (the brightest content there is).
-    expect(paletteWarnings(e.palette).map((w) => w.ref)).toEqual(['snow.light', 'deer_cream.light']);
+    expect(paletteWarnings(e.palette).map((w) => w.ref)).toEqual([
+      'snow.light',
+      'deer_cream.light',
+    ]);
     e.palette.ramps.meadow = { shadow: '#020202', base: '#82bd45', light: '#4a6aff' };
     const refs = paletteWarnings(e.palette).map((w) => w.ref);
     expect(refs).toContain('meadow.shadow');
@@ -81,8 +88,13 @@ describe('the Textures tab', () => {
     textureToParams({ on: true, material: 'stone' }, p);
     expect(p.toString()).toBe('seed=3&tab=textures&tex=stone');
     const m = buildTextures().materials;
-    expect(textureFromParams(p, m, { on: false, material: 'grass_top' })).toEqual({ on: true, material: 'stone' });
-    expect(textureFromParams(new URLSearchParams('tex=nope'), m, { on: false, material: 'grass_top' })).toEqual({
+    expect(textureFromParams(p, m, { on: false, material: 'grass_top' })).toEqual({
+      on: true,
+      material: 'stone',
+    });
+    expect(
+      textureFromParams(new URLSearchParams('tex=nope'), m, { on: false, material: 'grass_top' }),
+    ).toEqual({
       on: false,
       material: 'grass_top',
     });
@@ -90,13 +102,32 @@ describe('the Textures tab', () => {
 
   it('keeps the edit in the browser and starts from the build when storage fails', () => {
     const map = new Map<string, string>();
-    const store = { getItem: (k: string) => map.get(k) ?? null, setItem: (k: string, v: string) => map.set(k, v) };
+    const store = {
+      getItem: (k: string) => map.get(k) ?? null,
+      setItem: (k: string, v: string) => map.set(k, v),
+    };
     const e = buildTextures();
-    e.palette.ramps.meadow!.base = '#80b040';
+    e.palette.ramps.meadow = { shadow: '#4a8a45', base: '#80b040', light: '#c8e06a' };
     saveTextures(store, e);
     expect(loadTextures(store).palette.ramps.meadow?.base).toBe('#80b040');
-    const broken = { getItem: () => { throw new Error('denied'); } };
+    const broken = {
+      getItem: () => {
+        throw new Error('denied');
+      },
+    };
     expect(loadTextures(broken)).toEqual(buildTextures());
     expect(blockMaterials(e.materials)).toContain('stone');
+  });
+
+  it("tints the 3D section's blocks only where an edit changes their far colour", () => {
+    const e = buildTextures();
+    expect(blockTints(e, blocksDwell)).toEqual({});
+    e.palette.ramps.meadow = { shadow: '#30508a', base: '#4060c0', light: '#90a0e0' };
+    const t = blockTints(e, blocksDwell);
+    const grass = t['dwell:grass'];
+    expect(grass, 'grass tops paint with meadow').toBeDefined();
+    expect(grass?.[2] ?? 0).toBeGreaterThan(1);
+    expect(grass?.[1] ?? 9).toBeLessThan(1);
+    expect(t['dwell:stone'], 'stone untouched').toBeUndefined();
   });
 });

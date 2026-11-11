@@ -50,13 +50,28 @@ pub struct TreeBox {
     pub canopy: ([f32; 3], [f32; 3], u32),
 }
 
-fn rgb_of(state: dwell_blocks::StateId) -> u32 {
-    let c = top_rgb(state).map(srgb_byte);
+/// Chisel's Textures tab's edit (ADR 0074 B6): a factor per channel (linear light) on a block's
+/// far colour, by block name (`"dwell:stone"`, every state of it): the edited tile's far colour over
+/// the built one's, so an unedited block keeps its colour exactly.
+pub type Tints = std::collections::HashMap<String, [f64; 3]>;
+
+/// A state's top colour (sRGB `0xRRGGBB`), its block's tint applied.
+fn rgb_tinted(state: dwell_blocks::StateId, tints: &Tints) -> u32 {
+    let mut lin = top_rgb(state);
+    if !tints.is_empty()
+        && let Some(info) = dwell_blocks::STATES.get(usize::from(state))
+        && let Some(t) = tints.get(info.name.split('[').next().unwrap_or(info.name))
+    {
+        for (c, k) in lin.iter_mut().zip(t) {
+            *c = (*c * k).clamp(0.0, 1.0);
+        }
+    }
+    let c = lin.map(srgb_byte);
     (u32::from(c[0]) << 16) | (u32::from(c[1]) << 8) | u32::from(c[2])
 }
 
 /// The section's structures as boxes (`TerrainGenerator::trees_sparse` over its square).
-fn tree_boxes(g: &TerrainGenerator, x0: i64, z0: i64, side: i64) -> Vec<TreeBox> {
+fn tree_boxes(g: &TerrainGenerator, x0: i64, z0: i64, side: i64, tints: &Tints) -> Vec<TreeBox> {
     use dwell_world::m_of_row;
     let lo = (x0 as i32, z0 as i32);
     let hi = ((x0 + side - 1) as i32, (z0 + side - 1) as i32);
@@ -86,7 +101,7 @@ fn tree_boxes(g: &TerrainGenerator, x0: i64, z0: i64, side: i64) -> Vec<TreeBox>
             (
                 [a[0] as f32, y(a[1]), a[2] as f32],
                 [a[0] as f32 + 1.0, y(mn[1]), a[2] as f32 + 1.0],
-                other.map_or(0x6b4a2b, rgb_of),
+                other.map_or(0x6b4a2b, |m| rgb_tinted(m, tints)),
             )
         });
         out.push(TreeBox {
@@ -94,7 +109,7 @@ fn tree_boxes(g: &TerrainGenerator, x0: i64, z0: i64, side: i64) -> Vec<TreeBox>
             canopy: (
                 [mn[0] as f32, y(mn[1]), mn[2] as f32],
                 [mx[0] as f32 + 1.0, y(mx[1] + 1), mx[2] as f32 + 1.0],
-                rgb_of(canopy),
+                rgb_tinted(canopy, tints),
             ),
         });
     }
@@ -109,6 +124,18 @@ pub fn cell_top(h: f32) -> f32 {
 
 /// Samples the section from (x0, z0) (snapped to the texel grid).
 pub fn section(g: &TerrainGenerator, x0: i64, z0: i64, n: usize, texel: i64) -> Section {
+    section_tinted(g, x0, z0, n, texel, &Tints::new())
+}
+
+/// [`section`], the blocks' colours tinted by the Textures tab's edit.
+pub fn section_tinted(
+    g: &TerrainGenerator,
+    x0: i64,
+    z0: i64,
+    n: usize,
+    texel: i64,
+    tints: &Tints,
+) -> Section {
     let texel = texel.max(1);
     let (gx0, gz0) = (x0.div_euclid(texel), z0.div_euclid(texel));
     let mut s = Section {
@@ -123,7 +150,7 @@ pub fn section(g: &TerrainGenerator, x0: i64, z0: i64, n: usize, texel: i64) -> 
     };
     let side = n as i64 * texel;
     if side <= TREES_UP_TO {
-        s.trees = tree_boxes(g, s.x0, s.z0, side);
+        s.trees = tree_boxes(g, s.x0, s.z0, side, tints);
     }
     let min_half = 0.5 * texel as f64;
     for j in 0..n as i64 {
@@ -150,11 +177,9 @@ pub fn section(g: &TerrainGenerator, x0: i64, z0: i64, n: usize, texel: i64) -> 
                 level = h - 0.5;
                 h = cell_top((f64::from(h) - r.depth.max(1.0)) as f32);
             }
-            let c = top_rgb(g.top_state(&col)).map(srgb_byte);
             s.height.push(h);
             s.water.push(level);
-            s.rgb
-                .push((u32::from(c[0]) << 16) | (u32::from(c[1]) << 8) | u32::from(c[2]));
+            s.rgb.push(rgb_tinted(g.top_state(&col), tints));
         }
     }
     s
@@ -402,6 +427,66 @@ mod tests {
         // A section larger than TREES_UP_TO leaves them out.
         let big = section(&g, i64::from(x0), i64::from(z0), 300, texel);
         assert!(big.trees.is_empty());
+    }
+
+    #[test]
+    fn a_texture_tint_recolours_its_blocks_and_leaves_the_rest() {
+        // face-a-only: Chisel previews face A (the tint is a colour, not a direction).
+        let g = generator();
+        let (x0, z0, n, texel) = (0, 0, 24, 2);
+        let plain = section(&g, x0, z0, n, texel);
+        assert_eq!(
+            section_tinted(&g, x0, z0, n, texel, &Tints::new()).rgb,
+            plain.rgb,
+            "no tint: the build's colours, exactly"
+        );
+        // The commonest top block's name, tinted to half its red.
+        let top = |i: i64, j: i64| {
+            let col = g.column_lod(x0 + i * texel + 1, z0 + j * texel + 1, texel);
+            g.top_state(&col)
+        };
+        let state = top(5, 7);
+        let name = dwell_blocks::STATES[usize::from(state)]
+            .name
+            .split('[')
+            .next()
+            .unwrap()
+            .to_string();
+        let tinted = section_tinted(
+            &g,
+            x0,
+            z0,
+            n,
+            texel,
+            &Tints::from([(name.clone(), [0.5, 1.0, 1.0])]),
+        );
+        let (mut changed, mut kept) = (0, 0);
+        for j in 0..n as i64 {
+            for i in 0..n as i64 {
+                let k = (j * n as i64 + i) as usize;
+                let s = top(i, j);
+                if dwell_blocks::STATES[usize::from(s)]
+                    .name
+                    .starts_with(name.as_str())
+                {
+                    assert!(
+                        (tinted.rgb[k] >> 16) < (plain.rgb[k] >> 16),
+                        "{name}'s red falls"
+                    );
+                    assert_eq!(
+                        tinted.rgb[k] & 0xffff,
+                        plain.rgb[k] & 0xffff,
+                        "green and blue kept"
+                    );
+                    changed += 1;
+                } else if !plain.water[k].is_nan() || plain.height[k].is_nan() {
+                } else {
+                    assert_eq!(tinted.rgb[k], plain.rgb[k], "other blocks kept");
+                    kept += 1;
+                }
+            }
+        }
+        assert!(changed > 0, "{name} tinted somewhere ({kept} kept)");
     }
 
     #[test]
