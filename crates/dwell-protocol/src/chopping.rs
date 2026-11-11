@@ -18,7 +18,21 @@ mod table {
 }
 
 pub use crate::damage::{BlockDamageDef, DamageLook, DamageLookKind};
-pub use table::{BLOCK_DAMAGE, BREAK_CLASSES, BREAK_TOOLS, BREAK_WITH, TOOLS, WOODS};
+pub use table::{
+    BLOCK_DAMAGE, BREAK_CLASSES, BREAK_TOOLS, BREAK_WITH, CREATIVE_WEAR, DURABILITY, TOOLS,
+    WEAR_BREAK_SOUND, WOODS,
+};
+
+/// The hits tool item `item` survives (`durability.items`; owner, 2026-11-11), in `table`; `None`:
+/// it never wears.
+pub fn durability_in(table: &[(&str, u16)], item: &str) -> Option<u16> {
+    table.iter().find(|(i, _)| *i == item).map(|&(_, n)| n)
+}
+
+/// [`durability_in`] over the data's table.
+pub fn durability(item: &str) -> Option<u16> {
+    durability_in(DURABILITY, item)
+}
 
 /// A tool's swing (`swing` in the data): its feel (the client's) and its path (both sides').
 #[derive(Clone, Copy, Debug, PartialEq)]

@@ -1,5 +1,9 @@
 # Proposal: crafting (woodworking, log cabins, hauling)
 
+> **Shelved (owner, 2026-11-11):** "That's a lot of assumptions I don't think I want to do any of those
+> crafting question things for now." Nothing below is built; the small combining recipes (8 pieces to a
+> slab, the stone tools) were built on their own (0.52.46, ADR 0066's amendment).
+
 **Status:** recorded 2026-11-10 from the owner's direction; not adopted. Builds on the inventory and
 drops (ADR 0066), the axe and felling (ADR 0067, `docs/FELLING.md`, `CHOPPING_REDESIGN.md`), ground
 items (ADR 0071), block damage (ADR 0078, `docs/BLOCK_DAMAGE.md`), the six tools (0.52.21) and built

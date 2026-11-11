@@ -306,3 +306,39 @@ sticks; the boreal, mixed and cold rain forests more sticks. The weights reach t
 jobs and the crosshair as each chunk column's `GroundDensity` (four corners, eased), from the
 generator; ARCHITECTURE.md "Ground items". Chisel has a slider per kind per biome, and its
 placements overlay shows the ground items in their looks' colours beside the structures.
+
+## 9. Pieces, combining and tool wear **[built, 0.52.46]**
+
+- **Pieces** (owner, 2026-11-11: "8 Rock shards make a rock slab, 8 dirt clumps make a dirt slab, 8 wood
+  chunks to make a log slab"): a ½ m cell breaks into 8 pieces of its material, as its block's `drops`
+  (`{ "item": "dwell:rock_shard", "count": 8 }`): stone and its ramp → `dwell:rock_shard`; dirt, grass,
+  snowy grass and their ramps → `dwell:dirt_clump`; log → `dwell:wood`, relabelled "Wood chunk" (its
+  name kept: saves hold it; the bucked log's `buckDrops` keep it too). BLOCK_DAMAGE's split applies:
+  half (4) over the hits before the last, the rest on the destroy (stone pickaxe: 1 a hit, 4 on the
+  break). Grass, snowy grass and now dirt keep (dirt: gain) the random rock (chance 0.5, "we still
+  want rocks to be found in grass and dirt at random"); leaves keep their sticks; tall grass drops a
+  `dwell:grass_fiber` every time (owner: "2 grass fibers would be the final ingredient for stone
+  tools"). Felled pieces (bodies), sand, snow, ice and the rest keep their drops.
+- **Combining** (owner, 2026-11-11): recipes as data, `shared/inventory/inventory.json` `recipes`
+  (`name`, `inputs` [{ item, count }], `output` { item, count }), validated by `shared/inventory/gen.mjs`
+  (known items, not currency, counts in 1..stackSize, unique names and inputs) and emitted as `RECIPES`
+  (Rust, TS). The server applies one (`Inventory::combine`: the inputs from anywhere, the output added,
+  nothing changed if an input is short or the output has no room) on `InventoryAction::Combine { recipe }`,
+  the recipe's FNV-1a name hash (`inventory::recipe_id`, the same in every build that has it). The
+  server sets `inventory_flags::COMBINE` (16); a client sends Combine only to such a server
+  (`inventory::combine_request`), an older server never gets it. The backpack screen's Combine
+  section lists the recipes the inventory can make with how many times and a button each (adventure:
+  creative has no backpack, everything is in its catalogue). Recipes: 8 rock shards → stone (the ½ m
+  slab), 8 dirt clumps → dirt, 8 wood chunks → log; 2 sticks + 2 rock shards + 2 grass fibers → a stone
+  axe, or the same inputs → a stone pickaxe (the player picks).
+- **Tool wear** (owner, 2026-11-11: the stone axe "should survive 32 hits of durability"):
+  `shared/tools/tools.json` `durability` (`items`: tool item → hits; `creativeWear`; `breakSound`),
+  validated and emitted (`DURABILITY`, `CREATIVE_WEAR`, `WEAR_BREAK_SOUND`). The stone axe 32; every
+  other tool unlimited (the owner named only the axe). A hit that counts uses one: a chop, or a block
+  break hit (one the server takes, refused ones don't) with the tool held; at none left the tool is
+  gone from its slot and the client plays `stick_snap`. Creative: `creativeWear` false, tools don't
+  wear. The wear is a slot's `Stack::wear`, carried by moves; it rides in the inventory record as
+  entries at slot index 128 + slot with no item, which a build without wear skips as it skips any slot
+  past its count: the record stays version 1 on the wire and in saves, no new compatibility line. The
+  hotbar and backpack draw a wear bar from the data. Known gaps: a dead player's dropped tools lose
+  their wear (loose items carry none); an axe's swing that bounces off a non-wood is not a hit.

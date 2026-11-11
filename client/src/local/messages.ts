@@ -60,6 +60,8 @@ export type ToWorker =
   | { t: 'closeGuests' }
   /** Kill the local player (the bench's `die` step). */
   | { t: 'kill' }
+  /** Give the local player items (the bench's `give` step). */
+  | { t: 'give'; item: string; count: number }
   /** Carry the local player on a moving raft (the bench's `carry` step). */
   | { t: 'carry'; speed: number; yaw: number; seconds: number; lift: number }
   /** The respawn preload (ARCHITECTURE.md §6.3) on or off (`?respawnPreload=off`). */

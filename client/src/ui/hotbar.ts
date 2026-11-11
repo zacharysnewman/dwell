@@ -7,13 +7,40 @@ import { BrushPanel, type BrushPanelState } from './brushPanel';
 import { BUILD_MODES } from './buildModes.gen';
 import { keyLabel } from './controls';
 import { HOTBAR_SLOTS, ITEMS } from './inventory.gen';
+import { DURABILITY } from './tools.gen';
 
 /** The inventory as the HUD has it (`Client.hud().inventory`, ADR 0066): null in creative. */
 export interface InventoryHud {
-  slots: ({ item: string; count: number } | null)[];
+  /** `wear`: the hits a wearing tool has used (absent or 0: unworn). */
+  slots: ({ item: string; count: number; wear?: number } | null)[];
   held: number;
   money: number;
   capacity: number;
+  /** The server makes recipes (`inventory_flags::COMBINE`): the backpack shows Combine. */
+  combines?: boolean;
+}
+
+/**
+ * A slot's wear bar (owner, 2026-11-11: tools wear): the share of its hits left, 0..1, for an item
+ * the data gives a durability (`DURABILITY`); null for one that never wears or is unworn.
+ */
+export function wearLeft(item: string, wear: number | undefined): number | null {
+  const hits = DURABILITY[item];
+  if (hits === undefined || !wear) return null;
+  return Math.max(0, (hits - wear) / hits);
+}
+
+/** The wear bar's element for a slot (null: no bar). */
+export function wearBar(item: string, wear: number | undefined): HTMLSpanElement | null {
+  const left = wearLeft(item, wear);
+  if (left === null) return null;
+  const bar = document.createElement('span');
+  bar.className = 'wear-bar';
+  const fill = document.createElement('span');
+  fill.style.width = `${String(Math.round(left * 100))}%`;
+  fill.style.background = left > 0.5 ? '#7cd35a' : left > 0.2 ? '#e6c43c' : '#e0533a';
+  bar.append(fill);
+  return bar;
 }
 
 /** An item's label: a non-block item's from the data, a block's from its name. */
@@ -199,6 +226,8 @@ export class Hotbar {
         n.className = 'hotbar-count';
         n.textContent = String(s.count);
         b.append(n);
+        const bar = wearBar(s.item, s.wear);
+        if (bar) b.append(bar);
       }
       const k = document.createElement('span');
       k.className = 'hotbar-key';

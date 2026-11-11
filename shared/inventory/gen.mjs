@@ -28,6 +28,7 @@ const TOP_FIELDS = [
   'wallets',
   'startingWallet',
   'startingItems',
+  'recipes',
 ];
 const ITEM_FIELDS = ['name', 'label', 'color', 'size', 'stack', 'value', 'look'];
 const LOOK_FIELDS = ['shape', 'size', 'texture', 'color'];
@@ -202,7 +203,30 @@ export function validateInventory(data, namespaces) {
     if (!isInt(st.count) || st.count < 1 || st.count > 65535) fail(`${at}: count must be a whole number in [1, 65535]`);
     return { item: st.item, count: st.count };
   });
-  return { ...data, items, wallets, drops, startingItems };
+  // Recipes (combining, owner 2026-11-11): `inputs` → `output`, each a known item and a count; a
+  // unique namespaced `name` (the wire's); optional, none by default.
+  const amount = (v, where) => {
+    if (typeof v !== 'object' || v === null) fail(`${where} must be { item, count }`);
+    for (const k of Object.keys(v)) if (!['item', 'count'].includes(k)) fail(`${where}: unknown field ${k} (item, count)`);
+    if (typeof v.item !== 'string' || !known(v.item)) fail(`${where}: item must name a block or an item, not ${v.item}`);
+    if (value(v.item) > 0) fail(`${where}: ${v.item} is currency (the wallet's), not a slot's item`);
+    if (!isInt(v.count) || v.count < 1 || v.count > data.stackSize) fail(`${where}: count must be a whole number in [1, stackSize ${data.stackSize}]`);
+    return { item: v.item, count: v.count };
+  };
+  const value = (n) => items.find((i) => i.name === n)?.value ?? 0;
+  if (data.recipes !== undefined && !Array.isArray(data.recipes)) fail('recipes must be a list');
+  const recipes = (data.recipes ?? []).map((r, i) => {
+    const at = typeof r?.name === 'string' ? `recipes.${r.name}` : `recipes[${i}]`;
+    if (typeof r !== 'object' || r === null) fail(`${at} must be an object`);
+    for (const k of Object.keys(r)) if (!['name', 'inputs', 'output'].includes(k)) fail(`${at}: unknown field ${k} (name, inputs, output)`);
+    if (typeof r.name !== 'string' || !NAMESPACED.test(r.name) || r.name.length > MAX_NAME) fail(`${at}: name must be namespace:name`);
+    if (!Array.isArray(r.inputs) || r.inputs.length === 0 || r.inputs.length > 8) fail(`${at}: inputs must be a list of 1–8 { item, count }`);
+    const inputs = r.inputs.map((v, j) => amount(v, `${at}.inputs[${j}]`));
+    if (new Set(inputs.map((v) => v.item)).size !== inputs.length) fail(`${at}: an input item is listed twice`);
+    return { name: r.name, inputs, output: amount(r.output, `${at}.output`) };
+  });
+  if (new Set(recipes.map((r) => r.name)).size !== recipes.length) fail('recipes: a name is listed twice');
+  return { ...data, items, wallets, drops, startingItems, recipes };
 }
 
 /** The block files, as shared/blocks/gen.mjs reads them (and the fixtures with `fixture`). */
@@ -228,7 +252,7 @@ export function loadInventory() {
 const f64 = (v) => (Number.isInteger(v) ? `${v}.0` : `${v}`);
 
 export function inventoryRust(d) {
-  const rs = [`// ${header}`, '', 'use crate::inventory::{BlockDrops, DropChoice, DropRule, ItemDef, ItemLook, LookShape, WalletDef};', ''];
+  const rs = [`// ${header}`, '', 'use crate::inventory::{BlockDrops, DropChoice, DropRule, ItemDef, ItemLook, LookShape, Recipe, WalletDef};', ''];
   rs.push('/// Hotbar slots: the inventory\'s first slots.');
   rs.push(`pub const HOTBAR_SLOTS: usize = ${d.hotbarSlots};`);
   rs.push('/// Backpack slots, after the hotbar\'s.');
@@ -263,6 +287,13 @@ export function inventoryRust(d) {
     rs.push(
       `    ItemDef { name: "${it.name}", label: ${JSON.stringify(it.label)}, color: [${rgb(it.color)}], size: ${f64(it.size)}, stack: ${it.stack}, value: ${it.value}, look: ${look} },`,
     );
+  }
+  rs.push('];');
+  rs.push('');
+  rs.push('/// The recipes (combining): inputs → output.');
+  rs.push('pub static RECIPES: &[Recipe] = &[');
+  for (const r of d.recipes) {
+    rs.push(`    Recipe { name: "${r.name}", inputs: &[${r.inputs.map((v) => `("${v.item}", ${v.count})`).join(', ')}], output: ("${r.output.item}", ${r.output.count}) },`);
   }
   rs.push('];');
   rs.push('');
@@ -309,6 +340,17 @@ export function inventoryTs(d) {
   for (const w of d.wallets) ts.push(`  { name: ${JSON.stringify(w.name)}, label: ${JSON.stringify(w.label)}, capacity: ${w.capacity} },`);
   ts.push('];');
   ts.push(`export const STARTING_WALLET = ${JSON.stringify(d.startingWallet)};`);
+  ts.push('');
+  ts.push('/** A recipe (combining): its inputs make its output (the server applies it). */');
+  ts.push('export interface Recipe {');
+  ts.push('  name: string;');
+  ts.push('  inputs: readonly { item: string; count: number }[];');
+  ts.push('  output: { item: string; count: number };');
+  ts.push('}');
+  ts.push('');
+  ts.push('export const RECIPES: readonly Recipe[] = [');
+  for (const r of d.recipes) ts.push(`  ${JSON.stringify(r)},`);
+  ts.push('];');
   ts.push('');
   return ts.join('\n');
 }

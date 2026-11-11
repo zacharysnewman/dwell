@@ -141,6 +141,8 @@ export type Step =
    * respawn's loading screen, ARCHITECTURE.md §6.3).
    */
   | { do: 'die'; maxS: number }
+  /** Gives the local player `count` of `item` (a local world that uses items; `__dwell.give`). */
+  | { do: 'give'; item: string; count: number }
   /**
    * Stands the player on a raft `lift` m (default 1) above its feet and moves the raft at `speed`
    * m/s toward `yaw` (degrees, 0 = +Z, 90 = +X) for `s` seconds at a held height, then waits out
@@ -356,6 +358,7 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   settle: ['maxS'],
   until: ['what', 'maxS'],
   die: ['maxS'],
+  give: ['item', 'count'],
   mark: [],
   record: ['name'],
   shot: ['name'],
@@ -561,6 +564,12 @@ export function parseStep(where: string, v: unknown): Step {
         s: num(at('s'), o.s, 0, 600),
         ...(o.lift === undefined ? {} : { lift: num(at('lift'), o.lift, 0, 64) }),
       };
+    case 'give': {
+      if (typeof o.item !== 'string' || !/^[a-z][a-z0-9_]*:[a-z][a-z0-9_]*$/.test(o.item)) {
+        throw new ViewError(`${at('item')}: expected an item name (namespace:name)`);
+      }
+      return { do: d, item: o.item, count: num(at('count'), o.count, 1, 999) };
+    }
     case 'settle':
     case 'die':
       return { do: d, maxS: num(at('maxS'), o.maxS, 0, 3600) };

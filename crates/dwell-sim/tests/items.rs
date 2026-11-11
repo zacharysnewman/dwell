@@ -92,10 +92,12 @@ dwell_world::both_faces!(
             .server
             .loose_items()
             .iter()
-            .filter(|it| it.stack.item == "dwell:dirt")
+            .filter(|it| it.stack.item == "dwell:dirt_clump")
             .cloned()
             .collect();
-        assert_eq!(dirt.len(), 1, "grass drops one dirt");
+        // Owner, 2026-11-11: a ½ m grass cell breaks into 8 dirt clumps (one hit here: all 8).
+        assert_eq!(dirt.len(), 1, "one stack of clumps");
+        assert_eq!(dirt[0].stack.count, 8, "grass drops 8 dirt clumps");
         let id = dirt[0].id;
         // It falls out of the broken cell onto the stone below and rests on its top.
         step(&mut fx, 60);
@@ -122,10 +124,10 @@ dwell_world::both_faces!(
         step(&mut fx, 5);
         assert!(fx.server.loose_items().iter().all(|it| it.id != id));
         let inv = fx.server.inventory_of(1).unwrap();
-        assert_eq!(inv.count_of("dwell:dirt"), 1);
+        assert_eq!(inv.count_of("dwell:dirt_clump"), 8);
         let sent = fx.take(1);
         assert!(sent.iter().any(
-            |(m, _)| matches!(m, Message::Inventory(i) if i.inventory.count_of("dwell:dirt") == 1
+            |(m, _)| matches!(m, Message::Inventory(i) if i.inventory.count_of("dwell:dirt_clump") == 8
                 && i.flags & inventory_flags::USES_ITEMS != 0)
         ));
         assert!(
@@ -601,3 +603,74 @@ dwell_world::both_faces!(
         assert!(fx.server.ground_item_at(rocks[0]).is_some());
     }
 );
+
+// --- Combining (owner, 2026-11-11) ---
+
+fn combine(fx: &mut Fixture, name: &str) {
+    let recipe = dwell_protocol::inventory::recipe_id(name);
+    fx.send(
+        1,
+        Message::InventoryAction(InventoryAction::Combine { recipe }),
+    );
+    step(fx, 2);
+}
+
+#[test]
+fn the_server_combines_pieces_into_slabs_and_stone_tools() {
+    // face-a-only: inventories have no face.
+    let mut fx = scene(FaceFrame::A, "adventure");
+    let count = |fx: &Fixture, item: &str| fx.server.inventory_of(1).unwrap().count_of(item);
+    // The server says it combines.
+    fx.server.give(1, "dwell:stick", 1);
+    step(&mut fx, 2);
+    let sent = fx.take(1);
+    assert!(sent.iter().any(|(m, _)| matches!(m, Message::Inventory(i)
+        if i.flags & inventory_flags::COMBINE != 0)));
+    fx.server.give(1, "dwell:stick", 3);
+    // "8 Rock shards make a rock slab": refused with 7, made with 8.
+    fx.server.give(1, "dwell:rock_shard", 7);
+    combine(&mut fx, "dwell:stone_slab");
+    assert_eq!(count(&fx, "dwell:stone"), 0, "refused: 7 shards");
+    assert_eq!(count(&fx, "dwell:rock_shard"), 7, "nothing taken");
+    fx.server.give(1, "dwell:rock_shard", 3);
+    combine(&mut fx, "dwell:stone_slab");
+    assert_eq!(count(&fx, "dwell:stone"), 1);
+    assert_eq!(count(&fx, "dwell:rock_shard"), 2);
+    // Dirt clumps and wood chunks.
+    fx.server.give(1, "dwell:dirt_clump", 8);
+    fx.server.give(1, "dwell:wood", 8);
+    combine(&mut fx, "dwell:dirt_slab");
+    combine(&mut fx, "dwell:log_slab");
+    assert_eq!(
+        (count(&fx, "dwell:dirt"), count(&fx, "dwell:dirt_clump")),
+        (1, 0)
+    );
+    assert_eq!((count(&fx, "dwell:log"), count(&fx, "dwell:wood")), (1, 0));
+    // Stone tools: 2 sticks, 2 rock shards and 2 grass fibers; refused without the fibers.
+    combine(&mut fx, "dwell:stone_pickaxe");
+    assert_eq!(
+        count(&fx, "dwell:stone_pickaxe"),
+        0,
+        "refused: no grass fiber"
+    );
+    fx.server.give(1, "dwell:rock_shard", 2);
+    fx.server.give(1, "dwell:grass_fiber", 4);
+    combine(&mut fx, "dwell:stone_pickaxe");
+    combine(&mut fx, "dwell:stone_axe");
+    assert_eq!(count(&fx, "dwell:stone_pickaxe"), 1);
+    assert_eq!(
+        count(&fx, "dwell:stone_axe"),
+        2,
+        "the starting axe and the made one"
+    );
+    assert_eq!(count(&fx, "dwell:stick"), 0);
+    assert_eq!(count(&fx, "dwell:rock_shard"), 0);
+    assert_eq!(count(&fx, "dwell:grass_fiber"), 0);
+    // An unknown recipe id changes nothing.
+    fx.send(
+        1,
+        Message::InventoryAction(InventoryAction::Combine { recipe: 7 }),
+    );
+    step(&mut fx, 2);
+    assert_eq!(count(&fx, "dwell:stone_axe"), 2);
+}
