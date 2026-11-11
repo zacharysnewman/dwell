@@ -8,6 +8,13 @@ Last updated: 2026-11-11 (0.52.68).
 
 ## Next, in order
 
+0. **P0: the phone's frame rate at Low** (owner, 2026-11-11: "~23 fps on mobile … used to get 60 fps"; BUGS.md #72).
+   - Done (branch `claude/mobile-fps`): leaf cards off on the phone tier by data (`leaves.json` `cards.tiers`), a
+     `?cards=` override, no card into a trunk (the z-fighting). On the bench's phone page in a forest −0.4 ms of 4.8 ms GPU.
+   - Next: toggle the remaining large passes on the phone page at Low (`gpu.composite` ~3 ms, `gpu.arms` ~2 ms,
+     `gpu.water.tiles` 1.1–1.7 ms with no water in view) and compare with a pre-0.52.56 release once one starts under
+     the bench; a real iPhone check.
+
 5. **Leaves, option 5, with matching far trees.**
    - Leaf Lab option 5 at its defaults ("#5 looks really good with defaults"): canopy normals 75 %,
      chamfer 0.28 m, leaf cards density 55 % and size 0.95 m. Leaves stay blocks. Fix the dark gaps at
