@@ -44,7 +44,9 @@ test('bad entries fail with a message naming them', () => {
   bad((d) => (d.island.stepDays = 0), /island\.stepDays must be a number in \(0, 30\]/);
   bad((d) => (d.grazing.grounds[0].max = -1), /grazing\.grounds\.meadow\.max/);
   bad((d) => d.grazing.grounds.push({ ...d.grazing.grounds[0] }), /grazing\.grounds\.meadow: listed twice/);
-  bad((d) => (d.species[0].group.cap = 3), /species\.dwell:deer\.group: cap must be at least twice floor/);
+  bad((d) => (d.species[0].group.dieBelow = 7), /species\.dwell:deer\.group: cap must be at least twice dieBelow/);
+  bad((d) => (d.grazing.grounds[0].refuge = 2), /grazing\.grounds\.meadow\.refuge must be a number in \[0, 1\]/);
+  bad((d) => delete d.species[1].diet.prey.halfSaturationHead, /species\.dwell:wolf\.diet\.prey\.halfSaturationHead must be a number/);
   bad((d) => (d.species[0].start.size = 40), /species\.dwell:deer\.start\.size/);
   bad((d) => (d.species[0].start.groups = 99), /species\.dwell:deer\.start\.groups/);
   bad((d) => (d.species[0].flee.from = ['dwell:bear']), /species\.dwell:deer\.flee\.from\[0\]: "dwell:bear" is not a species/);

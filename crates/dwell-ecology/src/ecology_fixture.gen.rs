@@ -7,12 +7,12 @@ pub const DATA: Data = Data {
     island: IslandParams { cell_m: 100.0, step_days: 2.0 },
     regrow_per_day: 0.1,
     grounds: &[
-        GroundDef { name: "lawn", max_height_m: 100000.0, max_slope_deg: 90.0, max: 40.0 },
+        GroundDef { name: "lawn", max_height_m: 100000.0, max_slope_deg: 90.0, max: 40.0, refuge: 0.0 },
     ],
     species: &[
         SpeciesDef {
             name: "test:hare",
-            group: GroupRules { floor: 1.0, cap: 20.0, merge_below: 3.0, merge_radius_m: 200.0, max_groups: 30 },
+            group: GroupRules { die_below: 0.5, cap: 20.0, merge_below: 3.0, merge_radius_m: 200.0, max_groups: 30 },
             start_groups: 3,
             start_size: 4.0,
             breed_per_day: 0.1,
@@ -28,7 +28,7 @@ pub const DATA: Data = Data {
         },
         SpeciesDef {
             name: "test:fox",
-            group: GroupRules { floor: 1.0, cap: 3.0, merge_below: 1.0, merge_radius_m: 100.0, max_groups: 6 },
+            group: GroupRules { die_below: 0.5, cap: 3.0, merge_below: 1.0, merge_radius_m: 100.0, max_groups: 6 },
             start_groups: 1,
             start_size: 2.0,
             breed_per_day: 0.01,
@@ -38,7 +38,7 @@ pub const DATA: Data = Data {
             starve_per_day: 0.01,
             speed_m_per_day: 3000.0,
             sense_radius_m: 1500.0,
-            diet: Diet::Prey { species: &[0], kills_per_head_per_day: 0.5, need_per_head_per_day: 0.3, prey_per_head: 15.0, reach_m: 150.0 },
+            diet: Diet::Prey { species: &[0], kills_per_head_per_day: 0.5, half_saturation_head: 4.0, need_per_head_per_day: 0.3, prey_per_head: 15.0, reach_m: 150.0 },
             flee: None,
             disperse: None,
         },

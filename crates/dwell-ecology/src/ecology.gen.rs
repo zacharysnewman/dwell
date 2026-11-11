@@ -7,14 +7,14 @@ pub const DATA: Data = Data {
     island: IslandParams { cell_m: 200.0, step_days: 5.0 },
     regrow_per_day: 0.05,
     grounds: &[
-        GroundDef { name: "meadow", max_height_m: 120.0, max_slope_deg: 18.0, max: 40.0 },
-        GroundDef { name: "upland", max_height_m: 400.0, max_slope_deg: 30.0, max: 16.0 },
-        GroundDef { name: "crag", max_height_m: 100000.0, max_slope_deg: 90.0, max: 2.0 },
+        GroundDef { name: "meadow", max_height_m: 120.0, max_slope_deg: 18.0, max: 40.0, refuge: 0.0 },
+        GroundDef { name: "upland", max_height_m: 400.0, max_slope_deg: 30.0, max: 16.0, refuge: 0.0 },
+        GroundDef { name: "crag", max_height_m: 100000.0, max_slope_deg: 90.0, max: 2.0, refuge: 0.8 },
     ],
     species: &[
         SpeciesDef {
             name: "dwell:deer",
-            group: GroupRules { floor: 2.0, cap: 12.0, merge_below: 4.0, merge_radius_m: 400.0, max_groups: 40 },
+            group: GroupRules { die_below: 0.5, cap: 12.0, merge_below: 4.0, merge_radius_m: 400.0, max_groups: 40 },
             start_groups: 8,
             start_size: 6.0,
             breed_per_day: 0.03,
@@ -30,7 +30,7 @@ pub const DATA: Data = Data {
         },
         SpeciesDef {
             name: "dwell:wolf",
-            group: GroupRules { floor: 2.0, cap: 7.0, merge_below: 3.0, merge_radius_m: 600.0, max_groups: 8 },
+            group: GroupRules { die_below: 0.5, cap: 7.0, merge_below: 3.0, merge_radius_m: 600.0, max_groups: 8 },
             start_groups: 2,
             start_size: 4.0,
             breed_per_day: 0.008,
@@ -40,7 +40,7 @@ pub const DATA: Data = Data {
             starve_per_day: 0.005,
             speed_m_per_day: 8000.0,
             sense_radius_m: 3000.0,
-            diet: Diet::Prey { species: &[0], kills_per_head_per_day: 0.12, need_per_head_per_day: 0.08, prey_per_head: 20.0, reach_m: 300.0 },
+            diet: Diet::Prey { species: &[0], kills_per_head_per_day: 0.12, half_saturation_head: 15.0, need_per_head_per_day: 0.08, prey_per_head: 20.0, reach_m: 300.0 },
             flee: None,
             disperse: Some(Disperse { above_hunger: 0.6, speed_factor: 2.0, leave_per_day: 0.01 }),
         },

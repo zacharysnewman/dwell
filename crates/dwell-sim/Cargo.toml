@@ -9,6 +9,7 @@ license-file.workspace = true
 
 [dependencies]
 dwell-blocks = { path = "../dwell-blocks" }
+dwell-ecology = { path = "../dwell-ecology" }
 dwell-look = { path = "../dwell-look" }
 dwell-physics = { path = "../dwell-physics" }
 dwell-protocol = { path = "../dwell-protocol" }

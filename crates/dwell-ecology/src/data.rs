@@ -19,13 +19,17 @@ pub struct GroundDef {
     pub max_slope_deg: f64,
     /// The most forage the cell holds (deer-days: one unit feeds one head for a day).
     pub max: f64,
+    /// The share of a group on this ground a hunter can't take (steep crags, cover): a refuge, one
+    /// of the systemic resistances to being wiped out (0 none, 1 safe).
+    pub refuge: f64,
 }
 
 /// A group's size rules.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GroupRules {
-    /// A group never drops below this (resistant to complete destruction).
-    pub floor: f64,
+    /// A group smaller than this is gone (it died out): no floor keeps it (owner, 2026-11-11:
+    /// "systemically resistant to being wiped out, not immune from it").
+    pub die_below: f64,
     /// Above this a group splits in two (or stops growing at `max_groups`).
     pub cap: f64,
     /// A group smaller than this joins a group of its kind within `merge_radius_m`.
@@ -43,7 +47,11 @@ pub enum Diet {
     /// Other species' groups (indices into `Data::species`).
     Prey {
         species: &'static [usize],
+        /// The most kills a head a day, when prey is plentiful.
         kills_per_head_per_day: f64,
+        /// Holling type III: kills fall off as `N² / (N² + h²)` of the prey head `N` the hunter can
+        /// find in its sense (outside refuges); with few left, the last are hard to find.
+        half_saturation_head: f64,
         need_per_head_per_day: f64,
         /// The prey a hunter needs on the island per head: its island-wide bound.
         prey_per_head: f64,
@@ -99,11 +107,35 @@ impl Data {
         self.species.iter().position(|s| s.name == name)
     }
 
-    /// The forage a land cell of this height (m above sea) and slope (degrees) holds at most.
-    pub fn grazing_for(&self, height_m: f64, slope_deg: f64) -> f64 {
+    /// The ground a land cell of this height (m above sea) and slope (degrees) is (the first that
+    /// fits).
+    pub fn ground_for(&self, height_m: f64, slope_deg: f64) -> Option<&GroundDef> {
         self.grounds
             .iter()
             .find(|g| height_m <= g.max_height_m && slope_deg <= g.max_slope_deg)
-            .map_or(0.0, |g| g.max)
+    }
+
+    /// The forage a land cell of this height and slope holds at most.
+    pub fn grazing_for(&self, height_m: f64, slope_deg: f64) -> f64 {
+        self.ground_for(height_m, slope_deg).map_or(0.0, |g| g.max)
+    }
+
+    /// The share of the kills a hunter of `diet` makes a head when it finds `prey_head` prey
+    /// (Holling type III, 0 to 1); 0 for a grazer.
+    pub fn catch_share(diet: Diet, prey_head: f64) -> f64 {
+        match diet {
+            Diet::Prey {
+                half_saturation_head: h,
+                ..
+            } => {
+                let n2 = prey_head.max(0.0).powi(2);
+                if n2 + h * h > 0.0 {
+                    n2 / (n2 + h * h)
+                } else {
+                    0.0
+                }
+            }
+            Diet::Graze { .. } => 0.0,
+        }
     }
 }
