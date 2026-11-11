@@ -1250,18 +1250,28 @@ fn composited(p: vec2i, ndc: vec2f, decks: Decks) -> Composited {
 fn sky_behind_with_clouds(dir: vec3f, clear: vec3f, deck: vec4f, fw: f32, deck_o: vec4f, fw_o: f32) -> vec3f {
     let face = frame.eye.y;
     let e = face_rise(face, dir);
-    var behind: vec3f;
     if (e >= 0.0) {
-        behind = dwell_sky_bodies(dir, face, frame.day, clear);
-    } else {
-        let o = dwell_other_day(frame.day);
-        let other_clear = dwell_sky(dir, -face, o);
-        var other = dwell_sky_bodies(dir, -face, o, other_clear);
-        other = dwell_clouds(other, other_clear, dir, -face, deck_o, fw_o, frame.clouds_o, frame.cloud_cfg_o, cloud_lighting_for(-face));
-        let height = face_y(face, frame.eye.x) - face_y(face, FACE_MIDPLANE_Y);
-        behind = mix(other, clear, dwell_behind_haze(e, height, frame.eye.w));
+        return sky_above_with_clouds(dir, clear, deck, fw, 1.0);
     }
+    let o = dwell_other_day(frame.day);
+    let other_clear = dwell_sky(dir, -face, o);
+    var other = dwell_sky_bodies(dir, -face, o, other_clear);
+    other = dwell_clouds(other, other_clear, dir, -face, deck_o, fw_o, frame.clouds_o, frame.cloud_cfg_o, cloud_lighting_for(-face));
+    let height = face_y(face, frame.eye.x) - face_y(face, FACE_MIDPLANE_Y);
+    let behind = mix(other, clear, dwell_behind_haze(e, height, frame.eye.w));
     return dwell_clouds(behind, behind, dir, face, deck, fw, frame.clouds, frame.cloud_cfg, cloud_lighting());
+}
+
+// The sky toward `dir` above the eye's horizon (its `clear` sky, the eye's deck's hit `deck` with its
+// footprint `fw`): the stars, the moon and the sun (`dwell_sky_bodies`, at the strength `bodies`;
+// 1 for the sky pass) under the clouds. The sky pass and Snell's window both show this one sky.
+fn sky_above_with_clouds(dir: vec3f, clear: vec3f, deck: vec4f, fw: f32, bodies: f32) -> vec3f {
+    let face = frame.eye.y;
+    var lit = dwell_sky_bodies(dir, face, frame.day, clear);
+    if (bodies != 1.0) {
+        lit = mix(clear, lit, bodies);
+    }
+    return dwell_clouds(lit, lit, dir, face, deck, fw, frame.clouds, frame.cloud_cfg, cloud_lighting());
 }
 
 // A scene colour `c` (premultiplied by coverage) at view depth `depth`, composited along the
@@ -1531,6 +1541,20 @@ fn water_exit(dir: vec3f, n: vec3f, ior: f32) -> vec3f {
     return h + n * sqrt(max(1.0 - dot(h, h), 0.0));
 }
 
+// The sky seen through Snell's window along the ray `out` bent out of the fluid (`water_exit`;
+// `out_px` the next pixel's): the sky pass's own sky (`sky_behind_with_clouds` for a ray above the
+// horizon: the gradient, the stars, the moon in its phase, the sun's disc, the clouds), its
+// stars, moon and sun at the look's `window.bodies` strength (1: as above the surface).
+// WATER_RENDERING.md §16 (owner, 2026-11-11: looking up from just under the water should match
+// looking up from just above it).
+fn window_sky(out: vec3f, out_px: vec3f, bodies: f32) -> vec3f {
+    let face = frame.eye.y;
+    let deck = dwell_cloud_deck(out, face, frame.clouds, frame.cloud_cfg.w);
+    let next = dwell_cloud_deck(out_px, face, frame.clouds, frame.cloud_cfg.w);
+    let fw = max(abs(next.x - deck.x), abs(next.y - deck.y));
+    return sky_above_with_clouds(out, sky(out), deck, fw, bodies);
+}
+
 // The composite with the eye under a fluid's surface (the W4 stub): the fluid's fog over the
 // distance in it — to what the pixel shows, or to the surface where the ray reaches it first —
 // replaces the height fog; past the surface, the sky.
@@ -1588,14 +1612,10 @@ fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
             let inside = smoothstep(rim, rim + max(frame.shafts_color.w, 1e-3) * (1.0 - rim), bent);
             let up = face_up(frame.eye.y);
             let out = water_exit(dir, normalize(up + vec3f(slope.x, 0.0, slope.y)), ior);
-            var seen = sky(out);
-            if ((u32(frame.reflect_sky.y + 0.5) & 2u) != 0u && f.window.y > 0.0) {
-                let px = 2.0 * max(frame.day.stars.z, 1e-5) * ior;
-                let moon = dwell_moon(out, frame.day, px);
-                seen = mix(seen, max(seen, seen * 0.4 + moon.rgb * f.window.y), moon.w);
-                let sun = dwell_sun_disc(out, up, frame.day, px);
-                seen = mix(seen, max(seen, sun.rgb * f.window.y), sun.w);
-            }
+            // A pixel's step across the screen, bent out the same way: the clouds' footprint.
+            let step = 2.0 * frame.tan.y / f32(textureDimensions(scene_color).y);
+            let out_px = water_exit(normalize(dir + frame.right.xyz * step), normalize(up + vec3f(slope.x, 0.0, slope.y)), ior);
+            let seen = window_sky(out, out_px, f.window.y);
             let zenith = sky_radiance(up);
             let lift = inverse_display(frame.shafts_window.rgb) * max(zenith.r, max(zenith.g, zenith.b));
             let sky_in = mix(inverse_display(seen), lift, frame.shafts_window.w * (0.55 + 0.45 * inside));

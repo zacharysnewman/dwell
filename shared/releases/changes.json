@@ -2,6 +2,12 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.52.53",
+      "changes": [
+        "Looking up from under the water now shows the same sky as from above: the stars, the moon, the clouds and the night's darkness through the surface, not a pale glowing sheet"
+      ]
+    },
+    {
       "version": "0.52.52",
       "changes": [
         "Tools sit in your fist now, handle through the hand, in first person and in other players' hands; the stone pickaxe and wooden shovel wear out after 32 hits like the stone axe (not in creative)"

@@ -38,7 +38,7 @@
         "mirrorWarpPx": 10
       },
       "underside": { "texture": 0.6, "breakup": 1, "sunPatch": 4, "sunPower": 8, "cellScale": 2 },
-      "window": { "cells": 0.3, "bodies": 1.5 },
+      "window": { "cells": 0.1, "bodies": 1 },
       "fog": { "clearM": 3, "density": 0.3 }
     }
   }
