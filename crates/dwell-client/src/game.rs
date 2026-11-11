@@ -1762,10 +1762,12 @@ impl<S: Scene> Game<S> {
                                 cells,
                                 surface,
                                 surface_b,
+                                tints,
                             } => Some(dwell_lod::GeneratedSection {
                                 cells,
                                 surface,
                                 surface_b,
+                                tints,
                             }),
                             _ => None,
                         };

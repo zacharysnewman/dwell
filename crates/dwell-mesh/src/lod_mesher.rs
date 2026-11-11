@@ -10,6 +10,7 @@
 //! As in the TS, arithmetic is in `f64` and the per-column tables that are `Float32Array`s there
 //! are `f32` here, so heights round the same way.
 
+use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use dwell_blocks::{STATES, StateId};
@@ -23,6 +24,7 @@ use crate::textures::{
 };
 use dwell_look::face_tint;
 use dwell_look::lod_colour::LOD_COLOUR;
+use dwell_world::tree_tint::Tint;
 
 const N: i32 = SECTION_CELLS;
 const NU: usize = SECTION_CELLS as usize;
@@ -392,8 +394,28 @@ pub fn mesh_section(
     cells: &[u16],
     options: &MeshSectionOptions<'_>,
 ) -> Result<SectionMeshes, LengthError> {
+    mesh_section_tinted(cells, options, &[])
+}
+
+/// [`mesh_section`] with its trees' leaf tints (ADR 0079): (`lod::cell_index` of the cell in
+/// `cells`' own rows, the tint of the tree owning it), as the generator lists them
+/// (`BifacialTerrain::lod_tints`); a leaf cell not listed keeps its colour.
+pub fn mesh_section_tinted(
+    cells: &[u16],
+    options: &MeshSectionOptions<'_>,
+    tints: &[(u32, Tint)],
+) -> Result<SectionMeshes, LengthError> {
+    let map: HashMap<u32, Tint> = tints.iter().copied().collect();
+    let mirror = options.mirror;
+    // Meshed face-local: a mirrored section's row y is the listed row N − 1 − y.
+    let tint = move |x: i32, y: i32, z: i32| {
+        let y = if mirror { N - 1 - y } else { y };
+        map.get(&(dwell_world::lod::cell_index(x, y, z) as u32))
+            .copied()
+            .unwrap_or(Tint::NONE)
+    };
     let m = if options.mirror {
-        let m = mesh_section_above(&mirror_rows(cells), options)?;
+        let m = mesh_section_above(&mirror_rows(cells), options, &tint)?;
         let [s0, s1, s2, s3, s4, s5] = m.skirts;
         let skirts = [s0, s1, s3, s2, s4, s5].map(flip_mesh_y);
         SectionMeshes {
@@ -402,7 +424,7 @@ pub fn mesh_section(
             skirts,
         }
     } else {
-        mesh_section_above(cells, options)?
+        mesh_section_above(cells, options, &tint)?
     };
     Ok(SectionMeshes {
         opaque: mesh_to_metres(m.opaque),
@@ -420,6 +442,7 @@ fn col(x: i32, z: i32) -> usize {
 fn mesh_section_above(
     cells: &[u16],
     options: &MeshSectionOptions<'_>,
+    tint: &dyn Fn(i32, i32, i32) -> Tint,
 ) -> Result<SectionMeshes, LengthError> {
     if cells.len() != LOD_VOLUME {
         return Err(LengthError {
@@ -604,6 +627,7 @@ fn mesh_section_above(
         |x, y, z| i32::from(special.y[col(x, z)]) == y,
         lod_color,
         &mut opaque.m,
+        tint,
     );
     emit_surfaces(
         cells,

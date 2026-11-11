@@ -40,6 +40,11 @@ Last updated: 2026-11-11 (0.52.68).
    - **Status (0.52.60):** growth over time built (ADR 0079 S3: per-tree records saved in an optional
      `tree_growth` table, the growers step, edits win, felled trees stop; `?growth=N` time-lapse).
      Outstanding: per-tree leaf tints, a sapling item, frond blades.
+   - **Status (leaf tints, ADR 0079 S4):** per-tree leaf tints built: each species tree's leaves and
+     cards tinted by its seed's `variety` (lightness, hue), the far (LOD 1 m/2 m) trees alike, the same
+     tree from either chunk at a border; placed leaves and the default world unchanged. Mesher logic
+     and tests only: the in-game look is still to be checked on a GPU. Outstanding: a sapling item,
+     frond blades.
 7. **Chopping prototype** (behind a switch, not replacing chopping until approved). Decided:
    - A tree falls once more than 50 % of its cross-section is cut, from one side or two.
    - The back cut is supported, not required: notch + back cut leaves a hinge that steers the fall

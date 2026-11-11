@@ -14,6 +14,7 @@
 
 use dwell_blocks::{StateId, parse_state};
 use dwell_world::structure::Structure;
+use dwell_world::tree_tint::Tint;
 use std::collections::BTreeMap;
 
 mod species_gen {
@@ -43,6 +44,10 @@ pub struct Species {
     pub crown_scale: (f32, f32),
     /// The crown's scale per seed.
     pub crown_variety: (f32, f32),
+    /// The leaves' lightness factor per seed (a per-tree tint, `dwell_world::tree_tint`).
+    pub lightness: (f32, f32),
+    /// The leaves' hue shift per seed (turns of the HSL wheel).
+    pub hue: (f32, f32),
     pub stages: u32,
     /// A world's days from one stage to the next (growth over time; not run yet).
     pub days_per_stage: f32,
@@ -161,6 +166,18 @@ fn qz(v: f32, step: f32) -> f32 {
 
 fn lerp(a: f32, b: f32, t: f32) -> f32 {
     a + (b - a) * t
+}
+
+/// The leaf tint a tree of `species` grown from `seed` takes (ADR 0079 `variety`): drawn as the
+/// Tree Growth prototype's `growTree` draws it, from the stream after the crown's scale — the hue
+/// shift, then the lightness. The same at every stage. [`Tint::NONE`] for a species whose
+/// variety draws none.
+pub fn tint(species: &Species, seed: u32) -> Tint {
+    let mut vr = Rng(seed.wrapping_mul(104_729).wrapping_add(7));
+    vr.range(species.crown_variety);
+    let hue = vr.range(species.hue);
+    let lightness = vr.range(species.lightness);
+    Tint { hue, lightness }
 }
 
 /// Grows `species` from `seed` to `stage` (0 = sapling .. stages − 1 = mature): a pure function.
@@ -529,6 +546,40 @@ mod tests {
         assert!(trunk_cells(&t) >= 2);
         shrub.stages.checked_sub(1).unwrap();
         assert_eq!(structures(shrub).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn seeds_draw_different_leaf_tints_within_the_species_variety() {
+        // face-a-only: a tint is a colour factor; the meshers apply it on either face.
+        let within = |v: f32, (a, b): (f32, f32)| v >= a.min(b) - 1e-6 && v <= a.max(b) + 1e-6;
+        let tinted = FIXTURES.iter().find(|s| s.name == "test:tinted").unwrap();
+        for s in SPECIES.iter().chain([tinted]) {
+            let tints: Vec<Tint> = (0..s.variants).map(|seed| tint(s, seed)).collect();
+            for t in &tints {
+                assert!(within(t.hue, s.hue), "{}: hue {t:?}", s.name);
+                assert!(
+                    within(t.lightness, s.lightness),
+                    "{}: lightness {t:?}",
+                    s.name
+                );
+            }
+            assert_ne!(tints[0], tints[1], "{}: two seeds, two tints", s.name);
+            assert_eq!(
+                tint(s, 3),
+                tint(s, 3),
+                "{}: a pure function of the seed",
+                s.name
+            );
+        }
+        // The fixture's ranges, by data alone: far from every species'.
+        let t = tint(tinted, 1);
+        assert!(
+            (0.5..=0.6).contains(&t.lightness) && (0.2..=0.25).contains(&t.hue),
+            "{t:?}"
+        );
+        // A variety that draws nothing tints nothing.
+        let shrub = FIXTURES.iter().find(|s| s.name == "test:shrub").unwrap();
+        assert!((0..4).all(|seed| tint(shrub, seed).is_none()));
     }
 
     #[test]

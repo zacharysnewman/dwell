@@ -306,9 +306,14 @@ step on the server every few seconds over loaded chunks, a stage every `growth.d
 days written as the difference between stages where nobody edited; felled trees stop; saved in the
 optional `tree_growth` table. `?growth=N` speeds it for a time-lapse.
 
+**Per-tree leaf tints (ADR 0079 S4):** each species tree's leaves and cards are tinted by its seed's
+`variety` (`lightness`, `hue`, as the prototype draws them), near and at the LOD's tree levels alike;
+a leaf cell's tree is the nearest anchor among the trees whose bounds hold it, the same from either
+chunk at a border. Placed leaves and the default world's hand-built pines keep the plain colour.
+
 Not built: a sapling item to plant a tree (needs a per-tree record, its stage and the cells players edited,
 and the `growers` layer of §5: the stage advanced every `growth.daysPerStage` world days, the cells
-regenerated where nobody edited), per-tree leaf tints (`variety.lightness`, `hue`), frond blades (a `dwell:palm_frond` block), a pine needle block.
+regenerated where nobody edited), frond blades (a `dwell:palm_frond` block), a pine needle block.
 
 ## Sources
 

@@ -465,6 +465,7 @@ impl dwell_lod::SectionMesher for MeshJobs {
                 surface: job.surface,
                 water_drop: job.water_drop,
                 mirror: job.mirror,
+                tints: job.tints,
             },
         );
     }

@@ -141,6 +141,47 @@ impl BifacialTerrain {
             .ground_density_chunk(coord.x, coord.z)
     }
 
+    /// The species trees reaching chunk `coord`'s columns with their leaf tints (ADR 0079), in its
+    /// face's face-local frame — the frame `dwell_mesh::mesh_chunk_trees` meshes a face-B chunk in.
+    pub fn tree_tints(&self, coord: ChunkCoord) -> Vec<dwell_world::tree_tint::TreeTint> {
+        const S: i32 = CHUNK_SIZE;
+        let (x0, z0) = (coord.x * S, coord.z * S);
+        self.local(face_of_chunk_y(coord.y))
+            .tree_tints((x0, z0), (x0 + S - 1, z0 + S - 1))
+    }
+
+    /// The leaf tints of LOD section `c`'s tree cells as [`BifacialTerrain::generate_lod`] put them
+    /// in `cells` (ADR 0079; `dwell_mesh::mesh_section_tinted`): each face's rows from that face's
+    /// trees, the cells indexed in the section's world rows.
+    pub fn lod_tints(
+        &self,
+        c: LodCoord,
+        cells: &[u16],
+    ) -> Vec<(u32, dwell_world::tree_tint::Tint)> {
+        let mut out = Vec::new();
+        if !lod::in_world(c) {
+            return out;
+        }
+        let y0 = lod::section_origin(c).y;
+        let first_a = lod::first_face_a_row(c);
+        if first_a <= lod::SECTION_CELLS {
+            self.a
+                .lod_tints_at(c, y0, first_a..=lod::SECTION_CELLS, &|r| r, cells, &mut out);
+        }
+        if first_a >= 0 {
+            let origin_l = lod::mirror_row_bottom(y0, lod::section_size(c.level));
+            self.b.lod_tints_at(
+                c,
+                origin_l,
+                -1..=(first_a - 1).min(lod::SECTION_CELLS),
+                &|r| lod::SECTION_CELLS - 1 - r,
+                cells,
+                &mut out,
+            );
+        }
+        out
+    }
+
     /// Whether either face's biomes vary the ground items (ADR 0074 B5).
     pub fn ground_varies(&self) -> bool {
         self.a.ground_varies() || self.b.ground_varies()
