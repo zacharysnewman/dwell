@@ -1832,9 +1832,11 @@ mod tests {
     #[test]
     fn every_tool_is_held_low_right_clear_of_the_crosshair_and_the_eye() {
         // face-a-only: the arms view is drawn in view space, the same on both faces.
-        // Owner, 2026-11-10: the tools filled the right third of the screen, bolt upright. Held by
-        // their props' `hold`: in the view's right-lower part, clear of the crosshair, about half
-        // the old size; mid-swing never into the eye.
+        // Owner, 2026-11-10: the tools filled the right third of the screen, bolt upright; 0.52.22
+        // angled them in and halved them. Owner, 2026-11-11: "you made the tools too small in hand,
+        // the original size … was much more accurate": full size (hold scale 1), still angled in.
+        // So: at their modelled size (not shrunk), in the view's right-lower part, clear of the
+        // crosshair, and never inside the arms view's near plane mid-swing.
         let mut bad = Vec::new();
         for t in dwell_protocol::chopping::BREAK_TOOLS {
             for aspect in [16.0 / 9.0, 2880.0 / 1324.0] {
@@ -1844,14 +1846,17 @@ mod tests {
                     "{} {aspect:.2}: x {x0:.2}..{x1:.2} y {y0:.2}..{y1:.2} area {area:.2}",
                     t.item
                 );
-                if x0 < 0.12 {
+                if x0 < 0.05 {
                     bad.push(format!("{}: reaches the crosshair, x from {x0:.2}", t.item));
                 }
-                if y1 > 0.35 {
+                if y1 > 0.45 {
                     bad.push(format!("{}: up to y {y1:.2}, high in the view", t.item));
                 }
-                if area > 0.36 {
-                    bad.push(format!("{}: {area:.2} of the view's area 4", t.item));
+                if area < 0.38 {
+                    bad.push(format!(
+                        "{}: only {area:.2} of the view's area 4: shrunk",
+                        t.item
+                    ));
                 }
             }
             for (hold, clip) in [
@@ -1867,7 +1872,7 @@ mod tests {
                     })
                     .fold(f64::MAX, f64::min);
                 eprintln!("{} {clip}: nearest in view {near:.3} m", t.item);
-                if near < 0.08 {
+                if near < ARMS_NEAR + 0.01 {
                     bad.push(format!("{} in {clip}: {near:.3} m from the eye", t.item));
                 }
             }

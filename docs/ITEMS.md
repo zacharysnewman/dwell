@@ -87,13 +87,13 @@ roll about the length first, then pitch tips the head forward, then yaw leans it
 crosshair) and `offset` `[x, y, z]` metres (each ±0.5). Absent, it is held as modelled; a bad hold
 fails `gen.mjs` naming the prop and the field. The generator emits `PropData.hold`
 (`dwell_models::PropHold`, `apply`), and `prop_mesh` places the prop's triangles through it, so the
-same pose holds in first person and in another player's hand. The six tools are held at 0.55–0.7
-scale, leaned 30° in and tipped 30–40° forward, the axes' and pickaxes' heads rolled 55–88° so the
+same pose holds in first person and in another player's hand. The six tools are held at their modelled
+size (scale 1; 0.52.22 shrank them to 0.55–0.7 and the owner found that too small, 2026-11-11), leaned 30° in and tipped 30–40° forward, the axes' and pickaxes' heads rolled 55–88° so the
 edge or pick points toward the crosshair and the shovels' blades face ahead. A test
 (`every_tool_is_held_low_right_clear_of_the_crosshair_and_the_eye`) projects each held model in the
-arms' idle at the arms' FOV (16:9 and 2.18:1): it stays right of x = 0.12, below y = 0.35 and within
-0.36 of the view's area 4 (it was 0.4–1.24), and through the break and both axe swings nothing in
-view comes within 0.08 m of the eye.
+arms' idle at the arms' FOV (16:9 and 2.18:1): it stays right of x = 0.05 and below y = 0.45, covers
+at least 0.38 of the view's area 4 (not shrunk; 0.52.22's were 0.23–0.28), and through the break and
+both axe swings nothing in view comes inside the arms' near plane (`ARMS_NEAR` + 1 cm).
 
 ## 2. Pieces on the wire
 

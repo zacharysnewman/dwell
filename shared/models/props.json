@@ -196,7 +196,7 @@
       "objects": ["DoubleHeadedAxe", "MetalAxe"],
       "length": 0.65,
       "grip": [0, -0.22, 0],
-      "hold": { "scale": 0.6, "rotation": [30, 30, 88] }
+      "hold": { "scale": 1, "rotation": [30, 30, 88] }
     },
     "metal_fork": {
       "category": "tools",
@@ -217,7 +217,7 @@
       "objects": ["Handle.013", "MetalPickAxe"],
       "length": 0.7,
       "grip": [0, -0.2, 0],
-      "hold": { "scale": 0.55, "rotation": [30, 30, 60] }
+      "hold": { "scale": 1, "rotation": [30, 30, 60] }
     },
     "metal_shovel": {
       "category": "tools",
@@ -226,7 +226,7 @@
       "objects": ["MetalParts", "MetalShovel"],
       "length": 1.0,
       "grip": [0, 0.3, 0],
-      "hold": { "scale": 0.55, "rotation": [30, 40, 0] }
+      "hold": { "scale": 1, "rotation": [30, 40, 0] }
     },
     "modern_hoe": {
       "category": "tools",
@@ -249,7 +249,7 @@
       "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-stone-axes.fbx",
       "length": 0.6,
       "grip": [0, -0.2, 0],
-      "hold": { "scale": 0.7, "rotation": [30, 30, 55] }
+      "hold": { "scale": 1, "rotation": [30, 30, 55] }
     },
     "stone_hammer": {
       "category": "tools",
@@ -263,7 +263,7 @@
       "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-stone-pickaxes.fbx",
       "length": 0.6,
       "grip": [0, -0.2, 0],
-      "hold": { "scale": 0.7, "rotation": [30, 30, 60] }
+      "hold": { "scale": 1, "rotation": [30, 30, 60] }
     },
     "wooden_shovel": {
       "category": "tools",
@@ -271,7 +271,7 @@
       "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-wooden-shovel.fbx",
       "length": 1.0,
       "grip": [0, 0.3, 0],
-      "hold": { "scale": 0.55, "rotation": [30, 40, 0] }
+      "hold": { "scale": 1, "rotation": [30, 40, 0] }
     },
     "wrenches": {
       "category": "tools",
