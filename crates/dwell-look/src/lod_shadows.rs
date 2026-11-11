@@ -482,7 +482,7 @@ mod tests {
             // A wall 8 m thick and 200 m over a plain at 40 m, along x at z = 0 (the light's line,
             // the light toward -x), from x = -3000 to 0.
             let along = |x: f64, z: f64| {
-                if z.abs() <= 4.0 && x >= -3000.0 && x <= 0.0 {
+                if z.abs() <= 4.0 && (-3000.0..=0.0).contains(&x) {
                     240.0
                 } else {
                     40.0
