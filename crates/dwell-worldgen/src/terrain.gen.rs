@@ -20,7 +20,7 @@ pub const HEIGHT: HeightField = HeightField {
     island_wavelength: 1024,
     island_octaves: 3,
     island_cap: 100000.0,
-    tectonics: crate::tectonics::Tectonics { kind: 0, angle: 30.0, offset: -6000.0, width: 3500.0, range_height: 260.0, trench_depth: 40.0, rift_depth: 80.0, shift: 3000.0, arc_count: 0, arc_distance: 7000.0, arc_spacing: 9000.0, cone_height: 700.0, cone_radius: 3500.0, crater_radius: 350.0, crater_depth: 60.0, hotspot_count: 0, hotspot_x: 30000.0, hotspot_z: -8000.0, hotspot_heading: 60.0, hotspot_spacing: 5000.0, hotspot_height: 360.0, hotspot_radius: 2600.0, hotspot_decay: 0.7, hotspot_widen: 0.12, core_distance: 14000.0 },
+    tectonics: crate::tectonics::Tectonics { kind: 0, angle: 30.0, offset: -6000.0, width: 3500.0, range_height: 260.0, trench_depth: 40.0, rift_depth: 80.0, shift: 3000.0, arc_count: 0, arc_distance: 7000.0, arc_spacing: 9000.0, cone_height: 700.0, cone_radius: 3500.0, crater_radius: 350.0, crater_depth: 60.0, cone_hardness: 0.0, hotspot_count: 0, hotspot_x: 30000.0, hotspot_z: -8000.0, hotspot_heading: 60.0, hotspot_spacing: 5000.0, hotspot_height: 360.0, hotspot_radius: 2600.0, hotspot_decay: 0.7, hotspot_widen: 0.12, core_distance: 14000.0 },
 };
 
 /// The biome map's geography (terrain.json `biomeMap`).
@@ -1598,7 +1598,26 @@ pub const FIXTURE_WORLDS: &[(&str, HeightField)] = &[
         island_wavelength: 4096,
         island_octaves: 3,
         island_cap: -300.0,
-        tectonics: crate::tectonics::Tectonics { kind: 0, angle: 30.0, offset: -6000.0, width: 3500.0, range_height: 260.0, trench_depth: 40.0, rift_depth: 80.0, shift: 3000.0, arc_count: 0, arc_distance: 7000.0, arc_spacing: 9000.0, cone_height: 700.0, cone_radius: 3500.0, crater_radius: 350.0, crater_depth: 60.0, hotspot_count: 0, hotspot_x: 30000.0, hotspot_z: -8000.0, hotspot_heading: 60.0, hotspot_spacing: 5000.0, hotspot_height: 360.0, hotspot_radius: 2600.0, hotspot_decay: 0.7, hotspot_widen: 0.12, core_distance: 14000.0 },
+        tectonics: crate::tectonics::Tectonics { kind: 0, angle: 30.0, offset: -6000.0, width: 3500.0, range_height: 260.0, trench_depth: 40.0, rift_depth: 80.0, shift: 3000.0, arc_count: 0, arc_distance: 7000.0, arc_spacing: 9000.0, cone_height: 700.0, cone_radius: 3500.0, crater_radius: 350.0, crater_depth: 60.0, cone_hardness: 0.0, hotspot_count: 0, hotspot_x: 30000.0, hotspot_z: -8000.0, hotspot_heading: 60.0, hotspot_spacing: 5000.0, hotspot_height: 360.0, hotspot_radius: 2600.0, hotspot_decay: 0.7, hotspot_widen: 0.12, core_distance: 14000.0 },
+    }),
+    ("test:tall_peak", HeightField {
+        inland_rise: 320.0,
+        rise_half: 6000.0,
+        sea_floor: -20.0,
+        shelf: 2500.0,
+        hill_height: 225.0,
+        hill_wavelength: 1024,
+        hill_octaves: 5,
+        hill_fade_from: 500.0,
+        hill_fade_to: 4000.0,
+        bump_height: 5.0,
+        bump_wavelength: 128,
+        bump_octaves: 3,
+        island_amplitude: 0.0,
+        island_wavelength: 1024,
+        island_octaves: 3,
+        island_cap: 100000.0,
+        tectonics: crate::tectonics::Tectonics { kind: 1, angle: 30.0, offset: -9000.0, width: 3500.0, range_height: 220.0, trench_depth: 40.0, rift_depth: 80.0, shift: 3000.0, arc_count: 1, arc_distance: 8000.0, arc_spacing: 9000.0, cone_height: 4800.0, cone_radius: 12000.0, crater_radius: 400.0, crater_depth: 150.0, cone_hardness: 0.95, hotspot_count: 0, hotspot_x: 30000.0, hotspot_z: -8000.0, hotspot_heading: 60.0, hotspot_spacing: 5000.0, hotspot_height: 360.0, hotspot_radius: 2600.0, hotspot_decay: 0.7, hotspot_widen: 0.12, core_distance: 14000.0 },
     }),
 ];
 

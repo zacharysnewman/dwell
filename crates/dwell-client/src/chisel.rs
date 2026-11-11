@@ -332,6 +332,7 @@ pub fn height_from_json(v: &Value) -> Result<HeightField, String> {
             ("coneRadius", &mut k.cone_radius),
             ("craterRadius", &mut k.crater_radius),
             ("craterDepth", &mut k.crater_depth),
+            ("coneHardness", &mut k.cone_hardness),
             ("hotspotX", &mut k.hotspot_x),
             ("hotspotZ", &mut k.hotspot_z),
             ("hotspotHeading", &mut k.hotspot_heading),
@@ -352,6 +353,7 @@ pub fn height_from_json(v: &Value) -> Result<HeightField, String> {
             && k.width > 0.0
             && k.arc_spacing > 0.0
             && k.cone_radius > 0.0
+            && (0.0..=1.0).contains(&k.cone_hardness)
             && k.hotspot_spacing > 0.0
             && k.hotspot_radius > 0.0)
         {

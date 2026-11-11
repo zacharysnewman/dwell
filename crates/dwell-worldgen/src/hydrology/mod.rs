@@ -387,6 +387,7 @@ pub fn generate_with_height(
     let volcanoes = t.volcanoes();
     let n = grid.n;
     let (mut extra, mut rising) = (vec![0.0; grid.len()], vec![0.0; grid.len()]);
+    let mut shield = vec![0.0; grid.len()];
     for i in 0..grid.len() {
         let (x, z) = (
             x0 + (i % n) as f64 * f64::from(p.cell),
@@ -396,6 +397,7 @@ pub fn generate_with_height(
             let coast = f64::from(base.coast_at(x as i64, z as i64));
             extra[i] = t.height(&volcanoes, x, z, coast);
             rising[i] = t.boundary(x, z, coast);
+            shield[i] = t.shield(&volcanoes, x, z);
         }
     }
     from_heights_with(
@@ -405,7 +407,7 @@ pub fn generate_with_height(
         &hs,
         seed,
         p,
-        Some((&extra, &rising)),
+        Some((&extra, &rising, &shield)),
     )
 }
 
@@ -447,7 +449,10 @@ pub fn from_heights(
 /// [`from_heights`] with the tectonics' landforms (systemic terrain T5, m per cell) added: to the
 /// sampled field (so a hotspot island rises from the sea), in full over the uplift layer's kept
 /// relief; the boundary's part (`extra.1`) also as uplift (`rate` per `base_height` m), so its range
-/// keeps rising as the uplift layer's do, the dormant volcanoes not, so the erosion wears them.
+/// keeps rising as the uplift layer's do, the dormant volcanoes not, so the erosion wears them;
+/// `extra.2` the share of the erosion each cell is shielded from (a hardened cone, `coneHardness`:
+/// its erodibility × 1 − the share, and nothing deposited above its uneroded ground, so a tall
+/// cone keeps its height and its crater).
 pub fn from_heights_with(
     grid: Grid,
     cell: f64,
@@ -455,7 +460,7 @@ pub fn from_heights_with(
     h0: &[f64],
     seed: u64,
     p: &HydrologyParams,
-    extra: Option<(&[f64], &[f64])>,
+    extra: Option<(&[f64], &[f64], &[f64])>,
 ) -> HydrologyMap {
     assert_eq!(h0.len(), grid.len());
     let lifted: Vec<f64>;
@@ -463,7 +468,7 @@ pub fn from_heights_with(
     let offshore = extra.map(|_| open_sea(grid, h0));
     let h0 = match extra {
         None => h0,
-        Some((e, _)) => {
+        Some((e, _, _)) => {
             lifted = h0.iter().zip(e).map(|(&v, &d)| v + d).collect();
             &lifted
         }
@@ -525,18 +530,34 @@ pub fn from_heights_with(
             (rate, u.spines, u.plates)
         }
     };
-    let erodibility: Vec<f64> = match &p.rock_bands {
+    let mut erodibility: Vec<f64> = match &p.rock_bands {
         None => vec![p.erodibility; len],
         Some(r) => uplift::rock_factor(grid, cell, x0, &sea, seed, r)
             .iter()
             .map(|&f| p.erodibility * f)
             .collect(),
     };
+    // A hardened cone (T5 `coneHardness`): less erodible toward its summit; its ground before the
+    // erosion is kept to cap what settles on it (its crater silting up).
+    let shield = extra.map(|e| e.2).filter(|s| s.iter().any(|&v| v > 0.0));
+    let uneroded = shield.map(|s| {
+        for (k, &v) in erodibility.iter_mut().zip(s) {
+            *k *= 1.0 - v;
+        }
+        h.clone()
+    });
     let rain: Vec<f64> = match &p.rain {
         Rain::Uniform => vec![1.0; len],
         Rain::Orographic(o) => rain::orographic(grid, cell, &h, &sea, seed, o),
     };
     erosion::erode(grid, cell, &mut h, &uplift, &erodibility, &rain, &sea, p);
+    if let (Some(s), Some(u)) = (shield, &uneroded) {
+        for i in 0..len {
+            if s[i] > 0.0 && !sea[i] {
+                h[i] = h[i].min(u[i]);
+            }
+        }
+    }
     lakes::remove_small_pits(grid, cell, &mut h, &sea, p);
     let d = lakes::drainage(grid, cell, &h, &sea);
     // Discharge (m³/s): rain over the drainage area, donors before receivers.
