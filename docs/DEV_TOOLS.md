@@ -37,7 +37,7 @@ done for the day). `--warm` on a bench run does the same before the run and leav
 Options: `--cpu-throttle N` (Chrome slows the page's CPU N×, CDP `Emulation.setCPUThrottlingRate`: a phone's CPU-side costs such as HUD and DOM work show up), `--touch` (a touch device: the phone's touch controls and HUD), `--swiftshader` (software WebGPU, for machines without a GPU such as CI or a Linux
 sandbox; under Xvfb there), `--unthrottled` (no vsync or frame-rate cap, so frame intervals show
 the frame's real cost rather than 16.7 ms), `--base URL` (a served build; by default it reuses
-`vite preview` on :4173 or starts one; the server's root or the build's `…/dwell/`), `--out DIR`
+`vite preview` on :4173 or starts one; the server's root, the build's `…/dwell/`, or a release behind the launcher, `https://dropkickarcade.com/dwell/v/<version>/` (the published ones: `/dwell/versions.json`), opened at that path: `scripts/scenarios.ts` `buildPage`), `--out DIR`
 (default `bench/out/<timestamp>`, ignored by git), `--file FILE` (another scenarios file, e.g. a
 throwaway one in a scratch directory), `--compare` with `--configs A,B` and `--configs-file FILE`
 (each scenario once per configuration, side by side: below), `--warm` (the warm client, above),
@@ -1525,7 +1525,8 @@ every summary) rather than its p50. WATER_RENDERING.md §8 ("Cost") has the meth
 
 `?cards=1` meshes the leaf cards whatever the renderer's tier says (`shared/look/leaves.json` `cards.tiers`: off on the
 phone tier and a CPU adapter), and `?cards=0` meshes none; set at page load, before the world streams in. A bench
-`--compare` configuration with `params: {"cards": "1"}` measures their cost on the `--touch` phone page (BUGS.md #72).
+`--compare` configuration with `params: {"cards": "1"}` measures their cost on the `--touch` phone page (BUGS.md #72). It
+wins over the Leaf cards setting (Settings → Graphics; the presets' `leafCards`, off on Low).
 
 ## The GPU heightfield (`?heightfield=`)
 

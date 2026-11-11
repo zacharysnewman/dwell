@@ -527,7 +527,9 @@ describe('buildPage', () => {
   it('opens a root at /dwell/ and a build path as it is', () => {
     expect(buildPage('http://localhost:4173')).toBe('http://localhost:4173/dwell/');
     expect(buildPage('http://localhost:4174/')).toBe('http://localhost:4174/dwell/');
-    expect(buildPage('https://dropkickarcade.com/dwell/')).toBe('https://dropkickarcade.com/dwell/');
+    expect(buildPage('https://dropkickarcade.com/dwell/')).toBe(
+      'https://dropkickarcade.com/dwell/',
+    );
     // A released build behind the launcher (it 404'd as …/v/0.51.24/dwell/).
     expect(buildPage('https://dropkickarcade.com/dwell/v/0.51.24/')).toBe(
       'https://dropkickarcade.com/dwell/v/0.51.24/',

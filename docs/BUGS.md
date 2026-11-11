@@ -280,6 +280,25 @@ tree trunks with the leaf cards. What might be dropping frames since the last wh
   `gpu.water.tiles` (1.1–1.7 ms with no water in view). **Outstanding:** those three toggled one by one, and a comparison
   with a release from before the leaf, cloud and lava work: the launcher's builds (`/dwell/v/0.51.24/`) did not start
   under the bench (a 404 on a resource), and 0.52.40 is no longer published.
+- **Round 2 (branch `claude/mobile-fps-2`):** the bench's `--base` opened a release as `…/v/<version>/dwell/` (the 404);
+  it now opens the path as given. The **Low preset turns the leaf cards off** (a `leafCards` preset field and a Leaf
+  cards setting, Settings → Graphics; `graphicsPresets.test.ts` red with Low's on, green off). Versions compared on the
+  `--touch` phone page at Low, the default world's spawn, Chrome's CPU throttled 4×, M-series GPU (mean ms):
+
+  | Build | frame.cpu | draw.render | lod | gpu.frame | gpu.near | gpu.composite | gpu.arms | gpu.water.tiles |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | 0.51.24 | 3.84 | 1.98 | 1.06 | 4.50 | 2.81 | 2.01 | 1.30 | 0.90 |
+  | 0.52.77-dev.529 | 3.50 | 1.77 | 0.89 | 4.38 | 2.87 | 2.12 | 1.37 | 0.91 |
+  | this branch (≈ 0.52.111) | 3.23 | 1.44 | 0.93 | 4.32 | 2.77 | 2.24 | 1.42 | 0.88 |
+
+  No regression on the desktop at the spawn, CPU or GPU: the composite, arms and water-tile costs were already there in
+  0.51.24. The local server's water worker ticks at 0.15 ms mean. So what dropped the phone to ~23 fps does not show on a
+  desktop GPU at the spawn. The likeliest cause is the leaf cards on the phone's tile GPU: alpha-cut (`discard`) quads
+  defeat an Apple GPU's hidden-surface removal, so their overdraw costs far more there than the desktop's 8 %. The
+  cards are now off on the phone tier and on Low. 0.52.101 and newer releases still don't start under the bench (another
+  404, not looked into), so 0.52.78–0.52.110 are not bisected. **Outstanding:** a real iPhone check on a build with the
+  cards off; then, if it is still slow, the arms pass (a separate pass, a store and reload of the frame on a tile GPU)
+  and the composite.
 
 ### 71. "Starting the graphics" takes a long time with no elapsed time shown (fixed after 0.52.101)
 
