@@ -510,16 +510,16 @@ interface SliderSpec {
 }
 
 /** The Look section's choices (a row of buttons each, as the water quality's). */
-const CHOICES: ChoiceSpec<CloudQuality>[] = [
-  {
-    label: 'Clouds',
-    pin: 'clouds',
-    hint: 'Clouds in the sky; Low is lighter on the GPU',
-    choices: CLOUD_QUALITIES,
-    labels: { off: 'Off', low: 'Low', high: 'High' },
-    get: (s) => s.clouds,
-    with: (s, v) => ({ ...s, clouds: v }),
-  },
+const CLOUD_CHOICE: ChoiceSpec<CloudQuality> = {
+  label: 'Clouds',
+  pin: 'clouds',
+  hint: 'Clouds in the sky: Low is flat and lightest, Medium and High are volumetric (High sharper and dearer)',
+  choices: CLOUD_QUALITIES,
+  labels: { off: 'Off', low: 'Low', medium: 'Medium', high: 'High' },
+  get: (s) => s.clouds,
+  with: (s, v) => ({ ...s, clouds: v }),
+};
+const CHOICES: ChoiceSpec<ShaftQuality>[] = [
   {
     label: 'Light shafts',
     pin: 'shafts',
@@ -625,6 +625,7 @@ function panes(mobile: boolean): Record<SettingsPane, Group[]> {
           choice(WATER_CHOICE),
           choice(SHADOW_CHOICE),
           choice(TORCH_SHADOW_CHOICE),
+          choice(CLOUD_CHOICE),
           ...CHOICES.map(choice),
           {
             slider: {

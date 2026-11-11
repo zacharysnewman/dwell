@@ -13,13 +13,14 @@ export function sanitizeExposure(value: unknown): number {
     : DEFAULT_EXPOSURE;
 }
 
-/** The sky's clouds (dwell-look's clouds.rs): Low has fewer noise octaves and no self-shadow. */
-export const CLOUD_QUALITIES = ['off', 'low', 'high'] as const;
+/** The sky's clouds (dwell-look's clouds.rs): Low the flat deck; Medium and High the volume (CLOUDS.md §8). */
+export const CLOUD_QUALITIES = ['off', 'low', 'medium', 'high'] as const;
 export type CloudQuality = (typeof CLOUD_QUALITIES)[number];
 
-/** High on desktops, Low on phones (the GPU time a phone can spare). */
+/** Medium on desktops (High, the half-resolution volume, is opt-in: over its GPU budget seen from
+ * above, docs/CLOUDS.md §8.3), Low on phones (the GPU time a phone can spare). */
 export function defaultClouds(mobile: boolean): CloudQuality {
-  return mobile ? 'low' : 'high';
+  return mobile ? 'low' : 'medium';
 }
 
 /** A stored Clouds setting; anything else (missing, unknown) takes the device's default. */

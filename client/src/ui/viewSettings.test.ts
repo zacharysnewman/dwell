@@ -26,8 +26,8 @@ describe('exposure', () => {
 });
 
 describe('clouds setting', () => {
-  it('defaults to High on desktops and Low on phones', () => {
-    expect(defaultClouds(false)).toBe('high');
+  it('defaults to Medium on desktops and Low on phones', () => {
+    expect(defaultClouds(false)).toBe('medium');
     expect(defaultClouds(true)).toBe('low');
   });
 
@@ -37,10 +37,10 @@ describe('clouds setting', () => {
       expect(sanitizeClouds(q, true)).toBe(q);
     }
     for (const bad of [null, undefined, 'ultra', 2, { q: 'low' }]) {
-      expect(sanitizeClouds(bad, false)).toBe('high');
+      expect(sanitizeClouds(bad, false)).toBe('medium');
       expect(sanitizeClouds(bad, true)).toBe('low');
     }
-    expect(CLOUD_QUALITIES).toEqual(['off', 'low', 'high']);
+    expect(CLOUD_QUALITIES).toEqual(['off', 'low', 'medium', 'high']);
   });
 });
 

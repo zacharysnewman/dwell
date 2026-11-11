@@ -32,6 +32,8 @@ pub const COMPOSITE: &str = "gpu.composite";
 pub const MOTION: &str = "gpu.motion";
 /// The light shafts pass (ADR 0064), at the tier's resolution.
 pub const SHAFTS: &str = "gpu.shafts";
+/// The volumetric clouds pass (its march at the tier's resolution; docs/CLOUDS.md §8.6).
+pub const CLOUDS: &str = "gpu.clouds";
 /// The pixel-art preview's post pass (render/pixel_art.rs).
 pub const PIXEL_ART: &str = "gpu.pixelart";
 /// Render scale's upscale pass, or its two (EASU and RCAS, render/upscale.rs), onto the canvas.
@@ -50,7 +52,7 @@ pub const GAPS_COPY: &str = "gpu.gaps.copy";
 /// Readback buffers: the GPU runs a frame or two behind, so three keep one free.
 pub const RING: usize = 3;
 /// Passes a frame may time (each frame names its own, in order: `GpuTimer::pass`).
-pub const MAX_PASSES: usize = 14;
+pub const MAX_PASSES: usize = 15;
 
 const QUERIES: u32 = 2 * MAX_PASSES as u32;
 const BYTES: u64 = QUERIES as u64 * wgpu::QUERY_SIZE as u64;

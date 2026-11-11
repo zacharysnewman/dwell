@@ -147,6 +147,14 @@ Last updated: 2026-11-11 (0.52.68).
 12. **Players' saved structures as placement sources** (owner 2026-11-11): per player (their library, usable
    in any world they create); placed copies editable, not protected; 32³ for now (may change), or larger
    structures as a grid of 32³ tiles. Sharing between players: Future.
+13. **Volumetric clouds** (owner 2026-11-11: "volumetric clouds in the sky. These clouds will likely be
+   useful for weather sim, and volcano smoke. So they need to be performant."). **Built (branch
+   `claude/volumetric-clouds`, CLOUDS.md §8):** a ray-marched layer in its own reduced-resolution pass
+   with temporal accumulation and a depth-aware upsample; tiers as data (High ½ opt-in, Medium ¼ the
+   desktop default, Low the 2D deck); plumes with a colour by data; the cheap deck kept for Snell's
+   window and reflections. Bench from above: High +1.5 ms (budget 1.5), Medium +0.9 ms (budget 0.8).
+   Next: trace the clouds pass's fixed cost; plumes as run-time uniforms for a volcano or weather
+   system.
 
 Cloud sessions: logic-only items can run as `claude --cloud` sessions in parallel (verified 2026-11-11).
 
