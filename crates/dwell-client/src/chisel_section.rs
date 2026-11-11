@@ -1,4 +1,4 @@
-//! Chisel's 3D section view and relief shading (ADR 0074 B6; `client/src/chisel/section.ts`): a
+//! Chisel's 3D section view and relief shading (ADR 0074, the 3D section, 0.52.19; `client/src/chisel/section.ts`): a
 //! square of the real generator's columns (`TerrainGenerator::column_lod`, the detail preview's
 //! path) sampled every `texel` m, their heights snapped to the ½ m cells, turned into a blocky
 //! stepped mesh (one top quad a column, walls down to lower neighbours, the top colour per
@@ -334,6 +334,24 @@ mod tests {
             "behind the tower, away from the sun"
         );
         assert!(!shadowed(&s, 7, 7, 16), "the sunny side");
+    }
+
+    #[test]
+    fn the_relief_toggle_shades_the_preview_tile() {
+        // face-a-only: Chisel previews face A.
+        use crate::chisel::{Overlay, preview, preview_shaded};
+        let g = generator();
+        let (n, texel) = (48, 16);
+        let plain = preview(&g, -384, -384, n, texel, Overlay::Blocks);
+        assert_eq!(
+            preview_shaded(&g, -384, -384, n, texel, Overlay::Blocks, false),
+            plain
+        );
+        let lit = preview_shaded(&g, -384, -384, n, texel, Overlay::Blocks, true);
+        let changed = (0..(n * n) as usize)
+            .filter(|k| lit[k * 4..k * 4 + 3] != plain[k * 4..k * 4 + 3])
+            .count();
+        assert!(changed > (n * n) as usize / 4, "{changed} texels shaded");
     }
 
     #[test]

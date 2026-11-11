@@ -77,9 +77,9 @@ describe('Chisel world overview', () => {
     const k = OverviewCache.key(1, '{"biomes":[]}', 1, false, 196, -50_176, -50_176, 128);
     c.set(k, new Uint8ClampedArray([1, 2, 3, 4]));
     expect(c.get(k)).toEqual(new Uint8ClampedArray([1, 2, 3, 4]));
-    expect(c.get(OverviewCache.key(1, '{"biomes":[1]}', 1, false, 196, -50_176, -50_176, 128))).toBe(
-      undefined,
-    );
+    expect(
+      c.get(OverviewCache.key(1, '{"biomes":[1]}', 1, false, 196, -50_176, -50_176, 128)),
+    ).toBe(undefined);
     expect(c.get(OverviewCache.key(1, '{"biomes":[]}', 0, false, 196, -50_176, -50_176, 128))).toBe(
       undefined,
     );

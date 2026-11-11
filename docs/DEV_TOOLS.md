@@ -1505,3 +1505,23 @@ the overview to move it there. Its status line gives each pass's time (M1, headl
 build biomes plus six presets: 128² in 25–34 ms, 512² in 120–290 ms);
 `document.body.dataset.overview` is `<pass>:<ms>` once a pass is whole, for a script waiting on it.
 Face A only, like the detail preview.
+
+**Relief and the 3D section** (0.52.19; owner, 2026-11-10: "our biome tooling doesn't give you a good 3D
+perspective of the terrain, should probably have a more 3D perspective of a section"). The view bar's
+**relief** button (on by default; `?relief=0` off) hill-shades the detail preview and the overview
+whatever the overlay: each dry texel's colour scaled by its slope's light from a sun in the north-west,
+35° up (`chisel_section::hillshade`, central differences over a ring one texel wider than the tile;
+water flat), so mesa walls, cones and ridges read. The **3D** button opens a WebGPU view of a square
+(256 m to 8 km, the size select beside it; `?s3d=1&sx=&sz=&ssize=`) centred on the detail's centre;
+a click on the detail moves it (its square is drawn there in yellow). The worker's `section` lane
+(after the detail, before the overview; a newer edit drops the older passes) samples the real generator
+(`ChiselPreview.section`: `column_lod`, the detail's path) coarse (4 m, or 256² columns) then fine
+(2 m, 1 m for 256 m, or 512² columns), heights snapped to the ½ m cells, and meshes it blocky: one
+top quad a column in its top block's colour, a wall down to each lower neighbour, a baked sun shadow
+(a march toward the sun over the heights), water quads at each wet column's level drawn translucent.
+Sky light plus the same sun, a distance haze; drag orbits, shift- or right-drag pans, the wheel zooms.
+Heights are true scale up to 2 km squares, ×2 at 4 km and ×3 at 8 km (the status line says so), so a
+700 m cone 7 km wide reads. Trees are not drawn (skipped: the placement is per block, not cheap to
+sample at 2 m). M1, Chrome on the GPU, 1 km at 2 m (512² columns, ~0.7–1.5 M triangles): the 4 m pass
+in 58–68 ms, the 2 m pass in 300–330 ms, its upload and first draw 6–16 ms;
+`document.body.dataset.section` is `<texel>:<build ms>:<draw ms>` for a script.

@@ -50,7 +50,7 @@ const store = (() => {
 let edit: Edit = loadEdit(store);
 let selected = 0;
 const view = { seed: 1, cx: 0, cz: 0, size: 2048, overlay: 0, relief: 1 };
-/** The 3D section (ADR 0074 B6): off until asked for, centred on the detail's centre. */
+/** The 3D section (ADR 0074, the 3D section, 0.52.19): off until asked for, centred on the detail's centre. */
 let sec: SectionView = { on: false, x: 0, z: 0, size: 1024 };
 /** Where each `where` field's slider runs (the data's range is wider; the number box takes any). */
 const WHERE_SPAN: Record<string, [number, number, number]> = {
@@ -714,7 +714,7 @@ async function sectionReply(m: SectionMesh, ms: number) {
   secMs.push(
     `${String(m.texel)} m: ${String(Math.round(ms))} ms + ${String(Math.round(draw))} ms draw`,
   );
-  secStatus.textContent = `${String(m.n * m.texel)} m at (${String(sec.x)}, ${String(sec.z)}) · ${secMs.join(', ')} · ${String(Math.round(tris / 1000))}k triangles · drag orbits, shift-drag pans, wheel zooms; click the detail to move it`;
+  secStatus.textContent = `${String(m.n * m.texel)} m at (${String(sec.x)}, ${String(sec.z)}) · ${secMs.join(', ')} · ${String(Math.round(tris / 1000))}k triangles${secRenderer.exag > 1 ? ` · heights ×${String(secRenderer.exag)}` : ''} · drag orbits, shift-drag pans, wheel zooms; click the detail to move it`;
   document.body.dataset.section = `${String(m.texel)}:${String(Math.round(ms))}:${String(Math.round(draw))}`;
 }
 

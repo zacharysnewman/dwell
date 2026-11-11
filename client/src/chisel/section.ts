@@ -1,4 +1,4 @@
-// Chisel's 3D section view (ADR 0074 B6): a square of the world, sampled by the worker's 'section'
+// Chisel's 3D section view (ADR 0074, the 3D section, 0.52.19): a square of the world, sampled by the worker's 'section'
 // lane (`ChiselPreview.section`, the detail preview's generator path) as a blocky stepped mesh, drawn
 // here with WebGPU: sky light plus the sun (the mesh's tops carry a baked sun shadow), water as a
 // translucent layer at each wet column's level, an orbit / pan / zoom camera.
@@ -12,12 +12,21 @@ export interface SectionView {
 }
 
 /** The sizes the size control offers (m a side). */
-export const SECTION_SIZES = [256, 512, 1024] as const;
+export const SECTION_SIZES = [256, 512, 1024, 2048, 4096, 8192] as const;
 
-/** A section build's passes: a coarse 4 m pass first, then 2 m (1 m for the smallest square). */
+/** A section build's passes: a coarse pass first (4 m, or 256 columns a side for a bigger
+ * square), then the fine one (2 m, 1 m for the smallest square, or 512 columns a side): at most
+ * 512² columns, so a volcano's whole cone fits at 8–16 m. */
 export function sectionPasses(size: number): { n: number; texel: number }[] {
-  const fine = size <= 256 ? 1 : 2;
-  return [4, fine].map((texel) => ({ n: Math.round(size / texel), texel }));
+  const coarse = Math.max(4, size / 256);
+  const fine = size <= 256 ? 1 : Math.max(2, size / 512);
+  return [coarse, fine].map((texel) => ({ n: Math.round(size / texel), texel }));
+}
+
+/** The 3D view's vertical exaggeration for a square `size` m a side: true scale up to 2 km, then
+ * more, so a 700 m cone 7 km wide still reads as a cone in an 8 km square. */
+export function exaggeration(size: number): number {
+  return size <= 2048 ? 1 : size <= 4096 ? 2 : 3;
 }
 
 /** The section's corner (face-local m) for its centre and side. */
@@ -34,7 +43,8 @@ export function sectionToParams(v: SectionView, p: URLSearchParams) {
   p.set('ssize', String(v.size));
 }
 
-/** The section's state read back from the URL; a missing or bad value keeps `base`'s. */
+/** The section's state read back from the URL (off without `s3d`); a missing or bad number
+ * keeps `base`'s. */
 export function sectionFromParams(p: URLSearchParams, base: SectionView): SectionView {
   const n = (k: string, d: number) => {
     const v = p.get(k);
@@ -42,7 +52,7 @@ export function sectionFromParams(p: URLSearchParams, base: SectionView): Sectio
   };
   const size = n('ssize', base.size);
   return {
-    on: p.has('s3d') ? p.get('s3d') === '1' : base.on,
+    on: p.get('s3d') === '1',
     x: n('sx', base.x),
     z: n('sz', base.z),
     size: (SECTION_SIZES as readonly number[]).includes(size) ? size : base.size,
@@ -151,7 +161,7 @@ struct O { @builtin(position) p: vec4<f32>, @location(0) c: vec3<f32>, @location
   // Sky light (more from above) and the sun.
   let light = 0.42 + 0.16 * n.y + 0.85 * max(dot(n, u.sun.xyz), 0.0);
   var o: O;
-  o.p = u.vp * vec4<f32>(pos, 1.0);
+  o.p = u.vp * vec4<f32>(pos.x, pos.y * u.look.z, pos.z, 1.0);
   o.c = lin * light;
   o.d = o.p.w;
   return o;
@@ -186,6 +196,8 @@ export class SectionRenderer {
   private water: Buffers | null = null;
   private depth: GPUTexture | null = null;
   private size = 0;
+  /** The vertical exaggeration (`exaggeration`). */
+  exag = 1;
 
   private constructor(
     private canvas: HTMLCanvasElement,
@@ -198,7 +210,7 @@ export class SectionRenderer {
   ) {}
 
   static async create(canvas: HTMLCanvasElement): Promise<SectionRenderer | null> {
-    const adapter = await navigator.gpu?.requestAdapter();
+    const adapter = 'gpu' in navigator ? await navigator.gpu.requestAdapter() : null;
     if (!adapter) return null;
     const device = await adapter.requestDevice();
     const ctx = canvas.getContext('webgpu') as GPUCanvasContext | null;
@@ -261,15 +273,7 @@ export class SectionRenderer {
       layout,
       entries: [{ binding: 0, resource: { buffer: uniform } }],
     });
-    return new SectionRenderer(
-      canvas,
-      device,
-      ctx,
-      pipeline(false),
-      pipeline(true),
-      uniform,
-      bind,
-    );
+    return new SectionRenderer(canvas, device, ctx, pipeline(false), pipeline(true), uniform, bind);
   }
 
   private upload(verts: Uint32Array, index: Uint32Array): Buffers | null {
@@ -307,6 +311,7 @@ export class SectionRenderer {
     this.water = this.upload(m.water, m.waterIndex);
     const side = m.n * m.texel;
     this.size = side;
+    this.exag = exaggeration(side);
     if (reframe) {
       // The mean height of the tops (every vertex's y; walls sit between tops).
       const f = new Float32Array(m.ground.buffer, m.ground.byteOffset, m.ground.length);
@@ -317,8 +322,8 @@ export class SectionRenderer {
         sum += y;
         count++;
       }
-      const y = count ? sum / count : 0;
-      this.orbit = { target: [side / 2, y, side / 2], yaw: 0.7, pitch: 0.62, dist: side * 1.15 };
+      const y = (count ? sum / count : 0) * this.exag;
+      this.orbit = { target: [side / 2, y, side / 2], yaw: 0.7, pitch: 0.55, dist: side * 1.45 };
     }
     this.draw();
   }
@@ -366,7 +371,7 @@ export class SectionRenderer {
     const haze = Math.max(1500, this.size * 3);
     // A queue write lands at the next submit: the ground's uniform (alpha 1) here, the water's
     // before its own pass below.
-    u.set([haze, 1, 0, 0], 20);
+    u.set([haze, 1, this.exag, 0], 20);
     device.queue.writeBuffer(this.uniform, 0, u);
     if (this.ground) {
       pass.setPipeline(this.solid);
@@ -394,7 +399,7 @@ export class SectionRenderer {
           depthStoreOp: 'store',
         },
       });
-      u.set([haze, 0.62, 0, 0], 20);
+      u.set([haze, 0.62, this.exag, 0], 20);
       device.queue.writeBuffer(this.uniform, 0, u);
       p2.setPipeline(this.glass);
       p2.setBindGroup(0, this.bind);
@@ -404,7 +409,6 @@ export class SectionRenderer {
       p2.end();
       device.queue.submit([enc2.finish()]);
     }
-
   }
 
   /** Mouse: drag orbits, shift- or right-drag pans, the wheel zooms. */

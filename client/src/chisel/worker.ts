@@ -1,7 +1,7 @@
 // Chisel's preview worker (ADR 0074 B3): the real generator through WASM (`ChiselPreview`), one
 // world's face A built once per seed; each request puts the page's edit on it and rasterises a tile.
 // Three lanes (overview.ts `Jobs`): the detail preview's tiles first, then the 3D section's passes
-// (B6, meshed here), then the world overview's passes, split into chunks and cached by the edit
+// (the 3D section, meshed here), then the world overview's passes, split into chunks and cached by the edit
 // state; a newer generation drops a lane's older jobs.
 import { ChiselPreview, loadWasm } from '../engine/wasm';
 import { Jobs, OVERVIEW_PASSES, OverviewCache, chunks, type Frame, type Lane } from './overview';
