@@ -3630,3 +3630,9 @@ body.inventory-open #touch-controls {
 #world-map .map-panel.phone .map-hint {
   display: none;
 }
+
+/* A creative slot under a dragged item or slot (0.52.24). */
+.inventory-view .hotbar-slot.drop-target {
+  outline: 2px solid rgba(255, 255, 255, 0.9);
+  outline-offset: -2px;
+}
