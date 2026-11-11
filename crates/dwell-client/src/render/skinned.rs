@@ -307,8 +307,8 @@ fn upload(
 pub struct SkinnedRenderer {
     /// The player's model first, then each creature model as it is first drawn.
     meshes: Vec<Mesh>,
-    pipeline: wgpu::RenderPipeline,
-    shadow_pipeline: wgpu::RenderPipeline,
+    pipeline: crate::render::pipeline::Lazy,
+    shadow_pipeline: crate::render::pipeline::Lazy,
     layout: wgpu::BindGroupLayout,
     instances: wgpu::Buffer,
     capacity: u64,
@@ -350,6 +350,11 @@ fn bind_group(
 }
 
 impl SkinnedRenderer {
+    /// Its pipelines, for the renderer's warm-up (pipeline.rs).
+    pub(crate) fn pipelines(&self) -> [&crate::render::pipeline::Lazy; 2] {
+        [&self.pipeline, &self.shadow_pipeline]
+    }
+
     pub fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -402,11 +407,6 @@ impl SkinnedRenderer {
                 shader_location: 4,
             },
         ];
-        let buffers = [Some(wgpu::VertexBufferLayout {
-            array_stride: VERTEX_BYTES as u64,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &attributes,
-        })];
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("skinned"),
             bind_group_layouts: &[Some(frame_layout), Some(&layout)],
@@ -424,68 +424,96 @@ impl SkinnedRenderer {
                 write_mask: wgpu::ColorWrites::ALL,
             }),
         ];
-        let pipeline = crate::render::pipeline::create(
-            device,
-            &wgpu::RenderPipelineDescriptor {
-                label: Some("skinned"),
-                layout: Some(&pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &module,
-                    entry_point: Some("skinned_vs"),
-                    compilation_options: Default::default(),
-                    buffers: &buffers,
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &module,
-                    entry_point: Some("skinned_fs"),
-                    compilation_options: Default::default(),
-                    targets: &targets,
-                }),
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleList,
-                    front_face: wgpu::FrontFace::Ccw,
-                    // The packs' meshes aren't all closed (the hat's brim): both sides drawn.
-                    cull_mode: None,
-                    ..Default::default()
-                },
-                depth_stencil: Some(depth_state()),
-                multisample: wgpu::MultisampleState {
-                    count: samples,
-                    ..Default::default()
-                },
-                multiview_mask: None,
-                cache: None,
-            },
-        );
+        let pipeline = {
+            let (device, module, pipeline_layout, targets) = (
+                device.clone(),
+                module.clone(),
+                pipeline_layout.clone(),
+                targets.clone(),
+            );
+            crate::render::pipeline::Lazy::new(move || {
+                let buffers = [Some(wgpu::VertexBufferLayout {
+                    array_stride: VERTEX_BYTES as u64,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &attributes,
+                })];
+                crate::render::pipeline::create(
+                    &device,
+                    &wgpu::RenderPipelineDescriptor {
+                        label: Some("skinned"),
+                        layout: Some(&pipeline_layout),
+                        vertex: wgpu::VertexState {
+                            module: &module,
+                            entry_point: Some("skinned_vs"),
+                            compilation_options: Default::default(),
+                            buffers: &buffers,
+                        },
+                        fragment: Some(wgpu::FragmentState {
+                            module: &module,
+                            entry_point: Some("skinned_fs"),
+                            compilation_options: Default::default(),
+                            targets: &targets,
+                        }),
+                        primitive: wgpu::PrimitiveState {
+                            topology: wgpu::PrimitiveTopology::TriangleList,
+                            front_face: wgpu::FrontFace::Ccw,
+                            // The packs' meshes aren't all closed (the hat's brim): both sides drawn.
+                            cull_mode: None,
+                            ..Default::default()
+                        },
+                        depth_stencil: Some(depth_state()),
+                        multisample: wgpu::MultisampleState {
+                            count: samples,
+                            ..Default::default()
+                        },
+                        multiview_mask: None,
+                        cache: None,
+                    },
+                )
+            })
+        };
         let shadow_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("skinned shadows"),
             bind_group_layouts: &[Some(shadow_frame_layout), Some(&layout)],
             immediate_size: 0,
         });
-        let shadow_pipeline = crate::render::pipeline::create(
-            device,
-            &wgpu::RenderPipelineDescriptor {
-                label: Some("skinned shadows"),
-                layout: Some(&shadow_layout),
-                vertex: wgpu::VertexState {
-                    module: &module,
-                    entry_point: Some("skinned_vs"),
-                    compilation_options: Default::default(),
-                    buffers: &buffers,
-                },
-                fragment: None,
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleList,
-                    front_face: wgpu::FrontFace::Ccw,
-                    cull_mode: None,
-                    ..Default::default()
-                },
-                depth_stencil: Some(super::shadows::caster_depth(&dwell_look::shadows::SHADOWS)),
-                multisample: Default::default(),
-                multiview_mask: None,
-                cache: None,
-            },
-        );
+        let shadow_pipeline = {
+            let (device, module, shadow_layout) =
+                (device.clone(), module.clone(), shadow_layout.clone());
+            crate::render::pipeline::Lazy::new(move || {
+                let buffers = [Some(wgpu::VertexBufferLayout {
+                    array_stride: VERTEX_BYTES as u64,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &attributes,
+                })];
+                crate::render::pipeline::create(
+                    &device,
+                    &wgpu::RenderPipelineDescriptor {
+                        label: Some("skinned shadows"),
+                        layout: Some(&shadow_layout),
+                        vertex: wgpu::VertexState {
+                            module: &module,
+                            entry_point: Some("skinned_vs"),
+                            compilation_options: Default::default(),
+                            buffers: &buffers,
+                        },
+                        fragment: None,
+                        primitive: wgpu::PrimitiveState {
+                            topology: wgpu::PrimitiveTopology::TriangleList,
+                            front_face: wgpu::FrontFace::Ccw,
+                            cull_mode: None,
+                            ..Default::default()
+                        },
+                        depth_stencil: Some(super::shadows::caster_depth(
+                            &dwell_look::shadows::SHADOWS,
+                        )),
+                        multisample: Default::default(),
+                        multiview_mask: None,
+                        cache: None,
+                    },
+                )
+            })
+        };
         let level = dwell_models::DETAIL_DEFAULT;
         let player = upload(device, queue, data, model, level);
         let capacity = 4;

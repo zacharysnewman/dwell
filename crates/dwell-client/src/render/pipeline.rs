@@ -9,6 +9,7 @@
 //! was not), [`Lazy::built`], [`Warmup::step`], and [`created`] (how many this thread has made).
 
 use std::cell::{Cell, OnceCell, RefCell};
+use std::sync::atomic::Ordering::Relaxed;
 
 thread_local! {
     static CREATED: Cell<usize> = const { Cell::new(0) };
@@ -66,35 +67,51 @@ impl<T> std::ops::Deref for Lazy<T> {
     }
 }
 
-/// Builds the pipelines a frame draws a batch at a time, a frame apart, so the GPU process's
-/// compile comes in pieces the page paints between.
+/// Builds the pipelines a frame draws a batch at a time, the next batch only once the GPU has
+/// done the last (a queue fence), so the GPU process's compile comes in pieces the page paints
+/// between rather than piling up.
 #[derive(Default)]
 pub struct Warmup {
     done: Cell<bool>,
+    waiting: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Warmup {
-    /// Pipelines compiled per frame while warming.
-    pub const PER_FRAME: usize = 2;
+    /// Pipelines compiled per batch.
+    pub const PER_FRAME: usize = 1;
 
-    /// Builds up to [`Self::PER_FRAME`] of `wanted` not built yet; whether all of them are built.
-    pub fn step<'a>(&self, wanted: impl IntoIterator<Item = &'a Lazy>) -> bool {
+    /// Builds up to [`Self::PER_FRAME`] of `wanted` not built yet, unless the GPU is still on the
+    /// last batch; whether all of them are built (and the GPU is done with them).
+    pub fn step<'a>(
+        &self,
+        queue: &wgpu::Queue,
+        wanted: impl IntoIterator<Item = &'a Lazy>,
+    ) -> bool {
         if self.done.get() {
             return true;
         }
+        if self.waiting.load(Relaxed) {
+            return false;
+        }
         let mut made = 0;
         for p in wanted {
-            if p.built() {
-                continue;
-            }
             if made == Self::PER_FRAME {
-                return false;
+                break;
             }
-            p.get();
-            made += 1;
+            if !p.built() {
+                p.get();
+                made += 1;
+            }
         }
-        self.done.set(true);
-        true
+        if made == 0 {
+            self.done.set(true);
+            return true;
+        }
+        self.waiting.store(true, Relaxed);
+        let waiting = self.waiting.clone();
+        queue.on_submitted_work_done(move || waiting.store(false, Relaxed));
+        queue.submit([]);
+        false
     }
 }
 

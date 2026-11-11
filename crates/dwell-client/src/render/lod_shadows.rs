@@ -672,11 +672,11 @@ pub struct LodShadowMaps {
     targets: Vec<Vec<wgpu::TextureView>>,
     /// Per layer, per mip from 1: the group reading the mip before.
     sources: Vec<Vec<wgpu::BindGroup>>,
-    mip_pipeline: wgpu::RenderPipeline,
+    mip_pipeline: crate::render::pipeline::Lazy,
     horizons: wgpu::Texture,
     pub horizon_view: wgpu::TextureView,
     horizon_targets: Vec<wgpu::TextureView>,
-    sweep_pipeline: wgpu::RenderPipeline,
+    sweep_pipeline: crate::render::pipeline::Lazy,
     sweep_uniform: wgpu::Buffer,
     sweep_group: wgpu::BindGroup,
     pub sampler: wgpu::Sampler,
@@ -692,53 +692,65 @@ fn full_screen_pipeline(
     layout: &wgpu::BindGroupLayout,
     (vs, fs): (&str, &str),
     color: Option<wgpu::TextureFormat>,
-) -> wgpu::RenderPipeline {
-    let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some(label),
-        source: wgpu::ShaderSource::Wgsl(source.into()),
-    });
-    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some(label),
-        bind_group_layouts: &[Some(layout)],
-        immediate_size: 0,
-    });
-    let targets = color.map(|format| {
-        [Some(wgpu::ColorTargetState {
-            format,
-            blend: None,
-            write_mask: wgpu::ColorWrites::ALL,
-        })]
-    });
-    crate::render::pipeline::create(
-        device,
-        &wgpu::RenderPipelineDescriptor {
+) -> crate::render::pipeline::Lazy {
+    // Made on first use (pipeline.rs, bug #71).
+    let (device, label, layout, vs, fs) = (
+        device.clone(),
+        label.to_owned(),
+        layout.clone(),
+        vs.to_owned(),
+        fs.to_owned(),
+    );
+    crate::render::pipeline::Lazy::new(move || {
+        let (device, label, layout, vs, fs) =
+            (&device, label.as_str(), &layout, vs.as_str(), fs.as_str());
+        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some(label),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &module,
-                entry_point: Some(vs),
-                compilation_options: Default::default(),
-                buffers: &[],
+            source: wgpu::ShaderSource::Wgsl(source.into()),
+        });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some(label),
+            bind_group_layouts: &[Some(layout)],
+            immediate_size: 0,
+        });
+        let targets = color.map(|format| {
+            [Some(wgpu::ColorTargetState {
+                format,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            })]
+        });
+        crate::render::pipeline::create(
+            device,
+            &wgpu::RenderPipelineDescriptor {
+                label: Some(label),
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &module,
+                    entry_point: Some(vs),
+                    compilation_options: Default::default(),
+                    buffers: &[],
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &module,
+                    entry_point: Some(fs),
+                    compilation_options: Default::default(),
+                    targets: targets.as_ref().map_or(&[], |t| &t[..]),
+                }),
+                primitive: Default::default(),
+                depth_stencil: color.is_none().then_some(wgpu::DepthStencilState {
+                    format: HEIGHT_DEPTH,
+                    depth_write_enabled: Some(true),
+                    depth_compare: Some(wgpu::CompareFunction::Always),
+                    stencil: Default::default(),
+                    bias: Default::default(),
+                }),
+                multisample: Default::default(),
+                multiview_mask: None,
+                cache: None,
             },
-            fragment: Some(wgpu::FragmentState {
-                module: &module,
-                entry_point: Some(fs),
-                compilation_options: Default::default(),
-                targets: targets.as_ref().map_or(&[], |t| &t[..]),
-            }),
-            primitive: Default::default(),
-            depth_stencil: color.is_none().then_some(wgpu::DepthStencilState {
-                format: HEIGHT_DEPTH,
-                depth_write_enabled: Some(true),
-                depth_compare: Some(wgpu::CompareFunction::Always),
-                stencil: Default::default(),
-                bias: Default::default(),
-            }),
-            multisample: Default::default(),
-            multiview_mask: None,
-            cache: None,
-        },
-    )
+        )
+    })
 }
 
 /// The sweep's WGSL: its module with the horizon's range.

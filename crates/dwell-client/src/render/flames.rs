@@ -654,10 +654,10 @@ pub enum Group {
 
 /// The flames' pipelines and this frame's vertices.
 pub struct FlameRenderer {
-    mask: wgpu::RenderPipeline,
-    scene: wgpu::RenderPipeline,
-    lit: wgpu::RenderPipeline,
-    colour_only: wgpu::RenderPipeline,
+    mask: crate::render::pipeline::Lazy,
+    scene: crate::render::pipeline::Lazy,
+    lit: crate::render::pipeline::Lazy,
+    colour_only: crate::render::pipeline::Lazy,
     vertices: wgpu::Buffer,
     capacity: u64,
     /// Per group, its glows' and its embers' and flames' vertex ranges.
@@ -695,6 +695,11 @@ const PREMULTIPLIED: wgpu::BlendState = wgpu::BlendState {
 };
 
 impl FlameRenderer {
+    /// Its pipelines, for the renderer's warm-up (pipeline.rs).
+    pub(crate) fn pipelines(&self) -> [&crate::render::pipeline::Lazy; 4] {
+        [&self.mask, &self.scene, &self.lit, &self.colour_only]
+    }
+
     pub fn new(
         device: &wgpu::Device,
         frame_layout: &wgpu::BindGroupLayout,
@@ -737,49 +742,55 @@ impl FlameRenderer {
                 shader_location: 4,
             },
         ];
-        let buffers = [Some(wgpu::VertexBufferLayout {
-            array_stride: VERTEX_BYTES,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &attributes,
-        })];
-        let make = |label: &str, fs: &str, targets: &[Option<wgpu::ColorTargetState>]| {
-            crate::render::pipeline::create(
-                device,
-                &wgpu::RenderPipelineDescriptor {
-                    label: Some(label),
-                    layout: Some(&layout),
-                    vertex: wgpu::VertexState {
-                        module: &module,
-                        entry_point: Some("flame_vs"),
-                        compilation_options: Default::default(),
-                        buffers: &buffers,
+        // Made on first use (pipeline.rs, bug #71).
+        let make = |label: &'static str,
+                    fs: &'static str,
+                    targets: Vec<Option<wgpu::ColorTargetState>>| {
+            let (device, layout, module) = (device.clone(), layout.clone(), module.clone());
+            crate::render::pipeline::Lazy::new(move || {
+                let buffers = [Some(wgpu::VertexBufferLayout {
+                    array_stride: VERTEX_BYTES,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &attributes,
+                })];
+                crate::render::pipeline::create(
+                    &device,
+                    &wgpu::RenderPipelineDescriptor {
+                        label: Some(label),
+                        layout: Some(&layout),
+                        vertex: wgpu::VertexState {
+                            module: &module,
+                            entry_point: Some("flame_vs"),
+                            compilation_options: Default::default(),
+                            buffers: &buffers,
+                        },
+                        fragment: Some(wgpu::FragmentState {
+                            module: &module,
+                            entry_point: Some(fs),
+                            compilation_options: Default::default(),
+                            targets: &targets,
+                        }),
+                        primitive: wgpu::PrimitiveState {
+                            topology: wgpu::PrimitiveTopology::TriangleList,
+                            cull_mode: None,
+                            ..Default::default()
+                        },
+                        depth_stencil: Some(wgpu::DepthStencilState {
+                            format: DEPTH,
+                            depth_write_enabled: Some(false),
+                            depth_compare: Some(DEPTH_COMPARE),
+                            stencil: Default::default(),
+                            bias: Default::default(),
+                        }),
+                        multisample: wgpu::MultisampleState {
+                            count: samples,
+                            ..Default::default()
+                        },
+                        multiview_mask: None,
+                        cache: None,
                     },
-                    fragment: Some(wgpu::FragmentState {
-                        module: &module,
-                        entry_point: Some(fs),
-                        compilation_options: Default::default(),
-                        targets,
-                    }),
-                    primitive: wgpu::PrimitiveState {
-                        topology: wgpu::PrimitiveTopology::TriangleList,
-                        cull_mode: None,
-                        ..Default::default()
-                    },
-                    depth_stencil: Some(wgpu::DepthStencilState {
-                        format: DEPTH,
-                        depth_write_enabled: Some(false),
-                        depth_compare: Some(DEPTH_COMPARE),
-                        stencil: Default::default(),
-                        bias: Default::default(),
-                    }),
-                    multisample: wgpu::MultisampleState {
-                        count: samples,
-                        ..Default::default()
-                    },
-                    multiview_mask: None,
-                    cache: None,
-                },
-            )
+                )
+            })
         };
         let colour = |write: bool| wgpu::ColorTargetState {
             format: HDR,
@@ -802,19 +813,19 @@ impl FlameRenderer {
         let mask = make(
             "flame mask",
             "flame_mask_fs",
-            &[Some(colour(false)), Some(view_depth(true))],
+            vec![Some(colour(false)), Some(view_depth(true))],
         );
         let scene = make(
             "flames",
             "flame_scene_fs",
-            &[Some(colour(true)), Some(view_depth(false))],
+            vec![Some(colour(true)), Some(view_depth(false))],
         );
         let lit = make(
             "flames (lit)",
             "flame_lit_fs",
-            &[Some(colour(true)), Some(view_depth(true))],
+            vec![Some(colour(true)), Some(view_depth(true))],
         );
-        let colour_only = make("flames (water)", "flame_fs", &[Some(colour(true))]);
+        let colour_only = make("flames (water)", "flame_fs", vec![Some(colour(true))]);
         let capacity = 64;
         Self {
             mask,
@@ -1144,10 +1155,10 @@ mod tests {
         // The pipelines that run them write the view depth's target; the glows' does not.
         let src = include_str!("flames.rs");
         assert!(src.contains(
-            "\"flame_mask_fs\",\n            &[Some(colour(false)), Some(view_depth(true))]"
+            "\"flame_mask_fs\",\n            vec![Some(colour(false)), Some(view_depth(true))]"
         ));
         assert!(src.contains(
-            "\"flame_lit_fs\",\n            &[Some(colour(true)), Some(view_depth(true))]"
+            "\"flame_lit_fs\",\n            vec![Some(colour(true)), Some(view_depth(true))]"
         ));
         let scene = WGSL
             .split("fn flame_scene_fs")

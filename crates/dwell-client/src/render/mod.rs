@@ -2607,7 +2607,7 @@ impl Renderer {
     /// Builds the next few of the pipelines a frame draws (bug #71, pipeline.rs); whether all are
     /// built. Called once a frame before drawing; a frame is drawn only once it is done.
     pub fn warm_pipelines(&mut self) -> bool {
-        self.warmup.step(self.warm_set())
+        self.warmup.step(&self.queue, self.warm_set())
     }
 
     /// The pipelines the warm-up builds, in the order a frame needs them: the scene's, the
@@ -2620,6 +2620,9 @@ impl Renderer {
         scene.sort_by_key(|(k, _)| **k);
         set.extend(scene.into_iter().map(|(_, p)| p));
         set.push(&self.water_scene_pipeline);
+        set.extend([&self.heightfield.blended, &self.heightfield.scene]);
+        set.extend(self.characters.pipelines());
+        set.extend(self.flames.pipelines());
         set.extend([
             &self.composite_pipeline,
             &self.finished_pipeline,
@@ -6481,9 +6484,11 @@ mod tests {
         let before = pipeline::created();
         let mut r = noop_renderer();
         let up_front = pipeline::created() - before;
-        assert!(up_front <= 4, "{up_front} pipelines made up front");
+        // The water tiles' two (their noise is drawn once, at the start) are the only ones.
+        assert!(up_front <= 2, "{up_front} pipelines made up front");
         let mut steps = 0;
         while !r.warm_pipelines() {
+            r.device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
             steps += 1;
             let warmed = pipeline::created() - before - up_front;
             assert!(
@@ -6494,6 +6499,24 @@ mod tests {
         }
         let warmed = pipeline::created() - before;
         assert!(steps >= 2, "in batches: {steps} steps for {warmed}");
+        draws_cleanly(r);
+    }
+
+    /// A tier that is off is not warmed: its pipeline is made when it is switched on and drawn.
+    #[test]
+    fn a_tier_switched_off_is_not_warmed_and_is_made_on_first_use() {
+        let mut r = noop_renderer();
+        r.set_shafts(ShaftQuality::Off);
+        while !r.warm_pipelines() {
+            r.device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
+        }
+        assert!(!r.shafts_pipeline.built(), "light shafts are off");
+        assert!(r.composite_pipeline.built(), "the composite is warmed");
+        r.set_shafts(ShaftQuality::High);
+        let before = pipeline::created();
+        let _ = &*r.shafts_pipeline;
+        assert!(r.shafts_pipeline.built());
+        assert_eq!(pipeline::created() - before, 1, "made once, on first use");
         draws_cleanly(r);
     }
 
