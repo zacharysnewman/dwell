@@ -16,6 +16,7 @@ pub mod noise;
 pub mod placements;
 pub mod portals;
 pub mod ramps;
+pub mod species;
 pub mod tectonics;
 pub mod terrain;
 pub mod vegetation;
