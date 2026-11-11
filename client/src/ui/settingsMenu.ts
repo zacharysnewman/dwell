@@ -43,6 +43,7 @@ import {
   FOV_LIMITS,
   VIEW_KEY,
   sanitizeFovSetting,
+  sanitizeLeafCards,
   sanitizeShowArms,
   viewRecord,
 } from './viewSettings';
@@ -164,6 +165,11 @@ export interface Settings {
   fovDeg: number;
   /** Your first-person arms and what they hold (docs/CHARACTERS.md §5). */
   showArms: boolean;
+  /**
+   * The leaf cards on trees (shared/look/leaves.json `cards`): off draws none; on, the renderer's
+   * tier decides (none on a phone or a CPU adapter). Chunks meshed from then on follow it.
+   */
+  leafCards: boolean;
   /** What the on-screen interface shows (ui/hudSettings.ts, shared/ui/hud.json). */
   hud: HudSettings;
   /** Render scale and its upscaler (ui/renderScaleSettings.ts, shared/render/upscale.json). */
@@ -198,6 +204,7 @@ export function baseSettings(mobile: boolean, reducedMotion = false): Settings {
     explosions: defaultExplosions(reducedMotion),
     fovDeg: DEFAULT_FOV,
     showArms: true,
+    leafCards: true,
     hud: defaultHud(),
     renderScale: defaultRenderScale(),
     menuBackground: DEFAULT_MENU_BACKGROUND,
@@ -240,6 +247,7 @@ export function settingsJson(s: Settings): string {
     explosions: { ...s.explosions },
     fovDeg: Math.round(s.fovDeg),
     showArms: s.showArms,
+    leafCards: s.leafCards,
     hud: { shown: { ...s.hud.shown }, mapShading: s.hud.mapShading },
     renderScale: { ...s.renderScale },
     menuBackground: s.menuBackground,
@@ -334,6 +342,7 @@ export function storedSettings(mobile: boolean, defaults: Settings): Settings {
     explosions: sanitizeExplosions(load(EXPLOSIONS_KEY), defaultExplosions(prefersReducedMotion())),
     fovDeg: sanitizeFovSetting(load(VIEW_KEY)),
     showArms: sanitizeShowArms(load(VIEW_KEY)),
+    leafCards: sanitizeLeafCards(load(VIEW_KEY)),
     hud: sanitizeHud(load(HUD_KEY)),
     renderScale: sanitizeRenderScale(load(RENDER_SCALE_KEY), UPSCALE, defaults.renderScale),
     menuBackground: sanitizeMenuBackground(load(MENU_KEY)),
@@ -395,7 +404,7 @@ function writeSettings(s: Settings, pins: ReadonlySet<string>): void {
     [WATER_KEY, waterRecord(load(WATER_KEY), s.water)],
     [SHADOWS_KEY, shadowRecord(load(SHADOWS_KEY), s.shadows)],
     [MOTION_KEY, motionRecord(load(MOTION_KEY), s.motion)],
-    [VIEW_KEY, viewRecord(load(VIEW_KEY), s.fovDeg, s.showArms)],
+    [VIEW_KEY, viewRecord(load(VIEW_KEY), s.fovDeg, s.showArms, s.leafCards)],
     [HUD_KEY, hudRecord(load(HUD_KEY), s.hud)],
     [RENDER_SCALE_KEY, renderScaleRecord(load(RENDER_SCALE_KEY), s.renderScale)],
     [EXPLOSIONS_KEY, explosionRecord(load(EXPLOSIONS_KEY), s.explosions)],
@@ -712,6 +721,15 @@ function panes(mobile: boolean): Record<SettingsPane, Group[]> {
               format: (v) => `${String(Math.round(v))}°`,
               get: (s) => s.fovDeg,
               with: (s, v) => ({ ...s, fovDeg: Math.round(v) }),
+            },
+          },
+          {
+            toggle: {
+              label: 'Leaf cards',
+              pin: 'leafCards',
+              hint: 'Painted leaf clumps on near trees; off is lighter on the GPU (never drawn on phones)',
+              get: (s) => s.leafCards,
+              with: (s, v) => ({ ...s, leafCards: v }),
             },
           },
           {

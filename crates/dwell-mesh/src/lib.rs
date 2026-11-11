@@ -57,6 +57,7 @@ pub use lod_mesher::{
     lod_color, mesh_section, mesh_section_tinted, mirror_rows, section_bytes,
 };
 pub use lod_trees::has_leaves;
+pub use mesher::relief;
 pub use mesher::{
     ChunkFlags, ChunkMeshes, GroundJob, MeshArrays, PAD, PADDED_VOLUME, face_covered,
     ground_scatter, look_mesh, look_swatch, mesh_chunk, mesh_chunk_at, mesh_chunk_cut,

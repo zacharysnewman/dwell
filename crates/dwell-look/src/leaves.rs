@@ -32,4 +32,17 @@ pub struct LeafCards {
     /// They dissolve with distance from `fade_start_m` to `fade_end_m` (m).
     pub fade_start_m: f64,
     pub fade_end_m: f64,
+    /// Which renderer tiers mesh them (`dwell-client` `render::cards_for`).
+    pub tiers: CardTiers,
+}
+
+/// Whether each renderer tier meshes the cards (shared/look/leaves.json `cards.tiers`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CardTiers {
+    /// A GPU on a desktop page.
+    pub desktop: bool,
+    /// A touch device's page (the phone tier).
+    pub phone: bool,
+    /// A CPU adapter (the cheapest tier of everything).
+    pub cpu: bool,
 }

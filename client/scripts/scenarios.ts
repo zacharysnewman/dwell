@@ -220,6 +220,22 @@ export type Step =
       drift?: { position: Vec3; yaw: number; pitch: number };
       maxHueFlips?: number;
     }
+  /**
+   * One axe swing frame by frame (docs/DEV_TOOLS.md "Clip strip"): the level (or `vertical`)
+   * chop held at `frames` clip times across it (`__dwell.holdSwing`), each shot from the `views`
+   * (`fp`: your eyes; `tp-behind`, `tp-side`: a stand-in holding the same tool, seen from behind
+   * and to its right, and from its right side), `<name>-<view>-00.png`…, and one contact sheet
+   * `<name>-sheet.png` (a row per view). Hold the axe first (`give`, `pick`).
+   */
+  | {
+      do: 'clip-strip';
+      name: string;
+      vertical: boolean;
+      frames: number;
+      views: ClipStripView[];
+      /** The stand-in's feet from yours (m); it stands 4 m ahead of `at` + 10 m along x. */
+      at: Vec3;
+    }
   /** Runs `steps` `times` times (e.g. a burst of edits); no `mark`, `record`, `shot` or traces inside. */
   | { do: 'repeat'; times: number; steps: Step[] };
 
@@ -395,6 +411,7 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   waterDebug: ['names'],
   timelapse: ['name', 'frames', 'from', 'to', 'waitS'],
   burst: ['name', 'frames', 'clock', 'maxFlicker', 'drift', 'maxHueFlips'],
+  'clip-strip': ['name', 'vertical', 'frames', 'views', 'at'],
   repeat: ['times', 'steps'],
 };
 
@@ -409,6 +426,7 @@ const NOT_REPEATED: readonly Step['do'][] = [
   'traceStop',
   'timelapse',
   'burst',
+  'clip-strip',
 ];
 
 export function parseStep(where: string, v: unknown): Step {
@@ -674,6 +692,27 @@ export function parseStep(where: string, v: unknown): Step {
         to: num(at('to'), o.to, 0, 1, 1),
         waitS: num(at('waitS'), o.waitS, 0, 60, 0.3),
       };
+    case 'clip-strip': {
+      const views = o.views ?? CLIP_STRIP_VIEWS;
+      if (
+        !Array.isArray(views) ||
+        views.length === 0 ||
+        !views.every((v) => CLIP_STRIP_VIEWS.includes(v as ClipStripView))
+      ) {
+        throw new ViewError(`${at('views')}: expected a list of ${CLIP_STRIP_VIEWS.join(', ')}`);
+      }
+      const frames = num(at('frames'), o.frames, 2, 24, 8);
+      if (!Number.isInteger(frames))
+        throw new ViewError(`${at('frames')}: expected a whole number`);
+      return {
+        do: d,
+        name: name(at('name'), o.name),
+        vertical: o.vertical === undefined ? false : bool(at('vertical'), o.vertical),
+        frames,
+        views: views as ClipStripView[],
+        at: o.at === undefined ? [0, 0, 0] : vec3(at('at'), o.at),
+      };
+    }
     case 'burst':
       return {
         do: d,
@@ -867,10 +906,92 @@ export function parseScenarios(json: unknown): Scenario[] {
   return list;
 }
 
+/** A clip strip's views: your eyes, and a stand-in seen from behind-right and from its right. */
+export type ClipStripView = 'fp' | 'tp-behind' | 'tp-side';
+export const CLIP_STRIP_VIEWS: readonly ClipStripView[] = ['fp', 'tp-behind', 'tp-side'];
+
+/** The clip times (s) a strip shows: `frames` of them from 0 to `duration`, both ends included. */
+export function clipStripTimes(duration: number, frames: number): number[] {
+  return Array.from({ length: frames }, (_, i) => (duration * i) / (frames - 1));
+}
+
+/**
+ * The first-person clip a swing plays and its length (s), read from the characters data
+ * (shared/characters/characters.json: the player's `firstPerson.clips` role → clip).
+ */
+export function swingClip(
+  characters: unknown,
+  vertical: boolean,
+): { clip: string; duration: number } {
+  const c = characters as {
+    characters: Partial<
+      Record<string, { firstPerson?: { clips?: Partial<Record<string, string>> } }>
+    >;
+    clips: Partial<Record<string, { duration: number }>>;
+  };
+  const role = vertical ? 'chop_vertical' : 'chop_level';
+  const clip = c.characters.player?.firstPerson?.clips?.[role];
+  const duration = clip === undefined ? undefined : c.clips[clip]?.duration;
+  if (clip === undefined || duration === undefined) {
+    throw new Error(`clip-strip: the player has no first-person ${role} clip`);
+  }
+  return { clip, duration };
+}
+
+/**
+ * Where a third-person view of a stand-in (feet `feet`, facing +Z, standing still while a swing
+ * is held) is shot from: behind it and to its right (its right is −X at a heading of 0), or from
+ * its right side, looking at its chest; `up` is the face's (1 face A, −1 face B: mirrored).
+ */
+export function clipStripCamera(
+  view: Exclude<ClipStripView, 'fp'>,
+  feet: Vec3,
+  up: number,
+): { position: Vec3; yaw: number; pitch: number } {
+  // Face-local offsets (right is −x), the look's yaw from them (0 = +Z, 90 = +X).
+  const [dx, dy, dz] = view === 'tp-behind' ? [-1.6, 1.9, -2.6] : [-3.2, 1.4, 0.3];
+  const chest = 1.2;
+  const yaw = (Math.atan2(-dx, -dz) * 180) / Math.PI;
+  const pitch = (Math.atan2(chest - dy, Math.hypot(dx, dz)) * 180) / Math.PI;
+  return {
+    position: [feet[0] + dx * up, feet[1] + dy * up, feet[2] + dz],
+    yaw: up > 0 ? yaw : -yaw,
+    pitch,
+  };
+}
+
+/** The contact sheet's page: a row per view, a column per clip time, each frame labelled. */
+export function clipStripSheet(
+  title: string,
+  rows: { view: string; frames: { t: number; src: string }[] }[],
+): string {
+  const esc = (v: string): string =>
+    v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const cells = rows
+    .map(
+      (r) =>
+        `<tr><th>${esc(r.view)}</th>${r.frames
+          .map((f) => `<td><img src="${esc(f.src)}"><div>${f.t.toFixed(3)} s</div></td>`)
+          .join('')}</tr>`,
+    )
+    .join('');
+  return `<!doctype html><meta charset="utf-8"><style>body{margin:8px;font:12px sans-serif;background:#fff}td,th{padding:2px;vertical-align:top}img{width:240px;display:block}</style><h3>${esc(title)}</h3><table>${cells}</table>`;
+}
+
 /** The times of day a timelapse shows, `frames` of them from `from` toward `to` (not reaching it). */
 export function timelapseTimes(s: { from: number; to: number; frames: number }): number[] {
   const span = s.to > s.from ? s.to - s.from : s.to + 1 - s.from;
   return Array.from({ length: s.frames }, (_, i) => (s.from + (span * i) / s.frames) % 1);
+}
+
+/**
+ * The game page for a served `base`: a server's root (`http://localhost:4173`) → its `/dwell/`; a
+ * base already naming a build's path (`…/dwell/`, a released build's `…/dwell/v/0.51.24/`) → that
+ * path. The launcher's builds 404'd as `…/dwell/v/0.51.24/dwell/` (`--base`).
+ */
+export function buildPage(base: string): string {
+  const b = base.replace(/\/+$/, '');
+  return /\/dwell(\/|$)/.test(new URL(b).pathname) ? `${b}/` : `${b}/dwell/`;
 }
 
 /**

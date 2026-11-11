@@ -101,6 +101,11 @@ export const PRESET_FIELDS = {
     get: (s) => s.clouds,
     with: (s, v) => ({ ...s, clouds: v as Settings['clouds'] }),
   },
+  leafCards: {
+    check: oneOf(['on', 'off']),
+    get: (s) => (s.leafCards ? 'on' : 'off'),
+    with: (s, v) => ({ ...s, leafCards: v === 'on' }),
+  },
   distanceM: detailField('distanceM'),
   pixelError: detailField('pixelError'),
   memoryMb: detailField('memoryMb'),

@@ -45,6 +45,14 @@ pub struct DamageLook {
     /// How deep a mark is shaded as cut into the face (cells; look only, its scoop's bowl or shard's
     /// facets; data `depth`, default 0.1).
     pub depth: f64,
+    /// A scoop's per-pixel relief (BLOCK_DAMAGE.md §6.1): the loose soil raised round its rim (m;
+    /// data `rim`, default 0.012).
+    pub rim: f64,
+    /// The steps the texture marches into the dent (0: lit only; the Low tier marches none; data
+    /// `parallax`, default 6).
+    pub parallax: u32,
+    /// How much darker its damp floor is (0–1; data `darken`, default 0.35).
+    pub darken: f64,
 }
 
 /// The damage look of a block, by name.

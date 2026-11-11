@@ -262,6 +262,44 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 72. ~23 fps on an iPhone at Low, and z-fighting where leaf cards meet tree trunks (fixed after 0.52.109; the frame rate partly)
+
+Owner, 2026-11-11 (iPhone 17, Safari, quality Low): "I'm only getting ~23 fps on mobile, seeing lots of z-fighting on
+tree trunks with the leaf cards. What might be dropping frames since the last while. Used to get 60 fps."
+
+- **Z-fighting:** a leaf cell's cards (shared/look/leaves.json `cards`, 0.52.56) stood off every exposed face, and a face
+  toward a log counts as exposed (an octagonal log covers nothing), so cards were placed through and along the trunk's bark
+  beside it. Now a card with any corner reaching into a neighbouring block that is neither leaves nor empty is dropped
+  (`mesher/leaves.rs` `leaf_voxel`). Pinned by `dwell-mesh` `leaf_cards_stay_out_of_the_logs_beside_them` (both faces):
+  red on the unfixed mesher (a card's corner inside the log beside the leaf), green with the fix.
+- **Frame rate:** the cards are now off on the phone tier by data (`cards.tiers.phone`, `render::cards_for`; a `?cards=0|1`
+  dev override). Measured on the bench's `--touch` phone page (393 × 852 at 3×, Low preset, unthrottled, M-series desktop
+  GPU): in the starter's broadleaf forest `gpu.frame` p95 4.76 → 4.36 ms (−8 %; `gpu.near` 3.55 → 3.18, `gpu.far`
+  2.38 → 2.10) with cards off; at the default world's spawn (no near trees) no change. The cards are one cost, not the
+  whole regression: the largest passes on Low are `gpu.composite` (~2.9–3.3 ms), `gpu.arms` (~2.1 ms at the spawn) and
+  `gpu.water.tiles` (1.1–1.7 ms with no water in view). **Outstanding:** those three toggled one by one, and a comparison
+  with a release from before the leaf, cloud and lava work: the launcher's builds (`/dwell/v/0.51.24/`) did not start
+  under the bench (a 404 on a resource), and 0.52.40 is no longer published.
+- **Round 2 (branch `claude/mobile-fps-2`):** the bench's `--base` opened a release as `…/v/<version>/dwell/` (the 404);
+  it now opens the path as given. The **Low preset turns the leaf cards off** (a `leafCards` preset field and a Leaf
+  cards setting, Settings → Graphics; `graphicsPresets.test.ts` red with Low's on, green off). Versions compared on the
+  `--touch` phone page at Low, the default world's spawn, Chrome's CPU throttled 4×, M-series GPU (mean ms):
+
+  | Build | frame.cpu | draw.render | lod | gpu.frame | gpu.near | gpu.composite | gpu.arms | gpu.water.tiles |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | 0.51.24 | 3.84 | 1.98 | 1.06 | 4.50 | 2.81 | 2.01 | 1.30 | 0.90 |
+  | 0.52.77-dev.529 | 3.50 | 1.77 | 0.89 | 4.38 | 2.87 | 2.12 | 1.37 | 0.91 |
+  | this branch (≈ 0.52.111) | 3.23 | 1.44 | 0.93 | 4.32 | 2.77 | 2.24 | 1.42 | 0.88 |
+
+  No regression on the desktop at the spawn, CPU or GPU: the composite, arms and water-tile costs were already there in
+  0.51.24. The local server's water worker ticks at 0.15 ms mean. So what dropped the phone to ~23 fps does not show on a
+  desktop GPU at the spawn. The likeliest cause is the leaf cards on the phone's tile GPU: alpha-cut (`discard`) quads
+  defeat an Apple GPU's hidden-surface removal, so their overdraw costs far more there than the desktop's 8 %. The
+  cards are now off on the phone tier and on Low. 0.52.101 and newer releases still don't start under the bench (another
+  404, not looked into), so 0.52.78–0.52.110 are not bisected. **Outstanding:** a real iPhone check on a build with the
+  cards off; then, if it is still slow, the arms pass (a separate pass, a store and reload of the frame on a tile GPU)
+  and the composite.
+
 ### 71. "Starting the graphics" takes a long time with no elapsed time shown (fixed after 0.52.101)
 
 Owner, 2026-11-11: "'Starting the graphics' now takes a long time without showing elapsed time." The stage is

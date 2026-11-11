@@ -2,6 +2,51 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.52.117",
+      "changes": [
+        "Behind the scenes: work queue notes on digging, mining and chopping marks"
+      ]
+    },
+    {
+      "version": "0.52.116",
+      "changes": [
+        "Digging now carves a real-looking hollow into dirt, sand and snow: a rounded scoop with a crumbly rim, shaded walls and a damp floor, merging into one hole as you keep digging."
+      ]
+    },
+    {
+      "version": "0.52.115",
+      "changes": [
+        "The Low graphics preset turns the leaf cards off, for a faster frame",
+        "Settings → Graphics has a Leaf cards switch"
+      ]
+    },
+    {
+      "version": "0.52.114",
+      "changes": [
+        "Phones no longer draw the leaf cards on trees, for a faster frame",
+        "Leaf cards no longer flicker against tree trunks"
+      ]
+    },
+    {
+      "version": "0.52.113",
+      "changes": [
+        "Behind the scenes: work queue notes on the axe swing"
+      ]
+    },
+    {
+      "version": "0.52.112",
+      "changes": [
+        "The axe swings the right way: a level chop sweeps right to left and a vertical chop comes down top to bottom, both through the crosshair.",
+        "Developer tools: a clip probe that charts an animation's paths over time from several views, and a bench step that shoots a swing frame by frame."
+      ]
+    },
+    {
+      "version": "0.52.111",
+      "changes": [
+        "Behind the scenes: a world can now record its size (today's, or 2×, 4×, 8× or 10× wider) for the coming big-map test; every world plays exactly as before"
+      ]
+    },
+    {
       "version": "0.52.110",
       "changes": [
         "The main menu's Settings and Versions are now buttons in the menu's own style, side by side under Worlds and Play with others"

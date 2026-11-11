@@ -71,15 +71,28 @@ export function sanitizeShowArms(record: unknown): boolean {
   return v !== false;
 }
 
+/**
+ * A stored view record's Leaf cards setting (shared/look/leaves.json `cards`; BUGS.md #72): on
+ * unless stored off (a record from before it has none).
+ */
+export function sanitizeLeafCards(record: unknown): boolean {
+  const v =
+    typeof record === 'object' && record !== null
+      ? (record as Record<string, unknown>).leafCards
+      : undefined;
+  return v !== false;
+}
+
 /** The view record to store: the stored one's other fields kept (newer builds' fields survive). */
 export function viewRecord(
   stored: unknown,
   fovDeg: number,
   showArms = true,
+  leafCards = true,
 ): Record<string, unknown> {
   const base =
     typeof stored === 'object' && stored !== null && !Array.isArray(stored)
       ? (stored as Record<string, unknown>)
       : {};
-  return { ...base, fovDeg, showArms };
+  return { ...base, fovDeg, showArms, leafCards };
 }

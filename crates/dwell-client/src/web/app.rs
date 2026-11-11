@@ -1269,6 +1269,16 @@ impl Client {
         }));
         true
     }
+    /// Holds the axe's swing (`vertical` or level) at clip time `t` s on your arms and every
+    /// stand-in body for the dev tools (`__dwell.holdSwing`, the bench's `clip-strip`); a negative
+    /// `t` releases it.
+    #[wasm_bindgen(js_name = holdSwing)]
+    pub fn hold_swing(&self, vertical: bool, t: f64) -> bool {
+        let mut s = self.inner.borrow_mut();
+        let Some(g) = &mut s.game else { return false };
+        g.hold_swing((t >= 0.0).then_some((vertical, t)));
+        true
+    }
     /// Stand-in players for the dev tools (`__dwell.puppets`): `count` bodies ahead of `x, y, z`
     /// (feet) on `face` (its sign: negative for face B) holding block `held` (0: none); 0 removes
     /// them.
@@ -1926,6 +1936,22 @@ impl Client {
             .renderer
             .borrow_mut()
             .set_heightfield_override(on);
+    }
+    /// Forces the leaf cards on (1) or off (0), or back to the tier's (any other value): `?cards=`,
+    /// a dev tool (docs/DEV_TOOLS.md). Chunks meshed after it follow it, so it is set before the
+    /// world streams in.
+    #[wasm_bindgen(js_name = setCards)]
+    pub fn set_cards(&self, mode: i32) {
+        let on = match mode {
+            0 => Some(false),
+            1 => Some(true),
+            _ => None,
+        };
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_cards_override(on);
     }
     /// The ink outline's mode by name (`shared/look/outline.json`; docs/ART_DIRECTION.md §7), as
     /// `?outline=` takes it; `off` or an unknown name turns it off. True when a mode is on.

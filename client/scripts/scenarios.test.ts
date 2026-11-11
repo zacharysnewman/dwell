@@ -1,6 +1,16 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { parseScenarios, scenarioUrl, scenarioView, timelapseTimes } from './scenarios.ts';
+import {
+  clipStripCamera,
+  clipStripSheet,
+  clipStripTimes,
+  parseScenarios,
+  buildPage,
+  scenarioUrl,
+  scenarioView,
+  swingClip,
+  timelapseTimes,
+} from './scenarios.ts';
 import { HOTBAR_SLOTS } from '../src/ui/inventory.gen.ts';
 import { viewUrl } from './views.ts';
 
@@ -100,7 +110,16 @@ describe('scenarios', () => {
       s.steps.flatMap((t) => (t.do === 'pick' ? [t.item] : [])),
     );
     expect(new Set(picks)).toEqual(
-      new Set(['dwell:log', 'dwell:leaves', 'dwell:stone_axe', 'dwell:torch']),
+      new Set([
+        'dwell:log',
+        'dwell:leaves',
+        'dwell:stone_axe',
+        'dwell:torch',
+        'dwell:dirt',
+        'dwell:stone',
+        'dwell:wooden_shovel',
+        'dwell:stone_pickaxe',
+      ]),
     );
   });
 
@@ -438,5 +457,94 @@ describe('scenarios', () => {
         ]),
       ),
     ).toThrow(/aroundPlayer: expected true or false/);
+  });
+});
+
+describe('clip-strip', () => {
+  const bad = (step: unknown) => () => parseScenarios(file([{ name: 'a', steps: [step] }]));
+  it('parses with defaults and rejects bad views and frame counts', () => {
+    const s = parseScenarios(file([{ name: 'a', steps: [{ do: 'clip-strip', name: 'swing' }] }]))[0]
+      ?.steps[0];
+    expect(s).toEqual({
+      do: 'clip-strip',
+      name: 'swing',
+      vertical: false,
+      frames: 8,
+      views: ['fp', 'tp-behind', 'tp-side'],
+      at: [0, 0, 0],
+    });
+    expect(bad({ do: 'clip-strip', name: 's', views: ['top'] })).toThrow(/views/);
+    expect(bad({ do: 'clip-strip', name: 's', frames: 1 })).toThrow(/outside 2–24/);
+    expect(bad({ do: 'clip-strip', name: 's', frames: 2.5 })).toThrow(/whole number/);
+    expect(bad({ do: 'repeat', times: 2, steps: [{ do: 'clip-strip', name: 's' }] })).toThrow(
+      /can't be repeated/,
+    );
+  });
+
+  it('spans the swing clip of the characters data, ends included', () => {
+    const characters = JSON.parse(
+      readFileSync(new URL('../../shared/characters/characters.json', import.meta.url), 'utf8'),
+    ) as unknown;
+    const level = swingClip(characters, false);
+    expect(level.clip).toBe('fp_chop_level');
+    expect(swingClip(characters, true).clip).toBe('fp_chop_vertical');
+    const t = clipStripTimes(level.duration, 5);
+    expect(t).toHaveLength(5);
+    expect(t[0]).toBe(0);
+    expect(t[4]).toBeCloseTo(level.duration);
+    expect(() => swingClip({ characters: { player: {} }, clips: {} }, false)).toThrow(/chop_level/);
+  });
+
+  it('frames the stand-in from behind-right and from its right, looking at it', () => {
+    const feet: [number, number, number] = [10, 50, -4];
+    const behind = clipStripCamera('tp-behind', feet, 1);
+    // Behind (−Z) and to its right (−X at a heading of 0), above, looking ahead, right, down.
+    expect(behind.position[0]).toBeLessThan(feet[0]);
+    expect(behind.position[2]).toBeLessThan(feet[2]);
+    expect(behind.position[1]).toBeGreaterThan(feet[1] + 1.2);
+    expect(behind.yaw).toBeGreaterThan(0);
+    expect(behind.yaw).toBeLessThan(90);
+    expect(behind.pitch).toBeLessThan(0);
+    const side = clipStripCamera('tp-side', feet, 1);
+    expect(side.position[0]).toBeLessThan(feet[0] - 2);
+    expect(side.yaw).toBeGreaterThan(80);
+    expect(side.yaw).toBeLessThan(100);
+    // Face B: mirrored through the midplane (below the feet), the heading mirrored.
+    const b = clipStripCamera('tp-behind', feet, -1);
+    expect(b.position[1]).toBeLessThan(feet[1]);
+    expect(b.yaw).toBeCloseTo(-behind.yaw);
+  });
+
+  it('lays the frames out a row per view', () => {
+    const html = clipStripSheet('s <1>', [
+      {
+        view: 'fp',
+        frames: [
+          { t: 0, src: 'data:a' },
+          { t: 0.31, src: 'data:b' },
+        ],
+      },
+      { view: 'tp-side', frames: [{ t: 0, src: 'data:c' }] },
+    ]);
+    expect(html.match(/<tr>/g)).toHaveLength(2);
+    expect(html).toContain('0.310 s');
+    expect(html).toContain('s &lt;1>');
+  });
+});
+
+describe('buildPage', () => {
+  it('opens a root at /dwell/ and a build path as it is', () => {
+    expect(buildPage('http://localhost:4173')).toBe('http://localhost:4173/dwell/');
+    expect(buildPage('http://localhost:4174/')).toBe('http://localhost:4174/dwell/');
+    expect(buildPage('https://dropkickarcade.com/dwell/')).toBe(
+      'https://dropkickarcade.com/dwell/',
+    );
+    // A released build behind the launcher (it 404'd as …/v/0.51.24/dwell/).
+    expect(buildPage('https://dropkickarcade.com/dwell/v/0.51.24/')).toBe(
+      'https://dropkickarcade.com/dwell/v/0.51.24/',
+    );
+    expect(buildPage('https://dropkickarcade.com/dwell/v/0.51.24')).toBe(
+      'https://dropkickarcade.com/dwell/v/0.51.24/',
+    );
   });
 });

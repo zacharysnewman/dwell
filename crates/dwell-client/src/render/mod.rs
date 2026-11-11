@@ -244,13 +244,22 @@ pub fn shafts_for(device_type: wgpu::DeviceType, quality: ShaftQuality) -> Shaft
     }
 }
 
-/// Whether the night sky draws its stars (a hashed grid per pixel): not on a CPU adapter.
-/// Whether the leaf cards (shared/look/leaves.json `cards`) are drawn: not on a CPU adapter, which
-/// draws the cheapest tier of everything (their overdraw is per pixel).
-pub fn cards_for(device_type: wgpu::DeviceType) -> bool {
-    device_type != wgpu::DeviceType::Cpu
+/// Whether the leaf cards (shared/look/leaves.json `cards`) are meshed: the data's switch for the
+/// tier (`cards.tiers`: a CPU adapter's, the cheapest tier of everything; else a phone page's or a
+/// desktop's; their alpha-cut overdraw is per pixel), unless the dev override (`?cards=0|1`)
+/// forces it.
+pub fn cards_for(device_type: wgpu::DeviceType, phone: bool, forced: Option<bool>) -> bool {
+    let tiers = dwell_look::leaves::LEAVES.cards.tiers;
+    forced.unwrap_or(if is_cpu(device_type) {
+        tiers.cpu
+    } else if phone {
+        tiers.phone
+    } else {
+        tiers.desktop
+    })
 }
 
+/// Whether the night sky draws its stars (a hashed grid per pixel): not on a CPU adapter.
 pub fn stars_for(device_type: wgpu::DeviceType) -> bool {
     !is_cpu(device_type)
 }
@@ -1304,6 +1313,8 @@ pub struct Renderer {
     /// `?heightfield=0|1` (a dev tool, docs/DEV_TOOLS.md): forces the near water's GPU heightfield
     /// off or on whatever the tier says; `None` follows the tier (`watertiers.json` `heightfield`).
     heightfield_override: Option<bool>,
+    /// `?cards=0|1`: forces the leaf cards on or off (`cards_for`); `None` the tier's.
+    cards_override: Option<bool>,
     /// The water's flow shown (flow.rs `FLOW_RIPPLES`, `FLOW_FOAM`; the Water flow settings).
     flow_switches: u32,
     /// The water's noise and caustic tiles (water_tiles.rs).
@@ -2113,6 +2124,7 @@ impl Renderer {
             phone: false,
             water_debug: 0,
             heightfield_override: None,
+            cards_override: None,
             flow_switches: 0,
             water_tiles,
             pacer: pacing::FramePacer::default(),
@@ -2667,6 +2679,11 @@ impl Renderer {
     /// Chunks meshed from then on follow it; set it before the world streams in.
     pub fn set_heightfield_override(&mut self, on: Option<bool>) {
         self.heightfield_override = on;
+    }
+    /// Forces the leaf cards on or off (`?cards=`), or back to the tier's (`None`). Chunks meshed
+    /// from then on follow it; set it before the world streams in.
+    pub fn set_cards_override(&mut self, on: Option<bool>) {
+        self.cards_override = on;
     }
     /// The water this adapter draws: the setting's, Low on a CPU adapter (`water_for`).
     fn water(&self) -> WaterQuality {
@@ -5714,7 +5731,7 @@ impl TerrainRenderer for Renderer {
 
 impl crate::game::Scene for Renderer {
     fn draws_cards(&self) -> bool {
-        cards_for(self.adapter)
+        cards_for(self.adapter, self.phone, self.cards_override)
     }
     fn draws_heightfield(&self) -> bool {
         heightfield_drawn(self.water().tier().heightfield, self.heightfield_override)
@@ -6123,8 +6140,20 @@ mod tests {
     #[test]
     fn software_adapters_draw_without_multisampling() {
         assert_eq!(samples_for(wgpu::DeviceType::Cpu, SAMPLES), 1);
-        assert!(!cards_for(wgpu::DeviceType::Cpu));
-        assert!(cards_for(wgpu::DeviceType::DiscreteGpu));
+        // The tier table (shared/look/leaves.json `cards.tiers`): a desktop GPU meshes them; a
+        // phone page (owner, 2026-11-11: ~23 fps on an iPhone) and a CPU adapter do not.
+        assert!(!cards_for(wgpu::DeviceType::Cpu, false, None));
+        assert!(!cards_for(wgpu::DeviceType::Cpu, true, None));
+        assert!(cards_for(wgpu::DeviceType::DiscreteGpu, false, None));
+        assert!(cards_for(wgpu::DeviceType::IntegratedGpu, false, None));
+        assert!(!cards_for(wgpu::DeviceType::IntegratedGpu, true, None));
+        // `?cards=` wins over the tier either way.
+        assert!(cards_for(wgpu::DeviceType::IntegratedGpu, true, Some(true)));
+        assert!(!cards_for(
+            wgpu::DeviceType::DiscreteGpu,
+            false,
+            Some(false)
+        ));
         assert_eq!(samples_for(wgpu::DeviceType::DiscreteGpu, SAMPLES), SAMPLES);
         assert_eq!(
             samples_for(wgpu::DeviceType::IntegratedGpu, SAMPLES),

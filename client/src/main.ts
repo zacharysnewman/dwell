@@ -236,6 +236,11 @@ interface DwellDebug {
    * playing a clip of its own and holding block `held` (0: none); 0 removes them.
    */
   puppets(count: number, feet: Vec3, face?: number, held?: number): boolean;
+  /**
+   * Holds the axe's level (or `vertical`) swing at clip time `t` s on your arms and every
+   * stand-in, which stand still facing +Z (the bench's `clip-strip`); a negative `t` releases it.
+   */
+  holdSwing(vertical: boolean, t: number): boolean;
   /** Shows or hides your first-person arms (the setting, for this page only). */
   showArms(on: boolean): void;
   /** Back to the player's eyes. */
@@ -909,6 +914,10 @@ async function start(): Promise<App | null> {
     // ?heightfield=1|0 forces the near water's GPU heightfield on or off (a dev tool, DEV_TOOLS.md).
     const heightfield = new URLSearchParams(location.search).get('heightfield');
     if (heightfield === '1' || heightfield === '0') client.setHeightfield(Number(heightfield));
+    // The Leaf cards setting (off: none; on: the tier's), then ?cards=1|0 forcing them on or off
+    // over it (a dev tool, DEV_TOOLS.md).
+    const cards = new URLSearchParams(location.search).get('cards');
+    client.setCards(cards === '1' || cards === '0' ? Number(cards) : s.leafCards ? -1 : 0);
     client.setClouds(s.clouds);
     // FXAA and the atlas's anisotropic filtering apply live (?aa= and ?aniso= override them).
     const aa = antialiasFromQuery(location.search, s.antialias);
@@ -1127,6 +1136,7 @@ async function start(): Promise<App | null> {
     spyglass: (on, step) => client.spyglass(on, step ?? 0),
     placeCamera: ([x, y, z], yaw, pitch) => client.placeCamera(x, y, z, yaw, pitch),
     puppets: (count, [x, y, z], face, held) => client.puppets(count, x, y, z, face ?? 1, held ?? 0),
+    holdSwing: (vertical, t) => client.holdSwing(vertical, t),
     showArms: (on) => {
       client.setShowArms(on);
     },

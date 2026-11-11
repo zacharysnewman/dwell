@@ -230,10 +230,14 @@ test("block damage: the data's hits reach Rust and TS; a fixture block by data a
   blocks.set('test:clay', { damage: { default: 3, look: { kind: 'scoops', size: 0.3, color: '#806040', crack: '#302010' } } });
   assert.match(
     toolsRust(validateTools(data, items, blocks)),
-    /block: "test:clay", .*look: Some\(DamageLook \{ kind: DamageLookKind::Scoops, size: 0\.3, color: \[128, 96, 64\], crack: \[48, 32, 16\], depth: 0\.1 \}\)/,
+    /block: "test:clay", .*look: Some\(DamageLook \{ kind: DamageLookKind::Scoops, size: 0\.3, color: \[128, 96, 64\], crack: \[48, 32, 16\], depth: 0\.1, rim: 0\.012, parallax: 6, darken: 0\.35 \}\)/,
   );
   bad({ default: 3, look: { kind: 'dents', size: 0.3, color: '#806040', crack: '#302010' } }, /test:clay\.damage\.look\.kind must be one of shards, scoops, chips/);
   bad({ default: 3, look: { kind: 'scoops', size: 0.3, color: '#806040', crack: '#302010', depth: 0.9 } }, /test:clay\.damage\.look\.depth must be a number in \[0, 0\.5\]/);
+  // A scoop's per-pixel relief is data (BLOCK_DAMAGE.md §6.1): a fixture's rim, march and damp floor.
+  bad({ default: 3, look: { kind: 'scoops', size: 0.3, color: '#806040', crack: '#302010', rim: 0.2 } }, /test:clay\.damage\.look\.rim must be a number in \[0, 0\.03\]/);
+  bad({ default: 3, look: { kind: 'scoops', size: 0.3, color: '#806040', crack: '#302010', parallax: 2.5 } }, /test:clay\.damage\.look\.parallax must be a whole number of steps from 0 to 8/);
+  bad({ default: 3, look: { kind: 'scoops', size: 0.3, color: '#806040', crack: '#302010', darken: -1 } }, /test:clay\.damage\.look\.darken must be a number in \[0, 1\]/);
   bad({ default: 3, look: { kind: 'shards', size: 2, color: '#806040', crack: '#302010' } }, /test:clay\.damage\.look\.size must be a number/);
   bad({ default: 3, look: { kind: 'shards', size: 0.3, color: 'red', crack: '#302010' } }, /test:clay\.damage\.look\.color must be a #rrggbb colour/);
   // Its hit's chips (sounds round 2b) by data alone, and a bad one fails naming it.

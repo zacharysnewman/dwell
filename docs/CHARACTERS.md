@@ -224,8 +224,17 @@ The arms are a **separate view** of the same character, as first-person games do
   an entry, and its swing a clip.
 
 - **The axe's swings** (ADR 0067, 0.50.36): `fp_chop_level` and `fp_chop_vertical`, the arms'
-  `chop_level` and `chop_vertical` roles, played on each axe swing by its direction; a character
-  without them plays its `break`. The held axe is the `stone_axe` item (a stick handle, a knapped
+  `chop_level` and `chop_vertical` roles, played on each axe swing by its direction, and the body's
+  `biped_chop_level` and `biped_chop_vertical` (third person, 2026-11-11; before, others saw a
+  `break`); a character without them plays its `break`. Their direction is measured on the drawn
+  axe's head with the clip probe (DEV_TOOLS.md "Clip probe and clip strip"): the level swing winds
+  out to the right and strikes right to left across the screen, the vertical one is raised and
+  strikes top to bottom, both through the crosshair at the arc's middle (0.18 s), on the body across
+  its front from its right to its left, or down (owner, 2026-11-11: "They don't swing in the right
+  direction at all"; the keys were refitted to head targets and the clips' ease is `spline`, so the
+  head doesn't stop at the contact key). Remote players still see the body's `break`: the wire's
+  swing byte (`swing_flags`) carries break or place only, so naming the chop and its direction on it
+  is a protocol change for later. The held axe is the `stone_axe` item (a stick handle, a knapped
   flint head across its tip, its edge `axe_blade`, a leather lashing), named by the tool's `held` in
   `shared/tools/tools.json`; the vertical swing's hold is `stone_axe_vertical` (`heldVertical`: the
   same parts, another `pose`), so toggling the swing changes the grip (0.50.39). The blade faces away

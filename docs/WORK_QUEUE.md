@@ -13,6 +13,16 @@ Last updated: 2026-11-11 (0.52.108).
 
 ## Next, in order
 
+0. **P0: the phone's frame rate at Low** (owner, 2026-11-11: "~23 fps on mobile … used to get 60 fps"; BUGS.md #72).
+   - Done (branch `claude/mobile-fps`): leaf cards off on the phone tier by data (`leaves.json` `cards.tiers`), a
+     `?cards=` override, no card into a trunk (the z-fighting). On the bench's phone page in a forest −0.4 ms of 4.8 ms GPU.
+   - Done (branch `claude/mobile-fps-2`): the Low preset turns the cards off (`leafCards`, a Leaf cards setting);
+     the bench opens released builds (`--base …/dwell/v/<version>/`). 0.51.24, 0.52.77-dev and now measure the same
+     on the desktop phone page (CPU 4×): no regression there (BUGS.md #72's table).
+   - Next: the owner's iPhone on a build with the cards off. If still slow: the arms pass (its own pass: a store and
+     reload on a tile GPU), the composite (~2.2 ms), the caustic tile (0.9 ms every other frame); why 0.52.101+
+     releases still 404 under the bench.
+
 5. **Leaves, option 5, with matching far trees.**
    - Leaf Lab option 5 at its defaults ("#5 looks really good with defaults"): canopy normals 75 %,
      chamfer 0.28 m, leaf cards density 55 % and size 0.95 m. Leaves stay blocks. Fix the dark gaps at
@@ -243,6 +253,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    person, top, side, front and third-person views in one SVG), direction tests (horizontal strike right → left
    on screen, vertical top → bottom, the head at the crosshair at contact), the clips fixed, a bench
    `clip-strip` contact sheet from first and third person.
+   **Status (0.52.11x):** built: the `clip_probe` CLI and SVG (five views), direction tests (red 7/8 → green),
+   the clips refitted (level right → left, vertical top → bottom, the head on the crosshair at contact), a
+   bench `clip-strip` step. Review of the probe's sheets: directions right now, but the hands barely travel
+   (the head's arc is mostly a wrist turn), and the wind-up is short and small (0.1 s, no draw back over the
+   shoulder); the SVG's side panel is cut off. Left: an arm-driven swing (hands travel the arc, a real wind-up),
+   a probe test for hand travel, `clip-strip` run in the browser (local), remote players' chop direction (a
+   protocol change).
 18. **Digging marks that look carved** (owner 2026-11-11: "the 'chunks' of dirt aren't at all what we
    discussed. It should be like a normal map change (do we support normal/bump maps)? It's completely flat
    should look like mesh deformation (preferably without actually doing it for performance)"; "That part was
@@ -250,6 +267,16 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Planned (local, after item 16): each mark's height computed per pixel in the shader (its gradient bends the
    normal; the texture shifted inside the dent for depth; the rim's shadow and damp floor), growing with damage,
    data-driven, a cheap Low tier; collision unchanged. Stone shards on the same mechanism after.
+   **Status (carved-digging):** built (BLOCK_DAMAGE.md §6.1): one relief quad per struck face, the hollow per
+   pixel (merged bowls, rim with crumbs, bent normal, parallax march on Medium, rim shadow, damp floor), data
+   `rim`/`parallax`/`darken`, tests on the CPU copy. Left: the owner's look review (bench `dirt-relief`),
+   stone shards on the same function.
+   **Owner, later 2026-11-11: "Remember with the digging, mining, chopping it should be a real 3D chunk, not a 2D
+   decal"**; asked what should be real 3D (the block's mesh carved, or a real piece knocked off), the owner
+   chose **both**. So: (a) each hit cuts real geometry out of the block's face (a bowl in soil, angular facets
+   in stone, the notch in wood), seen from every angle and at the edges, collision still the full block;
+   (b) each hit also knocks off a real 3D piece (clod, shard, wood chip) that falls and is picked up as
+   today's per-hit drops are. 0.52.11x's per-pixel relief (built) is the stopgap until (a) lands.
 19. **Lava glow, remaining** (owner 2026-11-11: "Lava should have bloom glow"; "Lava looks dark red instead of
    bright red/orange"; "It should darken as it solidifies though"). Built 0.52.107: colour by heat stops, heat in
    cells. Left: the bloom pass (keyed on emissive; tiers, off on CPU/Low); the crust covering less of hot lava
@@ -269,6 +296,18 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
 ## Done
 
+- **Axe swing directions and animation tools (owner 2026-11-11: "The axe animations are still trash.
+  They don't swing in the right direction at all. Make yourself some tools to properly observe
+  animations"):** the clip probe (`cargo run -p dwell-client --example clip_probe`, DEV_TOOLS.md "Clip
+  probe and clip strip": a clip's points over time through the game's own posing, in first person,
+  top, side, front and third-person views, as a table, CSV or an SVG panel sheet) showed the level
+  strike going bottom → top and left → right on screen and both wind-ups taking the head behind the
+  eye. The arms' chop clips were refitted to head targets (level right → left, vertical top → bottom,
+  through the crosshair at contact) and the body got its own chop clips; pinned by
+  `clip_probe::chop_swing_tests` (red on the old clips, both faces in the world). The bench's
+  `clip-strip` step (K frames of one swing from first person and two third-person cameras, one
+  contact sheet) is for the local browser check, not run yet. Outstanding: that browser check; remote
+  players still see a `break` (the wire's swing byte has no chop kind).
 - **"Starting the graphics" frozen (BUGS.md #71):** not a main-thread task: on a cold Metal shader
   cache the GPU process compiled the renderer's 38 pipelines for ~9 s with the page painting no frame.
   Now the compile is its own stage (`shaders`), the pipelines are lazy (`render/pipeline.rs`) and
