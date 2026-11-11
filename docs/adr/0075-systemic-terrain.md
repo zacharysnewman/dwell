@@ -111,9 +111,48 @@ opt in (`vegetation: 1`; savanna and tundra now list the pine groves, which the 
 a "Soil and vegetation" group (the °C scale, the soil rules, each kind's tree-line temperature and least
 moisture), a per-biome vegetation slider, soil and vegetation overlays; the edit may carry `vegetation`.
 
-Not yet: the soil changes no block (the dirt's depth is still the bands' `underDepth`), the snow line
-is still the bands' fixed height (a temperature-driven snow line is T3b), decorations (grass) and ground
-items are not governed by kinds yet, and the climate needs the biome map (two or more biomes).
+Not yet (at 0.52.14): the soil changes no block, the snow line is the bands' fixed height, decorations
+and ground items are not governed by kinds; T3b below builds all three. Still: the dirt's depth is the
+bands' `underDepth`, and the climate needs the biome map (two or more biomes).
+
+### T3b, climate details in ordinary biomes (built)
+
+All opt-in per biome, none in the default biome, so the default world and the goldens are unchanged:
+
+- **A biome's snow line** (`snow`: `belowC`, `maxSlope`, `block`; optional `iceBelowC` with `ice`;
+  ranges `biomes.mjs` `SNOW`, read by `config.rs` `snow` for world files): the tectonic snow line's rule
+  (T5) for any biome. Where the biome map's temperature with its lapse rate, in °C, is below `belowC` and
+  the landform is no steeper than `maxSlope` (rise per run) the top is `block`; colder steeper ground is
+  bare rock; gentle ground colder than `iceBelowC` is `ice`. Where it is the column's biome its line
+  replaces the world's (`tectonics.snowBelowC`), so a world can have both. `BiomeSet` appends each such
+  biome's cover palettes after the world's (`biome_snow`); `BiomeSet::snow_cover` takes the column's biome.
+- **Soil blocks by soil type**: a `vegetation.json` soil type may name `ground` and `under` blocks
+  (absent: the band's own); a biome with `soilBlocks: true` shows them on its band ground, by the rock at
+  the surface (`rockSoils`). `BiomeSet::with_soils` builds the band × soil type palettes for those biomes
+  only (`soil_palette`; `biome_of_palette` maps them back to the biome, so decorations and placements
+  still see it); `with_vegetation` rebuilds the set when the soil types' blocks change. The build's data:
+  sandy soil (sandstone) puts sand under the grass; loamy and rocky keep the band's dirt (no peat or
+  dark-dirt block exists, and stone under the grass on granite would show on every terrace step; a
+  soil type takes one by data). No block was added.
+- **Undergrowth by climate**: a vegetation kind governs exactly one of a `placement`, a `decoration`
+  (`decorations.json`) or a `ground` item kind (`shared/ground`). A biome's `undergrowth` (0..1) is the
+  climate's share of its decorations and ground items, as `vegetation` is of its placements: the factor
+  1 − u + u × the kind's density. Decorations ask it only of a cell their own rolls keep
+  (`Placer::places_scaled`); ground items scale each biome's share of a chunk corner's density
+  (`ground_density_at`; `ground_varies` is true with a governed kind and a biome with undergrowth). The
+  build's kinds: `dwell:meadow_grass` (the tall grass: moisture from 0.05, faded over 0.3, so it thins
+  into the dry lee; above 1 °C), `dwell:fallen_sticks` (where it is wet and warm enough for trees, soil
+  0.2 m) and `dwell:loose_rocks` (any temperature, fewer where it is wet).
+- **The starter world opts in** (`worlds/starter.json`): every biome `undergrowth` 1; the alpine tundra
+  (snow below 2 °C, ice below −8 °C), the boreal (0.5 °C) and the steppe (−2 °C, so only its coldest
+  uplands) have their own snow lines over the world's 0 °C one; the steppe and the meadow `soilBlocks`.
+- **Tests** (`tests/climate_details.rs`, both faces; fixtures by data alone: the default biome's file
+  with keys over it, the build's vegetation with soil blocks or one kind replaced): a biome's line at the
+  island's median °C covers cold gentle ground, none warmer, none on steep faces; its glacier lies below
+  its ice line; soil types pick the block under the grass (sand, stone, the band's dirt); tall grass
+  follows a moisture floor; the sticks' density is 0 below one and 1 above, the rocks unchanged; bad
+  entries fail with messages (Rust and `gen.test.mjs`); the goldens and the starter's coverage unchanged.
+  No screenshots yet.
 
 First look (Chisel, seed 7, the default and boreal both at 1, `rainShare` 0.7): trees follow the river
 corridors and the wetter windward ground; with the moisture floor at 0 and a 9 °C tree line, the

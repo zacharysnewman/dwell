@@ -25,7 +25,13 @@ export function validateVegetation<T>(
   data: T,
   rocks?: Set<string>,
   placements?: Set<string>,
+  refs?: {
+    decorations?: Set<string>;
+    ground?: Set<string>;
+    blocks?: Map<string, BlockInfo>;
+  },
 ): T;
+export const SNOW: Record<string, Range>;
 export function validateBiome<T>(
   data: T,
   blocks: Map<string, BlockInfo>,
