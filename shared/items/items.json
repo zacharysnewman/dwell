@@ -71,6 +71,31 @@
       "tool": "dwell:stone_axe"
     },
     {
+      "name": "dwell:metal_axe",
+      "label": "Metal axe",
+      "tool": "dwell:metal_axe"
+    },
+    {
+      "name": "dwell:stone_pickaxe",
+      "label": "Stone pickaxe",
+      "tool": "dwell:stone_pickaxe"
+    },
+    {
+      "name": "dwell:metal_pickaxe",
+      "label": "Metal pickaxe",
+      "tool": "dwell:metal_pickaxe"
+    },
+    {
+      "name": "dwell:wooden_shovel",
+      "label": "Wooden shovel",
+      "tool": "dwell:wooden_shovel"
+    },
+    {
+      "name": "dwell:metal_shovel",
+      "label": "Metal shovel",
+      "tool": "dwell:metal_shovel"
+    },
+    {
       "name": "dwell:leaves",
       "label": "Leaves",
       "block": "dwell:leaves",

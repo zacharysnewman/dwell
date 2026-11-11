@@ -94,6 +94,10 @@ pub fn hotbar_swatch(slot: usize) -> Vec<u8> {
 /// A tool's picture (ADR 0067): a handle across the tile, bottom left to top right, and a head in
 /// the item's colour at its top.
 pub fn tool_swatch(item: &str) -> Vec<u8> {
+    // A tool with a model look (the tool models) is drawn as its model, as everywhere else.
+    if let Some(look) = dwell_protocol::inventory::item(item).and_then(|d| d.look) {
+        return dwell_mesh::look_swatch(&look);
+    }
     let n = dwell_mesh::TILE;
     let mut px = vec![0u8; n * n * 4];
     let head = dwell_protocol::inventory::item(item).map_or([125, 116, 104], |d| d.color);

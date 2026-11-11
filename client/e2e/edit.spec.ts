@@ -68,6 +68,16 @@ async function aim(page: Page, pitch = -45): Promise<Target> {
 }
 
 const add = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+/** The hotbar's tools (shared/items/items.json `tool`): they place nothing. */
+const TOOL_TITLES = new Set(
+  (
+    JSON.parse(readFileSync(new URL('../../shared/items/items.json', import.meta.url), 'utf8')) as {
+      items: { label: string; tool?: string }[];
+    }
+  ).items
+    .filter((i) => i.tool !== undefined)
+    .map((i) => i.label),
+);
 
 const EYE_HEIGHT = 1.62;
 
@@ -157,13 +167,13 @@ async function clearYaw(page: Page): Promise<number> {
 test('local mode: every palette block can be picked from the hotbar, placed, and broken', async ({
   page,
 }) => {
-  // 19 slots (the stone axe places nothing), each placed and broken: 66-114 s on CI's software renderer when it passed.
+  // 24 slots (the six tools place nothing), each placed and broken: 66-114 s on CI's software renderer when it passed.
   test.setTimeout(180_000);
   await page.goto('./?world=flat');
   await ready(page);
   // The hotbar is built once the page has taken the join, which can be a frame after the terrain.
   // One slot per item (shared/items/items.json, docs/ITEMS.md).
-  await expect(page.locator('#hotbar .hotbar-slot:visible')).toHaveCount(19);
+  await expect(page.locator('#hotbar .hotbar-slot:visible')).toHaveCount(24);
   const slots = await page.locator('#hotbar .hotbar-slot:visible').count();
   const ground = await aim(page);
   expect(ground.face).toBe(2);
@@ -186,7 +196,7 @@ test('local mode: every palette block can be picked from the hotbar, placed, and
       .getAttribute('title');
     if (title === 'Ladder') continue;
     // A tool places nothing: held, Place turns the axe's swing (docs/adr/0067-stone-axe-and-chopping.md).
-    if (title === 'Stone axe') continue;
+    if (title !== null && TOOL_TITLES.has(title)) continue;
     // Leaves placed on the ground stay there (docs/FELLING.md §2: loose leaves fall only to land).
 
     // Back to the ground cell, and wait until it is the target: the target is the previous look's

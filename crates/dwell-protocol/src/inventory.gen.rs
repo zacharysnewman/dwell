@@ -33,8 +33,12 @@ pub static ITEMS: &[ItemDef] = &[
     ItemDef { name: "dwell:gem", label: "Gem", color: [79, 176, 122], size: 0.14, stack: 64, value: 1, look: None },
     ItemDef { name: "dwell:gem_large", label: "Large gem", color: [79, 127, 208], size: 0.2, stack: 64, value: 5, look: None },
     ItemDef { name: "dwell:wood", label: "Wood", color: [160, 116, 70], size: 0.24, stack: 64, value: 0, look: None },
-    ItemDef { name: "dwell:stone_axe", label: "Stone axe", color: [125, 116, 104], size: 0.3, stack: 1, value: 0, look: None },
+    ItemDef { name: "dwell:stone_axe", label: "Stone axe", color: [125, 116, 104], size: 0.6, stack: 1, value: 0, look: Some(ItemLook { shape: LookShape::Model, size: [0.6, 0.6, 0.6], texture: "", color: [255, 255, 255], model: "stone_axes" }) },
+    ItemDef { name: "dwell:metal_axe", label: "Metal axe", color: [140, 143, 150], size: 0.65, stack: 1, value: 0, look: Some(ItemLook { shape: LookShape::Model, size: [0.65, 0.65, 0.65], texture: "", color: [255, 255, 255], model: "metal_axe" }) },
     ItemDef { name: "dwell:stone_pickaxe", label: "Stone pickaxe", color: [138, 122, 102], size: 0.6, stack: 1, value: 0, look: Some(ItemLook { shape: LookShape::Model, size: [0.6, 0.6, 0.6], texture: "", color: [255, 255, 255], model: "stone_pickaxes" }) },
+    ItemDef { name: "dwell:metal_pickaxe", label: "Metal pickaxe", color: [140, 143, 150], size: 0.7, stack: 1, value: 0, look: Some(ItemLook { shape: LookShape::Model, size: [0.7, 0.7, 0.7], texture: "", color: [255, 255, 255], model: "metal_pickaxes" }) },
+    ItemDef { name: "dwell:wooden_shovel", label: "Wooden shovel", color: [138, 100, 64], size: 1.0, stack: 1, value: 0, look: Some(ItemLook { shape: LookShape::Model, size: [1.0, 1.0, 1.0], texture: "", color: [255, 255, 255], model: "wooden_shovel" }) },
+    ItemDef { name: "dwell:metal_shovel", label: "Metal shovel", color: [140, 143, 150], size: 1.0, stack: 1, value: 0, look: Some(ItemLook { shape: LookShape::Model, size: [1.0, 1.0, 1.0], texture: "", color: [255, 255, 255], model: "metal_shovel" }) },
 ];
 
 /// What every block drops when broken without unlimited blocks, and what placing it uses up.

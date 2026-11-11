@@ -37,7 +37,7 @@ Stylized NPC - Peasant Nolant (Winged Boots), converted to GLB Asset Store pack 
 
 3D Low Poly Tools Weapons Containers (NexusArcadeStudios), 53 static models converted to GLB Asset Store pack
   License: Unity Asset Store EULA (Standard), NexusArcadeStudios, 3D Low Poly Tools Weapons Containers
-  Used in: shared/models/glb/props (model viewer); web client (the stone pickaxe's look, shared/models/glb/props/stone_pickaxes.glb)
+  Used in: shared/models/glb/props (model viewer); web client (the tool items' looks: shared/models/glb/props/stone_axes, metal_axe, stone_pickaxes, metal_pickaxes, wooden_shovel and metal_shovel .glb)
   Source:  https://assetstore.unity.com/
 
 aead 0.5.2

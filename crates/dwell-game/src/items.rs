@@ -66,9 +66,17 @@ mod tests {
     #[test]
     fn every_item_places_a_placeable_block_at_a_height_the_protocol_takes() {
         for i in &ITEMS {
-            // A tool places nothing: it names a tool of the tools data (ADR 0067).
+            // A tool places nothing: it names a tool of the tools data (ADR 0067), a chopping
+            // one or a breaking one (a pickaxe, a shovel).
             if let Some(t) = i.tool {
-                assert!(dwell_protocol::chopping::tool(t).is_some(), "{}", i.name);
+                assert!(
+                    dwell_protocol::chopping::tool(t).is_some()
+                        || dwell_protocol::chopping::BREAK_TOOLS
+                            .iter()
+                            .any(|b| b.item == t),
+                    "{}",
+                    i.name
+                );
                 assert!(i.block.is_empty(), "{}", i.name);
                 continue;
             }

@@ -47,7 +47,7 @@
       "url": "https://assetstore.unity.com/",
       "license": "Unity Asset Store EULA (Standard), NexusArcadeStudios, 3D Low Poly Tools Weapons Containers",
       "text": "unity-asset-store-eula.txt",
-      "used_in": "shared/models/glb/props (model viewer); web client (the stone pickaxe's look, shared/models/glb/props/stone_pickaxes.glb)"
+      "used_in": "shared/models/glb/props (model viewer); web client (the tool items' looks: shared/models/glb/props/stone_axes, metal_axe, stone_pickaxes, metal_pickaxes, wooden_shovel and metal_shovel .glb)"
     }
   ]
 }

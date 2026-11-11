@@ -8,7 +8,36 @@
       "swingSeconds": 0.45,
       "biteM": 0.12,
       "bindM": 0.05,
-      "across": 1.0,
+      "across": 1,
+      "along": 0.15,
+      "sharpness": 2,
+      "held": "stone_axe",
+      "heldVertical": "stone_axe_vertical",
+      "swing": {
+        "windupS": 0.12,
+        "activeS": 0.14,
+        "hitStopS": 0.08,
+        "recoverHitS": 0.22,
+        "recoverMissS": 0.36,
+        "reachM": 2.2,
+        "arcDeg": 110,
+        "samples": 12,
+        "kickDeg": 1.6,
+        "staminaCost": 8,
+        "swish": "axe_swish",
+        "bounce": "axe_clank",
+        "rustle": "axe_rustle",
+        "rustleLeaves": 5
+      },
+      "clears": ["dwell:leaves", "dwell:snowy_leaves", "dwell:log_ramp"]
+    },
+    {
+      "name": "dwell:metal_axe",
+      "kind": "axe",
+      "swingSeconds": 0.45,
+      "biteM": 0.2,
+      "bindM": 0.05,
+      "across": 1,
       "along": 0.15,
       "sharpness": 2,
       "held": "stone_axe",
@@ -37,19 +66,105 @@
       "block": "dwell:log",
       "fellFraction": 0.55,
       "buckFraction": 0.55,
-      "buckDrops": [{ "item": "dwell:wood", "count": [2, 3] }],
-      "chips": { "count": 7, "color": "#d9b37a", "speed": 2.6, "size": 0.05 },
-      "leaves": { "block": "dwell:leaves", "count": 6, "color": "#5f9e3e", "radiusM": 3, "heightM": 9 },
-      "sway": { "fromFraction": 0.4, "maxDeg": 3.5 },
-      "sounds": [
-        { "from": 0, "event": "chop_bark" },
-        { "from": 0.2, "event": "chop_wood" },
-        { "from": 0.4, "event": "chop_creak" }
+      "buckDrops": [
+        {
+          "item": "dwell:wood",
+          "count": [2, 3]
+        }
       ],
-      "cut": { "tile": "logCut", "tint": "#ffe2b8", "open": 2.5, "kerfWidthM": 0.035 },
+      "chips": {
+        "count": 7,
+        "color": "#d9b37a",
+        "speed": 2.6,
+        "size": 0.05
+      },
+      "leaves": {
+        "block": "dwell:leaves",
+        "count": 6,
+        "color": "#5f9e3e",
+        "radiusM": 3,
+        "heightM": 9
+      },
+      "sway": {
+        "fromFraction": 0.4,
+        "maxDeg": 3.5
+      },
+      "sounds": [
+        {
+          "from": 0,
+          "event": "chop_bark"
+        },
+        {
+          "from": 0.2,
+          "event": "chop_wood"
+        },
+        {
+          "from": 0.4,
+          "event": "chop_creak"
+        }
+      ],
+      "cut": {
+        "tile": "logCut",
+        "tint": "#ffe2b8",
+        "open": 2.5,
+        "kerfWidthM": 0.035
+      },
       "fellWedge": "dwell:log_ramp",
       "fellWedgeTrunk": "matching",
-      "fellTip": 1.0
+      "fellTip": 1
     }
-  ]
+  ],
+  "breaking": {
+    "$comment": "Which tool breaks which blocks faster (owner, 2026-11-10: \"pickaxe, shovel, and axe. Stone and Metal variants\"): `classes` maps a tool class to the blocks (by name) it is the right tool for, each block in at most one; `tiers` is a tier's break speed (a multiple of the bare hand's, 1); `tools` gives an item (shared/inventory) its class and tier. A break of a block holding the right class goes at its tier's speed, anything else at 1 (dwell_protocol::chopping::break_speed). The axe's chopping (`tools` above) is unchanged.",
+    "tiers": {
+      "stone": 1.5,
+      "metal": 2.5
+    },
+    "classes": {
+      "pickaxe": ["dwell:stone", "dwell:stone_ramp"],
+      "shovel": [
+        "dwell:dirt",
+        "dwell:dirt_ramp",
+        "dwell:grass",
+        "dwell:grass_ramp",
+        "dwell:snowy_grass",
+        "dwell:snowy_grass_ramp",
+        "dwell:sand",
+        "dwell:sand_ramp"
+      ],
+      "axe": ["dwell:log", "dwell:log_ramp"]
+    },
+    "tools": [
+      {
+        "item": "dwell:stone_axe",
+        "class": "axe",
+        "tier": "stone"
+      },
+      {
+        "item": "dwell:metal_axe",
+        "class": "axe",
+        "tier": "metal"
+      },
+      {
+        "item": "dwell:stone_pickaxe",
+        "class": "pickaxe",
+        "tier": "stone"
+      },
+      {
+        "item": "dwell:metal_pickaxe",
+        "class": "pickaxe",
+        "tier": "metal"
+      },
+      {
+        "item": "dwell:wooden_shovel",
+        "class": "shovel",
+        "tier": "stone"
+      },
+      {
+        "item": "dwell:metal_shovel",
+        "class": "shovel",
+        "tier": "metal"
+      }
+    ]
+  }
 }

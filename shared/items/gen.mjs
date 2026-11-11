@@ -52,10 +52,12 @@ export const stateName = (block, values) => {
   return keys.length ? `${block}[${keys.map((k) => `${k}=${values[k]}`).join(',')}]` : block;
 };
 
-/** The tools' item names (shared/tools/tools.json, validated). */
+/** The tools' item names (shared/tools/tools.json, validated): the chopping tools and the
+ * breaking tools (`breaking.tools`: a pickaxe, a shovel). */
 export function toolNames() {
   const { items, blocks } = loadNames();
-  return new Set(validateTools(loadTools(), items, blocks).tools.map((t) => t.name));
+  const d = validateTools(loadTools(), items, blocks);
+  return new Set([...d.tools.map((t) => t.name), ...d.breaking.tools.map((t) => t.item)]);
 }
 
 /** Checks the items against `blocks` (id → definition) and `tools` (the tools' item names); returns

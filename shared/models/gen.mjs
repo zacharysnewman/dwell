@@ -283,6 +283,8 @@ export function propSummary(bytes) {
     clips: (g.animations ?? []).length,
     colour0,
     colours: colours.size,
+    /** Its colours, each "r,g,b" (COLOR_0 × 255, rounded). */
+    palette: [...colours].sort(),
     size: hi.map((h, k) => h - lo[k]),
     centre: hi.map((h, k) => (h + lo[k]) / 2),
   };
@@ -344,6 +346,16 @@ export function validateProps(data, dir, read = (p) => readFileSync(p)) {
       )
     )
       fail(`${at}: grip is [x, y, z] metres`);
+    if (
+      p.objects !== undefined &&
+      !(
+        Array.isArray(p.objects) &&
+        p.objects.length > 0 &&
+        p.objects.every((o) => typeof o === "string" && o.length > 0) &&
+        new Set(p.objects).size === p.objects.length
+      )
+    )
+      fail(`${at}: objects is a list of its FBX's mesh object names, each once`);
     out[name] = {
       ...p,
       length,
