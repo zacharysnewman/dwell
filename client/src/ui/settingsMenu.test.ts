@@ -72,6 +72,7 @@ describe('settings JSON', () => {
       shafts: 'low',
       menuBackground: 'lake-shore',
       modelDetail: 'medium',
+      antialias: { mode: 'msaa4-fxaa', anisotropy: 16 },
     });
     const parsed = JSON.parse(json) as { detail: unknown };
     expect(parsed).toEqual({
@@ -96,6 +97,7 @@ describe('settings JSON', () => {
       shafts: 'low',
       menuBackground: 'lake-shore',
       modelDetail: 'medium',
+      antialias: { mode: 'msaa4-fxaa', anisotropy: 16 },
     });
     expect(sanitizeDetail(parsed.detail, defaultDetail(false))).toEqual({
       distanceM: 200,

@@ -61,7 +61,8 @@ export function validateAntialias(raw: unknown): AntialiasData {
       fail(`anisotropy[${String(i)}].value must be a whole number in [1, 16]`);
   }
   const def = d.default;
-  if (!def || !d.modes.some((m) => m.id === def.mode)) fail('default.mode must be one of the modes');
+  if (!def || !d.modes.some((m) => m.id === def.mode))
+    fail('default.mode must be one of the modes');
   if (!def || !d.anisotropy.some((a) => a.value === def.anisotropy))
     fail('default.anisotropy must be one of the anisotropy values');
   if (typeof d.hint !== 'string' || typeof d.anisotropyHint !== 'string')

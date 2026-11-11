@@ -770,8 +770,9 @@ async function start(): Promise<App | null> {
       loadingScreen: loadingScreenEnabled(location.search, storage()),
       // The scene's samples per pixel (Settings → Anti-aliasing; fixed when the renderer is made,
       // so a change applies on the next load; ?aa= overrides it).
-      samples: antialiasMode(antialiasFromQuery(location.search, loadSettings(mobile).antialias).mode)
-        .samples,
+      samples: antialiasMode(
+        antialiasFromQuery(location.search, loadSettings(mobile).antialias).mode,
+      ).samples,
     });
     stages.end('graphics', performance.now());
   } catch (err) {

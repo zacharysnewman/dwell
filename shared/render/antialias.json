@@ -3,7 +3,12 @@
   "modes": [
     { "id": "off", "label": "Off", "samples": 1, "fxaa": false },
     { "id": "msaa4", "label": "MSAA 4×", "samples": 4, "fxaa": false },
-    { "id": "msaa4-fxaa", "label": "MSAA 4× + FXAA", "samples": 4, "fxaa": true }
+    {
+      "id": "msaa4-fxaa",
+      "label": "MSAA 4× + FXAA",
+      "samples": 4,
+      "fxaa": true
+    }
   ],
   "anisotropy": [
     { "value": 1, "label": "Off" },

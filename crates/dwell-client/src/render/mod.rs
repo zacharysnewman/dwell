@@ -15,6 +15,7 @@ pub mod face_shading;
 pub mod flames;
 pub mod flow;
 pub mod frame;
+pub mod fxaa;
 pub mod geometry;
 pub mod heightfield;
 pub mod lights;
@@ -30,7 +31,6 @@ pub mod shadows;
 pub mod skinned;
 pub mod timing;
 pub mod upscale;
-pub mod fxaa;
 pub mod water;
 pub mod water_tiles;
 pub mod waterfalls;
@@ -86,7 +86,11 @@ pub fn is_cpu(device_type: wgpu::DeviceType) -> bool {
 
 /// Multisampling for an adapter: 4× on a GPU; none on a CPU adapter.
 pub fn samples_for(device_type: wgpu::DeviceType, requested: u32) -> u32 {
-    if is_cpu(device_type) || requested == 1 { 1 } else { SAMPLES }
+    if is_cpu(device_type) || requested == 1 {
+        1
+    } else {
+        SAMPLES
+    }
 }
 
 /// WebGPU's largest `maxAnisotropy`.
@@ -4117,7 +4121,11 @@ impl Renderer {
         if let (Some(_), Some(pass)) = (&fxaa_view, &self.fxaa_pass) {
             let query = self.timer.as_mut().and_then(|t| t.pass(timing::FXAA));
             let writes = self.timer.as_ref().and_then(|t| t.writes(query));
-            pass.draw(&mut encoder, upscale_view.as_ref().unwrap_or(target), writes);
+            pass.draw(
+                &mut encoder,
+                upscale_view.as_ref().unwrap_or(target),
+                writes,
+            );
             calls += 1;
         }
         if let (Some(_), Some(pass)) = (&upscale_view, &self.upscale_pass) {
@@ -5747,7 +5755,10 @@ mod tests {
     fn software_adapters_draw_without_multisampling() {
         assert_eq!(samples_for(wgpu::DeviceType::Cpu, SAMPLES), 1);
         assert_eq!(samples_for(wgpu::DeviceType::DiscreteGpu, SAMPLES), SAMPLES);
-        assert_eq!(samples_for(wgpu::DeviceType::IntegratedGpu, SAMPLES), SAMPLES);
+        assert_eq!(
+            samples_for(wgpu::DeviceType::IntegratedGpu, SAMPLES),
+            SAMPLES
+        );
     }
 
     #[test]
@@ -6199,7 +6210,11 @@ mod tests {
             let mut r = noop_renderer_with(samples, wgpu::Features::TIMESTAMP_QUERY);
             r.resize(64, 64, 1.0);
             if upscaled {
-                r.set_upscale(upscale::Upscaler::Sharpen, (40, 40), upscale::sharpness(0.25));
+                r.set_upscale(
+                    upscale::Upscaler::Sharpen,
+                    (40, 40),
+                    upscale::sharpness(0.25),
+                );
             }
             r.set_antialias(true, 16);
             assert!(r.fxaa());
@@ -6240,7 +6255,10 @@ mod tests {
                 assert_eq!(d.mag_filter, wgpu::FilterMode::Nearest, "1 keeps nearest");
             }
         }
-        assert_eq!(anisotropy_for(wgpu::DeviceType::DiscreteGpu, 64), MAX_ANISOTROPY);
+        assert_eq!(
+            anisotropy_for(wgpu::DeviceType::DiscreteGpu, 64),
+            MAX_ANISOTROPY
+        );
         assert_eq!(anisotropy_for(wgpu::DeviceType::IntegratedGpu, 0), 1);
     }
 
@@ -6262,11 +6280,21 @@ mod tests {
             assert_eq!(fxaa_for(wgpu::DeviceType::IntegratedGpu, fxaa), fxaa);
         }
         let default = data["default"]["mode"].as_str().expect("default mode");
-        let d = modes.iter().find(|m| m["id"] == default).expect("default is a mode");
-        assert_eq!((d["samples"].as_u64(), d["fxaa"].as_bool()), (Some(4), Some(false)));
+        let d = modes
+            .iter()
+            .find(|m| m["id"] == default)
+            .expect("default is a mode");
+        assert_eq!(
+            (d["samples"].as_u64(), d["fxaa"].as_bool()),
+            (Some(4), Some(false))
+        );
         for a in data["anisotropy"].as_array().expect("anisotropy") {
             let v = a["value"].as_u64().expect("value") as u16;
-            assert_eq!(anisotropy_for(wgpu::DeviceType::DiscreteGpu, v), v, "{a}: in [1, 16]");
+            assert_eq!(
+                anisotropy_for(wgpu::DeviceType::DiscreteGpu, v),
+                v,
+                "{a}: in [1, 16]"
+            );
         }
     }
 
