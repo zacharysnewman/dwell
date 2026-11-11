@@ -6,6 +6,17 @@ pins it.
 
 ## Open
 
+### 68. LOD holes and tall walls near a 4400 m summit
+
+Found 2026-11-10 (0.52.27) looking at the tall peak in game: `?worldgen=test:tall_peak&seed=7&fresh=1&at=500,5000,-866`,
+camera at (500, 5300, 34) looking down 45° toward −Z into the crater (bench `--compare`, the `summit`
+configuration). The cone's flank shows a hole (the sky and stars through it, lower right) and tall
+vertical grey walls where LOD sections at different levels meet, around the crater. From 20 km and
+from the cloud deck the cone is whole. Suspects: the LOD sections' bounds or skirts at heights the
+default world never reaches (~4400 m, ~8800 rows), or the selection near a camera far above the
+full-detail chunks. Next: `__dwell.state().lod` at that view, and `tests/tall_peaks.rs`'s LOD levels
+checked for neighbouring sections' seams.
+
 ### 60. On the software renderer the page draws no frame for ~6 s just after the first torch is placed
 
 Found 2026-11-10 chasing main's e2e failure on 0.51.8: `edit.spec.ts`'s every-palette-block test failed
