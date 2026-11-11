@@ -15,6 +15,7 @@ import type { KeyValueStore } from '../local/worldIndex';
 import { LOADING_FADE } from './loading.gen';
 import { BarFill, SecondsLabel, estimate, type DeviceRead } from './loadingEstimate';
 import { PERFORMANCE_MARKS, StageTracker, stagesFromHud } from './loadingStages';
+import { paintedFrame } from './startStages';
 
 /** The dev store that turns the screen off ("off"); anything else, or nothing, leaves it on. */
 export const LOADING_KEY = 'dwell.loading';
@@ -238,6 +239,15 @@ export class LoadingScreen {
       this.onOpen?.();
     }
     this.draw(opacity);
+  }
+
+  /**
+   * Draws the stages now and resolves once the browser has painted them: before work that may
+   * hold the main thread (the graphics' start), so the screen names the stage that is running.
+   */
+  painted(): Promise<void> {
+    this.drawStages(performance.now());
+    return paintedFrame();
   }
 
   /** The game did not start (an error, the menu): the screen goes, the page shows what it says. */
