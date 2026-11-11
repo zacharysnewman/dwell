@@ -343,7 +343,7 @@ fn molten_heat(world_xz: vec2f, t: f32) -> f32 {
 // y a per-plate value (0–1, to vary the crust's darkness).
 const MOLTEN_CELL: f32 = 1.7;
 const MOLTEN_SEAM: f32 = 0.11;
-const MOLTEN_OPEN: f32 = 0.7;
+const MOLTEN_OPEN: f32 = 0.35;
 fn molten_hash2(c: vec2f) -> vec2f {
     let p = vec2f(dot(c, vec2f(127.1, 311.7)), dot(c, vec2f(269.5, 183.3)));
     return fract(sin(p) * 43758.5453);
