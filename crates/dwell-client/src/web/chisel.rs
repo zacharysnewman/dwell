@@ -4,7 +4,8 @@
 
 use wasm_bindgen::prelude::*;
 
-use crate::chisel::{Overlay, edit_from_json, overview_frame, preview};
+use crate::chisel::{Overlay, edit_from_json, overview_frame, preview_shaded};
+use crate::chisel_section::{Mesh, section, section_mesh};
 use dwell_worldgen::bifacial::BifacialTerrain;
 use dwell_worldgen::terrain::TerrainGenerator;
 
@@ -60,16 +61,44 @@ impl ChiselPreview {
     }
 
     /// An `n` × `n` RGBA tile of `texel` m from face-local (x0, z0): `overlay` 0 blocks, 1 biome
-    /// weights, 2 temperature, 3 wetness, 4 rainfall, 5 rock.
-    pub fn tile(&self, x0: i32, z0: i32, n: u32, texel: u32, overlay: u32) -> Vec<u8> {
-        preview(
+    /// weights, 2 temperature, 3 wetness, 4 rainfall, 5 rock; hill-shaded when `relief`.
+    pub fn tile(
+        &self,
+        x0: i32,
+        z0: i32,
+        n: u32,
+        texel: u32,
+        overlay: u32,
+        relief: bool,
+    ) -> Vec<u8> {
+        preview_shaded(
             &self.current,
             i64::from(x0),
             i64::from(z0),
             i64::from(n),
             i64::from(texel.max(1)),
             Overlay::from_index(overlay),
+            relief,
         )
+    }
+
+    /// The 3D view's section (`crate::chisel_section`): `n` × `n` columns of `texel` m from
+    /// face-local (x0, z0), meshed.
+    pub fn section(&self, x0: i32, z0: i32, n: u32, texel: u32) -> ChiselSection {
+        let s = section(
+            &self.current,
+            i64::from(x0),
+            i64::from(z0),
+            n as usize,
+            i64::from(texel.max(1)),
+        );
+        let (ground, water) = section_mesh(&s);
+        ChiselSection {
+            x0: s.x0 as i32,
+            z0: s.z0 as i32,
+            ground,
+            water,
+        }
     }
 
     /// The world overview's frame for `n` texels a side: `[x0, texel]` (x0 also the frame's z0),
@@ -77,5 +106,35 @@ impl ChiselPreview {
     pub fn overview_frame(n: u32) -> Vec<i32> {
         let (x0, texel) = overview_frame(i64::from(n));
         vec![x0 as i32, texel as i32]
+    }
+}
+
+/// A meshed section for the page: vertices of four u32 (x, y, z f32 bits; `0xNNRRGGBB`) and
+/// indices, ground and water (`crate::chisel_section::Mesh`).
+#[wasm_bindgen]
+pub struct ChiselSection {
+    x0: i32,
+    z0: i32,
+    ground: Mesh,
+    water: Mesh,
+}
+
+#[wasm_bindgen]
+impl ChiselSection {
+    /// The section's corner (face-local, on its texel grid): `[x0, z0]`.
+    pub fn origin(&self) -> Vec<i32> {
+        vec![self.x0, self.z0]
+    }
+    pub fn ground_verts(&self) -> Vec<u32> {
+        self.ground.verts.clone()
+    }
+    pub fn ground_index(&self) -> Vec<u32> {
+        self.ground.index.clone()
+    }
+    pub fn water_verts(&self) -> Vec<u32> {
+        self.water.verts.clone()
+    }
+    pub fn water_index(&self) -> Vec<u32> {
+        self.water.index.clone()
     }
 }

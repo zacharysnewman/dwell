@@ -49,21 +49,27 @@ export function chunks(
   return out;
 }
 
-export type Lane = 'detail' | 'overview';
+export type Lane = 'detail' | 'overview' | 'section';
+
+/** The lanes in the order they run: the detail first, then the 3D section, then the overview. */
+const LANE_ORDER: readonly Lane[] = ['detail', 'section', 'overview'];
 
 /** The worker's jobs: a newer generation of a lane drops that lane's older jobs, and the detail
- * lane runs before the overview's. */
+ * lane runs before the 3D section's, which runs before the overview's. */
 export class Jobs<T extends { lane: Lane; gen: number }> {
   private q: T[] = [];
-  private latest: Record<Lane, number> = { detail: 0, overview: 0 };
+  private latest: Record<Lane, number> = { detail: 0, overview: 0, section: 0 };
   push(j: T) {
     this.latest[j.lane] = Math.max(this.latest[j.lane], j.gen);
     this.q.push(j);
   }
   next(): T | undefined {
     this.q = this.q.filter((j) => j.gen >= this.latest[j.lane]);
-    const d = this.q.findIndex((j) => j.lane === 'detail');
-    return d >= 0 ? this.q.splice(d, 1)[0] : this.q.shift();
+    for (const lane of LANE_ORDER) {
+      const d = this.q.findIndex((j) => j.lane === lane);
+      if (d >= 0) return this.q.splice(d, 1)[0];
+    }
+    return undefined;
   }
   get size() {
     return this.q.length;
@@ -78,12 +84,13 @@ export class OverviewCache {
     seed: number,
     edit: string,
     overlay: number,
+    relief: boolean,
     texel: number,
     x0: number,
     z0: number,
     n: number,
   ) {
-    return `${String(seed)}|${String(overlay)}|${String(texel)}|${String(x0)},${String(z0)}|${String(n)}|${edit}`;
+    return `${String(seed)}|${String(overlay)}${relief ? 'r' : ''}|${String(texel)}|${String(x0)},${String(z0)}|${String(n)}|${edit}`;
   }
   get(k: string): Uint8ClampedArray | undefined {
     const v = this.m.get(k);

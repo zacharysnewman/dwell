@@ -714,19 +714,58 @@ pub fn overview_frame(n: i64) -> (i64, i64) {
 /// A preview tile: `n` × `n` texels of `texel` m from face-local (x0, z0) (snapped to the texel
 /// grid), RGBA rows of x from z0 (alpha 0 beyond the disc).
 pub fn preview(g: &TerrainGenerator, x0: i64, z0: i64, n: i64, texel: i64, o: Overlay) -> Vec<u8> {
+    preview_shaded(g, x0, z0, n, texel, o, false)
+}
+
+/// [`preview`], hill-shaded when `relief` (`crate::chisel_section::hillshade`, from a ring of
+/// texels one wider than the tile): each dry texel's colour scaled by its slope's light, so
+/// walls and cones read on the 2D views (water is flat: unshaded).
+pub fn preview_shaded(
+    g: &TerrainGenerator,
+    x0: i64,
+    z0: i64,
+    n: i64,
+    texel: i64,
+    o: Overlay,
+    relief: bool,
+) -> Vec<u8> {
     // The default water's look: water drawn otherwise (a biome's `waterLook`) is tinted.
     let plain = water_tint_of(&BIOMES[0]);
     let tinted = g.biomes().iter().any(|b| b.water_look.is_some());
     let (gx0, gz0) = (x0.div_euclid(texel), z0.div_euclid(texel));
+    let pad = i64::from(relief);
+    let m = n + 2 * pad;
     let rect = Rect {
-        x0: gx0,
-        z0: gz0,
-        x1: gx0 + n,
-        z1: gz0 + n,
+        x0: gx0 - pad,
+        z0: gz0 - pad,
+        x1: gx0 + n + pad,
+        z1: gz0 + n + pad,
     };
     let raw = raster_with_heights(g, &LOD_MAP, texel, &rect);
+    let (rgba_m, heights_m) = raw.split_at((m * m) as usize * 4);
+    let code_at = |k: usize| i16::from_le_bytes([heights_m[k * 2], heights_m[k * 2 + 1]]);
+    let shade = relief.then(|| {
+        let h: Vec<f64> = (0..(m * m) as usize)
+            .map(|k| match decode_height(i32::from(code_at(k))) {
+                Some((h, false)) => h,
+                _ => f64::NAN,
+            })
+            .collect();
+        crate::chisel_section::hillshade(&h, n as usize, texel as f64)
+    });
     let texels = (n * n) as usize;
-    let (rgba, heights) = raw.split_at(texels * 4);
+    // The tile's own texels (inside the relief's ring).
+    let inner = |k: usize| {
+        let (i, j) = (k as i64 % n, k as i64 / n);
+        ((j + pad) * m + i + pad) as usize
+    };
+    let mut rgba = Vec::with_capacity(texels * 4);
+    let mut heights = Vec::with_capacity(texels * 2);
+    for k in 0..texels {
+        let q = inner(k);
+        rgba.extend_from_slice(&rgba_m[q * 4..q * 4 + 4]);
+        heights.extend_from_slice(&heights_m[q * 2..q * 2 + 2]);
+    }
     let mut out = Vec::with_capacity(texels * 4);
     for k in 0..texels {
         let px = &rgba[k * 4..k * 4 + 4];
@@ -815,6 +854,12 @@ pub fn preview(g: &TerrainGenerator, x0: i64, z0: i64, n: i64, texel: i64, o: Ov
                 // Square-root eased: the dry lee's small values stay readable.
                 Some(r) => lerp3([0.86, 0.74, 0.5], [0.1, 0.5, 0.25], r.max(0.0).sqrt()),
             }),
+        };
+        let rgb = match &shade {
+            Some(f) if f[k] != 1.0 => {
+                rgb.map(|v| (f64::from(v) * f[k]).round().clamp(0.0, 255.0) as u8)
+            }
+            _ => rgb,
         };
         out.extend_from_slice(&[rgb[0], rgb[1], rgb[2], 255]);
     }

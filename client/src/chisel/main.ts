@@ -29,7 +29,16 @@ import {
   type Edit,
 } from './state';
 import { pointAt, rectOn, type Frame } from './overview';
-import type { TileReply, TileRequest } from './worker';
+import type { SectionMesh, TileReply, TileRequest } from './worker';
+import {
+  SECTION_SIZES,
+  SectionRenderer,
+  sectionCorner,
+  sectionFromParams,
+  sectionPasses,
+  sectionToParams,
+  type SectionView,
+} from './section';
 
 const store = (() => {
   try {
@@ -40,7 +49,9 @@ const store = (() => {
 })();
 let edit: Edit = loadEdit(store);
 let selected = 0;
-const view = { seed: 1, cx: 0, cz: 0, size: 2048, overlay: 0 };
+const view = { seed: 1, cx: 0, cz: 0, size: 2048, overlay: 0, relief: 1 };
+/** The 3D section (ADR 0074, the 3D section, 0.52.19): off until asked for, centred on the detail's centre. */
+let sec: SectionView = { on: false, x: 0, z: 0, size: 1024 };
 /** Where each `where` field's slider runs (the data's range is wider; the number box takes any). */
 const WHERE_SPAN: Record<string, [number, number, number]> = {
   temperature: [-0.5, 1.5, 0.01],
@@ -618,10 +629,12 @@ function regenerate(overview = true) {
       n,
       texel,
       overlay: view.overlay,
+      relief: view.relief === 1,
     };
     worker.postMessage(req);
   }
   drawOverview();
+  requestSection();
   if (!overview) return;
   ov.wanted = next;
   ov.pass = 0;
@@ -637,9 +650,101 @@ function regenerate(overview = true) {
     n: 0,
     texel: 0,
     overlay: view.overlay,
+    relief: view.relief === 1,
   };
   worker.postMessage(req);
 }
+
+// The 3D section: its passes (coarse, then fine) in the worker's 'section' lane after the detail;
+// a newer request drops the older passes; the newest mesh drawn.
+const secCanvas = byId('section') as HTMLCanvasElement;
+const secBox = byId('section-box');
+const secStatus = byId('section-status');
+let secRenderer: SectionRenderer | null = null;
+let secWanted = 0;
+/** The square the mesh on screen shows (a new square reframes the camera). */
+let secShown = '';
+const secMs: string[] = [];
+
+function requestSection() {
+  secBox.hidden = !sec.on;
+  const p = new URLSearchParams(location.search);
+  sectionToParams(sec, p);
+  p.set('relief', String(view.relief));
+  history.replaceState(null, '', `${location.pathname}?${p.toString()}`);
+  drawSectionSquare();
+  if (!sec.on) return;
+  secWanted = next;
+  secMs.length = 0;
+  const { x0, z0 } = sectionCorner(sec);
+  const text = JSON.stringify(edit);
+  for (const { n, texel } of sectionPasses(sec.size)) {
+    const req: TileRequest = {
+      id: next++,
+      lane: 'section',
+      gen: secWanted,
+      seed: view.seed,
+      edit: text,
+      x0,
+      z0,
+      n,
+      texel,
+      overlay: 0,
+      relief: false,
+    };
+    worker.postMessage(req);
+  }
+}
+
+async function sectionReply(m: SectionMesh, ms: number) {
+  if (!secRenderer) {
+    secRenderer = await SectionRenderer.create(secCanvas);
+    if (!secRenderer) {
+      secStatus.textContent = 'The 3D view needs WebGPU.';
+      return;
+    }
+    secRenderer.attach();
+  }
+  const key = `${String(view.seed)}|${String(m.x0)},${String(m.z0)}|${String(m.n * m.texel)}`;
+  const t0 = performance.now();
+  secRenderer.setMesh(m, key !== secShown);
+  secShown = key;
+  const draw = performance.now() - t0;
+  const tris = (m.groundIndex.length + m.waterIndex.length) / 3;
+  secMs.push(
+    `${String(m.texel)} m: ${String(Math.round(ms))} ms + ${String(Math.round(draw))} ms draw`,
+  );
+  secStatus.textContent = `${String(m.n * m.texel)} m at (${String(sec.x)}, ${String(sec.z)}) · ${secMs.join(', ')} · ${String(Math.round(tris / 1000))}k triangles${secRenderer.exag > 1 ? ` · heights ×${String(secRenderer.exag)}` : ''} · drag orbits, shift-drag pans, wheel zooms; click the detail to move it`;
+  document.body.dataset.section = `${String(m.texel)}:${String(Math.round(ms))}:${String(Math.round(draw))}`;
+}
+
+/** The section's square on the detail preview (and the overview's rectangle is the detail's). */
+function drawSectionSquare() {
+  if (!ctx || !sec.on || !lastDetail) return;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(lastDetail, 0, 0, canvas.width, canvas.height);
+  const k = canvas.width / view.size;
+  const x = (sec.x - sec.size / 2 - (view.cx - view.size / 2)) * k;
+  const y = (sec.z - sec.size / 2 - (view.cz - view.size / 2)) * k;
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(x, y, sec.size * k, sec.size * k);
+  ctx.strokeStyle = '#ffe680';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(x, y, sec.size * k, sec.size * k);
+}
+let lastDetail: OffscreenCanvas | null = null;
+
+canvas.onclick = (ev) => {
+  if (!sec.on) return;
+  const b = canvas.getBoundingClientRect();
+  sec = {
+    ...sec,
+    x: Math.round(view.cx - view.size / 2 + ((ev.clientX - b.left) / b.width) * view.size),
+    z: Math.round(view.cz - view.size / 2 + ((ev.clientY - b.top) / b.height) * view.size),
+  };
+  requestSection();
+};
 
 // The overview: the world disc, its passes drawn into `ov.image` chunk by chunk (a finer pass over
 // the coarse one), the detail region's rectangle over it; a click or drag moves the detail's centre.
@@ -730,6 +835,13 @@ ovCanvas.onpointerup = () => {
 
 worker.onmessage = (ev: MessageEvent<TileReply>) => {
   const r = ev.data;
+  if (r.lane === 'section') {
+    if (r.gen < secWanted) return;
+    if ('error' in r) secStatus.textContent = r.error;
+    else if ('mesh' in r) void sectionReply(r.mesh, r.ms);
+    return;
+  }
+  if ('mesh' in r) return;
   if (r.lane === 'overview') {
     if ('error' in r) ovStatus.textContent = r.error;
     else overviewReply(r);
@@ -745,6 +857,8 @@ worker.onmessage = (ev: MessageEvent<TileReply>) => {
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(off, 0, 0, canvas.width, canvas.height);
+  lastDetail = off;
+  drawSectionSquare();
   const texel = Math.round(view.size / r.n);
   status.textContent = `${String(r.n)}² texels of ${String(texel)} m in ${String(Math.round(r.ms))} ms · seed ${String(view.seed)}`;
   document.body.dataset.tiles = String(Number(document.body.dataset.tiles ?? 0) + 1);
@@ -800,14 +914,54 @@ function viewBar() {
     view.overlay = Number(overlay.value);
     regenerate();
   };
-  bar.append(num('seed', 'seed'), num('x', 'cx'), num('z', 'cz'), size, overlay);
+  const relief = el('button', {
+    textContent: 'relief',
+    className: view.relief ? 'on' : '',
+    title: 'Hill-shade the 2D views (sun from the north-west)',
+  });
+  relief.onclick = () => {
+    view.relief = view.relief ? 0 : 1;
+    relief.className = view.relief ? 'on' : '';
+    regenerate();
+  };
+  const three = el('button', {
+    textContent: '3D',
+    className: sec.on ? 'on' : '',
+    title: 'A 3D view of a square of the world; click the detail to move it',
+  });
+  const secSize = select();
+  for (const s of SECTION_SIZES) {
+    secSize.append(
+      el('option', { value: String(s), textContent: `${String(s)} m`, selected: s === sec.size }),
+    );
+  }
+  three.onclick = () => {
+    sec = sec.on ? { ...sec, on: false } : { ...sec, on: true, x: view.cx, z: view.cz };
+    three.className = sec.on ? 'on' : '';
+    requestSection();
+  };
+  secSize.onchange = () => {
+    sec = { ...sec, size: Number(secSize.value) };
+    requestSection();
+  };
+  bar.append(
+    num('seed', 'seed'),
+    num('x', 'cx'),
+    num('z', 'cz'),
+    size,
+    overlay,
+    relief,
+    three,
+    secSize,
+  );
 }
 
 const params = new URLSearchParams(location.search);
-for (const k of ['seed', 'cx', 'cz', 'size', 'overlay'] as const) {
+for (const k of ['seed', 'cx', 'cz', 'size', 'overlay', 'relief'] as const) {
   const v = params.get(k);
   if (v !== null && Number.isFinite(Number(v))) view[k] = Number(v);
 }
+sec = sectionFromParams(params, { ...sec, x: view.cx, z: view.cz });
 viewBar();
 render();
 errors.textContent = validateEdit(edit).join('\n');

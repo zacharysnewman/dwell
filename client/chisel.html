@@ -121,6 +121,14 @@
       .world {
         width: 288px;
       }
+      #section {
+        width: min(640px, calc(100vw - 760px));
+        aspect-ratio: 4 / 3;
+        image-rendering: auto;
+        background: #9ebddb;
+        touch-action: none;
+        cursor: grab;
+      }
       #overview {
         width: 288px;
         cursor: crosshair;
@@ -149,6 +157,7 @@
         }
         canvas,
         .world,
+        #section,
         #overview {
           width: calc(100vw - 32px);
         }
@@ -163,6 +172,11 @@
           <div class="bar" id="view"></div>
           <canvas id="map" width="256" height="256"></canvas>
           <div id="status"></div>
+        </div>
+        <div id="section-box" class="world3d" hidden>
+          <h2>3D section</h2>
+          <canvas id="section" width="640" height="480"></canvas>
+          <div id="section-status" class="sub"></div>
         </div>
         <div class="world">
           <h2>World</h2>

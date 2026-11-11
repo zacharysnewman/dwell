@@ -57,18 +57,37 @@ describe('Chisel world overview', () => {
     expect(q.next()).toBeUndefined();
   });
 
+  it('runs the 3D section after the detail and before the overview, and cancels a stale build', () => {
+    const q = new Jobs<{ lane: 'detail' | 'overview' | 'section'; gen: number; tag: string }>();
+    q.push({ lane: 'overview', gen: 1, tag: 'o1' });
+    q.push({ lane: 'section', gen: 1, tag: 's1 coarse' });
+    q.push({ lane: 'section', gen: 1, tag: 's1 fine' });
+    q.push({ lane: 'detail', gen: 1, tag: 'd1' });
+    expect(q.next()?.tag).toBe('d1');
+    expect(q.next()?.tag).toBe('s1 coarse');
+    // An edit before the fine pass ran: the stale fine pass is dropped, the new coarse runs.
+    q.push({ lane: 'section', gen: 2, tag: 's2 coarse' });
+    expect(q.next()?.tag).toBe('s2 coarse');
+    expect(q.next()?.tag).toBe('o1');
+    expect(q.next()).toBeUndefined();
+  });
+
   it('caches the overview by the edit state: an edit or overlay misses', () => {
     const c = new OverviewCache(4);
-    const k = OverviewCache.key(1, '{"biomes":[]}', 1, 196, -50_176, -50_176, 128);
+    const k = OverviewCache.key(1, '{"biomes":[]}', 1, false, 196, -50_176, -50_176, 128);
     c.set(k, new Uint8ClampedArray([1, 2, 3, 4]));
     expect(c.get(k)).toEqual(new Uint8ClampedArray([1, 2, 3, 4]));
-    expect(c.get(OverviewCache.key(1, '{"biomes":[1]}', 1, 196, -50_176, -50_176, 128))).toBe(
+    expect(
+      c.get(OverviewCache.key(1, '{"biomes":[1]}', 1, false, 196, -50_176, -50_176, 128)),
+    ).toBe(undefined);
+    expect(c.get(OverviewCache.key(1, '{"biomes":[]}', 0, false, 196, -50_176, -50_176, 128))).toBe(
       undefined,
     );
-    expect(c.get(OverviewCache.key(1, '{"biomes":[]}', 0, 196, -50_176, -50_176, 128))).toBe(
+    expect(c.get(OverviewCache.key(2, '{"biomes":[]}', 1, false, 196, -50_176, -50_176, 128))).toBe(
       undefined,
     );
-    expect(c.get(OverviewCache.key(2, '{"biomes":[]}', 1, 196, -50_176, -50_176, 128))).toBe(
+    // The relief shade is part of the state.
+    expect(c.get(OverviewCache.key(1, '{"biomes":[]}', 1, true, 196, -50_176, -50_176, 128))).toBe(
       undefined,
     );
     for (let i = 0; i < 5; i++) c.set(`k${String(i)}`, new Uint8ClampedArray(1));
