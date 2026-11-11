@@ -157,8 +157,12 @@ look and the in-game check come next, locally). ARCHITECTURE.md §6.8 has the mo
 - **Basalt and obsidian** have their own painterly tiles (ropey pahoehoe folds on dark rock; near-black
   glass with a violet sheen), replacing the tinted stone placeholder. Their `color` (the LOD's) is the
   tiles' base.
-- **Spots:** `starter:volcano` and `starter:volcano-night` (`client/bench/spots.json`) look down on the
-  summit lake.
+- **Spots:** `starter:lava-lake` and `starter:lava-lake-night` (`client/bench/spots.json`) aim at the
+  vent site (30000, −8000). **Not yet seen in game:** on the warm bench (2026-11-11) the shots there
+  showed no lava: from 600 m straight down the site is low red-brown ground (the bench's ground ~32–64 m,
+  not a 420 m shield summit), and a 2 m³/s lake takes minutes to show. Whether the browser's local
+  world places the vent where the native test does (`tests/lava_world.rs`) is the first thing to check
+  next. The shader and tiles loaded and ran (60 fps, no WGSL error).
 - **Outstanding:** heat per cell (brighter where hotter/thicker: the field's heat isn't in the cells);
   steam to the clients (a `Steam` message gated by a hello like `CausesHello`) with puffs and a hiss; the
   burning screen edge and sizzle.
