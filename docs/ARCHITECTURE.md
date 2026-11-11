@@ -599,7 +599,7 @@ game holds still while it is open (`setMenuOpen`). Its state and controls are a 
 again when a cell in or bordering them changes) in **[built, 0.50.61] block colours lightly tinted by
 height** (owner, 2026-11-09; replacing 0.50.52's height bands, which hid the sand):
 `dwell_game::minimap::tint_rgb` scales a cell's colour in brightness by its height above sea level
-(`heightTint`: `darkest` at `lowM` to `brightest` at `highM`, then on to `peakBrightest` at `peakM`,
+(`heightTint`: `darkest` at `lowM` to `brightest` at `highM`, then above it toward white, `peakLighten` of the way at `peakM`,
 0.52.27, so a tall peak's slopes keep a gradient past 400 m; nothing below `highM` changed), water untinted (darkened by depth
 already); the minimap's height-shading toggle shows the same look. The shell hands each tile's
 screen-order cells (inside a one-cell border, unread) to `shadeMap` (`shade_grid`). Explored

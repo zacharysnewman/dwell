@@ -44,7 +44,7 @@ pub struct MapTunables {
     pub height_tint_darkest: f64,
     pub height_tint_brightest: f64,
     pub height_tint_peak_m: f64,
-    pub height_tint_peak_brightest: f64,
+    pub height_tint_peak_lighten: f64,
     pub explored_cell_m: f64,
     pub explored_pending_color: u32,
     /// The zoom levels, closest first: (cell side m, span across the panel m).
@@ -419,24 +419,30 @@ pub fn scale_rgb(c: u32, k: f64) -> u32 {
 /// The maps' look (`heightTint`; owner, 2026-11-09: block colours "lightly tinted by height",
 /// after the height bands hid the sand): `rgb` scaled in brightness by face-local height `h`'s
 /// height above sea level, `darkest` at or below `lowM`, `brightest` at `highM`, linear between,
-/// then on to `peakBrightest` at or above `peakM` (0.52.27: a tall peak's slopes keep a gradient
-/// past `highM`), so a cell keeps its block's hue. Water (`h` its bed's) keeps its colour: the
+/// so a cell keeps its block's hue; above `highM` that colour goes toward white, `peakLighten` of
+/// the way at or above `peakM` (0.52.27: a tall peak's slopes keep a gradient past `highM`, where
+/// a brighter scale would clip bright blocks). Water (`h` its bed's) keeps its colour: the
 /// generator and the minimap's scan already darken it by its depth.
 pub fn tint_rgb(t: &MapTunables, rgb: u32, h: f64, water: bool) -> u32 {
     if water {
         return rgb & 0xff_ffff;
     }
     let above = h - dwell_world::SEA_LEVEL_M;
-    let k = if above <= t.height_tint_high_m {
-        let s = ((above - t.height_tint_low_m) / (t.height_tint_high_m - t.height_tint_low_m))
+    let s = ((above - t.height_tint_low_m) / (t.height_tint_high_m - t.height_tint_low_m))
+        .clamp(0.0, 1.0);
+    let k = t.height_tint_darkest + (t.height_tint_brightest - t.height_tint_darkest) * s;
+    let c = scale_rgb(rgb, k);
+    if above <= t.height_tint_high_m {
+        return c;
+    }
+    let w = t.height_tint_peak_lighten
+        * ((above - t.height_tint_high_m) / (t.height_tint_peak_m - t.height_tint_high_m))
             .clamp(0.0, 1.0);
-        t.height_tint_darkest + (t.height_tint_brightest - t.height_tint_darkest) * s
-    } else {
-        let s = ((above - t.height_tint_high_m) / (t.height_tint_peak_m - t.height_tint_high_m))
-            .clamp(0.0, 1.0);
-        t.height_tint_brightest + (t.height_tint_peak_brightest - t.height_tint_brightest) * s
+    let ch = |sh: u32| {
+        let v = f64::from((c >> sh) & 0xff);
+        ((v + (255.0 - v) * w).round().clamp(0.0, 255.0) as u32) << sh
     };
-    scale_rgb(rgb, k)
+    ch(16) | ch(8) | ch(0)
 }
 
 /// No height in a cell (a fogged or pending cell; [`height_code`]).
