@@ -33,6 +33,8 @@ pub struct Species {
     pub sapling_height: f32,
     pub mature_height: (f32, f32),
     pub height_step: f32,
+    /// The trunk's width (m): sapling, mature, step; drawn by the log's `crossSection.widths`.
+    pub width: (f32, f32, f32),
     /// The palm's lean at the top (m), drawn per seed; (0, 0) for none.
     pub lean: (f32, f32),
     pub branches: Branches,
@@ -101,17 +103,19 @@ pub fn find(name: &str) -> Option<&'static Species> {
 /// What a grown tree puts in a cell.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Part {
-    /// A log along y (0), x (1) or z (2).
-    Log(u8),
+    /// A log along y (0), x (1) or z (2), its width in ¼ m (4: the full log; only standing
+    /// trunk logs are narrower).
+    Log(u8, u8),
     Leaf,
 }
 
-/// A grown tree: its cells relative to the trunk's foot (x, y in ½ m cells, z), and its trunk's
-/// height (m).
+/// A grown tree: its cells relative to the trunk's foot (x, y in ½ m cells, z), its trunk's
+/// height (m) and width (m).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Grown {
     pub cells: BTreeMap<[i32; 3], Part>,
     pub height: f32,
+    pub width: f32,
 }
 
 /// mulberry32, as the prototype draws (a sequence from one seed).
@@ -167,6 +171,9 @@ pub fn grow(species: &Species, seed: u32, stage: u32) -> Grown {
     let mut vr = Rng(seed.wrapping_mul(104_729).wrapping_add(7));
     let s = lerp(species.crown_scale.0, species.crown_scale.1, g) * vr.range(species.crown_variety);
     let trunk_cells = (h / CELL).round() as i32;
+    let (w0, w1, ws) = species.width;
+    let width = qz(lerp(w0, w1, g), ws).clamp(w0, w1);
+    let quarters = ((width * 4.0).round() as u8).clamp(1, 4);
     let mut logs: BTreeMap<[i32; 3], Part> = BTreeMap::new();
     let mut leaves: Vec<[i32; 3]> = Vec::new();
     let cell_y = |y: f32| (y / CELL).floor() as i32;
@@ -322,11 +329,11 @@ pub fn grow(species: &Species, seed: u32, stage: u32) -> Grown {
                 }
                 if i > 0 && (nx, nz) != (px, pz) {
                     // The knee: the segment below reaches over, one squared log across.
-                    logs.insert([nx, i - 1, nz], Part::Log(if nx != px { 1 } else { 2 }));
+                    logs.insert([nx, i - 1, nz], Part::Log(if nx != px { 1 } else { 2 }, 4));
                 }
                 px = nx;
                 pz = nz;
-                logs.insert([px, i, pz], Part::Log(0));
+                logs.insert([px, i, pz], Part::Log(0, quarters));
             }
             leaves.push([px, trunk_cells, pz]);
             leaves.push([px, trunk_cells + 1, pz]);
@@ -357,14 +364,18 @@ pub fn grow(species: &Species, seed: u32, stage: u32) -> Grown {
     }
     if straight {
         for yc in 0..trunk_cells {
-            logs.insert([0, yc, 0], Part::Log(0));
+            logs.insert([0, yc, 0], Part::Log(0, quarters));
         }
     }
     let mut cells = logs;
     for c in leaves {
         cells.entry(c).or_insert(Part::Leaf);
     }
-    Grown { cells, height: h }
+    Grown {
+        cells,
+        height: h,
+        width,
+    }
 }
 
 /// A branch as a stepped path of log cells from `a` to `b` (the trunk cell `a` excluded), each
@@ -386,7 +397,7 @@ fn branch(logs: &mut BTreeMap<[i32; 3], Part>, a: [i32; 3], b: [i32; 3]) {
             .unwrap_or(0);
         p[ax] += (b[ax] - p[ax]).signum();
         let axis = [1, 0, 2][ax];
-        logs.entry(p).or_insert(Part::Log(axis));
+        logs.entry(p).or_insert(Part::Log(axis, 4));
     }
 }
 
@@ -398,6 +409,22 @@ impl Grown {
             .iter()
             .map(|a| state(format!("{}[axis={a}]", species.log)))
             .collect::<Result<_, _>>()?;
+        // The standing log of each width in ¼ m: the log's state along y whose cross-section is
+        // that wide (by the block's data, `crossSection.widths`), else the full log.
+        let block = dwell_blocks::find_block(species.log)
+            .ok_or_else(|| format!("{}: no block {}", species.name, species.log))?;
+        let standing = |q: u8| {
+            block
+                .states()
+                .map(|i| i as StateId)
+                .find(|&m| {
+                    let i = dwell_blocks::info(m);
+                    i.axis == dwell_blocks::Axis::Y
+                        && i.cross_section
+                            .is_some_and(|c| (c.width * 4.0).round() as u8 == q)
+                })
+                .unwrap_or(logs[0])
+        };
         let leaf = state(species.leaf.to_string())?;
         let (mut lo, mut hi) = ([0; 3], [0; 3]);
         for p in self.cells.keys() {
@@ -411,7 +438,8 @@ impl Grown {
         for (p, part) in &self.cells {
             let [x, y, z] = std::array::from_fn(|i| p[i] - lo[i]);
             cells[((y * size[2] + z) * size[0] + x) as usize] = Some(match part {
-                Part::Log(a) => logs[*a as usize],
+                Part::Log(0, q) => standing(*q),
+                Part::Log(a, _) => logs[*a as usize],
                 Part::Leaf => leaf,
             });
         }
@@ -468,7 +496,10 @@ mod tests {
 
     fn trunk_cells(t: &Grown) -> i32 {
         (0..)
-            .take_while(|&y| t.cells.get(&[0, y, 0]) == Some(&Part::Log(0)))
+            .take_while(|&y| {
+                t.cells.get(&[0, y, 0]) == Some(&Part::Log(0, 4))
+                    || matches!(t.cells.get(&[0, y, 0]), Some(Part::Log(0, _)))
+            })
             .count() as i32
     }
 
@@ -596,7 +627,7 @@ mod tests {
             let logs: Vec<[i32; 3]> = t
                 .cells
                 .iter()
-                .filter(|(_, p)| matches!(p, Part::Log(_)))
+                .filter(|(_, p)| matches!(p, Part::Log(..)))
                 .map(|(c, _)| *c)
                 .collect();
             for y in 0..(t.height / CELL).round() as i32 {
@@ -614,7 +645,10 @@ mod tests {
                 }
             }
             // Each vertical log touches the one above it by a face (a path of logs to the ground).
-            for c in logs.iter().filter(|c| t.cells[*c] == Part::Log(0)) {
+            for c in logs
+                .iter()
+                .filter(|c| matches!(t.cells[*c], Part::Log(0, _)))
+            {
                 if c[1] == 0 {
                     continue;
                 }
@@ -642,6 +676,43 @@ mod tests {
                 "{}: some young: {stages:?}",
                 s.name
             );
+        }
+    }
+
+    #[test]
+    fn a_trunk_thickens_stage_by_stage_on_the_log_widths() {
+        // face-a-only: a tree is built face-local.
+        let log = dwell_blocks::find_block("dwell:log").unwrap();
+        for s in &SPECIES {
+            let quarters = |stage| {
+                grow(s, 3, stage)
+                    .cells
+                    .get(&[0, 0, 0])
+                    .map(|p| match p {
+                        Part::Log(_, q) => *q,
+                        Part::Leaf => 0,
+                    })
+                    .unwrap()
+            };
+            let (young, old) = (quarters(0), quarters(s.stages - 1));
+            assert_eq!(
+                f32::from(young) / 4.0,
+                s.width.0,
+                "{}: a sapling is thin",
+                s.name
+            );
+            assert_eq!(f32::from(old) / 4.0, s.width.1, "{}", s.name);
+            for st in 1..s.stages {
+                assert!(quarters(st) >= quarters(st - 1), "{}", s.name);
+            }
+            // The structure stands the narrow log state at the foot.
+            let t = structures(s).unwrap();
+            let _ = t;
+            let g = grow(s, 3, 0).structure(s, 1).unwrap();
+            let foot = g.place([0, 0, 0], 0).at([0, 0, 0]).unwrap();
+            assert!(log.states().contains(&usize::from(foot)), "{}", s.name);
+            let w = dwell_blocks::info(foot).cross_section.unwrap().width;
+            assert_eq!(w, s.width.0, "{}: the foot is the narrow log", s.name);
         }
     }
 }

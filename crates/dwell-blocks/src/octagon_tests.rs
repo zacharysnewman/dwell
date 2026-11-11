@@ -243,6 +243,7 @@ fn no_ring_returns_the_cap_whole() {
         joins: "x",
         ring: 0.0,
         heart: None,
+        width: 1.0,
     };
     let p = cap_pieces(&c, 1, 0, CELL, true);
     assert_eq!(p.len(), 1);
@@ -283,4 +284,47 @@ fn a_wood_ramp_is_the_log_octagon_cut_by_its_slant() {
             .any(|f| f.part == Part::Cap(true)),
         "the log's top under the ramp's whole end is hidden"
     );
+}
+
+/// A standing log's `width` (ADR 0079): the octagon narrows about the cell's centre, its sides on no
+/// cell face, collision (`state_faces`) following it; narrow logs join nothing; lying logs stay full.
+#[test]
+fn a_narrow_log_is_a_centred_smaller_octagon_that_joins_nothing() {
+    // face-a-only: the octagon is symmetric in y (the module doc), so face B meshes the same cells.
+    let full = log("y");
+    let half = state("dwell:log[axis=y,width=2]").expect("a width-2 log");
+    let quarter = state("dwell:log[axis=y,width=1]").expect("a width-1 log");
+    assert_eq!(section_of(full).unwrap().0.width, 1.0);
+    assert_eq!(section_of(half).unwrap().0.width, 0.5);
+    assert_eq!(section_of(quarter).unwrap().0.width, 0.25);
+    let extent = |m: StateId| {
+        let faces = state_faces(m, 0, CELL);
+        let xs: Vec<f64> = faces
+            .iter()
+            .flat_map(|f| f.pts.iter().map(|p| p[0]))
+            .collect();
+        let ys: Vec<f64> = faces
+            .iter()
+            .flat_map(|f| f.pts.iter().map(|p| p[1]))
+            .collect();
+        (
+            xs.iter().copied().fold(f64::MAX, f64::min),
+            xs.iter().copied().fold(f64::MIN, f64::max),
+            ys.iter().copied().fold(f64::MAX, f64::min),
+            ys.iter().copied().fold(f64::MIN, f64::max),
+        )
+    };
+    let (x0, x1, y0, y1) = extent(half);
+    assert!(
+        (x0 - 0.25).abs() < 1e-9 && (x1 - 0.75).abs() < 1e-9,
+        "{x0} {x1}"
+    );
+    assert_eq!((y0, y1), (0.0, 1.0), "the full cell along the axis");
+    let (q0, q1, _, _) = extent(quarter);
+    assert!((q1 - q0 - 0.25).abs() < 1e-9);
+    assert_eq!(extent(full).0, 0.0);
+    assert!(!joins(half, half) && !joins(half, full) && joins(full, full));
+    let side = world(vec![([1, 0, 0], half)]);
+    assert_eq!(joined_mask(half, &side), 0);
+    assert_eq!(joined_mask(full, &world(vec![([1, 0, 0], half)])), 0);
 }

@@ -166,7 +166,9 @@ for (const ns of namespaces) {
     // (the wood ramp is the log's octagon cut by its slant, ADR 0072).
     if (rest.crossSection === 'of') {
       if (!base(of)?.crossSection) fail(`${name}: crossSection "of" but ${of} has none`);
-      rest.crossSection = base(of).crossSection;
+      // Its widths stay the base's: a ramp is the full log's octagon (ADR 0079).
+      const { widths: _widths, ...section } = base(of).crossSection;
+      rest.crossSection = section;
     }
     return familyBlock(base(of), family, { ...rest, name });
   });
@@ -341,7 +343,7 @@ for (const ns of namespaces) {
     if (def.crossSection !== undefined) {
       const c = def.crossSection;
       if (typeof c !== 'object' || c === null) fail(`${id}: crossSection must be an object`);
-      const known = ['$comment', 'kind', 'chamfer', 'joins', 'ring', 'heart'];
+      const known = ['$comment', 'kind', 'chamfer', 'joins', 'ring', 'heart', 'widths'];
       for (const k of Object.keys(c)) if (!known.includes(k)) fail(`${id}: crossSection.${k} is not a field (${known.slice(1).join(', ')})`);
       if (c.kind !== 'octagon') fail(`${id}: crossSection.kind must be octagon`);
       if (typeof c.chamfer !== 'number' || !(c.chamfer > 0 && c.chamfer < 0.5)) fail(`${id}: crossSection.chamfer must be a number in (0, 0.5)`);
@@ -351,6 +353,20 @@ for (const ns of namespaces) {
       if (c.ring !== undefined && (typeof c.ring !== 'number' || !(c.ring > 0 && c.ring < 0.25))) fail(`${id}: crossSection.ring must be a number in (0, 0.25)`);
       if (c.heart !== undefined && (typeof c.heart !== 'string' || c.heart === '')) fail(`${id}: crossSection.heart must name a texture tile`);
       if (c.heart !== undefined && c.ring === undefined) fail(`${id}: crossSection.heart needs a ring (the heart is the tile inside it)`);
+      // Widths (ADR 0079): a property whose values give the octagon's width across a vertical cell
+      // (a fraction of 1 m, in (0, 1]); its default (first) value must be 1, the full log as before.
+      if (c.widths !== undefined) {
+        const { property, metres, $comment: _note, ...more } = c.widths ?? {};
+        if (Object.keys(more).length) fail(`${id}: crossSection.widths: unknown ${Object.keys(more).join(', ')}`);
+        const p = props.find((q) => q.name === property);
+        if (!p) fail(`${id}: crossSection.widths.property must name a property of the block`);
+        for (const v of p.values) {
+          const m = metres?.[v];
+          if (typeof m !== 'number' || !(m > 0 && m <= 1)) fail(`${id}: crossSection.widths.metres.${v} must be a number in (0, 1]`);
+        }
+        if (Object.keys(metres).some((v) => !p.values.includes(v))) fail(`${id}: crossSection.widths.metres names a value the property lacks`);
+        if (metres[p.values[0]] !== 1) fail(`${id}: crossSection.widths: the default value ${p.values[0]} must be 1 (the full log)`);
+      }
       // A ramp may have one (Phase 55 T4): the octagon prism along y cut by its convex shape's
       // slant (a ramp state whose shape isn't convex stays square: `octagon::section_of`).
       const ramp = def.slopeFamily === 'ramp';
@@ -783,7 +799,7 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
       `axis: Axis::${d.axisProperty ? st.values[d.axisProperty].toUpperCase() : 'Y'}`,
       `near_fade: ${rf(d.nearFade ?? 0)}`,
       `fill: ${rf(st.fill)}`,
-      `cross_section: ${d.crossSection ? `Some(CrossSection { chamfer: ${rf(d.crossSection.chamfer)}, joins: ${rstr(d.crossSection.joins)}, ring: ${rf(d.crossSection.ring ?? 0)}, heart: ${d.crossSection.heart ? `Some(${rstr(d.crossSection.heart)})` : 'None'} })` : 'None'}`,
+      `cross_section: ${d.crossSection ? `Some(CrossSection { chamfer: ${rf(d.crossSection.chamfer)}, joins: ${rstr(d.crossSection.joins)}, ring: ${rf(d.crossSection.ring ?? 0)}, heart: ${d.crossSection.heart ? `Some(${rstr(d.crossSection.heart)})` : 'None'}, width: ${rf(d.crossSection.widths ? d.crossSection.widths.metres[st.values[d.crossSection.widths.property]] : 1)} })` : 'None'}`,
     ];
     rs.push(`    StateInfo { ${fields.join(', ')} },`);
   }

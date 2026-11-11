@@ -246,7 +246,8 @@
       "support": "carrier",
       "axisProperty": "axis",
       "properties": {
-        "axis": ["y", "x", "z"]
+        "axis": ["y", "x", "z"],
+        "width": ["4", "3", "2", "1"]
       },
       "crossSection": {
         "$comment": "ADR 0072 (owner, 2026-11-09: \"trees should be octagons around. But smoothly connect when placed next to each other, full width sides where they meet\"): a regular octagon across its axis (chamfer 1/(2+√2) of the side); a side squares off to full width where a log of the same axis lies on it. ring/heart (Phase 55 T3; owner, 2026-11-09: \"the outside bark ring should follow the octagon\"): the caps' bark band follows the octagon's edges, none along a joined side, with the ringless end grain inside.",
@@ -254,7 +255,12 @@
         "chamfer": 0.2929,
         "joins": "dwell:wood",
         "ring": 0.08,
-        "heart": "logHeart"
+        "heart": "logHeart",
+        "widths": {
+          "$comment": "ADR 0079 (owner, 2026-11-11: \"trees start with small trunks, thin\"): a standing log's octagon in ¼ m steps, centred in its cell; width 4 is the full log (the default, as before). A narrower log joins nothing; a lying one is drawn full width.",
+          "property": "width",
+          "metres": { "4": 1, "3": 0.75, "2": 0.5, "1": 0.25 }
+        }
       },
       "color": "#7a5236",
       "textures": {

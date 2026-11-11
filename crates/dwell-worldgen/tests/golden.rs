@@ -77,3 +77,57 @@ fn lod_sections_match_the_golden_hashes() {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+/// The goldens hold *by name* across a registry whose state ids moved (a block gained states, ADR
+/// 0063): each chunk's voxels mapped to the old registry's ids (by their names) hash to the old
+/// golden. `OLD_VECTORS=<old shared/blocks/vectors.txt> OLD_GOLDEN=<old chunk-hashes.txt> cargo test
+/// -p dwell-worldgen --test golden -- --ignored`.
+#[test]
+#[ignore = "needs the old registry's vectors and goldens"]
+fn chunks_hold_by_name_against_an_older_registry() {
+    let read = |var: &str| std::fs::read_to_string(std::env::var(var).expect(var)).expect(var);
+    let ids = |text: &str| -> std::collections::HashMap<String, u16> {
+        text.lines()
+            .filter(|l| !l.starts_with('#') && !l.starts_with("hash"))
+            .filter_map(|l| l.split_once(' '))
+            .map(|(id, name)| (name.to_owned(), id.parse().expect("id")))
+            .collect()
+    };
+    let old = ids(&read("OLD_VECTORS"));
+    let new = ids(include_str!("../../../shared/blocks/vectors.txt"));
+    let mut to_old = vec![u16::MAX; new.values().copied().max().unwrap_or(0) as usize + 1];
+    for (name, id) in &new {
+        // A property the old registry lacked, at its default, names the old state.
+        if let Some(o) = old
+            .get(name)
+            .or_else(|| old.get(&name.replace(",width=4", "")))
+        {
+            to_old[*id as usize] = *o;
+        }
+    }
+    let (_, rows) = rows(&read("OLD_GOLDEN"));
+    let mut failures = Vec::new();
+    for r in &rows {
+        let seed: u64 = r[0].parse().expect("seed");
+        let c = ChunkCoord::new(
+            r[1].parse().expect("x"),
+            r[2].parse().expect("y"),
+            r[3].parse().expect("z"),
+        );
+        let mut chunk = Chunk::default();
+        BifacialTerrain::new(seed).generate(c, &mut chunk);
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        for &m in chunk.voxels().iter() {
+            let o = to_old[usize::from(m)];
+            assert_ne!(o, u16::MAX, "state {m} has no name in the old registry");
+            for b in o.to_le_bytes() {
+                h ^= u64::from(b);
+                h = h.wrapping_mul(0x0000_0100_0000_01b3);
+            }
+        }
+        if format!("{h:x}") != r[4] {
+            failures.push(format!("seed {seed} {c:?}"));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}

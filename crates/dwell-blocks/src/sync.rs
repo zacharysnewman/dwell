@@ -65,6 +65,9 @@ pub mod tag {
     /// `f32` chamfer, `str` join group, `f32` ring, `str` heart tile (empty: none): its octagonal cross-section (`StateInfo::cross_section`,
     /// ADR 0072), sent only when it has one. A rule: it shapes collision.
     pub const CROSS_SECTION: u8 = 13;
+    /// `f32` the cross-section's width (`CrossSection::width`, ADR 0079), after tag 13, sent only
+    /// when below 1. A rule: it shapes collision.
+    pub const CROSS_WIDTH: u8 = 14;
     /// `str`.
     pub const LOOK: u8 = 0x81;
     /// `u32` sRGB, `f32` opacity.
@@ -341,6 +344,9 @@ pub fn state_fields(s: &StateInfo) -> Fields {
             w.f32(c.ring);
             w.str(c.heart.unwrap_or(""));
         }));
+        if c.width < 1.0 {
+            out.push(field(tag::CROSS_WIDTH, |w| w.f32(c.width)));
+        }
     }
     if s.near_fade > 0.0 {
         out.push(field(tag::NEAR_FADE, |w| w.f32(s.near_fade)));
@@ -835,7 +841,14 @@ fn apply_rules(
                             0.0
                         },
                         heart: (!heart.is_empty()).then(|| intern(&heart)),
+                        width: 1.0,
                     });
+                }
+            }
+            tag::CROSS_WIDTH => {
+                let width = r.f32();
+                if let (true, Some(c)) = (r.ok() && width.is_finite(), row.cross_section.as_mut()) {
+                    c.width = width.clamp(0.05, 1.0);
                 }
             }
             t if t & tag::LOOK_BIT == 0 => {
