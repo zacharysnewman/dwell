@@ -1,8 +1,9 @@
 # Sky clouds
 
 Phase 31, [ADR 0034](./adr/0034-sky-clouds.md). The owner's brief (2026-10-15): "procedural clouds in
-the skybox (not 3D)". This is a 2D cloud layer drawn as part of the sky. It isn't volumetric and
-has no geometry. Architecture: `ARCHITECTURE.md` §6.6 (Clouds) and §5 (`dwell-look`, `render/`,
+the skybox (not 3D)". This is a 2D cloud layer drawn as part of the sky, with no geometry. Since
+2026-11-11 the High setting draws a ray-marched volumetric layer instead (§8, first slice); the deck
+below stays Low's, the CPU-light paths' and the sky's elsewhere. Architecture: `ARCHITECTURE.md` §6.6 (Clouds) and §5 (`dwell-look`, `render/`,
 `ui/`).
 
 ## 1. Decisions (defaults, not yet asked)
@@ -189,3 +190,131 @@ The owner asked for the deck to be visible from above (answer 2 in §6).
   deck proper as the eye leaves the layer.
 - **Cost.** From above, the self-shadow's second sample is skipped: the sunlit top barely shows it.
 - **Face B** uses its own deck: the height is face-local, and up is `(0, face, 0)`.
+
+## 8. Volumetric clouds (2026-11-11)
+
+The owner (2026-11-11): "volumetric clouds in the sky. These clouds will likely be useful for weather
+sim, and volcano smoke. So they need to be performant." [ADR 0034](./adr/0034-sky-clouds.md)'s
+amendment records the decision. Built in two rounds the same day: the march and its data, then the reduced-resolution pass with accumulation (§8.6); §8.5 lists what is left.
+
+### 8.1 The model
+
+- **A layer, ray-marched.** On a tier with steps (`tiers` in `clouds.json`), the clouds pass (§8.6) marches each
+  pixel's ray through the layer between `volume.baseM` and `volume.topM` above the viewer's face's sea
+  level (flat, face-local; the deck's sphere is not used), out to the layer's end or `maxDistanceM`
+  (the composite puts the scene in front, §8.6). The steps are spread evenly over the ray's span
+  inside the layer, offset per pixel and frame (`cloud_jitter`), and the march stops once the cloud
+  is 98 % opaque. With no light samples, a step's own density stands for the light's path.
+- **Density** (`dwell_cloud_density`): the deck's own noise is the weather map (the same noise point,
+  wind and coverage, so the volume's clouds sit where the deck's would, and a weather system drives
+  both with one coverage); for the march's budget it takes a one-octave warp and two octaves. The
+  coverage's cut rises with height (`topFloor`), so each cloud narrows into a rounded top over a
+  flat base and the densest clouds are the tallest. 3D value noise of `detailCellM` cells erodes it
+  (`detailErosion`; it tiles with the deck: `scaleM` is a whole multiple of it).
+- **Extra sources: plumes.** `clouds.json`'s `plumes` is a list of vertical columns (a future
+  volcano's ash, a smoke stack): a position, a radius that grows by `spread` from base to top, the
+  heights, a density, a colour (ash grey). The generator writes each into the shader (`cloud_plumes`); the march's height
+  span grows to cover them (`volume_span`). The shipped list is empty; a test adds one by data alone
+  (`clouds.rs` `volume_tests`, `clouds.test.mjs`). A source a weather or volcano system moves at run
+  time will need them as uniforms (§8.5).
+- **Light.** The sun or the moon, whichever is over the face, as the deck. At each step with cloud,
+  `lightSteps` samples toward the light (without the detail) give the optical depth; Beer's law over
+  it, a powder term (`powder`) darkening thin unlit edges, mixed between the deck's shade and lit
+  colours (`ambient` the floor). The low sun's warmth, the silver lining and the far haze toward the
+  clear sky are the deck's.
+- **Inside.** Flying into a cloud, the march starts at the eye, so the view fogs by the density
+  around it. The deck's CPU in-cloud fog (`insideFog`) is turned off on a volume tier
+  (`cloud_uniforms`' third vector's x is 0) so the two don't stack.
+- **What keeps the 2D deck.** The volume replaces only the eye's deck in the composite. Snell's window
+  (`sky_above_with_clouds`, WATER_RENDERING.md §16), the water's reflections and the other face's
+  deck below the horizon keep the deck: the cheap path. A test pins that only the clouds pass marches
+  and that `sky_above_with_clouds` neither marches nor samples the volume.
+
+### 8.2 Tiers
+
+`tiers` gives each Clouds setting value its march: steps (0: the 2D deck), light samples per step,
+the resolution divisor of the clouds pass (§8.6) and the share of each new frame in the accumulated
+picture (`historyBlend`):
+
+| Setting | Steps | Light samples | Resolution | Blend | Who |
+|---|---|---|---|---|---|
+| High | 16 | 1 | ½ | 0.2 | opt-in (the Ultra preset) |
+| Medium | 10 | 0 (the step's own density) | ¼ | 0.2 | desktops' default (and the Medium and High presets) |
+| Low | 0 (the 2D deck) | — | — | — | touch devices' default |
+| Off | — | — | — | — | |
+
+High is opt-in because from above it is at its budget's edge (§8.3). The CPU adapter (CI's software
+renderer) still draws no clouds (`clouds_for`): its frames are the e2e suite's bottleneck. The
+setting's stored values gained `medium` (the store is append-only; an older build reading it falls
+back to its default).
+
+### 8.3 Cost
+
+Measured 2026-11-11 with a scratch scenarios file (`--warm --unthrottled`, 1280 × 720, Apple GPU on
+the owner's Mac; all configurations in one run). Two views: the noon sky from the ground (yaw 240,
+pitch 45) and the camera 3.5 km up looking 35° down with the layer under most of the screen. The
+cost is `gpu.clouds` (the clouds pass) plus `gpu.composite`, minus Off's `gpu.composite`, p50:
+
+| Tier (run) | From the ground | From above | Budget |
+|---|---|---|---|
+| First slice: full resolution, 20 steps, 1 light sample | +1.0 ms | +2.5 ms | 1.5 ms |
+| High ½, 24 steps, 2 light samples | +0.9 ms | +2.1 ms | 1.5 ms |
+| High ½, 18 steps, 1 light sample | +0.1 ms | +1.7 ms | 1.5 ms |
+| **High ½, 16 steps, 1 light sample (shipped)** | **+0.5 ms** | **+1.5 ms** | 1.5 ms |
+| Medium ¼, 16 steps, 1 light sample | +0.3 ms | +1.0 ms | 0.8 ms |
+| Medium ¼, 12 steps, 1 light sample | +0.2 ms | +1.0 ms | 0.8 ms |
+| **Medium ¼, 10 steps, no light sample (shipped)** | **+0.3 ms** | **+0.9 ms** | 0.8 ms |
+
+Repeats vary by about ±0.3 ms. From the ground both tiers are well within budget. From above, High
+sits at its 1.5 ms and Medium is 0.1 ms over its 0.8 ms. The clouds pass barely got cheaper as the
+steps and resolution fell (Medium's pass took 0.8–0.9 ms at a quarter resolution with 10, 12 or 16
+steps), so its cost from above isn't the march's samples. It's probably a fixed part (the pass's
+start on a tile GPU after the heavy scene, the history copy) or the timestamps taking in the scene's
+tail. A Chrome trace of the pass is the next step before cutting more samples.
+
+### 8.4 How it looks
+
+Screenshots (bench shots, judged honestly):
+
+- **Noon from the ground:** soft, white, rounded cumulus with flat-ish bases and real parallax. With
+  the accumulation the first slice's dither grain is gone: the clouds are smooth. They are a little
+  soft-edged from the reduced resolution, and their shading is still mild.
+- **From above:** the tops over the terrain with the ground between them, now with grey shaded
+  sides; flat-lit tops still read mostly by their outlines.
+- **Inside a cloud:** the view fogs by density around the eye, with no pop and no grain.
+- **Sunset:** the low sun warms the lit sides.
+- **The fixture plume** (a scratch build with a test plume 4 km away): a dark ash-grey column rising
+  out of the hills through the white clouds (`color` per plume). Its foot over the hills shows a
+  little of the reduced resolution where the hills cut it.
+
+### 8.5 Left for the next rounds
+
+- Find the clouds pass's fixed cost from above (a trace), so Medium meets 0.8 ms and High gains
+  headroom; then perhaps a second light sample on High (better shading from above).
+- **Plumes at run time** (a volcano or weather system moving them): the list as frame uniforms, the
+  data's entries their defaults.
+- A CPU twin of the whole density (the in-cloud fog for other systems, e.g. the ink's fade).
+- The far field: past `maxDistanceM` the volume ends; the deck could take over there.
+- Face B's plumes use world x, z; a face-local placement through `FaceFrame` is not done.
+- A phone check (phones keep the deck, Low, by default).
+
+### 8.6 The clouds pass: reduced resolution, accumulated
+
+- **The pass.** Before the composite, `clouds_fs` marches the volume into the clouds buffer at the
+  tier's divisor of the drawing buffer (`cloud_buffer_size`): premultiplied colour and cover
+  (`rgba16float`), and the distance to the first cloud (`r16float`, 65000 for none). It marches to
+  the layer's end, not to the scene, so its history never holds the terrain's edges.
+- **Accumulation.** The step offset turns each frame (interleaved gradient noise plus a golden-ratio
+  step over 16 frames). Each texel blends its new march with the last frame's buffer, reprojected by
+  direction through the last frame's camera (`CloudPrev`: right, up, forward, tangents). Clouds are
+  far, so direction is enough; where they are near, the eye's move over the cloud's distance hands
+  the texel over to the new frame. The history starts over with new buffers, the first frame, or a
+  move over `CLOUD_HISTORY_JUMP_M` (200 m) in a frame (`cloud_prev_block`, tested). The pass then
+  copies its buffer into the history for the next frame.
+- **Depth-aware upsample.** The composite filters the buffer at the pixel (`upsampled_clouds`) and
+  hides the clouds where the scene is nearer than the nearest of the four texels' first cloud
+  (`textureGather`), so no cloud bleeds over a mountain in front of it. A cloud with terrain inside
+  it is drawn whole over that terrain: the march doesn't stop at the scene.
+- **Plumes' colour.** Each plume has a `color`. The march tints the lit cloud by it where the plume
+  is the density there.
+- **Timing:** `gpu.clouds` in the telemetry.

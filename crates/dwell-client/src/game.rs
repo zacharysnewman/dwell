@@ -587,6 +587,9 @@ pub struct Game<S: Scene> {
     /// The server keeps block damage (`inventory_flags::DAMAGE`): `DamageHello` sent, struck
     /// points sent with breaks.
     damage_on: bool,
+    /// The server takes `CausesHello` (`inventory_flags::CAUSES`): said once, so it sends the
+    /// damage causes this build knows (`Burn`, …).
+    causes_on: bool,
     /// The last `Inventory`'s flags (`inventory_flags`): whether the server takes `Combine`.
     inventory_flags: u8,
     /// Other players' hits seen in the damage updates (docs/BLOCK_DAMAGE.md §6).
@@ -945,6 +948,7 @@ impl<S: Scene> Game<S> {
             creatures: Default::default(),
             creatures_on: false,
             damage_on: false,
+            causes_on: false,
             inventory_flags: 0,
             remote_hits: Default::default(),
             contact_sounds: Default::default(),
@@ -1565,6 +1569,15 @@ impl<S: Scene> Game<S> {
                     self.outbox
                         .borrow_mut()
                         .push(Send::Control(Message::DamageHello));
+                }
+                // The server takes `CausesHello`: say once which damage causes this build knows.
+                if i.flags & dwell_protocol::inventory_flags::CAUSES != 0 && !self.causes_on {
+                    self.causes_on = true;
+                    self.outbox
+                        .borrow_mut()
+                        .push(Send::Control(Message::CausesHello(
+                            dwell_protocol::DamageCause::MAX,
+                        )));
                 }
                 // The server keeps creatures (ADR 0073): say so once, and draw them.
                 if i.flags & dwell_protocol::inventory_flags::CREATURES != 0 && !self.creatures_on {

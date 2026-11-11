@@ -97,8 +97,13 @@ Last updated: 2026-11-11 (0.52.68).
    `shared/fluids/lava.json`; VOLCANOES.md §6. **Server built:** the fields per face in `dwell-sim`
    (near/far like the water), lava, basalt and obsidian cells written into chunks through the edit sync,
    steam taking the water, players burning through the server's damage, the optional `lava` save table,
-   `dwell:lava` block, `Server::place_lava_vent` (dev). **The look next, local** (light, glow, crust, steam
-   puffs, the in-game check), then the starter world's summit vent as data and a `Burn` cause.
+   `dwell:lava` block, `Server::place_lava_vent` (dev). **Slice 3 built (logic):** the starter world's lake
+   vent on its youngest hotspot island's summit as worldgen data (`tectonics.lavaVents`, opt-in per cone,
+   placed by the server when the world is created or first loaded; the default world lists none), a `Burn`
+   damage cause sent only to clients that say `CausesHello` (older ones hear `Fall`), and fields re-reading
+   an edited column's bed and water (a dug channel takes the lava); VOLCANOES.md §6.2. **The look next,
+   local** (light, glow, crust, steam puffs, the in-game check), then the water grid's columns as the
+   fields' water and V2's vents.
 9. ~~**Loading-time display bug.**~~ Done (0.52.71): the 10 s was the graphics' start (one long task on the
    main thread making the renderer's pipelines) begun in the same task that ended the game's load, so the
    screen never painted "Starting the graphics…" and stood on "Loading the game… x MB 0.0 s". Each stage is
@@ -132,12 +137,25 @@ Last updated: 2026-11-11 (0.52.68).
    holds one ecology per face, stepped by the world's days (bounded catch-up: 4 steps a tick), saved in an
    optional `ecology` table with a per-world switch (default on, additive) and speed; a server-side read-out
    (ECOLOGY.md §6). Owner's correction (2026-11-11): no floors — herds and packs can die, resisted by the
-   system (Holling type III predation, refuges, fast low-density breeding, dispersal, slow starving). Next
-   (ECOLOGY.md §7): individuals near players, simple far rendering with a client read-out, local worlds'
-   maps, grazing on the real tall grass.
+   system (Holling type III predation, refuges, fast low-density breeding, dispersal, slow starving).
+   **Slice 3 built:** individuals near players (ECOLOGY.md §8, `dwell-sim` `herds.rs`): a record within
+   64 m of a player becomes its deer or wolves (the existing creatures, driven) and folds back past 96 m
+   (survivors, averaged needs, centroid); the mockup's needs-driven rules as data (flee, sleep at night,
+   graze the cell and sometimes a real tall grass block, chase and kill, mate up to the cap, company);
+   the creature rules for deer and wolves left out while the ecology runs. Next (ECOLOGY.md §7): simple
+   far rendering with a client read-out, local worlds' maps, grazing applied to tall grass as chunks
+   load; the far step seeing near groups; the herd's stag.
 12. **Players' saved structures as placement sources** (owner 2026-11-11): per player (their library, usable
    in any world they create); placed copies editable, not protected; 32³ for now (may change), or larger
    structures as a grid of 32³ tiles. Sharing between players: Future.
+13. **Volumetric clouds** (owner 2026-11-11: "volumetric clouds in the sky. These clouds will likely be
+   useful for weather sim, and volcano smoke. So they need to be performant."). **Built (branch
+   `claude/volumetric-clouds`, CLOUDS.md §8):** a ray-marched layer in its own reduced-resolution pass
+   with temporal accumulation and a depth-aware upsample; tiers as data (High ½ opt-in, Medium ¼ the
+   desktop default, Low the 2D deck); plumes with a colour by data; the cheap deck kept for Snell's
+   window and reflections. Bench from above: High +1.5 ms (budget 1.5), Medium +0.9 ms (budget 0.8).
+   Next: trace the clouds pass's fixed cost; plumes as run-time uniforms for a volcano or weather
+   system.
 
 Cloud sessions: logic-only items can run as `claude --cloud` sessions in parallel (verified 2026-11-11).
 

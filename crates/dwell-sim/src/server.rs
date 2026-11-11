@@ -42,7 +42,7 @@ mod chopping;
 mod creatures;
 mod ecology;
 pub use ecology::{
-    CATCH_UP_DAYS, EcologySnapshot, GroupView, IDLE_DAYS, MAX_STEPS_PER_TICK, next_step,
+    CATCH_UP_DAYS, EcologySnapshot, GroupView, IDLE_DAYS, MAX_STEPS_PER_TICK, next_step, night_on,
 };
 mod ground;
 mod growth;
@@ -140,6 +140,8 @@ struct TickChanges {
     before: Vec<([i32; 3], u16)>,
     /// Water's own writes: not told to water again.
     water: bool,
+    /// Lava's own writes: not told to the lava fields again (`Lava::touch`).
+    lava: bool,
 }
 
 impl TickChanges {
@@ -606,6 +608,9 @@ struct Session {
     /// and the ticks it has been out of air since the last drowning damage.
     vitals_hello: bool,
     drown_ticks: u32,
+    /// The last damage cause its client understands (`CausesHello`; 0: it never said, so only the
+    /// causes every build knows, and `Drown` with `vitals_hello`).
+    known_cause: u8,
     /// Its lava burn (docs/proposals/VOLCANOES.md §6): burning left after leaving lava.
     burn: dwell_lava::Burn,
     /// Whether its client draws creatures (`CreaturesHello`, ADR 0073).
@@ -664,6 +669,7 @@ impl Session {
             chop_hello: false,
             chop_ready: 0,
             vitals_hello: false,
+            known_cause: 0,
             drown_ticks: 0,
             burn: dwell_lava::Burn::default(),
             creatures_hello: false,
@@ -1125,6 +1131,7 @@ impl Server {
             config,
         };
         server.init_storage();
+        server.place_world_vents();
 
         // Pre-generate the spawn region, so the first players never wait for terrain. The
         // verification chunk is always generated: clients check their generator against it,
@@ -1557,6 +1564,7 @@ impl Server {
             Message::InventoryAction(a) => self.inventory_action(id, a),
             Message::Chop(a) => self.chop_action(id, a),
             Message::VitalsHello => s.vitals_hello = true,
+            Message::CausesHello(n) => s.known_cause = n,
             Message::CreaturesHello => self.creatures_hello(id),
             Message::DamageHello => self.damage_hello(id),
             Message::WorldgenRequest => {
@@ -2859,8 +2867,15 @@ impl Server {
             chunks: mut changed,
             before,
             water,
+            lava,
             ..
         } = changes;
+        // The lava fields read an edited column's bed and water again (a dug channel, poured water).
+        if !lava && !self.lava.is_empty() {
+            for &(cell, _) in &before {
+                self.lava.touch(cell);
+            }
+        }
         if !water {
             for &(cell, from) in &before {
                 if self.edit_log.len() == EDIT_LOG_LEN {

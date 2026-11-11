@@ -70,6 +70,8 @@ pub struct Ecology {
     /// Every step since the server started.
     pub steps: u64,
     world_seed: u64,
+    /// The herds and packs near players, as individuals (docs/ECOLOGY.md §8).
+    pub near: crate::herds::Near,
 }
 
 /// One herd or pack in the dev read-out.
@@ -120,6 +122,7 @@ impl Ecology {
             last_ms: 0.0,
             steps: 0,
             world_seed,
+            near: crate::herds::Near::default(),
         }
     }
 
@@ -141,7 +144,18 @@ impl Ecology {
             return b.clone();
         }
         let faces: [Vec<u8>; 2] = match (&self.faces, &self.saved) {
-            (Some(f), _) => [f[0].to_bytes(&DATA), f[1].to_bytes(&DATA)],
+            (Some(f), _) => {
+                // The groups near players are saved as they would fold back now.
+                let mut f = f.clone();
+                for g in &self.near.groups {
+                    if let Some(r) = g.folded() {
+                        let eco = &mut f[g.face];
+                        let at = eco.groups.partition_point(|o| o.id < r.id);
+                        eco.groups.insert(at, r);
+                    }
+                }
+                [f[0].to_bytes(&DATA), f[1].to_bytes(&DATA)]
+            }
             (None, Some(s)) => s.clone(),
             (None, None) => [Vec::new(), Vec::new()],
         };
@@ -208,6 +222,16 @@ impl Ecology {
     }
 }
 
+/// Whether it is night on `face` at `world_s` under `clock`: face A's sun is up for `day_s` of each
+/// day, centred on noon (docs/DAY_NIGHT.md); face B's day is face A's night.
+pub fn night_on(clock: crate::server::WorldClock, world_s: f64, face: Face) -> bool {
+    let len = clock.day_length_s();
+    let t = (world_s / len + f64::from(clock.start_hour) / 24.0).rem_euclid(1.0);
+    let day_a = (t - 0.5).abs() < f64::from(clock.day_s) / len / 2.0;
+    // face-boundary: the two faces' days are opposite (one sun between them).
+    day_a == (face == Face::B)
+}
+
 fn encode_record(enabled: bool, speed: f64, faces: &[Vec<u8>; 2]) -> Vec<u8> {
     let mut b = vec![RECORD_VERSION, u8::from(enabled)];
     b.extend(speed.to_bits().to_le_bytes());
@@ -272,6 +296,72 @@ impl Server {
         self.ecology.last_steps = steps;
         self.ecology.steps += u64::from(steps);
         self.ecology.last_ms = watch.elapsed_ms();
+    }
+
+    /// The near ecology (docs/ECOLOGY.md §8): records near players become individuals, those far
+    /// from all fold back, and the individuals decide; a grazer's eaten block is written here (the
+    /// only world change, near players only).
+    pub(super) fn step_herds(&mut self) {
+        let running =
+            self.ecology.enabled && self.ecology.unread.is_none() && self.ecology.faces.is_some();
+        if !running {
+            self.creatures.reserved.clear();
+            return;
+        }
+        if self.creatures.reserved.is_empty() {
+            self.creatures.reserved = DATA
+                .species
+                .iter()
+                .filter_map(|s| s.near)
+                .filter_map(|n| self.creatures.kind_of(n.creature))
+                .collect();
+        }
+        let players = self.living_points();
+        let world_s = f64::from(self.tick) / f64::from(SIM_HZ);
+        let night = FACES.map(|f| night_on(self.settings.clock, world_s, f));
+        let Some(islands) = self.ecology.islands.clone() else {
+            return;
+        };
+        let eaten = {
+            let world = &self.world;
+            let get = |c: [i32; 3]| {
+                world.find(dwell_world::chunk_of(c[0], c[1], c[2]))?;
+                Some(world.get_voxel_if_loaded(c))
+            };
+            let e = &mut self.ecology;
+            let Some(faces) = e.faces.as_mut() else {
+                return;
+            };
+            let mut w = crate::herds::World {
+                data: &DATA,
+                islands: &islands[..],
+                ecos: &mut faces[..],
+                players: &players,
+                get: &get,
+                night,
+                seed: self.config.world_seed,
+            };
+            e.near.tick(&mut w, &mut self.creatures)
+        };
+        if eaten.is_empty() {
+            return;
+        }
+        let mut changes = super::TickChanges::default();
+        for c in eaten {
+            changes.set(&mut self.world, c, dwell_blocks::AIR);
+        }
+        self.broadcast_changes(changes, dwell_protocol::VoxelModificationReason::Edit);
+    }
+
+    /// Tests, tools: the herds and packs near players.
+    pub fn herds(&self) -> &crate::herds::Near {
+        &self.ecology.near
+    }
+
+    /// Tests, tools: face `face`'s ecosystem, to move or change its records.
+    pub fn ecosystem_mut(&mut self, face: Face) -> Option<&mut Ecosystem> {
+        let k = FACES.iter().position(|&f| f == face)?;
+        self.ecology.faces.as_mut().map(|f| &mut f[k])
     }
 
     /// The dev read-out: every herd and pack on both faces (tests; a debug channel later).

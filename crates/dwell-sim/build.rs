@@ -6,7 +6,10 @@
 
 fn main() {
     println!("cargo:rerun-if-env-changed=DWELL_VERSION");
-    let line_file = concat!(env!("CARGO_MANIFEST_DIR"), "/../../shared/version/line.json");
+    let line_file = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../shared/version/line.json"
+    );
     println!("cargo:rerun-if-changed={line_file}");
     let version = match std::env::var("DWELL_VERSION") {
         Ok(v) if !v.is_empty() => v,

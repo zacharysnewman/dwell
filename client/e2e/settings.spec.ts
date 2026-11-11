@@ -91,7 +91,7 @@ test('settings menu: opens from the corner, in panes, without fog sliders, and i
     detail: { distanceM: 256, pixelError: 3, memoryMb: 256 },
     exposure: 1,
     audio: { master: 0.8, effects: 1, ui: 0.6, music: 0.6 },
-    clouds: 'high',
+    clouds: 'medium',
     shafts: 'high',
     water: {
       quality: 'medium',

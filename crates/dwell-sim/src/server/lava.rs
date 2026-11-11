@@ -30,7 +30,10 @@ impl Server {
         if out.writes.is_empty() {
             return;
         }
-        let mut changes = TickChanges::default();
+        let mut changes = TickChanges {
+            lava: true,
+            ..TickChanges::default()
+        };
         for (c, m) in out.writes {
             changes.set(&mut self.world, c, m);
         }
@@ -39,8 +42,7 @@ impl Server {
 
     /// A player standing in lava takes its `damagePerSecond`, and burns at `burnDamagePerSecond`
     /// for `burnSeconds` after leaving it (`dwell_lava::Burn`), through `damage` (so not in a mode
-    /// without damage). Sent as cause `Fall`: a `Burn` cause on the wire waits for the clients
-    /// (an older client refuses an unknown cause).
+    /// without damage), cause `Burn` (sent as `Fall` to a client that never said it knows `Burn`).
     pub(super) fn burn(&mut self, id: SessionId) {
         let Some(h) = self.sessions[&id].handle else {
             return;
@@ -58,7 +60,57 @@ impl Server {
         };
         let due = s.burn.step(fluid, in_lava.is_some(), 1.0 / SIM_HZ as f32);
         if due > 0 {
-            self.damage(id, due, DamageCause::Fall);
+            self.damage(id, due, DamageCause::Burn);
+        }
+    }
+
+    /// The world's own vents (its worldgen config's `tectonics.lavaVents`, VOLCANOES.md §6.2): placed
+    /// on each face when the world is created or first loaded with none (a saved world keeps its
+    /// fields, and a newer build's lava record is left alone), each on its cone's summit as the
+    /// terrain generates it. The build's ground lists none, so the default world gets no lava.
+    pub(super) fn place_world_vents(&mut self) {
+        if !self.lava.is_empty() || self.lava_unread || self.worldgen_text.is_empty() {
+            return;
+        }
+        let sites = match dwell_worldgen::config::lava_vent_sites(&self.worldgen_text) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("lava: the world's vents: {e}");
+                return;
+            }
+        };
+        if sites.is_empty() {
+            return;
+        }
+        let Some(terrain) = dwell_worldgen::bifacial::BifacialTerrain::for_generator(
+            self.config.generator_version,
+            self.config.world_seed,
+        ) else {
+            return;
+        };
+        for face in [dwell_world::Face::A, dwell_world::Face::B] {
+            let f = FaceFrame::of(face);
+            for (v, [x, z]) in &sites {
+                let column = [x.floor() as i32, z.floor() as i32];
+                let Some(y) = terrain.local(face).surface_y_at(column[0], column[1]) else {
+                    continue;
+                };
+                let spot = VentSpot {
+                    fluid: v.fluid.clone(),
+                    kind: match v.kind {
+                        dwell_worldgen::tectonics::LavaVentKind::Lake => dwell_lava::VentKind::Lake,
+                        dwell_worldgen::tectonics::LavaVentKind::River => {
+                            dwell_lava::VentKind::River
+                        }
+                    },
+                    rate_m3s: v.rate_m3s,
+                    depth_m: v.depth_m,
+                    radius: v.radius as usize,
+                };
+                if let Err(e) = self.place_lava_vent(f, column, dwell_world::row_of_m(y), &spot) {
+                    eprintln!("lava: a vent of the world at {column:?}: {e}");
+                }
+            }
         }
     }
 

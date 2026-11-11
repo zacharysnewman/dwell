@@ -722,6 +722,11 @@ export function validateFixtureWorlds(fixtures, world, pool = null) {
       Object.assign(merged[g], keys);
     }
     checkGroups(merged, WORLD_GROUPS, fail);
+    // A lava vent's fluid is one of shared/fluids/lava.json's hot fluids (VOLCANOES.md §6.2).
+    const hot = hotFluids();
+    for (const [i, v] of (merged.tectonics.lavaVents ?? []).entries())
+      if (!hot.includes(v.fluid))
+        fail(`tectonics.lavaVents[${i}]: ${v.fluid} is not a hot fluid (shared/fluids/lava.json)`);
     const out = { name: f.name, world: merged };
     if (
       f.biomes !== undefined ||
@@ -731,6 +736,12 @@ export function validateFixtureWorlds(fixtures, world, pool = null) {
       out.edit = fixtureWorldEdit(f, world, pool ?? biomePool(), fail);
     return out;
   });
+}
+
+/** The hot fluids' names (shared/fluids/lava.json `fluids`). */
+function hotFluids() {
+  const lava = JSON.parse(readFileSync(join(here, "../fluids/lava.json"), "utf8"));
+  return lava.fluids.map((f) => f.name);
 }
 
 /** The biomes a fixture world may name (`biomes`): the build's own and the presets, raw. */

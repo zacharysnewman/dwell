@@ -944,7 +944,7 @@ tests only); CI fails on stale output. Code names characters, looks, items and r
   triangles and 4 draws each, within the noise of `gpu.frame` (12.4–13.1 ms with 0–32 bodies on a
   busy machine); 41 KB of instance uniforms a frame at 32.
 
-### 5.4 The far ecology **[in progress: the data-level core and the server's tick and save built; not yet drawn, near players or in local worlds]**
+### 5.4 The far ecology **[in progress: the data-level core, the server's tick and save, and individuals near players built; not yet drawn far away or in local worlds]**
 
 ([`ECOLOGY.md`](./ECOLOGY.md), WORK_QUEUE item 11.) Away from players the deer and wolves are
 **data only**: one record per herd or pack (`dwell_ecology::Group`: face-local position, size,
@@ -975,8 +975,19 @@ world, an idle stretch), at most `MAX_STEPS_PER_TICK` (4) a tick. Saved in the w
 `ServerConfig::ecology`) and its speed. A dev read-out (`Server::ecology_snapshot`: each group's face,
 species, position, size, hunger, energy, activity) is server-side only for now. The browser's local
 server computes no world map itself (the server-jobs worker does), so a local world's ecology does
-not run yet. The 5.3 creatures (ADR 0073) are still spawned near players by their own rules; making
-individuals from the herds near players is a later slice (ECOLOGY.md §7).
+not run yet.
+
+**Near players** (`dwell-sim` `herds.rs`, ECOLOGY.md §8): a record within `near.spawnM` (64 m) of a
+player on its face becomes its individuals — ADR 0073's creatures (the species' `near.creature`),
+`driven` (they walk only where they are sent and are never despawned by the creature rules) — with
+the record's hunger and energy, and leaves the far step; once no player is within `near.foldM`
+(96 m, the hysteresis) it folds back (size the survivors, needs averaged, place their centroid), and
+a save while near writes it folded. Every `near.thinkS` each individual follows the owner's mockup as
+data (each species' `near`): flee, sleep (tired, or at night by chance: each face's own night), eat
+(a grazer the island cell's forage and, by chance, the real block its data names — the only world
+change, near players only; a hunter chases at a sprint and kills within reach, feeding its pack),
+mate (a young up to the group's cap), keep company or wander. While the ecology runs, the creature
+rules that spawn the species' creatures are left out (`Creatures::reserved`).
 
 ---
 
@@ -2893,6 +2904,21 @@ chunks), keeps the last selection (`LodSystem::update`; ~1 ms a frame standing s
   `face`) and samples another part of the noise. Clients draw the clouds as visuals only: they go
   over no network and don't affect the simulation. The Clouds setting: Off, Low (3 octaves, no
   self-shadow) or High (5 octaves and the self-shadow). Measured GPU cost: see §7.4.
+  **Volumetric clouds [in progress, 2026-11-11]** (`CLOUDS.md` §8, ADR 0034's amendment): the
+  setting is Off / Low / Medium / High, each tier data (`clouds.json` `tiers`: march steps, light
+  samples, resolution divisor, history blend; 0 steps is the 2D deck: Low). On Medium (desktops'
+  default, ¼ resolution) and High (opt-in, ½) a **clouds pass** before the composite ray-marches a
+  layer between `volume.baseM` and `topM` (`clouds_fs` → `dwell_cloud_march`, jittered per pixel and
+  frame, early exit at 98 % opacity) into a reduced `rgba16float` buffer (premultiplied colour, cover)
+  and an `r16float` first-cloud distance, blended with the last frame's buffer reprojected by
+  direction (a `CloudPrev` uniform with the last camera; reset on new buffers or a jump), then copied
+  to the history. The composite upsamples it in place of the eye's deck (`upsampled_clouds`,
+  depth-aware: hidden where the scene is nearer than the four texels' nearest first cloud). Density:
+  the deck's noise as a weather map (the same coverage uniform), a cut rising with height, 3D detail,
+  plus `plumes` (extra density columns with a colour, as data, generated into the shader); Beer and
+  powder lighting. Snell's window, the reflections and the other face's sky keep the deck. The
+  deck's CPU in-cloud fog is off on a volume tier (the march fogs by density). Telemetry
+  `gpu.clouds`.
 - Coarse sections: where a cell is taller than the relief, the column's top cell takes the
   material of the column's surface (not the bedrock its bottom voxel samples; a regression test
   covers it); a sea whose water no cell samples (the cell is deeper than the sea) shows water on
@@ -3460,15 +3486,24 @@ of any edit): each column's molten rows (`Field::lava_rows`, ½ m cell rows) are
 cells and cleared to air where the lava has gone; a `Rock` event's rows become the rock; a `Steam` event
 takes `steamWaterM` off the top of that column's water and is queued for the clients
 (`take_lava_steam`; not on the wire yet). A player whose feet are in lava burns (`Burn` per session,
-reset at death) through the server's `damage` (none in creative), sent as cause `Fall`: a `Burn` cause
-needs the clients to know it first (an older client refuses an unknown cause). Saved with the world
+reset at death) through the server's `damage` (none in creative), cause `Burn` (5), sent as `Fall` to a
+client that never said it knows `Burn` (`CausesHello`, on the wire below). Saved with the world
 as one record in an optional `lava` table (`Lava::to_bytes`: each field's face and `record_of`),
 written only when the world has lava; a record this build can't read is kept, not written over.
 
+**A world's vents [built, slice 3]:** worldgen data on the cones (`terrain.json` `tectonics.lavaVents`,
+opt-in, none by default: each a cone by kind and index, lake or river, fluid by name, rate, depth, field
+radius, offset from the summit; checked by `biomes.mjs` `checkLavaVents`, read by
+`dwell_worldgen::config::lava_vent_sites`), placed by the server on each face when its world is created
+or first loaded with no lava (`place_world_vents`, at the cone's summit as generated). The starter world
+lists a lake vent on its youngest hotspot island (VOLCANOES.md §6.2). **Edits:** every change through the
+edit path but the lava's own (`TickChanges::lava`) marks its column in a field over it (`Lava::touch`);
+the field reads that column's bed (up through blocks set on it, down through cells dug out) and water
+again at its next lava tick, so a dug channel takes the lava.
+
 **Not yet:** the lava's look (light, glow, crust) and the steam's particles and sound on the clients;
-the water grid's own columns as the fields' water flags (a field reads them once, at placement) and
-edits to a field's bed after placement; a `Burn` cause on the wire; vents placed by worldgen (V2's
-hotspot summits).
+the water grid's own columns as the fields' water flags (a field reads them from the world's cells);
+V2's river vents to the sea and eruptions.
 
 ## 7. Physics Pipeline
 
@@ -3748,7 +3783,7 @@ in the code yet.
 | Loading stages (shell, `shared/look/loading.json` `stages` → `client/src/ui/loading.gen.ts`) | 10 stages (page, game, graphics, worldFile, worldMap, server, spawn, connect, join, terrain); slow past 3 s | What the loading screen lists while the game starts, with times (§6.3) |
 | `OFF_VIEW_PRIORITY` (client, `dwell-lod` `system.rs`) | 1/8, beyond the full-detail distance only | The LOD's load order outside the view (§6.6) |
 | Water reflections (client, `shared/look/reflections.json` → `dwell-look` `reflections.gen.rs`) | Low: sky only; Medium: 12 march + 8 refine steps, 24 km, 3 cloud octaves; High: 28 + 10, 48 km, 5 octaves with self-shadow; thickness 1.5 m + 3 %, edge fade 12 % of the screen height (top and bottom only), distance fade 30 %, the land's ray steered by 0.3 of the ripples' slope; land and clouds reflected only where the surface reflects over 5 % (faded in to 10 %); a phone's Medium: 8 + 5 steps, 2 octaves | Screen-space reflections of land and the clouds in the water (Phase 26 W5a, `WATER_RENDERING.md` §8) |
-| Clouds (client, `shared/look/clouds.json` → `dwell-look` `clouds.gen.rs`) | deck 1.8 km up on a 400 km sphere, 1 km cells repeating every 128 km, 5 / 3 octaves (High / Low), coverage 42%, wind 6 m/s toward 70° | The sky's cloud layer (§6.6 Clouds, `CLOUDS.md`); High costs about 0.9 ms more composite GPU time than Off at 1280 × 720 on an Apple GPU, Low about 0.7 ms; from above with the deck over most of the screen about 0.9 ms |
+| Clouds (client, `shared/look/clouds.json` → `dwell-look` `clouds.gen.rs`) | deck 1.8 km up on a 400 km sphere, 1 km cells repeating every 128 km, 5 / 3 octaves (High / Low), coverage 42%, wind 6 m/s toward 70° | The sky's cloud layer (§6.6 Clouds, `CLOUDS.md`); Low (the deck) costs about 0.7 ms more composite GPU time than Off at 1280 × 720 on an Apple GPU, from above about 0.9 ms; the volume (layer 1350–2700 m): High (½ resolution, 16 steps, 1 light sample) about +0.5 ms from the ground and +1.5 ms from above, Medium (¼, 10 steps) +0.3 and +0.9 ms (`CLOUDS.md` §8.3) |
 | Height fog (client, `shared/look/fog.json` → `dwell-look` `fog.gen.rs` `FOG`) | distance 16 km, density 95%, height 1.8 km | Fixed, look data, not a setting (§6.6; owner, 2026-10-21: a clear day, about 100 km visibility, so the island's far side reads hazy like a mountain 40 mi off) |
 | Footstep strides (client, `shared/sounds` `gaits`) | walk 2.0 m, run 2.7 m, crouch 1.1 m, climb 0.75 m, swim 2.4 m | Distance between footsteps, climbing and swim strokes (§5.2), with each gait's loudness |
 | Sound speed ranges (client, `shared/sounds` `events.*.speed`) | land 3.5–16 m/s, enter 1.5–12, exit 1–6, rise/dive 2–30 | Speed at which an event starts sounding and at which its intensity reaches 1 |
@@ -4076,6 +4111,14 @@ C→S  VitalsHello 0x5B, control: empty (send me Vitals; I know the Drown cause)
 S→C  Vitals      0x5C, datagram with each snapshot while the mode has stamina or oxygen: u32 seq
                  (the input it is as of), f32 stamina, f32 seconds of air, u8 flags
                  (VitalsFlags: 1 exhausted, 2 the stamina rule, 4 the oxygen rule)
+```
+
+**Damage causes: `CausesHello` (reliable) [built, slice 3]** (VOLCANOES.md §6.2). A client sends
+`CausesHello` only to a server whose `Inventory` has `inventory_flags::CAUSES` (32): the last damage
+cause it knows (`DamageCause::MAX` as built). The server sends a cause past it (from `Burn`, 5) to that
+client as `Fall`, as it does `Drown` to a client without `VitalsHello`; a later cause needs no new hello.
+```
+C→S  CausesHello 0x64, control: u8 the last DamageCause this client knows
 ```
 
 **Client → Server: `BlockEditRequest` (reliable, `control`) [built, Phase 3d]** (§6.5)

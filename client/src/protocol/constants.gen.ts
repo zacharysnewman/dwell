@@ -144,6 +144,7 @@ export const MessageType = {
   Damage: 97,
   WorldgenRequest: 98,
   WorldgenConfig: 99,
+  CausesHello: 100,
 } as const;
 export type MessageType = (typeof MessageType)[keyof typeof MessageType];
 
@@ -201,6 +202,7 @@ export const DamageCause = {
   Crush: 2,
   Explosion: 3,
   Drown: 4,
+  Burn: 5,
 } as const;
 export type DamageCause = (typeof DamageCause)[keyof typeof DamageCause];
 
