@@ -229,5 +229,6 @@ slots, picked in the creative inventory view (docs/ITEMS.md §6a).
   wear. The wear is a slot's `Stack::wear`, carried by moves; it rides in the inventory record as
   entries at slot index 128 + slot with no item, which a build without wear skips as it skips any slot
   past its count: the record stays version 1 on the wire and in saves, no new compatibility line. The
-  hotbar and backpack draw a wear bar from the data. Known gaps: a dead player's dropped tools lose
-  their wear (loose items carry none); an axe's swing that bounces off a non-wood is not a hit.
+  hotbar and backpack draw a wear bar from the data. A dropped tool keeps its wear as a loose item
+  and when picked up (a no-item entry per worn item in the loose-items save record, which an older
+  build skips). Known gap: an axe's swing that bounces off a non-wood is not a hit.

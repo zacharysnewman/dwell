@@ -161,12 +161,19 @@ impl LooseItems {
         self.items.iter().find(|it| it.id == id)
     }
 
-    /// The save record: each item's item name, count, point and age (resting is found again).
+    /// The save record: each item's item name, count, point and age (resting is found again), then
+    /// a worn tool's wear as an entry with no item, the wear as its count and the worn entry's index
+    /// as its x (the inventory record's way, `inventory::WEAR_AT`): a build without wear skips an
+    /// entry with no item, so the record stays version 1 and readable on the whole line.
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut out = Vec::new();
         let mut w = dwell_protocol::bytes::ByteWriter::new(&mut out);
         w.u8(1);
-        w.u32(self.items.len() as u32);
+        let worn: Vec<(usize, u16)> = (self.items.iter().enumerate())
+            .filter(|(_, it)| it.stack.wear > 0)
+            .map(|(i, it)| (i, it.stack.wear))
+            .collect();
+        w.u32((self.items.len() + worn.len()) as u32);
         for it in &self.items {
             w.str(&it.stack.item);
             w.u16(it.stack.count);
@@ -174,6 +181,14 @@ impl LooseItems {
                 w.f64(v);
             }
             w.u32(it.age);
+        }
+        for (i, wear) in worn {
+            w.str("");
+            w.u16(wear);
+            for v in [i as f64, 0.0, 0.0] {
+                w.f64(v);
+            }
+            w.u32(0);
         }
         out
     }
@@ -185,7 +200,9 @@ impl LooseItems {
         r.check(version == 1);
         let n = r.u32() as usize;
         r.check(n <= MAX_DROPS * 4);
-        let mut out = Vec::new();
+        let mut out: Vec<LooseItem> = Vec::new();
+        // Each entry's item in `out` (none: skipped), for the wear entries' indices.
+        let mut kept: Vec<Option<usize>> = Vec::new();
         for _ in 0..n {
             if !r.ok() {
                 break;
@@ -195,6 +212,19 @@ impl LooseItems {
             let position = [r.f64(), r.f64(), r.f64()];
             let age = r.u32();
             r.check(position.iter().all(|v| v.is_finite()));
+            if item.is_empty() && count > 0 && r.ok() {
+                // A wear entry (an older save has none: its tools are unworn).
+                let at = position[0];
+                if at >= 0.0 && at.fract() == 0.0 {
+                    let target = kept.get(at as usize).copied().flatten();
+                    if let Some(it) = target.and_then(|j| out.get_mut(j)) {
+                        it.stack.wear = count;
+                    }
+                }
+                kept.push(None);
+                continue;
+            }
+            kept.push((count > 0 && !item.is_empty()).then_some(out.len()));
             if count > 0 && !item.is_empty() {
                 out.push(LooseItem {
                     id: 0,
@@ -278,5 +308,38 @@ mod tests {
         assert_eq!(saved[1].stack, Stack::new("mod:unknown", 5));
         assert_eq!(saved[0].position, [1.0, -40.0, 2.0]);
         assert!(LooseItems::from_bytes(&items.to_bytes()[..10]).is_none());
+    }
+
+    #[test]
+    fn a_worn_tool_keeps_its_wear_across_a_save_and_an_older_save_loads_unworn() {
+        // face-a-only: a byte format.
+        let mut items = LooseItems::default();
+        items.drop(Stack::new("dwell:rock", 3), [1.0, 40.0, 2.0]);
+        let worn = Stack {
+            wear: 11,
+            ..Stack::new("dwell:stone_axe", 1)
+        };
+        items.drop(worn.clone(), [2.0, 40.0, 2.0]);
+        let saved = LooseItems::from_bytes(&items.to_bytes()).unwrap();
+        assert_eq!(saved.len(), 2, "the wear entry is not an item");
+        assert_eq!(saved[0].stack, Stack::new("dwell:rock", 3));
+        assert_eq!(saved[1].stack, worn, "21 hits left, not a fresh axe");
+        assert_eq!(saved[1].position, [2.0, 40.0, 2.0]);
+
+        // An older save (before wear): the same record with no wear entries.
+        let mut old = Vec::new();
+        let mut w = dwell_protocol::bytes::ByteWriter::new(&mut old);
+        w.u8(1);
+        w.u32(1);
+        w.str("dwell:stone_axe");
+        w.u16(1);
+        for v in [2.0, 40.0, 2.0] {
+            w.f64(v);
+        }
+        w.u32(7);
+        let saved = LooseItems::from_bytes(&old).unwrap();
+        assert_eq!(saved.len(), 1);
+        assert_eq!(saved[0].stack, Stack::new("dwell:stone_axe", 1), "unworn");
+        assert_eq!(saved[0].age, 7);
     }
 }

@@ -270,6 +270,16 @@ impl Inventory {
     /// Adds `count` of `item`: currency to the wallet (whole items, up to its capacity), anything
     /// else onto stacks of it first, then empty slots, the hotbar first. Returns what didn't fit.
     pub fn add(&mut self, item: &str, count: u16) -> u16 {
+        self.add_worn(item, count, 0)
+    }
+
+    /// Adds a stack with its wear kept (a loose tool picked up): [`Inventory::add`]'s rule, merging
+    /// only onto stacks with the same wear. Returns what didn't fit.
+    pub fn add_stack(&mut self, stack: &Stack) -> u16 {
+        self.add_worn(&stack.item, stack.count, stack.wear)
+    }
+
+    fn add_worn(&mut self, item: &str, count: u16, wear: u16) -> u16 {
         let value = value_of(item);
         if value > 0 {
             let room = (self.capacity().saturating_sub(self.money)) / value;
@@ -283,7 +293,8 @@ impl Inventory {
             if left == 0 {
                 break;
             }
-            if s.item == item && s.count < max {
+            // Stacking never merges different wear (a worn tool onto a fresh one).
+            if s.item == item && s.wear == wear && s.count < max {
                 let n = (max - s.count).min(left);
                 s.count += n;
                 left -= n;
@@ -295,7 +306,10 @@ impl Inventory {
             }
             if slot.is_none() {
                 let n = max.min(left);
-                *slot = Some(Stack::new(item, n));
+                *slot = Some(Stack {
+                    wear,
+                    ..Stack::new(item, n)
+                });
                 left -= n;
             }
         }
@@ -429,9 +443,12 @@ impl Inventory {
                 return true;
             }
             None => {
-                self.slots[to] = Some(Stack::new(&src.item, n));
+                self.slots[to] = Some(Stack {
+                    count: n,
+                    ..src.clone()
+                });
             }
-            Some(dst) if dst.item == src.item => {
+            Some(dst) if dst.item == src.item && dst.wear == src.wear => {
                 let room = stack_of(&src.item).saturating_sub(dst.count);
                 let n = n.min(room);
                 if n == 0 {
@@ -739,6 +756,35 @@ mod tests {
         }
         assert!(r.ok() && r.at_end());
         assert_eq!(stacks, 2, "the axe and the rocks, the wear entry skipped");
+    }
+
+    #[test]
+    fn a_stack_added_keeps_its_wear_and_never_merges_with_different_wear() {
+        let worn = |item: &str, count, wear| Stack {
+            wear,
+            ..Stack::new(item, count)
+        };
+        let mut inv = Inventory::default();
+        // A worn axe picked up keeps its hits.
+        assert_eq!(inv.add_stack(&worn("dwell:stone_axe", 1, 11)), 0);
+        assert_eq!(inv.slots[0], Some(worn("dwell:stone_axe", 1, 11)));
+        // A stackable item (to see the rule, not its data): different wear goes to its own slot,
+        // the same wear merges, and an unworn add goes to the unworn stack.
+        inv.add_stack(&worn("dwell:rock", 2, 3));
+        inv.add("dwell:rock", 4);
+        inv.add_stack(&worn("dwell:rock", 1, 3));
+        assert_eq!(inv.slots[1], Some(worn("dwell:rock", 3, 3)));
+        assert_eq!(inv.slots[2], Some(Stack::new("dwell:rock", 4)));
+        // A move onto different wear swaps rather than merging; a part moved keeps its wear.
+        assert!(inv.move_items(2, 1, 0));
+        assert_eq!(inv.slots[1], Some(Stack::new("dwell:rock", 4)));
+        assert_eq!(inv.slots[2], Some(worn("dwell:rock", 3, 3)));
+        assert!(
+            !inv.move_items(2, 1, 1),
+            "a part onto different wear: nowhere"
+        );
+        assert!(inv.move_items(2, 5, 1));
+        assert_eq!(inv.slots[5], Some(worn("dwell:rock", 1, 3)));
     }
 
     /// Owner, 2026-11-10: the hotbar went from 9 slots to 6 and the backpack from 27 to 30, so

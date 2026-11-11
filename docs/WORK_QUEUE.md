@@ -142,7 +142,7 @@ Last updated: 2026-11-11 (0.52.52).
 - **Arches:** erosion growing real fins so arches are common; arches in a chosen rock only; the
   openings in the LOD and in Chisel's 3D view; caprock lips.
 - **Pieces follow-ups (0.52.46):** the Combine buttons say "Stone"/"Log", not "slab"; the wood chunk's
-  icon is a plain dot; a dead player's dropped tools lose their wear; the worn axe not yet seen in game.
+  icon is a plain dot; the worn axe not yet seen in game.
 - **Block damage follow-ups:** scoops read as dark stains (flat decals); remote players' leaf brushing
   and stick snaps are silent.
 - **Peaks:** a more broken summit, deeper ridges and cirques (Rainier).
