@@ -5,6 +5,13 @@
 
 import { AIMS, MAP_WATERS, type Aim, type FaceChoice, type MapWater } from '../src/debug/find.ts';
 import { HOTBAR_SLOTS } from '../src/ui/inventory.gen.ts';
+import {
+  hasPlacement,
+  parsePlacement,
+  PLACEMENT_FIELDS,
+  type Placement,
+  type Spot,
+} from './spots.ts';
 import { ViewError, viewUrl, WATER_TIER_NAMES, type View } from './views.ts';
 
 export type Vec3 = [number, number, number];
@@ -158,8 +165,16 @@ export type Step =
   | { do: 'mark' }
   /** Saves the telemetry, the controller ticks and the game's state under `name`. */
   | { do: 'record'; name: string }
-  /** Saves a screenshot `<name>.png`. */
-  | { do: 'shot'; name: string }
+  /**
+   * Saves a screenshot `<name>.png`. With a placement (`at` [x, y, z], the eye, or `above`
+   * [x, z, height], the eye `height` m over the ground there along `face`'s up; `yaw`, `pitch`),
+   * it first places the camera exactly there (the player flown to it, so its chunks stream) and
+   * waits for the view to settle (the LOD idle, nothing waiting in view, `quietFrames` frames)
+   * for at most `maxS`.
+   */
+  | { do: 'shot'; name: string; place?: Placement; quietFrames: number; maxS: number }
+  /** Shoots the saved spot `spot` (client/bench/spots.json) as a placed `shot` named `name`. */
+  | { do: 'spot'; spot: string; name: string }
   /** Starts or stops a Chrome performance trace (`<name>.trace.json`, open in DevTools). */
   | { do: 'traceStart' }
   | { do: 'traceStop'; name: string }
@@ -361,7 +376,8 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   give: ['item', 'count'],
   mark: [],
   record: ['name'],
-  shot: ['name'],
+  shot: ['name', ...PLACEMENT_FIELDS, 'quietFrames', 'maxS'],
+  spot: ['spot', 'name'],
   traceStart: [],
   traceStop: ['name'],
   time: ['t', 'moon'],
@@ -377,6 +393,7 @@ const NOT_REPEATED: readonly Step['do'][] = [
   'server',
   'record',
   'shot',
+  'spot',
   'traceStart',
   'traceStop',
   'timelapse',
@@ -579,8 +596,19 @@ export function parseStep(where: string, v: unknown): Step {
       }
       return { do: d, what: o.what as UntilWhat, maxS: num(at('maxS'), o.maxS, 0, 3600) };
     }
-    case 'record':
     case 'shot':
+      return {
+        do: d,
+        name: name(at('name'), o.name),
+        ...(hasPlacement(o) ? { place: parsePlacement(where, o) } : {}),
+        quietFrames: num(at('quietFrames'), o.quietFrames, 0, 600, 30),
+        maxS: num(at('maxS'), o.maxS, 1, 600, 90),
+      };
+    case 'spot': {
+      const spot = str(at('spot'), o.spot);
+      return { do: d, spot, name: name(at('name'), o.name ?? spot.replace(':', '-')) };
+    }
+    case 'record':
     case 'traceStop':
       return { do: d, name: name(at('name'), o.name) };
     case 'repeat': {
@@ -827,6 +855,25 @@ export function scenarioUrl(
   if (s.world !== 'terrain') url.searchParams.set('world', s.world);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   return `${base}${url.search}`;
+}
+
+/** A scenario that opens a saved spot's world at it and shoots it (`bench --spot NAME`). */
+export function spotScenario(spot: Spot): Scenario {
+  const name = spot.name.replace(':', '-');
+  return {
+    name,
+    notes: spot.notes || `the spot ${spot.name}`,
+    seed: spot.seed,
+    window: { width: 1280, height: 720 },
+    settings: {},
+    debug: false,
+    scale: 1,
+    split: null,
+    face: spot.place.face,
+    portal: false,
+    world: 'terrain',
+    steps: [{ do: 'spot', spot: spot.name, name }],
+  };
 }
 
 /** The scenario as a view (its page address and stored settings come from views.ts). */

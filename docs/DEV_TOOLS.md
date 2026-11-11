@@ -15,9 +15,24 @@ through `window.__dwell`; scenarios are per build (checked in), added by hand or
 
 ```sh
 cd client
-npm run build:wasm && npm run build     # the bench runs the built client
-npm run bench -- fly-low-fast           # one or more scenarios by name; none: all of them
+npm run bench -- --warm fly-low-fast             # the warm client (below): built only if stale
+npm run bench -- --warm --spot starter:broadleaf # a saved spot's screenshot (Screenshots of a place)
+npm run build:wasm && npm run build              # or build this checkout's client by hand…
+npm run bench -- fly-low-fast                    # …and run it (one or more scenarios; none: all)
 ```
+
+**The warm client** (`npm run bench:warm`, `scripts/warmClient.ts`): builds the WASM module and the
+client once into a cache keyed by the git tree hash of the sources the build reads (`scripts/warmKey.ts`
+`SOURCE_PATHSPECS`: the workspace, `shared/`, the client's page sources, as they are on disk, committed or
+not; Markdown, `client/bench`, `client/scripts`, `client/e2e` and `*.test.ts` left out, so a docs- or
+bench-only change doesn't rebuild), and serves it with a **long-lived** `vite preview` on **:4174** that
+later runs, worktrees and agents reuse. The cache is `$DWELL_BENCH_CACHE`, else the main checkout's
+`target/bench-client/` (`<key>/dist` per build, the newest 3 kept; `preview.json` the server's pid, port
+and key): shared by every worktree, like the warm `CARGO_TARGET_DIR`. A stale key rebuilds (cargo into
+`CARGO_TARGET_DIR`, wasm-bindgen into this checkout's `src/pkg`, `vite build` into the cache, no
+typecheck) and restarts the server on the new build. `npm run bench:warm -- --status` prints the key,
+whether it is built and the server; **`npm run bench:warm -- --stop` stops the server** (sweep it when
+done for the day). `--warm` on a bench run does the same before the run and leaves the server up.
 
 Options: `--cpu-throttle N` (Chrome slows the page's CPU N×, CDP `Emulation.setCPUThrottlingRate`: a phone's CPU-side costs such as HUD and DOM work show up), `--touch` (a touch device: the phone's touch controls and HUD), `--swiftshader` (software WebGPU, for machines without a GPU such as CI or a Linux
 sandbox; under Xvfb there), `--unthrottled` (no vsync or frame-rate cap, so frame intervals show
@@ -25,7 +40,10 @@ the frame's real cost rather than 16.7 ms), `--base URL` (a served build; by def
 `vite preview` on :4173 or starts one; the server's root or the build's `…/dwell/`), `--out DIR`
 (default `bench/out/<timestamp>`, ignored by git), `--file FILE` (another scenarios file, e.g. a
 throwaway one in a scratch directory), `--compare` with `--configs A,B` and `--configs-file FILE`
-(each scenario once per configuration, side by side: below).
+(each scenario once per configuration, side by side: below), `--warm` (the warm client, above),
+`--spot NAME` (repeatable; a saved spot in its own world: below), `--spots-file FILE`, `--stall-s S`
+(a load not playing within S s, 60 by default, is retried **once** in a fresh page and listed in
+`report.json`'s `stalls`; a second stall fails the scenario).
 
 By default it drives the **installed Google Chrome, headed, on the machine's GPU** (Metal on a Mac),
 which is what players run. Each scenario runs in a fresh browser context and local world
@@ -91,7 +109,7 @@ fields, ranges and names fail with the entry named):
 | `wait {s}` | waits |
 | `server {name, s}` | samples the local server's figures (`__dwell.serverStats()`) once a second for `s` seconds: its ticks' mean time, the worst `advance` call, and the water's (where it runs, its clock, owed and dropped time, its longest run, the batches queued, awake chunks, its copy of the world's size); printed, and saved in `report.json`'s `servers` under `name`. With a `--compare` configuration of `params: {"water": "inline"}` it measures the water on the server's thread against its own worker (WATER_SURFACE_GRID.md §2d) |
 | `key {code, down}`, `hold {code, s}` | presses/releases a key (`KeyboardEvent.code`), or holds it for `s` |
-| `look {yaw, pitch}` | turns the player's look (degrees; yaw 0 = +Z, 90 = +X, as `camera` and `goto`) |
+| `look {yaw, pitch}` | turns the player's look (degrees; yaw 0 = +Z, 90 = +X, as `camera` and `goto`), and a placed camera (`camera`, `goto`, a placed `shot`) where it stands (`__dwell.look`; it used to turn only the player's look, hidden behind the placed camera) |
 | `fly {on}`, `flySpeed {level}` | creative flight and its speed level (L flies at ≥ 11 × 2^(L/2) m/s: 6 ≈ 88, 8 ≈ 176) |
 | `puppets {count, at?, face?, held?}` | stand-in players (`__dwell.puppets`): `count` full bodies (≤ 256) in rows ahead of the player's feet offset by `at`, on `face` (1, or −1 for face B), each walking a small circle with a clip of its own (walk, sprint, slide, crouch, idle, jump, swim, climb), holding the hotbar's block (or the axe, when its slot is selected, swinging it every 0.8 s) with `held`; 0 removes them. For the frame cost of N bodies and screenshots of every clip without N clients ([`CHARACTERS.md`](./CHARACTERS.md)) |
 | `arms {on}` | your first-person arms shown or hidden (the Show your arms setting, this page only) |
@@ -111,7 +129,8 @@ fields, ranges and names fail with the entry named):
 | `give {item, count}` | gives the local player `count` of `item` (`__dwell.give`, a local world that uses items, e.g. `?mode=adventure`): `pieces-combine` fills the backpack with pieces to shoot its Combine section |
 | `mark` | forgets the telemetry so far: the next `record` measures from here |
 | `record {name}` | saves everything above under `name` |
-| `shot {name}` | screenshot |
+| `shot {name, at? \| above?, yaw?, pitch?, face?, quietFrames?, maxS?}` | screenshot; with a placement an exact one ([Screenshots of a place](#screenshots-of-a-place)): `at` [x, y, z] the eye, or `above` [x, z, height] the eye `height` m over the ground there along `face`'s up; the camera placed, the view settled, then shot; saved in `report.json`'s `shots` |
+| `spot {spot, name?}` | a placed `shot` of the saved spot `spot` (`bench/spots.json`), named `name` (default the spot's, `:` → `-`) |
 | `traceStart`, `traceStop {name}` | a Chrome performance trace (timeline, GPU, V8, the CPU profiler) and its profile summary |
 | `time {t, moon?}` | shows the time of day `t` (0–1, 0 midnight) and optionally the moon's phase on this client (`?time=`, `?moon=`; DAY_NIGHT.md) |
 | `timelapse {name, frames, from?, to?, waitS?}` | `frames` screenshots `<name>-00.png`… from time of day `from` (0) toward `to` (1), wrapping past midnight, waiting `waitS` (0.3 s) after each |
@@ -406,6 +425,31 @@ player, so `view()` after `placeCamera` still reads the player's own look.
 
 Seed 0's river at `?local=1&seed=0&fresh=1&at=2364.5,142,7443.5` is a known river by link (the
 player there with yaw 0 looks down it); `goto` finds water wherever the terrain puts it.
+
+## Screenshots of a place
+
+How agents take screenshots: an exact camera, a settled view, a saved spot.
+
+- **A placed `shot`** sets the camera exactly and waits before shooting: flight on, the player
+  teleported under the eye (so the full-detail chunks stream round it), the camera placed, then the
+  view settled — the LOD with nothing to generate, mesh or ask for, nothing waiting in view
+  (`waitingInView` 0) and the chunks meshed, for 1 s — and `quietFrames` (30) more frames; at `maxS`
+  (90) it shoots anyway and prints `NOT settled`. `report.json`'s `shots` keeps each one's eye, look,
+  ground and seconds.
+- **Height over the ground**: `above: [x, z, height]` finds the column's first non-air cell from the
+  face's top (face-aware: on face B it reads from the bottom up and `height` is along −y),
+  descending 48 m at a time from where the page opened until the column's chunks hold it, so a spot
+  whose ground height isn't known still lands `height` m over it (over the canopy under a tree).
+- **The face is checked**: the midplane is y = 0, so an `at` whose y is on the other face's side for
+  its `face` (default `a`) fails the parse (`y -80 is on face B's side … face is "a"`), instead of
+  spawning a face-A spot on face B from a sign slip.
+- **Saved spots** (`client/bench/spots.json`, `scripts/spots.ts`): `<world>:<place>` → `world`
+  (`test:<fixture>` or `terrain`), `seed`, `time`, `at` | `above`, `yaw`, `pitch`, `face`, and for
+  `above` an `openY` (the height its page opens at, over the ground). `npm run bench -- --warm
+  --spot starter:broadleaf` opens the spot's world fresh (`?worldgen=…&fresh=1&at=…`) and shoots it
+  to `bench/out/<time>/starter-broadleaf/starter-broadleaf.png`; a `spot` step shoots one inside a
+  scenario. The starter world's are its tour's (`starter_world` `tour`). A new spot is an entry in
+  the file (`spots.test.ts` parses every entry).
 
 ## Adding to it
 

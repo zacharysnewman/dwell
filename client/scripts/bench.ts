@@ -14,26 +14,44 @@
 //   --compare        each scenario once per configuration, compared (scripts/compare.ts)
 //   --configs A,B    with --compare: these configurations (and the baseline) only
 //   --configs-file F with --compare: another configurations file (default bench/configs.json)
+//   --spot NAME      shoot a saved spot (bench/spots.json, e.g. starter:broadleaf) in its own world
+//   --spots-file F   another spots file
+//   --warm           the warm prebuilt client (scripts/warmClient.ts): built only when its sources
+//                    changed, served by a long-lived preview on :4174
+//   --stall-s S      a load not playing within S s (60) is retried once in a fresh page
 // Build first: `npm run build:wasm && npm run build`. Per scenario, OUT/<name>/ gets report.json
 // (each `record` step: telemetry summary, raw frames, ticks, long tasks, state), the screenshots and
 // traces; a summary prints as it goes.
 import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { chromium, type Browser, type Page } from '@playwright/test';
+import { chromium, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { CODEC, compare, decode, type ScenarioReport } from './compare.ts';
 import { flickerOf, type Flicker } from './compareReport.ts';
 import { formatProfile, profileOf, work } from './profile.ts';
 import {
   parseScenarios,
   scenarioUrl,
+  spotScenario,
   scenarioView,
   timelapseTimes,
   type Scenario,
   type Step,
   type Vec3,
 } from './scenarios.ts';
+import {
+  eyeOver,
+  findSpot,
+  groundRows,
+  OPEN_HEIGHT_M,
+  parseSpots,
+  spotParams,
+  type Placement,
+  type Spot,
+} from './spots.ts';
 import { viewStorage } from './views.ts';
+import { warmServe } from './warmClient.ts';
+import { CELL_HEIGHT } from '../src/protocol/constants.gen.ts';
 import type { GotoResult } from '../src/debug/find.ts';
 
 interface Options {
@@ -48,10 +66,19 @@ interface Options {
   configsFile: string;
   cpuThrottle: number;
   touch: boolean;
+  /** Saved spots to shoot (`--spot NAME`, bench/spots.json), each in its own world. */
+  spots: string[];
+  spotsFile: string;
+  /** Use the warm prebuilt client (scripts/warmClient.ts) and its long-lived preview server. */
+  warm: boolean;
+  /** A load not playing within this many seconds is retried once in a fresh page. */
+  stallS: number;
 }
 
 /** The page emulation every scenario's context gets (`--cpu-throttle`, `--touch`). */
 const emulation = { cpuThrottle: 1, touch: false };
+/** The run's saved spots and the stall bar (`--spots-file`, `--stall-s`). */
+const runWide: { spots: Spot[]; stallS: number } = { spots: [], stallS: 60 };
 
 function options(argv: string[]): Options {
   const o: Options = {
@@ -66,6 +93,10 @@ function options(argv: string[]): Options {
     configsFile: 'bench/configs.json',
     cpuThrottle: 1,
     touch: false,
+    spots: [],
+    spotsFile: 'bench/spots.json',
+    warm: false,
+    stallS: 60,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -86,7 +117,13 @@ function options(argv: string[]): Options {
       o.cpuThrottle = Number(value());
       if (!(o.cpuThrottle >= 1)) throw new Error('--cpu-throttle needs a number ≥ 1');
     } else if (a === '--touch') o.touch = true;
-    else if (a.startsWith('--')) throw new Error(`unknown option ${a}`);
+    else if (a === '--spot') o.spots.push(value());
+    else if (a === '--spots-file') o.spotsFile = value();
+    else if (a === '--warm') o.warm = true;
+    else if (a === '--stall-s') {
+      o.stallS = Number(value());
+      if (!(o.stallS >= 5)) throw new Error('--stall-s needs a number of seconds ≥ 5');
+    } else if (a.startsWith('--')) throw new Error(`unknown option ${a}`);
     else o.names.push(a);
   }
   return o;
@@ -219,6 +256,125 @@ interface Run {
   camera?: { position: [number, number, number]; yaw: number; pitch: number };
   /** Each `goto` step's result (`__dwell.goto`): what it found and where it put the camera. */
   gotos: GotoResult[];
+  /** The saved spots (bench/spots.json) a `spot` step names. */
+  spots: Spot[];
+  /** Each placed `shot`'s camera and how long its view took to settle. */
+  shots: ShotResult[];
+}
+
+interface ShotResult {
+  name: string;
+  eye: Vec3;
+  yaw: number;
+  pitch: number;
+  face: 'a' | 'b';
+  /** The ground's top under an `above` shot (m), or null. */
+  groundY: number | null;
+  /** Seconds from the step's start to the shot; `settled` false: shot at `maxS` regardless. */
+  s: number;
+  settled: boolean;
+}
+
+/** The top of the ground's column at x, z on `face` among the loaded chunks (m), or null. */
+async function groundAt(page: Page, x: number, z: number, face: 'a' | 'b'): Promise<number | null> {
+  const rows = groundRows(face, GROUND_SCAN_M, CELL_HEIGHT);
+  const row = await call<number | null>(
+    page,
+    `(() => { const rows = ${JSON.stringify(rows)}; for (const r of rows) if (d.voxel(${String(Math.floor(x))}, r, ${String(Math.floor(z))}) !== 0) return r; return null; })()`,
+  );
+  return row === null ? null : eyeOver(face, row, CELL_HEIGHT, 0);
+}
+/** How far from the midplane an `above` shot looks for the ground (m). */
+const GROUND_SCAN_M = 1200;
+
+/**
+ * A placed shot: flies the player to the place (so its full-detail chunks stream), finds the
+ * ground under an `above` placement (descending until its chunks hold it), places the camera
+ * exactly, waits for the view to settle — the LOD with nothing to generate, mesh or ask for,
+ * nothing waiting in view and the chunks meshed, for 1 s, then `quietFrames` frames — and shoots.
+ */
+async function placedShot(
+  run: Run,
+  name: string,
+  p: Placement,
+  quietFrames: number,
+  maxS: number,
+): Promise<void> {
+  const { page } = run;
+  const start = Date.now();
+  const up = p.face === 'b' ? -1 : 1;
+  const [x, z] = p.at ? [p.at[0], p.at[2]] : [p.above[0], p.above[1]];
+  await call(page, 'd.fly(true)');
+  let eyeY: number;
+  let groundY: number | null = null;
+  if (p.at) {
+    eyeY = p.at[1];
+    await call(page, `d.teleport(${JSON.stringify([x, eyeY - 1.6 * up, z])})`);
+  } else {
+    const feet = (await call<Vec3 | null>(page, 'd.state()?.feet ?? null')) ?? [
+      x,
+      OPEN_HEIGHT_M * up,
+      z,
+    ];
+    // Over the spot at the feet's height (or the open height if far below it), then down a
+    // chunk's worth at a time until the column's ground has streamed in.
+    let y = Math.abs(feet[0] - x) + Math.abs(feet[2] - z) < 2 ? feet[1] : OPEN_HEIGHT_M * up;
+    await call(page, `d.teleport(${JSON.stringify([x, y, z])})`);
+    while (Date.now() - start < maxS * 1000) {
+      await page.waitForTimeout(1000);
+      groundY = await groundAt(page, x, z, p.face);
+      if (groundY !== null) break;
+      if (y * up > 32) {
+        y -= 48 * up;
+        await call(page, `d.teleport(${JSON.stringify([x, y, z])})`);
+      }
+    }
+    if (groundY === null)
+      throw new Error(`shot ${name}: no ground under ${f(x)}, ${f(z)} on face ${p.face}`);
+    eyeY = groundY + p.above[2] * up;
+    const feetY = up > 0 ? Math.max(eyeY - 1.6, groundY) : Math.min(eyeY + 1.6, groundY);
+    await call(page, `d.teleport(${JSON.stringify([x, feetY, z])})`);
+  }
+  const eye: Vec3 = [x, eyeY, z];
+  await until(
+    page,
+    `d.placeCamera(${JSON.stringify(eye)}, ${String(p.yaw)}, ${String(p.pitch)})`,
+    30_000,
+  );
+  run.camera = { position: eye, yaw: p.yaw, pitch: p.pitch };
+  let quiet: number | null = null;
+  let settled = false;
+  while (Date.now() - start < maxS * 1000) {
+    const st = await call<{
+      lod?: { generating: number; meshing: number; asking: number; waitingInView: number };
+      terrain?: { dirty: number; meshing: number };
+    } | null>(page, 'd.state()');
+    const lod = st?.lod;
+    const t = st?.terrain;
+    const idle =
+      !!lod &&
+      lod.generating === 0 &&
+      lod.meshing === 0 &&
+      lod.asking === 0 &&
+      lod.waitingInView === 0 &&
+      (!t || t.dirty + t.meshing === 0);
+    const now = Date.now();
+    quiet = idle ? (quiet ?? now) : null;
+    if (quiet !== null && now - quiet >= 1000) {
+      settled = true;
+      break;
+    }
+    await page.waitForTimeout(100);
+  }
+  await page.evaluate(
+    `new Promise((done) => { let n = ${String(quietFrames)}; const tick = () => (n-- <= 0 ? done(null) : requestAnimationFrame(tick)); tick(); })`,
+  );
+  await page.screenshot({ path: join(run.dir, `${name}.png`) });
+  const s = (Date.now() - start) / 1000;
+  run.shots.push({ name, eye, yaw: p.yaw, pitch: p.pitch, face: p.face, groundY, s, settled });
+  console.log(
+    `  shot ${name}: eye [${eye.map((c) => f(c)).join(', ')}] yaw ${f(p.yaw)} pitch ${f(p.pitch)}${groundY === null ? '' : ` (${f(p.above?.[2] ?? 0)} m over the ground at ${f(groundY)})`}, ${settled ? 'settled' : 'NOT settled'} in ${f(s)} s`,
+  );
 }
 
 /** The local server's figures (`__dwell.serverStats`, a second each) for `seconds`, saved as `name`. */
@@ -663,8 +819,14 @@ async function step(run: Run, s: Step): Promise<void> {
     case 'record':
       return record(run, s.name);
     case 'shot':
-      await page.screenshot({ path: join(run.dir, `${s.name}.png`) });
+      if (s.place) await placedShot(run, s.name, s.place, s.quietFrames, s.maxS);
+      else await page.screenshot({ path: join(run.dir, `${s.name}.png`) });
       return;
+    case 'spot': {
+      const spot = findSpot(run.spots, s.spot);
+      await placedShot(run, s.name, spot.place, 30, 90);
+      return;
+    }
     case 'time':
       await call(
         page,
@@ -740,14 +902,16 @@ function formatStageTimes(stages: StageTime[]): string {
     .join(', ');
 }
 
-async function runScenario(
+/** A scenario's page, opened and playing; or, not playing within `stallS`, closed as stalled. */
+async function openPage(
   browser: Browser,
-  base: string,
-  dir: string,
   sc: Scenario,
-  params: Record<string, string> = {},
-): Promise<ScenarioReport> {
-  mkdirSync(dir, { recursive: true });
+  url: string,
+  stallS: number,
+): Promise<
+  | { context: BrowserContext; page: Page; errors: string[]; openedAt: number; gpu: unknown }
+  | { stalled: { stalledS: number; errors: string[] } }
+> {
   const { pixelRatio, ...viewport } = sc.window;
   const context = await browser.newContext({
     viewport,
@@ -772,7 +936,6 @@ async function runScenario(
     // No music (docs/AUDIO.md §6a): its streaming and decoding are not what the bench measures.
     { ...viewStorage(scenarioView(sc)), 'dwell.music': '"off"' },
   );
-  const url = scenarioUrl(`${base}/dwell/`, sc, params);
   const openedAt = Date.now();
   await page.goto(url);
   const gpu = await page.evaluate<unknown>(`(async () => {
@@ -780,9 +943,37 @@ async function runScenario(
     return a ? { ...a.info, vendor: a.info.vendor, architecture: a.info.architecture,
       device: a.info.device, description: a.info.description } : null;
   })()`);
-  if (!(await until(page, 'd.state()?.terrainReady === true', 120_000))) {
-    throw new Error(`${sc.name}: the game did not start (${errors.join('; ')})`);
+  if (!(await until(page, 'd.state()?.terrainReady === true', stallS * 1000))) {
+    await context.close();
+    return { stalled: { stalledS: (Date.now() - openedAt) / 1000, errors } };
   }
+  return { context, page, errors, openedAt, gpu };
+}
+
+async function runScenario(
+  browser: Browser,
+  base: string,
+  dir: string,
+  sc: Scenario,
+  params: Record<string, string> = {},
+): Promise<ScenarioReport> {
+  mkdirSync(dir, { recursive: true });
+  const url = scenarioUrl(`${base}/dwell/`, sc, params);
+  // A load that isn't playing within the stall bar (`--stall-s`) is retried once in a fresh page
+  // (fresh loads at far spots have stalled now and then); the report lists it in `stalls`.
+  const stalls: { stalledS: number; errors: string[] }[] = [];
+  let opened = await openPage(browser, sc, url, runWide.stallS);
+  if ('stalled' in opened) {
+    console.log(`  not playing after ${f(runWide.stallS)} s: retrying once in a fresh page`);
+    stalls.push(opened.stalled);
+    opened = await openPage(browser, sc, url, 120);
+    if ('stalled' in opened) {
+      throw new Error(
+        `${sc.name}: the game did not start, twice (${opened.stalled.errors.join('; ')})`,
+      );
+    }
+  }
+  const { context, page, errors, openedAt, gpu } = opened;
   // The join's timeline (ARCHITECTURE.md §6.3): page opened → playing, and the loading screen's
   // wait (its near ring drawn, or its timeout).
   const joined = {
@@ -811,6 +1002,8 @@ async function runScenario(
     servers: {},
     up: sc.face === 'b' ? -1 : 1,
     gotos: [],
+    spots: runWide.spots,
+    shots: [],
   };
   for (const s of sc.steps) await step(run, s);
   const report: ScenarioReport = {
@@ -825,6 +1018,8 @@ async function runScenario(
     bursts: run.bursts,
     gotos: run.gotos,
     servers: run.servers,
+    shots: run.shots,
+    stalls,
     url,
   };
   writeFileSync(join(dir, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);
@@ -844,8 +1039,18 @@ async function main(): Promise<void> {
       `no scenario ${unknown.join(', ')} (have ${all.map((s) => s.name).join(', ')})`,
     );
   }
-  const chosen = o.names.length ? all.filter((s) => o.names.includes(s.name)) : all;
-  const { url, server } = await serve(o.base);
+  runWide.stallS = o.stallS;
+  runWide.spots = parseSpots(JSON.parse(readFileSync(o.spotsFile, 'utf8')) as unknown);
+  const spotRuns = o.spots.map((n) => {
+    const spot = findSpot(runWide.spots, n);
+    return { sc: spotScenario(spot), params: spotParams(spot) };
+  });
+  const chosen = o.names.length
+    ? all.filter((s) => o.names.includes(s.name))
+    : spotRuns.length
+      ? []
+      : all;
+  const { url, server } = o.warm ? await warmServe() : await serve(o.base);
   const browser = await launch(o);
   console.log(
     `bench: ${url} → ${o.out} (${o.swiftshader ? 'SwiftShader' : 'GPU'}${o.unthrottled ? ', unthrottled' : ''}${o.compare ? ', compare' : ''})`,
@@ -865,6 +1070,10 @@ async function main(): Promise<void> {
       for (const sc of chosen) {
         console.log(`${sc.name}: ${sc.notes}`);
         await runScenario(browser, url, join(o.out, sc.name), sc);
+      }
+      for (const { sc, params } of spotRuns) {
+        console.log(`${sc.name}: ${sc.notes}`);
+        await runScenario(browser, url, join(o.out, sc.name), sc, params);
       }
     }
   } finally {
