@@ -12,6 +12,7 @@
 //! A world with one biome never builds a map (`BiomeSet::single`): its weight is 1 everywhere and
 //! its columns are exactly the one biome's (the goldens).
 
+use crate::grid::{SparseGrid, most_common};
 use crate::noise::{fbm2, hash2, seed_word};
 use crate::terrain::{BIOME_MAP, Biome, BiomeMap, WhereRange};
 use crate::worldmap::{NO_LAKE, WorldMap};
@@ -120,16 +121,18 @@ pub struct BiomeField {
     n: usize,
     cell: f64,
     x0: f64,
-    /// Per map cell: metres to the nearest sea cell.
-    coast: Vec<f32>,
+    /// Per map cell: metres to the nearest sea cell (0 over the sea: stored by its exceptions,
+    /// `grid::SparseGrid`, BUGS.md #70).
+    coast: SparseGrid<f32>,
     /// Per map cell: metres to the nearest river or lake cell.
     fresh: Vec<f32>,
     climate_seed: u32,
     dither_seed: u32,
     /// The climate gradient's direction (a unit vector from the seed).
     dir: (f64, f64),
-    /// Per map cell: the rain shadow's rainfall (0..1, [`rainfall`]).
-    rain: Vec<f32>,
+    /// Per map cell: the rain shadow's rainfall (0..1, [`rainfall`]; the sea's flat rate over the
+    /// sea, stored by its exceptions).
+    rain: SparseGrid<f32>,
 }
 
 /// The rain shadow on a map's grid ([`rainfall`]): per cell, the rain that falls (0..1) and the
@@ -277,6 +280,7 @@ impl BiomeField {
     pub fn with_params(map: &WorldMap, world_seed: u64, params: BiomeMap) -> Self {
         let (n, cell, x0) = (map.n, map.cell, map.x0);
         let coast = chamfer(n, cell, |c| map.is_sea(c));
+        let coast = SparseGrid::from_dense(&coast, most_common(&coast));
         let mut wet = vec![false; n * n];
         for (c, &l) in map.lake.iter().enumerate() {
             wet[c] = l != NO_LAKE;
@@ -287,8 +291,11 @@ impl BiomeField {
             }
         }
         let fresh = chamfer(n, cell, |c| wet[c]);
+        drop(wet);
         let sea: Vec<bool> = (0..n * n).map(|c| map.is_sea(c)).collect();
         let rain = rainfall(n, cell, &map.height, &sea, &params).rain;
+        drop(sea);
+        let rain = SparseGrid::from_dense(&rain, most_common(&rain));
         let a = f64::from(seed_word(world_seed, 0xB10E_0001)) / f64::from(u32::MAX)
             * std::f64::consts::TAU;
         Self {
@@ -305,14 +312,23 @@ impl BiomeField {
         }
     }
 
-    /// A grid's value at (x, z), bilinear between the cells' centres.
-    fn sample(&self, grid: &[f32], x: f64, z: f64) -> f64 {
+    /// The bytes each of its grids holds.
+    pub fn grid_bytes(&self) -> Vec<(&'static str, usize)> {
+        vec![
+            ("biome field coast", self.coast.bytes()),
+            ("biome field fresh water", crate::vec_bytes(&self.fresh)),
+            ("biome field rain", self.rain.bytes()),
+        ]
+    }
+
+    /// A grid's value at (x, z) (cell c's `grid(c)`), bilinear between the cells' centres.
+    fn sample(&self, grid: impl Fn(usize) -> f32, x: f64, z: f64) -> f64 {
         let u = ((x - self.x0) / self.cell).clamp(0.0, (self.n - 1) as f64);
         let v = ((z - self.x0) / self.cell).clamp(0.0, (self.n - 1) as f64);
         let (i, j) = (u.floor() as usize, v.floor() as usize);
         let (i1, j1) = ((i + 1).min(self.n - 1), (j + 1).min(self.n - 1));
         let (fu, fv) = (u - i as f64, v - j as f64);
-        let g = |i: usize, j: usize| f64::from(grid[j * self.n + i]);
+        let g = |i: usize, j: usize| f64::from(grid(j * self.n + i));
         let a = g(i, j) + (g(i1, j) - g(i, j)) * fu;
         let b = g(i, j1) + (g(i1, j1) - g(i, j1)) * fu;
         a + (b - a) * fv
@@ -320,7 +336,7 @@ impl BiomeField {
 
     /// The rain shadow's rainfall at face-local (x, z), 0..1 ([`rainfall`]).
     pub fn rainfall(&self, x: f64, z: f64) -> f64 {
-        self.sample(&self.rain, x, z)
+        self.sample(|c| self.rain.get(c), x, z)
     }
 
     /// The geography at face-local (x, z), whose world height field is `elevation` m.
@@ -335,7 +351,7 @@ impl BiomeField {
                 * p.climate_noise
                 * f64::from(fbm2(self.climate_seed, x, z, p.climate_wavelength, 2, None));
         let temperature = climate - p.lapse_rate * elevation.max(0.0) / 1000.0;
-        let fresh = self.sample(&self.fresh, xf, zf);
+        let fresh = self.sample(|c| self.fresh[c], xf, zf);
         let t = (fresh / p.wet_reach).clamp(0.0, 1.0);
         let mut wetness = 1.0 - t * t * (3.0 - 2.0 * t);
         if p.rain_share > 0.0 {
@@ -345,7 +361,7 @@ impl BiomeField {
             temperature,
             wetness,
             elevation,
-            coast: self.sample(&self.coast, xf, zf),
+            coast: self.sample(|c| self.coast.get(c), xf, zf),
         }
     }
 
