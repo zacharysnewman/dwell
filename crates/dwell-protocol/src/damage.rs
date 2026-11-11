@@ -42,6 +42,9 @@ pub struct DamageLook {
     pub color: [u8; 3],
     /// sRGB: the cracks, growing with the damage.
     pub crack: [u8; 3],
+    /// How deep a mark is shaded as cut into the face (cells; look only, its scoop's bowl or shard's
+    /// facets; data `depth`, default 0.1).
+    pub depth: f64,
 }
 
 /// The damage look of a block, by name.

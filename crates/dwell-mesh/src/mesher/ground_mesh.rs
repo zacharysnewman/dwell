@@ -271,7 +271,7 @@ pub fn look_swatch(look: &dwell_protocol::inventory::ItemLook) -> Vec<u8> {
 }
 
 /// A polygon's unit normal from Newell's sum.
-fn newell(pts: &[[f64; 3]]) -> [f64; 3] {
+pub(super) fn newell(pts: &[[f64; 3]]) -> [f64; 3] {
     let mut n = [0.0f64; 3];
     for i in 0..pts.len() {
         let (a, b) = (pts[i], pts[(i + 1) % pts.len()]);
@@ -380,7 +380,20 @@ pub(super) fn push_polygon(
     row_m: f64,
 ) {
     // Its normal in metres (the points are).
-    let n = newell(pts);
+    push_polygon_shaded(m, pts, newell(pts), color, tile, lit, row_m);
+}
+
+/// `push_polygon` with a given shading normal (unit, metres) instead of the points' own: a shape
+/// drawn flat but lit as another (block damage's scoops and shards, docs/BLOCK_DAMAGE.md §6).
+pub(super) fn push_polygon_shaded(
+    m: &mut MeshArrays,
+    pts: &[[f64; 3]],
+    n: [f64; 3],
+    color: [f64; 3],
+    tile: &crate::textures::TileRect,
+    lit: [f32; 2],
+    row_m: f64,
+) {
     let tint = dwell_look::normal_tint(n[0], n[1], n[2]);
     let base = (m.positions.len() / 3) as u32;
     for p in pts {
