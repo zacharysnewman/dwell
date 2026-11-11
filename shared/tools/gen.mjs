@@ -208,7 +208,37 @@ export function validateTools(data, items, blocks, heldItems = loadHeldItems(), 
     if (!KINDS.includes(def.breakWith)) fail(`${name}.breakWith must be one of ${KINDS.join(', ')}`);
     breakWith.push({ block: name, kind: def.breakWith });
   }
-  return { tools, woods, breakWith, breaking: validateBreaking(data.breaking, items, blocks) };
+  const breaking = validateBreaking(data.breaking, items, blocks);
+  return { tools, woods, breakWith, breaking, damage: validateDamage(blocks, items, data.breaking) };
+}
+
+/** Validates each block's `damage` (docs/BLOCK_DAMAGE.md; owner, 2026-11-10: "Blocks will need per
+ * tool and default values"): `default` the hits to destroy it with bare hands or a tool not listed
+ * (null: it can't be broken so), and per tool class (`breaking.classes`' keys) or item its hits, an
+ * item's over its class's. A block without `damage` breaks in one hit, as before. */
+export function validateDamage(blocks, items, breaking) {
+  const classes = new Set(Object.keys(breaking?.classes ?? {}).filter((k) => k[0] !== '$'));
+  const hits = (v, at) => {
+    if (!(Number.isInteger(v) && v >= 1 && v <= 255)) fail(`${at} is a hit count from 1 to 255, not ${JSON.stringify(v)}`);
+    return v;
+  };
+  const out = [];
+  for (const [name, def] of blocks) {
+    const d = def.damage;
+    if (d === undefined) continue;
+    const at = `${name}.damage`;
+    if (d === null || typeof d !== 'object' || Array.isArray(d)) fail(`${at} must be an object`);
+    if (!Object.hasOwn(d, 'default')) fail(`${at} needs a default (hits with bare hands; null: can't)`);
+    const dflt = d.default === null ? null : hits(d.default, `${at}.default`);
+    const tools = [];
+    for (const [k, v] of Object.entries(d)) {
+      if (k === 'default' || k[0] === '$') continue;
+      if (!classes.has(k) && !items.has(k)) fail(`${at}.${k}: no tool class or item ${JSON.stringify(k)} (classes: ${[...classes].join(', ')})`);
+      tools.push({ tool: k, hits: hits(v, `${at}.${k}`) });
+    }
+    out.push({ block: name, default: dflt, tools });
+  }
+  return out;
 }
 
 /** Validates `breaking` (the right tool's break speed): each block in one class, every tool item
@@ -289,7 +319,7 @@ const swingRust = (s) =>
   `SwingDef { windup_s: ${f64(s.windupS)}, active_s: ${f64(s.activeS)}, hit_stop_s: ${f64(s.hitStopS)}, recover_hit_s: ${f64(s.recoverHitS)}, recover_miss_s: ${f64(s.recoverMissS)}, reach_m: ${f64(s.reachM)}, arc_deg: ${f64(s.arcDeg)}, samples: ${s.samples}, kick_deg: ${f64(s.kickDeg)}, stamina_cost: ${f64(s.staminaCost)}, swish: ${optStr(s.swish)}, bounce: ${optStr(s.bounce)}, rustle: ${optStr(s.rustle)}, rustle_leaves: ${s.rustleLeaves} }`;
 
 export function toolsRust(d) {
-  const rs = [`// ${header}`, '', 'use crate::chopping::{BreakTool, Chips, CutLook, Leaves, Sway, SwingDef, ToolDef, ToolKind, WoodDef};', 'use crate::inventory::{DropChoice, DropRule};', ''];
+  const rs = [`// ${header}`, '', 'use crate::chopping::{BlockDamageDef, BreakTool, Chips, CutLook, Leaves, Sway, SwingDef, ToolDef, ToolKind, WoodDef};', 'use crate::inventory::{DropChoice, DropRule};', ''];
   rs.push('/// The tools, by item name.');
   rs.push('pub static TOOLS: &[ToolDef] = &[');
   for (const t of d.tools) {
@@ -322,6 +352,11 @@ export function toolsRust(d) {
   for (const c of d.breaking.classes) rs.push(`    ("${c.block}", "${c.class}"),`);
   rs.push('];');
   rs.push('');
+  rs.push("/// Each block's hits to destroy (its `damage`): by bare hands, and by tool class or item.");
+  rs.push('pub static BLOCK_DAMAGE: &[BlockDamageDef] = &[');
+  for (const b of d.damage) rs.push(`    BlockDamageDef { block: "${b.block}", default: ${b.default === null ? 'None' : `Some(${b.default})`}, tools: &[${b.tools.map((t) => `("${t.tool}", ${t.hits})`).join(', ')}] },`);
+  rs.push('];');
+  rs.push('');
   rs.push("/// Each tool item's class, tier and that tier's break speed (`breaking.tools`).");
   rs.push('pub static BREAK_TOOLS: &[BreakTool] = &[');
   for (const t of d.breaking.tools) rs.push(`    BreakTool { item: "${t.item}", class: "${t.class}", tier: "${t.tier}", speed: ${f64(t.speed)} },`);
@@ -336,6 +371,11 @@ export function toolsTs(d) {
   ts.push('export const TOOLS: readonly { name: string; kind: string }[] = [');
   // Single-quoted, as the client's Prettier writes it.
   for (const t of d.tools) ts.push(`  { name: '${t.name}', kind: '${t.kind}' },`);
+  ts.push('];');
+  ts.push('');
+  ts.push("/** Each block's hits to destroy (its `damage`): `default` by bare hands (null: can't), `tools` by class or item. */");
+  ts.push('export const BLOCK_DAMAGE: readonly { block: string; default: number | null; tools: Readonly<Record<string, number>> }[] = [');
+  for (const b of d.damage) ts.push(`  { block: '${b.block}', default: ${b.default}, tools: { ${b.tools.map((t) => `${/^[A-Za-z_]\w*$/.test(t.tool) ? t.tool : `'${t.tool}'`}: ${t.hits}`).join(', ')} } },`);
   ts.push('];');
   ts.push('');
   return ts.join('\n');

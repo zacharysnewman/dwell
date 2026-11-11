@@ -17,7 +17,8 @@ mod table {
     include!("tools.gen.rs");
 }
 
-pub use table::{BREAK_CLASSES, BREAK_TOOLS, BREAK_WITH, TOOLS, WOODS};
+pub use crate::damage::BlockDamageDef;
+pub use table::{BLOCK_DAMAGE, BREAK_CLASSES, BREAK_TOOLS, BREAK_WITH, TOOLS, WOODS};
 
 /// A tool's swing (`swing` in the data): its feel (the client's) and its path (both sides').
 #[derive(Clone, Copy, Debug, PartialEq)]
