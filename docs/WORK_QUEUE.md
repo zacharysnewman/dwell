@@ -37,6 +37,9 @@ Last updated: 2026-11-11 (0.52.52).
      cheaper (lazy ground columns: the starter's tree spots faster than 0.52.57). Outstanding: growth
      over time (planned, ADR 0079), per-tree leaf tints (not cheap: the mesher doesn't know a leaf's
      tree), frond blades, narrow logs in felled pieces and the LOD.
+   - **Status (0.52.60):** growth over time built (ADR 0079 S3: per-tree records saved in an optional
+     `tree_growth` table, the growers step, edits win, felled trees stop; `?growth=N` time-lapse).
+     Outstanding: per-tree leaf tints, a sapling item, frond blades.
 7. **Chopping prototype** (behind a switch, not replacing chopping until approved). Decided:
    - A tree falls once more than 50 % of its cross-section is cut, from one side or two.
    - The back cut is supported, not required: notch + back cut leaves a hinge that steers the fall

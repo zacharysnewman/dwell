@@ -1769,8 +1769,10 @@ follow. **The Textures tab (B6, 0.52.42):** the painterly materials and palette 
    `broadleaf_groves` stands oaks (presets only); `conifer_groves` (pines) and `palm_coasts` (palms)
    are listed by the starter world only; the default world keeps its hand-built pines (goldens
    unchanged). **[built, 0.52.59]** trunks stand on the log's narrower widths by stage; `trees_in` asks
-   the ground columns of its margin lazily (cached), not all up front. Not built: growth over time,
-   per-tree leaf tints, frond blades.
+   the ground columns of its margin lazily (cached), not all up front. **[built, 0.52.60]**
+   growth over time (`dwell_worldgen::growth`, the server's growers step every 5 s over loaded
+   chunks, records in the world's optional `tree_growth` table; ADR 0079 S3). Not built: per-tree
+   leaf tints, frond blades.
    Ground items follow a biome's `ground` the same way (§ Ground items, 0.52.41).
    `trees_sparse` finds the same trees asking columns per candidate (Chisel's 3D section). The sky test (step 3) leaves room
    for the tallest structure over the highest ground; the spawn's level patch is clear of trees.
@@ -2097,6 +2099,7 @@ lives in side files. Chunk and LOD blobs are the protocol's palette + RLE compre
 | `loose_items` | **[built, 0.50.33]** One record (key 0), rewritten each save: the loose items lying in the world (version 1: item name, count, point, age each; ADR 0066) |
 | `ground_gone` | **[built, 0.50.68]** One record (key 0), rewritten each save: the ground items gone from the scatter (`dwell_world::ground::GroundGone::to_bytes`, version 1: a count, then each cell as i32×3, sorted; ADR 0071), the scatter's tombstones. Optional: older builds leave it; an unreadable record is kept, not overwritten |
 | `block_damage` | **[built, 0.52.28]** One record (key 0), rewritten each save: the blocks hit short of breaking (`dwell_protocol::damage::Damage::to_bytes`, version 1: each cell, its state, hits and up to four hit marks; ADR 0078). Optional: a world without it loads undamaged, older builds leave it; an unreadable record is kept, not overwritten |
+| `tree_growth` | **[built, 0.52.60]** One record (key 0), rewritten each save: the trees' growth records (`dwell_worldgen::growth::Records::to_bytes`, version 1: per tree its anchor, face, species by name, seed, stage, the world day it reached it, turn, planter, variant, stopped; ADR 0079). Optional: a world without it grows its trees from their drawn stages, older builds leave it; an unreadable record is kept, not overwritten |
 | `cuts` | **[built, 0.50.34]** One record (key 0), rewritten each save: the axes' cuts in wood cells (`dwell_protocol::chopping::Cuts::to_bytes`, version 1: each cell, then per side its notch and two kerfs as f32; ADR 0067). Optional: older builds leave it; an unreadable record is kept, not overwritten |
 | `water` | **[built, 0.48.2]** The water surface grid's free water (§6.7, WATER_SURFACE_GRID.md): one LZ4 record of `Water::save` (`DWG1`): each water chunk with free columns, their floors, depths and flows (and the rest layer's), and what the chunk owes; held water is found again from the blocks. An older basin record (`DWW5`) is ignored |
 | `tree_tombstones` | **[planned, Phase 30]** Per chunk: the sparse set of chopped procedural tree ids `(chunk, procedural index)` and the pruned node sets of partly cut ones (§6.3 tree growth) |
