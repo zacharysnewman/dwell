@@ -220,7 +220,7 @@ beside V1's lakes. §6.2's note stood: a 25-column field can't reach a coast 2.6
   `LavaEvent::Melt` the server clears to air before writing the lava), so a river dammed by its own
   frozen overflow runs on through the gap. At 1 m it melted the river's own levees (its channel runs
   ~2 m deep) and the flow spread into a sheet; 3 m keeps the levees and breaks the dams.
-- **Open: the starter river does not reach the sea yet.** On the fixture flank (a smooth slope) the
+- **The starter river did not reach the sea (V2).** On the fixture flank (a smooth slope) the
   build's lava runs 1.1 km to the sea in ~3 lava hours (14 world days) and builds land. On the generated
   terrain, without breakouts it reached ~480 m in 6 world days and then dammed itself, ponding 16 m deep
   behind walls its overflow froze into. With breakouts (3 m) it no longer dams (the deepest pond stays
@@ -228,9 +228,28 @@ beside V1's lakes. §6.2's note stood: a 25-column field can't reach a coast 2.6
   a wide sheet (~300 tiles at 2 m³/s, ~540 at 4) instead of keeping one channel; at 1 m breakouts it
   stalled at ~300 m as a sheet. What would close it: channelling (levees from the edges' cooling that a
   breakout at the front doesn't melt, or a channel's banks held as data), or a runnier `dwell:lava`.
-  The ignored test `the_starter_river_reaches_the_sea_and_builds_land` (`dwell-sim` `tests/lava_world.rs`,
-  ~4 min, `DWELL_LAVA_TRACE=1` for progress) is the check; too long for CI either way. A question for
-  the owner (the lava's tuning, a higher rate, or channelling next).
+  The ignored test `the_starter_river_runs_its_course` (`dwell-sim` `tests/lava_world.rs`,
+  ~3 min, `DWELL_LAVA_TRACE=1` for progress) is the check; too long for CI either way.
+- **Outcomes, not a target (owner, 2026-11-11):** "Lava may not reach the sea since it solidifies over
+  time as it cools… Sometimes it may, other times it may not reach the sea." Whether a river gets there
+  is the physics' (the vent's rate, the slope, the cooling), not a goal tuned for. What changed:
+  - **Levees hold (channelling).** A breakout melts only a dam on the pond's way down: the ground under
+    the dam's crust lower than under the pond's. A levee beside the channel (overflow frozen on ground
+    as high as the channel's) is not melted, so a channel keeps its banks; before, a pond 3 m deep broke
+    out sideways as readily as forward. Tested: `a_levee_beside_the_channel_holds` (red on the old rule),
+    and the dam test now stands its dam on lower ground.
+  - **The outcomes, tested on the fixture flank** (`rivers.rs`, the fixture's `test:runny`): the strong
+    vent (1 m³/s) on the 0.3 flank reaches the sea within two lava hours and builds land (as before); a
+    weak one (0.2 m³/s) on a 0.03 slope runs ~150 m in 45 lava minutes, crusts and stands still, no land
+    (`a_weak_vent_on_a_shallow_slope_crusts_and_stops_short`; at 0.1 it piles at its vent, at 0.3 it
+    still runs at the hour).
+  - **The starter river's outcome:** with the build's lava it reaches ~600 m of its 1.3 km by 18 world
+    days and crusts there as a wide flow (~260 tiles), no land in the sea. The ignored long test reports
+    this and checks only that the river ran well down the flank; `DWELL_LAVA_TUNE=rate=4,breakout=3,…`
+    runs it with other data (viscosity, yield, cooling, edge, thin, tube, breakout, rate, step, far).
+  - **Tried and dropped:** lava stiffening as it cools (viscosity × 30 or × 300 at heat 0, geometric in
+    heat) only slowed the whole flow (~420 / ~370 m by day 6 against ~500) at the same width per metre of
+    reach; it did not channel, so it was not kept.
 - **Tests** (`crates/dwell-lava/tests/rivers.rs`, both faces): on a fixture flank (a 0.3 slope 1.1 km to
   a shore, a fixture runny lava `test:runny` and vent `test:flank_river` by data alone) a river runs past
   1 km and reaches the sea within two lava hours, builds dry land past the shore out of the sea, its
@@ -240,6 +259,5 @@ beside V1's lakes. §6.2's note stood: a 25-column field can't reach a coast 2.6
 - **Fixed on the way:** none shipped (a stale lake index after a tile's removal was caught by the
   server tests before commit).
 
-**Next:** the rest of the look (heat per cell); the starter river reaching the sea on the generated
-terrain (§6.4, open); the water grid's columns as the fields' water (and the sea's level taken back where
+**Next:** the rest of the look (heat per cell); the water grid's columns as the fields' water (and the sea's level taken back where
 lava builds land); eruptions (V3–V5).
