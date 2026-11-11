@@ -461,6 +461,23 @@ pub fn water_exit(f: dwell_world::FaceFrame, dir: [f64; 3], ior: f64) -> Option<
     Some(f.vector([h[0], up, h[2]]))
 }
 
+/// The sky's light (linear) seen through Snell's window toward the bent-out ray whose sky (the sky
+/// pass's, linear) is `sky`, before the fog: the composite's `sky_in` (`composite_underwater`): the
+/// sky mixed toward the window's glow (shafts.json `window`: colour `glow_srgb` × the zenith's
+/// brightest channel, its share `glow` × (0.55 + 0.45 × `inside`)). With no glow the window shows the
+/// sky above unchanged (WATER_RENDERING.md §16).
+pub fn window_sky(
+    sky: [f64; 3],
+    zenith: [f64; 3],
+    glow_srgb: [f64; 3],
+    glow: f64,
+    inside: f64,
+) -> [f64; 3] {
+    let bright = zenith[0].max(zenith[1]).max(zenith[2]);
+    let share = glow * (0.55 + 0.45 * inside);
+    std::array::from_fn(|k| sky[k] + (srgb_to_linear(glow_srgb[k]) * bright - sky[k]) * share)
+}
+
 /// The length of a view ray inside the water (m): from the surface, at view depth `d_water`, to
 /// the scene behind it at `d_behind` (0: nothing drawn there, so as deep as can matter), for a
 /// surface point `rel_len` metres from the eye. View depths scale along a ray with distance.
@@ -1514,6 +1531,46 @@ mod tests {
         }
     );
 
+    dwell_world::both_faces!(
+        fn looking_up_through_the_window_shows_the_sky_seen_from_just_above(f: FaceFrame) {
+            // Owner, 2026-11-11: "you should be looking from just outside the water up compared to
+            // just under the water up, because that's the mismatch." 0.3 m under, straight up at
+            // midnight (full moon), at the moon 15° up and at midday, the window shows the sky the
+            // sky pass draws straight up 0.3 m above: the ray leaves straight up, the window's
+            // glow no longer mixes a white-cyan over it, and the fog does not reach 0.3 m.
+            let water = dwell_look::underwater::underwater_look("dwell:water");
+            let shafts = dwell_look::shafts::fluid_shafts("dwell:water");
+            let ior = 1.333;
+            let glow_srgb = dwell_look::hex(shafts.window_color);
+            let up = f.vector([0.0, 1.0, 0.0]);
+            let out = water_exit(f, up, ior).expect("straight up leaves");
+            assert!((0..3).all(|k| (out[k] - up[k]).abs() < 1e-12));
+            for (t, moon) in [(0.0, 0.5), (0.8689, 0.5), (0.5, 0.5)] {
+                let day = dwell_look::daynight::DAY_NIGHT.state(0.0, Some(t), Some(moon));
+                let lin = |c: [f64; 3]| c.map(srgb_to_linear);
+                let above = lin(dwell_look::sky_color(up, f, day.of(f), &day));
+                let zenith = above;
+                let through = lin(dwell_look::sky_color(out, f, day.of(f), &day));
+                let below = window_sky(through, zenith, glow_srgb, shafts.window_glow, 1.0);
+                for k in 0..3 {
+                    let rel = (below[k] - above[k]).abs() / above[k].max(1e-4);
+                    assert!(
+                        rel < 0.02,
+                        "t {t}: the window's sky {below:?} is not the sky above {above:?} (channel {k}: {rel:.3})"
+                    );
+                }
+            }
+            // The fog's clear distance covers the window's whole cone from 0.3 m under: the rim's
+            // ray to the surface is 0.3 / cos(critical angle) long.
+            let rim = 0.3 / critical_angle(ior).cos();
+            assert!(
+                water.fog_clear_m > rim,
+                "{} m clear, the rim {rim} m",
+                water.fog_clear_m
+            );
+        }
+    );
+
     #[test]
     fn the_window_shows_the_real_sky_and_bodies_scaled_by_its_light() {
         // both-faces: a source check; the composite's face handling is `face_up`.
@@ -1526,22 +1583,45 @@ mod tests {
             ),
             "the sky is looked up along the refracted ray, bent by the ripples"
         );
-        assert!(b.contains("var seen = sky(out);"));
+        assert!(b.contains("let seen = window_sky(out, out_px, f.window.y);"));
         assert!(
             !b.contains("mix(sky_radiance(dir), glow"),
             "not along the ray under water, nor a fixed glow"
         );
+        // The window's sky is the sky pass's own (owner, 2026-11-11: looking up from just under
+        // the water should match looking up from just above): one function draws the sky above the
+        // horizon for both, with the stars, the moon, the sun and the clouds, on every tier.
+        let at = src.find("fn window_sky(").expect("window_sky");
+        let ws = &src[at..at + src[at..].find("\n}\n").expect("end")];
+        assert!(ws.contains("return sky_above_with_clouds(out, sky(out), deck, fw, bodies);"));
+        let at = src.find("fn sky_behind_with_clouds(").expect("sky pass");
+        let sp = &src[at..at + src[at..].find("\n}\n").expect("end")];
+        assert!(sp.contains("return sky_above_with_clouds(dir, clear, deck, fw, 1.0);"));
+        let at = src.find("fn sky_above_with_clouds(").expect("the one sky");
+        let one = &src[at..at + src[at..].find("\n}\n").expect("end")];
         assert!(
-            b.contains("dwell_sun_disc(out, up, frame.day, px)")
-                && b.contains("dwell_moon(out, frame.day, px)"),
-            "the sun and moon discs show through the window"
+            one.contains("dwell_sky_bodies(dir, face, frame.day, clear)")
+                && one.contains("dwell_clouds(lit, lit, dir, face, deck, fw,"),
+            "the stars, moon, sun and clouds"
         );
         assert!(
-            b.contains("(u32(frame.reflect_sky.y + 0.5) & 2u) != 0u"),
-            "only on a tier with bodyPath"
+            !b.contains("frame.reflect_sky.y"),
+            "the bodies show on every tier, as the sky pass draws them"
+        );
+        // At night the water seen from inside takes the moonlight's grey as the scene above does
+        // (`scene_display`'s saturation), not a saturated glowing blue; the window's sky keeps its own.
+        assert!(b.contains("let mirror = moonlit(display("));
+        assert!(b.contains("let shown = moonlit(display(underwater(lit,"));
+        assert!(!b.contains("let window = moonlit("));
+        let at = src.find("fn moonlit(").expect("moonlit");
+        assert!(src[at..].contains("frame.day.horizon.a);"));
+        let at = src.find("fn scene_display(").expect("scene_display");
+        assert!(
+            src[at..].contains("frame.day.horizon.a"),
+            "the scene's saturation is the same"
         );
         assert!(
-            b.contains("* mix(1.0, look.x, f.window.x), to_surface, f));"),
+            b.contains("let window = display(underwater(sky_in * mix(1.0, look.x, f.window.x), to_surface, f));"),
             "the underside's cells over the window's sky at the look's share"
         );
         let w = dwell_look::underwater::underwater_look("dwell:water");
@@ -1549,17 +1629,19 @@ mod tests {
             w.window_cells < 0.5,
             "water's window is mostly the clear sky"
         );
-        assert!(w.window_bodies > 0.0, "and shows the sun and moon");
+        assert!(
+            (w.window_bodies - 1.0).abs() < 1e-9,
+            "and shows the stars, sun and moon as the sky above does"
+        );
         assert!(
             b.contains(
                 "inverse_display(frame.shafts_window.rgb) * max(zenith.r, max(zenith.g, zenith.b))"
             ),
             "the window's glow follows the sky's light (dim at night)"
         );
-        // The CPU tier draws no discs in the window (the cheapest: the refracted sky only), and
-        // its surface from below is the simple see-through tinted sheet (`from_below`'s Fresnel).
+        // The CPU tier's surface from below is the simple see-through tinted sheet
+        // (`from_below`'s Fresnel).
         let cpu = WATER_TIERS.iter().position(|t| t.cpu).expect("a CPU tier");
-        assert!(!dwell_look::reflections::REFLECTIONS.tiers[cpu].body_path);
         assert!(!WATER_TIERS[cpu].reads_scene);
         let at = src.find("fn from_below(").expect("from_below");
         let fb = &src[at..at + src[at..].find("\n}\n").expect("end")];
@@ -1642,7 +1724,7 @@ mod tests {
         // over its distance (underside_contrast), the sun patch along sun_through.
         assert!(src.contains("rim_above = 1.0 + (band_edge(0.0, f) - 1.0) * clamp(1.0 - d / waterline_across(f).x, 0.0, 1.0);"));
         assert!(src.contains(
-            "let mirror = display(underwater(underwater(vec3f(0.0), 1e6, f) * light, to_surface, f));"
+            "let mirror = moonlit(display(underwater(underwater(vec3f(0.0), 1e6, f) * light, to_surface, f)));"
         ));
         assert!(src.contains("let h = (sun - up * face_rise(face, sun)) / max(ior, 1.0);"));
         assert!(src.contains("return h + up * sqrt(max(1.0 - dot(h, h), 0.0));"));

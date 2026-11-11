@@ -90,7 +90,7 @@ pub const FLUID_SHAFTS: &[FluidShafts] = &[
         cell_m: 0.7,
         speed: 0.25,
         window_color: 0xc8f4ff,
-        window_glow: 0.4,
+        window_glow: 0.0,
         window_edge: 0.18,
     },
 ];
