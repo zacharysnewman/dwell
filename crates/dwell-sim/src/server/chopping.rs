@@ -105,17 +105,44 @@ impl Server {
         let swept = dwell_world::swing::sweep(&mut self.world, eye, look, vertical, &arc);
         let cleared: Vec<[i32; 3]> = swept.cleared.iter().map(|c| c.cell).collect();
         self.clear_cells(id, tool, &cleared, eye);
-        let wood = swept
-            .hit
-            .filter(|x| grain_of(self.world.get_voxel_if_loaded(x.hit.cell)).is_some());
+        // The chopping prototype aims at the crosshair: the chop lands where the look meets the
+        // trunk (its height the stump's), on the face it meets (WORK_QUEUE item 7).
+        let aimed = if self.config.chop2 {
+            self.crosshair_hit(t, eye, look)
+        } else {
+            swept.hit.map(|x| (x.hit.cell, x.axis_face(), x.point))
+        };
+        let wood = aimed.filter(|x| grain_of(self.world.get_voxel_if_loaded(x.0)).is_some());
         match wood {
-            Some(x) => self.swing(id, tool, x.hit.cell, x.axis_face(), x.point, vertical),
+            Some((cell, face, point)) => self.swing(id, tool, cell, face, point, vertical),
             None => {
                 let s = self.sessions.get_mut(&id).expect("session");
                 s.chop_ready =
                     self.tick + (t.swing_seconds * f64::from(dwell_protocol::SIM_HZ)) as u32;
             }
         }
+    }
+
+    /// The first solid cell the look from `eye` meets within the arc's reach, past the blocks
+    /// `t` clears (leaves): the cell, the face met (the chopping wire's `axis × 2 + positive`)
+    /// and the point (the chopping prototype's aim).
+    fn crosshair_hit(
+        &mut self,
+        t: &chop::ToolDef,
+        eye: [f64; 3],
+        look: [f64; 3],
+    ) -> Option<([i32; 3], u8, [f64; 3])> {
+        let dir = look.map(|v| v as f32);
+        let hit = dwell_world::edit::raycast_block_past(
+            &mut self.world,
+            eye,
+            dir,
+            t.swing.reach_m as f32,
+            |_, m| t.clears_block(block_of(m).name),
+        )?;
+        let d = f64::from(hit.distance);
+        let point = [0, 1, 2].map(|i| eye[i] + look[i] * d);
+        Some((hit.cell, hit.face ^ 1, point))
     }
 
     /// Breaks the cells a swing of `tool` went through (its `clears`: leaves, for the axe) in one
@@ -306,16 +333,26 @@ impl Server {
         g[grain] = 1.0;
         let share = chop::share(t, chop::swing_normal(vertical, look), f.vector(g));
         let band = band_of(f, cell, grain, point);
+        let v2 = self.config.chop2;
         let cut = self.cuts.cells.entry(cell).or_default();
-        cut.swing(t, grain, side, band, share);
+        if v2 {
+            // The chopping prototype (WORK_QUEUE item 7): a share of the section a chop, half of
+            // it along the grain (the swing's plane more along the grain than across it).
+            let along = share < 0.5 * (t.across + t.along);
+            cut.chop2(t, wood, grain, side, along);
+        } else {
+            cut.swing(t, grain, side, band, share);
+        }
         let cut = *cut;
         let standing = grain == 1;
-        let through = if standing {
-            wood.fell_fraction
+        let through = if v2 {
+            cut.chop2_through(wood, grain)
+        } else if standing {
+            cut.cross(grain) >= wood.fell_fraction
         } else {
-            wood.buck_fraction
+            cut.cross(grain) >= wood.buck_fraction
         };
-        if cut.cross(grain) < through {
+        if !through {
             self.send_cuts(vec![(cell, cut)], Vec::new());
             return;
         }
@@ -325,14 +362,27 @@ impl Server {
         // above taking the upside-down ramp as its new bottom; the trunk is released tipping toward
         // the notch with the wood's `fellTip` share of the topple spin (owner, 2026-11-09: "make
         // the tree tip if needed, like we used to, maybe 3/4 of the force"; 0: the contact alone).
-        let n = chop::side_normal(grain, cut.deepest(grain).unwrap_or(side));
+        // Toward the notch (the prototype: the notch steers, else the deepest cut; today: the
+        // deepest cut).
+        let toward = if v2 {
+            cut.chop2_toward(grain)
+        } else {
+            cut.deepest(grain)
+        };
+        let n = chop::side_normal(grain, toward.unwrap_or(side));
         let above = dwell_world::edit::above(cell);
         // The trunk's bottom needs the log above the cut (else no wedges: it falls as before).
         let wedges = wood
             .fell_wedge
             .filter(|_| standing && self.world.get_voxel_if_loaded(above) == m)
             .and_then(|w| {
-                let trunk = if wood.fell_wedge_matching {
+                // The prototype's split keeps the notch: the trunk's bottom is its upper face.
+                let matching = if v2 {
+                    wood.chop2.wedge_matching
+                } else {
+                    wood.fell_wedge_matching
+                };
+                let trunk = if matching {
                     crate::felling::WedgeTrunk::Matching
                 } else {
                     crate::felling::WedgeTrunk::Open

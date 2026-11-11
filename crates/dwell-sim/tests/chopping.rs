@@ -774,3 +774,171 @@ dwell_world::both_faces!(
         }
     }
 );
+
+// The chopping prototype (docs/WORK_QUEUE.md item 7, `chop2` in shared/tools/tools.json; owner
+// 2026-11-11): behind the `chop2` switch, each chop removes a share of the section, a tree falls
+// once more than half is cut, toward its notch, and the split keeps the notch.
+
+/// The scene with the chopping prototype on (adventure).
+fn scene2(f: FaceFrame) -> Fixture {
+    scene2_in(f, "adventure")
+}
+
+fn scene2_in(f: FaceFrame, mode: &str) -> Fixture {
+    scene_with(
+        f,
+        ServerConfig {
+            chop2: true,
+            ..config(f, mode)
+        },
+        true,
+        true,
+    )
+}
+
+/// A chop at the trunk's +x side (away from the player, reached round the trunk).
+fn at_trunk_far(fx: &mut Fixture, f: FaceFrame) {
+    let y = m_of_row(AT) + 0.25;
+    swing(fx, f, [3, AT, 0], [1.0, 0.0, 0.0], [4.0, y, 0.5], false);
+}
+
+/// Steps the felled piece `id` up to four seconds until it is down; its lean (face-local up).
+fn lean_of(fx: &mut Fixture, f: FaceFrame, id: u32) -> [f64; 3] {
+    let mut lean = [0.0, 1.0, 0.0];
+    for _ in 0..4 * 60 {
+        fx.server.step();
+        let Some((_, q)) = fx.server.body_pose(id) else {
+            break;
+        };
+        lean = f.vector((q * dwell_physics::DVec3::from(f.up())).to_array());
+        if lean[1] < 0.5 {
+            break;
+        }
+    }
+    lean
+}
+
+/// The felled piece's spawn among what was sent.
+fn felled_piece(sent: &[(Message, usize)]) -> EntitySpawn {
+    sent.iter()
+        .find_map(|(m, _)| match m {
+            Message::EntitySpawn(s) => Some(s.clone()),
+            _ => None,
+        })
+        .expect("a piece spawned")
+}
+
+dwell_world::both_faces!(
+    fn chop2_twelve_stone_chops_fell_toward_the_cut_and_the_split_keeps_the_notch(f: FaceFrame) {
+        let mut fx = scene2(f);
+        let n = swings_to_fell(&mut fx, f, false, 30, |_| 0).expect("felled");
+        assert!((11..=13).contains(&n), "{n} chops");
+        // The split keeps the notch (`| / \ |`): the stump the notch's lower face (the ramp rising
+        // away from the notch, −x), the trunk's bottom its upper face (`open`: thick at the hinge).
+        let wood = dwell_protocol::chopping::wood("dwell:log").expect("log");
+        assert!(
+            !wood.chop2.wedge_matching,
+            "the prototype's trunk keeps the upper face"
+        );
+        let (stump, top) = dwell_sim::felling::fell_wedges(
+            wood.fell_wedge.expect("the log's wedge"),
+            [-1.0, 0.0],
+            dwell_sim::felling::WedgeTrunk::Open,
+        )
+        .expect("the log's wedges");
+        let prop = dwell_blocks::state_property;
+        assert_eq!(
+            cell_is(&mut fx, f, [3, AT, 0]),
+            f.state(stump),
+            "the stump's face"
+        );
+        assert_eq!(
+            (prop(stump, "facing"), prop(stump, "half")),
+            (Some("west"), Some("bottom")),
+            "low at the notch (−x), rising to the hinge"
+        );
+        assert_eq!(
+            (prop(top, "facing"), prop(top, "half")),
+            (Some("west"), Some("top")),
+            "upside down, thick at the hinge: the notch's upper face"
+        );
+        let sent = fx.take(1);
+        let spawn = felled_piece(&sent);
+        let up = f.up()[1].signum() as i16;
+        let bottom = spawn
+            .cells
+            .iter()
+            .min_by_key(|c| c.offset[1] * up)
+            .expect("cells");
+        assert_eq!(
+            bottom.state,
+            f.state(top),
+            "the trunk's bottom keeps the upper face"
+        );
+        // One-sided: it falls toward the side cut (−x).
+        let lean = lean_of(&mut fx, f, spawn.id);
+        assert!(lean[1] < 0.5 && lean[0] < -0.8, "down toward −x: {lean:?}");
+    }
+);
+
+dwell_world::both_faces!(
+    fn chop2_a_notch_then_a_deeper_back_cut_falls_toward_the_notch(f: FaceFrame) {
+        let mut fx = scene2(f);
+        // The notch on +x (4 chops), the back cut from −x until it goes.
+        for _ in 0..4 {
+            at_trunk_far(&mut fx, f);
+        }
+        let cut = fx.server.cut_of(f.cell([3, AT, 0])).expect("cut");
+        assert_eq!(cut.notch_side(), Some(1), "the notch on +x: {cut:?}");
+        let n = swings_to_fell(&mut fx, f, false, 30, |_| 0).expect("felled");
+        assert!(n >= 6, "the back cut made the rest: {n}");
+        let spawn = felled_piece(&fx.take(1));
+        let lean = lean_of(&mut fx, f, spawn.id);
+        assert!(
+            lean[1] < 0.5 && lean[0] > 0.8,
+            "down toward +x, the notch: {lean:?}"
+        );
+        assert!(lean[2].abs() < 0.2, "not sideways: {lean:?}");
+    }
+);
+
+dwell_world::both_faces!(
+    fn chop2_along_the_grain_takes_about_twice_as_many(f: FaceFrame) {
+        // Creative: more chops than a stone axe's wear and a full stamina bar allow.
+        let mut fx = scene2_in(f, "creative");
+        let n = swings_to_fell(&mut fx, f, true, 40, |_| 0).expect("felled");
+        assert!((22..=26).contains(&n), "{n} vertical chops");
+    }
+);
+
+dwell_world::both_faces!(
+    fn chop2_a_swing_lands_at_the_crosshair_its_row_the_stump_height(f: FaceFrame) {
+        // From 1.5 m, looking a little down at the trunk, then nearly level: each look cuts the
+        // row it meets, the higher look a higher row.
+        let mut fx = scene2(f);
+        move_to_local(&mut fx, f, 1.5, m_of_row(BASE), 0.5);
+        fx.server.step();
+        sweep(&mut fx, f, [1.5, -0.45, 0.0], false);
+        let rows = cut_rows(&fx, f);
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        sweep(&mut fx, f, [1.5, -0.05, 0.0], false);
+        let rows2 = cut_rows(&fx, f);
+        assert_eq!(rows2.len(), 2, "a higher look cuts a higher row: {rows2:?}");
+        assert!(
+            rows2.iter().any(|&r| r > rows[0]),
+            "{rows:?} then {rows2:?}"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    fn chop2_off_the_old_chopping_is_unchanged(f: FaceFrame) {
+        // Without the switch twelve chops in one spot don't fell it (hacking: ~4× notching).
+        assert!(
+            !dwell_protocol::chopping::CHOP2_DEFAULT,
+            "off by default"
+        );
+        let mut fx = scene(f, "adventure", true);
+        assert_eq!(swings_to_fell(&mut fx, f, false, 13, |_| 0), None);
+    }
+);

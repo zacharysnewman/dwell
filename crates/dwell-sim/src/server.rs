@@ -311,6 +311,11 @@ pub struct ServerConfig {
     /// Every block breaks in one hit, as before block damage (docs/BLOCK_DAMAGE.md): a test
     /// world's switch, for tests and e2e specs that break blocks with one click. Off: the data's.
     pub one_hit_breaks: bool,
+    /// The chopping prototype (docs/WORK_QUEUE.md item 7, `chop2` in shared/tools/tools.json):
+    /// chops land where the look meets the trunk, each removes a share of the section, a tree
+    /// falls past half toward its notch. Off: today's chopping (ADR 0067). The data's `enabled`
+    /// by default; dev `?chop=v2` for a local world.
+    pub chop2: bool,
 }
 
 /// A new world's settings: this build's clock (`shared/look/daynight.json`), `water_speed` and the
@@ -372,6 +377,7 @@ impl Default for ServerConfig {
             water: crate::water::host::Placement::Inline,
             mode: dwell_protocol::modes::DEFAULT_MODE.into(),
             one_hit_breaks: false,
+            chop2: dwell_protocol::chopping::CHOP2_DEFAULT,
         }
     }
 }
