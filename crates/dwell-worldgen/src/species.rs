@@ -12,7 +12,7 @@
 //! Face-local: +y up, the ground below the anchor; the structure is stood on face B through the
 //! placements' `FaceFrame` like any structure.
 
-use dwell_blocks::{parse_state, StateId};
+use dwell_blocks::{StateId, parse_state};
 use dwell_world::structure::Structure;
 use std::collections::BTreeMap;
 
@@ -160,9 +160,10 @@ pub fn grow(species: &Species, seed: u32, stage: u32) -> Grown {
     let g = stage.min(n - 1) as f32 / (n - 1) as f32;
     let mut r = Rng(seed.wrapping_mul(7919).wrapping_add(13));
     let mature = r.range(species.mature_height);
-    let h = species
-        .sapling_height
-        .max(qz(lerp(species.sapling_height, mature, g), species.height_step));
+    let h = species.sapling_height.max(qz(
+        lerp(species.sapling_height, mature, g),
+        species.height_step,
+    ));
     let mut vr = Rng(seed.wrapping_mul(104_729).wrapping_add(7));
     let s = lerp(species.crown_scale.0, species.crown_scale.1, g) * vr.range(species.crown_variety);
     let trunk_cells = (h / CELL).round() as i32;
@@ -194,9 +195,8 @@ pub fn grow(species: &Species, seed: u32, stage: u32) -> Grown {
                 let k = r.range(count).round() as i32;
                 let a0 = r.next() * std::f32::consts::TAU;
                 for i in 0..k {
-                    let a = a0
-                        + i as f32 * std::f32::consts::TAU / k as f32
-                        + (r.next() - 0.5) * 0.9;
+                    let a =
+                        a0 + i as f32 * std::f32::consts::TAU / k as f32 + (r.next() - 0.5) * 0.9;
                     let (f, re, ri) = (r.range(from), r.range(reach), r.range(rise));
                     let (lr, lh) = (r.range(lump_radius), r.range(lump_height));
                     tips.push((a, f, re, ri));
@@ -230,15 +230,15 @@ pub fn grow(species: &Species, seed: u32, stage: u32) -> Grown {
                     }
                 }
             }
-            if let Branches::Heavy { emerge_at, .. } = species.branches {
-                if g >= emerge_at {
-                    for (a, f, re, ri) in tips {
-                        let y0 = cell_y((h * f).floor().max(1.0)).min(trunk_cells - 1).max(0);
-                        let tx = (a.cos() * re * s).round() as i32;
-                        let tz = (a.sin() * re * s).round() as i32;
-                        let ty = cell_y(cy + ri * s - centre * s).max(y0);
-                        branch(&mut logs, [0, y0, 0], [tx, ty, tz]);
-                    }
+            if let Branches::Heavy { emerge_at, .. } = species.branches
+                && g >= emerge_at
+            {
+                for (a, f, re, ri) in tips {
+                    let y0 = cell_y((h * f).floor().max(1.0)).min(trunk_cells - 1).max(0);
+                    let tx = (a.cos() * re * s).round() as i32;
+                    let tz = (a.sin() * re * s).round() as i32;
+                    let ty = cell_y(cy + ri * s - centre * s).max(y0);
+                    branch(&mut logs, [0, y0, 0], [tx, ty, tz]);
                 }
             }
         }
@@ -262,8 +262,8 @@ pub fn grow(species: &Species, seed: u32, stage: u32) -> Grown {
                 }
                 let k = (y - base).floor() as i32;
                 let wide = k % tier_period as i32 == 0;
-                let mut rad = (big_r * (1.0 - tt).powf(taper) + 0.45)
-                    * if wide { 1.0 } else { tier_upper };
+                let mut rad =
+                    (big_r * (1.0 - tt).powf(taper) + 0.45) * if wide { 1.0 } else { tier_upper };
                 if y < h {
                     rad = rad.max(1.05);
                 }
@@ -288,7 +288,8 @@ pub fn grow(species: &Species, seed: u32, stage: u32) -> Grown {
                         let len = ((rad * reach).floor() as i32).max(1);
                         let rot = (k / tier_period as i32) & 1;
                         for i in 0..per_whorl.min(4) as i32 {
-                            let [dx, dz] = [[1, 0], [0, 1], [-1, 0], [0, -1]][((i + rot) % 4) as usize];
+                            let [dx, dz] =
+                                [[1, 0], [0, 1], [-1, 0], [0, -1]][((i + rot) % 4) as usize];
                             branch(&mut logs, [0, yc, 0], [dx * len, yc, dz * len]);
                         }
                     }
@@ -345,7 +346,11 @@ pub fn grow(species: &Species, seed: u32, stage: u32) -> Grown {
                         origin[1] + l * (fl * u - fd * u * u * 0.8),
                         origin[2] + a.sin() * along,
                     ];
-                    leaves.push([p[0].floor() as i32, cell_y(p[1]).max(1), p[2].floor() as i32]);
+                    leaves.push([
+                        p[0].floor() as i32,
+                        cell_y(p[1]).max(1),
+                        p[2].floor() as i32,
+                    ]);
                 }
             }
         }
@@ -446,11 +451,9 @@ pub fn structures(species: &Species) -> Result<Vec<Structure>, String> {
         .into_iter()
         .map(|(seed, stage)| {
             let h = hash(
-                species
-                    .name
-                    .bytes()
-                    .fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ u64::from(b)).wrapping_mul(0x100_0000_01b3))
-                    ^ (u64::from(seed) << 8)
+                species.name.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| {
+                    (h ^ u64::from(b)).wrapping_mul(0x100_0000_01b3)
+                }) ^ (u64::from(seed) << 8)
                     ^ u64::from(stage),
             );
             grow(species, seed, stage).structure(species, h)
@@ -460,8 +463,8 @@ pub fn structures(species: &Species) -> Result<Vec<Structure>, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::species_gen::FIXTURES;
+    use super::*;
 
     fn trunk_cells(t: &Grown) -> i32 {
         (0..)
@@ -499,7 +502,12 @@ mod tests {
             for stage in [0, 3, s.stages - 1] {
                 assert_eq!(grow(s, 5, stage), grow(s, 5, stage), "{}", s.name);
             }
-            assert_ne!(grow(s, 5, s.stages - 1), grow(s, 6, s.stages - 1), "{}", s.name);
+            assert_ne!(
+                grow(s, 5, s.stages - 1),
+                grow(s, 6, s.stages - 1),
+                "{}",
+                s.name
+            );
         }
     }
 
@@ -519,13 +527,21 @@ mod tests {
                 );
                 if !matches!(s.crown, Crown::Fronds { .. }) {
                     // A branch may rise from the trunk's top, so the column is at least the trunk.
-                    assert!(trunk_cells(&t) >= (t.height / CELL).round() as i32, "{}", s.name);
+                    assert!(
+                        trunk_cells(&t) >= (t.height / CELL).round() as i32,
+                        "{}",
+                        s.name
+                    );
                 }
                 heights.push((t.height * 2.0) as i32);
             }
             heights.sort_unstable();
             heights.dedup();
-            assert!(heights.len() >= 4, "{}: seeds vary the height: {heights:?}", s.name);
+            assert!(
+                heights.len() >= 4,
+                "{}: seeds vary the height: {heights:?}",
+                s.name
+            );
         }
     }
 
@@ -543,13 +559,29 @@ mod tests {
                 for stage in 0..s.stages {
                     let t = grow(s, seed, stage);
                     let now = span(&t);
-                    assert!(now.0 >= last.0, "{} seed {seed} stage {stage}: top {now:?} < {last:?}", s.name);
-                    assert!(now.1 + 1 >= last.1, "{} seed {seed} stage {stage}: spread {now:?} < {last:?}", s.name);
-                    assert!(now.2 + now.2 / 5 >= last.2, "{} seed {seed} stage {stage}: cells {now:?} < {last:?}", s.name);
+                    assert!(
+                        now.0 >= last.0,
+                        "{} seed {seed} stage {stage}: top {now:?} < {last:?}",
+                        s.name
+                    );
+                    assert!(
+                        now.1 + 1 >= last.1,
+                        "{} seed {seed} stage {stage}: spread {now:?} < {last:?}",
+                        s.name
+                    );
+                    assert!(
+                        now.2 + now.2 / 5 >= last.2,
+                        "{} seed {seed} stage {stage}: cells {now:?} < {last:?}",
+                        s.name
+                    );
                     last = now;
                 }
                 let (young, old) = (grow(s, seed, 1), grow(s, seed, s.stages - 1));
-                assert!(old.height > young.height && old.cells.len() > young.cells.len() * 2, "{}", s.name);
+                assert!(
+                    old.height > young.height && old.cells.len() > young.cells.len() * 2,
+                    "{}",
+                    s.name
+                );
             }
         }
     }
@@ -569,9 +601,16 @@ mod tests {
                 .collect();
             for y in 0..(t.height / CELL).round() as i32 {
                 let layer: Vec<_> = logs.iter().filter(|c| c[1] == y).collect();
-                assert!(!layer.is_empty() && layer.len() <= 2, "seed {seed} layer {y}: {layer:?}");
+                assert!(
+                    !layer.is_empty() && layer.len() <= 2,
+                    "seed {seed} layer {y}: {layer:?}"
+                );
                 if let [a, b] = layer[..] {
-                    assert_eq!((a[0] - b[0]).abs() + (a[2] - b[2]).abs(), 1, "seed {seed}: a knee is one step on one axis");
+                    assert_eq!(
+                        (a[0] - b[0]).abs() + (a[2] - b[2]).abs(),
+                        1,
+                        "seed {seed}: a knee is one step on one axis"
+                    );
                 }
             }
             // Each vertical log touches the one above it by a face (a path of logs to the ground).
@@ -579,7 +618,9 @@ mod tests {
                 if c[1] == 0 {
                     continue;
                 }
-                let below = logs.iter().any(|d| d[1] == c[1] - 1 && d[0] == c[0] && d[2] == c[2]);
+                let below = logs
+                    .iter()
+                    .any(|d| d[1] == c[1] - 1 && d[0] == c[0] && d[2] == c[2]);
                 assert!(below, "seed {seed}: {c:?} floats");
             }
             if logs.iter().any(|c| c[0] != 0 || c[2] != 0) {
@@ -596,7 +637,11 @@ mod tests {
             let stages: Vec<u32> = wild(s).into_iter().map(|(_, st)| st).collect();
             let mature = stages.iter().filter(|&&st| st + 2 >= s.stages).count();
             assert!(mature * 2 >= stages.len(), "{}: {stages:?}", s.name);
-            assert!(stages.iter().any(|&st| st + 2 < s.stages), "{}: some young: {stages:?}", s.name);
+            assert!(
+                stages.iter().any(|&st| st + 2 < s.stages),
+                "{}: some young: {stages:?}",
+                s.name
+            );
         }
     }
 }

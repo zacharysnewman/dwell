@@ -226,7 +226,8 @@ test('a placement added by data alone is emitted', () => {
 
 test('a bad placement fails with its name and the problem', () => {
   const cases = [
-    [(p) => (p.structures = { 'dwell:oak': 1 }), /pine_groves: structure dwell:oak is not in shared\/structures/],
+    [(p) => (p.structures = { 'dwell:birch': 1 }), /pine_groves: structure dwell:birch is not in shared\/structures or shared\/trees/],
+    [(p) => (p.structures = { 'dwell:oak': 0 }), /structures.dwell:oak weight must be a whole number/],
     [(p) => (p.structures = {}), /structures must map structure names to weights/],
     [(p) => (p.structures['dwell:pine_tree'] = 0.5), /weight must be a whole number/],
     [(p) => (p.on = ['dwell:moss']), /on names unknown block dwell:moss/],

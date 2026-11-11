@@ -27,6 +27,11 @@ Last updated: 2026-11-11 (0.52.52).
    shorter, smaller leaves … it should grow over time" and "Oak trees …, Pine trees …, and Palm
    trees." Species as data (`shared/trees`), growth stages stored, per climate (vegetation.json),
    from the Tree Growth prototype once the owner has looked at it. Open: palm fronds (cards vs blocks).
+   - **Status (0.52.58, ADR 0079):** species as data (`shared/trees`), the builder (a pure function of
+     species, seed, stage) and placement in the starter world (oaks, pines, palms; mostly mature, some
+     young; heights by seed) built; the default world unchanged. Fronds are leaf cells for now.
+     Outstanding: growth over time (per-tree stage on the world clock, `growers`), thin trunks (a log
+     width), per-tree leaf tints, frond blades, palm density and climate tuning.
 7. **Chopping prototype** (behind a switch, not replacing chopping until approved). Decided:
    - A tree falls once more than 50 % of its cross-section is cut, from one side or two.
    - The back cut is supported, not required: notch + back cut leaves a hinge that steers the fall

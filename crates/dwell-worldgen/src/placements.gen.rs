@@ -64,10 +64,10 @@ pub static PLACEMENTS: [Placement; 5] = [
     Placement {
         name: "palm_coasts",
         structures: &[("dwell:palm", 1)],
-        on: &["dwell:sand", "dwell:grass"],
+        on: &["dwell:sand"],
         footprint_on: false,
-        grid: 9,
-        density: 0.5,
+        grid: 12,
+        density: 0.35,
         grove_wavelength: 96,
         grove_coverage: 0.6,
         grove_outside: 0.15,

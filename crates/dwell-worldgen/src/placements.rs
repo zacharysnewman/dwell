@@ -663,7 +663,10 @@ mod tests {
         let trees = trees_in(&p, (0, 0), (239, 239), &flat("dwell:grass"));
         assert!(trees.iter().all(|t| p[0].structure_name(t) == "dwell:oak"));
         let shapes: std::collections::BTreeSet<u8> = trees.iter().map(|t| t.shape).collect();
-        assert!(shapes.len() >= 6, "seeded oaks of several heights: {shapes:?}");
+        assert!(
+            shapes.len() >= 6,
+            "seeded oaks of several heights: {shapes:?}"
+        );
         let log = dwell_blocks::require("dwell:log");
         for t in &trees {
             let placed = p[0].place(t);
