@@ -55,6 +55,7 @@
     }
   ],
   "decorations": ["meadow_grass"],
-  "placements": [],
+  "placements": ["boulders"],
+  "trees": {"boulders": 0.3},
   "water": "dwell:water"
 }

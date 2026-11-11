@@ -62,7 +62,8 @@
     }
   ],
   "decorations": [],
-  "placements": [],
+  "placements": ["boulders"],
+  "trees": {"boulders": 1.5},
   "water": "dwell:water",
   "rockStack": "dwell:red_beds",
   "erosion": 1

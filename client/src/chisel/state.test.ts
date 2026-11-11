@@ -13,6 +13,8 @@ import {
   knob,
   loadEdit,
   saveEdit,
+  setTreeDensity,
+  treeDensity,
   playInGame,
   TALL_PEAK_WORLD,
   toJson,
@@ -213,5 +215,42 @@ describe('Chisel state', () => {
     const upside = structuredClone(vegetation);
     if (upside.kinds[0]) upside.kinds[0].temperature = [20, 10];
     expect(validateEdit({ ...e, vegetation: upside }).join()).toContain('least below most');
+  });
+});
+
+describe("a biome's trees and structures (ADR 0074 B5)", () => {
+  it('sets a density per placement, round-trips through JSON and validates', () => {
+    const e = buildEdit();
+    const b = e.biomes[0];
+    if (!b) throw new Error('the default biome');
+    expect(treeDensity(b, 'pine_groves')).toBe(1);
+    expect(treeDensity(b, 'boulders')).toBe(0);
+    setTreeDensity(b, 'boulders', 0.5);
+    setTreeDensity(b, 'pine_groves', 2);
+    expect(b.placements).toEqual(['pine_groves', 'boulders']);
+    expect(b.trees).toEqual({ pine_groves: 2, boulders: 0.5 });
+    expect(validateEdit(e)).toEqual([]);
+    expect(fromJson(toJson(e))).toEqual({ edit: e });
+    // Back to the default's form: listed at 1 with no entry, unlisted at 0.
+    setTreeDensity(b, 'pine_groves', 1);
+    setTreeDensity(b, 'boulders', 0);
+    expect(b.placements).toEqual(['pine_groves']);
+    expect(b.trees).toBeUndefined();
+    // A density for a rule it does not list, or out of range, fails with a message.
+    b.trees = { boulders: 1 };
+    expect(validateEdit(e).join()).toContain('not one of its placements');
+    b.trees = { pine_groves: 9 };
+    expect(validateEdit(e).join()).toContain('trees.pine_groves must be in [0, 3]');
+  });
+
+  it('the presets pick their trees', () => {
+    const p = (n: string) => {
+      const b = PRESETS.find((x) => x.name === `preset:${n}`);
+      if (!b) throw new Error(n);
+      return b;
+    };
+    expect(treeDensity(p('sand_desert'), 'pine_groves')).toBe(0);
+    expect(treeDensity(p('sand_desert'), 'boulders')).toBeGreaterThan(0);
+    expect(treeDensity(p('boreal'), 'pine_groves')).toBeGreaterThan(1);
   });
 });

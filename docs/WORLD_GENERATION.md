@@ -214,6 +214,12 @@ three reaches and the spacing), the same whichever chunk generates first. The tr
 air and replaceable cells only (tall grass), never into the ground or water. The sky test leaves
 room over the highest ground for the tallest tree; the spawn's level patch is clear of trees.
 
+**Per biome** (ADR 0074 B5, 0.52.39): a rule stands only where a biome listing it in `placements`
+has weight; the biome's `trees` (rule → density 0–3, 1 when not given) multiplies the chance by the
+biomes' weights. The default biome lists the pines at 1 (the default world unchanged); the presets
+pick `broadleaf_groves` (the prototype broadleaf) and `boulders` (the prototype rock) and their
+densities. Chisel edits them per biome and draws a placements overlay (`tests/trees.rs`).
+
 **Measured** (seed 7 and others; `tests/placements.rs`): about 55 % of the candidates the data's
 chances keep survive the slope, footprint and overlap tests; in groves ~0.28 trees per 49 m² cell
 (about 56 a hectare), outside them ~0.03 (about 7); ground at or above 120 m holds about twice the

@@ -1,5 +1,5 @@
 {
-  "$comment": "Structure placements (docs/WORLD_GENERATION.md §2, docs/STRUCTURES.md §8, ADR 0043): committed structures (shared/structures) the terrain generator stands on its ground. One candidate per `grid` cell, at a hashed point in it, kept by the density (inside the grove noise, `groves.outside` of it elsewhere), scaled by the height (`rise`: `low` at height[0], 1 from `full` up), and only where the ground at the anchor is one of `on`, its height (m above sea level) inside `height`, its slope at most `maxSlopeDeg` and, with footprint \"on\", every column under the structure is one of `on` too; of two candidates whose boxes come within `spacing` blocks the one with the lower priority hash is dropped. Each is turned by one of `rotate` and picked from `structures` by weight. `variants` swap blocks of a placed structure by the anchor's height (m above sea level): none at height[0], every one from height[1], a share in between (owner, 2026-10-21: snowy leaves on the pines high up). All decided from the world seed and positions, so chunks agree in any order. Prototype content. Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output.",
+  "$comment": "Structure placements (docs/WORLD_GENERATION.md §2, docs/STRUCTURES.md §8, ADR 0043): committed structures (shared/structures) the terrain generator stands on its ground. One candidate per `grid` cell, at a hashed point in it, kept by the density (inside the grove noise, `groves.outside` of it elsewhere), scaled by the height (`rise`: `low` at height[0], 1 from `full` up), and only where the ground at the anchor is one of `on`, its height (m above sea level) inside `height`, its slope at most `maxSlopeDeg` and, with footprint \"on\", every column under the structure is one of `on` too; of two candidates whose boxes come within `spacing` blocks the one with the lower priority hash is dropped. Each is turned by one of `rotate` and picked from `structures` by weight. `variants` swap blocks of a placed structure by the anchor's height (m above sea level): none at height[0], every one from height[1], a share in between (owner, 2026-10-21: snowy leaves on the pines high up). All decided from the world seed and positions, so chunks agree in any order. A placement stands only where a biome that lists it (biomes `placements`) has weight, by that biome's `trees` density (ADR 0074 B5): `broadleaf_groves` and `boulders` are listed by presets only, so the default world has neither. Prototype content. Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output.",
   "placements": [
     {
       "name": "pine_groves",
@@ -17,6 +17,32 @@
       "variants": [
         { "name": "snowy", "replace": { "dwell:leaves": "dwell:snowy_leaves" }, "height": [1050, 1250] }
       ]
+    },
+    {
+      "name": "broadleaf_groves",
+      "structures": { "dwell:proto_tree": 1 },
+      "on": ["dwell:grass"],
+      "footprint": "on",
+      "grid": 8,
+      "density": 0.6,
+      "groves": { "wavelength": 160, "coverage": 0.5, "outside": 0.1 },
+      "height": [2, 900],
+      "rise": { "full": 40, "low": 0.3 },
+      "maxSlopeDeg": 35,
+      "spacing": 1,
+      "rotate": [0, 90, 180, 270]
+    },
+    {
+      "name": "boulders",
+      "structures": { "dwell:proto_rock": 1 },
+      "on": ["dwell:sand", "dwell:stone", "dwell:dirt", "dwell:grass"],
+      "footprint": "anchor",
+      "grid": 16,
+      "density": 0.3,
+      "height": [1, 2500],
+      "maxSlopeDeg": 40,
+      "spacing": 2,
+      "rotate": [0, 90, 180, 270]
     }
   ]
 }

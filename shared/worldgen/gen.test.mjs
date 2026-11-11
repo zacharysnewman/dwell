@@ -151,6 +151,9 @@ test('a bad biome or world terrain fails with the key and the problem', () => {
     [(b) => (b.name = 'default'), /name must be "namespace:name"/],
     [(b) => (b.decorations = ['palms']), /decorations: "palms" is not a rule of decorations\.json/],
     [(b) => (b.placements = ['pine_groves', 'pine_groves']), /placements: a rule is listed twice/],
+    [(b) => (b.trees = { boulders: 1 }), /trees: "boulders" is not one of its placements/],
+    [(b) => (b.trees = { pine_groves: 4 }), /trees\.pine_groves must be in \[0, 3\]/],
+    [(b) => (b.trees = ['pine_groves']), /trees must map placement names to densities/],
     [(b) => (b.water = 'dwell:stone'), /water dwell:stone must be a fluid block/],
     [(b) => (b.inland = { rise: 1, halfDistance: 1 }), /unknown inland/],
   ];
@@ -193,6 +196,7 @@ test('the checked-in placements are valid and generate the checked-in Rust', () 
 
 test('a placement added by data alone is emitted', () => {
   const d = loadPlacements();
+  const n = d.placements.length;
   d.placements.push({
     name: 'rock_scatter',
     structures: { 'dwell:proto_rock': 1 },
@@ -206,7 +210,7 @@ test('a placement added by data alone is emitted', () => {
     rotate: [0, 180],
   });
   const rs = placementsRust(validatePlacements(d, blocks, structures));
-  assert.match(rs, /PLACEMENTS: \[Placement; 2\]/);
+  assert.ok(rs.includes(`PLACEMENTS: [Placement; ${String(n + 1)}]`));
   assert.match(
     rs,
     /name: "rock_scatter",\n\s+structures: &\[\("dwell:proto_rock", 1\)\],\n\s+on: &\["dwell:grass", "dwell:dirt"\],\n\s+footprint_on: false,\n\s+grid: 24,/,

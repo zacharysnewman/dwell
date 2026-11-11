@@ -32,6 +32,73 @@ pub struct Section {
     pub water: Vec<f32>,
     /// The top block's colour (sRGB `0xRRGGBB`).
     pub rgb: Vec<u32>,
+    /// The structures standing on it (trees, boulders; ADR 0074 B5) as simple boxes, when the
+    /// square is at most [`TREES_UP_TO`] m a side.
+    pub trees: Vec<TreeBox>,
+}
+
+/// The largest section (m a side) that shows its trees: their placement asks the ground per
+/// candidate, about as many columns as a section of 512 a side.
+pub const TREES_UP_TO: i64 = 1024;
+
+/// A placed structure drawn as two boxes (face-local metres): its trunk (the cells under its
+/// canopy in the anchor's column; empty for a boulder) and its canopy (every cell of its commonest
+/// block), each `[min, max]` with its colour.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TreeBox {
+    pub trunk: Option<([f32; 3], [f32; 3], u32)>,
+    pub canopy: ([f32; 3], [f32; 3], u32),
+}
+
+fn rgb_of(state: dwell_blocks::StateId) -> u32 {
+    let c = top_rgb(state).map(srgb_byte);
+    (u32::from(c[0]) << 16) | (u32::from(c[1]) << 8) | u32::from(c[2])
+}
+
+/// The section's structures as boxes (`TerrainGenerator::trees_sparse` over its square).
+fn tree_boxes(g: &TerrainGenerator, x0: i64, z0: i64, side: i64) -> Vec<TreeBox> {
+    use dwell_world::m_of_row;
+    let lo = (x0 as i32, z0 as i32);
+    let hi = ((x0 + side - 1) as i32, (z0 + side - 1) as i32);
+    let mut out = Vec::new();
+    for t in g.trees_sparse(lo, hi) {
+        let p = &g.planters()[t.planter as usize];
+        let placed = p.place(&t);
+        let canopy = p.canopy();
+        let (mut mn, mut mx) = ([i32::MAX; 3], [i32::MIN; 3]);
+        let mut other = None;
+        for (c, m) in placed.cells() {
+            if m == canopy {
+                for a in 0..3 {
+                    mn[a] = mn[a].min(c[a]);
+                    mx[a] = mx[a].max(c[a]);
+                }
+            } else {
+                other.get_or_insert(m);
+            }
+        }
+        if mn[0] > mx[0] {
+            continue;
+        }
+        let y = |row: i32| m_of_row(row) as f32;
+        let a = t.anchor;
+        let trunk = (mn[1] > a[1]).then(|| {
+            (
+                [a[0] as f32, y(a[1]), a[2] as f32],
+                [a[0] as f32 + 1.0, y(mn[1]), a[2] as f32 + 1.0],
+                other.map_or(0x6b4a2b, rgb_of),
+            )
+        });
+        out.push(TreeBox {
+            trunk,
+            canopy: (
+                [mn[0] as f32, y(mn[1]), mn[2] as f32],
+                [mx[0] as f32 + 1.0, y(mx[1] + 1), mx[2] as f32 + 1.0],
+                rgb_of(canopy),
+            ),
+        });
+    }
+    out
 }
 
 /// A column's ground height on the ½ m cells: its top voxel's top (`Column::height`'s top voxel is
@@ -52,7 +119,12 @@ pub fn section(g: &TerrainGenerator, x0: i64, z0: i64, n: usize, texel: i64) -> 
         height: Vec::with_capacity(n * n),
         water: Vec::with_capacity(n * n),
         rgb: Vec::with_capacity(n * n),
+        trees: Vec::new(),
     };
+    let side = n as i64 * texel;
+    if side <= TREES_UP_TO {
+        s.trees = tree_boxes(g, s.x0, s.z0, side);
+    }
     let min_half = 0.5 * texel as f64;
     for j in 0..n as i64 {
         for i in 0..n as i64 {
@@ -221,6 +293,40 @@ pub fn section_mesh(s: &Section) -> (Mesh, Mesh) {
             }
         }
     }
+    // The structures: a box each for trunk and canopy, lit from the top, darker on the sides.
+    let (ox, oz) = (s.x0 as f32, s.z0 as f32);
+    for t in &s.trees {
+        for (mn, mx, rgb) in t.trunk.into_iter().chain([t.canopy]) {
+            let [x0, y0, z0] = [mn[0] - ox, mn[1], mn[2] - oz];
+            let [x1, y1, z1] = [mx[0] - ox, mx[1], mx[2] - oz];
+            let side = scaled(rgb, 0.8);
+            ground.quad(
+                [[x0, y1, z0], [x0, y1, z1], [x1, y1, z1], [x1, y1, z0]],
+                rgb,
+                0,
+            );
+            ground.quad(
+                [[x1, y1, z0], [x1, y1, z1], [x1, y0, z1], [x1, y0, z0]],
+                side,
+                1,
+            );
+            ground.quad(
+                [[x0, y1, z1], [x0, y1, z0], [x0, y0, z0], [x0, y0, z1]],
+                side,
+                2,
+            );
+            ground.quad(
+                [[x1, y1, z1], [x0, y1, z1], [x0, y0, z1], [x1, y0, z1]],
+                side,
+                3,
+            );
+            ground.quad(
+                [[x0, y1, z0], [x1, y1, z0], [x1, y0, z0], [x0, y0, z0]],
+                side,
+                4,
+            );
+        }
+    }
     (ground, water)
 }
 
@@ -261,6 +367,41 @@ mod tests {
         BifacialTerrain::height_field(1)
             .local(dwell_world::Face::A)
             .clone()
+    }
+
+    #[test]
+    fn the_section_shows_its_trees_as_boxes_on_the_ground() {
+        // face-a-only: Chisel previews face A (the placements' faces are dwell-worldgen's
+        // tests/trees.rs).
+        let g = generator();
+        // Find a square with pines: the same trees the chunks stand.
+        let (side, texel) = (256i64, 4i64);
+        let n = (side / texel) as usize;
+        let (x0, z0) = (-2000..2000)
+            .step_by(256)
+            .flat_map(|x| (-2000..2000).step_by(256).map(move |z| (x, z)))
+            .find(|&(x, z)| !g.trees_in((x, z), (x + 255, z + 255)).is_empty())
+            .expect("pines somewhere");
+        let s = section(&g, i64::from(x0), i64::from(z0), n, texel);
+        let trees = g.trees_in((x0, z0), (x0 + 255, z0 + 255));
+        assert_eq!(s.trees.len(), trees.len(), "one box pair a tree");
+        for (b, t) in s.trees.iter().zip(&trees) {
+            let (mn, mx, _) = b.canopy;
+            assert!(mx[1] > mn[1] && mn[1] >= dwell_world::m_of_row(t.anchor[1]) as f32);
+        }
+        let (ground, _) = section_mesh(&s);
+        let bare = Section {
+            trees: Vec::new(),
+            ..s.clone()
+        };
+        let (plain, _) = section_mesh(&bare);
+        assert!(
+            ground.index.len() > plain.index.len(),
+            "the boxes are meshed"
+        );
+        // A section larger than TREES_UP_TO leaves them out.
+        let big = section(&g, i64::from(x0), i64::from(z0), 300, texel);
+        assert!(big.trees.is_empty());
     }
 
     #[test]
@@ -320,6 +461,7 @@ mod tests {
             height: vec![10.0; n * n],
             water: vec![f32::NAN; n * n],
             rgb: vec![0x808080; n * n],
+            trees: Vec::new(),
         };
         // A tower at (8, 8), the sun from −x −z: its shadow falls toward +x +z.
         s.height[8 * n + 8] = 30.0;

@@ -62,7 +62,7 @@
     }
   ],
   "decorations": [],
-  "placements": [],
+  "placements": ["boulders"],
   "water": "dwell:water",
   "rockStack": "dwell:badland_beds",
   "erosion": 1,

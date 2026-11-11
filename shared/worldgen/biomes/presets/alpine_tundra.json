@@ -50,6 +50,7 @@
   ],
   "decorations": [],
   "vegetation": 1,
-  "placements": ["pine_groves"],
+  "placements": ["pine_groves", "boulders"],
+  "trees": {"pine_groves": 0.3},
   "water": "dwell:water"
 }

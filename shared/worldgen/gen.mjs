@@ -620,6 +620,7 @@ export function terrainRust({ world, biomes, fixtures = [], presets = [], worlds
       rs.push('        ],');
       rs.push(`        decorations: ${list(b.decorations)},`);
       rs.push(`        placements: ${list(b.placements)},`);
+      rs.push(`        trees: &[${b.placements.filter((k) => b.trees?.[k] !== undefined).map((k) => `(${JSON.stringify(k)}, ${rf(b.trees[k])})`).join(', ')}],`);
       rs.push(`        water: ${JSON.stringify(b.water)},`);
       rs.push(`        rock_stack: ${b.rockStack === undefined ? 'None' : `Some(${JSON.stringify(b.rockStack)})`},`);
       rs.push(`        vegetation: ${rf(b.vegetation ?? 0)},`);

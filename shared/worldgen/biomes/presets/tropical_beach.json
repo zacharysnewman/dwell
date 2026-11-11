@@ -53,7 +53,8 @@
     }
   ],
   "decorations": ["meadow_grass"],
-  "placements": [],
+  "placements": ["broadleaf_groves"],
+  "trees": {"broadleaf_groves": 0.4},
   "water": "dwell:water",
   "waterLook": {
     "scatter": "#19d4c0",

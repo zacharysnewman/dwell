@@ -133,13 +133,15 @@ pub fn biome_from_json(v: &Value) -> Result<Biome, String> {
             }
         }
     }
+    let placements = names(v, "placements").map_err(at)?;
     Ok(Biome {
         name,
         place,
         surface: s,
         bands: Box::leak(bands.into_boxed_slice()),
         decorations: names(v, "decorations").map_err(at)?,
-        placements: names(v, "placements").map_err(at)?,
+        placements,
+        trees: trees(v, placements).map_err(at)?,
         water: text(v, "water").map_err(at)?,
         water_look: water_look(v).map_err(at)?,
         rock_stack: v.get("rockStack").and_then(Value::as_str).map(leak),
@@ -147,6 +149,30 @@ pub fn biome_from_json(v: &Value) -> Result<Biome, String> {
         erosion: v.get("erosion").and_then(Value::as_f64).unwrap_or(0.0),
         gullies: v.get("gullies").and_then(Value::as_f64).unwrap_or(0.0),
     })
+}
+
+/// A biome's optional `trees` (ADR 0074 B5): placement name → density in [0, 3], each one of its
+/// `placements`.
+fn trees(v: &Value, placements: &[&'static str]) -> Result<&'static [(&'static str, f64)], String> {
+    let Some(t) = v.get("trees") else {
+        return Ok(&[]);
+    };
+    let t = t
+        .as_object()
+        .ok_or("trees must map placement names to densities")?;
+    if let Some(k) = t.keys().find(|k| !placements.contains(&k.as_str())) {
+        return Err(format!("trees: {k:?} is not one of its placements"));
+    }
+    // In the placements' order, as the generated table has them.
+    let mut out = Vec::new();
+    for &k in placements {
+        let Some(d) = t.get(k) else { continue };
+        match d.as_f64() {
+            Some(d) if (0.0..=3.0).contains(&d) => out.push((k, d)),
+            _ => return Err(format!("trees.{k} must be in [0, 3]")),
+        }
+    }
+    Ok(Box::leak(out.into_boxed_slice()))
 }
 
 /// A biome's optional `waterLook` (`scatter` "#rrggbb", `absorption` three numbers).
