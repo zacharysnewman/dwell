@@ -2693,7 +2693,9 @@ impl TerrainGenerator {
     }
 
     /// The structures placed reaching columns [x0, x1] × [z0, z1] (face-local), the ground they
-    /// ask for computed once for the rectangle and its margin.
+    /// ask for computed at most once per column of the rectangle and its margin, and only the
+    /// columns asked (a species' wide crown makes the margin large and its candidates sparse;
+    /// ADR 0079).
     pub fn trees_in(&self, (x0, z0): (i32, i32), (x1, z1): (i32, i32)) -> Vec<Tree> {
         if self.planters.is_empty() {
             return Vec::new();
@@ -2701,11 +2703,18 @@ impl TerrainGenerator {
         let m = placements::ground_margin(&self.planters);
         let (rx, rz) = (x0 - m, z0 - m);
         let (w, l) = (x1 - x0 + 1 + 2 * m, z1 - z0 + 1 + 2 * m);
-        let cols = self.rect_columns(rx, rz, w, l);
+        let cache: std::cell::RefCell<Vec<Option<Option<Ground>>>> =
+            std::cell::RefCell::new(vec![None; (w * l) as usize]);
         let ground = |x: i32, z: i32| {
             let (i, j) = (x - rx, z - rz);
             if (0..w).contains(&i) && (0..l).contains(&j) {
-                self.ground_of(&cols[(j * w + i) as usize])
+                let k = (j * w + i) as usize;
+                if let Some(g) = cache.borrow()[k] {
+                    return g;
+                }
+                let g = self.ground_of(&self.column_at(x, z));
+                cache.borrow_mut()[k] = Some(g);
+                g
             } else {
                 self.ground_of(&self.column_at(x, z))
             }
