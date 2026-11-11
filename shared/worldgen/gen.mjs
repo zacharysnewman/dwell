@@ -372,6 +372,7 @@ export function rocksRust(data) {
   rs.push('    },');
   rs.push(`    volcanic_stack: ${JSON.stringify(data.tectonic.volcanic)},`);
   rs.push(`    core_stack: ${JSON.stringify(data.tectonic.core)},`);
+  rs.push(`    snow_block: ${JSON.stringify(data.tectonic.snow)},`);
   rs.push('};');
   rs.push('');
   return rs.join('\n');
@@ -465,7 +466,7 @@ export function validateFixtureWorlds(fixtures, world) {
 
 /** terrain.json `tectonics` (systemic terrain T5) as Rust: the keys in camelCase become snake_case. */
 function tectonicsRs(g) {
-  const whole = ['kind', 'arcCount', 'hotspotCount'];
+  const whole = ['kind', 'arcCount', 'hotspotCount', 'ridgeCount', 'ventCount'];
   const body = Object.keys(TERRAIN.tectonics)
     .map((k) => `${k.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`)}: ${whole.includes(k) ? g[k] : rf(g[k])}`)
     .join(', ');

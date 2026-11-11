@@ -2,6 +2,12 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.52.40",
+      "changes": [
+        "The tall peak test world reads more like Mount Rainier: ridges and glacier valleys down its flanks, an off-centre summit with a shoulder and side cones, an ice-filled crater, and snow above about 2000 m with dark rock on the steep ridges."
+      ]
+    },
+    {
       "version": "0.52.39",
       "changes": [
         "Chisel: each biome picks its trees and structures, pines, broadleaf trees or boulders, with a density slider each. A placements overlay shows where they stand, and the 3D view draws them. Deserts get boulders, forests more trees."

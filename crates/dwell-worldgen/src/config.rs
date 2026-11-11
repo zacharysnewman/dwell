@@ -244,6 +244,8 @@ pub fn height_from_json(v: &Value) -> Result<HeightField, String> {
         whole(&mut k.kind, "kind");
         whole(&mut k.arc_count, "arcCount");
         whole(&mut k.hotspot_count, "hotspotCount");
+        whole(&mut k.ridge_count, "ridgeCount");
+        whole(&mut k.vent_count, "ventCount");
         for (key, slot) in [
             ("angle", &mut k.angle),
             ("offset", &mut k.offset),
@@ -259,6 +261,21 @@ pub fn height_from_json(v: &Value) -> Result<HeightField, String> {
             ("craterRadius", &mut k.crater_radius),
             ("craterDepth", &mut k.crater_depth),
             ("coneHardness", &mut k.cone_hardness),
+            ("ridgeDepth", &mut k.ridge_depth),
+            ("ridgeWarp", &mut k.ridge_warp),
+            ("summitOffset", &mut k.summit_offset),
+            ("summitAngle", &mut k.summit_angle),
+            ("shoulderHeight", &mut k.shoulder_height),
+            ("shoulderDistance", &mut k.shoulder_distance),
+            ("shoulderAngle", &mut k.shoulder_angle),
+            ("shoulderRadius", &mut k.shoulder_radius),
+            ("ventHeight", &mut k.vent_height),
+            ("ventRadius", &mut k.vent_radius),
+            ("ventDistance", &mut k.vent_distance),
+            ("iceAbove", &mut k.ice_above),
+            ("iceDome", &mut k.ice_dome),
+            ("snowBelowC", &mut k.snow_below_c),
+            ("snowMaxSlope", &mut k.snow_max_slope),
             ("hotspotX", &mut k.hotspot_x),
             ("hotspotZ", &mut k.hotspot_z),
             ("hotspotHeading", &mut k.hotspot_heading),
@@ -280,6 +297,10 @@ pub fn height_from_json(v: &Value) -> Result<HeightField, String> {
             && k.arc_spacing > 0.0
             && k.cone_radius > 0.0
             && (0.0..=1.0).contains(&k.cone_hardness)
+            && k.ridge_count <= 64
+            && k.vent_count <= 16
+            && k.shoulder_radius > 0.0
+            && k.vent_radius > 0.0
             && k.hotspot_spacing > 0.0
             && k.hotspot_radius > 0.0)
         {
@@ -405,6 +426,11 @@ pub fn geology_from_json(v: &Value) -> Result<Geology, String> {
             .and_then(|t| t.get("core"))
             .and_then(Value::as_str)
             .map_or(GEOLOGY.core_stack, leak),
+        snow_block: v
+            .get("tectonic")
+            .and_then(|t| t.get("snow"))
+            .and_then(Value::as_str)
+            .map_or(GEOLOGY.snow_block, leak),
     })
 }
 

@@ -1,5 +1,5 @@
 {
-  "$comment": "An example world setting (owner, 2026-11-10: \"at least 5000m tall elevations like mount rainier is 4392m tall\"), never a world's own: terrain.json's elevation with one convergent plate boundary and one dormant stratovolcano behind it, 4800 m high and 12 km in radius with a 400 m crater, hardened against the erosion (coneHardness) so it keeps its relief on the 100 m map. Tests build it by data alone (FIXTURE_WORLDS, WorldMap::for_height); Chisel offers it as a preset. Prototype content.",
+  "$comment": "An example world setting (owner, 2026-11-10: \"at least 5000m tall elevations like mount rainier is 4392m tall\"), never a world's own: terrain.json's elevation with one convergent plate boundary and one dormant stratovolcano behind it, 4800 m high and 12 km in radius with a 400 m crater, hardened against the erosion (coneHardness) so it keeps its relief on the 100 m map. Shaped like Rainier (0.52.40): 14 radial ridges with glacier-cut valleys up to 450 m deep, the summit 900 m off the centre (one flank steeper), a shoulder peak (a Liberty Cap), three flank cones (a Little Tahoma), the crater an ice dome (above 3000 m), and a snow line from temperature at 0 °C (~1970 m with the 0.3/km lapse rate) leaving faces steeper than 1.1 bare rock. Tests build it by data alone (FIXTURE_WORLDS, WorldMap::for_height); Chisel offers it as a preset. Prototype content.",
   "name": "test:tall_peak",
   "overrides": {
     "tectonics": {
@@ -14,7 +14,24 @@
       "coneRadius": 12000,
       "craterRadius": 400,
       "craterDepth": 150,
-      "coneHardness": 0.95
+      "coneHardness": 0.95,
+      "ridgeCount": 14,
+      "ridgeDepth": 450,
+      "ridgeWarp": 0.3,
+      "summitOffset": 900,
+      "summitAngle": 200,
+      "shoulderHeight": 300,
+      "shoulderDistance": 1600,
+      "shoulderAngle": 330,
+      "shoulderRadius": 1400,
+      "ventCount": 3,
+      "ventHeight": 450,
+      "ventRadius": 1600,
+      "ventDistance": 5500,
+      "iceAbove": 3000,
+      "iceDome": 60,
+      "snowBelowC": 0,
+      "snowMaxSlope": 1.1
     }
   }
 }

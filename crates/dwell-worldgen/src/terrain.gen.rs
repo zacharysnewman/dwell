@@ -20,7 +20,7 @@ pub const HEIGHT: HeightField = HeightField {
     island_wavelength: 1024,
     island_octaves: 3,
     island_cap: 100000.0,
-    tectonics: crate::tectonics::Tectonics { kind: 0, angle: 30.0, offset: -6000.0, width: 3500.0, range_height: 260.0, trench_depth: 40.0, rift_depth: 80.0, shift: 3000.0, arc_count: 0, arc_distance: 7000.0, arc_spacing: 9000.0, cone_height: 700.0, cone_radius: 3500.0, crater_radius: 350.0, crater_depth: 60.0, cone_hardness: 0.0, hotspot_count: 0, hotspot_x: 30000.0, hotspot_z: -8000.0, hotspot_heading: 60.0, hotspot_spacing: 5000.0, hotspot_height: 360.0, hotspot_radius: 2600.0, hotspot_decay: 0.7, hotspot_widen: 0.12, core_distance: 14000.0 },
+    tectonics: crate::tectonics::Tectonics { kind: 0, angle: 30.0, offset: -6000.0, width: 3500.0, range_height: 260.0, trench_depth: 40.0, rift_depth: 80.0, shift: 3000.0, arc_count: 0, arc_distance: 7000.0, arc_spacing: 9000.0, cone_height: 700.0, cone_radius: 3500.0, crater_radius: 350.0, crater_depth: 60.0, cone_hardness: 0.0, ridge_count: 0, ridge_depth: 0.0, ridge_warp: 0.0, summit_offset: 0.0, summit_angle: 0.0, shoulder_height: 0.0, shoulder_distance: 0.0, shoulder_angle: 0.0, shoulder_radius: 1000.0, vent_count: 0, vent_height: 0.0, vent_radius: 800.0, vent_distance: 0.0, ice_above: 100000.0, ice_dome: 0.0, snow_below_c: -100.0, snow_max_slope: 1.0, hotspot_count: 0, hotspot_x: 30000.0, hotspot_z: -8000.0, hotspot_heading: 60.0, hotspot_spacing: 5000.0, hotspot_height: 360.0, hotspot_radius: 2600.0, hotspot_decay: 0.7, hotspot_widen: 0.12, core_distance: 14000.0 },
 };
 
 /// The biome map's geography (terrain.json `biomeMap`).
@@ -1615,7 +1615,7 @@ pub const FIXTURE_WORLDS: &[(&str, HeightField)] = &[
         island_wavelength: 4096,
         island_octaves: 3,
         island_cap: -300.0,
-        tectonics: crate::tectonics::Tectonics { kind: 0, angle: 30.0, offset: -6000.0, width: 3500.0, range_height: 260.0, trench_depth: 40.0, rift_depth: 80.0, shift: 3000.0, arc_count: 0, arc_distance: 7000.0, arc_spacing: 9000.0, cone_height: 700.0, cone_radius: 3500.0, crater_radius: 350.0, crater_depth: 60.0, cone_hardness: 0.0, hotspot_count: 0, hotspot_x: 30000.0, hotspot_z: -8000.0, hotspot_heading: 60.0, hotspot_spacing: 5000.0, hotspot_height: 360.0, hotspot_radius: 2600.0, hotspot_decay: 0.7, hotspot_widen: 0.12, core_distance: 14000.0 },
+        tectonics: crate::tectonics::Tectonics { kind: 0, angle: 30.0, offset: -6000.0, width: 3500.0, range_height: 260.0, trench_depth: 40.0, rift_depth: 80.0, shift: 3000.0, arc_count: 0, arc_distance: 7000.0, arc_spacing: 9000.0, cone_height: 700.0, cone_radius: 3500.0, crater_radius: 350.0, crater_depth: 60.0, cone_hardness: 0.0, ridge_count: 0, ridge_depth: 0.0, ridge_warp: 0.0, summit_offset: 0.0, summit_angle: 0.0, shoulder_height: 0.0, shoulder_distance: 0.0, shoulder_angle: 0.0, shoulder_radius: 1000.0, vent_count: 0, vent_height: 0.0, vent_radius: 800.0, vent_distance: 0.0, ice_above: 100000.0, ice_dome: 0.0, snow_below_c: -100.0, snow_max_slope: 1.0, hotspot_count: 0, hotspot_x: 30000.0, hotspot_z: -8000.0, hotspot_heading: 60.0, hotspot_spacing: 5000.0, hotspot_height: 360.0, hotspot_radius: 2600.0, hotspot_decay: 0.7, hotspot_widen: 0.12, core_distance: 14000.0 },
     }),
     ("test:tall_peak", HeightField {
         inland_rise: 320.0,
@@ -1634,7 +1634,7 @@ pub const FIXTURE_WORLDS: &[(&str, HeightField)] = &[
         island_wavelength: 1024,
         island_octaves: 3,
         island_cap: 100000.0,
-        tectonics: crate::tectonics::Tectonics { kind: 1, angle: 30.0, offset: -9000.0, width: 3500.0, range_height: 220.0, trench_depth: 40.0, rift_depth: 80.0, shift: 3000.0, arc_count: 1, arc_distance: 8000.0, arc_spacing: 9000.0, cone_height: 4800.0, cone_radius: 12000.0, crater_radius: 400.0, crater_depth: 150.0, cone_hardness: 0.95, hotspot_count: 0, hotspot_x: 30000.0, hotspot_z: -8000.0, hotspot_heading: 60.0, hotspot_spacing: 5000.0, hotspot_height: 360.0, hotspot_radius: 2600.0, hotspot_decay: 0.7, hotspot_widen: 0.12, core_distance: 14000.0 },
+        tectonics: crate::tectonics::Tectonics { kind: 1, angle: 30.0, offset: -9000.0, width: 3500.0, range_height: 220.0, trench_depth: 40.0, rift_depth: 80.0, shift: 3000.0, arc_count: 1, arc_distance: 8000.0, arc_spacing: 9000.0, cone_height: 4800.0, cone_radius: 12000.0, crater_radius: 400.0, crater_depth: 150.0, cone_hardness: 0.95, ridge_count: 14, ridge_depth: 450.0, ridge_warp: 0.3, summit_offset: 900.0, summit_angle: 200.0, shoulder_height: 300.0, shoulder_distance: 1600.0, shoulder_angle: 330.0, shoulder_radius: 1400.0, vent_count: 3, vent_height: 450.0, vent_radius: 1600.0, vent_distance: 5500.0, ice_above: 3000.0, ice_dome: 60.0, snow_below_c: 0.0, snow_max_slope: 1.1, hotspot_count: 0, hotspot_x: 30000.0, hotspot_z: -8000.0, hotspot_heading: 60.0, hotspot_spacing: 5000.0, hotspot_height: 360.0, hotspot_radius: 2600.0, hotspot_decay: 0.7, hotspot_widen: 0.12, core_distance: 14000.0 },
     }),
 ];
 

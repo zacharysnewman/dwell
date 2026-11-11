@@ -167,7 +167,20 @@ into `HeightField::tectonics`; `dwell-worldgen` `tectonics.rs`):
   keeps ≥ 4400 m (the fixture world `test:tall_peak`, `tests/tall_peaks.rs`, red at 0 and green at 0.95).
   In game (0.52.27): `?worldgen=test:tall_peak` plays it (docs/DEV_TOOLS.md "Play a test world"); the
   big map's height tint goes on past 400 m to `peakM` (`shared/ui/map.json`); the look is in
-  IMPLEMENTATION_PLAN.md Phase 57.
+  IMPLEMENTATION_PLAN.md Phase 57. That look was Fuji, not Rainier (a symmetric stepped cone in grey stone with
+  a lake in the crater), so 0.52.40 adds the **Rainier shape** as more keys, all off by default: `ridgeCount`,
+  `ridgeDepth`, `ridgeWarp` (radial ridges, sharp crests and round glacier-cut valleys, deepest below the
+  summit); `summitOffset`, `summitAngle` (the summit off the centre over the unmoved foot: an asymmetric cone
+  and an uneven rim); `shoulderHeight`, `shoulderDistance`, `shoulderAngle`, `shoulderRadius` (a Liberty Cap);
+  `ventCount`, `ventHeight`, `ventRadius`, `ventDistance` (flank cones, a Little Tahoma); `iceAbove`, `iceDome`
+  (a crater whose rim is above the line is an ice dome, not a hollow: no crater lake); and **T3b's snow line from
+  temperature** on the same group: `snowBelowC` (°C, −100 off) and `snowMaxSlope` (rise per run): where the biome
+  map's temperature with its lapse rate (a one-biome world: the gradient's middle) is colder, the top is
+  `rocks.json` `tectonic.snow` (`dwell:snowy_grass`; no ice or glacier block exists yet), and colder ground steeper
+  than the slope is bare rock, so the ridges poke through. The fixture opts in (`tests/tall_peaks.rs`: ridges round
+  a 3 km ring, the summit ≥ 500 m off the centre, no water near the summit, snow above and none below or on steep
+  faces, both faces); the goldens are unchanged. The snow line sits on the tectonics group because a world turns it
+  on (the world groups are numbers; the block is named in `rocks.json`); a per-biome line is later.
 - **The hotspot chain**: `hotspotCount` shield islands from (`hotspotX`, `hotspotZ`) along the plate's
   motion (`hotspotHeading`), `hotspotSpacing` m apart; each older one `hotspotDecay` of the last's height
   and `hotspotWiden` broader (eroded with age).

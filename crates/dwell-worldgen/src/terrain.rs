@@ -627,6 +627,9 @@ pub struct BiomeSet {
     drainage: Option<crate::geology::DrainageField>,
     /// Each stack's lowest soft layer's top (m within its period; T4's base level).
     soft_tops: Vec<f64>,
+    /// The snow line's cover palette (`terrain.json` `tectonics.snowBelowC`; `rocks.json`
+    /// `tectonic.snow`), and the line's °C and steepest slope; None when it is off.
+    snow: Option<(u16, f64, f64)>,
 }
 
 impl BiomeSet {
@@ -687,6 +690,21 @@ impl BiomeSet {
             .collect();
         let field = (list.len() > 1)
             .then(|| crate::biomemap::BiomeField::with_params(map, world_seed, params));
+        // The snow line (0.52.40): its cover's palette after the rocks', only when it is on.
+        let snow = map.tectonics.snow_line().then(|| {
+            let b = dwell_blocks::require(geology.snow_block);
+            palettes.push(Bands {
+                ground: b,
+                under: b,
+                rock: b,
+                shore: b,
+            });
+            (
+                palettes.len() as u16 - 1,
+                map.tectonics.snow_below_c,
+                map.tectonics.snow_max_slope,
+            )
+        });
         Self {
             list: list.to_vec(),
             palettes,
@@ -705,7 +723,35 @@ impl BiomeSet {
                 .iter()
                 .map(|s| crate::geology::soft_top(&geology, s))
                 .collect(),
+            snow,
         }
+    }
+
+    /// The biome map's temperature (0..1-ish, less the lapse rate) at (x, z) over `elevation` m:
+    /// the map's with more than one biome, else the climate gradient's middle (0.5) less the lapse
+    /// rate (so a one-biome world still has a snow line from temperature).
+    pub fn temperature(&self, x: i64, z: i64, elevation: f64) -> f64 {
+        match &self.field {
+            Some(f) => f.geography(x, z, elevation).temperature,
+            None => 0.5 - self.params.lapse_rate * elevation.max(0.0) / 1000.0,
+        }
+    }
+
+    /// The snow line at (x, z) on ground `elevation` m high and `slope` steep (rise per run),
+    /// given °C from the biome map's temperature: None when the line is off or the ground warmer
+    /// than it; else Some(the cover's palette) on ground no steeper than its slope, Some(None) on
+    /// a steeper face (bare rock: ridges poke through the snow).
+    pub fn snow_cover(
+        &self,
+        x: i64,
+        z: i64,
+        elevation: f64,
+        slope: f64,
+        celsius: impl Fn(f64) -> f64,
+    ) -> Option<Option<u16>> {
+        let (palette, below_c, max_slope) = self.snow?;
+        (celsius(self.temperature(x, z, elevation)) < below_c)
+            .then_some((slope <= max_slope).then_some(palette))
     }
 
     /// The geography at (x, z) over the world height field's `elevation` m (None with one biome:
@@ -1864,6 +1910,17 @@ impl TerrainGenerator {
         }
         let mut palette = self.biomes.first[usize::from(mix.chosen)] + level_band as u16;
         let mut band = band;
+        // The snow line from temperature (0.52.40, opt-in by the world): snow on cold, gentle
+        // ground over the band's and the rock's blocks; cold steep faces bare rock.
+        let snow = if band == Band::Shore {
+            None
+        } else {
+            self.biomes
+                .snow_cover(x, z, h, slope, |t| self.vegetation.celsius(t))
+        };
+        if snow == Some(None) {
+            band = Band::Rock;
+        }
         // Where the rock shapes the ground, its blocks show: a wall its face, talus its scree, a
         // tread its cap, a massive rock's steep faces its face.
         if let Some((r, part)) = rock
@@ -1878,6 +1935,9 @@ impl TerrainGenerator {
                 Part::Plain if band == Band::Rock => palette = scree,
                 Part::Plain => {}
             }
+        }
+        if let Some(Some(p)) = snow {
+            (palette, band) = (p, Band::Ground);
         }
         let mut shore = FAR_WATER;
         if let Some(r) = &river {

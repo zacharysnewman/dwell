@@ -76,6 +76,8 @@ pub struct Geology {
     /// The tectonic provinces' stacks (T5, `rocks.json` `tectonic`): a volcano's, the old core's.
     pub volcanic_stack: &'static str,
     pub core_stack: &'static str,
+    /// The snow line's cover (`rocks.json` `tectonic.snow`; `terrain.json` `tectonics.snowBelowC`).
+    pub snow_block: &'static str,
 }
 
 mod table {
