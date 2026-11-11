@@ -170,7 +170,10 @@ mod tests {
             (1 << 3) | (1 << 5) | (opacity_fifteenths(low.opacity) << 6) | (1 << 10)
         );
         let medium = &WATER_TIERS[tier_index("medium").unwrap()];
-        assert_eq!(tier_bits(medium), 1 | 2 | (3 << 3) | (15 << 6) | (1 << 10) | (1 << 11));
+        assert_eq!(
+            tier_bits(medium),
+            1 | 2 | (3 << 3) | (15 << 6) | (1 << 10) | (1 << 11)
+        );
         assert_eq!(opacity_fifteenths(0.55), 8);
         assert_eq!(opacity_fifteenths(0.8), 12);
         assert_eq!(tier_bits(&WATER_TIERS[cpu_tier()]) & 1, 0);

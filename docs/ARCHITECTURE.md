@@ -837,8 +837,10 @@ client predicts only one-hit breaks and tells the server its held pickaxe or sho
 (`ChunkStream::set_damage`), the chunk's mesh job carries its damaged cells
 (`dwell_mesh::mesh_chunk_damaged`), and the mesher draws each hit mark as decals just off the struck
 face in the opaque mesh (`mesher/damage_mesh.rs`: stone an angular shard in a fresher tone, soils a
-round darker scoop, cracks growing with the damage fraction; face-local through the face-B turn-over;
-collision unchanged), from the block's `damage.look` data. A hit short of breaking plays the
+round scoop carved per pixel — one quad per struck face whose hollow the terrain shader computes from
+parameters packed in its vertex colour and light (`relief`, `dent_shade`: bent normal, parallax march
+on Medium, rim shadow, damp floor; BLOCK_DAMAGE.md §6.1) — and cracks growing with the damage fraction;
+face-local through the face-B turn-over; collision unchanged), from the block's `damage.look` data. A hit short of breaking plays the
 material's `Hit` sound at the struck point.
 **Drawing** (`render/skinned.rs`, inside `CharacterRenderer`): the model's one mesh (36-byte
 vertices: position, normal, sRGB colour, 4 × u8 joints, 4 × unorm8 weights; the Peasant 1,834

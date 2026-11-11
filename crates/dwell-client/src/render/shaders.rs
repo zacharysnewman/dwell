@@ -3414,7 +3414,12 @@ pub fn source(samples: u32) -> String {
 /// occlusion and damp. Its constants from dwell-mesh's and dwell-look's.
 fn dent_wgsl() -> String {
     use dwell_mesh::relief;
-    let v = |c: [f64; 3]| format!("vec3f({:?}, {:?}, {:?})", c[0] as f32, c[1] as f32, c[2] as f32);
+    let v = |c: [f64; 3]| {
+        format!(
+            "vec3f({:?}, {:?}, {:?})",
+            c[0] as f32, c[1] as f32, c[2] as f32
+        )
+    };
     format!(
         "const DENT_MERGE: f32 = {:?};\nconst DENT_RIM_AT: f32 = {:?};\nconst DENT_RIM_HALF: f32 = {:?};\nconst DENT_EDGE_FADE: f32 = {:?};\nconst DENT_CELL_H: f32 = {:?};\nconst TINT_TOP: vec3f = {};\nconst TINT_BOTTOM: vec3f = {};\nconst TINT_SIDE_X: vec3f = {};\nconst TINT_SIDE_Z: vec3f = {};\n{DENT}",
         relief::MERGE as f32,
@@ -3673,9 +3678,15 @@ mod tests {
             ("DENT_RIM_HALF", relief::RIM_HALF),
             ("DENT_EDGE_FADE", relief::EDGE_FADE_M),
         ] {
-            assert!(src.contains(&format!("const {name}: f32 = {:?};", v as f32)), "{name}");
+            assert!(
+                src.contains(&format!("const {name}: f32 = {:?};", v as f32)),
+                "{name}"
+            );
         }
-        assert!(src.contains("dent_shade(dent_of(i.code, i.uv)"), "terrain_fs draws relief quads");
+        assert!(
+            src.contains("dent_shade(dent_of(i.code, i.uv)"),
+            "terrain_fs draws relief quads"
+        );
         assert!(src.contains("water_tier_relief()"), "the march is tiered");
     }
 

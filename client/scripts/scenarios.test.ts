@@ -110,7 +110,16 @@ describe('scenarios', () => {
       s.steps.flatMap((t) => (t.do === 'pick' ? [t.item] : [])),
     );
     expect(new Set(picks)).toEqual(
-      new Set(['dwell:log', 'dwell:leaves', 'dwell:stone_axe', 'dwell:torch']),
+      new Set([
+        'dwell:log',
+        'dwell:leaves',
+        'dwell:stone_axe',
+        'dwell:torch',
+        'dwell:dirt',
+        'dwell:stone',
+        'dwell:wooden_shovel',
+        'dwell:stone_pickaxe',
+      ]),
     );
   });
 

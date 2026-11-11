@@ -13,8 +13,8 @@ use super::{
     ground_mesh::{newell, push_polygon, push_polygon_shaded},
     relief, surface,
 };
-use crate::textures::TileRect;
 use crate::flood::Flood;
+use crate::textures::TileRect;
 use dwell_protocol::damage::{DamageLook, DamageLookKind, DamageView, HitMark, look_of};
 use dwell_world::CELL_H;
 
@@ -79,7 +79,12 @@ pub(crate) fn append(
                 let mut out = *cell;
                 out[axis] += sign;
                 let lit = flood.cell(out);
-                push_relief(m, &relief_quad(*cell, face, &marks, &look, fraction, &tile), &tile, lit);
+                push_relief(
+                    m,
+                    &relief_quad(*cell, face, &marks, &look, fraction, &tile),
+                    &tile,
+                    lit,
+                );
             }
             continue;
         }
@@ -153,7 +158,8 @@ fn relief_quad(
         .map(|m| {
             std::array::from_fn(|i| {
                 let a = ax[i];
-                let ra = (radius / ext(a)).min(0.5);
+                // The bowl and its lip inside the cell (the rim fades at its edge).
+                let ra = (1.35 * radius / ext(a)).min(0.5);
                 (f64::from(m.point[a]) / 255.0).clamp(ra, 1.0 - ra)
             })
         })
@@ -161,10 +167,18 @@ fn relief_quad(
     // The quad: the marks' reach, inside the cell.
     let reach = |i: usize| relief::EXTENT * radius / ext(ax[i]);
     let lo: [f64; 2] = std::array::from_fn(|i| {
-        centres.iter().map(|c| c[i] - reach(i)).fold(1.0, f64::min).max(0.005)
+        centres
+            .iter()
+            .map(|c| c[i] - reach(i))
+            .fold(1.0, f64::min)
+            .max(0.005)
     });
     let hi: [f64; 2] = std::array::from_fn(|i| {
-        centres.iter().map(|c| c[i] + reach(i)).fold(0.0, f64::max).min(0.995)
+        centres
+            .iter()
+            .map(|c| c[i] + reach(i))
+            .fold(0.0, f64::max)
+            .min(0.995)
     });
     // Corners counter-clockwise seen from outside: e_u × e_v = e_axis (u, v the next axes).
     let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
@@ -194,7 +208,11 @@ fn relief_quad(
     let top = f64::from(cell[1] + 1);
     let uv_of = |a: usize, p: &[f64; 3]| {
         if a == 1 {
-            if tile.hang { (p[1] - top) * CELL_H + top } else { p[1] * CELL_H }
+            if tile.hang {
+                (p[1] - top) * CELL_H + top
+            } else {
+                p[1] * CELL_H
+            }
         } else {
             p[a]
         }
@@ -211,7 +229,16 @@ fn relief_quad(
         radius,
         depth,
     );
-    ReliefQuad { pts, uvs, normal, color, light, centres, radius, depth }
+    ReliefQuad {
+        pts,
+        uvs,
+        normal,
+        color,
+        light,
+        centres,
+        radius,
+        depth,
+    }
 }
 
 /// Appends a relief quad: its parameters in the colour and light (the shader reads them flat).
@@ -231,7 +258,8 @@ fn push_relief(m: &mut MeshArrays, q: &ReliefQuad, tile: &TileRect, lit: [f32; 2
         m.light.push(q.light);
         m.flood.extend(lit);
     }
-    m.indices.extend([base, base + 1, base + 2, base, base + 2, base + 3]);
+    m.indices
+        .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
 }
 
 /// One piece of a decal: its polygon as drawn (cell space, rows up, just off the face), its colour
@@ -433,8 +461,14 @@ mod tests {
             let tile = crate::textures::tile_rect("plain");
             for (local, world_face) in [(2u8, if mirror { 3 } else { 2 }), (0, 0)] {
                 let world = [3, if mirror { N - 1 - 5 } else { 5 }, 4];
-                let mark = |p: [u8; 3]| HitMark { face: world_face, point: p };
-                let view = DamageView { fraction: 0, marks: vec![mark([128, 128, 128]), mark([90, 100, 170])] };
+                let mark = |p: [u8; 3]| HitMark {
+                    face: world_face,
+                    point: p,
+                };
+                let view = DamageView {
+                    fraction: 0,
+                    marks: vec![mark([128, 128, 128]), mark([90, 100, 170])],
+                };
                 let (cell, v) = face_local(world, &view, mirror);
                 assert!(v.marks.iter().all(|m| m.face == local));
                 let axis = usize::from(local / 2);
@@ -442,7 +476,10 @@ mod tests {
                 let quad = |fraction: f64| relief_quad(cell, local, &marks, &look, fraction, &tile);
                 let (light, heavy) = (quad(0.0), quad(1.0));
                 assert_eq!(heavy.centres.len(), 2, "both hits in one hollow");
-                assert!((heavy.depth - look.depth).abs() < 1e-9, "full damage: the data's depth");
+                assert!(
+                    (heavy.depth - look.depth).abs() < 1e-9,
+                    "full damage: the data's depth"
+                );
                 assert!(light.depth < heavy.depth && light.radius < heavy.radius);
                 assert!(heavy.normal[axis] == 1.0);
                 for (p, uv) in heavy.pts.iter().zip(heavy.uvs) {
@@ -450,16 +487,29 @@ mod tests {
                     assert!(off > 0.0 && off < 0.01, "just off the face: {off}");
                     for a in 0..3 {
                         if a != axis {
-                            assert!(p[a] > f64::from(cell[a]) && p[a] < f64::from(cell[a] + 1), "inside the cell: {p:?}");
+                            assert!(
+                                p[a] > f64::from(cell[a]) && p[a] < f64::from(cell[a] + 1),
+                                "inside the cell: {p:?}"
+                            );
                         }
                     }
                     // The face's uvs: blocks across, metres up a side (mesher.rs `quad`).
-                    let want = if axis == 1 { [p[0], p[2]] } else { [p[2], p[1] * CELL_H] };
-                    assert!((uv[0] - want[0]).abs() < 1e-9 && (uv[1] - want[1]).abs() < 1e-9, "{uv:?} {want:?}");
+                    let want = if axis == 1 {
+                        [p[0], p[2]]
+                    } else {
+                        [p[2], p[1] * CELL_H]
+                    };
+                    assert!(
+                        (uv[0] - want[0]).abs() < 1e-9 && (uv[1] - want[1]).abs() < 1e-9,
+                        "{uv:?} {want:?}"
+                    );
                 }
                 let (back, ..) = relief::unpack(heavy.color, heavy.light);
                 assert_eq!(back.len(), 2);
-                assert!(heavy.color[2] < -0.5 && heavy.color[1] >= 0.0, "a relief quad's code");
+                assert!(
+                    heavy.color[2] < -0.5 && heavy.color[1] >= 0.0,
+                    "a relief quad's code"
+                );
             }
         }
     );

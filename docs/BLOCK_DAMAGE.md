@@ -148,6 +148,47 @@ would split the greedy face per damaged cell.
 **Not done:** the e2e specs are not run locally; the look's tuning with the owner (the cracks read strong);
 in-game screenshots of the new dents (not taken in this change's time box).
 
+### 6.1 Carved scoops: per-pixel relief (WORK_QUEUE item 18)
+
+Owner, 2026-11-11: "the 'chunks' of dirt aren't at all what we discussed. It should be like a normal map
+change (do we support normal/bump maps)? It's completely flat should look like mesh deformation (preferably
+without actually doing it for performance)"; "That part was about digging". The renderer had no normal or
+bump maps; the scoop of rings above was flat facets lit by a modelled bowl and read as chunks. Now a
+scoop is a hollow computed per pixel, with no new geometry, pass or texture:
+
+- **One quad per struck face** (`mesher/damage_mesh.rs` `relief_quad`): over the face's marks' reach
+  (`relief::EXTENT` radii) inside the cell, 4 mm off the face in the opaque mesh, with the face's own uvs
+  (metres; a turned or hanging tile as the face's quad lays it), so the texture meets the face's. Its
+  parameters ride in its vertex colour and light, packed as whole numbers under 2^24 (`relief::pack`; up to
+  the four marks' centres in 1/63 of the cell, radius, depth, rim, march steps, damp), marked by a negative
+  blue (a lava face's green is), read flat by the shader (`TerrainOut.code`). The face's quad and collision
+  are unchanged. Shards keep their facets (§6), and get the relief later on the same function.
+- **The height field** (`dent_height` in `render/shaders.rs`; its CPU copy `dwell_mesh::relief`, which the
+  tests pin): the marks' distances merged by a smooth minimum (two hits run into one hollow), a smooth
+  bowl `depth` deep (slope 0 at the centre and lip) and a raised rim `rim` high with value-noise crumbs, faded
+  to the face at the cell's edge. Width and depth grow with the damage (55 % → 100 %).
+- **Shading** (`dent_shade`): the normal bent by the height's gradient (a normal map computed
+  analytically, central differences), the texture's uv marched down the view ray into the hollow (steep
+  parallax, `parallax` steps and a linear refine), a soft shadow from the rim toward the sun (or moon),
+  occlusion growing with depth and the damp floor darker by `darken`. The texture axes come from the
+  screen derivatives of the position and uv, so nothing assumes which way is up; the face's tint is taken
+  face-locally (`face_rise`), so face B matches face A.
+- **Data:** `damage.look` gains `rim` (m, [0, 0.03], default 0.012), `parallax` (steps 0–8, default 6) and
+  `darken` ([0, 1], default 0.35), validated by `shared/tools/gen.mjs` (a fixture's bad values fail by name).
+- **Tier:** the march runs on the tiers that afford the scene copy (Medium); Low (phones) and the CPU
+  adapter light the dent by its bent normal only (`dwell_look::water_tiers::relief_parallax`, bit 11 of the
+  tier bits). Deviation: tied to the water tier, the quality preset's GPU budget, until there is a general
+  quality tier.
+- **Tests:** `dwell-mesh` `relief` (lowest at the centre, walls tilt toward it, deeper and steeper with
+  damage, flat at the quad's and the cell's edge, the rim proud, two hits one hollow, the packing round
+  trip), `damage_mesh` `a_scoop_is_one_relief_quad_per_struck_face` (both faces, top and side),
+  `dwell-client` `the_relief_shares_its_shape_with_its_cpu_copy` with the naga validation, `dwell-look`
+  `only_the_scene_reading_tiers_march_the_relief`; the bench's `dirt-relief` scenario (dirt dug 2 and 4
+  times, standing and close, day and low sun).
+- **Cracks** are no longer drawn on dug soil (shards and chips keep them).
+- **Not done:** the merge is limited to the four marks a cell keeps; the face's baked corner light is not
+  carried into the quad (it is lit as an open face); the owner's look review.
+
 ## 7. Pieces (0.52.46)
 
 - **Pieces** (owner, 2026-11-11: "8 Rock shards make a rock slab, 8 dirt clumps make a dirt slab, 8 wood

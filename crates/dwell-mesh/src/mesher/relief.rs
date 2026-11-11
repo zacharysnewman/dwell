@@ -149,7 +149,10 @@ mod tests {
     fn the_bowl_is_lowest_at_its_centre() {
         let d = one(0.12);
         let h0 = d.height([0.5, 0.5]);
-        assert!((h0 + 0.12).abs() < 1e-9, "the full depth at the centre: {h0}");
+        assert!(
+            (h0 + 0.12).abs() < 1e-9,
+            "the full depth at the centre: {h0}"
+        );
         for k in 1..40 {
             let p = [0.5 + 0.17 * 1.5 * f64::from(k) / 40.0, 0.5];
             assert!(d.height(p) > h0, "{p:?} higher than the centre");
@@ -173,7 +176,10 @@ mod tests {
         let (shallow, deep) = (one(0.06), one(0.14));
         assert!(deep.height([0.5, 0.5]) < shallow.height([0.5, 0.5]));
         let p = [0.5 + 0.17 * 0.5, 0.5];
-        assert!(deep.normal(p)[2] < shallow.normal(p)[2], "a deeper bowl's walls are steeper");
+        assert!(
+            deep.normal(p)[2] < shallow.normal(p)[2],
+            "a deeper bowl's walls are steeper"
+        );
     }
 
     #[test]
@@ -182,7 +188,10 @@ mod tests {
         // Past EXTENT radii the relief is the face itself: no step where the quad ends.
         for a in 0..16 {
             let th = f64::from(a) * std::f64::consts::TAU / 16.0;
-            let p = [0.5 + 0.17 * EXTENT * th.cos(), 0.5 + 0.17 * EXTENT * th.sin()];
+            let p = [
+                0.5 + 0.17 * EXTENT * th.cos(),
+                0.5 + 0.17 * EXTENT * th.sin(),
+            ];
             assert!(d.height(p).abs() < 1e-9, "{p:?}");
             let n = d.normal(p);
             assert!(n[2] > 0.999, "{n:?}");
@@ -198,7 +207,10 @@ mod tests {
     #[test]
     fn the_rim_stands_proud_and_two_hits_merge_into_one_hollow() {
         let d = one(0.12);
-        assert!(d.height([0.5 + 0.17 * RIM_AT, 0.5]) > 0.005, "the rim is raised");
+        assert!(
+            d.height([0.5 + 0.17 * RIM_AT, 0.5]) > 0.005,
+            "the rim is raised"
+        );
         // Two marks 1.65 radii apart: between them the floor runs down deeper than either bowl's
         // alone there (one hollow), with no rim between them.
         let two = Dent {
@@ -207,7 +219,10 @@ mod tests {
         };
         let mid = two.height([0.5, 0.5]);
         let alone = one(0.12).height([0.5 + 0.14, 0.5]);
-        assert!(mid < 1.5 * alone && alone < 0.0, "one hollow between them: {mid} vs {alone}");
+        assert!(
+            mid < 1.5 * alone && alone < 0.0,
+            "one hollow between them: {mid} vs {alone}"
+        );
     }
 
     #[test]
@@ -218,11 +233,17 @@ mod tests {
         let (back, half, steps, darken, rim, radius, depth) = unpack(c, l);
         assert_eq!(back.len(), 4);
         for (a, b) in back.iter().zip(centres) {
-            assert!((a[0] - b[0]).abs() < 0.01 && (a[1] - b[1]).abs() < 0.01, "{a:?} {b:?}");
+            assert!(
+                (a[0] - b[0]).abs() < 0.01 && (a[1] - b[1]).abs() < 0.01,
+                "{a:?} {b:?}"
+            );
         }
         assert_eq!((half, steps), ([false, true], 6));
         assert!((darken - 0.35).abs() < 0.08 && (rim - 0.012).abs() < 1e-9);
         assert!((radius - 0.171).abs() < 0.002 && (depth - 0.126).abs() < 0.002);
-        assert!(c[2] < -0.5 && c[1] >= 0.0, "marked by its blue, not a lava face's green");
+        assert!(
+            c[2] < -0.5 && c[1] >= 0.0,
+            "marked by its blue, not a lava face's green"
+        );
     }
 }
