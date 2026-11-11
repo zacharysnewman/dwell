@@ -615,3 +615,46 @@ fn saved_species_are_mapped_by_name_and_unknown_ones_dropped() {
         "the wolves dropped"
     );
 }
+
+/// The far forage and the near tall grass agree (docs/ECOLOGY.md §10): scaled by the grass's
+/// climate share, a cell's most forage over its ground's most is the near cap over `maxDensity`,
+/// and its forage regrows toward that, so a dry cell's stays sparse.
+#[test]
+fn the_far_forage_regrows_toward_the_same_climate_cap_as_the_near_grass() {
+    use dwell_worldgen::grass::{Rule, far_share};
+    let unscaled = island(&DATA);
+    let mut isl = unscaled.clone();
+    // A climate from dry in the west (0) to lush in the east (1).
+    let env = |x: i32, _z: i32| (0.5f32, ((f64::from(x) + 1800.0) / 3600.0).clamp(0.0, 1.0));
+    isl.scale_grazing(|x, z| far_share(&env, x, z));
+    let rule = Rule::build(1);
+    for c in 0..isl.n * isl.n {
+        if unscaled.grazing_max[c] == 0.0 {
+            continue;
+        }
+        let (x, z) = isl.centre(c);
+        let share = env(x.floor() as i32, z.floor() as i32).1;
+        let far = isl.grazing_max[c] / unscaled.grazing_max[c];
+        let near = rule.cap(share) / rule.data.max_density;
+        assert!(
+            (far - near).abs() < 1e-9,
+            "cell {c}: far {far}, near {near}"
+        );
+    }
+    let mut eco = by_hand(&isl, vec![]);
+    eco.grazing.iter_mut().for_each(|g| *g = 0.0);
+    step(&isl, &DATA, &mut eco, 200.0);
+    for (c, &g) in eco.grazing.iter().enumerate() {
+        assert!(
+            g <= isl.grazing_max[c] + 1e-9,
+            "cell {c} regrew past its climate's most"
+        );
+        let (x, _) = isl.centre(c);
+        if x < -1500.0 {
+            assert!(
+                g < 0.1 * unscaled.grazing_max[c].max(1e-9),
+                "a dry cell stays sparse: {g}"
+            );
+        }
+    }
+}

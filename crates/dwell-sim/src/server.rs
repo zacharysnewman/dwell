@@ -45,6 +45,8 @@ pub use ecology::{
     CATCH_UP_DAYS, ECOLOGY_SEND_EVERY, EcologySnapshot, GroupView, IDLE_DAYS, MAX_STEPS_PER_TICK,
     next_step, night_on,
 };
+pub use grass::{Grass, GrassEnvelope};
+mod grass;
 mod ground;
 mod growth;
 mod items;
@@ -332,6 +334,10 @@ pub struct ServerConfig {
     /// Tests and tools: the faces' islands (A, B) in place of the world maps', for worlds without
     /// one (the flat world, test generators).
     pub ecology_islands: Option<Arc<[dwell_ecology::Island; 2]>>,
+    /// A new world's tall grass growth (ADR 0075 T3c, docs/ECOLOGY.md §10): on by default; saved
+    /// with the world, which keeps its own. A world saved before it (no `grass_growth` table) has
+    /// none: its meadows stay as they are.
+    pub grass: bool,
 }
 
 /// A new world's settings: this build's clock (`shared/look/daynight.json`), `water_speed` and the
@@ -397,6 +403,7 @@ impl Default for ServerConfig {
             ecology: true,
             ecology_speed: 1.0,
             ecology_islands: None,
+            grass: true,
         }
     }
 }
@@ -944,6 +951,15 @@ pub struct Server {
     growth_unread: bool,
     /// The far ecology (docs/ECOLOGY.md §6): both faces' herds and packs, saved with the world.
     ecology: ecology::Ecology,
+    /// Tall grass growth (ADR 0075 T3c): the switch and each chunk's last day, saved with the world.
+    grass: grass::Grass,
+    /// The saved record is a newer build's: kept, not written over.
+    grass_unread: bool,
+    grass_rule: dwell_worldgen::grass::Rule,
+    /// Tests: an envelope in place of the terrain's.
+    grass_envelope: Option<grass::GrassEnvelope>,
+    /// The face terrains grass grows over (shared with the ecology's forage share).
+    grass_terrain: grass::GrassTerrain,
     /// The world's growers (none: no species trees), built on first use.
     growers: Option<Option<Arc<dwell_worldgen::growth::Growers>>>,
     /// The loaded chunks already looked at for trees (not saved: looked at again after a load).
@@ -1107,6 +1123,14 @@ impl Server {
                     && config.generator_override.is_none(),
                 config.ecology_islands.clone(),
             ),
+            grass: grass::Grass {
+                enabled: config.grass,
+                days: Default::default(),
+            },
+            grass_unread: false,
+            grass_rule: dwell_worldgen::grass::Rule::build(config.world_seed),
+            grass_envelope: None,
+            grass_terrain: Default::default(),
             growers: None,
             growth_scanned: Default::default(),
             ground: Default::default(),
@@ -1173,6 +1197,7 @@ impl Server {
             .collect();
         // The respawn preload's ring: the same sphere, of its own radius (at most the view's).
         server.set_respawn_preload(server.config.respawn_preload_radius_chunks);
+        server.share_grass_with_ecology();
         server
     }
 
@@ -1859,6 +1884,8 @@ impl Server {
         self.flow_lava();
         // Trees grow by the world's days (ADR 0079 S3).
         self.grow_trees();
+        // Tall grass grows and spreads by them (ADR 0075 T3c).
+        self.grow_grass();
         // The far ecology steps by them too (docs/ECOLOGY.md §6).
         self.step_ecology();
         self.send_ecology();
@@ -4398,6 +4425,18 @@ impl Server {
         if let Some(b) = db.ecology() {
             self.ecology.restore(b);
         }
+        // Grass growth: the world's own; a world saved before it has none, a new one the config's.
+        match db.grass() {
+            Some(b) => match grass::Grass::from_bytes(&b) {
+                Some(g) => self.grass = g,
+                None => {
+                    self.grass_unread = true;
+                    self.grass.enabled = false;
+                }
+            },
+            None => self.grass.enabled = meta.is_none() && self.config.grass,
+        }
+        self.share_grass_with_ecology();
         if let Some(b) = db.ground_gone() {
             match dwell_world::ground::GroundGone::from_bytes(&b) {
                 Some(g) => self.ground = g,
@@ -4527,6 +4566,9 @@ impl Server {
             batch.ground_gone = Some(self.ground.to_bytes());
         }
         batch.ecology = Some(self.ecology.record());
+        if !self.grass_unread {
+            batch.grass = Some(self.grass.to_bytes());
+        }
         if !self.damage_unread {
             batch.damage = Some(self.damage.to_bytes());
         }

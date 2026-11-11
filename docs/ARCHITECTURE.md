@@ -993,6 +993,13 @@ rules that spawn the species' creatures are left out (`Creatures::reserved`).
 
 ## 6. Voxel World
 
+
+**Tall grass growth** (ADR 0075 T3c, ECOLOGY.md §10) **[built]**: `shared/worldgen/grass.json` →
+`dwell_worldgen::grass` (a face-local step capped by the T3b climate envelope); the server's grass step
+(`dwell-sim` `server/grass.rs`, every 5 s, loaded chunks, bounded catch-up) and its optional
+`grass_growth` world table (the switch, each chunk's last day; on for new worlds only). The ecology's
+island forage is scaled by the same climate share.
+
 ### 6.1 Grid & chunks **[in progress]**
 
 > **Prototype content.** Every material that exists today — its name, look, and role (the

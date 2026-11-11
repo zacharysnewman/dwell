@@ -154,6 +154,17 @@ All opt-in per biome, none in the default biome, so the default world and the go
   entries fail with messages (Rust and `gen.test.mjs`); the goldens and the starter's coverage unchanged.
   No screenshots yet.
 
+### T3c, tall grass grows and spreads (built)
+
+Owner (2026-11-11): "I want tall grass to steadily grow and spread. It should probably have a max depending
+on climate/biome." `shared/worldgen/grass.json` names the block, its ground, the decoration whose envelope
+caps it and the rates; the cap is the T3b envelope: a column is fertile when the decoration's own roll is
+under `maxDensity` × the undergrowth factor of the kind governing it (0 in a biome without the
+decoration), so generated tufts are always fertile and lush meadows fill while the dry lee stays sparse.
+The server grows loaded chunks a world day at a time (bounded catch-up on load), never over a player's
+block; the far ecology's forage follows the same share. On for new worlds only (an optional
+`grass_growth` table); worldgen and the goldens are unchanged. Details: docs/ECOLOGY.md §10.
+
 First look (Chisel, seed 7, the default and boreal both at 1, `rainShare` 0.7): trees follow the river
 corridors and the wetter windward ground; with the moisture floor at 0 and a 9 °C tree line, the
 vegetation overlay thins with altitude and on thin granite soil. At the default rain field the

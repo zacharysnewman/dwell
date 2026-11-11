@@ -2938,6 +2938,32 @@ impl TerrainGenerator {
         })
     }
 
+    /// Grass growth's envelope at face-local column (x, z) (ADR 0075 T3c): decoration `name`'s own
+    /// per-cell roll and the climate's share of it there — 0 where the column's biome doesn't list
+    /// it (with more than one biome), else its biome's undergrowth factor (1 without a climate).
+    /// None when no decoration is named so.
+    pub fn grass_envelope(&self, name: &str, x: i32, z: i32) -> Option<(f32, f64)> {
+        let i = DECORATIONS.iter().position(|d| d.name == name)?;
+        let roll = self.decorations.get(i)?.roll(x, z);
+        if self.biomes.list.len() <= 1 {
+            return Some((roll, 1.0));
+        }
+        let col = self.column_at(x, z);
+        let Some(b) = self
+            .biomes
+            .biome_of_palette(col.palette)
+            .map(|b| &self.biomes.list[b])
+        else {
+            return Some((roll, 1.0));
+        };
+        if !b.decorations.contains(&name) {
+            return Some((roll, 0.0));
+        }
+        let kind = self.vegetation.kind_for_decoration(name);
+        let share = self.undergrowth_factor(b, kind, || self.climate_at(x.into(), z.into()));
+        Some((roll, share))
+    }
+
     /// The biomes whose weights count (one biome without a biome map).
     fn ground_biomes(&self) -> &[Biome] {
         if self.biomes.field.is_none() {
