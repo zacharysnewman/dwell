@@ -262,6 +262,25 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 72. ~23 fps on an iPhone at Low, and z-fighting where leaf cards meet tree trunks (fixed after 0.52.109; the frame rate partly)
+
+Owner, 2026-11-11 (iPhone 17, Safari, quality Low): "I'm only getting ~23 fps on mobile, seeing lots of z-fighting on
+tree trunks with the leaf cards. What might be dropping frames since the last while. Used to get 60 fps."
+
+- **Z-fighting:** a leaf cell's cards (shared/look/leaves.json `cards`, 0.52.56) stood off every exposed face, and a face
+  toward a log counts as exposed (an octagonal log covers nothing), so cards were placed through and along the trunk's bark
+  beside it. Now a card with any corner reaching into a neighbouring block that is neither leaves nor empty is dropped
+  (`mesher/leaves.rs` `leaf_voxel`). Pinned by `dwell-mesh` `leaf_cards_stay_out_of_the_logs_beside_them` (both faces):
+  red on the unfixed mesher (a card's corner inside the log beside the leaf), green with the fix.
+- **Frame rate:** the cards are now off on the phone tier by data (`cards.tiers.phone`, `render::cards_for`; a `?cards=0|1`
+  dev override). Measured on the bench's `--touch` phone page (393 × 852 at 3×, Low preset, unthrottled, M-series desktop
+  GPU): in the starter's broadleaf forest `gpu.frame` p95 4.76 → 4.36 ms (−8 %; `gpu.near` 3.55 → 3.18, `gpu.far`
+  2.38 → 2.10) with cards off; at the default world's spawn (no near trees) no change. The cards are one cost, not the
+  whole regression: the largest passes on Low are `gpu.composite` (~2.9–3.3 ms), `gpu.arms` (~2.1 ms at the spawn) and
+  `gpu.water.tiles` (1.1–1.7 ms with no water in view). **Outstanding:** those three toggled one by one, and a comparison
+  with a release from before the leaf, cloud and lava work: the launcher's builds (`/dwell/v/0.51.24/`) did not start
+  under the bench (a 404 on a resource), and 0.52.40 is no longer published.
+
 ### 71. "Starting the graphics" takes a long time with no elapsed time shown (fixed after 0.52.101)
 
 Owner, 2026-11-11: "'Starting the graphics' now takes a long time without showing elapsed time." The stage is

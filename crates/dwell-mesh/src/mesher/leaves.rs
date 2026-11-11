@@ -444,7 +444,20 @@ pub(super) fn leaf_voxel(
                 f64::from(cell[a]) + 0.5 + if a == 1 { p[a] / CELL_H } else { p[a] }
             }))
         };
-        let list = cards(ex, world, &LEAVES.cards, at);
+        // A card reaching into a block beside it that is neither leaves nor empty (a trunk's bark)
+        // would cut through or lie along that block's faces and z-fight with them: none there.
+        let half = [0.5, 0.5 * CELL_H, 0.5];
+        let blocked = |p: V| {
+            let o: [i32; 3] =
+                std::array::from_fn(|a| (p[a] / (2.0 * half[a]) + 0.5).floor() as i32);
+            let c: [i32; 3] = std::array::from_fn(|a| cell[a] + o[a]);
+            if o == [0; 3] || !inside(c) {
+                return false;
+            }
+            let kn = cells.kind(c[0], c[1], c[2]);
+            kn.shape != super::Shape::Empty && !kn.style.leafy
+        };
+        let list = cards(ex, world, &LEAVES.cards, at, blocked);
         emit_cards(b, cells, k, cell, &list, tint);
     }
 }
@@ -476,12 +489,15 @@ fn cross(a: V, b: V) -> V {
 /// `leafCards`): per exposed face a number from `look.density` (tops 2.6×, sides 2.2× by their
 /// area, bottoms 1.2×), each `look.size_m` ±25 % across, standing a little off the face and facing
 /// out of the crown (`outward`, metres from the cell's centre → the crown's direction), jittered by
-/// a hash of the cell and face, so a cell's cards are the same whichever chunk meshes it.
+/// a hash of the cell and face, so a cell's cards are the same whichever chunk meshes it. A card
+/// with a corner where `blocked` (metres from the cell's centre: inside a block it must not cross)
+/// is dropped.
 pub(crate) fn cards(
     ex: [bool; 6],
     world: [i64; 3],
     look: &dwell_look::leaves::LeafCards,
     outward: impl Fn(V) -> Option<V>,
+    blocked: impl Fn(V) -> bool,
 ) -> Vec<Card> {
     let half = [0.5, 0.5 * CELL_H, 0.5];
     let mut out = Vec::new();
@@ -538,6 +554,9 @@ pub(crate) fn cards(
             let h = size / 2.0;
             let pts: [V; 4] = [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)]
                 .map(|(a, b)| std::array::from_fn(|i| c[i] + ux[i] * a * h + uy[i] * b * h));
+            if pts.iter().any(|&p| blocked(p)) {
+                continue;
+            }
             let blend = LEAVES.canopy_blend.max(0.6);
             let normals = pts.map(|p| canopy_normal(cn, outward(p), blend));
             out.push(Card {

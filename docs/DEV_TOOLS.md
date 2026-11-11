@@ -1521,6 +1521,12 @@ shading off, to attribute `gpu.*.water` and `gpu.frame` to them; a `--compare` c
 scenario's `water` step switches it mid-run. On a GPU shared with other processes, compare a pass's `min` (in
 every summary) rather than its p50. WATER_RENDERING.md §8 ("Cost") has the method and the numbers.
 
+## The leaf cards (`?cards=`)
+
+`?cards=1` meshes the leaf cards whatever the renderer's tier says (`shared/look/leaves.json` `cards.tiers`: off on the
+phone tier and a CPU adapter), and `?cards=0` meshes none; set at page load, before the world streams in. A bench
+`--compare` configuration with `params: {"cards": "1"}` measures their cost on the `--touch` phone page (BUGS.md #72).
+
 ## The GPU heightfield (`?heightfield=`)
 
 `?heightfield=1` draws the near water's surface from the GPU heightfield whatever the tier says
