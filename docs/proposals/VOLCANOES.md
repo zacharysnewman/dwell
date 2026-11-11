@@ -76,3 +76,33 @@ Hotspot islands map to effusive; arc cones to dormant, waiting or blown.
    ash when it stops); builds mostly flattened (cleared or replaced) or flooded, not broken into physics
    bodies.
 5. **Simulated:** "same as water": near players, fast-forwarded elsewhere.
+
+## 6. As built: V1, the simulation core (2026-11-11)
+
+Lava as a fluid on a test patch, simulation and data only (no shaders, no drawing, no browser; the
+look and the in-game check come next, locally). ARCHITECTURE.md §6.8 has the model.
+
+- **Its own surface grid, not a second liquid on the water grid.** The water grid
+  (`dwell-sim` `water.rs`, ADR 0060) carries one depth and one law per column; giving it a fluid kind
+  per column would mean a heat per column, a second law and its sleeping, held-sea and thread paths
+  learning both. Lava has its own small grid (`crates/dwell-lava`, `Field`) with the same near/far
+  scheduling instead. Lava and water meet through the field's water flag (the water grid's columns,
+  once wired) and the steam events.
+- **Flow:** the viscous gravity-current law with a yield depth (a Bingham plug), far slower than the
+  water's for the same slope (tested against the water's own Manning speed).
+- **Cooling:** from the edges and top into `dwell:basalt` (new land); the quench edge with water is
+  `dwell:obsidian` plus a steam event. Both blocks are added (break, drop and sound like stone;
+  placeholder looks: stone's tile under a dark tint).
+- **Vents as data:** lake (held at its level: the crater fills to its rim and stays molten under its
+  crust) or river (steady: it runs downhill and crusts behind its front).
+- **Danger (Q1's default):** `damagePerSecond` while in it, `burnDamagePerSecond` for `burnSeconds`
+  after, as data.
+- **Simulated like water (Q5):** every tick near a player, fast-forwarded elsewhere; a far run matches
+  a near one within a few percent (tested).
+- **Saves:** a versioned record per field, for an optional new table (additive; older builds ignore it).
+- **Data:** `shared/fluids/lava.json` (speed, viscosity, yield, cooling, rocks, light, damage, burn),
+  `shared/fluids/lava.mjs`, a fixture with a fluid and vents by data alone.
+
+**Next:** the server's fields and tick, rock and lava cells in chunks, the water grid's columns and
+steam, the damage in the server's vitals (a burn cause), the save table, the lava block and its look
+(light, glow, crust), then V2's vents on the hotspot cones.

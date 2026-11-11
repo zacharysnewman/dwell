@@ -75,7 +75,7 @@ export interface ShapeDef {
 }
 
 /** FNV-1a 64 over the canonical state strings (each followed by "\n") in id order. */
-export const REGISTRY_HASH = 0xc16bd6cfef78f0cbn;
+export const REGISTRY_HASH = 0xa43e03471d5b9c71n;
 
 export const BLOCK_DEFS: readonly BlockDef[] = [
   { id: 'dwell:air', first: 0, count: 1, properties: [] },
@@ -116,6 +116,8 @@ export const BLOCK_DEFS: readonly BlockDef[] = [
   { id: 'dwell:glacier_ice_ramp', first: 398, count: 48, properties: [{ name: 'facing', values: ['north', 'east', 'south', 'west'] }, { name: 'flooded', values: ['false', 'true'] }, { name: 'half', values: ['bottom', 'top'] }, { name: 'shape', values: ['ramp', 'steep_lower', 'steep_upper'] }], sound: 'dwell:stone' },
   { id: 'dwell:red_sandstone', first: 446, count: 2, properties: [{ name: 'flooded', values: ['false', 'true'] }], sound: 'dwell:stone' },
   { id: 'dwell:red_sandstone_ramp', first: 448, count: 48, properties: [{ name: 'facing', values: ['north', 'east', 'south', 'west'] }, { name: 'flooded', values: ['false', 'true'] }, { name: 'half', values: ['bottom', 'top'] }, { name: 'shape', values: ['ramp', 'steep_lower', 'steep_upper'] }], sound: 'dwell:stone' },
+  { id: 'dwell:basalt', first: 496, count: 2, properties: [{ name: 'flooded', values: ['false', 'true'] }], sound: 'dwell:stone' },
+  { id: 'dwell:obsidian', first: 498, count: 2, properties: [{ name: 'flooded', values: ['false', 'true'] }], sound: 'dwell:stone' },
 ];
 
 /** The shapes block states use. */
@@ -654,6 +656,10 @@ const STATES_3: readonly StateDef[] = [
   { id: 493, state: 'dwell:red_sandstone_ramp[facing=west,flooded=true,half=top,shape=ramp]', block: 37, values: { facing: 'west', flooded: 'true', half: 'top', shape: 'ramp' }, look: 'shaped', render: 'opaque', color: 0xb8653f, opacity: 1, textures: { top: 'redSandstone', side: 'redSandstone', bottom: 'redSandstone' }, shape: 23, flooded: true, placeable: false },
   { id: 494, state: 'dwell:red_sandstone_ramp[facing=west,flooded=true,half=top,shape=steep_lower]', block: 37, values: { facing: 'west', flooded: 'true', half: 'top', shape: 'steep_lower' }, look: 'shaped', render: 'opaque', color: 0xb8653f, opacity: 1, textures: { top: 'redSandstone', side: 'redSandstone', bottom: 'redSandstone' }, shape: 24, flooded: true, placeable: false },
   { id: 495, state: 'dwell:red_sandstone_ramp[facing=west,flooded=true,half=top,shape=steep_upper]', block: 37, values: { facing: 'west', flooded: 'true', half: 'top', shape: 'steep_upper' }, look: 'shaped', render: 'opaque', color: 0xb8653f, opacity: 1, textures: { top: 'redSandstone', side: 'redSandstone', bottom: 'redSandstone' }, shape: 25, flooded: true, placeable: false },
+  { id: 496, state: 'dwell:basalt[flooded=false]', block: 38, values: { flooded: 'false' }, look: 'cube', render: 'opaque', color: 0x4a4648, opacity: 1, textures: { top: 'stone', side: 'stone', bottom: 'stone' }, shape: 1, flooded: false, placeable: true },
+  { id: 497, state: 'dwell:basalt[flooded=true]', block: 38, values: { flooded: 'true' }, look: 'cube', render: 'opaque', color: 0x4a4648, opacity: 1, textures: { top: 'stone', side: 'stone', bottom: 'stone' }, shape: 1, flooded: true, placeable: false },
+  { id: 498, state: 'dwell:obsidian[flooded=false]', block: 39, values: { flooded: 'false' }, look: 'cube', render: 'opaque', color: 0x1d1724, opacity: 1, textures: { top: 'stone', side: 'stone', bottom: 'stone' }, shape: 1, flooded: false, placeable: true },
+  { id: 499, state: 'dwell:obsidian[flooded=true]', block: 39, values: { flooded: 'true' }, look: 'cube', render: 'opaque', color: 0x1d1724, opacity: 1, textures: { top: 'stone', side: 'stone', bottom: 'stone' }, shape: 1, flooded: true, placeable: false },
 ];
 
 export const STATE_DEFS: readonly StateDef[] = [

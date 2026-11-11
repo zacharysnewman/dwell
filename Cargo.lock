@@ -861,6 +861,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "dwell-lava"
+version = "0.0.0"
+dependencies = [
+ "dwell-blocks",
+ "dwell-world",
+]
+
+[[package]]
 name = "dwell-lod"
 version = "0.0.0"
 dependencies = [
