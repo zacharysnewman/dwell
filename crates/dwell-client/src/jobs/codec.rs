@@ -222,10 +222,11 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
             damage,
             ground,
             water_tops,
+            cards,
         } => {
             w.u8(4);
-            // Bit 0 the mirror, bit 1 no water tops.
-            w.u8(u8::from(*mirror) | if *water_tops { 0 } else { 2 });
+            // Bit 0 the mirror, bit 1 no water tops, bit 2 no leaf cards.
+            w.u8(u8::from(*mirror) | if *water_tops { 0 } else { 2 } | if *cards { 0 } else { 4 });
             origin.iter().for_each(|v| w.i32(*v));
             w.u16s(padded);
             w.bytes(light);
@@ -322,7 +323,7 @@ pub fn decode_job(bytes: &[u8]) -> Result<(u32, Job), DecodeError> {
         },
         4 => {
             let bits = r.u8()?;
-            let (mirror, water_tops) = (bits & 1 != 0, bits & 2 == 0);
+            let (mirror, water_tops, cards) = (bits & 1 != 0, bits & 2 == 0, bits & 4 == 0);
             let origin = [r.i32()?, r.i32()?, r.i32()?];
             let padded = r.u16s()?;
             let light = r.bytes()?;
@@ -375,6 +376,7 @@ pub fn decode_job(bytes: &[u8]) -> Result<(u32, Job), DecodeError> {
                 damage,
                 ground,
                 water_tops,
+                cards,
             }
         }
         5 => {
@@ -628,6 +630,7 @@ mod tests {
             )],
             ground: Some((0x1234_5678_9abc, vec![[1, 2, 3], [4, 5, 6]], vec![3, 4])),
             water_tops: false,
+            cards: false,
         });
         jobs.push(Job::MeshSection {
             cells: vec![1; dwell_world::lod::VOLUME],
@@ -676,6 +679,7 @@ mod tests {
                 damage: Vec::new(),
                 ground: Some((7, vec![[1, 2, 3]], vec![9])),
                 water_tops: true,
+                cards: true,
             },
         );
         for n in 0..bytes.len() {

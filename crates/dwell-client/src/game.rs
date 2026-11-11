@@ -108,6 +108,11 @@ pub trait Scene: TerrainRenderer {
     fn draws_heightfield(&self) -> bool {
         false
     }
+    /// Leaf cards are drawn (shared/look/leaves.json `cards`; not on a CPU adapter, the cheapest
+    /// tier): chunks are meshed with them (`dwell_mesh::ChunkFlags`).
+    fn draws_cards(&self) -> bool {
+        true
+    }
     /// Rewrites chunk `coord`'s heightfield tile alone (none: its water is gone), its meshes kept.
     fn set_water_tile(
         &mut self,
@@ -3037,6 +3042,8 @@ impl<S: Scene> Game<S> {
         // Chunks meshed from now on leave their water's tops to the heightfield where it draws.
         let water_tops = !self.scene.borrow().draws_heightfield();
         self.pool.borrow_mut().water_tops = water_tops;
+        let cards = self.scene.borrow().draws_cards();
+        self.pool.borrow_mut().cards = cards;
         let done = telemetry::span("jobs.poll", || self.pool.borrow_mut().poll());
         telemetry::add("jobs.done", done.len() as f64);
         telemetry::span("jobs.apply", || self.on_jobs(done));

@@ -30,7 +30,7 @@ function checkNumber(where, v, lo, hi) {
 
 /** Checks the look; returns it. Throws naming the entry. */
 export function validateLeaves(data) {
-  checkKeys('(root)', data, ['blocks', 'canopyBlend', 'chamfer']);
+  checkKeys('(root)', data, ['blocks', 'canopyBlend', 'chamfer', 'cards']);
   if (!Array.isArray(data.blocks) || data.blocks.length === 0) fail('blocks must list at least one block');
   data.blocks.forEach((b, i) => {
     if (typeof b !== 'string' || !/^[a-z0-9_]+:[a-z0-9_]+$/.test(b)) {
@@ -41,6 +41,13 @@ export function validateLeaves(data) {
   checkNumber('canopyBlend', data.canopyBlend, 0, 1);
   // Past 0.45 an edge's cut meets the opposite edge's in a one-cell-thick layer of leaves.
   checkNumber('chamfer', data.chamfer, 0, 0.45);
+  const c = data.cards;
+  checkKeys('cards', c, ['density', 'sizeM', 'swayM', 'fadeStartM', 'fadeEndM']);
+  checkNumber('cards.density', c.density, 0, 4);
+  checkNumber('cards.sizeM', c.sizeM, 0.1, 3);
+  checkNumber('cards.swayM', c.swayM, 0, 0.5);
+  checkNumber('cards.fadeStartM', c.fadeStartM, 0, 512);
+  checkNumber('cards.fadeEndM', c.fadeEndM, c.fadeStartM + 1, 1024);
   return data;
 }
 
@@ -51,13 +58,20 @@ export function leavesRust(data) {
   return [
     `// ${header}`,
     '',
-    'use crate::leaves::LeavesLook;',
+    'use crate::leaves::{LeafCards, LeavesLook};',
     '',
     "/// The leaves' look (shared/look/leaves.json).",
     'pub const LEAVES: LeavesLook = LeavesLook {',
     `    blocks: &[${data.blocks.map((b) => JSON.stringify(b)).join(', ')}],`,
     `    canopy_blend: ${rf(data.canopyBlend)},`,
     `    chamfer: ${rf(data.chamfer)},`,
+    '    cards: LeafCards {',
+    `        density: ${rf(data.cards.density)},`,
+    `        size_m: ${rf(data.cards.sizeM)},`,
+    `        sway_m: ${rf(data.cards.swayM)},`,
+    `        fade_start_m: ${rf(data.cards.fadeStartM)},`,
+    `        fade_end_m: ${rf(data.cards.fadeEndM)},`,
+    '    },',
     '};',
     '',
   ].join('\n');

@@ -1725,11 +1725,17 @@ pub struct ChunkFlags {
     /// Liquid cells' top faces are meshed (false: the GPU heightfield draws the water's surface;
     /// its sides, falls and pour slopes, and flooded cells' water, are meshed as before).
     pub water_tops: bool,
+    /// Leaf cards (shared/look/leaves.json `cards`) are meshed: false on a CPU adapter, the
+    /// cheapest tier of everything (`dwell-client` `render::cards_for`).
+    pub cards: bool,
 }
 
 impl Default for ChunkFlags {
     fn default() -> Self {
-        Self { water_tops: true }
+        Self {
+            water_tops: true,
+            cards: true,
+        }
     }
 }
 
@@ -2183,7 +2189,7 @@ fn mesh_cells(
                         RenderMode::Translucent => &mut transparent,
                         RenderMode::Cutout => &mut cutout,
                     };
-                    leaves::leaf_voxel(target, &cells, crowns, &k, [cx, cy, cz]);
+                    leaves::leaf_voxel(target, &cells, crowns, &k, [cx, cy, cz], flags.cards);
                 }
                 if k.liquid {
                     fall_into(&mut transparent, &cells, &k, cx, cy, cz);

@@ -15,4 +15,19 @@ pub struct LeavesLook {
     pub canopy_blend: f64,
     /// Cells: how far an exposed edge or corner is cut back.
     pub chamfer: f64,
+    pub cards: LeafCards,
+}
+
+/// The leaf cards: alpha-cut leaf clumps on exposed leaf faces, near trees only.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LeafCards {
+    /// Cards per exposed face (before the per-face share).
+    pub density: f64,
+    /// A card's width (m), ±25 %.
+    pub size_m: f64,
+    /// How far the wind moves a card's corners (m).
+    pub sway_m: f64,
+    /// They dissolve with distance from `fade_start_m` to `fade_end_m` (m).
+    pub fade_start_m: f64,
+    pub fade_end_m: f64,
 }

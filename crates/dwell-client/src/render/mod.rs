@@ -184,6 +184,12 @@ pub fn shafts_for(device_type: wgpu::DeviceType, quality: ShaftQuality) -> Shaft
 }
 
 /// Whether the night sky draws its stars (a hashed grid per pixel): not on a CPU adapter.
+/// Whether the leaf cards (shared/look/leaves.json `cards`) are drawn: not on a CPU adapter, which
+/// draws the cheapest tier of everything (their overdraw is per pixel).
+pub fn cards_for(device_type: wgpu::DeviceType) -> bool {
+    device_type != wgpu::DeviceType::Cpu
+}
+
 pub fn stars_for(device_type: wgpu::DeviceType) -> bool {
     !is_cpu(device_type)
 }
@@ -5375,6 +5381,9 @@ impl TerrainRenderer for Renderer {
 }
 
 impl crate::game::Scene for Renderer {
+    fn draws_cards(&self) -> bool {
+        cards_for(self.adapter)
+    }
     fn draws_heightfield(&self) -> bool {
         heightfield_drawn(self.water().tier().heightfield, self.heightfield_override)
     }
@@ -5755,6 +5764,8 @@ mod tests {
     #[test]
     fn software_adapters_draw_without_multisampling() {
         assert_eq!(samples_for(wgpu::DeviceType::Cpu, SAMPLES), 1);
+        assert!(!cards_for(wgpu::DeviceType::Cpu));
+        assert!(cards_for(wgpu::DeviceType::DiscreteGpu));
         assert_eq!(samples_for(wgpu::DeviceType::DiscreteGpu, SAMPLES), SAMPLES);
         assert_eq!(
             samples_for(wgpu::DeviceType::IntegratedGpu, SAMPLES),

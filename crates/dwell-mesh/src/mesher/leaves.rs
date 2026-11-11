@@ -369,6 +369,7 @@ pub(super) fn leaf_voxel(
     crowns: &Crowns,
     k: &Kind,
     cell: [i32; 3],
+    with_cards: bool,
 ) {
     let nb = |i: usize, c: [i32; 3]| {
         let (a, s) = FACES[i];
@@ -402,6 +403,183 @@ pub(super) fn leaf_voxel(
     let list = pieces(ex, leafy, nb_ex, LEAVES.chamfer);
     for piece in list {
         emit(b, cells, crowns, k, (cell, ex), &piece);
+    }
+    if with_cards && k.style.render == dwell_blocks::RenderMode::Cutout {
+        let world: [i64; 3] =
+            std::array::from_fn(|a| i64::from(cells.origin[a]) + i64::from(cell[a]));
+        let at = |p: V| {
+            crowns.outward(std::array::from_fn(|a| {
+                f64::from(cell[a]) + 0.5 + if a == 1 { p[a] / CELL_H } else { p[a] }
+            }))
+        };
+        let list = cards(ex, world, &LEAVES.cards, at);
+        emit_cards(b, cells, k, cell, &list);
+    }
+}
+
+/// A leaf card: its corners (metres from the cell's centre, counter-clockwise seen from its
+/// front), the normal at each (metres) and the cell face it stands off.
+#[derive(Clone, Debug)]
+pub(crate) struct Card {
+    pub pts: [V; 4],
+    pub normals: [V; 4],
+    pub face: usize,
+}
+
+fn mix64(mut z: u64) -> u64 {
+    z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    z ^ (z >> 31)
+}
+
+fn cross(a: V, b: V) -> V {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+
+/// The cards of a leaf cell exposed on `ex` at face-local world cell `world` (the Lab's
+/// `leafCards`): per exposed face a number from `look.density` (tops 2.6×, sides 2.2× by their
+/// area, bottoms 1.2×), each `look.size_m` ±25 % across, standing a little off the face and facing
+/// out of the crown (`outward`, metres from the cell's centre → the crown's direction), jittered by
+/// a hash of the cell and face, so a cell's cards are the same whichever chunk meshes it.
+pub(crate) fn cards(
+    ex: [bool; 6],
+    world: [i64; 3],
+    look: &dwell_look::leaves::LeafCards,
+    outward: impl Fn(V) -> Option<V>,
+) -> Vec<Card> {
+    let half = [0.5, 0.5 * CELL_H, 0.5];
+    let mut out = Vec::new();
+    for (d, &open) in ex.iter().enumerate() {
+        if !open {
+            continue;
+        }
+        let mut state = mix64(
+            (world[0] as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15)
+                ^ (world[1] as u64).wrapping_mul(0xc2b2_ae3d_27d4_eb4f)
+                ^ (world[2] as u64).wrapping_mul(0x1656_67b1_9e37_79f9)
+                ^ (d as u64 + 1),
+        );
+        let mut r = || {
+            state = mix64(state.wrapping_add(0x9e37_79b9_7f4a_7c15));
+            (state >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let (axis, _) = FACES[d];
+        let (ua, va) = ((axis + 1) % 3, (axis + 2) % 3);
+        let share = match d {
+            2 => 2.6,
+            3 => 1.2,
+            _ => 2.2 * CELL_H,
+        };
+        let want = look.density * share;
+        let mut n = want.floor() as usize + usize::from(r() < want.fract());
+        let fnrm = unit(d);
+        while n > 0 {
+            n -= 1;
+            let size = look.size_m * (0.75 + r() * 0.5);
+            let mut c = [0.0; 3];
+            c[axis] = fnrm[axis] * (half[axis] + size * (0.05 + r() * 0.2));
+            c[ua] = (r() - 0.5) * 1.8 * half[ua];
+            c[va] = (r() - 0.5) * 1.8 * half[va];
+            let out_dir = canopy_normal(fnrm, outward(c), 0.5);
+            let jitter = [r() - 0.5, r() - 0.5, r() - 0.5];
+            let cn = normalise(std::array::from_fn(|i| out_dir[i] + jitter[i] * 0.9))
+                .unwrap_or(out_dir);
+            let up0: V = if cn[1].abs() > 0.9 {
+                [1.0, 0.0, 0.0]
+            } else {
+                [0.0, 1.0, 0.0]
+            };
+            // Turn `up` about the card's normal (Rodrigues).
+            let ang = (r() - 0.5) * 1.2;
+            let (s, co) = ang.sin_cos();
+            let kx = cross(cn, up0);
+            let kd = dot(cn, up0);
+            let up: V = std::array::from_fn(|i| {
+                up0[i] * co + kx[i] * s + cn[i] * kd * (1.0 - co)
+            });
+            let Some(ux) = normalise(cross(up, cn)) else {
+                continue;
+            };
+            let uy = cross(cn, ux);
+            let h = size / 2.0;
+            let pts: [V; 4] = [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)]
+                .map(|(a, b)| std::array::from_fn(|i| c[i] + ux[i] * a * h + uy[i] * b * h));
+            let blend = LEAVES.canopy_blend.max(0.6);
+            let normals = pts.map(|p| canopy_normal(cn, outward(p), blend));
+            out.push(Card {
+                pts,
+                normals,
+                face: d,
+            });
+        }
+    }
+    out
+}
+
+/// Pushes `list` into the cutout mesh `b` with their `plants` stream (sway, wind, the distance
+/// fade) and `bare` (no ink).
+fn emit_cards(b: &mut Builder, cells: &Cells<'_>, k: &Kind, cell: [i32; 3], list: &[Card]) {
+    if list.is_empty() {
+        return;
+    }
+    let look = &LEAVES.cards;
+    // The streams the leaf faces before skipped: zeros, as the mesher pads them.
+    let before = b.vertex_count() as usize;
+    b.m.plants.resize(before * 4, 0.0);
+    b.m.bare.resize(before, 0.0);
+    let (color, mut tile) = surface(&k.style, 0, 1);
+    tile.turn = false;
+    let [x, y, z] = cell;
+    for card in list {
+        let d = card.face;
+        let (a, s) = FACES[d];
+        let mut fq = [0.5; 3];
+        fq[a] = if s > 0 { 1.0 } else { 0.0 };
+        let light = vertex_light(AO_OPEN, cells.sky_rays(cell, fq, unit(d), 60 + d as i64));
+        let front = super::neighbour_of(x, y, z, a, s);
+        let (u, v) = ((a + 1) % 3, (a + 2) % 3);
+        let (sky, block) = cells.flood.corner(cells.occ, front, u, 1, v, 1);
+        let flood = [
+            f32::from(sky) / crate::flood::QUARTERS,
+            f32::from(block) / crate::flood::QUARTERS,
+        ];
+        let base = b.vertex_count();
+        for (i, p) in card.pts.iter().enumerate() {
+            let n = card.normals[i];
+            let tint = normal_tint(n[0], n[1], n[2]);
+            let pos = [
+                f64::from(x) + 0.5 + p[0],
+                f64::from(y) + 0.5 + p[1] / CELL_H,
+                f64::from(z) + 0.5 + p[2],
+            ];
+            b.m.positions.extend(pos.map(|c| c as f32));
+            b.m.normals.extend(n.map(|c| c as f32));
+            b.m.colors.extend([
+                (super::channel(color, 16) * tint[0]) as f32,
+                (super::channel(color, 8) * tint[1]) as f32,
+                (super::channel(color, 0) * tint[2]) as f32,
+            ]);
+            let uv = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]][i];
+            b.m.uvs.extend(uv);
+            b.push_tile(&tile);
+            b.m.light.push(light);
+            b.m.flood.extend(flood);
+            // The far corners (the top two) sway; the near ones barely.
+            let sway = if i >= 2 { look.sway_m } else { look.sway_m * 0.25 };
+            b.m.plants.extend([
+                sway as f32,
+                1.0,
+                look.fade_start_m as f32,
+                look.fade_end_m as f32,
+            ]);
+            b.m.bare.push(1.0);
+        }
+        b.m.indices
+            .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
     }
 }
 

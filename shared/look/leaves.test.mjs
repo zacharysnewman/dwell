@@ -29,6 +29,9 @@ test('bad entries fail with their path named', () => {
     [(d) => (d.chamfer = 0.6), /chamfer must be a number in \[0, 0.45\]/],
     [(d) => (d.extra = 1), /unknown entry \(root\)\.extra/],
     [(d) => delete d.chamfer, /missing entry \(root\)\.chamfer/],
+    [(d) => (d.cards.fadeEndM = d.cards.fadeStartM), /cards\.fadeEndM must be a number/],
+    [(d) => (d.cards.density = -1), /cards\.density must be a number/],
+    [(d) => delete d.cards.sizeM, /missing entry cards\.sizeM/],
   ];
   for (const [edit, message] of cases) {
     const d = data();

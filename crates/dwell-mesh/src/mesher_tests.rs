@@ -1986,9 +1986,10 @@ dwell_world::both_faces!(
             "a dry leaf has the water's faces round it"
         );
         // A lone leaf (shared/look/leaves.json): 6 faces and 12 edge cuts (quads) and 8 corner
-        // cuts (triangles, half a quad each).
+        // cuts (triangles, half a quad each); its cards (`cards`, a quad each) besides.
+        let cards = flooded.cutout.plants.chunks(16).filter(|p| p[3] > 0.0).count();
         assert_eq!(
-            quads(&flooded.cutout),
+            quads(&flooded.cutout) - cards,
             22,
             "the leaf drawn inside the water"
         );
@@ -2421,5 +2422,50 @@ dwell_world::both_faces!(
             ts.len(),
             &ts[..ts.len().min(6)]
         );
+    }
+);
+
+dwell_world::both_faces!(
+    /// Leaf cards (shared/look/leaves.json `cards`): a lone leaf's cards are in the cutout mesh
+    /// with the data's distance fade (none past `fade_end_m`) and no ink; meshed without cards (a
+    /// CPU adapter, the cheapest tier) the leaf draws none.
+    fn a_lone_leaf_carries_cards_that_fade_by_distance_and_none_on_the_cpu_tier(f: FaceFrame) {
+        let leaf = require("dwell:leaves");
+        let padded = voxels(&[(8, 8, 8, leaf)]);
+        let mesh = |cards: bool| {
+            in_cells(
+                super::mesh_chunk_flags(
+                    &padded,
+                    &[],
+                    f.is_b(),
+                    [0; 3],
+                    &[],
+                    None,
+                    ChunkFlags {
+                        water_tops: true,
+                        cards,
+                    },
+                )
+                .expect("padded"),
+            )
+            .cutout
+        };
+        let (with, without) = (mesh(true), mesh(false));
+        let look = dwell_look::leaves::LEAVES.cards;
+        let carded: Vec<usize> = (0..with.positions.len() / 3)
+            .filter(|&i| with.plants[i * 4 + 3] > 0.0)
+            .collect();
+        assert!(!carded.is_empty(), "a lone leaf has cards");
+        assert_eq!(carded.len() % 4, 0);
+        for &i in &carded {
+            assert_eq!(with.plants[i * 4 + 2], look.fade_start_m as f32);
+            assert_eq!(with.plants[i * 4 + 3], look.fade_end_m as f32);
+            assert_eq!(with.bare[i], 1.0);
+        }
+        assert_eq!(
+            with.positions.len() / 3,
+            without.positions.len() / 3 + carded.len()
+        );
+        assert!(without.plants.iter().all(|&v| v == 0.0));
     }
 );
