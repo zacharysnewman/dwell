@@ -3082,9 +3082,9 @@ impl TerrainGenerator {
         out
     }
 
-    /// Carves the arches' openings (ADR 0074 B8) in a chunk filled to its columns' tops: a cell
-    /// under an opening's roof, over its floor and at least its lintel under the column's top
-    /// becomes air (dry columns only; the top and the cells over it stay).
+    /// Carves the arches' openings (ADR 0074 B8) in a chunk filled to its columns' tops
+    /// (`Site::carves`: under the roof, or the whole column down to the floor at a mouth; dry
+    /// columns only).
     fn carve_arches(
         &self,
         coord: ChunkCoord,
@@ -3108,16 +3108,15 @@ impl TerrainGenerator {
                 }
                 let (wx, wz) = (x0 + x, z0 + z);
                 let (cx, cz) = (f64::from(wx) + 0.5, f64::from(wz) + 0.5);
-                let top = top_voxel(col.height);
+                let height = f64::from(col.height);
                 for s in &sites {
-                    let Some(roof) = s.roof(cx, cz) else { continue };
-                    let roof = roof.min(f64::from(col.height) - s.lintel);
+                    if s.roof(cx, cz).is_none() {
+                        continue;
+                    }
                     for ly in 0..S {
                         let y = y0 + ly;
                         let mid = (f64::from(y) + 0.5) * ch;
-                        if y >= top
-                            || mid < s.floor
-                            || mid > roof
+                        if !s.carves(cx, cz, height, mid)
                             || !(FACE_MIN_Y..FACE_MAX_Y).contains(&y)
                             || (overlap == Overlap::Partial
                                 && !BUILD_VOLUME.contains_voxel(

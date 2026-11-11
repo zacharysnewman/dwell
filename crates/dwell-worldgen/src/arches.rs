@@ -9,6 +9,8 @@
 //! `lintel` m of rock stays over every carved cell), so the LOD, spawn, the maps and the water read
 //! the height field as before; the LOD does not show the opening (WORLD_GENERATION.md §5).
 
+use dwell_world::CELL_H;
+
 use crate::noise::{hash2, unit};
 
 /// A biome's arches (data): sites per km², the opening's span across the fin (m), its rise (m),
@@ -132,6 +134,24 @@ impl Site {
     /// How far (m) the site reaches from its centre.
     pub fn reach(&self) -> f64 {
         (self.half_fin * self.half_fin + self.half_span * self.half_span).sqrt()
+    }
+
+    /// Whether the cell centred `mid` m high in column (x, z) (its centre), whose ground stands
+    /// `height` m, is carved: over the floor and under the roof where the ground keeps at least the
+    /// lintel over it; at a mouth (the ground under the roof and lintel) the column is cut down to
+    /// the floor, with the cell over its top (a decoration), so the opening is open there rather
+    /// than sealed by a thin shell of the slope. Only mouth columns' tops move.
+    pub fn carves(&self, x: f64, z: f64, height: f64, mid: f64) -> bool {
+        let Some(roof) = self.roof(x, z) else {
+            return false;
+        };
+        if mid < self.floor {
+            false
+        } else if height < roof + self.lintel {
+            mid < height + 1.5 * CELL_H
+        } else {
+            mid <= roof
+        }
     }
 
     /// The opening's roof (m, face-local height) over column (x, z) (its centre), none outside

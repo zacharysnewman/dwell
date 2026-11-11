@@ -120,16 +120,13 @@ fn arches_agree_across_chunk_seams() {
                 // Every site's predicted air in this column (sites may overlap).
                 let predicted = |y: i32| {
                     let mid = (f64::from(y) + 0.5) * CELL_H;
-                    all.iter().any(|o| {
-                        o.roof(mx, mz).is_some_and(|roof| {
-                            mid >= o.floor && mid <= roof.min(f64::from(col.height) - o.lintel)
-                        })
-                    })
+                    all.iter()
+                        .any(|o| o.carves(mx, mz, f64::from(col.height), mid))
                 };
                 if col.water != dwell_worldgen::terrain::Water::None {
                     continue;
                 }
-                for y in rows_of(s.floor) - 1..top {
+                for y in rows_of(s.floor) - 1..=top {
                     let air = cells.get([x, y, z]) == M.air;
                     assert_eq!(air, predicted(y), "column ({x}, {z}) row {y}");
                     if air {
@@ -174,4 +171,60 @@ fn arches_are_validated() {
     let mut off = good.clone();
     off["arches"]["density"] = serde_json::json!(0);
     assert_eq!(biome_from_json(&off).unwrap().arches, None);
+}
+
+/// Writes vertical slices through the fixture's first arch and first overhang as PPM images to
+/// `DWELL_ARCH_SLICES` (a directory): across the opening (the half ellipse under its lintel) and
+/// along it (the way through). A look at the carve without a browser; nothing is asserted.
+#[test]
+#[ignore = "writes images: DWELL_ARCH_SLICES=<dir> cargo test --test arches -- --ignored"]
+fn arch_slices() {
+    let Ok(out_dir) = std::env::var("DWELL_ARCH_SLICES") else {
+        return;
+    };
+    let t = BifacialTerrain::mirrored_with_biomes(7, &[fixture()]);
+    let g = t.local(Face::A);
+    let all = sites(g);
+    let mut cells = Cells {
+        t: &t,
+        chunks: HashMap::new(),
+    };
+    for (name, s) in [
+        ("arch", all.iter().find(|s| s.through)),
+        ("overhang", all.iter().find(|s| !s.through)),
+    ] {
+        let Some(s) = s else { continue };
+        let across = [-s.axis[1], s.axis[0]];
+        for (view, dir) in [("across", across), ("along", s.axis)] {
+            let (w, lo, hi) = (96_i32, rows_of(s.floor) - 24, rows_of(s.floor) + 72);
+            let scale = 4;
+            let mut img = Vec::new();
+            for y in (lo..hi).rev() {
+                for _ in 0..scale {
+                    for i in 0..w * 2 {
+                        let d = f64::from(i - w) * 0.5;
+                        let x = (s.centre[0] + dir[0] * d).floor() as i32;
+                        let z = (s.centre[1] + dir[1] * d).floor() as i32;
+                        let v = cells.get([x, y, z]);
+                        let rgb: [u8; 3] = if v == M.air {
+                            [170, 205, 235]
+                        } else if v == M.water {
+                            [40, 90, 200]
+                        } else {
+                            let b = if (y + x + z) % 2 == 0 { 0 } else { 12 };
+                            [150 + b, 85 + b, 55 + b]
+                        };
+                        for _ in 0..scale {
+                            img.extend_from_slice(&rgb);
+                        }
+                    }
+                }
+            }
+            let mut out =
+                format!("P6\n{} {}\n255\n", w * 2 * scale, (hi - lo) * scale).into_bytes();
+            out.extend_from_slice(&img);
+            std::fs::write(format!("{out_dir}/{name}_{view}.ppm"), out).unwrap();
+        }
+        println!("{name}: {s:?}");
+    }
 }
