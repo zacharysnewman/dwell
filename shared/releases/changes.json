@@ -2,6 +2,20 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.52.81",
+      "changes": [
+        "The Combine buttons say \"Stone slab\", \"Dirt slab\" and \"Log slab\"",
+        "Wood chunks look like chunks of log, not a dot",
+        "You hear other players rustle through leaves and snap sticks"
+      ]
+    },
+    {
+      "version": "0.52.80",
+      "changes": [
+        "Behind the scenes: deer herds and wolf packs now live on the server, saved with the world, and can die out"
+      ]
+    },
+    {
       "version": "0.52.79",
       "changes": [
         "Behind the scenes: lava's simulation: it flows slowly, cools into basalt, turns to obsidian and steam in water, and burns; not in the world yet"
