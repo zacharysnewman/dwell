@@ -269,9 +269,6 @@ struct Piece {
     pts: Vec<[f64; 3]>,
     color: [f64; 3],
     normal: Option<[f64; 3]>,
-    /// The piece as modelled (metres, cut into the face): `pts` before they are laid flat.
-    #[cfg_attr(not(test), allow(dead_code))]
-    model: Vec<[f64; 3]>,
 }
 
 /// A decal's pieces.
@@ -327,7 +324,6 @@ fn decal(
     let srgb = |c: [u8; 3], mul: f64| c.map(|x| (f64::from(x) / 255.0 * mul).min(1.6));
     let turn = jitter(99) * std::f64::consts::TAU;
     let flat = |pts: Vec<[f64; 3]>, color: [f64; 3]| Piece {
-        model: Vec::new(),
         pts,
         color,
         normal: None,
@@ -350,7 +346,6 @@ fn decal(
             pts: pts.into_iter().map(|(p, _)| p).collect(),
             color,
             normal,
-            model,
         }
     };
     let depth = look.depth * grow;

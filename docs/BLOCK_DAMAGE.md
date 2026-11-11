@@ -132,7 +132,7 @@ D3 (tuning) to come. The owner's direction and answers are §1; §2 was the prop
 face at the struck point; other players' hits are heard and seen (the client reads a hit off each
 damage update's changed cell, at its newest mark, and skips its own hits' echoes).
 
-**Scoops and shards as dents (scoops-and-herds):** the owner's note that a scoop read "more as a dark
+**Scoops and shards as dents (scoops-and-herds; the scoop replaced by §6.1's per-pixel relief):** the owner's note that a scoop read "more as a dark
 stain than a shallow bowl". A scoop and a shard are now modelled cut into the face, `damage.look.depth`
 deep (cells; optional, default 0.1, validated in [0, 0.5]; dirt and grass 0.14, sand 0.12, stone 0.1),
 growing with the damage like the mark's width: a scoop is a spherical cap of two rings of quads and a
