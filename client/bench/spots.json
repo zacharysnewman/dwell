@@ -1,6 +1,21 @@
 {
   "$comment": "Saved camera spots (docs/DEV_TOOLS.md \"Screenshots of a place\"; scripts/spots.ts): <world>:<place> → the world (test:<fixture> or terrain), seed, time of day, and the camera: at [x, y, z] (the eye) or above [x, z, height over the ground there], yaw (0 = +Z, 90 = +X), pitch, face. An above spot's openY is the height its page opens at (over the ground). The starter's are its tour's (cargo test --release -p dwell-worldgen --test starter_world tour -- --ignored --nocapture, 2026-11-11). Shoot one: npm run bench -- --spot starter:broadleaf.",
   "spots": {
+    "starter:lava-lake": {
+      "notes": "The starter's lava lake on its youngest hotspot island's summit (shared/worldgen/worlds/starter.json lavaVents; VOLCANOES.md §6.2)",
+      "world": "test:starter",
+      "at": [30006.5, 250, -8006.5],
+      "yaw": -45,
+      "pitch": -50
+    },
+    "starter:lava-lake-night": {
+      "notes": "The starter's lava lake by night: its glow and its light on the summit",
+      "world": "test:starter",
+      "time": 0.95,
+      "at": [30006.5, 250, -8006.5],
+      "yaw": -45,
+      "pitch": -50
+    },
     "starter:broadleaf": {
       "notes": "The broadleaf forest's heart (tour: starter:broadleaf_forest)",
       "world": "test:starter",

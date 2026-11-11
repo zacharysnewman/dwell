@@ -1161,3 +1161,28 @@ and midday: the window's sky straight up 0.3 m under within 2 % of the sky pass'
 the `window_sky` twin; red on 0.52.52's data, green after) and
 `the_window_shows_the_real_sky_and_bodies_scaled_by_its_light` (the one sky function, `moonlit`).
 Outstanding: the owner's look; the lens plane's air view 0.3 m under; the mirror's brightness at sunset.
+
+## 17. Lava's look (2026-11-11, VOLCANOES.md §6.3)
+
+Lava is not drawn by the water's surface pass: `dwell:lava` cells are opaque blocks (`look: cube`, no
+collision, `emits` 13) meshed with the terrain, so the look is a painterly tile and one shader branch,
+both data-driven:
+
+- **The tile** (`shared/textures/materials.json` `lava_crust`, the palette's `lava` ramp): dark crust
+  plates (`slab`s in the ramp's shadow) over a bright molten ground with brighter dabs between them, the
+  cracks. `emissive: 1` makes it self-lit (it gives off its colour whatever the light, so it reads at
+  night); its `emits` 13 lights the ground round it through the flood light, as a torch's block does.
+- **Molten** (`"molten": true` on a material, checked by `paint.mjs`: it needs `emissive` > 0): the
+  generator emits `PAINTERLY_MOLTEN`, and `dwell-mesh` `tile_glow_entry` stores such a tile's glow
+  **negated** in the tile table (`tile_grids`' z), so the terrain shader finds it from the tile with
+  nothing added to the vertex. `terrain_fs` then stretches the tile over `MOLTEN_SPAN` (3) blocks, so the crust plates are metres across (at one block a tile the first in-game shots read as a checkerboard), drifts it by `MOLTEN_DRIFT` (blocks a
+  second, slow) and multiplies the glow of its bright texels (the cracks, not the crust plates) by
+  `molten_heat`: two slow world-space waves, 0.7–1.4 ×.
+- **The CPU tier** draws it flat: the water tier's bit 10 (`dwell-look` `tier_bits`, every tier but the
+  CPU's; WGSL `water_tier_molten`) gates the drift and heat, so the CPU adapter shows the still glowing
+  tile (tested: `only_the_cpu_tier_draws_molten_surfaces_still`).
+- **Not built yet:** heat per cell (brighter where hotter or deeper: the field's heat is not in the chunk
+  cells), steam's hiss where water boils away (the server's `Steam` events are
+  sent since §6.3 as `Steam`, drawn as puffs; their hiss is not), the burning screen edge and sizzle, and lava as a translucent fluid surface (it stays opaque by
+  design: no transparency).
+

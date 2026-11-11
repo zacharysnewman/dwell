@@ -18,7 +18,8 @@ use std::collections::{BTreeSet, HashMap};
 use std::ops::Range;
 
 use dwell_blocks::{StateId, info};
-use dwell_lava::{Field, HotFluid, LavaData, LavaEvent, Vent, VentKind, field_of, record_of};
+pub use dwell_lava::VentKind;
+use dwell_lava::{Field, HotFluid, LavaData, LavaEvent, Vent, field_of, record_of};
 use dwell_world::{CELL_H, Face, FaceFrame};
 
 const VERSION: u8 = 1;

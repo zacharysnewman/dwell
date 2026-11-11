@@ -86,7 +86,9 @@ export type ToWorker =
       radius: number;
       face: number;
       minDepth: number;
-    };
+    }
+  /** The lava's dev tools (local.rs `lava_dev`); answered with `lavaDev`. */
+  | { t: 'lavaDev'; op: string; args: number[] };
 
 export type FromWorker =
   /** `persisted`: the world is saved in the browser (OPFS, §6.4). */
@@ -113,6 +115,8 @@ export type FromWorker =
   | { t: 'waterReport'; report: string }
   /** The map's nearest water as JSON, or `null` (in reply to `findOnMap`). */
   | { t: 'findOnMap'; result: string }
+  /** The lava's dev tools' answer as JSON (in reply to `lavaDev`). */
+  | { t: 'lavaDev'; result: string }
   /** The server's figures, every second (docs/DEV_TOOLS.md `__dwell.serverStats`). */
   | { t: 'stats'; stats: ServerStats };
 

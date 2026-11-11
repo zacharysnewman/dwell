@@ -332,6 +332,7 @@ impl Server {
             | inventory_flags::COMBINE
             | inventory_flags::CAUSES
             | inventory_flags::ECOLOGY
+            | inventory_flags::STEAM
             | if self.uses_items() {
                 inventory_flags::USES_ITEMS
             } else {

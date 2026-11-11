@@ -316,7 +316,24 @@ fn tile_near_fade(tile_origin: vec2f) -> f32 {
 // docs/LIGHTS.md): a torch's flame.
 fn tile_glow(tile_origin: vec2f) -> f32 {
     let cell = vec2u(clamp(floor(tile_origin * f32(ATLAS_CELLS)), vec2f(0.0), vec2f(f32(ATLAS_CELLS - 1u))));
-    return tile_grids[cell.x + cell.y * ATLAS_CELLS].z;
+    return abs(tile_grids[cell.x + cell.y * ATLAS_CELLS].z);
+}
+
+// Whether the tile at `tile_origin` is molten (its material's `molten`: lava; dwell-mesh
+// `tile_glow_entry` stores its glow negated) and the tier moves its heat (not the CPU tier).
+fn tile_molten(tile_origin: vec2f) -> bool {
+    let cell = vec2u(clamp(floor(tile_origin * f32(ATLAS_CELLS)), vec2f(0.0), vec2f(f32(ATLAS_CELLS - 1u))));
+    return tile_grids[cell.x + cell.y * ATLAS_CELLS].z < 0.0 && water_tier_molten();
+}
+
+// Lava's slow heat (WATER_RENDERING.md §17): the crust drifts at MOLTEN_DRIFT blocks a second
+// and two slow waves over the world brighten and dim its glowing cracks, 0.7–1.4 × the glow.
+const MOLTEN_DRIFT: vec2f = vec2f(0.012, 0.007);
+const MOLTEN_SPAN: f32 = 3.0;
+fn molten_heat(world_xz: vec2f, t: f32) -> f32 {
+    let a = sin(dot(world_xz, vec2f(0.41, 0.23)) - 0.45 * t);
+    let b = sin(dot(world_xz, vec2f(-0.17, 0.37)) + 0.31 * t + 1.7);
+    return 1.05 + 0.35 * (0.6 * a + 0.4 * b);
 }
 
 // A level's brightness on `curve` (shared/look/light.json): x / (curve − (curve − 1)·x).
@@ -505,6 +522,10 @@ fn water_tier_caustics() -> bool {
 fn water_tier_opacity() -> f32 {
     return f32((water_tier_bits() >> 6u) & 15u) / 15.0;
 }
+// Bit 10: molten surfaces (lava) move their heat (every tier but the CPU's: flat, still glow).
+fn water_tier_molten() -> bool {
+    return (water_tier_bits() & 1024u) != 0u;
+}
 
 // The fluid the eye is under or just above (`frame.water`).
 fn eye_fluid() -> Fluid {
@@ -666,8 +687,14 @@ fn grid_shade(uv: vec2f, grid: vec2f) -> f32 {
 @fragment
 fn terrain_fs(i: TerrainOut, @builtin(front_facing) front: bool) -> SceneOut {
     let draw = draws[i.draw];
-    let atlas_uv = i.tile.xy + fract(i.uv) * i.tile.zw;
-    let grads = atlas_grads(dpdx(i.uv) * i.tile.zw, dpdy(i.uv) * i.tile.zw);
+    // A molten tile (lava) drifts its crust slowly and breathes its cracks' heat.
+    let molten = tile_molten(i.tile.xy);
+    // Its tile spans MOLTEN_SPAN blocks (the tile wraps), so the crust plates are metres across
+    // and don't repeat block by block (at one block a tile they read as a checkerboard).
+    let span = select(1.0, 1.0 / MOLTEN_SPAN, molten);
+    let drift = select(vec2f(0.0), MOLTEN_DRIFT * frame.fog.z, molten);
+    let atlas_uv = i.tile.xy + fract(i.uv * span + drift) * i.tile.zw;
+    let grads = atlas_grads(dpdx(i.uv) * span * i.tile.zw, dpdy(i.uv) * span * i.tile.zw);
     let texel = textureSampleGrad(atlas, atlas_sampler, atlas_crisp(atlas_uv), grads[0], grads[1]);
     let n = select(-i.normal, i.normal, front);
     let shade = grid_shade(i.uv, tile_grid(i.tile.xy));
@@ -677,9 +704,12 @@ fn terrain_fs(i: TerrainOut, @builtin(front_facing) front: bool) -> SceneOut {
     let alpha = select(draw.tint.a * texel.a, 1.0, draw.tint.a >= 1.0);
     let albedo = i.color * texel.rgb * shade * draw.tint.rgb;
     var o = scene_out(albedo, normalize(n), i.rel, alpha, terrain_light(i.light, i.flood));
-    let shine = tile_glow(i.tile.xy);
+    // The heat brightens the bright cracks, not the dark crust plates.
+    let crack = smoothstep(0.25, 0.75, max(texel.r, texel.g));
+    let heat = select(1.0, mix(1.0, molten_heat(i.rel.xz + frame.tan.zw, frame.fog.z), crack), molten);
+    let shine = tile_glow(i.tile.xy) * heat;
     o.color = vec4f(emitted(o.color.rgb, albedo * alpha, shine), o.color.a);
-    o.depth = self_lit_depth(frame_depth(o.depth, fade_inked(draw)), shine >= 1.0);
+    o.depth = self_lit_depth(frame_depth(o.depth, fade_inked(draw)), tile_glow(i.tile.xy) >= 1.0);
     return o;
 }
 

@@ -612,6 +612,10 @@ pub struct Game<S: Scene> {
     pub chop: crate::chop::Chopping,
     /// The axe's chips in flight (crate::chips; draw-only).
     pub chips: crate::chips::Chips,
+    /// Steam where lava boils water away (crate::steam; the server's `Steam`, VOLCANOES.md §6.3).
+    pub steam: crate::steam::Steam,
+    /// Said `SteamHello` (the server has `inventory_flags::STEAM`).
+    steam_on: bool,
     pub inventory_slot: usize,
     /// The creative hotbar's picks (docs/ITEMS.md §6a): its slots' palette items.
     pub creative: dwell_game::creative_hotbar::CreativeHotbar,
@@ -964,6 +968,8 @@ impl<S: Scene> Game<S> {
             ground_target: None,
             chop: Default::default(),
             chips: Default::default(),
+            steam: Default::default(),
+            steam_on: false,
             inventory_slot: 0,
             creative: dwell_game::creative_hotbar::CreativeHotbar::new(
                 &dwell_game::block_interaction::palette(),
@@ -1523,6 +1529,10 @@ impl<S: Scene> Game<S> {
                 }
                 self.chop.apply(c);
             }
+            Message::Steam(cells) => {
+                // Lava boiled water away (VOLCANOES.md §6.3): a puff over each cell.
+                self.steam.add(&cells, now_ms / 1000.0);
+            }
             Message::Damage(d) => {
                 // Another player's hit: its material's hit and chips at the struck point.
                 for (cell, mark) in self.remote_hits.on_damage(&d, now_ms) {
@@ -1584,6 +1594,13 @@ impl<S: Scene> Game<S> {
                         .push(Send::Control(Message::CausesHello(
                             dwell_protocol::DamageCause::MAX,
                         )));
+                }
+                // The server has lava (VOLCANOES.md §6.3): ask once for its steam.
+                if i.flags & dwell_protocol::inventory_flags::STEAM != 0 && !self.steam_on {
+                    self.steam_on = true;
+                    self.outbox
+                        .borrow_mut()
+                        .push(Send::Control(Message::SteamHello));
                 }
                 // The server keeps creatures (ADR 0073): say so once, and draw them.
                 if i.flags & dwell_protocol::inventory_flags::CREATURES != 0 && !self.creatures_on {
@@ -2790,7 +2807,9 @@ impl<S: Scene> Game<S> {
         let now = now_ms / 1000.0;
         self.blasts.prune(now);
         self.chips.prune(now);
-        let extra = self.chips.puffs(now);
+        self.steam.prune(now);
+        let mut extra = self.chips.puffs(now);
+        extra.extend(self.steam.puffs(now));
         if self.blasts.list.is_empty() {
             self.scene.borrow_mut().set_blasts(extra, Vec::new());
             return (0.0, 0.0);
@@ -2836,6 +2855,7 @@ impl<S: Scene> Game<S> {
     pub fn set_blast_settings(&mut self, s: crate::blasts::BlastSettings) {
         self.blasts.settings = s;
         self.chips.cpu = s.cpu;
+        self.steam.cpu = s.cpu;
     }
 
     /// The blasts whose effects are still going (the dev hook): each one's place and age (s).

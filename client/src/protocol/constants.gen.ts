@@ -147,6 +147,8 @@ export const MessageType = {
   CausesHello: 100,
   EcologyHello: 101,
   Ecology: 102,
+  SteamHello: 103,
+  Steam: 104,
 } as const;
 export type MessageType = (typeof MessageType)[keyof typeof MessageType];
 

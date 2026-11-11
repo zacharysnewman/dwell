@@ -280,6 +280,12 @@ interface DwellDebug {
   /** The local server's water around a cell (JSON, `Water::report`); null outside a local world. */
   waterReport(x: number, y: number, z: number, radius?: number): Promise<string | null>;
   /**
+   * The local server's lava (docs/DEV_TOOLS.md, VOLCANOES.md §6.3): with no op its fields as JSON
+   * (face, centre, molten columns, vents); `rate` [k] every vent's rate × k (fill a lake fast);
+   * `vent` [x, y, z, rateM3s, depthM] a lake vent at a world point. Null outside a local world.
+   */
+  lava(op?: 'report' | 'rate' | 'vent' | 'ventNear', args?: number[]): Promise<string | null>;
+  /**
    * The water quality (as the settings menu sets it, not stored) and/or its cost-isolation
    * switches (`?waterdbg=` names, comma-separated; "" for none); null leaves either as it is.
    * `phone` draws the phone's reflection tiers (or a desktop's) whatever the device is.
@@ -1243,6 +1249,7 @@ async function start(): Promise<App | null> {
     serverStats: () => app.loopback?.serverStats ?? null,
     waterReport: (x, y, z, radius) =>
       app.loopback?.waterReport([x, y, z], radius ?? WATER_REPORT_RADIUS) ?? Promise.resolve(null),
+    lava: (op, args) => app.loopback?.lavaDev(op ?? 'report', args ?? []) ?? Promise.resolve(null),
     die: () => {
       app.loopback?.postToWorker({ t: 'kill' });
       return app.loopback !== null;

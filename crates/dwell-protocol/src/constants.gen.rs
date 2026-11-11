@@ -184,6 +184,8 @@ pub enum MessageType {
     CausesHello = 100,
     EcologyHello = 101,
     Ecology = 102,
+    SteamHello = 103,
+    Steam = 104,
 }
 
 impl MessageType {
@@ -245,6 +247,8 @@ impl MessageType {
             100 => Some(Self::CausesHello),
             101 => Some(Self::EcologyHello),
             102 => Some(Self::Ecology),
+            103 => Some(Self::SteamHello),
+            104 => Some(Self::Steam),
             _ => None,
         }
     }
