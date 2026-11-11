@@ -37,6 +37,46 @@ pub struct ReflectionTier {
     pub cloud_octaves: u32,
     /// The deck's self-shadow in reflections.
     pub cloud_shadow: bool,
+    /// The sun and moon reflected as their discs and a glitter path (`BodyTunables`); false: the
+    /// GGX glint of their light only (a simple highlight).
+    pub body_path: bool,
+}
+
+/// One body's glitter path on the water (docs/WATER_RENDERING.md §15).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BodyPath {
+    /// The path's light × the disc's colour (the moon's × its lit share).
+    pub strength: f64,
+    /// The path lobe's GGX α (larger: longer, wider, dimmer).
+    pub path_alpha: f64,
+    /// Whole while the body is lower than this over the face's horizon (degrees).
+    pub full_below_deg: f64,
+    /// Gone while it is higher than this (degrees; at least `full_below_deg`).
+    pub gone_above_deg: f64,
+}
+
+impl BodyPath {
+    /// How much of the path shows with the body `elevation_deg` over the face's horizon:
+    /// 1 under `full_below_deg`, 0 over `gone_above_deg`, smoothly between (the WGSL `path_share`).
+    pub fn share(&self, elevation_deg: f64) -> f64 {
+        if elevation_deg <= self.full_below_deg {
+            return 1.0;
+        }
+        if elevation_deg >= self.gone_above_deg {
+            return 0.0;
+        }
+        let t = (elevation_deg - self.full_below_deg) / (self.gone_above_deg - self.full_below_deg);
+        1.0 - t * t * (3.0 - 2.0 * t)
+    }
+}
+
+/// The sun's and moon's paths.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BodyTunables {
+    pub sun: BodyPath,
+    pub moon: BodyPath,
+    /// The share of the path the cloud cover takes away while clouds are drawn.
+    pub cloud_fade: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -46,6 +86,7 @@ pub struct ReflectionTunables {
     pub tiers: &'static [ReflectionTier],
     /// The same on a phone (the data's `phone` overrides over each tier).
     pub phone_tiers: &'static [ReflectionTier],
+    pub bodies: BodyTunables,
 }
 
 impl ReflectionTunables {
@@ -67,7 +108,7 @@ impl ReflectionTunables {
 /// The frame uniform's two reflection vec4s for a tier, under the Clouds setting's octaves and
 /// self-shadow (the reflection never draws more of the deck than the sky does): x march steps,
 /// y refine steps, z reach (m), w the hit fade's start (m); then the cloud octaves, the
-/// self-shadow (0 or 1), the edge fade and the thickness.
+/// self-shadow (bit 0) and the bodies' path (bit 1), the edge fade and the thickness.
 pub fn reflection_uniforms(
     t: &ReflectionTunables,
     level: usize,
@@ -86,11 +127,7 @@ pub fn reflection_uniforms(
         ],
         [
             tier.cloud_octaves.min(sky_octaves) as f32,
-            if tier.cloud_shadow && sky_shadow {
-                1.0
-            } else {
-                0.0
-            },
+            (u32::from(tier.cloud_shadow && sky_shadow) | (u32::from(tier.body_path) << 1)) as f32,
             t.ssr.edge_fade as f32,
             t.ssr.thickness_m as f32,
         ],
@@ -125,6 +162,38 @@ mod tests {
     }
 
     #[test]
+    fn the_cpu_tier_draws_a_highlight_only_and_the_others_the_bodies_path() {
+        let cpu = crate::water_tiers::cpu_tier();
+        for (level, tier) in REFLECTIONS.tiers.iter().enumerate() {
+            let bits = reflection_uniforms(&REFLECTIONS, level, 8, false, false)[1][1] as u32;
+            assert_eq!(bits & 2 != 0, tier.body_path);
+            assert_eq!(tier.body_path, level != cpu, "tier {level}");
+        }
+        // The shadow bit stays its own.
+        let m = at("medium");
+        let mut tiers = REFLECTIONS.tiers.to_vec();
+        tiers[m].cloud_shadow = true;
+        let t = ReflectionTunables {
+            tiers: Box::leak(tiers.into_boxed_slice()),
+            ..REFLECTIONS
+        };
+        assert_eq!(reflection_uniforms(&t, m, 8, true, false)[1][1], 3.0);
+    }
+
+    #[test]
+    fn the_suns_path_is_a_low_sun_s_and_the_moons_shows_at_any_height() {
+        let b = REFLECTIONS.bodies;
+        assert_eq!(b.sun.share(2.0), 1.0, "a setting sun lays a path");
+        assert_eq!(b.sun.share(60.0), 0.0, "a high sun is a glint only");
+        let mid = b.sun.share((b.sun.full_below_deg + b.sun.gone_above_deg) / 2.0);
+        assert!((mid - 0.5).abs() < 1e-9);
+        for e in [1.0, 30.0, 80.0] {
+            assert_eq!(b.moon.share(e), 1.0);
+        }
+        assert!(b.moon.strength > 0.0 && b.sun.strength > 0.0);
+    }
+
+    #[test]
     fn the_reflection_never_draws_more_of_the_deck_than_the_sky() {
         let m = at("medium");
         let u = reflection_uniforms(&REFLECTIONS, m, 2, false, false);
@@ -132,7 +201,7 @@ mod tests {
             u[1][0],
             2.0_f32.min(REFLECTIONS.tier(m).cloud_octaves as f32)
         );
-        assert_eq!(u[1][1], 0.0, "no self-shadow while the sky draws none");
+        assert_eq!(u[1][1] as u32 & 1, 0, "no self-shadow while the sky draws none");
         let off = reflection_uniforms(&REFLECTIONS, m, 0, true, false);
         assert_eq!(off[1][0], 0.0, "Clouds off: none reflected");
         let u = reflection_uniforms(&REFLECTIONS, m, 8, true, false);

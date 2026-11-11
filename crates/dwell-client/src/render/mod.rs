@@ -24,6 +24,7 @@ pub mod lod_shadows;
 pub mod pacing;
 pub mod pixel_art;
 pub mod point_shadows;
+pub mod glitter;
 pub mod reflection;
 pub mod seam;
 pub mod shaders;

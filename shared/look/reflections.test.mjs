@@ -24,6 +24,8 @@ test('a tunable changed by data changes the output', () => {
   assert.match(rs, /ssr_steps: 7,/);
   assert.match(rs, /edge_fade: 0\.2,/);
   assert.match(rs, /cloud_shadow: true/);
+  d.bodies.moon.strength = 0.7;
+  assert.match(reflectionsRust(validateReflections(d)), /strength: 0\.7,/);
   assert.notEqual(rs, reflectionsRust(validateReflections(data())));
 });
 
@@ -45,6 +47,13 @@ test('bad entries fail with their path named', () => {
     [(d) => (d.tiers.medium.cloudShadow = 1), /tiers\.medium\.cloudShadow must be true or false/],
     [(d) => (d.tiers.opaque.ssrSteps = 4), /tiers\.opaque\.ssrSteps must be 0/],
     [(d) => (d.tiers.medium.maxDistanceM = 0), /tiers\.medium\.maxDistanceM must be over 0/],
+    [(d) => (d.tiers.opaque.bodyPath = true), /tiers\.opaque\.bodyPath must be false/],
+    [(d) => (d.tiers.medium.bodyPath = 'yes'), /tiers\.medium\.bodyPath must be true or false/],
+    [(d) => delete d.bodies.moon, /missing entry bodies\.moon/],
+    [(d) => (d.bodies.stars = {}), /unknown entry bodies\.stars/],
+    [(d) => (d.bodies.sun.pathAlpha = 0), /bodies\.sun\.pathAlpha must be a number in \[0\.01, 1\]/],
+    [(d) => (d.bodies.sun.goneAboveDeg = 2), /bodies\.sun\.goneAboveDeg must be at least fullBelowDeg/],
+    [(d) => (d.bodies.cloudFade = 2), /bodies\.cloudFade must be a number in \[0, 1\]/],
   ];
   for (const [edit, message] of cases) {
     const d = data();

@@ -37,7 +37,15 @@ const TIER = {
   maxDistanceM: [0, 1e5],
   cloudOctaves: ['count', 0, MAX_OCTAVES],
   cloudShadow: 'bool',
+  bodyPath: 'bool',
 };
+const BODY = {
+  strength: [0, 10],
+  pathAlpha: [0.01, 1],
+  fullBelowDeg: [0, 90],
+  goneAboveDeg: [0, 90],
+};
+const BODIES = ['sun', 'moon'];
 
 const snake = (s) => s.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
 const fail = (m) => {
@@ -66,7 +74,7 @@ function checkValue(where, v, spec) {
 
 /** Checks the tunables against the schema and each other; returns them. Throws naming the entry. */
 export function validateReflections(data) {
-  checkKeys('(root)', data, ['ssr', 'tiers', 'phone']);
+  checkKeys('(root)', data, ['ssr', 'tiers', 'bodies', 'phone']);
   checkKeys('ssr', data.ssr, Object.keys(SSR));
   for (const [k, spec] of Object.entries(SSR)) checkValue(`ssr.${k}`, data.ssr[k], spec);
   checkKeys('tiers', data.tiers, TIERS);
@@ -77,6 +85,15 @@ export function validateReflections(data) {
     if (SCENELESS.includes(tier) && t.ssrSteps !== 0) fail(`tiers.${tier}.ssrSteps must be 0 (it reads no copy of the scene)`);
     if (t.ssrSteps > 0 && t.maxDistanceM <= 0) fail(`tiers.${tier}.maxDistanceM must be over 0 when it marches`);
   }
+  checkKeys('bodies', data.bodies, [...BODIES, 'cloudFade']);
+  for (const b of BODIES) {
+    checkKeys(`bodies.${b}`, data.bodies[b], Object.keys(BODY));
+    for (const [k, spec] of Object.entries(BODY)) checkValue(`bodies.${b}.${k}`, data.bodies[b][k], spec);
+    if (data.bodies[b].goneAboveDeg < data.bodies[b].fullBelowDeg) fail(`bodies.${b}.goneAboveDeg must be at least fullBelowDeg`);
+  }
+  checkValue('bodies.cloudFade', data.bodies.cloudFade, [0, 1]);
+  const cpu = WATER_TIERS.tiers.find((t) => t.cpu).id;
+  if (data.tiers[cpu].bodyPath) fail(`tiers.${cpu}.bodyPath must be false (the CPU adapter's tier draws a simple highlight only)`);
   const phone = data.phone;
   if (typeof phone !== 'object' || phone === null || Array.isArray(phone)) fail('phone must be an object');
   for (const [tier, o] of Object.entries(phone)) {
@@ -128,6 +145,14 @@ export function reflectionsRust(data) {
   rs.push('    phone_tiers: &[');
   tiers((tier) => phoneTier(data, tier));
   rs.push('    ],');
+  rs.push('    bodies: BodyTunables {');
+  for (const b of BODIES) {
+    rs.push(`        ${b}: BodyPath {`);
+    for (const [k, spec] of Object.entries(BODY)) rs.push(`            ${snake(k)}: ${value(data.bodies[b][k], spec)},`);
+    rs.push('        },');
+  }
+  rs.push(`        cloud_fade: ${rf(data.bodies.cloudFade)},`);
+  rs.push('    },');
   rs.push('};');
   rs.push('');
   return rs.join('\n');
