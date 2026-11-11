@@ -2289,6 +2289,9 @@ fn surface_light(i: FluidOut, s: Surface, f: Fluid, fres: f32, footprint: f32, r
     if (!water_off(DBG_GLINT)) {
         glint = ggx_glint(s.n, s.v, d.sun.xyz, a, f0) * select(d.sun_b.rgb, d.sun_a.rgb, s.on_a) * own(d.sun.xyz, s.up)
             + ggx_glint(s.n, s.v, d.moon.xyz, a, f0) * select(d.moon_b.rgb, d.moon_a.rgb, s.on_a) * own(d.moon.xyz, s.up);
+        if (reflect_path()) {
+            glint += body_paths(s, f0);
+        }
     }
     var reflected = refl.rgb;
     if (water_off(DBG_SKY)) {
@@ -2301,6 +2304,52 @@ fn surface_light(i: FluidOut, s: Surface, f: Fluid, fres: f32, footprint: f32, r
     return fres * reflected + (1.0 - refl.a) * (glint + spark) * s.shadow;
 }
 
+// The reflection tier's switches (`frame.reflect_sky.y`, dwell-look `reflection_uniforms`): bit 0
+// the deck's self-shadow, bit 1 the sun's and moon's discs and glitter paths (`bodyPath`).
+fn reflect_bits() -> u32 {
+    return u32(frame.reflect_sky.y + 0.5);
+}
+fn reflect_path() -> bool {
+    return (reflect_bits() & 2u) != 0u;
+}
+
+// How much of a body's glitter path shows with it `rise` (the sine of its elevation) over the
+// face's horizon (dwell-look `BodyPath::share`): whole under p.z, gone over p.w (radians).
+fn path_share(p: vec4f, rise: f32) -> f32 {
+    let e = asin(clamp(rise, -1.0, 1.0));
+    return 1.0 - smoothstep(p.z, max(p.w, p.z + 1e-4), e);
+}
+
+// The sun's and moon's glitter paths (WATER_RENDERING.md §15; render/glitter.rs): a GGX lobe of
+// each disc's own light off the rippled normal, a streak toward the viewer under the body broken
+// up by the ripples; the ripples' lost slope variance widens and dims it (calm water: bright and
+// tight). The moon's is its disc colour × its lit share (its phase); the sun's only while it is
+// low. The cloud cover takes PATH_CLOUD_FADE of it while clouds are drawn.
+fn body_paths(s: Surface, f0: f32) -> vec3f {
+    let d = frame.day;
+    let lost = 2.0 * s.w.z;
+    let am = sqrt(MOON_PATH.y * MOON_PATH.y + lost);
+    let asun = sqrt(SUN_PATH.y * SUN_PATH.y + lost);
+    let moon = ggx_glint(s.n, s.v, d.moon.xyz, am, f0) * MOON_PATH.x * d.stars.w
+        * path_share(MOON_PATH, face_rise(s.up, d.moon.xyz)) * own(d.moon.xyz, s.up);
+    let sun = ggx_glint(s.n, s.v, d.sun.xyz, asun, f0) * SUN_PATH.x
+        * path_share(SUN_PATH, face_rise(s.up, d.sun.xyz)) * own(d.sun.xyz, s.up);
+    let cover = select(0.0, frame.cloud_cfg.x * PATH_CLOUD_FADE, frame.cloud_cfg.y > 0.5);
+    return (moon * inverse_display(MOON_COLOR) + sun * inverse_display(d.disc.rgb)) * (1.0 - cover);
+}
+
+// The sun's and moon's discs (the moon in its phase) in the reflected sky `base` toward `r`, on a
+// tier with `bodyPath` (`dwell_sky_bodies`' bodies without the stars; a ripple's mirror is a
+// little blurred, so the edge is two pixels wide).
+fn reflected_bodies(r: vec3f, base: vec3f) -> vec3f {
+    let up = face_up(frame.eye.y);
+    let px = 2.0 * max(frame.day.stars.z, 1e-5);
+    let moon = dwell_moon(r, frame.day, px);
+    let c = mix(base, max(base, base * 0.4 + moon.rgb), moon.w);
+    let sun = dwell_sun_disc(r, up, frame.day, px);
+    return min(mix(c, max(c, sun.rgb), sun.w), vec3f(1.0));
+}
+
 // The sky along a reflected ray `r` from the surface point `rel`, with the cloud deck over it on
 // the tiers that reflect clouds (WATER_RENDERING.md §8; the composite's own sky and clouds, so
 // the day, night and dusk follow), in the scene's linear light. `fw` is the deck's footprint
@@ -2310,6 +2359,10 @@ fn surface_light(i: FluidOut, s: Surface, f: Fluid, fres: f32, footprint: f32, r
 fn reflected_env(r: vec3f, rel: vec3f, fw: f32, clouds: f32) -> vec3f {
     let clear = sky(r);
     var c = clear;
+    if (reflect_path() && !water_off(DBG_GLINT)) {
+        c = reflected_bodies(r, clear);
+    }
+    let under = c;
     let octaves = frame.reflect_sky.x;
     if (octaves > 0.5 && clouds > 0.0 && !water_off(DBG_CLOUDS)) {
         let face = frame.eye.y;
@@ -2318,8 +2371,8 @@ fn reflected_env(r: vec3f, rel: vec3f, fw: f32, clouds: f32) -> vec3f {
         let height = frame.cloud_cfg.w - face_rise(face, rel);
         let offsets = vec4f(frame.clouds.xy + rel.xz / CLOUD_SCALE, frame.clouds.zw);
         let deck = dwell_cloud_deck(r, face, offsets, height);
-        let cfg = vec4f(frame.cloud_cfg.x, octaves, frame.reflect_sky.y, height);
-        c = mix(clear, dwell_clouds(clear, clear, r, face, deck, fw, offsets, cfg, cloud_lighting()), clouds);
+        let cfg = vec4f(frame.cloud_cfg.x, octaves, f32(reflect_bits() & 1u), height);
+        c = mix(under, dwell_clouds(under, clear, r, face, deck, fw, offsets, cfg, cloud_lighting()), clouds);
     }
     return inverse_display(c);
 }
@@ -3468,6 +3521,47 @@ mod tests {
         );
         // What the scene hides of the sky hides the sun's glint and sparkle too.
         assert!(body("surface_light").contains("(1.0 - refl.a) * (glint + spark)"));
+    }
+
+    #[test]
+    fn the_sun_and_moon_are_reflected_with_paths_only_on_a_body_path_tier() {
+        // WATER_RENDERING.md §15: the discs and glitter paths are gated on the reflection tier's
+        // bit (the CPU tier's is off: a simple highlight, the glint, only); the discs go under the
+        // reflected clouds; the clouds' cover dims the path.
+        let src = super::source(4);
+        let body = |name: &str| {
+            let at = src.find(&format!("fn {name}(")).expect(name);
+            src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
+        };
+        let light = body("surface_light");
+        assert!(light.contains("if (reflect_path()) {\n            glint += body_paths(s, f0);"));
+        let env = body("reflected_env");
+        let bodies = env
+            .find("reflected_bodies(r, clear)")
+            .expect("discs reflected");
+        assert!(env[..bodies].contains("reflect_path()"));
+        assert!(
+            bodies
+                < env
+                    .find("dwell_clouds(under")
+                    .expect("clouds over the discs")
+        );
+        let paths = body("body_paths");
+        assert!(
+            paths.contains("d.stars.w") && paths.contains("frame.cloud_cfg.x * PATH_CLOUD_FADE")
+        );
+        assert!(
+            paths.contains("face_rise(s.up, d.moon.xyz)") && paths.contains("own(d.sun.xyz, s.up)")
+        );
+        let cpu = dwell_look::water_tiers::cpu_tier();
+        let u = dwell_look::reflections::reflection_uniforms(
+            &dwell_look::reflections::REFLECTIONS,
+            cpu,
+            8,
+            true,
+            false,
+        );
+        assert_eq!(u[1][1] as u32 & 2, 0, "the CPU tier draws no path");
     }
 
     #[test]

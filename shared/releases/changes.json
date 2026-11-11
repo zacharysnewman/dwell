@@ -2,6 +2,12 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.52.32",
+      "changes": [
+        "The moon now shines on the water: its disc, in its phase, is mirrored on calm water and lays a glittering path toward you, and a low sun does the same at sunrise and sunset."
+      ]
+    },
+    {
       "version": "0.52.31",
       "changes": [
         "Sticks snap underfoot, leaves rustle as you push through, fires crackle softly, felled trees crack then boom as they land, falling pieces sound like their material, and hits fly chips you and other players see and hear."

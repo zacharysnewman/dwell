@@ -17,6 +17,7 @@ pub mod flow;
 pub mod frame;
 pub mod fxaa;
 pub mod geometry;
+pub mod glitter;
 pub mod heightfield;
 pub mod lights;
 pub mod lod_map;

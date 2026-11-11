@@ -239,10 +239,11 @@ pub fn land_share(fresnel: f32, min: f32) -> f32 {
 /// uniform's `reflect` and `reflect_sky`).
 pub fn wgsl() -> String {
     format!(
-        "const SSR_THICKNESS_REL: f32 = {:?};\nconst SSR_RIPPLE: f32 = {:?};\nconst SSR_MIN_REFLECTANCE: f32 = {:?};\n",
+        "const SSR_THICKNESS_REL: f32 = {:?};\nconst SSR_RIPPLE: f32 = {:?};\nconst SSR_MIN_REFLECTANCE: f32 = {:?};\n{}",
         dwell_look::reflections::REFLECTIONS.ssr.thickness_rel as f32,
         dwell_look::reflections::REFLECTIONS.ssr.ripple_scale as f32,
-        dwell_look::reflections::REFLECTIONS.ssr.min_reflectance as f32
+        dwell_look::reflections::REFLECTIONS.ssr.min_reflectance as f32,
+        super::glitter::wgsl()
     )
 }
 

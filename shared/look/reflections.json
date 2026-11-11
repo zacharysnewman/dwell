@@ -10,10 +10,16 @@
     "minReflectance": 0.05
   },
   "tiers": {
-    "$comment": "Per water quality, one entry per tier of shared/look/watertiers.json. ssrSteps: march steps along the reflected ray on screen (0: no land marched; a tier that reads no copy of the scene must have 0; Low reflects the bank by the bank band instead, watertiers.json `band`). refineSteps: binary steps that pin a hit between the last two. maxDistanceM: how far the ray reaches. cloudOctaves: the cloud deck's noise octaves in reflections (0: sky only; also capped by the Clouds setting). cloudShadow: the deck's self-shadow in reflections (while the Clouds setting draws it).",
-    "opaque": { "ssrSteps": 0, "refineSteps": 0, "maxDistanceM": 0, "cloudOctaves": 0, "cloudShadow": false },
-    "low": { "ssrSteps": 0, "refineSteps": 0, "maxDistanceM": 0, "cloudOctaves": 1, "cloudShadow": false },
-    "medium": { "ssrSteps": 12, "refineSteps": 8, "maxDistanceM": 24000, "cloudOctaves": 3, "cloudShadow": false }
+    "$comment": "Per water quality, one entry per tier of shared/look/watertiers.json. ssrSteps: march steps along the reflected ray on screen (0: no land marched; a tier that reads no copy of the scene must have 0; Low reflects the bank by the bank band instead, watertiers.json `band`). refineSteps: binary steps that pin a hit between the last two. maxDistanceM: how far the ray reaches. cloudOctaves: the cloud deck's noise octaves in reflections (0: sky only; also capped by the Clouds setting). cloudShadow: the deck's self-shadow in reflections (while the Clouds setting draws it). bodyPath: the sun and moon are reflected as their discs (the moon in its phase) and a glitter path (`bodies` below); false: a simple specular highlight only (the GGX glint of their light; the CPU tier's).",
+    "opaque": { "ssrSteps": 0, "refineSteps": 0, "maxDistanceM": 0, "cloudOctaves": 0, "cloudShadow": false, "bodyPath": false },
+    "low": { "ssrSteps": 0, "refineSteps": 0, "maxDistanceM": 0, "cloudOctaves": 1, "cloudShadow": false, "bodyPath": true },
+    "medium": { "ssrSteps": 12, "refineSteps": 8, "maxDistanceM": 24000, "cloudOctaves": 3, "cloudShadow": false, "bodyPath": true }
+  },
+  "bodies": {
+    "$comment": "The sun and moon on the water, on a tier with bodyPath (docs/WATER_RENDERING.md §15): the disc mirrored in the reflected sky, and a glitter path, a GGX lobe of the disc's own light off the rippled normal: a streak toward the viewer on the line under the body, broken up by the ripples, brighter and tighter on calm water (the ripples' lost slope variance widens and dims it, as it does the glint). strength: the path's light × the disc's colour (the moon's × its lit share). pathAlpha: the lobe's GGX α (larger: a longer, wider, dimmer path). fullBelowDeg, goneAboveDeg: the path is whole while the body is under fullBelowDeg over the face's horizon and gone over goneAboveDeg (the sun's at low angles only, a sunset path; 90 and 90: always). cloudFade: the share of the path the cloud cover (the Clouds setting's coverage) takes away while clouds are drawn. Run `node shared/look/reflections.mjs` after editing.",
+    "sun": { "strength": 0.05, "pathAlpha": 0.09, "fullBelowDeg": 6, "goneAboveDeg": 20 },
+    "moon": { "strength": 0.15, "pathAlpha": 0.07, "fullBelowDeg": 90, "goneAboveDeg": 90 },
+    "cloudFade": 0.8
   },
   "phone": {
     "$comment": "Overrides of a tier's entries on a phone (a touch-first device: the shell's prefersTouch), whose GPU has a fraction of a desktop's for the same pixels (owner, 2026-11-06: Medium slowed a phone close to the water). Any of a tier's entries; the rest are the tier's. Not a tier that reads no scene (it marches nothing).",
