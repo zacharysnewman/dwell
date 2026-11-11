@@ -75,6 +75,10 @@ const LAVA: TableDefinition<u32, &[u8]> = TableDefinition::new("lava");
 /// The far ecology (docs/ECOLOGY.md §5 slice 2): one record, both faces' herds and packs and their
 /// forage. Optional: older builds ignore it; a world without it starts a fresh ecology.
 const ECOLOGY: TableDefinition<u32, &[u8]> = TableDefinition::new("ecology");
+/// Tall grass growth (ADR 0075 T3c, docs/ECOLOGY.md §10): one record, the world's switch and each
+/// grown chunk's last world day. Optional: older builds ignore it; a world without it (an older
+/// save) has no grass growth.
+const GRASS: TableDefinition<u32, &[u8]> = TableDefinition::new("grass_growth");
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct WorldMeta {
@@ -243,6 +247,8 @@ pub struct SaveBatch {
     pub lava: Option<Vec<u8>>,
     /// The far ecology now, replacing what was saved before (None: leave it; docs/ECOLOGY.md).
     pub ecology: Option<Vec<u8>>,
+    /// The grass growth now, replacing what was saved before (None: leave it; ADR 0075 T3c).
+    pub grass: Option<Vec<u8>>,
 }
 
 /// A [`SaveBatch`] being encoded for its commit (`WorldDb::prepare`): its chunks mapped to the
@@ -710,6 +716,14 @@ impl WorldDb {
         Some(v.value().to_vec())
     }
 
+    /// The grass growth as last saved (ADR 0075 T3c), if any.
+    pub fn grass(&self) -> Option<Vec<u8>> {
+        let txn = self.db.begin_read().ok()?;
+        let t = txn.open_table(GRASS).ok()?;
+        let v = t.get(0).ok()??;
+        Some(v.value().to_vec())
+    }
+
     /// The far ecology as last saved (docs/ECOLOGY.md), if any.
     pub fn ecology(&self) -> Option<Vec<u8>> {
         let txn = self.db.begin_read().ok()?;
@@ -1054,6 +1068,10 @@ impl WorldDb {
         if let Some(ecology) = &batch.ecology {
             let mut t = txn.open_table(ECOLOGY).map_err(err)?;
             t.insert(0, ecology.as_slice()).map_err(err)?;
+        }
+        if let Some(grass) = &batch.grass {
+            let mut t = txn.open_table(GRASS).map_err(err)?;
+            t.insert(0, grass.as_slice()).map_err(err)?;
         }
         if let Some(hook) = &self.before_commit {
             hook()?; // dropping the transaction aborts it

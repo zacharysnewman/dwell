@@ -169,6 +169,16 @@ Last updated: 2026-11-11 (0.52.68).
 
 Cloud sessions: logic-only items can run as `claude --cloud` sessions in parallel (verified 2026-11-11).
 
+14. **Tall grass grows and spreads** (owner 2026-11-11: "I want tall grass to steadily grow and spread. It
+   should probably have a max depending on climate/biome."). **Built** (ADR 0075 T3c, docs/ECOLOGY.md §10):
+   `shared/worldgen/grass.json` (the rule as data: the block, the ground, the decoration whose climate
+   envelope sets the cap, the max density, spread and regrowth a day, reach, open air above, the catch-up
+   bound) → `grass.gen.rs`; `dwell_worldgen::grass` (the face-local step); the server's grass step every 5 s
+   over loaded chunks, each growing the whole world days it missed (at most 20); a player's block wins;
+   eaten grass regrows; the far forage's most is scaled by the same climate share. A per-world switch in an
+   optional `grass_growth` table: on for new worlds, off for worlds saved before it (their meadows stay as
+   they were). Not yet: a setting in the world menu; a local world's ecology share (its maps, ECOLOGY.md §7).
+
 ## Done
 
 - **Starter world on iPhone (P0, 0.52.68, BUGS.md #70):** the tab reloaded while loading the terrain.

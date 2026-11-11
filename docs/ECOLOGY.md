@@ -287,3 +287,56 @@ Tests: `cargo test -p dwell-protocol ecology` (round trip, truncation, a bad fac
 `cargo test -p dwell-sim --test ecology` (both faces): the Inventory's flag, a client that asked gets
 the far groups at the hello and every 2 s as the server holds them, face-local on their faces, and a
 client that didn't ask never does; a world without an ecology sends none.
+
+## 10. Tall grass growing and spreading (ADR 0075 T3c)
+
+Owner (2026-11-11): "I want tall grass to steadily grow and spread. It should probably have a max
+depending on climate/biome." Data: `shared/worldgen/grass.json` (`gen.mjs` `validateGrass` →
+`dwell-worldgen` `grass.gen.rs`). Code: `dwell_worldgen::grass` (the face-local step, pure),
+`dwell-sim` `server/grass.rs` (the server's step and save).
+
+- **The cap is the climate's.** A column is **fertile** when the tall grass decoration's own per-cell
+  roll (the one that decides generated tall grass, `Placer::roll`) is under `maxDensity` × the
+  climate's **share** there: the T3b undergrowth factor of the vegetation kind governing the decoration
+  (`dwell:meadow_grass`: thins with the moisture, fades below 1 °C), 0 in a biome that doesn't list the
+  decoration, 1 without a climate (`TerrainGenerator::grass_envelope`). Generated tufts roll under
+  `density` × patch × share ≤ `maxDensity` × share (`maxDensity` ≥ the decoration's density is
+  validated), so every generated tuft is fertile, and ground never holds more tall grass than
+  `maxDensity` × share of its open grass cells. Lush meadows fill toward 0.8; dry steppe stays sparse.
+- **Near players**: every 5 s of the tick the server's grass step takes up to 64 loaded chunks not yet
+  grown to today's whole world day (the world's days × `growth_speed`, as trees) and grows the days
+  each missed, at most `catchUpDays` (20) at once: a chunk first loaded on day 1000 grows days
+  980–999, not a thousand. Each day an open cell (air, with `openAbove` cells of air over it) over an
+  `on` block (`dwell:grass`) of a fertile column takes `block` with `spreadPerDay` (0.15) when tall grass
+  stands within `reach` columns (and a metre up or down), or `regrowPerDay` (0.25) when it held
+  generated tall grass that is gone (**grazed** by deer, §8, or cut). Rolls hash (seed, day, face-local
+  cell): face B grows face A's mirror.
+- **A player's block wins**: a cell grows only where it is air now and was air or tall grass as
+  generated, over ground that is its generated block. A placed block, a placed grass block, a roofed
+  cell or a dug cell never takes it.
+- **Far away**: the ecology's island cells (§2) hold at most their ground's forage × the same share at
+  the cell's centre (`Island::scale_grazing`, `grass::far_share`), and regrow toward it. **The mapping**:
+  near, a stretch's tall grass at saturation is `maxDensity` × share of its open grass cells; far, a
+  cell's most forage is its ground's × share; so a cell's forage over its ground's most equals its tall
+  grass over `maxDensity`. Applied to the islands made from world maps while the world grows grass (a
+  world without grass growth keeps its forage as before; the default world's single biome has share 1
+  everywhere, so its forage is unchanged).
+- **The world's switch**: saved in the optional `grass_growth` table (a version byte, the switch, each
+  grown chunk's last day; another version's is kept unread and the growth stays off). `ServerConfig::grass`
+  (on) is a **new** world's; a world saved before this (meta, no table) has none, so existing worlds'
+  meadows don't change under their players; a world keeps its own after. Not a compatibility change:
+  worldgen, the goldens and the protocol are unchanged (growth writes ordinary block edits).
+- **Not yet**: a setting in the world's menu; grass on a chunk's edge cells seeded only from loaded
+  neighbours; the browser's local world's far share (its maps, §7).
+
+Tests: `cargo test -p dwell-worldgen --test grass` (both faces): a meadow spreads over days toward
+`maxDensity` and never onto an infertile column; a dry stretch (share 0.1) stays sparse and share 0
+grows nothing; a placed stone, a placed grass block and a roofed cell are never grown over; eaten
+tufts regrow; a load catches up at most `catchUpDays`, the same as growing those days one by one; a
+fixture rule by data alone (on dirt, reach 2) grows its square and not on grass. `cargo test -p
+dwell-ecology` `the_far_forage_regrows_toward_the_same_climate_cap_as_the_near_grass`: the far most
+over the ground's is the near cap over `maxDensity`, and a dry cell's forage stays sparse. `cargo
+test -p dwell-sim --test grass` (both faces): the server grows a loaded chunk's missed days and a
+player's block stands; the switch and the days survive a save; an opted-out world keeps its choice;
+the saved form round-trips and another version is unread. `node --test shared/worldgen/gen.test.mjs`:
+grass.json validates, bad entries fail naming the field.
