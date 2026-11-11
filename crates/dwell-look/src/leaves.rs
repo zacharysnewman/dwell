@@ -1,4 +1,4 @@
-//! The leaves' look (docs/TREE_GROWTH.md §8, the Leaf Lab's option 5): which blocks are drawn as a
+//! The leaves' look (docs/TREE_GROWTH.md §10, the Leaf Lab's option 5): which blocks are drawn as a
 //! canopy, how far their lighting normals lean toward the crown's outward direction, and how far
 //! their exposed edges are cut back, from `shared/look/leaves.json`. The geometry is the chunk
 //! mesher's (`dwell-mesh` `mesher/leaves.rs`).

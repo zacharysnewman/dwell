@@ -1985,7 +1985,13 @@ dwell_world::both_faces!(
             water_area(&dry) > water_area(&all_water) + 1.0,
             "a dry leaf has the water's faces round it"
         );
-        assert_eq!(quads(&flooded.cutout), 6, "the leaf drawn inside the water");
+        // A lone leaf (shared/look/leaves.json): 6 faces and 12 edge cuts (quads) and 8 corner
+        // cuts (triangles, half a quad each).
+        assert_eq!(
+            quads(&flooded.cutout),
+            22,
+            "the leaf drawn inside the water"
+        );
     }
 );
 

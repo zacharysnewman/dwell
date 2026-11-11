@@ -136,7 +136,10 @@ pub(crate) fn style_of(s: &StateInfo, fluids: &[FluidInfo]) -> MaterialStyle {
             && SHAPES
                 .get(usize::from(s.shape_index))
                 .is_some_and(|sh| sh.convex),
-        leafy: look == Look::Cube && dwell_look::leaves::LEAVES.blocks.contains(&block_id(s.name)),
+        leafy: look == Look::Cube
+            && dwell_look::leaves::LEAVES
+                .blocks
+                .contains(&block_id(s.name)),
     }
 }
 

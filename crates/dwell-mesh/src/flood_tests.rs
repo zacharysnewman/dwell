@@ -357,10 +357,18 @@ dwell_world::both_faces!(
             let light = lit.padded_light(c);
             let m = mesh_chunk_lit(&block, &light, f.is_b(), [c.x * N, c.y * N, c.z * N])
                 .expect("block");
+            // Leaves' normals lean out of their crown (shared/look/leaves.json): a side's
+            // vertex under the leaf above leans up, under the canopy's own shade. Not open ground.
+            let leaf_tiles: Vec<f32> = ["leaves", "snowyLeavesTop", "snowyLeavesSide"]
+                .iter()
+                .map(|t| crate::textures::tile_rect(t).u0 as f32)
+                .collect();
             for mesh in [&m.opaque, &m.cutout] {
                 for i in 0..mesh.positions.len() / 3 {
                     let up = f64::from(mesh.normals[i * 3 + 1]) * f.sign_f64();
-                    if up > 0.2 && mesh.light[i] > 0.5 {
+                    let leaf =
+                        std::ptr::eq(mesh, &m.cutout) && leaf_tiles.contains(&mesh.tiles[i * 4]);
+                    if up > 0.2 && mesh.light[i] > 0.5 && !leaf {
                         checked += 1;
                         dark += usize::from(mesh.flood[i * 2] < 0.9);
                     }

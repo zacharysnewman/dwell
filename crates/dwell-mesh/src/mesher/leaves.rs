@@ -1,4 +1,4 @@
-//! Leaves as a canopy (docs/TREE_GROWTH.md §8, the Leaf Lab's option 5; `shared/look/leaves.json`):
+//! Leaves as a canopy (docs/TREE_GROWTH.md §10, the Leaf Lab's option 5; `shared/look/leaves.json`):
 //! each leaf cell is drawn whole, a cube cut back by `chamfer` on the edges and corners where both
 //! (all three) faces meeting there are exposed (no leaf beside them), and its normals lean
 //! `canopy_blend` of the way toward the crown's outward direction, so a crown shades as one
@@ -79,8 +79,10 @@ pub(crate) fn planes(ex: [bool; 6], s: f64) -> Vec<Plane> {
                 if !ex[sx] || !ex[sy] || !ex[sz] {
                     continue;
                 }
-                let n = normalise(std::array::from_fn(|a| unit(sx)[a] + unit(sy)[a] + unit(sz)[a]))
-                    .unwrap_or_default();
+                let n = normalise(std::array::from_fn(|a| {
+                    unit(sx)[a] + unit(sy)[a] + unit(sz)[a]
+                }))
+                .unwrap_or_default();
                 out.push(Plane {
                     n,
                     d: (1.5 - 2.0 * s) / 3f64.sqrt(),
@@ -218,7 +220,13 @@ pub(crate) fn pieces(ex: [bool; 6], leafy: [bool; 6], nb_ex: [[bool; 6]; 6], s: 
             let d = p.d + dot(p.n, e);
             let piece = clip(&rest, p.n.map(|c| -c), -d);
             if area(&piece) > EPS {
-                let sides = p.sides.iter().flatten().copied().filter(|&f| f != i).collect();
+                let sides = p
+                    .sides
+                    .iter()
+                    .flatten()
+                    .copied()
+                    .filter(|&f| f != i)
+                    .collect();
                 out.push(Piece {
                     pts: piece,
                     normal: e,
@@ -277,7 +285,9 @@ impl Crowns {
                     };
                     let mut s = [0.0; 4];
                     for c in 0..4 {
-                        s[c] = v[c] + sums[at(x, y + 1, z + 1)][c] + sums[at(x + 1, y, z + 1)][c]
+                        s[c] = v[c]
+                            + sums[at(x, y + 1, z + 1)][c]
+                            + sums[at(x + 1, y, z + 1)][c]
                             + sums[at(x + 1, y + 1, z)][c]
                             - sums[at(x, y, z + 1)][c]
                             - sums[at(x, y + 1, z)][c]
@@ -298,7 +308,9 @@ impl Crowns {
         let s = |x: i32, y: i32, z: i32| self.sums[at(x, y, z)];
         let mut out = [0.0; 4];
         for (c, o) in out.iter_mut().enumerate() {
-            *o = s(b[0], b[1], b[2])[c] - s(a[0], b[1], b[2])[c] - s(b[0], a[1], b[2])[c]
+            *o = s(b[0], b[1], b[2])[c]
+                - s(a[0], b[1], b[2])[c]
+                - s(b[0], a[1], b[2])[c]
                 - s(b[0], b[1], a[2])[c]
                 + s(a[0], a[1], b[2])[c]
                 + s(a[0], b[1], a[2])[c]
@@ -316,7 +328,10 @@ impl Crowns {
         let mut hi = [0; 3];
         for a in 0..3 {
             // The same reach on both sides, so two chunks agree near their shared border.
-            let r = reach[a].min(p[a] + 1.0).min(f64::from(N + 1) - p[a]).max(0.0);
+            let r = reach[a]
+                .min(p[a] + 1.0)
+                .min(f64::from(N + 1) - p[a])
+                .max(0.0);
             lo[a] = ((p[a] - r - 0.5).ceil() as i32).clamp(-1, N);
             hi[a] = ((p[a] + r - 0.5).floor() as i32).clamp(-1, N);
             if hi[a] < lo[a] {
@@ -341,11 +356,20 @@ pub(crate) fn canopy_normal(face: V, outward: Option<V>, blend: f64) -> V {
     let Some(g) = outward else {
         return face;
     };
-    normalise(std::array::from_fn(|i| face[i] * (1.0 - blend) + g[i] * blend)).unwrap_or(face)
+    normalise(std::array::from_fn(|i| {
+        face[i] * (1.0 - blend) + g[i] * blend
+    }))
+    .unwrap_or(face)
 }
 
 /// Draws the leaf cell `cell` (chunk-local) of kind `k` into `b`.
-pub(super) fn leaf_voxel(b: &mut Builder, cells: &Cells<'_>, crowns: &Crowns, k: &Kind, cell: [i32; 3]) {
+pub(super) fn leaf_voxel(
+    b: &mut Builder,
+    cells: &Cells<'_>,
+    crowns: &Crowns,
+    k: &Kind,
+    cell: [i32; 3],
+) {
     let nb = |i: usize, c: [i32; 3]| {
         let (a, s) = FACES[i];
         let mut o = c;
@@ -362,21 +386,33 @@ pub(super) fn leaf_voxel(b: &mut Builder, cells: &Cells<'_>, crowns: &Crowns, k:
                 return false;
             }
             let kn = cells.kind(o[0], o[1], o[2]);
-            !kn.style.leafy
-                && !(kn.occludes && kn.shape == super::Shape::Full && !kn.style.octagon)
+            let covers = kn.occludes && kn.shape == super::Shape::Full && !kn.style.octagon;
+            !kn.style.leafy && !covers
         })
     };
     let ex = exposed_at(cell);
     let leafy: [bool; 6] = std::array::from_fn(|i| leafy_at(nb(i, cell)));
-    let nb_ex: [[bool; 6]; 6] =
-        std::array::from_fn(|i| if leafy[i] { exposed_at(nb(i, cell)) } else { [false; 6] });
+    let nb_ex: [[bool; 6]; 6] = std::array::from_fn(|i| {
+        if leafy[i] {
+            exposed_at(nb(i, cell))
+        } else {
+            [false; 6]
+        }
+    });
     let list = pieces(ex, leafy, nb_ex, LEAVES.chamfer);
     for piece in list {
-        emit(b, cells, crowns, k, cell, &piece);
+        emit(b, cells, crowns, k, (cell, ex), &piece);
     }
 }
 
-fn emit(b: &mut Builder, cells: &Cells<'_>, crowns: &Crowns, k: &Kind, cell: [i32; 3], piece: &Piece) {
+fn emit(
+    b: &mut Builder,
+    cells: &Cells<'_>,
+    crowns: &Crowns,
+    k: &Kind,
+    (cell, ex): ([i32; 3], [bool; 6]),
+    piece: &Piece,
+) {
     let [x, y, z] = cell;
     let n_m = normal_to_m(piece.normal);
     // The tile and its uv projection: the dominant axis of the face.
@@ -394,13 +430,18 @@ fn emit(b: &mut Builder, cells: &Cells<'_>, crowns: &Crowns, k: &Kind, cell: [i3
     for &q in &piece.pts {
         // Cell-local point in 0..1 and chunk-local point (cells).
         let f: V = q.map(|c| c + 0.5);
-        let p: V = [f64::from(x) + f[0], f64::from(y) + f[1], f64::from(z) + f[2]];
+        let p: V = [
+            f64::from(x) + f[0],
+            f64::from(y) + f[1],
+            f64::from(z) + f[2],
+        ];
         let n = canopy_normal(n_m, crowns.outward(p), LEAVES.canopy_blend);
         let tint = normal_tint(n[0], n[1], n[2]);
         let r = super::channel(color, 16) * tint[0];
         let g = super::channel(color, 8) * tint[1];
         let bl = super::channel(color, 0) * tint[2];
-        b.m.positions.extend([p[0] as f32, p[1] as f32, p[2] as f32]);
+        b.m.positions
+            .extend([p[0] as f32, p[1] as f32, p[2] as f32]);
         b.m.normals.extend([n[0] as f32, n[1] as f32, n[2] as f32]);
         b.m.colors.extend([r as f32, g as f32, bl as f32]);
         let (su, sv) = match dom {
@@ -413,17 +454,30 @@ fn emit(b: &mut Builder, cells: &Cells<'_>, crowns: &Crowns, k: &Kind, cell: [i3
         // The light of the cell faces it looks out of, as an octagonal log's chamfer takes it.
         let mut light = 0.0;
         let mut flood = [0.0f32; 2];
-        for &side in &sides {
+        // The flood light also from the open face the leaned normal looks out of most (a side's
+        // corner leaned up takes the sky above it).
+        let nd = (0..3)
+            .max_by(|&i, &j| n[i].abs().total_cmp(&n[j].abs()))
+            .unwrap_or(1);
+        let looks = super::face_of(nd, if n[nd] >= 0.0 { 1 } else { -1 });
+        let extra = (ex[looks] && !sides.contains(&looks)).then_some(looks);
+        for &side in sides.iter().chain(extra.iter()) {
             let (a, s) = FACES[side];
             let mut fq = f;
             fq[a] = if s > 0 { 1.0 } else { 0.0 };
-            light += vertex_light(AO_OPEN, cells.sky_rays(cell, fq, unit(side), 40 + side as i64));
+            if Some(side) != extra {
+                light += vertex_light(
+                    AO_OPEN,
+                    cells.sky_rays(cell, fq, unit(side), 40 + side as i64),
+                );
+            }
             let front = super::neighbour_of(x, y, z, a, s);
             let (u, v) = ((a + 1) % 3, (a + 2) % 3);
             let toward = |c: f64| if c < 0.5 { -1 } else { 1 };
-            let (sky, block) = cells
-                .flood
-                .corner(cells.occ, front, u, toward(f[u]), v, toward(f[v]));
+            let (sky, block) =
+                cells
+                    .flood
+                    .corner(cells.occ, front, u, toward(f[u]), v, toward(f[v]));
             flood[0] = flood[0].max(f32::from(sky) / crate::flood::QUARTERS);
             flood[1] = flood[1].max(f32::from(block) / crate::flood::QUARTERS);
         }

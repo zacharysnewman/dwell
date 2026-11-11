@@ -34,8 +34,8 @@ use dwell_world::{CELL_H, SKY_APRON, SKY_EXTENT, SKY_VOLUME, normal_to_m};
 const N: i32 = CHUNK_SIZE;
 
 mod damage_mesh;
-mod leaves;
 mod ground_mesh;
+mod leaves;
 pub use ground_mesh::{GroundJob, look_mesh, look_swatch, scatter as ground_scatter};
 
 /// Edge of the padded voxel block: the chunk plus one voxel on each side.

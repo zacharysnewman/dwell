@@ -2,6 +2,12 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.52.56",
+      "changes": [
+        "Tree crowns look rounder: leaf blocks are bevelled where they meet the open air, and a crown is shaded as one mass, lit from outside in"
+      ]
+    },
+    {
       "version": "0.52.55",
       "changes": [
         "Behind the scenes: the starter world's hills are grass and forest again, not bare stone steps"

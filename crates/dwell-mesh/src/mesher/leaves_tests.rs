@@ -19,9 +19,10 @@ fn a_lone_leaf_is_cut_on_every_edge_and_corner() {
     let ps = pieces([true; 6], [false; 6], [[false; 6]; 6], S);
     // 6 faces, 12 edge cuts, 8 corner cuts.
     assert_eq!(ps.len(), 26);
-    // Each face keeps an octagon: the square less its four cut corners.
+    // Each face keeps a square 1 − 2s across (the edges' cuts reach past the corners').
     for p in ps.iter().filter(|p| p.sides.len() == 1) {
-        assert_eq!(p.pts.len(), 8, "{p:?}");
+        assert_eq!(p.pts.len(), 4, "{p:?}");
+        assert!((area(&p.pts) - (1.0 - 2.0 * S).powi(2)).abs() < 1e-9);
     }
     for p in &ps {
         for q in &p.pts {
@@ -39,7 +40,10 @@ fn only_edges_between_two_exposed_faces_are_cut() {
     let ps = pieces(ex, [false; 6], [[false; 6]; 6], S);
     let top = ps.iter().find(|p| p.sides == vec![2]).expect("top");
     assert!((area(&top.pts) - (1.0 - S)).abs() < 1e-9);
-    let cut = ps.iter().find(|p| p.sides.len() == 2).expect("the edge's cut");
+    let cut = ps
+        .iter()
+        .find(|p| p.sides.len() == 2)
+        .expect("the edge's cut");
     assert!((area(&cut.pts) - S * std::f64::consts::SQRT_2).abs() < 1e-9);
     assert_eq!(ps.len(), 3);
 }
@@ -87,7 +91,10 @@ fn the_canopy_leans_out_of_the_crown() {
     let top = crowns.outward([16.5, 20.0, 16.5]).expect("decided");
     assert!(top[1] > 0.99, "{top:?}");
     let corner = crowns.outward([20.0, 20.0, 20.0]).expect("decided");
-    assert!(corner[0] > 0.3 && corner[1] > 0.3 && corner[2] > 0.3, "{corner:?}");
+    assert!(
+        corner[0] > 0.3 && corner[1] > 0.3 && corner[2] > 0.3,
+        "{corner:?}"
+    );
     let side = crowns.outward([13.0, 16.0, 16.5]).expect("decided");
     assert!(side[0] < -0.99, "{side:?}");
     // Blended 0.75: a side face leans three parts toward the crown's direction to one its own.

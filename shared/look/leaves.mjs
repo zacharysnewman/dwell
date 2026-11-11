@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Generates the leaves' look (docs/TREE_GROWTH.md §8) for Rust (crates/dwell-look/src/leaves.gen.rs)
+// Generates the leaves' look (docs/TREE_GROWTH.md §10) for Rust (crates/dwell-look/src/leaves.gen.rs)
 // from shared/look/leaves.json, after validating it: an unknown, missing or out-of-range entry fails
 // with its path named. The output is checked in; CI regenerates it and fails on any diff.
 import { readFileSync, writeFileSync } from 'node:fs';

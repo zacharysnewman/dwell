@@ -17,6 +17,9 @@ Last updated: 2026-11-11 (0.52.52).
    - Far trees: "We do need better low rez trees the ones directly beyond high detail look nothing like
      the main trees." The LOD's trees match the near ones (octagon trunks, the same crown shape at
      coarser detail, the same colours and canopy lighting), no pop at the hand-over.
+   - **Status (0.52.56):** chamfered leaf cells (gaps fixed) and canopy normals built
+     (`shared/look/leaves.json`, TREE_GROWTH.md §10; the crown is a local 3 m centroid, not a per-tree
+     ellipsoid). Outstanding: leaf cards, the LOD's matching trees, screenshots and frame time on the GPU.
 6. **Tree species and growth in game.** Owner: "trees start with small trunks, thin, same shape, but
    shorter, smaller leaves … it should grow over time" and "Oak trees …, Pine trees …, and Palm
    trees." Species as data (`shared/trees`), growth stages stored, per climate (vegetation.json),
