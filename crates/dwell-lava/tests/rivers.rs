@@ -24,11 +24,16 @@ const SLOPE: f32 = 0.3;
 /// shallow valley along z = 0 and a ripple across it; past the shore, a sea floor 1.5 m under the
 /// sea at the shore, falling 0.05 a metre.
 fn flank(x: i32, z: i32) -> Column {
+    flank_at(SLOPE, x, z)
+}
+
+/// The fixture flank at another `slope`.
+fn flank_at(slope: f32, x: i32, z: i32) -> Column {
     let (xf, zf) = (x as f32, z as f32);
     let wobble = 0.3 * (zf * 0.37).sin() + 0.02 * zf.abs();
     if x < SHORE {
         Column {
-            bed: SEA + 0.5 + SLOPE * (SHORE as f32 - xf) + wobble,
+            bed: SEA + 0.5 + slope * (SHORE as f32 - xf) + wobble,
             water: None,
         }
     } else {
@@ -373,17 +378,23 @@ fn a_long_rivers_tick_stays_under_a_budget(f: FaceFrame, run: &Run) {
     }
 }
 
-/// A pond 4 m deep held by a 4.5 m crust dam of its own rock, on flat ground at 0 with a dry column
-/// past the dam: (field, pond, dam, past).
-fn dammed(rules: &LavaData) -> (Field, usize, usize, usize) {
+/// A pond 4 m deep on a bed at 0.5 m held by a crust dam of its own rock up to 4.5 m, standing on
+/// ground at `dam_base` (lower than the pond's: the dam is on its way down; as high: a levee beside
+/// its channel), with a dry column at 0 past the dam: (field, pond, dam, past).
+fn dammed_on(rules: &LavaData, dam_base: f32) -> (Field, usize, usize, usize) {
     let mut f = Field::new(rules, "dwell:lava", 3, 1).unwrap();
     let (p, d, q) = (f.at(0, 0), f.at(1, 0), f.at(2, 0));
+    f.ground[p] = 0.5;
     f.depth[p] = 4.0;
     f.heat[p] = 1.0;
     f.ground[d] = 4.5;
-    f.crust[d] = 4.5;
+    f.crust[d] = 4.5 - dam_base;
     f.settle();
     (f, p, d, q)
+}
+
+fn dammed(rules: &LavaData) -> (Field, usize, usize, usize) {
+    dammed_on(rules, 0.0)
 }
 
 both_faces!(
@@ -407,18 +418,18 @@ both_faces!(
         };
         assert_eq!(
             (*x, *z, rows.clone()),
-            (1, 0, 0..9),
-            "the dam's nine ½ m rows"
+            (1, 0, 1..9),
+            "the dam's eight ½ m rows down to the pond's bed"
         );
         let back: Vec<[i32; 3]> = melt[0]
             .cells(f, field.origin)
             .iter()
             .map(|&c| f.cell(c))
             .collect();
-        assert_eq!(back, (0..9).map(|r| [1, r, 0]).collect::<Vec<_>>());
-        assert_eq!((field.ground[d], field.crust[d]), (0.0, 0.0));
+        assert_eq!(back, (1..9).map(|r| [1, r, 0]).collect::<Vec<_>>());
+        assert_eq!((field.ground[d], field.crust[d]), (0.5, 0.5));
         assert!(
-            (field.stored() - before - 4.5).abs() < 1e-3,
+            (field.stored() - before - 4.0).abs() < 1e-3,
             "the crust's rock is lava again"
         );
         field.run(20.0);
@@ -441,5 +452,90 @@ both_faces!(
             (0.0, 0.0),
             "nothing past it"
         );
+    }
+);
+
+both_faces!(
+    // Channelling: a breakout melts only a dam on the pond's way down (the ground under its crust
+    // lower than under the pond). A levee beside the channel, its overflow frozen on ground as high
+    // as the channel's, holds, so a river stays in its banks instead of spreading into a sheet.
+    fn a_levee_beside_the_channel_holds(f: FaceFrame) {
+        let (mut field, p, d, q) = dammed_on(&dwell_lava::DATA, 0.5);
+        field.run(20.0);
+        assert!(
+            !field
+                .take_events()
+                .iter()
+                .any(|e| matches!(e, LavaEvent::Melt { .. })),
+            "no breakout through the levee"
+        );
+        assert_eq!(field.ground[d], 4.5, "the levee stands");
+        assert_eq!(
+            (field.depth[q], field.ground[q]),
+            (0.0, 0.0),
+            "nothing past it"
+        );
+        assert!(
+            field.depth[p] + field.ground[p] > 4.0,
+            "the channel holds its lava"
+        );
+        let _ = f;
+    }
+);
+
+both_faces!(
+    // Whether a river reaches the sea is the physics' (owner, 2026-11-11: "sometimes it may, other
+    // times it may not"): the same lava from a weak vent on a shallow slope crusts and stops short,
+    // its front standing still far from the shore, while the strong vent on the steep flank above
+    // reaches it. (0.2 m³/s: the front runs ~150 m in 45 lava minutes and stands; at 0.3 it
+    // still ran ~50 m every 15 minutes at the hour.)
+    fn a_weak_vent_on_a_shallow_slope_crusts_and_stops_short(f: FaceFrame) {
+        let slope = 0.03;
+        let mut field = Field::growing(&FIXTURE, "test:runny").unwrap();
+        field.cover(
+            [-8, -8],
+            [8, 8],
+            &mut |x, z, _| Some(flank_at(slope, x, z)),
+            0.0,
+        );
+        let mut v = Vent::from(FIXTURE.vent("test:flank_river").unwrap());
+        v.rate_m3s = 0.2;
+        field.vents.push(v);
+        let reach_on = |f: &Field| {
+            f.columns()
+                .filter(|&i| {
+                    let [x, z] = f.col(i);
+                    f.depth[i] > 0.0 || f.ground[i] > flank_at(slope, x, z).bed + 1e-3
+                })
+                .map(|i| f.col(i)[0])
+                .max()
+                .unwrap_or(0)
+        };
+        let mut at = Vec::new();
+        for _ in 0..4 {
+            let n = (900.0 / field.rules.far_every_seconds) as usize;
+            for _ in 0..n {
+                field.advance_on(
+                    field.rules.far_every_seconds,
+                    false,
+                    Some(&mut |x, z, _| Some(flank_at(slope, x, z))),
+                );
+                field.take_events();
+            }
+            at.push(reach_on(&field));
+        }
+        // It ran a while (well past its vent), then its front crusted and stood still, far short
+        // of the shore 1.1 km off, with no land in the sea.
+        let (last, before) = (at[at.len() - 1], at[at.len() - 2]);
+        assert!(at[0] > 20, "it ran: front every 15 min {at:?}");
+        assert!(last - before <= 5, "its front stopped: {at:?}");
+        assert!(last < SHORE / 4, "short of the shore: {at:?}");
+        assert_eq!(land(&field), 0, "no new land");
+        assert!(
+            field.rocked > 100.0,
+            "it crusted: {:.0} m³ of rock",
+            field.rocked
+        );
+        let _ = f;
     }
 );

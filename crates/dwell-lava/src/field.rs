@@ -969,9 +969,10 @@ impl Field {
     }
 
     /// A pond breaks its crust dam (`breakoutDepthM`, 0: never): molten lava at least that deep
-    /// beside a dry column of this field's own crust standing over its bed melts that crust down to
-    /// its bed again, at the pond's heat, so the lava runs on through the gap instead of freezing
-    /// its overflow into an ever higher wall. Volume is kept (the crust's rock becomes its lava).
+    /// beside a dry column of this field's own crust standing over its bed, on lower ground than the
+    /// pond's (its way down; a levee beside the channel holds), melts that crust down to its bed
+    /// again, at the pond's heat, so the lava runs on through the gap instead of freezing its
+    /// overflow into an ever higher wall. Volume is kept (the crust's rock becomes its lava).
     fn break_out(&mut self, visit: &[usize]) {
         let need = self.fluid.breakout_depth_m;
         if need <= 0.0 {
@@ -987,6 +988,12 @@ impl Field {
                 };
                 let rise = self.ground[j] - self.ground[i];
                 if self.depth[j] > 0.0 || self.crust[j] <= 0.0 || rise <= 0.0 {
+                    continue;
+                }
+                // Only a dam on the pond's way down: the ground under the crust lower than under
+                // the pond. A levee beside the channel stands on ground as high as the channel's,
+                // so it holds and the river stays in its banks.
+                if self.ground[j] - self.crust[j] >= self.ground[i] - self.crust[i] {
                     continue;
                 }
                 let melt = self.crust[j].min(rise);
