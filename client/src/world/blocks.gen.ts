@@ -75,7 +75,7 @@ export interface ShapeDef {
 }
 
 /** FNV-1a 64 over the canonical state strings (each followed by "\n") in id order. */
-export const REGISTRY_HASH = 0xa43e03471d5b9c71n;
+export const REGISTRY_HASH = 0xc8b4a901c5b0b1e9n;
 
 export const BLOCK_DEFS: readonly BlockDef[] = [
   { id: 'dwell:air', first: 0, count: 1, properties: [] },
@@ -118,6 +118,7 @@ export const BLOCK_DEFS: readonly BlockDef[] = [
   { id: 'dwell:red_sandstone_ramp', first: 448, count: 48, properties: [{ name: 'facing', values: ['north', 'east', 'south', 'west'] }, { name: 'flooded', values: ['false', 'true'] }, { name: 'half', values: ['bottom', 'top'] }, { name: 'shape', values: ['ramp', 'steep_lower', 'steep_upper'] }], sound: 'dwell:stone' },
   { id: 'dwell:basalt', first: 496, count: 2, properties: [{ name: 'flooded', values: ['false', 'true'] }], sound: 'dwell:stone' },
   { id: 'dwell:obsidian', first: 498, count: 2, properties: [{ name: 'flooded', values: ['false', 'true'] }], sound: 'dwell:stone' },
+  { id: 'dwell:lava', first: 500, count: 1, properties: [], sound: 'dwell:stone' },
 ];
 
 /** The shapes block states use. */
@@ -660,6 +661,7 @@ const STATES_3: readonly StateDef[] = [
   { id: 497, state: 'dwell:basalt[flooded=true]', block: 38, values: { flooded: 'true' }, look: 'cube', render: 'opaque', color: 0x4a4648, opacity: 1, textures: { top: 'stone', side: 'stone', bottom: 'stone' }, shape: 1, flooded: true, placeable: false },
   { id: 498, state: 'dwell:obsidian[flooded=false]', block: 39, values: { flooded: 'false' }, look: 'cube', render: 'opaque', color: 0x1d1724, opacity: 1, textures: { top: 'stone', side: 'stone', bottom: 'stone' }, shape: 1, flooded: false, placeable: true },
   { id: 499, state: 'dwell:obsidian[flooded=true]', block: 39, values: { flooded: 'true' }, look: 'cube', render: 'opaque', color: 0x1d1724, opacity: 1, textures: { top: 'stone', side: 'stone', bottom: 'stone' }, shape: 1, flooded: true, placeable: false },
+  { id: 500, state: 'dwell:lava', block: 40, values: {  }, look: 'cube', render: 'opaque', color: 0xe8561c, opacity: 1, textures: { top: 'stone', side: 'stone', bottom: 'stone' }, shape: 0, flooded: false, placeable: false },
 ];
 
 export const STATE_DEFS: readonly StateDef[] = [

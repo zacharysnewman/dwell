@@ -103,6 +103,22 @@ look and the in-game check come next, locally). ARCHITECTURE.md §6.8 has the mo
 - **Data:** `shared/fluids/lava.json` (speed, viscosity, yield, cooling, rocks, light, damage, burn),
   `shared/fluids/lava.mjs`, a fixture with a fluid and vents by data alone.
 
-**Next:** the server's fields and tick, rock and lava cells in chunks, the water grid's columns and
-steam, the damage in the server's vitals (a burn cause), the save table, the lava block and its look
-(light, glow, crust), then V2's vents on the hotspot cones.
+### 6.1 As built: V1 slice 2, the server (2026-11-11)
+
+- **Fields in the server, per face** (`dwell-sim` `lava.rs`): placed round a vent with their beds and
+  water read from the world, ticked every `tickEvery` ticks like the water (near a player every lava
+  tick, fast-forwarded elsewhere).
+- **In the chunks:** molten rows are `dwell:lava` cells (a new block: no collision, light 13, placeholder
+  look), cooled rows `dwell:basalt`, the quench edge `dwell:obsidian`, all as one modification a lava
+  tick through the edit sync, so clients get them with no protocol change. Steam takes the water's top
+  cells and is queued for the clients (not sent yet).
+- **Danger:** a player in lava takes `damagePerSecond` and burns `burnSeconds` after through the
+  server's damage (none in creative), sent as `Fall` until a `Burn` cause can go on the wire.
+- **Saves:** an optional `lava` table, written only by a world with lava (older builds ignore it).
+- **Vents:** a dev way to place one (`Server::place_lava_vent`, a `VentSpot`); no generated vents, so
+  the default world and every seed's terrain are unchanged.
+- **Fixed on the way:** a `Rock` event's rows were metres, not ½ m cell rows (test red → green).
+
+**Next:** the look (local: light, glow, crust, steam puffs, the in-game check); the starter world's
+lake vent on its youngest hotspot island's summit as worldgen data (opt-in); the water grid's columns as
+the fields' water; a `Burn` cause; then V2's vents on the hotspot cones.
