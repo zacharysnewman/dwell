@@ -596,6 +596,10 @@ pub struct Game<S: Scene> {
     /// The far ecology's herds and packs the server last told of (`Ecology`, docs/ECOLOGY.md §9;
     /// `__dwell.ecology()`; for far rendering later), and whether `EcologyHello` was sent.
     pub ecology: Option<dwell_protocol::EcologyMessage>,
+    /// The far herds' heads laid out on the ground from the last `ecology` (crate::far_herds),
+    /// and whether it is to be laid out again (a new snapshot, or heads whose ground wasn't loaded).
+    far_heads: Vec<crate::far_herds::Head>,
+    far_stale: bool,
     ecology_on: bool,
     /// The server keeps block damage (`inventory_flags::DAMAGE`): `DamageHello` sent, struck
     /// points sent with breaks.
@@ -967,6 +971,8 @@ impl<S: Scene> Game<S> {
             creatures: Default::default(),
             creatures_on: false,
             ecology: None,
+            far_heads: Vec::new(),
+            far_stale: false,
             ecology_on: false,
             damage_on: false,
             causes_on: false,
@@ -1652,7 +1658,10 @@ impl<S: Scene> Game<S> {
                 }
             }
             Message::Creatures(m) => self.creatures.apply(m),
-            Message::Ecology(m) => self.ecology = Some(m),
+            Message::Ecology(m) => {
+                self.ecology = Some(m);
+                self.far_stale = true;
+            }
             Message::GroundGone(cells) => {
                 self.streamer.ground_gone(&cells);
             }
@@ -2835,6 +2844,38 @@ impl<S: Scene> Game<S> {
         crate::chop::TreeLean::of(cell, &cut, w, now_ms / 1000.0 - at)
     }
 
+    /// The far herds' heads (docs/ECOLOGY.md §11), laid out again on a new snapshot; a head's
+    /// ground is the loaded terrain's (one past the loaded chunks waits for them).
+    fn far_herd_puffs(&mut self, eye: [f64; 3]) -> Vec<crate::blasts::Puff> {
+        if self.chips.cpu {
+            return Vec::new();
+        }
+        if self.far_stale
+            && let Some(snapshot) = self.ecology.as_ref()
+        {
+            // Only the groups that could show (within their fade's end, on the eye's face): the
+            // ground scan is per head.
+            let face = dwell_world::FaceFrame::at_height(eye[1]);
+            let local = face.point(eye);
+            let mut near = snapshot.clone();
+            near.groups.retain(|g| {
+                let end = crate::far_herds::FAR_LOOKS
+                    .iter()
+                    .find(|l| l.species == g.species)
+                    .map_or(0.0, |l| l.fade_end_m);
+                u8::from(face.is_b()) == g.face
+                    && (f64::from(g.x) - local[0]).hypot(f64::from(g.z) - local[2]) < end + 32.0
+            });
+            let world = self.streamer.store_mut();
+            self.far_heads =
+                crate::far_herds::lay_out(&near, crate::far_herds::FAR_LOOKS, &mut |f, x, z| {
+                    crate::bodies::ground_at(world, f, [x, local[1], z], 48.0)
+                });
+            self.far_stale = false;
+        }
+        crate::far_herds::puffs(&self.far_heads, eye, false)
+    }
+
     fn update_blast_effects(&mut self, eye: [f64; 3], now_ms: f64) -> (f64, f64) {
         let now = now_ms / 1000.0;
         self.blasts.prune(now);
@@ -2842,6 +2883,7 @@ impl<S: Scene> Game<S> {
         self.steam.prune(now);
         let mut extra = self.chips.puffs(now);
         extra.extend(self.steam.puffs(now));
+        extra.extend(self.far_herd_puffs(eye));
         if self.blasts.list.is_empty() {
             self.scene.borrow_mut().set_blasts(extra, Vec::new());
             return (0.0, 0.0);

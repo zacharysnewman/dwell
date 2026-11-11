@@ -38,6 +38,8 @@ pub enum PuffKind {
     Chip,
     /// A leaf shaken down from a tree by a hit (crate::chips; its wood's `leaves` colour).
     Leaf,
+    /// A head of a far herd (crate::far_herds; its colour in the seed's low 24 bits).
+    Herd,
 }
 
 /// One billboard to draw: its centre (world m), half size (m), opacity, kind and its explosive.
