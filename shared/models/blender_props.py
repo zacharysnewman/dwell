@@ -10,7 +10,7 @@
 #   blender -b --factory-startup -P shared/models/blender_props.py -- <job.json>
 #
 # The job (written by import.mjs): {texture, palette: [[[r,g,b],[r,g,b]], ...],
-# props: [{fbx, out, length}, ...]}.
+# props: [{fbx, out, length, objects}, ...]}; `objects`: the FBX's mesh objects to keep (null: all).
 import json
 import sys
 
@@ -54,6 +54,14 @@ for p in job['props']:
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.ops.import_scene.fbx(filepath=p['fbx'])
     meshes = [o for o in bpy.data.objects if o.type == 'MESH']
+    # The pack stacks alternates in one file (the axes file: SingleHeadedAxe, DoubleHeadedAxe and the
+    # MetalAxe handle, overlapping): a prop's `objects` names the ones it is made of.
+    if p.get('objects'):
+        names = {o.name for o in meshes}
+        unknown = [n for n in p['objects'] if n not in names]
+        if unknown:
+            raise SystemExit(f"{p['out']}: no object {unknown} in its FBX (it has {sorted(names)})")
+        meshes = [o for o in meshes if o.name in p['objects']]
     bpy.ops.object.select_all(action='DESELECT')
     for o in meshes:
         o.select_set(True)

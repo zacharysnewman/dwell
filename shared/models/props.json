@@ -189,10 +189,13 @@
       "glb": "glb/props/fractured_vase_004.glb",
       "fbx": "Assets/Breakables/Vases/AssetsPack-01-NAS-fractured-vase-004.fbx"
     },
-    "axes": {
+    "metal_axe": {
       "category": "tools",
-      "glb": "glb/props/axes.glb",
-      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-axes.fbx"
+      "glb": "glb/props/metal_axe.glb",
+      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-axes.fbx",
+      "objects": ["DoubleHeadedAxe", "MetalAxe"],
+      "length": 0.65,
+      "grip": [0, -0.22, 0]
     },
     "metal_fork": {
       "category": "tools",
@@ -209,12 +212,18 @@
     "metal_pickaxes": {
       "category": "tools",
       "glb": "glb/props/metal_pickaxes.glb",
-      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-metal-pickaxes.fbx"
+      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-metal-pickaxes.fbx",
+      "objects": ["Handle.013", "MetalPickAxe"],
+      "length": 0.7,
+      "grip": [0, -0.2, 0]
     },
     "metal_shovel": {
       "category": "tools",
       "glb": "glb/props/metal_shovel.glb",
-      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-metal-shovel.fbx"
+      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-metal-shovel.fbx",
+      "objects": ["MetalParts", "MetalShovel"],
+      "length": 1.0,
+      "grip": [0, 0.3, 0]
     },
     "modern_hoe": {
       "category": "tools",
@@ -234,7 +243,9 @@
     "stone_axes": {
       "category": "tools",
       "glb": "glb/props/stone_axes.glb",
-      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-stone-axes.fbx"
+      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-stone-axes.fbx",
+      "length": 0.6,
+      "grip": [0, -0.2, 0]
     },
     "stone_hammer": {
       "category": "tools",
@@ -252,7 +263,9 @@
     "wooden_shovel": {
       "category": "tools",
       "glb": "glb/props/wooden_shovel.glb",
-      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-wooden-shovel.fbx"
+      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-wooden-shovel.fbx",
+      "length": 1.0,
+      "grip": [0, 0.3, 0]
     },
     "wrenches": {
       "category": "tools",

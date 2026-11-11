@@ -17,7 +17,7 @@ mod table {
     include!("tools.gen.rs");
 }
 
-pub use table::{BREAK_WITH, TOOLS, WOODS};
+pub use table::{BREAK_CLASSES, BREAK_TOOLS, BREAK_WITH, TOOLS, WOODS};
 
 /// A tool's swing (`swing` in the data): its feel (the client's) and its path (both sides').
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -207,6 +207,39 @@ pub struct Chips {
     pub speed: f64,
     /// Their size (m).
     pub size: f64,
+}
+
+/// A tool item's class and tier for breaking (`breaking.tools` in shared/tools/tools.json).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BreakTool {
+    pub item: &'static str,
+    /// The tool class (`pickaxe`, `shovel`, `axe`, …: `breaking.classes`' keys).
+    pub class: &'static str,
+    pub tier: &'static str,
+    /// The tier's break speed, a multiple of the bare hand's.
+    pub speed: f64,
+}
+
+/// The break speed of `block` holding `held` (an item name; none: an empty hand), from tables
+/// `classes` (block → tool class) and `tools`: the held tool's tier speed when its class is the
+/// block's, 1 (as before) otherwise.
+pub fn break_speed_in(
+    classes: &[(&str, &str)],
+    tools: &[BreakTool],
+    block: &str,
+    held: Option<&str>,
+) -> f64 {
+    let Some(class) = classes.iter().find(|(b, _)| *b == block).map(|(_, c)| *c) else {
+        return 1.0;
+    };
+    held.and_then(|h| tools.iter().find(|t| t.item == h))
+        .filter(|t| t.class == class)
+        .map_or(1.0, |t| t.speed)
+}
+
+/// [`break_speed_in`] over the build's data.
+pub fn break_speed(block: &str, held: Option<&str>) -> f64 {
+    break_speed_in(BREAK_CLASSES, BREAK_TOOLS, block, held)
 }
 
 /// The tool kind breaking a block needs where blocks are not unlimited (its `breakWith`), if any.
@@ -429,6 +462,47 @@ mod tests {
 
     fn axe() -> &'static ToolDef {
         tool("dwell:stone_axe").expect("the stone axe is data")
+    }
+
+    #[test]
+    fn the_right_tool_breaks_its_material_faster_metal_faster_than_stone() {
+        // Pickaxe on stone, shovel on dirt and sand, axe on wood (owner, 2026-11-10).
+        for (block, stone, metal) in [
+            ("dwell:stone", "dwell:stone_pickaxe", "dwell:metal_pickaxe"),
+            ("dwell:dirt", "dwell:wooden_shovel", "dwell:metal_shovel"),
+            ("dwell:sand", "dwell:wooden_shovel", "dwell:metal_shovel"),
+            ("dwell:log", "dwell:stone_axe", "dwell:metal_axe"),
+        ] {
+            let (bare, s, m) = (
+                break_speed(block, None),
+                break_speed(block, Some(stone)),
+                break_speed(block, Some(metal)),
+            );
+            assert_eq!(bare, 1.0, "{block} by hand is as before");
+            assert!(s > bare && m > s, "{block}: hand {bare}, {stone} {s}, {metal} {m}");
+        }
+        // The wrong tool, or a block no class names, is as before.
+        assert_eq!(break_speed("dwell:stone", Some("dwell:metal_shovel")), 1.0);
+        assert_eq!(break_speed("dwell:log", Some("dwell:metal_pickaxe")), 1.0);
+        assert_eq!(break_speed("dwell:leaves", Some("dwell:metal_axe")), 1.0);
+        // Every breaking tool is an inventory item with a model look (the tool models).
+        for t in BREAK_TOOLS {
+            let item = crate::inventory::item(t.item).expect("a breaking tool is an item");
+            assert!(
+                item.look.is_some_and(|l| !l.model.is_empty()),
+                "{} has a model look",
+                t.item
+            );
+        }
+    }
+
+    #[test]
+    fn a_fixture_tool_class_and_tier_by_data_alone_breaks_faster() {
+        let classes = [("test:clay", "trowel")];
+        let tools = [BreakTool { item: "test:trowel", class: "trowel", tier: "bronze", speed: 2.0 }];
+        assert_eq!(break_speed_in(&classes, &tools, "test:clay", Some("test:trowel")), 2.0);
+        assert_eq!(break_speed_in(&classes, &tools, "test:clay", None), 1.0);
+        assert_eq!(break_speed_in(&classes, &tools, "test:rock", Some("test:trowel")), 1.0);
     }
     const UP: [f64; 3] = [0.0, 1.0, 0.0];
     const Y: usize = 1;

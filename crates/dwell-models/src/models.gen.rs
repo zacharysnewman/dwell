@@ -18,7 +18,7 @@ pub static MODELS: &[ModelData] = &[
     ModelData { name: "chicken", glb: "glb/chicken.glb", joints: 32, scale: 1.0, yaw: 0.0, fallback: "idle", roles: &[RoleClip { role: "idle", clip: "idle", speed: 1.0 }, RoleClip { role: "walk", clip: "walk", speed: 1.0 }, RoleClip { role: "sprint", clip: "run", speed: 1.0 }], hand: None },
     ModelData { name: "penguin", glb: "glb/penguin.glb", joints: 20, scale: 1.0, yaw: 0.0, fallback: "idle", roles: &[RoleClip { role: "idle", clip: "idle", speed: 1.0 }, RoleClip { role: "walk", clip: "walk", speed: 1.0 }, RoleClip { role: "sprint", clip: "run", speed: 1.0 }], hand: None },
 ];
-pub static PROP_GLBS: &[(&str, &[u8])] = &[("stone_pickaxes", include_bytes!("../../../shared/models/glb/props/stone_pickaxes.glb"))];
+pub static PROP_GLBS: &[(&str, &[u8])] = &[("stone_axes", include_bytes!("../../../shared/models/glb/props/stone_axes.glb")), ("metal_axe", include_bytes!("../../../shared/models/glb/props/metal_axe.glb")), ("stone_pickaxes", include_bytes!("../../../shared/models/glb/props/stone_pickaxes.glb")), ("metal_pickaxes", include_bytes!("../../../shared/models/glb/props/metal_pickaxes.glb")), ("wooden_shovel", include_bytes!("../../../shared/models/glb/props/wooden_shovel.glb")), ("metal_shovel", include_bytes!("../../../shared/models/glb/props/metal_shovel.glb"))];
 pub static PROPS: &[PropData] = &[
     PropData { name: "bag", category: "containers", glb: "glb/props/bag.glb", length: 0.7, size: [0.6284, 0.6428, 0.7], grip: [0.0, 0.0, 0.0] },
     PropData { name: "breakable_barrel", category: "containers", glb: "glb/props/breakable_barrel.glb", length: 0.7, size: [0.5813, 0.7, 0.5476], grip: [0.0, 0.0, 0.0] },
@@ -49,18 +49,18 @@ pub static PROPS: &[PropData] = &[
     PropData { name: "fractured_vase_002", category: "tableware", glb: "glb/props/fractured_vase_002.glb", length: 0.25, size: [0.2028, 0.25, 0.2028], grip: [0.0, 0.0, 0.0] },
     PropData { name: "fractured_vase_003", category: "tableware", glb: "glb/props/fractured_vase_003.glb", length: 0.25, size: [0.1652, 0.25, 0.1652], grip: [0.0, 0.0, 0.0] },
     PropData { name: "fractured_vase_004", category: "tableware", glb: "glb/props/fractured_vase_004.glb", length: 0.25, size: [0.1652, 0.25, 0.1652], grip: [0.0, 0.0, 0.0] },
-    PropData { name: "axes", category: "tools", glb: "glb/props/axes.glb", length: 0.8, size: [0.4788, 0.8, 0.0845], grip: [0.0, 0.0, 0.0] },
+    PropData { name: "metal_axe", category: "tools", glb: "glb/props/metal_axe.glb", length: 0.65, size: [0.389, 0.65, 0.0687], grip: [0.0, -0.22, 0.0] },
     PropData { name: "metal_fork", category: "tools", glb: "glb/props/metal_fork.glb", length: 0.3, size: [0.01, 0.3, 0.0377], grip: [0.0, 0.0, 0.0] },
     PropData { name: "metal_hammer", category: "tools", glb: "glb/props/metal_hammer.glb", length: 0.45, size: [0.1998, 0.45, 0.0691], grip: [0.0, 0.0, 0.0] },
-    PropData { name: "metal_pickaxes", category: "tools", glb: "glb/props/metal_pickaxes.glb", length: 0.8, size: [0.7594, 0.8, 0.1121], grip: [0.0, 0.0, 0.0] },
-    PropData { name: "metal_shovel", category: "tools", glb: "glb/props/metal_shovel.glb", length: 0.8, size: [0.1645, 0.8, 0.1121], grip: [0.0, 0.0, 0.0] },
+    PropData { name: "metal_pickaxes", category: "tools", glb: "glb/props/metal_pickaxes.glb", length: 0.7, size: [0.6645, 0.7, 0.0981], grip: [0.0, -0.2, 0.0] },
+    PropData { name: "metal_shovel", category: "tools", glb: "glb/props/metal_shovel.glb", length: 1.0, size: [0.2056, 1.0, 0.1401], grip: [0.0, 0.3, 0.0] },
     PropData { name: "modern_hoe", category: "tools", glb: "glb/props/modern_hoe.glb", length: 0.8, size: [0.139, 0.8, 0.2012], grip: [0.0, 0.0, 0.0] },
     PropData { name: "primitive_hoe", category: "tools", glb: "glb/props/primitive_hoe.glb", length: 0.8, size: [0.0924, 0.7963, 0.2655], grip: [0.0, 0.0, 0.0] },
     PropData { name: "scythes", category: "tools", glb: "glb/props/scythes.glb", length: 0.8, size: [0.2705, 0.8, 0.0342], grip: [0.0, 0.0, 0.0] },
-    PropData { name: "stone_axes", category: "tools", glb: "glb/props/stone_axes.glb", length: 0.8, size: [0.3019, 0.8, 0.0868], grip: [0.0, 0.0, 0.0] },
+    PropData { name: "stone_axes", category: "tools", glb: "glb/props/stone_axes.glb", length: 0.6, size: [0.2264, 0.6, 0.0651], grip: [0.0, -0.2, 0.0] },
     PropData { name: "stone_hammer", category: "tools", glb: "glb/props/stone_hammer.glb", length: 0.45, size: [0.154, 0.45, 0.065], grip: [0.0, 0.0, 0.0] },
     PropData { name: "stone_pickaxes", category: "tools", glb: "glb/props/stone_pickaxes.glb", length: 0.6, size: [0.2631, 0.6, 0.067], grip: [0.0, -0.2, 0.0] },
-    PropData { name: "wooden_shovel", category: "tools", glb: "glb/props/wooden_shovel.glb", length: 0.8, size: [0.144, 0.8, 0.057], grip: [0.0, 0.0, 0.0] },
+    PropData { name: "wooden_shovel", category: "tools", glb: "glb/props/wooden_shovel.glb", length: 1.0, size: [0.1801, 1.0, 0.0712], grip: [0.0, 0.3, 0.0] },
     PropData { name: "wrenches", category: "tools", glb: "glb/props/wrenches.glb", length: 0.35, size: [0.0745, 0.35, 0.0178], grip: [0.0, 0.0, 0.0] },
     PropData { name: "golf_bats", category: "weapons", glb: "glb/props/golf_bats.glb", length: 1.0, size: [0.1766, 1.0, 0.0363], grip: [0.0, 0.0, 0.0] },
     PropData { name: "katanas_swords", category: "weapons", glb: "glb/props/katanas_swords.glb", length: 1.0, size: [0.0486, 1.0, 0.0819], grip: [0.0, 0.0, 0.0] },

@@ -113,6 +113,7 @@ if (props) {
           fbx,
           out: join(here, p.glb),
           length: p.length ?? pd.categories[p.category].length,
+          objects: p.objects ?? null,
         };
       }),
     };

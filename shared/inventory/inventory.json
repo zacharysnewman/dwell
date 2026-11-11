@@ -33,8 +33,12 @@
     { "name": "dwell:gem", "label": "Gem", "color": "#4fb07a", "size": 0.14, "value": 1 },
     { "name": "dwell:gem_large", "label": "Large gem", "color": "#4f7fd0", "size": 0.2, "value": 5 },
     { "name": "dwell:wood", "label": "Wood", "color": "#a07446", "size": 0.24 },
-    { "name": "dwell:stone_axe", "label": "Stone axe", "color": "#7d7468", "size": 0.3, "stack": 1 },
-    { "name": "dwell:stone_pickaxe", "label": "Stone pickaxe", "color": "#8a7a66", "size": 0.6, "stack": 1, "look": { "model": "stone_pickaxes" } }
+    { "name": "dwell:stone_axe", "label": "Stone axe", "color": "#7d7468", "size": 0.6, "stack": 1, "look": { "model": "stone_axes" } },
+    { "name": "dwell:metal_axe", "label": "Metal axe", "color": "#8c8f96", "size": 0.65, "stack": 1, "look": { "model": "metal_axe" } },
+    { "name": "dwell:stone_pickaxe", "label": "Stone pickaxe", "color": "#8a7a66", "size": 0.6, "stack": 1, "look": { "model": "stone_pickaxes" } },
+    { "name": "dwell:metal_pickaxe", "label": "Metal pickaxe", "color": "#8c8f96", "size": 0.7, "stack": 1, "look": { "model": "metal_pickaxes" } },
+    { "name": "dwell:wooden_shovel", "label": "Wooden shovel", "color": "#8a6440", "size": 1.0, "stack": 1, "look": { "model": "wooden_shovel" } },
+    { "name": "dwell:metal_shovel", "label": "Metal shovel", "color": "#8c8f96", "size": 1.0, "stack": 1, "look": { "model": "metal_shovel" } }
   ],
   "$wallets": "Currency items (with a `value`) go to the wallet, not a slot: a total up to its capacity (owner, 2026-11-08: the starting wallet holds 99; bigger wallets later).",
   "wallets": [{ "name": "dwell:pouch", "label": "Pouch", "capacity": 99 }],
