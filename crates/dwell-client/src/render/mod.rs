@@ -1119,7 +1119,7 @@ struct BrushDraw {
 
 pub struct Renderer {
     device: wgpu::Device,
-    queue: wgpu::Queue,
+    pub(crate) queue: wgpu::Queue,
     format: wgpu::TextureFormat,
     /// The size the frame draws at: the canvas's, or the pixel-art preview's low-res picture.
     size: (u32, u32),
@@ -1344,10 +1344,12 @@ impl Renderer {
         format: wgpu::TextureFormat,
         samples: u32,
     ) -> Self {
+        crate::telemetry::mark("dwell:create:begin");
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("dwell"),
             source: wgpu::ShaderSource::Wgsl(shaders::source(samples).into()),
         });
+        crate::telemetry::mark("dwell:create:module");
         let frame_entries = [
             wgpu::BindGroupLayoutEntry {
                 binding: 0,
@@ -1500,6 +1502,7 @@ impl Renderer {
         let line_attrs = attrs(&[(0, 3), (1, 3), (2, 3), (3, 1)]);
         let ghost_attrs = attrs(&[(0, 3), (1, 3)]);
         let fluid_attrs = attrs(&[(0, 3), (1, 3), (2, 3), (3, 1), (4, 2)]);
+        crate::telemetry::mark("dwell:create:layouts");
         let mut pipelines = HashMap::default();
         // Opaque terrain, LOD sections and players; lines (depth-tested or over everything); and
         // fluids, the only see-through draws (blended, both sides, no depth writes).
@@ -1644,6 +1647,7 @@ impl Renderer {
             multiview_mask: None,
             cache: None,
         });
+        crate::telemetry::mark("dwell:create:scene-pipelines");
         let heightfield = heightfield::HeightfieldGpu::new(
             &device,
             &heightfield::PipelineParts {
@@ -1890,8 +1894,10 @@ impl Renderer {
             immediate_size: 0,
         });
         let motion_pipeline = full_screen("motion", &motion_layout, "motion_fs", format.into());
+        crate::telemetry::mark("dwell:create:passes");
         let timer = GpuTimer::new(&device, &queue);
         let (atlas_view, sampler) = Self::atlas(&device, &queue);
+        crate::telemetry::mark("dwell:create:atlas");
         let (tile_grid_buffer, fluid_buffer) = frame_extras(&device, &queue);
         let frame_buffers = std::array::from_fn(|_| {
             device.create_buffer(&wgpu::BufferDescriptor {
@@ -1949,6 +1955,7 @@ impl Renderer {
             &color_map,
             None,
         );
+        crate::telemetry::mark("dwell:create:bindings");
         let characters = characters::CharacterRenderer::new(
             &device,
             &queue,
@@ -1958,6 +1965,7 @@ impl Renderer {
         );
         let flames = flames::FlameRenderer::new(&device, &frame_bindings.layout, samples, true);
         let (draw_buffer, draw_group) = Self::draw_buffer(&device, &draw_layout, 1024);
+        crate::telemetry::mark("dwell:create:characters");
         let arena = Arena::new(device.clone(), queue.clone(), &STRIDES);
         let outline_box = ([0.0; 3], [1.0; 3]);
         let outline_mesh = Self::outline_lines(&arena, outline_box);

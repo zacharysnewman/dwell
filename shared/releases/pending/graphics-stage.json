@@ -1,0 +1,5 @@
+{
+  "changes": [
+    "The loading screen names the shader compile on a first start of a new version (\"Preparing the shaders\"), rather than standing on \"Starting the graphics\""
+  ]
+}

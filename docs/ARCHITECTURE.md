@@ -2054,10 +2054,16 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
   0.52.75, mostly the block atlas and its mips (`atlas_levels`; the mips convert bytes to linear light
   through a 256-entry table, `srgb_linear_table`, rather than a `powf` per channel, which was ~40 of
   ~90 ms). The pipelines' compiling is not in this task: Chrome makes them in its GPU process, which
-  then stalls the page's frames (~270 ms there, cold) after the stage ends; wgpu 30 has no
+  then stalls the page's frames after the stage ends; wgpu 30 has no
   `createRenderPipelineAsync`. So `ui/startStages.ts` `runStartStages` paints each of `game` and
   `graphics` (`LoadingScreen.painted`: a frame and the task after it) before its work starts, and
-  the screen names the stage that holds the thread rather than the one before it), `worldFile` (from the page's `?fresh=1` deletion to the worker's OPFS open),
+  the screen names the stage that holds the thread rather than the one before it. With Chrome's
+  Metal shader cache empty (a new build's shaders; bug #71, M-series Mac) the stage is
+  ~1.8 s, nearly all the device request (`dwell:create:device` mark), the renderer's own groups
+  ~40 ms), `shaders` (bug #71: from `create`'s end until `Client.gpuSettled`, a
+  `Queue::on_submitted_work_done` fence after the pipelines, resolves; not awaited, so the world's
+  stages run beside it: ~0.4 s warm, ~9 s cold, when the page paints no frame at all though its
+  main thread is free, and the join waits on it), `worldFile` (from the page's `?fresh=1` deletion to the worker's OPFS open),
   `worldMap` (the maps' faces, `worldMaps`' `onProgress`; a cached map ends it in milliseconds),
   `server` (the worker's WASM), `spawn` (the maps installed and `LocalWorld::new`: the world file
   read, the spawn found and its region pre-generated), `connect` (a dedicated server or friend
@@ -3825,7 +3831,7 @@ in the code yet.
 | Loading screen (client, `shared/look/loading.json` → `dwell-game` `loading.gen.rs`) | Near ring: the view sphere of 3 chunks (≤ `VIEW_RADIUS_CHUNKS`); timeout 20 s | How long the join waits behind its loading screen (§6.3) |
 | Respawn preload (`shared/look/loading.json` `respawnPreload` → `loading.gen.rs`, `dwell-sim` `respawn_preload.gen.rs`) | On; the view sphere of 3 chunks around the respawn (≤ `VIEW_RADIUS_CHUNKS`); chunk requests within 2 chunks past it | What a death streams and readies for the respawn (§6.3) |
 | Loading fade (shell, `shared/look/loading.json` `fade` → `client/src/ui/loading.gen.ts`) | `#fffdf6`, hold 0.12 s, 0.8 s ease-out power 3; CPU adapter 0.2 s; reduced motion 0 (none) | The fade in from white when the loading screen opens (§6.3) |
-| Loading stages (shell, `shared/look/loading.json` `stages` → `client/src/ui/loading.gen.ts`) | 10 stages (page, game, graphics, worldFile, worldMap, server, spawn, connect, join, terrain); slow past 3 s | What the loading screen lists while the game starts, with times (§6.3) |
+| Loading stages (shell, `shared/look/loading.json` `stages` → `client/src/ui/loading.gen.ts`) | 11 stages (page, game, graphics, shaders, worldFile, worldMap, server, spawn, connect, join, terrain); slow past 3 s | What the loading screen lists while the game starts, with times (§6.3) |
 | `OFF_VIEW_PRIORITY` (client, `dwell-lod` `system.rs`) | 1/8, beyond the full-detail distance only | The LOD's load order outside the view (§6.6) |
 | Water reflections (client, `shared/look/reflections.json` → `dwell-look` `reflections.gen.rs`) | Low: sky only; Medium: 12 march + 8 refine steps, 24 km, 3 cloud octaves; High: 28 + 10, 48 km, 5 octaves with self-shadow; thickness 1.5 m + 3 %, edge fade 12 % of the screen height (top and bottom only), distance fade 30 %, the land's ray steered by 0.3 of the ripples' slope; land and clouds reflected only where the surface reflects over 5 % (faded in to 10 %); a phone's Medium: 8 + 5 steps, 2 octaves | Screen-space reflections of land and the clouds in the water (Phase 26 W5a, `WATER_RENDERING.md` §8) |
 | Clouds (client, `shared/look/clouds.json` → `dwell-look` `clouds.gen.rs`) | deck 1.8 km up on a 400 km sphere, 1 km cells repeating every 128 km, 5 / 3 octaves (High / Low), coverage 42%, wind 6 m/s toward 70° | The sky's cloud layer (§6.6 Clouds, `CLOUDS.md`); Low (the deck) costs about 0.7 ms more composite GPU time than Off at 1280 × 720 on an Apple GPU, from above about 0.9 ms; the volume (layer 1350–2700 m): High (½ resolution, 16 steps, 1 light sample) about +0.5 ms from the ground and +1.5 ms from above, Medium (¼, 10 steps) +0.3 and +0.9 ms (`CLOUDS.md` §8.3) |

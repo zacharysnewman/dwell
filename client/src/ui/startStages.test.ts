@@ -28,12 +28,48 @@ describe("the start's stages", () => {
         clock += 9000; // one long task: the screen shows what was painted last
         return Promise.resolve('client');
       },
+      settled: () => Promise.resolve(),
     });
     expect(seen).toEqual(['load under game', 'create under graphics']);
+    await Promise.resolve();
     const times = Object.fromEntries(
       stages.timeline().map((r) => [r.id, (r.endedMs ?? 0) - r.beganMs]),
     );
-    expect(times).toEqual({ game: 40, graphics: 9000 });
+    expect(times).toEqual({ game: 40, graphics: 9000, shaders: 0 });
+  });
+
+  it("shows the GPU's compile after create as its own stage, counting while the world loads", async () => {
+    // Bug #71 (owner, 2026-11-11: "'Starting the graphics' now takes a long time without showing
+    // elapsed time"). On a cold shader cache `create` returns in ~40 ms and the GPU then compiles
+    // its pipelines for ~9 s: that time is 'shaders', running, not a finished 'graphics'.
+    const stages = new StageTracker();
+    let clock = 0;
+    let compiled: () => void = () => undefined;
+    const client = await runStartStages(stages, {
+      now: () => clock,
+      painted: () => Promise.resolve(),
+      load: () => Promise.resolve(),
+      create: () => {
+        clock += 40;
+        return Promise.resolve('client');
+      },
+      settled: (c) => {
+        expect(c).toBe('client');
+        return new Promise<void>((resolve) => (compiled = resolve));
+      },
+    });
+    // The start goes on (the world's stages) while the GPU compiles.
+    expect(client).toBe('client');
+    clock += 4000;
+    const running = stages.lines(clock).find((l) => l.id === 'shaders');
+    expect(running).toMatchObject({ running: true, time: '4.0 s', text: 'Preparing the shaders…' });
+    expect(stages.lines(clock).find((l) => l.id === 'graphics')?.time).toBe('0.0 s');
+    clock += 5000;
+    compiled();
+    await Promise.resolve();
+    await Promise.resolve();
+    const shaders = stages.timeline().find((r) => r.id === 'shaders');
+    expect(shaders && (shaders.endedMs ?? 0) - shaders.beganMs).toBe(9000);
   });
 
   it("counts a slow download and compile in the game's time", async () => {
@@ -51,6 +87,7 @@ describe("the start's stages", () => {
         clock += 1500; // the compile
       },
       create: () => Promise.resolve(null),
+      settled: () => Promise.resolve(),
     });
     const game = stages.timeline().find((r) => r.id === 'game');
     expect(game && (game.endedMs ?? 0) - game.beganMs).toBe(11_500);
