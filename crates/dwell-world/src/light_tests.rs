@@ -688,3 +688,114 @@ crate::both_faces!(
         assert!(w.light().expect("lit").sample(eye(19.0))[1] > 0.7);
     }
 );
+
+// ---- One chunk's light from its region (`LightRegion`, a mesh worker's) --------------------
+
+/// Chunk `c`'s region gathered from the lit world (its voxels, which chunks it holds, and the
+/// full-sky cells over and under it).
+fn region_of(w: &VoxelWorld, c: ChunkCoord) -> LightRegion {
+    let l = w.light().expect("lit");
+    LightRegion::gather(
+        c,
+        |k| l.holds(k),
+        |p| w.get_voxel_if_loaded(p),
+        |p| l.get(p).is_some_and(|v| sky_of(v) == LIGHT_MAX),
+    )
+}
+
+/// Every chunk's light computed from its region alone equals the map's (`LightMap::padded`).
+fn assert_regions_match(w: &VoxelWorld, chunks: &[ChunkCoord], what: &str) {
+    let l = w.light().expect("lit");
+    for &c in chunks {
+        let want = l.padded(c);
+        let got = region_of(w, c).light();
+        let differ = want.iter().zip(&got).filter(|(x, y)| x != y).count();
+        assert_eq!(
+            differ, 0,
+            "{what}: chunk {c:?}: {differ} padded cells differ"
+        );
+    }
+}
+
+crate::both_faces!(
+    /// A chunk's light from its region equals the flood light's: a tunnel under a hill (its
+    /// mouth's falloff), a cave with a shaft to the sky, leaves filtering it, a lamp and a placed
+    /// torch, chunks at the edge of what is held included (their neighbours not held).
+    fn a_chunks_light_from_its_region_equals_the_flood_lights(f: FaceFrame) {
+        let mut fx = tunnel(f);
+        fx.fill(
+            [-6, GROUND + 4, 28],
+            [2, GROUND + 8, 36],
+            dwell_blocks::require("dwell:leaves"),
+        );
+        fx.fill([33, GROUND + 20, 16], [34, GROUND + 21, 17], lamp());
+        // A cave under the hill and a 1 m shaft from it to the hill's top.
+        fx.fill([30, GROUND + 2, 30], [50, GROUND + 14, 50], 0);
+        fx.fill([40, GROUND + 14, 40], [41, GROUND + 20, 41], 0);
+        let chunks = fx.chunks(-1..=1, -1..=2, -1..=1);
+        let mut w = fx.lit(&chunks);
+        assert_regions_match(&w, &chunks, "lit");
+        let at = f.cell([22, GROUND, 16]);
+        let put = crate::edit::edit_writes(&mut w, at, dwell_blocks::require("dwell:torch"));
+        let cells: Vec<[i32; 3]> = put.iter().map(|(c, _)| *c).collect();
+        for &([x, y, z], m) in &put {
+            w.set_voxel(x, y, z, m);
+        }
+        w.light_edited(&cells);
+        assert_eq!(fx.at(&w, [22, GROUND + 1, 16]).1, 14, "the torch is lit");
+        assert_regions_match(&w, &chunks, "torch placed");
+        // Part held: the top row gone (the sky enters lower).
+        let gone: Vec<ChunkCoord> = fx.chunks(-1..=1, 2..=2, -1..=1);
+        for &c in &gone {
+            w.remove(c);
+        }
+        w.light_unload_many(&gone);
+        let held: Vec<ChunkCoord> = chunks
+            .iter()
+            .copied()
+            .filter(|c| !gone.contains(c))
+            .collect();
+        assert_regions_match(&w, &held, "top row unloaded");
+    }
+);
+
+/// both-faces: the chunks around the midplane, a slab with holes across it and a lamp in it:
+/// each face's sky enters from its own side, and the regions span both faces.
+#[test]
+fn a_chunks_light_from_its_region_across_the_midplane() {
+    let mid = MIDPLANE_Y.div_euclid(NC);
+    let mut src = VoxelWorld::new(empty_generator(), None);
+    let mut seed = 7u64;
+    let mut next = || {
+        seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        (seed >> 33) as u32
+    };
+    for y in (mid - 1) * NC..(mid + 2) * NC {
+        for z in -NC..2 * NC {
+            for x in -NC..2 * NC {
+                if (y - MIDPLANE_Y).abs() < 6 && next() % 9 != 0 {
+                    src.set_voxel(x, y, z, rock());
+                }
+            }
+        }
+    }
+    src.set_voxel(5, MIDPLANE_Y, 5, lamp());
+    let mut w = VoxelWorld::streamed();
+    w.enable_light();
+    let mut chunks = Vec::new();
+    for y in mid - 1..=mid + 1 {
+        for z in -1..=1 {
+            for x in -1..=1 {
+                let c = ChunkCoord::new(x, y, z);
+                if let Some(chunk) = src.find(c) {
+                    w.put(c, chunk.clone());
+                }
+                w.light_load(c);
+                chunks.push(c);
+            }
+        }
+    }
+    assert_regions_match(&w, &chunks, "across the midplane");
+}
