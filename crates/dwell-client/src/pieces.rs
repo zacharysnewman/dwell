@@ -22,6 +22,11 @@ const KEEP: usize = 8;
 /// A piece sounds a landing at most this often (ms): a log rolling to rest knocks a few times, not
 /// at every snapshot.
 const LAND_EVERY_MS: f64 = 250.0;
+/// All pieces together sound a landing at most this often (ms): a blast's hundreds of pieces
+/// coming down rattle, not roar (docs/AUDIO.md §5).
+const ANY_LAND_EVERY_MS: f64 = 45.0;
+/// A felled trunk's carriers at which its landing is at full size (fewer: quieter).
+const FELL_FULL_CARRIERS: f64 = 12.0;
 
 /// A piece within this (m) of the local player, past its cells' reach, is drawn at the present.
 const NEAR_M: f64 = 2.5;
@@ -61,9 +66,15 @@ struct Piece {
     /// Its stand-in's pose before and after the last prediction tick.
     ticked: (Option<Placed>, Option<Placed>),
     near: f64,
-    /// The block its landings sound like (its first carrier's; 0: riders only, silent).
+    /// The block its landings sound like (its first carrier's, else its first cell's: its
+    /// material's `impact`).
     block: StateId,
     landed_ms: f64,
+    /// A felled tree's trunk not yet down (its carriers, for the landing's size; 0: none).
+    falling_trunk: u16,
+    /// A snapshot's velocity seen (the spawn pose's zero is no measure: a flung piece's first
+    /// snapshot is no landing).
+    sampled: bool,
 }
 
 /// A piece's latest pose for the prediction: its id, boxes, position, rotation, velocity and the
@@ -138,6 +149,8 @@ impl Timeline {
 pub struct Pieces {
     map: HashMap<u32, Piece>,
     timeline: Timeline,
+    /// When any piece last sounded a landing (`ANY_LAND_EVERY_MS`).
+    landed_ms: Option<f64>,
 }
 
 fn quat(q: [f32; 4]) -> DQuat {
@@ -175,8 +188,8 @@ impl Pieces {
             velocity: DVec3::ZERO,
             angular: DVec3::ZERO,
         };
-        let block = if e.carriers > 0 { cells[0].1 } else { 0 };
-        if block != 0 {
+        let block = cells.first().map_or(0, |c| c.1);
+        if e.carriers > 0 && block != 0 {
             sounds.push(SoundEvent::new(SoundKind::Fell, block, 1.0, Some(e.origin)));
         }
         self.map.insert(
@@ -191,6 +204,8 @@ impl Pieces {
                 near: 0.0,
                 block,
                 landed_ms: f64::NEG_INFINITY,
+                falling_trunk: if block != 0 { e.carriers } else { 0 },
+                sampled: false,
             },
         );
         piece_meshes(&cells)
@@ -335,18 +350,42 @@ impl Pieces {
             let change = p
                 .poses
                 .back()
+                .filter(|_| p.sampled)
                 .map_or(0.0, |l| (velocity - l.velocity).length());
+            p.sampled = true;
+            let was = p.poses.back().map_or(0.0, |l| l.velocity.length());
             if p.block != 0
                 && now_ms - p.landed_ms >= LAND_EVERY_MS
                 && let Some(i) = speed_intensity(SoundKind::PieceLand, change)
             {
-                p.landed_ms = now_ms;
-                sounds.push(SoundEvent::new(
-                    SoundKind::PieceLand,
-                    p.block,
-                    i,
-                    Some(s.position),
-                ));
+                // A felled trunk coming to a stop (not a shove on the way) is its fall's impact,
+                // once, as loud as the trunk is big; any other landing its material's impact.
+                let stop = velocity.length() <= 0.5 * was;
+                if p.falling_trunk > 0 && stop {
+                    let size = (f64::from(p.falling_trunk) / FELL_FULL_CARRIERS).min(1.0);
+                    let i = speed_intensity(SoundKind::FellLand, change).unwrap_or(i);
+                    p.falling_trunk = 0;
+                    p.landed_ms = now_ms;
+                    self.landed_ms = Some(now_ms);
+                    sounds.push(SoundEvent::new(
+                        SoundKind::FellLand,
+                        p.block,
+                        i * (0.4 + 0.6 * size),
+                        Some(s.position),
+                    ));
+                } else if self
+                    .landed_ms
+                    .is_none_or(|t| now_ms - t >= ANY_LAND_EVERY_MS)
+                {
+                    p.landed_ms = now_ms;
+                    self.landed_ms = Some(now_ms);
+                    sounds.push(SoundEvent::new(
+                        SoundKind::PieceLand,
+                        p.block,
+                        i,
+                        Some(s.position),
+                    ));
+                }
             }
             if p.poses.len() == 1 && p.poses[0].at_ms >= server_ms {
                 p.poses.clear(); // its spawn pose, timed by an estimate past this snapshot
@@ -1207,17 +1246,67 @@ mod tests {
             sounds.iter().map(|s| s.kind).collect::<Vec<_>>()
         );
         sounds.clear();
-        // It hits the ground: -8 → 0, a landing; the bounce right after stays quiet.
+        // It hits the ground: -8 → 0, the trunk's impact (docs/AUDIO.md §5 `fell_land`, once);
+        // the bounce right after stays quiet.
         pieces.on_snapshot(&[state(0.0)], 0, 36, 600.0, &mut sounds);
         pieces.on_snapshot(&[state(-3.0)], 0, 39, 650.0, &mut sounds);
-        assert_eq!(
-            sounds
-                .iter()
-                .filter(|s| s.kind == SoundKind::PieceLand)
-                .count(),
-            1
+        let kinds: Vec<_> = sounds.iter().map(|s| s.kind).collect();
+        assert_eq!(kinds, [SoundKind::FellLand], "{kinds:?}");
+        // A two-log trunk: quieter than a full-size one.
+        assert!(sounds[0].intensity > 0.2 && sounds[0].intensity < 0.6);
+        // Later landings are the log's material impact, never the fall's again.
+        sounds.clear();
+        pieces.on_snapshot(&[state(-9.0)], 0, 60, 1000.0, &mut sounds);
+        pieces.on_snapshot(&[state(0.0)], 0, 63, 1300.0, &mut sounds);
+        let kinds: Vec<_> = sounds.iter().map(|s| s.kind).collect();
+        assert!(!kinds.contains(&SoundKind::FellLand), "{kinds:?}");
+        assert!(kinds.contains(&SoundKind::PieceLand), "{kinds:?}");
+    }
+
+    #[test]
+    fn a_blasts_pieces_land_by_material_and_at_most_every_45_ms_together() {
+        // Any piece, not only a felled tree's, sounds its first cell's material when it lands
+        // (`piece_land` plays the set's `impact`); many landing at once are rate-limited.
+        let stone = dwell_blocks::parse_state("dwell:stone").expect("stone");
+        let mut pieces = Pieces::default();
+        let mut sounds = Vec::new();
+        for id in 0..20u32 {
+            let spawn = EntitySpawn {
+                id,
+                origin: [f64::from(id), 100.0, 0.0],
+                rotation: [0.0, 0.0, 0.0, 1.0],
+                kind: 0,
+                carriers: 0,
+                cells: vec![dwell_protocol::PieceCellNet {
+                    offset: [0, 0, 0],
+                    state: stone,
+                }],
+            };
+            pieces.spawn(&spawn, 0.0, &mut sounds);
+        }
+        assert!(
+            sounds.is_empty(),
+            "a blast's pieces do not crack as a tree does"
         );
-        assert!(sounds[0].intensity > 0.2);
+        let all = |vy: f32| -> Vec<PieceState> {
+            (0..20u32)
+                .map(|id| PieceState {
+                    id,
+                    position: [id as f64, 99.0, 0.0],
+                    rotation: [0.0, 0.0, 0.0, 1.0],
+                    velocity: [0.0, vy, 0.0],
+                    angular: [0.0; 3],
+                })
+                .collect()
+        };
+        pieces.on_snapshot(&all(-10.0), 0, 3, 50.0, &mut sounds);
+        assert!(sounds.is_empty());
+        // All twenty land in one snapshot: one sounds.
+        pieces.on_snapshot(&all(0.0), 0, 6, 100.0, &mut sounds);
+        assert_eq!(sounds.len(), 1);
+        assert_eq!(sounds[0].kind, SoundKind::PieceLand);
+        assert_eq!(sounds[0].block, stone);
+        assert!(sounds[0].intensity > 0.3);
     }
 
     #[test]

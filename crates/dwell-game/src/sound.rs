@@ -1147,6 +1147,97 @@ pub fn encode(events: &[SoundEvent]) -> Vec<f64> {
     v
 }
 
+/// Moving through foliage (AUDIO.md §5 `brush`, sounds round 2b): a passable block the body is
+/// in (leaves, tall grass) rustles its set's `brush` — one rustle every `BRUSH_EVERY_M` moved
+/// through it, never closer than `BRUSH_MIN_S`, louder the faster (the event's `speed`). Standing
+/// still in a bush is silent.
+pub const BRUSH_EVERY_M: f64 = 0.8;
+pub const BRUSH_MIN_S: f64 = 0.18;
+/// Where up the body (m above the feet, face-local) foliage is looked for: the shins, the waist,
+/// the head.
+const BRUSH_AT_M: [f64; 3] = [0.2, 0.8, 1.5];
+
+/// The foliage a body with its feet at `feet` (world) on `face`, `height` tall, is in: the first
+/// passable, non-liquid, non-air block at its shins, waist or head (0: none).
+pub fn foliage_at(
+    feet: [f64; 3],
+    face: FaceFrame,
+    height: f64,
+    mut voxel: impl FnMut([i32; 3]) -> StateId,
+) -> StateId {
+    for dy in BRUSH_AT_M.into_iter().filter(|&dy| dy < height) {
+        let m = voxel(dwell_world::cell_of_pos([
+            feet[0],
+            face.y(face.y(feet[1]) + dy),
+            feet[2],
+        ]));
+        if m == 0 {
+            continue;
+        }
+        let Some(i) = dwell_blocks::try_info(m) else {
+            continue;
+        };
+        if !i.liquid && (i.passable || !i.solid) {
+            return m;
+        }
+    }
+    0
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct BrushSounds {
+    /// Metres moved through foliage since the last rustle.
+    moved: f64,
+    /// Seconds since the last rustle.
+    since: f64,
+}
+
+impl BrushSounds {
+    /// One update: the foliage the body is in (`foliage_at`; 0: none), its speed (m/s) and the
+    /// time since the last update (s); a rustle at `at` (None: at the listener).
+    pub fn update(
+        &mut self,
+        foliage: StateId,
+        speed: f64,
+        dt: f64,
+        at: Option<[f64; 3]>,
+        out: &mut Vec<SoundEvent>,
+    ) {
+        self.since += dt;
+        if foliage == 0 {
+            // Stepping in starts a rustle at once.
+            self.moved = BRUSH_EVERY_M;
+            return;
+        }
+        self.moved += speed * dt;
+        if self.moved < BRUSH_EVERY_M || self.since < BRUSH_MIN_S {
+            return;
+        }
+        let Some(i) = speed_intensity(SoundKind::Brush, speed) else {
+            return;
+        };
+        self.moved = 0.0;
+        self.since = 0.0;
+        out.push(SoundEvent::new(SoundKind::Brush, foliage, i, at));
+    }
+}
+
+/// The ground items a player steps onto (AUDIO.md §5, sounds round 2b: a stick snaps): the cell
+/// its feet are in while on the ground; a new one is stepped onto once.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct GroundSteps {
+    last: Option<[i32; 3]>,
+}
+
+impl GroundSteps {
+    /// The feet's cell now (None: not on the ground): the cell stepped onto, if it is a new one.
+    pub fn update(&mut self, feet_cell: Option<[i32; 3]>) -> Option<[i32; 3]> {
+        let new = feet_cell.filter(|c| self.last != Some(*c));
+        self.last = feet_cell;
+        new
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2196,5 +2287,89 @@ mod tests {
         };
         s.update([0.0; 3], &[fox], 500.0, &mut out);
         assert!(out.is_empty());
+    }
+
+    #[test]
+    fn walking_through_leaves_rustles_by_distance_at_most_every_min_interval() {
+        let leaves = dwell_blocks::parse_state("dwell:leaves").expect("leaves");
+        let mut b = BrushSounds::default();
+        let mut out = Vec::new();
+        let dt = 1.0 / 60.0;
+        // Standing in a bush: silent.
+        for _ in 0..120 {
+            b.update(leaves, 0.0, dt, None, &mut out);
+        }
+        assert!(out.is_empty());
+        // Walking 4 m/s for 2 s through it: about one rustle per BRUSH_EVERY_M (8 m), the first
+        // at once.
+        for _ in 0..120 {
+            b.update(leaves, 4.0, dt, None, &mut out);
+        }
+        assert!((9..=11).contains(&out.len()), "{}", out.len());
+        assert!(
+            out.iter()
+                .all(|e| e.kind == SoundKind::Brush && e.block == leaves)
+        );
+        // Sprinting 20 m/s: capped by BRUSH_MIN_S (1 s → at most 6), at full intensity.
+        out.clear();
+        for _ in 0..60 {
+            b.update(leaves, 20.0, dt, None, &mut out);
+        }
+        assert!(
+            out.len() <= (1.0 / BRUSH_MIN_S) as usize + 1,
+            "{}",
+            out.len()
+        );
+        assert!(out.iter().all(|e| e.intensity == 1.0));
+        // Out of the leaves: nothing.
+        out.clear();
+        for _ in 0..60 {
+            b.update(0, 4.0, dt, None, &mut out);
+        }
+        assert!(out.is_empty());
+    }
+
+    dwell_world::both_faces! {
+        fn foliage_is_found_at_the_body_face_locally(f: FaceFrame) {
+            let leaves = dwell_blocks::parse_state("dwell:leaves").expect("leaves");
+            let stone = dwell_blocks::parse_state("dwell:stone").expect("stone");
+            // Leaves a metre up (the waist), stone under the feet.
+            let feet = f.point([0.5, 40.0, 0.5]);
+            let leaf_cell = dwell_world::cell_of_pos(f.point([0.5, 40.8, 0.5]));
+            let ground = dwell_world::cell_of_pos(f.point([0.5, 39.8, 0.5]));
+            let voxel = |c: [i32; 3]| {
+                if c == leaf_cell {
+                    leaves
+                } else if c == ground {
+                    stone
+                } else {
+                    0
+                }
+            };
+            assert_eq!(foliage_at(feet, f, 1.8, voxel), leaves);
+            // A solid block at the body is not foliage.
+            assert_eq!(foliage_at(feet, f, 1.8, |c| if c == leaf_cell { stone } else { 0 }), 0);
+        }
+    }
+
+    #[test]
+    fn a_ground_item_cell_is_stepped_onto_once() {
+        let mut g = GroundSteps::default();
+        assert_eq!(g.update(Some([1, 2, 3])), Some([1, 2, 3]));
+        assert_eq!(g.update(Some([1, 2, 3])), None);
+        assert_eq!(g.update(Some([1, 2, 3])), None);
+        // A jump off it and back onto it: stepped onto again.
+        assert_eq!(g.update(None), None);
+        assert_eq!(g.update(Some([1, 2, 3])), Some([1, 2, 3]));
+        assert_eq!(g.update(Some([2, 2, 3])), Some([2, 2, 3]));
+        // The stick's step and hit are a sound event by name (shared/ground/ground.json).
+        let stick = dwell_world::ground::KINDS
+            .iter()
+            .find(|k| k.name == "dwell:ground_stick")
+            .expect("stick");
+        for e in [stick.step, stick.hit] {
+            let e = e.expect("a stick sounds");
+            assert!(SoundKind::ALL.iter().any(|k| k.name() == e), "{e}");
+        }
     }
 }

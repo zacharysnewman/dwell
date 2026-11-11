@@ -156,7 +156,7 @@ export const SOUND_DATA: SoundData = {
     },
     {
       "name": "piece_land",
-      "set": "land",
+      "set": "impact",
       "sound": "dwell:body_thud",
       "speed": [
         2,
@@ -258,6 +258,27 @@ export const SOUND_DATA: SoundData = {
     {
       "name": "creature_call",
       "creature": "call"
+    },
+    {
+      "name": "fell_land",
+      "sound": "dwell:fell_impact",
+      "speed": [
+        1,
+        12
+      ]
+    },
+    {
+      "name": "brush",
+      "set": "brush",
+      "speed": [
+        0.4,
+        6
+      ],
+      "fallback": false
+    },
+    {
+      "name": "stick_snap",
+      "sound": "dwell:stick_snap"
     }
   ],
   "sets": {
@@ -268,7 +289,8 @@ export const SOUND_DATA: SoundData = {
       "place": "dwell:stone_place",
       "hit": "dwell:stone_hit",
       "slide": "dwell:stone_slide",
-      "slide_stop": "dwell:stone_slide_stop"
+      "slide_stop": "dwell:stone_slide_stop",
+      "impact": "dwell:stone_impact"
     },
     "dwell:dirt": {
       "step": "dwell:dirt_step",
@@ -277,7 +299,8 @@ export const SOUND_DATA: SoundData = {
       "place": "dwell:dirt_place",
       "hit": "dwell:dirt_hit",
       "slide": "dwell:dirt_slide",
-      "slide_stop": "dwell:dirt_slide_stop"
+      "slide_stop": "dwell:dirt_slide_stop",
+      "impact": "dwell:dirt_land"
     },
     "dwell:grass": {
       "step": "dwell:grass_step",
@@ -286,7 +309,9 @@ export const SOUND_DATA: SoundData = {
       "place": "dwell:grass_place",
       "hit": "dwell:dirt_hit",
       "slide": "dwell:grass_slide",
-      "slide_stop": "dwell:grass_slide_stop"
+      "slide_stop": "dwell:grass_slide_stop",
+      "impact": "dwell:grass_land",
+      "brush": "dwell:leaf_brush"
     },
     "dwell:snow": {
       "step": "dwell:snow_step",
@@ -295,7 +320,9 @@ export const SOUND_DATA: SoundData = {
       "place": "dwell:grass_place",
       "hit": "dwell:sand_hit",
       "slide": "dwell:sand_slide",
-      "slide_stop": "dwell:sand_slide_stop"
+      "slide_stop": "dwell:sand_slide_stop",
+      "impact": "dwell:snow_land",
+      "brush": "dwell:leaf_brush"
     },
     "dwell:sand": {
       "step": "dwell:sand_step",
@@ -304,14 +331,16 @@ export const SOUND_DATA: SoundData = {
       "place": "dwell:sand_place",
       "hit": "dwell:sand_hit",
       "slide": "dwell:sand_slide",
-      "slide_stop": "dwell:sand_slide_stop"
+      "slide_stop": "dwell:sand_slide_stop",
+      "impact": "dwell:sand_land"
     },
     "dwell:wood": {
       "step": "dwell:wood_step",
       "land": "dwell:wood_land",
       "break": "dwell:wood_break",
       "place": "dwell:wood_place",
-      "hit": "dwell:wood_hit"
+      "hit": "dwell:wood_hit",
+      "impact": "dwell:wood_impact"
     },
     "dwell:torch": {
       "step": "dwell:wood_step",
@@ -319,7 +348,8 @@ export const SOUND_DATA: SoundData = {
       "break": "dwell:torch_break",
       "place": "dwell:torch_place",
       "hit": "dwell:wood_hit",
-      "burn": "dwell:torch_fire"
+      "burn": "dwell:torch_fire",
+      "impact": "dwell:wood_impact"
     },
     "dwell:dynamite": {
       "step": "dwell:wood_step",
@@ -327,7 +357,8 @@ export const SOUND_DATA: SoundData = {
       "break": "dwell:torch_break",
       "place": "dwell:wood_place",
       "hit": "dwell:wood_hit",
-      "explode": "dwell:dynamite_boom"
+      "explode": "dwell:dynamite_boom",
+      "impact": "dwell:wood_impact"
     },
     "dwell:lit_dynamite": {
       "step": "dwell:wood_step",
@@ -336,7 +367,8 @@ export const SOUND_DATA: SoundData = {
       "place": "dwell:fuse_light",
       "hit": "dwell:wood_hit",
       "burn": "dwell:fuse_fizz",
-      "explode": "dwell:dynamite_boom"
+      "explode": "dwell:dynamite_boom",
+      "impact": "dwell:wood_impact"
     },
     "dwell:water": {
       "step": "dwell:water_step",
@@ -346,7 +378,8 @@ export const SOUND_DATA: SoundData = {
       "hit": "dwell:water_exit",
       "enter": "dwell:water_enter",
       "exit": "dwell:water_exit",
-      "swim": "dwell:water_swim"
+      "swim": "dwell:water_swim",
+      "impact": "dwell:water_enter"
     }
   },
   "actions": {
@@ -705,6 +738,19 @@ export const SOUND_DATA: SoundData = {
             "from": 0,
             "full": 0.6,
             "floor": 0.3
+          }
+        ]
+      },
+      "dwell:fire": {
+        "files": [
+          "fire-loop-1-074aa2ce.m4a"
+        ],
+        "gain": 0.2,
+        "when": [
+          {
+            "input": "fireM",
+            "from": 8,
+            "full": 1.5
           }
         ]
       }
@@ -5451,6 +5497,324 @@ export const SOUND_DATA: SoundData = {
         }
       ]
     },
+    "dwell:fell_impact": {
+      "samples": {
+        "files": [
+          "fell-impact-1-c2006289.m4a",
+          "fell-impact-2-e84409b0.m4a",
+          "fell-impact-3-5b9bc6fe.m4a"
+        ],
+        "gain": 0.8,
+        "pitch": 1
+      },
+      "gain": 0.9,
+      "reverb": 0.2,
+      "variation": {
+        "pitch": 1.5,
+        "gain": 1,
+        "cutoff": 0.1,
+        "time": 0.1
+      },
+      "intensity": {
+        "gain": [
+          0.3,
+          1
+        ],
+        "cutoff": [
+          0.6,
+          1
+        ],
+        "time": [
+          0.8,
+          1.2
+        ]
+      },
+      "layers": [
+        {
+          "source": "osc",
+          "wave": "sine",
+          "freq": 90,
+          "to": 40,
+          "gain": 0.6,
+          "env": {
+            "attack": 0.004,
+            "decay": 0.35
+          }
+        },
+        {
+          "source": "noise",
+          "color": "brown",
+          "gain": 0.8,
+          "filters": [
+            {
+              "type": "lowpass",
+              "freq": 420,
+              "q": 0.8
+            }
+          ],
+          "env": {
+            "attack": 0.003,
+            "decay": 0.3
+          }
+        }
+      ]
+    },
+    "dwell:stone_impact": {
+      "samples": {
+        "files": [
+          "stone-impact-1-9feeed7e.m4a",
+          "stone-impact-2-3664dcc5.m4a",
+          "stone-impact-3-d22280a1.m4a"
+        ],
+        "gain": 0.6,
+        "pitch": 1.5
+      },
+      "gain": 0.6,
+      "reverb": 0.08,
+      "variation": {
+        "pitch": 2,
+        "gain": 1.5,
+        "cutoff": 0.12,
+        "time": 0.12
+      },
+      "intensity": {
+        "gain": [
+          0.25,
+          1
+        ],
+        "cutoff": [
+          0.6,
+          1
+        ],
+        "time": [
+          0.8,
+          1.1
+        ]
+      },
+      "layers": [
+        {
+          "source": "modal",
+          "freq": 620,
+          "gain": 0.3,
+          "partials": [
+            [
+              1,
+              1,
+              0.06
+            ],
+            [
+              2.7,
+              0.5,
+              0.04
+            ]
+          ]
+        },
+        {
+          "source": "noise",
+          "color": "pink",
+          "gain": 0.5,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 1400,
+              "q": 1
+            }
+          ],
+          "env": {
+            "attack": 0.001,
+            "decay": 0.06
+          }
+        }
+      ]
+    },
+    "dwell:wood_impact": {
+      "samples": {
+        "files": [
+          "wood-impact-1-912c03f4.m4a",
+          "wood-impact-2-63e74aea.m4a",
+          "wood-impact-3-054145b4.m4a"
+        ],
+        "gain": 0.6,
+        "pitch": 1.5
+      },
+      "gain": 0.6,
+      "reverb": 0.08,
+      "variation": {
+        "pitch": 2,
+        "gain": 1.5,
+        "cutoff": 0.12,
+        "time": 0.12
+      },
+      "intensity": {
+        "gain": [
+          0.25,
+          1
+        ],
+        "cutoff": [
+          0.6,
+          1
+        ],
+        "time": [
+          0.8,
+          1.1
+        ]
+      },
+      "layers": [
+        {
+          "source": "modal",
+          "freq": 260,
+          "gain": 0.35,
+          "partials": [
+            [
+              1,
+              1,
+              0.08
+            ],
+            [
+              2.4,
+              0.5,
+              0.05
+            ]
+          ]
+        },
+        {
+          "source": "noise",
+          "color": "brown",
+          "gain": 0.6,
+          "filters": [
+            {
+              "type": "lowpass",
+              "freq": 700,
+              "q": 0.8
+            }
+          ],
+          "env": {
+            "attack": 0.002,
+            "decay": 0.08
+          }
+        }
+      ]
+    },
+    "dwell:stick_snap": {
+      "samples": {
+        "files": [
+          "stick-snap-1-fa149302.m4a",
+          "stick-snap-2-609cdbd2.m4a",
+          "stick-snap-3-3a7778e2.m4a"
+        ],
+        "gain": 0.5,
+        "pitch": 2
+      },
+      "gain": 0.5,
+      "reverb": 0.04,
+      "variation": {
+        "pitch": 2,
+        "gain": 1.5,
+        "cutoff": 0.15,
+        "time": 0.1
+      },
+      "layers": [
+        {
+          "source": "noise",
+          "color": "white",
+          "gain": 0.5,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 3200,
+              "q": 1.5
+            }
+          ],
+          "env": {
+            "attack": 0.0005,
+            "decay": 0.03
+          },
+          "grains": {
+            "count": [
+              2,
+              4
+            ],
+            "spread": 0.05,
+            "gain": [
+              0.4,
+              1
+            ],
+            "pitch": 4
+          }
+        }
+      ]
+    },
+    "dwell:leaf_brush": {
+      "gain": 0.35,
+      "reverb": 0.04,
+      "variation": {
+        "pitch": 2,
+        "gain": 1.5,
+        "cutoff": 0.2,
+        "time": 0.2
+      },
+      "intensity": {
+        "gain": [
+          0.3,
+          1
+        ],
+        "cutoff": [
+          0.7,
+          1
+        ],
+        "time": [
+          1.2,
+          0.8
+        ]
+      },
+      "layers": [
+        {
+          "source": "noise",
+          "color": "pink",
+          "gain": 0.45,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 2400,
+              "q": 0.7
+            }
+          ],
+          "env": {
+            "attack": 0.03,
+            "hold": 0.08,
+            "decay": 0.25
+          }
+        },
+        {
+          "source": "noise",
+          "color": "white",
+          "gain": 0.15,
+          "filters": [
+            {
+              "type": "highpass",
+              "freq": 3500,
+              "q": 0.6
+            }
+          ],
+          "env": {
+            "attack": 0.002,
+            "decay": 0.03
+          },
+          "grains": {
+            "count": [
+              5,
+              9
+            ],
+            "spread": 0.3,
+            "gain": [
+              0.3,
+              1
+            ],
+            "pitch": 4
+          }
+        }
+      ]
+    },
     "dwell:axe_rustle": {
       "gain": 0.6,
       "reverb": 0.06,
@@ -5548,8 +5912,8 @@ export const SOUND_DATA: SoundData = {
     "dwell:fell_crack": {
       "samples": {
         "files": [
-          "fell-crack-impact-1-f72f003d.m4a",
-          "fell-crack-impact-2-83b80b2f.m4a"
+          "fell-crack-1-5f0f526f.m4a",
+          "fell-crack-2-f589bd38.m4a"
         ],
         "gain": 0.6,
         "pitch": 1
@@ -6786,6 +7150,10 @@ export const SOUND_DATA: SoundData = {
       "source": "leaves-loop-1.m4a"
     },
     {
+      "file": "fire-loop-1-074aa2ce.m4a",
+      "source": "fire-loop-1.m4a"
+    },
+    {
       "file": "stone-step-1-c59eeb14.m4a",
       "source": "stone-step-1.m4a"
     },
@@ -7294,6 +7662,54 @@ export const SOUND_DATA: SoundData = {
       "source": "axe-clank-3.m4a"
     },
     {
+      "file": "fell-impact-1-c2006289.m4a",
+      "source": "fell-impact-1.m4a"
+    },
+    {
+      "file": "fell-impact-2-e84409b0.m4a",
+      "source": "fell-impact-2.m4a"
+    },
+    {
+      "file": "fell-impact-3-5b9bc6fe.m4a",
+      "source": "fell-impact-3.m4a"
+    },
+    {
+      "file": "stone-impact-1-9feeed7e.m4a",
+      "source": "stone-impact-1.m4a"
+    },
+    {
+      "file": "stone-impact-2-3664dcc5.m4a",
+      "source": "stone-impact-2.m4a"
+    },
+    {
+      "file": "stone-impact-3-d22280a1.m4a",
+      "source": "stone-impact-3.m4a"
+    },
+    {
+      "file": "wood-impact-1-912c03f4.m4a",
+      "source": "wood-impact-1.m4a"
+    },
+    {
+      "file": "wood-impact-2-63e74aea.m4a",
+      "source": "wood-impact-2.m4a"
+    },
+    {
+      "file": "wood-impact-3-054145b4.m4a",
+      "source": "wood-impact-3.m4a"
+    },
+    {
+      "file": "stick-snap-1-fa149302.m4a",
+      "source": "stick-snap-1.m4a"
+    },
+    {
+      "file": "stick-snap-2-609cdbd2.m4a",
+      "source": "stick-snap-2.m4a"
+    },
+    {
+      "file": "stick-snap-3-3a7778e2.m4a",
+      "source": "stick-snap-3.m4a"
+    },
+    {
       "file": "axe-swish-1-219459ca.m4a",
       "source": "axe-swish-1.m4a"
     },
@@ -7306,12 +7722,12 @@ export const SOUND_DATA: SoundData = {
       "source": "axe-swish-3.m4a"
     },
     {
-      "file": "fell-crack-impact-1-f72f003d.m4a",
-      "source": "fell-crack-impact-1.m4a"
+      "file": "fell-crack-1-5f0f526f.m4a",
+      "source": "fell-crack-1.m4a"
     },
     {
-      "file": "fell-crack-impact-2-83b80b2f.m4a",
-      "source": "fell-crack-impact-2.m4a"
+      "file": "fell-crack-2-f589bd38.m4a",
+      "source": "fell-crack-2.m4a"
     },
     {
       "file": "body-thud-1-47264ef7.m4a",
@@ -7398,7 +7814,7 @@ export const SOUND_DATA: SoundData = {
       "source": "dynamite-boom-3.m4a"
     }
   ],
-  "sampleBytes": 1450401,
+  "sampleBytes": 1529337,
   "gaitOrder": [
     "walk",
     "run",

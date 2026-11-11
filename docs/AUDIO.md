@@ -261,10 +261,56 @@ can be added by data.
   under 0.7 (surfacing from a long dive); `strain` (`GRUNT_Male_Subtle_Hurt`) as the air crosses 0.25.
 - **Felling**: `fell_crack` now plays `TREE_Falling_Tree_Crack_Then_Impact_02`, `_08`.
 
-Not built this round (0.52.20): leaves rustling as the player brushes through them, cracking sticks
-on ground items, piece impacts by material beyond the set's `land` (already played with `body_thud`),
-a separate debris rattle after a blast (the `dynamite_boom` picks carry debris), wolf footsteps
-proper. Saved for later by the owner: rain and thunder, pickup/inventory/UI/coins, eating and
+Not built in round 2 (0.52.20), most of it built in round 2b (§2e): leaves rustling as the player
+brushes through them, cracking sticks on ground items, piece impacts by material. Still not built: a
+separate debris rattle after a blast (the `dynamite_boom` picks carry debris), wolf footsteps
+proper.
+
+### 2e. Round 2b (0.52.31): the world's small sounds and hit feedback
+
+Owner (2026-11-10): ongoing, ambient and looping sounds stay quiet ("more flavor than function").
+
+- **Sticks snap.** A ground item's kind (`shared/ground/ground.json`) may name sound events: `step`
+  as the local player's feet enter its cell on the ground (`dwell-game` `GroundSteps`, once per cell
+  entered; a jump off and back on is a second step), `hit` as the break action knocks it loose. The
+  stick has both: `stick_snap` at the item. Validated against the events by `shared/ground/gen.mjs`.
+- **Leaves brushed.** A new set event `brush` (`"fallback": false`: a set without one is silent):
+  the grass and snow sets have `leaf_brush` (procedural, a soft rustle; the pack has no foliage
+  brush). The local player's body in a passable block (`foliage_at`: shins, waist or head; leaves,
+  tall grass) rustles every `BRUSH_EVERY_M` (0.8 m) moved through it, at most every `BRUSH_MIN_S`
+  (0.18 s), intensity by speed (`speed: [0.4, 6]`); standing still is silent (`BrushSounds`).
+- **Fire bed.** An ambience bed `fire` (§2c) on `fireM`: nothing beyond 8 m, full at 1.5 m, gain
+  0.2 (under the 0.4 cap, below every other bed's gain). It sits under the per-source `burn` loops.
+- **Felling timed.** `fell` (the tip) now plays the crack alone (`TREE_Falling_Tree_Only_Cracking`);
+  `fell_land` (`fell_impact`) plays when the felled trunk comes to a stop — its first landing whose
+  speed drops to half or less (a shove on the way keeps falling) — once, at intensity × (0.4 + 0.6 ×
+  min(1, carriers / 12)): a bigger trunk lands louder (`dwell-client` `pieces.rs`).
+- **Piece impacts by material.** A new set event `impact`; `piece_land` plays the set's `impact`
+  and the thud. Every piece now sounds (before, only a felled tree's): its first cell's block. All
+  pieces together sound at most every 45 ms (`ANY_LAND_EVERY_MS`), each at most every 250 ms, and a
+  piece's first snapshot is no landing (its spawn pose has no velocity to compare).
+- **Hit feedback.** A block's `damage.chips` (shared/blocks: `count`, `color`, `speed`, `size`;
+  validated by `shared/tools/gen.mjs`) are the particles a hit knocks out of the struck face: stone
+  grey chips, soil clods, sand grains. The chip looks are the woods' then the blocks' (one colour
+  table for the billboard shader). **Other players' hits** (`dwell-client` `hit_feedback.rs`): a
+  damage update whose view of a cell changed is a hit at its newest mark — its material's `hit` and
+  chips there. Our own hits sounded and burst on the request, so the server's echo of a cell we hit
+  in the last 1.5 s is passed over (never doubled); the updates for 2 s after the hello (the world's
+  damage so far) are silent. No wire change: DAMAGE clients already get every change.
+
+| Sound | Universal Sound FX files |
+|---|---|
+| `fell_crack` | `TREE_Falling_Tree_Only_Cracking_02`, `_06` (replaces the crack-then-impact picks) |
+| `fell_impact` | `TREE_Falling_Tree_Only_Impact_01`, `_03`, `_05` |
+| `stone_impact` | `IMPACT_Stone_On_Stone_05`–`07` |
+| `wood_impact` (wood, torch, dynamite sets) | `IMPACT_Wood_01`, `IMPACT_Wood_Plank_On_Wood_Pile_03_Fall`, `_09` |
+| soil sets' `impact` | their `land` (the run footsteps) |
+| `stick_snap` | `CRACK_Bright_Crisp_01`–`03` |
+| `fire` bed | `FIRE_Campfire_Calm_Smooth_01_loop` (whole) |
+| `leaf_brush` | procedural |
+
+The samples are now about 1.8 MB in all. Not built: remote players brushing leaves and stepping on
+sticks (local player only), a stick's snap heard by others. Saved for later by the owner: rain and thunder, pickup/inventory/UI/coins, eating and
 drinking, the ladder's creak.
 
 ## 3. Synthesis (`client/src/audio/synth.ts`)
@@ -318,11 +364,14 @@ tick and each remote player's interpolated state each frame, and turns changes i
 | `slide_end` | not sliding for 0.15 s (`SLIDE_HOLD`: a flicker at a ramp's foot keeps the voice), a teleport, or the player gone from view | the slide's surface (`slide_stop`) | the speed it slid at |
 | `rise` / `dive` | flying, vertical speed passes `speed[0]` | — | from speed |
 | `break` / `place` | the local player's edit request (immediately), or another player's edit seen in a `VoxelModification` (spatial) | the broken / placed block | 1 |
-| `hit` | a break of an indestructible block (the server will refuse it) | the block | 1 |
+| `hit` | a break of an indestructible block (the server will refuse it), a hit short of breaking (ours on the request; another player's from the damage update, §2e) | the block | 1 |
 | `deny` | an edit with nothing targeted | — | 1 |
 | `impact` | a hit on a wall or a ceiling (below): the speed toward a solid block touching the body drops in a sample to ≤ 35 % of its fastest in the last 70 ms | the block hit (its `land`) + a body thud | from that fastest speed (2 → 25 m/s) |
 | `fell` | a tree begins to fall: a carrying piece spawns (`EntitySpawn`, [`FELLING.md`](./FELLING.md)), at its origin | `fell_crack` | — |
-| `piece_land` | a falling piece hits something: its velocity changes by over 2 m/s between snapshots, at most every 250 ms (`dwell-client` `pieces.rs`) | its first log's `land` + a body thud | from that change (2 → 20 m/s) |
+| `piece_land` | a falling piece hits something: its velocity changes by over 2 m/s between snapshots, at most every 250 ms a piece and 45 ms for all (`dwell-client` `pieces.rs`) | its first cell's `impact` + a body thud | from that change (2 → 20 m/s) |
+| `fell_land` | a felled trunk comes to a stop (§2e), once | `fell_impact` | from that change, by the trunk's size |
+| `brush` | moving through foliage (§2e), every 0.8 m, at most every 0.18 s | the foliage (its `brush`; none: silent) | from speed (0.4 → 6 m/s) |
+| `stick_snap` | stepping onto or knocking loose a ground item whose kind names it (§2e) | — | 1 |
 | `hurt` | the server's `PlayerEvent` Damage, any player's | — | from the damage (0 → 80 points) |
 | `death` / `respawn` | the server's `PlayerEvent` Death / Respawn, any player's | — | 1 |
 | `burn` / `burn_level` / `burn_end` | a burning light source's loop voice starting, moving, stopping (below) | the source's block (its `burn`) | by distance |

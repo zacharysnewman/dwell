@@ -582,6 +582,11 @@ pub struct Game<S: Scene> {
     /// The server keeps block damage (`inventory_flags::DAMAGE`): `DamageHello` sent, struck
     /// points sent with breaks.
     damage_on: bool,
+    /// Other players' hits seen in the damage updates (docs/BLOCK_DAMAGE.md §6).
+    remote_hits: crate::hit_feedback::RemoteHits,
+    /// Foliage brushed through and ground items stepped onto (AUDIO.md §5).
+    brush_sounds: dwell_game::sound::BrushSounds,
+    ground_steps: dwell_game::sound::GroundSteps,
     /// The world seed (Welcome), the ground items' scatter's (ADR 0071).
     world_seed: u64,
     /// The server keeps ground items and was told this client draws them (`GroundHello`).
@@ -923,6 +928,9 @@ impl<S: Scene> Game<S> {
             creatures: Default::default(),
             creatures_on: false,
             damage_on: false,
+            remote_hits: Default::default(),
+            brush_sounds: Default::default(),
+            ground_steps: Default::default(),
             world_seed: 0,
             ground_on: false,
             ground_target: None,
@@ -1488,6 +1496,15 @@ impl<S: Scene> Game<S> {
                 self.chop.apply(c);
             }
             Message::Damage(d) => {
+                // Another player's hit: its material's hit and chips at the struck point.
+                for (cell, mark) in self.remote_hits.on_damage(&d, now_ms) {
+                    let [x, y, z] = cell;
+                    let block = self.voxel(x, y, z);
+                    let at = point_in_cell(cell, mark.point);
+                    self.sounds
+                        .push(SoundEvent::new(SoundKind::Hit, block, 1.0, Some(at)));
+                    self.hit_chips(block, cell, at, now_ms);
+                }
                 // Drawn on the struck faces (docs/BLOCK_DAMAGE.md): each changed cell's chunk again.
                 for cell in &d.gone {
                     self.streamer.set_damage(*cell, None);
@@ -1525,6 +1542,7 @@ impl<S: Scene> Game<S> {
                 // The server keeps block damage (docs/BLOCK_DAMAGE.md): say so once, and draw it.
                 if i.flags & dwell_protocol::inventory_flags::DAMAGE != 0 && !self.damage_on {
                     self.damage_on = true;
+                    self.remote_hits.hello(now_ms);
                     self.outbox
                         .borrow_mut()
                         .push(Send::Control(Message::DamageHello));
@@ -1848,6 +1866,11 @@ impl<S: Scene> Game<S> {
                                 .map(|p| point_in_cell(target.cell, p));
                             self.sounds
                                 .push(SoundEvent::new(SoundKind::Hit, block, 1.0, at));
+                            // Its chips; the server's echo of the hit is not shown again.
+                            self.remote_hits.own_hit(target.cell, now_ms);
+                            if let Some(at) = at {
+                                self.hit_chips(block, target.cell, at, now_ms);
+                            }
                         }
                     }
                     (EditAction::Place, Some((cell, block))) => {
@@ -2707,6 +2730,18 @@ impl<S: Scene> Game<S> {
         self.blasts.shake(eye, now)
     }
 
+    /// A hit's chips out of `cell` (the block `block`) at the struck point `at` (world), when its
+    /// data has `damage.chips` (docs/BLOCK_DAMAGE.md §6).
+    fn hit_chips(&mut self, block: StateId, cell: [i32; 3], at: [f64; 3], now_ms: f64) {
+        if dwell_blocks::try_info(block).is_none() {
+            return;
+        }
+        if let Some(look) = crate::chips::hit_chips_of(dwell_blocks::block_of(block).name) {
+            let n = crate::chips::struck_normal(cell, at);
+            self.chips.hit_burst(look, n, at, now_ms / 1000.0);
+        }
+    }
+
     /// A swing's chips out of `face` at `point` of the wood `block` (the server cuts; these show).
     fn chips_burst(&mut self, block: StateId, face: u8, point: [f32; 3], now_ms: f64) {
         let name = dwell_blocks::block_of(block).name;
@@ -2761,6 +2796,59 @@ impl<S: Scene> Game<S> {
             }
         }
         out
+    }
+
+    /// The local player brushing through foliage and stepping onto ground items this tick
+    /// (AUDIO.md §5): a rustle by speed, a stick's snap.
+    fn foliage_and_ground_sounds(&mut self, c: &ClientState, grounded: bool) {
+        let feet = c.feet();
+        let foliage = {
+            let store = self.streamer.store_mut();
+            dwell_game::sound::foliage_at(
+                feet,
+                c.face,
+                self.current.standing_height,
+                |[x, y, z]| store.get_voxel(x, y, z),
+            )
+        };
+        let speed = c.velocity.iter().map(|v| v * v).sum::<f64>().sqrt();
+        self.brush_sounds
+            .update(foliage, speed, 1.0 / SIM_HZ as f64, None, &mut self.sounds);
+        // The open cell the feet stand in (just above the ground's top), while on the ground.
+        let cell = grounded.then(|| {
+            dwell_world::cell_of_pos([feet[0], c.face.y(c.face.y(feet[1]) + 0.1), feet[2]])
+        });
+        if let Some(cell) = self.ground_steps.update(cell)
+            && let Some((it, ev)) = self.ground_item_sound(cell, |k| k.step)
+        {
+            self.sounds
+                .push(SoundEvent::new(ev, 0, 1.0, Some(it.point())));
+        }
+    }
+
+    /// The ground item in `cell` (not gone) and its sound event `which` (its `step` or `hit`).
+    fn ground_item_sound(
+        &self,
+        cell: [i32; 3],
+        which: impl Fn(&dwell_world::ground::GroundKind) -> Option<&'static str>,
+    ) -> Option<(dwell_world::ground::Placed, SoundKind)> {
+        let (seed, gone) = self.streamer.ground()?;
+        if gone.cells.contains(&cell) {
+            return None;
+        }
+        let world = self.streamer.store();
+        let mut get = |c: [i32; 3], generated: bool| {
+            if generated && let Some(m) = self.streamer.generated_voxel(c) {
+                return Some(m);
+            }
+            world.find(dwell_world::chunk_of(c[0], c[1], c[2]))?;
+            Some(world.get_voxel_if_loaded(c))
+        };
+        let rules = dwell_world::ground::Rules::shipped();
+        let it = rules.item_over(&mut get, *seed, cell)?;
+        let name = which(rules.kind(it.kind)?)?;
+        let ev = SoundKind::ALL.into_iter().find(|k| k.name() == name)?;
+        Some((it, ev))
     }
 
     /// What the movement sounds read of a body with its feet at `feet`.
@@ -2969,6 +3057,7 @@ impl<S: Scene> Game<S> {
         );
         sample.carry = c.carry;
         self.mover_sounds.update(&sample, None, &mut self.sounds);
+        self.foliage_and_ground_sounds(&c, sample.grounded);
         // Across the midplane the body turns over and the look goes on across: the heading kept,
         // the pitch mirrored, the camera pointing the same way and rolling upright (face_flip.rs).
         (input.look.yaw, input.look.pitch) =
@@ -4232,6 +4321,15 @@ impl<S: Scene> Game<S> {
         self.bodies
             .swing_arms(dwell_characters::animator::Swing::Break);
         self.sound(dwell_game::sound::SoundKind::Tool);
+        // Its own sound where it lies (a stick's snap).
+        if let Some(ev) = dwell_world::ground::Rules::shipped()
+            .kind(it.kind)
+            .and_then(|k| k.hit)
+            .and_then(|n| SoundKind::ALL.into_iter().find(|k| k.name() == n))
+        {
+            self.sounds
+                .push(SoundEvent::new(ev, 0, 1.0, Some(it.point())));
+        }
         true
     }
 

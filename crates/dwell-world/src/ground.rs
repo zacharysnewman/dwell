@@ -33,6 +33,10 @@ pub struct GroundKind {
     pub color: [u8; 3],
     /// Each one's scale is in `[min, max]`.
     pub scale: [f64; 2],
+    /// The sound event a player stepping onto it plays (shared/sounds; a stick's snap), if any.
+    pub step: Option<&'static str>,
+    /// The sound event knocking it loose plays, if any.
+    pub hit: Option<&'static str>,
 }
 
 /// A rule's canopy condition: one of `blocks` within `within_rows` rows above the cell.

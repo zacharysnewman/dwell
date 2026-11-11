@@ -49,10 +49,13 @@ pub enum SoundKind {
     CreatureStep = 42,
     CreatureStartle = 43,
     CreatureCall = 44,
+    FellLand = 45,
+    Brush = 46,
+    StickSnap = 47,
 }
 
 impl SoundKind {
-    pub const ALL: [SoundKind; 45] = [
+    pub const ALL: [SoundKind; 48] = [
         SoundKind::Step,
         SoundKind::Climb,
         SoundKind::Land,
@@ -98,6 +101,9 @@ impl SoundKind {
         SoundKind::CreatureStep,
         SoundKind::CreatureStartle,
         SoundKind::CreatureCall,
+        SoundKind::FellLand,
+        SoundKind::Brush,
+        SoundKind::StickSnap,
     ];
 
     /// The event's name in the data.
@@ -148,6 +154,9 @@ impl SoundKind {
             SoundKind::CreatureStep => "creature_step",
             SoundKind::CreatureStartle => "creature_startle",
             SoundKind::CreatureCall => "creature_call",
+            SoundKind::FellLand => "fell_land",
+            SoundKind::Brush => "brush",
+            SoundKind::StickSnap => "stick_snap",
         }
     }
 
@@ -199,6 +208,9 @@ impl SoundKind {
             SoundKind::CreatureStep => None,
             SoundKind::CreatureStartle => None,
             SoundKind::CreatureCall => None,
+            SoundKind::FellLand => Some((1.0, 12.0)),
+            SoundKind::Brush => Some((0.4, 6.0)),
+            SoundKind::StickSnap => None,
         }
     }
 }

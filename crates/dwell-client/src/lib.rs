@@ -13,6 +13,7 @@ pub mod creatures;
 pub mod find;
 pub mod flecks;
 pub mod game;
+pub mod hit_feedback;
 pub mod jobs;
 pub mod local;
 pub mod lod_map;

@@ -4,7 +4,7 @@
   "kinds": [
     {
       "name": "dwell:ground_stick",
-      "item": "dwell:stick",
+      "item": "dwell:stick", "step": "stick_snap", "hit": "stick_snap",
       "scale": [0.75, 1.15]
     },
     {
