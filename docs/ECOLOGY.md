@@ -40,9 +40,13 @@ vocabulary. The species' tuning is per build; per world are the ecology's on/off
   world map. A cell is water (sea or lake: no forage, not walked) or land, whose **most forage** is
   the first `grazing.grounds` entry its height and slope are under (meadow, upland, crag). Forage is
   in deer-days: one unit feeds one head for a day. A ground may be a **refuge** (`refuge`, 0 to 1:
-  the share of a herd on it a hunter can't take; the crag's 0.8).
+  the share of a herd on it a hunter can't take; the crag's 0.8). Only the land is stored: its cells
+  are numbered row-major (`0..Island::cells()`), each row's land kept as runs (`Island::index`,
+  `cell_at` search the row), with each land cell's most forage (f32) and ground class (a byte, its
+  refuge the class's); water is not stored, so off the land is not walked and holds nothing.
 - **Forage** regrows toward the cell's most at `regrowPerDay` of the gap a day (exactly:
-  `g = max − (max − g)·e^(−r·dt)`) and is eaten by herds.
+  `g = max − (max − g)·e^(−r·dt)`, in f64, stored as f32 rounded up, so a regrown cell reaches its
+  most exactly) and is eaten by herds.
 - **A group** (`Group`): species, face-local x/z, size (fractional head, an average), hunger (0 fed,
   1 none), energy (1 rested), activity (resting, grazing, moving, fleeing, hunting, roaming,
   dispersing). Each step, in id order:
@@ -139,11 +143,15 @@ ecology, and tests hand the server islands (`ServerConfig::ecology_islands`).
   1000-day catch-up takes ~50 ticks, each well under a millisecond's share of the 16 ms tick in a
   release build (the test bounds it at 8 ms in a debug one).
 - **Saved** in the world's optional `ecology` table (ARCHITECTURE.md §6.4): the world's `enabled`
-  switch and `speed`, then each face's `Ecosystem::to_bytes` (seed, day, the forage grid, species by
-  name, the groups). Older builds ignore the table; a world without it (an older save) starts a
+  switch and `speed`, then each face's `Ecosystem::to_bytes` (version 2: seed, day, the land cells'
+  forage as runs — a count of cells at their most, not written, then a count of cells that aren't
+  and their f32 values — species by name, the groups; `dwell_ecology::codec`). A version 1 record
+  (the whole grid's forage as f64, before the land-only island) still loads: its land cells' values
+  are kept. A build from before reads a version 2 record as unreadable, so it keeps it as it is and
+  doesn't step it. Builds older still ignore the table; a world without it (an older save) starts a
   fresh ecology from its seed and catches up its days; an unreadable record (a newer build's) is
   kept, not overwritten, and not stepped. Saved species are mapped by name (one the build doesn't
-  know is dropped); a forage grid of another size (the data's `cellM` changed) starts full.
+  know is dropped); a forage grid of another size (the data's `cellM` or the land changed) starts full.
 - **Opting out**: `ServerConfig::ecology` (on by default) is a new world's switch; the world keeps
   its own after (an opted-out world opened by a build whose default is on stays off). **Default on**
   for new worlds and for older ones opened by this build, because it is additive: nothing in the
@@ -160,12 +168,16 @@ ecology, and tests hand the server islands (`ServerConfig::ecology_islands`).
   and saves as on a native server (the world file's `ecology` table). Only when the page could not
   give the maps (the worker's fallback: each worker computes its own) does the local server's
   instance have none, and then its ecology waits.
-- **Cost** (measured, seed 1, `game_local`): each face's island is the whole map's span at 200 m
-  (~190 000 cells a face), so the islands and ecosystems hold **12.5 MB** for both faces (the test
-  bounds it at 16 MB), made once on the first tick both maps are ready (~30 ms natively, a one-off).
-  The saved record is ~3 MB (each face's forage, f64 a cell), so **a save writes it only when it
-  changed** since the store last held it (`Ecology::record_to_save`, a hash of the record): a local
-  world saves every 5 s, the ecology steps once a world day. A failed save writes it next time.
+- **Cost** (measured, seed 1): each face's grid is the whole map's span at 200 m (251 001 cells a
+  face), of which ~50 000 are land; only those are stored (9 bytes a cell: forage and most forage
+  as f32, the ground class), so the islands and ecosystems hold **0.93 MB** for both faces (12.5 MB
+  before, when every cell held f64s; `Server::ecology_heap_bytes`, the tests bound it at 3 MB:
+  `game_local` and `dwell-ecology`'s `a_seed_1_worlds_ecology_is_small_in_memory_and_saved`), made
+  once on the first tick both maps are ready (~30 ms natively, a one-off). The saved record is ~0.5 KB
+  a face fresh or regrown and ~5 KB after a month of grazing (~3 MB before; the tests bound it at
+  200 KB), and **a save still writes it only when it changed** since the store last held it
+  (`Ecology::record_to_save`, a hash of the record): a local world saves every 5 s, the ecology steps
+  once a world day. A failed save writes it next time.
 
 Tests (`cargo test -p dwell-sim --test ecology`): the schedule; each face's ecology steps by the
 world's days (online a day at a time, idle waiting then catching up), its own seed, and the
@@ -180,8 +192,8 @@ world has none and keeps its choice; the flat world has none to run; an unreadab
 2. **Simple far rendering**: a herd drawn as a few low-detail figures or a marker in the LOD, from
    the client's read-out (§9, built).
 3. ~~**Local worlds**~~: built (§6). Still to do: native ↔ WASM determinism of the step (it uses
-   `exp`, `atan`, `hypot`), and a smaller island (land cells only, or f32 forage: 12.5 MB and a ~3 MB
-   record today, §6).
+   `exp`, `atan`, `hypot`). ~~A smaller island~~: built (land cells only, f32 forage, a run-length
+   record: 0.93 MB and a few KB, §6).
 4. **Grazing applied to the real tall grass** as chunks load: a cell's forage share decides how much
    of its tall grass stands (eaten grass as a composed layer, like trees' tombstones). Slice 3 eats
    single blocks by the deer near players only (§8).

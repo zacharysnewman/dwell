@@ -2806,29 +2806,25 @@ fn a_local_world_runs_the_far_ecology_on_both_faces_saves_and_reloads_it() {
         assert_eq!(core.server().ecosystem(face).unwrap().day, before.day);
     }
 
-    // Memory: the islands (walkable, most forage, refuge per cell) and the ecosystems (forage per
-    // cell, the groups) of both faces; the world maps themselves are the installed ones, shared.
-    let mut bytes = 0;
-    for face in [dwell_world::Face::A, dwell_world::Face::B] {
-        let eco = core.server().ecosystem(face).unwrap();
-        let cells = eco.grazing.len();
-        bytes += cells * (1 + 8 + 8) + cells * 8;
-        bytes += eco
-            .groups
-            .iter()
-            .chain(&eco.near)
-            .map(std::mem::size_of_val)
-            .sum::<usize>();
-    }
+    // Memory: the islands (the land cells' most forage and ground class) and the ecosystems
+    // (forage per land cell, the groups) of both faces, measured; the world maps themselves are
+    // the installed ones, shared.
+    let bytes = core.server().ecology_heap_bytes();
+    let record = core.server().ecology_record().len();
     println!(
-        "ecology: {bytes} bytes for both faces ({} groups); slowest tick {slowest:.1} ms",
+        "ecology: {bytes} bytes for both faces ({} groups), a {record}-byte record; slowest tick \
+         {slowest:.1} ms",
         before.groups.len()
     );
-    // Measured 12.5 MB on seed 1: each face's island is the whole world map's span at 200 m
-    // (~190 000 cells a face).
+    // 12.5 MB before the land-only island with f32 forage (docs/ECOLOGY.md §6, "Cost"); an iOS
+    // Safari tab is tight on memory.
     assert!(
-        bytes < 16 << 20,
-        "the ecology adds under 16 MB: {bytes} bytes"
+        bytes <= 3 << 20,
+        "the ecology adds at most 3 MB: {bytes} bytes"
+    );
+    assert!(
+        record <= 200 << 10,
+        "the ecology's saved record is at most 200 KB: {record} bytes"
     );
 
     // Saved in the world file's `ecology` table; a save with nothing stepped since writes nothing

@@ -46,8 +46,8 @@ pub struct Group {
 pub struct Ecosystem {
     pub seed: u64,
     pub day: f64,
-    /// Each island cell's forage now (deer-days).
-    pub grazing: Vec<f64>,
+    /// Each island land cell's forage now (deer-days; f32, as the island's most).
+    pub grazing: Vec<f32>,
     pub groups: Vec<Group>,
     pub next_id: u32,
     /// The herds and packs near players (individuals now: out of `groups`), as the near side last
@@ -118,9 +118,7 @@ impl Ecosystem {
             next_id: 0,
             near: Vec::new(),
         };
-        let land: Vec<usize> = (0..island.walkable.len())
-            .filter(|&c| island.walkable[c])
-            .collect();
+        let land: Vec<usize> = (0..island.cells()).collect();
         let pasture: Vec<usize> = land
             .iter()
             .copied()
@@ -191,9 +189,15 @@ impl Ecosystem {
             h = splitmix(h ^ u64::from(g.id) ^ ((g.species as u64) << 32));
         }
         for v in &self.grazing {
-            h = splitmix(h ^ v.to_bits());
+            h = splitmix(h ^ u64::from(v.to_bits()));
         }
         h
+    }
+
+    /// The heap the ecosystem holds (bytes): the forage and the groups.
+    pub fn heap_bytes(&self) -> usize {
+        self.grazing.capacity() * std::mem::size_of::<f32>()
+            + (self.groups.capacity() + self.near.capacity()) * std::mem::size_of::<Group>()
     }
 
     /// Advances the ecology `days`, in steps of at most `island.stepDays`.
@@ -209,7 +213,12 @@ impl Ecosystem {
     fn step_once(&mut self, island: &Island, data: &Data, dt: f64) {
         let regrow = (-data.regrow_per_day * dt).exp();
         for (g, &max) in self.grazing.iter_mut().zip(&island.grazing_max) {
-            *g = max - (max - *g) * regrow;
+            // In f64, rounded up to the next f32: never past the most (an f32), never below where
+            // it was, and a regrown cell reaches its most exactly (rounded to nearest, a gap of
+            // one f32 step would stay one step for ever), so its saved forage is not written.
+            let v = f64::from(max) - (f64::from(max) - f64::from(*g)) * regrow;
+            let f = v as f32;
+            *g = if f64::from(f) < v { f.next_up() } else { f };
         }
         let species = data.species.len();
         // The groups near players count in the totals (their grazing pressure, a hunter's prey).
@@ -327,19 +336,18 @@ impl Ecosystem {
                 if a < 0 || b < 0 || a >= island.n as i64 || b >= island.n as i64 {
                     continue;
                 }
-                let c = b as usize * island.n + a as usize;
-                if !island.walkable[c] {
+                let Some(c) = island.index(a as usize, b as usize) else {
                     continue;
-                }
-                let centre = island.centre(c);
+                };
+                let centre = island.grid_centre(a as usize, b as usize);
                 let d = dist(at, centre);
                 if d > sp.sense_radius_m + island.cell * 0.5 {
                     continue;
                 }
-                let food = (self.grazing[c] / need).min(1.0);
+                let food = (f64::from(self.grazing[c]) / need).min(1.0);
                 let stay = if Some(c) == here { 0.05 } else { 0.0 };
                 // A refuge takes the danger away (a threatened herd makes for the crags).
-                let threat = 2.0 * danger(centre) * (1.0 - island.refuge[c]);
+                let threat = 2.0 * danger(centre) * (1.0 - island.refuge(c));
                 let score = food - threat - 0.02 * d / island.cell + stay;
                 cells.push((score, c, d));
             }
@@ -378,8 +386,9 @@ impl Ecosystem {
             if eaten >= demand {
                 break;
             }
-            let take = self.grazing[c].min(demand - eaten);
-            self.grazing[c] -= take;
+            let have = f64::from(self.grazing[c]);
+            let take = have.min(demand - eaten);
+            self.grazing[c] = (have - take) as f32;
             eaten += take;
         }
         if demand > 0.0 { eaten / demand } else { 1.0 }
