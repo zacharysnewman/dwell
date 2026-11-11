@@ -28,9 +28,12 @@ function deps(store: MapStore | null): MapDeps & { builds: string[]; progress: n
   return {
     builds,
     progress,
-    keys: (seed) => [`fp-a-${seed.toString()}`, `fp-b-${seed.toString()}`],
-    build: (seed, face) => {
-      builds.push(`${seed.toString()}/${String(face)}`);
+    keys: (seed, worldgen) => [
+      `fp-a-${seed.toString()}${worldgen}`,
+      `fp-b-${seed.toString()}${worldgen}`,
+    ],
+    build: (seed, face, worldgen) => {
+      builds.push(`${seed.toString()}/${String(face)}${worldgen}`);
       return Promise.resolve(new Uint8Array([Number(seed % 256n), face]));
     },
     store,
@@ -71,6 +74,20 @@ describe('world maps (ADR 0049)', () => {
     expect(d.builds).toEqual(['3/0', '3/1']);
   });
 
+  it("keeps a test world's maps (its worldgen config) apart from its seed's own", async () => {
+    const store = new MemoryStore();
+    const d = deps(store);
+    await worldMaps(7n, GENERATOR_TERRAIN, d);
+    await worldMaps(7n, GENERATOR_TERRAIN, d, 'test:tall_peak');
+    expect(d.builds).toEqual(['7/0', '7/1', '7/0test:tall_peak', '7/1test:tall_peak']);
+    expect([...store.entries.keys()]).toEqual([
+      'fp-a-7',
+      'fp-b-7',
+      'fp-a-7test:tall_peak',
+      'fp-b-7test:tall_peak',
+    ]);
+  });
+
   it('has no maps for a world without terrain', () => {
     expect(worldMaps(3n, 0, deps(null))).toBeNull();
     expect(worldMaps(3n, 100, deps(null))).toBeNull();
@@ -91,7 +108,8 @@ describe('world maps (ADR 0049)', () => {
     const d = deps(null);
     let fail = true;
     const build = d.build.bind(d);
-    d.build = (seed, face) => (fail ? Promise.reject(new Error('no worker')) : build(seed, face));
+    d.build = (seed, face, worldgen) =>
+      fail ? Promise.reject(new Error('no worker')) : build(seed, face, worldgen);
     await expect(worldMaps(5n, GENERATOR_TERRAIN, d)).rejects.toThrow('no worker');
     fail = false;
     expect(await worldMaps(5n, GENERATOR_TERRAIN, d)).toHaveLength(2);

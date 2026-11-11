@@ -28,6 +28,8 @@ export const MAP = {
     highM: 400,
     darkest: 0.8,
     brightest: 1.15,
+    peakM: 5000,
+    peakLighten: 0.4,
   },
   explored: {
     cellM: 8,

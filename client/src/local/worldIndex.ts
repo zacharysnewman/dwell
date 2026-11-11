@@ -40,6 +40,13 @@ export interface WorldMeta {
    * (`DEFAULT_MODE`).
    */
   mode?: string;
+  /**
+   * A test world's worldgen config (docs/DEV_TOOLS.md "Play a test world"; dev links and Chisel's
+   * Play in game only): a fixture world's name (`test:tall_peak`) or a Chisel edit's JSON, whose
+   * height field its maps are built from. Kept so the world reopens on the same terrain. Absent:
+   * the build's terrain (every world the New world form makes).
+   */
+  worldgen?: string;
 }
 
 /** The part of `Storage` the index uses. */
@@ -56,6 +63,19 @@ export const MAX_NAME_LENGTH = 40;
  * (`localWorldName` in worldFiles.ts).
  */
 const LEGACY_ID = /^local-g(\d+)-s(\d+)$/;
+
+/**
+ * The id of a `?worldgen=` link's test world: `test-<name>-s<seed>` (the name's other characters
+ * as `-`), never a `local-g<generator>-s<seed>` world's.
+ */
+export function testWorldId(worldgen: string, seed: number): string {
+  const name = worldgen
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 32);
+  return `test-${name}-s${String(seed)}`.slice(0, 64);
+}
 
 /** The world type of a generator version (a retired version counts as its type's current one). */
 export function typeOfGenerator(generatorVersion: number): WorldType {
@@ -228,6 +248,7 @@ export class WorldIndex {
       ...(world.appVersion ? { appVersion: world.appVersion } : {}),
       ...(world.spawn ? { spawn: world.spawn } : {}),
       ...(world.mode ? { mode: world.mode } : {}),
+      ...(world.worldgen ? { worldgen: world.worldgen } : {}),
     };
     this.put(copy);
     return copy;
@@ -235,7 +256,15 @@ export class WorldIndex {
 
   /** Creates a new world's entry (its file is created when it is first played). */
   create(
-    options: { name: string; type: CreatableType; seed: number; spawn?: Spawn; mode?: string },
+    options: {
+      name: string;
+      type: CreatableType;
+      seed: number;
+      spawn?: Spawn;
+      mode?: string;
+      /** A test world's worldgen config (dev links and Chisel only; `WorldMeta.worldgen`). */
+      worldgen?: string;
+    },
     now: number,
     random: () => number = Math.random,
   ): WorldMeta {
@@ -253,6 +282,31 @@ export class WorldIndex {
       appVersion: recordedVersion(),
       ...(options.spawn ? { spawn: options.spawn } : {}),
       ...(options.mode ? { mode: options.mode } : {}),
+      ...(options.worldgen ? { worldgen: options.worldgen } : {}),
+    };
+    this.put(world);
+    return world;
+  }
+
+  /**
+   * The entry of a test world opened by a `?worldgen=<fixture>` link (docs/DEV_TOOLS.md), added
+   * if missing: a terrain world of `seed` with the link's worldgen config, under its own id
+   * (`testWorldId`), so it never shares a file with the seed's own world.
+   */
+  adoptTest(worldgen: string, seed: number, now: number): WorldMeta {
+    const id = testWorldId(worldgen, seed);
+    const existing = this.get(id);
+    if (existing) return existing;
+    const world: WorldMeta = {
+      id,
+      name: cleanName(`${worldgen.replace(/^test:/, '')} ${String(seed)}`, 'Test world'),
+      type: 'terrain',
+      seed,
+      generatorVersion: GENERATORS.terrain,
+      createdAt: now,
+      lastPlayedAt: 0,
+      appVersion: recordedVersion(),
+      worldgen,
     };
     this.put(world);
     return world;

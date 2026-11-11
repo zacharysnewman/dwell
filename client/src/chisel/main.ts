@@ -23,12 +23,14 @@ import {
   fromJson,
   knob,
   loadEdit,
+  playInGame,
   saveEdit,
   toJson,
   validateEdit,
   type BiomeJson,
   type Edit,
 } from './state';
+import { WorldIndex } from '../local/worldIndex';
 import { pointAt, rectOn, type Frame } from './overview';
 import type { SectionMesh, TileReply, TileRequest } from './worker';
 import {
@@ -591,6 +593,18 @@ function render() {
         selected = 0;
         saveEdit(store, null);
         restructure();
+      }),
+      // A new local world on this edit's ground (docs/DEV_TOOLS.md "Play a test world"): its
+      // record keeps the edit, so it reopens the same. The world knobs only, not the biomes yet.
+      el('button', {
+        textContent: 'Play in game',
+        title:
+          "Opens a new local world on this edit's world knobs (the seed above); biomes not yet",
+        onclick: () => {
+          if (validateEdit(edit).length) return;
+          const id = playInGame(new WorldIndex(store ?? null), edit, view.seed, Date.now());
+          window.open(`./?play=${encodeURIComponent(id)}`, '_blank');
+        },
       }),
     ),
   );

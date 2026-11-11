@@ -13,9 +13,31 @@ import {
   knob,
   loadEdit,
   saveEdit,
+  playInGame,
+  TALL_PEAK_WORLD,
   toJson,
   validateEdit,
 } from './state';
+import { WorldIndex } from '../local/worldIndex';
+
+describe("Chisel's Play in game", () => {
+  it("records the edit as the new world's worldgen config, which reopens unchanged", () => {
+    const store = memory();
+    const e = { ...buildEdit(), world: structuredClone(TALL_PEAK_WORLD) };
+    const id = playInGame(new WorldIndex(store), e, 42, Date.UTC(2026, 10, 10, 18, 0));
+    // A later page reads the record back: the same seed, a terrain world, the edit's JSON.
+    const world = new WorldIndex(store).get(id);
+    expect(world?.type).toBe('terrain');
+    expect(world?.seed).toBe(42);
+    expect(world?.name).toBe('Chisel 2026-11-10 18:00');
+    const config = JSON.parse(world?.worldgen ?? '{}') as { world: typeof TALL_PEAK_WORLD };
+    expect(config).toEqual(JSON.parse(toJson(e)));
+    expect(config.world).toEqual(TALL_PEAK_WORLD);
+    // Played again (touch): the config stays.
+    new WorldIndex(store).touch(id, Date.UTC(2026, 10, 11));
+    expect(new WorldIndex(store).get(id)?.worldgen).toBe(world?.worldgen);
+  });
+});
 
 function memory(init: Record<string, string> = {}) {
   const m = new Map(Object.entries(init));

@@ -19,10 +19,13 @@ export interface MapStore {
 
 /** What the maps need from the build: each face's cache key and a builder (a worker). */
 export interface MapDeps {
-  /** The cache keys of the world's faces A and B (`worldMapKeys`). */
-  keys(seed: bigint): string[];
-  /** Computes face `face`'s map off the page's thread; resolves with its bytes. */
-  build(seed: bigint, face: number): Promise<Uint8Array>;
+  /**
+   * The cache keys of the world's faces A and B (`worldMapKeys`); a test world's worldgen config
+   * (`worldgen`, docs/DEV_TOOLS.md "Play a test world") keys its maps apart.
+   */
+  keys(seed: bigint, worldgen: string): string[];
+  /** Computes face `face`'s map (under `worldgen`) off the page's thread; resolves with its bytes. */
+  build(seed: bigint, face: number, worldgen: string): Promise<Uint8Array>;
   store: MapStore | null;
   /** Each face's map as it becomes ready (the loading screen's progress). */
   onProgress?: (ready: number, needed: number) => void;
@@ -38,12 +41,13 @@ export function worldMaps(
   seed: bigint,
   generatorVersion: number,
   deps: MapDeps,
+  worldgen = '',
 ): Promise<Uint8Array[]> | null {
   if (generatorVersion !== GENERATOR_TERRAIN) return null;
-  const id = seed.toString();
+  const id = `${seed.toString()}|${worldgen}`;
   let p = pending.get(id);
   if (!p) {
-    p = fetchMaps(seed, deps);
+    p = fetchMaps(seed, deps, worldgen);
     pending.set(id, p);
     // A failure is not kept: the next join tries again.
     p.catch(() => pending.delete(id));
@@ -56,8 +60,8 @@ export function forgetWorldMaps(): void {
   pending.clear();
 }
 
-async function fetchMaps(seed: bigint, deps: MapDeps): Promise<Uint8Array[]> {
-  const keys = deps.keys(seed);
+async function fetchMaps(seed: bigint, deps: MapDeps, worldgen: string): Promise<Uint8Array[]> {
+  const keys = deps.keys(seed, worldgen);
   let ready = 0;
   deps.onProgress?.(0, keys.length);
   return Promise.all(
@@ -69,7 +73,7 @@ async function fetchMaps(seed: bigint, deps: MapDeps): Promise<Uint8Array[]> {
         bytes = null; // storage blocked or damaged: build it
       }
       if (!bytes) {
-        bytes = await deps.build(seed, face);
+        bytes = await deps.build(seed, face, worldgen);
         try {
           await deps.store?.put(key, bytes);
         } catch {
@@ -163,7 +167,7 @@ function request<T>(req: IDBRequest): Promise<T> {
 
 /** A builder that computes a map in a fresh worker (the job worker script), then ends it. */
 export function workerBuilder(makeWorker: () => Worker): MapDeps['build'] {
-  return (seed, face) =>
+  return (seed, face, worldgen) =>
     new Promise((resolve, reject) => {
       const worker = makeWorker();
       worker.onmessage = (e: MessageEvent<{ map?: Uint8Array; error?: string }>) => {
@@ -175,6 +179,6 @@ export function workerBuilder(makeWorker: () => Worker): MapDeps['build'] {
         worker.terminate();
         reject(new Error(e.message || 'the world map worker failed'));
       };
-      worker.postMessage({ t: 'buildMap', seed, face });
+      worker.postMessage({ t: 'buildMap', seed, face, worldgen });
     });
 }

@@ -633,7 +633,8 @@ fn a_sand_cell_stays_sand_coloured_and_height_changes_its_brightness_gently() {
     let sea = dwell_world::SEA_LEVEL_M;
     let ch = |c: u32, sh: u32| f64::from((c >> sh) & 0xff);
     let mut last = 0;
-    for h in [-50.0, 0.0, 100.0, 300.0, 600.0, 2000.0] {
+    // Up to highM (above it the colour goes toward white: `high_ground_keeps_a_gradient_…`).
+    for h in [-50.0, 0.0, 100.0, 300.0, 400.0] {
         let c = tint_rgb(&t, SAND, sea + h, false);
         // Its hue kept: each channel the same factor of sand's, within rounding.
         let k = ch(c, 16) / ch(SAND, 16);
@@ -655,9 +656,13 @@ fn a_sand_cell_stays_sand_coloured_and_height_changes_its_brightness_gently() {
         scale_rgb(SAND, t.height_tint_darkest)
     );
     assert_eq!(
-        tint_rgb(&t, SAND, sea + 5000.0, false),
+        tint_rgb(&t, SAND, sea + t.height_tint_high_m, false),
         scale_rgb(SAND, t.height_tint_brightest)
     );
+    // High sand: lighter still, never clipped to another hue's channel order.
+    let top = tint_rgb(&t, SAND, sea + t.height_tint_peak_m + 500.0, false);
+    assert_eq!(top, tint_rgb(&t, SAND, sea + t.height_tint_peak_m, false));
+    assert!(ch(top, 16) >= ch(top, 8) && ch(top, 8) >= ch(top, 0));
     // A few metres make little difference (no bands): 8 m changes no channel by more than 4.
     let (a, b) = (
         tint_rgb(&t, SAND, sea + 300.0, false),
@@ -666,6 +671,24 @@ fn a_sand_cell_stays_sand_coloured_and_height_changes_its_brightness_gently() {
     for sh in [16, 8, 0] {
         assert!((ch(a, sh) - ch(b, sh)).abs() <= 4.0);
     }
+}
+
+#[test]
+fn high_ground_keeps_a_gradient_past_400_m() {
+    // face-a-only: the tint reads a colour and a height alone.
+    // 0.52.27: a 4800 m peak's slopes were one flat brightness above 400 m; the ramp goes on to
+    // peakM, and below highM nothing changed.
+    let t = MAP;
+    let sea = dwell_world::SEA_LEVEL_M;
+    let grey = 0x60_6060;
+    let at = |m: f64| tint_rgb(&t, grey, sea + m, false);
+    assert!(at(1000.0) > at(400.0) && at(3000.0) > at(1000.0) && at(4800.0) > at(3000.0));
+    // Bright sand does not clip flat either: still rising at 4800 m.
+    let sand = |m: f64| tint_rgb(&t, SAND, sea + m, false) & 0xff;
+    assert!(sand(4800.0) > sand(2000.0) && sand(2000.0) > sand(400.0));
+    // The default world's heights (under highM) as before: the low ramp alone.
+    let k = t.height_tint_darkest + (t.height_tint_brightest - t.height_tint_darkest) * 0.5;
+    assert_eq!(at(t.height_tint_high_m * 0.5), scale_rgb(grey, k));
 }
 
 #[test]

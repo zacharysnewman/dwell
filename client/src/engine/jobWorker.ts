@@ -14,7 +14,7 @@ type Init = {
   /** The LOD colour map's river valleys in this world's LOD sections (`?lodmap=on`). */
   lodValleys?: boolean;
 };
-type BuildMap = { t: 'buildMap'; seed: bigint; face: number };
+type BuildMap = { t: 'buildMap'; seed: bigint; face: number; worldgen?: string };
 
 interface WorkerScope {
   postMessage(
@@ -52,7 +52,7 @@ scope.onmessage = (e) => {
   if (msg.t === 'buildMap') {
     void loadWasm().then(() => {
       try {
-        const map = buildWorldMap(msg.seed, msg.face);
+        const map = buildWorldMap(msg.seed, msg.face, msg.worldgen || undefined);
         scope.postMessage({ map }, [map.buffer as ArrayBuffer]);
       } catch (err) {
         scope.postMessage({ error: err instanceof Error ? err.message : String(err) });

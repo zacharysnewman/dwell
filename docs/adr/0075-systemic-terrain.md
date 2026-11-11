@@ -165,6 +165,9 @@ into `HeightField::tectonics`; `dwell-worldgen` `tectonics.rs`):
   toward each summit (`Tectonics::shield`), and on a shielded cell nothing settles above its uneroded
   ground, so the crater stays open. Without it a 4800 m cone (12 km radius) ends at ~4300 m; at 0.95 it
   keeps ≥ 4400 m (the fixture world `test:tall_peak`, `tests/tall_peaks.rs`, red at 0 and green at 0.95).
+  In game (0.52.27): `?worldgen=test:tall_peak` plays it (docs/DEV_TOOLS.md "Play a test world"); the
+  big map's height tint goes on past 400 m to `peakM` (`shared/ui/map.json`); the look is in
+  IMPLEMENTATION_PLAN.md Phase 57.
 - **The hotspot chain**: `hotspotCount` shield islands from (`hotspotX`, `hotspotZ`) along the plate's
   motion (`hotspotHeading`), `hotspotSpacing` m apart; each older one `hotspotDecay` of the last's height
   and `hotspotWiden` broader (eroded with age).

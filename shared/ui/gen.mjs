@@ -119,12 +119,15 @@ export const MAP_FIELDS = {
     waterDepthM: ['num', 0.5, 128],
   },
   // The block colours lightly tinted by height (owner, 2026-11-09): a brightness factor from
-  // `darkest` at `lowM` above sea level to `brightest` at `highM`.
+  // `darkest` at `lowM` above sea level to `brightest` at `highM`, then above it toward white,
+  // `peakLighten` of the way at `peakM` (high ground: a tall peak, 0.52.27; no clipping).
   heightTint: {
     lowM: ['num', -1024, 4096],
     highM: ['num', -1024, 4096],
     darkest: ['num', 0.25, 1],
     brightest: ['num', 1, 2],
+    peakM: ['num', -1024, 16384],
+    peakLighten: ['num', 0, 1],
   },
   explored: { cellM: ['int', 1, 128], pendingColor: ['color'] },
   bigMap: {
@@ -248,6 +251,7 @@ export function validateMap(data) {
   const b = data.bigMap;
   if (b.startLevel >= b.levels.length) mapFail(`bigMap.startLevel must name a level (0–${b.levels.length - 1})`);
   if (!(data.heightTint.lowM < data.heightTint.highM)) mapFail('heightTint: lowM must be below highM');
+  if (!(data.heightTint.highM < data.heightTint.peakM)) mapFail('heightTint: highM must be below peakM');
   if (data.minimap.radiusM % data.explored.cellM !== 0) mapFail('explored.cellM must divide minimap.radiusM');
   // The zoom levels' cells and the explored cells nest (fog per level).
   if (!isPow2(data.explored.cellM)) mapFail('explored.cellM must be a whole power of two');
