@@ -1071,6 +1071,10 @@ async function start(): Promise<App | null> {
     },
     look: (yaw, pitch) => {
       client.setLook(yaw, pitch);
+      // A placed camera (`placeCamera`, `goto`) draws the view, not the player's look: turn it
+      // too, where it stands, or a `look` after a `goto` turns nothing on screen.
+      const placed = client.camera() as Camera | null;
+      if (placed) client.placeCamera(...placed.position, yaw, pitch);
     },
     view: () => {
       const [yaw = 0, pitch = 0] = client.look();

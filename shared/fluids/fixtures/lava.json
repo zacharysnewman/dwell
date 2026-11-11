@@ -1,0 +1,30 @@
+{
+  "$comment": "Tests only (crates/dwell-lava): a fluid and vents added by data alone. test:magma is the build's lava's fixture twin, thinner and hotter; the vents are a lake (held at its level, at most `rateM3s`) and a river (a steady `rateM3s`) on the tests' patches, at face-local columns (x, z) of their field.",
+  "formatVersion": 1,
+  "speed": 1,
+  "tickEvery": 6,
+  "nearRadiusM": 96,
+  "farEverySeconds": 30,
+  "cfl": 0.8,
+  "maxSubsteps": 20000,
+  "fluids": [
+    {
+      "name": "test:magma",
+      "viscosityM2s": 1,
+      "yieldDepthM": 0.05,
+      "coolingSeconds": 600,
+      "edgeCooling": 0.5,
+      "thinDepthM": 0.2,
+      "rock": "dwell:obsidian",
+      "quench": { "rock": "dwell:obsidian", "steamWaterM": 0.25 },
+      "light": 15,
+      "damagePerSecond": 80,
+      "burnSeconds": 5,
+      "burnDamagePerSecond": 4
+    }
+  ],
+  "vents": [
+    { "name": "test:crater_lake", "fluid": "dwell:lava", "kind": "lake", "x": 16, "z": 16, "rateM3s": 2, "levelM": 10 },
+    { "name": "test:river", "fluid": "dwell:lava", "kind": "river", "x": 3, "z": 8, "rateM3s": 1.5 }
+  ]
+}

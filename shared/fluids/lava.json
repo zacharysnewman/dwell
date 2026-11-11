@@ -1,0 +1,26 @@
+{
+  "$comment": "Lava (docs/proposals/VOLCANOES.md §6, phase V1): hot fluids on their own surface grid (`dwell-lava`), a depth and a heat per 1 m column, moving by the viscous gravity-current law (flow per metre of width = g × h³ × surface slope / (3 × viscosity), through the depth above `yieldDepthM`, so a thin front stands still), scheduled like the water: every lava tick near a player, fast-forwarded in one run elsewhere. Times are real seconds × `speed`. tickEvery: server ticks per lava tick near a player. nearRadiusM: a field with a player this close runs every lava tick. farEverySeconds: a far field runs the time it owes once it owes this much. cfl: a substep's share of the explicit law's stable step (cell² / (4 × the fastest face's g h³ / 3ν)). maxSubsteps: the most substeps one run takes (more, and the rest of its time is lost). fluids: each hot fluid, by name (`name`; a field and a vent name theirs): viscosityM2s (kinematic, m²/s; higher is slower), yieldDepthM (a depth that never flows: the front's crust), coolingSeconds (a column at rest, thinDepthM deep, from vent heat to rock), edgeCooling (how much faster per dry neighbour: lava cools from its edges), thinDepthM (lava this deep cools in coolingSeconds; thinner faster and deeper slower, in proportion: it cools from its top), rock (the block it cools into: new land), quench (lava touching water: `rock` at once, the quench edge, and a steam event turning `steamWaterM` of the water's depth to steam), light (the light level its block gives, 0–15; the block itself comes with the look), damagePerSecond (health a second to a player in it), burnSeconds and burnDamagePerSecond (the burning after leaving it). Prototype tuning (ARCHITECTURE.md §6.1). Run `node shared/fluids/lava.mjs` after editing; CI fails if crates/dwell-lava/src/lava.gen.rs is stale.",
+  "formatVersion": 1,
+  "speed": 1,
+  "tickEvery": 6,
+  "nearRadiusM": 96,
+  "farEverySeconds": 30,
+  "cfl": 0.8,
+  "maxSubsteps": 20000,
+  "fluids": [
+    {
+      "name": "dwell:lava",
+      "viscosityM2s": 4,
+      "yieldDepthM": 0.15,
+      "coolingSeconds": 90,
+      "edgeCooling": 1.5,
+      "thinDepthM": 0.6,
+      "rock": "dwell:basalt",
+      "quench": { "rock": "dwell:obsidian", "steamWaterM": 0.5 },
+      "light": 13,
+      "damagePerSecond": 40,
+      "burnSeconds": 3,
+      "burnDamagePerSecond": 8
+    }
+  ]
+}

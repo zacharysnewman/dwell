@@ -32,6 +32,8 @@ const SCANNED: &[&str] = &[
     "dwell-look/src",
     "dwell-characters/src",
     "dwell-sim/src",
+    "dwell-lava/src",
+    "dwell-lava/tests",
     "dwell-client/src",
 ];
 

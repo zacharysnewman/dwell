@@ -247,21 +247,28 @@ that touches the public API, a release or the workflows:
 
 - **The app version is Semantic Versioning.** `client/package.json`'s `version` is a **floor**, not a
   counter: the next version is the next patch after the newest published release, or `package.json`'s
-  version if that is higher. Never bump it on its own after a release; the bump rides in the next PR.
-- **Every PR merged to `main` raises `package.json` and ships as a stable tagged release** (owner,
-  2026-10-19): features, bug fixes, CI, test and workflow fixes alike. Nothing merges as a dev-only
-  build: the owner sees a change only once a tag is released. Raise it to the next patch above the
-  newest release, or the next MINOR for a compatibility break (below), in the PR just before it
-  merges, one release per PR. The owner has given standing approval for these bumps. A push that
-  leaves `package.json` at or below the newest release (e.g. a direct push) is a dev build
-  (`v<next>-dev.<run>`).
-- **Every release says what changed:** the PR that raises `package.json` adds the version's entry,
-  one to six short lines, at the top of `shared/releases/changes.json` (a client test and
-  `release.ts` fail without it; `docs/RELEASES.md` §3). Write them for players, not as commit subjects.
+  version if that is higher. Never bump it on its own after a release.
+- **Every PR merged to `main` ships as a stable tagged release** (owner, 2026-10-19): features, bug
+  fixes, CI, test and workflow fixes alike. Nothing merges as a dev-only build: the owner sees a
+  change only once a tag is released. **The version is assigned at merge** (owner-approved speed-up,
+  2026-11-11): a PR does **not** raise `package.json` or edit `shared/releases/changes.json`; it adds
+  a **pending release note**, `shared/releases/pending/<branch-slug>.json` = `{"changes": ["…"]}`,
+  one to six short lines (a client test checks every note). On `main` the Release workflow
+  (`npm run release:assign`, `client/scripts/releaseAssign.ts`) gives each note the next patch,
+  writes `changes.json` and `package.json`, deletes the note, commits that to `main` and releases
+  it, so parallel PRs don't conflict (`docs/RELEASES.md` §3). Write the lines for players, not as
+  commit subjects. A PR that still raises `package.json` by hand with its own `changes.json` entry
+  releases as before. A push with neither (e.g. a direct push) is a dev build (`v<next>-dev.<run>`).
+- **Local builds carry the line, not the patch:** `crates/dwell-sim/build.rs` and `vite.config.ts`
+  read `shared/version/line.json` (MAJOR.MINOR), not `package.json`, so a release recompiles
+  nothing; a local build is `<line>.0-dev.local`. The release workflow passes the exact
+  `DWELL_VERSION`. A test fails when `line.json` disagrees with `package.json`.
 - **A breaking change to the public API — the saved world format, the terrain a seed generates, the
   network protocols, the cross-version browser storage — needs a new compatibility line** (before
-  `1.0.0`, the next MINOR). Say so in the PR and let the owner raise `package.json`; do not leave
-  such a change shipping under the old line, whose players' worlds it would break.
+  `1.0.0`, the next MINOR). Say so in the PR and let the owner raise `package.json` (with
+  `shared/version/line.json` and its `changes.json` entry); a pending note can't (`"breaking": true`
+  fails CI). Do not leave such a change shipping under the old line, whose players' worlds it would
+  break.
 - **Blocks and registry sync (ADR 0038):** the server sends its block registry at join and clients
   map ids by name, so **adding** blocks or states, or changing looks, is not breaking. From 0.50
   (ADR 0063) a state with a property or value a build doesn't know is kept as an **alias** of its
