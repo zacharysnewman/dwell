@@ -88,7 +88,8 @@ pub fn cpu_tier() -> usize {
 /// The tier's switches as the frame uniform carries them (`water.w`, read by the WGSL's
 /// `water_tier_*`): bit 0 reads the scene, bit 1 flow streaks, bit 2 the bank band, bits 3–4 the
 /// ripple layers, bit 5 the surface caustics, bits 6–9 the opacity in fifteenths, bit 10 molten
-/// surfaces' heat drift (lava; every tier but the CPU's, which draws it flat). Exact in an f32.
+/// surfaces' heat drift (lava; every tier but the CPU's, which draws it flat), bit 11 block damage's
+/// relief marching the texture into its dents ([`relief_parallax`]). Exact in an f32.
 pub fn tier_bits(t: &WaterTier) -> u32 {
     u32::from(t.reads_scene)
         | (u32::from(t.flow_streaks) << 1)
@@ -97,6 +98,15 @@ pub fn tier_bits(t: &WaterTier) -> u32 {
         | (u32::from(t.surface_caustics) << 5)
         | (opacity_fifteenths(t.opacity) << 6)
         | (u32::from(!t.cpu) << 10)
+        | (u32::from(relief_parallax(t)) << 11)
+}
+
+/// Whether block damage's relief marches the texture into its dents (steep parallax,
+/// docs/BLOCK_DAMAGE.md §6.1): on the tiers that afford the scene copy; Low (phones) and the CPU's
+/// light the dent by its bent normal only. Tied to the water tier (the quality preset's GPU budget)
+/// until the renderer has a general quality tier.
+pub fn relief_parallax(t: &WaterTier) -> bool {
+    t.reads_scene && !t.cpu
 }
 
 /// The opacity as `tier_bits` carries it (0–15; the WGSL divides by 15).
@@ -107,6 +117,18 @@ pub fn opacity_fifteenths(opacity: f64) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The relief's tier table (BLOCK_DAMAGE.md §6.1): Low and the CPU's tier light a dent by its
+    /// normal only; Medium marches the texture into it.
+    #[test]
+    fn only_the_scene_reading_tiers_march_the_relief() {
+        for (id, on) in [("low", false), ("medium", true)] {
+            let t = &WATER_TIERS[tier_index(id).unwrap()];
+            assert_eq!(relief_parallax(t), on, "{id}");
+            assert_eq!(tier_bits(t) & 2048 != 0, on, "{id}");
+        }
+        assert!(!relief_parallax(&WATER_TIERS[cpu_tier()]));
+    }
 
     /// The CPU tier draws lava flat (a still glow); every other tier moves its heat (bit 10).
     #[test]
@@ -148,7 +170,7 @@ mod tests {
             (1 << 3) | (1 << 5) | (opacity_fifteenths(low.opacity) << 6) | (1 << 10)
         );
         let medium = &WATER_TIERS[tier_index("medium").unwrap()];
-        assert_eq!(tier_bits(medium), 1 | 2 | (3 << 3) | (15 << 6) | (1 << 10));
+        assert_eq!(tier_bits(medium), 1 | 2 | (3 << 3) | (15 << 6) | (1 << 10) | (1 << 11));
         assert_eq!(opacity_fifteenths(0.55), 8);
         assert_eq!(opacity_fifteenths(0.8), 12);
         assert_eq!(tier_bits(&WATER_TIERS[cpu_tier()]) & 1, 0);
