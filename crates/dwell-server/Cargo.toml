@@ -17,6 +17,7 @@ dwell-protocol = { path = "../dwell-protocol" }
 dwell-sim = { path = "../dwell-sim" }
 dwell-storage = { path = "../dwell-storage" }
 dwell-world = { path = "../dwell-world" }
+dwell-worldgen = { path = "../dwell-worldgen" }
 ctrlc = "3"
 getrandom = "0.3"
 if-addrs = "0.13"

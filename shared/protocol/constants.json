@@ -67,7 +67,8 @@
     "maxResyncChunks": 64,
     "maxLodIndexEntries": 16384,
     "maxEditAckRejected": 1024,
-    "maxPieceCells": 4096
+    "maxPieceCells": 4096,
+    "worldgenConfigMaxBytes": 524288
   },
   "regionEdit": {
     "maxSide": 32,
@@ -131,7 +132,9 @@
     "Creatures": 94,
     "CreaturesHello": 95,
     "DamageHello": 96,
-    "Damage": 97
+    "Damage": 97,
+    "WorldgenRequest": 98,
+    "WorldgenConfig": 99
   },
   "rejectReasons": {
     "ProtocolVersion": 1,

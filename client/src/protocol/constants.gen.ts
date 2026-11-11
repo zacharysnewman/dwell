@@ -73,6 +73,7 @@ export const Limits = {
   maxLodIndexEntries: 16384,
   maxEditAckRejected: 1024,
   maxPieceCells: 4096,
+  worldgenConfigMaxBytes: 524288,
 } as const;
 
 export const RegionEdit = {
@@ -141,6 +142,8 @@ export const MessageType = {
   CreaturesHello: 95,
   DamageHello: 96,
   Damage: 97,
+  WorldgenRequest: 98,
+  WorldgenConfig: 99,
 } as const;
 export type MessageType = (typeof MessageType)[keyof typeof MessageType];
 

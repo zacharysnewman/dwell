@@ -754,9 +754,10 @@ async function start(): Promise<App | null> {
       displayName: displayName(),
       clientVersion: recordedVersion(),
       makeWorker: makeJobWorker,
-      // A terrain world's maps (ADR 0049): cached, or built in workers, never on this thread.
-      prepareWorld: (seed: bigint, version: number) =>
-        worldMaps(seed, version, mapDeps(), worldgenConfig) ?? Promise.resolve(null),
+      // A terrain world's maps (ADR 0049): cached, or built in workers, never on this thread;
+      // under the worldgen config the world's server sent (ADR 0074 B7: a guest of a test world).
+      prepareWorld: (seed: bigint, version: number, worldgen?: string) =>
+        worldMaps(seed, version, mapDeps(), worldgen ?? worldgenConfig) ?? Promise.resolve(null),
       // Per pool (generation, meshing); ?workers=N overrides it (docs/DEV_TOOLS.md).
       workers: workerCount(location.search, navigator.hardwareConcurrency, mobile),
       // ?lod=0 or ?lod=off: no distant terrain at all (a debug switch; __dwell.setLod hides it live).

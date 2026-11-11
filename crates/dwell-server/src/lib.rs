@@ -17,7 +17,7 @@ pub const USAGE: &str =
                     [--name NAME] [--motd TEXT] [--max-players N] [--edits POLICY]
                     [--flight POLICY] [--seed N] [--generator N] [--op KEY] [--ban KEY]
                     [--client-url URL] [--master URL] [--visibility public|unlisted|none]
-                    [--tags A,B] [--mode NAME]
+                    [--tags A,B] [--mode NAME] [--worldgen FILE|test:NAME]
   --world FILE    the world file (default world.dwellworld; created if missing; \"\" keeps
                   the world in memory only)
   --advertise IP  address players use to reach this server (invite links, WebRTC)
@@ -33,6 +33,9 @@ pub const USAGE: &str =
   --tags A,B      tags players can search the lobby list by (e.g. pve,creative)
   --mode NAME     the game mode (shared/modes/modes.json: creative, adventure): a new world's,
                   and an existing world switches to it on start (ADR 0065)
+  --worldgen FILE a worldgen config: a Chisel edit's JSON file, or a fixture world's name
+                  (test:tall_peak); the world's terrain is made from it and sent to guests
+                  (ADR 0074 B7). Not saved: give it on every start of that world
   --heartbeat S   seconds between master heartbeats (default 30; testing)";
 
 pub struct Options {
@@ -60,6 +63,9 @@ pub struct Options {
     /// `--mode`: the game mode by name (ADR 0065), checked against `shared/modes/modes.json` by
     /// [`open_world`]; a new world is made in it and a saved one switches to it ([`switch_mode`]).
     pub mode: Option<String>,
+    /// `--worldgen`: a worldgen config file, or a fixture world's name (ADR 0074 B7); empty: the
+    /// build's ground. [`install_worldgen`] installs the world's maps from it.
+    pub worldgen: String,
 }
 
 impl Default for Options {
@@ -84,6 +90,7 @@ impl Default for Options {
             settings: Vec::new(),
             grants: Vec::new(),
             mode: None,
+            worldgen: String::new(),
         }
     }
 }
@@ -135,6 +142,7 @@ pub fn parse_options(args: &[String]) -> Result<Options, UsageError> {
             "--generator" => o.server.generator_version = v.parse().map_err(|_| UsageError)?,
             "--client-url" => o.client_url = v.into(),
             "--mode" => o.mode = Some(v.into()),
+            "--worldgen" => o.worldgen = v.into(),
             _ => return Err(UsageError),
         }
     }
@@ -176,6 +184,37 @@ pub fn parse_hex<const N: usize>(text: &str) -> Option<[u8; N]> {
         *b = u8::from_str_radix(&text[2 * i..2 * i + 2], 16).ok()?;
     }
     Some(out)
+}
+
+/// `--worldgen` (ADR 0074 B7): the config's text (a fixture world's name as is, else the file's),
+/// with both faces' maps built from it and installed in this process before the server starts, so
+/// its generators make the config's ground and it sends the config to guests. `""`: none given.
+pub fn install_worldgen(o: &Options) -> Result<String, String> {
+    if o.worldgen.is_empty() {
+        return Ok(String::new());
+    }
+    let text = if o.worldgen.starts_with("test:") {
+        o.worldgen.clone()
+    } else {
+        std::fs::read_to_string(&o.worldgen)
+            .map_err(|e| format!("--worldgen {:?}: {e}", o.worldgen))?
+    };
+    let text = text.trim().to_owned();
+    if dwell_worldgen::config::world_config(&text)?.is_none() {
+        return Err(format!(
+            "--worldgen {:?}: the build's own ground",
+            o.worldgen
+        ));
+    }
+    if !dwell_world::has_terrain(o.server.generator_version) {
+        return Err("--worldgen needs a terrain world (--generator 8)".into());
+    }
+    for face in [dwell_world::Face::A, dwell_world::Face::B] {
+        let seed = dwell_worldgen::bifacial::face_seed(o.server.world_seed, face);
+        let bytes = dwell_worldgen::config::worldgen_map_bytes(seed, &text)?;
+        dwell_worldgen::worldmap::install(&bytes)?;
+    }
+    Ok(text)
 }
 
 /// Opens the world file and folds its settings and permissions (plus the launch options, which

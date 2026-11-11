@@ -311,8 +311,10 @@ LOD and the water all generate the fixture's ground. From 0.52.37 (ADR 0074 B7) 
 config's text (`WorldMap::worldgen`), so those generators put the whole edit on the ground: its biomes,
 biome map, rocks, erosion, vegetation and tectonics, as Chisel previews them (`dwell-worldgen`
 `tests/worldgen_config.rs` compares the columns, both faces). One difference: the game's terrain volume
-(the cliffs) stands over the edit's ground and Chisel's preview has none. Local worlds only: a guest
-joining one would build the seed's own maps. The New world form never sets it. A bench run uses it through a
+(the cliffs) stands over the edit's ground and Chisel's preview has none. From 0.52.38 a guest joining
+one (a friend world, or a dedicated server started with `--worldgen <edit.json>` or
+`--worldgen test:tall_peak`) is sent the config and builds the same maps; an older build refuses the
+world (`dwell-client` `tests/worldgen_guests.rs`). The New world form never sets it. A bench run uses it through a
 `--configs-file` configuration's `params` (`{"worldgen": "test:tall_peak", "fresh": "1", "at": …}`).
 
 **The water report** (0.44.4): `dwell_sim::water::Water::report(at, radius)` describes the water near a

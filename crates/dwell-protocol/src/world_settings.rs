@@ -29,6 +29,13 @@ pub mod tag {
     /// (a newer build's mode) reads as `modes::DEFAULT_MODE`. The server enforces the mode; a
     /// client only predicts and hides with it.
     pub const MODE: u8 = 0x82;
+    /// `u64` (LE) FNV-1a hash of the world's worldgen config text (ADR 0074 B7: a world made from
+    /// a Chisel edit or a fixture). Required: a build before it can't make the world's terrain, so
+    /// it refuses ("needs a newer version") instead of generating the seed's own. A client that
+    /// knows it sends `WorldgenRequest`, gets the text (`WorldgenConfig`), checks the hash and
+    /// builds its maps from it. Sent only for such a world (a default world's join is unchanged),
+    /// and never saved in the world file (the server adds it from its world's maps).
+    pub const WORLDGEN: u8 = 2;
 }
 
 /// The most fields, and the longest field.
@@ -143,9 +150,12 @@ impl SettingsFields {
     /// The settings, a missing optional field taken from `defaults`.
     pub fn settings(&self, defaults: WorldSettings) -> Result<WorldSettings, SettingsError> {
         for (t, _) in &self.0 {
-            if *t & tag::OPTIONAL == 0 && *t != tag::CLOCK {
+            if *t & tag::OPTIONAL == 0 && *t != tag::CLOCK && *t != tag::WORLDGEN {
                 return Err(SettingsError::Unknown(*t));
             }
+        }
+        if self.get(tag::WORLDGEN).is_some_and(|b| b.len() != 8) {
+            return Err(SettingsError::Invalid(tag::WORLDGEN));
         }
         let mut s = defaults;
         let Some(c) = self.get(tag::CLOCK) else {
@@ -176,12 +186,33 @@ impl SettingsFields {
         Ok(s)
     }
 
+    /// The world's worldgen config hash (`tag::WORLDGEN`), when it names one.
+    pub fn worldgen_hash(&self) -> Option<u64> {
+        let b: [u8; 8] = self.get(tag::WORLDGEN)?.try_into().ok()?;
+        Some(u64::from_le_bytes(b))
+    }
+
+    /// These fields with `tag::WORLDGEN` set to `hash` (the join's, ADR 0074 B7), or without it.
+    pub fn with_worldgen(&self, hash: Option<u64>) -> Self {
+        let mut out: Vec<(u8, Vec<u8>)> = self
+            .0
+            .iter()
+            .filter(|(t, _)| *t != tag::WORLDGEN)
+            .cloned()
+            .collect();
+        if let Some(h) = hash {
+            out.push((tag::WORLDGEN, h.to_le_bytes().to_vec()));
+            out.sort_by_key(|(t, _)| *t);
+        }
+        Self(out)
+    }
+
     /// These fields with the known ones set to `s` (fields this build doesn't know kept).
     pub fn with(&self, s: WorldSettings) -> Self {
         let mut out: Vec<(u8, Vec<u8>)> = self
             .0
             .iter()
-            .filter(|(t, _)| ![tag::CLOCK, tag::WATER_SPEED, tag::MODE].contains(t))
+            .filter(|(t, _)| ![tag::CLOCK, tag::WATER_SPEED, tag::MODE, tag::WORLDGEN].contains(t))
             .cloned()
             .collect();
         let field = |f: &dyn Fn(&mut ByteWriter)| {
@@ -320,5 +351,33 @@ mod tests {
         newer.0.retain(|(t, _)| *t != tag::MODE);
         newer.0.push((tag::MODE, vec![0xff, 0xfe]));
         assert_eq!(newer.settings(D), Err(SettingsError::Invalid(tag::MODE)));
+    }
+
+    #[test]
+    fn the_worldgen_hash_is_a_required_field_an_older_build_refuses() {
+        let f = SettingsFields::default().with(D);
+        assert_eq!(f.worldgen_hash(), None, "a default world names none");
+        assert_eq!(f.with_worldgen(None), f, "and its fields are unchanged");
+        let g = f.with_worldgen(Some(0x0123_4567_89ab_cdef));
+        assert_eq!(tag::WORLDGEN & tag::OPTIONAL, 0, "required");
+        assert_eq!(g.worldgen_hash(), Some(0x0123_4567_89ab_cdef));
+        assert_eq!(g.settings(D), Ok(D), "this build knows it");
+        let back = SettingsFields::from_bytes(&g.to_bytes()).expect("the tagged form");
+        assert_eq!(back.worldgen_hash(), Some(0x0123_4567_89ab_cdef));
+        // A build before it reads the same fields as one with an unknown required tag.
+        let older = |f: &SettingsFields| {
+            for (t, _) in &f.0 {
+                if *t & tag::OPTIONAL == 0 && *t != tag::CLOCK {
+                    return Err(SettingsError::Unknown(*t));
+                }
+            }
+            Ok(())
+        };
+        assert_eq!(older(&g), Err(SettingsError::Unknown(tag::WORLDGEN)));
+        // Never saved: setting the known fields drops it.
+        assert_eq!(g.with(D).worldgen_hash(), None);
+        let mut bad = f.clone();
+        bad.0.push((tag::WORLDGEN, vec![1, 2, 3]));
+        assert_eq!(bad.settings(D), Err(SettingsError::Invalid(tag::WORLDGEN)));
     }
 }
