@@ -347,6 +347,127 @@ fn arms_bones(role: &str, held: Held, t: f32) -> [Affine; MAX_BONES] {
     arm_transforms(ch, &with_item(&pose, hold))
 }
 
+/// A fitted arms key: the root offset (view space, as the clip keys it: +x left) and the swing's
+/// three arm bones (degrees), and where it puts the grip and the tool head (the player's frame:
+/// right, up, ahead of the eye).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Fit {
+    pub root: [f32; 3],
+    pub arm: [f32; 3],
+    pub forearm: f32,
+    pub hand: [f32; 3],
+    pub grip: [f32; 3],
+    pub head: [f32; 3],
+}
+
+impl Fit {
+    /// The key as the clip's JSON (`{ "t": …, "root": …, "bones": {…} }`).
+    pub fn json(&self, t: f32) -> String {
+        let r = |v: f32| (v * 1000.0).round() / 1000.0 + 0.0;
+        let d = |v: f32| v.round() + 0.0;
+        format!(
+            r#"{{ "t": {t}, "root": [{}, {}, {}], "bones": {{ "arm_r": [{}, {}, {}], "forearm_r": [{}, 0, 0], "hand_r": [{}, {}, {}] }} }}"#,
+            r(self.root[0]),
+            r(self.root[1]),
+            r(self.root[2]),
+            d(self.arm[0]),
+            d(self.arm[1]),
+            d(self.arm[2]),
+            d(self.forearm),
+            d(self.hand[0]),
+            d(self.hand[1]),
+            d(self.hand[2]),
+        )
+    }
+}
+
+/// Fits an arms key for `role`'s swing (the clip-authoring aid behind `clip_probe --fit`): the
+/// root offset (a torso turn, kept small) and the arm, elbow and wrist turns that put the grip at
+/// `grip` and the tool head at `head` (the player's frame: right, up, ahead of the eye), within
+/// the rig's joint limits, starting from `from`. Coordinate descent on the game's own posing
+/// (`arm_transforms` with the hold's turns), so the key plays where it was fitted.
+pub fn fit(
+    role: &str,
+    item: Option<&'static str>,
+    grip: [f32; 3],
+    head: [f32; 3],
+    from: Fit,
+) -> Fit {
+    let ch = player();
+    let held = held_for(item, role);
+    let hold = held.item().and_then(|(n, _)| ch.item(n));
+    let (gb, gp) = local_point(held, Point::Grip).expect("grip");
+    let (hb, hp) = local_point(held, Point::ToolHead).unwrap_or((gb, gp));
+    let bone = |n: &str| ch.bone(n).expect("bone");
+    let (arm, fore, hand) = (bone("arm_r"), bone("forearm_r"), bone("hand_r"));
+    let place = |x: &[f32; 10]| {
+        let mut pose = dwell_characters::anim::Pose::REST;
+        pose.rot[arm] = [x[0], x[1], x[2]];
+        pose.rot[fore] = [x[3], 0.0, 0.0];
+        pose.rot[hand] = [x[4], x[5], x[6]];
+        pose.root = [x[7], x[8], x[9]];
+        let b = arm_transforms(ch, &with_item(&pose, hold));
+        (to_local(b[gb].apply(gp)), to_local(b[hb].apply(hp)))
+    };
+    // The rig's joint limits, and a torso turn of at most 0.25 m.
+    let lo = [
+        -180.0, -90.0, -180.0, -150.0, -80.0, -60.0, -40.0, -0.25, -0.2, -0.2,
+    ];
+    let hi = [70.0, 90.0, 30.0, 0.0, 80.0, 60.0, 40.0, 0.25, 0.2, 0.2];
+    let cost = |x: &[f32; 10]| {
+        let (g, h) = place(x);
+        let d2 = |a: [f32; 3], b: [f32; 3]| (0..3).map(|k| (a[k] - b[k]).powi(2)).sum::<f32>();
+        // The root costs a little (the arm does the work), the wrist's turn a little too.
+        let reg = 0.3 * (x[7] * x[7] + x[8] * x[8] + x[9] * x[9])
+            + 2e-6 * (x[4] * x[4] + x[5] * x[5] + x[6] * x[6]);
+        let behind = if h[2] < 0.2 { 10.0 * (0.2 - h[2]) } else { 0.0 };
+        d2(g, grip) + d2(h, head) + reg + behind
+    };
+    let mut x = [
+        from.arm[0],
+        from.arm[1],
+        from.arm[2],
+        from.forearm,
+        from.hand[0],
+        from.hand[1],
+        from.hand[2],
+        from.root[0],
+        from.root[1],
+        from.root[2],
+    ];
+    let mut best = cost(&x);
+    let mut step = [8.0f32, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 0.03, 0.03, 0.03];
+    for _ in 0..4000 {
+        let mut moved = false;
+        for k in 0..10 {
+            for dir in [1.0f32, -1.0] {
+                let mut y = x;
+                y[k] = (y[k] + dir * step[k]).clamp(lo[k], hi[k]);
+                let c = cost(&y);
+                if c < best {
+                    (x, best, moved) = (y, c, true);
+                    break;
+                }
+            }
+        }
+        if !moved {
+            step = step.map(|s| s * 0.5);
+            if step[0] < 0.05 {
+                break;
+            }
+        }
+    }
+    let (g, h) = place(&x);
+    Fit {
+        root: [x[7], x[8], x[9]],
+        arm: [x[0], x[1], x[2]],
+        forearm: x[3],
+        hand: [x[4], x[5], x[6]],
+        grip: g,
+        head: h,
+    }
+}
+
 /// The body's bone transforms (its frame: feet at the origin, +x left, +z ahead) `t` s into the
 /// swing, from the body's animator.
 fn body_bones(role: &str, held: Held, t: f32) -> [Affine; MAX_BONES] {
@@ -647,14 +768,15 @@ fn view_title(view: &str) -> &'static str {
 pub fn svg(r: &Report, views: &[&str]) -> String {
     use std::fmt::Write;
     let (pw, ph) = (360.0f32, 300.0f32);
-    let cols = views.len().clamp(1, 3);
+    // Two columns (five views: 720 × 924) and a viewBox, so a viewer or thumbnailer that fits the
+    // sheet to a square (`qlmanage -t`) shows every panel (the side panel was cut off).
+    let cols = views.len().clamp(1, 2);
     let rows = views.len().div_ceil(cols);
+    let (w, h) = (pw * cols as f32, ph * rows as f32 + 24.0);
     let mut s = String::new();
     let _ = writeln!(
         s,
-        r#"<svg xmlns="http://www.w3.org/2000/svg" width="{}" height="{}" font-family="sans-serif" font-size="11">"#,
-        pw * cols as f32,
-        ph * rows as f32 + 24.0
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" font-family="sans-serif" font-size="11">"#,
     );
     let _ = writeln!(
         s,
@@ -967,6 +1089,59 @@ mod chop_swing_tests {
                     smp.at[0].screen[2]
                 );
             }
+        }
+    }
+
+    /// A point's path length (m, the player's frame) over samples.
+    fn travel(s: &[&Sample], k: usize) -> f32 {
+        s.windows(2)
+            .map(|w| {
+                let (a, b) = (w[0].at[k].local, w[1].at[k].local);
+                (0..3).map(|i| (b[i] - a[i]).powi(2)).sum::<f32>().sqrt()
+            })
+            .sum()
+    }
+
+    #[test]
+    fn the_arms_drive_the_strike_not_the_wrist() {
+        // face-a-only: view space. Owner review 2026-11-11: the head's arc was mostly a wrist
+        // turn, the grip and elbow nearly still (the grip went 0.2 m to the head's 1.1 m).
+        for role in ["chop_level", "chop_vertical"] {
+            let mut p = Probe::new(role);
+            p.samples = 121;
+            p.points = vec![Point::ToolHead, Point::Grip];
+            let r = probe(&p).expect("probe");
+            let s = within(&r, "strike");
+            let (head, grip) = (travel(&s, 0), travel(&s, 1));
+            assert!(
+                grip >= 0.4 * head && grip > 0.4,
+                "{role}: the hands travel the arc with the head: grip {grip:.2} m, head {head:.2} m"
+            );
+        }
+    }
+
+    #[test]
+    fn the_wind_up_draws_back_far_and_long_enough() {
+        // face-a-only: view space. Owner review: a 0.1 s flick with no draw back over the shoulder.
+        for role in ["chop_level", "chop_vertical"] {
+            let mut p = Probe::new(role);
+            p.samples = 121;
+            p.points = vec![Point::ToolHead, Point::Grip];
+            let r = probe(&p).expect("probe");
+            let w = r.phase("wind-up").unwrap();
+            let d = w.to - w.from;
+            assert!(
+                (0.25..=0.35).contains(&d),
+                "{role}: the wind-up takes {d:.2} s (want 0.25–0.35)"
+            );
+            let (a, b) = (r.at(0, w.from).local, r.at(0, w.to).local);
+            let head = (0..3).map(|i| (b[i] - a[i]).powi(2)).sum::<f32>().sqrt();
+            let (a, b) = (r.at(1, w.from).local, r.at(1, w.to).local);
+            let grip = (0..3).map(|i| (b[i] - a[i]).powi(2)).sum::<f32>().sqrt();
+            assert!(
+                head >= 0.45 && grip >= 0.35,
+                "{role}: the wind-up draws the head {head:.2} m and the hands {grip:.2} m back"
+            );
         }
     }
 

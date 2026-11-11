@@ -260,6 +260,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    shoulder); the SVG's side panel is cut off. Left: an arm-driven swing (hands travel the arc, a real wind-up),
    a probe test for hand travel, `clip-strip` run in the browser (local), remote players' chop direction (a
    protocol change).
+   **Status (swing-arms, WIP):** `clip_probe --fit` (keys fitted to grip and head places), the arms-driven
+   clips (hands travel the arc: grip ≥ 40% of the head's travel, red → green), a 0.3 s wind-up (`windupS` 0.3,
+   `activeS` 0.12), the SVG in two columns. Left: `dwell-characters` `axe.rs` the edge leads the head (fails
+   on the new level clip: the hold's roll), the level wind-up sits too high (its strike starts diagonal),
+   the body clips' wind-up, `clip-strip` in the browser, the owner's look review.
 18. **Digging marks that look carved** (owner 2026-11-11: "the 'chunks' of dirt aren't at all what we
    discussed. It should be like a normal map change (do we support normal/bump maps)? It's completely flat
    should look like mesh deformation (preferably without actually doing it for performance)"; "That part was

@@ -601,35 +601,39 @@
       ]
     },
     "biped_chop_level": {
-      "$comment": "The axe's level swing seen by others (third person; the arms' fp_chop_level timed the same): wound back to the player's right with the chest turned, swept across in front at chest height through the cut at 0.18 s, followed through to the left, and back to the hold. Fitted with the clip probe (docs/DEV_TOOLS.md) to head targets in the body's frame.",
+      "$comment": "The axe's level swing seen by others (third person; the arms' fp_chop_level timed the same): drawn back over 0.3 s to the player's right shoulder with the chest turned away, swept across in front at chest height through the cut at 0.355 s, followed through to the left with the chest turned, and back to the hold. Checked with the clip probe (docs/DEV_TOOLS.md).",
       "rig": "biped",
       "layer": "action",
-      "duration": 0.62,
+      "duration": 0.78,
       "loop": false,
       "ease": "spline",
       "keys": [
         { "t": 0, "bones": { "chest": [0, 0, 0], "arm_r": [-20, 0, -4], "forearm_r": [-65, 0, 0], "hand_r": [0, 0, 0] } },
-        { "t": 0.12, "bones": { "chest": [0, -25, 0], "arm_r": [-14, 38, -2], "forearm_r": [-91, 0, 0], "hand_r": [-27, -49, 40] } },
-        { "t": 0.18, "bones": { "chest": [0, 5, 0], "arm_r": [-45, 21, 30], "forearm_r": [-46, 0, 0], "hand_r": [41, -33, 40] } },
-        { "t": 0.26, "bones": { "chest": [0, 25, 0], "arm_r": [-37, 33, 30], "forearm_r": [-47, 0, 0], "hand_r": [41, -13, 40] } },
-        { "t": 0.38, "bones": { "chest": [0, 30, 0], "arm_r": [-37, 53, 27], "forearm_r": [-45, 0, 0], "hand_r": [40, -4, 22] } },
-        { "t": 0.62, "bones": { "chest": [0, 0, 0], "arm_r": [-20, 0, -4], "forearm_r": [-65, 0, 0], "hand_r": [0, 0, 0] } }
+        { "t": 0.12, "bones": { "chest": [0, -15, 0], "arm_r": [-14, 30, -2], "forearm_r": [-85, 0, 0], "hand_r": [-15, -30, 25] } },
+        { "t": 0.3, "bones": { "chest": [0, -40, 0], "arm_r": [-30, 60, -10], "forearm_r": [-110, 0, 0], "hand_r": [-35, -60, 40] } },
+        { "t": 0.355, "bones": { "chest": [0, 5, 0], "arm_r": [-50, 25, 30], "forearm_r": [-46, 0, 0], "hand_r": [41, -33, 40] } },
+        { "t": 0.42, "bones": { "chest": [0, 30, 0], "arm_r": [-40, 35, 30], "forearm_r": [-47, 0, 0], "hand_r": [41, -13, 40] } },
+        { "t": 0.52, "bones": { "chest": [0, 35, 0], "arm_r": [-37, 53, 27], "forearm_r": [-45, 0, 0], "hand_r": [40, -4, 22] } },
+        { "t": 0.64, "bones": { "chest": [0, 12, 0], "arm_r": [-28, 20, 8], "forearm_r": [-55, 0, 0], "hand_r": [15, 0, 6] } },
+        { "t": 0.78, "bones": { "chest": [0, 0, 0], "arm_r": [-20, 0, -4], "forearm_r": [-65, 0, 0], "hand_r": [0, 0, 0] } }
       ]
     },
     "biped_chop_vertical": {
-      "$comment": "The axe's vertical swing seen by others: raised over the head, brought straight down in front through the cut at 0.18 s, followed through low, and back to the hold.",
+      "$comment": "The axe's vertical swing seen by others: raised over the head over 0.3 s, brought straight down in front through the cut at 0.355 s, followed through low, and back to the hold.",
       "rig": "biped",
       "layer": "action",
-      "duration": 0.62,
+      "duration": 0.78,
       "loop": false,
       "ease": "spline",
       "keys": [
         { "t": 0, "bones": { "chest": [0, 0, 0], "arm_r": [-20, 0, -4], "forearm_r": [-65, 0, 0], "hand_r": [0, 0, 0] } },
-        { "t": 0.12, "bones": { "chest": [0, -5, 0], "arm_r": [-95, 3, 2], "forearm_r": [-53, 0, 0], "hand_r": [46, 7, 1] } },
-        { "t": 0.18, "bones": { "chest": [0, 8, 0], "arm_r": [-53, 0, -18], "forearm_r": [-16, 0, 0], "hand_r": [49, 35, 6] } },
-        { "t": 0.26, "bones": { "chest": [0, 15, 0], "arm_r": [-24, -9, -21], "forearm_r": [-2, 0, 0], "hand_r": [59, 48, 0] } },
-        { "t": 0.38, "bones": { "chest": [0, 15, 0], "arm_r": [-5, 18, -16], "forearm_r": [0, 0, 0], "hand_r": [61, 25, 3] } },
-        { "t": 0.62, "bones": { "chest": [0, 0, 0], "arm_r": [-20, 0, -4], "forearm_r": [-65, 0, 0], "hand_r": [0, 0, 0] } }
+        { "t": 0.12, "bones": { "chest": [0, -3, 0], "arm_r": [-70, 3, 2], "forearm_r": [-60, 0, 0], "hand_r": [30, 7, 1] } },
+        { "t": 0.3, "bones": { "chest": [-8, -8, 0], "arm_r": [-125, 5, 4], "forearm_r": [-35, 0, 0], "hand_r": [20, 7, 1] } },
+        { "t": 0.355, "bones": { "chest": [6, 8, 0], "arm_r": [-60, 0, -18], "forearm_r": [-16, 0, 0], "hand_r": [49, 35, 6] } },
+        { "t": 0.42, "bones": { "chest": [14, 15, 0], "arm_r": [-24, -9, -21], "forearm_r": [-2, 0, 0], "hand_r": [59, 48, 0] } },
+        { "t": 0.52, "bones": { "chest": [16, 15, 0], "arm_r": [-5, 18, -16], "forearm_r": [0, 0, 0], "hand_r": [61, 25, 3] } },
+        { "t": 0.64, "bones": { "chest": [6, 6, 0], "arm_r": [-15, 8, -8], "forearm_r": [-35, 0, 0], "hand_r": [25, 10, 2] } },
+        { "t": 0.78, "bones": { "chest": [0, 0, 0], "arm_r": [-20, 0, -4], "forearm_r": [-65, 0, 0], "hand_r": [0, 0, 0] } }
       ]
     },
     "biped_place": {
@@ -832,37 +836,41 @@
       ]
     },
     "fp_chop_level": {
-      "$comment": "The axe's level swing (ADR 0067), timed to a miss (shared/tools `swing`: windupS 0.12, the arc's activeS 0.14, recoverMissS 0.36): the head wound back out to the screen's right, swept right to left through the crosshair at the arc's middle (0.18 s), followed through to the left, and back (owner, 2026-11-11: it swung the wrong way; refitted with the clip probe, docs/DEV_TOOLS.md, and pinned by dwell-client clip_probe tests). A hit holds the impact's pose for the hit-stop and plays it back to the rest (dwell-client chop.rs `SwingRun::clip_time`).",
+      "$comment": "The axe's level swing (ADR 0067), timed to a miss (shared/tools `swing`: windupS 0.3, the arc's activeS 0.12, recoverMissS 0.36): the hands draw back to the right shoulder over 0.3 s (the head out past the screen's right), then the arms sweep across in front, right to left, the head through the crosshair at contact (0.355 s), the hands ending left of centre, a short follow-through and back (owner, 2026-11-11: it swung the wrong way, then 'the hands barely travel'; keys fitted to grip and head places with `clip_probe --fit`, docs/DEV_TOOLS.md, pinned by dwell-client clip_probe tests). A hit holds the impact's pose for the hit-stop and plays it back to the rest (dwell-client chop.rs `SwingRun::clip_time`).",
       "rig": "biped",
       "space": "arms",
       "layer": "action",
-      "duration": 0.62,
+      "duration": 0.78,
       "loop": false,
       "ease": "spline",
       "keys": [
         { "t": 0, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } },
-        { "t": 0.12, "root": [0.06, 0.025, -0.04], "bones": { "arm_r": [-79, 7, 18], "forearm_r": [-53, 0, 0], "hand_r": [9, -42, 40] } },
-        { "t": 0.18, "root": [0.03, 0, 0.06], "bones": { "arm_r": [-83, 45, 30], "forearm_r": [-54, 0, 0], "hand_r": [30, -15, 40] } },
-        { "t": 0.26, "root": [0.06, -0.01, 0.06], "bones": { "arm_r": [-103, 46, 30], "forearm_r": [-58, 0, 0], "hand_r": [56, 9, 40] } },
-        { "t": 0.38, "root": [0.08, -0.04, 0.03], "bones": { "arm_r": [-103, 45, 30], "forearm_r": [-58, 0, 0], "hand_r": [51, 16, 40] } },
-        { "t": 0.62, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } }
+        { "t": 0.12, "root": [-0.017, 0.041, -0.08], "bones": { "arm_r": [-59, -1, 9], "forearm_r": [-92, 0, 0], "hand_r": [55, -9, -12] } },
+        { "t": 0.3, "root": [-0.031, -0.119, -0.049], "bones": { "arm_r": [-136, -46, 30], "forearm_r": [-55, 0, 0], "hand_r": [63, -23, -25] } },
+        { "t": 0.355, "root": [0.043, 0.011, -0.172], "bones": { "arm_r": [-107, 29, 30], "forearm_r": [-24, 0, 0], "hand_r": [77, -6, -17] } },
+        { "t": 0.42, "root": [0.25, 0.049, -0.166], "bones": { "arm_r": [-104, 54, 30], "forearm_r": [-67, 0, 0], "hand_r": [80, 10, 28] } },
+        { "t": 0.52, "root": [0.25, 0.06, -0.15], "bones": { "arm_r": [-80, 58, 30], "forearm_r": [-78, 0, 0], "hand_r": [80, 14, 36] } },
+        { "t": 0.64, "root": [0.05, 0.02, -0.04], "bones": { "arm_r": [-72, 30, 8], "forearm_r": [-48, 0, 0], "hand_r": [30, 2, 4] } },
+        { "t": 0.78, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } }
       ]
     },
     "fp_chop_vertical": {
-      "$comment": "The axe's vertical swing (ADR 0067), timed to a miss as the level one: the head raised high, brought top to bottom through the crosshair at the arc's middle (0.18 s), a loose follow-through low, and back (refitted with the clip probe, 2026-11-11).",
+      "$comment": "The axe's vertical swing (ADR 0067), timed to a miss as the level one: the hands raised over the right shoulder, above the eye, over 0.3 s (the head high off the top of the screen), then the arms bring it down in front through the crosshair at contact to the hands at the waist, a short follow-through low, and back (keys fitted with `clip_probe --fit`, 2026-11-11).",
       "rig": "biped",
       "space": "arms",
       "layer": "action",
-      "duration": 0.62,
+      "duration": 0.78,
       "loop": false,
       "ease": "spline",
       "keys": [
         { "t": 0, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } },
-        { "t": 0.12, "root": [0.01, 0.06, -0.05], "bones": { "arm_r": [-111, 34, 1], "forearm_r": [-4, 0, 0], "hand_r": [28, 1, -5] } },
-        { "t": 0.18, "root": [0, -0.03, 0.06], "bones": { "arm_r": [-95, 30, 11], "forearm_r": [-21, 0, 0], "hand_r": [60, 6, 7] } },
-        { "t": 0.26, "root": [0, -0.05, 0.06], "bones": { "arm_r": [-50, 33, -9], "forearm_r": [-34, 0, 0], "hand_r": [35, 13, 40] } },
-        { "t": 0.38, "root": [0, -0.09, 0.03], "bones": { "arm_r": [-44, 41, -16], "forearm_r": [-41, 0, 0], "hand_r": [11, 3, 40] } },
-        { "t": 0.62, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } }
+        { "t": 0.12, "root": [0.069, -0.034, -0.175], "bones": { "arm_r": [-95, 24, -21], "forearm_r": [-42, 0, 0], "hand_r": [80, -1, 0] } },
+        { "t": 0.3, "root": [0.113, -0.002, 0.016], "bones": { "arm_r": [-148, 90, -31], "forearm_r": [0, 0, 0], "hand_r": [80, 17, -2] } },
+        { "t": 0.355, "root": [0.061, 0.037, -0.141], "bones": { "arm_r": [-88, -5, 30], "forearm_r": [0, 0, 0], "hand_r": [67, -5, 30] } },
+        { "t": 0.42, "root": [0.073, 0.197, 0.003], "bones": { "arm_r": [-6, -2, 30], "forearm_r": [0, 0, 0], "hand_r": [58, -6, 40] } },
+        { "t": 0.52, "root": [0.07, 0.179, 0.056], "bones": { "arm_r": [10, -1, 30], "forearm_r": [0, 0, 0], "hand_r": [56, -5, 39] } },
+        { "t": 0.64, "root": [-0.006, 0.044, -0.014], "bones": { "arm_r": [-15, 25, 7], "forearm_r": [-63, 0, 0], "hand_r": [27, 1, 0] } },
+        { "t": 0.78, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } }
       ]
     },
     "fp_place": {

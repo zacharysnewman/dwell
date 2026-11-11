@@ -4,13 +4,18 @@
 //! cargo run -p dwell-client --example clip_probe -- <clip or arms role> [--item dwell:stone_axe|none]
 //!     [--part tool_head[,grip,elbow,…]] [--samples 31] [--csv] [--svg out.svg]
 //!     [--views fp,top,side,front,tp] [--face a|b] [--yaw 0] [--pitch 0]
+//!     [--fit "t/gx,gy,gz/hx,hy,hz" …]
 //! ```
+//!
+//! `--fit` (repeatable) fits an arms key instead: the root and arm turns putting the grip and the
+//! tool head at those places (the player's frame: right, up, ahead of the eye), printed as the
+//! clip's JSON keys.
 //!
 //! Prints a table of each point's first-person screen place and body place over the clip, each
 //! phase's direction of travel, the peak speed and the contact; `--csv` prints every sample in
 //! every space instead; `--svg` writes the views' paths as a panel sheet.
 
-use dwell_client::clip_probe::{Point, Probe, VIEWS, csv, probe, svg, table};
+use dwell_client::clip_probe::{Fit, Point, Probe, VIEWS, csv, fit, probe, svg, table};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -25,6 +30,7 @@ fn run(args: &[String]) -> Result<(), String> {
     let mut p: Option<Probe> = None;
     let (mut want_csv, mut svg_out, mut views) = (false, None::<String>, VIEWS.to_vec());
     let mut parts: Option<Vec<Point>> = None;
+    let mut fits: Vec<(f32, [f32; 3], [f32; 3])> = Vec::new();
     let (mut face, mut yaw, mut pitch, mut samples, mut item) =
         (None, None, None, None, None::<Option<&'static str>>);
     let num = |v: Option<&String>, f: &str| -> Result<f64, String> {
@@ -35,6 +41,23 @@ fn run(args: &[String]) -> Result<(), String> {
     while let Some(a) = it.next() {
         match a.as_str() {
             "--csv" => want_csv = true,
+            "--fit" => {
+                // `t/gx,gy,gz/hx,hy,hz`: a key at t putting the grip and the head there.
+                let v = it.next().ok_or("--fit needs t/grip/head")?;
+                let f: Vec<&str> = v.split('/').collect();
+                let xyz = |s: &str| -> Result<[f32; 3], String> {
+                    let n: Vec<f32> = s
+                        .split(',')
+                        .map(|x| x.trim().parse::<f32>().map_err(|e| format!("--fit {s}: {e}")))
+                        .collect::<Result<_, _>>()?;
+                    n.try_into().map_err(|_| format!("--fit wants 3 numbers: {s}"))
+                };
+                if f.len() != 3 {
+                    return Err(format!("--fit wants t/gx,gy,gz/hx,hy,hz, not {v}"));
+                }
+                let t = f[0].parse::<f32>().map_err(|e| format!("--fit t: {e}"))?;
+                fits.push((t, xyz(f[1])?, xyz(f[2])?));
+            }
             "--svg" => svg_out = Some(it.next().ok_or("--svg needs a path")?.clone()),
             "--part" | "--parts" => {
                 let v = it.next().ok_or("--part needs a name")?;
@@ -93,6 +116,26 @@ fn run(args: &[String]) -> Result<(), String> {
     p.yaw = yaw.unwrap_or(p.yaw);
     p.pitch = pitch.unwrap_or(p.pitch);
     p.samples = samples.unwrap_or(p.samples);
+    if !fits.is_empty() {
+        // Each key starts from the one before (the first from the hold), so the turns stay continuous.
+        let role = p.clip.clone();
+        let mut from = Fit {
+            arm: [-70.0, 22.0, 0.0],
+            forearm: -40.0,
+            hand: [10.0, 0.0, 0.0],
+            ..Fit::default()
+        };
+        for (t, g, h) in fits {
+            let f = fit(&role, p.item, g, h, from);
+            println!("{}", f.json(t));
+            eprintln!(
+                "  t {t}: grip {:+.2} {:+.2} {:+.2} (want {g:?}), head {:+.2} {:+.2} {:+.2} (want {h:?})",
+                f.grip[0], f.grip[1], f.grip[2], f.head[0], f.head[1], f.head[2]
+            );
+            from = f;
+        }
+        return Ok(());
+    }
     let r = probe(&p)?;
     if want_csv {
         print!("{}", csv(&r));
