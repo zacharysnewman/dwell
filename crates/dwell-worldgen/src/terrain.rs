@@ -263,6 +263,10 @@ pub struct Biome {
     pub decorations: &'static [&'static str],
     /// The structure placement rules (`placements.json`, by name) that may stand here.
     pub placements: &'static [&'static str],
+    /// Its density for each of those placements (ADR 0074 B5): a multiplier on the placement's
+    /// chance where the biome has weight; a placement not named here takes 1. A placement the
+    /// biome does not list does not stand where it has weight.
+    pub trees: &'static [(&'static str, f64)],
     /// The fluid block the biome's water is drawn as.
     pub water: &'static str,
     /// Its water's colour and clarity over the fluid's look (none: the fluid's own).
@@ -286,6 +290,18 @@ mod table {
 pub use table::{
     BIOME_MAP, BIOMES, FIXTURE_BIOMES, FIXTURE_WORLDS, HEIGHT, PRESET_BIOMES, SURFACE,
 };
+
+/// Biome `b`'s density for the placement `name` (ADR 0074 B5): 0 when it does not list it, its
+/// `trees` entry when given, else 1.
+pub fn tree_density_of(b: &Biome, name: &str) -> f32 {
+    if !b.placements.contains(&name) {
+        return 0.0;
+    }
+    b.trees
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map_or(1.0, |&(_, d)| d as f32)
+}
 
 /// The biome named `name` (`shared/worldgen/biomes`), if the build has it.
 pub fn find_biome(name: &str) -> Option<&'static Biome> {
@@ -790,6 +806,9 @@ pub struct TerrainGenerator {
     ramps: Arc<RampPieces>,
     /// The structure placements (data), resolved for this world.
     planters: Vec<Planter>,
+    /// Each planter's density per biome (ADR 0074 B5; `Biome::trees`), and whether any active one
+    /// varies over the world (else trees ask nothing of the biomes: the default world).
+    tree_density: Arc<(Vec<Vec<f32>>, bool)>,
     /// Soil and vegetation from climate (`vegetation.json`; systemic terrain T3): read only where a
     /// biome's `vegetation` is above 0.
     vegetation: crate::vegetation::Vegetation,
@@ -900,6 +919,7 @@ impl TerrainGenerator {
             decorations: Placer::resolve(&DECORATIONS, world_seed),
             ramps: Arc::new(RampPieces::resolve(&biomes.palettes)),
             planters: Vec::new(),
+            tree_density: Arc::new((Vec::new(), false)),
             vegetation: crate::vegetation::VEGETATION,
             biomes,
             portals: None,
@@ -958,7 +978,7 @@ impl TerrainGenerator {
         self.ramps = Arc::new(RampPieces::resolve(&set.palettes));
         self.biomes = Arc::new(set);
         self.cache_id = next_cache_id();
-        self
+        self.refresh_trees()
     }
 
     /// The generator with `geology` (`rocks.json`: the rocks, the stacks, the provinces and the
@@ -1273,10 +1293,39 @@ impl TerrainGenerator {
     /// data alone).
     pub fn with_placements(mut self, rules: &[placements::Placement]) -> Self {
         self.planters = Planter::resolve(rules, self.world_seed, (self.offset_x, self.offset_z));
+        self.refresh_trees()
+    }
+
+    /// The planters' densities from the biomes' `trees` (ADR 0074 B5) and the rise they need: a
+    /// placement no biome lists stands nowhere.
+    fn refresh_trees(mut self) -> Self {
+        // With one biome (no biome map) only the first biome's weight counts.
+        let biomes = if self.biomes.field.is_none() {
+            &self.biomes.list[..1.min(self.biomes.list.len())]
+        } else {
+            &self.biomes.list[..]
+        };
+        let per: Vec<Vec<f32>> = self
+            .planters
+            .iter()
+            .map(|p| {
+                let name = p.rule().name;
+                biomes.iter().map(|b| tree_density_of(b, name)).collect()
+            })
+            .collect();
+        let mut varies = false;
+        for (p, d) in self.planters.iter_mut().zip(&per) {
+            let most = d.iter().copied().fold(0.0f32, f32::max);
+            p.set_boost(most);
+            varies |= most > 0.0 && d.iter().any(|&v| v != 1.0);
+        }
+        self.tree_density = Arc::new((per, varies));
+        self.cache_id = next_cache_id();
         // A structure anchored beside the chunk on ground up to its reach higher still reaches in
         // (rows: a structure's rise counts cells; ground climbs up to 1 m per column of reach).
-        let reach = self.planters.iter().map(Planter::reach).max().unwrap_or(0);
-        let rise = if self.planters.is_empty() {
+        let on = || self.planters.iter().filter(|p| p.active());
+        let reach = on().map(Planter::reach).max().unwrap_or(0);
+        let rise = if on().next().is_none() {
             0
         } else {
             placements::max_rise(&self.planters) + 1 + reach * rows_for_m(1.0)
@@ -2428,6 +2477,53 @@ impl TerrainGenerator {
         )
     }
 
+    /// Planter `i`'s density at (x, z) from the biomes' `trees` by their weights (ADR 0074 B5; 1
+    /// where it does not vary).
+    pub fn tree_density_at(&self, i: usize, x: i64, z: i64) -> f32 {
+        let (per, varies) = &*self.tree_density;
+        if !varies {
+            return 1.0;
+        }
+        let d = &per[i];
+        if self.biomes.field.is_none() {
+            return d[0];
+        }
+        let (base, _, _) = self.map.height_at(x as f64, z as f64);
+        self.biomes
+            .mix(x, z, base)
+            .iter()
+            .map(|(b, w)| d[b] * w as f32)
+            .sum()
+    }
+
+    /// The structures expected per hectare at (x, z) by the placement rules, the biomes' `trees`
+    /// and the climate, before the slope, footprint and spacing tests (Chisel's placement overlay,
+    /// ADR 0074 B5); None beyond the rim. `boulders` and every other rule count alike.
+    pub fn placement_density_at(&self, x: i64, z: i64) -> Option<f64> {
+        let col = self.column_at(x as i32, z as i32);
+        let g = self.ground_of(&col)?;
+        if !g.dry {
+            return Some(0.0);
+        }
+        let climate = self.climate_at(x, z);
+        let mut sum = 0.0;
+        for (i, p) in self.planters.iter().enumerate() {
+            if !p.active() || !p.stands_on(g.block) {
+                continue;
+            }
+            let mut c = f64::from(p.chance(x as i32, z as i32, g.above_sea))
+                * f64::from(self.tree_density_at(i, x, z));
+            if let (Some(k), Some(cl)) = (self.vegetation.kind_for(p.rule().name), &climate)
+                && self.climate_rules()
+            {
+                c *= self.vegetation.factor(k, cl);
+            }
+            let grid = f64::from(p.rule().grid);
+            sum += c.min(1.0) * 10_000.0 / (grid * grid);
+        }
+        Some(sum)
+    }
+
     /// Whether any biome lets the climate rule its placements (else `trees_in` asks nothing of it).
     fn climate_rules(&self) -> bool {
         self.biomes.field.is_some()
@@ -2461,10 +2557,18 @@ impl TerrainGenerator {
             .map(|p| self.vegetation.kind_for(p.rule().name))
             .collect();
         let height = |x: i64, z: i64| ground(x as i32, z as i32).map(|g| g.height);
+        let climate = self.climate_rules();
         let factor = |i: usize, x: i32, z: i32| -> f32 {
-            self.climate_factor(kinds[i], i64::from(x), i64::from(z), &height)
+            let (x, z) = (i64::from(x), i64::from(z));
+            let c = if climate {
+                self.climate_factor(kinds[i], x, z, &height)
+            } else {
+                1.0
+            };
+            c * self.tree_density_at(i, x, z)
         };
-        let factor: Option<&placements::Factor<'_>> = self.climate_rules().then_some(&factor);
+        let factor: Option<&placements::Factor<'_>> =
+            (climate || self.tree_density.1).then_some(&factor);
         let mut trees =
             placements::trees_in_with(&self.planters, (x0, z0), (x1, z1), &ground, factor);
         // No structure stands over a portal's opening or its clear ground round the rim.
@@ -3391,6 +3495,7 @@ impl TerrainGenerator {
             return;
         }
         let climate = self.climate_rules();
+        let varies = self.tree_density.1;
         for zi in -1..=n {
             for xi in -1..=n {
                 let col = cols[lod::column_index(xi, zi)];
@@ -3414,12 +3519,17 @@ impl TerrainGenerator {
                             + gz * (z - i64::from(wz)) as f32,
                     )
                 };
-                let Some(p) = self.planters.iter().find(|p| {
+                let Some((_, p)) = self.planters.iter().enumerate().find(|(i, p)| {
                     let f = || {
-                        let k = self.vegetation.kind_for(p.rule().name);
-                        self.climate_factor(k, wx.into(), wz.into(), &plane)
+                        let c = if climate {
+                            let k = self.vegetation.kind_for(p.rule().name);
+                            self.climate_factor(k, wx.into(), wz.into(), &plane)
+                        } else {
+                            1.0
+                        };
+                        c * self.tree_density_at(*i, wx.into(), wz.into())
                     };
-                    let f: Option<&dyn Fn() -> f32> = climate.then_some(&f);
+                    let f: Option<&dyn Fn() -> f32> = (climate || varies).then_some(&f);
                     p.canopy_at_with((wx, wz), level, g, gx * gx + gz * gz, f)
                 }) else {
                     continue;

@@ -34,3 +34,9 @@ export function validatePresets<T>(
   refs: BiomeRefs,
   taken?: readonly string[],
 ): T[];
+export const TREE_DENSITY_MAX: number;
+export function checkTrees(
+  trees: unknown,
+  placements: readonly string[],
+  fail: (m: string) => never,
+): void;

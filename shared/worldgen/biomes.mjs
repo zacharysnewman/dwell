@@ -132,7 +132,7 @@ export const WORLD_GROUPS = ['inland', 'seaFloor', 'islands', 'tectonics', 'hill
 /** A biome's groups (shared/worldgen/biomes/*.json): layered on the elevation. */
 export const BIOME_GROUPS = Object.keys(TERRAIN).filter((g) => !WORLD_GROUPS.includes(g));
 /** A biome's reference fields beside its groups. */
-const BIOME_REFS = ['where', 'bands', 'decorations', 'placements', 'water', 'waterLook', 'rockStack', 'vegetation', 'erosion', 'gullies'];
+const BIOME_REFS = ['where', 'bands', 'decorations', 'placements', 'trees', 'water', 'waterLook', 'rockStack', 'vegetation', 'erosion', 'gullies'];
 /** A biome's optional words for people (Chisel's lists): a short label and a one-line description. */
 export const BIOME_TEXT = { label: 40, description: 200 };
 const BIOME_NAME = /^[a-z0-9_]+:[a-z0-9_]+$/;
@@ -192,6 +192,7 @@ export function validateBiome(data, blocks, refs) {
     }
     if (new Set(names).size !== names.length) fail(`${k}: a rule is listed twice`);
   }
+  checkTrees(data.trees, data.placements, fail);
   const w = blocks.get(data.water);
   if (!w) fail(`water ${JSON.stringify(data.water)} is not in the registry`);
   if (!w.fluid) fail(`water ${data.water} must be a fluid block`);
@@ -209,6 +210,25 @@ export function validateBiome(data, blocks, refs) {
     if (data[k] !== undefined && !(isNum(data[k]) && data[k] >= 0 && data[k] <= 1)) fail(`${k} must be in [0, 1]`);
   }
   return data;
+}
+
+/** The most a biome's `trees` may multiply a placement's chance by (ADR 0074 B5). */
+export const TREE_DENSITY_MAX = 3;
+
+/**
+ * Checks a biome's optional `trees` (ADR 0074 B5): placement name → density, a multiplier on that
+ * placement's chance where the biome has weight (1 when not given; 0 none). Each must be one of the
+ * biome's `placements`.
+ */
+export function checkTrees(trees, placements, fail) {
+  if (trees === undefined) return;
+  if (typeof trees !== 'object' || trees === null || Array.isArray(trees)) {
+    fail('trees must map placement names to densities');
+  }
+  for (const [p, d] of Object.entries(trees)) {
+    if (!placements.includes(p)) fail(`trees: ${JSON.stringify(p)} is not one of its placements`);
+    if (!(isNum(d) && d >= 0 && d <= TREE_DENSITY_MAX)) fail(`trees.${p} must be in [0, ${TREE_DENSITY_MAX}]`);
+  }
 }
 
 /** The soil and vegetation's groups' ranges (vegetation.json `climate`, `soil`), as `TERRAIN`'s. */

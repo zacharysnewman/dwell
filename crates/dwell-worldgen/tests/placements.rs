@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use dwell_blocks::{StateId, require};
 use dwell_world::*;
 use dwell_worldgen::placements::{PLACEMENTS, Placement, Tree};
+use dwell_worldgen::terrain::{BIOMES, Biome};
 use dwell_worldgen::*;
 
 const S: i32 = CHUNK_SIZE;
@@ -415,7 +416,14 @@ fn a_placement_added_by_data_alone_stands_its_structure_in_the_chunks() {
         rotations: &[0],
         variants: &[],
     };
-    let g = TerrainGenerator::new(7).with_placements(&[rule]);
+    // The world's biome lists it (ADR 0074 B5: a placement no biome lists stands nowhere).
+    let biome = Biome {
+        placements: &["test_rocks"],
+        ..BIOMES[0]
+    };
+    let g = TerrainGenerator::new(7)
+        .with_biome(&biome)
+        .with_placements(&[rule]);
     assert_eq!(
         PLACEMENTS[0].name, "pine_groves",
         "the build's own rule is replaced"

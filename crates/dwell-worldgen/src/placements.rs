@@ -115,6 +115,9 @@ pub struct Planter {
     cover: f32,
     /// The variants' swaps, resolved by name.
     variants: Vec<Vec<(StateId, StateId)>>,
+    /// The most the biomes' `trees` densities raise its chance by (ADR 0074 B5): 0 where no biome
+    /// of the world lists it (it stands nowhere), 1 by default; the factor brings it down per column.
+    boost: f32,
 }
 
 /// The share of candidates the slope, footprint and overlap tests keep, as measured over seeds
@@ -226,9 +229,30 @@ impl Planter {
                     grove_seed: seed_word(world_seed, stream),
                     cell_seed: seed_word(world_seed, stream + 1),
                     offset,
+                    boost: 1.0,
                 }
             })
             .collect()
+    }
+
+    /// The most the biomes raise its chance by (0: it stands nowhere; ADR 0074 B5).
+    pub fn boost(&self) -> f32 {
+        self.boost
+    }
+
+    /// Sets [`Planter::boost`] (the generator, from its biomes' `trees`).
+    pub fn set_boost(&mut self, boost: f32) {
+        self.boost = boost;
+    }
+
+    /// Whether it stands on ground block `b`.
+    pub fn stands_on(&self, b: StateId) -> bool {
+        self.on.contains(&b)
+    }
+
+    /// Whether it can stand anywhere in this world.
+    pub fn active(&self) -> bool {
+        self.boost > 0.0
     }
 
     /// The farthest any of its structures reaches from the anchor horizontally (blocks).
@@ -317,16 +341,21 @@ impl Planter {
         let (x, z) = self.point(gx, gz);
         // The roll against the chance without its height factor (at most 1) first: most cells
         // end here without asking for ground.
+        if !self.active() {
+            return None;
+        }
         let roll = unit(self.h(gx, gz, 2));
         let open = self.rule.density * self.grove(x, z);
-        if roll >= open {
+        // A biome's density above 1 raises the most the chance can be (B5; 1 by default).
+        let most = open * self.boost.max(1.0);
+        if roll >= most {
             return None;
         }
         let g = ground(x, z)?;
         if !g.dry || !self.on.contains(&g.block) {
             return None;
         }
-        if roll >= open * self.rise_factor(g.above_sea) {
+        if roll >= most * self.rise_factor(g.above_sea) {
             return None;
         }
         if let Some(f) = factor
@@ -461,12 +490,16 @@ impl Planter {
         gradient_sq: f32,
         factor: Option<&dyn Fn() -> f32>,
     ) -> bool {
-        if !g.dry || !self.on.contains(&g.block) || gradient_sq > self.rule.max_gradient_sq {
+        if !self.active()
+            || !g.dry
+            || !self.on.contains(&g.block)
+            || gradient_sq > self.rule.max_gradient_sq
+        {
             return false;
         }
         let roll = unit(hash3(self.cell_seed ^ 0xC0A0_0000, x, level, z));
         let share = self.chance(x, z, g.above_sea) * self.cover;
-        if roll >= share {
+        if roll >= share * self.boost.max(1.0) {
             return false;
         }
         factor.is_none_or(|f| roll < share * f())
@@ -476,14 +509,20 @@ impl Planter {
 /// How far beyond a rectangle `trees_in` asks for ground (m): a neighbour's reach and spacing,
 /// its own reach, and the slope test's 2 m.
 pub fn ground_margin(planters: &[Planter]) -> i32 {
-    let reach = planters.iter().map(Planter::reach).max().unwrap_or(0);
-    let spacing = planters.iter().map(|p| p.rule.spacing).max().unwrap_or(0);
+    let on = || planters.iter().filter(|p| p.active());
+    let reach = on().map(Planter::reach).max().unwrap_or(0);
+    let spacing = on().map(|p| p.rule.spacing).max().unwrap_or(0);
     3 * reach + spacing + reach.max(2) + 1
 }
 
 /// The highest any placement rises over its anchor (blocks).
 pub fn max_rise(planters: &[Planter]) -> i32 {
-    planters.iter().map(Planter::rise).max().unwrap_or(0)
+    planters
+        .iter()
+        .filter(|p| p.active())
+        .map(Planter::rise)
+        .max()
+        .unwrap_or(0)
 }
 
 /// The climate's factor on a placement's chance: (planter index, x, z) → 0..1 (`vegetation.rs`).
@@ -508,13 +547,17 @@ pub fn trees_in_with(
     ground: &dyn Fn(i32, i32) -> Option<Ground>,
     factor: Option<&Factor<'_>>,
 ) -> Vec<Tree> {
-    let reach = planters.iter().map(Planter::reach).max().unwrap_or(0);
-    let spacing = planters.iter().map(|p| p.rule.spacing).max().unwrap_or(0);
+    let on = || planters.iter().filter(|p| p.active());
+    let reach = on().map(Planter::reach).max().unwrap_or(0);
+    let spacing = on().map(|p| p.rule.spacing).max().unwrap_or(0);
     // Trees reaching the rectangle have anchors within `reach` of it; those that could overlap
     // them, within another 2 × reach + spacing.
     let near = 3 * reach + spacing;
     let mut all = Vec::new();
     for (i, p) in planters.iter().enumerate() {
+        if !p.active() {
+            continue;
+        }
         let g = p.rule.grid;
         for gz in floor_div(z0 - near, g)..=floor_div(z1 + near, g) {
             for gx in floor_div(x0 - near, g)..=floor_div(x1 + near, g) {
