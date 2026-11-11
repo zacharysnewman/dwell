@@ -153,10 +153,7 @@ pub fn biome_from_json(v: &Value) -> Result<Biome, String> {
 
 /// A biome's optional `trees` (ADR 0074 B5): placement name → density in [0, 3], each one of its
 /// `placements`.
-fn trees(
-    v: &Value,
-    placements: &[&'static str],
-) -> Result<&'static [(&'static str, f64)], String> {
+fn trees(v: &Value, placements: &[&'static str]) -> Result<&'static [(&'static str, f64)], String> {
     let Some(t) = v.get("trees") else {
         return Ok(&[]);
     };
