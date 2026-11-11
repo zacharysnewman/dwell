@@ -749,3 +749,135 @@ fn the_mesas_fins_make_arches() {
         "{arches} arches, {overhangs} overhangs"
     );
 }
+
+/// Spots for the starter's features (the visual pass, 2026-11-11), printed as `at=` eyes with a yaw
+/// (0 = +Z, 90 = +X) toward the feature: the first arches on the mesa (looking through each along
+/// its axis), the tall cone's summit, and snow-line and sandy-soil edges per biome (a column of the
+/// biome whose top is snow, or sand, with a column 60 m off whose top is not).
+#[test]
+#[ignore = "prints the feature spots"]
+fn feature_spots() {
+    // face-a-only: the links are face A's.
+    let (g, names) = generator(FaceFrame::A, 0);
+    let ground = |x: f64, z: f64| f64::from(g.column_at(x as i32, z as i32).height);
+    let (cx, cz, r) = (14_500, 400, 6_000);
+    for s in g
+        .arches_near((cx - r, cz - r), (cx + r, cz + r))
+        .iter()
+        .filter(|s| s.through)
+        .take(4)
+    {
+        let d = s.half_fin + 30.0;
+        let (ex, ez) = (s.centre[0] - s.axis[0] * d, s.centre[1] - s.axis[1] * d);
+        let yaw = s.axis[0].atan2(s.axis[1]).to_degrees();
+        println!(
+            "arch (span {:.0} m, rise {:.0} m, floor {:.0}) at={ex:.1},{:.1},{ez:.1} yaw {yaw:.0} (ground there {:.0})",
+            s.half_span * 2.0,
+            s.rise,
+            s.floor,
+            s.floor + s.rise * 0.5,
+            ground(ex, ez)
+        );
+    }
+    let h = world_config(NAME).unwrap().unwrap().height.unwrap();
+    let v = h.tectonics.volcanoes()[0];
+    let mut top = (f64::MIN, 0.0, 0.0);
+    for dz in (-3000..=3000).step_by(50) {
+        for dx in (-3000..=3000).step_by(50) {
+            let (x, z) = (v.x + f64::from(dx), v.z + f64::from(dz));
+            let y = ground(x, z);
+            if y > top.0 {
+                top = (y, x, z);
+            }
+        }
+    }
+    println!(
+        "cone summit {:.0} m at {:.0},{:.0} (cone centre {:.0},{:.0})",
+        top.0, top.1, top.2, v.x, v.z
+    );
+    for (label, k) in [("summit", 0), ("1 km east", 1000), ("2 km east", 2000)] {
+        let (x, z) = (top.1 + f64::from(k), top.2);
+        let c = g.column_at(x as i32, z as i32);
+        println!(
+            "cone {label}: {:.0} m {} at={x:.0},{:.0},{z:.0}",
+            c.height,
+            dwell_blocks::block_of(g.top_state(&c)).name,
+            f64::from(c.height) + 2.0
+        );
+    }
+    let rr = i64::from(WORLD_RADIUS) * 3 / 4;
+    for (biome, want) in [
+        ("preset:alpine_tundra", "dwell:snow"),
+        ("preset:alpine_tundra", "dwell:glacier_ice"),
+        ("preset:boreal", "dwell:snow"),
+        ("preset:steppe", "dwell:snow"),
+        ("preset:steppe", "dwell:sand"),
+        ("preset:temperate_meadow", "dwell:sand"),
+    ] {
+        let i = names.iter().position(|n| *n == biome).unwrap();
+        let mut found = None;
+        'outer: for z in (-rr..=rr).step_by(100) {
+            for x in (-rr..=rr).step_by(100) {
+                if g.biome_mix(x, z).chosen as usize != i {
+                    continue;
+                }
+                let c = g.column_at(x as i32, z as i32);
+                // Inland (60 m from any water), so a sand top is the soil's, not a beach.
+                if c.water != dwell_worldgen::terrain::Water::None
+                    || c.shore < 60.0
+                    || g.biome_geography(x, z).is_none_or(|g| g.coast < 300.0)
+                    || dwell_blocks::block_of(g.top_state(&c)).name != want
+                {
+                    continue;
+                }
+                let o = g.column_at(x as i32 + 60, z as i32);
+                if dwell_blocks::block_of(g.top_state(&o)).name != want
+                    && g.biome_mix(x + 60, z).chosen as usize == i
+                {
+                    found = Some((x, z, c.height));
+                    break 'outer;
+                }
+            }
+        }
+        match found {
+            Some((x, z, y)) => println!(
+                "{biome} {want} edge at={x}.5,{:.0},{z}.5 (other side +60 m x)",
+                f64::from(y) + 2.0
+            ),
+            None => println!("{biome} {want}: no edge found"),
+        }
+    }
+}
+
+/// Tall grass round the tour's grassy spots (the visual pass, 2026-11-11): the share of the 128 m
+/// square's grass columns with tall grass over them, as generated (T3b undergrowth).
+#[test]
+#[ignore = "prints the tall grass counts"]
+fn tall_grass_counts() {
+    // face-a-only: the tour's spots are face A's.
+    let (g, _) = generator(FaceFrame::A, 0);
+    let tall = dwell_blocks::require("dwell:tall_grass");
+    let grass = dwell_blocks::require("dwell:grass");
+    for (label, x, z) in [
+        ("meadow", 10100, 16300),
+        ("steppe", -4100, 8300),
+        ("broadleaf", 22300, 100),
+        ("mixed", -18100, -6500),
+    ] {
+        let (mut on, mut tufts) = (0, 0);
+        for cz in -4..4 {
+            for cx in -4..4 {
+                let (wx, wz) = (x / CHUNK_SIZE + cx, z / CHUNK_SIZE + cz);
+                let h = f64::from(g.column_at(wx * CHUNK_SIZE, wz * CHUNK_SIZE).height);
+                let row = rows_for_m(h).div_euclid(CHUNK_SIZE);
+                for cy in row - 2..=row + 2 {
+                    let mut c = Chunk::default();
+                    g.generate(ChunkCoord::new(wx, cy, wz), &mut c);
+                    tufts += c.voxels().iter().filter(|&&m| m == tall).count();
+                    on += c.voxels().iter().filter(|&&m| m == grass).count();
+                }
+            }
+        }
+        println!("{label}: {tufts} tall grass cells over {on} grass cells");
+    }
+}
