@@ -20,7 +20,7 @@ test('a kind and a rule added by data alone are emitted, drawn with its item\'s 
   g.kinds.push({ name: 'test:pebble', item: 'test:pebble' });
   g.rules.push({ kind: 'test:pebble', on: ['dwell:sand'], density: 0.5 });
   const rs = groundRust(validateGround(g, b, i));
-  assert.match(rs, /GroundKind \{ name: "test:pebble", item: "test:pebble", shape: GroundShape::Lump, size: \[0.05, 0.03, 0.05\], texture: "dwell:sand", color: \[255, 255, 255\], scale: \[1.0, 1.0\] \}/);
+  assert.match(rs, /GroundKind \{ name: "test:pebble", item: "test:pebble", shape: GroundShape::Lump, size: \[0.05, 0.03, 0.05\], texture: "dwell:sand", color: \[255, 255, 255\], scale: \[1.0, 1.0\], step: None, hit: None \}/);
   assert.match(rs, /GroundRule \{ kind: 2, on: &\["dwell:sand"\], under: None, near_wall: None, density: 0.5 \}/);
 });
 

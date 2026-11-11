@@ -38,7 +38,9 @@ describe('creature and body sounds (AUDIO.md §2d, §5)', () => {
       ['strain', 'dwell:strain'],
     ] as const)
       expect(soundsFor(event(e, 0), SOUND_DATA)[0]?.sound).toBe(s);
-    expect(SOUND_DATA.sounds['dwell:fell_crack']?.samples?.files[0]).toMatch(/^fell-crack-impact-/);
+    // Sounds round 2b split the fall: the crack as it tips, the impact as the trunk lands.
+    expect(SOUND_DATA.sounds['dwell:fell_crack']?.samples?.files[0]).toMatch(/^fell-crack-1-/);
+    expect(SOUND_DATA.sounds['dwell:fell_impact']?.samples?.files[0]).toMatch(/^fell-impact-/);
   });
 
   it('takes a new creature by data alone, and names a bad one', () => {

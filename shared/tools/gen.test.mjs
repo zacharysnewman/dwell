@@ -215,7 +215,7 @@ test("block damage: the data's hits reach Rust and TS; a fixture block by data a
   blocks.set('test:clay', { damage: { default: 9, shovel: 4, 'dwell:metal_shovel': 1 } });
   assert.match(
     toolsRust(validateTools(data, items, blocks)),
-    /BlockDamageDef \{ block: "test:clay", default: Some\(9\), tools: &\[\("shovel", 4\), \("dwell:metal_shovel", 1\)\], look: None \},/,
+    /BlockDamageDef \{ block: "test:clay", default: Some\(9\), tools: &\[\("shovel", 4\), \("dwell:metal_shovel", 1\)\], look: None, chips: None \},/,
   );
   const bad = (damage, re) => {
     blocks.set('test:clay', { damage });
@@ -235,4 +235,12 @@ test("block damage: the data's hits reach Rust and TS; a fixture block by data a
   bad({ default: 3, look: { kind: 'dents', size: 0.3, color: '#806040', crack: '#302010' } }, /test:clay\.damage\.look\.kind must be one of shards, scoops, chips/);
   bad({ default: 3, look: { kind: 'shards', size: 2, color: '#806040', crack: '#302010' } }, /test:clay\.damage\.look\.size must be a number/);
   bad({ default: 3, look: { kind: 'shards', size: 0.3, color: 'red', crack: '#302010' } }, /test:clay\.damage\.look\.color must be a #rrggbb colour/);
+  // Its hit's chips (sounds round 2b) by data alone, and a bad one fails naming it.
+  blocks.set('test:clay', { damage: { default: 3, chips: { count: 5, color: '#806040', speed: 1.5, size: 0.05 } } });
+  assert.match(
+    toolsRust(validateTools(data, items, blocks)),
+    /block: "test:clay", .*chips: Some\(Chips \{ count: 5, color: \[128, 96, 64\], speed: 1\.5, size: 0\.05 \}\)/,
+  );
+  bad({ default: 3, chips: { count: 5, color: 'brown' } }, /test:clay\.damage\.chips\.color must be #rrggbb/);
+  bad({ default: 3, chips: { count: 99 } }, /test:clay\.damage\.chips\.count must be a whole number/);
 });

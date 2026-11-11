@@ -72,6 +72,18 @@ describe('ambience beds (AUDIO.md §2c)', () => {
     expect(at({ trees: 0.4 })['dwell:leaves']).toBeGreaterThan(0);
   });
 
+  it('crackles quietly by a fire, louder nearer, and not at all far from one', () => {
+    const far = at({ fireM: 99 })['dwell:fire'] ?? 0;
+    const near = at({ fireM: 4 })['dwell:fire'] ?? 0;
+    const beside = at({ fireM: 0.5 })['dwell:fire'] ?? 0;
+    expect(far).toBe(0);
+    expect(near).toBeGreaterThan(0);
+    expect(beside).toBeGreaterThan(near);
+    // Flavour, not function: under the cap and quieter than the wind's full level.
+    expect(beside).toBeLessThanOrEqual(A.cap);
+    expect(beside).toBeLessThanOrEqual(0.25);
+  });
+
   it('keeps every bed under the quiet cap, and the Ambience volume low by default', () => {
     const extremes: Partial<Surroundings>[] = [
       { altitude: 500, open: 1, waterShare: 1, waterM: 0, flow: 9, trees: 1, day: 1, fireM: 0 },
