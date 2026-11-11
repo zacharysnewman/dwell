@@ -49,9 +49,7 @@
     }
   ],
   "decorations": [],
-  "placements": [
-    "boulders"
-  ],
+  "placements": ["boulders"],
   "ground": {
     "dwell:ground_rock": 2.5
   },
@@ -64,19 +62,11 @@
   "arches": {
     "$comment": "Arches (ADR 0074 B8): openings carved through narrow fins of the bedded sandstone the cut-back leaves (Arches NP): density sites per km² (one chance per 32 m square), span across the fin, rise of its crown over the floor, lintel the rock left above (each [min, max] m), fin the thickest fin cut through (m); overhangs: a scarp's site (low on one side) cut as an overhang from its low side. Absent or density 0: none.",
     "density": 400,
-    "span": [
-      6,
-      18
-    ],
-    "rise": [
-      4,
-      12
-    ],
-    "lintel": [
-      2,
-      6
-    ],
-    "fin": 14, "overhangs": true
+    "span": [6, 18],
+    "rise": [4, 12],
+    "lintel": [2, 6],
+    "fin": 14,
+    "overhangs": true
   },
   "$comment": "A test fixture (ADR 0074 B8): the red rock mesa preset with dense arches; tests build it by data alone (FIXTURE_BIOMES). Prototype content."
 }

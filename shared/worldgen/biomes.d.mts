@@ -18,7 +18,11 @@ export const GEOLOGY: Record<string, Record<string, Range>>;
 export const JOINTING: readonly string[];
 export function validateRocks<T>(data: T, blocks: Map<string, BlockInfo>): T;
 export const VEGETATION: Record<string, Record<string, Range>>;
-export function validateVegetation<T>(data: T, rocks?: Set<string>, placements?: Set<string>): T;
+export function validateVegetation<T>(
+  data: T,
+  rocks?: Set<string>,
+  placements?: Set<string>,
+): T;
 export function validateBiome<T>(
   data: T,
   blocks: Map<string, BlockInfo>,
@@ -28,7 +32,7 @@ export function validateBiomeMap<T>(bm: T): T;
 export const WORLD_KNOBS: Record<string, readonly string[]>;
 export const WATER_LOOK_FIELDS: readonly string[];
 export function validateWorldKnobs<T>(w: T): T;
-export const BIOME_TEXT: Record<'label' | 'description', number>;
+export const BIOME_TEXT: Record<"label" | "description", number>;
 export function validatePresets<T>(
   presets: T[],
   blocks: Map<string, BlockInfo>,
@@ -36,7 +40,13 @@ export function validatePresets<T>(
   taken?: readonly string[],
 ): T[];
 export const TREE_DENSITY_MAX: number;
-export const ARCHES: Record<string, readonly [number, number]>;
+export const ARCHES: {
+  density: readonly [number, number];
+  span: readonly [number, number];
+  rise: readonly [number, number];
+  lintel: readonly [number, number];
+  fin: readonly [number, number];
+};
 export function checkArches(a: unknown, fail: (m: string) => never): void;
 export const GROUND_DENSITY_MAX: number;
 export function checkGround(
