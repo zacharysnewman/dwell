@@ -985,6 +985,16 @@ export function timelapseTimes(s: { from: number; to: number; frames: number }):
 }
 
 /**
+ * The game page for a served `base`: a server's root (`http://localhost:4173`) → its `/dwell/`; a
+ * base already naming a build's path (`…/dwell/`, a released build's `…/dwell/v/0.51.24/`) → that
+ * path. The launcher's builds 404'd as `…/dwell/v/0.51.24/dwell/` (`--base`).
+ */
+export function buildPage(base: string): string {
+  const b = base.replace(/\/+$/, '');
+  return /\/dwell(\/|$)/.test(new URL(b).pathname) ? `${b}/` : `${b}/dwell/`;
+}
+
+/**
  * The scenario's page address (views.ts's `viewUrl`) with `params` (a `bench --compare`
  * configuration's: `scale` and its own) over it.
  */
