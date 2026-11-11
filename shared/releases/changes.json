@@ -2,6 +2,13 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.52.90",
+      "changes": [
+        "Tall grass now slowly grows back and spreads across meadows over the days, filling lush ground and staying sparse where it is dry; it never grows over blocks you placed.",
+        "New worlds only: worlds made before this keep their meadows as they were."
+      ]
+    },
+    {
       "version": "0.52.89",
       "changes": [
         "Each oak, pine and palm in the starter world has its own leaf shade, near and far"

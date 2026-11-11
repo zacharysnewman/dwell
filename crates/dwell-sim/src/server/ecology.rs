@@ -56,6 +56,9 @@ pub fn next_step(behind: f64, online: bool, step_days: f64) -> Option<f64> {
     Some(step_days.max(1.0).floor().min(behind.floor()))
 }
 
+/// The grass's climate share at (face index, face-local x, z) (docs/ECOLOGY.md §10).
+pub type GrassShare = Arc<dyn Fn(usize, f64, f64) -> f64 + Send + Sync>;
+
 /// The server's ecology: both faces' ecosystems (once their islands are known), the world's
 /// switch and speed, and the last tick's figures.
 pub struct Ecology {
@@ -78,6 +81,9 @@ pub struct Ecology {
     world_seed: u64,
     /// The herds and packs near players, as individuals (docs/ECOLOGY.md §8).
     pub near: crate::herds::Near,
+    /// The grass's climate share of a cell's most forage at (face index, face-local x, z), applied
+    /// to the world maps' islands as they are made (docs/ECOLOGY.md §10; none: as the ground's).
+    pub grass_share: Option<GrassShare>,
 }
 
 /// One herd or pack in the dev read-out.
@@ -129,6 +135,7 @@ impl Ecology {
             steps: 0,
             world_seed,
             near: crate::herds::Near::default(),
+            grass_share: None,
         }
     }
 
@@ -180,11 +187,17 @@ impl Ecology {
                         .iter()
                         .all(|&s| dwell_worldgen::worldmap::cache::is_ready(s))
                         .then(|| {
+                            let mut k = 0;
                             Arc::new(seeds.map(|s| {
-                                Island::from_world_map(
+                                let mut island = Island::from_world_map(
                                     &dwell_worldgen::worldmap::for_seed(s),
                                     &DATA,
-                                )
+                                );
+                                if let Some(share) = &self.grass_share {
+                                    island.scale_grazing(|x, z| share(k, x, z));
+                                }
+                                k += 1;
+                                island
                             }))
                         })
                 }
