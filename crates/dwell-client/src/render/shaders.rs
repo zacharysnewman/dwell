@@ -117,6 +117,18 @@ fn atlas_crisp(uv: vec2f) -> vec2f {
     let size = vec2f(textureDimensions(atlas));
     return (floor(uv * size) + 0.5) / size;
 }
+// Atlas gradients with the long axis capped so an anisotropic footprint stays inside the tile's
+// wrapped gutter: the sampler picks the level from the short axis (2^L texels), where the gutter is
+// GUTTER / 2^L texels, and spreads its taps along the long axis; keeping that axis within
+// 2 × GUTTER level-0 texels (or the short axis, past it) keeps the taps off the neighbouring tiles
+// and the atlas's empty space, the grey grid far ground showed at a grazing angle.
+fn atlas_grads(gx: vec2f, gy: vec2f) -> array<vec2f, 2> {
+    let size = vec2f(textureDimensions(atlas));
+    let lx = length(gx * size);
+    let ly = length(gy * size);
+    let cap = max(2.0 * f32(ATLAS_GUTTER), min(lx, ly));
+    return array<vec2f, 2>(gx * min(1.0, cap / max(lx, 1e-12)), gy * min(1.0, cap / max(ly, 1e-12)));
+}
 // Per atlas tile (index cx + cy × ATLAS_CELLS): its grid lines (x every, y strength; 0 for none),
 // from the registry's `grid` look option of the blocks that use the tile, z its glow, w how close
 // to the eye (m) its faces dissolve (block data `nearFade`: leaves; dwell-mesh tile_grids).
@@ -652,7 +664,8 @@ fn grid_shade(uv: vec2f, grid: vec2f) -> f32 {
 fn terrain_fs(i: TerrainOut, @builtin(front_facing) front: bool) -> SceneOut {
     let draw = draws[i.draw];
     let atlas_uv = i.tile.xy + fract(i.uv) * i.tile.zw;
-    let texel = textureSampleGrad(atlas, atlas_sampler, atlas_crisp(atlas_uv), dpdx(i.uv) * i.tile.zw, dpdy(i.uv) * i.tile.zw);
+    let grads = atlas_grads(dpdx(i.uv) * i.tile.zw, dpdy(i.uv) * i.tile.zw);
+    let texel = textureSampleGrad(atlas, atlas_sampler, atlas_crisp(atlas_uv), grads[0], grads[1]);
     let n = select(-i.normal, i.normal, front);
     let shade = grid_shade(i.uv, tile_grid(i.tile.xy));
     if (fade_discard(draw, i.clip.xy)) {
@@ -792,7 +805,8 @@ fn cutout_fs(i: CutoutOut, @builtin(front_facing) front: bool) -> CutoutSceneOut
     let cap = 2.0 * min(length(gx), length(gy));
     gx *= min(1.0, cap / max(length(gx), 1e-12));
     gy *= min(1.0, cap / max(length(gy), 1e-12));
-    let texel = textureSampleGrad(atlas, atlas_sampler, atlas_crisp(atlas_uv), gx, gy);
+    let grads = atlas_grads(gx, gy);
+    let texel = textureSampleGrad(atlas, atlas_sampler, atlas_crisp(atlas_uv), grads[0], grads[1]);
     // Up close the atlas is sampled nearest (crisp texels), which would cut blade edges into
     // stairs: there the alpha is filtered bilinearly by hand from the four texels around the
     // sample (level 0), so edges are smooth curves; from afar (a texel under a pixel) the mips'.
@@ -3087,7 +3101,7 @@ fn light_wgsl() -> String {
 /// entry points.
 pub fn lighting_source() -> String {
     format!(
-        "{}{}const SEA_LEVEL: f32 = {:.1};\nconst AMBIENT_FLOOR: f32 = {:?};\n{}const ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\n{}\n{}\n{}\n{FRAME}\n{}\n{}\n{FRAME_DEPTH}\n{}\n{}\n{COMMON}\n{}\n{}\n",
+        "{}{}const SEA_LEVEL: f32 = {:.1};\nconst AMBIENT_FLOOR: f32 = {:?};\n{}const ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\nconst ATLAS_GUTTER: u32 = {}u;\n{}\n{}\n{}\n{FRAME}\n{}\n{}\n{FRAME_DEPTH}\n{}\n{}\n{COMMON}\n{}\n{}\n",
         dwell_world::FaceFrame::wgsl(),
         super::face_shading::WGSL,
         world::SEA_LEVEL_M,
@@ -3095,6 +3109,7 @@ pub fn lighting_source() -> String {
         light_wgsl(),
         dwell_mesh::ATLAS_CELLS,
         dwell_mesh::ATLAS_TILES,
+        dwell_mesh::GUTTER,
         dwell_look::daynight::DAY_SKY_WGSL,
         super::water::wgsl(),
         super::reflection::wgsl(),

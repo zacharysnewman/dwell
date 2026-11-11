@@ -16,7 +16,7 @@
     },
     {
       "name": "outline-silhouette",
-      "notes": "The mesher with the ink outline's silhouettes (docs/ART_DIRECTION.md \u00a77, shared/look/outline.json): its cost is the composite's.",
+      "notes": "The mesher with the ink outline's silhouettes (docs/ART_DIRECTION.md §7, shared/look/outline.json): its cost is the composite's.",
       "params": {
         "outline": "silhouette"
       }
@@ -44,7 +44,7 @@
     },
     {
       "name": "pixelart-270",
-      "notes": "The pixel-art preview's 270 preset: 270 rows (the spec's 480 \u00d7 270), banded sun, the dwell palette, silhouette edges.",
+      "notes": "The pixel-art preview's 270 preset: 270 rows (the spec's 480 × 270), banded sun, the dwell palette, silhouette edges.",
       "params": {
         "pixelart": "270"
       }
@@ -72,7 +72,7 @@
     },
     {
       "name": "shadows-low",
-      "notes": "The Shadows setting on Low (docs/DAY_NIGHT.md \u00a710, shared/look/shadows.json); the baseline draws High, the desktop default.",
+      "notes": "The Shadows setting on Low (docs/DAY_NIGHT.md §10, shared/look/shadows.json); the baseline draws High, the desktop default.",
       "params": {
         "shadows": "low"
       }
@@ -86,7 +86,7 @@
     },
     {
       "name": "torch-shadows-off",
-      "notes": "Torch shadows Off (docs/LIGHTS.md \u00a74, shared/look/lights.json `shadows`; `?torchshadows=off`): held torches light unshadowed, placed ones by the flood light alone.",
+      "notes": "Torch shadows Off (docs/LIGHTS.md §4, shared/look/lights.json `shadows`; `?torchshadows=off`): held torches light unshadowed, placed ones by the flood light alone.",
       "params": {
         "torchshadows": "off"
       }
@@ -100,7 +100,7 @@
     },
     {
       "name": "lod-shadows-off",
-      "notes": "The distant terrain's shadows off (docs/DAY_NIGHT.md \u00a712, shared/look/lodshadows.json; `?lodshadows=off`), the cascades on High: the third layer's cost.",
+      "notes": "The distant terrain's shadows off (docs/DAY_NIGHT.md §12, shared/look/lodshadows.json; `?lodshadows=off`), the cascades on High: the third layer's cost.",
       "params": {
         "lodshadows": "off"
       }
@@ -112,14 +112,14 @@
     },
     {
       "name": "loading-off",
-      "notes": "The game without its loading screen on joining (?loading=off, ARCHITECTURE.md \u00a76.3): the join's timeline as before the screen.",
+      "notes": "The game without its loading screen on joining (?loading=off, ARCHITECTURE.md §6.3): the join's timeline as before the screen.",
       "params": {
         "loading": "off"
       }
     },
     {
       "name": "respawn-preload-off",
-      "notes": "The respawn preload off (?respawnPreload=off: the server streams the spawn only once the player is there, and the client neither prioritises nor readies its LOD): the respawn as before it (ARCHITECTURE.md \u00a76.3).",
+      "notes": "The respawn preload off (?respawnPreload=off: the server streams the spawn only once the player is there, and the client neither prioritises nor readies its LOD): the respawn as before it (ARCHITECTURE.md §6.3).",
       "params": {
         "respawnPreload": "off"
       }
@@ -150,6 +150,35 @@
       "notes": "The near water's surface drawn from the GPU heightfield whatever the tier says (`?heightfield=1`, proposals/WATER_GPU_SURFACE.md C6a); compare with `raster`, the tier's (off in every tier but where `watertiers.json` turns it on).",
       "params": {
         "heightfield": "1"
+      }
+    },
+    {
+      "name": "aniso-off",
+      "notes": "The block atlas without anisotropic filtering (?aniso=1; shared/render/antialias.json): the crisp sampler of builds before 0.52.30.",
+      "params": {
+        "aniso": "1"
+      }
+    },
+    {
+      "name": "aniso-16",
+      "notes": "The block atlas at 16x anisotropic filtering (?aniso=16).",
+      "params": {
+        "aniso": "16"
+      }
+    },
+    {
+      "name": "aa-off",
+      "notes": "No multisampling (?aa=off; applied at load).",
+      "params": {
+        "aa": "off"
+      }
+    },
+    {
+      "name": "aa-fxaa-aniso16",
+      "notes": "MSAA 4x + FXAA and 16x anisotropy (?aa=msaa4-fxaa&aniso=16): the dearest anti-aliasing against the default.",
+      "params": {
+        "aa": "msaa4-fxaa",
+        "aniso": "16"
       }
     }
   ]
