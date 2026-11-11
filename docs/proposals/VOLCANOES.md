@@ -174,5 +174,72 @@ look and the in-game check come next, locally). ARCHITECTURE.md §6.8 has the mo
   as data, a hiss, the burning screen edge and a sizzle (§17.2).
 - **Outstanding:** heat per cell (brighter where hotter/thicker: the field's heat isn't in the cells).
 
-**Next:** the rest of the look (steam, burning feedback, heat per cell); the water grid's columns as the
-fields' water; then V2's vents on the hotspot cones (rivers to the sea, eruptions).
+### 6.4 As built: V2, rivers to the sea (2026-11-11)
+
+Logic and tests only (no shaders): the owner's "rivers of lava reaching the sea and building new land",
+beside V1's lakes. §6.2's note stood: a 25-column field can't reach a coast 2.6 km off.
+
+- **Fields that grow with their flow.** A field is a set of tiles of 8 × 8 columns keyed by tile
+  (`dwell_lava::field::TILE`), not a fixed rectangle. A growing field (`Field::growing`; every field the
+  server places) asks, as a run goes, for the tile past an edge its lava reaches, read from the world
+  by the run's `Ground` (bed and water per column; `None` a wall), up to `maxTiles` (`lava.json`, the cap
+  on its area: 2048 tiles, 0.13 km²; a refused tile is a wall), and drops the tiles that are all rock at
+  the end of a run (no lava in or beside them, no vent, nothing written as lava left in the world). A
+  re-added tile reads its bed again, so in the server it gets its rock back from the world's cells. V1's
+  rectangle (`Field::new`) is kept as a fixed field (tests; a V1 record).
+- **Cost by molten area.** A step visits the molten tiles' columns and the columns their flow reaches out
+  of them, nothing else (`Field::work` counts them); links across tile edges are cached per column.
+  A long river's tick near a player is tested under a budget (columns a substep ≤ the molten tiles' and
+  their edges'; under 20 ms a tick).
+- **Tubes (`tubeSpeedMs`, per fluid).** Moving lava keeps its heat under its crust: a column's cooling
+  is divided by `1 + speed / tubeSpeedMs` (its outflow over its depth). Without it a river crusted in
+  ~6 m; with the build's 0.002 m/s it runs a kilometre molten and its front, once stopped, cools at the
+  full rate (the V1 river test runs 480 s now, not 240, for its front to crust).
+- **Ponds (`stepDepthM`).** A substep is sized for lava up to 2 m deep; each face's flow is limited to
+  the explicit law's stable share of the two surfaces' difference, so a deeper pond levels instead of
+  shrinking every substep (it had cut the step to 2 ms behind a crusted dam).
+- **The sea.** Lava now quenches *in* a water column, not beside one: it runs into the sea, turns to
+  obsidian on the sea floor (a steam event per quenched row), and once the rock stands above the water's
+  surface (`Field::water_top`, read with the water) the column is dry land. Before, lava beside water
+  quenched on the shore and never entered it, so no coast could grow.
+- **Saves:** record version 2 (tiles, the water's surface per column, whether it grows); version 1
+  still loads as a fixed field. An older build keeps a version 2 record unread (V1 slice 2's rule), so
+  the change is additive.
+- **The server:** fields are placed with the vent at their column (0, 0), covering `radius` to start
+  (`lavaVents` `radius` is now the starting reach); a tick reads new tiles from the world round the bed
+  beside them (`dwell-sim` `lava.rs` `ground_at`) and writes only the tiles its steps visited.
+- **The starter world's river** (`tectonics.lavaVents`, with a new optional `faces` key): on the
+  youngest hotspot island's flank on face B, 400 m out at 75° (158 m up), 2 m³/s of `dwell:lava`. Each
+  face generates its own island: face A's drains its flanks into an enclosed basin above the sea at
+  almost every bearing (a pour walk, filling each hollow until it spills, never reaches the sea), so the
+  river is face B's alone (`faces: ["b"]`; the lake stays on both). Its way down (the same pour) meets the
+  sea 1.3 km off with no hollow deeper than 2 m (tested).
+- **Breakouts (`breakoutDepthM`, per fluid; `dwell:lava` 3 m).** Each column remembers the rock its own
+  lava laid (`Field::crust`, saved); molten lava at least that deep beside a dry column of that crust
+  standing over its bed melts it down to the bed again, at the pond's heat (volume kept, a
+  `LavaEvent::Melt` the server clears to air before writing the lava), so a river dammed by its own
+  frozen overflow runs on through the gap. At 1 m it melted the river's own levees (its channel runs
+  ~2 m deep) and the flow spread into a sheet; 3 m keeps the levees and breaks the dams.
+- **Open: the starter river does not reach the sea yet.** On the fixture flank (a smooth slope) the
+  build's lava runs 1.1 km to the sea in ~3 lava hours (14 world days) and builds land. On the generated
+  terrain, without breakouts it reached ~480 m in 6 world days and then dammed itself, ponding 16 m deep
+  behind walls its overflow froze into. With breakouts (3 m) it no longer dams (the deepest pond stays
+  ~3 m) and reaches ~630 m in 18 world days (~740 m at 4 m³/s), but it slows as it spreads sideways into
+  a wide sheet (~300 tiles at 2 m³/s, ~540 at 4) instead of keeping one channel; at 1 m breakouts it
+  stalled at ~300 m as a sheet. What would close it: channelling (levees from the edges' cooling that a
+  breakout at the front doesn't melt, or a channel's banks held as data), or a runnier `dwell:lava`.
+  The ignored test `the_starter_river_reaches_the_sea_and_builds_land` (`dwell-sim` `tests/lava_world.rs`,
+  ~4 min, `DWELL_LAVA_TRACE=1` for progress) is the check; too long for CI either way. A question for
+  the owner (the lava's tuning, a higher rate, or channelling next).
+- **Tests** (`crates/dwell-lava/tests/rivers.rs`, both faces): on a fixture flank (a 0.3 slope 1.1 km to
+  a shore, a fixture runny lava `test:runny` and vent `test:flank_river` by data alone) a river runs past
+  1 km and reaches the sea within two lava hours, builds dry land past the shore out of the sea, its
+  tiles follow it there; a stopped river cools and every tile drops; the cap holds; a save mid-flow runs
+  on identically; a V1 record loads. In the server (`dwell-sim` `tests/lava.rs`): a river's field grows
+  down a stone ramp and its lava is in the chunks past where it started.
+- **Fixed on the way:** none shipped (a stale lake index after a tile's removal was caught by the
+  server tests before commit).
+
+**Next:** the rest of the look (heat per cell); the starter river reaching the sea on the generated
+terrain (§6.4, open); the water grid's columns as the fields' water (and the sea's level taken back where
+lava builds land); eruptions (V3–V5).

@@ -3463,33 +3463,55 @@ prototype's 4 km² window: an hour on one core); later, water as its own layer o
 the surface meshed from depth; deferred by the owner, 2026-11-05: clients keep water as blocks); G4 the grid's settings as data
 (`shared/water/*.json`), pools for still water and the held sea as in the prototype.
 
-### 6.8 Lava **[in progress: the simulation core and the server built (V1); not yet drawn]**
+### 6.8 Lava **[in progress: the simulation core and the server built (V1), rivers that grow to the sea (V2 logic); not yet drawn]**
 
 ([`proposals/VOLCANOES.md`](./proposals/VOLCANOES.md) §6, WORK_QUEUE item 8.) Lava is a **hot fluid
 on its own surface grid** (`dwell_lava::Field`), not a second liquid on the water grid (§6.7): the
 water grid holds one depth and one law per column across 2,000 lines of sleeping chunks, the held sea
-and its own thread, and lava needs a heat per column and a different law. A field is a rectangle of
-face-local 1 m columns (bed, lava depth, heat 0–1, a water flag), its vents and its schedule.
+and its own thread, and lava needs a heat per column and a different law. A field is a set of
+**tiles** of 8 × 8 face-local 1 m columns (bed, lava depth, heat 0–1, a water flag and the water's
+surface, open or a wall), keyed by tile, with its vents and its schedule (V2, VOLCANOES.md §6.3).
+
+- **Growing with its flow (V2):** a growing field (`Field::growing`, every field the server places)
+  asks for the tile past an edge its lava reaches and reads it from the world as it runs (the run's
+  `Ground`: a column's bed and water, `None` a wall), up to `maxTiles` (data: the cap on its area; a
+  refused tile is a wall), and drops the tiles that are all rock (no lava in or beside them, no vent,
+  nothing written as lava left) at the end of a run. A step visits only the molten tiles' columns and
+  the columns their flow reaches out of them (cost by molten area, `Field::work`), with a cached link
+  per column across tile edges. V1's fixed rectangle (`Field::new`) never grows: its edges are walls.
 
 - **The law:** a viscous gravity current, flow per metre of width `g h³ × slope / 3ν` through the depth
   above the higher bed less the fluid's yield depth (a Bingham plug: a thin front stands as a lobe);
-  explicit, each substep at most `cfl × cell² / (4 g h³ / 3ν)`, outflow limited to what a column holds.
+  explicit, each substep at most `cfl × cell² / (4 g h³ / 3ν)` with `h` at most `stepDepthM` (data),
+  outflow limited to what a column holds, and each face's flow to its stable share of the two
+  surfaces' difference (`cfl / 4`: it binds only in ponds deeper than `stepDepthM`, which level instead
+  of ringing or shrinking every substep).
 - **Heat and cooling:** heat carried upwind with the flow; a column loses it at `1 / coolingSeconds`,
-  faster per dry neighbour (`edgeCooling`) and by `thinDepthM / depth` (its top's share); at 0 its lava
+  faster per dry neighbour (`edgeCooling`) and by `thinDepthM / depth` (its top's share), slower by
+  `1 + speed / tubeSpeedMs` while it moves (a crust roofs a running river over: a tube, V2); at 0 its lava
   joins its bed as the fluid's `rock` (`dwell:basalt`), and the rows whose centres it covers are a
   `LavaEvent::Rock`: a river crusts behind its front and builds land. A lake vent keeps the molten
   columns joined to it below its level hot (a lake convects); what overflows the rim cools.
-- **Quench:** lava in or beside a water column turns at once to `quench.rock` (`dwell:obsidian`) with
-  a `LavaEvent::Steam` taking `steamWaterM` of that water.
+- **Breakouts (V2):** a column remembers the rock its own lava laid (`crust`); molten lava
+  `breakoutDepthM` deep beside a dry column of it standing over its bed melts it down to the bed again
+  (`LavaEvent::Melt`, cleared to air by the server before the lava is written), so a pond behind a
+  dam of its own frozen overflow runs on.
+- **Quench:** lava that runs into a water column turns at once to `quench.rock` (`dwell:obsidian`),
+  raising the sea floor, with a `LavaEvent::Steam` (one per quenched row) taking `steamWaterM` of that
+  water; once the rock stands above the water's surface the column is dry land (V2: a river builds
+  the coastline out).
 - **Vents** (`VentDef`, data): `lake` (holds its column's surface at `levelM`, at most `rateM3s`) or
-  `river` (a steady `rateM3s`). V2 places them on cones; V1's are test fixtures.
+  `river` (a steady `rateM3s`). Placed on cones by a world's data (below); the build's own list is
+  test fixtures.
 - **Schedule (as the water):** a field with a player within `nearRadiusM` runs every lava tick; a far
   one owes its time and runs it at once when it owes `farEverySeconds`, at the same stable substeps,
   so the far run lands where the near one does (tested).
 - **Damage:** `Burn` gives `damagePerSecond` while a player's feet are in it (`Field::submerged`) and
   `burnDamagePerSecond` for `burnSeconds` after, as whole points for the server's `damage`.
-- **Saves:** `record_of` / `field_of`, a versioned record (fluid by name, columns, vents) for an
-  optional `lava` table; another version, an unknown fluid or a damaged record reads as none.
+- **Saves:** `record_of` / `field_of`, a versioned record for an optional `lava` table: version 2
+  (fluid by name, origin, time owed, whether it grows, each tile's columns, vents); version 1 (V1's
+  rectangle) still reads, as a fixed field. Another version, an unknown fluid or a damaged record
+  reads as none (an older build keeps a version 2 record unread, not written over).
 - **Data:** `shared/fluids/lava.json` (`lava.mjs` → `crates/dwell-lava/src/lava.gen.rs`, validated: ranges,
   names, the rocks against the block registry; a fixture with a fluid and vents added by data alone).
 - **Faces:** face-local; world points and cells cross only through `FaceFrame` (`submerged`,
@@ -3497,10 +3519,11 @@ face-local 1 m columns (bed, lava depth, heat 0–1, a water flag), its vents an
 
 **In the server** (`dwell-sim` `lava.rs`, `server/lava.rs`): the world's fields (`Lava`), each on one
 face, placed round a vent (`Server::place_lava_vent`, a `VentSpot`: fluid by name, lake or river, rate,
-a lake's depth over the vent's bed, the field's radius) with their beds and water read from the world;
-ticked every `tickEvery` server ticks (near a player every lava tick, far ones owing their time). Each
+a lake's depth over the vent's bed, the radius its field starts with) with their beds and water read
+from the world, the vent at the field's column (0, 0); each grows as its lava runs, reading new tiles'
+beds and water from the world's cells round the bed beside them (`ground_at`, loading chunks); ticked every `tickEvery` server ticks (near a player every lava tick, far ones owing their time). Each
 tick's changes go out as one `Rebake` modification through the edit path (the water grid is told, as
-of any edit): each column's molten rows (`Field::lava_rows`, ½ m cell rows) are the fluid's block
+of any edit): each column of the tiles its steps visited (`Field::take_touched`) has its molten rows (`Field::lava_rows`, ½ m cell rows) are the fluid's block
 (`dwell:lava`: no collision, `emits` the fluid's `light`, a placeholder look), written only into open
 cells and cleared to air where the lava has gone; a `Rock` event's rows become the rock; a `Steam` event
 takes `steamWaterM` off the top of that column's water and is queued for the clients
@@ -3515,14 +3538,17 @@ opt-in, none by default: each a cone by kind and index, lake or river, fluid by 
 radius, offset from the summit; checked by `biomes.mjs` `checkLavaVents`, read by
 `dwell_worldgen::config::lava_vent_sites`), placed by the server on each face when its world is created
 or first loaded with no lava (`place_world_vents`, at the cone's summit as generated). The starter world
-lists a lake vent on its youngest hotspot island (VOLCANOES.md §6.2). **Edits:** every change through the
+lists a lake vent on its youngest hotspot island's summit and, on face B only (a vent's optional
+`faces`: each face generates its own cone), a river vent on its flank 1.3 km from the sea
+(VOLCANOES.md §6.2, §6.4; the river reaching it on the generated terrain is open: it spreads into a
+sheet ~630 m down). **Edits:** every change through the
 edit path but the lava's own (`TickChanges::lava`) marks its column in a field over it (`Lava::touch`);
 the field reads that column's bed (up through blocks set on it, down through cells dug out) and water
 again at its next lava tick, so a dug channel takes the lava.
 
 **Not yet:** the lava's look (light, glow, crust) and the steam's particles and sound on the clients;
 the water grid's own columns as the fields' water flags (a field reads them from the world's cells);
-V2's river vents to the sea and eruptions.
+eruptions (V3–V5).
 
 ## 7. Physics Pipeline
 
