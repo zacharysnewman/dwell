@@ -2,6 +2,13 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.52.62",
+      "changes": [
+        "New chopping (?chop=v2): cuts on two sides next to each other add up, and you can chop as far as you can aim",
+        "A notched log stays round, and swinging on after a fall keeps the stump's slanted face"
+      ]
+    },
+    {
       "version": "0.52.61",
       "changes": [
         "Try the new chopping (dev link ?chop=v2): chop where you aim, a tree falls past halfway, toward your notch",

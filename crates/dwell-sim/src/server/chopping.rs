@@ -13,6 +13,9 @@ use dwell_protocol::{
 };
 use dwell_world::{CELL_H, FaceFrame, M, m_of_row};
 
+/// Where an aimed chop lands: the cell, the face met (`axis × 2 + positive`) and the point.
+type Aimed = ([i32; 3], u8, [f64; 3]);
+
 /// How far past the edit reach a swing's hit point may be (metres): the client's ray and the
 /// server's eye differ by a tick.
 const REACH_SLACK_M: f64 = 0.75;
@@ -135,7 +138,7 @@ impl Server {
         t: &chop::ToolDef,
         eye: [f64; 3],
         look: [f64; 3],
-    ) -> (Vec<[i32; 3]>, Option<([i32; 3], u8, [f64; 3])>) {
+    ) -> (Vec<[i32; 3]>, Option<Aimed>) {
         let dir = look.map(|v| v as f32);
         let passed = std::cell::RefCell::new(Vec::new());
         let hit = dwell_world::edit::raycast_block_past(

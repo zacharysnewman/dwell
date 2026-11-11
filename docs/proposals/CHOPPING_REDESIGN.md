@@ -102,9 +102,22 @@ local world, through the local server's `ServerConfig::chop2` and the client's `
   upper face (`chop2.fellWedgeTrunk: open`, the existing `felling::fell_wedges`), not one flat
   diagonal slice.
 
-Not yet: the hinge's flat break below cell size; adjacent sides adding up; the octagonal notch
-carve and the ghost notch (C1, C4); the hold-to-chop rhythm and the swing landing on the bite by IK
-(C2, C3); a switch on the dedicated server.
+**Round 2 (0.52.62):**
+
+- **Adjacent sides add up:** each side's cut takes a slab off its side; what is left is the section
+  after all of them (`Cut::removed`), so a notch on one side and cuts on the side next to it fell the
+  tree once more than half is gone, as cuts on opposite sides do. A chop still removes its bite of
+  the whole section (deeper as less is left across it).
+- **Reach:** the look reaches as far as the block-target outline (`players::REACH_DISTANCE`): a trunk
+  you can outline you can chop.
+- **Octagon-aware carve:** an octagonal log's cut is carved inside its octagon (`carve::carve_in`, the
+  mesher's `carve_outline` from the log's width and joins): the carved cell clipped to the prism,
+  the chamfers bark where wood is left, the notch's faces fresh wood.
+- **The stump keeps its face:** the look clears only what it passes through (leaves) and stops at a
+  wood's fell wedge, so swinging on after the fall no longer breaks the stump's slanted face.
+
+Not yet: the hinge's flat break below cell size; the ghost notch (C1); the hold-to-chop rhythm and
+the swing landing on the bite by IK (C2, C3); a switch on the dedicated server.
 
 ## 6. Questions
 
