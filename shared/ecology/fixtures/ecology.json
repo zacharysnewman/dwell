@@ -6,7 +6,7 @@
     "regrowPerDay": 0.1,
     "grounds": [{ "name": "lawn", "maxHeightM": 100000, "maxSlopeDeg": 90, "max": 40 }]
   },
-  "near": { "spawnM": 32, "foldM": 48, "thinkS": 1 },
+  "near": { "spawnM": 32, "foldM": 48, "thinkS": 1, "maxSlopeDeg": 40, "searchM": 24 },
   "species": [
     {
       "name": "test:hare",

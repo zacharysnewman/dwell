@@ -50,6 +50,7 @@ fn by_hand(island: &Island, groups: Vec<Group>) -> Ecosystem {
         grazing: island.grazing_max.clone(),
         next_id: groups.len() as u32,
         groups,
+        near: Vec::new(),
     }
 }
 
@@ -436,6 +437,47 @@ fn deer_flee_a_pack_and_a_hungry_pack_closes_on_a_herd() {
         eco.groups[1].x
     );
     assert_eq!(w.species, wolf());
+}
+
+#[test]
+fn the_far_step_sees_groups_near_players() {
+    // A hungry pack 1 km from a herd that is near players (individuals: only its summary here).
+    let isl = island(&DATA);
+    let mut eco = by_hand(&isl, vec![group(1, wolf(), 1000.0, 0.0, 4.0, 0.5)]);
+    eco.near.push(group(0, deer(), 0.0, 0.0, 6.0, 0.2));
+    step(&isl, &DATA, &mut eco, 0.1);
+    assert!(
+        eco.groups[0].x < 1000.0 - 100.0,
+        "the pack closes on the near herd: {}",
+        eco.groups[0].x
+    );
+    // Within reach it kills from the near herd's summary (the near side reads the loss back).
+    let mut eco = by_hand(&isl, vec![group(1, wolf(), 50.0, 0.0, 7.0, 0.9)]);
+    eco.near.push(group(0, deer(), 0.0, 0.0, 3.0, 0.9));
+    step(&isl, &DATA, &mut eco, 1.0);
+    assert!(eco.near[0].size < 3.0, "the pack ate: {}", eco.near[0].size);
+    assert_eq!(eco.near[0].x, 0.0, "the near summary isn't stepped");
+    // A far herd flees a pack that is near players.
+    let mut eco = by_hand(&isl, vec![group(0, deer(), 0.0, 0.0, 6.0, 0.2)]);
+    eco.near.push(group(1, wolf(), 300.0, 0.0, 4.0, 0.5));
+    step(&isl, &DATA, &mut eco, 1.0);
+    assert_eq!(eco.groups[0].activity, Activity::Fleeing);
+    // The near head counts in the totals: an island full of near deer leaves no room to breed.
+    let room = isl.carrying_capacity(&DATA, deer());
+    let run = |near: f64| {
+        let mut eco = by_hand(&isl, vec![group(0, deer(), 0.0, 0.0, 4.0, 0.0)]);
+        if near > 0.0 {
+            eco.near.push(group(9, deer(), -1500.0, 0.0, near, 0.0));
+        }
+        step(&isl, &DATA, &mut eco, 5.0);
+        eco.groups[0].size
+    };
+    assert!(run(0.0) > 4.0, "an empty island breeds");
+    assert!(
+        run(room) <= 4.0 + 1e-9,
+        "a full one doesn't: {} (capacity {room})",
+        run(room)
+    );
 }
 
 #[test]

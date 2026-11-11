@@ -17,16 +17,18 @@
 //! players and animals), and deterministic: the only randomness is each member's own hash chain,
 //! seeded from (world seed, record id, member).
 
-use crate::creatures::{Creatures, Get, feet_row, feet_y};
+use crate::creatures::{Creatures, Get, feet_row, feet_y, group_kinds};
 use dwell_ecology::{Activity, Data, Diet, Ecosystem, Group, Island, NearDef};
 use dwell_protocol::SIM_HZ;
-use dwell_world::{Face, FaceFrame, cell_of_pos};
+use dwell_world::{Face, FaceFrame, cell_of_pos, m_of_row};
 
 /// The faces, by index (an ecology's `ecos[k]` and `islands[k]` are `FACES[k]`'s).
 pub const FACES: [Face; 2] = [Face::A, Face::B];
 
 /// The rows searched up and down for an individual's feet at spawn.
 const SPAWN_ROWS: i32 = 48;
+/// The rows searched up and down for a next column's feet when measuring the ground's slope.
+const SLOPE_ROWS: i32 = 8;
 
 /// What an individual is doing (the mockup's states).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -84,6 +86,11 @@ pub struct NearGroup {
     /// Members killed and young born since it came near.
     pub deaths: u32,
     pub births: u32,
+    /// The head in its far summary as last written ([`Ecosystem::near`]); a far hunter's kill
+    /// lowers the summary, and the loss is read back as deaths.
+    summary_size: f64,
+    /// A far kill's share of a member not yet taken.
+    far_loss: f64,
 }
 
 impl NearGroup {
@@ -104,6 +111,25 @@ impl NearGroup {
             activity: Activity::Resting,
             ..self.record.clone()
         })
+    }
+
+    /// Its summary for the far step: its record as it would fold back, doing what most of its
+    /// members do.
+    fn summary(&self) -> Option<Group> {
+        let mut g = self.folded()?;
+        let count = |m: Mind| self.members.iter().filter(|o| o.mind == m).count();
+        g.activity = [
+            (Mind::Fleeing, Activity::Fleeing),
+            (Mind::Chasing, Activity::Hunting),
+            (Mind::Eating, Activity::Grazing),
+            (Mind::Sleeping, Activity::Resting),
+        ]
+        .into_iter()
+        .filter(|&(m, _)| count(m) * 2 > self.members.len())
+        .map(|(_, a)| a)
+        .next()
+        .unwrap_or(Activity::Moving);
+        Some(g)
     }
 }
 
@@ -133,6 +159,88 @@ fn splitmix(mut z: u64) -> u64 {
     z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
     z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
     z ^ (z >> 31)
+}
+
+/// [0, 1) from a hash.
+fn unit(h: u64) -> f64 {
+    (h >> 11) as f64 / (1u64 << 53) as f64
+}
+
+/// The feet row of an individual `rows` tall in face `k`'s face-local column `col` (searched
+/// around `row`) if it is the ecology's ground there: its island cell walkable land, a dry full
+/// block under open cells, and no steeper than the data's `near.maxSlopeDeg` to any next column
+/// with ground. `Err`: not loaded (wait).
+fn ecology_ground(
+    w: &World,
+    k: usize,
+    f: FaceFrame,
+    col: [i32; 2],
+    row: i32,
+    rows: i32,
+) -> Result<Option<i32>, ()> {
+    if (w.get)(f.cell([col[0], row, col[1]])).is_none() {
+        return Err(());
+    }
+    let (cx, cz) = (f64::from(col[0]) + 0.5, f64::from(col[1]) + 0.5);
+    if !w.islands.get(k).is_some_and(|i| i.is_walkable(cx, cz)) {
+        return Ok(None);
+    }
+    let Some(y) = feet_row(w.get, f, col, row, SPAWN_ROWS, SPAWN_ROWS, rows) else {
+        return Ok(None);
+    };
+    let most = w.data.near.max_slope_deg.to_radians().tan();
+    for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+        let next = [col[0] + dx, col[1] + dz];
+        if let Some(ny) = feet_row(w.get, f, next, y, SLOPE_ROWS, SLOPE_ROWS, rows)
+            && (m_of_row(ny) - m_of_row(y)).abs() > most + 1e-9
+        {
+            return Ok(None);
+        }
+    }
+    Ok(Some(y))
+}
+
+/// Up to `n` of the nearest loaded columns within the data's `near.searchM` of face-local
+/// `centre` that are the ecology's ground ([`ecology_ground`]), nearest first, as face-local
+/// feet points at their columns' centres.
+fn nearest_grounds(
+    w: &World,
+    k: usize,
+    f: FaceFrame,
+    centre: (f64, f64),
+    row: i32,
+    rows: i32,
+    n: usize,
+) -> Vec<[f64; 3]> {
+    let r = w.data.near.search_m;
+    let (ci, cj) = (centre.0.floor() as i32, centre.1.floor() as i32);
+    let span = r.ceil() as i32;
+    let mut cols: Vec<(f64, [i32; 2])> = Vec::new();
+    for dj in -span..=span {
+        for di in -span..=span {
+            let c = [ci + di, cj + dj];
+            let d = (f64::from(c[0]) + 0.5 - centre.0).hypot(f64::from(c[1]) + 0.5 - centre.1);
+            if d <= r {
+                cols.push((d, c));
+            }
+        }
+    }
+    // Nearest first (ties in the grid's order: deterministic).
+    cols.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut out = Vec::new();
+    for (_, c) in cols {
+        if out.len() >= n {
+            break;
+        }
+        if let Ok(Some(y)) = ecology_ground(w, k, f, c, row, rows) {
+            out.push([
+                f64::from(c[0]) + 0.5,
+                feet_y(f, [c[0], y, c[1]]),
+                f64::from(c[1]) + 0.5,
+            ]);
+        }
+    }
+    out
 }
 
 fn roll(rng: &mut u64) -> f64 {
@@ -193,9 +301,50 @@ impl Near {
             return Vec::new();
         }
         self.refresh(creatures);
+        self.far_losses(w, creatures);
         self.fold_far(w, creatures);
         self.spawn_near(w, creatures);
-        self.think(w, creatures, every as f64 / f64::from(SIM_HZ))
+        let eaten = self.think(w, creatures, every as f64 / f64::from(SIM_HZ));
+        self.summarise(w);
+        eaten
+    }
+
+    /// A far hunter's kills on a near group's summary since the last decision become deaths among
+    /// its members (the last first), a member for each whole head.
+    fn far_losses(&mut self, w: &World, creatures: &mut Creatures) {
+        for g in &mut self.groups {
+            let Some(r) = w
+                .ecos
+                .get(g.face)
+                .and_then(|e| e.near.iter().find(|r| r.id == g.record.id))
+            else {
+                continue;
+            };
+            g.far_loss += (g.summary_size - r.size).max(0.0);
+            while g.far_loss >= 1.0 - 1e-9 {
+                g.far_loss -= 1.0;
+                let Some(m) = g.members.pop() else {
+                    break;
+                };
+                creatures.remove(m.creature);
+                g.deaths += 1;
+            }
+        }
+        self.groups.retain(|g| !g.members.is_empty());
+    }
+
+    /// Writes each face's summaries of the groups near players ([`Ecosystem::near`]), so the far
+    /// step still sees them.
+    fn summarise(&mut self, w: &mut World) {
+        for (k, eco) in w.ecos.iter_mut().enumerate() {
+            eco.near.clear();
+            for g in self.groups.iter_mut().filter(|g| g.face == k) {
+                if let Some(r) = g.summary() {
+                    g.summary_size = r.size;
+                    eco.near.push(r);
+                }
+            }
+        }
     }
 
     /// Every member's place from its creature.
@@ -259,9 +408,24 @@ impl Near {
                     if creatures.list.len() + n > creatures.table.limits.max {
                         return None; // wait for room: the whole group or none
                     }
-                    let rows = creatures.table.creatures[kind].rows;
+                    // The herd's mix (does, a stag, …): the creature rule's for its creature, by
+                    // data (shared/creatures/creatures.json `mix`), rolled from the record.
+                    let kinds = match creatures.table.rules.iter().find(|q| q.creature == kind) {
+                        Some(rule) => group_kinds(rule, n as u32, |j| {
+                            unit(splitmix(
+                                w.seed ^ splitmix(u64::from(r.id) ^ 0x6d69_7800 ^ j as u64),
+                            ))
+                        }),
+                        None => vec![kind; n],
+                    };
+                    let rows = kinds
+                        .iter()
+                        .map(|&q| creatures.table.creatures[q].rows)
+                        .max()
+                        .unwrap_or(1);
                     let row = cell_of_pos(p)[1];
                     let mut places = Vec::with_capacity(n);
+                    let mut fallback: Option<Vec<[f64; 3]>> = None;
                     for m in 0..n {
                         let mut rng = splitmix(w.seed ^ splitmix(u64::from(r.id) << 16 | m as u64));
                         let mut at = None;
@@ -270,12 +434,20 @@ impl Near {
                             let rad = 1.0 + 3.0 * roll(&mut rng);
                             let (x, z) = (r.x + rad * a.sin(), r.z + rad * a.cos());
                             let col = [x.floor() as i32, z.floor() as i32];
-                            (w.get)(f.cell([col[0], row, col[1]]))?; // not loaded: wait
-                            if let Some(y) =
-                                feet_row(w.get, f, col, row, SPAWN_ROWS, SPAWN_ROWS, rows)
-                            {
+                            // Not loaded: wait.
+                            if let Some(y) = ecology_ground(w, k, f, col, row, rows).ok()? {
                                 at = Some([x, feet_y(f, [col[0], y, col[1]]), z]);
                                 break;
+                            }
+                        }
+                        // None of its tries is the ecology's ground (water, too steep): the
+                        // nearest columns that are, one each, within the data's `searchM`.
+                        if at.is_none() {
+                            let list = fallback.get_or_insert_with(|| {
+                                nearest_grounds(w, k, f, (r.x, r.z), row, rows, n)
+                            });
+                            if !list.is_empty() {
+                                at = Some(list.remove(0));
                             }
                         }
                         // Keep the head: a member with no ground of its own stands by the last.
@@ -283,7 +455,7 @@ impl Near {
                         places.push((at, rng));
                     }
                     let mut members = Vec::with_capacity(n);
-                    for (at, mut rng) in places {
+                    for ((at, mut rng), &kind) in places.into_iter().zip(&kinds) {
                         let yaw = roll(&mut rng) * 360.0;
                         let id = creatures.add_driven(kind, f.point(at), yaw, rng)?;
                         members.push(Member {
@@ -305,9 +477,11 @@ impl Near {
                         self.groups.push(NearGroup {
                             face: k,
                             record: r,
+                            summary_size: members.len() as f64,
                             members,
                             deaths: 0,
                             births: 0,
+                            far_loss: 0.0,
                         });
                     }
                     None => i += 1,
@@ -426,7 +600,11 @@ impl Near {
                     let m = &mut g.members[mi];
                     m.hunger = (m.hunger + def.mate.cost).min(1.0);
                     let rng = splitmix(m.rng ^ 0x0079_6f75_6e67);
-                    let kind = creatures.get(m.creature).map_or(0, |c| c.kind);
+                    // The young are the species' own creature (the herd's mix is its start's).
+                    let kind = creatures
+                        .kind_of(def.creature)
+                        .or_else(|| creatures.get(m.creature).map(|c| c.kind))
+                        .unwrap_or(0);
                     young.push((gi, [me.x + 0.6, me.z + 0.6], kind, rng, m.creature));
                     Go::Stop
                 }
@@ -676,8 +854,26 @@ mod tests {
     use dwell_ecology::{DATA, Ground};
     use dwell_world::{both_faces, m_of_row};
 
+    /// The top row of a floor at face-local column (x, z).
+    type Floor = fn(i32, i32) -> i32;
+
+    /// The stone floor: row 9 everywhere (feet at row 10).
+    fn flat(_: i32, _: i32) -> i32 {
+        9
+    }
+
+    /// Stairs rising west (x < 0) 2 rows (1 m) a column, steeper than the data's 40°; flat east.
+    fn stairs(x: i32, _: i32) -> i32 {
+        9 + 2 * (-x).max(0)
+    }
+
     /// A stone floor (face-local row 9, feet at row 10) over x, z in [-64, 64), tall grass on it.
     fn world(f: FaceFrame) -> impl Fn([i32; 3]) -> Option<StateId> {
+        world_on(f, flat)
+    }
+
+    /// A stone floor whose top row is `floor`'s, over x, z in [-64, 64), tall grass on it.
+    fn world_on(f: FaceFrame, floor: Floor) -> impl Fn([i32; 3]) -> Option<StateId> {
         let stone = find_block("dwell:stone").unwrap().first_state;
         let grass = find_block("dwell:tall_grass").unwrap().first_state;
         move |c: [i32; 3]| {
@@ -685,10 +881,13 @@ mod tests {
             if !(-64..64).contains(&x) || !(-64..64).contains(&z) {
                 return None;
             }
-            Some(match y {
-                ..=9 => stone,
-                10 => grass,
-                _ => 0,
+            let top = floor(x, z);
+            Some(if y <= top {
+                stone
+            } else if y == top + 1 && top == 9 {
+                grass
+            } else {
+                0
             })
         }
     }
@@ -707,6 +906,7 @@ mod tests {
         seed: u64,
         eaten: Vec<[i32; 3]>,
         night: bool,
+        floor: Floor,
     }
 
     impl Scene {
@@ -746,6 +946,7 @@ mod tests {
                 seed,
                 eaten: Vec::new(),
                 night: false,
+                floor: flat,
             }
         }
 
@@ -755,7 +956,7 @@ mod tests {
 
         /// Runs `secs` with the players at face-local `(x, z)`s; `each` sees every decision.
         fn run(&mut self, at: &[(f64, f64)], secs: f64, mut each: impl FnMut(&Near)) {
-            let g = world(self.f);
+            let g = world_on(self.f, self.floor);
             let players: Vec<_> = at.iter().map(|&(x, z)| self.player(x, z)).collect();
             for t in 0..(secs * f64::from(SIM_HZ)) as u64 {
                 let mut w = World {
@@ -797,7 +998,9 @@ mod tests {
                     c.driven && (l[1] - m_of_row(10)).abs() < 1e-9,
                     "on the floor: {l:?}"
                 );
-                assert_eq!(s.creatures.table.creatures[c.kind].name, "dwell:doe");
+                // Does, sometimes with a stag (the creature rule's mix).
+                let name = s.creatures.table.creatures[c.kind].name;
+                assert!(["dwell:doe", "dwell:deer"].contains(&name), "{name}");
             }
             let m = &s.near.groups[0].members[0];
             assert!(
@@ -998,6 +1201,163 @@ mod tests {
                 );
             });
             assert!(slept >= 2, "most of the herd slept at night ({slept})");
+        }
+    );
+
+    /// The creature names of each near group, by group.
+    fn kinds(s: &Scene) -> Vec<Vec<&'static str>> {
+        s.near
+            .groups
+            .iter()
+            .map(|g| {
+                g.members
+                    .iter()
+                    .map(|m| {
+                        let c = s.creatures.get(m.creature).unwrap();
+                        s.creatures.table.creatures[c.kind].name
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    both_faces!(
+        fn a_herd_comes_near_as_the_creature_rules_mix_does_and_a_stag(f: FaceFrame) {
+            // Twelve herds of four: the doe rule's mix gives some of them one stag, never two.
+            let herds: Vec<_> = (0..12)
+                .map(|k| ("dwell:deer", -44.0 + 8.0 * k as f64, 20.0, 4.0, 0.6))
+                .collect();
+            let mut s = Scene::new(f, &herds, 7);
+            s.run(&[(0.0, 0.0)], 0.6, |_| {});
+            let all = kinds(&s);
+            assert_eq!(all.len(), 12, "every herd came near");
+            let stags: Vec<usize> = all
+                .iter()
+                .map(|g| g.iter().filter(|&&n| n == "dwell:deer").count())
+                .collect();
+            assert!(stags.contains(&1), "some herds have a stag");
+            assert!(stags.iter().all(|&n| n <= 1), "never two: {stags:?}");
+            assert!(
+                all.iter()
+                    .flatten()
+                    .all(|&n| ["dwell:doe", "dwell:deer"].contains(&n)),
+                "{all:?}"
+            );
+            // By data alone: a mix of two stags always, and the herds come near with two each.
+            let mut rules = Table::SHIPPED.rules.to_vec();
+            let doe = s.creatures.kind_of("dwell:doe").unwrap();
+            let stag = s.creatures.kind_of("dwell:deer").unwrap();
+            let r = rules.iter_mut().find(|r| r.creature == doe).unwrap();
+            r.mix = Box::leak(Box::new([crate::creatures::MixPart {
+                creature: stag,
+                chance: 1.0,
+                max: 2,
+            }]));
+            let table = Table {
+                rules: Box::leak(rules.into_boxed_slice()),
+                ..Table::SHIPPED
+            };
+            let mut s = Scene::new(f, &herds[..3], 7);
+            s.creatures = Creatures::new(table);
+            s.run(&[(0.0, 0.0)], 0.6, |_| {});
+            for g in kinds(&s) {
+                assert_eq!(g.iter().filter(|&&n| n == "dwell:deer").count(), 2, "{g:?}");
+                assert_eq!(g.len(), 4, "the head kept: {g:?}");
+            }
+        }
+    );
+
+    both_faces!(
+        fn individuals_spawn_only_on_the_ecologys_ground_else_the_nearest(f: FaceFrame) {
+            // Too steep: stairs rising 1 m a column west of x 0 (over the data's 40°); a herd
+            // on them stands on the nearest flat columns instead (x ≥ 1: x 0's west step is steep).
+            let mut s = Scene::new(f, &[("dwell:deer", -6.0, 0.0, 4.0, 0.6)], 3);
+            s.floor = stairs;
+            s.run(&[(0.0, 0.0)], 0.6, |_| {});
+            assert_eq!(
+                s.creatures.list.len(),
+                4,
+                "the herd came near, its head kept"
+            );
+            for c in &s.creatures.list {
+                let l = f.point(c.position);
+                assert!(l[0] >= 1.0, "on the flat, not the stairs: {l:?}");
+                assert!((l[1] - m_of_row(10)).abs() < 1e-9, "on the floor: {l:?}");
+                assert!(
+                    (l[0] + 6.0).hypot(l[2]) <= DATA.near.search_m + 1.0,
+                    "within searchM: {l:?}"
+                );
+            }
+            // Water: the island's cells west of x 0 are sea; a herd there stands on the land.
+            let mut s = Scene::new(f, &[("dwell:deer", -5.0, 0.0, 4.0, 0.6)], 3);
+            let isl = Island::from_ground(&DATA, 4, -300.0, |x, _| {
+                if x < 0.0 {
+                    Ground::Water
+                } else {
+                    Ground::Land {
+                        height_m: 10.0,
+                        slope_deg: 1.0,
+                    }
+                }
+            });
+            s.islands = vec![isl.clone(), isl];
+            s.run(&[(0.0, 0.0)], 0.6, |_| {});
+            assert_eq!(s.creatures.list.len(), 4);
+            for c in &s.creatures.list {
+                let l = f.point(c.position);
+                assert!(l[0] >= 0.0, "on the island's land: {l:?}");
+            }
+            // No ground within searchM at all: the herd waits as a record.
+            let mut s = Scene::new(f, &[("dwell:deer", -40.0, 0.0, 4.0, 0.6)], 3);
+            s.floor = stairs;
+            s.run(&[(-40.0, 0.0)], 0.6, |_| {});
+            assert!(s.near.groups.is_empty() && s.creatures.list.is_empty());
+            assert_eq!(s.ecos[s.k()].groups.len(), 1, "still a record");
+        }
+    );
+
+    both_faces!(
+        fn the_far_step_sees_a_near_herd_and_its_kills_become_deaths(f: FaceFrame) {
+            let mut s = Scene::new(f, &[("dwell:deer", 5.0, 5.0, 5.0, 0.6)], 7);
+            s.run(&[(0.0, 0.0)], 0.6, |_| {});
+            let k = s.k();
+            assert!(s.ecos[k].groups.is_empty(), "out of the far step");
+            let r = s.ecos[k].near.clone();
+            assert_eq!(r.len(), 1, "its summary is there: {r:?}");
+            assert_eq!((r[0].id, r[0].size), (0, 5.0));
+            assert!(s.ecos[1 - k].near.is_empty(), "on its own face only");
+            // A far pack's kills on the summary: 1.5 head, then 0.6 more.
+            s.ecos[k].near[0].size -= 1.5;
+            s.run(&[(0.0, 0.0)], 0.5, |_| {});
+            assert_eq!(s.near.groups[0].deaths, 1);
+            assert_eq!(s.creatures.list.len(), 4);
+            assert_eq!(s.ecos[k].near[0].size, 4.0, "rewritten from the members");
+            s.ecos[k].near[0].size -= 0.6;
+            s.run(&[(0.0, 0.0)], 0.5, |_| {});
+            assert_eq!(s.near.groups[0].deaths, 2, "the shares add up");
+            assert_eq!(s.creatures.list.len(), 3);
+            // The far step itself: a hungry far pack closes on the near herd's summary.
+            let mut eco = s.ecos[k].clone();
+            eco.groups.push(Group {
+                id: 9,
+                species: species("dwell:wolf"),
+                x: 300.0,
+                z: 0.0,
+                size: 4.0,
+                hunger: 0.5,
+                energy: 1.0,
+                activity: Activity::Resting,
+            });
+            dwell_ecology::step(&s.islands[k], &DATA, &mut eco, 0.05);
+            assert!(
+                eco.groups[0].x < 250.0,
+                "the pack moved: {}",
+                eco.groups[0].x
+            );
+            // Folded back, the summary goes and the record returns.
+            s.run(&[(500.0, 0.0)], 0.5, |_| {});
+            assert!(s.ecos[k].near.is_empty());
+            assert_eq!(s.ecos[k].groups[0].size, 3.0);
         }
     );
 

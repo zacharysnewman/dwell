@@ -319,6 +319,7 @@ impl Server {
             | inventory_flags::DAMAGE
             | inventory_flags::COMBINE
             | inventory_flags::CAUSES
+            | inventory_flags::ECOLOGY
             | if self.uses_items() {
                 inventory_flags::USES_ITEMS
             } else {

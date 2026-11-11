@@ -136,9 +136,14 @@ Last updated: 2026-11-11 (0.52.68).
    64 m of a player becomes its deer or wolves (the existing creatures, driven) and folds back past 96 m
    (survivors, averaged needs, centroid); the mockup's needs-driven rules as data (flee, sleep at night,
    graze the cell and sometimes a real tall grass block, chase and kill, mate up to the cap, company);
-   the creature rules for deer and wolves left out while the ecology runs. Next (ECOLOGY.md §7): simple
-   far rendering with a client read-out, local worlds' maps, grazing applied to tall grass as chunks
-   load; the far step seeing near groups; the herd's stag.
+   the creature rules for deer and wolves left out while the ecology runs. **Slice 3b built** (logic, no
+   rendering): the far step sees near groups through a summary the near side keeps (hunted, fled, counted
+   in the totals; a far kill becomes a death near players); a herd comes near as the creature rule's mix
+   (does, sometimes a stag; fawns by the same data); individuals only on the ecology's ground (walkable
+   island cell, dry, ≤ `near.maxSlopeDeg`), else the nearest within `near.searchM`; the far groups sent
+   every 2 s to clients that ask (`EcologyHello`, `inventory_flags::ECOLOGY`) and `__dwell.ecology()`
+   (ECOLOGY.md §9). Next (ECOLOGY.md §7): simple far rendering from that read-out, local worlds' maps,
+   grazing applied to tall grass as chunks load.
 12. **Players' saved structures as placement sources** (owner 2026-11-11): per player (their library, usable
    in any world they create); placed copies editable, not protected; 32³ for now (may change), or larger
    structures as a grid of 32³ tiles. Sharing between players: Future.
