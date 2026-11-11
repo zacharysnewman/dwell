@@ -66,8 +66,8 @@ Last updated: 2026-11-11 (0.52.52).
      outline; the dedicated server has no switch yet; the owner's review. In game (bench, `?chop=v2`,
      config `chop-v2`): the notch at the crosshair and its deepening shown, the fall taken; the stump's
      and trunk's wedge faces not yet shown in game (the bench's placed logs didn't stack; the server
-     test checks them). The bench's `axe` scenario no longer builds its trunk (`region fill` of logs
-     refused): needs a fix.
+     test checks them). The bench's `axe` scenario no longer builds its trunk
+     (its `region fill` of logs leaves none; cause not looked into): needs a fix.
 
 ## Done
 
