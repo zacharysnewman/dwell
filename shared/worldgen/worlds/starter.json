@@ -1,5 +1,5 @@
 {
-  "$comment": "The starter world (a candidate default, for the owner to react to; never a world's own yet): the systemic terrain layers (ADR 0075) and the preset biomes (ADR 0074) in one world. The world knobs: one convergent plate boundary with its range and an arc of two cones, Rainier-shaped (tall_peak's keys; the second 0.72 of the first's height, `arcDecay`), the snow and ice lines on; a hotspot chain of islands offshore. The biome map: the rain shadow on (rainShare 0.6, the westerly wind's rain), dithered borders. The biomes: the default (a low weight, the fallback where no preset fits) and the presets by climate, each with vegetation, rocks, ground and trees opted in; the tree species (shared/trees, ADR 0079) opted in: oaks in the broadleaf groves, the pine species' conifer groves in place of the default's pine groves, palms on the warm coast (the tropical beach's `palm_coasts`). `biomes` names a biome or preset (`{ \"biome\": name, ...keys }` replaces those keys); `biomeMap` keys over terrain.json's; `geology` keys over rocks.json's. No cliffs (`cliffs` 0, the terrain volume's strength in this world, 0.52.64: seen in game at 1, 0.5 and 0, the cliffs stood stone and dirt walls across the forests and the steppe at 1 and 0.5 alike; off, the hillsides read as grassy slopes). Play it at ?worldgen=test:starter, or pick Starter in the New world form (`newWorld`: offered there with its label, 0.52.64). Prototype content.",
+  "$comment": "The starter world (a candidate default, for the owner to react to; never a world's own yet): the systemic terrain layers (ADR 0075) and the preset biomes (ADR 0074) in one world. The world knobs: one convergent plate boundary with its range and an arc of two cones, Rainier-shaped (tall_peak's keys; the second 0.72 of the first's height, `arcDecay`), the snow and ice lines on; a hotspot chain of islands offshore. The biome map: the rain shadow on (rainShare 0.6, the westerly wind's rain), dithered borders. The biomes: the default (a low weight, the fallback where no preset fits) and the presets by climate, each with vegetation, rocks, ground and trees opted in; the tree species (shared/trees, ADR 0079) opted in: oaks in the broadleaf groves, the pine species' conifer groves in place of the default's pine groves, palms on the warm coast (the tropical beach's `palm_coasts`). `biomes` names a biome or preset (`{ \"biome\": name, ...keys }` replaces those keys); `biomeMap` keys over terrain.json's; `geology` keys over rocks.json's. No cliffs (`cliffs` 0, the terrain volume's strength in this world, 0.52.64: seen in game at 1, 0.5 and 0, the cliffs stood stone and dirt walls across the forests and the steppe at 1 and 0.5 alike; off, the hillsides read as grassy slopes). T3b (ADR 0075): every biome has `undergrowth` 1 (its tall grass, sticks and rocks scaled by the climate: grass thins in the dry lee, sticks lie where trees could grow); the alpine tundra, boreal and steppe have their own snow lines (`snow`, in place of the world line at 0 °C; the tundra with a glacier); the steppe and the meadow show their soil type's blocks (`soilBlocks`: sand under the grass on sandy soil). Play it at ?worldgen=test:starter, or pick Starter in the New world form (`newWorld`: offered there with its label, 0.52.64). Prototype content.",
   "name": "test:starter",
   "cliffs": 0,
   "newWorld": {
@@ -65,7 +65,8 @@
       "biome": "dwell:default",
       "where": {
         "weight": 0.25
-      }
+      },
+      "undergrowth": 1
     },
     {
       "biome": "preset:mixed_forest",
@@ -93,7 +94,8 @@
         "broadleaf_groves": 1.5,
         "conifer_groves": 0.1
       },
-      "placements": ["conifer_groves", "broadleaf_groves"]
+      "placements": ["conifer_groves", "broadleaf_groves"],
+      "undergrowth": 1
     },
     {
       "biome": "preset:mixed_forest",
@@ -118,7 +120,8 @@
           "blend": 150
         }
       },
-      "placements": ["conifer_groves", "broadleaf_groves"]
+      "placements": ["conifer_groves", "broadleaf_groves"],
+      "undergrowth": 1
     },
     {
       "biome": "preset:boreal",
@@ -145,7 +148,13 @@
       "placements": ["conifer_groves"],
       "trees": {
         "conifer_groves": 1.5
-      }
+      },
+      "snow": {
+        "belowC": 0.5,
+        "maxSlope": 0.9,
+        "block": "dwell:snow"
+      },
+      "undergrowth": 1
     },
     {
       "biome": "preset:temperate_meadow",
@@ -168,7 +177,9 @@
           "max": 700,
           "blend": 150
         }
-      }
+      },
+      "undergrowth": 1,
+      "soilBlocks": true
     },
     {
       "biome": "preset:steppe",
@@ -192,7 +203,14 @@
           "max": 900,
           "blend": 120
         }
-      }
+      },
+      "snow": {
+        "belowC": -2,
+        "maxSlope": 0.8,
+        "block": "dwell:snow"
+      },
+      "undergrowth": 1,
+      "soilBlocks": true
     },
     {
       "biome": "preset:tropical_beach",
@@ -203,10 +221,12 @@
       "placements": ["palm_coasts"],
       "trees": {
         "palm_coasts": 0.8
-      }
+      },
+      "undergrowth": 1
     },
     {
-      "biome": "preset:sand_desert"
+      "biome": "preset:sand_desert",
+      "undergrowth": 1
     },
     {
       "biome": "preset:red_rock_mesa",
@@ -227,7 +247,8 @@
           "max": 1400,
           "blend": 100
         }
-      }
+      },
+      "undergrowth": 1
     },
     {
       "biome": "preset:badlands",
@@ -247,7 +268,8 @@
           "max": 1000,
           "blend": 100
         }
-      }
+      },
+      "undergrowth": 1
     },
     {
       "biome": "preset:alpine_tundra",
@@ -257,7 +279,15 @@
       "placements": ["conifer_groves", "boulders"],
       "trees": {
         "conifer_groves": 0.3
-      }
+      },
+      "snow": {
+        "belowC": 2,
+        "maxSlope": 1,
+        "block": "dwell:snow",
+        "iceBelowC": -8,
+        "ice": "dwell:glacier_ice"
+      },
+      "undergrowth": 1
     },
     {
       "biome": "preset:wetland",
@@ -275,7 +305,8 @@
           "max": 400,
           "blend": 60
         }
-      }
+      },
+      "undergrowth": 1
     }
   ]
 }

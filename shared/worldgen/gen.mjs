@@ -442,10 +442,12 @@ export function validateVegetation(data) {
     new Set(
       JSON.parse(readFileSync(join(here, f), "utf8"))[k].map((r) => r.name),
     );
+  const refs = biomeRefs();
   return checkVegetation(
     data,
     names("rocks.json", "rocks"),
     names("placements.json", "placements"),
+    { decorations: refs.decorations, ground: refs.ground, blocks: registryBlocks() },
   );
 }
 
@@ -464,7 +466,7 @@ export function vegetationRust(data) {
   rs.push("    soil_types: &[");
   for (const t of data.soilTypes) {
     rs.push(
-      `        SoilType { name: ${JSON.stringify(t.name)}, color: 0x${t.color.slice(1).toLowerCase()} },`,
+      `        SoilType { name: ${JSON.stringify(t.name)}, color: 0x${t.color.slice(1).toLowerCase()}, ground: ${JSON.stringify(t.ground ?? "")}, under: ${JSON.stringify(t.under ?? "")} },`,
     );
   }
   rs.push("    ],");
@@ -476,7 +478,9 @@ export function vegetationRust(data) {
   for (const k of data.kinds) {
     rs.push("        Kind {");
     rs.push(`            name: ${JSON.stringify(k.name)},`);
-    rs.push(`            placement: ${JSON.stringify(k.placement)},`);
+    rs.push(`            placement: ${JSON.stringify(k.placement ?? "")},`);
+    rs.push(`            decoration: ${JSON.stringify(k.decoration ?? "")},`);
+    rs.push(`            ground: ${JSON.stringify(k.ground ?? "")},`);
     rs.push(`            temperature: [${k.temperature.map(rf).join(", ")}],`);
     rs.push(`            moisture: [${k.moisture.map(rf).join(", ")}],`);
     rs.push(`            min_soil: ${rf(k.minSoil)},`);
@@ -958,6 +962,12 @@ export function terrainRust({
       rs.push(`        vegetation: ${rf(b.vegetation ?? 0)},`);
       rs.push(`        erosion: ${rf(b.erosion ?? 0)},`);
       rs.push(`        gullies: ${rf(b.gullies ?? 0)},`);
+      const sn = b.snow;
+      rs.push(
+        `        snow: ${sn === undefined ? "None" : `Some(crate::terrain::BiomeSnow { below_c: ${rf(sn.belowC)}, max_slope: ${rf(sn.maxSlope)}, block: ${JSON.stringify(sn.block)}, ice: ${sn.ice === undefined ? "None" : `Some((${JSON.stringify(sn.ice)}, ${rf(sn.iceBelowC)}))`} })`},`,
+      );
+      rs.push(`        soil_blocks: ${b.soilBlocks === true},`);
+      rs.push(`        undergrowth: ${rf(b.undergrowth ?? 0)},`);
       const a = b.arches;
       rs.push(
         `        arches: ${a === undefined || a.density === 0 ? "None" : `Some(crate::arches::Arches { density: ${rf(a.density)}, span: [${rf(a.span[0])}, ${rf(a.span[1])}], rise: [${rf(a.rise[0])}, ${rf(a.rise[1])}], lintel: [${rf(a.lintel[0])}, ${rf(a.lintel[1])}], fin: ${rf(a.fin)}, overhangs: ${a.overhangs === true}, fins: ${a.fins === undefined ? "None" : `Some(crate::arches::Fins { approach: ${rf(a.fins.approach)}, width: ${rf(a.fins.width)}, overrun: ${rf(a.fins.overrun ?? 0)} })`}, rock: ${a.rock === undefined ? "None" : `Some(${JSON.stringify(a.rock)})`} })`},`,

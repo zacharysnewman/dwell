@@ -204,9 +204,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   after two rounds; leads in BUGS.md).
 - **Arches:** the openings in the LOD and in Chisel's 3D view; caprock lips; an arch on a fin seen in
   game (fins and the rock filter built, 0.52.66).
-- **Terrain leftovers (0.52.66 round 1 left):** T3b in normal biomes (a snow line from temperature for
-  any biome, soil blocks by soil type, grass and ground items by climate; the starter opts in); Rainier
-  detail (below); in-game screenshots of an arch on a fin, the red mesa and a snowy biome edge.
+- **Terrain leftovers (0.52.66 round 1 left):** Rainier detail (below); in-game screenshots of an arch
+  on a fin, the red mesa and a snowy biome edge, and of T3b in the starter (its biomes' snow lines, sand
+  under the steppe's grass, the grass thinning into the dry lee; built without screenshots). T3b is built
+  (ADR 0075 T3b): a biome's own snow line (`snow`), soil blocks by soil type (`soilBlocks`), tall grass
+  and ground items by climate (`undergrowth`); the starter opts in.
 - **Pieces follow-ups (0.52.46):** the worn axe not yet seen in game.
 - **Block damage follow-ups:** scoops read as dark stains (flat decals).
 - **Peaks:** a more broken summit, deeper ridges and cirques (Rainier).

@@ -128,10 +128,10 @@ function vegetationEditor() {
     }
   }
   for (const k of v.kinds) {
-    box.append(el('h2', { textContent: `${k.name} (${k.placement})` }));
+    box.append(el('h2', { textContent: `${k.name} (${k.placement ?? k.decoration ?? k.ground})` }));
     box.append(
       slider(
-        'tree line °C',
+        k.placement ? 'tree line °C' : 'least °C',
         -20,
         30,
         0.5,

@@ -110,22 +110,38 @@ impl Placer {
     /// whose top is row `top`, with neighbours' tops (rows) from `neighbour_top` (+x, −x, +z, −z).
     pub fn places(
         &self,
+        at: (i32, i32),
+        noise: (i64, i64),
+        ground: StateId,
+        top: i32,
+        neighbour_top: impl Fn(i32, i32) -> i32,
+    ) -> bool {
+        self.places_scaled(at, noise, ground, top, neighbour_top, || 1.0)
+    }
+
+    /// [`Placer::places`] with its chance times `factor` (0..1; the climate's, T3b), asked only of
+    /// a cell its own rolls keep.
+    pub fn places_scaled(
+        &self,
         (x, z): (i32, i32),
         (noise_x, noise_z): (i64, i64),
         ground: StateId,
         top: i32,
         neighbour_top: impl Fn(i32, i32) -> i32,
+        factor: impl FnOnce() -> f32,
     ) -> bool {
         if !self.on.contains(&ground) || top < self.min_height || top > self.max_height {
             return false;
         }
         let roll = unit(hash2(self.cell_seed, x, z));
-        if roll >= self.chance(noise_x, noise_z) {
+        let chance = self.chance(noise_x, noise_z);
+        if roll >= chance {
             return false;
         }
         [(1, 0), (-1, 0), (0, 1), (0, -1)]
             .iter()
             .all(|&(dx, dz)| (neighbour_top(x + dx, z + dz) - top).abs() <= self.max_slope)
+            && roll < chance * factor()
     }
 
     /// The block put.

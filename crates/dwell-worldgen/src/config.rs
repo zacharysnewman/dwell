@@ -151,7 +151,48 @@ pub fn biome_from_json(v: &Value) -> Result<Biome, String> {
         erosion: v.get("erosion").and_then(Value::as_f64).unwrap_or(0.0),
         gullies: v.get("gullies").and_then(Value::as_f64).unwrap_or(0.0),
         arches: arches(v).map_err(at)?,
+        snow: snow(v).map_err(at)?,
+        soil_blocks: v
+            .get("soilBlocks")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        undergrowth: v.get("undergrowth").and_then(Value::as_f64).unwrap_or(0.0),
     })
+}
+
+/// A biome's optional `snow` (T3b; ranges as `shared/worldgen/biomes.mjs` `SNOW`): its snow line.
+fn snow(v: &Value) -> Result<Option<crate::terrain::BiomeSnow>, String> {
+    let Some(s) = v.get("snow") else {
+        return Ok(None);
+    };
+    let one = |k: &str, lo: f64, hi: f64| match s.get(k).and_then(Value::as_f64) {
+        Some(x) if (lo..=hi).contains(&x) => Ok(x),
+        _ => Err(format!("snow.{k} must be in [{lo}, {hi}]")),
+    };
+    let block = |k: &str| {
+        let id = s.get(k).and_then(Value::as_str).unwrap_or("?");
+        dwell_blocks::state(id)
+            .map(|_| leak(id))
+            .ok_or_else(|| format!("snow.{k} {id} is not in the registry"))
+    };
+    let below_c = one("belowC", -60.0, 40.0)?;
+    let ice = match (s.get("ice"), s.get("iceBelowC")) {
+        (None, None) => None,
+        (Some(_), Some(_)) => {
+            let c = one("iceBelowC", -80.0, 40.0)?;
+            if c >= below_c {
+                return Err("snow.iceBelowC must be colder than snow.belowC".into());
+            }
+            Some((block("ice")?, c))
+        }
+        _ => return Err("snow: ice and iceBelowC go together".into()),
+    };
+    Ok(Some(crate::terrain::BiomeSnow {
+        below_c,
+        max_slope: one("maxSlope", 0.05, 10.0)?,
+        block: block("block")?,
+        ice,
+    }))
 }
 
 /// A biome's optional `trees` (ADR 0074 B5): placement name → density in [0, 3], each one of its
@@ -595,9 +636,27 @@ pub fn vegetation_from_json(v: &Value) -> Result<Vegetation, String> {
             .and_then(|s| s.strip_prefix('#'))
             .and_then(|h| u32::from_str_radix(h, 16).ok())
             .ok_or(at("a soil type's color must be \"#rrggbb\"".into()))?;
+        let name = text(t, "name").map_err(at)?;
+        // T3b: the blocks the soil shows ("" the band's own).
+        let block = |k: &str| -> Result<&'static str, String> {
+            match t.get(k) {
+                None => Ok(""),
+                Some(b) => {
+                    let id = b.as_str().unwrap_or("?");
+                    if dwell_blocks::state(id).is_none() {
+                        return Err(at(format!(
+                            "soil type {name}: {k} {id} is not in the registry"
+                        )));
+                    }
+                    Ok(leak(id))
+                }
+            }
+        };
         types.push(SoilType {
-            name: text(t, "name").map_err(at)?,
+            name,
             color,
+            ground: block("ground")?,
+            under: block("under")?,
         });
     }
     if types.is_empty() {
@@ -641,18 +700,44 @@ pub fn vegetation_from_json(v: &Value) -> Result<Vegetation, String> {
             .and_then(Value::as_array)
             .map(|l| l.iter().map(type_of).collect())
             .unwrap_or(Ok(Vec::new()));
-        let placement = text(k, "placement").map_err(kf)?;
-        if !crate::placements::PLACEMENTS
+        // What it governs: exactly one of a placement, a decoration (T3b) or a ground item kind.
+        let target = |key: &str| k.get(key).and_then(Value::as_str).map(leak);
+        let (placement, decoration, ground) =
+            (target("placement"), target("decoration"), target("ground"));
+        if [placement, decoration, ground]
             .iter()
-            .any(|p| p.name == placement)
+            .filter(|t| t.is_some())
+            .count()
+            != 1
+        {
+            return Err(kf(
+                "must govern exactly one of placement, decoration or ground".into(),
+            ));
+        }
+        if let Some(p) = placement
+            && !crate::placements::PLACEMENTS.iter().any(|r| r.name == p)
         {
             return Err(kf(format!(
-                "placement {placement} is not a rule of placements.json"
+                "placement {p} is not a rule of placements.json"
             )));
+        }
+        if let Some(d) = decoration
+            && !crate::decorations::DECORATIONS.iter().any(|r| r.name == d)
+        {
+            return Err(kf(format!(
+                "decoration {d} is not a rule of decorations.json"
+            )));
+        }
+        if let Some(g) = ground
+            && !dwell_world::ground::KINDS.iter().any(|r| r.name == g)
+        {
+            return Err(kf(format!("ground {g} is not a kind of ground.json")));
         }
         kinds.push(Kind {
             name,
-            placement,
+            placement: placement.unwrap_or(""),
+            decoration: decoration.unwrap_or(""),
+            ground: ground.unwrap_or(""),
             temperature: pair("temperature")?,
             moisture: pair("moisture")?,
             min_soil: num(k, "minSoil").map_err(kf)?,
