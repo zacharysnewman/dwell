@@ -29,4 +29,20 @@ test("a bad entry fails naming the species and the field", () => {
   bad((s) => (s.trunk.heightStep = 0.75), /whole ½ m cells/);
   bad((s) => (s.extra = 1), /unknown extra/);
   bad((s) => (s.branches = { kind: "whorl", perWhorl: 4, reach: 0.5, emergeAt: 0.5 }), /lumpy crown takes heavy/);
+  bad((s) => (s.sapling.item = "dwell:nope"), /sapling.item: dwell:nope is not a block/);
+  bad((s) => (s.sapling.plantOn = []), /sapling.plantOn must list/);
+  bad((s) => (s.sapling.plantOn = ["dwell:nope"]), /sapling.plantOn: dwell:nope is not a block/);
+  bad((s) => (s.sapling.dropChance = 2), /sapling.dropChance must be a number in \[0, 1\]/);
+  bad((s) => delete s.sapling.dropChance, /sapling.dropChance is missing/);
+});
+
+test("every species names its own sapling, a block of the registry (ADR 0079 S4)", () => {
+  const species = loadSpecies(here, blocks);
+  const items = species.map((s) => s.sapling.item);
+  assert.deepEqual(items, ["dwell:oak_sapling", "dwell:palm_sapling", "dwell:pine_sapling"]);
+  for (const s of species) for (const g of s.sapling.plantOn) assert.ok(blocks.has(g), g);
+  // A species without a sapling is still valid (it is not planted).
+  const s = fixture();
+  delete s.sapling;
+  validateSpecies(s, blocks, "x.json");
 });

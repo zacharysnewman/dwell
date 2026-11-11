@@ -57,6 +57,8 @@ pub static BLOCK_DAMAGE: &[BlockDamageDef] = &[
     BlockDamageDef { block: "dwell:glacier_ice_ramp", default: None, tools: &[("pickaxe", 4)], look: Some(DamageLook { kind: DamageLookKind::Shards, size: 0.3, color: [238, 246, 250], crack: [79, 127, 184] }), chips: Some(Chips { count: 8, color: [207, 230, 242], speed: 2.8, size: 0.04 }) },
     BlockDamageDef { block: "dwell:red_sandstone", default: None, tools: &[("pickaxe", 7)], look: Some(DamageLook { kind: DamageLookKind::Shards, size: 0.34, color: [239, 198, 164], crack: [122, 62, 40] }), chips: Some(Chips { count: 7, color: [181, 100, 63], speed: 2.6, size: 0.045 }) },
     BlockDamageDef { block: "dwell:red_sandstone_ramp", default: None, tools: &[("pickaxe", 7)], look: Some(DamageLook { kind: DamageLookKind::Shards, size: 0.34, color: [239, 198, 164], crack: [122, 62, 40] }), chips: Some(Chips { count: 7, color: [181, 100, 63], speed: 2.6, size: 0.045 }) },
+    BlockDamageDef { block: "dwell:basalt", default: None, tools: &[("pickaxe", 7)], look: Some(DamageLook { kind: DamageLookKind::Shards, size: 0.34, color: [140, 138, 144], crack: [42, 40, 44] }), chips: Some(Chips { count: 7, color: [74, 70, 72], speed: 2.6, size: 0.045 }) },
+    BlockDamageDef { block: "dwell:obsidian", default: None, tools: &[("pickaxe", 12)], look: Some(DamageLook { kind: DamageLookKind::Shards, size: 0.34, color: [110, 96, 128], crack: [12, 10, 16] }), chips: Some(Chips { count: 7, color: [42, 34, 54], speed: 2.6, size: 0.045 }) },
 ];
 
 /// Tools that wear (`durability.items`): (item, hits it survives).

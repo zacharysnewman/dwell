@@ -93,4 +93,10 @@ pub static DROPS: &[BlockDrops] = &[
     BlockDrops { block: "dwell:glacier_ice_ramp", cost: "dwell:glacier_ice", drops: &[DropRule { chance: 1.0, choices: &[DropChoice { item: "dwell:glacier_ice", min: 1, max: 1, weight: 1.0 }] }] },
     BlockDrops { block: "dwell:red_sandstone", cost: "dwell:red_sandstone", drops: &[DropRule { chance: 1.0, choices: &[DropChoice { item: "dwell:rock_shard", min: 8, max: 8, weight: 1.0 }] }] },
     BlockDrops { block: "dwell:red_sandstone_ramp", cost: "dwell:red_sandstone", drops: &[DropRule { chance: 1.0, choices: &[DropChoice { item: "dwell:rock_shard", min: 8, max: 8, weight: 1.0 }] }] },
+    BlockDrops { block: "dwell:basalt", cost: "dwell:basalt", drops: &[DropRule { chance: 1.0, choices: &[DropChoice { item: "dwell:rock_shard", min: 8, max: 8, weight: 1.0 }] }] },
+    BlockDrops { block: "dwell:obsidian", cost: "dwell:obsidian", drops: &[DropRule { chance: 1.0, choices: &[DropChoice { item: "dwell:rock_shard", min: 8, max: 8, weight: 1.0 }] }] },
+    BlockDrops { block: "dwell:lava", cost: "dwell:lava", drops: &[DropRule { chance: 1.0, choices: &[DropChoice { item: "dwell:lava", min: 1, max: 1, weight: 1.0 }] }] },
+    BlockDrops { block: "dwell:oak_sapling", cost: "dwell:oak_sapling", drops: &[DropRule { chance: 1.0, choices: &[DropChoice { item: "dwell:oak_sapling", min: 1, max: 1, weight: 1.0 }] }] },
+    BlockDrops { block: "dwell:pine_sapling", cost: "dwell:pine_sapling", drops: &[DropRule { chance: 1.0, choices: &[DropChoice { item: "dwell:pine_sapling", min: 1, max: 1, weight: 1.0 }] }] },
+    BlockDrops { block: "dwell:palm_sapling", cost: "dwell:palm_sapling", drops: &[DropRule { chance: 1.0, choices: &[DropChoice { item: "dwell:palm_sapling", min: 1, max: 1, weight: 1.0 }] }] },
 ];

@@ -20,5 +20,6 @@
     "scale": [0.3, 1]
   },
   "variety": { "crown": [0.8, 1.2], "lightness": [0.78, 1.15], "hue": [-0.035, 0.035] },
+  "sapling": { "item": "dwell:pine_sapling", "plantOn": ["dwell:grass", "dwell:dirt", "dwell:snowy_grass"], "dropChance": 0.05 },
   "growth": { "stages": 8, "daysPerStage": 3, "wild": [0, 1, 1, 1, 2, 3, 5, 12], "variants": 16 }
 }

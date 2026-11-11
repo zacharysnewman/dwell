@@ -306,9 +306,14 @@ step on the server every few seconds over loaded chunks, a stage every `growth.d
 days written as the difference between stages where nobody edited; felled trees stop; saved in the
 optional `tree_growth` table. `?growth=N` speeds it for a time-lapse.
 
-Not built: a sapling item to plant a tree (needs a per-tree record, its stage and the cells players edited,
-and the `growers` layer of §5: the stage advanced every `growth.daysPerStage` world days, the cells
-regenerated where nobody edited), per-tree leaf tints (`variety.lightness`, `hue`), frond blades (a `dwell:palm_frond` block), a pine needle block.
+**Saplings (ADR 0079 S4):** each species names a sapling item in its data (`sapling`: the block
+item, the `plantOn` ground, the leaves' `dropChance`). Placed on its ground the sapling becomes the
+species' stage-0 tree and a growth record (seeded by the position), which the growers step grows like
+a generated tree; on other ground the place is refused. Broken leaves of a recorded tree drop its
+sapling at the data's chance (adventure); creative lists the saplings under Plants.
+
+Not built: per-tree leaf tints (`variety.lightness`, `hue`), frond blades (a `dwell:palm_frond`
+block), a pine needle block, a sapling's own model.
 
 ## Sources
 
