@@ -48,6 +48,8 @@ export const CREATIVE = {
     { name: 'dwell:dynamite_green', label: 'Green dynamite', category: 'explosives' },
     { name: 'dwell:dynamite_yellow', label: 'Yellow dynamite', category: 'explosives' },
     { name: 'dwell:snowy_grass', label: 'Snowy grass', category: 'blocks' },
+    { name: 'dwell:snow', label: 'Snow', category: 'blocks' },
+    { name: 'dwell:glacier_ice', label: 'Glacier ice', category: 'blocks' },
     { name: 'dwell:snowy_leaves', label: 'Snowy leaves', category: 'plants' },
   ],
   hotbar: [

@@ -22,4 +22,8 @@ export const BLOCK_DAMAGE: readonly {
   { block: 'dwell:sand_ramp', default: 11, tools: { shovel: 7 } },
   { block: 'dwell:snowy_grass', default: 11, tools: { shovel: 7 } },
   { block: 'dwell:snowy_grass_ramp', default: 11, tools: { shovel: 7 } },
+  { block: 'dwell:snow', default: 6, tools: { shovel: 3 } },
+  { block: 'dwell:snow_ramp', default: 6, tools: { shovel: 3 } },
+  { block: 'dwell:glacier_ice', default: null, tools: { pickaxe: 4 } },
+  { block: 'dwell:glacier_ice_ramp', default: null, tools: { pickaxe: 4 } },
 ];

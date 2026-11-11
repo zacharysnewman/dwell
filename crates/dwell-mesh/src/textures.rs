@@ -45,7 +45,7 @@ pub const ATLAS_SIZE: usize = CELL * ATLAS_CELLS;
 pub const ATLAS_TILES: usize = ATLAS_CELLS * ATLAS_CELLS;
 
 /// The tiles in atlas order (the registry's texture names).
-pub const TILE_ORDER: [&str; 34] = [
+pub const TILE_ORDER: [&str; 36] = [
     "plain",
     "grass",
     "grassSide",
@@ -88,6 +88,9 @@ pub const TILE_ORDER: [&str; 34] = [
     "logCut",
     // The end grain inside an octagonal log's bark ring (its `crossSection.heart`, ADR 0072).
     "logHeart",
+    // Glacier ice's top and sides (0.52.45; plain snow takes `snow` on every face).
+    "glacierIceTop",
+    "glacierIceSide",
     // The fallback look of a state whose look or textures this build lacks (synced from a server,
     // ADR 0038): a magenta and black checker, never content.
     MISSING_TILE,

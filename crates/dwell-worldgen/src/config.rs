@@ -337,6 +337,7 @@ pub fn height_from_json(v: &Value) -> Result<HeightField, String> {
             ("iceAbove", &mut k.ice_above),
             ("iceDome", &mut k.ice_dome),
             ("snowBelowC", &mut k.snow_below_c),
+            ("iceBelowC", &mut k.ice_below_c),
             ("snowMaxSlope", &mut k.snow_max_slope),
             ("hotspotX", &mut k.hotspot_x),
             ("hotspotZ", &mut k.hotspot_z),
@@ -493,6 +494,11 @@ pub fn geology_from_json(v: &Value) -> Result<Geology, String> {
             .and_then(|t| t.get("snow"))
             .and_then(Value::as_str)
             .map_or(GEOLOGY.snow_block, leak),
+        ice_block: v
+            .get("tectonic")
+            .and_then(|t| t.get("ice"))
+            .and_then(Value::as_str)
+            .map_or(GEOLOGY.ice_block, leak),
     })
 }
 

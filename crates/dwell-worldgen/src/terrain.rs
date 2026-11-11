@@ -646,9 +646,19 @@ pub struct BiomeSet {
     drainage: Option<crate::geology::DrainageField>,
     /// Each stack's lowest soft layer's top (m within its period; T4's base level).
     soft_tops: Vec<f64>,
-    /// The snow line's cover palette (`terrain.json` `tectonics.snowBelowC`; `rocks.json`
-    /// `tectonic.snow`), and the line's °C and steepest slope; None when it is off.
-    snow: Option<(u16, f64, f64)>,
+    /// The snow line (`terrain.json` `tectonics.snowBelowC`; `rocks.json` `tectonic.snow`);
+    /// None when it is off.
+    snow: Option<SnowLine>,
+}
+
+/// The snow line's covers by palette: the snow below `below_c` °C on ground no steeper than
+/// `max_slope`, and there the glacier's ice (`tectonics.iceBelowC`) where colder than its °C.
+#[derive(Clone, Copy, Debug)]
+struct SnowLine {
+    snow: u16,
+    ice: Option<(u16, f64)>,
+    below_c: f64,
+    max_slope: f64,
 }
 
 impl BiomeSet {
@@ -711,18 +721,28 @@ impl BiomeSet {
             .then(|| crate::biomemap::BiomeField::with_params(map, world_seed, params));
         // The snow line (0.52.40): its cover's palette after the rocks', only when it is on.
         let snow = map.tectonics.snow_line().then(|| {
-            let b = dwell_blocks::require(geology.snow_block);
-            palettes.push(Bands {
-                ground: b,
-                under: b,
-                rock: b,
-                shore: b,
-            });
-            (
-                palettes.len() as u16 - 1,
-                map.tectonics.snow_below_c,
-                map.tectonics.snow_max_slope,
-            )
+            let mut cover = |name: &str| {
+                let b = dwell_blocks::require(name);
+                palettes.push(Bands {
+                    ground: b,
+                    under: b,
+                    rock: b,
+                    shore: b,
+                });
+                palettes.len() as u16 - 1
+            };
+            let snow = cover(geology.snow_block);
+            // The glacier (0.52.45): its cover's palette after the snow's, only when it is on.
+            let ice = map
+                .tectonics
+                .glacier()
+                .then(|| (cover(geology.ice_block), map.tectonics.ice_below_c));
+            SnowLine {
+                snow,
+                ice,
+                below_c: map.tectonics.snow_below_c,
+                max_slope: map.tectonics.snow_max_slope,
+            }
         });
         Self {
             list: list.to_vec(),
@@ -768,9 +788,13 @@ impl BiomeSet {
         slope: f64,
         celsius: impl Fn(f64) -> f64,
     ) -> Option<Option<u16>> {
-        let (palette, below_c, max_slope) = self.snow?;
-        (celsius(self.temperature(x, z, elevation)) < below_c)
-            .then_some((slope <= max_slope).then_some(palette))
+        let line = self.snow?;
+        let c = celsius(self.temperature(x, z, elevation));
+        let palette = match line.ice {
+            Some((ice, ice_c)) if c < ice_c => ice,
+            _ => line.snow,
+        };
+        (c < line.below_c).then_some((slope <= line.max_slope).then_some(palette))
     }
 
     /// The geography at (x, z) over the world height field's `elevation` m (None with one biome:

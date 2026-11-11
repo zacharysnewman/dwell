@@ -75,4 +75,8 @@ pub static DROPS: &[BlockDrops] = &[
     BlockDrops { block: "dwell:dynamite_yellow", cost: "dwell:dynamite_yellow", drops: &[DropRule { chance: 1.0, choices: &[DropChoice { item: "dwell:dynamite_yellow", min: 1, max: 1, weight: 1.0 }] }] },
     BlockDrops { block: "dwell:lit_dynamite_yellow", cost: "dwell:lit_dynamite_yellow", drops: &[] },
     BlockDrops { block: "dwell:log_ramp", cost: "dwell:log", drops: &[DropRule { chance: 1.0, choices: &[DropChoice { item: "dwell:log", min: 1, max: 1, weight: 1.0 }] }] },
+    BlockDrops { block: "dwell:snow", cost: "dwell:snow", drops: &[DropRule { chance: 1.0, choices: &[DropChoice { item: "dwell:snow", min: 1, max: 1, weight: 1.0 }] }] },
+    BlockDrops { block: "dwell:snow_ramp", cost: "dwell:snow", drops: &[DropRule { chance: 1.0, choices: &[DropChoice { item: "dwell:snow", min: 1, max: 1, weight: 1.0 }] }] },
+    BlockDrops { block: "dwell:glacier_ice", cost: "dwell:glacier_ice", drops: &[DropRule { chance: 1.0, choices: &[DropChoice { item: "dwell:glacier_ice", min: 1, max: 1, weight: 1.0 }] }] },
+    BlockDrops { block: "dwell:glacier_ice_ramp", cost: "dwell:glacier_ice", drops: &[DropRule { chance: 1.0, choices: &[DropChoice { item: "dwell:glacier_ice", min: 1, max: 1, weight: 1.0 }] }] },
 ];

@@ -78,6 +78,8 @@ pub struct Geology {
     pub core_stack: &'static str,
     /// The snow line's cover (`rocks.json` `tectonic.snow`; `terrain.json` `tectonics.snowBelowC`).
     pub snow_block: &'static str,
+    /// The glacier's cover (`rocks.json` `tectonic.ice`; `terrain.json` `tectonics.iceBelowC`).
+    pub ice_block: &'static str,
 }
 
 mod table {

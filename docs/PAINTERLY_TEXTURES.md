@@ -203,7 +203,7 @@ has not changed paints the baked atlas's texels exactly (a test compares every t
 `painterly.rgba`), and an exported edit run through `gen.mjs` bakes the pixels it previewed. It flags
 palette colours off the art direction (mean value outside about 0.04–0.96, a shadow clearly warmer or
 a light clearly cooler than its base; the utility and sky colours exempt; snow's and the deer cream's
-lights are the build's known deviations), downloads `materials.json` and `palette.json`, and tints
+lights are the build's known deviations; the `ice` ramp of glacier ice, 0.52.45, is inside the range: a pale blue-white base, a deeper blue shadow for its cracks and planes, a light warmed slightly for its painted sheen), downloads `materials.json` and `palette.json`, and tints
 Chisel's 3D section by each edited block's far colour. The prototype page stays for now: it is
 still generated, and also edits character and sky materials.
 

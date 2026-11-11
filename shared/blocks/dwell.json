@@ -8,7 +8,9 @@
     "dirt",
     "grass",
     "sand",
-    "snowy_grass"
+    "snowy_grass",
+    "snow",
+    "glacier_ice"
   ],
   "fluids": {
     "dwell:water": {
@@ -595,6 +597,42 @@
       "support": "carrier",
       "breakWith": "axe",
       "crossSection": "of"
+    },
+    {
+      "$comment": "Plain snow (owner approved 2026-11-11, with the glacier ice): a block of packed snow through, white on every face, for high ground where no turf lies under it. The snow line's cover on a tall peak (shared/worldgen/rocks.json `tectonic.snow`). Shovelled quickly; drops itself. Its ramps are stored like grass's (`rampFamilies`). Prototype content.",
+      "name": "snow",
+      "damage": { "default": 6, "shovel": 3, "look": { "kind": "scoops", "size": 0.36, "color": "#b9c9de", "crack": "#8fa3c0" }, "chips": { "count": 6, "color": "#e9eff6", "speed": 1.6, "size": 0.05 } },
+      "sound": "dwell:snow",
+      "density": 400,
+      "shape": "full",
+      "placeable": true,
+      "properties": { "flooded": ["false", "true"] },
+      "color": "#e9eff6",
+      "textures": "snow"
+    },
+    {
+      "name": "snow_ramp",
+      "damage": { "default": 6, "shovel": 3, "look": { "kind": "scoops", "size": 0.36, "color": "#b9c9de", "crack": "#8fa3c0" }, "chips": { "count": 6, "color": "#e9eff6", "speed": 1.6, "size": 0.05 } },
+      "family": "ramp",
+      "of": "snow"
+    },
+    {
+      "$comment": "Glacier ice (owner approved 2026-11-11): old, compacted ice, a pale blue-white with deeper blue cracks and a painted sheen (glossy-looking but opaque: no new render path). On a tall peak it covers the coldest gentle ground and the crater's dome above the snow (shared/worldgen/rocks.json `tectonic.ice`, terrain.json `tectonics.iceBelowC`). Like stone, hands can't break it; a pickaxe breaks it in fewer hits than stone. Drops itself. Its ramps are stored like stone's (`rampFamilies`). Prototype content.",
+      "name": "glacier_ice",
+      "damage": { "default": null, "pickaxe": 4, "look": { "kind": "shards", "size": 0.3, "color": "#eef6fa", "crack": "#4f7fb8" }, "chips": { "count": 8, "color": "#cfe6f2", "speed": 2.8, "size": 0.04 } },
+      "sound": "dwell:stone",
+      "density": 917,
+      "shape": "full",
+      "placeable": true,
+      "properties": { "flooded": ["false", "true"] },
+      "color": "#b4d6ea",
+      "textures": { "top": "glacierIceTop", "side": "glacierIceSide", "bottom": "glacierIceSide" }
+    },
+    {
+      "name": "glacier_ice_ramp",
+      "damage": { "default": null, "pickaxe": 4, "look": { "kind": "shards", "size": 0.3, "color": "#eef6fa", "crack": "#4f7fb8" }, "chips": { "count": 8, "color": "#cfe6f2", "speed": 2.8, "size": 0.04 } },
+      "family": "ramp",
+      "of": "glacier_ice"
     }
   ]
 }

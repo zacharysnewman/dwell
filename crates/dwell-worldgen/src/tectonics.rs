@@ -73,6 +73,9 @@ pub struct Tectonics {
     pub ice_dome: f64,
     /// The snow line: cover below `snow_below_c` °C where no steeper than `snow_max_slope`.
     pub snow_below_c: f64,
+    /// The glacier: gentle ground colder than `ice_below_c` °C is ice (`rocks.json`
+    /// `tectonic.ice`); −100 is off.
+    pub ice_below_c: f64,
     pub snow_max_slope: f64,
     pub hotspot_count: u32,
     pub hotspot_x: f64,
@@ -237,6 +240,11 @@ impl Tectonics {
     /// Whether the snow line is on (`snow_below_c` above −100 °C).
     pub fn snow_line(&self) -> bool {
         self.snow_below_c > -100.0
+    }
+
+    /// Whether the glacier is on (`ice_below_c` above −100 °C, with the snow line on).
+    pub fn glacier(&self) -> bool {
+        self.snow_line() && self.ice_below_c > -100.0
     }
 
     /// An arc cone's summit (face-local m): `summit_offset` m from its centre toward `summit_angle`.
