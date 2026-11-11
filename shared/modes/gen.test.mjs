@@ -8,9 +8,10 @@ test("the build's data validates: creative is the default, adventure is experime
   assert.equal(d.defaultMode, 'creative');
   const creative = d.modes.find((m) => m.name === 'creative');
   const adventure = d.modes.find((m) => m.name === 'adventure');
-  assert.deepEqual(creative.abilities, ['flight', 'brushes', 'unlimitedBlocks', 'map', 'mapRevealed']);
+  assert.deepEqual(creative.abilities, ['flight', 'brushes', 'unlimitedBlocks', 'map', 'mapRevealed', 'instantBreaks']);
   // The big map shows everything in creative; adventure explores it (owner, 2026-11-08).
   assert.ok(!adventure.abilities.includes('mapRevealed'));
+  assert.ok(!adventure.abilities.includes('instantBreaks'));
   assert.match(modesRust(d), /Ability::Map\.bit\(\) \| Ability::MapRevealed\.bit\(\)/);
   assert.deepEqual(adventure.abilities, ['damage', 'map', 'stamina', 'oxygen']);
   assert.equal(adventure.experimental, true);

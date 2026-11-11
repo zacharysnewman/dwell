@@ -35,10 +35,14 @@ pub enum Ability {
     Stamina,
     /// Air runs out with the head under water, and then the player drowns (ADR 0069).
     Oxygen,
+    /// Breaking with anything but a breaking tool (an empty hand, a block, any other item) takes
+    /// one hit, whatever the block's `damage` says; a tool held keeps its hits
+    /// (`dwell_protocol::damage::hits_to_break_for`; owner, 2026-11-11). Server and client.
+    InstantBreaks,
 }
 
 impl Ability {
-    pub const ALL: [Ability; 8] = [
+    pub const ALL: [Ability; 9] = [
         Ability::Damage,
         Ability::Flight,
         Ability::Brushes,
@@ -47,6 +51,7 @@ impl Ability {
         Ability::MapRevealed,
         Ability::Stamina,
         Ability::Oxygen,
+        Ability::InstantBreaks,
     ];
     /// The data's name (`shared/modes/gen.mjs` `ABILITIES`).
     pub const fn name(self) -> &'static str {
@@ -59,6 +64,7 @@ impl Ability {
             Ability::MapRevealed => "mapRevealed",
             Ability::Stamina => "stamina",
             Ability::Oxygen => "oxygen",
+            Ability::InstantBreaks => "instantBreaks",
         }
     }
     pub const fn bit(self) -> u32 {

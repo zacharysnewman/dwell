@@ -144,18 +144,77 @@ dwell_world::both_faces!(
                 "{mode}: metal pickaxe"
             );
         }
+        let mut fx = scene_with(f, config(f, "adventure"));
+        empty_hand(&mut fx);
+        assert_eq!(hits_to_break(&mut fx, f, DIRT), 11, "adventure: bare hands");
+    }
+);
+
+/// Adventure: selects an empty inventory slot (a bare hand).
+fn empty_hand(fx: &mut Fixture) {
+    let slot = fx
+        .server
+        .inventory_of(1)
+        .unwrap()
+        .slots
+        .iter()
+        .position(|s| s.is_none())
+        .expect("an empty slot") as u8;
+    fx.send(
+        1,
+        Message::InventoryAction(InventoryAction::Select { slot }),
+    );
+    for _ in 0..2 {
+        fx.server.step();
+    }
+}
+
+dwell_world::both_faces!(
+    fn in_creative_anything_but_a_tool_breaks_any_block_in_one_hit(f: FaceFrame) {
+        // Owner, 2026-11-11: "I should be able to break any block while holding anything or
+        // nothing with the exception of tools" (creative's `instantBreaks`).
         let mut fx = scene_with(f, config(f, "creative"));
-        assert_eq!(hits_to_break(&mut fx, f, DIRT), 11, "creative: bare hands");
+        assert_eq!(hits_to_break(&mut fx, f, STONE), 1, "bare hands: stone");
+        assert_eq!(hits_to_break(&mut fx, f, DIRT), 1, "bare hands: dirt");
+        // Holding a block (the hotbar tells no tool, or names a non-tool item).
+        hold(&mut fx, "creative", "");
+        assert_eq!(hits_to_break(&mut fx, f, [-3, BASE - 1, 0]), 1, "a block");
+        hold(&mut fx, "creative", "dwell:dirt");
+        assert_eq!(
+            hits_to_break(&mut fx, f, [-4, BASE - 1, 0]),
+            1,
+            "dirt named"
+        );
+        // A tool keeps its hits.
+        hold(&mut fx, "creative", "dwell:stone_pickaxe");
+        assert_eq!(
+            hits_to_break(&mut fx, f, [-5, BASE - 1, 0]),
+            5,
+            "stone pickaxe"
+        );
     }
 );
 
 dwell_world::both_faces!(
     fn bare_hands_and_the_wrong_tool_do_nothing_to_stone(f: FaceFrame) {
-        let mut fx = scene_with(f, config(f, "creative"));
+        // Adventure (creative breaks anything without a tool, above).
+        let mut fx = scene_with(f, config(f, "adventure"));
+        empty_hand(&mut fx);
         for _ in 0..12 {
             hit(&mut fx, f, STONE);
         }
         assert_eq!(block_at(&mut fx, f, STONE), "dwell:stone", "bare hands");
+        // Creative with a tool that lists none for stone (a shovel) can't either.
+        let mut fx = scene_with(f, config(f, "creative"));
+        hold(&mut fx, "creative", "dwell:metal_shovel");
+        for _ in 0..12 {
+            hit(&mut fx, f, STONE);
+        }
+        assert_eq!(
+            block_at(&mut fx, f, STONE),
+            "dwell:stone",
+            "creative: a shovel"
+        );
         // Adventure starts holding an axe: the wrong tool for stone, which lists none for it.
         let mut fx = scene_with(f, config(f, "adventure"));
         for _ in 0..12 {

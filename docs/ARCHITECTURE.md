@@ -813,7 +813,9 @@ ADR 0078, docs/BLOCK_DAMAGE.md]:** a block's `damage` (block data, generated int
 tool class or item (`dwell_protocol::damage::hits_to_break`: item, else class ÷ tier speed, else
 default; none: can't); the server keeps each damaged cell's state, hits and up to four hit marks
 (`dwell_protocol::damage::Damage`), acks a hit short of the count as refused (the block stays), breaks
-it on the last, spreads half its certain drops over the hits, and clears a changed cell's damage; the
+it on the last, spreads half its certain drops over the hits, and clears a changed cell's damage; in a
+mode with `instantBreaks` (creative, 0.52.51) anything but a breaking tool breaks every block in one hit
+(`dwell_protocol::damage::hits_to_break_for`, asked by the server and the client's prediction alike); the
 client predicts only one-hit breaks and tells the server its held pickaxe or shovel by
 `ChopAction::Held`. **The look [built, D2 0.52.28]:** the client keeps the server's `Damage` per cell
 (`ChunkStream::set_damage`), the chunk's mesh job carries its damaged cells
@@ -2892,7 +2894,8 @@ a name and the abilities it allows, from a fixed vocabulary — `damage` (every 
 (without it placing uses items up and breaking drops them: inventories, below) and `map` (0.50.37,
 ADR 0068: the client shows the minimap and the explored map; both modes have it) and `mapRevealed`
 (0.50.46: the big map shows the whole world, unexplored ground coloured from the generator; creative
-only), and `stamina` and `oxygen` (0.50.57, ADR 0069: below; adventure only). Creative (the
+only), and `stamina` and `oxygen` (0.50.57, ADR 0069: below; adventure only), and `instantBreaks` (0.52.51,
+docs/BLOCK_DAMAGE.md §7: anything but a tool breaks any block in one hit; creative only). Creative (the
 default: new worlds, and worlds saved before modes) has flight, brushes and unlimited blocks and no
 damage; adventure (experimental) has damage, stamina and oxygen. The mode is a `WorldSettings` field (optional tag
 `0x82`), saved with the world; the New world form picks it, and the host changes it at runtime

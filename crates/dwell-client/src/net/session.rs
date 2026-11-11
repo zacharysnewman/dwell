@@ -201,6 +201,16 @@ impl Session {
         }
     }
 
+    /// Whether the world's mode breaks every block in one hit without a tool (`instantBreaks`):
+    /// the default mode's until Welcome has arrived.
+    pub fn instant_breaks(&self) -> bool {
+        use dwell_protocol::modes::Ability;
+        match self.world {
+            Some(w) => w.allows(Ability::InstantBreaks),
+            None => dwell_protocol::modes::default_mode().allows(Ability::InstantBreaks),
+        }
+    }
+
     /// The player chose Continue in the join prompt.
     pub fn accept_registry(&mut self) {
         if matches!(self.state, SessionState::Confirming { .. })

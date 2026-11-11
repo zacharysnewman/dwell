@@ -626,6 +626,9 @@ pub struct Game<S: Scene> {
     health: u8,
     /// The world's stamina and oxygen rules the prediction runs (ADR 0069).
     vitals_rules: dwell_protocol::vitals::VitalsRules,
+    /// The world's mode breaks every block in one hit without a tool (`instantBreaks`,
+    /// creative): the break prediction asks it as the server does.
+    instant_breaks: bool,
     dead: bool,
     death_feet: [f64; 3],
     /// The streaming probe's last feet and heading (`probe_stream`).
@@ -843,6 +846,8 @@ impl<S: Scene> Game<S> {
             tick_rate: 1.0,
             health: 0,
             vitals_rules: Default::default(),
+            instant_breaks: dwell_protocol::modes::default_mode()
+                .allows(dwell_protocol::modes::Ability::InstantBreaks),
             dead: false,
             death_feet: [0.0; 3],
             probe: ([0.0; 3], [0.0, 1.0]),
@@ -1868,8 +1873,7 @@ impl<S: Scene> Game<S> {
                         let [x, y, z] = target.cell;
                         let block = self.voxel(x, y, z);
                         let name = dwell_blocks::block_of(block).name;
-                        let held = self.held_break_item();
-                        if dwell_protocol::damage::hits_to_break(name, held) == Some(1) {
+                        if self.hits_to_break(name) == Some(1) {
                             self.edit_sounds.local_break(
                                 target.cell,
                                 block,
@@ -2297,6 +2301,21 @@ impl<S: Scene> Game<S> {
         self.predictor.set_vitals_rules(rules);
     }
 
+    /// Whether the world's mode breaks every block in one hit without a tool (`instantBreaks`,
+    /// creative; owner 2026-11-11), so the break prediction matches the server's.
+    pub fn set_instant_breaks(&mut self, on: bool) {
+        self.instant_breaks = on;
+    }
+
+    /// The hits the server will take to break `block` with what is held now.
+    fn hits_to_break(&self, block: &str) -> Option<u32> {
+        dwell_protocol::damage::hits_to_break_for(
+            block,
+            self.held_break_item(),
+            self.instant_breaks,
+        )
+    }
+
     pub fn set_capabilities(&mut self, region_edits: bool, brushes: bool) {
         self.region.enabled = region_edits;
         self.region.keep = brushes;
@@ -2441,15 +2460,15 @@ impl<S: Scene> Game<S> {
                 // A hit short of breaking leaves the block (docs/BLOCK_DAMAGE.md): only a break
                 // the data says takes one hit is shown at once (the server's damage so far isn't
                 // the client's; a last hit shows when the server's change arrives).
-                let held = self.held_break_item();
-                let world = self.streamer.store_mut();
                 if e.action == dwell_protocol::BlockEditAction::Break {
                     let [x, y, z] = e.cell;
-                    let block = dwell_blocks::block_of(world.get_voxel(x, y, z)).name;
-                    if dwell_protocol::damage::hits_to_break(block, held) != Some(1) {
+                    let block =
+                        dwell_blocks::block_of(self.streamer.store_mut().get_voxel(x, y, z)).name;
+                    if self.hits_to_break(block) != Some(1) {
                         return None;
                     }
                 }
+                let world = self.streamer.store_mut();
                 let out = dwell_world::edit::check_block_edit(
                     world,
                     e,

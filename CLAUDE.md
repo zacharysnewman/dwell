@@ -71,6 +71,8 @@ and friend worlds), with a small master server for discovery; there are no offic
 - `docs/WATER_SURFACE_GRID.md` — design for Phase 53 (ADR 0060): water as a simulated surface grid in its own
   layer (sleeping chunks, pools, a held sea), generated water filled by it at world creation; replaces
   Phase 52's basins and pool graph when built.
+- `docs/WORK_QUEUE.md` — the owner's ordered work queue with the decisions behind each item; update it in the change that
+  starts, finishes or re-orders an item.
 - `docs/BUGS.md` — the open bugs the owner reported, with repros and suspects; fixed ones move to its Fixed list.
 - `docs/BLOCK_DAMAGE.md` — design for Phase 58 (ADR 0078): blocks take hits to break by tool (each block's
   `damage` data: a default and per tool class or item), the server's per-cell damage, saved in an
