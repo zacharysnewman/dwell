@@ -11,7 +11,7 @@ use dwell_look::water_tiers::{WATER_TIERS, WaterTier, tier_bits};
 use dwell_look::{hex, srgb_to_linear};
 
 /// vec4s per fluid in the buffer (`Fluid` in the WGSL).
-pub const FLUID_VEC4S: usize = 16;
+pub const FLUID_VEC4S: usize = 17;
 /// Bytes per fluid.
 pub const FLUID_STRIDE: u64 = (FLUID_VEC4S * 16) as u64;
 
@@ -291,6 +291,7 @@ pub fn pack_fluids(fluids: &[FluidInfo]) -> Vec<f32> {
             u.underside_sun_power as f32,
             u.underside_cell_scale as f32,
         ]);
+        out.extend_from_slice(&[u.window_cells as f32, u.window_bodies as f32, 0.0, 0.0]);
     }
     if out.is_empty() {
         // A storage binding can't be empty: one zero fluid that nothing indexes.
@@ -1092,6 +1093,7 @@ mod tests {
                 u.underside_cell_scale,
             ];
             assert_eq!(v[60..64], under.map(|x| x as f32));
+            assert_eq!(v[64..66], [u.window_cells as f32, u.window_bodies as f32]);
         }
         // A fluid with no look of its own takes the default's (fog from the eye, the registry's rates).
         assert_eq!(underwater_look("test:oil"), &DEFAULT_UNDERWATER);
@@ -1538,6 +1540,16 @@ mod tests {
             b.contains("(u32(frame.reflect_sky.y + 0.5) & 2u) != 0u"),
             "only on a tier with bodyPath"
         );
+        assert!(
+            b.contains("* mix(1.0, look.x, f.window.x), to_surface, f));"),
+            "the underside's cells over the window's sky at the look's share"
+        );
+        let w = dwell_look::underwater::underwater_look("dwell:water");
+        assert!(
+            w.window_cells < 0.5,
+            "water's window is mostly the clear sky"
+        );
+        assert!(w.window_bodies > 0.0, "and shows the sun and moon");
         assert!(
             b.contains(
                 "inverse_display(frame.shafts_window.rgb) * max(zenith.r, max(zenith.g, zenith.b))"

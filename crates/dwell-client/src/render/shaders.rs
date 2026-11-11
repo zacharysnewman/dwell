@@ -181,6 +181,9 @@ struct Fluid {
     // cells, dark gaps), y the sun patch's strength, z its tightness (a power), w the cells'
     // scale against the floor's caustics (a whole number, so the pattern still wraps)
     underside: vec4f,
+    // Snell's window seen from below (WATER_RENDERING.md §16): x the share of the underside's
+    // cells over the sky in it, y the sun's and moon's discs' strength in it; zw spare
+    window: vec4f,
 };
 @group(0) @binding(4) var<storage, read> fluids: array<Fluid>;
 // The water's tiles (render/water_tiles.rs): gradient noise and its derivatives over NOISE_TILE
@@ -1586,17 +1589,18 @@ fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
             let up = face_up(frame.eye.y);
             let out = water_exit(dir, normalize(up + vec3f(slope.x, 0.0, slope.y)), ior);
             var seen = sky(out);
-            if ((u32(frame.reflect_sky.y + 0.5) & 2u) != 0u) {
+            if ((u32(frame.reflect_sky.y + 0.5) & 2u) != 0u && f.window.y > 0.0) {
                 let px = 2.0 * max(frame.day.stars.z, 1e-5) * ior;
                 let moon = dwell_moon(out, frame.day, px);
-                seen = mix(seen, max(seen, seen * 0.4 + moon.rgb), moon.w);
+                seen = mix(seen, max(seen, seen * 0.4 + moon.rgb * f.window.y), moon.w);
                 let sun = dwell_sun_disc(out, up, frame.day, px);
-                seen = min(mix(seen, max(seen, sun.rgb), sun.w), vec3f(1.0));
+                seen = mix(seen, max(seen, sun.rgb * f.window.y), sun.w);
             }
             let zenith = sky_radiance(up);
             let lift = inverse_display(frame.shafts_window.rgb) * max(zenith.r, max(zenith.g, zenith.b));
             let sky_in = mix(inverse_display(seen), lift, frame.shafts_window.w * (0.55 + 0.45 * inside));
-            let window = display(underwater((sky_in + underwater(vec3f(0.0), 1e6, f) * look.y) * look.x, to_surface, f));
+            // The sky through the window, waved by the underside's cells at the look's share.
+            let window = display(underwater((sky_in + underwater(vec3f(0.0), 1e6, f) * look.y) * mix(1.0, look.x, f.window.x), to_surface, f));
             back = mix(mirror, window, inside);
         } else {
             back = mirror;

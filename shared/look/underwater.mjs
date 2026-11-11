@@ -46,6 +46,7 @@ const PARTS = {
     mirrorWarpPx: [0, 32],
   },
   underside: { texture: [0, 1], breakup: [0, 1], sunPatch: [0, 8], sunPower: [1, 256], cellScale: [1, 4] },
+  window: { cells: [0, 1], bodies: [0, 4] },
   fog: { clearM: [0, 256], density: [0, 16, true] },
 };
 
@@ -115,6 +116,8 @@ function lookRust(name, l, indent) {
     `${i}    underside_sun_patch: ${rf(l.underside.sunPatch)},`,
     `${i}    underside_sun_power: ${rf(l.underside.sunPower)},`,
     `${i}    underside_cell_scale: ${rf(l.underside.cellScale)},`,
+    `${i}    window_cells: ${rf(l.window.cells)},`,
+    `${i}    window_bodies: ${rf(l.window.bodies)},`,
     `${i}    fog_clear_m: ${rf(l.fog.clearM)},`,
     `${i}    fog_density: ${rf(l.fog.density)},`,
     `${i}}`,
