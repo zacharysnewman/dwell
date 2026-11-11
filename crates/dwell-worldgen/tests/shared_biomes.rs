@@ -15,7 +15,8 @@ fn a_worlds_generators_share_one_biome_set_per_face() {
     // both-faces: installs and generates the world's two faces together.
     let seed = 7;
     for f in [Face::A, Face::B] {
-        let bytes = worldgen_map_bytes(face_seed(seed, f), "test:starter").expect("the starter's map");
+        let bytes =
+            worldgen_map_bytes(face_seed(seed, f), "test:starter").expect("the starter's map");
         dwell_worldgen::worldmap::install(&bytes).expect("installs");
     }
     let before = biome_sets_built();

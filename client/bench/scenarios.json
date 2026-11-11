@@ -2,6 +2,20 @@
   "$comment": "Dev bench scenarios (docs/DEV_TOOLS.md; scripts/scenarios.ts describes the steps, scripts/bench.ts runs them). Each runs in a fresh local world: the player at the spawn, then the steps in order.",
   "scenarios": [
     {
+      "name": "memory-phone",
+      "notes": "A phone's memory (BUGS.md #70; run with --touch for the phone tier): an iPhone-sized page, memory() at the end of loading and 30 s later. A test world by --compare with a params config ({\"worldgen\": \"test:starter\"}). Keep the total well under 1 GB: iOS Safari reloads a tab over ~1-1.5 GB.",
+      "window": { "width": 393, "height": 852, "pixelRatio": 3 },
+      "steps": [
+        { "do": "settle", "maxS": 120 },
+        { "do": "mark" },
+        { "do": "record", "name": "loaded" },
+        { "do": "wait", "s": 30 },
+        { "do": "mark" },
+        { "do": "record", "name": "after30" },
+        { "do": "shot", "name": "after30" }
+      ]
+    },
+    {
       "name": "idle-spawn",
       "notes": "Standing at the spawn looking at the horizon once the LOD has loaded: the steady-state frame.",
       "steps": [

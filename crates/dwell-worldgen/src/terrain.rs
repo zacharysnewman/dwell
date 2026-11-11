@@ -1009,7 +1009,9 @@ pub fn biome_sets_built() -> usize {
 pub fn shared_biomes(map: &Arc<WorldMap>, world_seed: u64) -> Arc<BiomeSet> {
     type Entry = (std::sync::Weak<WorldMap>, u64, Arc<BiomeSet>);
     static SETS: std::sync::Mutex<Vec<Entry>> = std::sync::Mutex::new(Vec::new());
-    let mut sets = SETS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut sets = SETS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     // A map no longer held drops its set (the weak keeps its address from being reused meanwhile).
     sets.retain(|(m, _, _)| m.strong_count() > 0);
     if let Some((_, _, set)) = sets
@@ -1019,13 +1021,9 @@ pub fn shared_biomes(map: &Arc<WorldMap>, world_seed: u64) -> Arc<BiomeSet> {
         return set.clone();
     }
     let set = Arc::new(match &map.worldgen {
-        Some(w) => BiomeSet::with_geology(
-            &w.edit.biomes,
-            map,
-            world_seed,
-            w.edit.map,
-            w.edit.geology,
-        ),
+        Some(w) => {
+            BiomeSet::with_geology(&w.edit.biomes, map, world_seed, w.edit.map, w.edit.geology)
+        }
         None => BiomeSet::new(BIOMES, map, world_seed),
     });
     sets.push((Arc::downgrade(map), world_seed, set.clone()));
