@@ -243,6 +243,38 @@ crown heart block, the cells they cross listed as frond blocks. **Not in the gam
 `shared/trees` data, no thin log widths, no palm blocks; adopting it needs an ADR (how species relate
 to the hand-built structures and the skeleton reveal of §1).
 
+## 10. Leaves as a canopy (Leaf Lab option 5) **[built in part, 0.52.56]**
+
+Owner, 2026-11-11: "#5 looks really good with defaults"; "Cards could only show on near trees";
+"We do need better low rez trees the ones directly beyond high detail look nothing like the main
+trees." Leaves stay blocks; the look is data (`shared/look/leaves.json`: the blocks by name,
+`canopyBlend` 0.75, `chamfer` 0.28 cells), drawn by the chunk mesher (`dwell-mesh` `mesher/leaves.rs`).
+
+- **Built: chamfered exposed cells.** A leaf cell's edges (corners) are cut by planes where both
+  (all three) faces meeting there are exposed (no leaf, and no full opaque cube, beside them), as the
+  Lab's `leafBlocks`. On ½ m cells the cut is in cells: 0.28 m across, 0.14 m up. **The Lab's dark
+  gaps are fixed**: where a neighbour leaf is cut and this one not (or less), the part of their
+  shared face the neighbour's cut uncovers is drawn, by clipping this cell's face by each of the
+  neighbour's planes in turn, lit from the faces the cut looks out of.
+- **Built: canopy normals.** Each vertex's normal leans 0.75 toward the crown's outward direction.
+  **Deviation:** the Lab fits an ellipsoid to each tree's crown; the mesher has no tree record (the
+  chunk's voxels and a one-cell apron only), so the outward direction is away from the centroid of
+  the leaf cells within 3 m of the point (prefix sums over the padded chunk). Near a chunk border the
+  reach is cut to the same distance on both sides, so the two chunks agree on the border itself;
+  a tree record or a wider leaf apron would let it see the whole crown (round 2).
+- **Built: leaf cards** (`cards`: density 0.55, size 0.95 m ±25 %, sway 0.04 m, faded out from 48
+  to 64 m): per exposed face a hashed number of alpha-cut quads (the leaf block's tile), standing a
+  little off the face and turned toward the crown's outward direction, in the cutout mesh with the
+  plants' `plants` stream (sway and the distance fade, so none draws past 64 m) and no ink. The
+  client meshes none on a CPU adapter (`render::cards_for`, `ChunkFlags::cards`, the mesh job's bit 2).
+  **Deviation:** the Lab painted a leaf-clump tile; the cards use the leaf block's own tile for now.
+- **Not built yet: far trees that match** (the LOD's trees with octagon trunks, the crown
+  downsampled, the same colours and canopy lighting). Today the LOD draws trees two ways
+  (`dwell-worldgen` `terrain.rs` `lod_trees`): at its 1 m and 2 m levels each tree's own voxels are
+  point-sampled into the section's cells (plain cubes: square trunks, unchamfered leaves, the
+  axis face tints and normals of `lod_mesher`); coarser, a share of columns shows the canopy block
+  on its top cell.
+
 ## Sources
 
 - Runions, Lane & Prusinkiewicz 2007, space colonization: https://algorithmicbotany.org/papers/colonization.egwnp2007.html

@@ -134,6 +134,8 @@ pub struct Pool {
     ready: Vec<Done>,
     /// Chunk meshes take their liquid tops (false while the scene draws the heightfield).
     pub water_tops: bool,
+    /// Chunk meshes carry leaf cards (false on a CPU adapter, `Scene::draws_cards`).
+    pub cards: bool,
     /// Where the player is (m; [`Self::set_focus`]): chunk jobs near it start first.
     focus: Option<[f64; 3]>,
     /// How many times the usual chunk meshes are in flight (`set_frame_ms`).
@@ -176,6 +178,7 @@ impl Pool {
             in_flight: [0; 2],
             ready: Vec::new(),
             water_tops: true,
+            cards: true,
             focus: None,
             frame_scale: 1,
         }));
@@ -419,7 +422,10 @@ impl Mesher for MeshJobs {
         2 * pool.capacity(true) * pool.frame_scale
     }
     fn mesh(&mut self, job: MeshJob) {
-        let water_tops = self.0.borrow().water_tops;
+        let (water_tops, cards) = {
+            let p = self.0.borrow();
+            (p.water_tops, p.cards)
+        };
         self.0.borrow_mut().submit(
             Purpose::ChunkMesh(job.coord, job.token),
             Job::MeshChunk {
@@ -431,6 +437,7 @@ impl Mesher for MeshJobs {
                 damage: job.damage,
                 ground: job.ground.map(|(seed, gone)| (seed, gone, job.generated)),
                 water_tops,
+                cards,
             },
         );
     }

@@ -46,6 +46,8 @@ pub enum Job {
         ground: Option<(u64, Vec<[i32; 3]>, Vec<u16>)>,
         /// Liquid tops are meshed (false: the GPU heightfield draws them; `dwell_mesh::ChunkFlags`).
         water_tops: bool,
+        /// Leaf cards are meshed (false on a CPU adapter; `dwell_mesh::ChunkFlags`).
+        cards: bool,
     },
     /// An LOD section's meshes.
     MeshSection {
@@ -268,6 +270,7 @@ impl Runner {
                 damage,
                 ground,
                 water_tops,
+                cards,
             } => match dwell_mesh::mesh_chunk_damaged(
                 &padded,
                 &light,
@@ -283,7 +286,7 @@ impl Runner {
                         density: self.ground_density(origin),
                     })
                     .as_ref(),
-                dwell_mesh::ChunkFlags { water_tops },
+                dwell_mesh::ChunkFlags { water_tops, cards },
                 &damage,
             ) {
                 Ok(m) => Output::ChunkMesh(Box::new(m)),
