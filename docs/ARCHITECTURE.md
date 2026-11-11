@@ -1751,6 +1751,7 @@ follow.
    `TerrainGenerator::tree_density_at`, with the climate's factor on candidates and the LOD canopy);
    a rule no biome of the world lists stands nowhere. Two more rules, `broadleaf_groves` and
    `boulders`, are listed by preset biomes only, so the default world (the pines at 1) is unchanged.
+   Ground items follow a biome's `ground` the same way (§ Ground items, 0.52.41).
    `trees_sparse` finds the same trees asking columns per candidate (Chisel's 3D section). The sky test (step 3) leaves room
    for the tallest structure over the highest ground; the spawn's level patch is clear of trees.
    The trees are voxels of the generated chunk — seed terrain, saved whole with the chunk once it
@@ -2956,7 +2957,17 @@ worldgen change: `dwell_world::ground` (`Rules::item_at`, `scatter_chunk`) puts 
 open cell over a full block, by the rules in `shared/ground/ground.json` (each a kind, the blocks it
 lies on, optionally the canopy blocks within some rows above or a wall some rows tall within some
 cells, and a density; the first rule that holds and whose roll hits wins), rolled from a hash of
-the world seed and the face-local cell (face B mirrors face A). `shared/ground/gen.mjs` checks the
+the world seed and the face-local cell (face B mirrors face A). **Per biome [built, 0.52.41, ADR 0074 B5]:** a biome's
+optional `ground` (kind → density 0–3) multiplies each kind's rules' densities where it has weight
+(no `ground`: every kind 1, so the default world's scatter is unchanged; a `ground` that does not
+name a kind: none of it). The biome weights reach the scatter as a per-chunk-column table,
+`GroundDensity` (each kind's multiplier at the column's four corners, eased bilinearly over its
+cells), from `TerrainGenerator::ground_density_chunk` (`BifacialTerrain::ground_density`, the
+chunk's face): the client's mesh jobs compute it in the worker that holds the generator and hand it
+back with the mesh (`ChunkMeshes::ground`, the job codec) for the crosshair; the server computes it
+lazily (`dwell_worldgen::ground_density_for`, built only when a biome of the world has a `ground`)
+and caches it per chunk; all three pass it to `Rules::with_density`. A multiplier of exactly 1 rolls
+as before. `shared/ground/gen.mjs` checks the
 names against the blocks and the inventory items and emits `dwell-world` `ground.gen.rs`. The
 server, the client's crosshair and the client's mesh jobs run the same function on their own blocks
 (the mesh jobs on their sky volume: rules look at most 16 rows and 6 cells away, the apron). **The

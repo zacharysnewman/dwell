@@ -297,3 +297,12 @@ which walking near collects; in creative, where breaking drops nothing, it simpl
 goes to the item when it is nearer than the block behind it, so the ground under it isn't broken.
 There is no pick-up button: E is the backpack, X the spyglass. The server keeps the knocked ones gone
 (the world's `ground_gone` table); breaking the block under one knocks it loose too.
+
+**Per biome** (0.52.41, ADR 0074 B5): a biome's optional `ground` (`shared/worldgen/biomes`, kind
+name → density 0–3) multiplies each kind's rule densities where the biome has weight; without it
+every kind is at 1 (the default biome: the scatter as before), and a kind its `ground` does not name
+lies nowhere it rules. The presets: the sand desert, red rock mesa and badlands more rocks and no
+sticks; the boreal, mixed and cold rain forests more sticks. The weights reach the server, the mesh
+jobs and the crosshair as each chunk column's `GroundDensity` (four corners, eased), from the
+generator; ARCHITECTURE.md "Ground items". Chisel has a slider per kind per biome, and its
+placements overlay shows the ground items in their looks' colours beside the structures.

@@ -112,7 +112,7 @@
   the coast into islands; the example world setting `shared/worldgen/worlds/archipelago.json` and the
   `test:archipelago` fixture biome (sand beaches, turquoise water, the pines as placeholder trees).
   Deviation: the game's water shader does not take the per-column look yet; Chisel's preview does.)*
-- **B5** trees, ground items and structures per biome. *(built in part, 0.52.39: a biome's
+- **B5** trees, ground items and structures per biome. *(built in part, 0.52.39 and 0.52.41: a biome's
   `placements` are now the rules that stand where it has weight, a placement no biome of the world
   lists standing nowhere, and its optional `trees` (placement name → density in [0, 3], 1 when not
   given, 0 none) multiplies that placement's chance by the biomes' weights (`TerrainGenerator::
@@ -125,9 +125,20 @@
   savanna, wetland and tropical beach sparse broadleaf as the palm's placeholder). Chisel: a density
   slider per placement rule per biome, a `placements` overlay (structures expected per hectare,
   `placement_density_at`), and the 3D section draws trees and boulders as trunk and canopy boxes for
-  squares up to 1 km (`trees_sparse`, the chunks' trees exactly). Deviations, left for later: ground
-  items per biome (the scatter runs in the mesher and the server from voxels alone, with no biome at
-  hand: it needs a per-chunk biome table on `GroundJob` and the server's pick-up check); spacing per
+  squares up to 1 km (`trees_sparse`, the chunks' trees exactly). Ground items per biome (0.52.41): a biome's optional
+  `ground` (ground item kind → density in [0, 3]; none: every kind 1, the default biome; given, a
+  kind it does not name lies nowhere it rules, as with `placements`) multiplies the kind's rule
+  densities by the biomes' weights. The weights reach the scatter as a per-chunk-column table,
+  `dwell_world::ground::GroundDensity` (each kind's multiplier at the column's four corners, eased
+  bilinearly), from `TerrainGenerator::ground_density_chunk`: the client's mesh jobs compute it in
+  the worker that already holds the generator (`GroundJob::density`) and return it with the mesh for
+  the crosshair; the server builds the terrain for it lazily, only when a biome of the world has a
+  `ground` (`dwell_worldgen::ground_density_for`), and caches it per chunk; all pass it to
+  `Rules::with_density`, so they agree. The presets: deserts, mesas and badlands more rocks and no
+  sticks, the forests more sticks; `test:desert` rocks ×3. Chisel: a slider per kind per biome; the
+  placements overlay colours each structure by its canopy block (trees green, boulders grey) and adds
+  the ground items in their looks' colours (their count per hectare a guess, 1% of cells passing
+  their rules, as the overview reads no voxels). Deviations, left for later: spacing per
   biome (the overlap test is per rule); the player's saved structures (the sandbox store) as placement
   sources (placement reads the build's `shared/structures` only).)*
 - **B6** Chisel's texture tab (the Painterly Texture Lab folded in).

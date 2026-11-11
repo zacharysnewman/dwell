@@ -14,6 +14,8 @@ import {
   loadEdit,
   saveEdit,
   setTreeDensity,
+  groundDensity,
+  setGroundDensity,
   treeDensity,
   playInGame,
   TALL_PEAK_WORLD,
@@ -241,6 +243,31 @@ describe("a biome's trees and structures (ADR 0074 B5)", () => {
     expect(validateEdit(e).join()).toContain('not one of its placements');
     b.trees = { pine_groves: 9 };
     expect(validateEdit(e).join()).toContain('trees.pine_groves must be in [0, 3]');
+  });
+
+  it("edits a biome's ground items by density and round-trips them", () => {
+    const e = buildEdit();
+    const b = e.biomes[0];
+    if (!b) throw new Error('the default biome');
+    // No `ground`: every kind at 1 (the default world's scatter).
+    expect(b.ground).toBeUndefined();
+    expect(groundDensity(b, 'dwell:ground_stick')).toBe(1);
+    setGroundDensity(b, 'dwell:ground_rock', 2.5);
+    setGroundDensity(b, 'dwell:ground_stick', 0);
+    // A kind at 0 is not named (it lies nowhere the biome rules).
+    expect(b.ground).toEqual({ 'dwell:ground_rock': 2.5 });
+    expect(groundDensity(b, 'dwell:ground_stick')).toBe(0);
+    expect(validateEdit(e)).toEqual([]);
+    expect(fromJson(toJson(e))).toEqual({ edit: e });
+    // Back to every kind at 1: no `ground`, the default's form.
+    setGroundDensity(b, 'dwell:ground_stick', 1);
+    setGroundDensity(b, 'dwell:ground_rock', 1);
+    expect(b.ground).toBeUndefined();
+    // An unknown kind, or out of range, fails with a message.
+    b.ground = { 'dwell:ground_shell': 1 };
+    expect(validateEdit(e).join()).toContain('is not a kind of ground.json');
+    b.ground = { 'dwell:ground_rock': 9 };
+    expect(validateEdit(e).join()).toContain('ground.dwell:ground_rock must be in [0, 3]');
   });
 
   it('the presets pick their trees', () => {

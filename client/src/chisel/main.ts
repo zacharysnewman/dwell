@@ -6,6 +6,7 @@ import {
   GEOLOGY,
   TERRAIN,
   TREE_DENSITY_MAX,
+  GROUND_DENSITY_MAX,
   VEGETATION,
   WHERE_FIELDS,
   WORLD_KNOBS,
@@ -18,6 +19,9 @@ import {
   BUILD_VEGETATION,
   FULL_BLOCKS,
   PLACEMENT_NAMES,
+  GROUND_KINDS,
+  groundDensity,
+  setGroundDensity,
   PRESETS,
   TEMPLATES,
   addBiome,
@@ -352,6 +356,29 @@ function treesEditor(b: BiomeJson) {
   return box;
 }
 
+/**
+ * A biome's ground items (ADR 0074 B5): a density per kind (shared/ground/ground.json), 1 the
+ * kind's own (all 1: no `ground`, the default's form), 0 none, up to `GROUND_DENSITY_MAX`.
+ */
+function groundEditor(b: BiomeJson) {
+  const box = el('details', {}, el('summary', { textContent: 'Ground items (ground.json)' }));
+  for (const kind of GROUND_KINDS) {
+    box.append(
+      slider(
+        kind,
+        0,
+        GROUND_DENSITY_MAX,
+        0.05,
+        () => groundDensity(b, kind),
+        (v) => {
+          setGroundDensity(b, kind, v);
+        },
+      ),
+    );
+  }
+  return box;
+}
+
 function biomeEditor(b: BiomeJson, isDefault: boolean) {
   const box = el('div', {}, whereEditor(b.where as Record<string, unknown>, isDefault));
   for (const g of ['detail', 'shaping', 'banks']) {
@@ -391,6 +418,7 @@ function biomeEditor(b: BiomeJson, isDefault: boolean) {
     ),
   );
   box.append(treesEditor(b));
+  box.append(groundEditor(b));
   box.append(waterEditor(b));
   const bands = el('details', { open: true }, el('summary', { textContent: 'Bands' }));
   b.bands.forEach((band, i) => {

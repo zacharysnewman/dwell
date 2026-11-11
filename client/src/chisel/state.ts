@@ -22,6 +22,7 @@ import rocks from '../../../shared/worldgen/rocks.json';
 import vegetation from '../../../shared/worldgen/vegetation.json';
 import decorations from '../../../shared/worldgen/decorations.json';
 import placements from '../../../shared/worldgen/placements.json';
+import ground from '../../../shared/ground/ground.json';
 import blocksDwell from '../../../shared/blocks/dwell.json';
 
 /** A biome as its file holds it. */
@@ -99,6 +100,7 @@ const REFS = {
   decorations: new Set(decorations.decorations.map((r) => r.name)),
   placements: new Set(placements.placements.map((r) => r.name)),
   stacks: new Set(BUILD_GEOLOGY.stacks.map((s) => s.name)),
+  ground: new Set(ground.kinds.map((k) => k.name)),
 };
 
 /** The placement rules a biome may list (placements.json, in its order): trees, boulders, … */
@@ -133,6 +135,35 @@ export function setTreeDensity(b: BiomeJson, name: string, d: number): void {
   b.placements = PLACEMENT_NAMES.filter((n) => listed.includes(n));
   if (Object.keys(trees).length) b.trees = trees;
   else delete b.trees;
+}
+
+/** The ground item kinds a biome's `ground` may name (shared/ground/ground.json, in its order). */
+export const GROUND_KINDS: readonly string[] = ground.kinds.map((k) => k.name);
+
+/**
+ * Biome `b`'s density for ground item kind `kind` (ADR 0074 B5, as the generator reads it): 1
+ * without a `ground`, else its entry, 0 when it does not name the kind.
+ */
+export function groundDensity(b: BiomeJson, kind: string): number {
+  const g = b.ground as Record<string, number> | undefined;
+  if (g === undefined) return 1;
+  return g[kind] ?? 0;
+}
+
+/**
+ * Sets biome `b`'s density for ground item kind `kind`: the other kinds keep theirs (1 for each
+ * when it had no `ground`); every kind back at 1 drops `ground` (the default's form).
+ */
+export function setGroundDensity(b: BiomeJson, kind: string, d: number): void {
+  const g: Record<string, number> = Object.fromEntries(
+    GROUND_KINDS.map((k) => [k, k === kind ? d : groundDensity(b, k)]),
+  );
+  if (GROUND_KINDS.every((k) => g[k] === 1)) {
+    delete b.ground;
+    return;
+  }
+  // Kept in ground.json's order, the kinds at 0 left out (a kind not named lies nowhere).
+  b.ground = Object.fromEntries(GROUND_KINDS.filter((k) => (g[k] ?? 0) > 0).map((k) => [k, g[k]]));
 }
 
 /** The biomes a world can start from: the build's default and the fixtures. */
