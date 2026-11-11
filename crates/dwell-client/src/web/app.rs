@@ -393,6 +393,7 @@ impl Client {
         renderer.set_adapter(device_type);
         renderer.resize(width, height, 1.0);
         renderer.set_lod_level_colors(options.lod_colors);
+        renderer.set_lod_debug(&lod_debug_query(&options.search));
         // `?outline=<mode>` (docs/ART_DIRECTION.md §7): the ink outline, off without it.
         renderer.set_outline_query(&options.search);
         // `?pixelart=<preset>` (docs/proposals/PIXEL_ART_LOOK.md): the pixel-art preview, off
@@ -3128,6 +3129,16 @@ impl Inner {
 }
 
 /// Whether the page's query asks for the LOD colour map preview (`lodmap=on`).
+/// `?loddebug=a,b` (the renderer's LOD debug switches, `set_lod_debug`).
+fn lod_debug_query(search: &str) -> String {
+    search
+        .trim_start_matches('?')
+        .split('&')
+        .find_map(|kv| kv.strip_prefix("loddebug="))
+        .unwrap_or_default()
+        .replace("%2C", ",")
+}
+
 fn lod_map_query(search: &str) -> bool {
     search
         .trim_start_matches('?')
