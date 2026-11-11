@@ -1,5 +1,5 @@
 {
-  "$comment": "An example world setting (owner, 2026-11-10: \"at least 5000m tall elevations like mount rainier is 4392m tall\"), never a world's own: terrain.json's elevation with one convergent plate boundary and one dormant stratovolcano behind it, 4800 m high and 12 km in radius with a 400 m crater, hardened against the erosion (coneHardness) so it keeps its relief on the 100 m map. Shaped like Rainier (0.52.40): 14 radial ridges with glacier-cut valleys up to 450 m deep, the summit 900 m off the centre (one flank steeper), a shoulder peak (a Liberty Cap), three flank cones (a Little Tahoma), the crater an ice dome (above 3000 m), and a snow line from temperature at 0 °C (~1970 m with the 0.3/km lapse rate) leaving faces steeper than 1.1 bare rock; glacier ice (0.52.45) on the gentle ground colder than −10 °C (~3500 m), the crater's dome among it. Tests build it by data alone (FIXTURE_WORLDS, WorldMap::for_height); Chisel offers it as a preset. Prototype content.",
+  "$comment": "An example world setting (owner, 2026-11-10: \"at least 5000m tall elevations like mount rainier is 4392m tall\"), never a world's own: terrain.json's elevation with one convergent plate boundary and one dormant stratovolcano behind it, 4800 m high and 12 km in radius with a 400 m crater, hardened against the erosion (coneHardness) so it keeps its relief on the 100 m map. Shaped like Rainier (0.52.40): 14 radial ridges with glacier-cut valleys up to 450 m deep, the summit 900 m off the centre (one flank steeper), a shoulder peak (a Liberty Cap), three flank cones (a Little Tahoma), the crater an ice dome (above 3000 m), and a snow line from temperature at 0 °C (~1970 m with the 0.3/km lapse rate) leaving faces steeper than 1.1 bare rock; glacier ice (0.52.45) on the gentle ground colder than −10 °C (~3500 m), the crater's dome among it. Column-level detail (Rainier detail, added where the chunks generate, so the 100 m map does not smooth it): cleavers cutting the valleys 160 m deeper between sharp crests, the rim broken by five notches 70 m deep and four crags up to 220 m (the tallest the summit, off the crater's centre), and four cirques 1100 m from the summit, 250 m deep and 600 m wide with steep headwalls, their floors ice. Tests build it by data alone (FIXTURE_WORLDS, WorldMap::for_height); Chisel offers it as a preset. Prototype content.",
   "name": "test:tall_peak",
   "overrides": {
     "tectonics": {
@@ -32,7 +32,17 @@
       "iceDome": 60,
       "snowBelowC": 0,
       "iceBelowC": -10,
-      "snowMaxSlope": 1.1
+      "snowMaxSlope": 1.1,
+      "cleaverDepth": 160,
+      "rimNotches": 5,
+      "rimNotchDepth": 70,
+      "cragCount": 4,
+      "cragHeight": 220,
+      "cragRadius": 70,
+      "cirqueCount": 4,
+      "cirqueDepth": 250,
+      "cirqueRadius": 600,
+      "cirqueDistance": 1100
     }
   }
 }

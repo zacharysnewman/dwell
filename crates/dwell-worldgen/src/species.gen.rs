@@ -112,5 +112,6 @@ pub static FIXTURES: [Species; 2] = [
         days_per_stage: 1.0,
         wild: &[1, 1, 1],
         variants: 4,
+        sapling: None,
     },
 ];

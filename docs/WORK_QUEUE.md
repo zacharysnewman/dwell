@@ -251,14 +251,18 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   after two rounds; leads in BUGS.md).
 - **Arches:** the openings in the LOD and in Chisel's 3D view; caprock lips; an arch on a fin seen in
   game (fins and the rock filter built, 0.52.66).
-- **Terrain leftovers (0.52.66 round 1 left):** Rainier detail (below); in-game screenshots of an arch
+- **Terrain leftovers (0.52.66 round 1 left):** in-game screenshots of an arch
   on a fin, the red mesa and a snowy biome edge, and of T3b in the starter (its biomes' snow lines, sand
   under the steppe's grass, the grass thinning into the dry lee; built without screenshots). T3b is built
   (ADR 0075 T3b): a biome's own snow line (`snow`), soil blocks by soil type (`soilBlocks`), tall grass
   and ground items by climate (`undergrowth`); the starter opts in.
 - **Pieces follow-ups (0.52.46):** the worn axe not yet seen in game.
 - **Block damage follow-ups:** scoops read as dark stains (flat decals).
-- **Peaks:** a more broken summit, deeper ridges and cirques (Rainier).
+- **Peaks (Rainier detail, built; ADR 0075 T5):** a broken summit (rim notches, crags, the highest point
+  off-centre), cleavers at the column level that survive the 100 m map, and cirques under steep
+  headwalls with ice floors, as opt-in `tectonics` keys on `test:tall_peak` and the starter.
+  Outstanding: the in-game look (screenshots from the summit and from afar, on a local GPU); the far
+  terrain's LOD levels coarser than the cirques and crags may smooth them.
 - **Chisel:** biome decorations and spacing per biome; players' saved structures as placement sources;
   the in-game editor and a biome choice in the New world form.
 

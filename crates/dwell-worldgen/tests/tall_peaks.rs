@@ -236,7 +236,6 @@ dwell_world::both_faces!(
 /// Columns round the cone: (m above the sea, slope, its top block's name).
 fn cover_samples(f: FaceFrame) -> Vec<(f64, f64, &'static str)> {
     let v = fixture().tectonics.volcanoes()[0];
-    let m = map(f, fixture());
     let g = TerrainGenerator::with_map(face_seed(7, f.face), Arc::new(map(f, fixture())));
     let mut out = Vec::new();
     for k in 0..48 {
@@ -250,14 +249,11 @@ fn cover_samples(f: FaceFrame) -> Vec<(f64, f64, &'static str)> {
             if c.water != Water::None {
                 continue;
             }
-            // The landform's slope (the map's, as the snow line reads it).
-            let (_, e, n) = m.height_at(f64::from(x), f64::from(z));
+            // The landform's slope as the snow line reads it (the map's with the cone's
+            // column-level detail, Rainier detail).
+            let slope = g.cover_slope_at(i64::from(x), i64::from(z));
             let top = dwell_blocks::block_of(g.top_state(&c)).name;
-            out.push((
-                f64::from(c.height) - SEA_LEVEL_M,
-                (e * e + n * n).sqrt(),
-                top,
-            ));
+            out.push((f64::from(c.height) - SEA_LEVEL_M, slope, top));
         }
     }
     out
@@ -354,6 +350,212 @@ dwell_world::both_faces!(
     }
 );
 
+// Rainier detail: the cone's column-level detail (`cleaverDepth`, `rimNotches`,
+// `cragCount`, `cirqueCount`), added where the chunks generate on top of the 100 m map's cone.
+
+/// The fixture's generator on face `f`.
+fn generator(f: FaceFrame, h: HeightField) -> TerrainGenerator {
+    TerrainGenerator::with_map(face_seed(7, f.face), Arc::new(map(f, h)))
+}
+
+/// The fixture with the column-level detail off.
+fn undetailed() -> HeightField {
+    let mut h = fixture();
+    let t = &mut h.tectonics;
+    t.cleaver_depth = 0.0;
+    t.rim_notch_depth = 0.0;
+    t.crag_height = 0.0;
+    t.cirque_depth = 0.0;
+    h
+}
+
+/// The columns' ground (m above the sea) round a circle `r` m from (x, z), one a degree.
+fn column_ring(g: &TerrainGenerator, (x, z): (f64, f64), r: f64, n: usize) -> Vec<f64> {
+    (0..n)
+        .map(|k| {
+            let a = (k as f64 * 360.0 / n as f64).to_radians();
+            let c = g.column_at((x + r * a.cos()) as i32, (z + r * a.sin()) as i32);
+            f64::from(c.height) - SEA_LEVEL_M
+        })
+        .collect()
+}
+
+fn span(v: &[f64]) -> f64 {
+    v.iter().copied().fold(f64::MIN, f64::max) - v.iter().copied().fold(f64::MAX, f64::min)
+}
+
+/// The local maxima round a ring standing `by` m over the lower of the ring's lows within `w`
+/// samples either side.
+fn peaks_round(v: &[f64], w: usize, by: f64) -> usize {
+    let n = v.len();
+    (0..n)
+        .filter(|&k| {
+            let near = (1..=w).flat_map(|d| [v[(k + d) % n], v[(k + n - d) % n]]);
+            let mut low = f64::MAX;
+            let mut top = true;
+            for x in near {
+                top &= v[k] >= x;
+                low = low.min(x);
+            }
+            top && v[k] - low >= by
+        })
+        .count()
+}
+
+dwell_world::both_faces!(
+    /// Cleavers at the column level: round a circle 3 km from the summit the chunks' ground
+    /// rises and falls by more than 400 m with at least 10 sharp crests, ≥ 100 m more relief
+    /// than the map's cone holds there (measured on columns, not the map), and its steepest step
+    /// between columns 1° apart (~52 m) is over 0.6 (a crest's cusp, not a rounded swell).
+    fn the_cleavers_survive_at_the_column_level(f: FaceFrame) {
+        let (ax, az) = apex();
+        let g = generator(f, fixture());
+        let ring = column_ring(&g, (ax, az), 3000.0, 360);
+        let m = map(f, fixture());
+        let map_ring: Vec<f64> = (0..360)
+            .map(|k| {
+                let a = f64::from(k).to_radians();
+                m.height_at(ax + 3000.0 * a.cos(), az + 3000.0 * a.sin()).0
+            })
+            .collect();
+        let plain = column_ring(&generator(f, undetailed()), (ax, az), 3000.0, 360);
+        let (s, sm, sp) = (span(&ring), span(&map_ring), span(&plain));
+        assert!(s > 400.0, "the columns' ring spans {s:.0} m");
+        assert!(s >= sm + 100.0, "columns {s:.0} m, the map {sm:.0} m");
+        assert!(s >= sp + 100.0, "columns {s:.0} m, undetailed {sp:.0} m");
+        let crests = peaks_round(&ring, 6, 40.0);
+        assert!(crests >= 10, "{crests} crests round the ring");
+        let step = 3000.0 * 1f64.to_radians();
+        let steepest = (0..360)
+            .map(|k| (ring[(k + 1) % 360] - ring[k]).abs() / step)
+            .fold(0.0, f64::max);
+        assert!(steepest > 0.6, "the steepest step {steepest:.2}");
+    }
+);
+
+dwell_world::both_faces!(
+    /// A broken summit: round the crater's rim the ground dips through its notches (at least
+    /// `rimNotches` of them, ≥ ½ `rimNotchDepth` deep) and the crags stand over it; the highest
+    /// column within 1.5 km is a crag ≥ 200 m off the crater's centre, over the ice dome; without
+    /// the detail the rim is smooth by comparison.
+    fn the_summit_is_a_broken_rim_with_crags(f: FaceFrame) {
+        let h = fixture();
+        let t = h.tectonics;
+        let (ax, az) = apex();
+        let g = generator(f, h);
+        let rim = t.crater_radius;
+        let ring = column_ring(&g, (ax, az), rim, 360);
+        let neg: Vec<f64> = ring.iter().map(|x| -x).collect();
+        let notches = peaks_round(&neg, 8, 0.5 * t.rim_notch_depth);
+        assert!(
+            notches as u32 >= t.rim_notches,
+            "{notches} notches round the rim"
+        );
+        let plain = column_ring(&generator(f, undetailed()), (ax, az), rim, 360);
+        assert!(
+            span(&ring) > span(&plain) + t.rim_notch_depth,
+            "the rim spans {:.0} m, undetailed {:.0} m",
+            span(&ring),
+            span(&plain)
+        );
+        let peak = &g.peak_details()[0];
+        assert_eq!(peak.crags.len() as u32, t.crag_count);
+        let mut top = (f64::MIN, 0.0, 0.0);
+        for i in -60..=60 {
+            for j in -60..=60 {
+                let (x, z) = (ax + f64::from(i) * 25.0, az + f64::from(j) * 25.0);
+                let c = f64::from(g.column_at(x as i32, z as i32).height) - SEA_LEVEL_M;
+                if c > top.0 {
+                    top = (c, x, z);
+                }
+            }
+        }
+        let off = ((top.1 - ax).powi(2) + (top.2 - az).powi(2)).sqrt();
+        let dome = f64::from(g.column_at(ax as i32, az as i32).height) - SEA_LEVEL_M;
+        assert!(
+            off >= 200.0,
+            "the highest column {:.0} m, {off:.0} m off",
+            top.0
+        );
+        assert!(
+            top.0 > dome + 50.0,
+            "the highest {:.0} m, the dome {dome:.0} m",
+            top.0
+        );
+        for &(cx, cz, ch) in &peak.crags {
+            let c = f64::from(g.column_at(cx as i32, cz as i32).height) - SEA_LEVEL_M;
+            let around = column_ring(&g, (cx, cz), 2.0 * t.crag_radius, 36);
+            let low = around.iter().copied().fold(f64::MAX, f64::min);
+            assert!(
+                c > low + 0.5 * ch,
+                "a crag {c:.0} m over {low:.0} m round it"
+            );
+        }
+    }
+);
+
+dwell_world::both_faces!(
+    /// Cirques: each is a hollow on the upper flank, below the summit (its floor lower than every
+    /// column round it from 0.1 to 0.3 of its radius: a local minimum, with a lip downhill ≥ 20 m over
+    /// it), under a steep
+    /// headwall on the summit side (a rise steeper than 1 between the floor and the bowl's back),
+    /// and above the ice line its gentle floor is glacier ice.
+    fn cirques_are_hollows_under_steep_headwalls(f: FaceFrame) {
+        let h = fixture();
+        let t = h.tectonics;
+        let g = generator(f, h);
+        let peak = g.peak_details()[0].clone();
+        assert_eq!(peak.cirques.len() as u32, t.cirque_count);
+        let top = f64::from(g.column_at(peak.apex.0 as i32, peak.apex.1 as i32).height);
+        for &(cx, cz, th, _) in &peak.cirques {
+            let floor_col = g.column_at(cx as i32, cz as i32);
+            let floor = f64::from(floor_col.height) - SEA_LEVEL_M;
+            assert!(
+                floor < top - SEA_LEVEL_M - 500.0 && floor > 2500.0,
+                "a cirque on the upper flank at {floor:.0} m"
+            );
+            for k in 2..=6 {
+                let r = 0.05 * f64::from(k) * t.cirque_radius;
+                let round = column_ring(&g, (cx, cz), r, 48);
+                let low = round.iter().copied().fold(f64::MAX, f64::min);
+                assert!(
+                    low > floor + 1.0,
+                    "a hollow: floor {floor:.0} m, its low {low:.0} m at {r:.0} m"
+                );
+            }
+            // The lip downhill: the ground rises over the floor before it falls away.
+            let lip = (1..60)
+                .map(|i| {
+                    let d = f64::from(i) * 10.0;
+                    let (x, z) = (cx + d * th.cos(), cz + d * th.sin());
+                    f64::from(g.column_at(x as i32, z as i32).height) - SEA_LEVEL_M - floor
+                })
+                .fold(f64::MIN, f64::max);
+            assert!(lip > 20.0, "the lip stands {lip:.0} m over the floor");
+            // The headwall: up toward the summit, the steepest rise between columns 10 m apart.
+            let (ux, uz) = (-th.cos(), -th.sin());
+            let steepest = (0..80)
+                .map(|i| {
+                    let d = f64::from(i) * 10.0;
+                    let at = |d: f64| {
+                        f64::from(
+                            g.column_at((cx + d * ux) as i32, (cz + d * uz) as i32)
+                                .height,
+                        )
+                    };
+                    (at(d + 10.0) - at(d)) / 10.0
+                })
+                .fold(f64::MIN, f64::max);
+            assert!(steepest > 1.0, "the headwall's steepest rise {steepest:.2}");
+            assert_eq!(
+                dwell_blocks::block_of(g.top_state(&floor_col)).name,
+                "dwell:glacier_ice",
+                "the cirque's floor at {floor:.0} m"
+            );
+        }
+    }
+);
+
 // face-a-only: the registry has no face.
 /// The ice blocks load by name (the creative catalogue's, shared/items/items.json).
 #[test]
@@ -361,5 +563,55 @@ fn the_ice_blocks_load_by_name() {
     for name in ["dwell:snow", "dwell:glacier_ice"] {
         assert!(dwell_blocks::find_block(name).is_some(), "{name} missing");
         assert!(dwell_blocks::parse_state(name).is_ok(), "{name} state");
+    }
+}
+
+// face-a-only: the data's parsing and ranges, no face.
+/// The Rainier detail's keys: off in the build's data (no detail placed), read from a
+/// world's knobs by name, and refused out of range.
+#[test]
+fn the_rainier_detail_keys_parse_and_are_checked() {
+    use dwell_worldgen::config::height_from_json;
+    use dwell_worldgen::terrain::HEIGHT;
+    let t = HEIGHT.tectonics;
+    assert!(
+        !t.detailed(),
+        "the default world has no column-level detail"
+    );
+    assert!(t.peak_details(|_, _| 0.0).is_empty());
+    let on = serde_json::json!({ "tectonics": {
+        "kind": 1, "arcCount": 1, "cleaverDepth": 120, "cleaverCount": 20, "rimNotches": 3,
+        "rimNotchDepth": 40, "cragCount": 2, "cragHeight": 90, "cragRadius": 50,
+        "cirqueCount": 3, "cirqueDepth": 200, "cirqueRadius": 500, "cirqueDistance": 1000
+    }});
+    let h = height_from_json(&on).expect("the detail's keys");
+    let k = h.tectonics;
+    assert_eq!(
+        (k.cleaver_count, k.rim_notches, k.crag_count, k.cirque_count),
+        (20, 3, 2, 3)
+    );
+    assert_eq!(
+        (
+            k.cleaver_depth,
+            k.rim_notch_depth,
+            k.crag_height,
+            k.crag_radius
+        ),
+        (120.0, 40.0, 90.0, 50.0)
+    );
+    assert_eq!(
+        (k.cirque_depth, k.cirque_radius, k.cirque_distance),
+        (200.0, 500.0, 1000.0)
+    );
+    assert!(k.detailed());
+    let p = k.peak_details(|_, _| 1000.0);
+    assert_eq!((p.len(), p[0].cirques.len(), p[0].crags.len()), (1, 3, 2));
+    for bad in [
+        serde_json::json!({ "tectonics": { "cirqueRadius": 0 } }),
+        serde_json::json!({ "tectonics": { "cragRadius": 0 } }),
+        serde_json::json!({ "tectonics": { "rimNotches": 17 } }),
+        serde_json::json!({ "tectonics": { "cleaverDepth": -5 } }),
+    ] {
+        assert!(height_from_json(&bad).is_err(), "{bad} refused");
     }
 }

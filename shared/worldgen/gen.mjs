@@ -765,7 +765,17 @@ function fixtureWorldEdit(f, world, pool, fail) {
 
 /** terrain.json `tectonics` (systemic terrain T5) as Rust: the keys in camelCase become snake_case. */
 function tectonicsRs(g) {
-  const whole = ["kind", "arcCount", "hotspotCount", "ridgeCount", "ventCount"];
+  const whole = [
+    "kind",
+    "arcCount",
+    "hotspotCount",
+    "ridgeCount",
+    "ventCount",
+    "cleaverCount",
+    "rimNotches",
+    "cragCount",
+    "cirqueCount",
+  ];
   const body = Object.keys(TERRAIN.tectonics)
     .map(
       (k) =>
