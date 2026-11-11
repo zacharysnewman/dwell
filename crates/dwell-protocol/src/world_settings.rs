@@ -212,9 +212,7 @@ impl SettingsFields {
         let mut out: Vec<(u8, Vec<u8>)> = self
             .0
             .iter()
-            .filter(|(t, _)| {
-                ![tag::CLOCK, tag::WATER_SPEED, tag::MODE, tag::WORLDGEN].contains(t)
-            })
+            .filter(|(t, _)| ![tag::CLOCK, tag::WATER_SPEED, tag::MODE, tag::WORLDGEN].contains(t))
             .cloned()
             .collect();
         let field = |f: &dyn Fn(&mut ByteWriter)| {

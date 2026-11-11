@@ -2,6 +2,12 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.52.38",
+      "changes": [
+        "Friends joining a world made in Chisel or from a test world now get the same terrain as the host. An older version says it needs a newer one instead of making the wrong ground. Dedicated servers take --worldgen."
+      ]
+    },
+    {
       "version": "0.52.37",
       "changes": [
         "Chisel's Play in game now plays the whole edit: its biomes, rocks, erosion, vegetation and tectonics, so mesas and volcanoes you shape in Chisel are there in the world."

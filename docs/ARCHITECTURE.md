@@ -1641,8 +1641,16 @@ edit's biomes, biome map, geology (erosion included) and vegetation on the groun
 tectonics are the config's (decoded from it, so the rock provinces follow the edit's plates). An instance
 that already holds another map for the seed takes the installed one (`worldmap::cache::install`
 replaces a map whose config differs), and the portal sites are cached per (seed, rules, the faces'
-configs). Keys: the build's key plus `-c<hash>` for any config. Not carried yet: the config to a guest
-(local worlds only); the game's terrain volume (the cliffs) is over the edit's ground, where Chisel's
+configs). Keys: the build's key plus `-c<hash>` for any config. **Guests (0.52.38, B7):** a server
+whose world has a config (`dwell-worldgen` `config::installed_worldgen`: face A's installed map's text;
+`Server::worldgen_text`) adds the required `WorldSettings` tag `WORLDGEN` (2: the config's u64 FNV-1a
+hash, `config::worldgen_hash`) to the fields it sends, never to the saved ones; a guest that knows it
+sends `WorldgenRequest`, gets `WorldgenConfig` (the text), checks the hash and parses it, then joins and
+asks the shell for the maps under it (`prepareWorld(seed, version, worldgen)`), so its generators make
+the host's ground. An older build reads the tag as an unknown required one and refuses ("This world
+needs a newer version of Dwell."); a default world's join is byte-identical. The dedicated server takes
+`--worldgen FILE|test:NAME` (installed before it starts; not saved, given on every start). The game's
+terrain volume (the cliffs) is over the edit's ground, where Chisel's
 preview has none (docs/DEV_TOOLS.md "Play a test world").
 
 **Erosion [built, Phase 57 T4, 0.52.17; ADR 0075]** (`rocks.json` `erosion`, `geology.rs` `DrainageField`, `eroded`; `TerrainGenerator::erosion_shaping` after the rock's shaping): rule-based erosion from the world map's plan view (`rocks.json` `erosion`, `geology::DrainageField`, `geology::eroded`): drainage lines are map cells with at least `threshold` cells of flow accumulation (or the sea); a column nearer a line than the scarp's retreat (`reach` × (1 − `resist` × the cap rock's hardness) × (1 + `valley` × log2 of the line's accumulation over the threshold) × (1 ± `outline` noise) − `relief` × the hill's height over the floor) is cut down to the floor (the line's height, `snap` of the way down to the stack's lowest soft layer's top), farther it stands; a `wall` m sheer wall at the edge (the cap rock's face) and a `talusWidth` m skirt (the soft rock's scree) below; a biome's `gullies` cuts short-wavelength rills (`gullyWavelength`, `gullyDepth`). A biome opts in with `erosion` 0..1 (absent 0: the default world and goldens unchanged); the red-rock mesa preset at 1, badlands at 1 with gullies 1. The drainage field is built once per generator from the world map, only when a biome erodes.
@@ -3792,7 +3800,15 @@ S→C  WorldSettings 0x54 (protocol v22): u8 count, each u8 tag, u16 length, byt
                    know it), any other must be understood ("This world needs a newer
                    version of Dwell."); before Welcome. The client uses the world's clock
                    for the sky, not its own. Sent again while joined when the host changes
-                   the world's game mode (ADR 0065); older clients ignore it then
+                   the world's game mode (ADR 0065); older clients ignore it then.
+                   **[built, 0.52.38]** Tag 2 (required) the world's worldgen config hash
+                   (u64 FNV-1a of its text, ADR 0074 B7), only for a world made from a
+                   config (a Chisel edit or a fixture), never saved: an older build refuses
+                   it; this one sends WorldgenRequest after Welcome and joins once the text
+                   arrives and matches
+C→S  WorldgenRequest 0x62: empty, only to a server whose WorldSettings has tag 2
+S→C  WorldgenConfig  0x63: u32 length (at most 512 KiB), UTF-8 — the world's worldgen config
+                   text (`dwell_worldgen::config::world_config`); answers WorldgenRequest
 S→C  Welcome       u16 playerId, u64 worldSeed, u32 generatorVersion, u32 serverTick,
                    i32×3 verificationChunk, u8 flags (WelcomeFlags: 1 = flight — this
                    player may use creative flight; 2 = regionEdits — the server takes

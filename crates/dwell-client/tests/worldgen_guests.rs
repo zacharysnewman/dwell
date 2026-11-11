@@ -143,7 +143,11 @@ fn a_default_worlds_join_is_unchanged() {
         vec![tag::CLOCK, tag::WATER_SPEED, tag::MODE]
     );
     assert!(!j.sent.contains(&Message::WorldgenRequest));
-    assert!(!j.got.iter().any(|m| matches!(m, Message::WorldgenConfig(_))));
+    assert!(
+        !j.got
+            .iter()
+            .any(|m| matches!(m, Message::WorldgenConfig(_)))
+    );
 }
 
 // both-faces: compares each face's map, as the guest builds it, with the host's.
@@ -167,12 +171,25 @@ fn a_test_worlds_guest_gets_its_config_and_builds_the_hosts_maps() {
     for face in [Face::A, Face::B] {
         let s = face_seed(seed, face);
         let host = cache::for_seed(s);
-        assert_eq!(host.worldgen_text(), FIXTURE, "{face:?}: the host's is the config's");
+        assert_eq!(
+            host.worldgen_text(),
+            FIXTURE,
+            "{face:?}: the host's is the config's"
+        );
         let guest_bytes = worldgen_map_bytes(s, &text).unwrap();
         assert_eq!(guest_bytes, codec::encode(&host), "{face:?}");
         let guest = codec::decode(&guest_bytes).unwrap();
-        for (x, z) in [(0.0, 0.0), (300.0, -200.0), (-1500.0, 900.0), (2400.0, 2400.0)] {
-            assert_eq!(guest.height_at(x, z), host.height_at(x, z), "{face:?} at {x},{z}");
+        for (x, z) in [
+            (0.0, 0.0),
+            (300.0, -200.0),
+            (-1500.0, 900.0),
+            (2400.0, 2400.0),
+        ] {
+            assert_eq!(
+                guest.height_at(x, z),
+                host.height_at(x, z),
+                "{face:?} at {x},{z}"
+            );
         }
     }
 }

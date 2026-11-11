@@ -365,7 +365,9 @@ impl Session {
             return;
         }
         if let Err(e) = dwell_worldgen::config::world_config(&text) {
-            self.fail(format!("This world's terrain settings can't be used ({e})."));
+            self.fail(format!(
+                "This world's terrain settings can't be used ({e})."
+            ));
             return;
         }
         self.worldgen = text.trim().to_owned();

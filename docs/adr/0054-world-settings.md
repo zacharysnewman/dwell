@@ -32,3 +32,14 @@ them back. A new world takes this build's clock (`daynight.json`) and the server
   speed changes only new worlds, and a new setting that an older build can do without is an
   optional field, not a new line.
 - A world keeps its own day length; a host can choose one (a host setting for it is later).
+
+## Amendment (0.52.38, ADR 0074 B7): a required tag that is sent, not saved
+
+The first required tag after the clock: `WORLDGEN` (2), the u64 hash of the world's worldgen config
+(a Chisel edit or a fixture world). It is required because an older build can't make that terrain:
+skipping it would generate the seed's own ground under the host's, so it refuses instead. The server
+adds it to the fields it sends from its world's maps and never saves it (setting the known fields drops
+it). Its value is too long for a field (`MAX_FIELD_BYTES`, 1 KB), so the tag carries only the hash and
+a client that knows it asks for the text (`WorldgenRequest` → `WorldgenConfig`); an older build never
+sends the request, so it never sees the new message. A default world sends no new tag: its join is
+byte-identical.

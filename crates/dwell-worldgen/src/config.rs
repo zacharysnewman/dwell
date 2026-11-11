@@ -657,7 +657,9 @@ pub fn installed_worldgen(world_seed: u64) -> String {
     if !crate::worldmap::cache::is_ready(seed) {
         return String::new();
     }
-    crate::worldmap::cache::for_seed(seed).worldgen_text().to_owned()
+    crate::worldmap::cache::for_seed(seed)
+        .worldgen_text()
+        .to_owned()
 }
 
 /// Face seed `seed`'s world map under worldgen `config` (`worldmap::build_bytes` for the build's

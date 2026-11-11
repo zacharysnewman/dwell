@@ -201,7 +201,10 @@ pub fn install_worldgen(o: &Options) -> Result<String, String> {
     };
     let text = text.trim().to_owned();
     if dwell_worldgen::config::world_config(&text)?.is_none() {
-        return Err(format!("--worldgen {:?}: the build's own ground", o.worldgen));
+        return Err(format!(
+            "--worldgen {:?}: the build's own ground",
+            o.worldgen
+        ));
     }
     if !dwell_world::has_terrain(o.server.generator_version) {
         return Err("--worldgen needs a terrain world (--generator 8)".into());

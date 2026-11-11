@@ -122,9 +122,11 @@
   tagged trailer of the bytes, none on the build's maps), so every WASM instance that installs them (the
   server, the chunk and LOD jobs, the water) builds generators with the edit's biomes, biome map,
   geology, erosion and vegetation, and the map's tectonics are the config's. Deviations: the game's
-  cliffs volume stays over the edit's ground; a guest does not get the config yet (a required
-  `WorldSettings` tag with the config's hash and a fetch, so an older guest refuses); the New world form
-  has no biome choice.)*
+  cliffs volume stays over the edit's ground; the New world form has no biome choice. 0.52.38: guests
+  get the config: a required `WorldSettings` tag `WORLDGEN` (2) with the config's hash on the join's
+  fields (not saved), `WorldgenRequest` / `WorldgenConfig` for the text (≤ 512 KiB, past the 1 KB field
+  limit), checked against the hash, so a guest builds the host's maps and an older build refuses the
+  world; the dedicated server's `--worldgen` (not saved in the world: given on every start).)*
 - **B8** arches (3D density, overhangs).
 
 ## Consequences

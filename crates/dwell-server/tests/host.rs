@@ -328,3 +328,28 @@ fn a_mode_name_not_in_the_data_fails_with_a_message() {
         "nothing is written for a bad mode"
     );
 }
+
+#[test]
+fn worldgen_installs_the_configs_maps_so_the_server_sends_it_to_guests() {
+    // both-faces: installs and checks both faces' maps. ADR 0074 B7.
+    let mut o = parse_options(&args(&["--seed", "47115", "--worldgen", "test:tall_peak"])).unwrap();
+    assert_eq!(o.worldgen, "test:tall_peak");
+    assert_eq!(install_worldgen(&o).unwrap(), "test:tall_peak");
+    for face in [dwell_world::Face::A, dwell_world::Face::B] {
+        let seed = dwell_worldgen::bifacial::face_seed(47115, face);
+        assert_eq!(
+            dwell_worldgen::worldmap::cache::for_seed(seed).worldgen_text(),
+            "test:tall_peak"
+        );
+    }
+    let config = std::mem::take(&mut o.server);
+    let server =
+        dwell_sim::server::Server::new(config, Box::new(dwell_sim::entropy::SeededEntropy(1)));
+    assert_eq!(server.worldgen_text(), "test:tall_peak");
+    o.worldgen = "test:no_such_world".into();
+    assert!(install_worldgen(&o).is_err());
+    assert_eq!(
+        install_worldgen(&parse_options(&args(&[])).unwrap()).unwrap(),
+        ""
+    );
+}
