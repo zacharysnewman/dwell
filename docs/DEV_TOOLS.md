@@ -317,6 +317,10 @@ one (a friend world, or a dedicated server started with `--worldgen <edit.json>`
 `--worldgen test:tall_peak`) is sent the config and builds the same maps; an older build refuses the
 world (`dwell-client` `tests/worldgen_guests.rs`). The New world form never sets it. A bench run uses it through a
 `--configs-file` configuration's `params` (`{"worldgen": "test:tall_peak", "fresh": "1", "at": …}`).
+The starter world (0.52.54), `?worldgen=test:starter`, is a fixture with its own biomes (`biomes`,
+`biomeMap`, `geology` in its file): its maps carry the fixture's name and every generator uses the edit it
+stands for. Its overview: `STARTER_PNG=<dir> cargo test --release -p dwell-worldgen --test starter_world`;
+its tour's `at=` spots: `… --test starter_world tour -- --ignored --nocapture`.
 
 **The water report** (0.44.4): `dwell_sim::water::Water::report(at, radius)` describes the water near a
 cell as JSON — each basin within `radius` cells: its id, level (world m), volume, inflow, what arrives,

@@ -227,6 +227,8 @@ fixture's 700 m cone's rim ~100–150 m over its surroundings on the range's slo
 flows and calderas; a curved boundary; the snow on the peaks comes from the bands' fixed snow height
 until T3b's temperature snow line.
 
+**All five layers in one world (0.52.54):** the starter world `test:starter` (ADR 0074, docs/WORLD_GENERATION.md) turns on T1 (`rainShare` 0.6), T2 (shaping `strength` 1), T3 (the biomes' `vegetation`), T4 (the mesa's and badlands' `erosion`, `gullies`) and T5 (a convergent boundary, two Rainier-shaped cones, a hotspot chain) together; the rain shadow reads clearly on its overview: forests and wetland on the windward west, steppe, desert, mesas and badlands in the lee east of the range.
+
 ## Consequences
 
 - The biome map's wetness can be climate-driven; a desert can now follow a rain shadow rather than a
