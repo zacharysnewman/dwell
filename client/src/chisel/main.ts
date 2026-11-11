@@ -598,7 +598,8 @@ function render() {
       // record keeps the edit, so it reopens the same. The world knobs only, not the biomes yet.
       el('button', {
         textContent: 'Play in game',
-        title: "Opens a new local world on this edit's world knobs (the seed above); biomes not yet",
+        title:
+          "Opens a new local world on this edit's world knobs (the seed above); biomes not yet",
         onclick: () => {
           if (validateEdit(edit).length) return;
           const id = playInGame(new WorldIndex(store ?? null), edit, view.seed, Date.now());

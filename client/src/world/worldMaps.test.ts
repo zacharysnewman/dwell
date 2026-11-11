@@ -28,7 +28,10 @@ function deps(store: MapStore | null): MapDeps & { builds: string[]; progress: n
   return {
     builds,
     progress,
-    keys: (seed, worldgen) => [`fp-a-${seed.toString()}${worldgen}`, `fp-b-${seed.toString()}${worldgen}`],
+    keys: (seed, worldgen) => [
+      `fp-a-${seed.toString()}${worldgen}`,
+      `fp-b-${seed.toString()}${worldgen}`,
+    ],
     build: (seed, face, worldgen) => {
       builds.push(`${seed.toString()}/${String(face)}${worldgen}`);
       return Promise.resolve(new Uint8Array([Number(seed % 256n), face]));

@@ -23,6 +23,8 @@ pub const MAP: MapTunables = MapTunables {
     height_tint_high_m: 400.0,
     height_tint_darkest: 0.8,
     height_tint_brightest: 1.15,
+    height_tint_peak_m: 5000.0,
+    height_tint_peak_brightest: 1.4,
     explored_cell_m: 8.0,
     explored_pending_color: 0x4e4c44,
     big_map_levels: &[(1.0, 128.0), (16.0, 3578.0), (256.0, 100000.0)],

@@ -643,8 +643,8 @@ fn a_sand_cell_stays_sand_coloured_and_height_changes_its_brightness_gently() {
                 "{h} m: {c:06x} is sand {k}×"
             );
         }
-        // Gently: never past the data's darkest and brightest.
-        assert!(k >= t.height_tint_darkest - 0.01 && k <= t.height_tint_brightest + 0.01);
+        // Gently: never past the data's darkest and its high ground's brightest.
+        assert!(k >= t.height_tint_darkest - 0.01 && k <= t.height_tint_peak_brightest + 0.01);
         // Brighter, never darker, going up.
         assert!(lum(c) >= last, "{h} m");
         last = lum(c);
@@ -655,8 +655,12 @@ fn a_sand_cell_stays_sand_coloured_and_height_changes_its_brightness_gently() {
         scale_rgb(SAND, t.height_tint_darkest)
     );
     assert_eq!(
-        tint_rgb(&t, SAND, sea + 5000.0, false),
+        tint_rgb(&t, SAND, sea + t.height_tint_high_m, false),
         scale_rgb(SAND, t.height_tint_brightest)
+    );
+    assert_eq!(
+        tint_rgb(&t, SAND, sea + t.height_tint_peak_m + 500.0, false),
+        scale_rgb(SAND, t.height_tint_peak_brightest)
     );
     // A few metres make little difference (no bands): 8 m changes no channel by more than 4.
     let (a, b) = (
@@ -666,6 +670,21 @@ fn a_sand_cell_stays_sand_coloured_and_height_changes_its_brightness_gently() {
     for sh in [16, 8, 0] {
         assert!((ch(a, sh) - ch(b, sh)).abs() <= 4.0);
     }
+}
+
+#[test]
+fn high_ground_keeps_a_gradient_past_400_m() {
+    // face-a-only: the tint reads a colour and a height alone.
+    // 0.52.27: a 4800 m peak's slopes were one flat brightness above 400 m; the ramp goes on to
+    // peakM, and below highM nothing changed.
+    let t = MAP;
+    let sea = dwell_world::SEA_LEVEL_M;
+    let grey = 0x60_6060;
+    let at = |m: f64| tint_rgb(&t, grey, sea + m, false);
+    assert!(at(1000.0) > at(400.0) && at(3000.0) > at(1000.0) && at(4800.0) > at(3000.0));
+    // The default world's heights (under highM) as before: the low ramp alone.
+    let k = t.height_tint_darkest + (t.height_tint_brightest - t.height_tint_darkest) * 0.5;
+    assert_eq!(at(t.height_tint_high_m * 0.5), scale_rgb(grey, k));
 }
 
 #[test]

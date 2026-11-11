@@ -114,7 +114,11 @@
   Deviation: the game's water shader does not take the per-column look yet; Chisel's preview does.)*
 - **B5** trees, ground items and structures per biome.
 - **B6** Chisel's texture tab (the Painterly Texture Lab folded in).
-- **B7** Chisel in the game, and the new-world biome choice.
+- **B7** Chisel in the game, and the new-world biome choice. *(Started 0.52.27: Chisel's **Play in
+  game** opens a new local world on the edit's world knobs, its record keeping the edit as its
+  worldgen config so it reopens the same, and `?worldgen=<fixture>` opens a fixture world by link
+  (docs/DEV_TOOLS.md "Play a test world"). The edit's biomes, geology and vegetation are not in the
+  game yet, and the New world form has no biome choice.)*
 - **B8** arches (3D density, overhangs).
 
 ## Consequences

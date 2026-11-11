@@ -295,6 +295,23 @@ the owner's dam site; then `__dwell.fly(true)`, `__dwell.tool('cornerA@…')`, `
 `placeCamera` set the scene up. `?new=1&seed=<n>&name=<name>` instead adds a new world to the
 menu's list and opens it.
 
+**Play a test world** (0.52.27): `?worldgen=test:tall_peak` (any fixture world's name,
+`shared/worldgen/worlds/*.json`; with `seed=`, `fresh=1`, `at=` as above, alone seed 0) opens a
+terrain world on the fixture's ground, its own world file and record (`test-<name>-s<seed>`, never the
+seed's own `local-g8-s<seed>`). Chisel's **Play in game** (its File group) does the same for the
+current edit: a new local world of the view's seed in a new tab (`?play=<id>`), listed in the menu.
+The world's record (`dwell.worlds`, `WorldMeta.worldgen`, optional: append-only) keeps the config, the
+fixture's name or the edit's JSON, so the world reopens on the same terrain. Only the height field
+travels (the fixture's overrides; an edit's world knobs, `chisel::worldgen_height`): the page builds
+the world maps from it (`buildWorldMap(seed, face, worldgen)`, `WorldMap::for_height`), cached under
+their own keys (`worldMapKeys(seed, worldgen)`: the default key plus the config's hash, so the
+seed's own maps are untouched), and every WASM instance installs them as usual, so the server, the
+LOD and the water all generate the fixture's ground. Not carried yet: an edit's biomes, geology and
+vegetation (the build's are used), and the map's tectonics (a map from bytes has the build's, so a
+test world's rock provinces are the default plates'). Local worlds only: a guest joining one would
+build the seed's own maps. The New world form never sets it. A bench run uses it through a
+`--configs-file` configuration's `params` (`{"worldgen": "test:tall_peak", "fresh": "1", "at": …}`).
+
 **The water report** (0.44.4): `dwell_sim::water::Water::report(at, radius)` describes the water near a
 cell as JSON — each basin within `radius` cells: its id, level (world m), volume, inflow, what arrives,
 whether it is filling or draining (`active`) and owes time, its bounds, its steady state as found

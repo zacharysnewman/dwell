@@ -286,7 +286,12 @@ export function addBiome(e: Edit, template: BiomeJson): Edit {
 export function playInGame(index: WorldIndex, e: Edit, seed: number, now: number): string {
   const stamp = new Date(now).toISOString().slice(0, 16).replace('T', ' ');
   return index.create(
-    { name: `Chisel ${stamp}`, type: 'terrain', seed, worldgen: JSON.stringify(JSON.parse(toJson(e))) },
+    {
+      name: `Chisel ${stamp}`,
+      type: 'terrain',
+      seed,
+      worldgen: JSON.stringify(JSON.parse(toJson(e))),
+    },
     now,
   ).id;
 }
