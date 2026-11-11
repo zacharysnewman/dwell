@@ -556,7 +556,13 @@ fn emit_cards(b: &mut Builder, cells: &Cells<'_>, k: &Kind, cell: [i32; 3], list
     let before = b.vertex_count() as usize;
     b.m.plants.resize(before * 4, 0.0);
     b.m.bare.resize(before, 0.0);
-    let (color, mut tile) = surface(&k.style, 0, 1);
+    // The painted clump (`cards.tile`), white so it keeps its own colours; the leaf's side tile in a
+    // build whose atlas lacks it.
+    let (color, mut tile) = if crate::textures::has_tile(look.tile) {
+        (0xffffff, crate::textures::tile_rect(look.tile))
+    } else {
+        surface(&k.style, 0, 1)
+    };
     tile.turn = false;
     let [x, y, z] = cell;
     for card in list {

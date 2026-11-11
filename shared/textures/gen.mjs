@@ -38,9 +38,15 @@ export function toolTiles(tools = readJson(join(root, 'shared', 'tools', 'tools.
   return (tools.woods ?? []).map((w) => w.cut?.tile).filter((t) => typeof t === 'string');
 }
 
-/** Every atlas tile the texture set must paint: the registry's tiles, the woods' cut tiles and the engine's. */
-export function atlasTiles(blocks, tools = toolTiles()) {
-  return [...new Set([...ENGINE_TILES, ...registryTiles(blocks), ...tools])];
+/** The tiles the looks draw with: the leaf cards' (shared/look/leaves.json `cards.tile`). */
+export function lookTiles(leaves = readJson(join(root, 'shared', 'look', 'leaves.json'))) {
+  const t = leaves.cards?.tile;
+  return typeof t === 'string' ? [t] : [];
+}
+
+/** Every atlas tile the texture set must paint: the registry's tiles, the woods' cut tiles, the looks' and the engine's. */
+export function atlasTiles(blocks, tools = toolTiles(), looks = lookTiles()) {
+  return [...new Set([...ENGINE_TILES, ...registryTiles(blocks), ...tools, ...looks])];
 }
 
 /** Validates and paints: every atlas tile (`tiles`), in `materials.tiles` order, as { names, texels }. */

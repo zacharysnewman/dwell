@@ -21,6 +21,8 @@ pub struct LeavesLook {
 /// The leaf cards: alpha-cut leaf clumps on exposed leaf faces, near trees only.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LeafCards {
+    /// The atlas tile they are painted with (shared/textures/materials.json `tiles`).
+    pub tile: &'static str,
     /// Cards per exposed face (before the per-face share).
     pub density: f64,
     /// A card's width (m), ±25 %.

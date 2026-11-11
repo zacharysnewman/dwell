@@ -268,12 +268,18 @@ trees." Leaves stay blocks; the look is data (`shared/look/leaves.json`: the blo
   plants' `plants` stream (sway and the distance fade, so none draws past 64 m) and no ink. The
   client meshes none on a CPU adapter (`render::cards_for`, `ChunkFlags::cards`, the mesh job's bit 2).
   **Deviation:** the Lab painted a leaf-clump tile; the cards use the leaf block's own tile for now.
-- **Not built yet: far trees that match** (the LOD's trees with octagon trunks, the crown
-  downsampled, the same colours and canopy lighting). Today the LOD draws trees two ways
-  (`dwell-worldgen` `terrain.rs` `lod_trees`): at its 1 m and 2 m levels each tree's own voxels are
-  point-sampled into the section's cells (plain cubes: square trunks, unchamfered leaves, the
-  axis face tints and normals of `lod_mesher`); coarser, a share of columns shows the canopy block
-  on its top cell.
+- **Built (0.52.57): far trees that match**, at the LOD levels that hold the trees' own cells (1 m and
+  2 m; `dwell-worldgen` `terrain.rs` `lod_trees` point-samples each tree into them). The section mesher
+  (`dwell-mesh` `lod_trees.rs`) draws leaf and log cells whole, as the chunks do, at the coarser cell:
+  leaves chamfered where exposed (the same `chamfer`, a share of the cell) with the gap fill, their
+  normals and face shading leaning out of the crown (the same `Crowns` over the section's 34³
+  grid), logs as octagonal columns (their vertical edges cut where both sides are open); colours are
+  the LOD's flat tile averages. A both-faces test meshes one fixture tree as a chunk and as a
+  section and compares the silhouettes (bounds within 0.05 m, leaning normals, the trunk's diagonal
+  sides). Coarser levels still show the canopy block on a share of columns' tops.
+- **Built (0.52.57): the cards' painted clump**: `shared/textures/materials.json` `leaf_clump` (tile
+  `leafCard`, named by `cards.tile` and baked into the atlas through `gen.mjs` `lookTiles`): stems
+  radiating from the bottom middle, leaves fanned along them, cut out between, lighter on top.
 
 ## Sources
 

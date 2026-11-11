@@ -8,6 +8,7 @@ pub const LEAVES: LeavesLook = LeavesLook {
     canopy_blend: 0.75,
     chamfer: 0.28,
     cards: LeafCards {
+        tile: "leafCard",
         density: 0.55,
         size_m: 0.95,
         sway_m: 0.04,

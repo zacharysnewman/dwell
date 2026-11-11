@@ -14,6 +14,7 @@
     "logHeart": "log_heart",
     "logCut": "fresh_wood",
     "leaves": "leaves",
+    "leafCard": "leaf_clump",
     "tallGrass": "tall_grass",
     "ladder": "ladder_wood",
     "planks": "planks",
@@ -167,6 +168,19 @@
         { "kind": "dab", "count": 12, "colors": ["@shadow", "@base"], "width": [8, 10], "length": [10, 13], "angle": 35, "angleJitter": 40, "softness": 1 },
         { "kind": "dab", "count": 9, "colors": ["@base"], "width": [5, 7], "length": [7, 10], "angle": 40, "angleJitter": 30, "opacity": 0.8, "clip": true, "seed": 1 },
         { "kind": "dab", "count": 7, "colors": ["@light"], "width": [3, 4], "length": [5, 7], "angle": 45, "angleJitter": 20, "opacity": 0.75, "clip": true, "seed": 2 }
+      ]
+    },
+    "leaf_clump": {
+      "$comment": "The leaf cards' clump (shared/look/leaves.json `cards`; the Leaf Lab's card): a sprite, so it does not wrap: thin stems radiating from the bottom middle, leaves fanned out along them (left, up, right), cut out between them, dark at the foot and lighter toward the top.",
+      "use": "block", "ramp": "leaf", "overlay": 1, "alpha": "strokes", "wrap": false,
+      "layers": [
+        { "kind": "fill", "color": "@base" },
+        { "kind": "blade", "at": [[16, 1, 13], [16, 1, 16], [16, 1, 12]], "colors": ["@shadow"], "width": [1, 1.4], "length": 1, "angle": 90, "angleJitter": 45, "bend": [-2, 2] },
+        { "kind": "dab", "at": [[9, 13], [6, 20], [10, 25], [12, 18]], "colors": ["@shadow", "@base"], "width": [5, 6.5], "length": [9, 11], "angle": 135, "angleJitter": 15, "softness": 1 },
+        { "kind": "dab", "at": [[16, 16], [14, 23], [18, 26], [16, 29]], "colors": ["@base", "@shadow"], "width": [5, 6.5], "length": [9, 11], "angle": 90, "angleJitter": 15, "softness": 1, "seed": 1 },
+        { "kind": "dab", "at": [[23, 13], [26, 20], [22, 25], [20, 18]], "colors": ["@shadow", "@base"], "width": [5, 6.5], "length": [9, 11], "angle": 45, "angleJitter": 15, "softness": 1, "seed": 2 },
+        { "kind": "dab", "at": [[10, 24], [15, 27], [21, 24], [16, 20], [7, 19], [25, 19]], "colors": ["@light"], "width": [2, 3], "length": [4, 6], "angle": 90, "angleJitter": 50, "opacity": 0.8, "clip": true, "seed": 3 },
+        { "kind": "gradient", "from": "@shadow", "to": "@light", "direction": "up", "opacity": 0.45, "clip": true }
       ]
     },
     "snow_top": {
