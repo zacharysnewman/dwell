@@ -102,6 +102,13 @@ impl BifacialTerrain {
         Self::joined(world_seed, MIDPLANE.portals, a.clone(), a, true)
     }
 
+    /// [`BifacialTerrain::mirrored`] with these biomes on both faces in place of the build's
+    /// (tests add a fixture biome by data alone and compare the faces).
+    pub fn mirrored_with_biomes(world_seed: u64, biomes: &[crate::terrain::Biome]) -> Self {
+        let a = TerrainGenerator::new(face_seed(world_seed, Face::A)).with_biomes(biomes);
+        Self::joined(world_seed, MIDPLANE.portals, a.clone(), a, true)
+    }
+
     /// The portals between the faces: their sites and how they are built.
     pub fn portals(&self) -> &Portals {
         self.a.portals().expect("both faces have the portals")

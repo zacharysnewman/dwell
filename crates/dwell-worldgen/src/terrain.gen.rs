@@ -221,7 +221,7 @@ pub const FIXTURE_BIOMES: &[Biome] = &[
         vegetation: 0.0,
         erosion: 1.0,
         gullies: 0.0,
-        arches: Some(crate::arches::Arches { density: 400.0, span: [6.0, 18.0], rise: [4.0, 12.0], lintel: [2.0, 6.0], fin: 14.0 }),
+        arches: Some(crate::arches::Arches { density: 400.0, span: [6.0, 18.0], rise: [4.0, 12.0], lintel: [2.0, 6.0], fin: 14.0, overhangs: true }),
         water_look: None,
     },
     Biome {
@@ -1079,7 +1079,7 @@ pub const PRESET_BIOMES: &[Biome] = &[
         vegetation: 0.0,
         erosion: 1.0,
         gullies: 0.0,
-        arches: Some(crate::arches::Arches { density: 40.0, span: [6.0, 18.0], rise: [4.0, 12.0], lintel: [2.0, 6.0], fin: 14.0 }),
+        arches: Some(crate::arches::Arches { density: 40.0, span: [6.0, 18.0], rise: [4.0, 12.0], lintel: [2.0, 6.0], fin: 14.0, overhangs: true }),
         water_look: None,
     },
     Biome {

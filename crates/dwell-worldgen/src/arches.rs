@@ -12,7 +12,8 @@
 use crate::noise::{hash2, unit};
 
 /// A biome's arches (data): sites per km², the opening's span across the fin (m), its rise (m),
-/// the rock left above it (m), and the thickest fin it cuts through (m, along the axis).
+/// the rock left above it (m), the thickest fin it cuts through (m, along the axis), and whether a
+/// scarp's site is cut as an overhang.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Arches {
     pub density: f64,
@@ -20,6 +21,8 @@ pub struct Arches {
     pub rise: [f64; 2],
     pub lintel: [f64; 2],
     pub fin: f64,
+    /// Whether a site on a scarp (low on one side only) is cut as an overhang.
+    pub overhangs: bool,
 }
 
 /// The site grid's square (m): one chance of an arch per square.
@@ -39,6 +42,8 @@ pub struct Site {
     pub rise: f64,
     pub lintel: f64,
     pub floor: f64,
+    /// Through a fin (an arch), else cut into a scarp from its low side (an overhang).
+    pub through: bool,
 }
 
 /// A site candidate before the fin test: its square's draw.
@@ -76,24 +81,41 @@ pub fn site(a: &Arches, d: &Draw, ground: impl Fn(f64, f64) -> Option<f64>) -> O
     if d.roll >= chance {
         return None;
     }
-    // A direction from a hash, by square roots only (IEEE-exact, so native and WASM agree; no
-    // `cos`): the half plane's directions, not quite uniform in angle.
-    let t = f64::from(unit(d.hashes[0])) * 4.0 - 2.0;
-    let (ux, uz) = if t < 0.0 { (1.0, t + 1.0) } else { (1.0 - t, 1.0) };
-    let n = (ux * ux + uz * uz).sqrt();
-    let axis = [ux / n, uz / n];
     let (half_span, rise, lintel) = (
         pick(a.span, d.hashes[1]) / 2.0,
         pick(a.rise, d.hashes[2]),
         pick(a.lintel, d.hashes[3]),
     );
+    let need = rise + lintel;
     let half_fin = a.fin / 2.0;
     let [cx, cz] = d.centre;
     let top = ground(cx, cz)?;
-    let a_side = ground(cx - axis[0] * half_fin, cz - axis[1] * half_fin)?;
-    let b_side = ground(cx + axis[0] * half_fin, cz + axis[1] * half_fin)?;
-    let floor = a_side.max(b_side);
-    (top - floor >= rise + lintel).then_some(Site {
+    // Four axes (x, z and the diagonals; square roots only, IEEE-exact so native and WASM agree),
+    // from a hashed first: a fin (the ground low on both sides) makes an arch on its best axis,
+    // else a scarp (low on one side) an overhang, an opening cut into it from the low side.
+    let h = std::f64::consts::FRAC_1_SQRT_2;
+    let axes = [[1.0, 0.0], [h, h], [0.0, 1.0], [-h, h]];
+    let first = (d.hashes[0] % 4) as usize;
+    let (mut arch, mut overhang): (Option<(f64, [f64; 2], f64)>, Option<(f64, [f64; 2], f64)>) =
+        (None, None);
+    for k in 0..4 {
+        let axis = axes[(first + k) % 4];
+        let s1 = ground(cx - axis[0] * half_fin, cz - axis[1] * half_fin)?;
+        let s2 = ground(cx + axis[0] * half_fin, cz + axis[1] * half_fin)?;
+        let (lo, hi) = (s1.min(s2), s1.max(s2));
+        if top - hi >= need && arch.is_none_or(|(d, _, _)| top - hi > d) {
+            arch = Some((top - hi, axis, hi));
+        }
+        if top - lo >= need && overhang.is_none_or(|(d, _, _)| top - lo > d) {
+            overhang = Some((top - lo, axis, lo));
+        }
+    }
+    let (through, (_, axis, floor)) = match (arch, overhang) {
+        (Some(a), _) => (true, a),
+        (None, Some(o)) if a.overhangs => (false, o),
+        _ => return None,
+    };
+    Some(Site {
         centre: d.centre,
         axis,
         half_fin,
@@ -101,6 +123,7 @@ pub fn site(a: &Arches, d: &Draw, ground: impl Fn(f64, f64) -> Option<f64>) -> O
         rise,
         lintel,
         floor,
+        through,
     })
 }
 
@@ -134,6 +157,7 @@ mod tests {
         rise: [4.0, 4.0],
         lintel: [2.0, 2.0],
         fin: 12.0,
+        overhangs: false,
     };
 
     #[test]

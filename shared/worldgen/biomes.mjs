@@ -235,7 +235,8 @@ export function validateBiome(data, blocks, refs) {
  * A biome's optional `arches` (ADR 0074 B8): openings carved through narrow fins of rock. `density`
  * sites per km² (one chance per 32 m square, so at most `ARCHES.density[1]`), each range a `[min, max]`
  * pair in m: `span` the opening across the fin, `rise` its crown over the floor, `lintel` the rock left
- * above it; `fin` the thickest fin (m, along the way through) it cuts. Absent or density 0: none.
+ * above it; `fin` the thickest fin (m, along the way through) it cuts; `overhangs` (optional) also cuts
+ * a scarp's site (low on one side) as an overhang from its low side. Absent or density 0: none.
  */
 export const ARCHES = {
   density: [0, 976.5625],
@@ -249,7 +250,7 @@ export const ARCHES = {
 export function checkArches(a, fail) {
   if (a === undefined) return;
   if (typeof a !== 'object' || a === null || Array.isArray(a)) fail('arches must be an object');
-  const extra = Object.keys(a).filter((k) => k !== '$comment' && !(k in ARCHES));
+  const extra = Object.keys(a).filter((k) => !['$comment', 'overhangs'].includes(k) && !(k in ARCHES));
   if (extra.length) fail(`arches: unknown ${extra.join(', ')}`);
   for (const [k, [lo, hi]] of Object.entries(ARCHES)) {
     const v = a[k];
@@ -259,6 +260,7 @@ export function checkArches(a, fail) {
       fail(`arches.${k} must be [min, max] in [${lo}, ${hi}], min ≤ max`);
     }
   }
+  if (a.overhangs !== undefined && typeof a.overhangs !== 'boolean') fail('arches.overhangs must be true or false');
 }
 
 /** The most a biome's `trees` may multiply a placement's chance by (ADR 0074 B5). */

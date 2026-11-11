@@ -631,7 +631,7 @@ export function terrainRust({ world, biomes, fixtures = [], presets = [], worlds
       rs.push(`        gullies: ${rf(b.gullies ?? 0)},`);
       const a = b.arches;
       rs.push(
-        `        arches: ${a === undefined || a.density === 0 ? 'None' : `Some(crate::arches::Arches { density: ${rf(a.density)}, span: [${rf(a.span[0])}, ${rf(a.span[1])}], rise: [${rf(a.rise[0])}, ${rf(a.rise[1])}], lintel: [${rf(a.lintel[0])}, ${rf(a.lintel[1])}], fin: ${rf(a.fin)} })`},`,
+        `        arches: ${a === undefined || a.density === 0 ? 'None' : `Some(crate::arches::Arches { density: ${rf(a.density)}, span: [${rf(a.span[0])}, ${rf(a.span[1])}], rise: [${rf(a.rise[0])}, ${rf(a.rise[1])}], lintel: [${rf(a.lintel[0])}, ${rf(a.lintel[1])}], fin: ${rf(a.fin)}, overhangs: ${a.overhangs === true} })`},`,
       );
       const wl = b.waterLook;
       if (!wl) rs.push('        water_look: None,');

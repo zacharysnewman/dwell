@@ -228,6 +228,11 @@ fn arches(v: &Value) -> Result<Option<crate::arches::Arches>, String> {
         rise: pair("rise", 1.0, 48.0)?,
         lintel: pair("lintel", 1.0, 32.0)?,
         fin: one("fin", 2.0, 64.0)?,
+        overhangs: match a.get("overhangs") {
+            None => false,
+            Some(Value::Bool(b)) => *b,
+            Some(_) => return Err("arches.overhangs must be true or false".into()),
+        },
     };
     Ok((out.density > 0.0).then_some(out))
 }
