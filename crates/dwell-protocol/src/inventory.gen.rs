@@ -3,9 +3,9 @@
 use crate::inventory::{BlockDrops, DropChoice, DropRule, ItemDef, ItemLook, LookShape, WalletDef};
 
 /// Hotbar slots: the inventory's first slots.
-pub const HOTBAR_SLOTS: usize = 9;
+pub const HOTBAR_SLOTS: usize = 6;
 /// Backpack slots, after the hotbar's.
-pub const BACKPACK_SLOTS: usize = 27;
+pub const BACKPACK_SLOTS: usize = 30;
 /// The most of one item a slot holds (an item may hold fewer, `ItemDef::stack`).
 pub const STACK_SIZE: u16 = 64;
 /// A loose item older than this is gone.

@@ -31,6 +31,9 @@ pub const ITEMS: [ItemDef; 24] = [
     ItemDef { name: "dwell:snowy_leaves", label: "Snowy leaves", block: "dwell:snowy_leaves", tool: None, rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
 ];
 
+/// A new world's creative hotbar: the items it starts with, one per slot.
+pub const CREATIVE_HOTBAR: [&str; 6] = ["dwell:stone", "dwell:dirt", "dwell:grass", "dwell:log", "dwell:stone_axe", "dwell:stone_pickaxe"];
+
 /// The keys that step the hotbar one slot left / right (`KeyboardEvent.code`).
 pub const HOTBAR_PREV_KEY: &str = "ArrowLeft";
 pub const HOTBAR_NEXT_KEY: &str = "ArrowRight";

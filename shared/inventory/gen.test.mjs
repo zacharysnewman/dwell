@@ -8,8 +8,8 @@ const dropsOf = (d, id) => d.drops.find((b) => b.block === id).drops;
 
 test("the build's data validates with the owner's rules", () => {
   const d = validateInventory(...fresh());
-  assert.equal(d.hotbarSlots, 9);
-  assert.equal(d.backpackSlots, 27);
+  assert.equal(d.hotbarSlots, 6);
+  assert.equal(d.backpackSlots, 30);
   assert.equal(d.stackSize, 64);
   assert.deepEqual(
     dropsOf(d, 'dwell:grass').map((r) => [r.choices[0].item, r.chance]),
@@ -22,7 +22,7 @@ test("the build's data validates with the owner's rules", () => {
   assert.deepEqual(dropsOf(d, 'dwell:leaves')[0].choices[0].item, 'dwell:stick');
   assert.deepEqual(dropsOf(d, 'dwell:water'), []);
   assert.equal(d.drops.find((b) => b.block === 'dwell:stone_ramp').cost, 'dwell:stone');
-  assert.match(inventoryRust(d), /pub const HOTBAR_SLOTS: usize = 9;/);
+  assert.match(inventoryRust(d), /pub const HOTBAR_SLOTS: usize = 6;/);
   assert.match(inventoryTs(d), /export const ITEMS/);
 });
 

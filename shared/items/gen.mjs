@@ -64,19 +64,21 @@ export function toolNames() {
  * them. */
 export function validateItems(data, blocks, states = registryStates(), tools = toolNames()) {
   if (typeof data !== 'object' || data === null || Array.isArray(data)) fail('must be an object');
-  const extra = Object.keys(data).filter((k) => !['$comment', 'items', 'hotbar', 'buildModes'].includes(k));
+  const extra = Object.keys(data).filter((k) => !['$comment', 'items', 'inventory', 'hotbar', 'buildModes'].includes(k));
   if (extra.length) fail(`unknown ${extra.join(', ')}`);
   if (!Array.isArray(data.items) || data.items.length === 0) fail('items must be a non-empty list');
   const names = new Set();
+  const categories = validateInventory(data.inventory);
   data.items.forEach((it, i) => {
     const at = `items[${i}]`;
     if (typeof it !== 'object' || it === null) fail(`${at} must be an object`);
-    const e = Object.keys(it).filter((k) => !['$comment', 'name', 'label', 'block', 'tool', 'rows', 'drag', 'state', 'facing', 'upper'].includes(k));
+    const e = Object.keys(it).filter((k) => !['$comment', 'name', 'label', 'category', 'block', 'tool', 'rows', 'drag', 'state', 'facing', 'upper'].includes(k));
     if (e.length) fail(`${at}: unknown ${e.join(', ')}`);
     if (typeof it.name !== 'string' || !NAME.test(it.name)) fail(`${at}.name must be namespace:name`);
     if (names.has(it.name)) fail(`${at}.name ${it.name} is listed twice`);
     names.add(it.name);
     if (typeof it.label !== 'string' || it.label === '') fail(`${at}.label must be a name to show`);
+    if (!categories.has(it.category)) fail(`${at}.category ${JSON.stringify(it.category)} must be one of inventory.categories (${[...categories].join(', ')})`);
     // A tool (ADR 0067; owner, 2026-11-08: the axe on the creative hotbar): held, it places
     // nothing; its item names a tool of shared/tools/tools.json.
     if (it.tool !== undefined) {
@@ -120,9 +122,38 @@ export function validateItems(data, blocks, states = registryStates(), tools = t
     if (drag === 'modes' && rules.length) fail(`${at}: ${it.block} has place rules (${rules.join(', ')}): drag must be vertical or none`);
     if (drag === 'vertical' && b.needsSupport !== 'behind') fail(`${at}: drag vertical is for a block hung on a wall (needsSupport behind)`);
   });
+  data.inventory.hotbar.forEach((n, i) => {
+    if (!names.has(n)) fail(`inventory.hotbar[${i}] ${JSON.stringify(n)} is not an item above`);
+  });
   validateHotbar(data.hotbar);
   validateBuildModes(data.buildModes);
   return data;
+}
+
+/** The hotbar's slot count (shared/inventory/inventory.json `hotbarSlots`). */
+export function hotbarSlots() {
+  return JSON.parse(readFileSync(join(root, 'shared/inventory/inventory.json'), 'utf8')).hotbarSlots;
+}
+
+/** Checks the creative inventory view's groups and a new world's picks; returns the group names. */
+function validateInventory(v, slots = hotbarSlots()) {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) fail('inventory must be an object');
+  const extra = Object.keys(v).filter((k) => !['$comment', 'categories', 'hotbar'].includes(k));
+  if (extra.length) fail(`inventory: unknown ${extra.join(', ')}`);
+  if (!Array.isArray(v.categories) || v.categories.length === 0) fail('inventory.categories must be a non-empty list');
+  const names = new Set();
+  v.categories.forEach((c, i) => {
+    const at = `inventory.categories[${i}]`;
+    if (typeof c !== 'object' || c === null) fail(`${at} must be an object`);
+    const e = Object.keys(c).filter((k) => !['name', 'label'].includes(k));
+    if (e.length) fail(`${at}: unknown ${e.join(', ')}`);
+    if (typeof c.name !== 'string' || !/^[a-z0-9_]+$/.test(c.name)) fail(`${at}.name must be a lowercase word`);
+    if (names.has(c.name)) fail(`${at}.name ${c.name} is listed twice`);
+    names.add(c.name);
+    if (typeof c.label !== 'string' || c.label === '') fail(`${at}.label must be a name to show`);
+  });
+  if (!Array.isArray(v.hotbar) || v.hotbar.length !== slots) fail(`inventory.hotbar must list ${slots} items (inventory.json hotbarSlots)`);
+  return names;
 }
 
 /** Checks the hotbar's step keys and the wheel's accumulator. */
@@ -174,6 +205,8 @@ export function itemsRust(data) {
     rs.push(`    ItemDef { name: ${JSON.stringify(it.name)}, label: ${JSON.stringify(it.label)}, block: ${JSON.stringify(it.block ?? '')}, tool: ${tool}, rows: ${it.rows ?? 1}, drag: ItemDrag::${drag}, state: ${pairs(it.state)}, facing: ${facing}, upper: ${pairs(it.upper)} },`);
   }
   rs.push('];', '');
+  rs.push('/// A new world\'s creative hotbar: the items it starts with, one per slot.');
+  rs.push(`pub const CREATIVE_HOTBAR: [&str; ${data.inventory.hotbar.length}] = [${data.inventory.hotbar.map((n) => JSON.stringify(n)).join(', ')}];`, '');
   const h = data.hotbar;
   const f = (v) => (Number.isInteger(v) ? `${v}.0` : String(v));
   rs.push('/// The keys that step the hotbar one slot left / right (`KeyboardEvent.code`).');
@@ -216,6 +249,17 @@ export function buildModesTs(data) {
   ts.push('} as const;', '');
   ts.push('/** The keys that step the hotbar one slot left / right (`KeyboardEvent.code`). */');
   ts.push(`export const HOTBAR_KEYS = { prev: ${q(data.hotbar.prevKey)}, next: ${q(data.hotbar.nextKey)} } as const;`, '');
+  ts.push('/** The creative inventory view (docs/ITEMS.md §6a): its groups in order, every item in the');
+  ts.push(' * hotbar\'s order with its group, and a new world\'s picks. */');
+  ts.push('export const CREATIVE = {');
+  ts.push('  categories: [');
+  for (const c of data.inventory.categories) ts.push(`    { name: ${q(c.name)}, label: ${q(c.label)} },`);
+  ts.push('  ],');
+  ts.push('  items: [');
+  for (const it of data.items) ts.push(`    { name: ${q(it.name)}, label: ${q(it.label)}, category: ${q(it.category)} },`);
+  ts.push('  ],');
+  ts.push(`  hotbar: [${data.inventory.hotbar.map(q).join(', ')}],`);
+  ts.push('} as const;', '');
   return ts.join('\n');
 }
 

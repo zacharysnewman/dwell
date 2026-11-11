@@ -21,7 +21,7 @@ test("the build's items validate", () => {
 
 test('an item added by data alone is emitted', () => {
   const d = loadItems();
-  d.items.push({ name: 'test:leaves_tall', label: 'Leaves, 1 m', block: 'dwell:leaves', rows: 2 });
+  d.items.push({ name: 'test:leaves_tall', label: 'Leaves, 1 m', category: 'plants', block: 'dwell:leaves', rows: 2 });
   assert.match(itemsRust(validateItems(d, blocks)), /name: "test:leaves_tall".*rows: 2/);
 });
 
@@ -69,9 +69,9 @@ test('bad items fail with the entry and the problem', () => {
     [(d) => (d.buildModes.modes = []), /buildModes\.modes must be a non-empty list/],
     [(d) => (d.buildModes.clearance = 2), /buildModes\.clearance must be 0\.\.0\.5/],
     [(d) => (d.buildModes.holdMs = -1), /buildModes\.holdMs must be 0\.\.2000/],
-    [(d) => d.items.push({ name: 'test:saw', label: 'Saw', tool: 'test:saw' }), /items\[24\]\.tool "test:saw" is not a tool of shared\/tools\/tools\.json/],
-    [(d) => d.items.push({ name: 'test:axe2', label: 'Axe', tool: 'dwell:stone_axe', block: 'dwell:stone' }), /items\[24\]: give block or tool \(not both\)/],
-    [(d) => d.items.push({ name: 'test:axe3', label: 'Axe', tool: 'dwell:stone_axe', rows: 1 }), /items\[24\]: a tool places nothing \(rows\)/],
+    [(d) => d.items.push({ name: 'test:saw', label: 'Saw', category: 'tools', tool: 'test:saw' }), /items\[24\]\.tool "test:saw" is not a tool of shared\/tools\/tools\.json/],
+    [(d) => d.items.push({ name: 'test:axe2', label: 'Axe', category: 'tools', tool: 'dwell:stone_axe', block: 'dwell:stone' }), /items\[24\]: give block or tool \(not both\)/],
+    [(d) => d.items.push({ name: 'test:axe3', label: 'Axe', category: 'tools', tool: 'dwell:stone_axe', rows: 1 }), /items\[24\]: a tool places nothing \(rows\)/],
   ];
   for (const [change, message] of cases) {
     const d = loadItems();
@@ -84,7 +84,7 @@ test('a slope item added by data alone is generated with its state, facing and u
   const d = loadItems();
   d.items.push({
     name: 'dwell:stone_ramp_away',
-    label: 'Stone ramp (away)',
+    label: 'Stone ramp (away)', category: 'shapes',
     block: 'dwell:stone_ramp',
     rows: 2,
     state: { flooded: 'false', half: 'top', shape: 'steep_lower' },
@@ -100,9 +100,33 @@ test('a slope item added by data alone is generated with its state, facing and u
 
 test('a tool item added by data alone is emitted (a fixture tool of the tools data)', () => {
   const d = loadItems();
-  d.items.push({ name: 'test:flint_axe', label: 'Flint axe', tool: 'test:flint_axe' });
+  d.items.push({ name: 'test:flint_axe', label: 'Flint axe', category: 'tools', tool: 'test:flint_axe' });
   const tools = new Set([...toolNames(), 'test:flint_axe']);
   const rs = itemsRust(validateItems(d, blocks, undefined, tools));
   assert.match(rs, /ITEMS: \[ItemDef; 25\]/);
   assert.match(rs, /name: "test:flint_axe", label: "Flint axe", block: "", tool: Some\("test:flint_axe"\)/);
+});
+
+test('the creative inventory view: every item in a group, a fixture item and group by data alone', () => {
+  const d = loadItems();
+  d.inventory.categories.push({ name: 'test_group', label: 'Test group' });
+  d.items.push({ name: 'test:brick', label: 'Brick', category: 'test_group', block: 'dwell:stone', rows: 1 });
+  const ts = buildModesTs(validateItems(d, blocks));
+  assert.match(ts, /\{ name: 'test_group', label: 'Test group' \}/);
+  assert.match(ts, /\{ name: 'test:brick', label: 'Brick', category: 'test_group' \}/);
+  for (const it of loadItems().items) assert.ok(ts.includes(`name: '${it.name}'`), it.name);
+  assert.match(
+    itemsRust(validateItems(loadItems(), blocks)),
+    /CREATIVE_HOTBAR: \[&str; 6\] = \["dwell:stone", "dwell:dirt", "dwell:grass", "dwell:log", "dwell:stone_axe", "dwell:stone_pickaxe"\]/,
+  );
+  const bad = [
+    [(x) => delete x.items[0].category, /items\[0\]\.category undefined must be one of inventory\.categories/],
+    [(x) => x.inventory.hotbar.pop(), /inventory\.hotbar must list 6 items/],
+    [(x) => (x.inventory.hotbar[0] = 'test:nothing'), /inventory\.hotbar\[0\] "test:nothing" is not an item above/],
+  ];
+  for (const [edit, message] of bad) {
+    const x = loadItems();
+    edit(x);
+    assert.throws(() => validateItems(x, blocks), message);
+  }
 });

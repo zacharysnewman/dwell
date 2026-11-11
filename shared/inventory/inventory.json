@@ -1,8 +1,8 @@
 {
   "$comment": "Inventories and loose items (docs/adr/0066-inventory-and-drops.md). Every block is an item of its own name; `items` lists the items that are not blocks (prototype content, ARCHITECTURE.md §6.1): a label, and a simple look for the hotbar and a loose item (`color`, `size` in metres) or, with `look`, the item's one shaped look used everywhere it is drawn (in the hand, on the hotbar and backpack, loose, and lying on the ground as a ground item of shared/ground): `shape` rod or lump, `size` [x, y, z] metres, the `texture` of a block's side, tinted by `color`, or instead `model`, a prop of shared/models/props.json (its own mesh and palette colours; ADR 0070 §8; the stone pickaxe proves the path and does nothing yet), optionally `value` (currency: picked up into the wallet), and optionally `stack` (at most stackSize). What a block drops is its `drops` in shared/blocks/*.json. Run `node shared/inventory/gen.mjs` after editing (it checks every block's drops too); CI fails if the generated files are stale.",
   "formatVersion": 1,
-  "hotbarSlots": 9,
-  "backpackSlots": 27,
+  "hotbarSlots": 6,
+  "backpackSlots": 30,
   "stackSize": 64,
   "despawnSeconds": 300,
   "pickupRadiusM": 1.5,
