@@ -2,6 +2,14 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.52.93",
+      "changes": [
+        "Lava up close: dark crust plates drifting over glowing seams",
+        "Steam is white and hisses where lava meets water",
+        "Burning in lava reddens the edge of the screen, with a sizzle"
+      ]
+    },
+    {
       "version": "0.52.92",
       "changes": [
         "Lava glows: a dark crust over bright cracks, slowly drifting and breathing its heat",
