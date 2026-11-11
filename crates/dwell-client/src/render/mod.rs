@@ -5325,7 +5325,11 @@ fn preserve_coverage(levels: &mut [(Vec<u8>, usize)]) {
 /// Halves an RGBA8 sRGB image, averaging in linear light.
 fn downsample(src: &[u8], size: usize) -> Vec<u8> {
     let half = (size / 2).max(1);
-    let to_linear = |b: u8| srgb_to_linear(f64::from(b) / 255.0);
+    // Each byte's linear light from a table: the same values as `srgb_to_linear` per texel, without
+    // its `powf` for every channel of every texel (it was most of the graphics start's main-thread
+    // task on the web: ~40 of ~95 ms on an M1, cold).
+    let linear = srgb_linear_table();
+    let to_linear = |b: u8| linear[usize::from(b)];
     let to_srgb = |l: f64| {
         let s = if l <= 0.0031308 {
             l * 12.92
@@ -5351,6 +5355,11 @@ fn downsample(src: &[u8], size: usize) -> Vec<u8> {
         }
     }
     out
+}
+
+/// Each sRGB byte's linear light (`srgb_to_linear(b / 255)`).
+fn srgb_linear_table() -> [f64; 256] {
+    std::array::from_fn(|b| srgb_to_linear(b as f64 / 255.0))
 }
 
 impl TerrainRenderer for Renderer {
@@ -5886,6 +5895,62 @@ mod tests {
         assert_eq!(out.len(), 4);
         assert!((186..=190).contains(&out[0]), "{}", out[0]);
         assert_eq!(out[3], 255);
+    }
+
+    #[test]
+    fn mipmaps_from_the_linear_table_match_the_curve_exactly() {
+        // The table is the start's shortcut, not a new look: every mip of the real atlas comes
+        // out byte for byte as it did with `srgb_to_linear` per channel.
+        let table = srgb_linear_table();
+        for b in 0..=255u8 {
+            assert_eq!(
+                table[usize::from(b)].to_bits(),
+                srgb_to_linear(f64::from(b) / 255.0).to_bits()
+            );
+        }
+        let reference = |src: &[u8], size: usize| -> Vec<u8> {
+            let half = (size / 2).max(1);
+            let to_srgb = |l: f64| {
+                let s = if l <= 0.0031308 {
+                    l * 12.92
+                } else {
+                    1.055 * l.powf(1.0 / 2.4) - 0.055
+                };
+                (s * 255.0).round().clamp(0.0, 255.0) as u8
+            };
+            let mut out = vec![0u8; half * half * 4];
+            for y in 0..half {
+                for x in 0..half {
+                    for c in 0..4 {
+                        let at = |dx: usize, dy: usize| {
+                            src[((2 * y + dy).min(size - 1) * size + (2 * x + dx).min(size - 1))
+                                * 4
+                                + c]
+                        };
+                        let px = [at(0, 0), at(1, 0), at(0, 1), at(1, 1)];
+                        out[(y * half + x) * 4 + c] = if c == 3 {
+                            (px.iter().map(|&p| u32::from(p)).sum::<u32>() / 4) as u8
+                        } else {
+                            to_srgb(
+                                px.iter()
+                                    .map(|&p| srgb_to_linear(f64::from(p) / 255.0))
+                                    .sum::<f64>()
+                                    / 4.0,
+                            )
+                        };
+                    }
+                }
+            }
+            out
+        };
+        let mut level = dwell_mesh::build_atlas();
+        let mut size = dwell_mesh::ATLAS_SIZE;
+        while size > 1 {
+            let next = downsample(&level, size);
+            assert!(next == reference(&level, size), "mip {size} differs");
+            level = next;
+            size /= 2;
+        }
     }
 
     #[test]

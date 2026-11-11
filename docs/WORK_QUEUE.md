@@ -93,12 +93,20 @@ Last updated: 2026-11-11 (0.52.68).
 9. ~~**Loading-time display bug.**~~ Done (0.52.71): the 10 s was the graphics' start (one long task on the
    main thread making the renderer's pipelines) begun in the same task that ended the game's load, so the
    screen never painted "Starting the graphics…" and stood on "Loading the game… x MB 0.0 s". Each stage is
-   now painted before its work (`ui/startStages.ts`). Open: making the pipelines asynchronously to cut the
-   block itself.
+   now painted before its work (`ui/startStages.ts`). 0.52.75 measured it cold (fresh Chrome profile,
+   `--disable-gpu-shader-disk-cache`, M1): the main-thread task was ~90 ms, ~40 of it the atlas mips'
+   `powf` (now a table: ~50–65 ms); the pipelines compile in Chrome's GPU process, a ~270 ms frame stall
+   after the stage, not in the task. Open: that GPU-process stall (seconds on a slow GPU?) needs
+   `createRenderPipelineAsync`, which wgpu 30 lacks: a wgpu patch, or warming Dawn's pipeline cache
+   with the same descriptors through `Device::as_webgpu`.
 10. **Speed-ups 1–6** (owner: "Implement 1-6 now"): the version out of build scripts (dwell-sim's build.rs reads
    client/package.json → every release recompiles), version + release note assigned at merge, an agent
    quickstart doc, a reliable browser kit (warm prebuilt client, exact camera goto, stall retries, saved
    spots), per-area check commands, lighter paperwork for small changes. (Runs before lava.)
+   Done: 1 (local builds read `shared/version/line.json`, `<line>.0-dev.local`), 2 (pending release notes,
+   `shared/releases/pending/`, assigned by the Release workflow; RELEASES.md §3; its first run on `main`
+   still to watch), 3 (`docs/AGENT_QUICKSTART.md`), 5 (`npm run check:<area>`) and 6 (CLAUDE.md "lighter
+   paperwork"), with `docs/CLOUD_SESSIONS.md`; 4 (the browser kit) running locally.
 11. **Deer/wolf ecology simulation, first slice** (owner 2026-11-11, with a mockup:
    docs/proposals/ECOSYSTEM_MOCKUP_NOTES.md). "Simulate at a data level only when you're not nearby, render
    simply from afar, and exactly when close by." Answers: far = herds and packs (one record each;
