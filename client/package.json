@@ -1,6 +1,6 @@
 {
   "name": "@dwell/client",
-  "version": "0.52.72",
+  "version": "0.52.74",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
@@ -25,7 +25,17 @@
     "e2e:webgpu": "playwright test -c playwright.webgpu.config.ts",
     "bench": "node --experimental-strip-types scripts/bench.ts",
     "panoramas": "node --experimental-strip-types scripts/panoramas.ts",
-    "sfx:render": "node --experimental-strip-types scripts/renderSfx.ts"
+    "sfx:render": "node --experimental-strip-types scripts/renderSfx.ts",
+    "check:protocol": "node --experimental-strip-types scripts/check.ts protocol",
+    "check:data": "node --experimental-strip-types scripts/check.ts data",
+    "check:worldgen": "node --experimental-strip-types scripts/check.ts worldgen",
+    "check:mesh": "node --experimental-strip-types scripts/check.ts mesh",
+    "check:render": "node --experimental-strip-types scripts/check.ts render",
+    "check:sim": "node --experimental-strip-types scripts/check.ts sim",
+    "check:ui": "node --experimental-strip-types scripts/check.ts ui",
+    "check:audio": "node --experimental-strip-types scripts/check.ts audio",
+    "check:tools": "node --experimental-strip-types scripts/check.ts tools",
+    "check:all": "node --experimental-strip-types scripts/check.ts all"
   },
   "dependencies": {
     "qrcode-generator": "2.0.4"

@@ -1,5 +1,8 @@
 # CLAUDE.md
 
+> **For a typical task, read [`docs/AGENT_QUICKSTART.md`](docs/AGENT_QUICKSTART.md) instead of this whole
+> file:** the build rules, `npm run check:<area>`, each rule below in one line, and when to come back here.
+
 ## Project
 
 Dwell is a server-authoritative, multiplayer-first voxel sandbox with large-scale dynamic
@@ -71,6 +74,9 @@ and friend worlds), with a small master server for discovery; there are no offic
 - `docs/WATER_SURFACE_GRID.md` — design for Phase 53 (ADR 0060): water as a simulated surface grid in its own
   layer (sleeping chunks, pools, a held sea), generated water filled by it at world creation; replaces
   Phase 52's basins and pool graph when built.
+- `docs/AGENT_QUICKSTART.md` — the one page an agent reads instead of this file for a typical task.
+- `docs/CLOUD_SESSIONS.md` — running Claude Code cloud sessions for parallel logic-only work: launching,
+  follow-ups, the PR and merge flow, what suits the cloud, limits and timings.
 - `docs/ECOLOGY.md` — the far ecology (WORK_QUEUE item 11): deer herds and wolf packs as data records on a
   face's island grid, forage per cell, the day step (`crates/dwell-ecology`, `shared/ecology/ecology.json`).
 - `docs/WORK_QUEUE.md` — the owner's ordered work queue with the decisions behind each item; update it in the change that
@@ -134,6 +140,13 @@ Record the answers in the feature's design doc or ADR. If the owner prefers a ha
 a prototype, record that as a deviation with the reason. Bug fixes and tuning of an existing system
 don't need this step; a fix in hardcoded code that the baseline rework will replace doesn't need to
 make it extendable first.
+
+## Lighter paperwork for small changes
+
+Owner, 2026-11-11. Small changes — bug fixes, tuning, tests, docs — update only `docs/WORK_QUEUE.md`
+(and `docs/BUGS.md` for a reported bug) and the release note. `docs/ARCHITECTURE.md` and ADRs change
+only when the architecture actually changes; `docs/IMPLEMENTATION_PLAN.md` and its Progress table only
+for phase work. The ARCHITECTURE.md and progress sections below apply in full to those cases.
 
 ## Requirement: keep ARCHITECTURE.md up to date
 
