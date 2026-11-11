@@ -16,8 +16,8 @@ Rainier shaping, `coneHardness`), the water surface grid (ADR 0060) and explosiv
 | State | Real example | In game |
 |---|---|---|
 | Dormant | Rainier today | The cone as built (0.52.25–0.52.45): no lava. |
-| Effusive, always on | Kīlauea, Hawaii | A vent (summit crater or a flank rift) feeding a lava lake and slow flows down the slope that crust over and cool to new rock, building the land. Steady, local danger. |
-| Explosive, waiting | Mount St. Helens before 1980 | Quiet on the surface; signs as it builds (steam vents, tremors, a bulging flank); an eruption when a trigger fires (time, a pressure value, player action). |
+| Effusive, always on | Kīlauea, Hawaii | A vent (summit crater or a flank rift) feeding, as data per vent, a crater lava lake with occasional flows, or lava rivers that reach the sea and build new land (both kinds, owner Q2); flows crust over and cool to new rock. Steady, local danger. |
+| Explosive, waiting | Mount St. Helens before 1980 | Quiet on the surface; signs as it builds (steam vents, tremors, a bulging flank); an eruption when a trigger fires: time-based (a timer, or random within a window, as data) or caused by players (dynamite in the vent), both (owner Q3). |
 | Blown | Mount St. Helens after 1980 | Generated already erupted: a summit gone, a horseshoe crater opening to one side (a lateral blast and flank collapse), a debris field and ash-grey slopes, a lava dome growing in the crater. |
 
 Hotspot islands map to effusive; arc cones to dormant, waiting or blown.
@@ -25,24 +25,30 @@ Hotspot islands map to effusive; arc cones to dormant, waiting or blown.
 ## 3. Pieces it needs
 
 - **Lava as a fluid:** on the water surface grid as a second fluid (thick: slow, high viscosity), or its
-  own simple flow model; hot (light, damage, sets fire to wood), cools from its edges into rock
+  own simple flow model, simulated like water: near players, fast-forwarded elsewhere (owner Q5); hot (light, damage, sets fire to wood), cools from its edges into rock
   (basalt, obsidian at the quench edge with water), steam where it meets water.
 - **Vents and sources:** a volcano's vent cells as world data, fed at a rate (effusive) or released at
   once (explosive).
-- **Eruptions:** an explosive eruption as an event: ash column (particles, sky darkening), pyroclastic
-  flow (a fast cloud down the slope), a lateral blast that flattens trees (fells them as bodies), and
-  the cone reshaped (the blown state's shape applied live). Reuses the explosives' blast for the
-  mechanics where it fits.
+- **Eruptions:** an explosive eruption as an event: ejected rock (projectiles landing as blocks), an ash
+  column and ash clouds (particles, sky darkening) with ash fall settling on the ground, lahars (a new
+  fluid, below) down the valleys, and the cone reshaped (the blown state's shape applied live). Builds
+  near the cone are mostly flattened (cleared or replaced) or flooded, not broken into physics bodies
+  (owner Q4).
+- **Lahar as a fluid:** a mud flow, fast and heavy, running down the valleys from the cone and
+  depositing mud and ash where it stops (a second new fluid beside lava, owner Q4).
 - **Generated history:** the blown state as worldgen data on the cone (crater bearing, collapse depth,
   debris spread, ash cover), so a world can start with a volcano that went off long ago.
 
 ## 4. Phases (≤ 45 min each, sketch)
 
 - V1: lava as a fluid on a test patch (flow, cooling to rock, light, damage).
-- V2: effusive vents on hotspot cones (data), lava lakes and flows in the starter world's islands.
+- V2: effusive vents on hotspot cones (data per vent: a crater lake with occasional flows, or rivers to
+  the sea building land), in the starter world's islands.
 - V3: the blown state at worldgen (crater, collapse, debris, ash) as cone data.
-- V4: explosive-waiting signs (steam vents, tremor) and a triggered eruption event.
-- V5: the eruption reshaping the cone live; ash fall; pyroclastic flow.
+- V4: explosive-waiting signs (steam vents, tremor) and an eruption event, triggered by time (a timer or
+  random within a window, data) or by players (dynamite in the vent).
+- V5: the eruption reshaping the cone live; ejected rock; ash clouds and ash fall; lahar as a fluid;
+  builds near the cone flattened or flooded.
 
 ## 5. Questions for the owner
 
@@ -55,3 +61,18 @@ Hotspot islands map to effusive; arc cones to dormant, waiting or blown.
    everything within a radius, or mostly cosmetic ash and a crater change)?
 5. **Server cost:** lava simulated everywhere a volcano is active, or only near players (like water
    fast-forwarded elsewhere)?
+
+### Answers (owner, 2026-11-11)
+
+1. **Lava's danger:** open. Default until answered: heavy damage while in it, plus a moment of burning
+   after leaving it.
+2. **Active scale:** "Both?" — crater lava lakes with occasional flows **and** lava rivers reaching the
+   sea, building new land, chosen as data per vent.
+3. **Eruption trigger:** "both?" — time-based (a timer, or random within a window, as data) **and**
+   player-caused (e.g. dynamite in the vent).
+4. **Damage:** "a sudden eruption will spew rock, clouds of ash, cause lahar flows (Lahar would be a new
+   liquid), I think we might mostly flatten/flood vs physics destruction": ejected rock (projectiles and
+   blocks), ash clouds and ash fall, and lahar as a new fluid (a mud flow: fast, heavy, depositing mud and
+   ash when it stops); builds mostly flattened (cleared or replaced) or flooded, not broken into physics
+   bodies.
+5. **Simulated:** "same as water": near players, fast-forwarded elsewhere.

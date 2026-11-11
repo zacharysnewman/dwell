@@ -155,7 +155,7 @@ Last updated: 2026-11-11 (0.52.52).
 
 ## Future (needs owner answers)
 
-- **Active volcanoes, lava and eruptions** — docs/proposals/VOLCANOES.md (owner 2026-11-11), 5 questions open.
+- **Active volcanoes, lava and eruptions** — docs/proposals/VOLCANOES.md (owner 2026-11-11), 4 of 5 questions answered (lava's danger open).
   Phase V1 (lava as a fluid) moved into the queue (item 8); the later phases (volcano states, eruptions,
   partly destroyed cones) stay here.
 
