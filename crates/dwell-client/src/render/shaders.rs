@@ -1595,7 +1595,7 @@ fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
         let look = underside_look(hit, dir, fp, f, fluid);
         let light = look.x * (1.0 + look.y);
         // The mirror: the water's in-scatter, textured.
-        let mirror = display(underwater(underwater(vec3f(0.0), 1e6, f) * light, to_surface, f));
+        let mirror = moonlit(display(underwater(underwater(vec3f(0.0), 1e6, f) * light, to_surface, f)));
         if (leaves) {
             // Out through the window: the sky, under the window's glow (shafts.json `window`: a
             // bright white-cyan, strongest at its middle), with the patch's light round the sun;
@@ -1619,8 +1619,10 @@ fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
             let zenith = sky_radiance(up);
             let lift = inverse_display(frame.shafts_window.rgb) * max(zenith.r, max(zenith.g, zenith.b));
             let sky_in = mix(inverse_display(seen), lift, frame.shafts_window.w * (0.55 + 0.45 * inside));
-            // The sky through the window, waved by the underside's cells at the look's share.
-            let window = display(underwater((sky_in + underwater(vec3f(0.0), 1e6, f) * look.y) * mix(1.0, look.x, f.window.x), to_surface, f));
+            // The sky through the window, waved by the underside's cells at the look's share. The
+            // sun patch is the mirror's (the sun's own disc is in the window's sky), so it does not
+            // wash the sky with the water's colour.
+            let window = display(underwater(sky_in * mix(1.0, look.x, f.window.x), to_surface, f));
             back = mix(mirror, window, inside);
         } else {
             back = mirror;
@@ -1645,8 +1647,16 @@ fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
         lit *= exp(-f.absorption.rgb * max(under, 0.0))
             * caustic_light(frame.wrap.xy + rel.xz, under, frame.eye.x + rel.y, pixel_m(p, ray, depth), UNDERWATER_CAUSTICS, f, fluid);
     }
-    let shown = display(underwater(lit, min(dist, to_surface), f));
+    let shown = moonlit(display(underwater(lit, min(dist, to_surface), f)));
     return mix(back, shown, min(c.a, 1.0));
+}
+
+// The time of day's saturation (`frame.day.horizon.a`, lower by moonlight) on a colour the water
+// shows from inside (the mirror, what is under it), as `scene_display` gives the scene above: at
+// night the water below is as grey as the sea seen from above, not a saturated glowing blue
+// (WATER_RENDERING.md §16). The sky through the window keeps its own colour, as the sky pass does.
+fn moonlit(c: vec3f) -> vec3f {
+    return mix(vec3f(dot(c, vec3f(0.2126, 0.7152, 0.0722))), c, frame.day.horizon.a);
 }
 ";
 

@@ -36,6 +36,11 @@ Last updated: 2026-11-11 (0.52.52).
 
 ## Done
 
+- **Underwater at night** (0.52.53, WATER_RENDERING.md §16.1): Snell's window shows the sky pass's own
+  sky (one function: the stars, the moon, the sun, the clouds), no white-cyan glow over it, fewer cells;
+  the water seen from inside takes the moonlight's grey as the scene above does. Owner, 2026-11-11:
+  "Check the underwater update at night, and you should be looking from just outside the water up
+  compared to just under the water up, because that's the mismatch."
 - **Underwater surface** (0.52.49): Snell's window as data (`underwater.json` `window`), the refracted
   sky, the sun and moon discs, glow by the sky's light; total internal reflection outside it. Not yet
   seen in frame: the night moon disc and the sunset sun disc from below. Owner, 2026-11-11: "We need to

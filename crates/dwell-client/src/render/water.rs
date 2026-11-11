@@ -1598,8 +1598,17 @@ mod tests {
             !b.contains("frame.reflect_sky.y"),
             "the bodies show on every tier, as the sky pass draws them"
         );
+        // At night the water seen from inside takes the moonlight's grey as the scene above does
+        // (`scene_display`'s saturation), not a saturated glowing blue; the window's sky keeps its own.
+        assert!(b.contains("let mirror = moonlit(display("));
+        assert!(b.contains("let shown = moonlit(display(underwater(lit,"));
+        assert!(!b.contains("let window = moonlit("));
+        let at = src.find("fn moonlit(").expect("moonlit");
+        assert!(src[at..].contains("frame.day.horizon.a);"));
+        let at = src.find("fn scene_display(").expect("scene_display");
+        assert!(src[at..].contains("frame.day.horizon.a"), "the scene's saturation is the same");
         assert!(
-            b.contains("* mix(1.0, look.x, f.window.x), to_surface, f));"),
+            b.contains("let window = display(underwater(sky_in * mix(1.0, look.x, f.window.x), to_surface, f));"),
             "the underside's cells over the window's sky at the look's share"
         );
         let w = dwell_look::underwater::underwater_look("dwell:water");
