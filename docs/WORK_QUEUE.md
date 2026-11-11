@@ -204,6 +204,17 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    optional `grass_growth` table: on for new worlds, off for worlds saved before it (their meadows stay as
    they were). Not yet: a setting in the world menu.
 
+15. **Realistic world** (owner 2026-11-11: "The realistic world should come from our systems (which may not be
+   properly defined or built yet to support this) the seed should determine tectonic plates, rain shadow,
+   ground/rock materials, etc."). Proposal: docs/proposals/REALISTIC_WORLD.md (phases R1–R6, open questions).
+   Owner's answers: scale one region to start (a few plates meeting, a coastal range and its rain shadow,
+   one or two climate zones), designed so the 10× map ("we will test out a 10x size map soon") stays
+   possible; climate from a seed-chosen latitude band and altitude, rain from the prevailing wind and the
+   rain shadows over the seed's mountains; geology from plate history (arcs → basalt/andesite, uplifted
+   ranges → granite/metamorphic, basins → sandstone/shale, old seafloor → limestone), soils from rock +
+   climate; the starter stays a test bed, Realistic is a new World choice (later perhaps the default, on a
+   new compatibility line). **Status:** proposal written; waiting on the owner's answers (§7) before R1.
+
 ## Done
 
 - **"Starting the graphics" frozen (BUGS.md #71):** not a main-thread task: on a cold Metal shader
@@ -348,6 +359,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 - **Active volcanoes, lava and eruptions** — docs/proposals/VOLCANOES.md (owner 2026-11-11), all 5 questions answered.
   Phase V1 (lava as a fluid) moved into the queue (item 8); the later phases (volcano states, eruptions,
   partly destroyed cones) stay here.
+
+- **A 10× map** — docs/proposals/BIG_MAP.md (owner 2026-11-11: "we will test out a 10x size map soon (could
+  start whenever)"). Study written: 10× area (158 km radius) runs natively today (62 s, 871 MB a face here)
+  once the radius is one value (M0–M2, a desktop test); a phone needs coarse whole-disc grids and 100 m
+  regions on demand (R1–R6). Open: which 10× (area or radius), per build or per world, desktop first.
 
 - **Sharing saved structures between players** (owner 2026-11-11: "eventually shareable").
 
