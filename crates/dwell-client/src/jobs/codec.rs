@@ -4,6 +4,7 @@
 use dwell_mesh::{ChunkMeshes, FlatMesh, MeshArrays, SectionMeshes};
 use dwell_world::ChunkCoord;
 use dwell_world::lod::{LodBounds, LodCoord};
+use dwell_world::tree_tint::Tint;
 
 use super::{Job, Output};
 
@@ -56,6 +57,15 @@ impl W {
     }
     fn str(&mut self, s: &str) {
         self.bytes(s.as_bytes());
+    }
+    /// Leaf tints (ADR 0079): the cells' indices, then each tint's hue and lightness.
+    fn tints(&mut self, v: &[(u32, Tint)]) {
+        self.u32s(&v.iter().map(|t| t.0).collect::<Vec<_>>());
+        self.f32s(
+            &v.iter()
+                .flat_map(|t| [t.1.hue, t.1.lightness])
+                .collect::<Vec<_>>(),
+        );
     }
     fn arrays(&mut self, m: &MeshArrays) {
         self.f32s(&m.positions);
@@ -155,6 +165,26 @@ impl R<'_> {
         } else {
             None
         })
+    }
+    fn tints(&mut self) -> Res<Vec<(u32, Tint)>> {
+        let at = self.u32s()?;
+        let v = self.f32s()?;
+        if v.len() != at.len() * 2 {
+            return Err(DecodeError);
+        }
+        Ok(at
+            .into_iter()
+            .zip(v.chunks_exact(2))
+            .map(|(i, t)| {
+                (
+                    i,
+                    Tint {
+                        hue: t[0],
+                        lightness: t[1],
+                    },
+                )
+            })
+            .collect())
     }
     fn arrays(&mut self) -> Res<MeshArrays> {
         Ok(MeshArrays {
@@ -264,12 +294,14 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
             surface,
             water_drop,
             mirror,
+            tints,
         } => {
             w.u8(5);
             w.u8(u8::from(*mirror));
             w.f64(*water_drop);
             w.u16s(cells);
             w.opt_f32s(surface);
+            w.tints(tints);
         }
         Job::Registry { payload } => {
             w.u8(6);
@@ -387,6 +419,7 @@ pub fn decode_job(bytes: &[u8]) -> Result<(u32, Job), DecodeError> {
                 water_drop,
                 cells: r.u16s()?,
                 surface: r.opt_f32s()?,
+                tints: r.tints()?,
             }
         }
         6 => Job::Registry {
@@ -426,11 +459,13 @@ pub fn encode_output(id: u32, out: &Output) -> Vec<u8> {
             cells,
             surface,
             surface_b,
+            tints,
         } => {
             w.u8(2);
             w.u16s(cells);
             w.opt_f32s(surface);
             w.opt_f32s(surface_b);
+            w.tints(tints);
         }
         Output::Map(bytes) => {
             w.u8(3);
@@ -511,6 +546,7 @@ pub fn decode_output(bytes: &[u8]) -> Result<(u32, Output), DecodeError> {
             cells: r.u16s()?,
             surface: r.opt_f32s()?,
             surface_b: r.opt_f32s()?,
+            tints: r.tints()?,
         },
         3 => Output::Map(if r.u8()? == 1 { Some(r.bytes()?) } else { None }),
         4 => {
@@ -637,6 +673,16 @@ mod tests {
             surface: None,
             water_drop: 0.125,
             mirror: false,
+            tints: vec![
+                (
+                    7,
+                    Tint {
+                        hue: 0.02,
+                        lightness: 0.9,
+                    },
+                ),
+                (40, Tint::NONE),
+            ],
         });
         for (n, job) in jobs.into_iter().enumerate() {
             let id = 1000 + n as u32;

@@ -29,6 +29,7 @@ use dwell_blocks::StateId;
 use dwell_world::hash::HashMap;
 use dwell_world::lod::{self, LodBounds, LodCells, LodCoord, LodKind, LodSurface, LodSurfaces};
 use dwell_world::ramps::{self, RampFacing};
+use dwell_world::tree_tint::{Tint, TreeTint, tint_at};
 use dwell_world::{
     BUILD_VOLUME, CELL_H, CHUNK_SIZE, CORE_LAYERS, Chunk, ChunkCoord, DiscOverlap, M, MIDPLANE_Y,
     Overlap, SEA_LEVEL, SEA_LEVEL_M, chunk_disc_overlap, inside_world_disc, local_index, m_of_row,
@@ -3092,6 +3093,82 @@ impl TerrainGenerator {
             }
         };
         self.trees_over((x0, z0), (x1, z1), &ground)
+    }
+
+    /// The species trees reaching columns [x0, x1] × [z0, z1] (face-local) with their leaf tints
+    /// (ADR 0079: each tree's seed drawn through its species' `variety`), for the meshers
+    /// (`dwell_world::tree_tint`). Empty when no placement stands a species (the default world's
+    /// hand-built pines carry none) or a species' variety draws no tint.
+    pub fn tree_tints(&self, lo: (i32, i32), hi: (i32, i32)) -> Vec<TreeTint> {
+        if !self.planters.iter().any(|p| p.active() && p.grows()) {
+            return Vec::new();
+        }
+        self.trees_in(lo, hi)
+            .into_iter()
+            .filter_map(|t| {
+                let p = &self.planters[t.planter as usize];
+                let (i, seed, _) = p.grown(&t)?;
+                let tint = crate::species::tint(crate::species::SPECIES.get(usize::from(i))?, seed);
+                if tint.is_none() {
+                    return None;
+                }
+                let placed = p.place(&t);
+                Some(TreeTint {
+                    anchor: t.anchor,
+                    min: placed.min,
+                    max: placed.max,
+                    tint,
+                })
+            })
+            .collect()
+    }
+
+    /// The leaf tints of an LOD section's tree cells (ADR 0079), at the levels whose cells hold
+    /// the trees' own (`lod_trees`): for each non-air cell of `rows` (rows of `cells`, the
+    /// section's world rows; `row_of` the face-local row each was generated at, from `origin_y`),
+    /// its `lod::cell_index` and the tint of the tree owning the cell's centre — the voxel the
+    /// chunks would ask of the same tree, so near and far leaves agree.
+    #[allow(clippy::too_many_arguments)]
+    pub fn lod_tints_at(
+        &self,
+        c: lod::LodCoord,
+        origin_y: i64,
+        rows: std::ops::RangeInclusive<i32>,
+        row_of: &dyn Fn(i32) -> i32,
+        cells: &[u16],
+        out: &mut Vec<(u32, Tint)>,
+    ) {
+        let cell = lod::cell_size(c.level);
+        if cell > LOD_TREE_CELL || cells.len() < lod::VOLUME {
+            return;
+        }
+        let mut o = lod::section_origin(c);
+        o.y = origin_y;
+        let n = lod::SECTION_CELLS;
+        let half = cell / 2;
+        let centre = |o: i64, i: i32| (o + i64::from(i) * cell + half) as i32;
+        let trees = self.tree_tints(
+            (centre(o.x, -1), centre(o.z, -1)),
+            (centre(o.x, n), centre(o.z, n)),
+        );
+        if trees.is_empty() {
+            return;
+        }
+        for r in rows {
+            let y = (o.y + i64::from(row_of(r)) * cell + half) as i32;
+            for z in -1..=n {
+                for x in -1..=n {
+                    let i = lod::cell_index(x, r, z);
+                    if cells[i] == M.air {
+                        continue;
+                    }
+                    let t = tint_at(&trees, [centre(o.x, x), y, centre(o.z, z)]);
+                    if !t.is_none() {
+                        out.push((i as u32, t));
+                    }
+                }
+            }
+        }
     }
 
     /// [`TerrainGenerator::trees_in`] asking each column only as a candidate needs it (no

@@ -55,6 +55,8 @@ pub enum Job {
         surface: Option<Vec<f32>>,
         water_drop: f64,
         mirror: bool,
+        /// Its tree cells' leaf tints (ADR 0079; `dwell_mesh::mesh_section_tinted`).
+        tints: Vec<(u32, dwell_world::tree_tint::Tint)>,
     },
     /// A strip of the LOD colour map (`crate::lod_map::raster`): world texels `x0..x0 + w` ×
     /// `z0..z0 + h` of `texel_m` m on face `face` (0 A, 1 B); with `heights`, each texel's height
@@ -108,6 +110,8 @@ pub enum Output {
         cells: Vec<u16>,
         surface: Option<Vec<f32>>,
         surface_b: Option<Vec<f32>>,
+        /// Its tree cells' leaf tints (ADR 0079; `BifacialTerrain::lod_tints`).
+        tints: Vec<(u32, dwell_world::tree_tint::Tint)>,
     },
     /// Height (i16 little-endian) and an outside flag per sample; `None` without a terrain.
     Map(Option<Vec<u8>>),
@@ -271,7 +275,7 @@ impl Runner {
                 ground,
                 water_tops,
                 cards,
-            } => match dwell_mesh::mesh_chunk_damaged(
+            } => match dwell_mesh::mesh_chunk_trees(
                 &padded,
                 &light,
                 mirror,
@@ -288,6 +292,8 @@ impl Runner {
                     .as_ref(),
                 dwell_mesh::ChunkFlags { water_tops, cards },
                 &damage,
+                // Its species trees' leaf tints, from the generator this worker runs (ADR 0079).
+                &self.tree_tints(origin, &padded),
             ) {
                 Ok(m) => Output::ChunkMesh(Box::new(m)),
                 Err(e) => Output::Failed(format!("{e:?}")),
@@ -297,13 +303,14 @@ impl Runner {
                 surface,
                 water_drop,
                 mirror,
+                tints,
             } => {
                 let options = MeshSectionOptions {
                     surface: surface.as_deref(),
                     water_drop,
                     mirror,
                 };
-                match dwell_mesh::mesh_section(&cells, &options) {
+                match dwell_mesh::mesh_section_tinted(&cells, &options, &tints) {
                     Ok(m) => Output::SectionMesh(Box::new(m)),
                     Err(e) => Output::Failed(format!("{e:?}")),
                 }
@@ -321,6 +328,23 @@ impl Runner {
         })
     }
 
+    /// The species trees reaching the chunk at `origin` (world cells) with their leaf tints, in the
+    /// frame the chunk is meshed in (ADR 0079): none without terrain or leaves in `padded`.
+    fn tree_tints(
+        &self,
+        origin: [i32; 3],
+        padded: &[u16],
+    ) -> Vec<dwell_world::tree_tint::TreeTint> {
+        match &self.terrain {
+            Some(t) if dwell_mesh::has_leaves(padded) => {
+                t.tree_tints(dwell_world::ChunkCoord::from_array(
+                    origin.map(|v| v.div_euclid(dwell_world::CHUNK_SIZE)),
+                ))
+            }
+            _ => Vec::new(),
+        }
+    }
+
     fn lod(&self, c: LodCoord) -> Output {
         let mut cells = Vec::new();
         if let Some(t) = &self.terrain {
@@ -332,10 +356,12 @@ impl Runner {
             let pack = |s: &LodSurfaces, ran: bool| {
                 (ran && in_world && !s.is_empty()).then(|| surface_floats(s))
             };
+            let tints = t.lod_tints(c, &cells);
             return Output::Lod {
                 cells,
                 surface: pack(&a, first <= lod::SECTION_CELLS),
                 surface_b: pack(&b, first >= 0),
+                tints,
             };
         }
         let Some(g) = &self.lod else {
@@ -346,6 +372,7 @@ impl Runner {
             cells,
             surface: None,
             surface_b: None,
+            tints: Vec::new(),
         }
     }
 }
@@ -392,6 +419,7 @@ mod tests {
             surface: None,
             water_drop: 0.0,
             mirror: false,
+            tints: Vec::new(),
         };
         assert_eq!(mesh.column(), None);
     }

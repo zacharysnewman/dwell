@@ -54,13 +54,14 @@ mod textures;
 pub use dwell_look::{Rgb, face_tint, normal_tint};
 pub use lod_mesher::{
     FlatMesh, MeshSectionOptions, SKIRT_SINK, SURFACE_STEPS, SURFACE_STRIDE, SectionMeshes,
-    lod_color, mesh_section, mirror_rows, section_bytes,
+    lod_color, mesh_section, mesh_section_tinted, mirror_rows, section_bytes,
 };
+pub use lod_trees::has_leaves;
 pub use mesher::{
     ChunkFlags, ChunkMeshes, GroundJob, MeshArrays, PAD, PADDED_VOLUME, face_covered,
     ground_scatter, look_mesh, look_swatch, mesh_chunk, mesh_chunk_at, mesh_chunk_cut,
-    mesh_chunk_damaged, mesh_chunk_flags, mesh_chunk_ground, mesh_chunk_lit, mirror_padded,
-    padded_index,
+    mesh_chunk_damaged, mesh_chunk_flags, mesh_chunk_ground, mesh_chunk_lit, mesh_chunk_trees,
+    mirror_padded, padded_index,
 };
 /// The `fluids` stream's value for a see-through face that is not a fluid's.
 pub const NO_FLUID: f32 = 255.0;

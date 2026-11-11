@@ -18,6 +18,7 @@ use dwell_protocol::CHUNK_SIZE;
 use dwell_protocol::chopping::Cut;
 use dwell_protocol::damage::DamageView;
 use dwell_world::FaceFrame;
+use dwell_world::tree_tint::TreeTint;
 
 use crate::LengthError;
 use crate::carve::{self, Part};
@@ -376,6 +377,8 @@ struct Cells<'a> {
     origin: [i32; 3],
     /// The flood light around the chunk, face-local.
     flood: &'a Flood,
+    /// The species trees reaching the chunk (ADR 0079 leaf tints), face-local world cells.
+    trees: &'a [TreeTint],
 }
 
 impl<'a> Cells<'a> {
@@ -394,7 +397,16 @@ impl<'a> Cells<'a> {
             paths: occ.lattice_paths(),
             shaped_rays: Default::default(),
             origin,
+            trees: &[],
         }
+    }
+
+    /// The leaf tint of chunk-local cell `cell`: its owning tree's (ADR 0079), else none.
+    fn tint(&self, cell: [i32; 3]) -> dwell_world::tree_tint::Tint {
+        dwell_world::tree_tint::tint_at(
+            self.trees,
+            std::array::from_fn(|a| self.origin[a] + cell[a]),
+        )
     }
 
     /// [`Self::sky_rays`] for the lattice vertex `at` of the axis-aligned face `face`.
@@ -1688,6 +1700,7 @@ pub fn mesh_chunk_cut(
         None,
         ChunkFlags::default(),
         &[],
+        &[],
     )
 }
 
@@ -1725,6 +1738,34 @@ pub fn mesh_chunk_damaged(
     flags: ChunkFlags,
     damage: &[([i32; 3], DamageView)],
 ) -> Result<ChunkMeshes, LengthError> {
+    mesh_chunk_trees(
+        padded,
+        light,
+        mirror,
+        origin,
+        cuts,
+        ground,
+        flags,
+        damage,
+        &[],
+    )
+}
+
+/// [`mesh_chunk_damaged`] with the chunk's species trees (ADR 0079 per-tree leaf tints): each leaf
+/// cell is tinted by the tree owning it (`dwell_world::tree_tint::owner`), anchors and bounds in
+/// face-local world cells (face B's as its face-local chunk); a leaf no tree owns keeps its colour.
+#[allow(clippy::too_many_arguments)]
+pub fn mesh_chunk_trees(
+    padded: &[u16],
+    light: &[u8],
+    mirror: bool,
+    origin: [i32; 3],
+    cuts: &[([i32; 3], Cut)],
+    ground: Option<&GroundJob>,
+    flags: ChunkFlags,
+    damage: &[([i32; 3], DamageView)],
+    trees: &[TreeTint],
+) -> Result<ChunkMeshes, LengthError> {
     mesh_chunk_full(
         Kinds::build(),
         padded,
@@ -1735,6 +1776,7 @@ pub fn mesh_chunk_damaged(
         ground,
         flags,
         damage,
+        trees,
     )
 }
 
@@ -1795,6 +1837,7 @@ pub fn mesh_chunk_flags(
         ground,
         flags,
         &[],
+        &[],
     )
 }
 
@@ -1817,6 +1860,7 @@ pub(crate) fn mesh_chunk_with(
         None,
         ChunkFlags::default(),
         &[],
+        &[],
     )
 }
 
@@ -1832,6 +1876,7 @@ pub(crate) fn mesh_chunk_full(
     ground: Option<&GroundJob>,
     flags: ChunkFlags,
     damage: &[([i32; 3], DamageView)],
+    trees: &[TreeTint],
 ) -> Result<ChunkMeshes, LengthError> {
     let items = ground.map_or(Vec::new(), |g| ground_mesh::scatter(padded, origin, g));
     // The one-voxel apron, or the sky volume's deeper one (the client's jobs): the faces are
@@ -1874,6 +1919,7 @@ pub(crate) fn mesh_chunk_full(
             local,
             &carved,
             flags,
+            trees,
         );
         ground_mesh::append(&mut m.opaque, kinds, &flood, &items, origin, true);
         let damaged = damaged_cells(&inner, damage, true);
@@ -1891,7 +1937,7 @@ pub(crate) fn mesh_chunk_full(
             .filter(|(c, _)| in_chunk(*c))
             .map(|(c, cut)| (*c, *cut))
             .collect();
-        let mut m = mesh_cells(kinds, &inner, &occ, &flood, origin, &carved, flags);
+        let mut m = mesh_cells(kinds, &inner, &occ, &flood, origin, &carved, flags, trees);
         ground_mesh::append(&mut m.opaque, kinds, &flood, &items, origin, false);
         let damaged = damaged_cells(&inner, damage, false);
         damage_mesh::append(&mut m.opaque, kinds, &flood, &damaged);
@@ -1936,7 +1982,8 @@ fn in_chunk(c: [i32; 3]) -> bool {
 }
 
 /// The meshes of a chunk of face A (or a mirrored one), in chunk-local cells; `carved` its cut
-/// wood cells (face-local, as the padded block).
+/// wood cells (face-local, as the padded block); `trees` the species trees' leaf tints (ADR 0079).
+#[allow(clippy::too_many_arguments)]
 fn mesh_cells(
     kinds: &Kinds,
     padded: &[u16],
@@ -1945,6 +1992,7 @@ fn mesh_cells(
     origin: [i32; 3],
     carved: &HashMap<[i32; 3], Cut>,
     flags: ChunkFlags,
+    trees: &[TreeTint],
 ) -> ChunkMeshes {
     // A cut cell is carved only if it is drawn as an opaque cube.
     let carved: HashMap<[i32; 3], Cut> = carved
@@ -1957,7 +2005,8 @@ fn mesh_cells(
         .collect();
     let mut opaque = Builder::default();
     let mut transparent = Builder::default();
-    let cells = Cells::new(kinds, padded, occ, flood, origin);
+    let mut cells = Cells::new(kinds, padded, occ, flood, origin);
+    cells.trees = trees;
     // The heightfield's skirts draw the top water's sides to open air (W2): its runs, face-local.
     let runs = (!flags.water_tops).then(|| water_runs(kinds, padded));
     let mut cutout = Builder::default();
