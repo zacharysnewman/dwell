@@ -19,8 +19,8 @@
     "turnDeg": 0.5
   },
   "tiers": {
-    "$comment": "Per Shadows setting. resolution: each map's texels a side (a power of two). texelM: the nearest map's texel (m). levels: how many maps (1–2), each next one levelScale times coarser around the same eye. steps, reachM: each texel's march toward the light, from the first step to reachM, geometrically spaced (fine near the texel, coarse far off, each step reading the max mip its length needs). fillKtris, fillDraws: a heightmap fill draws at most this many thousand triangles and draws a frame (one map at a time; it replaces the one in use when it is whole). sweepRows: a horizon sweep marches this many rows of texels a frame. So the cost is spread over frames and never spikes.",
-    "low": { "resolution": 512, "texelM": 8, "levels": 1, "levelScale": 4, "steps": 16, "reachM": 2000, "fillKtris": 60, "fillDraws": 64, "sweepRows": 32 },
-    "high": { "resolution": 1024, "texelM": 4, "levels": 2, "levelScale": 4, "steps": 24, "reachM": 5000, "fillKtris": 80, "fillDraws": 96, "sweepRows": 32 }
+    "$comment": "Per Shadows setting. resolution: each map's texels a side (a power of two). texelM: the nearest map's texel (m). levels: how many maps (1–2), each next one levelScale times coarser around the same eye. steps, reachM: each texel's march toward the light, from the first step to reachM, geometrically spaced (fine near the texel, coarse far off, each step reading the max mip its length needs). fillKtris, fillDraws: a heightmap fill draws at most this many thousand triangles and draws a frame (one map at a time; it replaces the one in use when it is whole). sweepRows: a horizon sweep marches this many rows of texels a frame (4: each step's sub-steps, no wider than the sun's disc, cost about 4–8× the 32 rows before them; BUGS.md #69). So the cost is spread over frames and never spikes.",
+    "low": { "resolution": 512, "texelM": 8, "levels": 1, "levelScale": 4, "steps": 16, "reachM": 2000, "fillKtris": 60, "fillDraws": 64, "sweepRows": 4 },
+    "high": { "resolution": 1024, "texelM": 4, "levels": 2, "levelScale": 4, "steps": 24, "reachM": 5000, "fillKtris": 80, "fillDraws": 96, "sweepRows": 4 }
   }
 }

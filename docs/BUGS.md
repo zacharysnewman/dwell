@@ -61,6 +61,21 @@ Round 2 (branch `claude/lod-shadow-69`, session scratchpad `lod-bugs/`):
   that place. Next: read the level-1 heightmap's texels back along z = −4866, east of x = 5450, and compare
   them with `column_at` (a dev readback of `lod_maps`, `__dwell`).
 
+Round 3: the sub-steps are kept with the sweep at 4 rows a frame (`sweepRows`, was 32): on
+`lod-shadows-dusk` (M1, unthrottled) `gpu.lodsweep` p50 0.32 ms, mean 0.53 ms on the 156 frames that sweep
+(before the sub-steps: p50 0.19, mean 0.25 on 64 frames; with 8 rows: p50 0.38, mean 0.57 on 239);
+frame intervals and `frame.cpu` unchanged. A cap of 4 sub-steps would cost less but lets a wall 250 m
+beside the line shade it again (the test fails), so the cap stays 8. **The fill's geometry, read back
+natively** (`dwell-lod`, the starter world's real LOD selection from the spot, every shown section's
+opaque triangles rasterised into an 8 m top map over x −7000…13000, z −5000…−4728; probe kept as a diff in
+the session scratchpad `lod-bugs/probe_fill.diff`): the drawn tops stand at most ~90 m over `column_at`
+near the hill (cliff edges in 16 m cells, the cell's centre sample spread over the cell; up to ~230 m on
+the cone's 128 m cells), and an exact march over them toward +X at 3° finds **no streak** on z = −4866
+(no column shaded there with those 64 m north and south lit). So neither the fill's content nor the
+march's sideways reach makes the column; what is left is the sweep's and the fragment's sampling (the
+horizon map's texel rows, level boundaries) or the real light's azimuth at the world's opening hour
+(7:00, not due east). Next: read the horizon map itself back on the GPU along that line.
+
 ### 60. On the software renderer the page draws no frame for ~6 s just after the first torch is placed
 
 Found 2026-11-10 chasing main's e2e failure on 0.51.8: `edit.spec.ts`'s every-palette-block test failed

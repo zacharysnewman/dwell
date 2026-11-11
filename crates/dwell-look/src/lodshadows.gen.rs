@@ -30,7 +30,7 @@ pub const LOD_SHADOWS: LodShadowTunables = LodShadowTunables {
             reach_m: 2000.0,
             fill_ktris: 60.0,
             fill_draws: 64,
-            sweep_rows: 32,
+            sweep_rows: 4,
         },
         // high
         LodShadowTier {
@@ -42,7 +42,7 @@ pub const LOD_SHADOWS: LodShadowTunables = LodShadowTunables {
             reach_m: 5000.0,
             fill_ktris: 80.0,
             fill_draws: 96,
-            sweep_rows: 32,
+            sweep_rows: 4,
         },
     ],
 };
