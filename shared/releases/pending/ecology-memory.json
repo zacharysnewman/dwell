@@ -1,6 +1,0 @@
-{
-  "changes": [
-    "Worlds use about 11 MB less memory for their deer and wolves, which helps phones and tablets",
-    "Behind the scenes: a world's saved herds take a few kilobytes instead of megabytes; older saves still load"
-  ]
-}
