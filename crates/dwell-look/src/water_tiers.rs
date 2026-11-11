@@ -87,7 +87,8 @@ pub fn cpu_tier() -> usize {
 
 /// The tier's switches as the frame uniform carries them (`water.w`, read by the WGSL's
 /// `water_tier_*`): bit 0 reads the scene, bit 1 flow streaks, bit 2 the bank band, bits 3–4 the
-/// ripple layers, bit 5 the surface caustics, bits 6–9 the opacity in fifteenths. Exact in an f32.
+/// ripple layers, bit 5 the surface caustics, bits 6–9 the opacity in fifteenths, bit 10 molten
+/// surfaces' heat drift (lava; every tier but the CPU's, which draws it flat). Exact in an f32.
 pub fn tier_bits(t: &WaterTier) -> u32 {
     u32::from(t.reads_scene)
         | (u32::from(t.flow_streaks) << 1)
@@ -95,6 +96,7 @@ pub fn tier_bits(t: &WaterTier) -> u32 {
         | (t.ripple_layers.min(3) << 3)
         | (u32::from(t.surface_caustics) << 5)
         | (opacity_fifteenths(t.opacity) << 6)
+        | (u32::from(!t.cpu) << 10)
 }
 
 /// The opacity as `tier_bits` carries it (0–15; the WGSL divides by 15).
@@ -105,6 +107,15 @@ pub fn opacity_fifteenths(opacity: f64) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The CPU tier draws lava flat (a still glow); every other tier moves its heat (bit 10).
+    #[test]
+    fn only_the_cpu_tier_draws_molten_surfaces_still() {
+        for t in WATER_TIERS.iter() {
+            assert_eq!(tier_bits(t) & 1024 != 0, !t.cpu, "{}", t.id);
+        }
+        assert_eq!(tier_bits(&WATER_TIERS[cpu_tier()]) & 1024, 0);
+    }
 
     /// The owner's tiers (2026-11-07): a see-through Low for phones (scene, one ripple layer, no
     /// streaks, the band), Medium the whole look (High folded in), an opaque tier for the CPU only.
@@ -134,10 +145,10 @@ mod tests {
         let low = &WATER_TIERS[tier_index("low").unwrap()];
         assert_eq!(
             tier_bits(low),
-            (1 << 3) | (1 << 5) | (opacity_fifteenths(low.opacity) << 6)
+            (1 << 3) | (1 << 5) | (opacity_fifteenths(low.opacity) << 6) | (1 << 10)
         );
         let medium = &WATER_TIERS[tier_index("medium").unwrap()];
-        assert_eq!(tier_bits(medium), 1 | 2 | (3 << 3) | (15 << 6));
+        assert_eq!(tier_bits(medium), 1 | 2 | (3 << 3) | (15 << 6) | (1 << 10));
         assert_eq!(opacity_fifteenths(0.55), 8);
         assert_eq!(opacity_fifteenths(0.8), 12);
         assert_eq!(tier_bits(&WATER_TIERS[cpu_tier()]) & 1, 0);

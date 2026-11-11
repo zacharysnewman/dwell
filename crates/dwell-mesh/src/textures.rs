@@ -45,7 +45,7 @@ pub const ATLAS_SIZE: usize = CELL * ATLAS_CELLS;
 pub const ATLAS_TILES: usize = ATLAS_CELLS * ATLAS_CELLS;
 
 /// The tiles in atlas order (the registry's texture names).
-pub const TILE_ORDER: [&str; 38] = [
+pub const TILE_ORDER: [&str; 41] = [
     "plain",
     "grass",
     "grassSide",
@@ -88,6 +88,10 @@ pub const TILE_ORDER: [&str; 38] = [
     "logCut",
     // The end grain inside an octagonal log's bark ring (its `crossSection.heart`, ADR 0072).
     "logHeart",
+    // Lava's rocks and its molten surface (docs/proposals/VOLCANOES.md §6, WATER_RENDERING.md §17).
+    "basalt",
+    "obsidian",
+    "lava",
     // Glacier ice's top and sides (0.52.45; plain snow takes `snow` on every face).
     "glacierIceTop",
     "glacierIceSide",
@@ -146,14 +150,15 @@ pub fn tile_rect(name: &str) -> TileRect {
 }
 
 /// The grid lines of each atlas tile slot (index cx + cy × `ATLAS_CELLS`, `TILE_ORDER` order):
-/// `[every, strength, glow, 0]` (zero for none; the glow is [`tile_emissive`]). A tile's grid is the registry's `grid` look
+/// `[every, strength, glow, 0]` (zero for none; the glow is [`tile_emissive`], negated for a
+/// [`tile_molten`] tile: its sign tells the shader to move the slow heat pattern over it). A tile's grid is the registry's `grid` look
 /// option of the states drawn with it (an untextured state with the `plain` tile); `gen.mjs`
 /// rejects a tile whose states disagree, so the terrain shader can find a face's grid from its
 /// tile rectangle with nothing added to the vertex.
 pub fn tile_grids() -> [[f32; 4]; ATLAS_TILES] {
     let mut out = [[0.0; 4]; ATLAS_TILES];
     for (i, name) in TILE_ORDER.iter().enumerate() {
-        out[i][2] = tile_emissive(name);
+        out[i][2] = tile_glow_entry(name);
     }
     for s in &dwell_blocks::STATES {
         let names = s
@@ -180,6 +185,21 @@ pub fn tile_emissive(name: &str) -> f32 {
         .iter()
         .position(|t| *t == name)
         .map_or(0.0, |i| painterly::PAINTERLY_EMISSIVE[i])
+}
+
+/// Whether tile `name` is molten (its material's `molten`, WATER_RENDERING.md §17): lava, whose
+/// glow the terrain shader moves a slow heat pattern over (off on the CPU tier).
+pub fn tile_molten(name: &str) -> bool {
+    PAINTERLY_TILES
+        .iter()
+        .position(|t| *t == name)
+        .is_some_and(|i| painterly::PAINTERLY_MOLTEN[i])
+}
+
+/// The tile table's glow slot for `name`: its emissive, negative when molten.
+pub fn tile_glow_entry(name: &str) -> f32 {
+    let g = tile_emissive(name);
+    if tile_molten(name) { -g } else { g }
 }
 
 /// Whether tile `name` hangs from its block's top edge (its material's `hang`, a turf skirt): a side
@@ -494,7 +514,7 @@ mod tests {
                 .textures
                 .map_or(["plain"; 3], |t| [t.top, t.side, t.bottom]);
             for name in names {
-                let glow = tile_emissive(name);
+                let glow = tile_glow_entry(name);
                 let near = table[TILE_ORDER.iter().position(|t| *t == name).expect("tile")][3];
                 assert!(
                     near >= s.near_fade,
@@ -532,6 +552,11 @@ mod tests {
             0.0
         );
         assert_eq!(table[0], [0.0; 4], "plain: no grid");
+        // Lava's tile glows and is molten: its slot is negative (the shader's heat drift).
+        let lava = dwell_blocks::info(dwell_blocks::require("dwell:lava"));
+        let t = lava.textures.expect("lava is textured").top;
+        assert!(tile_molten(t) && tile_emissive(t) > 0.0);
+        assert!(table[TILE_ORDER.iter().position(|n| *n == t).unwrap()][2] < 0.0);
     }
 }
 

@@ -22,7 +22,7 @@ export const RAMP_STOPS = ['shadow', 'base', 'light'];
 const DIRECTIONS = ['up', 'down', 'left', 'right', 'radial'];
 const EDGES = ['top', 'bottom', 'left', 'right', 'all'];
 
-const MATERIAL_KEYS = ['$comment', 'use', 'ramp', 'overlay', 'wrap', 'alpha', 'emissive', 'hang', 'like', 'over', 'layers'];
+const MATERIAL_KEYS = ['$comment', 'use', 'ramp', 'overlay', 'wrap', 'alpha', 'emissive', 'molten', 'hang', 'like', 'over', 'layers'];
 const COMMON_KEYS = ['$comment', 'kind', 'opacity', 'clip'];
 const LAYER_KEYS = {
   fill: ['color'],
@@ -230,6 +230,10 @@ export function validateMaterials(materials, palette, atlasTiles = null) {
     if (m.emissive !== undefined) checkRange(`materials.json: ${where}.emissive`, m.emissive, 0, 4);
     // `hang` (PAINTERLY_TEXTURES.md §1): a side tile that hangs from each block's top edge (a skirt).
     if (m.hang !== undefined && typeof m.hang !== 'boolean') fail(`${where}.hang must be true or false`);
+    // `molten` (WATER_RENDERING.md §17): a self-lit tile the terrain shader moves a slow heat
+    // pattern over (lava); it must glow.
+    if (m.molten !== undefined && typeof m.molten !== 'boolean') fail(`${where}.molten must be true or false`);
+    if (m.molten && !(m.emissive > 0)) fail(`${where}.molten needs emissive > 0 (a molten tile glows)`);
     if (m.alpha !== undefined && !['opaque', 'strokes'].includes(m.alpha)) fail(`${where}.alpha must be "opaque" or "strokes"`);
     if (m.over !== undefined) {
       const chain = [name];

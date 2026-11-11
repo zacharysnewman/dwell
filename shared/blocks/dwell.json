@@ -665,7 +665,7 @@
       "of": "red_sandstone"
     },
     {
-      "$comment": "Basalt (lava V1, docs/proposals/VOLCANOES.md §6): the rock lava cools into (shared/fluids/lava.json `cooling.rock`), new land where a lava river crusts over. Breaks, drops and sounds like stone. Placeholder look: stone's painted tile under a dark tint (`color`); its own tile comes with the lava look. Prototype content.",
+      "$comment": "Basalt (lava V1, docs/proposals/VOLCANOES.md §6): the rock lava cools into (shared/fluids/lava.json `cooling.rock`), new land where a lava river crusts over. Breaks, drops and sounds like stone. Its look: the painterly `basalt` tile (shared/textures/materials.json, ropey pahoehoe folds). Prototype content.",
       "name": "basalt",
       "damage": { "default": null, "pickaxe": 7, "look": { "kind": "shards", "size": 0.34, "color": "#8c8a90", "crack": "#2a282c" }, "chips": { "count": 7, "color": "#4a4648", "speed": 2.6, "size": 0.045 } },
       "drops": [{ "item": "dwell:rock_shard", "count": 8 }],
@@ -674,11 +674,11 @@
       "shape": "full",
       "placeable": true,
       "properties": { "flooded": ["false", "true"] },
-      "color": "#4a4648",
-      "textures": "stone"
+      "color": "#35323a",
+      "textures": "basalt"
     },
     {
-      "$comment": "Obsidian (lava V1): the quench edge, lava chilled at once where water touches it (shared/fluids/lava.json `quench.rock`). Breaks, drops and sounds like stone, harder. Placeholder look: stone's tile under a near-black tint. Prototype content.",
+      "$comment": "Obsidian (lava V1): the quench edge, lava chilled at once where water touches it (shared/fluids/lava.json `quench.rock`). Breaks, drops and sounds like stone, harder. Its look: the painterly `obsidian` tile (near-black glass with a violet sheen). Prototype content.",
       "name": "obsidian",
       "damage": { "default": null, "pickaxe": 12, "look": { "kind": "shards", "size": 0.34, "color": "#6e6080", "crack": "#0c0a10" }, "chips": { "count": 7, "color": "#2a2236", "speed": 2.6, "size": 0.045 } },
       "drops": [{ "item": "dwell:rock_shard", "count": 8 }],
@@ -687,11 +687,11 @@
       "shape": "full",
       "placeable": true,
       "properties": { "flooded": ["false", "true"] },
-      "color": "#1d1724",
-      "textures": "stone"
+      "color": "#16121e",
+      "textures": "obsidian"
     },
     {
-      "$comment": "Lava (lava V1, docs/proposals/VOLCANOES.md §6): the cells the server's lava fields (crates/dwell-lava, shared/fluids/lava.json) hold molten. No collision (a player wades in and burns); written by the server only, never placed. `emits` is shared/fluids/lava.json's `light` (a test checks). Placeholder look until the lava's own look (the next slice): stone's tile under a bright orange tint. Prototype content.",
+      "$comment": "Lava (lava V1, docs/proposals/VOLCANOES.md §6): the cells the server's lava fields (crates/dwell-lava, shared/fluids/lava.json) hold molten. No collision (a player wades in and burns); written by the server only, never placed. `emits` is shared/fluids/lava.json's `light` (a test checks). Its look: the painterly `lava` tile (crust plates over glowing cracks), self-lit (`emissive`) and `molten` (the terrain shader's slow heat drift, off on the CPU tier; WATER_RENDERING.md §17). Prototype content.",
       "name": "lava",
       "sound": "dwell:stone",
       "density": 2600,
@@ -700,7 +700,7 @@
       "medium": "air",
       "emits": 13,
       "color": "#e8561c",
-      "textures": "stone"
+      "textures": "lava"
     }
   ]
 }
