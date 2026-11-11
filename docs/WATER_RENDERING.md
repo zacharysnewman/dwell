@@ -1175,7 +1175,7 @@ both data-driven:
 - **Molten** (`"molten": true` on a material, checked by `paint.mjs`: it needs `emissive` > 0): the
   generator emits `PAINTERLY_MOLTEN`, and `dwell-mesh` `tile_glow_entry` stores such a tile's glow
   **negated** in the tile table (`tile_grids`' z), so the terrain shader finds it from the tile with
-  nothing added to the vertex. `terrain_fs` then shifts each block's tile by a hash of the block (so the crust plates do not line up in a grid, as the first in-game shots showed) and drifts it by `MOLTEN_DRIFT` (blocks a
+  nothing added to the vertex. `terrain_fs` then stretches the tile over `MOLTEN_SPAN` (3) blocks, so the crust plates are metres across (at one block a tile the first in-game shots read as a checkerboard), drifts it by `MOLTEN_DRIFT` (blocks a
   second, slow) and multiplies the glow of its bright texels (the cracks, not the crust plates) by
   `molten_heat`: two slow world-space waves, 0.7–1.4 ×.
 - **The CPU tier** draws it flat: the water tier's bit 10 (`dwell-look` `tier_bits`, every tier but the

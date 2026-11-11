@@ -328,7 +328,8 @@ fn tile_molten(tile_origin: vec2f) -> bool {
 
 // Lava's slow heat (WATER_RENDERING.md §17): the crust drifts at MOLTEN_DRIFT blocks a second
 // and two slow waves over the world brighten and dim its glowing cracks, 0.7–1.4 × the glow.
-const MOLTEN_DRIFT: vec2f = vec2f(0.035, 0.02);
+const MOLTEN_DRIFT: vec2f = vec2f(0.012, 0.007);
+const MOLTEN_SPAN: f32 = 3.0;
 fn molten_heat(world_xz: vec2f, t: f32) -> f32 {
     let a = sin(dot(world_xz, vec2f(0.41, 0.23)) - 0.45 * t);
     let b = sin(dot(world_xz, vec2f(-0.17, 0.37)) + 0.31 * t + 1.7);
@@ -688,13 +689,12 @@ fn terrain_fs(i: TerrainOut, @builtin(front_facing) front: bool) -> SceneOut {
     let draw = draws[i.draw];
     // A molten tile (lava) drifts its crust slowly and breathes its cracks' heat.
     let molten = tile_molten(i.tile.xy);
-    // Each block's tile shifted by its own hash too, so the crust plates don't line up block to
-    // block (a regular grid read as tiling in the bench's shots).
-    let block = floor(i.uv);
-    let shift = fract(sin(vec2f(dot(block, vec2f(12.9898, 78.233)), dot(block, vec2f(39.346, 11.135)))) * 43758.5453);
-    let drift = select(vec2f(0.0), MOLTEN_DRIFT * frame.fog.z + shift, molten);
-    let atlas_uv = i.tile.xy + fract(i.uv + drift) * i.tile.zw;
-    let grads = atlas_grads(dpdx(i.uv) * i.tile.zw, dpdy(i.uv) * i.tile.zw);
+    // Its tile spans MOLTEN_SPAN blocks (the tile wraps), so the crust plates are metres across
+    // and don't repeat block by block (at one block a tile they read as a checkerboard).
+    let span = select(1.0, 1.0 / MOLTEN_SPAN, molten);
+    let drift = select(vec2f(0.0), MOLTEN_DRIFT * frame.fog.z, molten);
+    let atlas_uv = i.tile.xy + fract(i.uv * span + drift) * i.tile.zw;
+    let grads = atlas_grads(dpdx(i.uv) * span * i.tile.zw, dpdy(i.uv) * span * i.tile.zw);
     let texel = textureSampleGrad(atlas, atlas_sampler, atlas_crisp(atlas_uv), grads[0], grads[1]);
     let n = select(-i.normal, i.normal, front);
     let shade = grid_shade(i.uv, tile_grid(i.tile.xy));
