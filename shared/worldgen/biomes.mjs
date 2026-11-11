@@ -32,6 +32,7 @@ export const TERRAIN = {
     arcDistance: [0, 30_000],
     arcSpacing: [{ above: 0 }, 50_000],
     coneHeight: [0, 8000],
+    arcDecay: [0, 1],
     coneRadius: [{ above: 0 }, 20_000],
     craterRadius: [0, 5000],
     craterDepth: [0, 1000],

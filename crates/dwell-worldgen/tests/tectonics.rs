@@ -173,3 +173,22 @@ dwell_world::both_faces!(
         }
     }
 );
+
+#[test]
+fn the_arcs_cones_fall_off_by_arc_decay() {
+    // both-faces: the layer's data, no face.
+    // 1 (terrain.json's): every cone alike; below 1 each next one along the arc is that share of the
+    // last's height (0.52.63: the starter's arc was two identical peaks).
+    let alike = fixture();
+    assert_eq!(alike.arc_decay, 1.0);
+    let hs: Vec<f64> = alike.volcanoes()[..3].iter().map(|v| v.height).collect();
+    assert_eq!(hs, vec![700.0; 3]);
+    let falling = Tectonics {
+        arc_decay: 0.75,
+        ..fixture()
+    };
+    let hs: Vec<f64> = falling.volcanoes()[..3].iter().map(|v| v.height).collect();
+    assert_eq!(hs, vec![700.0, 525.0, 393.75]);
+    // The hotspot chain is the same.
+    assert_eq!(falling.volcanoes()[3..], alike.volcanoes()[3..]);
+}

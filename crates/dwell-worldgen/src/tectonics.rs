@@ -42,6 +42,8 @@ pub struct Tectonics {
     pub arc_distance: f64,
     pub arc_spacing: f64,
     pub cone_height: f64,
+    /// Each next arc cone's height as a share of the last's (1: all `cone_height`).
+    pub arc_decay: f64,
     pub cone_radius: f64,
     pub crater_radius: f64,
     pub crater_depth: f64,
@@ -151,7 +153,11 @@ impl Tectonics {
                 v.push(Volcano {
                     x,
                     z,
-                    height: self.cone_height,
+                    height: if self.arc_decay == 1.0 {
+                        self.cone_height
+                    } else {
+                        self.cone_height * self.arc_decay.powi(k as i32)
+                    },
                     radius: self.cone_radius,
                     crater_radius: self.crater_radius,
                     crater_depth: self.crater_depth,

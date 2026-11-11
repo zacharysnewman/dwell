@@ -1,5 +1,5 @@
 {
-  "$comment": "The starter world (a candidate default, for the owner to react to; never a world's own yet): the systemic terrain layers (ADR 0075) and the preset biomes (ADR 0074) in one world. The world knobs: one convergent plate boundary with its range and an arc of two cones, Rainier-shaped (tall_peak's keys; the arc's cones share one height today), the snow and ice lines on; a hotspot chain of islands offshore. The biome map: the rain shadow on (rainShare 0.6, the westerly wind's rain), dithered borders. The biomes: the default (a low weight, the fallback where no preset fits) and the presets by climate, each with vegetation, rocks, ground and trees opted in; the tree species (shared/trees, ADR 0079) opted in: oaks in the broadleaf groves, the pine species' conifer groves in place of the default's pine groves, palms on the warm coast (the tropical beach's `palm_coasts`). `biomes` names a biome or preset (`{ \"biome\": name, ...keys }` replaces those keys); `biomeMap` keys over terrain.json's; `geology` keys over rocks.json's. Play it at ?worldgen=test:starter. Prototype content.",
+  "$comment": "The starter world (a candidate default, for the owner to react to; never a world's own yet): the systemic terrain layers (ADR 0075) and the preset biomes (ADR 0074) in one world. The world knobs: one convergent plate boundary with its range and an arc of two cones, Rainier-shaped (tall_peak's keys; the second 0.72 of the first's height, `arcDecay`), the snow and ice lines on; a hotspot chain of islands offshore. The biome map: the rain shadow on (rainShare 0.6, the westerly wind's rain), dithered borders. The biomes: the default (a low weight, the fallback where no preset fits) and the presets by climate, each with vegetation, rocks, ground and trees opted in; the tree species (shared/trees, ADR 0079) opted in: oaks in the broadleaf groves, the pine species' conifer groves in place of the default's pine groves, palms on the warm coast (the tropical beach's `palm_coasts`). `biomes` names a biome or preset (`{ \"biome\": name, ...keys }` replaces those keys); `biomeMap` keys over terrain.json's; `geology` keys over rocks.json's. Play it at ?worldgen=test:starter. Prototype content.",
   "name": "test:starter",
   "overrides": {
     "tectonics": {
@@ -12,6 +12,7 @@
       "arcDistance": 8000,
       "arcSpacing": 16000,
       "coneHeight": 4800,
+      "arcDecay": 0.72,
       "coneRadius": 12000,
       "craterRadius": 400,
       "craterDepth": 150,
