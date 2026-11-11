@@ -165,6 +165,12 @@
   limit), checked against the hash, so a guest builds the host's maps and an older build refuses the
   world; the dedicated server's `--worldgen` (not saved in the world: given on every start).)*
 
+  *New world form (0.52.64): a **World** choice, Default or a world file that carries `newWorld` (a
+  label and a line; `shared/worldgen/worlds/*.json`, checked by gen.mjs; `client/src/ui/worldChoices.ts`):
+  the starter is offered. The made world records the file's name as its `worldgen` (the 0.52.27 record,
+  append-only), so it reopens on the same ground and a guest gets it at join (0.52.38). A world file's
+  `cliffs` (0..1) sets the terrain volume's strength in that world (0: none); the starter has none.*
+
   *Starter tuning (0.52.63): the biome map's `sharpen` (the pick's exponent on the weights; 1, the default,
   the arithmetic of before) is data in `terrain.json` `biomeMap`, overridable per world and tuned in Chisel;
   the starter world uses 2 (WORLD_GENERATION.md, the starter world). Chisel's **Open starter world** (File) loads

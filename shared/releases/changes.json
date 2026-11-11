@@ -4,7 +4,8 @@
     {
       "version": "0.52.64",
       "changes": [
-        "New world: pick the World, Default or Starter (eleven biomes, a volcano arc), and friends who join get the same ground"
+        "New world: pick the World, Default or Starter (eleven biomes, a volcano arc), and friends who join get the same ground",
+        "The starter world has no cliffs: its hills are grassy slopes"
       ]
     },
     {

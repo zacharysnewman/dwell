@@ -92,9 +92,17 @@ Last updated: 2026-11-11 (0.52.52).
   balance (broadleaf up, boreal and steppe down), the pick's `sharpen` (less mesa/badlands speckle), the
   boreal spot's pines, the arc's cones falling off (`arcDecay`), Chisel's "Open
   starter world", the tour printing a mesa spot (its strongest sample), a
-  biome's `decorations` read. Left: the cliffs layer in the starter (weaker or off), tour spots for the volcano
-  view, a wetland and a mesa, in-game screenshots of the spots;
-  the New world form's biome/world choice.
+  biome's `decorations` read. 0.52.64 (round 2): the New world form's **World** (Default, or a world
+  file offered as data, `newWorld`: Starter), recorded as the world's `worldgen` so it reopens and guests
+  get it; a world's `cliffs` (the terrain volume's strength, 0 none) and the starter without cliffs (seen
+  in game at 1, 0.5 and 0 at the steppe and the broadleaf spots: stone and dirt walls across the forest at
+  1 and 0.5 alike; off, the hillsides read as grassy slopes with oaks); the tour spots looked at in game
+  (the volcano view from 15 km east, facing west: the cone fills the view over red badlands, a black
+  vertical seam on it; the wetland spot is a grassy slope with no water in view: the river is ~150 m
+  off; the mesa spot stands on red ground under a grey stone ridge). Left: a wetland tour spot by its
+  water, a mesa spot that reads as a mesa, the page stalling on a fresh load at a far spot when a long
+  script waits on it (twice; a new tab loaded), spacing per biome, players' structures as sources, the
+  in-game editor, the textures tab extras.
 
 - **Underwater at night** (0.52.53, WATER_RENDERING.md §16.1): Snell's window shows the sky pass's own
   sky (one function: the stars, the moon, the sun, the clouds), no white-cyan glow over it, fewer cells;
