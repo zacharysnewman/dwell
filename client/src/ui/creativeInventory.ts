@@ -195,6 +195,14 @@ export class CreativeInventory {
     });
   }
 
+  /** Puts the item named `name` in the selected slot; false if the palette lacks it. */
+  pickItem(name: string): boolean {
+    const index = this.palette.indexOf(name);
+    if (index < 0) return false;
+    this.pick(this.selected, index);
+    return true;
+  }
+
   /** Puts palette item `index` in slot `slot` and redraws the view's hotbar. */
   pick(slot: number, index: number): void {
     const picks = this.assign(slot, index);

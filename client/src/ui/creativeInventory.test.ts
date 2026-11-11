@@ -54,7 +54,12 @@ describe('creative inventory view', () => {
 
   it('the search keeps the items whose label holds it', () => {
     const names = catalogue(palette, 'AXE').flatMap((g) => g.items.map((i) => i.name));
-    expect(names).toEqual(['dwell:stone_axe', 'dwell:metal_axe', 'dwell:stone_pickaxe', 'dwell:metal_pickaxe']);
+    expect(names).toEqual([
+      'dwell:stone_axe',
+      'dwell:metal_axe',
+      'dwell:stone_pickaxe',
+      'dwell:metal_pickaxe',
+    ]);
     expect(catalogue(palette, 'nothing like it')).toEqual([]);
   });
 
@@ -86,7 +91,13 @@ describe('creative inventory view', () => {
     const bad = memory({ [PICKS_KEY]: '{broken' });
     savePicks(bad, 'w1', picks, palette);
     expect(bad.data[PICKS_KEY]).toBe('{broken');
-    expect(loadPicks(memory({ [PICKS_KEY]: '{"w":["a:b","a:b","a:b","a:b","a:b","a:b"]}' }), 'w', palette)).toBeNull();
+    expect(
+      loadPicks(
+        memory({ [PICKS_KEY]: '{"w":["a:b","a:b","a:b","a:b","a:b","a:b"]}' }),
+        'w',
+        palette,
+      ),
+    ).toBeNull();
   });
 });
 

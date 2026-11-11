@@ -261,7 +261,7 @@ test('a held ladder climbs the wall it is hung on, and stops where the wall ends
   await call(page, 'd.press("KeyS", false)');
   await page.waitForTimeout(300);
   // The ladder (its own drag: up or down only, whatever the mode) on the pillar's near side.
-  await page.locator('#hotbar .hotbar-slot[title="Ladder"]:visible').click();
+  expect(await call<boolean>(page, 'd.pick("dwell:ladder")')).toBe(true);
   await lookAtPoint(page, [x + 0.5, (y + 2.5) * CELL_HEIGHT, z + 0.02]);
   await expect.poll(async () => (await state(page))?.target?.face ?? -1).toBe(5);
   await page.waitForTimeout(150); // BLOCK_EDIT_INTERVAL_MS

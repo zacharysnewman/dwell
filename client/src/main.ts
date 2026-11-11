@@ -198,6 +198,11 @@ interface DwellDebug {
   buildMode(): string;
   /** Selects a hotbar slot, as a number key does. */
   select(slot: number): void;
+  /**
+   * Creative: puts the item named `item` (shared/items/items.json) in the selected hotbar slot, as
+   * a click in the inventory view does; false if it is not a creative item.
+   */
+  pick(item: string): boolean;
   /** The state the selected slot would place at the crosshair, and where; null with no target. */
   placement(): { cell: [number, number, number]; material: number } | null;
   /** Material at a voxel in the client's world. */
@@ -1052,6 +1057,7 @@ async function start(): Promise<App | null> {
     select: (slot) => {
       client.select(slot);
     },
+    pick: (item) => app.creative?.pickItem(item) ?? false,
     placement: () =>
       client.placement() as { cell: [number, number, number]; material: number } | null,
     voxel: (x, y, z) => client.voxel(x, y, z),
@@ -1315,7 +1321,9 @@ function setInventoryOpen(app: App, open: boolean): void {
   if (open) document.exitPointerLock();
   // The touch controls step aside but for the bag button, which closes it again.
   document.body.classList.toggle('inventory-open', open);
-  app.client.setMenuOpen(open || (app.settings?.isOpen ?? false) || (app.minimap?.bigOpen ?? false));
+  app.client.setMenuOpen(
+    open || (app.settings?.isOpen ?? false) || (app.minimap?.bigOpen ?? false),
+  );
 }
 
 /** Once joined: the hotbar, the block dump's world, and the debug tools. */
