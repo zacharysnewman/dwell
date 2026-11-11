@@ -82,6 +82,10 @@ Last updated: 2026-11-11 (0.52.52).
      upper face is not clearly seen in the shots, and a short octagon piece lies beside the stump
      after the fall (not looked into); the hinge's break is cell-sized; the hold-to-chop rhythm and
      IK (C2, C3) and the dedicated server's switch, for later; the owner's review.
+8. **Lava (VOLCANOES.md phase V1)** — next after the terrain leftovers' current round (0.52.66), ahead of
+   the remaining leftover sections (owner, 2026-11-11: "Let's implement lava", "Into our queue"): lava as
+   a fluid — flows slowly, cools into rock, gives light, damages, steam where it meets water. The other
+   volcano phases stay under Future.
 
 ## Done
 
@@ -152,6 +156,8 @@ Last updated: 2026-11-11 (0.52.52).
 ## Future (needs owner answers)
 
 - **Active volcanoes, lava and eruptions** — docs/proposals/VOLCANOES.md (owner 2026-11-11), 5 questions open.
+  Phase V1 (lava as a fluid) moved into the queue (item 8); the later phases (volcano states, eruptions,
+  partly destroyed cones) stay here.
 
 ## Waiting on the owner
 
