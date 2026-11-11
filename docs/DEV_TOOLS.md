@@ -1547,3 +1547,14 @@ Heights are true scale up to 2 km squares, ×2 at 4 km and ×3 at 8 km (the stat
 sample at 2 m). M1, Chrome on the GPU, 1 km at 2 m (512² columns, ~0.7–1.5 M triangles): the 4 m pass
 in 58–68 ms, the 2 m pass in 300–330 ms, its upload and first draw 6–16 ms;
 `document.body.dataset.section` is `<texel>:<build ms>:<draw ms>` for a script.
+
+**The Textures tab** (0.52.42, ADR 0074 B6; `?tab=textures&tex=grass_top`): the painterly materials
+and palette (`shared/textures/`) edited with the build's own painter (`paint.mjs`). Pick a block
+material; its layers show as sliders (count, widths, lengths, angles, opacity, …; a [min, max] pair as
+two) and palette pickers; the palette group shows the material's ramp (or every ramp) as colour
+pickers, an art-direction warning outlined in red and listed. The right shows the tile, a 3 × 3 repeat
+and the block on a cube, repainted on every change; `document.body.dataset.texture` is
+`<material>:<far colour>`. With the 3D section on, an edit re-tints its blocks ~150 ms later. Export
+downloads `materials.json` and `palette.json` (drop them into `shared/textures/`, run
+`node shared/textures/gen.mjs`); edits persist in the browser (`dwell.chisel.textures`, set aside when
+the build's data changes); Reset textures returns to the build's.

@@ -141,7 +141,16 @@
   their rules, as the overview reads no voxels). Deviations, left for later: spacing per
   biome (the overlap test is per rule); the player's saved structures (the sandbox store) as placement
   sources (placement reads the build's `shared/structures` only).)*
-- **B6** Chisel's texture tab (the Painterly Texture Lab folded in).
+- **B6** Chisel's texture tab (the Painterly Texture Lab folded in). *(Built 0.52.42: a **Textures** tab
+  beside Biomes runs the build's painter (`shared/textures/paint.mjs`, the one `gen.mjs` bakes with) in
+  the page, so an unchanged material previews bit-identical to the atlas; a block material's layers as
+  sliders and palette pickers, its ramp's colours with the art direction's warnings (albedo range, a
+  shadow warmer or a light cooler than its base), the tile, 3 × 3 and a cube; Export downloads
+  `materials.json` and `palette.json` for `shared/textures/`; `?tab=textures&tex=<material>`. The 3D
+  section draws a block's far colour, so an edit reaches it as a tint per block (the edited tile's mean
+  over the built one's, linear light; `ChiselPreview.set_tints`), unedited blocks exact. The prototype
+  page is kept (still generated and tested) until the owner retires it. Left for later: §5b's new
+  materials and blocks, water and sky colours, item and model textures.)*
 - **B7** Chisel in the game, and the new-world biome choice. *(Started 0.52.27: Chisel's **Play in
   game** opens a new local world on the edit's world knobs, its record keeping the edit as its
   worldgen config so it reopens the same, and `?worldgen=<fixture>` opens a fixture world by link

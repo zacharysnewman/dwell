@@ -1661,7 +1661,7 @@ rock, the slope) and vegetation kinds, each a placement's climate envelope; a bi
 scales its placements' chance by the kind's density (`placements::trees_in_with`, `canopy_at_with` for the
 LOD's canopy), so the tree line and dry lees emerge. The default biome's share is 0 and a one-biome world
 has no biome map, so the default world is unchanged (goldens byte-identical).
-**Chisel [built, B3]** (`client/chisel.html`, a second page of the client build; `client/src/chisel/`):
+**Chisel [built, B3; Textures tab B6]** (`client/chisel.html`, a second page of the client build; `client/src/chisel/`):
 the biome editor. Its state is the biomes' JSON (the default first) and `terrain.json`'s `biomeMap`,
 checked by `shared/worldgen/biomes.mjs` (the same rules `gen.mjs` applies; the sliders are made from its
 ranges) and kept in the browser (`dwell.chisel`, append-only). A worker loads the client's WASM
@@ -1670,7 +1670,7 @@ parsed and put on it (`TerrainGenerator::with_biomes_on`, `BiomeField::with_para
 by the big map's rules (`lod_map::raster_with_heights`, `tint_rgb`) or as overlays (biome weights,
 temperature, wetness, rainfall, rock, soil, vegetation, erosion), 64² then 256² per change; the edit may carry the geology
 (`rocks.json`'s shape: the Rock group's sliders) and the soil and vegetation (`vegetation.json`'s shape). The world overview (0.52.11; owner, 2026-11-10: "a world map preview for this tool when we can blend between biomes"): beside the detail preview, the whole disc (island and sea, `WORLD_RADIUS`) from the same edit and overlay, 128² (~0.78 km texels) then 512² (~0.2 km), the frame from `chisel::overview_frame` (`ChiselPreview.overview_frame`); the worker runs the detail lane first, splits the overview's passes into 128² chunks, drops a lane's older generation when a newer edit arrives and caches the chunks by the edit state (`client/src/chisel/overview.ts`); the detail region drawn as a rectangle, a click or drag moving its centre. Relief and the 3D section (0.52.19): a hill shade on both 2D views (`chisel_section::hillshade`, a toggle), and a WebGPU view of a 256 m–8 km square (`client/src/chisel/section.ts`) meshed by the worker's third lane (`section`, between the detail and the overview; `ChiselPreview.section`, `dwell-client` `chisel_section.rs`: `column_lod` heights on ½ m cells, a top quad a column, walls to lower neighbours, a baked sun shadow, translucent water at each wet column's level), coarse then fine, a newer edit cancelling older passes; Chisel's own small WebGPU renderer, not the game's (no new dependency). Face A only (Chisel has no face toggle; face B is its mirror). The texture tab (B6) and Chisel in the game (B7)
-follow.
+follow. **The Textures tab (B6, 0.52.42):** the painterly materials and palette edited in the page by `shared/textures/paint.mjs` itself (the bake's painter: unchanged, bit-identical to `painterly.rgba`), with the palette's art-direction warnings and Export of the two files; the 3D section takes the edit as per-block tints of its far colours (`ChiselPreview.set_tints`, `chisel_section::section_tinted`).
 
 1. **Layout (2D).** The coast distance of the interim island (above).
 2. **Height (2D).** On land the ground rises from sea level at the coast toward 320 m inland

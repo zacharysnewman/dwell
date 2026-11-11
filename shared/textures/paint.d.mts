@@ -31,8 +31,21 @@ export const LAYER_KINDS: readonly string[];
 export const USES: readonly string[];
 export const RAMP_STOPS: readonly ('shadow' | 'base' | 'light')[];
 export function validatePalette(palette: Palette): void;
-export function resolveColor(palette: Palette, ref: string, ramp?: string, where?: string): [number, number, number];
+export function resolveColor(
+  palette: Palette,
+  ref: string,
+  ramp?: string,
+  where?: string,
+): [number, number, number];
 export function resolveMaterial(materials: Materials, name: string): Material;
-export function validateMaterials(materials: Materials, palette: Palette, atlasTiles?: string[] | null): void;
-export function paintMaterial(name: string, materials: Materials, palette: Palette): Uint8Array;
+export function validateMaterials(
+  materials: Materials,
+  palette: Palette,
+  atlasTiles?: string[] | null,
+): void;
+export function paintMaterial(
+  name: string,
+  materials: Materials,
+  palette: Palette,
+): Uint8Array;
 export function imageRows(tile: Uint8Array): Uint8Array;

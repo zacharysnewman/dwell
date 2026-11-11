@@ -197,6 +197,16 @@ the ground, 9.34 ms 600 m up, 11.79 ms over the sea).
 see the tile, a 3 × 3 repeat and a block lit from above, and copy the material or palette JSON back
 into `shared/textures/`.
 
+**Chisel's Textures tab** (0.52.42, ADR 0074 B6) folds the lab into Chisel (`client/chisel.html`,
+`client/src/chisel/textures.ts`, `texturesTab.ts`): it imports `paint.mjs` itself, so a material it
+has not changed paints the baked atlas's texels exactly (a test compares every tile with
+`painterly.rgba`), and an exported edit run through `gen.mjs` bakes the pixels it previewed. It flags
+palette colours off the art direction (mean value outside about 0.04–0.96, a shadow clearly warmer or
+a light clearly cooler than its base; the utility and sky colours exempt; snow's and the deer cream's
+lights are the build's known deviations), downloads `materials.json` and `palette.json`, and tints
+Chisel's 3D section by each edited block's far colour. The prototype page stays for now: it is
+still generated, and also edits character and sky materials.
+
 ## 9. Outstanding and later
 
 - Water's surface is drawn by the water shader from its fluid look (`fluids` in
