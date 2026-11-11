@@ -137,7 +137,17 @@ describe('where routes open', () => {
       type: 'flat',
       spawn: '',
       mode: '',
+      worldgen: '',
     });
+    // The New world form's World (0.52.64): an offered world file, not a test-world link; the
+    // route to the made world drops it.
+    expect(launchOf('?new=1&name=Hill&seed=1&type=terrain&worldgen=test:starter')).toMatchObject({
+      kind: 'new',
+      worldgen: 'test:starter',
+    });
+    expect(withRoute('?new=1&name=Hill&worldgen=test:starter&debug=1', { play: 'wabc' })).toBe(
+      '?debug=1&play=wabc',
+    );
     // The New world form's Spawn: with `new` it is the new world's first spawn, not a spawn link.
     expect(launchOf('?new=1&name=Hill&seed=42&type=terrain&spawn=portal-b')).toMatchObject({
       kind: 'new',

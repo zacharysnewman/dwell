@@ -6,6 +6,7 @@
 // choice is a route the launcher sends to the build that carries it out (ui/launch.ts) — creating
 // and regenerating a world too, so the world is the build's own. A build served at the launcher's
 // path (a local or preview build) shows it itself (ui/menuPage.ts).
+import { WORLD_CHOICES } from './worldChoices';
 import { DEFAULT_MODE, GAME_MODES } from './modes.gen';
 import { modeLabel } from './modes';
 import { changesFor } from '../version/changes';
@@ -170,6 +171,8 @@ export interface NewWorldValues {
   type: string;
   mode: string;
   spawn: string;
+  /** An offered world file's name (worldChoices.ts), or '' for the build's terrain. */
+  worldgen?: string;
 }
 
 /** The route the New world form opens: the build that opens it creates the world. */
@@ -181,6 +184,7 @@ export function newWorldRoute(v: NewWorldValues): Record<string, string> {
     type: v.type,
     ...(v.spawn ? { spawn: v.spawn } : {}),
     ...(v.mode && v.mode !== DEFAULT_MODE ? { mode: v.mode } : {}),
+    ...(v.worldgen ? { worldgen: v.worldgen } : {}),
   };
 }
 
@@ -606,6 +610,25 @@ export class MainMenu {
       if (m.name === DEFAULT_MODE) option.selected = true;
       mode.append(option);
     }
+    // The world: the build's terrain, or a world file offered as data (worldChoices.ts).
+    const world = document.createElement('select');
+    world.id = 'world-world';
+    const terrainOption = document.createElement('option');
+    terrainOption.value = '';
+    terrainOption.textContent = 'Default';
+    world.append(terrainOption);
+    for (const c of WORLD_CHOICES) {
+      const option = document.createElement('option');
+      option.value = c.name;
+      option.textContent = c.label;
+      if (c.description) option.title = c.description;
+      world.append(option);
+    }
+    // A world file is terrain: the Type follows it.
+    world.addEventListener('change', () => {
+      if (world.value) type.value = 'terrain';
+      type.disabled = world.value !== '';
+    });
     const submit = document.createElement('button');
     submit.type = 'submit';
     submit.className = 'block-button';
@@ -617,6 +640,7 @@ export class MainMenu {
       field('Name', name),
       field('Seed', seed),
       field('Type', type),
+      ...(WORLD_CHOICES.length ? [field('World', world)] : []),
       field('Mode', mode),
       field('Spawn', spawn),
       hint,
@@ -632,6 +656,7 @@ export class MainMenu {
           type: type.value,
           mode: mode.value,
           spawn: spawn.value,
+          worldgen: world.value,
         }),
       );
     });

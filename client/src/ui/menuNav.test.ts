@@ -90,4 +90,12 @@ describe('the New world form', () => {
       newWorldRoute({ name: ' Home ', seed: ' 42 ', type: 'flat', mode: 'other-mode', spawn: 'b' }),
     ).toEqual({ new: '1', name: 'Home', seed: '42', type: 'flat', spawn: 'b', mode: 'other-mode' });
   });
+
+  it('passes the World chosen (an offered world file; 0.52.64), none for Default', () => {
+    const v = { name: '', seed: '', type: 'terrain', mode: DEFAULT_MODE, spawn: '' };
+    expect(newWorldRoute({ ...v, worldgen: 'test:starter' })).toMatchObject({
+      worldgen: 'test:starter',
+    });
+    expect(newWorldRoute({ ...v, worldgen: '' })).not.toHaveProperty('worldgen');
+  });
 });
