@@ -1494,6 +1494,14 @@ impl Client {
             s.shell_events.push(shell_event("slot", slot as u32));
         }
     }
+    /// The palette's item names (`shared/items/items.json`), in `palette()`'s order.
+    #[wasm_bindgen(js_name = paletteItems)]
+    pub fn palette_items(&self) -> Vec<String> {
+        dwell_game::block_interaction::palette()
+            .into_iter()
+            .map(|p| p.item.to_owned())
+            .collect()
+    }
     /// The creative hotbar's picks (docs/ITEMS.md §6a): each slot's palette index.
     #[wasm_bindgen(js_name = creativeHotbar)]
     pub fn creative_hotbar(&self) -> Vec<u32> {

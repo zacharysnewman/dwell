@@ -1,5 +1,7 @@
-// The block hotbar (ARCHITECTURE.md §6.5): the infinite palette with the selected block highlighted.
-// Number keys and the scroll wheel (desktop) or tapping a slot (touch) change the selection.
+// The hotbar (ARCHITECTURE.md §6.5): its slots (shared/inventory/inventory.json `hotbarSlots`, 6)
+// with the selected one highlighted: in creative the palette items picked in the inventory view
+// (docs/ITEMS.md §6a), in a world that uses items the inventory's first slots. Number keys and the
+// scroll wheel (desktop) or tapping a slot (touch) change the selection.
 
 import { BrushPanel, type BrushPanelState } from './brushPanel';
 import { BUILD_MODES } from './buildModes.gen';
@@ -53,6 +55,8 @@ export class Hotbar {
   private readonly region: HTMLDivElement;
   private readonly brush: BrushPanel;
   private selected = 0;
+  /** The creative slots' palette indices (`Client.creativeHotbar()`). */
+  private picks: number[] = Array.from({ length: HOTBAR_SLOTS }, (_, i) => i);
   /** The inventory's hotbar (a world that uses items), shown instead of the palette's slots. */
   private readonly palRow: HTMLDivElement;
   private readonly invRow: HTMLDivElement;
@@ -79,22 +83,13 @@ export class Hotbar {
     this.region.hidden = true;
     const row = document.createElement('div');
     row.className = 'hotbar-slots';
-    palette.forEach((slot, i) => {
+    for (let i = 0; i < HOTBAR_SLOTS; i++) {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'hotbar-slot';
       // Choosing a slot has its own sound (the hotbar action), not a click.
       b.dataset.sound = 'none';
       b.dataset.slot = String(i);
-      b.title = slot.name;
-      b.append(swatch(slot));
-      const key = slotKey(i);
-      if (key) {
-        const k = document.createElement('span');
-        k.className = 'hotbar-key';
-        k.textContent = key;
-        b.append(k);
-      }
       b.addEventListener('pointerdown', (e) => {
         e.stopPropagation();
         e.preventDefault();
@@ -102,7 +97,7 @@ export class Hotbar {
       });
       this.slots.push(b);
       row.append(b);
-    });
+    }
     this.palRow = row;
     this.invRow = document.createElement('div');
     this.invRow.className = 'hotbar-slots';
@@ -128,6 +123,22 @@ export class Hotbar {
     this.setBuildMode(BUILD_MODES.modes[0].label);
     this.brush = new BrushPanel(this.root);
     this.root.prepend(this.root.lastChild as Node);
+    this.setPicks(this.picks);
+  }
+
+  /** The creative slots' palette indices (`Client.creativeHotbar()`): each slot's picture. */
+  setPicks(picks: readonly number[]): void {
+    this.picks = [...picks];
+    this.slots.forEach((b, i) => {
+      const slot = this.palette[this.picks[i] ?? -1];
+      b.replaceChildren();
+      b.title = slot?.name ?? '';
+      if (slot) b.append(swatch(slot));
+      const k = document.createElement('span');
+      k.className = 'hotbar-key';
+      k.textContent = slotKey(i);
+      b.append(k);
+    });
     this.refresh();
   }
 
@@ -205,7 +216,7 @@ export class Hotbar {
       this.label.textContent = s ? itemLabel(s.item) : '';
       return;
     }
-    const slot = this.palette[this.selected];
+    const slot = this.palette[this.picks[this.selected] ?? -1];
     this.label.textContent = (slot?.name ?? '').replace(/_/g, ' ');
   }
 }

@@ -12,11 +12,11 @@ const inv = (): InventoryHud => ({
 });
 
 describe('backpack', () => {
-  it("has the data's sizes: 9 hotbar slots, 27 backpack slots, stacks of 64", () => {
-    expect([HOTBAR_SLOTS, BACKPACK_SLOTS, STACK_SIZE]).toEqual([9, 27, 64]);
+  it("has the data's sizes: 6 hotbar slots under 30 backpack slots (5 rows of 6), stacks of 64", () => {
+    expect([HOTBAR_SLOTS, BACKPACK_SLOTS, STACK_SIZE]).toEqual([6, 30, 64]);
     const order = screenOrder();
     expect(order).toHaveLength(36);
-    expect(order.slice(-9)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(order.slice(-6)).toEqual([0, 1, 2, 3, 4, 5]);
   });
 
   it('moves a whole stack, or half of it', () => {

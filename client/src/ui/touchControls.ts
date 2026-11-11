@@ -56,7 +56,18 @@ export class TouchControls {
     buttons.append(...made);
     const debug = this.button('debug', 'i', 'touch-debug');
     debug.setAttribute('aria-label', 'Debug overlay');
-    this.root.append(moveZone, lookZone, this.stickBase, buttons, debug);
+    // The bag (docs/ITEMS.md §6a): opens and closes the inventory view, the shell's (not touch.rs).
+    const bag = document.createElement('button');
+    bag.type = 'button';
+    bag.id = 'touch-bag';
+    bag.textContent = 'Bag';
+    bag.setAttribute('aria-label', 'Inventory');
+    bag.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.onBag?.();
+    });
+    this.root.append(moveZone, lookZone, this.stickBase, buttons, debug, bag);
     parent.append(this.root);
 
     moveZone.addEventListener('pointerdown', (e) => {
@@ -116,6 +127,13 @@ export class TouchControls {
         { passive: false },
       );
     }
+  }
+
+  private onBag: (() => void) | null = null;
+
+  /** What the bag button does (opens or closes the inventory view). */
+  setOnBag(f: () => void): void {
+    this.onBag = f;
   }
 
   set visible(v: boolean) {
