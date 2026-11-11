@@ -245,12 +245,16 @@ test("block damage: the data's hits reach Rust and TS; a fixture block by data a
   bad({ default: 3, chips: { count: 99 } }, /test:clay\.damage\.chips\.count must be a whole number/);
 });
 
-test('durability: the stone axe survives 32 hits, creative does not wear, a fixture tool by data alone', () => {
+test('durability: the stone axe, stone pickaxe and wooden shovel survive 32 hits, creative does not wear, a fixture tool by data alone', () => {
   const [tools, items, blocks] = fresh();
   const d = validateTools(tools, items, blocks);
-  assert.deepEqual(d.durability.items, [{ item: 'dwell:stone_axe', hits: 32 }]);
+  assert.deepEqual(d.durability.items, [
+    { item: 'dwell:stone_axe', hits: 32 },
+    { item: 'dwell:stone_pickaxe', hits: 32 },
+    { item: 'dwell:wooden_shovel', hits: 32 },
+  ]);
   assert.equal(d.durability.creativeWear, false);
-  assert.match(toolsRust(d), /pub static DURABILITY: &\[\(&str, u16\)\] = &\[\("dwell:stone_axe", 32\)\];/);
+  assert.match(toolsRust(d), /pub static DURABILITY: &\[\(&str, u16\)\] = &\[\("dwell:stone_axe", 32\), \("dwell:stone_pickaxe", 32\), \("dwell:wooden_shovel", 32\)\];/);
   assert.match(toolsRust(d), /pub const CREATIVE_WEAR: bool = false;/);
   assert.match(toolsTs(d), /'dwell:stone_axe': 32,/);
   tools.durability.items['dwell:metal_pickaxe'] = 200;

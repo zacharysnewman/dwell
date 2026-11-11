@@ -513,7 +513,7 @@
     "tool": {
       "label": "A tool drawn as its model held at rest (dwell-client `MODEL_HOLD`; props.json `hand`): no parts of its own, the prop's handle lies along the closed fist's grip axis and this pose of the hand leans it in toward the crosshair, low and right, at full size (owner, 2026-11-11: \"properly align them to the hand\")",
       "on": "grip_r",
-      "pose": { "hand_r": [-20, -45, 10], "forearm_r": [0, -10, 0] },
+      "pose": { "hand_r": [10, 0, -30], "forearm_r": [0, 10, 0] },
       "parts": []
     },
     "stone_axe": {

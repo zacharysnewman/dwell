@@ -46,7 +46,7 @@ Last updated: 2026-11-11 (0.52.52).
 - **Tree Growth prototype** (0.52.50, and the owner's later edits in 0.52.52): oak, pine and palm as
   data, saplings growing in height, trunk width and crown together; a 1.8 m player for scale, seed
   variety in height, crown and tint, and block-grid palms as the default (a toggle shows the free
-  lean). Open: palm free lean vs block-aligned, the owner to decide.
+  lean).
 - **Tool grip** (0.52.52): the hand's grip as data (props.json `hand`: the fist's centre and grip axis
   in the hand bone's frame), each tool's handle axis measured from its GLB (`handle`), the handle laid
   through the fist and rolled by data (`hold.roll`); the lean toward the crosshair is the hand's pose

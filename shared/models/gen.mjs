@@ -447,14 +447,12 @@ export function measureHandle(bytes, handle, at) {
   const fail = (msg) => {
     throw new Error(`props.json: ${at}: ${msg}`);
   };
-  if (
-    !(
-      Array.isArray(handle) &&
-      handle.length === 2 &&
-      handle.every(Number.isFinite) &&
-      Math.abs(handle[1] - handle[0]) >= 0.05
-    )
-  )
+  if (!(
+    Array.isArray(handle) &&
+    handle.length === 2 &&
+    handle.every(Number.isFinite) &&
+    Math.abs(handle[1] - handle[0]) >= 0.05
+  ))
     fail("handle is [from, to] metres along its length, at least 0.05 m apart");
   const g = glbJson(bytes);
   // Its surface sampled every centimetre along each triangle's edges (a long handle's only
@@ -474,7 +472,10 @@ export function measureHandle(bytes, handle, at) {
         [idx[t + 2], idx[t]],
       ]) {
         const [u, w] = [v(i), v(j)];
-        const n = Math.max(1, Math.ceil(Math.hypot(...u.map((x, k) => w[k] - x)) / 0.01));
+        const n = Math.max(
+          1,
+          Math.ceil(Math.hypot(...u.map((x, k) => w[k] - x)) / 0.01),
+        );
         for (let s = 0; s <= n; s++)
           pts.push(u.map((x, k) => x + ((w[k] - x) * s) / n));
       }
@@ -487,8 +488,7 @@ export function measureHandle(bytes, handle, at) {
       fail(`handle: no vertex between ${lo} and ${hi} m (measure its span)`);
     const c = [0, 1, 2].map(
       (k) =>
-        (Math.min(...s.map((p) => p[k])) + Math.max(...s.map((p) => p[k]))) /
-        2,
+        (Math.min(...s.map((p) => p[k])) + Math.max(...s.map((p) => p[k]))) / 2,
     );
     return c;
   };
@@ -499,7 +499,9 @@ export function measureHandle(bytes, handle, at) {
   const l = Math.hypot(...d);
   const axis = d.map((v) => v / l);
   if (Math.abs(axis[1]) < Math.cos((30 * Math.PI) / 180))
-    fail(`handle: its measured axis [${axis.map((v) => v.toFixed(3))}] is not along its length`);
+    fail(
+      `handle: its measured axis [${axis.map((v) => v.toFixed(3))}] is not along its length`,
+    );
   return {
     axis,
     at: (y) => {

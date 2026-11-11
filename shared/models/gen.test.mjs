@@ -240,7 +240,12 @@ test("a prop's objects are a list of names, each once", () => {
 test("a prop is added by data alone: the fixture validates and lands in the table", () => {
   const out = validateProps(fixtureProps(), fixtures);
   assert.equal(out.plate.category, "dishes");
-  const rs = rustProps(out, "../../../shared/models/fixtures", ["plate"], validateHand(fixtureProps().hand));
+  const rs = rustProps(
+    out,
+    "../../../shared/models/fixtures",
+    ["plate"],
+    validateHand(fixtureProps().hand),
+  );
   assert.match(
     rs,
     /PropData \{ name: "plate", category: "dishes", glb: "plate\.glb", length: 0\.25/,
@@ -279,10 +284,7 @@ test("bad props fail naming the entry and the problem", () => {
   bad((p) => (p.length = 2), /length 2 m is outside dishes's/);
   bad((p) => (p.length = 0.4), /is 0\.250 m long, not its length 0\.4 m/);
   bad((p) => (p.grip = [0, 1]), /grip is \[x, y, z\]/);
-  bad(
-    (p) => (p.hold = [1]),
-    /prop plate: hold is \{ scale, roll \}/,
-  );
+  bad((p) => (p.hold = [1]), /prop plate: hold is \{ scale, roll \}/);
   bad((p) => (p.hold = { size: 1 }), /prop plate: hold has unknown field size/);
   bad(
     (p) => (p.hold = { scale: 0 }),
@@ -300,10 +302,7 @@ test("bad props fail naming the entry and the problem", () => {
     (p) => (p.handle = [0, 0.01]),
     /prop plate: handle is \[from, to\] metres along its length/,
   );
-  bad(
-    (p) => (p.handle = [0.4, 0.6]),
-    /prop plate: handle: no vertex between/,
-  );
+  bad((p) => (p.handle = [0.4, 0.6]), /prop plate: handle: no vertex between/);
   assert.throws(
     () => validateHand({ ...fixtureProps().hand, edge: [0, 0, 1] }),
     /hand: edge is not perpendicular to axis/,

@@ -1897,6 +1897,14 @@ mod tests {
                 if x0 < 0.05 {
                     bad.push(format!("{}: reaches the crosshair, x from {x0:.2}", t.item));
                 }
+                // 0.52.52: the handle in the fist and the lean from the hand's pose (the `tool`
+                // hold); the head stays in view, not past the screen's right edge.
+                if x1 > 0.97 {
+                    bad.push(format!(
+                        "{}: its head off the right edge, x to {x1:.2}",
+                        t.item
+                    ));
+                }
                 if y1 > 0.45 {
                     bad.push(format!("{}: up to y {y1:.2}, high in the view", t.item));
                 }
