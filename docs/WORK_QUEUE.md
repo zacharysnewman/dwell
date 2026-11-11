@@ -170,9 +170,10 @@ Last updated: 2026-11-11 (0.52.68).
    screenshots and bench cost. **Local worlds built** (2026-11-11, ECOLOGY.md §6): the local server already
    had both maps installed in its instance, so its ecology runs, saves and reloads as on native; the bug
    was the client's session dropping `Ecology`, so `__dwell.ecology()` and the far herds were empty on
-   every server (fixed). The ecology is 12.5 MB for both faces; its ~3 MB record is now written only when
-   it changed (a local world saves every 5 s). Next: a smaller island, grazing applied to tall grass as
-   chunks load.
+   every server (fixed). **Smaller island built** (2026-11-11, ECOLOGY.md §6): only land cells stored,
+   forage f32, the saved forage as runs (a cell at its most not written; version 2, version 1 still
+   read): 12.5 MB → 0.93 MB for both faces, the record ~3 MB → ~1 KB fresh, a few KB grazed, and it is
+   still written only when it changed. Next: grazing applied to tall grass as chunks load.
 12. **Players' saved structures as placement sources** (owner 2026-11-11): per player (their library, usable
    in any world they create); placed copies editable, not protected; 32³ for now (may change), or larger
    structures as a grid of 32³ tiles. Sharing between players: Future.

@@ -561,8 +561,9 @@ impl Near {
                     let eco = &mut w.ecos[me.face];
                     let m = &mut self.groups[gi].members[mi];
                     match w.islands[me.face].cell_at(me.x, me.z) {
-                        Some(c) if eco.grazing[c] >= g.forage_per_s * dt => {
-                            eco.grazing[c] -= g.forage_per_s * dt;
+                        Some(c) if f64::from(eco.grazing[c]) >= g.forage_per_s * dt => {
+                            eco.grazing[c] =
+                                (f64::from(eco.grazing[c]) - g.forage_per_s * dt) as f32;
                             m.hunger = (m.hunger - g.eat_per_s * dt).max(0.0);
                             m.mind = Mind::Eating;
                             if g.block.is_some() && roll(&mut m.rng) < g.block_chance_per_s * dt {

@@ -22,9 +22,10 @@
 //! server runs it too: its worker installs both faces' maps in its own instance before the world
 //! starts (`installWorldMap`), and the islands are made from those (docs/ECOLOGY.md §6).
 //!
-//! **Saving**: the record is megabytes (each face's forage grid over the whole map), so a save
-//! writes it only when it changed since the store last held it ([`Ecology::record_to_save`]); a
-//! local world saves every few seconds, the ecology steps once a world day.
+//! **Saving**: each face's forage is written as runs, a cell at its most not written
+//! (`dwell_ecology::codec`), so a fresh or regrown world's record is a few hundred bytes; a save
+//! still writes it only when it changed since the store last held it ([`Ecology::record_to_save`]):
+//! a local world saves every few seconds, the ecology steps once a world day.
 
 use super::{Server, SessionId};
 use dwell_ecology::{DATA, Ecosystem, Island};
@@ -89,8 +90,8 @@ pub struct Ecology {
     /// to the world maps' islands as they are made (docs/ECOLOGY.md §10; none: as the ground's).
     pub grass_share: Option<GrassShare>,
     /// A hash of the record the store holds (last restored or handed to a save), so a save whose
-    /// record is unchanged writes nothing: the record is megabytes (each face's forage grid), and a
-    /// local world saves every few seconds while the ecology steps once a world day.
+    /// record is unchanged writes nothing: a local world saves every few seconds while the ecology
+    /// steps once a world day.
     written: Option<u64>,
     /// Records handed to saves since the server started.
     pub writes: u64,
@@ -169,8 +170,8 @@ impl Ecology {
         if let Some(b) = &self.unread {
             return b.clone();
         }
-        let faces: [Vec<u8>; 2] = match (&self.faces, &self.saved) {
-            (Some(f), _) => {
+        let faces: [Vec<u8>; 2] = match (&self.faces, &self.islands, &self.saved) {
+            (Some(f), Some(islands), _) => {
                 // The groups near players are saved as they would fold back now.
                 let mut f = f.clone();
                 for g in &self.near.groups {
@@ -180,10 +181,13 @@ impl Ecology {
                         eco.groups.insert(at, r);
                     }
                 }
-                [f[0].to_bytes(&DATA), f[1].to_bytes(&DATA)]
+                [
+                    f[0].to_bytes(&islands[0], &DATA),
+                    f[1].to_bytes(&islands[1], &DATA),
+                ]
             }
-            (None, Some(s)) => s.clone(),
-            (None, None) => [Vec::new(), Vec::new()],
+            (_, _, Some(s)) => s.clone(),
+            _ => [Vec::new(), Vec::new()],
         };
         encode_record(self.enabled, self.speed, &faces)
     }
@@ -507,6 +511,23 @@ impl Server {
             clock_day: self.ecology_clock_days(),
             groups,
         }
+    }
+
+    /// The heap the ecology's islands and ecosystems hold on both faces (bytes; the world maps they
+    /// were made from are not counted: those are the installed ones, shared).
+    pub fn ecology_heap_bytes(&self) -> usize {
+        let e = &self.ecology;
+        e.islands
+            .as_ref()
+            .map_or(0, |i| i.iter().map(Island::heap_bytes).sum())
+            + e.faces
+                .as_ref()
+                .map_or(0, |f| f.iter().map(Ecosystem::heap_bytes).sum())
+    }
+
+    /// Tests, tools: the ecology record a save writes now (the `ecology` table's bytes).
+    pub fn ecology_record(&self) -> Vec<u8> {
+        self.ecology.record()
     }
 
     /// Tests, tools: face `face`'s ecosystem, once it exists.
