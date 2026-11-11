@@ -13,6 +13,8 @@ import {
   lookModels,
   propSummary,
   rustProps,
+  validateHand,
+  measureHandle,
   validateProps,
   paletteStops,
   resolveColor,
@@ -238,7 +240,12 @@ test("a prop's objects are a list of names, each once", () => {
 test("a prop is added by data alone: the fixture validates and lands in the table", () => {
   const out = validateProps(fixtureProps(), fixtures);
   assert.equal(out.plate.category, "dishes");
-  const rs = rustProps(out, "../../../shared/models/fixtures", ["plate"]);
+  const rs = rustProps(
+    out,
+    "../../../shared/models/fixtures",
+    ["plate"],
+    validateHand(fixtureProps().hand),
+  );
   assert.match(
     rs,
     /PropData \{ name: "plate", category: "dishes", glb: "plate\.glb", length: 0\.25/,
@@ -247,15 +254,19 @@ test("a prop is added by data alone: the fixture validates and lands in the tabl
   // Its hold pose by data alone; a prop naming none is held as modelled.
   assert.match(
     rs,
-    /hold: PropHold \{ scale: 0\.5, rotation: \[0\.0, 90\.0, 0\.0\], offset: \[0\.0, 0\.0, 0\.1\] \}/,
+    /axis: \[0\.0, 1\.0, 0\.0\], hold: PropHold \{ scale: 0\.5, roll: 90\.0 \}/,
   );
   const plain = fixtureProps();
   delete plain.props.plate.hold;
   assert.deepEqual(validateProps(plain, fixtures).plate.hold, {
     scale: 1,
-    rotation: [0, 0, 0],
-    offset: [0, 0, 0],
+    roll: 0,
   });
+  // The hand that holds it, by data alone.
+  assert.match(
+    rs,
+    /HAND_GRIP: HandGrip = HandGrip \{ bone: "hand_r", at: \[0\.0, -0\.08, 0\.0\], axis: \[0\.0, 0\.0, 1\.0\], edge: \[0\.0, -1\.0, 0\.0\] \}/,
+  );
   assert.match(
     rs,
     /\("plate", include_bytes!\("\.\.\/\.\.\/\.\.\/shared\/models\/fixtures\/plate\.glb"\)\)/,
@@ -273,26 +284,28 @@ test("bad props fail naming the entry and the problem", () => {
   bad((p) => (p.length = 2), /length 2 m is outside dishes's/);
   bad((p) => (p.length = 0.4), /is 0\.250 m long, not its length 0\.4 m/);
   bad((p) => (p.grip = [0, 1]), /grip is \[x, y, z\]/);
-  bad(
-    (p) => (p.hold = [1]),
-    /prop plate: hold is \{ scale, rotation, offset \}/,
-  );
+  bad((p) => (p.hold = [1]), /prop plate: hold is \{ scale, roll \}/);
   bad((p) => (p.hold = { size: 1 }), /prop plate: hold has unknown field size/);
   bad(
     (p) => (p.hold = { scale: 0 }),
     /prop plate: hold\.scale 0 is outside 0\.1\.\.2/,
   );
   bad(
-    (p) => (p.hold = { rotation: [0, 90] }),
-    /prop plate: hold\.rotation is \[yaw, pitch, roll\] degrees/,
+    (p) => (p.hold = { rotation: [0, 90, 0] }),
+    /prop plate: hold has unknown field rotation \(scale, roll\)/,
   );
   bad(
-    (p) => (p.hold = { rotation: [0, 270, 0] }),
-    /hold\.rotation \[0,270,0\] is outside ±180 degrees/,
+    (p) => (p.hold = { roll: 270 }),
+    /prop plate: hold\.roll 270 is outside ±180 degrees/,
   );
   bad(
-    (p) => (p.hold = { offset: [0, 0, 2] }),
-    /hold\.offset \[0,0,2\] is outside ±0\.5 metres/,
+    (p) => (p.handle = [0, 0.01]),
+    /prop plate: handle is \[from, to\] metres along its length/,
+  );
+  bad((p) => (p.handle = [0.4, 0.6]), /prop plate: handle: no vertex between/);
+  assert.throws(
+    () => validateHand({ ...fixtureProps().hand, edge: [0, 0, 1] }),
+    /hand: edge is not perpendicular to axis/,
   );
   bad((p) => (p.glb = "two_bone.glb"), /a skin or clips|meshes, not one/);
   bad((_, f) => (f.categories.dishes.min = 0), /category dishes: needs/);
@@ -473,4 +486,19 @@ test("bad coats fail naming the model and the problem", () => {
     () => validate(f, palette, fixtures),
     /model two_bone: coat: head is an axis/,
   );
+});
+
+test("a handle's axis is measured from its GLB: the props' tools", () => {
+  const props = validateProps(
+    JSON.parse(readFileSync(join(here, "props.json"), "utf8")),
+    here,
+  );
+  // The stone axe's handle runs 3.5 cm off its origin, along its length.
+  const a = props.stone_axes;
+  assert.ok(Math.abs(a.grip[0] + 0.035) < 0.003, `${a.grip}`);
+  assert.ok(a.axis[1] > 0.999, `${a.axis}`);
+  // A shovel's handle is named from its top, so its axis points down its length to the blade.
+  assert.ok(props.metal_shovel.axis[1] < -0.999, `${props.metal_shovel.axis}`);
+  assert.ok(Math.abs(props.metal_shovel.grip[2] + 0.056) < 0.003);
+  assert.equal(typeof measureHandle, "function");
 });

@@ -693,6 +693,27 @@ mod tests {
     }
 
     #[test]
+    fn the_stone_pickaxe_and_the_wooden_shovel_wear_like_the_stone_axe() {
+        // Owner, 2026-11-11: "stone pick wears too like axe, same with shovel"; metal tools don't.
+        let hits = |item: &str| crate::chopping::durability(item);
+        for item in ["dwell:stone_pickaxe", "dwell:wooden_shovel"] {
+            assert_eq!(hits(item), Some(32), "{item}");
+            let mut inv = Inventory::starting();
+            inv.slots[0] = None;
+            inv.add(item, 1);
+            assert_eq!(inv.slots[0].as_ref().unwrap().item, item);
+            for n in 1..32 {
+                assert_eq!(inv.wear_held(hits), Wear::Worn(32 - n), "{item}");
+            }
+            assert_eq!(inv.wear_held(hits), Wear::Broke, "{item}");
+            assert!(inv.slots[0].is_none(), "{item}: gone");
+        }
+        for item in ["dwell:metal_pickaxe", "dwell:metal_shovel"] {
+            assert_eq!(hits(item), None, "{item}: unlimited");
+        }
+    }
+
+    #[test]
     fn wear_round_trips_and_an_older_build_reads_the_record_without_it() {
         let mut inv = Inventory::starting();
         inv.add("dwell:rock", 3);

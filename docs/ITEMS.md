@@ -79,21 +79,42 @@ shovel, 3 with the metal one and 11 by hand. Same in creative (the hotbar's tool
 held slot's). Half a block's drops come out over the hits, the rest on the last. Each hit shows where it
 struck (a shard knocked off stone, a scoop out of soil) and cracks grow until the block breaks.
 
-**How a tool sits in the hand (0.52.22).** Owner, 2026-11-10: the tools were far too big and held
-bolt upright, filling the right third of the screen, the double axe's flat face to the camera. Each
-prop's optional **`hold`** (`shared/models/props.json`) poses it about its `grip` in the hand's frame
-(+z the prop's length ahead): `scale` (0.1–2), `rotation` `[yaw, pitch, roll]` degrees (each ±180;
-roll about the length first, then pitch tips the head forward, then yaw leans it in toward the
-crosshair) and `offset` `[x, y, z]` metres (each ±0.5). Absent, it is held as modelled; a bad hold
-fails `gen.mjs` naming the prop and the field. The generator emits `PropData.hold`
-(`dwell_models::PropHold`, `apply`), and `prop_mesh` places the prop's triangles through it, so the
-same pose holds in first person and in another player's hand. The six tools are held at their modelled
-size (scale 1; 0.52.22 shrank them to 0.55–0.7 and the owner found that too small, 2026-11-11), leaned 30° in and tipped 30–40° forward, the axes' and pickaxes' heads rolled 55–88° so the
-edge or pick points toward the crosshair and the shovels' blades face ahead. A test
-(`every_tool_is_held_low_right_clear_of_the_crosshair_and_the_eye`) projects each held model in the
-arms' idle at the arms' FOV (16:9 and 2.18:1): it stays right of x = 0.05 and below y = 0.45, covers
-at least 0.38 of the view's area 4 (not shrunk; 0.52.22's were 0.23–0.28), and through the break and
-both axe swings nothing in view comes inside the arms' near plane (`ARMS_NEAR` + 1 cm).
+**How a tool sits in the hand (0.52.52).** Owner, 2026-11-11: "The tools are obviously held
+incorrectly … can you properly align them to the hand?" The handles floated beside the fist: the
+models' handles are not on their origins (the stone axe's 3.5 cm off, the metal shovel's 5.6 cm),
+and 0.52.22's per-tool turn tilted each off the hand. Now the grip is data on both sides:
+
+- **The hand** (`shared/models/props.json` `hand`, in the characters rig's `hand_r` frame): `at` the
+  closed fist's centre, `axis` the line through the fist a handle lies along (the rigid axe's handle
+  line), `edge` the way a tool's working side faces across it (the rigid axe's blade). The Peasant's
+  `hand.R` maps onto that frame (`shared/models/models.json` `hand`, its `at` moved 0.52.52 so the
+  fist's centre lies in the Peasant's palm), so other players grip the same way.
+- **The tool** (a prop's `handle` `[from, to]`, the bare handle's span along the GLB's length, `from`
+  the end away from the head): `gen.mjs` samples the mesh's edges every centimetre and takes the
+  centres of the two halves' bounds, so the handle's axis is measured, not guessed; it moves `grip`
+  (where along it the hand holds: near the end for axes and pickaxes, mid-shaft for shovels) onto
+  that axis. A span with no geometry, or an axis not along the length, fails naming the prop.
+- **The pose**: `dwell_models::PropData::in_hand` puts the grip at the fist and the handle along the
+  grip axis, then turns the tool about its handle by `hold.roll` (degrees, from its +x side facing the
+  hand's `edge`: the axes' edges and the picks' points away from the eye, the shovels' faces turned
+  90° to face ahead), at `hold.scale` (1: full size). The lean toward the crosshair is the hand's:
+  the hold item's pose (`shared/characters/characters.json` `tool`, the pickaxes' and shovels' hold,
+  `MODEL_HOLD`; the axes keep `stone_axe` and `stone_axe_vertical`), not a turn of the tool off the
+  hand. The first-person hand is a closed mitten fist; it has no fingers to curl.
+
+Tests: `every_tool_is_held_as_its_model_its_handle_through_the_fist` measures the drawn mesh (the
+centre of the handle's cross-section at the fist within 4 mm of the fist's centre, the handle within 2°
+of the grip axis, for all six); `a_tool_is_gripped_in_the_peasants_fist` (the fist's centre within 4 cm
+of the Peasant's hand mesh's centre, the grip axis across its fingers); a fixture prop's grip by data
+alone (`dwell-models`, `gen.test.mjs`); and `every_tool_is_held_low_right_clear_of_the_crosshair_and_the_eye`
+projects each held model in the arms' idle at the arms' FOV (16:9 and 2.18:1): it stays right of x =
+0.05, below y = 0.45 and (0.52.52) left of x = 0.97, its head in view, covers at least 0.38 of the
+view's area 4 (full size, not shrunk), and through the break and both axe swings nothing in view
+comes inside the arms' near plane (`ARMS_NEAR` + 1 cm).
+
+**Wear.** The stone axe, the stone pickaxe and the wooden shovel survive 32 hits each
+(`shared/tools/tools.json` `durability`; owner, 2026-11-11: "stone pick wears too like axe, same with
+shovel"); the metal tools never wear, and nothing wears in creative (`creativeWear` false).
 
 ## 2. Pieces on the wire
 

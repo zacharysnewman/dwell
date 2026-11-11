@@ -93,12 +93,15 @@ pre { font-size: 11px; max-height: 220px; overflow: auto; background: var(--bg);
     <label class="s">Time of day <output id="timeV"></output><input id="time" type="range" min="0" max="100" value="38"></label>
     <div class="row"><label><input id="grid" type="checkbox"> Show block cells (leaf, frond and log cells)</label></div>
     <div class="row"><label><input id="cards" type="checkbox" checked> Leaf cards and fronds</label></div>
+    <div class="row"><label><input id="player" type="checkbox" checked> Player for scale (1.8 m)</label></div>
+    <div class="row"><label><input id="palmAlign" type="checkbox"> Palm on the block grid (trunk centred in its cells, leaning by whole-cell steps)</label></div>
 
     <h2>Data</h2>
     <div class="row"><button id="showJson">Show species JSON</button><button id="copyJson">Copy</button></div>
     <pre id="json" hidden></pre>
 
     <div class="note">
+      <p><b>Seeds.</b> Each seed draws its own mature height (oak 3.5–7 m, pine 7–14 m, palm 4.5–9.5 m of trunk), a crown size (×0.8–1.2) and a leaf tint (lighter or darker, a slight hue shift): <code>variety</code> in the species data. Try <i>Seeds</i>.</p>
       <p><b>Growth as data.</b> Each species has <code>growth.stages</code>; a tree's stage is a small integer the game could store per tree
       (or derive from its age), and every stage is a pure function of (species, seed, stage). Height grows in ½ m steps (the half-height grid),
       the trunk's width in ¼ m steps (an octagon of half-width 0.125–0.5 m), the crown is the mature crown scaled. Oak branches appear when
@@ -121,33 +124,36 @@ const SPECIES = {
   oak: {
     name: 'dwell:oak', label: 'Oak', climate: 'temperate broadleaf (broadleaf_groves)',
     blocks: { log: 'dwell:log', leaf: 'dwell:leaves' },
-    trunk: { height: { sapling: 1, mature: [4, 5.5] }, width: { sapling: 0.25, mature: 1.0, step: 0.25 }, heightStep: 0.5 },
+    trunk: { height: { sapling: 1, mature: [3.5, 7] }, width: { sapling: 0.25, mature: 1.0, step: 0.25 }, heightStep: 0.5 },
     branches: { kind: 'heavy', count: [2, 4], from: [0.6, 0.95], reach: [2.2, 3.2], rise: [0.6, 1.4],
       widthRatio: 0.55, emergeAt: 0.35 },
     crown: { shape: 'lumpy', centre: 1.2, radius: [2.4, 1.7, 2.4], lumps: { at: 'branchTips', radius: [1.2, 1.8], height: [0.9, 1.3] },
       roughness: 0.3, scale: [0.3, 1], normals: 'ellipsoid' },
     look: { blend: 0.75, chamfer: 0.28, cards: { kind: 'broadleaf', density: 0.55, size: 0.95 }, tint: '#ffffff' },
+    variety: { crown: [0.8, 1.2], lightness: [0.72, 1.18], hue: [-0.045, 0.045] },
     growth: { stages: 8 },
   },
   pine: {
     name: 'dwell:pine', label: 'Pine', climate: 'conifers (pine_groves)',
     blocks: { log: 'dwell:log', leaf: 'dwell:pine_needles (proposed; today dwell:leaves)' },
-    trunk: { height: { sapling: 1.5, mature: [9, 12] }, width: { sapling: 0.25, mature: 0.75, step: 0.25 }, heightStep: 0.5 },
+    trunk: { height: { sapling: 1.5, mature: [7, 14] }, width: { sapling: 0.25, mature: 0.75, step: 0.25 }, heightStep: 0.5 },
     branches: { kind: 'whorl', every: 2, perWhorl: 4, reach: 0.55, widthRatio: 0.34, emergeAt: 0.45 },
     crown: { shape: 'cone', base: 0.28, top: 1.5, radius: 3.2, taper: 1.3, tier: { period: 2, upper: 0.6 }, roughness: 0.25,
       scale: [0.3, 1], normals: 'cone' },
     look: { blend: 0.75, chamfer: 0.28, cards: { kind: 'needles', density: 0.55, size: 0.95 }, tint: '#8fb39a' },
+    variety: { crown: [0.8, 1.2], lightness: [0.78, 1.15], hue: [-0.035, 0.035] },
     growth: { stages: 8 },
   },
   palm: {
     name: 'dwell:palm', label: 'Palm', climate: 'warm and wet coasts (no kind yet)',
     blocks: { log: 'dwell:palm_log (proposed)', leaf: 'dwell:palm_frond (proposed)' },
-    trunk: { height: { sapling: 0.5, mature: [5.5, 7.5] }, width: { sapling: 0.25, mature: 0.5, step: 0.25 }, heightStep: 0.5,
+    trunk: { height: { sapling: 0.5, mature: [4.5, 9.5] }, width: { sapling: 0.25, mature: 0.5, step: 0.25 }, heightStep: 0.5,
       curve: { lean: [1.2, 2.4], offsetStep: 0.125, segment: 0.5, taper: 0.9 } },
     branches: { kind: 'none' },
     crown: { shape: 'fronds', heart: 1, fronds: [8, 11], length: [2.8, 3.6], width: 0.62, lift: 0.55, droop: 1.25,
       scale: [0.3, 1], normals: 'up' },
     look: { blend: 0.75, chamfer: 0.28, cards: { kind: 'frond' }, tint: '#c4dc8a' },
+    variety: { crown: [0.85, 1.15], lightness: [0.88, 1.1], hue: [-0.03, 0.03] },
     growth: { stages: 8 },
   },
 };
@@ -176,6 +182,8 @@ const S = {
   time: +(q.get('time') ?? 38) / 100,
   grid: q.get('grid') === '1',
   cards: q.get('cards') !== '0',
+  player: q.get('player') !== '0',
+  palmAlign: q.get('palmAlign') !== '0',
 };
 
 // ---------- RNG ----------
@@ -303,9 +311,12 @@ function growTree(spec, seed, stage, ox, oz) {
   const H = Math.max(T.height.sapling, qz(lerp(T.height.sapling, matureH, g), T.heightStep));
   const width = Math.min(T.width.mature, Math.max(T.width.sapling, qz(lerp(T.width.sapling, T.width.mature, g), T.width.step)));
   const w = width / 2;                                   // octagon half-width
-  const s = lerp(spec.crown.scale[0], spec.crown.scale[1], g);
+  const vr = mulberry32(seed * 104729 + 7), V = spec.variety || { crown: [1, 1], lightness: [1, 1], hue: [0, 0] };
+  const crownK = rr(vr, V.crown);
+  const s = lerp(spec.crown.scale[0], spec.crown.scale[1], g) * crownK;
+  const tint = new THREE.Color(spec.look.tint); { const h = {}; tint.getHSL(h); tint.setHSL((h.h + rr(vr, V.hue) + 1) % 1, h.s, h.l); tint.multiplyScalar(rr(vr, V.lightness)); }
   const cx = ox + .5, cz = oz + .5;
-  const t = { spec, g, stage, ox, oz, cx, cz, H, w, s, leaves: new Set(), logCells: new Set(), runs: [], joins: [], fronds: [],
+  const t = { spec, g, stage, ox, oz, cx, cz, H, w, s, tint, leaves: new Set(), logCells: new Set(), runs: [], joins: [], fronds: [],
     frondCells: new Set(), segs: [], top: new THREE.Vector3(cx, H, cz) };
   const noise = mulberry32(seed * 31 + 5);
   const bw = Math.max(0.0625, qz(w * (spec.branches.widthRatio ?? .5), 0.0625));
@@ -382,7 +393,14 @@ function growTree(spec, seed, stage, ox, oz) {
     let px = cx, pz = cz;
     for (let i = 0; i < nseg; i++) {
       const u = (i + .5) / nseg, off = qz(lean * u * u, K.offsetStep);
-      px = cx + Math.cos(la) * off; pz = cz + Math.sin(la) * off;
+      if (S.palmAlign) {
+        // on the grid: every ½ m segment centred in a cell; the lean is whole-cell steps along x and z
+        const e = lean * u * u;
+        let nx = cx + Math.round(Math.cos(la) * e), nz = cz + Math.round(Math.sin(la) * e);
+        // one axis per step: a diagonal step would need a 2 x 2 knee (a flat slab); take x now, z on the next segment
+        if (i > 0 && nx !== px && nz !== pz) nz = pz;
+        px = nx; pz = nz;
+      } else { px = cx + Math.cos(la) * off; pz = cz + Math.sin(la) * off; }
       t.segs.push({ x: px, z: pz, y0: i * K.segment, y1: (i + 1) * K.segment });
       // the top ½ m log shares its 1 m cell with the crown heart on the half-height grid
       if (Math.floor(i * K.segment) < Math.floor(H)) t.logCells.add(key(Math.floor(px), Math.floor(i * K.segment), Math.floor(pz)));
@@ -483,6 +501,12 @@ function logsGroup(t) {
   if (t.segs.length) {
     const K = t.spec.trunk.curve;
     t.segs.forEach((sg, i) => {
+      const prev = t.segs[i - 1];
+      if (prev && (prev.x !== sg.x || prev.z !== sg.z)) {
+        // a whole-cell step: a squared knee joining the two segments (full-width sides where logs meet)
+        const dx = sg.x - prev.x, dz = sg.z - prev.z;
+        mesh(boxUV(Math.abs(dx) + 2 * t.w, .5, Math.abs(dz) + 2 * t.w), M.palmBark, (sg.x + prev.x) / 2, sg.y0 + .25, (sg.z + prev.z) / 2);
+      }
       mesh(octPrism(t.w, sg.y1 - sg.y0, 1, t.w * K.taper), M.palmBark, sg.x, (sg.y0 + sg.y1) / 2, sg.z);
       mesh(octPrism(t.w * 1.04, .07, 1), M.ring, sg.x, sg.y0 + .035, sg.z);  // the ring at each segment's foot
     });
@@ -593,7 +617,8 @@ function leafBlocks(t) {
       for (let i = 1; i + 1 < vv.length; i++) B.tri(wp[0], wp[i], wp[i + 1], ns[0], ns[i], ns[i + 1], uvs[0], uvs[i], uvs[i + 1]);
     }
   }
-  const m = new THREE.Mesh(B.geometry(), M.leaf[t.spec === SPECIES.oak ? 'oak' : t.spec === SPECIES.pine ? 'pine' : 'palm']);
+  const base = M.leaf[t.spec === SPECIES.oak ? 'oak' : t.spec === SPECIES.pine ? 'pine' : 'palm'];
+  const m = new THREE.Mesh(B.geometry(), Object.assign(base.clone(), { color: t.tint.clone() }));
   m.castShadow = m.receiveShadow = true;
   return m;
 }
@@ -621,7 +646,8 @@ function leafCards(t, seed) {
       B.quad(pts, pts.map(p => blendN(t, p, cn, Math.max(t.spec.look.blend, .6))), [[0, 0], [1, 0], [1, 1], [0, 1]]);
     }
   }
-  const m = new THREE.Mesh(B.geometry(), M.card[t.spec === SPECIES.oak ? 'oak' : 'pine']);
+  const cm = M.card[t.spec === SPECIES.oak ? 'oak' : 'pine'].clone(); cm.color = t.tint.clone().lerp(new THREE.Color('#ffffff'), t.spec === SPECIES.pine ? .6 : 0);
+  const m = new THREE.Mesh(B.geometry(), cm);
   m.castShadow = m.receiveShadow = true;
   return m;
 }
@@ -647,7 +673,8 @@ function frondMesh(t) {
       B.quad([a.c, a.r, b.r, b.c], nn, [[.5, a.u], [1, a.u], [1, b.u], [.5, b.u]]);
     }
   }
-  const m = new THREE.Mesh(B.geometry(), M.frond);
+  const fm = M.frond.clone(); fm.color = new THREE.Color('#e6f0c0').multiply(t.tint.clone().lerp(new THREE.Color('#ffffff'), .5));
+  const m = new THREE.Mesh(B.geometry(), fm);
   m.castShadow = m.receiveShadow = true;
   return m;
 }
@@ -674,19 +701,32 @@ function treeObject(t, seed) {
   return grp;
 }
 
+// ---------- a player for scale: the game's player is 1.8 m tall (shared/characters/characters.json) ----------
+function playerFigure() {
+  const g = new THREE.Group(), mat = c => new THREE.MeshStandardMaterial({ color: c, roughness: .9 });
+  const box = (w, h, d, x, y, z, c) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(c)); m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; g.add(m); };
+  box(.16, .8, .2, -.11, .4, 0, '#4a3f55'); box(.16, .8, .2, .11, .4, 0, '#4a3f55');     // legs
+  box(.44, .6, .26, 0, 1.1, 0, '#5f7fa8');                                                 // torso
+  box(.12, .58, .14, -.29, 1.1, 0, '#5f7fa8'); box(.12, .58, .14, .29, 1.1, 0, '#5f7fa8'); // arms
+  box(.3, .3, .28, 0, 1.55, 0, '#e8b48a');                                                 // head (top at 1.7)
+  box(.42, .06, .42, 0, 1.73, 0, '#7c5338'); box(.24, .1, .24, 0, 1.75, 0, '#7c5338');     // hat brim and crown: 1.8 m
+  g.userData.player = true;
+  return g;
+}
+
 // ---------- layouts ----------
 const stageOf = (spec, g) => Math.round(g * (spec.growth.stages - 1));
 function layoutTrees() {
   const sp = S.species, out = [];
   if (S.mode === 'single') out.push({ sp, seed: S.seed, g: S.growth, x: 0, z: 0 });
-  if (S.mode === 'variants') [-10, -3, 4, 11].forEach((x, i) => out.push({ sp, seed: S.seed + i * 101, g: S.growth, x, z: 0, label: `seed ${S.seed + i * 101}` }));
+  if (S.mode === 'variants') [-16, -5.5, 5.5, 16].forEach((x, i) => out.push({ sp, seed: S.seed + i * 101, g: S.growth, x, z: 0, label: `seed ${S.seed + i * 101}` }));
   if (S.mode === 'compare') ORDER.forEach((k, i) => out.push({ sp: k, seed: S.seed, g: S.growth, x: -10 + i * 10, z: 0, label: SPECIES[k].label }));
   if (S.mode === 'forest') ORDER.forEach((k, row) => [0, 2, 4, 5, 7].forEach((st, i) =>
     out.push({ sp: k, seed: S.seed + i, g: st / 7, x: -24 + i * 12, z: -16 + row * 16, label: `${SPECIES[k].label} · stage ${st + 1}/8` })));
   return out;
 }
 const CAMS = {
-  single: { p: [11, 8, 14], t: [0, 4, 0] }, variants: { p: [6, 11, 27], t: [0, 4, 0] },
+  single: { p: [11, 8, 14], t: [0, 4, 0] }, variants: { p: [6, 13, 36], t: [0, 4, 0] },
   compare: { p: [6, 11, 26], t: [0, 4.5, 0] }, forest: { p: [6, 40, 52], t: [0, 0, 2] },
 };
 function frameCamera() {
@@ -705,6 +745,7 @@ function rebuild() {
     const spec = SPECIES[L.sp], st = stageOf(spec, L.g);
     const t = growTree(spec, L.seed, st, L.x, L.z);
     world.add(treeObject(t, L.seed));
+    const pl = playerFigure(); pl.position.set(t.cx + 2.6, 0, t.cz + 1.2); pl.rotation.y = -0.5; world.add(pl);
     placed.push({ t, L });
   }
   applyToggles();
@@ -712,7 +753,7 @@ function rebuild() {
   updateStats();
 }
 function applyToggles() {
-  world.traverse(o => { if (o.userData.grid) o.visible = S.grid; if (o.userData.cards) o.visible = S.cards; });
+  world.traverse(o => { if (o.userData.grid) o.visible = S.grid; if (o.userData.cards) o.visible = S.cards; if (o.userData.player) o.visible = S.player; });
 }
 
 // ---------- UI ----------
@@ -741,6 +782,8 @@ $('seed').onchange = () => { S.seed = +$('seed').value | 0; rebuild(); };
 $('reroll').onclick = () => { S.seed = (Math.random() * 1e4) | 0; $('seed').value = S.seed; rebuild(); };
 $('grid').checked = S.grid; $('grid').onchange = () => { S.grid = $('grid').checked; applyToggles(); };
 $('cards').checked = S.cards; $('cards').onchange = () => { S.cards = $('cards').checked; applyToggles(); };
+$('player').checked = S.player; $('player').onchange = () => { S.player = $('player').checked; applyToggles(); };
+$('palmAlign').checked = S.palmAlign; $('palmAlign').onchange = () => { S.palmAlign = $('palmAlign').checked; rebuild(); };
 const json = () => JSON.stringify(SPECIES, null, 2);
 $('showJson').onclick = () => { const p = $('json'); p.hidden = !p.hidden; p.textContent = json(); };
 $('copyJson').onclick = async () => { try { await navigator.clipboard.writeText(json()); $('copyJson').textContent = 'Copied'; } catch { $('copyJson').textContent = 'Copy failed'; } };

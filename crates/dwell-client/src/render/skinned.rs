@@ -789,6 +789,78 @@ mod tests {
         }
     }
 
+    /// The Peasant's right hand at rest in model space: the centre of the bounds of the vertices
+    /// weighted most to its hand joint or a joint below it (the fingers), and their bounds' size.
+    fn peasant_hand() -> ([f32; 3], [f32; 3]) {
+        let (data, model) = dwell_models::player();
+        let h = data.hand.unwrap();
+        let hand_node = model.skin[h.joint];
+        let below = |mut n: usize| loop {
+            if n == hand_node {
+                return true;
+            }
+            match model.nodes[n].parent {
+                Some(p) => n = p,
+                None => return false,
+            }
+        };
+        let mut lo = [f32::MAX; 3];
+        let mut hi = [f32::MIN; 3];
+        for (i, p) in model.positions.iter().enumerate() {
+            let (j, w) = (0..4)
+                .map(|k| (model.joints[i][k], model.weights[i][k]))
+                .fold((0, 0.0), |b, x| if x.1 > b.1 { x } else { b });
+            if w > 0.5 && below(model.skin[usize::from(j)]) {
+                for k in 0..3 {
+                    lo[k] = lo[k].min(p[k]);
+                    hi[k] = hi[k].max(p[k]);
+                }
+            }
+        }
+        assert!(lo[0] < f32::MAX, "the Peasant's hand has vertices");
+        (
+            std::array::from_fn(|k| (lo[k] + hi[k]) / 2.0),
+            std::array::from_fn(|k| hi[k] - lo[k]),
+        )
+    }
+
+    #[test]
+    fn a_tool_is_gripped_in_the_peasants_fist() {
+        // both-faces: model space at rest, before the body's face frame (place_frame turns both
+        // faces' bodies alike; the_held_item_follows_the_skinned_hand_joint checks the faces).
+        // Owner, 2026-11-11: the tools "held incorrectly … properly align them to the hand", in
+        // other players' hands too. The grip (props.json `hand`, the rig's hand bone's frame) put
+        // on the Peasant's hand.R (models.json `hand`): the fist's centre inside the hand's mesh,
+        // and the grip axis across the hand, not along its fingers.
+        let (data, model) = dwell_models::player();
+        let globals = anim::globals(model, &anim::rest(model));
+        let scale = mm::trs([0.0; 3], [0.0, 0.0, 0.0, 1.0], [data.scale; 3]);
+        let hand = hand_frame(data, model, &globals, &scale).expect("the Peasant holds items");
+        let grip = dwell_models::HAND_GRIP;
+        let fist = hand.apply(grip.at);
+        let (centre, size) = peasant_hand();
+        let centre = centre.map(|v| v * data.scale);
+        let size = size.map(|v| v * data.scale);
+        let d = (0..3)
+            .map(|k| (fist[k] - centre[k]).powi(2))
+            .sum::<f32>()
+            .sqrt();
+        eprintln!("fist {fist:?} hand centre {centre:?} size {size:?}: {d:.3} m apart");
+        assert!(d < 0.04, "the fist's centre is {d:.3} m from the hand's");
+        // The grip axis runs across the hand: square to the way from the wrist to the hand's
+        // centre (its fingers' way), within 30 degrees.
+        let wrist = hand.t;
+        let along = [0, 1, 2].map(|k| centre[k] - wrist[k]);
+        let l = (0..3).map(|k| along[k] * along[k]).sum::<f32>().sqrt();
+        let axis = hand.rotate(grip.axis);
+        let cos = (0..3).map(|k| along[k] * axis[k]).sum::<f32>() / l;
+        eprintln!("grip axis {axis:?}, the fingers' way {along:?}: cos {cos:.2}");
+        assert!(
+            cos.abs() < 30f32.to_radians().sin(),
+            "the grip runs along the fingers: {cos}"
+        );
+    }
+
     #[test]
     fn a_hand_is_data_and_a_model_without_one_holds_nothing() {
         // The fixture's hand comes from its models.json alone.

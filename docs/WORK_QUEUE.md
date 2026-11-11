@@ -4,27 +4,10 @@ The owner's ordered queue of work, with the decisions behind each item, so it su
 ending. Update it in the same change that starts, finishes, re-orders or re-scopes an item. The phase
 status lives in `docs/IMPLEMENTATION_PLAN.md`; this file is the order and the owner's words.
 
-Last updated: 2026-11-11 (0.52.51).
-
-## Running
-
-2. **Tree Growth prototype update** (0.52.50, docs prototype, merge after 1): oak, pine and palm as
-   data; saplings start thin and short with a small crown of the same shape and grow in height, trunk
-   width (octagon steps) and crown together; the chosen leaf look (option 5) with the game's tiles.
-   Republish to the Tree Growth link.
+Last updated: 2026-11-11 (0.52.52).
 
 ## Next, in order
 
-3. **Creative breaking fix (bug)** — done in 0.52.51 (creative's `instantBreaks` mode ability,
-   docs/BLOCK_DAMAGE.md §7). Owner: "I can't break blocks like stone with my fists in creative,
-   that's not right. I should be able to break any block while holding anything or nothing with the
-   exception of tools." Creative, no tool held (bare hand or any non-tool item): any block breaks in
-   one hit. A tool held: that tool's damage rules. Adventure unchanged (bare hands can't break stone).
-   Red → green test.
-4. **Tool grip.** Owner: "The tools are obviously held incorrectly … can you properly align them to the
-   hand?" Each tool's handle through the closed fist along the palm, in first person and in other
-   players' hands; full size kept (0.52.44: "the original size … was much more accurate"). Screenshots
-   of all six.
 5. **Leaves, option 5, with matching far trees.**
    - Leaf Lab option 5 at its defaults ("#5 looks really good with defaults"): canopy normals 75 %,
      chamfer 0.28 m, leaf cards density 55 % and size 0.95 m. Leaves stay blocks. Fix the dark gaps at
@@ -60,6 +43,15 @@ Last updated: 2026-11-11 (0.52.51).
   is shining down."
 - **Creative breaking fix** (0.52.51): in creative anything but a tool breaks every block in one hit
   (predicted); a tool keeps its hits; adventure unchanged.
+- **Tree Growth prototype** (0.52.50, and the owner's later edits in 0.52.52): oak, pine and palm as
+  data, saplings growing in height, trunk width and crown together; a 1.8 m player for scale, seed
+  variety in height, crown and tint, and block-grid palms as the default (a toggle shows the free
+  lean).
+- **Tool grip** (0.52.52): the hand's grip as data (props.json `hand`: the fist's centre and grip axis
+  in the hand bone's frame), each tool's handle axis measured from its GLB (`handle`), the handle laid
+  through the fist and rolled by data (`hold.roll`); the lean toward the crosshair is the hand's pose
+  (the `tool` hold); full size. The stone pickaxe and the wooden shovel wear like the stone axe (32
+  hits; creative doesn't wear, metal tools are unlimited).
 
 ## Smaller items, after the queue
 
@@ -77,9 +69,6 @@ Last updated: 2026-11-11 (0.52.51).
 
 ## Waiting on the owner
 
-- Should the stone pickaxe wear too (only the stone axe has durability, 32 hits)?
-- Should tools wear in creative (`creativeWear` is false)?
-- Plain dirt now also drops random rocks ("grass and dirt"): confirm.
 - Palm fronds: leaf cards or blocks (after the Tree Growth prototype).
 
 ## Decided and not to be revisited
@@ -90,4 +79,7 @@ Last updated: 2026-11-11 (0.52.51).
   rocks still found in grass and dirt at random; sticks from leaves. Stone tools: 2 sticks + 2 rock
   shards + 2 grass fibers. Stone axe durability 32.
 - **Volcanoes:** dormant for now, eruptions later.
+- **Tool wear** (2026-11-11): "Tools don't wear in creative, stone pick wears too like axe, same with
+  shovel": the stone axe, stone pickaxe and wooden shovel 32 hits each; metal tools unlimited.
+- **Rocks from plain dirt** (2026-11-11): confirmed, as built in 0.52.46.
 - **Backpack:** 30 slots.

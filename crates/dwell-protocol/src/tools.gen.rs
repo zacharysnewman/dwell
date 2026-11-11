@@ -55,7 +55,7 @@ pub static BLOCK_DAMAGE: &[BlockDamageDef] = &[
 ];
 
 /// Tools that wear (`durability.items`): (item, hits it survives).
-pub static DURABILITY: &[(&str, u16)] = &[("dwell:stone_axe", 32)];
+pub static DURABILITY: &[(&str, u16)] = &[("dwell:stone_axe", 32), ("dwell:stone_pickaxe", 32), ("dwell:wooden_shovel", 32)];
 /// Whether tools wear where blocks are unlimited (creative).
 pub const CREATIVE_WEAR: bool = false;
 /// The sound event of a tool breaking from wear.
