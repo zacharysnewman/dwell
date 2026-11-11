@@ -1,6 +1,0 @@
-{
-  "changes": [
-    "The axe swings the right way: a level chop sweeps right to left and a vertical chop comes down top to bottom, both through the crosshair.",
-    "Developer tools: a clip probe that charts an animation's paths over time from several views, and a bench step that shoots a swing frame by frame."
-  ]
-}
