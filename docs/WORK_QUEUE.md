@@ -33,7 +33,7 @@ Last updated: 2026-11-11 (0.52.52).
      Outstanding: growth over time (per-tree stage on the world clock, `growers`), thin trunks (a log
      width), per-tree leaf tints, frond blades, palm density and climate tuning.
    - **Status (0.52.59):** thin trunks built (`dwell:log[width]` in ¼ m, the narrower octagon drawn and
-     collided; saplings thin, thickening by stage); palms sparser (sand only); tree generation made
+     collided; saplings thin, thickening by stage); tree generation made
      cheaper (lazy ground columns: the starter's tree spots faster than 0.52.57). Outstanding: growth
      over time (planned, ADR 0079), per-tree leaf tints (not cheap: the mesher doesn't know a leaf's
      tree), frond blades, narrow logs in felled pieces and the LOD.
