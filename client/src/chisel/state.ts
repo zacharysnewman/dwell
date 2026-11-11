@@ -120,8 +120,11 @@ export function treeDensity(b: BiomeJson, name: string): number {
  */
 export function setTreeDensity(b: BiomeJson, name: string, d: number): void {
   const listed = ((b.placements as string[] | undefined) ?? []).filter((n) => n !== name);
-  const trees = { ...((b.trees as Record<string, number> | undefined) ?? {}) };
-  delete trees[name];
+  const trees = Object.fromEntries(
+    Object.entries((b.trees as Record<string, number> | undefined) ?? {}).filter(
+      ([k]) => k !== name,
+    ),
+  );
   if (d > 0) {
     listed.push(name);
     if (d !== 1) trees[name] = d;
