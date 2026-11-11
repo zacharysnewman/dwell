@@ -310,3 +310,139 @@ fn an_unreadable_record_is_kept_and_not_stepped() {
     fx.server.flush_store();
     assert_eq!(db.ecology(), Some(vec![99, 1, 2, 3]), "kept as it was");
 }
+
+// --- slice 3: individuals near players (docs/ECOLOGY.md §8) ---
+
+const BASE: i32 = dwell_world::FLAT_TOP_Y + 40;
+
+/// A stone floor around face-local (8, 8), a player standing on it, the ecology running at the
+/// world's own pace and face `f`'s records cut to one herd of `size` at (8, 12) (the other face's
+/// none).
+fn near_scene(f: FaceFrame, ecology: bool, size: f64) -> Fixture {
+    near_scene_in(f, ecology, size, None)
+}
+
+fn near_scene_in(f: FaceFrame, ecology: bool, size: f64, store: Option<WorldStore>) -> Fixture {
+    let mut fx = Fixture::new(ServerConfig {
+        store,
+        generator_override: Some(dwell_world::empty_generator()),
+        spawn: Some(f.point([0.5, dwell_world::m_of_row(BASE), 0.5])),
+        ecology,
+        ecology_speed: 1.0,
+        ..config()
+    });
+    let stone = f.state(dwell_blocks::require("dwell:stone"));
+    for x in -30..50 {
+        for z in -30..50 {
+            for r in -2..0 {
+                let [x, y, z] = f.cell([x, BASE + r, z]);
+                fx.server.world().set_voxel(x, y, z, stone);
+            }
+        }
+    }
+    fx.join(1, &Client::new(1));
+    move_player(&mut fx, f, 8.5, 8.5);
+    ticks(&mut fx, 2);
+    for face in [Face::A, Face::B] {
+        if let Some(e) = fx.server.ecosystem_mut(face) {
+            let deer = DATA.find("dwell:deer").unwrap();
+            e.groups.retain(|g| g.species == deer);
+            e.groups.truncate(usize::from(face == f.face));
+            for g in &mut e.groups {
+                (g.x, g.z, g.size, g.hunger) = (8.0, 12.0, size, 0.6);
+            }
+        }
+    }
+    fx.take_all();
+    fx
+}
+
+fn move_player(fx: &mut Fixture, f: FaceFrame, x: f64, z: f64) {
+    let h = fx.server.player_handle_of(1).expect("a live player");
+    let (_, physics, players) = fx.server.sim();
+    let half = players.half_height(h) as f64;
+    let c = f.point([x, dwell_world::m_of_row(BASE) + half, z]);
+    players.teleport(
+        physics,
+        h,
+        dwell_physics::DVec3::from(c),
+        dwell_physics::Vec3::ZERO,
+    );
+}
+
+dwell_world::both_faces!(
+    fn a_herd_near_a_player_becomes_deer_and_folds_back_when_they_leave(f: FaceFrame) {
+        let mut fx = near_scene(f, true, 4.0);
+        ticks(&mut fx, 40);
+        let herds = fx.server.herds();
+        assert_eq!(herds.groups.len(), 1, "the herd came near");
+        assert_eq!(fx.server.ecosystem(f.face).unwrap().groups.len(), 0);
+        let deer: Vec<_> = fx.server.creatures().iter().filter(|c| c.driven).collect();
+        assert_eq!(deer.len(), 4, "its four deer, through the creatures");
+        for c in &deer {
+            let l = f.point(c.position);
+            assert!(
+                (l[1] - dwell_world::m_of_row(BASE)).abs() < 1e-9,
+                "on the floor: {l:?}"
+            );
+        }
+        // No rule-spawned deer or wolves beside them.
+        assert!(fx.server.creatures().iter().all(|c| c.driven));
+        ticks(&mut fx, 600);
+        let g = fx.server.herds().groups[0].clone();
+        let head = 4 + g.births - g.deaths;
+        move_player(&mut fx, f, 8.5, 400.0);
+        ticks(&mut fx, 40);
+        assert!(fx.server.herds().groups.is_empty(), "folded back");
+        assert!(fx.server.creatures().is_empty(), "the deer are gone");
+        let e = fx.server.ecosystem(f.face).unwrap();
+        assert_eq!(e.groups.len(), 1);
+        assert!(
+            e.groups[0].size >= f64::from(head),
+            "the head kept: {}",
+            e.groups[0].size
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    fn an_opted_out_world_spawns_no_individuals(f: FaceFrame) {
+        let mut fx = near_scene(f, false, 4.0);
+        ticks(&mut fx, 120);
+        assert!(fx.server.herds().groups.is_empty());
+        assert!(fx.server.creatures().iter().all(|c| !c.driven));
+    }
+);
+
+dwell_world::both_faces!(
+    fn a_save_while_the_herd_is_near_keeps_it_as_it_would_fold_back(f: FaceFrame) {
+        let db = WorldDb::in_memory().expect("db");
+        let mut fx = near_scene_in(f, true, 3.0, Some(WorldStore::new(db.clone(), false)));
+        ticks(&mut fx, 40);
+        assert_eq!(fx.server.herds().groups.len(), 1);
+        let head = fx.server.herds().groups[0].members.len();
+        fx.server.save_now();
+        fx.server.flush_store();
+        let mut back = Fixture::new(ServerConfig {
+            store: Some(WorldStore::new(db.clone(), false)),
+            ecology_speed: 1.0,
+            ..config()
+        });
+        ticks(&mut back, 1);
+        let e = back.server.ecosystem(f.face).expect("loaded");
+        assert_eq!(e.groups.len(), 1, "the near herd was saved");
+        assert_eq!(e.groups[0].size, head as f64);
+    }
+);
+
+#[test]
+fn night_is_each_faces_own() {
+    // both-faces: it compares the two faces' nights.
+    let clock = default_settings(1.0).clock;
+    let len = clock.day_length_s();
+    // World time of face A's noon and midnight.
+    let at = |t: f64| ((t - f64::from(clock.start_hour) / 24.0).rem_euclid(1.0)) * len;
+    use dwell_sim::server::night_on;
+    assert!(!night_on(clock, at(0.5), Face::A) && night_on(clock, at(0.5), Face::B));
+    assert!(night_on(clock, at(0.0), Face::A) && !night_on(clock, at(0.0), Face::B));
+}
