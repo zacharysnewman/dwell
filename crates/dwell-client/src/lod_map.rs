@@ -116,12 +116,12 @@ pub fn tiles(r: &Rect, texels: i64) -> Vec<Rect> {
 
 /// The colours the map paints with: each block state's LOD top colour (sRGB, the LOD mesher's
 /// `lod_color`) and the water's.
-fn top_rgb(state: dwell_blocks::StateId) -> [f64; 3] {
+pub(crate) fn top_rgb(state: dwell_blocks::StateId) -> [f64; 3] {
     let c = dwell_mesh::lod_color(state, 0);
     [16, 8, 0].map(|s| dwell_look::srgb_to_linear(f64::from((c >> s) & 0xff) / 255.0))
 }
 
-fn srgb_byte(v: f64) -> u8 {
+pub(crate) fn srgb_byte(v: f64) -> u8 {
     dwell_mesh::linear_to_srgb_byte(v)
 }
 

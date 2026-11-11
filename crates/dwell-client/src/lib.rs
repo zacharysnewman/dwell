@@ -7,6 +7,7 @@ pub mod blasts;
 pub mod bodies;
 pub mod chips;
 pub mod chisel;
+pub mod chisel_section;
 pub mod chop;
 pub mod creatures;
 pub mod find;
