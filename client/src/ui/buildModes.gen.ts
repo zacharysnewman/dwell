@@ -12,3 +12,50 @@ export const BUILD_MODES = {
 
 /** The keys that step the hotbar one slot left / right (`KeyboardEvent.code`). */
 export const HOTBAR_KEYS = { prev: 'ArrowLeft', next: 'ArrowRight' } as const;
+
+/** The creative inventory view (docs/ITEMS.md §6a): its groups in order, every item in the
+ * hotbar's order with its group, and a new world's picks. */
+export const CREATIVE = {
+  categories: [
+    { name: 'blocks', label: 'Blocks' },
+    { name: 'shapes', label: 'Shapes' },
+    { name: 'plants', label: 'Plants' },
+    { name: 'tools', label: 'Tools' },
+    { name: 'explosives', label: 'Explosives' },
+    { name: 'special', label: 'Special' },
+  ],
+  items: [
+    { name: 'dwell:stone', label: 'Stone', category: 'blocks' },
+    { name: 'dwell:stone_slope', label: 'Stone slope', category: 'shapes' },
+    { name: 'dwell:stone_steep_slope', label: 'Stone steep slope', category: 'shapes' },
+    { name: 'dwell:dirt', label: 'Dirt', category: 'blocks' },
+    { name: 'dwell:grass', label: 'Grass', category: 'blocks' },
+    { name: 'dwell:ladder', label: 'Ladder', category: 'shapes' },
+    { name: 'dwell:sand', label: 'Sand', category: 'blocks' },
+    { name: 'dwell:log', label: 'Log', category: 'blocks' },
+    { name: 'dwell:stone_axe', label: 'Stone axe', category: 'tools' },
+    { name: 'dwell:metal_axe', label: 'Metal axe', category: 'tools' },
+    { name: 'dwell:stone_pickaxe', label: 'Stone pickaxe', category: 'tools' },
+    { name: 'dwell:metal_pickaxe', label: 'Metal pickaxe', category: 'tools' },
+    { name: 'dwell:wooden_shovel', label: 'Wooden shovel', category: 'tools' },
+    { name: 'dwell:metal_shovel', label: 'Metal shovel', category: 'tools' },
+    { name: 'dwell:leaves', label: 'Leaves', category: 'plants' },
+    { name: 'dwell:tall_grass', label: 'Tall grass', category: 'plants' },
+    { name: 'dwell:build_platform', label: 'Build platform', category: 'special' },
+    { name: 'dwell:torch', label: 'Torch', category: 'special' },
+    { name: 'dwell:dynamite', label: 'Dynamite', category: 'explosives' },
+    { name: 'dwell:dynamite_blue', label: 'Blue dynamite', category: 'explosives' },
+    { name: 'dwell:dynamite_green', label: 'Green dynamite', category: 'explosives' },
+    { name: 'dwell:dynamite_yellow', label: 'Yellow dynamite', category: 'explosives' },
+    { name: 'dwell:snowy_grass', label: 'Snowy grass', category: 'blocks' },
+    { name: 'dwell:snowy_leaves', label: 'Snowy leaves', category: 'plants' },
+  ],
+  hotbar: [
+    'dwell:stone',
+    'dwell:dirt',
+    'dwell:grass',
+    'dwell:log',
+    'dwell:stone_axe',
+    'dwell:stone_pickaxe',
+  ],
+} as const;

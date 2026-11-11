@@ -11,6 +11,7 @@ pub mod brush_tool;
 pub mod build_drag;
 pub mod chunk_diff;
 pub mod chunk_stream;
+pub mod creative_hotbar;
 pub mod edit_prediction;
 pub mod eye;
 pub mod face_flip;

@@ -57,7 +57,12 @@ export class Backpack {
   ) {
     this.root = document.createElement('div');
     this.root.id = 'backpack';
+    this.root.className = 'inventory-view';
     this.root.hidden = true;
+    // A dialog the controller's menu focus moves in (docs/GAMEPAD.md): A on a slot presses it.
+    this.root.setAttribute('role', 'dialog');
+    this.root.setAttribute('aria-modal', 'true');
+    this.root.setAttribute('aria-label', 'Backpack');
     const title = document.createElement('div');
     title.className = 'backpack-title';
     title.textContent = 'Backpack';
@@ -77,6 +82,10 @@ export class Backpack {
         e.preventDefault();
         e.stopPropagation();
         this.press(slot, e.button === 2 || e.shiftKey);
+      });
+      // A press with no pointer (the controller's A, Enter): pick up or put down, as a click.
+      b.addEventListener('click', (e) => {
+        if (e.detail === 0) this.press(slot, false);
       });
       b.addEventListener('pointerup', (e) => {
         if (this.picked && this.picked.slot !== slot) {

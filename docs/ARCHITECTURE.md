@@ -2868,7 +2868,7 @@ an air bar above the health bar while not full (`#vitals`, a `shared/ui/hud.json
 **Inventories and block drops [built, 0.50.33]** (ADR 0066). Items are namespaced names: every
 block is an item of its own name, and `shared/inventory/inventory.json` lists the items that are not
 blocks (rocks, sticks, grass seed, gems; prototype content) with their simple look, and the numbers
-(9 hotbar and 27 backpack slots, stacks of 64, loose items gone after 300 s, picked up within
+(6 hotbar and 30 backpack slots since 0.52.23, the same 36 indices as the 9 + 27 before, stacks of 64, loose items gone after 300 s, picked up within
 1.5 m, at most 2,048 in a world) and the wallets (the starting one holds 99). What a block drops is
 its `drops` in the block data (absent: itself; a stored ramp its base's; liquids, extra cells and
 indestructible blocks nothing), each rule a chance and an item or a weighted pick (tall grass's
@@ -2882,7 +2882,7 @@ not Rapier bodies: a point that falls toward the midplane through `FaceFrame` an
 of the first solid cell. Currency items (a `value`) go to the wallet, whole items up to its
 capacity. The client draws loose items as small turning copies of their block through the pieces'
 renderer (`dwell-client` `loose_items.rs`), and in such a world its hotbar is the inventory's first
-nine slots with counts and the wallet, and E opens the backpack screen (`client/src/ui/backpack.ts`).
+six slots with counts and the wallet, and E opens the backpack screen (`client/src/ui/backpack.ts`). In creative the hotbar's six slots hold items picked in the creative inventory view (E, the touch Bag, the controller's `inventory`; `client/src/ui/creativeInventory.ts`, `dwell-game` `creative_hotbar.rs`, the groups as `items.json` `category` data, picks saved per world in the browser; docs/ITEMS.md §6a).
 
 **Creatures [built, 0.51.13]** (ADR 0073). Animals as light server entities (`dwell_sim::creatures`, not
 Rapier bodies): spawned in groups near players by `shared/creatures/creatures.json`'s rules (the ground

@@ -590,6 +590,8 @@ pub struct Game<S: Scene> {
     /// The axe's chips in flight (crate::chips; draw-only).
     pub chips: crate::chips::Chips,
     pub inventory_slot: usize,
+    /// The creative hotbar's picks (docs/ITEMS.md §6a): its slots' palette items.
+    pub creative: dwell_game::creative_hotbar::CreativeHotbar,
     /// The moving body's cell under the crosshair, when nearer than the block aimed at
     /// (docs/BUILT_BODIES.md §4).
     body_target: Option<crate::pieces::BodyHit>,
@@ -923,6 +925,9 @@ impl<S: Scene> Game<S> {
             chop: Default::default(),
             chips: Default::default(),
             inventory_slot: 0,
+            creative: dwell_game::creative_hotbar::CreativeHotbar::new(
+                &dwell_game::block_interaction::palette(),
+            ),
             show_arms: true,
             lod_drawn: true,
             puppets: None,
@@ -4039,32 +4044,46 @@ impl<S: Scene> Game<S> {
         crate::loose_items::palette_slot_for(inv, slot, &names)
     }
 
-    /// The hotbar's slots: the inventory's hotbar in a world that uses items, else the palette.
+    /// The hotbar's slots (`inventory.json` `hotbarSlots`, both modes): the inventory's hotbar in
+    /// a world that uses items, else the creative hotbar's picks.
     pub fn hotbar_len(&self) -> usize {
-        if self.loose.uses_items() {
-            dwell_protocol::inventory::HOTBAR_SLOTS
-        } else {
-            self.interaction.palette().len()
-        }
+        dwell_protocol::inventory::HOTBAR_SLOTS
     }
 
-    /// Selects hotbar slot `slot` (wrapping): an inventory slot or a palette slot, by the mode.
+    /// Selects hotbar slot `slot` (wrapping): an inventory slot, or a creative slot (its pick
+    /// becomes the palette's selection).
     pub fn select_hotbar(&mut self, slot: i64) -> usize {
         if self.loose.uses_items() {
             let n = dwell_protocol::inventory::HOTBAR_SLOTS as i64;
             self.select_inventory_slot(slot.rem_euclid(n) as usize)
         } else {
-            self.interaction.select(slot)
+            let (slot, pick) = self.creative.select(slot);
+            self.interaction.select(pick as i64);
+            slot
         }
+    }
+
+    /// Puts palette item `palette_index` in creative hotbar slot `slot` (the creative inventory
+    /// view); the selected slot's pick is held at once. False if either is out of range.
+    pub fn set_creative_slot(&mut self, slot: usize, palette_index: usize) -> bool {
+        let n = self.interaction.palette().len();
+        if !self.creative.set(slot, palette_index, n) {
+            return false;
+        }
+        if !self.loose.uses_items() && slot == self.creative.slot() {
+            self.interaction.select(palette_index as i64);
+        }
+        true
     }
 
     /// The scroll wheel or a controller's bumper: the next (step > 0) or previous hotbar slot.
     pub fn scroll_hotbar(&mut self, step: i32) -> Option<usize> {
-        if !self.loose.uses_items() {
-            return self.interaction.scroll(step);
-        }
-        (step != 0)
-            .then(|| self.select_hotbar(self.inventory_slot as i64 + i64::from(step.signum())))
+        let at = if self.loose.uses_items() {
+            self.inventory_slot
+        } else {
+            self.creative.slot()
+        };
+        (step != 0).then(|| self.select_hotbar(at as i64 + i64::from(step.signum())))
     }
 
     /// The ground item a ray from `eye` along `dir` meets within reach (ADR 0071), if the server

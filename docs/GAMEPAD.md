@@ -42,7 +42,7 @@ closes the game menu.
   (`setMenuOpen`) nothing acts or is held, but the buttons are tracked, so one held over closing the
   menu isn't a press.
 - **WASM** (`web/app.rs`): `gamepad(buttons, axes, now)` each frame (actions: break and place as
-  clicks — place held as the right button is —, the build mode as `L`, the hotbar as the wheel, fly as F, fly faster/slower one level, the spyglass; returns `pause` and `map` for the shell,
+  clicks — place held as the right button is —, the build mode as `L`, the hotbar as the wheel, fly as F, fly faster/slower one level, the spyglass; returns `pause`, `map` and `inventory` (D-pad left: the inventory view, docs/ITEMS.md §6a, where the menu buttons move, A picks and B closes) for the shell,
   which opens the game menu or the big map — while the big map is open the poller hands the pad to
   `MapUi.padFrame` and the client holds still, as under a menu), `gamepadDisconnected`, `setGamepadBinding`,
   `resetGamepadBindings`, `setGamepadLook`, `gamepadBinding`.

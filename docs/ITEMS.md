@@ -237,10 +237,37 @@ page deltas (`deltaMode` 1, 2) count as 40 and 800 px. The controller steps it w
 `a_mouse_notch_steps_once_and_a_touchpad_swipe_steps_by_its_travel`, `the_step_keys_step_the_hotbar_while_playing`,
 `a_sideways_swipe_steps_the_hotbar_…`; `shared/items/gen.test.mjs` (validation).
 
-## 6a. Not yet
+Since 0.52.23 the hotbar has **6 slots** in both modes (`shared/inventory/inventory.json`
+`hotbarSlots`); the number keys 1–6 pick them (7–0 do nothing; `dwell-game` `creative_hotbar.rs`
+`slot_for_digit`), and the wheel, the step keys and LB / RB wrap over the six.
 
-The held item in the hand shows a whole block for a ½ m piece; the region tools and brushes still
-work in cells; no survival inventory (creative only).
+## 6a. The inventory view **[built, 0.52.23]**
+
+Owner, 2026-11-10: "Cap the hotbar at 6 slots. We need inventory view. For both adventure and
+creative." `E`, the touch **Bag** button (top left) or the controller's `inventory` button (D-pad
+left, `shared/input/gamepad.json`) opens it; `E`, Escape, the Bag or B closes it. While it is open the
+game holds still (`setMenuOpen`) and the controller's menu focus moves in it (the view is an
+`aria-modal` dialog; A presses the focused slot).
+
+- **Creative** (`client/src/ui/creativeInventory.ts`): every item of `items.json` in a catalogue
+  grouped by its **`category`**, the groups and their labels in `items.json` `inventory.categories`
+  (data: a new group or item shows by data alone, `gen.test.mjs` and `creativeInventory.test.ts`), a
+  search field over the labels, and the hotbar's six slots under it. A click or tap on an item puts it
+  in the selected slot (a click on one of the view's slots selects it), or drag an item onto a slot.
+  The picks are the client's (`dwell-game` `CreativeHotbar`: each slot's palette index; `Client.
+  setCreativeSlot`, `creativeHotbar`). A new world starts with `inventory.hotbar` — stone, dirt,
+  grass, log, the stone axe, the stone pickaxe (planks are not an item yet; the log stands for wood).
+  The picks are saved per world in this browser, by item name, under `dwell.creativeHotbar` (world
+  key → names; append-only: other worlds' records and unknown fields kept, an unreadable store left
+  alone). Deviation: the world key is the world's generator version and seed, so two local worlds
+  with one seed share their picks; the world's player record would be the per-world home if that
+  matters.
+- **Adventure**: the backpack screen (ADR 0066 §10), now 5 rows of 6 over the hotbar's 6.
+- The dev API's `d.pick(item)` puts an item in the selected slot, as a click in the view does (the
+  e2e specs use it).
+
+Not yet: the held item in the hand shows a whole block for a ½ m piece; the region tools and
+brushes still work in cells; the view's slots are not reordered by dragging between them.
 
 ## 7. Dynamite **[built, 0.49.32]**
 

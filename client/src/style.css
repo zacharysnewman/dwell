@@ -3318,7 +3318,8 @@ body.loading-wait #brush-panel {
   display: none;
 }
 
-#backpack {
+#backpack,
+#creative-inventory {
   position: fixed;
   left: 50%;
   top: 50%;
@@ -3333,7 +3334,8 @@ body.loading-wait #brush-panel {
   pointer-events: auto;
 }
 
-#backpack[hidden] {
+#backpack[hidden],
+#creative-inventory[hidden] {
   display: none;
 }
 
@@ -3355,6 +3357,102 @@ body.loading-wait #brush-panel {
 
 .backpack-hotbar {
   margin-top: 8px;
+}
+
+/* The creative inventory view (docs/ITEMS.md §6a): the catalogue's groups, scrolling, over the
+   hotbar's six slots. */
+#creative-inventory {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+}
+
+.inventory-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.inventory-head .backpack-title {
+  margin: 0;
+}
+
+.inventory-search {
+  width: 160px;
+  padding: 4px 8px;
+  border: 1px solid var(--glass-line);
+  border-radius: 6px;
+  background: rgb(0 0 0 / 25%);
+  color: #fff;
+  font: 13px var(--font-body);
+}
+
+.inventory-groups {
+  overflow-y: auto;
+  min-height: 0;
+  max-height: 52vh;
+}
+
+.inventory-group + .inventory-group {
+  margin-top: 8px;
+}
+
+.inventory-group-label {
+  margin-bottom: 4px;
+  color: rgb(255 255 255 / 75%);
+  font: 600 12px var(--font-body);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.inventory-items {
+  display: grid;
+  grid-template-columns: repeat(8, 44px);
+  gap: 4px;
+}
+
+.inventory-hotbar {
+  padding-top: 8px;
+  border-top: 1px solid var(--glass-line);
+}
+
+.inventory-view .hotbar-slot:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 1px;
+}
+
+@media (max-width: 480px) {
+  .inventory-items {
+    grid-template-columns: repeat(6, 44px);
+  }
+}
+
+/* The touch bag button (docs/ITEMS.md §6a): top left; while the inventory view is open the other
+   touch controls step aside and the bag closes it. */
+#touch-bag {
+  position: absolute;
+  top: var(--safe-top);
+  left: var(--safe-left);
+  z-index: 1;
+  height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--glass-line);
+  border-radius: 22px;
+  background: var(--glass);
+  color: #fff;
+  font: 700 14px var(--font-body);
+  touch-action: none;
+}
+
+body.inventory-open #touch-controls > :not(#touch-bag) {
+  display: none;
+}
+
+body.inventory-open #touch-controls {
+  z-index: calc(var(--z-widgets) + 1);
 }
 
 /* The minimap (ADR 0068; its size from shared/ui/map.json, set as --minimap-size): round, top right, the

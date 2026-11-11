@@ -68,16 +68,14 @@ async function aim(page: Page, pitch = -45): Promise<Target> {
 }
 
 const add = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+/** The creative items (shared/items/items.json), in its order. */
+const ITEMS = (
+  JSON.parse(readFileSync(new URL('../../shared/items/items.json', import.meta.url), 'utf8')) as {
+    items: { name: string; label: string; tool?: string }[];
+  }
+).items;
 /** The hotbar's tools (shared/items/items.json `tool`): they place nothing. */
-const TOOL_TITLES = new Set(
-  (
-    JSON.parse(readFileSync(new URL('../../shared/items/items.json', import.meta.url), 'utf8')) as {
-      items: { label: string; tool?: string }[];
-    }
-  ).items
-    .filter((i) => i.tool !== undefined)
-    .map((i) => i.label),
-);
+const TOOL_TITLES = new Set(ITEMS.filter((i) => i.tool !== undefined).map((i) => i.label));
 
 const EYE_HEIGHT = 1.62;
 
@@ -164,31 +162,59 @@ async function clearYaw(page: Page): Promise<number> {
   return best;
 }
 
+test('local mode: the creative inventory view puts an item on the 6-slot hotbar', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.goto('./?world=flat&fresh=1');
+  await ready(page);
+  // Six slots (shared/inventory/inventory.json hotbarSlots), a new world's picks first.
+  await expect(page.locator('#hotbar .hotbar-slot:visible')).toHaveCount(6);
+  await page.keyboard.press('Digit3');
+  await expect(page.locator('#hotbar .hotbar-slot.selected:visible')).toHaveAttribute(
+    'data-slot',
+    '2',
+    { timeout: FRAME_STALL_MS },
+  );
+  await page.keyboard.press('KeyE');
+  const view = page.locator('#creative-inventory');
+  await expect(view).toBeVisible();
+  // Every creative item is in the catalogue.
+  await expect(view.locator('.inventory-items [data-item]')).toHaveCount(ITEMS.length);
+  await view.locator('[data-item="dwell:sand"]').click();
+  await page.keyboard.press('Escape');
+  await expect(view).toBeHidden();
+  await expect(page.locator('#hotbar .hotbar-slot[data-slot="2"]:visible')).toHaveAttribute(
+    'title',
+    'Sand',
+  );
+});
+
 test('local mode: every palette block can be picked from the hotbar, placed, and broken', async ({
   page,
 }) => {
-  // 24 slots (the six tools place nothing), each placed and broken: 66-114 s on CI's software renderer when it passed.
+  // 24 items (the six tools place nothing), each put on the hotbar, placed and broken: 66-114 s on CI's software renderer when it passed.
   test.setTimeout(180_000);
   await page.goto('./?world=flat');
   await ready(page);
   // The hotbar is built once the page has taken the join, which can be a frame after the terrain.
-  // One slot per item (shared/items/items.json, docs/ITEMS.md).
-  await expect(page.locator('#hotbar .hotbar-slot:visible')).toHaveCount(24);
-  const slots = await page.locator('#hotbar .hotbar-slot:visible').count();
+  // Six slots (shared/inventory/inventory.json); every item reaches one by the inventory view.
+  await expect(page.locator('#hotbar .hotbar-slot:visible')).toHaveCount(6);
   const ground = await aim(page);
   expect(ground.face).toBe(2);
   const cell = add(ground.cell, FACE_DIRS[ground.face] ?? [0, 0, 0]);
   expect(await voxel(page, cell)).toBe(0);
 
-  for (let slot = 0; slot < slots; slot++) {
-    // Number keys pick the first ten slots, a tap on the hotbar the rest.
-    if (slot < 10) await page.keyboard.press(`Digit${String((slot + 1) % 10)}`);
-    else await page.locator(`#hotbar .hotbar-slot[data-slot="${String(slot)}"]:visible`).click();
+  for (const [i, item] of ITEMS.entries()) {
+    // Number keys pick the six slots; the item goes in the selected one (docs/ITEMS.md §6a).
+    const slot = i % 6;
+    await page.keyboard.press(`Digit${String(slot + 1)}`);
     await expect(page.locator('#hotbar .hotbar-slot.selected:visible')).toHaveAttribute(
       'data-slot',
       String(slot),
       { timeout: FRAME_STALL_MS },
     );
+    expect(await call<boolean>(page, `d.pick(${JSON.stringify(item.name)})`)).toBe(true);
     // A ladder hangs on a block's side, never on the ground's top (docs/ITEMS.md; the placement
     // rules' tests, dwell-world tests/placement.rs, hang it).
     const title = await page
@@ -306,7 +332,7 @@ test('local mode: an edited world is saved in the browser and survives a reload'
   await ready(page);
   const target = await aim(page);
   const cell = add(target.cell, FACE_DIRS[target.face] ?? [0, 0, 0]);
-  await page.locator('#hotbar .hotbar-slot[title="Sand"]:visible').click(); // not a fixed slot: the palette grows
+  expect(await call<boolean>(page, 'd.pick("dwell:sand")')).toBe(true); // into the selected slot (docs/ITEMS.md §6a)
   const sand = stateId('dwell:sand');
   expect(await call<boolean>(page, `d.edit('place')`)).toBe(true);
   await expect.poll(() => voxel(page, cell), { timeout: 5_000 }).toBe(sand);

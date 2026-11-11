@@ -324,8 +324,9 @@ Check these before chasing an e2e failure:
 - On the software renderer the page draws nothing for 3–5 s just after `terrainReady` (BUGS.md #49):
   a spec that moves the player, times the screen or clicks the menu right after the join first awaits
   `untilTicking` (`e2e/ticking.ts`). A new spec of that kind needs it too; a move of 0 m on CI is this.
-- The hotbar slot count in `e2e/edit.spec.ts` is the items' count (19, `shared/items/items.json`; the stone axe places nothing and is skipped);
-  update it when the items change.
+- The hotbar has 6 slots in both modes since 0.52.23 (`shared/inventory/inventory.json` `hotbarSlots`);
+  `e2e/edit.spec.ts` puts every item of `shared/items/items.json` on it with `d.pick` (tools place
+  nothing and are skipped), so it follows the items by itself; update its count of 6 if `hotbarSlots` changes.
 - Main's e2e failed from 0.28.x to 0.37.1 (fixed 0.37.2). Part was specs left behind by features:
   1 m hotbar blocks (two cells), leaves falling when no log holds them, flight capped at level
   11, new settings values. The rest were timeouts waiting for the generated terrain. The cliffs,

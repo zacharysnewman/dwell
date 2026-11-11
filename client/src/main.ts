@@ -57,6 +57,7 @@ import { rememberServer } from './ui/recentServers';
 import { prefersTouch, TouchControls } from './ui/touchControls';
 import { Hotbar, type HotbarSlot, type InventoryHud } from './ui/hotbar';
 import { Backpack, backpackKey } from './ui/backpack';
+import { CreativeInventory, loadPicks, savePicks } from './ui/creativeInventory';
 import type { BrushPanelState } from './ui/brushPanel';
 import { prefersReducedMotion } from './ui/motionSettings';
 import type { SpyglassHud } from './ui/spyglass';
@@ -197,6 +198,11 @@ interface DwellDebug {
   buildMode(): string;
   /** Selects a hotbar slot, as a number key does. */
   select(slot: number): void;
+  /**
+   * Creative: puts the item named `item` (shared/items/items.json) in the selected hotbar slot, as
+   * a click in the inventory view does; false if it is not a creative item.
+   */
+  pick(item: string): boolean;
   /** The state the selected slot would place at the crosshair, and where; null with no target. */
   placement(): { cell: [number, number, number]; material: number } | null;
   /** Material at a voxel in the client's world. */
@@ -459,6 +465,8 @@ interface App {
   hotbar: Hotbar | null;
   /** The backpack screen (ADR 0066), in a world that uses items. */
   backpack: Backpack | null;
+  /** The creative inventory view (docs/ITEMS.md §6a), in a world that doesn't use items. */
+  creative: CreativeInventory | null;
   settings: SettingsMenu | null;
   flightSpeed: FlightSpeedControl;
   /** Frames per second, shown in the status line. */
@@ -631,6 +639,7 @@ function handleEvents(app: App): void {
     } else if (e.t === 'slot') {
       const slot = e.value as number;
       app.hotbar?.setSelected(slot);
+      app.creative?.set([...app.client.creativeHotbar()], slot);
       // A change of slot sounds; the first selection, when the game starts, does not.
       if (shownSlot !== null && shownSlot !== slot) audio().action('hotbar');
       shownSlot = slot;
@@ -780,6 +789,7 @@ async function start(): Promise<App | null> {
     map: new MapOverlay(document.body),
     hotbar: null,
     backpack: null,
+    creative: null,
     settings: null,
     flightSpeed: new FlightSpeedControl(document.body, (level) => {
       client.flySpeed(level);
@@ -898,15 +908,20 @@ async function start(): Promise<App | null> {
   // D-pad moves, A presses, B and Menu close it. Settings → Controller rebinds it.
   const pad = new GamepadInput({
     client,
-    menuOpen: () => settings.isOpen,
+    menuOpen: () => settings.isOpen || inventoryOpen(app),
     openMenu: () => {
       settings.setOpen(true);
     },
     closeMenu: () => {
-      settings.setOpen(false);
+      if (inventoryOpen(app)) setInventoryOpen(app, false);
+      else settings.setOpen(false);
     },
     back: () => {
-      settings.setOpen(false);
+      if (inventoryOpen(app)) setInventoryOpen(app, false);
+      else settings.setOpen(false);
+    },
+    inventory: () => {
+      setInventoryOpen(app, !inventoryOpen(app));
     },
     map: {
       open: () => app.minimap?.bigOpen ?? false,
@@ -1042,6 +1057,7 @@ async function start(): Promise<App | null> {
     select: (slot) => {
       client.select(slot);
     },
+    pick: (item) => app.creative?.pickItem(item) ?? false,
     placement: () =>
       client.placement() as { cell: [number, number, number]; material: number } | null,
     voxel: (x, y, z) => client.voxel(x, y, z),
@@ -1289,6 +1305,27 @@ function itemPicture(item: string): HotbarSlot {
   return p;
 }
 
+/** Whether the inventory view is open: the backpack (a world that uses items) or the creative one. */
+function inventoryOpen(app: App): boolean {
+  return (app.backpack?.open ?? false) || (app.creative?.open ?? false);
+}
+
+/**
+ * Opens or closes the inventory view: the backpack in a world that uses items, else the creative
+ * catalogue. While it is open the game holds still and the controller moves its focus.
+ */
+function setInventoryOpen(app: App, open: boolean): void {
+  const usesItems = app.backpack?.usable ?? false;
+  if (app.backpack) app.backpack.open = open && usesItems;
+  if (app.creative) app.creative.open = open && !usesItems;
+  if (open) document.exitPointerLock();
+  // The touch controls step aside but for the bag button, which closes it again.
+  document.body.classList.toggle('inventory-open', open);
+  app.client.setMenuOpen(
+    open || (app.settings?.isOpen ?? false) || (app.minimap?.bigOpen ?? false),
+  );
+}
+
 /** Once joined: the hotbar, the block dump's world, and the debug tools. */
 function play(app: App, joined: Extract<SessionReport, { phase: 'joined' }>): void {
   app.playing = true;
@@ -1298,6 +1335,38 @@ function play(app: App, joined: Extract<SessionReport, { phase: 'joined' }>): vo
   app.hotbar = new Hotbar(document.body, slots, (slot) => {
     app.client.select(slot);
   });
+  // The creative hotbar's picks (docs/ITEMS.md §6a), saved per world in this browser.
+  const items = app.client.paletteItems();
+  const worldKey = `${String(joined.generatorVersion)}:${String(joined.worldSeed)}`;
+  const store = (() => {
+    try {
+      return window.localStorage;
+    } catch {
+      return null;
+    }
+  })();
+  const saved = store ? loadPicks(store, worldKey, items) : null;
+  saved?.forEach((index, slot) => app.client.setCreativeSlot(slot, index));
+  app.hotbar.setPicks([...app.client.creativeHotbar()]);
+  app.creative = new CreativeInventory(
+    document.body,
+    items,
+    (i) => slots[i] ?? { name: '', swatch: new Uint8Array(), size: 0 },
+    (slot, index) => {
+      app.client.setCreativeSlot(slot, index);
+      const picks = [...app.client.creativeHotbar()];
+      app.hotbar?.setPicks(picks);
+      if (store) savePicks(store, worldKey, picks, items);
+      audio().action('hotbar');
+      return picks;
+    },
+    (slot) => {
+      app.client.select(slot);
+    },
+  );
+  app.touch?.setOnBag(() => {
+    setInventoryOpen(app, !inventoryOpen(app));
+  });
   app.client.select(0);
   // The backpack screen (ADR 0066): E opens and closes it in a world that uses items.
   app.backpack = new Backpack(document.body, itemPicture, (from, to, count) => {
@@ -1306,13 +1375,13 @@ function play(app: App, joined: Extract<SessionReport, { phase: 'joined' }>): vo
   window.addEventListener(
     'keydown',
     (e) => {
-      const b = app.backpack;
-      if (!b || !app.playing) return;
-      // E is the backpack only: a ground item is knocked loose by the break action (ADR 0071).
-      const open = backpackKey(e.code, e.repeat, b.open, b.usable);
+      if (!app.playing || (app.settings?.isOpen ?? false)) return;
+      // Typing in the inventory's search: only Escape is the view's.
+      if (e.target instanceof HTMLInputElement && e.code !== 'Escape') return;
+      // E is the inventory only: a ground item is knocked loose by the break action (ADR 0071).
+      const open = backpackKey(e.code, e.repeat, inventoryOpen(app), true);
       if (open === null) return;
-      b.open = open;
-      if (b.open) document.exitPointerLock();
+      setInventoryOpen(app, open);
       e.preventDefault();
       e.stopPropagation();
     },

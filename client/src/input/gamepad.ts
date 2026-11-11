@@ -17,6 +17,8 @@ export interface GamepadHost {
   closeMenu(): void;
   /** B in a menu: back, as Esc. */
   back(): void;
+  /** The inventory action: opens the inventory view (closed by back, as a menu). */
+  inventory?: () => void;
   /**
    * The big map (ADR 0068), in the game: the map action opens it, and while it is open the
    * controller pans, zooms and closes it (`MapUi.padFrame`) instead of playing.
@@ -102,6 +104,7 @@ export class GamepadInput {
     if (mapOpen) this.host.map?.pad(values, pad.axes, now);
     const shell = this.host.client?.gamepad(buttons, axes, now) ?? [];
     if (!menuOpen && shell.includes('pause')) this.host.openMenu();
+    if (!menuOpen && shell.includes('inventory')) this.host.inventory?.();
     if (!menuOpen && !mapOpen && shell.includes('map')) this.host.map?.toggle();
   }
 }

@@ -68,11 +68,12 @@ pub enum PlayAction {
     Spyglass,
     Map,
     Pause,
+    Inventory,
 }
 
 impl PlayAction {
     /// Every action, in the data's order (`gamepad.gen.rs` `PLAY`).
-    pub const ALL: [PlayAction; 14] = [
+    pub const ALL: [PlayAction; 15] = [
         Self::Jump,
         Self::Crouch,
         Self::Run,
@@ -87,6 +88,7 @@ impl PlayAction {
         Self::Spyglass,
         Self::Map,
         Self::Pause,
+        Self::Inventory,
     ];
 
     /// Its name in the data and in Settings.

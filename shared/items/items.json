@@ -3,12 +3,14 @@
   "items": [
     {
       "name": "dwell:stone",
+      "category": "blocks",
       "label": "Stone",
       "block": "dwell:stone",
       "rows": 1
     },
     {
       "name": "dwell:stone_slope",
+      "category": "shapes",
       "label": "Stone slope",
       "block": "dwell:stone_ramp",
       "rows": 1,
@@ -21,6 +23,7 @@
     },
     {
       "name": "dwell:stone_steep_slope",
+      "category": "shapes",
       "label": "Stone steep slope",
       "block": "dwell:stone_ramp",
       "rows": 2,
@@ -36,18 +39,21 @@
     },
     {
       "name": "dwell:dirt",
+      "category": "blocks",
       "label": "Dirt",
       "block": "dwell:dirt",
       "rows": 1
     },
     {
       "name": "dwell:grass",
+      "category": "blocks",
       "label": "Grass",
       "block": "dwell:grass",
       "rows": 1
     },
     {
       "name": "dwell:ladder",
+      "category": "shapes",
       "label": "Ladder",
       "block": "dwell:ladder",
       "rows": 1,
@@ -55,54 +61,64 @@
     },
     {
       "name": "dwell:sand",
+      "category": "blocks",
       "label": "Sand",
       "block": "dwell:sand",
       "rows": 1
     },
     {
       "name": "dwell:log",
+      "category": "blocks",
       "label": "Log",
       "block": "dwell:log",
       "rows": 1
     },
     {
       "name": "dwell:stone_axe",
+      "category": "tools",
       "label": "Stone axe",
       "tool": "dwell:stone_axe"
     },
     {
       "name": "dwell:metal_axe",
+      "category": "tools",
       "label": "Metal axe",
       "tool": "dwell:metal_axe"
     },
     {
       "name": "dwell:stone_pickaxe",
+      "category": "tools",
       "label": "Stone pickaxe",
       "tool": "dwell:stone_pickaxe"
     },
     {
       "name": "dwell:metal_pickaxe",
+      "category": "tools",
       "label": "Metal pickaxe",
       "tool": "dwell:metal_pickaxe"
     },
     {
       "name": "dwell:wooden_shovel",
+      "category": "tools",
       "label": "Wooden shovel",
       "tool": "dwell:wooden_shovel"
     },
     {
       "name": "dwell:metal_shovel",
+      "category": "tools",
       "label": "Metal shovel",
       "tool": "dwell:metal_shovel"
     },
     {
       "name": "dwell:leaves",
+      "category": "plants",
       "label": "Leaves",
       "block": "dwell:leaves",
       "rows": 1
     },
     {
       "name": "dwell:tall_grass",
+      "category": "plants",
       "label": "Tall grass",
       "block": "dwell:tall_grass",
       "rows": 1,
@@ -110,12 +126,14 @@
     },
     {
       "name": "dwell:build_platform",
+      "category": "special",
       "label": "Build platform",
       "block": "dwell:build_platform",
       "rows": 1
     },
     {
       "name": "dwell:torch",
+      "category": "special",
       "label": "Torch",
       "block": "dwell:torch",
       "rows": 1,
@@ -123,6 +141,7 @@
     },
     {
       "name": "dwell:dynamite",
+      "category": "explosives",
       "label": "Dynamite",
       "block": "dwell:dynamite",
       "rows": 1,
@@ -130,6 +149,7 @@
     },
     {
       "name": "dwell:dynamite_blue",
+      "category": "explosives",
       "label": "Blue dynamite",
       "block": "dwell:dynamite_blue",
       "rows": 1,
@@ -137,6 +157,7 @@
     },
     {
       "name": "dwell:dynamite_green",
+      "category": "explosives",
       "label": "Green dynamite",
       "block": "dwell:dynamite_green",
       "rows": 1,
@@ -144,6 +165,7 @@
     },
     {
       "name": "dwell:dynamite_yellow",
+      "category": "explosives",
       "label": "Yellow dynamite",
       "block": "dwell:dynamite_yellow",
       "rows": 1,
@@ -151,17 +173,31 @@
     },
     {
       "name": "dwell:snowy_grass",
+      "category": "blocks",
       "label": "Snowy grass",
       "block": "dwell:snowy_grass",
       "rows": 1
     },
     {
       "name": "dwell:snowy_leaves",
+      "category": "plants",
       "label": "Snowy leaves",
       "block": "dwell:snowy_leaves",
       "rows": 1
     }
   ],
+  "inventory": {
+    "$comment": "The creative inventory view (docs/ITEMS.md §6a; owner, 2026-11-10): every item above in a catalogue grouped by its `category`, the groups in this order with these labels; the player picks the hotbar's slots (shared/inventory/inventory.json hotbarSlots) from it, saved per world in the browser. `hotbar`: a new world's picks, one per hotbar slot.",
+    "categories": [
+      { "name": "blocks", "label": "Blocks" },
+      { "name": "shapes", "label": "Shapes" },
+      { "name": "plants", "label": "Plants" },
+      { "name": "tools", "label": "Tools" },
+      { "name": "explosives", "label": "Explosives" },
+      { "name": "special", "label": "Special" }
+    ],
+    "hotbar": ["dwell:stone", "dwell:dirt", "dwell:grass", "dwell:log", "dwell:stone_axe", "dwell:stone_pickaxe"]
+  },
   "hotbar": {
     "$comment": "Stepping the hotbar's selection without number keys (docs/ITEMS.md §6; owner, 2026-11-07: on a sensitive touchpad with no wheel it was almost impossible to pick a piece). `prevKey` / `nextKey` (KeyboardEvent.code) step one slot left / right, wrapping, held keys repeating. The wheel and a touchpad's two-finger swipes (vertical, and horizontal as `deltaX`) step it too, through an accumulator: the first wheel event after `wheelGapMs` of quiet steps one slot at once (a mouse notch), and then every `wheelNotchPx` of travel in the same gesture steps one more, so a sensitive pad's stream of small deltas and its momentum don't skip several slots. A reversed direction starts over.",
     "prevKey": "ArrowLeft",
