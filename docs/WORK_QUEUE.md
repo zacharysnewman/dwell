@@ -40,6 +40,12 @@ Last updated: 2026-11-11 (0.52.68).
    - **Status (0.52.60):** growth over time built (ADR 0079 S3: per-tree records saved in an optional
      `tree_growth` table, the growers step, edits win, felled trees stop; `?growth=N` time-lapse).
      Outstanding: per-tree leaf tints, a sapling item, frond blades.
+   - **Status (saplings, ADR 0079 S4):** saplings built: `dwell:oak_sapling`, `dwell:pine_sapling`,
+     `dwell:palm_sapling`, named by each species' `sapling` data (`plantOn`: grass/dirt for oak and
+     pine, sand for palm; `dropChance` 5 %); placed on its ground a sapling becomes stage 0 and a
+     growth record that grows by the world days; other ground is refused; leaves of species trees drop
+     them in adventure; creative lists them under Plants. Outstanding: per-tree leaf tints, frond
+     blades, a sapling's own model.
 7. **Chopping prototype** (behind a switch, not replacing chopping until approved). Decided:
    - A tree falls once more than 50 % of its cross-section is cut, from one side or two.
    - The back cut is supported, not required: notch + back cut leaves a hinge that steers the fall

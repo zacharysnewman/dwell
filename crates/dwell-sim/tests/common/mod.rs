@@ -51,8 +51,13 @@ pub struct Fixture {
 
 impl Fixture {
     pub fn new(config: ServerConfig) -> Self {
+        Self::with_entropy(config, Box::new(CountingEntropy(1)))
+    }
+
+    /// A fixture whose server rolls (drops, …) from `entropy`.
+    pub fn with_entropy(config: ServerConfig, entropy: Box<dyn Entropy>) -> Self {
         Self {
-            server: Server::new(config, Box::new(CountingEntropy(1))),
+            server: Server::new(config, entropy),
             binding: [0; 32],
             left: Vec::new(),
         }

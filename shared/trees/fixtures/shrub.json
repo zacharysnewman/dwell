@@ -7,5 +7,6 @@
   "branches": { "kind": "none" },
   "crown": { "shape": "lumpy", "centre": 0.5, "radius": [1.2, 0.8, 1.2], "lumps": { "radius": [0.5, 0.6], "height": [1, 1] }, "roughness": 0, "scale": [0.5, 1] },
   "variety": { "crown": [1, 1], "lightness": [1, 1], "hue": [0, 0] },
+  "sapling": { "item": "dwell:tall_grass", "plantOn": ["dwell:stone"], "dropChance": 1 },
   "growth": { "stages": 3, "daysPerStage": 1, "wild": [1, 1, 1], "variants": 2 }
 }

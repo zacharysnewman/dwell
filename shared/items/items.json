@@ -117,6 +117,30 @@
       "rows": 1
     },
     {
+      "name": "dwell:oak_sapling",
+      "category": "plants",
+      "label": "Oak sapling",
+      "block": "dwell:oak_sapling",
+      "rows": 1,
+      "drag": "none"
+    },
+    {
+      "name": "dwell:pine_sapling",
+      "category": "plants",
+      "label": "Pine sapling",
+      "block": "dwell:pine_sapling",
+      "rows": 1,
+      "drag": "none"
+    },
+    {
+      "name": "dwell:palm_sapling",
+      "category": "plants",
+      "label": "Palm sapling",
+      "block": "dwell:palm_sapling",
+      "rows": 1,
+      "drag": "none"
+    },
+    {
       "name": "dwell:tall_grass",
       "category": "plants",
       "label": "Tall grass",

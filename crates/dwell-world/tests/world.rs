@@ -115,7 +115,10 @@ fn the_palette_is_the_registrys_placeable_states() {
             "dwell:glacier_ice[flooded=false]",
             "dwell:red_sandstone[flooded=false]",
             "dwell:basalt[flooded=false]",
-            "dwell:obsidian[flooded=false]"
+            "dwell:obsidian[flooded=false]",
+            "dwell:oak_sapling",
+            "dwell:pine_sapling",
+            "dwell:palm_sapling",
         ]
     );
     assert!(!placeable(dwell_blocks::STATES.len() as StateId));
