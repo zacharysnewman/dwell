@@ -117,8 +117,14 @@
 - **B7** Chisel in the game, and the new-world biome choice. *(Started 0.52.27: Chisel's **Play in
   game** opens a new local world on the edit's world knobs, its record keeping the edit as its
   worldgen config so it reopens the same, and `?worldgen=<fixture>` opens a fixture world by link
-  (docs/DEV_TOOLS.md "Play a test world"). The edit's biomes, geology and vegetation are not in the
-  game yet, and the New world form has no biome choice.)*
+  (docs/DEV_TOOLS.md "Play a test world"). 0.52.37: the whole edit reaches the game. The parser moved to
+  `dwell-worldgen` `config.rs`; a test world's maps carry the config's text (`WorldMap::worldgen`, a
+  tagged trailer of the bytes, none on the build's maps), so every WASM instance that installs them (the
+  server, the chunk and LOD jobs, the water) builds generators with the edit's biomes, biome map,
+  geology, erosion and vegetation, and the map's tectonics are the config's. Deviations: the game's
+  cliffs volume stays over the edit's ground; a guest does not get the config yet (a required
+  `WorldSettings` tag with the config's hash and a fetch, so an older guest refuses); the New world form
+  has no biome choice.)*
 - **B8** arches (3D density, overhangs).
 
 ## Consequences

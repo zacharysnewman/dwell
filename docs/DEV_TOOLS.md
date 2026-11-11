@@ -307,10 +307,12 @@ travels (the fixture's overrides; an edit's world knobs, `chisel::worldgen_heigh
 the world maps from it (`buildWorldMap(seed, face, worldgen)`, `WorldMap::for_height`), cached under
 their own keys (`worldMapKeys(seed, worldgen)`: the default key plus the config's hash, so the
 seed's own maps are untouched), and every WASM instance installs them as usual, so the server, the
-LOD and the water all generate the fixture's ground. Not carried yet: an edit's biomes, geology and
-vegetation (the build's are used), and the map's tectonics (a map from bytes has the build's, so a
-test world's rock provinces are the default plates'). Local worlds only: a guest joining one would
-build the seed's own maps. The New world form never sets it. A bench run uses it through a
+LOD and the water all generate the fixture's ground. From 0.52.37 (ADR 0074 B7) the maps also carry the
+config's text (`WorldMap::worldgen`), so those generators put the whole edit on the ground: its biomes,
+biome map, rocks, erosion, vegetation and tectonics, as Chisel previews them (`dwell-worldgen`
+`tests/worldgen_config.rs` compares the columns, both faces). One difference: the game's terrain volume
+(the cliffs) stands over the edit's ground and Chisel's preview has none. Local worlds only: a guest
+joining one would build the seed's own maps. The New world form never sets it. A bench run uses it through a
 `--configs-file` configuration's `params` (`{"worldgen": "test:tall_peak", "fresh": "1", "at": …}`).
 
 **The water report** (0.44.4): `dwell_sim::water::Water::report(at, radius)` describes the water near a

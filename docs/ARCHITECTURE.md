@@ -1632,9 +1632,18 @@ the New world form): the page builds its world maps over that height field
 (`dwell-client` `chisel::worldgen_height`, `buildWorldMap(seed, face, worldgen)` → `WorldMap::for_height`)
 and keys them apart in IndexedDB (`worldMapKeys(seed, worldgen)`: the build's key plus the config's
 hash), and every WASM instance installs them as for any world, so the server, the LOD and the water
-generate the fixture's ground; the record keeps the config, so the world reopens the same. Not
-carried: an edit's biomes, geology and vegetation, and the map's tectonics (the provinces are the
-build's plates'); local worlds only (docs/DEV_TOOLS.md "Play a test world").
+generate the fixture's ground; the record keeps the config, so the world reopens the same. **The whole
+edit (0.52.37, B7):** the parser moved to `dwell-worldgen` `config.rs` (`world_config`, `edit_from_json`;
+Chisel re-exports it), and a test world's maps carry the config's text in a tagged trailer of their bytes
+(`WorldMap::worldgen`, codec tag `WG`; the build's maps have none, byte-identical), so every generator
+built over them (`TerrainGenerator::with_map`: the server, the chunk and LOD jobs, the water) puts the
+edit's biomes, biome map, geology (erosion included) and vegetation on the ground, and the map's
+tectonics are the config's (decoded from it, so the rock provinces follow the edit's plates). An instance
+that already holds another map for the seed takes the installed one (`worldmap::cache::install`
+replaces a map whose config differs), and the portal sites are cached per (seed, rules, the faces'
+configs). Keys: the build's key plus `-c<hash>` for any config. Not carried yet: the config to a guest
+(local worlds only); the game's terrain volume (the cliffs) is over the edit's ground, where Chisel's
+preview has none (docs/DEV_TOOLS.md "Play a test world").
 
 **Erosion [built, Phase 57 T4, 0.52.17; ADR 0075]** (`rocks.json` `erosion`, `geology.rs` `DrainageField`, `eroded`; `TerrainGenerator::erosion_shaping` after the rock's shaping): rule-based erosion from the world map's plan view (`rocks.json` `erosion`, `geology::DrainageField`, `geology::eroded`): drainage lines are map cells with at least `threshold` cells of flow accumulation (or the sea); a column nearer a line than the scarp's retreat (`reach` × (1 − `resist` × the cap rock's hardness) × (1 + `valley` × log2 of the line's accumulation over the threshold) × (1 ± `outline` noise) − `relief` × the hill's height over the floor) is cut down to the floor (the line's height, `snap` of the way down to the stack's lowest soft layer's top), farther it stands; a `wall` m sheer wall at the edge (the cap rock's face) and a `talusWidth` m skirt (the soft rock's scree) below; a biome's `gullies` cuts short-wavelength rills (`gullyWavelength`, `gullyDepth`). A biome opts in with `erosion` 0..1 (absent 0: the default world and goldens unchanged); the red-rock mesa preset at 1, badlands at 1 with gullies 1. The drainage field is built once per generator from the world map, only when a biome erodes.
 **Soil and vegetation [built, Phase 57 T3, 0.52.14; ADR 0075]** (`shared/worldgen/vegetation.json` →
