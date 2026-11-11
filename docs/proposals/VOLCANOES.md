@@ -172,7 +172,31 @@ look and the in-game check come next, locally). ARCHITECTURE.md §6.8 has the mo
   colour for now.
 - **Round 3:** world-space crust plates with glowing seams (WATER_RENDERING.md §17.1); steam's own look
   as data, a hiss, the burning screen edge and a sizzle (§17.2).
-- **Outstanding:** heat per cell (brighter where hotter/thicker: the field's heat isn't in the cells).
+- **Outstanding:** heat per cell (brighter where hotter/thicker: the field's heat isn't in the cells);
+  §6.5 has its data and plan.
+
+### 6.5 Lava glow, part 1: heat stops (2026-11-11)
+
+Owner, 2026-11-11: "Lava should have bloom glow." / "Lava looks dark red instead of bright red/orange" /
+"It should darken as it solidifies though."
+
+- **Built:** the look by heat as data (`lava.json` `heat` stops: colour, emissive, crust cover, hottest
+  first; `heatHysteresis`), validated by `lava.mjs` (descending `above`, the coolest at 0, names
+  lower_snake_case, ranges) and generated into `dwell_lava::DATA.heat`; a fixture's fifth stop by data
+  alone; `LavaData::heat_stop(heat, current)` picks a column's stop with hysteresis, so a cooling column
+  changes stop once per stop and heat wavering at a threshold changes nothing (tested). The terrain shader
+  draws every molten cell in the **hottest** stop (bright orange seams at emissive 2.4 over a 30 % crust),
+  so the lake and the rivers read bright red-orange, not dark red.
+- **Chosen for heat in the cells (not built yet): a `heat` property on `dwell:lava`** whose values are the
+  stops' names (the first, `hot`, the default: "as before", ADR 0063, so additive), written by the server's
+  lava tick only when `heat_stop` changes a column's stop. Cheaper than a per-chunk side channel: the cells
+  already go through the edit sync with no protocol change, a cooling column is rewritten once per stop
+  (4 writes over its life, on top of its molten and rock writes), and the mesher already keys looks by
+  state. Left: the property in `shared/blocks/dwell.json` (a `gen.mjs` check that its values equal the stop
+  names), the server's write in `dwell-sim` `lava.rs` (both faces), and the mesher passing the state's stop to
+  the shader (the molten branch's constants become a small stop table indexed per vertex).
+- **Not built: the bloom pass** (bright pass on the HDR scene, a few half-res blur levels, added before tone
+  mapping in the composite, data in `shared/look`, per tier: off on CPU and low).
 
 ### 6.4 As built: V2, rivers to the sea (2026-11-11)
 

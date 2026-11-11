@@ -3525,6 +3525,9 @@ surface, open or a wall), keyed by tile, with its vents and its schedule (V2, VO
   reads as none (an older build keeps a version 2 record unread, not written over).
 - **Data:** `shared/fluids/lava.json` (`lava.mjs` → `crates/dwell-lava/src/lava.gen.rs`, validated: ranges,
   names, the rocks against the block registry; a fixture with a fluid and vents added by data alone).
+  Its look by heat is data too (`heat` stops hottest first: seam colour, emissive, crust cover;
+  `heatHysteresis`; `LavaData::heat_stop`); the terrain shader draws molten cells in the hottest stop
+  (`render/shaders.rs` `lava_wgsl`) until the cells carry their heat (VOLCANOES.md §6.5).
 - **Faces:** face-local; world points and cells cross only through `FaceFrame` (`submerged`,
   `is_near`, `LavaEvent::cells`); the crate is in the both-faces scan.
 
