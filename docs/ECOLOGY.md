@@ -153,9 +153,19 @@ ecology, and tests hand the server islands (`ServerConfig::ecology_islands`).
   clock's day, and every herd and pack: face, id, species name, face-local x/z, size, hunger,
   energy, activity name), with `ecosystem(face)` and `ecology_stats()` (the last tick's steps and
   ms). The clients' read-out of the far groups is §9 (`Ecology`, `__dwell.ecology()`).
-- **Not yet**: the browser's local server never has the world maps in its own instance (the
-  server-jobs worker computes them), so a local world's ecology waits forever; a dedicated server's
-  runs. Worlds whose installed worldgen config differs from the default use the default's map.
+- **Local worlds** (the browser's single-player and friend-hosted worlds) run it too, from the same
+  code: the local worker installs both faces' maps in its own WASM instance before the world starts
+  (`installWorldMap`, the bytes the page built or kept, ADR 0049), so the islands are made from the
+  installed maps (no second copy of a map; a test world's installed map is the one used). It steps
+  and saves as on a native server (the world file's `ecology` table). Only when the page could not
+  give the maps (the worker's fallback: each worker computes its own) does the local server's
+  instance have none, and then its ecology waits.
+- **Cost** (measured, seed 1, `game_local`): each face's island is the whole map's span at 200 m
+  (~190 000 cells a face), so the islands and ecosystems hold **12.5 MB** for both faces (the test
+  bounds it at 16 MB), made once on the first tick both maps are ready (~30 ms natively, a one-off).
+  The saved record is ~3 MB (each face's forage, f64 a cell), so **a save writes it only when it
+  changed** since the store last held it (`Ecology::record_to_save`, a hash of the record): a local
+  world saves every 5 s, the ecology steps once a world day. A failed save writes it next time.
 
 Tests (`cargo test -p dwell-sim --test ecology`): the schedule; each face's ecology steps by the
 world's days (online a day at a time, idle waiting then catching up), its own seed, and the
@@ -169,8 +179,9 @@ world has none and keeps its choice; the flat world has none to run; an unreadab
 1. ~~**Individuals near players**~~: built (§8).
 2. **Simple far rendering**: a herd drawn as a few low-detail figures or a marker in the LOD, from
    the client's read-out (§9, built).
-3. **Local worlds**: the maps (or the islands, a few KB) handed to the local server, so its ecology
-   runs; then native ↔ WASM determinism of the step (it uses `exp`, `atan`, `hypot`).
+3. ~~**Local worlds**~~: built (§6). Still to do: native ↔ WASM determinism of the step (it uses
+   `exp`, `atan`, `hypot`), and a smaller island (land cells only, or f32 forage: 12.5 MB and a ~3 MB
+   record today, §6).
 4. **Grazing applied to the real tall grass** as chunks load: a cell's forage share decides how much
    of its tall grass stands (eaten grass as a composed layer, like trees' tombstones). Slice 3 eats
    single blocks by the deer near players only (§8).
@@ -280,13 +291,22 @@ For the far rendering to come (§7), the server sends the far groups to the clie
   `ECOLOGY_SEND_EVERY` (2 s) while the ecology runs; none from a world without one. ~2 KB for the
   shipped data's ~100 groups.
 - **`__dwell.ecology()`**: the last one, `{ day, groups: [{ id, face: "a" | "b", species, x, z,
-  size }] }`, or null before the first (docs/DEV_TOOLS.md). A local world's ecology doesn't run yet
-  (§7), so it is null there.
+  size }] }`, or null before the first (docs/DEV_TOOLS.md), in local worlds (the host's own client and
+  friends joining) as on native servers. Until this change the client's session dropped `Ecology` (it
+  passes only listed message kinds to the game), so it was null on every server and no far herd was
+  drawn (§11).
 
 Tests: `cargo test -p dwell-protocol ecology` (round trip, truncation, a bad face or a NaN malformed);
 `cargo test -p dwell-sim --test ecology` (both faces): the Inventory's flag, a client that asked gets
 the far groups at the hello and every 2 s as the server holds them, face-local on their faces, and a
-client that didn't ask never does; a world without an ecology sends none.
+client that didn't ask never does; a world without an ecology sends none. `cargo test -p dwell-client --lib net::session`
+(`hello_goes_only_to_a_server_that_keeps_inventories`): `Ecology` reaches the game. `cargo test -p
+dwell-client --test game_local` (the local world's `LocalCore`, the code the WASM worker runs, with the
+maps installed from bytes as the worker does): deer and wolves on both faces, stepping by world days,
+the measured memory bound, an unchanged record not written again, a reload exactly as saved
+(`a_local_world_runs_the_far_ecology_on_both_faces_saves_and_reloads_it`); the host's client and a
+guest get the far groups (`a_local_worlds_far_herds_reach_its_own_client_and_a_guest`); a
+test-generator world has none (`a_test_generator_local_world_has_no_ecology`).
 
 ## 11. Far herds drawn simply (scoops-and-herds)
 
@@ -355,7 +375,7 @@ depending on climate/biome." Data: `shared/worldgen/grass.json` (`gen.mjs` `vali
   meadows don't change under their players; a world keeps its own after. Not a compatibility change:
   worldgen, the goldens and the protocol are unchanged (growth writes ordinary block edits).
 - **Not yet**: a setting in the world's menu; grass on a chunk's edge cells seeded only from loaded
-  neighbours; the browser's local world's far share (its maps, §7).
+  neighbours.
 
 Tests: `cargo test -p dwell-worldgen --test grass` (both faces): a meadow spreads over days toward
 `maxDensity` and never onto an infertile column; a dry stretch (share 0.1) stays sparse and share 0
