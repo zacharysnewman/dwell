@@ -1,6 +1,6 @@
 # Proposal: a seed-driven Realistic world
 
-**Status:** written 2026-11-11, not adopted. Questions for the owner in §7 (q1, q3, q4 and q7 answered
+**Status:** written 2026-11-11, not adopted. Questions for the owner in §7 (q1, q3, q4, q5 and q7 answered
 2026-11-11). R1 built: the plate layout (`shared/worldgen/plates.json`, `dwell-worldgen` `plates.rs`), not
 wired into any world, so nothing in the game changes yet.
 
@@ -179,8 +179,11 @@ alone. All work face-local and on both faces (face B is A's mirror, each face it
   rock (or rock class) × a temperature and moisture range → a soil type, depth and blocks (e.g. granite +
   wet + cool → thin acidic soil; shale + dry → clay; limestone + wet → deep loam). Today's rock-only
   table is the case of one climate range.
-- **Blocks:** new rocks need new looks (andesite, schist, limestone that isn't `dwell:stone`). Adding
-  blocks is not breaking (ADR 0038), but each is content: §7 q5.
+- **Blocks (owner, 2026-11-11, §7 q5):** no new rock blocks for now. The settings map to today's blocks:
+  stone for collision and uplifted cores, basalt for arcs and hotspots, sandstone and red sandstone for
+  basins and rift floors, sand and dirt soils; the accreted strip's limestone and the metamorphic rock are
+  stone until blocks exist. Every province names its rock by block name in data (`rocks.json`), so a later
+  andesite, schist or limestone block replaces one by data alone (adding blocks is not breaking, ADR 0038).
 
 ### 3.5 Biomes chosen by climate only
 
@@ -299,10 +302,11 @@ debug views go (an overlay and sliders), since it already runs the generator's W
   unchanged. *Exit:* for a few seeds, biome shares follow the climate (no desert in a wet band's windward
   side; tundra above the tree line); no per-world biome tuning in `realistic.json`; the starter still
   passes `tests/starter_world.rs`.
-- **R5 Geology and materials.** `rocks.json` `plateProvinces`, new rocks (andesite, schist, limestone
-  looks if approved), soils by rock × climate. Chisel: the rock overlay by setting. *Exit:* cones sit on
-  volcanic stacks, collision cores on granite/metamorphic, basins on sandstone/shale, accreted strips on
-  limestone (tests by fixture); soil type changes with climate on one rock; goldens unchanged.
+- **R5 Geology and materials.** `rocks.json` `plateProvinces` with today's blocks (§7 q5: stone cores,
+  basalt volcanics, sandstone/red sandstone basins, sand/dirt soils; rocks by block name so new ones can
+  replace them by data later), soils by rock × climate. Chisel: the rock overlay by setting. *Exit:* cones sit on
+  volcanic stacks, collision cores on the core stack, basins on sandstone, accreted strips on their stack
+  (tests by fixture; swapping a province's block by data alone changes it); soil type changes with climate on one rock; goldens unchanged.
 - **R6 The World option.** `newWorld` on `realistic.json`; its own golden hashes; the memory check on the
   phone tier (the bench `--touch`, BUGS.md #70's table). *Exit:* create, play and reload a Realistic world
   in the browser; a hash file for it; total at load on the phone page within ~10 % of the starter's.
@@ -313,8 +317,7 @@ R1–R5 are logic-only and suit cloud sessions (docs/CLOUD_SESSIONS.md); R6's br
 
 ## 7. Questions for the owner
 
-Open: q2's bands (the seed picks one: answered), q5 (new rocks: still with the
-owner), q6, q8. Answered: q1 (by default), q3, q4, q7.
+Open: q2's bands (the seed picks one: answered), q6, q8. Answered: q1 (by default), q3, q4, q5, q7.
 
 1. **Plate count and size for the first region:** 3–5 plates with one or two boundaries crossing the
    island, or more, smaller plates?
@@ -332,7 +335,11 @@ owner), q6, q8. Answered: q1 (by default), q3, q4, q7.
    **Answered (owner, 2026-11-11):** its own plates from its own seed (the face seed): a different region.
 5. **New rocks:** add andesite, schist (or gneiss) and a real limestone look as blocks now, or show them
    with today's blocks (stone, sand, dirt) until the art pass?
-   **Open:** still with the owner (needed by R5).
+   **Answered (owner, 2026-11-11):** "Let's hold off on new blocks as long as we can add relevant ones
+   later." No new rock blocks now: R5 lays out the provinces with today's blocks (stone for range cores,
+   basalt for volcanic ground, sandstone and red sandstone for basins, sand and dirt soils), each province
+   naming its rock by block name in data, so andesite, schist or limestone can replace them later by data
+   alone.
 6. **Volcanoes in Realistic:** dormant cones only at first, or lava vents by rule (VOLCANOES.md)?
 7. **Determinism of tuning:** while Realistic is a test world, may its seeds' terrain change between
    releases (hashes updated with a note), as the starter's does?

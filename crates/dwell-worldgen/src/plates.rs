@@ -572,8 +572,8 @@ mod tests {
                 }
                 for p in &l.plates {
                     let s = (p.motion[0] * p.motion[0] + p.motion[1] * p.motion[1]).sqrt();
-                    assert!(s >= PLATES.speed[0] - 1e-9 && s <= PLATES.speed[1] + 1e-9);
-                    assert!(p.age >= PLATES.age[0] && p.age <= PLATES.age[1]);
+                    assert!((PLATES.speed[0] - 1e-9..=PLATES.speed[1] + 1e-9).contains(&s));
+                    assert!((PLATES.age[0]..=PLATES.age[1]).contains(&p.age));
                     assert!(dist2(p.centre, [0.0, 0.0]) <= PLATES.reach * PLATES.reach);
                 }
                 assert!(!l.boundaries.is_empty(), "seed {seed}: plates meet");

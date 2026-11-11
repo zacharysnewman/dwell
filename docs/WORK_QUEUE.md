@@ -217,7 +217,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (`shared/worldgen/plates.json`, `plates.gen.rs`, `dwell-worldgen` `plates.rs`: plates by kind, motion and
    age, boundaries classified by relative motion with the subducting side, hotspots, a land/sea mask), tested
    on both faces, not wired into any world (goldens unchanged). The Chisel plates overlay moved to R2. Next:
-   R2 (uplift from boundaries); q5 (new rocks), q2, q6 and q8 still open.
+   R2 (uplift from boundaries); q2's bands, q6 and q8 still open. q5 (2026-11-11): no new rock blocks
+   for now; R5 uses today's blocks (stone, basalt, sandstone, red sandstone, sand, dirt) named in data, so
+   new ones can replace them later.
 
 ## Done
 
