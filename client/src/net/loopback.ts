@@ -57,6 +57,7 @@ export class LoopbackTransport implements Transport {
       waterInline?: boolean;
       jobsInline?: boolean;
       growth?: number;
+      chop2?: boolean;
     },
     onStage?: StageReport,
     maps?: Promise<Uint8Array[] | undefined>,

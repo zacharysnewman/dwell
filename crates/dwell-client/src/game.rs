@@ -4220,15 +4220,21 @@ impl<S: Scene> Game<S> {
         let arc = dwell_world::swing::Arc::of(tool);
         let store = self.streamer.store_mut();
         let swept = dwell_world::swing::sweep(store, eye, look, self.chop.vertical, &arc);
-        let hit = swept.hit.map(|h| {
-            let m = store.get_voxel(h.hit.cell[0], h.hit.cell[1], h.hit.cell[2]);
-            crate::chop::Impact {
-                cell: h.hit.cell,
-                face: h.axis_face(),
-                point: h.point,
-                step: h.step,
-                wood: dwell_protocol::chopping::wood(dwell_blocks::block_of(m).name).is_some(),
-            }
+        // The chopping prototype (`?chop=v2`): the bite lands at the crosshair.
+        let aimed = crate::chop::crosshair_aim()
+            .then(|| crate::chop::crosshair_impact(store, tool, eye, look))
+            .flatten();
+        let hit = aimed.or_else(|| {
+            swept.hit.map(|h| {
+                let m = store.get_voxel(h.hit.cell[0], h.hit.cell[1], h.hit.cell[2]);
+                crate::chop::Impact {
+                    cell: h.hit.cell,
+                    face: h.axis_face(),
+                    point: h.point,
+                    step: h.step,
+                    wood: dwell_protocol::chopping::wood(dwell_blocks::block_of(m).name).is_some(),
+                }
+            })
         });
         let Some(message) = self.chop.start(tool, look, hit, now_ms) else {
             return false;

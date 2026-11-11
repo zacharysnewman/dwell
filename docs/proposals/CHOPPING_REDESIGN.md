@@ -80,6 +80,32 @@ weighty first-person swing, to tune against footage:
 3. **C3:** the first-person animation landing on the bite point (IK), the four beats, camera kick.
 4. **C4:** felling feedback (creak, cracks, sway) and the octagonal notch carve.
 
+## 7. As built: the prototype (0.52.61, behind a switch)
+
+The owner's decided rules (2026-11-11, docs/WORK_QUEUE.md item 7) are built as a prototype beside
+today's chopping, off by default (`chop2.enabled` in `shared/tools/tools.json`; dev `?chop=v2` on a
+local world, through the local server's `ServerConfig::chop2` and the client's `setChopAim`):
+
+- **Aim:** the server takes the chop where the look meets the trunk (`crosshair_hit`: the look's
+  ray within the swing's reach, through what the axe clears), not where the arc first meets wood;
+  the client predicts the same impact (`chop::crosshair_impact`) for its chips, hit-stop and sound,
+  timed to the arc's middle. The row hit is the stump's height.
+- **The cut:** each chop removes the tool's `chop2.bite` of the cross-section on the side hit
+  (stone 0.045, about 12 chops to pass half; metal 0.075, 7), the wood's `chop2.along` of that when
+  the swing's plane runs along the grain (0.5: twice as many). The first side cut is the **notch**;
+  a chop at another side once there is one is a **back cut**. Kept in today's `Cut` record (the
+  notch in `notch`, the back cut in a kerf), so the wire, the save and the carve are unchanged
+  (`Cut::chop2`, `chop2_through`, `chop2_toward`).
+- **The fall:** past `chop2.fellFraction` (0.5) of the section cut, from one side or two opposite
+  ones: toward the notch if there is one (the hinge steers), else toward the side cut.
+- **The split keeps the notch:** the stump keeps the notch's lower face and the trunk's bottom its
+  upper face (`chop2.fellWedgeTrunk: open`, the existing `felling::fell_wedges`), not one flat
+  diagonal slice.
+
+Not yet: the hinge's flat break below cell size; adjacent sides adding up; the octagonal notch
+carve and the ghost notch (C1, C4); the hold-to-chop rhythm and the swing landing on the bite by IK
+(C2, C3); a switch on the dedicated server.
+
 ## 6. Questions
 
 1. Should the player also make a **back cut** from the far side (real technique, more skill), or does

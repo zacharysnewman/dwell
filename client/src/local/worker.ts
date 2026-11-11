@@ -229,6 +229,7 @@ async function start(
   jobsInline = false,
   mode?: string,
   growth?: number,
+  chop2 = false,
 ): Promise<void> {
   // The world file (§6.4): the chosen world's (by default one per generator and seed), in OPFS.
   // Without it the world lives in memory only (no OPFS, or the world is open in another tab).
@@ -269,6 +270,7 @@ async function start(
       jobs !== null,
       mode,
       growth,
+      chop2,
     );
     stage('spawn', 'end');
     jobs?.postMessage({
@@ -359,6 +361,7 @@ scope.onmessage = (e) => {
       msg.jobsInline,
       msg.mode,
       msg.growth,
+      msg.chop2,
     );
   else handle(msg);
 };

@@ -30,6 +30,8 @@ export type ToWorker =
        * tick, not their own worker.
        */
       jobsInline?: boolean;
+      /** `?chop=v2`: the chopping prototype (docs/WORK_QUEUE.md item 7). */
+      chop2?: boolean;
       /** Dev link `?growth=N`: trees grow N times as fast (ADR 0079; a time-lapse). */
       growth?: number;
       /**

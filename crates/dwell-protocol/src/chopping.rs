@@ -19,8 +19,8 @@ mod table {
 
 pub use crate::damage::{BlockDamageDef, DamageLook, DamageLookKind};
 pub use table::{
-    BLOCK_DAMAGE, BREAK_CLASSES, BREAK_TOOLS, BREAK_WITH, CREATIVE_WEAR, DURABILITY, TOOLS,
-    WEAR_BREAK_SOUND, WOODS,
+    BLOCK_DAMAGE, BREAK_CLASSES, BREAK_TOOLS, BREAK_WITH, CHOP2_DEFAULT, CREATIVE_WEAR, DURABILITY,
+    TOOLS, WEAR_BREAK_SOUND, WOODS,
 };
 
 /// The hits tool item `item` survives (`durability.items`; owner, 2026-11-11), in `table`; `None`:
@@ -150,6 +150,9 @@ pub struct ToolDef {
     /// The blocks (by name) its swing goes through, breaking each it touches (owner, 2026-11-09:
     /// the axe clears leaves); never a wood.
     pub clears: &'static [&'static str],
+    /// The chopping prototype (`chop2.bite`): the share of the cross-section a chop across the
+    /// grain removes ([`Cut::chop2`]).
+    pub chop2_bite: f64,
 }
 
 impl ToolDef {
@@ -196,6 +199,20 @@ pub struct WoodDef {
     /// (`felling.toppleSpin`, capped by `toppleTipSpeed`) it is released with; 0: none, the
     /// wedges' contact alone.
     pub fell_tip: f64,
+    /// The chopping prototype's rules (`chop2`).
+    pub chop2: Chop2Wood,
+}
+
+/// A wood's rules in the chopping prototype (`chop2` in the data; WORK_QUEUE item 7).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Chop2Wood {
+    /// It falls once more than this share of its cross-section is cut, from one side or two.
+    pub fell_fraction: f64,
+    /// A chop along the grain cuts this share of one across it.
+    pub along: f64,
+    /// The felled trunk's wedge lies parallel to the stump's (`matching`), or as the notch's
+    /// upper face (`open`: the split keeps the notch, `| / \ |`).
+    pub wedge_matching: bool,
 }
 
 /// How a wood's cuts are carved into its cell's mesh (`cut` in the data): the notch as a V across
@@ -403,6 +420,47 @@ impl Cut {
             self.kerf[side][1] -= m;
         }
         gain
+    }
+
+    /// The side holding the notch (the chopping prototype's): the first side cut, a V.
+    pub fn notch_side(&self) -> Option<usize> {
+        (0..SIDES).find(|&s| self.notch[s] > 0.0)
+    }
+
+    /// One chop of the chopping prototype (WORK_QUEUE item 7) at side `side`: it removes `tool`'s
+    /// `chop2_bite` of the cross-section (`wood`'s `along` of that when the swing is `along_grain`),
+    /// never past the far side. The first side cut is the **notch** (kept in `notch`, drawn as a
+    /// V); a chop at any other side once there is a notch is a **back cut** (kept in `kerf[side][0]`,
+    /// drawn as a flat slit). The same record and wire as today's cuts. Returns the share cut.
+    pub fn chop2(
+        &mut self,
+        tool: &ToolDef,
+        wood: &WoodDef,
+        grain: usize,
+        side: usize,
+        along_grain: bool,
+    ) -> f64 {
+        let e = extent(side_axis(grain, side));
+        let share = tool.chop2_bite * if along_grain { wood.chop2.along } else { 1.0 };
+        let room = (e - self.depth(side) - self.depth(side ^ 1)).max(0.0);
+        let gain = (share * e).min(room);
+        match self.notch_side() {
+            Some(n) if n != side => self.kerf[side][0] += gain as f32,
+            _ => self.notch[side] += gain as f32,
+        }
+        gain / e
+    }
+
+    /// Whether the chopping prototype fells (a standing wood) or cuts through (a lying one) a
+    /// cell of grain `grain` cut like this: more than `fell_fraction` of its section is cut.
+    pub fn chop2_through(&self, wood: &WoodDef, grain: usize) -> bool {
+        self.cross(grain) > wood.chop2.fell_fraction + 1e-6
+    }
+
+    /// The side the chopping prototype fells toward: the notch's (the hinge steers the fall), else
+    /// the deepest cut.
+    pub fn chop2_toward(&self, grain: usize) -> Option<usize> {
+        self.notch_side().or_else(|| self.deepest(grain))
     }
 
     pub fn write(&self, w: &mut ByteWriter) {
@@ -631,6 +689,80 @@ mod tests {
         // Vertical swings at a standing trunk barely cut it.
         let split = swings_to_fell(axe().along, |i| i % 2);
         assert!(split >= 5 * notch, "vertical: {split} swings");
+    }
+
+    /// Chops of the prototype at sides `side_of(i)` until it is through; the count and the cut.
+    fn chop2_to_fell(
+        tool: &ToolDef,
+        along: bool,
+        side_of: impl Fn(usize) -> usize,
+    ) -> (usize, Cut) {
+        let log = wood("dwell:log").expect("log");
+        let mut c = Cut::default();
+        for i in 0..1000 {
+            c.chop2(tool, log, Y, side_of(i), along);
+            if c.chop2_through(log, Y) {
+                return (i + 1, c);
+            }
+        }
+        panic!("never fell");
+    }
+
+    #[test]
+    fn chop2_the_stone_axe_fells_in_about_twelve_along_the_grain_twice_that_metal_fewer() {
+        let (stone, _) = chop2_to_fell(axe(), false, |_| 0);
+        assert!((11..=13).contains(&stone), "stone: {stone} chops");
+        let (along, _) = chop2_to_fell(axe(), true, |_| 0);
+        let r = along as f64 / stone as f64;
+        assert!(
+            (1.7..=2.3).contains(&r),
+            "along the grain: {along} chops, {r:.2}×"
+        );
+        let metal = tool("dwell:metal_axe").expect("metal axe");
+        let (m, _) = chop2_to_fell(metal, false, |_| 0);
+        assert!(m < stone, "metal: {m} chops, stone {stone}");
+        // Not before half: one chop short of it still stands.
+        let log = wood("dwell:log").unwrap();
+        let mut c = Cut::default();
+        for _ in 0..stone - 1 {
+            c.chop2(axe(), log, Y, 0, false);
+        }
+        assert!(!c.chop2_through(log, Y) && c.cross(Y) <= 0.5 + 1e-6);
+    }
+
+    #[test]
+    fn chop2_notch_then_back_cut_falls_toward_the_notch_one_sided_toward_the_cut() {
+        // A notch on side 1 (+x), then the back cut from side 0 (−x), deeper: toward the notch.
+        let (_, c) = chop2_to_fell(axe(), false, |i| if i < 4 { 1 } else { 0 });
+        assert_eq!(c.notch_side(), Some(1));
+        assert!(
+            c.kerf[0][0] > c.notch[1],
+            "the back cut is the deeper: {c:?}"
+        );
+        assert_eq!(c.notch[0], 0.0, "the back cut is flat (a kerf), not a V");
+        assert_eq!(
+            c.chop2_toward(Y),
+            Some(1),
+            "the hinge steers it toward the notch"
+        );
+        // One-sided: toward the side cut.
+        let (_, c) = chop2_to_fell(axe(), false, |_| 2);
+        assert_eq!(c.chop2_toward(Y), Some(2));
+        // The cut never passes the far side.
+        let log = wood("dwell:log").unwrap();
+        let mut c = Cut::default();
+        for i in 0..200 {
+            c.chop2(axe(), log, Y, i % 2, false);
+        }
+        assert!(c.depth(0) + c.depth(1) <= 1.0 + 1e-6);
+    }
+
+    #[test]
+    fn chop2_a_fixture_tool_cuts_by_its_data_alone() {
+        let mut t = *axe();
+        t.chop2_bite = 0.26;
+        let (n, _) = chop2_to_fell(&t, false, |_| 0);
+        assert_eq!(n, 2, "0.26 a chop: past half in two");
     }
 
     #[test]

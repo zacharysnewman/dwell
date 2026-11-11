@@ -121,6 +121,8 @@ export async function connectLocal(
     typeof location !== 'undefined'
       ? Number(new URLSearchParams(location.search).get('growth') ?? 'NaN')
       : NaN;
+  // `?chop=v2`: the chopping prototype (docs/WORK_QUEUE.md item 7, `chop2` in shared/tools).
+  const chop2 = typeof location !== 'undefined' && /[?&]chop=v2(&|$)/.test(location.search);
   const loopback = await LoopbackTransport.start(
     worker,
     {
@@ -128,6 +130,7 @@ export async function connectLocal(
       ...(waterInline ? { waterInline } : {}),
       ...(jobsInline ? { jobsInline } : {}),
       ...(Number.isFinite(growth) && growth > 0 ? { growth } : {}),
+      ...(chop2 ? { chop2 } : {}),
     },
     options.onStage,
     maps,
