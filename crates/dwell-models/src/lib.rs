@@ -6,6 +6,7 @@
 pub mod anim;
 pub mod glb;
 pub mod math;
+pub mod retarget;
 
 #[rustfmt::skip]
 mod table {
@@ -61,6 +62,27 @@ pub struct Hand {
     pub rot: [f32; 3],
 }
 
+/// One rig bone of a retarget map (models.json `retarget.bones`, docs/CHARACTERS.md §11.6).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RetargetBone {
+    /// The characters rig's bone (`arm_r`).
+    pub bone: &'static str,
+    /// The skin joint it turns (an index into the skin's joints).
+    pub joint: usize,
+    /// Degrees, Euler XYZ in the model's space: the turn from the joint's rest frame to the bone's.
+    pub rest: [f32; 3],
+}
+
+/// A model driven by the characters rig's pose (models.json `retarget`, docs/CHARACTERS.md §11.6).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Retarget {
+    /// The characters rig (`biped`).
+    pub rig: &'static str,
+    /// The mapped bone whose joint takes the pose's root offset (`hips`).
+    pub root: &'static str,
+    pub bones: &'static [RetargetBone],
+}
+
 /// One model's data.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ModelData {
@@ -77,6 +99,8 @@ pub struct ModelData {
     pub roles: &'static [RoleClip],
     /// Where it holds an item; None: it holds none.
     pub hand: Option<Hand>,
+    /// Its joints driven by the characters rig's pose; None: it plays its own clips only.
+    pub retarget: Option<Retarget>,
 }
 
 impl ModelData {

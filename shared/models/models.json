@@ -33,6 +33,28 @@
         "at": [0, 0.05, 0],
         "rot": [-2, 1, -175]
       },
+      "retarget": {
+        "$comment": "Drives the Peasant from the characters rig's pose (docs/CHARACTERS.md §11.6, ADR 0070 amendment 2026-11-10): each rig bone names the skin joint it turns, and `rest` (degrees, Euler XYZ in the model's space) turns that joint's rest frame onto the bone's rest (the Peasant stands in an A pose, the rig with its arms and legs straight down). Joints no bone names keep their rest turn under their parent. `root` is the rig bone whose joint takes the clips' root offset (scaled by the two hip heights). Without a rig pose the model plays its own clips (`roles`).",
+        "rig": "biped",
+        "root": "hips",
+        "bones": {
+          "hips": { "joint": "spine" },
+          "chest": { "joint": "spine.003" },
+          "head": { "joint": "spine.005" },
+          "arm_l": { "joint": "upper_arm.L", "rest": [0, 0, -32.4] },
+          "forearm_l": { "joint": "forearm.L", "rest": [0, 0, -39.1] },
+          "hand_l": { "joint": "hand.L", "rest": [0, 0, -42.2] },
+          "arm_r": { "joint": "upper_arm.R", "rest": [0, 0, 32.4] },
+          "forearm_r": { "joint": "forearm.R", "rest": [0, 0, 39.1] },
+          "hand_r": { "joint": "hand.R", "rest": [0, 0, 42.2] },
+          "thigh_l": { "joint": "thigh.L", "rest": [-2.6, 0, -3.3] },
+          "shin_l": { "joint": "shin.L", "rest": [-2.2, 0, 0] },
+          "foot_l": { "joint": "foot.L", "rest": [-2.2, 0, 0] },
+          "thigh_r": { "joint": "thigh.R", "rest": [-2.6, 0, 3.3] },
+          "shin_r": { "joint": "shin.R", "rest": [-2.2, 0, 0] },
+          "foot_r": { "joint": "foot.R", "rest": [-2.2, 0, 0] }
+        }
+      },
       "roles": {
         "idle": { "clip": "idle" },
         "walk": { "clip": "walk" },

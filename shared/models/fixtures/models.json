@@ -22,6 +22,14 @@
         "at": [0, 0.1, 0],
         "rot": [0, 0, 90]
       },
+      "retarget": {
+        "rig": "biped",
+        "root": "hips",
+        "bones": {
+          "hips": { "joint": "root" },
+          "arm_r": { "joint": "tip", "rest": [0, 0, 180] }
+        }
+      },
       "roles": {
         "idle": { "clip": "rest" },
         "walk": { "clip": "bend" },
