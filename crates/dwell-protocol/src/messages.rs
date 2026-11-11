@@ -572,6 +572,13 @@ pub enum Message {
     /// S→C reliable, world channel, only to a client that sent `CreaturesHello`: creatures that
     /// appeared or moved, and those gone (ADR 0073).
     Creatures(CreaturesMessage),
+    /// C→S reliable, control channel, only to a server whose `WorldSettings` has the required
+    /// `world_settings::tag::WORLDGEN` (ADR 0074 B7): send this world's worldgen config.
+    WorldgenRequest,
+    /// S→C reliable, control channel, only to a client that sent `WorldgenRequest`: the world's
+    /// worldgen config text (`dwell_worldgen::config::world_config`), whose hash the `WORLDGEN`
+    /// tag names. u32 length (at most `limits::WORLDGEN_CONFIG_MAX_BYTES`), UTF-8.
+    WorldgenConfig(String),
 }
 
 /// A creature as sent (ADR 0073): its skinned model (shared/models/models.json), its feet (world
@@ -777,6 +784,8 @@ impl Message {
             M::Vitals(_) => MessageType::Vitals,
             M::CreaturesHello => MessageType::CreaturesHello,
             M::DamageHello => MessageType::DamageHello,
+            M::WorldgenRequest => MessageType::WorldgenRequest,
+            M::WorldgenConfig(_) => MessageType::WorldgenConfig,
             M::Damage(_) => MessageType::Damage,
             M::Creatures(_) => MessageType::Creatures,
             M::BodyEdit(_) => MessageType::BodyEdit,
@@ -1451,7 +1460,17 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
             }
         },
         M::VitalsHello => {}
-        M::CreaturesHello | M::DamageHello => {}
+        M::CreaturesHello | M::DamageHello | M::WorldgenRequest => {}
+        M::WorldgenConfig(t) => {
+            // Too long to send: none (the guest's hash check then refuses, with a message).
+            let b: &[u8] = if t.len() <= limits::WORLDGEN_CONFIG_MAX_BYTES {
+                t.as_bytes()
+            } else {
+                &[]
+            };
+            w.u32(b.len() as u32);
+            w.bytes(b);
+        }
         M::Damage(m) => {
             let n = m.cells.len().min(MAX_DAMAGE_PER_MESSAGE);
             w.u16(n as u16);
@@ -1939,6 +1958,14 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
         T::VitalsHello => M::VitalsHello,
         T::CreaturesHello => M::CreaturesHello,
         T::DamageHello => M::DamageHello,
+        T::WorldgenRequest => M::WorldgenRequest,
+        T::WorldgenConfig => {
+            let n = r.u32() as usize;
+            r.check(n <= limits::WORLDGEN_CONFIG_MAX_BYTES);
+            let b = r.bytes(n);
+            r.check(b.len() == n);
+            M::WorldgenConfig(String::from_utf8(b).ok()?)
+        }
         T::Damage => {
             let n = usize::from(r.u16());
             r.check(n <= MAX_DAMAGE_PER_MESSAGE);

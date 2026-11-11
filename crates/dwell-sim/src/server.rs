@@ -849,6 +849,9 @@ pub struct Server {
     /// newer build added kept in `settings_fields`.
     settings: WorldSettings,
     settings_fields: SettingsFields,
+    /// The world's worldgen config (ADR 0074 B7), from its installed maps: `""` for the build's
+    /// ground. Non-empty, the join's settings name its hash (`tag::WORLDGEN`) and a guest asks for it.
+    worldgen_text: String,
     tick: u32,
     next_player_id: u16,
     worldgen: WorldgenPool,
@@ -992,6 +995,13 @@ impl Server {
             },
             settings: new_world_settings(&config),
             settings_fields: SettingsFields::default().with(new_world_settings(&config)),
+            worldgen_text: if dwell_world::has_terrain(config.generator_version)
+                && config.generator_override.is_none()
+            {
+                dwell_worldgen::config::installed_worldgen(config.world_seed)
+            } else {
+                String::new()
+            },
             tick: 0,
             next_player_id: 1,
             worldgen: if config.jobs_remote {
@@ -1343,7 +1353,7 @@ impl Server {
             self.send_reliable(id, &m, Channel::Control);
         }
         // The world's settings (its clock, its water speed), which the client uses over its own.
-        let settings = Message::WorldSettings(self.settings_fields.clone());
+        let settings = Message::WorldSettings(self.join_settings());
         self.send_reliable(id, &settings, Channel::Control);
         self.send_reliable(id, &Message::Welcome(welcome), Channel::Control);
         // The moving bodies already here (falling pieces, built bodies; docs/BUILT_BODIES.md §4):
@@ -1480,6 +1490,10 @@ impl Server {
             Message::VitalsHello => s.vitals_hello = true,
             Message::CreaturesHello => self.creatures_hello(id),
             Message::DamageHello => self.damage_hello(id),
+            Message::WorldgenRequest => {
+                let m = Message::WorldgenConfig(self.worldgen_text.clone());
+                self.send_reliable(id, &m, Channel::Control);
+            }
             Message::ChunkResync(coords) => self.resync(id, &coords),
             Message::ChunkRequest(coords) => self.request_chunks(id, &coords),
             Message::LodRequest(sections) => {
@@ -3580,6 +3594,19 @@ impl Server {
     }
 
     /// The world's settings (its clock, its water speed, its game mode).
+    /// The world's settings as sent to players: the saved fields, with the worldgen config's hash
+    /// for a world made from one (ADR 0074 B7; a default world's are the saved fields unchanged).
+    fn join_settings(&self) -> SettingsFields {
+        let hash = (!self.worldgen_text.is_empty())
+            .then(|| dwell_worldgen::config::worldgen_hash(&self.worldgen_text));
+        self.settings_fields.with_worldgen(hash)
+    }
+
+    /// The world's worldgen config text (ADR 0074 B7): `""` for the build's ground.
+    pub fn worldgen_text(&self) -> &str {
+        &self.worldgen_text
+    }
+
     pub fn world_settings(&self) -> WorldSettings {
         self.settings
     }
@@ -3616,7 +3643,7 @@ impl Server {
         for s in self.sessions.values_mut() {
             s.inventory_dirty = true;
         }
-        let bytes = encode(&Message::WorldSettings(self.settings_fields.clone()));
+        let bytes = encode(&Message::WorldSettings(self.join_settings()));
         for (&id, s) in &self.sessions {
             if s.joined() {
                 self.outbox.push(Outgoing {

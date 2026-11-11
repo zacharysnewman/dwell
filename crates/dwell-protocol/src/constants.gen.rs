@@ -94,6 +94,7 @@ pub mod limits {
     pub const MAX_LOD_INDEX_ENTRIES: usize = 16384;
     pub const MAX_EDIT_ACK_REJECTED: usize = 1024;
     pub const MAX_PIECE_CELLS: usize = 4096;
+    pub const WORLDGEN_CONFIG_MAX_BYTES: usize = 524288;
 }
 
 pub mod region_edit {
@@ -178,6 +179,8 @@ pub enum MessageType {
     CreaturesHello = 95,
     DamageHello = 96,
     Damage = 97,
+    WorldgenRequest = 98,
+    WorldgenConfig = 99,
 }
 
 impl MessageType {
@@ -234,6 +237,8 @@ impl MessageType {
             95 => Some(Self::CreaturesHello),
             96 => Some(Self::DamageHello),
             97 => Some(Self::Damage),
+            98 => Some(Self::WorldgenRequest),
+            99 => Some(Self::WorldgenConfig),
             _ => None,
         }
     }

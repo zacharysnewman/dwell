@@ -109,6 +109,11 @@ pub struct Session {
     vitals_server: bool,
     /// The Welcome waiting on the player's answer (Confirming).
     pending: Option<Welcome>,
+    /// The Welcome waiting on the world's worldgen config (ADR 0074 B7), with the hash the world's
+    /// settings named: `WorldgenRequest` sent, `WorldgenConfig` not here yet.
+    worldgen_wait: Option<(Welcome, u64)>,
+    /// The world's worldgen config, checked against its hash (`""`: the build's ground).
+    worldgen: String,
     /// A definitions hash the player said not to ask about again for this server.
     trusted_registry: Option<u64>,
     /// The game's ids of the edits sent and not yet acknowledged, in the order sent: the server
@@ -152,6 +157,8 @@ impl Session {
             world: None,
             vitals_server: false,
             pending: None,
+            worldgen_wait: None,
+            worldgen: String::new(),
             trusted_registry: None,
             sent_edits: VecDeque::new(),
             edits_acked: 0,
@@ -168,6 +175,12 @@ impl Session {
     /// The id translation, once Welcome has arrived.
     pub fn mapping(&self) -> Option<&Mapping> {
         self.mapping.as_ref()
+    }
+
+    /// The world's worldgen config (ADR 0074 B7), once joined: `""` for the build's ground, else the
+    /// text the server sent, its hash checked; the world's maps are built from it.
+    pub fn worldgen_config(&self) -> &str {
+        &self.worldgen
     }
 
     /// The world's settings (its clock, its water speed), once Welcome has arrived.
@@ -303,6 +316,7 @@ impl Session {
             self.fail("The server sent no world settings.".into());
             return;
         };
+        let worldgen_hash = fields.worldgen_hash();
         match fields.settings(dwell_sim::server::default_settings(
             dwell_sim::water::FLOW.speed,
         )) {
@@ -330,8 +344,40 @@ impl Session {
                 return;
             }
         };
-        let differences = mapping.differences.clone();
         self.mapping = Some(mapping);
+        // A world made from a worldgen config (ADR 0074 B7): its text first, then on as usual.
+        if let Some(h) = worldgen_hash {
+            self.worldgen_wait = Some((w, h));
+            self.send(&Message::WorldgenRequest);
+            return;
+        }
+        self.welcome_mapped(w);
+    }
+
+    /// The world's worldgen config arrived (`WorldgenConfig`): checked against the hash its
+    /// settings named and parsed, then the join goes on.
+    fn on_worldgen_config(&mut self, text: String) {
+        let Some((w, h)) = self.worldgen_wait.take() else {
+            return;
+        };
+        if text.trim().is_empty() || dwell_worldgen::config::worldgen_hash(&text) != h {
+            self.fail("This world's terrain settings arrived damaged (their hash differs).".into());
+            return;
+        }
+        if let Err(e) = dwell_worldgen::config::world_config(&text) {
+            self.fail(format!("This world's terrain settings can't be used ({e})."));
+            return;
+        }
+        self.worldgen = text.trim().to_owned();
+        self.welcome_mapped(w);
+    }
+
+    /// Welcome with the ids mapped: join, or ask the player first.
+    fn welcome_mapped(&mut self, w: Welcome) {
+        let Some(mapping) = self.mapping.as_ref() else {
+            return;
+        };
+        let (differences, hash) = (mapping.differences.clone(), mapping.hash);
         if differences.is_empty() || self.trusted_registry == Some(hash) {
             self.join(w);
         } else {
@@ -612,7 +658,9 @@ impl Session {
                     | Message::Cuts(_)
                     | Message::Damage(_)
                     | Message::HeldTools(_)
-            ) && (self.joined() || matches!(self.state, SessionState::Confirming { .. }))
+            ) && (self.joined()
+                || self.worldgen_wait.is_some()
+                || matches!(self.state, SessionState::Confirming { .. }))
             {
                 self.game.push_back((m, bytes.to_vec()));
             }
@@ -637,6 +685,9 @@ impl Session {
                 self.game.push_back((Message::Inventory(i), bytes.to_vec()));
             }
             Message::Welcome(w) if self.state == SessionState::Handshaking => self.on_welcome(w),
+            Message::WorldgenConfig(t) if self.state == SessionState::Handshaking => {
+                self.on_worldgen_config(t);
+            }
             Message::Reject(r) => {
                 self.set_state(SessionState::Rejected {
                     reason: r.reason,

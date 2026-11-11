@@ -634,16 +634,30 @@ pub struct Worldgen {
 pub fn worldgen_map_key(seed: u64, config: &str) -> String {
     let key = crate::worldmap::cache::key(seed);
     match world_config(config) {
-        Ok(Some(_)) => {
-            // FNV-1a of the config's text.
-            let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-            for b in config.trim().bytes() {
-                h = (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3);
-            }
-            format!("{key}-c{h:016x}")
-        }
+        Ok(Some(_)) => format!("{key}-c{:016x}", worldgen_hash(config)),
         _ => key,
     }
+}
+
+/// The hash of worldgen config `config` (FNV-1a of its trimmed text): the map cache key's and the
+/// join's (`WorldSettings` tag `WORLDGEN`, ADR 0074 B7), so a guest checks the text it was sent.
+pub fn worldgen_hash(config: &str) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in config.trim().bytes() {
+        h = (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3);
+    }
+    h
+}
+
+/// The worldgen config of the world of `world_seed` as this process has its maps (face A's
+/// installed or computed map, `WorldMap::worldgen`): `""` for the build's ground, or when its map
+/// isn't here. A server sends it to its guests (ADR 0074 B7).
+pub fn installed_worldgen(world_seed: u64) -> String {
+    let seed = crate::bifacial::face_seed(world_seed, dwell_world::Face::A);
+    if !crate::worldmap::cache::is_ready(seed) {
+        return String::new();
+    }
+    crate::worldmap::cache::for_seed(seed).worldgen_text().to_owned()
 }
 
 /// Face seed `seed`'s world map under worldgen `config` (`worldmap::build_bytes` for the build's
