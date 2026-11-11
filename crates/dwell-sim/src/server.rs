@@ -877,6 +877,10 @@ pub struct Server {
     /// The wood cells cut by axes (ADR 0067).
     cuts: dwell_protocol::chopping::Cuts,
     cuts_unread: bool,
+    /// The blocks hit short of breaking (docs/BLOCK_DAMAGE.md, ADR 0078), saved with the world.
+    damage: dwell_protocol::damage::Damage,
+    /// The saved damage is a newer build's: kept, not written over.
+    damage_unread: bool,
     /// The ground items gone (picked up or knocked loose; ADR 0071), saved with the world.
     ground: dwell_world::ground::GroundGone,
     /// The saved gone set is a newer build's: kept, not written over.
@@ -1009,6 +1013,8 @@ impl Server {
             creatures: Default::default(),
             cuts: Default::default(),
             cuts_unread: false,
+            damage: Default::default(),
+            damage_unread: false,
             ground: Default::default(),
             ground_unread: false,
             ground_generated: Default::default(),
@@ -2394,6 +2400,10 @@ impl Server {
         // Without unlimited blocks (ADR 0066): placing takes an item, breaking drops the block's.
         let uses_items = self.uses_items();
         let mut broken: Vec<([i32; 3], dwell_blocks::StateId)> = Vec::new();
+        // Hits short of breaking (cell, state, hits to break, this hit's number), for their drops;
+        // and the cells a last hit broke, with their hits (the destroy drops what is left).
+        let mut hits: Vec<([i32; 3], dwell_blocks::StateId, u32, u32)> = Vec::new();
+        let mut destroyed_after: HashMap<[i32; 3], u32> = HashMap::default();
         // Every broken cell and what it was, in any mode: ground items on them are knocked loose.
         let mut under_ground: Vec<([i32; 3], dwell_blocks::StateId)> = Vec::new();
         let ids: Vec<SessionId> = self.sessions.keys().copied().collect();
@@ -2458,8 +2468,47 @@ impl Server {
                         continue;
                     }
                 }
-                s.edit_credit -= 1.0;
-                s.stats.edits_applied += 1;
+                // Blocks take hits to break by the tool held (docs/BLOCK_DAMAGE.md, ADR 0078; the
+                // same in every mode): a hit short of the count is recorded and the block stays
+                // (the client's predicted break gives way, as to a refusal); none: it can't be
+                // broken so (stone by hand).
+                if edit.action == BlockEditAction::Break {
+                    let state = self.world.get_voxel_if_loaded(outcome.cell);
+                    let block = dwell_blocks::block_of(state).name;
+                    let held = held_break_item(s, uses_items);
+                    match dwell_protocol::damage::hits_to_break(block, held) {
+                        None => {
+                            s.stats.edits_rejected += 1;
+                            s.edit_refused.push(seq);
+                            continue;
+                        }
+                        Some(n) if n > 1 => {
+                            let mark = dwell_protocol::damage::HitMark {
+                                face: edit.face,
+                                point: [128; 3],
+                            };
+                            let k = u32::from(self.damage.hit(outcome.cell, state, mark));
+                            s.edit_credit -= 1.0;
+                            s.stats.edits_applied += 1;
+                            if k < n {
+                                if uses_items {
+                                    hits.push((outcome.cell, state, n, k));
+                                }
+                                s.edit_refused.push(seq);
+                                continue;
+                            }
+                            destroyed_after.insert(outcome.cell, n);
+                            self.damage.clear(outcome.cell);
+                        }
+                        Some(_) => {
+                            s.edit_credit -= 1.0;
+                            s.stats.edits_applied += 1;
+                        }
+                    }
+                } else {
+                    s.edit_credit -= 1.0;
+                    s.stats.edits_applied += 1;
+                }
                 // On a build platform's top, or touching a held body, a block goes into that body,
                 // not the grid (docs/BUILT_BODIES.md §3); the client's predicted block gives way to
                 // it when the edit is acknowledged.
@@ -2605,8 +2654,14 @@ impl Server {
         }
         let edited = changes.cells();
         self.broadcast_changes(changes, VoxelModificationReason::Edit);
+        for (cell, was, n, k) in hits {
+            self.drop_hit(was, dwell_world::centre_of_cell(cell), n, k);
+        }
         for (cell, was) in broken {
-            self.drop_block(was, dwell_world::centre_of_cell(cell));
+            match destroyed_after.get(&cell) {
+                Some(&n) => self.drop_destroyed(was, dwell_world::centre_of_cell(cell), n),
+                None => self.drop_block(was, dwell_world::centre_of_cell(cell)),
+            }
         }
         self.knock_ground(&under_ground);
         // An explosive lit by an edit (a torch held against it) starts its fuse (docs/EXPLOSIVES.md).
@@ -2675,8 +2730,11 @@ impl Server {
                 self.water_link.pending.push(WaterIn::Edit { cell, byte });
             }
         }
-        // A changed cell's cut goes with its wood (ADR 0067).
+        // A changed cell's cut goes with its wood (ADR 0067), and its damage with its block.
         self.cuts_dropped(&before);
+        for &(cell, _) in &before {
+            self.damage.clear(cell);
+        }
         if changed.is_empty() {
             return;
         }
@@ -4130,6 +4188,12 @@ impl Server {
                 None => self.cuts_unread = true,
             }
         }
+        if let Some(b) = db.damage() {
+            match dwell_protocol::damage::Damage::from_bytes(&b) {
+                Some(d) => self.damage = d,
+                None => self.damage_unread = true,
+            }
+        }
         if let Some(b) = db.ground_gone() {
             match dwell_world::ground::GroundGone::from_bytes(&b) {
                 Some(g) => self.ground = g,
@@ -4251,6 +4315,9 @@ impl Server {
         }
         if !self.ground_unread {
             batch.ground_gone = Some(self.ground.to_bytes());
+        }
+        if !self.damage_unread {
+            batch.damage = Some(self.damage.to_bytes());
         }
         // The world's moving bodies, all of them each save (docs/BUILT_BODIES.md §7).
         batch.bodies = Some(self.felling.saved(&self.physics));
@@ -4617,6 +4684,24 @@ impl Server {
 pub fn spawn_spread(player_id: u16) -> [f64; 2] {
     let slot = (i32::from(player_id) - 1).rem_euclid(8);
     [f64::from(slot % 4) - 1.5, f64::from(slot / 4) * 1.5 - 0.75]
+}
+
+/// The item a session's break is made with (docs/BLOCK_DAMAGE.md): the held inventory slot's
+/// where blocks are not unlimited, else the tool its hotbar holds (`ChopAction::Held`); none: an
+/// empty hand.
+fn held_break_item(s: &Session, uses_items: bool) -> Option<&str> {
+    if uses_items {
+        s.inventory
+            .slots
+            .get(usize::from(s.inventory.held))
+            .and_then(|h| h.as_ref())
+            .map(|st| st.item.as_str())
+    } else {
+        s.held_tool
+            .as_ref()
+            .map(|(t, _)| t.as_str())
+            .filter(|t| !t.is_empty())
+    }
 }
 
 #[cfg(test)]

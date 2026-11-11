@@ -66,6 +66,41 @@ impl Server {
         }
     }
 
+    /// What hit `k` of the `n` that break block `was` flings (docs/BLOCK_DAMAGE.md): its share of
+    /// the block's certain drops (half of them spread over the hits before the last).
+    pub(super) fn drop_hit(&mut self, was: StateId, at: [f64; 3], n: u32, k: u32) {
+        for (item, total) in certain_drops_of(was) {
+            let c = dwell_protocol::damage::hit_share(total, n, k);
+            if c > 0 {
+                self.loose.drop(Stack::new(item, c as u16), at);
+            }
+        }
+    }
+
+    /// What block `was`, broken by the last of `n` hits, drops: its drops less what the hits gave
+    /// ([`drop_hit`](Self::drop_hit)), so the hits and the destroy total the block's drops.
+    pub(super) fn drop_destroyed(&mut self, was: StateId, at: [f64; 3], n: u32) {
+        if was == M.air || info(was).liquid {
+            return;
+        }
+        let name = block_of(was).name;
+        let mut stacks = match inv::drops_of(name) {
+            Some(d) => inv::roll(d.drops, &mut || self.random()),
+            None => vec![Stack::new(name, 1)],
+        };
+        for (item, total) in certain_drops_of(was) {
+            let mut given = (total - dwell_protocol::damage::destroy_share(total, n)) as u16;
+            for st in stacks.iter_mut().filter(|st| st.item == item) {
+                let off = given.min(st.count);
+                st.count -= off;
+                given -= off;
+            }
+        }
+        for s in stacks.into_iter().filter(|s| s.count > 0) {
+            self.loose.drop(s, at);
+        }
+    }
+
     /// A player's saved inventory, at join.
     pub(super) fn load_inventory(&mut self, id: SessionId, key: &[u8; 32]) {
         let saved = self
@@ -322,5 +357,18 @@ impl Server {
     /// Drops a stack at a point (tests, tools).
     pub fn drop_item(&mut self, stack: Stack, at: [f64; 3]) -> u32 {
         self.loose.drop(stack, at)
+    }
+}
+
+/// A block state's certain drops (item, count; docs/BLOCK_DAMAGE.md): a block without `drops`
+/// drops itself, one.
+fn certain_drops_of(was: StateId) -> Vec<(&'static str, u32)> {
+    if was == M.air || info(was).liquid {
+        return Vec::new();
+    }
+    let name = block_of(was).name;
+    match inv::drops_of(name) {
+        Some(d) => dwell_protocol::damage::certain_drops(d.drops),
+        None => vec![(name, 1)],
     }
 }

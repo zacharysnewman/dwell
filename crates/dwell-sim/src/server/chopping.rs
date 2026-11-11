@@ -184,7 +184,9 @@ impl Server {
     /// What a player holds (`ChopAction::Held`): kept, and told to the others that understand it;
     /// the first one a player sends also brings it everyone else's.
     fn held_tool(&mut self, id: SessionId, tool: String, vertical: bool) {
-        let tool = if chop::tool(&tool).is_some() {
+        // An axe, or a tool a break is made with (`breaking.tools`: a pickaxe, a shovel).
+        let tool = if chop::tool(&tool).is_some() || chop::BREAK_TOOLS.iter().any(|t| t.item == tool)
+        {
             tool
         } else {
             String::new()

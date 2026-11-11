@@ -60,6 +60,10 @@ const CUTS: TableDefinition<u32, &[u8]> = TableDefinition::new("cuts");
 /// The ground items gone from the scatter (`dwell_world::ground::GroundGone::to_bytes`; ADR 0071):
 /// one record (key 0), rewritten on each save that carries it. Optional, as `cuts`.
 const GROUND_GONE: TableDefinition<u32, &[u8]> = TableDefinition::new("ground_gone");
+/// The blocks' damage, hits taken short of breaking (`dwell_protocol::damage::Damage::to_bytes`;
+/// ADR 0072): one record (key 0), rewritten on each save that carries it. Optional, as `cuts`: a
+/// world without it loads undamaged, and an older build on the line never opens it.
+const DAMAGE: TableDefinition<u32, &[u8]> = TableDefinition::new("block_damage");
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct WorldMeta {
@@ -220,6 +224,8 @@ pub struct SaveBatch {
     pub cuts: Option<Vec<u8>>,
     /// The ground items gone now, replacing those saved before (None: leave them; ADR 0071).
     pub ground_gone: Option<Vec<u8>>,
+    /// The blocks' damage now, replacing what was saved before (None: leave it; ADR 0072).
+    pub damage: Option<Vec<u8>>,
 }
 
 /// A [`SaveBatch`] being encoded for its commit (`WorldDb::prepare`): its chunks mapped to the
@@ -663,6 +669,14 @@ impl WorldDb {
         Some(v.value().to_vec())
     }
 
+    /// The blocks' damage as last saved (ADR 0072), if any.
+    pub fn damage(&self) -> Option<Vec<u8>> {
+        let txn = self.db.begin_read().ok()?;
+        let t = txn.open_table(DAMAGE).ok()?;
+        let v = t.get(0).ok()??;
+        Some(v.value().to_vec())
+    }
+
     /// The ground items gone as last saved (ADR 0071), if any.
     pub fn ground_gone(&self) -> Option<Vec<u8>> {
         let txn = self.db.begin_read().ok()?;
@@ -983,6 +997,10 @@ impl WorldDb {
         if let Some(gone) = &batch.ground_gone {
             let mut t = txn.open_table(GROUND_GONE).map_err(err)?;
             t.insert(0, gone.as_slice()).map_err(err)?;
+        }
+        if let Some(damage) = &batch.damage {
+            let mut t = txn.open_table(DAMAGE).map_err(err)?;
+            t.insert(0, damage.as_slice()).map_err(err)?;
         }
         if let Some(hook) = &self.before_commit {
             hook()?; // dropping the transaction aborts it
