@@ -288,6 +288,34 @@ Tests: `cargo test -p dwell-protocol ecology` (round trip, truncation, a bad fac
 the far groups at the hello and every 2 s as the server holds them, face-local on their faces, and a
 client that didn't ask never does; a world without an ecology sends none.
 
+## 11. Far herds drawn simply (scoops-and-herds)
+
+- **Data:** a species' `far` (shared/ecology/ecology.json): `color` (#rrggbb), `sizeM` (a head's height),
+  `fadeStartM`/`fadeEndM` (whole until the start, gone at the end). Deer: tan, 1.3 m, 450–700 m; wolves:
+  grey, 0.9 m, 350–550 m. `shared/ecology/gen.mjs` validates it (an unknown field, a bad colour, an end
+  not past its start fail naming the field) and emits `FAR_LOOKS` into `dwell-client` `far_herds.gen.rs`
+  (checked stale like the others). A species without `far` is not drawn far.
+- **Lay-out** (`dwell_client::far_herds::lay_out`, on each new `Ecology`, §9): each group of the eye's
+  face within its fade's end draws round(size) heads (1..24), scattered in a disc of 2 + 1.6·√n m round
+  its place, hashed by the group id and head (stable between snapshots), each stood on the loaded
+  terrain's ground (`bodies::ground_at`, 48 m round the eye's height; a head past the loaded chunks waits
+  for the next snapshot).
+- **Drawn** (`far_herds::puffs`, each frame): one lit billboard per head through the blasts' billboard
+  pass (kind 12, `PuffKind::Herd`): a body's oval over two leg strokes in the species' colour (sRGB in
+  the seed), darker underneath, lit facing up as the chips are; faded by distance; **none on a CPU
+  adapter**. Groups near players are not in the snapshot (they are creatures), so the two never draw at
+  once; the hand-over is the group leaving the snapshot as its creatures spawn (`near.spawnM` 64 m,
+  where a head is a few pixels, so the swap is small).
+- **Not yet:** heads past the loaded chunks (the LOD's heights are not on the main thread); a fade-in at
+  the near hand-over; in-game screenshots and the frame cost from the bench (not measured in this
+  change's time box; at ≤ 24 heads × ~100 groups it is at most a few thousand billboard vertices).
+
+Tests: `cargo test -p dwell-client --lib far_herds` (both faces): round(size) heads capped, on the
+ground round the group's place, stable, a species without a look none, faded past its end and partly
+between, none from the other face and none on the CPU tier; the shipped species have looks. `node --test
+shared/ecology/gen.test.mjs`: the look reaches the client table, a fixture species' by data alone, bad
+entries fail.
+
 ## 10. Tall grass growing and spreading (ADR 0075 T3c)
 
 Owner (2026-11-11): "I want tall grass to steadily grow and spread. It should probably have a max
