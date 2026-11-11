@@ -1,0 +1,7 @@
+{
+  "changes": [
+    "The Combine buttons say \"Stone slab\", \"Dirt slab\" and \"Log slab\"",
+    "Wood chunks look like chunks of log, not a dot",
+    "You hear other players rustle through leaves and snap sticks"
+  ]
+}

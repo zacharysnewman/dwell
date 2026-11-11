@@ -334,7 +334,8 @@ placements overlay shows the ground items in their looks' colours beside the str
   chunks to make a log slab"): a ½ m cell breaks into 8 pieces of its material, as its block's `drops`
   (`{ "item": "dwell:rock_shard", "count": 8 }`): stone and its ramp → `dwell:rock_shard`; dirt, grass,
   snowy grass and their ramps → `dwell:dirt_clump`; log → `dwell:wood`, relabelled "Wood chunk" (its
-  name kept: saves hold it; the bucked log's `buckDrops` keep it too). BLOCK_DAMAGE's split applies:
+  name kept: saves hold it; the bucked log's `buckDrops` keep it too), drawn as a lump of log (its
+  `look`, like the rock shard's). BLOCK_DAMAGE's split applies:
   half (4) over the hits before the last, the rest on the destroy (stone pickaxe: 1 a hit, 4 on the
   break). Grass, snowy grass and now dirt keep (dirt: gain) the random rock (chance 0.5, "we still
   want rocks to be found in grass and dirt at random"); leaves keep their sticks; tall grass drops a
@@ -349,7 +350,9 @@ placements overlay shows the ground items in their looks' colours beside the str
   server sets `inventory_flags::COMBINE` (16); a client sends Combine only to such a server
   (`inventory::combine_request`), an older server never gets it. The backpack screen's Combine
   section lists the recipes the inventory can make with how many times and a button each (adventure:
-  creative has no backpack, everything is in its catalogue). Recipes: 8 rock shards → stone (the ½ m
+  creative has no backpack, everything is in its catalogue). A button names the output by the
+  recipe's optional `label` (the slabs: "Stone slab", "Dirt slab", "Log slab": a slab's item is its
+  block, labelled "Stone"), else by the output item's label. Recipes: 8 rock shards → stone (the ½ m
   slab), 8 dirt clumps → dirt, 8 wood chunks → log; 2 sticks + 2 rock shards + 2 grass fibers → a stone
   axe, or the same inputs → a stone pickaxe (the player picks).
 - **Tool wear** (owner, 2026-11-11: the stone axe "should survive 32 hits of durability"):

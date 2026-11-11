@@ -202,10 +202,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 - **Terrain leftovers (0.52.66 round 1 left):** T3b in normal biomes (a snow line from temperature for
   any biome, soil blocks by soil type, grass and ground items by climate; the starter opts in); Rainier
   detail (below); in-game screenshots of an arch on a fin, the red mesa and a snowy biome edge.
-- **Pieces follow-ups (0.52.46):** the Combine buttons say "Stone"/"Log", not "slab"; the wood chunk's
-  icon is a plain dot; the worn axe not yet seen in game.
-- **Block damage follow-ups:** scoops read as dark stains (flat decals); remote players' leaf brushing
-  and stick snaps are silent.
+- **Pieces follow-ups (0.52.46):** the worn axe not yet seen in game.
+- **Block damage follow-ups:** scoops read as dark stains (flat decals).
 - **Peaks:** a more broken summit, deeper ridges and cirques (Rainier).
 - **Chisel:** biome decorations and spacing per biome; players' saved structures as placement sources;
   the in-game editor and a biome choice in the New world form.

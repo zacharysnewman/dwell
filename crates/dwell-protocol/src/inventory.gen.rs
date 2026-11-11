@@ -32,7 +32,7 @@ pub static ITEMS: &[ItemDef] = &[
     ItemDef { name: "dwell:grass_seed", label: "Grass seed", color: [185, 180, 90], size: 0.12, stack: 64, value: 0, look: Some(ItemLook { shape: LookShape::Cluster, size: [0.12, 0.05, 0.11], texture: "dwell:sand", color: [244, 220, 120], model: "" }) },
     ItemDef { name: "dwell:gem", label: "Gem", color: [79, 176, 122], size: 0.14, stack: 64, value: 1, look: None },
     ItemDef { name: "dwell:gem_large", label: "Large gem", color: [79, 127, 208], size: 0.2, stack: 64, value: 5, look: None },
-    ItemDef { name: "dwell:wood", label: "Wood chunk", color: [160, 116, 70], size: 0.24, stack: 64, value: 0, look: None },
+    ItemDef { name: "dwell:wood", label: "Wood chunk", color: [160, 116, 70], size: 0.24, stack: 64, value: 0, look: Some(ItemLook { shape: LookShape::Lump, size: [0.16, 0.09, 0.12], texture: "dwell:log", color: [214, 173, 132], model: "" }) },
     ItemDef { name: "dwell:rock_shard", label: "Rock shard", color: [143, 138, 132], size: 0.1, stack: 64, value: 0, look: Some(ItemLook { shape: LookShape::Lump, size: [0.09, 0.05, 0.07], texture: "dwell:stone", color: [240, 236, 230], model: "" }) },
     ItemDef { name: "dwell:dirt_clump", label: "Dirt clump", color: [138, 90, 58], size: 0.1, stack: 64, value: 0, look: Some(ItemLook { shape: LookShape::Lump, size: [0.09, 0.06, 0.08], texture: "dwell:dirt", color: [232, 220, 207], model: "" }) },
     ItemDef { name: "dwell:grass_fiber", label: "Grass fiber", color: [159, 191, 74], size: 0.12, stack: 64, value: 0, look: Some(ItemLook { shape: LookShape::Cluster, size: [0.14, 0.04, 0.1], texture: "dwell:sand", color: [184, 224, 112], model: "" }) },

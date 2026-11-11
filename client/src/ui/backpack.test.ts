@@ -1,6 +1,6 @@
 // The backpack screen's moves and order, and item labels (ADR 0066).
 import { describe, expect, it } from 'vitest';
-import { backpackKey, combinable, moveFor, recipeInputs, screenOrder } from './backpack';
+import { backpackKey, combinable, moveFor, recipeInputs, recipeOutput, screenOrder } from './backpack';
 import { itemLabel, wearLeft, type InventoryHud } from './hotbar';
 import { BACKPACK_SLOTS, HOTBAR_SLOTS, ITEMS, STACK_SIZE } from './inventory.gen';
 
@@ -81,6 +81,28 @@ describe('combine and wear (owner, 2026-11-11)', () => {
       '2 Stick + 2 Rock shard + 2 Grass fiber',
     );
     expect(itemLabel('dwell:wood')).toBe('Wood chunk');
+  });
+
+  it('names a slab recipe\'s output by its own label ("Stone slab"), a tool\'s by its item', () => {
+    const can = combinable(
+      holding(
+        { item: 'dwell:rock_shard', count: 8 },
+        { item: 'dwell:dirt_clump', count: 8 },
+        { item: 'dwell:wood', count: 8 },
+        { item: 'dwell:stick', count: 2 },
+        { item: 'dwell:grass_fiber', count: 2 },
+      ),
+    );
+    const names = can.map((c) => recipeOutput(c.recipe));
+    expect(names.slice(0, 3)).toEqual(['Stone slab', 'Dirt slab', 'Log slab']);
+    expect(names).toContain('Stone axe');
+    expect(
+      recipeOutput({
+        name: 'test:pair',
+        inputs: [{ item: 'dwell:rock', count: 1 }],
+        output: { item: 'dwell:stick', count: 2 },
+      }),
+    ).toBe('2 Stick');
   });
 
   it("draws the stone axe's wear bar from its data (32 hits); unworn or unlimited tools have none", () => {
