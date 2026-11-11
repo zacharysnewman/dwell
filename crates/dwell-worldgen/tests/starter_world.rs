@@ -313,6 +313,55 @@ fn tour() {
         hs.z,
         at(best.1, best.2)
     );
+    // Spots that read as their biome (round 3): the wetland where it wins by water (a river or
+    // lake shore 8-40 m off, the feet on dry ground), the mesa where it wins with walls in view
+    // (the most relief within 150 m, below 700 m, where it is the column's biome).
+    let chosen_is = |name: &str, x: i64, z: i64| {
+        let i = names.iter().position(|n| *n == name).unwrap();
+        let m = g.biome_mix(x, z);
+        m.chosen as usize == i
+            && m.weights[..m.len as usize]
+                .iter()
+                .any(|(k, w)| *k as usize == i && *w > 0.6)
+    };
+    let mut wet = None;
+    let mut mesa = (0.0f32, 0i64, 0i64);
+    let mesa_i = names
+        .iter()
+        .position(|n| *n == "preset:red_rock_mesa")
+        .unwrap();
+    for z in (-r..=r).step_by(100) {
+        for x in (-r..=r).step_by(100) {
+            if g.biome_geography(x, z).is_none_or(|g| g.coast < 300.0) {
+                continue;
+            }
+            let c = g.column_at(x as i32, z as i32);
+            if wet.is_none() && (8.0..40.0).contains(&c.shore) && chosen_is("preset:wetland", x, z)
+            {
+                wet = Some((x, z));
+            }
+            // Below 700 m, where the mesa shows its own red stack (higher, the grey province rock).
+            if c.height < 700.0 && g.biome_mix(x, z).chosen as usize == mesa_i {
+                let hs: Vec<f32> = [(-150, 0), (150, 0), (0, -150), (0, 150)]
+                    .iter()
+                    .map(|(a, b)| g.column_at(x as i32 + a, z as i32 + b).height)
+                    .collect();
+                let relief = hs.iter().fold(f32::MIN, |a, &b| a.max(b))
+                    - hs.iter().fold(f32::MAX, |a, &b| a.min(b));
+                if relief > mesa.0 {
+                    mesa = (relief, x, z);
+                }
+            }
+        }
+    }
+    if let Some((x, z)) = wet {
+        println!("wetland by its water at={}", at(x, z));
+    }
+    println!(
+        "mesa with {:.0} m of relief in view at={}",
+        mesa.0,
+        at(mesa.1, mesa.2)
+    );
 }
 
 /// Times generating the chunks round the tour's tree spots (oaks, the mixed forest, palms): run
@@ -547,5 +596,62 @@ dwell_world::both_faces!(
             differ,
             "the build's volume reshapes the build's chunks there"
         );
+    }
+);
+
+dwell_world::both_faces!(
+    /// A biome's `spacing` (0.52.65): the starter's broadleaf forest given 12 blocks between its
+    /// oaks keeps every two oaks anchored in it that far apart (their boxes), and stands fewer of
+    /// them round the tour's broadleaf spot; the other biomes keep their placements' own.
+    fn a_biomes_spacing_keeps_its_trees_apart(f: FaceFrame) {
+        let base = world_config(NAME).unwrap().unwrap();
+        let mut wide = world_config(NAME).unwrap().unwrap();
+        let b = wide
+            .biomes
+            .iter()
+            .position(|b| b.name == "starter:broadleaf_forest")
+            .unwrap();
+        wide.biomes[b].spacing = &[("broadleaf_groves", 12)];
+        let make = |e: &dwell_worldgen::config::Edit| {
+            let map = WorldMap::for_height(face_seed(0, f.face), e.height.unwrap())
+                .with_worldgen(NAME)
+                .unwrap();
+            TerrainGenerator::with_map(face_seed(0, f.face), Arc::new(map))
+                .with_biomes_and_geology(&e.biomes, e.map, e.geology)
+                .with_vegetation(e.vegetation)
+        };
+        let (g0, g1) = (make(&base), make(&wide));
+        let (lo, hi) = ((22300 - 128, 100 - 128), (22300 + 128, 100 + 128));
+        let oaks = |g: &TerrainGenerator| -> Vec<[i32; 3]> {
+            g.trees_in(lo, hi)
+                .iter()
+                .filter(|t| {
+                    g.planters()[t.planter as usize].structure_name(t) == "dwell:oak"
+                        && g.biome_mix(i64::from(t.anchor[0]), i64::from(t.anchor[2]))
+                            .chosen as usize
+                            == b
+                })
+                .map(|t| t.anchor)
+                .collect()
+        };
+        let (before, after) = (oaks(&g0), oaks(&g1));
+        println!(
+            "oaks in the broadleaf forest: {} before, {} with 12 blocks",
+            before.len(),
+            after.len()
+        );
+        assert!(before.len() > 10, "{}", before.len());
+        assert!(
+            after.len() < before.len(),
+            "{} vs {}",
+            after.len(),
+            before.len()
+        );
+        for (i, a) in after.iter().enumerate() {
+            for c in &after[i + 1..] {
+                let d = (a[0] - c[0]).abs().max((a[2] - c[2]).abs());
+                assert!(d > 12, "two oaks {d} blocks apart: {a:?} {c:?}");
+            }
+        }
     }
 );

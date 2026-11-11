@@ -908,6 +908,12 @@ export function terrainRust({
           .join(", ")}],`,
       );
       rs.push(
+        `        spacing: &[${b.placements
+          .filter((k) => b.spacing?.[k] !== undefined)
+          .map((k) => `(${JSON.stringify(k)}, ${b.spacing[k]})`)
+          .join(", ")}],`,
+      );
+      rs.push(
         `        ground: ${
           b.ground === undefined
             ? "None"

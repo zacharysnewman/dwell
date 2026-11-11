@@ -568,6 +568,13 @@ pub fn max_rise(planters: &[Planter]) -> i32 {
 /// The climate's factor on a placement's chance: (planter index, x, z) → 0..1 (`vegetation.rs`).
 pub type Factor<'a> = dyn Fn(usize, i32, i32) -> f32 + 'a;
 
+/// A placement's spacing at an anchor (planter index, x, z) → blocks, with the most it can be:
+/// the biomes' `spacing` (0.52.65).
+pub struct Spacing<'a> {
+    pub at: &'a dyn Fn(usize, i32, i32) -> i32,
+    pub most: i32,
+}
+
 /// Every placed structure whose box reaches the columns [x0, x1] × [z0, z1], in a fixed order
 /// (planter, then grid cell). `ground` must answer columns up to `ground_margin` beyond them.
 pub fn trees_in(
@@ -576,7 +583,7 @@ pub fn trees_in(
     hi: (i32, i32),
     ground: &dyn Fn(i32, i32) -> Option<Ground>,
 ) -> Vec<Tree> {
-    trees_in_with(planters, lo, hi, ground, None)
+    trees_in_with(planters, lo, hi, ground, None, None)
 }
 
 /// [`trees_in`] with the climate's `factor` on each candidate's chance (systemic terrain T3).
@@ -586,10 +593,15 @@ pub fn trees_in_with(
     (x1, z1): (i32, i32),
     ground: &dyn Fn(i32, i32) -> Option<Ground>,
     factor: Option<&Factor<'_>>,
+    spacing_at: Option<&Spacing<'_>>,
 ) -> Vec<Tree> {
     let on = || planters.iter().filter(|p| p.active());
     let reach = on().map(Planter::reach).max().unwrap_or(0);
-    let spacing = on().map(|p| p.rule.spacing).max().unwrap_or(0);
+    let spacing = on()
+        .map(|p| p.rule.spacing)
+        .max()
+        .unwrap_or(0)
+        .max(spacing_at.map_or(0, |s| s.most));
     // Trees reaching the rectangle have anchors within `reach` of it; those that could overlap
     // them, within another 2 × reach + spacing.
     let near = 3 * reach + spacing;
@@ -615,16 +627,24 @@ pub fn trees_in_with(
         .iter()
         .map(|t| planters[t.planter as usize].footprint(t))
         .collect();
+    // Each candidate's spacing: its placement's, or its anchor's biome's.
+    let gaps: Vec<i32> = all
+        .iter()
+        .map(|t| match spacing_at {
+            Some(s) => (s.at)(t.planter as usize, t.anchor[0], t.anchor[2]),
+            None => planters[t.planter as usize].rule.spacing,
+        })
+        .collect();
     let mut out = Vec::new();
     for (i, t) in all.iter().enumerate() {
         let b = boxes[i];
         if b[0] > x1 || b[2] < x0 || b[1] > z1 || b[3] < z0 {
             continue;
         }
-        let gap = planters[t.planter as usize].rule.spacing;
+        let gap = gaps[i];
         let beaten = all.iter().enumerate().any(|(j, o)| {
             let c = boxes[j];
-            let gap = gap.max(planters[o.planter as usize].rule.spacing);
+            let gap = gap.max(gaps[j]);
             j != i
                 && o.rank() > t.rank()
                 && b[0] <= c[2] + gap
@@ -769,11 +789,11 @@ mod tests {
         // The climate's factor: 1 everywhere places the same; 0 west of x = 50 none there.
         let one = |_: usize, _: i32, _: i32| 1.0;
         assert_eq!(
-            trees_in_with(&p, (0, 0), (99, 99), &dirt, Some(&one)),
+            trees_in_with(&p, (0, 0), (99, 99), &dirt, Some(&one), None),
             trees
         );
         let east = |_: usize, x: i32, _: i32| f32::from(u8::from(x >= 50));
-        let half = trees_in_with(&p, (0, 0), (99, 99), &dirt, Some(&east));
+        let half = trees_in_with(&p, (0, 0), (99, 99), &dirt, Some(&east), None);
         assert!(!half.is_empty() && half.iter().all(|t| t.anchor[0] >= 50));
     }
 }

@@ -102,7 +102,16 @@ Last updated: 2026-11-11 (0.52.52).
   off; the mesa spot stands on red ground under a grey stone ridge). Left: a wetland tour spot by its
   water, a mesa spot that reads as a mesa, the page stalling on a fresh load at a far spot when a long
   script waits on it (twice; a new tab loaded), spacing per biome, players' structures as sources, the
-  in-game editor, the textures tab extras.
+  in-game editor, the textures tab extras. 0.52.65 (round 3, the section's last): spacing per biome
+  (a biome's `spacing`: placement → blocks, the anchor's biome's; default unchanged); the tour prints a
+  wetland spot by its water (`at=-14900.5,36,-20300.5`: a wide grassy plain with oaks under the range; the
+  water lies behind, the look can't be turned by link) and a mesa spot under 700 m with walls (`at=
+  14500.5,668,400.5`: inside a red canyon, a wall fills the view; higher mesa columns show the grey
+  province rock, not the red stack); the volcano's dark column narrowed (BUGS.md #69: in the LOD, not a
+  skirt, not a height spike). **The biome section is done** except, for the owner's design input: the
+  in-game Chisel editor; the textures tab extras (new materials and blocks by data, water and sky
+  colours, item and model textures); players' saved structures as placement sources (plan in ADR 0074);
+  BUGS.md #69.
 
 - **Underwater at night** (0.52.53, WATER_RENDERING.md §16.1): Snell's window shows the sky pass's own
   sky (one function: the stars, the moon, the sun, the clouds), no white-cyan glow over it, fewer cells;

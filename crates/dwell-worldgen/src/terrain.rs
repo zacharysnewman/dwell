@@ -269,6 +269,9 @@ pub struct Biome {
     /// chance where the biome has weight; a placement not named here takes 1. A placement the
     /// biome does not list does not stand where it has weight.
     pub trees: &'static [(&'static str, f64)],
+    /// Its spacing for some of those placements (0.52.65): the blocks kept clear between two of
+    /// them anchored where it is the column's biome, in place of the placement's own `spacing`.
+    pub spacing: &'static [(&'static str, i32)],
     /// Its ground items (ADR 0074 B5): kind (`shared/ground` `kinds`) → a multiplier on that kind's
     /// rules where the biome has weight. None: every kind 1 (the default biome); given, a kind it
     /// does not name lies nowhere it rules.
@@ -906,6 +909,9 @@ pub struct TerrainGenerator {
     /// Each planter's density per biome (ADR 0074 B5; `Biome::trees`), and whether any active one
     /// varies over the world (else trees ask nothing of the biomes: the default world).
     tree_density: Arc<(Vec<Vec<f32>>, bool)>,
+    /// Each planter's spacing per biome (the biomes' `spacing`, else its own), and the most of
+    /// them when some biome sets one (0.52.65; None: the placements' own, the default world).
+    tree_spacing: Arc<Option<(Vec<Vec<i32>>, i32)>>,
     /// Soil and vegetation from climate (`vegetation.json`; systemic terrain T3): read only where a
     /// biome's `vegetation` is above 0.
     vegetation: crate::vegetation::Vegetation,
@@ -1017,6 +1023,7 @@ impl TerrainGenerator {
             ramps: Arc::new(RampPieces::resolve(&biomes.palettes)),
             planters: Vec::new(),
             tree_density: Arc::new((Vec::new(), false)),
+            tree_spacing: Arc::new(None),
             vegetation: crate::vegetation::VEGETATION,
             biomes,
             portals: None,
@@ -1417,6 +1424,26 @@ impl TerrainGenerator {
             varies |= most > 0.0 && d.iter().any(|&v| v != 1.0);
         }
         self.tree_density = Arc::new((per, varies));
+        // The biomes' spacing, only when one sets any.
+        let spacing: Vec<Vec<i32>> = self
+            .planters
+            .iter()
+            .map(|p| {
+                let rule = p.rule();
+                biomes
+                    .iter()
+                    .map(|b| {
+                        b.spacing
+                            .iter()
+                            .find(|(n, _)| *n == rule.name)
+                            .map_or(rule.spacing, |&(_, s)| s)
+                    })
+                    .collect()
+            })
+            .collect();
+        let set = biomes.iter().any(|b| !b.spacing.is_empty());
+        let most = spacing.iter().flatten().copied().max().unwrap_or(0);
+        self.tree_spacing = Arc::new(set.then_some((spacing, most)));
         self.cache_id = next_cache_id();
         // A structure anchored beside the chunk on ground up to its reach higher still reaches in
         // (rows: a structure's rise counts cells; ground climbs up to 1 m per column of reach).
@@ -2714,7 +2741,12 @@ impl TerrainGenerator {
         if self.planters.is_empty() {
             return Vec::new();
         }
-        let m = placements::ground_margin(&self.planters);
+        let m = placements::ground_margin(&self.planters)
+            + self
+                .tree_spacing
+                .as_ref()
+                .as_ref()
+                .map_or(0, |(_, most)| *most);
         let (rx, rz) = (x0 - m, z0 - m);
         let (w, l) = (x1 - x0 + 1 + 2 * m, z1 - z0 + 1 + 2 * m);
         let cache: std::cell::RefCell<Vec<Option<Option<Ground>>>> =
@@ -2774,8 +2806,34 @@ impl TerrainGenerator {
         };
         let factor: Option<&placements::Factor<'_>> =
             (climate || self.tree_density.1).then_some(&factor);
-        let mut trees =
-            placements::trees_in_with(&self.planters, (x0, z0), (x1, z1), ground, factor);
+        // The biomes' spacing at an anchor: its column's biome's (0.52.65).
+        let spacing_at = |i: usize, x: i32, z: i32| -> i32 {
+            let Some((per, _)) = self.tree_spacing.as_ref() else {
+                return self.planters[i].rule().spacing;
+            };
+            let b = if self.biomes.field.is_none() {
+                0
+            } else {
+                usize::from(self.biome_mix(i64::from(x), i64::from(z)).chosen)
+            };
+            per[i][b.min(per[i].len() - 1)]
+        };
+        let spacing = self
+            .tree_spacing
+            .as_ref()
+            .as_ref()
+            .map(|(_, most)| placements::Spacing {
+                at: &spacing_at,
+                most: *most,
+            });
+        let mut trees = placements::trees_in_with(
+            &self.planters,
+            (x0, z0),
+            (x1, z1),
+            ground,
+            factor,
+            spacing.as_ref(),
+        );
         // No structure stands over a portal's opening or its clear ground round the rim.
         if let Some(p) = &self.portals {
             trees.retain(|t| {
