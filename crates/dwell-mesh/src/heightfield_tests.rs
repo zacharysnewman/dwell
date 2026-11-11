@@ -136,7 +136,10 @@ fn the_flag_drops_only_the_waters_tops() {
         let cells = voxels(&[(2, 3, 2, water()), (3, 3, 2, water()), (2, 2, 2, stone())]);
         let cells = if mirror { mirror_padded(&cells) } else { cells };
         let mesh = |water_tops| {
-            let flags = ChunkFlags { water_tops, ..Default::default() };
+            let flags = ChunkFlags {
+                water_tops,
+                ..Default::default()
+            };
             mesh_chunk_flags(&cells, &[], mirror, [0; 3], &[], None, flags).expect("padded")
         };
         let (on, off) = (mesh(true), mesh(false));
@@ -161,7 +164,10 @@ fn the_flag_drops_only_the_waters_tops() {
 
 #[test]
 fn a_rising_pool_changes_the_tile_not_the_mesh() {
-    let flags = ChunkFlags { water_tops: false, ..Default::default() };
+    let flags = ChunkFlags {
+        water_tops: false,
+        ..Default::default()
+    };
     let mesh =
         |cells: &[u16]| mesh_chunk_flags(cells, &[], false, [0; 3], &[], None, flags).unwrap();
     let low = voxels(&basin(0.5, None));
@@ -201,7 +207,10 @@ fn the_meshes_carry_the_tile_only_without_tops() {
         let cells = voxels(&basin(1.0, None));
         let cells = if mirror { mirror_padded(&cells) } else { cells };
         let mesh = |water_tops| {
-            let flags = ChunkFlags { water_tops, ..Default::default() };
+            let flags = ChunkFlags {
+                water_tops,
+                ..Default::default()
+            };
             mesh_chunk_flags(&cells, &[], mirror, [0; 3], &[], None, flags).expect("padded")
         };
         assert_eq!(mesh(true).water, None);
@@ -302,7 +311,10 @@ fn a_lone_column_draws_four_skirts_down_to_its_floor_on_both_faces() {
         }
         // The chunk mesh leaves those sides to the skirts: only the bottom-less column's
         // faces it still owns are none (stone under it hides its bottom).
-        let flags = ChunkFlags { water_tops: false, ..Default::default() };
+        let flags = ChunkFlags {
+            water_tops: false,
+            ..Default::default()
+        };
         let mesh = mesh_chunk_flags(&cells, &[], mirror, [0; 3], &[], None, flags).unwrap();
         assert_eq!(mesh.transparent.positions.len(), 0, "mirror {mirror}");
     }

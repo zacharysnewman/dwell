@@ -262,9 +262,18 @@ trees." Leaves stay blocks; the look is data (`shared/look/leaves.json`: the blo
   the leaf cells within 3 m of the point (prefix sums over the padded chunk). Near a chunk border the
   reach is cut to the same distance on both sides, so the two chunks agree on the border itself;
   a tree record or a wider leaf apron would let it see the whole crown (round 2).
-- **Not built yet: leaf cards** (density 0.55, size 0.95 m, near trees only, faded by distance, none
-  on the CPU tier) and **far trees that match** (the LOD's trees with octagon trunks, the crown
-  downsampled, the same colours and canopy lighting).
+- **Built: leaf cards** (`cards`: density 0.55, size 0.95 m ±25 %, sway 0.04 m, faded out from 48
+  to 64 m): per exposed face a hashed number of alpha-cut quads (the leaf block's tile), standing a
+  little off the face and turned toward the crown's outward direction, in the cutout mesh with the
+  plants' `plants` stream (sway and the distance fade, so none draws past 64 m) and no ink. The
+  client meshes none on a CPU adapter (`render::cards_for`, `ChunkFlags::cards`, the mesh job's bit 2).
+  **Deviation:** the Lab painted a leaf-clump tile; the cards use the leaf block's own tile for now.
+- **Not built yet: far trees that match** (the LOD's trees with octagon trunks, the crown
+  downsampled, the same colours and canopy lighting). Today the LOD draws trees two ways
+  (`dwell-worldgen` `terrain.rs` `lod_trees`): at its 1 m and 2 m levels each tree's own voxels are
+  point-sampled into the section's cells (plain cubes: square trunks, unchamfered leaves, the
+  axis face tints and normals of `lod_mesher`); coarser, a share of columns shows the canopy block
+  on its top cell.
 
 ## Sources
 

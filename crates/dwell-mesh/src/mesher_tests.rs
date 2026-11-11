@@ -1987,7 +1987,12 @@ dwell_world::both_faces!(
         );
         // A lone leaf (shared/look/leaves.json): 6 faces and 12 edge cuts (quads) and 8 corner
         // cuts (triangles, half a quad each); its cards (`cards`, a quad each) besides.
-        let cards = flooded.cutout.plants.chunks(16).filter(|p| p[3] > 0.0).count();
+        let cards = flooded
+            .cutout
+            .plants
+            .chunks(16)
+            .filter(|p| p[3] > 0.0)
+            .count();
         assert_eq!(
             quads(&flooded.cutout) - cards,
             22,

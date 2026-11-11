@@ -4,7 +4,8 @@
     {
       "version": "0.52.56",
       "changes": [
-        "Tree crowns look rounder: leaf blocks are bevelled where they meet the open air, and a crown is shaded as one mass, lit from outside in"
+        "Tree crowns look rounder: leaf blocks are bevelled where they meet the open air, and a crown is shaded as one mass, lit from outside in",
+        "Near trees grow leafy clumps that sway in the wind"
       ]
     },
     {

@@ -486,8 +486,8 @@ pub(crate) fn cards(
             c[va] = (r() - 0.5) * 1.8 * half[va];
             let out_dir = canopy_normal(fnrm, outward(c), 0.5);
             let jitter = [r() - 0.5, r() - 0.5, r() - 0.5];
-            let cn = normalise(std::array::from_fn(|i| out_dir[i] + jitter[i] * 0.9))
-                .unwrap_or(out_dir);
+            let cn =
+                normalise(std::array::from_fn(|i| out_dir[i] + jitter[i] * 0.9)).unwrap_or(out_dir);
             let up0: V = if cn[1].abs() > 0.9 {
                 [1.0, 0.0, 0.0]
             } else {
@@ -498,9 +498,7 @@ pub(crate) fn cards(
             let (s, co) = ang.sin_cos();
             let kx = cross(cn, up0);
             let kd = dot(cn, up0);
-            let up: V = std::array::from_fn(|i| {
-                up0[i] * co + kx[i] * s + cn[i] * kd * (1.0 - co)
-            });
+            let up: V = std::array::from_fn(|i| up0[i] * co + kx[i] * s + cn[i] * kd * (1.0 - co));
             let Some(ux) = normalise(cross(up, cn)) else {
                 continue;
             };
@@ -569,7 +567,11 @@ fn emit_cards(b: &mut Builder, cells: &Cells<'_>, k: &Kind, cell: [i32; 3], list
             b.m.light.push(light);
             b.m.flood.extend(flood);
             // The far corners (the top two) sway; the near ones barely.
-            let sway = if i >= 2 { look.sway_m } else { look.sway_m * 0.25 };
+            let sway = if i >= 2 {
+                look.sway_m
+            } else {
+                look.sway_m * 0.25
+            };
             b.m.plants.extend([
                 sway as f32,
                 1.0,
