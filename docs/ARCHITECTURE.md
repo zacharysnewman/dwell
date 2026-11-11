@@ -800,8 +800,15 @@ colour a character material row after the data's; `render/characters.rs` `prop_m
 `objects` (optional) names the FBX objects it keeps, for the pack's files that stack alternates (the
 axes file's three axes); the import fails on an unknown name. The six tools (stone and metal axe,
 pickaxe, shovel) carry a class and tier in `shared/tools/tools.json` `breaking` (block → class, tier →
-speed; `dwell_protocol::chopping::break_speed`, 1 for anything else); breaks are instant, so the speed
-has no effect until a break takes time.
+speed; `dwell_protocol::chopping::break_speed`, 1 for anything else). **Block damage [built, D1 0.52.28;
+ADR 0078, docs/BLOCK_DAMAGE.md]:** a block's `damage` (block data, generated into
+`dwell_protocol::chopping::BLOCK_DAMAGE` and `tools.gen.ts`) gives its hits to break by bare hands and per
+tool class or item (`dwell_protocol::damage::hits_to_break`: item, else class ÷ tier speed, else
+default; none: can't); the server keeps each damaged cell's state, hits and up to four hit marks
+(`dwell_protocol::damage::Damage`), acks a hit short of the count as refused (the block stays), breaks
+it on the last, spreads half its certain drops over the hits, and clears a changed cell's damage; the
+client predicts only one-hit breaks and tells the server its held pickaxe or shovel by
+`ChopAction::Held`. Not yet sent to clients (D2, with the look).
 **Drawing** (`render/skinned.rs`, inside `CharacterRenderer`): the model's one mesh (36-byte
 vertices: position, normal, sRGB colour, 4 × u8 joints, 4 × unorm8 weights; the Peasant 1,834
 vertices, 66 KB), per body one block of uniforms (3,328 bytes, a dynamic offset: 64 joints' 3 × 4
@@ -2032,6 +2039,7 @@ lives in side files. Chunk and LOD blobs are the protocol's palette + RLE compre
 | `vitals` | **[built, 0.50.57]** Keyed by device public key: the player's stamina and oxygen (version 1: f32 stamina, f32 seconds of air, u8 exhausted; ADR 0069), rewritten each save. Optional: older builds leave it; a player without one, or with a record this build can't read, starts rested |
 | `loose_items` | **[built, 0.50.33]** One record (key 0), rewritten each save: the loose items lying in the world (version 1: item name, count, point, age each; ADR 0066) |
 | `ground_gone` | **[built, 0.50.68]** One record (key 0), rewritten each save: the ground items gone from the scatter (`dwell_world::ground::GroundGone::to_bytes`, version 1: a count, then each cell as i32×3, sorted; ADR 0071), the scatter's tombstones. Optional: older builds leave it; an unreadable record is kept, not overwritten |
+| `block_damage` | **[built, 0.52.28]** One record (key 0), rewritten each save: the blocks hit short of breaking (`dwell_protocol::damage::Damage::to_bytes`, version 1: each cell, its state, hits and up to four hit marks; ADR 0078). Optional: a world without it loads undamaged, older builds leave it; an unreadable record is kept, not overwritten |
 | `cuts` | **[built, 0.50.34]** One record (key 0), rewritten each save: the axes' cuts in wood cells (`dwell_protocol::chopping::Cuts::to_bytes`, version 1: each cell, then per side its notch and two kerfs as f32; ADR 0067). Optional: older builds leave it; an unreadable record is kept, not overwritten |
 | `water` | **[built, 0.48.2]** The water surface grid's free water (§6.7, WATER_SURFACE_GRID.md): one LZ4 record of `Water::save` (`DWG1`): each water chunk with free columns, their floors, depths and flows (and the rest layer's), and what the chunk owes; held water is found again from the blocks. An older basin record (`DWW5`) is ignored |
 | `tree_tombstones` | **[planned, Phase 30]** Per chunk: the sparse set of chopped procedural tree ids `(chunk, procedural index)` and the pruned node sets of partly cut ones (§6.3 tree growth) |

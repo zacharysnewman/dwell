@@ -206,3 +206,24 @@ test('a fixture wood with its own fell wedge by data alone; a bad wedge fails na
   assert.match(toolsRust(validateTools(plain, items, blocks)), /fell_wedge_matching: true, fell_tip: 0\.0 \}/);
   assert.match(toolsRust(validateTools(loadTools(), items, blocks)), /block: "dwell:log", .*fell_tip: 1\.0 \}/);
 });
+
+test("block damage: the data's hits reach Rust and TS; a fixture block by data alone; bad entries fail naming them", () => {
+  const [data, items, blocks] = fresh();
+  const d = validateTools(data, items, blocks);
+  assert.match(toolsRust(d), /BlockDamageDef \{ block: "dwell:stone", default: None, tools: &\[\("pickaxe", 7\)\] \},/);
+  assert.match(toolsTs(d), /\{ block: 'dwell:dirt', default: 11, tools: \{ shovel: 7 \} \},/);
+  blocks.set('test:clay', { damage: { default: 9, shovel: 4, 'dwell:metal_shovel': 1 } });
+  assert.match(
+    toolsRust(validateTools(data, items, blocks)),
+    /BlockDamageDef \{ block: "test:clay", default: Some\(9\), tools: &\[\("shovel", 4\), \("dwell:metal_shovel", 1\)\] \},/,
+  );
+  const bad = (damage, re) => {
+    blocks.set('test:clay', { damage });
+    assert.throws(() => validateTools(data, items, blocks), re);
+  };
+  bad({ shovel: 4 }, /test:clay\.damage needs a default/);
+  bad({ default: 0 }, /test:clay\.damage\.default is a hit count from 1 to 255, not 0/);
+  bad({ default: null, spoon: 3 }, /test:clay\.damage\.spoon: no tool class or item "spoon"/);
+  bad({ default: 2, shovel: 1.5 }, /test:clay\.damage\.shovel is a hit count/);
+  bad([], /test:clay\.damage must be an object/);
+});

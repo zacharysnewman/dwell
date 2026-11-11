@@ -374,7 +374,7 @@ export function toolsTs(d) {
   ts.push('];');
   ts.push('');
   ts.push("/** Each block's hits to destroy (its `damage`): `default` by bare hands (null: can't), `tools` by class or item. */");
-  ts.push('export const BLOCK_DAMAGE: readonly { block: string; default: number | null; tools: Readonly<Record<string, number>> }[] = [');
+  ts.push('export const BLOCK_DAMAGE: readonly {', '  block: string;', '  default: number | null;', '  tools: Readonly<Record<string, number>>;', '}[] = [');
   for (const b of d.damage) ts.push(`  { block: '${b.block}', default: ${b.default}, tools: { ${b.tools.map((t) => `${/^[A-Za-z_]\w*$/.test(t.tool) ? t.tool : `'${t.tool}'`}: ${t.hits}`).join(', ')} } },`);
   ts.push('];');
   ts.push('');

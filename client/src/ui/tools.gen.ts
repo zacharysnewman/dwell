@@ -7,7 +7,11 @@ export const TOOLS: readonly { name: string; kind: string }[] = [
 ];
 
 /** Each block's hits to destroy (its `damage`): `default` by bare hands (null: can't), `tools` by class or item. */
-export const BLOCK_DAMAGE: readonly { block: string; default: number | null; tools: Readonly<Record<string, number>> }[] = [
+export const BLOCK_DAMAGE: readonly {
+  block: string;
+  default: number | null;
+  tools: Readonly<Record<string, number>>;
+}[] = [
   { block: 'dwell:stone', default: null, tools: { pickaxe: 7 } },
   { block: 'dwell:dirt', default: 11, tools: { shovel: 7 } },
   { block: 'dwell:grass', default: 11, tools: { shovel: 7 } },
