@@ -210,7 +210,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    rain shadows over the seed's mountains; geology from plate history (arcs → basalt/andesite, uplifted
    ranges → granite/metamorphic, basins → sandstone/shale, old seafloor → limestone), soils from rock +
    climate; the starter stays a test bed, Realistic is a new World choice (later perhaps the default, on a
-   new compatibility line). **Status:** proposal written; waiting on the owner's answers (§7) before R1.
+   new compatibility line). Owner's answers to §7 (2026-11-11): plates decide land and sea (oceanic = sea,
+   continental = land, a sea margin at the disc's edge); face B its own plates from its own seed; the seed
+   picks the latitude band; Realistic seeds' terrain may change between releases while it is a test world;
+   plate count unanswered (the proposal's 3–5, as data). **Status:** R1 built: the plate layout
+   (`shared/worldgen/plates.json`, `plates.gen.rs`, `dwell-worldgen` `plates.rs`: plates by kind, motion and
+   age, boundaries classified by relative motion with the subducting side, hotspots, a land/sea mask), tested
+   on both faces, not wired into any world (goldens unchanged). The Chisel plates overlay moved to R2. Next:
+   R2 (uplift from boundaries); q5 (new rocks), q2, q6 and q8 still open.
 
 ## Done
 

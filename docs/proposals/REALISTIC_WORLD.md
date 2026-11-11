@@ -1,7 +1,8 @@
 # Proposal: a seed-driven Realistic world
 
-**Status:** written 2026-11-11, not adopted. Docs only: nothing in the game changes. Questions for the
-owner in §7.
+**Status:** written 2026-11-11, not adopted. Questions for the owner in §7 (q1, q3, q4 and q7 answered
+2026-11-11). R1 built: the plate layout (`shared/worldgen/plates.json`, `dwell-worldgen` `plates.rs`), not
+wired into any world, so nothing in the game changes yet.
 
 ## 1. The owner's direction
 
@@ -270,6 +271,20 @@ debug views go (an overlay and sliders), since it already runs the generator's W
   *Exit:* same seed same layout, different seeds differ; every boundary's kind matches its relative
   motion (unit test over a fixture of two plates by data alone); counts within the data's ranges; a bad
   entry fails with a message; both faces; default goldens unchanged.
+  **Built (2026-11-11):** `plates.json` (count 3–5, reach 25 km with a 2 km sea margin, spacing, the kinds'
+  weights and minimums, speed in cm/yr, age in Myr, the warp, `transformBelow`, hotspots, and two-plate
+  `fixtures` with the boundary each must give), checked by `gen.mjs` `validatePlates` (a bad entry fails
+  naming it) and emitted as `plates.gen.rs`. `plates.rs`: `PlateLayout::for_face(world_seed, face)` draws
+  from the face seed; the plates are a warped Voronoi; the boundaries are found on a 500 m scan (`SCAN_CELL`)
+  as sample points per neighbour pair, each classified by `classify` from the relative motion across the
+  centres' line (closing → convergent, opening → divergent, under `transformBelow` of the relative speed →
+  transform; oceanic under continental, the older of two oceanic plates, none for two continents);
+  hotspots fixed under a plate with the chain's trail against its motion; `is_land` from the plate kind
+  inside the sea margin. Every exit criterion is a test (`plates::tests`, `gen.test.mjs`); the goldens are
+  unchanged (nothing reads the layout yet). *Deviations:* the boundaries are sample points in scan order,
+  not ordered polylines (R2 orders them when `tectonics.rs` takes segments); a boundary's kind is from its
+  plates' centres' line, its mean normal, not the warped local normal. The Chisel plates overlay moved to
+  R2 (it needs a WASM export and a Chisel view; not quick).
 - **R2 Uplift from boundaries.** `tectonics.rs` takes many segments; the uplift strength from the layout;
   arc cones and hotspot chains placed by rule. Realistic world file added (not yet in the New world form).
   *Exit:* for seed fixtures, ranges stand along convergent boundaries above the plain map, rifts below,
@@ -298,17 +313,30 @@ R1–R5 are logic-only and suit cloud sessions (docs/CLOUD_SESSIONS.md); R6's br
 
 ## 7. Questions for the owner
 
+Open: q2's bands (the seed picks one: answered), q5 (new rocks: still with the
+owner), q6, q8. Answered: q1 (by default), q3, q4, q7.
+
 1. **Plate count and size for the first region:** 3–5 plates with one or two boundaries crossing the
    island, or more, smaller plates?
+   **Not answered (2026-11-11):** R1 uses the proposal's default, 3–5 plates, as a range in `plates.json`
+   (`count`), with `spacing` and `reach` for their size.
 2. **Latitude bands:** which to offer at first (e.g. subtropical, temperate, subarctic), and should the
    seed pick any band, or should a world creator pick one (seed decides the rest)?
+   **Half answered (owner, 2026-11-11):** the seed picks the band. Which bands to offer is open.
 3. **The disc's coast:** should plates decide where land and sea are (oceanic plate = sea), keeping only
    a sea margin at the disc's edge, or keep today's central island and let plates shape it?
+   **Answered (owner, 2026-11-11):** plates decide land and sea (oceanic plate = sea, continental = land);
+   only a sea margin is kept at the disc's edge (`plates.json` `seaMargin`).
 4. **Face B:** its own plates from its own seed (a different region), or the same plates mirrored
    through the midplane?
+   **Answered (owner, 2026-11-11):** its own plates from its own seed (the face seed): a different region.
 5. **New rocks:** add andesite, schist (or gneiss) and a real limestone look as blocks now, or show them
    with today's blocks (stone, sand, dirt) until the art pass?
+   **Open:** still with the owner (needed by R5).
 6. **Volcanoes in Realistic:** dormant cones only at first, or lava vents by rule (VOLCANOES.md)?
 7. **Determinism of tuning:** while Realistic is a test world, may its seeds' terrain change between
    releases (hashes updated with a note), as the starter's does?
+   **Answered (owner, 2026-11-11):** yes: while Realistic is a test world its seeds' terrain may change
+   between releases, with a note (and its hashes updated). The seed picks the latitude band (q2's second
+   half); which bands to offer is still open.
 8. **Debug view home:** Chisel's overlays (proposed), or also the in-game big map?
