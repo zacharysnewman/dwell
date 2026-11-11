@@ -258,9 +258,16 @@ impl Tectonics {
         let big_r = v.radius.max(1.0);
         // The distance from the summit to the foot circle along the ray through (x, z).
         let (ox, oz) = (ax - v.x, az - v.z);
-        let (ux, uz) = if r > 1e-9 { (dx / r, dz / r) } else { (1.0, 0.0) };
+        let (ux, uz) = if r > 1e-9 {
+            (dx / r, dz / r)
+        } else {
+            (1.0, 0.0)
+        };
         let od = ox * ux + oz * uz;
-        let foot = -od + (od * od - (ox * ox + oz * oz) + big_r * big_r).max(0.0).sqrt();
+        let foot = -od
+            + (od * od - (ox * ox + oz * oz) + big_r * big_r)
+                .max(0.0)
+                .sqrt();
         let foot = foot.max(1.0);
         let u = r / foot;
         let mut h = 0.0f64;
@@ -282,7 +289,10 @@ impl Tectonics {
                     + 0.5 * self.ridge_warp * (5.0 * th + 0.4).sin();
                 // |sin| has its cusps at the ridges' crests (sharp cleavers) and round floors
                 // between (glacier-cut valleys); each valley's depth varies round the cone.
-                let valley = (0.5 * f64::from(self.ridge_count) * w).sin().abs().powf(0.6);
+                let valley = (0.5 * f64::from(self.ridge_count) * w)
+                    .sin()
+                    .abs()
+                    .powf(0.6);
                 let deep = 0.7 + 0.3 * (2.0 * th + 0.9).sin();
                 let s = (u / 0.2).clamp(0.0, 1.0);
                 let env = s * s * (3.0 - 2.0 * s) * ((1.0 - u) / 0.8).min(1.0);

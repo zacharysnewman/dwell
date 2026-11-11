@@ -737,9 +737,10 @@ impl BiomeSet {
         }
     }
 
-    /// The snow line's cover palette at (x, z) on ground `elevation` m high and `slope` steep
-    /// (rise per run), given °C from the biome map's temperature: Some where colder than the line
-    /// and no steeper than its slope (ridges stay bare rock); None when the line is off.
+    /// The snow line at (x, z) on ground `elevation` m high and `slope` steep (rise per run),
+    /// given °C from the biome map's temperature: None when the line is off or the ground warmer
+    /// than it; else Some(the cover's palette) on ground no steeper than its slope, Some(None) on
+    /// a steeper face (bare rock: ridges poke through the snow).
     pub fn snow_cover(
         &self,
         x: i64,
@@ -747,10 +748,10 @@ impl BiomeSet {
         elevation: f64,
         slope: f64,
         celsius: impl Fn(f64) -> f64,
-    ) -> Option<u16> {
+    ) -> Option<Option<u16>> {
         let (palette, below_c, max_slope) = self.snow?;
-        (slope <= max_slope && celsius(self.temperature(x, z, elevation)) < below_c)
-            .then_some(palette)
+        (celsius(self.temperature(x, z, elevation)) < below_c)
+            .then_some((slope <= max_slope).then_some(palette))
     }
 
     /// The geography at (x, z) over the world height field's `elevation` m (None with one biome:
@@ -1909,6 +1910,19 @@ impl TerrainGenerator {
         }
         let mut palette = self.biomes.first[usize::from(mix.chosen)] + level_band as u16;
         let mut band = band;
+        // The snow line from temperature (0.52.40, opt-in by the world): snow on cold, gentle
+        // ground over the band's and the rock's blocks; cold steep faces bare rock.
+        let snow = if band == Band::Shore {
+            None
+        } else {
+            self.biomes
+                .snow_cover(i64::from(x), i64::from(z), h, slope, |t| {
+                    self.vegetation.celsius(t)
+                })
+        };
+        if snow == Some(None) {
+            band = Band::Rock;
+        }
         // Where the rock shapes the ground, its blocks show: a wall its face, talus its scree, a
         // tread its cap, a massive rock's steep faces its face.
         if let Some((r, part)) = rock
@@ -1924,13 +1938,7 @@ impl TerrainGenerator {
                 Part::Plain => {}
             }
         }
-        // The snow line from temperature (0.52.40, opt-in by the world): snow on cold, gentle
-        // ground over the band's and the rock's blocks; steep faces stay bare rock.
-        if band != Band::Shore
-            && let Some(p) = self.biomes.snow_cover(i64::from(x), i64::from(z), h, slope, |t| {
-                self.vegetation.celsius(t)
-            })
-        {
+        if let Some(Some(p)) = snow {
             (palette, band) = (p, Band::Ground);
         }
         let mut shore = FAR_WATER;
