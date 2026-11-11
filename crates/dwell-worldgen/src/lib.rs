@@ -65,12 +65,14 @@ pub fn ground_density_for(version: u32, world_seed: u64) -> Option<GroundDensity
     if version != dwell_world::GENERATOR_TERRAIN {
         return None;
     }
-    let any = [dwell_world::Face::A, dwell_world::Face::B].into_iter().any(|f| {
-        match &worldmap::cache::for_seed(bifacial::face_seed(world_seed, f)).worldgen {
-            Some(w) => w.edit.biomes.iter().any(|b| b.ground.is_some()),
-            None => terrain::BIOMES.iter().any(|b| b.ground.is_some()),
-        }
-    });
+    let any = [dwell_world::Face::A, dwell_world::Face::B]
+        .into_iter()
+        .any(
+            |f| match &worldmap::cache::for_seed(bifacial::face_seed(world_seed, f)).worldgen {
+                Some(w) => w.edit.biomes.iter().any(|b| b.ground.is_some()),
+                None => terrain::BIOMES.iter().any(|b| b.ground.is_some()),
+            },
+        );
     if !any {
         return None;
     }

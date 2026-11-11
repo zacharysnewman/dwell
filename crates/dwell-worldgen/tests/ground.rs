@@ -77,7 +77,10 @@ dwell_world::both_faces!(
                 }
             }
         }
-        assert!(fixture_seen > 0 && default_seen > 0, "{fixture_seen} {default_seen}");
+        assert!(
+            fixture_seen > 0 && default_seen > 0,
+            "{fixture_seen} {default_seen}"
+        );
     }
 );
 
@@ -92,7 +95,10 @@ fn a_bad_ground_entry_fails_with_a_message() {
     let mut v = base.clone();
     v["ground"] = json!({ "dwell:ground_rock": 4 });
     let e = biome_from_json(&v).unwrap_err();
-    assert!(e.contains("ground.dwell:ground_rock must be in [0, 3]"), "{e}");
+    assert!(
+        e.contains("ground.dwell:ground_rock must be in [0, 3]"),
+        "{e}"
+    );
     let mut v = base;
     v["ground"] = json!([1]);
     assert!(biome_from_json(&v).unwrap_err().contains("ground must map"));
@@ -117,4 +123,13 @@ fn the_presets_pick_their_ground_items() {
     }
     // A preset without `ground` keeps every kind at 1.
     assert_eq!(ground_density_of(&p("temperate_meadow"), stick), 1.0);
+}
+
+#[test]
+fn the_default_world_builds_no_ground_densities() {
+    // both-faces: asks both faces' worldgen at once.
+    // The server asks this at its first ground item: none for the default world (nothing built,
+    // the scatter as before), none for the flat world.
+    assert!(dwell_worldgen::ground_density_for(GENERATOR_TERRAIN, 7).is_none());
+    assert!(dwell_worldgen::ground_density_for(0, 7).is_none());
 }

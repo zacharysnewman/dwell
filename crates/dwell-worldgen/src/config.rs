@@ -187,10 +187,11 @@ fn ground(v: &Value) -> Result<Option<&'static [(&'static str, f64)]>, String> {
         .ok_or("ground must map ground item kinds to densities")?;
     let mut out = Vec::new();
     // In the kinds' order, as the generated table has them.
-    if let Some(k) = g
-        .keys()
-        .find(|k| !dwell_world::ground::KINDS.iter().any(|g| g.name == k.as_str()))
-    {
+    if let Some(k) = g.keys().find(|k| {
+        !dwell_world::ground::KINDS
+            .iter()
+            .any(|g| g.name == k.as_str())
+    }) {
         return Err(format!("ground: {k:?} is not a kind of ground.json"));
     }
     for k in dwell_world::ground::KINDS.iter() {

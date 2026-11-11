@@ -579,7 +579,13 @@ dwell_world::both_faces!(
             std::sync::Arc::new(move |_| GroundDensity {
                 corners: KINDS
                     .iter()
-                    .map(|k| [if k.name == "dwell:ground_rock" { rock } else { 1.0 }; 4])
+                    .map(|k| {
+                        [if k.name == "dwell:ground_rock" {
+                            rock
+                        } else {
+                            1.0
+                        }; 4]
+                    })
                     .collect(),
             })
         };

@@ -420,7 +420,7 @@ pub(super) fn push_polygon(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dwell_world::{FLAT_TOP_Y, FaceFrame, M};
+    use dwell_world::{FLAT_TOP_Y, M};
 
     dwell_world::both_faces!(
         /// The client's mesh job and the server scatter alike in a world of two biomes (ADR 0074
@@ -494,7 +494,10 @@ mod tests {
             }
             assert!(!mesh.is_empty());
             assert_eq!(mesh, server);
-            assert_ne!(mesh, scatter(&padded, origin, &job(GroundDensity::default())));
+            assert_ne!(
+                mesh,
+                scatter(&padded, origin, &job(GroundDensity::default()))
+            );
         }
     );
 

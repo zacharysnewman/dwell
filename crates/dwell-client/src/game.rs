@@ -4309,7 +4309,9 @@ impl<S: Scene> Game<S> {
     /// Kind `kind`'s ground density in world cell `cell` (1 where its chunk's mesh had none).
     fn ground_density_at(&self, kind: usize, cell: [i32; 3]) -> f64 {
         let c = cell.map(|v| v.div_euclid(dwell_world::CHUNK_SIZE));
-        self.ground_density.get(&c).map_or(1.0, |d| d.at(kind, cell))
+        self.ground_density
+            .get(&c)
+            .map_or(1.0, |d| d.at(kind, cell))
     }
 
     fn ground_under_crosshair(

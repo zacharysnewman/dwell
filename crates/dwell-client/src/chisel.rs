@@ -172,10 +172,8 @@ fn placements_rgb(g: &TerrainGenerator, per_planter: &[f64], x: i64, z: i64) -> 
             .filter(|r| r.kind == k)
             .map(|r| r.density)
             .sum();
-        let per_ha = rules
-            * 10_000.0
-            * GROUND_PASS_SHARE
-            * f64::from(g.ground_density_at(kind.name, x, z));
+        let per_ha =
+            rules * 10_000.0 * GROUND_PASS_SHARE * f64::from(g.ground_density_at(kind.name, x, z));
         parts.push((per_ha, kind.color.map(|c| f64::from(c) / 255.0)));
     }
     let total: f64 = parts.iter().map(|(w, _)| w).sum();
@@ -768,14 +766,20 @@ mod tests {
         d["placements"] = serde_json::json!(["boulders"]);
         let boulders = tile(d.clone());
         // Trees lean green; boulders grey (red near green).
-        assert!(pines[1] - pines[0] > boulders[1] - boulders[0], "{pines:?} {boulders:?}");
+        assert!(
+            pines[1] - pines[0] > boulders[1] - boulders[0],
+            "{pines:?} {boulders:?}"
+        );
         // The ground items count by the biome's `ground`: none, then rocks ×3.
         d["placements"] = serde_json::json!([]);
         let bare = tile(d.clone());
         d["ground"] = serde_json::json!({ "dwell:ground_rock": 3 });
         let rocks = tile(d);
         let pale = bytes([0.93, 0.88, 0.74]).map(f64::from);
-        assert!((0..3).all(|i| (bare[i] - pale[i]).abs() < 1.0), "pale with nothing: {bare:?}");
+        assert!(
+            (0..3).all(|i| (bare[i] - pale[i]).abs() < 1.0),
+            "pale with nothing: {bare:?}"
+        );
         assert!(rocks[0] < bare[0] - 5.0, "{rocks:?} {bare:?}");
     }
 
