@@ -22,6 +22,7 @@ pub const DATA: LavaData = LavaData {
             edge_cooling: 1.5,
             thin_depth_m: 0.6,
             tube_speed_ms: 0.002,
+            breakout_depth_m: 3.0,
             light: 13,
             damage_per_second: 40.0,
             burn_seconds: 3.0,

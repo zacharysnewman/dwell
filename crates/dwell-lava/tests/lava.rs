@@ -172,7 +172,9 @@ both_faces!(
             .columns()
             .map(|i| field.ground[i] - bed[i])
             .fold(0.0, f32::max);
-        assert!(land >= 1.0, "new land: {land} m");
+        // Half a metre and more (it was 1 m before ponds broke out through their crust dams,
+        // breakoutDepthM: the rock no longer piles behind them).
+        assert!(land >= 0.5, "new land: {land} m");
     }
 );
 

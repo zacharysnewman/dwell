@@ -32,6 +32,7 @@ export const FLUID_RANGES = {
   edgeCooling: [0, 20, false],
   thinDepthM: [0, 4, false],
   tubeSpeedMs: [0.0001, 1000, false],
+  breakoutDepthM: [0, 100, false],
   light: [0, 15, true],
   damagePerSecond: [0, 1000, false],
   burnSeconds: [0, 60, false],

@@ -1,7 +1,7 @@
 //! A field's saved record: additive and optional (the world's `lava` table; a build without lava
 //! never reads it). Version 2 (V2, tiles): the fluid's name, the origin, the time owed, whether it
 //! grows, then each tile (its x, z, and each of its `TILE × TILE` columns' bed, depth, heat, water's
-//! surface and flags), then the vents. Version 1 (V1's fixed rectangle: its size, each column's bed,
+//! surface, crust and flags), then the vents. Version 1 (V1's fixed rectangle: its size, each column's bed,
 //! depth, heat and water flag, the vents) still reads, as a fixed field. A record of another
 //! version, an unknown fluid or a damaged one reads as `None` (the field is left as generated).
 
@@ -30,6 +30,7 @@ pub fn record_of(field: &Field) -> Vec<u8> {
             out.extend_from_slice(&field.depth[i].to_le_bytes());
             out.extend_from_slice(&field.heat[i].to_le_bytes());
             out.extend_from_slice(&field.water_top[i].to_le_bytes());
+            out.extend_from_slice(&field.crust[i].to_le_bytes());
             out.push(u8::from(field.water[i]) | (u8::from(field.open[i]) << 1));
         }
     }
@@ -173,11 +174,12 @@ fn field_v2(mut r: Reader<'_>, rules: &LavaData) -> Option<Field> {
                 r.f32()?.clamp(0.0, 1.0),
                 r.f32()?,
             );
+            let crust = r.f32()?.max(0.0);
             let flags = r.u8()?;
             if flags > 3 {
                 return None;
             }
-            cols.push((g, d, h, top, flags & 1 != 0, flags & 2 != 0));
+            cols.push((g, d, h, top, crust, flags & 1 != 0, flags & 2 != 0));
         }
         f.load_tile(t, &cols);
     }

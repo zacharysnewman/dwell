@@ -30,6 +30,9 @@ pub struct HotFluid {
     /// Moving lava keeps its heat under its crust (a tube): its cooling is divided by
     /// `1 + speed / tube_speed_ms` (speed m/s), so a running river stays molten far from its vent.
     pub tube_speed_ms: f32,
+    /// A pond this deep (m) breaks out through the crust dam beside it (the field's own rock,
+    /// melted again); 0: never.
+    pub breakout_depth_m: f32,
     /// The light its block gives (0–15).
     pub light: u8,
     /// Health a second to a player standing in it.

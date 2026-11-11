@@ -118,13 +118,16 @@ pub enum LavaEvent {
     },
     /// Lava met water in a column: `water_m` of the water's depth there becomes steam.
     Steam { x: i32, z: i32, water_m: f32 },
+    /// A pond broke out through its crust dam: the face-local rows `rows` of the column's rock
+    /// are lava again (the world clears that rock, then writes the lava).
+    Melt { x: i32, z: i32, rows: Range<i32> },
 }
 
 impl LavaEvent {
     /// A rock event's world cells on face `f`, for the field at face-local `origin`.
     pub fn cells(&self, f: FaceFrame, origin: [i32; 2]) -> Vec<[i32; 3]> {
         match self {
-            Self::Rock { x, z, rows, .. } => rows
+            Self::Rock { x, z, rows, .. } | Self::Melt { x, z, rows } => rows
                 .clone()
                 .map(|r| f.cell([origin[0] + *x, r, origin[1] + *z]))
                 .collect(),
@@ -132,6 +135,9 @@ impl LavaEvent {
         }
     }
 }
+
+/// A saved column: bed, depth, heat, water's surface, crust, water and open flags.
+pub(crate) type SavedColumn = (f32, f32, f32, f32, f32, bool, bool);
 
 /// A per-column vector, moved and grown a tile at a time.
 trait Cols {
@@ -171,6 +177,9 @@ pub struct Field {
     /// The water's surface over a water column (face-local m; [`DRY`] when unknown): quenched rock
     /// raised above it makes the column land.
     pub water_top: Vec<f32>,
+    /// The rock this field's lava laid on each column and could melt again (m; the fluid's `rock`,
+    /// not the quench's): a crust dam a pond breaks out through (`breakoutDepthM`).
+    pub crust: Vec<f32>,
     /// Columns that are part of the field (a closed one is a wall: no ground, or past a fixed
     /// field's edge).
     pub open: Vec<bool>,
@@ -231,6 +240,7 @@ impl Field {
             heat: Vec::new(),
             water: Vec::new(),
             water_top: Vec::new(),
+            crust: Vec::new(),
             open: Vec::new(),
             written: Vec::new(),
             vents: Vec::new(),
@@ -288,13 +298,14 @@ impl Field {
         Self::empty(rules, fluid, true)
     }
 
-    fn per_column(&mut self) -> [&mut dyn Cols; 14] {
+    fn per_column(&mut self) -> [&mut dyn Cols; 15] {
         [
             &mut self.ground,
             &mut self.depth,
             &mut self.heat,
             &mut self.water,
             &mut self.water_top,
+            &mut self.crust,
             &mut self.open,
             &mut self.written,
             &mut self.qx,
@@ -395,19 +406,16 @@ impl Field {
 
     /// A saved tile (its columns' bed, depth, heat, water's surface, water and open flags), for
     /// the save's reader. Returns its slot.
-    pub(crate) fn load_tile(
-        &mut self,
-        t: [i32; 2],
-        cols: &[(f32, f32, f32, f32, bool, bool)],
-    ) -> usize {
+    pub(crate) fn load_tile(&mut self, t: [i32; 2], cols: &[SavedColumn]) -> usize {
         let k = self.insert_tile(t, &mut |_, _, _| None);
         let (mut sum, mut n) = (0.0f64, 0usize);
-        for (r, &(g, d, h, top, wet, open)) in cols.iter().enumerate().take(TN) {
+        for (r, &(g, d, h, top, crust, wet, open)) in cols.iter().enumerate().take(TN) {
             let i = k * TN + r;
             self.ground[i] = g;
             self.depth[i] = d;
             self.heat[i] = h;
             self.water_top[i] = top;
+            self.crust[i] = crust;
             self.water[i] = wet;
             self.open[i] = open;
             self.written[i] = self.lava_rows(i);
@@ -736,6 +744,9 @@ impl Field {
         self.depth[i] = 0.0;
         self.heat[i] = 0.0;
         self.rocked += f64::from(d);
+        if rock == self.fluid.rock {
+            self.crust[i] += d;
+        }
         let rows = row_at(from)..row_at(self.ground[i]);
         if rows.is_empty() {
             return false;
@@ -891,6 +902,7 @@ impl Field {
                 // A film too thin to hold: it cools on the bed.
                 self.ground[i] += d.max(0.0);
                 self.rocked += f64::from(d.max(0.0));
+                self.crust[i] += d.max(0.0);
                 self.depth[i] = 0.0;
                 self.heat[i] = 0.0;
             } else {
@@ -943,6 +955,7 @@ impl Field {
                 self.solidify(i, fl.rock);
             }
         }
+        self.break_out(&visit);
         for &i in &outside {
             self.molten[i / TN] |= self.depth[i] > 0.0;
             self.touched[i / TN] = true;
@@ -953,6 +966,45 @@ impl Field {
         }
         self.outside = outside;
         self.visit = visit;
+    }
+
+    /// A pond breaks its crust dam (`breakoutDepthM`, 0: never): molten lava at least that deep
+    /// beside a dry column of this field's own crust standing over its bed melts that crust down to
+    /// its bed again, at the pond's heat, so the lava runs on through the gap instead of freezing
+    /// its overflow into an ever higher wall. Volume is kept (the crust's rock becomes its lava).
+    fn break_out(&mut self, visit: &[usize]) {
+        let need = self.fluid.breakout_depth_m;
+        if need <= 0.0 {
+            return;
+        }
+        for &i in visit {
+            if self.depth[i] < need || self.heat[i] <= 0.0 {
+                continue;
+            }
+            for d in 0..4 {
+                let Some(j) = self.link(i, d) else {
+                    continue;
+                };
+                let rise = self.ground[j] - self.ground[i];
+                if self.depth[j] > 0.0 || self.crust[j] <= 0.0 || rise <= 0.0 {
+                    continue;
+                }
+                let melt = self.crust[j].min(rise);
+                let top = self.ground[j];
+                self.ground[j] -= melt;
+                self.crust[j] -= melt;
+                self.depth[j] = melt;
+                self.heat[j] = self.heat[i];
+                self.rocked -= f64::from(melt);
+                self.molten[j / TN] = true;
+                self.touched[j / TN] = true;
+                let rows = row_at(self.ground[j])..row_at(top);
+                if !rows.is_empty() {
+                    let [x, z] = self.col(j);
+                    self.events.push(LavaEvent::Melt { x, z, rows });
+                }
+            }
+        }
     }
 
     /// A lake vent keeps its lake molten (it convects): every molten column joined to the vent

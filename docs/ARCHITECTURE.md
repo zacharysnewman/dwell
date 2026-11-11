@@ -3492,6 +3492,10 @@ surface, open or a wall), keyed by tile, with its vents and its schedule (V2, VO
   joins its bed as the fluid's `rock` (`dwell:basalt`), and the rows whose centres it covers are a
   `LavaEvent::Rock`: a river crusts behind its front and builds land. A lake vent keeps the molten
   columns joined to it below its level hot (a lake convects); what overflows the rim cools.
+- **Breakouts (V2):** a column remembers the rock its own lava laid (`crust`); molten lava
+  `breakoutDepthM` deep beside a dry column of it standing over its bed melts it down to the bed again
+  (`LavaEvent::Melt`, cleared to air by the server before the lava is written), so a pond behind a
+  dam of its own frozen overflow runs on.
 - **Quench:** lava that runs into a water column turns at once to `quench.rock` (`dwell:obsidian`),
   raising the sea floor, with a `LavaEvent::Steam` (one per quenched row) taking `steamWaterM` of that
   water; once the rock stands above the water's surface the column is dry land (V2: a river builds
@@ -3536,7 +3540,8 @@ radius, offset from the summit; checked by `biomes.mjs` `checkLavaVents`, read b
 or first loaded with no lava (`place_world_vents`, at the cone's summit as generated). The starter world
 lists a lake vent on its youngest hotspot island's summit and, on face B only (a vent's optional
 `faces`: each face generates its own cone), a river vent on its flank 1.3 km from the sea
-(VOLCANOES.md §6.2, §6.4; the river reaching it on the generated terrain is open). **Edits:** every change through the
+(VOLCANOES.md §6.2, §6.4; the river reaching it on the generated terrain is open: it spreads into a
+sheet ~630 m down). **Edits:** every change through the
 edit path but the lava's own (`TickChanges::lava`) marks its column in a field over it (`Lava::touch`);
 the field reads that column's bed (up through blocks set on it, down through cells dug out) and water
 again at its next lava tick, so a dug channel takes the lava.

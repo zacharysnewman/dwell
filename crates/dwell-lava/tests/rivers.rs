@@ -252,7 +252,8 @@ both_faces!(
             .unwrap();
         assert!(reach(&field) < edge);
         assert!(events.iter().all(|e| match e {
-            LavaEvent::Rock { x, z, .. } => field.slot_any(*x, *z).is_some() || *x < edge,
+            LavaEvent::Rock { x, z, .. } | LavaEvent::Melt { x, z, .. } =>
+                field.slot_any(*x, *z).is_some() || *x < edge,
             LavaEvent::Steam { .. } => true,
         }));
         assert_eq!(field.check_links(), Ok(()));
@@ -371,3 +372,74 @@ fn a_long_rivers_tick_stays_under_a_budget(f: FaceFrame, run: &Run) {
         assert!(worst < Duration::from_millis(20), "a tick took {worst:?}");
     }
 }
+
+/// A pond 4 m deep held by a 4.5 m crust dam of its own rock, on flat ground at 0 with a dry column
+/// past the dam: (field, pond, dam, past).
+fn dammed(rules: &LavaData) -> (Field, usize, usize, usize) {
+    let mut f = Field::new(rules, "dwell:lava", 3, 1).unwrap();
+    let (p, d, q) = (f.at(0, 0), f.at(1, 0), f.at(2, 0));
+    f.depth[p] = 4.0;
+    f.heat[p] = 1.0;
+    f.ground[d] = 4.5;
+    f.crust[d] = 4.5;
+    f.settle();
+    (f, p, d, q)
+}
+
+both_faces!(
+    // The physical way out of a self-built dam (`breakoutDepthM`): a pond that deep melts the
+    // crust holding it back, down to the bed, and runs on through the gap; volume is kept. Without
+    // it (0), the dam holds.
+    fn a_pond_breaks_out_through_its_crust_dam(f: FaceFrame) {
+        let lava = dwell_lava::DATA.fluid("dwell:lava").unwrap();
+        assert!(lava.breakout_depth_m > 0.0 && lava.breakout_depth_m <= 4.0);
+        let (mut field, _, d, q) = dammed(&dwell_lava::DATA);
+        let before = field.stored();
+        field.step(0.01);
+        let melt: Vec<_> = field
+            .take_events()
+            .into_iter()
+            .filter(|e| matches!(e, LavaEvent::Melt { .. }))
+            .collect();
+        assert_eq!(melt.len(), 1, "one breakout");
+        let LavaEvent::Melt { x, z, rows } = &melt[0] else {
+            unreachable!()
+        };
+        assert_eq!(
+            (*x, *z, rows.clone()),
+            (1, 0, 0..9),
+            "the dam's nine ½ m rows"
+        );
+        let back: Vec<[i32; 3]> = melt[0]
+            .cells(f, field.origin)
+            .iter()
+            .map(|&c| f.cell(c))
+            .collect();
+        assert_eq!(back, (0..9).map(|r| [1, r, 0]).collect::<Vec<_>>());
+        assert_eq!((field.ground[d], field.crust[d]), (0.0, 0.0));
+        assert!(
+            (field.stored() - before - 4.5).abs() < 1e-3,
+            "the crust's rock is lava again"
+        );
+        field.run(20.0);
+        assert!(
+            field.depth[q] > 0.0 || field.ground[q] > 0.0,
+            "and the lava ran on past it"
+        );
+        // Off: the dam holds.
+        let mut off = *lava;
+        off.breakout_depth_m = 0.0;
+        let rules = LavaData {
+            fluids: std::slice::from_ref(Box::leak(Box::new(off))),
+            ..dwell_lava::DATA
+        };
+        let (mut held, _, d, q) = dammed(&rules);
+        held.run(20.0);
+        assert_eq!(held.ground[d], 4.5, "the dam stands");
+        assert_eq!(
+            (held.depth[q], held.ground[q]),
+            (0.0, 0.0),
+            "nothing past it"
+        );
+    }
+);

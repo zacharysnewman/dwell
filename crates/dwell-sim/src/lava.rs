@@ -7,7 +7,8 @@
 //!   name, `dwell:lava`), written only into open cells (air, or a replaceable non-solid block) and
 //!   cleared to air where the lava has gone.
 //! - **Rock.** A `Rock` event writes its rows as the rock (`dwell:basalt`, or `dwell:obsidian` at
-//!   the quench edge): new land.
+//!   the quench edge): new land. A `Melt` event (a pond breaking its crust dam) clears its rows of
+//!   that rock again, and the lava is written there.
 //! - **Steam.** A `Steam` event takes `steamWaterM` off the top of that column's water (cells to
 //!   air) and is kept as a [`Steam`] for the clients to show later.
 //!
@@ -359,6 +360,15 @@ impl Placed {
                     let m = f.state(dwell_blocks::require(rock));
                     for c in e.cells(f, origin) {
                         view.set(c, m);
+                    }
+                }
+                LavaEvent::Melt { .. } => {
+                    // The crust melted again: its rock (and only its rock) cleared for the lava.
+                    let rock = f.state(self.field.fluid.rock_state());
+                    for c in e.cells(f, origin) {
+                        if view.get(c) == rock {
+                            view.set(c, air);
+                        }
                     }
                 }
                 LavaEvent::Steam { x, z, water_m } => {

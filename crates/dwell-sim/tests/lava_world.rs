@@ -212,14 +212,13 @@ fn the_starter_river_vent_stands_on_face_bs_flank_over_a_kilometre_from_the_sea(
     );
 }
 
-// The long run (`cargo test -p dwell-sim --test lava_world -- --ignored`, about two minutes;
+// The long run (`cargo test -p dwell-sim --test lava_world -- --ignored`, about four minutes;
 // `DWELL_LAVA_TRACE=1` prints its progress): the starter's river vent, its field growing over the
 // terrain (the bed the terrain generates, the sea over the ground below sea level), fast-forwarded
 // far from any player until it builds land in the sea within twenty world days (800 s each at lava
-// speed 1). NOT PASSING YET (VOLCANOES.md §6.4, open): on the generated terrain the build's lava
-// reaches ~480 m in 6 days, then its front crusts, the river dams itself and ponds up to 16 m deep
-// behind walls its overflow freezes into; the fixture flank's smooth slope doesn't show it. The
-// check for the tuning that fixes it.
+// speed 1). NOT PASSING YET (VOLCANOES.md §6.4, open): with breakouts the river no longer dams
+// itself, but it spreads into a sheet and reaches ~630 m of its 1.3 km in 18 days. The check for
+// the tuning (or channelling) that closes it; too long for CI.
 #[test]
 #[ignore = "a long fast-forward (minutes); run by hand"]
 fn the_starter_river_reaches_the_sea_and_builds_land() {

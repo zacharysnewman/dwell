@@ -214,14 +214,23 @@ beside V1's lakes. §6.2's note stood: a 25-column field can't reach a coast 2.6
   almost every bearing (a pour walk, filling each hollow until it spills, never reaches the sea), so the
   river is face B's alone (`faces: ["b"]`; the lake stays on both). Its way down (the same pour) meets the
   sea 1.3 km off with no hollow deeper than 2 m (tested).
+- **Breakouts (`breakoutDepthM`, per fluid; `dwell:lava` 3 m).** Each column remembers the rock its own
+  lava laid (`Field::crust`, saved); molten lava at least that deep beside a dry column of that crust
+  standing over its bed melts it down to the bed again, at the pond's heat (volume kept, a
+  `LavaEvent::Melt` the server clears to air before writing the lava), so a river dammed by its own
+  frozen overflow runs on through the gap. At 1 m it melted the river's own levees (its channel runs
+  ~2 m deep) and the flow spread into a sheet; 3 m keeps the levees and breaks the dams.
 - **Open: the starter river does not reach the sea yet.** On the fixture flank (a smooth slope) the
-  build's lava runs 1.1 km to the sea in ~3 lava hours (14 world days) and builds land; on the generated
-  terrain it reaches ~480 m in 6 world days, then its front crusts, the river dams itself and ponds up to
-  16 m deep behind walls its overflow freezes into (films cool fastest, `thinDepthM / depth`). Capping a
-  film's cooling at the base rate didn't help. The ignored test
-  `the_starter_river_reaches_the_sea_and_builds_land` (`dwell-sim` `tests/lava_world.rs`, ~2 min) is the
-  check for the tuning that fixes it: candidates are a runnier `dwell:lava` (lower `viscosityM2s` with
-  `stepDepthM` kept), slower front cooling, or overflow breaking a crust dam. A question for the owner.
+  build's lava runs 1.1 km to the sea in ~3 lava hours (14 world days) and builds land. On the generated
+  terrain, without breakouts it reached ~480 m in 6 world days and then dammed itself, ponding 16 m deep
+  behind walls its overflow froze into. With breakouts (3 m) it no longer dams (the deepest pond stays
+  ~3 m) and reaches ~630 m in 18 world days (~740 m at 4 m³/s), but it slows as it spreads sideways into
+  a wide sheet (~300 tiles at 2 m³/s, ~540 at 4) instead of keeping one channel; at 1 m breakouts it
+  stalled at ~300 m as a sheet. What would close it: channelling (levees from the edges' cooling that a
+  breakout at the front doesn't melt, or a channel's banks held as data), or a runnier `dwell:lava`.
+  The ignored test `the_starter_river_reaches_the_sea_and_builds_land` (`dwell-sim` `tests/lava_world.rs`,
+  ~4 min, `DWELL_LAVA_TRACE=1` for progress) is the check; too long for CI either way. A question for
+  the owner (the lava's tuning, a higher rate, or channelling next).
 - **Tests** (`crates/dwell-lava/tests/rivers.rs`, both faces): on a fixture flank (a 0.3 slope 1.1 km to
   a shore, a fixture runny lava `test:runny` and vent `test:flank_river` by data alone) a river runs past
   1 km and reaches the sea within two lava hours, builds dry land past the shore out of the sea, its

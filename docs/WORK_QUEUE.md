@@ -116,8 +116,10 @@ Last updated: 2026-11-11 (0.52.68).
    flow (tiles added as lava reaches them, dropped when all rock, capped by `maxTiles`), cost by molten
    area, lava tubes (`tubeSpeedMs`), lava running into the sea and building land above it, save record
    version 2 (version 1 still loads), and a river vent on the starter island's flank on face B whose way
-   to the sea is 1.3 km (lavaVents `faces`); VOLCANOES.md §6.4. **Open:** on the generated terrain the
-   starter river dams itself ~480 m down (it reaches the sea on the fixture flank only; §6.4).
+   to the sea is 1.3 km (lavaVents `faces`), and breakouts through crust dams (`breakoutDepthM`);
+   VOLCANOES.md §6.4. **Open:** on the generated terrain the starter river no longer dams itself but
+   spreads into a sheet and reaches ~630 m in 18 world days (it reaches the sea on the fixture flank
+   only); channelling or the lava's tuning next (§6.4, the owner's call).
    **Next:** heat per cell; the water grid's columns as the fields' water; eruptions.
 9. ~~**Loading-time display bug.**~~ Done (0.52.71): the 10 s was the graphics' start (one long task on the
    main thread making the renderer's pipelines) begun in the same task that ended the game's load, so the
