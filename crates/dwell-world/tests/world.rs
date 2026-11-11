@@ -100,7 +100,7 @@ fn the_palette_is_the_registrys_placeable_states() {
             "dwell:ladder[facing=south,flooded=false]",
             "dwell:ladder[facing=west,flooded=false]",
             "dwell:sand[flooded=false]",
-            "dwell:log[axis=y]",
+            "dwell:log[axis=y,width=4]",
             "dwell:leaves[flooded=false]",
             "dwell:tall_grass",
             "dwell:torch",

@@ -262,6 +262,10 @@ pub fn open_faces(
     let mut out = state_faces(m, joined, size_m);
     out.retain(|f| match f.part {
         Part::Side(face) => {
+            // A narrow standing log's sides are inside its cell: no neighbour covers them.
+            if axis == 1 && section.width < 1.0 {
+                return true;
+            }
             let n = at(face_offset(face));
             joined & (1 << face) == 0 && !(covers(n) && section_of(n).is_none())
         }

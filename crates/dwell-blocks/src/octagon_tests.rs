@@ -327,4 +327,18 @@ fn a_narrow_log_is_a_centred_smaller_octagon_that_joins_nothing() {
     let side = world(vec![([1, 0, 0], half)]);
     assert_eq!(joined_mask(half, &side), 0);
     assert_eq!(joined_mask(full, &world(vec![([1, 0, 0], half)])), 0);
+    // Beside stone a narrow log keeps all its sides (they are inside its cell); a full one hides one.
+    let stone = state("dwell:stone").unwrap();
+    let beside = world(vec![([1, 0, 0], stone)]);
+    let sides = |m| count(&open_faces(m, &beside, &|n| n == stone, CELL), |p| matches!(p, Part::Side(_)));
+    assert_eq!(sides(half), 4);
+    assert_eq!(sides(full), 3);
+    // On a narrow log of its width the cap between them is hidden; on a full one only the full one's
+    // top shows (a ring round the narrow trunk).
+    let caps = |m, below| {
+        let w = world(vec![([0, -1, 0], below), ([0, 1, 0], AIR)]);
+        count(&open_faces(m, &w, &|_| false, CELL), |p| *p == Part::Cap(false))
+    };
+    assert_eq!(caps(half, half), 0);
+    assert_eq!(caps(half, full), 1, "the narrow log's foot cap is drawn on a wider log");
 }

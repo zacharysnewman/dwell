@@ -300,3 +300,38 @@ fn tour() {
         at(best.1, best.2)
     );
 }
+
+/// Times generating the chunks round the tour's tree spots (oaks, the mixed forest, palms): run
+/// before and after a change to the trees (`cargo test --release -p dwell-worldgen --test
+/// starter_world time_tree_spots -- --ignored --nocapture`).
+#[test]
+#[ignore = "a timing, printed"]
+fn time_tree_spots() {
+    // face-a-only: a timing of face A's chunks.
+    let (g, _) = generator(FaceFrame::A, 0);
+    for (label, x, z) in [
+        ("broadleaf", 13900, -7100),
+        ("mixed", -17700, -7300),
+        ("coast", 20500, 11900),
+    ] {
+        let t = std::time::Instant::now();
+        let (mut chunks, mut solid) = (0, 0usize);
+        for cz in -4..4 {
+            for cx in -4..4 {
+                let (wx, wz) = (x / CHUNK_SIZE + cx, z / CHUNK_SIZE + cz);
+                let h = f64::from(g.column_at(wx * CHUNK_SIZE, wz * CHUNK_SIZE).height);
+                let row = rows_for_m(h).div_euclid(CHUNK_SIZE);
+                for cy in row - 1..=row + 2 {
+                    let mut c = Chunk::default();
+                    g.generate(ChunkCoord::new(wx, cy, wz), &mut c);
+                    solid += c.voxels().iter().filter(|&&m| m != 0).count();
+                    chunks += 1;
+                }
+            }
+        }
+        println!(
+            "{label}: {chunks} chunks in {:.0} ms ({solid} solid voxels)",
+            t.elapsed().as_secs_f64() * 1000.0
+        );
+    }
+}

@@ -3,11 +3,11 @@
 pub static STRUCTURES: [StructureDef; 6] = [
     StructureDef {
         name: "dwell:pine_tree",
-        hash: 0x00791467b2635f04,
+        hash: 0xa9437aa6630f30bd,
         body: Body::Voxels {
             size: [5, 10, 5],
             anchor: [2, 0, 2],
-            palette: &[('.', None), ('L', Some("dwell:leaves[flooded=false]")), ('l', Some("dwell:log[axis=y]"))],
+            palette: &[('.', None), ('L', Some("dwell:leaves[flooded=false]")), ('l', Some("dwell:log[axis=y,width=4]"))],
             cells: "............l........................l..............L...LLL.LLlLL.LLL...L....L...LLL.LLlLL.LLL...L........LLL..LlL..LLL............LLL..LlL..LLL.............L...LlL...L..............L...LlL...L...................L........................L............",
         },
         variants: &[],
@@ -47,22 +47,22 @@ pub static STRUCTURES: [StructureDef; 6] = [
     },
     StructureDef {
         name: "dwell:proto_tree",
-        hash: 0xf623e32f032f5c19,
+        hash: 0xe1e11545e36e14fe,
         body: Body::Voxels {
             size: [5, 7, 5],
             anchor: [2, 0, 2],
-            palette: &[('.', None), ('l', Some("dwell:leaves[flooded=false]")), ('w', Some("dwell:log[axis=y]"))],
+            palette: &[('.', None), ('l', Some("dwell:leaves[flooded=false]")), ('w', Some("dwell:log[axis=y,width=4]"))],
             cells: "............w........................w........................w.............lll.lllllllwlllllll.lll..lll.lllllllwlllllll.lll.......lll..lwl..lll.............l...lll...l.......",
         },
         variants: &[Variant::Rotate(&[0, 90, 180, 270]), Variant::Mirror(&[Axis::X])],
     },
     StructureDef {
         name: "dwell:tall_pine_tree",
-        hash: 0xb62f948f38af0a9c,
+        hash: 0x3146f1e47e7a668d,
         body: Body::Voxels {
             size: [7, 18, 7],
             anchor: [3, 0, 3],
-            palette: &[('.', None), ('L', Some("dwell:leaves[flooded=false]")), ('l', Some("dwell:log[axis=y]"))],
+            palette: &[('.', None), ('L', Some("dwell:leaves[flooded=false]")), ('l', Some("dwell:log[axis=y,width=4]"))],
             cells: "........................l................................................l................................................l................................................l...........................L.....LLL...LLLLL.LLLlLLL.LLLLL...LLL.....L......L.....LLL...LLLLL.LLLlLLL.LLLLL...LLL.....L....................L.....LlL.....L..................................L.....LlL.....L...........................L.....LLL...LLlLL...LLL.....L....................L.....LLL...LLlLL...LLL.....L...........................L.....LlL.....L..................................L.....LlL.....L..................................L.....LlL.....L..................................L.....LlL.....L.........................................L................................................L................................................L................................................L........................",
         },
         variants: &[],
