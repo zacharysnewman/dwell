@@ -1182,7 +1182,27 @@ both data-driven:
   CPU's; WGSL `water_tier_molten`) gates the drift and heat, so the CPU adapter shows the still glowing
   tile (tested: `only_the_cpu_tier_draws_molten_surfaces_still`).
 - **Not built yet:** heat per cell (brighter where hotter or deeper: the field's heat is not in the chunk
-  cells), steam's hiss where water boils away (the server's `Steam` events are
-  sent since §6.3 as `Steam`, drawn as puffs; their hiss is not), the burning screen edge and sizzle, and lava as a translucent fluid surface (it stays opaque by
-  design: no transparency).
+  cells), and lava as a translucent fluid surface (it stays opaque by design: no transparency).
+
+### 17.1 The crust plates (round 3, 2026-11-11)
+
+Up close the tile (even over 3 blocks) read blocky and patchy, its cracks hatch strokes. On every tier
+but the CPU's the molten branch of `terrain_fs` now draws **crust plates in world metres**,
+continuous across blocks: a cellular (Voronoi) pattern, `molten_plates`, plates `MOLTEN_CELL` (1.7 m)
+across whose seams (the second-nearest centre's distance less the nearest's, under `MOLTEN_SEAM`) glow.
+A top face takes the world's x z, a side its along and y. The centres wander slowly and the plane is
+warped a little, so the seams bend and the crust flows. The plates' colour is the painted tile darkened
+(each plate a little apart), the seams the tile's hue lifted toward yellow-white; the glow (`emissive`)
+is a quarter on the crust and up to 1.6 × `molten_heat` on the seams. The CPU tier keeps the still
+painted tile. The pattern's constants are shader constants for now (a look file when it is tuned).
+
+### 17.2 Steam and burning (round 3)
+
+- **Steam's look** is data: `shared/fluids/lava.json` `steam` (colour, life, rise, size, opacity;
+  `lava.mjs` checks it and emits `DATA.steam`). Its puffs are smoke puffs of their own look
+  (`render/blasts.rs` `steam_look`, the smoke table's last entry). Each `Steam` message plays
+  `steam_hiss` (shared/sounds, procedural: no fitting sample in the pack) at its first cell.
+- **Burning:** a `Burn` damage hit shows a red-orange screen edge (`burnEdge`: colour, opacity,
+  seconds; the HUD's `#burn-edge`, `game.rs` `burn_edge_strength`) and plays `sizzle`.
+
 
