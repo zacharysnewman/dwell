@@ -313,15 +313,21 @@ fn column_top(
             if unsure(up) {
                 return None;
             }
-            if let Some(c) = colour_of(top) {
-                return Some(Top {
-                    colour: c,
-                    height: dwell_world::m_of_row(up + 1) as f32,
-                    water: false,
-                    depth: 0.0,
-                });
-            }
-            return None;
+            let c = colour_of(top)?;
+            // A sea deeper than `scanUpM` over the eye (the player at its bottom): its surface,
+            // shaded by its depth as from above.
+            let (colour, wet) = if dwell_blocks::info(top).liquid {
+                let (c, d) = water_shade(world, f, cx, cz, up, water_rows, c);
+                (c, Some(d))
+            } else {
+                (c, None)
+            };
+            return Some(Top {
+                colour,
+                height: dwell_world::m_of_row(up + 1) as f32,
+                water: wet.is_some(),
+                depth: wet.unwrap_or(0.0),
+            });
         }
         if m != M.air
             && let Some(c) = colour_of(m)
@@ -329,22 +335,12 @@ fn column_top(
             if unsure(row) {
                 return None;
             }
-            let info = dwell_blocks::info(m);
-            let mut c = c;
-            let mut wet = None;
-            if info.liquid {
-                // Darkened by the depth under it, to the deepest at `waterDepthM`.
-                let mut depth = 1;
-                while depth < water_rows {
-                    let [wx, wy, wz] = f.cell([cx, row - depth, cz]);
-                    if !dwell_blocks::info(world.get_voxel_if_loaded([wx, wy, wz])).liquid {
-                        break;
-                    }
-                    depth += 1;
-                }
-                c = scale_rgb(c, 1.0 - 0.55 * f64::from(depth) / f64::from(water_rows));
-                wet = Some((f64::from(depth) * dwell_world::CELL_H) as f32);
-            }
+            let (c, wet) = if dwell_blocks::info(m).liquid {
+                let (c, d) = water_shade(world, f, cx, cz, row, water_rows, c);
+                (c, Some(d))
+            } else {
+                (c, None)
+            };
             return Some(Top {
                 colour: c,
                 height: dwell_world::m_of_row(row + 1) as f32,
@@ -355,6 +351,37 @@ fn column_top(
         row -= 1;
     }
     None
+}
+
+/// A liquid top at `row` of column (`cx`, `cz`): its colour `c` shaded by the water under it as
+/// the generated map shades it (`LOD_MAP.water_shade`, in linear light, followed down as far as
+/// [`dwell_look::lod_map::LodMapTunables::water_colour_depth_m`]; the owner, 0.52.35: exploring
+/// the sea bottom painted it "very dark blue" under the scan's own ramp), and its depth (m) as far
+/// as `water_rows` (`heightShading.waterDepthM`, for the height colours).
+fn water_shade(
+    world: &VoxelWorld,
+    f: FaceFrame,
+    cx: i32,
+    cz: i32,
+    row: i32,
+    water_rows: i32,
+    c: u32,
+) -> (u32, f32) {
+    let look = dwell_look::lod_map::LOD_MAP;
+    let colour_rows = row_of_m(look.water_colour_depth_m()).max(water_rows);
+    let mut depth = 1;
+    while depth < colour_rows {
+        let [wx, wy, wz] = f.cell([cx, row - depth, cz]);
+        if !dwell_blocks::info(world.get_voxel_if_loaded([wx, wy, wz])).liquid {
+            break;
+        }
+        depth += 1;
+    }
+    let m = |rows: i32| f64::from(rows) * dwell_world::CELL_H;
+    (
+        dwell_look::lod_map::shade_srgb(c, look.water_shade(m(depth))),
+        m(depth.min(water_rows)) as f32,
+    )
 }
 
 /// The big map's closest levels from the loaded terrain (ADR 0068; owner, 2026-11-09: "big map

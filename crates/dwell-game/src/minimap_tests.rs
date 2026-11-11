@@ -929,3 +929,67 @@ dwell_world::both_faces!(
         assert!(!map.generated.has((face, 0, -1)));
     }
 );
+
+const SEA: u32 = 0x3a6ec8;
+
+/// [`colour_of`], water [`SEA`].
+fn colour_of_sea(m: StateId) -> Option<u32> {
+    if dwell_blocks::info(m).liquid {
+        Some(SEA)
+    } else {
+        colour_of(m)
+    }
+}
+
+fn near(a: u32, b: u32, tol: u32) -> bool {
+    [16, 8, 0]
+        .iter()
+        .all(|s| ((a >> s) & 0xff).abs_diff((b >> s) & 0xff) <= tol)
+}
+
+dwell_world::both_faces!(
+    fn an_explored_sea_column_reads_as_the_generated_sea(f: FaceFrame) {
+        // The owner (0.52.35): "When I explore at the sea bottom, the explored sections turn very
+        // dark blue". The scan darkened water by its own ramp (to 45% in sRGB over 8 m), and a sea
+        // deeper than `scanUpM` over the eye read as undarkened, unflagged water: both unlike the
+        // generated map's water (`LOD_MAP.water_shade`, linear light), which the scan now uses.
+        let t = MAP;
+        let water = dwell_blocks::parse_state("dwell:water").expect("water");
+        let rows = row_of_m(30.0);
+        let mut w = floor(f, 6);
+        for x in -6..=6 {
+            for z in -6..=6 {
+                for r in GROUND..GROUND + rows {
+                    let [x, y, z] = f.cell([x, r, z]);
+                    w.set_voxel(x, y, z, water);
+                }
+            }
+        }
+        let depth_m = m_of_row(GROUND + rows) - m_of_row(GROUND);
+        let generated =
+            dwell_look::lod_map::shade_srgb(SEA, dwell_look::lod_map::LOD_MAP.water_shade(depth_m));
+        for (what, eye) in [
+            ("from over the surface", m_of_row(GROUND + rows) + 1.6),
+            ("from the sea bottom", m_of_row(GROUND) + 1.6),
+        ] {
+            let grid = scan_tops(&w, f, [0.5, eye, 0.5], &t, &colour_of_sea, None, false);
+            let i = grid.index(2.5, 1.5).expect("in");
+            assert!(grid.water[i], "{what}: water");
+            assert!(
+                near(grid.colour[i], generated, 4),
+                "{what}: {:06x}, the generated map's {generated:06x}",
+                grid.colour[i]
+            );
+            // The big map's closest level reads the same column the same way.
+            let tile = scan_tile(&w, f, 0, 0, 4, 1, eye, &t, &colour_of_sea).expect("a tile");
+            let j = 4 + 2;
+            let c = (u32::from(tile[j * 4]) << 16)
+                | (u32::from(tile[j * 4 + 1]) << 8)
+                | u32::from(tile[j * 4 + 2]);
+            assert!(
+                near(c, generated, 4),
+                "{what}, the big map: {c:06x} vs {generated:06x}"
+            );
+        }
+    }
+);

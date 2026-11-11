@@ -646,7 +646,9 @@ seed: the shell's `RevealCache` asks for the view's tiles (`revealed.tileCells`�
 the view's centre first, at most `revealed.jobsInFlight` at once) with `requestReveal`, which
 `map_reveal.rs` runs as the LOD colour map's `Job::LodMap` raster in the generation workers (a texel an
 explored cell: its column's top block's LOD colour — the colour explored cells average — water darkened
-by depth, rivers from their polylines; with `heights`, each cell's height code after the colours,
+by depth (`LodMapTunables::water_shade`, `shared/look/lodmap.json`, in linear light; the minimap's scan
+and the explored cells shade water they read by the same ramp, so an explored sea reads as the
+generated one, 0.52.36), rivers from their polylines; with `heights`, each cell's height code after the colours,
 `raster_with_heights`); `takeReveal` returns finished tiles, which the shell takes for
 at most `revealed.budgetMs` a frame and draws as images under the explored cells (redrawn at most every
 `redrawMs`; beyond the world's edge transparent). The main thread
