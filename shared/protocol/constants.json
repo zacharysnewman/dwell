@@ -129,7 +129,9 @@
     "Vitals": 92,
     "GroundGone": 93,
     "Creatures": 94,
-    "CreaturesHello": 95
+    "CreaturesHello": 95,
+    "DamageHello": 96,
+    "Damage": 97
   },
   "rejectReasons": {
     "ProtocolVersion": 1,

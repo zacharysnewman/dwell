@@ -442,11 +442,19 @@ fn joins_streams_walks_and_breaks_a_block() {
     assert!(rig.scene.borrow().outline.is_some(), "and outlined");
     let [x, y, z] = target.cell;
     assert_ne!(rig.game.as_mut().unwrap().voxel(x, y, z), 0);
-    let now = rig.now + 1000.0;
+    let mut now = rig.now + 1000.0;
     assert!(
         rig.game.as_mut().unwrap().edit(EditAction::Break, now),
         "the edit is sent"
     );
+    // The ground takes several hits by hand (docs/BLOCK_DAMAGE.md): hit until it breaks.
+    for _ in 0..12 {
+        if rig.run_until(10, |r| r.game.as_mut().unwrap().voxel(x, y, z) == 0) {
+            break;
+        }
+        now += 200.0;
+        rig.game.as_mut().unwrap().edit(EditAction::Break, now);
+    }
     assert!(
         rig.run_until(60, |r| r.game.as_mut().unwrap().voxel(x, y, z) == 0),
         "the server's modification arrives and the block is gone"
@@ -1596,12 +1604,13 @@ fn a_refused_edit_rolls_back() {
 fn rapid_edits_and_a_refusal_reconcile_with_the_server() {
     use dwell_sim::server::EditPolicy;
     let mut rig = predicting_rig(8);
-    let stone = dwell_blocks::require("dwell:stone");
-    // The ½ m stone: one cell an edit (docs/ITEMS.md).
+    // Leaves: one cell an edit (docs/ITEMS.md) and one hit to break (no `damage`, so the break
+    // is predicted; stone takes a pickaxe, docs/BLOCK_DAMAGE.md).
+    let stone = dwell_blocks::require("dwell:leaves");
     let half = dwell_game::block_interaction::palette()
         .iter()
-        .position(|s| s.item == "dwell:stone")
-        .expect("a ½ m stone");
+        .position(|s| s.item == "dwell:leaves")
+        .expect("½ m leaves");
     rig.game.as_mut().unwrap().interaction.select(half as i64);
     let floor = target_at(&mut rig, 0.0, -40.0);
     let p = [floor[0], floor[1] + 1, floor[2]];
@@ -1774,6 +1783,8 @@ fn another_client_sees_your_body_walk_sprint_slide_and_jump_and_what_you_hold() 
             material: 0,
             rows: 1,
             down: false,
+
+            point: None,
         },
     ));
     assert!(rig.run_until(60, |r| {

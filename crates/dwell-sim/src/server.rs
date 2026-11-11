@@ -303,6 +303,9 @@ pub struct ServerConfig {
     /// A new world's game mode (ADR 0065, `shared/modes/modes.json`; a name not there is the
     /// default, creative). A saved world keeps its own; one saved before modes is creative.
     pub mode: String,
+    /// Every block breaks in one hit, as before block damage (docs/BLOCK_DAMAGE.md): a test
+    /// world's switch, for tests and e2e specs that break blocks with one click. Off: the data's.
+    pub one_hit_breaks: bool,
 }
 
 /// A new world's settings: this build's clock (`shared/look/daynight.json`), `water_speed` and the
@@ -362,6 +365,7 @@ impl Default for ServerConfig {
             water_speed: crate::water::FLOW.speed,
             water: crate::water::host::Placement::Inline,
             mode: dwell_protocol::modes::DEFAULT_MODE.into(),
+            one_hit_breaks: false,
         }
     }
 }
@@ -576,6 +580,8 @@ struct Session {
     drown_ticks: u32,
     /// Whether its client draws creatures (`CreaturesHello`, ADR 0073).
     creatures_hello: bool,
+    /// Whether its client draws block damage (`DamageHello`, docs/BLOCK_DAMAGE.md).
+    damage_hello: bool,
     /// The tool it holds (item name, the hold's plane), from `ChopAction::Held`; having sent one,
     /// it understands `HeldTools` (ADR 0067).
     held_tool: Option<(String, bool)>,
@@ -630,6 +636,7 @@ impl Session {
             vitals_hello: false,
             drown_ticks: 0,
             creatures_hello: false,
+            damage_hello: false,
             held_tool: None,
             primed: false,
             low_water: usize::MAX,
@@ -877,6 +884,10 @@ pub struct Server {
     /// The wood cells cut by axes (ADR 0067).
     cuts: dwell_protocol::chopping::Cuts,
     cuts_unread: bool,
+    /// The blocks hit short of breaking (docs/BLOCK_DAMAGE.md, ADR 0078), saved with the world.
+    damage: dwell_protocol::damage::Damage,
+    /// The saved damage is a newer build's: kept, not written over.
+    damage_unread: bool,
     /// The ground items gone (picked up or knocked loose; ADR 0071), saved with the world.
     ground: dwell_world::ground::GroundGone,
     /// The saved gone set is a newer build's: kept, not written over.
@@ -1009,6 +1020,8 @@ impl Server {
             creatures: Default::default(),
             cuts: Default::default(),
             cuts_unread: false,
+            damage: Default::default(),
+            damage_unread: false,
             ground: Default::default(),
             ground_unread: false,
             ground_generated: Default::default(),
@@ -1466,6 +1479,7 @@ impl Server {
             Message::Chop(a) => self.chop_action(id, a),
             Message::VitalsHello => s.vitals_hello = true,
             Message::CreaturesHello => self.creatures_hello(id),
+            Message::DamageHello => self.damage_hello(id),
             Message::ChunkResync(coords) => self.resync(id, &coords),
             Message::ChunkRequest(coords) => self.request_chunks(id, &coords),
             Message::LodRequest(sections) => {
@@ -2394,6 +2408,12 @@ impl Server {
         // Without unlimited blocks (ADR 0066): placing takes an item, breaking drops the block's.
         let uses_items = self.uses_items();
         let mut broken: Vec<([i32; 3], dwell_blocks::StateId)> = Vec::new();
+        // Hits short of breaking (cell, state, hits to break, this hit's number), for their drops;
+        // and the cells a last hit broke, with their hits (the destroy drops what is left).
+        let mut hits: Vec<([i32; 3], dwell_blocks::StateId, u32, u32)> = Vec::new();
+        let mut destroyed_after: HashMap<[i32; 3], u32> = HashMap::default();
+        // Cells a hit damaged this tick, for the clients that draw damage.
+        let mut damaged: Vec<[i32; 3]> = Vec::new();
         // Every broken cell and what it was, in any mode: ground items on them are knocked loose.
         let mut under_ground: Vec<([i32; 3], dwell_blocks::StateId)> = Vec::new();
         let ids: Vec<SessionId> = self.sessions.keys().copied().collect();
@@ -2458,8 +2478,57 @@ impl Server {
                         continue;
                     }
                 }
-                s.edit_credit -= 1.0;
-                s.stats.edits_applied += 1;
+                // Blocks take hits to break by the tool held (docs/BLOCK_DAMAGE.md, ADR 0078; the
+                // same in every mode): a hit short of the count is recorded and the block stays
+                // (the client's predicted break gives way, as to a refusal); none: it can't be
+                // broken so (stone by hand).
+                if edit.action == BlockEditAction::Break {
+                    let state = self.world.get_voxel_if_loaded(outcome.cell);
+                    let block = dwell_blocks::block_of(state).name;
+                    let held = held_break_item(s, uses_items);
+                    let need = if self.config.one_hit_breaks {
+                        Some(1)
+                    } else {
+                        dwell_protocol::damage::hits_to_break(block, held)
+                    };
+                    match need {
+                        None => {
+                            s.stats.edits_rejected += 1;
+                            s.edit_refused.push(seq);
+                            continue;
+                        }
+                        Some(n) if n > 1 => {
+                            let mark = dwell_protocol::damage::HitMark {
+                                face: edit.face,
+                                point: edit.point.unwrap_or([128; 3]),
+                            };
+                            let k = u32::from(self.damage.hit(
+                                outcome.cell,
+                                state,
+                                n.min(u32::from(u16::MAX)) as u16,
+                                mark,
+                            ));
+                            s.edit_credit -= 1.0;
+                            s.stats.edits_applied += 1;
+                            if k < n {
+                                if uses_items {
+                                    hits.push((outcome.cell, state, n, k));
+                                }
+                                damaged.push(outcome.cell);
+                                s.edit_refused.push(seq);
+                                continue;
+                            }
+                            destroyed_after.insert(outcome.cell, n);
+                        }
+                        Some(_) => {
+                            s.edit_credit -= 1.0;
+                            s.stats.edits_applied += 1;
+                        }
+                    }
+                } else {
+                    s.edit_credit -= 1.0;
+                    s.stats.edits_applied += 1;
+                }
                 // On a build platform's top, or touching a held body, a block goes into that body,
                 // not the grid (docs/BUILT_BODIES.md §3); the client's predicted block gives way to
                 // it when the edit is acknowledged.
@@ -2605,8 +2674,15 @@ impl Server {
         }
         let edited = changes.cells();
         self.broadcast_changes(changes, VoxelModificationReason::Edit);
+        self.send_damage(&damaged, Vec::new());
+        for (cell, was, n, k) in hits {
+            self.drop_hit(was, dwell_world::centre_of_cell(cell), n, k);
+        }
         for (cell, was) in broken {
-            self.drop_block(was, dwell_world::centre_of_cell(cell));
+            match destroyed_after.get(&cell) {
+                Some(&n) => self.drop_destroyed(was, dwell_world::centre_of_cell(cell), n),
+                None => self.drop_block(was, dwell_world::centre_of_cell(cell)),
+            }
         }
         self.knock_ground(&under_ground);
         // An explosive lit by an edit (a torch held against it) starts its fuse (docs/EXPLOSIVES.md).
@@ -2675,8 +2751,16 @@ impl Server {
                 self.water_link.pending.push(WaterIn::Edit { cell, byte });
             }
         }
-        // A changed cell's cut goes with its wood (ADR 0067).
+        // A changed cell's cut goes with its wood (ADR 0067), and its damage with its block.
         self.cuts_dropped(&before);
+        if !self.damage.cells.is_empty() {
+            let gone: Vec<[i32; 3]> = before
+                .iter()
+                .filter(|(c, _)| self.damage.cells.remove(c).is_some())
+                .map(|(c, _)| *c)
+                .collect();
+            self.send_damage(&[], gone);
+        }
         if changed.is_empty() {
             return;
         }
@@ -4130,6 +4214,12 @@ impl Server {
                 None => self.cuts_unread = true,
             }
         }
+        if let Some(b) = db.damage() {
+            match dwell_protocol::damage::Damage::from_bytes(&b) {
+                Some(d) => self.damage = d,
+                None => self.damage_unread = true,
+            }
+        }
         if let Some(b) = db.ground_gone() {
             match dwell_world::ground::GroundGone::from_bytes(&b) {
                 Some(g) => self.ground = g,
@@ -4251,6 +4341,9 @@ impl Server {
         }
         if !self.ground_unread {
             batch.ground_gone = Some(self.ground.to_bytes());
+        }
+        if !self.damage_unread {
+            batch.damage = Some(self.damage.to_bytes());
         }
         // The world's moving bodies, all of them each save (docs/BUILT_BODIES.md §7).
         batch.bodies = Some(self.felling.saved(&self.physics));
@@ -4617,6 +4710,87 @@ impl Server {
 pub fn spawn_spread(player_id: u16) -> [f64; 2] {
     let slot = (i32::from(player_id) - 1).rem_euclid(8);
     [f64::from(slot % 4) - 1.5, f64::from(slot / 4) * 1.5 - 0.75]
+}
+
+impl Server {
+    /// A client draws block damage (`DamageHello`): every damaged cell now, then each change.
+    fn damage_hello(&mut self, id: SessionId) {
+        let Some(s) = self.sessions.get_mut(&id) else {
+            return;
+        };
+        s.damage_hello = true;
+        let all: Vec<_> = self
+            .damage
+            .sorted()
+            .into_iter()
+            .map(|(c, d)| (c, d.view()))
+            .collect();
+        for part in all.chunks(dwell_protocol::MAX_DAMAGE_PER_MESSAGE) {
+            let m = Message::Damage(dwell_protocol::DamageMessage {
+                cells: part.to_vec(),
+                gone: Vec::new(),
+            });
+            self.send_reliable(id, &m, Channel::World);
+        }
+    }
+
+    /// Tells the clients that draw damage of `cells`' damage now and of the cells `gone`.
+    fn send_damage(&mut self, cells: &[[i32; 3]], gone: Vec<[i32; 3]>) {
+        let cells: Vec<_> = cells
+            .iter()
+            .filter_map(|c| self.damage.cells.get(c).map(|d| (*c, d.view())))
+            .collect();
+        if cells.is_empty() && gone.is_empty() {
+            return;
+        }
+        let to: Vec<SessionId> = self
+            .sessions
+            .iter()
+            .filter(|(_, s)| s.damage_hello)
+            .map(|(&id, _)| id)
+            .collect();
+        for part in cells.chunks(dwell_protocol::MAX_DAMAGE_PER_MESSAGE.max(1)) {
+            let m = Message::Damage(dwell_protocol::DamageMessage {
+                cells: part.to_vec(),
+                gone: Vec::new(),
+            });
+            for &id in &to {
+                self.send_reliable(id, &m, Channel::World);
+            }
+        }
+        for part in gone.chunks(dwell_protocol::MAX_DAMAGE_PER_MESSAGE) {
+            let m = Message::Damage(dwell_protocol::DamageMessage {
+                cells: Vec::new(),
+                gone: part.to_vec(),
+            });
+            for &id in &to {
+                self.send_reliable(id, &m, Channel::World);
+            }
+        }
+    }
+
+    /// A cell's damage (tests, the bench).
+    pub fn damage_of(&self, cell: [i32; 3]) -> Option<&dwell_protocol::damage::CellDamage> {
+        self.damage.cells.get(&cell)
+    }
+}
+
+/// The item a session's break is made with (docs/BLOCK_DAMAGE.md): the held inventory slot's
+/// where blocks are not unlimited, else the tool its hotbar holds (`ChopAction::Held`); none: an
+/// empty hand.
+fn held_break_item(s: &Session, uses_items: bool) -> Option<&str> {
+    if uses_items {
+        s.inventory
+            .slots
+            .get(usize::from(s.inventory.held))
+            .and_then(|h| h.as_ref())
+            .map(|st| st.item.as_str())
+    } else {
+        s.held_tool
+            .as_ref()
+            .map(|(t, _)| t.as_str())
+            .filter(|t| !t.is_empty())
+    }
 }
 
 #[cfg(test)]

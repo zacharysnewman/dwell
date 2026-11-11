@@ -610,6 +610,7 @@ impl Session {
                     | Message::Creatures(_)
                     | Message::GroundGone(_)
                     | Message::Cuts(_)
+                    | Message::Damage(_)
                     | Message::HeldTools(_)
             ) && (self.joined() || matches!(self.state, SessionState::Confirming { .. }))
             {
@@ -1070,6 +1071,7 @@ mod tests {
                 material,
                 rows: 1,
                 down: false,
+                point: None,
             })
         };
         s.send_control(&place(require("dwell:sand")));
@@ -1121,6 +1123,7 @@ mod tests {
             material: 0,
             rows: 1,
             down: false,
+            point: None,
         }));
         assert_eq!(sent(&s.take_out()).len(), 1);
     }
@@ -1138,6 +1141,7 @@ mod tests {
                 material,
                 rows: 1,
                 down: false,
+                point: None,
             })
         };
         // The game's ids need not be in order (a stroke's queued edits were numbered first).

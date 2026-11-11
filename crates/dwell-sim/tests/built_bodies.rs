@@ -49,6 +49,7 @@ fn place(f: &mut Fixture, cell: [i32; 3], face: u8, m: u16) {
             material: m,
             rows: 1,
             down: false,
+            point: None,
         }),
     );
     f.server.step();
@@ -95,6 +96,7 @@ fn build_on_a_platform(f: &mut Fixture) -> EntitySpawn {
             material: 0,
             rows: 1,
             down: false,
+            point: None,
         }),
     );
     f.server.step();
@@ -201,6 +203,7 @@ fn blocks_built_on_a_platform_are_one_held_body_until_the_platform_goes() {
             material: 0,
             rows: 1,
             down: false,
+            point: None,
         }),
     );
     steps(&mut f, 60 * 4);

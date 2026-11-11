@@ -72,6 +72,7 @@ fn fell_and_settle(walk_away: bool) {
             material: 0,
             rows: 1,
             down: false,
+            point: None,
         }),
     );
     f.server.step();
@@ -193,6 +194,7 @@ fn a_falling_trunk_hurts_a_player_it_lands_on_and_not_the_one_who_cut_it() {
             material: 0,
             rows: 1,
             down: false,
+            point: None,
         }),
     );
     let mut hurt = false;
@@ -234,6 +236,7 @@ fn break_and_wait(
             material: 0,
             rows: 1,
             down: false,
+            point: None,
         }),
     );
     for _ in 0..(60 * 15) {
@@ -286,6 +289,7 @@ fn a_leaf_no_tree_holds_falls_and_lands_as_a_leaf() {
             material: 0,
             rows: 1,
             down: false,
+            point: None,
         }),
     );
     f.server.step();
@@ -354,6 +358,7 @@ fn a_leaf_placed_against_a_side_in_the_air_falls_and_lands() {
             material: leaves,
             rows: 1,
             down: false,
+            point: None,
         }),
     );
     let mut landed = false;
@@ -400,6 +405,7 @@ fn sand_falling_on_a_player_passes_them_and_lands_beside_them() {
             material: 0,
             rows: 1,
             down: false,
+            point: None,
         }),
     );
     let in_body = |x: i32, z: i32| (x == -1 || x == -2) && (z == -1 || z == 0);
@@ -468,6 +474,7 @@ fn cutting_a_tall_trunk_loads_terrain_collision_round_it_not_a_cube_of_its_lengt
             material: 0,
             rows: 1,
             down: false,
+            point: None,
         }),
     );
     let t = std::time::Instant::now();
@@ -595,6 +602,7 @@ fn a_cell_broken_off_a_falling_trunk_goes_and_a_break_through_it_splits_it() {
             material: 0,
             rows: 1,
             down: false,
+            point: None,
         }),
     );
     f.server.step();

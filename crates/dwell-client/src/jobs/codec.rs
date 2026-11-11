@@ -219,6 +219,7 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
             mirror,
             origin,
             cuts,
+            damage,
             ground,
             water_tops,
         } => {
@@ -248,6 +249,13 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
                     gone.iter().flatten().for_each(|v| w.i32(*v));
                     w.u16s(generated);
                 }
+            }
+            w.u32(damage.len() as u32);
+            for (c, d) in damage {
+                c.iter().for_each(|v| w.i32(*v));
+                let mut b = Vec::new();
+                d.write(&mut dwell_protocol::bytes::ByteWriter::new(&mut b));
+                w.bytes(&b);
             }
         }
         Job::MeshSection {
@@ -346,12 +354,25 @@ pub fn decode_job(bytes: &[u8]) -> Result<(u32, Job), DecodeError> {
                 }
                 _ => return Err(DecodeError),
             };
+            let n = r.u32()? as usize;
+            let mut damage = Vec::with_capacity(n.min(4096));
+            for _ in 0..n {
+                let c = [r.i32()?, r.i32()?, r.i32()?];
+                let b = r.bytes()?;
+                let mut br = dwell_protocol::bytes::ByteReader::new(&b);
+                let d = dwell_protocol::damage::DamageView::read(&mut br);
+                if !(br.ok() && br.at_end()) {
+                    return Err(DecodeError);
+                }
+                damage.push((c, d));
+            }
             Job::MeshChunk {
                 mirror,
                 origin,
                 padded,
                 light,
                 cuts,
+                damage,
                 ground,
                 water_tops,
             }
@@ -582,6 +603,16 @@ mod tests {
                 c.kerf[2][1] = 0.04;
                 c
             })],
+            damage: vec![(
+                [4, 5, 6],
+                dwell_protocol::damage::DamageView {
+                    fraction: 140,
+                    marks: vec![dwell_protocol::damage::HitMark {
+                        face: 2,
+                        point: [10, 255, 0],
+                    }],
+                },
+            )],
             ground: Some((0x1234_5678_9abc, vec![[1, 2, 3], [4, 5, 6]], vec![3, 4])),
             water_tops: false,
         });
@@ -618,6 +649,7 @@ mod tests {
                 mirror: false,
                 origin: [0; 3],
                 cuts: Vec::new(),
+                damage: Vec::new(),
                 ground: Some((7, vec![[1, 2, 3]], vec![9])),
                 water_tops: true,
             },

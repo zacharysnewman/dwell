@@ -402,6 +402,7 @@ fn hand_break(fx: &mut Fixture, f: FaceFrame, cell: [i32; 3]) {
             material: 0,
             rows: 1,
             down: false,
+            point: None,
         }),
     );
     for _ in 0..3 {

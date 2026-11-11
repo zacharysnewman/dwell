@@ -362,7 +362,7 @@ fn polygons(shape: GroundShape, [sx, sy, sz]: [f64; 3], base: bool) -> Vec<Vec<[
     }
 }
 
-fn push_polygon(
+pub(super) fn push_polygon(
     m: &mut MeshArrays,
     pts: &[[f64; 3]],
     color: [f64; 3],

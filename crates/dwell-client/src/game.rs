@@ -579,6 +579,9 @@ pub struct Game<S: Scene> {
     /// The creatures the server tells of (ADR 0073), and whether it was told this client draws them.
     pub creatures: crate::creatures::ClientCreatures,
     creatures_on: bool,
+    /// The server keeps block damage (`inventory_flags::DAMAGE`): `DamageHello` sent, struck
+    /// points sent with breaks.
+    damage_on: bool,
     /// The world seed (Welcome), the ground items' scatter's (ADR 0071).
     world_seed: u64,
     /// The server keeps ground items and was told this client draws them (`GroundHello`).
@@ -919,6 +922,7 @@ impl<S: Scene> Game<S> {
             loose: Default::default(),
             creatures: Default::default(),
             creatures_on: false,
+            damage_on: false,
             world_seed: 0,
             ground_on: false,
             ground_target: None,
@@ -1483,6 +1487,15 @@ impl<S: Scene> Game<S> {
                 }
                 self.chop.apply(c);
             }
+            Message::Damage(d) => {
+                // Drawn on the struck faces (docs/BLOCK_DAMAGE.md): each changed cell's chunk again.
+                for cell in &d.gone {
+                    self.streamer.set_damage(*cell, None);
+                }
+                for (cell, view) in &d.cells {
+                    self.streamer.set_damage(*cell, Some(view.clone()));
+                }
+            }
             Message::HeldTools(list) => {
                 // The server sweeps swings along their path (its answer to our first `Held`).
                 self.chop.sweep = true;
@@ -1508,6 +1521,13 @@ impl<S: Scene> Game<S> {
                             dwell_protocol::InventoryAction::GroundHello,
                         )));
                     self.streamer.set_ground(self.world_seed);
+                }
+                // The server keeps block damage (docs/BLOCK_DAMAGE.md): say so once, and draw it.
+                if i.flags & dwell_protocol::inventory_flags::DAMAGE != 0 && !self.damage_on {
+                    self.damage_on = true;
+                    self.outbox
+                        .borrow_mut()
+                        .push(Send::Control(Message::DamageHello));
                 }
                 // The server keeps creatures (ADR 0073): say so once, and draw them.
                 if i.flags & dwell_protocol::inventory_flags::CREATURES != 0 && !self.creatures_on {
@@ -1811,8 +1831,24 @@ impl<S: Scene> Game<S> {
                     (EditAction::Break, _) => {
                         let [x, y, z] = target.cell;
                         let block = self.voxel(x, y, z);
-                        self.edit_sounds
-                            .local_break(target.cell, block, now_ms, &mut self.sounds);
+                        let name = dwell_blocks::block_of(block).name;
+                        let held = self.held_break_item();
+                        if dwell_protocol::damage::hits_to_break(name, held) == Some(1) {
+                            self.edit_sounds.local_break(
+                                target.cell,
+                                block,
+                                now_ms,
+                                &mut self.sounds,
+                            );
+                        } else {
+                            // A hit short of breaking (docs/BLOCK_DAMAGE.md): the material's hit
+                            // at the struck point; the block stays until the server breaks it.
+                            let at = self
+                                .struck_point(target.cell, target.face)
+                                .map(|p| point_in_cell(target.cell, p));
+                            self.sounds
+                                .push(SoundEvent::new(SoundKind::Hit, block, 1.0, at));
+                        }
                     }
                     (EditAction::Place, Some((cell, block))) => {
                         self.edit_sounds
@@ -1824,6 +1860,14 @@ impl<S: Scene> Game<S> {
                     EditAction::Break => dwell_characters::animator::Swing::Break,
                     EditAction::Place => dwell_characters::animator::Swing::Place,
                 });
+                // The struck point, to a server that keeps damage (an older one reads none).
+                let mut m = m;
+                if let Message::BlockEditRequest(e) = &mut m
+                    && e.action == dwell_protocol::BlockEditAction::Break
+                    && self.damage_on
+                {
+                    e.point = self.struck_point(target.cell, target.face);
+                }
                 self.send_edit(m, None);
                 if let Some(u) = upper {
                     self.send_edit(u, None);
@@ -1959,6 +2003,7 @@ impl<S: Scene> Game<S> {
                 material,
                 rows,
                 down: rows > 1 && t.face != 2 && t.face != 3 && t.aim_up < 0.5,
+                point: None,
             });
             let cells: Option<Vec<[i32; 3]>> = self
                 .predicted_changes(&m)
@@ -2352,7 +2397,18 @@ impl<S: Scene> Game<S> {
         let players: &[dwell_world::edit::EditCapsule] = me.as_slice();
         match m {
             Message::BlockEditRequest(e) => {
+                // A hit short of breaking leaves the block (docs/BLOCK_DAMAGE.md): only a break
+                // the data says takes one hit is shown at once (the server's damage so far isn't
+                // the client's; a last hit shows when the server's change arrives).
+                let held = self.held_break_item();
                 let world = self.streamer.store_mut();
+                if e.action == dwell_protocol::BlockEditAction::Break {
+                    let [x, y, z] = e.cell;
+                    let block = dwell_blocks::block_of(world.get_voxel(x, y, z)).name;
+                    if dwell_protocol::damage::hits_to_break(block, held) != Some(1) {
+                        return None;
+                    }
+                }
                 let out = dwell_world::edit::check_block_edit(
                     world,
                     e,
@@ -3896,7 +3952,11 @@ impl<S: Scene> Game<S> {
         }
         // The tool by name, to a server that passes it on (ADR 0067: the wire above carries
         // blocks only).
-        let tool = self.held_tool().map(|t| (t.name, self.chop.vertical));
+        // A pickaxe or a shovel too: the server's hits to break go by it (docs/BLOCK_DAMAGE.md).
+        let tool = self
+            .held_tool()
+            .map(|t| (t.name, self.chop.vertical))
+            .or_else(|| self.held_break_item().map(|n| (n, false)));
         if self.chop.sweep && self.held_tool_sent != Some(tool.unwrap_or(("", false))) {
             let (name, vertical) = tool.unwrap_or(("", false));
             self.held_tool_sent = Some((name, vertical));
@@ -3926,6 +3986,45 @@ impl<S: Scene> Game<S> {
         let (_, inv) = self.loose.inventory.as_ref()?;
         let held = inv.slots.get(self.inventory_slot)?.as_ref()?;
         dwell_protocol::chopping::tool(&held.item)
+    }
+
+    /// The held item a break is made with, when it is a tool (`breaking.tools`: an axe, a
+    /// pickaxe, a shovel; docs/BLOCK_DAMAGE.md).
+    pub fn held_break_item(&self) -> Option<&'static str> {
+        let name: &str = if !self.loose.uses_items() {
+            self.interaction
+                .palette()
+                .get(self.interaction.selected())?
+                .tool?
+        } else {
+            let (_, inv) = self.loose.inventory.as_ref()?;
+            &inv.slots.get(self.inventory_slot)?.as_ref()?.item
+        };
+        dwell_protocol::chopping::BREAK_TOOLS
+            .iter()
+            .find(|t| t.item == name)
+            .map(|t| t.item)
+    }
+
+    /// Where the aim meets `face` of `cell` (world-oriented), each axis in 1/255ths of the cell: a
+    /// break's struck point (docs/BLOCK_DAMAGE.md).
+    fn struck_point(&self, cell: [i32; 3], face: u8) -> Option<[u8; 3]> {
+        let eye = self.target_eye?;
+        let dir = self.view_dir;
+        let centre = dwell_world::centre_of_cell(cell);
+        let size = [1.0, dwell_world::CELL_H, 1.0];
+        let axis = usize::from(face / 2).min(2);
+        let sign = if face.is_multiple_of(2) { 1.0 } else { -1.0 };
+        let plane = centre[axis] + sign * size[axis] / 2.0;
+        if dir[axis].abs() < 1e-9 {
+            return None;
+        }
+        let t = (plane - eye[axis]) / dir[axis];
+        Some(std::array::from_fn(|k| {
+            let p = eye[k] + dir[k] * t;
+            let f = ((p - centre[k]) / size[k] + 0.5).clamp(0.0, 1.0);
+            (f * 255.0).round() as u8
+        }))
     }
 
     /// The swing hint while an axe is held.
@@ -4633,4 +4732,11 @@ mod placed_light_tests {
             assert!(placed_lights(&w, eye, 1.0).is_empty());
         }
     );
+}
+
+/// A struck point (1/255ths of `cell`, world-oriented) in world metres.
+fn point_in_cell(cell: [i32; 3], p: [u8; 3]) -> [f64; 3] {
+    let centre = dwell_world::centre_of_cell(cell);
+    let size = [1.0, dwell_world::CELL_H, 1.0];
+    std::array::from_fn(|k| centre[k] + (f64::from(p[k]) / 255.0 - 0.5) * size[k])
 }

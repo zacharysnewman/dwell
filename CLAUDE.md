@@ -72,6 +72,9 @@ and friend worlds), with a small master server for discovery; there are no offic
   layer (sleeping chunks, pools, a held sea), generated water filled by it at world creation; replaces
   Phase 52's basins and pool graph when built.
 - `docs/BUGS.md` — the open bugs the owner reported, with repros and suspects; fixed ones move to its Fixed list.
+- `docs/BLOCK_DAMAGE.md` — design for Phase 58 (ADR 0078): blocks take hits to break by tool (each block's
+  `damage` data: a default and per tool class or item), the server's per-cell damage, saved in an
+  optional world table; per-hit and destroy drops; D2 the looks.
 - `docs/ITEMS.md` — the creative hotbar's items (1 m and ½ m pieces, `shared/items/items.json`) and the
   placement rules as block data (attach, placeOn, onSlopes, moldable).
 - `docs/GAMEPAD.md` — controller support: the bindings and tunables as data (`shared/input/gamepad.json`),

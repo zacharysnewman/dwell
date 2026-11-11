@@ -1523,6 +1523,7 @@ mod tests {
             material: require("dwell:stone"),
             rows: 2,
             down: false,
+            point: None,
         };
         let waiting = |holder, material| Waiting {
             holder,

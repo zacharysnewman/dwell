@@ -324,6 +324,8 @@ pub struct MeshJob {
     pub mirror: bool,
     /// Its cut wood cells (ADR 0067 §11), chunk-local and world-oriented: meshed carved.
     pub cuts: Vec<([i32; 3], dwell_protocol::chopping::Cut)>,
+    /// Its damaged cells (docs/BLOCK_DAMAGE.md), chunk-local and world-oriented: drawn struck.
+    pub damage: Vec<([i32; 3], dwell_protocol::damage::DamageView)>,
     /// Its ground items (docs/adr/0071-ground-items.md): the world seed and its gone cells,
     /// chunk-local; none: the server keeps no ground items, none are drawn.
     pub ground: Option<(u64, Vec<[i32; 3]>)>,
@@ -626,6 +628,8 @@ pub struct ChunkStreamer<S, G, M: Mesher, V> {
     hidden: HashSet<[i32; 3]>,
     /// The server's cuts on wood cells (`set_cut`, ADR 0067 §11), by world cell: meshed carved.
     cuts: HashMap<[i32; 3], dwell_protocol::chopping::Cut>,
+    /// The server's block damage (`set_damage`, docs/BLOCK_DAMAGE.md), by world cell.
+    damage: HashMap<[i32; 3], dwell_protocol::damage::DamageView>,
     /// The ground items (ADR 0071): the world seed and the gone cells, once the server keeps them.
     ground: Option<(u64, dwell_world::ground::GroundGone)>,
     /// Loaded chunks as generated and not edited since (their voxels are their generation).
@@ -687,6 +691,7 @@ where
             second: None,
             hidden: HashSet::default(),
             cuts: HashMap::default(),
+            damage: HashMap::default(),
             ground: None,
             pristine: HashSet::default(),
             generated: HashMap::default(),
@@ -1079,6 +1084,7 @@ where
             let padded = mask_hidden(&self.hidden, c, self.store.mesh_block(c));
             let light = self.store.mesh_light(c);
             let cuts = self.cuts_in(c);
+            let damage = self.damage_in(c);
             let ground = self
                 .ground
                 .as_ref()
@@ -1097,6 +1103,7 @@ where
                 light,
                 mirror: face_of_chunk_y(c[1]) == Face::B,
                 cuts,
+                damage,
             });
             count += 1;
             let t1 = now();
@@ -1234,6 +1241,42 @@ where
                 self.stale.insert(k);
             }
         }
+    }
+
+    /// Sets world cell `cell`'s damage (none: undamaged), as the server sent it
+    /// (docs/BLOCK_DAMAGE.md): its chunk is meshed again with the marks drawn.
+    pub fn set_damage(
+        &mut self,
+        cell: [i32; 3],
+        damage: Option<dwell_protocol::damage::DamageView>,
+    ) {
+        let changed = match damage {
+            Some(d) => self.damage.insert(cell, d.clone()) != Some(d),
+            None => self.damage.remove(&cell).is_some(),
+        };
+        if !changed {
+            return;
+        }
+        let k = cell.map(|v| v.div_euclid(CHUNK_SIZE));
+        if self.loaded.contains_key(&k) && !self.air.contains(&k) {
+            self.dirty.mark(k);
+        }
+    }
+
+    /// The damaged cells in chunk `c`, chunk-local (a mesh job's `damage`).
+    fn damage_in(&self, c: Coord) -> Vec<([i32; 3], dwell_protocol::damage::DamageView)> {
+        if self.damage.is_empty() {
+            return Vec::new();
+        }
+        let o = c.map(|v| v * CHUNK_SIZE);
+        let mut out: Vec<_> = self
+            .damage
+            .iter()
+            .filter(|(w, _)| (0..3).all(|k| w[k].div_euclid(CHUNK_SIZE) == c[k]))
+            .map(|(w, d)| ([w[0] - o[0], w[1] - o[1], w[2] - o[2]], d.clone()))
+            .collect();
+        out.sort_by_key(|(l, _)| *l);
+        out
     }
 
     /// The cuts in chunk `c`, chunk-local (a mesh job's `cuts`).

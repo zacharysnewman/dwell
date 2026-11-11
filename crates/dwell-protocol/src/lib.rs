@@ -5,6 +5,7 @@
 pub mod auth;
 pub mod bytes;
 pub mod chopping;
+pub mod damage;
 pub mod fragment;
 pub mod inventory;
 mod messages;

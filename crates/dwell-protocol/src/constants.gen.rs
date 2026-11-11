@@ -176,6 +176,8 @@ pub enum MessageType {
     GroundGone = 93,
     Creatures = 94,
     CreaturesHello = 95,
+    DamageHello = 96,
+    Damage = 97,
 }
 
 impl MessageType {
@@ -230,6 +232,8 @@ impl MessageType {
             93 => Some(Self::GroundGone),
             94 => Some(Self::Creatures),
             95 => Some(Self::CreaturesHello),
+            96 => Some(Self::DamageHello),
+            97 => Some(Self::Damage),
             _ => None,
         }
     }

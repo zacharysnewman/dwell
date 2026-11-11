@@ -5,3 +5,21 @@ export const TOOLS: readonly { name: string; kind: string }[] = [
   { name: 'dwell:stone_axe', kind: 'axe' },
   { name: 'dwell:metal_axe', kind: 'axe' },
 ];
+
+/** Each block's hits to destroy (its `damage`): `default` by bare hands (null: can't), `tools` by class or item. */
+export const BLOCK_DAMAGE: readonly {
+  block: string;
+  default: number | null;
+  tools: Readonly<Record<string, number>>;
+}[] = [
+  { block: 'dwell:stone', default: null, tools: { pickaxe: 7 } },
+  { block: 'dwell:dirt', default: 11, tools: { shovel: 7 } },
+  { block: 'dwell:grass', default: 11, tools: { shovel: 7 } },
+  { block: 'dwell:sand', default: 11, tools: { shovel: 7 } },
+  { block: 'dwell:stone_ramp', default: null, tools: { pickaxe: 7 } },
+  { block: 'dwell:dirt_ramp', default: 11, tools: { shovel: 7 } },
+  { block: 'dwell:grass_ramp', default: 11, tools: { shovel: 7 } },
+  { block: 'dwell:sand_ramp', default: 11, tools: { shovel: 7 } },
+  { block: 'dwell:snowy_grass', default: 11, tools: { shovel: 7 } },
+  { block: 'dwell:snowy_grass_ramp', default: 11, tools: { shovel: 7 } },
+];

@@ -70,6 +70,7 @@ fn edit(fx: &mut Fixture, f: FaceFrame, action: BlockEditAction, local: [i32; 3]
             material,
             rows: 1,
             down: false,
+            point: None,
         }),
     );
     for _ in 0..3 {

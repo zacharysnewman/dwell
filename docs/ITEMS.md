@@ -71,7 +71,13 @@ a bare hand does. Every tool's item has a model look (`shared/inventory` `look.m
 model (`Held::Model`: the axe in its swing's hold, the others in the axe's level hold). `breaking`
 gives each tool a class (`pickaxe`: stone; `shovel`: dirt, grass, sand; `axe`: wood) and a tier
 (`stone` 1.5, `metal` 2.5, a multiple of the bare hand's speed); `break_speed(block, held)` is that
-speed for the right class and 1 otherwise. Breaks are instant today, so it has nothing to shorten yet.
+speed for the right class and 1 otherwise. **Block damage (0.52.28, ADR 0078, docs/BLOCK_DAMAGE.md):**
+a block's `damage` (block data) gives its hits to break by bare hands (`default`; `null`: can't) and per
+tool class or item; a class's count is divided by the held tool's tier speed. Stone takes 5 hits with the
+stone pickaxe, 3 with the metal one and can't be broken by hand; soil and sand take 5 with the wooden
+shovel, 3 with the metal one and 11 by hand. Same in creative (the hotbar's tool) and adventure (the
+held slot's). Half a block's drops come out over the hits, the rest on the last. Each hit shows where it
+struck (a shard knocked off stone, a scoop out of soil) and cracks grow until the block breaks.
 
 **How a tool sits in the hand (0.52.22).** Owner, 2026-11-10: the tools were far too big and held
 bolt upright, filling the right third of the screen, the double axe's flat face to the camera. Each
