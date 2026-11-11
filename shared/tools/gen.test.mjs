@@ -160,12 +160,12 @@ test("the axe clears leaves and the stump's wood ramp; a fixture tool clearing a
   const d = validateTools(...fresh());
   const axe = d.tools.find((t) => t.name === 'dwell:stone_axe');
   assert.deepEqual(axe.clears, ['dwell:leaves', 'dwell:snowy_leaves', 'dwell:log_ramp']);
-  assert.match(toolsRust(d), /rustle: Some\("axe_rustle"\), rustle_leaves: 5 \}, clears: &\["dwell:leaves", "dwell:snowy_leaves", "dwell:log_ramp"\] \}/);
+  assert.match(toolsRust(d), /rustle: Some\("axe_rustle"\), rustle_leaves: 5 \}, clears: &\["dwell:leaves", "dwell:snowy_leaves", "dwell:log_ramp"\], chop2_bite: [\d.]+ \}/);
   const [data, items, blocks] = fresh();
   items.add('test:sickle');
   data.tools.push({ name: 'test:sickle', kind: 'axe', swingSeconds: 0.3, biteM: 0.1, bindM: 0.1, across: 1, along: 0.3, sharpness: 1, clears: ['dwell:tall_grass'] });
   const rs = toolsRust(validateTools(data, items, blocks));
-  assert.match(rs, /name: "test:sickle".*rustle: None, rustle_leaves: 4 \}, clears: &\["dwell:tall_grass"\] \}/);
+  assert.match(rs, /name: "test:sickle".*rustle: None, rustle_leaves: 4 \}, clears: &\["dwell:tall_grass"\], chop2_bite: [\d.]+ \}/);
   const bad = (edit, re) => {
     const [data, items, blocks] = fresh();
     edit(data);
@@ -203,8 +203,8 @@ test('a fixture wood with its own fell wedge by data alone; a bad wedge fails na
   const plain = loadTools();
   delete plain.woods[0].fellTip;
   delete plain.woods[0].fellWedgeTrunk;
-  assert.match(toolsRust(validateTools(plain, items, blocks)), /fell_wedge_matching: true, fell_tip: 0\.0 \}/);
-  assert.match(toolsRust(validateTools(loadTools(), items, blocks)), /block: "dwell:log", .*fell_tip: 1\.0 \}/);
+  assert.match(toolsRust(validateTools(plain, items, blocks)), /fell_wedge_matching: true, fell_tip: 0\.0, chop2: Chop2Wood \{[^}]*\} \}/);
+  assert.match(toolsRust(validateTools(loadTools(), items, blocks)), /block: "dwell:log", .*fell_tip: 1\.0, chop2: Chop2Wood \{[^}]*\} \}/);
 });
 
 test("block damage: the data's hits reach Rust and TS; a fixture block by data alone; bad entries fail naming them", () => {
