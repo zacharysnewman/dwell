@@ -842,6 +842,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "dwell-ecology"
+version = "0.0.0"
+dependencies = [
+ "dwell-world",
+ "dwell-worldgen",
+]
+
+[[package]]
 name = "dwell-game"
 version = "0.0.0"
 dependencies = [

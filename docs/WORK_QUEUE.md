@@ -95,12 +95,19 @@ Last updated: 2026-11-11 (0.52.68).
    client/package.json → every release recompiles), version + release note assigned at merge, an agent
    quickstart doc, a reliable browser kit (warm prebuilt client, exact camera goto, stall retries, saved
    spots), per-area check commands, lighter paperwork for small changes. (Runs before lava.)
+   Done: 3 (`docs/AGENT_QUICKSTART.md`), 5 (`npm run check:<area>`, `client/scripts/checks.ts`) and 6
+   (CLAUDE.md "lighter paperwork"), with `docs/CLOUD_SESSIONS.md`; 1, 2 and 4 outstanding.
 11. **Deer/wolf ecology simulation, first slice** (owner 2026-11-11, with a mockup:
    docs/proposals/ECOSYSTEM_MOCKUP_NOTES.md). "Simulate at a data level only when you're not nearby, render
    simply from afar, and exactly when close by." Answers: far = herds and packs (one record each;
    individuals made when near); deer eat tall grass, but "it shouldn't affect the world until you are close
    enough to see" — a grazing value per area is the truth far away, applied to real tall grass near
    players; watch only for now (no player interaction); the whole island, coarse (fast-forwarded like water).
+   Tuning (owner): resistant to complete destruction, quick to replicate up to each group's cap, slow to
+   starve, and no runaway (the island's total bounded by grazing for deer, by prey for wolves).
+   **Started 2026-11-11:** the data-level core is built — `crates/dwell-ecology`, `shared/ecology/ecology.json`,
+   docs/ECOLOGY.md (herds and packs, forage per cell, the day step, 15 tests). Next (ECOLOGY.md §5): the
+   server's tick and saving, individuals near players, simple far rendering, grazing on the real tall grass.
 12. **Players' saved structures as placement sources** (owner 2026-11-11): per player (their library, usable
    in any world they create); placed copies editable, not protected; 32³ for now (may change), or larger
    structures as a grid of 32³ tiles. Sharing between players: Future.
