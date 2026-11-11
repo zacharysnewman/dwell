@@ -303,6 +303,9 @@ pub struct ServerConfig {
     /// A new world's game mode (ADR 0065, `shared/modes/modes.json`; a name not there is the
     /// default, creative). A saved world keeps its own; one saved before modes is creative.
     pub mode: String,
+    /// Every block breaks in one hit, as before block damage (docs/BLOCK_DAMAGE.md): a test
+    /// world's switch, for tests and e2e specs that break blocks with one click. Off: the data's.
+    pub one_hit_breaks: bool,
 }
 
 /// A new world's settings: this build's clock (`shared/look/daynight.json`), `water_speed` and the
@@ -362,6 +365,7 @@ impl Default for ServerConfig {
             water_speed: crate::water::FLOW.speed,
             water: crate::water::host::Placement::Inline,
             mode: dwell_protocol::modes::DEFAULT_MODE.into(),
+            one_hit_breaks: false,
         }
     }
 }
@@ -2476,7 +2480,12 @@ impl Server {
                     let state = self.world.get_voxel_if_loaded(outcome.cell);
                     let block = dwell_blocks::block_of(state).name;
                     let held = held_break_item(s, uses_items);
-                    match dwell_protocol::damage::hits_to_break(block, held) {
+                    let need = if self.config.one_hit_breaks {
+                        Some(1)
+                    } else {
+                        dwell_protocol::damage::hits_to_break(block, held)
+                    };
+                    match need {
                         None => {
                             s.stats.edits_rejected += 1;
                             s.edit_refused.push(seq);

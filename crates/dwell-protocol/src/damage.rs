@@ -208,14 +208,32 @@ mod tests {
     fn hits_per_tool_tier_and_default_come_from_the_data() {
         // Owner, 2026-11-10: the right tool at stone tier about 5, metal about 3, the wrong tool or
         // bare hands about 10–12; bare hands can't break stone.
-        assert_eq!(hits_to_break("dwell:stone", Some("dwell:stone_pickaxe")), Some(5));
-        assert_eq!(hits_to_break("dwell:stone", Some("dwell:metal_pickaxe")), Some(3));
+        assert_eq!(
+            hits_to_break("dwell:stone", Some("dwell:stone_pickaxe")),
+            Some(5)
+        );
+        assert_eq!(
+            hits_to_break("dwell:stone", Some("dwell:metal_pickaxe")),
+            Some(3)
+        );
         assert_eq!(hits_to_break("dwell:stone", None), None);
-        assert_eq!(hits_to_break("dwell:stone", Some("dwell:metal_shovel")), None);
-        assert_eq!(hits_to_break("dwell:dirt", Some("dwell:wooden_shovel")), Some(5));
-        assert_eq!(hits_to_break("dwell:sand", Some("dwell:metal_shovel")), Some(3));
+        assert_eq!(
+            hits_to_break("dwell:stone", Some("dwell:metal_shovel")),
+            None
+        );
+        assert_eq!(
+            hits_to_break("dwell:dirt", Some("dwell:wooden_shovel")),
+            Some(5)
+        );
+        assert_eq!(
+            hits_to_break("dwell:sand", Some("dwell:metal_shovel")),
+            Some(3)
+        );
         assert_eq!(hits_to_break("dwell:grass", None), Some(11));
-        assert_eq!(hits_to_break("dwell:dirt", Some("dwell:stone_pickaxe")), Some(11));
+        assert_eq!(
+            hits_to_break("dwell:dirt", Some("dwell:stone_pickaxe")),
+            Some(11)
+        );
         // A block without `damage` breaks in one hit, as before.
         assert_eq!(hits_to_break("dwell:leaves", None), Some(1));
     }
@@ -253,19 +271,33 @@ mod tests {
         for total in 0..12 {
             for hits in 1..14 {
                 let on_hits: u32 = (1..hits).map(|k| hit_share(total, hits, k)).sum();
-                assert_eq!(on_hits, total / 2 * u32::from(hits > 1), "{total} over {hits}");
+                assert_eq!(
+                    on_hits,
+                    total / 2 * u32::from(hits > 1),
+                    "{total} over {hits}"
+                );
                 assert_eq!(on_hits + destroy_share(total, hits), total);
             }
         }
         // Four over five hits: one a hit before the last.
-        assert_eq!((1..5).map(|k| hit_share(8, 5, k)).collect::<Vec<_>>(), [1, 1, 1, 1]);
+        assert_eq!(
+            (1..5).map(|k| hit_share(8, 5, k)).collect::<Vec<_>>(),
+            [1, 1, 1, 1]
+        );
     }
 
     #[test]
     fn damage_saves_and_loads_and_a_new_state_is_undamaged() {
         let mut d = Damage::default();
         for i in 0..6 {
-            d.hit([1, -2, 3], 7, HitMark { face: 2, point: [i, 128, 255] });
+            d.hit(
+                [1, -2, 3],
+                7,
+                HitMark {
+                    face: 2,
+                    point: [i, 128, 255],
+                },
+            );
         }
         assert_eq!(d.hits([1, -2, 3], 7), 6);
         assert_eq!(d.cells[&[1, -2, 3]].marks.len(), MAX_HIT_MARKS);
@@ -273,6 +305,16 @@ mod tests {
         let back = Damage::from_bytes(&d.to_bytes()).expect("reads its own record");
         assert_eq!(back, d);
         assert_eq!(Damage::from_bytes(&[9, 0, 0, 0, 0]), None, "a newer record");
-        assert_eq!(d.hit([1, -2, 3], 8, HitMark { face: 0, point: [0; 3] }), 1);
+        assert_eq!(
+            d.hit(
+                [1, -2, 3],
+                8,
+                HitMark {
+                    face: 0,
+                    point: [0; 3]
+                }
+            ),
+            1
+        );
     }
 }

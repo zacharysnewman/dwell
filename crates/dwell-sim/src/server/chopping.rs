@@ -185,12 +185,12 @@ impl Server {
     /// the first one a player sends also brings it everyone else's.
     fn held_tool(&mut self, id: SessionId, tool: String, vertical: bool) {
         // An axe, or a tool a break is made with (`breaking.tools`: a pickaxe, a shovel).
-        let tool = if chop::tool(&tool).is_some() || chop::BREAK_TOOLS.iter().any(|t| t.item == tool)
-        {
-            tool
-        } else {
-            String::new()
-        };
+        let tool =
+            if chop::tool(&tool).is_some() || chop::BREAK_TOOLS.iter().any(|t| t.item == tool) {
+                tool
+            } else {
+                String::new()
+            };
         let Some(s) = self.sessions.get_mut(&id) else {
             return;
         };

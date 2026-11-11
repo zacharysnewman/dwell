@@ -22,6 +22,7 @@ fn config(f: FaceFrame, mode: &str) -> ServerConfig {
         generator_override: Some(empty_generator()),
         spawn: Some(f.point([0.5, m_of_row(BASE), 0.5])),
         mode: mode.into(),
+        one_hit_breaks: false,
         ..flat()
     }
 }
@@ -63,7 +64,10 @@ fn hold(fx: &mut Fixture, mode: &str, item: &str) {
             .iter()
             .position(|s| s.as_ref().is_some_and(|s| s.item == item))
             .expect("given") as u8;
-        fx.send(1, Message::InventoryAction(InventoryAction::Select { slot }));
+        fx.send(
+            1,
+            Message::InventoryAction(InventoryAction::Select { slot }),
+        );
     } else {
         fx.send(
             1,
@@ -184,7 +188,11 @@ fn damage_persists_across_a_save_and_an_older_world_loads_undamaged() {
     // face-a-only: a byte format.
     let f = FaceFrame::A;
     let db = WorldDb::in_memory().expect("db");
-    assert_eq!(db.damage(), None, "a world from before damage has no record");
+    assert_eq!(
+        db.damage(),
+        None,
+        "a world from before damage has no record"
+    );
     let cfg = || ServerConfig {
         store: Some(WorldStore::new(db.clone(), false)),
         ..config(f, "creative")

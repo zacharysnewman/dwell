@@ -327,6 +327,7 @@ fn resync_re_sends_chunks_the_client_has_with_their_current_revision() {
 fn an_edited_chunk_the_air_test_calls_empty_is_kept_and_streamed_explicitly() {
     let mut f = Fixture::new(ServerConfig {
         world_seed: 5,
+        one_hit_breaks: true,
         ..ServerConfig::default()
     });
     let w = f.join(1, &Client::new(1));

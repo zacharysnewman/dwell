@@ -2352,7 +2352,18 @@ impl<S: Scene> Game<S> {
         let players: &[dwell_world::edit::EditCapsule] = me.as_slice();
         match m {
             Message::BlockEditRequest(e) => {
+                // A hit short of breaking leaves the block (docs/BLOCK_DAMAGE.md): only a break
+                // the data says takes one hit is shown at once (the server's damage so far isn't
+                // the client's; a last hit shows when the server's change arrives).
+                let held = self.held_break_item();
                 let world = self.streamer.store_mut();
+                if e.action == dwell_protocol::BlockEditAction::Break {
+                    let [x, y, z] = e.cell;
+                    let block = dwell_blocks::block_of(world.get_voxel(x, y, z)).name;
+                    if dwell_protocol::damage::hits_to_break(block, held) != Some(1) {
+                        return None;
+                    }
+                }
                 let out = dwell_world::edit::check_block_edit(
                     world,
                     e,
@@ -3896,7 +3907,11 @@ impl<S: Scene> Game<S> {
         }
         // The tool by name, to a server that passes it on (ADR 0067: the wire above carries
         // blocks only).
-        let tool = self.held_tool().map(|t| (t.name, self.chop.vertical));
+        // A pickaxe or a shovel too: the server's hits to break go by it (docs/BLOCK_DAMAGE.md).
+        let tool = self
+            .held_tool()
+            .map(|t| (t.name, self.chop.vertical))
+            .or_else(|| self.held_break_item().map(|n| (n, false)));
         if self.chop.sweep && self.held_tool_sent != Some(tool.unwrap_or(("", false))) {
             let (name, vertical) = tool.unwrap_or(("", false));
             self.held_tool_sent = Some((name, vertical));
@@ -3926,6 +3941,24 @@ impl<S: Scene> Game<S> {
         let (_, inv) = self.loose.inventory.as_ref()?;
         let held = inv.slots.get(self.inventory_slot)?.as_ref()?;
         dwell_protocol::chopping::tool(&held.item)
+    }
+
+    /// The held item a break is made with, when it is a tool (`breaking.tools`: an axe, a
+    /// pickaxe, a shovel; docs/BLOCK_DAMAGE.md).
+    pub fn held_break_item(&self) -> Option<&'static str> {
+        let name: &str = if !self.loose.uses_items() {
+            self.interaction
+                .palette()
+                .get(self.interaction.selected())?
+                .tool?
+        } else {
+            let (_, inv) = self.loose.inventory.as_ref()?;
+            &inv.slots.get(self.inventory_slot)?.as_ref()?.item
+        };
+        dwell_protocol::chopping::BREAK_TOOLS
+            .iter()
+            .find(|t| t.item == name)
+            .map(|t| t.item)
     }
 
     /// The swing hint while an axe is held.

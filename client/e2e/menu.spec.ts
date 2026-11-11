@@ -89,8 +89,16 @@ test('main menu: create a world with a seed, quit, reopen, regenerate and delete
   const cell = await aim(page);
   const before = await voxel(page, cell);
   expect(before).not.toBe(0);
-  expect(await call<boolean>(page, `d.edit('break')`)).toBe(true);
-  await expect.poll(() => voxel(page, cell), { timeout: 5_000 }).toBe(0);
+  // Hit until it breaks (block damage, docs/BLOCK_DAMAGE.md: soil takes 11 hits by hand).
+  await expect
+    .poll(
+      async () => {
+        await call<boolean>(page, `d.edit('break')`);
+        return voxel(page, cell);
+      },
+      { timeout: 10_000, intervals: [150] },
+    )
+    .toBe(0);
   await quit(page);
   await openMenuPage(page, 'worlds');
   // The world's card: its type and when it was played, and the view it was left at (captured

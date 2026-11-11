@@ -191,6 +191,8 @@ pub fn flat() -> ServerConfig {
     ServerConfig {
         generator_version: GENERATOR_FLAT,
         spawn: Some([0.5, dwell_world::FLAT_TOP_M, 0.5]),
+        // Tests that break a block break it with one click; block damage's own set it off.
+        one_hit_breaks: true,
         ..ServerConfig::default()
     }
 }

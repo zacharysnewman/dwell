@@ -122,15 +122,26 @@ const EDIT_ARRIVES_MS = 20_000;
 /**
  * Breaks the block placed at `cell`: a break takes one ½ m cell (docs/ITEMS.md §2), so a taller
  * piece (an item of two cells, none on the hotbar today) goes in two breaks, its upper cell first
- * (a look from above meets it first). Each waits until `pages` all show the cell empty.
+ * (a look from above meets it first), each hit until it breaks (block damage). Each waits until
+ * `pages` all show the cell empty.
  */
 async function breakBlock(page: Page, cell: Vec3, pages: Page[] = [page]): Promise<void> {
   const upper: Vec3 = [cell[0], cell[1] + 1, cell[2]];
   const cells = (await voxel(page, upper)) === (await voxel(page, cell)) ? [upper, cell] : [cell];
   for (const c of cells) {
     await lookAt(page, c);
-    // edit() refuses (and sends nothing) within BLOCK_EDIT_INTERVAL_MS of the last edit.
-    await expect.poll(() => call<boolean>(page, `d.edit('break')`)).toBe(true);
+    // Blocks take several hits by the tool held (docs/BLOCK_DAMAGE.md: 11 by hand for soil):
+    // hit until it breaks. edit() refuses (and sends nothing) within BLOCK_EDIT_INTERVAL_MS of
+    // the last edit.
+    await expect
+      .poll(
+        async () => {
+          await call<boolean>(page, `d.edit('break')`);
+          return voxel(page, c);
+        },
+        { timeout: EDIT_ARRIVES_MS, intervals: [150] },
+      )
+      .toBe(0);
     for (const p of pages) {
       await expect.poll(() => voxel(p, c), { timeout: EDIT_ARRIVES_MS }).toBe(0);
     }
