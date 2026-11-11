@@ -1202,6 +1202,10 @@ painted tile. The pattern's constants are shader constants for now (a look file 
   `lava.mjs` checks it and emits `DATA.steam`). Its puffs are smoke puffs of their own look
   (`render/blasts.rs` `steam_look`, the smoke table's last entry). Each `Steam` message plays
   `steam_hiss` (shared/sounds, procedural: no fitting sample in the pack) at its first cell.
+  Fixed on the way: as first shipped, `Steam` went on the control channel, which the client's session
+  does not pass to the game, so no puff ever showed (the bench's `__dwell.lava()` report counted
+  thousands of `steamCells` sent); it now goes on the world channel and the session routes it (its test
+  red, then green).
 - **Burning:** a `Burn` damage hit shows a red-orange screen edge (`burnEdge`: colour, opacity,
   seconds; the HUD's `#burn-edge`, `game.rs` `burn_edge_strength`) and plays `sizzle`.
 
