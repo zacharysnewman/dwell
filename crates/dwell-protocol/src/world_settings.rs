@@ -36,6 +36,11 @@ pub mod tag {
     /// builds its maps from it. Sent only for such a world (a default world's join is unchanged),
     /// and never saved in the world file (the server adds it from its world's maps).
     pub const WORLDGEN: u8 = 2;
+    /// The world's size (`crate::world_size`, BIG_MAP.md M0): `u16` (LE) radius scale. Optional:
+    /// a world without it is the default size (today's disc), and a default-size world writes none,
+    /// so its fields and join are byte-identical to before. A build before it skips it (and would
+    /// draw today's disc: such a build can't hold a bigger LOD root anyway, BIG_MAP.md M1).
+    pub const WORLD_SIZE: u8 = 0x83;
 }
 
 /// The most fields, and the longest field.
@@ -72,6 +77,8 @@ pub struct WorldSettings {
     pub water_speed: f32,
     /// The game mode's name: always one of `crate::modes::MODES`.
     pub mode: &'static str,
+    /// The world's size (`tag::WORLD_SIZE`; the default, today's, when the tag is absent).
+    pub size: crate::world_size::WorldSize,
 }
 
 impl WorldSettings {
@@ -183,6 +190,15 @@ impl SettingsFields {
             let name = std::str::from_utf8(b).map_err(|_| SettingsError::Invalid(tag::MODE))?;
             s.mode = crate::modes::mode_or_default(name).name;
         }
+        if let Some(b) = self.get(tag::WORLD_SIZE) {
+            let mut r = ByteReader::new(b);
+            let scale = u32::from(r.u16());
+            s.size = r
+                .at_end()
+                .then(|| crate::world_size::WorldSize::scaled(scale).ok())
+                .flatten()
+                .ok_or(SettingsError::Invalid(tag::WORLD_SIZE))?;
+        }
         Ok(s)
     }
 
@@ -212,7 +228,16 @@ impl SettingsFields {
         let mut out: Vec<(u8, Vec<u8>)> = self
             .0
             .iter()
-            .filter(|(t, _)| ![tag::CLOCK, tag::WATER_SPEED, tag::MODE, tag::WORLDGEN].contains(t))
+            .filter(|(t, _)| {
+                ![
+                    tag::CLOCK,
+                    tag::WATER_SPEED,
+                    tag::MODE,
+                    tag::WORLDGEN,
+                    tag::WORLD_SIZE,
+                ]
+                .contains(t)
+            })
             .cloned()
             .collect();
         let field = |f: &dyn Fn(&mut ByteWriter)| {
@@ -230,6 +255,12 @@ impl SettingsFields {
         ));
         out.push((tag::WATER_SPEED, field(&|w| w.f32(s.water_speed))));
         out.push((tag::MODE, s.game_mode().name.as_bytes().to_vec()));
+        if !s.size.is_default() {
+            out.push((
+                tag::WORLD_SIZE,
+                field(&|w| w.u16(s.size.radius_scale as u16)),
+            ));
+        }
         out.sort_by_key(|(t, _)| *t);
         Self(out)
     }
@@ -247,6 +278,7 @@ mod tests {
         },
         water_speed: 1.0,
         mode: "creative",
+        size: crate::world_size::WorldSize::DEFAULT,
     };
 
     #[test]
@@ -259,6 +291,7 @@ mod tests {
             },
             water_speed: 4.0,
             mode: "adventure",
+            size: crate::world_size::WorldSize::DEFAULT,
         };
         let f = SettingsFields::default().with(s);
         let back = SettingsFields::from_bytes(&f.to_bytes()).expect("the tagged form");
@@ -379,5 +412,51 @@ mod tests {
         let mut bad = f.clone();
         bad.0.push((tag::WORLDGEN, vec![1, 2, 3]));
         assert_eq!(bad.settings(D), Err(SettingsError::Invalid(tag::WORLDGEN)));
+    }
+
+    #[test]
+    fn the_world_size_is_an_optional_field_written_only_for_a_bigger_world() {
+        use crate::world_size::WorldSize;
+        // A default-size world writes no size field: its fields are what they were before sizes.
+        let f = SettingsFields::default().with(D);
+        assert!(!f.0.iter().any(|(t, _)| *t == tag::WORLD_SIZE));
+        assert_eq!(f.settings(D).map(|s| s.size), Ok(WorldSize::DEFAULT));
+        assert_ne!(
+            tag::WORLD_SIZE & tag::OPTIONAL,
+            0,
+            "optional: no new compatibility line"
+        );
+        // Every named size round-trips through the saved (and sent) bytes.
+        for (n, size) in WorldSize::all() {
+            let s = WorldSettings { size, ..D };
+            let back = SettingsFields::from_bytes(&SettingsFields::default().with(s).to_bytes())
+                .expect("the tagged form");
+            assert_eq!(back.settings(D), Ok(s), "{n}");
+            // Setting the other fields keeps it.
+            let again = back.with(WorldSettings {
+                water_speed: 3.0,
+                ..s
+            });
+            assert_eq!(again.settings(D).map(|s| s.size), Ok(size), "{n}");
+        }
+        // An older world (saved before sizes) has no tag: today's size.
+        let older = SettingsFields(
+            SettingsFields::default()
+                .with(WorldSettings {
+                    size: WorldSize::named("10x").unwrap(),
+                    ..D
+                })
+                .0
+                .into_iter()
+                .filter(|(t, _)| *t != tag::WORLD_SIZE)
+                .collect(),
+        );
+        assert_eq!(older.settings(D).map(|s| s.size), Ok(WorldSize::DEFAULT));
+        // A bad scale is refused, not read as some other size.
+        for bad in [vec![0, 0], vec![0xff, 0], vec![2]] {
+            let mut f = f.clone();
+            f.0.push((tag::WORLD_SIZE, bad));
+            assert_eq!(f.settings(D), Err(SettingsError::Invalid(tag::WORLD_SIZE)));
+        }
     }
 }

@@ -387,7 +387,7 @@ export class MainMenu {
     const links = document.createElement('div');
     links.className = 'mm-links';
     if (this.deps.openSettings) {
-      const settings = button('Settings', 'mm-link', () => {
+      const settings = button('Settings', 'mm-action mm-action-secondary', () => {
         this.show('settings');
       });
       settings.id = 'menu-settings';
@@ -395,7 +395,7 @@ export class MainMenu {
       settings.setAttribute('aria-controls', 'settings-menu');
       links.append(settings);
     }
-    const versions = button('Versions', 'mm-link', () => {
+    const versions = button('Versions', 'mm-action mm-action-secondary', () => {
       this.show('versions');
     });
     versions.id = 'home-versions';

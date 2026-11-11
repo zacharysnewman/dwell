@@ -8,6 +8,7 @@ import {
   decorationsRust,
   hydrologyRust,
   midplaneRust,
+  platesRust,
   placementsRust,
   rocksRust,
   validateRocks,
@@ -20,6 +21,7 @@ import {
   validateDecorations,
   validateHydrology,
   validateMidplane,
+  validatePlates,
   validatePlacements,
   validateTerrainAndBiomes,
   validateBiome,
@@ -433,6 +435,63 @@ test('a portal monument is named by data: another structure, or none', () => {
   assert.match(rs, /monument_lod_cell: 4,/);
   m.portals.monument.structure = null;
   assert.match(midplaneRust(validateMidplane(m, blocks)), /monument: None,/);
+});
+
+const loadPlates = () => JSON.parse(readFileSync(join(here, 'plates.json'), 'utf8'));
+
+test('the checked-in plate layout rules are valid and generate the checked-in Rust', () => {
+  const rs = platesRust(validatePlates(loadPlates()));
+  const checkedIn = readFileSync(join(here, '../../crates/dwell-worldgen/src/plates.gen.rs'), 'utf8');
+  assert.equal(rs, checkedIn, 'run `node shared/worldgen/gen.mjs`');
+});
+
+test('a plate fixture and new ranges added by data alone are emitted', () => {
+  const p = loadPlates();
+  p.count = [6, 9];
+  p.kinds.oceanic.min = 2;
+  p.fixtures.push({
+    name: 'young_ocean_dives_last',
+    plates: [
+      { kind: 'oceanic', at: [0, 0], motion: [2, 0], age: 300 },
+      { kind: 'oceanic', at: [4000, 0], motion: [-2, 0], age: 10 },
+    ],
+    expect: { kind: 'convergent', subducts: 0 },
+  });
+  const rs = platesRust(validatePlates(p));
+  assert.match(rs, /count_min: 6,/);
+  assert.match(rs, /count_max: 9,/);
+  assert.match(rs, /oceanic: KindRule \{ weight: 0\.45, min: 2 \},/);
+  assert.match(rs, /name: "young_ocean_dives_last",/);
+  assert.match(rs, /age: 300\.0 \},\n.*age: 10\.0 \},\n {8}\],\n {8}kind: BoundaryKind::Convergent,\n {8}subducts: Some\(0\),/);
+});
+
+test('bad plate entries fail with the key and the problem', () => {
+  const cases = [
+    [(p) => (p.count = [5, 3]), /plates\.json: count must be \[min, max\]/],
+    [(p) => (p.count = [0, 3]), /count must be \[min, max\], whole numbers 1–32/],
+    [(p) => delete p.reach, /plates\.json: reach is missing/],
+    [(p) => (p.seaMargin = 30000), /seaMargin must be in \[0, 25000\]/],
+    [(p) => (p.kinds.basaltic = { weight: 1, min: 0 }), /kinds: unknown basaltic/],
+    [(p) => delete p.kinds.oceanic, /kinds\.oceanic is missing/],
+    [(p) => (p.kinds.oceanic.weight = 2), /kinds\.oceanic\.weight must be in \[0, 1\]/],
+    [(p) => ((p.kinds.oceanic.weight = 0), (p.kinds.continental.weight = 0)), /kinds: the weights must not all be 0/],
+    [(p) => (p.kinds.oceanic.min = 3), /kinds: the kinds' mins \(4\) exceed the least plate count \(3\)/],
+    [(p) => (p.warp.wavelength = 1.5), /warp\.wavelength must be a whole number/],
+    [(p) => (p.transformBelow = 1.5), /transformBelow must be in \[0, 1\]/],
+    [(p) => (p.hotspots.extra = 1), /hotspots: unknown extra/],
+    [(p) => (p.other = 1), /the file: unknown other/],
+    [(p) => (p.fixtures[0].plates[1].kind = 'mantle'), /fixtures\[0\] \(ocean_under_continent\)\.plates\[1\]\.kind must be one of oceanic, continental/],
+    [(p) => p.fixtures[0].plates.pop(), /fixtures\[0\] \(ocean_under_continent\)\.plates must be two plates/],
+    [(p) => (p.fixtures[0].plates[0].at = [5000, 0]), /plates must not share a centre/],
+    [(p) => (p.fixtures[0].expect.kind = 'sideways'), /expect\.kind must be one of convergent, divergent, transform/],
+    [(p) => (p.fixtures[3].expect.subducts = 0), /fixtures\[3\] \(rift_opens\)\.expect\.subducts must be null for a divergent boundary/],
+    [(p) => (p.fixtures[1].name = p.fixtures[0].name), /fixtures\[1\] \(ocean_under_continent\): duplicate name/],
+  ];
+  for (const [change, message] of cases) {
+    const p = loadPlates();
+    change(p);
+    assert.throws(() => validatePlates(p), message);
+  }
 });
 
 test('the checked-in volumes are valid and generate the checked-in Rust', () => {

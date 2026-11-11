@@ -77,6 +77,34 @@ pub struct MapTunables {
     pub revealed_live_refresh_ms: f64,
 }
 
+impl MapTunables {
+    /// The big map's zoom levels for a world of `size` (BIG_MAP.md M0): the closest level (the
+    /// minimap's area, streamed round the player) as the data has it; every coarser one's cell
+    /// grown by the size's next power of two (`WorldSize::map_cell_m`, so no level builds more
+    /// tiles than today) and the spans spaced geometrically up to the bigger disc's diameter, as
+    /// `shared/ui/gen.mjs` spaces them. At today's size, `big_map_levels` exactly.
+    pub fn big_map_levels_sized(
+        &self,
+        size: dwell_protocol::world_size::WorldSize,
+    ) -> Vec<(f64, f64)> {
+        let n = self.big_map_levels.len();
+        let near = 2.0 * self.minimap_radius_m;
+        let far = 2.0 * size.world_radius_m() as f64;
+        self.big_map_levels
+            .iter()
+            .enumerate()
+            .map(|(i, &(cell, span))| {
+                if size.is_default() {
+                    return (cell, span);
+                }
+                let cell = f64::from(size.map_cell_m(cell as u32, i > 0));
+                let t = i as f64 / (n - 1) as f64;
+                (cell, (near * (far / near).powf(t)).round())
+            })
+            .collect()
+    }
+}
+
 #[rustfmt::skip]
 mod table {
     use super::MapTunables;

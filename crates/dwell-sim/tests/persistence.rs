@@ -104,6 +104,47 @@ fn a_worlds_settings_are_saved_with_it_and_kept_over_a_new_servers_defaults() {
 }
 
 #[test]
+fn a_worlds_size_is_saved_with_it_and_an_older_world_is_todays_size() {
+    // BIG_MAP.md M0: the size is a world setting (an optional tag, ADR 0054). A world made at 10×
+    // keeps it over a server whose new worlds are 1×; a world saved before sizes (no tag) and a
+    // default-size world (which writes none) open at today's size over a server set to make 10×.
+    use dwell_protocol::world_size::WorldSize;
+    let ten = WorldSize::named("10x").expect("a named size");
+    let scratch = Scratch::new("size");
+    let saved = |name: &str, size: WorldSize| {
+        let path = scratch.world(name);
+        let store = WorldStore::open_file(&path).expect("opens");
+        let mut f = Fixture::new(ServerConfig {
+            store: Some(store),
+            world_size: size,
+            ..flat()
+        });
+        assert_eq!(f.server.world_settings().size, size);
+        f.server.save_now();
+        f.server.flush_store();
+        path
+    };
+    let reopen = |path: &std::path::Path, size: WorldSize| {
+        let store = WorldStore::open_file(path).expect("reopens");
+        let mut f = Fixture::new(ServerConfig {
+            store: Some(store),
+            world_size: size,
+            ..flat()
+        });
+        f.join(1, &Client::new(1)); // checks the settings sent are the world's
+        f.server.world_settings().size
+    };
+    let big = saved("big", ten);
+    assert_eq!(reopen(&big, WorldSize::DEFAULT), ten, "the world's own");
+    let today = saved("today", WorldSize::DEFAULT);
+    assert_eq!(
+        reopen(&today, ten),
+        WorldSize::DEFAULT,
+        "no tag: today's size"
+    );
+}
+
+#[test]
 fn an_edited_world_survives_a_server_restart() {
     let scratch = Scratch::new("server");
     let path = scratch.world("server");

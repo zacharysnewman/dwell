@@ -69,6 +69,20 @@ pub mod lod {
     pub const MAX_REQUEST_SECTIONS: i64 = 32;
 }
 
+/// The world sizes (BIG_MAP.md §6 M0): `(name, radius scale)`, each a whole multiple of
+/// `world`'s radii; `DEFAULT` is today's (scale 1).
+pub mod world_sizes {
+    pub const DEFAULT: &str = "1x";
+    pub const MAX_RADIUS_SCALE: u32 = 16;
+    pub const SIZES: &[(&str, u32)] = &[
+        ("1x", 1),
+        ("2x", 2),
+        ("4x", 4),
+        ("8x", 8),
+        ("10x", 10),
+    ];
+}
+
 /// The build volume (ARCHITECTURE.md §6.3, ADR 0025): one shape of a closed set, its parameters
 /// from `constants.json` (`dwell_world::BuildVolume` evaluates it).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

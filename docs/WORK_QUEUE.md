@@ -4,7 +4,12 @@ The owner's ordered queue of work, with the decisions behind each item, so it su
 ending. Update it in the same change that starts, finishes, re-orders or re-scopes an item. The phase
 status lives in `docs/IMPLEMENTATION_PLAN.md`; this file is the order and the owner's words.
 
-Last updated: 2026-11-11 (0.52.68).
+**Rule (owner, 2026-11-11: "This is why we need to be documenting these as we go"):** every request, answer
+or decision the owner gives goes into this file **in the same turn it arrives**, before or alongside starting
+the work, quoting the owner's words; never only in a session's memory or an agent's brief. An item nobody
+recorded doesn't exist for the next session.
+
+Last updated: 2026-11-11 (0.52.108).
 
 ## Next, in order
 
@@ -220,10 +225,76 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    rain shadows over the seed's mountains; geology from plate history (arcs → basalt/andesite, uplifted
    ranges → granite/metamorphic, basins → sandstone/shale, old seafloor → limestone), soils from rock +
    climate; the starter stays a test bed, Realistic is a new World choice (later perhaps the default, on a
-   new compatibility line). **Status:** proposal written; waiting on the owner's answers (§7) before R1.
+   new compatibility line). Owner's answers to §7 (2026-11-11): plates decide land and sea (oceanic = sea,
+   continental = land, a sea margin at the disc's edge); face B its own plates from its own seed; the seed
+   picks the latitude band; Realistic seeds' terrain may change between releases while it is a test world;
+   plate count unanswered (the proposal's 3–5, as data). **Status:** R1 built: the plate layout
+   (`shared/worldgen/plates.json`, `plates.gen.rs`, `dwell-worldgen` `plates.rs`: plates by kind, motion and
+   age, boundaries classified by relative motion with the subducting side, hotspots, a land/sea mask), tested
+   on both faces, not wired into any world (goldens unchanged). The Chisel plates overlay moved to R2. Next:
+   R2 (uplift from boundaries); q2's bands, q6 and q8 still open. q5 (2026-11-11): no new rock blocks
+   for now; R5 uses today's blocks (stone, basalt, sandstone, red sandstone, sand, dirt) named in data, so
+   new ones can replace them later.
+
+16. **Phone frame rate (P0)** (owner 2026-11-11, iPhone 17, Safari, setting Low: "I'm only getting ~23 fps on
+   mobile, seeing lots of z-fighting on tree trunks with the leaf cards. What might be dropping frames since the
+   last while. Used to get 60 fps"). Suspect: leaf cards are on in every tier but CPU, Low included; cards lying
+   on trunk faces z-fight. In progress (local): measure each feature's cost on the `--touch` page at Low (default
+   and starter worlds) against an older release; cards off on Low/phone, no cards against log faces, a Low tier
+   for every new visual; tier pins and a z-fight test.
+17. **Axe swing directions and animation tools** (owner 2026-11-11: "The axe animations are still trash. They
+   don't swing in the right direction at all. Make yourself some tools to properly observe animations, movement
+   directions, positions over time, etc. Should swing right to left for horizontal and up to down for vertical";
+   "May need to see multiple perspectives to see animation and understand it"). In progress (cloud): a
+   `clip_probe` CLI sampling a clip through the game's posing code (tool head, hand, elbow over time; first
+   person, top, side, front and third-person views in one SVG), direction tests (horizontal strike right → left
+   on screen, vertical top → bottom, the head at the crosshair at contact), the clips fixed, a bench
+   `clip-strip` contact sheet from first and third person.
+   **Status (0.52.11x):** built: the `clip_probe` CLI and SVG (five views), direction tests (red 7/8 → green),
+   the clips refitted (level right → left, vertical top → bottom, the head on the crosshair at contact), a
+   bench `clip-strip` step. Review of the probe's sheets: directions right now, but the hands barely travel
+   (the head's arc is mostly a wrist turn), and the wind-up is short and small (0.1 s, no draw back over the
+   shoulder); the SVG's side panel is cut off. Left: an arm-driven swing (hands travel the arc, a real wind-up),
+   a probe test for hand travel, `clip-strip` run in the browser (local), remote players' chop direction (a
+   protocol change).
+18. **Digging marks that look carved** (owner 2026-11-11: "the 'chunks' of dirt aren't at all what we
+   discussed. It should be like a normal map change (do we support normal/bump maps)? It's completely flat
+   should look like mesh deformation (preferably without actually doing it for performance)"; "That part was
+   about digging"). No normal or bump maps today; 0.52.9x's scoop is a flat decal lit by a modelled bowl.
+   Planned (local, after item 16): each mark's height computed per pixel in the shader (its gradient bends the
+   normal; the texture shifted inside the dent for depth; the rim's shadow and damp floor), growing with damage,
+   data-driven, a cheap Low tier; collision unchanged. Stone shards on the same mechanism after.
+19. **Lava glow, remaining** (owner 2026-11-11: "Lava should have bloom glow"; "Lava looks dark red instead of
+   bright red/orange"; "It should darken as it solidifies though"). Built 0.52.107: colour by heat stops, heat in
+   cells. Left: the bloom pass (keyed on emissive; tiers, off on CPU/Low); the crust covering less of hot lava
+   (one number, `crust` of the hot stop, waiting on the owner's look); the cooling river not yet seen in game.
+20. **Starter world on iPhone, again** (owner 2026-11-11: "iOS can't handle the starter world. It crashes and
+   restarts quite often. What's so much heavier about it?"). 0.52.99–0.52.104: ecology 12.5 → 0.9 MB, starter
+   biome grids 53.6 → 15.9 MB a process. Left: re-measure on the `--touch` page; if still near the limit, one
+   world worker on phones.
+21. **Meadow tall grass** (owner's call pending, 2026-11-11): the meadow's grass grows in patches, never on ½ m
+   grass ramps (~40 % of the meadow), drawn pale. Denser patches or tufts on ramps change the default world's
+   terrain (a new compatibility line); a less pale tuft is a look change only. Asked the owner which.
+
+22. **Settings and version buttons look like web links** (owner 2026-11-11: "I thought we had settings and
+   version buttons changed queued, is that true?" — it wasn't recorded anywhere; then "The buttons should be
+   aligned to match the design of the others instead of looking like web links"). Restyle them as the menu's
+   own buttons, aligned with the others.
 
 ## Done
 
+- **Axe swing directions and animation tools (owner 2026-11-11: "The axe animations are still trash.
+  They don't swing in the right direction at all. Make yourself some tools to properly observe
+  animations"):** the clip probe (`cargo run -p dwell-client --example clip_probe`, DEV_TOOLS.md "Clip
+  probe and clip strip": a clip's points over time through the game's own posing, in first person,
+  top, side, front and third-person views, as a table, CSV or an SVG panel sheet) showed the level
+  strike going bottom → top and left → right on screen and both wind-ups taking the head behind the
+  eye. The arms' chop clips were refitted to head targets (level right → left, vertical top → bottom,
+  through the crosshair at contact) and the body got its own chop clips; pinned by
+  `clip_probe::chop_swing_tests` (red on the old clips, both faces in the world). The bench's
+  `clip-strip` step (K frames of one swing from first person and two third-person cameras, one
+  contact sheet) is for the local browser check, not run yet. Outstanding: that browser check; remote
+  players still see a `break` (the wire's swing byte has no chop kind).
 - **"Starting the graphics" frozen (BUGS.md #71):** not a main-thread task: on a cold Metal shader
   cache the GPU process compiled the renderer's 38 pipelines for ~9 s with the page painting no frame.
   Now the compile is its own stage (`shaders`), the pipelines are lazy (`render/pipeline.rs`) and
@@ -237,7 +308,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   shrunk exactly: stored by their exceptions over the sea (`grid::SparseGrid`), the drainage's height
   copy read from the world map, scratch dropped early: 53.6 → 15.9 MB a process natively
   (`tests/starter_memory.rs`, with the starter's terrain pinned bit for bit). Left: re-measure the page
-  on the bench; one copy per process remains.
+  on the bench; one copy per process remains. The pin was re-recorded 2026-11-11: it had been taken on code from
+  before the steppe's `undergrowth` 1 → 0.75, so it failed on main (stale, not a float difference: with
+  the steppe at 1 the old hashes match).
 
 - **Terrain leftovers, round 1** (0.52.66): arches from erosion-grown fins (a biome's `arches.fins`, the
   fin rule in T4's cut-back; sites slide to a fin within 12 m) and arches in a chosen rock
@@ -370,7 +443,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 - **A 10× map** — docs/proposals/BIG_MAP.md (owner 2026-11-11: "we will test out a 10x size map soon (could
   start whenever)"). Study written: 10× area (158 km radius) runs natively today (62 s, 871 MB a face here)
   once the radius is one value (M0–M2, a desktop test); a phone needs coarse whole-disc grids and 100 m
-  regions on demand (R1–R6). Open: which 10× (area or radius), per build or per world, desktop first.
+  regions on demand (R1–R6). Owner's answers (2026-11-11): 10× **radius** (500 km); a desktop test first, phones after the regional maps;
+  the size a **world setting**; the plates decide the land; "Perhaps even scope it as a 2x, 4x, 8x or 10x" —
+  sizes 1×/2×/4×/8×/10× as data. At 10× radius the whole-map grids run at a coarser cell (~1 km) until the
+  regional maps. **M0 built:** the size is a per-world setting (optional tag, today's worlds unchanged) and the
+  LOD levels, big map cells, hydrology cell (≤ 1 M cells at every size), island shape and uplift counts derive
+  from it. Next: M1 (the LOD root per size).
 
 - **Sharing saved structures between players** (owner 2026-11-11: "eventually shareable").
 

@@ -809,6 +809,7 @@ mod tests {
             },
             water_speed: 2.0,
             mode: "creative",
+            size: dwell_protocol::world_size::WorldSize::DEFAULT,
         }
     }
 

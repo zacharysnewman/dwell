@@ -9,6 +9,8 @@ pub mod chips;
 pub mod chisel;
 pub mod chisel_section;
 pub mod chop;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod clip_probe;
 pub mod creatures;
 pub mod far_herds;
 pub mod find;
