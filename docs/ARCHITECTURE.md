@@ -284,7 +284,8 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
                      the dynamic lights' falloff, flicker and choice (shared/look/lights.json).
   /dwell-ecology     The far ecology (§5.4, ECOLOGY.md): herds and packs as records on a face's
                      island grid, the forage per cell, the day step (ecology.gen.rs from
-                     shared/ecology; a fixture for tests). No dependency on the server core.
+                     shared/ecology; a fixture for tests), its bytes for saving. No dependency on
+                     the server core; dwell-sim holds one per face (server/ecology.rs).
   /dwell-characters  Characters (§5.3, CHARACTERS.md): the tables generated from shared/characters
                      (characters.gen.rs: rigs, looks composed into parts on bones, items, clips,
                      materials; characters.tiles: the brush tiles; fixture.gen.rs for tests), part
@@ -943,23 +944,39 @@ tests only); CI fails on stale output. Code names characters, looks, items and r
   triangles and 4 draws each, within the noise of `gpu.frame` (12.4–13.1 ms with 0–32 bodies on a
   busy machine); 41 KB of instance uniforms a frame at 32.
 
-### 5.4 The far ecology **[in progress: the data-level core built (`dwell-ecology`); not yet in the server, saved, drawn or near players]**
+### 5.4 The far ecology **[in progress: the data-level core and the server's tick and save built; not yet drawn, near players or in local worlds]**
 
 ([`ECOLOGY.md`](./ECOLOGY.md), WORK_QUEUE item 11.) Away from players the deer and wolves are
 **data only**: one record per herd or pack (`dwell_ecology::Group`: face-local position, size,
 hunger and energy averages, activity) on a coarse grid of the face's island (`Island`, 200 m cells
-sampled once from its world map: sea and lakes unwalked, each land cell's most forage by its height
-and slope). Each cell's **forage** is a number grazing depletes and time regrows; the real tall grass
+sampled once from its world map: sea and lakes unwalked, each land cell's most forage and refuge by
+its ground). Each cell's **forage** is a number grazing depletes and time regrows; the real tall grass
 is not touched. `step(island, data, eco, days)` fast-forwards the whole island over days in steps
 of at most `stepDays` (5), each rate integrated in closed form, so 100 days at once land within a
 few percent of 100 single days; deterministic from the seed (hashes, no carried generator). Deer
-move to the best forage away from packs, packs close on herds and kill within reach, groups split
-above their cap and merge when small, never drop below their floor; breeding slows to nothing as a
-species nears its island **carrying capacity** (deer: the forage regrown a day; wolves: that over
-their prey a head), so no species dies out or runs away. Data: `shared/ecology/ecology.json`
+move to the best forage away from packs (toward refuges when threatened), packs close on herds and
+kill within reach, groups split above their cap and merge when small. **No floor**: a group under
+its `dieBelow` is gone and a species can die out, but the system resists it (owner, 2026-11-11):
+predation is a Holling type III response (kills fall off with the square of the prey a pack can
+find, outside refuges), refuge grounds (crags) shield part of a herd, breeding is fastest at low
+density (a Ricker step), hungry packs disperse and lose members, starving is slow. Breeding slows
+to nothing as a species nears its island **carrying capacity** (deer: the forage regrown a day;
+wolves: that over their prey a head), so none runs away. Data: `shared/ecology/ecology.json`
 (`gen.mjs` → `ecology.gen.rs`, a fixture with species added by data alone). Face-local: one
-ecology per face, on that face's map. The 5.3 creatures (ADR 0073) are still spawned near players by
-their own rules; making individuals from the herds near players is the next slice (ECOLOGY.md §5).
+ecology per face, on that face's map.
+
+**On the server** (`dwell-sim` `server/ecology.rs`): one `Ecosystem` per face, made once both faces'
+world maps are in the process (never computed on the tick; worlds without a map, such as the flat
+world, have none), stepped by the world clock's days × the world's ecology `speed` on a schedule
+that depends only on how far behind it is and whether anyone is online: a day at a time online,
+nothing until 10 days behind when idle, `stepDays` steps when 10 or more behind (a load of an older
+world, an idle stretch), at most `MAX_STEPS_PER_TICK` (4) a tick. Saved in the world's optional
+`ecology` table with its `enabled` switch (a world can opt out; new worlds default on,
+`ServerConfig::ecology`) and its speed. A dev read-out (`Server::ecology_snapshot`: each group's face,
+species, position, size, hunger, energy, activity) is server-side only for now. The browser's local
+server computes no world map itself (the server-jobs worker does), so a local world's ecology does
+not run yet. The 5.3 creatures (ADR 0073) are still spawned near players by their own rules; making
+individuals from the herds near players is a later slice (ECOLOGY.md §7).
 
 ---
 
@@ -2140,6 +2157,7 @@ lives in side files. Chunk and LOD blobs are the protocol's palette + RLE compre
 | `ground_gone` | **[built, 0.50.68]** One record (key 0), rewritten each save: the ground items gone from the scatter (`dwell_world::ground::GroundGone::to_bytes`, version 1: a count, then each cell as i32×3, sorted; ADR 0071), the scatter's tombstones. Optional: older builds leave it; an unreadable record is kept, not overwritten |
 | `block_damage` | **[built, 0.52.28]** One record (key 0), rewritten each save: the blocks hit short of breaking (`dwell_protocol::damage::Damage::to_bytes`, version 1: each cell, its state, hits and up to four hit marks; ADR 0078). Optional: a world without it loads undamaged, older builds leave it; an unreadable record is kept, not overwritten |
 | `tree_growth` | **[built, 0.52.60]** One record (key 0), rewritten each save: the trees' growth records (`dwell_worldgen::growth::Records::to_bytes`, version 1: per tree its anchor, face, species by name, seed, stage, the world day it reached it, turn, planter, variant, stopped; ADR 0079). Optional: a world without it grows its trees from their drawn stages, older builds leave it; an unreadable record is kept, not overwritten |
+| `ecology` | **[built]** One record (key 0), rewritten each save: the far ecology (docs/ECOLOGY.md §6; `dwell-sim` `server/ecology.rs`, version 1: the world's `enabled` switch and `speed`, then each face's `Ecosystem::to_bytes`: its seed, day, forage grid, species by name, groups). Optional: a world without it starts a fresh ecology from its seed and catches up its days; older builds leave it; an unreadable record is kept, not overwritten |
 | `cuts` | **[built, 0.50.34]** One record (key 0), rewritten each save: the axes' cuts in wood cells (`dwell_protocol::chopping::Cuts::to_bytes`, version 1: each cell, then per side its notch and two kerfs as f32; ADR 0067). Optional: older builds leave it; an unreadable record is kept, not overwritten |
 | `water` | **[built, 0.48.2]** The water surface grid's free water (§6.7, WATER_SURFACE_GRID.md): one LZ4 record of `Water::save` (`DWG1`): each water chunk with free columns, their floors, depths and flows (and the rest layer's), and what the chunk owes; held water is found again from the blocks. An older basin record (`DWW5`) is ignored |
 | `tree_tombstones` | **[planned, Phase 30]** Per chunk: the sparse set of chopped procedural tree ids `(chunk, procedural index)` and the pruned node sets of partly cut ones (§6.3 tree growth) |

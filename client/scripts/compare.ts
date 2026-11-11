@@ -38,6 +38,10 @@ export interface ScenarioReport {
   bursts?: Record<string, Flicker>;
   /** Each `server` step's samples of the local server's figures, by name. */
   servers?: Record<string, unknown[]>;
+  /** Each placed `shot`'s camera and settle time (bench.ts `placedShot`). */
+  shots?: unknown[];
+  /** Loads that weren't playing within the stall bar and were retried in a fresh page. */
+  stalls?: { stalledS: number; errors: string[] }[];
   /** Page opened → playing (s), and the loading screen's state then (ARCHITECTURE.md §6.3). */
   join?: { playingS: number; loading: Record<string, unknown> | null };
   /** Each `until` step's seconds since the page was opened (null: not reached). */

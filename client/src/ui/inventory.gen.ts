@@ -41,14 +41,16 @@ export const STARTING_WALLET = "dwell:pouch";
 /** A recipe (combining): its inputs make its output (the server applies it). */
 export interface Recipe {
   name: string;
+  /** The Combine button's name (else the output item's label). */
+  label?: string;
   inputs: readonly { item: string; count: number }[];
   output: { item: string; count: number };
 }
 
 export const RECIPES: readonly Recipe[] = [
-  {"name":"dwell:stone_slab","inputs":[{"item":"dwell:rock_shard","count":8}],"output":{"item":"dwell:stone","count":1}},
-  {"name":"dwell:dirt_slab","inputs":[{"item":"dwell:dirt_clump","count":8}],"output":{"item":"dwell:dirt","count":1}},
-  {"name":"dwell:log_slab","inputs":[{"item":"dwell:wood","count":8}],"output":{"item":"dwell:log","count":1}},
+  {"name":"dwell:stone_slab","label":"Stone slab","inputs":[{"item":"dwell:rock_shard","count":8}],"output":{"item":"dwell:stone","count":1}},
+  {"name":"dwell:dirt_slab","label":"Dirt slab","inputs":[{"item":"dwell:dirt_clump","count":8}],"output":{"item":"dwell:dirt","count":1}},
+  {"name":"dwell:log_slab","label":"Log slab","inputs":[{"item":"dwell:wood","count":8}],"output":{"item":"dwell:log","count":1}},
   {"name":"dwell:stone_axe","inputs":[{"item":"dwell:stick","count":2},{"item":"dwell:rock_shard","count":2},{"item":"dwell:grass_fiber","count":2}],"output":{"item":"dwell:stone_axe","count":1}},
   {"name":"dwell:stone_pickaxe","inputs":[{"item":"dwell:stick","count":2},{"item":"dwell:rock_shard","count":2},{"item":"dwell:grass_fiber","count":2}],"output":{"item":"dwell:stone_pickaxe","count":1}},
 ];

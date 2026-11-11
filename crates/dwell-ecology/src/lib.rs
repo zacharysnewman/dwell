@@ -9,9 +9,11 @@
 //! Face-local: an ecology runs on one face's map, in its face-local metres (nothing here depends on
 //! which way is up); each face has its own.
 //!
-//! Not yet: individuals made when a player comes near, far rendering, grazing applied to the real
-//! tall grass, saving with the world, the server's tick (docs/ECOLOGY.md §5).
+//! The server (`dwell-sim`'s `ecology`) holds one per face, steps it by the world's days and saves
+//! it ([`Ecosystem::to_bytes`]). Not yet: individuals made when a player comes near, far rendering,
+//! grazing applied to the real tall grass (docs/ECOLOGY.md §5).
 
+pub mod codec;
 pub mod data;
 pub mod island;
 pub mod sim;

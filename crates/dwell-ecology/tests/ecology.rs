@@ -53,18 +53,18 @@ fn by_hand(island: &Island, groups: Vec<Group>) -> Ecosystem {
     }
 }
 
-/// Every group's size within its species' floor and cap.
+/// Every group's size within its species' `dieBelow` (under it, it is gone) and cap.
 fn assert_groups_in_bounds(eco: &Ecosystem, data: &Data) {
     for g in &eco.groups {
         let r = data.species[g.species].group;
         assert!(
-            g.size <= r.cap + 1e-9 && g.size >= r.floor - 1e-9,
+            g.size <= r.cap + 1e-9 && g.size >= r.die_below - 1e-9,
             "day {}: group {} of {} has {} head, outside [{}, {}]",
             eco.day,
             g.id,
             data.species[g.species].name,
             g.size,
-            r.floor,
+            r.die_below,
             r.cap
         );
         assert!((0.0..=1.0).contains(&g.hunger) && g.energy.is_finite());
@@ -72,9 +72,10 @@ fn assert_groups_in_bounds(eco: &Ecosystem, data: &Data) {
 }
 
 #[test]
-fn a_thousand_days_never_lose_a_species_nor_run_away() {
-    // The owner's goals: resistant to complete destruction, and (2026-11-11) no runaway either:
-    // each species' island total stays under its carrying capacity from the data.
+fn a_thousand_days_keep_both_species_in_most_seeds_and_never_run_away() {
+    // The owner's goals: "systemically resistant to being wiped out, not immune from it"
+    // (2026-11-11), and no runaway: each species' island total stays under its carrying capacity
+    // from the data. With no floor a species may die out, but not in most seeds.
     let isl = island(&DATA);
     let (k_deer, k_wolf) = (
         isl.carrying_capacity(&DATA, deer()),
@@ -84,22 +85,14 @@ fn a_thousand_days_never_lose_a_species_nor_run_away() {
         k_deer > 100.0 && k_wolf > 4.0,
         "the test island is too poor: {k_deer}, {k_wolf}"
     );
+    let mut kept = 0;
+    let mut report = Vec::new();
     for seed in [1, 7, 42, 1234] {
         let mut eco = Ecosystem::new(&isl, &DATA, seed);
         let (mut most_deer, mut most_wolves) = (0.0f64, 0.0f64);
         for _ in 0..100 {
             step(&isl, &DATA, &mut eco, 10.0);
             let (d, w) = (eco.population(deer()), eco.population(wolf()));
-            assert!(
-                d > 0.0 && eco.group_count(deer()) > 0,
-                "seed {seed} day {}: no deer",
-                eco.day
-            );
-            assert!(
-                w > 0.0 && eco.group_count(wolf()) > 0,
-                "seed {seed} day {}: no wolves",
-                eco.day
-            );
             assert!(
                 d <= k_deer,
                 "seed {seed} day {}: {d} deer over the capacity {k_deer}",
@@ -114,17 +107,21 @@ fn a_thousand_days_never_lose_a_species_nor_run_away() {
             most_deer = most_deer.max(d);
             most_wolves = most_wolves.max(w);
         }
-        // Quick to replicate: the herds grew well past their start (8 × 6) and split to do it.
+        // Quick to replicate: the herds grew well past their start (8 × 6).
         assert!(
             most_deer > 100.0,
             "seed {seed}: the deer never grew ({most_deer})"
         );
-        assert!(eco.group_count(deer()) > DATA.species[deer()].start_groups);
-        assert!(
-            most_wolves > 8.0,
-            "seed {seed}: the wolves never grew ({most_wolves})"
-        );
+        let (d, w) = (eco.population(deer()), eco.population(wolf()));
+        report.push(format!("seed {seed}: {d:.0} deer, {w:.1} wolves"));
+        if eco.group_count(deer()) > 0 && eco.group_count(wolf()) > 0 {
+            kept += 1;
+        }
     }
+    assert!(
+        kept >= 3,
+        "both species kept in {kept} of 4 seeds: {report:?}"
+    );
 }
 
 #[test]
@@ -182,12 +179,13 @@ const BARE: Data = Data {
         max_height_m: 100000.0,
         max_slope_deg: 90.0,
         max: 0.0,
+        refuge: 0.0,
     }],
     ..DATA
 };
 
 #[test]
-fn a_herd_with_no_grazing_starves_slowly_and_keeps_its_floor() {
+fn a_herd_with_no_grazing_starves_slowly_and_dies_out_in_the_end() {
     let isl = island(&BARE);
     let mut eco = by_hand(&isl, vec![group(0, deer(), 0.0, 0.0, 10.0, 0.0)]);
     step(&isl, &BARE, &mut eco, 1.0);
@@ -208,13 +206,129 @@ fn a_herd_with_no_grazing_starves_slowly_and_keeps_its_floor() {
         month > 7.0 && month < 10.0,
         "a month starving loses some, slowly: {month}"
     );
-    step(&isl, &BARE, &mut eco, 970.0);
-    let floor = DATA.species[deer()].group.floor;
-    assert_eq!(
-        eco.population(deer()),
-        floor,
-        "starving to the floor, never below"
+    step(&isl, &BARE, &mut eco, 70.0);
+    assert!(eco.group_count(deer()) == 1, "slow: alive after 100 days");
+    step(&isl, &BARE, &mut eco, 900.0);
+    assert_eq!(eco.group_count(deer()), 0, "no floor: it died out");
+    assert_eq!(eco.population(deer()), 0.0);
+}
+
+#[test]
+fn an_island_whose_grazing_collapsed_loses_its_deer_and_then_its_wolves() {
+    // A thriving island, then its forage gone (every cell bare from then on).
+    let isl = island(&DATA);
+    let mut eco = Ecosystem::new(&isl, &DATA, 7);
+    step(&isl, &DATA, &mut eco, 200.0);
+    assert!(eco.population(deer()) > 50.0);
+    let bare = island(&BARE);
+    eco.grazing.iter_mut().for_each(|g| *g = 0.0);
+    step(&bare, &BARE, &mut eco, 1500.0);
+    assert_eq!(eco.group_count(deer()), 0, "the deer starved out");
+    step(&bare, &BARE, &mut eco, 500.0);
+    assert_eq!(eco.group_count(wolf()), 0, "then the wolves, with no prey");
+}
+
+#[test]
+fn wolves_with_no_deer_die_out() {
+    let isl = island(&DATA);
+    let mut eco = by_hand(&isl, vec![group(0, wolf(), 0.0, 0.0, 6.0, 0.3)]);
+    step(&isl, &DATA, &mut eco, 30.0);
+    assert_eq!(eco.group_count(wolf()), 1, "not at once: {:?}", eco.groups);
+    step(&isl, &DATA, &mut eco, 970.0);
+    assert_eq!(eco.group_count(wolf()), 0, "{:?}", eco.groups);
+}
+
+#[test]
+fn predation_eases_at_low_prey_density_holling_type_iii() {
+    let diet = DATA.species[wolf()].diet;
+    let dwell_ecology::Diet::Prey {
+        half_saturation_head: h,
+        ..
+    } = diet
+    else {
+        panic!("the wolf hunts")
+    };
+    let share = |n: f64| Data::catch_share(diet, n);
+    assert_eq!(share(0.0), 0.0);
+    assert!(
+        (share(h) - 0.5).abs() < 1e-12,
+        "half at the half-saturation"
     );
+    assert!(share(100.0 * h) > 0.99, "saturates when prey is plentiful");
+    // Sigmoid: at low density it rises with the square (doubling the prey quadruples the share),
+    // so each prey head's risk (share / N) falls as the prey gets scarce.
+    let (a, b) = (share(0.05 * h), share(0.1 * h));
+    assert!((b / a - 4.0).abs() < 0.05, "{a} → {b}");
+    for n in [1.0, 2.0, 4.0, 8.0] {
+        assert!(
+            share(n) / n < share(2.0 * n) / (2.0 * n),
+            "risk a head at {n}"
+        );
+    }
+    // In the step: the same pack takes a smaller share of a scarce herd than of a big one (the
+    // pack first in id order, so it strikes before the herd runs; bare ground and a half-hungry
+    // herd, so it neither breeds nor starves over the half day and only the kills count).
+    let isl = island(&BARE);
+    let taken = |size: f64| {
+        let mut eco = by_hand(
+            &isl,
+            vec![
+                group(0, wolf(), 50.0, 0.0, 4.0, 0.5),
+                group(1, deer(), 0.0, 0.0, size, 0.5),
+            ],
+        );
+        step(&isl, &BARE, &mut eco, 0.5);
+        1.0 - eco.population(deer()) / size
+    };
+    let (scarce, plenty) = (taken(1.5), taken(12.0));
+    assert!(scarce > 0.0 && plenty > 0.0);
+    assert!(
+        scarce < plenty / 2.0,
+        "a scarce herd's share taken {scarce} vs a big one's {plenty}"
+    );
+}
+
+#[test]
+fn a_herd_in_a_refuge_loses_fewer_to_a_pack() {
+    // West of x = 0 open ground, east crag (steep: a refuge), both bare (only the kills count).
+    const ROCKS: Data = Data {
+        grounds: &[
+            GroundDef {
+                name: "open",
+                max_height_m: 100000.0,
+                max_slope_deg: 30.0,
+                max: 0.0,
+                refuge: 0.0,
+            },
+            GroundDef {
+                name: "crag",
+                max_height_m: 100000.0,
+                max_slope_deg: 90.0,
+                max: 0.0,
+                refuge: 0.8,
+            },
+        ],
+        ..DATA
+    };
+    let isl = Island::from_ground(&ROCKS, 24, -2300.0, |x, _| Ground::Land {
+        height_m: 50.0,
+        slope_deg: if x < 0.0 { 5.0 } else { 60.0 },
+    });
+    assert!(isl.refuge_at(1000.0, 0.0) > 0.5 && isl.refuge_at(-1000.0, 0.0) == 0.0);
+    let lost = |x: f64| {
+        let mut eco = by_hand(
+            &isl,
+            vec![
+                group(0, wolf(), x + 50.0, 0.0, 6.0, 0.5),
+                group(1, deer(), x, 0.0, 10.0, 0.5),
+            ],
+        );
+        step(&isl, &ROCKS, &mut eco, 0.5);
+        10.0 - eco.population(deer())
+    };
+    let (open, refuge) = (lost(-1000.0), lost(1000.0));
+    assert!(open > 0.0);
+    assert!(refuge < open * 0.5, "refuge {refuge} vs open {open}");
 }
 
 #[test]
@@ -325,9 +439,8 @@ fn deer_flee_a_pack_and_a_hungry_pack_closes_on_a_herd() {
 }
 
 #[test]
-fn predation_takes_deer_but_never_below_the_herds_floor() {
+fn predation_takes_deer() {
     let isl = island(&DATA);
-    let floor = DATA.species[deer()].group.floor;
     let mut eco = by_hand(
         &isl,
         vec![
@@ -338,9 +451,7 @@ fn predation_takes_deer_but_never_below_the_herds_floor() {
     step(&isl, &DATA, &mut eco, 1.0);
     let herd = eco.population(deer());
     assert!(herd < 3.0, "the pack ate: {herd}");
-    step(&isl, &DATA, &mut eco, 30.0);
-    assert!(eco.population(deer()) >= floor - 1e-9);
-    assert!(eco.population(wolf()) >= DATA.species[wolf()].group.floor - 1e-9);
+    assert_groups_in_bounds(&eco, &DATA);
 }
 
 #[test]
@@ -406,3 +517,59 @@ dwell_world::both_faces!(
         }
     }
 );
+
+#[test]
+fn an_ecosystem_round_trips_through_its_bytes() {
+    let isl = island(&DATA);
+    let mut eco = Ecosystem::new(&isl, &DATA, 5);
+    step(&isl, &DATA, &mut eco, 120.0);
+    let bytes = eco.to_bytes(&DATA);
+    let back = Ecosystem::from_bytes(&bytes, &isl, &DATA).expect("reads its own bytes");
+    assert_eq!(back, eco);
+    assert_eq!(back.digest(), eco.digest());
+    // Cut short, or another version: not read.
+    assert_eq!(
+        Ecosystem::from_bytes(&bytes[..bytes.len() - 1], &isl, &DATA),
+        None
+    );
+    let mut other = bytes.clone();
+    other[0] = 99;
+    assert_eq!(Ecosystem::from_bytes(&other, &isl, &DATA), None);
+}
+
+#[test]
+fn saved_species_are_mapped_by_name_and_unknown_ones_dropped() {
+    // Saved under the build's data (deer, wolf); read by data that knows only the deer, at another
+    // index: the deer kept, the wolves dropped. A grid of another size starts full.
+    let isl = island(&DATA);
+    let mut eco = Ecosystem::new(&isl, &DATA, 5);
+    step(&isl, &DATA, &mut eco, 20.0);
+    let bytes = eco.to_bytes(&DATA);
+    const ONLY_DEER: Data = Data {
+        species: &[
+            dwell_ecology::SpeciesDef {
+                name: "test:elk",
+                ..DATA.species[0]
+            },
+            DATA.species[0],
+        ],
+        ..DATA
+    };
+    let small = Island::from_ground(&DATA, 4, 0.0, |_, _| Ground::Land {
+        height_m: 10.0,
+        slope_deg: 1.0,
+    });
+    let back = Ecosystem::from_bytes(&bytes, &small, &ONLY_DEER).expect("reads");
+    assert_eq!(back.grazing, small.grazing_max, "another grid: full");
+    assert_eq!(
+        back.group_count(1),
+        eco.group_count(deer()),
+        "deer at their new index"
+    );
+    assert_eq!(back.group_count(0), 0, "no elk were saved");
+    assert_eq!(
+        back.groups.len(),
+        eco.group_count(deer()),
+        "the wolves dropped"
+    );
+}

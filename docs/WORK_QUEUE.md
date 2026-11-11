@@ -109,7 +109,10 @@ Last updated: 2026-11-11 (0.52.68).
    Done: 1 (local builds read `shared/version/line.json`, `<line>.0-dev.local`), 2 (pending release notes,
    `shared/releases/pending/`, assigned by the Release workflow; RELEASES.md §3; its first run on `main`
    still to watch), 3 (`docs/AGENT_QUICKSTART.md`), 5 (`npm run check:<area>`) and 6 (CLAUDE.md "lighter
-   paperwork"), with `docs/CLOUD_SESSIONS.md`; 4 (the browser kit) running locally.
+   paperwork"), with `docs/CLOUD_SESSIONS.md`; 4, the browser kit (`claude/browser-kit`, in review): the
+   warm prebuilt client (`npm run bench:warm`, `--warm`), placed `shot`s (`at` / `above`, face-checked,
+   settled), `look` turning a placed camera, stall retries, saved spots (`client/bench/spots.json`,
+   `--spot`); DEV_TOOLS.md "Screenshots of a place".
 11. **Deer/wolf ecology simulation, first slice** (owner 2026-11-11, with a mockup:
    docs/proposals/ECOSYSTEM_MOCKUP_NOTES.md). "Simulate at a data level only when you're not nearby, render
    simply from afar, and exactly when close by." Answers: far = herds and packs (one record each;
@@ -119,8 +122,13 @@ Last updated: 2026-11-11 (0.52.68).
    Tuning (owner): resistant to complete destruction, quick to replicate up to each group's cap, slow to
    starve, and no runaway (the island's total bounded by grazing for deer, by prey for wolves).
    **Started 2026-11-11:** the data-level core is built — `crates/dwell-ecology`, `shared/ecology/ecology.json`,
-   docs/ECOLOGY.md (herds and packs, forage per cell, the day step, 15 tests). Next (ECOLOGY.md §5): the
-   server's tick and saving, individuals near players, simple far rendering, grazing on the real tall grass.
+   docs/ECOLOGY.md (herds and packs, forage per cell, the day step, 15 tests). **Slice 2 built:** the server
+   holds one ecology per face, stepped by the world's days (bounded catch-up: 4 steps a tick), saved in an
+   optional `ecology` table with a per-world switch (default on, additive) and speed; a server-side read-out
+   (ECOLOGY.md §6). Owner's correction (2026-11-11): no floors — herds and packs can die, resisted by the
+   system (Holling type III predation, refuges, fast low-density breeding, dispersal, slow starving). Next
+   (ECOLOGY.md §7): individuals near players, simple far rendering with a client read-out, local worlds'
+   maps, grazing on the real tall grass.
 12. **Players' saved structures as placement sources** (owner 2026-11-11): per player (their library, usable
    in any world they create); placed copies editable, not protected; 32³ for now (may change), or larger
    structures as a grid of 32³ tiles. Sharing between players: Future.
@@ -202,10 +210,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 - **Terrain leftovers (0.52.66 round 1 left):** T3b in normal biomes (a snow line from temperature for
   any biome, soil blocks by soil type, grass and ground items by climate; the starter opts in); Rainier
   detail (below); in-game screenshots of an arch on a fin, the red mesa and a snowy biome edge.
-- **Pieces follow-ups (0.52.46):** the Combine buttons say "Stone"/"Log", not "slab"; the wood chunk's
-  icon is a plain dot; the worn axe not yet seen in game.
-- **Block damage follow-ups:** scoops read as dark stains (flat decals); remote players' leaf brushing
-  and stick snaps are silent.
+- **Pieces follow-ups (0.52.46):** the worn axe not yet seen in game.
+- **Block damage follow-ups:** scoops read as dark stains (flat decals).
 - **Peaks:** a more broken summit, deeper ridges and cirques (Rainier).
 - **Chisel:** biome decorations and spacing per biome; players' saved structures as placement sources;
   the in-game editor and a biome choice in the New world form.

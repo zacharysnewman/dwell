@@ -40,6 +40,10 @@ use dwell_protocol::auth::verify_ed25519;
 
 mod chopping;
 mod creatures;
+mod ecology;
+pub use ecology::{
+    CATCH_UP_DAYS, EcologySnapshot, GroupView, IDLE_DAYS, MAX_STEPS_PER_TICK, next_step,
+};
 mod ground;
 mod growth;
 mod items;
@@ -317,6 +321,14 @@ pub struct ServerConfig {
     /// falls past half toward its notch. Off: today's chopping (ADR 0067). The data's `enabled`
     /// by default; dev `?chop=v2` for a local world.
     pub chop2: bool,
+    /// A new world's far ecology (docs/ECOLOGY.md §6): on by default; off, the world has none
+    /// (saved so: a world keeps its own). `ecology_speed` × the world's days (tests, dev; a
+    /// per-world tuning hook, saved with it).
+    pub ecology: bool,
+    pub ecology_speed: f64,
+    /// Tests and tools: the faces' islands (A, B) in place of the world maps', for worlds without
+    /// one (the flat world, test generators).
+    pub ecology_islands: Option<Arc<[dwell_ecology::Island; 2]>>,
 }
 
 /// A new world's settings: this build's clock (`shared/look/daynight.json`), `water_speed` and the
@@ -379,6 +391,9 @@ impl Default for ServerConfig {
             mode: dwell_protocol::modes::DEFAULT_MODE.into(),
             one_hit_breaks: false,
             chop2: dwell_protocol::chopping::CHOP2_DEFAULT,
+            ecology: true,
+            ecology_speed: 1.0,
+            ecology_islands: None,
         }
     }
 }
@@ -917,6 +932,8 @@ pub struct Server {
     growth: dwell_worldgen::growth::Records,
     /// The saved records are a newer build's: kept, not written over.
     growth_unread: bool,
+    /// The far ecology (docs/ECOLOGY.md §6): both faces' herds and packs, saved with the world.
+    ecology: ecology::Ecology,
     /// The world's growers (none: no species trees), built on first use.
     growers: Option<Option<Arc<dwell_worldgen::growth::Growers>>>,
     /// The loaded chunks already looked at for trees (not saved: looked at again after a load).
@@ -1072,6 +1089,14 @@ impl Server {
             lava_steam: Vec::new(),
             growth: Default::default(),
             growth_unread: false,
+            ecology: ecology::Ecology::new(
+                config.ecology,
+                config.ecology_speed,
+                config.world_seed,
+                config.generator_version == dwell_world::GENERATOR_TERRAIN
+                    && config.generator_override.is_none(),
+                config.ecology_islands.clone(),
+            ),
             growers: None,
             growth_scanned: Default::default(),
             ground: Default::default(),
@@ -1821,6 +1846,8 @@ impl Server {
         self.flow_lava();
         // Trees grow by the world's days (ADR 0079 S3).
         self.grow_trees();
+        // The far ecology steps by them too (docs/ECOLOGY.md §6).
+        self.step_ecology();
 
         // Loose items fall, are picked up and despawn (ADR 0066); inventories changed are sent.
         self.step_items();
@@ -4322,6 +4349,9 @@ impl Server {
                 None => self.growth_unread = true,
             }
         }
+        if let Some(b) = db.ecology() {
+            self.ecology.restore(b);
+        }
         if let Some(b) = db.ground_gone() {
             match dwell_world::ground::GroundGone::from_bytes(&b) {
                 Some(g) => self.ground = g,
@@ -4450,6 +4480,7 @@ impl Server {
         if !self.ground_unread {
             batch.ground_gone = Some(self.ground.to_bytes());
         }
+        batch.ecology = Some(self.ecology.record());
         if !self.damage_unread {
             batch.damage = Some(self.damage.to_bytes());
         }

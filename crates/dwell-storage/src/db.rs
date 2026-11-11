@@ -72,6 +72,9 @@ const TREE_GROWTH: TableDefinition<u32, &[u8]> = TableDefinition::new("tree_grow
 /// (`dwell_sim::lava::Lava::to_bytes`), rewritten on each save that carries it. Optional, as
 /// `tree_growth`: a world without it has no lava, and an older build ignores it.
 const LAVA: TableDefinition<u32, &[u8]> = TableDefinition::new("lava");
+/// The far ecology (docs/ECOLOGY.md §5 slice 2): one record, both faces' herds and packs and their
+/// forage. Optional: older builds ignore it; a world without it starts a fresh ecology.
+const ECOLOGY: TableDefinition<u32, &[u8]> = TableDefinition::new("ecology");
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct WorldMeta {
@@ -238,6 +241,8 @@ pub struct SaveBatch {
     pub tree_growth: Option<Vec<u8>>,
     /// The lava fields now, replacing those saved before (None: leave them; VOLCANOES.md §6).
     pub lava: Option<Vec<u8>>,
+    /// The far ecology now, replacing what was saved before (None: leave it; docs/ECOLOGY.md).
+    pub ecology: Option<Vec<u8>>,
 }
 
 /// A [`SaveBatch`] being encoded for its commit (`WorldDb::prepare`): its chunks mapped to the
@@ -705,6 +710,14 @@ impl WorldDb {
         Some(v.value().to_vec())
     }
 
+    /// The far ecology as last saved (docs/ECOLOGY.md), if any.
+    pub fn ecology(&self) -> Option<Vec<u8>> {
+        let txn = self.db.begin_read().ok()?;
+        let t = txn.open_table(ECOLOGY).ok()?;
+        let v = t.get(0).ok()??;
+        Some(v.value().to_vec())
+    }
+
     /// The ground items gone as last saved (ADR 0071), if any.
     pub fn ground_gone(&self) -> Option<Vec<u8>> {
         let txn = self.db.begin_read().ok()?;
@@ -1037,6 +1050,10 @@ impl WorldDb {
         if let Some(lava) = &batch.lava {
             let mut t = txn.open_table(LAVA).map_err(err)?;
             t.insert(0, lava.as_slice()).map_err(err)?;
+        }
+        if let Some(ecology) = &batch.ecology {
+            let mut t = txn.open_table(ECOLOGY).map_err(err)?;
+            t.insert(0, ecology.as_slice()).map_err(err)?;
         }
         if let Some(hook) = &self.before_commit {
             hook()?; // dropping the transaction aborts it
