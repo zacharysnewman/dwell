@@ -167,10 +167,11 @@ export const AREAS: Record<string, Area> = {
     ],
   },
   sim: {
-    notes: 'the server, physics and the player controller (both faces), creatures, storage',
+    notes: 'the server, physics and the player controller (both faces), creatures, the ecology, storage',
     generators: [
       'shared/physics/gen.mjs',
       'shared/creatures/gen.mjs',
+      'shared/ecology/gen.mjs',
       'shared/explosives/gen.mjs',
       'shared/fluids/gen.mjs',
       'shared/fluids/falls.mjs',
@@ -178,11 +179,12 @@ export const AREAS: Record<string, Area> = {
     nodeTests: [
       'shared/physics/gen.test.mjs',
       'shared/creatures/gen.test.mjs',
+      'shared/ecology/gen.test.mjs',
       'shared/explosives/gen.test.mjs',
       'shared/fluids/gen.test.mjs',
       'shared/fluids/falls.test.mjs',
     ],
-    crates: ['dwell-sim', 'dwell-physics', 'dwell-world', 'dwell-storage', 'dwell-server'],
+    crates: ['dwell-sim', 'dwell-ecology', 'dwell-physics', 'dwell-world', 'dwell-storage', 'dwell-server'],
     vitest: ['src/local/', 'src/predict/'],
     // CLAUDE.md "both faces": controller changes pass the mirror suite too.
     extra: [{ argv: ['cargo', 'test', '-p', 'dwell-physics'], env: { DWELL_FACE: 'b' } }],

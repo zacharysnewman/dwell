@@ -106,8 +106,13 @@ Last updated: 2026-11-11 (0.52.68).
    Tuning (owner): resistant to complete destruction, quick to replicate up to each group's cap, slow to
    starve, and no runaway (the island's total bounded by grazing for deer, by prey for wolves).
    **Started 2026-11-11:** the data-level core is built — `crates/dwell-ecology`, `shared/ecology/ecology.json`,
-   docs/ECOLOGY.md (herds and packs, forage per cell, the day step, 15 tests). Next (ECOLOGY.md §5): the
-   server's tick and saving, individuals near players, simple far rendering, grazing on the real tall grass.
+   docs/ECOLOGY.md (herds and packs, forage per cell, the day step, 15 tests). **Slice 2 built:** the server
+   holds one ecology per face, stepped by the world's days (bounded catch-up: 4 steps a tick), saved in an
+   optional `ecology` table with a per-world switch (default on, additive) and speed; a server-side read-out
+   (ECOLOGY.md §6). Owner's correction (2026-11-11): no floors — herds and packs can die, resisted by the
+   system (Holling type III predation, refuges, fast low-density breeding, dispersal, slow starving). Next
+   (ECOLOGY.md §7): individuals near players, simple far rendering with a client read-out, local worlds'
+   maps, grazing on the real tall grass.
 12. **Players' saved structures as placement sources** (owner 2026-11-11): per player (their library, usable
    in any world they create); placed copies editable, not protected; 32³ for now (may change), or larger
    structures as a grid of 32³ tiles. Sharing between players: Future.

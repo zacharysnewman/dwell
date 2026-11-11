@@ -25,6 +25,8 @@ pub struct Island {
     pub walkable: Vec<bool>,
     /// The most forage each cell holds (0 on water).
     pub grazing_max: Vec<f64>,
+    /// Each cell's refuge (its ground's): the share of a group there hunters can't take.
+    pub refuge: Vec<f64>,
 }
 
 impl Island {
@@ -39,6 +41,7 @@ impl Island {
         let cell = data.island.cell_m;
         let mut walkable = vec![false; n * n];
         let mut grazing_max = vec![0.0; n * n];
+        let mut refuge = vec![0.0; n * n];
         for c in 0..n * n {
             let (x, z) = (x0 + (c % n) as f64 * cell, x0 + (c / n) as f64 * cell);
             if let Ground::Land {
@@ -47,7 +50,10 @@ impl Island {
             } = sample(x, z)
             {
                 walkable[c] = true;
-                grazing_max[c] = data.grazing_for(height_m, slope_deg);
+                if let Some(g) = data.ground_for(height_m, slope_deg) {
+                    grazing_max[c] = g.max;
+                    refuge[c] = g.refuge;
+                }
             }
         }
         Self {
@@ -56,6 +62,7 @@ impl Island {
             x0,
             walkable,
             grazing_max,
+            refuge,
         }
     }
 
@@ -94,13 +101,20 @@ impl Island {
         )
     }
 
+    /// The refuge at face-local (x, z) (0 off the grid).
+    pub fn refuge_at(&self, x: f64, z: f64) -> f64 {
+        self.cell_at(x, z)
+            .and_then(|c| self.refuge.get(c).copied())
+            .unwrap_or(0.0)
+    }
+
     pub fn is_walkable(&self, x: f64, z: f64) -> bool {
         self.cell_at(x, z).is_some_and(|c| self.walkable[c])
     }
 
     /// The most head of `species` the island holds: for a grazer, the forage regrown a day when
     /// grazed bare over its feed a head; for a hunter, its prey's capacity over the prey it needs a
-    /// head. Breeding slows toward it, so the island-wide total stays under it (floors aside).
+    /// head. Breeding slows toward it, so the island-wide total stays under it.
     pub fn carrying_capacity(&self, data: &Data, species: usize) -> f64 {
         match data.species[species].diet {
             Diet::Graze { per_head_per_day } => {

@@ -15,16 +15,16 @@ const root = join(here, '..', '..');
 const TOP_FIELDS = ['formatVersion', 'island', 'grazing', 'species'];
 const ISLAND_FIELDS = ['cellM', 'stepDays'];
 const GRAZING_FIELDS = ['regrowPerDay', 'grounds'];
-const GROUND_FIELDS = ['name', 'maxHeightM', 'maxSlopeDeg', 'max'];
+const GROUND_FIELDS = ['name', 'maxHeightM', 'maxSlopeDeg', 'max', 'refuge'];
 const SPECIES_FIELDS = [
   'name', 'group', 'start', 'breedPerDay', 'breedBelowHunger', 'hungerDays', 'starveAboveHunger',
   'starvePerDay', 'speedMPerDay', 'senseRadiusM', 'diet', 'flee', 'disperse',
 ];
-const GROUP_FIELDS = ['floor', 'cap', 'mergeBelow', 'mergeRadiusM', 'maxGroups'];
+const GROUP_FIELDS = ['dieBelow', 'cap', 'mergeBelow', 'mergeRadiusM', 'maxGroups'];
 const START_FIELDS = ['groups', 'size'];
 const DIETS = ['graze', 'prey'];
 const GRAZE_FIELDS = ['perHeadPerDay'];
-const PREY_FIELDS = ['species', 'killsPerHeadPerDay', 'needPerHeadPerDay', 'preyPerHead', 'reachM'];
+const PREY_FIELDS = ['species', 'killsPerHeadPerDay', 'halfSaturationHead', 'needPerHeadPerDay', 'preyPerHead', 'reachM'];
 const FLEE_FIELDS = ['from', 'radiusM'];
 const DISPERSE_FIELDS = ['aboveHunger', 'speedFactor', 'leavePerDay'];
 const NAMESPACED = /^[a-z][a-z0-9_]*:[a-z][a-z0-9_]*$/;
@@ -69,6 +69,7 @@ export function validateEcology(data) {
     range(gr.maxHeightM, -100, 100000, `${at}.maxHeightM`);
     range(gr.maxSlopeDeg, 0, 90, `${at}.maxSlopeDeg`);
     range(gr.max, 0, 100000, `${at}.max`);
+    if (gr.refuge !== undefined) range(gr.refuge, 0, 1, `${at}.refuge`);
   });
   if (!Array.isArray(data.species) || data.species.length === 0) fail('species must be a non-empty list');
   const index = new Map();
@@ -89,15 +90,15 @@ export function validateEcology(data) {
     const at = `species.${s.name}`;
     object(s, SPECIES_FIELDS, at);
     const gp = object(s.group, GROUP_FIELDS, `${at}.group`);
-    whole(gp.floor, 1, 1000, `${at}.group.floor`);
+    range(gp.dieBelow, 0, 1000, `${at}.group.dieBelow`, true);
     whole(gp.cap, 2, 1000, `${at}.group.cap`);
-    if (gp.cap < 2 * gp.floor) fail(`${at}.group: cap must be at least twice floor (a split's halves keep the floor)`);
+    if (gp.cap < 2 * gp.dieBelow) fail(`${at}.group: cap must be at least twice dieBelow (a split's halves live)`);
     range(gp.mergeBelow, 0, gp.cap, `${at}.group.mergeBelow`);
     range(gp.mergeRadiusM, 0, 100000, `${at}.group.mergeRadiusM`);
     whole(gp.maxGroups, 1, 10000, `${at}.group.maxGroups`);
     const st = object(s.start, START_FIELDS, `${at}.start`);
     whole(st.groups, 1, gp.maxGroups, `${at}.start.groups`);
-    range(st.size, gp.floor, gp.cap, `${at}.start.size`);
+    range(st.size, gp.dieBelow, gp.cap, `${at}.start.size`);
     range(s.breedPerDay, 0, 1, `${at}.breedPerDay`);
     range(s.breedBelowHunger, 0, 1, `${at}.breedBelowHunger`);
     range(s.hungerDays, 0, 365, `${at}.hungerDays`, true);
@@ -124,6 +125,7 @@ export function validateEcology(data) {
         prey: {
           species: prey,
           killsPerHeadPerDay: range(d.killsPerHeadPerDay, 0, 100, `${at}.diet.prey.killsPerHeadPerDay`),
+          halfSaturationHead: range(d.halfSaturationHead, 0, 100000, `${at}.diet.prey.halfSaturationHead`),
           needPerHeadPerDay: range(d.needPerHeadPerDay, 0, 100, `${at}.diet.prey.needPerHeadPerDay`, true),
           preyPerHead: range(d.preyPerHead, 0, 100000, `${at}.diet.prey.preyPerHead`, true),
           reachM: range(d.reachM, 0, 100000, `${at}.diet.prey.reachM`),
@@ -170,14 +172,14 @@ export function ecologyRust(d, source) {
     '    grounds: &[',
   ];
   for (const g of d.grazing.grounds) {
-    rs.push(`        GroundDef { name: ${JSON.stringify(g.name)}, max_height_m: ${f(g.maxHeightM)}, max_slope_deg: ${f(g.maxSlopeDeg)}, max: ${f(g.max)} },`);
+    rs.push(`        GroundDef { name: ${JSON.stringify(g.name)}, max_height_m: ${f(g.maxHeightM)}, max_slope_deg: ${f(g.maxSlopeDeg)}, max: ${f(g.max)}, refuge: ${f(g.refuge ?? 0)} },`);
   }
   rs.push('    ],', '    species: &[');
   for (const s of d.species) {
     const gp = s.group;
     const diet = s.diet.graze
       ? `Diet::Graze { per_head_per_day: ${f(s.diet.graze.perHeadPerDay)} }`
-      : `Diet::Prey { species: ${idx(s.diet.prey.species)}, kills_per_head_per_day: ${f(s.diet.prey.killsPerHeadPerDay)}, need_per_head_per_day: ${f(s.diet.prey.needPerHeadPerDay)}, prey_per_head: ${f(s.diet.prey.preyPerHead)}, reach_m: ${f(s.diet.prey.reachM)} }`;
+      : `Diet::Prey { species: ${idx(s.diet.prey.species)}, kills_per_head_per_day: ${f(s.diet.prey.killsPerHeadPerDay)}, half_saturation_head: ${f(s.diet.prey.halfSaturationHead)}, need_per_head_per_day: ${f(s.diet.prey.needPerHeadPerDay)}, prey_per_head: ${f(s.diet.prey.preyPerHead)}, reach_m: ${f(s.diet.prey.reachM)} }`;
     const flee = s.flee ? `Some(Flee { from: ${idx(s.flee.from)}, radius_m: ${f(s.flee.radiusM)} })` : 'None';
     const disperse = s.disperse
       ? `Some(Disperse { above_hunger: ${f(s.disperse.aboveHunger)}, speed_factor: ${f(s.disperse.speedFactor)}, leave_per_day: ${f(s.disperse.leavePerDay)} })`
@@ -185,7 +187,7 @@ export function ecologyRust(d, source) {
     rs.push(
       '        SpeciesDef {',
       `            name: ${JSON.stringify(s.name)},`,
-      `            group: GroupRules { floor: ${f(gp.floor)}, cap: ${f(gp.cap)}, merge_below: ${f(gp.mergeBelow)}, merge_radius_m: ${f(gp.mergeRadiusM)}, max_groups: ${gp.maxGroups} },`,
+      `            group: GroupRules { die_below: ${f(gp.dieBelow)}, cap: ${f(gp.cap)}, merge_below: ${f(gp.mergeBelow)}, merge_radius_m: ${f(gp.mergeRadiusM)}, max_groups: ${gp.maxGroups} },`,
       `            start_groups: ${s.start.groups},`,
       `            start_size: ${f(s.start.size)},`,
       `            breed_per_day: ${f(s.breedPerDay)},`,
