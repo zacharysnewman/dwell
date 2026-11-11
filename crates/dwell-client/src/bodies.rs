@@ -170,6 +170,19 @@ pub struct Bodies {
     /// read within this of the drawn feet.
     ramp: StepRamp,
     max_lift: f64,
+    /// A swing held at a clip time on your arms and every remote body (the bench's `clip-strip`:
+    /// `__dwell.holdSwing`), or none.
+    held_swing: Option<(Swing, f32)>,
+}
+
+/// Plays swing `s` on `a` held at clip time `t` (starting it if another action or none plays).
+pub fn hold_swing_on(a: &mut Animator, held: Option<(Swing, f32)>) {
+    if let Some((s, t)) = held {
+        if a.action() != Some(s.role()) {
+            a.swing(s);
+        }
+        a.drive_action(Some(t));
+    }
 }
 
 impl Default for Bodies {
@@ -183,6 +196,7 @@ impl Default for Bodies {
             own: Animator::new(&TABLES, character, Space::Body),
             ramp: config.step_view.into(),
             max_lift: f64::from(config.max_step_lift()),
+            held_swing: None,
         }
     }
 }
@@ -250,6 +264,7 @@ impl Bodies {
         if let Some(s) = swing_of(body.swing, v.swing) {
             body.animator.swing(s);
         }
+        hold_swing_on(&mut body.animator, self.held_swing);
         body.swing = Some(v.swing);
         let f = v.face();
         let local = f.point(v.feet);
@@ -361,11 +376,29 @@ impl Bodies {
 
     /// Your arms this frame.
     pub fn arms(&mut self, input: &MoveInput, held: Held, dt: f64) -> ArmsView {
+        hold_swing_on(&mut self.arms, self.held_swing);
         ArmsView {
             pose: self.arms.update(input, dt as f32),
             held,
             light: [1.0, 0.0],
         }
+    }
+
+    /// Holds swing `s` at clip time `t` (s) on your arms and every remote body until released
+    /// (none): the bench's `clip-strip` frames (docs/DEV_TOOLS.md).
+    pub fn hold_swing(&mut self, held: Option<(Swing, f32)>) {
+        if held.is_none() && self.held_swing.is_some() {
+            self.arms.drive_action(None);
+            for b in self.remotes.values_mut() {
+                b.animator.drive_action(None);
+            }
+        }
+        self.held_swing = held;
+    }
+
+    /// Whether a swing is held ([`Bodies::hold_swing`]).
+    pub fn swing_held(&self) -> bool {
+        self.held_swing.is_some()
     }
 
     /// Your arms swing (an edit sent).
@@ -404,6 +437,41 @@ impl Bodies {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_held_swing_poses_the_arms_at_its_clip_time_until_released() {
+        // face-a-only: the arms' pose, no world.
+        let mut b = Bodies::default();
+        let input = MoveInput::default();
+        b.hold_swing(Some((Swing::ChopLevel, 0.18)));
+        let ch = dwell_characters::player();
+        let clip = TABLES.clip(ch.arms_clip("chop_level").unwrap());
+        let want = dwell_characters::anim::sample(clip, 0.18);
+        let arm = ch.bone("arm_r").unwrap();
+        for _ in 0..3 {
+            let v = b.arms(&input, Held::Empty, 0.1);
+            assert_eq!(
+                v.pose.rot[arm], want.rot[arm],
+                "held at 0.18 s frame after frame"
+            );
+        }
+        b.hold_swing(Some((Swing::ChopVertical, 0.05)));
+        let v = b.arms(&input, Held::Empty, 0.1);
+        let vertical = TABLES.clip(ch.arms_clip("chop_vertical").unwrap());
+        assert_eq!(
+            v.pose.rot[arm],
+            dwell_characters::anim::sample(vertical, 0.05).rot[arm]
+        );
+        b.hold_swing(None);
+        for _ in 0..10 {
+            b.arms(&input, Held::Empty, 0.1);
+        }
+        assert_eq!(
+            b.arms.action(),
+            None,
+            "released, the swing plays out and ends"
+        );
+    }
     use super::*;
     use dwell_characters::animator::body_role;
     use dwell_protocol::PlayerState;

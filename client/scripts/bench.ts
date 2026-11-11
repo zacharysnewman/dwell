@@ -35,6 +35,10 @@ import {
   spotScenario,
   scenarioView,
   timelapseTimes,
+  clipStripCamera,
+  clipStripSheet,
+  clipStripTimes,
+  swingClip,
   type Scenario,
   type Step,
   type Vec3,
@@ -515,6 +519,65 @@ const DAY_LENGTH_S = ((c: { dayS: number; nightS: number }) => c.dayS + c.nightS
  * of day runs on from it at the world clock's rate, set every animation frame (the bench holds it
  * still otherwise), so the light moves between the frames as it does in play.
  */
+/** One swing frame by frame, from each view, and a contact sheet (docs/DEV_TOOLS.md "Clip strip"). */
+async function clipStrip(run: Run, s: Extract<Step, { do: 'clip-strip' }>): Promise<void> {
+  const { page } = run;
+  const characters = JSON.parse(
+    readFileSync(new URL('../../shared/characters/characters.json', import.meta.url), 'utf8'),
+  ) as unknown;
+  const { clip, duration } = swingClip(characters, s.vertical);
+  const times = clipStripTimes(duration, s.frames);
+  const [ax, ay, az] = s.at;
+  // A stand-in holding your tool, 4 m ahead of `at` (puppet 0 stands at x − 10, z + 4).
+  const feet = await call<Vec3>(page, 'd.state().feet');
+  const origin: Vec3 = [feet[0] + ax + 10, feet[1] + ay, feet[2] + az];
+  const standIn: Vec3 = [origin[0] - 10, origin[1], origin[2] + 4];
+  const third = s.views.some((v) => v !== 'fp');
+  if (third) {
+    await call(page, `d.puppets(1, ${JSON.stringify(origin)}, ${String(run.up)}, 65535)`);
+  }
+  const frame = (): Promise<unknown> =>
+    page.evaluate('new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))');
+  const rows: { view: string; frames: { t: number; src: string }[] }[] = s.views.map((view) => ({
+    view,
+    frames: [],
+  }));
+  const width = Math.max(2, String(times.length - 1).length);
+  try {
+    for (const [i, t] of times.entries()) {
+      await call(page, `d.holdSwing(${String(s.vertical)}, ${String(t)})`);
+      for (const [k, view] of s.views.entries()) {
+        if (view === 'fp') await call(page, 'd.releaseCamera()');
+        else {
+          const c = clipStripCamera(view, standIn, run.up);
+          await call(
+            page,
+            `d.placeCamera(${JSON.stringify(c.position)}, ${String(c.yaw)}, ${String(c.pitch)})`,
+          );
+        }
+        await frame();
+        await frame();
+        const path = join(run.dir, `${s.name}-${view}-${String(i).padStart(width, '0')}.png`);
+        const png = await page.screenshot({ path });
+        rows[k]?.frames.push({ t, src: `data:image/png;base64,${png.toString('base64')}` });
+      }
+    }
+  } finally {
+    await call(page, 'd.holdSwing(false, -1)');
+    if (third) await call(page, 'd.puppets(0, [0, 0, 0], 1, 0)');
+    await call(page, 'd.releaseCamera()');
+    run.camera = undefined;
+  }
+  const sheet = await run.browser.newPage({ viewport: { width: 1600, height: 900 } });
+  try {
+    await sheet.setContent(clipStripSheet(`${s.name}: ${clip}, ${String(s.frames)} frames`, rows));
+    await sheet.screenshot({ path: join(run.dir, `${s.name}-sheet.png`), fullPage: true });
+  } finally {
+    await sheet.close();
+  }
+  console.log(`  clip-strip ${s.name}: ${clip} at ${times.map((t) => t.toFixed(2)).join(', ')} s`);
+}
+
 async function burst(run: Run, s: Extract<Step, { do: 'burst' }>): Promise<void> {
   const { page } = run;
   if (s.clock !== undefined) {
@@ -871,6 +934,8 @@ async function step(run: Run, s: Step): Promise<void> {
     }
     case 'burst':
       return burst(run, s);
+    case 'clip-strip':
+      return clipStrip(run, s);
     case 'traceStart':
       await run.browser.startTracing(page, {
         screenshots: true,

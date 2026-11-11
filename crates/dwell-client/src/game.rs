@@ -1079,6 +1079,20 @@ impl<S: Scene> Game<S> {
     }
 
     /// Places the camera (None: back to the player's eyes).
+    /// Holds the axe's level or vertical swing at clip time `t` (s) on your arms and every remote
+    /// body (puppets included), or releases it (none): the bench's `clip-strip` (DEV_TOOLS.md).
+    pub fn hold_swing(&mut self, held: Option<(bool, f64)>) {
+        use dwell_characters::animator::Swing;
+        self.bodies.hold_swing(held.map(|(vertical, t)| {
+            let s = if vertical {
+                Swing::ChopVertical
+            } else {
+                Swing::ChopLevel
+            };
+            (s, t.max(0.0) as f32)
+        }));
+    }
+
     pub fn set_view(&mut self, view: Option<ViewOverride>) {
         self.view = view;
     }
@@ -3515,8 +3529,17 @@ impl<S: Scene> Game<S> {
             if p.held == Puppets::HOTBAR {
                 p.held = self.selected_material();
             }
+            let held_swing = self.bodies.swing_held();
             for mut v in p.views(now_ms / 1000.0) {
                 drawn.insert(v.player_id);
+                // A held swing (the bench's `clip-strip`): they stand still facing +Z, so a
+                // placed camera frames them from behind or the side.
+                if held_swing {
+                    use dwell_protocol::player_flags as pf;
+                    (v.yaw, v.velocity, v.state) = (0.0, [0.0; 3], PlayerState::Idle);
+                    v.flags &= pf::GROUNDED | pf::FACE_B;
+                    v.feet[1] = p.origin[1];
+                }
                 // Holding a tool, they swing it (a break swing every 0.8 s): the swing clips seen
                 // on a body (docs/DEV_TOOLS.md `puppets`).
                 if tool.is_some() {
