@@ -14,6 +14,7 @@
   "species": [
     {
       "name": "dwell:deer",
+      "far": { "color": "#9a6b45", "sizeM": 1.3, "fadeStartM": 450, "fadeEndM": 700 },
       "group": { "dieBelow": 0.5, "cap": 12, "mergeBelow": 4, "mergeRadiusM": 400, "maxGroups": 40 },
       "start": { "groups": 8, "size": 6 },
       "breedPerDay": 0.03,
@@ -39,6 +40,7 @@
     },
     {
       "name": "dwell:wolf",
+      "far": { "color": "#6f6a64", "sizeM": 0.9, "fadeStartM": 350, "fadeEndM": 550 },
       "group": { "dieBelow": 0.5, "cap": 7, "mergeBelow": 3, "mergeRadiusM": 600, "maxGroups": 8 },
       "start": { "groups": 2, "size": 4 },
       "breedPerDay": 0.008,

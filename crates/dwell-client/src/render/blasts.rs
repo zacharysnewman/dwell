@@ -15,6 +15,8 @@ pub const KIND_DUST: u32 = 9;
 pub const KIND_FIRE: u32 = 10;
 /// A wood chip off an axe's swing (crate::chips; lit, its wood's colour).
 pub const KIND_CHIP: u32 = 11;
+/// A head of a far herd (crate::far_herds; lit, its species' colour in the seed).
+pub const KIND_HERD: u32 = 12;
 
 /// The puffs' quads, farthest first (blended over one another), seen with `basis`; and how many.
 pub fn blast_quads(puffs: &[Puff], eye: [f64; 3], basis: &Basis) -> (Vec<f32>, usize) {
@@ -34,6 +36,7 @@ pub fn blast_quads(puffs: &[Puff], eye: [f64; 3], basis: &Basis) -> (Vec<f32>, u
             PuffKind::Dust => KIND_DUST,
             PuffKind::Fire => KIND_FIRE,
             PuffKind::Chip | PuffKind::Leaf => KIND_CHIP,
+            PuffKind::Herd => KIND_HERD,
         };
         // A chip's rest x: 1 for a leaf (its wood's `leaves` colour, a rounder flutter).
         let leaf = f32::from(u8::from(p.kind == PuffKind::Leaf));
@@ -198,6 +201,22 @@ fn chip_colour(kind: u32, k: u32, uv: vec2f, rest: vec3f, rel: vec3f, seed: u32,
     var c = fresh;
     var a = rest.y;
     var n = up;
+    if (kind == 12u) {{
+        // A far herd's head (crate::far_herds): a body's oval over a pair of leg strokes, its
+        // species' colour (sRGB in the seed's low 24 bits), darker underneath; lit facing up.
+        let srgb = vec3f(f32(seed & 255u), f32((seed >> 8u) & 255u), f32((seed >> 16u) & 255u)) / 255.0;
+        let col = pow(srgb, vec3f(2.2));
+        let body = (uv.x * uv.x) / 0.9 + ((uv.y - 0.15) * (uv.y - 0.15)) / 0.16;
+        let legs = uv.y < -0.1 && uv.y > -1.0 && (abs(uv.x - 0.55) < 0.08 || abs(uv.x + 0.5) < 0.08);
+        if (body > 1.0 && !legs) {{
+            return vec4f(0.0);
+        }}
+        c = col * select(1.0, 0.7, uv.y < 0.0);
+        if (a < 0.01) {{
+            return vec4f(0.0);
+        }}
+        return vec4f(wood_lit(c, n, rel, y) * a, a);
+    }}
     if (kind == 11u) {{
         let ang = f32(seed & 255u) * 0.0246;
         let r = vec2f(cos(ang) * uv.x - sin(ang) * uv.y, sin(ang) * uv.x + cos(ang) * uv.y);

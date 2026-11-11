@@ -157,8 +157,9 @@ Last updated: 2026-11-11 (0.52.68).
    (does, sometimes a stag; fawns by the same data); individuals only on the ecology's ground (walkable
    island cell, dry, ≤ `near.maxSlopeDeg`), else the nearest within `near.searchM`; the far groups sent
    every 2 s to clients that ask (`EcologyHello`, `inventory_flags::ECOLOGY`) and `__dwell.ecology()`
-   (ECOLOGY.md §9). Next (ECOLOGY.md §7): simple far rendering from that read-out, local worlds' maps,
-   grazing applied to tall grass as chunks load.
+   (ECOLOGY.md §9). **Far rendering built (simple):** heads in the species' `far` look, on the loaded
+   ground, fading by distance, none on the CPU tier (ECOLOGY.md §11); not yet past the loaded chunks,
+   screenshots and bench cost. Next: local worlds' maps, grazing applied to tall grass as chunks load.
 12. **Players' saved structures as placement sources** (owner 2026-11-11): per player (their library, usable
    in any world they create); placed copies editable, not protected; 32³ for now (may change), or larger
    structures as a grid of 32³ tiles. Sharing between players: Future.
@@ -267,7 +268,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   (ADR 0075 T3b): a biome's own snow line (`snow`), soil blocks by soil type (`soilBlocks`), tall grass
   and ground items by climate (`undergrowth`); the starter opts in.
 - **Pieces follow-ups (0.52.46):** the worn axe not yet seen in game.
-- **Block damage follow-ups:** scoops read as dark stains (flat decals).
+- **Block damage follow-ups:** scoops and shards now modelled as dents (`damage.look.depth`, lit by their
+  modelled normals; BLOCK_DAMAGE.md §6); in-game before/after screenshots and the owner's look still to do.
 - **Peaks (Rainier detail, built; ADR 0075 T5):** a broken summit (rim notches, crags, the highest point
   off-centre), cleavers at the column level that survive the 100 m map, and cirques under steep
   headwalls with ice floors, as opt-in `tectonics` keys on `test:tall_peak` and the starter.

@@ -132,8 +132,21 @@ D3 (tuning) to come. The owner's direction and answers are §1; §2 was the prop
 face at the struck point; other players' hits are heard and seen (the client reads a hit off each
 damage update's changed cell, at its newest mark, and skips its own hits' echoes).
 
-**Not done:** the e2e specs are not run locally; the look's tuning with the owner (the cracks read strong, the soil scoop as a
-dark patch more than a bowl).
+**Scoops and shards as dents (scoops-and-herds):** the owner's note that a scoop read "more as a dark
+stain than a shallow bowl". A scoop and a shard are now modelled cut into the face, `damage.look.depth`
+deep (cells; optional, default 0.1, validated in [0, 0.5]; dirt and grass 0.14, sand 0.12, stone 0.1),
+growing with the damage like the mark's width: a scoop is a spherical cap of two rings of quads and a
+floor fan (12 segments) in the look colour's hue over the tile, darkest at its damp rim; a shard is five angular facets round an off-centre
+apex knocked in (one mark in five a flake left proud). Each piece is still drawn flat 4 mm off the face
+(the face's own greedy quad stays whole and collision is unchanged) but lit by its modelled normal
+(`ground_mesh::push_polygon_shaded`), so the bowl's far wall catches the light and its near wall falls
+into shade. Test: `dwell-mesh` `damage_mesh` `a_scoop_is_a_bowl_recessed_into_the_face` (both faces, the
+top and a side: modelled behind the face, deepest at its data depth, walls tilted toward the middle,
+drawn just off the face). A geometric recess (cutting the face's quad round the mark) was not done: it
+would split the greedy face per damaged cell.
+
+**Not done:** the e2e specs are not run locally; the look's tuning with the owner (the cracks read strong);
+in-game screenshots of the new dents (not taken in this change's time box).
 
 ## 7. Pieces (0.52.46)
 

@@ -10,6 +10,7 @@ pub mod chisel;
 pub mod chisel_section;
 pub mod chop;
 pub mod creatures;
+pub mod far_herds;
 pub mod find;
 pub mod flecks;
 pub mod game;

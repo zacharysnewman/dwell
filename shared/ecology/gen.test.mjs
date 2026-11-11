@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { ecologyRust, generate, validateEcology } from './gen.mjs';
+import { ecologyRust, farLooksRust, generate, validateEcology } from './gen.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const data = () => JSON.parse(readFileSync(join(here, 'ecology.json'), 'utf8'));
@@ -81,4 +81,23 @@ test('bad entries fail with a message naming them', () => {
     },
     /"dwell:wolf" must graze/,
   );
+});
+
+test("a species' far look (how clients draw a far herd) is data, validated, and reaches the client", () => {
+  const d = data();
+  const rs = farLooksRust(validateEcology(d), 'x');
+  assert.match(rs, /FarLook \{ species: "dwell:deer", color: \[154, 107, 69\], size_m: 1\.3, fade_start_m: 450\.0, fade_end_m: 700\.0 \}/);
+  // A fixture species' look by data alone.
+  d.species.push({ ...d.species[0], name: 'test:elk', far: { color: '#102030', sizeM: 2, fadeStartM: 10, fadeEndM: 20 } });
+  delete d.species[2].flee;
+  delete d.species[2].near;
+  assert.match(farLooksRust(validateEcology(d), 'x'), /species: "test:elk", color: \[16, 32, 48\], size_m: 2\.0/);
+  const bad = (far, re) => {
+    const e = data();
+    e.species[0].far = far;
+    assert.throws(() => validateEcology(e), re);
+  };
+  bad({ color: 'tan', sizeM: 1, fadeStartM: 1, fadeEndM: 2 }, /far\.color must be a #rrggbb colour/);
+  bad({ color: '#102030', sizeM: 1, fadeStartM: 5, fadeEndM: 2 }, /far\.fadeEndM must be past fadeStartM/);
+  bad({ color: '#102030', sizeM: 1, fadeStartM: 5, fadeEndM: 9, glow: 1 }, /glow/);
 });

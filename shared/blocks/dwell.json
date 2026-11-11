@@ -78,7 +78,7 @@
     },
     {
       "name": "stone",
-      "damage": { "default": null, "pickaxe": 7, "look": { "kind": "shards", "size": 0.34, "color": "#e4ddcf", "crack": "#7a7266" }, "chips": { "count": 7, "color": "#9a948c", "speed": 2.6, "size": 0.045 } },
+      "damage": { "default": null, "pickaxe": 7, "look": { "kind": "shards", "size": 0.34, "color": "#e4ddcf", "crack": "#7a7266", "depth": 0.1 }, "chips": { "count": 7, "color": "#9a948c", "speed": 2.6, "size": 0.045 } },
       "drops": [{"item": "dwell:rock_shard", "count": 8}],
       "sound": "dwell:stone",
       "density": 2400,
@@ -95,7 +95,7 @@
     },
     {
       "name": "dirt",
-      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#4a3322", "crack": "#3f2d1f" }, "chips": { "count": 6, "color": "#5b3d27", "speed": 1.8, "size": 0.06 } },
+      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#4a3322", "crack": "#3f2d1f", "depth": 0.14 }, "chips": { "count": 6, "color": "#5b3d27", "speed": 1.8, "size": 0.06 } },
       "drops": [{"item": "dwell:dirt_clump", "count": 8}, {"item": "dwell:rock", "chance": 0.5}],
       "sound": "dwell:dirt",
       "density": 1500,
@@ -118,7 +118,7 @@
     },
     {
       "name": "grass",
-      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#4a3322", "crack": "#3f2d1f" }, "chips": { "count": 6, "color": "#5b3d27", "speed": 1.8, "size": 0.06 } },
+      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#4a3322", "crack": "#3f2d1f", "depth": 0.14 }, "chips": { "count": 6, "color": "#5b3d27", "speed": 1.8, "size": 0.06 } },
       "drops": [{"item": "dwell:dirt_clump", "count": 8}, {"item": "dwell:rock", "chance": 0.5}],
       "sound": "dwell:grass",
       "density": 1400,
@@ -205,7 +205,7 @@
     },
     {
       "name": "sand",
-      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#a8865a", "crack": "#6e5636" }, "chips": { "count": 6, "color": "#c9ad7c", "speed": 1.6, "size": 0.04 } },
+      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#a8865a", "crack": "#6e5636", "depth": 0.12 }, "chips": { "count": 6, "color": "#c9ad7c", "speed": 1.6, "size": 0.04 } },
       "support": "falls",
       "sound": "dwell:sand",
       "density": 1600,
@@ -345,26 +345,26 @@
     {
       "$comment": "The stored ramps (rampFamilies) at their own slots, as generated before the torch was added: blocks added after them keep every earlier state id (the worldgen goldens hash ids). Stone's are placeable: the hotbar's stone slopes (shared/items, owner 2026-10-30).",
       "name": "stone_ramp",
-      "damage": { "default": null, "pickaxe": 7, "look": { "kind": "shards", "size": 0.34, "color": "#e4ddcf", "crack": "#7a7266" }, "chips": { "count": 7, "color": "#9a948c", "speed": 2.6, "size": 0.045 } },
+      "damage": { "default": null, "pickaxe": 7, "look": { "kind": "shards", "size": 0.34, "color": "#e4ddcf", "crack": "#7a7266", "depth": 0.1 }, "chips": { "count": 7, "color": "#9a948c", "speed": 2.6, "size": 0.045 } },
       "family": "ramp",
       "of": "stone",
       "palette": "all"
     },
     {
       "name": "dirt_ramp",
-      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#4a3322", "crack": "#3f2d1f" }, "chips": { "count": 6, "color": "#5b3d27", "speed": 1.8, "size": 0.06 } },
+      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#4a3322", "crack": "#3f2d1f", "depth": 0.14 }, "chips": { "count": 6, "color": "#5b3d27", "speed": 1.8, "size": 0.06 } },
       "family": "ramp",
       "of": "dirt"
     },
     {
       "name": "grass_ramp",
-      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#4a3322", "crack": "#3f2d1f" }, "chips": { "count": 6, "color": "#5b3d27", "speed": 1.8, "size": 0.06 } },
+      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#4a3322", "crack": "#3f2d1f", "depth": 0.14 }, "chips": { "count": 6, "color": "#5b3d27", "speed": 1.8, "size": 0.06 } },
       "family": "ramp",
       "of": "grass"
     },
     {
       "name": "sand_ramp",
-      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#a8865a", "crack": "#6e5636" }, "chips": { "count": 6, "color": "#c9ad7c", "speed": 1.6, "size": 0.04 } },
+      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#a8865a", "crack": "#6e5636", "depth": 0.12 }, "chips": { "count": 6, "color": "#c9ad7c", "speed": 1.6, "size": 0.04 } },
       "family": "ramp",
       "of": "sand"
     },
@@ -441,7 +441,7 @@
     {
       "$comment": "Snow lying on turf (owner, 2026-10-21: \"add snow 'grass' block\"): grass's counterpart on high ground, which the terrain generator tops columns with above the snow line (shared/worldgen/terrain.json `bands`). A white snow top, a side with the snow's fringe hanging over the dirt (the `hang` tile, as grass's turf), dirt below; dirt under it shows the fringe as its skirt (`sideUnder`). Its ramps are stored like grass's (`rampFamilies`).",
       "name": "snowy_grass",
-      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#4a3322", "crack": "#3f2d1f" }, "chips": { "count": 6, "color": "#5b3d27", "speed": 1.8, "size": 0.06 } },
+      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#4a3322", "crack": "#3f2d1f", "depth": 0.14 }, "chips": { "count": 6, "color": "#5b3d27", "speed": 1.8, "size": 0.06 } },
       "drops": [{"item": "dwell:dirt_clump", "count": 8}, {"item": "dwell:rock", "chance": 0.5}],
       "sound": "dwell:snow",
       "density": 1300,
@@ -463,7 +463,7 @@
     },
     {
       "name": "snowy_grass_ramp",
-      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#4a3322", "crack": "#3f2d1f" }, "chips": { "count": 6, "color": "#5b3d27", "speed": 1.8, "size": 0.06 } },
+      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#4a3322", "crack": "#3f2d1f", "depth": 0.14 }, "chips": { "count": 6, "color": "#5b3d27", "speed": 1.8, "size": 0.06 } },
       "family": "ramp",
       "of": "snowy_grass"
     },
