@@ -343,6 +343,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   Phase V1 (lava as a fluid) moved into the queue (item 8); the later phases (volcano states, eruptions,
   partly destroyed cones) stay here.
 
+- **A 10× map** — docs/proposals/BIG_MAP.md (owner 2026-11-11: "we will test out a 10x size map soon (could
+  start whenever)"). Study written: 10× area (158 km radius) runs natively today (62 s, 871 MB a face here)
+  once the radius is one value (M0–M2, a desktop test); a phone needs coarse whole-disc grids and 100 m
+  regions on demand (R1–R6). Open: which 10× (area or radius), per build or per world, desktop first.
+
 - **Sharing saved structures between players** (owner 2026-11-11: "eventually shareable").
 
 ## Waiting on the owner
