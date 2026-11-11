@@ -47,6 +47,8 @@ export const SET_EVENTS = [
   "slide_stop",
   "burn",
   "explode",
+  "impact",
+  "brush",
 ];
 /** An event's part in a continuous (looped) sound: start a voice, update it, stop it. */
 export const LOOP_PARTS = ["start", "update", "stop"];
