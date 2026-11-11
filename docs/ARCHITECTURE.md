@@ -2061,9 +2061,14 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
   Metal shader cache empty (a new build's shaders; bug #71, M-series Mac) the stage is
   ~1.8 s, nearly all the device request (`dwell:create:device` mark), the renderer's own groups
   ~40 ms), `shaders` (bug #71: from `create`'s end until `Client.gpuSettled`, a
-  `Queue::on_submitted_work_done` fence after the pipelines, resolves; not awaited, so the world's
-  stages run beside it: ~0.4 s warm, ~9 s cold, when the page paints no frame at all though its
-  main thread is free, and the join waits on it), `worldFile` (from the page's `?fresh=1` deletion to the worker's OPFS open),
+  `Queue::on_submitted_work_done` fence, resolves; not awaited, so the world's stages run beside
+  it). The renderer's pipelines are lazy (`render/pipeline.rs`: `Lazy`, made on first use; only the
+  water tiles' two are made in `with_samples`): each compiles in the GPU process when it is made, and
+  making all 38 at once froze the page's paints ~9 s on a cold cache. While they are not all made the
+  client's draw is skipped and `Renderer::warm_pipelines` makes the next one (`Warmup`: one a frame,
+  the next only once a queue fence says the GPU did the last), in the order a frame needs them,
+  leaving out a tier that is off (shadows, distant shadows, clouds, light shafts), made when it is
+  switched on; cold, the longest no-paint gap after `create` is ~0.7 s, `worldFile` (from the page's `?fresh=1` deletion to the worker's OPFS open),
   `worldMap` (the maps' faces, `worldMaps`' `onProgress`; a cached map ends it in milliseconds),
   `server` (the worker's WASM), `spawn` (the maps installed and `LocalWorld::new`: the world file
   read, the spawn found and its region pre-generated), `connect` (a dedicated server or friend

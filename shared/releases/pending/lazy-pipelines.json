@@ -1,0 +1,5 @@
+{
+  "changes": [
+    "The first start of a new version no longer freezes the loading screen for seconds while the graphics are prepared: its timer keeps counting"
+  ]
+}

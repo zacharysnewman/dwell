@@ -203,11 +203,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
 ## Done
 
-- **"Starting the graphics" frozen (BUGS.md #71, partly):** measured, not a main-thread task: on a
-  cold Metal shader cache the device request is ~1.7 s and the GPU process then compiles the
-  pipelines for ~9 s with the page painting no frame. The compile is now its own stage, `shaders`;
-  the bench prints the start's frame gaps, long tasks and the renderer's `dwell:create:*` groups.
-  Left: send the pipelines in groups with a paint between, defer the ones the first frame doesn't need.
+- **"Starting the graphics" frozen (BUGS.md #71):** not a main-thread task: on a cold Metal shader
+  cache the GPU process compiled the renderer's 38 pipelines for ~9 s with the page painting no frame.
+  Now the compile is its own stage (`shaders`), the pipelines are lazy (`render/pipeline.rs`) and
+  warmed one a frame behind a queue fence while the loading screen is up, tiers that are off never
+  built: the longest no-paint gap after `create` 9.0 s → 0.68 s, playing 15.1–15.6 → 14.1 s cold.
 - **Starter world on iPhone (P0, 0.52.68, BUGS.md #70):** the tab reloaded while loading the terrain.
   Every generator of a many-biome world built its own whole-map biome grids (20 sets in a job worker);
   now one per map and process (`terrain::shared_biomes`), and the LOD coarsens by its overshoot so a

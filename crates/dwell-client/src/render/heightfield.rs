@@ -230,8 +230,8 @@ fn wgsl_offsets(face_b: bool) -> String {
 pub struct HeightfieldGpu {
     texture: wgpu::Texture,
     pub group: wgpu::BindGroup,
-    pub blended: wgpu::RenderPipeline,
-    pub scene: wgpu::RenderPipeline,
+    pub blended: crate::render::pipeline::Lazy,
+    pub scene: crate::render::pipeline::Lazy,
     atlas: HeightAtlas<dwell_world::ChunkCoord>,
     tiles: std::collections::HashMap<dwell_world::ChunkCoord, (f32, bool)>,
 }
@@ -327,49 +327,68 @@ impl HeightfieldGpu {
                 blend,
                 write_mask: wgpu::ColorWrites::ALL,
             })];
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some(if scene {
-                    "heightfield water_scene_fs"
-                } else {
-                    "heightfield water_fs"
-                }),
-                layout: Some(&pl),
-                vertex: wgpu::VertexState {
-                    module: p.module,
-                    entry_point: Some("heightfield_vs"),
-                    compilation_options: Default::default(),
-                    buffers: &[],
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: p.module,
-                    entry_point: Some(if scene { "water_scene_fs" } else { "water_fs" }),
-                    compilation_options: Default::default(),
-                    targets: if scene {
-                        &scene_targets
-                    } else {
-                        &blended_targets
-                    },
-                }),
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleList,
-                    front_face: wgpu::FrontFace::Ccw,
-                    cull_mode: None,
-                    ..Default::default()
-                },
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: p.depth,
-                    depth_write_enabled: Some(false),
-                    depth_compare: Some(p.depth_compare),
-                    stencil: Default::default(),
-                    bias: Default::default(),
-                }),
-                multisample: wgpu::MultisampleState {
-                    count: p.samples,
-                    ..Default::default()
-                },
-                multiview_mask: None,
-                cache: None,
-            })
+            {
+                let (device, module, pl, depth, depth_compare, samples) = (
+                    device.clone(),
+                    p.module.clone(),
+                    pl.clone(),
+                    p.depth,
+                    p.depth_compare,
+                    p.samples,
+                );
+                crate::render::pipeline::Lazy::new(move || {
+                    crate::render::pipeline::create(
+                        &device,
+                        &wgpu::RenderPipelineDescriptor {
+                            label: Some(if scene {
+                                "heightfield water_scene_fs"
+                            } else {
+                                "heightfield water_fs"
+                            }),
+                            layout: Some(&pl),
+                            vertex: wgpu::VertexState {
+                                module: &module,
+                                entry_point: Some("heightfield_vs"),
+                                compilation_options: Default::default(),
+                                buffers: &[],
+                            },
+                            fragment: Some(wgpu::FragmentState {
+                                module: &module,
+                                entry_point: Some(if scene {
+                                    "water_scene_fs"
+                                } else {
+                                    "water_fs"
+                                }),
+                                compilation_options: Default::default(),
+                                targets: if scene {
+                                    &scene_targets
+                                } else {
+                                    &blended_targets
+                                },
+                            }),
+                            primitive: wgpu::PrimitiveState {
+                                topology: wgpu::PrimitiveTopology::TriangleList,
+                                front_face: wgpu::FrontFace::Ccw,
+                                cull_mode: None,
+                                ..Default::default()
+                            },
+                            depth_stencil: Some(wgpu::DepthStencilState {
+                                format: depth,
+                                depth_write_enabled: Some(false),
+                                depth_compare: Some(depth_compare),
+                                stencil: Default::default(),
+                                bias: Default::default(),
+                            }),
+                            multisample: wgpu::MultisampleState {
+                                count: samples,
+                                ..Default::default()
+                            },
+                            multiview_mask: None,
+                            cache: None,
+                        },
+                    )
+                })
+            }
         };
         Self {
             texture,
