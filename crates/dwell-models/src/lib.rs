@@ -13,7 +13,7 @@ mod table {
     include!("models.gen.rs");
 }
 pub use table::{
-    DETAIL_DEFAULT, DETAIL_LEVELS, GLBS, MODELS, PLAYER, PLAYER_GLB, PROP_GLBS, PROPS,
+    DETAIL_DEFAULT, DETAIL_LEVELS, GLBS, HAND_GRIP, MODELS, PLAYER, PLAYER_GLB, PROP_GLBS, PROPS,
 };
 
 /// The fixture table (shared/models/fixtures): a model added by data alone, for tests.
@@ -154,43 +154,85 @@ pub struct PropData {
     pub length: f32,
     /// Its bounds' size (m, x y z; +y up in the GLB), centred on its origin.
     pub size: [f32; 3],
-    /// Where a hand holds it (m from its origin).
+    /// Where a hand holds it (m from its origin): on its handle's measured axis when it has one.
     pub grip: [f32; 3],
+    /// Its handle's axis (unit, GLB frame) from the grip toward its head, measured from the GLB
+    /// by shared/models/gen.mjs (props.json `handle`); +y when it names no handle.
+    pub axis: [f32; 3],
     /// How the hand holds it (props.json `hold`; [`PropHold::DEFAULT`] when it names none).
     pub hold: PropHold,
 }
 
-/// A held prop's pose in the hand (props.json `hold`, docs/ITEMS.md §8): scaled about its grip,
-/// turned there and moved, in the hand's frame (+z the prop's length ahead of the grip, +x its
-/// side, +y the other way across).
+/// A held prop's pose about its handle (props.json `hold`, docs/ITEMS.md §1a): scaled about its
+/// grip and rolled about its handle. The handle itself lies along the hand's grip axis
+/// ([`HandGrip`]); a lean comes from the hand's pose, not the prop's.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PropHold {
     /// Uniform scale about the grip.
     pub scale: f32,
-    /// Degrees: yaw (about +y), pitch (about +x), roll (about +z, the length), applied roll first.
-    pub rotation: [f32; 3],
-    /// Metres, moved after the turn.
-    pub offset: [f32; 3],
+    /// Degrees about the handle, from the prop's +x side facing the hand's `edge`.
+    pub roll: f32,
 }
 
 impl PropHold {
-    /// As modelled, at its grip.
+    /// As modelled, unrolled.
     pub const DEFAULT: PropHold = PropHold {
         scale: 1.0,
-        rotation: [0.0; 3],
-        offset: [0.0; 3],
+        roll: 0.0,
     };
+}
 
-    /// A point `q` (metres from the grip, in the hand's frame) placed by the pose.
-    pub fn apply(&self, q: [f32; 3]) -> [f32; 3] {
-        let [yaw, pitch, roll] = self.rotation.map(f32::to_radians);
-        let (s, c) = roll.sin_cos();
-        let q = [q[0] * c - q[1] * s, q[0] * s + q[1] * c, q[2]];
-        let (s, c) = pitch.sin_cos();
-        let q = [q[0], q[1] * c - q[2] * s, q[1] * s + q[2] * c];
-        let (s, c) = yaw.sin_cos();
-        let q = [q[0] * c + q[2] * s, q[1], -q[0] * s + q[2] * c];
-        [0, 1, 2].map(|i| q[i] * self.scale + self.offset[i])
+/// The hand that holds a prop (props.json `hand`), in the characters rig's hand bone's frame (the
+/// Peasant's hand joint maps to it, models.json `hand`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HandGrip {
+    /// The characters rig's hand bone (`hand_r`).
+    pub bone: &'static str,
+    /// The closed fist's centre (m).
+    pub at: [f32; 3],
+    /// The line through the fist a handle lies along (unit).
+    pub axis: [f32; 3],
+    /// The way a tool's working side faces across the fist (unit, perpendicular to `axis`).
+    pub edge: [f32; 3],
+}
+
+fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+fn cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+
+fn unit(a: [f32; 3]) -> [f32; 3] {
+    let l = dot(a, a).sqrt().max(1e-12);
+    a.map(|v| v / l)
+}
+
+impl PropData {
+    /// A point `p` of its GLB (m) in the hand's bone frame held by `hand`: its grip at the fist,
+    /// its handle's axis along the hand's grip axis, its +x side (square to the handle) toward
+    /// the hand's edge turned by its `roll` about the handle, scaled about the grip.
+    pub fn in_hand(&self, hand: &HandGrip, p: [f32; 3]) -> [f32; 3] {
+        let a = unit(self.axis);
+        // The prop's frame: its handle, its +x side square to it, and the third way.
+        let side = [1.0, 0.0, 0.0];
+        let u = unit([0, 1, 2].map(|k| side[k] - a[k] * dot(side, a)));
+        let w = cross(a, u);
+        // The hand's: its grip axis, its edge rolled about it, and the third way.
+        let ax = unit(hand.axis);
+        let e = unit(hand.edge);
+        let f = cross(ax, e);
+        let (s, c) = self.hold.roll.to_radians().sin_cos();
+        let e = [0, 1, 2].map(|k| e[k] * c + f[k] * s);
+        let f = cross(ax, e);
+        let q = [0, 1, 2].map(|k| (p[k] - self.grip[k]) * self.hold.scale);
+        let (qa, qu, qw) = (dot(q, a), dot(q, u), dot(q, w));
+        [0, 1, 2].map(|k| hand.at[k] + ax[k] * qa + e[k] * qu + f[k] * qw)
     }
 }
 
@@ -309,25 +351,62 @@ mod props_tests {
         assert_eq!(data.category, "dishes");
         assert_eq!(data.grip, [0.0, 0.01, 0.0]);
         assert!(!m.indices.is_empty());
-        // Its hold pose, from the fixture's data alone.
+        // Its hold, from the fixture's data alone: half size, rolled a quarter turn.
         assert_eq!(
             data.hold,
             PropHold {
                 scale: 0.5,
-                rotation: [0.0, 90.0, 0.0],
-                offset: [0.0, 0.0, 0.1]
+                roll: 90.0
             }
         );
-        // Half size, its length (+z) pitched to −y, then moved 0.1 m ahead.
-        let p = data.hold.apply([0.0, 0.0, 1.0]);
+        let hand = fixture::HAND_GRIP;
+        // Its grip lands on the fist; a point 1 m up its axis lies 0.5 m along the grip axis.
+        let g = data.in_hand(&hand, data.grip);
+        assert!((0..3).all(|k| (g[k] - hand.at[k]).abs() < 1e-6), "{g:?}");
+        let up = [0, 1, 2].map(|k| data.grip[k] + data.axis[k]);
+        let p = data.in_hand(&hand, up);
         assert!(
-            (p[0]).abs() < 1e-6 && (p[1] + 0.5).abs() < 1e-6 && (p[2] - 0.1).abs() < 1e-6,
+            (0..3).all(|k| (p[k] - hand.at[k] - 0.5 * hand.axis[k]).abs() < 1e-5),
             "{p:?}"
         );
         // A prop that names no hold is held as modelled.
-        assert_eq!(PropHold::DEFAULT.apply([0.1, 0.2, 0.3]), [0.1, 0.2, 0.3]);
         let (chest, _) = (PROPS.iter().find(|p| p.name == "chest").unwrap(), ());
         assert_eq!(chest.hold, PropHold::DEFAULT);
+    }
+
+    #[test]
+    fn a_tilted_off_centre_handle_is_laid_along_the_fist_by_data_alone() {
+        // A fixture prop by data alone: its handle 3 cm off its origin and leaning 10 degrees.
+        let t = 10f32.to_radians();
+        let data = PropData {
+            name: "stick",
+            category: "dishes",
+            glb: "stick.glb",
+            length: 0.5,
+            size: [0.05, 0.5, 0.05],
+            grip: [0.03, -0.1, 0.0],
+            axis: [t.sin(), t.cos(), 0.0],
+            hold: PropHold {
+                scale: 1.0,
+                roll: 30.0,
+            },
+        };
+        let hand = HAND_GRIP;
+        for s in [-0.1f32, 0.0, 0.2] {
+            let p = [0, 1, 2].map(|k| data.grip[k] + data.axis[k] * s);
+            let h = data.in_hand(&hand, p);
+            let want = [0, 1, 2].map(|k| hand.at[k] + hand.axis[k] * s);
+            assert!(
+                (0..3).all(|k| (h[k] - want[k]).abs() < 1e-5),
+                "{s}: {h:?} {want:?}"
+            );
+        }
+        // Rolled 30 degrees: its +x side (square to the handle) faces 30 degrees from the edge.
+        let side = [t.cos(), -t.sin(), 0.0];
+        let p = data.in_hand(&hand, [0, 1, 2].map(|k| data.grip[k] + side[k]));
+        let d = [0, 1, 2].map(|k| p[k] - hand.at[k]);
+        let c = d[0] * hand.edge[0] + d[1] * hand.edge[1] + d[2] * hand.edge[2];
+        assert!((c - 30f32.to_radians().cos()).abs() < 1e-4, "{c}");
     }
 
     #[test]

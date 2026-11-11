@@ -408,6 +408,8 @@ export function validateProps(data, dir, read = (p) => readFileSync(p)) {
       )
     )
       fail(`${at}: grip is [x, y, z] metres`);
+    const handle =
+      p.handle === undefined ? null : measureHandle(read(path), p.handle, at);
     const hold = validateHold(p.hold, at);
     if (
       p.objects !== undefined &&
@@ -426,24 +428,123 @@ export function validateProps(data, dir, read = (p) => readFileSync(p)) {
       length,
       size: s.size,
       colours: s.colours,
-      grip: p.grip ?? [0, 0, 0],
+      // With a handle, the grip is the point on its measured axis at the grip's height.
+      grip: handle ? handle.at(p.grip?.[1] ?? 0) : (p.grip ?? [0, 0, 0]),
+      axis: handle ? handle.axis : [0, 1, 0],
       hold,
     };
   }
   return out;
 }
 
-/** The pose a prop is held in when it names none: as modelled, at its grip. */
-export const DEFAULT_HOLD = {
-  scale: 1,
-  rotation: [0, 0, 0],
-  offset: [0, 0, 0],
-};
+/**
+ * A prop's handle axis measured from its GLB (`handle` [from, to]: the bare handle's span along the
+ * GLB's +y, `from` the end away from its head): the centre of the bounds of the vertices in each
+ * half of the span, the axis the line through them pointing toward `to`. Returns the unit axis and
+ * the point on it at a height. Throws when a half holds no vertex or the axis is not along +y.
+ */
+export function measureHandle(bytes, handle, at) {
+  const fail = (msg) => {
+    throw new Error(`props.json: ${at}: ${msg}`);
+  };
+  if (
+    !(
+      Array.isArray(handle) &&
+      handle.length === 2 &&
+      handle.every(Number.isFinite) &&
+      Math.abs(handle[1] - handle[0]) >= 0.05
+    )
+  )
+    fail("handle is [from, to] metres along its length, at least 0.05 m apart");
+  const g = glbJson(bytes);
+  // Its surface sampled every centimetre along each triangle's edges (a long handle's only
+  // vertices may be at its ends).
+  const pts = [];
+  for (const p of g.meshes?.[0]?.primitives ?? []) {
+    const { values } = glbAccessor(bytes, p.attributes.POSITION);
+    const v = (i) => values.slice(i * 3, i * 3 + 3);
+    const idx =
+      p.indices === undefined
+        ? [...Array(values.length / 3).keys()]
+        : glbAccessor(bytes, p.indices).values;
+    for (let t = 0; t + 2 < idx.length; t += 3)
+      for (const [i, j] of [
+        [idx[t], idx[t + 1]],
+        [idx[t + 1], idx[t + 2]],
+        [idx[t + 2], idx[t]],
+      ]) {
+        const [u, w] = [v(i), v(j)];
+        const n = Math.max(1, Math.ceil(Math.hypot(...u.map((x, k) => w[k] - x)) / 0.01));
+        for (let s = 0; s <= n; s++)
+          pts.push(u.map((x, k) => x + ((w[k] - x) * s) / n));
+      }
+  }
+  const [a, b] = handle;
+  const mid = (a + b) / 2;
+  const centre = (lo, hi) => {
+    const s = pts.filter((p) => p[1] >= lo && p[1] <= hi);
+    if (s.length === 0)
+      fail(`handle: no vertex between ${lo} and ${hi} m (measure its span)`);
+    const c = [0, 1, 2].map(
+      (k) =>
+        (Math.min(...s.map((p) => p[k])) + Math.max(...s.map((p) => p[k]))) /
+        2,
+    );
+    return c;
+  };
+  const [lo, hi] = [Math.min(a, mid), Math.max(a, mid)];
+  const p0 = centre(lo, hi);
+  const p1 = centre(Math.min(b, mid), Math.max(b, mid));
+  const d = [0, 1, 2].map((k) => p1[k] - p0[k]);
+  const l = Math.hypot(...d);
+  const axis = d.map((v) => v / l);
+  if (Math.abs(axis[1]) < Math.cos((30 * Math.PI) / 180))
+    fail(`handle: its measured axis [${axis.map((v) => v.toFixed(3))}] is not along its length`);
+  return {
+    axis,
+    at: (y) => {
+      const t = (y - p0[1]) / d[1];
+      return [0, 1, 2].map((k) => p0[k] + d[k] * t);
+    },
+  };
+}
 
 /**
- * A prop's hold pose (`hold`, optional): `scale` (0.1..2, about the grip), `rotation` [yaw, pitch,
- * roll] degrees (each within ±180) and `offset` [x, y, z] metres (each within ±0.5) in the hand's
- * frame; missing fields take DEFAULT_HOLD's.
+ * The hand that holds props (props.json `hand`, in the characters rig's hand bone's frame): `at`
+ * the fist's centre (m), `axis` the line through the closed fist a handle lies along, `edge` the
+ * way across it a tool's working side faces (perpendicular to `axis`).
+ */
+export function validateHand(h) {
+  const fail = (msg) => {
+    throw new Error(`props.json: hand: ${msg}`);
+  };
+  const v3 = (v, name) => {
+    if (!(Array.isArray(v) && v.length === 3 && v.every(Number.isFinite)))
+      fail(`${name} is [x, y, z]`);
+    return v;
+  };
+  if (!h || typeof h !== "object") fail("is { bone, at, axis, edge }");
+  if (typeof h.bone !== "string") fail("bone names the rig's hand bone");
+  const at = v3(h.at, "at");
+  const unit = (v, name) => {
+    const l = Math.hypot(...v3(v, name));
+    if (l < 1e-6) fail(`${name} is zero`);
+    return v.map((x) => x / l);
+  };
+  const axis = unit(h.axis, "axis");
+  const edge = unit(h.edge, "edge");
+  if (Math.abs(axis.reduce((s, x, k) => s + x * edge[k], 0)) > 1e-3)
+    fail("edge is not perpendicular to axis");
+  return { bone: h.bone, at, axis, edge };
+}
+
+/** The pose a prop is held in when it names none: as modelled, at its grip. */
+export const DEFAULT_HOLD = { scale: 1, roll: 0 };
+
+/**
+ * A prop's hold (`hold`, optional): `scale` (0.1..2, about the grip) and `roll` degrees (within
+ * ±180) about its handle, from its +x side facing the hand's `edge`; missing fields take
+ * DEFAULT_HOLD's. The handle lies along the hand's grip axis: a lean comes from the hand's pose.
  */
 export function validateHold(h, at) {
   const fail = (msg) => {
@@ -451,28 +552,17 @@ export function validateHold(h, at) {
   };
   if (h === undefined) return { ...DEFAULT_HOLD };
   if (h === null || typeof h !== "object" || Array.isArray(h))
-    fail(`${at}: hold is { scale, rotation, offset }`);
+    fail(`${at}: hold is { scale, roll }`);
   for (const k of Object.keys(h))
-    if (!["scale", "rotation", "offset"].includes(k))
-      fail(`${at}: hold has unknown field ${k} (scale, rotation, offset)`);
+    if (!["scale", "roll"].includes(k))
+      fail(`${at}: hold has unknown field ${k} (scale, roll)`);
   const scale = h.scale ?? DEFAULT_HOLD.scale;
   if (!(Number.isFinite(scale) && scale >= 0.1 && scale <= 2))
     fail(`${at}: hold.scale ${scale} is outside 0.1..2`);
-  const v3 = (v, name, max, unit) => {
-    if (v === undefined) return [0, 0, 0];
-    if (!(Array.isArray(v) && v.length === 3 && v.every(Number.isFinite)))
-      fail(
-        `${at}: hold.${name} is [${name === "rotation" ? "yaw, pitch, roll" : "x, y, z"}] ${unit}`,
-      );
-    if (v.some((x) => Math.abs(x) > max))
-      fail(`${at}: hold.${name} [${v}] is outside ±${max} ${unit}`);
-    return v;
-  };
-  return {
-    scale,
-    rotation: v3(h.rotation, "rotation", 180, "degrees"),
-    offset: v3(h.offset, "offset", 0.5, "metres"),
-  };
+  const roll = h.roll ?? DEFAULT_HOLD.roll;
+  if (!(Number.isFinite(roll) && Math.abs(roll) <= 180))
+    fail(`${at}: hold.roll ${roll} is outside ±180 degrees`);
+  return { scale, roll };
 }
 
 /** The props an item's look names (shared/inventory `look.model`): the ones built into the game. */
@@ -481,9 +571,10 @@ export function lookModels(inventory) {
 }
 
 /** The props' Rust table; `built`: the props whose GLB bytes are built in. */
-export function rustProps(props, glbRoot, built) {
+export function rustProps(props, glbRoot, built, hand) {
   const v3 = (v) => `[${v.map((x) => f32(Number(x.toFixed(4)))).join(", ")}]`;
   const lines = [
+    `pub const HAND_GRIP: HandGrip = HandGrip { bone: ${JSON.stringify(hand.bone)}, at: ${v3(hand.at)}, axis: ${v3(hand.axis)}, edge: ${v3(hand.edge)} };`,
     `pub static PROP_GLBS: &[(&str, &[u8])] = &[${built
       .map(
         (n) =>
@@ -494,7 +585,7 @@ export function rustProps(props, glbRoot, built) {
   ];
   for (const [name, p] of Object.entries(props))
     lines.push(
-      `    PropData { name: ${JSON.stringify(name)}, category: ${JSON.stringify(p.category)}, glb: ${JSON.stringify(p.glb)}, length: ${f32(p.length)}, size: ${v3(p.size)}, grip: ${v3(p.grip)}, hold: PropHold { scale: ${f32(p.hold.scale)}, rotation: ${v3(p.hold.rotation)}, offset: ${v3(p.hold.offset)} } },`,
+      `    PropData { name: ${JSON.stringify(name)}, category: ${JSON.stringify(p.category)}, glb: ${JSON.stringify(p.glb)}, length: ${f32(p.length)}, size: ${v3(p.size)}, grip: ${v3(p.grip)}, axis: ${v3(p.axis)}, hold: PropHold { scale: ${f32(p.hold.scale)}, roll: ${f32(p.hold.roll)} } },`,
     );
   lines.push("];", "");
   return lines.join("\n");
@@ -591,8 +682,8 @@ export function generate() {
       join(CRATE, out),
       rust(data, models, glbRoot).replace(
         "use crate::{DetailLevel, Hand, ModelData, Retarget, RetargetBone, RoleClip};",
-        "use crate::{DetailLevel, Hand, ModelData, PropData, PropHold, Retarget, RetargetBone, RoleClip};",
-      ) + rustProps(props, glbRoot, built),
+        "use crate::{DetailLevel, Hand, HandGrip, ModelData, PropData, PropHold, Retarget, RetargetBone, RoleClip};",
+      ) + rustProps(props, glbRoot, built, validateHand(propsData.hand)),
     ]);
   }
   return outputs;

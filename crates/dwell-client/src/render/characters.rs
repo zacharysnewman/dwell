@@ -586,29 +586,20 @@ fn same_colour(a: &[f32; 3], b: &[f32; 3]) -> bool {
     (0..3).all(|k| (a[k] - b[k]).abs() < 1e-4)
 }
 
-/// The mesh of prop `model` held in characters item `hold`: on the bone of the hold's first part
-/// (the grip), its `grip` point at the bone's origin and its far end along the bone's +z (the
-/// way the axe's handle runs from the hand to its head), flat shaded, each face its colour's
-/// material row ([`prop_colours`]).
+/// The mesh of prop `model` held in characters item `hold`: on the hold's bone (the hand), its
+/// handle laid along the hand's grip axis with its grip at the fist's centre and rolled by its
+/// `hold` ([`dwell_models::PropData::in_hand`], props.json `hand`), flat shaded, each face its
+/// colour's material row ([`prop_colours`]). How it leans is the hold's pose of the hand.
 pub fn prop_mesh(character: &Character, hold: &str, model: &str) -> Mesh {
     let mut out = Mesh::default();
     let Some((data, m)) = dwell_models::prop(model) else {
         return out;
     };
-    let Some((bone, at)) = character.item(hold).map(|i| i.socket) else {
+    let Some((bone, _)) = character.item(hold).map(|i| i.socket) else {
         return out;
     };
-    let g = data.grip;
-    // The far end is the one away from the grip along the length (+y in the GLB): a grip below
-    // the middle (an axe, a pickaxe) points +y ahead, one above it (a shovel) turns it over.
-    let flip = if g[1] > 0.0 { -1.0 } else { 1.0 };
-    // GLB +y (the length) to the bone's +z, its +z to −y (a turn of 90° about x), posed by its
-    // `hold` (scale, turn, offset about the grip), the grip on the hold's socket.
-    let place = |p: [f32; 3]| {
-        let q = [(p[0] - g[0]) * flip, (p[1] - g[1]) * flip, p[2] - g[2]];
-        let r = data.hold.apply([q[0], -q[2], q[1]]);
-        [at[0] + r[0], at[1] + r[1], at[2] + r[2]]
-    };
+    let hand = dwell_models::HAND_GRIP;
+    let place = |p: [f32; 3]| data.in_hand(&hand, p);
     let base = TABLES.materials.len();
     for t in m.indices.chunks_exact(3) {
         let [a, b, c] = [t[0], t[1], t[2]].map(|i| place(m.positions[i as usize]));
@@ -1720,10 +1711,10 @@ mod tests {
     }
 
     #[test]
-    fn every_tool_is_held_as_its_model_at_the_grip_its_head_ahead() {
+    fn every_tool_is_held_as_its_model_its_handle_through_the_fist() {
         // face-a-only: the hand's item mesh, in the grip bone's frame (the arms view is face-local).
         let ch = dwell_characters::player();
-        let (grip, socket) = ch.item(MODEL_HOLD).expect("the tools' hold").socket;
+        let (grip, _) = ch.item(MODEL_HOLD).expect("the tools' hold").socket;
         let base = TABLES.materials.len();
         for t in dwell_protocol::chopping::BREAK_TOOLS {
             let held = held_item(t.item, None);
@@ -1750,24 +1741,80 @@ mod tests {
                 "{}: its colours are the props' material rows",
                 t.item
             );
-            // The grip on the hold's socket (moved by its pose's offset), the far end ahead along
-            // its posed length (+z turned by its `hold`): from the grip to the head is most of
-            // the tool's length, behind it the handle's end.
-            let h = data.hold;
-            let at = [0, 1, 2].map(|i| socket[i] + h.offset[i]);
-            let ahead = h.apply([0.0, 0.0, 1.0]);
-            let ahead = [0, 1, 2].map(|i| (ahead[i] - h.offset[i]) / h.scale);
-            let along = |p: &[f32; 3]| (0..3).map(|i| (p[i] - at[i]) * ahead[i]).sum::<f32>();
+            // Its handle through the closed fist along the hand's grip axis (owner, 2026-11-11:
+            // "properly align them to the hand"), measured on the mesh as drawn: the centre of the
+            // surface's bounds in a slab across the axis at the fist is the fist's centre, and the
+            // line through two such slabs along the handle is the grip axis.
+            let hand = dwell_models::HAND_GRIP;
+            let centre = |from: f32, to: f32| -> [f32; 3] {
+                let mut lo = [f32::MAX; 3];
+                let mut hi = [f32::MIN; 3];
+                for tri in m.indices.chunks_exact(3) {
+                    for (i, j) in [(0, 1), (1, 2), (2, 0)] {
+                        let (u, w) = (m.positions[tri[i] as usize], m.positions[tri[j] as usize]);
+                        for k in 0..=20 {
+                            let f = k as f32 / 20.0;
+                            let q = [0, 1, 2].map(|c| u[c] + (w[c] - u[c]) * f);
+                            let s = (0..3)
+                                .map(|c| (q[c] - hand.at[c]) * hand.axis[c])
+                                .sum::<f32>();
+                            if (from..=to).contains(&s) {
+                                for c in 0..3 {
+                                    lo[c] = lo[c].min(q[c]);
+                                    hi[c] = hi[c].max(q[c]);
+                                }
+                            }
+                        }
+                    }
+                }
+                assert!(
+                    lo[0] < f32::MAX,
+                    "{}: nothing at {from}..{to} m along the grip",
+                    t.item
+                );
+                [0, 1, 2].map(|c| (lo[c] + hi[c]) / 2.0)
+            };
+            let off = |p: [f32; 3]| {
+                let d = [0, 1, 2].map(|c| p[c] - hand.at[c]);
+                let s = (0..3).map(|c| d[c] * hand.axis[c]).sum::<f32>();
+                (0..3)
+                    .map(|c| (d[c] - s * hand.axis[c]).powi(2))
+                    .sum::<f32>()
+                    .sqrt()
+            };
+            let fist = centre(-0.02, 0.02);
+            assert!(
+                off(fist) < 0.004,
+                "{}: the handle is {:.3} m off the fist",
+                t.item,
+                off(fist)
+            );
+            let (p0, p1) = (centre(-0.07, -0.05), centre(0.05, 0.07));
+            let d = [0, 1, 2].map(|c| p1[c] - p0[c]);
+            let l = (0..3).map(|c| d[c] * d[c]).sum::<f32>().sqrt();
+            let cos = (0..3).map(|c| d[c] * hand.axis[c]).sum::<f32>() / l;
+            assert!(
+                cos > 2f32.to_radians().cos(),
+                "{}: the handle is {:.1} degrees off the grip axis",
+                t.item,
+                cos.acos().to_degrees()
+            );
+            // The head ahead along the grip axis: most of the tool beyond the fist.
+            let along = |p: &[f32; 3]| {
+                (0..3)
+                    .map(|c| (p[c] - hand.at[c]) * hand.axis[c])
+                    .sum::<f32>()
+            };
             let (lo, hi) = m
                 .positions
                 .iter()
                 .fold((f32::MAX, f32::MIN), |(lo, hi), p| {
                     (lo.min(along(p)), hi.max(along(p)))
                 });
-            let length = data.length * h.scale;
+            let length = data.length * data.hold.scale;
             assert!(
                 hi > 0.4 * length && lo > -0.4 * length,
-                "{}: z {lo}..{hi}",
+                "{}: {lo}..{hi}",
                 t.item
             );
         }
