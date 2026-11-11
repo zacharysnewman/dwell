@@ -176,8 +176,11 @@ into `HeightField::tectonics`; `dwell-worldgen` `tectonics.rs`):
   (a crater whose rim is above the line is an ice dome, not a hollow: no crater lake); and **T3b's snow line from
   temperature** on the same group: `snowBelowC` (°C, −100 off) and `snowMaxSlope` (rise per run): where the biome
   map's temperature with its lapse rate (a one-biome world: the gradient's middle) is colder, the top is
-  `rocks.json` `tectonic.snow` (`dwell:snowy_grass`; no ice or glacier block exists yet), and colder ground steeper
-  than the slope is bare rock, so the ridges poke through. The fixture opts in (`tests/tall_peaks.rs`: ridges round
+  `rocks.json` `tectonic.snow` (`dwell:snow` since 0.52.45; `dwell:snowy_grass` before it), and colder ground steeper
+  than the slope is bare rock, so the ridges poke through. **The glacier** (0.52.45, owner approved the ice block
+  2026-11-11): `iceBelowC` (°C, −100 off; read only with the snow line on): gentle ground colder than it is
+  `rocks.json` `tectonic.ice` (`dwell:glacier_ice`), so the summit and the crater's dome are ice over a belt of snow;
+  steep faces stay bare rock. Its palette is added only when it is on, so worlds without it are unchanged. The fixture opts in (`tests/tall_peaks.rs`: ridges round
   a 3 km ring, the summit ≥ 500 m off the centre, no water near the summit, snow above and none below or on steep
   faces, both faces); the goldens are unchanged. The snow line sits on the tectonics group because a world turns it
   on (the world groups are numbers; the block is named in `rocks.json`); a per-biome line is later.
