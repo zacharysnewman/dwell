@@ -2260,3 +2260,34 @@ dwell_world::both_faces!(
         );
     }
 );
+
+#[test]
+fn a_fresh_view_far_over_the_cache_budget_fits_it_within_seconds_not_tens_of_them() {
+    // Regression (BUGS.md, iOS: the starter world reloaded the tab while loading): a phone's 96 MB
+    // budget was held 3.4× over (326 MB of sections) at the end of loading, the error scale stepping
+    // ×1.15 a second from 1 and reaching the ×12 that fits only ~18 s later. The step now follows
+    // the overshoot (sections ∝ 1 / scale²: ×√(in use / budget), at most ×2 a second).
+    let mut host = Host::new();
+    host.mesh_bytes = 64 * 1024;
+    let budget = 24 * 1_048_576;
+    let mut lod = system(4.0, 24, 64, 64);
+    let mut now = 0.0;
+    let low = camera([0.0, 40.0, 0.0], 0.0, -10.0);
+    let (mut fitted_at, mut over) = (None, false);
+    while now < 30_000.0 {
+        run_for(&mut lod, &mut host, &mut now, &low, 500.0);
+        let s = lod.debug_stats();
+        over |= s.in_use_bytes > budget;
+        if over && fitted_at.is_none() && s.in_use_bytes <= budget {
+            fitted_at = Some(now);
+        }
+    }
+    assert!(over, "the fixture's view overflows the budget at first");
+    let fitted_at = fitted_at.expect("the view fits the budget");
+    assert!(
+        fitted_at <= 8_000.0,
+        "the view fit its budget only after {:.1} s (scale {:.2})",
+        fitted_at / 1000.0,
+        lod.debug_stats().error_scale
+    );
+}

@@ -2,6 +2,19 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.52.69",
+      "changes": [
+        "Behind the scenes: tests brought up to date with the chopping prototype and the red sandstone block, and a work queue document"
+      ]
+    },
+    {
+      "version": "0.52.68",
+      "changes": [
+        "The starter world loads on phones again: it no longer runs out of memory and reloads the page while loading the terrain",
+        "Distant terrain settles into your device's memory budget within seconds of joining, not after half a minute"
+      ]
+    },
+    {
       "version": "0.52.67",
       "changes": [
         "Tools you drop when you die keep their wear: pick your axe back up and it has the hits it had left, not a fresh 32"

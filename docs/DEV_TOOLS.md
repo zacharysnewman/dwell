@@ -785,6 +785,17 @@ scenario needs a `goto` to a bank first (left for a follow-up).
 the world-generation workers 350 MB (four at 75–79 MB, four at 9–10), the client core 185 MB, the server
 79 MB, the JS heap 19 MB.
 
+### Phone memory (`memory-phone`, BUGS.md #70)
+
+iOS Safari reloads a tab over its memory limit (~1–1.5 GB with the GPU's share; "A problem repeatedly
+occurred"), and the page cannot read Safari's own count, so the phone's budget is checked on the desktop:
+the `memory-phone` scenario (a 393 × 852 at 3× page) run with `--touch` (the phone tier: two workers per
+pool, the Mobile preset's 128 m and 96 MB) records `memory()` at the end of loading and 30 s later; a test
+world by `--compare` with a `params` config (`{"worldgen": "test:starter"}` in a `--configs-file`). At
+0.52.68 on the M1: the default world 676 MB at load (592 after 30 s), the starter 850 (776); before it the
+starter read 1,467 MB (each instance's own biome grids, the LOD 3.4× over its budget). WASM memories never
+shrink, so the reading is each instance's peak. Keep a phone's total well under 1 GB.
+
 ### What is untimed
 
 `pacing.done` (submit to the GPU's answer) runs 11 ms past `gpu.frame` at the dam (31.0 against 19.8) and

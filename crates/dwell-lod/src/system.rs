@@ -337,6 +337,18 @@ pub const CHUNK_REQUEST_RADIUS: i32 = world::RENDER_RADIUS_CHUNKS as i32 - 1;
 /// so a finer step can overflow: that scale is not tried again until the camera has moved
 /// RETRY_FINER_AFTER_M, or it would swing back and forth, reloading sections each time.
 pub const ERROR_SCALE_STEP: f64 = 1.15;
+/// The largest coarser step (a second): far over the budget the scale steps by the overshoot.
+pub const MAX_COARSER_STEP: f64 = 2.0;
+
+/// The coarser step for sections using `in_use` bytes of a `budget`: the view's sections go as
+/// 1 / scale² (a surface), so ×√(in use / budget) fits it in one step, between `ERROR_SCALE_STEP`
+/// and `MAX_COARSER_STEP` (BUGS.md: at ×1.15 a second a phone's loading view held 3.4× its
+/// budget for ~18 s, and iOS reloaded the tab).
+pub fn coarser_step(in_use: f64, budget: f64) -> f64 {
+    (in_use / budget.max(1.0))
+        .sqrt()
+        .clamp(ERROR_SCALE_STEP, MAX_COARSER_STEP)
+}
 pub const MAX_ERROR_SCALE: f64 = 16.0;
 const ROOM: f64 = 0.6;
 pub const COARSER_AFTER_MS: f64 = 1000.0;
@@ -2047,7 +2059,7 @@ impl LodSystem {
             if self.last_step_finer {
                 self.too_fine = Some((self.error_scale, position));
             }
-            self.error_scale = MAX_ERROR_SCALE.min(self.error_scale * ERROR_SCALE_STEP);
+            self.error_scale = MAX_ERROR_SCALE.min(self.error_scale * coarser_step(in_use, budget));
             self.last_scale_ms = Some(now_ms);
             self.last_step_finer = false;
         } else if in_use < budget * ROOM && self.error_scale > 1.0 && since >= FINER_AFTER_MS {
