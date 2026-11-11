@@ -120,19 +120,19 @@ fn the_crown_agrees_with_itself_across_a_chunk_border() {
 fn cards_stand_off_exposed_faces_by_the_data_and_none_inside() {
     let look = LEAVES.cards;
     let up = |_: V| Some([0.0, 1.0, 0.0]);
-    assert!(cards([false; 6], [3, 4, 5], &look, up).is_empty());
+    assert!(cards([false; 6], [3, 4, 5], &look, up, |_| false).is_empty());
     // Over many lone cells the mean count per cell is the data's: tops 2.6×, sides 2.2× by their
     // area (½), bottoms 1.2×.
     let n = 2000;
     let total: usize = (0..n)
-        .map(|i| cards([true; 6], [i, 7, -i], &look, up).len())
+        .map(|i| cards([true; 6], [i, 7, -i], &look, up, |_| false).len())
         .sum();
     let want = look.density * (2.6 + 1.2 + 4.0 * 2.2 * CELL_H);
     let mean = total as f64 / n as f64;
     assert!((mean - want).abs() < 0.1 * want, "{mean} vs {want}");
     // The same cell: the same cards, whichever chunk meshes it.
-    let a = cards([true; 6], [11, 2, 3], &look, up);
-    let b = cards([true; 6], [11, 2, 3], &look, up);
+    let a = cards([true; 6], [11, 2, 3], &look, up, |_| false);
+    let b = cards([true; 6], [11, 2, 3], &look, up, |_| false);
     assert_eq!(format!("{a:?}"), format!("{b:?}"));
     for c in &a {
         let w = (0..3)

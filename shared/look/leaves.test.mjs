@@ -32,10 +32,21 @@ test('bad entries fail with their path named', () => {
     [(d) => (d.cards.fadeEndM = d.cards.fadeStartM), /cards\.fadeEndM must be a number/],
     [(d) => (d.cards.density = -1), /cards\.density must be a number/],
     [(d) => delete d.cards.sizeM, /missing entry cards\.sizeM/],
+    [(d) => delete d.cards.tiers.phone, /missing entry cards\.tiers\.phone/],
+    [(d) => (d.cards.tiers.cpu = 'no'), /cards\.tiers\.cpu must be true or false/],
+    [(d) => (d.cards.tiers.tablet = true), /unknown entry cards\.tiers\.tablet/],
   ];
   for (const [edit, message] of cases) {
     const d = data();
     edit(d);
     assert.throws(() => validateLeaves(d), message);
   }
+});
+
+test('the phone and CPU tiers mesh no cards; a tier turned on by data alone reaches the output', () => {
+  const d = data();
+  assert.equal(d.cards.tiers.phone, false);
+  assert.equal(d.cards.tiers.cpu, false);
+  d.cards.tiers.phone = true;
+  assert.match(leavesRust(validateLeaves(d)), /phone: true,/);
 });

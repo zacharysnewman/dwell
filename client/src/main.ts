@@ -909,6 +909,9 @@ async function start(): Promise<App | null> {
     // ?heightfield=1|0 forces the near water's GPU heightfield on or off (a dev tool, DEV_TOOLS.md).
     const heightfield = new URLSearchParams(location.search).get('heightfield');
     if (heightfield === '1' || heightfield === '0') client.setHeightfield(Number(heightfield));
+    // ?cards=1|0 forces the leaf cards on or off (a dev tool, DEV_TOOLS.md; the tier's otherwise).
+    const cards = new URLSearchParams(location.search).get('cards');
+    if (cards === '1' || cards === '0') client.setCards(Number(cards));
     client.setClouds(s.clouds);
     // FXAA and the atlas's anisotropic filtering apply live (?aa= and ?aniso= override them).
     const aa = antialiasFromQuery(location.search, s.antialias);

@@ -2474,3 +2474,58 @@ dwell_world::both_faces!(
         assert!(without.plants.iter().all(|&v| v == 0.0));
     }
 );
+
+dwell_world::both_faces!(
+    /// Leaf cards never reach into a trunk (owner, 2026-11-11: "lots of z-fighting on tree trunks
+    /// with the leaf cards"): a leaf with logs on its four sides and below it, as a crown's cell
+    /// beside a trunk, draws no card with a corner inside a log's cell, nor one lying within ε of a
+    /// log cell's face.
+    fn leaf_cards_stay_out_of_the_logs_beside_them(f: FaceFrame) {
+        let (leaf, log) = (require("dwell:leaves"), require("dwell:log[axis=y]"));
+        // Face-locally below the leaf: the row under it on A, over it in storage on B.
+        let below = if f.is_b() { 9 } else { 7 };
+        let logs = [(9, 8, 8), (7, 8, 8), (8, 8, 9), (8, 8, 7), (8, below, 8)];
+        let mut cells = vec![(8, 8, 8, leaf)];
+        cells.extend(logs.iter().map(|&(x, y, z)| (x, y, z, log)));
+        let m = in_cells(
+            super::mesh_chunk_flags(
+                &voxels(&cells),
+                &[],
+                f.is_b(),
+                [0; 3],
+                &[],
+                None,
+                ChunkFlags {
+                    water_tops: true,
+                    cards: true,
+                },
+            )
+            .expect("padded"),
+        )
+        .cutout;
+        let carded: Vec<[f64; 3]> = (0..m.positions.len() / 3)
+            .filter(|&i| m.plants[i * 4 + 3] > 0.0)
+            .map(|i| std::array::from_fn(|a| f64::from(m.positions[i * 3 + a])))
+            .collect();
+        assert_eq!(carded.len() % 4, 0);
+        const EPS: f64 = 0.02;
+        for &(x, y, z) in &logs {
+            let lo = [f64::from(x), f64::from(y), f64::from(z)];
+            for (q, card) in carded.chunks_exact(4).enumerate() {
+                for p in card {
+                    let inside = (0..3).all(|a| p[a] > lo[a] + 1e-4 && p[a] < lo[a] + 1.0 - 1e-4);
+                    assert!(!inside, "card {q} reaches into the log at {lo:?}: {p:?}");
+                }
+                for a in 0..3 {
+                    for plane in [lo[a], lo[a] + 1.0] {
+                        let along = card.iter().all(|p| (p[a] - plane).abs() < EPS);
+                        assert!(
+                            !along,
+                            "card {q} lies along the log at {lo:?}'s face: {card:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+);

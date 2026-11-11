@@ -28,6 +28,9 @@ function checkNumber(where, v, lo, hi) {
   }
 }
 
+/** The renderer's tiers (`dwell-client` `render::cards_for`), each with its own switch. */
+const TIERS = ['desktop', 'phone', 'cpu'];
+
 /** Checks the look; returns it. Throws naming the entry. */
 export function validateLeaves(data) {
   checkKeys('(root)', data, ['blocks', 'canopyBlend', 'chamfer', 'cards']);
@@ -42,13 +45,17 @@ export function validateLeaves(data) {
   // Past 0.45 an edge's cut meets the opposite edge's in a one-cell-thick layer of leaves.
   checkNumber('chamfer', data.chamfer, 0, 0.45);
   const c = data.cards;
-  checkKeys('cards', c, ['tile', 'density', 'sizeM', 'swayM', 'fadeStartM', 'fadeEndM']);
+  checkKeys('cards', c, ['tile', 'density', 'sizeM', 'swayM', 'fadeStartM', 'fadeEndM', 'tiers']);
   if (typeof c.tile !== 'string' || !/^[A-Za-z0-9_]+$/.test(c.tile)) fail(`cards.tile must be a tile name, got ${JSON.stringify(c.tile)}`);
   checkNumber('cards.density', c.density, 0, 4);
   checkNumber('cards.sizeM', c.sizeM, 0.1, 3);
   checkNumber('cards.swayM', c.swayM, 0, 0.5);
   checkNumber('cards.fadeStartM', c.fadeStartM, 0, 512);
   checkNumber('cards.fadeEndM', c.fadeEndM, c.fadeStartM + 1, 1024);
+  checkKeys('cards.tiers', c.tiers, TIERS);
+  for (const t of TIERS) {
+    if (typeof c.tiers[t] !== 'boolean') fail(`cards.tiers.${t} must be true or false, got ${JSON.stringify(c.tiers[t])}`);
+  }
   return data;
 }
 
@@ -59,7 +66,7 @@ export function leavesRust(data) {
   return [
     `// ${header}`,
     '',
-    'use crate::leaves::{LeafCards, LeavesLook};',
+    'use crate::leaves::{CardTiers, LeafCards, LeavesLook};',
     '',
     "/// The leaves' look (shared/look/leaves.json).",
     'pub const LEAVES: LeavesLook = LeavesLook {',
@@ -73,6 +80,9 @@ export function leavesRust(data) {
     `        sway_m: ${rf(data.cards.swayM)},`,
     `        fade_start_m: ${rf(data.cards.fadeStartM)},`,
     `        fade_end_m: ${rf(data.cards.fadeEndM)},`,
+    '        tiers: CardTiers {',
+    ...TIERS.map((t) => `            ${t}: ${data.cards.tiers[t]},`),
+    '        },',
     '    },',
     '};',
     '',
