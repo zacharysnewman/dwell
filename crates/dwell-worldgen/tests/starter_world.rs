@@ -655,3 +655,43 @@ dwell_world::both_faces!(
         }
     }
 );
+
+/// Arches vs overhangs on the starter's mesa (the 6 km square around the tour's mesa spot), and
+/// what the mesa's tops show by height: a measurement, printed (ADR 0074 B8, 0.52.66).
+#[test]
+#[ignore = "prints the mesa's arch counts"]
+fn mesa_arch_counts() {
+    // face-a-only: a measurement of face A's mesa.
+    let (g, names) = generator(FaceFrame::A, 0);
+    let mesa = names
+        .iter()
+        .position(|n| *n == "preset:red_rock_mesa")
+        .unwrap();
+    let (cx, cz) = (14_500, 400);
+    let r = 3_000;
+    let sites = g.arches_near((cx - r, cz - r), (cx + r, cz + r));
+    let arches = sites.iter().filter(|s| s.through).count();
+    println!(
+        "mesa square: {} sites, {arches} arches, {} overhangs",
+        sites.len(),
+        sites.len() - arches
+    );
+    let mut by_height = std::collections::BTreeMap::<i32, (u32, u32)>::new();
+    for z in (cz - r..=cz + r).step_by(25) {
+        for x in (cx - r..=cx + r).step_by(25) {
+            if usize::from(g.biome_mix(i64::from(x), i64::from(z)).chosen) != mesa {
+                continue;
+            }
+            let c = g.column_at(x, z);
+            let h = (f64::from(c.height) - SEA_LEVEL_M) as i32 / 100 * 100;
+            let e = by_height.entry(h).or_default();
+            e.0 += 1;
+            if g.is_rock_palette(&c) {
+                e.1 += 1;
+            }
+        }
+    }
+    for (h, (n, rock)) in by_height {
+        println!("{h} m: {n} mesa columns, {rock} show the stack's rock");
+    }
+}

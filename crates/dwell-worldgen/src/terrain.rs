@@ -1235,13 +1235,24 @@ impl TerrainGenerator {
                 .rock(l.rock)
                 .filter(|&r| geo.geology.rocks[r].hardness < 0.5)
         });
+        // A biome with its own stack (`rockStack`) shows the layer at the ground's height on its
+        // walls and its standing tops, whatever the shaping's strength (0.52.66: the mesa's beds
+        // at every height, not the band's stone over the cut); else the cap rock's face.
+        let own = self.biomes.biome_stack[usize::from(mix.chosen)]
+            .map(|k| geo.profiles[k].map(out.max(0.0)).1);
         let rock = match cut {
-            Cut::Wall => cap.map(|r| (r, Part::Wall)),
+            Cut::Wall => own.or(cap).map(|r| (r, Part::Wall)),
             Cut::Talus => soft.or(cap).map(|r| (r, Part::Talus)),
             Cut::Floor => soft.or(cap).map(|r| (r, Part::Tread)),
-            Cut::Standing => rock,
+            Cut::Standing => rock.or(own.map(|r| (r, Part::Tread))),
         };
         (out, rock)
+    }
+
+    /// Whether column `col`'s top shows a rock's blocks (the stack's wall, tread or talus: the
+    /// rock shaping's or the erosion's), not its biome band's.
+    pub fn is_rock_palette(&self, col: &Column) -> bool {
+        self.biomes.biome_of_palette(col.palette).is_none()
     }
 
     /// This generator's geology (`rocks.json`).
