@@ -307,6 +307,42 @@ dwell_world::both_faces!(
     }
 );
 
+dwell_world::both_faces!(
+    fn a_worn_tool_dropped_at_death_and_picked_up_keeps_its_wear(f: FaceFrame) {
+        // A dead player's axe fell as a loose item with no wear: picked back up it was a fresh
+        // 32-hit axe. The loose item carries the slot's wear.
+        let mut fx = scene_with(f, config(f, "adventure"));
+        assert_eq!(hits_to_break(&mut fx, f, DIRT), 11);
+        fx.server.kill_player(1);
+        let axe: Vec<_> = fx
+            .server
+            .loose_items()
+            .iter()
+            .filter(|it| it.stack.item == "dwell:stone_axe")
+            .map(|it| it.stack.wear)
+            .collect();
+        assert_eq!(axe, [11], "the dropped axe keeps its wear");
+        // The player respawns where it died (the spawn) and walks over its drops.
+        let ticks = (players::RESPAWN_SECONDS as u32 + 1) * SIM_HZ;
+        for _ in 0..ticks {
+            fx.server.step();
+        }
+        fx.move_to_local(f, 0.5, m_of_row(BASE), 0.5);
+        for _ in 0..60 {
+            fx.server.step();
+        }
+        let inv = fx.server.inventory_of(1).expect("respawned");
+        let worn: Vec<_> = inv
+            .slots
+            .iter()
+            .flatten()
+            .filter(|s| s.item == "dwell:stone_axe")
+            .map(|s| s.wear)
+            .collect();
+        assert_eq!(worn, [11], "picked up with 21 hits left, not a fresh axe");
+    }
+);
+
 #[test]
 fn damage_persists_across_a_save_and_an_older_world_loads_undamaged() {
     // face-a-only: a byte format.

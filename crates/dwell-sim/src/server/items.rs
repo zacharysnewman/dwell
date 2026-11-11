@@ -253,9 +253,11 @@ impl Server {
                 let Some(it) = self.loose.get(item) else {
                     break;
                 };
-                let (name, count) = (it.stack.item.clone(), it.stack.count);
+                let stack = it.stack.clone();
+                let count = stack.count;
                 let s = self.sessions.get_mut(&id).expect("session");
-                let left = s.inventory.add(&name, count);
+                // Wear and all (a dead player's worn tool).
+                let left = s.inventory.add_stack(&stack);
                 if left == count {
                     continue;
                 }
