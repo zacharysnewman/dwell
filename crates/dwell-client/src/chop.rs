@@ -37,7 +37,14 @@ pub fn crosshair_impact(
         look.map(|v| v as f32),
         // As far as the block-target outline (a trunk you can outline you can chop).
         dwell_protocol::players::REACH_DISTANCE,
-        |_, m| tool.clears_block(dwell_blocks::block_of(m).name),
+        // A wood's fell wedge (a stump's face) stops the look, as on the server.
+        |_, m| {
+            let name = dwell_blocks::block_of(m).name;
+            tool.clears_block(name)
+                && !dwell_protocol::chopping::WOODS
+                    .iter()
+                    .any(|w| w.fell_wedge == Some(name))
+        },
     )?;
     let d = f64::from(hit.distance);
     let m = store.get_voxel(hit.cell[0], hit.cell[1], hit.cell[2]);

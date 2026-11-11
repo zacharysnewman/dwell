@@ -950,3 +950,30 @@ dwell_world::both_faces!(
         assert_eq!(cut_rows(&fx, f).len(), 1, "{:?}", cut_rows(&fx, f));
     }
 );
+
+dwell_world::both_faces!(
+    fn chop2_a_swing_after_the_fall_keeps_the_stumps_wedge(f: FaceFrame) {
+        // Round 2, seen in game: the swings after the fall broke the stump's wedge (a `log_ramp`,
+        // in the axe's `clears`) as the arc swept through it, leaving a flat stump. Red before.
+        let mut fx = scene2(f);
+        swings_to_fell(&mut fx, f, false, 30, |_| 0).expect("felled");
+        let stump = cell_is(&mut fx, f, [3, AT, 0]);
+        assert_eq!(
+            dwell_blocks::block_of(f.state(stump)).name,
+            "dwell:log_ramp"
+        );
+        // From the hinge's side (+x), where the wedge rises to meet the look.
+        move_to_local(&mut fx, f, 5.5, m_of_row(BASE), 0.5);
+        for _ in 0..30 {
+            fx.server.step();
+        }
+        for _ in 0..3 {
+            sweep(&mut fx, f, [-1.0, 0.0, 0.0], false);
+        }
+        assert_eq!(
+            cell_is(&mut fx, f, [3, AT, 0]),
+            stump,
+            "the stump keeps its wedge"
+        );
+    }
+);
