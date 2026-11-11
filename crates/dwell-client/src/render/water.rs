@@ -11,7 +11,7 @@ use dwell_look::water_tiers::{WATER_TIERS, WaterTier, tier_bits};
 use dwell_look::{hex, srgb_to_linear};
 
 /// vec4s per fluid in the buffer (`Fluid` in the WGSL).
-pub const FLUID_VEC4S: usize = 16;
+pub const FLUID_VEC4S: usize = 17;
 /// Bytes per fluid.
 pub const FLUID_STRIDE: u64 = (FLUID_VEC4S * 16) as u64;
 
@@ -291,6 +291,7 @@ pub fn pack_fluids(fluids: &[FluidInfo]) -> Vec<f32> {
             u.underside_sun_power as f32,
             u.underside_cell_scale as f32,
         ]);
+        out.extend_from_slice(&[u.window_cells as f32, u.window_bodies as f32, 0.0, 0.0]);
     }
     if out.is_empty() {
         // A storage binding can't be empty: one zero fluid that nothing indexes.
@@ -432,6 +433,32 @@ pub fn band_keep(k: [f64; 2], fp: [f64; 2]) -> f64 {
 /// water). Below the surface's plane (rise ≤ 0) it never reaches it.
 pub fn sees_out(rise: f64, ior: f64) -> bool {
     rise > 0.0 && 1.0 - rise * rise < 1.0 / (ior * ior)
+}
+
+/// Snell's window's critical angle (radians from the surface's normal) in a fluid of refractive
+/// index `ior`: `asin(1 / ior)`, 48.6° for water, so the window is a ~97° cone overhead.
+pub fn critical_angle(ior: f64) -> f64 {
+    (1.0 / ior.max(1.0)).asin()
+}
+
+/// The radius (m) of Snell's window on a calm surface `depth_m` above the eye: where the cone of
+/// the critical angle meets the surface.
+pub fn window_radius(depth_m: f64, ior: f64) -> f64 {
+    depth_m.max(0.0) * critical_angle(ior).tan()
+}
+
+/// A ray from under the surface bent out into the air (the WGSL `water_exit`; Snell's law), for
+/// the calm surface of face `f` (its normal the face's up): `dir` (world, unit) rising inside the
+/// window leaves with its slant from the up grown by `ior`, so the whole sky shows inside the
+/// window's cone; `None` past the critical angle (totally reflected: the mirror).
+pub fn water_exit(f: dwell_world::FaceFrame, dir: [f64; 3], ior: f64) -> Option<[f64; 3]> {
+    let d = f.vector(dir);
+    if !sees_out(d[1], ior) {
+        return None;
+    }
+    let h = [d[0] * ior, 0.0, d[2] * ior];
+    let up = (1.0 - h[0] * h[0] - h[2] * h[2]).max(0.0).sqrt();
+    Some(f.vector([h[0], up, h[2]]))
 }
 
 /// The length of a view ray inside the water (m): from the surface, at view depth `d_water`, to
@@ -1066,6 +1093,7 @@ mod tests {
                 u.underside_cell_scale,
             ];
             assert_eq!(v[60..64], under.map(|x| x as f32));
+            assert_eq!(v[64..66], [u.window_cells as f32, u.window_bodies as f32]);
         }
         // A fluid with no look of its own takes the default's (fog from the eye, the registry's rates).
         assert_eq!(underwater_look("test:oil"), &DEFAULT_UNDERWATER);
@@ -1411,6 +1439,133 @@ mod tests {
         assert!(
             !sees_out(-0.2, ior),
             "a ray going down never reaches the surface"
+        );
+    }
+
+    #[test]
+    fn snells_window_is_a_97_degree_cone_and_its_radius_grows_with_depth() {
+        // both-faces: the angle and radius are face-local scalars.
+        let ior = 1.333;
+        let cone = 2.0 * critical_angle(ior).to_degrees();
+        assert!((cone - 97.2).abs() < 0.1, "{cone}");
+        // 2 m down the window is ~2.27 m across in radius, and twice that 4 m down.
+        assert!(
+            (window_radius(2.0, ior) - 2.27).abs() < 0.01,
+            "{}",
+            window_radius(2.0, ior)
+        );
+        assert!((window_radius(4.0, ior) - 2.0 * window_radius(2.0, ior)).abs() < 1e-9);
+        assert_eq!(window_radius(0.0, ior), 0.0);
+        assert_eq!(
+            window_radius(-1.0, ior),
+            0.0,
+            "above the surface: no window"
+        );
+    }
+
+    dwell_world::both_faces!(
+        fn the_sky_through_snells_window_is_refracted_out_by_snells_law(f: FaceFrame) {
+            // Owner, 2026-11-11: the surface from under should look transparent and show the light
+            // shining down. Inside the window the sky is seen along the ray bent out of the water:
+            // straight up stays straight up, the slant from the up grows by sin θ_air = n sin θ_water,
+            // and a ray at the critical angle leaves along the horizon. Outside it: None (mirror).
+            let ior = 1.333;
+            let local = |deg: f64| {
+                let r = deg.to_radians();
+                f.vector([r.sin(), r.cos(), 0.0])
+            };
+            let up = water_exit(f, local(0.0), ior).expect("straight up leaves");
+            let l = f.vector(up);
+            assert!((l[1] - 1.0).abs() < 1e-12 && l[0].abs() < 1e-12, "{l:?}");
+            for deg in [10.0, 30.0, 45.0, 48.0] {
+                let out = f.vector(water_exit(f, local(deg), ior).expect("inside the window"));
+                let air = out[0].atan2(out[1]).to_degrees();
+                let want = (ior * deg.to_radians().sin()).asin().to_degrees();
+                assert!((air - want).abs() < 1e-9, "{deg}°: {air} vs {want}");
+                assert!(
+                    air > deg,
+                    "the sky is squeezed into the window: {deg}° shows {air}°"
+                );
+                assert!(
+                    ((out[0] * out[0] + out[1] * out[1] + out[2] * out[2]) - 1.0).abs() < 1e-12
+                );
+            }
+            let edge = critical_angle(ior).to_degrees();
+            let rim = f.vector(water_exit(f, local(edge - 1e-6), ior).expect("just inside"));
+            assert!(rim[1] < 1e-3, "the window's rim shows the horizon: {rim:?}");
+            for deg in [edge + 0.1, 60.0, 85.0] {
+                assert!(
+                    water_exit(f, local(deg), ior).is_none(),
+                    "{deg}°: totally reflected"
+                );
+                assert!(!sees_out(
+                    local(deg)
+                        .iter()
+                        .zip(f.vector([0.0, 1.0, 0.0]))
+                        .map(|(a, b)| a * b)
+                        .sum(),
+                    ior
+                ));
+            }
+            assert!(
+                water_exit(f, local(120.0), ior).is_none(),
+                "a ray going down never leaves"
+            );
+        }
+    );
+
+    #[test]
+    fn the_window_shows_the_real_sky_and_bodies_scaled_by_its_light() {
+        // both-faces: a source check; the composite's face handling is `face_up`.
+        let src = super::super::shaders::source(1);
+        let at = src.find("fn composite_underwater(").expect("composite");
+        let b = &src[at..at + src[at..].find("\n}\n").expect("end")];
+        assert!(
+            b.contains(
+                "let out = water_exit(dir, normalize(up + vec3f(slope.x, 0.0, slope.y)), ior);"
+            ),
+            "the sky is looked up along the refracted ray, bent by the ripples"
+        );
+        assert!(b.contains("var seen = sky(out);"));
+        assert!(
+            !b.contains("mix(sky_radiance(dir), glow"),
+            "not along the ray under water, nor a fixed glow"
+        );
+        assert!(
+            b.contains("dwell_sun_disc(out, up, frame.day, px)")
+                && b.contains("dwell_moon(out, frame.day, px)"),
+            "the sun and moon discs show through the window"
+        );
+        assert!(
+            b.contains("(u32(frame.reflect_sky.y + 0.5) & 2u) != 0u"),
+            "only on a tier with bodyPath"
+        );
+        assert!(
+            b.contains("* mix(1.0, look.x, f.window.x), to_surface, f));"),
+            "the underside's cells over the window's sky at the look's share"
+        );
+        let w = dwell_look::underwater::underwater_look("dwell:water");
+        assert!(
+            w.window_cells < 0.5,
+            "water's window is mostly the clear sky"
+        );
+        assert!(w.window_bodies > 0.0, "and shows the sun and moon");
+        assert!(
+            b.contains(
+                "inverse_display(frame.shafts_window.rgb) * max(zenith.r, max(zenith.g, zenith.b))"
+            ),
+            "the window's glow follows the sky's light (dim at night)"
+        );
+        // The CPU tier draws no discs in the window (the cheapest: the refracted sky only), and
+        // its surface from below is the simple see-through tinted sheet (`from_below`'s Fresnel).
+        let cpu = WATER_TIERS.iter().position(|t| t.cpu).expect("a CPU tier");
+        assert!(!dwell_look::reflections::REFLECTIONS.tiers[cpu].body_path);
+        assert!(!WATER_TIERS[cpu].reads_scene);
+        let at = src.find("fn from_below(").expect("from_below");
+        let fb = &src[at..at + src[at..].find("\n}\n").expect("end")];
+        assert!(
+            fb.contains("return vec4f(body * (look.x * (1.0 + look.y)), fres);"),
+            "see-through by the Fresnel"
         );
     }
 

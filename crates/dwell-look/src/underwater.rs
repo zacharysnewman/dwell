@@ -48,6 +48,11 @@ pub struct UnderwaterLook {
     pub underside_sun_power: f64,
     /// The cells' scale against the floor's caustics (a whole number: 2 halves them).
     pub underside_cell_scale: f64,
+    /// Snell's window seen from below (WATER_RENDERING.md §16): how much of the underside's cells
+    /// darken and lighten the sky through it (0: the clear sky; 1: as on the mirror), and how
+    /// strongly the sun's and moon's discs show in it (× their colour; 0: none).
+    pub window_cells: f64,
+    pub window_bodies: f64,
     /// The fog: none over the first `fog_clear_m` metres, then the fluid's rates × `fog_density`.
     pub fog_clear_m: f64,
     pub fog_density: f64,

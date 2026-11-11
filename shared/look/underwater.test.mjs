@@ -24,6 +24,7 @@ test('a murky fluid added by data alone reaches the output', () => {
       breakup: 0, mirror: 0.6, mirrorWarpPx: 0,
     },
     underside: { texture: 0, breakup: 0, sunPatch: 0, sunPower: 8, cellScale: 1 },
+    window: { cells: 0.5, bodies: 0 },
     fog: { clearM: 0, density: 4 },
   };
   const rs = underwaterRust(validateUnderwater(d));
@@ -40,6 +41,8 @@ test('bad entries fail with their path named', () => {
     [(d) => (d.fluids[w].band.lineGlow = 0.5), /band\.lineGlow must be a number in \[1, 4\]/],
     [(d) => (d.fluids[w].underside.texture = -1), /underside\.texture must be a number/],
     [(d) => (d.fluids[w].underside.sunPower = 0), /underside\.sunPower must be a number in \[1, 256\]/],
+    [(d) => (d.fluids[w].window.cells = 2), /window\.cells must be a number in \[0, 1\]/],
+    [(d) => delete d.fluids[w].window, /window/],
     [(d) => (d.fluids[w].band.mirrorWarpPx = 40), /band\.mirrorWarpPx must be a number in \[0, 32\]/],
     [(d) => ((d.fluids[w].lensM = 0.05), (d.fluids[w].line.amplitudeM = 0.1)), /line\.amplitudeM must be under lensM/],
     [(d) => (d.fluids[w].lensM = 0), /lensM must be a number in \[0\.01, 2\]/],
