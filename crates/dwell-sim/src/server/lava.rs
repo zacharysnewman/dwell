@@ -131,6 +131,68 @@ impl Server {
             })
     }
 
+    /// The lava fields as a dev report (`__dwell.lava()`, docs/DEV_TOOLS.md): JSON
+    /// `{"worldgen":…, "fields":[{"face":"a"|"b","centre":[x,z],"origin":[x,z],"w","h","molten",
+    /// "maxDepthM","vents":[{"x","z","rateM3s"}]}]}`, `molten` the columns holding lava.
+    pub fn lava_report(&self) -> String {
+        let fields: Vec<String> = self
+            .lava
+            .fields
+            .iter()
+            .map(|p| {
+                let f = &p.field;
+                let molten = f.depth.iter().filter(|d| **d > 0.0).count();
+                let max = f.depth.iter().copied().fold(0.0_f32, f32::max);
+                let vents: Vec<String> = f
+                    .vents
+                    .iter()
+                    .map(|v| {
+                        format!(
+                            r#"{{"x":{},"z":{},"rateM3s":{}}}"#,
+                            f.origin[0] + v.x as i32,
+                            f.origin[1] + v.z as i32,
+                            v.rate_m3s
+                        )
+                    })
+                    .collect();
+                format!(
+                    r#"{{"face":"{}","centre":[{},{}],"origin":[{},{}],"w":{},"h":{},"molten":{molten},"maxDepthM":{max},"vents":[{}]}}"#,
+                    if p.face.is_b() { "b" } else { "a" },
+                    f.origin[0] + (f.w / 2) as i32,
+                    f.origin[1] + (f.h / 2) as i32,
+                    f.origin[0],
+                    f.origin[1],
+                    f.w,
+                    f.h,
+                    vents.join(",")
+                )
+            })
+            .collect();
+        let worldgen = if self.worldgen_text.len() > 64 {
+            "(text)"
+        } else {
+            &self.worldgen_text
+        };
+        format!(
+            r#"{{"worldgen":{:?},"fields":[{}]}}"#,
+            worldgen,
+            fields.join(",")
+        )
+    }
+
+    /// Multiplies every vent's rate by `k` (a dev way to fill a lake fast: `?lavaRate=`,
+    /// `__dwell.lavaRate(k)`); returns the vents changed.
+    pub fn scale_lava_rate(&mut self, k: f32) -> usize {
+        let mut n = 0;
+        for p in &mut self.lava.fields {
+            for v in &mut p.field.vents {
+                v.rate_m3s *= k;
+                n += 1;
+            }
+        }
+        n
+    }
+
     /// The world's lava fields.
     pub fn lava(&self) -> &crate::lava::Lava {
         &self.lava

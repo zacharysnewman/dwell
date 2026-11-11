@@ -107,3 +107,50 @@ dwell_world::both_faces!(
         );
     }
 );
+
+/// The dev report (`__dwell.lava()`) lists the starter's field on each face round its vent, and the
+/// dev rate scale (`?lavaRate=`) fills it faster. Prints the site and the ground there for the
+/// bench's spots.
+#[test]
+fn the_dev_report_lists_the_starter_fields_and_the_rate_scale_fills_faster() {
+    // both-faces: the report lists the fields of both faces at once.
+    install();
+    let (c, y) = vent(FaceFrame::A);
+    eprintln!("starter vent (seed {SEED:#x}): column {c:?}, face A ground {y} m");
+    let run = |k: f32| {
+        let mut fx = Fixture::new(ServerConfig {
+            generator_version: GENERATOR_TERRAIN,
+            world_seed: SEED,
+            spawn: Some([f64::from(c[0]) + 6.5, y + 1.0, f64::from(c[1]) + 0.5]),
+            mode: "creative".into(),
+            ..flat()
+        });
+        assert_eq!(fx.server.scale_lava_rate(k), 2, "a vent on each face");
+        fx.join(1, &Client::new(1));
+        for _ in 0..10 * SIM_HZ {
+            fx.server.step();
+        }
+        fx.server.lava_report()
+    };
+    let slow = run(1.0);
+    eprintln!("{slow}");
+    assert!(
+        slow.contains(&format!(r#""centre":[{},{}]"#, c[0], c[1])),
+        "{slow}"
+    );
+    assert!(slow.contains(r#""face":"a""#) && slow.contains(r#""face":"b""#));
+    assert!(slow.contains(r#""worldgen":"test:starter""#), "{slow}");
+    let molten = |r: &str| -> usize {
+        let i = r.find(r#""face":"a""#).unwrap();
+        let m = &r[i..];
+        let j = m.find(r#""molten":"#).unwrap() + 9;
+        m[j..].split(',').next().unwrap().parse().unwrap()
+    };
+    let fast = run(20.0);
+    assert!(
+        molten(&fast) > molten(&slow),
+        "slow {}, fast {}",
+        molten(&slow),
+        molten(&fast)
+    );
+}

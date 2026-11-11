@@ -777,6 +777,16 @@ async function step(run: Run, s: Step): Promise<void> {
       await page.waitForTimeout(s.s * 1000);
       return;
     }
+    case 'lava': {
+      const r = await call<string | null>(
+        page,
+        `d.lava(${JSON.stringify(s.op)}, ${JSON.stringify(s.args)})`,
+      );
+      if (r === null) throw new Error('lava: not a local world');
+      console.log(`  lava ${s.op}: ${r}`);
+      if (r.includes('"error"')) throw new Error(`lava ${s.op}: ${r}`);
+      return;
+    }
     case 'give': {
       const ok = await call<boolean | null>(
         page,

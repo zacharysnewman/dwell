@@ -397,6 +397,56 @@ impl LocalCore {
     /// docs/DEV_TOOLS.md): the server moves the body, the client's prediction snaps to it and the
     /// chunks stream around it. Only on the face the player is on (crossing has its own path,
     /// BIFACIAL_WORLD.md §6). False without a living local player or across the faces.
+    /// The lava's dev tools (docs/DEV_TOOLS.md, VOLCANOES.md §6.3), JSON back: `"report"` the
+    /// fields (`Server::lava_report`); `"rate"` [k] every vent's rate × k (a lake fills fast);
+    /// `"vent"` [x, y, z, rateM3s, depthM] a lake vent at the world point (its face's), a
+    /// 12-column field.
+    pub fn lava_dev(&mut self, op: &str, args: &[f64]) -> String {
+        match (op, args) {
+            ("report", _) => self.server.lava_report(),
+            ("rate", [k]) => format!(r#"{{"vents":{}}}"#, self.server.scale_lava_rate(*k as f32)),
+            ("ventNear", [dx, dz, rate, depth]) => {
+                // `ventNear` [dx, dz, rate, depth]: a vent `dx`, `dz` m off the local player's
+                // feet, its bed looked for round their height.
+                let Some(feet) = self
+                    .server
+                    .player_of_session(LOCAL_SESSION)
+                    .and_then(|p| self.server.feet_of(p))
+                else {
+                    return r#"{"error":"no local player"}"#.into();
+                };
+                self.lava_dev(
+                    "vent",
+                    &[feet[0] + dx, feet[1], feet[2] + dz, *rate, *depth],
+                )
+            }
+            ("vent", [x, y, z, rate, depth]) => {
+                let f = dwell_world::FaceFrame::at_height(*y);
+                let spot = dwell_sim::lava::VentSpot {
+                    fluid: "dwell:lava".into(),
+                    kind: dwell_sim::lava::VentKind::Lake,
+                    rate_m3s: *rate as f32,
+                    depth_m: *depth as f32,
+                    radius: 12,
+                };
+                let row = f.row(dwell_world::row_of_m(*y));
+                match self.server.place_lava_vent(
+                    f,
+                    [x.floor() as i32, z.floor() as i32],
+                    row,
+                    &spot,
+                ) {
+                    Ok(i) => format!(r#"{{"field":{i}}}"#),
+                    Err(e) => format!(r#"{{"error":{e:?}}}"#),
+                }
+            }
+            _ => format!(
+                r#"{{"error":"unknown lava op {op:?} with {} args"}}"#,
+                args.len()
+            ),
+        }
+    }
+
     pub fn teleport_local_player(&mut self, feet: [f64; 3]) -> bool {
         let Some(p) = self.server.player_of_session(LOCAL_SESSION) else {
             return false;

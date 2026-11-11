@@ -151,6 +151,11 @@ export type Step =
   /** Gives the local player `count` of `item` (a local world that uses items; `__dwell.give`). */
   | { do: 'give'; item: string; count: number }
   /**
+   * The local server's lava (`__dwell.lava`, VOLCANOES.md §6.3): `report` prints its fields,
+   * `rate` [k] scales every vent's rate, `vent` [x, y, z, rateM3s, depthM] places a lake vent.
+   */
+  | { do: 'lava'; op: 'report' | 'rate' | 'vent' | 'ventNear'; args: number[] }
+  /**
    * Stands the player on a raft `lift` m (default 1) above its feet and moves the raft at `speed`
    * m/s toward `yaw` (degrees, 0 = +Z, 90 = +X) for `s` seconds at a held height, then waits out
    * the ride (a local world only): "carried by a moving body" bugs (`__dwell.carry`).
@@ -245,6 +250,11 @@ export interface Scenario {
   portal: boolean;
   /** The local world's type (`?world=`, local/world.ts `GENERATORS`); default `terrain`. */
   world: World;
+  /**
+   * Extra page parameters (e.g. `{"worldgen": "test:starter", "seed": "0", "at": "x,y,z"}`, as a
+   * spot's): a test world and a start point for a scenario of its own steps.
+   */
+  query?: Record<string, string>;
   steps: Step[];
 }
 
@@ -374,6 +384,7 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   until: ['what', 'maxS'],
   die: ['maxS'],
   give: ['item', 'count'],
+  lava: ['op', 'args'],
   mark: [],
   record: ['name'],
   shot: ['name', ...PLACEMENT_FIELDS, 'quietFrames', 'maxS'],
@@ -581,6 +592,16 @@ export function parseStep(where: string, v: unknown): Step {
         s: num(at('s'), o.s, 0, 600),
         ...(o.lift === undefined ? {} : { lift: num(at('lift'), o.lift, 0, 64) }),
       };
+    case 'lava': {
+      if (o.op !== 'report' && o.op !== 'rate' && o.op !== 'vent' && o.op !== 'ventNear') {
+        throw new ViewError(`${at('op')}: expected "report", "rate", "vent" or "ventNear"`);
+      }
+      const args = o.args === undefined ? [] : o.args;
+      if (!Array.isArray(args) || !args.every((a) => typeof a === 'number' && Number.isFinite(a))) {
+        throw new ViewError(`${at('args')}: expected a list of numbers`);
+      }
+      return { do: d, op: o.op, args: args as number[] };
+    }
     case 'give': {
       if (typeof o.item !== 'string' || !/^[a-z][a-z0-9_]*:[a-z][a-z0-9_]*$/.test(o.item)) {
         throw new ViewError(`${at('item')}: expected an item name (namespace:name)`);
@@ -759,8 +780,19 @@ function parseScenario(where: string, v: unknown): Scenario {
     'face',
     'portal',
     'world',
+    'query',
     'steps',
   ]);
+  const query: Record<string, string> = {};
+  if (o.query !== undefined) {
+    if (typeof o.query !== 'object' || o.query === null || Array.isArray(o.query)) {
+      throw new ViewError(`${where}.query: expected an object of strings`);
+    }
+    for (const [k, v] of Object.entries(o.query)) {
+      if (typeof v !== 'string') throw new ViewError(`${where}.query.${k}: expected a string`);
+      query[k] = v;
+    }
+  }
   if (o.world !== undefined && !(WORLDS as readonly unknown[]).includes(o.world)) {
     throw new ViewError(`${where}.world: expected one of ${WORLDS.join(', ')}`);
   }
@@ -816,6 +848,7 @@ function parseScenario(where: string, v: unknown): Scenario {
     face: o.face === 'b' ? 'b' : 'a',
     portal: bool(`${where}.portal`, o.portal, false),
     world: (o.world as World | undefined) ?? 'terrain',
+    ...(o.query === undefined ? {} : { query }),
     steps,
   };
 }
@@ -853,6 +886,7 @@ export function scenarioUrl(
   if (s.portal) url.searchParams.set('spawn', s.face === 'b' ? 'portal-b' : 'portal');
   else if (s.face === 'b') url.searchParams.set('spawn', 'b');
   if (s.world !== 'terrain') url.searchParams.set('world', s.world);
+  for (const [k, v] of Object.entries(s.query ?? {})) url.searchParams.set(k, v);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   return `${base}${url.search}`;
 }

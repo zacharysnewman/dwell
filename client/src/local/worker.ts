@@ -187,6 +187,9 @@ function handle(msg: ToWorker): void {
         result: core.findOnMap(msg.kind, msg.at, msg.radius, msg.face, msg.minDepth),
       });
       break;
+    case 'lavaDev':
+      scope.postMessage({ t: 'lavaDev', result: core.lavaDev(msg.op, msg.args) });
+      break;
     case 'respawnPreload':
       core.setRespawnPreload(msg.on);
       break;
