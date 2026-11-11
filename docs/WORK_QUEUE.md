@@ -86,9 +86,11 @@ Last updated: 2026-11-11 (0.52.68).
    the remaining leftover sections (owner, 2026-11-11: "Let's implement lava", "Into our queue"): lava as
    a fluid — flows slowly, cools into rock, gives light, damages, steam where it meets water. The other
    volcano phases stay under Future. Lava's danger (owner): heavy damage while in it, a moment of burning after.
-9. **Loading-time display bug.** Owner: "the loading game (xMB) step still takes like 10+ seconds sometimes and
-   shows as 0.0s [or 0.1s] on the loading screen." Find what the 10 s is, show its real time, speed it up if
-   possible; red → green test. (Runs before lava.)
+9. ~~**Loading-time display bug.**~~ Done (0.52.71): the 10 s was the graphics' start (one long task on the
+   main thread making the renderer's pipelines) begun in the same task that ended the game's load, so the
+   screen never painted "Starting the graphics…" and stood on "Loading the game… x MB 0.0 s". Each stage is
+   now painted before its work (`ui/startStages.ts`). Open: making the pipelines asynchronously to cut the
+   block itself.
 10. **Speed-ups 1–6** (owner: "Implement 1-6 now"): the version out of build scripts (dwell-sim's build.rs reads
    client/package.json → every release recompiles), version + release note assigned at merge, an agent
    quickstart doc, a reliable browser kit (warm prebuilt client, exact camera goto, stall retries, saved
