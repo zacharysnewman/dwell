@@ -1,6 +1,0 @@
-{
-  "changes": [
-    "Phones no longer draw the leaf cards on trees, for a faster frame",
-    "Leaf cards no longer flicker against tree trunks"
-  ]
-}
