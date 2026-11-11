@@ -993,6 +993,13 @@ rules that spawn the species' creatures are left out (`Creatures::reserved`).
 
 ## 6. Voxel World
 
+
+**Tall grass growth** (ADR 0075 T3c, ECOLOGY.md §10) **[built]**: `shared/worldgen/grass.json` →
+`dwell_worldgen::grass` (a face-local step capped by the T3b climate envelope); the server's grass step
+(`dwell-sim` `server/grass.rs`, every 5 s, loaded chunks, bounded catch-up) and its optional
+`grass_growth` world table (the switch, each chunk's last day; on for new worlds only). The ecology's
+island forage is scaled by the same climate share.
+
 ### 6.1 Grid & chunks **[in progress]**
 
 > **Prototype content.** Every material that exists today — its name, look, and role (the
@@ -2768,8 +2775,10 @@ chunks), keeps the last selection (`LodSystem::update`; ~1 ms a frame standing s
   test by straight-line distance could miss terrain toward the sides of the view, where it is
   nearer than the split in depth but farther in distance), so a section straddling the split is clipped at it.
   The far pass's near plane is just inside the split (0.95 × `LOD_NEAR_SPLIT_M`) and moves out to
-  0.8 × the camera's face-local altitude when that is farther (nothing is nearer up there),
-  keeping depth precise from orbit.
+  0.8 × the camera's face-local altitude over the terrain's top when that is farther (nothing is
+  nearer up there), keeping depth precise from orbit. The top is the higher of 1024 m and the
+  highest box of the sections, stand-ins and chunks shown (`render/mod.rs` `far_pass_near`,
+  `drawn_top`; after 0.52.92, BUGS.md #68: over a 4800 m peak a fixed 1024 m clipped the cone).
   **Reversed depth [built, 2026-10-21]** (`render/camera.rs` `perspective_reversed`, `frame.rs`
   `DEPTH_CLEAR`, `DEPTH_COMPARE`): both passes map their near plane to 1 and their far plane to 0
   in the `depth32float` buffer, cleared to 0 and tested greater-or-equal, so a float's dense end
@@ -2981,7 +2990,8 @@ chunks), keeps the last selection (`LodSystem::update`; ~1 ms a frame standing s
   error's scale and LOD bytes/s, and the frame's draw calls and triangles over both passes;
   `?lodcolors=1` tints sections by level, `?lod=0` turns the LOD off; `?loddebug=` takes a comma list of
   renderer switches — `skirts` (the shown skirts drawn magenta), `noskirts`, `nocull` (no per-section
-  culling), `nostandins` — to tell which part draws a seam (BUGS.md #68). (Before the port, the
+  culling), `nostandins`, `levels` (sections tinted by level, as `?lodcolors=1`) — to tell which part
+  draws a seam (BUGS.md #68). (Before the port, the
   TypeScript selection measured ~2–4 ms per frame for ~2,800 drawn sections under Node; the Rust
   one has not been measured yet.)
 - **Memory (F3, `ui/memory.ts`):** a phone's browser closes a tab that uses too much, without
@@ -3526,7 +3536,7 @@ radius, offset from the summit; checked by `biomes.mjs` `checkLavaVents`, read b
 or first loaded with no lava (`place_world_vents`, at the cone's summit as generated). The starter world
 lists a lake vent on its youngest hotspot island's summit and, on face B only (a vent's optional
 `faces`: each face generates its own cone), a river vent on its flank 1.3 km from the sea
-(VOLCANOES.md §6.2–6.3; the river reaching it on the generated terrain is open). **Edits:** every change through the
+(VOLCANOES.md §6.2, §6.4; the river reaching it on the generated terrain is open). **Edits:** every change through the
 edit path but the lava's own (`TickChanges::lava`) marks its column in a field over it (`Lava::touch`);
 the field reads that column's bed (up through blocks set on it, down through cells dug out) and water
 again at its next lava tick, so a dug channel takes the lava.
@@ -4149,6 +4159,16 @@ cause it knows (`DamageCause::MAX` as built). The server sends a cause past it (
 client as `Fall`, as it does `Drown` to a client without `VitalsHello`; a later cause needs no new hello.
 ```
 C→S  CausesHello 0x64, control: u8 the last DamageCause this client knows
+```
+
+**Steam: `SteamHello` / `Steam` (reliable) [built]** (VOLCANOES.md §6.3). A client sends `SteamHello`
+only to a server whose `Inventory` has `inventory_flags::STEAM` (128); from then on, each tick lava
+boiled water away, the server sends it `Steam`: the world cells whose water went (at most 256), drawn
+as rising puffs (`dwell-client` `steam.rs`, through the blasts' puffs). A client that never said it
+(an older build) never gets the message.
+```
+C→S  SteamHello 0x67, control: (empty)
+S→C  Steam 0x68, world: u16 count, then count × (i32 x, i32 y, i32 z) world cells
 ```
 
 **Client → Server: `BlockEditRequest` (reliable, `control`) [built, Phase 3d]** (§6.5)

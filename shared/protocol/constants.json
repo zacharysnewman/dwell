@@ -137,7 +137,9 @@
     "WorldgenConfig": 99,
     "CausesHello": 100,
     "EcologyHello": 101,
-    "Ecology": 102
+    "Ecology": 102,
+    "SteamHello": 103,
+    "Steam": 104
   },
   "rejectReasons": {
     "ProtocolVersion": 1,

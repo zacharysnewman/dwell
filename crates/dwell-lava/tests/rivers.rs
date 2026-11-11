@@ -1,4 +1,4 @@
-//! Lava V2 (docs/proposals/VOLCANOES.md §6.3): fields that grow with their flow, rivers that reach
+//! Lava V2 (docs/proposals/VOLCANOES.md §6.4): fields that grow with their flow, rivers that reach
 //! the sea and build land. On a fixture flank (a 0.3 slope falling 1100 m to a shore, then a sea
 //! floor under 2 m of water), a river vent's lava runs over a kilometre downslope, quenches in the
 //! sea and builds new land above it; the field adds the tiles its lava reaches and drops the ones

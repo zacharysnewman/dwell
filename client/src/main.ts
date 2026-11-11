@@ -280,6 +280,12 @@ interface DwellDebug {
   /** The local server's water around a cell (JSON, `Water::report`); null outside a local world. */
   waterReport(x: number, y: number, z: number, radius?: number): Promise<string | null>;
   /**
+   * The local server's lava (docs/DEV_TOOLS.md, VOLCANOES.md §6.3): with no op its fields as JSON
+   * (face, centre, molten columns, vents); `rate` [k] every vent's rate × k (fill a lake fast);
+   * `vent` [x, y, z, rateM3s, depthM] a lake vent at a world point. Null outside a local world.
+   */
+  lava(op?: 'report' | 'rate' | 'vent' | 'ventNear', args?: number[]): Promise<string | null>;
+  /**
    * The water quality (as the settings menu sets it, not stored) and/or its cost-isolation
    * switches (`?waterdbg=` names, comma-separated; "" for none); null leaves either as it is.
    * `phone` draws the phone's reflection tiers (or a desktop's) whatever the device is.
@@ -684,6 +690,9 @@ function showHud(app: App, now: number): void {
     vitals?: VitalsHud | null;
     debug?: string | null;
     damaged?: boolean;
+    /** The burning edge's opacity now (0: none) and colour (shared/fluids/lava.json `burnEdge`). */
+    burn?: number;
+    burnColor?: string;
     region?: string;
     /** The held axe's swing hint (ADR 0067), else null. */
     chop?: string | null;
@@ -698,6 +707,7 @@ function showHud(app: App, now: number): void {
   if (h.message === undefined) return;
   app.hud.setSpyglass(h.spyglass ?? null);
   if (h.damaged) app.hud.flashDamage(now);
+  app.hud.setBurn(h.burn ?? 0, h.burnColor ?? '#ff5a1e');
   app.hud.setHealth(h.health ?? 0, now);
   app.hud.setVitals(h.vitals ?? null);
   app.hud.setMessage(h.message);
@@ -1243,6 +1253,7 @@ async function start(): Promise<App | null> {
     serverStats: () => app.loopback?.serverStats ?? null,
     waterReport: (x, y, z, radius) =>
       app.loopback?.waterReport([x, y, z], radius ?? WATER_REPORT_RADIUS) ?? Promise.resolve(null),
+    lava: (op, args) => app.loopback?.lavaDev(op ?? 'report', args ?? []) ?? Promise.resolve(null),
     die: () => {
       app.loopback?.postToWorker({ t: 'kill' });
       return app.loopback !== null;

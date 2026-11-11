@@ -25,6 +25,7 @@ pub mod pool;
 pub mod render;
 pub mod render_clock;
 pub mod settle_glide;
+pub mod steam;
 pub mod telemetry;
 #[cfg(target_arch = "wasm32")]
 mod web;

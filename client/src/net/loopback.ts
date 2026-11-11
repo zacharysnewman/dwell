@@ -38,6 +38,7 @@ export class LoopbackTransport implements Transport {
   private readonly saving: ((ok: boolean) => void)[] = [];
   private readonly reports: ((report: string | null) => void)[] = [];
   private readonly mapFinds: ((result: string | null) => void)[] = [];
+  private readonly lavaAnswers: ((result: string | null) => void)[] = [];
 
   private constructor(private readonly worker: Worker) {
     worker.onmessage = (e: MessageEvent<FromWorker>) => {
@@ -148,6 +149,15 @@ export class LoopbackTransport implements Transport {
     });
   }
 
+  /** The lava's dev tools (local.rs `lava_dev`; JSON); null once the transport is closed. */
+  lavaDev(op: string, args: number[]): Promise<string | null> {
+    if (this.closed) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      this.lavaAnswers.push(resolve);
+      this.post({ t: 'lavaDev', op, args });
+    });
+  }
+
   /**
    * The host switches the world's game mode (ADR 0065); resolves with the mode the world is in
    * after it (the old one if the name was refused, or once the transport is closed).
@@ -180,6 +190,7 @@ export class LoopbackTransport implements Transport {
     for (const resolve of this.saving.splice(0)) resolve(false);
     for (const resolve of this.reports.splice(0)) resolve(null);
     for (const resolve of this.mapFinds.splice(0)) resolve(null);
+    for (const resolve of this.lavaAnswers.splice(0)) resolve(null);
     for (const resolve of this.modeWaits.splice(0)) resolve(this.mode);
     this.handlers?.onClose({ message });
     this.handlers = null;
@@ -215,6 +226,9 @@ export class LoopbackTransport implements Transport {
         break;
       case 'findOnMap':
         this.mapFinds.shift()?.(msg.result);
+        break;
+      case 'lavaDev':
+        this.lavaAnswers.shift()?.(msg.result);
         break;
       case 'memory':
         this.heapBytes = msg.bytes;

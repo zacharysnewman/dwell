@@ -47,6 +47,9 @@ export class Hud {
   private hintTimer = 0;
   /** The spyglass's vignette (docs/SPYGLASS.md), hidden while unzoomed. */
   private readonly spyglass: HTMLDivElement;
+  /** The burning edge (lava, VOLCANOES.md §6.3): a red-orange vignette while burning. */
+  private readonly burnEdge: HTMLDivElement;
+  private burnColor = '';
   /** The held tool's swing line (`setSwing`). */
   private readonly swingLine: HTMLDivElement;
 
@@ -148,8 +151,11 @@ export class Hud {
     this.spyglass = document.createElement('div');
     this.spyglass.id = 'spyglass';
     this.spyglass.hidden = true;
+    this.burnEdge = document.createElement('div');
+    this.burnEdge.id = 'burn-edge';
     this.root.append(
       this.spyglass,
+      this.burnEdge,
       crosshair,
       this.vitals,
       this.health,
@@ -196,6 +202,16 @@ export class Hud {
 
   flashDamage(nowMs: number): void {
     this.damageUntil = nowMs + 400;
+  }
+
+  /** The burning edge at `opacity` (0: none) in `color` (shared/fluids/lava.json `burnEdge`). */
+  setBurn(opacity: number, color: string): void {
+    if (color !== this.burnColor) {
+      this.burnColor = color;
+      this.burnEdge.style.background = burnEdgeBackground(color);
+    }
+    const o = String(Math.round(Math.max(0, Math.min(1, opacity)) * 100) / 100);
+    if (this.burnEdge.style.opacity !== o) this.burnEdge.style.opacity = o;
   }
 
   /** The spyglass's vignette from `Client.hud().spyglass` (null: unzoomed). */
@@ -248,4 +264,9 @@ export class Hud {
       if (this.note.textContent === text) this.note.textContent = '';
     }, ms);
   }
+}
+
+/** The burning edge's background: clear in the middle, `color` toward the screen's edges. */
+export function burnEdgeBackground(color: string): string {
+  return `radial-gradient(ellipse at center, transparent 45%, ${color} 100%)`;
 }

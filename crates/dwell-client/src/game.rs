@@ -503,6 +503,15 @@ pub struct Hud {
     pub debug: Option<String>,
     /// Damage taken since the last frame (the HUD flashes).
     pub damaged: bool,
+    /// The burning edge's strength, 0–1 (shared/fluids/lava.json `burnEdge`; VOLCANOES.md §6.3).
+    pub burn: f64,
+}
+
+/// The burning edge's strength at `now_ms` for a burn that shows until `until_ms`: 1 at a burn
+/// hit, fading to 0 over `burnEdge.seconds`.
+pub fn burn_edge_strength(until_ms: f64, now_ms: f64) -> f64 {
+    let span = f64::from(dwell_lava::DATA.burn_edge.seconds) * 1000.0;
+    ((until_ms - now_ms) / span).clamp(0.0, 1.0)
 }
 
 /// The HUD's stamina and air bars (ADR 0069): each a share of full, None where the mode has no
@@ -612,6 +621,12 @@ pub struct Game<S: Scene> {
     pub chop: crate::chop::Chopping,
     /// The axe's chips in flight (crate::chips; draw-only).
     pub chips: crate::chips::Chips,
+    /// Steam where lava boils water away (crate::steam; the server's `Steam`, VOLCANOES.md §6.3).
+    pub steam: crate::steam::Steam,
+    /// When the burning edge has faded (ms; a `Burn` hit sets it).
+    burn_until_ms: f64,
+    /// Said `SteamHello` (the server has `inventory_flags::STEAM`).
+    steam_on: bool,
     pub inventory_slot: usize,
     /// The creative hotbar's picks (docs/ITEMS.md §6a): its slots' palette items.
     pub creative: dwell_game::creative_hotbar::CreativeHotbar,
@@ -964,6 +979,9 @@ impl<S: Scene> Game<S> {
             ground_target: None,
             chop: Default::default(),
             chips: Default::default(),
+            steam: Default::default(),
+            burn_until_ms: 0.0,
+            steam_on: false,
             inventory_slot: 0,
             creative: dwell_game::creative_hotbar::CreativeHotbar::new(
                 &dwell_game::block_interaction::palette(),
@@ -1523,6 +1541,20 @@ impl<S: Scene> Game<S> {
                 }
                 self.chop.apply(c);
             }
+            Message::Steam(cells) => {
+                // Lava boiled water away (VOLCANOES.md §6.3): a puff over each cell.
+                self.steam.add(&cells, now_ms / 1000.0);
+                // And its hiss, once a message, at the first cell (shared/sounds `steam_hiss`).
+                if let Some(c) = cells.first() {
+                    let at = [
+                        f64::from(c[0]) + 0.5,
+                        dwell_world::m_of_row(c[1]) + 0.25,
+                        f64::from(c[2]) + 0.5,
+                    ];
+                    self.sounds
+                        .push(SoundEvent::new(SoundKind::SteamHiss, 0, 1.0, Some(at)));
+                }
+            }
             Message::Damage(d) => {
                 // Another player's hit: its material's hit and chips at the struck point.
                 for (cell, mark) in self.remote_hits.on_damage(&d, now_ms) {
@@ -1584,6 +1616,13 @@ impl<S: Scene> Game<S> {
                         .push(Send::Control(Message::CausesHello(
                             dwell_protocol::DamageCause::MAX,
                         )));
+                }
+                // The server has lava (VOLCANOES.md §6.3): ask once for its steam.
+                if i.flags & dwell_protocol::inventory_flags::STEAM != 0 && !self.steam_on {
+                    self.steam_on = true;
+                    self.outbox
+                        .borrow_mut()
+                        .push(Send::Control(Message::SteamHello));
                 }
                 // The server keeps creatures (ADR 0073): say so once, and draw them.
                 if i.flags & dwell_protocol::inventory_flags::CREATURES != 0 && !self.creatures_on {
@@ -1653,7 +1692,17 @@ impl<S: Scene> Game<S> {
                         self.predictor
                             .on_knockback(self.streamer.store_mut(), e.input_seq, v);
                     }
-                    PlayerEventKind::Damage => self.hud.damaged = true,
+                    PlayerEventKind::Damage => {
+                        self.hud.damaged = true;
+                        // Burning (lava, VOLCANOES.md §6.3): the screen's red-orange edge for
+                        // `burnEdge.seconds` and a sizzle.
+                        if e.cause == dwell_protocol::DamageCause::Burn {
+                            self.burn_until_ms =
+                                now_ms + f64::from(dwell_lava::DATA.burn_edge.seconds) * 1000.0;
+                            self.sounds
+                                .push(SoundEvent::new(SoundKind::Sizzle, 0, 1.0, None));
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -2790,7 +2839,9 @@ impl<S: Scene> Game<S> {
         let now = now_ms / 1000.0;
         self.blasts.prune(now);
         self.chips.prune(now);
-        let extra = self.chips.puffs(now);
+        self.steam.prune(now);
+        let mut extra = self.chips.puffs(now);
+        extra.extend(self.steam.puffs(now));
         if self.blasts.list.is_empty() {
             self.scene.borrow_mut().set_blasts(extra, Vec::new());
             return (0.0, 0.0);
@@ -2836,6 +2887,7 @@ impl<S: Scene> Game<S> {
     pub fn set_blast_settings(&mut self, s: crate::blasts::BlastSettings) {
         self.blasts.settings = s;
         self.chips.cpu = s.cpu;
+        self.steam.cpu = s.cpu;
     }
 
     /// The blasts whose effects are still going (the dev hook): each one's place and age (s).
@@ -3650,6 +3702,7 @@ impl<S: Scene> Game<S> {
         self.scene.borrow_mut().set_falls(shown);
 
         self.hud.health = self.health;
+        self.hud.burn = burn_edge_strength(self.burn_until_ms, now_ms);
         self.hud.vitals = HudVitals::of(&self.predictor.controller().vitals, self.vitals_rules)
             .filter(|_| !self.dead);
         if self.debug_visible {

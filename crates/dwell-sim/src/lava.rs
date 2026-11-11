@@ -11,7 +11,7 @@
 //! - **Steam.** A `Steam` event takes `steamWaterM` off the top of that column's water (cells to
 //!   air) and is kept as a [`Steam`] for the clients to show later.
 //!
-//! A field grows with its flow (V2, VOLCANOES.md §6.3): placed covering `radius` columns round its
+//! A field grows with its flow (V2, VOLCANOES.md §6.4): placed covering `radius` columns round its
 //! vent, it reads each tile its lava reaches from the world as it runs ([`ground_at`]), up to the
 //! data's `maxTiles`, and drops the tiles that are all rock. A tick writes only the tiles its steps
 //! visited ([`Field::take_touched`]).
@@ -22,9 +22,8 @@
 use std::collections::{BTreeSet, HashMap};
 
 use dwell_blocks::{StateId, info};
-use dwell_lava::{
-    Column, Field, HotFluid, LavaData, LavaEvent, Vent, VentKind, field_of, record_of,
-};
+pub use dwell_lava::VentKind;
+use dwell_lava::{Column, Field, HotFluid, LavaData, LavaEvent, Vent, field_of, record_of};
 use dwell_world::{CELL_H, Face, FaceFrame};
 
 const VERSION: u8 = 1;

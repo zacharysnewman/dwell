@@ -37,11 +37,17 @@
     "dynamiteGreenTop": "dynamite_green_top",
     "dynamiteYellow": "dynamite_yellow_side",
     "dynamiteYellowTop": "dynamite_yellow_top",
+    "basalt": "basalt",
+    "obsidian": "obsidian",
+    "lava": "lava_crust",
     "plain": "plain",
     "grid": "grid",
     "missing": "missing"
   },
   "materials": {
+    "basalt": {"$comment": "Cooled lava (VOLCANOES.md §6): dark rock with ropey pahoehoe folds, curved light ropes over darker hollows in the basalt ramp, and a few cracks.", "use": "block", "ramp": "basalt", "overlay": 1, "layers": [{"kind": "fill", "color": "@base"}, {"kind": "dab", "count": 6, "colors": ["@shadow"], "width": [6, 9], "length": [10, 14], "angle": 10, "angleJitter": 30, "opacity": 0.45, "softness": 2}, {"kind": "blade", "count": 9, "colors": ["@light"], "width": [1.4, 2], "length": [8, 13], "angle": 20, "angleJitter": 25, "bend": [-3, 3], "opacity": 0.45, "seed": 1}, {"kind": "blade", "count": 7, "colors": ["@shadow"], "width": [1.2, 1.6], "length": [7, 11], "angle": 20, "angleJitter": 25, "bend": [-3, 3], "opacity": 0.55, "seed": 2}, {"kind": "streak", "count": 2, "colors": ["@shadow"], "width": [1, 1.4], "length": [6, 10], "angle": 70, "angleJitter": 30, "opacity": 0.6, "seed": 3}]},
+    "obsidian": {"$comment": "Quenched lava glass (VOLCANOES.md §6): near black, with long conchoidal planes and a violet sheen along a few edges, the obsidian ramp's light kept thin.", "use": "block", "ramp": "obsidian", "overlay": 1, "layers": [{"kind": "fill", "color": "@base"}, {"kind": "slab", "count": 4, "colors": ["@shadow"], "width": [8, 12], "length": [12, 18], "angle": 35, "angleJitter": 30, "opacity": 0.6, "softness": 2}, {"kind": "streak", "count": 4, "colors": ["@light"], "width": [0.8, 1.2], "length": [8, 14], "angle": 35, "angleJitter": 20, "bend": [-2, 2], "opacity": 0.55, "seed": 1}, {"kind": "dab", "count": 3, "colors": ["@light"], "width": [2, 3], "length": [4, 6], "angle": 35, "angleJitter": 20, "opacity": 0.25, "softness": 2, "seed": 2}]},
+    "lava_crust": {"$comment": "Molten lava (VOLCANOES.md §6, WATER_RENDERING.md §lava): dark cooling crust plates over a bright molten ground, the cracks between them glowing. `emissive` makes it self-lit (it gives off its colour by night); `molten` lets the terrain shader move a slow heat pattern over it (brighter cracks drifting), off on the CPU tier.", "use": "block", "ramp": "lava", "overlay": 1, "emissive": 1, "molten": true, "layers": [{"kind": "fill", "color": "@base"}, {"kind": "slab", "count": 3, "colors": ["@shadow"], "width": [12, 16], "length": [13, 18], "angle": 0, "angleJitter": 40, "opacity": 0.92, "softness": 0.6}, {"kind": "slab", "count": 2, "colors": ["@shadow"], "width": [8, 11], "length": [9, 13], "angle": 45, "angleJitter": 40, "opacity": 0.85, "softness": 0.6, "seed": 1}, {"kind": "streak", "count": 5, "colors": ["@light"], "width": [0.8, 1.3], "length": [10, 18], "angle": 30, "angleJitter": 80, "bend": [-3, 3], "opacity": 0.9, "seed": 2}, {"kind": "dab", "count": 4, "colors": ["@light"], "width": [2, 3], "length": [3, 5], "angle": 0, "angleJitter": 90, "opacity": 0.5, "softness": 1.5, "seed": 3}]},
     "plain": {
       "$comment": "A utility tile, not content: white, which an untextured state's colour tints.",
       "use": "block", "ramp": "chalk",

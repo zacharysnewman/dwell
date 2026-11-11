@@ -79,6 +79,27 @@ pub struct Tectonics {
     /// `tectonic.ice`); −100 is off.
     pub ice_below_c: f64,
     pub snow_max_slope: f64,
+    /// The column-level detail (the Rainier detail; added where the chunks are generated, on
+    /// top of the 100 m map's cone, so it survives the map's sampling): cleavers, `cleaver_depth` m
+    /// deeper valleys between sharp crests, `cleaver_count` of them round the cone (0: the
+    /// ridges' count, along the same crests).
+    pub cleaver_count: u32,
+    pub cleaver_depth: f64,
+    /// The summit crater's rim broken by `rim_notches` notches `rim_notch_depth` m deep.
+    pub rim_notches: u32,
+    pub rim_notch_depth: f64,
+    /// `crag_count` crags on and just outside the rim, up to `crag_height` m high and
+    /// `crag_radius` m wide: the highest one the summit (off the crater's centre).
+    pub crag_count: u32,
+    pub crag_height: f64,
+    pub crag_radius: f64,
+    /// `cirque_count` glacier-carved bowls at the heads of valleys between the ridges,
+    /// `cirque_distance` m from the summit, `cirque_depth` m deep and `cirque_radius` m wide,
+    /// with steep headwalls on their summit side and a lip on the downhill side.
+    pub cirque_count: u32,
+    pub cirque_depth: f64,
+    pub cirque_radius: f64,
+    pub cirque_distance: f64,
     pub hotspot_count: u32,
     pub hotspot_x: f64,
     pub hotspot_z: f64,
@@ -139,6 +160,27 @@ pub struct LavaVent {
     /// The faces it is placed on (`faces`, default both: each face generates its own cone, so a
     /// river's way to the sea can suit one face only): face A, face B.
     pub faces: [bool; 2],
+}
+
+/// An arc cone's column-level detail, placed once per map ([`Tectonics::peak_details`]): its
+/// cone, summit, cirques (x, z, outward heading in radians, floor height m) and crags (x, z,
+/// height m).
+#[derive(Clone, Debug, PartialEq)]
+pub struct PeakDetail {
+    pub cone: Volcano,
+    pub apex: (f64, f64),
+    pub cirques: Vec<(f64, f64, f64, f64)>,
+    pub crags: Vec<(f64, f64, f64)>,
+}
+
+/// The fractional part of `x` (0..1).
+fn frac(x: f64) -> f64 {
+    x - x.floor()
+}
+
+/// The angle from `b` to `a`, wrapped to −π..π.
+fn wrap(a: f64) -> f64 {
+    (a + PI).rem_euclid(2.0 * PI) - PI
 }
 
 /// `ice_above`'s off value (no crater is ever that high).
@@ -351,16 +393,10 @@ impl Tectonics {
             }
             if self.ridge_count > 0 && self.ridge_depth > 0.0 {
                 let th = dz.atan2(dx);
-                let w = th
-                    + self.ridge_warp * (3.0 * th + 1.3).sin()
-                    + 0.5 * self.ridge_warp * (5.0 * th + 0.4).sin();
                 // |sin| has its cusps at the ridges' crests (sharp cleavers) and round floors
                 // between (glacier-cut valleys); each valley's depth varies round the cone.
-                let valley = (0.5 * f64::from(self.ridge_count) * w)
-                    .sin()
-                    .abs()
-                    .powf(0.6);
-                let deep = 0.7 + 0.3 * (2.0 * th + 0.9).sin();
+                let valley = self.valley(self.ridge_count, th).powf(0.6);
+                let deep = Self::deep(th);
                 let s = (u / 0.2).clamp(0.0, 1.0);
                 let env = s * s * (3.0 - 2.0 * s) * ((1.0 - u) / 0.8).min(1.0);
                 h -= self.ridge_depth * env * valley * deep;
@@ -392,6 +428,180 @@ impl Tectonics {
             }
         }
         h.max(0.0)
+    }
+
+    /// The ridges' angular pattern at heading `th` (radians from the summit) for `n` ridges: 0 on a
+    /// crest, 1 mid-valley (|sin| of the warped angle, so the crests are cusps).
+    fn valley(&self, n: u32, th: f64) -> f64 {
+        let w = th
+            + self.ridge_warp * (3.0 * th + 1.3).sin()
+            + 0.5 * self.ridge_warp * (5.0 * th + 0.4).sin();
+        (0.5 * f64::from(n) * w).sin().abs()
+    }
+
+    /// How deep each valley is round the cone (0.4..1).
+    fn deep(th: f64) -> f64 {
+        0.7 + 0.3 * (2.0 * th + 0.9).sin()
+    }
+
+    /// Whether the arc's cones take column-level detail (cleavers, a broken rim, crags, cirques).
+    pub fn detailed(&self) -> bool {
+        self.kind == CONVERGENT
+            && self.arc_count > 0
+            && ((self.cleaver_depth > 0.0 && (self.cleaver_count > 0 || self.ridge_count > 0))
+                || (self.rim_notches > 0 && self.rim_notch_depth > 0.0)
+                || (self.crag_count > 0 && self.crag_height > 0.0)
+                || (self.cirque_count > 0 && self.cirque_depth > 0.0))
+    }
+
+    /// The arc cones' column-level detail, placed once (empty when [`Tectonics::detailed`] is
+    /// off): each cirque at the head of the valley nearest its share of the circle, its floor
+    /// `cirque_depth` m under `ground` (the map's height, m) there; the crags round the rim by the
+    /// golden angle, the first the tallest.
+    pub fn peak_details(&self, ground: impl Fn(f64, f64) -> f64) -> Vec<PeakDetail> {
+        if !self.detailed() {
+            return Vec::new();
+        }
+        let shaped = self.shaped();
+        self.volcanoes()
+            .into_iter()
+            .filter(|v| v.chain == 0)
+            .map(|v| {
+                let apex = if shaped { self.summit(&v) } else { (v.x, v.z) };
+                let n = self.cirque_count;
+                let cirques = (0..if self.cirque_depth > 0.0 { n } else { 0 })
+                    .map(|k| {
+                        let k = f64::from(k);
+                        let mut th = (self.summit_angle
+                            + 15.0
+                            + 360.0 * (k + 0.2 * frac(0.618 * k)) / f64::from(n))
+                        .to_radians();
+                        // The valley's head: the most valley-like heading within half a ridge's
+                        // spacing.
+                        if self.ridge_count > 0 {
+                            let span = PI / f64::from(self.ridge_count);
+                            let best = (0..=32)
+                                .map(|i| th + span * (f64::from(i) / 16.0 - 1.0))
+                                .fold((th, -1.0), |b, a| {
+                                    let s = self.valley(self.ridge_count, a);
+                                    if s > b.1 { (a, s) } else { b }
+                                });
+                            th = best.0;
+                        }
+                        let (x, z) = (
+                            apex.0 + self.cirque_distance * th.cos(),
+                            apex.1 + self.cirque_distance * th.sin(),
+                        );
+                        // Its floor under the ground there, cleavers and all.
+                        let u = self.cirque_distance / self.detail_reach(&v);
+                        let floor = ground(x, z) - self.cleaver_cut(u, th) - self.cirque_depth;
+                        (x, z, th, floor)
+                    })
+                    .collect();
+                let rim = v.crater_radius.max(50.0);
+                let crags = (0..if self.crag_height > 0.0 {
+                    self.crag_count
+                } else {
+                    0
+                })
+                    .map(|k| {
+                        let kf = f64::from(k);
+                        let a = (self.summit_angle + 70.0 + 137.5 * kf).to_radians();
+                        let d = rim * (1.0 + 0.3 * frac(0.382 * kf));
+                        let h = self.crag_height * (1.0 - 0.45 * frac(0.618 * kf));
+                        (apex.0 + d * a.cos(), apex.1 + d * a.sin(), h)
+                    })
+                    .collect();
+                PeakDetail {
+                    cone: v,
+                    apex,
+                    cirques,
+                    crags,
+                }
+            })
+            .collect()
+    }
+
+    /// The cleavers' cut (m) at `u` of the way from the summit to the foot, heading `th`: the
+    /// valleys between the crests cut `cleaver_depth` deeper (none at the summit and the foot).
+    fn cleaver_cut(&self, u: f64, th: f64) -> f64 {
+        let n = if self.cleaver_count > 0 {
+            self.cleaver_count
+        } else {
+            self.ridge_count
+        };
+        if self.cleaver_depth <= 0.0 || n == 0 || u >= 1.0 {
+            return 0.0;
+        }
+        let s = (u / 0.1).clamp(0.0, 1.0);
+        let env = s * s * (3.0 - 2.0 * s) * ((1.0 - u) / 0.6).clamp(0.0, 1.0);
+        self.cleaver_depth * env * self.valley(n, th).powf(0.35) * Self::deep(th)
+    }
+
+    /// The radius (m) the column-level detail reaches round an arc cone's summit.
+    fn detail_reach(&self, v: &Volcano) -> f64 {
+        v.radius.max(1.0) + self.summit_offset
+    }
+
+    /// The column-level detail at (x, z) on ground `h` m high (the map's, with the biomes' fine
+    /// relief): `h` with the cleavers cut, the rim notched, the crags raised and the cirques
+    /// carved; `h` itself away from every cone.
+    pub fn peak_relief(&self, peaks: &[PeakDetail], x: f64, z: f64, h: f64) -> f64 {
+        let mut out = h;
+        for p in peaks {
+            let v = &p.cone;
+            let (dx, dz) = (x - p.apex.0, z - p.apex.1);
+            let r2 = dx * dx + dz * dz;
+            let big_r = self.detail_reach(v);
+            if r2 >= big_r * big_r {
+                continue;
+            }
+            let r = r2.sqrt();
+            let th = dz.atan2(dx);
+            let u = r / big_r;
+            // Cleavers: the valleys between the ridges cut deeper, the crests left as cusps.
+            out -= self.cleaver_cut(u, th);
+            // The rim's notches: an irregular ring of cuts through the crater's rim.
+            let rim = v.crater_radius.max(50.0);
+            if self.rim_notches > 0 && self.rim_notch_depth > 0.0 && r < 2.5 * rim {
+                let band = bump((r - rim) / (0.8 * rim));
+                if band > 0.0 {
+                    let m = f64::from(self.rim_notches);
+                    let width = 0.35 * PI / m;
+                    let notch = (0..self.rim_notches)
+                        .map(|k| {
+                            let k = f64::from(k);
+                            let a = self.summit_angle.to_radians()
+                                + 2.0 * PI * (k + 0.4 * (2.3 * k + 0.7).sin()) / m;
+                            bump(wrap(th - a) / width)
+                        })
+                        .fold(0.0, f64::max);
+                    out -= self.rim_notch_depth * band * notch;
+                }
+            }
+            // Crags: sharp spires on and just outside the rim.
+            for &(cx, cz, ch) in &p.crags {
+                let t = ((x - cx).powi(2) + (z - cz).powi(2)).sqrt() / self.crag_radius.max(1.0);
+                if t < 1.0 {
+                    out += ch * (1.0 - t).powf(1.3);
+                }
+            }
+            // Cirques: a bowl under each, its floor level, a steep headwall on the summit side
+            // (a short radius) and a lip downhill (a long one): the ground no higher than it.
+            let cr = self.cirque_radius.max(1.0);
+            for &(cx, cz, ch, floor) in &p.cirques {
+                let (ex, ez) = (ch.cos(), ch.sin());
+                let (px, pz) = (x - cx, z - cz);
+                let s = px * ex + pz * ez;
+                let c = -px * ez + pz * ex;
+                let rs = if s < 0.0 { 0.5 * cr } else { 0.9 * cr };
+                let t2 = (s / rs).powi(2) + (c / (0.75 * cr)).powi(2);
+                if t2 < 9.0 {
+                    out = out.min(floor + self.cirque_depth * t2);
+                }
+            }
+        }
+        out
     }
 
     /// Everything the layer adds at (x, z) (m), given the island's coast distance there.

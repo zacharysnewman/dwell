@@ -147,7 +147,34 @@ look and the in-game check come next, locally). ARCHITECTURE.md §6.8 has the mo
   and its water (any liquid over the bed but the lava). A raised bed pushes the lava above it; a lowered
   one keeps its depth, so the surface drops and the lava flows in (a dug channel takes it).
 
-### 6.3 As built: V2, rivers to the sea (2026-11-11)
+### 6.3 As built: V1 slice 4, the look (2026-11-11, part)
+
+- **Lava's surface:** the painterly `lava` tile (`materials.json` `lava_crust`: dark crust plates over a
+  bright molten ground and glowing cracks), self-lit (`emissive`) so it reads at night, its `emits` 13
+  lighting the summit through the flood light. `molten: true` (material data) makes the terrain shader
+  drift the crust slowly and breathe the cracks' heat; the CPU tier draws it flat and still
+  (WATER_RENDERING.md §17). Opaque, as asked (no transparency).
+- **Basalt and obsidian** have their own painterly tiles (ropey pahoehoe folds on dark rock; near-black
+  glass with a violet sheen), replacing the tinted stone placeholder. Their `color` (the LOD's) is the
+  tiles' base.
+- **Spots:** `starter:lava-lake` and `starter:lava-lake-night` (`client/bench/spots.json`) aim at the
+  vent site (30000, −8000) from over the summit (its ground ~232 m at seed 0, 189 m at the native
+  test's seed). The first look found no lava only because the shots were badly placed (the eye under
+  the summit's ground, or far over it): `__dwell.lava()` in the page lists both faces' fields round
+  the vent with molten columns, as the native test does (`tests/lava_world.rs`, which prints the site).
+  Not a placement bug.
+- **Dev tools:** `__dwell.lava(op, args)` (`report`, `rate` [k], `vent` [x, y, z, rate, depth],
+  `ventNear` [dx, dz, rate, depth]), the bench's `lava` step and a scenario's `query`; `npm run bench --
+  --warm lava-lake` fills the summit lake ×30, shoots it by day and night, then a vent by the sea.
+- **Steam to the clients:** `SteamHello` / `Steam` (ARCHITECTURE.md, the wire), gated by
+  `inventory_flags::STEAM`, so an older client never gets it (tested both faces); the client draws a
+  rising puff over each cell (`steam.rs`, a third on a CPU adapter). Puffs use the explosions' smoke
+  colour for now.
+- **Round 3:** world-space crust plates with glowing seams (WATER_RENDERING.md §17.1); steam's own look
+  as data, a hiss, the burning screen edge and a sizzle (§17.2).
+- **Outstanding:** heat per cell (brighter where hotter/thicker: the field's heat isn't in the cells).
+
+### 6.4 As built: V2, rivers to the sea (2026-11-11)
 
 Logic and tests only (no shaders): the owner's "rivers of lava reaching the sea and building new land",
 beside V1's lakes. §6.2's note stood: a 25-column field can't reach a coast 2.6 km off.
@@ -204,5 +231,6 @@ beside V1's lakes. §6.2's note stood: a 25-column field can't reach a coast 2.6
 - **Fixed on the way:** none shipped (a stale lake index after a tile's removal was caught by the
   server tests before commit).
 
-**Next:** the look (local: light, glow, crust, steam puffs, the in-game check); the water grid's columns
-as the fields' water (and the sea's level taken back where lava builds land); eruptions (V3–V5).
+**Next:** the rest of the look (heat per cell); the starter river reaching the sea on the generated
+terrain (§6.4, open); the water grid's columns as the fields' water (and the sea's level taken back where
+lava builds land); eruptions (V3–V5).

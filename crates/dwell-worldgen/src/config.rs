@@ -398,6 +398,10 @@ pub fn height_from_json(v: &Value) -> Result<HeightField, String> {
         whole(&mut k.hotspot_count, "hotspotCount");
         whole(&mut k.ridge_count, "ridgeCount");
         whole(&mut k.vent_count, "ventCount");
+        whole(&mut k.cleaver_count, "cleaverCount");
+        whole(&mut k.rim_notches, "rimNotches");
+        whole(&mut k.crag_count, "cragCount");
+        whole(&mut k.cirque_count, "cirqueCount");
         for (key, slot) in [
             ("angle", &mut k.angle),
             ("offset", &mut k.offset),
@@ -430,6 +434,13 @@ pub fn height_from_json(v: &Value) -> Result<HeightField, String> {
             ("snowBelowC", &mut k.snow_below_c),
             ("iceBelowC", &mut k.ice_below_c),
             ("snowMaxSlope", &mut k.snow_max_slope),
+            ("cleaverDepth", &mut k.cleaver_depth),
+            ("rimNotchDepth", &mut k.rim_notch_depth),
+            ("cragHeight", &mut k.crag_height),
+            ("cragRadius", &mut k.crag_radius),
+            ("cirqueDepth", &mut k.cirque_depth),
+            ("cirqueRadius", &mut k.cirque_radius),
+            ("cirqueDistance", &mut k.cirque_distance),
             ("hotspotX", &mut k.hotspot_x),
             ("hotspotZ", &mut k.hotspot_z),
             ("hotspotHeading", &mut k.hotspot_heading),
@@ -455,6 +466,16 @@ pub fn height_from_json(v: &Value) -> Result<HeightField, String> {
             && k.vent_count <= 16
             && k.shoulder_radius > 0.0
             && k.vent_radius > 0.0
+            && k.cleaver_count <= 64
+            && k.rim_notches <= 16
+            && k.crag_count <= 16
+            && k.cirque_count <= 16
+            && k.cleaver_depth >= 0.0
+            && k.rim_notch_depth >= 0.0
+            && k.crag_height >= 0.0
+            && k.crag_radius > 0.0
+            && k.cirque_depth >= 0.0
+            && k.cirque_radius > 0.0
             && k.hotspot_spacing > 0.0
             && k.hotspot_radius > 0.0)
         {

@@ -1161,3 +1161,52 @@ and midday: the window's sky straight up 0.3 m under within 2 % of the sky pass'
 the `window_sky` twin; red on 0.52.52's data, green after) and
 `the_window_shows_the_real_sky_and_bodies_scaled_by_its_light` (the one sky function, `moonlit`).
 Outstanding: the owner's look; the lens plane's air view 0.3 m under; the mirror's brightness at sunset.
+
+## 17. Lava's look (2026-11-11, VOLCANOES.md §6.3)
+
+Lava is not drawn by the water's surface pass: `dwell:lava` cells are opaque blocks (`look: cube`, no
+collision, `emits` 13) meshed with the terrain, so the look is a painterly tile and one shader branch,
+both data-driven:
+
+- **The tile** (`shared/textures/materials.json` `lava_crust`, the palette's `lava` ramp): dark crust
+  plates (`slab`s in the ramp's shadow) over a bright molten ground with brighter dabs between them, the
+  cracks. `emissive: 1` makes it self-lit (it gives off its colour whatever the light, so it reads at
+  night); its `emits` 13 lights the ground round it through the flood light, as a torch's block does.
+- **Molten** (`"molten": true` on a material, checked by `paint.mjs`: it needs `emissive` > 0): the
+  generator emits `PAINTERLY_MOLTEN`, and `dwell-mesh` `tile_glow_entry` stores such a tile's glow
+  **negated** in the tile table (`tile_grids`' z), so the terrain shader finds it from the tile with
+  nothing added to the vertex. `terrain_fs` then stretches the tile over `MOLTEN_SPAN` (3) blocks, so the crust plates are metres across (at one block a tile the first in-game shots read as a checkerboard), drifts it by `MOLTEN_DRIFT` (blocks a
+  second, slow) and multiplies the glow of its bright texels (the cracks, not the crust plates) by
+  `molten_heat`: two slow world-space waves, 0.7–1.4 ×.
+- **The CPU tier** draws it flat: the water tier's bit 10 (`dwell-look` `tier_bits`, every tier but the
+  CPU's; WGSL `water_tier_molten`) gates the drift and heat, so the CPU adapter shows the still glowing
+  tile (tested: `only_the_cpu_tier_draws_molten_surfaces_still`).
+- **Not built yet:** heat per cell (brighter where hotter or deeper: the field's heat is not in the chunk
+  cells), and lava as a translucent fluid surface (it stays opaque by design: no transparency).
+
+### 17.1 The crust plates (round 3, 2026-11-11)
+
+Up close the tile (even over 3 blocks) read blocky and patchy, its cracks hatch strokes. On every tier
+but the CPU's the molten branch of `terrain_fs` now draws **crust plates in world metres**,
+continuous across blocks: a cellular (Voronoi) pattern, `molten_plates`, plates `MOLTEN_CELL` (1.7 m)
+across whose seams (the second-nearest centre's distance less the nearest's, under `MOLTEN_SEAM`) glow.
+A top face takes the world's x z, a side its along and y. The centres wander slowly and the plane is
+warped a little, so the seams bend and the crust flows. The plates' colour is the painted tile darkened
+(each plate a little apart), the seams the tile's hue lifted toward yellow-white; the glow (`emissive`)
+is a quarter on the crust and up to 1.6 × `molten_heat` on the seams. The CPU tier keeps the still
+painted tile. The pattern's constants are shader constants for now (a look file when it is tuned).
+
+### 17.2 Steam and burning (round 3)
+
+- **Steam's look** is data: `shared/fluids/lava.json` `steam` (colour, life, rise, size, opacity;
+  `lava.mjs` checks it and emits `DATA.steam`). Its puffs are smoke puffs of their own look
+  (`render/blasts.rs` `steam_look`, the smoke table's last entry). Each `Steam` message plays
+  `steam_hiss` (shared/sounds, procedural: no fitting sample in the pack) at its first cell.
+  Fixed on the way: as first shipped, `Steam` went on the control channel, which the client's session
+  does not pass to the game, so no puff ever showed (the bench's `__dwell.lava()` report counted
+  thousands of `steamCells` sent); it now goes on the world channel and the session routes it (its test
+  red, then green).
+- **Burning:** a `Burn` damage hit shows a red-orange screen edge (`burnEdge`: colour, opacity,
+  seconds; the HUD's `#burn-edge`, `game.rs` `burn_edge_strength`) and plays `sizzle`.
+
+

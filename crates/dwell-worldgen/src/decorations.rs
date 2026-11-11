@@ -144,6 +144,12 @@ impl Placer {
             && roll < chance * factor()
     }
 
+    /// The cell's own roll (0..1) at (x, z): the cell gets it where the roll is under its chance
+    /// (grass growth's fertile columns use the same roll, ADR 0075 T3c).
+    pub fn roll(&self, x: i32, z: i32) -> f32 {
+        unit(hash2(self.cell_seed, x, z))
+    }
+
     /// The block put.
     pub fn state(&self) -> StateId {
         self.state

@@ -591,6 +591,14 @@ pub enum Message {
     /// S→C reliable, world channel, only to a client that sent `EcologyHello`: the far herds and
     /// packs on both faces (not those near players: those are creatures), for far rendering.
     Ecology(EcologyMessage),
+    /// C→S reliable, control channel, only to a server whose `Inventory` has
+    /// `inventory_flags::STEAM` (docs/proposals/VOLCANOES.md §6.3): send this client the steam
+    /// where lava boils water away.
+    SteamHello,
+    /// S→C reliable, world channel, only to a client that sent `SteamHello`: the world cells
+    /// whose water lava just boiled away (the clients' puffs and hiss). u16 count (at most
+    /// `MAX_STEAM_PER_MESSAGE`), each cell three i32.
+    Steam(Vec<[i32; 3]>),
 }
 
 /// The most groups one `Ecology` carries (more are left out).
@@ -616,6 +624,9 @@ pub struct EcologyMessage {
     pub day: f32,
     pub groups: Vec<EcologyGroupNet>,
 }
+
+/// The most cells one `Steam` carries (more are dropped: a puff each is plenty).
+pub const MAX_STEAM_PER_MESSAGE: usize = 256;
 
 /// A creature as sent (ADR 0073): its skinned model (shared/models/models.json), its feet (world
 /// metres), its heading (degrees, 0 faces +z) and its speed (m/s; the client picks its clip by it).
@@ -741,6 +752,9 @@ pub mod inventory_flags {
     pub const CAUSES: u8 = 32;
     /// The server runs a far ecology (docs/ECOLOGY.md §9): it takes `EcologyHello`.
     pub const ECOLOGY: u8 = 64;
+    /// The server has lava (docs/proposals/VOLCANOES.md §6.3): it takes `SteamHello` and then
+    /// sends `Steam`.
+    pub const STEAM: u8 = 128;
 }
 
 /// The most cells one `Damage` carries (more go in more messages).
@@ -835,6 +849,8 @@ impl Message {
             M::WorldgenRequest => MessageType::WorldgenRequest,
             M::WorldgenConfig(_) => MessageType::WorldgenConfig,
             M::CausesHello(_) => MessageType::CausesHello,
+            M::SteamHello => MessageType::SteamHello,
+            M::Steam(_) => MessageType::Steam,
             M::Damage(_) => MessageType::Damage,
             M::Creatures(_) => MessageType::Creatures,
             M::EcologyHello => MessageType::EcologyHello,
@@ -1516,7 +1532,20 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
         },
         M::VitalsHello => {}
         M::CausesHello(n) => w.u8(*n),
-        M::CreaturesHello | M::DamageHello | M::WorldgenRequest | M::EcologyHello => {}
+        M::CreaturesHello
+        | M::DamageHello
+        | M::WorldgenRequest
+        | M::SteamHello
+        | M::EcologyHello => {}
+        M::Steam(cells) => {
+            let n = cells.len().min(MAX_STEAM_PER_MESSAGE);
+            w.u16(n as u16);
+            for c in &cells[..n] {
+                for &v in c {
+                    w.i32(v);
+                }
+            }
+        }
         M::Ecology(m) => {
             w.f32(m.day);
             let n = m.groups.len().min(MAX_ECOLOGY_GROUPS);
@@ -2027,6 +2056,19 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
         }),
         T::VitalsHello => M::VitalsHello,
         T::CausesHello => M::CausesHello(r.u8()),
+        T::SteamHello => M::SteamHello,
+        T::Steam => {
+            let n = usize::from(r.u16());
+            r.check(n <= MAX_STEAM_PER_MESSAGE);
+            let mut cells = Vec::new();
+            for _ in 0..n {
+                if !r.ok() {
+                    break;
+                }
+                cells.push([r.i32(), r.i32(), r.i32()]);
+            }
+            M::Steam(cells)
+        }
         T::CreaturesHello => M::CreaturesHello,
         T::DamageHello => M::DamageHello,
         T::EcologyHello => M::EcologyHello,

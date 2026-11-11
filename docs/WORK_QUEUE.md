@@ -106,15 +106,19 @@ Last updated: 2026-11-11 (0.52.68).
    vent on its youngest hotspot island's summit as worldgen data (`tectonics.lavaVents`, opt-in per cone,
    placed by the server when the world is created or first loaded; the default world lists none), a `Burn`
    damage cause sent only to clients that say `CausesHello` (older ones hear `Fall`), and fields re-reading
-   an edited column's bed and water (a dug channel takes the lava); VOLCANOES.md §6.2. **V2 built (logic):**
-   rivers to the sea: fields that grow with their flow (tiles added as lava reaches them, dropped when all
-   rock, capped by `maxTiles`), cost by molten area, lava tubes (`tubeSpeedMs`), lava running into the sea
-   and building land above it, save record version 2 (version 1 still loads), and a river vent on the
-   starter island's flank on face B whose way to the sea is 1.3 km (lavaVents `faces`); VOLCANOES.md §6.3.
-   **Open:** on the generated terrain the starter river dams itself ~480 m down (it reaches the sea on
-   the fixture flank only); the lava's tuning for it is the owner's call (§6.3). **The look next,
-   local** (light, glow, crust, steam puffs, the in-game check), then the water grid's columns as the
-   fields' water, then eruptions.
+   an edited column's bed and water (a dug channel takes the lava); VOLCANOES.md §6.2. **Look, part 1
+   built:** the painterly lava tile (self-lit, crust drifting and cracks breathing by `molten` material
+   data, flat on the CPU tier) and basalt and obsidian tiles; VOLCANOES.md §6.3, WATER_RENDERING.md §17.
+   **Part 2:** `__dwell.lava` dev tools (the summit lake was there: the first shots were misplaced),
+   steam sent to clients that say `SteamHello` and drawn as puffs. **Round 3:** world-space crust plates
+   with glowing seams, steam's look as data and a hiss, the burning screen edge and a sizzle
+   (WATER_RENDERING.md §17.1–17.2). **V2 built (logic):** rivers to the sea: fields that grow with their
+   flow (tiles added as lava reaches them, dropped when all rock, capped by `maxTiles`), cost by molten
+   area, lava tubes (`tubeSpeedMs`), lava running into the sea and building land above it, save record
+   version 2 (version 1 still loads), and a river vent on the starter island's flank on face B whose way
+   to the sea is 1.3 km (lavaVents `faces`); VOLCANOES.md §6.4. **Open:** on the generated terrain the
+   starter river dams itself ~480 m down (it reaches the sea on the fixture flank only; §6.4).
+   **Next:** heat per cell; the water grid's columns as the fields' water; eruptions.
 9. ~~**Loading-time display bug.**~~ Done (0.52.71): the 10 s was the graphics' start (one long task on the
    main thread making the renderer's pipelines) begun in the same task that ended the game's load, so the
    screen never painted "Starting the graphics…" and stood on "Loading the game… x MB 0.0 s". Each stage is
@@ -175,6 +179,16 @@ Last updated: 2026-11-11 (0.52.68).
 
 Cloud sessions: logic-only items can run as `claude --cloud` sessions in parallel (verified 2026-11-11).
 
+14. **Tall grass grows and spreads** (owner 2026-11-11: "I want tall grass to steadily grow and spread. It
+   should probably have a max depending on climate/biome."). **Built** (ADR 0075 T3c, docs/ECOLOGY.md §10):
+   `shared/worldgen/grass.json` (the rule as data: the block, the ground, the decoration whose climate
+   envelope sets the cap, the max density, spread and regrowth a day, reach, open air above, the catch-up
+   bound) → `grass.gen.rs`; `dwell_worldgen::grass` (the face-local step); the server's grass step every 5 s
+   over loaded chunks, each growing the whole world days it missed (at most 20); a player's block wins;
+   eaten grass regrows; the far forage's most is scaled by the same climate share. A per-world switch in an
+   optional `grass_growth` table: on for new worlds, off for worlds saved before it (their meadows stay as
+   they were). Not yet: a setting in the world menu; a local world's ecology share (its maps, ECOLOGY.md §7).
+
 ## Done
 
 - **Starter world on iPhone (P0, 0.52.68, BUGS.md #70):** the tab reloaded while loading the terrain.
@@ -219,6 +233,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   colours, item and model textures); players' saved structures as placement sources (plan in ADR 0074);
   BUGS.md #69.
 
+- **LOD bugs** (leftovers section 3, after 0.52.92): BUGS.md #68 fixed — the holes round the tall peak's
+  crater were the renderer's far pass clipping terrain over a fixed 1024 m top from above it
+  (`far_pass_near`, `drawn_top`); `?loddebug=levels` tints sections by level. #69 narrowed to the
+  distant shadows (gone with `?lodshadows=off`; a world-fixed streak along the low sun on the cone's
+  z, not the sweep's max mips; suspect a thin caster on that line); still open.
+
 - **Underwater at night** (0.52.53, WATER_RENDERING.md §16.1): Snell's window shows the sky pass's own
   sky (one function: the stars, the moon, the sun, the clouds), no white-cyan glow over it, fewer cells;
   the water seen from inside takes the moonlight's grey as the scene above does. Owner, 2026-11-11:
@@ -247,14 +267,18 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   after two rounds; leads in BUGS.md).
 - **Arches:** the openings in the LOD and in Chisel's 3D view; caprock lips; an arch on a fin seen in
   game (fins and the rock filter built, 0.52.66).
-- **Terrain leftovers (0.52.66 round 1 left):** Rainier detail (below); in-game screenshots of an arch
+- **Terrain leftovers (0.52.66 round 1 left):** in-game screenshots of an arch
   on a fin, the red mesa and a snowy biome edge, and of T3b in the starter (its biomes' snow lines, sand
   under the steppe's grass, the grass thinning into the dry lee; built without screenshots). T3b is built
   (ADR 0075 T3b): a biome's own snow line (`snow`), soil blocks by soil type (`soilBlocks`), tall grass
   and ground items by climate (`undergrowth`); the starter opts in.
 - **Pieces follow-ups (0.52.46):** the worn axe not yet seen in game.
 - **Block damage follow-ups:** scoops read as dark stains (flat decals).
-- **Peaks:** a more broken summit, deeper ridges and cirques (Rainier).
+- **Peaks (Rainier detail, built; ADR 0075 T5):** a broken summit (rim notches, crags, the highest point
+  off-centre), cleavers at the column level that survive the 100 m map, and cirques under steep
+  headwalls with ice floors, as opt-in `tectonics` keys on `test:tall_peak` and the starter.
+  Outstanding: the in-game look (screenshots from the summit and from afar, on a local GPU); the far
+  terrain's LOD levels coarser than the cirques and crags may smooth them.
 - **Chisel:** biome decorations and spacing per biome; players' saved structures as placement sources;
   the in-game editor and a biome choice in the New world form.
 

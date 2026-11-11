@@ -279,6 +279,14 @@ export const SOUND_DATA: SoundData = {
     {
       "name": "stick_snap",
       "sound": "dwell:stick_snap"
+    },
+    {
+      "name": "steam_hiss",
+      "sound": "dwell:steam_hiss"
+    },
+    {
+      "name": "sizzle",
+      "sound": "dwell:sizzle"
     }
   ],
   "sets": {
@@ -6919,6 +6927,103 @@ export const SOUND_DATA: SoundData = {
               "freq": 900
             }
           ]
+        }
+      ]
+    },
+    "dwell:steam_hiss": {
+      "gain": 1.2,
+      "reverb": 0.15,
+      "variation": {
+        "pitch": 2,
+        "gain": 1.5,
+        "cutoff": 0.15,
+        "time": 0.15
+      },
+      "layers": [
+        {
+          "source": "noise",
+          "color": "white",
+          "gain": 0.45,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 4200,
+              "q": 0.6,
+              "to": 2600
+            },
+            {
+              "type": "highpass",
+              "freq": 1800
+            }
+          ],
+          "env": {
+            "attack": 0.08,
+            "decay": 1.1
+          }
+        },
+        {
+          "source": "noise",
+          "color": "crackle",
+          "gain": 0.3,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 900,
+              "q": 0.8
+            }
+          ],
+          "env": {
+            "attack": 0.05,
+            "decay": 0.7
+          }
+        }
+      ]
+    },
+    "dwell:sizzle": {
+      "gain": 1,
+      "reverb": 0.04,
+      "variation": {
+        "pitch": 2,
+        "gain": 1.5,
+        "cutoff": 0.15,
+        "time": 0.1
+      },
+      "layers": [
+        {
+          "source": "noise",
+          "color": "crackle",
+          "gain": 0.5,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 3200,
+              "q": 1.1
+            }
+          ],
+          "env": {
+            "attack": 0.01,
+            "decay": 0.45
+          }
+        },
+        {
+          "source": "noise",
+          "color": "white",
+          "gain": 0.25,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 6000,
+              "q": 0.8
+            },
+            {
+              "type": "highpass",
+              "freq": 3000
+            }
+          ],
+          "env": {
+            "attack": 0.02,
+            "decay": 0.3
+          }
         }
       ]
     },

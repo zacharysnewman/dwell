@@ -286,6 +286,12 @@ impl LocalWorld {
     pub fn teleport(&mut self, x: f64, y: f64, z: f64) -> bool {
         self.core.teleport_local_player([x, y, z])
     }
+    /// The lava's dev tools (`LocalCore::lava_dev`): `report`, `rate` [k], `vent` [x, y, z, rate,
+    /// depth]; JSON back.
+    #[wasm_bindgen(js_name = lavaDev)]
+    pub fn lava_dev(&mut self, op: &str, args: &[f64]) -> String {
+        self.core.lava_dev(op, args)
+    }
     /// The nearest water of `kind` (`water`, `sea`, `river`, `lake`) on the world map from (x, y,
     /// z) within `radius` m, on face `face` (1 A, -1 B, 0 the point's), `min_depth` m deep at
     /// least: JSON or `null`

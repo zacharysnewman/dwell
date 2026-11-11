@@ -341,7 +341,7 @@ dwell_world::both_faces!(
 );
 
 dwell_world::both_faces!(
-    // V2 (VOLCANOES.md §6.3): a field grows with its flow. A river vent at the top of a stone ramp,
+    // V2 (VOLCANOES.md §6.4): a field grows with its flow. A river vent at the top of a stone ramp,
     // its field covering 3 columns round it to start, runs down the ramp: the field reads the
     // tiles its lava reaches from the world, and the lava and its basalt are in the chunks well
     // past where the field started.
@@ -427,3 +427,49 @@ fn the_lava_blocks_light_is_the_fluids() {
     );
     assert!(!block.solid, "a player wades into it");
 }
+
+dwell_world::both_faces!(
+    fn steam_goes_only_to_a_client_that_said_steam_hello(f: FaceFrame) {
+        let mut fx = scene(f, "creative", true, None);
+        // Water standing in the crater's east side, where the lake will reach it.
+        let water = f.state(require("dwell:water"));
+        for x in 1..=2 {
+            for z in -1..=1 {
+                for r in BASE - CRATER_ROWS..BASE - 2 {
+                    let [wx, wy, wz] = f.cell([x, r, z]);
+                    fx.server.world().set_voxel(wx, wy, wz, water);
+                }
+            }
+        }
+        // Client 1 draws steam; client 2 is an older one (no `SteamHello`).
+        fx.send(1, Message::SteamHello);
+        fx.join(2, &Client::new(2));
+        fx.take_all();
+        fx.server
+            .place_lava_vent(f, [0, 0], BASE, &lake())
+            .expect("a vent on the crater's floor");
+        step(&mut fx, 20 * SECOND);
+        let all = fx.take_all();
+        let steam = |id: SessionId| -> Vec<[i32; 3]> {
+            all.get(&id)
+                .into_iter()
+                .flatten()
+                .filter_map(|m| match m {
+                    Message::Steam(c) => Some(c.clone()),
+                    _ => None,
+                })
+                .flatten()
+                .collect()
+        };
+        let heard = steam(1);
+        assert!(!heard.is_empty(), "lava boiled the water: steam sent");
+        assert!(
+            heard.iter().all(|c| {
+                let [x, _, z] = *c;
+                (1..=2).contains(&x) && (-1..=1).contains(&z)
+            }),
+            "steam where the water stood: {heard:?}"
+        );
+        assert!(steam(2).is_empty(), "an older client never gets Steam");
+    }
+);

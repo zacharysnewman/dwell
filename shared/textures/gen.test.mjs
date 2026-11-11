@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { ENGINE_TILES, atlasTiles, bake, labPage, rustSource, tileEmissive, tileHang } from './gen.mjs';
+import { ENGINE_TILES, atlasTiles, bake, labPage, rustSource, tileEmissive, tileHang, tileMolten } from './gen.mjs';
 import { TILE, imageRows, materialRamp, paintMaterial, resolveColor, validateMaterials, validatePalette } from './paint.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -23,7 +23,7 @@ test('the checked-in data is valid and the baked tiles are current', () => {
   const baked = readFileSync(join(here, '..', '..', 'crates', 'dwell-mesh', 'src', 'painterly.rgba'));
   assert.ok(Buffer.from(texels).equals(baked), 'painterly.rgba is stale: run node shared/textures/gen.mjs');
   const src = readFileSync(join(here, '..', '..', 'crates', 'dwell-mesh', 'src', 'painterly.gen.rs'), 'utf8');
-  assert.equal(src, rustSource(names, tileEmissive(materials, names), tileHang(materials, names)));
+  assert.equal(src, rustSource(names, tileEmissive(materials, names), tileHang(materials, names), tileMolten(materials, names)));
 });
 
 test("a tile glows by its material's emissive, by data alone (docs/LIGHTS.md)", () => {
@@ -50,6 +50,27 @@ test("a side tile hangs from its block's top by its material's hang, by data alo
   assert.match(rustSource(names, tileEmissive(m, names), tileHang(m, names)), /PAINTERLY_HANG: \[bool; \d+\] = \[[^\]]*true/);
   m.materials.stone.hang = 'yes';
   assert.throws(() => validateMaterials(m, palette), /hang must be true or false/);
+});
+
+test('lava, basalt and obsidian paint their own tiles; a tile is molten by data alone (WATER_RENDERING.md §17)', () => {
+  const m = clone(materials);
+  const names = Object.keys(m.tiles);
+  const { texels } = bake(m, palette, tiles);
+  const tile = (n) => texels.subarray(names.indexOf(n) * TILE * TILE * 4, (names.indexOf(n) + 1) * TILE * TILE * 4);
+  const mean = (t) => [0, 1, 2].map((c) => t.filter((_, i) => i % 4 === c).reduce((a, b) => a + b, 0) / (TILE * TILE));
+  const [lr, , lb] = mean(tile('lava'));
+  assert.ok(lr > 100 && lr > lb * 2, `lava reads orange-red over its dark crust: ${mean(tile('lava'))}`);
+  assert.ok(mean(tile('basalt')).every((v) => v < 110), `basalt is dark: ${mean(tile('basalt'))}`);
+  assert.ok(mean(tile('obsidian')).every((v) => v < 60), `obsidian is near black: ${mean(tile('obsidian'))}`);
+  assert.notDeepEqual(mean(tile('basalt')), mean(tile('stone')), 'basalt is no longer stone');
+  assert.ok(tileEmissive(m, names)[names.indexOf('lava')] > 0, 'lava glows');
+  assert.equal(tileMolten(m, names)[names.indexOf('lava')], true);
+  assert.equal(tileMolten(m, names)[names.indexOf('stone')], false);
+  m.materials.stone.molten = true;
+  assert.throws(() => validateMaterials(m, palette), /molten needs emissive/);
+  m.materials.stone.emissive = 0.5;
+  assert.equal(tileMolten(m, names)[names.indexOf('stone')], true);
+  assert.match(rustSource(names, tileEmissive(m, names), tileHang(m, names), tileMolten(m, names)), /PAINTERLY_MOLTEN: \[bool; \d+\] = \[[^\]]*true/);
 });
 
 test('the editor page embeds the current painter and data, and its painter paints the same', () => {

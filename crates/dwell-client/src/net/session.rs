@@ -670,6 +670,7 @@ impl Session {
                     | Message::Cuts(_)
                     | Message::Damage(_)
                     | Message::HeldTools(_)
+                    | Message::Steam(_)
             ) && (self.joined()
                 || self.worldgen_wait.is_some()
                 || matches!(self.state, SessionState::Confirming { .. }))
@@ -1376,6 +1377,14 @@ mod tests {
             1000.0,
         );
         assert!(matches!(s.next_game(), Some((Message::GroundGone(_), _))));
+        // Steam (VOLCANOES.md §6.3) reaches the game: before, the session dropped it, so no puff
+        // or hiss ever showed though the server sent thousands of cells.
+        s.on_reliable(
+            Channel::World,
+            &Message::Steam(vec![[1, 2, 3]]).encode(),
+            1000.0,
+        );
+        assert!(matches!(s.next_game(), Some((Message::Steam(_), _))));
     }
 
     #[test]

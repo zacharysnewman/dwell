@@ -170,6 +170,10 @@ export class LocalCore {
   ): string {
     return this.world.findOnMap(kind, at[0], at[1], at[2], radius, face, minDepth);
   }
+  /** The lava's dev tools (JSON; local.rs `lava_dev`): `report`, `rate` [k], `vent` [x, y, z, rate, depth]. */
+  lavaDev(op: string, args: number[]): string {
+    return this.world.lavaDev(op, new Float64Array(args));
+  }
   /** A report the water worker sent back. */
   takeWaterReport(): string | undefined {
     return this.world.takeWaterReport();

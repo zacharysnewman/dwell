@@ -2,7 +2,7 @@
 //! (`test:starter`, `shared/worldgen/worlds/starter.json`) lists a lake vent on its youngest
 //! hotspot island's summit (`tectonics.lavaVents`), placed by the server on each face when the
 //! world is created, and lava stands round the vent after a while with a player beside it. V2
-//! (§6.3): a river vent on the same island's flank on face B, whose way downhill reaches the sea
+//! (§6.4): a river vent on the same island's flank on face B, whose way downhill reaches the sea
 //! 1.3 km off, and (a long run, `--ignored`, not passing yet) whether its lava does. Its own test binary: the starter's maps are installed process-wide.
 
 mod common;
@@ -194,7 +194,7 @@ fn pour(f: FaceFrame, c: [i32; 2]) -> Option<(f64, f64)> {
 #[test]
 fn the_starter_river_vent_stands_on_face_bs_flank_over_a_kilometre_from_the_sea() {
     // face-b-only: the vent is face B's (`faces`); face A's island drains its flanks into an enclosed
-    // basin above the sea (VOLCANOES.md §6.3).
+    // basin above the sea (VOLCANOES.md §6.4).
     install();
     let f = FaceFrame::B;
     let (c, y) = site(f, 1);
@@ -216,7 +216,7 @@ fn the_starter_river_vent_stands_on_face_bs_flank_over_a_kilometre_from_the_sea(
 // `DWELL_LAVA_TRACE=1` prints its progress): the starter's river vent, its field growing over the
 // terrain (the bed the terrain generates, the sea over the ground below sea level), fast-forwarded
 // far from any player until it builds land in the sea within twenty world days (800 s each at lava
-// speed 1). NOT PASSING YET (VOLCANOES.md §6.3, open): on the generated terrain the build's lava
+// speed 1). NOT PASSING YET (VOLCANOES.md §6.4, open): on the generated terrain the build's lava
 // reaches ~480 m in 6 days, then its front crusts, the river dams itself and ponds up to 16 m deep
 // behind walls its overflow freezes into; the fixture flank's smooth slope doesn't show it. The
 // check for the tuning that fixes it.
@@ -303,4 +303,55 @@ fn ground_was_sea(t: &BifacialTerrain, f: FaceFrame, [x, z]: [i32; 2], sea: f32)
     t.local(f.face)
         .surface_y_at(x, z)
         .is_some_and(|y| (y as f32) < sea)
+}
+
+/// The dev report (`__dwell.lava()`) lists the starter's field on each face round its vent, and the
+/// dev rate scale (`?lavaRate=`) fills it faster. Prints the site and the ground there for the
+/// bench's spots.
+#[test]
+fn the_dev_report_lists_the_starter_fields_and_the_rate_scale_fills_faster() {
+    // both-faces: the report lists the fields of both faces at once.
+    install();
+    let (c, y) = vent(FaceFrame::A);
+    eprintln!("starter vent (seed {SEED:#x}): column {c:?}, face A ground {y} m");
+    let run = |k: f32| {
+        let mut fx = Fixture::new(ServerConfig {
+            generator_version: GENERATOR_TERRAIN,
+            world_seed: SEED,
+            spawn: Some([f64::from(c[0]) + 6.5, y + 1.0, f64::from(c[1]) + 0.5]),
+            mode: "creative".into(),
+            ..flat()
+        });
+        assert_eq!(
+            fx.server.scale_lava_rate(k),
+            3,
+            "a lake on each face, the river on face B"
+        );
+        fx.join(1, &Client::new(1));
+        for _ in 0..10 * SIM_HZ {
+            fx.server.step();
+        }
+        fx.server.lava_report()
+    };
+    let slow = run(1.0);
+    eprintln!("{slow}");
+    assert!(
+        slow.contains(&format!(r#""centre":[{},{}]"#, c[0], c[1])),
+        "{slow}"
+    );
+    assert!(slow.contains(r#""face":"a""#) && slow.contains(r#""face":"b""#));
+    assert!(slow.contains(r#""worldgen":"test:starter""#), "{slow}");
+    let molten = |r: &str| -> usize {
+        let i = r.find(r#""face":"a""#).unwrap();
+        let m = &r[i..];
+        let j = m.find(r#""molten":"#).unwrap() + 9;
+        m[j..].split(',').next().unwrap().parse().unwrap()
+    };
+    let fast = run(20.0);
+    assert!(
+        molten(&fast) > molten(&slow),
+        "slow {}, fast {}",
+        molten(&slow),
+        molten(&fast)
+    );
 }

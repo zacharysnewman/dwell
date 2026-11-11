@@ -2,6 +2,44 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.52.94",
+      "changes": [
+        "Flying high over a tall mountain no longer cuts a hole in it",
+        "Dev: ?loddebug=levels tints the distant terrain by its detail level"
+      ]
+    },
+    {
+      "version": "0.52.93",
+      "changes": [
+        "Lava up close: dark crust plates drifting over glowing seams",
+        "Steam is white and hisses where lava meets water",
+        "Burning in lava reddens the edge of the screen, with a sizzle"
+      ]
+    },
+    {
+      "version": "0.52.92",
+      "changes": [
+        "Lava glows: a dark crust over bright cracks, slowly drifting and breathing its heat",
+        "Steam rises where lava boils water away",
+        "Basalt and obsidian have their own painted looks"
+      ]
+    },
+    {
+      "version": "0.52.91",
+      "changes": [
+        "The tall volcanoes in the Tall peak and Starter worlds look more like real mountains: the summit crater's rim is broken by notches, with rocky crags, and the highest point sits off-centre",
+        "Sharp ridges (cleavers) now run down the volcanoes' flanks up close, not only on the map",
+        "Glacier-carved bowls (cirques) under steep rock headwalls sit high on the flanks, with icy floors"
+      ]
+    },
+    {
+      "version": "0.52.90",
+      "changes": [
+        "Tall grass now slowly grows back and spreads across meadows over the days, filling lush ground and staying sparse where it is dry; it never grows over blocks you placed.",
+        "New worlds only: worlds made before this keep their meadows as they were."
+      ]
+    },
+    {
       "version": "0.52.89",
       "changes": [
         "Each oak, pine and palm in the starter world has its own leaf shade, near and far"

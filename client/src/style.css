@@ -2218,6 +2218,15 @@ body.menu-open #main-menu .mm-shell {
   pointer-events: none;
 }
 
+/* Burning (lava, VOLCANOES.md §6.3): a red-orange edge, its colour and opacity from
+   shared/fluids/lava.json `burnEdge` (hud.ts `setBurn`). */
+#burn-edge {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+}
+
 #crosshair {
   position: absolute;
   left: 50%;
