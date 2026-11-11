@@ -271,6 +271,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    pixel (merged bowls, rim with crumbs, bent normal, parallax march on Medium, rim shadow, damp floor), data
    `rim`/`parallax`/`darken`, tests on the CPU copy. Left: the owner's look review (bench `dirt-relief`),
    stone shards on the same function.
+   **Owner, later 2026-11-11: "Remember with the digging, mining, chopping it should be a real 3D chunk, not a 2D
+   decal"**; asked what should be real 3D (the block's mesh carved, or a real piece knocked off), the owner
+   chose **both**. So: (a) each hit cuts real geometry out of the block's face (a bowl in soil, angular facets
+   in stone, the notch in wood), seen from every angle and at the edges, collision still the full block;
+   (b) each hit also knocks off a real 3D piece (clod, shard, wood chip) that falls and is picked up as
+   today's per-hit drops are. 0.52.11x's per-pixel relief (built) is the stopgap until (a) lands.
 19. **Lava glow, remaining** (owner 2026-11-11: "Lava should have bloom glow"; "Lava looks dark red instead of
    bright red/orange"; "It should darken as it solidifies though"). Built 0.52.107: colour by heat stops, heat in
    cells. Left: the bloom pass (keyed on emissive; tiers, off on CPU/Low); the crust covering less of hot lava
