@@ -31,4 +31,6 @@ export const BLOCK_DAMAGE: readonly {
 /** Tools that wear (`durability.items`): the hits each survives (the slot's wear bar). */
 export const DURABILITY: Readonly<Record<string, number>> = {
   'dwell:stone_axe': 32,
+  'dwell:stone_pickaxe': 32,
+  'dwell:wooden_shovel': 32,
 };

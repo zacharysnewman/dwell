@@ -115,10 +115,10 @@
     }
   ],
   "durability": {
-    "$comment": "Tools wear (owner, 2026-11-11: the stone axe \"should survive 32 hits of durability\"): `items` gives a tool item its hits; a hit that counts (a chop, or a break hit, with it held) uses one, and at none left the tool breaks (gone from its slot, `breakSound` played). A tool not listed never wears. `creativeWear`: whether tools wear where blocks are unlimited (false: creative's tools don't). The wear rides in the inventory record (dwell_protocol::inventory, a slot's `wear`).",
+    "$comment": "Tools wear (owner, 2026-11-11: the stone axe \"should survive 32 hits of durability\"; \"stone pick wears too like axe, same with shovel\": the stone pickaxe and the wooden shovel 32 each, the metal tools unlimited): `items` gives a tool item its hits; a hit that counts (a chop, or a break hit, with it held) uses one, and at none left the tool breaks (gone from its slot, `breakSound` played). A tool not listed never wears. `creativeWear`: whether tools wear where blocks are unlimited (false: creative's tools don't). The wear rides in the inventory record (dwell_protocol::inventory, a slot's `wear`).",
     "creativeWear": false,
     "breakSound": "stick_snap",
-    "items": { "dwell:stone_axe": 32 }
+    "items": { "dwell:stone_axe": 32, "dwell:stone_pickaxe": 32, "dwell:wooden_shovel": 32 }
   },
   "breaking": {
     "$comment": "Which tool breaks which blocks faster (owner, 2026-11-10: \"pickaxe, shovel, and axe. Stone and Metal variants\"): `classes` maps a tool class to the blocks (by name) it is the right tool for, each block in at most one; `tiers` is a tier's break speed (a multiple of the bare hand's, 1); `tools` gives an item (shared/inventory) its class and tier. A break of a block holding the right class goes at its tier's speed, anything else at 1 (dwell_protocol::chopping::break_speed). The axe's chopping (`tools` above) is unchanged.",
