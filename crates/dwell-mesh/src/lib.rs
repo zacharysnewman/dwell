@@ -45,6 +45,7 @@ mod flood;
 mod flood_tests;
 pub mod heightfield;
 mod lod_mesher;
+mod lod_trees;
 mod mesher;
 mod sky;
 mod style;

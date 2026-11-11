@@ -42,7 +42,8 @@ export function validateLeaves(data) {
   // Past 0.45 an edge's cut meets the opposite edge's in a one-cell-thick layer of leaves.
   checkNumber('chamfer', data.chamfer, 0, 0.45);
   const c = data.cards;
-  checkKeys('cards', c, ['density', 'sizeM', 'swayM', 'fadeStartM', 'fadeEndM']);
+  checkKeys('cards', c, ['tile', 'density', 'sizeM', 'swayM', 'fadeStartM', 'fadeEndM']);
+  if (typeof c.tile !== 'string' || !/^[A-Za-z0-9_]+$/.test(c.tile)) fail(`cards.tile must be a tile name, got ${JSON.stringify(c.tile)}`);
   checkNumber('cards.density', c.density, 0, 4);
   checkNumber('cards.sizeM', c.sizeM, 0.1, 3);
   checkNumber('cards.swayM', c.swayM, 0, 0.5);
@@ -66,6 +67,7 @@ export function leavesRust(data) {
     `    canopy_blend: ${rf(data.canopyBlend)},`,
     `    chamfer: ${rf(data.chamfer)},`,
     '    cards: LeafCards {',
+    `        tile: ${JSON.stringify(data.cards.tile)},`,
     `        density: ${rf(data.cards.density)},`,
     `        size_m: ${rf(data.cards.sizeM)},`,
     `        sway_m: ${rf(data.cards.swayM)},`,
