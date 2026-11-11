@@ -50,7 +50,7 @@
   },
   "geology": {
     "shaping": {
-      "strength": 1
+      "strength": 0.25
     }
   },
   "biomes": [
