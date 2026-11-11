@@ -101,6 +101,11 @@ Last updated: 2026-11-11 (0.52.68).
    individuals made when near); deer eat tall grass, but "it shouldn't affect the world until you are close
    enough to see" — a grazing value per area is the truth far away, applied to real tall grass near
    players; watch only for now (no player interaction); the whole island, coarse (fast-forwarded like water).
+   Tuning (owner): resistant to complete destruction, quick to replicate up to each group's cap, slow to
+   starve, and no runaway (the island's total bounded by grazing for deer, by prey for wolves).
+   **Started 2026-11-11:** the data-level core is built — `crates/dwell-ecology`, `shared/ecology/ecology.json`,
+   docs/ECOLOGY.md (herds and packs, forage per cell, the day step, 15 tests). Next (ECOLOGY.md §5): the
+   server's tick and saving, individuals near players, simple far rendering, grazing on the real tall grass.
 12. **Players' saved structures as placement sources** (owner 2026-11-11): per player (their library, usable
    in any world they create); placed copies editable, not protected; 32³ for now (may change), or larger
    structures as a grid of 32³ tiles. Sharing between players: Future.
