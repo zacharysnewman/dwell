@@ -3,7 +3,7 @@
 use crate::types::*;
 
 /// FNV-1a 64 over the canonical state strings (each followed by a newline) in runtime id order.
-pub const REGISTRY_HASH: u64 = 0xa43e03471d5b9c71;
+pub const REGISTRY_HASH: u64 = 0xc8b4a901c5b0b1e9;
 
 pub static PROPERTY_VALUES: [&str; 144] = [
     "false",
@@ -208,7 +208,7 @@ pub static PROPERTIES: [PropertyDef; 53] = [
     PropertyDef { name: "flooded", first_value: 142, value_count: 2 },
 ];
 
-pub static BLOCKS: [BlockDef; 40] = [
+pub static BLOCKS: [BlockDef; 41] = [
     BlockDef { name: "dwell:air", first_state: 0, state_count: 1, first_property: 0, property_count: 0 },
     BlockDef { name: "dwell:stone", first_state: 1, state_count: 2, first_property: 0, property_count: 1 },
     BlockDef { name: "dwell:dirt", first_state: 3, state_count: 2, first_property: 1, property_count: 1 },
@@ -249,6 +249,7 @@ pub static BLOCKS: [BlockDef; 40] = [
     BlockDef { name: "dwell:red_sandstone_ramp", first_state: 448, state_count: 48, first_property: 47, property_count: 4 },
     BlockDef { name: "dwell:basalt", first_state: 496, state_count: 2, first_property: 51, property_count: 1 },
     BlockDef { name: "dwell:obsidian", first_state: 498, state_count: 2, first_property: 52, property_count: 1 },
+    BlockDef { name: "dwell:lava", first_state: 500, state_count: 1, first_property: 53, property_count: 0 },
 ];
 
 pub static SHAPE_FACES: [ShapeFace; 166] = [
@@ -449,7 +450,7 @@ pub static SHAPES: [ShapeInfo; 26] = [
     ShapeInfo { first_face: 160, face_count: 6, corners: [0, 2, 2, 0], points: [[0, 0, 4], [0, 0, 4], [0, 0, 4]], fan: true, inverted: true, diagonal: 0, convex: true, volume: 0.25, sides: [[4, 4, 4], [0, 0, 0], [0, 0, 4], [0, 0, 4]], full_top: false, full_bottom: false, min_y: 0.0, max_y: 1.0 },
 ];
 
-pub static STATES: [StateInfo; 500] = [
+pub static STATES: [StateInfo; 501] = [
     StateInfo { name: "dwell:air", block: 0, density_kg_m3: 0.0, solid: false, indestructible: false, shape: VoxelShape::Empty, shape_index: 0, flooded: false, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, fluid: None, placeable: false, look: "cube", color: 0x000000, opacity: 0.0, textures: None, side_under: &[], grid: None, render: RenderMode::Opaque, cross: None, wind: None, fade: None, outline: true, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, on_slopes: false, moldable: None, medium: Medium::Any, light_filter: 0, emits: 0, light: None, held: None, extends_up: None, part_of: None, support_role: SupportRole::Ground, passable: false, axis: Axis::Y, near_fade: 0.0, fill: 1.0, cross_section: None },
     StateInfo { name: "dwell:stone[flooded=false]", block: 1, density_kg_m3: 2400.0, solid: true, indestructible: false, shape: VoxelShape::Full, shape_index: 1, flooded: false, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, fluid: None, placeable: true, look: "cube", color: 0xbbafa6, opacity: 1.0, textures: Some(Textures { top: "stone", side: "stone", bottom: "stone" }), side_under: &[], grid: None, render: RenderMode::Opaque, cross: None, wind: None, fade: None, outline: true, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, on_slopes: false, moldable: None, medium: Medium::Any, light_filter: 15, emits: 0, light: None, held: None, extends_up: None, part_of: None, support_role: SupportRole::Ground, passable: false, axis: Axis::Y, near_fade: 0.0, fill: 1.0, cross_section: None },
     StateInfo { name: "dwell:stone[flooded=true]", block: 1, density_kg_m3: 2400.0, solid: true, indestructible: false, shape: VoxelShape::Full, shape_index: 1, flooded: true, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, fluid: None, placeable: false, look: "cube", color: 0xbbafa6, opacity: 1.0, textures: Some(Textures { top: "stone", side: "stone", bottom: "stone" }), side_under: &[], grid: None, render: RenderMode::Opaque, cross: None, wind: None, fade: None, outline: true, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, on_slopes: false, moldable: None, medium: Medium::Any, light_filter: 15, emits: 0, light: None, held: None, extends_up: None, part_of: None, support_role: SupportRole::Ground, passable: false, axis: Axis::Y, near_fade: 0.0, fill: 1.0, cross_section: None },
@@ -950,6 +951,7 @@ pub static STATES: [StateInfo; 500] = [
     StateInfo { name: "dwell:basalt[flooded=true]", block: 38, density_kg_m3: 2900.0, solid: true, indestructible: false, shape: VoxelShape::Full, shape_index: 1, flooded: true, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, fluid: None, placeable: false, look: "cube", color: 0x4a4648, opacity: 1.0, textures: Some(Textures { top: "stone", side: "stone", bottom: "stone" }), side_under: &[], grid: None, render: RenderMode::Opaque, cross: None, wind: None, fade: None, outline: true, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, on_slopes: false, moldable: None, medium: Medium::Any, light_filter: 15, emits: 0, light: None, held: None, extends_up: None, part_of: None, support_role: SupportRole::Ground, passable: false, axis: Axis::Y, near_fade: 0.0, fill: 1.0, cross_section: None },
     StateInfo { name: "dwell:obsidian[flooded=false]", block: 39, density_kg_m3: 2400.0, solid: true, indestructible: false, shape: VoxelShape::Full, shape_index: 1, flooded: false, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, fluid: None, placeable: true, look: "cube", color: 0x1d1724, opacity: 1.0, textures: Some(Textures { top: "stone", side: "stone", bottom: "stone" }), side_under: &[], grid: None, render: RenderMode::Opaque, cross: None, wind: None, fade: None, outline: true, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, on_slopes: false, moldable: None, medium: Medium::Any, light_filter: 15, emits: 0, light: None, held: None, extends_up: None, part_of: None, support_role: SupportRole::Ground, passable: false, axis: Axis::Y, near_fade: 0.0, fill: 1.0, cross_section: None },
     StateInfo { name: "dwell:obsidian[flooded=true]", block: 39, density_kg_m3: 2400.0, solid: true, indestructible: false, shape: VoxelShape::Full, shape_index: 1, flooded: true, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, fluid: None, placeable: false, look: "cube", color: 0x1d1724, opacity: 1.0, textures: Some(Textures { top: "stone", side: "stone", bottom: "stone" }), side_under: &[], grid: None, render: RenderMode::Opaque, cross: None, wind: None, fade: None, outline: true, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, on_slopes: false, moldable: None, medium: Medium::Any, light_filter: 15, emits: 0, light: None, held: None, extends_up: None, part_of: None, support_role: SupportRole::Ground, passable: false, axis: Axis::Y, near_fade: 0.0, fill: 1.0, cross_section: None },
+    StateInfo { name: "dwell:lava", block: 40, density_kg_m3: 2600.0, solid: false, indestructible: false, shape: VoxelShape::Empty, shape_index: 0, flooded: false, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, fluid: None, placeable: false, look: "cube", color: 0xe8561c, opacity: 1.0, textures: Some(Textures { top: "stone", side: "stone", bottom: "stone" }), side_under: &[], grid: None, render: RenderMode::Opaque, cross: None, wind: None, fade: None, outline: true, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, on_slopes: false, moldable: None, medium: Medium::Air, light_filter: 0, emits: 13, light: None, held: None, extends_up: None, part_of: None, support_role: SupportRole::Ground, passable: false, axis: Axis::Y, near_fade: 0.0, fill: 1.0, cross_section: None },
 ];
 
 pub static FLUIDS: [FluidInfo; 1] = [

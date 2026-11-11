@@ -88,8 +88,11 @@ Last updated: 2026-11-11 (0.52.68).
    volcano phases stay under Future. Lava's danger (owner): heavy damage while in it, a moment of burning after.
    **Core built (V1, `crates/dwell-lava`):** lava's own surface grid (viscous, cooling to basalt, obsidian
    and steam with water, lake and river vents, burning, saves, near/far), as data in
-   `shared/fluids/lava.json`; VOLCANOES.md §6. Look + in-game check next (local): the server's fields,
-   cells in chunks, the damage hook, the lava block's look.
+   `shared/fluids/lava.json`; VOLCANOES.md §6. **Server built:** the fields per face in `dwell-sim`
+   (near/far like the water), lava, basalt and obsidian cells written into chunks through the edit sync,
+   steam taking the water, players burning through the server's damage, the optional `lava` save table,
+   `dwell:lava` block, `Server::place_lava_vent` (dev). **The look next, local** (light, glow, crust, steam
+   puffs, the in-game check), then the starter world's summit vent as data and a `Burn` cause.
 9. ~~**Loading-time display bug.**~~ Done (0.52.71): the 10 s was the graphics' start (one long task on the
    main thread making the renderer's pipelines) begun in the same task that ended the game's load, so the
    screen never painted "Starting the graphics…" and stood on "Loading the game… x MB 0.0 s". Each stage is
@@ -209,9 +212,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   after two rounds; leads in BUGS.md).
 - **Arches:** the openings in the LOD and in Chisel's 3D view; caprock lips; an arch on a fin seen in
   game (fins and the rock filter built, 0.52.66).
-- **Terrain leftovers (0.52.66 round 1 left):** T3b in normal biomes (a snow line from temperature for
-  any biome, soil blocks by soil type, grass and ground items by climate; the starter opts in); Rainier
-  detail (below); in-game screenshots of an arch on a fin, the red mesa and a snowy biome edge.
+- **Terrain leftovers (0.52.66 round 1 left):** Rainier detail (below); in-game screenshots of an arch
+  on a fin, the red mesa and a snowy biome edge, and of T3b in the starter (its biomes' snow lines, sand
+  under the steppe's grass, the grass thinning into the dry lee; built without screenshots). T3b is built
+  (ADR 0075 T3b): a biome's own snow line (`snow`), soil blocks by soil type (`soilBlocks`), tall grass
+  and ground items by climate (`undergrowth`); the starter opts in.
 - **Pieces follow-ups (0.52.46):** the worn axe not yet seen in game.
 - **Block damage follow-ups:** scoops read as dark stains (flat decals).
 - **Peaks:** a more broken summit, deeper ridges and cirques (Rainier).
