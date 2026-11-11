@@ -1747,16 +1747,23 @@ mod tests {
                 "{}: its colours are the props' material rows",
                 t.item
             );
-            // The grip on the hold's socket, the far end ahead along +z: from the grip to the
-            // head is most of the tool's length, behind it the handle's end.
+            // The grip on the hold's socket (moved by its pose's offset), the far end ahead along
+            // its posed length (+z turned by its `hold`): from the grip to the head is most of
+            // the tool's length, behind it the handle's end.
+            let h = data.hold;
+            let at = [0, 1, 2].map(|i| socket[i] + h.offset[i]);
+            let ahead = h.apply([0.0, 0.0, 1.0]);
+            let ahead = [0, 1, 2].map(|i| (ahead[i] - h.offset[i]) / h.scale);
+            let along = |p: &[f32; 3]| (0..3).map(|i| (p[i] - at[i]) * ahead[i]).sum::<f32>();
             let (lo, hi) = m
                 .positions
                 .iter()
                 .fold((f32::MAX, f32::MIN), |(lo, hi), p| {
-                    (lo.min(p[2] - socket[2]), hi.max(p[2] - socket[2]))
+                    (lo.min(along(p)), hi.max(along(p)))
                 });
+            let length = data.length * h.scale;
             assert!(
-                hi > 0.4 * data.length && lo > -0.4 * data.length,
+                hi > 0.4 * length && lo > -0.4 * length,
                 "{}: z {lo}..{hi}",
                 t.item
             );
