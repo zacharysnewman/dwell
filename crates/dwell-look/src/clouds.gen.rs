@@ -43,4 +43,27 @@ pub const CLOUDS: CloudTunables = CloudTunables {
         sun_warmth: 0.4,
         top_light: 0.9,
     },
+    volume: VolumeTunables {
+        base_m: 1350.0,
+        top_m: 2700.0,
+        top_floor: 0.35,
+        detail_cell_m: 256.0,
+        detail_erosion: 0.45,
+        extinction: 0.006,
+        light_step_m: 160.0,
+        powder: 0.6,
+        ambient: 0.55,
+        max_distance_m: 22000.0,
+    },
+    tiers: VolumeTiers {
+        high: VolumeTier {
+            steps: 20,
+            light_steps: 1,
+        },
+        low: VolumeTier {
+            steps: 0,
+            light_steps: 0,
+        },
+    },
+    plumes: &[],
 };

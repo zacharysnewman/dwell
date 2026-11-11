@@ -42,5 +42,30 @@
     "silverPower": 8,
     "sunWarmth": 0.4,
     "topLight": 0.9
-  }
+  },
+  "volume": {
+    "$comment": "The volumetric layer (docs/CLOUDS.md §8): ray-marched between baseM and topM above sea level on the viewer's face, when the Clouds setting's tier has steps (tiers). Density: the deck's 2D shape as a weather map (the coverage) times a vertical profile (taller where denser: tops between topFloor and 1 of the layer), eroded by 3D value noise of detailCellM cells (scaleM must be a whole multiple of it) by detailErosion, plus the plumes. extinction: the light lost per metre at density 1. lightStepM: the spacing of the light samples toward the sun or moon. powder: the dark-edge (powder) term's strength. ambient: the share of the sky's light in the shade. maxDistanceM: the march's reach along the ray (the deck's fade still hazes it).",
+    "baseM": 1350,
+    "topM": 2700,
+    "topFloor": 0.35,
+    "detailCellM": 256,
+    "detailErosion": 0.45,
+    "extinction": 0.006,
+    "lightStepM": 160,
+    "powder": 0.6,
+    "ambient": 0.55,
+    "maxDistanceM": 22000
+  },
+  "tiers": {
+    "$comment": "Per Clouds setting value: the march's steps per pixel (0: the 2D deck, as before) and the light samples per step (0-4). The CPU adapter draws no clouds (clouds_for).",
+    "high": {
+      "steps": 20,
+      "lightSteps": 1
+    },
+    "low": {
+      "steps": 0,
+      "lightSteps": 0
+    }
+  },
+  "plumes": []
 }

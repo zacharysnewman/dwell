@@ -1215,30 +1215,49 @@ fn composited(p: vec2i, ndc: vec2f, decks: Decks) -> Composited {
     let ray = view_ray(ndc);
     let dir = normalize(ray);
     let face = frame.eye.y;
-    let deck = decks.deck;
+    // The volumetric clouds (docs/CLOUDS.md §8) replace the eye's 2D deck here when the tier marches
+    // (cloud_inside.w): the deck's weight goes to 0 and its hit to the eye, so the layer below is
+    // the march's, in front of the scene out to the scene's distance. The sky pass's other users
+    // (Snell's window, reflections) keep the cheap deck.
+    let volume = frame.cloud_inside.w >= 1.0;
+    var deck = decks.deck;
+    if (volume) {
+        deck = vec4f(deck.xy, 0.0, 0.0);
+    }
     let fw = decks.fw;
     let deck_o = decks.deck_o;
     let fw_o = decks.fw_o;
     let clear = sky(dir);
     let lights = cloud_lighting();
     let c = textureLoad(scene_color, p, 0);
-    var back = clear;
-    if (c.a < 1.0) {
-        back = sky_behind_with_clouds(dir, clear, deck, fw, deck_o, fw_o);
-    }
     var depth = 0.0;
     var self_lit = 0.0;
     if (c.a > 0.0) {
         depth = scene_depth_at(p).x;
         self_lit = scene_self_lit_at(p);
     }
-    var front = vec4f(0.0);
-    if (c.a > 0.0 && cloud_in_front_of(deck.z, ray, depth)) {
+    var vol = vec4f(0.0);
+    if (volume) {
+        let max_t = select(1e9, depth * length(ray), c.a > 0.0 && depth > 0.0);
+        vol = dwell_cloud_volume(clear, dir, face, max_t, cloud_jitter(p), frame.clouds, frame.cloud_cfg, frame.cloud_inside, lights);
+    }
+    var back = clear;
+    if (c.a < 1.0) {
+        back = dwell_cloud_over(sky_behind_with_clouds(dir, clear, deck, fw, deck_o, fw_o), vol);
+    }
+    var front = vol;
+    if (!volume && c.a > 0.0 && cloud_in_front_of(deck.z, ray, depth)) {
         front = dwell_cloud_layer(clear, dir, face, deck, fw, frame.clouds, frame.cloud_cfg, lights);
     }
     var s = Composited(vec3f(0.0), ray, clear, back, front, deck.z);
     s.color = composited_scene(c, depth, self_lit, s);
     return s;
+}
+
+// The volume march's per-pixel step offset (interleaved gradient noise): the steps' banding becomes
+// a fine, stable dither.
+fn cloud_jitter(p: vec2i) -> f32 {
+    return fract(52.9829189 * fract(0.06711056 * f32(p.x) + 0.00583715 * f32(p.y)));
 }
 
 // The sky behind the world toward `dir` with both faces' clouds, the world's and not the viewer's
@@ -4022,10 +4041,31 @@ mod tests {
         assert!(scene.contains("dwell_cloud_fog(color, frame.cloud_inside.x"));
         let c = body("composited");
         let layer = c.find("dwell_cloud_layer(").expect("layer");
-        assert!(c[..layer].contains("if (c.a > 0.0 && cloud_in_front_of(deck.z, ray, depth))"));
+        assert!(
+            c[..layer]
+                .contains("if (!volume && c.a > 0.0 && cloud_in_front_of(deck.z, ray, depth))")
+        );
         assert!(body("motion_composite").contains("textureLoad(finished, vec2i(q), 0)"));
         // The layer is the clouds dwell_clouds draws, found once.
         let look = dwell_look::clouds::cloud_wgsl(&dwell_look::clouds::CLOUDS);
         assert!(look.contains("return dwell_cloud_over(under, dwell_cloud_layer(clear,"));
+    }
+
+    #[test]
+    fn only_the_composite_marches_the_volume_and_the_cheap_sky_keeps_the_deck() {
+        // docs/CLOUDS.md §8: the composite marches the volumetric clouds (once a pixel, out to the
+        // scene) in place of the eye's deck; Snell's window and the reflections sample
+        // sky_above_with_clouds, which stays the 2D deck (WATER_RENDERING.md §16).
+        let src = super::source(4);
+        let body = |name: &str| {
+            let at = src.find(&format!("fn {name}(")).expect(name);
+            src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
+        };
+        let c = body("composited");
+        assert_eq!(c.matches("dwell_cloud_volume(").count(), 1);
+        assert!(c.contains("deck = vec4f(deck.xy, 0.0, 0.0);"));
+        assert!(c.contains("max_t = select(1e9, depth * length(ray)"));
+        assert_eq!(src.matches("dwell_cloud_volume(clear, dir,").count(), 1);
+        assert!(!body("sky_above_with_clouds").contains("dwell_cloud_volume"));
     }
 }
