@@ -85,7 +85,25 @@ Last updated: 2026-11-11 (0.52.68).
 8. **Lava (VOLCANOES.md phase V1)** — next after the terrain leftovers' current round (0.52.66), ahead of
    the remaining leftover sections (owner, 2026-11-11: "Let's implement lava", "Into our queue"): lava as
    a fluid — flows slowly, cools into rock, gives light, damages, steam where it meets water. The other
-   volcano phases stay under Future.
+   volcano phases stay under Future. Lava's danger (owner): heavy damage while in it, a moment of burning after.
+9. **Loading-time display bug.** Owner: "the loading game (xMB) step still takes like 10+ seconds sometimes and
+   shows as 0.0s [or 0.1s] on the loading screen." Find what the 10 s is, show its real time, speed it up if
+   possible; red → green test. (Runs before lava.)
+10. **Speed-ups 1–6** (owner: "Implement 1-6 now"): the version out of build scripts (dwell-sim's build.rs reads
+   client/package.json → every release recompiles), version + release note assigned at merge, an agent
+   quickstart doc, a reliable browser kit (warm prebuilt client, exact camera goto, stall retries, saved
+   spots), per-area check commands, lighter paperwork for small changes. (Runs before lava.)
+11. **Deer/wolf ecology simulation, first slice** (owner 2026-11-11, with a mockup:
+   docs/proposals/ECOSYSTEM_MOCKUP_NOTES.md). "Simulate at a data level only when you're not nearby, render
+   simply from afar, and exactly when close by." Answers: far = herds and packs (one record each;
+   individuals made when near); deer eat tall grass, but "it shouldn't affect the world until you are close
+   enough to see" — a grazing value per area is the truth far away, applied to real tall grass near
+   players; watch only for now (no player interaction); the whole island, coarse (fast-forwarded like water).
+12. **Players' saved structures as placement sources** (owner 2026-11-11): per player (their library, usable
+   in any world they create); placed copies editable, not protected; 32³ for now (may change), or larger
+   structures as a grid of 32³ tiles. Sharing between players: Future.
+
+Cloud sessions: logic-only items can run as `claude --cloud` sessions in parallel (verified 2026-11-11).
 
 ## Done
 
@@ -172,9 +190,11 @@ Last updated: 2026-11-11 (0.52.68).
 
 ## Future (needs owner answers)
 
-- **Active volcanoes, lava and eruptions** — docs/proposals/VOLCANOES.md (owner 2026-11-11), 4 of 5 questions answered (lava's danger open).
+- **Active volcanoes, lava and eruptions** — docs/proposals/VOLCANOES.md (owner 2026-11-11), all 5 questions answered.
   Phase V1 (lava as a fluid) moved into the queue (item 8); the later phases (volcano states, eruptions,
   partly destroyed cones) stay here.
+
+- **Sharing saved structures between players** (owner 2026-11-11: "eventually shareable").
 
 ## Waiting on the owner
 
