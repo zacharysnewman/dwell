@@ -149,7 +149,8 @@ impl LocalWorld {
     /// sections are done in the server-jobs worker this worker's script starts (`takeJob`,
     /// `jobIn`); without, on the tick within its budgets. `mode`: a new world's game mode (ADR
     /// 0065; the New world form's choice, by name); a saved world keeps its own. `growth` (dev,
-    /// `?growth=N`): trees grow N times as fast (ADR 0079).
+    /// `?growth=N`): trees grow N times as fast (ADR 0079). `chop2` (dev, `?chop=v2`): the
+    /// chopping prototype (docs/WORK_QUEUE.md item 7).
     // Positional, as JS passes them (wasm-bindgen constructor), like `LocalCore::create_spawning`.
     #[allow(clippy::too_many_arguments)]
     #[wasm_bindgen(constructor)]
@@ -166,6 +167,7 @@ impl LocalWorld {
         jobs_worker: Option<bool>,
         mode: Option<String>,
         growth: Option<f64>,
+        chop2: Option<bool>,
     ) -> Result<LocalWorld, JsError> {
         // The tick's phases timed by this worker's clock (`tickPhases`, docs/DEV_TOOLS.md).
         dwell_sim::clock::set_clock(worker_now);
@@ -198,6 +200,10 @@ impl LocalWorld {
                 // `?growth=N` (dev): trees grow N times as fast (ADR 0079).
                 if let Some(g) = growth.filter(|g| g.is_finite() && *g > 0.0) {
                     c.growth_speed = g;
+                }
+                // `?chop=v2` (dev): the chopping prototype.
+                if chop2 == Some(true) {
+                    c.chop2 = true;
                 }
             },
         ) {

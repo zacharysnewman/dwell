@@ -891,6 +891,9 @@ async function start(): Promise<App | null> {
     client.setAntialias(antialiasMode(aa.mode).fxaa, aa.anisotropy);
     // The skinned models' detail level (ADR 0070 §10); ?modeldetail=<level id> overrides it.
     client.setModelDetail(new URLSearchParams(location.search).get('modeldetail') ?? s.modelDetail);
+    // ?chop=v2: the chopping prototype's crosshair aim (docs/WORK_QUEUE.md item 7; the local
+    // server's half rides the world's start, net/connect.ts).
+    client.setChopAim(/[?&]chop=v2(&|$)/.test(location.search));
     // The light shafts (ADR 0064); ?shafts=off|low|high overrides them (the bench).
     client.setShafts(new URLSearchParams(location.search).get('shafts') ?? s.shafts);
     // Render scale and its upscaler; ?renderscale= and ?upscaler= override them (the bench).

@@ -1046,6 +1046,11 @@ impl Client {
     pub fn press(&self, code: &str, down: bool) {
         self.inner.borrow_mut().input.set_key(code, down);
     }
+    /// The chopping prototype's crosshair aim (dev `?chop=v2`, docs/WORK_QUEUE.md item 7).
+    #[wasm_bindgen(js_name = setChopAim)]
+    pub fn set_chop_aim(&self, on: bool) {
+        crate::chop::set_crosshair_aim(on);
+    }
     #[wasm_bindgen(js_name = setPointerLocked)]
     pub fn set_pointer_locked(&self, locked: bool) {
         let mut s = self.inner.borrow_mut();

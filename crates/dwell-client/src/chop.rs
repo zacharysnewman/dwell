@@ -10,6 +10,45 @@ use dwell_protocol::{ChopAction, CutsMessage};
 use dwell_world::{CELL_H, m_of_row};
 use std::collections::HashMap;
 
+/// The chopping prototype's aim (docs/WORK_QUEUE.md item 7, dev `?chop=v2`): a swing's predicted
+/// impact is where the look meets the trunk, as the prototype's server cuts it; off: the arc's.
+static CROSSHAIR_AIM: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Turns the chopping prototype's crosshair aim on or off (the page's `?chop=v2`).
+pub fn set_crosshair_aim(on: bool) {
+    CROSSHAIR_AIM.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn crosshair_aim() -> bool {
+    CROSSHAIR_AIM.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// The chopping prototype's impact: the first solid cell the look from `eye` meets within the
+/// tool's reach past what it clears, the bite timed to the middle of the arc (the hit-stop there).
+pub fn crosshair_impact(
+    store: &mut dwell_world::VoxelWorld,
+    tool: &ToolDef,
+    eye: [f64; 3],
+    look: [f64; 3],
+) -> Option<Impact> {
+    let hit = dwell_world::edit::raycast_block_past(
+        store,
+        eye,
+        look.map(|v| v as f32),
+        tool.swing.reach_m as f32,
+        |_, m| tool.clears_block(dwell_blocks::block_of(m).name),
+    )?;
+    let d = f64::from(hit.distance);
+    let m = store.get_voxel(hit.cell[0], hit.cell[1], hit.cell[2]);
+    Some(Impact {
+        cell: hit.cell,
+        face: hit.face ^ 1,
+        point: [0, 1, 2].map(|i| eye[i] + look[i] * d),
+        step: tool.swing.samples / 2,
+        wood: dwell_protocol::chopping::wood(dwell_blocks::block_of(m).name).is_some(),
+    })
+}
+
 #[derive(Debug, Default)]
 pub struct Chopping {
     /// The server keeps cuts (Welcome's `CHOPPING`).

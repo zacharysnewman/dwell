@@ -19,8 +19,8 @@ mod table {
 
 pub use crate::damage::{BlockDamageDef, DamageLook, DamageLookKind};
 pub use table::{
-    BLOCK_DAMAGE, BREAK_CLASSES, CHOP2_DEFAULT, BREAK_TOOLS, BREAK_WITH, CREATIVE_WEAR, DURABILITY, TOOLS,
-    WEAR_BREAK_SOUND, WOODS,
+    BLOCK_DAMAGE, BREAK_CLASSES, BREAK_TOOLS, BREAK_WITH, CHOP2_DEFAULT, CREATIVE_WEAR, DURABILITY,
+    TOOLS, WEAR_BREAK_SOUND, WOODS,
 };
 
 /// The hits tool item `item` survives (`durability.items`; owner, 2026-11-11), in `table`; `None`:
@@ -735,7 +735,10 @@ mod tests {
         // A notch on side 1 (+x), then the back cut from side 0 (−x), deeper: toward the notch.
         let (_, c) = chop2_to_fell(axe(), false, |i| if i < 4 { 1 } else { 0 });
         assert_eq!(c.notch_side(), Some(1));
-        assert!(c.kerf[0][0] > c.notch[1], "the back cut is the deeper: {c:?}");
+        assert!(
+            c.kerf[0][0] > c.notch[1],
+            "the back cut is the deeper: {c:?}"
+        );
         assert_eq!(c.notch[0], 0.0, "the back cut is flat (a kerf), not a V");
         assert_eq!(
             c.chop2_toward(Y),
