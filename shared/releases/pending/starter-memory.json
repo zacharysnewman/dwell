@@ -1,6 +1,0 @@
-{
-  "changes": [
-    "The Starter world uses less memory while it loads, so phones are less likely to reload the page",
-    "The terrain is unchanged"
-  ]
-}
