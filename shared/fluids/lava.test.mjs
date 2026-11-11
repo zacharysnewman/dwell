@@ -59,3 +59,25 @@ test("the clients' looks (steam, the burn edge) come from data, defaulted for a 
   delete d.burnEdge;
   assert.match(lavaRust(validateLava(d)), /steam: SteamLook \{ color: "#f2f4f6"/);
 });
+
+test('heat stops: a stop added by data alone is generated, bad stops fail naming them', () => {
+  const d = data();
+  d.heat.unshift({ name: 'mymod_white', above: 0.95, color: '#fff8e0', intensity: 5, crust: 0 });
+  assert.match(lavaRust(validateLava(d)), /HeatStop \{ name: "mymod_white", above: 0\.95, color: "#fff8e0", intensity: 5\.0, crust: 0\.0 \}/);
+  for (const [change, message] of [
+    [(d) => (d.heat[1].above = 0.9), /heat\.warm\.above must be below the hotter stop's/],
+    [(d) => (d.heat[3].above = 0.05), /coolest stop's above must be 0/],
+    [(d) => (d.heat[0].crust = 2), /heat\.hot\.crust must be a number in \[0, 1\]/],
+    [(d) => (d.heat[0].color = 'red'), /heat\.hot\.color must be a colour/],
+    [(d) => (d.heat[1].name = 'hot'), /heat\.hot: listed twice/],
+    [(d) => (d.heat = []), /heat must be a non-empty list/],
+  ]) {
+    const bad = data();
+    change(bad);
+    assert.throws(() => validateLava(bad), message);
+  }
+});
+
+test("the hottest stop's emissive is over 1, so it glows past white and blooms", () => {
+  assert.ok(data().heat[0].intensity > 1);
+});

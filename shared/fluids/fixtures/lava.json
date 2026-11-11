@@ -9,6 +9,15 @@
   "maxSubsteps": 20000,
   "stepDepthM": 1000,
   "maxTiles": 2048,
+  "$heat": "A fifth stop by data alone (test_white_hot, hotter than the build's hottest).",
+  "heat": [
+    { "name": "test_white_hot", "above": 0.9, "color": "#fff4d0", "intensity": 4, "crust": 0 },
+    { "name": "hot", "above": 0.6, "color": "#ffb23c", "intensity": 2.4, "crust": 0.3 },
+    { "name": "warm", "above": 0.35, "color": "#ff6e1e", "intensity": 1.6, "crust": 0.55 },
+    { "name": "cooling", "above": 0.15, "color": "#e0401a", "intensity": 1.0, "crust": 0.8 },
+    { "name": "crusting", "above": 0, "color": "#a02810", "intensity": 0.6, "crust": 0.95 }
+  ],
+  "heatHysteresis": 0.05,
   "fluids": [
     {
       "name": "test:magma",

@@ -105,6 +105,42 @@ pub struct LavaData {
     pub steam: SteamLook,
     /// The screen's edge while the player burns.
     pub burn_edge: BurnEdge,
+    /// Lava's look by heat, hottest first (`heat`): the last stop's `above` is 0.
+    pub heat: &'static [HeatStop],
+    /// How far past a stop's edge a column's heat must be to move to the next stop
+    /// (`heatHysteresis`), so a column at a threshold doesn't flicker.
+    pub heat_hysteresis: f32,
+}
+
+/// One stop of lava's look by heat (`heat`): a column at least `above` hot (0–1) shows it. `name`
+/// is the value of lava's `heat` block property it is written as; `color` (sRGB) the molten seams'
+/// glow, `intensity` its emissive (over 1 blooms), `crust` the share of the surface the dark crust
+/// plates cover.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HeatStop {
+    pub name: &'static str,
+    pub above: f32,
+    pub color: &'static str,
+    pub intensity: f32,
+    pub crust: f32,
+}
+
+impl HeatStop {
+    /// The stop's colour, linear.
+    pub fn linear(&self) -> [f32; 3] {
+        let h = self.color.trim_start_matches('#');
+        let c = |i: usize| {
+            let v =
+                f32::from(u8::from_str_radix(h.get(i..i + 2).unwrap_or("ff"), 16).unwrap_or(255))
+                    / 255.0;
+            if v <= 0.04045 {
+                v / 12.92
+            } else {
+                ((v + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        [c(0), c(2), c(4)]
+    }
 }
 
 /// Steam's puffs where lava boils water away (`steam`): colour (sRGB), life (s), rise (m/s), size
@@ -133,6 +169,28 @@ impl LavaData {
         self.fluids.iter().find(|f| f.name == name)
     }
 
+    /// The heat stop a column `heat` hot (0–1) shows, given the stop it shows now (`current`,
+    /// `None` for a new column): the stop whose range holds the heat, but a column keeps its
+    /// current stop until its heat is `heat_hysteresis` past that stop's edge, so heat wavering at
+    /// a threshold changes nothing (the rate limit on rewriting cells as lava cools).
+    pub fn heat_stop(&self, heat: f32, current: Option<usize>) -> usize {
+        let plain = self
+            .heat
+            .iter()
+            .position(|s| heat >= s.above)
+            .unwrap_or(self.heat.len().saturating_sub(1));
+        let Some(cur) = current.filter(|&c| c < self.heat.len()) else {
+            return plain;
+        };
+        let lo = self.heat[cur].above - self.heat_hysteresis;
+        let hi = if cur == 0 {
+            f32::INFINITY
+        } else {
+            self.heat[cur - 1].above + self.heat_hysteresis
+        };
+        if heat >= lo && heat < hi { cur } else { plain }
+    }
+
     /// The vent named `name`.
     pub fn vent(&self, name: &str) -> Option<&'static VentDef> {
         self.vents.iter().find(|v| v.name == name)
@@ -152,5 +210,74 @@ impl LavaData {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod heat_tests {
+    use crate::{DATA, fixture::FIXTURE};
+
+    #[test]
+    fn heat_crossing_each_threshold_picks_the_stop_below_it() {
+        let names: Vec<_> = [1.0, 0.61, 0.59, 0.36, 0.2, 0.14, 0.0]
+            .iter()
+            .map(|&h| DATA.heat[DATA.heat_stop(h, None)].name)
+            .collect();
+        assert_eq!(
+            names,
+            [
+                "hot", "hot", "warm", "warm", "cooling", "crusting", "crusting"
+            ]
+        );
+    }
+
+    #[test]
+    fn heat_wavering_at_a_threshold_keeps_its_stop_the_rate_limit() {
+        // A column at "hot" cooling to just under 0.6 keeps "hot" until past the hysteresis, and a
+        // column at "warm" heated back over 0.6 by a hair keeps "warm": no rewrite either way.
+        let edge = DATA.heat[0].above;
+        let h = DATA.heat_hysteresis;
+        assert_eq!(DATA.heat_stop(edge - h * 0.5, Some(0)), 0);
+        assert_eq!(DATA.heat_stop(edge + h * 0.5, Some(1)), 1);
+        assert_eq!(DATA.heat_stop(edge - h * 1.5, Some(0)), 1);
+        assert_eq!(DATA.heat_stop(edge + h * 1.5, Some(1)), 0);
+        // A column cooling steadily from vent heat to rock changes stop once per stop, no more.
+        let mut cur = None;
+        let mut writes = 0;
+        for k in (0..=1000).rev() {
+            // wobble ± half the hysteresis on the way down
+            let heat =
+                (k as f32 / 1000.0 + if k % 2 == 0 { 0.5 } else { -0.5 } * h).clamp(0.0, 1.0);
+            let s = DATA.heat_stop(heat, cur);
+            if cur != Some(s) {
+                writes += 1;
+                cur = Some(s);
+            }
+        }
+        assert_eq!(writes, DATA.heat.len());
+    }
+
+    #[test]
+    fn a_stop_added_by_data_alone_is_picked() {
+        assert_eq!(FIXTURE.heat[0].name, "test_white_hot");
+        assert_eq!(FIXTURE.heat_stop(0.95, None), 0);
+        assert_eq!(FIXTURE.heat[FIXTURE.heat_stop(0.7, None)].name, "hot");
+    }
+
+    #[test]
+    fn the_hottest_stop_glows_past_white_and_cools_darker_with_more_crust() {
+        // Owner, 2026-11-11: "Lava looks dark red instead of bright red/orange"; "It should darken
+        // as it solidifies though." Emissive over 1 is what the bloom picks up.
+        assert!(DATA.heat[0].intensity > 1.0);
+        let lum = |c: [f32; 3]| 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+        for w in DATA.heat.windows(2) {
+            assert!(
+                w[1].intensity * lum(w[1].linear()) < w[0].intensity * lum(w[0].linear()),
+                "{} → {}",
+                w[0].name,
+                w[1].name
+            );
+            assert!(w[1].crust >= w[0].crust, "{} → {}", w[0].name, w[1].name);
+        }
     }
 }
