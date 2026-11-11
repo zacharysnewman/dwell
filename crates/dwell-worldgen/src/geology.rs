@@ -347,6 +347,8 @@ pub struct DrainageField {
     dist: Vec<f32>,
     height: Vec<f32>,
     accumulation: Vec<f32>,
+    /// Each cell's nearest drainage cell (its index; `u32::MAX` none): the fronts' sources.
+    source: Vec<u32>,
 }
 
 impl DrainageField {
@@ -430,6 +432,10 @@ impl DrainageField {
             .map(|&s| if s == usize::MAX { 1.0 } else { acc[s] })
             .collect();
         let dist = dist.into_iter().map(|d| d.min(1.0e9)).collect();
+        let source = src
+            .iter()
+            .map(|&s| if s == usize::MAX { u32::MAX } else { s as u32 })
+            .collect();
         Self {
             n,
             cell: map.cell,
@@ -437,6 +443,7 @@ impl DrainageField {
             dist,
             height,
             accumulation,
+            source,
         }
     }
 
@@ -459,6 +466,39 @@ impl DrainageField {
             }
         }
         (out[0], out[1], out[2])
+    }
+}
+
+impl DrainageField {
+    /// The distances (m) at face-local (x, z) to the nearest drainage cell and to the nearest one
+    /// on the other side (seen from here at more than a right angle from the first), from the
+    /// sources of the 4 × 4 cells around it; None with no line on the other side. Two cut-back
+    /// fronts meet on the crest between them, where the two are equal (the fins, 0.52.66).
+    pub fn fronts(&self, x: f64, z: f64) -> Option<(f64, f64)> {
+        let n = self.n as i64;
+        let fx = ((x - self.x0) / self.cell).floor() as i64;
+        let fz = ((z - self.x0) / self.cell).floor() as i64;
+        let mut near: [(f64, f64, f64); 16] = [(f64::INFINITY, 0.0, 0.0); 16];
+        let mut k = 0;
+        for j in fz - 1..=fz + 2 {
+            for i in fx - 1..=fx + 2 {
+                let (i, j) = (i.clamp(0, n - 1), j.clamp(0, n - 1));
+                let s = self.source[(j * n + i) as usize];
+                if s != u32::MAX {
+                    let (si, sj) = (f64::from(s % self.n as u32), f64::from(s / self.n as u32));
+                    let (dx, dz) = (self.x0 + si * self.cell - x, self.x0 + sj * self.cell - z);
+                    near[k] = ((dx * dx + dz * dz).sqrt(), dx, dz);
+                    k += 1;
+                }
+            }
+        }
+        let near = &near[..k];
+        let first = near.iter().min_by(|a, b| a.0.total_cmp(&b.0))?;
+        let second = near
+            .iter()
+            .filter(|s| s.1 * first.1 + s.2 * first.2 < 0.0)
+            .min_by(|a, b| a.0.total_cmp(&b.0))?;
+        Some((first.0, second.0))
     }
 }
 

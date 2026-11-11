@@ -25,6 +25,32 @@ pub struct Arches {
     pub fin: f64,
     /// Whether a site on a scarp (low on one side only) is cut as an overhang.
     pub overhangs: bool,
+    /// The erosion's fin rule (0.52.66): fins left between cut-back fronts, so arches find fins.
+    pub fins: Option<Fins>,
+    /// Arches only in this rock (rocks.json): the stack's layer at the opening's mid-height.
+    pub rock: Option<&'static str>,
+}
+
+/// A biome's fin rule (data, its `arches.fins`): where two cut-back fronts from drainage lines on
+/// either side come within `approach` m of meeting, or have met by at most `overrun` m, a fin
+/// `width` m wide stands on the crest between them (systemic terrain T4).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Fins {
+    pub approach: f64,
+    pub width: f64,
+    pub overrun: f64,
+}
+
+impl Fins {
+    /// The margin (m past the scarp; below 0 cut away) a fin gives a column `d1` m from the nearest
+    /// drainage line and `d2` m from the nearest on the other side, the fronts having retreated
+    /// `retreat` m: none where the fronts are farther apart than `approach` or past each other
+    /// by more than `overrun`; else half the width less the distance to the crest.
+    pub fn margin(&self, d1: f64, d2: f64, retreat: f64) -> Option<f64> {
+        let gap = d1 + d2 - 2.0 * retreat.max(0.0);
+        (gap < self.approach && gap > -self.overrun)
+            .then(|| self.width / 2.0 - (d2 - d1).abs() / 2.0)
+    }
 }
 
 /// The site grid's square (m): one chance of an arch per square.
@@ -130,6 +156,43 @@ pub fn site(a: &Arches, d: &Draw, ground: impl Fn(f64, f64) -> Option<f64>) -> O
     })
 }
 
+/// How far (m) a site with a fin rule looks for a fin from its draw's centre ([`site_near`]).
+pub const SLIDE: f64 = 12.0;
+
+/// The site a draw makes, sliding to a fin nearby when the biome grows fins (`fins`, 0.52.66): the
+/// draw's centre first, then 6 and [`SLIDE`] m out along the four axes both ways, the first arch
+/// found; else the centre's site (an overhang or none). Without fins, [`site`] at the centre.
+pub fn site_near(a: &Arches, d: &Draw, ground: impl Fn(f64, f64) -> Option<f64>) -> Option<Site> {
+    let at_centre = site(a, d, &ground);
+    if a.fins.is_none() || at_centre.is_some_and(|s| s.through) || d.roll >= a.density / DENSITY_MAX
+    {
+        return at_centre;
+    }
+    let h = std::f64::consts::FRAC_1_SQRT_2;
+    let ways = [
+        [1.0, 0.0],
+        [h, h],
+        [0.0, 1.0],
+        [-h, h],
+        [-1.0, 0.0],
+        [-h, -h],
+        [0.0, -1.0],
+        [h, -h],
+    ];
+    for r in [SLIDE / 2.0, SLIDE] {
+        for [ax, az] in ways {
+            let moved = Draw {
+                centre: [d.centre[0] + ax * r, d.centre[1] + az * r],
+                ..*d
+            };
+            if let Some(s) = site(a, &moved, &ground).filter(|s| s.through) {
+                return Some(s);
+            }
+        }
+    }
+    at_centre
+}
+
 impl Site {
     /// How far (m) the site reaches from its centre.
     pub fn reach(&self) -> f64 {
@@ -179,7 +242,39 @@ mod tests {
         lintel: [2.0, 2.0],
         fin: 12.0,
         overhangs: false,
+        fins: None,
+        rock: None,
     };
+
+    #[test]
+    fn a_fin_stands_where_two_fronts_meet() {
+        let f = Fins {
+            approach: 40.0,
+            width: 10.0,
+            overrun: 100.0,
+        };
+        // Lines 400 m apart, fronts retreated 190 m: a 20 m gap, the crest 200 m from each.
+        assert_eq!(f.margin(200.0, 200.0, 190.0), Some(5.0));
+        assert_eq!(f.margin(198.0, 202.0, 190.0), Some(3.0));
+        assert!(
+            f.margin(190.0, 210.0, 190.0).unwrap() < 0.0,
+            "beside the fin: cut"
+        );
+        assert_eq!(
+            f.margin(200.0, 200.0, 100.0),
+            None,
+            "fronts far apart: no fin"
+        );
+        assert_eq!(
+            f.margin(200.0, 200.0, 300.0),
+            None,
+            "fronts long past: no fin"
+        );
+        assert!(
+            f.margin(200.0, 200.0, 240.0).is_some(),
+            "fronts just past: a fin"
+        );
+    }
 
     #[test]
     fn a_fin_makes_an_arch_and_flat_ground_does_not() {

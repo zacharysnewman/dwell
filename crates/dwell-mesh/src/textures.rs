@@ -45,7 +45,7 @@ pub const ATLAS_SIZE: usize = CELL * ATLAS_CELLS;
 pub const ATLAS_TILES: usize = ATLAS_CELLS * ATLAS_CELLS;
 
 /// The tiles in atlas order (the registry's texture names).
-pub const TILE_ORDER: [&str; 37] = [
+pub const TILE_ORDER: [&str; 38] = [
     "plain",
     "grass",
     "grassSide",
@@ -91,6 +91,8 @@ pub const TILE_ORDER: [&str; 37] = [
     // Glacier ice's top and sides (0.52.45; plain snow takes `snow` on every face).
     "glacierIceTop",
     "glacierIceSide",
+    // Red sandstone, the mesa's bedded rock (0.52.66).
+    "redSandstone",
     // The leaf cards' painted clump (shared/look/leaves.json `cards.tile`).
     "leafCard",
     // The fallback look of a state whose look or textures this build lacks (synced from a server,

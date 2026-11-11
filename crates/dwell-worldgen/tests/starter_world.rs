@@ -655,3 +655,97 @@ dwell_world::both_faces!(
         }
     }
 );
+
+/// Arches vs overhangs on the starter's mesa (the 12 km square around the tour's mesa spot), and
+/// what the mesa's tops show by height: a measurement, printed (ADR 0074 B8, 0.52.66).
+#[test]
+#[ignore = "prints the mesa's arch counts"]
+fn mesa_arch_counts() {
+    // face-a-only: a measurement of face A's mesa.
+    let (g, names) = generator(FaceFrame::A, 0);
+    let mesa = names
+        .iter()
+        .position(|n| *n == "preset:red_rock_mesa")
+        .unwrap();
+    let (cx, cz) = (14_500, 400);
+    let r = 6_000;
+    let sites = g.arches_near((cx - r, cz - r), (cx + r, cz + r));
+    let arches = sites.iter().filter(|s| s.through).count();
+    println!(
+        "mesa square: {} sites, {arches} arches, {} overhangs",
+        sites.len(),
+        sites.len() - arches
+    );
+    let mut by_height = std::collections::BTreeMap::<i32, (u32, u32)>::new();
+    for z in (cz - r..=cz + r).step_by(25) {
+        for x in (cx - r..=cx + r).step_by(25) {
+            if usize::from(g.biome_mix(i64::from(x), i64::from(z)).chosen) != mesa {
+                continue;
+            }
+            let c = g.column_at(x, z);
+            let h = (f64::from(c.height) - SEA_LEVEL_M) as i32 / 100 * 100;
+            let e = by_height.entry(h).or_default();
+            e.0 += 1;
+            if g.is_rock_palette(&c) {
+                e.1 += 1;
+            }
+        }
+    }
+    for (h, (n, rock)) in by_height {
+        println!("{h} m: {n} mesa columns, {rock} show the stack's rock");
+    }
+}
+
+dwell_world::both_faces!(
+    /// The mesa's beds show at every height (0.52.66): its high columns' tops are its own stack's
+    /// rock (red sandstone or shale by the bed), not the band's stone over the cut-back's remnants
+    /// (before, about 64 % over 300 m: 60 % at 600 m, 20 % at 700 m), and red sandstone tops some of them.
+    fn the_mesas_beds_show_at_every_height(f: FaceFrame) {
+        let (g, names) = generator(f, 0);
+        let mesa = names
+            .iter()
+            .position(|n| *n == "preset:red_rock_mesa")
+            .unwrap();
+        let red = dwell_blocks::state("dwell:red_sandstone").expect("red sandstone");
+        let r = WORLD_RADIUS * 3 / 4;
+        let (mut high, mut rock, mut reds) = (0u32, 0u32, 0u32);
+        for z in (-r..=r).step_by(100) {
+            for x in (-r..=r).step_by(100) {
+                if usize::from(g.biome_mix(i64::from(x), i64::from(z)).chosen) != mesa {
+                    continue;
+                }
+                let c = g.column_at(x, z);
+                if f64::from(c.height) - SEA_LEVEL_M < 300.0 {
+                    continue;
+                }
+                high += 1;
+                rock += u32::from(g.is_rock_palette(&c));
+                reds += u32::from(g.top_state(&c) == red);
+            }
+        }
+        assert!(high >= 30, "{high} high mesa columns");
+        let share = f64::from(rock) / f64::from(high);
+        assert!(
+            share >= 0.85,
+            "{rock} of {high} high mesa tops show the beds"
+        );
+        assert!(reds > 0, "no red sandstone top in {high}");
+    }
+);
+
+/// The mesa's arches stand on fins (0.52.66): with its `arches.fins` (the erosion's fin rule, sites
+/// sliding to a fin nearby) and `arches.rock` (sandstone only), arches outnumber overhangs on the
+/// 12 km square around the tour's mesa spot (before: 1 arch, 15 overhangs; after: 10 and 6).
+#[test]
+fn the_mesas_fins_make_arches() {
+    // face-a-only: the measured square is face A's mesa (face B's mesa lies elsewhere).
+    let (g, _) = generator(FaceFrame::A, 0);
+    let (cx, cz, r) = (14_500, 400, 6_000);
+    let sites = g.arches_near((cx - r, cz - r), (cx + r, cz + r));
+    let arches = sites.iter().filter(|s| s.through).count();
+    let overhangs = sites.len() - arches;
+    assert!(
+        arches >= 5 && arches > overhangs,
+        "{arches} arches, {overhangs} overhangs"
+    );
+}

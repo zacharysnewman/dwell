@@ -101,9 +101,9 @@ describe('block registry (docs/BLOCK_REGISTRY.md)', () => {
     // faces after it, 2026-10-21; the snowy grass, its ramp and the snowy leaves of the world map,
     // generator 21, after that; the build platform of built bodies, 2026-11-02, after those; the
     // running water of the water flow, 2026-11-03; dynamite and its lit state, 2026-11-06; the
-    // felling wedge's wood ramp, 0.51.0; snow and glacier ice with their ramps, 0.52.45, last).
+    // felling wedge's wood ramp, 0.51.0; snow and glacier ice with their ramps, 0.52.45; red sandstone and its ramp, 0.52.66, last).
     expect(data.blocks.findIndex((b) => b.name === 'sandbox_floor')).toBe(7);
-    expect(data.blocks.map((b) => b.name).slice(-21)).toEqual([
+    expect(data.blocks.map((b) => b.name).slice(-23)).toEqual([
       'torch',
       'torch_upper',
       'bedrock',
@@ -125,8 +125,10 @@ describe('block registry (docs/BLOCK_REGISTRY.md)', () => {
       'snow_ramp',
       'glacier_ice',
       'glacier_ice_ramp',
+      'red_sandstone',
+      'red_sandstone_ramp',
     ]);
-    expect(STATE_DEFS.at(-1)?.state.startsWith('dwell:glacier_ice_ramp')).toBe(true);
+    expect(STATE_DEFS.at(-1)?.state.startsWith('dwell:red_sandstone_ramp')).toBe(true);
     const floor = STATE_DEFS[stateId('dwell:sandbox_floor')];
     expect(floor).toMatchObject({ look: 'cube', color: 0xffffff, placeable: false });
     expect(floor?.textures).toEqual({ top: 'grid', side: 'grid', bottom: 'grid' });

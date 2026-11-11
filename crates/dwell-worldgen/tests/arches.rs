@@ -168,6 +168,27 @@ fn arches_are_validated() {
         let e = biome_from_json(&bad).expect_err(k);
         assert!(e.contains(&format!("arches.{k}")), "{e}");
     }
+    // The fin rule and the rock filter (0.52.66), by data alone.
+    let mut fins = good.clone();
+    fins["arches"]["fins"] = serde_json::json!({ "approach": 150, "width": 12 });
+    fins["arches"]["rock"] = serde_json::json!("dwell:sandstone");
+    let a = biome_from_json(&fins).unwrap().arches.unwrap();
+    assert_eq!(
+        a.fins,
+        Some(dwell_worldgen::arches::Fins {
+            approach: 150.0,
+            width: 12.0,
+            overrun: 0.0
+        })
+    );
+    assert_eq!(a.rock, Some("dwell:sandstone"));
+    let mut bad = fins.clone();
+    bad["arches"]["fins"]["width"] = serde_json::json!(1);
+    let e = biome_from_json(&bad).expect_err("a 1 m fin");
+    assert!(e.contains("arches.fins.width"), "{e}");
+    let mut bad = fins.clone();
+    bad["arches"]["rock"] = serde_json::json!(3);
+    assert!(biome_from_json(&bad).is_err(), "a rock is a name");
     let mut off = good.clone();
     off["arches"]["density"] = serde_json::json!(0);
     assert_eq!(biome_from_json(&off).unwrap().arches, None);

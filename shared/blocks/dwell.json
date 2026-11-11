@@ -10,7 +10,8 @@
     "sand",
     "snowy_grass",
     "snow",
-    "glacier_ice"
+    "glacier_ice",
+    "red_sandstone"
   ],
   "fluids": {
     "dwell:water": {
@@ -643,6 +644,25 @@
       "damage": { "default": null, "pickaxe": 4, "look": { "kind": "shards", "size": 0.3, "color": "#eef6fa", "crack": "#4f7fb8" }, "chips": { "count": 8, "color": "#cfe6f2", "speed": 2.8, "size": 0.04 } },
       "family": "ramp",
       "of": "glacier_ice"
+    },
+    {
+      "$comment": "Red sandstone (0.52.66, the mesa's red layers): bedded red rock, the face of shared/worldgen/rocks.json's dwell:sandstone, so a stack's sandstone layers read red on a mesa's walls and tops. Breaks and drops like stone. Its ramps are stored like stone's (`rampFamilies`). Prototype content.",
+      "name": "red_sandstone",
+      "damage": { "default": null, "pickaxe": 7, "look": { "kind": "shards", "size": 0.34, "color": "#efc6a4", "crack": "#7a3e28" }, "chips": { "count": 7, "color": "#b5643f", "speed": 2.6, "size": 0.045 } },
+      "drops": [{ "item": "dwell:rock_shard", "count": 8 }],
+      "sound": "dwell:stone",
+      "density": 2300,
+      "shape": "full",
+      "placeable": true,
+      "properties": { "flooded": ["false", "true"] },
+      "color": "#b8653f",
+      "textures": "redSandstone"
+    },
+    {
+      "name": "red_sandstone_ramp",
+      "damage": { "default": null, "pickaxe": 7, "look": { "kind": "shards", "size": 0.34, "color": "#efc6a4", "crack": "#7a3e28" }, "chips": { "count": 7, "color": "#b5643f", "speed": 2.6, "size": 0.045 } },
+      "family": "ramp",
+      "of": "red_sandstone"
     }
   ]
 }
