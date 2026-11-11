@@ -243,6 +243,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    person, top, side, front and third-person views in one SVG), direction tests (horizontal strike right → left
    on screen, vertical top → bottom, the head at the crosshair at contact), the clips fixed, a bench
    `clip-strip` contact sheet from first and third person.
+   **Status (0.52.11x):** built: the `clip_probe` CLI and SVG (five views), direction tests (red 7/8 → green),
+   the clips refitted (level right → left, vertical top → bottom, the head on the crosshair at contact), a
+   bench `clip-strip` step. Review of the probe's sheets: directions right now, but the hands barely travel
+   (the head's arc is mostly a wrist turn), and the wind-up is short and small (0.1 s, no draw back over the
+   shoulder); the SVG's side panel is cut off. Left: an arm-driven swing (hands travel the arc, a real wind-up),
+   a probe test for hand travel, `clip-strip` run in the browser (local), remote players' chop direction (a
+   protocol change).
 18. **Digging marks that look carved** (owner 2026-11-11: "the 'chunks' of dirt aren't at all what we
    discussed. It should be like a normal map change (do we support normal/bump maps)? It's completely flat
    should look like mesh deformation (preferably without actually doing it for performance)"; "That part was
