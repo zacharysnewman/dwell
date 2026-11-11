@@ -154,6 +154,9 @@ test('a bad biome or world terrain fails with the key and the problem', () => {
     [(b) => (b.trees = { boulders: 1 }), /trees: "boulders" is not one of its placements/],
     [(b) => (b.trees = { pine_groves: 4 }), /trees\.pine_groves must be in \[0, 3\]/],
     [(b) => (b.trees = ['pine_groves']), /trees must map placement names to densities/],
+    [(b) => (b.ground = { 'dwell:ground_shell': 1 }), /ground: "dwell:ground_shell" is not a kind of ground\.json/],
+    [(b) => (b.ground = { 'dwell:ground_rock': 3.5 }), /ground\.dwell:ground_rock must be in \[0, 3\]/],
+    [(b) => (b.ground = ['dwell:ground_rock']), /ground must map ground item kinds to densities/],
     [(b) => (b.water = 'dwell:stone'), /water dwell:stone must be a fluid block/],
     [(b) => (b.inland = { rise: 1, halfDistance: 1 }), /unknown inland/],
   ];

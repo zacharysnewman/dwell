@@ -2625,13 +2625,19 @@ impl TerrainGenerator {
     /// and the climate, before the slope, footprint and spacing tests (Chisel's placement overlay,
     /// ADR 0074 B5); None beyond the rim. `boulders` and every other rule count alike.
     pub fn placement_density_at(&self, x: i64, z: i64) -> Option<f64> {
+        self.placement_densities_at(x, z).map(|d| d.iter().sum())
+    }
+
+    /// [`TerrainGenerator::placement_density_at`] per planter (in [`TerrainGenerator::planters`]'
+    /// order): Chisel's overlay colours each by its structure's canopy block.
+    pub fn placement_densities_at(&self, x: i64, z: i64) -> Option<Vec<f64>> {
         let col = self.column_at(x as i32, z as i32);
         let g = self.ground_of(&col)?;
+        let mut out = vec![0.0; self.planters.len()];
         if !g.dry {
-            return Some(0.0);
+            return Some(out);
         }
         let climate = self.climate_at(x, z);
-        let mut sum = 0.0;
         for (i, p) in self.planters.iter().enumerate() {
             if !p.active() || !p.stands_on(g.block) {
                 continue;
@@ -2644,9 +2650,9 @@ impl TerrainGenerator {
                 c *= self.vegetation.factor(k, cl);
             }
             let grid = f64::from(p.rule().grid);
-            sum += c.min(1.0) * 10_000.0 / (grid * grid);
+            out[i] = c.min(1.0) * 10_000.0 / (grid * grid);
         }
-        Some(sum)
+        Some(out)
     }
 
     /// Whether any biome lets the climate rule its placements (else `trees_in` asks nothing of it).

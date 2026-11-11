@@ -44,8 +44,10 @@ pub enum Overlay {
     /// The tectonics (systemic terrain T5): the two plates (the overriding tan, the other blue-grey,
     /// the old core darker), the boundary dark, the volcanoes red by height; grey when off.
     Tectonics,
-    /// The structures placed (ADR 0074 B5): trees, boulders and every placement rule, expected per
-    /// hectare by the biomes' `trees` and the climate; pale (none) to dark green (about 60).
+    /// The structures placed and the ground items (ADR 0074 B5): every placement rule's structures
+    /// expected per hectare by the biomes' `trees` and the climate, each in its canopy block's
+    /// colour (trees green, boulders grey), and the ground items by the biomes' `ground`, each in
+    /// its look's colour; pale (none) to their mix, darker the more (about 60 a hectare).
     Placements,
 }
 
@@ -145,6 +147,49 @@ fn water_tinted(
 fn lerp3(a: [f64; 3], b: [f64; 3], t: f64) -> [f64; 3] {
     let t = t.clamp(0.0, 1.0);
     [0, 1, 2].map(|i| a[i] + (b[i] - a[i]) * t)
+}
+
+/// The share of cells a ground item rule's conditions pass, for the placements overlay's count of
+/// ground items per hectare (a guess: the rules read the voxels, which the overview does not
+/// generate).
+const GROUND_PASS_SHARE: f64 = 0.01;
+
+/// The placements overlay's colour (ADR 0074 B5) at face-local (x, z), from each planter's
+/// structures per hectare `per_planter`: pale (none) to the mix of what stands and lies there by
+/// count, each structure in its canopy block's colour (a pine's leaves green, a boulder's stone
+/// grey) and each ground item kind in its look's colour (`shared/inventory`), its count
+/// from its rules' densities by the biomes' `ground`.
+fn placements_rgb(g: &TerrainGenerator, per_planter: &[f64], x: i64, z: i64) -> [f64; 3] {
+    let mut parts: Vec<(f64, [f64; 3])> = g
+        .planters()
+        .iter()
+        .zip(per_planter)
+        .map(|(p, &d)| (d, crate::lod_map::top_rgb(p.canopy()).map(linear_to_srgb)))
+        .collect();
+    for (k, kind) in dwell_world::ground::KINDS.iter().enumerate() {
+        let rules: f64 = dwell_world::ground::RULES
+            .iter()
+            .filter(|r| r.kind == k)
+            .map(|r| r.density)
+            .sum();
+        let per_ha = rules
+            * 10_000.0
+            * GROUND_PASS_SHARE
+            * f64::from(g.ground_density_at(kind.name, x, z));
+        parts.push((per_ha, kind.color.map(|c| f64::from(c) / 255.0)));
+    }
+    let total: f64 = parts.iter().map(|(w, _)| w).sum();
+    if total <= 0.0 {
+        return [0.93, 0.88, 0.74];
+    }
+    let mix = [0, 1, 2].map(|i| parts.iter().map(|(w, c)| w * c[i]).sum::<f64>() / total);
+    // Darker the more there is: the mix itself at about 60 a hectare.
+    let deep = mix.map(|v| v * 0.6);
+    lerp3([0.93, 0.88, 0.74], deep, 1.0 - (-total / 30.0).exp())
+}
+
+fn linear_to_srgb(v: f64) -> f64 {
+    f64::from(crate::lod_map::srgb_byte(v)) / 255.0
 }
 
 fn bytes(c: [f64; 3]) -> [u8; 3] {
@@ -281,13 +326,9 @@ pub fn preview_shaded(
                 None => [0.5; 3],
                 Some(d) => lerp3([0.86, 0.78, 0.58], [0.1, 0.42, 0.16], d),
             }),
-            Overlay::Placements => bytes(match g.placement_density_at(x, z) {
+            Overlay::Placements => bytes(match g.placement_densities_at(x, z) {
                 None => [0.5; 3],
-                Some(d) => lerp3(
-                    [0.93, 0.88, 0.74],
-                    [0.05, 0.3, 0.1],
-                    1.0 - (-d / 30.0).exp(),
-                ),
+                Some(d) => placements_rgb(g, &d, x, z),
             }),
             Overlay::Erosion => bytes(match g.erosion_at(x, z) {
                 None => [0.5; 3],
@@ -699,6 +740,43 @@ mod tests {
             plain > sparse && sparse > bare,
             "{plain} > {sparse} > {bare}"
         );
+    }
+
+    #[test]
+    fn the_placement_overlay_tells_boulders_from_trees_and_shows_the_ground_items() {
+        // face-a-only: Chisel previews face A (the ground densities' faces are dwell-worldgen's
+        // tests/ground.rs).
+        let t = BifacialTerrain::height_field(7);
+        let base = t.local(dwell_world::Face::A).clone();
+        let (x0, n, texel) = (-2048, 32, 128);
+        // The land's mean colour (r, g, b sums) under biome `b` alone.
+        let tile = |b: Value| {
+            let e = serde_json::json!({ "biomes": [b] });
+            let e = edit_from_json(&e.to_string()).unwrap();
+            let g = base
+                .clone()
+                .with_biomes_and_geology(&e.biomes, e.map, e.geology);
+            let t = preview(&g, x0, x0, n, texel, Overlay::Placements);
+            let land: Vec<&[u8]> = t.chunks(4).filter(|p| p[3] > 0).collect();
+            let sum = |i: usize| land.iter().map(|p| f64::from(p[i])).sum::<f64>();
+            [sum(0), sum(1), sum(2)].map(|v| v / land.len() as f64)
+        };
+        let mut d = file("biomes/default.json");
+        d["placements"] = serde_json::json!(["pine_groves"]);
+        d["ground"] = serde_json::json!({});
+        let pines = tile(d.clone());
+        d["placements"] = serde_json::json!(["boulders"]);
+        let boulders = tile(d.clone());
+        // Trees lean green; boulders grey (red near green).
+        assert!(pines[1] - pines[0] > boulders[1] - boulders[0], "{pines:?} {boulders:?}");
+        // The ground items count by the biome's `ground`: none, then rocks ×3.
+        d["placements"] = serde_json::json!([]);
+        let bare = tile(d.clone());
+        d["ground"] = serde_json::json!({ "dwell:ground_rock": 3 });
+        let rocks = tile(d);
+        let pale = bytes([0.93, 0.88, 0.74]).map(f64::from);
+        assert!((0..3).all(|i| (bare[i] - pale[i]).abs() < 1.0), "pale with nothing: {bare:?}");
+        assert!(rocks[0] < bare[0] - 5.0, "{rocks:?} {bare:?}");
     }
 
     #[test]
