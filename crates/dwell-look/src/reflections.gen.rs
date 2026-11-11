@@ -78,7 +78,7 @@ pub const REFLECTIONS: ReflectionTunables = ReflectionTunables {
             gone_above_deg: 20.0,
         },
         moon: BodyPath {
-            strength: 0.25,
+            strength: 0.15,
             path_alpha: 0.07,
             full_below_deg: 90.0,
             gone_above_deg: 90.0,

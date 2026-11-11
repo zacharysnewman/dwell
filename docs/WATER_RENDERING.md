@@ -1062,8 +1062,11 @@ was. Now, on a tier with `bodyPath` (`shared/look/reflections.json` `tiers`; Low
   `reflections`: the CPU tier draws no path, the bits stay apart, the sun's path is a low sun's.
   `reflections.test.mjs`: bad `bodies` entries fail with their path. `render::shaders`: the gates and
   the discs under the clouds.
-- **Seen (bench, M1, Medium, seed 7's sea; shots in the session's scratchpad):** at midnight the
-  moon stands high, so its path lies under the viewer, glints in the near ripples at the bottom of the
-  view. The bench's `time` 0.2 and 0.73 were still daylight, so the low-moon and sunset-path views
-  were not taken: **outstanding**, with tuning `strength` and `pathAlpha` against them. GPU frame
-  7.55 ms mean on the night view (not yet compared against main).
+- **Seen (bench, M1, Medium, seed 7's sea; full moon):** the clock maps time t to face A's solar angle
+  (`DayNight::solar_deg`, the sun's elevation `sin(angle) × sin 60°`, the moon opposite), so a full
+  moon 15° up is t 0.8689 (yaw 40°), 8° up t 0.8525, and the sun 5° up t 0.8208 (yaw 208°). The
+  camera must be aimed by `goto`'s `yaw`: a `look` step after a `goto` doesn't turn the placed camera.
+  The moon's path runs from under the disc toward the viewer, broken into glints by the ripples; at
+  strength 0.25 it was a solid bar near the horizon, so 0.15. The sunset's path (0.05) reads as a warm
+  column under the sun. GPU frame 7.06 ms mean over the moonlit sea (not compared against main;
+  outstanding). No lake within 700 m of the seed-7 spawn, so no lake view.
