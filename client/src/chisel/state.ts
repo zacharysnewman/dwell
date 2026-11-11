@@ -280,8 +280,9 @@ export function addBiome(e: Edit, template: BiomeJson): Edit {
 /**
  * Chisel's Play in game (docs/DEV_TOOLS.md "Play a test world"): a new local terrain world of
  * `seed` whose record keeps the edit as its worldgen config, so its maps are built over the edit's
- * world knobs now and whenever it reopens. Its biomes, geology and vegetation are not the game's
- * yet (only the height field reaches the world maps). Returns the world's id (`?play=<id>`).
+ * world knobs now and whenever it reopens, carrying the edit (its biomes, geology, vegetation,
+ * erosion and tectonics: `WorldMap::worldgen`, ADR 0074 B7) to every generator in the game. Returns
+ * the world's id (`?play=<id>`).
  */
 export function playInGame(index: WorldIndex, e: Edit, seed: number, now: number): string {
   const stamp = new Date(now).toISOString().slice(0, 16).replace('T', ' ');
