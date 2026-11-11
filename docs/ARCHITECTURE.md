@@ -1977,7 +1977,10 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
   once by `pageStartMs`, a negative time on the page's clock; else from the page's opening), `game` (the
   WASM's download, counted as it streams by `engine/wasm.ts` `countedResponse`: of the total when
   the response is not compressed, else MB so far; and its instantiation), `graphics`
-  (`Client.create`), `worldFile` (from the page's `?fresh=1` deletion to the worker's OPFS open),
+  (`Client.create`; its renderer's pipelines are made in one long task on the main thread, seconds
+  on a cold GPU shader cache, so `ui/startStages.ts` `runStartStages` paints each of `game` and
+  `graphics` (`LoadingScreen.painted`: a frame and the task after it) before its work starts, and
+  the screen names the stage that holds the thread rather than the one before it), `worldFile` (from the page's `?fresh=1` deletion to the worker's OPFS open),
   `worldMap` (the maps' faces, `worldMaps`' `onProgress`; a cached map ends it in milliseconds),
   `server` (the worker's WASM), `spawn` (the maps installed and `LocalWorld::new`: the world file
   read, the spawn found and its region pre-generated), `connect` (a dedicated server or friend
