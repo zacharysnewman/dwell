@@ -25,6 +25,8 @@ pub const DEFAULT_UNDERWATER: UnderwaterLook = UnderwaterLook {
     underside_sun_patch: 0.0,
     underside_sun_power: 8.0,
     underside_cell_scale: 1.0,
+    window_cells: 1.0,
+    window_bodies: 1.0,
     fog_clear_m: 0.0,
     fog_density: 1.0,
 };
@@ -53,6 +55,8 @@ pub const UNDERWATER_LOOKS: &[UnderwaterLook] = &[
         underside_sun_patch: 4.0,
         underside_sun_power: 8.0,
         underside_cell_scale: 2.0,
+        window_cells: 0.3,
+        window_bodies: 1.5,
         fog_clear_m: 3.0,
         fog_density: 0.3,
     },

@@ -181,6 +181,9 @@ struct Fluid {
     // cells, dark gaps), y the sun patch's strength, z its tightness (a power), w the cells'
     // scale against the floor's caustics (a whole number, so the pattern still wraps)
     underside: vec4f,
+    // Snell's window seen from below (WATER_RENDERING.md §16): x the share of the underside's
+    // cells over the sky in it, y the sun's and moon's discs' strength in it; zw spare
+    window: vec4f,
 };
 @group(0) @binding(4) var<storage, read> fluids: array<Fluid>;
 // The water's tiles (render/water_tiles.rs): gradient noise and its derivatives over NOISE_TILE
@@ -1514,6 +1517,20 @@ fn sun_through(sun: vec3f, ior: f32) -> vec3f {
     return h + up * sqrt(max(1.0 - dot(h, h), 0.0));
 }
 
+// A ray `dir` (unit) from under a fluid of refractive index `ior` bent out through its surface,
+// whose normal is `n` (unit, toward the air: the face's up, tilted by the ripples), into the air
+// (render/water.rs `water_exit`; Snell's law): its slant from `n` grown by `ior`, so the window's
+// ~97° cone opens onto the whole sky. Past the critical angle it is clamped to the horizon of `n`
+// (the caller keeps those for the mirror).
+fn water_exit(dir: vec3f, n: vec3f, ior: f32) -> vec3f {
+    var h = (dir - n * dot(dir, n)) * ior;
+    let l = dot(h, h);
+    if (l > 1.0) {
+        h = h / sqrt(l);
+    }
+    return h + n * sqrt(max(1.0 - dot(h, h), 0.0));
+}
+
 // The composite with the eye under a fluid's surface (the W4 stub): the fluid's fog over the
 // distance in it — to what the pixel shows, or to the surface where the ray reaches it first —
 // replaces the height fog; past the surface, the sky.
@@ -1559,12 +1576,31 @@ fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
             // Out through the window: the sky, under the window's glow (shafts.json `window`: a
             // bright white-cyan, strongest at its middle), with the patch's light round the sun;
             // its rim softened into the mirror over the look's `edge` (ADR 0064).
-            let bent = rise + dot(noise_t(hit * 0.9).yz * 0.18, dir.xz);
+            // The sky is seen along the ray bent out of the fluid by Snell's law at the rippled
+            // surface (`water_exit`: the whole sky squeezed into the window's ~97° cone, so the
+            // sun and moon sit where they truly are), with their discs on a tier with `bodyPath`
+            // (reflections.json; not the CPU's). The window's glow is scaled by the sky's own
+            // light straight up, so it is bright at noon, warm at dusk and dim at night
+            // (WATER_RENDERING.md §16; owner, 2026-11-11).
+            let slope = noise_t(hit * 0.9).yz * 0.18;
+            let bent = rise + dot(slope, dir.xz);
             let rim = sqrt(max(1.0 - 1.0 / (ior * ior), 0.0));
             let inside = smoothstep(rim, rim + max(frame.shafts_color.w, 1e-3) * (1.0 - rim), bent);
-            let glow = inverse_display(frame.shafts_window.rgb);
-            let sky_in = mix(sky_radiance(dir), glow, frame.shafts_window.w * (0.55 + 0.45 * inside));
-            let window = display(underwater((sky_in + underwater(vec3f(0.0), 1e6, f) * look.y) * look.x, to_surface, f));
+            let up = face_up(frame.eye.y);
+            let out = water_exit(dir, normalize(up + vec3f(slope.x, 0.0, slope.y)), ior);
+            var seen = sky(out);
+            if ((u32(frame.reflect_sky.y + 0.5) & 2u) != 0u && f.window.y > 0.0) {
+                let px = 2.0 * max(frame.day.stars.z, 1e-5) * ior;
+                let moon = dwell_moon(out, frame.day, px);
+                seen = mix(seen, max(seen, seen * 0.4 + moon.rgb * f.window.y), moon.w);
+                let sun = dwell_sun_disc(out, up, frame.day, px);
+                seen = mix(seen, max(seen, sun.rgb * f.window.y), sun.w);
+            }
+            let zenith = sky_radiance(up);
+            let lift = inverse_display(frame.shafts_window.rgb) * max(zenith.r, max(zenith.g, zenith.b));
+            let sky_in = mix(inverse_display(seen), lift, frame.shafts_window.w * (0.55 + 0.45 * inside));
+            // The sky through the window, waved by the underside's cells at the look's share.
+            let window = display(underwater((sky_in + underwater(vec3f(0.0), 1e6, f) * look.y) * mix(1.0, look.x, f.window.x), to_surface, f));
             back = mix(mirror, window, inside);
         } else {
             back = mirror;

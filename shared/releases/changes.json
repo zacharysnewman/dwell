@@ -4,7 +4,13 @@
     {
       "version": "0.52.50",
       "changes": [
-        "Behind the scenes: the Tree Growth prototype now grows oak, pine and palm trees from thin saplings to full size"
+        "Behind the scenes: the Tree Growth prototype now grows oak, pine and palm from thin saplings to mature trees"
+      ]
+    },
+    {
+      "version": "0.52.49",
+      "changes": [
+        "Looking up from under water, the surface is now a clear window onto the real sky: the sun or moon shows where it truly is, bent by the water, bright at noon, golden at sunset and dim at night, with the water mirrored outside it"
       ]
     },
     {

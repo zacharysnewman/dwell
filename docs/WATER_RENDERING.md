@@ -1070,3 +1070,43 @@ was. Now, on a tier with `bodyPath` (`shared/look/reflections.json` `tiers`; Low
   strength 0.25 it was a solid bar near the horizon, so 0.15. The sunset's path (0.05) reads as a warm
   column under the sun. GPU frame 7.06 ms mean over the moonlit sea (not compared against main;
   outstanding). No lake within 700 m of the seed-7 spawn, so no lake view.
+
+## 16. The surface from below: Snell's window onto the real sky (2026-11-11, 0.52.49)
+
+Owner, 2026-11-11: "We need to make underwater surface layer look transparent like the surface and
+look more accurate to what light is shining down." Before, the window overhead (§12.2–12.3) showed the
+sky along the ray *under* water (not bent out), mixed 0.4 toward a fixed white-cyan glow (shafts.json
+`window`) whatever the hour, and multiplied by the underside's full cells: a pale textured sheet,
+as bright at midnight as at noon.
+
+- **The sky refracted out (Snell's law).** In the composite (`composite_underwater`), a ray inside the
+  window is bent out through the rippled surface (`water_exit`: its slant from the normal grown by the
+  IOR, sin θ_air = n sin θ_water, so the whole sky hemisphere is squeezed into the ~97° cone,
+  2 × asin(1/n) = 2 × 48.6°; the rim shows the horizon), and the sky is looked up along that ray. The
+  normal is the face's up tilted by the ripples' slope (`face_up`, both faces).
+- **The sun and moon discs** show through it where they truly are (`dwell_sun_disc`, `dwell_moon` in
+  its phase), on a water tier with `bodyPath` (reflections.json; not the CPU's), at the look's
+  `window.bodies` strength.
+- **Brightness by the real light.** The window's glow (shafts.json `window`) is scaled by the sky's own
+  light straight up (its brightest channel), so it is bright at noon, coloured at dusk and dim at
+  night; the sun patch (§12.2) still follows the sun's refracted image and is gone at night.
+- **Clear, not a sheet.** The underside's cells darken and lighten the window's sky only by the look's
+  `window.cells` share (water 0.3; the mirror outside keeps them whole).
+- **Outside the window**, total internal reflection as before (§12): the water's in-scatter, textured;
+  the floor is not reflected (no copy of it is at hand in the composite).
+- **Light shafts** already follow the real sun (ADR 0064, §12.3); unchanged.
+- **CPU tier:** no discs; the surface mesh from below is `from_below`'s see-through tinted body by the
+  Fresnel (the cheapest), the window's refracted sky in the composite.
+- **Data:** `shared/look/underwater.json` per fluid `window: { cells (0–1), bodies (0–4) }`, validated
+  by `underwater.mjs` (a bad or missing entry fails), packed as the fluid's 17th vec4 (`Fluid.window`).
+- **Tests:** `render::water` `snells_window_is_a_97_degree_cone_and_its_radius_grows_with_depth`
+  (`critical_angle`, `window_radius`: 2.27 m at 2 m deep), `the_sky_through_snells_window_is_refracted_out_by_snells_law`
+  (both faces: `water_exit`'s angle against Snell's law, the rim at the horizon, outside it none),
+  `the_window_shows_the_real_sky_and_bodies_scaled_by_its_light` (the shader's gates, the CPU tier).
+- **Seen (bench, M1, Medium, seed 7's sea 2 m under, scratch scenario `underwater-up`):** midday t 0.5
+  pitch 80: the window is a clear bright sky with the sun's disc in it and faint cells (main: a white
+  sheet of strong cells); sunset t 0.8208 yaw 208 pitch 42: the window is the bright sky, the mirror
+  around it; the sun disc was not caught in frame; night t 0.8689 (full moon) yaw 40 pitch 44: the
+  window is a dim night blue (main: a bright white-cyan window at night); the moon disc was not caught
+  in frame. GPU (HUD) the same as main within noise: midday 3.4 / 3.4 ms, night 6.0 / 6.0 ms.
+  Outstanding: the owner's look; the discs aimed in frame at sunset and night; a lake view.
