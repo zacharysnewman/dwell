@@ -230,7 +230,11 @@ mod tests {
             let (water, sand) = (st("dwell:water"), st("dwell:sand"));
             // The sea from x > 2.
             let coast = listen(f, sea + 1.6, |x, _| {
-                if x > 2.0 { (sea, water) } else { (sea + 0.5, sand) }
+                if x > 2.0 {
+                    (sea, water)
+                } else {
+                    (sea + 0.5, sand)
+                }
             });
             assert!(coast.water_share > 0.3, "{coast:?}");
             assert!(coast.water_m < 6.0, "{coast:?}");
@@ -238,7 +242,11 @@ mod tests {
             // A 1 m stream along z at x = 4.
             let grass = st("dwell:grass");
             let stream = listen(f, sea + 11.6, |x, _| {
-                if (4.0..5.0).contains(&x) { (sea + 9.5, water) } else { (sea + 10.0, grass) }
+                if (4.0..5.0).contains(&x) {
+                    (sea + 9.5, water)
+                } else {
+                    (sea + 10.0, grass)
+                }
             });
             assert!(stream.water_share < 0.15, "{stream:?}");
             assert!(stream.water_m < 6.0, "{stream:?}");

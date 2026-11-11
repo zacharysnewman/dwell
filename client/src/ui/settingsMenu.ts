@@ -20,11 +20,7 @@ import {
   type RenderScaleSettings,
 } from './renderScaleSettings';
 import { DEFAULT_EXPOSURE, EXPOSURE_LIMITS, sanitizeExposure } from './viewSettings';
-import {
-  MODEL_DETAIL,
-  MODEL_DETAIL_KEY,
-  sanitizeModelDetail,
-} from './modelDetailSettings';
+import { MODEL_DETAIL, MODEL_DETAIL_KEY, sanitizeModelDetail } from './modelDetailSettings';
 import {
   CLOUD_QUALITIES,
   DEFAULT_SHAFTS,
@@ -213,6 +209,7 @@ export function settingsJson(s: Settings): string {
       effects: Math.round(s.audio.effects * 100) / 100,
       ui: Math.round(s.audio.ui * 100) / 100,
       music: Math.round(s.audio.music * 100) / 100,
+      ambience: Math.round(s.audio.ambience * 100) / 100,
     },
     clouds: s.clouds,
     shafts: s.shafts,
@@ -658,6 +655,7 @@ function panes(mobile: boolean): Record<SettingsPane, Group[]> {
           volume('Effects', 'Footsteps, blocks, water, other players', 'effects'),
           volume('Interface', 'Menus, buttons and the hotbar', 'ui'),
           volume('Music', 'The music; 0% turns it off', 'music'),
+          volume('Ambience', 'Wind, water, birds and leaves around you', 'ambience'),
         ],
       },
     ],

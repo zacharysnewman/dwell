@@ -79,7 +79,7 @@ export function settingFields(keys: StoreKeys): SettingField[] {
       ['distanceM', 'pixelError', 'memoryMb'],
     ),
     one(['exposure'], EXPOSURE_KEY, []),
-    ...rec('audio', keys.audio, ['master', 'effects', 'ui', 'music']),
+    ...rec('audio', keys.audio, ['master', 'effects', 'ui', 'music', 'ambience']),
     one(['clouds'], CLOUDS_KEY, [], 'clouds'),
     one(['shafts'], SHAFTS_KEY, [], 'shafts'),
     ...rec(

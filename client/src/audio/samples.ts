@@ -39,6 +39,7 @@ export class SampleBank<B extends Decoded> {
     const files = new Set<string>();
     for (const s of Object.values(data.sounds))
       if (usesSamples(s)) for (const f of s.samples?.files ?? []) files.add(f);
+    for (const b of Object.values(data.ambience.beds)) for (const f of b.files) files.add(f);
     return Promise.all(
       [...files].map((f) =>
         fetchDecode(f).then(
@@ -54,6 +55,11 @@ export class SampleBank<B extends Decoded> {
   /** Puts a decoded sample in the bank (tests; the loader). */
   set(file: string, buffer: B): void {
     this.buffers.set(file, buffer);
+  }
+
+  /** A decoded file (an ambience bed's loop), if loaded. */
+  get(file: string): B | undefined {
+    return this.buffers.get(file);
   }
 
   get loaded(): number {

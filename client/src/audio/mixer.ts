@@ -3,6 +3,7 @@
 // a tanh knee that never passes full scale (a DynamicsCompressorNode adds its own make-up gain).
 // Built the same on an AudioContext (the game, the menus) and an OfflineAudioContext (renders and
 // their checks).
+import { SOUND_DATA } from './sounds.gen';
 import { mulberry32 } from './variation';
 
 export interface Volumes {
@@ -11,6 +12,8 @@ export interface Volumes {
   ui: number;
   /** The music (AUDIO.md §6a); 0 mutes it. */
   music: number;
+  /** The ambience beds (AUDIO.md §2c); quiet by default. */
+  ambience: number;
 }
 
 export interface Mixer {
@@ -18,6 +21,8 @@ export interface Mixer {
   ui: GainNode;
   /** The music bus (dry: no room). */
   music: GainNode;
+  /** The ambience beds' bus (dry). */
+  ambience: GainNode;
   /** Into the room: a sound's `reverb` share goes here. */
   reverb: GainNode;
   master: GainNode;
@@ -83,7 +88,13 @@ function softClipCurve(): Float32Array<ArrayBuffer> {
   return curve;
 }
 
-export const DEFAULT_VOLUMES: Volumes = { master: 0.8, effects: 1, ui: 0.6, music: 0.6 };
+export const DEFAULT_VOLUMES: Volumes = {
+  master: 0.8,
+  effects: 1,
+  ui: 0.6,
+  music: 0.6,
+  ambience: SOUND_DATA.ambience.volume,
+};
 
 /** Builds the mixer into `ctx.destination`. */
 export function buildMixer(ctx: BaseAudioContext, volumes: Volumes = DEFAULT_VOLUMES): Mixer {
@@ -103,6 +114,8 @@ export function buildMixer(ctx: BaseAudioContext, volumes: Volumes = DEFAULT_VOL
   effects.connect(master);
   ui.connect(master);
   music.connect(master);
+  const ambience = ctx.createGain();
+  ambience.connect(master);
   const reverb = ctx.createGain();
   const room = ctx.createConvolver();
   room.normalize = false;
@@ -117,9 +130,10 @@ export function buildMixer(ctx: BaseAudioContext, volumes: Volumes = DEFAULT_VOL
     effects.gain.value = v.effects;
     ui.gain.value = v.ui;
     music.gain.value = v.music;
+    ambience.gain.value = v.ambience;
   };
   setVolumes(volumes);
-  return { effects, ui, music, reverb, master, setVolumes };
+  return { effects, ui, music, ambience, reverb, master, setVolumes };
 }
 
 /** The node a play goes into: the bus, with a send to the room for its `reverb` share. */

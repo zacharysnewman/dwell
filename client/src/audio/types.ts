@@ -151,6 +151,33 @@ export interface AmbientDef {
   falls: { radiusM: number; max: number; fullM3s: number };
 }
 
+/** A bed's condition (AUDIO.md §2c): 0 at `from`, 1 at `full`, at least `floor`. */
+export interface BedCondition {
+  input: string;
+  from: number;
+  full: number;
+  floor?: number;
+}
+
+/** A looping ambience bed: its files (published names), level and conditions. */
+export interface BedDef {
+  files: string[];
+  gain: number;
+  when: BedCondition[];
+}
+
+/** The ambience (AUDIO.md §2c). */
+export interface AmbienceDef {
+  /** The Ambience volume's default. */
+  volume: number;
+  /** The beds' glide time constant (s). */
+  fadeS: number;
+  /** No bed is louder than this (before the Ambience volume). */
+  cap: number;
+  probe: { radiusM: number; trees: string[] };
+  beds: Record<string, BedDef>;
+}
+
 export type ControlSounds = string[] | { silent: string };
 
 export interface SoundData {
@@ -166,6 +193,7 @@ export interface SoundData {
   ui: Record<string, string>;
   controls: Record<string, ControlSounds>;
   ambient: AmbientDef;
+  ambience: AmbienceDef;
   sounds: Record<string, SoundDef>;
   /** Every sample file shipped: its published name and its file in shared/sounds/samples. */
   sampleFiles: { file: string; source: string }[];
