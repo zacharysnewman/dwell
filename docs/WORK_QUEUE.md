@@ -461,7 +461,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   sizes 1×/2×/4×/8×/10× as data. At 10× radius the whole-map grids run at a coarser cell (~1 km) until the
   regional maps. **M0 built:** the size is a per-world setting (optional tag, today's worlds unchanged) and the
   LOD levels, big map cells, hydrology cell (≤ 1 M cells at every size), island shape and uplift counts derive
-  from it. Next: M1 (the LOD root per size).
+  from it. **M1 built:** the LOD root (level 15) holds every size; protocol v23, so it needs a new
+  compatibility line (the owner's call). Next: M2 (the generators read the world's size; 2× first).
 
 - **Sharing saved structures between players** (owner 2026-11-11: "eventually shareable").
 

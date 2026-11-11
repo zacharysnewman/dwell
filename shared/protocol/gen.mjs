@@ -73,6 +73,17 @@ function validateWorldSizes(w) {
   return w;
 }
 validateWorldSizes(c.worldSizes);
+// The LOD octree's root (BIG_MAP.md M1) holds the largest world size's disc: lod.maxLevel is the fewest
+// levels whose root (sectionCells << level wide, centred on the origin) holds it. A world's own top
+// level follows its size (dwell_protocol::world_size::WorldSize::lod_max_level).
+{
+  const largest = Math.max(...c.worldSizes.sizes.map((s) => s.radiusScale)) * c.world.worldRadius;
+  let level = 0;
+  while ((c.lod.sectionCells * 2 ** level) / 2 < largest) level += 1;
+  if (c.lod.maxLevel !== level) {
+    throw new Error(`constants.json lod.maxLevel must be ${level}: the fewest levels whose root holds the largest world size's disc (${largest} m)`);
+  }
+}
 // A WebRTC fragment (ARCHITECTURE.md §8.2) is told from a whole message by its first byte.
 if (Object.values(c.messageTypes).includes(c.webrtcFragmentTag)) {
   throw new Error(`constants.json webrtcFragmentTag ${c.webrtcFragmentTag} is a message type`);

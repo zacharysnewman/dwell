@@ -2,7 +2,8 @@
 
 **Status:** written 2026-11-11; the owner answered §7 the same day (10× radius, a world setting of
 named sizes, desktop first). **M0 built** (the size as one per-world value, every derived value at
-1× unchanged); M1 onward not started. The owner (2026-11-11): "we
+1× unchanged); **M1 built** (the LOD root holds every named size; protocol v23, a compatibility
+question for the owner); M2 onward not started. The owner (2026-11-11): "we
 will test out a 10x size map soon (could start whenever)". This study adds two things to
 [`WORLD_SCALE.md`](./WORLD_SCALE.md) (2026-11-10, which measured a disc 10× *across*): the case of 10×
 the *area*, measured, and the whole-map grids built since then (the biome field, the geology's
@@ -169,9 +170,19 @@ rivers, ranges and climate stay. The sizes are data: `constants.json` `worldSize
   volume (`bounds.radius`) and `WORLD_RADIUS` readers (fog, Chisel, the LOD's rim) are still the
   build's, and the generators still build 1×: the sized constructors are not yet called from a
   world's settings.
-- **M1 — the LOD root for a big disc.** The root, the section keys and `CHUNK_OFFSET_Y` per size
-  (`lod_max_level` up to 15); the build volume per size; a new protocol version; turn on
-  `every_named_size_fits_the_lod_root`; tests at 2× and 10× on both faces.
+- **M1 — the LOD root for a big disc. [built]** The compiled root holds the largest named size:
+  `lod.maxLevel` 15 (1 049 km), checked by `shared/protocol/gen.mjs` against `worldSizes` (a size
+  past it fails the generator with the level it needs); `CHUNK_OFFSET_Y` is `1 << (maxLevel − 1)`
+  (2¹⁴); a world's own top level is `WorldSize::lod_max_level`. One root for every size, not a root
+  per world: section keys mean the same section in every world of a build, and a 1× world's extra
+  levels 13–15 are a handful of coarse sections. Every section key moved (the root's corner went
+  from −2¹⁶ to −2¹⁹), so the wire's LOD messages changed meaning: **protocol v23**, a new
+  compatibility line for the owner to raise. Saved worlds keep loading: their LOD rows were keyed
+  under root 12 (`meta.lod_root` absent), so they are dropped at open and rebuilt from the chunks.
+  The terrain is unchanged: the regenerated LOD goldens give every section at the same place the
+  same hash (levels 1–11; 12–15 are new sections). `every_named_size_fits_the_lod_root` is on.
+  **Left for M2:** the build volume (`bounds.radius`) and `in_world`'s disc are still the 1× disc's,
+  so a bigger world's far sections aren't generated until the generators read the world's size.
 - **M2 — a big dev world at a coarse map cell.** The generators built from the world's size (the
   sized constructors called from its settings, the world map and the biome and drainage fields on
   the scaled grid). Start at 2× (100 km, a 200 m map cell) and step up through 4× and 8× to the
