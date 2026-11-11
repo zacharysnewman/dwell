@@ -671,6 +671,7 @@ impl Session {
                     | Message::Damage(_)
                     | Message::HeldTools(_)
                     | Message::Steam(_)
+                    | Message::Ecology(_)
             ) && (self.joined()
                 || self.worldgen_wait.is_some()
                 || matches!(self.state, SessionState::Confirming { .. }))
@@ -1385,6 +1386,14 @@ mod tests {
             1000.0,
         );
         assert!(matches!(s.next_game(), Some((Message::Steam(_), _))));
+        // The far ecology (docs/ECOLOGY.md §9) reaches the game: before, the session dropped it,
+        // so `__dwell.ecology()` stayed null and no far herd was drawn on any server.
+        s.on_reliable(
+            Channel::World,
+            &Message::Ecology(dwell_protocol::EcologyMessage::default()).encode(),
+            1000.0,
+        );
+        assert!(matches!(s.next_game(), Some((Message::Ecology(_), _))));
     }
 
     #[test]

@@ -159,7 +159,12 @@ Last updated: 2026-11-11 (0.52.68).
    every 2 s to clients that ask (`EcologyHello`, `inventory_flags::ECOLOGY`) and `__dwell.ecology()`
    (ECOLOGY.md §9). **Far rendering built (simple):** heads in the species' `far` look, on the loaded
    ground, fading by distance, none on the CPU tier (ECOLOGY.md §11); not yet past the loaded chunks,
-   screenshots and bench cost. Next: local worlds' maps, grazing applied to tall grass as chunks load.
+   screenshots and bench cost. **Local worlds built** (2026-11-11, ECOLOGY.md §6): the local server already
+   had both maps installed in its instance, so its ecology runs, saves and reloads as on native; the bug
+   was the client's session dropping `Ecology`, so `__dwell.ecology()` and the far herds were empty on
+   every server (fixed). The ecology is 12.5 MB for both faces; its ~3 MB record is now written only when
+   it changed (a local world saves every 5 s). Next: a smaller island, grazing applied to tall grass as
+   chunks load.
 12. **Players' saved structures as placement sources** (owner 2026-11-11): per player (their library, usable
    in any world they create); placed copies editable, not protected; 32³ for now (may change), or larger
    structures as a grid of 32³ tiles. Sharing between players: Future.
@@ -182,7 +187,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    over loaded chunks, each growing the whole world days it missed (at most 20); a player's block wins;
    eaten grass regrows; the far forage's most is scaled by the same climate share. A per-world switch in an
    optional `grass_growth` table: on for new worlds, off for worlds saved before it (their meadows stay as
-   they were). Not yet: a setting in the world menu; a local world's ecology share (its maps, ECOLOGY.md §7).
+   they were). Not yet: a setting in the world menu.
 
 ## Done
 

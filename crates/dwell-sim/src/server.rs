@@ -4573,7 +4573,7 @@ impl Server {
         if !self.ground_unread {
             batch.ground_gone = Some(self.ground.to_bytes());
         }
-        batch.ecology = Some(self.ecology.record());
+        batch.ecology = self.ecology.record_to_save();
         if !self.grass_unread {
             batch.grass = Some(self.grass.to_bytes());
         }
@@ -4647,6 +4647,7 @@ impl Server {
             } else {
                 self.save_stats.failed += 1;
                 self.save_stats.last_error = result.error;
+                self.ecology.save_failed();
                 self.dirty.extend(revisions.into_iter().map(|(c, _)| c)); // try again
             }
         }

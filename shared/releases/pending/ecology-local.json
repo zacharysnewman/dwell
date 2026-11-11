@@ -1,0 +1,6 @@
+{
+  "changes": [
+    "Far-off deer herds and wolf packs show in the distance again, in your own worlds, worlds you host for friends and on dedicated servers: the game had been throwing away the herd updates the world sent",
+    "Behind the scenes: a world saves its herds only when they have changed, so autosaves write megabytes less"
+  ]
+}
