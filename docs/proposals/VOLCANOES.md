@@ -147,5 +147,21 @@ look and the in-game check come next, locally). ARCHITECTURE.md §6.8 has the mo
   and its water (any liquid over the bed but the lava). A raised bed pushes the lava above it; a lowered
   one keeps its depth, so the surface drops and the lava flows in (a dug channel takes it).
 
-**Next:** the look (local: light, glow, crust, steam puffs, the in-game check); the water grid's columns
-as the fields' water; then V2's vents on the hotspot cones (rivers to the sea, eruptions).
+### 6.3 As built: V1 slice 4, the look (2026-11-11, part)
+
+- **Lava's surface:** the painterly `lava` tile (`materials.json` `lava_crust`: dark crust plates over a
+  bright molten ground and glowing cracks), self-lit (`emissive`) so it reads at night, its `emits` 13
+  lighting the summit through the flood light. `molten: true` (material data) makes the terrain shader
+  drift the crust slowly and breathe the cracks' heat; the CPU tier draws it flat and still
+  (WATER_RENDERING.md §17). Opaque, as asked (no transparency).
+- **Basalt and obsidian** have their own painterly tiles (ropey pahoehoe folds on dark rock; near-black
+  glass with a violet sheen), replacing the tinted stone placeholder. Their `color` (the LOD's) is the
+  tiles' base.
+- **Spots:** `starter:volcano` and `starter:volcano-night` (`client/bench/spots.json`) look down on the
+  summit lake.
+- **Outstanding:** heat per cell (brighter where hotter/thicker: the field's heat isn't in the cells);
+  steam to the clients (a `Steam` message gated by a hello like `CausesHello`) with puffs and a hiss; the
+  burning screen edge and sizzle.
+
+**Next:** the rest of the look (steam, burning feedback, heat per cell); the water grid's columns as the
+fields' water; then V2's vents on the hotspot cones (rivers to the sea, eruptions).

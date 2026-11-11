@@ -95,9 +95,11 @@ Last updated: 2026-11-11 (0.52.68).
    vent on its youngest hotspot island's summit as worldgen data (`tectonics.lavaVents`, opt-in per cone,
    placed by the server when the world is created or first loaded; the default world lists none), a `Burn`
    damage cause sent only to clients that say `CausesHello` (older ones hear `Fall`), and fields re-reading
-   an edited column's bed and water (a dug channel takes the lava); VOLCANOES.md §6.2. **The look next,
-   local** (light, glow, crust, steam puffs, the in-game check), then the water grid's columns as the
-   fields' water and V2's vents.
+   an edited column's bed and water (a dug channel takes the lava); VOLCANOES.md §6.2. **Look, part 1
+   built:** the painterly lava tile (self-lit, crust drifting and cracks breathing by `molten` material
+   data, flat on the CPU tier) and basalt and obsidian tiles; VOLCANOES.md §6.3, WATER_RENDERING.md §17.
+   **Next:** steam to the clients (gated) with puffs and a hiss, the burning screen edge and sizzle, heat
+   per cell; then the water grid's columns as the fields' water and V2's vents.
 9. ~~**Loading-time display bug.**~~ Done (0.52.71): the 10 s was the graphics' start (one long task on the
    main thread making the renderer's pipelines) begun in the same task that ended the game's load, so the
    screen never painted "Starting the graphics…" and stood on "Loading the game… x MB 0.0 s". Each stage is
