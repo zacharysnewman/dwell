@@ -214,6 +214,65 @@ fn damage_persists_across_a_save_and_an_older_world_loads_undamaged() {
     assert_eq!(hits_to_break(&mut fx, f, [-3, BASE - 1, 0]), 5);
 }
 
+#[test]
+fn damage_and_its_struck_point_reach_a_client_that_draws_it_and_go_when_it_breaks() {
+    // face-a-only: the message's cells are world-oriented; the drawing's faces are the mesher's
+    // both-faces test (dwell-mesh damage_mesh).
+    let f = FaceFrame::A;
+    let mut fx = scene_with(f, config(f, "creative"));
+    // A second client asks for damage (the Inventory's DAMAGE flag says the server keeps it).
+    fx.join(2, &Client::new(2));
+    fx.send(2, Message::DamageHello);
+    for _ in 0..3 {
+        fx.server.step();
+    }
+    fx.take_all();
+    hold(&mut fx, "creative", "dwell:stone_pickaxe");
+    fx.send(
+        1,
+        Message::BlockEditRequest(BlockEditRequest {
+            action: BlockEditAction::Break,
+            cell: f.cell(STONE),
+            face: 2,
+            material: 0,
+            rows: 1,
+            down: false,
+            point: Some([40, 255, 200]),
+        }),
+    );
+    for _ in 0..7 {
+        fx.server.step();
+    }
+    let d = fx.server.damage_of(f.cell(STONE)).expect("damaged");
+    assert_eq!(d.marks[0].point, [40, 255, 200], "the struck point kept");
+    let sent = fx.take(2);
+    let view = sent
+        .iter()
+        .find_map(|(m, _)| match m {
+            Message::Damage(d) => d.cells.iter().find(|(c, _)| *c == f.cell(STONE)).cloned(),
+            _ => None,
+        })
+        .expect("player 2 was told")
+        .1;
+    assert_eq!(view.fraction, 51, "1 of 5 hits");
+    assert_eq!(view.marks[0].point, [40, 255, 200]);
+    // Player 1 never asked: nothing it might not read.
+    assert!(
+        !fx.take(1)
+            .iter()
+            .any(|(m, _)| matches!(m, Message::Damage(_)))
+    );
+    for _ in 0..4 {
+        hit(&mut fx, f, STONE);
+    }
+    assert_eq!(block_at(&mut fx, f, STONE), "dwell:air");
+    assert!(
+        fx.take(2)
+            .iter()
+            .any(|(m, _)| matches!(m, Message::Damage(d) if d.gone.contains(&f.cell(STONE))))
+    );
+}
+
 trait MoveLocal {
     fn move_to_local(&mut self, f: FaceFrame, x: f64, feet: f64, z: f64);
 }

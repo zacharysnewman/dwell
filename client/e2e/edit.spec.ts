@@ -257,7 +257,10 @@ test('local mode: every palette block can be picked from the hotbar, placed, and
       .not.toBe(0);
     const placed = await voxel(page, cell);
     // Breaking targets the new block itself: looked at, as tall grass is aimed at by a box
-    // smaller than its cell.
+    // smaller than its cell. Stone can't be broken by hand (docs/BLOCK_DAMAGE.md): a pickaxe.
+    if (item.name.startsWith('dwell:stone')) {
+      expect(await call<boolean>(page, 'd.pick("dwell:stone_pickaxe")')).toBe(true);
+    }
     await breakBlock(page, cell);
     await page.waitForTimeout(120); // BLOCK_EDIT_INTERVAL_MS
     // A steep slope's upper half (a piece of two cells) is broken on its own.
