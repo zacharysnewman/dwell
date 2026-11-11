@@ -595,7 +595,7 @@ pub enum Message {
     /// `inventory_flags::STEAM` (docs/proposals/VOLCANOES.md §6.3): send this client the steam
     /// where lava boils water away.
     SteamHello,
-    /// S→C reliable, control channel, only to a client that sent `SteamHello`: the world cells
+    /// S→C reliable, world channel, only to a client that sent `SteamHello`: the world cells
     /// whose water lava just boiled away (the clients' puffs and hiss). u16 count (at most
     /// `MAX_STEAM_PER_MESSAGE`), each cell three i32.
     Steam(Vec<[i32; 3]>),

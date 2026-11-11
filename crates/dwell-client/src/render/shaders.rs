@@ -749,15 +749,18 @@ fn terrain_fs(i: TerrainOut, @builtin(front_facing) front: bool) -> SceneOut {
         let side = abs(n.y) < 0.5;
         let plane = select(world.xz, vec2f(world.x + world.z, world.y * 1.3), side);
         let plate = molten_plates(plane, frame.fog.z);
+        // The tile's hue (orange) for the seams; the crust its darkest, one shade per plate with
+        // the painted strokes faint in it.
         let hue = texel.rgb / max(max(texel.r, texel.g), 0.05);
-        let seam = mix(hue, vec3f(1.0, 0.85, 0.45), 0.3);
-        let crust = texel.rgb * (0.16 + 0.14 * plate.y);
+        let seam = mix(hue, vec3f(1.0, 0.62, 0.2), 0.5);
+        let grain = dot(texel.rgb, vec3f(0.3, 0.5, 0.2));
+        let crust = hue * (0.05 + 0.04 * plate.y) * (0.7 + 0.6 * grain);
         albedo = mix(crust, seam, plate.x) * i.color * draw.tint.rgb;
         crack = plate.x;
     }
     var o = scene_out(albedo, normalize(n), i.rel, alpha, terrain_light(i.light, i.flood));
     // The heat brightens the glowing seams (or a still tile's bright cracks), not the crust.
-    let heat = select(1.0, mix(0.25, 1.6 * molten_heat(i.rel.xz + frame.tan.zw, frame.fog.z), crack), molten);
+    let heat = select(1.0, mix(0.15, 1.1 * molten_heat(i.rel.xz + frame.tan.zw, frame.fog.z), crack), molten);
     let shine = tile_glow(i.tile.xy) * heat;
     o.color = vec4f(emitted(o.color.rgb, albedo * alpha, shine), o.color.a);
     o.depth = self_lit_depth(frame_depth(o.depth, fade_inked(draw)), tile_glow(i.tile.xy) >= 1.0);
