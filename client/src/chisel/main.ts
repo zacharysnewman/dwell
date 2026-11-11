@@ -600,6 +600,7 @@ function render() {
         },
         changed: textureChanged,
         download,
+        rerender: render,
       },
       texturePreview,
     );

@@ -52,6 +52,8 @@ export interface TexturesHost {
   /** After any edit: store it, update the URL, and repaint the 3D section if it is on. */
   changed: () => void;
   download: (name: string, text: string) => void;
+  /** Rebuilds the whole panel (the tab bar and this editor) after a structural change. */
+  rerender: () => void;
 }
 
 /** The tab's preview canvases (in the page's preview area). */
@@ -411,7 +413,7 @@ export function renderTextures(panel: HTMLElement, host: TexturesHost, preview: 
   const e = host.edit();
   const v = host.view();
   const redraw = () => {
-    renderTextures(panel, host, preview);
+    host.rerender();
   };
   const pick = el('select') as HTMLSelectElement;
   for (const n of blockMaterials(e.materials))
