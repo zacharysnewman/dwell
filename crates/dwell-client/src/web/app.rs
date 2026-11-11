@@ -1173,7 +1173,7 @@ impl Client {
                     }
                 }
                 // The big map is the shell's (ADR 0068), as M is; the F4 debug map stays a key.
-                A::Map | A::Pause => shell.push(a.name().to_owned()),
+                A::Map | A::Pause | A::Inventory => shell.push(a.name().to_owned()),
                 A::Jump | A::Crouch | A::Run => {}
             }
         }
@@ -1493,6 +1493,23 @@ impl Client {
             let slot = g.select_hotbar(i64::from(slot));
             s.shell_events.push(shell_event("slot", slot as u32));
         }
+    }
+    /// The creative hotbar's picks (docs/ITEMS.md §6a): each slot's palette index.
+    #[wasm_bindgen(js_name = creativeHotbar)]
+    pub fn creative_hotbar(&self) -> Vec<u32> {
+        self.inner.borrow().game.as_ref().map_or_else(Vec::new, |g| {
+            g.creative.picks().iter().map(|&i| i as u32).collect()
+        })
+    }
+    /// Puts palette item `palette_index` in creative hotbar slot `slot` (the creative inventory
+    /// view); false if either is out of range.
+    #[wasm_bindgen(js_name = setCreativeSlot)]
+    pub fn set_creative_slot(&self, slot: u32, palette_index: u32) -> bool {
+        self.inner
+            .borrow_mut()
+            .game
+            .as_mut()
+            .is_some_and(|g| g.set_creative_slot(slot as usize, palette_index as usize))
     }
     /// Moves items between inventory slots (the backpack screen; ADR 0066): `count` 0 moves all.
     #[wasm_bindgen(js_name = moveItems)]
@@ -2721,12 +2738,9 @@ impl Inner {
         match e {
             InputEvent::Toggle(key) => self.shell_events.push(shell_event("toggle", key)),
             InputEvent::Digit(code) => {
-                let slot = code
-                    .strip_prefix("Digit")
-                    .and_then(|d| d.parse::<i64>().ok())
-                    .map(|d| if d == 0 { 9 } else { d - 1 });
-                if let (Some(slot), Some(g)) = (slot, &mut self.game)
-                    && (slot as usize) < g.hotbar_len()
+                if let Some(g) = &mut self.game
+                    && let Some(slot) =
+                        dwell_game::creative_hotbar::slot_for_digit(&code, g.hotbar_len())
                 {
                     let slot = g.select_hotbar(slot);
                     self.shell_events.push(shell_event("slot", slot as u32));
@@ -2734,7 +2748,7 @@ impl Inner {
             }
             InputEvent::HotbarStep(step) => {
                 if let Some(g) = &mut self.game
-                    && let Some(slot) = g.interaction.scroll(step)
+                    && let Some(slot) = g.scroll_hotbar(step)
                 {
                     self.shell_events.push(shell_event("slot", slot as u32));
                 }

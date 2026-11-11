@@ -27,6 +27,7 @@ export const ACTION_LABELS: Record<PlayAction, string> = {
   spyglass: 'Spyglass',
   map: 'Map',
   pause: 'Menu',
+  inventory: 'Inventory',
 };
 
 export interface ControllerPanelOptions {

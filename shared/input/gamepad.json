@@ -26,7 +26,7 @@
     "lookY": 3
   },
   "play": {
-    "$comment": "While playing (no menu open). Held: jump (and fly up), crouch (and fly down), run (pressed once, it holds until the stick lets go), and place, which builds on while held (docs/ITEMS.md §5). Pressed: the rest; buildMode cycles the build modes.",
+    "$comment": "While playing (no menu open). Held: jump (and fly up), crouch (and fly down), run (pressed once, it holds until the stick lets go), and place, which builds on while held (docs/ITEMS.md §5). Pressed: the rest; buildMode cycles the build modes; inventory opens the backpack (adventure) or the creative inventory view, where the menu buttons move, pick (confirm) and close (back).",
     "jump": "a",
     "crouch": "b",
     "run": "ls",
@@ -40,7 +40,8 @@
     "flySlower": "down",
     "spyglass": "x",
     "map": "view",
-    "pause": "menu"
+    "pause": "menu",
+    "inventory": "left"
   },
   "menu": {
     "$comment": "While a menu is open: move the focus (the left stick too), press the focused control, go back or close.",

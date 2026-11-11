@@ -405,9 +405,45 @@ impl Inventory {
 mod tests {
     use super::*;
 
+    /// Owner, 2026-11-10: the hotbar went from 9 slots to 6 and the backpack from 27 to 30, so
+    /// every slot keeps its index (36 in all). A record saved with 9 hotbar slots reads back with
+    /// old slots 7–9 (indices 6–8) as the backpack's first three: nothing lost, the record as it
+    /// was; a held slot past the new hotbar is the first.
+    #[test]
+    fn a_nine_slot_hotbar_save_loads_with_slots_7_to_9_in_the_backpack() {
+        assert_eq!(SLOTS, 36, "the slot indices of a saved record stay where they were");
+        // The old build's record: version 1, held 8, the pouch, 3 gems, four stacks.
+        let mut old = Vec::new();
+        let mut w = ByteWriter::new(&mut old);
+        w.u8(1);
+        w.u8(8);
+        w.str("dwell:pouch");
+        w.u16(3);
+        w.u8(4);
+        for (i, item, n) in [
+            (0u8, "dwell:stone_axe", 1u16),
+            (6, "dwell:dirt", 12),
+            (7, "dwell:stick", 5),
+            (8, "dwell:rock", 64),
+        ] {
+            w.u8(i);
+            w.str(item);
+            w.u16(n);
+        }
+        let inv = Inventory::from_bytes(&old).unwrap();
+        assert_eq!(inv.held, 0);
+        assert_eq!(inv.money, 3);
+        let at = |i: usize| inv.slots[i].as_ref().map(|s| (s.item.as_str(), s.count));
+        assert_eq!(at(0), Some(("dwell:stone_axe", 1)));
+        for (i, want) in [(6, ("dwell:dirt", 12)), (7, ("dwell:stick", 5)), (8, ("dwell:rock", 64))] {
+            assert!(i >= HOTBAR_SLOTS, "slot {i} is the backpack's now");
+            assert_eq!(at(i), Some(want));
+        }
+    }
+
     #[test]
     fn the_data_has_the_owners_numbers_and_rules() {
-        assert_eq!((HOTBAR_SLOTS, BACKPACK_SLOTS, STACK_SIZE), (9, 27, 64));
+        assert_eq!((HOTBAR_SLOTS, BACKPACK_SLOTS, STACK_SIZE), (6, 30, 64));
         assert_eq!(DESPAWN_SECONDS, 300.0);
         assert_eq!(wallet(STARTING_WALLET).unwrap().capacity, 99);
         // Grass drops dirt and (sometimes) rocks; dirt drops dirt; leaves drop sticks.
