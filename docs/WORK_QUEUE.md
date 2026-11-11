@@ -93,6 +93,9 @@ Last updated: 2026-11-11 (0.52.68).
    client/package.json → every release recompiles), version + release note assigned at merge, an agent
    quickstart doc, a reliable browser kit (warm prebuilt client, exact camera goto, stall retries, saved
    spots), per-area check commands, lighter paperwork for small changes. (Runs before lava.)
+   Built (2026-11-11): 1 (local builds read `shared/version/line.json`, `<line>.0-dev.local`) and 2 (pending
+   release notes, `shared/releases/pending/`, assigned by the Release workflow; RELEASES.md §3); outstanding
+   3–6 and the workflow's first run on `main`.
 11. **Deer/wolf ecology simulation, first slice** (owner 2026-11-11, with a mockup:
    docs/proposals/ECOSYSTEM_MOCKUP_NOTES.md). "Simulate at a data level only when you're not nearby, render
    simply from afar, and exactly when close by." Answers: far = herds and packs (one record each;

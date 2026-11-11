@@ -154,8 +154,13 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
   patch after the newest published release, or `client/package.json`'s version if that is higher
   (`package.json` is a floor, raised by hand only to start a new line; nothing is bumped after a
   release), or one named in the manual run's *version* input or by the tag, which must be newer than
-  the newest release. Each build is made with `DWELL_VERSION` (read by
-  `client/vite.config.ts` and `crates/dwell-sim/build.rs`), with the Rust client's WASM built for it,
+  the newest release. **[built]** On a push to `main` the workflow first assigns the
+  pending release notes (`shared/releases/pending/*.json`, `client/scripts/releaseAssign.ts`): each
+  the next patch, its `changes.json` entry and `package.json`, committed to `main` by the workflow
+  ("Release <version>") and released from that commit, so PRs carry no version bump (RELEASES.md §3).
+  Each build is made with `DWELL_VERSION` (read by
+  `client/vite.config.ts` and `crates/dwell-sim/build.rs`; without it a local build is
+  `<line>.0-dev.local`, the line from `shared/version/line.json`, so a patch release recompiles nothing), with the Rust client's WASM built for it,
   for the base `/dwell/v/<version>/`, and attached to its GitHub Release as `dwell-<version>.tar.gz`
   with its `build.json` (version, channel, date, commit, `protocolVersion`, generator versions,
   `minLauncher`). The version is Semantic Versioning 2.0.0, one for the whole app; before `1.0.0`
@@ -4502,8 +4507,8 @@ Direct invite links (`?join=host:port&cert=<sha256>`) work without the master se
 - **App version** ([ADR 0014](./adr/0014-versioned-releases.md), [`RELEASES.md`](./RELEASES.md)):
   Semantic Versioning 2.0.0, one for the whole app, kept in `client/package.json` as the version the
   next release can have at least (a floor, §2.1), embedded in every build (TS shell: `__APP_VERSION__`; Rust:
-  `dwell_sim::app_version::APP_VERSION`, set by `crates/dwell-sim/build.rs` from `DWELL_VERSION` or
-  `package.json`) and recorded in `build.json`. The declared public API is the saved
+  `dwell_sim::app_version::APP_VERSION`, set by `crates/dwell-sim/build.rs` from `DWELL_VERSION` or,
+  locally, `<line>.0-dev.local` from `shared/version/line.json`, package.json's MAJOR.MINOR) and recorded in `build.json`. The declared public API is the saved
   world format, the terrain a seed generates, the network protocols and the cross-version storage
   contract. Releases are stable (`0.1.0`); pushes to `main` are dev pre-releases
   (`0.2.0-dev.42`, with the commit as build metadata).
