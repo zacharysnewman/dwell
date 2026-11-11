@@ -105,7 +105,17 @@ by the Vite build and linked from the menu's About screen). Beside the native se
     counter:** the next release is the next patch after the newest published release, or
     `package.json`'s version if that is higher (nothing is released yet, or a breaking change raised
     it). So nobody bumps it after a release; it is raised by hand only to start a new line
-    (`0.1.x` → `0.2.0`), in the PR that makes the breaking change.
+    (`0.1.x` → `0.2.0`), in the PR that makes the breaking change, or by the Release workflow
+    when it assigns pending release notes (below).
+  - **Local builds carry the line, not the patch** (2026-11-11): without `DWELL_VERSION`,
+    `crates/dwell-sim/build.rs` and `client/vite.config.ts` read `shared/version/line.json`
+    (`{"line": "0.52"}`, MAJOR.MINOR) and give `<line>.0-dev.local` (`+<sha>` in the shell). The
+    build script reruns only on that file, so a patch release no longer recompiles `dwell-sim` and
+    everything above it for every developer. A pre-release's line is itself, so a local build opens
+    only its own local worlds, as before (they now survive patch releases); both sides (WASM and
+    shell) record the same version. `src/version/line.test.ts` fails when the file is not
+    `package.json`'s MAJOR.MINOR, or when the build script reruns on anything else; a new line
+    raises both.
 - **Channels:** **stable** (a release: pushing a `v<version>` tag, or a manual "Release" workflow)
   and **dev** (every push to `main`). Both are published; the launcher defaults to stable and
   offers dev in settings.
@@ -132,18 +142,49 @@ line's retired patches since the next older listed build folded under "Earlier".
 test fails when `client/package.json`'s version has no entry (`src/version/changes.test.ts`, which
 also checks every entry: a stable version, newest first, each once, lines of text up to 240
 characters), and `release.ts` refuses to publish a stable release without one (`hasChanges`). So the
-PR that raises `package.json` adds its version's entry in the same change. The entries before 0.38.7
+entry is written when the version is assigned (below), or by a PR that raises `package.json` by hand.
+The entries before 0.38.7
 were drafted from the merged pull requests' titles (0.1.0 and 0.10.0, which gathered dozens, are
 summarised by hand).
+
+### Pending release notes: the version assigned at merge **[built]**
+
+Owner-approved speed-up (2026-11-11, WORK_QUEUE item 10): when every PR raised `package.json` to
+the next patch and added a `changes.json` entry, parallel PRs conflicted on both. Now a PR carries
+its note as a file of its own, `shared/releases/pending/<slug>.json` (the branch name works):
+`{"changes": ["…"]}`, one to six lines of up to 240 characters, the same limits as `changes.json`
+(`releaseAssign.test.ts` checks every note in CI, and that the limits match). It does not touch
+`package.json` or `changes.json`.
+
+On a push to `main`, the Release workflow's `assign` step runs `npm run release:assign`
+(`client/scripts/releaseAssign.ts`, tested) on `main`'s newest commit: each note, in file name
+order, gets the next patch (after the newest release, or from `package.json` if that is higher, and
+after `changes.json`'s newest entry), its entry at the top of `changes.json`; `package.json` gets
+the last; the notes are deleted. The workflow commits that to `main` as "Release <version>"
+(retrying on a moved `main`), and the run builds and releases **that commit** (the plan sees
+`package.json` raised over its parent, so it is stable). Several notes merged together each get a
+version; only the newest is built, the others are listed under it as retired patches ("Earlier").
+A run that finds no notes (none merged, or an overlapping run already took them) builds its own push
+as before: a dev build, or a stable release if the push raised `package.json` by hand. A push by the
+workflow's token starts no other workflow, so the release commit is neither re-released nor CI-tested
+(it changes only the version and notes).
+
+Chosen over computing the version at release time without a commit: `changes.json` is the history
+every later build shows, and `package.json` the floor, so both must be on `main`.
+
+`"breaking": true` in a note is refused loudly (CI fails, and so would the workflow): a new line is
+the owner's to raise by hand (`package.json` to the next MINOR, `shared/version/line.json`, its
+`changes.json` entry). The assigned versions must stay on `line.json`'s line.
 
 ### Releasing
 
 The next version is computed by `client/scripts/release.ts` from the published releases and
 `client/package.json` (§3): the next patch after the newest release, or `package.json`'s version if
-that is higher. Pushes to `main` publish dev builds of it, pre-releases `v<next>-dev.<run>` —
-**except** a push that leaves `package.json` above the newest release, which publishes that version
-as a stable release: raising it (the baseline `0.1.0`, or a new line like `0.2.0`) is the deliberate
-act, so merging it is the release. Patch releases are manual:
+that is higher. A push to `main` with pending release notes releases them (above); otherwise pushes
+publish dev builds of it, pre-releases `v<next>-dev.<run>` — **except** a push that leaves
+`package.json` above the newest release, which publishes that version as a stable release: raising
+it (the baseline `0.1.0`, or a new line like `0.2.0`) is the deliberate act, so merging it is the
+release. Other patch releases are manual:
 
 1. To release by hand (a patch, or a version not in `package.json`), run the **Release** workflow (Actions → Release → Run workflow, on `main`):
    it releases the next version. To release a different one — a breaking change's `0.2.0` — type it

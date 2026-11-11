@@ -99,8 +99,10 @@ Last updated: 2026-11-11 (0.52.68).
    client/package.json → every release recompiles), version + release note assigned at merge, an agent
    quickstart doc, a reliable browser kit (warm prebuilt client, exact camera goto, stall retries, saved
    spots), per-area check commands, lighter paperwork for small changes. (Runs before lava.)
-   Done: 3 (`docs/AGENT_QUICKSTART.md`), 5 (`npm run check:<area>`, `client/scripts/checks.ts`) and 6
-   (CLAUDE.md "lighter paperwork"), with `docs/CLOUD_SESSIONS.md`; 1, 2 and 4 outstanding.
+   Done: 1 (local builds read `shared/version/line.json`, `<line>.0-dev.local`), 2 (pending release notes,
+   `shared/releases/pending/`, assigned by the Release workflow; RELEASES.md §3; its first run on `main`
+   still to watch), 3 (`docs/AGENT_QUICKSTART.md`), 5 (`npm run check:<area>`) and 6 (CLAUDE.md "lighter
+   paperwork"), with `docs/CLOUD_SESSIONS.md`; 4 (the browser kit) running locally.
 11. **Deer/wolf ecology simulation, first slice** (owner 2026-11-11, with a mockup:
    docs/proposals/ECOSYSTEM_MOCKUP_NOTES.md). "Simulate at a data level only when you're not nearby, render
    simply from afar, and exactly when close by." Answers: far = herds and packs (one record each;

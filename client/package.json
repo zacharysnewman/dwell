@@ -1,6 +1,6 @@
 {
   "name": "@dwell/client",
-  "version": "0.52.75",
+  "version": "0.52.76",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
@@ -16,6 +16,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
+    "release:assign": "node --experimental-strip-types scripts/releaseAssign.ts",
     "build:wasm": "cd .. && cargo build -p dwell-client --target wasm32-unknown-unknown --release && wasm-bindgen --target web --out-dir client/src/pkg target/wasm32-unknown-unknown/release/dwell_client.wasm",
     "e2e": "playwright test",
     "build:launcher": "vite build -c vite.launcher.config.ts",
