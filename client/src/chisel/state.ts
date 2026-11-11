@@ -81,6 +81,8 @@ export interface Edit {
   world?: WorldJson;
   geology?: GeologyJson;
   vegetation?: VegetationJson;
+  /** The terrain volume's strength in this world (0..1, 0 no cliffs; 0.52.64): the build's when absent. */
+  cliffs?: number;
 }
 
 /** The build's geology (shared/worldgen/rocks.json). */
@@ -316,6 +318,7 @@ export function toJson(e: Edit): string {
   if (e.world) out.world = e.world;
   if (e.geology) out.geology = e.geology;
   if (e.vegetation) out.vegetation = e.vegetation;
+  if (e.cliffs !== undefined) out.cliffs = e.cliffs;
   return JSON.stringify(out, null, 2);
 }
 
@@ -345,6 +348,7 @@ export function fromJson(
           ...(o.world ? { world: o.world } : {}),
           ...(o.geology ? { geology: o.geology } : {}),
           ...(o.vegetation ? { vegetation: o.vegetation } : {}),
+          ...(o.cliffs !== undefined ? { cliffs: o.cliffs } : {}),
         };
   const errors = validateEdit(edit);
   return errors.length ? { errors } : { edit };

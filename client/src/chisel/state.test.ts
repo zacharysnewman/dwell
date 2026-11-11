@@ -95,6 +95,9 @@ describe('Chisel state', () => {
     expect(e.biomeMap.sharpen).toBe(2);
     expect(e.world?.tectonics?.arcDecay).toBe(0.72);
     expect(e.geology?.shaping.strength).toBe(0.25);
+    // No cliffs (0.52.64), kept through a save and a Play in game.
+    expect(e.cliffs).toBe(0);
+    expect(fromJson(toJson(e))).toMatchObject({ edit: { cliffs: 0 } });
     // A fresh copy each time: tuning one never changes the next.
     expect(starterEdit()).toEqual(e);
     expect(starterEdit()).not.toBe(e);

@@ -918,5 +918,11 @@ export function fixtureWorldEdit(f, world, pool, rocksJson, blocks, refs, fail) 
     edit.geology = rocks;
   }
   edit.world = f.overrides ?? {};
+  // The terrain volume's strength in this world (0..1; 0: no cliffs).
+  if (f.cliffs !== undefined) {
+    if (typeof f.cliffs !== "number" || !(f.cliffs >= 0 && f.cliffs <= 1))
+      fail("cliffs must be a number in [0, 1]");
+    edit.cliffs = f.cliffs;
+  }
   return edit;
 }

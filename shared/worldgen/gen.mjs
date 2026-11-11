@@ -676,6 +676,7 @@ export function validateFixtureWorlds(fixtures, world, pool = null) {
           "biomeMap",
           "geology",
           "newWorld",
+          "cliffs",
         ].includes(k),
     );
     if (extra.length) fail(`unknown ${extra.join(", ")}`);
