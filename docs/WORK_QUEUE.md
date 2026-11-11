@@ -126,9 +126,14 @@ Last updated: 2026-11-11 (0.52.68).
    holds one ecology per face, stepped by the world's days (bounded catch-up: 4 steps a tick), saved in an
    optional `ecology` table with a per-world switch (default on, additive) and speed; a server-side read-out
    (ECOLOGY.md §6). Owner's correction (2026-11-11): no floors — herds and packs can die, resisted by the
-   system (Holling type III predation, refuges, fast low-density breeding, dispersal, slow starving). Next
-   (ECOLOGY.md §7): individuals near players, simple far rendering with a client read-out, local worlds'
-   maps, grazing on the real tall grass.
+   system (Holling type III predation, refuges, fast low-density breeding, dispersal, slow starving).
+   **Slice 3 built:** individuals near players (ECOLOGY.md §8, `dwell-sim` `herds.rs`): a record within
+   64 m of a player becomes its deer or wolves (the existing creatures, driven) and folds back past 96 m
+   (survivors, averaged needs, centroid); the mockup's needs-driven rules as data (flee, sleep at night,
+   graze the cell and sometimes a real tall grass block, chase and kill, mate up to the cap, company);
+   the creature rules for deer and wolves left out while the ecology runs. Next (ECOLOGY.md §7): simple
+   far rendering with a client read-out, local worlds' maps, grazing applied to tall grass as chunks
+   load; the far step seeing near groups; the herd's stag.
 12. **Players' saved structures as placement sources** (owner 2026-11-11): per player (their library, usable
    in any world they create); placed copies editable, not protected; 32³ for now (may change), or larger
    structures as a grid of 32³ tiles. Sharing between players: Future.

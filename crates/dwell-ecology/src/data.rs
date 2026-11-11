@@ -89,6 +89,98 @@ pub struct SpeciesDef {
     pub diet: Diet,
     pub flee: Option<Flee>,
     pub disperse: Option<Disperse>,
+    /// Its individuals near players (docs/ECOLOGY.md §8); None: it stays a record.
+    pub near: Option<NearDef>,
+}
+
+/// Where groups become individuals and fold back (docs/ECOLOGY.md §8).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NearParams {
+    /// A player within this (face-local horizontal metres) of a record makes its individuals.
+    pub spawn_m: f64,
+    /// They fold back into a record once no player is within this of them (> `spawn_m`).
+    pub fold_m: f64,
+    /// Seconds between their decisions.
+    pub think_s: f64,
+}
+
+/// A species' individuals near players: the owner's mockup's needs as data
+/// (docs/proposals/ECOSYSTEM_MOCKUP_NOTES.md). Hunger 0 fed, 1 none; energy 1 rested.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NearDef {
+    /// The creature (shared/creatures/creatures.json) its individuals are, by name.
+    pub creature: &'static str,
+    pub hunger_per_s: f64,
+    /// Energy lost a second awake.
+    pub energy_per_s: f64,
+    pub sleep: NearSleep,
+    /// A grazer's eating; a hunter's hunting (the one its diet calls for).
+    pub graze: Option<NearGraze>,
+    pub hunt: Option<NearHunt>,
+    /// Fleeing the species' `flee.from` (prey only).
+    pub flee: Option<NearFlee>,
+    pub mate: NearMate,
+    /// Otherwise it keeps within this of a groupmate.
+    pub company_m: f64,
+    /// The farthest it wanders a walk.
+    pub wander_m: f64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NearSleep {
+    pub below_energy: f64,
+    pub night_chance_per_s: f64,
+    pub night_below_hunger: f64,
+    pub gain_per_s: f64,
+    pub wake_above_energy: f64,
+    pub wake_above_hunger: f64,
+    pub min_s: f64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NearGraze {
+    pub above_hunger: f64,
+    pub full_below: f64,
+    /// Hunger eaten a second.
+    pub eat_per_s: f64,
+    /// The island cell's forage (deer-days) eaten a second.
+    pub forage_per_s: f64,
+    /// The real block it eats (the only world change, near players only).
+    pub block: Option<&'static str>,
+    pub block_chance_per_s: f64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NearHunt {
+    pub above_hunger: f64,
+    pub sense_m: f64,
+    /// × its walking speed while chasing.
+    pub sprint: f64,
+    pub reach_m: f64,
+    /// A kill feeds packmates within this by `feeds_pack` of their hunger.
+    pub feeds_pack_m: f64,
+    pub feeds_pack: f64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NearFlee {
+    pub radius_m: f64,
+    /// × its walking speed while fleeing.
+    pub pace: f64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NearMate {
+    pub below_hunger: f64,
+    pub above_energy: f64,
+    pub radius_m: f64,
+    pub reach_m: f64,
+    /// The chance of a young a try within reach.
+    pub chance: f64,
+    /// Hunger each parent spends on a young.
+    pub cost: f64,
+    /// Energy a failed try costs.
+    pub tired: f64,
 }
 
 /// One ecology: the build's ([`crate::DATA`]) or a test's fixture.
@@ -98,6 +190,7 @@ pub struct Data {
     /// Forage regrowth: this share of the gap to the cell's most, a day.
     pub regrow_per_day: f64,
     pub grounds: &'static [GroundDef],
+    pub near: NearParams,
     pub species: &'static [SpeciesDef],
 }
 

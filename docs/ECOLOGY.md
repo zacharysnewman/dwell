@@ -1,7 +1,7 @@
 # The far ecology (deer and wolves)
 
-WORK_QUEUE item 11: the first slice (2026-11-11, the data-level core) and the second (the server's
-tick and save, §6; no floors, §2). Architecture: [`ARCHITECTURE.md`](./ARCHITECTURE.md)
+WORK_QUEUE item 11: the first slice (2026-11-11, the data-level core), the second (the server's
+tick and save, §6; no floors, §2) and the third (individuals near players, §8). Architecture: [`ARCHITECTURE.md`](./ARCHITECTURE.md)
 §5.4. Code: `crates/dwell-ecology`. Data: `shared/ecology/ecology.json` (`gen.mjs` →
 `ecology.gen.rs`). The owner's mockup it grows from: [`proposals/ECOSYSTEM_MOCKUP_NOTES.md`](./proposals/ECOSYSTEM_MOCKUP_NOTES.md).
 
@@ -168,17 +168,78 @@ world has none and keeps its choice; the flat world has none to run; an unreadab
 
 ## 7. What's next
 
-1. **Individuals near players**: a herd within a player's range becomes its deer (ADR 0073's
-   creatures, its size and averages handed to them), and the deer near no player fold back into a
-   herd record; the near simulation follows the mockup's rules (ECOSYSTEM_MOCKUP_NOTES.md).
+1. ~~**Individuals near players**~~: built (§8).
 2. **Simple far rendering**: a herd drawn as a few low-detail figures or a marker in the LOD; with it
    a snapshot message or `__dwell.ecology()` for the client (the read-out above).
 3. **Local worlds**: the maps (or the islands, a few KB) handed to the local server, so its ecology
    runs; then native ↔ WASM determinism of the step (it uses `exp`, `atan`, `hypot`).
-4. **Grazing applied to the real tall grass** near players: a cell's forage share decides how much
-   of its tall grass stands as chunks load (eaten grass as a composed layer, like trees' tombstones).
+4. **Grazing applied to the real tall grass** as chunks load: a cell's forage share decides how much
+   of its tall grass stands (eaten grass as a composed layer, like trees' tombstones). Slice 3 eats
+   single blocks by the deer near players only (§8).
 5. **Forage and refuges from the climate**: the vegetation's envelopes (`vegetation.json`'s
    temperature, moisture and soil), woods as refuges, and the biome map in place of the height and
    slope bands.
 6. Per-world species tuning (a world's own copy of the data), a setting in the world's menu for the
    switch, and prey switching for hunters with several prey species.
+
+## 8. Individuals near players (slice 3)
+
+`dwell-sim` `herds.rs` (pure: a `World` view of the islands, the ecosystems, the players and the
+cells; unit-tested on a stone floor), driven by `Server::step_herds` each tick before the creatures
+move. Data: `shared/ecology/ecology.json`'s `near` (where) and each species' `near` (how; a species
+without one stays a record — the fixture's hare and fox).
+
+- **Coming near**: a record within `near.spawnM` (64 m, face-local horizontal) of a player on its
+  face becomes `round(size)` individuals (at least 1) of its `near.creature` — ADR 0073's creatures
+  (`dwell:doe`, `dwell:wolf`), `driven`: they walk only to targets the herd logic gives (at its `pace`,
+  a sprint or a flight) and the creature rules never despawn them — placed 1–4 m around the record on
+  ground found from the player's row, with the record's hunger and energy. The record leaves its
+  face's `Ecosystem` (the far step no longer steps it). The whole group spawns or none: it waits
+  while its cells aren't loaded or the world is at its most creatures (64).
+- **Folding back**: once no player on its face is within `near.foldM` (96 m: the hysteresis) of any
+  member, the creatures go and the record returns (by id order) with size = the survivors, hunger and
+  energy their averages, place their centroid, resting. A group with none left (all killed) is gone.
+  A save while near writes each near group as it would fold back now.
+- **The rules** (every `near.thinkS`, 0.5 s; the mockup's priority order, its numbers as data):
+  hunger rises `hungerPerS`, energy falls `energyPerS` awake. (1) **Fleeing**: a species with
+  `near.flee` runs `radiusM` away from the nearest of its far `flee.from` within `radiusM`, at
+  `pace` × its walk (a deer 14 m from a wolf, 2×). (2) **Sleeping**: `gainPerS` energy, at least
+  `minS`, waking once over `wakeAboveEnergy` or hungrier than `wakeAboveHunger`. (3) Falling asleep:
+  under `belowEnergy`, or at night (the face's own: `night_on`, face B's day is face A's night) with
+  `nightChancePerS` while under `nightBelowHunger`. (4) **Food**: a grazer over `graze.aboveHunger`
+  is **Eating** while its island cell has forage — `eatPerS` hunger and `foragePerS` of the cell's
+  forage a second (the far grazing value drops), until under `fullBelow` — else **Looking for
+  Food** (wandering); while eating, `blockChancePerS` a second it eats the real `graze.block`
+  (`dwell:tall_grass`) by its feet: the only world change, near players only, none when the data
+  names no block. A hunter over `hunt.aboveHunger` **Chases** the nearest prey individual within
+  `senseM` at `sprint` × its walk (2.2×: a wolf 3.5 m/s, a fleeing deer 2.6) and kills it within
+  `reachM`: the prey is gone (its group's `deaths`), the killer fed and asleep, packmates within
+  `feedsPackM` lose `feedsPack` of their hunger. (5) **Mating**: under `mate.belowHunger` and over
+  `aboveEnergy` with a groupmate like it within `radiusM` (walking to it), within `reachM` a young
+  with `chance` a try (the deer 0.5, the wolf 0.02, the mockup's), each parent's hunger + `cost`, a
+  failed try `tired` energy; never past the group's `cap`. (6) **Looking for Company**: back toward
+  the nearest groupmate farther than `companyM`, else **Wandering** (up to `wanderM`).
+- **Death near players** is by kills only: hunger stops at 1 and never kills here (starving is the
+  far step's, over days; owner: "slow to starve").
+- **Deterministic**: each member's own hash chain from (world seed, record id, member); the near
+  state's digest (`Near::digest`) repeats for a seed.
+- **The creature rules**: while the ecology runs, the creature rules whose creature is a species'
+  `near.creature` are left out (`Creatures::reserved`: the doe rule with its stag, the wolf rule), so
+  the deer and wolves near players are the ecology's only. A world without an ecology (opted out, no
+  map) keeps the rule-spawned ones.
+- **Not yet**: the far step doesn't see near groups (a pack far away doesn't hunt a herd that is
+  near); individuals' grounds are any full block (not only the ecology's grounds); the herd's stag
+  (the creature rule's mix) isn't made; players can't interact; no far rendering.
+
+Tests: `cargo test -p dwell-sim --lib herds` (both faces): a herd near a player becomes its deer
+(on the floor, the record out of the far step, its hunger) and folds back keeping its head (+ births
+− deaths) at their centroid, staying near inside the hysteresis; a hungry wolf chases at a sprint
+and kills a deer, the kill feeding the pack; a deer flees a wolf within its radius; a fed pair has
+young up to the cap and never past it; deer graze the cell's forage and sometimes eat the real tall
+grass by their feet, and never with no block in the data; at night fed animals fall asleep; the
+same seed gives the same run and another seed another; every species names a creature and a block
+the build has. `cargo test -p dwell-sim --test ecology` (both faces): through the server, a herd
+near a joined player becomes driven deer on the floor with no rule-spawned animals beside them and
+folds back when the player leaves; a save while near keeps the herd; an opted-out world makes no
+individuals; night is each face's own. `node --test shared/ecology/gen.test.mjs`: the `near` data
+validates, emits its creature and block, a species without it stays a record, bad entries fail.
