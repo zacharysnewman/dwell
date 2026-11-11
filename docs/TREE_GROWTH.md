@@ -301,7 +301,12 @@ blades. Pines stand in the mixed forest; the boreal spot has none (its climate, 
 **Thin trunks (0.52.59):** saplings stand on narrow logs (`dwell:log[width]`, ¼ m steps; ADR 0079),
 the trunk thickening by stage to the species' `trunk.width.mature`.
 
-Not built: **growth over time** (planned in ADR 0079) (needs a per-tree record, its stage and the cells players edited,
+**Growth over time (0.52.60):** built (ADR 0079 S3): a record per tree keyed by its anchor, the growers
+step on the server every few seconds over loaded chunks, a stage every `growth.daysPerStage` world
+days written as the difference between stages where nobody edited; felled trees stop; saved in the
+optional `tree_growth` table. `?growth=N` speeds it for a time-lapse.
+
+Not built: a sapling item to plant a tree (needs a per-tree record, its stage and the cells players edited,
 and the `growers` layer of §5: the stage advanced every `growth.daysPerStage` world days, the cells
 regenerated where nobody edited), per-tree leaf tints (`variety.lightness`, `hue`), frond blades (a `dwell:palm_frond` block), a pine needle block.
 

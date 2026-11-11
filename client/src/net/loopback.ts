@@ -52,7 +52,12 @@ export class LoopbackTransport implements Transport {
    */
   static start(
     worker: Worker,
-    world: LocalWorld & { maps?: Uint8Array[]; waterInline?: boolean; jobsInline?: boolean },
+    world: LocalWorld & {
+      maps?: Uint8Array[];
+      waterInline?: boolean;
+      jobsInline?: boolean;
+      growth?: number;
+    },
     onStage?: StageReport,
     maps?: Promise<Uint8Array[] | undefined>,
   ): Promise<LoopbackTransport> {

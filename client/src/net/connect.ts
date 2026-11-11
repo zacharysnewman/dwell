@@ -116,12 +116,18 @@ export async function connectLocal(
   // `?serverjobs=inline`: the server's generation and LOD on its tick (the bench's before/after).
   const jobsInline =
     typeof location !== 'undefined' && /[?&]serverjobs=inline(&|$)/.test(location.search);
+  // `?growth=N`: trees grow N times as fast (ADR 0079; a time-lapse for the bench).
+  const growth =
+    typeof location !== 'undefined'
+      ? Number(new URLSearchParams(location.search).get('growth') ?? 'NaN')
+      : NaN;
   const loopback = await LoopbackTransport.start(
     worker,
     {
       ...world,
       ...(waterInline ? { waterInline } : {}),
       ...(jobsInline ? { jobsInline } : {}),
+      ...(Number.isFinite(growth) && growth > 0 ? { growth } : {}),
     },
     options.onStage,
     maps,

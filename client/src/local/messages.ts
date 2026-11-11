@@ -30,6 +30,8 @@ export type ToWorker =
        * tick, not their own worker.
        */
       jobsInline?: boolean;
+      /** Dev link `?growth=N`: trees grow N times as fast (ADR 0079; a time-lapse). */
+      growth?: number;
       /**
        * The maps follow in a `maps` message (the page still shaping them): the worker opens the
        * world file and loads its WASM meanwhile, then waits for them (§6.3).

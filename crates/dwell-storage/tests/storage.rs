@@ -92,6 +92,7 @@ fn everything_round_trips_through_a_file() {
             cuts: Some(vec![1, 0, 0, 0, 0]),
             ground_gone: Some(vec![1, 1, 0, 0, 0, 4, 0, 0, 0, 5, 0, 0, 0, 6, 0, 0, 0]),
             damage: Some(vec![1, 0, 0, 0, 0]),
+            tree_growth: Some(vec![1, 0, 0, 0, 0]),
         };
         db.save(&batch).expect("saves");
         db.set_setting("motd", "hello").expect("setting");
@@ -137,6 +138,7 @@ fn everything_round_trips_through_a_file() {
     assert_eq!(db.loose_items(), Some(vec![9, 8]));
     assert_eq!(db.cuts(), Some(vec![1, 0, 0, 0, 0]));
     assert_eq!(db.damage(), Some(vec![1, 0, 0, 0, 0]));
+    assert_eq!(db.tree_growth(), Some(vec![1, 0, 0, 0, 0]));
     assert_eq!(
         db.ground_gone(),
         Some(vec![1, 1, 0, 0, 0, 4, 0, 0, 0, 5, 0, 0, 0, 6, 0, 0, 0])

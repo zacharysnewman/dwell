@@ -10,6 +10,7 @@ pub mod biomemap;
 pub mod config;
 pub mod decorations;
 pub mod geology;
+pub mod growth;
 pub mod hydrology;
 pub mod island;
 pub mod noise;

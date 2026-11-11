@@ -1,7 +1,7 @@
 # 0079 — Tree species: trees grown from data by (species, seed, stage)
 
 **Status:** Accepted (2026-11-11; S1 built in 0.52.58: species data, the builder, worldgen placement in
-the starter world). Builds on ADR 0033 (tree growth), ADR 0043 (placements), ADR 0072 (octagonal logs),
+the starter world; S2, thin trunks, in 0.52.59; S3, growth over time, in 0.52.60). Builds on ADR 0033 (tree growth), ADR 0043 (placements), ADR 0072 (octagonal logs),
 ADR 0074 (biomes) and docs/TREE_GROWTH.md §9–§11.
 
 ## Context
@@ -65,15 +65,24 @@ editing `shared/trees/*.json`. Fixed in code: the trunk, branch (`heavy`, `whorl
   draws leaves by cell and does not know a cell's tree; needs a per-tree tint the chunk carries, e.g.
   the placed tree's seed in the generated chunk's tree list, read by the leaf mesher; not cheap); frond
   blades; a pine needle block; climate-fitted palms (a warm-coast vegetation kind).
-- Growth over time, the plan (not built): (a) a per-tree record in the world, keyed by the tree's
-  anchor, holding its species, seed, the stage it was generated or last grown at and the world time it
-  reached it, written when a chunk holding the anchor is first saved (generated trees need none until
-  then: their stage is the placement's draw); (b) the `growers` layer of ADR 0033 §5: on a chunk's load
-  (and once a world day for loaded ones) a tree whose record is `daysPerStage` × n days old grows n
-  stages, `grow(species, seed, stage)` diffed against its previous stage's cells, each new cell placed
-  only where the world still holds what the old stage put there or air (a player's edit wins; a felled
-  tree, its foot log gone, grows no more); (c) a saved sapling item planting a record at stage 0. Its
-  tests: growth is a pure function of the record and the clock; an edited cell is never overwritten;
-  both faces.
-- Each species is `variants` structures in memory per placement; generated trees repeat across a world
-  (16 per species × 4 turns).
+- **Growth over time (S3, built in 0.52.60):** `dwell_worldgen::growth`. A `Record` per species tree,
+  keyed by its anchor (world cell): face, species, seed, stage, `since` (the world day it reached the
+  stage; generated trees day 0), turn, planter and variant (its block swaps), `stopped`. `Record::due`:
+  a stage every `daysPerStage` world days, capped at the last. `step` diffs `species::grow` between
+  the stage and the target (placed face-local, crossed with `FaceFrame`) and writes a cell only where
+  the world still holds what the older stage put there (or air where it put nothing): a player's
+  edit wins; a foot that is no longer the trunk stops the tree for good. The server's growers step
+  (`dwell-sim` `server/growth.rs`, every 5 s of the tick) records the species trees of loaded chunks
+  it has not looked at (`Growers::trees_in_chunk`, from the placements' new `Planter::grown`), then
+  grows each due tree whose stages' chunks are all loaded, as one `Rebake` modification. World days
+  are the tick over the clock's day length, × `ServerConfig::growth_speed` (1; dev `?growth=N` for a
+  time-lapse). The records are saved in an optional `tree_growth` table (one record, a version byte;
+  a newer version's is kept unread, as `block_damage`): an older build ignores it, a world without
+  it grows its trees from their drawn stages. Tests: `growth.rs` (due by days, n stages grown is that
+  stage's tree, edits stand, felled stops, the saved form; both faces), `dwell-sim/tests/growth.rs`
+  (the server grows a planted record, an edit stands, a felled tree stops, the stage survives a
+  save; both faces). Seen in game (starter world, `?growth=120`: a stage every 30 s): saplings and
+  young oaks fill out and rise over a minute.
+  Not yet: a sapling item that plants a record; trees outside loaded chunks catch up only when
+  loaded (by design); the records of trees never loaded are not saved (not needed: they are
+  generated again at their drawn stage, day 0).
