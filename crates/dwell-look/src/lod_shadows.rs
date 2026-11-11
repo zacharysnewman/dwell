@@ -246,17 +246,37 @@ pub fn horizon(
     let h0 = home.height(column[0], column[1], 0) + m.bias_m;
     let start = home.texel * m.start_texels;
     let growth = (tier.reach_m / start).powf(1.0 / f64::from(tier.steps.max(2) - 1));
+    let disc = 2.0 * m.penumbra_deg.to_radians().tan();
     let mut most = -NO_HORIZON;
     let mut s = start;
     for _ in 0..tier.steps {
-        let (x, z) = (column[0] + dir[0] * s, column[1] + dir[1] * s);
-        if let Some(map) = maps.iter().find(|m| m.holds(x, z)) {
-            let level = step_level(s * (growth - 1.0), map.texel, map.mips.len());
-            most = most.max((map.height(x, z, level) - h0) / s);
+        // The step in sub-steps no longer than the sun's disc is wide at its distance, each
+        // reading the max mip its length needs: the march sees every ridge it passes, and nothing
+        // much farther to the side of its line than the disc reaches (BUGS.md #69).
+        let delta = s * (growth - 1.0);
+        let n = substeps(delta, s * disc);
+        for k in 0..n {
+            let d = s + delta * f64::from(k) / f64::from(n);
+            let (x, z) = (column[0] + dir[0] * d, column[1] + dir[1] * d);
+            if let Some(map) = maps.iter().find(|m| m.holds(x, z)) {
+                let level = step_level(delta / f64::from(n), map.texel, map.mips.len());
+                most = most.max((map.height(x, z, level) - h0) / d);
+            }
         }
         s *= growth;
     }
     most.min(NO_HORIZON)
+}
+
+/// The most sub-steps a march step is split into (the sweep's cost grows with them).
+pub const MAX_SUBSTEPS: u32 = 8;
+
+/// How many sub-steps a march step of `delta` m takes so each is no longer than `width` m (the
+/// sun's disc across at its distance), 1 to [`MAX_SUBSTEPS`].
+pub fn substeps(delta: f64, width: f64) -> u32 {
+    (delta / width.max(1e-6))
+        .ceil()
+        .clamp(1.0, f64::from(MAX_SUBSTEPS)) as u32
 }
 
 /// The horizon's range (a tangent; the map stores it in half floats).
@@ -447,6 +467,49 @@ mod tests {
                 v > 0.05 && v < 0.95
             });
             assert!(partial, "a penumbra");
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// BUGS.md #69: a far step read the highest of a max-mip texel about a third of its distance
+        /// wide, so terrain well to the side of the ray shaded it — a streak across the starter
+        /// world's hills at a low sun, where the ground in the same 128 m texel stood higher. Samples
+        /// are now no wider across the light than the sun's disc (the penumbra) at their distance: a
+        /// wall along the light 150 m to the side of a column does not shade it, and still shades
+        /// the columns on its line (red before: shaded beside it too).
+        fn a_wall_beside_the_light_does_not_shade_a_column_off_its_line(f: FaceFrame) {
+            let tier = T.tiers[1];
+            // A wall 8 m thick and 200 m over a plain at 40 m, along x at z = 0 (the light's line,
+            // the light toward -x), from x = -3000 to 0.
+            let along = |x: f64, z: f64| {
+                if z.abs() <= 4.0 && x >= -3000.0 && x <= 0.0 {
+                    240.0
+                } else {
+                    40.0
+                }
+            };
+            let ms: Vec<HeightMap> = (0..tier.levels)
+                .map(|l| {
+                    HeightMap::from_fn(
+                        [0.0, 0.0],
+                        tier.texel(l),
+                        tier.resolution,
+                        max_mips(tier.resolution),
+                        along,
+                    )
+                })
+                .collect();
+            let at = |x: f64, z: f64| {
+                let p = f.point([x, 40.0, z]);
+                visibility(&T, &tier, &ms, f, p, light(f, 3.0))
+            };
+            for x in [500.0, 1000.0, 1500.0] {
+                let beside = at(x, 150.0);
+                assert!(beside > 0.99, "{x} m out, 150 m beside: {beside}");
+                assert!(at(x, -150.0) > 0.99, "{x} m out, 150 m the other side");
+                // On its line the wall shades (its end 500-1500 m off, 200 m up: 8-22 degrees).
+                assert!(at(x, 0.0) < 0.01, "{x} m out, on the line: {}", at(x, 0.0));
+            }
         }
     );
 
