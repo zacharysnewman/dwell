@@ -253,7 +253,9 @@ game holds still (`setMenuOpen`) and the controller's menu focus moves in it (th
   grouped by its **`category`**, the groups and their labels in `items.json` `inventory.categories`
   (data: a new group or item shows by data alone, `gen.test.mjs` and `creativeInventory.test.ts`), a
   search field over the labels, and the hotbar's six slots under it. A click or tap on an item puts it
-  in the selected slot (a click on one of the view's slots selects it), or drag an item onto a slot.
+  in the selected slot (a click on one of the view's slots selects it), or drag an item onto a slot;
+  drag one of the view's slots onto another to swap them (0.52.24; pointer dragging, so touch works:
+  `dropAssignments`, a press that travels 6 px lifts a ghost and the release over a slot drops it).
   The picks are the client's (`dwell-game` `CreativeHotbar`: each slot's palette index; `Client.
   setCreativeSlot`, `creativeHotbar`). A new world starts with `inventory.hotbar` — stone, dirt,
   grass, log, the stone axe, the stone pickaxe (planks are not an item yet; the log stands for wood).
@@ -267,7 +269,7 @@ game holds still (`setMenuOpen`) and the controller's menu focus moves in it (th
   e2e specs use it).
 
 Not yet: the held item in the hand shows a whole block for a ½ m piece; the region tools and
-brushes still work in cells; the view's slots are not reordered by dragging between them.
+brushes still work in cells.
 
 ## 7. Dynamite **[built, 0.49.32]**
 
