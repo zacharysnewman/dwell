@@ -43,6 +43,17 @@ const inRange = (o, k, lo, hi, at, open = false) => {
   const v = o[k];
   if (!num(v) || v < lo || v > hi || (open && v <= lo)) fail(`${at}.${k} must be a number in ${open ? '(' : '['}${lo}, ${hi}]`);
 };
+/** Chips (the client's particles): a wood's off a swing, a block's `damage.chips` off a hit. */
+function validateChips(c, at) {
+  if (c === null || typeof c !== 'object' || Array.isArray(c)) fail(`${at} must be an object`);
+  known(c, CHIP_FIELDS, at);
+  const chips = { count: c.count ?? 6, color: c.color ?? '#c8a070', speed: c.speed ?? 2.5, size: c.size ?? 0.05 };
+  if (!Number.isInteger(chips.count) || chips.count < 0 || chips.count > 32) fail(`${at}.count must be a whole number in [0, 32]`);
+  if (typeof chips.color !== 'string' || !COLOR.test(chips.color)) fail(`${at}.color must be #rrggbb`);
+  inRange(chips, 'speed', 0, 10, at, true);
+  inRange(chips, 'size', 0, 0.2, at, true);
+  return chips;
+}
 
 /**
  * Checks the tools data. `items` are the names of every item (blocks and inventory items); `blocks`
@@ -156,13 +167,7 @@ export function validateTools(data, items, blocks, heldItems = loadHeldItems(), 
       return { item: d.item, min, max, chance };
     });
     // The chips a swing knocks out of it (the client's particles).
-    const c = w.chips ?? {};
-    known(c, CHIP_FIELDS, `${at}.chips`);
-    const chips = { count: c.count ?? 6, color: c.color ?? '#c8a070', speed: c.speed ?? 2.5, size: c.size ?? 0.05 };
-    if (!Number.isInteger(chips.count) || chips.count < 0 || chips.count > 32) fail(`${at}.chips.count must be a whole number in [0, 32]`);
-    if (typeof chips.color !== 'string' || !COLOR.test(chips.color)) fail(`${at}.chips.color must be #rrggbb`);
-    inRange(chips, 'speed', 0, 10, `${at}.chips`, true);
-    inRange(chips, 'size', 0, 0.2, `${at}.chips`, true);
+    const chips = validateChips(w.chips ?? {}, `${at}.chips`);
     // How a cut is carved into the cell's mesh (the client's): the cut faces' atlas tile (a tile of
     // shared/textures/materials.json) and a tint multiplying it, the notch's opening along the grain per metre of depth and
     // the kerf slits' width.
@@ -246,12 +251,15 @@ export function validateDamage(blocks, items, breaking) {
       for (const c of ['color', 'crack']) if (!/^#[0-9a-f]{6}$/i.test(d.look[c] ?? '')) fail(`${lat}.${c} must be a #rrggbb colour`);
       look = d.look;
     }
+    // The chips a hit knocks out of it (the client's particles, sounds round 2b): stone grey
+    // chips, soil clods; none: no particles.
+    const chips = d.chips === undefined ? null : validateChips(d.chips, `${at}.chips`);
     for (const [k, v] of Object.entries(d)) {
-      if (k === 'default' || k === 'look' || k[0] === '$') continue;
+      if (k === 'default' || k === 'look' || k === 'chips' || k[0] === '$') continue;
       if (!classes.has(k) && !items.has(k)) fail(`${at}.${k}: no tool class or item ${JSON.stringify(k)} (classes: ${[...classes].join(', ')})`);
       tools.push({ tool: k, hits: hits(v, `${at}.${k}`) });
     }
-    out.push({ block: name, default: dflt, tools, look });
+    out.push({ block: name, default: dflt, tools, look, chips });
   }
   return out;
 }
@@ -369,7 +377,7 @@ export function toolsRust(d) {
   rs.push('');
   rs.push("/// Each block's hits to destroy (its `damage`): by bare hands, and by tool class or item.");
   rs.push('pub static BLOCK_DAMAGE: &[BlockDamageDef] = &[');
-  for (const b of d.damage) rs.push(`    BlockDamageDef { block: "${b.block}", default: ${b.default === null ? 'None' : `Some(${b.default})`}, tools: &[${b.tools.map((t) => `("${t.tool}", ${t.hits})`).join(', ')}], look: ${b.look === null ? 'None' : `Some(DamageLook { kind: DamageLookKind::${b.look.kind[0].toUpperCase() + b.look.kind.slice(1)}, size: ${f64(b.look.size)}, color: [${rgb(b.look.color).join(', ')}], crack: [${rgb(b.look.crack).join(', ')}] })`} },`);
+  for (const b of d.damage) rs.push(`    BlockDamageDef { block: "${b.block}", default: ${b.default === null ? 'None' : `Some(${b.default})`}, tools: &[${b.tools.map((t) => `("${t.tool}", ${t.hits})`).join(', ')}], look: ${b.look === null ? 'None' : `Some(DamageLook { kind: DamageLookKind::${b.look.kind[0].toUpperCase() + b.look.kind.slice(1)}, size: ${f64(b.look.size)}, color: [${rgb(b.look.color).join(', ')}], crack: [${rgb(b.look.crack).join(', ')}] })`}, chips: ${b.chips === null ? 'None' : `Some(Chips { count: ${b.chips.count}, color: [${rgb(b.chips.color).join(', ')}], speed: ${f64(b.chips.speed)}, size: ${f64(b.chips.size)} })`} },`);
   rs.push('];');
   rs.push('');
   rs.push("/// Each tool item's class, tier and that tier's break speed (`breaking.tools`).");

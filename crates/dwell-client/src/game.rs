@@ -582,6 +582,8 @@ pub struct Game<S: Scene> {
     /// The server keeps block damage (`inventory_flags::DAMAGE`): `DamageHello` sent, struck
     /// points sent with breaks.
     damage_on: bool,
+    /// Other players' hits seen in the damage updates (docs/BLOCK_DAMAGE.md §6).
+    remote_hits: crate::hit_feedback::RemoteHits,
     /// The world seed (Welcome), the ground items' scatter's (ADR 0071).
     world_seed: u64,
     /// The server keeps ground items and was told this client draws them (`GroundHello`).
@@ -923,6 +925,7 @@ impl<S: Scene> Game<S> {
             creatures: Default::default(),
             creatures_on: false,
             damage_on: false,
+            remote_hits: Default::default(),
             world_seed: 0,
             ground_on: false,
             ground_target: None,
@@ -1488,6 +1491,15 @@ impl<S: Scene> Game<S> {
                 self.chop.apply(c);
             }
             Message::Damage(d) => {
+                // Another player's hit: its material's hit and chips at the struck point.
+                for (cell, mark) in self.remote_hits.on_damage(&d, now_ms) {
+                    let [x, y, z] = cell;
+                    let block = self.voxel(x, y, z);
+                    let at = point_in_cell(cell, mark.point);
+                    self.sounds
+                        .push(SoundEvent::new(SoundKind::Hit, block, 1.0, Some(at)));
+                    self.hit_chips(block, cell, at, now_ms);
+                }
                 // Drawn on the struck faces (docs/BLOCK_DAMAGE.md): each changed cell's chunk again.
                 for cell in &d.gone {
                     self.streamer.set_damage(*cell, None);
@@ -1525,6 +1537,7 @@ impl<S: Scene> Game<S> {
                 // The server keeps block damage (docs/BLOCK_DAMAGE.md): say so once, and draw it.
                 if i.flags & dwell_protocol::inventory_flags::DAMAGE != 0 && !self.damage_on {
                     self.damage_on = true;
+                    self.remote_hits.hello(now_ms);
                     self.outbox
                         .borrow_mut()
                         .push(Send::Control(Message::DamageHello));
@@ -1848,6 +1861,11 @@ impl<S: Scene> Game<S> {
                                 .map(|p| point_in_cell(target.cell, p));
                             self.sounds
                                 .push(SoundEvent::new(SoundKind::Hit, block, 1.0, at));
+                            // Its chips; the server's echo of the hit is not shown again.
+                            self.remote_hits.own_hit(target.cell, now_ms);
+                            if let Some(at) = at {
+                                self.hit_chips(block, target.cell, at, now_ms);
+                            }
                         }
                     }
                     (EditAction::Place, Some((cell, block))) => {
@@ -2705,6 +2723,18 @@ impl<S: Scene> Game<S> {
         let lights = self.blasts.lights(now);
         self.scene.borrow_mut().set_blasts(puffs, lights);
         self.blasts.shake(eye, now)
+    }
+
+    /// A hit's chips out of `cell` (the block `block`) at the struck point `at` (world), when its
+    /// data has `damage.chips` (docs/BLOCK_DAMAGE.md §6).
+    fn hit_chips(&mut self, block: StateId, cell: [i32; 3], at: [f64; 3], now_ms: f64) {
+        if dwell_blocks::try_info(block).is_none() {
+            return;
+        }
+        if let Some(look) = crate::chips::hit_chips_of(dwell_blocks::block_of(block).name) {
+            let n = crate::chips::struck_normal(cell, at);
+            self.chips.hit_burst(look, n, at, now_ms / 1000.0);
+        }
     }
 
     /// A swing's chips out of `face` at `point` of the wood `block` (the server cuts; these show).

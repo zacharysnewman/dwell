@@ -18,6 +18,8 @@ pub struct BlockDamageDef {
     pub tools: &'static [(&'static str, u32)],
     /// How its damage is drawn (D2); none: not drawn.
     pub look: Option<DamageLook>,
+    /// The chips a hit on it knocks out (the client's particles); none: none.
+    pub chips: Option<crate::chopping::Chips>,
 }
 
 /// How a block's damage is drawn at each hit mark (`damage.look` in the block data).

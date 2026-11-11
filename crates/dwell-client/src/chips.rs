@@ -12,7 +12,7 @@
 use dwell_blocks::StateId;
 
 use crate::blasts::{Puff, PuffKind};
-use dwell_protocol::chopping::WOODS;
+use dwell_protocol::chopping::{BLOCK_DAMAGE, Chips as ChipLook, WOODS};
 use dwell_world::{CELL_H, FaceFrame, m_of_row};
 
 /// How long a chip flies (s).
@@ -26,13 +26,36 @@ const LEAF_CELLS_MAX: usize = 512;
 /// Gravity on a chip (m/s²), toward the face's ground.
 const CHIP_GRAVITY: f64 = 9.0;
 
+/// Every chip look, in the index a [`Chip`]'s `wood` holds: the woods' (`WOODS` order, a swing's
+/// chips), then each block's `damage.chips` (a hit's: stone grey chips, soil clods; shared/blocks).
+pub fn chip_looks() -> impl Iterator<Item = &'static ChipLook> {
+    WOODS
+        .iter()
+        .map(|w| &w.chips)
+        .chain(BLOCK_DAMAGE.iter().filter_map(|d| d.chips.as_ref()))
+}
+
+/// Chip look `i` ([`chip_looks`]).
+pub fn chip_look(i: usize) -> Option<&'static ChipLook> {
+    chip_looks().nth(i)
+}
+
+/// The chip look a hit on block `block` (by name) knocks out (its `damage.chips`), if any.
+pub fn hit_chips_of(block: &str) -> Option<usize> {
+    BLOCK_DAMAGE
+        .iter()
+        .filter(|d| d.chips.is_some())
+        .position(|d| d.block == block)
+        .map(|i| WOODS.len() + i)
+}
+
 /// One chip in flight: from `at` (world) at `vel` (world m/s), since `start_s`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Chip {
     pub at: [f64; 3],
     pub vel: [f64; 3],
     pub start_s: f64,
-    /// The wood's index in `WOODS`.
+    /// Its look's index in [`chip_looks`] (a leaf: its wood's index in `WOODS`).
     pub wood: usize,
     pub seed: u32,
     /// A leaf shaken down (it flutters and falls slowly), not a chip.
@@ -68,6 +91,20 @@ pub fn face_normal(face: u8) -> [f64; 3] {
     n
 }
 
+/// The outward normal (world) of the face of world cell `cell` that the point `p` (world) on it
+/// lies on: the axis it is farthest out along, by the cell's half sizes.
+pub fn struck_normal(cell: [i32; 3], p: [f64; 3]) -> [f64; 3] {
+    let c = dwell_world::centre_of_cell(cell);
+    let half = [0.5, CELL_H / 2.0, 0.5];
+    let d: [f64; 3] = std::array::from_fn(|k| (p[k] - c[k]) / half[k]);
+    let axis = (0..3)
+        .max_by(|&a, &b| d[a].abs().total_cmp(&d[b].abs()))
+        .unwrap_or(1);
+    let mut n = [0.0; 3];
+    n[axis] = d[axis].signum();
+    n
+}
+
 /// The way a swing travels at the cut, face-local (+y up), for a look `look` (face-local): a level
 /// swing sweeps from the right across to the left, a vertical one down.
 pub fn swing_travel(vertical: bool, look: [f64; 3]) -> [f64; 3] {
@@ -82,8 +119,38 @@ pub fn swing_travel(vertical: bool, look: [f64; 3]) -> [f64; 3] {
 impl Chips {
     /// How many chips a swing at wood `wood` knocks out.
     pub fn count(&self, wood: usize) -> usize {
-        let n = WOODS.get(wood).map_or(0, |w| w.chips.count as usize);
+        let n = chip_look(wood).map_or(0, |w| w.count as usize);
         if self.cpu { n.div_ceil(3) } else { n }
+    }
+
+    /// A hit's chips of look `look` ([`hit_chips_of`]): out of the struck face (its outward
+    /// `normal`, world) at `point` (world), scattered and a little up, now (`now_s`);
+    /// docs/BLOCK_DAMAGE.md §6.
+    pub fn hit_burst(&mut self, look: usize, normal: [f64; 3], point: [f64; 3], now_s: f64) {
+        let Some(w) = chip_look(look) else {
+            return;
+        };
+        let f = FaceFrame::at_height(point[1]);
+        let n = f.vector(normal);
+        let seed = (point[0] * 977.0) as i32 as u32
+            ^ ((point[1] * 613.0) as i32 as u32).wrapping_mul(0x85eb_ca6b)
+            ^ ((point[2] * 331.0) as i32 as u32).wrapping_mul(0xc2b2_ae35)
+            ^ (now_s * 1000.0) as u32;
+        for k in 0..self.count(look) as u32 {
+            let r: [f64; 3] = std::array::from_fn(|j| hash(seed, k * 3 + j as u32) * 2.0 - 1.0);
+            let s = w.speed * (0.7 + 0.6 * hash(seed, 101 + k));
+            let d = norm(std::array::from_fn(|j| {
+                n[j] + 0.6 * r[j] + if j == 1 { 0.4 } else { 0.0 }
+            }));
+            self.list.push(Chip {
+                at: point,
+                vel: f.vector(d.map(|c| c * s)),
+                start_s: now_s,
+                wood: look,
+                seed: seed ^ k.wrapping_mul(0x27d4_eb2d),
+                leaf: false,
+            });
+        }
     }
 
     /// A swing's chips at wood `wood`: out of face `face` (world) at `point` (world), along the
@@ -97,7 +164,7 @@ impl Chips {
         look: [f64; 3],
         now_s: f64,
     ) {
-        let Some(w) = WOODS.get(wood) else {
+        let Some(w) = chip_look(wood) else {
             return;
         };
         let f = FaceFrame::at_height(point[1]);
@@ -109,7 +176,7 @@ impl Chips {
             ^ (now_s * 1000.0) as u32;
         for k in 0..self.count(wood) as u32 {
             let r: [f64; 3] = std::array::from_fn(|j| hash(seed, k * 3 + j as u32) * 2.0 - 1.0);
-            let s = w.chips.speed * (0.7 + 0.6 * hash(seed, 101 + k));
+            let s = w.speed * (0.7 + 0.6 * hash(seed, 101 + k));
             // Out of the cut, carried along the swing, a little up, scattered.
             let d = norm(std::array::from_fn(|j| {
                 0.8 * n[j] + 0.6 * travel[j] + 0.35 * r[j] + if j == 1 { 0.3 } else { 0.0 }
@@ -194,7 +261,6 @@ impl Chips {
             .iter()
             .filter_map(|c| {
                 let t = now_s - c.start_s;
-                let w = WOODS.get(c.wood)?;
                 let f = FaceFrame::at_height(c.at[1]);
                 let up = f.up();
                 if c.leaf {
@@ -221,12 +287,13 @@ impl Chips {
                 if !(0.0..CHIP_SECONDS).contains(&t) {
                     return None;
                 }
+                let w = chip_look(c.wood)?;
                 let at = std::array::from_fn(|k| {
                     c.at[k] + c.vel[k] * t - 0.5 * CHIP_GRAVITY * t * t * up[k]
                 });
                 Some(Puff {
                     at,
-                    size: 0.5 * w.chips.size * (0.7 + 0.6 * hash(c.seed, 7)),
+                    size: 0.5 * w.size * (0.7 + 0.6 * hash(c.seed, 7)),
                     alpha: (1.0 - (t / CHIP_SECONDS).powi(3)).clamp(0.0, 1.0),
                     kind: PuffKind::Chip,
                     explosive: c.wood,
@@ -378,6 +445,34 @@ mod tests {
             assert!(leaf_cells(hit, log(), |_| 0).is_empty());
         }
     );
+
+    // A fixture block's chips by data alone: its look is listed after the woods', its colour and
+    // count are its data's, and a hit knocks that many out of the struck face.
+    both_faces! {
+        fn a_hit_knocks_out_its_blocks_chips_from_data(f: FaceFrame) {
+            let stone = hit_chips_of("dwell:stone").expect("stone's damage.chips");
+            let dirt = hit_chips_of("dwell:dirt").expect("dirt's damage.chips");
+            assert!(stone >= WOODS.len() && dirt >= WOODS.len() && stone != dirt);
+            let look = chip_look(stone).expect("look");
+            let data = BLOCK_DAMAGE.iter().find(|d| d.block == "dwell:stone").and_then(|d| d.chips);
+            assert_eq!(Some(*look), data);
+            assert_ne!(chip_look(stone).map(|c| c.color), chip_look(dirt).map(|c| c.color));
+            assert_eq!(hit_chips_of("dwell:air"), None);
+            let mut c = Chips::default();
+            // The top face of a cell (face-local +y), at its centre.
+            let at = f.point([0.5, 40.0, 0.5]);
+            let top = f.vector([0.0, 1.0, 0.0]);
+            c.hit_burst(stone, top, at, 1.0);
+            assert_eq!(c.list.len(), look.count as usize);
+            // They fly out of the face (face-locally up) and are drawn in the look's size.
+            for chip in &c.list {
+                assert!(dot(chip.vel, top) > 0.0);
+            }
+            let p = c.puffs(1.1);
+            assert_eq!(p.len(), look.count as usize);
+            assert!(p.iter().all(|p| p.kind == PuffKind::Chip && p.explosive == stone));
+        }
+    }
 
     #[test]
     fn a_cpu_adapter_draws_a_third_of_the_chips() {

@@ -72,15 +72,19 @@ pub fn wgsl() -> String {
             v.join(", ")
         }
     };
-    let woods: Vec<String> = dwell_protocol::chopping::WOODS
-        .iter()
-        .map(|w| lin(w.chips.color.map(|c| f32::from(c) / 255.0)))
+    // Every chip look (the woods' and the blocks' `damage.chips`, crate::chips::chip_looks); the
+    // leaves' colours are the woods', padded to as many with the first (a block's chips no leaf).
+    let woods: Vec<String> = crate::chips::chip_looks()
+        .map(|c| lin(c.color.map(|c| f32::from(c) / 255.0)))
         .collect();
     let nw = woods.len().max(1);
-    let leaves: Vec<String> = dwell_protocol::chopping::WOODS
+    let mut leaves: Vec<String> = dwell_protocol::chopping::WOODS
         .iter()
         .map(|w| lin(w.leaves.color.map(|c| f32::from(c) / 255.0)))
         .collect();
+    if let Some(first) = leaves.first().cloned() {
+        leaves.resize(nw, first);
+    }
     let leaves = if leaves.is_empty() {
         "vec3f(1.0)".to_string()
     } else {
