@@ -303,7 +303,14 @@ export function validateBiome(data, blocks, refs) {
     )
       fail(`${k} must be in [0, 1]`);
   }
-  checkArches(data.arches, fail, refs.rocks);
+  checkArches(
+    data.arches,
+    fail,
+    refs.rocks,
+    data.rockStack !== undefined
+      ? refs.stackRocks?.get(data.rockStack)
+      : undefined,
+  );
   return data;
 }
 
@@ -316,7 +323,8 @@ export function validateBiome(data, blocks, refs) {
  * `fins` (optional, 0.52.66): the erosion's fin rule, where two cut-back fronts from drainage lines on
  * either side come within `approach` m of meeting (or have met by at most `overrun` m) a fin `width` m
  * wide stands on the crest between them (`FINS`'s ranges). `rock` (optional): arches only where the
- * opening's rock (the stack's layer at its mid-height) is this rock of rocks.json.
+ * opening's rock (the stack's layer at its mid-height) is this rock of rocks.json, and when the biome
+ * names its `rockStack`, one of that stack's layers (another could never be at an arch's height).
  */
 export const ARCHES = {
   density: [0, 976.5625],
@@ -329,8 +337,12 @@ export const ARCHES = {
 /** The ranges (m) of an `arches.fins` rule's numbers. */
 export const FINS = { approach: [0, 1000], width: [2, 64], overrun: [0, 2000] };
 
-/** Checks a biome's optional `arches` (`ARCHES`'s ranges; each range's min at most its max). */
-export function checkArches(a, fail, rocks) {
+/**
+ * Checks a biome's optional `arches` (`ARCHES`'s ranges; each range's min at most its max). `rocks`
+ * (optional): the rock names `rock` may be; `stackRocks` (optional): the rocks of the biome's own
+ * `rockStack`, which `rock` must be one of.
+ */
+export function checkArches(a, fail, rocks, stackRocks) {
   if (a === undefined) return;
   if (typeof a !== "object" || a === null || Array.isArray(a))
     fail("arches must be an object");
@@ -375,6 +387,10 @@ export function checkArches(a, fail, rocks) {
     if (rocks && !rocks.has(a.rock))
       fail(
         `arches.rock: ${JSON.stringify(a.rock)} is not a rock of rocks.json`,
+      );
+    if (stackRocks && !stackRocks.has(a.rock))
+      fail(
+        `arches.rock: ${JSON.stringify(a.rock)} is not a layer of the biome's rockStack`,
       );
   }
 }

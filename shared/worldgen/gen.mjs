@@ -574,8 +574,12 @@ export function validateBiome(
   return checkBiome(data, blocks, refs);
 }
 
-/** The decoration and placement rule names a biome may reference, from the checked-in files. */
+/**
+ * The decoration and placement rule names a biome may reference, from the checked-in files, and
+ * each rock stack's rocks (`stackRocks`: stack name → set of its layers' rocks).
+ */
 export function biomeRefs() {
+  const rocksJson = JSON.parse(readFileSync(join(here, "rocks.json"), "utf8"));
   const names = (f, k) =>
     new Set(
       JSON.parse(readFileSync(join(here, f), "utf8"))[k].map((r) => r.name),
@@ -585,6 +589,9 @@ export function biomeRefs() {
     placements: names("placements.json", "placements"),
     stacks: names("rocks.json", "stacks"),
     rocks: names("rocks.json", "rocks"),
+    stackRocks: new Map(
+      rocksJson.stacks.map((s) => [s.name, new Set(s.layers.map((l) => l.rock))]),
+    ),
     ground: new Set(
       JSON.parse(
         readFileSync(join(here, "../ground/ground.json"), "utf8"),
