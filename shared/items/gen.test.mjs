@@ -19,6 +19,17 @@ test("the build's items validate", () => {
   assert.match(buildModesTs(loadItems()), /HOTBAR_KEYS = \{ prev: 'ArrowLeft', next: 'ArrowRight' \}/);
 });
 
+test("the creative catalogue lists every species' sapling (ADR 0079 S4)", async () => {
+  const { loadSpecies } = await import('../trees/gen.mjs');
+  const items = loadItems().items;
+  for (const s of loadSpecies(new URL('../trees/', import.meta.url).pathname, blocks)) {
+    if (!s.sapling) continue;
+    const it = items.find((i) => i.name === s.sapling.item);
+    assert.ok(it, `${s.name}'s sapling ${s.sapling.item} is in the catalogue`);
+    assert.equal(it.block, s.sapling.item);
+  }
+});
+
 test('an item added by data alone is emitted', () => {
   const d = loadItems();
   d.items.push({ name: 'test:leaves_tall', label: 'Leaves, 1 m', category: 'plants', block: 'dwell:leaves', rows: 2 });
@@ -103,7 +114,7 @@ test('a tool item added by data alone is emitted (a fixture tool of the tools da
   d.items.push({ name: 'test:flint_axe', label: 'Flint axe', category: 'tools', tool: 'test:flint_axe' });
   const tools = new Set([...toolNames(), 'test:flint_axe']);
   const rs = itemsRust(validateItems(d, blocks, undefined, tools));
-  assert.match(rs, /ITEMS: \[ItemDef; 27\]/);
+  assert.match(rs, new RegExp(`ITEMS: \\[ItemDef; ${d.items.length}\\]`));
   assert.match(rs, /name: "test:flint_axe", label: "Flint axe", block: "", tool: Some\("test:flint_axe"\)/);
 });
 

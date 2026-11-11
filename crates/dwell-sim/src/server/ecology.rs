@@ -22,9 +22,11 @@
 //! server waits for the map to be computed in its own instance (it is computed in the server-jobs
 //! worker today, so a local world's ecology does not run yet: docs/ECOLOGY.md §7).
 
-use super::Server;
+use super::{Server, SessionId};
 use dwell_ecology::{DATA, Ecosystem, Island};
-use dwell_protocol::SIM_HZ;
+use dwell_protocol::{
+    Channel, EcologyGroupNet, EcologyMessage, MAX_ECOLOGY_GROUPS, Message, SIM_HZ,
+};
 use dwell_world::Face;
 use std::sync::Arc;
 
@@ -34,6 +36,10 @@ pub const MAX_STEPS_PER_TICK: u32 = 4;
 pub const CATCH_UP_DAYS: f64 = 10.0;
 /// With nobody online the ecology waits until it is this far behind, then catches up.
 pub const IDLE_DAYS: f64 = 10.0;
+
+/// Ticks between sends of the far groups to the clients that said `EcologyHello` (every 2 s: the
+/// far groups move over days, so a low rate is plenty).
+pub const ECOLOGY_SEND_EVERY: u32 = 2 * SIM_HZ;
 
 const RECORD_VERSION: u8 = 1;
 const FACES: [Face; 2] = [Face::A, Face::B];
@@ -49,6 +55,9 @@ pub fn next_step(behind: f64, online: bool, step_days: f64) -> Option<f64> {
     }
     Some(step_days.max(1.0).floor().min(behind.floor()))
 }
+
+/// The grass's climate share at (face index, face-local x, z) (docs/ECOLOGY.md §10).
+pub type GrassShare = Arc<dyn Fn(usize, f64, f64) -> f64 + Send + Sync>;
 
 /// The server's ecology: both faces' ecosystems (once their islands are known), the world's
 /// switch and speed, and the last tick's figures.
@@ -72,6 +81,9 @@ pub struct Ecology {
     world_seed: u64,
     /// The herds and packs near players, as individuals (docs/ECOLOGY.md §8).
     pub near: crate::herds::Near,
+    /// The grass's climate share of a cell's most forage at (face index, face-local x, z), applied
+    /// to the world maps' islands as they are made (docs/ECOLOGY.md §10; none: as the ground's).
+    pub grass_share: Option<GrassShare>,
 }
 
 /// One herd or pack in the dev read-out.
@@ -123,6 +135,7 @@ impl Ecology {
             steps: 0,
             world_seed,
             near: crate::herds::Near::default(),
+            grass_share: None,
         }
     }
 
@@ -174,11 +187,17 @@ impl Ecology {
                         .iter()
                         .all(|&s| dwell_worldgen::worldmap::cache::is_ready(s))
                         .then(|| {
+                            let mut k = 0;
                             Arc::new(seeds.map(|s| {
-                                Island::from_world_map(
+                                let mut island = Island::from_world_map(
                                     &dwell_worldgen::worldmap::for_seed(s),
                                     &DATA,
-                                )
+                                );
+                                if let Some(share) = &self.grass_share {
+                                    island.scale_grazing(|x, z| share(k, x, z));
+                                }
+                                k += 1;
+                                island
                             }))
                         })
                 }
@@ -351,6 +370,66 @@ impl Server {
             changes.set(&mut self.world, c, dwell_blocks::AIR);
         }
         self.broadcast_changes(changes, dwell_protocol::VoxelModificationReason::Edit);
+    }
+
+    /// A client reads the far ecology (`EcologyHello`): the far groups now, then every
+    /// [`ECOLOGY_SEND_EVERY`] ticks while the ecology runs.
+    pub(super) fn ecology_hello(&mut self, id: SessionId) {
+        let Some(s) = self.sessions.get_mut(&id) else {
+            return;
+        };
+        s.ecology_hello = true;
+        if let Some(m) = self.ecology_message() {
+            self.send_reliable(id, &Message::Ecology(m), Channel::World);
+        }
+    }
+
+    /// The far groups for the clients (docs/ECOLOGY.md §9), None while the ecology doesn't run.
+    pub fn ecology_message(&self) -> Option<EcologyMessage> {
+        let snap = self.ecology_snapshot();
+        if !snap.enabled || !snap.running {
+            return None;
+        }
+        let groups = snap
+            .groups
+            .iter()
+            .take(MAX_ECOLOGY_GROUPS)
+            .map(|g| EcologyGroupNet {
+                id: g.id,
+                face: dwell_physics::net::face_bit(dwell_world::FaceFrame::of(g.face), 1),
+                species: g.species.to_string(),
+                x: g.x as f32,
+                z: g.z as f32,
+                size: g.size as f32,
+            })
+            .collect();
+        Some(EcologyMessage {
+            day: snap.day as f32,
+            groups,
+        })
+    }
+
+    /// Every [`ECOLOGY_SEND_EVERY`] ticks, the far groups to the joined clients that asked.
+    pub(super) fn send_ecology(&mut self) {
+        if !self.tick.is_multiple_of(ECOLOGY_SEND_EVERY) {
+            return;
+        }
+        let to: Vec<SessionId> = self
+            .sessions
+            .iter()
+            .filter(|(_, s)| s.joined() && s.ecology_hello)
+            .map(|(&id, _)| id)
+            .collect();
+        if to.is_empty() {
+            return;
+        }
+        let Some(m) = self.ecology_message() else {
+            return;
+        };
+        let m = Message::Ecology(m);
+        for id in to {
+            self.send_reliable(id, &m, Channel::World);
+        }
     }
 
     /// Tests, tools: the herds and packs near players.

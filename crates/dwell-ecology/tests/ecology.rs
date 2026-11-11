@@ -50,6 +50,7 @@ fn by_hand(island: &Island, groups: Vec<Group>) -> Ecosystem {
         grazing: island.grazing_max.clone(),
         next_id: groups.len() as u32,
         groups,
+        near: Vec::new(),
     }
 }
 
@@ -439,6 +440,47 @@ fn deer_flee_a_pack_and_a_hungry_pack_closes_on_a_herd() {
 }
 
 #[test]
+fn the_far_step_sees_groups_near_players() {
+    // A hungry pack 1 km from a herd that is near players (individuals: only its summary here).
+    let isl = island(&DATA);
+    let mut eco = by_hand(&isl, vec![group(1, wolf(), 1000.0, 0.0, 4.0, 0.5)]);
+    eco.near.push(group(0, deer(), 0.0, 0.0, 6.0, 0.2));
+    step(&isl, &DATA, &mut eco, 0.1);
+    assert!(
+        eco.groups[0].x < 1000.0 - 100.0,
+        "the pack closes on the near herd: {}",
+        eco.groups[0].x
+    );
+    // Within reach it kills from the near herd's summary (the near side reads the loss back).
+    let mut eco = by_hand(&isl, vec![group(1, wolf(), 50.0, 0.0, 7.0, 0.9)]);
+    eco.near.push(group(0, deer(), 0.0, 0.0, 3.0, 0.9));
+    step(&isl, &DATA, &mut eco, 1.0);
+    assert!(eco.near[0].size < 3.0, "the pack ate: {}", eco.near[0].size);
+    assert_eq!(eco.near[0].x, 0.0, "the near summary isn't stepped");
+    // A far herd flees a pack that is near players.
+    let mut eco = by_hand(&isl, vec![group(0, deer(), 0.0, 0.0, 6.0, 0.2)]);
+    eco.near.push(group(1, wolf(), 300.0, 0.0, 4.0, 0.5));
+    step(&isl, &DATA, &mut eco, 1.0);
+    assert_eq!(eco.groups[0].activity, Activity::Fleeing);
+    // The near head counts in the totals: an island full of near deer leaves no room to breed.
+    let room = isl.carrying_capacity(&DATA, deer());
+    let run = |near: f64| {
+        let mut eco = by_hand(&isl, vec![group(0, deer(), 0.0, 0.0, 4.0, 0.0)]);
+        if near > 0.0 {
+            eco.near.push(group(9, deer(), -1500.0, 0.0, near, 0.0));
+        }
+        step(&isl, &DATA, &mut eco, 5.0);
+        eco.groups[0].size
+    };
+    assert!(run(0.0) > 4.0, "an empty island breeds");
+    assert!(
+        run(room) <= 4.0 + 1e-9,
+        "a full one doesn't: {} (capacity {room})",
+        run(room)
+    );
+}
+
+#[test]
 fn predation_takes_deer() {
     let isl = island(&DATA);
     let mut eco = by_hand(
@@ -572,4 +614,47 @@ fn saved_species_are_mapped_by_name_and_unknown_ones_dropped() {
         eco.group_count(deer()),
         "the wolves dropped"
     );
+}
+
+/// The far forage and the near tall grass agree (docs/ECOLOGY.md §10): scaled by the grass's
+/// climate share, a cell's most forage over its ground's most is the near cap over `maxDensity`,
+/// and its forage regrows toward that, so a dry cell's stays sparse.
+#[test]
+fn the_far_forage_regrows_toward_the_same_climate_cap_as_the_near_grass() {
+    use dwell_worldgen::grass::{Rule, far_share};
+    let unscaled = island(&DATA);
+    let mut isl = unscaled.clone();
+    // A climate from dry in the west (0) to lush in the east (1).
+    let env = |x: i32, _z: i32| (0.5f32, ((f64::from(x) + 1800.0) / 3600.0).clamp(0.0, 1.0));
+    isl.scale_grazing(|x, z| far_share(&env, x, z));
+    let rule = Rule::build(1);
+    for c in 0..isl.n * isl.n {
+        if unscaled.grazing_max[c] == 0.0 {
+            continue;
+        }
+        let (x, z) = isl.centre(c);
+        let share = env(x.floor() as i32, z.floor() as i32).1;
+        let far = isl.grazing_max[c] / unscaled.grazing_max[c];
+        let near = rule.cap(share) / rule.data.max_density;
+        assert!(
+            (far - near).abs() < 1e-9,
+            "cell {c}: far {far}, near {near}"
+        );
+    }
+    let mut eco = by_hand(&isl, vec![]);
+    eco.grazing.iter_mut().for_each(|g| *g = 0.0);
+    step(&isl, &DATA, &mut eco, 200.0);
+    for (c, &g) in eco.grazing.iter().enumerate() {
+        assert!(
+            g <= isl.grazing_max[c] + 1e-9,
+            "cell {c} regrew past its climate's most"
+        );
+        let (x, _) = isl.centre(c);
+        if x < -1500.0 {
+            assert!(
+                g < 0.1 * unscaled.grazing_max[c].max(1e-9),
+                "a dry cell stays sparse: {g}"
+            );
+        }
+    }
 }

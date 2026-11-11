@@ -95,6 +95,7 @@ fn everything_round_trips_through_a_file() {
             tree_growth: Some(vec![1, 0, 0, 0, 0]),
             lava: Some(vec![1, 0, 0]),
             ecology: Some(vec![1, 2, 3]),
+            grass: Some(vec![1, 1, 0, 0, 0, 0]),
         };
         db.save(&batch).expect("saves");
         db.set_setting("motd", "hello").expect("setting");
@@ -141,6 +142,7 @@ fn everything_round_trips_through_a_file() {
     assert_eq!(db.cuts(), Some(vec![1, 0, 0, 0, 0]));
     assert_eq!(db.damage(), Some(vec![1, 0, 0, 0, 0]));
     assert_eq!(db.tree_growth(), Some(vec![1, 0, 0, 0, 0]));
+    assert_eq!(db.grass(), Some(vec![1, 1, 0, 0, 0, 0]));
     assert_eq!(db.lava(), Some(vec![1, 0, 0]));
     assert_eq!(db.ecology(), Some(vec![1, 2, 3]));
     assert_eq!(

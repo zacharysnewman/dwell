@@ -86,6 +86,7 @@ fn bifacial_section(c: LodCoord) -> GeneratedSection {
         }
     }
     GeneratedSection {
+        tints: Vec::new(),
         cells,
         surface: Some(vec![0.0; SURFACE_LEN]),
         surface_b: Some(vec![0.0; SURFACE_LEN]),
@@ -116,6 +117,7 @@ fn terrain_section(t: &dwell_worldgen::BifacialTerrain, c: LodCoord) -> Generate
         })
     };
     GeneratedSection {
+        tints: Vec::new(),
         cells,
         surface: pack(&a, first <= SECTION_CELLS),
         surface_b: pack(&b, first >= 0),
@@ -145,6 +147,7 @@ fn flat_section_at(c: LodCoord, top: i64) -> GeneratedSection {
         }
     }
     GeneratedSection {
+        tints: Vec::new(),
         cells,
         surface: None,
         surface_b: None,

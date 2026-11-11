@@ -13,7 +13,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
 
 const TOP_FIELDS = ['formatVersion', 'island', 'grazing', 'near', 'species'];
-const NEAR_FIELDS = ['spawnM', 'foldM', 'thinkS'];
+const NEAR_FIELDS = ['spawnM', 'foldM', 'thinkS', 'maxSlopeDeg', 'searchM'];
 const NEAR_SPECIES_FIELDS = ['creature', 'hungerPerS', 'energyPerS', 'sleep', 'graze', 'hunt', 'flee', 'mate', 'companyM', 'wanderM'];
 const NEAR_SLEEP_FIELDS = ['belowEnergy', 'nightChancePerS', 'nightBelowHunger', 'gainPerS', 'wakeAboveEnergy', 'wakeAboveHunger', 'minS'];
 const NEAR_GRAZE_FIELDS = ['aboveHunger', 'fullBelow', 'eatPerS', 'foragePerS', 'block', 'blockChancePerS'];
@@ -83,6 +83,8 @@ export function validateEcology(data) {
   range(nr.foldM, nr.spawnM, 2000, 'near.foldM');
   range(nr.thinkS, 0, 10, 'near.thinkS', true);
   if (nr.foldM <= nr.spawnM) fail('near.foldM must be past near.spawnM (the hysteresis)');
+  range(nr.maxSlopeDeg, 0, 90, 'near.maxSlopeDeg');
+  range(nr.searchM, 1, 128, 'near.searchM');
   if (!Array.isArray(data.species) || data.species.length === 0) fail('species must be a non-empty list');
   const index = new Map();
   data.species.forEach((s, i) => {
@@ -262,7 +264,7 @@ export function ecologyRust(d, source) {
     'pub const DATA: Data = Data {',
     `    island: IslandParams { cell_m: ${f(d.island.cellM)}, step_days: ${f(d.island.stepDays)} },`,
     `    regrow_per_day: ${f(d.grazing.regrowPerDay)},`,
-    `    near: NearParams { spawn_m: ${f(d.near.spawnM)}, fold_m: ${f(d.near.foldM)}, think_s: ${f(d.near.thinkS)} },`,
+    `    near: NearParams { spawn_m: ${f(d.near.spawnM)}, fold_m: ${f(d.near.foldM)}, think_s: ${f(d.near.thinkS)}, max_slope_deg: ${f(d.near.maxSlopeDeg)}, search_m: ${f(d.near.searchM)} },`,
     '    grounds: &[',
   ];
   for (const g of d.grazing.grounds) {

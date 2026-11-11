@@ -28,6 +28,8 @@ import {
   validatePresetBiomes,
   validateVolume,
   volumeRust,
+  validateGrass,
+  grassRust,
 } from './gen.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -752,6 +754,17 @@ test('the tectonics (T5) are off by default, take a boundary and a chain by data
   validateWorldKnobs({ tectonics: { kind: 2, riftDepth: 120 } });
   assert.throws(() => validateWorldKnobs({ tectonics: { coneRadius: 0 } }), /tectonics\.coneRadius/);
   const rocks = JSON.parse(readFileSync(join(here, 'rocks.json'), 'utf8'));
+  // The Rainier detail: off by default, validated by range.
+  for (const k of ['cleaverDepth', 'rimNotchDepth', 'cragHeight', 'cirqueDepth'])
+    assert.equal(world.tectonics[k], 0, `${k} off by default`);
+  validateWorldKnobs({ tectonics: { cleaverDepth: 160, rimNotches: 5, cragCount: 4, cirqueCount: 4 } });
+  assert.throws(() => validateWorldKnobs({ tectonics: { rimNotches: 2.5 } }), /tectonics\.rimNotches/);
+  assert.throws(() => validateWorldKnobs({ tectonics: { cirqueRadius: 0 } }), /tectonics\.cirqueRadius/);
+  assert.throws(() => validateWorldKnobs({ tectonics: { cragHeight: -1 } }), /tectonics\.cragHeight/);
+  assert.throws(
+    () => validateFixtureWorlds([{ name: 'test:x', overrides: { tectonics: { cirqueCount: 17 } } }], world),
+    /tectonics\.cirqueCount must be a whole number in \[0, 16\]/,
+  );
   rocks.tectonic.volcanic = 'dwell:nothing';
   assert.throws(() => validateRocks(rocks, blocks), /tectonic\.volcanic must name a stack/);
 });
@@ -806,4 +819,25 @@ test('lava vents on a cone are fixture-world data: checked, and a new one added 
     [{ ...vent, heat: 1 }, /unknown heat/],
   ])
     assert.throws(() => validateFixtureWorlds(of(v), world), msg);
+});
+
+test('grass.json validates, its output is current, and bad entries fail naming the field', () => {
+  const blocks = registryBlocks();
+  const decorations = validateDecorations(load(), blocks).decorations;
+  const grass = () => JSON.parse(readFileSync(join(here, 'grass.json'), 'utf8'));
+  const g = validateGrass(grass(), blocks, decorations);
+  const checkedIn = readFileSync(join(here, '../../crates/dwell-worldgen/src/grass.gen.rs'), 'utf8');
+  assert.equal(grassRust(g), checkedIn, 'grass.gen.rs is stale: run node shared/worldgen/gen.mjs');
+  const bad = (patch, re) =>
+    assert.throws(() => validateGrass({ ...grass(), ...patch }, blocks, decorations), re);
+  bad({ block: 'dwell:nope' }, /block "dwell:nope" is not a block/);
+  bad({ on: ['dwell:tall_grass'] }, /on "dwell:tall_grass" is not a full block/);
+  bad({ decoration: 'nope' }, /decoration "nope" is not a decoration/);
+  bad({ maxDensity: 1.5 }, /maxDensity must be in/);
+  bad({ maxDensity: 0.1 }, /maxDensity 0.1 is under decoration meadow_grass/);
+  bad({ reach: 1.5 }, /reach must be a whole number/);
+  bad({ extra: 1 }, /unknown extra/);
+  // A rule by data alone: another ground and rates.
+  const fixture = validateGrass({ ...grass(), on: ['dwell:dirt'], spreadPerDay: 1, reach: 2 }, blocks, decorations);
+  assert.match(grassRust(fixture), /on: &\["dwell:dirt"\]/);
 });

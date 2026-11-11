@@ -134,6 +134,90 @@ impl Records {
     }
 }
 
+/// The planter byte of a tree a player planted from a sapling (ADR 0079 S4): no placement's planter,
+/// so no variant's block swaps.
+pub const PLANTED: u8 = u8::MAX;
+
+/// A planted sapling's seed: a hash of its anchor (world cell), so a sapling planted at a place
+/// always grows the same tree there.
+pub fn seed_at(anchor: [i32; 3]) -> u32 {
+    let mut h = 0x9E37_79B9_7F4A_7C15u64;
+    for v in anchor {
+        h ^= u64::from(v as u32);
+        h = h.wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        h ^= h >> 31;
+    }
+    (h ^ (h >> 32)) as u32
+}
+
+/// Why a sapling is not planted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Refused {
+    /// The block placed is no species' sapling.
+    NotASapling,
+    /// The ground under it is not one of its species' `plantOn` blocks.
+    WrongGround,
+}
+
+/// The record of species sapling `item` planted at world cell `anchor` (the cell above its ground)
+/// on world day `day`, the ground under it block `ground` (by name): stage 0, its seed from the
+/// position, its turn from the seed. Refused on ground its species doesn't take on.
+pub fn plant(item: &str, anchor: [i32; 3], ground: &str, day: f64) -> Result<Record, Refused> {
+    let species = species::of_sapling(item).ok_or(Refused::NotASapling)?;
+    let sapling = SPECIES[species].sapling.ok_or(Refused::NotASapling)?;
+    if !sapling.takes_on(ground) {
+        return Err(Refused::WrongGround);
+    }
+    let seed = seed_at(anchor);
+    Ok(Record {
+        anchor,
+        face: FaceFrame::at_row(anchor[1]).face,
+        species: species as u16,
+        seed,
+        stage: 0,
+        since: day,
+        turns: (seed >> 29) as u8 & 3,
+        planter: PLANTED,
+        variant: 0,
+        stopped: false,
+    })
+}
+
+/// How far (cells) from a tree's anchor its leaves may reach, sideways and up: the bound
+/// [`tree_of_leaf`] looks within.
+const LEAF_REACH: i32 = 24;
+const LEAF_RISE: i32 = 64;
+
+/// The recorded tree whose current stage put a leaf at world cell `cell` (its species' leaf block),
+/// if any: whose broken leaves drop its species' sapling (ADR 0079 S4).
+pub fn tree_of_leaf(records: &Records, cell: [i32; 3]) -> Option<&Record> {
+    let f = FaceFrame::at_row(cell[1]);
+    let local = f.cell(cell);
+    records.trees.values().find(|r| {
+        if r.face != f.face || r.stopped {
+            return false;
+        }
+        let a = f.cell(r.anchor);
+        let (dx, dy, dz) = (local[0] - a[0], local[1] - a[1], local[2] - a[2]);
+        if dx.abs() > LEAF_REACH || dz.abs() > LEAF_REACH || !(0..=LEAF_RISE).contains(&dy) {
+            return false;
+        }
+        let Some(s) = SPECIES.get(usize::from(r.species)) else {
+            return false;
+        };
+        placed(r, r.stage, &[])
+            .and_then(|p| p.at(local))
+            .is_some_and(|m| dwell_blocks::block_of(m).name == s.leaf)
+    })
+}
+
+/// The sapling a broken leaf of tree `r` drops on a `roll` in [0, 1): its species' `sapling.item`
+/// when the roll is under the species' `sapling.dropChance` (ADR 0079 S4).
+pub fn sapling_drop(r: &Record, roll: f64) -> Option<&'static str> {
+    let p = SPECIES.get(usize::from(r.species))?.sapling?;
+    (roll < f64::from(p.drop_chance)).then_some(p.item)
+}
+
 /// What one growth step does: the cells to write (world cells), and whether the tree is found felled.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Step {
@@ -431,5 +515,96 @@ mod tests {
             "a newer version is left unread"
         );
         assert_eq!(Records::from_bytes(&b[..b.len() - 2]), None);
+    }
+
+    /// The ground name and anchor of a sapling planted on face `f` at local (x, z).
+    fn planted(f: FaceFrame, item: &str, ground: &str) -> Result<Record, Refused> {
+        plant(item, f.cell([4, 120, -2]), ground, 1.5)
+    }
+
+    dwell_world::both_faces!(
+        fn a_planted_sapling_is_a_stage_0_record_that_grows_by_days(f: FaceFrame) {
+            for (item, ground) in [
+                ("dwell:oak_sapling", "dwell:grass"),
+                ("dwell:pine_sapling", "dwell:dirt"),
+                ("dwell:palm_sapling", "dwell:sand"),
+            ] {
+                let mut r = planted(f, item, ground).expect(item);
+                let s = &SPECIES[usize::from(r.species)];
+                assert_eq!(s.sapling.unwrap().item, item);
+                assert_eq!((r.stage, r.since, r.face), (0, 1.5, f.face));
+                assert_eq!(r.planter, PLANTED);
+                assert_eq!(r.seed, seed_at(r.anchor), "the seed is the position's");
+                // Its stage 0 stands its trunk's foot at the anchor.
+                let zero = world_of(&r);
+                assert!(
+                    zero.contains_key(&r.anchor),
+                    "{item}: the foot at the anchor"
+                );
+                let per = f64::from(s.days_per_stage);
+                for n in 1..s.stages as u8 {
+                    assert_eq!(r.due(1.5 + per * f64::from(n) + 1e-6), n);
+                }
+                // Grown n stages, it is stage n's tree.
+                let mut world = zero;
+                let n = 3;
+                grow_to(&mut world, &mut r, n);
+                let mut want = r.clone();
+                want.stage = n;
+                assert_eq!(world, world_of(&want), "{item}: stage {n}");
+            }
+        }
+    );
+
+    dwell_world::both_faces!(
+        fn a_sapling_on_the_wrong_ground_is_refused(f: FaceFrame) {
+            assert_eq!(
+                planted(f, "dwell:palm_sapling", "dwell:grass"),
+                Err(Refused::WrongGround)
+            );
+            assert_eq!(
+                planted(f, "dwell:oak_sapling", "dwell:sand"),
+                Err(Refused::WrongGround)
+            );
+            assert_eq!(
+                planted(f, "dwell:oak_sapling", "dwell:stone"),
+                Err(Refused::WrongGround)
+            );
+            assert_eq!(
+                planted(f, "dwell:stone", "dwell:grass"),
+                Err(Refused::NotASapling)
+            );
+        }
+    );
+
+    dwell_world::both_faces!(
+        fn a_leaf_is_found_to_be_its_trees(f: FaceFrame) {
+            let r = oak(f, 5);
+            let mut rs = Records::default();
+            rs.trees.insert(r.anchor, r.clone());
+            let leaf = dwell_blocks::require("dwell:leaves");
+            let w = world_of(&r);
+            let at = *w.iter().find(|(_, m)| **m == f.state(leaf)).unwrap().0;
+            assert_eq!(tree_of_leaf(&rs, at).map(|t| t.anchor), Some(r.anchor));
+            // Its trunk is no leaf; a cell beside the tree is no one's.
+            assert!(tree_of_leaf(&rs, r.anchor).is_none());
+            let away = f.cell({
+                let a = f.cell(r.anchor);
+                [a[0] + 40, a[1], a[2]]
+            });
+            assert!(tree_of_leaf(&rs, away).is_none());
+        }
+    );
+
+    #[test]
+    fn a_planted_record_round_trips_its_saved_form() {
+        // both-faces: one planted record per face in one table.
+        let mut rs = Records::default();
+        for f in [FaceFrame::A, FaceFrame::B] {
+            let mut r = planted(f, "dwell:palm_sapling", "dwell:sand").unwrap();
+            r.stage = 2;
+            rs.trees.insert(r.anchor, r);
+        }
+        assert_eq!(Records::from_bytes(&rs.to_bytes()), Some(rs));
     }
 }

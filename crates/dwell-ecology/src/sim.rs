@@ -50,6 +50,12 @@ pub struct Ecosystem {
     pub grazing: Vec<f64>,
     pub groups: Vec<Group>,
     pub next_id: u32,
+    /// The herds and packs near players (individuals now: out of `groups`), as the near side last
+    /// summarised them (docs/ECOLOGY.md §8): not stepped and not saved, but the far step treats them
+    /// as present — hunters target them, grazers flee them, and their head counts in the species'
+    /// totals. A hunter's kill on one lowers its `size` here; the near side reads the loss back as
+    /// deaths among its individuals.
+    pub near: Vec<Group>,
 }
 
 /// How fast energy follows the activity (days).
@@ -110,6 +116,7 @@ impl Ecosystem {
             grazing: island.grazing_max.clone(),
             groups: Vec::new(),
             next_id: 0,
+            near: Vec::new(),
         };
         let land: Vec<usize> = (0..island.walkable.len())
             .filter(|&c| island.walkable[c])
@@ -150,9 +157,19 @@ impl Ecosystem {
         self.next_id += 1;
     }
 
-    /// The head of `species` on the island.
+    /// The head of `species` on the island (the far records; [`Self::near_head`] adds those near
+    /// players).
     pub fn population(&self, species: usize) -> f64 {
         self.groups
+            .iter()
+            .filter(|g| g.species == species)
+            .map(|g| g.size)
+            .sum()
+    }
+
+    /// The head of `species` near players (their summaries in [`Self::near`]).
+    pub fn near_head(&self, species: usize) -> f64 {
+        self.near
             .iter()
             .filter(|g| g.species == species)
             .map(|g| g.size)
@@ -195,13 +212,17 @@ impl Ecosystem {
             *g = max - (max - *g) * regrow;
         }
         let species = data.species.len();
-        let totals: Vec<f64> = (0..species).map(|s| self.population(s)).collect();
+        // The groups near players count in the totals (their grazing pressure, a hunter's prey).
+        let totals: Vec<f64> = (0..species)
+            .map(|s| self.population(s) + self.near_head(s))
+            .collect();
         let capacity: Vec<f64> = (0..species)
             .map(|s| island.carrying_capacity(data, s))
             .collect();
         let seen: Vec<Seen> = self
             .groups
             .iter()
+            .chain(&self.near)
             .map(|g| Seen {
                 species: g.species,
                 x: g.x,
@@ -386,18 +407,16 @@ impl Ecosystem {
         let exposed = |o: &Group| o.size * (1.0 - island.refuge_at(o.x, o.z));
         let dispersing = sp.disperse.filter(|d| g.hunger > d.above_hunger);
         let mut factor = 1.0;
+        // Prey near players (individuals now) are still prey: their summaries are targets too.
+        let all = || self.groups.iter().chain(&self.near);
         let (target, activity) = if let Some(d) = dispersing {
             factor = d.speed_factor;
-            let biggest = self
-                .groups
-                .iter()
+            let biggest = all()
                 .filter(|o| huntable(o))
                 .max_by(|a, b| a.size.total_cmp(&b.size));
             (biggest.map_or(at, |o| (o.x, o.z)), Activity::Dispersing)
         } else {
-            let nearest = self
-                .groups
-                .iter()
+            let nearest = all()
                 .filter(|o| huntable(o))
                 .map(|o| (dist(at, (o.x, o.z)), (o.x, o.z)))
                 .filter(|&(d, _)| d <= sp.sense_radius_m)
@@ -425,9 +444,8 @@ impl Ecosystem {
         g.z = z;
         g.activity = activity;
         let demand = size * need_per_head_per_day * dt;
-        let near = self
-            .groups
-            .iter()
+        let all = || self.groups.iter().chain(&self.near);
+        let near = all()
             .enumerate()
             .filter(|(_, o)| huntable(o))
             .map(|(j, o)| (dist((x, z), (o.x, o.z)), j))
@@ -436,17 +454,21 @@ impl Ecosystem {
         let Some((_, j)) = near else {
             return 0.0;
         };
-        let found: f64 = self
-            .groups
-            .iter()
+        let found: f64 = all()
             .filter(|o| huntable(o) && dist((x, z), (o.x, o.z)) <= sp.sense_radius_m.max(reach_m))
             .map(exposed)
             .sum();
+        let n = self.groups.len();
+        let prey = if j < n {
+            &mut self.groups[j]
+        } else {
+            &mut self.near[j - n]
+        };
         let kill = demand
             .min(size * kills_per_head_per_day * Data::catch_share(sp.diet, found) * dt)
-            .min(exposed(&self.groups[j]))
+            .min(exposed(prey))
             .max(0.0);
-        self.groups[j].size -= kill;
+        prey.size -= kill;
         if kill > 0.0 && dispersing.is_none() {
             self.groups[i].activity = Activity::Hunting;
         }

@@ -13,6 +13,8 @@
 //!   box around it (3 m each way, cut to the same reach on both sides where the chunk's padding
 //!   ends, so two chunks agree near their border). It stands in for an ellipsoid fitted to the
 //!   tree's crown: the tree record is not at hand in the mesher (a recorded deviation).
+//! - **Per-tree tints** (ADR 0079): a leaf cell's colour, and its cards', are tinted by the tree
+//!   owning it among the chunk's species trees (`dwell_world::tree_tint`), its seed's `variety`.
 //!
 //! Face-local throughout (+y up): face B's mesh is mirrored afterwards with the rest.
 
@@ -20,6 +22,7 @@ use super::{Builder, Cells, FACES, Kind, PAD, surface};
 use crate::sky::{AO_OPEN, vertex_light};
 use dwell_look::leaves::LEAVES;
 use dwell_look::normal_tint;
+use dwell_world::tree_tint::Tint;
 use dwell_world::{CELL_H, normal_to_m};
 
 const N: i32 = dwell_protocol::CHUNK_SIZE;
@@ -428,8 +431,10 @@ pub(super) fn leaf_voxel(
         }
     });
     let list = pieces(ex, leafy, nb_ex, LEAVES.chamfer);
+    // The tree owning the cell tints it (ADR 0079); a placed leaf keeps its colour.
+    let tint = cells.tint(cell);
     for piece in list {
-        emit(b, cells, crowns, k, (cell, ex), &piece);
+        emit(b, cells, crowns, k, (cell, ex), &piece, tint);
     }
     if with_cards && k.style.render == dwell_blocks::RenderMode::Cutout {
         let world: [i64; 3] =
@@ -440,7 +445,7 @@ pub(super) fn leaf_voxel(
             }))
         };
         let list = cards(ex, world, &LEAVES.cards, at);
-        emit_cards(b, cells, k, cell, &list);
+        emit_cards(b, cells, k, cell, &list, tint);
     }
 }
 
@@ -547,7 +552,14 @@ pub(crate) fn cards(
 
 /// Pushes `list` into the cutout mesh `b` with their `plants` stream (sway, wind, the distance
 /// fade) and `bare` (no ink).
-fn emit_cards(b: &mut Builder, cells: &Cells<'_>, k: &Kind, cell: [i32; 3], list: &[Card]) {
+fn emit_cards(
+    b: &mut Builder,
+    cells: &Cells<'_>,
+    k: &Kind,
+    cell: [i32; 3],
+    list: &[Card],
+    leaf_tint: Tint,
+) {
     if list.is_empty() {
         return;
     }
@@ -563,6 +575,7 @@ fn emit_cards(b: &mut Builder, cells: &Cells<'_>, k: &Kind, cell: [i32; 3], list
     } else {
         surface(&k.style, 0, 1)
     };
+    let color = leaf_tint.apply_rgb8(color);
     tile.turn = false;
     let [x, y, z] = cell;
     for card in list {
@@ -625,6 +638,7 @@ fn emit(
     k: &Kind,
     (cell, ex): ([i32; 3], [bool; 6]),
     piece: &Piece,
+    leaf_tint: Tint,
 ) {
     let [x, y, z] = cell;
     let n_m = normal_to_m(piece.normal);
@@ -634,6 +648,7 @@ fn emit(
         .unwrap_or(1);
     let sign = if n_m[dom] >= 0.0 { 1 } else { -1 };
     let (color, tile) = surface(&k.style, dom, sign);
+    let color = leaf_tint.apply_rgb8(color);
     let base = b.vertex_count();
     let sides: Vec<usize> = if piece.sides.is_empty() {
         vec![super::face_of(dom, sign)]

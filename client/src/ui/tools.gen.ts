@@ -28,6 +28,8 @@ export const BLOCK_DAMAGE: readonly {
   { block: 'dwell:glacier_ice_ramp', default: null, tools: { pickaxe: 4 } },
   { block: 'dwell:red_sandstone', default: null, tools: { pickaxe: 7 } },
   { block: 'dwell:red_sandstone_ramp', default: null, tools: { pickaxe: 7 } },
+  { block: 'dwell:basalt', default: null, tools: { pickaxe: 7 } },
+  { block: 'dwell:obsidian', default: null, tools: { pickaxe: 12 } },
 ];
 
 /** Tools that wear (`durability.items`): the hits each survives (the slot's wear bar). */

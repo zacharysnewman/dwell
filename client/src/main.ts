@@ -164,6 +164,12 @@ export interface GameDebugState {
   spyglass: number;
 }
 
+/** `__dwell.ecology()`: the far ecology's herds and packs (docs/ECOLOGY.md §9). */
+interface EcologyReadout {
+  day: number;
+  groups: { id: number; face: 'a' | 'b'; species: string; x: number; z: number; size: number }[];
+}
+
 interface RenderStats {
   calls: number;
   triangles: number;
@@ -356,6 +362,11 @@ interface DwellDebug {
   blasts(): { x: number; y: number; z: number; age: number }[];
   /** The creatures drawn (docs/adr/0073-creatures.md): each one's feet, heading (deg) and speed (m/s). */
   creatures(): { x: number; y: number; z: number; yaw: number; speed: number }[];
+  /**
+   * The far ecology the server last told of (docs/ECOLOGY.md §9): its day and the far herds and
+   * packs (face, species, face-local x/z, head); null before the first, or from a server without one.
+   */
+  ecology(): EcologyReadout | null;
   /** The kept player controller ticks, oldest first. */
   ticks(): TickSample[];
   /** The latest sounds played (ids, newest last; docs/AUDIO.md). */
@@ -1229,6 +1240,7 @@ async function start(): Promise<App | null> {
       }
       return out;
     },
+    ecology: () => client.ecology() as EcologyReadout | null,
     ticks: () => client.telemetryTicks() as TickSample[],
     telemetryReset: () => {
       client.telemetryReset();

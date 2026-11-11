@@ -102,6 +102,11 @@ pub struct NearParams {
     pub fold_m: f64,
     /// Seconds between their decisions.
     pub think_s: f64,
+    /// The steepest ground (degrees, from the rise to the next column) an individual is placed on.
+    pub max_slope_deg: f64,
+    /// How far (face-local metres) from its record an individual's ground is searched for when the
+    /// record's own place isn't the ecology's ground (water, too steep).
+    pub search_m: f64,
 }
 
 /// A species' individuals near players: the owner's mockup's needs as data

@@ -23,6 +23,7 @@ test('species refer to each other by name, emitted as indices', () => {
   assert.match(rs, /Diet::Prey \{ species: &\[0\]/);
   assert.match(rs, /flee: Some\(Flee \{ from: &\[1\]/);
   assert.match(rs, /creature: "dwell:doe"/);
+  assert.match(rs, /max_slope_deg: 40\.0, search_m: 24\.0/);
   assert.match(rs, /block: Some\("dwell:tall_grass"\)/);
 });
 
@@ -65,6 +66,8 @@ test('bad entries fail with a message naming them', () => {
   bad((d) => (d.species[1].name = 'Wolf'), /species\[1\]: name must be namespace:name/);
   bad((d) => (d.species[0].starvePerDay = 0.5), /species\.dwell:deer\.starvePerDay/);
   bad((d) => (d.near.foldM = d.near.spawnM), /near\.foldM must be past near\.spawnM/);
+  bad((d) => (d.near.maxSlopeDeg = 95), /near\.maxSlopeDeg/);
+  bad((d) => delete d.near.searchM, /near\.searchM/);
   bad((d) => (d.species[0].near.creature = 'Doe'), /species\.dwell:deer\.near\.creature must name a creature/);
   bad((d) => (d.species[0].near.hunt = d.species[1].near.hunt), /species\.dwell:deer\.near\.hunt: a grazer doesn't hunt/);
   bad((d) => (d.species[1].near.flee = { radiusM: 5, pace: 2 }), /species\.dwell:wolf\.near\.flee: the species flees nothing/);

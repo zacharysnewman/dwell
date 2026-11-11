@@ -40,6 +40,17 @@ Last updated: 2026-11-11 (0.52.68).
    - **Status (0.52.60):** growth over time built (ADR 0079 S3: per-tree records saved in an optional
      `tree_growth` table, the growers step, edits win, felled trees stop; `?growth=N` time-lapse).
      Outstanding: per-tree leaf tints, a sapling item, frond blades.
+   - **Status (leaf tints, ADR 0079 S4):** per-tree leaf tints built: each species tree's leaves and
+     cards tinted by its seed's `variety` (lightness, hue), the far (LOD 1 m/2 m) trees alike, the same
+     tree from either chunk at a border; placed leaves and the default world unchanged. Mesher logic
+     and tests only: the in-game look is still to be checked on a GPU. Outstanding: a sapling item,
+     frond blades.
+   - **Status (saplings, ADR 0079 S4):** saplings built: `dwell:oak_sapling`, `dwell:pine_sapling`,
+     `dwell:palm_sapling`, named by each species' `sapling` data (`plantOn`: grass/dirt for oak and
+     pine, sand for palm; `dropChance` 5 %); placed on its ground a sapling becomes stage 0 and a
+     growth record that grows by the world days; other ground is refused; leaves of species trees drop
+     them in adventure; creative lists them under Plants. Outstanding: per-tree leaf tints, frond
+     blades, a sapling's own model.
 7. **Chopping prototype** (behind a switch, not replacing chopping until approved). Decided:
    - A tree falls once more than 50 % of its cross-section is cut, from one side or two.
    - The back cut is supported, not required: notch + back cut leaves a hinge that steers the fall
@@ -140,9 +151,14 @@ Last updated: 2026-11-11 (0.52.68).
    64 m of a player becomes its deer or wolves (the existing creatures, driven) and folds back past 96 m
    (survivors, averaged needs, centroid); the mockup's needs-driven rules as data (flee, sleep at night,
    graze the cell and sometimes a real tall grass block, chase and kill, mate up to the cap, company);
-   the creature rules for deer and wolves left out while the ecology runs. Next (ECOLOGY.md §7): simple
-   far rendering with a client read-out, local worlds' maps, grazing applied to tall grass as chunks
-   load; the far step seeing near groups; the herd's stag.
+   the creature rules for deer and wolves left out while the ecology runs. **Slice 3b built** (logic, no
+   rendering): the far step sees near groups through a summary the near side keeps (hunted, fled, counted
+   in the totals; a far kill becomes a death near players); a herd comes near as the creature rule's mix
+   (does, sometimes a stag; fawns by the same data); individuals only on the ecology's ground (walkable
+   island cell, dry, ≤ `near.maxSlopeDeg`), else the nearest within `near.searchM`; the far groups sent
+   every 2 s to clients that ask (`EcologyHello`, `inventory_flags::ECOLOGY`) and `__dwell.ecology()`
+   (ECOLOGY.md §9). Next (ECOLOGY.md §7): simple far rendering from that read-out, local worlds' maps,
+   grazing applied to tall grass as chunks load.
 12. **Players' saved structures as placement sources** (owner 2026-11-11): per player (their library, usable
    in any world they create); placed copies editable, not protected; 32³ for now (may change), or larger
    structures as a grid of 32³ tiles. Sharing between players: Future.
@@ -156,6 +172,16 @@ Last updated: 2026-11-11 (0.52.68).
    system.
 
 Cloud sessions: logic-only items can run as `claude --cloud` sessions in parallel (verified 2026-11-11).
+
+14. **Tall grass grows and spreads** (owner 2026-11-11: "I want tall grass to steadily grow and spread. It
+   should probably have a max depending on climate/biome."). **Built** (ADR 0075 T3c, docs/ECOLOGY.md §10):
+   `shared/worldgen/grass.json` (the rule as data: the block, the ground, the decoration whose climate
+   envelope sets the cap, the max density, spread and regrowth a day, reach, open air above, the catch-up
+   bound) → `grass.gen.rs`; `dwell_worldgen::grass` (the face-local step); the server's grass step every 5 s
+   over loaded chunks, each growing the whole world days it missed (at most 20); a player's block wins;
+   eaten grass regrows; the far forage's most is scaled by the same climate share. A per-world switch in an
+   optional `grass_growth` table: on for new worlds, off for worlds saved before it (their meadows stay as
+   they were). Not yet: a setting in the world menu; a local world's ecology share (its maps, ECOLOGY.md §7).
 
 ## Done
 
@@ -229,14 +255,18 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   after two rounds; leads in BUGS.md).
 - **Arches:** the openings in the LOD and in Chisel's 3D view; caprock lips; an arch on a fin seen in
   game (fins and the rock filter built, 0.52.66).
-- **Terrain leftovers (0.52.66 round 1 left):** Rainier detail (below); in-game screenshots of an arch
+- **Terrain leftovers (0.52.66 round 1 left):** in-game screenshots of an arch
   on a fin, the red mesa and a snowy biome edge, and of T3b in the starter (its biomes' snow lines, sand
   under the steppe's grass, the grass thinning into the dry lee; built without screenshots). T3b is built
   (ADR 0075 T3b): a biome's own snow line (`snow`), soil blocks by soil type (`soilBlocks`), tall grass
   and ground items by climate (`undergrowth`); the starter opts in.
 - **Pieces follow-ups (0.52.46):** the worn axe not yet seen in game.
 - **Block damage follow-ups:** scoops read as dark stains (flat decals).
-- **Peaks:** a more broken summit, deeper ridges and cirques (Rainier).
+- **Peaks (Rainier detail, built; ADR 0075 T5):** a broken summit (rim notches, crags, the highest point
+  off-centre), cleavers at the column level that survive the 100 m map, and cirques under steep
+  headwalls with ice floors, as opt-in `tectonics` keys on `test:tall_peak` and the starter.
+  Outstanding: the in-game look (screenshots from the summit and from afar, on a local GPU); the far
+  terrain's LOD levels coarser than the cirques and crags may smooth them.
 - **Chisel:** biome decorations and spacing per biome; players' saved structures as placement sources;
   the in-game editor and a biome choice in the New world form.
 

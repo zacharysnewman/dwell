@@ -306,9 +306,22 @@ step on the server every few seconds over loaded chunks, a stage every `growth.d
 days written as the difference between stages where nobody edited; felled trees stop; saved in the
 optional `tree_growth` table. `?growth=N` speeds it for a time-lapse.
 
+**Per-tree leaf tints (ADR 0079 S4):** each species tree's leaves and cards are tinted by its seed's
+`variety` (`lightness`, `hue`, as the prototype draws them), near and at the LOD's tree levels alike;
+a leaf cell's tree is the nearest anchor among the trees whose bounds hold it, the same from either
+chunk at a border. Placed leaves and the default world's hand-built pines keep the plain colour.
+
 Not built: a sapling item to plant a tree (needs a per-tree record, its stage and the cells players edited,
 and the `growers` layer of §5: the stage advanced every `growth.daysPerStage` world days, the cells
-regenerated where nobody edited), per-tree leaf tints (`variety.lightness`, `hue`), frond blades (a `dwell:palm_frond` block), a pine needle block.
+regenerated where nobody edited), frond blades (a `dwell:palm_frond` block), a pine needle block.
+**Saplings (ADR 0079 S4):** each species names a sapling item in its data (`sapling`: the block
+item, the `plantOn` ground, the leaves' `dropChance`). Placed on its ground the sapling becomes the
+species' stage-0 tree and a growth record (seeded by the position), which the growers step grows like
+a generated tree; on other ground the place is refused. Broken leaves of a recorded tree drop its
+sapling at the data's chance (adventure); creative lists the saplings under Plants.
+
+Not built: per-tree leaf tints (`variety.lightness`, `hue`), frond blades (a `dwell:palm_frond`
+block), a pine needle block, a sapling's own model.
 
 ## Sources
 

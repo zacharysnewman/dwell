@@ -75,7 +75,7 @@ export interface ShapeDef {
 }
 
 /** FNV-1a 64 over the canonical state strings (each followed by "\n") in id order. */
-export const REGISTRY_HASH = 0xc8b4a901c5b0b1e9n;
+export const REGISTRY_HASH = 0xb94439e107d0db07n;
 
 export const BLOCK_DEFS: readonly BlockDef[] = [
   { id: 'dwell:air', first: 0, count: 1, properties: [] },
@@ -119,6 +119,9 @@ export const BLOCK_DEFS: readonly BlockDef[] = [
   { id: 'dwell:basalt', first: 496, count: 2, properties: [{ name: 'flooded', values: ['false', 'true'] }], sound: 'dwell:stone' },
   { id: 'dwell:obsidian', first: 498, count: 2, properties: [{ name: 'flooded', values: ['false', 'true'] }], sound: 'dwell:stone' },
   { id: 'dwell:lava', first: 500, count: 1, properties: [], sound: 'dwell:stone' },
+  { id: 'dwell:oak_sapling', first: 501, count: 1, properties: [], sound: 'dwell:grass' },
+  { id: 'dwell:pine_sapling', first: 502, count: 1, properties: [], sound: 'dwell:grass' },
+  { id: 'dwell:palm_sapling', first: 503, count: 1, properties: [], sound: 'dwell:grass' },
 ];
 
 /** The shapes block states use. */
@@ -662,6 +665,9 @@ const STATES_3: readonly StateDef[] = [
   { id: 498, state: 'dwell:obsidian[flooded=false]', block: 39, values: { flooded: 'false' }, look: 'cube', render: 'opaque', color: 0x16121e, opacity: 1, textures: { top: 'obsidian', side: 'obsidian', bottom: 'obsidian' }, shape: 1, flooded: false, placeable: true },
   { id: 499, state: 'dwell:obsidian[flooded=true]', block: 39, values: { flooded: 'true' }, look: 'cube', render: 'opaque', color: 0x16121e, opacity: 1, textures: { top: 'obsidian', side: 'obsidian', bottom: 'obsidian' }, shape: 1, flooded: true, placeable: false },
   { id: 500, state: 'dwell:lava', block: 40, values: {  }, look: 'cube', render: 'opaque', color: 0xe8561c, opacity: 1, textures: { top: 'lava', side: 'lava', bottom: 'lava' }, shape: 0, flooded: false, placeable: false },
+  { id: 501, state: 'dwell:oak_sapling', block: 41, values: {  }, look: 'cross', render: 'cutout', color: 0x6fa83a, opacity: 1, textures: { top: 'leaves', side: 'leaves', bottom: 'leaves' }, selection: [0.2, 0, 0.2, 0.8, 0.7, 0.8], shape: 0, flooded: false, placeable: true },
+  { id: 502, state: 'dwell:pine_sapling', block: 42, values: {  }, look: 'cross', render: 'cutout', color: 0x3f7a4a, opacity: 1, textures: { top: 'leaves', side: 'leaves', bottom: 'leaves' }, selection: [0.2, 0, 0.2, 0.8, 0.7, 0.8], shape: 0, flooded: false, placeable: true },
+  { id: 503, state: 'dwell:palm_sapling', block: 43, values: {  }, look: 'cross', render: 'cutout', color: 0x8fbf4a, opacity: 1, textures: { top: 'leaves', side: 'leaves', bottom: 'leaves' }, selection: [0.2, 0, 0.2, 0.8, 0.7, 0.8], shape: 0, flooded: false, placeable: true },
 ];
 
 export const STATE_DEFS: readonly StateDef[] = [

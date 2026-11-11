@@ -585,6 +585,13 @@ pub enum Message {
     /// without `VitalsHello`) goes to it as `Fall`.
     CausesHello(u8),
     /// C→S reliable, control channel, only to a server whose `Inventory` has
+    /// `inventory_flags::ECOLOGY` (docs/ECOLOGY.md §9): this client reads the far ecology; send it
+    /// `Ecology` (now, then at a low rate).
+    EcologyHello,
+    /// S→C reliable, world channel, only to a client that sent `EcologyHello`: the far herds and
+    /// packs on both faces (not those near players: those are creatures), for far rendering.
+    Ecology(EcologyMessage),
+    /// C→S reliable, control channel, only to a server whose `Inventory` has
     /// `inventory_flags::STEAM` (docs/proposals/VOLCANOES.md §6.3): send this client the steam
     /// where lava boils water away.
     SteamHello,
@@ -592,6 +599,30 @@ pub enum Message {
     /// whose water lava just boiled away (the clients' puffs and hiss). u16 count (at most
     /// `MAX_STEAM_PER_MESSAGE`), each cell three i32.
     Steam(Vec<[i32; 3]>),
+}
+
+/// The most groups one `Ecology` carries (more are left out).
+pub const MAX_ECOLOGY_GROUPS: usize = 1024;
+/// The longest species name on the wire.
+pub const MAX_SPECIES_NAME: usize = 64;
+
+/// A far herd or pack as sent (docs/ECOLOGY.md §9): its record's id, its face (0 face A, 1 face
+/// B), its species by name, its place (face-local metres on its face's island) and its head.
+#[derive(Clone, Debug, PartialEq)]
+pub struct EcologyGroupNet {
+    pub id: u32,
+    pub face: u8,
+    pub species: String,
+    pub x: f32,
+    pub z: f32,
+    pub size: f32,
+}
+
+/// `Ecology`: the ecology's day and its far groups.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct EcologyMessage {
+    pub day: f32,
+    pub groups: Vec<EcologyGroupNet>,
 }
 
 /// The most cells one `Steam` carries (more are dropped: a puff each is plenty).
@@ -719,9 +750,11 @@ pub mod inventory_flags {
     /// The server takes `CausesHello` (docs/proposals/VOLCANOES.md §6.2): it sends a damage cause
     /// past the client's last known one (`Burn`, …) only to a client that said it knows it.
     pub const CAUSES: u8 = 32;
+    /// The server runs a far ecology (docs/ECOLOGY.md §9): it takes `EcologyHello`.
+    pub const ECOLOGY: u8 = 64;
     /// The server has lava (docs/proposals/VOLCANOES.md §6.3): it takes `SteamHello` and then
     /// sends `Steam`.
-    pub const STEAM: u8 = 64;
+    pub const STEAM: u8 = 128;
 }
 
 /// The most cells one `Damage` carries (more go in more messages).
@@ -820,6 +853,8 @@ impl Message {
             M::Steam(_) => MessageType::Steam,
             M::Damage(_) => MessageType::Damage,
             M::Creatures(_) => MessageType::Creatures,
+            M::EcologyHello => MessageType::EcologyHello,
+            M::Ecology(_) => MessageType::Ecology,
             M::BodyEdit(_) => MessageType::BodyEdit,
         }
     }
@@ -1497,7 +1532,11 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
         },
         M::VitalsHello => {}
         M::CausesHello(n) => w.u8(*n),
-        M::CreaturesHello | M::DamageHello | M::WorldgenRequest | M::SteamHello => {}
+        M::CreaturesHello
+        | M::DamageHello
+        | M::WorldgenRequest
+        | M::SteamHello
+        | M::EcologyHello => {}
         M::Steam(cells) => {
             let n = cells.len().min(MAX_STEAM_PER_MESSAGE);
             w.u16(n as u16);
@@ -1505,6 +1544,19 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
                 for &v in c {
                     w.i32(v);
                 }
+            }
+        }
+        M::Ecology(m) => {
+            w.f32(m.day);
+            let n = m.groups.len().min(MAX_ECOLOGY_GROUPS);
+            w.u16(n as u16);
+            for g in &m.groups[..n] {
+                w.u32(g.id);
+                w.u8(g.face);
+                w.str(crate::bytes::clamp_str(&g.species, MAX_SPECIES_NAME));
+                w.f32(g.x);
+                w.f32(g.z);
+                w.f32(g.size);
             }
         }
         M::WorldgenConfig(t) => {
@@ -2019,6 +2071,32 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
         }
         T::CreaturesHello => M::CreaturesHello,
         T::DamageHello => M::DamageHello,
+        T::EcologyHello => M::EcologyHello,
+        T::Ecology => {
+            let day = r.f32();
+            let n = usize::from(r.u16());
+            r.check(n <= MAX_ECOLOGY_GROUPS && day.is_finite());
+            let mut groups = Vec::new();
+            for _ in 0..n {
+                if !r.ok() {
+                    break;
+                }
+                let id = r.u32();
+                let face = r.u8();
+                let species = r.str(MAX_SPECIES_NAME);
+                let (x, z, size) = (r.f32(), r.f32(), r.f32());
+                r.check(face <= 1 && [x, z, size].iter().all(|v| v.is_finite()));
+                groups.push(EcologyGroupNet {
+                    id,
+                    face,
+                    species,
+                    x,
+                    z,
+                    size,
+                });
+            }
+            M::Ecology(EcologyMessage { day, groups })
+        }
         T::WorldgenRequest => M::WorldgenRequest,
         T::WorldgenConfig => {
             let n = r.u32() as usize;
@@ -2359,6 +2437,43 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
         }
     };
     r.ok().then_some(m)
+}
+
+#[cfg(test)]
+mod ecology_tests {
+    use super::*;
+
+    #[test]
+    fn ecology_round_trips_and_rejects_bad_ones() {
+        let g = |id, face| EcologyGroupNet {
+            id,
+            face,
+            species: "dwell:deer".into(),
+            x: -1200.5,
+            z: 340.0,
+            size: 5.5,
+        };
+        let m = Message::Ecology(EcologyMessage {
+            day: 12.0,
+            groups: vec![g(3, 0), g(7, 1)],
+        });
+        let b = m.encode();
+        assert_eq!(b[0], MessageType::Ecology as u8);
+        assert_eq!(Message::decode(&b), Some(m.clone()));
+        assert_eq!(Message::decode(&b[..b.len() - 1]), None);
+        let h = Message::EcologyHello.encode();
+        assert_eq!(Message::decode(&h), Some(Message::EcologyHello));
+        // A face past B, and a NaN head, are malformed.
+        let bad = Message::Ecology(EcologyMessage {
+            day: 1.0,
+            groups: vec![g(1, 2)],
+        });
+        assert_eq!(Message::decode(&bad.encode()), None);
+        let mut nan = m.encode();
+        let at = nan.len() - 4;
+        nan[at..].copy_from_slice(&f32::NAN.to_le_bytes());
+        assert_eq!(Message::decode(&nan), None);
+    }
 }
 
 #[cfg(test)]

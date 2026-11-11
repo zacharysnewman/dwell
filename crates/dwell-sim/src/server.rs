@@ -42,8 +42,11 @@ mod chopping;
 mod creatures;
 mod ecology;
 pub use ecology::{
-    CATCH_UP_DAYS, EcologySnapshot, GroupView, IDLE_DAYS, MAX_STEPS_PER_TICK, next_step, night_on,
+    CATCH_UP_DAYS, ECOLOGY_SEND_EVERY, EcologySnapshot, GroupView, IDLE_DAYS, MAX_STEPS_PER_TICK,
+    next_step, night_on,
 };
+pub use grass::{Grass, GrassEnvelope};
+mod grass;
 mod ground;
 mod growth;
 mod items;
@@ -331,6 +334,10 @@ pub struct ServerConfig {
     /// Tests and tools: the faces' islands (A, B) in place of the world maps', for worlds without
     /// one (the flat world, test generators).
     pub ecology_islands: Option<Arc<[dwell_ecology::Island; 2]>>,
+    /// A new world's tall grass growth (ADR 0075 T3c, docs/ECOLOGY.md §10): on by default; saved
+    /// with the world, which keeps its own. A world saved before it (no `grass_growth` table) has
+    /// none: its meadows stay as they are.
+    pub grass: bool,
 }
 
 /// A new world's settings: this build's clock (`shared/look/daynight.json`), `water_speed` and the
@@ -396,6 +403,7 @@ impl Default for ServerConfig {
             ecology: true,
             ecology_speed: 1.0,
             ecology_islands: None,
+            grass: true,
         }
     }
 }
@@ -617,6 +625,8 @@ struct Session {
     creatures_hello: bool,
     /// Whether its client draws block damage (`DamageHello`, docs/BLOCK_DAMAGE.md).
     damage_hello: bool,
+    /// Whether its client reads the far ecology (`EcologyHello`, docs/ECOLOGY.md §9).
+    ecology_hello: bool,
     /// Whether its client draws steam (`SteamHello`, VOLCANOES.md §6.3).
     steam_hello: bool,
     /// The tool it holds (item name, the hold's plane), from `ChopAction::Held`; having sent one,
@@ -676,6 +686,7 @@ impl Session {
             burn: dwell_lava::Burn::default(),
             creatures_hello: false,
             damage_hello: false,
+            ecology_hello: false,
             steam_hello: false,
             held_tool: None,
             primed: false,
@@ -943,6 +954,15 @@ pub struct Server {
     growth_unread: bool,
     /// The far ecology (docs/ECOLOGY.md §6): both faces' herds and packs, saved with the world.
     ecology: ecology::Ecology,
+    /// Tall grass growth (ADR 0075 T3c): the switch and each chunk's last day, saved with the world.
+    grass: grass::Grass,
+    /// The saved record is a newer build's: kept, not written over.
+    grass_unread: bool,
+    grass_rule: dwell_worldgen::grass::Rule,
+    /// Tests: an envelope in place of the terrain's.
+    grass_envelope: Option<grass::GrassEnvelope>,
+    /// The face terrains grass grows over (shared with the ecology's forage share).
+    grass_terrain: grass::GrassTerrain,
     /// The world's growers (none: no species trees), built on first use.
     growers: Option<Option<Arc<dwell_worldgen::growth::Growers>>>,
     /// The loaded chunks already looked at for trees (not saved: looked at again after a load).
@@ -1106,6 +1126,14 @@ impl Server {
                     && config.generator_override.is_none(),
                 config.ecology_islands.clone(),
             ),
+            grass: grass::Grass {
+                enabled: config.grass,
+                days: Default::default(),
+            },
+            grass_unread: false,
+            grass_rule: dwell_worldgen::grass::Rule::build(config.world_seed),
+            grass_envelope: None,
+            grass_terrain: Default::default(),
             growers: None,
             growth_scanned: Default::default(),
             ground: Default::default(),
@@ -1172,6 +1200,7 @@ impl Server {
             .collect();
         // The respawn preload's ring: the same sphere, of its own radius (at most the view's).
         server.set_respawn_preload(server.config.respawn_preload_radius_chunks);
+        server.share_grass_with_ecology();
         server
     }
 
@@ -1570,6 +1599,7 @@ impl Server {
             Message::CausesHello(n) => s.known_cause = n,
             Message::CreaturesHello => self.creatures_hello(id),
             Message::DamageHello => self.damage_hello(id),
+            Message::EcologyHello => self.ecology_hello(id),
             Message::SteamHello => s.steam_hello = true,
             Message::WorldgenRequest => {
                 let m = Message::WorldgenConfig(self.worldgen_text.clone());
@@ -1859,8 +1889,11 @@ impl Server {
         self.send_lava_steam();
         // Trees grow by the world's days (ADR 0079 S3).
         self.grow_trees();
+        // Tall grass grows and spreads by them (ADR 0075 T3c).
+        self.grow_grass();
         // The far ecology steps by them too (docs/ECOLOGY.md §6).
         self.step_ecology();
+        self.send_ecology();
 
         // Loose items fall, are picked up and despawn (ADR 0066); inventories changed are sent.
         self.step_items();
@@ -2520,6 +2553,9 @@ impl Server {
         let mut damaged: Vec<[i32; 3]> = Vec::new();
         // Every broken cell and what it was, in any mode: ground items on them are knocked loose.
         let mut under_ground: Vec<([i32; 3], dwell_blocks::StateId)> = Vec::new();
+        // Saplings planted this tick (ADR 0079 S4): each becomes its species' stage-0 tree.
+        let mut planted: Vec<dwell_worldgen::growth::Record> = Vec::new();
+        let day = self.world_days();
         let ids: Vec<SessionId> = self.sessions.keys().copied().collect();
         for id in ids {
             let s = &self.sessions[&id];
@@ -2550,6 +2586,16 @@ impl Server {
                     s.edit_refused.push(seq);
                     continue;
                 }
+                // A species' sapling takes only on its `plantOn` ground (shared/trees; ADR 0079 S4).
+                let plant = match edit.action {
+                    BlockEditAction::Place => sapling_planted(&self.world, &outcome, day),
+                    _ => Ok(None),
+                };
+                let Ok(plant) = plant else {
+                    s.stats.edits_rejected += 1;
+                    s.edit_refused.push(seq);
+                    continue;
+                };
                 // The item asked for must be held; it is used up when it is what goes in (a torch
                 // held against dynamite lights it and stays in the hand).
                 if uses_items && edit.action == BlockEditAction::Place {
@@ -2667,6 +2713,7 @@ impl Server {
                     }
                     continue;
                 }
+                planted.extend(plant);
                 // Every cell of the piece (a 1 m block's two; docs/ITEMS.md) in one set of writes.
                 for (at, m) in outcome.writes(&mut self.world, medium_kept) {
                     if edit.action == BlockEditAction::Break {
@@ -2789,6 +2836,16 @@ impl Server {
             }
             s.region_edits = held;
         }
+        // A planted sapling stands as its species' stage-0 tree, in what is still air (or the
+        // sapling itself), and its record grows it from today (the growers step).
+        for r in planted {
+            for (c, m) in dwell_worldgen::growth::cells_at(&r, 0) {
+                if c == r.anchor || self.world.get_voxel(c[0], c[1], c[2]) == M.air {
+                    changes.set(&mut self.world, c, m);
+                }
+            }
+            self.growth.trees.insert(r.anchor, r);
+        }
         let edited = changes.cells();
         self.broadcast_changes(changes, VoxelModificationReason::Edit);
         self.send_damage(&damaged, Vec::new());
@@ -2800,6 +2857,7 @@ impl Server {
                 Some(&n) => self.drop_destroyed(was, dwell_world::centre_of_cell(cell), n),
                 None => self.drop_block(was, dwell_world::centre_of_cell(cell)),
             }
+            self.drop_sapling(cell, dwell_world::centre_of_cell(cell));
         }
         self.knock_ground(&under_ground);
         // An explosive lit by an edit (a torch held against it) starts its fuse (docs/EXPLOSIVES.md).
@@ -4372,6 +4430,18 @@ impl Server {
         if let Some(b) = db.ecology() {
             self.ecology.restore(b);
         }
+        // Grass growth: the world's own; a world saved before it has none, a new one the config's.
+        match db.grass() {
+            Some(b) => match grass::Grass::from_bytes(&b) {
+                Some(g) => self.grass = g,
+                None => {
+                    self.grass_unread = true;
+                    self.grass.enabled = false;
+                }
+            },
+            None => self.grass.enabled = meta.is_none() && self.config.grass,
+        }
+        self.share_grass_with_ecology();
         if let Some(b) = db.ground_gone() {
             match dwell_world::ground::GroundGone::from_bytes(&b) {
                 Some(g) => self.ground = g,
@@ -4501,6 +4571,9 @@ impl Server {
             batch.ground_gone = Some(self.ground.to_bytes());
         }
         batch.ecology = Some(self.ecology.record());
+        if !self.grass_unread {
+            batch.grass = Some(self.grass.to_bytes());
+        }
         if !self.damage_unread {
             batch.damage = Some(self.damage.to_bytes());
         }
@@ -4959,6 +5032,23 @@ fn held_break_item(s: &Session, uses_items: bool) -> Option<&str> {
             .map(|(t, _)| t.as_str())
             .filter(|t| !t.is_empty())
     }
+}
+
+/// A place edit's sapling (ADR 0079 S4): `Ok(None)` when it places no species' sapling, `Ok(record)`
+/// for one on its species' `plantOn` ground (face-local below the cell), `Err` on other ground.
+fn sapling_planted(
+    world: &VoxelWorld,
+    outcome: &dwell_world::edit::EditOutcome,
+    day: f64,
+) -> Result<Option<dwell_worldgen::growth::Record>, dwell_worldgen::growth::Refused> {
+    let item = dwell_blocks::block_of(outcome.material).name;
+    if dwell_worldgen::species::of_sapling(item).is_none() {
+        return Ok(None);
+    }
+    let f = FaceFrame::at_row(outcome.cell[1]);
+    let [x, y, z] = f.cell(outcome.cell);
+    let ground = dwell_blocks::block_of(world.get_voxel_if_loaded(f.cell([x, y - 1, z]))).name;
+    dwell_worldgen::growth::plant(item, outcome.cell, ground, day).map(Some)
 }
 
 #[cfg(test)]

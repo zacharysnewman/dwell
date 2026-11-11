@@ -86,6 +86,19 @@ impl Island {
         })
     }
 
+    /// Scales each cell's most forage by the grass's climate share at its centre (0..1;
+    /// docs/ECOLOGY.md §10, `dwell_worldgen::grass::far_share`), so the far forage regrows toward
+    /// the same climate cap the near tall grass grows to: a cell's forage over its ground's most is
+    /// its tall grass over its cap.
+    pub fn scale_grazing(&mut self, share: impl Fn(f64, f64) -> f64) {
+        for c in 0..self.n * self.n {
+            if self.grazing_max[c] > 0.0 {
+                let (x, z) = self.centre(c);
+                self.grazing_max[c] *= share(x, z).clamp(0.0, 1.0);
+            }
+        }
+    }
+
     /// The cell holding face-local (x, z), if it is on the grid.
     pub fn cell_at(&self, x: f64, z: f64) -> Option<usize> {
         let i = ((x - self.x0) / self.cell + 0.5).floor();

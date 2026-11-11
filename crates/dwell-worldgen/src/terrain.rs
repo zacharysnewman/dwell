@@ -29,6 +29,7 @@ use dwell_blocks::StateId;
 use dwell_world::hash::HashMap;
 use dwell_world::lod::{self, LodBounds, LodCells, LodCoord, LodKind, LodSurface, LodSurfaces};
 use dwell_world::ramps::{self, RampFacing};
+use dwell_world::tree_tint::{Tint, TreeTint, tint_at};
 use dwell_world::{
     BUILD_VOLUME, CELL_H, CHUNK_SIZE, CORE_LAYERS, Chunk, ChunkCoord, DiscOverlap, M, MIDPLANE_Y,
     Overlap, SEA_LEVEL, SEA_LEVEL_M, chunk_disc_overlap, inside_world_disc, local_index, m_of_row,
@@ -1071,6 +1072,9 @@ pub struct TerrainGenerator {
     /// The terrain volume over the height field (`volume.rs`, a prototype: world type `cliffs`);
     /// none for the plain terrain. Chunks only: the LOD draws the height field's top.
     volume: Option<Arc<Volume>>,
+    /// The arc cones' column-level detail (`tectonics.cleaverDepth`, the rim's notches, crags,
+    /// cirques, Rainier detail), placed once over the map; empty when off (the default world).
+    peaks: Arc<Vec<crate::tectonics::PeakDetail>>,
     world_seed: u64,
 }
 
@@ -1186,8 +1190,10 @@ impl TerrainGenerator {
         // edit, whole), shared by every generator of this map in the process (`shared_biomes`).
         let biomes = shared_biomes(&map, world_seed);
         let worldgen = map.worldgen.clone();
+        let peaks = Arc::new(map.tectonics.peak_details(|x, z| map.height_at(x, z).0));
         let g = Self {
             base,
+            peaks,
             map,
             detail_seed: seed_word(world_seed, 0xD7A1_0001),
             meander_seeds: [
@@ -1997,6 +2003,44 @@ impl TerrainGenerator {
         (r.d < r.half && r.level > CELL_H).then(|| surface_row((SEA_LEVEL_M + r.level) as f32))
     }
 
+    /// The arc cones' column-level detail on ground `h` m high with the map's gradient (`gx`,
+    /// `gz`) at (x, z): the ground and its gradient with the detail (by central differences over
+    /// half a `cell`), unchanged away from the cones and when it is off.
+    fn peak_relief(&self, x: i64, z: i64, h: f64, gx: f64, gz: f64, cell: i64) -> (f64, f64, f64) {
+        if self.peaks.is_empty() {
+            return (h, gx, gz);
+        }
+        let t = &self.map.tectonics;
+        let (fx, fz) = (x as f64, z as f64);
+        let at = |px: f64, pz: f64, ph: f64| t.peak_relief(&self.peaks, px, pz, ph);
+        let shaped = at(fx, fz, h);
+        if shaped == h {
+            return (h, gx, gz);
+        }
+        let e = 0.5 * cell.max(1) as f64;
+        (
+            shaped,
+            (at(fx + e, fz, h + gx * e) - at(fx - e, fz, h - gx * e)) / (2.0 * e),
+            (at(fx, fz + e, h + gz * e) - at(fx, fz - e, h - gz * e)) / (2.0 * e),
+        )
+    }
+
+    /// The landform's slope at full-detail column (x, z) as the snow line reads it (rise per run):
+    /// the map's, with the arc cones' column-level detail (Rainier detail) over the biomes' fine relief
+    /// (away from the water, whose banks fade that relief).
+    pub fn cover_slope_at(&self, x: i64, z: i64) -> f64 {
+        let (base, gx, gz) = self.map.height_at(x as f64, z as f64);
+        let mix = self.biomes.mix(x, z, base);
+        let h = base + self.blended_detail(&mix, x, z, base, 1);
+        let (_, gx, gz) = self.peak_relief(x, z, h, gx, gz, 1);
+        (gx * gx + gz * gz).sqrt()
+    }
+
+    /// The arc cones' column-level detail as placed for this map (empty when off).
+    pub fn peak_details(&self) -> &[crate::tectonics::PeakDetail] {
+        &self.peaks
+    }
+
     fn base_column(&self, x: i64, z: i64, cell: i64) -> Column {
         self.base_column_with(x, z, cell, true)
     }
@@ -2012,7 +2056,7 @@ impl TerrainGenerator {
             };
         }
         let map = &*self.map;
-        let (base, gx, gz) = map.height_at(x as f64, z as f64);
+        let (base, mut gx, mut gz) = map.height_at(x as f64, z as f64);
         // The biomes here (by the world height field, which they never change beyond their fine
         // relief) and the one whose surface the column takes.
         let mix = self.biomes.mix(x, z, base);
@@ -2065,6 +2109,9 @@ impl TerrainGenerator {
             fade = fade.min(smooth01(-l.sdf / bs.detail_water_fade.max(1e-6)));
         }
         let mut h = base + detail * fade;
+        // The arc cones' column-level detail (Rainier detail: cleavers, the broken rim, crags, cirques),
+        // finer than the map's cells; its slope joins the map's (the snow line reads it).
+        (h, gx, gz) = self.peak_relief(x, z, h, gx, gz, cell);
         // The rock's shaping (systemic terrain T2; none at strength 0).
         let (shaped, rock) = self.rock_shaping(&mix, x, z, h, fade);
         h = shaped;
@@ -2938,6 +2985,32 @@ impl TerrainGenerator {
         })
     }
 
+    /// Grass growth's envelope at face-local column (x, z) (ADR 0075 T3c): decoration `name`'s own
+    /// per-cell roll and the climate's share of it there — 0 where the column's biome doesn't list
+    /// it (with more than one biome), else its biome's undergrowth factor (1 without a climate).
+    /// None when no decoration is named so.
+    pub fn grass_envelope(&self, name: &str, x: i32, z: i32) -> Option<(f32, f64)> {
+        let i = DECORATIONS.iter().position(|d| d.name == name)?;
+        let roll = self.decorations.get(i)?.roll(x, z);
+        if self.biomes.list.len() <= 1 {
+            return Some((roll, 1.0));
+        }
+        let col = self.column_at(x, z);
+        let Some(b) = self
+            .biomes
+            .biome_of_palette(col.palette)
+            .map(|b| &self.biomes.list[b])
+        else {
+            return Some((roll, 1.0));
+        };
+        if !b.decorations.contains(&name) {
+            return Some((roll, 0.0));
+        }
+        let kind = self.vegetation.kind_for_decoration(name);
+        let share = self.undergrowth_factor(b, kind, || self.climate_at(x.into(), z.into()));
+        Some((roll, share))
+    }
+
     /// The biomes whose weights count (one biome without a biome map).
     fn ground_biomes(&self) -> &[Biome] {
         if self.biomes.field.is_none() {
@@ -3066,6 +3139,82 @@ impl TerrainGenerator {
             }
         };
         self.trees_over((x0, z0), (x1, z1), &ground)
+    }
+
+    /// The species trees reaching columns [x0, x1] × [z0, z1] (face-local) with their leaf tints
+    /// (ADR 0079: each tree's seed drawn through its species' `variety`), for the meshers
+    /// (`dwell_world::tree_tint`). Empty when no placement stands a species (the default world's
+    /// hand-built pines carry none) or a species' variety draws no tint.
+    pub fn tree_tints(&self, lo: (i32, i32), hi: (i32, i32)) -> Vec<TreeTint> {
+        if !self.planters.iter().any(|p| p.active() && p.grows()) {
+            return Vec::new();
+        }
+        self.trees_in(lo, hi)
+            .into_iter()
+            .filter_map(|t| {
+                let p = &self.planters[t.planter as usize];
+                let (i, seed, _) = p.grown(&t)?;
+                let tint = crate::species::tint(crate::species::SPECIES.get(usize::from(i))?, seed);
+                if tint.is_none() {
+                    return None;
+                }
+                let placed = p.place(&t);
+                Some(TreeTint {
+                    anchor: t.anchor,
+                    min: placed.min,
+                    max: placed.max,
+                    tint,
+                })
+            })
+            .collect()
+    }
+
+    /// The leaf tints of an LOD section's tree cells (ADR 0079), at the levels whose cells hold
+    /// the trees' own (`lod_trees`): for each non-air cell of `rows` (rows of `cells`, the
+    /// section's world rows; `row_of` the face-local row each was generated at, from `origin_y`),
+    /// its `lod::cell_index` and the tint of the tree owning the cell's centre — the voxel the
+    /// chunks would ask of the same tree, so near and far leaves agree.
+    #[allow(clippy::too_many_arguments)]
+    pub fn lod_tints_at(
+        &self,
+        c: lod::LodCoord,
+        origin_y: i64,
+        rows: std::ops::RangeInclusive<i32>,
+        row_of: &dyn Fn(i32) -> i32,
+        cells: &[u16],
+        out: &mut Vec<(u32, Tint)>,
+    ) {
+        let cell = lod::cell_size(c.level);
+        if cell > LOD_TREE_CELL || cells.len() < lod::VOLUME {
+            return;
+        }
+        let mut o = lod::section_origin(c);
+        o.y = origin_y;
+        let n = lod::SECTION_CELLS;
+        let half = cell / 2;
+        let centre = |o: i64, i: i32| (o + i64::from(i) * cell + half) as i32;
+        let trees = self.tree_tints(
+            (centre(o.x, -1), centre(o.z, -1)),
+            (centre(o.x, n), centre(o.z, n)),
+        );
+        if trees.is_empty() {
+            return;
+        }
+        for r in rows {
+            let y = (o.y + i64::from(row_of(r)) * cell + half) as i32;
+            for z in -1..=n {
+                for x in -1..=n {
+                    let i = lod::cell_index(x, r, z);
+                    if cells[i] == M.air {
+                        continue;
+                    }
+                    let t = tint_at(&trees, [centre(o.x, x), y, centre(o.z, z)]);
+                    if !t.is_none() {
+                        out.push((i as u32, t));
+                    }
+                }
+            }
+        }
     }
 
     /// [`TerrainGenerator::trees_in`] asking each column only as a candidate needs it (no

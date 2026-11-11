@@ -182,8 +182,10 @@ pub enum MessageType {
     WorldgenRequest = 98,
     WorldgenConfig = 99,
     CausesHello = 100,
-    SteamHello = 101,
-    Steam = 102,
+    EcologyHello = 101,
+    Ecology = 102,
+    SteamHello = 103,
+    Steam = 104,
 }
 
 impl MessageType {
@@ -243,8 +245,10 @@ impl MessageType {
             98 => Some(Self::WorldgenRequest),
             99 => Some(Self::WorldgenConfig),
             100 => Some(Self::CausesHello),
-            101 => Some(Self::SteamHello),
-            102 => Some(Self::Steam),
+            101 => Some(Self::EcologyHello),
+            102 => Some(Self::Ecology),
+            103 => Some(Self::SteamHello),
+            104 => Some(Self::Steam),
             _ => None,
         }
     }

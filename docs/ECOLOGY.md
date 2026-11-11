@@ -152,9 +152,7 @@ ecology, and tests hand the server islands (`ServerConfig::ecology_islands`).
 - **The dev read-out**: `Server::ecology_snapshot()` (enabled, running, the ecology's and the
   clock's day, and every herd and pack: face, id, species name, face-local x/z, size, hunger,
   energy, activity name), with `ecosystem(face)` and `ecology_stats()` (the last tick's steps and
-  ms). Server-side only for now (tests): the client's existing dev channel, `__dwell.serverStats()`,
-  is the local worker's once-a-second figures, and the local world's ecology doesn't run yet (below),
-  so wiring `__dwell.ecology()` waits for that.
+  ms). The clients' read-out of the far groups is §9 (`Ecology`, `__dwell.ecology()`).
 - **Not yet**: the browser's local server never has the world maps in its own instance (the
   server-jobs worker computes them), so a local world's ecology waits forever; a dedicated server's
   runs. Worlds whose installed worldgen config differs from the default use the default's map.
@@ -169,8 +167,8 @@ world has none and keeps its choice; the flat world has none to run; an unreadab
 ## 7. What's next
 
 1. ~~**Individuals near players**~~: built (§8).
-2. **Simple far rendering**: a herd drawn as a few low-detail figures or a marker in the LOD; with it
-   a snapshot message or `__dwell.ecology()` for the client (the read-out above).
+2. **Simple far rendering**: a herd drawn as a few low-detail figures or a marker in the LOD, from
+   the client's read-out (§9, built).
 3. **Local worlds**: the maps (or the islands, a few KB) handed to the local server, so its ecology
    runs; then native ↔ WASM determinism of the step (it uses `exp`, `atan`, `hypot`).
 4. **Grazing applied to the real tall grass** as chunks load: a cell's forage share decides how much
@@ -194,8 +192,18 @@ without one stays a record — the fixture's hare and fox).
   (`dwell:doe`, `dwell:wolf`), `driven`: they walk only to targets the herd logic gives (at its `pace`,
   a sprint or a flight) and the creature rules never despawn them — placed 1–4 m around the record on
   ground found from the player's row, with the record's hunger and energy. The record leaves its
-  face's `Ecosystem` (the far step no longer steps it). The whole group spawns or none: it waits
-  while its cells aren't loaded or the world is at its most creatures (64).
+  face's `Ecosystem` (the far step no longer steps it, but still sees it: below). The whole group
+  spawns or none: it waits while its cells aren't loaded or the world is at its most creatures (64).
+- **The herd's mix** (slice 3b): the individuals are the **creature rule's mix** for the species'
+  creature (shared/creatures/creatures.json: the doe rule's `mix`, a stag in 40% of herds, at most
+  one), rolled once from (world seed, record id), so a herd is does and sometimes a stag; fawns, or
+  any other member, come by adding a mix part there (no code). A species whose creature has no rule
+  comes as that creature only. Young born near players are the species' own creature.
+- **The ecology's grounds** (slice 3b): an individual is placed only where the far model allows — its
+  island cell walkable (land, not sea or lake), a dry full block under open cells, and a rise to each
+  next column no steeper than `near.maxSlopeDeg` (40°). A member none of whose 8 tries is such ground
+  takes the nearest such column within `near.searchM` (24 m) of its record (one each, nearest
+  first); with none there the group waits as a record.
 - **Folding back**: once no player on its face is within `near.foldM` (96 m: the hysteresis) of any
   member, the creatures go and the record returns (by id order) with size = the survivors, hunger and
   energy their averages, place their centroid, resting. A group with none left (all killed) is gone.
@@ -227,9 +235,15 @@ without one stays a record — the fixture's hare and fox).
   `near.creature` are left out (`Creatures::reserved`: the doe rule with its stag, the wolf rule), so
   the deer and wolves near players are the ecology's only. A world without an ecology (opted out, no
   map) keeps the rule-spawned ones.
-- **Not yet**: the far step doesn't see near groups (a pack far away doesn't hunt a herd that is
-  near); individuals' grounds are any full block (not only the ecology's grounds); the herd's stag
-  (the creature rule's mix) isn't made; players can't interact; no far rendering.
+- **The far step sees near groups** (slice 3b): after each decision the near side writes each near
+  group's **summary** (its record as it would fold back, the activity most members share) into its
+  face's `Ecosystem::near`; the far step treats those as present but never steps them: far hunters
+  target and close on them, far grazers flee near packs, and their head counts in the species'
+  totals (the grazing bound, a hunter's prey per head). A far kill lowers the summary's size; the
+  near side reads the loss back before its next decision, a death (the last member, its creature
+  removed) for each whole head, keeping the fraction. Not saved (a save writes near groups as they
+  would fold back).
+- **Not yet**: players can't interact; no far rendering (the read-out for it is §9).
 
 Tests: `cargo test -p dwell-sim --lib herds` (both faces): a herd near a player becomes its deer
 (on the floor, the record out of the far step, its hunger) and folds back keeping its head (+ births
@@ -243,3 +257,86 @@ near a joined player becomes driven deer on the floor with no rule-spawned anima
 folds back when the player leaves; a save while near keeps the herd; an opted-out world makes no
 individuals; night is each face's own. `node --test shared/ecology/gen.test.mjs`: the `near` data
 validates, emits its creature and block, a species without it stays a record, bad entries fail.
+
+Slice 3b tests (`cargo test -p dwell-sim --lib herds`, both faces): a herd comes near as the rule's
+mix (some herds a stag, never two; a fixture mix of two stags by data alone); individuals spawn only
+on the ecology's ground — a herd on stairs steeper than the data's stands on the nearest flat
+columns, one on the island's sea on its land, and with none within `searchM` it waits; the summary
+is in its face's ecosystem while near, a far kill on it becomes deaths (fractions adding up), a far
+pack closes on it, and it goes when the group folds back. `cargo test -p dwell-ecology`: the far step
+closes on, kills from and flees near summaries, and their head bounds breeding.
+
+## 9. The clients' read-out (slice 3b)
+
+For the far rendering to come (§7), the server sends the far groups to the clients that ask:
+
+- **Gated** like block damage (0.52.28): the server's `Inventory` carries `inventory_flags::ECOLOGY`
+  (64); a client that sees it sends `EcologyHello` (C→S, control channel) once; only those clients
+  get `Ecology` (S→C, reliable, world channel). An older client never sees the flag's meaning, never
+  asks, and is never sent one; an older server never sets the flag. Additive: no new line.
+- **`Ecology`**: the ecology's day (f32) and up to `MAX_ECOLOGY_GROUPS` (1024) far groups, each its
+  record id (u32), face (u8: 0 A, 1 B), species by name (≤ 64 bytes), face-local x and z and head
+  (f32). The groups near players aren't in it (they are creatures). Sent at the hello, then every
+  `ECOLOGY_SEND_EVERY` (2 s) while the ecology runs; none from a world without one. ~2 KB for the
+  shipped data's ~100 groups.
+- **`__dwell.ecology()`**: the last one, `{ day, groups: [{ id, face: "a" | "b", species, x, z,
+  size }] }`, or null before the first (docs/DEV_TOOLS.md). A local world's ecology doesn't run yet
+  (§7), so it is null there.
+
+Tests: `cargo test -p dwell-protocol ecology` (round trip, truncation, a bad face or a NaN malformed);
+`cargo test -p dwell-sim --test ecology` (both faces): the Inventory's flag, a client that asked gets
+the far groups at the hello and every 2 s as the server holds them, face-local on their faces, and a
+client that didn't ask never does; a world without an ecology sends none.
+
+## 10. Tall grass growing and spreading (ADR 0075 T3c)
+
+Owner (2026-11-11): "I want tall grass to steadily grow and spread. It should probably have a max
+depending on climate/biome." Data: `shared/worldgen/grass.json` (`gen.mjs` `validateGrass` →
+`dwell-worldgen` `grass.gen.rs`). Code: `dwell_worldgen::grass` (the face-local step, pure),
+`dwell-sim` `server/grass.rs` (the server's step and save).
+
+- **The cap is the climate's.** A column is **fertile** when the tall grass decoration's own per-cell
+  roll (the one that decides generated tall grass, `Placer::roll`) is under `maxDensity` × the
+  climate's **share** there: the T3b undergrowth factor of the vegetation kind governing the decoration
+  (`dwell:meadow_grass`: thins with the moisture, fades below 1 °C), 0 in a biome that doesn't list the
+  decoration, 1 without a climate (`TerrainGenerator::grass_envelope`). Generated tufts roll under
+  `density` × patch × share ≤ `maxDensity` × share (`maxDensity` ≥ the decoration's density is
+  validated), so every generated tuft is fertile, and ground never holds more tall grass than
+  `maxDensity` × share of its open grass cells. Lush meadows fill toward 0.8; dry steppe stays sparse.
+- **Near players**: every 5 s of the tick the server's grass step takes up to 64 loaded chunks not yet
+  grown to today's whole world day (the world's days × `growth_speed`, as trees) and grows the days
+  each missed, at most `catchUpDays` (20) at once: a chunk first loaded on day 1000 grows days
+  980–999, not a thousand. Each day an open cell (air, with `openAbove` cells of air over it) over an
+  `on` block (`dwell:grass`) of a fertile column takes `block` with `spreadPerDay` (0.15) when tall grass
+  stands within `reach` columns (and a metre up or down), or `regrowPerDay` (0.25) when it held
+  generated tall grass that is gone (**grazed** by deer, §8, or cut). Rolls hash (seed, day, face-local
+  cell): face B grows face A's mirror.
+- **A player's block wins**: a cell grows only where it is air now and was air or tall grass as
+  generated, over ground that is its generated block. A placed block, a placed grass block, a roofed
+  cell or a dug cell never takes it.
+- **Far away**: the ecology's island cells (§2) hold at most their ground's forage × the same share at
+  the cell's centre (`Island::scale_grazing`, `grass::far_share`), and regrow toward it. **The mapping**:
+  near, a stretch's tall grass at saturation is `maxDensity` × share of its open grass cells; far, a
+  cell's most forage is its ground's × share; so a cell's forage over its ground's most equals its tall
+  grass over `maxDensity`. Applied to the islands made from world maps while the world grows grass (a
+  world without grass growth keeps its forage as before; the default world's single biome has share 1
+  everywhere, so its forage is unchanged).
+- **The world's switch**: saved in the optional `grass_growth` table (a version byte, the switch, each
+  grown chunk's last day; another version's is kept unread and the growth stays off). `ServerConfig::grass`
+  (on) is a **new** world's; a world saved before this (meta, no table) has none, so existing worlds'
+  meadows don't change under their players; a world keeps its own after. Not a compatibility change:
+  worldgen, the goldens and the protocol are unchanged (growth writes ordinary block edits).
+- **Not yet**: a setting in the world's menu; grass on a chunk's edge cells seeded only from loaded
+  neighbours; the browser's local world's far share (its maps, §7).
+
+Tests: `cargo test -p dwell-worldgen --test grass` (both faces): a meadow spreads over days toward
+`maxDensity` and never onto an infertile column; a dry stretch (share 0.1) stays sparse and share 0
+grows nothing; a placed stone, a placed grass block and a roofed cell are never grown over; eaten
+tufts regrow; a load catches up at most `catchUpDays`, the same as growing those days one by one; a
+fixture rule by data alone (on dirt, reach 2) grows its square and not on grass. `cargo test -p
+dwell-ecology` `the_far_forage_regrows_toward_the_same_climate_cap_as_the_near_grass`: the far most
+over the ground's is the near cap over `maxDensity`, and a dry cell's forage stays sparse. `cargo
+test -p dwell-sim --test grass` (both faces): the server grows a loaded chunk's missed days and a
+player's block stands; the switch and the days survive a save; an opted-out world keeps its choice;
+the saved form round-trips and another version is unread. `node --test shared/worldgen/gen.test.mjs`:
+grass.json validates, bad entries fail naming the field.

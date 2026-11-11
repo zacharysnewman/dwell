@@ -66,6 +66,18 @@ impl Server {
         }
     }
 
+    /// A broken leaf of a recorded species tree drops its species' sapling at the species'
+    /// `sapling.dropChance` (ADR 0079 S4), rolled with the server's entropy, besides the leaf's own
+    /// drops. `cell` is the broken cell (world), `at` where the drop falls from.
+    pub(super) fn drop_sapling(&mut self, cell: [i32; 3], at: [f64; 3]) {
+        let Some(r) = dwell_worldgen::growth::tree_of_leaf(&self.growth, cell).cloned() else {
+            return;
+        };
+        if let Some(item) = dwell_worldgen::growth::sapling_drop(&r, self.random()) {
+            self.loose.drop(Stack::new(item, 1), at);
+        }
+    }
+
     /// What hit `k` of the `n` that break block `was` flings (docs/BLOCK_DAMAGE.md): its share of
     /// the block's certain drops (half of them spread over the hits before the last).
     pub(super) fn drop_hit(&mut self, was: StateId, at: [f64; 3], n: u32, k: u32) {
@@ -319,6 +331,7 @@ impl Server {
             | inventory_flags::DAMAGE
             | inventory_flags::COMBINE
             | inventory_flags::CAUSES
+            | inventory_flags::ECOLOGY
             | inventory_flags::STEAM
             | if self.uses_items() {
                 inventory_flags::USES_ITEMS

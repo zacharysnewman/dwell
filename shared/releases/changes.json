@@ -2,6 +2,49 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.52.91",
+      "changes": [
+        "The tall volcanoes in the Tall peak and Starter worlds look more like real mountains: the summit crater's rim is broken by notches, with rocky crags, and the highest point sits off-centre",
+        "Sharp ridges (cleavers) now run down the volcanoes' flanks up close, not only on the map",
+        "Glacier-carved bowls (cirques) under steep rock headwalls sit high on the flanks, with icy floors"
+      ]
+    },
+    {
+      "version": "0.52.90",
+      "changes": [
+        "Tall grass now slowly grows back and spreads across meadows over the days, filling lush ground and staying sparse where it is dry; it never grows over blocks you placed.",
+        "New worlds only: worlds made before this keep their meadows as they were."
+      ]
+    },
+    {
+      "version": "0.52.89",
+      "changes": [
+        "Each oak, pine and palm in the starter world has its own leaf shade, near and far"
+      ]
+    },
+    {
+      "version": "0.52.88",
+      "changes": [
+        "Oak, pine and palm saplings: plant one on grass or dirt (oak, pine) or sand (palm) and it grows into a tree over the world's days",
+        "Breaking a tree's leaves sometimes drops its sapling in adventure; creative lists the saplings under Plants",
+        "A sapling placed on the wrong ground is refused"
+      ]
+    },
+    {
+      "version": "0.52.87",
+      "changes": [
+        "Herds near you now come as does with, sometimes, a stag, and they appear only on open, dry, gentle ground",
+        "Wolf packs far away still hunt a herd that is near you, and far herds still keep away from a pack that is near you"
+      ]
+    },
+    {
+      "version": "0.52.86",
+      "changes": [
+        "Volumetric clouds: real 3D clouds you can fly up to, over and through, lit by the sun and the moon",
+        "A new Medium clouds setting is the desktop default; High is sharper and costs more; Low keeps the lighter flat layer, for phones"
+      ]
+    },
+    {
       "version": "0.52.85",
       "changes": [
         "The Starter world's youngest island now has a lava lake on its summit",

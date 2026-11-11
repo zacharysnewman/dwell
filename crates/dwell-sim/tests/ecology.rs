@@ -7,7 +7,9 @@ mod common;
 use common::*;
 use dwell_ecology::{DATA, Ecosystem, Ground, Island};
 use dwell_protocol::SIM_HZ;
-use dwell_sim::server::{MAX_STEPS_PER_TICK, ServerConfig, default_settings, next_step};
+use dwell_sim::server::{
+    ECOLOGY_SEND_EVERY, MAX_STEPS_PER_TICK, ServerConfig, default_settings, next_step,
+};
 use dwell_storage::{SaveBatch, WorldDb, WorldMeta, WorldStore};
 use dwell_world::{Face, FaceFrame};
 use std::sync::Arc;
@@ -445,4 +447,101 @@ fn night_is_each_faces_own() {
     use dwell_sim::server::night_on;
     assert!(!night_on(clock, at(0.5), Face::A) && night_on(clock, at(0.5), Face::B));
     assert!(night_on(clock, at(0.0), Face::A) && !night_on(clock, at(0.0), Face::B));
+}
+
+/// The `Ecology` messages each client got.
+fn ecology_told(
+    fx: &mut Fixture,
+) -> std::collections::BTreeMap<u32, Vec<dwell_protocol::EcologyMessage>> {
+    fx.take_all()
+        .into_iter()
+        .map(|(id, msgs)| {
+            let e = msgs
+                .into_iter()
+                .filter_map(|m| match m {
+                    dwell_protocol::Message::Ecology(e) => Some(e),
+                    _ => None,
+                })
+                .collect();
+            (id, e)
+        })
+        .collect()
+}
+
+dwell_world::both_faces!(
+    fn a_client_that_asks_gets_the_far_groups_at_a_low_rate_and_others_never(f: FaceFrame) {
+        let mut fx = Fixture::new(config());
+        fx.join(1, &Client::new(1));
+        fx.join(2, &Client::new(2));
+        // The server says it takes the hello (its Inventory's flag).
+        fx.send(
+            1,
+            dwell_protocol::Message::InventoryAction(dwell_protocol::InventoryAction::Hello),
+        );
+        ticks(&mut fx, 3);
+        let flags = fx.take_all()[&1]
+            .iter()
+            .find_map(|m| match m {
+                dwell_protocol::Message::Inventory(i) => Some(i.flags),
+                _ => None,
+            })
+            .expect("an Inventory");
+        assert_ne!(flags & dwell_protocol::inventory_flags::ECOLOGY, 0);
+        // Client 1 asks (a build that reads the ecology); client 2 is an older one that doesn't.
+        fx.send(1, dwell_protocol::Message::EcologyHello);
+        let now = ecology_told(&mut fx);
+        assert_eq!(
+            now.get(&1).map(Vec::len),
+            Some(1),
+            "the far groups at the hello"
+        );
+        assert!(now.get(&2).is_none_or(Vec::is_empty));
+        // Then once every ECOLOGY_SEND_EVERY ticks, to it only; each as the server's far groups
+        // were at the tick it was sent.
+        let mut mine = Vec::new();
+        let mut at_send = Vec::new();
+        for _ in 0..2 * ECOLOGY_SEND_EVERY {
+            ticks(&mut fx, 1);
+            let told = ecology_told(&mut fx);
+            assert!(
+                told.get(&2).is_none_or(Vec::is_empty),
+                "never to a client that didn't ask"
+            );
+            if let Some(m) = told.get(&1).filter(|m| !m.is_empty()) {
+                mine.extend(m.iter().cloned());
+                at_send.push((
+                    fx.server.ecology_message().unwrap(),
+                    fx.server.ecology_snapshot(),
+                ));
+            }
+        }
+        assert_eq!(mine.len(), 2, "every {ECOLOGY_SEND_EVERY} ticks");
+        let m = mine.last().unwrap();
+        let (now, snap) = at_send.last().unwrap();
+        assert_eq!(m, now);
+        // What it holds: the server's far groups, each on its face, face-local.
+        assert_eq!(m.groups.len(), snap.groups.len());
+        assert_eq!(m.day, snap.day as f32);
+        let face = u8::from(f.is_b());
+        let on: Vec<_> = m.groups.iter().filter(|g| g.face == face).collect();
+        let want: Vec<_> = snap.groups.iter().filter(|g| g.face == f.face).collect();
+        assert_eq!(on.len(), want.len());
+        assert!(!on.is_empty(), "this face has herds and packs");
+        for (g, w) in on.iter().zip(&want) {
+            assert_eq!((g.id, g.species.as_str()), (w.id, w.species));
+            assert_eq!((g.x, g.z, g.size), (w.x as f32, w.z as f32, w.size as f32));
+        }
+    }
+);
+
+#[test]
+fn a_world_without_an_ecology_sends_none() {
+    let mut fx = Fixture::new(ServerConfig {
+        ecology: false,
+        ..config()
+    });
+    fx.join(1, &Client::new(1));
+    fx.send(1, dwell_protocol::Message::EcologyHello);
+    ticks(&mut fx, ECOLOGY_SEND_EVERY + 1);
+    assert!(ecology_told(&mut fx).values().all(Vec::is_empty));
 }

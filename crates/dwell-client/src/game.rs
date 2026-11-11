@@ -584,6 +584,10 @@ pub struct Game<S: Scene> {
     /// The creatures the server tells of (ADR 0073), and whether it was told this client draws them.
     pub creatures: crate::creatures::ClientCreatures,
     creatures_on: bool,
+    /// The far ecology's herds and packs the server last told of (`Ecology`, docs/ECOLOGY.md §9;
+    /// `__dwell.ecology()`; for far rendering later), and whether `EcologyHello` was sent.
+    pub ecology: Option<dwell_protocol::EcologyMessage>,
+    ecology_on: bool,
     /// The server keeps block damage (`inventory_flags::DAMAGE`): `DamageHello` sent, struck
     /// points sent with breaks.
     damage_on: bool,
@@ -951,6 +955,8 @@ impl<S: Scene> Game<S> {
             loose: Default::default(),
             creatures: Default::default(),
             creatures_on: false,
+            ecology: None,
+            ecology_on: false,
             damage_on: false,
             causes_on: false,
             inventory_flags: 0,
@@ -1603,6 +1609,13 @@ impl<S: Scene> Game<S> {
                         .borrow_mut()
                         .push(Send::Control(Message::CreaturesHello));
                 }
+                // The server runs a far ecology (docs/ECOLOGY.md §9): ask for its far groups once.
+                if i.flags & dwell_protocol::inventory_flags::ECOLOGY != 0 && !self.ecology_on {
+                    self.ecology_on = true;
+                    self.outbox
+                        .borrow_mut()
+                        .push(Send::Control(Message::EcologyHello));
+                }
                 // A tool that broke from wear (owner, 2026-11-11): its break sound.
                 if let Some((_, old)) = &self.loose.inventory
                     && old.tool_broke(&i.inventory, dwell_protocol::chopping::durability)
@@ -1617,6 +1630,7 @@ impl<S: Scene> Game<S> {
                 }
             }
             Message::Creatures(m) => self.creatures.apply(m),
+            Message::Ecology(m) => self.ecology = Some(m),
             Message::GroundGone(cells) => {
                 self.streamer.ground_gone(&cells);
             }
@@ -1779,10 +1793,12 @@ impl<S: Scene> Game<S> {
                                 cells,
                                 surface,
                                 surface_b,
+                                tints,
                             } => Some(dwell_lod::GeneratedSection {
                                 cells,
                                 surface,
                                 surface_b,
+                                tints,
                             }),
                             _ => None,
                         };

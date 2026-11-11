@@ -993,6 +993,13 @@ rules that spawn the species' creatures are left out (`Creatures::reserved`).
 
 ## 6. Voxel World
 
+
+**Tall grass growth** (ADR 0075 T3c, ECOLOGY.md §10) **[built]**: `shared/worldgen/grass.json` →
+`dwell_worldgen::grass` (a face-local step capped by the T3b climate envelope); the server's grass step
+(`dwell-sim` `server/grass.rs`, every 5 s, loaded chunks, bounded catch-up) and its optional
+`grass_growth` world table (the switch, each chunk's last day; on for new worlds only). The ecology's
+island forage is scaled by the same climate share.
+
 ### 6.1 Grid & chunks **[in progress]**
 
 > **Prototype content.** Every material that exists today — its name, look, and role (the
@@ -1832,8 +1839,17 @@ follow. **The Textures tab (B6, 0.52.42):** the painterly materials and palette 
    unchanged). **[built, 0.52.59]** trunks stand on the log's narrower widths by stage; `trees_in` asks
    the ground columns of its margin lazily (cached), not all up front. **[built, 0.52.60]**
    growth over time (`dwell_worldgen::growth`, the server's growers step every 5 s over loaded
-   chunks, records in the world's optional `tree_growth` table; ADR 0079 S3). Not built: per-tree
-   leaf tints, frond blades.
+   chunks, records in the world's optional `tree_growth` table; ADR 0079 S3). **[built]** per-tree
+   leaf tints (ADR 0079): `TerrainGenerator::tree_tints` lists the species trees reaching a chunk's
+   columns (anchor, placed bounds, the seed's tint from its species' `variety`: a hue shift and a
+   lightness factor; `dwell_world::tree_tint`), the client's mesh worker asks it for a chunk holding
+   leaves and passes it to `dwell_mesh::mesh_chunk_trees`; a leaf cell (and its cards) takes the tint
+   of its owning tree (`tree_tint::owner`: the nearest anchor across, of the trees whose bounds hold
+   it), so chunks agree at a border. LOD sections at the tree levels carry `lod_tints` (cell index,
+   tint) from generation through `GeneratedSection` and the `MeshSection` job to
+   `mesh_section_tinted`, each cell's owner asked at its centre voxel, so the far tree matches the
+   near one. Placed leaves (no tree) and the default world (no species) are untinted. Not built:
+   frond blades.
    Ground items follow a biome's `ground` the same way (§ Ground items, 0.52.41).
    `trees_sparse` finds the same trees asking columns per candidate (Chisel's 3D section). The sky test (step 3) leaves room
    for the tallest structure over the highest ground; the spawn's level patch is clear of trees.
@@ -4122,13 +4138,13 @@ C→S  CausesHello 0x64, control: u8 the last DamageCause this client knows
 ```
 
 **Steam: `SteamHello` / `Steam` (reliable) [built]** (VOLCANOES.md §6.3). A client sends `SteamHello`
-only to a server whose `Inventory` has `inventory_flags::STEAM` (64); from then on, each tick lava
+only to a server whose `Inventory` has `inventory_flags::STEAM` (128); from then on, each tick lava
 boiled water away, the server sends it `Steam`: the world cells whose water went (at most 256), drawn
 as rising puffs (`dwell-client` `steam.rs`, through the blasts' puffs). A client that never said it
 (an older build) never gets the message.
 ```
-C→S  SteamHello 0x65, control: (empty)
-S→C  Steam 0x66, control: u16 count, then count × (i32 x, i32 y, i32 z) world cells
+C→S  SteamHello 0x67, control: (empty)
+S→C  Steam 0x68, control: u16 count, then count × (i32 x, i32 y, i32 z) world cells
 ```
 
 **Client → Server: `BlockEditRequest` (reliable, `control`) [built, Phase 3d]** (§6.5)
