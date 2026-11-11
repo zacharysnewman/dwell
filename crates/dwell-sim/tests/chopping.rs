@@ -934,7 +934,7 @@ dwell_world::both_faces!(
 dwell_world::both_faces!(
     fn chop2_off_the_old_chopping_is_unchanged(f: FaceFrame) {
         // Without the switch twelve chops in one spot don't fell it (hacking: ~4× notching).
-        assert!(!dwell_protocol::chopping::CHOP2_DEFAULT, "off by default");
+        const { assert!(!dwell_protocol::chopping::CHOP2_DEFAULT, "off by default") };
         let mut fx = scene(f, "adventure", true);
         assert_eq!(swings_to_fell(&mut fx, f, false, 13, |_| 0), None);
     }

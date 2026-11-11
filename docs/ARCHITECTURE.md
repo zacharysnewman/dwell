@@ -3056,7 +3056,13 @@ ADR 0067 §5a, `felling::fell_wedges`; a piece's shaped cell collides as its sha
 lying one cut through (its cell goes; in a mode that uses items it drops its wood items). The
 client (`dwell-client` `chop.rs`) sends the swings, keeps the cuts and shows the swing in the HUD;
 the axe is held from the inventory in adventure or from the creative hotbar (`items.json`'s
-`tool` entries). **Cuts are carved into the terrain mesh [built, 0.50.60]:** the client's
+`tool` entries). **The chopping prototype [built, 0.52.61, behind a switch]** (`chop2` in the tools data, off; dev
+`?chop=v2` on a local world: `ServerConfig::chop2`, the client's `chop::set_crosshair_aim`): the
+server takes a sweep's chop where the look meets the wood (`crosshair_hit`), a chop removes the
+tool's `chop2.bite` of the section (`Cut::chop2`; along the grain the wood's `chop2.along` of it),
+the first side cut is the notch and another side's a flat back cut (in the same `Cut`), and a
+standing wood falls past `chop2.fellFraction` toward its notch, the split keeping it (`open`
+wedges; ADR 0067's 0.52.61 amendment). **Cuts are carved into the terrain mesh [built, 0.50.60]:** the client's
 `ChunkStreamer::set_cut` keeps the server's cuts by cell and meshes a changed cell's chunk again
 (a job in flight for it dropped, as `hide_cells` does); a mesh job carries its chunk's cuts
 (`MeshJob::cuts`, `Job::MeshChunk`, chunk-local) and `dwell_mesh::mesh_chunk_cut` meshes each cut

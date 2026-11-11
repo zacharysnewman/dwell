@@ -11,6 +11,13 @@
       }
     },
     {
+      "name": "chop-v2",
+      "notes": "The chopping prototype (docs/WORK_QUEUE.md item 7, `?chop=v2`): chops at the crosshair, the fall past half toward the notch, the split keeping the notch.",
+      "params": {
+        "chop": "v2"
+      }
+    },
+    {
       "name": "raster",
       "notes": "The mesher at full resolution."
     },

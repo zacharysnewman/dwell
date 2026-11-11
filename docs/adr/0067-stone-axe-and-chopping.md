@@ -315,6 +315,18 @@ Owner, 2026-11-09: "the axe should be able to clear leaves too."
 falling trunk's fling onto its chopper fixed at its root (BUGS.md #52: 0.50.37's `max_body_kick`
 cap was removed in 0.50.39 on the owner's word, "we shouldn't be capping player kick like that").
 
+## Amendment 0.52.61: the chopping prototype, behind a switch
+
+The owner's decided rules (2026-11-11, docs/WORK_QUEUE.md item 7) run beside this ADR's chopping
+while the owner tries them, off by default (`chop2` in `shared/tools/tools.json`; dev `?chop=v2`):
+the chop lands at the crosshair (its row the stump's height); a chop removes a share of the section
+(`tools[].chop2.bite`, along the grain `woods[].chop2.along` of it); the first side cut is the notch
+and a cut on another side a flat back cut, in the same `Cut` record and wire; a standing wood falls
+once more than `woods[].chop2.fellFraction` (0.5) is cut, toward the notch, else the side cut; the
+split keeps the notch (`fellWedgeTrunk: open`). With the switch off nothing here changes (a test
+pins it). Adopting it would replace §§2–5's swing share, bands and kerfs; see
+docs/proposals/CHOPPING_REDESIGN.md §7.
+
 ## Consequences
 
 - A new tool is an item and a `tools` entry; a new wood a block with an `axis` and a `woods` entry;

@@ -52,6 +52,18 @@ Last updated: 2026-11-11 (0.52.52).
      ninja"): seen from the side `| / \ |`, the falling trunk keeps the notch's upper face and the
      stump its lower face; the rest breaks flat across the back cut and hinge.
    - Also: the axe looks big mid-swing (the swing clips' pose).
+   - **Status (0.52.61, first slice):** the prototype is built behind a switch (`chop2` in
+     `shared/tools/tools.json`, off; dev `?chop=v2` for a local world; ADR 0067's 0.52.61 amendment,
+     CHOPPING_REDESIGN.md §7): chops land at the crosshair (the row hit is the stump), each removes a
+     share of the section (stone 0.045: 12 chops; metal 0.075: 7; along the grain half), the first
+     side cut is the notch (V) and a cut on another side a flat back cut, it falls past 50 % toward
+     the notch (else the side cut), and the split keeps the notch (the stump the lower face, the
+     trunk's bottom the upper face: the `open` wedges). Tests: dwell-protocol and dwell-sim (both
+     faces). Outstanding: the hinge's flat break is cell-sized (the whole cut cell is the stump's
+     wedge); the notch is still carved as today's V and kerf; adjacent sides don't add up (only
+     opposite ones do); the swing animation is the arc's (timed to the middle of the arc), not aimed
+     at the bite; the dedicated server has no switch yet; in-game screenshots (the bench's flat-world
+     trunk didn't draw in this run, on main's build too) and the owner's review.
 
 ## Done
 
