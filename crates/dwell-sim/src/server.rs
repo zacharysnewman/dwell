@@ -897,6 +897,11 @@ pub struct Server {
     ground_unread: bool,
     /// Edited chunks as generated, for the ground items' rules (ADR 0071; not saved).
     ground_generated: dwell_world::hash::HashMap<dwell_world::ChunkCoord, Box<dwell_world::Chunk>>,
+    /// The ground densities from the biomes (ADR 0074 B5), built at the first ground item asked
+    /// for (none: they do not vary, the default world), and each chunk's once computed.
+    ground_density: Option<Option<dwell_worldgen::GroundDensityFn>>,
+    ground_density_chunks:
+        dwell_world::hash::HashMap<dwell_world::ChunkCoord, dwell_world::ground::GroundDensity>,
     next_save_tick: u32,
     save_stats: SaveStats,
     // Level of detail: sections, index entries changed since the last LodIndexUpdate, sections to
@@ -1035,6 +1040,8 @@ impl Server {
             ground: Default::default(),
             ground_unread: false,
             ground_generated: Default::default(),
+            ground_density: None,
+            ground_density_chunks: Default::default(),
             next_save_tick: 0,
             save_stats: SaveStats::default(),
             lod: if config.jobs_remote {

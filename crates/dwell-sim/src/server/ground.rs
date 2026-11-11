@@ -7,7 +7,7 @@ use super::{Server, SessionId};
 use dwell_blocks::StateId;
 use dwell_protocol::{Channel, MAX_GROUND_GONE_PER_MESSAGE, Message};
 use dwell_world::FaceFrame;
-use dwell_world::ground::{Placed, Rules};
+use dwell_world::ground::{GroundDensity, Placed, Rules};
 
 /// How far from the eye a ground item may be hit (m): the block reach and a little.
 pub const PICK_REACH_M: f64 = dwell_protocol::players::REACH_DISTANCE as f64 + 0.5;
@@ -24,6 +24,7 @@ impl Server {
             return None;
         }
         let seed = self.config.world_seed;
+        let density = self.ground_density_of(cell);
         let world = &mut self.world;
         let cache = &mut self.ground_generated;
         // The rules read the terrain as generated (the leaves cleared over a stick leave it); the
@@ -33,7 +34,45 @@ impl Server {
             _ if generated => Some(world.generated_voxel(c, cache)),
             _ => Some(world.get_voxel(c[0], c[1], c[2])),
         };
-        Rules::shipped().item_over(&mut get, seed, cell)
+        let by = |k: usize, c: [i32; 3]| density.as_ref().map_or(1.0, |d| d.at(k, c));
+        let rules = Rules::shipped();
+        let rules = if density.is_some() {
+            rules.with_density(&by)
+        } else {
+            rules
+        };
+        rules.item_over(&mut get, seed, cell)
+    }
+
+    /// Cell `cell`'s chunk's ground densities from the biomes (ADR 0074 B5), as the client's mesh
+    /// jobs compute them; none where they do not vary.
+    fn ground_density_of(&mut self, cell: [i32; 3]) -> Option<GroundDensity> {
+        let (version, seed) = (self.config.generator_version, self.config.world_seed);
+        let f = self
+            .ground_density
+            .get_or_insert_with(|| {
+                if self.config.generator_override.is_some() {
+                    return None;
+                }
+                dwell_worldgen::ground_density_for(version, seed)
+            })
+            .clone()?;
+        let c = dwell_world::chunk_of(cell[0], cell[1], cell[2]);
+        if self.ground_density_chunks.len() >= 16_384 {
+            self.ground_density_chunks.clear();
+        }
+        Some(
+            self.ground_density_chunks
+                .entry(c)
+                .or_insert_with(|| f(c))
+                .clone(),
+        )
+    }
+
+    /// Tests: the ground densities by chunk in place of the generator's (ADR 0074 B5).
+    pub fn set_ground_density(&mut self, f: Option<dwell_worldgen::GroundDensityFn>) {
+        self.ground_density = Some(f);
+        self.ground_density_chunks.clear();
     }
 
     /// `InventoryAction::GroundHello`: the client draws ground items; it is sent every gone one.

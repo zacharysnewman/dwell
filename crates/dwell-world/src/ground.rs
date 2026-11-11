@@ -104,6 +104,38 @@ impl Placed {
 pub struct Rules<'a> {
     kinds: &'a [GroundKind],
     rules: Vec<(&'a GroundRule, StateRanges, StateRanges)>,
+    /// Each kind's density multiplier by world cell (the biomes' `ground`, ADR 0074 B5); none: 1.
+    density: Option<&'a dyn Fn(usize, [i32; 3]) -> f64>,
+}
+
+/// A chunk column's ground densities (ADR 0074 B5): each kind's multiplier from the biomes'
+/// `ground` by their weights, at the column's four corners (world x, z of the chunk's corner and
+/// the next chunk's), eased bilinearly over its cells. The generator both sides run computes it
+/// ([`Rules::with_density`]); empty: 1 everywhere (the default world).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct GroundDensity {
+    /// Per kind (in [`KINDS`]' order): x0z0, x1z0, x0z1, x1z1.
+    pub corners: Vec<[f32; 4]>,
+}
+
+impl GroundDensity {
+    /// Kind `kind`'s multiplier in world cell `cell` (its chunk column's corners).
+    pub fn at(&self, kind: usize, cell: [i32; 3]) -> f64 {
+        let Some(c) = self.corners.get(kind) else {
+            return 1.0;
+        };
+        let u = (f64::from(cell[0].rem_euclid(CHUNK_SIZE)) + 0.5) / f64::from(CHUNK_SIZE);
+        let v = (f64::from(cell[2].rem_euclid(CHUNK_SIZE)) + 0.5) / f64::from(CHUNK_SIZE);
+        let [a, b, d, e] = c.map(f64::from);
+        let lo = a + (b - a) * u;
+        let hi = d + (e - d) * u;
+        lo + (hi - lo) * v
+    }
+
+    /// Whether every kind is 1 everywhere.
+    pub fn is_uniform(&self) -> bool {
+        self.corners.iter().all(|c| c.iter().all(|&v| v == 1.0))
+    }
 }
 
 /// State id ranges (a block's states each).
@@ -156,7 +188,16 @@ impl<'a> Rules<'a> {
                     )
                 })
                 .collect(),
+            density: None,
         }
+    }
+
+    /// The rules with each kind's density multiplied by `density(kind, world cell)` (the biomes'
+    /// `ground`, ADR 0074 B5: a [`GroundDensity`] per chunk column); the server, the mesher and
+    /// the crosshair pass the same, so they agree.
+    pub fn with_density(mut self, density: &'a dyn Fn(usize, [i32; 3]) -> f64) -> Self {
+        self.density = Some(density);
+        self
     }
 
     pub fn kind(&self, i: usize) -> Option<&'a GroundKind> {
@@ -215,7 +256,11 @@ impl<'a> Rules<'a> {
             }
             // The roll and the look hash the face-local cell: face B mirrors face A.
             let h = |salt: u64| unit(mix(seed, [x, y, z], salt));
-            if h(i as u64) >= rule.density {
+            // Times 1 is exact: the default world's rolls are as before.
+            let density = self
+                .density
+                .map_or(rule.density, |d| rule.density * d(rule.kind, cell));
+            if h(i as u64) >= density {
                 continue;
             }
             let kind = self.kinds.get(rule.kind)?;

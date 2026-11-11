@@ -65,5 +65,6 @@
   ],
   "decorations": [],
   "placements": [],
+  "ground": { "dwell:ground_rock": 3 },
   "water": "dwell:water"
 }

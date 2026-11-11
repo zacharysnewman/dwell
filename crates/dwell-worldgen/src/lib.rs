@@ -54,6 +54,31 @@ pub fn generator_for(version: u32, world_seed: u64) -> ChunkGenerator {
     flat_generator()
 }
 
+/// A chunk's ground densities from its biomes (ADR 0074 B5; `dwell_world::ground::GroundDensity`).
+pub type GroundDensityFn =
+    Arc<dyn Fn(dwell_world::ChunkCoord) -> dwell_world::ground::GroundDensity + Send + Sync>;
+
+/// The ground densities of a generator version's world (ADR 0074 B5): none where no biome of
+/// either face's worldgen has a `ground` (the default world: nothing is built, and the scatter is
+/// as before). The terrain is built only when one does.
+pub fn ground_density_for(version: u32, world_seed: u64) -> Option<GroundDensityFn> {
+    if version != dwell_world::GENERATOR_TERRAIN {
+        return None;
+    }
+    let any = [dwell_world::Face::A, dwell_world::Face::B].into_iter().any(|f| {
+        match &worldmap::cache::for_seed(bifacial::face_seed(world_seed, f)).worldgen {
+            Some(w) => w.edit.biomes.iter().any(|b| b.ground.is_some()),
+            None => terrain::BIOMES.iter().any(|b| b.ground.is_some()),
+        }
+    });
+    if !any {
+        return None;
+    }
+    let t = Arc::new(BifacialTerrain::for_generator(version, world_seed)?);
+    t.ground_varies()
+        .then(|| Arc::new(move |c| t.ground_density(c)) as GroundDensityFn)
+}
+
 /// The generator's all-air test. The terrain's caches its sky floors per chunk column and face
 /// (bounded: cleared when large); `AirColumns` gives the server its costly part apart.
 pub fn air_test_for(version: u32, world_seed: u64) -> AirChunkTest {

@@ -149,7 +149,7 @@ export const WORLD_GROUPS = ['inland', 'seaFloor', 'islands', 'tectonics', 'hill
 /** A biome's groups (shared/worldgen/biomes/*.json): layered on the elevation. */
 export const BIOME_GROUPS = Object.keys(TERRAIN).filter((g) => !WORLD_GROUPS.includes(g));
 /** A biome's reference fields beside its groups. */
-const BIOME_REFS = ['where', 'bands', 'decorations', 'placements', 'trees', 'water', 'waterLook', 'rockStack', 'vegetation', 'erosion', 'gullies'];
+const BIOME_REFS = ['where', 'bands', 'decorations', 'placements', 'trees', 'ground', 'water', 'waterLook', 'rockStack', 'vegetation', 'erosion', 'gullies'];
 /** A biome's optional words for people (Chisel's lists): a short label and a one-line description. */
 export const BIOME_TEXT = { label: 40, description: 200 };
 const BIOME_NAME = /^[a-z0-9_]+:[a-z0-9_]+$/;
@@ -210,6 +210,7 @@ export function validateBiome(data, blocks, refs) {
     if (new Set(names).size !== names.length) fail(`${k}: a rule is listed twice`);
   }
   checkTrees(data.trees, data.placements, fail);
+  checkGround(data.ground, refs.ground, fail);
   const w = blocks.get(data.water);
   if (!w) fail(`water ${JSON.stringify(data.water)} is not in the registry`);
   if (!w.fluid) fail(`water ${data.water} must be a fluid block`);
@@ -245,6 +246,26 @@ export function checkTrees(trees, placements, fail) {
   for (const [p, d] of Object.entries(trees)) {
     if (!placements.includes(p)) fail(`trees: ${JSON.stringify(p)} is not one of its placements`);
     if (!(isNum(d) && d >= 0 && d <= TREE_DENSITY_MAX)) fail(`trees.${p} must be in [0, ${TREE_DENSITY_MAX}]`);
+  }
+}
+
+/** The most a biome's `ground` may multiply a ground item kind's density by (ADR 0074 B5). */
+export const GROUND_DENSITY_MAX = 3;
+
+/**
+ * Checks a biome's optional `ground` (ADR 0074 B5): ground item kind (shared/ground/ground.json
+ * `kinds`) → density, a multiplier on that kind's rules where the biome has weight. Without it
+ * every kind takes 1 (the default biome: unchanged); with it a kind it does not name lies nowhere
+ * it rules, as with `placements`. `kinds` (a set of names) is checked when given.
+ */
+export function checkGround(ground, kinds, fail) {
+  if (ground === undefined) return;
+  if (typeof ground !== 'object' || ground === null || Array.isArray(ground)) {
+    fail('ground must map ground item kinds to densities');
+  }
+  for (const [k, d] of Object.entries(ground)) {
+    if (kinds && !kinds.has(k)) fail(`ground: ${JSON.stringify(k)} is not a kind of ground.json`);
+    if (!(isNum(d) && d >= 0 && d <= GROUND_DENSITY_MAX)) fail(`ground.${k} must be in [0, ${GROUND_DENSITY_MAX}]`);
   }
 }
 

@@ -127,6 +127,18 @@ impl BifacialTerrain {
         }
     }
 
+    /// Chunk `coord`'s ground densities from its face's biomes (ADR 0074 B5; the chunk column's
+    /// corners, face-local x and z being the world's); empty where they do not vary.
+    pub fn ground_density(&self, coord: ChunkCoord) -> dwell_world::ground::GroundDensity {
+        self.local(face_of_chunk_y(coord.y))
+            .ground_density_chunk(coord.x, coord.z)
+    }
+
+    /// Whether either face's biomes vary the ground items (ADR 0074 B5).
+    pub fn ground_varies(&self) -> bool {
+        self.a.ground_varies() || self.b.ground_varies()
+    }
+
     /// A chunk of either face: face A's directly, face B's as the vertical flip of the face-local
     /// chunk with shaped blocks turned over.
     pub fn generate(&self, coord: ChunkCoord, chunk: &mut Chunk) {

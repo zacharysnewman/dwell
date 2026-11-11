@@ -5,7 +5,7 @@
 use super::{Kinds, MeshArrays, N, surface};
 use crate::flood::Flood;
 use dwell_blocks::find_block;
-use dwell_world::ground::{GroundShape, Placed, Rules};
+use dwell_world::ground::{GroundDensity, GroundShape, Placed, Rules};
 use dwell_world::{CELL_H, SKY_APRON, SKY_EXTENT, SKY_VOLUME};
 
 /// A mesh job's ground items: the world seed and the chunk's gone cells (chunk-local, world-oriented).
@@ -16,6 +16,8 @@ pub struct GroundJob {
     /// The sky volume as generated (empty: as the job's): the rules read the terrain as
     /// generated, so the leaves cleared over a stick leave it (owner, 2026-11-09).
     pub generated: Vec<u16>,
+    /// The chunk column's ground densities from its biomes (ADR 0074 B5; empty: 1 everywhere).
+    pub density: GroundDensity,
 }
 
 /// The ground items of the chunk at `origin` (world cells), read from its world-oriented sky
@@ -42,7 +44,14 @@ pub fn scatter(padded: &[u16], origin: [i32; 3], job: &GroundJob) -> Vec<Placed>
             .then(|| v[(x + ex * (z + ez * y)) as usize])
     };
     let c = dwell_world::ChunkCoord::from_array(origin.map(|v| v.div_euclid(N)));
-    let mut out = Rules::shipped().scatter_over(&mut get, job.seed, c);
+    let density = |k: usize, cell: [i32; 3]| job.density.at(k, cell);
+    let rules = Rules::shipped();
+    let rules = if job.density.is_uniform() {
+        rules
+    } else {
+        rules.with_density(&density)
+    };
+    let mut out = rules.scatter_over(&mut get, job.seed, c);
     if !job.gone.is_empty() {
         out.retain(|p| {
             let l = [

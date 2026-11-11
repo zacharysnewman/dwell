@@ -12,6 +12,7 @@ export interface BiomeRefs {
   decorations: Set<string>;
   placements: Set<string>;
   stacks?: Set<string>;
+  ground?: Set<string>;
 }
 export const GEOLOGY: Record<string, Record<string, Range>>;
 export const JOINTING: readonly string[];
@@ -35,6 +36,12 @@ export function validatePresets<T>(
   taken?: readonly string[],
 ): T[];
 export const TREE_DENSITY_MAX: number;
+export const GROUND_DENSITY_MAX: number;
+export function checkGround(
+  ground: unknown,
+  kinds: ReadonlySet<string> | undefined,
+  fail: (m: string) => never,
+): void;
 export function checkTrees(
   trees: unknown,
   placements: readonly string[],

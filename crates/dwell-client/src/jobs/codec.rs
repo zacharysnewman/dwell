@@ -454,6 +454,8 @@ pub fn encode_output(id: u32, out: &Output) -> Vec<u8> {
                 }
                 None => w.u8(0),
             }
+            // The ground densities (ADR 0074 B5): each kind's four corners.
+            w.f32s(&m.ground.corners.concat());
         }
         Output::SectionMesh(m) => {
             w.u8(5);
@@ -523,11 +525,22 @@ pub fn decode_output(bytes: &[u8]) -> Result<(u32, Output), DecodeError> {
             } else {
                 None
             };
+            let corners = r.f32s()?;
+            if corners.len() % 4 != 0 {
+                return Err(DecodeError);
+            }
+            let ground = dwell_world::ground::GroundDensity {
+                corners: corners
+                    .chunks_exact(4)
+                    .map(|c| [c[0], c[1], c[2], c[3]])
+                    .collect(),
+            };
             Output::ChunkMesh(Box::new(ChunkMeshes {
                 opaque,
                 transparent,
                 cutout,
                 water,
+                ground,
             }))
         }
         5 => {
