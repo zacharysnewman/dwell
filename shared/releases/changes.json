@@ -2,6 +2,12 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.52.111",
+      "changes": [
+        "Behind the scenes: a world can now record its size (today's, or 2×, 4×, 8× or 10× wider) for the coming big-map test; every world plays exactly as before"
+      ]
+    },
+    {
       "version": "0.52.110",
       "changes": [
         "The main menu's Settings and Versions are now buttons in the menu's own style, side by side under Worlds and Play with others"
