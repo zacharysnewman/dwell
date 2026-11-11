@@ -41,6 +41,14 @@ describe('the main menu text contrast', () => {
     }
   }
 
+  it("Settings' text in a world is at least 4.5:1 on its glass over a dark, dimmed game (M3)", () => {
+    const sheet = rgba(token('gm-glass'));
+    const panel = over(sheet.rgb, sheet.alpha, hex('#000000'));
+    for (const color of Object.values(texts)) {
+      expect(contrast(color, panel)).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
   it("the big actions' white text is at least 4.5:1 on both ends of their green", () => {
     const white = hex('#ffffff');
     expect(contrast(white, hex(token('mm-action-top')))).toBeGreaterThanOrEqual(4.5);

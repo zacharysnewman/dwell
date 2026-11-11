@@ -56,8 +56,11 @@ export interface MainMenuDeps {
   noticesHref: string;
   /** The background (shared/ui/menu-backgrounds.json, Settings → On screen); default the data's. */
   background?: string;
-  /** Opens Settings (every pane; ui/menuPage.ts), from the Settings button. */
-  openSettings?: () => void;
+  /**
+   * Shows or hides Settings (every pane; ui/menuPage.ts): the menu's `settings` page (menu M3),
+   * opened by the Settings link and closed by Back, Esc or B. Its own Back calls `settingsClosed`.
+   */
+  openSettings?: (open: boolean) => void;
   /** The worlds' thumbnails (local/worldThumbs.ts); without it every card shows its placeholder. */
   thumbs?: { get(id: string): string | null; remove(id: string): void };
   /** Whether a world can be regenerated (the build that opens it carries out `?regenerate=`). */
@@ -279,10 +282,18 @@ export class MainMenu {
   }
 
   /** Shows a view: the home column stays beside a page on wide screens; the logo stands alone. */
+  /** Settings' own Back closed it: the menu leaves its `settings` page for the home. */
+  settingsClosed(): void {
+    if (this.view === 'settings') this.show(back('settings'));
+  }
+
   private show(view: MenuView, focus = true): void {
     const from = this.view;
     this.view = view;
     this.root.dataset.view = view;
+    // Settings is ui/settingsMenu.ts's page, drawn over the menu's panorama (menu M3).
+    if (view === 'settings') this.deps.openSettings?.(true);
+    else if (from === 'settings') this.deps.openSettings?.(false);
     for (const [v, el] of this.views) {
       if (v !== 'home') el.hidden = v !== view;
     }
@@ -372,11 +383,11 @@ export class MainMenu {
     const links = document.createElement('div');
     links.className = 'mm-links';
     if (this.deps.openSettings) {
-      const open = this.deps.openSettings;
       const settings = button('Settings', 'mm-link', () => {
-        open();
+        this.show('settings');
       });
       settings.id = 'menu-settings';
+      settings.dataset.opens = 'settings';
       settings.setAttribute('aria-controls', 'settings-menu');
       links.append(settings);
     }
