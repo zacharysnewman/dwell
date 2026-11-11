@@ -68,6 +68,20 @@ Last updated: 2026-11-11 (0.52.52).
      and trunk's wedge faces not yet shown in game (the bench's placed logs didn't stack; the server
      test checks them). The bench's `axe` scenario no longer builds its trunk
      (its `region fill` of logs leaves none; cause not looked into): needs a fix.
+   - **Status (0.52.62, round 2):** cuts on adjacent sides add up (what is left is the section after
+     every side's slab; `Cut::removed`); the aim reaches as far as the block-target outline
+     (`REACH_DISTANCE`, 5 m); a cut octagonal log is carved inside its octagon (`carve_in`: the carve
+     clipped to the prism, the chamfers as bark where wood is left); the look clears only what it
+     passes through and stops at a stump's wedge (seen in game: the swings after the fall broke it);
+     the bench's `axe` scenario builds its trunk again (the bench's `select` now updates the creative
+     view at once: a `pick` right after it went into the old slot and the fill was the pickaxe's
+     nothing). Seen in game (bench `chop2` scratch scenario, `chop-v2`, a tree built on the flat world:
+     no generated tree was within 256 m of the default world's spawn, and the starter world isn't
+     reachable from the page): the notch's V at the crosshair, the flat back cut from the far side
+     beside it, the fall toward the notch, the stump's slanted face after. Outstanding: the trunk's
+     upper face is not clearly seen in the shots, and a short octagon piece lies beside the stump
+     after the fall (not looked into); the hinge's break is cell-sized; the hold-to-chop rhythm and
+     IK (C2, C3) and the dedicated server's switch, for later; the owner's review.
 
 ## Done
 

@@ -3062,7 +3062,11 @@ server takes a sweep's chop where the look meets the wood (`crosshair_hit`), a c
 tool's `chop2.bite` of the section (`Cut::chop2`; along the grain the wood's `chop2.along` of it),
 the first side cut is the notch and another side's a flat back cut (in the same `Cut`), and a
 standing wood falls past `chop2.fellFraction` toward its notch, the split keeping it (`open`
-wedges; ADR 0067's 0.52.61 amendment). **Cuts are carved into the terrain mesh [built, 0.50.60]:** the client's
+wedges; ADR 0067's 0.52.61 amendment). Round 2 (0.52.62): the look reaches the target outline's
+`REACH_DISTANCE`, clears only what it passes through and stops at a wood's fell wedge; the share cut
+is what all sides' slabs leave (`Cut::removed`: adjacent sides add up); an octagonal log's cut is
+carved inside its octagon (`carve::carve_in`, the mesher's `carve_outline`: clipped to the prism,
+the chamfers bark, `carve::Part::Inner`). **Cuts are carved into the terrain mesh [built, 0.50.60]:** the client's
 `ChunkStreamer::set_cut` keeps the server's cuts by cell and meshes a changed cell's chunk again
 (a job in flight for it dropped, as `hide_cells` does); a mesh job carries its chunk's cuts
 (`MeshJob::cuts`, `Job::MeshChunk`, chunk-local) and `dwell_mesh::mesh_chunk_cut` meshes each cut

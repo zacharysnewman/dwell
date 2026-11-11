@@ -13,6 +13,9 @@ use dwell_protocol::{
 };
 use dwell_world::{CELL_H, FaceFrame, M, m_of_row};
 
+/// Where an aimed chop lands: the cell, the face met (`axis × 2 + positive`) and the point.
+type Aimed = ([i32; 3], u8, [f64; 3]);
+
 /// How far past the edit reach a swing's hit point may be (metres): the client's ray and the
 /// server's eye differ by a tick.
 const REACH_SLACK_M: f64 = 0.75;
@@ -103,15 +106,19 @@ impl Server {
         let eye = self.eye_of(h);
         let arc = dwell_world::swing::Arc::of(t);
         let swept = dwell_world::swing::sweep(&mut self.world, eye, look, vertical, &arc);
-        let cleared: Vec<[i32; 3]> = swept.cleared.iter().map(|c| c.cell).collect();
-        self.clear_cells(id, tool, &cleared, eye);
         // The chopping prototype aims at the crosshair: the chop lands where the look meets the
-        // trunk (its height the stump's), on the face it meets (WORK_QUEUE item 7).
-        let aimed = if self.config.chop2 {
+        // trunk (its height the stump's), on the face it meets (WORK_QUEUE item 7), and clears only
+        // what the look passes through on the way (round 2: the arc's clears broke a felled tree's
+        // stump wedge, a `log_ramp`, with the next swing).
+        let (cleared, aimed) = if self.config.chop2 {
             self.crosshair_hit(t, eye, look)
         } else {
-            swept.hit.map(|x| (x.hit.cell, x.axis_face(), x.point))
+            (
+                swept.cleared.iter().map(|c| c.cell).collect(),
+                swept.hit.map(|x| (x.hit.cell, x.axis_face(), x.point)),
+            )
         };
+        self.clear_cells(id, tool, &cleared, eye);
         let wood = aimed.filter(|x| grain_of(self.world.get_voxel_if_loaded(x.0)).is_some());
         match wood {
             Some((cell, face, point)) => self.swing(id, tool, cell, face, point, vertical),
@@ -123,26 +130,40 @@ impl Server {
         }
     }
 
-    /// The first solid cell the look from `eye` meets within the arc's reach, past the blocks
-    /// `t` clears (leaves): the cell, the face met (the chopping wire's `axis × 2 + positive`)
-    /// and the point (the chopping prototype's aim).
+    /// The first solid cell the look from `eye` meets within the target outline's reach, past the
+    /// blocks `t` clears (leaves): the cells it passed through (to clear) and the cell, the face met
+    /// (the chopping wire's `axis × 2 + positive`) and the point (the chopping prototype's aim).
     fn crosshair_hit(
         &mut self,
         t: &chop::ToolDef,
         eye: [f64; 3],
         look: [f64; 3],
-    ) -> Option<([i32; 3], u8, [f64; 3])> {
+    ) -> (Vec<[i32; 3]>, Option<Aimed>) {
         let dir = look.map(|v| v as f32);
+        let passed = std::cell::RefCell::new(Vec::new());
         let hit = dwell_world::edit::raycast_block_past(
             &mut self.world,
             eye,
             dir,
-            t.swing.reach_m as f32,
-            |_, m| t.clears_block(block_of(m).name),
-        )?;
-        let d = f64::from(hit.distance);
-        let point = [0, 1, 2].map(|i| eye[i] + look[i] * d);
-        Some((hit.cell, hit.face ^ 1, point))
+            // As far as the block-target outline (round 2: a trunk you can outline you can chop).
+            dwell_protocol::players::REACH_DISTANCE,
+            |c, m| {
+                // A wood's fell wedge (a stump's face) stops the look: the prototype keeps it.
+                let name = block_of(m).name;
+                let through =
+                    t.clears_block(name) && !chop::WOODS.iter().any(|w| w.fell_wedge == Some(name));
+                if through {
+                    passed.borrow_mut().push(c);
+                }
+                through
+            },
+        );
+        let aimed = hit.map(|hit| {
+            let d = f64::from(hit.distance);
+            let point = [0, 1, 2].map(|i| eye[i] + look[i] * d);
+            (hit.cell, hit.face ^ 1, point)
+        });
+        (passed.into_inner(), aimed)
     }
 
     /// Breaks the cells a swing of `tool` went through (its `clears`: leaves, for the axe) in one

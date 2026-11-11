@@ -24,7 +24,7 @@ pub fn crosshair_aim() -> bool {
 }
 
 /// The chopping prototype's impact: the first solid cell the look from `eye` meets within the
-/// tool's reach past what it clears, the bite timed to the middle of the arc (the hit-stop there).
+/// target outline's reach past what it clears, the bite timed to the middle of the arc (the hit-stop there).
 pub fn crosshair_impact(
     store: &mut dwell_world::VoxelWorld,
     tool: &ToolDef,
@@ -35,8 +35,16 @@ pub fn crosshair_impact(
         store,
         eye,
         look.map(|v| v as f32),
-        tool.swing.reach_m as f32,
-        |_, m| tool.clears_block(dwell_blocks::block_of(m).name),
+        // As far as the block-target outline (a trunk you can outline you can chop).
+        dwell_protocol::players::REACH_DISTANCE,
+        // A wood's fell wedge (a stump's face) stops the look, as on the server.
+        |_, m| {
+            let name = dwell_blocks::block_of(m).name;
+            tool.clears_block(name)
+                && !dwell_protocol::chopping::WOODS
+                    .iter()
+                    .any(|w| w.fell_wedge == Some(name))
+        },
     )?;
     let d = f64::from(hit.distance);
     let m = store.get_voxel(hit.cell[0], hit.cell[1], hit.cell[2]);

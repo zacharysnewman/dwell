@@ -936,6 +936,40 @@ fn shaped_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, x: i32, y: i32, z:
     }
 }
 
+/// The cross-section outline of an octagonal log cell (ADR 0072; its width, its joins), as points
+/// on the two axes across `grain` in the carve's order, cell units; none for a square wood.
+fn carve_outline(cells: &Cells<'_>, cell: [i32; 3], grain: usize) -> Option<Vec<[f64; 2]>> {
+    use dwell_blocks::octagon::{joined_mask, outline_width, section_of};
+    let [x, y, z] = cell;
+    let m = cells.state(x, y, z);
+    let (section, axis) = section_of(m)?;
+    let at = |o: [i32; 3]| cells.state(x + o[0], y + o[1], z + o[2]);
+    let joined = joined_mask(m, &at);
+    let ring = outline_width(
+        f64::from(section.chamfer),
+        f64::from(section.width),
+        axis,
+        joined,
+        [1.0, CELL_H, 1.0],
+    );
+    let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
+    let ax = match grain {
+        0 => [1, 2],
+        1 => [0, 2],
+        _ => [0, 1],
+    };
+    Some(
+        ring.into_iter()
+            .map(|(p, _)| {
+                let mut q = [0.0; 3];
+                q[u] = p[0];
+                q[v] = p[1];
+                [q[ax[0]], q[ax[1]]]
+            })
+            .collect(),
+    )
+}
+
 /// How much darker a cut face is per cell of its depth into the wood (the notch's shade).
 const CUT_SHADE: f64 = 0.55;
 
@@ -962,17 +996,19 @@ fn carved_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, cell: [i32; 3], cu
     };
     let [x, y, z] = cell;
     let at = [f64::from(x), f64::from(y), f64::from(z)];
-    for f in carve::carve(grain, cut, &look) {
+    // An octagonal log's cut is carved inside its octagon (round 2 of the chopping prototype).
+    let outline = carve_outline(cells, cell, grain);
+    for f in carve::carve_in(grain, cut, &look, outline.as_deref()) {
         // The side (axis, sign) the face looks out of: a cut face's light comes from there.
         let (axis, sign, shade_axis) = match f.part {
-            Part::Bark(s) | Part::Cut(s) => {
+            Part::Bark(s) | Part::Cut(s) | Part::Inner(s) => {
                 let a = dwell_protocol::chopping::side_axis(grain, s);
                 (a, if s % 2 == 1 { 1 } else { -1 }, Some(a))
             }
             Part::End(pos) => (grain, if pos { 1 } else { -1 }, None),
         };
         let [nx, ny, nz] = neighbour_of(x, y, z, axis, sign);
-        if !matches!(f.part, Part::Cut(_))
+        if !matches!(f.part, Part::Cut(_) | Part::Inner(_))
             && face_covered(cube(), face_of(axis, sign), cover(&cells.kind(nx, ny, nz)))
         {
             continue;

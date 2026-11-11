@@ -189,3 +189,56 @@ fn a_mirrored_cut_swaps_its_vertical_sides_only() {
     // A standing log's sides are all level: unchanged.
     assert_eq!(mirror_cut(1, &c), c);
 }
+
+/// A full-width octagon's outline (ADR 0072's chamfer), on the two axes across the grain.
+fn octagon(c: f64) -> Vec<[f64; 2]> {
+    vec![
+        [c, 0.0],
+        [1.0 - c, 0.0],
+        [1.0, c],
+        [1.0, 1.0 - c],
+        [1.0 - c, 1.0],
+        [c, 1.0],
+        [0.0, 1.0 - c],
+        [0.0, c],
+    ]
+}
+
+#[test]
+fn a_notch_in_an_octagonal_log_is_carved_inside_its_octagon() {
+    // Round 2 of the chopping prototype: red before, a cut log's carve was the cube (its corners
+    // came back square: points outside the octagon, no chamfer bark).
+    let c = 0.2929;
+    let oct = octagon(c);
+    let inside = |p: &[f64; 3]| {
+        let (a, b) = (p[0], p[2]);
+        a + b >= c - 1e-6
+            && (1.0 - a) + b >= c - 1e-6
+            && a + (1.0 - b) >= c - 1e-6
+            && (1.0 - a) + (1.0 - b) >= c - 1e-6
+    };
+    // Uncut: the octagonal prism, closed, its volume the octagon's area.
+    let f = carve_in(1, &Cut::default(), &LOOK, Some(&oct));
+    assert_closed(&f, 1.0 - 2.0 * c * c);
+    // A notch on side 0 (−x) and a back cut on side 1 (+x): closed, every point inside the
+    // octagon, the chamfers bark where wood is left, the notch's faces fresh wood.
+    for cut in [notch(0, 0.3), {
+        let mut k = notch(0, 0.3);
+        k.kerf[1][0] = 0.25;
+        k
+    }] {
+        let f = carve_in(1, &cut, &LOOK, Some(&oct));
+        let (s, v) = closure(&f);
+        assert!(s.iter().all(|x| x.abs() < 1e-3), "open surface: {s:?}");
+        assert!(v > 0.4 && v < 1.0 - 2.0 * c * c, "volume {v}");
+        assert!(
+            f.iter().all(|f| f.pts.iter().all(inside)),
+            "outside the octagon"
+        );
+        assert!(
+            f.iter().any(|f| matches!(f.part, Part::Inner(_))),
+            "chamfer bark"
+        );
+        assert!(f.iter().any(|f| f.part == Part::Cut(0)), "the notch");
+    }
+}

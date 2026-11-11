@@ -442,19 +442,36 @@ impl Cut {
     ) -> f64 {
         let e = extent(side_axis(grain, side));
         let share = tool.chop2_bite * if along_grain { wood.chop2.along } else { 1.0 };
+        // A cut takes a slab off its side across what is left of the other axis: deepening it by
+        // `d` removes `d × left_other` of the section, so a chop of `share` goes `share × area /
+        // left_other` deep (owner, round 2: "the remaining section is what's left after all cuts").
+        let [ea, eb] = across_axes(grain).map(extent);
+        let other = 1 - side / 2;
+        let left_other =
+            (if other == 0 { ea } else { eb }) - self.depth(2 * other) - self.depth(2 * other + 1);
         let room = (e - self.depth(side) - self.depth(side ^ 1)).max(0.0);
-        let gain = (share * e).min(room);
+        let want = share * ea * eb / left_other.max(1e-6);
+        let gain = want.min(room);
         match self.notch_side() {
             Some(n) if n != side => self.kerf[side][0] += gain as f32,
             _ => self.notch[side] += gain as f32,
         }
-        gain / e
+        gain * left_other.max(0.0) / (ea * eb)
+    }
+
+    /// The share of the section the chopping prototype's cuts have removed: 1 − what is left
+    /// after every side's cut (each a slab off its side), so cuts on adjacent sides add up too.
+    pub fn removed(&self, grain: usize) -> f64 {
+        let [ea, eb] = across_axes(grain).map(extent);
+        let a = (ea - self.depth(0) - self.depth(1)).max(0.0);
+        let b = (eb - self.depth(2) - self.depth(3)).max(0.0);
+        1.0 - a * b / (ea * eb)
     }
 
     /// Whether the chopping prototype fells (a standing wood) or cuts through (a lying one) a
     /// cell of grain `grain` cut like this: more than `fell_fraction` of its section is cut.
     pub fn chop2_through(&self, wood: &WoodDef, grain: usize) -> bool {
-        self.cross(grain) > wood.chop2.fell_fraction + 1e-6
+        self.removed(grain) > wood.chop2.fell_fraction + 1e-6
     }
 
     /// The side the chopping prototype fells toward: the notch's (the hinge steers the fall), else
@@ -755,6 +772,30 @@ mod tests {
             c.chop2(axe(), log, Y, i % 2, false);
         }
         assert!(c.depth(0) + c.depth(1) <= 1.0 + 1e-6);
+    }
+
+    #[test]
+    fn chop2_cuts_on_adjacent_sides_add_up() {
+        // Red before: only opposite sides counted, so 7 chops on −x and 7 on −z (each side under
+        // half) never felled it.
+        let log = wood("dwell:log").unwrap();
+        let mut c = Cut::default();
+        let mut n = 0;
+        for i in 0..40 {
+            c.chop2(axe(), log, Y, if i % 2 == 0 { 0 } else { 2 }, false);
+            n += 1;
+            if c.chop2_through(log, Y) {
+                break;
+            }
+        }
+        assert!(c.chop2_through(log, Y), "adjacent sides fell it: {c:?}");
+        assert!((11..=13).contains(&n), "{n} chops, as from one side");
+        assert!(c.cross(Y) < 0.5, "neither axis alone is half: {c:?}");
+        assert_eq!(
+            c.chop2_toward(Y),
+            Some(0),
+            "toward the notch, the first side cut"
+        );
     }
 
     #[test]
