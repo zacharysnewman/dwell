@@ -420,6 +420,83 @@ pub(super) fn push_polygon(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dwell_world::{FLAT_TOP_Y, FaceFrame, M};
+
+    dwell_world::both_faces!(
+        /// The client's mesh job and the server scatter alike in a world of two biomes (ADR 0074
+        /// B5): the mesher, handed the chunk's densities in its `GroundJob`, places exactly the
+        /// items the server's `Rules::with_density` finds cell by cell from the same densities
+        /// (the generator's for a chunk of a two-biome world, a fixture biome by data alone), and
+        /// other items than with none.
+        fn the_mesh_job_and_the_server_scatter_the_same_items_by_biome(f: FaceFrame) {
+            let g = FLAT_TOP_Y; // the ground's row, face-local
+            let leaves = find_block("dwell:leaves").unwrap().first_state;
+            // A grass field under a canopy, face-local, round the chunk and its apron.
+            let mut cells = dwell_world::hash::HashMap::default();
+            let [ax, _, az] = SKY_APRON;
+            for x in -ax..N + ax {
+                for z in -az..N + az {
+                    cells.insert(f.cell([x, g, z]), f.state(M.grass));
+                    cells.insert(f.cell([x, g - 1, z]), f.state(M.dirt));
+                    cells.insert(f.cell([x, g + 8, z]), f.state(leaves));
+                }
+            }
+            let at = |c: [i32; 3]| cells.get(&c).copied().unwrap_or(M.air);
+            let chunk = f.cell([0, g + 1, 0]).map(|v| v.div_euclid(N));
+            let origin = chunk.map(|v| v * N);
+            let [ex, ey, ez] = SKY_EXTENT;
+            let [_, ay, _] = SKY_APRON;
+            let mut padded = vec![0u16; SKY_VOLUME];
+            for y in 0..ey {
+                for z in 0..ez {
+                    for x in 0..ex {
+                        let c = [origin[0] + x - ax, origin[1] + y - ay, origin[2] + z - az];
+                        padded[(x + ex * (z + ez * y)) as usize] = at(c);
+                    }
+                }
+            }
+            // The densities of a chunk of a two-biome world where the fixture (rocks ×3, no
+            // sticks) has some weight.
+            let fixture = dwell_worldgen::terrain::Biome {
+                name: "test:rock_field",
+                ground: Some(&[("dwell:ground_rock", 3.0)]),
+                ..dwell_worldgen::terrain::BIOMES[0]
+            };
+            let t = dwell_worldgen::BifacialTerrain::height_field(7);
+            let gen_ = t
+                .local(f.face)
+                .clone()
+                .with_biomes(&[dwell_worldgen::terrain::BIOMES[0], fixture]);
+            let r = i64::from(dwell_world::WORLD_RADIUS) / 2;
+            let density = (-r..r)
+                .step_by(700)
+                .flat_map(|x| (-r..r).step_by(700).map(move |z| (x, z)))
+                .map(|(x, z)| gen_.ground_density_chunk((x / 32) as i32, (z / 32) as i32))
+                .find(|d| d.corners.iter().flatten().any(|&v| v < 0.5))
+                .expect("a chunk where the fixture has weight");
+            let job = |density: GroundDensity| GroundJob {
+                seed: 5,
+                density,
+                ..GroundJob::default()
+            };
+            let mesh = scatter(&padded, origin, &job(density.clone()));
+            let by = |k: usize, c: [i32; 3]| density.at(k, c);
+            let rules = Rules::shipped().with_density(&by);
+            let mut get = |c: [i32; 3], _: bool| Some(at(c));
+            let mut server = Vec::new();
+            for y in 0..N {
+                for z in 0..N {
+                    for x in 0..N {
+                        let c = [origin[0] + x, origin[1] + y, origin[2] + z];
+                        server.extend(rules.item_over(&mut get, 5, c));
+                    }
+                }
+            }
+            assert!(!mesh.is_empty());
+            assert_eq!(mesh, server);
+            assert_ne!(mesh, scatter(&padded, origin, &job(GroundDensity::default())));
+        }
+    );
 
     #[test]
     fn every_face_of_both_shapes_faces_outward() {

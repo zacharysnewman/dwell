@@ -645,6 +645,17 @@ mod tests {
             assert!(!matches!(out, Output::Failed(_)), "{out:?}");
             assert_eq!(decode_output(&encode_output(id, &out)).unwrap(), (id, out));
         }
+        // A mesh's ground densities (ADR 0074 B5) come back to the crosshair.
+        let meshed = Output::ChunkMesh(Box::new(ChunkMeshes {
+            ground: dwell_world::ground::GroundDensity {
+                corners: vec![[0.0, 0.5, 1.0, 3.0], [1.0; 4]],
+            },
+            ..ChunkMeshes::default()
+        }));
+        assert_eq!(
+            decode_output(&encode_output(4, &meshed)).unwrap(),
+            (4, meshed)
+        );
         let failed = Output::Failed("nope".into());
         assert_eq!(
             decode_output(&encode_output(3, &failed)).unwrap(),

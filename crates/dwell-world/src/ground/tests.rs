@@ -373,3 +373,81 @@ crate::both_faces!(
         assert!(r.item_over(&mut get, 4, cell).is_none());
     }
 );
+
+/// Each kind at `[stick, rock]` everywhere (a chunk column's four corners alike).
+fn even(stick: f32, rock: f32) -> GroundDensity {
+    let mut corners = vec![[1.0; 4]; KINDS.len()];
+    corners[kind_named("dwell:ground_stick")] = [stick; 4];
+    corners[kind_named("dwell:ground_rock")] = [rock; 4];
+    GroundDensity { corners }
+}
+
+/// The items of a 128-cell grass field under a canopy, and their count per kind (sticks, rocks).
+fn counts_with(f: FaceFrame, d: Option<&GroundDensity>) -> (Vec<([i32; 3], Placed)>, [usize; 2]) {
+    let mut w = Fixture::field(f, 128);
+    for x in 0..128 {
+        for z in 0..128 {
+            w.set([x, G + 8, z], state("dwell:leaves"));
+        }
+    }
+    let by = |k: usize, c: [i32; 3]| d.map_or(1.0, |d| d.at(k, c));
+    let rules = Rules::shipped();
+    let rules = match d {
+        Some(_) => rules.with_density(&by),
+        None => rules,
+    };
+    let items = w.scatter(&rules, 11, 128);
+    let n = |name: &str| {
+        items
+            .iter()
+            .filter(|(_, p)| p.kind == kind_named(name))
+            .count()
+    };
+    let c = [n("dwell:ground_stick"), n("dwell:ground_rock")];
+    (items, c)
+}
+
+crate::both_faces!(
+    /// A biome's `ground` density drives each kind's count (ADR 0074 B5): sticks ×0 none, ×½
+    /// about half; rocks ×3 about three times; all 1 the scatter exactly as without densities
+    /// (the default world's).
+    fn a_ground_density_drives_each_kinds_scatter(f: FaceFrame) {
+        let (plain, [sticks, rocks]) = counts_with(f, None);
+        assert!(sticks > 500 && rocks > 20, "{sticks} sticks, {rocks} rocks");
+        assert_eq!(counts_with(f, Some(&even(1.0, 1.0))).0, plain);
+        assert_eq!(counts_with(f, Some(&GroundDensity::default())).0, plain);
+        let [s0, r0] = counts_with(f, Some(&even(0.0, 1.0))).1;
+        assert_eq!(s0, 0);
+        // The cells the sticks took roll for a rock instead.
+        assert!(r0 >= rocks, "{r0} rocks without sticks, {rocks} with");
+        let [half, _] = counts_with(f, Some(&even(0.5, 1.0))).1;
+        let share = half as f64 / sticks as f64;
+        assert!((0.4..0.6).contains(&share), "{half} of {sticks}");
+        let [_, r3] = counts_with(f, Some(&even(1.0, 3.0))).1;
+        let share = r3 as f64 / rocks as f64;
+        assert!(
+            (2.3..3.7).contains(&share),
+            "{r3} rocks at ×3, {rocks} at ×1"
+        );
+    }
+);
+
+#[test]
+fn a_chunks_density_eases_between_its_corners() {
+    // both-faces: x and z only, the same on both faces.
+    let d = GroundDensity {
+        corners: vec![[0.0, 2.0, 0.0, 2.0], [1.0, 1.0, 3.0, 3.0]],
+    };
+    let n = CHUNK_SIZE;
+    // Along x for kind 0, along z for kind 1; a cell's centre, so never quite the corner.
+    assert!(d.at(0, [0, 5, 0]) < 0.1);
+    assert!(d.at(0, [n - 1, 5, 0]) > 1.9);
+    assert!((d.at(0, [n / 2, 5, 7]) - 1.0).abs() < 0.1);
+    assert!(d.at(1, [3, 5, n * 4 + n - 1]) > 2.9);
+    // Negative chunks read their own corners.
+    assert!(d.at(0, [-1, 5, -1]) > 1.9);
+    // A kind past its list is 1.
+    assert_eq!(d.at(9, [0, 0, 0]), 1.0);
+    assert!(!d.is_uniform());
+    assert!(GroundDensity::default().is_uniform());
+}
