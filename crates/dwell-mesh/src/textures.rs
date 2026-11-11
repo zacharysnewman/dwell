@@ -45,7 +45,7 @@ pub const ATLAS_SIZE: usize = CELL * ATLAS_CELLS;
 pub const ATLAS_TILES: usize = ATLAS_CELLS * ATLAS_CELLS;
 
 /// The tiles in atlas order (the registry's texture names).
-pub const TILE_ORDER: [&str; 34] = [
+pub const TILE_ORDER: [&str; 36] = [
     "plain",
     "grass",
     "grassSide",
