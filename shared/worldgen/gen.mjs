@@ -580,6 +580,7 @@ export function biomeRefs() {
     decorations: names("decorations.json", "decorations"),
     placements: names("placements.json", "placements"),
     stacks: names("rocks.json", "stacks"),
+    rocks: names("rocks.json", "rocks"),
     ground: new Set(
       JSON.parse(
         readFileSync(join(here, "../ground/ground.json"), "utf8"),
@@ -931,7 +932,7 @@ export function terrainRust({
       rs.push(`        gullies: ${rf(b.gullies ?? 0)},`);
       const a = b.arches;
       rs.push(
-        `        arches: ${a === undefined || a.density === 0 ? "None" : `Some(crate::arches::Arches { density: ${rf(a.density)}, span: [${rf(a.span[0])}, ${rf(a.span[1])}], rise: [${rf(a.rise[0])}, ${rf(a.rise[1])}], lintel: [${rf(a.lintel[0])}, ${rf(a.lintel[1])}], fin: ${rf(a.fin)}, overhangs: ${a.overhangs === true} })`},`,
+        `        arches: ${a === undefined || a.density === 0 ? "None" : `Some(crate::arches::Arches { density: ${rf(a.density)}, span: [${rf(a.span[0])}, ${rf(a.span[1])}], rise: [${rf(a.rise[0])}, ${rf(a.rise[1])}], lintel: [${rf(a.lintel[0])}, ${rf(a.lintel[1])}], fin: ${rf(a.fin)}, overhangs: ${a.overhangs === true}, fins: ${a.fins === undefined ? "None" : `Some(crate::arches::Fins { approach: ${rf(a.fins.approach)}, width: ${rf(a.fins.width)}, overrun: ${rf(a.fins.overrun ?? 0)} })`}, rock: ${a.rock === undefined ? "None" : `Some(${JSON.stringify(a.rock)})`} })`},`,
       );
       const wl = b.waterLook;
       if (!wl) rs.push("        water_look: None,");

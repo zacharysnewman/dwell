@@ -1181,7 +1181,18 @@ impl TerrainGenerator {
             * (1.0 + e.valley * (acc / e.threshold.max(1.0)).max(1.0).log2())
             * (1.0 + e.outline * 2.0 * f64::from(n)).max(0.0)
             - e.relief * hill;
-        Some((s.min(1.0), dist - retreat, floor, stack))
+        let mut margin = dist - retreat;
+        // The fin rule (0.52.66, the chosen biome's `arches.fins`): where the fronts from lines on
+        // either side meet, a fin stands on the crest between them.
+        if let Some(f) = self.biomes.list[usize::from(mix.chosen)]
+            .arches
+            .and_then(|a| a.fins)
+            && let Some((d1, d2)) = field.fronts(x as f64, z as f64)
+            && let Some(m) = f.margin(d1, d2, retreat)
+        {
+            margin = margin.max(m);
+        }
+        Some((s.min(1.0), margin, floor, stack))
     }
 
     /// The ground at `h` m eroded from the plan view (systemic terrain T4): cut down to the floor
@@ -3148,6 +3159,14 @@ impl TerrainGenerator {
         }
     }
 
+    /// The rock (its rocks.json name) at height `h` m in biome `biome`'s stack at face-local
+    /// (x, z): its own `rockStack`, else the province's (an arch's `rock` filter).
+    fn rock_name_at(&self, biome: usize, x: i64, z: i64, h: f64) -> &'static str {
+        let geo = &self.biomes.geology;
+        let stack = self.biomes.biome_stack[biome].unwrap_or_else(|| geo.province(x, z).0);
+        geo.geology.rocks[geo.profiles[stack].map(h.max(0.0)).1].name
+    }
+
     /// Whether a biome of this generator has arches (ADR 0074 B8; none in the default world).
     fn has_arches(&self) -> bool {
         self.biomes
@@ -3160,7 +3179,7 @@ impl TerrainGenerator {
     /// each site square's draw under the biome its centre's column chose, kept where the height
     /// field stands a fin there. A function of the world position alone, so every chunk agrees.
     pub fn arches_near(&self, lo: (i32, i32), hi: (i32, i32)) -> Vec<crate::arches::Site> {
-        use crate::arches::{CELL, draw, site};
+        use crate::arches::{CELL, SLIDE, draw, site_near};
         if !self.has_arches() {
             return Vec::new();
         }
@@ -3169,7 +3188,10 @@ impl TerrainGenerator {
             .list
             .iter()
             .filter_map(|b| b.arches)
-            .map(|a| (a.fin * a.fin + a.span[1] * a.span[1]).sqrt() / 2.0)
+            .map(|a| {
+                (a.fin * a.fin + a.span[1] * a.span[1]).sqrt() / 2.0
+                    + if a.fins.is_some() { SLIDE } else { 0.0 }
+            })
             .fold(0.0_f64, f64::max);
         let r = reach.ceil() as i32 + CELL;
         let seed = seed_word(self.world_seed, ARCH_STREAM);
@@ -3191,7 +3213,9 @@ impl TerrainGenerator {
                 let Some(a) = self.biomes.list.get(biome).and_then(|b| b.arches) else {
                     continue;
                 };
-                if let Some(s) = site(&a, &d, ground) {
+                if let Some(s) = site_near(&a, &d, ground)
+                    && a.rock.is_none_or(|r| self.rock_name_at(biome, x, z, s.floor + s.rise / 2.0) == r)
+                {
                     out.push(s);
                 }
             }

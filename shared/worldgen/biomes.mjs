@@ -303,7 +303,7 @@ export function validateBiome(data, blocks, refs) {
     )
       fail(`${k} must be in [0, 1]`);
   }
-  checkArches(data.arches, fail);
+  checkArches(data.arches, fail, refs.rocks);
   return data;
 }
 
@@ -313,6 +313,10 @@ export function validateBiome(data, blocks, refs) {
  * pair in m: `span` the opening across the fin, `rise` its crown over the floor, `lintel` the rock left
  * above it; `fin` the thickest fin (m, along the way through) it cuts; `overhangs` (optional) also cuts
  * a scarp's site (low on one side) as an overhang from its low side. Absent or density 0: none.
+ * `fins` (optional, 0.52.66): the erosion's fin rule, where two cut-back fronts from drainage lines on
+ * either side come within `approach` m of meeting (or have met by at most `overrun` m) a fin `width` m
+ * wide stands on the crest between them (`FINS`'s ranges). `rock` (optional): arches only where the
+ * opening's rock (the stack's layer at its mid-height) is this rock of rocks.json.
  */
 export const ARCHES = {
   density: [0, 976.5625],
@@ -322,13 +326,17 @@ export const ARCHES = {
   fin: [2, 64],
 };
 
+/** The ranges (m) of an `arches.fins` rule's numbers. */
+export const FINS = { approach: [0, 1000], width: [2, 64], overrun: [0, 2000] };
+
 /** Checks a biome's optional `arches` (`ARCHES`'s ranges; each range's min at most its max). */
-export function checkArches(a, fail) {
+export function checkArches(a, fail, rocks) {
   if (a === undefined) return;
   if (typeof a !== "object" || a === null || Array.isArray(a))
     fail("arches must be an object");
   const extra = Object.keys(a).filter(
-    (k) => !["$comment", "overhangs"].includes(k) && !(k in ARCHES),
+    (k) =>
+      !["$comment", "overhangs", "fins", "rock"].includes(k) && !(k in ARCHES),
   );
   if (extra.length) fail(`arches: unknown ${extra.join(", ")}`);
   for (const [k, [lo, hi]] of Object.entries(ARCHES)) {
@@ -347,6 +355,24 @@ export function checkArches(a, fail) {
   }
   if (a.overhangs !== undefined && typeof a.overhangs !== "boolean")
     fail("arches.overhangs must be true or false");
+  if (a.fins !== undefined) {
+    const f = a.fins;
+    if (typeof f !== "object" || f === null || Array.isArray(f))
+      fail("arches.fins must be an object");
+    const extra = Object.keys(f).filter((k) => k !== "$comment" && !(k in FINS));
+    if (extra.length) fail(`arches.fins: unknown ${extra.join(", ")}`);
+    for (const [k, [lo, hi]] of Object.entries(FINS)) {
+      const v = f[k];
+      if (k === "overrun" && v === undefined) continue;
+      if (!(isNum(v) && v >= lo && v <= hi))
+        fail(`arches.fins.${k} must be in [${lo}, ${hi}]`);
+    }
+  }
+  if (a.rock !== undefined) {
+    if (typeof a.rock !== "string") fail("arches.rock must be a rock name");
+    if (rocks && !rocks.has(a.rock))
+      fail(`arches.rock: ${JSON.stringify(a.rock)} is not a rock of rocks.json`);
+  }
 }
 
 /** The most a biome's `trees` may multiply a placement's chance by (ADR 0074 B5). */
