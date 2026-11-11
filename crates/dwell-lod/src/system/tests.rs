@@ -2077,3 +2077,148 @@ fn without_a_chunk_revision_the_lod_selects_every_frame() {
     run_for(&mut lod, &mut host, &mut now, &cam, 30_000.0);
     assert_eq!(lod.selections().1, 0);
 }
+
+/// The tall peak fixture world (`shared/worldgen/worlds/tall_peak.json`, by data alone) on both
+/// faces of seed `seed`, its maps installed in the map cache as a test world's are in game.
+fn tall_peak_terrain(seed: u64) -> (dwell_worldgen::BifacialTerrain, dwell_worldgen::tectonics::Volcano) {
+    use dwell_worldgen::bifacial::face_seed;
+    use dwell_worldgen::worldmap::{WorldMap, cache, codec};
+    let h = dwell_worldgen::terrain::FIXTURE_WORLDS
+        .iter()
+        .find(|(n, _)| *n == "test:tall_peak")
+        .expect("the tall peak fixture")
+        .1;
+    for face in [dwell_world::Face::A, dwell_world::Face::B] {
+        let s = face_seed(seed, face);
+        cache::install(&codec::encode(&WorldMap::for_height(s, h))).expect("installs");
+    }
+    (dwell_worldgen::BifacialTerrain::new(seed), h.tectonics.volcanoes()[0])
+}
+
+dwell_world::both_faces!(
+    /// BUGS.md #68: from 300 m above the tall peak's rim looking 45° down into the crater, every
+    /// column of the cone in view is covered by a drawn section's triangles (no hole where the sky
+    /// shows through the flank).
+    fn the_lod_covers_a_4800_m_cone_seen_from_its_summit(f: FaceFrame) {
+        let (t, v) = tall_peak_terrain(68);
+        let t = std::sync::Arc::new(t);
+        let rim = t.local(f.face).column_at(v.x as i32, (v.z + v.crater_radius) as i32);
+        let rim_y = f64::from(rim.height);
+        // The player on the rim, its chunks streamed around it (the server's view radius).
+        let feet = f.point([v.x, rim_y + 1.6, v.z + v.crater_radius]);
+        let at = chunk_of(feet);
+        let r = world::VIEW_RADIUS_CHUNKS as i32;
+        let mut host = Host {
+            terrain: Some(t.clone()),
+            ..Host::with_chunks(move |c| {
+                let (dx, dy, dz) = (c.x - at.x, c.y - at.y, c.z - at.z);
+                dx * dx + dy * dy + dz * dz <= r * r + r
+            })
+        };
+        let mut lod = LodSystem::new(LodOptions::new(8.0, 1024 * 1_048_576, 16, 8));
+        // The camera 900 m south of the player and 300 m above, looking north (−Z) and down.
+        let eye_local = [v.x, rim_y + 300.0, v.z + v.crater_radius + 900.0];
+        let eye = f.point(eye_local);
+        let cam = camera(eye, 180.0, -45.0 * f.sign_f64());
+        let mut random = rng(5);
+        for frame in 0..400 {
+            lod.update(&cam, f64::from(frame) * 16.0, &mut host);
+            finish(&mut lod, &mut host, &mut random, 1.0);
+        }
+        // Rasterise the drawn triangles onto the x-z plane, 8 m a sample.
+        const STEP: f64 = 8.0;
+        const HALF: i64 = 400; // 3.2 km each way
+        let (cx, cz) = (v.x, v.z);
+        let n = (2 * HALF) as usize;
+        let mut covered = vec![false; n * n];
+        let mut mark = |a: [f64; 2], b: [f64; 2], c: [f64; 2]| {
+            let lo_x = a[0].min(b[0]).min(c[0]);
+            let hi_x = a[0].max(b[0]).max(c[0]);
+            let lo_z = a[1].min(b[1]).min(c[1]);
+            let hi_z = a[1].max(b[1]).max(c[1]);
+            let i0 = (((lo_x - cx) / STEP).floor() as i64 + HALF).max(0);
+            let i1 = (((hi_x - cx) / STEP).ceil() as i64 + HALF).min(2 * HALF - 1);
+            let k0 = (((lo_z - cz) / STEP).floor() as i64 + HALF).max(0);
+            let k1 = (((hi_z - cz) / STEP).ceil() as i64 + HALF).min(2 * HALF - 1);
+            let edge = |p: [f64; 2], q: [f64; 2], r: [f64; 2]| {
+                (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+            };
+            let area = edge(a, b, c);
+            if area.abs() < 1e-9 {
+                return;
+            }
+            for k in k0..=k1 {
+                for i in i0..=i1 {
+                    let p = [
+                        cx + (i - HALF) as f64 * STEP + STEP / 2.0,
+                        cz + (k - HALF) as f64 * STEP + STEP / 2.0,
+                    ];
+                    let (w0, w1, w2) = (edge(b, c, p), edge(c, a, p), edge(a, b, p));
+                    let inside = (w0 >= 0.0 && w1 >= 0.0 && w2 >= 0.0)
+                        || (w0 <= 0.0 && w1 <= 0.0 && w2 <= 0.0);
+                    if inside {
+                        covered[k as usize * n + i as usize] = true;
+                    }
+                }
+            }
+        };
+        let mut drawn_levels = HashMap::<i32, usize>::default();
+        for &(id, _, _) in &host.shown {
+            let Some((o, cell, m)) = host.sections.get(&id) else {
+                continue;
+            };
+            *drawn_levels.entry(cell.log2().round() as i32).or_default() += 1;
+            for mesh in [&m.opaque, &m.water] {
+                let at = |j: u32| {
+                    let j = j as usize * 3;
+                    [
+                        o[0] + f64::from(mesh.positions[j]) * cell,
+                        o[2] + f64::from(mesh.positions[j + 2]) * cell,
+                    ]
+                };
+                for tri in mesh.indices.chunks_exact(3) {
+                    mark(at(tri[0]), at(tri[1]), at(tri[2]));
+                }
+            }
+        }
+        for &c in &lod.last_selection().chunks {
+            let (lo, hi) = section_box(c);
+            mark([lo[0], lo[2]], [hi[0], lo[2]], [hi[0], hi[2]]);
+            mark([lo[0], lo[2]], [hi[0], hi[2]], [lo[0], hi[2]]);
+        }
+        for s in &host.stand_ins {
+            mark([s.lo[0], s.lo[2]], [s.hi[0], s.lo[2]], [s.hi[0], s.hi[2]]);
+            mark([s.lo[0], s.lo[2]], [s.hi[0], s.hi[2]], [s.lo[0], s.hi[2]]);
+        }
+        // The cone's columns in view: north of the eye, within the view's half-angle of its axis.
+        let mut holes = Vec::new();
+        let mut checked = 0;
+        for k in 0..2 * HALF {
+            for i in 0..2 * HALF {
+                let x = cx + (i - HALF) as f64 * STEP + STEP / 2.0;
+                let z = cz + (k - HALF) as f64 * STEP + STEP / 2.0;
+                let g = f64::from(t.local(f.face).column_at(x as i32, z as i32).height);
+                let d = [x - eye_local[0], g - eye_local[1], z - eye_local[2]];
+                let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+                // The view axis (face-local): −Z, 45° down.
+                let s = std::f64::consts::FRAC_1_SQRT_2;
+                let cos = (-d[2] * s - d[1] * s) / len;
+                if len < 50.0 || cos < (25.0f64).to_radians().cos() {
+                    continue;
+                }
+                checked += 1;
+                if !covered[k as usize * n + i as usize] {
+                    holes.push((x as i64, g as i64, z as i64));
+                }
+            }
+        }
+        assert!(checked > 1000, "{checked} columns in view");
+        assert!(
+            holes.is_empty(),
+            "{:?}: {} of {checked} columns in view uncovered, e.g. {:?}; drawn by level {drawn_levels:?}",
+            f.face,
+            holes.len(),
+            &holes[..holes.len().min(8)]
+        );
+    }
+);
