@@ -341,6 +341,7 @@ mod tests {
             default: Some(9),
             tools: &[("trowel", 6), ("test:golden_trowel", 1)],
             look: None,
+            chips: None,
         }];
         let tools = [
             BreakTool {

@@ -2804,9 +2804,12 @@ impl<S: Scene> Game<S> {
         let feet = c.feet();
         let foliage = {
             let store = self.streamer.store_mut();
-            dwell_game::sound::foliage_at(feet, c.face, self.current.standing_height, |[x, y, z]| {
-                store.get_voxel(x, y, z)
-            })
+            dwell_game::sound::foliage_at(
+                feet,
+                c.face,
+                self.current.standing_height,
+                |[x, y, z]| store.get_voxel(x, y, z),
+            )
         };
         let speed = c.velocity.iter().map(|v| v * v).sum::<f64>().sqrt();
         self.brush_sounds
@@ -2818,7 +2821,8 @@ impl<S: Scene> Game<S> {
         if let Some(cell) = self.ground_steps.update(cell)
             && let Some((it, ev)) = self.ground_item_sound(cell, |k| k.step)
         {
-            self.sounds.push(SoundEvent::new(ev, 0, 1.0, Some(it.point())));
+            self.sounds
+                .push(SoundEvent::new(ev, 0, 1.0, Some(it.point())));
         }
     }
 
@@ -4323,7 +4327,8 @@ impl<S: Scene> Game<S> {
             .and_then(|k| k.hit)
             .and_then(|n| SoundKind::ALL.into_iter().find(|k| k.name() == n))
         {
-            self.sounds.push(SoundEvent::new(ev, 0, 1.0, Some(it.point())));
+            self.sounds
+                .push(SoundEvent::new(ev, 0, 1.0, Some(it.point())));
         }
         true
     }

@@ -125,8 +125,11 @@ D3 (tuning) to come. The owner's direction and answers are §1; §2 was the prop
 - **e2e:** `edit.spec.ts`'s `breakBlock` and `menu.spec.ts` hit until the cell breaks; the palette test
   picks the stone pickaxe before breaking a stone piece.
 
-**Not done:** hit particles (the chips are the woods' only; a material's chip colour needs the puff
-colours as data); remote players' hits are silent (the sound plays on the hitter's client); the e2e
-specs are not run locally; the look's tuning with the owner (the cracks read strong, the soil scoop as a
+**Built in 0.52.31 (sounds round 2b, AUDIO.md §2e):** hit particles — a block's `damage.chips`
+(`count`, `color`, `speed`, `size`; stone grey chips, soil clods, sand grains) fly out of the struck
+face at the struck point; other players' hits are heard and seen (the client reads a hit off each
+damage update's changed cell, at its newest mark, and skips its own hits' echoes).
+
+**Not done:** the e2e specs are not run locally; the look's tuning with the owner (the cracks read strong, the soil scoop as a
 dark patch more than a bowl).
 

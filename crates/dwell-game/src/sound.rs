@@ -2306,13 +2306,20 @@ mod tests {
             b.update(leaves, 4.0, dt, None, &mut out);
         }
         assert!((9..=11).contains(&out.len()), "{}", out.len());
-        assert!(out.iter().all(|e| e.kind == SoundKind::Brush && e.block == leaves));
+        assert!(
+            out.iter()
+                .all(|e| e.kind == SoundKind::Brush && e.block == leaves)
+        );
         // Sprinting 20 m/s: capped by BRUSH_MIN_S (1 s → at most 6), at full intensity.
         out.clear();
         for _ in 0..60 {
             b.update(leaves, 20.0, dt, None, &mut out);
         }
-        assert!(out.len() <= (1.0 / BRUSH_MIN_S) as usize + 1, "{}", out.len());
+        assert!(
+            out.len() <= (1.0 / BRUSH_MIN_S) as usize + 1,
+            "{}",
+            out.len()
+        );
         assert!(out.iter().all(|e| e.intensity == 1.0));
         // Out of the leaves: nothing.
         out.clear();

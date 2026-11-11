@@ -1284,7 +1284,10 @@ mod tests {
             };
             pieces.spawn(&spawn, 0.0, &mut sounds);
         }
-        assert!(sounds.is_empty(), "a blast's pieces do not crack as a tree does");
+        assert!(
+            sounds.is_empty(),
+            "a blast's pieces do not crack as a tree does"
+        );
         let all = |vy: f32| -> Vec<PieceState> {
             (0..20u32)
                 .map(|id| PieceState {

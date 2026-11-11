@@ -66,7 +66,10 @@ mod tests {
                 cell,
                 DamageView {
                     fraction,
-                    marks: points.iter().map(|&point| HitMark { face: 3, point }).collect(),
+                    marks: points
+                        .iter()
+                        .map(|&point| HitMark { face: 3, point })
+                        .collect(),
                 },
             )],
             gone: Vec::new(),
@@ -80,23 +83,46 @@ mod tests {
         h.hello(0.0);
         let c = [4, 120, -3];
         // The hello's damage so far: silent.
-        assert!(h.on_damage(&update(c, 51, &[[1, 255, 1]]), 100.0).is_empty());
+        assert!(
+            h.on_damage(&update(c, 51, &[[1, 255, 1]]), 100.0)
+                .is_empty()
+        );
         // Another player's hit: once, at the newest mark.
         let hits = h.on_damage(&update(c, 102, &[[1, 255, 1], [200, 255, 9]]), 3000.0);
-        assert_eq!(hits, [(c, HitMark { face: 3, point: [200, 255, 9] })]);
+        assert_eq!(
+            hits,
+            [(
+                c,
+                HitMark {
+                    face: 3,
+                    point: [200, 255, 9]
+                }
+            )]
+        );
         // The same view again (a resend) is no hit.
-        assert!(h.on_damage(&update(c, 102, &[[1, 255, 1], [200, 255, 9]]), 3100.0).is_empty());
+        assert!(
+            h.on_damage(&update(c, 102, &[[1, 255, 1], [200, 255, 9]]), 3100.0)
+                .is_empty()
+        );
         // Our own hit: shown on the request, so the server's echo of it is silent here …
         h.own_hit(c, 4000.0);
         let echo = update(c, 153, &[[1, 255, 1], [200, 255, 9], [9, 255, 9]]);
         assert!(h.on_damage(&echo, 4080.0).is_empty());
         // … and only once: the next change is another player's again.
-        let next = update(c, 204, &[[1, 255, 1], [200, 255, 9], [9, 255, 9], [7, 255, 7]]);
+        let next = update(
+            c,
+            204,
+            &[[1, 255, 1], [200, 255, 9], [9, 255, 9], [7, 255, 7]],
+        );
         assert_eq!(h.on_damage(&next, 4200.0).len(), 1);
         // A stale own hit (no echo came) does not hide a later one.
         let d = [0, 100, 0];
         h.own_hit(d, 5000.0);
-        assert_eq!(h.on_damage(&update(d, 51, &[[0, 255, 0]]), 5000.0 + OWN_HIT_MS + 1.0).len(), 1);
+        assert_eq!(
+            h.on_damage(&update(d, 51, &[[0, 255, 0]]), 5000.0 + OWN_HIT_MS + 1.0)
+                .len(),
+            1
+        );
         // A cell gone (broken) and hit afresh shows again.
         h.on_damage(
             &DamageMessage {

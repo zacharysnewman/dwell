@@ -700,7 +700,7 @@ sounds of every control of `ui/controls.ts` (a test fails on an action without o
 `shared/sounds/gen.mjs` validates it and generates `client/src/audio/sounds.gen.ts` and
 `crates/dwell-game/src/sound.gen.rs`; CI fails on stale output.
 **Ambience [built, 0.52.20]** (ADR 0077, AUDIO.md §2c): the data's `ambience` beds — recorded loops
-(wind, sea, river, stream, birds, leaves) on their own ambience bus under the **Ambience** volume
+(wind, sea, river, stream, birds, leaves, fire) on their own ambience bus under the **Ambience** volume
 (default 0.35) — each at its `gain` × its conditions' ramps over the listener's surroundings, capped
 (`cap`) and glided (`fadeS`) by `client/src/audio/ambience.ts`. The surroundings come from
 `dwell-game` `ambience.rs`'s probe (four times a second, face-local: a 9 × 9 grid of columns over

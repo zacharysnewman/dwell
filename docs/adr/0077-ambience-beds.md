@@ -43,3 +43,10 @@
 - The ambience costs a 9 × 9 × ≤ 96-cell read four times a second on the main thread (loaded chunks
   only, no generation).
 - The picks are unheard (by filename): the owner tunes gains, conditions and files by data.
+
+## Amendment (0.52.31, sounds round 2b)
+
+- A `fire` bed (`fireM`, nothing beyond 8 m, gain 0.2) was added by data alone, as this ADR
+  allowed; the per-source `burn` loops stay.
+- New set events `impact` (a piece landing: stone, wood, soil) and `brush` (foliage moved through;
+  no fallback), and ground kinds name `step`/`hit` sound events (a stick's snap). AUDIO.md §2e.
