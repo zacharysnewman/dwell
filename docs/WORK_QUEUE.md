@@ -206,8 +206,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   Every generator of a many-biome world built its own whole-map biome grids (20 sets in a job worker);
   now one per map and process (`terrain::shared_biomes`), and the LOD coarsens by its overshoot so a
   phone's loading view fits its 96 MB within seconds. Bench (`memory-phone --touch`): starter 1,467 →
-  850 MB at load, default 746 → 676. Owner to check on the iPhone 17; left: smaller grids (f16, the
-  drainage's copy of the heights), one copy per instance.
+  850 MB at load, default 746 → 676. Owner to check on the iPhone 17. Then (pending release) the grids
+  shrunk exactly: stored by their exceptions over the sea (`grid::SparseGrid`), the drainage's height
+  copy read from the world map, scratch dropped early: 53.6 → 15.9 MB a process natively
+  (`tests/starter_memory.rs`, with the starter's terrain pinned bit for bit). Left: re-measure the page
+  on the bench; one copy per process remains.
 
 - **Terrain leftovers, round 1** (0.52.66): arches from erosion-grown fins (a biome's `arches.fins`, the
   fin rule in T4's cut-back; sites slide to a fin within 12 m) and arches in a chosen rock

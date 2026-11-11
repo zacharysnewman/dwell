@@ -338,18 +338,24 @@ pub struct Erosion {
 
 /// The world map's drainage seen from above (T4): per map cell, the distance (m) to the nearest
 /// drainage line (a cell with at least `threshold` cells of flow accumulation, or the sea), that
-/// line's height and accumulation. Built once per generator, only where a biome erodes.
+/// line's height and accumulation. Built once per generator, only where a biome erodes. Stored by
+/// its exceptions (`grid::SparseGrid`, BUGS.md #70): over the sea every cell is its own line at 0
+/// m; the line's height is read from the world map (its cell's), not copied.
 #[derive(Clone, Debug)]
 pub struct DrainageField {
     n: usize,
     cell: f64,
     x0: f64,
-    dist: Vec<f32>,
-    height: Vec<f32>,
-    accumulation: Vec<f32>,
-    /// Each cell's nearest drainage cell (its index; `u32::MAX` none): the fronts' sources.
-    source: Vec<u32>,
+    dist: crate::grid::SparseGrid<f32>,
+    /// Each cell's flow accumulation (cells), read at its nearest line's cell.
+    acc: crate::grid::SparseGrid<f32>,
+    /// Each cell's nearest drainage cell: `SELF` itself, `u32::MAX` none, else its index (the
+    /// fronts' sources).
+    source: crate::grid::SparseGrid<u32>,
 }
+
+/// `DrainageField::source`'s mark of a cell that is its own line.
+const SELF: u32 = u32::MAX - 1;
 
 impl DrainageField {
     /// The field of `map` with drainage lines at `threshold` cells of accumulation.
@@ -374,6 +380,7 @@ impl DrainageField {
                 }
             }
         }
+        drop(order);
         // Distance to the nearest drainage cell: a Dijkstra over the grid's 8 neighbours.
         let mut dist = vec![f32::INFINITY; len];
         let mut src = vec![usize::MAX; len];
@@ -417,39 +424,50 @@ impl DrainageField {
                 }
             }
         }
-        let height = src
+        let dist: Vec<f32> = dist.into_iter().map(|d| d.min(1.0e9)).collect();
+        let source: Vec<u32> = src
             .iter()
-            .map(|&s| {
-                if s == usize::MAX {
-                    0.0
-                } else {
-                    map.height[s].max(0.0)
-                }
+            .enumerate()
+            .map(|(c, &s)| match s {
+                usize::MAX => u32::MAX,
+                s if s == c => SELF,
+                s => u32::try_from(s).expect("a map of under 2^32 - 2 cells"),
             })
             .collect();
-        let accumulation = src
-            .iter()
-            .map(|&s| if s == usize::MAX { 1.0 } else { acc[s] })
-            .collect();
-        let dist = dist.into_iter().map(|d| d.min(1.0e9)).collect();
-        let source = src
-            .iter()
-            .map(|&s| if s == usize::MAX { u32::MAX } else { s as u32 })
-            .collect();
+        drop(src);
         Self {
             n,
             cell: map.cell,
             x0: map.centre(0).0,
-            dist,
-            height,
-            accumulation,
-            source,
+            dist: crate::grid::SparseGrid::from_dense(&dist, 0.0),
+            acc: crate::grid::SparseGrid::from_dense(&acc, 1.0),
+            source: crate::grid::SparseGrid::from_dense(&source, SELF),
         }
     }
 
+    /// Cell c's nearest drainage cell, if any.
+    #[inline]
+    fn source_of(&self, c: usize) -> Option<usize> {
+        match self.source.get(c) {
+            u32::MAX => None,
+            SELF => Some(c),
+            s => Some(s as usize),
+        }
+    }
+
+    /// The bytes each of its grids holds.
+    pub fn grid_bytes(&self) -> Vec<(&'static str, usize)> {
+        vec![
+            ("drainage distance", self.dist.bytes()),
+            ("drainage accumulation", self.acc.bytes()),
+            ("drainage source", self.source.bytes()),
+        ]
+    }
+
     /// At face-local (x, z), bilinear between the cells' centres: the distance (m) to the nearest
-    /// drainage line, that line's height (m over the sea) and its accumulation (cells).
-    pub fn at(&self, x: f64, z: f64) -> (f64, f64, f64) {
+    /// drainage line, that line's height (m over the sea) and its accumulation (cells). `map` is
+    /// the map the field was built of (its heights are the lines').
+    pub fn at(&self, map: &crate::worldmap::WorldMap, x: f64, z: f64) -> (f64, f64, f64) {
         let n = self.n as i64;
         let fx = ((x - self.x0) / self.cell).clamp(0.0, (n - 1) as f64);
         let fz = ((z - self.x0) / self.cell).clamp(0.0, (n - 1) as f64);
@@ -460,9 +478,13 @@ impl DrainageField {
             for (di, wx) in [(0, 1.0 - tx), (1, tx)] {
                 let c = ((j + dj).min(n - 1) * n + (i + di).min(n - 1)) as usize;
                 let w = wx * wz;
-                out[0] += w * f64::from(self.dist[c]);
-                out[1] += w * f64::from(self.height[c]);
-                out[2] += w * f64::from(self.accumulation[c]);
+                let (height, accumulation) = match self.source_of(c) {
+                    Some(s) => (map.height[s].max(0.0), self.acc.get(s)),
+                    None => (0.0, 1.0),
+                };
+                out[0] += w * f64::from(self.dist.get(c));
+                out[1] += w * f64::from(height);
+                out[2] += w * f64::from(accumulation);
             }
         }
         (out[0], out[1], out[2])
@@ -483,8 +505,8 @@ impl DrainageField {
         for j in fz - 1..=fz + 2 {
             for i in fx - 1..=fx + 2 {
                 let (i, j) = (i.clamp(0, n - 1), j.clamp(0, n - 1));
-                let s = self.source[(j * n + i) as usize];
-                if s != u32::MAX {
+                if let Some(s) = self.source_of((j * n + i) as usize) {
+                    let s = s as u32;
                     let (si, sj) = (f64::from(s % self.n as u32), f64::from(s / self.n as u32));
                     let (dx, dz) = (self.x0 + si * self.cell - x, self.x0 + sj * self.cell - z);
                     near[k] = ((dx * dx + dz * dz).sqrt(), dx, dz);

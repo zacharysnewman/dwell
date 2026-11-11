@@ -353,6 +353,31 @@ the page can read; the F3 memory line is the game's own count); the starter's gr
 (f16 grids, the drainage's height copy of the map), and the server and the world workers still hold one
 copy each.
 
+**The grids shrunk (pending release, 2026-11-11).** Natively measured, seed 7, both faces of a
+process (`tests/starter_memory.rs`, `BiomeSet::grid_bytes`; each face's map 1002 × 1002 cells, 79 % sea):
+
+| Grid (one face) | Before | Now | How |
+| --- | --- | --- | --- |
+| Biome field coast | 3.83 MB | 0.98 MB | stored by its exceptions: 0 over the sea |
+| Biome field fresh water | 3.83 MB | 3.83 MB | dense f32 (no common value) |
+| Biome field rain | 3.83 MB | 0.98 MB | by its exceptions: the sea's flat rate |
+| Drainage distance | 3.83 MB | 0.80 MB | by its exceptions: 0 on a line (the sea) |
+| Drainage line height | 3.83 MB | — | read from the world map at the line's cell |
+| Drainage accumulation | 3.83 MB | 0.60 MB | per cell, by its exceptions (1); read at the line's cell |
+| Drainage source | 3.83 MB | 0.80 MB | by its exceptions: a line is its own source |
+| **Both faces (a process)** | **53.6 MB** | **15.9 MB** | test bar 20 MB (red at 53.6) |
+
+`grid::SparseGrid` keeps a default and the cells whose bits differ from it, so every read is the dense
+grid's value exactly: the starter's terrain is pinned bit for bit on both faces
+(`the_starter_worlds_terrain_is_unchanged`: the grids' reads, columns every 128 m, chunks and LOD
+sections; recorded before the change) and the build's goldens are unchanged. Build scratch (the
+drainage's sort order and sources, the biome field's wet and sea masks) is dropped as soon as it is
+used, and face A's set now holds ~8 MB while face B's is built, so a WASM memory's high-water mark falls
+too. Not done: f16 or quantized grids (they would change the terrain, a new compatibility line); lazy
+grids per process (the server, the chunk worker and the LOD worker each generate the biome surface and
+the erosion, so each reads every grid). Expected ~37 MB less in each of the three processes (~110 MB
+of the 850 MB); the page's numbers are to be re-measured on the bench (`memory-phone --touch`).
+
 ### 67. The minimap fragmented, black-edged and coarse when moving fast (fixed pending release 0.52.10)
 
 Owner, 2026-11-10: "The mini map gets all fragmented when moving fast, it should always show the full
