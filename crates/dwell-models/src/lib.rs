@@ -132,6 +132,42 @@ pub struct PropData {
     pub size: [f32; 3],
     /// Where a hand holds it (m from its origin).
     pub grip: [f32; 3],
+    /// How the hand holds it (props.json `hold`; [`PropHold::DEFAULT`] when it names none).
+    pub hold: PropHold,
+}
+
+/// A held prop's pose in the hand (props.json `hold`, docs/ITEMS.md §8): scaled about its grip,
+/// turned there and moved, in the hand's frame (+z the prop's length ahead of the grip, +x its
+/// side, +y the other way across).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PropHold {
+    /// Uniform scale about the grip.
+    pub scale: f32,
+    /// Degrees: yaw (about +y), pitch (about +x), roll (about +z, the length), applied roll first.
+    pub rotation: [f32; 3],
+    /// Metres, moved after the turn.
+    pub offset: [f32; 3],
+}
+
+impl PropHold {
+    /// As modelled, at its grip.
+    pub const DEFAULT: PropHold = PropHold {
+        scale: 1.0,
+        rotation: [0.0; 3],
+        offset: [0.0; 3],
+    };
+
+    /// A point `q` (metres from the grip, in the hand's frame) placed by the pose.
+    pub fn apply(&self, q: [f32; 3]) -> [f32; 3] {
+        let [yaw, pitch, roll] = self.rotation.map(f32::to_radians);
+        let (s, c) = roll.sin_cos();
+        let q = [q[0] * c - q[1] * s, q[0] * s + q[1] * c, q[2]];
+        let (s, c) = pitch.sin_cos();
+        let q = [q[0], q[1] * c - q[2] * s, q[1] * s + q[2] * c];
+        let (s, c) = yaw.sin_cos();
+        let q = [q[0] * c + q[2] * s, q[1], -q[0] * s + q[2] * c];
+        [0, 1, 2].map(|i| q[i] * self.scale + self.offset[i])
+    }
 }
 
 /// A prop built into the game (one an item's look names) and its GLB read once, by name; None:
@@ -249,6 +285,25 @@ mod props_tests {
         assert_eq!(data.category, "dishes");
         assert_eq!(data.grip, [0.0, 0.01, 0.0]);
         assert!(!m.indices.is_empty());
+        // Its hold pose, from the fixture's data alone.
+        assert_eq!(
+            data.hold,
+            PropHold {
+                scale: 0.5,
+                rotation: [0.0, 90.0, 0.0],
+                offset: [0.0, 0.0, 0.1]
+            }
+        );
+        // Half size, its length (+z) pitched to −y, then moved 0.1 m ahead.
+        let p = data.hold.apply([0.0, 0.0, 1.0]);
+        assert!(
+            (p[0]).abs() < 1e-6 && (p[1] + 0.5).abs() < 1e-6 && (p[2] - 0.1).abs() < 1e-6,
+            "{p:?}"
+        );
+        // A prop that names no hold is held as modelled.
+        assert_eq!(PropHold::DEFAULT.apply([0.1, 0.2, 0.3]), [0.1, 0.2, 0.3]);
+        let (chest, _) = (PROPS.iter().find(|p| p.name == "chest").unwrap(), ());
+        assert_eq!(chest.hold, PropHold::DEFAULT);
     }
 
     #[test]

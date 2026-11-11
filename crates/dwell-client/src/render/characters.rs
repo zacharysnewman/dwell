@@ -602,11 +602,12 @@ pub fn prop_mesh(character: &Character, hold: &str, model: &str) -> Mesh {
     // The far end is the one away from the grip along the length (+y in the GLB): a grip below
     // the middle (an axe, a pickaxe) points +y ahead, one above it (a shovel) turns it over.
     let flip = if g[1] > 0.0 { -1.0 } else { 1.0 };
-    // GLB +y (the length) to the bone's +z, its +z to −y (a turn of 90° about x), the grip on
-    // the hold's socket.
+    // GLB +y (the length) to the bone's +z, its +z to −y (a turn of 90° about x), posed by its
+    // `hold` (scale, turn, offset about the grip), the grip on the hold's socket.
     let place = |p: [f32; 3]| {
         let q = [(p[0] - g[0]) * flip, (p[1] - g[1]) * flip, p[2] - g[2]];
-        [at[0] + q[0], at[1] - q[2], at[2] + q[1]]
+        let r = data.hold.apply([q[0], -q[2], q[1]]);
+        [at[0] + r[0], at[1] + r[1], at[2] + r[2]]
     };
     let base = TABLES.materials.len();
     for t in m.indices.chunks_exact(3) {
@@ -1746,16 +1747,23 @@ mod tests {
                 "{}: its colours are the props' material rows",
                 t.item
             );
-            // The grip on the hold's socket, the far end ahead along +z: from the grip to the
-            // head is most of the tool's length, behind it the handle's end.
+            // The grip on the hold's socket (moved by its pose's offset), the far end ahead along
+            // its posed length (+z turned by its `hold`): from the grip to the head is most of
+            // the tool's length, behind it the handle's end.
+            let h = data.hold;
+            let at = [0, 1, 2].map(|i| socket[i] + h.offset[i]);
+            let ahead = h.apply([0.0, 0.0, 1.0]);
+            let ahead = [0, 1, 2].map(|i| (ahead[i] - h.offset[i]) / h.scale);
+            let along = |p: &[f32; 3]| (0..3).map(|i| (p[i] - at[i]) * ahead[i]).sum::<f32>();
             let (lo, hi) = m
                 .positions
                 .iter()
                 .fold((f32::MAX, f32::MIN), |(lo, hi), p| {
-                    (lo.min(p[2] - socket[2]), hi.max(p[2] - socket[2]))
+                    (lo.min(along(p)), hi.max(along(p)))
                 });
+            let length = data.length * h.scale;
             assert!(
-                hi > 0.4 * data.length && lo > -0.4 * data.length,
+                hi > 0.4 * length && lo > -0.4 * length,
                 "{}: z {lo}..{hi}",
                 t.item
             );
@@ -1775,6 +1783,93 @@ mod tests {
             held_item("dwell:stone_axe", Some("stone_axe")).model(),
             Some("stone_axes")
         );
+    }
+
+    /// The on-screen bounds (NDC, +x right, +y up) of item `item`'s held model in your arms posed
+    /// by clip `clip` at `t` s, held in `hold` (its tool's, None for the default), at the arms'
+    /// FOV and `aspect`; and the distance ahead of the eye of its nearest point in view.
+    fn held_model_bounds(
+        item: &'static str,
+        hold: Option<&'static str>,
+        clip: &str,
+        t: f32,
+        aspect: f64,
+    ) -> ([f64; 4], f64) {
+        let ch = dwell_characters::player();
+        let held = held_item(item, hold);
+        let Held::Model { hold, model } = held else {
+            panic!("{item} is held as {held:?}");
+        };
+        let clip = TABLES
+            .clips
+            .iter()
+            .find(|c| c.name == clip)
+            .expect("the clip");
+        let pose = with_item(&dwell_characters::anim::sample(clip, t), ch.item(hold));
+        // View space (+x left, +y up, +z ahead): the arms' frame with the identity basis.
+        let bones = arm_transforms(ch, &pose);
+        let fov = ch.first_person.map_or(62.0, |f| f64::from(f.fov));
+        let tan = (fov.to_radians() / 2.0).tan();
+        let m = prop_mesh(ch, hold, model);
+        let mut b = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
+        let mut near = f64::MAX;
+        for (p, &bone) in m.positions.iter().zip(&m.bones) {
+            let v = bones[usize::from(bone)].apply(*p).map(f64::from);
+            let z = v[2].max(1e-3);
+            let (x, y) = (-v[0] / (z * tan * aspect), v[1] / (z * tan));
+            // Only what is in view counts as near (an axe raised over your head is not).
+            if v[2] > 0.0 && x.abs() <= 1.0 && y.abs() <= 1.0 {
+                near = near.min(v[2]);
+            }
+            b = [b[0].min(x), b[1].min(y), b[2].max(x), b[3].max(y)];
+        }
+        (b, near)
+    }
+
+    #[test]
+    fn every_tool_is_held_low_right_clear_of_the_crosshair_and_the_eye() {
+        // face-a-only: the arms view is drawn in view space, the same on both faces.
+        // Owner, 2026-11-10: the tools filled the right third of the screen, bolt upright. Held by
+        // their props' `hold`: in the view's right-lower part, clear of the crosshair, about half
+        // the old size; mid-swing never into the eye.
+        let mut bad = Vec::new();
+        for t in dwell_protocol::chopping::BREAK_TOOLS {
+            for aspect in [16.0 / 9.0, 2880.0 / 1324.0] {
+                let ([x0, y0, x1, y1], _) = held_model_bounds(t.item, None, "fp_idle", 0.0, aspect);
+                let area = (x1.min(1.0) - x0) * (y1.min(1.0) - y0.max(-1.0));
+                eprintln!(
+                    "{} {aspect:.2}: x {x0:.2}..{x1:.2} y {y0:.2}..{y1:.2} area {area:.2}",
+                    t.item
+                );
+                if x0 < 0.12 {
+                    bad.push(format!("{}: reaches the crosshair, x from {x0:.2}", t.item));
+                }
+                if y1 > 0.35 {
+                    bad.push(format!("{}: up to y {y1:.2}, high in the view", t.item));
+                }
+                if area > 0.36 {
+                    bad.push(format!("{}: {area:.2} of the view's area 4", t.item));
+                }
+            }
+            for (hold, clip) in [
+                (None, "fp_break"),
+                (Some("stone_axe"), "fp_chop_level"),
+                (Some("stone_axe_vertical"), "fp_chop_vertical"),
+            ] {
+                let c = TABLES.clips.iter().find(|c| c.name == clip).expect(clip);
+                let near = (0..=40)
+                    .map(|i| {
+                        let s = c.duration * i as f32 / 40.0;
+                        held_model_bounds(t.item, hold, clip, s, 16.0 / 9.0).1
+                    })
+                    .fold(f64::MAX, f64::min);
+                eprintln!("{} {clip}: nearest in view {near:.3} m", t.item);
+                if near < 0.08 {
+                    bad.push(format!("{} in {clip}: {near:.3} m from the eye", t.item));
+                }
+            }
+        }
+        assert!(bad.is_empty(), "{bad:#?}");
     }
 
     #[test]

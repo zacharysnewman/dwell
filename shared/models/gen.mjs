@@ -346,6 +346,7 @@ export function validateProps(data, dir, read = (p) => readFileSync(p)) {
       )
     )
       fail(`${at}: grip is [x, y, z] metres`);
+    const hold = validateHold(p.hold, at);
     if (
       p.objects !== undefined &&
       !(
@@ -355,16 +356,61 @@ export function validateProps(data, dir, read = (p) => readFileSync(p)) {
         new Set(p.objects).size === p.objects.length
       )
     )
-      fail(`${at}: objects is a list of its FBX's mesh object names, each once`);
+      fail(
+        `${at}: objects is a list of its FBX's mesh object names, each once`,
+      );
     out[name] = {
       ...p,
       length,
       size: s.size,
       colours: s.colours,
       grip: p.grip ?? [0, 0, 0],
+      hold,
     };
   }
   return out;
+}
+
+/** The pose a prop is held in when it names none: as modelled, at its grip. */
+export const DEFAULT_HOLD = {
+  scale: 1,
+  rotation: [0, 0, 0],
+  offset: [0, 0, 0],
+};
+
+/**
+ * A prop's hold pose (`hold`, optional): `scale` (0.1..2, about the grip), `rotation` [yaw, pitch,
+ * roll] degrees (each within ±180) and `offset` [x, y, z] metres (each within ±0.5) in the hand's
+ * frame; missing fields take DEFAULT_HOLD's.
+ */
+export function validateHold(h, at) {
+  const fail = (msg) => {
+    throw new Error(`props.json: ${msg}`);
+  };
+  if (h === undefined) return { ...DEFAULT_HOLD };
+  if (h === null || typeof h !== "object" || Array.isArray(h))
+    fail(`${at}: hold is { scale, rotation, offset }`);
+  for (const k of Object.keys(h))
+    if (!["scale", "rotation", "offset"].includes(k))
+      fail(`${at}: hold has unknown field ${k} (scale, rotation, offset)`);
+  const scale = h.scale ?? DEFAULT_HOLD.scale;
+  if (!(Number.isFinite(scale) && scale >= 0.1 && scale <= 2))
+    fail(`${at}: hold.scale ${scale} is outside 0.1..2`);
+  const v3 = (v, name, max, unit) => {
+    if (v === undefined) return [0, 0, 0];
+    if (!(Array.isArray(v) && v.length === 3 && v.every(Number.isFinite)))
+      fail(
+        `${at}: hold.${name} is [${name === "rotation" ? "yaw, pitch, roll" : "x, y, z"}] ${unit}`,
+      );
+    if (v.some((x) => Math.abs(x) > max))
+      fail(`${at}: hold.${name} [${v}] is outside ±${max} ${unit}`);
+    return v;
+  };
+  return {
+    scale,
+    rotation: v3(h.rotation, "rotation", 180, "degrees"),
+    offset: v3(h.offset, "offset", 0.5, "metres"),
+  };
 }
 
 /** The props an item's look names (shared/inventory `look.model`): the ones built into the game. */
@@ -386,7 +432,7 @@ export function rustProps(props, glbRoot, built) {
   ];
   for (const [name, p] of Object.entries(props))
     lines.push(
-      `    PropData { name: ${JSON.stringify(name)}, category: ${JSON.stringify(p.category)}, glb: ${JSON.stringify(p.glb)}, length: ${f32(p.length)}, size: ${v3(p.size)}, grip: ${v3(p.grip)} },`,
+      `    PropData { name: ${JSON.stringify(name)}, category: ${JSON.stringify(p.category)}, glb: ${JSON.stringify(p.glb)}, length: ${f32(p.length)}, size: ${v3(p.size)}, grip: ${v3(p.grip)}, hold: PropHold { scale: ${f32(p.hold.scale)}, rotation: ${v3(p.hold.rotation)}, offset: ${v3(p.hold.offset)} } },`,
     );
   lines.push("];", "");
   return lines.join("\n");
@@ -475,7 +521,7 @@ export function generate() {
       join(CRATE, out),
       rust(data, models, glbRoot).replace(
         "use crate::{DetailLevel, Hand, ModelData, RoleClip};",
-        "use crate::{DetailLevel, Hand, ModelData, PropData, RoleClip};",
+        "use crate::{DetailLevel, Hand, ModelData, PropData, PropHold, RoleClip};",
       ) + rustProps(props, glbRoot, built),
     ]);
   }

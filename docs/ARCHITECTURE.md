@@ -792,7 +792,9 @@ ADR 0070 §8, `shared/models/props.json`): the tools pack's 53 models, imported 
 without skin or clips, scaled to their category's lengths, validated by `gen.mjs`; an inventory item's
 look may name one (`look.model`, `LookShape::Model`), drawn loose and on the hotbar from its
 triangles (`dwell_mesh::model_faces`) and in the hand as `Held::Model` (0.52.21: the prop's
-triangles on its hold item's socket at the prop's `grip`, its far end along the hand's +z, each
+triangles on its hold item's socket at the prop's `grip`, its far end along the hand's +z, posed by
+the prop's `hold` (0.52.22: scale, yaw/pitch/roll and offset about the grip, `dwell_models::PropHold`,
+validated by `gen.mjs`, as modelled when absent; docs/ITEMS.md §1a), each
 colour a character material row after the data's; `render/characters.rs` `prop_mesh`). A prop's
 `objects` (optional) names the FBX objects it keeps, for the pack's files that stack alternates (the
 axes file's three axes); the import fails on an unknown name. The six tools (stone and metal axe,

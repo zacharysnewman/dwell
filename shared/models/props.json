@@ -1,5 +1,5 @@
 {
-  "$comment": "Dwell's static models, the props (ADR 0070 \u00a78, docs/CHARACTERS.md \u00a711.7): no skin, no clips. Each is a GLB in shared/models/glb/props (the checked-in source of truth, made once by `node shared/models/import.mjs --props --from <unpacked packs>` from its pack's FBX: every face one palette colour, the pack's gradient texture snapped to the nearest ramp's base, its longest side scaled to `length` metres (else its category's), its origin at its bounds' centre). `category` is one of `categories`, whose `length` is the default size and `min`/`max` the sizes a prop of it may be (the generator fails outside them). `grip` (optional, metres from the origin) is where a hand holds it, for a prop an item's look names (shared/inventory `look.model`). `source.pack` names the unpacked pack and `source.root` the path inside it the `fbx` paths are under. Prototype content: which props become items is the owner's to decide. Run `node shared/models/gen.mjs` after editing.",
+  "$comment": "Dwell's static models, the props (ADR 0070 \u00a78, docs/CHARACTERS.md \u00a711.7): no skin, no clips. Each is a GLB in shared/models/glb/props (the checked-in source of truth, made once by `node shared/models/import.mjs --props --from <unpacked packs>` from its pack's FBX: every face one palette colour, the pack's gradient texture snapped to the nearest ramp's base, its longest side scaled to `length` metres (else its category's), its origin at its bounds' centre). `category` is one of `categories`, whose `length` is the default size and `min`/`max` the sizes a prop of it may be (the generator fails outside them). `grip` (optional, metres from the origin) is where a hand holds it, for a prop an item's look names (shared/inventory `look.model`); `hold` (optional) how: `scale` (0.1..2), `rotation` [yaw, pitch, roll] degrees and `offset` [x, y, z] metres about the grip in the hand's frame (docs/ITEMS.md \u00a71a). `source.pack` names the unpacked pack and `source.root` the path inside it the `fbx` paths are under. Prototype content: which props become items is the owner's to decide. Run `node shared/models/gen.mjs` after editing.",
   "source": {
     "pack": "3D_Low_Poly_Tools_Weapons_Containers",
     "root": "Assets/WeaponsAndPropsAssetPack_NAS/",
@@ -195,7 +195,8 @@
       "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-axes.fbx",
       "objects": ["DoubleHeadedAxe", "MetalAxe"],
       "length": 0.65,
-      "grip": [0, -0.22, 0]
+      "grip": [0, -0.22, 0],
+      "hold": { "scale": 0.6, "rotation": [30, 30, 88] }
     },
     "metal_fork": {
       "category": "tools",
@@ -215,7 +216,8 @@
       "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-metal-pickaxes.fbx",
       "objects": ["Handle.013", "MetalPickAxe"],
       "length": 0.7,
-      "grip": [0, -0.2, 0]
+      "grip": [0, -0.2, 0],
+      "hold": { "scale": 0.55, "rotation": [30, 30, 60] }
     },
     "metal_shovel": {
       "category": "tools",
@@ -223,7 +225,8 @@
       "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-metal-shovel.fbx",
       "objects": ["MetalParts", "MetalShovel"],
       "length": 1.0,
-      "grip": [0, 0.3, 0]
+      "grip": [0, 0.3, 0],
+      "hold": { "scale": 0.55, "rotation": [30, 40, 0] }
     },
     "modern_hoe": {
       "category": "tools",
@@ -245,7 +248,8 @@
       "glb": "glb/props/stone_axes.glb",
       "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-stone-axes.fbx",
       "length": 0.6,
-      "grip": [0, -0.2, 0]
+      "grip": [0, -0.2, 0],
+      "hold": { "scale": 0.7, "rotation": [30, 30, 55] }
     },
     "stone_hammer": {
       "category": "tools",
@@ -258,14 +262,16 @@
       "glb": "glb/props/stone_pickaxes.glb",
       "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-stone-pickaxes.fbx",
       "length": 0.6,
-      "grip": [0, -0.2, 0]
+      "grip": [0, -0.2, 0],
+      "hold": { "scale": 0.7, "rotation": [30, 30, 60] }
     },
     "wooden_shovel": {
       "category": "tools",
       "glb": "glb/props/wooden_shovel.glb",
       "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-wooden-shovel.fbx",
       "length": 1.0,
-      "grip": [0, 0.3, 0]
+      "grip": [0, 0.3, 0],
+      "hold": { "scale": 0.55, "rotation": [30, 40, 0] }
     },
     "wrenches": {
       "category": "tools",
