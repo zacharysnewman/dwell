@@ -428,6 +428,7 @@ impl Mesher for MeshJobs {
                 mirror: job.mirror,
                 origin: job.coord.map(|c| c * dwell_world::CHUNK_SIZE),
                 cuts: job.cuts,
+                damage: job.damage,
                 ground: job.ground.map(|(seed, gone)| (seed, gone, job.generated)),
                 water_tops,
             },

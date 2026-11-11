@@ -1783,6 +1783,8 @@ fn another_client_sees_your_body_walk_sprint_slide_and_jump_and_what_you_hold() 
             material: 0,
             rows: 1,
             down: false,
+
+            point: None,
         },
     ));
     assert!(rig.run_until(60, |r| {

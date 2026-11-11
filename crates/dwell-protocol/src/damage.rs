@@ -388,6 +388,7 @@ mod tests {
             d.hit(
                 [1, -2, 3],
                 7,
+                5,
                 HitMark {
                     face: 2,
                     point: [i, 128, 255],
@@ -395,6 +396,7 @@ mod tests {
             );
         }
         assert_eq!(d.hits([1, -2, 3], 7), 6);
+        assert_eq!(d.cells[&[1, -2, 3]].view().fraction, 255, "6 of 5: full");
         assert_eq!(d.cells[&[1, -2, 3]].marks.len(), MAX_HIT_MARKS);
         assert_eq!(d.hits([1, -2, 3], 8), 0, "replaced: undamaged");
         let back = Damage::from_bytes(&d.to_bytes()).expect("reads its own record");
@@ -404,6 +406,7 @@ mod tests {
             d.hit(
                 [1, -2, 3],
                 8,
+                5,
                 HitMark {
                     face: 0,
                     point: [0; 3]

@@ -455,7 +455,6 @@ impl Session {
                 Message::BlockEditRequest(BlockEditRequest {
                     material: id(e.material)?,
                     ..e.clone()
-                    point: None,
                 })
             }
             Message::BodyEditRequest(e) if e.action == BlockEditAction::Place => {
@@ -611,6 +610,7 @@ impl Session {
                     | Message::Creatures(_)
                     | Message::GroundGone(_)
                     | Message::Cuts(_)
+                    | Message::Damage(_)
                     | Message::HeldTools(_)
             ) && (self.joined() || matches!(self.state, SessionState::Confirming { .. }))
             {

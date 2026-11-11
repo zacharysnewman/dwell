@@ -39,6 +39,8 @@ pub enum Job {
         origin: [i32; 3],
         /// Its cut wood cells, chunk-local (ADR 0067 §11): meshed carved.
         cuts: Vec<([i32; 3], dwell_protocol::chopping::Cut)>,
+        /// Its damaged cells, chunk-local (docs/BLOCK_DAMAGE.md): drawn struck.
+        damage: Vec<([i32; 3], dwell_protocol::damage::DamageView)>,
         /// Its ground items (ADR 0071): the world seed, its gone cells (chunk-local) and `padded`
         /// as generated (empty: as `padded`; the rules read the terrain as generated).
         ground: Option<(u64, Vec<[i32; 3]>, Vec<u16>)>,
@@ -263,9 +265,10 @@ impl Runner {
                 mirror,
                 origin,
                 cuts,
+                damage,
                 ground,
                 water_tops,
-            } => match dwell_mesh::mesh_chunk_flags(
+            } => match dwell_mesh::mesh_chunk_damaged(
                 &padded,
                 &light,
                 mirror,
@@ -279,6 +282,7 @@ impl Runner {
                     })
                     .as_ref(),
                 dwell_mesh::ChunkFlags { water_tops },
+                &damage,
             ) {
                 Ok(m) => Output::ChunkMesh(Box::new(m)),
                 Err(e) => Output::Failed(format!("{e:?}")),

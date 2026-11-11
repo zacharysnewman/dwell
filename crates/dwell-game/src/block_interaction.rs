@@ -513,7 +513,6 @@ mod tests {
             Message::BlockEditRequest(r) => r,
             other => panic!("not a BlockEditRequest: {other:?}"),
         }
-        point: None,
     }
 
     #[test]

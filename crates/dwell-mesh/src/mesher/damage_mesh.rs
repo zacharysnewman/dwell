@@ -13,7 +13,11 @@ const LIFT: f64 = 0.004;
 
 /// A damaged cell turned face-local: a face-B chunk is meshed with its rows turned over, so the
 /// cell's row, its marks' up and down faces and their points' heights turn over too.
-pub(crate) fn face_local(cell: [i32; 3], view: &DamageView, mirror: bool) -> ([i32; 3], DamageView) {
+pub(crate) fn face_local(
+    cell: [i32; 3],
+    view: &DamageView,
+    mirror: bool,
+) -> ([i32; 3], DamageView) {
     if !mirror {
         return (cell, view.clone());
     }
@@ -58,7 +62,7 @@ pub(crate) fn append(
             }
             let (_, tile) = surface(&k.style, usize::from(mark.face), 1);
             let axis = usize::from(mark.face / 2);
-            let sign = if mark.face % 2 == 0 { 1 } else { -1 };
+            let sign = if mark.face.is_multiple_of(2) { 1 } else { -1 };
             let mut out = *cell;
             out[axis] += sign;
             let lit = flood.cell(out);
@@ -78,7 +82,7 @@ fn decal(
     index: usize,
 ) -> Vec<(Vec<[f64; 3]>, [f64; 3])> {
     let axis = usize::from(mark.face / 2);
-    let positive = mark.face % 2 == 0;
+    let positive = mark.face.is_multiple_of(2);
     // In-face axes, (u, v) with u × v the face's outward normal.
     let (mut u, mut v) = match axis {
         0 => (1, 2),
@@ -98,8 +102,7 @@ fn decal(
         let ra = (r * scale(a)).min(0.5);
         centre[a] = f64::from(cell[a]) + p.clamp(ra, 1.0 - ra);
     }
-    centre[axis] = f64::from(cell[axis])
-        + if positive { 1.0 + LIFT } else { -LIFT };
+    centre[axis] = f64::from(cell[axis]) + if positive { 1.0 + LIFT } else { -LIFT };
     // A stable jitter per mark (its point and order), so a remesh draws it the same.
     let seed = (u32::from(mark.point[0]).wrapping_mul(73_856_093))
         ^ (u32::from(mark.point[1]).wrapping_mul(19_349_663))

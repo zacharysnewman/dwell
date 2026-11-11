@@ -30,8 +30,8 @@ fn brk(cell: [i32; 3], face: u8) -> BlockEditRequest {
         material: 0,
         rows: 1,
         down: false,
+        point: None,
     }
-    point: None,
 }
 fn place(cell: [i32; 3], face: u8, material: StateId) -> BlockEditRequest {
     BlockEditRequest {
@@ -41,8 +41,8 @@ fn place(cell: [i32; 3], face: u8, material: StateId) -> BlockEditRequest {
         material,
         rows: 1,
         down: false,
+        point: None,
     }
-    point: None,
 }
 fn check(
     world: &mut VoxelWorld,
