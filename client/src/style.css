@@ -1445,7 +1445,13 @@ body.menu-open #menu-button {
   backdrop-filter: none;
 }
 
+/* A page's frame, as the menu's pages: from the same top edge, the screen's height. */
+.game-menu.gm-full-page {
+  place-items: start center;
+}
+
 .gm-full-page .gm-sheet {
+  height: 100%;
   background: var(--mm-glass);
 }
 
@@ -1931,6 +1937,11 @@ body.menu-open #main-menu .mm-shell {
 .menu-actions {
   display: flex;
   gap: 10px;
+}
+
+/* From the main menu the foot holds nothing (no Resume or Quit, no build line). */
+.gm-foot:empty {
+  display: none;
 }
 
 .gm-note {

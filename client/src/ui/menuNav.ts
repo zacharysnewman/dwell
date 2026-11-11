@@ -6,13 +6,7 @@
 
 /** The menu's views: the intro screens, the home, and the pages the home opens. */
 export type MenuView =
-  | 'logo'
-  | 'home'
-  | 'worlds'
-  | 'new-world'
-  | 'online'
-  | 'settings'
-  | 'versions';
+  'logo' | 'home' | 'worlds' | 'new-world' | 'online' | 'settings' | 'versions';
 
 /**
  * The intro screens in order, before the home. A studio intro (Dropkick) goes before `logo` when

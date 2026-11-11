@@ -152,7 +152,7 @@ export function showMenu(options: MenuPageOptions): MainMenu {
   });
   // Settings' own Back (or a click beside it) closes it: the menu leaves its page for the home.
   settings.onOpenChange = (open) => {
-    if (!open) menu?.settingsClosed();
+    if (!open) menu.settingsClosed();
   };
   return menu;
 }

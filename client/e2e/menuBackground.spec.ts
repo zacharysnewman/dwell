@@ -61,6 +61,9 @@ test('main menu: a turning panorama, and every setting from the Settings button'
   await choices.filter({ hasText: 'Lake shore' }).click();
   await page.keyboard.press('Escape');
   await expect(menu).toBeHidden();
+  // Settings is the menu's page (menu M3): Esc goes Back to the home, to the link that opened it.
+  await expect(page.locator('#main-menu')).toHaveAttribute('data-view', 'home');
+  await expect(page.locator('#menu-settings')).toBeFocused();
   await expect.poll(async () => (await strip(page)).name).toBe('lake-shore');
 
   await page.reload();
