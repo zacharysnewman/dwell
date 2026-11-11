@@ -48,6 +48,10 @@ pub static BLOCK_DAMAGE: &[BlockDamageDef] = &[
     BlockDamageDef { block: "dwell:sand_ramp", default: Some(11), tools: &[("shovel", 7)], look: Some(DamageLook { kind: DamageLookKind::Scoops, size: 0.38, color: [168, 134, 90], crack: [110, 86, 54] }), chips: Some(Chips { count: 6, color: [201, 173, 124], speed: 1.6, size: 0.04 }) },
     BlockDamageDef { block: "dwell:snowy_grass", default: Some(11), tools: &[("shovel", 7)], look: Some(DamageLook { kind: DamageLookKind::Scoops, size: 0.38, color: [74, 51, 34], crack: [63, 45, 31] }), chips: Some(Chips { count: 6, color: [91, 61, 39], speed: 1.8, size: 0.06 }) },
     BlockDamageDef { block: "dwell:snowy_grass_ramp", default: Some(11), tools: &[("shovel", 7)], look: Some(DamageLook { kind: DamageLookKind::Scoops, size: 0.38, color: [74, 51, 34], crack: [63, 45, 31] }), chips: Some(Chips { count: 6, color: [91, 61, 39], speed: 1.8, size: 0.06 }) },
+    BlockDamageDef { block: "dwell:snow", default: Some(6), tools: &[("shovel", 3)], look: Some(DamageLook { kind: DamageLookKind::Scoops, size: 0.36, color: [185, 201, 222], crack: [143, 163, 192] }), chips: Some(Chips { count: 6, color: [233, 239, 246], speed: 1.6, size: 0.05 }) },
+    BlockDamageDef { block: "dwell:snow_ramp", default: Some(6), tools: &[("shovel", 3)], look: Some(DamageLook { kind: DamageLookKind::Scoops, size: 0.36, color: [185, 201, 222], crack: [143, 163, 192] }), chips: Some(Chips { count: 6, color: [233, 239, 246], speed: 1.6, size: 0.05 }) },
+    BlockDamageDef { block: "dwell:glacier_ice", default: None, tools: &[("pickaxe", 4)], look: Some(DamageLook { kind: DamageLookKind::Shards, size: 0.3, color: [238, 246, 250], crack: [79, 127, 184] }), chips: Some(Chips { count: 8, color: [207, 230, 242], speed: 2.8, size: 0.04 }) },
+    BlockDamageDef { block: "dwell:glacier_ice_ramp", default: None, tools: &[("pickaxe", 4)], look: Some(DamageLook { kind: DamageLookKind::Shards, size: 0.3, color: [238, 246, 250], crack: [79, 127, 184] }), chips: Some(Chips { count: 8, color: [207, 230, 242], speed: 2.8, size: 0.04 }) },
 ];
 
 /// Each tool item's class, tier and that tier's break speed (`breaking.tools`).
