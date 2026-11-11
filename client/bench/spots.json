@@ -79,6 +79,119 @@
       "yaw": 90,
       "pitch": -3,
       "openY": 80
+    },
+    "starter:arch-1": {
+      "notes": "Through the first arch on the mesa's fins (feature_spots: span 12 m, rise 9 m; ADR 0074 B8, 0.52.66)",
+      "world": "test:starter",
+      "at": [19336.4, 111.1, -3027.2],
+      "yaw": -45,
+      "pitch": 0
+    },
+    "starter:arch-2": {
+      "notes": "Through a mesa arch on a high bench (feature_spots: span 14 m, rise 10 m)",
+      "world": "test:starter",
+      "at": [14596.2, 287.9, -2286.9],
+      "yaw": 0,
+      "pitch": 0
+    },
+    "starter:arch-3": {
+      "notes": "Through a mesa arch (feature_spots: span 10 m, rise 9 m)",
+      "world": "test:starter",
+      "at": [15733.6, 227.6, -1579.0],
+      "yaw": 45,
+      "pitch": 0
+    },
+    "starter:mesa-walls": {
+      "notes": "The red mesa's walls, 430 m of relief in view (tour: mesa with relief), looking down its canyon",
+      "world": "test:starter",
+      "at": [16000.5, 600, 1500.5],
+      "yaw": 0,
+      "pitch": -12
+    },
+    "starter:rainier-summit": {
+      "notes": "On the tall cone's highest point (feature_spots: 4839 m, off the cone's centre), looking across the broken rim toward the centre (ADR 0075 T5)",
+      "world": "test:starter",
+      "at": [-7278.5, 4850, -5566.5],
+      "yaw": 50,
+      "pitch": -25
+    },
+    "starter:rainier-flank": {
+      "notes": "The tall cone from 8 km east at 3000 m: cleavers, cirques, the snow and ice caps (ADR 0075 T5)",
+      "world": "test:starter",
+      "at": [1500.5, 3000, -5200.5],
+      "yaw": -90,
+      "pitch": 4
+    },
+    "starter:glacier-edge": {
+      "notes": "The alpine tundra's glacier ice edge on the cone's south flank, ground at 3175 m (feature_spots: glacier_ice with bare ground 60 m east)",
+      "world": "test:starter",
+      "at": [-5700.5, 3190, -9400.5],
+      "yaw": 90,
+      "pitch": -15
+    },
+    "starter:tundra-snowline": {
+      "notes": "The alpine tundra's own snow line (T3b snow; feature_spots: snow with bare ground 60 m east). An exact eye: as an above spot the bench found ground at 1200 m, 72 m under the column's top (1272 m), and shot from inside the hill.",
+      "world": "test:starter",
+      "at": [-16700.5, 1282, -16100.5],
+      "yaw": 90,
+      "pitch": -15
+    },
+    "starter:steppe-sand": {
+      "notes": "Sand under the steppe's grass on sandy soil (T3b soilBlocks; feature_spots: a sand top with grass 60 m east)",
+      "world": "test:starter",
+      "above": [-16300.5, -12200.5, 5],
+      "yaw": 90,
+      "pitch": -20,
+      "openY": 100
+    },
+    "starter:meadow-sand": {
+      "notes": "The meadow's sandy soil (T3b soilBlocks; feature_spots)",
+      "world": "test:starter",
+      "above": [-2800.5, -24900.5, 5],
+      "yaw": 90,
+      "pitch": -20,
+      "openY": 100
+    },
+    "starter:steppe-grass": {
+      "notes": "The steppe's tall grass, thinned by its dry climate (T3b undergrowth; tour: preset:steppe)",
+      "world": "test:starter",
+      "above": [-4100.5, 8300.5, 2.5],
+      "yaw": 0,
+      "pitch": -12,
+      "openY": 300
+    },
+    "starter:meadow-grass": {
+      "notes": "The meadow's tall grass, for comparison with the steppe's (T3b undergrowth; tour: preset:temperate_meadow)",
+      "world": "test:starter",
+      "above": [10100.5, 16300.5, 2.5],
+      "yaw": 0,
+      "pitch": -12,
+      "openY": 120
+    },
+    "starter:leaf-tints": {
+      "notes": "The broadleaf forest's oak crowns from above: per-tree leaf tints (ADR 0079 S4)",
+      "world": "test:starter",
+      "above": [22300.5, 100.5, 30],
+      "yaw": 0,
+      "pitch": -35,
+      "openY": 160
+    },
+    "starter:leaf-tints-pines": {
+      "notes": "The mixed forest's crowns from above: per-tree tints on pines and oaks (ADR 0079 S4)",
+      "world": "test:starter",
+      "above": [-18100.5, -6500.5, 30],
+      "yaw": 0,
+      "pitch": -35,
+      "openY": 150
+    },
+    "starter:lava-river": {
+      "notes": "The starter's face-B river vent on the youngest hotspot island's flank (30103, -7614; lavaVents faces b), from 45 m over the ground 54 m south of it. A fresh world shows little lava: run it after the lava rate step (`lava` rate [30], 45 s) as a scenario does.",
+      "world": "test:starter",
+      "above": [30103.5, -7560.5, 45],
+      "face": "b",
+      "yaw": 180,
+      "pitch": -40,
+      "openY": 300
     }
   }
 }

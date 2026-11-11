@@ -271,6 +271,34 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
 ## Smaller items, after the queue
 
+- **Visual pass (2026-11-11), found in game** (spots `starter:*` in `client/bench/spots.json`, found by
+  `starter_world` `feature_spots`; shots named `starter-<spot>.png`):
+  - **Tall grass nearly absent in game.** Natively the starter's meadow spot has 7914 tall grass cells
+    over 48849 grass cells (`tall_grass_counts`; broadleaf 7464, mixed 6505), but in game
+    (`starter-meadow-grass`, `tall-grass-close`) a 2.5 m-high view shows almost no tufts, and the nearest
+    to the spot (`goto dwell:tall_grass`) is one cell 10 m off, drawn pale. Something between the
+    generator and the screen loses them: the server's grass step, the chunk sent, or the cross mesh/fade.
+  - **The steppe has no tall grass at all** (`tall_grass_counts`: 0 over 50545 grass cells at the tour's
+    steppe spot; `starter-steppe-grass`): its climate share is 0 there. A steppe reads as grassland;
+    the dry-lee thinning goes all the way to none.
+  - **Arches:** `starter-arch-2` reads (a hole through a red wall, sky beyond); `arch-1`'s opening sits at
+    the foot of a ~100 m fin with a pale sandstone heap in front of it, `arch-3`'s is a slit in a long
+    wall (the "fin" is a wall, not a narrow fin). Arches are tunnels through broad walls more than
+    spans on fins.
+  - **Rainier summit ice reads saturated blue** (`starter-rainier-summit`): every surface on the summit
+    is glacier ice in a strong blue; from afar (`starter-rainier-flank`) cleavers, snow and the ice cap
+    read well. On the glacier edge (`starter-glacier-edge`) ice and snow barely differ.
+  - **Leaf tints barely show** (`starter-leaf-tints`, `-pines`): crowns look nearly alike from 30 m
+    (oak lightness 0.72–1.18 in data); needs an on/off comparison or wider variety.
+  - **Sandy soil spots land on shores:** `feature_spots`' sand-edge search finds lake and sea shores
+    (`starter-steppe-sand`), not sand under the steppe's grass; a better search is needed to see T3b's
+    `soilBlocks`.
+  - **The lava river is a sheet** (`lava-river-day`, face B, rate ×30 for 45 s): a lava pond with a crust
+    in a shallow valley, no channel (as the lava queue item says).
+  - **Bench: an `above` spot can find ground far too low** at a high spot: `starter:tundra-snowline` as
+    `above` (openY 1500) found ground at 1200 m under a 1272 m column and shot from inside the hill
+    (`starter-tundra-snowline-BUG-above.png`); the spot is an `at` now. `openY` caps at 2000, so spots
+    over 2000 m (Rainier, the glacier) must be `at` spots.
 - **BUGS.md #68:** holes and walls in the far terrain on a 4800 m cone seen from its summit (parked
   after two rounds; leads in BUGS.md).
 - **Arches:** the openings in the LOD and in Chisel's 3D view; caprock lips; an arch on a fin seen in
