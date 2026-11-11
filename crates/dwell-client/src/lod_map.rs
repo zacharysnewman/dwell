@@ -163,10 +163,7 @@ fn raster_into(
 ) -> Vec<u8> {
     let water_state = dwell_blocks::state(t.water_block).unwrap_or(0);
     let water = top_rgb(water_state);
-    let shade = |depth: f64| {
-        let k = 1.0 - (-depth.max(0.0) / t.water_depth_m).exp();
-        1.0 + (t.water_deep_shade - 1.0) * k
-    };
+    let shade = |depth: f64| t.water_shade(depth);
     let s = texel_m as f64;
     let min_half = 0.5 * t.river_min_texels * s;
     let mut out = Vec::with_capacity((rect.width() * rect.height() * 4) as usize);
