@@ -111,7 +111,6 @@ pub const BIOME_HUES: [[f64; 3]; 6] = [
     [0.40, 0.80, 0.75],
 ];
 
-
 /// A water texel's colour moved toward its look's scatter colour by how far the look differs
 /// from the default water's (none where it is the default's).
 fn water_tinted(
@@ -317,8 +316,10 @@ pub fn preview_shaded(
 mod tests {
     use super::*;
     use dwell_worldgen::bifacial::BifacialTerrain;
-    use dwell_worldgen::terrain::{BIOME_MAP, FIXTURE_BIOMES, FIXTURE_WORLDS, HEIGHT, PRESET_BIOMES};
     use dwell_worldgen::geology::GEOLOGY;
+    use dwell_worldgen::terrain::{
+        BIOME_MAP, FIXTURE_BIOMES, FIXTURE_WORLDS, HEIGHT, PRESET_BIOMES,
+    };
     use dwell_worldgen::vegetation::VEGETATION;
     use serde_json::Value;
 

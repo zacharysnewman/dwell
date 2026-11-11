@@ -599,7 +599,7 @@ function render() {
       el('button', {
         textContent: 'Play in game',
         title:
-          "Opens a new local world on this edit (the seed above): its biomes, rocks, erosion, vegetation and world knobs",
+          'Opens a new local world on this edit (the seed above): its biomes, rocks, erosion, vegetation and world knobs',
         onclick: () => {
           if (validateEdit(edit).length) return;
           const id = playInGame(new WorldIndex(store ?? null), edit, view.seed, Date.now());

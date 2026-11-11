@@ -96,7 +96,9 @@ pub fn install(bytes: &[u8]) -> Result<u64, String> {
         // seed's own was computed or installed here, or the other way round) replaces it, so a
         // generator built after the install never uses the wrong ground.
         let m = codec::decode(bytes)?;
-        if s.get().is_some_and(|k| k.worldgen_text() == m.worldgen_text()) {
+        if s.get()
+            .is_some_and(|k| k.worldgen_text() == m.worldgen_text())
+        {
             return Ok(seed);
         }
         replace(seed, m);

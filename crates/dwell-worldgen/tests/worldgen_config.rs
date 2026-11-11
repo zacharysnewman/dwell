@@ -68,14 +68,29 @@ fn a_world_made_from_an_edit_generates_what_chisel_previews_on_both_faces() {
         let p = preview(seed, &edit);
         let g = game.local(f);
         assert_eq!(g.biomes().len(), 2, "face {f:?}: the edit's biomes");
-        assert_eq!(cliffs.local(f).biomes().len(), 2, "face {f:?}: under the cliffs too");
-        assert_eq!(cliffs.local(f).geology(), p.geology(), "face {f:?}: the edit's geology");
-        assert_eq!(g.map().tectonics, p.map().tectonics, "face {f:?}: tectonics");
+        assert_eq!(
+            cliffs.local(f).biomes().len(),
+            2,
+            "face {f:?}: under the cliffs too"
+        );
+        assert_eq!(
+            cliffs.local(f).geology(),
+            p.geology(),
+            "face {f:?}: the edit's geology"
+        );
+        assert_eq!(
+            g.map().tectonics,
+            p.map().tectonics,
+            "face {f:?}: tectonics"
+        );
         for i in -12..=12 {
             for k in -12..=12 {
                 let (x, z) = (i * 211, k * 197);
                 let at = format!("face {f:?} at ({x}, {z})");
-                let (gm, pm) = (g.biome_mix(x.into(), z.into()), p.biome_mix(x.into(), z.into()));
+                let (gm, pm) = (
+                    g.biome_mix(x.into(), z.into()),
+                    p.biome_mix(x.into(), z.into()),
+                );
                 assert_eq!(gm.chosen, pm.chosen, "{at}: biome");
                 mesa_columns += usize::from(gm.chosen == 1);
                 let (gc, pc) = (g.column_at(x, z), p.column_at(x, z));
@@ -97,9 +112,16 @@ fn a_world_made_from_an_edit_generates_what_chisel_previews_on_both_faces() {
             }
         }
         let area = ((-600, -600), (600, 600));
-        assert_eq!(g.trees_in(area.0, area.1), p.trees_in(area.0, area.1), "face {f:?}: trees");
+        assert_eq!(
+            g.trees_in(area.0, area.1),
+            p.trees_in(area.0, area.1),
+            "face {f:?}: trees"
+        );
     }
-    assert!(mesa_columns > 0, "the mesa biome is somewhere in the sample");
+    assert!(
+        mesa_columns > 0,
+        "the mesa biome is somewhere in the sample"
+    );
     assert!(rock_columns > 0, "more than one rock shows");
 }
 
@@ -119,7 +141,10 @@ fn the_config_round_trips_with_the_map_and_the_builds_maps_are_unchanged() {
     assert_eq!(worldgen_map_key(seed, ""), cache::key(seed));
     let plain = WorldMap::compute(seed);
     assert_eq!(plain.worldgen_text(), "");
-    assert_eq!(codec::encode(&plain), codec::encode(&codec::decode(&codec::encode(&plain)).unwrap()));
+    assert_eq!(
+        codec::encode(&plain),
+        codec::encode(&codec::decode(&codec::encode(&plain)).unwrap())
+    );
     // A config keys its maps apart, a fixture's name too.
     assert_ne!(worldgen_map_key(seed, &edit), cache::key(seed));
     assert_ne!(worldgen_map_key(seed, "test:tall_peak"), cache::key(seed));

@@ -7,7 +7,8 @@
 
 use crate::geology::{Erosion, GEOLOGY, Geology, Jointing, Layer, Rock, Stack};
 use crate::terrain::{
-    BIOME_MAP, BIOMES, Biome, BiomeMap, ElevationBand, HEIGHT, HeightField, WaterLook, Where, WhereRange,
+    BIOME_MAP, BIOMES, Biome, BiomeMap, ElevationBand, HEIGHT, HeightField, WaterLook, Where,
+    WhereRange,
 };
 use crate::vegetation::{Kind, RockSoil, SoilType, VEGETATION, Vegetation};
 use serde_json::Value;
