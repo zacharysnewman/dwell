@@ -165,6 +165,21 @@
   limit), checked against the hash, so a guest builds the host's maps and an older build refuses the
   world; the dedicated server's `--worldgen` (not saved in the world: given on every start).)*
 
+  *Spacing per biome (0.52.65): a biome's optional `spacing` (placement name → blocks, 0..32, each one of
+  its `placements`; biomes.mjs `checkSpacing`, `config.rs`) sets the blocks kept clear between two of
+  that placement's structures anchored where it is the column's biome, in place of the placement's
+  `spacing` (`placements::Spacing`, `TerrainGenerator::tree_spacing`); a pair takes the larger of their two.
+  Only when some biome sets one (the default world asks nothing: goldens byte-identical).*
+
+  *Players' saved structures as placement sources (plan, not built): the structures store
+  (STRUCTURES.md) keeps a player's saved structure by name in the browser (and the world). A placement's
+  `structures` could name `store:<name>` beside committed ones: the generator needs the structure's
+  blocks on every instance (server, chunk and LOD jobs) and on guests, so it travels with the world's
+  worldgen config (a Chisel edit carrying the structure's palette and cells, under the 512 KiB config
+  limit, hashed with it), resolved by `Planter` from the edit, not the build's tables. Questions for the
+  owner: per world or per player; whether a saved structure placed by worldgen may be edited after; a
+  size cap.*
+
   *New world form (0.52.64): a **World** choice, Default or a world file that carries `newWorld` (a
   label and a line; `shared/worldgen/worlds/*.json`, checked by gen.mjs; `client/src/ui/worldChoices.ts`):
   the starter is offered. The made world records the file's name as its `worldgen` (the 0.52.27 record,

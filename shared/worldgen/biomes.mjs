@@ -190,6 +190,7 @@ const BIOME_REFS = [
   "decorations",
   "placements",
   "trees",
+  "spacing",
   "ground",
   "water",
   "waterLook",
@@ -274,6 +275,7 @@ export function validateBiome(data, blocks, refs) {
       fail(`${k}: a rule is listed twice`);
   }
   checkTrees(data.trees, data.placements, fail);
+  checkSpacing(data.spacing, data.placements, fail);
   checkGround(data.ground, refs.ground, fail);
   const w = blocks.get(data.water);
   if (!w) fail(`water ${JSON.stringify(data.water)} is not in the registry`);
@@ -365,6 +367,27 @@ export function checkTrees(trees, placements, fail) {
       fail(`trees: ${JSON.stringify(p)} is not one of its placements`);
     if (!(isNum(d) && d >= 0 && d <= TREE_DENSITY_MAX))
       fail(`trees.${p} must be in [0, ${TREE_DENSITY_MAX}]`);
+  }
+}
+
+/** The most blocks a biome's `spacing` may keep clear between two placed structures. */
+export const SPACING_MAX = 32;
+
+/**
+ * A biome's optional `spacing` (0.52.65): placement name → the blocks kept clear between two of
+ * them anchored where it is the column's biome, in place of the placement's `spacing`. Each must be
+ * one of the biome's `placements`.
+ */
+export function checkSpacing(spacing, placements, fail) {
+  if (spacing === undefined) return;
+  if (typeof spacing !== "object" || spacing === null || Array.isArray(spacing)) {
+    fail("spacing must map placement names to blocks");
+  }
+  for (const [p, d] of Object.entries(spacing)) {
+    if (!placements.includes(p))
+      fail(`spacing: ${JSON.stringify(p)} is not one of its placements`);
+    if (!(Number.isInteger(d) && d >= 0 && d <= SPACING_MAX))
+      fail(`spacing.${p} must be a whole number in [0, ${SPACING_MAX}]`);
   }
 }
 

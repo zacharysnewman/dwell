@@ -6,6 +6,20 @@ pins it.
 
 ## Open
 
+### 69. A dark vertical column in the far terrain before the starter world's volcano
+
+Found 2026-11-11 (0.52.64) on the starter world's tour: `?worldgen=test:starter&fresh=1&at=8571.5,350,-4866.5`
+(15 km east of the arc's first cone, the default look). A thin dark-brown column, a lighter foot,
+stands from the badlands' horizon up past the top of the screen, in front of the cone (session scratchpad
+`leftovers-biomes/tour_volcano_east_facing_west.jpg`). Narrowed 0.52.65: it is in the **LOD** (gone with
+`?lod=0`, `seam_lod_off.jpg`); it is **not a skirt** (`?loddebug=skirts` draws the skirts magenta, the
+column stays brown, `seam_skirts_debug.jpg`); and the height field has **no spike** there (every 16 m
+column within 12 km of the spot, west and south, stands within 60 m of its neighbours' highest; a probe
+in `tests/starter_world.rs`, not kept). With `loddebug=nostandins,nocull` it stays too (`seam_nostandins_nocull.jpg`): not a stand-in, not the per-section culling. Suspects next: a LOD section's cells with a wrong top (a column
+of a coarse level whose surface or colour comes from a log, e.g. a tree folded into the LOD, or a
+cell past the build volume), or the cone's crater ice dome at a coarse level. Next: a level tint switch (there is none yet in
+`?loddebug=`) to see its level, then the section's cells natively at that level. Not fixed.
+
 ### 68. LOD holes and tall walls near a 4400 m summit
 
 Found 2026-11-10 (0.52.27) looking at the tall peak in game: `?worldgen=test:tall_peak&seed=7&fresh=1&at=500,5000,-866`,

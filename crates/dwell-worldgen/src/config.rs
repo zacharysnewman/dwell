@@ -142,6 +142,7 @@ pub fn biome_from_json(v: &Value) -> Result<Biome, String> {
         decorations: names(v, "decorations").map_err(at)?,
         placements,
         trees: trees(v, placements).map_err(at)?,
+        spacing: spacing(v, placements).map_err(at)?,
         ground: ground(v).map_err(at)?,
         water: text(v, "water").map_err(at)?,
         water_look: water_look(v).map_err(at)?,
@@ -172,6 +173,32 @@ fn trees(v: &Value, placements: &[&'static str]) -> Result<&'static [(&'static s
         match d.as_f64() {
             Some(d) if (0.0..=3.0).contains(&d) => out.push((k, d)),
             _ => return Err(format!("trees.{k} must be in [0, 3]")),
+        }
+    }
+    Ok(Box::leak(out.into_boxed_slice()))
+}
+
+/// A biome's optional `spacing` (0.52.65): placement name → blocks in [0, 32], each one of its
+/// `placements`.
+fn spacing(
+    v: &Value,
+    placements: &[&'static str],
+) -> Result<&'static [(&'static str, i32)], String> {
+    let Some(t) = v.get("spacing") else {
+        return Ok(&[]);
+    };
+    let t = t
+        .as_object()
+        .ok_or("spacing must map placement names to blocks")?;
+    if let Some(k) = t.keys().find(|k| !placements.contains(&k.as_str())) {
+        return Err(format!("spacing: {k:?} is not one of its placements"));
+    }
+    let mut out = Vec::new();
+    for &k in placements {
+        let Some(d) = t.get(k) else { continue };
+        match d.as_u64() {
+            Some(d) if d <= 32 => out.push((k, d as i32)),
+            _ => return Err(format!("spacing.{k} must be a whole number in [0, 32]")),
         }
     }
     Ok(Box::leak(out.into_boxed_slice()))

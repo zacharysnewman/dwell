@@ -663,3 +663,20 @@ test('a world fixture may be offered in the New world form (newWorld), checked',
     /newWorld: unknown size/,
   );
 });
+
+test('a biome may set spacing per placement it lists (0.52.65), checked', async () => {
+  const { biomeRefs } = await import('./gen.mjs');
+  const { validateBiome } = await import('./biomes.mjs');
+  const blocks = registryBlocks();
+  const refs = biomeRefs();
+  const boreal = JSON.parse(readFileSync(join(here, 'biomes/presets/boreal.json'), 'utf8'));
+  validateBiome({ ...boreal, spacing: { pine_groves: 6 } }, blocks, refs);
+  assert.throws(
+    () => validateBiome({ ...boreal, spacing: { boulders: 6 } }, blocks, refs),
+    /spacing: "boulders" is not one of its placements/,
+  );
+  assert.throws(
+    () => validateBiome({ ...boreal, spacing: { pine_groves: 2.5 } }, blocks, refs),
+    /spacing\.pine_groves must be a whole number/,
+  );
+});
