@@ -1,0 +1,69 @@
+{
+  "$comment": "Saved camera spots (docs/DEV_TOOLS.md \"Screenshots of a place\"; scripts/spots.ts): <world>:<place> → the world (test:<fixture> or terrain), seed, time of day, and the camera: at [x, y, z] (the eye) or above [x, z, height over the ground there], yaw (0 = +Z, 90 = +X), pitch, face. An above spot's openY is the height its page opens at (over the ground). The starter's are its tour's (cargo test --release -p dwell-worldgen --test starter_world tour -- --ignored --nocapture, 2026-11-11). Shoot one: npm run bench -- --spot starter:broadleaf.",
+  "spots": {
+    "starter:broadleaf": {
+      "notes": "The broadleaf forest's heart (tour: starter:broadleaf_forest)",
+      "world": "test:starter",
+      "above": [22300.5, 100.5, 8],
+      "yaw": 0,
+      "pitch": -12,
+      "openY": 140
+    },
+    "starter:mixed-forest": {
+      "notes": "The mixed forest (tour: preset:mixed_forest)",
+      "world": "test:starter",
+      "above": [-18100.5, -6500.5, 8],
+      "yaw": 0,
+      "pitch": -12,
+      "openY": 130
+    },
+    "starter:beach": {
+      "notes": "The tropical beach (tour: preset:tropical_beach)",
+      "world": "test:starter",
+      "above": [20500.5, 11900.5, 4],
+      "yaw": 90,
+      "pitch": -8,
+      "openY": 80
+    },
+    "starter:desert": {
+      "notes": "The sand desert (tour: preset:sand_desert)",
+      "world": "test:starter",
+      "above": [25300.5, -2100.5, 6],
+      "yaw": 0,
+      "pitch": -8,
+      "openY": 100
+    },
+    "starter:mesa": {
+      "notes": "The mesa with 463 m of relief in view (tour)",
+      "world": "test:starter",
+      "above": [14500.5, 400.5, 20],
+      "yaw": 0,
+      "pitch": -5,
+      "openY": 710
+    },
+    "starter:wetland": {
+      "notes": "The wetland by its water (tour; WORK_QUEUE: a grassy plain with oaks under the range)",
+      "world": "test:starter",
+      "above": [-14900.5, -20300.5, 3],
+      "yaw": 180,
+      "pitch": -5,
+      "openY": 80
+    },
+    "starter:volcano": {
+      "notes": "The volcano seen from 15 km east of its cone (tour)",
+      "world": "test:starter",
+      "above": [8571.5, -4866.5, 30],
+      "yaw": -90,
+      "pitch": 2,
+      "openY": 390
+    },
+    "starter:shore": {
+      "notes": "The shore facing the hotspot islands (tour)",
+      "world": "test:starter",
+      "above": [23100.5, -6500.5, 6],
+      "yaw": 90,
+      "pitch": -3,
+      "openY": 80
+    }
+  }
+}

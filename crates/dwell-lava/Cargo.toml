@@ -1,0 +1,15 @@
+[package]
+name = "dwell-lava"
+description = "Dwell's lava (docs/proposals/VOLCANOES.md §6, V1): hot fluids on their own surface grid, cooling into rock, quenching in water, vents and burning."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license-file.workspace = true
+
+[dependencies]
+dwell-blocks = { path = "../dwell-blocks" }
+dwell-world = { path = "../dwell-world" }
+
+[lints]
+workspace = true

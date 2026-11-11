@@ -4,6 +4,10 @@ Status: design for Phase 53, [ADR 0060](./adr/0060-water-surface-grid.md) (accep
 planned, nothing built in the game yet. Evidence: [`WATER_MODEL_EVALUATION.md`](./proposals/WATER_MODEL_EVALUATION.md)
 §5 (the lab, the native benchmark on the game's terrain).
 
+Lava is not on this grid: it has its own small surface grid with the same near/far scheduling
+(`crates/dwell-lava`, ARCHITECTURE.md §6.8, VOLCANOES.md §6), meeting the water through its water
+flag and steam events.
+
 ## 1. The owner's answers (2026-11-05)
 
 | Question | Answer |

@@ -1,6 +1,6 @@
 {
   "name": "@dwell/client",
-  "version": "0.52.76",
+  "version": "0.52.79",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
@@ -25,6 +25,7 @@
     "build:probe": "cd .. && cargo build -p dwell-client --target wasm32-unknown-unknown --release && wasm-bindgen --target web --out-dir crates/dwell-client/www/pkg target/wasm32-unknown-unknown/release/dwell_client.wasm",
     "e2e:webgpu": "playwright test -c playwright.webgpu.config.ts",
     "bench": "node --experimental-strip-types scripts/bench.ts",
+    "bench:warm": "node --experimental-strip-types scripts/warmClient.ts",
     "panoramas": "node --experimental-strip-types scripts/panoramas.ts",
     "sfx:render": "node --experimental-strip-types scripts/renderSfx.ts",
     "check:protocol": "node --experimental-strip-types scripts/check.ts protocol",

@@ -113,7 +113,9 @@ fn the_palette_is_the_registrys_placeable_states() {
             "dwell:dynamite_yellow",
             "dwell:snow[flooded=false]",
             "dwell:glacier_ice[flooded=false]",
-            "dwell:red_sandstone[flooded=false]"
+            "dwell:red_sandstone[flooded=false]",
+            "dwell:basalt[flooded=false]",
+            "dwell:obsidian[flooded=false]"
         ]
     );
     assert!(!placeable(dwell_blocks::STATES.len() as StateId));
