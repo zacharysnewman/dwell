@@ -1444,7 +1444,14 @@ impl TerrainGenerator {
     /// The generator with a terrain volume shaping its chunks (`volume.rs`); the sky test leaves
     /// room for what it adds over the ground.
     pub fn with_volume(mut self, def: &'static VolumeDef) -> Self {
-        let v = Volume::resolve(def, self.world_seed);
+        let mut v = Volume::resolve(def, self.world_seed);
+        // A test world's `cliffs` (0.52.64): its strength, 0 none.
+        if let Some(c) = self.map.worldgen.as_ref().and_then(|w| w.edit.cliffs) {
+            if c <= 0.0 {
+                return self;
+            }
+            v.strength = c;
+        }
         self.rise = self.rise.max((v.reach_rows + 1) as f32);
         self.volume = Some(Arc::new(v));
         self.cache_id = next_cache_id();

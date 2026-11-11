@@ -513,3 +513,39 @@ dwell_world::both_faces!(
         assert!(listed > 0, "tall grass where listed");
     }
 );
+
+dwell_world::both_faces!(
+    /// A world's `cliffs` (0.52.64): the starter's 0 leaves its chunks as without the terrain
+    /// volume (no cliffs), where the build's volume at full strength reshapes them.
+    fn the_starters_cliffs_are_off(f: FaceFrame) {
+        let e = world_config(NAME).unwrap().unwrap();
+        assert_eq!(e.cliffs, Some(0.0));
+        let def = dwell_worldgen::volume::terrain_volume().expect("the build's cliffs");
+        let (plain, _) = generator(f, 0);
+        let with = plain.clone().with_volume(def);
+        // The build's world (no worldgen config) at the same seed: the volume reshapes it.
+        let build = TerrainGenerator::new(face_seed(0, f.face));
+        let build_cliffs = build.clone().with_volume(def);
+        let (mut same, mut differ) = (true, false);
+        for (x, z) in [(22300, 100), (-4100, 8300), (-9300, 2900)] {
+            let (cx, cz) = (x / CHUNK_SIZE, z / CHUNK_SIZE);
+            let row = rows_for_m(f64::from(plain.column_at(x, z).height)).div_euclid(CHUNK_SIZE);
+            let row_b = rows_for_m(f64::from(build.column_at(x, z).height)).div_euclid(CHUNK_SIZE);
+            for dy in -1..=1 {
+                let (mut a, mut b) = (Chunk::default(), Chunk::default());
+                plain.generate(ChunkCoord::new(cx, row + dy, cz), &mut a);
+                with.generate(ChunkCoord::new(cx, row + dy, cz), &mut b);
+                same &= a.voxels() == b.voxels();
+                let (mut c, mut d) = (Chunk::default(), Chunk::default());
+                build.generate(ChunkCoord::new(cx, row_b + dy, cz), &mut c);
+                build_cliffs.generate(ChunkCoord::new(cx, row_b + dy, cz), &mut d);
+                differ |= c.voxels() != d.voxels();
+            }
+        }
+        assert!(same, "the starter's chunks are as without the volume");
+        assert!(
+            differ,
+            "the build's volume reshapes the build's chunks there"
+        );
+    }
+);

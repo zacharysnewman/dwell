@@ -1,4 +1,5 @@
 import { buildInfo, channelOf, formatBuildInfo, recordedVersion } from './buildInfo';
+import { worldChoice } from './ui/worldChoices';
 import { isGameMode } from './ui/modes';
 import { blockDump, formatBlockDump, type BlockDump, type BlockTarget } from './debug/blockDump';
 import {
@@ -1639,11 +1640,14 @@ async function makeWorld(
   launch: Extract<Launch, { kind: 'new' | 'regenerate' }>,
 ): Promise<string | { message: string }> {
   if (launch.kind === 'new') {
-    const type = creatableType(launch.type);
+    // An offered world file (the form's World) is terrain on that file's ground.
+    const worldgen = worldChoice(launch.worldgen);
+    const type = worldgen ? 'terrain' : creatableType(launch.type);
     const world = index.create(
       {
         name: cleanName(launch.name, 'New world'),
         type,
+        ...(worldgen ? { worldgen } : {}),
         seed: parseSeed(launch.seed),
         ...(launch.spawn !== '' && isSpawn(launch.spawn) ? { spawn: launch.spawn } : {}),
         ...(isGameMode(launch.mode) ? { mode: launch.mode } : {}),

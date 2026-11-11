@@ -651,3 +651,15 @@ test('the tectonics (T5) are off by default, take a boundary and a chain by data
   rocks.tectonic.volcanic = 'dwell:nothing';
   assert.throws(() => validateRocks(rocks, blocks), /tectonic\.volcanic must name a stack/);
 });
+
+test('a world fixture may be offered in the New world form (newWorld), checked', () => {
+  const world = loadTerrain();
+  const base = { name: 'test:offer', overrides: {} };
+  const ok = { ...base, newWorld: { label: 'Offer', description: 'A world to pick.' } };
+  assert.equal(validateFixtureWorlds([ok], world)[0].name, 'test:offer');
+  assert.throws(() => validateFixtureWorlds([{ ...base, newWorld: {} }], world), /newWorld\.label/);
+  assert.throws(
+    () => validateFixtureWorlds([{ ...base, newWorld: { label: 'x', size: 3 } }], world),
+    /newWorld: unknown size/,
+  );
+});

@@ -675,9 +675,21 @@ export function validateFixtureWorlds(fixtures, world, pool = null) {
           "biomes",
           "biomeMap",
           "geology",
+          "newWorld",
+          "cliffs",
         ].includes(k),
     );
     if (extra.length) fail(`unknown ${extra.join(", ")}`);
+    // Offered in the New world form (0.52.64): a label and a line for people.
+    if (f.newWorld !== undefined) {
+      const n = f.newWorld;
+      if (typeof n?.label !== "string" || n.label.length < 1 || n.label.length > 40)
+        fail("newWorld.label must be 1 to 40 characters");
+      if (n.description !== undefined && (typeof n.description !== "string" || n.description.length > 200))
+        fail("newWorld.description must be at most 200 characters");
+      const more = Object.keys(n).filter((k) => !["label", "description"].includes(k));
+      if (more.length) fail(`newWorld: unknown ${more.join(", ")}`);
+    }
     const merged = structuredClone(world);
     for (const [g, keys] of Object.entries(f.overrides ?? {})) {
       if (!WORLD_GROUPS.includes(g))

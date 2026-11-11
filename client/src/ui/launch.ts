@@ -19,7 +19,16 @@ export type Launch =
    * A new world from the menu (`?new=1&name=…&seed=…&type=…&spawn=…`): created by the build that opens it,
    * which records its own generator and version (RELEASES.md §5: the launcher owns the menu).
    */
-  | { kind: 'new'; name: string; seed: string; type: string; spawn: string; mode: string }
+  | {
+      kind: 'new';
+      name: string;
+      seed: string;
+      type: string;
+      spawn: string;
+      mode: string;
+      /** An offered world file's name (`&worldgen=`, ui/worldChoices.ts), or ''. */
+      worldgen: string;
+    }
   /** A world regenerated from its seed by the build that opens it (`?regenerate=<world id>`). */
   | { kind: 'regenerate'; id: string }
   /** A local world by link (`?local=1`, `?world=`, `?seed=`): one per generator and seed. */
@@ -42,6 +51,8 @@ const ROUTE_PARAMS = [
   'name',
   'type',
   'regenerate',
+  // A test world's or an offered world file's worldgen (`?worldgen=`, the New world form's World).
+  'worldgen',
   // A message for the menu (the launcher's): why it came up instead of a game.
   'say',
   // Play advanced's overrides (ui/playAdvanced.ts): one-off, so they never ride into the next route.
@@ -70,6 +81,7 @@ export function launchOf(search: string): Launch {
       type: params.get('type') ?? '',
       spawn: params.get('spawn') ?? '',
       mode: params.get('mode') ?? '',
+      worldgen: params.get('worldgen') ?? '',
     };
   }
   const regenerate = params.get('regenerate');

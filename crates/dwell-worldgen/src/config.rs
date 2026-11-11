@@ -638,6 +638,9 @@ pub struct Edit {
     pub geology: Geology,
     pub vegetation: Vegetation,
     pub height: Option<HeightField>,
+    /// The terrain volume's strength in this world (`cliffs`, 0..1; 0.52.64): 0 is no volume (no
+    /// cliffs), `None` the volume as the build has it (`volume.json`).
+    pub cliffs: Option<f32>,
 }
 
 /// A Chisel edit (`{ "biomes": [...], "biomeMap": {...}, "world": {...} }`) parsed.
@@ -673,6 +676,14 @@ pub fn edit_from_json(text: &str) -> Result<Edit, String> {
             ));
         }
     }
+    let cliffs = match v.get("cliffs") {
+        Some(c) => Some(
+            c.as_f64()
+                .filter(|c| (0.0..=1.0).contains(c))
+                .ok_or("cliffs must be a number in [0, 1]")? as f32,
+        ),
+        None => None,
+    };
     let biomes = biomes?;
     for b in &biomes {
         if let Some(s) = b.rock_stack
@@ -687,6 +698,7 @@ pub fn edit_from_json(text: &str) -> Result<Edit, String> {
         geology,
         vegetation,
         height,
+        cliffs,
     })
 }
 
@@ -746,6 +758,7 @@ pub fn world_config(config: &str) -> Result<Option<Edit>, String> {
         geology: GEOLOGY,
         vegetation: VEGETATION,
         height: Some(h),
+        cliffs: None,
     }))
 }
 
