@@ -17,6 +17,20 @@ default world never reaches (~4400 m, ~8800 rows), or the selection near a camer
 full-detail chunks. Next: `__dwell.state().lod` at that view, and `tests/tall_peaks.rs`'s LOD levels
 checked for neighbouring sections' seams.
 
+Narrowed 0.52.29 (natively, `dwell-lod` `the_lod_covers_a_4800_m_cone_seen_from_its_summit`, both faces;
+passes): the summit view over the real tall-peak terrain, generated and meshed for real with the player's
+chunks streamed on the rim, settles with every column of the cone in view (3.2 km each way, 8 m apart)
+covered in plan by a drawn surface, a shown skirt or drawn chunks. So the selection leaves no hole there,
+and the one seam it finds — ~100 columns (face A) where the ground crosses a horizontal section boundary
+between a coarse section and the finer ones over it (e.g. level 5 j 70 under level 4 j 142 at 3584 m) —
+is closed by the coarse section's top skirt. Ruled out: the column bounds (the bounds and the cells come
+from the same columns), the build volume (the summit is inside it), the selection. Still suspect: what
+the plan view can't see — a skirt or surface drawn but facing away (culled) or clipped, the side skirts
+as the "walls" (on 128 m cells a side skirt stands up to the column's surface, tens of metres on the
+cone's slope, in the riser's colour), the renderer's per-section culling bounds at ~9000 rows, and a
+stand-in drawn clipped. Next: the bench at the summit view with the skirts tinted, and the test above
+extended to compare each shown skirt's height with the slope.
+
 ### 60. On the software renderer the page draws no frame for ~6 s just after the first torch is placed
 
 Found 2026-11-10 chasing main's e2e failure on 0.51.8: `edit.spec.ts`'s every-palette-block test failed

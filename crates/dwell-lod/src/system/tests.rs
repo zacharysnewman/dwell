@@ -2080,7 +2080,12 @@ fn without_a_chunk_revision_the_lod_selects_every_frame() {
 
 /// The tall peak fixture world (`shared/worldgen/worlds/tall_peak.json`, by data alone) on both
 /// faces of seed `seed`, its maps installed in the map cache as a test world's are in game.
-fn tall_peak_terrain(seed: u64) -> (dwell_worldgen::BifacialTerrain, dwell_worldgen::tectonics::Volcano) {
+fn tall_peak_terrain(
+    seed: u64,
+) -> (
+    dwell_worldgen::BifacialTerrain,
+    dwell_worldgen::tectonics::Volcano,
+) {
     use dwell_worldgen::bifacial::face_seed;
     use dwell_worldgen::worldmap::{WorldMap, cache, codec};
     let h = dwell_worldgen::terrain::FIXTURE_WORLDS
@@ -2092,17 +2097,25 @@ fn tall_peak_terrain(seed: u64) -> (dwell_worldgen::BifacialTerrain, dwell_world
         let s = face_seed(seed, face);
         cache::install(&codec::encode(&WorldMap::for_height(s, h))).expect("installs");
     }
-    (dwell_worldgen::BifacialTerrain::new(seed), h.tectonics.volcanoes()[0])
+    (
+        dwell_worldgen::BifacialTerrain::new(seed),
+        h.tectonics.volcanoes()[0],
+    )
 }
 
 dwell_world::both_faces!(
-    /// BUGS.md #68: from 300 m above the tall peak's rim looking 45° down into the crater, every
-    /// column of the cone in view is covered by a drawn section's triangles (no hole where the sky
-    /// shows through the flank).
+    /// BUGS.md #68 (a guard while it is open): from 300 m above the tall peak's rim looking 45°
+    /// down into the crater, with the player's chunks streamed on the rim, every column of the cone
+    /// in view is covered by a drawn section's triangles — its surface or a skirt the renderer
+    /// shows — or by drawn chunks. Without the skirts ~100 columns are open on face A, where the
+    /// ground crosses a horizontal section boundary between a coarse section and the finer ones
+    /// above it; the top skirts close them.
     fn the_lod_covers_a_4800_m_cone_seen_from_its_summit(f: FaceFrame) {
         let (t, v) = tall_peak_terrain(68);
         let t = std::sync::Arc::new(t);
-        let rim = t.local(f.face).column_at(v.x as i32, (v.z + v.crater_radius) as i32);
+        let rim = t
+            .local(f.face)
+            .column_at(v.x as i32, (v.z + v.crater_radius) as i32);
         let rim_y = f64::from(rim.height);
         // The player on the rim, its chunks streamed around it (the server's view radius).
         let feet = f.point([v.x, rim_y + 1.6, v.z + v.crater_radius]);
@@ -2163,12 +2176,16 @@ dwell_world::both_faces!(
             }
         };
         let mut drawn_levels = HashMap::<i32, usize>::default();
-        for &(id, _, _) in &host.shown {
+        for &(id, mask, _) in &host.shown {
             let Some((o, cell, m)) = host.sections.get(&id) else {
                 continue;
             };
             *drawn_levels.entry(cell.log2().round() as i32).or_default() += 1;
-            for mesh in [&m.opaque, &m.water] {
+            // The surfaces and the skirts the renderer shows (bit per side).
+            let shown_skirts = (0..6)
+                .filter(|s| mask & (1 << s) != 0)
+                .map(|s| &m.skirts[s]);
+            for mesh in [&m.opaque, &m.water].into_iter().chain(shown_skirts) {
                 let at = |j: u32| {
                     let j = j as usize * 3;
                     [
