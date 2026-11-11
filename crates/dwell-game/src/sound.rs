@@ -971,6 +971,56 @@ impl FallSounds {
 /// flags: bit 0 spatial, bits 1–3 the gait + 1, bits 4 and up the voice + 1).
 pub const FLOATS_PER_EVENT: usize = 7;
 
+/// The air share under which surfacing gasps (a breath held long), and under which the body strains.
+pub const GASP_BELOW: f64 = 0.7;
+pub const STRAIN_BELOW: f64 = 0.25;
+
+/// The player's body (docs/AUDIO.md §5): heavy breathing as stamina runs out, a gasp on surfacing
+/// short of air, a strain as the air runs low. Read from the vitals each frame (ADR 0069).
+#[derive(Clone, Debug, Default)]
+pub struct VitalSounds {
+    exhausted: bool,
+    last_air: Option<f64>,
+    /// The air fell below `GASP_BELOW` and has not come back yet.
+    held: bool,
+    strained: bool,
+}
+
+impl VitalSounds {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// `exhausted`: out of stamina; `air`: the oxygen's share of full (None where the mode has none).
+    pub fn update(&mut self, exhausted: bool, air: Option<f64>, out: &mut Vec<SoundEvent>) {
+        if exhausted && !self.exhausted {
+            out.push(SoundEvent::new(SoundKind::Exhausted, 0, 1.0, None));
+        }
+        self.exhausted = exhausted;
+        let Some(air) = air else {
+            self.last_air = None;
+            return;
+        };
+        if let Some(last) = self.last_air {
+            if air < GASP_BELOW && air < last {
+                self.held = true;
+            }
+            if self.held && air > last + 1e-6 {
+                out.push(SoundEvent::new(SoundKind::Gasp, 0, 1.0, None));
+                self.held = false;
+            }
+            if air < STRAIN_BELOW && last >= STRAIN_BELOW && !self.strained {
+                out.push(SoundEvent::new(SoundKind::Strain, 0, 1.0, None));
+                self.strained = true;
+            }
+        }
+        if air >= STRAIN_BELOW {
+            self.strained = false;
+        }
+        self.last_air = Some(air);
+    }
+}
+
 pub fn encode(events: &[SoundEvent]) -> Vec<f64> {
     let mut v = Vec::with_capacity(events.len() * FLOATS_PER_EVENT);
     for e in events {
@@ -1961,5 +2011,32 @@ mod tests {
         burn.voice = Some(FIRE_VOICE + 2);
         let v = encode(&[burn]);
         assert_eq!(v[6], f64::from((FIRE_VOICE + 3) << 4));
+    }
+
+    #[test]
+    fn running_out_of_stamina_breathes_and_air_running_low_strains_then_gasps() {
+        // face-a-only: the vitals have no up.
+        let mut v = VitalSounds::new();
+        let mut out = Vec::new();
+        v.update(false, Some(1.0), &mut out);
+        v.update(true, Some(1.0), &mut out);
+        v.update(true, Some(1.0), &mut out);
+        assert_eq!(kinds(&out), vec![SoundKind::Exhausted]);
+        out.clear();
+        // Under water: the air falls past the strain line once, then surfacing gasps once.
+        for k in (10..=100).rev() {
+            v.update(false, Some(f64::from(k) / 100.0), &mut out);
+        }
+        assert_eq!(kinds(&out), vec![SoundKind::Strain]);
+        out.clear();
+        v.update(false, Some(0.12), &mut out);
+        v.update(false, Some(0.15), &mut out);
+        assert_eq!(kinds(&out), vec![SoundKind::Gasp]);
+        out.clear();
+        // A short dip (never under the gasp line) is silent.
+        for a in [1.0, 0.9, 0.8, 0.85, 0.9] {
+            v.update(false, Some(a), &mut out);
+        }
+        assert!(out.is_empty(), "{out:?}");
     }
 }

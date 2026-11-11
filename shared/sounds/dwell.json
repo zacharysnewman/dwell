@@ -48,11 +48,47 @@
     "chop_creak": {"sound": "chop_creak"},
     "axe_clank": {"sound": "axe_clank"},
     "axe_swish": {"sound": "axe_swish"},
-    "axe_rustle": {"sound": "axe_rustle"}
+    "axe_rustle": {"sound": "axe_rustle"},
+    "exhausted": {"sound": "breath_heavy"},
+    "gasp": {"sound": "gasp"},
+    "strain": {"sound": "strain"}
   },
   "ambient": {
     "fire": {"radiusM": 10, "max": 4},
     "falls": {"radiusM": 40, "max": 3, "fullM3s": 2}
+  },
+  "ambience": {
+    "$comment": "AUDIO.md §2c: looping beds under the Ambience volume, each at its gain times every condition's ramp over the listener's surroundings; quiet flavour, never above cap.",
+    "volume": 0.35,
+    "fadeS": 2.5,
+    "cap": 0.4,
+    "probe": {"radiusM": 16, "trees": ["dwell:leaves", "dwell:snowy_leaves", "dwell:log"]},
+    "beds": {
+      "wind": {"files": ["wind-loop-1.m4a"], "gain": 0.3, "when": [
+        {"input": "altitude", "from": 0, "full": 60, "floor": 0.2},
+        {"input": "open", "from": 0.2, "full": 1}
+      ]},
+      "sea": {"files": ["sea-loop-1.m4a"], "gain": 0.35, "when": [
+        {"input": "waterShare", "from": 0.15, "full": 0.5},
+        {"input": "waterM", "from": 40, "full": 4}
+      ]},
+      "river": {"files": ["river-loop-1.m4a"], "gain": 0.25, "when": [
+        {"input": "flow", "from": 0.1, "full": 2},
+        {"input": "waterM", "from": 24, "full": 3}
+      ]},
+      "stream": {"files": ["stream-loop-1.m4a"], "gain": 0.25, "when": [
+        {"input": "waterShare", "from": 0.15, "full": 0.01},
+        {"input": "waterM", "from": 12, "full": 2}
+      ]},
+      "birds": {"files": ["birds-loop-1.m4a"], "gain": 0.3, "when": [
+        {"input": "trees", "from": 0.05, "full": 0.35},
+        {"input": "day", "from": 0.1, "full": 0.6, "floor": 0.1}
+      ]},
+      "leaves": {"files": ["leaves-loop-1.m4a"], "gain": 0.25, "when": [
+        {"input": "trees", "from": 0.05, "full": 0.4},
+        {"input": "open", "from": 0, "full": 0.6, "floor": 0.3}
+      ]}
+    }
   },
   "sets": {
     "stone": {
@@ -2045,7 +2081,7 @@
       ]
     },
     "fell_crack": {
-      "samples": {"files": ["fell-crack-1.m4a", "fell-crack-2.m4a"], "gain": 0.6, "pitch": 1},
+      "samples": {"files": ["fell-crack-impact-1.m4a", "fell-crack-impact-2.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 1.2, "reverb": 0.25,
       "variation": {"pitch": 2, "gain": 1, "cutoff": 0.1, "time": 0.12},
       "layers": [
@@ -2064,6 +2100,31 @@
         {"source": "osc", "wave": "sine", "freq": 120, "to": 52, "gain": 0.55, "env": {"attack": 0.003, "decay": 0.16}},
         {"source": "noise", "color": "brown", "gain": 0.8, "filters": [{"type": "lowpass", "freq": 360, "q": 0.8}], "env": {"attack": 0.002, "decay": 0.12}},
         {"source": "noise", "color": "pink", "gain": 0.3, "filters": [{"type": "bandpass", "freq": 700, "q": 1.2}], "env": {"attack": 0.001, "decay": 0.045}}
+      ]
+    },
+    "breath_heavy": {
+      "samples": {"files": ["breath-heavy-1.m4a", "breath-heavy-2.m4a"], "gain": 0.35, "pitch": 0.5},
+      "gain": 0.4, "reverb": 0.05,
+      "variation": {"pitch": 1, "gain": 1, "cutoff": 0.1, "time": 0.1},
+      "layers": [
+        {"source": "noise", "color": "pink", "gain": 0.3, "filters": [{"type": "bandpass", "freq": 1100, "q": 0.8}], "env": {"attack": 0.15, "hold": 0.1, "decay": 0.4}},
+        {"source": "noise", "color": "pink", "gain": 0.25, "at": 0.7, "filters": [{"type": "bandpass", "freq": 800, "q": 0.8}], "env": {"attack": 0.2, "hold": 0.1, "decay": 0.5}}
+      ]
+    },
+    "gasp": {
+      "samples": {"files": ["gasp-1.m4a"], "gain": 0.45, "pitch": 0.5},
+      "gain": 0.5, "reverb": 0.05,
+      "variation": {"pitch": 1, "gain": 1, "cutoff": 0.1, "time": 0.1},
+      "layers": [
+        {"source": "noise", "color": "white", "gain": 0.35, "filters": [{"type": "bandpass", "freq": 1600, "q": 1, "to": 900}], "env": {"attack": 0.05, "hold": 0.08, "decay": 0.3}}
+      ]
+    },
+    "strain": {
+      "samples": {"files": ["strain-1.m4a"], "gain": 0.4, "pitch": 0.5},
+      "gain": 0.4, "reverb": 0.05,
+      "variation": {"pitch": 1, "gain": 1, "cutoff": 0.1, "time": 0.1},
+      "layers": [
+        {"source": "osc", "wave": "triangle", "freq": 180, "to": 150, "gain": 0.2, "filters": [{"type": "lowpass", "freq": 900, "q": 0.7}], "env": {"attack": 0.05, "hold": 0.15, "decay": 0.25}}
       ]
     },
     "hurt": {

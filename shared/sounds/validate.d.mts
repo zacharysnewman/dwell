@@ -14,6 +14,7 @@ export function validateSound(where: string, sound: unknown): void;
 export const SAMPLES_DIR: string;
 export const SAMPLES_MAX_BYTES: number;
 export const PLAY_MODES: string[];
+export const AMBIENCE_INPUTS: string[];
 export function resolveSounds(files: unknown[], samplesDir?: string): Omit<SoundData, 'gaitOrder'>;
 export function checkBlockSounds(
   blocks: { id: string; sound?: unknown }[],

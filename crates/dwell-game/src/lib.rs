@@ -5,6 +5,7 @@
 //! client's chunk streaming. Platform-free: time is passed in, collaborators (renderer, mesher,
 //! worldgen, network) are traits or callbacks, so it all runs natively under test and in the browser.
 
+pub mod ambience;
 pub mod block_interaction;
 pub mod brush_tool;
 pub mod build_drag;

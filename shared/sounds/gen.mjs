@@ -97,6 +97,10 @@ rs.push("    /// level by their flow at `FALLS_FULL_M3S` (m³/s; docs/WATER_SURF
 rs.push(`    pub const FALLS_RADIUS_M: f64 = ${rf(am.falls.radiusM)};`);
 rs.push(`    pub const FALLS_MAX: usize = ${am.falls.max};`);
 rs.push(`    pub const FALLS_FULL_M3S: f64 = ${rf(am.falls.fullM3s)};`);
+rs.push("    /// The ambience probe's reach round the listener (m) and the blocks that count as trees");
+rs.push("    /// (shared/sounds `ambience.probe`; docs/AUDIO.md §2c).");
+rs.push(`    pub const AMBIENCE_RADIUS_M: f64 = ${rf(data.ambience.probe.radiusM)};`);
+rs.push(`    pub const AMBIENCE_TREES: &[&str] = &[${data.ambience.probe.trees.map((t) => JSON.stringify(t)).join(", ")}];`);
 rs.push("}");
 rs.push("");
 writeFileSync(join(root, "crates/dwell-game/src/sound.gen.rs"), rs.join("\n"));

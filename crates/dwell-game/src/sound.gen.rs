@@ -43,10 +43,13 @@ pub enum SoundKind {
     AxeClank = 36,
     AxeSwish = 37,
     AxeRustle = 38,
+    Exhausted = 39,
+    Gasp = 40,
+    Strain = 41,
 }
 
 impl SoundKind {
-    pub const ALL: [SoundKind; 39] = [
+    pub const ALL: [SoundKind; 42] = [
         SoundKind::Step,
         SoundKind::Climb,
         SoundKind::Land,
@@ -86,6 +89,9 @@ impl SoundKind {
         SoundKind::AxeClank,
         SoundKind::AxeSwish,
         SoundKind::AxeRustle,
+        SoundKind::Exhausted,
+        SoundKind::Gasp,
+        SoundKind::Strain,
     ];
 
     /// The event's name in the data.
@@ -130,6 +136,9 @@ impl SoundKind {
             SoundKind::AxeClank => "axe_clank",
             SoundKind::AxeSwish => "axe_swish",
             SoundKind::AxeRustle => "axe_rustle",
+            SoundKind::Exhausted => "exhausted",
+            SoundKind::Gasp => "gasp",
+            SoundKind::Strain => "strain",
         }
     }
 
@@ -175,6 +184,9 @@ impl SoundKind {
             SoundKind::AxeClank => None,
             SoundKind::AxeSwish => None,
             SoundKind::AxeRustle => None,
+            SoundKind::Exhausted => None,
+            SoundKind::Gasp => None,
+            SoundKind::Strain => None,
         }
     }
 }
@@ -214,4 +226,8 @@ pub mod ambient {
     pub const FALLS_RADIUS_M: f64 = 40.0;
     pub const FALLS_MAX: usize = 3;
     pub const FALLS_FULL_M3S: f64 = 2.0;
+    /// The ambience probe's reach round the listener (m) and the blocks that count as trees
+    /// (shared/sounds `ambience.probe`; docs/AUDIO.md §2c).
+    pub const AMBIENCE_RADIUS_M: f64 = 16.0;
+    pub const AMBIENCE_TREES: &[&str] = &["dwell:leaves", "dwell:snowy_leaves", "dwell:log"];
 }

@@ -105,7 +105,20 @@ const TOP_KEYS = [
   "ui",
   "controls",
   "ambient",
+  "ambience",
   "sounds",
+];
+/** The surroundings an ambience bed's conditions read (crates/dwell-game ambience.rs `INPUTS`). */
+export const AMBIENCE_INPUTS = [
+  "altitude",
+  "height",
+  "open",
+  "waterShare",
+  "waterM",
+  "flow",
+  "trees",
+  "day",
+  "fireM",
 ];
 
 function fail(where, message) {
@@ -326,6 +339,52 @@ export function validateSound(where, s) {
   }
 }
 
+/**
+ * The ambience (AUDIO.md §2c): `volume` (the Ambience volume's default), `fadeS` (the beds' glide
+ * time constant), `cap` (no bed louder), `probe` (`radiusM`, the `trees` blocks), and `beds`: each
+ * `{ files, gain, when: [{ input, from, full, floor? }] }`, its level `gain` times every
+ * condition's ramp (0 at `from`, 1 at `full`, either way round; never under `floor`).
+ */
+function validateAmbience(ns, a) {
+  keysIn("ambience", a, ["$comment", "volume", "fadeS", "cap", "probe", "beds"]);
+  number("ambience.volume", a.volume, 0, 1);
+  number("ambience.fadeS", a.fadeS, 0.05, 30);
+  number("ambience.cap", a.cap, 0, 1);
+  keysIn("ambience.probe", a.probe, ["radiusM", "trees"]);
+  number("ambience.probe.radiusM", a.probe.radiusM, 2, 64);
+  if (!Array.isArray(a.probe.trees)) fail("ambience.probe.trees", "must list block ids");
+  for (const t of a.probe.trees)
+    if (typeof t !== "string" || !ID.test(t))
+      fail("ambience.probe.trees", `"${t}" is not a block id like "dwell:leaves"`);
+  if (!isObject(a.beds)) fail("ambience.beds", "must be an object");
+  const beds = {};
+  for (const [name, b] of Object.entries(a.beds)) {
+    const where = `ambience bed ${ns}:${name}`;
+    if (!NAME.test(name)) fail(where, "bad name");
+    keysIn(where, b, ["files", "gain", "when"]);
+    if (!Array.isArray(b.files) || b.files.length === 0 || b.files.length > 4)
+      fail(`${where}.files`, "must list 1 to 4 loop files");
+    for (const f of b.files)
+      if (typeof f !== "string" || !SAMPLE_FILE.test(f))
+        fail(`${where}.files`, `"${f}" is not a lower-case .m4a or .mp3 name`);
+    number(`${where}.gain`, b.gain, 0, 1);
+    if (b.gain > a.cap) fail(`${where}.gain`, `${b.gain} is over the cap ${a.cap}`);
+    if (!Array.isArray(b.when)) fail(`${where}.when`, "must list conditions");
+    b.when.forEach((c, i) => {
+      const w = `${where}.when[${i}]`;
+      keysIn(w, c, ["input", "from", "full", "floor"]);
+      if (!AMBIENCE_INPUTS.includes(c.input))
+        fail(`${w}.input`, `unknown input "${c.input}" (one of ${AMBIENCE_INPUTS.join(", ")})`);
+      number(`${w}.from`, c.from, -1000, 1000);
+      number(`${w}.full`, c.full, -1000, 1000);
+      if (c.from === c.full) fail(w, "from and full must differ");
+      number(`${w}.floor`, c.floor, 0, 1, { optional: true });
+    });
+    beds[`${ns}:${name}`] = b;
+  }
+  return { volume: a.volume, fadeS: a.fadeS, cap: a.cap, probe: a.probe, beds };
+}
+
 /** The file's content hash (8 hex digits): its published name changes with its bytes. */
 function contentHash(bytes) {
   return createHash("sha256").update(bytes).digest("hex").slice(0, 8);
@@ -336,9 +395,24 @@ function contentHash(bytes) {
  * rewrites each to its published name (`name-<hash>.m4a`, served once per site under `media/`);
  * returns the files to ship, `{ file, source }`, and their total size.
  */
-function resolveSamples(sounds, dir) {
+function resolveSamples(sounds, dir, beds = {}) {
   const ship = new Map();
   let bytes = 0;
+  for (const [id, b] of Object.entries(beds)) {
+    const files = b.files.map((f) => {
+      const path = join(dir, f);
+      if (!existsSync(path))
+        fail(`ambience bed ${id}.files`, `no file "${f}" in shared/sounds/samples/`);
+      const data = readFileSync(path);
+      const published = f.replace(/[.](\w+)$/, (_, ext) => `-${contentHash(data)}.${ext}`);
+      if (!ship.has(published)) {
+        ship.set(published, f);
+        bytes += data.length;
+      }
+      return published;
+    });
+    beds[id] = { ...b, files };
+  }
   for (const [id, s] of Object.entries(sounds)) {
     if (!s.samples) continue;
     const files = s.samples.files.map((f) => {
@@ -403,6 +477,7 @@ export function resolveSounds(files, samplesDir = SAMPLES_DIR) {
     ui: {},
     controls: {},
     ambient: undefined,
+    ambience: undefined,
     sounds: {},
   };
   const sorted = [...files].sort((a, b) =>
@@ -422,8 +497,13 @@ export function resolveSounds(files, samplesDir = SAMPLES_DIR) {
       validateSound(`sound ${id}`, s);
       out.sounds[id] = s;
     }
+    if (file.ambience !== undefined) {
+      if (out.ambience) fail("ambience", "given twice");
+      out.ambience = validateAmbience(ns, file.ambience);
+    }
   }
-  const samples = resolveSamples(out.sounds, samplesDir);
+  if (!out.ambience) fail("ambience", "missing (the ambience beds)");
+  const samples = resolveSamples(out.sounds, samplesDir, out.ambience.beds);
   const sound = (where, ns, name) => {
     if (typeof name !== "string") fail(where, "must name a sound");
     const id = qualify(ns, name);
