@@ -770,7 +770,12 @@ than in each version directory: release builds load it from the site root (`__ME
 [`CHARACTERS.md`](./CHARACTERS.md) §11). Skinned models from the owner's Unity Asset Store packs
 replace the rigid-part characters, starting with **other players' bodies**: they are drawn as the
 Peasant model (`shared/models/models.json` `player`), and so is your own shadow (S2); your
-first-person arms and your own body seen in first person stay the rigid parts below for now. The data (`shared/models/models.json`)
+first-person arms and your own body seen in first person stay the rigid parts below for now. Since
+0.52.35 the Peasant is **posed from the rigid rig's animator pose** (the same clips, times and
+blends): `models.json` `retarget` maps rig bones to skin joints with rest-pose corrections
+(validated by `gen.mjs`), `dwell_models::retarget` turns each mapped joint by its bone's turn from
+rest, keeping the model's bone lengths, and `SkinnedDraw::rig_pose` carries the pose (the model's own
+clips are the fallback without one; CHARACTERS.md §11.9, ADR 0070's amendment). The data (`shared/models/models.json`)
 lists each model's GLB (`shared/models/glb/`, checked in: the source of truth), scale, yaw, which of
 its clips plays each role (`body_role`'s names, with a speed; a `fallback` role for the rest) and a
 palette remap. `shared/models/import.mjs` makes the GLBs once from the packs' FBX with Blender

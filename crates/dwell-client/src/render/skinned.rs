@@ -54,6 +54,26 @@ pub struct SkinnedDraw {
     pub light: [f32; 2],
     /// Drawn into the shadow maps only (your own body: your shadow).
     pub cast_only: bool,
+    /// The characters rig's pose this frame (the clips, times and blends the rigid body and the
+    /// first-person arms play): a model with a retarget map is posed from it (docs/CHARACTERS.md
+    /// §11.9); None, or no map: the model plays its own clip for `role`.
+    pub rig_pose: Option<dwell_characters::anim::Pose>,
+}
+
+/// The model's pose this frame: retargeted from the rig's pose where the model has a map and one
+/// is given, else its own clip player's.
+pub fn model_pose(
+    data: &ModelData,
+    model: &Model,
+    player: &Player,
+    rig_pose: Option<&dwell_characters::anim::Pose>,
+) -> Vec<anim::Trs> {
+    match (data.retarget, rig_pose) {
+        (Some(map), Some(pose)) => {
+            dwell_models::retarget::pose_from(model, data, &map, dwell_characters::player(), pose)
+        }
+        _ => player.pose(model),
+    }
 }
 
 /// A model-space matrix as a rigid frame: its rotation's columns made orthonormal (the model's
@@ -570,7 +590,7 @@ impl SkinnedRenderer {
                 continue;
             }
             let place = body_matrix(d, data, eye);
-            let globals = anim::globals(model, &p.pose(model));
+            let globals = anim::globals(model, &model_pose(data, model, p, d.rig_pose.as_ref()));
             hands[n] = hand_frame(data, model, &globals, &place);
             let joints: Vec<Mat4> = model
                 .skin
@@ -698,6 +718,7 @@ mod tests {
                 role: "idle",
                 light: [1.0, 0.0],
                 cast_only: false,
+                rig_pose: None,
             };
             let place = body_matrix(&d, data, [0.0; 3]);
             let joints: Vec<Mat4> = anim::joint_matrices(model, &anim::rest(model))
@@ -726,6 +747,7 @@ mod tests {
             role: "walk",
             light: [1.0, 0.0],
             cast_only: false,
+            rig_pose: None,
         };
         let place = body_matrix(&d, data, [0.0; 3]);
         let mut p = Player::new(data, model, "walk");
@@ -821,5 +843,56 @@ mod tests {
         // Joint rows then the light: within the instance block.
         assert!((JOINT_FLOATS + 4) * 4 <= INSTANCE_BYTES as usize);
         assert_eq!(INSTANCE_BYTES % 256, 0);
+    }
+
+    // The shadow and other players are the rig's pose on the Peasant (docs/CHARACTERS.md §11.9):
+    // for the body's clips at sampled times, the skinned hand (where a held item is drawn) and the
+    // rigid body's hand bone (where the first-person body and the arms' items are authored) sit
+    // within a tolerance of each other in the world, turned alike, on both faces.
+    dwell_world::both_faces! {
+        fn the_retargeted_hand_follows_the_rigs_hand_in_the_world(face: FaceFrame) {
+            use dwell_characters::anim::{bone_transforms, sample};
+            let (data, model) = dwell_models::player();
+            let ch = dwell_characters::player();
+            let hand_r = ch.bone("hand_r").unwrap();
+            let feet = face.point([4.0, 7.0, -2.0]);
+            let mut worst = (0.0f32, 0.0f32);
+            for role in ["idle", "walk", "crouch_walk", "break", "place", "jump", "swim"] {
+                let clip = dwell_characters::TABLES.clip(ch.clip(role).unwrap());
+                for s in 0..6 {
+                    let pose = sample(clip, clip.duration * s as f32 / 6.0);
+                    let d = SkinnedDraw {
+                        model: dwell_models::PLAYER,
+                        seed: 1,
+                        feet,
+                        yaw: 30.0,
+                        face,
+                        dead: false,
+                        role,
+                        light: [1.0, 0.0],
+                        cast_only: true,
+                        rig_pose: Some(pose),
+                    };
+                    let place = body_matrix(&d, data, [0.0; 3]);
+                    let p = Player::new(data, model, "idle");
+                    let globals = anim::globals(model, &model_pose(data, model, &p, d.rig_pose.as_ref()));
+                    let skinned = hand_frame(data, model, &globals, &place).unwrap();
+                    let frame = place_frame(feet, 30.0, face, false, [0.0; 3]);
+                    let rigid = frame.then(&bone_transforms(ch, &pose)[hand_r]);
+                    let miss = (0..3).map(|k| (skinned.t[k] - rigid.t[k]).powi(2)).sum::<f32>().sqrt();
+                    // The angle between the two frames' axes (their worst axis).
+                    let turn = (0..3)
+                        .map(|c| {
+                            let dot: f32 = (0..3).map(|r| skinned.m[c][r] * rigid.m[c][r]).sum();
+                            dot.clamp(-1.0, 1.0).acos().to_degrees()
+                        })
+                        .fold(0.0, f32::max);
+                    worst = (worst.0.max(miss), worst.1.max(turn));
+                }
+            }
+            eprintln!("skinned vs rigid hand: worst {:.3} m, {:.1}°", worst.0, worst.1);
+            assert!(worst.0 < 0.2, "{worst:?}");
+            assert!(worst.1 < 10.0, "{worst:?}");
+        }
     }
 }

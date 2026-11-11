@@ -579,7 +579,8 @@ small painted detail inside one face (its eyes) is lost.
 (`anim::BLEND_S`), a change of speed on the same clip keeps its phase. The Peasant has `idle` and
 `walk`: `sprint` is the walk at 1.8×, `crouch_walk` 0.6×, `slide` 0.4×; jump, fall, land, crouch,
 swim, climb and fly play idle until clips are added. The animals map `idle`, `walk` and `sprint`
-(their `run`).
+(their `run`). Since 0.52.35 the Peasant as a player is posed from the characters rig's clips
+(§11.9); its own clips are the fallback for a body given no rig pose.
 
 ### 11.4 Drawing
 
@@ -647,3 +648,38 @@ Model Viewer's **Props** view (`?view=props`) lays them out by category. An inve
 name one (`look: { "model": … }`): the stone pickaxe (`dwell:stone_pickaxe`, not given to anyone)
 proves it, drawn loose and on the hotbar from the prop's triangles. In the hand it shows nothing yet:
 the held items are rigid parts with material indices, and a prop needs a part with its own colours.
+
+### 11.9 The Peasant driven by the rig's clips (0.52.35, ADR 0070 amendment)
+
+The owner (2026-11-10): "My shadow isn't lining up with my first person feet and hands … We should use
+the existing or slightly modified animations we already setup for our character." Other players and
+your shadow are the Peasant **posed from the characters rig's pose**: the same clips, times, blends,
+one-shots, swings and held-item turns the rigid body (your own body in first person) and the
+animator play (§6), not the Peasant's own idle and walk.
+
+- **Data**: a model's `retarget` in `models.json`: `rig` (a characters rig, `biped`), `root` (the
+  mapped bone whose joint takes the clips' root offset) and `bones`: each rig bone → `{ joint, rest }`,
+  the skin joint it turns and `rest`, Euler XYZ degrees in the model's space turning the joint's rest
+  frame onto the bone's (the Peasant stands in an A pose: its arms `rest` ±32–42° about z; the rig's
+  arms and legs hang straight down). `gen.mjs` fails on an unknown rig, bone or joint, a joint mapped
+  twice, a bad `rest` or a `root` that is not mapped; the fixture's two-joint model is retargeted by
+  data alone.
+- **Retarget** (`dwell_models::retarget`): each mapped joint's model-space frame is the bone's turn
+  from its rest (`R_b · R_b,rest⁻¹`, in the character's frame, through the model's yaw) on the
+  joint's corrected rest (`rest · G_rest`); joints the map leaves out (the Peasant's lower spine,
+  shoulders, fingers, toes) keep their rest turn under their parent; the root joint moves by the root
+  offset scaled by the two hip heights (crouching lowers the Peasant by its own legs' share). The
+  model keeps its own proportions (bone lengths).
+- **Use**: `SkinnedDraw::rig_pose` carries the body's animator pose (with the held item's turns);
+  `skinned::model_pose` retargets it when the model has a map, else plays the model's own clip for
+  the role (the animals, and a model without a map). The held item still sits on the hand joint
+  (§11.5), now following the rig's swings.
+- **Alignment, as numbers** (tests): over every body clip at sampled times, each hand and foot's
+  direction and reach from its shoulder or hip is within 9.2 % of the limb's length of the rig's
+  (the worst: a crouch-walk foot); with the Peasant scaled to the rig by hip height, within 13.1 % of
+  the height (arms overhead in the swim: the Peasant's shoulders are lower); in the world, on both
+  faces, the skinned hand (where a held item is drawn) is within 0.15 m and 5.2° of the rigid body's
+  hand bone.
+- **Not yet**: the first-person arms still play their own view-space clips (`fp_*`), so the arms on
+  screen and the shadow's arms differ by design; the Peasant's proportions differ from the rig's
+  (shorter arms, lower shoulders), so a shadow's hand sits up to ~0.15 m from the rigid body's.
