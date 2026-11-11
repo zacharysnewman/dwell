@@ -130,7 +130,7 @@ export function buildRigs() {
 }
 
 /**
- * A model's retarget map (docs/CHARACTERS.md §11.6): `{ rig, root, bones: { bone: { joint, rest } } }`,
+ * A model's retarget map (docs/CHARACTERS.md §11.9): `{ rig, root, bones: { bone: { joint, rest } } }`,
  * each bone one of the characters rig `rig`'s, each joint one of the skin's, `rest` [x, y, z]
  * degrees. Returns it resolved (joints as skin indices). Throws naming the bad entry.
  */
@@ -150,9 +150,11 @@ export function validateRetarget(r, jointNames, rigs, at) {
     if (used.has(joint)) fail(`bone ${bone}: joint ${b.joint} mapped twice`);
     used.add(joint);
     const rest = b.rest ?? [0, 0, 0];
-    if (
-      !(Array.isArray(rest) && rest.length === 3 && rest.every(Number.isFinite))
-    )
+    if (!(
+      Array.isArray(rest) &&
+      rest.length === 3 &&
+      rest.every(Number.isFinite)
+    ))
       fail(`bone ${bone}: rest is [x, y, z] degrees`);
     return { bone, joint, rest };
   });

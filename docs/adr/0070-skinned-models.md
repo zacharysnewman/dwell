@@ -157,6 +157,21 @@ are code and rare. Per build: the models ship with a release, like the block reg
    a dark tip (`bedrock.shadow`). The collar is part of the dog's one mesh (not a loose part a
    `remove` could drop), so it is fur-coloured but its raised ring still shows at full detail.
 
+## Amendment (2026-11-10): the Peasant driven by the rig's clips
+
+The owner: "My shadow isn't lining up with my first person feet and hands" (the shadow was the
+Peasant playing its own idle and walk; the first-person body and arms the rigid rig's clips), and
+"We should use the existing or slightly modified animations we already setup for our character."
+Decision: a skinned model may carry a **retarget map** (`models.json` `retarget`: rig bone → skin
+joint with a rest-pose correction, validated by `gen.mjs`), and a body drawn as such a model is
+posed each frame from the characters rig's animator pose (`dwell_models::retarget`, CHARACTERS.md
+§11.9): the same clips, times and blends the rigid body plays, the model's own bone lengths kept.
+The model's own clips stay as the fallback where no rig pose is given (and for the animals). Tests
+put the alignment as numbers (each hand and foot within 9.2 % of its limb's length; the skinned hand
+within 0.15 m and 5.2° of the rigid hand bone on both faces). Held items stay on the hand joint
+(§11.5). Rejected: authoring new Peasant clips per role (two clips in the pack, ~15 roles to cover,
+and they would still drift from the first-person body's).
+
 ## Consequences
 
 - Characters now come from bought art; adding one is: unpack, add an entry, run the import and the

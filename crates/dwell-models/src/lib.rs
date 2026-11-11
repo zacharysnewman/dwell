@@ -62,7 +62,7 @@ pub struct Hand {
     pub rot: [f32; 3],
 }
 
-/// One rig bone of a retarget map (models.json `retarget.bones`, docs/CHARACTERS.md §11.6).
+/// One rig bone of a retarget map (models.json `retarget.bones`, docs/CHARACTERS.md §11.9).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RetargetBone {
     /// The characters rig's bone (`arm_r`).
@@ -73,7 +73,7 @@ pub struct RetargetBone {
     pub rest: [f32; 3],
 }
 
-/// A model driven by the characters rig's pose (models.json `retarget`, docs/CHARACTERS.md §11.6).
+/// A model driven by the characters rig's pose (models.json `retarget`, docs/CHARACTERS.md §11.9).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Retarget {
     /// The characters rig (`biped`).

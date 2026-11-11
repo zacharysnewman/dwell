@@ -1177,6 +1177,8 @@ impl CharacterRenderer {
                     role: d.role,
                     light: d.light,
                     cast_only: d.cast_only,
+                    // The same pose the rigid body and the arms play, its held item's turns on.
+                    rig_pose: Some(with_item(&d.pose, held_item)),
                 });
                 held_items.push(HeldOnSkin {
                     held: d.held,
@@ -1242,6 +1244,7 @@ impl CharacterRenderer {
                 role: c.role,
                 light: *light,
                 cast_only: false,
+                rig_pose: None,
             });
         }
         let hands = self.skinned.prepare(

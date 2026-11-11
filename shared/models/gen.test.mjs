@@ -108,6 +108,40 @@ test("bad detail levels fail naming the problem", () => {
   );
 });
 
+test("a retarget map is data: the fixture's lands in the table, bad names fail naming them", () => {
+  const f = fixture();
+  const models = validate(f, palette, fixtures);
+  assert.deepEqual(models.two_bone.retarget.bones, [
+    { bone: "hips", joint: 0, rest: [0, 0, 0] },
+    { bone: "arm_r", joint: 1, rest: [0, 0, 180] },
+  ]);
+  assert.match(
+    rust(f, models, "x"),
+    /retarget: Some\(Retarget \{ rig: "biped", root: "hips", bones: &\[RetargetBone \{ bone: "hips", joint: 0/,
+  );
+  for (const [edit, re] of [
+    [(r) => (r.rig = "octopus"), /retarget: no characters rig octopus/],
+    [
+      (r) => (r.bones.tail = { joint: "tip" }),
+      /retarget: no bone tail in rig biped/,
+    ],
+    [
+      (r) => (r.bones.arm_r.joint = "elbow"),
+      /retarget: bone arm_r: no joint elbow/,
+    ],
+    [(r) => (r.bones.arm_l = { joint: "tip" }), /joint tip mapped twice/],
+    [
+      (r) => (r.bones.arm_r.rest = [1, 2]),
+      /bone arm_r: rest is \[x, y, z\] degrees/,
+    ],
+    [(r) => (r.root = "chest"), /root chest is not a mapped bone/],
+  ]) {
+    const g = fixture();
+    edit(g.models.two_bone.retarget);
+    assert.throws(() => validate(g, palette, fixtures), re);
+  }
+});
+
 test("a role naming a clip the GLB lacks fails naming it", () => {
   const f = fixture();
   f.models.two_bone.roles.walk.clip = "cartwheel";

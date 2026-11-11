@@ -1,4 +1,4 @@
-//! A skinned model driven by the characters rig's pose (docs/CHARACTERS.md §11.6, ADR 0070
+//! A skinned model driven by the characters rig's pose (docs/CHARACTERS.md §11.9, ADR 0070
 //! amendment): the same clips, times and blends the rigid body and the first-person arms play
 //! (`dwell_characters::animator`), turned onto the model's joints by its retarget map
 //! (models.json `retarget`).
@@ -151,10 +151,7 @@ pub fn pose(model: &Model, data: &ModelData, map: &Retarget, rig: &RigPose) -> V
         let delta = mul(&r.posed, &transpose(&r.rest));
         let k = dwell_characters::math::euler(b.rest);
         let g_rest = rotation(&rest_g[node]).0;
-        target[node] = Some(mul(
-            &mul(&mul(&yaw_t, &delta), &yaw),
-            &mul(&k, &g_rest),
-        ));
+        target[node] = Some(mul(&mul(&mul(&yaw_t, &delta), &yaw), &mul(&k, &g_rest)));
     }
     let root_node = map
         .bones
@@ -187,7 +184,11 @@ pub fn pose(model: &Model, data: &ModelData, map: &Retarget, rig: &RigPose) -> V
             // The root offset: metres in the character's frame, the hips' height ratio, into the
             // parent's units.
             let hip = rest_g[i][3][1] * data.scale;
-            let k = if rig.hip_m > 1e-6 { hip / rig.hip_m } else { 1.0 };
+            let k = if rig.hip_m > 1e-6 {
+                hip / rig.hip_m
+            } else {
+                1.0
+            };
             let off = apply(&yaw_t, rig.root.map(|v| v * k / data.scale));
             let local_off = apply(&transpose(&pg), off.map(|v| v / ps));
             for (t, o) in out[i].t.iter_mut().zip(local_off) {
@@ -242,7 +243,10 @@ mod tests {
         let r = anim::globals(model, &anim::rest(model));
         for b in map.bones {
             let node = model.skin[b.joint];
-            let want = mul(&dwell_characters::math::euler(b.rest), &rotation(&r[node]).0);
+            let want = mul(
+                &dwell_characters::math::euler(b.rest),
+                &rotation(&r[node]).0,
+            );
             assert!(close(&rotation(&g[node]).0, &want, 1e-4), "{}", b.bone);
         }
     }
@@ -275,12 +279,14 @@ mod tests {
         // The tip (pointing up at rest, `rest` turning it to hang down) swings forward with the arm.
         let tip = model.skin[1];
         let dir = apply(&rotation(&g[tip]).0, [0.0, 1.0, 0.0]);
-        let want = apply(&dwell_characters::math::euler([-90.0, 0.0, 0.0]), [0.0, -1.0, 0.0]);
+        let want = apply(
+            &dwell_characters::math::euler([-90.0, 0.0, 0.0]),
+            [0.0, -1.0, 0.0],
+        );
         for k in 0..3 {
             assert!((dir[k] - want[k]).abs() < 1e-4, "{dir:?} {want:?}");
         }
     }
-
 
     /// The tracked limbs: the rig's end bone and its chain's first, and the Peasant's joints.
     const TRACKED: [(&str, &str, &str, &str); 4] = [
@@ -314,8 +320,20 @@ mod tests {
         let sub = |a: [f32; 3], b: [f32; 3]| -> [f32; 3] { std::array::from_fn(|i| a[i] - b[i]) };
         let (mut limb, mut body) = ((0.0f32, String::new()), (0.0f32, String::new()));
         for role in [
-            "idle", "walk", "sprint", "crouch", "crouch_walk", "jump", "fall", "land", "swim",
-            "climb", "slide", "fly", "break", "place",
+            "idle",
+            "walk",
+            "sprint",
+            "crouch",
+            "crouch_walk",
+            "jump",
+            "fall",
+            "land",
+            "swim",
+            "climb",
+            "slide",
+            "fly",
+            "break",
+            "place",
         ] {
             let Some(c) = ch.clip(role) else { continue };
             let clip = dwell_characters::TABLES.clip(c);
@@ -331,8 +349,9 @@ mod tests {
                     let want_len = len(sub(rest_t[e].t, rest_t[f].t));
                     let got = sub(at(&g, j_end), at(&g, j_first));
                     let got_len = len(sub(at(&gr, j_end), at(&gr, j_first)));
-                    let miss =
-                        len(std::array::from_fn(|i| got[i] / got_len - want[i] / want_len));
+                    let miss = len(std::array::from_fn(|i| {
+                        got[i] / got_len - want[i] / want_len
+                    }));
                     if miss > limb.0 {
                         limb = (miss, format!("{role} t={t:.2} {end}"));
                     }
