@@ -10,8 +10,9 @@
 //! which way is up); each face has its own.
 //!
 //! The server (`dwell-sim`'s `ecology`) holds one per face, steps it by the world's days and saves
-//! it ([`Ecosystem::to_bytes`]). Not yet: individuals made when a player comes near, far rendering,
-//! grazing applied to the real tall grass (docs/ECOLOGY.md §5).
+//! it ([`Ecosystem::to_bytes`]); near players its records become individuals (`dwell-sim`
+//! `herds`), still seen here as [`Ecosystem::near`] summaries. Not yet: far rendering, grazing
+//! applied to the real tall grass (docs/ECOLOGY.md §7).
 
 pub mod codec;
 pub mod data;

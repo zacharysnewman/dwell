@@ -2,6 +2,7 @@
 
 **Status:** Accepted (2026-11-11; S1 built in 0.52.58: species data, the builder, worldgen placement in
 the starter world; S2, thin trunks, in 0.52.59; S3, growth over time, in 0.52.60; S4, per-tree leaf tints). Builds on ADR 0033 (tree growth), ADR 0043 (placements), ADR 0072 (octagonal logs),
+the starter world; S2, thin trunks, in 0.52.59; S3, growth over time, in 0.52.60; S4, saplings, in the next release). Builds on ADR 0033 (tree growth), ADR 0043 (placements), ADR 0072 (octagonal logs),
 ADR 0074 (biomes) and docs/TREE_GROWTH.md §9–§11.
 
 ## Context
@@ -102,6 +103,35 @@ editing `shared/trees/*.json`. Fixed in code: the trunk, branch (`heavy`, `whorl
   (the server grows a planted record, an edit stands, a felled tree stops, the stage survives a
   save; both faces). Seen in game (starter world, `?growth=120`: a stage every 30 s): saplings and
   young oaks fill out and rise over a minute.
-  Not yet: a sapling item that plants a record; trees outside loaded chunks catch up only when
+  Not yet: trees outside loaded chunks catch up only when
   loaded (by design); the records of trees never loaded are not saved (not needed: they are
   generated again at their drawn stage, day 0).
+- **Saplings (S4):** a species names its sapling in its data, `sapling: { item, plantOn, dropChance }`
+  (`shared/trees/gen.mjs` validates it: the item a block of the registry and no other species'
+  sapling, `plantOn` blocks of the registry, the chance in [0, 1]; optional, a species without one is
+  not planted). The item is a block of its own name (`dwell:oak_sapling`, `dwell:pine_sapling`,
+  `dwell:palm_sapling`; a crossed-leaf look, drops itself), so the inventory, the hotbar and the
+  creative catalogue (`shared/items/items.json`, Plants) carry it unchanged. Oak and pine take on
+  grass and dirt (pine on snowy grass too), palm on sand. Placing one (`dwell-sim` `apply_edits`):
+  the server reads the ground face-local below the cell and refuses the edit on any block not in
+  its species' `plantOn` (`growth::plant` → `Refused::WrongGround`); otherwise it plants a `Record`
+  at stage 0 — `since` the world day, the seed `growth::seed_at(anchor)` (a hash of the position:
+  a spot always grows the same tree), the turn from the seed, `planter` `growth::PLANTED` (255: no
+  placement's block swaps) — and writes stage 0's cells (`cells_at(r, 0)`) where the world is still
+  air, the sapling's own cell becoming the trunk's foot. From then the growers step grows it as it
+  grows generated trees. A broken leaf of a recorded tree (`growth::tree_of_leaf`: its current
+  stage's leaf in that cell) drops the species' sapling at `dropChance` (5 % for all three; rolled
+  with the server's entropy, `growth::sapling_drop`) besides the leaf's own drops, where items are
+  used (adventure); creative takes saplings from the catalogue. Saved with the record in the
+  `tree_growth` table (no new field: the planter byte says planted). Not breaking: new blocks only
+  (appended: existing ids and the goldens' hashes unchanged, their registry line updated). Tests:
+  `growth.rs` (a planted record is stage 0 at the anchor and grows a stage every `daysPerStage`, wrong
+  ground refused, a leaf found to be its tree's, the planted record's saved form; both faces),
+  `species.rs` (every species names a sapling; the fixture shrub's sapling by data alone),
+  `dwell-sim/tests/saplings.rs` (placing plants stage 0 and a record that reaches stage n after
+  `daysPerStage` × n days, wrong ground refused, a crown's leaves drop saplings at about the data's
+  rate (seeded), the planted record survives a save; both faces), the node tests of
+  `shared/trees` and `shared/items` (bad sapling entries fail; every species' sapling is in the
+  catalogue). Not yet: a sapling drawn as its own small model (the crossed leaves are a placeholder);
+  leaves of trees whose chunks were never scanned (no record yet) drop no sapling until the growers
+  step has looked at them (within seconds of loading).

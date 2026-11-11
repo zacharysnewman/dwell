@@ -116,6 +116,20 @@ comes inside the arms' near plane (`ARMS_NEAR` + 1 cm).
 (`shared/tools/tools.json` `durability`; owner, 2026-11-11: "stone pick wears too like axe, same with
 shovel"); the metal tools never wear, and nothing wears in creative (`creativeWear` false).
 
+### 1b. Saplings (ADR 0079 S4)
+
+A tree species (`shared/trees/*.json`) names its sapling: `sapling: { "item", "plantOn", "dropChance" }`.
+The item is a block of its own name (`dwell:oak_sapling`, `dwell:pine_sapling`, `dwell:palm_sapling`;
+a crossed-leaf `cross` look, `needsSupport: below`, drops itself), listed in the catalogue's Plants
+with `drag: none`, so it is held, carried and placed as any block. Placing it is the species' rule,
+not the block's: the server refuses a sapling whose ground (face-local below) is not in its species'
+`plantOn` (grass and dirt for oak and pine, snowy grass too for pine, sand for palm), and otherwise
+plants the species' stage-0 tree and its growth record (docs/TREE_GROWTH.md §11), the sapling's cell
+becoming the trunk's foot. Drops: a broken leaf of a recorded species tree drops its sapling at the
+species' `dropChance` (5 %) besides the leaf's own sticks, where items are used (adventure). Adding a
+species' sapling is data alone: the block, the catalogue entry and the species' `sapling` (the trees'
+and the items' node tests check it is a block and in the catalogue).
+
 ## 2. Pieces on the wire
 
 `BlockEditRequest` carries the piece (protocol 19): `rows` (1–`MAX_PIECE_ROWS` 2) and `down`. A place

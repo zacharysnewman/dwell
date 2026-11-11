@@ -2,6 +2,36 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.52.88",
+      "changes": [
+        "Oak, pine and palm saplings: plant one on grass or dirt (oak, pine) or sand (palm) and it grows into a tree over the world's days",
+        "Breaking a tree's leaves sometimes drops its sapling in adventure; creative lists the saplings under Plants",
+        "A sapling placed on the wrong ground is refused"
+      ]
+    },
+    {
+      "version": "0.52.87",
+      "changes": [
+        "Herds near you now come as does with, sometimes, a stag, and they appear only on open, dry, gentle ground",
+        "Wolf packs far away still hunt a herd that is near you, and far herds still keep away from a pack that is near you"
+      ]
+    },
+    {
+      "version": "0.52.86",
+      "changes": [
+        "Volumetric clouds: real 3D clouds you can fly up to, over and through, lit by the sun and the moon",
+        "A new Medium clouds setting is the desktop default; High is sharper and costs more; Low keeps the lighter flat layer, for phones"
+      ]
+    },
+    {
+      "version": "0.52.85",
+      "changes": [
+        "The Starter world's youngest island now has a lava lake on its summit",
+        "Lava now burns as its own kind of damage (older versions show it as a fall)",
+        "Digging a channel or pouring water next to lava now changes where it flows"
+      ]
+    },
+    {
       "version": "0.52.84",
       "changes": [
         "Starter world: the alpine tundra, boreal forest and steppe have their own snow lines, set by temperature, with glacier ice high on the tundra",

@@ -135,7 +135,9 @@
     "Damage": 97,
     "WorldgenRequest": 98,
     "WorldgenConfig": 99,
-    "CausesHello": 100
+    "CausesHello": 100,
+    "EcologyHello": 101,
+    "Ecology": 102
   },
   "rejectReasons": {
     "ProtocolVersion": 1,

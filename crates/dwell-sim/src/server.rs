@@ -42,7 +42,8 @@ mod chopping;
 mod creatures;
 mod ecology;
 pub use ecology::{
-    CATCH_UP_DAYS, EcologySnapshot, GroupView, IDLE_DAYS, MAX_STEPS_PER_TICK, next_step, night_on,
+    CATCH_UP_DAYS, ECOLOGY_SEND_EVERY, EcologySnapshot, GroupView, IDLE_DAYS, MAX_STEPS_PER_TICK,
+    next_step, night_on,
 };
 mod ground;
 mod growth;
@@ -617,6 +618,8 @@ struct Session {
     creatures_hello: bool,
     /// Whether its client draws block damage (`DamageHello`, docs/BLOCK_DAMAGE.md).
     damage_hello: bool,
+    /// Whether its client reads the far ecology (`EcologyHello`, docs/ECOLOGY.md §9).
+    ecology_hello: bool,
     /// The tool it holds (item name, the hold's plane), from `ChopAction::Held`; having sent one,
     /// it understands `HeldTools` (ADR 0067).
     held_tool: Option<(String, bool)>,
@@ -674,6 +677,7 @@ impl Session {
             burn: dwell_lava::Burn::default(),
             creatures_hello: false,
             damage_hello: false,
+            ecology_hello: false,
             held_tool: None,
             primed: false,
             low_water: usize::MAX,
@@ -1567,6 +1571,7 @@ impl Server {
             Message::CausesHello(n) => s.known_cause = n,
             Message::CreaturesHello => self.creatures_hello(id),
             Message::DamageHello => self.damage_hello(id),
+            Message::EcologyHello => self.ecology_hello(id),
             Message::WorldgenRequest => {
                 let m = Message::WorldgenConfig(self.worldgen_text.clone());
                 self.send_reliable(id, &m, Channel::Control);
@@ -1856,6 +1861,7 @@ impl Server {
         self.grow_trees();
         // The far ecology steps by them too (docs/ECOLOGY.md §6).
         self.step_ecology();
+        self.send_ecology();
 
         // Loose items fall, are picked up and despawn (ADR 0066); inventories changed are sent.
         self.step_items();
@@ -2515,6 +2521,9 @@ impl Server {
         let mut damaged: Vec<[i32; 3]> = Vec::new();
         // Every broken cell and what it was, in any mode: ground items on them are knocked loose.
         let mut under_ground: Vec<([i32; 3], dwell_blocks::StateId)> = Vec::new();
+        // Saplings planted this tick (ADR 0079 S4): each becomes its species' stage-0 tree.
+        let mut planted: Vec<dwell_worldgen::growth::Record> = Vec::new();
+        let day = self.world_days();
         let ids: Vec<SessionId> = self.sessions.keys().copied().collect();
         for id in ids {
             let s = &self.sessions[&id];
@@ -2545,6 +2554,16 @@ impl Server {
                     s.edit_refused.push(seq);
                     continue;
                 }
+                // A species' sapling takes only on its `plantOn` ground (shared/trees; ADR 0079 S4).
+                let plant = match edit.action {
+                    BlockEditAction::Place => sapling_planted(&self.world, &outcome, day),
+                    _ => Ok(None),
+                };
+                let Ok(plant) = plant else {
+                    s.stats.edits_rejected += 1;
+                    s.edit_refused.push(seq);
+                    continue;
+                };
                 // The item asked for must be held; it is used up when it is what goes in (a torch
                 // held against dynamite lights it and stays in the hand).
                 if uses_items && edit.action == BlockEditAction::Place {
@@ -2662,6 +2681,7 @@ impl Server {
                     }
                     continue;
                 }
+                planted.extend(plant);
                 // Every cell of the piece (a 1 m block's two; docs/ITEMS.md) in one set of writes.
                 for (at, m) in outcome.writes(&mut self.world, medium_kept) {
                     if edit.action == BlockEditAction::Break {
@@ -2784,6 +2804,16 @@ impl Server {
             }
             s.region_edits = held;
         }
+        // A planted sapling stands as its species' stage-0 tree, in what is still air (or the
+        // sapling itself), and its record grows it from today (the growers step).
+        for r in planted {
+            for (c, m) in dwell_worldgen::growth::cells_at(&r, 0) {
+                if c == r.anchor || self.world.get_voxel(c[0], c[1], c[2]) == M.air {
+                    changes.set(&mut self.world, c, m);
+                }
+            }
+            self.growth.trees.insert(r.anchor, r);
+        }
         let edited = changes.cells();
         self.broadcast_changes(changes, VoxelModificationReason::Edit);
         self.send_damage(&damaged, Vec::new());
@@ -2795,6 +2825,7 @@ impl Server {
                 Some(&n) => self.drop_destroyed(was, dwell_world::centre_of_cell(cell), n),
                 None => self.drop_block(was, dwell_world::centre_of_cell(cell)),
             }
+            self.drop_sapling(cell, dwell_world::centre_of_cell(cell));
         }
         self.knock_ground(&under_ground);
         // An explosive lit by an edit (a torch held against it) starts its fuse (docs/EXPLOSIVES.md).
@@ -4954,6 +4985,23 @@ fn held_break_item(s: &Session, uses_items: bool) -> Option<&str> {
             .map(|(t, _)| t.as_str())
             .filter(|t| !t.is_empty())
     }
+}
+
+/// A place edit's sapling (ADR 0079 S4): `Ok(None)` when it places no species' sapling, `Ok(record)`
+/// for one on its species' `plantOn` ground (face-local below the cell), `Err` on other ground.
+fn sapling_planted(
+    world: &VoxelWorld,
+    outcome: &dwell_world::edit::EditOutcome,
+    day: f64,
+) -> Result<Option<dwell_worldgen::growth::Record>, dwell_worldgen::growth::Refused> {
+    let item = dwell_blocks::block_of(outcome.material).name;
+    if dwell_worldgen::species::of_sapling(item).is_none() {
+        return Ok(None);
+    }
+    let f = FaceFrame::at_row(outcome.cell[1]);
+    let [x, y, z] = f.cell(outcome.cell);
+    let ground = dwell_blocks::block_of(world.get_voxel_if_loaded(f.cell([x, y - 1, z]))).name;
+    dwell_worldgen::growth::plant(item, outcome.cell, ground, day).map(Some)
 }
 
 #[cfg(test)]

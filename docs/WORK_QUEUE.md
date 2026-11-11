@@ -45,6 +45,12 @@ Last updated: 2026-11-11 (0.52.68).
      tree from either chunk at a border; placed leaves and the default world unchanged. Mesher logic
      and tests only: the in-game look is still to be checked on a GPU. Outstanding: a sapling item,
      frond blades.
+   - **Status (saplings, ADR 0079 S4):** saplings built: `dwell:oak_sapling`, `dwell:pine_sapling`,
+     `dwell:palm_sapling`, named by each species' `sapling` data (`plantOn`: grass/dirt for oak and
+     pine, sand for palm; `dropChance` 5 %); placed on its ground a sapling becomes stage 0 and a
+     growth record that grows by the world days; other ground is refused; leaves of species trees drop
+     them in adventure; creative lists them under Plants. Outstanding: per-tree leaf tints, frond
+     blades, a sapling's own model.
 7. **Chopping prototype** (behind a switch, not replacing chopping until approved). Decided:
    - A tree falls once more than 50 % of its cross-section is cut, from one side or two.
    - The back cut is supported, not required: notch + back cut leaves a hinge that steers the fall
@@ -141,12 +147,25 @@ Last updated: 2026-11-11 (0.52.68).
    64 m of a player becomes its deer or wolves (the existing creatures, driven) and folds back past 96 m
    (survivors, averaged needs, centroid); the mockup's needs-driven rules as data (flee, sleep at night,
    graze the cell and sometimes a real tall grass block, chase and kill, mate up to the cap, company);
-   the creature rules for deer and wolves left out while the ecology runs. Next (ECOLOGY.md §7): simple
-   far rendering with a client read-out, local worlds' maps, grazing applied to tall grass as chunks
-   load; the far step seeing near groups; the herd's stag.
+   the creature rules for deer and wolves left out while the ecology runs. **Slice 3b built** (logic, no
+   rendering): the far step sees near groups through a summary the near side keeps (hunted, fled, counted
+   in the totals; a far kill becomes a death near players); a herd comes near as the creature rule's mix
+   (does, sometimes a stag; fawns by the same data); individuals only on the ecology's ground (walkable
+   island cell, dry, ≤ `near.maxSlopeDeg`), else the nearest within `near.searchM`; the far groups sent
+   every 2 s to clients that ask (`EcologyHello`, `inventory_flags::ECOLOGY`) and `__dwell.ecology()`
+   (ECOLOGY.md §9). Next (ECOLOGY.md §7): simple far rendering from that read-out, local worlds' maps,
+   grazing applied to tall grass as chunks load.
 12. **Players' saved structures as placement sources** (owner 2026-11-11): per player (their library, usable
    in any world they create); placed copies editable, not protected; 32³ for now (may change), or larger
    structures as a grid of 32³ tiles. Sharing between players: Future.
+13. **Volumetric clouds** (owner 2026-11-11: "volumetric clouds in the sky. These clouds will likely be
+   useful for weather sim, and volcano smoke. So they need to be performant."). **Built (branch
+   `claude/volumetric-clouds`, CLOUDS.md §8):** a ray-marched layer in its own reduced-resolution pass
+   with temporal accumulation and a depth-aware upsample; tiers as data (High ½ opt-in, Medium ¼ the
+   desktop default, Low the 2D deck); plumes with a colour by data; the cheap deck kept for Snell's
+   window and reflections. Bench from above: High +1.5 ms (budget 1.5), Medium +0.9 ms (budget 0.8).
+   Next: trace the clouds pass's fixed cost; plumes as run-time uniforms for a volcano or weather
+   system.
 
 Cloud sessions: logic-only items can run as `claude --cloud` sessions in parallel (verified 2026-11-11).
 

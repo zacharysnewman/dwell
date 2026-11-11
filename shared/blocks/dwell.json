@@ -701,6 +701,57 @@
       "emits": 13,
       "color": "#e8561c",
       "textures": "stone"
+    },
+    {
+      "$comment": "An oak sapling (ADR 0079 S4, docs/TREE_GROWTH.md §11): the item a player plants. Its species (shared/trees) names it as its `sapling.item` and says where it takes (`plantOn`); the server turns a placed sapling into the species' stage-0 tree and its growth record, so this block stands in the world only on a build without that species. A simple crossed-leaf look; drops itself. Prototype content.",
+      "name": "oak_sapling",
+      "sound": "dwell:grass",
+      "density": 200,
+      "shape": "empty",
+      "placeable": true,
+      "look": "cross",
+      "render": "cutout",
+      "cross": { "height": 0.7, "quads": 2 },
+      "wind": { "strength": 0.06, "speed": 1.0 },
+      "selectionBox": [0.2, 0, 0.2, 0.8, 0.7, 0.8],
+      "needsSupport": "below",
+      "medium": "air",
+      "color": "#6fa83a",
+      "textures": "leaves"
+    },
+    {
+      "$comment": "A pine sapling (ADR 0079 S4, docs/TREE_GROWTH.md §11): the item a player plants. Its species (shared/trees) names it as its `sapling.item` and says where it takes (`plantOn`); the server turns a placed sapling into the species' stage-0 tree and its growth record, so this block stands in the world only on a build without that species. A simple crossed-leaf look; drops itself. Prototype content.",
+      "name": "pine_sapling",
+      "sound": "dwell:grass",
+      "density": 200,
+      "shape": "empty",
+      "placeable": true,
+      "look": "cross",
+      "render": "cutout",
+      "cross": { "height": 0.8, "quads": 2 },
+      "wind": { "strength": 0.06, "speed": 1.0 },
+      "selectionBox": [0.2, 0, 0.2, 0.8, 0.7, 0.8],
+      "needsSupport": "below",
+      "medium": "air",
+      "color": "#3f7a4a",
+      "textures": "leaves"
+    },
+    {
+      "$comment": "A palm sapling (ADR 0079 S4, docs/TREE_GROWTH.md §11): the item a player plants. Its species (shared/trees) names it as its `sapling.item` and says where it takes (`plantOn`); the server turns a placed sapling into the species' stage-0 tree and its growth record, so this block stands in the world only on a build without that species. A simple crossed-leaf look; drops itself. Prototype content.",
+      "name": "palm_sapling",
+      "sound": "dwell:grass",
+      "density": 200,
+      "shape": "empty",
+      "placeable": true,
+      "look": "cross",
+      "render": "cutout",
+      "cross": { "height": 0.6, "quads": 2 },
+      "wind": { "strength": 0.06, "speed": 1.0 },
+      "selectionBox": [0.2, 0, 0.2, 0.8, 0.7, 0.8],
+      "needsSupport": "below",
+      "medium": "air",
+      "color": "#8fbf4a",
+      "textures": "leaves"
     }
   ]
 }

@@ -71,12 +71,64 @@ pub struct CloudLight {
     pub top_light: f64,
 }
 
+/// The volumetric layer (`volume`, docs/CLOUDS.md §8).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct VolumeTunables {
+    pub base_m: f64,
+    pub top_m: f64,
+    pub top_floor: f64,
+    pub detail_cell_m: f64,
+    pub detail_erosion: f64,
+    pub extinction: f64,
+    pub light_step_m: f64,
+    pub powder: f64,
+    pub ambient: f64,
+    pub max_distance_m: f64,
+}
+
+/// One Clouds setting value's march (`tiers`): steps per pixel (0: the 2D deck), light samples
+/// per step, the march's resolution divisor and the share of each new frame in the accumulated
+/// picture.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct VolumeTier {
+    pub steps: u32,
+    pub light_steps: u32,
+    pub divisor: u32,
+    pub history_blend: f64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct VolumeTiers {
+    pub high: VolumeTier,
+    pub medium: VolumeTier,
+    pub low: VolumeTier,
+}
+
+/// An extra density source (`plumes`): a vertical column of cloud, e.g. a volcano's ash, in world
+/// metres. Its radius grows by `spread` times from base to top.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Plume {
+    pub name: &'static str,
+    pub x_m: f64,
+    pub z_m: f64,
+    pub radius_m: f64,
+    pub spread: f64,
+    pub base_m: f64,
+    pub top_m: f64,
+    pub density: f64,
+    /// Its colour (sRGB), tinting the lit cloud where it is the plume (ash grey, smoke).
+    pub color: Rgb,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CloudTunables {
     pub deck: DeckTunables,
     pub shape: ShapeTunables,
     pub wind: WindTunables,
     pub light: CloudLight,
+    pub volume: VolumeTunables,
+    pub tiers: VolumeTiers,
+    pub plumes: &'static [Plume],
 }
 
 pub use crate::clouds_gen::CLOUDS;
@@ -91,11 +143,13 @@ pub const LACUNARITY: f64 = 2.236_067_977_499_79;
 /// `coverage` is close to the share of the sky covered.
 const CONTRAST: f64 = 1.9;
 
-/// The Clouds setting: Off, Low (fewer octaves, no self-shadow) or High.
+/// The Clouds setting: Off, Low (the 2D deck: fewer octaves, no self-shadow), Medium or High (the
+/// volume at their `tiers`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CloudQuality {
     Off,
     Low,
+    Medium,
     High,
 }
 
@@ -105,6 +159,7 @@ impl CloudQuality {
         match name {
             "off" => Some(Self::Off),
             "low" => Some(Self::Low),
+            "medium" => Some(Self::Medium),
             "high" => Some(Self::High),
             _ => None,
         }
@@ -113,13 +168,31 @@ impl CloudQuality {
         match self {
             Self::Off => 0,
             Self::Low => t.shape.low_octaves,
-            Self::High => t.shape.octaves,
+            Self::Medium | Self::High => t.shape.octaves,
         }
     }
     pub fn self_shadow(self) -> bool {
         self == Self::High
     }
+    /// The volumetric march this setting draws (`tiers`; Off: none). Zero steps: the 2D deck.
+    pub fn volume(self, t: &CloudTunables) -> VolumeTier {
+        match self {
+            Self::Off => VolumeTier {
+                steps: 0,
+                light_steps: 0,
+                divisor: 1,
+                history_blend: 1.0,
+            },
+            Self::Low => t.tiers.low,
+            Self::Medium => t.tiers.medium,
+            Self::High => t.tiers.high,
+        }
+    }
 }
+
+/// The most march steps and light samples per step (`clouds.mjs`'s MAX_STEPS, MAX_LIGHT_STEPS).
+pub const MAX_STEPS: u32 = 64;
+pub const MAX_LIGHT_STEPS: u32 = 4;
 
 /// The distance along a unit view ray to the deck. The deck is the sphere of radius `curvature +
 /// altitude` about a centre `curvature` below sea level, under the eye; the eye is `height` below it
@@ -195,7 +268,9 @@ fn heading(deg: f64) -> [f64; 2] {
 /// offset from it, in cells, each wrapped into one period), `cfg` (coverage, octaves, 1 with the
 /// self-shadow, the deck's height above the eye: negative above it) and `inside` (x: how much the
 /// eye is in cloud — the cloud's density under the eye, faded in over `cross_fade_m` either side of
-/// the deck, times `inside_fog`; y, z, w unused). `seconds` is the
+/// the deck, times `inside_fog`, 0 when the volume is drawn: its march is the fog; y, z the eye's
+/// world x and z modulo `wrap_m` (the plumes' place); w the volume's steps plus its light samples
+/// over 8, 0 for the 2D deck). `seconds` is the
 /// clouds' clock (world time where there is one). Face B's clouds are another part of the noise
 /// (half a period away).
 pub fn cloud_uniforms(
@@ -222,6 +297,7 @@ pub fn cloud_uniforms(
     } else {
         0.0
     };
+    let vol = quality.volume(t);
     let cells = |m: f64| cells(m) as f32;
     [
         [
@@ -236,7 +312,12 @@ pub fn cloud_uniforms(
             if quality.self_shadow() { 1.0 } else { 0.0 },
             height as f32,
         ],
-        [inside as f32, 0.0, 0.0, 0.0],
+        [
+            if vol.steps > 0 { 0.0 } else { inside as f32 },
+            eye[0].rem_euclid(wrap) as f32,
+            eye[2].rem_euclid(wrap) as f32,
+            vol.steps as f32 + vol.light_steps as f32 / 8.0,
+        ],
     ]
 }
 
@@ -396,8 +477,260 @@ pub fn cloud_wgsl(t: &CloudTunables) -> String {
         format!("const CLOUD_SUN_WARMTH: f32 = {};", f(l.sun_warmth)),
         format!("const CLOUD_TWILIGHT: f32 = {};", f(TWILIGHT)),
     ];
-    format!("{}\n{CLOUD_FNS}", consts.join("\n"))
+    let v = &t.volume;
+    let (lo, hi) = volume_span(t);
+    let detail = (s.scale_m / v.detail_cell_m).round();
+    let volume = [
+        format!("const CLOUD_MAX_STEPS: i32 = {MAX_STEPS};"),
+        format!("const CLOUD_MAX_LIGHT_STEPS: i32 = {MAX_LIGHT_STEPS};"),
+        format!("const CLOUD_WRAP: f32 = {};", f(s.wrap_m)),
+        format!("const CLOUD_VOL_BASE: f32 = {};", f(v.base_m)),
+        format!("const CLOUD_VOL_TOP: f32 = {};", f(v.top_m)),
+        format!("const CLOUD_VOL_LO: f32 = {};", f(lo)),
+        format!("const CLOUD_VOL_HI: f32 = {};", f(hi)),
+        format!("const CLOUD_VOL_TOP_FLOOR: f32 = {};", f(v.top_floor)),
+        format!("const CLOUD_VOL_DETAIL: f32 = {};", f(detail)),
+        format!(
+            "const CLOUD_VOL_PERIOD: i32 = {};",
+            period(t) * detail as i64
+        ),
+        format!("const CLOUD_VOL_CELL: f32 = {};", f(v.detail_cell_m)),
+        format!("const CLOUD_VOL_EROSION: f32 = {};", f(v.detail_erosion)),
+        format!("const CLOUD_VOL_EXTINCTION: f32 = {};", f(v.extinction)),
+        format!("const CLOUD_VOL_LIGHT_STEP: f32 = {};", f(v.light_step_m)),
+        format!("const CLOUD_VOL_POWDER: f32 = {};", f(v.powder)),
+        format!("const CLOUD_VOL_AMBIENT: f32 = {};", f(v.ambient)),
+        format!(
+            "const CLOUD_VOL_MAX_DISTANCE: f32 = {};",
+            f(v.max_distance_m)
+        ),
+    ];
+    format!(
+        "{}\n{CLOUD_FNS}\n{}\n{}\n{VOLUME_FNS}",
+        consts.join("\n"),
+        volume.join("\n"),
+        plumes_wgsl(t.plumes)
+    )
 }
+
+/// The heights the march covers: the layer's and every plume's (face-local metres).
+pub fn volume_span(t: &CloudTunables) -> (f64, f64) {
+    t.plumes
+        .iter()
+        .fold((t.volume.base_m, t.volume.top_m), |(lo, hi), p| {
+            (lo.min(p.base_m), hi.max(p.top_m))
+        })
+}
+
+/// A plume's density (0 to its `density`) at a point `dx`, `dz` metres across from its axis and at
+/// face-local height `h`: full within half its radius there, fading to none at the radius, faded in
+/// above its base and out below its top. The shader's `cloud_plumes` is the generated twin.
+pub fn plume_density(p: &Plume, dx: f64, dz: f64, h: f64) -> f64 {
+    let u = (h - p.base_m) / (p.top_m - p.base_m);
+    if !(0.0..=1.0).contains(&u) {
+        return 0.0;
+    }
+    let r = p.radius_m * (1.0 + p.spread * u);
+    let dist = (dx * dx + dz * dz).sqrt();
+    p.density
+        * (1.0 - smoothstep(0.5 * r, r, dist))
+        * smoothstep(0.0, 0.08, u)
+        * (1.0 - smoothstep(0.85, 1.0, u))
+}
+
+/// The plumes' density for the shader, one block per plume (none: 0).
+fn plumes_wgsl(plumes: &[Plume]) -> String {
+    let mut src = String::from(
+        "// The plumes (clouds.json `plumes`): `rel` the point's offset from the eye (m, across), `h` its
+// face-local height, `eye` the eye's x and z modulo CLOUD_WRAP. The densest wins: its colour (rgb)
+// and density (w).
+fn cloud_plumes(rel: vec2f, h: f32, eye: vec2f) -> vec4f {
+	var d = vec4f(1.0, 1.0, 1.0, 0.0);
+",
+    );
+    for p in plumes {
+        src.push_str(&format!(
+            "	{{ // {name}
+		let u = (h - {base}) / ({top} - {base});
+		if (u > 0.0 && u < 1.0) {{
+			let o = vec2f({x}, {z}) - eye;
+			let axis = o - CLOUD_WRAP * round(o / CLOUD_WRAP);
+			let r = {radius} * (1.0 + {spread} * u);
+			let k = {density} * (1.0 - smoothstep(0.5 * r, r, length(rel - axis))) * smoothstep(0.0, 0.08, u) * (1.0 - smoothstep(0.85, 1.0, u));
+			if (k > d.w) {{
+				d = vec4f({color}, k);
+			}}
+		}}
+	}}
+",
+            name = p.name,
+            base = f(p.base_m),
+            top = f(p.top_m),
+            x = f(p.x_m),
+            z = f(p.z_m),
+            radius = f(p.radius_m),
+            spread = f(p.spread),
+            density = f(p.density),
+            color = vec3(p.color),
+        ));
+    }
+    src.push_str("\treturn d;\n}\n");
+    src
+}
+
+const VOLUME_FNS: &str = r"
+fn cloud_hash3(c: vec3i) -> f32 {
+	let x = ((c.x % CLOUD_VOL_PERIOD) + CLOUD_VOL_PERIOD) % CLOUD_VOL_PERIOD;
+	let z = ((c.z % CLOUD_VOL_PERIOD) + CLOUD_VOL_PERIOD) % CLOUD_VOL_PERIOD;
+	var h = (u32(x) * 0x8da6b343u) ^ (bitcast<u32>(c.y) * 0xd8163841u) ^ (u32(z) * 0xcb1ab31fu);
+	h = (h ^ (h >> 16u)) * 0x7feb352du;
+	h = (h ^ (h >> 15u)) * 0x846ca68bu;
+	h ^= h >> 16u;
+	return f32(h) / 4294967295.0;
+}
+
+// Trilinear value noise with a smooth (cubic) fade, periodic across.
+fn cloud_value3(p: vec3f) -> f32 {
+	let i = floor(p);
+	let f = p - i;
+	let u = f * f * (3.0 - 2.0 * f);
+	let c = vec3i(i);
+	let a = mix(cloud_hash3(c), cloud_hash3(c + vec3i(1, 0, 0)), u.x);
+	let b = mix(cloud_hash3(c + vec3i(0, 1, 0)), cloud_hash3(c + vec3i(1, 1, 0)), u.x);
+	let d = mix(cloud_hash3(c + vec3i(0, 0, 1)), cloud_hash3(c + vec3i(1, 0, 1)), u.x);
+	let e = mix(cloud_hash3(c + vec3i(0, 1, 1)), cloud_hash3(c + vec3i(1, 1, 1)), u.x);
+	return mix(mix(a, b, u.y), mix(d, e, u.y), u.z);
+}
+
+// The volume's density (0-1) at the noise point `q` (cells), face-local height `h` (m), `rel` metres
+// across from the eye: the deck's noise as the weather map (a one-octave warp, two octaves: the
+// march's budget), cut higher with height (rounded tops, the densest tallest), plus the plumes, eroded by the
+// 3D detail (`detail`: the view samples; the light samples skip it).
+fn dwell_cloud_density(q: vec2f, h: f32, rel: vec2f, coverage: f32, warp_off: vec2f, eye: vec2f, detail: bool) -> f32 {
+	var d = 0.0;
+	let y = (h - CLOUD_VOL_BASE) / (CLOUD_VOL_TOP - CLOUD_VOL_BASE);
+	if (y > 0.0 && y < 1.0 && coverage > 0.0) {
+		let w0 = q + warp_off;
+		let wq = q + CLOUD_WARP * (vec2f(cloud_value(w0), cloud_value(w0 + vec2f(5.2, 1.3))) - 0.5);
+		// The coverage's cut rises with height, so each cloud narrows upward into a rounded top
+		// (a dome over a flat base) instead of a straight-walled column; the densest reach highest.
+		let n = clamp((cloud_fbm(wq, 2, 0.0) - 0.5) * CLOUD_CONTRAST + 0.5, 0.0, 1.0);
+		let cut = 1.0 - coverage + (1.0 - CLOUD_VOL_TOP_FLOOR) * y * y + 0.15 * (1.0 - smoothstep(0.0, 0.12, y));
+		d = smoothstep(cut, cut + CLOUD_SOFTNESS, n);
+	}
+	d = max(d, cloud_plumes(rel, h, eye).w);
+	if (detail && d > 0.0) {
+		let n = cloud_value3(vec3f(q.x * CLOUD_VOL_DETAIL, h / CLOUD_VOL_CELL, q.y * CLOUD_VOL_DETAIL));
+		d = clamp((d - CLOUD_VOL_EROSION * (1.0 - n)) / max(1.0 - CLOUD_VOL_EROSION, 0.05), 0.0, 1.0);
+	}
+	return d;
+}
+
+// The volumetric clouds along the unit ray `dir` out to `max_t` (m; the opaque scene's distance, or
+// a large number for the sky), as a layer for dwell_cloud_over: colour (rgb, hazed toward `clear`
+// with distance) and cover (a). `jitter` (0-1, per pixel) offsets the steps. `inside` is
+// cloud_uniforms' third vector (its w the steps and light samples; 0: none, the 2D deck draws).
+// Lit by the sun or the moon over the face: Beer's law along a few light samples, a powder term for
+// dark edges, the sky's light in the shade, a silver lining toward the light.
+fn dwell_cloud_volume(clear: vec3f, dir: vec3f, face: f32, max_t: f32, jitter: f32, offsets: vec4f, cfg: vec4f, inside: vec4f, lights: CloudLighting) -> vec4f {
+	return dwell_cloud_march(clear, dir, face, max_t, jitter, offsets, cfg, inside, lights).layer;
+}
+
+// The march's layer and the distance (m) along the ray to the first cloud it met (-1: none).
+struct CloudMarch {
+	layer: vec4f,
+	first: f32,
+};
+
+// dwell_cloud_volume with the distance to the first cloud: the half-resolution pass keeps it, so
+// the composite can put the scene in front of clouds behind it.
+fn dwell_cloud_march(clear: vec3f, dir: vec3f, face: f32, max_t: f32, jitter: f32, offsets: vec4f, cfg: vec4f, inside: vec4f, lights: CloudLighting) -> CloudMarch {
+	let none = CloudMarch(vec4f(0.0), -1.0);
+	let steps = i32(floor(inside.w));
+	let light_steps = i32(round(fract(inside.w) * 8.0));
+	if (steps <= 0 || cfg.y <= 0.0) {
+		return none;
+	}
+	let eye_h = CLOUD_ALTITUDE - cfg.w;
+	let rise = face_rise(face, dir);
+	var t0 = 0.0;
+	var t1 = min(max_t, CLOUD_VOL_MAX_DISTANCE);
+	if (abs(rise) > 1e-5) {
+		let a = (CLOUD_VOL_LO - eye_h) / rise;
+		let b = (CLOUD_VOL_HI - eye_h) / rise;
+		t0 = max(t0, min(a, b));
+		t1 = min(t1, max(a, b));
+	} else if (eye_h < CLOUD_VOL_LO || eye_h > CLOUD_VOL_HI) {
+		return none;
+	}
+	if (t1 <= t0) {
+		return none;
+	}
+	let up = face_up(face);
+	let sun_up = dot(lights.sun, up);
+	let light = select(lights.moon, lights.sun, sun_up >= dot(lights.moon, up));
+	let light_rise = dot(light, up);
+	let dayness = smoothstep(-CLOUD_TWILIGHT, CLOUD_TWILIGHT, dot(up, lights.day_pole));
+	let low = (1.0 - smoothstep(0.02, 0.4, sun_up)) * CLOUD_SUN_WARMTH;
+	let day_lit = mix(CLOUD_SUNLIT * cloud_hue(lights.sun_color), CLOUD_SUNSET, low);
+	let day_shade = CLOUD_SHADE * mix(vec3f(1.0), cloud_hue(lights.day_ambient), 0.5);
+	let night_lit = CLOUD_NIGHT_LIT * cloud_hue(lights.moon_color);
+	let night_shade = CLOUD_NIGHT_SHADE * mix(vec3f(1.0), cloud_hue(lights.night_ambient), 0.5);
+	let lit_col = mix(night_lit, day_lit, dayness);
+	let shade_col = mix(night_shade, day_shade, dayness);
+	let dt = (t1 - t0) / f32(steps);
+	var trans = 1.0;
+	var energy = vec3f(0.0);
+	var first = -1.0;
+	for (var i = 0; i < CLOUD_MAX_STEPS; i++) {
+		if (i >= steps || trans < 0.02) {
+			break;
+		}
+		let t = t0 + (f32(i) + jitter) * dt;
+		let rel = dir.xz * t;
+		let h = eye_h + rise * t;
+		let q = offsets.xy + rel / CLOUD_SCALE;
+		let d = dwell_cloud_density(q, h, rel, cfg.x, offsets.zw, inside.yz, true);
+		if (d <= 0.001) {
+			continue;
+		}
+		if (first < 0.0) {
+			first = t;
+		}
+		var od = d * CLOUD_VOL_LIGHT_STEP;
+		for (var j = 0; j < CLOUD_MAX_LIGHT_STEPS; j++) {
+			if (j >= light_steps) {
+				break;
+			}
+			let s = (f32(j) + 1.0) * CLOUD_VOL_LIGHT_STEP;
+			let lrel = rel + light.xz * s;
+			od += CLOUD_VOL_LIGHT_STEP * dwell_cloud_density(offsets.xy + lrel / CLOUD_SCALE, h + light_rise * s, lrel, cfg.x, offsets.zw, inside.yz, false);
+		}
+		// Beer toward the light, with the powder term darkening the thin, unlit edges a little.
+		let beer = exp(-CLOUD_ABSORPTION * CLOUD_VOL_EXTINCTION * od);
+		// A plume's own colour where it is the plume (ash grey, smoke).
+		let plume = cloud_plumes(rel, h, inside.yz);
+		let tint = mix(vec3f(1.0), plume.rgb, clamp(plume.w, 0.0, 1.0));
+		let powder = mix(1.0, 1.0 - exp(-4.0 * CLOUD_VOL_EXTINCTION * od), CLOUD_VOL_POWDER);
+		let col = tint * mix(shade_col, lit_col, CLOUD_VOL_AMBIENT + (1.0 - CLOUD_VOL_AMBIENT) * beer * powder);
+		let a = 1.0 - exp(-CLOUD_VOL_EXTINCTION * d * dt);
+		energy += trans * a * col;
+		trans *= 1.0 - a;
+	}
+	let cover = 1.0 - trans;
+	if (cover <= 0.0) {
+		return none;
+	}
+	var col = energy / cover;
+	// The silver lining: thin cloud toward the light glows.
+	let rim = CLOUD_SILVER * pow(max(dot(dir, light), 0.0), CLOUD_SILVER_POWER) * trans;
+	col += rim * mix(CLOUD_MOON_GLOW * 0.5, CLOUD_SUN_GLOW, dayness);
+	// Far cloud takes the sky's haze behind it, and fades out with the deck's distance fade.
+	let fade = dwell_cloud_fade(cfg.w);
+	col = mix(col, clear, 0.85 * smoothstep(0.0, fade.y, first));
+	return CloudMarch(vec4f(col, cover * CLOUD_OPACITY * (1.0 - smoothstep(fade.x, fade.y, first))), first);
+}
+";
 
 const CLOUD_FNS: &str = r"
 fn cloud_hash(c: vec2i) -> f32 {
@@ -735,14 +1068,14 @@ mod tests {
                     [x, deck, 0.0],
                     FaceFrame::A,
                     0.0,
-                    CloudQuality::High,
+                    CloudQuality::Low,
                     1.0,
                 )[2][0]
                     > 0.3
             })
             .expect("a cloud");
         let at = |y: f64| {
-            cloud_uniforms(&t, [x, y, 0.0], FaceFrame::A, 0.0, CloudQuality::High, 1.0)[2][0]
+            cloud_uniforms(&t, [x, y, 0.0], FaceFrame::A, 0.0, CloudQuality::Low, 1.0)[2][0]
         };
         let full = (t.deck.inside_fog * t.shape.opacity) as f32;
         assert!(at(deck) > 0.0 && at(deck) <= full + 1e-6, "{}", at(deck));
@@ -986,5 +1319,94 @@ mod tests {
             0.5,
         )[0];
         assert!((d[0] - a[0]).abs() > 1.0);
+    }
+}
+
+#[cfg(test)]
+mod volume_tests {
+    use super::*;
+
+    /// A test fixture plume (a volcano's ash column, by data alone).
+    const ASH: Plume = Plume {
+        name: "test:ash",
+        x_m: 500.0,
+        z_m: -300.0,
+        radius_m: 200.0,
+        spread: 1.5,
+        base_m: 300.0,
+        top_m: 3500.0,
+        density: 1.0,
+        color: [0.43, 0.42, 0.4],
+    };
+    const WITH_ASH: CloudTunables = CloudTunables {
+        plumes: &[ASH],
+        ..CLOUDS
+    };
+
+    fn validate(src: &str) {
+        let src = format!("{}{src}", dwell_world::FaceFrame::wgsl());
+        let module = naga::front::wgsl::parse_str(&src).expect("WGSL parses");
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .expect("WGSL validates");
+    }
+
+    #[test]
+    fn the_settings_pick_their_tier_from_the_data() {
+        assert_eq!(CloudQuality::High.volume(&CLOUDS), CLOUDS.tiers.high);
+        assert_eq!(CloudQuality::Low.volume(&CLOUDS), CLOUDS.tiers.low);
+        assert_eq!(CloudQuality::Off.volume(&CLOUDS).steps, 0);
+        // The shipped tiers: High marches, Low (phones' default) keeps the 2D deck.
+        let high = CloudQuality::High.volume(&CLOUDS).steps;
+        assert!(high > 0 && high <= MAX_STEPS);
+        assert_eq!(CLOUDS.tiers.low.steps, 0);
+    }
+
+    #[test]
+    fn the_uniforms_carry_the_tier_and_the_volume_replaces_the_deck_fog() {
+        let at = |q| cloud_uniforms(&CLOUDS, [10.0, 1800.0, 20.0], FaceFrame::A, 0.0, q, 1.0)[2];
+        let high = at(CloudQuality::High);
+        let tier = CLOUDS.tiers.high;
+        assert_eq!(high[3].floor() as u32, tier.steps);
+        assert_eq!((high[3].fract() * 8.0).round() as u32, tier.light_steps);
+        assert_eq!(high[0], 0.0, "the march is the fog inside the volume");
+        assert_eq!([high[1], high[2]], [10.0, 20.0]);
+        let low = at(CloudQuality::Low);
+        assert_eq!(low[3], 0.0);
+    }
+
+    #[test]
+    fn a_plume_by_data_is_dense_on_its_axis_and_clear_outside() {
+        assert!(plume_density(&ASH, 0.0, 0.0, 1500.0) > 0.99);
+        assert_eq!(plume_density(&ASH, 0.0, 0.0, 200.0), 0.0, "below its base");
+        assert_eq!(plume_density(&ASH, 0.0, 0.0, 3600.0), 0.0, "above its top");
+        assert_eq!(
+            plume_density(&ASH, 600.0, 0.0, 400.0),
+            0.0,
+            "past its radius near the base"
+        );
+        assert!(
+            plume_density(&ASH, 300.0, 0.0, 3000.0) > 0.5,
+            "it widens upward"
+        );
+        // The march reaches down to it, and the shader has it.
+        assert_eq!(volume_span(&WITH_ASH), (300.0, 3500.0));
+        assert_eq!(
+            volume_span(&CLOUDS),
+            (CLOUDS.volume.base_m, CLOUDS.volume.top_m)
+        );
+        let src = cloud_wgsl(&WITH_ASH);
+        assert!(src.contains("// test:ash"));
+        assert!(src.contains("const CLOUD_VOL_LO: f32 = 300.000000;"));
+        assert!(!cloud_wgsl(&CLOUDS).contains("test:ash"));
+    }
+
+    #[test]
+    fn the_volume_shader_is_valid_wgsl_with_and_without_plumes() {
+        validate(&cloud_wgsl(&CLOUDS));
+        validate(&cloud_wgsl(&WITH_ASH));
     }
 }

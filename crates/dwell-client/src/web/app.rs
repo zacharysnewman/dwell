@@ -1816,6 +1816,34 @@ impl Client {
             .flat_map(|(p, yaw, speed)| [p[0], p[1], p[2], yaw, f64::from(speed)])
             .collect()
     }
+    /// The far ecology the server last told of (docs/ECOLOGY.md §9; DEV_TOOLS.md): `{ day, groups:
+    /// [{ id, face: "a" | "b", species, x, z, size }] }` (face-local metres), or null before the
+    /// first (a server without an ecology, or an older one, never sends one).
+    #[wasm_bindgen(js_name = ecology)]
+    pub fn ecology(&self) -> JsValue {
+        let s = self.inner.borrow();
+        let Some(m) = s.game.as_ref().and_then(|g| g.ecology.as_ref()) else {
+            return JsValue::NULL;
+        };
+        let groups: Array = m
+            .groups
+            .iter()
+            .map(|g| {
+                let o = Object::new();
+                set(&o, "id", g.id);
+                set(&o, "face", if g.face == 0 { "a" } else { "b" });
+                set(&o, "species", g.species.as_str());
+                set(&o, "x", g.x);
+                set(&o, "z", g.z);
+                set(&o, "size", g.size);
+                JsValue::from(o)
+            })
+            .collect();
+        let o = Object::new();
+        set(&o, "day", m.day);
+        set(&o, "groups", groups);
+        o.into()
+    }
     #[wasm_bindgen(js_name = blasts)]
     pub fn blasts(&self) -> Vec<f64> {
         let s = self.inner.borrow();

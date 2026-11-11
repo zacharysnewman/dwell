@@ -2913,6 +2913,21 @@ chunks), keeps the last selection (`LodSystem::update`; ~1 ms a frame standing s
   `face`) and samples another part of the noise. Clients draw the clouds as visuals only: they go
   over no network and don't affect the simulation. The Clouds setting: Off, Low (3 octaves, no
   self-shadow) or High (5 octaves and the self-shadow). Measured GPU cost: see §7.4.
+  **Volumetric clouds [in progress, 2026-11-11]** (`CLOUDS.md` §8, ADR 0034's amendment): the
+  setting is Off / Low / Medium / High, each tier data (`clouds.json` `tiers`: march steps, light
+  samples, resolution divisor, history blend; 0 steps is the 2D deck: Low). On Medium (desktops'
+  default, ¼ resolution) and High (opt-in, ½) a **clouds pass** before the composite ray-marches a
+  layer between `volume.baseM` and `topM` (`clouds_fs` → `dwell_cloud_march`, jittered per pixel and
+  frame, early exit at 98 % opacity) into a reduced `rgba16float` buffer (premultiplied colour, cover)
+  and an `r16float` first-cloud distance, blended with the last frame's buffer reprojected by
+  direction (a `CloudPrev` uniform with the last camera; reset on new buffers or a jump), then copied
+  to the history. The composite upsamples it in place of the eye's deck (`upsampled_clouds`,
+  depth-aware: hidden where the scene is nearer than the four texels' nearest first cloud). Density:
+  the deck's noise as a weather map (the same coverage uniform), a cut rising with height, 3D detail,
+  plus `plumes` (extra density columns with a colour, as data, generated into the shader); Beer and
+  powder lighting. Snell's window, the reflections and the other face's sky keep the deck. The
+  deck's CPU in-cloud fog is off on a volume tier (the march fogs by density). Telemetry
+  `gpu.clouds`.
 - Coarse sections: where a cell is taller than the relief, the column's top cell takes the
   material of the column's surface (not the bedrock its bottom voxel samples; a regression test
   covers it); a sea whose water no cell samples (the cell is deeper than the sea) shows water on
@@ -3777,7 +3792,7 @@ in the code yet.
 | Loading stages (shell, `shared/look/loading.json` `stages` → `client/src/ui/loading.gen.ts`) | 10 stages (page, game, graphics, worldFile, worldMap, server, spawn, connect, join, terrain); slow past 3 s | What the loading screen lists while the game starts, with times (§6.3) |
 | `OFF_VIEW_PRIORITY` (client, `dwell-lod` `system.rs`) | 1/8, beyond the full-detail distance only | The LOD's load order outside the view (§6.6) |
 | Water reflections (client, `shared/look/reflections.json` → `dwell-look` `reflections.gen.rs`) | Low: sky only; Medium: 12 march + 8 refine steps, 24 km, 3 cloud octaves; High: 28 + 10, 48 km, 5 octaves with self-shadow; thickness 1.5 m + 3 %, edge fade 12 % of the screen height (top and bottom only), distance fade 30 %, the land's ray steered by 0.3 of the ripples' slope; land and clouds reflected only where the surface reflects over 5 % (faded in to 10 %); a phone's Medium: 8 + 5 steps, 2 octaves | Screen-space reflections of land and the clouds in the water (Phase 26 W5a, `WATER_RENDERING.md` §8) |
-| Clouds (client, `shared/look/clouds.json` → `dwell-look` `clouds.gen.rs`) | deck 1.8 km up on a 400 km sphere, 1 km cells repeating every 128 km, 5 / 3 octaves (High / Low), coverage 42%, wind 6 m/s toward 70° | The sky's cloud layer (§6.6 Clouds, `CLOUDS.md`); High costs about 0.9 ms more composite GPU time than Off at 1280 × 720 on an Apple GPU, Low about 0.7 ms; from above with the deck over most of the screen about 0.9 ms |
+| Clouds (client, `shared/look/clouds.json` → `dwell-look` `clouds.gen.rs`) | deck 1.8 km up on a 400 km sphere, 1 km cells repeating every 128 km, 5 / 3 octaves (High / Low), coverage 42%, wind 6 m/s toward 70° | The sky's cloud layer (§6.6 Clouds, `CLOUDS.md`); Low (the deck) costs about 0.7 ms more composite GPU time than Off at 1280 × 720 on an Apple GPU, from above about 0.9 ms; the volume (layer 1350–2700 m): High (½ resolution, 16 steps, 1 light sample) about +0.5 ms from the ground and +1.5 ms from above, Medium (¼, 10 steps) +0.3 and +0.9 ms (`CLOUDS.md` §8.3) |
 | Height fog (client, `shared/look/fog.json` → `dwell-look` `fog.gen.rs` `FOG`) | distance 16 km, density 95%, height 1.8 km | Fixed, look data, not a setting (§6.6; owner, 2026-10-21: a clear day, about 100 km visibility, so the island's far side reads hazy like a mountain 40 mi off) |
 | Footstep strides (client, `shared/sounds` `gaits`) | walk 2.0 m, run 2.7 m, crouch 1.1 m, climb 0.75 m, swim 2.4 m | Distance between footsteps, climbing and swim strokes (§5.2), with each gait's loudness |
 | Sound speed ranges (client, `shared/sounds` `events.*.speed`) | land 3.5–16 m/s, enter 1.5–12, exit 1–6, rise/dive 2–30 | Speed at which an event starts sounding and at which its intensity reaches 1 |

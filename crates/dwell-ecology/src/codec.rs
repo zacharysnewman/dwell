@@ -148,6 +148,7 @@ impl Ecosystem {
             grazing,
             groups,
             next_id,
+            near: Vec::new(),
         })
     }
 }

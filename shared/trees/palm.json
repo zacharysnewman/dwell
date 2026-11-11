@@ -19,5 +19,6 @@
     "scale": [0.3, 1]
   },
   "variety": { "crown": [0.85, 1.15], "lightness": [0.88, 1.1], "hue": [-0.03, 0.03] },
+  "sapling": { "item": "dwell:palm_sapling", "plantOn": ["dwell:sand"], "dropChance": 0.05 },
   "growth": { "stages": 8, "daysPerStage": 3, "wild": [0, 1, 1, 1, 2, 3, 5, 12], "variants": 16 }
 }

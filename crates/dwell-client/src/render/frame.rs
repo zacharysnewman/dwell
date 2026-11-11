@@ -140,18 +140,60 @@ pub fn scene_layout(device: &wgpu::Device, samples: u32) -> wgpu::BindGroupLayou
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                 count: None,
             },
+            filterable(3),
+            // The volumetric clouds' buffer and their first cloud's distance (CLOUDS.md §8.6).
+            filterable(4),
+            filterable(5),
+        ],
+    })
+}
+
+/// The clouds pass's own group (3; binding 0 is the motion pass's `finished`): the accumulated
+/// clouds of the last frame, a filtering sampler, and the last frame's camera (`CloudPrev`).
+pub fn cloud_history_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("cloud history"),
+        entries: &[
+            filterable(1),
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
             wgpu::BindGroupLayoutEntry {
                 binding: 3,
                 visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: wgpu::BufferSize::new(CLOUD_PREV_BYTES),
                 },
                 count: None,
             },
         ],
     })
+}
+
+/// The clouds pass's uniform (`CloudPrev`): five vec4s.
+pub const CLOUD_PREV_BYTES: u64 = 5 * 16;
+
+/// The volumetric clouds' buffer's format: premultiplied colour and cover.
+pub const CLOUDS: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
+/// The distance to each texel's first cloud (m; 65000: none).
+pub const CLOUD_DIST: wgpu::TextureFormat = wgpu::TextureFormat::R16Float;
+
+fn filterable(binding: u32) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Texture {
+            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+            view_dimension: wgpu::TextureViewDimension::D2,
+            multisampled: false,
+        },
+        count: None,
+    }
 }
 
 /// The scene targets the light shafts pass reads (group 2: the colour and the view depth, as
@@ -195,6 +237,13 @@ pub struct Targets {
     /// the shafts pass reads (ADR 0064).
     pub shafts: Target,
     pub scene_read: wgpu::BindGroup,
+    /// The volumetric clouds (CLOUDS.md §8.6, the tier's reduced size; 1 × 1 without them): this
+    /// frame's accumulated clouds, their first cloud's distance, the last frame's copy, and the
+    /// clouds pass's group over that copy.
+    pub clouds: Target,
+    pub cloud_dist: Target,
+    pub cloud_history: Target,
+    pub cloud_group: wgpu::BindGroup,
 }
 
 /// What [`Targets::new`] makes the scene's groups with: the scene layout, the shafts pass's read
@@ -204,6 +253,10 @@ pub struct SceneGroups<'a> {
     pub read_layout: &'a wgpu::BindGroupLayout,
     pub sampler: &'a wgpu::Sampler,
     pub shafts: (u32, u32),
+    /// The volumetric clouds' buffer size, the clouds pass's group layout and its uniform.
+    pub clouds: (u32, u32),
+    pub cloud_layout: &'a wgpu::BindGroupLayout,
+    pub cloud_prev: &'a wgpu::Buffer,
 }
 
 impl Targets {
@@ -266,6 +319,55 @@ impl Targets {
             let view = texture.create_view(&Default::default());
             (texture, view)
         };
+        let small = |format, label, size: (u32, u32), usage| {
+            let texture = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some(label),
+                size: wgpu::Extent3d {
+                    width: size.0.max(1),
+                    height: size.1.max(1),
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format,
+                usage,
+                view_formats: &[],
+            });
+            let view = texture.create_view(&Default::default());
+            (texture, view)
+        };
+        let clouds = small(
+            CLOUDS,
+            "clouds",
+            groups.clouds,
+            read | wgpu::TextureUsages::COPY_SRC,
+        );
+        let cloud_dist = small(CLOUD_DIST, "cloud distance", groups.clouds, read);
+        let cloud_history = small(
+            CLOUDS,
+            "cloud history",
+            groups.clouds,
+            wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        );
+        let cloud_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("cloud history"),
+            layout: groups.cloud_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&cloud_history.1),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(groups.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: groups.cloud_prev.as_entire_binding(),
+                },
+            ],
+        });
         let scene = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("scene"),
             layout,
@@ -285,6 +387,14 @@ impl Targets {
                 wgpu::BindGroupEntry {
                     binding: 3,
                     resource: wgpu::BindingResource::TextureView(&shafts.1),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(&clouds.1),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::TextureView(&cloud_dist.1),
                 },
             ],
         });
@@ -338,7 +448,17 @@ impl Targets {
             under,
             shafts,
             scene_read,
+            clouds,
+            cloud_dist,
+            cloud_history,
+            cloud_group,
         }
+    }
+
+    /// The volumetric clouds' buffer size.
+    pub fn clouds_size(&self) -> (u32, u32) {
+        let s = self.clouds.0.size();
+        (s.width, s.height)
     }
 
     /// The shafts' buffer's size.
@@ -362,6 +482,9 @@ impl Drop for Targets {
         self.view_depth.0.destroy();
         self.depth.0.destroy();
         self.shafts.0.destroy();
+        self.clouds.0.destroy();
+        self.cloud_dist.0.destroy();
+        self.cloud_history.0.destroy();
         if let Some(((t, _), _)) = &self.under {
             t.destroy();
         }
