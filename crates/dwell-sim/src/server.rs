@@ -47,6 +47,7 @@ pub use ecology::{
 mod ground;
 mod growth;
 mod items;
+mod lava;
 mod vitals;
 
 use crate::app_version::APP_VERSION;
@@ -605,6 +606,8 @@ struct Session {
     /// and the ticks it has been out of air since the last drowning damage.
     vitals_hello: bool,
     drown_ticks: u32,
+    /// Its lava burn (docs/proposals/VOLCANOES.md §6): burning left after leaving lava.
+    burn: dwell_lava::Burn,
     /// Whether its client draws creatures (`CreaturesHello`, ADR 0073).
     creatures_hello: bool,
     /// Whether its client draws block damage (`DamageHello`, docs/BLOCK_DAMAGE.md).
@@ -662,6 +665,7 @@ impl Session {
             chop_ready: 0,
             vitals_hello: false,
             drown_ticks: 0,
+            burn: dwell_lava::Burn::default(),
             creatures_hello: false,
             damage_hello: false,
             held_tool: None,
@@ -918,6 +922,12 @@ pub struct Server {
     damage: dwell_protocol::damage::Damage,
     /// The saved damage is a newer build's: kept, not written over.
     damage_unread: bool,
+    /// The lava fields (docs/proposals/VOLCANOES.md §6), saved with the world (`lava` table).
+    lava: crate::lava::Lava,
+    /// The saved lava is a newer build's: kept, not written over.
+    lava_unread: bool,
+    /// Steam from lava meeting water since the last `take_lava_steam` (the clients' puffs, later).
+    lava_steam: Vec<crate::lava::Steam>,
     /// The trees' growth records (ADR 0079 S3), saved with the world.
     growth: dwell_worldgen::growth::Records,
     /// The saved records are a newer build's: kept, not written over.
@@ -1074,6 +1084,9 @@ impl Server {
             cuts_unread: false,
             damage: Default::default(),
             damage_unread: false,
+            lava: Default::default(),
+            lava_unread: false,
+            lava_steam: Vec::new(),
             growth: Default::default(),
             growth_unread: false,
             ecology: ecology::Ecology::new(
@@ -1661,6 +1674,7 @@ impl Server {
         s.health = 0;
         s.inputs.clear();
         s.respawn_tick = respawn_tick;
+        s.burn = dwell_lava::Burn::default(); // the dead don't burn on into their respawn
         s.preload_center = preload;
         s.preload_complete = false;
         let mut e = self.event(PlayerEventKind::Death, &self.sessions[&id]);
@@ -1687,6 +1701,7 @@ impl Server {
             self.damage(id, amount, DamageCause::Fall);
         }
         self.drown(id);
+        self.burn(id);
     }
 
     /// Advances the simulation by one 1/SIM_HZ step.
@@ -1827,6 +1842,8 @@ impl Server {
         self.settle_pieces();
         self.phase_ms[7] += watch.lap_ms();
         self.flow_water();
+        // Lava flows, cools and quenches (docs/proposals/VOLCANOES.md §6).
+        self.flow_lava();
         // Trees grow by the world's days (ADR 0079 S3).
         self.grow_trees();
         // The far ecology steps by them too (docs/ECOLOGY.md §6).
@@ -4320,6 +4337,12 @@ impl Server {
                 None => self.damage_unread = true,
             }
         }
+        if let Some(b) = db.lava() {
+            match crate::lava::Lava::from_bytes(&b, &dwell_lava::DATA) {
+                Some(l) => self.lava = l,
+                None => self.lava_unread = true,
+            }
+        }
         if let Some(b) = db.tree_growth() {
             match dwell_worldgen::growth::Records::from_bytes(&b) {
                 Some(g) => self.growth = g,
@@ -4447,6 +4470,9 @@ impl Server {
         batch.loose_items = Some(self.loose.to_bytes());
         if !self.cuts_unread {
             batch.cuts = Some(self.cuts.to_bytes());
+        }
+        if !self.lava_unread && !self.lava.is_empty() {
+            batch.lava = Some(self.lava.to_bytes());
         }
         if !self.growth_unread {
             batch.tree_growth = Some(self.growth.to_bytes());

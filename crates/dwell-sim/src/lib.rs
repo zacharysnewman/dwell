@@ -10,6 +10,7 @@ pub mod entropy;
 pub mod felling;
 pub mod fixed_step;
 pub mod jobs;
+pub mod lava;
 pub mod lod_propagation;
 pub mod loose_items;
 pub mod server;

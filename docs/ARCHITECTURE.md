@@ -3418,7 +3418,7 @@ prototype's 4 km² window: an hour on one core); later, water as its own layer o
 the surface meshed from depth; deferred by the owner, 2026-11-05: clients keep water as blocks); G4 the grid's settings as data
 (`shared/water/*.json`), pools for still water and the held sea as in the prototype.
 
-### 6.8 Lava **[in progress: the simulation core built (`dwell-lava`, V1); not yet in the server, the chunks, the saves or drawn]**
+### 6.8 Lava **[in progress: the simulation core and the server built (V1); not yet drawn]**
 
 ([`proposals/VOLCANOES.md`](./proposals/VOLCANOES.md) §6, WORK_QUEUE item 8.) Lava is a **hot fluid
 on its own surface grid** (`dwell_lava::Field`), not a second liquid on the water grid (§6.7): the
@@ -3450,10 +3450,25 @@ face-local 1 m columns (bed, lava depth, heat 0–1, a water flag), its vents an
 - **Faces:** face-local; world points and cells cross only through `FaceFrame` (`submerged`,
   `is_near`, `LavaEvent::cells`); the crate is in the both-faces scan.
 
-**Not yet:** the server's fields and tick, the rock and lava cells written into chunks, the water
-grid's columns and steam applied to it, the damage on the server (a `Burn` damage cause, sent as
-`Fall` to older clients as `Drown` is), the save table, the lava block (light, the look) and the
-steam's particles and sound.
+**In the server** (`dwell-sim` `lava.rs`, `server/lava.rs`): the world's fields (`Lava`), each on one
+face, placed round a vent (`Server::place_lava_vent`, a `VentSpot`: fluid by name, lake or river, rate,
+a lake's depth over the vent's bed, the field's radius) with their beds and water read from the world;
+ticked every `tickEvery` server ticks (near a player every lava tick, far ones owing their time). Each
+tick's changes go out as one `Rebake` modification through the edit path (the water grid is told, as
+of any edit): each column's molten rows (`Field::lava_rows`, ½ m cell rows) are the fluid's block
+(`dwell:lava`: no collision, `emits` the fluid's `light`, a placeholder look), written only into open
+cells and cleared to air where the lava has gone; a `Rock` event's rows become the rock; a `Steam` event
+takes `steamWaterM` off the top of that column's water and is queued for the clients
+(`take_lava_steam`; not on the wire yet). A player whose feet are in lava burns (`Burn` per session,
+reset at death) through the server's `damage` (none in creative), sent as cause `Fall`: a `Burn` cause
+needs the clients to know it first (an older client refuses an unknown cause). Saved with the world
+as one record in an optional `lava` table (`Lava::to_bytes`: each field's face and `record_of`),
+written only when the world has lava; a record this build can't read is kept, not written over.
+
+**Not yet:** the lava's look (light, glow, crust) and the steam's particles and sound on the clients;
+the water grid's own columns as the fields' water flags (a field reads them once, at placement) and
+edits to a field's bed after placement; a `Burn` cause on the wire; vents placed by worldgen (V2's
+hotspot summits).
 
 ## 7. Physics Pipeline
 

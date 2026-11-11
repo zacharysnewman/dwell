@@ -35,6 +35,12 @@ use dwell_world::FaceFrame;
 use crate::data::{HotFluid, LavaData, VentDef, VentKind};
 
 const G: f32 = 9.81;
+
+/// The cell row boundary nearest a face-local height (m): rows are `CELL_H` tall (½ m,
+/// HALF_HEIGHT_GRID.md §2), so a column's lava and rock are written in whole rows.
+pub fn row_at(m: f32) -> i32 {
+    (f64::from(m) / dwell_world::CELL_H).round() as i32
+}
 /// A depth below which a column holds no lava (m).
 const FILM: f32 = 1e-4;
 
@@ -178,6 +184,16 @@ impl Field {
         self.ground[i] + self.depth[i]
     }
 
+    /// The face-local cell rows column `i`'s lava fills (empty when it holds none): from its bed's
+    /// row boundary to its surface's, so a cell is lava once lava covers most of it.
+    pub fn lava_rows(&self, i: usize) -> Range<i32> {
+        if self.depth[i] <= 0.0 {
+            let r = row_at(self.ground[i]);
+            return r..r;
+        }
+        row_at(self.ground[i])..row_at(self.surface(i)).max(row_at(self.ground[i]))
+    }
+
     /// The lava stored (m³).
     pub fn stored(&self) -> f64 {
         self.depth.iter().map(|&d| f64::from(d)).sum()
@@ -230,7 +246,7 @@ impl Field {
         self.depth[i] = 0.0;
         self.heat[i] = 0.0;
         self.rocked += f64::from(d);
-        let rows = from.round() as i32..self.ground[i].round() as i32;
+        let rows = row_at(from)..row_at(self.ground[i]);
         if !rows.is_empty() {
             self.events.push(LavaEvent::Rock {
                 x: i % self.w,
