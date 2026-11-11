@@ -1110,3 +1110,54 @@ as bright at midnight as at noon.
   window is a dim night blue (main: a bright white-cyan window at night); the moon disc was not caught
   in frame. GPU (HUD) the same as main within noise: midday 3.4 / 3.4 ms, night 6.0 / 6.0 ms.
   Outstanding: the owner's look; the discs aimed in frame at sunset and night; a lake view.
+
+### 16.1 Underwater at night: the window is the sky above (2026-11-11, 0.52.53)
+
+Owner, 2026-11-11: "Check the underwater update at night, and you should be looking from just outside
+the water up compared to just under the water up, because that's the mismatch." Benched over seed 7's
+sea (M1, Medium, clouds High), 0.3 m and 2 m above and below one spot, straight up and toward the moon
+(15° up, t 0.8689, yaw 40), at midnight (full moon), sunset (t 0.8208, yaw 208) and midday; scratch
+scenarios in the session's scratchpad (`underwater-night`, `underwater-deep`). Differences found on
+0.52.52 (below vs above):
+
+- **No stars, no clouds, a different moon.** The window looked up `dwell_sky` (the gradient and halos)
+  and drew its own moon and sun discs (bodies × 1.5, only on a `bodyPath` tier); the sky pass draws
+  `dwell_sky_bodies` (stars, moon, sun) under the clouds. 2 m under at midnight the window was a plain
+  blue with cells, no stars or clouds.
+- **A white-cyan wash.** The window's glow (shafts.json `window`, #c8f4ff at 0.4) was mixed over the sky:
+  straight up at midnight the window's red channel was 2.3 × the sky's (the new test's red run).
+- **A sun-patch wash.** The underside's sun patch (in-scatter × the patch) was added inside the window
+  too, a cyan haze round the sun's image at midday.
+- **A glowing blue sea at night.** The water seen from inside (the mirror outside the window, the floor)
+  kept full saturation, while the scene above takes the moonlight's grey (`scene_display`): 2 m under at
+  midnight the view averaged sRGB (1, 42, 130) against the sky's (16, 22, 45).
+- **Cells.** The underside's cells darkened and lightened the window's sky at 0.3.
+- **Not a difference:** the fog. Its clear distance (3 m) covers the window's whole cone from 0.3 m (the
+  rim's ray is 0.45 m long); at 2 m only the rim's rays pass it.
+- **Not changed:** 0.3 m under, the waterline's lens plane (§12, `lensM` 0.4) draws the view above the
+  line as from the air, so looking up from just under shows the window only near the line; and the
+  light shafts (ADR 0064) still glow over the view.
+
+Fixed:
+
+- **One sky.** `sky_above_with_clouds(dir, clear, deck, fw, bodies)` is the sky above the horizon for the
+  sky pass (`sky_behind_with_clouds`, bodies 1) and for the window (`window_sky`, along `water_exit`'s
+  ray, the clouds' footprint from the next pixel's bent ray): the stars, the moon in its phase, the sun
+  and the clouds, on every tier (the CPU's too, as its sky pass). `window.bodies` scales the bodies
+  over the gradient (water 1: as above).
+- **No glow over it.** shafts.json water `window.glow` 0; the sun patch stays on the mirror only.
+- **Moonlit water.** `moonlit` gives the mirror and what is seen under the surface the time of day's
+  saturation (`frame.day.horizon.a`), as `scene_display` does above; the window's sky keeps its colour.
+- **Fewer cells.** underwater.json water `window.cells` 0.1.
+
+Seen after (pairs above | below): 2 m under at midnight the window is the starry night sky with the
+clouds, squeezed into the cone, inside a dark navy mirror (mean (11, 17, 40) vs the sky's (16, 22, 45));
+at midday a clear blue sky with the clouds and the small refracted sun disc (main: a pale white-cyan
+sheet); at sunset the warm clouds at the rim. 0.3 m under the strip under the line is a grey-navy, not
+bright blue. GPU (bench `gpu.frame` p50, 2 m under looking up): night 5.37 ms vs main 5.35, midday
+5.03 vs 4.72 (the window's clouds). Tests: `render::water`
+`looking_up_through_the_window_shows_the_sky_seen_from_just_above` (both faces, midnight, the moon 15° up
+and midday: the window's sky straight up 0.3 m under within 2 % of the sky pass's straight up, through
+the `window_sky` twin; red on 0.52.52's data, green after) and
+`the_window_shows_the_real_sky_and_bodies_scaled_by_its_light` (the one sky function, `moonlit`).
+Outstanding: the owner's look; the lens plane's air view 0.3 m under; the mirror's brightness at sunset.
