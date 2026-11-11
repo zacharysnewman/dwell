@@ -185,7 +185,9 @@ mod tests {
         let b = REFLECTIONS.bodies;
         assert_eq!(b.sun.share(2.0), 1.0, "a setting sun lays a path");
         assert_eq!(b.sun.share(60.0), 0.0, "a high sun is a glint only");
-        let mid = b.sun.share((b.sun.full_below_deg + b.sun.gone_above_deg) / 2.0);
+        let mid = b
+            .sun
+            .share((b.sun.full_below_deg + b.sun.gone_above_deg) / 2.0);
         assert!((mid - 0.5).abs() < 1e-9);
         for e in [1.0, 30.0, 80.0] {
             assert_eq!(b.moon.share(e), 1.0);
@@ -201,7 +203,11 @@ mod tests {
             u[1][0],
             2.0_f32.min(REFLECTIONS.tier(m).cloud_octaves as f32)
         );
-        assert_eq!(u[1][1] as u32 & 1, 0, "no self-shadow while the sky draws none");
+        assert_eq!(
+            u[1][1] as u32 & 1,
+            0,
+            "no self-shadow while the sky draws none"
+        );
         let off = reflection_uniforms(&REFLECTIONS, m, 0, true, false);
         assert_eq!(off[1][0], 0.0, "Clouds off: none reflected");
         let u = reflection_uniforms(&REFLECTIONS, m, 8, true, false);

@@ -40,8 +40,8 @@ pub fn ggx(n: V3, v: V3, l: V3, a: f64, f0: f64) -> f64 {
     let a2 = a * a;
     let d = nh * nh * (a2 - 1.0) + 1.0;
     let dist = a2 / (std::f64::consts::PI * d * d);
-    let vis = 0.5
-        / (nl * (nv * nv * (1.0 - a2) + a2).sqrt() + nv * (nl * nl * (1.0 - a2) + a2).sqrt());
+    let vis =
+        0.5 / (nl * (nv * nv * (1.0 - a2) + a2).sqrt() + nv * (nl * nl * (1.0 - a2) + a2).sqrt());
     dist * vis * schlick(dot(v, h), f0) * nl
 }
 
@@ -101,7 +101,11 @@ mod tests {
                 let w = mirror_dir(f, toward(f, az, e));
                 let up = f.vector([0.0, 1.0, 0.0]);
                 let d = dot(w, up);
-                let r = [w[0] - 2.0 * d * up[0], w[1] - 2.0 * d * up[1], w[2] - 2.0 * d * up[2]];
+                let r = [
+                    w[0] - 2.0 * d * up[0],
+                    w[1] - 2.0 * d * up[1],
+                    w[2] - 2.0 * d * up[2],
+                ];
                 let b = toward(f, az, e);
                 assert!((0..3).all(|i| (r[i] - b[i]).abs() < 1e-12));
             }
@@ -157,10 +161,7 @@ mod tests {
     fn the_wgsl_takes_the_data() {
         let w = wgsl();
         assert!(w.contains("const SUN_PATH: vec4f") && w.contains("const MOON_PATH: vec4f"));
-        assert!(w.contains(&format!(
-            "{:?}",
-            REFLECTIONS.bodies.moon.strength as f32
-        )));
+        assert!(w.contains(&format!("{:?}", REFLECTIONS.bodies.moon.strength as f32)));
         assert!(w.contains("PATH_CLOUD_FADE"));
     }
 }

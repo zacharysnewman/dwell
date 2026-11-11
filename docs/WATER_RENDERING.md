@@ -1030,3 +1030,40 @@ the bed's depth, not the block's distance), so foam behind a block shows where t
 Screenshots: the river banks at seed 7's nearest river from the spawn (bench `goto` river, 2.5 m up,
 pitch −25): a solid line along each bank and two thinner bands beside it, no gaps.
 
+
+## 15. The sun and moon on the water (2026-11-10, 0.52.32)
+
+The owner's question: "why doesn't the moon reflect on the water?" The water reflected `dwell_sky`
+(the gradient and the bodies' halos) and lit a GGX glint by the sun's and moon's *light* colours; the
+moon's light is dim and its disc was never in the reflected sky, so at night nothing marked where it
+was. Now, on a tier with `bodyPath` (`shared/look/reflections.json` `tiers`; Low and Medium):
+
+- **The discs mirrored** (`reflected_bodies`): `dwell_moon` (its phase, maria and earthshine) and
+  `dwell_sun_disc` along the reflected ray, under the reflected cloud deck (so clouds hide them), with
+  a two-pixel edge. On calm water this is the mirror image; ripples break it up.
+- **A glitter path** (`body_paths`): a GGX lobe of each disc's own light (`MOON_COLOR` × the lit
+  share `day.stars.w`, the sun's disc colour) off the rippled normal, by `bodies.<body>.pathAlpha`
+  widened by the ripples' lost slope variance (Toksvig, as the glint): a streak toward the viewer on
+  the line under the body, brighter and tighter on calm water. `strength` scales it; `fullBelowDeg`
+  and `goneAboveDeg` fade it with the body's elevation over the fragment's face's horizon (the sun's
+  only at low angles: a sunset path; the moon's always). The cloud cover takes `cloudFade` of it
+  while the Clouds setting draws clouds (the deck's coverage, `cloud_cfg.x`; not the deck along the
+  body's own ray, which would cost a deck evaluation per pixel).
+- **The CPU adapter's tier** (opaque) keeps the simple highlight only (the GGX glint);
+  `reflections.mjs` fails if its `bodyPath` is set.
+- **Both faces:** the path uses `face_rise(s.up, …)` and `own(…, s.up)` of the fragment's face, the
+  discs the eye's face's reflected sky, as the sky reflection does.
+- **Uniform:** `reflect_sky.y` is now bits (bit 0 the deck's self-shadow, bit 1 the path;
+  `reflect_bits`); the tunables are WGSL constants (`SUN_PATH`, `MOON_PATH`, `PATH_CLOUD_FADE`,
+  `render/glitter.rs` `wgsl`).
+- **Tests:** `render::glitter` (both faces): a body at elevation e is mirrored at −e and the mirror
+  ray reflects to the body; the path's peak over a calm surface lies along the viewer–body azimuth and
+  runs further along it than across; calm water's path is brighter than rough's. `dwell-look`
+  `reflections`: the CPU tier draws no path, the bits stay apart, the sun's path is a low sun's.
+  `reflections.test.mjs`: bad `bodies` entries fail with their path. `render::shaders`: the gates and
+  the discs under the clouds.
+- **Seen (bench, M1, Medium, seed 7's sea; shots in the session's scratchpad):** at midnight the
+  moon stands high, so its path lies under the viewer, glints in the near ripples at the bottom of the
+  view. The bench's `time` 0.2 and 0.73 were still daylight, so the low-moon and sunset-path views
+  were not taken: **outstanding**, with tuning `strength` and `pathAlpha` against them. GPU frame
+  7.55 ms mean on the night view (not yet compared against main).

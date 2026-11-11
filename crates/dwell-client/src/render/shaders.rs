@@ -3536,12 +3536,23 @@ mod tests {
         let light = body("surface_light");
         assert!(light.contains("if (reflect_path()) {\n            glint += body_paths(s, f0);"));
         let env = body("reflected_env");
-        let bodies = env.find("reflected_bodies(r, clear)").expect("discs reflected");
+        let bodies = env
+            .find("reflected_bodies(r, clear)")
+            .expect("discs reflected");
         assert!(env[..bodies].contains("reflect_path()"));
-        assert!(bodies < env.find("dwell_clouds(under").expect("clouds over the discs"));
+        assert!(
+            bodies
+                < env
+                    .find("dwell_clouds(under")
+                    .expect("clouds over the discs")
+        );
         let paths = body("body_paths");
-        assert!(paths.contains("d.stars.w") && paths.contains("frame.cloud_cfg.x * PATH_CLOUD_FADE"));
-        assert!(paths.contains("face_rise(s.up, d.moon.xyz)") && paths.contains("own(d.sun.xyz, s.up)"));
+        assert!(
+            paths.contains("d.stars.w") && paths.contains("frame.cloud_cfg.x * PATH_CLOUD_FADE")
+        );
+        assert!(
+            paths.contains("face_rise(s.up, d.moon.xyz)") && paths.contains("own(d.sun.xyz, s.up)")
+        );
         let cpu = dwell_look::water_tiers::cpu_tier();
         let u = dwell_look::reflections::reflection_uniforms(
             &dwell_look::reflections::REFLECTIONS,
