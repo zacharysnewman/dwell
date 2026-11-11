@@ -131,9 +131,14 @@ Last updated: 2026-11-11 (0.52.68).
    holds one ecology per face, stepped by the world's days (bounded catch-up: 4 steps a tick), saved in an
    optional `ecology` table with a per-world switch (default on, additive) and speed; a server-side read-out
    (ECOLOGY.md §6). Owner's correction (2026-11-11): no floors — herds and packs can die, resisted by the
-   system (Holling type III predation, refuges, fast low-density breeding, dispersal, slow starving). Next
-   (ECOLOGY.md §7): individuals near players, simple far rendering with a client read-out, local worlds'
-   maps, grazing on the real tall grass.
+   system (Holling type III predation, refuges, fast low-density breeding, dispersal, slow starving).
+   **Slice 3 built:** individuals near players (ECOLOGY.md §8, `dwell-sim` `herds.rs`): a record within
+   64 m of a player becomes its deer or wolves (the existing creatures, driven) and folds back past 96 m
+   (survivors, averaged needs, centroid); the mockup's needs-driven rules as data (flee, sleep at night,
+   graze the cell and sometimes a real tall grass block, chase and kill, mate up to the cap, company);
+   the creature rules for deer and wolves left out while the ecology runs. Next (ECOLOGY.md §7): simple
+   far rendering with a client read-out, local worlds' maps, grazing applied to tall grass as chunks
+   load; the far step seeing near groups; the herd's stag.
 12. **Players' saved structures as placement sources** (owner 2026-11-11): per player (their library, usable
    in any world they create); placed copies editable, not protected; 32³ for now (may change), or larger
    structures as a grid of 32³ tiles. Sharing between players: Future.
@@ -212,9 +217,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   after two rounds; leads in BUGS.md).
 - **Arches:** the openings in the LOD and in Chisel's 3D view; caprock lips; an arch on a fin seen in
   game (fins and the rock filter built, 0.52.66).
-- **Terrain leftovers (0.52.66 round 1 left):** T3b in normal biomes (a snow line from temperature for
-  any biome, soil blocks by soil type, grass and ground items by climate; the starter opts in); Rainier
-  detail (below); in-game screenshots of an arch on a fin, the red mesa and a snowy biome edge.
+- **Terrain leftovers (0.52.66 round 1 left):** Rainier detail (below); in-game screenshots of an arch
+  on a fin, the red mesa and a snowy biome edge, and of T3b in the starter (its biomes' snow lines, sand
+  under the steppe's grass, the grass thinning into the dry lee; built without screenshots). T3b is built
+  (ADR 0075 T3b): a biome's own snow line (`snow`), soil blocks by soil type (`soilBlocks`), tall grass
+  and ground items by climate (`undergrowth`); the starter opts in.
 - **Pieces follow-ups (0.52.46):** the worn axe not yet seen in game.
 - **Block damage follow-ups:** scoops read as dark stains (flat decals).
 - **Peaks:** a more broken summit, deeper ridges and cirques (Rainier).

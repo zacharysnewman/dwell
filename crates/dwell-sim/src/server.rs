@@ -42,7 +42,7 @@ mod chopping;
 mod creatures;
 mod ecology;
 pub use ecology::{
-    CATCH_UP_DAYS, EcologySnapshot, GroupView, IDLE_DAYS, MAX_STEPS_PER_TICK, next_step,
+    CATCH_UP_DAYS, EcologySnapshot, GroupView, IDLE_DAYS, MAX_STEPS_PER_TICK, next_step, night_on,
 };
 mod ground;
 mod growth;

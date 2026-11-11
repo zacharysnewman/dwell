@@ -12,13 +12,20 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
 
-const TOP_FIELDS = ['formatVersion', 'island', 'grazing', 'species'];
+const TOP_FIELDS = ['formatVersion', 'island', 'grazing', 'near', 'species'];
+const NEAR_FIELDS = ['spawnM', 'foldM', 'thinkS'];
+const NEAR_SPECIES_FIELDS = ['creature', 'hungerPerS', 'energyPerS', 'sleep', 'graze', 'hunt', 'flee', 'mate', 'companyM', 'wanderM'];
+const NEAR_SLEEP_FIELDS = ['belowEnergy', 'nightChancePerS', 'nightBelowHunger', 'gainPerS', 'wakeAboveEnergy', 'wakeAboveHunger', 'minS'];
+const NEAR_GRAZE_FIELDS = ['aboveHunger', 'fullBelow', 'eatPerS', 'foragePerS', 'block', 'blockChancePerS'];
+const NEAR_HUNT_FIELDS = ['aboveHunger', 'senseM', 'sprint', 'reachM', 'feedsPackM', 'feedsPack'];
+const NEAR_FLEE_FIELDS = ['radiusM', 'pace'];
+const NEAR_MATE_FIELDS = ['belowHunger', 'aboveEnergy', 'radiusM', 'reachM', 'chance', 'cost', 'tired'];
 const ISLAND_FIELDS = ['cellM', 'stepDays'];
 const GRAZING_FIELDS = ['regrowPerDay', 'grounds'];
 const GROUND_FIELDS = ['name', 'maxHeightM', 'maxSlopeDeg', 'max', 'refuge'];
 const SPECIES_FIELDS = [
   'name', 'group', 'start', 'breedPerDay', 'breedBelowHunger', 'hungerDays', 'starveAboveHunger',
-  'starvePerDay', 'speedMPerDay', 'senseRadiusM', 'diet', 'flee', 'disperse',
+  'starvePerDay', 'speedMPerDay', 'senseRadiusM', 'diet', 'flee', 'disperse', 'near',
 ];
 const GROUP_FIELDS = ['dieBelow', 'cap', 'mergeBelow', 'mergeRadiusM', 'maxGroups'];
 const START_FIELDS = ['groups', 'size'];
@@ -71,6 +78,11 @@ export function validateEcology(data) {
     range(gr.max, 0, 100000, `${at}.max`);
     if (gr.refuge !== undefined) range(gr.refuge, 0, 1, `${at}.refuge`);
   });
+  const nr = object(data.near, NEAR_FIELDS, 'near');
+  range(nr.spawnM, 1, 1000, 'near.spawnM');
+  range(nr.foldM, nr.spawnM, 2000, 'near.foldM');
+  range(nr.thinkS, 0, 10, 'near.thinkS', true);
+  if (nr.foldM <= nr.spawnM) fail('near.foldM must be past near.spawnM (the hysteresis)');
   if (!Array.isArray(data.species) || data.species.length === 0) fail('species must be a non-empty list');
   const index = new Map();
   data.species.forEach((s, i) => {
@@ -151,9 +163,90 @@ export function validateEcology(data) {
         leavePerDay: range(d.leavePerDay, 0, 0.2, `${at}.disperse.leavePerDay`),
       };
     }
-    return { ...s, diet, flee, disperse };
+    const near = s.near === undefined ? null : nearOf(s, `${at}.near`, diet, flee);
+    return { ...s, diet, flee, disperse, near };
   });
-  return { island: is, grazing: g, species };
+  return { island: is, grazing: g, near: nr, species };
+}
+
+/** A species' individuals near players (docs/ECOLOGY.md §8): the mockup's needs as data. */
+function nearOf(s, at, diet, flee) {
+  const n = object(s.near, NEAR_SPECIES_FIELDS, at);
+  if (typeof n.creature !== 'string' || !NAMESPACED.test(n.creature)) fail(`${at}.creature must name a creature (namespace:name)`);
+  range(n.hungerPerS, 0, 1, `${at}.hungerPerS`);
+  range(n.energyPerS, 0, 1, `${at}.energyPerS`);
+  range(n.companyM, 0, 1000, `${at}.companyM`);
+  range(n.wanderM, 0, 1000, `${at}.wanderM`);
+  const sl = object(n.sleep, NEAR_SLEEP_FIELDS, `${at}.sleep`);
+  for (const k of ['belowEnergy', 'nightBelowHunger', 'wakeAboveEnergy', 'wakeAboveHunger']) range(sl[k], 0, 1, `${at}.sleep.${k}`);
+  range(sl.nightChancePerS, 0, 10, `${at}.sleep.nightChancePerS`);
+  range(sl.gainPerS, 0, 10, `${at}.sleep.gainPerS`, true);
+  range(sl.minS, 0, 3600, `${at}.sleep.minS`);
+  let graze = null;
+  let hunt = null;
+  if (diet.graze) {
+    if (n.hunt !== undefined) fail(`${at}.hunt: a grazer doesn't hunt`);
+    const g = object(n.graze, NEAR_GRAZE_FIELDS, `${at}.graze`);
+    range(g.aboveHunger, 0, 1, `${at}.graze.aboveHunger`);
+    range(g.fullBelow, 0, g.aboveHunger, `${at}.graze.fullBelow`);
+    range(g.eatPerS, 0, 10, `${at}.graze.eatPerS`, true);
+    range(g.foragePerS, 0, 100, `${at}.graze.foragePerS`);
+    if (g.block !== undefined && (typeof g.block !== 'string' || !NAMESPACED.test(g.block))) fail(`${at}.graze.block must name a block (namespace:name)`);
+    range(g.blockChancePerS ?? 0, 0, 10, `${at}.graze.blockChancePerS`);
+    graze = { ...g, block: g.block ?? null, blockChancePerS: g.blockChancePerS ?? 0 };
+  } else {
+    if (n.graze !== undefined) fail(`${at}.graze: a hunter doesn't graze`);
+    const h = object(n.hunt, NEAR_HUNT_FIELDS, `${at}.hunt`);
+    range(h.aboveHunger, 0, 1, `${at}.hunt.aboveHunger`);
+    range(h.senseM, 0, 1000, `${at}.hunt.senseM`);
+    range(h.sprint, 1, 10, `${at}.hunt.sprint`);
+    range(h.reachM, 0, 100, `${at}.hunt.reachM`, true);
+    range(h.feedsPackM, 0, 1000, `${at}.hunt.feedsPackM`);
+    range(h.feedsPack, 0, 1, `${at}.hunt.feedsPack`);
+    hunt = h;
+  }
+  let nflee = null;
+  if (n.flee !== undefined) {
+    if (!flee) fail(`${at}.flee: the species flees nothing (its flee.from)`);
+    const fl = object(n.flee, NEAR_FLEE_FIELDS, `${at}.flee`);
+    range(fl.radiusM, 0, 1000, `${at}.flee.radiusM`);
+    range(fl.pace, 1, 10, `${at}.flee.pace`);
+    nflee = fl;
+  }
+  const m = object(n.mate, NEAR_MATE_FIELDS, `${at}.mate`);
+  for (const k of ['belowHunger', 'aboveEnergy', 'chance', 'cost', 'tired']) range(m[k], 0, 1, `${at}.mate.${k}`);
+  range(m.radiusM, 0, 1000, `${at}.mate.radiusM`);
+  range(m.reachM, 0, 100, `${at}.mate.reachM`, true);
+  return { ...n, sleep: sl, graze, hunt, flee: nflee, mate: m };
+}
+
+function nearRust(n) {
+  if (!n) return 'None';
+  const sl = n.sleep;
+  const g = n.graze;
+  const h = n.hunt;
+  const m = n.mate;
+  const graze = g
+    ? `Some(NearGraze { above_hunger: ${f(g.aboveHunger)}, full_below: ${f(g.fullBelow)}, eat_per_s: ${f(g.eatPerS)}, forage_per_s: ${f(g.foragePerS)}, block: ${g.block ? `Some(${JSON.stringify(g.block)})` : 'None'}, block_chance_per_s: ${f(g.blockChancePerS)} })`
+    : 'None';
+  const hunt = h
+    ? `Some(NearHunt { above_hunger: ${f(h.aboveHunger)}, sense_m: ${f(h.senseM)}, sprint: ${f(h.sprint)}, reach_m: ${f(h.reachM)}, feeds_pack_m: ${f(h.feedsPackM)}, feeds_pack: ${f(h.feedsPack)} })`
+    : 'None';
+  const flee = n.flee ? `Some(NearFlee { radius_m: ${f(n.flee.radiusM)}, pace: ${f(n.flee.pace)} })` : 'None';
+  return [
+    'Some(NearDef {',
+    `                creature: ${JSON.stringify(n.creature)},`,
+    `                hunger_per_s: ${f(n.hungerPerS)},`,
+    `                energy_per_s: ${f(n.energyPerS)},`,
+    `                sleep: NearSleep { below_energy: ${f(sl.belowEnergy)}, night_chance_per_s: ${f(sl.nightChancePerS)}, night_below_hunger: ${f(sl.nightBelowHunger)}, gain_per_s: ${f(sl.gainPerS)}, wake_above_energy: ${f(sl.wakeAboveEnergy)}, wake_above_hunger: ${f(sl.wakeAboveHunger)}, min_s: ${f(sl.minS)} },`,
+    `                graze: ${graze},`,
+    `                hunt: ${hunt},`,
+    `                flee: ${flee},`,
+    `                mate: NearMate { below_hunger: ${f(m.belowHunger)}, above_energy: ${f(m.aboveEnergy)}, radius_m: ${f(m.radiusM)}, reach_m: ${f(m.reachM)}, chance: ${f(m.chance)}, cost: ${f(m.cost)}, tired: ${f(m.tired)} },`,
+    `                company_m: ${f(n.companyM)},`,
+    `                wander_m: ${f(n.wanderM)},`,
+    '            })',
+  ].join('\n');
 }
 
 const f = (v) => (Number.isInteger(v) ? `${v}.0` : `${v}`);
@@ -164,11 +257,12 @@ export function ecologyRust(d, source) {
     `// Generated by shared/ecology/gen.mjs from ${source}. Do not edit.`,
     '',
     '#[allow(unused_imports)]',
-    'use crate::data::{Data, Diet, Disperse, Flee, GroundDef, GroupRules, IslandParams, SpeciesDef};',
+    'use crate::data::{Data, Diet, Disperse, Flee, GroundDef, GroupRules, IslandParams, NearDef, NearFlee, NearGraze, NearHunt, NearMate, NearParams, NearSleep, SpeciesDef};',
     '',
     'pub const DATA: Data = Data {',
     `    island: IslandParams { cell_m: ${f(d.island.cellM)}, step_days: ${f(d.island.stepDays)} },`,
     `    regrow_per_day: ${f(d.grazing.regrowPerDay)},`,
+    `    near: NearParams { spawn_m: ${f(d.near.spawnM)}, fold_m: ${f(d.near.foldM)}, think_s: ${f(d.near.thinkS)} },`,
     '    grounds: &[',
   ];
   for (const g of d.grazing.grounds) {
@@ -200,6 +294,7 @@ export function ecologyRust(d, source) {
       `            diet: ${diet},`,
       `            flee: ${flee},`,
       `            disperse: ${disperse},`,
+      `            near: ${nearRust(s.near)},`,
       '        },',
     );
   }

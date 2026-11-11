@@ -944,7 +944,7 @@ tests only); CI fails on stale output. Code names characters, looks, items and r
   triangles and 4 draws each, within the noise of `gpu.frame` (12.4–13.1 ms with 0–32 bodies on a
   busy machine); 41 KB of instance uniforms a frame at 32.
 
-### 5.4 The far ecology **[in progress: the data-level core and the server's tick and save built; not yet drawn, near players or in local worlds]**
+### 5.4 The far ecology **[in progress: the data-level core, the server's tick and save, and individuals near players built; not yet drawn far away or in local worlds]**
 
 ([`ECOLOGY.md`](./ECOLOGY.md), WORK_QUEUE item 11.) Away from players the deer and wolves are
 **data only**: one record per herd or pack (`dwell_ecology::Group`: face-local position, size,
@@ -975,8 +975,19 @@ world, an idle stretch), at most `MAX_STEPS_PER_TICK` (4) a tick. Saved in the w
 `ServerConfig::ecology`) and its speed. A dev read-out (`Server::ecology_snapshot`: each group's face,
 species, position, size, hunger, energy, activity) is server-side only for now. The browser's local
 server computes no world map itself (the server-jobs worker does), so a local world's ecology does
-not run yet. The 5.3 creatures (ADR 0073) are still spawned near players by their own rules; making
-individuals from the herds near players is a later slice (ECOLOGY.md §7).
+not run yet.
+
+**Near players** (`dwell-sim` `herds.rs`, ECOLOGY.md §8): a record within `near.spawnM` (64 m) of a
+player on its face becomes its individuals — ADR 0073's creatures (the species' `near.creature`),
+`driven` (they walk only where they are sent and are never despawned by the creature rules) — with
+the record's hunger and energy, and leaves the far step; once no player is within `near.foldM`
+(96 m, the hysteresis) it folds back (size the survivors, needs averaged, place their centroid), and
+a save while near writes it folded. Every `near.thinkS` each individual follows the owner's mockup as
+data (each species' `near`): flee, sleep (tired, or at night by chance: each face's own night), eat
+(a grazer the island cell's forage and, by chance, the real block its data names — the only world
+change, near players only; a hunter chases at a sprint and kills within reach, feeding its pack),
+mate (a young up to the group's cap), keep company or wander. While the ecology runs, the creature
+rules that spawn the species' creatures are left out (`Creatures::reserved`).
 
 ---
 

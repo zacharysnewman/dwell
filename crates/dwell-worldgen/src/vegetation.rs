@@ -8,11 +8,23 @@
 
 include!("vegetation.gen.rs");
 
-/// A soil type (a name and its overlay colour).
+/// A soil type (a name and its overlay colour) and the blocks it shows in a biome with
+/// `soilBlocks` (T3b; "" the band's own).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SoilType {
     pub name: &'static str,
     pub color: u32,
+    /// The ground's top block ("" the band's `ground`).
+    pub ground: &'static str,
+    /// The block under it ("" the band's `under`).
+    pub under: &'static str,
+}
+
+impl SoilType {
+    /// Whether it changes any block of a band.
+    pub fn has_blocks(&self) -> bool {
+        !self.ground.is_empty() || !self.under.is_empty()
+    }
 }
 
 /// The soil a rock weathers to on flat ground.
@@ -25,12 +37,19 @@ pub struct RockSoil {
     pub soil_type: u8,
 }
 
-/// A vegetation kind: a placement's climate envelope.
+/// A vegetation kind: a climate envelope over one placement, decoration or ground item kind.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Kind {
     pub name: &'static str,
-    /// The placement (`placements.json`, by name) it governs.
+    /// The placement (`placements.json`, by name) it governs ("" none), scaled by a biome's
+    /// `vegetation`.
     pub placement: &'static str,
+    /// The decoration (`decorations.json`, by name; T3b) it governs ("" none), scaled by a biome's
+    /// `undergrowth`.
+    pub decoration: &'static str,
+    /// The ground item kind (`shared/ground` `kinds`, by name; T3b) it governs ("" none), scaled
+    /// by a biome's `undergrowth`.
+    pub ground: &'static str,
     /// °C, least and most.
     pub temperature: [f64; 2],
     /// Wetness 0..1, least and most.
@@ -115,7 +134,23 @@ impl Vegetation {
 
     /// The kind governing placement `name`, if any.
     pub fn kind_for(&self, placement: &str) -> Option<usize> {
-        self.kinds.iter().position(|k| k.placement == placement)
+        (!placement.is_empty())
+            .then(|| self.kinds.iter().position(|k| k.placement == placement))
+            .flatten()
+    }
+
+    /// The kind governing decoration `name` (T3b), if any.
+    pub fn kind_for_decoration(&self, name: &str) -> Option<usize> {
+        (!name.is_empty())
+            .then(|| self.kinds.iter().position(|k| k.decoration == name))
+            .flatten()
+    }
+
+    /// The kind governing ground item kind `name` (T3b), if any.
+    pub fn kind_for_ground(&self, name: &str) -> Option<usize> {
+        (!name.is_empty())
+            .then(|| self.kinds.iter().position(|k| k.ground == name))
+            .flatten()
     }
 
     /// Kind `k`'s density (0..`density`) in climate `c`, before the biome's strength.

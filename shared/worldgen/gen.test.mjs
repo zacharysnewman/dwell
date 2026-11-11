@@ -22,6 +22,7 @@ import {
   validateMidplane,
   validatePlacements,
   validateTerrainAndBiomes,
+  validateBiome,
   validateFixtureWorlds,
   validateFixtureBiomes,
   validatePresetBiomes,
@@ -672,7 +673,7 @@ test('the checked-in vegetation is valid, generates the checked-in Rust, and tak
   d.soilTypes.push({ name: 'test:clay', color: '#aa5500' });
   d.kinds[0] = { ...d.kinds[0], name: 'test:clay_pines', temperature: [0, 9], soils: ['test:clay'] };
   const out = vegetationRust(validateVegetation(d));
-  assert.match(out, /name: "test:clay_pines",\n {12}placement: "pine_groves",\n {12}temperature: \[0\.0, 9\.0\]/);
+  assert.match(out, /name: "test:clay_pines",\n {12}placement: "pine_groves",\n {12}decoration: "",\n {12}ground: "",\n {12}temperature: \[0\.0, 9\.0\]/);
   assert.match(out, /soils: &\[3\]/);
   const bad = (f, msg) => {
     const x = veg();
@@ -687,6 +688,53 @@ test('the checked-in vegetation is valid, generates the checked-in Rust, and tak
   bad((x) => (x.climate.perUnitC = -1), /climate.perUnitC must be in/);
   bad((x) => x.kinds.push({ ...x.kinds[0], name: 'test:twin' }), /placement pine_groves already has a kind/);
   bad((x) => (x.extra = 1), /unknown extra/);
+});
+
+test('T3b: soil types name their blocks, kinds govern decorations and ground items, biomes opt in to snow lines, all checked', () => {
+  const veg = () => JSON.parse(readFileSync(join(here, 'vegetation.json'), 'utf8'));
+  // A kind over a decoration and one over a ground item, by data alone.
+  const d = veg();
+  d.soilTypes[1].under = 'dwell:sand';
+  d.kinds = d.kinds.filter((k) => !k.decoration);
+  d.kinds.push({ ...d.kinds[0], name: 'test:tufts', decoration: 'meadow_grass' });
+  delete d.kinds.at(-1).placement;
+  const out = vegetationRust(validateVegetation(d));
+  assert.match(out, /name: "dwell:loamy", color: 0x5f4426, ground: "", under: "dwell:sand"/);
+  assert.match(out, /name: "test:tufts",\n {12}placement: "",\n {12}decoration: "meadow_grass",/);
+  const bad = (f, msg) => {
+    const x = veg();
+    f(x);
+    assert.throws(() => validateVegetation(x), msg);
+  };
+  bad((x) => (x.soilTypes[0].under = 'dwell:nothing'), /soil type dwell:sandy: under "dwell:nothing" is not a full block/);
+  bad((x) => (x.soilTypes[0].colour = '#000000'), /soil type dwell:sandy: unknown colour/);
+  bad((x) => (x.kinds[0].decoration = 'meadow_grass'), /must govern exactly one of placement, decoration or ground/);
+  bad((x) => {
+    const k = { ...x.kinds[0], name: 'test:g', ground: 'dwell:nothing' };
+    delete k.placement;
+    x.kinds.push(k);
+  }, /ground "dwell:nothing" is not a kind of ground.json/);
+  bad((x) => {
+    const k = { ...x.kinds.find((k) => k.decoration), name: 'test:twin' };
+    x.kinds.push(k);
+  }, /decoration meadow_grass already has a kind/);
+  // A biome's snow line, soil blocks and undergrowth.
+  const biome = () => JSON.parse(readFileSync(join(here, 'biomes/default.json'), 'utf8'));
+  const snowy = { ...biome(), snow: { belowC: 0, maxSlope: 1, block: 'dwell:snow', iceBelowC: -8, ice: 'dwell:glacier_ice' }, soilBlocks: true, undergrowth: 1 };
+  validateBiome(snowy);
+  const rs = terrainRust(terrainOf(loadTerrain(), [snowy]));
+  assert.match(rs, /snow: Some\(crate::terrain::BiomeSnow \{ below_c: 0\.0, max_slope: 1\.0, block: "dwell:snow", ice: Some\(\("dwell:glacier_ice", -8\.0\)\) \}\),\n {8}soil_blocks: true,\n {8}undergrowth: 1\.0,/);
+  const badBiome = (extra, msg) => assert.throws(() => validateBiome({ ...biome(), ...extra }), msg);
+  badBiome({ snow: { belowC: 0, maxSlope: 1, block: 'dwell:nothing' } }, /snow\.block "dwell:nothing" is not a full block/);
+  badBiome({ snow: { belowC: 0, maxSlope: 1, block: 'dwell:snow', ice: 'dwell:glacier_ice' } }, /ice and iceBelowC go together/);
+  badBiome({ snow: { belowC: 0, maxSlope: 1, block: 'dwell:snow', iceBelowC: 3, ice: 'dwell:glacier_ice' } }, /iceBelowC must be colder/);
+  badBiome({ snow: { belowC: 0, maxSlope: 0, block: 'dwell:snow' } }, /snow\.maxSlope must be in/);
+  badBiome({ snow: { belowC: 0, maxSlope: 1, block: 'dwell:snow', deep: 2 } }, /snow: unknown deep/);
+  badBiome({ soilBlocks: 1 }, /soilBlocks must be true or false/);
+  badBiome({ undergrowth: 2 }, /undergrowth must be in \[0, 1\]/);
+  // The default biome opts in to none of them.
+  const def = biome();
+  assert.equal(def.snow ?? def.soilBlocks ?? def.undergrowth, undefined);
 });
 
 test('the tectonics (T5) are off by default, take a boundary and a chain by data alone, and name bad keys', async () => {
