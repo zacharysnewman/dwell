@@ -95,6 +95,7 @@ import { readDevice } from './ui/loadingEstimate';
 import { type LoadingHud, LoadingScreen, loadingScreenEnabled } from './ui/loadingScreen';
 import type { LoadingStageId } from './ui/loading.gen';
 import { LAUNCH_AT_KEY, pageStartMs, type StageRun } from './ui/loadingStages';
+import { runStartStages } from './ui/startStages';
 import { START_HINT, TOUCH_START_HINT } from './ui/controls';
 import { formatMemory, jsHeapBytes, type MemoryReport } from './ui/memory';
 import type { LoopbackTransport } from './net/loopback';
@@ -745,40 +746,40 @@ async function start(): Promise<App | null> {
   }
   let client: Client;
   try {
-    // The stages the loading screen lists (§6.3): the module's download, then the graphics.
-    const stages = loading.stages;
-    stages.begin('game', performance.now());
-    await loadTools((done, total) => {
-      stages.progress('game', done, total, performance.now());
+    // The stages the loading screen lists (§6.3): the module's download, then the graphics, each
+    // painted before its work (the graphics hold the thread: ui/startStages.ts).
+    client = await runStartStages(loading.stages, {
+      now: () => performance.now(),
+      painted: () => loading.painted(),
+      load: (onBytes) => loadTools(onBytes),
+      create: () =>
+        Client.create(canvas, {
+          displayName: displayName(),
+          clientVersion: recordedVersion(),
+          makeWorker: makeJobWorker,
+          // A terrain world's maps (ADR 0049): cached, or built in workers, never on this thread;
+          // under the worldgen config the world's server sent (ADR 0074 B7: a guest of a test world).
+          prepareWorld: (seed: bigint, version: number, worldgen?: string) =>
+            worldMaps(seed, version, mapDeps(), worldgen ?? worldgenConfig) ??
+            Promise.resolve(null),
+          // Per pool (generation, meshing); ?workers=N overrides it (docs/DEV_TOOLS.md).
+          workers: workerCount(location.search, navigator.hardwareConcurrency, mobile),
+          // ?lod=0 or ?lod=off: no distant terrain at all (a debug switch; __dwell.setLod hides it live).
+          lod: params.get('lod') !== '0' && params.get('lod') !== 'off',
+          lodColors: params.get('lodcolors') === '1',
+          // ?chunks=full asks the server to send every chunk explicitly (full-chunk mode).
+          fullChunks: params.get('chunks') === 'full',
+          netsim: params.get('netsim') ?? undefined,
+          search: location.search,
+          // The loading screen on joining; ?loading=off or the dwell.loading store "off" skip it.
+          loadingScreen: loadingScreenEnabled(location.search, storage()),
+          // The scene's samples per pixel (Settings → Anti-aliasing; fixed when the renderer is made,
+          // so a change applies on the next load; ?aa= overrides it).
+          samples: antialiasMode(
+            antialiasFromQuery(location.search, loadSettings(mobile).antialias).mode,
+          ).samples,
+        }),
     });
-    stages.end('game', performance.now());
-    stages.begin('graphics', performance.now());
-    client = await Client.create(canvas, {
-      displayName: displayName(),
-      clientVersion: recordedVersion(),
-      makeWorker: makeJobWorker,
-      // A terrain world's maps (ADR 0049): cached, or built in workers, never on this thread;
-      // under the worldgen config the world's server sent (ADR 0074 B7: a guest of a test world).
-      prepareWorld: (seed: bigint, version: number, worldgen?: string) =>
-        worldMaps(seed, version, mapDeps(), worldgen ?? worldgenConfig) ?? Promise.resolve(null),
-      // Per pool (generation, meshing); ?workers=N overrides it (docs/DEV_TOOLS.md).
-      workers: workerCount(location.search, navigator.hardwareConcurrency, mobile),
-      // ?lod=0 or ?lod=off: no distant terrain at all (a debug switch; __dwell.setLod hides it live).
-      lod: params.get('lod') !== '0' && params.get('lod') !== 'off',
-      lodColors: params.get('lodcolors') === '1',
-      // ?chunks=full asks the server to send every chunk explicitly (full-chunk mode).
-      fullChunks: params.get('chunks') === 'full',
-      netsim: params.get('netsim') ?? undefined,
-      search: location.search,
-      // The loading screen on joining; ?loading=off or the dwell.loading store "off" skip it.
-      loadingScreen: loadingScreenEnabled(location.search, storage()),
-      // The scene's samples per pixel (Settings → Anti-aliasing; fixed when the renderer is made,
-      // so a change applies on the next load; ?aa= overrides it).
-      samples: antialiasMode(
-        antialiasFromQuery(location.search, loadSettings(mobile).antialias).mode,
-      ).samples,
-    });
-    stages.end('graphics', performance.now());
   } catch (err) {
     loading.abort();
     showFatal(startupMessage(err, 'gpu' in navigator));

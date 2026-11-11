@@ -1,0 +1,43 @@
+{
+  "$comment": "The far ecology (docs/ECOLOGY.md, WORK_QUEUE item 11): away from players the deer and wolves are data only, one record per herd or pack (its place on the face's island, size, hunger and energy averages, state), stepped over whole days by crates/dwell-ecology. `island`: the coarse grid the ecology runs on (`cellM` m a cell, sampled from the face's world map) and the longest step (`stepDays`): a big fast-forward is cut into steps of at most this. `grazing`: the forage per cell in deer-days (one unit feeds one head for a day), the most a cell holds by its ground (the first of `grounds` whose `maxHeightM` and `maxSlopeDeg` it is under; sea and lakes hold none and are not walked), regrowing toward it at `regrowPerDay` of the gap a day; the real tall grass is not touched (a later slice applies it near players). A species: its group's `floor` (never fewer: resistant to complete destruction), `cap` (above it a group splits in two), `mergeBelow` and `mergeRadiusM` (small groups near each other join), `maxGroups` on the island; `start` groups and size; `breedPerDay` (growth a day while well fed: hunger under `breedBelowHunger`, slowed as the island fills: deer by the grazing's carrying capacity, predators by their prey per head); `hungerDays` (how fast hunger follows the food: 0 fed, 1 none); starving above `starveAboveHunger` loses up to `starvePerDay` of the group a day (slow); `speedMPerDay`; `senseRadiusM`; `diet` either `graze` (forage per head per day) or `prey` (the species it hunts, kills and need per head per day, prey per head for the island's bound, reach); `flee` (optional: the species it keeps `radiusM` from); `disperse` (optional: above `aboveHunger` the group leaves for the island's biggest prey group at `speedFactor`, members leaving at `leavePerDay`, down to its floor, instead of starving). Prototype tuning (ARCHITECTURE.md §6.1). Run `node shared/ecology/gen.mjs` after editing; CI fails if crates/dwell-ecology/src/ecology.gen.rs is stale.",
+  "formatVersion": 1,
+  "island": { "cellM": 200, "stepDays": 5 },
+  "grazing": {
+    "regrowPerDay": 0.05,
+    "grounds": [
+      { "name": "meadow", "maxHeightM": 120, "maxSlopeDeg": 18, "max": 40 },
+      { "name": "upland", "maxHeightM": 400, "maxSlopeDeg": 30, "max": 16 },
+      { "name": "crag", "maxHeightM": 100000, "maxSlopeDeg": 90, "max": 2 }
+    ]
+  },
+  "species": [
+    {
+      "name": "dwell:deer",
+      "group": { "floor": 2, "cap": 12, "mergeBelow": 4, "mergeRadiusM": 400, "maxGroups": 40 },
+      "start": { "groups": 8, "size": 6 },
+      "breedPerDay": 0.03,
+      "breedBelowHunger": 0.4,
+      "hungerDays": 6,
+      "starveAboveHunger": 0.7,
+      "starvePerDay": 0.01,
+      "speedMPerDay": 3000,
+      "senseRadiusM": 800,
+      "diet": { "graze": { "perHeadPerDay": 1 } },
+      "flee": { "from": ["dwell:wolf"], "radiusM": 500 }
+    },
+    {
+      "name": "dwell:wolf",
+      "group": { "floor": 2, "cap": 7, "mergeBelow": 3, "mergeRadiusM": 600, "maxGroups": 8 },
+      "start": { "groups": 2, "size": 4 },
+      "breedPerDay": 0.008,
+      "breedBelowHunger": 0.4,
+      "hungerDays": 4,
+      "starveAboveHunger": 0.75,
+      "starvePerDay": 0.005,
+      "speedMPerDay": 8000,
+      "senseRadiusM": 3000,
+      "diet": { "prey": { "species": ["dwell:deer"], "killsPerHeadPerDay": 0.12, "needPerHeadPerDay": 0.08, "preyPerHead": 20, "reachM": 300 } },
+      "disperse": { "aboveHunger": 0.6, "speedFactor": 2, "leavePerDay": 0.01 }
+    }
+  ]
+}

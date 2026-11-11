@@ -74,9 +74,14 @@ and friend worlds), with a small master server for discovery; there are no offic
 - `docs/WATER_SURFACE_GRID.md` — design for Phase 53 (ADR 0060): water as a simulated surface grid in its own
   layer (sleeping chunks, pools, a held sea), generated water filled by it at world creation; replaces
   Phase 52's basins and pool graph when built.
+<<<<<<< HEAD
 - `docs/AGENT_QUICKSTART.md` — the one page an agent reads instead of this file for a typical task.
 - `docs/CLOUD_SESSIONS.md` — running Claude Code cloud sessions for parallel logic-only work: launching,
   follow-ups, the PR and merge flow, what suits the cloud, limits and timings.
+=======
+- `docs/ECOLOGY.md` — the far ecology (WORK_QUEUE item 11): deer herds and wolf packs as data records on a
+  face's island grid, forage per cell, the day step (`crates/dwell-ecology`, `shared/ecology/ecology.json`).
+>>>>>>> origin/main
 - `docs/WORK_QUEUE.md` — the owner's ordered work queue with the decisions behind each item; update it in the change that
   starts, finishes or re-orders an item.
 - `docs/BUGS.md` — the open bugs the owner reported, with repros and suspects; fixed ones move to its Fixed list.
