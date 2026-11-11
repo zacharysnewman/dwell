@@ -117,9 +117,12 @@ Last updated: 2026-11-11 (0.52.68).
    area, lava tubes (`tubeSpeedMs`), lava running into the sea and building land above it, save record
    version 2 (version 1 still loads), and a river vent on the starter island's flank on face B whose way
    to the sea is 1.3 km (lavaVents `faces`), and breakouts through crust dams (`breakoutDepthM`);
-   VOLCANOES.md §6.4. **Open:** on the generated terrain the starter river no longer dams itself but
-   spreads into a sheet and reaches ~630 m in 18 world days (it reaches the sea on the fixture flank
-   only); channelling or the lava's tuning next (§6.4, the owner's call).
+   VOLCANOES.md §6.4. **Outcomes, not a target (owner, 2026-11-11: "Sometimes it may, other times it may
+   not" reach the sea):** breakouts melt only a dam on the pond's way down, so levees beside a channel
+   hold; tested that a strong vent on a steep flank reaches the sea and builds land and a weak one on a
+   shallow slope crusts and stops short; the starter river runs ~600 m of its 1.3 km and crusts (no land;
+   the ignored long test reports it, `DWELL_LAVA_TUNE` for tuning). Lava stiffening as it cools was
+   tried and only slowed the whole flow (§6.4).
    **Next:** heat per cell; the water grid's columns as the fields' water; eruptions.
 9. ~~**Loading-time display bug.**~~ Done (0.52.71): the 10 s was the graphics' start (one long task on the
    main thread making the renderer's pipelines) begun in the same task that ended the game's load, so the
@@ -170,9 +173,10 @@ Last updated: 2026-11-11 (0.52.68).
    screenshots and bench cost. **Local worlds built** (2026-11-11, ECOLOGY.md §6): the local server already
    had both maps installed in its instance, so its ecology runs, saves and reloads as on native; the bug
    was the client's session dropping `Ecology`, so `__dwell.ecology()` and the far herds were empty on
-   every server (fixed). The ecology is 12.5 MB for both faces; its ~3 MB record is now written only when
-   it changed (a local world saves every 5 s). Next: a smaller island, grazing applied to tall grass as
-   chunks load.
+   every server (fixed). **Smaller island built** (2026-11-11, ECOLOGY.md §6): only land cells stored,
+   forage f32, the saved forage as runs (a cell at its most not written; version 2, version 1 still
+   read): 12.5 MB → 0.93 MB for both faces, the record ~3 MB → ~1 KB fresh, a few KB grazed, and it is
+   still written only when it changed. Next: grazing applied to tall grass as chunks load.
 12. **Players' saved structures as placement sources** (owner 2026-11-11): per player (their library, usable
    in any world they create); placed copies editable, not protected; 32³ for now (may change), or larger
    structures as a grid of 32³ tiles. Sharing between players: Future.

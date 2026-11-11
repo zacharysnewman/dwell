@@ -3,7 +3,7 @@
 //! hotspot island's summit (`tectonics.lavaVents`), placed by the server on each face when the
 //! world is created, and lava stands round the vent after a while with a player beside it. V2
 //! (§6.4): a river vent on the same island's flank on face B, whose way downhill reaches the sea
-//! 1.3 km off, and (a long run, `--ignored`, not passing yet) whether its lava does. Its own test binary: the starter's maps are installed process-wide.
+//! 1.3 km off, and (a long run, `--ignored`) how far its lava gets: the physics' outcome, no target. Its own test binary: the starter's maps are installed process-wide.
 
 mod common;
 
@@ -215,13 +215,15 @@ fn the_starter_river_vent_stands_on_face_bs_flank_over_a_kilometre_from_the_sea(
 // The long run (`cargo test -p dwell-sim --test lava_world -- --ignored`, about four minutes;
 // `DWELL_LAVA_TRACE=1` prints its progress): the starter's river vent, its field growing over the
 // terrain (the bed the terrain generates, the sea over the ground below sea level), fast-forwarded
-// far from any player until it builds land in the sea within twenty world days (800 s each at lava
-// speed 1). NOT PASSING YET (VOLCANOES.md §6.4, open): with breakouts the river no longer dams
-// itself, but it spreads into a sheet and reaches ~630 m of its 1.3 km in 18 days. The check for
-// the tuning (or channelling) that closes it; too long for CI.
+// far from any player for twenty world days (800 s each at lava speed 1), or until it builds land in
+// the sea. Whether it gets there is the physics' (owner, 2026-11-11: "sometimes it may, other times it
+// may not"; VOLCANOES.md §6.4): no target, it prints the outcome and checks only that the river ran
+// well down the flank. With the build's lava it reaches ~600 m of its 1.3 km and crusts there, no
+// land. `DWELL_LAVA_TUNE=rate=4,breakout=3,…` (the keys below) runs it with other data, for tuning.
+// Too long for CI (~3 min).
 #[test]
 #[ignore = "a long fast-forward (minutes); run by hand"]
-fn the_starter_river_reaches_the_sea_and_builds_land() {
+fn the_starter_river_runs_its_course() {
     // face-b-only: the river is face B's (`faces`); the macro can't carry `#[ignore]` anyway.
     install();
     {
@@ -238,7 +240,30 @@ fn the_starter_river_reaches_the_sea_and_builds_land() {
                 water: (y < sea).then_some(sea),
             })
         };
-        let mut field = dwell_lava::Field::growing(&dwell_lava::DATA, &v.fluid).unwrap();
+        let mut fl = *dwell_lava::DATA.fluid(&v.fluid).unwrap();
+        let mut rules = dwell_lava::DATA;
+        let mut rate = v.rate_m3s;
+        if let Ok(t) = std::env::var("DWELL_LAVA_TUNE") {
+            for kv in t.split(',') {
+                let (k, val) = kv.split_once('=').unwrap();
+                let val: f32 = val.parse().unwrap();
+                match k {
+                    "visc" => fl.viscosity_m2s = val,
+                    "yield" => fl.yield_depth_m = val,
+                    "cool" => fl.cooling_seconds = val,
+                    "edge" => fl.edge_cooling = val,
+                    "thin" => fl.thin_depth_m = val,
+                    "tube" => fl.tube_speed_ms = val,
+                    "breakout" => fl.breakout_depth_m = val,
+                    "rate" => rate = val,
+                    "step" => rules.step_depth_m = val,
+                    "far" => rules.far_every_seconds = val,
+                    _ => panic!("{k}"),
+                }
+            }
+        }
+        rules.fluids = std::slice::from_ref(Box::leak(Box::new(fl)));
+        let mut field = dwell_lava::Field::growing(&rules, &v.fluid).unwrap();
         field.origin = c;
         let r = v.radius as i32;
         field.cover([-r, -r], [r, r], &mut ground, 0.0);
@@ -246,7 +271,7 @@ fn the_starter_river_reaches_the_sea_and_builds_land() {
             kind: dwell_lava::VentKind::River,
             x: 0,
             z: 0,
-            rate_m3s: v.rate_m3s,
+            rate_m3s: rate,
             level_m: 0.0,
         });
         let day = 800.0;
@@ -289,12 +314,18 @@ fn the_starter_river_reaches_the_sea_and_builds_land() {
             }
         }
         let n = land(&field);
+        let reach = field
+            .columns()
+            .filter(|&i| field.depth[i] > 0.0 || field.crust[i] > 0.0)
+            .map(|i| field.col(i))
+            .map(|[x, z]| f64::from(x * x + z * z).sqrt())
+            .fold(0.0, f64::max);
         eprintln!(
-            "the starter river: land {n} columns after {:.1} world days, {} tiles",
+            "the starter river: reach {reach:.0} m, land {n} columns after {:.1} world days, {} tiles",
             t_s / day,
             field.tiles().len()
         );
-        assert!(n > 0, "new land in the sea within 20 world days");
+        assert!(reach > 300.0, "it ran down the flank: {reach:.0} m");
     }
 }
 

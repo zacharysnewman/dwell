@@ -347,9 +347,11 @@ fn grazing_regrows_toward_each_cells_most() {
     }
     // 20 days at 0.05 a day of the gap: 1 − e^−1 of the most.
     let want = 1.0 - (-1.0f64).exp();
+    // Forage is f32 (docs/ECOLOGY.md §6): within its rounding of the closed form.
     for (c, &g) in eco.grazing.iter().enumerate() {
+        let max = f64::from(isl.grazing_max[c]);
         assert!(
-            (g - isl.grazing_max[c] * want).abs() < 1e-9,
+            (f64::from(g) - max * want).abs() < 1e-6 * max.max(1.0),
             "cell {c}: {g}"
         );
     }
@@ -360,9 +362,9 @@ fn grazing_regrows_toward_each_cells_most() {
 fn grazing_is_depleted_where_a_herd_eats() {
     let isl = island(&DATA);
     let mut eco = by_hand(&isl, vec![group(0, deer(), -1500.0, 0.0, 12.0, 0.6)]);
-    let before: f64 = eco.grazing.iter().sum();
+    let before: f64 = eco.grazing.iter().map(|&g| f64::from(g)).sum();
     step(&isl, &DATA, &mut eco, 1.0);
-    let after: f64 = eco.grazing.iter().sum();
+    let after: f64 = eco.grazing.iter().map(|&g| f64::from(g)).sum();
     assert!(after < before - 5.0, "{before} → {after}");
 }
 
@@ -385,7 +387,8 @@ fn a_hundred_days_at_once_roughly_match_a_hundred_single_days() {
                 DATA.species[s].name
             );
         }
-        let (gb, gm): (f64, f64) = (big.grazing.iter().sum(), small.grazing.iter().sum());
+        let sum = |e: &Ecosystem| e.grazing.iter().map(|&g| f64::from(g)).sum::<f64>();
+        let (gb, gm) = (sum(&big), sum(&small));
         assert!((gb - gm).abs() <= 0.15 * gm.max(gb), "grazing {gb} vs {gm}");
     }
 }
@@ -546,7 +549,10 @@ dwell_world::both_faces!(
         let map =
             dwell_worldgen::worldmap::for_seed(dwell_worldgen::bifacial::face_seed(11, f.face));
         let isl = Island::from_world_map(&map, &DATA);
-        assert!(isl.walkable.iter().any(|&w| w) && isl.walkable.iter().any(|&w| !w));
+        assert!(
+            isl.cells() > 0 && isl.cells() < isl.n * isl.n,
+            "land and water"
+        );
         assert!(isl.grazing_max.iter().any(|&g| g > 0.0));
         let mut eco = Ecosystem::new(&isl, &DATA, 11);
         for _ in 0..20 {
@@ -565,7 +571,7 @@ fn an_ecosystem_round_trips_through_its_bytes() {
     let isl = island(&DATA);
     let mut eco = Ecosystem::new(&isl, &DATA, 5);
     step(&isl, &DATA, &mut eco, 120.0);
-    let bytes = eco.to_bytes(&DATA);
+    let bytes = eco.to_bytes(&isl, &DATA);
     let back = Ecosystem::from_bytes(&bytes, &isl, &DATA).expect("reads its own bytes");
     assert_eq!(back, eco);
     assert_eq!(back.digest(), eco.digest());
@@ -586,7 +592,7 @@ fn saved_species_are_mapped_by_name_and_unknown_ones_dropped() {
     let isl = island(&DATA);
     let mut eco = Ecosystem::new(&isl, &DATA, 5);
     step(&isl, &DATA, &mut eco, 20.0);
-    let bytes = eco.to_bytes(&DATA);
+    let bytes = eco.to_bytes(&isl, &DATA);
     const ONLY_DEER: Data = Data {
         species: &[
             dwell_ecology::SpeciesDef {
@@ -628,16 +634,17 @@ fn the_far_forage_regrows_toward_the_same_climate_cap_as_the_near_grass() {
     let env = |x: i32, _z: i32| (0.5f32, ((f64::from(x) + 1800.0) / 3600.0).clamp(0.0, 1.0));
     isl.scale_grazing(|x, z| far_share(&env, x, z));
     let rule = Rule::build(1);
-    for c in 0..isl.n * isl.n {
+    for c in 0..isl.cells() {
         if unscaled.grazing_max[c] == 0.0 {
             continue;
         }
         let (x, z) = isl.centre(c);
         let share = env(x.floor() as i32, z.floor() as i32).1;
-        let far = isl.grazing_max[c] / unscaled.grazing_max[c];
+        let far = f64::from(isl.grazing_max[c]) / f64::from(unscaled.grazing_max[c]);
         let near = rule.cap(share) / rule.data.max_density;
+        // The most forage is f32 (docs/ECOLOGY.md §6): within its rounding.
         assert!(
-            (far - near).abs() < 1e-9,
+            (far - near).abs() < 1e-6,
             "cell {c}: far {far}, near {near}"
         );
     }
@@ -658,3 +665,151 @@ fn the_far_forage_regrows_toward_the_same_climate_cap_as_the_near_grass() {
         }
     }
 }
+
+/// Version 1's bytes (before the land-only island): the whole `n` × `n` grid's forage as f64,
+/// water cells 0, then the species and groups as version 2 writes them.
+fn version_1_bytes(eco: &Ecosystem, isl: &Island, data: &Data) -> Vec<u8> {
+    let mut grid = vec![0.0f64; isl.n * isl.n];
+    for (c, k) in isl.grid_indices().enumerate() {
+        grid[k] = f64::from(eco.grazing[c]);
+    }
+    let mut b = vec![1u8];
+    b.extend(eco.seed.to_le_bytes());
+    b.extend(eco.day.to_bits().to_le_bytes());
+    b.extend(eco.next_id.to_le_bytes());
+    b.extend((grid.len() as u32).to_le_bytes());
+    for g in grid {
+        b.extend(g.to_bits().to_le_bytes());
+    }
+    b.extend((data.species.len() as u16).to_le_bytes());
+    for s in data.species {
+        b.extend((s.name.len() as u16).to_le_bytes());
+        b.extend(s.name.as_bytes());
+    }
+    b.extend((eco.groups.len() as u32).to_le_bytes());
+    for g in &eco.groups {
+        b.extend(g.id.to_le_bytes());
+        b.extend((g.species as u16).to_le_bytes());
+        for v in [g.x, g.z, g.size, g.hunger, g.energy] {
+            b.extend(v.to_bits().to_le_bytes());
+        }
+        b.push(match g.activity {
+            Activity::Resting => 0,
+            Activity::Grazing => 1,
+            Activity::Moving => 2,
+            Activity::Fleeing => 3,
+            Activity::Hunting => 4,
+            Activity::Roaming => 5,
+            Activity::Dispersing => 6,
+        });
+    }
+    b
+}
+
+#[test]
+fn an_older_version_1_record_still_loads_its_land_cells_forage() {
+    let isl = island(&DATA);
+    let mut eco = Ecosystem::new(&isl, &DATA, 5);
+    step(&isl, &DATA, &mut eco, 120.0);
+    assert!(
+        eco.grazing
+            .iter()
+            .zip(&isl.grazing_max)
+            .any(|(g, m)| g != m),
+        "some forage was grazed"
+    );
+    let v1 = version_1_bytes(&eco, &isl, &DATA);
+    let back = Ecosystem::from_bytes(&v1, &isl, &DATA).expect("reads a version 1 record");
+    assert_eq!(back, eco, "the land's forage and the groups as they were");
+    // And written back as version 2, smaller.
+    let v2 = back.to_bytes(&isl, &DATA);
+    assert_eq!(v2[0], 2);
+    assert!(v2.len() < v1.len(), "{} vs {}", v2.len(), v1.len());
+}
+
+#[test]
+fn the_land_only_island_matches_its_whole_grid() {
+    // Every grid cell: land exactly where the sampler said, each land cell's index found back from
+    // its centre, in row-major order.
+    let isl = island(&DATA);
+    let land = |x: f64, z: f64| x.hypot(z) <= 1800.0;
+    let mut next = 0;
+    for j in 0..isl.n {
+        for i in 0..isl.n {
+            let (x, z) = isl.grid_centre(i, j);
+            let c = isl.index(i, j);
+            assert_eq!(c.is_some(), land(x, z), "cell ({i}, {j})");
+            assert_eq!(isl.cell_at(x + 40.0, z - 40.0), c);
+            if let Some(c) = c {
+                assert_eq!(c, next, "row-major");
+                assert_eq!(isl.centre(c), (x, z));
+                assert_eq!(isl.grid_of(c), (i, j));
+                next += 1;
+            }
+        }
+    }
+    assert_eq!(next, isl.cells());
+    assert!(isl.cells() < isl.n * isl.n, "the sea is not stored");
+    assert_eq!(isl.cell_at(-1.0e6, 0.0), None);
+    assert_eq!(isl.index(isl.n, 0), None);
+}
+
+#[test]
+fn a_records_forage_runs_round_trip_whatever_their_pattern() {
+    let isl = island(&DATA);
+    let mut eco = by_hand(&isl, vec![group(0, deer(), 0.0, 0.0, 5.0, 0.2)]);
+    // Every third cell grazed, a long bare stretch, the rest full.
+    for c in 0..eco.grazing.len() {
+        if c % 3 == 0 || (40..90).contains(&c) {
+            eco.grazing[c] *= 0.25;
+        }
+    }
+    let bytes = eco.to_bytes(&isl, &DATA);
+    assert_eq!(
+        Ecosystem::from_bytes(&bytes, &isl, &DATA),
+        Some(eco.clone())
+    );
+    // A cut-short forage section is not read.
+    let fresh = by_hand(&isl, vec![]).to_bytes(&isl, &DATA);
+    for cut in [25, 26, 27, fresh.len() - 1] {
+        assert_eq!(Ecosystem::from_bytes(&fresh[..cut], &isl, &DATA), None);
+    }
+}
+
+dwell_world::both_faces!(
+    fn a_seed_1_worlds_ecology_is_small_in_memory_and_saved(f: dwell_world::FaceFrame) {
+        // Measured on a seed-1 world (docs/ECOLOGY.md §6, "Cost"): each face's island and
+        // ecosystem; both faces together under 3 MB (12.5 MB before the land-only island).
+        let map =
+            dwell_worldgen::worldmap::for_seed(dwell_worldgen::bifacial::face_seed(1, f.face));
+        let isl = Island::from_world_map(&map, &DATA);
+        let mut eco = Ecosystem::new(&isl, &DATA, 1);
+        let fresh = eco.to_bytes(&isl, &DATA).len();
+        step(&isl, &DATA, &mut eco, 200.0);
+        let bytes = isl.heap_bytes() + eco.heap_bytes();
+        println!(
+            "face {:?}: {} of {} cells land, {bytes} bytes; a fresh record {fresh} bytes",
+            f.face,
+            isl.cells(),
+            isl.n * isl.n
+        );
+        assert!(
+            2 * bytes <= 3 << 20,
+            "both faces' ecology under 3 MB: {bytes} bytes a face"
+        );
+        assert!(fresh <= 100 << 10, "a fresh face's record: {fresh} bytes");
+        // Grazed bare, its herds gone, and regrown: every cell back at its most exactly, so the
+        // record is as small as a fresh one's.
+        eco.groups.clear();
+        eco.grazing.iter_mut().for_each(|g| *g = 0.0);
+        step(&isl, &DATA, &mut eco, 2000.0);
+        assert_eq!(eco.grazing, isl.grazing_max, "regrown to the most exactly");
+        let regrown = eco.to_bytes(&isl, &DATA).len();
+        assert!(
+            regrown <= 100 << 10,
+            "a regrown face's record: {regrown} bytes"
+        );
+        let back = Ecosystem::from_bytes(&eco.to_bytes(&isl, &DATA), &isl, &DATA);
+        assert_eq!(back, Some(eco));
+    }
+);
