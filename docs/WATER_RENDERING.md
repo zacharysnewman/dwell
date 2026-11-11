@@ -1196,6 +1196,16 @@ warped a little, so the seams bend and the crust flows. The plates' colour is th
 is a quarter on the crust and up to 1.6 × `molten_heat` on the seams. The CPU tier keeps the still
 painted tile. The pattern's constants are shader constants for now (a look file when it is tuned).
 
+### 17.1a Heat stops (lava glow, 2026-11-11)
+
+Owner, 2026-11-11: "Lava looks dark red instead of bright red/orange" / "It should darken as it
+solidifies though." Each molten cell is a `heat` state of `dwell:lava` (VOLCANOES.md §6.5), carried to the
+shader in its faces' vertex colour; the molten branch reads that stop's row (`lava_stop_look`,
+`lava_stop_core`, generated from `shared/fluids/lava.json` `heat`): the seams in the stop's colour with its
+core at their middle, at its emissive, seams widening as the crust thins
+(`MOLTEN_SEAM + MOLTEN_OPEN × (1 − crust)`), the crust plates darker the more they cover. Lava glows
+through `emitted_hue` (the tone curve on the brightest channel, the hue kept). The bloom pass is not built.
+
 ### 17.2 Steam and burning (round 3)
 
 - **Steam's look** is data: `shared/fluids/lava.json` `steam` (colour, life, rise, size, opacity;

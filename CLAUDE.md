@@ -141,6 +141,14 @@ a prototype, record that as a deviation with the reason. Bug fixes and tuning of
 don't need this step; a fix in hardcoded code that the baseline rework will replace doesn't need to
 make it extendable first.
 
+## Requirement: record the owner's requests as they arrive
+
+Owner, 2026-11-11: "This is why we need to be documenting these as we go." Every request, answer or
+decision the owner gives goes into `docs/WORK_QUEUE.md` (a bug also into `docs/BUGS.md`) **in the same turn
+it arrives**, in the owner's words, before or alongside starting the work: not only in a session's memory,
+a scratch note or an agent's brief. Commit it with the next change (or on its own). An item nobody recorded
+doesn't exist for the next session.
+
 ## Lighter paperwork for small changes
 
 Owner, 2026-11-11. Small changes — bug fixes, tuning, tests, docs — update only `docs/WORK_QUEUE.md`

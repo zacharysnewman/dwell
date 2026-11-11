@@ -1,0 +1,136 @@
+{
+  "$comment": "The plate layout a Realistic world's seed draws (docs/proposals/REALISTIC_WORLD.md §3.1, phase R1; owner 2026-11-11: plates decide land and sea, face B its own plates from its own face seed). Read by crates/dwell-worldgen/src/plates.rs; not wired into any world yet, so nothing here changes the terrain a seed generates. `count` [min, max]: the seed picks how many plates (3–5 for the first region, the proposal's default; Q1 not answered). `reach`: plates and hotspots lie within this many m of the disc's centre, and the layout covers that disc; `seaMargin`: the outer m of it are sea whatever the plate (the disc must end in sea). `spacing`: the least distance between two plates' centres (m), tried at up to `attempts` seeded points. `kinds`: each plate kind (code vocabulary: oceanic, continental) has a draw `weight` and a `min` count the layout keeps (oceanic plate = sea, continental = land). `speed` [min, max] cm/yr and `age` [min, max] Myr are drawn uniformly per plate. `warp`: the boundaries curve by `amplitude` m of noise at `wavelength` m. `transformBelow`: a boundary is transform where the closing (or opening) rate across it is less than this share of the plates' relative speed, else convergent (closing) or divergent (opening). `hotspots`: `count` [min, max] points fixed in the mantle within `within` m of the centre; the chain runs back along the overlying plate's motion. `fixtures`: two-plate layouts by data with the boundary each must give (`kind`, and `subducts`: the index of the plate that dives, or null) — the tests check every entry. Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output.",
+  "count": [3, 5],
+  "reach": 25000,
+  "seaMargin": 2000,
+  "spacing": 8000,
+  "attempts": 400,
+  "kinds": {
+    "oceanic": {
+      "weight": 0.45,
+      "min": 1
+    },
+    "continental": {
+      "weight": 0.55,
+      "min": 1
+    }
+  },
+  "speed": [1, 10],
+  "age": [5, 200],
+  "warp": {
+    "amplitude": 2500,
+    "wavelength": 16000
+  },
+  "transformBelow": 0.4,
+  "hotspots": {
+    "count": [0, 2],
+    "within": 22000
+  },
+  "fixtures": [
+    {
+      "name": "ocean_under_continent",
+      "plates": [
+        {
+          "kind": "oceanic",
+          "at": [-5000, 0],
+          "motion": [5, 0],
+          "age": 80
+        },
+        {
+          "kind": "continental",
+          "at": [5000, 0],
+          "motion": [-1, 0],
+          "age": 150
+        }
+      ],
+      "expect": {
+        "kind": "convergent",
+        "subducts": 0
+      }
+    },
+    {
+      "name": "older_ocean_dives",
+      "plates": [
+        {
+          "kind": "oceanic",
+          "at": [0, -5000],
+          "motion": [0, 3],
+          "age": 40
+        },
+        {
+          "kind": "oceanic",
+          "at": [0, 5000],
+          "motion": [0, -3],
+          "age": 120
+        }
+      ],
+      "expect": {
+        "kind": "convergent",
+        "subducts": 1
+      }
+    },
+    {
+      "name": "continents_collide",
+      "plates": [
+        {
+          "kind": "continental",
+          "at": [-5000, 0],
+          "motion": [4, 1],
+          "age": 100
+        },
+        {
+          "kind": "continental",
+          "at": [5000, 0],
+          "motion": [-4, 0],
+          "age": 100
+        }
+      ],
+      "expect": {
+        "kind": "convergent",
+        "subducts": null
+      }
+    },
+    {
+      "name": "rift_opens",
+      "plates": [
+        {
+          "kind": "continental",
+          "at": [-5000, 0],
+          "motion": [-3, 0],
+          "age": 100
+        },
+        {
+          "kind": "oceanic",
+          "at": [5000, 0],
+          "motion": [3, 1],
+          "age": 20
+        }
+      ],
+      "expect": {
+        "kind": "divergent",
+        "subducts": null
+      }
+    },
+    {
+      "name": "plates_slide_past",
+      "plates": [
+        {
+          "kind": "continental",
+          "at": [-5000, 0],
+          "motion": [0, 4],
+          "age": 100
+        },
+        {
+          "kind": "oceanic",
+          "at": [5000, 0],
+          "motion": [0.5, -4],
+          "age": 60
+        }
+      ],
+      "expect": {
+        "kind": "transform",
+        "subducts": null
+      }
+    }
+  ]
+}

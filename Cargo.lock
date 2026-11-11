@@ -896,6 +896,7 @@ name = "dwell-mesh"
 version = "0.0.0"
 dependencies = [
  "dwell-blocks",
+ "dwell-lava",
  "dwell-look",
  "dwell-models",
  "dwell-protocol",

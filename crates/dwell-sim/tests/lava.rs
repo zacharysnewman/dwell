@@ -182,6 +182,70 @@ dwell_world::both_faces!(
 );
 
 dwell_world::both_faces!(
+    fn lava_cells_show_their_columns_heat_stop_hot_at_the_vent_cooler_at_the_front(f: FaceFrame) {
+        // Owner, 2026-11-11: "It should darken as it solidifies." Each column's cells are the
+        // `heat` state of its stop (VOLCANOES.md §6.5), rewritten as it cools past one.
+        let stops = dwell_sim::lava::heat_states("dwell:lava");
+        assert_eq!(stops.len(), dwell_lava::DATA.heat.len());
+        assert!(stops.windows(2).all(|w| w[0] != w[1]), "one state per stop");
+        let mut fx = scene(f, "creative", false, None);
+        let river = VentSpot {
+            fluid: "dwell:lava".into(),
+            kind: VentKind::River,
+            rate_m3s: 0.4,
+            depth_m: 0.0,
+            radius: 8,
+        };
+        fx.server
+            .place_lava_vent(f, [0, 0], BASE, &river)
+            .expect("a vent on the stone");
+        step(&mut fx, 60 * SECOND);
+        // The vent all but stops: the flow it fed slows and cools in place, darkening by stop.
+        fx.server.scale_lava_rate(0.01);
+        step(&mut fx, 30 * SECOND);
+        let all = fx.take_all();
+        let mut seen = vec![0; stops.len()];
+        let field = fx.server.lava().fields[0].field.clone();
+        for x in -8..=8 {
+            for z in -8..=8 {
+                for r in BASE..BASE + 4 {
+                    let m = at(&mut fx, f, [x, r, z]);
+                    if let Some(k) = stops.iter().position(|&s| f.state(s) == m) {
+                        seen[k] += 1;
+                        // The cell's stop is its column's heat's, within the hysteresis.
+                        let i = field.slot(x, z).expect("a column of the field");
+                        let h = field.heat[i];
+                        let d = &dwell_lava::DATA;
+                        let lo = d.heat[k].above - d.heat_hysteresis;
+                        let hi = if k == 0 {
+                            2.0
+                        } else {
+                            d.heat[k - 1].above + d.heat_hysteresis
+                        };
+                        assert!(
+                            h >= lo && h < hi || h == 0.0,
+                            "({x}, {r}, {z}) {} at heat {h}",
+                            d.heat[k].name
+                        );
+                    }
+                }
+            }
+        }
+        assert!(seen[0] > 0, "hot lava by the vent: {seen:?}");
+        assert!(
+            seen[1..].iter().sum::<i32>() > 0,
+            "cooler lava toward the front: {seen:?}"
+        );
+        assert!(
+            stops[1..]
+                .iter()
+                .any(|&s| sent(&all, 1).contains(&f.state(s))),
+            "the client was sent a cooler stop"
+        );
+    }
+);
+
+dwell_world::both_faces!(
     fn a_player_in_lava_loses_health_and_burns_on_after(f: FaceFrame) {
         let full = players::MAX_HEALTH as i32;
         let mut fx = filled(f, "adventure", 30, None);
@@ -388,7 +452,7 @@ dwell_world::both_faces!(
                 (-3..=3).any(|z| {
                     (top(x) - 2..top(x) + 6).any(|r| {
                         let m = at(&mut fx, f, [x, r, z]);
-                        m == lava || m == basalt
+                        dwell_blocks::info(m).block == dwell_blocks::info(lava).block || m == basalt
                     })
                 })
             })

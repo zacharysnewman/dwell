@@ -37,6 +37,23 @@ fn glow(c: vec3f) -> vec3f {{
     return inverse_display(srgb_encode(clamp(ACES_OUTPUT * rrt_odt_fit(ACES_INPUT * v), vec3f(0.0), vec3f(1.0))));
 }}
 
+// `glow` keeping the hue (lava, VOLCANOES.md §6.5): the tone curve applied to the brightest
+// channel only, the colour scaled with it, so a hot orange stays orange instead of washing toward
+// yellow-white. Capped at GLOW_PEAK as `glow` is.
+fn glow_hue(c: vec3f) -> vec3f {{
+    let peak = max(max(c.r, c.g), c.b);
+    if (peak <= 0.0) {{
+        return vec3f(0.0);
+    }}
+    let p = min(peak, GLOW_PEAK);
+    let t = clamp(ACES_OUTPUT * rrt_odt_fit(ACES_INPUT * vec3f(p)), vec3f(0.0), vec3f(1.0));
+    let l = max(max(t.r, t.g), t.b);
+    return inverse_display(srgb_encode(c / peak * l));
+}}
+fn emitted_hue(lit: vec3f, albedo: vec3f, shine: f32) -> vec3f {{
+    return lit * (1.0 - min(shine, 1.0)) + glow_hue(albedo * shine);
+}}
+
 // A surface lit to `lit` with emissive `shine`: its lit colour replaced by up to all of its glow
 // (`shine` 1 or more: fully self-lit, unaffected by the sun, ambient, flood light, corner occlusion
 // and shadows); `emitted` below mirrors it.

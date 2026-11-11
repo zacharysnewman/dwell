@@ -78,8 +78,12 @@ fn fnv(h: &mut u64, bytes: &[u8]) {
 /// surface of every 512th of those columns, and LOD sections over the face at two levels.
 /// `STARTER_PIN=print` prints the hashes to re-pin after a deliberate change of the starter world
 /// (a worldgen change: a new compatibility line).
+///
+/// Re-pinned 2026-11-11 for the steppe's `undergrowth` 1 → 0.75 (`shared/worldgen/worlds/starter.json`,
+/// sparse tall grass in its dry lee): the earlier pin was recorded on code from before that change
+/// (with the steppe back at 1 the old hashes match exactly, so it was stale, not a float difference).
 const STARTER_PIN: [(Face, &str); 2] =
-    [(Face::A, "43e3e88612532cad"), (Face::B, "5d2fc4552314933e")];
+    [(Face::A, "b3ec7a4067146f17"), (Face::B, "d35b89d345614054")];
 
 #[test]
 fn the_starter_worlds_terrain_is_unchanged() {

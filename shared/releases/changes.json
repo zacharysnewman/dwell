@@ -2,6 +2,31 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.52.110",
+      "changes": [
+        "The main menu's Settings and Versions are now buttons in the menu's own style, side by side under Worlds and Play with others"
+      ]
+    },
+    {
+      "version": "0.52.109",
+      "changes": [
+        "Behind the scenes: a starter-world terrain check updated for the steppe's sparser grass"
+      ]
+    },
+    {
+      "version": "0.52.108",
+      "changes": [
+        "Behind the scenes: the first step of a Realistic world: each seed draws its own tectonic plates, their boundaries and hotspots (not used by any world yet; the terrain is unchanged)"
+      ]
+    },
+    {
+      "version": "0.52.107",
+      "changes": [
+        "Lava glows bright orange-red instead of dark red",
+        "Lava darkens as it cools: deeper red with more crust, then nearly black just before it turns to rock"
+      ]
+    },
+    {
       "version": "0.52.106",
       "changes": [
         "Design: a study of a ten times larger world (no change in game yet)"

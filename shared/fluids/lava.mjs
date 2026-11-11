@@ -48,12 +48,22 @@ const COLOR = /^#[0-9a-f]{6}$/;
 export const LOOK_DEFAULTS = {
   steam: { color: '#f2f4f6', seconds: 1.6, riseMs: 1.6, sizeM: [0.4, 1.6], opacity: 0.75 },
   burnEdge: { color: '#ff5a1e', opacity: 0.6, seconds: 0.9 },
+  heat: [{ name: 'hot', above: 0, color: '#ff5a14', core: '#ffa030', intensity: 1.6, crust: 0.5 }],
+  heatHysteresis: 0.03,
 };
+/** A heat stop's name: the value of lava's `heat` block property it would be written as. */
+const STOP_NAME = /^[a-z][a-z0-9_]*$/;
 
 /** The registry's block names, from shared/blocks/dwell.json. */
 export function registryBlocks() {
   const ns = JSON.parse(readFileSync(join(root, 'shared/blocks/dwell.json'), 'utf8'));
   return new Set(ns.blocks.map((b) => `${ns.namespace}:${b.name}`));
+}
+
+/** Each registry block's `heat` property values (lava's look by heat), by block name. */
+export function registryHeat() {
+  const ns = JSON.parse(readFileSync(join(root, 'shared/blocks/dwell.json'), 'utf8'));
+  return new Map(ns.blocks.filter((b) => b.properties?.heat).map((b) => [`${ns.namespace}:${b.name}`, b.properties.heat]));
 }
 
 const isObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -62,7 +72,7 @@ const isObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
  * Checks lava data; returns it. `known` names fluids a vent may name besides the file's own (a
  * fixture's vents may use the build's lava). Throws naming the entry.
  */
-export function validateLava(data, { blocks = registryBlocks(), known = [], file = 'lava.json' } = {}) {
+export function validateLava(data, { blocks = registryBlocks(), heatProps = registryHeat(), known = [], file = 'lava.json' } = {}) {
   const bad = (m) => {
     throw new Error(`${file}: ${m}`);
   };
@@ -79,7 +89,7 @@ export function validateLava(data, { blocks = registryBlocks(), known = [], file
   const block = (at, v) => {
     if (!blocks.has(v)) bad(`${at}: ${JSON.stringify(v)} is not a block of the registry`);
   };
-  keys(data, '(root)', ['formatVersion', ...Object.keys(TOP_RANGES), 'fluids', 'vents', 'steam', 'burnEdge']);
+  keys(data, '(root)', ['formatVersion', ...Object.keys(TOP_RANGES), 'fluids', 'vents', 'steam', 'burnEdge', 'heat', 'heatHysteresis']);
   const color = (at, v) => {
     if (typeof v !== 'string' || !COLOR.test(v)) bad(`${at} must be a colour #rrggbb, got ${JSON.stringify(v)}`);
   };
@@ -100,6 +110,25 @@ export function validateLava(data, { blocks = registryBlocks(), known = [], file
     range(data.burnEdge, 'burnEdge', 'opacity', [0, 1, false]);
     range(data.burnEdge, 'burnEdge', 'seconds', [0.05, 10, false]);
   }
+  if (data.heat !== undefined) {
+    if (!Array.isArray(data.heat) || data.heat.length === 0) bad('heat must be a non-empty list of stops, hottest first');
+    const seen = new Set();
+    data.heat.forEach((h, i) => {
+      const at = typeof h?.name === 'string' ? `heat.${h.name}` : `heat[${i}]`;
+      keys(h, at, ['name', 'above', 'color', 'core', 'intensity', 'crust']);
+      if (typeof h.name !== 'string' || !STOP_NAME.test(h.name)) bad(`${at}.name must be lower_snake_case`);
+      if (seen.has(h.name)) bad(`${at}: listed twice`);
+      seen.add(h.name);
+      range(h, at, 'above', [0, 1, false]);
+      color(`${at}.color`, h.color);
+      color(`${at}.core`, h.core);
+      range(h, at, 'intensity', [0, 16, false]);
+      range(h, at, 'crust', [0, 1, false]);
+      if (i > 0 && !(h.above < data.heat[i - 1].above)) bad(`${at}.above must be below the hotter stop's (${data.heat[i - 1].above}): stops run hottest first`);
+    });
+    if (data.heat[data.heat.length - 1].above !== 0) bad(`heat: the coolest stop's above must be 0 (every molten column has a stop)`);
+  }
+  if (data.heatHysteresis !== undefined) range(data, '(root)', 'heatHysteresis', [0, 0.5, false]);
   if (data.formatVersion !== 1) bad(`formatVersion must be 1, not ${JSON.stringify(data.formatVersion)}`);
   for (const [k, r] of Object.entries(TOP_RANGES)) range(data, '(root)', k, r);
   if (!Array.isArray(data.fluids) || data.fluids.length === 0) bad('fluids must be a non-empty list');
@@ -116,6 +145,14 @@ export function validateLava(data, { blocks = registryBlocks(), known = [], file
     block(`${at}.quench.rock`, l.quench.rock);
     range(l.quench, `${at}.quench`, 'steamWaterM', [0, 16, false]);
   });
+  // A fluid's block with a `heat` property is written by stop name: its values are the stops'.
+  const stops = (data.heat ?? LOOK_DEFAULTS.heat).map((h) => h.name);
+  for (const l of data.fluids) {
+    const vals = heatProps.get(l.name);
+    if (vals && JSON.stringify(vals) !== JSON.stringify(stops)) {
+      bad(`fluids.${l.name}: its block's heat property ${JSON.stringify(vals)} must be the heat stops' names in order ${JSON.stringify(stops)}`);
+    }
+  }
   const fluids = new Set([...known, ...names]);
   const vents = data.vents ?? [];
   if (!Array.isArray(vents)) bad('vents must be a list');
@@ -143,7 +180,7 @@ const kind = (k) => k[0].toUpperCase() + k.slice(1);
 
 /** The Rust source for validated lava data, as the constant `name`. */
 export function lavaRust(data, { name = 'DATA', src = 'shared/fluids/lava.json' } = {}) {
-  const lines = [`// ${header(src)}`, '', '#[allow(unused_imports)]', 'use crate::data::{BurnEdge, HotFluid, LavaData, Quench, SteamLook, VentDef, VentKind};', ''];
+  const lines = [`// ${header(src)}`, '', '#[allow(unused_imports)]', 'use crate::data::{BurnEdge, HeatStop, HotFluid, LavaData, Quench, SteamLook, VentDef, VentKind};', ''];
   lines.push(`/// Lava's data (${src}).`);
   lines.push(`pub const ${name}: LavaData = LavaData {`);
   for (const [k, [, , int]] of Object.entries(TOP_RANGES)) lines.push(`    ${snake(k)}: ${int ? String(data[k]) : rf(data[k])},`);
@@ -170,6 +207,12 @@ export function lavaRust(data, { name = 'DATA', src = 'shared/fluids/lava.json' 
     `    steam: SteamLook { color: ${JSON.stringify(st.color)}, seconds: ${rf(st.seconds)}, rise_ms: ${rf(st.riseMs)}, size_m: [${rf(st.sizeM[0])}, ${rf(st.sizeM[1])}], opacity: ${rf(st.opacity)} },`,
   );
   lines.push(`    burn_edge: BurnEdge { color: ${JSON.stringify(be.color)}, opacity: ${rf(be.opacity)}, seconds: ${rf(be.seconds)} },`);
+  lines.push('    heat: &[');
+  for (const h of data.heat ?? LOOK_DEFAULTS.heat) {
+    lines.push(`        HeatStop { name: ${JSON.stringify(h.name)}, above: ${rf(h.above)}, color: ${JSON.stringify(h.color)}, core: ${JSON.stringify(h.core)}, intensity: ${rf(h.intensity)}, crust: ${rf(h.crust)} },`);
+  }
+  lines.push('    ],');
+  lines.push(`    heat_hysteresis: ${rf(data.heatHysteresis ?? LOOK_DEFAULTS.heatHysteresis)},`);
   lines.push('};', '');
   return lines.join('\n');
 }
