@@ -58,6 +58,7 @@ export interface StoreKeys {
   renderScale: string;
   audio: string;
   modelDetail: string;
+  antialias: string;
 }
 
 /** Every stored setting, by key. */
@@ -98,6 +99,7 @@ export function settingFields(keys: StoreKeys): SettingField[] {
     ...rec('renderScale', keys.renderScale, ['scale', 'upscaler'], ['renderScale', 'upscaler']),
     one(['menuBackground'], MENU_KEY, ['background']),
     one(['modelDetail'], keys.modelDetail, []),
+    ...rec('antialias', keys.antialias, ['mode', 'anisotropy']),
   ];
 }
 

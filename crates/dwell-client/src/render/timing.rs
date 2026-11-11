@@ -36,6 +36,8 @@ pub const SHAFTS: &str = "gpu.shafts";
 pub const PIXEL_ART: &str = "gpu.pixelart";
 /// Render scale's upscale pass, or its two (EASU and RCAS, render/upscale.rs), onto the canvas.
 pub const UPSCALE: &str = "gpu.upscale";
+/// The Anti-aliasing setting's FXAA post pass (render/fxaa.rs).
+pub const FXAA: &str = "gpu.fxaa";
 /// The whole frame on the GPU: the first pass's start to the last one's end.
 pub const FRAME: &str = "gpu.frame";
 /// The frame's time between its timed passes (each pass's start after the one before ended,
@@ -48,7 +50,7 @@ pub const GAPS_COPY: &str = "gpu.gaps.copy";
 /// Readback buffers: the GPU runs a frame or two behind, so three keep one free.
 pub const RING: usize = 3;
 /// Passes a frame may time (each frame names its own, in order: `GpuTimer::pass`).
-pub const MAX_PASSES: usize = 13;
+pub const MAX_PASSES: usize = 14;
 
 const QUERIES: u32 = 2 * MAX_PASSES as u32;
 const BYTES: u64 = QUERIES as u64 * wgpu::QUERY_SIZE as u64;

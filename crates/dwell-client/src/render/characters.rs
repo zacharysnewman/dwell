@@ -465,7 +465,7 @@ fn character_fs(i: CharacterOut, @builtin(front_facing) front: bool) -> SceneOut
         // The held block: its own tile on each side (top, bottom, sides), lit like terrain.
         let tile = select(select(inst.block_side, inst.block_bottom, side == 3u), inst.block_top, side == 2u);
         let uv = tile.xy + clamp(i.uv, vec2f(0.002), vec2f(0.998)) * tile.zw;
-        let texel = textureSampleLevel(atlas, atlas_sampler, uv, 0.0);
+        let texel = textureSampleLevel(atlas, atlas_sampler, atlas_crisp(uv), 0.0);
         let has = inst.block_color.w > 0.5;
         if (has && texel.a < 0.5) {
             discard;
