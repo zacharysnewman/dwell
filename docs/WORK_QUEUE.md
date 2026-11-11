@@ -267,6 +267,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Planned (local, after item 16): each mark's height computed per pixel in the shader (its gradient bends the
    normal; the texture shifted inside the dent for depth; the rim's shadow and damp floor), growing with damage,
    data-driven, a cheap Low tier; collision unchanged. Stone shards on the same mechanism after.
+   **Status (carved-digging):** built (BLOCK_DAMAGE.md §6.1): one relief quad per struck face, the hollow per
+   pixel (merged bowls, rim with crumbs, bent normal, parallax march on Medium, rim shadow, damp floor), data
+   `rim`/`parallax`/`darken`, tests on the CPU copy. Left: the owner's look review (bench `dirt-relief`),
+   stone shards on the same function.
 19. **Lava glow, remaining** (owner 2026-11-11: "Lava should have bloom glow"; "Lava looks dark red instead of
    bright red/orange"; "It should darken as it solidifies though"). Built 0.52.107: colour by heat stops, heat in
    cells. Left: the bloom pass (keyed on emissive; tiers, off on CPU/Low); the crust covering less of hot lava

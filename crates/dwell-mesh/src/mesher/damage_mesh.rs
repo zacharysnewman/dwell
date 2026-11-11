@@ -3,16 +3,18 @@
 //! tone), a scoop (soils: a round, darker bowl) or chips, and cracks that grow with the damage, as
 //! decals just off the face in the chunk's opaque mesh. Per block, from its `damage.look` data.
 //!
-//! A scoop and a shard are modelled cut into the face, `depth` deep (a bowl of rings, a fan of
-//! angular facets), and drawn flat just off it, each piece lit by its modelled normal: the face's
-//! own quad stays whole (greedy-meshed, collision unchanged), and the dent reads by its shading.
+//! A shard is modelled cut into the face, `depth` deep (a fan of angular facets), and drawn flat
+//! just off it, each piece lit by its modelled normal. A scoop is one flat quad per struck face
+//! whose hollow the terrain shader computes per pixel (`relief`, BLOCK_DAMAGE.md §6.1): the face's
+//! own quad stays whole (greedy-meshed, collision unchanged), and the dent reads by its relief.
 
 use super::{
     Kinds, MeshArrays, N,
     ground_mesh::{newell, push_polygon, push_polygon_shaded},
-    surface,
+    relief, surface,
 };
 use crate::flood::Flood;
+use crate::textures::TileRect;
 use dwell_protocol::damage::{DamageLook, DamageLookKind, DamageView, HitMark, look_of};
 use dwell_world::CELL_H;
 
@@ -64,6 +66,28 @@ pub(crate) fn append(
             continue;
         };
         let fraction = f64::from(view.fraction) / 255.0;
+        if look.kind == DamageLookKind::Scoops {
+            // One relief quad per struck face, its marks merged into one hollow.
+            for face in 0..6u8 {
+                let marks: Vec<_> = view.marks.iter().filter(|m| m.face == face).collect();
+                if marks.is_empty() {
+                    continue;
+                }
+                let axis = usize::from(face / 2);
+                let sign = if face.is_multiple_of(2) { 1 } else { -1 };
+                let (_, tile) = surface(&k.style, axis, sign);
+                let mut out = *cell;
+                out[axis] += sign;
+                let lit = flood.cell(out);
+                push_relief(
+                    m,
+                    &relief_quad(*cell, face, &marks, &look, fraction, &tile),
+                    &tile,
+                    lit,
+                );
+            }
+            continue;
+        }
         for (i, mark) in view.marks.iter().enumerate() {
             if mark.face > 5 {
                 continue;
@@ -84,6 +108,160 @@ pub(crate) fn append(
     }
 }
 
+/// A scoop's relief quad (BLOCK_DAMAGE.md §6.1): its corners (cell space, rows up, just off the
+/// face, counter-clockwise seen from outside), their uvs (the face's own, so the texture meets the
+/// face's), its normal and its parameters packed for the shader (`relief::pack`).
+#[derive(Debug)]
+struct ReliefQuad {
+    pts: [[f64; 3]; 4],
+    uvs: [[f64; 2]; 4],
+    normal: [f64; 3],
+    color: [f32; 3],
+    light: f32,
+    /// The marks' centres (cell fractions along the face's u and v), the radius and depth (m).
+    #[cfg_attr(not(test), allow(dead_code))]
+    centres: Vec<[f64; 2]>,
+    #[cfg_attr(not(test), allow(dead_code))]
+    radius: f64,
+    #[cfg_attr(not(test), allow(dead_code))]
+    depth: f64,
+}
+
+fn relief_quad(
+    cell: [i32; 3],
+    face: u8,
+    marks: &[&HitMark],
+    look: &DamageLook,
+    fraction: f64,
+    tile: &TileRect,
+) -> ReliefQuad {
+    let axis = usize::from(face / 2);
+    let positive = face.is_multiple_of(2);
+    // The face's texture axes as the face's quad lays them (mesher.rs `quad`): tops in x, z; sides
+    // along then up; a turned tile swaps them.
+    let mut ax = match axis {
+        1 => [0, 2],
+        0 => [2, 1],
+        _ => [0, 1],
+    };
+    if tile.turn {
+        ax.swap(0, 1);
+    }
+    // A cell's extent along an axis (m).
+    let ext = |a: usize| if a == 1 { CELL_H } else { 1.0 };
+    let grow = 0.55 + 0.45 * fraction;
+    let radius = 0.5 * look.size * grow;
+    let depth = look.depth * grow;
+    let centres: Vec<[f64; 2]> = marks
+        .iter()
+        .take(4)
+        .map(|m| {
+            std::array::from_fn(|i| {
+                let a = ax[i];
+                // The bowl and its lip inside the cell (the rim fades at its edge).
+                let ra = (1.35 * radius / ext(a)).min(0.5);
+                (f64::from(m.point[a]) / 255.0).clamp(ra, 1.0 - ra)
+            })
+        })
+        .collect();
+    // The quad: the marks' reach, inside the cell.
+    let reach = |i: usize| relief::EXTENT * radius / ext(ax[i]);
+    let lo: [f64; 2] = std::array::from_fn(|i| {
+        centres
+            .iter()
+            .map(|c| c[i] - reach(i))
+            .fold(1.0, f64::min)
+            .max(0.005)
+    });
+    let hi: [f64; 2] = std::array::from_fn(|i| {
+        centres
+            .iter()
+            .map(|c| c[i] + reach(i))
+            .fold(0.0, f64::max)
+            .min(0.995)
+    });
+    // Corners counter-clockwise seen from outside: e_u × e_v = e_axis (u, v the next axes).
+    let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
+    let plane = f64::from(cell[axis]) + if positive { 1.0 + LIFT } else { -LIFT };
+    let corner = |su: f64, sv: f64| {
+        // su, sv: 0 or 1 along the next axes u, v.
+        let mut f = [0.0; 3];
+        f[u] = su;
+        f[v] = sv;
+        let pick = |a: usize, i: usize| if f[a] > 0.5 { hi[i] } else { lo[i] };
+        let mut p = [0.0; 3];
+        p[axis] = plane;
+        for a in [u, v] {
+            let i = usize::from(a == ax[1]);
+            p[a] = f64::from(cell[a]) + pick(a, i);
+        }
+        p
+    };
+    let order: [(f64, f64); 4] = if positive {
+        [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
+    } else {
+        [(0.0, 0.0), (0.0, 1.0), (1.0, 1.0), (1.0, 0.0)]
+    };
+    let pts = order.map(|(a, b)| corner(a, b));
+    // The face's own uvs (mesher.rs `quad`): blocks across, metres up a side (a hanging tile from
+    // the cell's top).
+    let top = f64::from(cell[1] + 1);
+    let uv_of = |a: usize, p: &[f64; 3]| {
+        if a == 1 {
+            if tile.hang {
+                (p[1] - top) * CELL_H + top
+            } else {
+                p[1] * CELL_H
+            }
+        } else {
+            p[a]
+        }
+    };
+    let uvs = pts.map(|p| [uv_of(ax[0], &p), uv_of(ax[1], &p)]);
+    let mut normal = [0.0; 3];
+    normal[axis] = if positive { 1.0 } else { -1.0 };
+    let (color, light) = relief::pack(
+        &centres,
+        [ax[0] == 1, ax[1] == 1],
+        look.parallax,
+        look.darken,
+        look.rim,
+        radius,
+        depth,
+    );
+    ReliefQuad {
+        pts,
+        uvs,
+        normal,
+        color,
+        light,
+        centres,
+        radius,
+        depth,
+    }
+}
+
+/// Appends a relief quad: its parameters in the colour and light (the shader reads them flat).
+fn push_relief(m: &mut MeshArrays, q: &ReliefQuad, tile: &TileRect, lit: [f32; 2]) {
+    let base = (m.positions.len() / 3) as u32;
+    for (p, uv) in q.pts.iter().zip(q.uvs) {
+        m.positions.extend(p.map(|x| x as f32));
+        m.normals.extend(q.normal.map(|x| x as f32));
+        m.colors.extend(q.color);
+        m.uvs.extend(uv.map(|x| x as f32));
+        m.tiles.extend([
+            tile.u0 as f32,
+            tile.v0 as f32,
+            (tile.u1 - tile.u0) as f32,
+            (tile.v1 - tile.v0) as f32,
+        ]);
+        m.light.push(q.light);
+        m.flood.extend(lit);
+    }
+    m.indices
+        .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
+}
+
 /// One piece of a decal: its polygon as drawn (cell space, rows up, just off the face), its colour
 /// (a linear multiplier of the tile), and the normal it is lit by (metres; `None`: its own).
 #[derive(Debug)]
@@ -91,9 +269,6 @@ struct Piece {
     pts: Vec<[f64; 3]>,
     color: [f64; 3],
     normal: Option<[f64; 3]>,
-    /// The piece as modelled (metres, cut into the face): `pts` before they are laid flat.
-    #[cfg_attr(not(test), allow(dead_code))]
-    model: Vec<[f64; 3]>,
 }
 
 /// A decal's pieces.
@@ -149,7 +324,6 @@ fn decal(
     let srgb = |c: [u8; 3], mul: f64| c.map(|x| (f64::from(x) / 255.0 * mul).min(1.6));
     let turn = jitter(99) * std::f64::consts::TAU;
     let flat = |pts: Vec<[f64; 3]>, color: [f64; 3]| Piece {
-        model: Vec::new(),
         pts,
         color,
         normal: None,
@@ -172,7 +346,6 @@ fn decal(
             pts: pts.into_iter().map(|(p, _)| p).collect(),
             color,
             normal,
-            model,
         }
     };
     let depth = look.depth * grow;
@@ -199,47 +372,8 @@ fn decal(
                 ));
             }
         }
-        DamageLookKind::Scoops => {
-            // A round bowl, a spherical cap `depth` deep: rings of quads from its damp rim down to
-            // its floor, darker at the rim, each lit at its slant, so the far wall catches the
-            // light and the near one falls into shadow.
-            const SEG: u32 = 12;
-            let rings = [1.0, 0.72, 0.42];
-            let ring = |t: f64, k: u32| {
-                let th = turn + f64::from(k % SEG) * std::f64::consts::TAU / f64::from(SEG);
-                let wobble = 0.92 + 0.12 * jitter(20 + k % SEG);
-                at(r * t * wobble, th, 0.0)
-            };
-            let cap = |t: f64| depth * (1.0 - t * t);
-            // The look's colour as a hue (its brightest channel 1), so the bowl keeps the tile's
-            // grain and reads by its shading: a dark damp rim, lighter walls and floor.
-            let hue = |mul: f64| {
-                let top = look.color.iter().copied().max().unwrap_or(1).max(1);
-                look.color.map(|c| f64::from(c) / f64::from(top) * mul)
-            };
-            let tones = [0.5, 0.95];
-            for (i, w) in rings.windows(2).enumerate() {
-                for k in 0..SEG {
-                    let pts = vec![
-                        (ring(w[0], k), cap(w[0])),
-                        (ring(w[0], k + 1), cap(w[0])),
-                        (ring(w[1], k + 1), cap(w[1])),
-                        (ring(w[1], k), cap(w[1])),
-                    ];
-                    out.push(cut(pts, hue(tones[i])));
-                }
-            }
-            // The floor: a fan to the deepest point.
-            let last = rings[rings.len() - 1];
-            for k in 0..SEG {
-                let pts = vec![
-                    (at(0.0, 0.0, 0.0), depth),
-                    (ring(last, k), cap(last)),
-                    (ring(last, k + 1), cap(last)),
-                ];
-                out.push(cut(pts, hue(0.85)));
-            }
-        }
+        // Drawn per pixel instead (`relief_quad`).
+        DamageLookKind::Scoops => {}
         DamageLookKind::Chips => {
             for k in 0..3 {
                 let th = turn + f64::from(k) * 2.1;
@@ -257,8 +391,8 @@ fn decal(
             }
         }
     }
-    // Cracks that grow with the damage: thin wedges out from the mark.
-    if fraction > 0.2 {
+    // Cracks that grow with the damage: thin wedges out from the mark (not in dug soil).
+    if fraction > 0.2 && look.kind != DamageLookKind::Scoops {
         // Toned down after the first look (thinner, shorter, a softer colour: the storybook style).
         let len = r * (0.6 + 1.1 * fraction);
         for k in 0..3 {
@@ -311,75 +445,66 @@ mod tests {
     );
 
     dwell_world::both_faces!(
-        /// A shovel's scoop is a bowl cut into the face (BLOCK_DAMAGE.md §6): drawn flat on the
-        /// face, modelled behind it, deepest at its middle, and each wall lit as it slopes, tilted
-        /// toward the middle (concave); deeper as the damage grows, as deep as its data says. On the
-        /// top and on a side, face-locally on both faces.
-        fn a_scoop_is_a_bowl_recessed_into_the_face(f: dwell_world::FaceFrame) {
+        /// A shovel's scoop is one flat quad per struck face whose hollow the shader computes
+        /// (BLOCK_DAMAGE.md §6.1): just off the face, inside the cell, the face's own uvs (so the
+        /// texture meets the face's), its parameters packed for the shader, deeper and wider as
+        /// the damage grows, as deep as its data says; two hits on a face share one quad (one
+        /// hollow). On the top and on a side, face-locally on both faces.
+        fn a_scoop_is_one_relief_quad_per_struck_face(f: dwell_world::FaceFrame) {
             let mirror = f == dwell_world::FaceFrame::B;
             let look = look_of("dwell:dirt").expect("dirt's damage look is data");
-            assert!(look.depth > 0.0, "a scoop's depth is data");
-            // The up face (face-locally 2) and the +x side (0), struck mid-face.
+            let tile = crate::textures::tile_rect("plain");
             for (local, world_face) in [(2u8, if mirror { 3 } else { 2 }), (0, 0)] {
                 let world = [3, if mirror { N - 1 - 5 } else { 5 }, 4];
-                let mark = DamageView {
+                let mark = |p: [u8; 3]| HitMark {
+                    face: world_face,
+                    point: p,
+                };
+                let view = DamageView {
                     fraction: 0,
-                    marks: vec![HitMark {
-                        face: world_face,
-                        point: [128, 128, 128],
-                    }],
+                    marks: vec![mark([128, 128, 128]), mark([90, 100, 170])],
                 };
-                let (cell, v) = face_local(world, &mark, mirror);
-                assert_eq!(v.marks[0].face, local);
+                let (cell, v) = face_local(world, &view, mirror);
+                assert!(v.marks.iter().all(|m| m.face == local));
                 let axis = usize::from(local / 2);
-                // The face's plane in metres (positive faces: the cell's far side).
-                let plane = (f64::from(cell[axis]) + 1.0) * if axis == 1 { CELL_H } else { 1.0 };
-                let deepest = |fraction: f64| {
-                    let ps = decal(cell, &v.marks[0], &look, fraction, 0);
-                    let cut: Vec<_> = ps.iter().filter(|p| p.normal.is_some()).collect();
-                    assert!(
-                        cut.len() >= 24,
-                        "a bowl of rings and a floor: {}",
-                        cut.len()
-                    );
-                    let mut deepest: f64 = 0.0;
-                    for p in &cut {
-                        for q in &p.model {
-                            let d = plane - q[axis];
-                            assert!(d >= -1e-9, "modelled behind the face, never proud: {d}");
-                            deepest = deepest.max(d);
-                        }
-                        // Lit as it slopes, toward the bowl's middle (concave).
-                        let n = p.normal.unwrap();
-                        assert!(
-                            n[axis] > 0.5 && n[axis] < 1.0 - 1e-6,
-                            "a slanted wall: {n:?}"
-                        );
-                        let mid: [f64; 3] = std::array::from_fn(|a| {
-                            p.model.iter().map(|q| q[a]).sum::<f64>() / p.model.len() as f64
-                        });
-                        let centre = [3.5, 5.5 * CELL_H, 4.5];
-                        let inward: f64 = (0..3)
-                            .filter(|&a| a != axis)
-                            .map(|a| n[a] * (centre[a] - mid[a]))
-                            .sum();
-                        assert!(
-                            inward > 0.0,
-                            "a wall faces the bowl's middle: {n:?} at {mid:?}"
-                        );
-                        for q in &p.pts {
-                            let off = q[axis] - (f64::from(cell[axis]) + 1.0);
-                            assert!(off > 0.0 && off < 0.01, "drawn just off the face: {off}");
-                        }
-                    }
-                    deepest
-                };
-                let (light, heavy) = (deepest(0.0), deepest(1.0));
+                let marks: Vec<_> = v.marks.iter().collect();
+                let quad = |fraction: f64| relief_quad(cell, local, &marks, &look, fraction, &tile);
+                let (light, heavy) = (quad(0.0), quad(1.0));
+                assert_eq!(heavy.centres.len(), 2, "both hits in one hollow");
                 assert!(
-                    (heavy - look.depth).abs() < 1e-9,
+                    (heavy.depth - look.depth).abs() < 1e-9,
                     "full damage: the data's depth"
                 );
-                assert!(light > 0.0 && light < heavy, "deeper as the damage grows");
+                assert!(light.depth < heavy.depth && light.radius < heavy.radius);
+                assert!(heavy.normal[axis] == 1.0);
+                for (p, uv) in heavy.pts.iter().zip(heavy.uvs) {
+                    let off = p[axis] - (f64::from(cell[axis]) + 1.0);
+                    assert!(off > 0.0 && off < 0.01, "just off the face: {off}");
+                    for a in 0..3 {
+                        if a != axis {
+                            assert!(
+                                p[a] > f64::from(cell[a]) && p[a] < f64::from(cell[a] + 1),
+                                "inside the cell: {p:?}"
+                            );
+                        }
+                    }
+                    // The face's uvs: blocks across, metres up a side (mesher.rs `quad`).
+                    let want = if axis == 1 {
+                        [p[0], p[2]]
+                    } else {
+                        [p[2], p[1] * CELL_H]
+                    };
+                    assert!(
+                        (uv[0] - want[0]).abs() < 1e-9 && (uv[1] - want[1]).abs() < 1e-9,
+                        "{uv:?} {want:?}"
+                    );
+                }
+                let (back, ..) = relief::unpack(heavy.color, heavy.light);
+                assert_eq!(back.len(), 2);
+                assert!(
+                    heavy.color[2] < -0.5 && heavy.color[1] >= 0.0,
+                    "a relief quad's code"
+                );
             }
         }
     );

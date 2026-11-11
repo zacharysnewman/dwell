@@ -276,17 +276,23 @@ export function validateDamage(blocks, items, breaking) {
     // The look of its damage (D2): shards (stone), scoops (soils) or chips (wood) at each hit mark,
     // `size` the mark's width (cells) at full damage, `color` the fresh face inside, `crack` the
     // cracks that grow with the damage, `depth` (optional, cells; default 0.1) how deep the mark is
-    // shaded as cut into the face (a scoop's bowl, a shard's facets; look only).
+    // shaded as cut into the face (a scoop's bowl, a shard's facets; look only). A scoop's relief,
+    // computed per pixel (BLOCK_DAMAGE.md §6.1): `rim` (optional, m; default 0.012) the loose soil
+    // raised round it, `parallax` (optional, steps 0–8; default 6) the texture's march into the dent
+    // (0: lit only; the Low tier marches none), `darken` (optional, 0–1; default 0.35) the damp floor.
     let look = null;
     if (d.look !== undefined) {
       const lat = `${at}.look`;
       if (d.look === null || typeof d.look !== 'object' || Array.isArray(d.look)) fail(`${lat} must be an object`);
-      known(d.look, ['kind', 'size', 'color', 'crack', 'depth'], lat);
+      known(d.look, ['kind', 'size', 'color', 'crack', 'depth', 'rim', 'parallax', 'darken'], lat);
       if (!LOOKS.includes(d.look.kind)) fail(`${lat}.kind must be one of ${LOOKS.join(', ')}`);
       if (!(num(d.look.size) && d.look.size >= 0.05 && d.look.size <= 0.9)) fail(`${lat}.size must be a number in [0.05, 0.9]`);
       for (const c of ['color', 'crack']) if (!/^#[0-9a-f]{6}$/i.test(d.look[c] ?? '')) fail(`${lat}.${c} must be a #rrggbb colour`);
       if (d.look.depth !== undefined && !(num(d.look.depth) && d.look.depth >= 0 && d.look.depth <= 0.5)) fail(`${lat}.depth must be a number in [0, 0.5]`);
-      look = { ...d.look, depth: d.look.depth ?? 0.1 };
+      if (d.look.rim !== undefined && !(num(d.look.rim) && d.look.rim >= 0 && d.look.rim <= 0.03)) fail(`${lat}.rim must be a number in [0, 0.03] (m)`);
+      if (d.look.parallax !== undefined && !(Number.isInteger(d.look.parallax) && d.look.parallax >= 0 && d.look.parallax <= 8)) fail(`${lat}.parallax must be a whole number of steps from 0 to 8`);
+      if (d.look.darken !== undefined && !(num(d.look.darken) && d.look.darken >= 0 && d.look.darken <= 1)) fail(`${lat}.darken must be a number in [0, 1]`);
+      look = { ...d.look, depth: d.look.depth ?? 0.1, rim: d.look.rim ?? 0.012, parallax: d.look.parallax ?? 6, darken: d.look.darken ?? 0.35 };
     }
     // The chips a hit knocks out of it (the client's particles, sounds round 2b): stone grey
     // chips, soil clods; none: no particles.
@@ -417,7 +423,7 @@ export function toolsRust(d) {
   rs.push('');
   rs.push("/// Each block's hits to destroy (its `damage`): by bare hands, and by tool class or item.");
   rs.push('pub static BLOCK_DAMAGE: &[BlockDamageDef] = &[');
-  for (const b of d.damage) rs.push(`    BlockDamageDef { block: "${b.block}", default: ${b.default === null ? 'None' : `Some(${b.default})`}, tools: &[${b.tools.map((t) => `("${t.tool}", ${t.hits})`).join(', ')}], look: ${b.look === null ? 'None' : `Some(DamageLook { kind: DamageLookKind::${b.look.kind[0].toUpperCase() + b.look.kind.slice(1)}, size: ${f64(b.look.size)}, color: [${rgb(b.look.color).join(', ')}], crack: [${rgb(b.look.crack).join(', ')}], depth: ${f64(b.look.depth)} })`}, chips: ${b.chips === null ? 'None' : `Some(Chips { count: ${b.chips.count}, color: [${rgb(b.chips.color).join(', ')}], speed: ${f64(b.chips.speed)}, size: ${f64(b.chips.size)} })`} },`);
+  for (const b of d.damage) rs.push(`    BlockDamageDef { block: "${b.block}", default: ${b.default === null ? 'None' : `Some(${b.default})`}, tools: &[${b.tools.map((t) => `("${t.tool}", ${t.hits})`).join(', ')}], look: ${b.look === null ? 'None' : `Some(DamageLook { kind: DamageLookKind::${b.look.kind[0].toUpperCase() + b.look.kind.slice(1)}, size: ${f64(b.look.size)}, color: [${rgb(b.look.color).join(', ')}], crack: [${rgb(b.look.crack).join(', ')}], depth: ${f64(b.look.depth)}, rim: ${f64(b.look.rim)}, parallax: ${b.look.parallax}, darken: ${f64(b.look.darken)} })`}, chips: ${b.chips === null ? 'None' : `Some(Chips { count: ${b.chips.count}, color: [${rgb(b.chips.color).join(', ')}], speed: ${f64(b.chips.speed)}, size: ${f64(b.chips.size)} })`} },`);
   rs.push('];');
   rs.push('');
   rs.push('/// Tools that wear (`durability.items`): (item, hits it survives).');
