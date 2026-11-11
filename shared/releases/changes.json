@@ -4,7 +4,7 @@
     {
       "version": "0.52.29",
       "changes": [
-        "Behind the scenes: a new check that the far terrain has no gaps on a 4800 m mountain seen from its summit, a step toward fixing the holes and walls there."
+        "Behind the scenes: new checks and debug views for the gaps and grey walls in the far terrain on a 4800 m test mountain seen from its summit (not fixed yet)."
       ]
     },
     {

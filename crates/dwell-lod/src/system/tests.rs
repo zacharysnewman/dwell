@@ -2105,11 +2105,10 @@ fn tall_peak_terrain(
 
 dwell_world::both_faces!(
     /// BUGS.md #68 (a guard while it is open): from 300 m above the tall peak's rim looking 45°
-    /// down into the crater, with the player's chunks streamed on the rim, every column of the cone
-    /// in view is covered by a drawn section's triangles — its surface or a skirt the renderer
-    /// shows — or by drawn chunks. Without the skirts ~100 columns are open on face A, where the
-    /// ground crosses a horizontal section boundary between a coarse section and the finer ones
-    /// above it; the top skirts close them.
+    /// down into the crater, with the player's chunks streamed on the rim and the game's options,
+    /// every column of the cone in view is drawn up to its ground (within 64 m) by a section's
+    /// surface, a skirt the renderer shows or drawn chunks — not left open, nor covered only by a
+    /// lid (a top skirt) far under the ground.
     fn the_lod_covers_a_4800_m_cone_seen_from_its_summit(f: FaceFrame) {
         let (t, v) = tall_peak_terrain(68);
         let t = std::sync::Arc::new(t);
@@ -2128,7 +2127,12 @@ dwell_world::both_faces!(
                 dx * dx + dy * dy + dz * dz <= r * r + r
             })
         };
-        let mut lod = LodSystem::new(LodOptions::new(8.0, 1024 * 1_048_576, 16, 8));
+        // The game's options (game.rs start_lod) at the default preset's detail (3 px, 128 m,
+        // 256 MB).
+        let mut options = LodOptions::new(3.0, 256 * 1_048_576, 16, 8);
+        options.request_chunks = true;
+        let mut lod = LodSystem::new(options);
+        lod.set_detail_distance(Some(128.0));
         // The camera 900 m south of the player and 300 m above, looking north (−Z) and down.
         let eye_local = [v.x, rim_y + 300.0, v.z + v.crater_radius + 900.0];
         let eye = f.point(eye_local);
@@ -2143,8 +2147,10 @@ dwell_world::both_faces!(
         const HALF: i64 = 400; // 3.2 km each way
         let (cx, cz) = (v.x, v.z);
         let n = (2 * HALF) as usize;
-        let mut covered = vec![false; n * n];
-        let mut mark = |a: [f64; 2], b: [f64; 2], c: [f64; 2]| {
+        let mut covered = vec![f64::NEG_INFINITY; n * n];
+        let mut mark = |a: [f64; 3], b: [f64; 3], c: [f64; 3]| {
+            let top = a[1].max(b[1]).max(c[1]);
+            let (a, b, c) = ([a[0], a[2]], [b[0], b[2]], [c[0], c[2]]);
             let lo_x = a[0].min(b[0]).min(c[0]);
             let hi_x = a[0].max(b[0]).max(c[0]);
             let lo_z = a[1].min(b[1]).min(c[1]);
@@ -2170,7 +2176,8 @@ dwell_world::both_faces!(
                     let inside = (w0 >= 0.0 && w1 >= 0.0 && w2 >= 0.0)
                         || (w0 <= 0.0 && w1 <= 0.0 && w2 <= 0.0);
                     if inside {
-                        covered[k as usize * n + i as usize] = true;
+                        let at = &mut covered[k as usize * n + i as usize];
+                        *at = at.max(top);
                     }
                 }
             }
@@ -2188,10 +2195,12 @@ dwell_world::both_faces!(
             for mesh in [&m.opaque, &m.water].into_iter().chain(shown_skirts) {
                 let at = |j: u32| {
                     let j = j as usize * 3;
-                    [
+                    // Face-local height (m): a cell is `CELL_H` tall (mirrored on face B).
+                    f.point([
                         o[0] + f64::from(mesh.positions[j]) * cell,
+                        o[1] + f64::from(mesh.positions[j + 1]) * cell,
                         o[2] + f64::from(mesh.positions[j + 2]) * cell,
-                    ]
+                    ])
                 };
                 for tri in mesh.indices.chunks_exact(3) {
                     mark(at(tri[0]), at(tri[1]), at(tri[2]));
@@ -2200,12 +2209,22 @@ dwell_world::both_faces!(
         }
         for &c in &lod.last_selection().chunks {
             let (lo, hi) = section_box(c);
-            mark([lo[0], lo[2]], [hi[0], lo[2]], [hi[0], hi[2]]);
-            mark([lo[0], lo[2]], [hi[0], hi[2]], [lo[0], hi[2]]);
+            let y = f.y(hi[1]).max(f.y(lo[1]));
+            mark([lo[0], y, lo[2]], [hi[0], y, lo[2]], [hi[0], y, hi[2]]);
+            mark([lo[0], y, lo[2]], [hi[0], y, hi[2]], [lo[0], y, hi[2]]);
         }
         for s in &host.stand_ins {
-            mark([s.lo[0], s.lo[2]], [s.hi[0], s.lo[2]], [s.hi[0], s.hi[2]]);
-            mark([s.lo[0], s.lo[2]], [s.hi[0], s.hi[2]], [s.lo[0], s.hi[2]]);
+            let y = f.y(s.hi[1]).max(f.y(s.lo[1]));
+            mark(
+                [s.lo[0], y, s.lo[2]],
+                [s.hi[0], y, s.lo[2]],
+                [s.hi[0], y, s.hi[2]],
+            );
+            mark(
+                [s.lo[0], y, s.lo[2]],
+                [s.hi[0], y, s.hi[2]],
+                [s.lo[0], y, s.hi[2]],
+            );
         }
         // The cone's columns in view: north of the eye, within the view's half-angle of its axis.
         let mut holes = Vec::new();
@@ -2224,8 +2243,10 @@ dwell_world::both_faces!(
                     continue;
                 }
                 checked += 1;
-                if !covered[k as usize * n + i as usize] {
-                    holes.push((x as i64, g as i64, z as i64));
+                // Drawn up to the ground (within 64 m: a coarse cell's top), not a lid under it.
+                let top = covered[k as usize * n + i as usize];
+                if top < g - 64.0 {
+                    holes.push((x as i64, g as i64, z as i64, top as i64));
                 }
             }
         }

@@ -28,8 +28,23 @@ from the same columns), the build volume (the summit is inside it), the selectio
 the plan view can't see — a skirt or surface drawn but facing away (culled) or clipped, the side skirts
 as the "walls" (on 128 m cells a side skirt stands up to the column's surface, tens of metres on the
 cone's slope, in the riser's colour), the renderer's per-section culling bounds at ~9000 rows, and a
-stand-in drawn clipped. Next: the bench at the summit view with the skirts tinted, and the test above
-extended to compare each shown skirt's height with the slope.
+stand-in drawn clipped.
+
+In Chrome on the GPU (0.52.29, `?loddebug=` switches; screenshots in the session's `peaks2/run1`): at
+the summit view the grey walls and the flat grey planes around the crater are all **skirts**: `skirts`
+draws them magenta, and with `noskirts` the sky shows through where they were. So the ground is
+missing over those areas and the skirts are only what shows in the gap. Per-section culling
+(`nocull`) and stand-ins (`nostandins`) change nothing, so neither is the cause. The level tints put the
+planes at level 6. The LOD's own state in game: every column within 2.4 km of the crater has drawn
+sections stacked through its ground (levels 3–5), nothing is waiting, the cache is at 252 of 256 MB and
+the error scale is 3.06. Natively the same view settles with every column drawn up to its ground, at
+the game's options (3 px, 128 m, 256 MB) and at a 48 MB budget too. Over a 3.2 km box, levels 2–6, the
+column bounds never call a section empty that has solid cells. So the selection, the bounds and the
+generator agree natively, and the game differs. Next suspect: what the game's sections are made from.
+The job pool is created only once the test world's maps are installed (`world_maps`, `WebJobs::new`), so
+the plain race is ruled out. But any instance that builds a generator without them would compute the
+seed's own ground, which has no cone. After that, the meshes as uploaded. Next: in the
+page, compare a drawn section's mesh (or its column surface) at a hole column with the native one.
 
 ### 60. On the software renderer the page draws no frame for ~6 s just after the first torch is placed
 

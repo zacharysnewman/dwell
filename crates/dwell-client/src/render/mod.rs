@@ -3084,8 +3084,16 @@ impl Renderer {
             if passes == 0 {
                 continue;
             }
-            let mask = if self.lod_debug & 3 != 0 { 0 } else { full_mask };
-            let skirt_mask = if self.lod_debug & 2 != 0 { full_mask } else { 0 };
+            let mask = if self.lod_debug & 3 != 0 {
+                0
+            } else {
+                full_mask
+            };
+            let skirt_mask = if self.lod_debug & 2 != 0 {
+                full_mask
+            } else {
+                0
+            };
             let r = self.rel(s.origin);
             let offset = [r[0], r[1], r[2], s.cell as f32];
             if s.opaque.is_some() {

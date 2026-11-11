@@ -2830,7 +2830,9 @@ chunks), keeps the last selection (`LodSystem::update`; ~1 ms a frame standing s
 - Debug: the F3 overlay shows sections drawn per level, those shown as chunks, nodes, jobs in
   flight (generation, meshing, requests), cache use (and the view's share of it), the pixel
   error's scale and LOD bytes/s, and the frame's draw calls and triangles over both passes;
-  `?lodcolors=1` tints sections by level, `?lod=0` turns the LOD off. (Before the port, the
+  `?lodcolors=1` tints sections by level, `?lod=0` turns the LOD off; `?loddebug=` takes a comma list of
+  renderer switches — `skirts` (the shown skirts drawn magenta), `noskirts`, `nocull` (no per-section
+  culling), `nostandins` — to tell which part draws a seam (BUGS.md #68). (Before the port, the
   TypeScript selection measured ~2–4 ms per frame for ~2,800 drawn sections under Node; the Rust
   one has not been measured yet.)
 - **Memory (F3, `ui/memory.ts`):** a phone's browser closes a tab that uses too much, without
