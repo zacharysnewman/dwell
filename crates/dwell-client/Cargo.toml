@@ -21,6 +21,7 @@ dwell-models = { path = "../dwell-models" }
 dwell-game = { path = "../dwell-game" }
 dwell-lod = { path = "../dwell-lod" }
 dwell-look = { path = "../dwell-look" }
+dwell-lava = { path = "../dwell-lava" }
 dwell-mesh = { path = "../dwell-mesh" }
 dwell-physics = { path = "../dwell-physics" }
 dwell-protocol = { path = "../dwell-protocol" }

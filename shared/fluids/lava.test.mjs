@@ -37,9 +37,25 @@ test('bad entries fail with their path named', () => {
     [(d) => (d.vents = [{ name: 'a:v', fluid: 'dwell:lava', kind: 'geyser', x: 0, z: 0, rateM3s: 1 }]), /vents\.a:v\.kind: "geyser" is not one of lake, river/],
     [(d) => (d.vents = [{ name: 'a:v', fluid: 'dwell:lava', kind: 'lake', x: 0, z: 0, rateM3s: 1 }]), /vents\.a:v\.levelM must be a number/],
     [(d) => (d.vents = [{ name: 'a:v', fluid: 'dwell:lava', kind: 'river', x: 0, z: 0, rateM3s: 1, levelM: 3 }]), /only a lake vent holds a level/],
+    [(d) => (d.steam.color = 'white'), /steam\.color must be a colour/],
+    [(d) => (d.steam.sizeM = [2, 1]), /steam\.sizeM must be/],
+    [(d) => (d.steam.glow = 1), /steam: unknown field glow/],
+    [(d) => (d.burnEdge.opacity = 2), /burnEdge\.opacity must be a number in \[0, 1\]/],
   ]) {
     const d = data();
     change(d);
     assert.throws(() => validateLava(d), message);
   }
+});
+
+test("the clients' looks (steam, the burn edge) come from data, defaulted for a file without them", () => {
+  const d = data();
+  d.steam.color = '#ffffff';
+  d.burnEdge.seconds = 2;
+  const src = lavaRust(validateLava(d));
+  assert.match(src, /steam: SteamLook \{ color: "#ffffff"/);
+  assert.match(src, /burn_edge: BurnEdge \{ color: "#ff5a1e", opacity: 0\.6, seconds: 2\.0 \}/);
+  delete d.steam;
+  delete d.burnEdge;
+  assert.match(lavaRust(validateLava(d)), /steam: SteamLook \{ color: "#f2f4f6"/);
 });

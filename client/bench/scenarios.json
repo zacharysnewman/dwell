@@ -2,6 +2,19 @@
   "$comment": "Dev bench scenarios (docs/DEV_TOOLS.md; scripts/scenarios.ts describes the steps, scripts/bench.ts runs them). Each runs in a fresh local world: the player at the spawn, then the steps in order.",
   "scenarios": [
     {
+      "name": "lava-burn",
+      "notes": "Burning (VOLCANOES.md §6.3): an adventure-mode player on the starter's summit, the lake filled fast, the player put into the lava (`goto` the nearest dwell:lava): the red-orange screen edge and the sizzle.",
+      "query": { "worldgen": "test:starter", "seed": "0", "fresh": "1", "mode": "adventure", "at": "30008.5,240,-8000.5" },
+      "steps": [
+        { "do": "settle", "maxS": 60 },
+        { "do": "lava", "op": "rate", "args": [30] },
+        { "do": "wait", "s": 20 },
+        { "do": "goto", "find": "dwell:lava", "radius": 40, "height": 1.0, "pitch": -20, "move": true, "maxS": 30 },
+        { "do": "wait", "s": 0.6 },
+        { "do": "shot", "name": "burning", "maxS": 1 }
+      ]
+    },
+    {
       "name": "lava-lake",
       "notes": "Lava's look (VOLCANOES.md §6.3): the starter world's summit lava lake, its vent's rate × 30 (the dev `lava` step) so it fills in seconds, by day and by night, the frame near it; then a dev vent by the sea for lava meeting water (obsidian, steam).",
       "query": { "worldgen": "test:starter", "seed": "0", "fresh": "1", "at": "30008.5,200,-8000.5" },
@@ -11,6 +24,7 @@
         { "do": "lava", "op": "rate", "args": [30] },
         { "do": "wait", "s": 30 },
         { "do": "lava", "op": "report" },
+        { "do": "shot", "name": "lake-20m", "at": [30014.5, 250, -8014.5], "yaw": -45, "pitch": -45, "maxS": 20 },
         { "do": "shot", "name": "lake-day", "at": [30006.5, 250, -8006.5], "yaw": -45, "pitch": -50, "maxS": 20 },
         { "do": "shot", "name": "lake-close", "at": [30000.5, 240, -8000.5], "yaw": -45, "pitch": -65, "maxS": 20 },
         { "do": "mark" },
@@ -21,6 +35,8 @@
         { "do": "time", "t": 0.45 },
         { "do": "goto", "find": "water", "scope": "world", "water": "sea", "minDepth": 1, "radius": 4000, "height": 6, "lookAt": "land", "pitch": -30, "maxS": 120 },
         { "do": "lava", "op": "ventNear", "args": [-4, 0, 20, 1.5] },
+        { "do": "wait", "s": 4 },
+        { "do": "shot", "name": "steam-early", "at": [30880.5, 40, -7113.5], "yaw": -95, "pitch": -35, "maxS": 3 },
         { "do": "wait", "s": 30 },
         { "do": "lava", "op": "report" },
         { "do": "shot", "name": "lava-meets-water", "at": [30880.5, 40, -7113.5], "yaw": -95, "pitch": -35, "maxS": 20 },

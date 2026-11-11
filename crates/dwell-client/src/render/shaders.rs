@@ -336,6 +336,44 @@ fn molten_heat(world_xz: vec2f, t: f32) -> f32 {
     return 1.05 + 0.35 * (0.6 * a + 0.4 * b);
 }
 
+// Lava's crust plates (WATER_RENDERING.md §17.1): a cellular pattern in world metres, continuous
+// across blocks: plates MOLTEN_CELL m across whose seams (the distance to the second-nearest
+// plate's centre less the nearest's) glow. The plates' centres wander slowly (flowing crust) and
+// the plane is warped a little so the seams bend. Returns x the seam (1 on it, 0 inside a plate),
+// y a per-plate value (0–1, to vary the crust's darkness).
+const MOLTEN_CELL: f32 = 1.7;
+const MOLTEN_SEAM: f32 = 0.11;
+fn molten_hash2(c: vec2f) -> vec2f {
+    let p = vec2f(dot(c, vec2f(127.1, 311.7)), dot(c, vec2f(269.5, 183.3)));
+    return fract(sin(p) * 43758.5453);
+}
+fn molten_plates(world: vec2f, t: f32) -> vec2f {
+    let warp = vec2f(sin(world.y * 0.9 + t * 0.21), sin(world.x * 0.8 - t * 0.17)) * 0.22;
+    let p = (world + warp) / MOLTEN_CELL;
+    let base = floor(p);
+    var d1 = 9.0;
+    var d2 = 9.0;
+    var id = vec2f(0.0);
+    for (var j = -1; j <= 1; j++) {
+        for (var i = -1; i <= 1; i++) {
+            let c = base + vec2f(f32(i), f32(j));
+            let h = molten_hash2(c);
+            let centre = c + 0.5 + 0.38 * sin(6.2831853 * h + t * 0.08);
+            let d = length(p - centre);
+            if (d < d1) {
+                d2 = d1;
+                d1 = d;
+                id = h;
+            } else if (d < d2) {
+                d2 = d;
+            }
+        }
+    }
+    let gap = (d2 - d1) * MOLTEN_CELL;
+    let w = MOLTEN_SEAM * (0.7 + 0.6 * id.y);
+    return vec2f(1.0 - smoothstep(w * 0.4, w, gap), id.x);
+}
+
 // A level's brightness on `curve` (shared/look/light.json): x / (curve − (curve − 1)·x).
 fn light_curve(x: f32, curve: f32) -> f32 {
     let c = clamp(x, 0.0, 1.0);
@@ -702,11 +740,24 @@ fn terrain_fs(i: TerrainOut, @builtin(front_facing) front: bool) -> SceneOut {
         discard;
     }
     let alpha = select(draw.tint.a * texel.a, 1.0, draw.tint.a >= 1.0);
-    let albedo = i.color * texel.rgb * shade * draw.tint.rgb;
+    var albedo = i.color * texel.rgb * shade * draw.tint.rgb;
+    // Lava (§17.1): world-space crust plates over the painted tile, thin glowing seams between
+    // them, continuous across blocks; a top face takes the world's x z, a side its along and y.
+    var crack = smoothstep(0.25, 0.75, max(texel.r, texel.g));
+    if (molten) {
+        let world = vec3f(i.rel.x + frame.tan.z, i.rel.y + frame.eye.x, i.rel.z + frame.tan.w);
+        let side = abs(n.y) < 0.5;
+        let plane = select(world.xz, vec2f(world.x + world.z, world.y * 1.3), side);
+        let plate = molten_plates(plane, frame.fog.z);
+        let hue = texel.rgb / max(max(texel.r, texel.g), 0.05);
+        let seam = mix(hue, vec3f(1.0, 0.85, 0.45), 0.3);
+        let crust = texel.rgb * (0.16 + 0.14 * plate.y);
+        albedo = mix(crust, seam, plate.x) * i.color * draw.tint.rgb;
+        crack = plate.x;
+    }
     var o = scene_out(albedo, normalize(n), i.rel, alpha, terrain_light(i.light, i.flood));
-    // The heat brightens the bright cracks, not the dark crust plates.
-    let crack = smoothstep(0.25, 0.75, max(texel.r, texel.g));
-    let heat = select(1.0, mix(1.0, molten_heat(i.rel.xz + frame.tan.zw, frame.fog.z), crack), molten);
+    // The heat brightens the glowing seams (or a still tile's bright cracks), not the crust.
+    let heat = select(1.0, mix(0.25, 1.6 * molten_heat(i.rel.xz + frame.tan.zw, frame.fog.z), crack), molten);
     let shine = tile_glow(i.tile.xy) * heat;
     o.color = vec4f(emitted(o.color.rgb, albedo * alpha, shine), o.color.a);
     o.depth = self_lit_depth(frame_depth(o.depth, fade_inked(draw)), tile_glow(i.tile.xy) >= 1.0);

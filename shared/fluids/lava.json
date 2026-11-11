@@ -7,6 +7,10 @@
   "farEverySeconds": 30,
   "cfl": 0.8,
   "maxSubsteps": 20000,
+  "$steam": "The clients' steam puffs where lava boils water away (VOLCANOES.md §6.3): colour, life (s), rise (m/s), size at birth and end (m), peak opacity.",
+  "steam": { "color": "#f2f4f6", "seconds": 1.6, "riseMs": 1.6, "sizeM": [0.4, 1.6], "opacity": 0.75 },
+  "$burnEdge": "The red-orange screen edge while the player burns (lava's Burn damage): colour, opacity at its strongest, seconds after a burn hit.",
+  "burnEdge": { "color": "#ff5a1e", "opacity": 0.6, "seconds": 0.9 },
   "fluids": [
     {
       "name": "dwell:lava",

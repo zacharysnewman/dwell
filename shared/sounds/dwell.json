@@ -57,7 +57,9 @@
     "creature_call": {"creature": "call"},
     "fell_land": {"sound": "fell_impact", "speed": [1.0, 12]},
     "brush": {"set": "brush", "fallback": false, "speed": [0.4, 6]},
-    "stick_snap": {"sound": "stick_snap"}
+    "stick_snap": {"sound": "stick_snap"},
+    "steam_hiss": {"sound": "steam_hiss"},
+    "sizzle": {"sound": "sizzle"}
   },
   "creatures": {
     "$comment": "AUDIO.md §2d: each creature model's sounds — a footstep every stride walked, a startle when it breaks into a run, a call now and then (every callEveryS [min, max] seconds) — heard within radiusM.",
@@ -2310,6 +2312,22 @@
       "intensity": {"gain": [0, 1], "cutoff": [0.7, 1]},
       "layers": [
         {"source": "noise", "color": "crackle", "gain": 0.55, "filters": [{"type": "bandpass", "freq": 2800, "q": 0.8}, {"type": "highpass", "freq": 900}]}
+      ]
+    },
+    "steam_hiss": {
+      "gain": 1.2, "reverb": 0.15,
+      "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
+      "layers": [
+        {"source": "noise", "color": "white", "gain": 0.45, "filters": [{"type": "bandpass", "freq": 4200, "q": 0.6, "to": 2600}, {"type": "highpass", "freq": 1800}], "env": {"attack": 0.08, "decay": 1.1}},
+        {"source": "noise", "color": "crackle", "gain": 0.3, "filters": [{"type": "bandpass", "freq": 900, "q": 0.8}], "env": {"attack": 0.05, "decay": 0.7}}
+      ]
+    },
+    "sizzle": {
+      "gain": 1.0, "reverb": 0.04,
+      "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.1},
+      "layers": [
+        {"source": "noise", "color": "crackle", "gain": 0.5, "filters": [{"type": "bandpass", "freq": 3200, "q": 1.1}], "env": {"attack": 0.01, "decay": 0.45}},
+        {"source": "noise", "color": "white", "gain": 0.25, "filters": [{"type": "bandpass", "freq": 6000, "q": 0.8}, {"type": "highpass", "freq": 3000}], "env": {"attack": 0.02, "decay": 0.3}}
       ]
     },
     "fuse_fizz": {
