@@ -534,6 +534,7 @@ export function rocksRust(data) {
   rs.push(`    volcanic_stack: ${JSON.stringify(data.tectonic.volcanic)},`);
   rs.push(`    core_stack: ${JSON.stringify(data.tectonic.core)},`);
   rs.push(`    snow_block: ${JSON.stringify(data.tectonic.snow)},`);
+  rs.push(`    ice_block: ${JSON.stringify(data.tectonic.ice)},`);
   rs.push("};");
   rs.push("");
   return rs.join("\n");

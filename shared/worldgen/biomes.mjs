@@ -52,6 +52,7 @@ export const TERRAIN = {
     iceAbove: [0, 100_000],
     iceDome: [0, 1000],
     snowBelowC: [-100, 50],
+    iceBelowC: [-100, 50],
     snowMaxSlope: [0, 10],
     hotspotCount: [0, 32, true],
     hotspotX: [-50_000, 50_000],
@@ -672,7 +673,7 @@ export function validateRocks(data, blocks) {
   const t = data.tectonic;
   if (typeof t !== "object" || t === null) fail("tectonic must be an object");
   const te = Object.keys(t).filter(
-    (k) => !["$comment", "volcanic", "core", "snow"].includes(k),
+    (k) => !["$comment", "volcanic", "core", "snow", "ice"].includes(k),
   );
   if (te.length) fail(`tectonic: unknown ${te.join(", ")}`);
   for (const k of ["volcanic", "core"]) {
@@ -684,6 +685,11 @@ export function validateRocks(data, blocks) {
   if (!sb)
     fail(`tectonic.snow ${JSON.stringify(t.snow)} is not in the registry`);
   if (sb.shape !== "full") fail(`tectonic.snow ${t.snow} must be a full block`);
+  // The glacier's cover (terrain.json tectonics.iceBelowC): a full block.
+  const ib = blocks.get(t.ice);
+  if (!ib)
+    fail(`tectonic.ice ${JSON.stringify(t.ice)} is not in the registry`);
+  if (ib.shape !== "full") fail(`tectonic.ice ${t.ice} must be a full block`);
   return data;
 }
 

@@ -233,12 +233,11 @@ dwell_world::both_faces!(
     }
 );
 
-/// Columns round the cone: (m above the sea, slope, whether its top is the snow line's cover).
-fn snow_samples(f: FaceFrame) -> Vec<(f64, f64, bool)> {
+/// Columns round the cone: (m above the sea, slope, its top block's name).
+fn cover_samples(f: FaceFrame) -> Vec<(f64, f64, &'static str)> {
     let v = fixture().tectonics.volcanoes()[0];
     let m = map(f, fixture());
     let g = TerrainGenerator::with_map(face_seed(7, f.face), Arc::new(map(f, fixture())));
-    let snow = dwell_blocks::block_of(dwell_blocks::require("dwell:snowy_grass")).name;
     let mut out = Vec::new();
     for k in 0..48 {
         let a = f64::from(k) * 7.5f64.to_radians();
@@ -253,7 +252,7 @@ fn snow_samples(f: FaceFrame) -> Vec<(f64, f64, bool)> {
             }
             // The landform's slope (the map's, as the snow line reads it).
             let (_, e, n) = m.height_at(f64::from(x), f64::from(z));
-            let top = dwell_blocks::block_of(g.top_state(&c)).name == snow;
+            let top = dwell_blocks::block_of(g.top_state(&c)).name;
             out.push((
                 f64::from(c.height) - SEA_LEVEL_M,
                 (e * e + n * n).sqrt(),
@@ -269,7 +268,11 @@ dwell_world::both_faces!(
     /// ground below 1600 m is not, and faces steeper than `snowMaxSlope` stay bare rock.
     fn snow_lies_above_the_line_and_not_on_steep_faces(f: FaceFrame) {
         let max = fixture().tectonics.snow_max_slope;
-        let s = snow_samples(f);
+        // The snow line's cover: the snow, or the glacier's ice where colder still.
+        let s: Vec<(f64, f64, bool)> = cover_samples(f)
+            .into_iter()
+            .map(|(h, sl, top)| (h, sl, top == "dwell:snow" || top == "dwell:glacier_ice"))
+            .collect();
         let high: Vec<_> = s.iter().filter(|c| c.0 > 2300.0 && c.1 < max).collect();
         let low: Vec<_> = s.iter().filter(|c| c.0 < 1600.0).collect();
         let steep: Vec<_> = s.iter().filter(|c| c.0 > 2300.0 && c.1 > max).collect();
@@ -293,3 +296,70 @@ dwell_world::both_faces!(
         );
     }
 );
+
+dwell_world::both_faces!(
+    /// The glacier (0.52.45, `iceBelowC`): the summit's gentle ground (above 4200 m, well below
+    /// -10 °C) is mostly glacier ice, the snow lies below it (2300-3000 m is snow, no ice), and
+    /// neither lies below the snow line (1600 m); the crater's dome is ice.
+    fn glacier_ice_caps_the_summit_over_the_snow(f: FaceFrame) {
+        let max = fixture().tectonics.snow_max_slope;
+        let s = cover_samples(f);
+        let summit: Vec<_> = s.iter().filter(|c| c.0 > 4200.0 && c.1 < max).collect();
+        let mid: Vec<_> = s
+            .iter()
+            .filter(|c| c.0 > 2300.0 && c.0 < 3000.0 && c.1 < max)
+            .collect();
+        assert!(
+            summit.len() > 5 && mid.len() > 20,
+            "{} summit, {} mid",
+            summit.len(),
+            mid.len()
+        );
+        let iced = summit.iter().filter(|c| c.2 == "dwell:glacier_ice").count();
+        assert!(
+            iced * 10 >= summit.len() * 8,
+            "ice on {iced} of {} at the summit",
+            summit.len()
+        );
+        let low_ice: Vec<_> = mid
+            .iter()
+            .filter(|c| c.2 == "dwell:glacier_ice")
+            .map(|c| c.0 as i32)
+            .collect();
+        assert!(
+            low_ice.is_empty(),
+            "ice mid-slope at {low_ice:?} of {}",
+            mid.len()
+        );
+        let snowy = mid.iter().filter(|c| c.2 == "dwell:snow").count();
+        assert!(
+            snowy * 10 >= mid.len() * 9,
+            "snow on {snowy} of {} mid-slope",
+            mid.len()
+        );
+        assert!(
+            s.iter()
+                .filter(|c| c.0 < 1600.0)
+                .all(|c| c.2 != "dwell:snow" && c.2 != "dwell:glacier_ice"),
+            "no snow or ice below the line"
+        );
+        // The crater's dome: the summit column itself.
+        let (ax, az) = apex();
+        let g = TerrainGenerator::with_map(face_seed(7, f.face), Arc::new(map(f, fixture())));
+        let c = g.column_at(ax as i32, az as i32);
+        assert_eq!(
+            dwell_blocks::block_of(g.top_state(&c)).name,
+            "dwell:glacier_ice"
+        );
+    }
+);
+
+// face-a-only: the registry has no face.
+/// The ice blocks load by name (the creative catalogue's, shared/items/items.json).
+#[test]
+fn the_ice_blocks_load_by_name() {
+    for name in ["dwell:snow", "dwell:glacier_ice"] {
+        assert!(dwell_blocks::find_block(name).is_some(), "{name} missing");
+        assert!(dwell_blocks::parse_state(name).is_ok(), "{name} state");
+    }
+}
