@@ -91,6 +91,8 @@ pub struct Ground {
 struct Shape {
     structure: Structure,
     weight: u32,
+    /// A species' tree: (species index, seed, stage) it was grown at (ADR 0079), else `None`.
+    grown: Option<(u16, u32, u32)>,
     /// Its box relative to the anchor in each quarter turn: (min x, min z, max x, max z).
     boxes: [[i32; 4]; 4],
     /// The rise of its top voxel above its anchor (blocks).
@@ -165,16 +167,26 @@ impl Planter {
                     .structures
                     .iter()
                     .flat_map(|&(name, weight)| {
-                        let built = match crate::species::find(name) {
-                            Some(s) => crate::species::structures(s),
-                            None => structure::load(name).map(|s| vec![s]),
+                        let built = match crate::species::index(name) {
+                            Some(i) => {
+                                let s = &crate::species::SPECIES[i];
+                                crate::species::structures(s).map(|v| {
+                                    v.into_iter()
+                                        .zip(crate::species::wild(s))
+                                        .map(|(t, (seed, stage))| {
+                                            (t, Some((i as u16, seed, stage)))
+                                        })
+                                        .collect::<Vec<_>>()
+                                })
+                            }
+                            None => structure::load(name).map(|s| vec![(s, None)]),
                         };
                         built
                             .unwrap_or_else(|e| panic!("placement {}: {e}", p.name))
                             .into_iter()
-                            .map(move |s| (s, weight))
+                            .map(move |(s, g)| (s, weight, g))
                     })
-                    .map(|(structure, weight)| {
+                    .map(|(structure, weight, grown)| {
                         let boxes = std::array::from_fn(|t| {
                             let placed = structure.place_oriented(
                                 [0, 0, 0],
@@ -190,6 +202,7 @@ impl Planter {
                         Shape {
                             structure,
                             weight,
+                            grown,
                             boxes,
                             rise,
                         }
@@ -466,6 +479,23 @@ impl Planter {
             }
         }
         placed
+    }
+
+    /// Whether any of its structures is a species tree (ADR 0079: they grow).
+    pub fn grows(&self) -> bool {
+        self.shapes.iter().any(|s| s.grown.is_some())
+    }
+
+    /// The species tree a tree is, if it is one: (species index, seed, stage) (ADR 0079).
+    pub fn grown(&self, t: &Tree) -> Option<(u16, u32, u32)> {
+        self.shapes.get(usize::from(t.shape)).and_then(|s| s.grown)
+    }
+
+    /// The block swaps of variant `v` (index + 1; 0 or unknown: none).
+    pub fn swaps(&self, v: u8) -> &[(StateId, StateId)] {
+        self.variants
+            .get(usize::from(v).wrapping_sub(1))
+            .map_or(&[], Vec::as_slice)
     }
 
     /// The structure a tree is, by name.

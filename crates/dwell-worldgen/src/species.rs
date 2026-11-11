@@ -100,6 +100,11 @@ pub fn find(name: &str) -> Option<&'static Species> {
     SPECIES.iter().find(|s| s.name == name)
 }
 
+/// A species' index in [`SPECIES`] by name.
+pub fn index(name: &str) -> Option<usize> {
+    SPECIES.iter().position(|s| s.name == name)
+}
+
 /// What a grown tree puts in a cell.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Part {
