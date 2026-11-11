@@ -36,6 +36,7 @@ const N: i32 = CHUNK_SIZE;
 
 mod damage_mesh;
 mod ground_mesh;
+pub mod relief;
 pub(crate) mod leaves;
 pub use ground_mesh::{GroundJob, look_mesh, look_swatch, scatter as ground_scatter};
 
