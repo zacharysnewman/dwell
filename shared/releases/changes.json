@@ -2,6 +2,12 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.52.50",
+      "changes": [
+        "Behind the scenes: the Tree Growth prototype now grows oak, pine and palm from thin saplings to mature trees"
+      ]
+    },
+    {
       "version": "0.52.49",
       "changes": [
         "Looking up from under water, the surface is now a clear window onto the real sky: the sun or moon shows where it truly is, bent by the water, bright at noon, golden at sunset and dim at night, with the water mirrored outside it"

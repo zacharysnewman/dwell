@@ -9,7 +9,8 @@ link). They are not part of any build; Prettier and CI ignore `docs/`.
 | Adaptive Block Lab | [`adaptive-block-lab.html`](./adaptive-block-lab.html) | https://claude.ai/artifact/7gvrFMfUyT6GegnyKPTTqV | The adaptive-block rules on whole scenes and three voxel grids |
 | Shape Playground | [`shape-playground.html`](./shape-playground.html) | https://claude.ai/artifact/Sc4Pu3UqX8TcpcrRrEYpVz | Every shape and situation, hand-shaped by the owner; the rules fitted to it |
 | Half-Height Voxel Lab | [`half-height-lab.html`](./half-height-lab.html) | https://claude.ai/artifact/DGQZG6GH1GhxvZRtPgh5MN | Today's 1 m cells beside 1 × ½ × 1 m cells with 1 m double blocks: shapes, 27° and 45° slopes, plants standing on the ground, ½ m growth ([proposal](../proposals/HALF_HEIGHT_VOXELS.md)) |
-| Tree Growth | [`tree-growth.html`](./tree-growth.html) | https://claude.ai/artifact/MRW4RcNKTHkYdxMyRKLLHz | A hand-built tree grown by revealing its skeleton, obstacles, and jitter variants (Phase 30, G0) |
+| Tree Growth | [`tree-growth.html`](./tree-growth.html) | https://claude.ai/artifact/MRW4RcNKTHkYdxMyRKLLHz | Oak, pine and palm as species data, grown from a thin sapling to maturity in stages (the same silhouette, the trunk thickening in ¼ m steps), in the Leaf Lab's chosen look (option 5) with octagonal logs; seeds, compare, a forest row (2026-11-11) |
+| Tree Growth: skeleton | [`tree-growth-skeleton.html`](./tree-growth-skeleton.html) | not published | The G0 page: a hand-built tree grown by revealing its skeleton, obstacles, and jitter variants (Phase 30, G0) |
 | Chisel (biome editor) | [`client/chisel.html`](../../client/chisel.html) | not published (runs the client's WASM: `npm run build:wasm`, `npm run dev`, then `/dwell/chisel.html`) | The world's biomes edited with sliders and previewed live on the real generator; Export/Import the biome JSON (Phase 56 B3, ADR 0074) |
 | Painterly Texture Lab | [`painterly-texture-lab.html`](./painterly-texture-lab.html) | https://claude.ai/artifact/4CTkNW4G6p8p67MkSNMUJA | The painterly materials and palette edited live with the game's generator; the JSON copied back (Phase 39). Folded into Chisel's Textures tab (0.52.42); kept for the character and sky materials |
 | Model Viewer | [`model-viewer.html`](./model-viewer.html) | not published (reads the repo's GLBs: serve the repo root) | Every skinned model of `shared/models` (the Peasant and seven animals) playing the clip each role maps to (Phase 54, S1) |
@@ -56,6 +57,19 @@ The first two feed [`ADAPTIVE_BLOCKS.md`](../ADAPTIVE_BLOCKS.md) (Phase 18, form
   them in and run `node shared/blocks/gen.mjs`, which validates them and the adjacency test.
 
 ## Tree Growth
+
+- **Species as data**: a `SPECIES` object in the page shaped like a future `shared/trees/<name>.json`
+  (trunk height and width from sapling to mature with their steps, branch rules, crown shape and
+  normals, leaf look, growth stages); *Show species JSON* prints it. Oak: thick trunk, two to four heavy
+  branches stepping out and up, a lumpy crown with its lumps on the branch tips. Pine: tall straight
+  trunk, a cone of 2 m tiers (a wide layer and a narrower one), thin whorl stubs. Palm: a leaning trunk
+  of ½ m ring segments offset in ⅛ m steps, a crown heart block and long drooping fronds drawn as blades.
+- **Growth**: a slider and a time-lapse; each species has 8 stages, height in ½ m steps, trunk width in
+  ¼ m steps, the crown the mature crown scaled. Oak branches and pine whorls appear from a stage on.
+- **Views**: One, Seeds (four variants), Compare (the three side by side), Forest (each species at
+  stages 1, 3, 5, 6 and 8); time of day; block cells (leaf, log and the palm's frond cells).
+
+## Tree Growth: skeleton (G0)
 
 - **Load a tree**: three built-in samples (prototype content: an oak-like tree with marked roles and
   root flares, a conifer-like one without roles, a wide spreading one with a marked `trunk` and a

@@ -228,6 +228,21 @@ intermediate stages read as a sapling, a young tree and a mature one. What it to
   `growth` block as sketched (with `thickness.exponent` instead of `tapering`). The per-world growth
   speed is exported beside them as `$world_settings`, not structure data.
 
+## 9. Species and growth stages in the prototype (2026-11-11)
+
+The owner (2026-11-11): trees should start as thin, short saplings of the same shape with a small crown,
+and grow over time; the new climates need a few kinds: oak, pine and palm. The prototype page
+([`prototypes/tree-growth.html`](./prototypes/tree-growth.html); the G0 skeleton page is now
+[`prototypes/tree-growth-skeleton.html`](./prototypes/tree-growth-skeleton.html)) shows them as
+**procedural species data** rather than hand-built models: per species a trunk height and width from
+sapling to mature, branch rules, a crown shape and a number of growth stages. A stage is a small
+integer; every stage is a pure function of (species, seed, stage); height grows in ½ m steps, the
+octagonal trunk's width in ¼ m steps, and the crown is the mature crown scaled. Leaves use the Leaf
+Lab's chosen look (canopy normals, chamfered cells, cards; option 5). Palm fronds are cards owned by a
+crown heart block, the cells they cross listed as frond blocks. **Not in the game yet**: no
+`shared/trees` data, no thin log widths, no palm blocks; adopting it needs an ADR (how species relate
+to the hand-built structures and the skeleton reveal of §1).
+
 ## Sources
 
 - Runions, Lane & Prusinkiewicz 2007, space colonization: https://algorithmicbotany.org/papers/colonization.egwnp2007.html
