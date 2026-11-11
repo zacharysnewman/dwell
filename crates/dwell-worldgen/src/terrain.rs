@@ -294,7 +294,8 @@ mod table {
     include!("terrain.gen.rs");
 }
 pub use table::{
-    BIOME_MAP, BIOMES, FIXTURE_BIOMES, FIXTURE_WORLD_EDITS, FIXTURE_WORLDS, HEIGHT, PRESET_BIOMES, SURFACE,
+    BIOME_MAP, BIOMES, FIXTURE_BIOMES, FIXTURE_WORLD_EDITS, FIXTURE_WORLDS, HEIGHT, PRESET_BIOMES,
+    SURFACE,
 };
 
 /// Biome `b`'s density for the placement `name` (ADR 0074 B5): 0 when it does not list it, its

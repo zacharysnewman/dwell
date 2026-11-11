@@ -54,7 +54,7 @@ const LISTED: &[&str] = &[
     "preset:alpine_tundra",
     "preset:wetland",
 ];
-const MIN: f64 = 0.005;
+const MIN: f64 = 0.02;
 
 fn colour(i: usize) -> [f64; 3] {
     const C: &[[f64; 3]] = &[
@@ -79,7 +79,7 @@ dwell_world::both_faces!(
     /// chunks generate at a few spots.
     fn every_listed_biome_holds_a_share_of_the_land(f: FaceFrame) {
         let (g, names) = generator(f, 0);
-        let r = i64::from(WORLD_RADIUS) * 6 / 10;
+        let r = i64::from(WORLD_RADIUS) * 3 / 4;
         let step = 200;
         let mut won = vec![0u32; names.len()];
         let mut land = 0u32;
@@ -118,12 +118,21 @@ dwell_world::both_faces!(
         }
         println!("face {:?}: {land} land samples: {report}", f.face);
         if let Some(dir) = png {
-            write_png(&format!("{dir}/overview_{:?}.png", f.face), n as u32, n as u32, &img);
+            write_png(
+                &format!("{dir}/overview_{:?}.png", f.face),
+                n as u32,
+                n as u32,
+                &img,
+            );
         }
         for l in LISTED {
             let i = names.iter().position(|n| n == l).expect(l);
             let share = f64::from(won[i]) / f64::from(land);
-            assert!(share >= MIN, "{l} holds {:.2}% of the land: {report}", 100.0 * share);
+            assert!(
+                share >= MIN,
+                "{l} holds {:.2}% of the land: {report}",
+                100.0 * share
+            );
         }
         for (x, z) in [(0, 0), (4000, -3000), (-8000, 6000)] {
             let col = g.column_at(x, z);
@@ -142,11 +151,16 @@ dwell_world::both_faces!(
         let mut top = f64::NEG_INFINITY;
         for i in -30..=30 {
             for j in -30..=30 {
-                let t = m.height_at(v.x + f64::from(i) * 50.0, v.z + f64::from(j) * 50.0).0;
+                let t = m
+                    .height_at(v.x + f64::from(i) * 50.0, v.z + f64::from(j) * 50.0)
+                    .0;
                 top = top.max(t);
             }
         }
-        println!("face {:?}: the main cone at ({:.0}, {:.0}) stands {top:.0} m", f.face, v.x, v.z);
+        println!(
+            "face {:?}: the main cone at ({:.0}, {:.0}) stands {top:.0} m",
+            f.face, v.x, v.z
+        );
         assert!(top >= 4400.0, "the main cone stands {top:.0} m");
     }
 );
@@ -158,7 +172,11 @@ fn write_png(path: &str, w: u32, h: u32, rgb: &[u8]) {
         for &b in data {
             c ^= u32::from(b);
             for _ in 0..8 {
-                c = if c & 1 != 0 { 0xedb8_8320 ^ (c >> 1) } else { c >> 1 };
+                c = if c & 1 != 0 {
+                    0xedb8_8320 ^ (c >> 1)
+                } else {
+                    c >> 1
+                };
             }
         }
         !c
@@ -198,4 +216,87 @@ fn write_png(path: &str, w: u32, h: u32, rgb: &[u8]) {
     chunk(&mut out, b"IDAT", &z);
     chunk(&mut out, b"IEND", &[]);
     std::fs::write(path, out).expect("write png");
+}
+
+/// The tour's spots (`cargo test … -- --ignored --nocapture tour`): for each listed biome the 200 m
+/// sample of it (over 0.6 of the mix) nearest the centre of its cells, as an `at=` world point on face A (feet 2 m over
+/// the ground), the volcano 15 km off its summit and the shore facing the hotspot chain.
+#[test]
+#[ignore = "prints the tour's links"]
+fn tour() {
+    // face-a-only: the links are face A's.
+    let f = FaceFrame::A;
+    let (g, names) = generator(f, 0);
+    let r = i64::from(WORLD_RADIUS) * 3 / 4;
+    let mut cells: Vec<Vec<(i64, i64)>> = vec![Vec::new(); names.len()];
+    for z in (-r..=r).step_by(200) {
+        for x in (-r..=r).step_by(200) {
+            if g.biome_geography(x, z).is_none_or(|g| g.coast < 300.0) {
+                continue;
+            }
+            let m = g.biome_mix(x, z);
+            if m.weights[..m.len as usize]
+                .iter()
+                .any(|(i, w)| *i == m.chosen && *w > 0.6)
+            {
+                cells[m.chosen as usize].push((x, z));
+            }
+        }
+    }
+    let at = |x: i64, z: i64| {
+        let y = f64::from(g.column_at(x as i32, z as i32).height) + 2.0;
+        format!("{x}.5,{y:.0},{z}.5")
+    };
+    for (i, c) in cells.iter().enumerate() {
+        if c.is_empty() {
+            continue;
+        }
+        let n = c.len() as f64;
+        let (mx, mz) = c.iter().fold((0.0, 0.0), |a, p| {
+            (a.0 + p.0 as f64 / n, a.1 + p.1 as f64 / n)
+        });
+        let p = c
+            .iter()
+            .min_by(|a, b| {
+                let d = |p: &&(i64, i64)| (p.0 as f64 - mx).powi(2) + (p.1 as f64 - mz).powi(2);
+                d(a).total_cmp(&d(b))
+            })
+            .unwrap();
+        println!("{} at={}", names[i], at(p.0, p.1));
+    }
+    let h = world_config(NAME).unwrap().unwrap().height.unwrap();
+    let vs = h.tectonics.volcanoes();
+    let (v, w) = (vs[0], vs[1]);
+    for (label, (x, z)) in [
+        ("volcano 15 km east", (v.x + 15000.0, v.z)),
+        ("volcano 15 km south", (v.x, v.z + 15000.0)),
+        ("between the cones", ((v.x + w.x) / 2.0, (v.z + w.z) / 2.0)),
+    ] {
+        println!(
+            "{label} (cone at {:.0},{:.0}) at={}",
+            v.x,
+            v.z,
+            at(x as i64, z as i64)
+        );
+    }
+    let hs = vs[2];
+    let mut best = (f64::INFINITY, 0, 0);
+    for z in (-r..=r).step_by(200) {
+        for x in (-r..=r).step_by(200) {
+            if g.biome_geography(x, z)
+                .is_some_and(|g| g.coast > 50.0 && g.coast < 400.0)
+            {
+                let d = (x as f64 - hs.x).hypot(z as f64 - hs.z);
+                if d < best.0 && (x * x + z * z) < 24000 * 24000 {
+                    best = (d, x, z);
+                }
+            }
+        }
+    }
+    println!(
+        "shore facing the islands (first at {:.0},{:.0}) at={}",
+        hs.x,
+        hs.z,
+        at(best.1, best.2)
+    );
 }

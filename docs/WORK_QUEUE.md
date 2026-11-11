@@ -36,6 +36,11 @@ Last updated: 2026-11-11 (0.52.52).
 
 ## Done
 
+- **Starter world** (0.52.54, WORLD_GENERATION.md): `test:starter`, a candidate default from the
+  systemic terrain layers and eleven biome presets placed by climate, for the owner to react to at
+  `?worldgen=test:starter`; fixture worlds may carry their own biomes. Left: in-game screenshots of the
+  tour, per-cone heights for the arc, palms. Next: the leaves (item 5).
+
 - **Underwater at night** (0.52.53, WATER_RENDERING.md §16.1): Snell's window shows the sky pass's own
   sky (one function: the stars, the moon, the sun, the clouds), no white-cyan glow over it, fewer cells;
   the water seen from inside takes the moonlight's grey as the scene above does. Owner, 2026-11-11:
