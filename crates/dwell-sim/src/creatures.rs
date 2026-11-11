@@ -117,6 +117,11 @@ pub struct Creature {
     pub idle: u32,
     /// The spawn column it came from ([chunk x, face sign, chunk z]).
     pub home: [i32; 3],
+    /// Driven by the near ecology (docs/ECOLOGY.md §8): it walks only to the targets it is given
+    /// (no wandering of its own) and is never despawned here (it folds back into its herd).
+    pub driven: bool,
+    /// × its walking speed (a sprint, a flight; 1 walking).
+    pub pace: f64,
     rng: u64,
 }
 
@@ -169,7 +174,7 @@ pub fn feet_row(
 }
 
 /// The face-local height of the bottom of face-local row `y` (the top of the cell under it).
-fn feet_y(f: FaceFrame, [x, y, z]: [i32; 3]) -> f64 {
+pub(crate) fn feet_y(f: FaceFrame, [x, y, z]: [i32; 3]) -> f64 {
     let c = f.cell([x, y - 1, z]);
     let (a, b) = (f.y(m_of_row(c[1])), f.y(m_of_row(c[1] + 1)));
     a.max(b)
@@ -212,6 +217,8 @@ pub struct Creatures {
     rolled: HashSet<[i32; 3]>,
     /// Creatures gone since the clients were last told.
     pub removed: Vec<u32>,
+    /// Kinds the spawn rules leave out (the near ecology's: its herds and packs make them).
+    pub reserved: Vec<usize>,
 }
 
 impl Default for Creatures {
@@ -228,7 +235,61 @@ impl Creatures {
             next_id: 0,
             rolled: HashSet::new(),
             removed: Vec::new(),
+            reserved: Vec::new(),
         }
+    }
+
+    /// The kind named `name` (`"dwell:wolf"`).
+    pub fn kind_of(&self, name: &str) -> Option<usize> {
+        self.table.creatures.iter().position(|c| c.name == name)
+    }
+
+    /// Adds a creature of `kind` driven by the near ecology, its feet at `position` (world), or
+    /// None at the world's most creatures.
+    pub fn add_driven(
+        &mut self,
+        kind: usize,
+        position: [f64; 3],
+        yaw: f64,
+        rng: u64,
+    ) -> Option<u32> {
+        if self.list.len() >= self.table.limits.max || kind >= self.table.creatures.len() {
+            return None;
+        }
+        self.next_id = self.next_id.wrapping_add(1).max(1);
+        let f = FaceFrame::at_height(position[1]);
+        let local = f.point(position);
+        let home = [
+            (local[0].floor() as i32).div_euclid(CHUNK_SIZE),
+            f.sign(),
+            (local[2].floor() as i32).div_euclid(CHUNK_SIZE),
+        ];
+        self.list.push(Creature {
+            id: self.next_id,
+            kind,
+            position,
+            yaw,
+            speed: 0.0,
+            target: None,
+            idle: 0,
+            home,
+            driven: true,
+            pace: 1.0,
+            rng,
+        });
+        Some(self.next_id)
+    }
+
+    /// Removes creature `id` (the clients are told).
+    pub fn remove(&mut self, id: u32) {
+        if let Some(i) = self.list.iter().position(|c| c.id == id) {
+            self.list.remove(i);
+            self.removed.push(id);
+        }
+    }
+
+    pub fn get_mut(&mut self, id: u32) -> Option<&mut Creature> {
+        self.list.iter_mut().find(|c| c.id == id)
     }
 
     /// Rolls the spawn columns within `spawn_chunks` of each player (world feet) not yet rolled;
@@ -262,6 +323,9 @@ impl Creatures {
     fn roll_column(&mut self, get: Get, seed: u64, f: FaceFrame, key: [i32; 3], row: i32) -> bool {
         let col = [key[0], 0, key[2]];
         for (i, rule) in self.table.rules.iter().enumerate() {
+            if self.reserved.contains(&rule.creature) {
+                continue;
+            }
             let h = |salt: u64| unit(mix(seed, col, salt * 16 + i as u64));
             if h(0) >= rule.chance {
                 continue;
@@ -323,6 +387,8 @@ impl Creatures {
                     target: None,
                     idle: 0,
                     home: key,
+                    driven: false,
+                    pace: 1.0,
                     rng: mix(seed, [x + dx, yy, z + dz], 99),
                 };
                 c.idle = c.idle_ticks(&def);
@@ -341,6 +407,13 @@ impl Creatures {
             let def = self.table.creatures[c.kind];
             let f = FaceFrame::at_height(c.position[1]);
             let local = f.point(c.position);
+            if c.driven {
+                c.idle = 0;
+                if c.target.is_none() {
+                    c.speed = 0.0;
+                    continue;
+                }
+            }
             if c.idle > 0 {
                 c.idle -= 1;
                 c.speed = 0.0;
@@ -357,10 +430,13 @@ impl Creatures {
             };
             let (dx, dz) = (tx - local[0], tz - local[2]);
             let dist = (dx * dx + dz * dz).sqrt();
-            let step = def.walk_speed * dt;
+            let speed = def.walk_speed * c.pace;
+            let step = speed * dt;
             if dist <= step {
                 c.target = None;
-                c.idle = c.idle_ticks(&def).max(1);
+                if !c.driven {
+                    c.idle = c.idle_ticks(&def).max(1);
+                }
                 c.speed = 0.0;
                 continue;
             }
@@ -372,11 +448,13 @@ impl Creatures {
                     let ny = feet_y(f, [col[0], y, col[1]]);
                     c.position = f.point([next[0], ny, next[1]]);
                     c.yaw = dx.atan2(dz).to_degrees();
-                    c.speed = def.walk_speed;
+                    c.speed = speed;
                 }
                 None => {
                     c.target = None;
-                    c.idle = c.idle_ticks(&def).max(1);
+                    if !c.driven {
+                        c.idle = c.idle_ticks(&def).max(1);
+                    }
                     c.speed = 0.0;
                 }
             }
@@ -394,7 +472,7 @@ impl Creatures {
         };
         let removed = &mut self.removed;
         self.list.retain(|c| {
-            let keep = near(&c.position);
+            let keep = c.driven || near(&c.position);
             if !keep {
                 removed.push(c.id);
             }

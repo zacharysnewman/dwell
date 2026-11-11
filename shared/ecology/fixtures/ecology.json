@@ -6,10 +6,11 @@
     "regrowPerDay": 0.1,
     "grounds": [{ "name": "lawn", "maxHeightM": 100000, "maxSlopeDeg": 90, "max": 40 }]
   },
+  "near": { "spawnM": 32, "foldM": 48, "thinkS": 1 },
   "species": [
     {
       "name": "test:hare",
-      "group": { "floor": 1, "cap": 20, "mergeBelow": 3, "mergeRadiusM": 200, "maxGroups": 30 },
+      "group": { "dieBelow": 0.5, "cap": 20, "mergeBelow": 3, "mergeRadiusM": 200, "maxGroups": 30 },
       "start": { "groups": 3, "size": 4 },
       "breedPerDay": 0.1,
       "breedBelowHunger": 0.5,
@@ -23,7 +24,7 @@
     },
     {
       "name": "test:fox",
-      "group": { "floor": 1, "cap": 3, "mergeBelow": 1, "mergeRadiusM": 100, "maxGroups": 6 },
+      "group": { "dieBelow": 0.5, "cap": 3, "mergeBelow": 1, "mergeRadiusM": 100, "maxGroups": 6 },
       "start": { "groups": 1, "size": 2 },
       "breedPerDay": 0.01,
       "breedBelowHunger": 0.4,
@@ -32,7 +33,7 @@
       "starvePerDay": 0.01,
       "speedMPerDay": 3000,
       "senseRadiusM": 1500,
-      "diet": { "prey": { "species": ["test:hare"], "killsPerHeadPerDay": 0.5, "needPerHeadPerDay": 0.3, "preyPerHead": 15, "reachM": 150 } }
+      "diet": { "prey": { "species": ["test:hare"], "killsPerHeadPerDay": 0.5, "halfSaturationHead": 4, "needPerHeadPerDay": 0.3, "preyPerHead": 15, "reachM": 150 } }
     }
   ]
 }

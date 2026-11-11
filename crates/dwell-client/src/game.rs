@@ -587,13 +587,17 @@ pub struct Game<S: Scene> {
     /// The server keeps block damage (`inventory_flags::DAMAGE`): `DamageHello` sent, struck
     /// points sent with breaks.
     damage_on: bool,
+    /// The server takes `CausesHello` (`inventory_flags::CAUSES`): said once, so it sends the
+    /// damage causes this build knows (`Burn`, …).
+    causes_on: bool,
     /// The last `Inventory`'s flags (`inventory_flags`): whether the server takes `Combine`.
     inventory_flags: u8,
     /// Other players' hits seen in the damage updates (docs/BLOCK_DAMAGE.md §6).
     remote_hits: crate::hit_feedback::RemoteHits,
-    /// Foliage brushed through and ground items stepped onto (AUDIO.md §5).
-    brush_sounds: dwell_game::sound::BrushSounds,
-    ground_steps: dwell_game::sound::GroundSteps,
+    /// Foliage brushed through and ground items stepped onto (AUDIO.md §5): ours, and other
+    /// players' from their replicated positions (AUDIO.md §2e).
+    contact_sounds: dwell_game::sound::ContactSounds,
+    remote_contacts: dwell_game::sound::RemoteContacts,
     /// The world seed (Welcome), the ground items' scatter's (ADR 0071).
     world_seed: u64,
     /// The server keeps ground items and was told this client draws them (`GroundHello`).
@@ -944,10 +948,11 @@ impl<S: Scene> Game<S> {
             creatures: Default::default(),
             creatures_on: false,
             damage_on: false,
+            causes_on: false,
             inventory_flags: 0,
             remote_hits: Default::default(),
-            brush_sounds: Default::default(),
-            ground_steps: Default::default(),
+            contact_sounds: Default::default(),
+            remote_contacts: Default::default(),
             world_seed: 0,
             ground_on: false,
             ground_target: None,
@@ -1564,6 +1569,15 @@ impl<S: Scene> Game<S> {
                     self.outbox
                         .borrow_mut()
                         .push(Send::Control(Message::DamageHello));
+                }
+                // The server takes `CausesHello`: say once which damage causes this build knows.
+                if i.flags & dwell_protocol::inventory_flags::CAUSES != 0 && !self.causes_on {
+                    self.causes_on = true;
+                    self.outbox
+                        .borrow_mut()
+                        .push(Send::Control(Message::CausesHello(
+                            dwell_protocol::DamageCause::MAX,
+                        )));
                 }
                 // The server keeps creatures (ADR 0073): say so once, and draw them.
                 if i.flags & dwell_protocol::inventory_flags::CREATURES != 0 && !self.creatures_on {
@@ -2854,18 +2868,67 @@ impl<S: Scene> Game<S> {
             )
         };
         let speed = c.velocity.iter().map(|v| v * v).sum::<f64>().sqrt();
-        self.brush_sounds
-            .update(foliage, speed, 1.0 / SIM_HZ as f64, None, &mut self.sounds);
         // The open cell the feet stand in (just above the ground's top), while on the ground.
-        let cell = grounded.then(|| {
-            dwell_world::cell_of_pos([feet[0], c.face.y(c.face.y(feet[1]) + 0.1), feet[2]])
-        });
-        if let Some(cell) = self.ground_steps.update(cell)
-            && let Some((it, ev)) = self.ground_item_sound(cell, |k| k.step)
+        let cell = grounded.then(|| dwell_game::sound::feet_cell(feet, c.face));
+        let mut contact = self.contact_sounds;
+        let mut out = Vec::new();
+        contact.update(
+            foliage,
+            speed,
+            1.0 / SIM_HZ as f64,
+            cell,
+            None,
+            |cell| self.ground_step_at(cell),
+            &mut out,
+        );
+        self.contact_sounds = contact;
+        self.sounds.extend(out);
+    }
+
+    /// The point and step sound of the ground item in `cell`, if it has one.
+    fn ground_step_at(&self, cell: [i32; 3]) -> Option<([f64; 3], SoundKind)> {
+        self.ground_item_sound(cell, |k| k.step)
+            .map(|(it, ev)| (it.point(), ev))
+    }
+
+    /// Other players brushing through foliage and stepping onto ground items (AUDIO.md §2e), from
+    /// their drawn (interpolated) positions: no wire message of their own.
+    fn remote_contact_sounds(&mut self, views: &[dwell_game::remotes::RemoteView], dt: f64) {
+        let height = self.current.standing_height;
+        let samples: Vec<_> = views
+            .iter()
+            .filter(|v| !v.is_dead())
+            .map(|v| dwell_game::sound::ContactSample {
+                player_id: v.player_id,
+                feet: v.feet,
+                face: v.face(),
+                speed: v
+                    .velocity
+                    .map(f64::from)
+                    .iter()
+                    .map(|v| v * v)
+                    .sum::<f64>()
+                    .sqrt(),
+                grounded: on_ground(v.state),
+                height,
+            })
+            .collect();
+        let local = self.player_id;
+        let mut contacts = std::mem::take(&mut self.remote_contacts);
+        let mut out = Vec::new();
         {
-            self.sounds
-                .push(SoundEvent::new(ev, 0, 1.0, Some(it.point())));
+            let world = self.streamer.store();
+            contacts.update(
+                local,
+                &samples,
+                dt,
+                |c| world.get_voxel_if_loaded(c),
+                |cell| self.ground_step_at(cell),
+                &mut out,
+            );
         }
+        self.remote_contacts = contacts;
+        self.sounds.extend(out);
     }
 
     /// The ground item in `cell` (not gone) and its sound event `which` (its `step` or `hit`).
@@ -3304,6 +3367,7 @@ impl<S: Scene> Game<S> {
                 .borrow_mut()
                 .set_player(u32::from(v.player_id), Some(view));
         }
+        self.remote_contact_sounds(&views, dt);
         for id in self.remotes.ids() {
             if !drawn.contains(&id) {
                 self.scene.borrow_mut().set_player(u32::from(id), None);

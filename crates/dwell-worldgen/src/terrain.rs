@@ -293,6 +293,27 @@ pub struct Biome {
     pub gullies: f64,
     /// Its arches (ADR 0074 B8, `arches.rs`): openings through narrow fins; none in the default.
     pub arches: Option<crate::arches::Arches>,
+    /// Its own snow line from temperature (systemic terrain T3b); none: the world's (the
+    /// tectonics' `snowBelowC`), if on.
+    pub snow: Option<BiomeSnow>,
+    /// Whether its ground shows its soil type's blocks (`vegetation.json` `soilTypes`' `ground`
+    /// and `under`; T3b): false (the default biome) the bands' own.
+    pub soil_blocks: bool,
+    /// How much the climate rules its decorations and ground items (`vegetation.json`'s kinds
+    /// with a `decoration` or `ground`; T3b): 0 none (the default biome), 1 fully.
+    pub undergrowth: f64,
+}
+
+/// A biome's snow line (T3b; data: a biome's `snow`): where the biome map's temperature with its
+/// lapse rate is below `below_c` °C and the ground no steeper than `max_slope` (rise per run) the
+/// top is `block`; colder steeper ground is bare rock; with `ice`, gentle ground colder than its
+/// °C is that block (a glacier).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BiomeSnow {
+    pub below_c: f64,
+    pub max_slope: f64,
+    pub block: &'static str,
+    pub ice: Option<(&'static str, f64)>,
 }
 
 mod table {
@@ -655,6 +676,17 @@ pub struct BiomeSet {
     /// The snow line (`terrain.json` `tectonics.snowBelowC`; `rocks.json` `tectonic.snow`);
     /// None when it is off.
     snow: Option<SnowLine>,
+    /// Each biome's own snow line (its `snow`, T3b), in place of the world's where it is the
+    /// column's biome.
+    biome_snow: Vec<Option<SnowLine>>,
+    /// Each biome's soil palettes (its `soilBlocks`, T3b): band k's with soil type t's blocks at
+    /// `first + k × soil_types + t`; None for a biome without.
+    soil_first: Vec<Option<u16>>,
+    /// The soil types the soil palettes were built for (`vegetation.json` `soilTypes`).
+    soil_types: usize,
+    soil_list: &'static [crate::vegetation::SoilType],
+    /// Which soil types change a block (the rest keep the band's palette).
+    soil_has_blocks: Vec<bool>,
 }
 
 /// The snow line's covers by palette: the snow below `below_c` °C on ground no steeper than
@@ -668,9 +700,18 @@ struct SnowLine {
 }
 
 impl BiomeSet {
-    /// The biome whose band palette `p` is (None for the rocks' and the snow's palettes).
+    /// The biome whose band palette `p` is, its soil palettes too (None for the rocks' and the
+    /// snow's palettes).
     pub fn biome_of_palette(&self, p: u16) -> Option<usize> {
-        (p < self.rock_first).then(|| self.first.partition_point(|&f| f <= p) - 1)
+        if p < self.rock_first {
+            return Some(self.first.partition_point(|&f| f <= p) - 1);
+        }
+        let n = self.soil_types as u16;
+        self.soil_first.iter().enumerate().find_map(|(b, f)| {
+            let f = (*f)?;
+            let len = self.list[b].bands.len() as u16 * n;
+            (f..f + len).contains(&p).then_some(b)
+        })
     }
 
     /// `list` (the world's default first) over `map`.
@@ -690,6 +731,26 @@ impl BiomeSet {
         world_seed: u64,
         params: BiomeMap,
         geology: crate::geology::Geology,
+    ) -> Self {
+        Self::with_soils(
+            list,
+            map,
+            world_seed,
+            params,
+            geology,
+            crate::vegetation::VEGETATION.soil_types,
+        )
+    }
+
+    /// [`BiomeSet::with_geology`] with `soil_types` (`vegetation.json` `soilTypes`: the blocks a
+    /// biome with `soilBlocks` shows) in place of the build's.
+    pub fn with_soils(
+        list: &[Biome],
+        map: &WorldMap,
+        world_seed: u64,
+        params: BiomeMap,
+        geology: crate::geology::Geology,
+        soil_types: &'static [crate::vegetation::SoilType],
     ) -> Self {
         assert!(!list.is_empty(), "a world has at least one biome");
         BIOME_SETS_BUILT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -756,6 +817,60 @@ impl BiomeSet {
                 max_slope: map.tectonics.snow_max_slope,
             }
         });
+        // T3b: each biome's own snow line, its covers' palettes after the world's, only for a
+        // biome with one (none in the default world).
+        let biome_snow = list
+            .iter()
+            .map(|b| {
+                let s = b.snow?;
+                let mut cover = |name: &str| {
+                    let c = dwell_blocks::require(name);
+                    palettes.push(Bands {
+                        ground: c,
+                        under: c,
+                        rock: c,
+                        shore: c,
+                    });
+                    palettes.len() as u16 - 1
+                };
+                let snow = cover(s.block);
+                let ice = s.ice.map(|(name, c)| (cover(name), c));
+                Some(SnowLine {
+                    snow,
+                    ice,
+                    below_c: s.below_c,
+                    max_slope: s.max_slope,
+                })
+            })
+            .collect();
+        // T3b: each `soilBlocks` biome's bands with each soil type's blocks, after those.
+        let soil_first = list
+            .iter()
+            .map(|b| {
+                if !b.soil_blocks {
+                    return None;
+                }
+                let f = palettes.len() as u16;
+                for band in b.bands {
+                    let base = Bands::of(band);
+                    for t in soil_types {
+                        let or = |name: &str, own| {
+                            if name.is_empty() {
+                                own
+                            } else {
+                                dwell_blocks::require(name)
+                            }
+                        };
+                        palettes.push(Bands {
+                            ground: or(t.ground, base.ground),
+                            under: or(t.under, base.under),
+                            ..base
+                        });
+                    }
+                }
+                Some(f)
+            })
+            .collect();
         Self {
             list: list.to_vec(),
             palettes,
@@ -775,7 +890,21 @@ impl BiomeSet {
                 .map(|s| crate::geology::soft_top(&geology, s))
                 .collect(),
             snow,
+            biome_snow,
+            soil_first,
+            soil_types: soil_types.len(),
+            soil_list: soil_types,
+            soil_has_blocks: soil_types.iter().map(|t| t.has_blocks()).collect(),
         }
+    }
+
+    /// Biome `biome`'s band `band` palette with soil type `soil`'s blocks (T3b): None where the
+    /// biome has no `soilBlocks` or the soil type changes no block.
+    pub fn soil_palette(&self, biome: usize, band: usize, soil: u8) -> Option<u16> {
+        let f = self.soil_first.get(biome).copied().flatten()?;
+        let t = usize::from(soil);
+        (self.soil_has_blocks.get(t) == Some(&true))
+            .then(|| f + (band * self.soil_types + t) as u16)
     }
 
     /// The biome map's temperature (0..1-ish, less the lapse rate) at (x, z) over `elevation` m:
@@ -792,15 +921,22 @@ impl BiomeSet {
     /// given °C from the biome map's temperature: None when the line is off or the ground warmer
     /// than it; else Some(the cover's palette) on ground no steeper than its slope, Some(None) on
     /// a steeper face (bare rock: ridges poke through the snow).
+    /// `biome` is the column's: its own line (`snow`, T3b) in place of the world's.
     pub fn snow_cover(
         &self,
+        biome: usize,
         x: i64,
         z: i64,
         elevation: f64,
         slope: f64,
         celsius: impl Fn(f64) -> f64,
     ) -> Option<Option<u16>> {
-        let line = self.snow?;
+        let line = self
+            .biome_snow
+            .get(biome)
+            .copied()
+            .flatten()
+            .or(self.snow)?;
         let c = celsius(self.temperature(x, z, elevation));
         let palette = match line.ice {
             Some((ice, ice_c)) if c < ice_c => ice,
@@ -1021,9 +1157,14 @@ pub fn shared_biomes(map: &Arc<WorldMap>, world_seed: u64) -> Arc<BiomeSet> {
         return set.clone();
     }
     let set = Arc::new(match &map.worldgen {
-        Some(w) => {
-            BiomeSet::with_geology(&w.edit.biomes, map, world_seed, w.edit.map, w.edit.geology)
-        }
+        Some(w) => BiomeSet::with_soils(
+            &w.edit.biomes,
+            map,
+            world_seed,
+            w.edit.map,
+            w.edit.geology,
+            w.edit.vegetation.soil_types,
+        ),
         None => BiomeSet::new(BIOMES, map, world_seed),
     });
     sets.push((Arc::downgrade(map), world_seed, set.clone()));
@@ -1331,6 +1472,27 @@ impl TerrainGenerator {
     pub fn rock_at_surface(&self, x: i64, z: i64) -> (crate::geology::Rock, crate::geology::Part) {
         let (base, _, _) = self.map.height_at(x as f64, z as f64);
         let mix = self.biomes.mix(x, z, base);
+        self.surface_rock_part(&mix, x, z, base)
+    }
+
+    /// [`TerrainGenerator::rock_at_surface`]'s rock, given the column's biome `mix` over `base` m.
+    fn surface_rock(
+        &self,
+        mix: &crate::biomemap::Mix,
+        x: i64,
+        z: i64,
+        base: f64,
+    ) -> crate::geology::Rock {
+        self.surface_rock_part(mix, x, z, base).0
+    }
+
+    fn surface_rock_part(
+        &self,
+        mix: &crate::biomemap::Mix,
+        x: i64,
+        z: i64,
+        base: f64,
+    ) -> (crate::geology::Rock, crate::geology::Part) {
         let geo = &self.biomes.geology;
         let stack = match self.biomes.biome_stack[usize::from(mix.chosen)] {
             Some(k) => k,
@@ -2061,7 +2223,9 @@ impl TerrainGenerator {
             None
         } else {
             self.biomes
-                .snow_cover(x, z, h, slope, |t| self.vegetation.celsius(t))
+                .snow_cover(usize::from(mix.chosen), x, z, h, slope, |t| {
+                    self.vegetation.celsius(t)
+                })
         };
         if snow == Some(None) {
             band = Band::Rock;
@@ -2083,6 +2247,20 @@ impl TerrainGenerator {
         }
         if let Some(Some(p)) = snow {
             (palette, band) = (p, Band::Ground);
+        } else if biome.soil_blocks
+            && band == Band::Ground
+            && palette == self.biomes.first[usize::from(mix.chosen)] + level_band as u16
+        {
+            // T3b: the soil type's blocks (sand under the grass on sandstone, say) on the band's
+            // own ground, by the rock at the surface.
+            let rock = self.surface_rock(&mix, x, z, base);
+            let soil = self.vegetation.rock_soil(rock.name).soil_type;
+            if let Some(p) = self
+                .biomes
+                .soil_palette(usize::from(mix.chosen), level_band, soil)
+            {
+                palette = p;
+            }
         }
         let mut shore = FAR_WATER;
         if let Some(r) = &river {
@@ -2591,10 +2769,32 @@ impl TerrainGenerator {
     }
 
     /// The generator with `vegetation` (`vegetation.json`) in place of the build's.
+    /// A biome with `soilBlocks` (T3b) shows its soil types' blocks: when they differ from the
+    /// biomes' set's, the set is rebuilt with them.
     pub fn with_vegetation(mut self, vegetation: crate::vegetation::Vegetation) -> Self {
         self.vegetation = vegetation;
         self.cache_id = next_cache_id();
+        let b = &self.biomes;
+        if b.list.iter().any(|x| x.soil_blocks) && b.soil_list != vegetation.soil_types {
+            let set = BiomeSet::with_soils(
+                &b.list,
+                &self.map,
+                self.world_seed,
+                b.params,
+                b.geology.geology,
+                vegetation.soil_types,
+            );
+            self.ramps = Arc::new(RampPieces::resolve(&set.palettes));
+            self.biomes = Arc::new(set);
+        }
         self
+    }
+
+    /// °C at face-local (x, z) over `elevation` m (the biome map's temperature with its lapse
+    /// rate, as the snow line reads it; T3b).
+    pub fn celsius_at(&self, x: i64, z: i64, elevation: f64) -> f64 {
+        self.vegetation
+            .celsius(self.biomes.temperature(x, z, elevation))
     }
 
     /// This generator's soil and vegetation.
@@ -2704,7 +2904,38 @@ impl TerrainGenerator {
     /// Whether the biomes' `ground` varies the ground items (ADR 0074 B5; else they ask nothing of
     /// the biomes: the default world).
     pub fn ground_varies(&self) -> bool {
-        self.ground_biomes().iter().any(|b| b.ground.is_some())
+        self.ground_biomes().iter().any(|b| b.ground.is_some()) || self.undergrowth_rules_ground()
+    }
+
+    /// Whether a biome's `undergrowth` scales a ground item kind by the climate (T3b): a biome
+    /// map, a biome with it above 0 and a kind governing a ground item.
+    fn undergrowth_rules_ground(&self) -> bool {
+        self.biomes.field.is_some()
+            && self.biomes.list.iter().any(|b| b.undergrowth > 0.0)
+            && self.vegetation.kinds.iter().any(|k| !k.ground.is_empty())
+    }
+
+    /// The climate's factor on biome `b`'s decoration or ground item governed by `kind` (T3b): 1
+    /// where it does not rule (no kind, `undergrowth` 0 or no climate), else 1 − u + u × the
+    /// kind's density.
+    fn undergrowth_factor(
+        &self,
+        b: &Biome,
+        kind: Option<usize>,
+        climate: impl FnOnce() -> Option<crate::vegetation::Climate>,
+    ) -> f64 {
+        let Some(k) = kind.filter(|_| b.undergrowth > 0.0) else {
+            return 1.0;
+        };
+        climate().map_or(1.0, |c| {
+            self.vegetation.factor(
+                k,
+                &crate::vegetation::Climate {
+                    strength: b.undergrowth,
+                    ..c
+                },
+            )
+        })
     }
 
     /// The biomes whose weights count (one biome without a biome map).
@@ -2718,19 +2949,28 @@ impl TerrainGenerator {
 
     /// Ground item kind `name`'s density at face-local column (x, z) from the biomes' `ground` by
     /// their weights (ADR 0074 B5; 1 where it does not vary).
+    /// With a biome's `undergrowth` (T3b) its share is scaled by the climate's kind for `name`.
     pub fn ground_density_at(&self, name: &str, x: i64, z: i64) -> f32 {
         let list = self.ground_biomes();
-        if !list.iter().any(|b| b.ground.is_some()) {
+        let climate_rules = self.undergrowth_rules_ground();
+        if !climate_rules && !list.iter().any(|b| b.ground.is_some()) {
             return 1.0;
         }
         if self.biomes.field.is_none() {
             return ground_density_of(&list[0], name);
         }
+        let kind = self.vegetation.kind_for_ground(name);
+        let climate = std::cell::OnceCell::new();
         let (base, _, _) = self.map.height_at(x as f64, z as f64);
         self.biomes
             .mix(x, z, base)
             .iter()
-            .map(|(b, w)| ground_density_of(&self.biomes.list[b], name) * w as f32)
+            .map(|(b, w)| {
+                let b = &self.biomes.list[b];
+                let f = self
+                    .undergrowth_factor(b, kind, || *climate.get_or_init(|| self.climate_at(x, z)));
+                ground_density_of(b, name) * (w * f) as f32
+            })
             .sum()
     }
 
@@ -3495,22 +3735,47 @@ impl TerrainGenerator {
         let noise = (i64::from(x) + self.offset_x, i64::from(z) + self.offset_z);
         // With more than one biome, only the rules the column's biome lists (its `decorations`,
         // 0.52.63); a world of one biome asks nothing (the default world as before).
-        let listed = (self.biomes.list.len() > 1)
+        let biome = (self.biomes.list.len() > 1)
             .then(|| self.biomes.biome_of_palette(here.palette))
             .flatten()
-            .map(|b| self.biomes.list[b].decorations);
+            .map(|b| &self.biomes.list[b]);
+        let listed = biome.map(|b| b.decorations);
+        // T3b: a biome's `undergrowth` scales each rule a vegetation kind governs by the climate
+        // (heights from this chunk's columns where they lie in it).
+        let height = |hx: i64, hz: i64| {
+            let (ix, iz) = (hx as i32 - x0, hz as i32 - z0);
+            let col = if (0..S).contains(&ix) && (0..S).contains(&iz) {
+                cols[(iz * S + ix) as usize]
+            } else {
+                self.column_at(hx as i32, hz as i32)
+            };
+            (!col.outside).then_some(col.height)
+        };
         self.decorations
             .iter()
             .enumerate()
             .filter(|(i, _)| listed.is_none_or(|d| d.contains(&DECORATIONS[*i].name)))
-            .map(|(_, p)| p)
             // The rules' heights are metres above sea level.
-            .find(|p| {
-                p.places((x, z), noise, ground, top - SEA_LEVEL, |nx, nz| {
-                    neighbour_top(nx, nz) - SEA_LEVEL
-                })
+            .find(|(i, p)| {
+                let factor = || match biome {
+                    Some(b) => {
+                        let kind = self.vegetation.kind_for_decoration(DECORATIONS[*i].name);
+                        self.undergrowth_factor(b, kind, || {
+                            self.climate_with(x.into(), z.into(), &height)
+                        }) as f32
+                    }
+                    None => 1.0,
+                };
+                p.places_scaled(
+                    (x, z),
+                    noise,
+                    ground,
+                    top - SEA_LEVEL,
+                    |nx, nz| neighbour_top(nx, nz) - SEA_LEVEL,
+                    factor,
+                )
             })
-            .map(Placer::state)
+            .map(|(_, p)| p.state())
     }
 
     // --- level of detail (§6.6) -------------------------------------------------------------------

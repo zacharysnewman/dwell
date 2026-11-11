@@ -28,7 +28,7 @@ impl Server {
         }
     }
 
-    fn living_points(&self) -> Vec<[f64; 3]> {
+    pub(super) fn living_points(&self) -> Vec<[f64; 3]> {
         self.sessions
             .values()
             .filter(|s| s.joined())
@@ -39,6 +39,8 @@ impl Server {
 
     pub(super) fn step_creatures(&mut self) {
         let players = self.living_points();
+        // The near ecology's herds and packs (docs/ECOLOGY.md §8) before the creatures move.
+        self.step_herds();
         if players.is_empty() && self.creatures.list.is_empty() {
             return;
         }

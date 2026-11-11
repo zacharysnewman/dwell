@@ -103,6 +103,49 @@ look and the in-game check come next, locally). ARCHITECTURE.md §6.8 has the mo
 - **Data:** `shared/fluids/lava.json` (speed, viscosity, yield, cooling, rocks, light, damage, burn),
   `shared/fluids/lava.mjs`, a fixture with a fluid and vents by data alone.
 
-**Next:** the server's fields and tick, rock and lava cells in chunks, the water grid's columns and
-steam, the damage in the server's vitals (a burn cause), the save table, the lava block and its look
-(light, glow, crust), then V2's vents on the hotspot cones.
+### 6.1 As built: V1 slice 2, the server (2026-11-11)
+
+- **Fields in the server, per face** (`dwell-sim` `lava.rs`): placed round a vent with their beds and
+  water read from the world, ticked every `tickEvery` ticks like the water (near a player every lava
+  tick, fast-forwarded elsewhere).
+- **In the chunks:** molten rows are `dwell:lava` cells (a new block: no collision, light 13, placeholder
+  look), cooled rows `dwell:basalt`, the quench edge `dwell:obsidian`, all as one modification a lava
+  tick through the edit sync, so clients get them with no protocol change. Steam takes the water's top
+  cells and is queued for the clients (not sent yet).
+- **Danger:** a player in lava takes `damagePerSecond` and burns `burnSeconds` after through the
+  server's damage (none in creative), cause `Burn` from slice 3 (§6.2).
+- **Saves:** an optional `lava` table, written only by a world with lava (older builds ignore it).
+- **Vents:** a dev way to place one (`Server::place_lava_vent`, a `VentSpot`); a world's own from slice 3
+  (§6.2); the default world and every seed's terrain are unchanged.
+- **Fixed on the way:** a `Rock` event's rows were metres, not ½ m cell rows (test red → green).
+
+### 6.2 As built: V1 slice 3, the logic leftovers (2026-11-11)
+
+- **A world's vents as worldgen data** (`terrain.json` `tectonics.lavaVents`, opt-in: no default list,
+  so the default world and every seed's terrain are unchanged): each vent names its cone (`cone` "arc"
+  or "hotspot", `index` youngest first), its `kind` (lake or river), its hot fluid (by name, one of
+  `shared/fluids/lava.json`'s), `rateM3s`, a lake's `depthM`, its field's `radius` (columns) and an
+  offset from the summit (`distance` m toward `angle`°). Checked by `shared/worldgen/biomes.mjs`
+  `checkLavaVents` (and the fluid by `gen.mjs`); read by `dwell_worldgen::config::lava_vents_from_json`
+  into the edit (`Edit::lava_vents`), its sites by `config::lava_vent_sites` (`Tectonics::vent_site`:
+  an arc cone's offset summit, a hotspot island's centre).
+- **Placed by the server** (`Server::place_world_vents`) when its world is created or first loaded
+  with no lava, on each face, at the cone's summit as the terrain generates it (`surface_y_at`); a
+  saved world keeps its fields (and a newer build's record is left alone).
+- **The starter world** (`shared/worldgen/worlds/starter.json`) lists one: a lake vent on its youngest
+  hotspot island's summit (2 m³/s, 1.5 m deep, a 25-column field). A hotspot shield has no crater, so
+  the lake spreads over the summit and crusts at its edges. The river vent to the sea is left for V2
+  (a field of 25 columns can't reach a coast 2.6 km off).
+- **`Burn` on the wire** (`damageCauses` 5): a client says which causes it knows with `CausesHello(n)`
+  (`DamageCause::MAX` as built), sent only to a server whose `Inventory` has `inventory_flags::CAUSES`
+  (an older server would refuse the message). A cause past a client's `n` (or `Drown` without
+  `VitalsHello`) goes to it as `Fall`, so an older client never sees `Burn`; later causes need no new
+  hello. Lava's damage is `Burn`.
+- **Edits refresh a field:** every change through the edit sync but the lava's own (players' edits,
+  blasts, the water's writes) marks its column in any field over it (`Lava::touch`); at the next lava
+  tick the field reads that column's bed again (up through blocks set on it, down through cells dug out)
+  and its water (any liquid over the bed but the lava). A raised bed pushes the lava above it; a lowered
+  one keeps its depth, so the surface drops and the lava flows in (a dug channel takes it).
+
+**Next:** the look (local: light, glow, crust, steam puffs, the in-game check); the water grid's columns
+as the fields' water; then V2's vents on the hotspot cones (rivers to the sea, eruptions).

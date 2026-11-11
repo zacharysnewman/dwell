@@ -88,8 +88,16 @@ Last updated: 2026-11-11 (0.52.68).
    volcano phases stay under Future. Lava's danger (owner): heavy damage while in it, a moment of burning after.
    **Core built (V1, `crates/dwell-lava`):** lava's own surface grid (viscous, cooling to basalt, obsidian
    and steam with water, lake and river vents, burning, saves, near/far), as data in
-   `shared/fluids/lava.json`; VOLCANOES.md §6. Look + in-game check next (local): the server's fields,
-   cells in chunks, the damage hook, the lava block's look.
+   `shared/fluids/lava.json`; VOLCANOES.md §6. **Server built:** the fields per face in `dwell-sim`
+   (near/far like the water), lava, basalt and obsidian cells written into chunks through the edit sync,
+   steam taking the water, players burning through the server's damage, the optional `lava` save table,
+   `dwell:lava` block, `Server::place_lava_vent` (dev). **Slice 3 built (logic):** the starter world's lake
+   vent on its youngest hotspot island's summit as worldgen data (`tectonics.lavaVents`, opt-in per cone,
+   placed by the server when the world is created or first loaded; the default world lists none), a `Burn`
+   damage cause sent only to clients that say `CausesHello` (older ones hear `Fall`), and fields re-reading
+   an edited column's bed and water (a dug channel takes the lava); VOLCANOES.md §6.2. **The look next,
+   local** (light, glow, crust, steam puffs, the in-game check), then the water grid's columns as the
+   fields' water and V2's vents.
 9. ~~**Loading-time display bug.**~~ Done (0.52.71): the 10 s was the graphics' start (one long task on the
    main thread making the renderer's pipelines) begun in the same task that ended the game's load, so the
    screen never painted "Starting the graphics…" and stood on "Loading the game… x MB 0.0 s". Each stage is
@@ -119,8 +127,18 @@ Last updated: 2026-11-11 (0.52.68).
    Tuning (owner): resistant to complete destruction, quick to replicate up to each group's cap, slow to
    starve, and no runaway (the island's total bounded by grazing for deer, by prey for wolves).
    **Started 2026-11-11:** the data-level core is built — `crates/dwell-ecology`, `shared/ecology/ecology.json`,
-   docs/ECOLOGY.md (herds and packs, forage per cell, the day step, 15 tests). Next (ECOLOGY.md §5): the
-   server's tick and saving, individuals near players, simple far rendering, grazing on the real tall grass.
+   docs/ECOLOGY.md (herds and packs, forage per cell, the day step, 15 tests). **Slice 2 built:** the server
+   holds one ecology per face, stepped by the world's days (bounded catch-up: 4 steps a tick), saved in an
+   optional `ecology` table with a per-world switch (default on, additive) and speed; a server-side read-out
+   (ECOLOGY.md §6). Owner's correction (2026-11-11): no floors — herds and packs can die, resisted by the
+   system (Holling type III predation, refuges, fast low-density breeding, dispersal, slow starving).
+   **Slice 3 built:** individuals near players (ECOLOGY.md §8, `dwell-sim` `herds.rs`): a record within
+   64 m of a player becomes its deer or wolves (the existing creatures, driven) and folds back past 96 m
+   (survivors, averaged needs, centroid); the mockup's needs-driven rules as data (flee, sleep at night,
+   graze the cell and sometimes a real tall grass block, chase and kill, mate up to the cap, company);
+   the creature rules for deer and wolves left out while the ecology runs. Next (ECOLOGY.md §7): simple
+   far rendering with a client read-out, local worlds' maps, grazing applied to tall grass as chunks
+   load; the far step seeing near groups; the herd's stag.
 12. **Players' saved structures as placement sources** (owner 2026-11-11): per player (their library, usable
    in any world they create); placed copies editable, not protected; 32³ for now (may change), or larger
    structures as a grid of 32³ tiles. Sharing between players: Future.
@@ -207,13 +225,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   after two rounds; leads in BUGS.md).
 - **Arches:** the openings in the LOD and in Chisel's 3D view; caprock lips; an arch on a fin seen in
   game (fins and the rock filter built, 0.52.66).
-- **Terrain leftovers (0.52.66 round 1 left):** T3b in normal biomes (a snow line from temperature for
-  any biome, soil blocks by soil type, grass and ground items by climate; the starter opts in); Rainier
-  detail (below); in-game screenshots of an arch on a fin, the red mesa and a snowy biome edge.
-- **Pieces follow-ups (0.52.46):** the Combine buttons say "Stone"/"Log", not "slab"; the wood chunk's
-  icon is a plain dot; the worn axe not yet seen in game.
-- **Block damage follow-ups:** scoops read as dark stains (flat decals); remote players' leaf brushing
-  and stick snaps are silent.
+- **Terrain leftovers (0.52.66 round 1 left):** Rainier detail (below); in-game screenshots of an arch
+  on a fin, the red mesa and a snowy biome edge, and of T3b in the starter (its biomes' snow lines, sand
+  under the steppe's grass, the grass thinning into the dry lee; built without screenshots). T3b is built
+  (ADR 0075 T3b): a biome's own snow line (`snow`), soil blocks by soil type (`soilBlocks`), tall grass
+  and ground items by climate (`undergrowth`); the starter opts in.
+- **Pieces follow-ups (0.52.46):** the worn axe not yet seen in game.
+- **Block damage follow-ups:** scoops read as dark stains (flat decals).
 - **Peaks:** a more broken summit, deeper ridges and cirques (Rainier).
 - **Chisel:** biome decorations and spacing per biome; players' saved structures as placement sources;
   the in-game editor and a biome choice in the New world form.

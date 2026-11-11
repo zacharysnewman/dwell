@@ -199,6 +199,9 @@ const BIOME_REFS = [
   "erosion",
   "gullies",
   "arches",
+  "snow",
+  "soilBlocks",
+  "undergrowth",
 ];
 /** A biome's optional words for people (Chisel's lists): a short label and a one-line description. */
 export const BIOME_TEXT = { label: 40, description: 200 };
@@ -208,10 +211,15 @@ const BIOME_NAME = /^[a-z0-9_]+:[a-z0-9_]+$/;
 export function checkGroups(data, groups, fail) {
   for (const group of groups) {
     const keys = TERRAIN[group];
+    const lists = TERRAIN_LISTS[group] ?? {};
     const g = data[group];
     if (typeof g !== "object" || g === null) fail(`${group} must be an object`);
-    const ge = Object.keys(g).filter((k) => k !== "$comment" && !(k in keys));
+    const ge = Object.keys(g).filter(
+      (k) => k !== "$comment" && !(k in keys) && !(k in lists),
+    );
     if (ge.length) fail(`${group}: unknown ${ge.join(", ")}`);
+    for (const [key, check] of Object.entries(lists))
+      if (g[key] !== undefined) check(g[key], g, (m) => fail(`${group}.${key}${m}`));
     for (const [key, [min, max, whole]] of Object.entries(keys)) {
       const v = g[key];
       const low = typeof min === "object" ? v > min.above : v >= min;
@@ -224,6 +232,48 @@ export function checkGroups(data, groups, fail) {
     }
   }
 }
+
+/**
+ * Checks `tectonics.lavaVents` (docs/proposals/VOLCANOES.md §6.2): a list of vents, each on a cone
+ * the group has (`cone` "arc" below `arcCount` with `kind` 1, or "hotspot" below `hotspotCount`;
+ * `index` youngest first), a lake or a river of a hot fluid (by name; gen.mjs checks it is one of
+ * shared/fluids/lava.json's), its rate, a lake's depth, its field's radius in columns and its offset
+ * from the summit. Opt-in: none by default.
+ */
+export function checkLavaVents(list, g, fail) {
+  if (!Array.isArray(list)) fail(" must be a list");
+  list.forEach((v, i) => {
+    const at = (m) => fail(`[${i}]: ${m}`);
+    if (typeof v !== "object" || v === null) at("must be an object");
+    const known = ["cone", "index", "kind", "fluid", "rateM3s", "depthM", "radius", "distance", "angle"];
+    const extra = Object.keys(v).filter((k) => !known.includes(k));
+    if (extra.length) at(`unknown ${extra.join(", ")}`);
+    const index = v.index ?? 0;
+    if (!(Number.isInteger(index) && index >= 0)) at("index must be a whole number");
+    if (v.cone === "arc") {
+      if (!(g.kind === 1 && index < g.arcCount)) at(`no arc cone ${index}`);
+    } else if (v.cone === "hotspot") {
+      if (!(index < g.hotspotCount)) at(`no hotspot cone ${index}`);
+    } else at('cone must be "arc" or "hotspot"');
+    if (!["lake", "river"].includes(v.kind)) at('kind must be "lake" or "river"');
+    if (typeof v.fluid !== "string" || !BIOME_NAME.test(v.fluid))
+      at('fluid must be a hot fluid\'s "namespace:name"');
+    if (!(isNum(v.rateM3s) && v.rateM3s > 0 && v.rateM3s <= 1000))
+      at("rateM3s must be in (0, 1000]");
+    if (!(Number.isInteger(v.radius) && v.radius >= 1 && v.radius <= 64))
+      at("radius must be a whole number in [1, 64]");
+    for (const [k, lo, hi] of [
+      ["depthM", 0, 50],
+      ["distance", 0, 20_000],
+      ["angle", -360, 360],
+    ])
+      if (v[k] !== undefined && !(isNum(v[k]) && v[k] >= lo && v[k] <= hi))
+        at(`${k} must be in [${lo}, ${hi}]`);
+  });
+}
+
+/** A group's list keys (not ranged numbers), each with its checker. */
+export const TERRAIN_LISTS = { tectonics: { lavaVents: checkLavaVents } };
 
 /**
  * Checks a biome (shared/worldgen/biomes/<name>.json) against `blocks` and the rule names it may
@@ -296,13 +346,16 @@ export function validateBiome(data, blocks, refs) {
   ) {
     fail("vegetation must be in [0, 1]");
   }
-  for (const k of ["erosion", "gullies"]) {
+  for (const k of ["erosion", "gullies", "undergrowth"]) {
     if (
       data[k] !== undefined &&
       !(isNum(data[k]) && data[k] >= 0 && data[k] <= 1)
     )
       fail(`${k} must be in [0, 1]`);
   }
+  if (data.soilBlocks !== undefined && typeof data.soilBlocks !== "boolean")
+    fail("soilBlocks must be true or false");
+  checkSnow(data.snow, blocks, fail);
   checkArches(
     data.arches,
     fail,
@@ -475,7 +528,7 @@ export const VEGETATION = {
  * rock not listed takes `fallback`) and the vegetation kinds (each a placement's envelope;
  * `placements`: the names it may name). Throws naming the kind, the rock or the key.
  */
-export function validateVegetation(data, rocks, placements) {
+export function validateVegetation(data, rocks, placements, refs = {}) {
   const fail = (m) => {
     throw new Error(`vegetation.json: ${m}`);
   };
@@ -514,6 +567,21 @@ export function validateVegetation(data, rocks, placements) {
       fail('a soil type name must be "namespace:name"');
     if (typeof t.color !== "string" || !/^#[0-9a-fA-F]{6}$/.test(t.color))
       fail(`soil type ${t.name}: color must be "#rrggbb"`);
+    const tx = Object.keys(t).filter(
+      (k) => !["name", "color", "ground", "under", "$comment"].includes(k),
+    );
+    if (tx.length) fail(`soil type ${t.name}: unknown ${tx.join(", ")}`);
+    // T3b: the blocks the soil shows in a biome with `soilBlocks` (absent: the band's own).
+    for (const k of ["ground", "under"]) {
+      if (t[k] === undefined) continue;
+      if (typeof t[k] !== "string")
+        fail(`soil type ${t.name}: ${k} must be a block name`);
+      const b = refs.blocks?.get(t[k]);
+      if (refs.blocks && (!b || b.shape !== "full"))
+        fail(
+          `soil type ${t.name}: ${k} ${JSON.stringify(t[k])} is not a full block of the registry`,
+        );
+    }
   }
   if (new Set(types).size !== types.length) fail("a soil type is listed twice");
   const soil = (s, at) => {
@@ -545,6 +613,8 @@ export function validateVegetation(data, rocks, placements) {
     const ks = [
       "name",
       "placement",
+      "decoration",
+      "ground",
       "temperature",
       "moisture",
       "minSoil",
@@ -556,13 +626,24 @@ export function validateVegetation(data, rocks, placements) {
     ];
     const ex = Object.keys(k).filter((x) => !ks.includes(x));
     if (ex.length) kf(`unknown ${ex.join(", ")}`);
-    if (placements && !placements.has(k.placement))
-      kf(
-        `placement ${JSON.stringify(k.placement)} is not a rule of placements.json`,
-      );
-    if (governed.has(k.placement))
-      kf(`placement ${k.placement} already has a kind`);
-    governed.add(k.placement);
+    // What it governs: one placement (trees), decoration (T3b: tall grass) or ground item kind
+    // (T3b: sticks, rocks).
+    const targets = ["placement", "decoration", "ground"].filter(
+      (t) => k[t] !== undefined,
+    );
+    if (targets.length !== 1)
+      kf("must govern exactly one of placement, decoration or ground");
+    const [target] = targets;
+    const of = {
+      placement: [placements, "a rule of placements.json"],
+      decoration: [refs.decorations, "a rule of decorations.json"],
+      ground: [refs.ground, "a kind of ground.json"],
+    }[target];
+    if (typeof k[target] !== "string" || (of[0] && !of[0].has(k[target])))
+      kf(`${target} ${JSON.stringify(k[target])} is not ${of[1]}`);
+    if (governed.has(`${target}:${k[target]}`))
+      kf(`${target} ${k[target]} already has a kind`);
+    governed.add(`${target}:${k[target]}`);
     const range = (v, lo, hi, n) => {
       if (!(
         Array.isArray(v) &&
@@ -603,6 +684,40 @@ export function validateVegetation(data, rocks, placements) {
     if (fx.length) kf(`fade: unknown ${fx.join(", ")}`);
   }
   return data;
+}
+
+/**
+ * A biome's optional `snow` (systemic terrain T3b, ADR 0075): its own snow line from temperature.
+ * Where the biome map's temperature (with its lapse rate) in °C is below `belowC` and the ground is
+ * no steeper than `maxSlope` (rise per run) the top is `block`; colder ground steeper than that is
+ * bare rock. Optional glacier: below `iceBelowC` °C (colder than `belowC`) gentle ground is `ice`.
+ */
+export const SNOW = { belowC: [-60, 40], maxSlope: [0.05, 10], iceBelowC: [-80, 40] };
+function checkSnow(s, blocks, fail) {
+  if (s === undefined) return;
+  if (typeof s !== "object" || s === null) fail("snow must be an object");
+  const ex = Object.keys(s).filter(
+    (k) => !["belowC", "maxSlope", "block", "iceBelowC", "ice", "$comment"].includes(k),
+  );
+  if (ex.length) fail(`snow: unknown ${ex.join(", ")}`);
+  for (const [k, [lo, hi]] of Object.entries(SNOW)) {
+    if (k === "iceBelowC" && s[k] === undefined) continue;
+    if (!(isNum(s[k]) && s[k] >= lo && s[k] <= hi))
+      fail(`snow.${k} must be in [${lo}, ${hi}]`);
+  }
+  const full = (k) => {
+    const b = blocks.get(s[k]);
+    if (typeof s[k] !== "string" || !b || b.shape !== "full")
+      fail(`snow.${k} ${JSON.stringify(s[k])} is not a full block of the registry`);
+  };
+  full("block");
+  if ((s.ice === undefined) !== (s.iceBelowC === undefined))
+    fail("snow: ice and iceBelowC go together");
+  if (s.ice !== undefined) {
+    full("ice");
+    if (!(s.iceBelowC < s.belowC))
+      fail("snow.iceBelowC must be colder than snow.belowC");
+  }
 }
 
 /** A rock's jointing (code, a fixed vocabulary; systemic terrain T2). */

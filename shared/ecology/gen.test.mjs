@@ -22,6 +22,14 @@ test('species refer to each other by name, emitted as indices', () => {
   const rs = ecologyRust(v, 'x');
   assert.match(rs, /Diet::Prey \{ species: &\[0\]/);
   assert.match(rs, /flee: Some\(Flee \{ from: &\[1\]/);
+  assert.match(rs, /creature: "dwell:doe"/);
+  assert.match(rs, /block: Some\("dwell:tall_grass"\)/);
+});
+
+test('a species without `near` stays a record (the fixture\'s)', () => {
+  const d = JSON.parse(readFileSync(join(here, 'fixtures/ecology.json'), 'utf8'));
+  const rs = ecologyRust(validateEcology(d), 'x');
+  assert.match(rs, /near: None/);
 });
 
 test('a fixture species is added by data alone', () => {
@@ -44,7 +52,9 @@ test('bad entries fail with a message naming them', () => {
   bad((d) => (d.island.stepDays = 0), /island\.stepDays must be a number in \(0, 30\]/);
   bad((d) => (d.grazing.grounds[0].max = -1), /grazing\.grounds\.meadow\.max/);
   bad((d) => d.grazing.grounds.push({ ...d.grazing.grounds[0] }), /grazing\.grounds\.meadow: listed twice/);
-  bad((d) => (d.species[0].group.cap = 3), /species\.dwell:deer\.group: cap must be at least twice floor/);
+  bad((d) => (d.species[0].group.dieBelow = 7), /species\.dwell:deer\.group: cap must be at least twice dieBelow/);
+  bad((d) => (d.grazing.grounds[0].refuge = 2), /grazing\.grounds\.meadow\.refuge must be a number in \[0, 1\]/);
+  bad((d) => delete d.species[1].diet.prey.halfSaturationHead, /species\.dwell:wolf\.diet\.prey\.halfSaturationHead must be a number/);
   bad((d) => (d.species[0].start.size = 40), /species\.dwell:deer\.start\.size/);
   bad((d) => (d.species[0].start.groups = 99), /species\.dwell:deer\.start\.groups/);
   bad((d) => (d.species[0].flee.from = ['dwell:bear']), /species\.dwell:deer\.flee\.from\[0\]: "dwell:bear" is not a species/);
@@ -54,6 +64,12 @@ test('bad entries fail with a message naming them', () => {
   bad((d) => (d.species[0].wings = 2), /species\.dwell:deer: unknown field wings/);
   bad((d) => (d.species[1].name = 'Wolf'), /species\[1\]: name must be namespace:name/);
   bad((d) => (d.species[0].starvePerDay = 0.5), /species\.dwell:deer\.starvePerDay/);
+  bad((d) => (d.near.foldM = d.near.spawnM), /near\.foldM must be past near\.spawnM/);
+  bad((d) => (d.species[0].near.creature = 'Doe'), /species\.dwell:deer\.near\.creature must name a creature/);
+  bad((d) => (d.species[0].near.hunt = d.species[1].near.hunt), /species\.dwell:deer\.near\.hunt: a grazer doesn't hunt/);
+  bad((d) => (d.species[1].near.flee = { radiusM: 5, pace: 2 }), /species\.dwell:wolf\.near\.flee: the species flees nothing/);
+  bad((d) => (d.species[0].near.graze.fullBelow = 0.9), /species\.dwell:deer\.near\.graze\.fullBelow/);
+  bad((d) => (d.species[0].near.mate.chance = 2), /species\.dwell:deer\.near\.mate\.chance/);
   bad(
     (d) => {
       d.species.push({ ...d.species[1], name: 'dwell:bear', disperse: undefined });

@@ -151,7 +151,48 @@ pub fn biome_from_json(v: &Value) -> Result<Biome, String> {
         erosion: v.get("erosion").and_then(Value::as_f64).unwrap_or(0.0),
         gullies: v.get("gullies").and_then(Value::as_f64).unwrap_or(0.0),
         arches: arches(v).map_err(at)?,
+        snow: snow(v).map_err(at)?,
+        soil_blocks: v
+            .get("soilBlocks")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        undergrowth: v.get("undergrowth").and_then(Value::as_f64).unwrap_or(0.0),
     })
+}
+
+/// A biome's optional `snow` (T3b; ranges as `shared/worldgen/biomes.mjs` `SNOW`): its snow line.
+fn snow(v: &Value) -> Result<Option<crate::terrain::BiomeSnow>, String> {
+    let Some(s) = v.get("snow") else {
+        return Ok(None);
+    };
+    let one = |k: &str, lo: f64, hi: f64| match s.get(k).and_then(Value::as_f64) {
+        Some(x) if (lo..=hi).contains(&x) => Ok(x),
+        _ => Err(format!("snow.{k} must be in [{lo}, {hi}]")),
+    };
+    let block = |k: &str| {
+        let id = s.get(k).and_then(Value::as_str).unwrap_or("?");
+        dwell_blocks::state(id)
+            .map(|_| leak(id))
+            .ok_or_else(|| format!("snow.{k} {id} is not in the registry"))
+    };
+    let below_c = one("belowC", -60.0, 40.0)?;
+    let ice = match (s.get("ice"), s.get("iceBelowC")) {
+        (None, None) => None,
+        (Some(_), Some(_)) => {
+            let c = one("iceBelowC", -80.0, 40.0)?;
+            if c >= below_c {
+                return Err("snow.iceBelowC must be colder than snow.belowC".into());
+            }
+            Some((block("ice")?, c))
+        }
+        _ => return Err("snow: ice and iceBelowC go together".into()),
+    };
+    Ok(Some(crate::terrain::BiomeSnow {
+        below_c,
+        max_slope: one("maxSlope", 0.05, 10.0)?,
+        block: block("block")?,
+        ice,
+    }))
 }
 
 /// A biome's optional `trees` (ADR 0074 B5): placement name → density in [0, 3], each one of its
@@ -595,9 +636,27 @@ pub fn vegetation_from_json(v: &Value) -> Result<Vegetation, String> {
             .and_then(|s| s.strip_prefix('#'))
             .and_then(|h| u32::from_str_radix(h, 16).ok())
             .ok_or(at("a soil type's color must be \"#rrggbb\"".into()))?;
+        let name = text(t, "name").map_err(at)?;
+        // T3b: the blocks the soil shows ("" the band's own).
+        let block = |k: &str| -> Result<&'static str, String> {
+            match t.get(k) {
+                None => Ok(""),
+                Some(b) => {
+                    let id = b.as_str().unwrap_or("?");
+                    if dwell_blocks::state(id).is_none() {
+                        return Err(at(format!(
+                            "soil type {name}: {k} {id} is not in the registry"
+                        )));
+                    }
+                    Ok(leak(id))
+                }
+            }
+        };
         types.push(SoilType {
-            name: text(t, "name").map_err(at)?,
+            name,
             color,
+            ground: block("ground")?,
+            under: block("under")?,
         });
     }
     if types.is_empty() {
@@ -641,18 +700,44 @@ pub fn vegetation_from_json(v: &Value) -> Result<Vegetation, String> {
             .and_then(Value::as_array)
             .map(|l| l.iter().map(type_of).collect())
             .unwrap_or(Ok(Vec::new()));
-        let placement = text(k, "placement").map_err(kf)?;
-        if !crate::placements::PLACEMENTS
+        // What it governs: exactly one of a placement, a decoration (T3b) or a ground item kind.
+        let target = |key: &str| k.get(key).and_then(Value::as_str).map(leak);
+        let (placement, decoration, ground) =
+            (target("placement"), target("decoration"), target("ground"));
+        if [placement, decoration, ground]
             .iter()
-            .any(|p| p.name == placement)
+            .filter(|t| t.is_some())
+            .count()
+            != 1
+        {
+            return Err(kf(
+                "must govern exactly one of placement, decoration or ground".into(),
+            ));
+        }
+        if let Some(p) = placement
+            && !crate::placements::PLACEMENTS.iter().any(|r| r.name == p)
         {
             return Err(kf(format!(
-                "placement {placement} is not a rule of placements.json"
+                "placement {p} is not a rule of placements.json"
             )));
+        }
+        if let Some(d) = decoration
+            && !crate::decorations::DECORATIONS.iter().any(|r| r.name == d)
+        {
+            return Err(kf(format!(
+                "decoration {d} is not a rule of decorations.json"
+            )));
+        }
+        if let Some(g) = ground
+            && !dwell_world::ground::KINDS.iter().any(|r| r.name == g)
+        {
+            return Err(kf(format!("ground {g} is not a kind of ground.json")));
         }
         kinds.push(Kind {
             name,
-            placement,
+            placement: placement.unwrap_or(""),
+            decoration: decoration.unwrap_or(""),
+            ground: ground.unwrap_or(""),
             temperature: pair("temperature")?,
             moisture: pair("moisture")?,
             min_soil: num(k, "minSoil").map_err(kf)?,
@@ -690,6 +775,63 @@ pub struct Edit {
     /// The terrain volume's strength in this world (`cliffs`, 0..1; 0.52.64): 0 is no volume (no
     /// cliffs), `None` the volume as the build has it (`volume.json`).
     pub cliffs: Option<f32>,
+    /// The world's lava vents (`world.tectonics.lavaVents`, docs/proposals/VOLCANOES.md §6.2): none
+    /// unless the edit lists some.
+    pub lava_vents: Vec<crate::tectonics::LavaVent>,
+}
+
+/// The lava vents of a world's knobs (`{ "tectonics": { "lavaVents": [...] } }`): each one's cone,
+/// kind, fluid, rate, lake depth, field radius and offset from the summit. An entry that is not one
+/// fails with its index; an absent list is none.
+pub fn lava_vents_from_json(world: &Value) -> Result<Vec<crate::tectonics::LavaVent>, String> {
+    use crate::tectonics::{Cone, LavaVent, LavaVentKind};
+    let Some(list) = world.get("tectonics").and_then(|t| t.get("lavaVents")) else {
+        return Ok(Vec::new());
+    };
+    let list = list
+        .as_array()
+        .ok_or("tectonics.lavaVents must be a list")?;
+    list.iter()
+        .enumerate()
+        .map(|(i, v)| {
+            let fail = |m: &str| format!("tectonics.lavaVents[{i}]: {m}");
+            let n = |k: &str| v.get(k).and_then(Value::as_f64);
+            let index = n("index").unwrap_or(0.0);
+            if !(index >= 0.0 && index.fract() == 0.0) {
+                return Err(fail("index must be a whole number"));
+            }
+            let cone = match v.get("cone").and_then(Value::as_str) {
+                Some("arc") => Cone::Arc(index as u32),
+                Some("hotspot") => Cone::Hotspot(index as u32),
+                _ => return Err(fail("cone must be \"arc\" or \"hotspot\"")),
+            };
+            let kind = match v.get("kind").and_then(Value::as_str) {
+                Some("lake") => LavaVentKind::Lake,
+                Some("river") => LavaVentKind::River,
+                _ => return Err(fail("kind must be \"lake\" or \"river\"")),
+            };
+            let fluid = v
+                .get("fluid")
+                .and_then(Value::as_str)
+                .ok_or_else(|| fail("fluid must be a hot fluid's name"))?
+                .to_owned();
+            let rate = n("rateM3s").filter(|r| *r > 0.0);
+            let radius = n("radius").filter(|r| (1.0..=64.0).contains(r) && r.fract() == 0.0);
+            let (Some(rate), Some(radius)) = (rate, radius) else {
+                return Err(fail("rateM3s must be over 0 and radius a whole 1..64"));
+            };
+            Ok(LavaVent {
+                cone,
+                kind,
+                fluid,
+                rate_m3s: rate as f32,
+                depth_m: n("depthM").unwrap_or(0.0) as f32,
+                radius: radius as u32,
+                distance: n("distance").unwrap_or(0.0),
+                angle: n("angle").unwrap_or(0.0),
+            })
+        })
+        .collect()
 }
 
 /// A Chisel edit (`{ "biomes": [...], "biomeMap": {...}, "world": {...} }`) parsed.
@@ -708,6 +850,10 @@ pub fn edit_from_json(text: &str) -> Result<Edit, String> {
     let height = match v.get("world") {
         Some(w) => Some(height_from_json(w)?).filter(|h| *h != HEIGHT),
         None => None,
+    };
+    let lava_vents = match v.get("world") {
+        Some(w) => lava_vents_from_json(w)?,
+        None => Vec::new(),
     };
     let geology = match v.get("geology") {
         Some(g) => geology_from_json(g)?,
@@ -748,6 +894,7 @@ pub fn edit_from_json(text: &str) -> Result<Edit, String> {
         vegetation,
         height,
         cliffs,
+        lava_vents,
     })
 }
 
@@ -808,7 +955,24 @@ pub fn world_config(config: &str) -> Result<Option<Edit>, String> {
         vegetation: VEGETATION,
         height: Some(h),
         cliffs: None,
+        lava_vents: Vec::new(),
     }))
+}
+
+/// The lava vents of worldgen config `config` (docs/proposals/VOLCANOES.md §6.2), each with its
+/// face-local site (m) on its cone: none for the build's ground or an edit without `lavaVents`, and
+/// a vent on a cone the world lacks is left out.
+pub fn lava_vent_sites(
+    config: &str,
+) -> Result<Vec<(crate::tectonics::LavaVent, [f64; 2])>, String> {
+    let Some(e) = world_config(config)? else {
+        return Ok(Vec::new());
+    };
+    let t = e.height.unwrap_or(HEIGHT).tectonics;
+    Ok(e.lava_vents
+        .into_iter()
+        .filter_map(|v| t.vent_site(&v).map(|(x, z)| (v, [x, z])))
+        .collect())
 }
 
 /// A world map's worldgen config (`WorldMap::worldgen`): its text, kept and stored with the map,

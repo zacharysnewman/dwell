@@ -214,7 +214,7 @@ impl Ecosystem {
                 Diet::Graze { per_head_per_day } => {
                     self.graze(island, sp, &seen, i, per_head_per_day, dt)
                 }
-                Diet::Prey { .. } => self.hunt(island, data, sp, i, dt),
+                Diet::Prey { .. } => self.hunt(island, sp, i, dt),
             };
             // The island's bound (owner, 2026-11-11: no runaway populations): breeding slows to
             // nothing as the species' total nears its carrying capacity; a hunter's is also its
@@ -252,8 +252,12 @@ impl Ecosystem {
             {
                 rate -= d.leave_per_day;
             }
-            g.size = (g.size * (rate * dt).exp()).max(sp.group.floor);
+            g.size *= (rate * dt).exp();
         }
+        // No floor (owner, 2026-11-11: "systemically resistant to being wiped out, not immune
+        // from it"): a group under its `dieBelow` is gone.
+        self.groups
+            .retain(|g| g.size >= data.species[g.species].group.die_below);
         self.merge(data);
         self.split(island, data);
         self.day += dt;
@@ -313,7 +317,9 @@ impl Ecosystem {
                 }
                 let food = (self.grazing[c] / need).min(1.0);
                 let stay = if Some(c) == here { 0.05 } else { 0.0 };
-                let score = food - 2.0 * danger(centre) - 0.02 * d / island.cell + stay;
+                // A refuge takes the danger away (a threatened herd makes for the crags).
+                let threat = 2.0 * danger(centre) * (1.0 - island.refuge[c]);
+                let score = food - threat - 0.02 * d / island.cell + stay;
                 cells.push((score, c, d));
             }
         }
@@ -358,9 +364,11 @@ impl Ecosystem {
         if demand > 0.0 { eaten / demand } else { 1.0 }
     }
 
-    /// A hunter goes for the nearest prey group it senses above its floor (or, starving, the
-    /// island's biggest), kills what it needs within reach; returns the share of its need it ate.
-    fn hunt(&mut self, island: &Island, data: &Data, sp: &SpeciesDef, i: usize, dt: f64) -> f64 {
+    /// A hunter goes for the nearest prey group it senses (or, starving, the island's biggest) and
+    /// kills within reach: at most `killsPerHeadPerDay` a head, times the Holling type III share of
+    /// the prey head it can find in its sense outside refuges ([`Data::catch_share`]), never more
+    /// than the target's head outside its refuge. Returns the share of its need it ate.
+    fn hunt(&mut self, island: &Island, sp: &SpeciesDef, i: usize, dt: f64) -> f64 {
         let Diet::Prey {
             species: prey,
             kills_per_head_per_day,
@@ -373,9 +381,9 @@ impl Ecosystem {
         };
         let g = &self.groups[i];
         let at = (g.x, g.z);
-        let huntable = |o: &Group| {
-            prey.contains(&o.species) && o.size > data.species[o.species].group.floor + 0.5
-        };
+        let huntable = |o: &Group| prey.contains(&o.species) && o.size > 0.0;
+        // The head of a prey group a hunter can take: what is outside its cell's refuge.
+        let exposed = |o: &Group| o.size * (1.0 - island.refuge_at(o.x, o.z));
         let dispersing = sp.disperse.filter(|d| g.hunger > d.above_hunger);
         let mut factor = 1.0;
         let (target, activity) = if let Some(d) = dispersing {
@@ -428,10 +436,15 @@ impl Ecosystem {
         let Some((_, j)) = near else {
             return 0.0;
         };
-        let floor = data.species[self.groups[j].species].group.floor;
+        let found: f64 = self
+            .groups
+            .iter()
+            .filter(|o| huntable(o) && dist((x, z), (o.x, o.z)) <= sp.sense_radius_m.max(reach_m))
+            .map(exposed)
+            .sum();
         let kill = demand
-            .min(size * kills_per_head_per_day * dt)
-            .min(self.groups[j].size - floor)
+            .min(size * kills_per_head_per_day * Data::catch_share(sp.diet, found) * dt)
+            .min(exposed(&self.groups[j]))
             .max(0.0);
         self.groups[j].size -= kill;
         if kill > 0.0 && dispersing.is_none() {
@@ -477,8 +490,8 @@ impl Ecosystem {
         });
     }
 
-    /// A group above its cap splits in two (each half keeps the floor: cap ≥ 2 × floor); at the
-    /// island's most groups it stops at the cap instead.
+    /// A group above its cap splits in two (each half lives: cap ≥ 2 × `dieBelow`); at the island's
+    /// most groups it stops at the cap instead.
     fn split(&mut self, island: &Island, data: &Data) {
         let mut i = 0;
         while i < self.groups.len() {

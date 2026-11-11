@@ -40,9 +40,14 @@ use dwell_protocol::auth::verify_ed25519;
 
 mod chopping;
 mod creatures;
+mod ecology;
+pub use ecology::{
+    CATCH_UP_DAYS, EcologySnapshot, GroupView, IDLE_DAYS, MAX_STEPS_PER_TICK, next_step, night_on,
+};
 mod ground;
 mod growth;
 mod items;
+mod lava;
 mod vitals;
 
 use crate::app_version::APP_VERSION;
@@ -135,6 +140,8 @@ struct TickChanges {
     before: Vec<([i32; 3], u16)>,
     /// Water's own writes: not told to water again.
     water: bool,
+    /// Lava's own writes: not told to the lava fields again (`Lava::touch`).
+    lava: bool,
 }
 
 impl TickChanges {
@@ -316,6 +323,14 @@ pub struct ServerConfig {
     /// falls past half toward its notch. Off: today's chopping (ADR 0067). The data's `enabled`
     /// by default; dev `?chop=v2` for a local world.
     pub chop2: bool,
+    /// A new world's far ecology (docs/ECOLOGY.md §6): on by default; off, the world has none
+    /// (saved so: a world keeps its own). `ecology_speed` × the world's days (tests, dev; a
+    /// per-world tuning hook, saved with it).
+    pub ecology: bool,
+    pub ecology_speed: f64,
+    /// Tests and tools: the faces' islands (A, B) in place of the world maps', for worlds without
+    /// one (the flat world, test generators).
+    pub ecology_islands: Option<Arc<[dwell_ecology::Island; 2]>>,
 }
 
 /// A new world's settings: this build's clock (`shared/look/daynight.json`), `water_speed` and the
@@ -378,6 +393,9 @@ impl Default for ServerConfig {
             mode: dwell_protocol::modes::DEFAULT_MODE.into(),
             one_hit_breaks: false,
             chop2: dwell_protocol::chopping::CHOP2_DEFAULT,
+            ecology: true,
+            ecology_speed: 1.0,
+            ecology_islands: None,
         }
     }
 }
@@ -590,6 +608,11 @@ struct Session {
     /// and the ticks it has been out of air since the last drowning damage.
     vitals_hello: bool,
     drown_ticks: u32,
+    /// The last damage cause its client understands (`CausesHello`; 0: it never said, so only the
+    /// causes every build knows, and `Drown` with `vitals_hello`).
+    known_cause: u8,
+    /// Its lava burn (docs/proposals/VOLCANOES.md §6): burning left after leaving lava.
+    burn: dwell_lava::Burn,
     /// Whether its client draws creatures (`CreaturesHello`, ADR 0073).
     creatures_hello: bool,
     /// Whether its client draws block damage (`DamageHello`, docs/BLOCK_DAMAGE.md).
@@ -646,7 +669,9 @@ impl Session {
             chop_hello: false,
             chop_ready: 0,
             vitals_hello: false,
+            known_cause: 0,
             drown_ticks: 0,
+            burn: dwell_lava::Burn::default(),
             creatures_hello: false,
             damage_hello: false,
             held_tool: None,
@@ -903,10 +928,18 @@ pub struct Server {
     damage: dwell_protocol::damage::Damage,
     /// The saved damage is a newer build's: kept, not written over.
     damage_unread: bool,
+    /// The lava fields (docs/proposals/VOLCANOES.md §6), saved with the world (`lava` table).
+    lava: crate::lava::Lava,
+    /// The saved lava is a newer build's: kept, not written over.
+    lava_unread: bool,
+    /// Steam from lava meeting water since the last `take_lava_steam` (the clients' puffs, later).
+    lava_steam: Vec<crate::lava::Steam>,
     /// The trees' growth records (ADR 0079 S3), saved with the world.
     growth: dwell_worldgen::growth::Records,
     /// The saved records are a newer build's: kept, not written over.
     growth_unread: bool,
+    /// The far ecology (docs/ECOLOGY.md §6): both faces' herds and packs, saved with the world.
+    ecology: ecology::Ecology,
     /// The world's growers (none: no species trees), built on first use.
     growers: Option<Option<Arc<dwell_worldgen::growth::Growers>>>,
     /// The loaded chunks already looked at for trees (not saved: looked at again after a load).
@@ -1057,8 +1090,19 @@ impl Server {
             cuts_unread: false,
             damage: Default::default(),
             damage_unread: false,
+            lava: Default::default(),
+            lava_unread: false,
+            lava_steam: Vec::new(),
             growth: Default::default(),
             growth_unread: false,
+            ecology: ecology::Ecology::new(
+                config.ecology,
+                config.ecology_speed,
+                config.world_seed,
+                config.generator_version == dwell_world::GENERATOR_TERRAIN
+                    && config.generator_override.is_none(),
+                config.ecology_islands.clone(),
+            ),
             growers: None,
             growth_scanned: Default::default(),
             ground: Default::default(),
@@ -1087,6 +1131,7 @@ impl Server {
             config,
         };
         server.init_storage();
+        server.place_world_vents();
 
         // Pre-generate the spawn region, so the first players never wait for terrain. The
         // verification chunk is always generated: clients check their generator against it,
@@ -1519,6 +1564,7 @@ impl Server {
             Message::InventoryAction(a) => self.inventory_action(id, a),
             Message::Chop(a) => self.chop_action(id, a),
             Message::VitalsHello => s.vitals_hello = true,
+            Message::CausesHello(n) => s.known_cause = n,
             Message::CreaturesHello => self.creatures_hello(id),
             Message::DamageHello => self.damage_hello(id),
             Message::WorldgenRequest => {
@@ -1636,6 +1682,7 @@ impl Server {
         s.health = 0;
         s.inputs.clear();
         s.respawn_tick = respawn_tick;
+        s.burn = dwell_lava::Burn::default(); // the dead don't burn on into their respawn
         s.preload_center = preload;
         s.preload_complete = false;
         let mut e = self.event(PlayerEventKind::Death, &self.sessions[&id]);
@@ -1662,6 +1709,7 @@ impl Server {
             self.damage(id, amount, DamageCause::Fall);
         }
         self.drown(id);
+        self.burn(id);
     }
 
     /// Advances the simulation by one 1/SIM_HZ step.
@@ -1802,8 +1850,12 @@ impl Server {
         self.settle_pieces();
         self.phase_ms[7] += watch.lap_ms();
         self.flow_water();
+        // Lava flows, cools and quenches (docs/proposals/VOLCANOES.md §6).
+        self.flow_lava();
         // Trees grow by the world's days (ADR 0079 S3).
         self.grow_trees();
+        // The far ecology steps by them too (docs/ECOLOGY.md §6).
+        self.step_ecology();
 
         // Loose items fall, are picked up and despawn (ADR 0066); inventories changed are sent.
         self.step_items();
@@ -2790,8 +2842,15 @@ impl Server {
             chunks: mut changed,
             before,
             water,
+            lava,
             ..
         } = changes;
+        // The lava fields read an edited column's bed and water again (a dug channel, poured water).
+        if !lava && !self.lava.is_empty() {
+            for &(cell, _) in &before {
+                self.lava.touch(cell);
+            }
+        }
         if !water {
             for &(cell, from) in &before {
                 if self.edit_log.len() == EDIT_LOG_LEN {
@@ -4293,11 +4352,20 @@ impl Server {
                 None => self.damage_unread = true,
             }
         }
+        if let Some(b) = db.lava() {
+            match crate::lava::Lava::from_bytes(&b, &dwell_lava::DATA) {
+                Some(l) => self.lava = l,
+                None => self.lava_unread = true,
+            }
+        }
         if let Some(b) = db.tree_growth() {
             match dwell_worldgen::growth::Records::from_bytes(&b) {
                 Some(g) => self.growth = g,
                 None => self.growth_unread = true,
             }
+        }
+        if let Some(b) = db.ecology() {
+            self.ecology.restore(b);
         }
         if let Some(b) = db.ground_gone() {
             match dwell_world::ground::GroundGone::from_bytes(&b) {
@@ -4418,12 +4486,16 @@ impl Server {
         if !self.cuts_unread {
             batch.cuts = Some(self.cuts.to_bytes());
         }
+        if !self.lava_unread && !self.lava.is_empty() {
+            batch.lava = Some(self.lava.to_bytes());
+        }
         if !self.growth_unread {
             batch.tree_growth = Some(self.growth.to_bytes());
         }
         if !self.ground_unread {
             batch.ground_gone = Some(self.ground.to_bytes());
         }
+        batch.ecology = Some(self.ecology.record());
         if !self.damage_unread {
             batch.damage = Some(self.damage.to_bytes());
         }

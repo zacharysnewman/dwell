@@ -284,7 +284,8 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
                      the dynamic lights' falloff, flicker and choice (shared/look/lights.json).
   /dwell-ecology     The far ecology (§5.4, ECOLOGY.md): herds and packs as records on a face's
                      island grid, the forage per cell, the day step (ecology.gen.rs from
-                     shared/ecology; a fixture for tests). No dependency on the server core.
+                     shared/ecology; a fixture for tests), its bytes for saving. No dependency on
+                     the server core; dwell-sim holds one per face (server/ecology.rs).
   /dwell-characters  Characters (§5.3, CHARACTERS.md): the tables generated from shared/characters
                      (characters.gen.rs: rigs, looks composed into parts on bones, items, clips,
                      materials; characters.tiles: the brush tiles; fixture.gen.rs for tests), part
@@ -943,23 +944,50 @@ tests only); CI fails on stale output. Code names characters, looks, items and r
   triangles and 4 draws each, within the noise of `gpu.frame` (12.4–13.1 ms with 0–32 bodies on a
   busy machine); 41 KB of instance uniforms a frame at 32.
 
-### 5.4 The far ecology **[in progress: the data-level core built (`dwell-ecology`); not yet in the server, saved, drawn or near players]**
+### 5.4 The far ecology **[in progress: the data-level core, the server's tick and save, and individuals near players built; not yet drawn far away or in local worlds]**
 
 ([`ECOLOGY.md`](./ECOLOGY.md), WORK_QUEUE item 11.) Away from players the deer and wolves are
 **data only**: one record per herd or pack (`dwell_ecology::Group`: face-local position, size,
 hunger and energy averages, activity) on a coarse grid of the face's island (`Island`, 200 m cells
-sampled once from its world map: sea and lakes unwalked, each land cell's most forage by its height
-and slope). Each cell's **forage** is a number grazing depletes and time regrows; the real tall grass
+sampled once from its world map: sea and lakes unwalked, each land cell's most forage and refuge by
+its ground). Each cell's **forage** is a number grazing depletes and time regrows; the real tall grass
 is not touched. `step(island, data, eco, days)` fast-forwards the whole island over days in steps
 of at most `stepDays` (5), each rate integrated in closed form, so 100 days at once land within a
 few percent of 100 single days; deterministic from the seed (hashes, no carried generator). Deer
-move to the best forage away from packs, packs close on herds and kill within reach, groups split
-above their cap and merge when small, never drop below their floor; breeding slows to nothing as a
-species nears its island **carrying capacity** (deer: the forage regrown a day; wolves: that over
-their prey a head), so no species dies out or runs away. Data: `shared/ecology/ecology.json`
+move to the best forage away from packs (toward refuges when threatened), packs close on herds and
+kill within reach, groups split above their cap and merge when small. **No floor**: a group under
+its `dieBelow` is gone and a species can die out, but the system resists it (owner, 2026-11-11):
+predation is a Holling type III response (kills fall off with the square of the prey a pack can
+find, outside refuges), refuge grounds (crags) shield part of a herd, breeding is fastest at low
+density (a Ricker step), hungry packs disperse and lose members, starving is slow. Breeding slows
+to nothing as a species nears its island **carrying capacity** (deer: the forage regrown a day;
+wolves: that over their prey a head), so none runs away. Data: `shared/ecology/ecology.json`
 (`gen.mjs` → `ecology.gen.rs`, a fixture with species added by data alone). Face-local: one
-ecology per face, on that face's map. The 5.3 creatures (ADR 0073) are still spawned near players by
-their own rules; making individuals from the herds near players is the next slice (ECOLOGY.md §5).
+ecology per face, on that face's map.
+
+**On the server** (`dwell-sim` `server/ecology.rs`): one `Ecosystem` per face, made once both faces'
+world maps are in the process (never computed on the tick; worlds without a map, such as the flat
+world, have none), stepped by the world clock's days × the world's ecology `speed` on a schedule
+that depends only on how far behind it is and whether anyone is online: a day at a time online,
+nothing until 10 days behind when idle, `stepDays` steps when 10 or more behind (a load of an older
+world, an idle stretch), at most `MAX_STEPS_PER_TICK` (4) a tick. Saved in the world's optional
+`ecology` table with its `enabled` switch (a world can opt out; new worlds default on,
+`ServerConfig::ecology`) and its speed. A dev read-out (`Server::ecology_snapshot`: each group's face,
+species, position, size, hunger, energy, activity) is server-side only for now. The browser's local
+server computes no world map itself (the server-jobs worker does), so a local world's ecology does
+not run yet.
+
+**Near players** (`dwell-sim` `herds.rs`, ECOLOGY.md §8): a record within `near.spawnM` (64 m) of a
+player on its face becomes its individuals — ADR 0073's creatures (the species' `near.creature`),
+`driven` (they walk only where they are sent and are never despawned by the creature rules) — with
+the record's hunger and energy, and leaves the far step; once no player is within `near.foldM`
+(96 m, the hysteresis) it folds back (size the survivors, needs averaged, place their centroid), and
+a save while near writes it folded. Every `near.thinkS` each individual follows the owner's mockup as
+data (each species' `near`): flee, sleep (tired, or at night by chance: each face's own night), eat
+(a grazer the island cell's forage and, by chance, the real block its data names — the only world
+change, near players only; a hunter chases at a sprint and kills within reach, feeding its pack),
+mate (a young up to the group's cap), keep company or wander. While the ecology runs, the creature
+rules that spawn the species' creatures are left out (`Creatures::reserved`).
 
 ---
 
@@ -2140,6 +2168,7 @@ lives in side files. Chunk and LOD blobs are the protocol's palette + RLE compre
 | `ground_gone` | **[built, 0.50.68]** One record (key 0), rewritten each save: the ground items gone from the scatter (`dwell_world::ground::GroundGone::to_bytes`, version 1: a count, then each cell as i32×3, sorted; ADR 0071), the scatter's tombstones. Optional: older builds leave it; an unreadable record is kept, not overwritten |
 | `block_damage` | **[built, 0.52.28]** One record (key 0), rewritten each save: the blocks hit short of breaking (`dwell_protocol::damage::Damage::to_bytes`, version 1: each cell, its state, hits and up to four hit marks; ADR 0078). Optional: a world without it loads undamaged, older builds leave it; an unreadable record is kept, not overwritten |
 | `tree_growth` | **[built, 0.52.60]** One record (key 0), rewritten each save: the trees' growth records (`dwell_worldgen::growth::Records::to_bytes`, version 1: per tree its anchor, face, species by name, seed, stage, the world day it reached it, turn, planter, variant, stopped; ADR 0079). Optional: a world without it grows its trees from their drawn stages, older builds leave it; an unreadable record is kept, not overwritten |
+| `ecology` | **[built]** One record (key 0), rewritten each save: the far ecology (docs/ECOLOGY.md §6; `dwell-sim` `server/ecology.rs`, version 1: the world's `enabled` switch and `speed`, then each face's `Ecosystem::to_bytes`: its seed, day, forage grid, species by name, groups). Optional: a world without it starts a fresh ecology from its seed and catches up its days; older builds leave it; an unreadable record is kept, not overwritten |
 | `cuts` | **[built, 0.50.34]** One record (key 0), rewritten each save: the axes' cuts in wood cells (`dwell_protocol::chopping::Cuts::to_bytes`, version 1: each cell, then per side its notch and two kerfs as f32; ADR 0067). Optional: older builds leave it; an unreadable record is kept, not overwritten |
 | `water` | **[built, 0.48.2]** The water surface grid's free water (§6.7, WATER_SURFACE_GRID.md): one LZ4 record of `Water::save` (`DWG1`): each water chunk with free columns, their floors, depths and flows (and the rest layer's), and what the chunk owes; held water is found again from the blocks. An older basin record (`DWW5`) is ignored |
 | `tree_tombstones` | **[planned, Phase 30]** Per chunk: the sparse set of chopped procedural tree ids `(chunk, procedural index)` and the pruned node sets of partly cut ones (§6.3 tree growth) |
@@ -3415,7 +3444,7 @@ prototype's 4 km² window: an hour on one core); later, water as its own layer o
 the surface meshed from depth; deferred by the owner, 2026-11-05: clients keep water as blocks); G4 the grid's settings as data
 (`shared/water/*.json`), pools for still water and the held sea as in the prototype.
 
-### 6.8 Lava **[in progress: the simulation core built (`dwell-lava`, V1); not yet in the server, the chunks, the saves or drawn]**
+### 6.8 Lava **[in progress: the simulation core and the server built (V1); not yet drawn]**
 
 ([`proposals/VOLCANOES.md`](./proposals/VOLCANOES.md) §6, WORK_QUEUE item 8.) Lava is a **hot fluid
 on its own surface grid** (`dwell_lava::Field`), not a second liquid on the water grid (§6.7): the
@@ -3447,10 +3476,34 @@ face-local 1 m columns (bed, lava depth, heat 0–1, a water flag), its vents an
 - **Faces:** face-local; world points and cells cross only through `FaceFrame` (`submerged`,
   `is_near`, `LavaEvent::cells`); the crate is in the both-faces scan.
 
-**Not yet:** the server's fields and tick, the rock and lava cells written into chunks, the water
-grid's columns and steam applied to it, the damage on the server (a `Burn` damage cause, sent as
-`Fall` to older clients as `Drown` is), the save table, the lava block (light, the look) and the
-steam's particles and sound.
+**In the server** (`dwell-sim` `lava.rs`, `server/lava.rs`): the world's fields (`Lava`), each on one
+face, placed round a vent (`Server::place_lava_vent`, a `VentSpot`: fluid by name, lake or river, rate,
+a lake's depth over the vent's bed, the field's radius) with their beds and water read from the world;
+ticked every `tickEvery` server ticks (near a player every lava tick, far ones owing their time). Each
+tick's changes go out as one `Rebake` modification through the edit path (the water grid is told, as
+of any edit): each column's molten rows (`Field::lava_rows`, ½ m cell rows) are the fluid's block
+(`dwell:lava`: no collision, `emits` the fluid's `light`, a placeholder look), written only into open
+cells and cleared to air where the lava has gone; a `Rock` event's rows become the rock; a `Steam` event
+takes `steamWaterM` off the top of that column's water and is queued for the clients
+(`take_lava_steam`; not on the wire yet). A player whose feet are in lava burns (`Burn` per session,
+reset at death) through the server's `damage` (none in creative), cause `Burn` (5), sent as `Fall` to a
+client that never said it knows `Burn` (`CausesHello`, on the wire below). Saved with the world
+as one record in an optional `lava` table (`Lava::to_bytes`: each field's face and `record_of`),
+written only when the world has lava; a record this build can't read is kept, not written over.
+
+**A world's vents [built, slice 3]:** worldgen data on the cones (`terrain.json` `tectonics.lavaVents`,
+opt-in, none by default: each a cone by kind and index, lake or river, fluid by name, rate, depth, field
+radius, offset from the summit; checked by `biomes.mjs` `checkLavaVents`, read by
+`dwell_worldgen::config::lava_vent_sites`), placed by the server on each face when its world is created
+or first loaded with no lava (`place_world_vents`, at the cone's summit as generated). The starter world
+lists a lake vent on its youngest hotspot island (VOLCANOES.md §6.2). **Edits:** every change through the
+edit path but the lava's own (`TickChanges::lava`) marks its column in a field over it (`Lava::touch`);
+the field reads that column's bed (up through blocks set on it, down through cells dug out) and water
+again at its next lava tick, so a dug channel takes the lava.
+
+**Not yet:** the lava's look (light, glow, crust) and the steam's particles and sound on the clients;
+the water grid's own columns as the fields' water flags (a field reads them from the world's cells);
+V2's river vents to the sea and eruptions.
 
 ## 7. Physics Pipeline
 
@@ -4058,6 +4111,14 @@ C→S  VitalsHello 0x5B, control: empty (send me Vitals; I know the Drown cause)
 S→C  Vitals      0x5C, datagram with each snapshot while the mode has stamina or oxygen: u32 seq
                  (the input it is as of), f32 stamina, f32 seconds of air, u8 flags
                  (VitalsFlags: 1 exhausted, 2 the stamina rule, 4 the oxygen rule)
+```
+
+**Damage causes: `CausesHello` (reliable) [built, slice 3]** (VOLCANOES.md §6.2). A client sends
+`CausesHello` only to a server whose `Inventory` has `inventory_flags::CAUSES` (32): the last damage
+cause it knows (`DamageCause::MAX` as built). The server sends a cause past it (from `Burn`, 5) to that
+client as `Fall`, as it does `Drown` to a client without `VitalsHello`; a later cause needs no new hello.
+```
+C→S  CausesHello 0x64, control: u8 the last DamageCause this client knows
 ```
 
 **Client → Server: `BlockEditRequest` (reliable, `control`) [built, Phase 3d]** (§6.5)

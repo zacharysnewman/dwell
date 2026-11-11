@@ -462,6 +462,15 @@ savanna, desert and alpine presets. The tree line is where the temperature falls
 dry lee has no trees. Tuned in Chisel (the Soil and vegetation group, the soil and vegetation overlays).
 Prototype content (§6.1 of the architecture).
 
+T3b (2026-11-11, ADR 0075): climate details in ordinary biomes, each opt-in per biome. A biome's `snow`
+(`belowC`, `maxSlope`, `block`, optional `iceBelowC`/`ice`) is its own snow line from the biome map's
+temperature with its lapse rate (the tectonic peaks' rule, for any biome; it replaces the world's line
+where it is the column's biome). A soil type may name `ground`/`under` blocks, shown in a biome with
+`soilBlocks` (the build's: sand under the grass on sandy soil). A vegetation kind may govern a
+`decoration` or a `ground` item kind in place of a placement, by a biome's `undergrowth` (0..1): tall
+grass thins with the moisture, sticks lie where trees could grow. The starter world opts in: every biome's
+undergrowth, snow lines for the alpine tundra, boreal and steppe, soil blocks for the steppe and meadow.
+
 ## Preset biomes (2026-11-10, ADR 0075)
 
 Starting points for a world's biomes: `shared/worldgen/biomes/presets/*.json` (14: temperate meadow,

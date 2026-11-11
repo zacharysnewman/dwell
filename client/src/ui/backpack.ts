@@ -29,6 +29,16 @@ export function recipeInputs(r: Recipe): string {
   return r.inputs.map((i) => `${String(i.count)} ${itemLabel(i.item)}`).join(' + ');
 }
 
+/**
+ * A recipe's output as its Combine button names it: the recipe's own `label` where it has one (a
+ * slab's item is its block, labelled "Stone": the recipe says "Stone slab"), else the output item's
+ * label, with a count over 1 in front.
+ */
+export function recipeOutput(r: Recipe): string {
+  const out = r.output.count > 1 ? `${String(r.output.count)} ` : '';
+  return `${out}${r.label ?? itemLabel(r.output.item)}`;
+}
+
 /** The move a pick-up and a put-down make: from, to, count (0: the whole stack). */
 export function moveFor(
   inv: InventoryHud,
@@ -220,10 +230,9 @@ export class Backpack {
       b.type = 'button';
       b.className = 'combine-recipe';
       b.dataset.recipe = recipe.name;
-      const out = recipe.output.count > 1 ? `${String(recipe.output.count)} ` : '';
       const name = document.createElement('span');
       name.className = 'combine-output';
-      name.textContent = `${out}${itemLabel(recipe.output.item)}`;
+      name.textContent = recipeOutput(recipe);
       const ins = document.createElement('span');
       ins.className = 'combine-inputs';
       ins.textContent = recipeInputs(recipe);

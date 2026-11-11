@@ -53,10 +53,15 @@ export interface GeologyJson {
   [k: string]: unknown;
 }
 
-/** A vegetation kind as vegetation.json holds it (systemic terrain T3): a placement's envelope. */
+/**
+ * A vegetation kind as vegetation.json holds it (systemic terrain T3): a placement's envelope, or
+ * (T3b) a decoration's or a ground item kind's.
+ */
 export interface KindJson {
   name: string;
-  placement: string;
+  placement?: string;
+  decoration?: string;
+  ground?: string;
   temperature: [number, number];
   moisture: [number, number];
   [k: string]: unknown;

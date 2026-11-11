@@ -32,7 +32,13 @@
     },
     { "name": "dwell:gem", "label": "Gem", "color": "#4fb07a", "size": 0.14, "value": 1 },
     { "name": "dwell:gem_large", "label": "Large gem", "color": "#4f7fd0", "size": 0.2, "value": 5 },
-    { "name": "dwell:wood", "label": "Wood chunk", "color": "#a07446", "size": 0.24 },
+    {
+      "name": "dwell:wood",
+      "label": "Wood chunk",
+      "color": "#a07446",
+      "size": 0.24,
+      "look": { "shape": "lump", "size": [0.16, 0.09, 0.12], "texture": "dwell:log", "color": "#d6ad84" }
+    },
     {
       "name": "dwell:rock_shard",
       "label": "Rock shard",
@@ -63,11 +69,11 @@
   ],
   "$wallets": "Currency items (with a `value`) go to the wallet, not a slot: a total up to its capacity (owner, 2026-11-08: the starting wallet holds 99; bigger wallets later).",
   "wallets": [{ "name": "dwell:pouch", "label": "Pouch", "capacity": 99 }],
-  "$recipes": "Combining (owner, 2026-11-11): each recipe's `inputs` (items and counts, taken from anywhere in the inventory) make its `output`; applied by the server (InventoryAction::Combine, sent only to a server whose Inventory has inventory_flags::COMBINE), listed in the backpack's Combine section where items are used. `name` names it on the wire (unique). A slab is a block's own item: the ½ m piece it places. The stone axe and the stone pickaxe share their inputs (the player picks which).",
+  "$recipes": "Combining (owner, 2026-11-11): each recipe's `inputs` (items and counts, taken from anywhere in the inventory) make its `output`; applied by the server (InventoryAction::Combine, sent only to a server whose Inventory has inventory_flags::COMBINE), listed in the backpack's Combine section where items are used. `name` names it on the wire (unique); `label` (optional) names the Combine button, else the output item's label (a slab's item is its block, labelled \"Stone\": the recipe says \"Stone slab\"). A slab is a block's own item: the ½ m piece it places. The stone axe and the stone pickaxe share their inputs (the player picks which).",
   "recipes": [
-    { "name": "dwell:stone_slab", "inputs": [{ "item": "dwell:rock_shard", "count": 8 }], "output": { "item": "dwell:stone", "count": 1 } },
-    { "name": "dwell:dirt_slab", "inputs": [{ "item": "dwell:dirt_clump", "count": 8 }], "output": { "item": "dwell:dirt", "count": 1 } },
-    { "name": "dwell:log_slab", "inputs": [{ "item": "dwell:wood", "count": 8 }], "output": { "item": "dwell:log", "count": 1 } },
+    { "name": "dwell:stone_slab", "label": "Stone slab", "inputs": [{ "item": "dwell:rock_shard", "count": 8 }], "output": { "item": "dwell:stone", "count": 1 } },
+    { "name": "dwell:dirt_slab", "label": "Dirt slab", "inputs": [{ "item": "dwell:dirt_clump", "count": 8 }], "output": { "item": "dwell:dirt", "count": 1 } },
+    { "name": "dwell:log_slab", "label": "Log slab", "inputs": [{ "item": "dwell:wood", "count": 8 }], "output": { "item": "dwell:log", "count": 1 } },
     {
       "name": "dwell:stone_axe",
       "inputs": [{ "item": "dwell:stick", "count": 2 }, { "item": "dwell:rock_shard", "count": 2 }, { "item": "dwell:grass_fiber", "count": 2 }],

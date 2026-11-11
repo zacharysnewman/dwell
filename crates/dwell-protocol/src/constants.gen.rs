@@ -181,6 +181,7 @@ pub enum MessageType {
     Damage = 97,
     WorldgenRequest = 98,
     WorldgenConfig = 99,
+    CausesHello = 100,
 }
 
 impl MessageType {
@@ -239,6 +240,7 @@ impl MessageType {
             97 => Some(Self::Damage),
             98 => Some(Self::WorldgenRequest),
             99 => Some(Self::WorldgenConfig),
+            100 => Some(Self::CausesHello),
             _ => None,
         }
     }
@@ -384,10 +386,11 @@ pub enum DamageCause {
     Crush = 2,
     Explosion = 3,
     Drown = 4,
+    Burn = 5,
 }
 
 impl DamageCause {
-    pub const MAX: u8 = 4;
+    pub const MAX: u8 = 5;
 
     pub const fn from_u8(v: u8) -> Option<Self> {
         match v {
@@ -395,6 +398,7 @@ impl DamageCause {
             2 => Some(Self::Crush),
             3 => Some(Self::Explosion),
             4 => Some(Self::Drown),
+            5 => Some(Self::Burn),
             _ => None,
         }
     }
