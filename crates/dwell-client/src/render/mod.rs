@@ -71,9 +71,20 @@ use water_tiles::WaterTiles;
 pub const NEAR_SPLIT: f64 = dwell_protocol::lod::NEAR_SPLIT_M as f64;
 pub const NEAR_PLANE: f64 = 0.05;
 pub const FAR_PLANE: f64 = 5e7;
-/// Face-local height no terrain reaches (m): above it, nothing is nearer than the altitude over it,
-/// so the far pass's near plane moves out with it.
+/// Face-local height the default terrain stays under (m): above the highest of it and of the
+/// terrain drawn (`far_pass_near`), nothing is nearer than the altitude over it, so the far pass's
+/// near plane moves out with it.
 const TERRAIN_TOP_M: f64 = 1024.0;
+
+/// The far pass's near plane for an eye at face-local height `eye_y` (m) over terrain drawn up to
+/// face-local `drawn_top` (m; the highest top of the sections and chunks shown, or −∞): pushed out
+/// with the altitude over the higher of it and `TERRAIN_TOP_M`, never inside the near pass's split.
+/// A test world's 4800 m peak stands far over `TERRAIN_TOP_M`: from over its summit the near plane
+/// clipped the cone (docs/BUGS.md #68).
+pub fn far_pass_near(eye_y: f64, drawn_top: f64) -> f64 {
+    let altitude = eye_y - TERRAIN_TOP_M.max(drawn_top);
+    (NEAR_SPLIT * 0.95).max(altitude * 0.8)
+}
 pub const SAMPLES: u32 = 4;
 
 // A CPU (software) adapter — SwiftShader: CI, machines without a GPU — draws the cheapest tier of
@@ -2288,9 +2299,13 @@ impl Renderer {
     pub fn set_lod_level_colors(&mut self, on: bool) {
         self.level_colors = on;
     }
-    /// The `?loddebug=` switches (see `lod_debug`): `noskirts`, `skirts`, `nocull`, `nostandins`.
+    /// The `?loddebug=` switches (see `lod_debug`): `noskirts`, `skirts`, `nocull`, `nostandins`,
+    /// and `levels` (each section tinted by its level, `LEVEL_TINTS`; as `?lodcolors=1`).
     pub fn set_lod_debug(&mut self, query: &str) {
         let has = |w: &str| query.split(',').any(|q| q == w);
+        if has("levels") {
+            self.level_colors = true;
+        }
         self.lod_debug = u8::from(has("noskirts"))
             | u8::from(has("skirts")) << 1
             | u8::from(has("nocull")) << 2
@@ -3637,8 +3652,7 @@ impl Renderer {
         let basis = aim(self.yaw, self.pitch, self.face, self.roll);
         // Two passes (§6.6): the far one beyond the split (its near plane pushed out with altitude,
         // where nothing is closer), then a depth clear and the near one. Heights are face-local.
-        let altitude = self.face.y(self.eye[1]) - TERRAIN_TOP_M;
-        let far_near = (NEAR_SPLIT * 0.95).max(altitude * 0.8);
+        let far_near = far_pass_near(self.face.y(self.eye[1]), self.drawn_top());
         let passes = [(far_near, FAR_PLANE), (NEAR_PLANE, NEAR_SPLIT)];
         let draws = self.collect(passes, chunk_fade);
         let mut near_uniforms = None;
@@ -4612,6 +4626,42 @@ impl Renderer {
         }
         out.sort_by_key(|d| d.key);
         out
+    }
+
+    /// The highest face-local top (m) of the terrain shown on the viewer's face: the LOD sections'
+    /// and stand-ins' boxes and the chunks' (−∞ with none); `far_pass_near` keeps it in the far pass.
+    fn drawn_top(&self) -> f64 {
+        let f = self.face;
+        let top = |lo: V3, hi: V3| {
+            if FaceFrame::at_height((lo[1] + hi[1]) * 0.5) == f {
+                f.y(lo[1]).max(f.y(hi[1]))
+            } else {
+                f64::NEG_INFINITY
+            }
+        };
+        let sections = self.terrain.shown.iter().filter_map(|&(id, _, fade)| {
+            let s = self
+                .terrain
+                .sections
+                .get(&id)
+                .filter(|_| !fade.is_hidden())?;
+            let side = s.cell * 32.0;
+            let hi = [
+                s.origin[0] + side,
+                s.origin[1] + side * CELL_H,
+                s.origin[2] + side,
+            ];
+            Some(top(s.origin, hi))
+        });
+        let stand_ins = self.terrain.stand_ins.iter().map(|s| top(s.lo, s.hi));
+        let chunks = self.terrain.chunks.values().map(|c| {
+            let hi = std::array::from_fn(|k| c.origin[k] + CHUNK_EXTENT_M[k]);
+            top(c.origin, hi)
+        });
+        sections
+            .chain(stand_ins)
+            .chain(chunks)
+            .fold(f64::NEG_INFINITY, f64::max)
     }
 
     /// The casters of a distant-shadow heightmap fill at `place` (lod_shadows.rs): the terrain as
@@ -5687,6 +5737,33 @@ impl crate::game::Scene for Renderer {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn the_far_pass_keeps_terrain_drawn_over_the_default_top_from_above_it() {
+        // face-a-only: `far_pass_near` takes face-local heights; `drawn_top` maps them through
+        // the viewer's FaceFrame.
+        // BUGS.md #68: 300 m over the tall peak's ~4400 m rim (sections drawn up to 4608 m) the far
+        // pass's near plane sat at 0.8 × (5300 − 1024) = 3421 m, clipping the cone 0.9–2 km away:
+        // a hole to the sky round the crater. Red before: the drawn terrain was not considered.
+        let near = far_pass_near(5300.0, 4608.0);
+        // Nearer than the summit, or the near pass's own (which draws it).
+        let summit = 5300.0 - 4608.0;
+        assert!(
+            near <= f64::max(summit, NEAR_SPLIT * 0.95),
+            "near plane {near} m clips the summit"
+        );
+        // Over the default terrain (nothing drawn above the default top) it still moves out.
+        assert!((far_pass_near(5300.0, 600.0) - 0.8 * (5300.0 - TERRAIN_TOP_M)).abs() < 1e-9);
+        assert!(
+            (far_pass_near(5300.0, f64::NEG_INFINITY) - 0.8 * (5300.0 - TERRAIN_TOP_M)).abs()
+                < 1e-9
+        );
+        // From 8 km over that summit: out past the split, short of the summit.
+        let high = far_pass_near(12_608.0, 4608.0);
+        assert!(high > NEAR_SPLIT && high < 8000.0, "{high}");
+        // Near the ground, the split's.
+        assert_eq!(far_pass_near(300.0, 290.0), NEAR_SPLIT * 0.95);
+    }
     use super::*;
 
     #[test]

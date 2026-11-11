@@ -2107,12 +2107,27 @@ fn tall_peak_terrain(
 }
 
 dwell_world::both_faces!(
-    /// BUGS.md #68 (a guard while it is open): from 300 m above the tall peak's rim looking 45°
-    /// down into the crater, with the player's chunks streamed on the rim and the game's options,
-    /// every column of the cone in view is drawn up to its ground (within 64 m) by a section's
-    /// surface, a skirt the renderer shows or drawn chunks — not left open, nor covered only by a
-    /// lid (a top skirt) far under the ground.
+    /// BUGS.md #68: from 300 m above the tall peak's rim looking 45° down into the crater, with
+    /// the player's chunks streamed on the rim and the game's options, every column of the cone in
+    /// view is drawn up to its ground (within 64 m) by a section's surface, a skirt the renderer
+    /// shows or drawn chunks — not left open, nor covered only by a lid (a top skirt) far under
+    /// the ground.
     fn the_lod_covers_a_4800_m_cone_seen_from_its_summit(f: FaceFrame) {
+        cone_from_summit(f, false);
+    }
+);
+
+dwell_world::both_faces!(
+    /// BUGS.md #68 as it was seen in game: the player flying where the camera is, 300 m over the
+    /// rim, so the chunks streamed round it are all air — the cone is still drawn whole.
+    fn the_lod_covers_the_cone_with_the_player_flying_over_the_summit(f: FaceFrame) {
+        cone_from_summit(f, true);
+    }
+);
+
+/// The summit view of BUGS.md #68 (both tests above): the player on the rim, or flying at the eye.
+fn cone_from_summit(f: FaceFrame, player_flying: bool) {
+    {
         let (t, v) = tall_peak_terrain(68);
         let t = std::sync::Arc::new(t);
         let rim = t
@@ -2120,7 +2135,11 @@ dwell_world::both_faces!(
             .column_at(v.x as i32, (v.z + v.crater_radius) as i32);
         let rim_y = f64::from(rim.height);
         // The player on the rim, its chunks streamed around it (the server's view radius).
-        let feet = f.point([v.x, rim_y + 1.6, v.z + v.crater_radius]);
+        let feet = if player_flying {
+            f.point([v.x, rim_y + 300.0, v.z + v.crater_radius + 900.0])
+        } else {
+            f.point([v.x, rim_y + 1.6, v.z + v.crater_radius])
+        };
         let at = chunk_of(feet);
         let r = world::VIEW_RADIUS_CHUNKS as i32;
         let mut host = Host {
@@ -2262,7 +2281,7 @@ dwell_world::both_faces!(
             &holes[..holes.len().min(8)]
         );
     }
-);
+}
 
 #[test]
 fn a_fresh_view_far_over_the_cache_budget_fits_it_within_seconds_not_tens_of_them() {
