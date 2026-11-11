@@ -46,10 +46,13 @@ pub enum SoundKind {
     Exhausted = 39,
     Gasp = 40,
     Strain = 41,
+    CreatureStep = 42,
+    CreatureStartle = 43,
+    CreatureCall = 44,
 }
 
 impl SoundKind {
-    pub const ALL: [SoundKind; 42] = [
+    pub const ALL: [SoundKind; 45] = [
         SoundKind::Step,
         SoundKind::Climb,
         SoundKind::Land,
@@ -92,6 +95,9 @@ impl SoundKind {
         SoundKind::Exhausted,
         SoundKind::Gasp,
         SoundKind::Strain,
+        SoundKind::CreatureStep,
+        SoundKind::CreatureStartle,
+        SoundKind::CreatureCall,
     ];
 
     /// The event's name in the data.
@@ -139,6 +145,9 @@ impl SoundKind {
             SoundKind::Exhausted => "exhausted",
             SoundKind::Gasp => "gasp",
             SoundKind::Strain => "strain",
+            SoundKind::CreatureStep => "creature_step",
+            SoundKind::CreatureStartle => "creature_startle",
+            SoundKind::CreatureCall => "creature_call",
         }
     }
 
@@ -187,6 +196,9 @@ impl SoundKind {
             SoundKind::Exhausted => None,
             SoundKind::Gasp => None,
             SoundKind::Strain => None,
+            SoundKind::CreatureStep => None,
+            SoundKind::CreatureStartle => None,
+            SoundKind::CreatureCall => None,
         }
     }
 }
@@ -230,4 +242,18 @@ pub mod ambient {
     /// (shared/sounds `ambience.probe`; docs/AUDIO.md §2c).
     pub const AMBIENCE_RADIUS_M: f64 = 16.0;
     pub const AMBIENCE_TREES: &[&str] = &["dwell:leaves", "dwell:snowy_leaves", "dwell:log"];
+}
+
+/// The creatures' sounds (shared/sounds `creatures`; docs/AUDIO.md §2d): heard within
+/// `RADIUS_M`; each model's stride (m between footsteps) and its call's interval (s), if it
+/// calls. A creature event's `block` is the model's index here.
+pub mod creature_sounds {
+    pub const RADIUS_M: f64 = 32.0;
+    /// A model's name, stride and call interval.
+    pub type Model = (&'static str, f64, Option<(f64, f64)>);
+    pub const MODELS: &[Model] = &[
+        ("wolf", 1.1, Some((50.0, 140.0))),
+        ("deer", 1.2, None),
+        ("doe", 1.1, None),
+    ];
 }

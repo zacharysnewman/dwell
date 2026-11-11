@@ -106,8 +106,11 @@ const TOP_KEYS = [
   "controls",
   "ambient",
   "ambience",
+  "creatures",
   "sounds",
 ];
+/** A creature event's part (AUDIO.md §2d): which of the creature's sounds it plays. */
+export const CREATURE_PARTS = ["step", "startle", "call"];
 /** The surroundings an ambience bed's conditions read (crates/dwell-game ambience.rs `INPUTS`). */
 export const AMBIENCE_INPUTS = [
   "altitude",
@@ -478,6 +481,7 @@ export function resolveSounds(files, samplesDir = SAMPLES_DIR) {
     controls: {},
     ambient: undefined,
     ambience: undefined,
+    creatures: undefined,
     sounds: {},
   };
   const sorted = [...files].sort((a, b) =>
@@ -533,9 +537,10 @@ export function resolveSounds(files, samplesDir = SAMPLES_DIR) {
       const where = `event ${name}`;
       if (!NAME.test(name)) fail(where, "bad name");
       if (out.events.some((e) => e.name === name)) fail(where, "defined twice");
-      keysIn(where, def, ["set", "sound", "speed", "loop", "fallback"]);
+      keysIn(where, def, ["set", "sound", "speed", "loop", "fallback", "creature"]);
+      if (def.creature !== undefined) oneOf(`${where}.creature`, def.creature, CREATURE_PARTS);
       if (def.loop !== undefined) oneOf(`${where}.loop`, def.loop, LOOP_PARTS);
-      const plays = def.set !== undefined || def.sound !== undefined;
+      const plays = def.set !== undefined || def.sound !== undefined || def.creature !== undefined;
       if (def.loop === "update") {
         if (plays) fail(where, "a loop update plays nothing of its own");
       } else if (!plays && def.loop !== "stop")
@@ -570,6 +575,7 @@ export function resolveSounds(files, samplesDir = SAMPLES_DIR) {
         ...(def.speed !== undefined ? { speed: def.speed } : {}),
         ...(def.loop !== undefined ? { loop: def.loop } : {}),
         ...(def.fallback === false ? { fallback: false } : {}),
+        ...(def.creature !== undefined ? { creature: def.creature } : {}),
       });
     }
     if (file.gaits !== undefined) {
@@ -608,6 +614,33 @@ export function resolveSounds(files, samplesDir = SAMPLES_DIR) {
     }
   }
   if (!out.ambient) fail("ambient", "missing (the fire and night tunables)");
+  // Creatures (AUDIO.md §2d): each model's stride and sounds.
+  for (const file of sorted) {
+    const c = file.creatures;
+    if (c === undefined) continue;
+    if (out.creatures) fail("creatures", "given twice");
+    keysIn("creatures", c, ["$comment", "radiusM", "models"]);
+    number("creatures.radiusM", c.radiusM, 1, 128);
+    if (!isObject(c.models)) fail("creatures.models", "must be an object");
+    const models = {};
+    for (const [m, d] of Object.entries(c.models)) {
+      const where = `creature ${m}`;
+      if (!NAME.test(m)) fail(where, "bad model name");
+      keysIn(where, d, ["stride", ...CREATURE_PARTS, "callEveryS"]);
+      number(`${where}.stride`, d.stride, 0.1, 20);
+      const r = { stride: d.stride };
+      for (const part of CREATURE_PARTS)
+        if (d[part] !== undefined) r[part] = sound(`${where}.${part}`, file.namespace, d[part]);
+      if (d.callEveryS !== undefined) {
+        pair(`${where}.callEveryS`, d.callEveryS, 1, 3600, { ordered: true });
+        if (r.call === undefined) fail(`${where}.callEveryS`, "needs a call");
+        r.callEveryS = d.callEveryS;
+      }
+      models[m] = r;
+    }
+    out.creatures = { radiusM: c.radiusM, models };
+  }
+  if (!out.creatures) out.creatures = { radiusM: 32, models: {} };
   if (!out.fallback || !(out.fallback in out.sets))
     fail("fallback", `unknown set "${out.fallback}"`);
   // A loop's start plays loop sounds, every other event one-shots; the fallback set has every

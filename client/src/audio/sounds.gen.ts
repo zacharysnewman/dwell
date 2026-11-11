@@ -246,6 +246,18 @@ export const SOUND_DATA: SoundData = {
     {
       "name": "strain",
       "sound": "dwell:strain"
+    },
+    {
+      "name": "creature_step",
+      "creature": "step"
+    },
+    {
+      "name": "creature_startle",
+      "creature": "startle"
+    },
+    {
+      "name": "creature_call",
+      "creature": "call"
     }
   ],
   "sets": {
@@ -695,6 +707,31 @@ export const SOUND_DATA: SoundData = {
             "floor": 0.3
           }
         ]
+      }
+    }
+  },
+  "creatures": {
+    "radiusM": 32,
+    "models": {
+      "wolf": {
+        "stride": 1.1,
+        "step": "dwell:wolf_step",
+        "startle": "dwell:wolf_growl",
+        "call": "dwell:wolf_howl",
+        "callEveryS": [
+          50,
+          140
+        ]
+      },
+      "deer": {
+        "stride": 1.2,
+        "step": "dwell:deer_step",
+        "startle": "dwell:deer_snort"
+      },
+      "doe": {
+        "stride": 1.1,
+        "step": "dwell:deer_step",
+        "startle": "dwell:deer_snort"
       }
     }
   },
@@ -5822,6 +5859,190 @@ export const SOUND_DATA: SoundData = {
         }
       ]
     },
+    "dwell:wolf_step": {
+      "samples": {
+        "files": [
+          "grass-step-1-437e2e79.m4a",
+          "grass-step-2-4ab9ef08.m4a",
+          "grass-step-3-2f69fd0a.m4a",
+          "grass-step-4-6e1efa60.m4a"
+        ],
+        "gain": 0.18,
+        "pitch": 1.5
+      },
+      "gain": 0.3,
+      "reverb": 0.05,
+      "variation": {
+        "pitch": 2,
+        "gain": 2,
+        "cutoff": 0.15,
+        "time": 0.15
+      },
+      "layers": [
+        {
+          "source": "noise",
+          "color": "pink",
+          "gain": 0.3,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 900,
+              "q": 1
+            }
+          ],
+          "env": {
+            "attack": 0.002,
+            "decay": 0.06
+          }
+        }
+      ]
+    },
+    "dwell:deer_step": {
+      "samples": {
+        "files": [
+          "dirt-step-1-1b494792.m4a",
+          "dirt-step-2-f620358a.m4a",
+          "dirt-step-3-33f64fc6.m4a",
+          "dirt-step-4-74fb0116.m4a"
+        ],
+        "gain": 0.22,
+        "pitch": 1.5
+      },
+      "gain": 0.35,
+      "reverb": 0.05,
+      "variation": {
+        "pitch": 2,
+        "gain": 2,
+        "cutoff": 0.15,
+        "time": 0.15
+      },
+      "layers": [
+        {
+          "source": "modal",
+          "freq": 420,
+          "gain": 0.25,
+          "partials": [
+            [
+              1,
+              1,
+              0.04
+            ],
+            [
+              2.4,
+              0.5,
+              0.02
+            ]
+          ]
+        }
+      ]
+    },
+    "dwell:wolf_howl": {
+      "samples": {
+        "files": [
+          "wolf-howl-1-b5f4a467.m4a",
+          "wolf-howl-2-54005519.m4a"
+        ],
+        "gain": 0.4,
+        "pitch": 1,
+        "reverb": 0.1
+      },
+      "gain": 0.4,
+      "reverb": 0.3,
+      "variation": {
+        "pitch": 1,
+        "gain": 1,
+        "cutoff": 0.1,
+        "time": 0.1
+      },
+      "layers": [
+        {
+          "source": "osc",
+          "wave": "sine",
+          "freq": 420,
+          "to": 640,
+          "gain": 0.2,
+          "env": {
+            "attack": 0.4,
+            "hold": 0.8,
+            "decay": 1.2
+          }
+        }
+      ]
+    },
+    "dwell:wolf_growl": {
+      "samples": {
+        "files": [
+          "wolf-growl-1-9a226a35.m4a",
+          "wolf-growl-2-eedbfbc3.m4a"
+        ],
+        "gain": 0.45,
+        "pitch": 1
+      },
+      "gain": 0.45,
+      "reverb": 0.05,
+      "variation": {
+        "pitch": 1,
+        "gain": 1,
+        "cutoff": 0.1,
+        "time": 0.1
+      },
+      "layers": [
+        {
+          "source": "noise",
+          "color": "brown",
+          "gain": 0.4,
+          "filters": [
+            {
+              "type": "lowpass",
+              "freq": 400,
+              "q": 1
+            }
+          ],
+          "env": {
+            "attack": 0.05,
+            "hold": 0.4,
+            "decay": 0.3
+          }
+        }
+      ]
+    },
+    "dwell:deer_snort": {
+      "samples": {
+        "files": [
+          "deer-snort-1-d7ae1675.m4a",
+          "deer-snort-2-3094de0e.m4a"
+        ],
+        "gain": 0.45,
+        "pitch": 1
+      },
+      "gain": 0.45,
+      "reverb": 0.05,
+      "variation": {
+        "pitch": 1,
+        "gain": 1,
+        "cutoff": 0.1,
+        "time": 0.1
+      },
+      "layers": [
+        {
+          "source": "noise",
+          "color": "white",
+          "gain": 0.4,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 1400,
+              "q": 0.8
+            }
+          ],
+          "env": {
+            "attack": 0.005,
+            "hold": 0.05,
+            "decay": 0.15
+          }
+        }
+      ]
+    },
     "dwell:hurt": {
       "samples": {
         "files": [
@@ -7121,6 +7342,30 @@ export const SOUND_DATA: SoundData = {
       "source": "strain-1.m4a"
     },
     {
+      "file": "wolf-howl-1-b5f4a467.m4a",
+      "source": "wolf-howl-1.m4a"
+    },
+    {
+      "file": "wolf-howl-2-54005519.m4a",
+      "source": "wolf-howl-2.m4a"
+    },
+    {
+      "file": "wolf-growl-1-9a226a35.m4a",
+      "source": "wolf-growl-1.m4a"
+    },
+    {
+      "file": "wolf-growl-2-eedbfbc3.m4a",
+      "source": "wolf-growl-2.m4a"
+    },
+    {
+      "file": "deer-snort-1-d7ae1675.m4a",
+      "source": "deer-snort-1.m4a"
+    },
+    {
+      "file": "deer-snort-2-3094de0e.m4a",
+      "source": "deer-snort-2.m4a"
+    },
+    {
       "file": "hurt-1-608ea852.m4a",
       "source": "hurt-1.m4a"
     },
@@ -7153,7 +7398,7 @@ export const SOUND_DATA: SoundData = {
       "source": "dynamite-boom-3.m4a"
     }
   ],
-  "sampleBytes": 1343773,
+  "sampleBytes": 1450401,
   "gaitOrder": [
     "walk",
     "run",

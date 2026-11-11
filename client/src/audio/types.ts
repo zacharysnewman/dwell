@@ -142,6 +142,8 @@ export interface EventDef {
   loop?: LoopPart;
   /** false: a set without this event's sound plays nothing (not the fallback set's). */
   fallback?: false;
+  /** A creature's event (AUDIO.md §2d): the event's `block` is the model's index in `creatures`. */
+  creature?: 'step' | 'startle' | 'call';
 }
 
 /** The ambient sounds' tunables (AUDIO.md §2), read by the Rust game. */
@@ -194,6 +196,20 @@ export interface SoundData {
   controls: Record<string, ControlSounds>;
   ambient: AmbientDef;
   ambience: AmbienceDef;
+  /** Each creature model's sounds (AUDIO.md §2d), in the Rust game's order. */
+  creatures: {
+    radiusM: number;
+    models: Record<
+      string,
+      {
+        stride: number;
+        step?: string;
+        startle?: string;
+        call?: string;
+        callEveryS?: [number, number];
+      }
+    >;
+  };
   sounds: Record<string, SoundDef>;
   /** Every sample file shipped: its published name and its file in shared/sounds/samples. */
   sampleFiles: { file: string; source: string }[];

@@ -714,6 +714,8 @@ pub struct Game<S: Scene> {
     fire_sounds: FireSounds,
     /// The body's breathing, gasps and strain from the vitals (docs/AUDIO.md §5).
     vital_sounds: dwell_game::sound::VitalSounds,
+    /// The creatures' footsteps, startles and calls (docs/AUDIO.md §2d).
+    creature_sounds: dwell_game::sound::CreatureSounds,
     /// The listener's surroundings for the ambience beds (AUDIO.md §2c), read a few times a second.
     ambience: dwell_game::ambience::Listening,
     ambience_due_s: f64,
@@ -879,6 +881,7 @@ impl<S: Scene> Game<S> {
             lean_at: None,
             fire_sounds: FireSounds::new(),
             vital_sounds: dwell_game::sound::VitalSounds::new(),
+            creature_sounds: dwell_game::sound::CreatureSounds::new(0x5eed),
             ambience: dwell_game::ambience::Listening {
                 fire_m: dwell_game::ambience::FAR_M,
                 water_m: dwell_game::ambience::FAR_M,
@@ -3115,6 +3118,19 @@ impl<S: Scene> Game<S> {
                 (v, light)
             })
             .collect();
+        // Their footsteps, startles and calls (docs/AUDIO.md §2d), at the listener.
+        let samples: Vec<_> = creatures
+            .iter()
+            .map(|(v, _)| dwell_game::sound::CreatureSample {
+                id: v.id,
+                model: v.model,
+                feet: v.feet,
+                running: v.role == "sprint",
+            })
+            .collect();
+        let ear = [self.listener[0], self.listener[1], self.listener[2]];
+        self.creature_sounds
+            .update(ear, &samples, dt, &mut self.sounds);
         self.scene.borrow_mut().set_creatures(creatures);
         if let Some(mut p) = self.puppets {
             // Holding the hotbar's: a tool (the axe) as your hand shows it, else its block.
