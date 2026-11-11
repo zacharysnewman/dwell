@@ -92,11 +92,31 @@ pub fn install(bytes: &[u8]) -> Result<u64, String> {
     let seed = codec::verify(bytes)?;
     let s = slot(seed);
     if s.get().is_some() {
+        // The same map kept; another one for the seed (a test world's, ADR 0074 B7, after the
+        // seed's own was computed or installed here, or the other way round) replaces it, so a
+        // generator built after the install never uses the wrong ground.
+        let m = codec::decode(bytes)?;
+        if s.get().is_some_and(|k| k.worldgen_text() == m.worldgen_text()) {
+            return Ok(seed);
+        }
+        replace(seed, m);
         return Ok(seed);
     }
     let m = codec::decode(bytes)?;
     let _ = s.set(Arc::new(m));
     Ok(seed)
+}
+
+/// Puts `m` in seed `seed`'s place (a fresh slot; generators holding the old map keep it).
+fn replace(seed: u64, m: WorldMap) {
+    let mut maps = MAPS.lock().expect("world maps");
+    maps.retain(|(s, _)| *s != seed);
+    if maps.len() >= KEEP {
+        maps.remove(0);
+    }
+    let slot: Slot = Arc::default();
+    let _ = slot.set(Arc::new(m));
+    maps.push((seed, slot));
 }
 
 /// Computes face seed `seed`'s map and returns its bytes (the browser's builder worker).

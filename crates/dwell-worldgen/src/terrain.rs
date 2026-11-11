@@ -881,7 +881,8 @@ impl TerrainGenerator {
         let base = BaseField::new(world_seed);
         let (offset_x, offset_z) = base.offset();
         let biomes = Arc::new(BiomeSet::new(BIOMES, &map, world_seed));
-        Self {
+        let worldgen = map.worldgen.clone();
+        let g = Self {
             base,
             map,
             detail_seed: seed_word(world_seed, 0xD7A1_0001),
@@ -908,7 +909,14 @@ impl TerrainGenerator {
             cache_id: next_cache_id(),
             world_seed,
         }
-        .with_placements(&PLACEMENTS)
+        .with_placements(&PLACEMENTS);
+        // A test world's map carries its worldgen config (ADR 0074 B7): Chisel's edit, whole.
+        match worldgen {
+            Some(w) => g
+                .with_biomes_and_geology(&w.edit.biomes, w.edit.map, w.edit.geology)
+                .with_vegetation(w.edit.vegetation),
+            None => g,
+        }
     }
 
     /// The world seed this generator was made from (a face's own seed, `bifacial::face_seed`).

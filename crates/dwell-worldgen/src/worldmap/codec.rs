@@ -11,6 +11,8 @@
 use super::{MapLake, MapRiver, MapVertex, Mouth, RiverEnd, WorldMap};
 
 const MAGIC: &[u8; 5] = b"DWMAP";
+/// The worldgen config trailer's tag.
+const WORLDGEN: &[u8; 2] = b"WG";
 const FORMAT: u16 = 1;
 
 /// FNV-1a 64 over bytes.
@@ -77,6 +79,12 @@ fn encode_with(m: &WorldMap, fingerprint: u64) -> Vec<u8> {
                 out.extend_from_slice(&f.to_le_bytes());
             }
         }
+    }
+    // A test world's worldgen config (ADR 0074 B7): a tagged trailer, absent from the build's maps.
+    if let Some(w) = &m.worldgen {
+        out.extend_from_slice(WORLDGEN);
+        out.extend_from_slice(&(w.text.len() as u32).to_le_bytes());
+        out.extend_from_slice(w.text.as_bytes());
     }
     let sum = checksum(&out);
     out.extend_from_slice(&sum.to_le_bytes());
@@ -222,10 +230,18 @@ pub fn decode(bytes: &[u8]) -> Result<WorldMap, String> {
             path,
         });
     }
+    let mut worldgen = None;
+    if r.at < body.len() && r.take(2)? == WORLDGEN {
+        let len = r.u32()? as usize;
+        let text = std::str::from_utf8(r.take(len)?).map_err(|_| "a worldgen config not UTF-8")?;
+        worldgen = Some(text.to_owned());
+    }
     if r.at != body.len() {
         return Err("trailing bytes after the map".into());
     }
-    Ok(WorldMap::assemble(
-        seed, n, cell, x0, height, flags, lake, lakes, rivers,
-    ))
+    let map = WorldMap::assemble(seed, n, cell, x0, height, flags, lake, lakes, rivers);
+    match worldgen {
+        Some(text) => map.with_worldgen(&text),
+        None => Ok(map),
+    }
 }
