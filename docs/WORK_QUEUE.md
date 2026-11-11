@@ -89,8 +89,12 @@ Last updated: 2026-11-11 (0.52.68).
 9. ~~**Loading-time display bug.**~~ Done (0.52.71): the 10 s was the graphics' start (one long task on the
    main thread making the renderer's pipelines) begun in the same task that ended the game's load, so the
    screen never painted "Starting the graphics…" and stood on "Loading the game… x MB 0.0 s". Each stage is
-   now painted before its work (`ui/startStages.ts`). Open: making the pipelines asynchronously to cut the
-   block itself.
+   now painted before its work (`ui/startStages.ts`). 0.52.75 measured it cold (fresh Chrome profile,
+   `--disable-gpu-shader-disk-cache`, M1): the main-thread task was ~90 ms, ~40 of it the atlas mips'
+   `powf` (now a table: ~50–65 ms); the pipelines compile in Chrome's GPU process, a ~270 ms frame stall
+   after the stage, not in the task. Open: that GPU-process stall (seconds on a slow GPU?) needs
+   `createRenderPipelineAsync`, which wgpu 30 lacks: a wgpu patch, or warming Dawn's pipeline cache
+   with the same descriptors through `Device::as_webgpu`.
 10. **Speed-ups 1–6** (owner: "Implement 1-6 now"): the version out of build scripts (dwell-sim's build.rs reads
    client/package.json → every release recompiles), version + release note assigned at merge, an agent
    quickstart doc, a reliable browser kit (warm prebuilt client, exact camera goto, stall retries, saved
