@@ -3291,8 +3291,14 @@ impl<S: Scene> Game<S> {
             if p.held == Puppets::HOTBAR {
                 p.held = self.selected_material();
             }
-            for v in p.views(now_ms / 1000.0) {
+            for mut v in p.views(now_ms / 1000.0) {
                 drawn.insert(v.player_id);
+                // Holding a tool, they swing it (a break swing every 0.8 s): the swing clips seen
+                // on a body (docs/DEV_TOOLS.md `puppets`).
+                if tool.is_some() {
+                    use dwell_protocol::swing_flags as sf;
+                    v.swing = sf::BREAK | ((now_ms / 800.0) as u64 as u8 & sf::COUNT_MASK);
+                }
                 let held = tool.unwrap_or_else(|| crate::bodies::held_from_wire(v.held, Some));
                 let world = self.streamer.store_mut();
                 let reach = self.current.max_step_lift;
