@@ -453,3 +453,63 @@ dwell_world::both_faces!(
         );
     }
 );
+
+dwell_world::both_faces!(
+    /// A biome's `decorations` (0.52.63): tall grass grows only where the column's biome lists it.
+    /// The starter with its broadleaf forest listing none: round the tour's broadleaf spot no tall
+    /// grass stands in a column of that biome, and some stands in its neighbours' grass.
+    fn decorations_follow_the_biome(f: FaceFrame) {
+        let mut e = world_config(NAME).unwrap().unwrap();
+        let broadleaf = e
+            .biomes
+            .iter()
+            .position(|b| b.name == "starter:broadleaf_forest")
+            .unwrap();
+        assert!(!e.biomes[broadleaf].decorations.is_empty());
+        e.biomes[broadleaf].decorations = &[];
+        let h = e.height.unwrap();
+        let map = WorldMap::for_height(face_seed(0, f.face), h)
+            .with_worldgen(NAME)
+            .unwrap();
+        let g = TerrainGenerator::with_map(face_seed(0, f.face), Arc::new(map))
+            .with_biomes_and_geology(&e.biomes, e.map, e.geology)
+            .with_vegetation(e.vegetation);
+        let grass = dwell_blocks::block_of(dwell_blocks::require("dwell:tall_grass")).name;
+        let (mut unlisted, mut listed) = (0, 0);
+        let (x, z) = (22300, 100);
+        for cz in -3..3 {
+            for cx in -3..3 {
+                let (wx, wz) = (x / CHUNK_SIZE + cx, z / CHUNK_SIZE + cz);
+                let h = f64::from(g.column_at(wx * CHUNK_SIZE, wz * CHUNK_SIZE).height);
+                let row = rows_for_m(h).div_euclid(CHUNK_SIZE);
+                for cy in row - 2..=row + 2 {
+                    let mut c = Chunk::default();
+                    g.generate(ChunkCoord::new(wx, cy, wz), &mut c);
+                    for lz in 0..CHUNK_SIZE {
+                        for lx in 0..CHUNK_SIZE {
+                            for ly in 0..CHUNK_SIZE {
+                                let m = c.get(lx, ly, lz);
+                                if m == 0 || dwell_blocks::block_of(m).name != grass {
+                                    continue;
+                                }
+                                let (px, pz) = (wx * CHUNK_SIZE + lx, wz * CHUNK_SIZE + lz);
+                                let b = g.biome_mix(i64::from(px), i64::from(pz)).chosen;
+                                if e.biomes[b as usize].decorations.is_empty() {
+                                    unlisted += 1;
+                                } else {
+                                    listed += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        println!("tall grass: {listed} where listed, {unlisted} where not");
+        assert_eq!(
+            unlisted, 0,
+            "tall grass in biomes that list none ({listed} listed)"
+        );
+        assert!(listed > 0, "tall grass where listed");
+    }
+);

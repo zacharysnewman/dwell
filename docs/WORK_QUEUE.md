@@ -91,9 +91,10 @@ Last updated: 2026-11-11 (0.52.52).
   tour, per-cone heights for the arc, palms. Next: the leaves (item 5). 0.52.63 (leftovers round 1): the biome
   balance (broadleaf up, boreal and steppe down), the pick's `sharpen` (less mesa/badlands speckle), the
   boreal spot's pines, the arc's cones falling off (`arcDecay`), Chisel's "Open
-  starter world", the tour printing a mesa spot (its strongest sample). Left: the cliffs layer in the starter (weaker or off), tour spots for the volcano
+  starter world", the tour printing a mesa spot (its strongest sample), a
+  biome's `decorations` read. Left: the cliffs layer in the starter (weaker or off), tour spots for the volcano
   view, a wetland and a mesa, in-game screenshots of the spots;
-  a biome's `decorations` read; the New world form's biome/world choice.
+  the New world form's biome/world choice.
 
 - **Underwater at night** (0.52.53, WATER_RENDERING.md §16.1): Snell's window shows the sky pass's own
   sky (one function: the stars, the moon, the sun, the clouds), no white-cyan glow over it, fewer cells;
