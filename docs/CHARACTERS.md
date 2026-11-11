@@ -642,7 +642,7 @@ instruments, containers, tableware, lamps; each category a default length and th
 imported with `node shared/models/import.mjs --props --from <unpacked packs>` (one Blender run,
 `blender_props.py`: joined, scaled to the length, centred, the per-face palette remap, the pack's own
 colour layers dropped first). `gen.mjs` validates them (one static mesh, palette colours in
-`COLOR_0`, the length) and writes `PROPS`; a prop's optional `grip` is where a hand holds it. The
+`COLOR_0`, the length) and writes `PROPS`; a prop's optional `grip` is where a hand holds it and its optional `hold` (scale, rotation, offset) how (docs/ITEMS.md §1a). The
 Model Viewer's **Props** view (`?view=props`) lays them out by category. An inventory item's look may
 name one (`look: { "model": … }`): the stone pickaxe (`dwell:stone_pickaxe`, not given to anyone)
 proves it, drawn loose and on the hotbar from the prop's triangles. In the hand it shows nothing yet:
