@@ -2,7 +2,10 @@
 //! at level L a cell is 2^L level-0 cells on a side (2^L m wide and 2^L rows tall: cell space,
 //! HALF_HEIGHT_GRID.md §2) and a section 32³ cells, so level 0 is the chunk grid.
 //! Section coordinates count from the root's corner (−2¹⁶, −2¹⁶, −2¹⁶) cells: one root at
-//! `MAX_LEVEL` (131 km wide) holds the whole disc and build volume, centred on the origin.
+//! `MAX_LEVEL` (1 049 km wide since BIG_MAP.md M1: the largest world size's disc, `lod.maxLevel`
+//! checked by `shared/protocol/gen.mjs`) holds the whole disc and build volume, centred on the
+//! origin. A smaller world's sections above its own top level (`WorldSize::lod_max_level`, 12 for
+//! today's 50 km) are few and coarse.
 //! Section content is 34³ cells (the section and a one-cell apron) in layer order (x fastest, then
 //! z, then y): the codec's order and the client mesher's padded layout.
 
@@ -112,18 +115,18 @@ pub fn ancestor(c: LodCoord, level: i32) -> LodCoord {
 
 const CHUNK_OFFSET_XZ: i32 = (-ORIGIN_X / CHUNK_SIZE as i64) as i32;
 const CHUNK_OFFSET_Y: i32 = (-ORIGIN_Y / CHUNK_SIZE as i64) as i32;
-const _: () = assert!(CHUNK_OFFSET_Y == 1 << 11);
+const _: () = assert!(CHUNK_OFFSET_Y == 1 << (MAX_LEVEL - 1));
 const _: () = assert!(
     -ORIGIN_Y >= crate::BUILD_VOLUME.y_range().1
         && ORIGIN_Y <= crate::BUILD_VOLUME.y_range().0
         && -ORIGIN_X >= WORLD_RADIUS as i64,
     "the root holds the disc and the build volume"
 );
-// BIG_MAP.md M0: the compiled root is the one today's world size derives (`lod.maxLevel`, the fewest
-// levels that hold the disc). A bigger size derives more and needs M1's root rework.
+// BIG_MAP.md M1: the compiled root holds every world size (`lod.maxLevel` is the largest's).
 const _: () = assert!(
-    dwell_protocol::world_size::WorldSize::DEFAULT.lod_max_level() as i32 == MAX_LEVEL,
-    "lod.maxLevel is the default world size's"
+    dwell_protocol::world_size::WorldSize::DEFAULT.fits_lod_root()
+        && dwell_protocol::world_size::WorldSize::LARGEST.fits_lod_root(),
+    "the root holds every world size"
 );
 
 /// The level-0 section that is this chunk.
