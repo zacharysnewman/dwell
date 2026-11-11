@@ -30,6 +30,7 @@ pub mod shadows;
 pub mod skinned;
 pub mod timing;
 pub mod upscale;
+pub mod fxaa;
 pub mod water;
 pub mod water_tiles;
 pub mod waterfalls;
@@ -84,8 +85,47 @@ pub fn is_cpu(device_type: wgpu::DeviceType) -> bool {
 }
 
 /// Multisampling for an adapter: 4× on a GPU; none on a CPU adapter.
-pub fn samples_for(device_type: wgpu::DeviceType) -> u32 {
-    if is_cpu(device_type) { 1 } else { SAMPLES }
+pub fn samples_for(device_type: wgpu::DeviceType, requested: u32) -> u32 {
+    if is_cpu(device_type) || requested == 1 { 1 } else { SAMPLES }
+}
+
+/// WebGPU's largest `maxAnisotropy`.
+pub const MAX_ANISOTROPY: u16 = 16;
+
+/// The block atlas's anisotropic filtering for the setting's `requested` (shared/render/
+/// antialias.json `anisotropy`): 1 (off) on a CPU adapter (the cheapest tier: a loop of taps per
+/// pixel), else the request in [1, 16].
+pub fn anisotropy_for(device_type: wgpu::DeviceType, requested: u16) -> u16 {
+    if is_cpu(device_type) {
+        1
+    } else {
+        requested.clamp(1, MAX_ANISOTROPY)
+    }
+}
+
+/// Whether the FXAA post pass runs (the Anti-aliasing setting's `fxaa`): never on a CPU adapter.
+pub fn fxaa_for(device_type: wgpu::DeviceType, on: bool) -> bool {
+    on && !is_cpu(device_type)
+}
+
+/// The block atlas's sampler for `anisotropy` (`anisotropy_for`). Off (1) it is the crisp sampler:
+/// nearest up close, filtered between mips far away. Anisotropic filtering needs every filter linear
+/// (WebGPU), so from 2 the magnification is linear too, and the shaders keep texels crisp up close
+/// by sampling level 0 at texel centres (shaders.rs `atlas_crisp`).
+pub fn atlas_sampler_descriptor(anisotropy: u16) -> wgpu::SamplerDescriptor<'static> {
+    let anisotropy = anisotropy.clamp(1, MAX_ANISOTROPY);
+    wgpu::SamplerDescriptor {
+        label: Some("atlas"),
+        mag_filter: if anisotropy > 1 {
+            wgpu::FilterMode::Linear
+        } else {
+            wgpu::FilterMode::Nearest
+        },
+        min_filter: wgpu::FilterMode::Linear,
+        mipmap_filter: wgpu::MipmapFilterMode::Linear,
+        anisotropy_clamp: anisotropy,
+        ..Default::default()
+    }
 }
 
 /// The clouds a frame draws with the Clouds setting `quality`: none on a CPU adapter (the deck's
@@ -1033,6 +1073,13 @@ pub struct Renderer {
     upscale_sharpness: f32,
     upscale_pass: Option<upscale::UpscalePass>,
     groups_atlas: Option<AtlasFilter>,
+    /// The Anisotropic filtering setting (`set_antialias`), and the anisotropy the frame groups'
+    /// atlas sampler was made with.
+    anisotropy: u16,
+    groups_anisotropy: u16,
+    /// The Anti-aliasing setting's FXAA post pass (render/fxaa.rs), made on first use.
+    fxaa: bool,
+    fxaa_pass: Option<fxaa::FxaaPass>,
     /// The ink outline's mode (`?outline=`; docs/ART_DIRECTION.md §7), none by default.
     ink_outline: Option<&'static OutlineMode>,
     /// The spyglass's magnification this frame (1 unzoomed): the outline's fade follows it.
@@ -1813,6 +1860,10 @@ impl Renderer {
             upscale_sharpness: 1.0,
             upscale_pass: None,
             groups_atlas: None,
+            anisotropy: 1,
+            groups_anisotropy: 1,
+            fxaa: false,
+            fxaa_pass: None,
             ink_outline: None,
             magnification: 1.0,
             targets: None,
@@ -1956,13 +2007,7 @@ impl Renderer {
                 },
             );
         }
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("atlas"),
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::MipmapFilterMode::Linear,
-            ..Default::default()
-        });
+        let sampler = device.create_sampler(&atlas_sampler_descriptor(1));
         (texture.create_view(&Default::default()), sampler)
     }
 
@@ -2190,6 +2235,24 @@ impl Renderer {
     pub fn adapter(&self) -> wgpu::DeviceType {
         self.adapter
     }
+    /// The Anti-aliasing setting's FXAA post pass and the Anisotropic filtering setting
+    /// (shared/render/antialias.json), live; the sample count is the renderer's (`with_samples`).
+    pub fn set_antialias(&mut self, fxaa: bool, anisotropy: u16) {
+        self.fxaa = fxaa;
+        self.anisotropy = anisotropy;
+    }
+    /// The atlas's anisotropy this adapter draws (`anisotropy_for`).
+    pub fn anisotropy(&self) -> u16 {
+        anisotropy_for(self.adapter, self.anisotropy)
+    }
+    /// Whether this adapter runs the FXAA pass (`fxaa_for`).
+    pub fn fxaa(&self) -> bool {
+        fxaa_for(self.adapter, self.fxaa)
+    }
+    /// The scene's samples per pixel (1 or 4).
+    pub fn samples(&self) -> u32 {
+        self.samples
+    }
     /// The Clouds setting (Off, Low, High).
     pub fn set_clouds(&mut self, quality: CloudQuality) {
         self.clouds = quality;
@@ -2266,6 +2329,7 @@ impl Renderer {
             && self.lod_map_full == (self.color_map.size > 1)
             && self.point_maps.tier == torch_tier
             && self.groups_atlas == atlas
+            && self.groups_anisotropy == self.anisotropy()
         {
             return;
         }
@@ -2285,6 +2349,13 @@ impl Renderer {
                 .lod_maps(&self.device, lod_tier.as_ref());
             // New heightmaps hold nothing: none is shown until its first fill is whole.
             self.lod_schedule = lod_shadows::Schedule::new(lod_tier.map_or(1, |t| t.levels));
+        }
+        let anisotropy = self.anisotropy();
+        if self.groups_anisotropy != anisotropy {
+            self.frame_bindings.sampler = self
+                .device
+                .create_sampler(&atlas_sampler_descriptor(anisotropy));
+            self.groups_anisotropy = anisotropy;
         }
         self.frame_groups = self.frame_bindings.groups(
             &self.device,
@@ -3406,8 +3477,21 @@ impl Renderer {
             }
             _ => None,
         };
+        // With FXAA, they draw into its input picture, which its pass draws onto the upscale's
+        // picture or the canvas (render/fxaa.rs).
+        let fxaa_view = if self.fxaa() && low_view.is_none() {
+            let size = self.upscale_size().unwrap_or(self.canvas);
+            let (device, format) = (self.device.clone(), self.format);
+            let pass = self
+                .fxaa_pass
+                .get_or_insert_with(|| fxaa::FxaaPass::new(&device, format));
+            Some(pass.input(&device, format, size).view.clone())
+        } else {
+            None
+        };
         let composite_target = low_view
             .as_ref()
+            .or(fxaa_view.as_ref())
             .or(upscale_view.as_ref())
             .unwrap_or(target);
         // GPU pass times of earlier frames the GPU has finished; then whether this one is timed.
@@ -4028,6 +4112,12 @@ impl Renderer {
             let query = self.timer.as_mut().and_then(|t| t.pass(timing::PIXEL_ART));
             let writes = self.timer.as_ref().and_then(|t| t.writes(query));
             pass.draw(&self.queue, &mut encoder, target, &u, writes);
+            calls += 1;
+        }
+        if let (Some(_), Some(pass)) = (&fxaa_view, &self.fxaa_pass) {
+            let query = self.timer.as_mut().and_then(|t| t.pass(timing::FXAA));
+            let writes = self.timer.as_ref().and_then(|t| t.writes(query));
+            pass.draw(&mut encoder, upscale_view.as_ref().unwrap_or(target), writes);
             calls += 1;
         }
         if let (Some(_), Some(pass)) = (&upscale_view, &self.upscale_pass) {
@@ -5655,9 +5745,9 @@ mod tests {
 
     #[test]
     fn software_adapters_draw_without_multisampling() {
-        assert_eq!(samples_for(wgpu::DeviceType::Cpu), 1);
-        assert_eq!(samples_for(wgpu::DeviceType::DiscreteGpu), SAMPLES);
-        assert_eq!(samples_for(wgpu::DeviceType::IntegratedGpu), SAMPLES);
+        assert_eq!(samples_for(wgpu::DeviceType::Cpu, SAMPLES), 1);
+        assert_eq!(samples_for(wgpu::DeviceType::DiscreteGpu, SAMPLES), SAMPLES);
+        assert_eq!(samples_for(wgpu::DeviceType::IntegratedGpu, SAMPLES), SAMPLES);
     }
 
     #[test]
@@ -6098,6 +6188,85 @@ mod tests {
             let mut r = noop_renderer_with(4, wgpu::Features::TIMESTAMP_QUERY);
             assert!(r.set_pixel_art(preset));
             draws_cleanly(r);
+        }
+    }
+
+    #[test]
+    fn frames_draw_cleanly_with_fxaa_and_anisotropy() {
+        // The FXAA input picture and its pass onto the canvas, or onto the upscale's picture; the
+        // atlas sampler made again with anisotropy (every filter linear, or WebGPU refuses it).
+        for (samples, upscaled) in [(4, false), (1, false), (4, true)] {
+            let mut r = noop_renderer_with(samples, wgpu::Features::TIMESTAMP_QUERY);
+            r.resize(64, 64, 1.0);
+            if upscaled {
+                r.set_upscale(upscale::Upscaler::Sharpen, (40, 40), upscale::sharpness(0.25));
+            }
+            r.set_antialias(true, 16);
+            assert!(r.fxaa());
+            assert_eq!(r.anisotropy(), 16);
+            draws_cleanly(r);
+        }
+    }
+
+    #[test]
+    fn a_cpu_adapter_draws_no_fxaa_and_no_anisotropy() {
+        let mut r = noop_renderer_with(1, wgpu::Features::empty());
+        r.set_antialias(true, 16);
+        r.set_adapter(wgpu::DeviceType::Cpu);
+        assert!(!r.fxaa());
+        assert_eq!(r.anisotropy(), 1);
+        assert_eq!(samples_for(wgpu::DeviceType::Cpu, 4), 1);
+        assert!(!fxaa_for(wgpu::DeviceType::Cpu, true));
+        assert_eq!(anisotropy_for(wgpu::DeviceType::Cpu, 8), 1);
+    }
+
+    #[test]
+    fn the_atlas_sampler_follows_the_anisotropy() {
+        // Off: today's crisp sampler (nearest up close, filtered between mips).
+        let off = atlas_sampler_descriptor(1);
+        assert_eq!(off.anisotropy_clamp, 1);
+        assert_eq!(off.mag_filter, wgpu::FilterMode::Nearest);
+        assert_eq!(off.min_filter, wgpu::FilterMode::Linear);
+        assert_eq!(off.mipmap_filter, wgpu::MipmapFilterMode::Linear);
+        // On: every filter linear (WebGPU's rule for maxAnisotropy > 1), clamped to 16.
+        for (asked, want) in [(2, 2), (8, 8), (16, 16), (64, 16), (0, 1)] {
+            let d = atlas_sampler_descriptor(asked);
+            assert_eq!(d.anisotropy_clamp, want, "{asked}");
+            if d.anisotropy_clamp > 1 {
+                assert_eq!(d.mag_filter, wgpu::FilterMode::Linear);
+                assert_eq!(d.min_filter, wgpu::FilterMode::Linear);
+                assert_eq!(d.mipmap_filter, wgpu::MipmapFilterMode::Linear);
+            } else {
+                assert_eq!(d.mag_filter, wgpu::FilterMode::Nearest, "1 keeps nearest");
+            }
+        }
+        assert_eq!(anisotropy_for(wgpu::DeviceType::DiscreteGpu, 64), MAX_ANISOTROPY);
+        assert_eq!(anisotropy_for(wgpu::DeviceType::IntegratedGpu, 0), 1);
+    }
+
+    #[test]
+    fn the_antialias_modes_map_to_webgpu_sample_counts() {
+        // shared/render/antialias.json: each mode's samples is one WebGPU allows (1 or 4), and on
+        // a GPU the renderer draws exactly that; the default is today's (4×, no FXAA).
+        let data: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../shared/render/antialias.json"))
+                .expect("antialias.json parses");
+        let modes = data["modes"].as_array().expect("modes");
+        assert!(!modes.is_empty());
+        for m in modes {
+            let samples = m["samples"].as_u64().expect("samples") as u32;
+            assert!(samples == 1 || samples == 4, "{m}: WebGPU allows 1 or 4");
+            assert_eq!(samples_for(wgpu::DeviceType::DiscreteGpu, samples), samples);
+            assert_eq!(samples_for(wgpu::DeviceType::Cpu, samples), 1);
+            let fxaa = m["fxaa"].as_bool().expect("fxaa");
+            assert_eq!(fxaa_for(wgpu::DeviceType::IntegratedGpu, fxaa), fxaa);
+        }
+        let default = data["default"]["mode"].as_str().expect("default mode");
+        let d = modes.iter().find(|m| m["id"] == default).expect("default is a mode");
+        assert_eq!((d["samples"].as_u64(), d["fxaa"].as_bool()), (Some(4), Some(false)));
+        for a in data["anisotropy"].as_array().expect("anisotropy") {
+            let v = a["value"].as_u64().expect("value") as u16;
+            assert_eq!(anisotropy_for(wgpu::DeviceType::DiscreteGpu, v), v, "{a}: in [1, 16]");
         }
     }
 

@@ -224,6 +224,8 @@ struct Options {
     /// The loading screen on joining (ARCHITECTURE.md §6.3); the shell turns it off for
     /// `?loading=off` and the `dwell.loading` store.
     loading_screen: bool,
+    /// The scene's samples per pixel asked for (the Anti-aliasing setting; `samples_for`).
+    samples: u32,
     /// `prepareWorld(worldSeed: bigint, generatorVersion) → Promise<Uint8Array[] | null>`: the
     /// world's maps (ADR 0049), from the shell's cache or built in workers; none: each instance
     /// computes its own.
@@ -343,6 +345,11 @@ impl Client {
             day: DayOverride::from_query(&get("search").as_string().unwrap_or_default()),
             search: get("search").as_string().unwrap_or_default(),
             loading_screen: get("loadingScreen").as_bool().unwrap_or(true),
+            // The Anti-aliasing setting's samples per pixel (shared/render/antialias.json), fixed
+            // for the renderer's life; absent: multisampled.
+            samples: get("samples")
+                .as_f64()
+                .map_or(crate::render::SAMPLES, |v| v as u32),
             prepare_world: get("prepareWorld").dyn_into().ok(),
         };
         let (width, height) = (canvas.width().max(1), canvas.height().max(1));
@@ -388,7 +395,7 @@ impl Client {
             device,
             queue,
             format,
-            crate::render::samples_for(device_type),
+            crate::render::samples_for(device_type, options.samples),
         );
         renderer.set_adapter(device_type);
         renderer.resize(width, height, 1.0);
@@ -1646,6 +1653,17 @@ impl Client {
             .renderer
             .borrow_mut()
             .set_exposure(exposure);
+    }
+    /// The Anti-aliasing setting's FXAA pass and the Anisotropic filtering setting (the block
+    /// atlas's maxAnisotropy, 1–16), live (shared/render/antialias.json; render/mod.rs
+    /// `set_antialias`).
+    #[wasm_bindgen(js_name = setAntialias)]
+    pub fn set_antialias(&self, fxaa: bool, anisotropy: u32) {
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_antialias(fxaa, anisotropy.min(u32::from(u16::MAX)) as u16);
     }
     /// The Clouds setting: `off`, `low` or `high` (anything else: high).
     #[wasm_bindgen(js_name = setClouds)]

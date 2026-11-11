@@ -63,7 +63,8 @@ import { prefersReducedMotion } from './ui/motionSettings';
 import type { SpyglassHud } from './ui/spyglass';
 import { Hud, type VitalsHud } from './ui/hud';
 import { MAP_SIZE, MapOverlay } from './ui/mapOverlay';
-import { SettingsMenu } from './ui/settingsMenu';
+import { SettingsMenu, loadSettings } from './ui/settingsMenu';
+import { antialiasFromQuery, antialiasMode } from './ui/antialiasSettings';
 import { StructuresPanel } from './ui/structuresPanel';
 import { opfsStructureDir, StructureStore } from './local/structureStore';
 import { clipboardOf, type Vec3 as Cell } from './local/structures';
@@ -767,6 +768,10 @@ async function start(): Promise<App | null> {
       search: location.search,
       // The loading screen on joining; ?loading=off or the dwell.loading store "off" skip it.
       loadingScreen: loadingScreenEnabled(location.search, storage()),
+      // The scene's samples per pixel (Settings → Anti-aliasing; fixed when the renderer is made,
+      // so a change applies on the next load; ?aa= overrides it).
+      samples: antialiasMode(antialiasFromQuery(location.search, loadSettings(mobile).antialias).mode)
+        .samples,
     });
     stages.end('graphics', performance.now());
   } catch (err) {
@@ -877,6 +882,9 @@ async function start(): Promise<App | null> {
     const heightfield = new URLSearchParams(location.search).get('heightfield');
     if (heightfield === '1' || heightfield === '0') client.setHeightfield(Number(heightfield));
     client.setClouds(s.clouds);
+    // FXAA and the atlas's anisotropic filtering apply live (?aa= and ?aniso= override them).
+    const aa = antialiasFromQuery(location.search, s.antialias);
+    client.setAntialias(antialiasMode(aa.mode).fxaa, aa.anisotropy);
     // The skinned models' detail level (ADR 0070 §10); ?modeldetail=<level id> overrides it.
     client.setModelDetail(new URLSearchParams(location.search).get('modeldetail') ?? s.modelDetail);
     // The light shafts (ADR 0064); ?shafts=off|low|high overrides them (the bench).

@@ -109,6 +109,14 @@ struct Frame {
 @group(0) @binding(0) var<uniform> frame: Frame;
 @group(0) @binding(1) var atlas: texture_2d<f32>;
 @group(0) @binding(2) var atlas_sampler: sampler;
+// An atlas uv moved to its level-0 texel's centre: with anisotropic filtering on, the sampler's
+// magnification is linear (WebGPU wants every filter linear), and sampling at texel centres keeps
+// texels crisp up close as the nearest filter did; far away the footprint spans many texels and
+// the half-texel move is lost in it (render/mod.rs `atlas_sampler_descriptor`).
+fn atlas_crisp(uv: vec2f) -> vec2f {
+    let size = vec2f(textureDimensions(atlas));
+    return (floor(uv * size) + 0.5) / size;
+}
 // Per atlas tile (index cx + cy × ATLAS_CELLS): its grid lines (x every, y strength; 0 for none),
 // from the registry's `grid` look option of the blocks that use the tile, z its glow, w how close
 // to the eye (m) its faces dissolve (block data `nearFade`: leaves; dwell-mesh tile_grids).
@@ -644,7 +652,7 @@ fn grid_shade(uv: vec2f, grid: vec2f) -> f32 {
 fn terrain_fs(i: TerrainOut, @builtin(front_facing) front: bool) -> SceneOut {
     let draw = draws[i.draw];
     let atlas_uv = i.tile.xy + fract(i.uv) * i.tile.zw;
-    let texel = textureSampleGrad(atlas, atlas_sampler, atlas_uv, dpdx(i.uv) * i.tile.zw, dpdy(i.uv) * i.tile.zw);
+    let texel = textureSampleGrad(atlas, atlas_sampler, atlas_crisp(atlas_uv), dpdx(i.uv) * i.tile.zw, dpdy(i.uv) * i.tile.zw);
     let n = select(-i.normal, i.normal, front);
     let shade = grid_shade(i.uv, tile_grid(i.tile.xy));
     if (fade_discard(draw, i.clip.xy)) {
@@ -784,7 +792,7 @@ fn cutout_fs(i: CutoutOut, @builtin(front_facing) front: bool) -> CutoutSceneOut
     let cap = 2.0 * min(length(gx), length(gy));
     gx *= min(1.0, cap / max(length(gx), 1e-12));
     gy *= min(1.0, cap / max(length(gy), 1e-12));
-    let texel = textureSampleGrad(atlas, atlas_sampler, atlas_uv, gx, gy);
+    let texel = textureSampleGrad(atlas, atlas_sampler, atlas_crisp(atlas_uv), gx, gy);
     // Up close the atlas is sampled nearest (crisp texels), which would cut blade edges into
     // stairs: there the alpha is filtered bilinearly by hand from the four texels around the
     // sample (level 0), so edges are smooth curves; from afar (a texel under a pixel) the mips'.
@@ -941,7 +949,7 @@ fn shadow_flat_fs(i: FlatOut) {
 fn shadow_cutout_fs(i: CutoutOut) {
     let draw = draws[i.draw];
     let atlas_uv = i.tile.xy + fract(i.uv) * i.tile.zw;
-    let alpha = textureSampleLevel(atlas, atlas_sampler, atlas_uv, 0.0).a;
+    let alpha = textureSampleLevel(atlas, atlas_sampler, atlas_crisp(atlas_uv), 0.0).a;
     var fade = 1.0;
     if (i.fade.y > 0.0) {
         fade = 1.0 - smoothstep(i.fade.x, i.fade.y, length(i.rel));

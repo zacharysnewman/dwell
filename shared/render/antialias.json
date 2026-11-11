@@ -1,0 +1,18 @@
+{
+  "$comment": "Anti-aliasing and anisotropic filtering (ARCHITECTURE.md §6.10; owner: \"Yes can we add anti aliasing… Should be a graphics setting\"). `modes` are Settings → Graphics's Anti-aliasing choices: `samples` per pixel of the scene's multisampling (WebGPU allows only 1 or 4, so there is no 8× or 16× MSAA; dwell-client render/mod.rs `samples_for`), and `fxaa` a cheap post pass that smooths the edges multisampling leaves (render/fxaa.rs). The sample count is fixed when the renderer is made, so a change of `samples` applies on the next load; `fxaa` applies live. `anisotropy` is the block atlas's anisotropic filtering, its sampler's maxAnisotropy (1 off; WebGPU allows up to 16), applied live: far ground at a grazing angle stays sharp instead of blurring. A CPU adapter draws the cheapest of each (1 sample, no FXAA, anisotropy 1). Not part of a graphics preset.",
+  "modes": [
+    { "id": "off", "label": "Off", "samples": 1, "fxaa": false },
+    { "id": "msaa4", "label": "MSAA 4×", "samples": 4, "fxaa": false },
+    { "id": "msaa4-fxaa", "label": "MSAA 4× + FXAA", "samples": 4, "fxaa": true }
+  ],
+  "anisotropy": [
+    { "value": 1, "label": "Off" },
+    { "value": 2, "label": "2×" },
+    { "value": 4, "label": "4×" },
+    { "value": 8, "label": "8×" },
+    { "value": 16, "label": "16×" }
+  ],
+  "default": { "mode": "msaa4", "anisotropy": 8 },
+  "hint": "Smooths jagged edges. Browsers' WebGPU allows only 4× multisampling, so there is no 8× or 16×; FXAA adds a light post pass. A change of MSAA applies when the game next loads",
+  "anisotropyHint": "Keeps far ground sharp at a grazing angle instead of blurring; higher costs a little GPU time"
+}

@@ -225,7 +225,7 @@ impl Harness {
             device,
             queue,
             format,
-            dwell_client::render::samples_for(info.device_type),
+            dwell_client::render::samples_for(info.device_type, dwell_client::render::SAMPLES),
         );
         renderer.set_adapter(info.device_type);
         renderer.resize(w, h, args.pixel_ratio);

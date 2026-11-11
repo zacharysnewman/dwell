@@ -22,6 +22,14 @@ import {
 import { DEFAULT_EXPOSURE, EXPOSURE_LIMITS, sanitizeExposure } from './viewSettings';
 import { MODEL_DETAIL, MODEL_DETAIL_KEY, sanitizeModelDetail } from './modelDetailSettings';
 import {
+  ANTIALIAS,
+  ANTIALIAS_KEY,
+  type AntialiasSettings,
+  antialiasRecord,
+  defaultAntialias,
+  sanitizeAntialias,
+} from './antialiasSettings';
+import {
   CLOUD_QUALITIES,
   DEFAULT_SHAFTS,
   SHAFT_QUALITIES,
@@ -164,6 +172,8 @@ export interface Settings {
   menuBackground: string;
   /** The skinned models' detail level, by id (ui/modelDetailSettings.ts, shared/models/models.json). */
   modelDetail: string;
+  /** Anti-aliasing and anisotropic filtering (ui/antialiasSettings.ts, shared/render/antialias.json). */
+  antialias: AntialiasSettings;
 }
 
 /**
@@ -192,6 +202,7 @@ export function baseSettings(mobile: boolean, reducedMotion = false): Settings {
     renderScale: defaultRenderScale(),
     menuBackground: DEFAULT_MENU_BACKGROUND,
     modelDetail: MODEL_DETAIL.default,
+    antialias: defaultAntialias(),
   };
 }
 
@@ -233,6 +244,7 @@ export function settingsJson(s: Settings): string {
     renderScale: { ...s.renderScale },
     menuBackground: s.menuBackground,
     modelDetail: s.modelDetail,
+    antialias: { ...s.antialias },
   };
   return JSON.stringify(rounded, null, 2);
 }
@@ -251,6 +263,7 @@ export const SETTING_FIELDS: readonly SettingField[] = settingFields({
   renderScale: RENDER_SCALE_KEY,
   audio: AUDIO_KEY,
   modelDetail: MODEL_DETAIL_KEY,
+  antialias: ANTIALIAS_KEY,
 });
 
 /** The graphics settings a preset sets: changing one by hand pins it and reads Custom. */
@@ -325,6 +338,7 @@ export function storedSettings(mobile: boolean, defaults: Settings): Settings {
     renderScale: sanitizeRenderScale(load(RENDER_SCALE_KEY), UPSCALE, defaults.renderScale),
     menuBackground: sanitizeMenuBackground(load(MENU_KEY)),
     modelDetail: sanitizeModelDetail(load(MODEL_DETAIL_KEY) ?? defaults.modelDetail),
+    antialias: sanitizeAntialias(load(ANTIALIAS_KEY), ANTIALIAS, defaults.antialias),
   };
 }
 
@@ -387,6 +401,7 @@ function writeSettings(s: Settings, pins: ReadonlySet<string>): void {
     [EXPLOSIONS_KEY, explosionRecord(load(EXPLOSIONS_KEY), s.explosions)],
     [MENU_KEY, menuRecord(load(MENU_KEY), s.menuBackground)],
     [MODEL_DETAIL_KEY, s.modelDetail],
+    [ANTIALIAS_KEY, antialiasRecord(load(ANTIALIAS_KEY), s.antialias)],
   ];
   for (const [key, value] of full) {
     try {
@@ -538,6 +553,28 @@ const RENDER_SCALE_CHOICES: ChoiceSpec<string>[] = [
   },
 ];
 
+/** The Graphics section's anti-aliasing choices, from the data (shared/render/antialias.json). */
+const ANTIALIAS_CHOICES: ChoiceSpec<string>[] = [
+  {
+    label: 'Anti-aliasing',
+    pin: 'antialias.mode',
+    hint: ANTIALIAS.hint,
+    choices: ANTIALIAS.modes.map((m) => m.id),
+    labels: Object.fromEntries(ANTIALIAS.modes.map((m) => [m.id, m.label])),
+    get: (s) => s.antialias.mode,
+    with: (s, v) => ({ ...s, antialias: { ...s.antialias, mode: v } }),
+  },
+  {
+    label: 'Anisotropic filtering',
+    pin: 'antialias.anisotropy',
+    hint: ANTIALIAS.anisotropyHint,
+    choices: ANTIALIAS.anisotropy.map((a) => String(a.value)),
+    labels: Object.fromEntries(ANTIALIAS.anisotropy.map((a) => [String(a.value), a.label])),
+    get: (s) => String(s.antialias.anisotropy),
+    with: (s, v) => ({ ...s, antialias: { ...s.antialias, anisotropy: Number(v) } }),
+  },
+];
+
 interface ToggleSpec {
   label: string;
   pin: string;
@@ -584,6 +621,7 @@ function panes(mobile: boolean): Record<SettingsPane, Group[]> {
         title: 'Quality',
         rows: [
           ...RENDER_SCALE_CHOICES.map(choice),
+          ...ANTIALIAS_CHOICES.map(choice),
           choice(WATER_CHOICE),
           choice(SHADOW_CHOICE),
           choice(TORCH_SHADOW_CHOICE),
