@@ -584,6 +584,9 @@ pub struct Game<S: Scene> {
     damage_on: bool,
     /// Other players' hits seen in the damage updates (docs/BLOCK_DAMAGE.md §6).
     remote_hits: crate::hit_feedback::RemoteHits,
+    /// Foliage brushed through and ground items stepped onto (AUDIO.md §5).
+    brush_sounds: dwell_game::sound::BrushSounds,
+    ground_steps: dwell_game::sound::GroundSteps,
     /// The world seed (Welcome), the ground items' scatter's (ADR 0071).
     world_seed: u64,
     /// The server keeps ground items and was told this client draws them (`GroundHello`).
@@ -926,6 +929,8 @@ impl<S: Scene> Game<S> {
             creatures_on: false,
             damage_on: false,
             remote_hits: Default::default(),
+            brush_sounds: Default::default(),
+            ground_steps: Default::default(),
             world_seed: 0,
             ground_on: false,
             ground_target: None,
@@ -2793,6 +2798,55 @@ impl<S: Scene> Game<S> {
         out
     }
 
+    /// The local player brushing through foliage and stepping onto ground items this tick
+    /// (AUDIO.md §5): a rustle by speed, a stick's snap.
+    fn foliage_and_ground_sounds(&mut self, c: &ClientState, grounded: bool) {
+        let feet = c.feet();
+        let foliage = {
+            let store = self.streamer.store_mut();
+            dwell_game::sound::foliage_at(feet, c.face, self.current.standing_height, |[x, y, z]| {
+                store.get_voxel(x, y, z)
+            })
+        };
+        let speed = c.velocity.iter().map(|v| v * v).sum::<f64>().sqrt();
+        self.brush_sounds
+            .update(foliage, speed, 1.0 / SIM_HZ as f64, None, &mut self.sounds);
+        // The open cell the feet stand in (just above the ground's top), while on the ground.
+        let cell = grounded.then(|| {
+            dwell_world::cell_of_pos([feet[0], c.face.y(c.face.y(feet[1]) + 0.1), feet[2]])
+        });
+        if let Some(cell) = self.ground_steps.update(cell)
+            && let Some((it, ev)) = self.ground_item_sound(cell, |k| k.step)
+        {
+            self.sounds.push(SoundEvent::new(ev, 0, 1.0, Some(it.point())));
+        }
+    }
+
+    /// The ground item in `cell` (not gone) and its sound event `which` (its `step` or `hit`).
+    fn ground_item_sound(
+        &self,
+        cell: [i32; 3],
+        which: impl Fn(&dwell_world::ground::GroundKind) -> Option<&'static str>,
+    ) -> Option<(dwell_world::ground::Placed, SoundKind)> {
+        let (seed, gone) = self.streamer.ground()?;
+        if gone.cells.contains(&cell) {
+            return None;
+        }
+        let world = self.streamer.store();
+        let mut get = |c: [i32; 3], generated: bool| {
+            if generated && let Some(m) = self.streamer.generated_voxel(c) {
+                return Some(m);
+            }
+            world.find(dwell_world::chunk_of(c[0], c[1], c[2]))?;
+            Some(world.get_voxel_if_loaded(c))
+        };
+        let rules = dwell_world::ground::Rules::shipped();
+        let it = rules.item_over(&mut get, *seed, cell)?;
+        let name = which(rules.kind(it.kind)?)?;
+        let ev = SoundKind::ALL.into_iter().find(|k| k.name() == name)?;
+        Some((it, ev))
+    }
+
     /// What the movement sounds read of a body with its feet at `feet`.
     #[allow(clippy::too_many_arguments)]
     fn mover_sample(
@@ -2999,6 +3053,7 @@ impl<S: Scene> Game<S> {
         );
         sample.carry = c.carry;
         self.mover_sounds.update(&sample, None, &mut self.sounds);
+        self.foliage_and_ground_sounds(&c, sample.grounded);
         // Across the midplane the body turns over and the look goes on across: the heading kept,
         // the pitch mirrored, the camera pointing the same way and rolling upright (face_flip.rs).
         (input.look.yaw, input.look.pitch) =
@@ -4262,6 +4317,14 @@ impl<S: Scene> Game<S> {
         self.bodies
             .swing_arms(dwell_characters::animator::Swing::Break);
         self.sound(dwell_game::sound::SoundKind::Tool);
+        // Its own sound where it lies (a stick's snap).
+        if let Some(ev) = dwell_world::ground::Rules::shipped()
+            .kind(it.kind)
+            .and_then(|k| k.hit)
+            .and_then(|n| SoundKind::ALL.into_iter().find(|k| k.name() == n))
+        {
+            self.sounds.push(SoundEvent::new(ev, 0, 1.0, Some(it.point())));
+        }
         true
     }
 

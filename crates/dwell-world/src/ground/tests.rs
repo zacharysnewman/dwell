@@ -171,6 +171,8 @@ crate::both_faces!(
             texture: "dwell:stone",
             color: [255, 255, 255],
             scale: [1.0, 1.0],
+            step: None,
+            hit: None,
         }];
         let rules = [GroundRule {
             kind: 0,
@@ -206,6 +208,8 @@ crate::both_faces!(
             texture: "dwell:sand",
             color: [255, 255, 255],
             scale: [1.0, 1.0],
+            step: None,
+            hit: None,
         }];
         let rules = [GroundRule {
             kind: 0,
