@@ -5,7 +5,7 @@
 use wasm_bindgen::prelude::*;
 
 use crate::chisel::{Overlay, edit_from_json, overview_frame, preview_shaded};
-use crate::chisel_section::{Mesh, section, section_mesh};
+use crate::chisel_section::{Mesh, Tints, section_mesh, section_tinted};
 use dwell_worldgen::bifacial::BifacialTerrain;
 use dwell_worldgen::terrain::TerrainGenerator;
 
@@ -17,6 +17,8 @@ pub struct ChiselPreview {
     current: TerrainGenerator,
     /// The world knobs' generator (the archipelago's, ADR 0074 B4), kept while the knobs stay.
     shaped: Option<(dwell_worldgen::terrain::HeightField, TerrainGenerator)>,
+    /// The Textures tab's tints on the 3D section's colours (ADR 0074 B6).
+    tints: Tints,
 }
 
 #[wasm_bindgen]
@@ -32,6 +34,7 @@ impl ChiselPreview {
             current: base.clone(),
             base,
             shaped: None,
+            tints: Tints::new(),
         }
     }
 
@@ -82,15 +85,23 @@ impl ChiselPreview {
         )
     }
 
+    /// The Textures tab's edit on the 3D section (ADR 0074 B6): `{ "dwell:stone": [r, g, b] }`,
+    /// a factor per channel (linear light) on each named block's colour; throws the parse error.
+    pub fn set_tints(&mut self, json: &str) -> Result<(), JsError> {
+        self.tints = serde_json::from_str(json).map_err(|e| JsError::new(&e.to_string()))?;
+        Ok(())
+    }
+
     /// The 3D view's section (`crate::chisel_section`): `n` × `n` columns of `texel` m from
     /// face-local (x0, z0), meshed.
     pub fn section(&self, x0: i32, z0: i32, n: u32, texel: u32) -> ChiselSection {
-        let s = section(
+        let s = section_tinted(
             &self.current,
             i64::from(x0),
             i64::from(z0),
             n as usize,
             i64::from(texel.max(1)),
+            &self.tints,
         );
         let (ground, water) = section_mesh(&s);
         ChiselSection {

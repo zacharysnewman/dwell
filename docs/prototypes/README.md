@@ -11,7 +11,7 @@ link). They are not part of any build; Prettier and CI ignore `docs/`.
 | Half-Height Voxel Lab | [`half-height-lab.html`](./half-height-lab.html) | https://claude.ai/artifact/DGQZG6GH1GhxvZRtPgh5MN | Today's 1 m cells beside 1 × ½ × 1 m cells with 1 m double blocks: shapes, 27° and 45° slopes, plants standing on the ground, ½ m growth ([proposal](../proposals/HALF_HEIGHT_VOXELS.md)) |
 | Tree Growth | [`tree-growth.html`](./tree-growth.html) | https://claude.ai/artifact/MRW4RcNKTHkYdxMyRKLLHz | A hand-built tree grown by revealing its skeleton, obstacles, and jitter variants (Phase 30, G0) |
 | Chisel (biome editor) | [`client/chisel.html`](../../client/chisel.html) | not published (runs the client's WASM: `npm run build:wasm`, `npm run dev`, then `/dwell/chisel.html`) | The world's biomes edited with sliders and previewed live on the real generator; Export/Import the biome JSON (Phase 56 B3, ADR 0074) |
-| Painterly Texture Lab | [`painterly-texture-lab.html`](./painterly-texture-lab.html) | https://claude.ai/artifact/4CTkNW4G6p8p67MkSNMUJA | The painterly materials and palette edited live with the game's generator; the JSON copied back (Phase 39) |
+| Painterly Texture Lab | [`painterly-texture-lab.html`](./painterly-texture-lab.html) | https://claude.ai/artifact/4CTkNW4G6p8p67MkSNMUJA | The painterly materials and palette edited live with the game's generator; the JSON copied back (Phase 39). Folded into Chisel's Textures tab (0.52.42); kept for the character and sky materials |
 | Model Viewer | [`model-viewer.html`](./model-viewer.html) | not published (reads the repo's GLBs: serve the repo root) | Every skinned model of `shared/models` (the Peasant and seven animals) playing the clip each role maps to (Phase 54, S1) |
 | Character Lab | [`character-lab.html`](./character-lab.html) | https://claude.ai/artifact/YAieiGfJnp5f2FnoR6wQWB | The player's full body and first-person arms, the wolf and the deer, from `shared/characters` (Phase 40, C0) |
 | Water Grid Lab | [`water-grid-lab.html`](./water-grid-lab.html) | https://claude.ai/artifact/NynEuDz9qjjBq1U4GRrv75 | Water as a depth per column (local-inertial): rivers, dams, diversions, a flood, chained basins; the steady solve and the water graph beside it; sleeping chunks, still water as pools, θ; place, dig, springs ([evaluation](../proposals/WATER_MODEL_EVALUATION.md), the model chosen in [ADR 0060](../adr/0060-water-surface-grid.md)) |
@@ -109,6 +109,9 @@ The first two feed [`ADAPTIVE_BLOCKS.md`](../ADAPTIVE_BLOCKS.md) (Phase 18, form
   voxels).
 ## Painterly Texture Lab
 
+- **Folded into Chisel** (0.52.42, ADR 0074 B6): Chisel's Textures tab edits the block materials and
+  the palette with the same painter and tints its 3D section. This page is **kept** (still generated and
+  tested) for the character and sky materials until the owner retires it.
 - Feeds [`PAINTERLY_TEXTURES.md`](../PAINTERLY_TEXTURES.md) and [`ART_DIRECTION.md`](../ART_DIRECTION.md)
   ([ADR 0040](../adr/0040-painterly-textures.md)).
 - **Generated in part**: `node shared/textures/gen.mjs` rewrites the block between its `BEGIN

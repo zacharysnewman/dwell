@@ -142,6 +142,46 @@
       .num {
         width: 80px;
       }
+      .tex-views {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+      }
+      canvas.tex {
+        width: auto;
+        aspect-ratio: auto;
+        background: transparent;
+      }
+      #tex-cube {
+        border: none;
+        image-rendering: auto;
+      }
+      .chip {
+        display: inline-block;
+        width: 14px;
+        height: 14px;
+        border-radius: 3px;
+        border: 1px solid var(--line);
+        margin-right: 3px;
+        vertical-align: middle;
+      }
+      input[type='color'] {
+        width: 34px;
+        height: 24px;
+        padding: 1px;
+      }
+      input[type='color'].warn {
+        outline: 2px solid var(--bad);
+      }
+      .warn-line,
+      .bad {
+        color: var(--bad);
+        white-space: pre-wrap;
+      }
+      .ramp-name {
+        width: 110px;
+      }
       details {
         border-top: 1px solid var(--line);
         padding: 4px 0;
@@ -168,7 +208,22 @@
     <main>
       <aside id="panel"></aside>
       <section class="preview">
-        <div>
+        <div id="textures-box" hidden>
+          <h2>Texture</h2>
+          <div class="tex-views">
+            <canvas id="tex-tile" class="tex" width="256" height="256" title="The tile"></canvas>
+            <canvas
+              id="tex-repeat"
+              class="tex"
+              width="288"
+              height="288"
+              title="3 × 3, to show it tiles"
+            ></canvas>
+            <canvas id="tex-cube" class="tex" width="320" height="320" title="The block"></canvas>
+          </div>
+          <div id="tex-status" class="sub"></div>
+        </div>
+        <div id="map-box">
           <div class="bar" id="view"></div>
           <canvas id="map" width="256" height="256"></canvas>
           <div id="status"></div>
@@ -178,7 +233,7 @@
           <canvas id="section" width="640" height="480"></canvas>
           <div id="section-status" class="sub"></div>
         </div>
-        <div class="world">
+        <div class="world" id="world-box">
           <h2>World</h2>
           <canvas id="overview" width="512" height="512"></canvas>
           <div id="overview-status" class="sub"></div>

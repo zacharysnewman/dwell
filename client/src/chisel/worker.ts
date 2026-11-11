@@ -21,6 +21,8 @@ export interface TileRequest {
   overlay: number;
   /** Hill-shade the tile (2D lanes). */
   relief: boolean;
+  /** The Textures tab's tints on the 3D section (`blockTints`, JSON; ADR 0074 B6). */
+  tints?: string;
 }
 interface Job extends TileRequest {
   /** An overview chunk's frame, pass and texel offset in it. */
@@ -62,6 +64,7 @@ export type TileReply =
 let preview: ChiselPreview | null = null;
 let seed = -1;
 let edit = '';
+let tints = '{}';
 const jobs = new Jobs<Job>();
 const cache = new OverviewCache();
 let busy = false;
@@ -77,6 +80,11 @@ function generator(r: Job): ChiselPreview {
     preview = new ChiselPreview(BigInt(r.seed));
     seed = r.seed;
     edit = '';
+    tints = '{}';
+  }
+  if (r.tints !== undefined && tints !== r.tints) {
+    preview.set_tints(r.tints);
+    tints = r.tints;
   }
   if (edit !== r.edit) {
     preview.edit(r.edit);
