@@ -34,7 +34,7 @@ pub const VEGETATION: Vegetation = Vegetation {
         Kind {
             name: "dwell:conifer_species",
             placement: "conifer_groves",
-            temperature: [6.5, 28.0],
+            temperature: [-1.0, 28.0],
             moisture: [0.04, 1.0],
             min_soil: 0.15,
             max_slope_deg: 40.0,

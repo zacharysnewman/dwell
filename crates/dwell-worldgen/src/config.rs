@@ -393,6 +393,7 @@ pub fn biome_map_from_json(v: &Value) -> Result<BiomeMap, String> {
         lee_dry: n("leeDry")?,
         rain_share: n("rainShare")?,
         wind_smooth_m: n("windSmoothM")?,
+        sharpen: n("sharpen")?,
     })
 }
 

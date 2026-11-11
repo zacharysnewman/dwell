@@ -335,3 +335,107 @@ fn time_tree_spots() {
         );
     }
 }
+
+/// The blocks round a spot: the log voxels standing in the 8 × 8 chunks round it and the surface
+/// blocks of their top voxels, by name.
+fn spot_blocks(
+    g: &TerrainGenerator,
+    x: i32,
+    z: i32,
+) -> (usize, std::collections::BTreeMap<&'static str, usize>) {
+    let log = dwell_blocks::block_of(dwell_blocks::require("dwell:log")).name;
+    let mut logs = 0;
+    let mut tops = std::collections::BTreeMap::new();
+    for cz in -4..4 {
+        for cx in -4..4 {
+            let (wx, wz) = (x / CHUNK_SIZE + cx, z / CHUNK_SIZE + cz);
+            let h = f64::from(g.column_at(wx * CHUNK_SIZE, wz * CHUNK_SIZE).height);
+            let row = rows_for_m(h).div_euclid(CHUNK_SIZE);
+            let mut cs = Vec::new();
+            for cy in row - 2..=row + 3 {
+                let mut c = Chunk::default();
+                g.generate(ChunkCoord::new(wx, cy, wz), &mut c);
+                cs.push(c);
+            }
+            for c in &cs {
+                logs += c
+                    .voxels()
+                    .iter()
+                    .filter(|&&m| m != 0 && dwell_blocks::block_of(m).name == log)
+                    .count();
+            }
+            // The top voxel of the chunk column's corner, by its block's name.
+            let col = g.column_at(wx * CHUNK_SIZE, wz * CHUNK_SIZE);
+            let r = rows_for_m(f64::from(col.height)) - 1;
+            let ci = (r.div_euclid(CHUNK_SIZE) - (row - 2)) as usize;
+            if let Some(c) = cs.get(ci) {
+                let m = c.get(0, r.rem_euclid(CHUNK_SIZE), 0);
+                if m != 0 {
+                    *tops.entry(dwell_blocks::block_of(m).name).or_insert(0) += 1;
+                }
+            }
+        }
+    }
+    (logs, tops)
+}
+
+/// The 0.52.55 tour's boreal spot (terraced uplands in the range's dry lee) stood no pines: the pine
+/// species' climate floor (6.5 °C) put it above the tree line and its moisture was 0. The conifer
+/// species is hardier (vegetation.json) and the starter's boreal keeps off the driest lee.
+#[test]
+fn the_boreal_spot_stands_pines() {
+    // face-a-only: the tour's spot is face A's (the placement is face-local, both faces alike).
+    let (g, _) = generator(FaceFrame::A, 0);
+    let (logs, tops) = spot_blocks(&g, -9300, 2900);
+    println!("boreal: {logs} log voxels, tops {tops:?}");
+    assert!(logs > 200, "the boreal spot's logs: {logs}, tops {tops:?}");
+}
+
+dwell_world::both_faces!(
+    /// The pick's `sharpen` (biomeMap, 0.52.63): with the starter's 2 the strongest biome takes more
+    /// of the mixed columns than with 1 (the weights as they are), so two biomes sharing a climate
+    /// (the mesa and the badlands) speckle less; the weights themselves are the same.
+    fn sharpen_gives_the_strongest_biome_more_columns(f: FaceFrame) {
+        let e = world_config(NAME).unwrap().unwrap();
+        assert!(e.map.sharpen > 1.0, "the starter sharpens");
+        let h = e.height.unwrap();
+        let map = Arc::new(
+            WorldMap::for_height(face_seed(0, f.face), h)
+                .with_worldgen(NAME)
+                .unwrap(),
+        );
+        let gen_with = |sharpen: f64| {
+            let mut m = e.map;
+            m.sharpen = sharpen;
+            TerrainGenerator::with_map(face_seed(0, f.face), map.clone())
+                .with_biomes_and_geology(&e.biomes, m, e.geology)
+        };
+        let (plain, sharp) = (gen_with(1.0), gen_with(e.map.sharpen));
+        let (mut top_plain, mut top_sharp, mut mixed) = (0u32, 0u32, 0u32);
+        for z in (-12000..=12000).step_by(97) {
+            for x in (-12000..=12000).step_by(97) {
+                let (a, b) = (plain.biome_mix(x, z), sharp.biome_mix(x, z));
+                assert_eq!(a.weights, b.weights, "the weights are the same at {x}, {z}");
+                if a.len < 2 {
+                    continue;
+                }
+                mixed += 1;
+                let top = a.weights[..a.len as usize]
+                    .iter()
+                    .max_by(|p, q| p.1.total_cmp(&q.1))
+                    .unwrap()
+                    .0;
+                top_plain += u32::from(a.chosen == top);
+                top_sharp += u32::from(b.chosen == top);
+            }
+        }
+        println!(
+            "{mixed} mixed columns: the strongest picked {top_plain} (1), {top_sharp} (sharpened)"
+        );
+        assert!(mixed > 1000, "{mixed}");
+        assert!(
+            f64::from(top_sharp) > 1.05 * f64::from(top_plain),
+            "{top_sharp} vs {top_plain}"
+        );
+    }
+);

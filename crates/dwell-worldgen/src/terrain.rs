@@ -243,6 +243,8 @@ pub struct BiomeMap {
     /// The wind sees the ground low-passed over about this many metres (0: the map's own), so the
     /// rain follows whole ranges, not each hillside.
     pub wind_smooth_m: f64,
+    /// The pick's exponent on each weight (`biomemap::BiomeField::mix`; 1: the weights as they are).
+    pub sharpen: f64,
 }
 
 /// A biome (data: `shared/worldgen/biomes/<name>.json`, ADR 0074): what is layered on the world's

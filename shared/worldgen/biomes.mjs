@@ -147,6 +147,7 @@ export const TERRAIN = {
     leeDry: [0, 10],
     rainShare: [0, 1],
     windSmoothM: [0, 50_000],
+    sharpen: [1, 16],
   },
   spawn: {
     minHeight: [0, 10_000],

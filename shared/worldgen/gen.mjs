@@ -888,6 +888,7 @@ export function terrainRust({
   rs.push(`    lee_dry: ${rf(bm.leeDry)},`);
   rs.push(`    rain_share: ${rf(bm.rainShare)},`);
   rs.push(`    wind_smooth_m: ${rf(bm.windSmoothM)},`);
+  rs.push(`    sharpen: ${rf(bm.sharpen)},`);
   rs.push("};");
   rs.push("");
   const list = (xs) => `&[${xs.map((x) => JSON.stringify(x)).join(", ")}]`;

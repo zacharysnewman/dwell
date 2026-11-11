@@ -115,7 +115,7 @@
   },
   "defaultBiome": "dwell:default",
   "biomeMap": {
-    "$comment": "The biome map's geography (ADR 0074 B2): a slow climate gradient across the island (0..1 from one side to the other, along a direction from the seed, bent by a noise of climateWavelength m and ±climateNoise), temperature = climate − lapseRate per 1000 m of elevation; wetness easing from 1 at a river or lake to 0 wetReach m away; a biome border dithered by a noise of ditherWavelength m (±dither of the weights), so edges are not lines. Only read where a world has more than one biome. The rain shadow (systemic terrain T1): a prevailing wind blowing from windDirection degrees (face-local, from +x toward +z) carries moisture in from the sea (refilled to 1 over sea) and drops it as rain: baseRain of it per km on flat land, more where the ground rises along the wind (upliftRain per 10 % grade), less where it falls behind high ground (leeDry per 10 % grade); the air dries out over windReach m of full rain, so land behind a ridge gets what is left. The wetness a biome reads is (1 - rainShare) x the river/lake wetness + rainShare x the rainfall: rainShare 0 (the default) is the wetness without rain, so the default world is unchanged; tune it in Chisel. The wind sees the ground low-passed over windSmoothM m (a tent filter; 0: the map's own heights), so a whole range lifts the air and shadows its lee, not each hillside.",
+    "$comment": "The biome map's geography (ADR 0074 B2): a slow climate gradient across the island (0..1 from one side to the other, along a direction from the seed, bent by a noise of climateWavelength m and ±climateNoise), temperature = climate − lapseRate per 1000 m of elevation; wetness easing from 1 at a river or lake to 0 wetReach m away; a biome border dithered by a noise of ditherWavelength m (±dither of the weights), so edges are not lines. Only read where a world has more than one biome. The rain shadow (systemic terrain T1): a prevailing wind blowing from windDirection degrees (face-local, from +x toward +z) carries moisture in from the sea (refilled to 1 over sea) and drops it as rain: baseRain of it per km on flat land, more where the ground rises along the wind (upliftRain per 10 % grade), less where it falls behind high ground (leeDry per 10 % grade); the air dries out over windReach m of full rain, so land behind a ridge gets what is left. The wetness a biome reads is (1 - rainShare) x the river/lake wetness + rainShare x the rainfall: rainShare 0 (the default) is the wetness without rain, so the default world is unchanged; tune it in Chisel. The wind sees the ground low-passed over windSmoothM m (a tent filter; 0: the map's own heights), so a whole range lifts the air and shadows its lee, not each hillside. The pick (0.52.63): the biome a column takes is drawn from the weights each raised to the power `sharpen` (1, the default: the weights as they are; above 1 the strongest biome wins more of a climate two biomes share, so their border speckles less); the terrain's blend keeps the plain weights.",
     "climateWavelength": 6000,
     "climateNoise": 0.15,
     "lapseRate": 0.3,
@@ -128,6 +128,7 @@
     "upliftRain": 1.5,
     "leeDry": 1,
     "rainShare": 0,
-    "windSmoothM": 3000
+    "windSmoothM": 3000,
+    "sharpen": 1
   }
 }
