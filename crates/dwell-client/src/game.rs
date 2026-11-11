@@ -1562,6 +1562,14 @@ impl<S: Scene> Game<S> {
                         .borrow_mut()
                         .push(Send::Control(Message::CreaturesHello));
                 }
+                // A tool that broke from wear (owner, 2026-11-11): its break sound.
+                if let Some((_, old)) = &self.loose.inventory
+                    && old.tool_broke(&i.inventory, dwell_protocol::chopping::durability)
+                    && let Some(ev) = dwell_protocol::chopping::WEAR_BREAK_SOUND
+                        .and_then(|n| SoundKind::ALL.into_iter().find(|k| k.name() == n))
+                {
+                    self.sounds.push(SoundEvent::new(ev, 0, 1.0, None));
+                }
                 self.loose.inventory = Some((uses, i.inventory));
                 if uses {
                     self.select_inventory_slot(self.inventory_slot);

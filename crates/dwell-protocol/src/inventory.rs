@@ -197,6 +197,8 @@ pub fn roll(rules: &[DropRule], random: &mut impl FnMut() -> f64) -> Vec<Stack> 
 pub struct Stack {
     pub item: String,
     pub count: u16,
+    /// The hits a wearing tool has used (`chopping::durability`; 0: unworn).
+    pub wear: u16,
 }
 
 impl Stack {
@@ -204,8 +206,25 @@ impl Stack {
         Self {
             item: item.to_owned(),
             count,
+            wear: 0,
         }
     }
+}
+
+/// Wear slot `index`'s base in the record: a slot's wear is written as an entry at `WEAR_AT + slot`
+/// (no item, the wear as its count) after the stacks. A build without wear skips it, as it skips
+/// any entry past its slot count, so the record stays version 1 and readable on the whole line.
+pub const WEAR_AT: usize = 128;
+
+/// What a tool's hit did to it (`Inventory::wear_held`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Wear {
+    /// The held item doesn't wear (or nothing is held).
+    None,
+    /// It wore by one hit; this many hits are left.
+    Worn(u16),
+    /// That was its last hit: it broke and is gone from its slot.
+    Broke,
 }
 
 /// A player's items: `SLOTS` slots (the hotbar's first), the held hotbar slot, and the wallet.
@@ -335,6 +354,35 @@ impl Inventory {
         true
     }
 
+    /// One hit with the held item (owner, 2026-11-11: tools wear): an item `durability` (by name)
+    /// gives hits wears by one, and breaks (its slot emptied) on its last.
+    pub fn wear_held(&mut self, durability: impl Fn(&str) -> Option<u16>) -> Wear {
+        let Some(slot) = self.slots.get_mut(usize::from(self.held)) else {
+            return Wear::None;
+        };
+        let Some(s) = slot.as_mut() else {
+            return Wear::None;
+        };
+        let Some(hits) = durability(&s.item) else {
+            return Wear::None;
+        };
+        s.wear = s.wear.saturating_add(1);
+        if s.wear >= hits {
+            *slot = None;
+            return Wear::Broke;
+        }
+        Wear::Worn(hits - s.wear)
+    }
+
+    /// Whether going from `self` to `next` broke a tool from wear (the client's break sound): an
+    /// item `durability` gives hits had one hit left in a slot and `next` holds fewer of it.
+    pub fn tool_broke(&self, next: &Inventory, durability: impl Fn(&str) -> Option<u16>) -> bool {
+        self.slots.iter().flatten().any(|s| {
+            durability(&s.item).is_some_and(|hits| s.wear + 1 >= hits)
+                && next.count_of(&s.item) < self.count_of(&s.item)
+        })
+    }
+
     /// Takes one `item`: from the held slot if it holds it, otherwise the first slot that does.
     pub fn take_one(&mut self, item: &str) -> bool {
         let held = usize::from(self.held);
@@ -374,6 +422,12 @@ impl Inventory {
             count.min(src.count)
         };
         match self.slots[to].clone() {
+            None if n == src.count => {
+                // The whole stack, wear and all.
+                self.slots[to] = Some(src);
+                self.slots[from] = None;
+                return true;
+            }
             None => {
                 self.slots[to] = Some(Stack::new(&src.item, n));
             }
@@ -430,11 +484,22 @@ impl Inventory {
             .enumerate()
             .filter_map(|(i, s)| s.as_ref().map(|s| (i, s)))
             .collect();
-        w.u8(full.len() as u8);
-        for (i, s) in full {
+        let worn: Vec<(usize, u16)> = full
+            .iter()
+            .filter(|(_, s)| s.wear > 0)
+            .map(|&(i, s)| (i, s.wear))
+            .collect();
+        w.u8((full.len() + worn.len()) as u8);
+        for &(i, s) in &full {
             w.u8(i as u8);
             w.str(crate::bytes::clamp_str(&s.item, MAX_ITEM_NAME));
             w.u16(s.count);
+        }
+        // Wear after the stacks, at `WEAR_AT + slot` with no item: an older build skips them.
+        for (i, wear) in worn {
+            w.u8((WEAR_AT + i) as u8);
+            w.str("");
+            w.u16(wear);
         }
     }
 
@@ -453,7 +518,15 @@ impl Inventory {
         for _ in 0..n {
             let (i, item, count) = (usize::from(r.u8()), r.str(MAX_ITEM_NAME), r.u16());
             if r.ok() && i < SLOTS && count > 0 && !item.is_empty() {
-                inv.slots[i] = Some(Stack { item, count });
+                inv.slots[i] = Some(Stack {
+                    item,
+                    count,
+                    wear: 0,
+                });
+            } else if r.ok() && (WEAR_AT..WEAR_AT + SLOTS).contains(&i) && item.is_empty() {
+                if let Some(s) = inv.slots[i - WEAR_AT].as_mut() {
+                    s.wear = count;
+                }
             }
         }
         if usize::from(inv.held) >= HOTBAR_SLOTS {

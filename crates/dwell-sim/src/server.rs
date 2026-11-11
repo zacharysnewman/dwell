@@ -14,6 +14,7 @@ use dwell_physics::controller::{Input, PlayerHandle, Players, events};
 use dwell_physics::net::{dequantize_input, player_flags_of, quantize_pitch, quantize_yaw, to_net};
 use dwell_physics::query::GroundRef;
 use dwell_physics::{DVec3, Physics, Vec3};
+use dwell_protocol::inventory as inv;
 use dwell_protocol::modes::Ability;
 use dwell_protocol::world_settings::{SettingsFields, WorldClock, WorldSettings};
 use dwell_protocol::*;
@@ -2512,6 +2513,14 @@ impl Server {
                     } else {
                         dwell_protocol::damage::hits_to_break(block, held)
                     };
+                    // A hit that counts wears the held tool (owner, 2026-11-11), where items are
+                    // used (or creative too, `creativeWear`).
+                    if need.is_some() {
+                        match wear_tool(&mut s.inventory, uses_items) {
+                            inv::Wear::None => {}
+                            inv::Wear::Worn(_) | inv::Wear::Broke => s.inventory_dirty = true,
+                        }
+                    }
                     match need {
                         None => {
                             s.stats.edits_rejected += 1;
@@ -4812,6 +4821,15 @@ impl Server {
 /// The item a session's break is made with (docs/BLOCK_DAMAGE.md): the held inventory slot's
 /// where blocks are not unlimited, else the tool its hotbar holds (`ChopAction::Held`); none: an
 /// empty hand.
+/// One hit that counts with the held tool (owner, 2026-11-11: tools wear by `durability`): worn
+/// where items are used, and where blocks are unlimited only if the data says (`creativeWear`).
+pub(crate) fn wear_tool(inventory: &mut inv::Inventory, uses_items: bool) -> inv::Wear {
+    if !uses_items && !dwell_protocol::chopping::CREATIVE_WEAR {
+        return inv::Wear::None;
+    }
+    inventory.wear_held(dwell_protocol::chopping::durability)
+}
+
 fn held_break_item(s: &Session, uses_items: bool) -> Option<&str> {
     if uses_items {
         s.inventory
