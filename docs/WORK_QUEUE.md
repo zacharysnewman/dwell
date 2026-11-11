@@ -149,6 +149,10 @@ Last updated: 2026-11-11 (0.52.52).
 - **Chisel:** biome decorations and spacing per biome; players' saved structures as placement sources;
   the in-game editor and a biome choice in the New world form.
 
+## Future (needs owner answers)
+
+- **Active volcanoes, lava and eruptions** — docs/proposals/VOLCANOES.md (owner 2026-11-11), 5 questions open.
+
 ## Waiting on the owner
 
 - Palm fronds: leaf cards or blocks (after the Tree Growth prototype).
