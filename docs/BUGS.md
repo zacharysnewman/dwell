@@ -6,28 +6,6 @@ pins it.
 
 ## Open
 
-### 71. "Starting the graphics" takes a long time with no elapsed time shown
-
-Owner, 2026-11-11: "'Starting the graphics' now takes a long time without showing elapsed time." The stage is
-painted before its work (`client/src/ui/startStages.ts`), but `Client.create` then makes the renderer in one
-long main-thread task, so the screen can't repaint and the stage's timer stands still until it is done.
-
-Measured 2026-11-11 (bench `idle-spawn`, M-series Mac, Chrome's Metal shader cache emptied for a cold
-start; the bench now prints the start's frame gaps, long tasks and `dwell:create:*` marks): the
-premise above is wrong. `create` holds the main thread ~40 ms (the atlas 25, the characters 8, the
-rest ≤ 2 ms each; no long task in the stage). Cold, the stage is 1.8 s, of which the device request
-is 1.5–1.75 s (warm 7–125 ms), and the page's frames stutter (gaps of 170–800 ms). Then the GPU
-process compiles the renderer's pipelines for **9.0 s** with the page painting **no frame at all**
-(one 8.9–9.0 s frame gap, warm: none over 400 ms), so the screen stands on its last paint, "Starting
-the graphics… 1.8 s"; the join waits on the compile (5.2–11.4 s cold vs 0.1–0.2 s warm). First step
-(this change): the compile is its own stage, `shaders` "Preparing the shaders", from `create`'s end
-to `Client.gpuSettled` (a queue fence), beside the world's stages, so the timeline and the frozen
-screen name it (test `startStages.test.ts` "shows the GPU's compile after create as its own stage",
-red then green). **Still open:** the frozen screen. The page can't paint while the GPU process
-compiles in one go; the fix is to send the pipelines in groups with a painted frame between them
-(a renderer built in steps), or async pipeline creation once wgpu has it, and to make fewer
-pipelines up front (water tiers, clouds High, debug ones on first use).
-
 ### 69. A dark vertical column in the far terrain before the starter world's volcano
 
 Found 2026-11-11 (0.52.64) on the starter world's tour: `?worldgen=test:starter&fresh=1&at=8571.5,350,-4866.5`
@@ -283,6 +261,38 @@ face, or the placement check against its shape.
 
 
 ## Fixed
+
+### 71. "Starting the graphics" takes a long time with no elapsed time shown (fixed after 0.52.101)
+
+Owner, 2026-11-11: "'Starting the graphics' now takes a long time without showing elapsed time." The stage is
+painted before its work (`client/src/ui/startStages.ts`), but `Client.create` then makes the renderer in one
+long main-thread task, so the screen can't repaint and the stage's timer stands still until it is done.
+
+Measured 2026-11-11 (bench `idle-spawn`, M-series Mac, Chrome's Metal shader cache emptied for a cold
+start; the bench now prints the start's frame gaps, long tasks and `dwell:create:*` marks): the
+premise above is wrong. `create` holds the main thread ~40 ms (the atlas 25, the characters 8, the
+rest ≤ 2 ms each; no long task in the stage). Cold, the stage is 1.8 s, of which the device request
+is 1.5–1.75 s (warm 7–125 ms), and the page's frames stutter (gaps of 170–800 ms). Then the GPU
+process compiles the renderer's pipelines for **9.0 s** with the page painting **no frame at all**
+(one 8.9–9.0 s frame gap, warm: none over 400 ms), so the screen stands on its last paint, "Starting
+the graphics… 1.8 s"; the join waits on the compile (5.2–11.4 s cold vs 0.1–0.2 s warm). First step
+(this change): the compile is its own stage, `shaders` "Preparing the shaders", from `create`'s end
+to `Client.gpuSettled` (a queue fence), beside the world's stages, so the timeline and the frozen
+screen name it (test `startStages.test.ts` "shows the GPU's compile after create as its own stage",
+red then green).
+
+**Fix:** the renderer makes its pipelines lazily (`render/pipeline.rs`: `Lazy`, built on first use;
+36 of the 38 that `with_samples` made, the water tiles' two left). While the loading screen is up the
+frame's draw waits for `Renderer::warm_pipelines`, which builds one pipeline a frame and the next only
+once the GPU has done the last (a queue fence), so the GPU process compiles them one at a time with
+paints between; a tier that is off (shadows, distant shadows, clouds, light shafts) is not warmed and
+its pipelines are made when it is switched on. Cold, after: the longest no-paint gap after `create`
+is **683 ms** (before 9.0 s); the longest of the whole start 815 ms, in the device request; playing
+**14.1 s** (before 15.1–15.6 s); warm unchanged (7.45 s, no gap over 160 ms). Tests: `render::tests::
+a_renderer_makes_its_pipelines_lazily_and_warms_them_in_batches` (38 made up front before: red, then
+green with 2) and `a_tier_switched_off_is_not_warmed_and_is_made_on_first_use`. Left: the device
+request itself (~1.7 s cold, gaps to 815 ms), Chrome's.
+
 
 ### 68. LOD holes and tall walls near a 4400 m summit (fixed after 0.52.92)
 
