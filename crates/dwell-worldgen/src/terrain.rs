@@ -692,6 +692,7 @@ impl BiomeSet {
         geology: crate::geology::Geology,
     ) -> Self {
         assert!(!list.is_empty(), "a world has at least one biome");
+        BIOME_SETS_BUILT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let mut palettes = Vec::new();
         let mut first = Vec::new();
         for b in list {
@@ -991,6 +992,46 @@ const DECORATION_RISE: i32 = 1;
 /// finer, and as a canopy tint on the ground at coarser ones.
 const LOD_TREE_CELL: i64 = 2;
 
+/// How many biome sets this process has built (`BiomeSet::with_geology`; `shared_biomes`'s test).
+static BIOME_SETS_BUILT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// The biome sets this process has built so far (each holds whole-map grids: see `shared_biomes`).
+pub fn biome_sets_built() -> usize {
+    BIOME_SETS_BUILT.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// The biomes of `map` for face seed `world_seed`: its worldgen config's (biomes, biome map and
+/// geology) when it carries one, else the build's. Built once per map and seed in a process and
+/// shared: a process makes several generators of the same world (a job worker's chunk, LOD and
+/// bounds generators, the server's, the spawn search's), and a many-biome world's set holds grids
+/// of the whole map (the biome field and the drainage, ~60 MB a face), once per generator before
+/// (BUGS.md: the starter world reloaded iOS Safari's tab while loading).
+pub fn shared_biomes(map: &Arc<WorldMap>, world_seed: u64) -> Arc<BiomeSet> {
+    type Entry = (std::sync::Weak<WorldMap>, u64, Arc<BiomeSet>);
+    static SETS: std::sync::Mutex<Vec<Entry>> = std::sync::Mutex::new(Vec::new());
+    let mut sets = SETS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    // A map no longer held drops its set (the weak keeps its address from being reused meanwhile).
+    sets.retain(|(m, _, _)| m.strong_count() > 0);
+    if let Some((_, _, set)) = sets
+        .iter()
+        .find(|(m, seed, _)| *seed == world_seed && std::ptr::eq(m.as_ptr(), Arc::as_ptr(map)))
+    {
+        return set.clone();
+    }
+    let set = Arc::new(match &map.worldgen {
+        Some(w) => BiomeSet::with_geology(
+            &w.edit.biomes,
+            map,
+            world_seed,
+            w.edit.map,
+            w.edit.geology,
+        ),
+        None => BiomeSet::new(BIOMES, map, world_seed),
+    });
+    sets.push((Arc::downgrade(map), world_seed, set.clone()));
+    set
+}
+
 impl TerrainGenerator {
     /// The face generator for face seed `world_seed`, its world map computed now or taken from
     /// the process's maps (`worldmap::for_seed`).
@@ -1002,7 +1043,9 @@ impl TerrainGenerator {
     pub fn with_map(world_seed: u64, map: Arc<WorldMap>) -> Self {
         let base = BaseField::new(world_seed);
         let (offset_x, offset_z) = base.offset();
-        let biomes = Arc::new(BiomeSet::new(BIOMES, &map, world_seed));
+        // The map's biomes (a test world's map carries its worldgen config, ADR 0074 B7: Chisel's
+        // edit, whole), shared by every generator of this map in the process (`shared_biomes`).
+        let biomes = shared_biomes(&map, world_seed);
         let worldgen = map.worldgen.clone();
         let g = Self {
             base,
@@ -1034,11 +1077,8 @@ impl TerrainGenerator {
             world_seed,
         }
         .with_placements(&PLACEMENTS);
-        // A test world's map carries its worldgen config (ADR 0074 B7): Chisel's edit, whole.
         match worldgen {
-            Some(w) => g
-                .with_biomes_and_geology(&w.edit.biomes, w.edit.map, w.edit.geology)
-                .with_vegetation(w.edit.vegetation),
+            Some(w) => g.with_vegetation(w.edit.vegetation),
             None => g,
         }
     }
