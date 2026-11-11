@@ -2941,7 +2941,12 @@ not Rapier bodies: a point that falls toward the midplane through `FaceFrame` an
 of the first solid cell. Currency items (a `value`) go to the wallet, whole items up to its
 capacity. The client draws loose items as small turning copies of their block through the pieces'
 renderer (`dwell-client` `loose_items.rs`), and in such a world its hotbar is the inventory's first
-six slots with counts and the wallet, and E opens the backpack screen (`client/src/ui/backpack.ts`). In creative the hotbar's six slots hold items picked in the creative inventory view (E, the touch Bag, the controller's `inventory`; `client/src/ui/creativeInventory.ts`, `dwell-game` `creative_hotbar.rs`, the groups as `items.json` `category` data, picks saved per world in the browser; docs/ITEMS.md §6a).
+six slots with counts and the wallet, and E opens the backpack screen (`client/src/ui/backpack.ts`) with its Combine section. Pieces,
+combining and tool wear (0.52.46, ADR 0066's amendment, docs/ITEMS.md §9): a ½ m cell breaks into 8
+pieces of its material (its `drops`); recipes are `inventory.json` `recipes`, applied by the server on
+`InventoryAction::Combine` (a recipe-name hash) where it sets `inventory_flags::COMBINE` (16); tools wear
+by `tools.json` `durability` (the stone axe 32, creative not), the wear a slot's `Stack::wear`, carried in
+the inventory record as entries an older build skips. In creative the hotbar's six slots hold items picked in the creative inventory view (E, the touch Bag, the controller's `inventory`; `client/src/ui/creativeInventory.ts`, `dwell-game` `creative_hotbar.rs`, the groups as `items.json` `category` data, picks saved per world in the browser; docs/ITEMS.md §6a).
 
 **Creatures [built, 0.51.13]** (ADR 0073). Animals as light server entities (`dwell_sim::creatures`, not
 Rapier bodies): spawned in groups near players by `shared/creatures/creatures.json`'s rules (the ground
