@@ -1,5 +1,5 @@
 use super::*;
-use crate::{AIR, info, state};
+use crate::{AIR, state};
 
 const CELL: [f64; 3] = [1.0, 0.5, 1.0];
 
@@ -137,7 +137,7 @@ fn a_cross_section_added_by_data_alone_joins_the_logs() {
         .expect("the fixture's post");
     let c = post.cross_section.expect("a cross-section from data");
     assert!((c.chamfer - 0.15).abs() < 1e-6);
-    let wood = info(log("y")).cross_section.unwrap();
+    let wood = crate::info(log("y")).cross_section.unwrap();
     assert_eq!(c.joins, wood.joins);
     let ring = outline(f64::from(c.chamfer), 1, 0, CELL);
     assert_eq!(ring.len(), 8);
