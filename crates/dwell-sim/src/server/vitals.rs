@@ -148,10 +148,12 @@ impl Server {
         }
     }
 
-    /// A damage or death event to every joined client: one with the `Drown` cause goes as `Fall`
-    /// to those that never said `VitalsHello` (an older client refuses a cause it doesn't know).
+    /// A damage or death event to every joined client, its cause as the client understands it:
+    /// the causes every build knows (`Fall`, `Crush`, `Explosion`) as they are; `Drown` to a client
+    /// that said `VitalsHello`; any later one (`Burn`) to a client whose `CausesHello` names it. A
+    /// client that can't read a cause gets `Fall` (an older client refuses a cause it doesn't know).
     pub(super) fn broadcast_event(&mut self, e: PlayerEvent) {
-        if e.cause != DamageCause::Drown {
+        if (e.cause as u8) < DamageCause::Drown as u8 {
             self.broadcast_world(&Message::PlayerEvent(e));
             return;
         }
@@ -165,7 +167,7 @@ impl Server {
                 self.outbox.push(Outgoing {
                     session: id,
                     kind: OutKind::Reliable(Channel::World),
-                    bytes: if s.vitals_hello {
+                    bytes: if s.understands(e.cause) {
                         new.clone()
                     } else {
                         old.clone()
@@ -173,6 +175,16 @@ impl Server {
                 });
             }
         }
+    }
+}
+
+impl Session {
+    /// Whether its client reads damage cause `c` (see [`Server::broadcast_event`]).
+    pub(super) fn understands(&self, c: DamageCause) -> bool {
+        let n = c as u8;
+        n < DamageCause::Drown as u8
+            || (c == DamageCause::Drown && self.vitals_hello)
+            || n <= self.known_cause
     }
 }
 

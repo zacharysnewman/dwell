@@ -208,10 +208,15 @@ const BIOME_NAME = /^[a-z0-9_]+:[a-z0-9_]+$/;
 export function checkGroups(data, groups, fail) {
   for (const group of groups) {
     const keys = TERRAIN[group];
+    const lists = TERRAIN_LISTS[group] ?? {};
     const g = data[group];
     if (typeof g !== "object" || g === null) fail(`${group} must be an object`);
-    const ge = Object.keys(g).filter((k) => k !== "$comment" && !(k in keys));
+    const ge = Object.keys(g).filter(
+      (k) => k !== "$comment" && !(k in keys) && !(k in lists),
+    );
     if (ge.length) fail(`${group}: unknown ${ge.join(", ")}`);
+    for (const [key, check] of Object.entries(lists))
+      if (g[key] !== undefined) check(g[key], g, (m) => fail(`${group}.${key}${m}`));
     for (const [key, [min, max, whole]] of Object.entries(keys)) {
       const v = g[key];
       const low = typeof min === "object" ? v > min.above : v >= min;
@@ -224,6 +229,48 @@ export function checkGroups(data, groups, fail) {
     }
   }
 }
+
+/**
+ * Checks `tectonics.lavaVents` (docs/proposals/VOLCANOES.md §6.2): a list of vents, each on a cone
+ * the group has (`cone` "arc" below `arcCount` with `kind` 1, or "hotspot" below `hotspotCount`;
+ * `index` youngest first), a lake or a river of a hot fluid (by name; gen.mjs checks it is one of
+ * shared/fluids/lava.json's), its rate, a lake's depth, its field's radius in columns and its offset
+ * from the summit. Opt-in: none by default.
+ */
+export function checkLavaVents(list, g, fail) {
+  if (!Array.isArray(list)) fail(" must be a list");
+  list.forEach((v, i) => {
+    const at = (m) => fail(`[${i}]: ${m}`);
+    if (typeof v !== "object" || v === null) at("must be an object");
+    const known = ["cone", "index", "kind", "fluid", "rateM3s", "depthM", "radius", "distance", "angle"];
+    const extra = Object.keys(v).filter((k) => !known.includes(k));
+    if (extra.length) at(`unknown ${extra.join(", ")}`);
+    const index = v.index ?? 0;
+    if (!(Number.isInteger(index) && index >= 0)) at("index must be a whole number");
+    if (v.cone === "arc") {
+      if (!(g.kind === 1 && index < g.arcCount)) at(`no arc cone ${index}`);
+    } else if (v.cone === "hotspot") {
+      if (!(index < g.hotspotCount)) at(`no hotspot cone ${index}`);
+    } else at('cone must be "arc" or "hotspot"');
+    if (!["lake", "river"].includes(v.kind)) at('kind must be "lake" or "river"');
+    if (typeof v.fluid !== "string" || !BIOME_NAME.test(v.fluid))
+      at('fluid must be a hot fluid\'s "namespace:name"');
+    if (!(isNum(v.rateM3s) && v.rateM3s > 0 && v.rateM3s <= 1000))
+      at("rateM3s must be in (0, 1000]");
+    if (!(Number.isInteger(v.radius) && v.radius >= 1 && v.radius <= 64))
+      at("radius must be a whole number in [1, 64]");
+    for (const [k, lo, hi] of [
+      ["depthM", 0, 50],
+      ["distance", 0, 20_000],
+      ["angle", -360, 360],
+    ])
+      if (v[k] !== undefined && !(isNum(v[k]) && v[k] >= lo && v[k] <= hi))
+        at(`${k} must be in [${lo}, ${hi}]`);
+  });
+}
+
+/** A group's list keys (not ranged numbers), each with its checker. */
+export const TERRAIN_LISTS = { tectonics: { lavaVents: checkLavaVents } };
 
 /**
  * Checks a biome (shared/worldgen/biomes/<name>.json) against `blocks` and the rule names it may

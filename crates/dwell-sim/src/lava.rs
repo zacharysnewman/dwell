@@ -14,7 +14,7 @@
 //! A field's columns, beds and rows are face-local; every world cell and point crosses through its
 //! [`FaceFrame`]. Saved as one record (`to_bytes`, the world's optional `lava` table).
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::ops::Range;
 
 use dwell_blocks::{StateId, info};
@@ -51,6 +51,9 @@ pub struct Placed {
     pub face: FaceFrame,
     pub field: Field,
     written: Vec<Range<i32>>,
+    /// Columns the world edited since the last lava tick (not by the lava): their bed and water
+    /// are read again then ([`Lava::touch`]).
+    dirty: BTreeSet<usize>,
 }
 
 /// What a lava tick did to the world: cell writes (world cells, world states) and steam.
@@ -167,6 +170,7 @@ impl Lava {
             face: f,
             field,
             written,
+            dirty: BTreeSet::new(),
         });
         Ok(self.fields.len() - 1)
     }
@@ -187,6 +191,7 @@ impl Lava {
             at: HashMap::new(),
         };
         for p in &mut self.fields {
+            p.refresh(&mut view);
             let near = p.field.is_near(p.face, players);
             if p.field.advance(real_s, near) <= 0.0 {
                 continue;
@@ -194,6 +199,22 @@ impl Lava {
             p.apply(&mut view);
         }
         out
+    }
+
+    /// A world cell the world changed (an edit, the water; not the lava's own writes): a field
+    /// over its column reads that column's bed and water again at its next lava tick, so a dug
+    /// channel or poured water changes the flow.
+    pub fn touch(&mut self, cell: [i32; 3]) {
+        let f = FaceFrame::at_row(cell[1]);
+        for p in &mut self.fields {
+            if p.face != f {
+                continue;
+            }
+            let (x, z) = (cell[0] - p.field.origin[0], cell[2] - p.field.origin[1]);
+            if (0..p.field.w as i32).contains(&x) && (0..p.field.h as i32).contains(&z) {
+                p.dirty.insert(p.field.at(x as usize, z as usize));
+            }
+        }
     }
 
     /// The hot fluid a player's feet (a world point) stand in, if any.
@@ -246,6 +267,7 @@ impl Lava {
                 face,
                 field,
                 written,
+                dirty: BTreeSet::new(),
             });
         }
         rest.is_empty().then_some(Self { fields })
@@ -253,6 +275,51 @@ impl Lava {
 }
 
 impl Placed {
+    /// Reads each edited column's bed and water again: the bed from the solid run its old top
+    /// cell is in (up through blocks set on it, down through cells dug out of it), its water from
+    /// the liquid over it (not the lava's own cells). A raised bed pushes the lava above it (its
+    /// depth over the new bed, none if buried); a lowered one keeps the lava's depth, so the
+    /// column's surface drops and its neighbours flow in. A bed that keeps its top cell keeps its
+    /// height (cooled rock's part of a cell).
+    fn refresh<R: FnMut([i32; 3]) -> StateId>(&mut self, view: &mut View<'_, R>) {
+        if self.dirty.is_empty() {
+            return;
+        }
+        let f = self.face;
+        let lava = f.state(dwell_blocks::require(self.field.fluid.name));
+        let solid = |view: &mut View<'_, R>, c: [i32; 3]| info(view.get(f.cell(c))).solid;
+        for i in std::mem::take(&mut self.dirty) {
+            let (x, z) = (i % self.field.w, i / self.field.w);
+            let (wx, wz) = (
+                self.field.origin[0] + x as i32,
+                self.field.origin[1] + z as i32,
+            );
+            let old = dwell_lava::field::row_at(self.field.ground[i]);
+            let mut bed = old;
+            if solid(view, [wx, old - 1, wz]) {
+                while bed < old + SCAN_ROWS && solid(view, [wx, bed, wz]) {
+                    bed += 1;
+                }
+            } else {
+                while bed > old - SCAN_ROWS && !solid(view, [wx, bed - 1, wz]) {
+                    bed -= 1;
+                }
+            }
+            if bed != old {
+                let surface = self.field.surface(i);
+                let ground = (f64::from(bed) * CELL_H) as f32;
+                if ground > self.field.ground[i] {
+                    self.field.depth[i] = (surface - ground).max(0.0);
+                }
+                self.field.ground[i] = ground;
+            }
+            self.field.water[i] = (bed..bed + SCAN_ROWS).any(|r| {
+                let m = view.get(f.cell([wx, r, wz]));
+                m != lava && info(m).liquid
+            });
+        }
+    }
+
     /// Writes what the field's last run did: its rock, its lava cells, its steam.
     fn apply<R: FnMut([i32; 3]) -> StateId>(&mut self, view: &mut View<'_, R>) {
         let (f, origin) = (self.face, self.field.origin);

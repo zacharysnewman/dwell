@@ -736,3 +736,26 @@ test('a biome may set spacing per placement it lists (0.52.65), checked', async 
     /spacing\.pine_groves must be a whole number/,
   );
 });
+
+test('lava vents on a cone are fixture-world data: checked, and a new one added by data alone', () => {
+  const world = loadTerrain();
+  const vent = { cone: 'hotspot', index: 0, kind: 'lake', fluid: 'dwell:lava', rateM3s: 2, depthM: 1, radius: 8 };
+  const of = (v, t = {}) => [
+    { name: 'test:x', overrides: { tectonics: { hotspotCount: 2, ...t, lavaVents: [v] } } },
+  ];
+  const [w] = validateFixtureWorlds(of({ ...vent, kind: 'river', index: 1, distance: 300, angle: 90 }), world);
+  assert.equal(w.world.tectonics.lavaVents[0].kind, 'river');
+  assert.equal(world.tectonics.lavaVents, undefined, 'the default world lists none');
+  const starter = validateFixtureWorlds(loadBiomes(join(here, 'worlds')), world).find((w) => w.name === 'test:starter');
+  assert.equal(starter.world.tectonics.lavaVents.length, 1, 'the starter world has its vent');
+  for (const [v, msg] of [
+    [{ ...vent, index: 2 }, /no hotspot cone 2/],
+    [{ ...vent, cone: 'arc' }, /no arc cone 0/],
+    [{ ...vent, kind: 'geyser' }, /kind must be "lake" or "river"/],
+    [{ ...vent, fluid: 'dwell:honey' }, /dwell:honey is not a hot fluid/],
+    [{ ...vent, radius: 0 }, /radius must be a whole number/],
+    [{ ...vent, rateM3s: 0 }, /rateM3s must be in/],
+    [{ ...vent, heat: 1 }, /unknown heat/],
+  ])
+    assert.throws(() => validateFixtureWorlds(of(v), world), msg);
+});
