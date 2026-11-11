@@ -36,10 +36,10 @@ pub const DATA: LavaData = LavaData {
     steam: SteamLook { color: "#f2f4f6", seconds: 1.6, rise_ms: 1.6, size_m: [0.4, 1.6], opacity: 0.75 },
     burn_edge: BurnEdge { color: "#ff5a1e", opacity: 0.6, seconds: 0.9 },
     heat: &[
-        HeatStop { name: "hot", above: 0.6, color: "#ffb23c", intensity: 2.4, crust: 0.3 },
-        HeatStop { name: "warm", above: 0.35, color: "#ff6e1e", intensity: 1.6, crust: 0.55 },
-        HeatStop { name: "cooling", above: 0.15, color: "#e0401a", intensity: 1.0, crust: 0.8 },
-        HeatStop { name: "crusting", above: 0.0, color: "#a02810", intensity: 0.6, crust: 0.95 },
+        HeatStop { name: "hot", above: 0.85, color: "#ff5a14", core: "#ffa030", intensity: 2.4, crust: 0.3 },
+        HeatStop { name: "warm", above: 0.6, color: "#f04010", core: "#ff7020", intensity: 1.6, crust: 0.55 },
+        HeatStop { name: "cooling", above: 0.3, color: "#b8200c", core: "#e04018", intensity: 1.0, crust: 0.8 },
+        HeatStop { name: "crusting", above: 0.0, color: "#5a0e06", core: "#a02010", intensity: 0.5, crust: 0.95 },
     ],
     heat_hysteresis: 0.03,
 };

@@ -121,6 +121,8 @@ pub struct HeatStop {
     pub name: &'static str,
     pub above: f32,
     pub color: &'static str,
+    /// The glow at the middle of the thinnest seams (sRGB).
+    pub core: &'static str,
     pub intensity: f32,
     pub crust: f32,
 }
@@ -128,7 +130,19 @@ pub struct HeatStop {
 impl HeatStop {
     /// The stop's colour, linear.
     pub fn linear(&self) -> [f32; 3] {
-        let h = self.color.trim_start_matches('#');
+        linear_of(self.color)
+    }
+
+    /// The seams' core colour, linear.
+    pub fn core_linear(&self) -> [f32; 3] {
+        linear_of(self.core)
+    }
+}
+
+/// A `#rrggbb` colour, linear.
+fn linear_of(color: &str) -> [f32; 3] {
+    {
+        let h = color.trim_start_matches('#');
         let c = |i: usize| {
             let v =
                 f32::from(u8::from_str_radix(h.get(i..i + 2).unwrap_or("ff"), 16).unwrap_or(255))
@@ -219,7 +233,7 @@ mod heat_tests {
 
     #[test]
     fn heat_crossing_each_threshold_picks_the_stop_below_it() {
-        let names: Vec<_> = [1.0, 0.61, 0.59, 0.36, 0.2, 0.14, 0.0]
+        let names: Vec<_> = [1.0, 0.86, 0.84, 0.61, 0.4, 0.29, 0.0]
             .iter()
             .map(|&h| DATA.heat[DATA.heat_stop(h, None)].name)
             .collect();
@@ -260,8 +274,8 @@ mod heat_tests {
     #[test]
     fn a_stop_added_by_data_alone_is_picked() {
         assert_eq!(FIXTURE.heat[0].name, "test_white_hot");
-        assert_eq!(FIXTURE.heat_stop(0.95, None), 0);
-        assert_eq!(FIXTURE.heat[FIXTURE.heat_stop(0.7, None)].name, "hot");
+        assert_eq!(FIXTURE.heat_stop(0.97, None), 0);
+        assert_eq!(FIXTURE.heat[FIXTURE.heat_stop(0.9, None)].name, "hot");
     }
 
     #[test]

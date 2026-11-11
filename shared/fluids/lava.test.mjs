@@ -62,8 +62,9 @@ test("the clients' looks (steam, the burn edge) come from data, defaulted for a 
 
 test('heat stops: a stop added by data alone is generated, bad stops fail naming them', () => {
   const d = data();
-  d.heat.unshift({ name: 'mymod_white', above: 0.95, color: '#fff8e0', intensity: 5, crust: 0 });
-  assert.match(lavaRust(validateLava(d)), /HeatStop \{ name: "mymod_white", above: 0\.95, color: "#fff8e0", intensity: 5\.0, crust: 0\.0 \}/);
+  d.heat.unshift({ name: 'mymod_white', above: 0.95, color: '#fff8e0', core: '#ffffff', intensity: 5, crust: 0 });
+  const heatProps = new Map([['dwell:lava', d.heat.map((h) => h.name)]]);
+  assert.match(lavaRust(validateLava(d, { heatProps })), /HeatStop \{ name: "mymod_white", above: 0\.95, color: "#fff8e0", core: "#ffffff", intensity: 5\.0, crust: 0\.0 \}/);
   for (const [change, message] of [
     [(d) => (d.heat[1].above = 0.9), /heat\.warm\.above must be below the hotter stop's/],
     [(d) => (d.heat[3].above = 0.05), /coolest stop's above must be 0/],
@@ -71,6 +72,7 @@ test('heat stops: a stop added by data alone is generated, bad stops fail naming
     [(d) => (d.heat[0].color = 'red'), /heat\.hot\.color must be a colour/],
     [(d) => (d.heat[1].name = 'hot'), /heat\.hot: listed twice/],
     [(d) => (d.heat = []), /heat must be a non-empty list/],
+    [(d) => (d.heat[1].name = 'warmish'), /its block's heat property .* must be the heat stops' names/],
   ]) {
     const bad = data();
     change(bad);

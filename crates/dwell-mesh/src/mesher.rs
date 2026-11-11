@@ -501,10 +501,7 @@ impl Builder {
         let u = (axis + 1) % 3;
         let v = (axis + 2) % 3;
         let base = self.vertex_count();
-        let tint = face_tint(axis, sign);
-        let r = channel(color, 16) * tint[0];
-        let g = channel(color, 8) * tint[1];
-        let b = channel(color, 0) * tint[2];
+        let [r, g, b] = vertex_rgb(color, face_tint(axis, sign));
         let s = f64::from(sign);
         // A side's texture runs in world metres (a 1 m tile spans 1 m, HALF_HEIGHT_GRID.md §6), so
         // it stays put however the faces merge. A hanging tile (a turf skirt) runs down from the
@@ -570,9 +567,7 @@ impl Builder {
         light: Option<(&[f32], &[[f32; 2]])>,
     ) {
         let base = self.vertex_count();
-        let r = channel(color, 16) * tint[0];
-        let g = channel(color, 8) * tint[1];
-        let b = channel(color, 0) * tint[2];
+        let [r, g, b] = vertex_rgb(color, tint);
         let [nx, ny, nz] = normal_to_m(normal);
         for pt in pts {
             let [qx, qy, qz] = *pt;
@@ -624,6 +619,30 @@ pub(crate) fn flip_diagonal(l: [f32; 4]) -> bool {
     l[1] + l[3] > l[0] + l[2]
 }
 
+/// A vertex colour (`0xRRGGBB`, sRGB) under a face's tint, linear; a heat code (`HEAT_CODE | k`, a
+/// molten block's heat stop, VOLCANOES.md §6.5) is passed untinted as (k, −1, −1), which the
+/// terrain shader reads as the stop (and draws white otherwise).
+fn vertex_rgb(color: u32, tint: [f64; 3]) -> [f64; 3] {
+    if color & HEAT_CODE != 0 {
+        return [f64::from(color & 0xff), -1.0, -1.0];
+    }
+    [
+        channel(color, 16) * tint[0],
+        channel(color, 8) * tint[1],
+        channel(color, 0) * tint[2],
+    ]
+}
+
+/// The flag on a face colour that carries a heat stop instead (`vertex_rgb`).
+pub(crate) const HEAT_CODE: u32 = 1 << 24;
+
+/// A textured face's vertex colour: white, or its block's heat stop (`vertex_rgb`).
+fn white(style: &MaterialStyle) -> u32 {
+    style
+        .heat_stop
+        .map_or(0xffffff, |k| HEAT_CODE | u32::from(k))
+}
+
 /// Vertex colour and texture tile of a face: textured faces take their colour from the texture.
 /// The faces along the block's axis (`style.axis`: up for most, a felled log's length) take its top
 /// and bottom tiles, the rest its side tile, turned where the face's v doesn't run along the axis
@@ -633,12 +652,15 @@ fn surface(style: &MaterialStyle, axis: usize, sign: i32) -> (u32, TileRect) {
         None => (style.color, tile_rect("plain")),
         Some(t) => {
             if axis == style.axis {
-                return (0xffffff, tile_rect(if sign > 0 { t.top } else { t.bottom }));
+                return (
+                    white(style),
+                    tile_rect(if sign > 0 { t.top } else { t.bottom }),
+                );
             }
             let v = if axis == 1 { 2 } else { 1 };
             let mut tile = tile_rect(t.side);
             tile.turn = v != style.axis;
-            (0xffffff, tile)
+            (white(style), tile)
         }
     }
 }
@@ -2414,4 +2436,25 @@ pub(crate) fn water_runs(kinds: &Kinds, padded: &[u16]) -> Vec<Option<WaterRun>>
         }
     }
     out
+}
+
+#[cfg(test)]
+mod heat_code_tests {
+    #[test]
+    fn a_lava_states_faces_carry_its_heat_stop_untinted() {
+        // VOLCANOES.md §6.5: each `heat` state of dwell:lava is its stop in dwell_lava::DATA.heat,
+        // passed to the shader as (k, -1, -1) whatever the face's tint; other faces are as before.
+        for (k, h) in dwell_lava::DATA.heat.iter().enumerate() {
+            let name = format!("dwell:lava[heat={}]", h.name);
+            let stop = crate::style::heat_stop(&name);
+            assert_eq!(stop, Some(k as u8), "{name}");
+            let code = super::HEAT_CODE | u32::from(stop.unwrap_or(0));
+            assert_eq!(
+                super::vertex_rgb(code, [0.74, 0.77, 0.9]),
+                [k as f64, -1.0, -1.0]
+            );
+        }
+        assert_eq!(crate::style::heat_stop("dwell:stone"), None);
+        assert!(super::vertex_rgb(0xffffff, [1.0, 0.97, 0.9])[1] > 0.0);
+    }
 }

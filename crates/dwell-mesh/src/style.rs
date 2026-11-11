@@ -40,6 +40,9 @@ pub(crate) struct MaterialStyle {
     /// Index into `SHAPES`.
     pub shape: usize,
     pub flooded: bool,
+    /// A molten block's heat stop (its `heat` property's place in `dwell_lava::DATA.heat`,
+    /// VOLCANOES.md §6.5), carried to the shader in its faces' vertex colour.
+    pub heat_stop: Option<u8>,
     /// The cross look's geometry, wind and distance fade.
     pub cross: Option<Cross>,
     pub wind: Option<Wind>,
@@ -82,6 +85,15 @@ fn cube_index() -> usize {
 
 /// The style of a state row, with `fluids` the table its `fluid` indexes (the build's, or a test
 /// registry's).
+/// The heat stop of state `name` (`dwell:lava[heat=warm]`): its `heat` value's place among
+/// `dwell_lava::DATA.heat`'s names; `None` without one.
+pub(crate) fn heat_stop(name: &str) -> Option<u8> {
+    let id = dwell_blocks::state(name)?;
+    let v = dwell_blocks::state_property(id, "heat")?;
+    let k = dwell_lava::DATA.heat.iter().position(|h| h.name == v)?;
+    u8::try_from(k).ok()
+}
+
 pub(crate) fn style_of(s: &StateInfo, fluids: &[FluidInfo]) -> MaterialStyle {
     if !drawable(s, fluids) {
         return fallback_style(usize::from(s.shape_index), s.flooded);
@@ -116,6 +128,7 @@ pub(crate) fn style_of(s: &StateInfo, fluids: &[FluidInfo]) -> MaterialStyle {
         },
         shape: usize::from(s.shape_index),
         flooded: s.flooded,
+        heat_stop: heat_stop(s.name),
         cross: s.cross,
         wind: s.wind,
         fade: s.fade,
@@ -185,6 +198,7 @@ fn fallback_style(shape: usize, flooded: bool) -> MaterialStyle {
         ladder_face: None,
         shape,
         flooded,
+        heat_stop: None,
         cross: None,
         wind: None,
         fade: None,

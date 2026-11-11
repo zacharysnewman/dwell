@@ -699,6 +699,8 @@
       "look": "cube",
       "medium": "air",
       "emits": 13,
+      "$properties": "heat: the look's heat stop (shared/fluids/lava.json `heat`, hottest first; lava.mjs checks the values are the stops' names), written by the server as a column cools past a stop; hot (the default) is the look before 0.52.x.",
+      "properties": { "heat": ["hot", "warm", "cooling", "crusting"] },
       "color": "#e8561c",
       "textures": "lava"
     },
