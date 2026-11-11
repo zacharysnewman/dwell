@@ -70,6 +70,8 @@ jobs:
           node --test shared/fluids/gen.test.mjs
           node shared/fluids/falls.mjs
           node --test shared/fluids/falls.test.mjs
+          node shared/fluids/lava.mjs --check
+          node --test shared/fluids/lava.test.mjs
           node shared/look/lodblend.mjs
           node --test shared/look/lodblend.test.mjs
           node shared/look/lodcolour.mjs
