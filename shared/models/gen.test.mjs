@@ -177,7 +177,13 @@ test("a prop of a stacked FBX keeps only its named objects: the metal axe has no
   const s = propSummary(readFileSync(join(here, p.glb)));
   assert.deepEqual(s.palette.filter(red), [], `metal_axe: ${s.palette}`);
   // The other tools are whole files of one tool, or a head and its handle.
-  for (const n of ["stone_axes", "stone_pickaxes", "metal_pickaxes", "wooden_shovel", "metal_shovel"])
+  for (const n of [
+    "stone_axes",
+    "stone_pickaxes",
+    "metal_pickaxes",
+    "wooden_shovel",
+    "metal_shovel",
+  ])
     assert.ok(props().props[n], n);
 });
 
@@ -185,7 +191,10 @@ test("a prop's objects are a list of names, each once", () => {
   for (const objects of [[], "DoubleHeadedAxe", [""], ["A", "A"], [1]]) {
     const f = fixtureProps();
     f.props.plate.objects = objects;
-    assert.throws(() => validateProps(f, fixtures), /prop plate: objects is a list of its FBX's mesh object names, each once/);
+    assert.throws(
+      () => validateProps(f, fixtures),
+      /prop plate: objects is a list of its FBX's mesh object names, each once/,
+    );
   }
   const f = fixtureProps();
   f.props.plate.objects = ["Plate"];
@@ -201,6 +210,18 @@ test("a prop is added by data alone: the fixture validates and lands in the tabl
     /PropData \{ name: "plate", category: "dishes", glb: "plate\.glb", length: 0\.25/,
   );
   assert.match(rs, /grip: \[0\.0, 0\.01, 0\.0\]/);
+  // Its hold pose by data alone; a prop naming none is held as modelled.
+  assert.match(
+    rs,
+    /hold: PropHold \{ scale: 0\.5, rotation: \[0\.0, 90\.0, 0\.0\], offset: \[0\.0, 0\.0, 0\.1\] \}/,
+  );
+  const plain = fixtureProps();
+  delete plain.props.plate.hold;
+  assert.deepEqual(validateProps(plain, fixtures).plate.hold, {
+    scale: 1,
+    rotation: [0, 0, 0],
+    offset: [0, 0, 0],
+  });
   assert.match(
     rs,
     /\("plate", include_bytes!\("\.\.\/\.\.\/\.\.\/shared\/models\/fixtures\/plate\.glb"\)\)/,
@@ -218,6 +239,27 @@ test("bad props fail naming the entry and the problem", () => {
   bad((p) => (p.length = 2), /length 2 m is outside dishes's/);
   bad((p) => (p.length = 0.4), /is 0\.250 m long, not its length 0\.4 m/);
   bad((p) => (p.grip = [0, 1]), /grip is \[x, y, z\]/);
+  bad(
+    (p) => (p.hold = [1]),
+    /prop plate: hold is \{ scale, rotation, offset \}/,
+  );
+  bad((p) => (p.hold = { size: 1 }), /prop plate: hold has unknown field size/);
+  bad(
+    (p) => (p.hold = { scale: 0 }),
+    /prop plate: hold\.scale 0 is outside 0\.1\.\.2/,
+  );
+  bad(
+    (p) => (p.hold = { rotation: [0, 90] }),
+    /prop plate: hold\.rotation is \[yaw, pitch, roll\] degrees/,
+  );
+  bad(
+    (p) => (p.hold = { rotation: [0, 270, 0] }),
+    /hold\.rotation \[0,270,0\] is outside ±180 degrees/,
+  );
+  bad(
+    (p) => (p.hold = { offset: [0, 0, 2] }),
+    /hold\.offset \[0,0,2\] is outside ±0\.5 metres/,
+  );
   bad((p) => (p.glb = "two_bone.glb"), /a skin or clips|meshes, not one/);
   bad((_, f) => (f.categories.dishes.min = 0), /category dishes: needs/);
   // The game's item looks may only name a prop.
