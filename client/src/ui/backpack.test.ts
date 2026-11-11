@@ -1,7 +1,7 @@
 // The backpack screen's moves and order, and item labels (ADR 0066).
 import { describe, expect, it } from 'vitest';
-import { backpackKey, moveFor, screenOrder } from './backpack';
-import { itemLabel, type InventoryHud } from './hotbar';
+import { backpackKey, combinable, moveFor, recipeInputs, screenOrder } from './backpack';
+import { itemLabel, wearLeft, type InventoryHud } from './hotbar';
 import { BACKPACK_SLOTS, HOTBAR_SLOTS, ITEMS, STACK_SIZE } from './inventory.gen';
 
 const inv = (): InventoryHud => ({
@@ -50,5 +50,43 @@ describe('the backpack key', () => {
   it('Escape closes it, and only when open', () => {
     expect(backpackKey('Escape', false, true, true)).toBe(false);
     expect(backpackKey('Escape', false, false, true)).toBeNull();
+  });
+});
+
+describe('combine and wear (owner, 2026-11-11)', () => {
+  const holding = (...stacks: { item: string; count: number }[]): InventoryHud => ({
+    slots: [...stacks, ...Array<null>(36 - stacks.length).fill(null)],
+    held: 0,
+    money: 0,
+    capacity: 99,
+    combines: true,
+  });
+
+  it('lists the recipes the inventory can make, with how many times', () => {
+    expect(combinable(holding({ item: 'dwell:rock_shard', count: 7 }))).toEqual([]);
+    const can = combinable(holding({ item: 'dwell:rock_shard', count: 17 }));
+    expect(can.map((c) => [c.recipe.name, c.times])).toEqual([['dwell:stone_slab', 2]]);
+    const tools = combinable(
+      holding(
+        { item: 'dwell:stick', count: 4 },
+        { item: 'dwell:rock_shard', count: 2 },
+        { item: 'dwell:grass_fiber', count: 2 },
+      ),
+    );
+    expect(tools.map((c) => [c.recipe.name, c.times])).toEqual([
+      ['dwell:stone_axe', 1],
+      ['dwell:stone_pickaxe', 1],
+    ]);
+    expect(tools[0] && recipeInputs(tools[0].recipe)).toBe(
+      '2 Stick + 2 Rock shard + 2 Grass fiber',
+    );
+    expect(itemLabel('dwell:wood')).toBe('Wood chunk');
+  });
+
+  it("draws the stone axe's wear bar from its data (32 hits); unworn or unlimited tools have none", () => {
+    expect(wearLeft('dwell:stone_axe', 0)).toBeNull();
+    expect(wearLeft('dwell:stone_axe', 8)).toBe(0.75);
+    expect(wearLeft('dwell:stone_axe', 31)).toBeCloseTo(1 / 32);
+    expect(wearLeft('dwell:metal_axe', 8)).toBeNull();
   });
 });

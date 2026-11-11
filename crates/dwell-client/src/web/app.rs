@@ -1550,7 +1550,11 @@ impl Client {
     }
     /// Whether the server makes recipes (shows the Combine section).
     pub fn combines(&self) -> bool {
-        self.inner.borrow().game.as_ref().is_some_and(|g| g.combines())
+        self.inner
+            .borrow()
+            .game
+            .as_ref()
+            .is_some_and(|g| g.combines())
     }
     /// The hotbar's block names (the palette, in slot order).
     pub fn palette(&self) -> Vec<String> {

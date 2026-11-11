@@ -182,7 +182,11 @@ dwell_world::both_faces!(
         assert_eq!(loose(&fx, "dwell:stone"), 0, "no longer the block itself");
         hit(&mut fx, f, STONE);
         assert_eq!(block_at(&mut fx, f, STONE), "dwell:air");
-        assert_eq!(loose(&fx, "dwell:rock_shard"), 8, "the cell's 8 pieces, once");
+        assert_eq!(
+            loose(&fx, "dwell:rock_shard"),
+            8,
+            "the cell's 8 pieces, once"
+        );
     }
 );
 
@@ -199,7 +203,10 @@ dwell_world::both_faces!(
             assert_eq!(loose(&fx, "dwell:dirt"), 0);
             rocks += loose(&fx, "dwell:rock");
         }
-        assert!(rocks > 0, "the random rock (chance 0.5) turned up in 12 cells");
+        assert!(
+            rocks > 0,
+            "the random rock (chance 0.5) turned up in 12 cells"
+        );
     }
 );
 
@@ -218,7 +225,11 @@ dwell_world::both_faces!(
         fx.take_all();
         let n = hits_to_break(&mut fx, f, DIRT);
         assert_eq!(n, 11, "the axe is no shovel");
-        assert_eq!(wear(&fx), Some(("dwell:stone_axe".into(), 11)), "one per hit");
+        assert_eq!(
+            wear(&fx),
+            Some(("dwell:stone_axe".into(), 11)),
+            "one per hit"
+        );
         // A refused hit (stone with an axe) doesn't count.
         hit(&mut fx, f, STONE);
         assert_eq!(wear(&fx), Some(("dwell:stone_axe".into(), 11)));
@@ -227,7 +238,7 @@ dwell_world::both_faces!(
         assert!(sent.iter().any(|(m, _)| matches!(m, Message::Inventory(i)
             if i.inventory.slots[0].as_ref().is_some_and(|s| s.wear == 11))));
         // Creative (`creativeWear` false): the hotbar's tool doesn't wear.
-        assert!(!chopping::CREATIVE_WEAR);
+        const { assert!(!chopping::CREATIVE_WEAR) };
         let mut fx = scene_with(f, config(f, "creative"));
         hold(&mut fx, "creative", "dwell:stone_axe");
         fx.server.give(1, "dwell:stone_axe", 1);

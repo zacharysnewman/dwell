@@ -14,11 +14,23 @@ test("the build's data validates with the owner's rules", () => {
   assert.deepEqual(
     dropsOf(d, 'dwell:grass').map((r) => [r.choices[0].item, r.chance]),
     [
-      ['dwell:dirt', 1],
+      ['dwell:dirt_clump', 1],
       ['dwell:rock', 0.5],
     ],
   );
-  assert.deepEqual(dropsOf(d, 'dwell:dirt')[0].choices[0].item, 'dwell:dirt');
+  // Owner, 2026-11-11: a ½ m cell breaks into 8 pieces of its material.
+  assert.deepEqual(dropsOf(d, 'dwell:dirt')[0].choices[0], { item: 'dwell:dirt_clump', min: 8, max: 8, weight: 1 });
+  assert.deepEqual(dropsOf(d, 'dwell:stone')[0].choices[0], { item: 'dwell:rock_shard', min: 8, max: 8, weight: 1 });
+  assert.deepEqual(dropsOf(d, 'dwell:log')[0].choices[0], { item: 'dwell:wood', min: 8, max: 8, weight: 1 });
+  assert.equal(dropsOf(d, 'dwell:tall_grass')[0].choices[0].item, 'dwell:grass_fiber');
+  assert.deepEqual(
+    d.recipes.find((r) => r.name === 'dwell:stone_axe').inputs.map((i) => [i.item, i.count]),
+    [
+      ['dwell:stick', 2],
+      ['dwell:rock_shard', 2],
+      ['dwell:grass_fiber', 2],
+    ],
+  );
   assert.deepEqual(dropsOf(d, 'dwell:leaves')[0].choices[0].item, 'dwell:stick');
   assert.deepEqual(dropsOf(d, 'dwell:water'), []);
   assert.equal(d.drops.find((b) => b.block === 'dwell:stone_ramp').cost, 'dwell:stone');
@@ -109,4 +121,22 @@ test('new players start with the data\'s items: an axe (owner, 2026-11-08)', () 
   const [inv, blocks] = fresh();
   inv.startingItems = [{ item: 'dwell:nothing', count: 1 }];
   assert.throws(() => validateInventory(inv, blocks), /startingItems\[0\]: item must name a block or an item/);
+});
+
+test('a recipe added by data alone is emitted, and a bad one fails with a message', () => {
+  const [inv, blocks] = fresh();
+  inv.recipes.push({ name: 'test:cairn', inputs: [{ item: 'dwell:rock', count: 4 }], output: { item: 'dwell:stone', count: 1 } });
+  const d = validateInventory(inv, blocks);
+  assert.match(inventoryRust(d), /Recipe \{ name: "test:cairn", inputs: &\[\("dwell:rock", 4\)\], output: \("dwell:stone", 1\) \}/);
+  assert.match(inventoryTs(d), /"name":"test:cairn"/);
+  const bad = (r, re) => {
+    const [i, b] = fresh();
+    i.recipes.push(r);
+    assert.throws(() => validateInventory(i, b), re);
+  };
+  bad({ name: 'test:x', inputs: [{ item: 'dwell:nothing', count: 1 }], output: { item: 'dwell:stone', count: 1 } }, /neither|must name/);
+  bad({ name: 'test:x', inputs: [], output: { item: 'dwell:stone', count: 1 } }, /inputs must be a list/);
+  bad({ name: 'test:x', inputs: [{ item: 'dwell:rock', count: 0 }], output: { item: 'dwell:stone', count: 1 } }, /count must be/);
+  bad({ name: 'test:x', inputs: [{ item: 'dwell:gem', count: 1 }], output: { item: 'dwell:stone', count: 1 } }, /currency/);
+  bad({ name: 'dwell:stone_axe', inputs: [{ item: 'dwell:rock', count: 1 }], output: { item: 'dwell:stone', count: 1 } }, /listed twice/);
 });

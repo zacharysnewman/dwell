@@ -648,7 +648,11 @@ fn the_server_combines_pieces_into_slabs_and_stone_tools() {
     assert_eq!((count(&fx, "dwell:log"), count(&fx, "dwell:wood")), (1, 0));
     // Stone tools: 2 sticks, 2 rock shards and 2 grass fibers; refused without the fibers.
     combine(&mut fx, "dwell:stone_pickaxe");
-    assert_eq!(count(&fx, "dwell:stone_pickaxe"), 0, "refused: no grass fiber");
+    assert_eq!(
+        count(&fx, "dwell:stone_pickaxe"),
+        0,
+        "refused: no grass fiber"
+    );
     fx.server.give(1, "dwell:rock_shard", 2);
     fx.server.give(1, "dwell:grass_fiber", 4);
     combine(&mut fx, "dwell:stone_pickaxe");

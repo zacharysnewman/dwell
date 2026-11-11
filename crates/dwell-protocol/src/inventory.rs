@@ -523,10 +523,12 @@ impl Inventory {
                     count,
                     wear: 0,
                 });
-            } else if r.ok() && (WEAR_AT..WEAR_AT + SLOTS).contains(&i) && item.is_empty() {
-                if let Some(s) = inv.slots[i - WEAR_AT].as_mut() {
-                    s.wear = count;
-                }
+            } else if r.ok()
+                && (WEAR_AT..WEAR_AT + SLOTS).contains(&i)
+                && item.is_empty()
+                && let Some(s) = inv.slots[i - WEAR_AT].as_mut()
+            {
+                s.wear = count;
             }
         }
         if usize::from(inv.held) >= HOTBAR_SLOTS {
@@ -667,10 +669,7 @@ mod tests {
                 recipe: recipe_id("dwell:stone_axe")
             })
         );
-        assert_eq!(
-            combine_request(inventory_flags::COMBINE, "test:none"),
-            None
-        );
+        assert_eq!(combine_request(inventory_flags::COMBINE, "test:none"), None);
     }
 
     #[test]
