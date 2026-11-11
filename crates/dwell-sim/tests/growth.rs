@@ -71,7 +71,11 @@ dwell_world::both_faces!(
         assert_eq!(got.stage, 5, "three stages after three stages' days");
         let five = cells_at(&r, 5);
         let want: Vec<u16> = five.iter().map(|(_, m)| *m).collect();
-        assert_eq!(cells(&mut fx, &five), want, "the world holds stage 5's tree");
+        assert_eq!(
+            cells(&mut fx, &five),
+            want,
+            "the world holds stage 5's tree"
+        );
         // Nothing more is due yet.
         fx.server.grow_trees_now();
         assert_eq!(fx.server.growth().trees[&r.anchor].stage, 5);
@@ -88,14 +92,21 @@ dwell_world::both_faces!(
             .map(|(c, _)| c)
             .find(|c| !two.contains(c))
             .unwrap();
-        fx.server.world().set_voxel(built[0], built[1], built[2], stone);
+        fx.server
+            .world()
+            .set_voxel(built[0], built[1], built[2], stone);
         fx.server.grow_trees_now();
-        assert_eq!(fx.server.world().get_voxel(built[0], built[1], built[2]), stone);
+        assert_eq!(
+            fx.server.world().get_voxel(built[0], built[1], built[2]),
+            stone
+        );
 
         // A second tree, felled at its foot before it is due: it never grows.
         let (mut fx, r) = scene(f, config(f), 3.0);
         let a = r.anchor;
-        fx.server.world().set_voxel(a[0], a[1], a[2], dwell_world::M.air);
+        fx.server
+            .world()
+            .set_voxel(a[0], a[1], a[2], dwell_world::M.air);
         fx.server.grow_trees_now();
         let got = fx.server.growth().trees[&a].clone();
         assert!(got.stopped);

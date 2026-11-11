@@ -100,9 +100,7 @@ impl Server {
             let swaps = growers.as_ref().map_or(Vec::new(), |g| g.swaps(&r));
             let step = {
                 let world = &self.world;
-                dwell_worldgen::growth::step(&r, target, &swaps, &|c| {
-                    world.get_voxel_if_loaded(c)
-                })
+                dwell_worldgen::growth::step(&r, target, &swaps, &|c| world.get_voxel_if_loaded(c))
             };
             if step.chunks.iter().any(|&k| self.world.find(k).is_none()) {
                 continue; // wait until its whole box is loaded
