@@ -1386,9 +1386,16 @@ function play(app: App, joined: Extract<SessionReport, { phase: 'joined' }>): vo
   });
   app.client.select(0);
   // The backpack screen (ADR 0066): E opens and closes it in a world that uses items.
-  app.backpack = new Backpack(document.body, itemPicture, (from, to, count) => {
-    app.client.moveItems(from, to, count);
-  });
+  app.backpack = new Backpack(
+    document.body,
+    itemPicture,
+    (from, to, count) => {
+      app.client.moveItems(from, to, count);
+    },
+    (recipe) => {
+      app.client.combine(recipe);
+    },
+  );
   window.addEventListener(
     'keydown',
     (e) => {

@@ -552,6 +552,175 @@ impl Inventory {
 mod tests {
     use super::*;
 
+    // --- Pieces, combining and wear (owner, 2026-11-11) ---
+
+    /// The certain drops of a block, as `damage` splits them (item, least count).
+    fn certain(block: &str) -> Vec<(&'static str, u16)> {
+        drops_of(block)
+            .unwrap()
+            .drops
+            .iter()
+            .filter(|r| r.chance >= 1.0 && r.choices.len() == 1)
+            .map(|r| (r.choices[0].item, r.choices[0].min))
+            .collect()
+    }
+
+    #[test]
+    fn a_half_metre_cell_breaks_into_eight_pieces_of_its_material() {
+        for (block, piece) in [
+            ("dwell:stone", "dwell:rock_shard"),
+            ("dwell:stone_ramp", "dwell:rock_shard"),
+            ("dwell:dirt", "dwell:dirt_clump"),
+            ("dwell:dirt_ramp", "dwell:dirt_clump"),
+            ("dwell:grass", "dwell:dirt_clump"),
+            ("dwell:grass_ramp", "dwell:dirt_clump"),
+            ("dwell:snowy_grass", "dwell:dirt_clump"),
+            ("dwell:snowy_grass_ramp", "dwell:dirt_clump"),
+            ("dwell:log", "dwell:wood"),
+        ] {
+            assert_eq!(certain(block), vec![(piece, 8)], "{block}");
+            // Half over the hits, half on the destroy, totalling the 8 (stone pickaxe: 5 hits).
+            let hits: u32 = (1..5).map(|k| crate::damage::hit_share(8, 5, k)).sum();
+            assert_eq!((hits, crate::damage::destroy_share(8, 5)), (4, 4));
+        }
+        // "We still want rocks to be found in grass and dirt at random"; sticks from leaves.
+        for block in ["dwell:grass", "dwell:dirt", "dwell:snowy_grass"] {
+            let rules = drops_of(block).unwrap().drops;
+            assert!(
+                rules
+                    .iter()
+                    .any(|r| r.chance < 1.0 && r.choices[0].item == "dwell:rock"),
+                "{block}"
+            );
+        }
+        let leaves = drops_of("dwell:leaves").unwrap().drops;
+        assert_eq!(leaves[0].choices[0].item, "dwell:stick");
+        // Tall grass gives a grass fiber every time (the stone tools' last input).
+        assert!(certain("dwell:tall_grass").contains(&("dwell:grass_fiber", 1)));
+        assert_eq!(item("dwell:wood").unwrap().label, "Wood chunk");
+    }
+
+    static FIXTURE: &[Recipe] = &[Recipe {
+        name: "test:pebble_pile",
+        inputs: &[("dwell:rock", 3), ("dwell:stick", 1)],
+        output: ("dwell:stone", 2),
+    }];
+
+    #[test]
+    fn a_fixture_recipe_by_data_alone_takes_its_inputs_and_adds_its_output() {
+        let r = recipe_in(FIXTURE, recipe_id("test:pebble_pile")).expect("found by its id");
+        let mut inv = Inventory::default();
+        inv.add("dwell:rock", 5);
+        inv.add("dwell:stick", 1);
+        assert_eq!(inv.can_make(r), 1);
+        assert!(inv.combine(r));
+        assert_eq!(inv.count_of("dwell:rock"), 2);
+        assert_eq!(inv.count_of("dwell:stick"), 0);
+        assert_eq!(inv.count_of("dwell:stone"), 2);
+        // Refused without its inputs, changing nothing.
+        let before = inv.clone();
+        assert!(!inv.combine(r));
+        assert_eq!(inv, before);
+        assert!(recipe_in(FIXTURE, 1).is_none());
+    }
+
+    #[test]
+    fn the_stone_tools_take_two_sticks_two_shards_and_two_fibers() {
+        for tool in ["dwell:stone_axe", "dwell:stone_pickaxe"] {
+            let r = RECIPES.iter().find(|r| r.name == tool).expect(tool);
+            assert_eq!(
+                r.inputs,
+                &[
+                    ("dwell:stick", 2),
+                    ("dwell:rock_shard", 2),
+                    ("dwell:grass_fiber", 2)
+                ]
+            );
+            assert_eq!(r.output, (tool, 1));
+            let mut inv = Inventory::default();
+            inv.add("dwell:stick", 2);
+            inv.add("dwell:rock_shard", 2);
+            assert!(!inv.combine(r), "{tool}: refused without the fibers");
+            inv.add("dwell:grass_fiber", 2);
+            assert!(inv.combine(r));
+            assert_eq!(inv.count_of(tool), 1);
+            assert_eq!(inv.slots.iter().flatten().count(), 1, "the inputs used up");
+        }
+        for (name, piece, block) in [
+            ("dwell:stone_slab", "dwell:rock_shard", "dwell:stone"),
+            ("dwell:dirt_slab", "dwell:dirt_clump", "dwell:dirt"),
+            ("dwell:log_slab", "dwell:wood", "dwell:log"),
+        ] {
+            let r = RECIPES.iter().find(|r| r.name == name).expect(name);
+            assert_eq!((r.inputs, r.output), (&[(piece, 8)][..], (block, 1)));
+        }
+    }
+
+    #[test]
+    fn a_combine_request_goes_only_to_a_server_that_combines() {
+        use crate::messages::{InventoryAction, inventory_flags};
+        let older = inventory_flags::GROUND | inventory_flags::DAMAGE | inventory_flags::USES_ITEMS;
+        assert_eq!(combine_request(older, "dwell:stone_axe"), None);
+        assert_eq!(
+            combine_request(older | inventory_flags::COMBINE, "dwell:stone_axe"),
+            Some(InventoryAction::Combine {
+                recipe: recipe_id("dwell:stone_axe")
+            })
+        );
+        assert_eq!(
+            combine_request(inventory_flags::COMBINE, "test:none"),
+            None
+        );
+    }
+
+    #[test]
+    fn the_stone_axe_wears_by_one_a_hit_and_breaks_after_its_32nd() {
+        let hits = |item: &str| crate::chopping::durability(item);
+        assert_eq!(hits("dwell:stone_axe"), Some(32));
+        assert_eq!(hits("dwell:metal_axe"), None, "unlimited");
+        let mut inv = Inventory::starting();
+        assert_eq!(inv.slots[0].as_ref().unwrap().item, "dwell:stone_axe");
+        for n in 1..32 {
+            assert_eq!(inv.wear_held(hits), Wear::Worn(32 - n));
+        }
+        let before = inv.clone();
+        assert_eq!(inv.wear_held(hits), Wear::Broke);
+        assert!(inv.slots[0].is_none(), "gone");
+        assert!(before.tool_broke(&inv, hits), "the client's break sound");
+        assert_eq!(inv.wear_held(hits), Wear::None, "nothing held");
+        // An item that doesn't wear.
+        inv.add("dwell:metal_axe", 1);
+        assert_eq!(inv.wear_held(hits), Wear::None);
+    }
+
+    #[test]
+    fn wear_round_trips_and_an_older_build_reads_the_record_without_it() {
+        let mut inv = Inventory::starting();
+        inv.add("dwell:rock", 3);
+        inv.wear_held(crate::chopping::durability);
+        inv.wear_held(crate::chopping::durability);
+        // Moving the axe keeps its wear.
+        assert!(inv.move_items(0, 10, 0));
+        assert_eq!(inv.slots[10].as_ref().unwrap().wear, 2);
+        let bytes = inv.to_bytes();
+        assert_eq!(Inventory::from_bytes(&bytes), Some(inv.clone()));
+        // An older build's reader (before wear): it skips entries past its slot count, so it reads
+        // the same stacks unworn and the record is still version 1.
+        let mut r = ByteReader::new(&bytes);
+        assert_eq!(r.u8(), 1);
+        let (_, _, _) = (r.u8(), r.str(MAX_ITEM_NAME), r.u16());
+        let n = r.u8();
+        let mut stacks = 0;
+        for _ in 0..n {
+            let (i, item, count) = (usize::from(r.u8()), r.str(MAX_ITEM_NAME), r.u16());
+            if i < SLOTS && count > 0 && !item.is_empty() {
+                stacks += 1;
+            }
+        }
+        assert!(r.ok() && r.at_end());
+        assert_eq!(stacks, 2, "the axe and the rocks, the wear entry skipped");
+    }
+
     /// Owner, 2026-11-10: the hotbar went from 9 slots to 6 and the backpack from 27 to 30, so
     /// every slot keeps its index (36 in all). A record saved with 9 hotbar slots reads back with
     /// old slots 7–9 (indices 6–8) as the backpack's first three: nothing lost, the record as it
@@ -609,13 +778,19 @@ mod tests {
                 .flat_map(|r| r.choices.iter().map(|c| c.item))
                 .collect()
         };
-        assert_eq!(items("dwell:grass"), ["dwell:dirt", "dwell:rock"]);
-        assert_eq!(items("dwell:dirt"), ["dwell:dirt"]);
+        // Owner, 2026-11-11: a cell breaks into 8 pieces of its material; rocks still at random.
+        assert_eq!(items("dwell:grass"), ["dwell:dirt_clump", "dwell:rock"]);
+        assert_eq!(items("dwell:dirt"), ["dwell:dirt_clump", "dwell:rock"]);
         assert_eq!(items("dwell:leaves"), ["dwell:stick"]);
-        assert_eq!(items("dwell:stone"), ["dwell:stone"]);
+        assert_eq!(items("dwell:stone"), ["dwell:rock_shard"]);
         assert_eq!(
             items("dwell:tall_grass"),
-            ["dwell:grass_seed", "dwell:gem", "dwell:gem_large"]
+            [
+                "dwell:grass_fiber",
+                "dwell:grass_seed",
+                "dwell:gem",
+                "dwell:gem_large"
+            ]
         );
         // A ramp drops what its base drops and placing it costs its base.
         assert_eq!(items("dwell:grass_ramp"), items("dwell:grass"));
@@ -641,17 +816,19 @@ mod tests {
         let rules = drops_of("dwell:tall_grass").unwrap().drops;
         let mut random = rng(0x5eed);
         let n = 40_000;
-        let (mut seeds, mut gems, mut large) = (0, 0, 0);
+        let (mut seeds, mut gems, mut large, mut fibers) = (0, 0, 0, 0);
         for _ in 0..n {
             for s in roll(rules, &mut random) {
                 match s.item.as_str() {
                     "dwell:grass_seed" => seeds += s.count,
                     "dwell:gem" => gems += s.count,
                     "dwell:gem_large" => large += s.count,
+                    "dwell:grass_fiber" => fibers += s.count,
                     other => panic!("{other}"),
                 }
             }
         }
+        assert_eq!(fibers, n, "a grass fiber every time");
         let frac = |k: u16| f64::from(k) / f64::from(n);
         assert!((frac(seeds) - 0.5).abs() < 0.01, "seeds {}", frac(seeds));
         assert!(

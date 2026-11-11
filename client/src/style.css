@@ -3393,6 +3393,80 @@ body.loading-wait #brush-panel {
   margin-top: 8px;
 }
 
+/* A wearing tool's bar (owner, 2026-11-11): the hits left, along the slot's foot. */
+.wear-bar {
+  position: absolute;
+  right: 4px;
+  bottom: 3px;
+  left: 4px;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: rgb(0 0 0 / 55%);
+}
+
+.wear-bar > span {
+  display: block;
+  height: 100%;
+}
+
+/* The backpack's Combine section: a button per recipe the inventory can make. */
+.backpack-combine {
+  margin-top: 12px;
+}
+
+.backpack-combine[hidden] {
+  display: none;
+}
+
+.combine-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.combine-recipe {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--glass-line);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 8%);
+  color: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.combine-recipe:hover,
+.combine-recipe:focus-visible {
+  background: rgb(255 255 255 / 18%);
+}
+
+.combine-output {
+  font: 700 13px var(--font-body);
+}
+
+.combine-inputs {
+  grid-row: 2;
+  color: rgb(255 255 255 / 70%);
+  font: 400 11px var(--font-body);
+}
+
+.combine-times {
+  grid-row: 1 / 3;
+  grid-column: 2;
+  align-self: center;
+  font: 700 13px var(--font-body);
+}
+
+.combine-none {
+  color: rgb(255 255 255 / 60%);
+  font: 400 12px var(--font-body);
+}
+
 /* The creative inventory view (docs/ITEMS.md §6a): the catalogue's groups, scrolling, over the
    hotbar's six slots. */
 #creative-inventory {

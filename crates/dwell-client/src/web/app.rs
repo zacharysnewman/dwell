@@ -2205,6 +2205,7 @@ impl Client {
                                 let o = Object::new();
                                 set(&o, "item", s.item.as_str());
                                 set(&o, "count", u32::from(s.count));
+                                set(&o, "wear", u32::from(s.wear));
                                 JsValue::from(o)
                             }
                             None => JsValue::NULL,
@@ -2214,6 +2215,7 @@ impl Client {
                     set(&i, "held", g.inventory_slot as u32);
                     set(&i, "money", u32::from(inv.money));
                     set(&i, "capacity", u32::from(inv.capacity()));
+                    set(&i, "combines", g.combines());
                     set(&o, "inventory", i);
                 }
                 None => set(&o, "inventory", JsValue::NULL),
