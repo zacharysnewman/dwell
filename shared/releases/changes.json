@@ -2,6 +2,14 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.52.85",
+      "changes": [
+        "The Starter world's youngest island now has a lava lake on its summit",
+        "Lava now burns as its own kind of damage (older versions show it as a fall)",
+        "Digging a channel or pouring water next to lava now changes where it flows"
+      ]
+    },
+    {
       "version": "0.52.84",
       "changes": [
         "Starter world: the alpine tundra, boreal forest and steppe have their own snow lines, set by temperature, with glacier ice high on the tundra",
