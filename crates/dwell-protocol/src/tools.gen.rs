@@ -38,16 +38,16 @@ pub static BREAK_CLASSES: &[(&str, &str)] = &[
 
 /// Each block's hits to destroy (its `damage`): by bare hands, and by tool class or item.
 pub static BLOCK_DAMAGE: &[BlockDamageDef] = &[
-    BlockDamageDef { block: "dwell:stone", default: None, tools: &[("pickaxe", 7)], look: Some(DamageLook { kind: DamageLookKind::Shards, size: 0.34, color: [228, 221, 207], crack: [61, 56, 48] }) },
-    BlockDamageDef { block: "dwell:dirt", default: Some(11), tools: &[("shovel", 7)], look: Some(DamageLook { kind: DamageLookKind::Scoops, size: 0.38, color: [74, 51, 34], crack: [46, 32, 22] }) },
-    BlockDamageDef { block: "dwell:grass", default: Some(11), tools: &[("shovel", 7)], look: Some(DamageLook { kind: DamageLookKind::Scoops, size: 0.38, color: [74, 51, 34], crack: [46, 32, 22] }) },
+    BlockDamageDef { block: "dwell:stone", default: None, tools: &[("pickaxe", 7)], look: Some(DamageLook { kind: DamageLookKind::Shards, size: 0.34, color: [228, 221, 207], crack: [122, 114, 102] }) },
+    BlockDamageDef { block: "dwell:dirt", default: Some(11), tools: &[("shovel", 7)], look: Some(DamageLook { kind: DamageLookKind::Scoops, size: 0.38, color: [74, 51, 34], crack: [63, 45, 31] }) },
+    BlockDamageDef { block: "dwell:grass", default: Some(11), tools: &[("shovel", 7)], look: Some(DamageLook { kind: DamageLookKind::Scoops, size: 0.38, color: [74, 51, 34], crack: [63, 45, 31] }) },
     BlockDamageDef { block: "dwell:sand", default: Some(11), tools: &[("shovel", 7)], look: Some(DamageLook { kind: DamageLookKind::Scoops, size: 0.38, color: [168, 134, 90], crack: [110, 86, 54] }) },
-    BlockDamageDef { block: "dwell:stone_ramp", default: None, tools: &[("pickaxe", 7)], look: Some(DamageLook { kind: DamageLookKind::Shards, size: 0.34, color: [228, 221, 207], crack: [61, 56, 48] }) },
-    BlockDamageDef { block: "dwell:dirt_ramp", default: Some(11), tools: &[("shovel", 7)], look: Some(DamageLook { kind: DamageLookKind::Scoops, size: 0.38, color: [74, 51, 34], crack: [46, 32, 22] }) },
-    BlockDamageDef { block: "dwell:grass_ramp", default: Some(11), tools: &[("shovel", 7)], look: Some(DamageLook { kind: DamageLookKind::Scoops, size: 0.38, color: [74, 51, 34], crack: [46, 32, 22] }) },
+    BlockDamageDef { block: "dwell:stone_ramp", default: None, tools: &[("pickaxe", 7)], look: Some(DamageLook { kind: DamageLookKind::Shards, size: 0.34, color: [228, 221, 207], crack: [122, 114, 102] }) },
+    BlockDamageDef { block: "dwell:dirt_ramp", default: Some(11), tools: &[("shovel", 7)], look: Some(DamageLook { kind: DamageLookKind::Scoops, size: 0.38, color: [74, 51, 34], crack: [63, 45, 31] }) },
+    BlockDamageDef { block: "dwell:grass_ramp", default: Some(11), tools: &[("shovel", 7)], look: Some(DamageLook { kind: DamageLookKind::Scoops, size: 0.38, color: [74, 51, 34], crack: [63, 45, 31] }) },
     BlockDamageDef { block: "dwell:sand_ramp", default: Some(11), tools: &[("shovel", 7)], look: Some(DamageLook { kind: DamageLookKind::Scoops, size: 0.38, color: [168, 134, 90], crack: [110, 86, 54] }) },
-    BlockDamageDef { block: "dwell:snowy_grass", default: Some(11), tools: &[("shovel", 7)], look: Some(DamageLook { kind: DamageLookKind::Scoops, size: 0.38, color: [74, 51, 34], crack: [46, 32, 22] }) },
-    BlockDamageDef { block: "dwell:snowy_grass_ramp", default: Some(11), tools: &[("shovel", 7)], look: Some(DamageLook { kind: DamageLookKind::Scoops, size: 0.38, color: [74, 51, 34], crack: [46, 32, 22] }) },
+    BlockDamageDef { block: "dwell:snowy_grass", default: Some(11), tools: &[("shovel", 7)], look: Some(DamageLook { kind: DamageLookKind::Scoops, size: 0.38, color: [74, 51, 34], crack: [63, 45, 31] }) },
+    BlockDamageDef { block: "dwell:snowy_grass_ramp", default: Some(11), tools: &[("shovel", 7)], look: Some(DamageLook { kind: DamageLookKind::Scoops, size: 0.38, color: [74, 51, 34], crack: [63, 45, 31] }) },
 ];
 
 /// Each tool item's class, tier and that tier's break speed (`breaking.tools`).

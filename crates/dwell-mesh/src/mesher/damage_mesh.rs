@@ -176,10 +176,11 @@ fn decal(
     }
     // Cracks that grow with the damage: thin wedges out from the mark.
     if fraction > 0.2 {
-        let len = r * (0.8 + 1.6 * fraction);
+        // Toned down after the first look (thinner, shorter, a softer colour: the storybook style).
+        let len = r * (0.6 + 1.1 * fraction);
         for k in 0..3 {
             let th = turn + 0.3 + f64::from(k) * (2.0 + 0.4 * jitter(40 + k));
-            let w = 0.018 + 0.012 * fraction;
+            let w = 0.008 + 0.006 * fraction;
             let a = at(r * 0.5, th - w / (r * 0.5).max(0.05), 0.002);
             let b = at(len, th, 0.002);
             let c = at(r * 0.5, th + w / (r * 0.5).max(0.05), 0.002);
