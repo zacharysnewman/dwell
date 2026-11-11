@@ -84,6 +84,36 @@ pub fn hits_to_break(block: &str, held: Option<&str>) -> Option<u32> {
     hits_to_break_in(BLOCK_DAMAGE, BREAK_TOOLS, block, held)
 }
 
+/// Whether `held` is a breaking tool (one of `tools.json`'s, the pickaxes, shovels and axes): an
+/// empty hand, a block or any other item is not.
+pub fn is_break_tool_in(tools: &[BreakTool], held: Option<&str>) -> bool {
+    held.is_some_and(|h| tools.iter().any(|t| t.item == h))
+}
+
+/// The hits to destroy `block` holding `held` in a mode that does or doesn't allow
+/// `instant_breaks` (`dwell_protocol::modes::Ability::InstantBreaks`; creative, owner
+/// 2026-11-11: "I should be able to break any block while holding anything or nothing with the
+/// exception of tools"): with it, anything but a breaking tool breaks every block in one hit; a
+/// tool held keeps its hits. Without it, [`hits_to_break_in`].
+pub fn hits_to_break_in_mode(
+    damage: &[BlockDamageDef],
+    tools: &[BreakTool],
+    block: &str,
+    held: Option<&str>,
+    instant_breaks: bool,
+) -> Option<u32> {
+    if instant_breaks && !is_break_tool_in(tools, held) {
+        return Some(1);
+    }
+    hits_to_break_in(damage, tools, block, held)
+}
+
+/// [`hits_to_break_in_mode`] over the build's data: the server and the client's prediction ask
+/// this, so they agree.
+pub fn hits_to_break_for(block: &str, held: Option<&str>, instant_breaks: bool) -> Option<u32> {
+    hits_to_break_in_mode(BLOCK_DAMAGE, BREAK_TOOLS, block, held, instant_breaks)
+}
+
 /// How many of a block's `total` drops (of one item) hit `k` (1-based) of `hits` gives: half the
 /// total (rounded down) spread over the hits before the last, so the hits' and the destroy's
 /// ([`destroy_share`]) sum to `total` exactly.
@@ -332,6 +362,40 @@ mod tests {
         );
         // A block without `damage` breaks in one hit, as before.
         assert_eq!(hits_to_break("dwell:leaves", None), Some(1));
+    }
+
+    #[test]
+    fn with_instant_breaks_anything_but_a_tool_breaks_any_block_in_one_hit() {
+        // Owner, 2026-11-11 (creative): "I should be able to break any block while holding
+        // anything or nothing with the exception of tools."
+        for held in [None, Some("dwell:dirt"), Some("dwell:torch")] {
+            assert_eq!(
+                hits_to_break_for("dwell:stone", held, true),
+                Some(1),
+                "{held:?}"
+            );
+            assert_eq!(
+                hits_to_break_for("dwell:dirt", held, true),
+                Some(1),
+                "{held:?}"
+            );
+        }
+        // A tool keeps its hits, and its "can't" (a shovel on stone).
+        assert_eq!(
+            hits_to_break_for("dwell:stone", Some("dwell:stone_pickaxe"), true),
+            Some(5)
+        );
+        assert_eq!(
+            hits_to_break_for("dwell:stone", Some("dwell:metal_shovel"), true),
+            None
+        );
+        // Without it (adventure), as the data says: bare hands can't break stone.
+        assert_eq!(hits_to_break_for("dwell:stone", None, false), None);
+        assert_eq!(hits_to_break_for("dwell:dirt", None, false), Some(11));
+        // And the modes' data gives it to creative only.
+        use crate::modes::{Ability, mode};
+        assert!(mode("creative").unwrap().allows(Ability::InstantBreaks));
+        assert!(!mode("adventure").unwrap().allows(Ability::InstantBreaks));
     }
 
     #[test]

@@ -1573,6 +1573,48 @@ fn an_edit_shows_at_once_and_the_servers_ack_settles_it() {
     assert_eq!(rig.game.as_ref().unwrap().prediction.stats.corrected, 0);
 }
 
+/// Regression (owner, 2026-11-11): in creative, stone couldn't be broken without a pickaxe. Holding
+/// a block (not a tool) it breaks in one hit, the client predicts it at once, and the server agrees
+/// (no refusal to roll back, no flicker).
+#[test]
+fn in_creative_a_block_in_hand_breaks_stone_at_once_as_predicted() {
+    let mut rig = predicting_rig(8);
+    let stone = dwell_blocks::require("dwell:stone");
+    let half = dwell_game::block_interaction::palette()
+        .iter()
+        .position(|s| s.item == "dwell:stone")
+        .expect("a ½ m stone");
+    rig.game.as_mut().unwrap().interaction.select(half as i64);
+    let floor = target_at(&mut rig, 0.0, -40.0);
+    let p = [floor[0], floor[1] + 1, floor[2]];
+    let mut now = rig.now + 1000.0;
+    assert!(rig.game.as_mut().unwrap().edit(EditAction::Place, now));
+    assert!(rig.run_until(120, |r| r.game.as_ref().unwrap().prediction.pending() == 0));
+    assert_eq!(server_voxel(&mut rig, p), stone, "placed");
+    rig.frame();
+    let aimed = rig
+        .game
+        .as_ref()
+        .unwrap()
+        .debug_state()
+        .target
+        .unwrap()
+        .cell;
+    assert_eq!(aimed, p, "the crosshair sees the stone");
+    now += 200.0;
+    assert!(rig.game.as_mut().unwrap().edit(EditAction::Break, now));
+    assert_eq!(host_voxel(&mut rig, p), 0, "predicted at once");
+    assert!(rig.run_until(120, |r| r.game.as_ref().unwrap().prediction.pending() == 0));
+    assert_eq!(
+        server_voxel(&mut rig, p),
+        0,
+        "the server broke it in one hit"
+    );
+    assert_eq!(host_voxel(&mut rig, p), 0);
+    let stats = rig.game.as_ref().unwrap().prediction.stats;
+    assert_eq!((stats.refused, stats.corrected), (0, 0), "no flicker");
+}
+
 #[test]
 fn a_refused_edit_rolls_back() {
     use dwell_sim::server::EditPolicy;

@@ -2503,7 +2503,8 @@ impl Server {
                 // Blocks take hits to break by the tool held (docs/BLOCK_DAMAGE.md, ADR 0078; the
                 // same in every mode): a hit short of the count is recorded and the block stays
                 // (the client's predicted break gives way, as to a refusal); none: it can't be
-                // broken so (stone by hand).
+                // broken so (stone by hand). A mode with `instantBreaks` (creative; owner
+                // 2026-11-11) breaks every block in one hit with anything but a tool held.
                 if edit.action == BlockEditAction::Break {
                     let state = self.world.get_voxel_if_loaded(outcome.cell);
                     let block = dwell_blocks::block_of(state).name;
@@ -2511,7 +2512,11 @@ impl Server {
                     let need = if self.config.one_hit_breaks {
                         Some(1)
                     } else {
-                        dwell_protocol::damage::hits_to_break(block, held)
+                        dwell_protocol::damage::hits_to_break_for(
+                            block,
+                            held,
+                            self.settings.allows(Ability::InstantBreaks),
+                        )
                     };
                     // A hit that counts wears the held tool (owner, 2026-11-11), where items are
                     // used (or creative too, `creativeWear`).

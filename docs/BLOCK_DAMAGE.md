@@ -17,7 +17,9 @@ D3 (tuning) to come. The owner's direction and answers are §1; §2 was the prop
      other half ("drop some of the resource on [hit], on destroy drop the other half of the chunks").
   3. **Hits: tiered**, as data: the right tool at stone tier about 5 hits, metal about 3, the wrong tool or
      bare hands about 10–12; bare hands can't break stone.
-  4. **Same in both modes:** creative damages blocks over several hits too.
+  4. **Same in both modes:** creative damages blocks over several hits too. Revised (owner,
+     2026-11-11): "I should be able to break any block while holding anything or nothing with the
+     exception of tools": in creative only a tool's hits count; anything else breaks in one hit (§7).
 
 ## 2. Design sketch
 
@@ -80,7 +82,7 @@ D3 (tuning) to come. The owner's direction and answers are §1; §2 was the prop
   as (a cell holding another state is undamaged), the hits taken, and up to `MAX_HIT_MARKS` (4) hit
   marks (the struck face and a point, for D2). The point is the face's centre until the edit request
   carries the struck point (D2). A changed cell's damage is cleared (`broadcast_changes`, with its cuts).
-- **Hits** (server, `tick_edits`): a Break of a block needing more than one hit by the held item
+- **Hits** (server, `tick_edits`; creative without a tool: §7): a Break of a block needing more than one hit by the held item
   (adventure: the held inventory slot; creative: the hotbar's tool, told by `ChopAction::Held`, which
   now carries pickaxes and shovels too) records a hit and leaves the block; the edit is acked as
   refused, so a predicted break gives way. The hit that reaches the count breaks it. A block that
@@ -92,7 +94,7 @@ D3 (tuning) to come. The owner's direction and answers are §1; §2 was the prop
   every chance drop on the destroy (`destroy_share`), so the hits and the destroy total the block's
   drops exactly. Today's blocks drop one item, so a hit drops nothing yet: the per-hit drops show once a
   block drops more (D3 tuning, the owner's call).
-- **Client:** a Break the data says takes one hit is predicted at once as before; one that takes more
+- **Client:** a Break the data (and the mode, §7) says takes one hit is predicted at once as before; one that takes more
   is not predicted (the server's hits so far aren't the client's), and its last hit shows when the
   server's change arrives.
 - **Saved** with the world in its own optional record (`block_damage` table, `Damage::to_bytes`
@@ -145,3 +147,23 @@ dark patch more than a bowl).
   want rocks to be found in grass and dirt at random"); leaves keep their sticks; tall grass drops a
   `dwell:grass_fiber` every time (owner: "2 grass fibers would be the final ingredient for stone
   tools"). Felled pieces (bodies), sand, snow, ice and the rest keep their drops.
+
+## 7. Creative breaks without a tool in one hit (0.52.51)
+
+- Owner, 2026-11-11: "I noticed I can't break blocks like stone with my fists in creative, that's not
+  right. I should be able to break any block while holding anything or nothing with the exception of
+  tools."
+- **Data:** a mode ability, `instantBreaks` (`shared/modes/modes.json`; `dwell_protocol::modes::Ability::InstantBreaks`),
+  creative's only. In a mode with it, a Break holding anything but a breaking tool (an empty hand, a
+  block, any item not in `tools.json`'s breaking tools) takes one hit, whatever the block's `damage`
+  says: no damage record, no hit drops. A tool held keeps its hits and its "can't" (a pickaxe on stone 5
+  or 3 hits; a shovel on stone can't; the axe's chopping unchanged). Adventure lacks it: bare hands
+  can't break stone.
+- **One rule for both sides:** `dwell_protocol::damage::hits_to_break_for(block, held, instant_breaks)`,
+  asked by the server (`tick_edits`, the world's mode) and by the client's break prediction
+  (`Game::set_instant_breaks`, from the world's mode at join and when the host changes it), so a creative
+  break without a tool is predicted at once and not refused.
+- Tests: `dwell-protocol` `damage` (the rule and the modes' data), `dwell-sim` `damage`
+  (`in_creative_anything_but_a_tool_breaks_any_block_in_one_hit`, both faces; adventure bare hands and a
+  creative shovel still can't break stone), `dwell-client` `game_local`
+  (`in_creative_a_block_in_hand_breaks_stone_at_once_as_predicted`: predicted, no refusal).

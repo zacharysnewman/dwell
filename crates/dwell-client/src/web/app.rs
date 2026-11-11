@@ -595,6 +595,7 @@ impl Client {
             {
                 game.set_capabilities(region_edits, brushes);
                 game.set_vitals_rules(session.vitals_rules());
+                game.set_instant_breaks(session.instant_breaks());
                 if let Some(v) = s.input.flight.set_allowed(may_fly) {
                     s.shell_events.push(shell_event("flightAllowed", v));
                 }
@@ -2996,6 +2997,7 @@ impl Inner {
         }
         if let Some(s) = self.session.as_ref() {
             game.set_vitals_rules(s.vitals_rules());
+            game.set_instant_breaks(s.instant_breaks());
         }
         game.set_loading_screen(self.options.loading_screen);
         game.set_crossing_roll(self.crossing_roll);
