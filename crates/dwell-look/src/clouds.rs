@@ -587,8 +587,8 @@ fn cloud_value3(p: vec3f) -> f32 {
 }
 
 // The volume's density (0-1) at the noise point `q` (cells), face-local height `h` (m), `rel` metres
-// across from the eye: the deck's shape as the weather map (a one-octave warp, two octaves: the
-// march's budget) times the vertical profile (taller where denser), plus the plumes, eroded by the
+// across from the eye: the deck's noise as the weather map (a one-octave warp, two octaves: the
+// march's budget), cut higher with height (rounded tops, the densest tallest), plus the plumes, eroded by the
 // 3D detail (`detail`: the view samples; the light samples skip it).
 fn dwell_cloud_density(q: vec2f, h: f32, rel: vec2f, coverage: f32, warp_off: vec2f, eye: vec2f, detail: bool) -> f32 {
 	var d = 0.0;
@@ -596,9 +596,11 @@ fn dwell_cloud_density(q: vec2f, h: f32, rel: vec2f, coverage: f32, warp_off: ve
 	if (y > 0.0 && y < 1.0 && coverage > 0.0) {
 		let w0 = q + warp_off;
 		let wq = q + CLOUD_WARP * (vec2f(cloud_value(w0), cloud_value(w0 + vec2f(5.2, 1.3))) - 0.5);
-		let w = cloud_shape(cloud_fbm(wq, 2, 0.0), coverage);
-		let top = mix(CLOUD_VOL_TOP_FLOOR, 1.0, w);
-		d = w * smoothstep(0.0, 0.1, y) * (1.0 - smoothstep(top * 0.55, top, y));
+		// The coverage's cut rises with height, so each cloud narrows upward into a rounded top
+		// (a dome over a flat base) instead of a straight-walled column; the densest reach highest.
+		let n = clamp((cloud_fbm(wq, 2, 0.0) - 0.5) * CLOUD_CONTRAST + 0.5, 0.0, 1.0);
+		let cut = 1.0 - coverage + (1.0 - CLOUD_VOL_TOP_FLOOR) * y * y + 0.15 * (1.0 - smoothstep(0.0, 0.12, y));
+		d = smoothstep(cut, cut + CLOUD_SOFTNESS, n);
 	}
 	d = max(d, cloud_plumes(rel, h, eye));
 	if (detail && d > 0.0) {
@@ -675,9 +677,10 @@ fn dwell_cloud_volume(clear: vec3f, dir: vec3f, face: f32, max_t: f32, jitter: f
 			let lrel = rel + light.xz * s;
 			od += CLOUD_VOL_LIGHT_STEP * dwell_cloud_density(offsets.xy + lrel / CLOUD_SCALE, h + light_rise * s, lrel, cfg.x, offsets.zw, inside.yz, false);
 		}
-		let beer = exp(-CLOUD_VOL_EXTINCTION * od);
-		let powder = mix(1.0, 1.0 - exp(-2.0 * CLOUD_VOL_EXTINCTION * od), CLOUD_VOL_POWDER);
-		let col = shade_col * CLOUD_VOL_AMBIENT + lit_col * beer * powder * (1.0 - 0.5 * CLOUD_VOL_AMBIENT);
+		// Beer toward the light, with the powder term darkening the thin, unlit edges a little.
+		let beer = exp(-CLOUD_ABSORPTION * CLOUD_VOL_EXTINCTION * od);
+		let powder = mix(1.0, 1.0 - exp(-4.0 * CLOUD_VOL_EXTINCTION * od), CLOUD_VOL_POWDER);
+		let col = mix(shade_col, lit_col, CLOUD_VOL_AMBIENT + (1.0 - CLOUD_VOL_AMBIENT) * beer * powder);
 		let a = 1.0 - exp(-CLOUD_VOL_EXTINCTION * d * dt);
 		energy += trans * a * col;
 		trans *= 1.0 - a;
@@ -1324,7 +1327,8 @@ mod volume_tests {
         assert_eq!(CloudQuality::Low.volume(&CLOUDS), CLOUDS.tiers.low);
         assert_eq!(CloudQuality::Off.volume(&CLOUDS).steps, 0);
         // The shipped tiers: High marches, Low (phones' default) keeps the 2D deck.
-        assert!(CLOUDS.tiers.high.steps > 0 && CLOUDS.tiers.high.steps <= MAX_STEPS);
+        let high = CloudQuality::High.volume(&CLOUDS).steps;
+        assert!(high > 0 && high <= MAX_STEPS);
         assert_eq!(CLOUDS.tiers.low.steps, 0);
     }
 

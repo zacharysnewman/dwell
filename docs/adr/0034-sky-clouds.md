@@ -51,3 +51,22 @@ recorded in `CLOUDS.md` §1 with the open questions.
   and weather-driven coverage come later (C6, C7).
 - Reversing it means removing `clouds.rs`, the call in `composite_fs`, two frame uniforms and the
   setting. The setting's stored key is then ignored (the store is append-only).
+
+## Amendment (2026-11-11): volumetric clouds
+
+The owner: "volumetric clouds in the sky. These clouds will likely be useful for weather sim, and
+volcano smoke. So they need to be performant." The original decision ("not 3D") is amended:
+
+- The Clouds setting's tiers are data (`clouds.json` `tiers`): High ray-marches a volumetric layer
+  (`volume`: base and top altitudes, a weather map from the deck's noise, a height-shaped cut, 3D
+  detail noise, Beer and powder lighting with a few light samples); Low keeps the 2D deck (phones);
+  the CPU adapter draws none, as before.
+- The density takes extra sources as data (`plumes`: vertical columns, e.g. volcano ash), generated
+  into the shader.
+- The deck stays the cheap path wherever the sky is sampled outside the composite (Snell's window,
+  the water's reflections, the other face's sky).
+- First slice: the march is per pixel in the composite. A half-resolution pass with temporal
+  reprojection is the next step, to bring the cost from above into budget (`CLOUDS.md` §8.3, §8.5).
+
+Consequences: High costs more GPU time where much of the screen is cloud (`CLOUDS.md` §8.3); the
+setting's stored values are unchanged (no store change); client-side visuals only.
