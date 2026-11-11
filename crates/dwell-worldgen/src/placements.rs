@@ -159,12 +159,22 @@ impl Planter {
             .enumerate()
             .map(|(i, p)| {
                 let stream = 0x7EE5_0000 + 2 * i as u32;
+                // A name may be a committed structure or a tree species (ADR 0079): a species
+                // stands its seeded, staged trees, each of them at the entry's weight.
                 let shapes: Vec<Shape> = p
                     .structures
                     .iter()
-                    .map(|&(name, weight)| {
-                        let structure = structure::load(name)
-                            .unwrap_or_else(|e| panic!("placement {}: {e}", p.name));
+                    .flat_map(|&(name, weight)| {
+                        let built = match crate::species::find(name) {
+                            Some(s) => crate::species::structures(s),
+                            None => structure::load(name).map(|s| vec![s]),
+                        };
+                        built
+                            .unwrap_or_else(|e| panic!("placement {}: {e}", p.name))
+                            .into_iter()
+                            .map(move |s| (s, weight))
+                    })
+                    .map(|(structure, weight)| {
                         let boxes = std::array::from_fn(|t| {
                             let placed = structure.place_oriented(
                                 [0, 0, 0],
@@ -623,6 +633,45 @@ mod tests {
         assert_eq!(p[0].reach(), 3, "the tall pine reaches 3 m from its trunk");
         // In cells: the 9 m pine is 18 ½ m cells on the half-height grid, its top 17 over the anchor.
         assert_eq!(p[0].rise(), 9 * dwell_world::rows_for_m(1.0) - 1);
+    }
+
+    #[test]
+    fn a_placement_naming_a_species_stands_its_seeded_trees() {
+        // face-a-only: the planter's rules are face-local; the face is crossed by the generator.
+        let rule = Placement {
+            name: "test_oaks",
+            structures: &[("dwell:oak", 1)],
+            on: &["dwell:grass"],
+            footprint_on: false,
+            grid: 12,
+            density: 1.0,
+            grove_wavelength: 0,
+            grove_coverage: 1.0,
+            grove_outside: 1.0,
+            min_height: 0,
+            max_height: 100,
+            rise_full: 0,
+            rise_low: 1.0,
+            max_gradient_sq: 1.0,
+            spacing: 0,
+            rotations: &[0, 1, 2, 3],
+            variants: &[],
+        };
+        let p = Planter::resolve(&[rule], 3, (0, 0));
+        let oak = crate::species::find("dwell:oak").unwrap();
+        assert_eq!(p[0].shapes.len(), oak.variants as usize);
+        let trees = trees_in(&p, (0, 0), (239, 239), &flat("dwell:grass"));
+        assert!(trees.iter().all(|t| p[0].structure_name(t) == "dwell:oak"));
+        let shapes: std::collections::BTreeSet<u8> = trees.iter().map(|t| t.shape).collect();
+        assert!(
+            shapes.len() >= 6,
+            "seeded oaks of several heights: {shapes:?}"
+        );
+        let log = dwell_blocks::require("dwell:log");
+        for t in &trees {
+            let placed = p[0].place(t);
+            assert_eq!(placed.at(t.anchor), Some(log), "a trunk at the anchor");
+        }
     }
 
     #[test]

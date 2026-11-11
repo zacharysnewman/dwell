@@ -1,0 +1,22 @@
+{
+  "$comment": "Oak (docs/TREE_GROWTH.md §11, ADR 0090): a tree species, from the Tree Growth prototype (docs/prototypes/tree-growth.html). Lengths in metres. A tree is a pure function of (species, seed, stage): `trunk.height.mature` the range a seed draws its full height from, the crown the mature crown scaled by `crown.scale` over the stages and by `variety.crown` per seed; heavy branches show from `emergeAt` of the growth. `growth.wild` weighs the stages generated trees stand at, `growth.variants` how many seeds a placement draws. Prototype content. Run `node shared/trees/gen.mjs` after editing; CI fails on stale output.",
+  "name": "dwell:oak",
+  "label": "Oak",
+  "blocks": { "log": "dwell:log", "leaf": "dwell:leaves" },
+  "trunk": {
+    "height": { "sapling": 1, "mature": [3.5, 7] },
+    "heightStep": 0.5,
+    "width": { "sapling": 0.25, "mature": 1, "step": 0.25 }
+  },
+  "branches": { "kind": "heavy", "count": [2, 4], "from": [0.6, 0.95], "reach": [2.2, 3.2], "rise": [0.6, 1.4], "emergeAt": 0.35 },
+  "crown": {
+    "shape": "lumpy",
+    "centre": 1.2,
+    "radius": [2.4, 1.7, 2.4],
+    "lumps": { "radius": [1.2, 1.8], "height": [0.9, 1.3] },
+    "roughness": 0.3,
+    "scale": [0.3, 1]
+  },
+  "variety": { "crown": [0.8, 1.2], "lightness": [0.72, 1.18], "hue": [-0.045, 0.045] },
+  "growth": { "stages": 8, "daysPerStage": 3, "wild": [0, 1, 1, 1, 2, 3, 5, 12], "variants": 16 }
+}

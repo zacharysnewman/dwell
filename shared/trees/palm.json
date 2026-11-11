@@ -1,0 +1,23 @@
+{
+  "$comment": "Palm (docs/TREE_GROWTH.md §11, ADR 0090): a slender leaning trunk of ½ m segments, each centred in its cell, the lean (`trunk.lean`, m at the top) taken in whole-cell steps one axis at a time: a step's knee is one squared log cell, never a 2 × 2 slab (owner, 2026-11-11); no branches; a crown heart block with drooping fronds, the fronds leaf cells today. Lengths in metres. Prototype content. Run `node shared/trees/gen.mjs` after editing; CI fails on stale output.",
+  "name": "dwell:palm",
+  "label": "Palm",
+  "blocks": { "log": "dwell:log", "leaf": "dwell:leaves" },
+  "trunk": {
+    "height": { "sapling": 0.5, "mature": [4.5, 9.5] },
+    "heightStep": 0.5,
+    "width": { "sapling": 0.25, "mature": 0.5, "step": 0.25 },
+    "lean": [1.2, 2.4]
+  },
+  "branches": { "kind": "none" },
+  "crown": {
+    "shape": "fronds",
+    "fronds": [8, 11],
+    "length": [2.8, 3.6],
+    "lift": 0.55,
+    "droop": 1.25,
+    "scale": [0.3, 1]
+  },
+  "variety": { "crown": [0.85, 1.15], "lightness": [0.88, 1.1], "hue": [-0.03, 0.03] },
+  "growth": { "stages": 8, "daysPerStage": 3, "wild": [0, 1, 1, 1, 2, 3, 5, 12], "variants": 16 }
+}

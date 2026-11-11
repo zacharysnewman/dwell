@@ -341,11 +341,13 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
 /shared/music        Music (music.json: tracks — title, author, file, volume, loop, fades, when —
                      and their audio files, the owner's Starry Sunshine) + gen.mjs (→ TS
                      music.gen.ts, each file's published name with its content hash), validate.mjs.
-/shared/worldgen     golden/: chunk and LOD-section hashes of generator version 23 (§6.3); terrain.json: the world's elevation and water (the height field, rivers, lakes, spawn, the `defaultBiome`), biomes/: the biomes layered on it (where they belong, fine relief, banks, water look, elevation bands, rule references; fixtures/ for tests; ADR 0074), worlds/: example world settings (the archipelago), decorations.json: the terrain's decoration rules, placements.json: the structure placements (the pines, ADR 0043; broadleaf trees and boulders that preset biomes list, ADR 0074 B5), midplane.json: the bedrock between the faces and the portals through it, gen.mjs (→ Rust tables for dwell-worldgen) (§6.3).
+/shared/worldgen     golden/: chunk and LOD-section hashes of generator version 23 (§6.3); terrain.json: the world's elevation and water (the height field, rivers, lakes, spawn, the `defaultBiome`), biomes/: the biomes layered on it (where they belong, fine relief, banks, water look, elevation bands, rule references; fixtures/ for tests; ADR 0074), worlds/: example world settings (the archipelago), decorations.json: the terrain's decoration rules, placements.json: the structure placements (the pines, ADR 0043; broadleaf trees and boulders that preset biomes list, ADR 0074 B5; tree species by name, ADR 0079), midplane.json: the bedrock between the faces and the portals through it, gen.mjs (→ Rust tables for dwell-worldgen) (§6.3).
 /shared/structures   Structure files (*.json; test/ holds fixtures) + gen.mjs (→ Rust tables for
                      dwell-world) and gen.test.mjs; format.mjs, the format's rules, shared by gen.mjs
                      and the client's structures store; playground.json is the movement playground
                      the tests stamp (§6.3).
+/shared/trees        Tree species (oak, pine, palm; fixtures/ for tests) + gen.mjs (→ species.gen.rs
+                     for dwell-worldgen's tree builder) and gen.test.mjs (ADR 0079).
 /shared/textures     palette.json (the storybook palette: named ramps and swatches, ART_DIRECTION.md),
                      materials.json (painterly materials as stroke layers; block, character and sky
                      materials) + paint.mjs (the generator, shared with the editor page and the
@@ -1757,6 +1759,16 @@ follow. **The Textures tab (B6, 0.52.42):** the painterly materials and palette 
    `TerrainGenerator::tree_density_at`, with the climate's factor on candidates and the LOD canopy);
    a rule no biome of the world lists stands nowhere. Two more rules, `broadleaf_groves` and
    `boulders`, are listed by preset biomes only, so the default world (the pines at 1) is unchanged.
+   **Tree species [built in part, 0.52.58; ADR 0079]:** a placement's `structures` may name a tree
+   species (`shared/trees/*.json`: oak, pine, palm; validated and emitted as `species.gen.rs` by
+   `shared/trees/gen.mjs`, fixtures in `shared/trees/fixtures`). `dwell_worldgen::species::grow` builds
+   a tree's cells as a pure function of (species, seed, stage) on the ½ m grid (trunk, `heavy`/`whorl`
+   branches as axis-turned logs, `lumpy`/`cone`/`fronds` crowns; palms lean in whole-cell steps one
+   axis at a time, a step's knee one squared log); the planter grows `growth.variants` seeds per
+   species at stages drawn by `growth.wild` into ordinary `Structure`s (`Structure::from_cells`).
+   `broadleaf_groves` stands oaks (presets only); `conifer_groves` (pines) and `palm_coasts` (palms)
+   are listed by the starter world only; the default world keeps its hand-built pines (goldens
+   unchanged). Not built: growth over time, thin trunks (no log width), per-tree leaf tints, frond blades.
    Ground items follow a biome's `ground` the same way (§ Ground items, 0.52.41).
    `trees_sparse` finds the same trees asking columns per candidate (Chisel's 3D section). The sky test (step 3) leaves room
    for the tallest structure over the highest ground; the spawn's level patch is clear of trees.

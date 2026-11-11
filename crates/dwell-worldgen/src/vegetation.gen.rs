@@ -31,5 +31,16 @@ pub const VEGETATION: Vegetation = Vegetation {
             fade: [1.5, 0.04, 0.1],
             density: 1.0,
         },
+        Kind {
+            name: "dwell:conifer_species",
+            placement: "conifer_groves",
+            temperature: [6.5, 28.0],
+            moisture: [0.04, 1.0],
+            min_soil: 0.15,
+            max_slope_deg: 40.0,
+            soils: &[],
+            fade: [1.5, 0.04, 0.1],
+            density: 1.0,
+        },
     ],
 };

@@ -239,9 +239,7 @@ sapling to mature, branch rules, a crown shape and a number of growth stages. A 
 integer; every stage is a pure function of (species, seed, stage); height grows in ½ m steps, the
 octagonal trunk's width in ¼ m steps, and the crown is the mature crown scaled. Leaves use the Leaf
 Lab's chosen look (canopy normals, chamfered cells, cards; option 5). Palm fronds are cards owned by a
-crown heart block, the cells they cross listed as frond blocks. **Not in the game yet**: no
-`shared/trees` data, no thin log widths, no palm blocks; adopting it needs an ADR (how species relate
-to the hand-built structures and the skeleton reveal of §1).
+crown heart block, the cells they cross listed as frond blocks. Adopted as species in the game by ADR 0079 (§11).
 
 ## 10. Leaves as a canopy (Leaf Lab option 5) **[built in part, 0.52.56]**
 
@@ -280,6 +278,30 @@ trees." Leaves stay blocks; the look is data (`shared/look/leaves.json`: the blo
 - **Built (0.52.57): the cards' painted clump**: `shared/textures/materials.json` `leaf_clump` (tile
   `leafCard`, named by `cards.tile` and baked into the atlas through `gen.mjs` `lookTiles`): stems
   radiating from the bottom middle, leaves fanned along them, cut out between, lighter on top.
+
+## 11. Species in the game **[built in part, 0.52.58; ADR 0079]**
+
+`shared/trees/{oak,pine,palm}.json` carry the prototype's species data (lengths in metres), validated
+and emitted by `shared/trees/gen.mjs` (`species.gen.rs`; the fixture `fixtures/shrub.json` grows by
+data alone). `dwell_worldgen::species::grow(species, seed, stage)` is the prototype's `growTree` on
+the ½ m grid, a pure function: the trunk height drawn per seed from `trunk.height.mature` in ½ m
+steps, the crown the mature crown scaled by `crown.scale` over the stages and `variety.crown` per
+seed, oak branches (`heavy`) and pine whorls from `emergeAt`, branch logs turned to their step's axis;
+palms lean in whole-cell steps one axis at a time, a knee one squared horizontal log (owner: no 2×2
+flat knees), the fronds leaf cells along each frond's curve. Placements name a species like a
+structure: `growth.variants` seeds at stages drawn by `growth.wild` (mostly mature, some young).
+Oaks stand in `broadleaf_groves`, pines in `conifer_groves` and palms in `palm_coasts` (sand), the
+last two listed by the starter world only; the default world's pines are unchanged.
+
+Seen in the starter world (0.52.58, GPU): the oaks read as the prototype's broad crowns on bare trunks
+at clearly different heights, young ones among them; a branch's tip can poke out of a young crown.
+The palms lean and step as on the prototype's grid, but their leaf-cell fronds read as clumps, not
+blades. Pines stand in the mixed forest; the boreal spot has none (its climate, as before).
+
+Not built: **growth over time** (needs a per-tree record, its stage and the cells players edited,
+and the `growers` layer of §5: the stage advanced every `growth.daysPerStage` world days, the cells
+regenerated where nobody edited), thin trunks (no log width property; saplings are 1 m logs), per-tree
+leaf tints (`variety.lightness`, `hue`), frond blades (a `dwell:palm_frond` block), a pine needle block.
 
 ## Sources
 

@@ -3,7 +3,7 @@
 use crate::placements::{Placement, Variant};
 
 /// The structure placements (shared/worldgen/placements.json), in their file order.
-pub static PLACEMENTS: [Placement; 3] = [
+pub static PLACEMENTS: [Placement; 5] = [
     Placement {
         name: "pine_groves",
         structures: &[("dwell:pine_tree", 55), ("dwell:tall_pine_tree", 45)],
@@ -25,7 +25,7 @@ pub static PLACEMENTS: [Placement; 3] = [
     },
     Placement {
         name: "broadleaf_groves",
-        structures: &[("dwell:proto_tree", 1)],
+        structures: &[("dwell:oak", 1)],
         on: &["dwell:grass"],
         footprint_on: true,
         grid: 8,
@@ -38,6 +38,44 @@ pub static PLACEMENTS: [Placement; 3] = [
         rise_full: 40,
         rise_low: 0.3,
         max_gradient_sq: 0.49029058,
+        spacing: 1,
+        rotations: &[0, 1, 2, 3],
+        variants: &[],
+    },
+    Placement {
+        name: "conifer_groves",
+        structures: &[("dwell:pine", 1)],
+        on: &["dwell:grass", "dwell:snowy_grass"],
+        footprint_on: true,
+        grid: 7,
+        density: 0.75,
+        grove_wavelength: 192,
+        grove_coverage: 0.4,
+        grove_outside: 0.06,
+        min_height: 3,
+        max_height: 1300,
+        rise_full: 120,
+        rise_low: 0.15,
+        max_gradient_sq: 0.9325548,
+        spacing: 1,
+        rotations: &[0, 1, 2, 3],
+        variants: &[Variant { name: "snowy", replace: &[("dwell:leaves", "dwell:snowy_leaves")], from: 1050, full: 1250 }],
+    },
+    Placement {
+        name: "palm_coasts",
+        structures: &[("dwell:palm", 1)],
+        on: &["dwell:sand"],
+        footprint_on: false,
+        grid: 12,
+        density: 0.35,
+        grove_wavelength: 96,
+        grove_coverage: 0.6,
+        grove_outside: 0.15,
+        min_height: 1,
+        max_height: 40,
+        rise_full: 1,
+        rise_low: 1.0,
+        max_gradient_sq: 0.33333334,
         spacing: 1,
         rotations: &[0, 1, 2, 3],
         variants: &[],
