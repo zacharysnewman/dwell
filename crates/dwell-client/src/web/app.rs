@@ -226,9 +226,10 @@ struct Options {
     loading_screen: bool,
     /// The scene's samples per pixel asked for (the Anti-aliasing setting; `samples_for`).
     samples: u32,
-    /// `prepareWorld(worldSeed: bigint, generatorVersion) → Promise<Uint8Array[] | null>`: the
-    /// world's maps (ADR 0049), from the shell's cache or built in workers; none: each instance
-    /// computes its own.
+    /// `prepareWorld(worldSeed: bigint, generatorVersion, worldgen: string) → Promise<Uint8Array[] |
+    /// null>`: the world's maps (ADR 0049), from the shell's cache or built in workers; none: each
+    /// instance computes its own. `worldgen` is the world's config as its server sent it (ADR 0074
+    /// B7; `""`: the build's ground, or the shell's own for its local world).
     prepare_world: Option<Function>,
 }
 
@@ -3075,10 +3076,16 @@ impl Inner {
             return Some(Vec::new());
         };
         let slot: MapsSlot = Rc::default();
-        let promise = prepare.call2(
+        let worldgen = self
+            .session
+            .as_ref()
+            .map_or("", |s| s.worldgen_config())
+            .to_owned();
+        let promise = prepare.call3(
             &JsValue::NULL,
             &js_sys::BigInt::from(world_seed).into(),
             &generator_version.into(),
+            &worldgen.into(),
         );
         let into = slot.clone();
         spawn_local(async move {

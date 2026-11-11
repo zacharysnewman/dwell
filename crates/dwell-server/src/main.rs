@@ -31,6 +31,19 @@ fn main() {
             std::process::exit(1);
         }
     }
+    // A world made from a worldgen config (ADR 0074 B7): its maps installed before the server.
+    match install_worldgen(&options) {
+        Ok(t) if !t.is_empty() => println!(
+            "world: terrain from --worldgen {} (hash {:016x})",
+            options.worldgen,
+            dwell_worldgen::config::worldgen_hash(&t)
+        ),
+        Ok(_) => {}
+        Err(e) => {
+            eprintln!("dwell-server {APP_VERSION}: {e}");
+            std::process::exit(1);
+        }
+    }
     // Terrain generation off the tick (§6.3): about cores − 2 threads.
     let cores = std::thread::available_parallelism().map_or(2, usize::from);
     options.server.worldgen_threads = cores.saturating_sub(2).max(1);

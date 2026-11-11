@@ -958,6 +958,7 @@ dependencies = [
  "dwell-sim",
  "dwell-storage",
  "dwell-world",
+ "dwell-worldgen",
  "getrandom 0.3.4",
  "if-addrs",
  "serde_json",
