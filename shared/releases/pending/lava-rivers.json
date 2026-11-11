@@ -1,9 +1,0 @@
-{
-  "changes": [
-    "Lava rivers: a river vent's lava now runs as far as its flow takes it, kilometres if need be, instead of stopping at the edge of a fixed patch",
-    "Lava that reaches the sea quenches to obsidian on the sea floor and builds new land above the water",
-    "Running lava stays molten under its crust and cools once it stops",
-    "A lava pond held back by its own crust breaks out through it and runs on",
-    "The starter world's youngest island has a lava river vent on its flank, on one face"
-  ]
-}
