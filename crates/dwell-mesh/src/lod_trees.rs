@@ -173,11 +173,9 @@ fn emit(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::lod_mesher::{MeshSectionOptions, mesh_section};
     use crate::mesher::{ChunkFlags, mesh_chunk_flags};
     use dwell_blocks::require;
-    use dwell_world::FaceFrame;
 
     /// A tree fixture in the 34³ padded layout (chunks' and sections' alike): a log column 8 cells
     /// tall and a 5 × 6 × 5 crown round its top, corners cut.
@@ -256,8 +254,8 @@ mod tests {
             assert!(leaning > 20, "{leaning}");
             let diagonal = normals.iter().any(|n| {
                 n[1].abs() < 1e-3
-                    && (n[0].abs() - 0.7071).abs() < 0.01
-                    && (n[2].abs() - 0.7071).abs() < 0.01
+                    && (n[0].abs() - std::f32::consts::FRAC_1_SQRT_2).abs() < 0.01
+                    && (n[2].abs() - std::f32::consts::FRAC_1_SQRT_2).abs() < 0.01
             });
             assert!(diagonal, "the trunk is an octagon at LOD");
         }
