@@ -752,6 +752,17 @@ test('the tectonics (T5) are off by default, take a boundary and a chain by data
   validateWorldKnobs({ tectonics: { kind: 2, riftDepth: 120 } });
   assert.throws(() => validateWorldKnobs({ tectonics: { coneRadius: 0 } }), /tectonics\.coneRadius/);
   const rocks = JSON.parse(readFileSync(join(here, 'rocks.json'), 'utf8'));
+  // The Rainier detail: off by default, validated by range.
+  for (const k of ['cleaverDepth', 'rimNotchDepth', 'cragHeight', 'cirqueDepth'])
+    assert.equal(world.tectonics[k], 0, `${k} off by default`);
+  validateWorldKnobs({ tectonics: { cleaverDepth: 160, rimNotches: 5, cragCount: 4, cirqueCount: 4 } });
+  assert.throws(() => validateWorldKnobs({ tectonics: { rimNotches: 2.5 } }), /tectonics\.rimNotches/);
+  assert.throws(() => validateWorldKnobs({ tectonics: { cirqueRadius: 0 } }), /tectonics\.cirqueRadius/);
+  assert.throws(() => validateWorldKnobs({ tectonics: { cragHeight: -1 } }), /tectonics\.cragHeight/);
+  assert.throws(
+    () => validateFixtureWorlds([{ name: 'test:x', overrides: { tectonics: { cirqueCount: 17 } } }], world),
+    /tectonics\.cirqueCount must be a whole number in \[0, 16\]/,
+  );
   rocks.tectonic.volcanic = 'dwell:nothing';
   assert.throws(() => validateRocks(rocks, blocks), /tectonic\.volcanic must name a stack/);
 });

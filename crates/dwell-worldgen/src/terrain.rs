@@ -1072,6 +1072,9 @@ pub struct TerrainGenerator {
     /// The terrain volume over the height field (`volume.rs`, a prototype: world type `cliffs`);
     /// none for the plain terrain. Chunks only: the LOD draws the height field's top.
     volume: Option<Arc<Volume>>,
+    /// The arc cones' column-level detail (`tectonics.cleaverDepth`, the rim's notches, crags,
+    /// cirques, Rainier detail), placed once over the map; empty when off (the default world).
+    peaks: Arc<Vec<crate::tectonics::PeakDetail>>,
     world_seed: u64,
 }
 
@@ -1187,8 +1190,10 @@ impl TerrainGenerator {
         // edit, whole), shared by every generator of this map in the process (`shared_biomes`).
         let biomes = shared_biomes(&map, world_seed);
         let worldgen = map.worldgen.clone();
+        let peaks = Arc::new(map.tectonics.peak_details(|x, z| map.height_at(x, z).0));
         let g = Self {
             base,
+            peaks,
             map,
             detail_seed: seed_word(world_seed, 0xD7A1_0001),
             meander_seeds: [
@@ -1998,6 +2003,44 @@ impl TerrainGenerator {
         (r.d < r.half && r.level > CELL_H).then(|| surface_row((SEA_LEVEL_M + r.level) as f32))
     }
 
+    /// The arc cones' column-level detail on ground `h` m high with the map's gradient (`gx`,
+    /// `gz`) at (x, z): the ground and its gradient with the detail (by central differences over
+    /// half a `cell`), unchanged away from the cones and when it is off.
+    fn peak_relief(&self, x: i64, z: i64, h: f64, gx: f64, gz: f64, cell: i64) -> (f64, f64, f64) {
+        if self.peaks.is_empty() {
+            return (h, gx, gz);
+        }
+        let t = &self.map.tectonics;
+        let (fx, fz) = (x as f64, z as f64);
+        let at = |px: f64, pz: f64, ph: f64| t.peak_relief(&self.peaks, px, pz, ph);
+        let shaped = at(fx, fz, h);
+        if shaped == h {
+            return (h, gx, gz);
+        }
+        let e = 0.5 * cell.max(1) as f64;
+        (
+            shaped,
+            (at(fx + e, fz, h + gx * e) - at(fx - e, fz, h - gx * e)) / (2.0 * e),
+            (at(fx, fz + e, h + gz * e) - at(fx, fz - e, h - gz * e)) / (2.0 * e),
+        )
+    }
+
+    /// The landform's slope at full-detail column (x, z) as the snow line reads it (rise per run):
+    /// the map's, with the arc cones' column-level detail (Rainier detail) over the biomes' fine relief
+    /// (away from the water, whose banks fade that relief).
+    pub fn cover_slope_at(&self, x: i64, z: i64) -> f64 {
+        let (base, gx, gz) = self.map.height_at(x as f64, z as f64);
+        let mix = self.biomes.mix(x, z, base);
+        let h = base + self.blended_detail(&mix, x, z, base, 1);
+        let (_, gx, gz) = self.peak_relief(x, z, h, gx, gz, 1);
+        (gx * gx + gz * gz).sqrt()
+    }
+
+    /// The arc cones' column-level detail as placed for this map (empty when off).
+    pub fn peak_details(&self) -> &[crate::tectonics::PeakDetail] {
+        &self.peaks
+    }
+
     fn base_column(&self, x: i64, z: i64, cell: i64) -> Column {
         self.base_column_with(x, z, cell, true)
     }
@@ -2013,7 +2056,7 @@ impl TerrainGenerator {
             };
         }
         let map = &*self.map;
-        let (base, gx, gz) = map.height_at(x as f64, z as f64);
+        let (base, mut gx, mut gz) = map.height_at(x as f64, z as f64);
         // The biomes here (by the world height field, which they never change beyond their fine
         // relief) and the one whose surface the column takes.
         let mix = self.biomes.mix(x, z, base);
@@ -2066,6 +2109,9 @@ impl TerrainGenerator {
             fade = fade.min(smooth01(-l.sdf / bs.detail_water_fade.max(1e-6)));
         }
         let mut h = base + detail * fade;
+        // The arc cones' column-level detail (Rainier detail: cleavers, the broken rim, crags, cirques),
+        // finer than the map's cells; its slope joins the map's (the snow line reads it).
+        (h, gx, gz) = self.peak_relief(x, z, h, gx, gz, cell);
         // The rock's shaping (systemic terrain T2; none at strength 0).
         let (shaped, rock) = self.rock_shaping(&mix, x, z, h, fade);
         h = shaped;

@@ -228,6 +228,27 @@ into `HeightField::tectonics`; `dwell-worldgen` `tectonics.rs`):
   a 3 km ring, the summit ≥ 500 m off the centre, no water near the summit, snow above and none below or on steep
   faces, both faces); the goldens are unchanged. The snow line sits on the tectonics group because a world turns it
   on (the world groups are numbers; the block is named in `rocks.json`); a per-biome line is later.
+  **Rainier detail** (owner brief 2026-11-11, after the honest note below that the 100 m map smooths the
+  ridges): more keys, all off by default, add **column-level detail** to the arc cones where the chunks
+  generate, on top of the map's cone (as the cliffs and the erosion layers add theirs), so the map's
+  sampling cannot smooth it: `cleaverDepth`, `cleaverCount` (cleavers: the valleys between the crests cut
+  deeper, the crests left as cusps; 0 count follows the map's `ridgeCount` crests); `rimNotches`,
+  `rimNotchDepth` (the crater's rim notched); `cragCount`, `cragHeight`, `cragRadius` (spires on and just
+  outside the rim; the tallest is the summit, off the crater's centre); `cirqueCount`, `cirqueDepth`,
+  `cirqueRadius`, `cirqueDistance` (glacier bowls at the heads of the valleys between ridges, a level
+  floor `cirqueDepth` under the ground there, a steep headwall on the summit side and a lip downhill).
+  `Tectonics::peak_details` places the crags and cirques once per map (each cirque snapped to the nearest
+  valley heading, its floor from the map's height); `Tectonics::peak_relief` is the column's height;
+  `TerrainGenerator` folds its slope into the map's, so the snow line leaves the crests and headwalls bare
+  and the cirques' floors take snow or ice by the lines. The world map, its hydrology and erosion do not see
+  the detail (no water collects in a cirque; above the ice line it is ice). `test:tall_peak` and the starter
+  opt in (cleavers 160 m, five 70 m notches, four crags to 220 m, four cirques 250 m deep, 600 m wide,
+  1100 m from the summit); the goldens are unchanged. Tests (`tests/tall_peaks.rs`, both faces): ridge
+  relief measured on columns round a 3 km ring (> 400 m, ≥ 10 crests, ≥ 100 m more than the map and the
+  undetailed cone, a step steeper than 0.6 between columns 1° apart); the rim's notches and crags and the
+  highest column ≥ 200 m off the crater's centre over the ice dome; each cirque a local minimum with a
+  ≥ 20 m lip downhill, a headwall steeper than 1 and a glacier-ice floor; the keys parse and are refused
+  out of range (`gen.test.mjs`, `config::height_from_json`).
 - **The hotspot chain**: `hotspotCount` shield islands from (`hotspotX`, `hotspotZ`) along the plate's
   motion (`hotspotHeading`), `hotspotSpacing` m apart; each older one `hotspotDecay` of the last's height
   and `hotspotWiden` broader (eroded with age).
