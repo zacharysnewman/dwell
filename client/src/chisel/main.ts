@@ -6,6 +6,7 @@ import {
   GEOLOGY,
   TERRAIN,
   TREE_DENSITY_MAX,
+  ARCHES,
   GROUND_DENSITY_MAX,
   VEGETATION,
   WHERE_FIELDS,
@@ -32,6 +33,8 @@ import {
   playInGame,
   saveEdit,
   setTreeDensity,
+  archesOf,
+  setArches,
   toJson,
   treeDensity,
   validateEdit,
@@ -371,6 +374,63 @@ function treesEditor(b: BiomeJson) {
 }
 
 /**
+ * A biome's arches and overhangs (ADR 0074 B8): sites per km², each range's min and max (m), the
+ * thickest fin. The 3D section and the maps draw the height field's top, which arches keep, so
+ * they do not show the openings: Play in game does.
+ */
+function archesEditor(b: BiomeJson) {
+  const box = el(
+    'details',
+    {},
+    el('summary', { textContent: 'Arches and overhangs (3D, in game only)' }),
+  );
+  const [dlo, dhi] = ARCHES.density;
+  box.append(
+    slider(
+      'density (sites per km²)',
+      dlo,
+      dhi,
+      1,
+      () => archesOf(b).density,
+      (v) => {
+        setArches(b, 'density', v);
+      },
+    ),
+  );
+  for (const key of ['span', 'rise', 'lintel'] as const) {
+    const [lo, hi] = ARCHES[key];
+    for (const end of [0, 1] as const) {
+      box.append(
+        slider(
+          `${key} ${end ? 'max' : 'min'} (m)`,
+          lo,
+          hi,
+          0.5,
+          () => archesOf(b)[key][end],
+          (v) => {
+            setArches(b, key, v, end);
+          },
+        ),
+      );
+    }
+  }
+  const [flo, fhi] = ARCHES.fin;
+  box.append(
+    slider(
+      'fin (m, thickest cut)',
+      flo,
+      fhi,
+      0.5,
+      () => archesOf(b).fin,
+      (v) => {
+        setArches(b, 'fin', v);
+      },
+    ),
+  );
+  return box;
+}
+
+/**
  * A biome's ground items (ADR 0074 B5): a density per kind (shared/ground/ground.json), 1 the
  * kind's own (all 1: no `ground`, the default's form), 0 none, up to `GROUND_DENSITY_MAX`.
  */
@@ -433,6 +493,7 @@ function biomeEditor(b: BiomeJson, isDefault: boolean) {
   );
   box.append(treesEditor(b));
   box.append(groundEditor(b));
+  box.append(archesEditor(b));
   box.append(waterEditor(b));
   const bands = el('details', { open: true }, el('summary', { textContent: 'Bands' }));
   b.bands.forEach((band, i) => {

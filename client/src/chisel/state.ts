@@ -3,6 +3,7 @@
 // by shared/worldgen/biomes.mjs, the same rules gen.mjs applies; kept in the browser as an
 // append-only record (unknown fields kept on rewrite).
 import {
+  ARCHES,
   validateBiome,
   validateBiomeMap,
   validatePresets,
@@ -135,6 +136,53 @@ export function setTreeDensity(b: BiomeJson, name: string, d: number): void {
   b.placements = PLACEMENT_NAMES.filter((n) => listed.includes(n));
   if (Object.keys(trees).length) b.trees = trees;
   else delete b.trees;
+}
+
+/** A biome's arches (ADR 0074 B8) as Chisel edits them: density 0 when it has none. */
+export interface ArchesJson {
+  density: number;
+  span: [number, number];
+  rise: [number, number];
+  lintel: [number, number];
+  fin: number;
+  overhangs?: boolean;
+}
+
+/** The arches a biome without its own starts from on the sliders (density 0: none). */
+export const ARCHES_START: ArchesJson = {
+  density: 0,
+  span: [6, 18],
+  rise: [4, 12],
+  lintel: [2, 6],
+  fin: 14,
+  overhangs: true,
+};
+
+/** Biome `b`'s arches, or `ARCHES_START` (a copy) when it has none. */
+export function archesOf(b: BiomeJson): ArchesJson {
+  const a = b.arches as ArchesJson | undefined;
+  return a ? a : structuredClone(ARCHES_START);
+}
+
+/**
+ * Sets one arches value of biome `b` (`key` a number field, or a range's `min`/`max` by `end`
+ * 0 or 1; the other end follows so min ≤ max), clamped to `ARCHES`' range. Density 0 drops the
+ * group (the default's form: no arches).
+ */
+export function setArches(b: BiomeJson, key: keyof typeof ARCHES, v: number, end?: 0 | 1): void {
+  const a = archesOf(b);
+  const [lo, hi] = ARCHES[key];
+  const x = Math.min(hi, Math.max(lo, v));
+  if (key === 'density' || key === 'fin') {
+    a[key] = x;
+  } else {
+    const r = a[key];
+    const e = end ?? 0;
+    r[e] = x;
+    if (r[0] > r[1]) r[1 - e] = x;
+  }
+  if (a.density > 0) b.arches = a;
+  else delete b.arches;
 }
 
 /** The ground item kinds a biome's `ground` may name (shared/ground/ground.json, in its order). */

@@ -1594,6 +1594,8 @@ the `water` fluid). The elevation and water (`inland`, `seaFloor`, `hills`,
 names the `defaultBiome`. `shared/worldgen/gen.mjs` validates them and emits `HEIGHT` (the world's),
 `BIOMES` (the default first, each surface merged with the world's water shaping) and `SURFACE` (the
 default's) into `terrain.gen.rs`; every world is the default biome today (the goldens unchanged).
+**Arches and overhangs [built in part, ADR 0074 B8, 0.52.43]** (`dwell-worldgen` `arches.rs`): a biome's optional `arches` cuts openings under a `lintel` of rock, through fins (an arch) or into scarps from their low side (an overhang), after the chunk's fill and the terrain volume's carve, before trees. Sites lie on a 32 m grid drawn from the world position; their numbers are the centre column's chosen biome's; the fin test reads the columns (`column_at`), so every chunk carves the same cells. Column tops change only at a mouth (cut down to the floor so the opening is open): the LOD, spawn, the maps and the water read the height field as before and do not show the openings (a recorded deviation, as the cliffs' LOD). Face-local, mirrored on face B with the chunk. None in the default world.
+
 **The biome map [built, B2]** (`dwell-worldgen` `biomemap.rs`): a generator's biomes (the build's
 `BIOMES`, or `TerrainGenerator::with_biomes`; tests add `FIXTURE_BIOMES`, `shared/worldgen/biomes/fixtures/`,
 never on a world's map; **the presets [built, Phase 57, 0.52.8]**, `shared/worldgen/biomes/presets/`, are

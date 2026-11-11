@@ -281,3 +281,19 @@ describe("a biome's trees and structures (ADR 0074 B5)", () => {
     expect(treeDensity(p('boreal'), 'pine_groves')).toBeGreaterThan(1);
   });
 });
+
+describe('arches (ADR 0074 B8)', () => {
+  it('a density above 0 adds the group, ranges keep min ≤ max, 0 drops it', async () => {
+    const { archesOf, setArches } = await import('./state');
+    const b: Record<string, unknown> = { name: 'test:x' };
+    expect(archesOf(b as never).density).toBe(0);
+    setArches(b as never, 'density', 40);
+    expect((b.arches as { density: number }).density).toBe(40);
+    setArches(b as never, 'span', 30, 0);
+    expect((b.arches as { span: number[] }).span).toEqual([30, 30]);
+    setArches(b as never, 'rise', 999, 1);
+    expect((b.arches as { rise: number[] }).rise[1]).toBe(48);
+    setArches(b as never, 'density', 0);
+    expect(b.arches).toBeUndefined();
+  });
+});
