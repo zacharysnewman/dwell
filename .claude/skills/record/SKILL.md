@@ -63,6 +63,20 @@ it every frame from the page with `requestAnimationFrame` so the move is smooth 
 - **Drone rise:** from 5 m to 60–150 m over the subject, pitch easing from −10° to −60°.
 - For portrait, frame tall: subjects centred, more sky or ground above and below, slower horizontal moves.
 
+## 3b. Time-lapse and the player
+
+Owner (2026-11-12): use **full or partial time-lapses** where they suit (a whole clip sped up, or a normal-speed
+shot that speeds up mid-way) and **include the player in the video when possible**.
+
+- **Time-lapse in the game:** drive the clock (`d.setTime(t)` stepped per frame for day→night), speed up the
+  world's processes by their dev knobs (`?growth=N` for trees and grass, the world's water speed, `d.lava('rate',
+  …)`), then record at normal speed. **Time-lapse in the splice:** a clip's `speed` (e.g. 4) or a ramp
+  (`speedFrom`/`speedTo`) in the plan — or `setpts` by hand — for a shot that speeds up partway.
+- **The player in frame:** a third-person camera on the player's own body (behind-over-the-shoulder, or a
+  slow orbit around them while they walk, chop or swim), or first person with the arms and the held item
+  doing something. The player's position is `d.player()`/the snapshot; walk them with the input steps or a
+  scripted `d.walk` if available (check `client/src/main.ts`'s dev API and add a small tested step if needed).
+
 ## 4. Splice
 
 `scripts/splice.py` cuts each clip (start, end), scales and crops to the format, cross-fades 0.8 s, fades out,
