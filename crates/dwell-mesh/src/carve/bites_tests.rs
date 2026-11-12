@@ -238,5 +238,5 @@ fn a_cut_without_bites_is_carved_as_before_and_mirrored_bites_follow_their_side(
     let m = mirror_cut(0, &b);
     assert_eq!(m.bites[1], b.bites[0]);
     assert_eq!(m.bites[0].n, 0);
-    assert_eq!(carve_in(0, &m, &look(), None).len() > 6, true);
+    assert!(carve_in(0, &m, &look(), None).len() > 6);
 }
