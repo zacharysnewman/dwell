@@ -2,6 +2,19 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.54.189",
+      "changes": [
+        "Behind the scenes: a model part painter tool"
+      ]
+    },
+    {
+      "version": "0.54.188",
+      "changes": [
+        "The axe's notch now grows with every swing: each chop carves its fair share, so half the log is cut away by the time the tree falls.",
+        "The notch keeps its V shape as it grows, deepening and widening until it opens into the gash the tree falls from."
+      ]
+    },
+    {
       "version": "0.54.187",
       "changes": [
         "Behind the scenes: cloud research notes"
