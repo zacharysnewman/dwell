@@ -829,6 +829,7 @@ dependencies = [
  "dwell-protocol",
  "dwell-sim",
  "dwell-storage",
+ "dwell-theater",
  "dwell-world",
  "dwell-worldgen",
  "ed25519-dalek 2.2.0",
@@ -1011,6 +1012,14 @@ dependencies = [
  "js-sys",
  "lz4_flex",
  "redb",
+]
+
+[[package]]
+name = "dwell-theater"
+version = "0.0.0"
+dependencies = [
+ "dwell-world",
+ "serde_json",
 ]
 
 [[package]]

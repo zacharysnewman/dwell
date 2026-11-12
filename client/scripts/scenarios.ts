@@ -201,6 +201,21 @@ export type Step =
    */
   | { do: 'time'; t: number; moon?: number }
   /**
+   * Plays a theater mode camera path (docs/THEATER_MODE.md; `__dwell.theater`): `path` (a camera
+   * path's JSON) or `preset` (a name in shared/theater/presets.json) with `params` over its
+   * defaults around `subject` ("player", [x, y, z], {creature: id}); waits for its end unless
+   * `wait` is false. The HUD is hidden while it plays unless `hud` is true.
+   */
+  | {
+      do: 'theater';
+      path?: Record<string, unknown>;
+      preset?: string;
+      params?: Record<string, number>;
+      subject?: unknown;
+      wait: boolean;
+      hud: boolean;
+    }
+  /**
    * Turns pieces of the water's shading off (`names`, the `?waterdbg=` switches, comma-separated;
    * "" turns them all back on), so a cost can be told apart within one page and one load.
    */
@@ -426,6 +441,7 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   traceStart: [],
   traceStop: ['name'],
   time: ['t', 'moon'],
+  theater: ['path', 'preset', 'params', 'subject', 'wait', 'hud'],
   waterDebug: ['names'],
   timelapse: ['name', 'frames', 'from', 'to', 'waitS'],
   burst: ['name', 'frames', 'clock', 'maxFlicker', 'drift', 'maxHueFlips'],
@@ -736,6 +752,30 @@ export function parseStep(where: string, v: unknown): Step {
       return o.moon === undefined
         ? { do: d, t }
         : { do: d, t, moon: num(at('moon'), o.moon, 0, 1) };
+    }
+    case 'theater': {
+      const isObj = (x: unknown): x is Record<string, unknown> =>
+        typeof x === 'object' && x !== null && !Array.isArray(x);
+      if ((o.path === undefined) === (o.preset === undefined)) {
+        throw new ViewError(`${where}: a theater step needs a path or a preset (one of them)`);
+      }
+      if (o.path !== undefined && !isObj(o.path)) {
+        throw new ViewError(`${at('path')}: expected a camera path object`);
+      }
+      const params: Record<string, number> = {};
+      if (o.params !== undefined) {
+        if (!isObj(o.params)) throw new ViewError(`${at('params')}: expected {name: number}`);
+        for (const [k, v] of Object.entries(o.params))
+          params[k] = num(at(`params.${k}`), v, -1e6, 1e6);
+      }
+      return {
+        do: d,
+        ...(o.path === undefined ? {} : { path: o.path }),
+        ...(o.preset === undefined ? {} : { preset: str(at('preset'), o.preset), params }),
+        ...(o.subject === undefined ? {} : { subject: o.subject }),
+        wait: o.wait === undefined ? true : bool(at('wait'), o.wait),
+        hud: o.hud === undefined ? false : bool(at('hud'), o.hud),
+      };
     }
     case 'waterDebug': {
       if (typeof o.names !== 'string' || !/^[a-z0-9,]*$/.test(o.names)) {

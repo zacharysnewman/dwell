@@ -226,7 +226,7 @@ export const AREAS: Record<string, Area> = {
       'shared/items/gen.test.mjs',
       ...lookTests(UI_LOOKS),
     ],
-    crates: ['dwell-game'],
+    crates: ['dwell-game', 'dwell-theater'],
     vitest: ['src/ui/', 'src/input/', 'src/debug/', 'src/identity/'],
   },
   audio: {
