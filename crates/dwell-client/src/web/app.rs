@@ -624,6 +624,12 @@ impl Client {
                 game.set_swordplay(
                     session.capability(dwell_protocol::capability_names::WEAPONS_CLASH),
                 );
+                // The theater camera as a simulation viewpoint (THEATER_MODE.md §7): creative
+                // on a server that takes it.
+                game.set_theater_viewpoint(
+                    session.capability(dwell_protocol::capability_names::THEATER_VIEWPOINT)
+                        && session.theater_viewpoint(),
+                );
                 if let Some(v) = s.input.flight.set_allowed(may_fly) {
                     s.shell_events.push(shell_event("flightAllowed", v));
                 }
@@ -3302,6 +3308,10 @@ impl Inner {
                 s.capability(dwell_protocol::capability_names::STRUCTURES_PLACE),
             );
             game.set_swordplay(s.capability(dwell_protocol::capability_names::WEAPONS_CLASH));
+            game.set_theater_viewpoint(
+                s.capability(dwell_protocol::capability_names::THEATER_VIEWPOINT)
+                    && s.theater_viewpoint(),
+            );
         }
         game.set_loading_screen(self.options.loading_screen);
         game.set_crossing_roll(self.crossing_roll);

@@ -40,6 +40,8 @@
     "chunkBytesPerSecond": 1048576,
     "maxChunksPerTick": 32,
     "autosaveSeconds": 30,
+    "theaterViewpointHz": 4,
+    "theaterViewpointMaxM": 4096,
     "pos64Limit": 33554432
   },
   "worldSizes": {
@@ -154,7 +156,8 @@
     "SteamHello": 103,
     "Steam": 104,
     "Capabilities": 105,
-    "Swordplay": 106
+    "Swordplay": 106,
+    "TheaterViewpoint": 107
   },
   "rejectReasons": {
     "ProtocolVersion": 1,

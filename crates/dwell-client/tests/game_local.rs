@@ -1164,6 +1164,58 @@ fn a_theater_path_drives_the_view() {
     assert_eq!(g.theater_state(), None);
 }
 
+/// The simulation viewpoint (docs/THEATER_MODE.md §7, T-4): a playing path's eye goes to the
+/// server as `TheaterViewpoint` only where it is one (the capability and creative), at the rate,
+/// and one clear follows when the path stops; elsewhere (adventure, an older server) none is sent.
+#[test]
+fn a_playing_path_sends_its_viewpoint_only_where_the_server_takes_it() {
+    let mut rig = Rig::new();
+    assert!(rig.run_until(60 * 30, |r| r.game.is_some()));
+    let feet = rig.game.as_ref().unwrap().debug_state().feet;
+    let at = |dx: f64| [feet[0] + dx, feet[1] + 10.0, feet[2]];
+    let path = dwell_theater::Path::parse(&serde_json::json!({
+        "formatVersion": 1,
+        "keyframes": [
+            { "t": 0, "position": at(0.0), "look": [90, -10] },
+            { "t": 4, "position": at(400.0) }
+        ],
+        "segments": [{ "move": "linear" }]
+    }))
+    .unwrap();
+    let viewpoints = |g: &mut Game<_>| -> Vec<Option<[f64; 3]>> {
+        g.take_outbox()
+            .into_iter()
+            .filter_map(|m| match m {
+                Send::Control(dwell_protocol::Message::TheaterViewpoint(v)) => Some(v),
+                _ => None,
+            })
+            .collect()
+    };
+    let g = rig.game.as_mut().unwrap();
+    viewpoints(g);
+    // Off (adventure, or a server without `theater.viewpoint`): nothing on the wire.
+    g.play_theater(path.clone());
+    for i in 0..60 {
+        g.step_theater(f64::from(i) * 1000.0 / 60.0);
+    }
+    g.stop_theater();
+    g.step_theater(1100.0);
+    assert!(viewpoints(g).is_empty(), "never sent where it is off");
+    // On: four a second while playing, then one clear.
+    g.set_theater_viewpoint(true);
+    g.play_theater(path);
+    for i in 0..60 {
+        g.step_theater(10_000.0 + f64::from(i) * 1000.0 / 60.0);
+    }
+    let sent = viewpoints(g);
+    assert_eq!(sent.len(), 4, "{sent:?}");
+    assert!(sent.iter().all(Option::is_some));
+    g.stop_theater();
+    g.step_theater(11_100.0);
+    g.step_theater(11_200.0);
+    assert_eq!(viewpoints(g), vec![None], "one clear when it ends");
+}
+
 #[test]
 fn a_placed_camera_views_the_world_from_there() {
     let mut rig = Rig::new();

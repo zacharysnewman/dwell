@@ -54,6 +54,8 @@ mod ground;
 mod growth;
 mod items;
 mod lava;
+mod theater;
+pub use theater::{VIEWPOINT_EVERY_TICKS, VIEWPOINT_MAX_M};
 mod vitals;
 mod weapons;
 pub use weapons::{NpcStrikeLog, StrikeLog, WeaponSwing};
@@ -471,6 +473,8 @@ pub struct StreamStats {
     pub requests_dropped: u32,
     /// Of the above, sent for the respawn preload (§6.3).
     pub preload_sent: u32,
+    /// Of the above, sent for the theater camera's viewpoint (docs/THEATER_MODE.md §7).
+    pub viewpoint_sent: u32,
     /// Chunks the client currently has.
     pub streamed: usize,
 }
@@ -696,6 +700,8 @@ struct Session {
     /// The capabilities its client said it has (`Capabilities`, ARCHITECTURE.md §8.3); empty for a
     /// client that never sent the message (an older build).
     capabilities: dwell_protocol::capabilities::Capabilities,
+    /// Theater mode's camera as a simulation viewpoint (docs/THEATER_MODE.md §7, `server/theater.rs`).
+    viewpoint: theater::Viewpoint,
     /// While on another grid (MOON_WORLD.md §7.2): its slot and handle there (`handle` is `None`
     /// then), and that grid's chunks its client has.
     away: Option<grids::Away>,
@@ -773,6 +779,7 @@ impl Session {
             ecology_hello: false,
             steam_hello: false,
             capabilities: Default::default(),
+            viewpoint: Default::default(),
             away: None,
             grid_streamed: HashSet::default(),
             held_tool: None,
@@ -1767,6 +1774,7 @@ impl Server {
                 s.capabilities = c;
                 self.swordplay_hello(id);
             }
+            Message::TheaterViewpoint(at) => self.theater_viewpoint(id, at),
             Message::WorldgenRequest => {
                 let m = Message::WorldgenConfig(self.worldgen_text.clone());
                 self.send_reliable(id, &m, Channel::Control);
@@ -2111,7 +2119,9 @@ impl Server {
         }
         self.phase_ms[9] += watch.lap_ms();
 
-        // 6. Terrain streaming, then what to generate next and what to forget.
+        // 6. Terrain streaming, then what to generate next and what to forget. The theater cameras'
+        // viewpoints held back by their rate are taken first (THEATER_MODE.md §7).
+        self.take_viewpoints();
         self.explicit_wanted.clear();
         if let Some(sky) = &mut self.sky {
             sky.begin();
@@ -2212,11 +2222,13 @@ impl Server {
     }
 
     fn update_worldgen(&mut self) {
-        let centers: Vec<ChunkCoord> = self
+        // The bodies' views, then the theater cameras' (THEATER_MODE.md §7).
+        let mut centers: Vec<ChunkCoord> = self
             .sessions
             .values()
             .filter_map(|s| self.view_center(s))
             .collect();
+        centers.extend(self.viewpoint_centers());
         // Around players first (collision needs them), then chunks full-mode clients wait for.
         // Saved chunks are read from the world file instead (a few per tick).
         let mut wanted = Vec::new();
@@ -2321,6 +2333,13 @@ impl Server {
     /// LOD asks for to show the level-1 sections the ring straddles as chunks.
     fn requestable(&self, s: &Session, c: ChunkCoord, center: ChunkCoord) -> bool {
         within_radius(c, center, self.config.render_radius_chunks)
+            || self.viewpoint_of(s).is_some_and(|p| {
+                within_radius(
+                    c,
+                    chunk_at(p[0], p[1], p[2]),
+                    self.config.render_radius_chunks,
+                )
+            })
             || s.preload_center
                 .zip(self.config.respawn_preload_radius_chunks)
                 .is_some_and(|(p, r)| within_radius(c, p, r + 2))
@@ -2365,6 +2384,9 @@ impl Server {
 
     fn stream_chunks(&mut self, id: SessionId) {
         let center = self.view_center(&self.sessions[&id]);
+        let viewpoint = self
+            .viewpoint_of(&self.sessions[&id])
+            .map(|p| chunk_at(p[0], p[1], p[2]));
         let (view, render) = (
             self.config.view_radius_chunks,
             self.config.render_radius_chunks,
@@ -2382,7 +2404,11 @@ impl Server {
             .preload_center
             .zip(self.config.respawn_preload_radius_chunks);
 
-        if s.stream_center != Some(center) {
+        if s.stream_center != Some(center) || s.viewpoint.stream_center != viewpoint {
+            if s.viewpoint.stream_center != viewpoint {
+                s.viewpoint.stream_center = viewpoint;
+                s.viewpoint.stream_complete = false;
+            }
             s.stream_center = Some(center);
             s.stream_complete = false;
             // Chunks beyond the view plus a margin (hysteresis) leave the client; requested ones
@@ -2403,6 +2429,17 @@ impl Server {
                             r
                         },
                     ) && !preload.is_some_and(|(p, pr)| within_radius(*c, p, pr))
+                        && !viewpoint.is_some_and(|v| {
+                            within_radius(
+                                *c,
+                                v,
+                                if s.requested.contains(c) {
+                                    r.max(rr)
+                                } else {
+                                    r
+                                },
+                            )
+                        })
                 })
                 .collect();
             unload.sort_by_key(|c| (c.x, c.y, c.z));
@@ -2429,6 +2466,15 @@ impl Server {
         {
             // Then the respawn point's ring (§6.3): the view first (collision needs it).
             self.stream_preload(id, p, &mut sent);
+        }
+        let s = &self.sessions[&id];
+        if s.stream_complete
+            && (s.preload_complete || s.preload_center.is_none())
+            && let Some(v) = viewpoint
+            && !s.viewpoint.stream_complete
+        {
+            // Then the theater camera's view (THEATER_MODE.md §7), from the same budget.
+            self.stream_viewpoint(id, v, &mut sent);
         }
         let s = &self.sessions[&id];
         if s.stream_complete && (s.preload_complete || s.preload_center.is_none()) {
@@ -3932,12 +3978,14 @@ impl Server {
         }
         let game = 86_400.0 / self.settings.clock.day_length_s();
         let dt = f64::from(every) / f64::from(SIM_HZ) * game * f64::from(self.settings.water_speed);
-        let players: Vec<[f64; 3]> = self
+        let bodies: Vec<[f64; 3]> = self
             .sessions
             .values()
             .filter_map(|s| s.handle)
             .map(|h| self.players.position(&self.physics, h).to_array())
             .collect();
+        // Near the bodies and the theater cameras' viewpoints (THEATER_MODE.md §7).
+        let players = self.presence_points(&bodies);
         // The world's chunks as the water's copy should have them, then the run.
         let changes = self.water_link.mirror.sync(&self.world);
         let link = &mut self.water_link;
@@ -4392,15 +4440,19 @@ impl Server {
         }
     }
 
+    /// The players' bodies (or where they died), then the theater cameras' viewpoints
+    /// (THEATER_MODE.md §7): the LOD's propagation goes nearest them first.
     fn player_positions(&self) -> Vec<[f64; 3]> {
-        self.sessions
+        let bodies: Vec<[f64; 3]> = self
+            .sessions
             .values()
             .filter(|s| s.joined())
             .map(|s| match s.handle {
                 Some(h) => self.players.position(&self.physics, h).to_array(),
                 None => s.death_position,
             })
-            .collect()
+            .collect();
+        self.presence_points(&bodies)
     }
 
     /// Runs LOD propagation until nothing is dirty (tests, tools).

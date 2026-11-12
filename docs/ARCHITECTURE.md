@@ -1019,7 +1019,7 @@ rules that spawn the species' creatures are left out (`Creatures::reserved`).
 
 ---
 
-### 5.5 Theater mode **[in progress: T-1, the camera path engine, built; the mode's UI, recording and the creative viewpoint planned]**
+### 5.5 Theater mode **[in progress: T-1, the camera path engine, and T-4, the creative viewpoint, built; the mode's UI and recording planned]**
 
 Design: [`THEATER_MODE.md`](THEATER_MODE.md) (WORK_QUEUE item 41). A viewer-only camera toolset: the
 character stays put while the camera follows a **camera path** — JSON keyframes (world position, a look or a
@@ -1029,9 +1029,23 @@ target, field of view, the viewer's time of day, a playback speed) joined by seg
 and presets, evaluates a path at a time into a pose and plays it frame-rate independently (tracking a moving
 player, creature or NPC with exponential smoothing). The client steps it before each frame
 (`Game::step_theater`) into the placed view (`ViewOverride`, with an optional field of view) and a viewer-only
-time of day (`theater_time`); nothing goes on the wire. Dev API `__dwell.theater`, the bench's `theater` step.
-Planned: the in-game mode and editor (T-2), canvas recording (T-3), and in creative only the camera as a
-server-checked simulation viewpoint (T-4, a mode ability).
+time of day (`theater_time`). Dev API `__dwell.theater`, the bench's `theater` step.
+
+**The simulation viewpoint [built, T-4]** (THEATER_MODE.md §7): the one thing on the wire. Where the server has
+the `theater.viewpoint` capability (§8.3) and the world's mode the `theaterViewpoint` ability (creative), the
+client sends the playing path's eye as `TheaterViewpoint` 0x6B (C→S, control: u8 0 cleared | 1 then f64 × 3; at
+most `world.theaterViewpointHz` = 4 a second and only when it moved ½ m, `dwell_theater::viewpoint::Sender`) and
+one clear when the path stops. The server keeps one per player (`server/theater.rs`; a faster one waits for its
+turn, a clear is taken at once) and uses it **only while the world's mode has the ability**
+(`Server::viewpoint_of`, so a mode change applies at once and an adventure client gains nothing), held within
+`world.theaterViewpointMaxM` = 4096 m of the body: the body's view sphere is streamed around it after the body's
+own view and the respawn preload, from the same per-player chunk budget (kept from unloading, chunk requests
+within the render radius of it answered, `StreamStats::viewpoint_sent`); worldgen prefetches and keeps its
+chunks; the LOD's propagation, creature spawning and despawning, the near ecology's groups and the lava run near
+it as near a body (`Server::presence_points`). It only brings the world near: animals don't flee it and NPCs
+don't look at it or get bumped by it (`herds::World::near` vs `players`). Tests:
+`crates/dwell-sim/tests/theater_viewpoint.rs` (both faces). Planned: the in-game mode and editor (T-2) and canvas
+recording (T-3).
 
 ## 6. Voxel World
 
@@ -3193,7 +3207,9 @@ a name and the abilities it allows, from a fixed vocabulary — `damage` (every 
 ADR 0068: the client shows the minimap and the explored map; both modes have it) and `mapRevealed`
 (0.50.46: the big map shows the whole world, unexplored ground coloured from the generator; creative
 only), and `stamina` and `oxygen` (0.50.57, ADR 0069: below; adventure only), and `instantBreaks` (0.52.51,
-docs/BLOCK_DAMAGE.md §7: anything but a tool breaks any block in one hit; creative only). Creative (the
+docs/BLOCK_DAMAGE.md §7: anything but a tool breaks any block in one hit; creative only), `structures` (saved
+structures placed; creative only) and `theaterViewpoint` (theater mode's camera as a simulation viewpoint, §5.5,
+THEATER_MODE.md §7; creative only). Creative (the
 default: new worlds, and worlds saved before modes) has flight, brushes and unlimited blocks and no
 damage; adventure (experimental) has damage, stamina and oxygen. The mode is a `WorldSettings` field (optional tag
 `0x82`), saved with the world; the New world form picks it, and the host changes it at runtime
@@ -4546,7 +4562,9 @@ poses (above), drawn from `models.json` `poses` (CHARACTERS.md §11.6); without 
 their idle clip. The seventh is `npcs.swings` (WORK_QUEUE item 35): while an NPC swings its sword,
 its NPC part's pose is 3 (level) or 4 (vertical) (`NPC_STRIKE_POSES`), and the client plays the rig's
 chop clip; without it the server sends the NPC's idle pose, as older clients (whose decode refuses a
-pose past 2) read it.
+pose past 2) read it. The eighth is `theater.viewpoint` (THEATER_MODE.md §7, §5.5): the client sends
+`TheaterViewpoint` 0x6B (C→S, control: u8 0 cleared | 1 then f64 × 3, finite) while a camera path plays,
+used by the server only in a mode with `theaterViewpoint`; an older server is never sent one.
 ```
 S→C  WorldSettings field 0x85 (optional): u8 count (≤ 64), each str name (≤ 48 bytes, no repeat)
 C→S  Capabilities 0x69, control: the same form — the client's capabilities, once after Welcome,

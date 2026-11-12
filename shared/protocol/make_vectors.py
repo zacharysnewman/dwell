@@ -459,6 +459,9 @@ vectors["capabilities_none"] = struct.pack("<B", T["Capabilities"]) + capabiliti
 vectors["world_settings_capabilities"] = world_settings(
     [(0x01, f32s(800.0, 400.0, 7.0)), (0x81, f32s(1.0)), (0x85, CAPS)]
 )
+# TheaterViewpoint (docs/THEATER_MODE.md §7): u8 0 (cleared) or 1 then three f64.
+vectors["theater_viewpoint"] = struct.pack("<BBddd", T["TheaterViewpoint"], 1, 1200.5, 96.25, -40.0)
+vectors["theater_viewpoint_cleared"] = struct.pack("<BB", T["TheaterViewpoint"], 0)
 vectors["edit_ack"] = edit_ack(7, [])
 vectors["edit_ack_rejected"] = edit_ack(0x01020304, [2, 0x01020303, 0x01020304])
 
@@ -561,6 +564,9 @@ malformed = {
     "!capabilities_bad_name": struct.pack("<B", T["Capabilities"]) + capabilities(["Upper"]),
     "!capabilities_truncated": vectors["capabilities"][:-1],
     "!capabilities_trailing": vectors["capabilities"] + b"\x00",
+    "!theater_viewpoint_bad_flag": struct.pack("<BB", T["TheaterViewpoint"], 2),
+    "!theater_viewpoint_truncated": vectors["theater_viewpoint"][:-1],
+    "!theater_viewpoint_not_finite": struct.pack("<BBddd", T["TheaterViewpoint"], 1, float("nan"), 0.0, 0.0),
     "!world_settings_truncated": world_settings([(0x01, f32s(800.0, 400.0, 7.0))])[:-1],
     "!world_settings_tag_twice": world_settings([(0x81, f32s(1.0)), (0x81, f32s(2.0))]),
     "!block_registry_zero_parts": block_registry(0, 0, b""),

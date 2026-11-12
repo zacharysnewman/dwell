@@ -885,6 +885,11 @@ pub struct Game<S: Scene> {
     theater_ms: Option<f64>,
     /// The time of day the theater shows (this viewer only), over the dev override.
     theater_time: Option<f64>,
+    /// Whether the camera is a simulation viewpoint here (THEATER_MODE.md §7): the server has
+    /// `theater.viewpoint` and the world's mode `theaterViewpoint` (creative).
+    theater_viewpoint: bool,
+    /// What of the camera's eye goes to the server, frame by frame.
+    viewpoint_sender: dwell_theater::viewpoint::Sender,
     /// The world's clock (the server's world settings; this build's until they arrive).
     /// The world's day/night cycle: its clock, its moon's phase and its orbit (ADR 0054;
     /// REALISTIC_WORLD.md §8), this build's looks.
@@ -1051,6 +1056,8 @@ impl<S: Scene> Game<S> {
             theater: None,
             theater_ms: None,
             theater_time: None,
+            theater_viewpoint: false,
+            viewpoint_sender: Default::default(),
             world_day: DAY_NIGHT,
             day: DayState::default(),
             first_draw_ms: None,
@@ -1232,8 +1239,38 @@ impl<S: Scene> Game<S> {
             creatures: &self.creatures,
         }
     }
-    /// Steps the camera path to `now_ms` and places the view at its pose (before the frame).
+    /// Whether the camera is a simulation viewpoint (THEATER_MODE.md §7, T-4): the server has the
+    /// `theater.viewpoint` capability and the world's mode the `theaterViewpoint` ability. Turned
+    /// off, a viewpoint sent is cleared.
+    pub fn set_theater_viewpoint(&mut self, on: bool) {
+        self.theater_viewpoint = on;
+    }
+
+    /// The viewpoint's message for this frame, if any: the playing path's eye at the rate, or one
+    /// clear after it ends (or the viewpoint is turned off).
+    fn send_viewpoint(&mut self, now_ms: f64) {
+        let eye = self
+            .theater
+            .as_ref()
+            .filter(|_| self.theater_viewpoint)
+            .and(self.view)
+            .map(|v| v.eye);
+        let interval_ms = 1000.0 / dwell_protocol::world::THEATER_VIEWPOINT_HZ as f64;
+        if let Some(m) = self.viewpoint_sender.frame(now_ms, eye, interval_ms) {
+            self.outbox
+                .borrow_mut()
+                .push(Send::Control(Message::TheaterViewpoint(m)));
+        }
+    }
+
+    /// Steps the camera path to `now_ms` and places the view at its pose (before the frame); the
+    /// viewpoint goes to the server where it is one.
     pub fn step_theater(&mut self, now_ms: f64) {
+        self.step_theater_path(now_ms);
+        self.send_viewpoint(now_ms);
+    }
+
+    fn step_theater_path(&mut self, now_ms: f64) {
         let Some(mut player) = self.theater.take() else {
             return;
         };
