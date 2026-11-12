@@ -896,9 +896,16 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `npc.fight` rules (`stance` counter/random, `raiseOnWindup`, `strikeBack`, `strikeWithinM`, `cooldownS`,
    `giveUpS`); an NPC's blow is resolved against the player's block but never hurts (owner's question open).
    Found along the way: the villager was 2 rows (1 m) tall, so a level slash at eye height passed over it; now 4.
-   **Outstanding (local):** the raised-pose clips (`fp_guard_level`, `fp_guard_vertical`) and drawing the
-   raised sword on others and NPCs (`Game::guard_pose`, `Game::remote_guards`); the owner's answer on NPCs
-   hurting players.
+   **Round 3 (local, 2026-11-12, combat visuals):** the raised block drawn: `raisedPose` names a role
+   (`guard_level`, `guard_vertical`) each character plays from its clips (`biped_guard_*`, `fp_guard_*`,
+   first guesses), laid over the gait while no swing plays, on your arms and body and on other players and
+   NPCs from the server's guards (CHARACTERS.md §11.11); the hint per tool kind as data (BUGS.md #83).
+   Seen in game: the vertical block reads (the blade upright before the view); **the level block does not
+   yet** (the blade still leans up, not across: the hand's roll limit, ±40°, stops it: needs an arm turn,
+   fitted with `clip_probe --fit`). Not seen: a clash's sparks in a duel (the villager did not turn on a
+   single strike in the time box) and the third-person raised poses. Found: BUGS.md #85 (a NaN look kicks
+   the player). **Outstanding:** fit the level block; NPCs' own swings drawn (the server sends no NPC swing
+   to clients yet); a duel shot with sparks; the owner's answer on NPCs hurting players.
 36. **A showcase video of the deer and wolves** (owner 2026-11-12: "have you observed the animals simulation? Make
    some clips of the deer/wolves behavior, really showcase it and try to get good angles. Keep it under 2 minutes
    of video. Splice it together into a single video."). Queued (local, after item 30).
@@ -943,6 +950,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    local world. Left: sit and look-around clips (the rig has none: both play idle); the NPC's raised guard
    and swings drawn from the server's fight. Combat with the swords built in item 35's round 2 (`npc.fight`: an NPC blocks its foe's wind-up by
    its stance rule, strikes back on the recovery, gives up after `giveUpS`; it never hurts a player).
+   Owner, 2026-11-12: **"Hat gets its own colours"** — split the villager's hat into its own colour slot
+   (hat colours: browns, greys, straw), separate from the hair, as data in the NPC variants. Not done in the
+   combat-visuals PR: the Peasant GLB paints its hat, its hair and its boots with the same palette stop
+   (`hair_brown`'s base, 2754 vertices from the feet to the hat's top), so a remap of one recolours all
+   three; a hat slot needs the hat's vertices painted with a ramp of their own at import
+   (shared/models `import.mjs`, by mesh or joint), then a `colours` part `hat` in shared/creatures. Queued.
 
 39. **Livelier animals** (owner 2026-11-12, after the video had no chase or fleeing — on day one every pack is
    kilometres from any herd and players can't scare deer): chose **deer flee from players** (they notice a player
@@ -958,7 +971,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    idle/walk/run clips, so each pose is joint turns on the idle clip as data (models.json `poses`, `poseBlendS`;
    CHARACTERS.md §11.6), sent as the `creatures.poses` capability's part of `Creatures` (after the NPCs'); the
    deer's graze, look up and ear flick and the wolf's sit, lie and ear flick are first guesses to tune by eye.
-   Left: a new video.
+   Left: a new video. **Dev (2026-11-12):** `__dwell.spawnHerd('deer'|'wolf', size, offset)` puts a herd or
+   pack by the player through the near ecology (a generated world: the flat world has no ecology). Tried
+   in game: the deer bolt from the player at once (item 39's flee), and when the player moves off far
+   enough for them to calm they fold back into a far record, so a camera can't film them idling near the
+   player yet; the wolves stayed and idled (one read as sitting from a low camera). The poses are still
+   unjudged first guesses: filming them needs a placed camera near a herd with the player out of its
+   notice distance (a dev switch to make animals ignore the player, or `near.players` off) — next.
    Owner on the first video: **"The recording was a really good start. I'd like to record at 9:16 1080/1920."** —
    the next video (after this item lands) is portrait 1080×1920, framed for portrait, with a chase and fleeing.
 

@@ -6,6 +6,22 @@ pins it.
 
 ## Open
 
+### 85. A dev `look` with an object kicks the player: "refused the connection: Malformed message"
+
+Found 2026-11-12 filming the sword duel. `__dwell.look({yaw: 0, pitch: -5})` (the signature is
+`look(yaw, pitch)`, numbers) turns the look to NaN; the next sword swing sends its `Sweep` with a
+NaN look, the server's decode refuses it (`r.check(look.iter().all(is_finite))`) and rejects the
+whole session as malformed. Repro: a flat local world, `pick('dwell:sword')`, `look({yaw:0,pitch:-5})`,
+`edit('break')`. Fix: the dev hook checks its numbers (as `teleport` now does, #84), and the client
+never sends a non-finite look (clamp or drop at the sender). Open.
+
+### 84. `?at=` at a far spot hung the page loading (part of #84; not reproduced)
+
+Found 2026-11-12 reaching a wolf pack 5 km off. Natively a spawn link 5 km off (in the air, at the
+ground, under it) loads in under 2 s (`game_local.rs` `a_spawn_link_five_km_off_loads`), and in the
+browser a dev teleport of 400 m+ arrived and its terrain streamed. Not reproduced: needs the link
+and seed that hung. The teleport half is fixed (Fixed, #84).
+
 ### 78. 26 fps at High on the owner's M1 MacBook Air ("I think cards are killing my m1 mac")
 
 Reported 2026-11-12 (owner): "It seems like we're hiding some performance settings. I don't see 'tree' options in
@@ -309,6 +325,24 @@ face, or the placement check against its shape.
 
 
 ## Fixed
+
+### 84. A dev `teleport` did not move the player (fixed after 0.54.116)
+
+Found 2026-11-12 reaching a wolf pack 5 km off. `__dwell.teleport(feet)` posted whatever it was
+given to the worker and answered `true`; a point that was not `[x, y, z]` of finite numbers (an
+object `{x, y, z}`, a string) reached `teleport_local_player` as NaN, which refused it silently.
+Now `feetOf` takes `[x, y, z]` or `{x, y, z}` and anything else throws, naming the input
+(`client/src/local/world.ts`, `world.test.ts` "feetOf"); a single far teleport (5 km) moves the
+player and its terrain arrives (`game_local.rs` `a_single_teleport_five_km_off_…`, which passed on
+the old code too: the core was right, the page's hook was not). The `?at=` hang is open (#84 above).
+
+### 83. The sword showed the axe's hint (fixed after 0.54.116)
+
+"Axe: level swing (right click: vertical)" while holding the sword: the hint was a constant in
+`chop.rs`. Now each tool kind's hint is data (shared/tools `hints`, every kind a tool uses needs one;
+`dwell_protocol::chopping::hint`), tested in `chopping.rs` `each_tool_shows_its_own_kinds_hint` and
+`gen.test.mjs` (red before: no weapon hint existed). Seen in game: "Sword: level stance (tap right
+click: vertical, hold: block)".
 
 ### 79. A herd grows by several animals within seconds of coming near (fixed after 0.54.101)
 

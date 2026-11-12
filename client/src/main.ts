@@ -47,6 +47,7 @@ import { rememberTrust, showRegistryPrompt, trustedHash } from './ui/registryPro
 import { showUpgradePrompt } from './ui/upgradePrompt';
 import { compatibilityLine, sameLine } from './version/semver';
 import {
+  feetOf,
   GENERATORS,
   isSpawn,
   parseLocalWorld,
@@ -1342,7 +1343,7 @@ async function start(): Promise<App | null> {
       app.loopback?.lavaDev('spawnNpcs', [n, radius ?? 3, variant ?? 0]) ?? Promise.resolve(null),
     plume: (op, args) => {
       const [name, ...nums] = args ?? [];
-      return client.plumeDev(op ?? 'list', name ?? '', Float64Array.from(nums as number[]));
+      return client.plumeDev(op ?? 'list', name ?? '', Float64Array.from(nums));
     },
     die: () => {
       app.loopback?.postToWorker({ t: 'kill' });
@@ -1391,7 +1392,11 @@ async function start(): Promise<App | null> {
 
 /** Moves the local player's feet (a local world; the dev tools' `goto`). */
 function teleport(app: App, feet: Vec3): boolean {
-  app.loopback?.postToWorker({ t: 'teleport', at: feet });
+  // BUGS.md #84: a point that is not three finite numbers is an error here, not a silent no-op.
+  const at = feetOf(feet);
+  if (at === null)
+    throw new Error(`teleport: feet must be [x, y, z] (metres), not ${JSON.stringify(feet)}`);
+  app.loopback?.postToWorker({ t: 'teleport', at });
   return app.loopback !== null;
 }
 

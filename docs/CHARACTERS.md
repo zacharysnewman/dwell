@@ -835,10 +835,17 @@ by default) and a combat hook; the combat AI waits for the sword mechanic.
   part (id, kind, pose, variant; ARCHITECTURE.md §8). Older clients draw a plain Peasant.
 - **Swordplay** (the `weapons.clash` capability, ARCHITECTURE.md "Weapons"): the player's block, raised by
   holding Place with a weapon (past the weapon's `guard.raiseAfterS`; a tap still turns the stance), shows
-  the stance's first-person pose clip named by `guard.stances.*.raisedPose` (`fp_guard_level`,
-  `fp_guard_vertical`: data now, the clips and their drawing a local follow-up; `Game::guard_pose`);
-  others' and NPCs' raised guards arrive as `Swordplay` guards (`Game::remote_guards`) for the renderer
-  to draw (local).
+  the stance's raised pose: `guard.stances.*.raisedPose` names a **role** (`guard_level`,
+  `guard_vertical`), each character's clips give it (shared/characters: `biped_guard_*` in `clips`,
+  `fp_guard_*` in `firstPerson.clips`, layer `hold`), and the animator lays it over the gait in place
+  of the hold while no swing plays (`MoveInput::guard`; attacking drops the block; a character without
+  the role shows its hold). Your arms and your body take `Game::guard_pose`; other players' and NPCs'
+  raised guards arrive as `Swordplay` guards (`Game::remote_guards`) and are drawn by the same roles
+  (`swordplay::guard_role` from the weapon in hand: `Bodies::guards` for players, `NpcLook::guard`
+  for NPCs, laid over `npc_rig_pose` before the item's turns). The clash's sparks and sound play at
+  the clash's point (`Game::on_clash`). The raise clips are first guesses checked by eye.
+- **Hints**: the line shown while a tool is held is its kind's (shared/tools `hints`: `{ <kind>:
+  { level, vertical } }`, every kind a tool uses needs one; `dwell_protocol::chopping::hint`).
 - **Client** (`dwell-client` `creatures.rs`): `CreatureView::npc` holds the NPC's colours (from its
   kind's data and variant) and held item; its role is its speed's while moving, else `look` or `sit`
   (the Peasant has neither clip yet, so they play its fallback, idle).
@@ -861,6 +868,10 @@ by default) and a combat hook; the combat AI waits for the sword mechanic.
   matched no vertex and every villager drew alike. Seen in game (5 spawned villagers): shirts,
   trousers and skin vary; the `hair` part's `hair_brown` is mostly the **hat** (its 942 vertices), so
   hats take hair colours: the part→ramp guess needs the owner's call (a hat part of its own).
+- **Dev**: `__dwell.spawnHerd(kind, size?, offset?)` (a local world) puts a far record of a deer
+  herd (`'deer'`) or a wolf pack (`'wolf'`) of `size` head (5) `offset` m (12) along +x from the
+  player, fed and rested; the near ecology brings it in as individuals on its next tick, posed by
+  its `near.idles` (`Server::spawn_group_dev`; for filming the animals' poses, §11.6).
 - **Dev**: `__dwell.spawnNpcs(n, radius?, variant?)` (a local world) puts `n` villagers (≤ 16) in a
   ring round the player, each its own variant (`Server::spawn_npcs_dev`).
 - **Not yet**: sit and look-around clips (the rig has none); the NPC's raised guard and swings drawn

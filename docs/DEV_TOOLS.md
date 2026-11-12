@@ -432,6 +432,10 @@ the `goto` step.
   face it is on; the local core's `teleport_local_player`, through the worker, not a network
   message). The client follows: a player the server moved while the prediction waits for terrain
   takes the server's place (`game.rs`), so it waits for the terrain there.
+- `__dwell.spawnHerd(kind, size?, offset?)`: a deer herd (`'deer'`) or a wolf pack (`'wolf'`) of
+  `size` (5) put `offset` m (12) along +x from the local player as a far record, which the near
+  ecology brings in as animals at once (a local world; CHARACTERS.md §11.11). `spawnNpcs(n,
+  radius?, variant?)` does the same for villagers.
 - `__dwell.camera()`: the placed camera (`placeCamera`, `goto`) or null; `view()` is the player's
   look, not a placed camera's.
 

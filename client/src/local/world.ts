@@ -104,6 +104,23 @@ export function spawnOptions(spawn: Spawn): Pick<LocalWorld, 'spawnFaceB' | 'spa
   };
 }
 
+/**
+ * A point the dev tools' `teleport` takes (BUGS.md #84): `[x, y, z]` or `{ x, y, z }` of finite
+ * numbers, or null. Anything else used to reach the worker as NaN, where the move was refused and
+ * the page still answered true.
+ */
+export function feetOf(v: unknown): [number, number, number] | null {
+  const xyz = Array.isArray(v)
+    ? v.length === 3
+      ? v
+      : null
+    : typeof v === 'object' && v !== null
+      ? [(v as { x?: unknown }).x, (v as { y?: unknown }).y, (v as { z?: unknown }).z]
+      : null;
+  if (xyz === null || !xyz.every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
+  return xyz as [number, number, number];
+}
+
 /** `?at=x,y,z`: three finite numbers, or null. */
 export function parseAt(value: string | null): [number, number, number] | null {
   if (value === null) return null;
