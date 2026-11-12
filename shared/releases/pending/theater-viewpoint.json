@@ -1,6 +1,0 @@
-{
-  "changes": [
-    "Creative: a theater camera path far from your character now loads the world where the camera is, with its animals and people",
-    "Adventure: the theater camera still sees only what is loaded near your character"
-  ]
-}
