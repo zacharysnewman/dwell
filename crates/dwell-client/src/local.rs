@@ -464,6 +464,29 @@ impl LocalCore {
                     Err(e) => format!(r#"{{"error":{e:?}}}"#),
                 }
             }
+            ("npcsFight", []) => {
+                // Every NPC turns on the local player as if struck by it (its `npc.fight` rules
+                // then block and strike back; DEV_TOOLS.md): a duel without the first blow.
+                let Some(p) = self.server.player_of_session(LOCAL_SESSION) else {
+                    return r#"{"error":"no local player"}"#.into();
+                };
+                let Some(feet) = self.server.feet_of(p) else {
+                    return r#"{"error":"no local player"}"#.into();
+                };
+                let ids: Vec<u32> = self.server.creatures().iter().map(|c| c.id).collect();
+                let cs = self.server.creatures_mut();
+                let n = ids
+                    .into_iter()
+                    .filter(|&id| {
+                        let on = cs.attacked(id, feet);
+                        if on {
+                            cs.set_foe_player(id, p);
+                        }
+                        on
+                    })
+                    .count();
+                format!(r#"{{"fighting":{n}}}"#)
+            }
             ("animalsIgnorePlayers", [on]) => {
                 // The near animals see no player (filming their idles up close; DEV_TOOLS.md).
                 self.server.set_animals_ignore_players(*on != 0.0);

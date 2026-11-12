@@ -809,6 +809,10 @@ pub struct NpcNet {
 /// The idle poses an NPC is sent in, by `NpcNet::pose`.
 pub const NPC_POSES: [&str; 3] = ["stand", "look", "sit"];
 
+/// The poses after `NPC_POSES` an NPC is sent in while it swings its sword, to a client with the
+/// `npcs.swings` capability (WORK_QUEUE item 35): `NpcNet::pose` 3 level, 4 vertical.
+pub const NPC_STRIKE_POSES: [&str; 2] = ["strikeLevel", "strikeVertical"];
+
 /// The local player's stamina and oxygen as of its input `seq` (`Message::Vitals`).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct VitalsMessage {
@@ -2522,7 +2526,7 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
                     }
                     let (id, kind) = (r.u32(), r.str(MAX_MODEL_NAME));
                     let pose = r.u8();
-                    r.check(usize::from(pose) < NPC_POSES.len());
+                    r.check(usize::from(pose) < NPC_POSES.len() + NPC_STRIKE_POSES.len());
                     npcs.push(NpcNet {
                         id,
                         kind,
@@ -2980,7 +2984,7 @@ mod creature_tests {
         assert_eq!(Message::decode(&b), Some(Message::Creatures(with)));
         assert_eq!(Message::decode(&b[..b.len() - 1]), None, "truncated");
         let mut bad = b.clone();
-        bad[b.len() - 5] = NPC_POSES.len() as u8; // the pose byte, before the u32 variant
+        bad[b.len() - 5] = (NPC_POSES.len() + NPC_STRIKE_POSES.len()) as u8; // the pose byte, before the u32 variant
         assert_eq!(Message::decode(&bad), None, "an unknown pose");
     }
 }
