@@ -83,7 +83,7 @@ impl Grids {
     pub fn new(
         world_seed: u64,
         home_radius_m: f64,
-        moon_phase: Option<f64>,
+        celestial: Celestial,
         db: Option<&dwell_storage::WorldDb>,
     ) -> Self {
         let all = dwell_worldgen::grids::grids();
@@ -107,7 +107,7 @@ impl Grids {
             });
         }
         Self {
-            celestial: Celestial::new(dwell_look::daynight::DAY_NIGHT, moon_phase),
+            celestial,
             rules: dwell_worldgen::grids::travel(),
             home: &all[0],
             home_radius_m,

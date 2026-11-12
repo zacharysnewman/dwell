@@ -4,12 +4,65 @@ The owner's ordered queue of work, with the decisions behind each item, so it su
 ending. Update it in the same change that starts, finishes, re-orders or re-scopes an item. The phase
 status lives in `docs/IMPLEMENTATION_PLAN.md`; this file is the order and the owner's words.
 
+**Shots (owner, 2026-11-12):** bench screenshots are taken with clouds off unless the shot is about clouds ("The
+clouds make those screenshots hard to read").
+
 **Rule (owner, 2026-11-11: "This is why we need to be documenting these as we go"):** every request, answer
 or decision the owner gives goes into this file **in the same turn it arrives**, before or alongside starting
 the work, quoting the owner's words; never only in a session's memory or an agent's brief. An item nobody
 recorded doesn't exist for the next session.
 
 Last updated: 2026-11-11 (0.52.108).
+
+## Queued next, in order (2026-11-12)
+
+The running order across the items below; each line names its item, where the owner's words and details are.
+
+1. **High at 60 fps on the M1 Air (item 30, P0)** — running locally: measure each feature at High, cull leaf cards
+   inside crowns and on the far side, pull their range in, a Trees group and a setting for every costly feature.
+2. **Distance haze tuning (item 29)** — only the height fog's three numbers, ground-level and hilltop shots, clouds off.
+3. **Cloud lighting (item 13)** — shaded bases and self-shadowing, matched against the old 2D deck.
+4. **Far-tree impostors (item 31)** — the bake in the cloud now; drawing them locally after, replacing lod_trees.
+5. **Dense forest reference (item 32)** — in the cloud now: `old_growth`, `test:forest`, the `forest-perf` bench.
+6. **The moon, client side (item 27, M-7c)** — the client follows a player onto the moon (its chunks in the moon's
+   frame, the view rolled to its down, `grid.frames` turned on); then M-5 (LOD per grid), M-8 (moon spawns A/B),
+   the bake in a worker + cached, `MOON_PHASE` wired, the disc oriented by `moon_axes`.
+7. **Orbits O1–O3 (item 15)** — in the cloud now; then O4–O5 (seasons).
+8. **Chopping follow-ups (items 24, 26)** — see bites round 2 and the kept gash in game; stone chips that break the
+   cell's outline (item 18 lever 3); half the hit shards on phones (the flag nothing sets yet).
+9. **Big worlds (BIG_MAP.md)** — BUGS.md #76 (browser memory grows with world size) before 8×/10×; #77 (bigger
+   islands lose their ranges, speckled lakes: an owner look question); region maps built ahead with no hitches.
+10. **Realistic R5–R6 (item 15)** — geology by plate history with today's blocks; the World option.
+
+### Waiting on the owner (each with what it means and the default meanwhile)
+
+1. **Two missing biomes for the Realistic world** (REALISTIC_WORLD.md q9). Biomes are now chosen by climate
+   alone, and no preset covers two climates: a cold, nearly rainless interior (a cold desert, like the Gobi) and
+   very hot, very wet tropics (a rainforest). There the plain default biome (temperate grassland with generic trees)
+   fills in, so both look like an ordinary meadow. Proposed: add *cold desert* (sparse dry grass, gravel and sand,
+   few trees) and *tropical rainforest* (dense tall trees, thick undergrowth). Default meanwhile: the plain biome.
+2. **How different the two faces' climates are** (REALISTIC_WORLD.md §8.10 q4). With orbits by seed, both faces
+   share one sky: face A gets about 2/3 of the daylight and face B 1/3, which makes B about 3 °C colder, with
+   opposite seasons. Is that enough difference, or should face B be more distinct (e.g. its own climate band)?
+   Default: the 3 °C difference.
+3. **The climate gradient across the disc** (§8.10 q5). Should climate change from one side of a face to the
+   other (today: about a 14° "latitude" span across the map, so one end is warmer than the other), or be one
+   climate per face with only height and rain varying? Default: keep the 14° span.
+4. **Pick a haze setting** (item 29). Once the ground-level and hilltop shots of a few fog settings are taken
+   (clouds off), choose one. Default: today's fog.
+5. **Try a 2× world on the desktop** (BIG_MAP.md). New world → More options → World size → 2×, or `?size=2x`.
+   It's checked in the browser (11 s to play, 60 fps flying); your impressions decide the next big-map steps.
+6. **The iPhone while moving** (item 16). On the latest build at Low: how low the frame rate goes while walking,
+   sprinting and flying, and whether it's a steady drop or stutters. Four rounds cut the loading spikes; this
+   decides whether more is needed.
+7. **What "double efficiency" means for metal tools** (from the tools work, 2026-11-11: "Metal tools also double
+   efficiency."). Does a metal tool break blocks twice as fast, last twice as long (durability), or both?
+   Default: neither is applied yet.
+8. **Palm fronds: leaf cards or blocks** (item 6, TREE_GROWTH.md). Palm leaves are drawn as leaf blocks today;
+   the alternative is painted frond cards like the other leaves' cards. Default: blocks.
+9. **The in-game Chisel editor and the textures tab extras** (from the biomes work). Both need your design input
+   (what they should let you do) before they can be planned. Default: not started.
+
 
 ## Next, in order
 
@@ -236,6 +289,12 @@ Last updated: 2026-11-11 (0.52.108).
 
 Cloud sessions: logic-only items can run as `claude --cloud` sessions in parallel (verified 2026-11-11).
 
+   Owner, 2026-11-12: **"The clouds make those screenshots hard to read. Also the lighting on the new clouds just
+   looks like it's all bright white so the actual shape is difficult or impossible to read. Our old 2D clouds had
+   better lighting, use that as a reference."** Next: light the volume like the old deck read — shaded bases and
+   self-shadowing toward the sun (a short light march), sky-coloured ambient on the shaded side, a brighter
+   sun-facing rim — matched against the old 2D deck's look side by side; and bench shots taken with clouds off
+   unless the shot is about clouds.
 14. **Tall grass grows and spreads** (owner 2026-11-11: "I want tall grass to steadily grow and spread. It
    should probably have a max depending on climate/biome."). **Built** (ADR 0075 T3c, docs/ECOLOGY.md §10):
    `shared/worldgen/grass.json` (the rule as data: the block, the ground, the decoration whose climate
@@ -311,7 +370,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    hitches" — region maps built ahead of the player.
    Orbits by seed (REALISTIC_WORLD.md §8), owner 2026-11-12: orbits first, seasons after; "a great setting to have
    default with some presets. Like proposed ranges, fixed day, day varies, more extreme with hotter/colder."; the
-   moon's orbit by seed too (size kept); Realistic worlds only. O1–O3 in progress (cloud).
+   moon's orbit by seed too (size kept); Realistic worlds only ("We'll likely roll orbits out to regular worlds too,
+   but for now it's a good reference point to compare to."); q4/q5 open (the proposal's defaults). **O1–O2 built
+   (2026-11-12):** `shared/look/orbits.json` (presets Default, Day varies, Extreme; limits) → `orbits.gen.rs` and
+   `skyPresets.gen.ts`; `dwell-look` `orbits.rs` (`Orbit::roll`, `Orbit::today`, `day_night_for`); the optional
+   `CELESTIAL` world setting (0x86); the server rolls it at creation for a Sky preset (`--sky`, the browser's New
+   world → More options → Sky, shown for a world whose climate reads the sky, and `&sky=` on a `?worldgen=test:realistic`
+   link); the sky (server and clients) draws the world's orbit; default and starter today's sky exactly (golden).
+   Realistic is not in the World list yet (R6), so the Sky field shows once it is. **O3 not built** (the climate
+   reading the orbit needs it carried to the map workers): next.
 16. **Phone frame rate (P0)** (owner 2026-11-11, iPhone 17, Safari, setting Low: "I'm only getting ~23 fps on
    mobile, seeing lots of z-fighting on tree trunks with the leaf cards. What might be dropping frames since the
    last while. Used to get 60 fps"). Suspect: leaf cards are on in every tier but CPU, Low included; cards lying
@@ -542,7 +609,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    at 0.85; the stump's `dwell:log_ramp` is chopped as the log (a bite, a wear), never cleared, and comes
    down only when cut through, dropping wood. Not done: the stump's bites aren't drawn (recorded only).
    BLOCK_DAMAGE.md §6.4 "Round 2", ADR 0067 note.
-27. **A felled trunk landing on its chopper flings them (BUGS.md #52)** (the owner's brief, 2026-11-12: fix the
+26b. **A felled trunk landing on its chopper flings them (BUGS.md #52)** (the owner's brief, 2026-11-12: fix the
    cause, "we shouldn't be capping player kick like that" (2026-11-08): no cap on the kick; a trunk hitting a
    player at speed must still knock them as physics says). **Built 2026-11-12** (branch `claude/pinch-fling`):
    a piece's contact pressing a player down takes the piece's friction (`physics::PinchGrip`, a Rapier contact
@@ -702,6 +769,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    pick a preset (or ask for a stronger C: e.g. elevationDeg 8, saturation 0.6) and its values move to the
    top level of fog.json.
 
+   Variants built (0.54.x, `?haze=thicker|aerial|aerial-sun`; defaults unchanged). Owner, 2026-11-12, on the sheet:
+   **"The clouds make those screenshots hard to read."**; **"Also don't we just have an atmospheric distance fog
+   that thins as you ascend? Something like that?"**; **"Shouldn't that be what's tuned, your screenshots seem to
+   describe a lot of other effects?"** So: tune only the existing height fog's three numbers (fog.json
+   `distanceM`, `density`, `heightM`); shoot a few settings from ground level and a hilltop (not from 3000 m,
+   above the haze) with clouds off; the extra aerial-perspective mechanisms stay off. Queued (local, after
+   item 30).
 30. **Desktop frame rate on the M1 and hidden graphics settings (P0)** (owner 2026-11-12: "It seems like we're
    hiding some performance settings. I don't see 'tree' options in our settings for graphics. I think cards are
    killing my m1 mac too." / "Running 26fps." / "GPU at 31ms"). The desktop default preset is High (leaf cards
@@ -739,6 +813,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (`dwell_worldgen::impostor`, data `shared/trees/impostors/impostors.json`, preview sheet
    `docs/proposals/tree-impostors-bake.png`). Next: I-2 tree lists per section (cloud-able), then I-3 drawing
    (local, GPU, measured on the M1 at High). Waiting on the owner: the proposal's questions.
+
+32. **A tall dense forest for performance reference** (owner 2026-11-12: "We should have a tall dense forest
+   biome/climate for performance reference on trees."). A biome preset (tall, closely spaced mature trees — an
+   old-growth temperate rainforest of tall pines and broadleaf, thick undergrowth) placed by climate (cool and very
+   wet), plus a fixed test world and bench spot that stand in the densest forest, so every tree/leaf/impostor change
+   is measured there at High on the M1 Air. In progress (cloud).
 
 ## Done
 

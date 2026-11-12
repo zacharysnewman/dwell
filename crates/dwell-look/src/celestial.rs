@@ -28,7 +28,9 @@
 //!
 //! Drawn by M-2: `DayNight::state` places the sky's moon, its lit share and its glow from this.
 
-use crate::daynight::{Clock, DAY_NIGHT, DayNight};
+#[cfg(test)]
+use crate::daynight::DAY_NIGHT;
+use crate::daynight::DayNight;
 use dwell_protocol::world_settings::WorldSettings;
 use dwell_world::FaceFrame;
 
@@ -145,14 +147,10 @@ impl Celestial {
         }
     }
 
-    /// The model for a world: its clock and its moon phase (ADR 0054), this build's data otherwise.
+    /// The model for a world: its clock, its moon phase and its orbit (ADR 0054; REALISTIC_WORLD.md
+    /// §8, `crate::orbits`), this build's data otherwise (a world without an orbit: today's sky).
     pub fn for_world(s: &WorldSettings) -> Self {
-        let clock = Clock {
-            day_s: f64::from(s.clock.day_s),
-            night_s: f64::from(s.clock.night_s),
-            start_hour: f64::from(s.clock.start_hour),
-        };
-        Self::new(DayNight { clock, ..DAY_NIGHT }, s.moon_phase.map(f64::from))
+        Self::new(crate::orbits::day_night_for(s), None)
     }
 
     /// Face A's solar angle at `world_s` (DAY_NIGHT.md §3, unchanged).

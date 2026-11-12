@@ -51,6 +51,15 @@ pub mod tag {
     /// a client that sees it answers with its own after `Welcome`. The join's, never saved in
     /// the world file (the server adds it to what it sends; [`SettingsFields::with`] drops it).
     pub const CAPABILITIES: u8 = 0x85;
+    /// The world's orbit (docs/proposals/REALISTIC_WORLD.md §8, O2; [`super::WorldOrbit`]): `u8`
+    /// version (1), then `f32`s: the pole's height and yaw, the distance, the axial tilt, the year
+    /// (days) and its phase, the moon's month (days), inclination and node. A world that rolls an
+    /// orbit (a Realistic world) writes it at creation, its clock in `CLOCK` and its moon's phase in
+    /// `MOON_PHASE`, so it keeps its sky when a later build changes the ranges. Optional: a world
+    /// without it (every default and starter world) has today's orbit, and writes none, so its
+    /// fields and join are byte-identical to before; a build before it skips it and draws today's
+    /// sky (a look). A later version may append fields: this build reads its nine.
+    pub const CELESTIAL: u8 = 0x86;
 }
 
 /// The most fields, and the longest field.
@@ -80,6 +89,86 @@ impl WorldClock {
     }
 }
 
+/// A world's rolled orbit (`tag::CELESTIAL`; `dwell_look::orbits::Orbit` reads it). Its clock is
+/// the world's `CLOCK` and its moon's phase its `MOON_PHASE`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WorldOrbit {
+    /// The celestial pole's height over face A's horizon (face A's latitude, °N).
+    pub pole_deg: f32,
+    /// The pole's yaw: the sun's rising point (°, 0 = +Z, 90 = +X).
+    pub pole_yaw_deg: f32,
+    /// From the sun, relative to today's (1).
+    pub distance: f32,
+    /// The axial tilt (°; seasons, O4).
+    pub tilt_deg: f32,
+    /// The year in world days, and where in it day 0 is (0–1).
+    pub year_days: f32,
+    pub year_phase: f32,
+    /// The moon's month (days, new to new), its orbit's inclination to the sun's path and its
+    /// ascending node at day 0 (°).
+    pub moon_cycle_days: f32,
+    pub moon_inclination_deg: f32,
+    pub moon_node_deg: f32,
+}
+
+impl WorldOrbit {
+    const VERSION: u8 = 1;
+    fn values(&self) -> [f32; 9] {
+        [
+            self.pole_deg,
+            self.pole_yaw_deg,
+            self.distance,
+            self.tilt_deg,
+            self.year_days,
+            self.year_phase,
+            self.moon_cycle_days,
+            self.moon_inclination_deg,
+            self.moon_node_deg,
+        ]
+    }
+    fn write(&self, w: &mut ByteWriter) {
+        w.u8(Self::VERSION);
+        for v in self.values() {
+            w.f32(v);
+        }
+    }
+    fn read(b: &[u8]) -> Option<Self> {
+        let mut r = ByteReader::new(b);
+        if r.u8() < Self::VERSION {
+            return None;
+        }
+        let v: [f32; 9] = std::array::from_fn(|_| r.f32());
+        if !r.ok() {
+            return None;
+        }
+        let o = Self {
+            pole_deg: v[0],
+            pole_yaw_deg: v[1],
+            distance: v[2],
+            tilt_deg: v[3],
+            year_days: v[4],
+            year_phase: v[5],
+            moon_cycle_days: v[6],
+            moon_inclination_deg: v[7],
+            moon_node_deg: v[8],
+        };
+        o.valid().then_some(o)
+    }
+    /// Within what any build's ranges could roll (`shared/look/orbits.mjs`'s bounds).
+    pub fn valid(&self) -> bool {
+        let within = |v: f32, lo: f32, hi: f32| v.is_finite() && (lo..=hi).contains(&v);
+        within(self.pole_deg, 0.0, 90.0)
+            && within(self.pole_yaw_deg, 0.0, 360.0)
+            && within(self.distance, 0.5, 2.0)
+            && within(self.tilt_deg, 0.0, 45.0)
+            && within(self.year_days, 1.0, 1000.0)
+            && within(self.year_phase, 0.0, 1.0)
+            && within(self.moon_cycle_days, 1.0, 100.0)
+            && within(self.moon_inclination_deg, 0.0, 30.0)
+            && within(self.moon_node_deg, 0.0, 360.0)
+    }
+}
+
 /// The settings this build knows, read from a world's fields.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct WorldSettings {
@@ -91,6 +180,8 @@ pub struct WorldSettings {
     pub size: crate::world_size::WorldSize,
     /// The moon's phase at day 0 (`tag::MOON_PHASE`; None: the build's default).
     pub moon_phase: Option<f32>,
+    /// The world's rolled orbit (`tag::CELESTIAL`; None: today's).
+    pub orbit: Option<WorldOrbit>,
 }
 
 impl WorldSettings {
@@ -219,6 +310,9 @@ impl SettingsFields {
             }
             s.moon_phase = Some(p);
         }
+        if let Some(b) = self.get(tag::CELESTIAL) {
+            s.orbit = Some(WorldOrbit::read(b).ok_or(SettingsError::Invalid(tag::CELESTIAL))?);
+        }
         Ok(s)
     }
 
@@ -277,6 +371,7 @@ impl SettingsFields {
                     tag::WORLD_SIZE,
                     tag::MOON_PHASE,
                     tag::CAPABILITIES,
+                    tag::CELESTIAL,
                 ]
                 .contains(t)
             })
@@ -306,6 +401,9 @@ impl SettingsFields {
         if let Some(p) = s.moon_phase {
             out.push((tag::MOON_PHASE, field(&|w| w.f32(p))));
         }
+        if let Some(o) = s.orbit {
+            out.push((tag::CELESTIAL, field(&|w| o.write(w))));
+        }
         out.sort_by_key(|(t, _)| *t);
         Self(out)
     }
@@ -325,7 +423,72 @@ mod tests {
         mode: "creative",
         size: crate::world_size::WorldSize::DEFAULT,
         moon_phase: None,
+        orbit: None,
     };
+
+    const ORBIT: WorldOrbit = WorldOrbit {
+        pole_deg: 41.5,
+        pole_yaw_deg: 200.0,
+        distance: 1.02,
+        tilt_deg: 12.0,
+        year_days: 24.0,
+        year_phase: 0.0,
+        moon_cycle_days: 9.0,
+        moon_inclination_deg: 3.0,
+        moon_node_deg: 120.0,
+    };
+
+    #[test]
+    fn the_orbit_is_an_optional_field_that_round_trips_and_a_world_without_it_writes_none() {
+        assert_eq!(tag::CELESTIAL & tag::OPTIONAL, tag::OPTIONAL);
+        // Absent: today's orbit, and the fields are byte-identical to a world before it.
+        let plain = SettingsFields::default().with(D);
+        assert!(plain.get(tag::CELESTIAL).is_none());
+        assert_eq!(plain.settings(D).map(|s| s.orbit), Ok(None));
+        let s = WorldSettings {
+            orbit: Some(ORBIT),
+            ..D
+        };
+        let f = SettingsFields::default().with(s);
+        let back = SettingsFields::from_bytes(&f.to_bytes()).expect("the tagged form");
+        assert_eq!(back.settings(D), Ok(s));
+        // A build before it skips it (an optional tag it doesn't know).
+        let older: Vec<_> = f.0.iter().filter(|(t, _)| *t != tag::CELESTIAL).collect();
+        assert_eq!(older.len(), f.0.len() - 1);
+        // A later version's longer record still reads its nine values.
+        let mut longer = f.clone();
+        for (t, b) in &mut longer.0 {
+            if *t == tag::CELESTIAL {
+                b[0] = 2;
+                b.extend_from_slice(&[0; 4]);
+            }
+        }
+        assert_eq!(longer.settings(D), Ok(s));
+        // Out of range, or truncated, refuses.
+        for bad in [
+            WorldOrbit {
+                pole_deg: 95.0,
+                ..ORBIT
+            },
+            WorldOrbit {
+                distance: f32::NAN,
+                ..ORBIT
+            },
+        ] {
+            let f = SettingsFields::default().with(WorldSettings {
+                orbit: Some(bad),
+                ..D
+            });
+            assert_eq!(f.settings(D), Err(SettingsError::Invalid(tag::CELESTIAL)));
+        }
+        let mut cut = f.clone();
+        for (t, b) in &mut cut.0 {
+            if *t == tag::CELESTIAL {
+                b.truncate(10);
+            }
+        }
+        assert_eq!(cut.settings(D), Err(SettingsError::Invalid(tag::CELESTIAL)));
+    }
 
     #[test]
     fn capabilities_are_an_optional_join_field_never_saved() {
@@ -360,6 +523,7 @@ mod tests {
             mode: "adventure",
             size: crate::world_size::WorldSize::DEFAULT,
             moon_phase: Some(0.25),
+            orbit: Some(ORBIT),
         };
         let f = SettingsFields::default().with(s);
         let back = SettingsFields::from_bytes(&f.to_bytes()).expect("the tagged form");
@@ -541,6 +705,7 @@ mod tests {
         );
         let s = WorldSettings {
             moon_phase: Some(0.625),
+            orbit: None,
             ..D
         };
         let back = SettingsFields::from_bytes(&SettingsFields::default().with(s).to_bytes())

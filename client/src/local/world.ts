@@ -55,6 +55,8 @@ export interface LocalWorld {
   upgrade?: boolean;
   /** A new world's game mode by name (ADR 0065, the New world form's Mode); a saved world keeps its own. */
   mode?: string;
+  /** A new world's Sky preset (REALISTIC_WORLD.md §8, `shared/look/orbits.json`); a saved world keeps its orbit. */
+  sky?: string;
   /**
    * A bigger world's size (docs/proposals/BIG_MAP.md M2b: the New world form's World size, the dev
    * link `?size=2x`), as its radius scale; absent: today's (1×). A new world is created at it and

@@ -30,6 +30,8 @@ export type Launch =
       worldgen: string;
       /** A bigger world's size by name (`&size=2x`, BIG_MAP.md M2b), or '' (today's). */
       size: string;
+      /** A Realistic world's Sky preset by name (`&sky=extreme`, REALISTIC_WORLD.md §8), or ''. */
+      sky: string;
     }
   /** A world regenerated from its seed by the build that opens it (`?regenerate=<world id>`). */
   | { kind: 'regenerate'; id: string }
@@ -57,6 +59,8 @@ const ROUTE_PARAMS = [
   'worldgen',
   // A bigger world's size (`?size=2x`, BIG_MAP.md M2b: a link's world or the New world form's).
   'size',
+  // A Realistic world's Sky preset (`&sky=extreme`, the New world form's Sky).
+  'sky',
   // A message for the menu (the launcher's): why it came up instead of a game.
   'say',
   // Play advanced's overrides (ui/playAdvanced.ts): one-off, so they never ride into the next route.
@@ -87,6 +91,7 @@ export function launchOf(search: string): Launch {
       mode: params.get('mode') ?? '',
       worldgen: params.get('worldgen') ?? '',
       size: params.get('size') ?? '',
+      sky: params.get('sky') ?? '',
     };
   }
   const regenerate = params.get('regenerate');
