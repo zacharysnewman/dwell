@@ -1,0 +1,6 @@
+{
+  "changes": [
+    "Forests draw faster: leaf cards hidden inside a tree's crown, on its far side or past their distance are no longer drawn, and they now fade out from 24 to 40 m (was 48 to 64 m)",
+    "Settings → Graphics has a Trees group; the Leaf cards switch moved there from View"
+  ]
+}

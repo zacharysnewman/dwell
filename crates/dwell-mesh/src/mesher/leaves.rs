@@ -471,7 +471,7 @@ pub(super) fn leaf_voxel(
 /// The exposed faces `ex` that get cards: those whose way out is open. A face is dropped when a
 /// leaf cell lies `2..=reach` cells straight out of it (`leafy_at(face, step)`: Some(leafy) for
 /// the cell `step` cells out, None where unknown, taken as open): it looks into a cavity inside
-/// the crown, where its cards would be drawn and hidden (BUGS.md #73).
+/// the crown, where its cards would be drawn and hidden (BUGS.md #78).
 pub(crate) fn card_faces(
     ex: [bool; 6],
     reach: u32,
@@ -488,7 +488,7 @@ pub(crate) fn card_faces(
 /// A card's `plants.y` (the wind's speed for a plant, >= 0): the card's plane normal `n` (metres,
 /// unit), octahedral-packed into 11 + 11 bits, stored as -(1 + packed), which marks the vertex a
 /// card's (its wind speed 1). The cutout shaders' `plant_speed` and `card_normal` read it back
-/// (BUGS.md #73: a card on the crown's far side, facing away, is dropped in the vertex shader).
+/// (BUGS.md #78: a card on the crown's far side, facing away, is dropped in the vertex shader).
 pub(crate) fn card_speed(n: V) -> f32 {
     let l1 = n[0].abs() + n[1].abs() + n[2].abs();
     let (mut u, mut v) = (n[0] / l1, n[2] / l1);

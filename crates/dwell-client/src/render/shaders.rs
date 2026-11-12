@@ -932,7 +932,7 @@ fn card_normal(packed: f32) -> vec3f {
     }
     return normalize(n);
 }
-// BUGS.md #73 (the M1 at High): a leaf card the eye can't see costs no pixels. Dropped when the
+// BUGS.md #78 (the M1 at High): a leaf card the eye can't see costs no pixels. Dropped when the
 // eye is more than CARD_BACK_CULL_M behind its plane (the crown's far side, facing away; the
 // plane's distance is the same at its four corners, so a card goes whole) or every corner of it is
 // past its fade's end (the margin over its size). `rel` the corner before the wind's sway, `n` the

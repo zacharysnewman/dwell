@@ -8262,7 +8262,7 @@
     },
     {
       "name": "high-forest",
-      "notes": "WORK_QUEUE item 30 (BUGS.md #73): the High preset in the starter's broadleaf forest, every costly feature switched off in turn mid-run (cards, shadows, torch shadows, shafts, bloom, clouds, water, tall grass, the full-detail distance, the render scale at full), each recorded 4 s; run --unthrottled on the M1 for gpu.frame per feature (docs/DEV_TOOLS.md, High on the M1).",
+      "notes": "WORK_QUEUE item 30 (BUGS.md #78): the High preset in the starter's broadleaf forest, every costly feature switched off in turn mid-run (cards, shadows, torch shadows, shafts, bloom, clouds, water, tall grass, the full-detail distance, the render scale at full), each recorded 4 s; run --unthrottled on the M1 for gpu.frame per feature (docs/DEV_TOOLS.md, High on the M1).",
       "window": {
         "width": 1280,
         "height": 800,
