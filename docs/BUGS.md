@@ -6,6 +6,22 @@ pins it.
 
 ## Open
 
+### 79. A herd grows by several animals within seconds of coming near
+
+Seen filming the deer (2026-11-12, seed 7, herd id 3 at 3000,2200 face A): a herd that arrived as 6 head had 9 within seconds and 12–13 within a minute. Births (mating chance 0.5 a try, cap 12) could explain part, but it looks like animals popping in; check the near herd isn't spawned twice (far→near handover) and that births are paced.
+
+### 80. Deer in a herd stand inside each other
+
+Seen in the deer video (still_01 and clip 1): two does occupy the same space for seconds. Herd members have no spacing or separation.
+
+### 81. A wolf walks partly inside a cliff wall
+
+Seen in the wolf clip (pack id 9 at -7800,-15600, a terraced cliff): a wolf's body overlapped the stone wall at the cliff foot; creature movement doesn't keep the body's radius out of solid cells.
+
+### 82. `?at=` or a teleport to a y inside the ground drops the player through to face B
+
+`?at=3000,260,2200` where the ground is at 381 fell through to face B; a teleport while flying to a y inside a mountain did the same. Expected: put the player on the ground above (or refuse).
+
 ### 78. 26 fps at High on the owner's M1 MacBook Air ("I think cards are killing my m1 mac")
 
 Reported 2026-11-12 (owner): "It seems like we're hiding some performance settings. I don't see 'tree' options in
