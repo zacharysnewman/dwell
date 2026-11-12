@@ -1454,6 +1454,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    the initial wide shot so you could tell it was a different side without the disorientation."** — only the
    initial wide (the crane from face A round under to face B) holds face A's up; the out-of-the-hole shot on face B
    uses face B's own up (upright, `up: "auto"`).
+   v5 (one-command tool #853; full record ~5 min, a one-shot fix 2 min 34 s): owner **"Bifacial v5 looks great saved
+   it."** — video 1 done; its clip cache cleared. Next: video 2 (water and underwater), shot plan first.
    weird", confirmed by the v2 comparison).
    **Built 2026-11-12:** a keyframe `up` ("a" | "b" | "auto", default auto) holds a face's up, roll and look frame
    across the midplane (THEATER_MODE.md §3.1; presets and the keyframe editor's Up take it); the next take uses
