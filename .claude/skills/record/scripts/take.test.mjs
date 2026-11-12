@@ -6,7 +6,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { SKILL, VIDEOS, clipPath, fingerprint, loadVideo, metaPath, resolveOnly, selectShots, splicePlan, validate } from './videos.mjs';
-import { encodeClip } from './take.mjs';
+import { encodeClip, fetchRetrying } from './take.mjs';
 
 const bifacial = () => loadVideo('bifacial');
 const copy = (v) => JSON.parse(JSON.stringify(v));
@@ -61,8 +61,10 @@ test('--only takes a shot id or a part label; s5 is the portal take (the landing
 
 test('shot 5 camera and up are manifest args the take script reads', () => {
   const portal = bifacial().shots.find((s) => s.id === 'portal');
-  assert.deepEqual(portal.args.camB, [1789.5, -58, 20700.5]);
-  assert.equal(portal.args.up, 'a'); // v4; the upright v5 shot is "auto"
+  assert.deepEqual(portal.args.camB, [1796.3, -50.5, 20707.3]); // v5 (v4: [1789.5, -58, 20700.5])
+  assert.equal(portal.args.up, 'auto'); // v5: upright on face B (v4 held face A's: "a")
+  const s6 = JSON.parse(readFileSync(join(SKILL, bifacial().shots.find((s) => s.id === 's6').path), 'utf8'));
+  assert.deepEqual(s6.keyframes[0].position, portal.args.camB); // the drone rise starts from shot 5's camera
   const src = readFileSync(join(SKILL, portal.script), 'utf8');
   assert.match(src, /up: A\.up \?\? 'a'/);
   assert.match(src, /A\.camB/);
@@ -88,7 +90,7 @@ test('the fingerprint changes with the footage recipe, not with the splice cut',
   const s = m.shots.find((x) => x.id === 'portal');
   const before = fingerprint(m, s);
   assert.equal(fingerprint(m, { ...s, splice: [{ from: 0, to: 1 }] }), before);
-  assert.notEqual(fingerprint(m, { ...s, args: { ...s.args, up: 'auto' } }), before);
+  assert.notEqual(fingerprint(m, { ...s, args: { ...s.args, up: 'b' } }), before);
   assert.notEqual(fingerprint(m, { ...s, setup: { reload: false } }), before);
   assert.notEqual(fingerprint({ ...m, world: { url: '/dwell/?seed=8' } }, s), before);
 });
@@ -132,4 +134,16 @@ test('encodeClip turns a driver frame folder into an mp4 at the measured rate', 
   assert.ok(Math.abs(enc.rate - 60) < 0.01);
   const dur = +spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', out], { encoding: 'utf8' }).stdout;
   assert.ok(Math.abs(dur - n / 60) < 0.05, `duration ${dur}`);
+});
+
+test('a post on a socket the driver closed while idle is retried once; other errors are not', async () => {
+  const sock = Object.assign(new TypeError('fetch failed'), { cause: { code: 'UND_ERR_SOCKET' } });
+  let n = 0;
+  const flaky = async () => { if (n++ === 0) throw sock; return 'ok'; };
+  assert.equal(await fetchRetrying('u', {}, flaky), 'ok');
+  assert.equal(n, 2);
+  const refused = Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } });
+  n = 0;
+  await assert.rejects(fetchRetrying('u', {}, async () => { n++; throw refused; }), /fetch failed/);
+  assert.equal(n, 1);
 });
