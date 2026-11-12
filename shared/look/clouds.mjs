@@ -95,12 +95,17 @@ const SCHEMA = {
     detailErosion: [0, 0.95],
     wispHeight: [0.001, 1],
     shear: [0, 4],
-    coverageSoftness: [0.01, 1],
+    baseLow: [0, 1],
+    baseHigh: [0, 1],
   },
   weather: {
     type: [0, 1],
     typeVariation: [0, 1],
+    typeScaleM: [64, 1e6],
     typeFromCoverage: [0, 4],
+    coverScaleM: [64, 1e6],
+    coverVariation: [0, 1],
+    deckBreakup: [0, 0.9],
     precipitation: [0, 1],
   },
 };
@@ -339,6 +344,20 @@ export function validateClouds(data, atmosphere = loadAtmosphere()) {
     if (!Number.isInteger(shape.wrapM / form[k]))
       fail(
         `shape.wrapM must be a whole multiple of form.${k} (the noise tiles with the deck)`,
+      );
+  }
+  if (form.baseHigh <= form.baseLow)
+    fail("form.baseHigh must be greater than form.baseLow");
+  // The weather's regional fields are value noise on a coarser lattice of the deck's: whole
+  // multiples of its cells that divide its period, so they tile with it too.
+  for (const k of ["typeScaleM", "coverScaleM"]) {
+    const v = data.weather[k];
+    if (
+      !Number.isInteger(v / shape.scaleM) ||
+      !Number.isInteger(shape.wrapM / v)
+    )
+      fail(
+        `weather.${k} must be a whole multiple of shape.scaleM that divides shape.wrapM (the field tiles with the deck)`,
       );
   }
   return data;

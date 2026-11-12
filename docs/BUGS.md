@@ -43,6 +43,15 @@ weather `type` from the deck's noise) with a height cut on a linearly interpolat
 3 sides suggests a triangular lattice (simplex-style) or the weather texture sampled as triangles. Fix: smooth
 (cubic/Hermite) interpolation or Perlin-Worley for coverage/type, a rounded height profile (the papers' gradient
 times a remap, not a linear cut), erosion to break the silhouette.
+**Fixed in code (2026-11-12, branch `claude/cloud-pyramids`, CLOUDS.md §9.9), the in-game look left for a local
+check:** the cause was each cloud being a heightfield of the deck's 2D noise (`docs/reference/cloud-papers.md`):
+the type tied to each core (`typeFromCoverage` 0.9), the cover a hard 2D cut so the 3D noise carved nothing,
+the view extinction 0.03 a hard shell. Now the type and the cover are regional fields (16 km, 8 km), the 3D
+Perlin–Worley cuts the single clouds (Nubis's `saturate(remap(base, 1 − profile × cover, 1))`, base tile 2 km),
+the profile fades from just over the base (flat bases, domed tops), erosion 0.25, view extinction 0.015. Test
+`clouds::pyramid_tests::the_cloud_tops_are_rounded_not_pyramids` (both faces): the CPU twin's median cloud-top
+slope over fixture patches was 4.1 and 2.6 m per m on main (red), now 0.7–1.0; tallest 2.3–2.5 km → 0.5–1.8 km;
+footprints 300–1500 m; seamless tiling; a cloud behind 400 m of cloud 9 % visible. Not done: adaptive steps.
 
 ### 97. Light shafts draw a pixelated dither pattern
 
