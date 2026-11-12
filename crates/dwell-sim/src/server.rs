@@ -1292,6 +1292,15 @@ impl Server {
             lod_rebuild: false,
             config,
         };
+        // The portals' shafts for the player controller's exit push (BIFACIAL_WORLD.md §12.3):
+        // from the generator and seed, as the client's prediction sets them (`Game::set_world`).
+        if server.config.generator_override.is_none() {
+            server.world.portals = dwell_worldgen::portal_shafts_for_sized(
+                server.config.generator_version,
+                server.config.world_seed,
+                server.config.world_size,
+            );
+        }
         server.init_storage();
         server.place_world_vents();
 

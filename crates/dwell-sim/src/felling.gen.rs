@@ -16,6 +16,7 @@ pub const FELLING: FellingData = FellingData {
     settle_every_ticks: 6,
     max_seconds: 30.0,
     max_settles: 1,
+    beach_seconds: 2.0,
     hit_speed: 4.0,
     hit_damage_per_speed: 6.0,
     hold_speed: 1.0,

@@ -2978,6 +2978,10 @@ impl<S: Scene> Game<S> {
         size: dwell_protocol::world_size::WorldSize,
     ) {
         self.portals = dwell_worldgen::portal_axes_for_sized(generator_version, world_seed, size);
+        // And their shafts for the controller's exit push (BIFACIAL_WORLD.md §12.3), the same the
+        // server's world holds, so the prediction pushes as the server does.
+        self.streamer.store_mut().portals =
+            dwell_worldgen::portal_shafts_for_sized(generator_version, world_seed, size);
         self.world_seed = world_seed;
         self.world_bounds = dwell_world::WorldBounds::of(size);
         self.streamer.set_volume(*self.world_bounds.volume());

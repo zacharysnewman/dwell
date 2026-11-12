@@ -193,7 +193,7 @@ mono AAC 64 kbps, 44.1 kHz, leading and trailing silence trimmed; about 0.8 MB i
 | `dynamite_boom` | `EXPLOSION_Medium_Blast_Scatter_Debris`, `EXPLOSION_Short_Dark_Debris`, `EXPLOSION_Medium_Fast_with_Rock_Debris` |
 | `chop_bark` / `chop_wood` / `chop_creak` | `AXE_Chop_Tree_01_RR1–3` / `AXE_Chop_Wood_01_RR1–3` / `CREAK_Wood_01–03` |
 | `axe_clank` / `axe_swish` | `PICKAXE_Impact_Metal_01_RR1–3` / `WHOOSH_Air_Blade_RR1–3` |
-| `deny` | `UI_Error_Tone_01` |
+| `deny` | `UI_Click_Tap_Knock_Subtle_Darker` (owner, 2026-11-12: the old `UI_Error_Tone_01` was "way to loud and jarring"; a soft dull 30 ms knock played ~12 dB under it, ±1 semitone) |
 
 Still procedural: the slides and slide stops, `rise`, `dive`, `crouch_on`/`off`, `sprint`,
 `respawn`, `axe_rustle`, the torch's place and break, the fuse, the loops (fire, fuse fizz,
@@ -207,12 +207,15 @@ Owner (2026-11-10): wind stronger up high and in open ground, the sea near the c
 streams near moving water, birds in daytime forests and quieter at night, leaves near trees —
 *"Ongoing/ambient/looping sounds should be quieter so they're not really disruptive, more flavor
 than function."* ([ADR 0077](./adr/0077-ambience-beds.md).)
+Owner (2026-11-12): **"let's disable the wind for now it doesn't seem right like should just be for flying or high
+altitude only."** So the wind bed reads the eye's `height` above the ground (silent below 12 m, full at 60 m), not its
+altitude above the sea: nothing on the ground, even on a mountain; it comes in flying.
 
 ```json
 "ambience": { "volume": 0.35, "fadeS": 2.5, "cap": 0.4,
   "probe": {"radiusM": 16, "trees": ["dwell:leaves", "dwell:snowy_leaves", "dwell:log"]},
   "beds": { "wind": {"files": ["wind-loop-1.m4a"], "gain": 0.3, "when": [
-    {"input": "altitude", "from": 0, "full": 60, "floor": 0.2}, {"input": "open", "from": 0.2, "full": 1}]} } }
+    {"input": "height", "from": 12, "full": 60}, {"input": "open", "from": 0.2, "full": 1}]} } }
 ```
 
 - `volume`: the **Ambience** volume's default (Settings → Sound; the beds' own bus, per browser in

@@ -92,7 +92,7 @@
     "probe": {"radiusM": 16, "trees": ["dwell:leaves", "dwell:snowy_leaves", "dwell:log"]},
     "beds": {
       "wind": {"files": ["wind-loop-1.m4a"], "gain": 0.3, "when": [
-        {"input": "altitude", "from": 0, "full": 60, "floor": 0.2},
+        {"input": "height", "from": 12, "full": 60},
         {"input": "open", "from": 0.2, "full": 1}
       ]},
       "sea": {"files": ["sea-loop-1.m4a"], "gain": 0.35, "when": [
@@ -1617,8 +1617,8 @@
       ]
     },
     "deny": {
-      "samples": {"files": ["deny-1.m4a"], "gain": 0.4, "pitch": 0},
-      "gain": 0.879,
+      "samples": {"files": ["deny-knock-1.m4a"], "gain": 0.2, "pitch": 1},
+      "gain": 0.3,
       "reverb": 0.028,
       "variation": "none",
       "layers": [

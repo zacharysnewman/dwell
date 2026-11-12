@@ -442,3 +442,75 @@ fn prediction_runs_stamina_out_as_the_server_does_and_takes_its_corrections() {
     let error = (p.position() - server.players.position(&server.physics, server.h)).length();
     assert!(error <= f64::from(Predictor::POSITION_TOLERANCE), "{error}");
 }
+
+/// A server and a client predicting it on a generated world with portals (BIFACIAL_WORLD.md
+/// §12.3), the client's world given `client_portals`: the player starts 1 m over a portal's
+/// opening on face A and drops in, facing 45° with no input. The replays, and the face it ends on.
+fn portal_drop(
+    client_portals: dwell_world::portal_shafts::PortalShafts,
+) -> (dwell_physics::predictor::PredictorStats, FaceFrame) {
+    use dwell_world::GENERATOR_TERRAIN;
+    let seed = 0;
+    let world = || {
+        VoxelWorld::new(
+            dwell_worldgen::generator_for(GENERATOR_TERRAIN, seed),
+            Some(dwell_worldgen::air_test_for(GENERATOR_TERRAIN, seed)),
+        )
+    };
+    let portals =
+        dwell_worldgen::portal_shafts_for_sized(GENERATOR_TERRAIN, seed, Default::default());
+    let shaft = portals.shafts[0];
+    let mut server = Server::new();
+    server.world = world();
+    server.world.portals = portals;
+    // Its feet 1 m over the opening (the body's centre is half its height over its feet).
+    let centre =
+        shaft.top(dwell_world::Face::A) + 1.0 + f64::from(server.players.half_height(server.h));
+    let start = DVec3::new(shaft.axis[0], centre, shaft.axis[1]);
+    server
+        .players
+        .teleport(&mut server.physics, server.h, start, Vec3::ZERO);
+    let mut client_world = world();
+    client_world.portals = client_portals;
+    let mut p = Predictor::new(PlayerControllerConfig::default());
+    p.on_snapshot(&mut client_world, &server.snapshot(0));
+    let mut in_flight: VecDeque<PhysicsSnapshot> = VecDeque::new();
+    for seq in 1..=60 * 8 {
+        // Facing 45° (between the monument's pillars), level: the look continued across the
+        // midplane is the same (`FaceFrame::look_across` keeps the heading, mirrors the pitch).
+        let input = quantize_input(
+            &Input {
+                look_yaw: 45.0,
+                ..Input::default()
+            },
+            seq,
+        );
+        p.tick(&mut client_world, &input);
+        server.step(&input, None);
+        in_flight.push_back(server.snapshot(seq));
+        if in_flight.len() > 6 {
+            let s = in_flight.pop_front().unwrap();
+            p.on_snapshot(&mut client_world, &s);
+        }
+    }
+    let c = server.players.controller(server.h);
+    assert!(c.ground.grounded, "still in the air after 8 s");
+    (*p.stats(), c.face)
+}
+
+#[test]
+fn the_prediction_agrees_with_the_server_through_a_portal_and_out_of_it() {
+    // both-faces: the drop crosses from face A to face B. The exit push is the shared
+    // controller's, read from each side's own `VoxelWorld::portals`, so the client predicts it.
+    let portals = dwell_worldgen::portal_shafts_for_sized(
+        dwell_world::GENERATOR_TERRAIN,
+        0,
+        Default::default(),
+    );
+    let (stats, face) = portal_drop(portals);
+    assert_eq!(face, FaceFrame::B, "out on the far face");
+    assert_eq!(stats.replays, 0, "{stats:?}");
+    // A client without the shafts mispredicts the push: why both sides set them.
+    let (stats, _) = portal_drop(Default::default());
+    assert!(stats.replays > 0, "{stats:?}");
+}
