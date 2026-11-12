@@ -2,6 +2,21 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.54.112",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.111",
+      "changes": [
+        "Herds near you no longer grow by several animals in seconds: deer and wolves have young at a natural pace.",
+        "Deer and wolves keep a little space between them instead of standing inside each other.",
+        "Animals no longer walk partly into cliff walls.",
+        "A spawn link or teleport to a point inside the ground now puts you on the ground above instead of dropping you through the world."
+      ]
+    },
+    {
       "version": "0.54.110",
       "changes": [
         "Behind the scenes: recording notes"
