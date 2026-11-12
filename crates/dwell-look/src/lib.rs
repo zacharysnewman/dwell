@@ -6,6 +6,7 @@
 
 pub mod ambient;
 pub mod bloom;
+pub mod celestial;
 pub mod clouds;
 #[path = "clouds.gen.rs"]
 mod clouds_gen;

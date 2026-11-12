@@ -534,6 +534,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    moon should look bright."** The far-body moon (M-2) keeps today's halo/glow and brightness: the baked normals
    and albedo shape its surface, but its lit part is as bright as today's moon (exposure-independent emissive-like
    brightness and the same glow around it), scaled by the phase's lit share (physical phases).
+   **M-4 built 2026-11-12** (branch `claude/moon-m4-celestial-jxijig`): the celestial model (`dwell-look`
+   `celestial.rs`, DAY_NIGHT.md §14): the moon's orbit as data (`daynight.json` `moonOrbit`: 5°, ~597 km, the
+   node turning every 96 days; the month `moon.cycleDays` 8), tidally locked (face A toward home), phases and
+   the lit share from geometry (physical: a flat disc, dark from last quarter to first), moonlight = today's ×
+   (`moon.nightFloor` 0.15 + the rest × lit × over the horizon), the halo today's × lit (what M-2 needs for
+   "the moon should look bright"); the month's start an optional world setting (`MOON_PHASE` 0x84, absent =
+   the data's). Not drawn yet (M-2).
 
 ## Done
 

@@ -2962,6 +2962,20 @@ chunks), keeps the last selection (`LodSystem::update`; ~1 ms a frame standing s
   only): `?time=0..1`, `?moon=0..1`, `?timespeed=N`, `__dwell.setTime`, the bench's `time` and
   `timelapse` steps, the F3 line (the clock, the day, the solar angles, the keyframes between, the
   moon). Measured GPU cost: see §7.4.
+  **The celestial model [built, M-4; not drawn yet]** (`dwell-look` `celestial.rs`,
+  [`proposals/MOON_WORLD.md`](./proposals/MOON_WORLD.md) §6, DAY_NIGHT.md §14): the sun, the home
+  disc and the moon as bodies, pure functions of the world clock (server and clients agree with no
+  message). The sun is today's direction exactly; the moon goes round a circle `moonOrbit.distanceM`
+  (596.8 km: the moon grid's 12.5 km at `moon.radiusDeg` 1.2°, checked against `grids.json` by
+  `daynight.mjs`) out, inclined `inclinationDeg` (5°) to the sun's path, once a month (`cycleDays` 8,
+  new to new) against the sky's turn, its node turning against the sun every `nodeTurnDays` (96);
+  tidally locked (the moon grid's up, its face A's, at the home disc's centre: `Celestial::moon_axes`,
+  the grid's frame for M-3). The phase and the lit share (a flat disc: n·s of the face seen, physical)
+  follow from the geometry, the same from either home face; moonlight = today's × (`moon.nightFloor`
+  0.15 + the rest × lit share × the disc's share over the face's horizon); the halo is today's × the
+  lit share. The month's start is the world's (`WorldSettings` optional tag `MOON_PHASE` 0x84; absent,
+  `moon.startPhase`). The sky still draws today's moon (opposite the sun, counted phase,
+  `newMoonLight`) until M-2 draws from the model.
 - **Clouds [built, Phase 31]** ([ADR 0034](./adr/0034-sky-clouds.md), [`CLOUDS.md`](./CLOUDS.md)): a
   2D cloud layer drawn as part of the sky in the composite pass (not volumetric, no geometry). A thin
   deck lies `altitudeM` above the viewer's own face's sea level, on a sphere about a centre
@@ -4189,7 +4203,9 @@ S→C  WorldSettings 0x54 (protocol v22): u8 count, each u8 tag, u16 length, byt
                    (u64 FNV-1a of its text, ADR 0074 B7), only for a world made from a
                    config (a Chisel edit or a fixture), never saved: an older build refuses
                    it; this one sends WorldgenRequest after Welcome and joins once the text
-                   arrives and matches
+                   arrives and matches. **[built, M-4]** Tag 0x84 (optional) the moon's
+                   phase at day 0 (f32, 0 new, 0.5 full; MOON_WORLD.md §6): written only
+                   for a world that sets one, absent = the build's `moon.startPhase`
 C→S  WorldgenRequest 0x62: empty, only to a server whose WorldSettings has tag 2
 S→C  WorldgenConfig  0x63: u32 length (at most 512 KiB), UTF-8 — the world's worldgen config
                    text (`dwell_worldgen::config::world_config`); answers WorldgenRequest
