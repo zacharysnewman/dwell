@@ -444,6 +444,12 @@ interface DwellDebug {
    * packs (face, species, face-local x/z, head); null before the first, or from a server without one.
    */
   ecology(): EcologyReadout | null;
+  /**
+   * The far trees' impostors (BUGS.md #106): whether they draw (`ready`: every atlas layer baked
+   * and the tiles about the eye in), the layers baked, tiles and instances held, instances drawn
+   * last frame and the last upload error. Not ready: the near crowns and the LOD's trees draw.
+   */
+  impostors(): ImpostorStatus;
   /** The kept player controller ticks, oldest first. */
   ticks(): TickSample[];
   /** The latest sounds played (ids, newest last; docs/AUDIO.md). */
@@ -492,6 +498,20 @@ export interface Telemetry {
   samples: Record<string, TelemetryStats>;
   counters: Record<string, number>;
   frameCount: number;
+}
+
+/** The far trees' impostors now (render/impostors.rs `Status`, BUGS.md #106). */
+export interface ImpostorStatus {
+  made: boolean;
+  tierOn: boolean;
+  ready: boolean;
+  baked: number;
+  layers: number;
+  requested: boolean;
+  tiles: number;
+  instances: number;
+  drawn: number;
+  lastError: string;
 }
 
 /** One controller tick (telemetry.rs `TickSample`). */
@@ -1444,6 +1464,7 @@ async function start(): Promise<App | null> {
       return out;
     },
     ecology: () => client.ecology() as EcologyReadout | null,
+    impostors: () => client.impostorStatus() as ImpostorStatus,
     ticks: () => client.telemetryTicks() as TickSample[],
     telemetryReset: () => {
       client.telemetryReset();

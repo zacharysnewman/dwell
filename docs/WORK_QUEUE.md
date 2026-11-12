@@ -39,6 +39,13 @@ The running order across the items below; each line names its item, where the ow
    inside crowns and on the far side, pull their range in, a Trees group and a setting for every costly feature.
 2. **Distance haze tuning (item 29)** — only the height fog's three numbers, ground-level and hilltop shots, clouds off.
 3. **Cloud lighting (item 13)** — shaded bases and self-shadowing, matched against the old 2D deck.
+3b. **BUGS #106, trees drawn as bare sticks (owner, 2026-11-12, URGENT):** "What happened to the trees, they just
+   look like sticks?" Do: (1) the leaves fade out and the LOD omits its trees only when the impostors are ready to
+   draw (atlas uploaded, the area's instances in), with a no-GPU test; (2) find why the impostors draw nothing on the
+   release and add `__dwell.impostors()`. Then (local GPU check): the impostors draw but small and faint: make a far
+   impostor's crown match the real crown's size and density at the hand-over, with a CPU test. Gate and readout done
+   (claude/tree-sticks); the CPU test shows the bake and the fragment's sampling match the real crown, so the cause
+   is on the GPU path, open (BUGS.md #106).
 4. **Far-tree impostors (item 31)** — the bake in the cloud now; drawing them locally after, replacing lod_trees.
 5. **Dense forest reference (item 32)** — in the cloud now: `old_growth`, `test:forest`, the `forest-perf` bench.
 6. **The moon, client side (item 27, M-7c)** — the client follows a player onto the moon (its chunks in the moon's

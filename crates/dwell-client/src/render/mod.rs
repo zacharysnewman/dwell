@@ -3162,6 +3162,20 @@ impl Renderer {
         let c = dwell_worldgen::impostor::Config::get();
         c.far(if self.far_trees { "on" } else { "off" })
     }
+    /// The hand-over the frame draws with (BUGS.md #106, `impostors::drawn`): the tier's only once
+    /// the impostors are ready about the eye (the atlas baked, the area's instances in); else
+    /// `None`: the near crowns draw to the full-detail distance and the LOD sections keep trees.
+    fn far_drawn(&self) -> Option<dwell_worldgen::impostor::Far> {
+        let i = self.impostors.as_ref()?;
+        impostors::drawn(i.far, i.ready(self.face, self.eye))
+    }
+    /// What the far trees' impostors hold now (`__dwell.impostors()`).
+    pub fn impostor_status(&self) -> impostors::Status {
+        let ready = self.far_drawn().is_some();
+        self.impostors
+            .as_ref()
+            .map_or_else(impostors::Status::default, |i| i.status(ready))
+    }
     /// The far trees' impostors when they draw, made on first use (the atlas at this device's
     /// tier: phone, CPU adapter or desktop texels).
     fn impostors_mut(&mut self) -> Option<&mut impostors::Impostors> {
@@ -3574,9 +3588,7 @@ impl Renderer {
         for v in lean_uniforms(self.tree_lean, self.eye) {
             put(&v);
         }
-        put(&impostors::far_uniform(
-            self.impostors.as_ref().and_then(|i| i.far),
-        ));
+        put(&impostors::far_uniform(self.far_drawn()));
         let pixel_angle = 2.0 * tan_y / f64::from(self.size.1.max(1));
         let mut day =
             self.day_in_air()
@@ -3786,7 +3798,7 @@ impl Renderer {
                 | u8::from(view.holds_box(origin, size, passes[1].0, passes[1].1)) << 1
         };
         // Past the far trees' hand-over and the plants' fades a chunk's cutout draws nothing.
-        let cutout_reach = impostors::cutout_reach(self.impostors.as_ref().and_then(|i| i.far));
+        let cutout_reach = impostors::cutout_reach(self.far_drawn());
         for (&coord, c) in &self.terrain.chunks {
             let fade = chunk_fade(coord).filter(|f| !f.is_hidden());
             let passes = if fade.is_some() {
@@ -6361,8 +6373,9 @@ impl crate::game::Scene for Renderer {
         self.plant_percent
     }
     fn draws_far_trees(&self) -> bool {
-        // The impostors draw the far trees: the LOD sections mesh only their ground.
-        self.far_trees && self.far_tier().is_none()
+        // Once the impostors draw the far trees the LOD sections mesh only their ground; until
+        // they are ready (BUGS.md #106) the sections keep their trees.
+        impostors::lod_trees(self.far_trees, self.far_drawn())
     }
     fn far_tree_reach(&mut self) -> Option<f32> {
         self.impostors_mut()
@@ -6899,8 +6912,8 @@ mod tests {
         // had no such switches, every plant and far tree was meshed whatever the settings).
         use crate::game::Scene;
         let mut r = noop_renderer();
-        // The impostors draw the far trees (render/impostors.rs): the sections mesh their ground.
-        assert_eq!((r.plant_percent(), r.draws_far_trees()), (100, false));
+        // The impostors aren't ready (nothing baked, BUGS.md #106): the sections keep their trees.
+        assert_eq!((r.plant_percent(), r.draws_far_trees()), (100, true));
         r.set_impostors_override(Some(false));
         assert!(
             r.draws_far_trees(),
@@ -6913,6 +6926,66 @@ mod tests {
         assert_eq!(r.plant_percent(), 100);
         assert_eq!(plant_percent_of(-1.0), 0);
         assert_eq!(plant_percent_of(3.0), 100);
+    }
+
+    #[test]
+    fn the_near_crowns_and_lod_trees_stay_until_the_impostors_are_ready() {
+        // BUGS.md #106 (red before: with the Far trees tier "on" the frame dropped every leaf past
+        // the hand-over and the LOD sections their trees, though no impostor had been baked or
+        // placed, so every far tree was a bare trunk).
+        use crate::game::Scene;
+        let mut r = noop_renderer();
+        let reach = r.far_tree_reach().expect("the tier draws impostors");
+        assert!(reach > 0.0);
+        let unready = |r: &Renderer| {
+            (
+                impostors::far_uniform(r.far_drawn()),
+                impostors::cutout_reach(r.far_drawn()),
+                r.draws_far_trees(),
+            )
+        };
+        assert_eq!(
+            unready(&r),
+            ([0.0; 4], None, true),
+            "no atlas, no instances: the leaves to the full-detail distance, the LOD's trees kept"
+        );
+        assert!(!r.impostor_status().ready);
+        // Every tile about the eye in, with trees, but the atlas not baked: still not ready.
+        let c = dwell_worldgen::impostor::Config::get();
+        let far = r.impostors.as_ref().and_then(|i| i.far).expect("on");
+        let tree = dwell_worldgen::impostor::FarTree {
+            anchor: [0, 100, 0],
+            species: 0,
+            seed: 1,
+            stage: 7,
+        };
+        let local = r.face.point(r.eye);
+        for (i, k) in impostors::tiles_within([local[0], local[2]], impostors::ready_radius(&far)) {
+            r.far_tree_tile((u8::from(r.face.is_b()), i, k), &[tree]);
+        }
+        assert!(unready(&r).2, "instances without the atlas");
+        // The atlas baked (every layer at the atlas's size): now the impostors draw them.
+        let px = r.impostors.as_ref().unwrap().px();
+        let n = c.views.len() as u32;
+        let cols = (n as f32).sqrt().ceil() as u32;
+        let bytes = vec![0u8; (cols * px * n.div_ceil(cols) * px * 4) as usize];
+        for layer in 0..c.layer_count() - 1 {
+            r.impostor_layer(layer, 3.0, 4.0, &bytes, &bytes);
+        }
+        assert!(r.far_drawn().is_none(), "one layer short");
+        // A layer of the wrong size is dropped, and said so.
+        r.impostor_layer(c.layer_count() - 1, 3.0, 4.0, &bytes[4..], &bytes[4..]);
+        assert!(r.far_drawn().is_none());
+        assert!(!r.impostor_status().last_error.is_empty());
+        r.impostor_layer(c.layer_count() - 1, 3.0, 4.0, &bytes, &bytes);
+        assert_eq!(r.far_drawn(), Some(far));
+        assert_eq!(impostors::far_uniform(r.far_drawn())[3], 1.0);
+        assert!(!r.draws_far_trees(), "the impostors draw the far trees");
+        let st = r.impostor_status();
+        assert!(
+            st.ready && st.baked == c.layer_count() && st.instances > 0,
+            "{st:?}"
+        );
     }
 
     #[test]
