@@ -834,6 +834,17 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    some clips of the deer/wolves behavior, really showcase it and try to get good angles. Keep it under 2 minutes
    of video. Splice it together into a single video."). Queued (local, after item 30).
 
+37. **First-person arms from the player model** (owner 2026-11-12: "I thought we were going to swap out the AI
+   generated first person character model? We discussed this yesterday."). The Peasant (the owner's Asset Store
+   model) became other players' body and your shadow in 0.52.35 (CHARACTERS.md §11.5), but "Still rigid: your
+   first-person arms … drawing them at the eye needs its own view and clips (later)" — the swap was never queued,
+   so it was missed. Now: draw your first-person arms and hands from the Peasant's own mesh (its arm vertices by
+   their skin weights), driven by the first-person clips (the swings fitted with clip_probe) mapped onto its arm
+   bones, held items on its `hand.R`; the rigid arms retired. Priority: next after item 30.
+38. **Wandering NPCs** (owner 2026-11-12: "Another item to queue up, wandering NPCs. They'll use the same player
+   character model."). People using the Peasant model who wander the world like the animals do. Design questions
+   asked; queued.
+
 ## Done
 
 - **Axe swing directions and animation tools (owner 2026-11-11: "The axe animations are still trash.
