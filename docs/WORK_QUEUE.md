@@ -381,7 +381,18 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    default and starter worlds unchanged (a decoration no biome of a world lists now stands nowhere in it:
    before, a rock province's columns tried every decoration). q5 (2026-11-11): no new rock blocks
    for now; R5 uses today's blocks (stone, basalt, sandstone, red sandstone, sand, dirt) named in data, so
-   new ones can replace them later.
+   new ones can replace them later. R5 built (2026-11-12): rocks from plate history (`rocks.json`
+   `plateProvinces`: a setting on the face's plate layout → a stack by name, the first rule that holds
+   winning, the noise's provinces elsewhere): arc cones on andesite (shown as basalt), hotspot islands on a
+   shield basalt, collision cores and the subducting ranges' crests on granite over schist (stone), the
+   accreted strip by a trench on the limestone shelf (stone), rift floors and the plates' quiet interiors on
+   sandstone beds (red sandstone); new rocks and stacks only, weight 0 in the noise, so the default and the
+   starter are unchanged. Soils by rock × climate (`vegetation.json` `rockSoils` entries with `celsius` and
+   `moisture`, first that holds): andesite weathers to rocky soil in the cold, sand in the dry, deep loam in
+   warm wet air. Tests: `tests/realistic_rocks.rs` (both faces, seeds 1, 7, 42), `geology` fixture tests
+   (each setting, a rule or a rock's block swapped by data alone), `vegetation` (soil by climate),
+   `gen.test.mjs`. **Not done:** the plates/rock overlay in Chisel and on the in-game big map (§7 q8: a WASM
+   export of the layout and a view in each); moved to R6. Next: R6 (the World option).
 
    Owner, 2026-11-12, on q2 (which latitude bands): **"I think latitude bands are based on orbits right? Orbits
    should be seed determined."** So the climate band is not a list to pick from: the seed sets the world's orbit

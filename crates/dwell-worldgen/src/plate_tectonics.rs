@@ -226,6 +226,21 @@ impl PlateTectonics {
         h * line.scale
     }
 
+    /// The boundaries of plate `plate` and their distance (m) from (x, z) (R5's rock settings).
+    pub fn lines_of(&self, plate: usize, x: f64, z: f64) -> impl Iterator<Item = (&Line, f64)> {
+        self.lines.iter().filter_map(move |line| {
+            let [a, b] = self.layout.boundaries[line.boundary].plates;
+            (plate == a || plate == b).then(|| {
+                let d = line
+                    .polylines
+                    .iter()
+                    .map(|pl| to_line([x, z], pl))
+                    .fold(f64::INFINITY, f64::min);
+                (line, d)
+            })
+        })
+    }
+
     /// The boundaries' landform at (x, z) computed exactly (the coarse grid's nodes take it).
     pub fn landform_exact(&self, x: f64, z: f64) -> f64 {
         let reach = self.reach();

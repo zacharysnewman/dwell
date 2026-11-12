@@ -1,0 +1,6 @@
+{
+  "changes": [
+    "Realistic test world: rocks now follow the plates, with volcanic rock on the arc volcanoes and hotspot islands, granite and schist in the collision ranges, a limestone shelf by the trenches, and sandstone in the rifts and quiet basins",
+    "Realistic test world: soils weather from that rock by climate, so the same volcanic rock is thin and stony in the cold, sandy where it is dry, and deep and loamy where it is warm and wet"
+  ]
+}
