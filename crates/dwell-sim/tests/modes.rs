@@ -207,6 +207,125 @@ fn adventure_refuses_brush_strokes_creative_takes_them() {
     );
 }
 
+/// A one-cell stone placement beside player 1 in face `f`'s frame, as `op` (a plain `Paste` or a
+/// saved structure's `Structure`); the server's check of it.
+fn place_one(fx: &mut Fixture, f: FaceFrame, op: RegionEditOp) -> RegionCheck {
+    let [x, y, z] = f.cell([2, BASE, 0]);
+    fx.send(
+        1,
+        Message::RegionEdit(RegionEdit {
+            op,
+            min: [x, y, z],
+            size: [1, 1, 1],
+            material: 0,
+            from: 0,
+            cells: vec![f.state(require("dwell:stone"))],
+        }),
+    );
+    for _ in 0..3 {
+        fx.server.step();
+    }
+    fx.server.stats_of(1).expect("joined").last_region_check
+}
+
+dwell_world::both_faces!(
+    /// STRUCTURES.md §9 (owner, 2026-11-12): the server refuses a structure placement as such
+    /// where the world's mode lacks the `structures` ability, and takes it in creative. A plain
+    /// paste of the same cell in adventure still goes, paid in items (ADR 0066): the refusal is
+    /// the op's, not the cell's.
+    fn a_structure_placement_is_refused_outside_creative_and_placed_in_it(f: FaceFrame) {
+        let stone = f.state(require("dwell:stone"));
+        let [x, y, z] = f.cell([2, BASE, 0]);
+        let mut creative = scene(f, "creative");
+        creative.send(
+            1,
+            Message::Capabilities(dwell_protocol::capabilities::Capabilities::this_build()),
+        );
+        assert_eq!(
+            place_one(&mut creative, f, RegionEditOp::Structure),
+            RegionCheck::Ok
+        );
+        assert_eq!(creative.server.world().get_voxel(x, y, z), stone);
+
+        let mut adventure = scene(f, "adventure");
+        assert_eq!(adventure.server.give(1, "dwell:stone", 4), 0);
+        assert_eq!(
+            place_one(&mut adventure, f, RegionEditOp::Structure),
+            RegionCheck::NotInMode
+        );
+        assert_ne!(adventure.server.world().get_voxel(x, y, z), stone);
+        let stats = adventure.server.stats_of(1).unwrap();
+        assert_eq!(stats.region_edits_rejected, 1);
+        assert_eq!(
+            adventure
+                .server
+                .inventory_of(1)
+                .unwrap()
+                .count_of("dwell:stone"),
+            4,
+            "nothing paid for the refused placement"
+        );
+        // The same cell as a plain paste: placed, one stone paid.
+        assert_eq!(
+            place_one(&mut adventure, f, RegionEditOp::Paste),
+            RegionCheck::Ok
+        );
+        assert_eq!(adventure.server.world().get_voxel(x, y, z), stone);
+        assert_eq!(
+            adventure
+                .server
+                .inventory_of(1)
+                .unwrap()
+                .count_of("dwell:stone"),
+            3
+        );
+        // The host switching to creative allows it at once.
+        assert!(adventure.server.set_mode("creative"));
+        let [x2, y2, z2] = f.cell([2, BASE + 1, 0]);
+        adventure.send(
+            1,
+            Message::RegionEdit(RegionEdit {
+                op: RegionEditOp::Structure,
+                min: [x2, y2, z2],
+                size: [1, 1, 1],
+                material: 0,
+                from: 0,
+                cells: vec![stone],
+            }),
+        );
+        for _ in 0..3 {
+            adventure.server.step();
+        }
+        assert_eq!(adventure.server.world().get_voxel(x2, y2, z2), stone);
+    }
+);
+
+#[test]
+fn the_server_announces_its_capabilities_and_keeps_its_clients() {
+    // both-faces: no face is involved (the join's messages only).
+    use dwell_protocol::capabilities::Capabilities;
+    use dwell_protocol::capability_names::STRUCTURES_PLACE;
+    // `Fixture::join` checks the join's settings announce this build's capabilities.
+    let mut fx = scene(FaceFrame::A, "creative");
+    // A client that never says it (an older build) has none, and plays on.
+    assert_eq!(
+        fx.server.client_capabilities(1),
+        Some(&Capabilities::default())
+    );
+    assert_eq!(stroke(&mut fx), RegionCheck::Ok, "an older client's paste");
+    // This build's client: its answer is kept.
+    fx.send(1, Message::Capabilities(Capabilities::this_build()));
+    let got = fx.server.client_capabilities(1).expect("joined");
+    assert!(got.has(STRUCTURES_PLACE));
+    // A newer client's names the server doesn't know are kept and match nothing here.
+    fx.send(
+        1,
+        Message::Capabilities(Capabilities::of(["mymod:wet", STRUCTURES_PLACE])),
+    );
+    let got = fx.server.client_capabilities(1).expect("still joined");
+    assert!(got.has("mymod:wet") && got.has(STRUCTURES_PLACE));
+}
+
 /// Connects player `id` and returns its Welcome's flags.
 fn welcome_flags_of(fx: &mut Fixture, id: SessionId) -> u8 {
     fx.join(id, &Client::new(id as u8)).flags

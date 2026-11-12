@@ -135,6 +135,9 @@ struct Clipboard {
     /// Cells that keep what is in the world where they land (a structure's `null` cells); empty
     /// for a copy, which sets every cell.
     keep: Vec<bool>,
+    /// A saved structure from the library (`load_clipboard`), not a copy: its paste is a structure
+    /// placement (`RegionEditOp::Structure` to a server that takes it).
+    structure: bool,
 }
 
 /// One edit of an undo step: the box and its states before `edit` (what undo pastes back; `KEEP`
@@ -159,6 +162,11 @@ pub struct RegionTools {
     /// The world's mode places saved structures (`modes::Ability::Structures`, creative only for
     /// now): [`load_clipboard`](Self::load_clipboard) refuses without it.
     pub structures: bool,
+    /// The server takes structure placements as such (the `structures.place` capability,
+    /// ARCHITECTURE.md §8.3): a library structure pastes as `RegionEditOp::Structure`, which the
+    /// server refuses outside a mode with `structures`. Without it (an older server), plain
+    /// `Paste`s, validated as any paste (STRUCTURES.md §9).
+    pub structure_ops: bool,
     a: Option<[i32; 3]>,
     b: Option<[i32; 3]>,
     clipboard: Option<Clipboard>,
@@ -221,6 +229,7 @@ impl RegionTools {
             keep: false,
             reach: region_edit::REACH,
             structures: false,
+            structure_ops: false,
             a: None,
             b: None,
             clipboard: None,
@@ -398,6 +407,7 @@ impl RegionTools {
                     size,
                     cells: FaceFrame::of_box(min, size).box_cells(size, &cells),
                     keep: Vec::new(),
+                    structure: false,
                 });
                 self.note = format!("Copied {}", size_text(size));
                 None
@@ -454,7 +464,7 @@ impl RegionTools {
                     }
                 }
                 let edit = RegionEdit {
-                    op: RegionEditOp::Paste,
+                    op: self.paste_op(&c),
                     min,
                     size,
                     material: 0,
@@ -465,6 +475,16 @@ impl RegionTools {
             }
             T::Undo => self.replay(true, ctx, world),
             T::Redo => self.replay(false, ctx, world),
+        }
+    }
+
+    /// The op a paste of `c` goes as: a library structure's is a structure placement where the
+    /// server takes one (`structure_ops`), anything else a plain `Paste`.
+    fn paste_op(&self, c: &Clipboard) -> RegionEditOp {
+        if c.structure && self.structure_ops {
+            RegionEditOp::Structure
+        } else {
+            RegionEditOp::Paste
         }
     }
 
@@ -495,7 +515,12 @@ impl RegionTools {
         if cells.len() != volume || !(keep.is_empty() || keep.len() == volume) {
             return Err("The cells don't fill the box".into());
         }
-        self.clipboard = Some(Clipboard { size, cells, keep });
+        self.clipboard = Some(Clipboard {
+            size,
+            cells,
+            keep,
+            structure: true,
+        });
         self.paste = Some(PasteTransform::default());
         self.note = format!("{label}: aim and right click to paste");
         Ok(())
@@ -574,7 +599,7 @@ impl RegionTools {
                         continue;
                     }
                     let edit = RegionEdit {
-                        op: RegionEditOp::Paste,
+                        op: self.paste_op(c),
                         min: tmin,
                         size: tsize.map(|s| s as u8),
                         material: 0,
@@ -1004,6 +1029,61 @@ mod tests {
             t.load_clipboard([2, 1, 1], vec![stone; 2], vec![true], "mask")
                 .is_err()
         );
+    }
+
+    /// ARCHITECTURE.md §8.3, STRUCTURES.md §9: a library structure's paste is a structure
+    /// placement (`Structure`) to a server that announced `structures.place`, a plain `Paste` to
+    /// an older one; a copy's paste is always a `Paste`. Tiles of a larger structure likewise.
+    #[test]
+    fn a_library_structure_pastes_as_a_structure_placement_only_where_the_server_takes_one() {
+        // face-a-only: the op is chosen before anything face-dependent (the both-faces tile test
+        // covers the placement itself).
+        let stone = require("dwell:stone");
+        let op_of = |m: Option<Message>| match m {
+            Some(Message::RegionEdit(e)) => Some(e.op),
+            _ => None,
+        };
+        for (structure_ops, want) in [
+            (true, RegionEditOp::Structure),
+            (false, RegionEditOp::Paste),
+        ] {
+            let mut w = world();
+            let mut t = RegionTools {
+                structure_ops,
+                ..tools()
+            };
+            t.load_clipboard([1, 1, 1], vec![stone], vec![], "one")
+                .unwrap();
+            let m = t.act(ToolAction::Paste, &ctx(Some([2, 0, 2]), 0), &mut w);
+            assert_eq!(op_of(m), Some(want), "structure_ops {structure_ops}");
+            // Wider than one edit: every tile goes as the same op.
+            let mut t = RegionTools {
+                structure_ops,
+                ..tools()
+            };
+            t.load_clipboard([40, 1, 1], vec![stone; 40], vec![], "wide")
+                .unwrap();
+            assert!(
+                t.act(ToolAction::Paste, &ctx(Some([2, 0, 2]), 0), &mut w)
+                    .is_none()
+            );
+            let sent: Vec<_> = t.pump(1e9).into_iter().map(|m| op_of(Some(m))).collect();
+            assert!(sent.len() >= 2, "tiles: {}", sent.len());
+            assert!(sent.iter().all(|o| *o == Some(want)), "{sent:?}");
+        }
+        // A copy (Ctrl+C) pastes as a plain Paste whatever the server takes.
+        let mut w = world();
+        w.set_voxel(0, 1, 0, stone);
+        let mut t = RegionTools {
+            structure_ops: true,
+            ..tools()
+        };
+        t.act(ToolAction::CornerA, &ctx(Some([0, 1, 0]), 0), &mut w);
+        t.act(ToolAction::CornerB, &ctx(Some([0, 1, 0]), 0), &mut w);
+        t.act(ToolAction::Copy, &ctx(None, 0), &mut w);
+        t.act(ToolAction::PasteMode, &ctx(None, 0), &mut w);
+        let m = t.act(ToolAction::Paste, &ctx(Some([3, 0, 3]), 0), &mut w);
+        assert_eq!(op_of(m), Some(RegionEditOp::Paste));
     }
 
     #[test]
