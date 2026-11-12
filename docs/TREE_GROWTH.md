@@ -363,7 +363,7 @@ normal + depth per texel, the leaves' normals leaning out of the crown by `leave
 Deterministic, no drawing yet; it is to replace the LOD's tree cells (`lod_trees.rs`) once drawn.
 
 **Felling (WORK_QUEUE item 51, 2026-11-12):** a tree's logs take block damage like any block (hits to break
-by the axe, docs/BLOCK_DAMAGE.md §11); breaking a trunk's log fells what it held up (the trunk and crown
+by the axe, docs/BLOCK_DAMAGE.md §12); breaking a trunk's log fells what it held up (the trunk and crown
 above) as one body (docs/FELLING.md §8). A grown tree's record (`growers`) is unaffected until the change of
 its cells, as for any edit.
 

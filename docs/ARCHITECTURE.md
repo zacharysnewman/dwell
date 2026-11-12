@@ -4611,7 +4611,11 @@ its NPC part's pose is 3 (level) or 4 (vertical) (`NPC_STRIKE_POSES`), and the c
 chop clip; without it the server sends the NPC's idle pose, as older clients (whose decode refuses a
 pose past 2) read it. The eighth is `theater.viewpoint` (THEATER_MODE.md §7, §5.5): the client sends
 `TheaterViewpoint` 0x6B (C→S, control: u8 0 cleared | 1 then f64 × 3, finite) while a camera path plays,
-used by the server only in a mode with `theaterViewpoint`; an older server is never sent one.
+used by the server only in a mode with `theaterViewpoint`; an older server is never sent one. The ninth
+is `hits.at_contact` (BUGS.md #111, BLOCK_DAMAGE.md §11): a breaking tool's `BlockEditRequest` (one with a
+`contactS`) leaves at its swing's contact, naming the cell aimed at then, and the server lands it on
+arrival instead of `contactS` after; without it on either side the request leaves at the click and the
+server waits, as before. The message itself is unchanged.
 ```
 S→C  WorldSettings field 0x85 (optional): u8 count (≤ 64), each str name (≤ 48 bytes, no repeat)
 C→S  Capabilities 0x69, control: the same form — the client's capabilities, once after Welcome,

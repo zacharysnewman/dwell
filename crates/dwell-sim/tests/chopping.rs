@@ -1,4 +1,4 @@
-//! Chopping through the server (docs/adr/0067-stone-axe-and-chopping.md, docs/BLOCK_DAMAGE.md §11): the
+//! Chopping through the server (docs/adr/0067-stone-axe-and-chopping.md, docs/BLOCK_DAMAGE.md §12): the
 //! axe's swing (its arc, contact, clears and wear) lands on a log as a block-damage hit (WORK_QUEUE item
 //! 50: hits to break by the axe, a mark each, the drops spread over them), the last breaking it and
 //! felling the trunk above as one body toward the side struck; older saves' cuts still load and are

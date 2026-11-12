@@ -387,7 +387,7 @@ cut model (§2) and felling at 11 swings are unchanged. BLOCK_DAMAGE.md §6.4 "R
 ## Note 2026-11-12: superseded for new hits: the axe like the other tools (WORK_QUEUE item 51)
 
 Owner: "Also the axe doesn't behave like the other tools. I think it should." and, asked how, **"Like the
-others, felling on top"**. A log now takes block damage (ADR 0078, docs/BLOCK_DAMAGE.md §11): its `damage`
+others, felling on top"**. A log now takes block damage (ADR 0078, docs/BLOCK_DAMAGE.md §12): its `damage`
 data gives the axe 10 hits (stone) or 5 (metal), each hit a mark, a wear and its share of the drops, the
 last breaking the block. Breaking a standing log fells the trunk above as one body toward the side struck,
 as this ADR's felling did. **Superseded:** the cut model of §2 for new hits (bite, bind, kerfs, bands, the

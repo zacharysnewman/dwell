@@ -718,7 +718,7 @@ impl Server {
     }
 
     /// One axe hit on a wood that takes block damage (WORK_QUEUE item 51; docs/BLOCK_DAMAGE.md
-    /// §11): the axe wears, the cell records the hit (its mark: the edit face struck and the point,
+    /// §12): the axe wears, the cell records the hit (its mark: the edit face struck and the point,
     /// the bite rule's chunk) toward its hits to break with the axe held (the block's `damage`:
     /// the stone axe 10, the metal 5), a hit short of the count drops its share of the block's
     /// drops; the hit that reaches it breaks the block (its drops' rest, as a pickaxe's last hit)

@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "name": "bifacial",
-  "description": "Showcase #1, the bifacial world (seed 7): the outline, a crane under the disc, the portal drop to face B and the landing, a drone rise back to the outline. Reproduces v4 (paths/bifacial-v4/plan.json).",
+  "description": "Showcase #1, the bifacial world (seed 7): the outline, a crane under the disc, the portal drop to face B and the landing, a drone rise back to the outline. v5: only the crane (s2) holds face A's up; the landing (s5) is upright on face B and closer.",
   "world": {
     "url": "/dwell/?fresh=1&seed=7&spawn=portal",
     "storage": { "dwell.clouds": "\"off\"", "dwell.music": "\"off\"" }
@@ -26,10 +26,10 @@
     },
     {
       "id": "portal",
-      "note": "one take, three parts: s3 first person to the hole and the drop, s4 the motes slowed, s5 a hard cut to the face-B camera (camB, fov, up) as the player rises out and lands. For an upright face-B shot set args.up to \"auto\"; move the camera with args.camB",
+      "note": "one take, three parts: s3 first person to the hole and the drop, s4 the motes slowed, s5 a hard cut to the face-B camera (camB, fov, up) as the player rises out and lands. v5: upright on face B (args.up \"auto\"), closer to the landing; move the camera with args.camB",
       "kind": "take",
       "script": "videos/bifacial/portal_take.js",
-      "args": { "camB": [1789.5, -58, 20700.5], "fov": 50, "up": "a", "timeOfDay": 0.29 },
+      "args": { "camB": [1796.3, -50.5, 20707.3], "fov": 50, "up": "auto", "timeOfDay": 0.29 },
       "setup": { "reload": true, "view": { "clouds": "off" } },
       "splice": [
         { "label": "s3", "from": 0.5, "to": 4.28 },
@@ -39,7 +39,7 @@
     },
     {
       "id": "s6",
-      "note": "a drone rise from shot 5's camera out under the disc and round the rim to the outline; its first keyframe matches s5's camera (change both together)",
+      "note": "a drone rise from shot 5's camera (upright on face B; under \"auto\" it turns over edge-on at the rim) out under the disc and round the rim to the outline; its first keyframe matches s5's camera (change both together)",
       "kind": "path",
       "path": "videos/bifacial/s6_drone_rise_b.json",
       "setup": { "timeOfDay": 0.29, "view": { "clouds": "off" }, "warmS": 10 },
