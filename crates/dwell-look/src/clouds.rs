@@ -104,6 +104,11 @@ pub struct VolumeTunables {
     pub bounce_tint: Rgb,
     pub ambient_depth_m: f64,
     pub max_distance_m: f64,
+    /// The composite's band against the scene (BUGS.md #88): a texel's cloud is a pixel's where
+    /// the texel's march ended within the band of the pixel's scene: the texel's depth range, at
+    /// least `depth_band` and at most `depth_band_range` of the distance.
+    pub depth_band: f64,
+    pub depth_band_range: f64,
     /// How much rising 3D noise breaks a plume's density up (0: smooth).
     pub plume_billow: f64,
 }
@@ -607,6 +612,121 @@ pub fn soft_clip(c: Rgb) -> Rgb {
     c.map(|x| x * s)
 }
 
+// ----- The march against the scene (BUGS.md #88, docs/CLOUDS.md §8.9) -----
+
+/// The clouds pass's per-pixel step offset (`cloud_jitter` in the client's shader): interleaved
+/// gradient noise at pixel `p`, turned each frame by a golden-ratio step over 16 frames.
+pub fn cloud_jitter(p: [i32; 2], frame: u32) -> f64 {
+    let fract = |x: f64| x - x.floor();
+    let (x, y) = (f64::from(p[0]), f64::from(p[1]));
+    let ign = fract(52.9829189 * fract(0.06711056 * x + 0.00583715 * y));
+    fract(ign + f64::from(frame % 16) * 0.618034)
+}
+
+/// The span (t0, t1) of a ray in the layer, out to `max_t` and the march's reach (m along the ray;
+/// `rise` the ray's face-local up part, `eye_h` the eye's height above sea level): the layer
+/// march's (`cloud_layer_march`); `None` where it never crosses the layer inside the reach.
+pub fn layer_span(v: &VolumeTunables, rise: f64, eye_h: f64, max_t: f64) -> Option<(f64, f64)> {
+    let mut t0: f64 = 0.0;
+    let mut t1 = max_t.min(v.max_distance_m);
+    if rise.abs() > 1e-5 {
+        let a = (v.base_m - eye_h) / rise;
+        let b = (v.top_m - eye_h) / rise;
+        t0 = t0.max(a.min(b));
+        t1 = t1.min(a.max(b));
+    } else if eye_h < v.base_m || eye_h > v.top_m {
+        return None;
+    }
+    (t1 > t0).then_some((t0, t1))
+}
+
+/// The distances along the ray of a march's `steps` samples over `span` offset by `jitter`
+/// (`cloud_layer_march`'s `t`).
+pub fn march_samples(span: (f64, f64), jitter: f64, steps: u32) -> Vec<f64> {
+    let dt = (span.1 - span.0) / f64::from(steps);
+    (0..steps)
+        .map(|i| span.0 + (f64::from(i) + jitter) * dt)
+        .collect()
+}
+
+/// The scene's distance (m along the ray) over one clouds-pass texel's footprint (its
+/// full-resolution pixels): the nearest and the farthest, each at most `reach` (the march's; the
+/// sky is `reach`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SceneRange {
+    pub near: f64,
+    pub far: f64,
+}
+
+/// [`SceneRange`] of a texel's pixels' scene distances (0: the sky): `clouds_fs`'s reduced depth.
+pub fn scene_range(depths: &[f64], reach: f64) -> SceneRange {
+    let at = |d: f64| if d > 0.0 { d.min(reach) } else { reach };
+    let mut r = SceneRange {
+        near: reach,
+        far: 0.0,
+    };
+    for &d in depths {
+        r.near = r.near.min(at(d));
+        r.far = r.far.max(at(d));
+    }
+    r.far = r.far.max(r.near);
+    r
+}
+
+/// How far the texel marches (m along its ray): to its farthest scene pixel, so none of its cloud
+/// is behind all of its scene, or the whole layer where any of it is sky or past the reach.
+pub fn march_end(r: SceneRange, reach: f64) -> f64 {
+    if r.far >= reach { f64::INFINITY } else { r.far }
+}
+
+/// What the clouds pass keeps beside the colour for the composite (its second target): the texel's
+/// scene depth range, which doesn't move with the jitter.
+pub fn texel_depth(r: SceneRange) -> [f64; 2] {
+    [r.near, r.far]
+}
+
+/// The weight of a texel (its `texel_depth`) in the composite's upsample at a pixel whose scene is
+/// `e` m along its ray (`reach` for the sky): 1 where the texel's cloud is the pixel's (its march ended
+/// at the pixel's scene, within a band of the texel's depth range, at least `depth_band` and at most
+/// `depth_band_range` of the distance), falling to 0 at twice the band.
+pub fn upsample_weight(v: &VolumeTunables, e: f64, rec: [f64; 2]) -> f64 {
+    let band = upsample_band(v, e, rec);
+    1.0 - smoothstep(band, 2.0 * band, (rec[1] - e).abs())
+}
+
+/// [`upsample_weight`]'s band (m) at a pixel `e` m out for a texel's `texel_depth`.
+pub fn upsample_band(v: &VolumeTunables, e: f64, rec: [f64; 2]) -> f64 {
+    (rec[1] - rec[0])
+        .min(v.depth_band_range * e)
+        .max(v.depth_band * e)
+        .max(1.0)
+}
+
+/// The composite's cloud cover at a pixel whose scene is `e` m along its ray (`reach`: the sky)
+/// from the four nearest texels, each (its cover, its `texel_depth`, its bilinear weight):
+/// `upsampled_clouds`'s twin.
+/// Where no texel's march ended at the pixel's scene (a sub-texel spire), the nearest match leads
+/// by `UPSAMPLE_FALLBACK`'s share: still a function of depths alone, so it doesn't flicker.
+pub fn upsample_cover(v: &VolumeTunables, e: f64, texels: &[(f64, [f64; 2], f64)]) -> f64 {
+    let (mut sum, mut weight) = (0.0, 0.0);
+    for &(cover, rec, bilinear) in texels {
+        let band = upsample_band(v, e, rec);
+        let w = bilinear
+            * (upsample_weight(v, e, rec) + UPSAMPLE_FALLBACK / (1.0 + (rec[1] - e).abs() / band));
+        sum += w * cover;
+        weight += w;
+    }
+    if weight > 0.0 { sum / weight } else { 0.0 }
+}
+
+/// The most a tier's `divisor` may be (`clouds.mjs`'s bound): the clouds pass reads at most its
+/// square of scene pixels per texel (`cloud_scene_span`'s loop bound).
+pub const MAX_DIVISOR: u32 = 4;
+
+/// The composite's floor weight for a texel by how near its march's end is to the pixel's scene
+/// (`upsample_cover`), small enough to vanish beside any texel within the band.
+pub const UPSAMPLE_FALLBACK: f64 = 1e-4;
+
 // ----- The shader -----
 
 fn f(n: f64) -> String {
@@ -724,6 +844,15 @@ pub fn cloud_wgsl(t: &CloudTunables) -> String {
         format!(
             "const CLOUD_VOL_MAX_DISTANCE: f32 = {};",
             f(v.max_distance_m)
+        ),
+        format!("const CLOUD_VOL_DEPTH_BAND: f32 = {};", f(v.depth_band)),
+        format!(
+            "const CLOUD_VOL_DEPTH_BAND_RANGE: f32 = {};",
+            f(v.depth_band_range)
+        ),
+        format!(
+            "const CLOUD_UPSAMPLE_FALLBACK: f32 = {};",
+            f(UPSAMPLE_FALLBACK)
         ),
         format!("const CLOUD_PLUME_BILLOW: f32 = {};", f(v.plume_billow)),
         format!("const CLOUD_MAX_PLUME_STEPS: i32 = {MAX_PLUME_STEPS};"),
@@ -1146,6 +1275,23 @@ fn dwell_cloud_plumes(layer: CloudMarch, dir: vec3f, rise: f32, eye_h: f32, max_
 		}
 	}
 	return out;
+}
+
+// The march's end for a texel whose scene spans `rec` (m along the ray: its nearest and farthest
+// pixel, the sky at CLOUD_VOL_MAX_DISTANCE): its farthest pixel, or the whole layer where any of it
+// is sky or past the reach (march_end's twin, BUGS.md #88).
+fn dwell_cloud_march_end(rec: vec2f) -> f32 {
+	return select(rec.y, 1e9, rec.y >= CLOUD_VOL_MAX_DISTANCE);
+}
+
+// A texel's weight in the composite's upsample at a pixel whose scene is `e` m along its ray
+// (CLOUD_VOL_MAX_DISTANCE: the sky), for the texel's scene span `rec`: 1 where its march ended at
+// the pixel's scene within the band, falling to the fallback's share past twice the band
+// (upsample_weight + upsample_cover's floor, the twins). A function of depths alone: no jitter.
+fn dwell_cloud_upsample_weight(e: f32, rec: vec2f) -> f32 {
+	let band = max(max(min(rec.y - rec.x, CLOUD_VOL_DEPTH_BAND_RANGE * e), CLOUD_VOL_DEPTH_BAND * e), 1.0);
+	let miss = abs(rec.y - e);
+	return 1.0 - smoothstep(band, 2.0 * band, miss) + CLOUD_UPSAMPLE_FALLBACK / (1.0 + miss / band);
 }
 
 // The volumetric clouds along the unit ray `dir` out to `max_t` (m): the layer, then the run-time
@@ -2072,6 +2218,167 @@ mod volume_tests {
             let here = lit_sample(&CLOUDS, 0.95, top - 0.04, rise, 0.0, steps);
             assert!((lum(a) - lum(here)).abs() < 1e-9);
             assert!(lum(here) > 1.5 * lum(lit_sample(&CLOUDS, 0.95, 0.08, rise, 0.0, steps)));
+        }
+    );
+}
+
+#[cfg(test)]
+mod depth_tests {
+    //! BUGS.md #88: the clouds pass against a mountain inside the layer, as the shader does it.
+    use super::*;
+    use dwell_world::FaceFrame;
+
+    const V: VolumeTunables = CLOUDS.volume;
+    /// A ray from a valley 100 m above sea level rising 0.4 (face-local up) into the layer.
+    const EYE_H: f64 = 100.0;
+    const RISE: f64 = 0.4;
+
+    /// The cover a march over `span`'s samples finds in a fixture cloud of density 1 between `cloud`
+    /// (m along the ray), and its first cloud sample (-1: none).
+    fn fixture_march(span: (f64, f64), jitter: f64, steps: u32, cloud: (f64, f64)) -> (f64, f64) {
+        let dt = (span.1 - span.0) / f64::from(steps);
+        let mut trans = 1.0;
+        let mut first = -1.0;
+        for t in march_samples(span, jitter, steps) {
+            if t < cloud.0 || t > cloud.1 {
+                continue;
+            }
+            if first < 0.0 {
+                first = t;
+            }
+            trans *= (-V.extinction * dt).exp();
+        }
+        (1.0 - trans, first)
+    }
+
+    /// One texel over `scene` (its pixels' distances along the ray, 0: sky) on frame `frame`:
+    /// its cover, its `texel_depth`, and the samples it took.
+    fn texel(
+        scene: &[f64],
+        rise: f64,
+        p: [i32; 2],
+        frame: u32,
+        cloud: (f64, f64),
+    ) -> (f64, [f64; 2], Vec<f64>) {
+        let reach = V.max_distance_m;
+        let r = scene_range(scene, reach);
+        let steps = CLOUDS.tiers.medium.steps;
+        let jitter = cloud_jitter(p, frame);
+        let Some(span) = layer_span(&V, rise, EYE_H, march_end(r, reach)) else {
+            return (0.0, texel_depth(r), vec![]);
+        };
+        let (cover, _) = fixture_march(span, jitter, steps, cloud);
+        (cover, texel_depth(r), march_samples(span, jitter, steps))
+    }
+
+    /// The rock 4 km out, inside the layer (1.7 km up), its slope across the texel 3.99–4.01 km.
+    const ROCK: [f64; 4] = [3990.0, 4000.0, 4005.0, 4010.0];
+
+    #[test]
+    fn the_march_stops_at_the_scene_so_no_cloud_behind_the_rock_draws() {
+        // A cloud wholly behind the rock: nothing of it on any frame of the jitter's sequence.
+        for frame in 0..16 {
+            let (cover, _, samples) = texel(&ROCK, RISE, [7, 3], frame, (4100.0, 6000.0));
+            assert!(
+                samples.iter().all(|&t| t <= 4010.0),
+                "frame {frame}: {samples:?}"
+            );
+            let shown = upsample_cover(
+                &V,
+                4000.0,
+                &[(
+                    cover,
+                    texel(&ROCK, RISE, [7, 3], frame, (4100.0, 6000.0)).1,
+                    1.0,
+                )],
+            );
+            assert_eq!(
+                shown, 0.0,
+                "frame {frame}: cloud behind the rock drew {shown}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_cloud_round_the_rock_draws_in_front_of_it_on_every_frame_alike() {
+        // A cloud from 100 m in front of the rock to far behind it: the part in front draws, the cut
+        // doesn't flip with the jitter (the old cut by the jittered first cloud did).
+        let cloud = (3900.0, 6000.0);
+        let mut seen = vec![];
+        for frame in 0..16 {
+            let (cover, rec, _) = texel(&ROCK, RISE, [7, 3], frame, cloud);
+            for e in ROCK {
+                let w = upsample_weight(&V, e, rec);
+                seen.push(w);
+                assert!(cover > 0.0, "frame {frame}: the cloud in front is gone");
+            }
+        }
+        assert!(
+            seen.iter().all(|&w| w == seen[0]),
+            "the cut flips frame to frame: {seen:?}"
+        );
+        assert_eq!(seen[0], 1.0);
+        // The cover is the cloud in front only: ~100 m of it, not the 2 km behind.
+        let (cover, _, _) = texel(&ROCK, RISE, [7, 3], 0, cloud);
+        assert!(cover < 1.0 - (-V.extinction * 300.0).exp(), "{cover}");
+    }
+
+    #[test]
+    fn at_a_silhouette_rock_and_sky_pixels_take_their_own_texels() {
+        let reach = V.max_distance_m;
+        let cloud = (3500.0, 9000.0);
+        let rock = texel(&ROCK, RISE, [7, 3], 0, cloud);
+        let edge = texel(&[4000.0, 0.0, 4002.0, 0.0], RISE, [8, 3], 0, cloud);
+        let sky = texel(&[0.0; 4], RISE, [9, 3], 0, cloud);
+        assert!(
+            sky.0 > rock.0,
+            "the sky's texel holds the cloud behind the rock too"
+        );
+        // A rock pixel between the rock's texel and the edge's: the rock's cloud only.
+        let at_rock = upsample_cover(&V, 4001.0, &[(rock.0, rock.1, 0.5), (edge.0, edge.1, 0.5)]);
+        assert!((at_rock - rock.0).abs() < 1e-3, "{at_rock} vs {}", rock.0);
+        // A sky pixel between the edge's texel and the rock's: the sky's cloud, not the rock's.
+        let at_sky = upsample_cover(&V, reach, &[(edge.0, edge.1, 0.5), (rock.0, rock.1, 0.5)]);
+        assert!((at_sky - edge.0).abs() < 1e-3, "{at_sky} vs {}", edge.0);
+        // Far from any rock the sky is the bilinear filter's.
+        let open = upsample_cover(&V, reach, &[(sky.0, sky.1, 0.25), (edge.0, edge.1, 0.75)]);
+        assert!((open - (0.25 * sky.0 + 0.75 * edge.0)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn the_shader_twins_are_valid_and_every_tier_fits_the_depth_taps() {
+        for t in [CLOUDS.tiers.high, CLOUDS.tiers.medium, CLOUDS.tiers.low] {
+            assert!(t.divisor <= MAX_DIVISOR, "{t:?}");
+        }
+        let src = format!(
+            "{}{}{}",
+            dwell_world::FaceFrame::wgsl(),
+            cloud_wgsl(&CLOUDS),
+            cloud_march_wgsl(0, 0)
+        );
+        let module = naga::front::wgsl::parse_str(&src).expect("WGSL parses");
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .expect("WGSL validates");
+        assert!(src.contains("fn dwell_cloud_upsample_weight(e: f32, rec: vec2f) -> f32"));
+        assert!(src.contains(&format!(
+            "const CLOUD_VOL_DEPTH_BAND: f32 = {};",
+            f(V.depth_band)
+        )));
+    }
+
+    dwell_world::both_faces!(
+        fn the_march_stops_at_the_scene_on_both_faces(f: FaceFrame) {
+            // The ray in the world through the face's frame; the march takes its face-local rise.
+            let local = [0.0, RISE, (1.0 - RISE * RISE).sqrt()];
+            let rise = f.vector(f.vector(local))[1];
+            for frame in 0..16 {
+                let (_, _, samples) = texel(&ROCK, rise, [2, 5], frame, (0.0, 1e9));
+                assert!(!samples.is_empty() && samples.iter().all(|&t| t <= 4010.0));
+            }
         }
     );
 }

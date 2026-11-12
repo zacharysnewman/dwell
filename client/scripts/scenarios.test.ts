@@ -70,7 +70,12 @@ describe('scenarios', () => {
       (step: unknown): (() => unknown) =>
       () =>
         parseScenarios(file([{ name: 'a', steps: [step] }]));
-    expect(bad({ do: 'view', clouds: 'medium' })).toThrow(/"off", "low" or "high"/);
+    // Medium is a Clouds tier (shared/look/clouds.json `tiers.medium`, the desktops' default).
+    expect(
+      parseScenarios(file([{ name: 'a', steps: [{ do: 'view', clouds: 'medium' }] }])).at(0)
+        ?.steps[0],
+    ).toEqual({ do: 'view', clouds: 'medium' });
+    expect(bad({ do: 'view', clouds: 'ultra' })).toThrow(/"off", "low", "medium" or "high"/);
     expect(bad({ do: 'view', pixelError: 40 })).toThrow(/pixelError/);
     expect(bad({ do: 'view', fog: false })).toThrow(/fog/);
   });

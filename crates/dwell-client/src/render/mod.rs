@@ -4585,6 +4585,11 @@ impl Renderer {
                 targets.cloud_history.0.as_image_copy(),
                 targets.clouds.0.size(),
             );
+            encoder.copy_texture_to_texture(
+                targets.cloud_dist.0.as_image_copy(),
+                targets.cloud_dist_history.0.as_image_copy(),
+                targets.cloud_dist.0.size(),
+            );
         }
         // The light shafts (ADR 0064) into their buffer at the tier's size, from the finished
         // scene, when the frame draws some (the composite reads them).

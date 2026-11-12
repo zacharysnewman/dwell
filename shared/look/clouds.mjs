@@ -78,6 +78,8 @@ const SCHEMA = {
     bounceTint: "color",
     ambientDepthM: [1, 1e5],
     maxDistanceM: [100, 1e6],
+    depthBand: [0.001, 0.5],
+    depthBandRange: [0, 1],
     plumeBillow: [0, 1],
   },
 };

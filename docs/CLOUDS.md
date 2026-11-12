@@ -306,8 +306,8 @@ Screenshots (bench shots, judged honestly):
 
 - **The pass.** Before the composite, `clouds_fs` marches the volume into the clouds buffer at the
   tier's divisor of the drawing buffer (`cloud_buffer_size`): premultiplied colour and cover
-  (`rgba16float`), and the distance to the first cloud (`r16float`, 65000 for none). It marches to
-  the layer's end, not to the scene, so its history never holds the terrain's edges.
+  (`rgba16float`), and the scene's span under the texel (`rg16float`, §8.9). It marches to the
+  farthest scene pixel under the texel (the layer's end where any of it is sky), §8.9.
 - **Accumulation.** The step offset turns each frame (interleaved gradient noise plus a golden-ratio
   step over 16 frames). Each texel blends its new march with the last frame's buffer, reprojected by
   direction through the last frame's camera (`CloudPrev`: right, up, forward, tangents). Clouds are
@@ -315,10 +315,8 @@ Screenshots (bench shots, judged honestly):
   the texel over to the new frame. The history starts over with new buffers, the first frame, or a
   move over `CLOUD_HISTORY_JUMP_M` (200 m) in a frame (`cloud_prev_block`, tested). The pass then
   copies its buffer into the history for the next frame.
-- **Depth-aware upsample.** The composite filters the buffer at the pixel (`upsampled_clouds`) and
-  hides the clouds where the scene is nearer than the nearest of the four texels' first cloud
-  (`textureGather`), so no cloud bleeds over a mountain in front of it. A cloud with terrain inside
-  it is drawn whole over that terrain: the march doesn't stop at the scene.
+- **Depth-aware upsample.** The composite weighs the four texels round the pixel by their scene
+  span (`upsampled_clouds`, §8.9).
 - **Plumes' colour.** Each plume has a `color`; its own march (§8.7) tints its lit cloud by it.
 - **Timing:** `gpu.clouds` in the telemetry.
 
@@ -440,3 +438,43 @@ phase brightens toward the sun (and is even with no strength); the tiers' light 
 the data and the shader's loop bound is the cap; the march reuses one warp per sample; the light is
 face-local (both faces); the shaders validate with naga. `clouds.test.mjs` checks the new entries'
 ranges and the tiers' order.
+
+### 8.9 Against the scene: the march stops at the rock (2026-11-12, BUGS.md #88)
+
+The owner: "a bug with volumetric clouds z fighting against tall terrain like mountains." The pass marched
+the whole layer and kept the distance to its first cloud, jittered every frame by up to a step (hundreds of
+metres); the composite cut the cloud at the scene by a ±5 % band of that distance, so where a mountain
+stood inside the layer the cut flipped frame to frame, and the colour held the cloud behind the rock too.
+Now:
+
+- **A reduced depth.** `clouds_fs` reads the scene's view depth under its texel (the divisor's square of
+  full-resolution pixels, sample 0 of each: Medium's ¼ 16 loads, High's ½ 4; `cloud_scene_span`) as
+  distances along the ray: the nearest and the farthest, the sky and past the reach at `maxDistanceM`. No
+  extra pass: the clouds pass already binds the scene's depth.
+- **The march stops at the scene.** It ends at the farthest pixel (`dwell_cloud_march_end`, twin
+  `march_end`), or covers the layer where any of the texel is sky: no cloud behind a texel's rock.
+- **Stable.** The texel keeps that span (`rg16float`, the second target), not the first cloud: the scene's
+  depth doesn't move with the jitter, so nothing it decides flickers.
+- **The composite** takes the four texels round the pixel by their bilinear share times
+  `dwell_cloud_upsample_weight` (twin `upsample_weight`): 1 where the texel's march ended at the pixel's
+  scene within a band of the texel's depth range, at least `depthBand` (3 %) and at most `depthBandRange`
+  (15 %) of the distance, soft out to twice the band. A rock pixel takes the cloud in front of the rock, a
+  sky pixel beside it the whole layer's. Where no texel matches (a spire under a texel), the nearest match
+  leads by a floor weight (`UPSAMPLE_FALLBACK`): still depths alone.
+- **The history** is reprojected the same way: the last frame's span is copied beside its colour
+  (`cloud_dist_history`, group 3 binding 5), and the four history texels are weighed by whether their march
+  ended where this texel's does, so the sky's cloud beside a peak doesn't smear onto it as the view turns;
+  with none matching, the texel takes the new frame.
+
+**Cost, read from the shader** (§8.7's counting): the clouds pass adds the span's loads (Medium 16, High 4)
+and ~8 ALU each, and the history's 8 loads for its 1 filtered sample, ~0.2k ALU a texel against Medium's
+1.8k–5.3k march; a rock texel inside the layer now marches its steps over a shorter span (finer, the same
+count) and one wholly in front of the layer takes none. The composite takes 8 loads (4 colour, 4 span) for
+its 1 filtered sample and gather, ~60 ALU a pixel. Within the tiers' budgets (§8.3); the GPU timings are
+for a local `npm run bench -- --warm` (§8.3's views and a mountain in the layer).
+
+Tests (`crates/dwell-look/src/clouds.rs`, `depth_tests`, a CPU model of the pass and the composite over a
+fixture slope 4 km out, 1.7 km up, inside the layer): no sample past the scene and no cloud behind the rock on
+any of the jitter's 16 frames; a cloud round the rock draws its part in front, with the cut the same on every
+frame (red before: 0 to 0.79 over the sequence); at a silhouette a rock pixel takes the rock's texel and a sky
+pixel the sky's; both faces; the twins validate with naga. `dwell-client` `shaders.rs` pins the wiring.
