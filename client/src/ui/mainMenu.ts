@@ -23,6 +23,9 @@ import { looksLikeAddress, pastedCode, pastedInvite } from './launch';
 import type { RecentServer } from './recentServers';
 import { ServerBrowser } from './serverBrowser';
 import { playAdvancedPanel, spawnChoices } from './playAdvanced';
+import { WORLD_SIZES } from '../local/world';
+import { prefersTouch } from './touchControls';
+import { World } from '../protocol/constants.gen';
 import { audio } from '../audio/engine';
 import { DEFAULT_MENU_BACKGROUND, MenuPanorama } from './menuBackground';
 import {
@@ -173,6 +176,25 @@ export interface NewWorldValues {
   spawn: string;
   /** An offered world file's name (worldChoices.ts), or '' for the build's terrain. */
   worldgen?: string;
+  /** A bigger world's size by name (`2x`, BIG_MAP.md M2b), or '' / `1x` for today's. */
+  size?: string;
+}
+
+/**
+ * The New world form's World size choices (docs/proposals/BIG_MAP.md M2b; `worldSizes` in
+ * shared/protocol/constants.json): every named size with its disc's width, today's first. None on a
+ * touch page (owner, 2026-11-11: desktop first; a phone can't hold a bigger world's maps yet).
+ */
+export function worldSizeChoices(touch: boolean): { value: string; label: string }[] {
+  if (touch) return [];
+  return WORLD_SIZES.map((s) => {
+    const km = (2 * World.worldRadius * s.radiusScale) / 1000;
+    const across = `${km.toLocaleString('en-US')} km across`;
+    return {
+      value: s.name,
+      label: s.radiusScale === 1 ? `Normal (${across})` : `${s.name} (${across})`,
+    };
+  });
 }
 
 /** The route the New world form opens: the build that opens it creates the world. */
@@ -185,6 +207,12 @@ export function newWorldRoute(v: NewWorldValues): Record<string, string> {
     ...(v.spawn ? { spawn: v.spawn } : {}),
     ...(v.mode && v.mode !== DEFAULT_MODE ? { mode: v.mode } : {}),
     ...(v.worldgen ? { worldgen: v.worldgen } : {}),
+    // A bigger terrain world only (the flat and sandbox worlds are 1×); today's adds nothing.
+    ...(v.size &&
+    v.type === 'terrain' &&
+    WORLD_SIZES.some((s) => s.name === v.size && s.radiusScale !== 1)
+      ? { size: v.size }
+      : {}),
   };
 }
 
@@ -224,6 +252,8 @@ export class MainMenu {
   private readonly shell = document.createElement('div');
   /** The Worlds page's own New world, hidden while the empty state offers its big one. */
   private newWorldHead!: HTMLButtonElement;
+  /** New world → More options' World size (BIG_MAP.md M2b); none on a touch page. */
+  private sizeField: HTMLLabelElement | null = null;
 
   constructor(
     parent: HTMLElement,
@@ -449,7 +479,7 @@ export class MainMenu {
       this.deps.go(route);
     });
     advanced.hidden = false;
-    more.append(summary, advanced);
+    more.append(summary, ...(this.sizeField ? [this.sizeField] : []), advanced);
     return this.page(
       'menu-page-new-world',
       pageHead('New world', () => {
@@ -650,6 +680,28 @@ export class MainMenu {
       hint,
       submit,
     );
+    // The world's size (BIG_MAP.md M2b), under More options on a desktop page only; a terrain
+    // world's alone (the Type follows a bigger size).
+    const sizes = worldSizeChoices(prefersTouch());
+    const size = document.createElement('select');
+    size.id = 'world-size';
+    for (const c of sizes) {
+      const option = document.createElement('option');
+      option.value = c.value;
+      option.textContent = c.label;
+      size.append(option);
+    }
+    size.addEventListener('change', () => {
+      if (size.selectedIndex > 0) type.value = 'terrain';
+    });
+    type.addEventListener('change', () => {
+      if (type.value !== 'terrain') size.selectedIndex = 0;
+    });
+    if (sizes.length) {
+      this.sizeField = field('World size', size);
+      this.sizeField.id = 'world-size-field';
+      this.sizeField.title = 'A bigger world takes longer to create. Desktop only for now.';
+    }
     f.addEventListener('submit', (e) => {
       e.preventDefault();
       // The build that opens it creates it (its generator, its version).
@@ -661,6 +713,7 @@ export class MainMenu {
           mode: mode.value,
           spawn: spawn.value,
           worldgen: world.value,
+          ...(sizes.length ? { size: size.value } : {}),
         }),
       );
     });

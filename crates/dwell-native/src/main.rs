@@ -348,7 +348,7 @@ impl Harness {
         let jobs = jobs::ThreadJobs::new(
             self.args.workers,
             self.args.workers,
-            (generator_version, world_seed),
+            (generator_version, world_seed, self.session.world_size()),
         );
         let pool = Pool::new(Box::new(jobs));
         let mut game = Game::new(
@@ -362,7 +362,7 @@ impl Harness {
         let r = self.args.pixel_ratio;
         game.viewport_css = (f64::from(w) / r, f64::from(h) / r);
         game.set_capabilities(region_edits, brushes);
-        game.set_world(generator_version, world_seed);
+        game.set_world(generator_version, world_seed, self.session.world_size());
         if let Some(w) = self.session.world_settings() {
             game.set_world_clock(w.clock);
         }

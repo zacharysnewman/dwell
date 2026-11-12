@@ -18,6 +18,9 @@ import {
   isLive,
   ExploredLevels,
   LEVELS,
+  setMapWorldSize,
+  worldRadiusM,
+  islandRadiusM,
   Steps,
   levelPxPerM,
   levelCellM,
@@ -268,6 +271,44 @@ describe('the zoom levels (owner, 2026-11-09)', () => {
     for (let i = 1; i < LEVELS.length; i++) {
       expect(LEVELS[i]?.cellM).toBeGreaterThan(LEVELS[i - 1]?.cellM ?? 0);
     }
+  });
+
+  it("follow a bigger world's size (BIG_MAP.md M2b): its disc, island and coarser levels", () => {
+    const data = MAP.bigMap.levels;
+    const before = data.map((_, l) => new RevealCache(32).levelTiles(l, 0, 0, 0).length);
+    // The client's `bigMapLevels` at 2× (`MapTunables::big_map_levels_sized`): the closest level
+    // as the data's, every coarser cell × 2, the spans geometric up to the 2× disc.
+    const n = data.length;
+    const near = 2 * MAP.minimap.radiusM;
+    const far = 4 * World.worldRadius;
+    const two = data.flatMap((l, i) => [
+      i === 0 ? l.cellM : l.cellM * 2,
+      i === 0 ? l.spanM : Math.round(near * (far / near) ** (i / (n - 1))),
+    ]);
+    try {
+      setMapWorldSize(2, two);
+      expect(worldRadiusM()).toBe(2 * World.worldRadius);
+      expect(islandRadiusM()).toBe(2 * World.islandRadius);
+      expect(LEVELS[0]).toEqual(data[0]);
+      expect(LEVELS[n - 1]?.spanM).toBe(4 * World.worldRadius);
+      expect(LEVELS.map((l) => l.reach)).toEqual(data.map((l) => l.reach));
+      const cache = new RevealCache(32);
+      // The 2× disc is on the map past today's rim; no coarse level builds more tiles than today.
+      const widest = LEVELS[n - 1]?.cellM ?? 1;
+      expect(cache.onWorld(widest, Math.floor(75_000 / (32 * widest)), 0)).toBe(true);
+      for (let l = 1; l < n; l++) {
+        expect(cache.levelTiles(l, 0, 0, 0).length).toBeLessThanOrEqual(before[l] ?? 0);
+      }
+    } finally {
+      // Today's size restores the data's levels and disc.
+      setMapWorldSize(1, []);
+    }
+    expect(LEVELS).toBe(data);
+    expect(worldRadiusM()).toBe(World.worldRadius);
+    // Levels that don't match the data's are refused: today's.
+    setMapWorldSize(2, [1, 2]);
+    expect(LEVELS).toBe(data);
+    expect(worldRadiusM()).toBe(World.worldRadius);
   });
 
   it("a level's span fills the map's short side", () => {

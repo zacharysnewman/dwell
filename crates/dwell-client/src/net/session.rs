@@ -183,6 +183,12 @@ impl Session {
         &self.worldgen
     }
 
+    /// The world's size (BIG_MAP.md M2b: its settings' `WORLD_SIZE`), once its settings have
+    /// arrived; today's before, from a server without sizes, or past this build's LOD root.
+    pub fn world_size(&self) -> dwell_protocol::world_size::WorldSize {
+        dwell_protocol::world_size::WorldSize::playable(self.world.map(|w| w.size.radius_scale))
+    }
+
     /// The world's settings (its clock, its water speed), once Welcome has arrived.
     pub fn world_settings(&self) -> Option<world_settings::WorldSettings> {
         self.world

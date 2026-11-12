@@ -677,8 +677,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   from it. **M1 built:** the LOD root (level 15) holds every size; protocol v23, so it needs a new
   compatibility line (the owner's call). **M2a built (native):** the generators, the disc and build volume
   (`WorldBounds`), the LOD and the server read the world's size; a saved 2× world reopens at 2×; 1× unchanged;
-  a 2× world creates natively in 4.6 s at 176 MB (1×: 3.7 s, 164 MB). Next: M2b (the browser's workers and
-  the dev link `?size=2x` / New world → "World size", desktop only), then 4×, 8×, 10×.
+  a 2× world creates natively in 4.6 s at 176 MB (1×: 3.7 s, 164 MB). **M2b built (the browser):** New world →
+  More options → World size (desktop pages only; hidden on touch) and the dev link `?size=2x`; the size saved
+  in the world's settings and its menu record, every worker builds its maps and generators at it, the client's
+  bounds, streaming, LOD and big map follow the join's size; 1× unchanged. **Next: the owner tests 2× on the
+  desktop**, then 4×, 8×, 10× with the bench's measurements at each.
 
 - **Sharing saved structures between players** (owner 2026-11-11: "eventually shareable").
 

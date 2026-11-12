@@ -50,6 +50,26 @@ struct Carry {
 /// The carrying raft: `CARRY_SIDE` × `CARRY_SIDE` logs one cell thick.
 const CARRY_SIDE: i32 = 4;
 
+/// The cache keys of a terrain world's maps, faces A then B (ADR 0049; the shell's `worldMapKeys`):
+/// the build's map fingerprint, each face's seed, a test world's worldgen config and a bigger
+/// world's size (BIG_MAP.md M2b), so a map kept for another build, config or size is never read.
+pub fn world_map_keys(
+    world_seed: u64,
+    worldgen: &str,
+    size: dwell_protocol::world_size::WorldSize,
+) -> Vec<String> {
+    [dwell_world::Face::A, dwell_world::Face::B]
+        .into_iter()
+        .map(|f| {
+            dwell_worldgen::config::worldgen_map_key_sized(
+                dwell_worldgen::bifacial::face_seed(world_seed, f),
+                worldgen,
+                size,
+            )
+        })
+        .collect()
+}
+
 impl LocalCore {
     /// Starts the local server. With `storage` the world is loaded from and saved to it, and a
     /// saved world's seed and generator win over the arguments.
@@ -239,6 +259,10 @@ impl LocalCore {
     /// the world. False for a name not in `shared/modes/modes.json`.
     pub fn set_mode(&mut self, name: &str) -> bool {
         self.server.set_mode(name)
+    }
+    /// The world's size (BIG_MAP.md M2b): a saved world's own, else the size it was created at.
+    pub fn world_size(&self) -> dwell_protocol::world_size::WorldSize {
+        self.server.world_settings().size
     }
     /// The world's game mode's name.
     pub fn mode(&self) -> &'static str {

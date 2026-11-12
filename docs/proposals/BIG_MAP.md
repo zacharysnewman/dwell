@@ -4,8 +4,9 @@
 named sizes, desktop first). **M0 built** (the size as one per-world value, every derived value at
 1× unchanged); **M1 built** (the LOD root holds every named size; protocol v23, a compatibility
 question for the owner); **M2's native part built** (the generators, disc, build volume, LOD and
-server read the world's size; a 2× world creates natively in 4.6 s at 176 MB); M2's browser part
-(the client's workers, the dev link and the New world choice) and M3 onward not started. The owner (2026-11-11): "we
+server read the world's size; a 2× world creates natively in 4.6 s at 176 MB); **M2b built** (the
+browser: New world → More options' World size on desktop pages, `?size=2x`, every worker and the
+client following the world's size), waiting on the owner's desktop test; M3 onward not started. The owner (2026-11-11): "we
 will test out a 10x size map soon (could start whenever)". This study adds two things to
 [`WORLD_SCALE.md`](./WORLD_SCALE.md) (2026-11-10, which measured a disc 10× *across*): the case of 10×
 the *area*, measured, and the whole-map grids built since then (the biome field, the geology's
@@ -215,12 +216,34 @@ world keeps its own; `tests/host.rs`). The LOD system's near-rim check and its i
   size" (desktop only); Chisel's map texel (Chisel tunes a 1× world); the flat and sandbox worlds
   stay 1×; Realistic worlds' plate layout and climate (`climate.rs`, R2/R3) still read the 1× radius; `portal_spawn_for` (`?spawn=portal`) is 1×'s. The fog has no rim of its own at run time
   (`fog.mjs`'s `2 × worldRadius` is the data's distance cap). Then 4×, 8× and 10× in the browser.
-- **M2b — a big dev world in the browser.** The generators built from the world's size (the
-  sized constructors called from its settings, the world map and the biome and drainage fields on
-  the scaled grid). Start at 2× (100 km, a 200 m map cell) and step up through 4× and 8× to the
-  owner's 10× (500 km at a 1 km map cell, 1 M cells, today's cost); measure world creation, memory
-  and the big map in the browser on the M1 (`npm run bench`) at each; the owner plays it. Desktop
-  only (owner, 2026-11-11).
+- **M2b — a big dev world in the browser. [built; the owner's desktop test outstanding]** The
+  size's way in: New world → More options' **World size** (`worldSizeChoices`: every named size,
+  none on a touch page, owner 2026-11-11 "desktop first"; a terrain world's only) and the dev link
+  `?size=2x` (its own world file, `local-g8-s<seed>-x2`). The world index keeps a new world's size
+  (`WorldMeta.radiusScale`, optional; the world file's settings are its truth), so the page builds
+  its maps at it before the world starts: `worldMaps(seed, version, deps, worldgen, radiusScale)`
+  keys them apart (`worldMapKeys` with the scale: `dwell_worldgen::config::worldgen_map_key_sized`,
+  today's key at 1×, `-x<scale>` above) and builds them over the bigger disc (`buildWorldMap` with
+  the scale, `worldgen_map_bytes_sized`; a test world with its own height field is 1× only). The
+  local world's worker hands the scale to `LocalWorld` (the server's `world_size` for a new world;
+  a saved one reads its own) and the server-jobs worker builds `JobRunner::for_world_sized` from
+  the core's (`radiusScale`, the saved world's). The client reads the join's size
+  (`Session::world_size`, `WorldSize::playable`: a size this build can't hold is 1×) and passes it
+  to the shell's `prepareWorld` (4th argument), its job workers (`radiusScale` in their init,
+  `JobWorker.worldSized`, `Runner::world_sized`) and `Game::set_world` (the portals, the streamer's
+  build volume `ChunkStreamer::set_volume`, the LOD's `set_world`, the big map's levels
+  `big_map_levels_sized` and their reveal check `map_reveal::is_level_sized`); the shell's big map
+  takes the levels and the disc from the client (`bigMapLevels`, `worldRadiusScale`,
+  `setMapWorldSize`). Every 1× path is the old one: no new field or message at 1×, the same map
+  keys. Tests: `game_local.rs` (a local world created at 2× saves and reopens at 2× through
+  LocalCore, its maps keyed apart, its client's bounds and big map levels the size's, the terrain
+  arriving; a world saved without a size at 1×), `WorldSize::playable`, and Vitest over the form's
+  choices (none on touch), the route, the link, the index record, the map cache and the big map's
+  sized levels. **Left:** the owner plays 2× on the desktop, then 4×, 8× and 10×, with the bench's
+  measurements of world creation, memory and the big map at each (`npm run bench` on the M1); Chisel
+  tunes a 1× disc (its map texel is the build's radius); the flat and sandbox worlds stay 1×;
+  `portal_spawn_for` (`?spawn=portal`) and Realistic worlds' plates and climate are still 1×'s; a
+  `?size=` link's world (like a spawn link's) has no menu record.
 - **M3 — audit the shaders** for absolute f32 world coordinates; a test that feeds one at 500 km
   (3.1 cm steps).
 - **M4 — slimmer grids.** f16 for the biome and drainage grids, one shared drainage height copy;

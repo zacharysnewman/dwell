@@ -119,8 +119,44 @@ export interface BigView {
   pxPerM: number;
 }
 
-/** The zoom levels, closest first (shared/ui/map.json): each its cell side and span (m). */
-export const LEVELS: readonly { cellM: number; spanM: number; reach: Reach }[] = MAP.bigMap.levels;
+/** A zoom level: its cell side and span (m), and where its tiles are built. */
+export interface Level {
+  cellM: number;
+  spanM: number;
+  reach: Reach;
+}
+
+/**
+ * The zoom levels, closest first (shared/ui/map.json): each its cell side and span (m). A bigger
+ * world's (BIG_MAP.md M2b) are its size's (`setMapWorldSize`), its coarse cells and spans wider.
+ */
+export let LEVELS: readonly Level[] = MAP.bigMap.levels;
+
+/** The world's size (BIG_MAP.md M2b): its radius scale, 1 today's. */
+let worldScale = 1;
+
+/**
+ * The map follows the world's size (BIG_MAP.md M2b): its disc's and island's radii × `radiusScale`
+ * and its levels' cells and spans `levels` ([cellM, spanM, …], the client's `bigMapLevels`,
+ * `MapTunables::big_map_levels_sized`); each level's reach stays the data's. Today's size, or
+ * levels that don't match the data's count, restore map.json's.
+ */
+export function setMapWorldSize(radiusScale: number, levels: ArrayLike<number>): void {
+  const data = MAP.bigMap.levels;
+  const ok =
+    Number.isInteger(radiusScale) &&
+    radiusScale > 1 &&
+    levels.length === 2 * data.length &&
+    Array.from(levels).every((v) => Number.isFinite(v) && v > 0);
+  worldScale = ok ? radiusScale : 1;
+  LEVELS = ok
+    ? data.map((l, i) => ({
+        ...l,
+        cellM: levels[2 * i] ?? l.cellM,
+        spanM: levels[2 * i + 1] ?? l.spanM,
+      }))
+    : data;
+}
 
 /**
  * Where the background builds a level's tiles (`bigMap.levels[].reach`; owner, 2026-11-10): round
@@ -148,7 +184,12 @@ export function levelPxPerM(level: number, w: number, h: number): number {
  * half span): the map's tiles are built anywhere on it, the sea's included, and nowhere off it.
  */
 export function worldRadiusM(): number {
-  return World.worldRadius;
+  return World.worldRadius * worldScale;
+}
+
+/** The island's radius (m; constants.json's islandRadius × the world's size, BIG_MAP.md M2b). */
+export function islandRadiusM(): number {
+  return World.islandRadius * worldScale;
 }
 
 /**
@@ -477,7 +518,7 @@ export class RevealCache {
     const { cellM, reach } = LEVELS[l] ?? { cellM: 1, reach: 'disc' };
     if (reach !== 'island') return this.onWorld(cellM, i, k);
     const span = this.span(cellM);
-    const r = World.islandRadius;
+    const r = islandRadiusM();
     const nx = Math.max(i * span, Math.min(0, (i + 1) * span));
     const nz = Math.max(k * span, Math.min(0, (k + 1) * span));
     return nx * nx + nz * nz <= r * r;
@@ -500,7 +541,7 @@ export class RevealCache {
         for (let i = i0; i <= i1; i++) if (this.onWorld(cellM, i, k)) out.push([cellM, face, i, k]);
       }
     } else {
-      const n = Math.ceil((reach === 'island' ? World.islandRadius : worldRadiusM()) / span);
+      const n = Math.ceil((reach === 'island' ? islandRadiusM() : worldRadiusM()) / span);
       for (let k = -n; k < n; k++) {
         for (let i = -n; i < n; i++) if (this.inReach(l, i, k)) out.push([cellM, face, i, k]);
       }
@@ -904,6 +945,10 @@ export interface MapClient extends RevealClient, LiveClient, MinimapFeed {
   /** The `mapRevealed` ability (creative): the big map shows everything. */
   mapRevealed(): boolean;
   cpuAdapter(): boolean;
+  /** The joined world's size's radius scale (BIG_MAP.md M2b; 1 today's). */
+  worldRadiusScale?(): number;
+  /** The big map's levels for the world's size, [cellM, spanM, …] (BIG_MAP.md M2b). */
+  bigMapLevels?(): ArrayLike<number>;
   /**
    * The big map's cells tinted by height (`dwell_game::minimap::shade_grid`, the minimap's look
    * when its toggle is on): a `w` × `h` screen-order grid inside a one-cell border; RGBA out.
@@ -1220,6 +1265,8 @@ export class MapUi {
     version = '',
   ) {
     this.cpu = client.cpuAdapter();
+    // The world's size (BIG_MAP.md M2b): its disc and its levels, before any tile is asked for.
+    setMapWorldSize(client.worldRadiusScale?.() ?? 1, client.bigMapLevels?.() ?? []);
     this.reveal = new RevealCache(
       MAP.revealed.tileCells,
       MAP.revealed.jobsInFlight,

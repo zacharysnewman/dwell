@@ -35,6 +35,11 @@ export type ToWorker =
       /** Dev link `?growth=N`: trees grow N times as fast (ADR 0079; a time-lapse). */
       growth?: number;
       /**
+       * A new world's size's radius scale (BIG_MAP.md M2b: the New world form's World size,
+       * `?size=2x`); absent: today's. A saved world keeps its own.
+       */
+      radiusScale?: number;
+      /**
        * The maps follow in a `maps` message (the page still shaping them): the worker opens the
        * world file and loads its WASM meanwhile, then waits for them (§6.3).
        */

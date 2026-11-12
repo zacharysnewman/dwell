@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { WorldMeta } from '../local/worldIndex';
-import { formatPlayed, nearbyLabel, worldCardData, worldDetails, worldModeLabel } from './mainMenu';
+import {
+  formatPlayed,
+  nearbyLabel,
+  newWorldRoute,
+  worldCardData,
+  worldDetails,
+  worldModeLabel,
+  worldSizeChoices,
+} from './mainMenu';
 
 const MIN = 60_000;
 
@@ -98,5 +106,36 @@ describe("a world's card", () => {
     expect(card.mode).toBe('creative');
     expect(card.details).toBe('Flat · never played');
     expect(card.note).toBe('Seed 42');
+  });
+});
+
+describe("New world → More options' World size (BIG_MAP.md M2b)", () => {
+  it("offers every named size on a desktop page, today's first, and none on a touch page", () => {
+    const desktop = worldSizeChoices(false);
+    expect(desktop.map((c) => c.value)).toEqual(['1x', '2x', '4x', '8x', '10x']);
+    expect(desktop[0]?.label).toBe('Normal (100 km across)');
+    expect(desktop[4]?.label).toBe('10x (1,000 km across)');
+    // Desktop first (owner, 2026-11-11): a phone page has no World size.
+    expect(worldSizeChoices(true)).toEqual([]);
+  });
+
+  it("opens a bigger terrain world by its size, and today's route as before", () => {
+    const base = { name: 'Big', seed: '7', type: 'terrain', mode: '', spawn: '' };
+    expect(newWorldRoute({ ...base, size: '2x' })).toEqual({
+      new: '1',
+      name: 'Big',
+      seed: '7',
+      type: 'terrain',
+      size: '2x',
+    });
+    // Today's size, none (a touch page), an unknown one and a flat world add nothing.
+    const plain = { new: '1', name: 'Big', seed: '7', type: 'terrain' };
+    expect(newWorldRoute({ ...base, size: '1x' })).toEqual(plain);
+    expect(newWorldRoute(base)).toEqual(plain);
+    expect(newWorldRoute({ ...base, size: '3x' })).toEqual(plain);
+    expect(newWorldRoute({ ...base, type: 'flat', size: '2x' })).toEqual({
+      ...plain,
+      type: 'flat',
+    });
   });
 });
