@@ -1626,7 +1626,9 @@ fn clouds_resolve_fs(i: SkyOut) -> @location(0) vec4f {
 // `depth`, 0: the sky) as a layer for dwell_cloud_over (§8.9): the four texels round it, each by its
 // bilinear share and by whether its march ended at this pixel's scene (dwell_cloud_upsample_weight,
 // a band in metres of the texel's depth range), so a rock pixel takes the cloud in front of the rock
-// and a sky pixel beside it the whole layer's. Only depths decide: no flicker frame to frame.
+// and a sky pixel beside it the whole layer's. Only depths decide: no flicker frame to frame. A texel
+// that doesn't match and whose first cloud is past the pixel's scene adds its weight with no cloud
+// (dwell_cloud_upsample_split, BUGS.md #97), so leaves among sky gaps don't take the cloud behind.
 fn upsampled_clouds(ndc: vec2f, ray: vec3f, depth: f32) -> vec4f {
     let uv = vec2f(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
     let taps = cloud_taps(uv, vec2i(textureDimensions(clouds_tex)));
@@ -1634,9 +1636,9 @@ fn upsampled_clouds(ndc: vec2f, ray: vec3f, depth: f32) -> vec4f {
     var sum = vec4f(0.0);
     var weight = 0.0;
     for (var k = 0; k < 4; k++) {
-        let w = taps.share[k] * dwell_cloud_upsample_weight(e, textureLoad(cloud_dist_tex, taps.at[k], 0).xy);
-        sum += w * textureLoad(clouds_tex, taps.at[k], 0);
-        weight += w;
+        let w = taps.share[k] * dwell_cloud_upsample_split(e, textureLoad(cloud_dist_tex, taps.at[k], 0).xyz);
+        sum += w.y * textureLoad(clouds_tex, taps.at[k], 0);
+        weight += w.x;
     }
     let c = sum / max(weight, 1e-8);
     if (c.a <= 0.001) {
@@ -1724,7 +1726,15 @@ fn with_shafts(composited: vec3f, p: vec2i) -> vec3f {
         return color;
     }
     let uv = (vec2f(p) + 0.5) / vec2f(textureDimensions(scene_color));
-    let s = textureSampleLevel(shafts_tex, scene_sampler, uv, 0.0);
+    // The 3 × 3 box of the shafts' texels round the pixel (SHAFT_BLUR; bilinear taps a texel
+    // apart), which takes in every stratum of the pass's jitter tile (dwell-look shaft_blur).
+    let texel = 1.0 / vec2f(textureDimensions(shafts_tex));
+    var s = vec4f(0.0);
+    for (var k = 0; k < 9; k++) {
+        let o = vec2f(f32(k % 3 - 1), f32(k / 3 - 1)) * f32(SHAFT_BLUR);
+        s += textureSampleLevel(shafts_tex, scene_sampler, uv + o * texel, 0.0);
+    }
+    s /= 9.0;
     let g = select(0.0, s.a * frame.shafts.z, air);
     let glow = clamp(frame.shafts_color.rgb * g + select(vec3f(0.0), s.rgb, lit), vec3f(0.0), vec3f(1.0));
     return color + glow * (1.0 - color);
@@ -2089,10 +2099,18 @@ const SHAFTS: &str = r"
 const MAX_SHAFT_LIGHTS: u32 = 4u;
 // How many air samples share one look-up of the clouds' density.
 const SHAFTS_CLOUD_EVERY: i32 = 6;
+// The pass's 3 × 3 tile of sample strata and the composite's box half width over it (dwell-look
+// SHAFT_TILE, SHAFT_BLUR; BUGS.md #97).
+const SHAFT_TILE: array<u32, 9> = array<u32, 9>(0u, 5u, 7u, 8u, 3u, 1u, 4u, 6u, 2u);
+const SHAFT_BLUR: i32 = 1;
 
-// A per-pixel offset (0–1) for the samples, so the steps band into noise, not rings.
-fn shafts_jitter(p: vec2f) -> f32 {
-    return fract(52.9829189 * fract(dot(p, vec2f(0.06711056, 0.00583715))));
+// A per-texel offset (0–1) for the samples, so the steps band into noise, not rings: the 3 × 3
+// tile's stratum (dwell-look shaft_jitter, SHAFT_TILE; BUGS.md #97: was an interleaved gradient,
+// whose diagonal pattern showed), which the composite's 3 × 3 box (with_shafts) averages to nine
+// times the steps.
+fn shafts_jitter(p: vec2i) -> f32 {
+    let q = vec2i(p.x % 3, p.y % 3);
+    return (f32(SHAFT_TILE[q.x + 3 * q.y]) + 0.5) / 9.0;
 }
 
 // The full-resolution pixel at screen point `ndc` (clamped to the screen).
@@ -2228,7 +2246,7 @@ fn shafts_lights(ndc: vec2f, j: f32, size: vec2f) -> vec3f {
 @fragment
 fn shafts_fs(i: SkyOut) -> @location(0) vec4f {
     let size = vec2f(textureDimensions(scene_color));
-    let j = shafts_jitter(i.clip.xy);
+    let j = shafts_jitter(vec2i(i.clip.xy));
     var g = 0.0;
     if (frame.shafts.w > 1.5) {
         g = shafts_under(i.ndc, j, size);
@@ -3799,6 +3817,27 @@ mod tests {
     }
 
     #[test]
+    fn the_shafts_jitter_tile_and_the_composites_box_are_dwell_looks() {
+        // BUGS.md #97: the pass's jitter is the 3 × 3 tile of strata and the composite the box over
+        // it (dwell-look `shaft_jitter`, `shaft_blur`, whose test measures the dither).
+        use super::{SHAFTS, TERRAIN};
+        use dwell_look::shafts::{SHAFT_BLUR, SHAFT_TILE};
+        let tile = SHAFT_TILE.map(|k| format!("{k}u")).join(", ");
+        assert!(SHAFTS.contains(&format!(
+            "const SHAFT_TILE: array<u32, 9> = array<u32, 9>({tile});"
+        )));
+        assert!(SHAFTS.contains(&format!("const SHAFT_BLUR: i32 = {SHAFT_BLUR};")));
+        assert!(SHAFTS.contains("let j = shafts_jitter(vec2i(i.clip.xy));"));
+        assert!(
+            !SHAFTS.contains("52.9829189"),
+            "the interleaved gradient is back"
+        );
+        let comp = &TERRAIN[TERRAIN.find("fn with_shafts").unwrap()..];
+        let comp = &comp[..comp.find("fn composite_pixel").unwrap()];
+        assert!(comp.contains("for (var k = 0; k < 9; k++)") && comp.contains("f32(SHAFT_BLUR)"));
+    }
+
+    #[test]
     fn the_lights_shafts_block_holds_the_datas_lights_and_the_composite_adds_their_colour() {
         use super::{FRAME, SHAFTS, TERRAIN};
         use dwell_look::shafts::{LIGHT_SHAFT_VEC4S, MAX_SHAFT_LIGHTS};
@@ -4570,7 +4609,7 @@ mod tests {
             "return CloudOut(vec4f(layer.rgb * layer.a, layer.a), vec4f(rec, first, 0.0));"
         ));
         let up = body("upsampled_clouds");
-        assert!(up.contains("dwell_cloud_upsample_weight(e, textureLoad(cloud_dist_tex"));
+        assert!(up.contains("dwell_cloud_upsample_split(e, textureLoad(cloud_dist_tex"));
         assert!(!up.contains("smoothstep(0.95, 1.05"));
         assert!(body("cloud_history_at").contains("dwell_cloud_upsample_weight(rec.y,"));
         assert!(src.contains(&format!(

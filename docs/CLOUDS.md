@@ -637,6 +637,12 @@ its interleaved-gradient jitter clumping. Now:
   band so hovering at the edge doesn't swap buffers): Medium ¼ → ½ and 10 → 14 steps, High 16 → 24 steps.
 - **The upsample** stays the depth-aware one of §8.9 (bilinear shares × each texel's match to the pixel's
   scene), which keeps a silhouette sharp.
+- **No cloud from behind a near pixel** (BUGS.md #97, `dwell_cloud_upsample_split`, `upsample_cover`):
+  where none of a pixel's four texels matched its scene (leaves with sky in every texel), the fallback's
+  small weights were normalised to the whole cloud of the texels' marches, which ran past the leaves to the
+  sky: the cloud behind the tree drew over it, in the texel grid's and the gaps' pattern under the jitter.
+  A fallback texel whose first cloud (the second target's z) is past the pixel's scene (beyond its band,
+  soft to twice it) now lends its weight with no cloud. Matched texels are unchanged.
 
 ### 9.7 Checks and what's left
 
