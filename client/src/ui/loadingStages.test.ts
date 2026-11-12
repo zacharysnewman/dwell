@@ -133,6 +133,7 @@ describe('the loading stages', () => {
       done: 3_400_000,
       firstMs: 1,
       total: null,
+      detail: null,
     };
     expect(formatProgress(run)).toBe('3.4 MB'); // compressed: no total
     expect(stageFraction(run)).toBeNull();
