@@ -844,8 +844,9 @@ configuration (`--compare --configs raster,cards-off`). `gpu.frame` mean (ms):
 | Render scale 100 % (from 50 %) | 29.93 | +14.30 | 29.58 | +14.11 | 19.92 | +10.67 |
 
 The spot's view holds few trees and much grass (its screenshot), so the cutout row is mostly tall grass. Run-to-run
-spread is ~0.3–0.5 ms. Everything at High fits 16.7 ms here; the largest levers left are the cutout meshes, the
-full-detail distance and sun shadows.
+spread is ~0.3–0.5 ms. The denser mixed forest (`high-mixed`, after the culls) read 17.05 ms at High (cards 0.23, the cutout meshes 4.2),
+so High's full detail went 256 → 192 m: 13.88 ms there. The largest levers left are the cutout meshes (a Tall grass
+setting needs a mesher flag), the full-detail distance and sun shadows.
 
 ## Cost profile (M1 Air)
 
