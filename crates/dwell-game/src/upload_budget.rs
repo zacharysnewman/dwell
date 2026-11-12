@@ -71,7 +71,9 @@ mod tests {
     #[test]
     fn no_frame_uploads_more_than_its_budget_and_the_queue_drains_in_order() {
         // A burst like the phone page's worst while flying: 2.6 MB of meshes in one frame.
-        let sizes = [400_000u64, 900_000, 120_000, 300_000, 700_000, 50_000, 160_000];
+        let sizes = [
+            400_000u64, 900_000, 120_000, 300_000, 700_000, 50_000, 160_000,
+        ];
         let mut q = UploadQueue::default();
         for (i, &b) in sizes.iter().enumerate() {
             q.push(i, b);

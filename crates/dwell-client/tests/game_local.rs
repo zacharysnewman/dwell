@@ -450,7 +450,10 @@ fn no_frame_uploads_more_chunk_mesh_bytes_than_the_scenes_budget() {
         over, 0,
         "{over} of {frames} frames uploaded more than {budget} B of several meshes (most {most} B)"
     );
-    assert!(drained, "the view finished meshing ({uploads} meshes in {frames} frames)");
+    assert!(
+        drained,
+        "the view finished meshing ({uploads} meshes in {frames} frames)"
+    );
 }
 
 /// BUGS.md #72: a chunk mesh over the phone's budget is written a slice a frame
@@ -470,7 +473,10 @@ fn no_mesh_is_handed_over_while_the_scene_is_still_writing_one() {
         rig.frame();
         handed += rig.scene.borrow().frame_chunks;
     }
-    assert_eq!(handed, 0, "{handed} meshes handed over while one was being written");
+    assert_eq!(
+        handed, 0,
+        "{handed} meshes handed over while one was being written"
+    );
     rig.scene.borrow_mut().uploads_waiting = false;
     assert!(
         rig.run_until(60 * 10, |r| r.scene.borrow().frame_chunks > 0),

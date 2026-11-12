@@ -732,7 +732,10 @@ crate::both_faces!(
         let whole = snapshot(&fx.lit(&chunks), &chunks);
         let steps = 512;
         let (w, most, longest) = lit_in_slices(&mut fx, &chunks, steps);
-        assert!(longest > 4, "the biggest chunk took {longest} slices: not sliced");
+        assert!(
+            longest > 4,
+            "the biggest chunk took {longest} slices: not sliced"
+        );
         // A cell's step writes itself and at most its six neighbours.
         assert!(most <= 7 * steps as u64, "a slice wrote {most} cells");
         let sliced = snapshot(&w, &chunks);
@@ -776,12 +779,19 @@ crate::both_faces!(
         let beside = ChunkCoord::new(last.x + 1, last.y, last.z);
         assert!(!chunks.contains(&beside));
         w.put(beside, Chunk::default());
-        assert_eq!(w.light_pending(), Some(*last), "a new chunk's arrival finished it");
+        assert_eq!(
+            w.light_pending(),
+            Some(*last),
+            "a new chunk's arrival finished it"
+        );
         apply(&mut w);
         assert_eq!(w.light_pending(), None, "finished by the edit");
         let (a, b) = (snapshot(&want, &chunks), snapshot(&w, &chunks));
         let differ = a.iter().zip(&b).filter(|(x, y)| x != y).count();
-        assert_eq!(differ, 0, "{differ} cells differ from the load then the edit");
+        assert_eq!(
+            differ, 0,
+            "{differ} cells differ from the load then the edit"
+        );
         assert_matches_scratch(&mut w, &chunks, "the edit mid-light");
     }
 );

@@ -259,6 +259,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    budget written over several frames; at 6× the three routes drop 77 frames where they dropped 115 (BUGS.md #72
    round 4). Left: the flood light off the main thread (the largest main-thread cost; one chunk's light is the
    worst frames at 6×), then a real iPhone check while moving.
+   **Status (fps-moving-3):** built: a chunk's flood light lit a slice at a time across frames within the light
+   budget (the chunk unmeshed until lit; edits and nearby held chunks finish it first). The 6× flight's worst
+   `mesh_dirty` 21.2 → 8.4 ms; frames over 16.7 ms of CPU at 6× 77 → 24 (BUGS.md #72 round 5). Left: the
+   prediction's ticks in flight (13–20 ms frames at 6×), a real iPhone check while moving.
 17. **Axe swing directions and animation tools** (owner 2026-11-11: "The axe animations are still trash. They
    don't swing in the right direction at all. Make yourself some tools to properly observe animations, movement
    directions, positions over time, etc. Should swing right to left for horizontal and up to down for vertical";

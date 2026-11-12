@@ -1067,11 +1067,9 @@ where
             // before the deadline, across frames (BUGS.md #72: one chunk's light was 15–20 ms
             // of a frame at CPU 6×); the chunk stays unlit for meshing until it is done.
             while (self.lighting.is_some() || rest.peek().is_some())
-                && self.light_cost.fits(
-                    ran + usize::from(!light_forces),
-                    t,
-                    light_deadline,
-                )
+                && self
+                    .light_cost
+                    .fits(ran + usize::from(!light_forces), t, light_deadline)
             {
                 let c = match self.lighting {
                     Some(c) => c,
@@ -1869,7 +1867,11 @@ mod tests {
             self.lit.push(coord);
             if let Some(c) = &self.light_clock {
                 // The whole light at once: a resumable one's slices, or 10 ms.
-                let ms = if self.light_slices == 0 { 10.0 } else { self.light_slices as f64 };
+                let ms = if self.light_slices == 0 {
+                    10.0
+                } else {
+                    self.light_slices as f64
+                };
                 c.set(c.get() + ms);
             }
         }
@@ -2372,7 +2374,10 @@ mod tests {
         let t = clock.clone();
         let started = s.mesh_dirty([16.0; 3], StreamBudget::new(4.0, 2.0), move || t.get());
         assert_eq!(s.store().lit, vec![[0, 0, 0]], "one chunk lit, the nearest");
-        assert_eq!(started, 0, "no mesh start after the light ran past the deadline");
+        assert_eq!(
+            started, 0,
+            "no mesh start after the light ran past the deadline"
+        );
         // The next late frame is the mesh starts': no light past the deadline, a mesh started.
         let t = clock.clone();
         let started = s.mesh_dirty([16.0; 3], StreamBudget::new(4.0, 2.0), move || t.get());
@@ -2403,7 +2408,10 @@ mod tests {
             // An 8 ms budget, 3.2 of it the mesh starts': the light stops at 4.8 ms.
             s.mesh_dirty([16.0; 3], StreamBudget::new(8.0, 3.2), move || t.get());
             let spent = clock.get() - before;
-            assert!(spent <= 4.8 + 1.0, "frame {frames} spent {spent} ms on light");
+            assert!(
+                spent <= 4.8 + 1.0,
+                "frame {frames} spent {spent} ms on light"
+            );
             if s.store().lit.is_empty() {
                 assert!(s.store().meshed_from.is_empty(), "meshed on half its light");
             }
@@ -2413,7 +2421,10 @@ mod tests {
         assert!(frames >= 5, "lit in {frames} frames: not spread");
         let t = clock.clone();
         s.mesh_dirty([16.0; 3], StreamBudget::new(8.0, 3.2), move || t.get());
-        assert!(s.store().meshed_from.contains(&[0, 0, 0]), "meshed once lit");
+        assert!(
+            s.store().meshed_from.contains(&[0, 0, 0]),
+            "meshed once lit"
+        );
     }
 
     #[test]

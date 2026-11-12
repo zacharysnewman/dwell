@@ -40,7 +40,11 @@ impl<K> Default for WriteQueue<K> {
 impl<K: PartialEq + Copy> WriteQueue<K> {
     /// Queues `key`'s writes (each a whole number of 4-byte words, as the GPU's writes are).
     pub fn push(&mut self, key: K, writes: Vec<Write>) {
-        debug_assert!(writes.iter().all(|w| w.data.len() % 4 == 0 && w.offset % 4 == 0));
+        debug_assert!(
+            writes
+                .iter()
+                .all(|w| w.data.len() % 4 == 0 && w.offset % 4 == 0)
+        );
         self.items.push_back(Item {
             key,
             writes: writes.into(),
@@ -72,11 +76,7 @@ impl<K: PartialEq + Copy> WriteQueue<K> {
     /// This frame's writes, oldest first, at most `budget` bytes in all (at least one 4-byte word,
     /// so the queue never stalls), handed to `write` as (format, page, offset, bytes); returns the
     /// keys whose writes are now all done, in order.
-    pub fn pump(
-        &mut self,
-        budget: u64,
-        mut write: impl FnMut(usize, usize, u64, &[u8]),
-    ) -> Vec<K> {
+    pub fn pump(&mut self, budget: u64, mut write: impl FnMut(usize, usize, u64, &[u8])) -> Vec<K> {
         let mut left = (budget.min(usize::MAX as u64) as usize / 4 * 4).max(4);
         let mut finished = Vec::new();
         while left > 0 {
