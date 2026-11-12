@@ -4691,8 +4691,10 @@ impl<S: Scene> Game<S> {
                     face: h.axis_face(),
                     point: h.point,
                     step: h.step,
-                    wood: dwell_protocol::chopping::chopped_wood(dwell_blocks::block_of(m).name)
-                        .is_some(),
+                    // A weapon (a sword) cuts no wood: a log only stops it, as stone does.
+                    wood: !tool.is_weapon()
+                        && dwell_protocol::chopping::chopped_wood(dwell_blocks::block_of(m).name)
+                            .is_some(),
                 }
             })
         });

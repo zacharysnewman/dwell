@@ -4,6 +4,7 @@
 export const TOOLS: readonly { name: string; kind: string }[] = [
   { name: 'dwell:stone_axe', kind: 'axe' },
   { name: 'dwell:metal_axe', kind: 'axe' },
+  { name: 'dwell:sword', kind: 'weapon' },
 ];
 
 /** Each block's hits to destroy (its `damage`): `default` by bare hands (null: can't), `tools` by class or item. */
@@ -42,4 +43,5 @@ export const DURABILITY: Readonly<Record<string, number>> = {
   'dwell:metal_axe': 64,
   'dwell:metal_pickaxe': 64,
   'dwell:metal_shovel': 64,
+  'dwell:sword': 120,
 };

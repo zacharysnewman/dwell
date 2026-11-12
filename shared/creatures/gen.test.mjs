@@ -64,3 +64,20 @@ test('bad entries fail with a message naming them', () => {
   bad((d) => (d.rules[2].biomes = ['preset:moon']), /rules\[2\]\.biomes\[0\]: "preset:moon" is not a biome/);
   bad((d) => (d.rules[2].spacingM = -3), /rules\[2\]: spacingM/);
 });
+
+// WORK_QUEUE item 35: a creature's body to a weapon (health, hit radius, drops) is data.
+test('a creature’s health, hit radius and drops are checked and emitted', () => {
+  const v = validateCreatures(data(), blocks, models);
+  const doe = v.creatures.find((c) => c.name === 'dwell:doe');
+  assert.ok(doe.health > 0 && doe.hitRadiusM > 0);
+  assert.deepEqual(doe.drops, [{ item: 'dwell:raw_meat', min: 1, max: 2 }]);
+  const bad = (edit, re) => {
+    const d = data();
+    edit(d.creatures.find((c) => c.name === 'dwell:doe'));
+    assert.throws(() => validateCreatures(d, blocks, models), re);
+  };
+  bad((c) => (c.drops = [{ item: 'dwell:nothing' }]), /creatures\.dwell:doe\.drops\[0\]: no item "dwell:nothing"/);
+  bad((c) => (c.health = -1), /health must be in \[0, 10000\]/);
+  bad((c) => (c.hitRadiusM = 0), /hitRadiusM must be in \(0, 4\]/);
+  bad((c) => delete c.health, /drops need health/);
+});

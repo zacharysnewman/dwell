@@ -863,6 +863,20 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    sword in its stance; attacking drops the block for the swing; a strike that meets the defender's raised sword
    within a threshold of perpendicular to it is blocked (a clash, no damage), within a threshold of parallel it
    slips past and connects; angles and thresholds as data. NPCs carry swords and fight by the same rules (item 38).
+   **Built (server, data, tests; 2026-11-12):** a `weapon` tool kind (shared/tools: `weapon` damage, knockbackM,
+   maxTargets, durability, `guard` stances/thresholds/recoil/front arc; a fixture weapon by data alone), the sword
+   item (prop `katanas_swords`, the creative inventory's Weapons group); the server sweeps its arc at contact and
+   strikes creatures only (never players), damage and knockback by data, one wear a creature struck; creatures
+   have health, a hit radius and drops (shared/creatures), react by `near.hurt` (deer flee; wolves fight, flee when
+   badly hurt), die and drop; a defender API (`Creature::guard`: stance, raised, attacking drops it) and the
+   blade-angle clash (blocked / glanced / connected, a block recoils the striker). ARCHITECTURE.md "Weapons".
+   **Outstanding (local):** pick one sword out of the joined prop and measure its grip (needs the FBX); slash
+   clips of its own fitted with `clip_probe --fit` (it plays the axe's chop clips, with the axe's timings, for
+   now); a clash's sound, sparks and recoil on the clients (a message for the outcome); the player's block input
+   and raised pose (players can't be struck yet); NPCs raising their block and swinging on their own (the
+   villager holds the sword as its guard from its spawn, lowered, and turns on its striker: item 38's
+   `fightBack`; the sword in its drawn hand is item 38's renderer work); wolves biting back (no creature damage
+   to players yet).
 36. **A showcase video of the deer and wolves** (owner 2026-11-12: "have you observed the animals simulation? Make
    some clips of the deer/wolves behavior, really showcase it and try to get good angles. Keep it under 2 minutes
    of video. Splice it together into a single video."). Queued (local, after item 30).

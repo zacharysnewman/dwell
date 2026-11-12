@@ -369,7 +369,7 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
                      for dwell-characters), fixtures/ (test-only parts), gen.test.mjs
                      (CHARACTERS.md, ADR 0041).
 /shared/creatures    creatures.json (the animals and NPCs: model, speeds, wandering, an NPC's idles, look-at, sidestep,
-                     colours, held item; spawn rules with a group mix, spacing, biomes, limits; ADR 0073),
+                     colours, held item; health, hit radius and drops; spawn rules with a group mix, spacing, biomes, limits; ADR 0073),
                      gen.mjs → dwell-sim creatures.gen.rs, a fixture creature
 /shared/ecology      ecology.json (the far ecology: island grid, forage grounds, species' group,
                      breeding, hunger, diet, flee and disperse rules; §5.4) + gen.mjs →
@@ -3237,6 +3237,34 @@ taken only onto a solid full block with `rows` open dry cells over it within `cl
 (water and cliffs stop it); face-local through `FaceFrame`. Not saved. Clients draw them with the
 skinned renderer (a mesh per model, `render/skinned.rs`), smoothed toward the server's points, the clip
 by speed (`dwell-client` `creatures.rs`).
+
+**Weapons [built: the server and the data; WORK_QUEUE item 35].** A tool of kind `weapon`
+(`shared/tools/tools.json`; the sword, `dwell:sword`) has no cutting fields and a `weapon`: `damage`,
+`knockbackM`, `maxTargets`, `durability` (merged into the tools' `durability` table) and `guard`, its
+swordplay (owner, 2026-11-12, the Wii Resort model: "you can only hold the sword vertical or
+horizontal, and you can choose to block or not. Attacking drops block, if you hit enemy sword within an
+angle threshold of perpendicular you're blocked, if within an angle of parallel it connects"): each
+stance's blade roll (`stances.level` 0, `vertical` 90), `blockWithinDeg`, `connectWithinDeg`, a
+glance's `glanceDamage` share between them, a block's `recoilS` and the guarded `frontDeg`
+(`dwell_protocol::chopping::{WeaponDef, GuardDef, Clash}`; a fixture weapon by data alone,
+`shared/tools/fixtures/tools.json` → `chopping::fixture`). Its swing goes on the wire as the axe's
+(`ChopAction::Sweep`, `SwingKind` chop level or vertical): the server times it to its contact — the
+first creature its head meets on the arc, else the block that stops it (`dwell_world::swing::reaches`)
+— and then sweeps again from the eye (`server/weapons.rs`): `Creatures::crossed` finds the creatures
+whose body (a post from the feet up its `rows`, `hitRadiusM` round) a step's segment comes within,
+on the eye's face, in the order the head meets them, at most `maxTargets`; players are never
+targets. Each is struck (`Creatures::strike`): a creature holding a raised sword facing the striker
+(`Creature::guard`, the **defender API** NPCs use: weapon, stance, raised, its own swing's ticks —
+attacking drops the block) clashes by the blades' angle (`GuardDef::clash`, the holder's roll mirrored
+into the striker's view): blocked (nothing lands, the striker's next swing waits `recoilS`), glanced or
+connected; what lands takes `damage` × its share from the creature's `health` (shared/creatures, per
+creature with its `hitRadiusM` and `drops`; none: it can't be hurt), slides it `knockbackM` away along
+walkable ground (`KNOCK_SPEED_MPS`) and sets its `hurt_from` for the near ecology's reaction
+(docs/ECOLOGY.md §8.1). A creature killed is removed (the clients told) and drops its `drops` as loose
+items; the weapon wears once a creature struck. The client's sweep treats a wood as a bounce for a
+weapon. Not yet: a clash's sound, sparks and recoil on the clients (no message carries the outcome),
+a player's block input and raised pose (players can't be struck yet), slash clips of its own
+(CHARACTERS.md §5), NPCs raising their blocks and swinging on their own (by the defender API). An NPC whose `npc.held` is a weapon holds it as its guard (its stance, lowered) from its spawn, and a strike on an NPC also calls its `fightBack` hook (`Creatures::attacked`); the villager has health (`health` 40, no drops).
 
 **NPCs [in progress: data, server and client logic built; the colours and held item in the renderer to
 follow]** (WORK_QUEUE item 38, CHARACTERS.md §11.11). Wandering people are creatures with an `npc` block

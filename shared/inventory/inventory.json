@@ -40,6 +40,13 @@
       "look": { "shape": "lump", "size": [0.16, 0.09, 0.12], "texture": "dwell:log", "color": "#d6ad84" }
     },
     {
+      "name": "dwell:raw_meat",
+      "label": "Raw meat",
+      "color": "#b0524a",
+      "size": 0.2,
+      "look": { "shape": "lump", "size": [0.14, 0.07, 0.11], "texture": "dwell:dirt", "color": "#d98a80" }
+    },
+    {
       "name": "dwell:rock_shard",
       "label": "Rock shard",
       "color": "#8f8a84",
@@ -62,6 +69,7 @@
     },
     { "name": "dwell:stone_axe", "label": "Stone axe", "color": "#7d7468", "size": 0.6, "stack": 1, "look": { "model": "stone_axes" } },
     { "name": "dwell:metal_axe", "label": "Metal axe", "color": "#8c8f96", "size": 0.65, "stack": 1, "look": { "model": "metal_axe" } },
+    { "name": "dwell:sword", "label": "Sword", "color": "#a9adb5", "size": 0.9, "stack": 1, "look": { "model": "katanas_swords" } },
     { "name": "dwell:stone_pickaxe", "label": "Stone pickaxe", "color": "#8a7a66", "size": 0.6, "stack": 1, "look": { "model": "stone_pickaxes" } },
     { "name": "dwell:metal_pickaxe", "label": "Metal pickaxe", "color": "#8c8f96", "size": 0.7, "stack": 1, "look": { "model": "metal_pickaxes" } },
     { "name": "dwell:wooden_shovel", "label": "Wooden shovel", "color": "#8a6440", "size": 1.0, "stack": 1, "look": { "model": "wooden_shovel" } },

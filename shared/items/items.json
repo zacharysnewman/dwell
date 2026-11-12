@@ -110,6 +110,12 @@
       "tool": "dwell:metal_shovel"
     },
     {
+      "name": "dwell:sword",
+      "category": "weapons",
+      "label": "Sword",
+      "tool": "dwell:sword"
+    },
+    {
       "name": "dwell:leaves",
       "category": "plants",
       "label": "Leaves",
@@ -231,6 +237,7 @@
       { "name": "shapes", "label": "Shapes" },
       { "name": "plants", "label": "Plants" },
       { "name": "tools", "label": "Tools" },
+      { "name": "weapons", "label": "Weapons" },
       { "name": "explosives", "label": "Explosives" },
       { "name": "special", "label": "Special" }
     ],

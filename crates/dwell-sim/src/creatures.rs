@@ -12,6 +12,7 @@
 use std::collections::{HashMap, HashSet};
 
 use dwell_blocks::{StateId, VoxelShape, find_block, try_info};
+use dwell_protocol::chopping::{Clash, WeaponDef};
 use dwell_protocol::{CreatureNet, NPC_POSES, NpcNet, SIM_HZ};
 use dwell_world::{CHUNK_SIZE, FaceFrame, cell_of_pos, m_of_row};
 
@@ -127,6 +128,12 @@ pub struct CreatureDef {
     pub rows: i32,
     pub climb_rows: i32,
     pub drop_rows: i32,
+    /// Its health to a weapon (WORK_QUEUE item 35); 0: it can't be hurt.
+    pub health: f64,
+    /// The radius round its body a swing's arc must come within to hit it (m).
+    pub hit_radius_m: f64,
+    /// What it drops when killed: (item, min, max).
+    pub drops: &'static [(&'static str, u32, u32)],
     /// An NPC's behaviour and looks; None: an animal.
     pub npc: Option<NpcDef>,
 }
@@ -229,6 +236,14 @@ pub struct Creature {
     pub driven: bool,
     /// × its walking speed (a sprint, a flight; 1 walking).
     pub pace: f64,
+    /// Its health (its kind's `health` when whole; WORK_QUEUE item 35).
+    pub health: f64,
+    /// Where (world) the last hit came from, until its mind takes it ([`Creature::take_hurt`]).
+    pub hurt_from: Option<[f64; 3]>,
+    /// The knockback still to slide (face-local x, z metres).
+    pub knock: [f64; 2],
+    /// Its sword, if it holds one (the defender API: NPCs, WORK_QUEUE items 35 and 38).
+    pub guard: Option<Guard>,
     /// An NPC's idle pose (Stand while it walks).
     pub pose: Pose,
     /// An NPC's palette variant seed (its colours: [`npc_colours`]).
@@ -244,7 +259,54 @@ pub struct Creature {
     rng: u64,
 }
 
+/// A defender's sword (WORK_QUEUE item 35; owner, 2026-11-12: the Wii Resort model): the weapon it
+/// holds (a `weapon` tool's item name), its stance (vertical or level, the two swing kinds),
+/// whether it holds its block, and how long its own swing still runs (attacking drops the block).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Guard {
+    pub weapon: &'static str,
+    pub vertical: bool,
+    pub raised: bool,
+    /// Ticks left in its own swing.
+    pub attacking: u32,
+}
+
+impl Guard {
+    /// A sword held in a stance, not raised.
+    pub fn holding(weapon: &'static str, vertical: bool) -> Self {
+        Self {
+            weapon,
+            vertical,
+            raised: false,
+            attacking: 0,
+        }
+    }
+    /// Whether its blade guards now: raised and not mid-swing (attacking drops the block).
+    pub fn blocking(&self) -> bool {
+        self.raised && self.attacking == 0
+    }
+    /// Starts its own swing for `ticks`: the block drops until it ends.
+    pub fn attack(&mut self, ticks: u32) {
+        self.attacking = self.attacking.max(ticks);
+    }
+}
+
 impl Creature {
+    /// Where its last hit came from (world), once: its mind's to react to.
+    pub fn take_hurt(&mut self) -> Option<[f64; 3]> {
+        self.hurt_from.take()
+    }
+
+    /// Its health as a share of its kind's whole (1 for a kind that can't be hurt).
+    pub fn health_share(&self, table: &Table) -> f64 {
+        let whole = table.creatures[self.kind].health;
+        if whole > 0.0 {
+            (self.health / whole).clamp(0.0, 1.0)
+        } else {
+            1.0
+        }
+    }
+
     pub fn net(&self, table: &Table) -> CreatureNet {
         CreatureNet {
             id: self.id,
@@ -442,6 +504,10 @@ impl Creatures {
             home,
             driven: true,
             pace: 1.0,
+            health: self.table.creatures[kind].health,
+            hurt_from: None,
+            knock: [0.0; 2],
+            guard: guard_of(&self.table.creatures[kind]),
             pose: Pose::Stand,
             variant: 0,
             sidestepping: false,
@@ -592,6 +658,10 @@ impl Creatures {
                     home: key,
                     driven: false,
                     pace: 1.0,
+                    health: def.health,
+                    hurt_from: None,
+                    knock: [0.0; 2],
+                    guard: guard_of(&def),
                     pose: Pose::Stand,
                     variant: mix(seed, [x + dx, yy, z + dz], 0x6e70_6373) as u32,
                     sidestepping: false,
@@ -657,6 +727,32 @@ impl Creatures {
             let def = table.creatures[c.kind];
             let f = FaceFrame::at_height(c.position[1]);
             let local = f.point(c.position);
+            if let Some(g) = &mut c.guard {
+                g.attacking = g.attacking.saturating_sub(1);
+            }
+            // A hit's knockback slides it first, over ground it could walk (a wall, water or a
+            // cliff's edge stops it), walking nothing meanwhile.
+            let left = c.knock[0].hypot(c.knock[1]);
+            if left > 1e-9 {
+                let step = (KNOCK_SPEED_MPS * dt).min(left);
+                let next = [
+                    local[0] + c.knock[0] / left * step,
+                    local[2] + c.knock[1] / left * step,
+                ];
+                let row = cell_of_pos(local)[1];
+                let col = [next[0].floor() as i32, next[1].floor() as i32];
+                match feet_row(get, f, col, row, def.climb_rows, def.drop_rows, def.rows) {
+                    Some(y) => {
+                        let ny = feet_y(f, [col[0], y, col[1]]);
+                        c.position = f.point([next[0], ny, next[1]]);
+                        let k = (left - step) / left;
+                        c.knock = [c.knock[0] * k, c.knock[1] * k];
+                    }
+                    None => c.knock = [0.0; 2],
+                }
+                c.speed = 0.0;
+                continue;
+            }
             if let (Some(n), false) = (def.npc, c.driven) {
                 let near = |p: &[f64; 3]| {
                     (FaceFrame::at_height(p[1]).sign() == f.sign()).then(|| {
@@ -809,6 +905,181 @@ impl Creatures {
     pub fn get(&self, id: u32) -> Option<&Creature> {
         self.list.iter().find(|c| c.id == id)
     }
+
+    /// The creatures a swing's head crosses (WORK_QUEUE item 35): `arc` its steps in the order the
+    /// head sweeps them, each a direction (world, unit) from `eye` and how far the head reaches on
+    /// it (the weapon's reach, or less where a solid block stops it). A creature is crossed when a
+    /// step's segment comes within its kind's `hitRadiusM` of its body (a vertical line from its
+    /// feet up its `rows`), on the eye's face; only kinds with health. At most `max`, each once,
+    /// in the order the head meets them: (creature id, step).
+    pub fn crossed(&self, eye: [f64; 3], arc: &[([f64; 3], f64)], max: usize) -> Vec<(u32, u32)> {
+        let f = FaceFrame::at_height(eye[1]);
+        let e = f.point(eye);
+        let mut out: Vec<(u32, u32)> = Vec::new();
+        for (step, &(dir, reach)) in arc.iter().enumerate() {
+            let d = f.vector(dir);
+            let mut met: Vec<(f64, u32)> = Vec::new();
+            for c in &self.list {
+                let def = &self.table.creatures[c.kind];
+                if def.health <= 0.0 || out.iter().any(|o| o.0 == c.id) {
+                    continue;
+                }
+                if FaceFrame::at_height(c.position[1]).sign() != f.sign() {
+                    continue;
+                }
+                let feet = f.point(c.position);
+                let top = feet[1] + f64::from(def.rows) * dwell_world::CELL_H;
+                if let Some(t) = segment_meets_post(e, d, reach, feet, top, def.hit_radius_m) {
+                    met.push((t, c.id));
+                }
+            }
+            met.sort_by(|a, b| a.0.total_cmp(&b.0));
+            for (_, id) in met {
+                if out.len() < max {
+                    out.push((id, step as u32));
+                }
+            }
+            if out.len() >= max {
+                break;
+            }
+        }
+        out
+    }
+
+    /// A weapon's strike on creature `id` from a striker at `from` (world eye): if it holds a raised
+    /// sword facing the striker (within the striker's weapon's `frontDeg` of its facing), the
+    /// blades clash by angle ([`GuardDef::clash`]): blocked, nothing lands; a glance or a connect
+    /// lands its share of the damage ([`Self::hurt`]). None: no such creature or one that can't be
+    /// hurt.
+    pub fn strike(
+        &mut self,
+        id: u32,
+        weapon: &WeaponDef,
+        vertical: bool,
+        from: [f64; 3],
+    ) -> Option<Strike> {
+        let table = self.table;
+        let c = self.get(id)?;
+        if table.creatures[c.kind].health <= 0.0 {
+            return None;
+        }
+        let clash = c.guard.filter(Guard::blocking).and_then(|g| {
+            let theirs = dwell_protocol::chopping::tool(g.weapon)?.weapon?;
+            let f = FaceFrame::at_height(c.position[1]);
+            let (me, them) = (f.point(c.position), f.point(from));
+            let to = (them[2] - me[2]).atan2(them[0] - me[0]);
+            let facing = c.yaw.to_radians().cos().atan2(c.yaw.to_radians().sin());
+            let off = (to - facing + std::f64::consts::PI).rem_euclid(std::f64::consts::TAU)
+                - std::f64::consts::PI;
+            (off.abs().to_degrees() <= weapon.guard.front_deg / 2.0)
+                .then(|| weapon.guard.clash(vertical, &theirs.guard, g.vertical))
+        });
+        // An NPC turns on whoever struck it (its `fightBack`), blocked or not.
+        self.attacked(id, from);
+        let share = clash.map_or(1.0, |k| weapon.guard.damage_share(k));
+        let hurt = if share > 0.0 {
+            self.hurt(id, weapon.damage * share, weapon.knockback_m * share, from)
+        } else {
+            None
+        };
+        Some(Strike { clash, hurt })
+    }
+
+    /// Sets creature `id`'s sword (None: it holds none). False: no such creature.
+    pub fn set_guard(&mut self, id: u32, guard: Option<Guard>) -> bool {
+        self.get_mut(id).map(|c| c.guard = guard).is_some()
+    }
+
+    /// A hit on creature `id` (a weapon's): `damage` from its health, a `knockback_m` slide away
+    /// from `from` (world; the striker) along the ground, and `from` kept for its mind to react
+    /// to. Returns whether it died (its health gone): it is then removed (the clients are told).
+    /// None: no such creature, or one that can't be hurt.
+    pub fn hurt(&mut self, id: u32, damage: f64, knockback_m: f64, from: [f64; 3]) -> Option<Hurt> {
+        let table = self.table;
+        let c = self.get_mut(id)?;
+        let def = &table.creatures[c.kind];
+        if def.health <= 0.0 {
+            return None;
+        }
+        c.health -= damage;
+        let f = FaceFrame::at_height(c.position[1]);
+        let (me, them) = (f.point(c.position), f.point(from));
+        let (dx, dz) = (me[0] - them[0], me[2] - them[2]);
+        let d = dx.hypot(dz);
+        let (ax, az) = if d > 1e-6 {
+            (dx / d, dz / d)
+        } else {
+            (0.0, 1.0)
+        };
+        c.knock = [ax * knockback_m, az * knockback_m];
+        c.hurt_from = Some(from);
+        let hurt = Hurt {
+            kind: c.kind,
+            position: c.position,
+            killed: c.health <= 1e-9,
+        };
+        if hurt.killed {
+            self.remove(id);
+        }
+        Some(hurt)
+    }
+}
+
+/// What a strike did (`Creatures::strike`): the clash with a raised blade, if it met one, and the
+/// hurt that landed (None: blocked).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Strike {
+    pub clash: Option<Clash>,
+    pub hurt: Option<Hurt>,
+}
+
+/// What a hit did (`Creatures::hurt`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Hurt {
+    /// The kind hit (its `drops` when killed).
+    pub kind: usize,
+    /// Where it stood (world feet).
+    pub position: [f64; 3],
+    pub killed: bool,
+}
+
+/// The sword a creature of `def` holds from its spawn: an NPC whose `held` is a weapon, in its level
+/// stance and lowered (the defender API; WORK_QUEUE items 35 and 38).
+pub fn guard_of(def: &CreatureDef) -> Option<Guard> {
+    let held = def.npc?.held?;
+    dwell_protocol::chopping::tool(held)
+        .filter(|t| t.is_weapon())
+        .map(|t| Guard::holding(t.name, false))
+}
+
+/// How fast a knockback slides a creature (m/s).
+pub const KNOCK_SPEED_MPS: f64 = 6.0;
+
+/// Where along the segment from `e` along unit `d` for `reach` metres (face-local) it first comes
+/// within `r` of the vertical post at `feet`'s x, z from `feet`'s y to `top`: its distance from
+/// `e`, or None. Sampled finely along the segment (a swing's step is short).
+fn segment_meets_post(
+    e: [f64; 3],
+    d: [f64; 3],
+    reach: f64,
+    feet: [f64; 3],
+    top: f64,
+    r: f64,
+) -> Option<f64> {
+    const N: u32 = 24;
+    (0..=N).find_map(|i| {
+        let t = reach * f64::from(i) / f64::from(N);
+        let p = [e[0] + d[0] * t, e[1] + d[1] * t, e[2] + d[2] * t];
+        let dy = if p[1] < feet[1] {
+            feet[1] - p[1]
+        } else if p[1] > top {
+            p[1] - top
+        } else {
+            0.0
+        };
+        let h = (p[0] - feet[0]).hypot(p[2] - feet[2]);
+        (h * h + dy * dy <= r * r).then_some(t)
+    })
 }
 
 #[cfg(test)]
@@ -956,6 +1227,188 @@ mod tests {
                 }
             }
             assert!(walked > 20.0, "they wander ({walked} m)");
+        }
+    );
+
+    /// A creature of `name` (shipped table) at face-local (x, floor, z), facing yaw.
+    fn put(cs: &mut Creatures, f: FaceFrame, name: &str, x: f64, z: f64, yaw: f64) -> u32 {
+        let k = cs.kind_of(name).unwrap();
+        cs.add_driven(k, f.point([x, m_of_row(10), z]), yaw, 1)
+            .unwrap()
+    }
+
+    /// An eye 1.6 m over the floor at face-local (0.5, 0.5), and a level arc toward face-local +x
+    /// of the sword's reach (no blocks in the way).
+    fn eye_and_arc(f: FaceFrame) -> ([f64; 3], Vec<([f64; 3], f64)>) {
+        let t = dwell_protocol::chopping::tool("dwell:sword").unwrap();
+        let arc = dwell_world::swing::Arc::of(t);
+        let eye = f.point([0.5, m_of_row(10) + 1.6, 0.5]);
+        let dirs = dwell_world::swing::arc_dirs(f, f.vector([1.0, 0.0, 0.0]), false, &arc);
+        (eye, dirs.into_iter().map(|d| (d, arc.reach_m)).collect())
+    }
+
+    both_faces!(
+        fn a_swing_crosses_the_deer_in_its_arc_and_not_one_outside_it(f: FaceFrame) {
+            let mut cs = Creatures::new(Table::SHIPPED);
+            let near = put(&mut cs, f, "dwell:doe", 2.0, 0.5, 0.0);
+            let behind = put(&mut cs, f, "dwell:doe", -2.5, 0.5, 0.0);
+            let far = put(&mut cs, f, "dwell:doe", 6.0, 0.5, 0.0);
+            let (eye, arc) = eye_and_arc(f);
+            let hit: Vec<u32> = cs.crossed(eye, &arc, 4).iter().map(|h| h.0).collect();
+            assert_eq!(
+                hit,
+                [near],
+                "only the deer in the arc ({behind}, {far} not)"
+            );
+            // Short of it (a block stopping the head at 0.5 m): nothing.
+            let short: Vec<_> = arc.iter().map(|&(d, _)| (d, 0.5)).collect();
+            assert!(cs.crossed(eye, &short, 4).is_empty());
+        }
+    );
+
+    both_faces!(
+        fn a_strike_hurts_knocks_back_and_kills_dropping_its_data_drops(f: FaceFrame) {
+            let g = world(f);
+            let mut cs = Creatures::new(Table::SHIPPED);
+            let doe = put(&mut cs, f, "dwell:doe", 2.0, 0.5, 0.0);
+            let w = dwell_protocol::chopping::tool("dwell:sword")
+                .unwrap()
+                .weapon
+                .unwrap();
+            let whole = cs.table.creatures[cs.get(doe).unwrap().kind].health;
+            let eye = f.point([0.5, m_of_row(10) + 1.6, 0.5]);
+            let s = cs.strike(doe, &w, false, eye).unwrap();
+            assert_eq!(s.clash, None);
+            assert!(!s.hurt.unwrap().killed);
+            assert!((cs.get(doe).unwrap().health - (whole - w.damage)).abs() < 1e-9);
+            assert!(
+                cs.get_mut(doe).unwrap().take_hurt().is_some(),
+                "its mind is told"
+            );
+            // The knockback slides it away from the striker along the ground.
+            for _ in 0..60 {
+                cs.step(&g);
+            }
+            let l = f.point(cs.get(doe).unwrap().position);
+            assert!(
+                (l[0] - (2.0 + w.knockback_m)).abs() < 0.05,
+                "pushed +x: {l:?}"
+            );
+            assert!((l[1] - m_of_row(10)).abs() < 1e-9);
+            // Struck until its health is gone: killed, removed, its kind's drops by data.
+            let mut last = None;
+            while cs.get(doe).is_some() {
+                last = cs.strike(doe, &w, false, eye).unwrap().hurt;
+            }
+            let hurt = last.unwrap();
+            assert!(hurt.killed);
+            assert_eq!(
+                cs.table.creatures[hurt.kind].drops,
+                &[("dwell:raw_meat", 1, 2)]
+            );
+            assert!(cs.removed.contains(&doe));
+        }
+    );
+
+    both_faces!(
+        fn a_fixture_creature_by_data_alone_takes_a_fixture_weapons_damage(f: FaceFrame) {
+            let mut cs = Creatures::new(Table::FIXTURE);
+            let k = cs.kind_of("test:walker").unwrap();
+            let id = cs
+                .add_driven(k, f.point([2.0, m_of_row(10), 0.5]), 0.0, 1)
+                .unwrap();
+            let club = dwell_protocol::chopping::fixture::TOOLS[0].weapon.unwrap();
+            let eye = f.point([0.5, m_of_row(10) + 1.6, 0.5]);
+            assert!(
+                !cs.strike(id, &club, false, eye)
+                    .unwrap()
+                    .hurt
+                    .unwrap()
+                    .killed
+            );
+            assert!((cs.get(id).unwrap().health - 2.0).abs() < 1e-9, "5 - 3");
+            let h = cs.strike(id, &club, false, eye).unwrap().hurt.unwrap();
+            assert!(h.killed);
+            assert_eq!(cs.table.creatures[h.kind].drops, &[("dwell:stick", 2, 2)]);
+            // The leader has no health: never crossed, never struck.
+            let leader = cs.kind_of("test:leader").unwrap();
+            let l = cs
+                .add_driven(leader, f.point([2.0, m_of_row(10), 0.5]), 0.0, 2)
+                .unwrap();
+            assert!(cs.strike(l, &club, false, eye).is_none());
+        }
+    );
+
+    // Owner, 2026-11-12: the Wii Resort model. A defender (an NPC's API) holding its sword raised
+    // facing the striker blocks a strike across its blade, not one along it; attacking drops the
+    // block; facing away it guards nothing.
+    both_faces!(
+        fn a_raised_blade_blocks_across_not_along_and_attacking_drops_it(f: FaceFrame) {
+            let w = dwell_protocol::chopping::tool("dwell:sword")
+                .unwrap()
+                .weapon
+                .unwrap();
+            let eye = f.point([0.5, m_of_row(10) + 1.6, 0.5]);
+            let health = |cs: &Creatures, id| cs.get(id).unwrap().health;
+            // Facing the striker (toward face-local -x: yaw -90, its facing (sin, cos)).
+            let mut cs = Creatures::new(Table::SHIPPED);
+            let d = put(&mut cs, f, "dwell:wolf", 2.0, 0.5, -90.0);
+            let whole = health(&cs, d);
+            let mut guard = Guard::holding("dwell:sword", true);
+            guard.raised = true;
+            cs.set_guard(d, Some(guard));
+            // A level slash across the upright blade: blocked, nothing lands.
+            let s = cs.strike(d, &w, false, eye).unwrap();
+            assert_eq!(s.clash, Some(Clash::Blocked));
+            assert!(s.hurt.is_none() && health(&cs, d) == whole);
+            assert_eq!(cs.get(d).unwrap().knock, [0.0; 2], "no knockback");
+            // A vertical slash along it: connects, the whole damage.
+            let s = cs.strike(d, &w, true, eye).unwrap();
+            assert_eq!(s.clash, Some(Clash::Connected));
+            assert!((health(&cs, d) - (whole - w.damage)).abs() < 1e-9);
+            // Attacking drops the block: a level slash lands while it swings, and is blocked again
+            // once its swing is over.
+            let g = world(f);
+            cs.get_mut(d).unwrap().guard.as_mut().unwrap().attack(3);
+            assert_eq!(cs.strike(d, &w, false, eye).unwrap().clash, None);
+            for _ in 0..3 {
+                cs.step(&g);
+            }
+            cs.get_mut(d).unwrap().knock = [0.0; 2];
+            assert_eq!(
+                cs.strike(d, &w, false, eye).unwrap().clash,
+                Some(Clash::Blocked)
+            );
+            // Turned away from the striker its blade guards nothing.
+            cs.get_mut(d).unwrap().yaw = 90.0;
+            assert_eq!(cs.strike(d, &w, false, eye).unwrap().clash, None);
+        }
+    );
+
+    // Owner, 2026-11-12: "Wandering NPCs will get swords." The villager holds its data's sword as
+    // its guard from its spawn (lowered: it connects), turns on its striker, and blocks once raised.
+    both_faces!(
+        fn a_villager_holds_its_sword_as_its_guard_and_turns_on_its_striker(f: FaceFrame) {
+            let w = dwell_protocol::chopping::tool("dwell:sword")
+                .unwrap()
+                .weapon
+                .unwrap();
+            let mut cs = Creatures::new(Table::SHIPPED);
+            let v = put(&mut cs, f, "dwell:villager", 2.0, 0.5, -90.0);
+            let g = cs.get(v).unwrap().guard.expect("its data's sword");
+            assert_eq!(g.weapon, "dwell:sword");
+            assert!(!g.blocking(), "lowered");
+            let eye = f.point([0.5, m_of_row(10) + 1.6, 0.5]);
+            let s = cs.strike(v, &w, false, eye).unwrap();
+            assert!(s.clash.is_none() && s.hurt.is_some());
+            assert!(cs.get(v).unwrap().foe.is_some(), "fights back");
+            cs.get_mut(v).unwrap().guard.as_mut().unwrap().raised = true;
+            let s = cs.strike(v, &w, true, eye).unwrap();
+            assert_eq!(
+                s.clash,
+                Some(Clash::Blocked),
+                "vertical across its level blade"
+            );
         }
     );
 

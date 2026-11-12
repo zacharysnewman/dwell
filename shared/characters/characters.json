@@ -540,6 +540,18 @@
         { "id": "axe_lashing", "on": "grip_r", "kind": "box", "size": [0.062, 0.06, 0.07], "at": [0, 0.02, 0.33], "material": "leather" }
       ]
     },
+    "sword": {
+      "label": "The sword held for a level slash (shared/tools names it as the sword's `held`; WORK_QUEUE item 35): drawn as its model (props.json `katanas_swords`), the blade laid along the fist's grip axis, its edge turned toward the slash's way, across to the left",
+      "on": "grip_r",
+      "pose": { "hand_r": [0, 0, -50], "forearm_r": [0, -10, 0] },
+      "parts": []
+    },
+    "sword_vertical": {
+      "label": "The sword held for a vertical slash (shared/tools `heldVertical`): the same sword raised, its edge ahead and down, ready to come down",
+      "on": "grip_r",
+      "pose": { "forearm_r": [-14, 0, 0], "hand_r": [-12, 0, 0] },
+      "parts": []
+    },
     "brush": {
       "label": "The brush tool",
       "on": "grip_r",

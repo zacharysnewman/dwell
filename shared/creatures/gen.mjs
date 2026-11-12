@@ -8,14 +8,16 @@
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { loadBlocks } from '../inventory/gen.mjs';
+import { loadBlocks, loadInventory } from '../inventory/gen.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
 
 const TOP_FIELDS = ['formatVersion', 'limits', 'creatures', 'rules'];
 const LIMIT_FIELDS = ['spawnChunks', 'despawnM', 'max'];
-const CREATURE_FIELDS = ['name', 'model', 'walkSpeed', 'wanderM', 'idleSeconds', 'rows', 'climbRows', 'dropRows', 'npc'];
+const CREATURE_FIELDS = ['name', 'model', 'walkSpeed', 'wanderM', 'idleSeconds', 'rows', 'climbRows', 'dropRows', 'npc', 'health', 'hitRadiusM', 'drops'];
+/** A death's drop (WORK_QUEUE item 35): an item and how many, [min, max] or n. */
+const DROP_FIELDS = ['item', 'count'];
 const RULE_FIELDS = ['creature', 'on', 'chance', 'group', 'mix', 'spacingM', 'biomes'];
 const NPC_FIELDS = ['lookAtM', 'turnDegPerS', 'bumpM', 'sidestepM', 'idles', 'colours', 'held', 'disposition', 'combat'];
 /** Dispositions (owner 2026-11-12, item 35: "neutral by default"): who an NPC treats as a foe. */
@@ -89,7 +91,7 @@ function validateNpc(n, at, ramps, items) {
 
 /** Checks the creatures against the block files (`{ namespace, blocks }`) and the model names;
  * NPCs' colours against the palette's ramps and rules' biomes against the biome names. */
-export function validateCreatures(data, namespaces, models, ramps = loadRamps(), biomes = loadBiomes(), items = loadItems()) {
+export function validateCreatures(data, namespaces, models, ramps = loadRamps(), biomes = loadBiomes(), items = loadItems(), dropItems = loadDropItems(namespaces)) {
   if (!isObject(data)) fail('the file must hold an object');
   unknown(data, TOP_FIELDS, 'the file');
   if (data.formatVersion !== 1) fail(`formatVersion must be 1, not ${data.formatVersion}`);
@@ -116,8 +118,26 @@ export function validateCreatures(data, namespaces, models, ramps = loadRamps(),
     if (!int(c.rows, 1, MAX_ROWS)) fail(`${at}: rows must be a whole number in [1, ${MAX_ROWS}]`);
     if (!int(c.climbRows, 0, MAX_ROWS)) fail(`${at}: climbRows must be a whole number in [0, ${MAX_ROWS}]`);
     if (!int(c.dropRows, 0, MAX_ROWS)) fail(`${at}: dropRows must be a whole number in [0, ${MAX_ROWS}]`);
+    // Its body to a weapon (WORK_QUEUE item 35): `health` (none: it can't be hurt), the radius a
+    // swing's arc must come within to hit it (`hitRadiusM`), and what it drops when killed.
+    const health = c.health ?? 0;
+    if (!num(health) || health < 0 || health > 10000) fail(`${at}: health must be in [0, 10000] (0 or none: it can't be hurt)`);
+    const hitRadiusM = c.hitRadiusM ?? 0.4;
+    if (!num(hitRadiusM) || hitRadiusM <= 0 || hitRadiusM > 4) fail(`${at}: hitRadiusM must be in (0, 4] m`);
+    if (c.drops !== undefined && !Array.isArray(c.drops)) fail(`${at}: drops must be a list`);
+    const drops = (c.drops ?? []).map((d, j) => {
+      const dat = `${at}.drops[${j}]`;
+      if (!isObject(d)) fail(`${dat} must be an object`);
+      unknown(d, DROP_FIELDS, dat);
+      if (!dropItems.has(d.item)) fail(`${dat}: no item ${JSON.stringify(d.item)} (shared/inventory or a block)`);
+      const n = d.count ?? 1;
+      const [min, max] = Array.isArray(n) ? n : [n, n];
+      if (!int(min, 0, 64) || !int(max, 1, 64) || min > max) fail(`${dat}.count must be n or [min, max], whole numbers in 0..64, max at least 1`);
+      return { item: d.item, min, max };
+    });
+    if (drops.length > 0 && health === 0) fail(`${at}: drops need health (a creature that can't be hurt never dies)`);
     if (c.npc !== undefined) validateNpc(c.npc, `${at}.npc`, ramps, items);
-    creatures.set(c.name, { ...c, index: i });
+    creatures.set(c.name, { ...c, health, hitRadiusM, drops, index: i });
   });
   if (!Array.isArray(data.rules) || data.rules.length === 0) fail('rules must be a non-empty list');
   const rules = data.rules.map((r, i) => {
@@ -155,6 +175,12 @@ export function validateCreatures(data, namespaces, models, ramps = loadRamps(),
     return { creature: creatures.get(r.creature).index, on: r.on, chance: r.chance, group: g, mix, spacing, biomes: r.biomes ?? [] };
   });
   return { limits: l, creatures: [...creatures.values()], rules };
+}
+
+/** Every item's name a creature may drop: the blocks and shared/inventory's items. */
+function loadDropItems(namespaces) {
+  const blocks = namespaces.flatMap((ns) => ns.blocks.map((b) => `${ns.namespace}:${b.name}`));
+  return new Set([...blocks, ...loadInventory().items.map((i) => i.name)]);
 }
 
 /** The item names (shared/items/items.json): what an NPC may hold. */
@@ -200,7 +226,7 @@ export function creaturesRust(d, source) {
   rs.push(`pub const CREATURES: [CreatureDef; ${d.creatures.length}] = [`);
   for (const c of d.creatures) {
     rs.push(
-      `    CreatureDef { name: ${JSON.stringify(c.name)}, model: ${JSON.stringify(c.model)}, walk_speed: ${f(c.walkSpeed)}, wander_m: ${f(c.wanderM)}, idle_seconds: [${c.idleSeconds.map(f).join(', ')}], rows: ${c.rows}, climb_rows: ${c.climbRows}, drop_rows: ${c.dropRows}, npc: ${npcRust(c.npc)} },`,
+      `    CreatureDef { name: ${JSON.stringify(c.name)}, model: ${JSON.stringify(c.model)}, walk_speed: ${f(c.walkSpeed)}, wander_m: ${f(c.wanderM)}, idle_seconds: [${c.idleSeconds.map(f).join(', ')}], rows: ${c.rows}, climb_rows: ${c.climbRows}, drop_rows: ${c.dropRows}, npc: ${npcRust(c.npc)}, health: ${f(c.health)}, hit_radius_m: ${f(c.hitRadiusM)}, drops: &[${c.drops.map((d) => `(${JSON.stringify(d.item)}, ${d.min}, ${d.max})`).join(', ')}] },`,
     );
   }
   rs.push('];', '');

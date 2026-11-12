@@ -289,6 +289,19 @@ is in its face's ecosystem while near, a far kill on it becomes deaths (fraction
 pack closes on it, and it goes when the group folds back. `cargo test -p dwell-ecology`: the far step
 closes on, kills from and flees near summaries, and their head bounds breeding.
 
+### 8.1 Hurt and killed (WORK_QUEUE item 35)
+
+A weapon's hit (ARCHITECTURE.md "Weapons") takes health from a creature (its `health`, `hitRadiusM` and
+`drops` are its creature's, shared/creatures: the doe 30, the stag 40, the wolf 36; raw meat), slides
+it back (`knockbackM`) and tells its mind where the hit came from (`Creature::hurt_from`). Each
+species' `near.hurt` says how one reacts, before anything else, for `seconds` after the hit at `pace`
+× its walk: the deer `flee` (runs `runM` from the striker each decision), the wolves `fight` (turn on
+the striker and close on it; they can't bite players yet) unless under `fleeBelowHealth` (0.35) of
+their health, when they flee. A creature killed is removed and drops its `drops`; its herd counts it a
+death at its next decision (`Near::refresh`: a member whose creature is gone), and folds back without
+it. Tests: `herds.rs` `a_hurt_deer_flees_and_a_hurt_wolf_fights_unless_badly_hurt`,
+`a_member_killed_leaves_its_group_as_a_death` (both faces).
+
 ## 9. The clients' read-out (slice 3b)
 
 For the far rendering to come (§7), the server sends the far groups to the clients that ask:

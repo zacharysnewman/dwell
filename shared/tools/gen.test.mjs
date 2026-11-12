@@ -202,12 +202,12 @@ test("the axe clears leaves, not the stump's wood ramp (chopped); a fixture tool
   const d = validateTools(...fresh());
   const axe = d.tools.find((t) => t.name === 'dwell:stone_axe');
   assert.deepEqual(axe.clears, ['dwell:leaves', 'dwell:snowy_leaves']);
-  assert.match(toolsRust(d), /rustle: Some\("axe_rustle"\), rustle_leaves: 5 \}, clears: &\["dwell:leaves", "dwell:snowy_leaves"\], chop2_bite: [\d.]+ \}/);
+  assert.match(toolsRust(d), /rustle: Some\("axe_rustle"\), rustle_leaves: 5 \}, clears: &\["dwell:leaves", "dwell:snowy_leaves"\], chop2_bite: [\d.]+, weapon: None \}/);
   const [data, items, blocks] = fresh();
   items.add('test:sickle');
   data.tools.push({ name: 'test:sickle', kind: 'axe', swingSeconds: 0.3, biteM: 0.1, bindM: 0.1, across: 1, along: 0.3, sharpness: 1, clears: ['dwell:tall_grass'] });
   const rs = toolsRust(validateTools(data, items, blocks));
-  assert.match(rs, /name: "test:sickle".*rustle: None, rustle_leaves: 4 \}, clears: &\["dwell:tall_grass"\], chop2_bite: [\d.]+ \}/);
+  assert.match(rs, /name: "test:sickle".*rustle: None, rustle_leaves: 4 \}, clears: &\["dwell:tall_grass"\], chop2_bite: [\d.]+, weapon: None \}/);
   const bad = (edit, re) => {
     const [data, items, blocks] = fresh();
     edit(data);
@@ -335,9 +335,11 @@ test('durability: the stone axe, stone pickaxe and wooden shovel survive 32 hits
     { item: 'dwell:metal_axe', hits: 64 },
     { item: 'dwell:metal_pickaxe', hits: 64 },
     { item: 'dwell:metal_shovel', hits: 64 },
+    // The sword's `weapon.durability` (WORK_QUEUE item 35).
+    { item: 'dwell:sword', hits: 120 },
   ]);
   assert.equal(d.durability.creativeWear, false);
-  assert.match(toolsRust(d), /pub static DURABILITY: &\[\(&str, u16\)\] = &\[\("dwell:stone_axe", 32\), \("dwell:stone_pickaxe", 32\), \("dwell:wooden_shovel", 32\), \("dwell:metal_axe", 64\), \("dwell:metal_pickaxe", 64\), \("dwell:metal_shovel", 64\)\];/);
+  assert.match(toolsRust(d), /pub static DURABILITY: &\[\(&str, u16\)\] = &\[\("dwell:stone_axe", 32\), \("dwell:stone_pickaxe", 32\), \("dwell:wooden_shovel", 32\), \("dwell:metal_axe", 64\), \("dwell:metal_pickaxe", 64\), \("dwell:metal_shovel", 64\), \("dwell:sword", 120\)\];/);
   assert.match(toolsRust(d), /pub const CREATIVE_WEAR: bool = false;/);
   assert.match(toolsTs(d), /'dwell:stone_axe': 32,/);
   tools.durability.items['dwell:metal_pickaxe'] = 200;
@@ -383,4 +385,41 @@ test("a swing's camera sway (CHARACTERS.md §5.2): the axe's per kind, a fixture
   bad((c) => (c.level.kick.decayS = 0), /camera\.level\.kick\.decayS must be a number in \(0, 1\]/);
   bad((c) => (c.level.kick.spin = 1), /camera\.level\.kick: unknown field spin/);
   bad((c) => (c.level.keys = [{ t: 0 }]), /camera\.level\.keys must be a list of at least two keys/);
+});
+
+// WORK_QUEUE item 35: a `weapon` tool cuts no wood and strikes by its data; the swordplay's
+// thresholds (owner, 2026-11-12: perpendicular blocks, parallel connects) are checked.
+test('the sword is a weapon: its strike, guard and wear are emitted', () => {
+  const d = validateTools(...fresh());
+  const sword = d.tools.find((t) => t.name === 'dwell:sword');
+  assert.equal(sword.kind, 'weapon');
+  assert.deepEqual(sword.clears, []);
+  assert.ok(d.durability.items.some((x) => x.item === 'dwell:sword'), 'its durability wears as a tool');
+  assert.match(toolsRust(d), /name: "dwell:sword", kind: ToolKind::Weapon/);
+  assert.match(toolsRust(d), /weapon: Some\(WeaponDef \{ damage: 12\.0, knockback_m: 0\.8, max_targets: 2, guard: GuardDef \{ level_roll_deg: 0\.0, vertical_roll_deg: 90\.0/);
+  assert.match(toolsRust(d), /name: "dwell:stone_axe"[^\n]*weapon: None/);
+});
+
+test('a fixture weapon added by data alone is emitted with the default guard', () => {
+  const [data, items, blocks] = fresh();
+  items.add('test:club');
+  data.tools.push({ name: 'test:club', kind: 'weapon', swingSeconds: 0.4, weapon: { damage: 3, knockbackM: 0.2 } });
+  const d = validateTools(data, items, blocks);
+  assert.match(toolsRust(d), /name: "test:club", kind: ToolKind::Weapon[^\n]*max_targets: 1, guard: GuardDef \{ level_roll_deg: 0\.0, vertical_roll_deg: 90\.0, block_within_deg: 45\.0, connect_within_deg: 45\.0/);
+  assert.ok(!d.durability.items.some((x) => x.item === 'test:club'), 'no durability: it never wears');
+});
+
+test('a bad weapon fails naming it and the problem', () => {
+  const bad = (edit, re) => {
+    const [data, items, blocks] = fresh();
+    edit(data.tools.find((t) => t.name === 'dwell:sword'));
+    assert.throws(() => validateTools(data, items, blocks), re);
+  };
+  bad((t) => (t.biteM = 0.1), /tools\.dwell:sword\.biteM: a weapon cuts no wood/);
+  bad((t) => delete t.weapon, /tools\.dwell:sword\.weapon is required/);
+  bad((t) => (t.weapon.damage = 0), /weapon\.damage must be a number in \(0, 1000\]/);
+  bad((t) => (t.weapon.maxTargets = 0), /maxTargets must be a whole number/);
+  bad((t) => (t.weapon.guard.blockWithinDeg = 60), /blockWithinDeg \+ connectWithinDeg \(95\) must not be above 90/);
+  bad((t) => (t.weapon.guard.stances.level = { rollDeg: 400 }), /stances\.level\.rollDeg must be a number/);
+  bad((t) => (t.weapon.wobble = 1), /unknown field wobble/);
 });
