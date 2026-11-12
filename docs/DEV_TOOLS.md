@@ -884,6 +884,45 @@ spread is ~0.3–0.5 ms. The denser mixed forest (`high-mixed`, after the culls)
 so High's full detail went 256 → 192 m: 13.88 ms there. The largest levers left are the cutout meshes (a Tall grass
 setting needs a mesher flag), the full-detail distance and sun shadows.
 
+### Flying at High on the M1 (BUGS.md #89)
+
+The owner's "sub-60FPS when flying on High … the new trees and volumetric clouds?" (2026-11-12), on this M1 Air:
+`npm run bench -- --warm --unthrottled high-fly`. The scenario spawns over the starter's mixed forest
+(`?at=-18100.5,140,-6500.5`, `?preset=high`, 1280×800 at pixel ratio 2), climbs 3 s at fly level 6, then flies +X
+at level 4 (~16 m/s, ~64 m a record) toward the tall cone with W held for 11 records of 4 s: High, then each
+suspect off with High recorded again between (`fly-high`, `fly-clouds-low`, `fly-high-2`, `fly-speed-effects-off`,
+… `fly-high-6`). The path is the same in every run (`probe.x` within ~15 m), so **two runs with one change are an
+A/B record by record**; within one run the scenery under the flight changes (forest first and last, open ground in
+the middle), so a mid-run switch is only a rough read. `gpu.frame` mean / p95 ms and the main thread:
+
+| Record (over) | `gpu.frame` | `gpu.near` | `gpu.gaps` | `frame.cpu` mean / p95 / p99 | `jobs.apply` p95 | Uploaded (MiB / 4 s) |
+| --- | --- | --- | --- | --- | --- | --- |
+| `fly-high` (mixed forest) | 15.0 / 17.3 | 7.9 | 2.9 | 3.9 / 9.3 / 10.1 | 4.6 | 402 |
+| `fly-high-2` (open ground) | 8.8 / 10.1 | 2.9 | 0.2 | 1.8 / 5.5 / 8.5 | 2.9 | 134 |
+| `fly-high-3` (open ground) | 8.9 / 10.0 | 3.0 | 0.1 | 1.5 / 5.3 / 9.0 | 0.5 | 39 |
+| `fly-high-4` (forest edge) | 8.9 / 10.1 | 3.5 | 0.6 | 3.1 / 8.3 / 9.1 | 3.1 | 205 |
+| `fly-high-5` (forest) | 13.5 / 15.6 | 6.8 | 2.2 | 5.0 / 9.9 / 10.7 | 4.3 | 333 |
+| `fly-high-6` (forest) | 13.4 / 15.6 | 6.3 | 2.2 | 5.7 / 10.3 / 10.9 | 4.3 | 331 |
+
+The suspects, each the A/B that isolates it best (`gpu.frame` mean / p95):
+
+| Suspect | Read | Effect |
+| --- | --- | --- |
+| Volumetric clouds Medium → Low (the 2D deck) | a second run with clouds Low from the start: `fly-high` 15.7 / 18.5 vs 15.0 / 17.3 | **none** (the volume's `gpu.clouds` 2.2–3.4 ms overlaps the scene passes on the M1; with it off, `gpu.gaps` 2.9 → 0.2 but the frame is no shorter). Its steps are fixed per pixel (shared/look/clouds.json `tiers`), not by the ray's length, so altitude does not grow them |
+| Speed effects (the wind's motion pass, full canvas resolution) | `fly-speed-effects-off` vs `fly-high-2`/`-3` | −0.5 / −0.6 |
+| Leaf cards + tall grass (mid-run: cards change only in chunks meshed after) | `fly-trees-off` vs `fly-high-3`/`-4` | −0.5 / −0.4, over open ground; over forest the near pass is the cost (`gpu.near` 3 → 6–8 ms), the cutout meshes of #78 (4.5 ms there) |
+| Shadows High → Low | `fly-shadows-low` vs `fly-high-5` (forest) | about −2 / −1.7 (confounded by the forest's start) |
+| Bloom + shafts off | `fly-bloom-off` vs `fly-high-5`/`-6` | none (±0.5, noise) |
+| Desktop upload budget 4 → 1 MiB a frame (`shared/render/streaming.json`, a second run) | record by record | −0.4 to −1.8 over forest, +0.3 over open ground; `jobs.apply` p95 4.6 → 1.8; uploads halved (a backlog). Not adopted: the GPU's extra time over forest is the near pass and its gaps, not the copies |
+
+**What this says:** flying at High on the M1 fits 60 fps over open ground with room (8.8 ms) and sits at the line
+over the forests (13.4–15.0 mean, **p95 15.6–17.3**, the first record up to 18.5 in another run); the main thread is
+never the limit (`frame.cpu` p95 ≤ 10.5 ms, `mesh_dirty` p95 ≤ 7.6, no long task while flying). Neither the
+volumetric clouds nor streaming is at fault; the forest's geometry is (the near pass's cutout leaves and grass,
+their sun shadows), the cost #78 measured standing still. The frame interval p95 reads 17.7–18.7 in every record,
+even at 8 ms GPU frames: the page's pacing (`pacing.done` p95 30–50 ms), not the frame's cost; read the vsync'd
+drop count from a run without `--unthrottled`.
+
 ## Cost profile (M1 Air)
 
 The owner's "can you truly benchmark the game to determine our most costly pieces … each feature by CPU and
