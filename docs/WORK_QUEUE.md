@@ -569,7 +569,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   regional maps. **M0 built:** the size is a per-world setting (optional tag, today's worlds unchanged) and the
   LOD levels, big map cells, hydrology cell (≤ 1 M cells at every size), island shape and uplift counts derive
   from it. **M1 built:** the LOD root (level 15) holds every size; protocol v23, so it needs a new
-  compatibility line (the owner's call). Next: M2 (the generators read the world's size; 2× first).
+  compatibility line (the owner's call). **M2a built (native):** the generators, the disc and build volume
+  (`WorldBounds`), the LOD and the server read the world's size; a saved 2× world reopens at 2×; 1× unchanged;
+  a 2× world creates natively in 4.6 s at 176 MB (1×: 3.7 s, 164 MB). Next: M2b (the browser's workers and
+  the dev link `?size=2x` / New world → "World size", desktop only), then 4×, 8×, 10×.
 
 - **Sharing saved structures between players** (owner 2026-11-11: "eventually shareable").
 

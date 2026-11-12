@@ -276,9 +276,14 @@ pub fn diff_chunk(generated: &Chunk, current: &Chunk) -> Vec<VoxelDiff> {
         .collect()
 }
 
-/// A column (x, z) is inside the world's disc when x² + z² < R² (ADR 0011).
+/// A column (x, z) is inside the world's disc when x² + z² < R² (ADR 0011); a 1× world's
+/// (`WorldBounds::inside_disc` for a world's own).
 pub fn inside_world_disc(x: i64, z: i64) -> bool {
-    let r = i64::from(WORLD_RADIUS);
+    inside_disc_of(i64::from(WORLD_RADIUS), x, z)
+}
+
+/// [`inside_world_disc`] for a disc of `r` m.
+pub fn inside_disc_of(r: i64, x: i64, z: i64) -> bool {
     x * x + z * z < r * r
 }
 
@@ -289,8 +294,14 @@ pub enum DiscOverlap {
     Outside,
 }
 
-/// How a chunk column's 32 × 32 voxel columns lie relative to the disc.
+/// How a chunk column's 32 × 32 voxel columns lie relative to a 1× world's disc
+/// (`WorldBounds::chunk_disc_overlap` for a world's own).
 pub fn chunk_disc_overlap(cx: i32, cz: i32) -> DiscOverlap {
+    chunk_disc_overlap_of(i64::from(WORLD_RADIUS), cx, cz)
+}
+
+/// [`chunk_disc_overlap`] for a disc of `r` m.
+pub fn chunk_disc_overlap_of(r: i64, cx: i32, cz: i32) -> DiscOverlap {
     let s = i64::from(CHUNK_SIZE);
     let nearest = |c: i32| {
         let lo = i64::from(c) * s;
@@ -308,7 +319,7 @@ pub fn chunk_disc_overlap(cx: i32, cz: i32) -> DiscOverlap {
         let hi = lo + s - 1;
         if -lo > hi { lo } else { hi }
     };
-    let r2 = i64::from(WORLD_RADIUS) * i64::from(WORLD_RADIUS);
+    let r2 = r * r;
     let (nx, nz) = (nearest(cx), nearest(cz));
     if nx * nx + nz * nz >= r2 {
         return DiscOverlap::Outside;

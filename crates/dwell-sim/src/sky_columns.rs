@@ -242,7 +242,11 @@ mod tests {
         assert_eq!(s.pending(), 0);
         assert_eq!(
             air.known(c),
-            Ok(dwell_worldgen::BifacialTerrain::is_air_chunk_with(c, 100.0))
+            Ok(dwell_worldgen::BifacialTerrain::is_air_chunk_with(
+                &dwell_world::WorldBounds::DEFAULT,
+                c,
+                100.0
+            ))
         );
     }
 }

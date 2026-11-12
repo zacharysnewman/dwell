@@ -5,9 +5,10 @@
 //! distance (`coast_at`, the portals' inland rule). Its parameters are data
 //! (`shared/worldgen/terrain.json` `input`, generated into `terrain.gen.rs`).
 
-use dwell_world::inside_world_disc;
+use dwell_protocol::world_size::WorldSize;
+use dwell_world::WorldBounds;
 
-use crate::island::{self, IslandLayout};
+use crate::island::IslandLayout;
 use crate::noise::{clamp01, fbm2, noise_offset, octaves_resolved, seed_word, smooth_step};
 use crate::terrain::{HEIGHT, HeightField};
 
@@ -22,6 +23,8 @@ pub struct BaseField {
     islands_seed: u32,
     /// The field's parameters (the build's `HEIGHT` unless `with_height`).
     h: HeightField,
+    /// The world's disc (its size's, BIG_MAP.md M2).
+    world: WorldBounds,
 }
 
 impl BaseField {
@@ -29,9 +32,25 @@ impl BaseField {
         Self::with_height(seed, HEIGHT)
     }
 
+    /// The field of face seed `seed` for a world of `size` (BIG_MAP.md M2): its disc and its island
+    /// (`IslandLayout::sized`). At today's size, [`BaseField::new`] exactly.
+    pub fn sized(seed: u64, size: WorldSize) -> Self {
+        Self {
+            island: IslandLayout::sized(seed, size),
+            world: WorldBounds::of(size),
+            ..Self::new(seed)
+        }
+    }
+
+    /// The world's disc radius (m) this field covers.
+    pub fn world_radius(&self) -> i64 {
+        self.world.radius()
+    }
+
     /// The field of face seed `seed` with these parameters (a fixture world, Chisel's edit).
     pub fn with_height(seed: u64, h: HeightField) -> Self {
         Self {
+            world: WorldBounds::DEFAULT,
             islands_seed: seed_word(seed, 0x1514_A010),
             h,
             hills_seed: seed_word(seed, 1),
@@ -55,7 +74,7 @@ impl BaseField {
     /// The field's height (m, face-local from the midplane) at (x, z) with the octaves finer than
     /// `cell` m dropped; `None` beyond the world's disc.
     pub fn height_lod(&self, x: i64, z: i64, cell: i64) -> Option<f32> {
-        if !inside_world_disc(x, z) {
+        if !self.world.inside_disc(x, z) {
             return None;
         }
         let h = &self.h;
@@ -64,8 +83,8 @@ impl BaseField {
             x,
             z,
             Some(octaves_resolved(
-                island::COAST_WAVELENGTH,
-                island::COAST_OCTAVES,
+                self.island.shape().coast_wavelength,
+                self.island.shape().coast_octaves,
                 cell,
             )),
         );

@@ -24,8 +24,10 @@ pub mod support;
 pub mod swing;
 pub mod tree_tint;
 mod voxel;
+pub mod world_bounds;
 
 pub use bounds::{BUILD_VOLUME, BoundsShape, BuildVolume, Overlap, inside_build_volume};
 pub use cell::*;
 pub use face::FaceFrame;
 pub use voxel::*;
+pub use world_bounds::WorldBounds;

@@ -32,8 +32,7 @@ use dwell_world::ramps::{self, RampFacing};
 use dwell_world::tree_tint::{Tint, TreeTint, tint_at};
 use dwell_world::{
     BUILD_VOLUME, CELL_H, CHUNK_SIZE, CORE_LAYERS, Chunk, ChunkCoord, DiscOverlap, M, MIDPLANE_Y,
-    Overlap, SEA_LEVEL, SEA_LEVEL_M, chunk_disc_overlap, inside_world_disc, local_index, m_of_row,
-    rows_for_m,
+    Overlap, SEA_LEVEL, SEA_LEVEL_M, local_index, m_of_row, rows_for_m,
 };
 use std::sync::Arc;
 
@@ -1194,9 +1193,15 @@ impl TerrainGenerator {
         Self::with_map(world_seed, worldmap::for_seed(world_seed))
     }
 
+    /// [`TerrainGenerator::new`] in a world of `size` (BIG_MAP.md M2): its map is the size's
+    /// (`worldmap::for_seed_sized`), and so are its disc, build volume and base field.
+    pub fn sized(world_seed: u64, size: dwell_protocol::world_size::WorldSize) -> Self {
+        Self::with_map(world_seed, worldmap::for_seed_sized(world_seed, size))
+    }
+
     /// The face generator over a given map (tests: a fixture map).
     pub fn with_map(world_seed: u64, map: Arc<WorldMap>) -> Self {
-        let base = BaseField::new(world_seed);
+        let base = BaseField::sized(world_seed, map.size);
         let (offset_x, offset_z) = base.offset();
         // The map's biomes (a test world's map carries its worldgen config, ADR 0074 B7: Chisel's
         // edit, whole), shared by every generator of this map in the process (`shared_biomes`).
@@ -1248,6 +1253,11 @@ impl TerrainGenerator {
     /// This face's world map.
     pub fn map(&self) -> &Arc<WorldMap> {
         &self.map
+    }
+
+    /// The world's disc and build volume: its map's size's (BIG_MAP.md M2).
+    pub fn world(&self) -> dwell_world::WorldBounds {
+        dwell_world::WorldBounds::of(self.map.size)
     }
 
     /// The generator with `biome` alone in place of the build's biomes (everywhere).
@@ -1964,7 +1974,7 @@ impl TerrainGenerator {
     /// The river whose channel holds full-detail column (x, z), and its surface row (none off a
     /// channel, or at the sea's level).
     fn river_row_at(&self, x: i64, z: i64) -> Option<(u32, i32)> {
-        if !inside_world_disc(x, z) || !self.map.channels.near(x as f64, z as f64, 0.0) {
+        if !self.world().inside_disc(x, z) || !self.map.channels.near(x as f64, z as f64, 0.0) {
             return None;
         }
         let (wx, wz) = self.warp(
@@ -1983,7 +1993,7 @@ impl TerrainGenerator {
     /// below it water); none where no river channel or lake is. A light lookup for the waterline
     /// (docs/WATER_FLOW.md §17).
     fn water_row_at(&self, x: i64, z: i64) -> Option<i32> {
-        if !inside_world_disc(x, z) {
+        if !self.world().inside_disc(x, z) {
             return None;
         }
         let map = &*self.map;
@@ -2061,7 +2071,7 @@ impl TerrainGenerator {
     /// channel's columns take the valley floor at its banks' height (no bed cut, no lips, no water
     /// drawn), for the water surface grid's prototype (Phase 53 G0, ADR 0060).
     fn base_column_with(&self, x: i64, z: i64, cell: i64, beds: bool) -> Column {
-        if !inside_world_disc(x, z) {
+        if !self.world().inside_disc(x, z) {
             return Column {
                 outside: true,
                 ..Column::default()
@@ -2616,7 +2626,7 @@ impl TerrainGenerator {
     /// G0: rivers without beds, ADR 0060); the chunk path doesn't use it.
     pub fn ground_without_water(&self, x: i32, z: i32) -> Option<f32> {
         let (x, z) = (i64::from(x), i64::from(z));
-        if !inside_world_disc(x, z) {
+        if !self.world().inside_disc(x, z) {
             return None;
         }
         let (base, _, _) = self.map.height_at(x as f64, z as f64);
@@ -2641,7 +2651,10 @@ impl TerrainGenerator {
 
     pub fn solid_at(&self, x: i32, y: i32, z: i32) -> bool {
         if !(FACE_MIN_Y..FACE_MAX_Y).contains(&y)
-            || !BUILD_VOLUME.contains_voxel(i64::from(x), i64::from(y), i64::from(z))
+            || !self
+                .world()
+                .volume()
+                .contains_voxel(i64::from(x), i64::from(y), i64::from(z))
         {
             return false;
         }
@@ -3306,13 +3319,17 @@ impl TerrainGenerator {
     }
 
     /// `is_air_chunk` given `sky_floor_at(coord.x, coord.z)`.
-    pub fn is_air_chunk_with(coord: ChunkCoord, sky_floor: f32) -> bool {
+    pub fn is_air_chunk_with(
+        world: &dwell_world::WorldBounds,
+        coord: ChunkCoord,
+        sky_floor: f32,
+    ) -> bool {
         let y0 = coord.y * CHUNK_SIZE;
         if y0 + CHUNK_SIZE <= FACE_MIN_Y || y0 >= FACE_MAX_Y {
             return true;
         }
-        if chunk_disc_overlap(coord.x, coord.z) == DiscOverlap::Outside
-            || !BUILD_VOLUME.chunk_may_hold(coord)
+        if world.chunk_disc_overlap(coord.x, coord.z) == DiscOverlap::Outside
+            || !world.volume().chunk_may_hold(coord)
         {
             return true;
         }
@@ -3323,12 +3340,12 @@ impl TerrainGenerator {
     pub fn is_air_chunk(&self, coord: ChunkCoord) -> bool {
         let y0 = coord.y * CHUNK_SIZE;
         if !(SEA_LEVEL..FACE_MAX_Y).contains(&y0)
-            || chunk_disc_overlap(coord.x, coord.z) == DiscOverlap::Outside
-            || !BUILD_VOLUME.chunk_may_hold(coord)
+            || self.world().chunk_disc_overlap(coord.x, coord.z) == DiscOverlap::Outside
+            || !self.world().volume().chunk_may_hold(coord)
         {
-            return Self::is_air_chunk_with(coord, 0.0);
+            return Self::is_air_chunk_with(&self.world(), coord, 0.0);
         }
-        Self::is_air_chunk_with(coord, self.sky_floor_at(coord.x, coord.z))
+        Self::is_air_chunk_with(&self.world(), coord, self.sky_floor_at(coord.x, coord.z))
     }
 
     pub fn generate(&self, coord: ChunkCoord, chunk: &mut Chunk) {
@@ -3338,8 +3355,8 @@ impl TerrainGenerator {
             return;
         }
         // Beyond the rim of the world's disc or outside the build volume: nothing.
-        let volume = BUILD_VOLUME.chunk_overlap(coord);
-        if chunk_disc_overlap(coord.x, coord.z) == DiscOverlap::Outside
+        let volume = self.world().volume().chunk_overlap(coord);
+        if self.world().chunk_disc_overlap(coord.x, coord.z) == DiscOverlap::Outside
             || volume == Overlap::Outside
         {
             return;
@@ -3366,7 +3383,7 @@ impl TerrainGenerator {
                 let in_volume = |y: i32| {
                     (FACE_MIN_Y..FACE_MAX_Y).contains(&y)
                         && (volume != Overlap::Partial
-                            || BUILD_VOLUME.contains_voxel(
+                            || self.world().volume().contains_voxel(
                                 i64::from(x0 + x),
                                 i64::from(y),
                                 i64::from(z0 + z),
@@ -3573,7 +3590,7 @@ impl TerrainGenerator {
                         || y >= top
                         || !(FACE_MIN_Y..FACE_MAX_Y).contains(&y)
                         || (overlap == Overlap::Partial
-                            && !BUILD_VOLUME.contains_voxel(wx, i64::from(y), wz))
+                            && !self.world().volume().contains_voxel(wx, i64::from(y), wz))
                     {
                         continue;
                     }
@@ -3700,7 +3717,7 @@ impl TerrainGenerator {
                         if !s.carves(cx, cz, height, mid)
                             || !(FACE_MIN_Y..FACE_MAX_Y).contains(&y)
                             || (overlap == Overlap::Partial
-                                && !BUILD_VOLUME.contains_voxel(
+                                && !self.world().volume().contains_voxel(
                                     i64::from(wx),
                                     i64::from(y),
                                     i64::from(wz),
@@ -3733,7 +3750,7 @@ impl TerrainGenerator {
                     && (0..S).contains(&lz)
                     && (FACE_MIN_Y..FACE_MAX_Y).contains(&p[1])
                     && (volume != Overlap::Partial
-                        || BUILD_VOLUME.contains_voxel(
+                        || self.world().volume().contains_voxel(
                             i64::from(p[0]),
                             i64::from(p[1]),
                             i64::from(p[2]),
@@ -3783,7 +3800,7 @@ impl TerrainGenerator {
                     && (FACE_MIN_Y..FACE_MAX_Y).contains(&p[1]);
                 if !inside
                     || (volume == Overlap::Partial
-                        && !BUILD_VOLUME.contains_voxel(
+                        && !self.world().volume().contains_voxel(
                             i64::from(p[0]),
                             i64::from(p[1]),
                             i64::from(p[2]),
@@ -4090,7 +4107,7 @@ impl TerrainGenerator {
         cells: &mut LodCells,
         surface: Option<&mut LodSurfaces>,
     ) -> LodKind {
-        if !lod::in_world(c) {
+        if !lod::in_world_of(c, &self.world()) {
             cells.clear();
             cells.resize(lod::VOLUME, M.air);
             if let Some(s) = surface {

@@ -382,6 +382,19 @@ pub fn generate_seed(seed: u64, p: &HydrologyParams) -> HydrologyMap {
     from_heights(grid, f64::from(p.cell), x0, &h, seed, p)
 }
 
+/// [`generate_seed`] for a world of `size` (BIG_MAP.md M2): the profile `sized` (its cell × the
+/// scale, its uplift counts × the area) over the size's base field (its disc and island). At
+/// today's size, [`generate_seed`] exactly.
+pub fn generate_seed_sized(
+    seed: u64,
+    p: &HydrologyParams,
+    size: dwell_protocol::world_size::WorldSize,
+) -> HydrologyMap {
+    let p = p.sized(size);
+    let (grid, x0, h) = sample_field(&BaseField::sized(seed, size), p.cell);
+    from_heights(grid, f64::from(p.cell), x0, &h, seed, &p)
+}
+
 /// The face's base field on the grid of `cell` m (m above sea level; −∞ beyond the disc): each
 /// cell's centre, with the octaves finer than a cell dropped (the LOD's sampling).
 pub fn sample(terrain: &BifacialTerrain, face: FaceFrame, cell: i32) -> (Grid, f64, Vec<f64>) {
@@ -435,7 +448,7 @@ pub fn generate_with_height(
 
 /// [`sample_seed`] of a given base field.
 fn sample_field(g: &BaseField, cell: i32) -> (Grid, f64, Vec<f64>) {
-    let (grid, x0) = grid_for(cell);
+    let (grid, x0) = grid_for_radius(cell, g.world_radius());
     let n = grid.n;
     let cell = i64::from(cell);
     let half = (n as i64 - 1) * cell / 2;

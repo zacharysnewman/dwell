@@ -150,6 +150,11 @@ pub fn chunk_of_lod(c: LodCoord) -> ChunkCoord {
 /// Inside the octree, within the world's rows, overlapping the world's disc and not wholly outside
 /// the build volume (sections that are, are never generated, stored or requested).
 pub fn in_world(c: LodCoord) -> bool {
+    in_world_of(c, &crate::WorldBounds::DEFAULT)
+}
+
+/// [`in_world`] for a world of these bounds (its own disc and build volume, BIG_MAP.md M2).
+pub fn in_world_of(c: LodCoord, w: &crate::WorldBounds) -> bool {
     if c.level < 0 || c.level > MAX_LEVEL {
         return false;
     }
@@ -171,8 +176,9 @@ pub fn in_world(c: LodCoord) -> bool {
             0
         }
     };
-    inside_world_disc(nearest(o.x, o.x + s), nearest(o.z, o.z + s))
-        && crate::BUILD_VOLUME.box_overlap([o.x, o.y, o.z], [o.x + s, o.y + s, o.z + s])
+    w.inside_disc(nearest(o.x, o.x + s), nearest(o.z, o.z + s))
+        && w.volume()
+            .box_overlap([o.x, o.y, o.z], [o.x + s, o.y + s, o.z + s])
             != crate::Overlap::Outside
 }
 

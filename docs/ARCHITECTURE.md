@@ -1437,7 +1437,10 @@ its precision decisions stand):
   (`shared/protocol/gen.mjs`) rejects an unknown shape or a bad parameter with a message. A voxel is
   inside when its centre is; a box (a chunk, an LOD section, a region edit) is classified
   conservatively (`Overlap::{Inside, Partial, Outside}`), in exact integer arithmetic. Everything
-  that bounds the world reads it: **edits** (the server's `check_block_edit` and `check_region_edit`
+  that bounds the world reads it **[built, BIG_MAP.md M2a]** through the world's `WorldBounds`
+  (`dwell_world::world_bounds`: a 1× world's disc and volume are the build's; a bigger world's disc
+  is `radius_scale` × as wide, its volume `BuildVolume::sized`, as wide as the disc and as tall as
+  today's, so the rows are every size's): **edits** (the server's `check_block_edit` and `check_region_edit`
   refuse a cell or box outside, `OutOfWorld`; the client's `BlockInteraction::act` and region tools
   don't send one), **generation and storage** (chunks wholly outside are air — the generators
   return nothing, the air tests say so, so they are never generated or stored; partial chunks are
@@ -2201,7 +2204,7 @@ lives in side files. Chunk and LOD blobs are the protocol's palette + RLE compre
 
 | Table | Contents |
 |---|---|
-| `meta` | Scalars by name: format version, block registry hash, world seed, generator version, spawn, world time (`world_tick`, the server's tick: the day/night cycle's clock, §6.6), **[built, 0.42.0]** the world's settings (`world_settings`: the `WorldSettings` fields as sent, its clock, water speed and **[built, 0.50.30]** game mode (ADR 0065), **[built, M0 of docs/proposals/BIG_MAP.md]** world size (`WORLD_SIZE`, optional, a radius scale of `constants.json` `worldSizes`, written only above 1×; a world without it is 1×; the LOD levels, big map cells, hydrology cell, island shape and uplift counts derive from it in `dwell_protocol::world_size`, the generators still build 1× until M2), unknown optional fields kept; a new world takes this build's clock and the server's `water_speed`), timestamps, **[built, Phase 6]** the app versions that created and last saved the world; **[planned]** preview image |
+| `meta` | Scalars by name: format version, block registry hash, world seed, generator version, spawn, world time (`world_tick`, the server's tick: the day/night cycle's clock, §6.6), **[built, 0.42.0]** the world's settings (`world_settings`: the `WorldSettings` fields as sent, its clock, water speed and **[built, 0.50.30]** game mode (ADR 0065), **[built, M0 of docs/proposals/BIG_MAP.md]** world size (`WORLD_SIZE`, optional, a radius scale of `constants.json` `worldSizes`, written only above 1×; a world without it is 1×; the LOD levels, big map cells, hydrology cell, island shape and uplift counts derive from it in `dwell_protocol::world_size`, **[built, M2a]** the server, its generators (map, disc, build volume, spawn) and its LOD read it natively, `dwell_world::WorldBounds`; the browser's workers still build 1× until M2b), unknown optional fields kept; a new world takes this build's clock and the server's `water_speed`), timestamps, **[built, Phase 6]** the app versions that created and last saved the world; **[planned]** preview image |
 | `settings` | Name, MOTD, max players, edit and flight policies, autosave interval, allow-list switch, the server key **[built]**; **[planned]** icon, visibility, password hash, online/offline mode, physics/view caps, backup policy; **[planned, Phase 30]** the growth-speed multiplier (default 1), applied by the server to tree growth |
 | `block_states` | **[built, Phase 8]** world state id → canonical string (§6.1), ids assigned densely in order of first use and stable for the life of the file |
 | `chunks` | Modified chunks only: `(cx, cy, cz)` → revision, generator version, LZ4 palette + RLE blob (same encoding as `ChunkData Explicit`, but the palette lists **world state ids** of `block_states`, not runtime ids) |

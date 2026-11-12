@@ -11,6 +11,8 @@ use dwell_world::{
 
 use std::sync::Arc;
 
+use dwell_protocol::world_size::WorldSize;
+
 use crate::noise::seed_word;
 use crate::portals::{MIDPLANE, Portal, PortalRules, Portals};
 use crate::terrain::TerrainGenerator;
@@ -37,9 +39,19 @@ impl BifacialTerrain {
     /// The world's terrain: both faces' height fields with the terrain's volume over them
     /// (`volume.json` `terrain`: the cliffs; WORLD_GENERATION.md §5).
     pub fn new(world_seed: u64) -> Self {
+        Self::sized(world_seed, WorldSize::DEFAULT)
+    }
+
+    /// [`BifacialTerrain::new`] in a world of `size` (BIG_MAP.md M2): both faces' maps, discs,
+    /// build volumes and base fields the size's. At today's size, [`BifacialTerrain::new`].
+    pub fn sized(world_seed: u64, size: WorldSize) -> Self {
+        let t = Self::with_portal_rules_sized(world_seed, MIDPLANE.portals, size);
         match crate::volume::terrain_volume() {
-            Some(def) => Self::with_volume(world_seed, def),
-            None => Self::height_field(world_seed),
+            Some(def) => Self {
+                a: t.a.with_volume(def),
+                b: t.b.with_volume(def),
+            },
+            None => t,
         }
     }
 
@@ -52,7 +64,12 @@ impl BifacialTerrain {
     /// The terrain of a terrain generator version (`dwell_world::has_terrain`); none for the
     /// other versions.
     pub fn for_generator(version: u32, world_seed: u64) -> Option<Self> {
-        (version == dwell_world::GENERATOR_TERRAIN).then(|| Self::new(world_seed))
+        Self::for_generator_sized(version, world_seed, WorldSize::DEFAULT)
+    }
+
+    /// [`BifacialTerrain::for_generator`] in a world of `size`.
+    pub fn for_generator_sized(version: u32, world_seed: u64, size: WorldSize) -> Option<Self> {
+        (version == dwell_world::GENERATOR_TERRAIN).then(|| Self::sized(world_seed, size))
     }
 
     /// The world with a terrain volume over both faces' height fields (`volume.rs`), each face
@@ -68,13 +85,21 @@ impl BifacialTerrain {
     /// The world with these portal rules in place of the build's (tests add a fixture by data
     /// alone).
     pub fn with_portal_rules(world_seed: u64, rules: PortalRules) -> Self {
+        Self::with_portal_rules_sized(world_seed, rules, WorldSize::DEFAULT)
+    }
+
+    /// [`BifacialTerrain::with_portal_rules`] in a world of `size`.
+    pub fn with_portal_rules_sized(world_seed: u64, rules: PortalRules, size: WorldSize) -> Self {
         // Both faces' world maps at once (on two threads natively) before either face needs one.
-        crate::worldmap::cache::prefetch(&[
-            face_seed(world_seed, Face::A),
-            face_seed(world_seed, Face::B),
-        ]);
-        let a = TerrainGenerator::new(face_seed(world_seed, Face::A));
-        let b = TerrainGenerator::new(face_seed(world_seed, Face::B));
+        crate::worldmap::cache::prefetch_sized(
+            &[
+                face_seed(world_seed, Face::A),
+                face_seed(world_seed, Face::B),
+            ],
+            size,
+        );
+        let a = TerrainGenerator::sized(face_seed(world_seed, Face::A), size);
+        let b = TerrainGenerator::sized(face_seed(world_seed, Face::B), size);
         Self::joined(world_seed, rules, a, b, false)
     }
 
@@ -159,7 +184,7 @@ impl BifacialTerrain {
         cells: &[u16],
     ) -> Vec<(u32, dwell_world::tree_tint::Tint)> {
         let mut out = Vec::new();
-        if !lod::in_world(c) {
+        if !lod::in_world_of(c, &self.world()) {
             return out;
         }
         let y0 = lod::section_origin(c).y;
@@ -219,8 +244,17 @@ impl BifacialTerrain {
     }
 
     /// `TerrainGenerator::is_air_chunk_with` for a chunk in the world.
-    pub fn is_air_chunk_with(coord: ChunkCoord, sky_floor: f32) -> bool {
-        TerrainGenerator::is_air_chunk_with(face_local_chunk(coord), sky_floor)
+    pub fn is_air_chunk_with(
+        world: &dwell_world::WorldBounds,
+        coord: ChunkCoord,
+        sky_floor: f32,
+    ) -> bool {
+        TerrainGenerator::is_air_chunk_with(world, face_local_chunk(coord), sky_floor)
+    }
+
+    /// The world's disc and build volume (its size's, BIG_MAP.md M2).
+    pub fn world(&self) -> dwell_world::WorldBounds {
+        self.a.world()
     }
 
     /// The column bounds of both faces.
@@ -259,7 +293,7 @@ impl BifacialTerrain {
             s.clear();
             s.resize(columns, Default::default());
         }
-        if !lod::in_world(c) {
+        if !lod::in_world_of(c, &self.world()) {
             return LodKind::Empty;
         }
         let y0 = lod::section_origin(c).y;
