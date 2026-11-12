@@ -1,0 +1,1126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Model Part Painter</title>
+<!--
+  Dwell's model part painter (WORK_QUEUE item 43, docs/CHARACTERS.md §11.11, BUGS.md #96): paint which
+  part (skin, hair, hat, shirt, …) each vertex of a skinned model's full mesh (`detail_0`) belongs to,
+  preview a creature's colour variants recoloured by part, and export the part map file the game reads
+  (shared/models/parts/<model>.json, written exactly as shared/models/parts.mjs writes it).
+
+  One self-contained page: three.js from cdnjs, everything else inline; works from file:// (load or drop
+  the files) or served from the repo's root (`python3 -m http.server`, then
+  /docs/prototypes/model-part-painter.html: "Load the Peasant" fetches its GLB, part map, the palette and
+  creatures.json). The core script block (id "core") is pure (no DOM, no three.js) and is run by
+  shared/models/painter.test.mjs, which checks it against parts.mjs on the repo's files.
+-->
+<style>
+  :root { --bg: #e9eff6; --ink: #241c28; --panel: #ffffffe6; --line: #43354a33; --accent: #82bd45; --warn: #b8402e; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #2a2530; --ink: #f0f8f8; --panel: #241c28e6; --line: #f0f8f833; --accent: #82bd45; --warn: #ff8a73; } }
+  :root[data-theme="dark"] { --bg: #2a2530; --ink: #f0f8f8; --panel: #241c28e6; --line: #f0f8f833; --accent: #82bd45; --warn: #ff8a73; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 13px system-ui, sans-serif; overflow: hidden; }
+  #app { display: flex; height: 100%; }
+  #side { width: 320px; flex: none; overflow-y: auto; background: var(--panel); border-right: 1px solid var(--line); padding: 10px 12px 40px; box-sizing: border-box; }
+  #view { flex: 1; position: relative; min-width: 0; }
+  #view canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+  h1 { font-size: 16px; margin: 0 0 6px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; opacity: .7; margin: 14px 0 6px; }
+  button, select, input[type=text], textarea { font: inherit; color: inherit; background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; }
+  button { cursor: pointer; } button:disabled { opacity: .4; cursor: default; }
+  button.on { background: var(--accent); color: #241c28; border-color: var(--accent); }
+  select { background: var(--bg); }
+  .row { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin: 4px 0; }
+  .muted { opacity: .7; } .warn { color: var(--warn); }
+  #status { white-space: pre-wrap; min-height: 1.2em; }
+  #parts .part { display: grid; grid-template-columns: 28px 1fr 52px 26px; gap: 4px; align-items: center; padding: 2px 4px; border-radius: 6px; cursor: pointer; }
+  #parts .part.sel { outline: 2px solid var(--accent); }
+  #parts input[type=color] { width: 26px; height: 22px; padding: 0; border: none; background: none; }
+  #parts input[type=text] { width: 100%; box-sizing: border-box; }
+  #parts .count { text-align: right; font-variant-numeric: tabular-nums; }
+  #variant .entry { display: grid; grid-template-columns: 70px 1fr; gap: 4px; align-items: center; margin: 2px 0; }
+  #info { position: absolute; left: 10px; bottom: 10px; background: var(--panel); padding: 6px 9px; border-radius: 8px; pointer-events: none; white-space: pre; font: 12px ui-monospace, monospace; max-width: calc(100% - 40px); overflow: hidden; }
+  #brush { position: absolute; border: 1.5px solid #fff; box-shadow: 0 0 0 1px #000a; border-radius: 50%; pointer-events: none; display: none; }
+  #drop { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; font-size: 20px; background: #82bd4555; pointer-events: none; }
+  #help { position: absolute; right: 10px; top: 10px; background: var(--panel); padding: 6px 9px; border-radius: 8px; font-size: 12px; max-width: 280px; }
+  textarea { width: 100%; box-sizing: border-box; height: 70px; font: 11px ui-monospace, monospace; }
+  @media (max-width: 700px) {
+    #app { flex-direction: column-reverse; }
+    #side { width: 100%; height: 45vh; border-right: none; border-top: 1px solid var(--line); }
+    #help { display: none; }
+  }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+<div id="app">
+  <div id="side">
+    <h1>Model Part Painter</h1>
+    <div class="muted">Paint each vertex of a model's full mesh into a part; export the part map (shared/models/parts/&lt;model&gt;.json).</div>
+    <h2>Files</h2>
+    <div class="row">
+      <button id="peasant">Load the Peasant</button>
+      <label><button id="pick">Open files…</button><input id="files" type="file" multiple accept=".glb,.json" hidden></label>
+    </div>
+    <div class="muted">Or drop files: a .glb, a part map, palette.json, creatures.json, models.json.</div>
+    <div id="loaded" class="muted"></div>
+    <div class="row">
+      <button id="empty">New empty map</button>
+      <button id="seedc">Seed from colours</button>
+    </div>
+    <div id="status"></div>
+
+    <h2>View</h2>
+    <div class="row" id="views">
+      <button data-view="front">Front</button><button data-view="side">Side</button><button data-view="back">Back</button>
+      <button data-view="top">Top</button>
+    </div>
+    <div class="row" id="modes">
+      <button data-mode="parts" class="on">Parts</button><button data-mode="real">Real colours</button>
+      <button data-mode="variant">Variant</button><button data-mode="weights">Weights</button>
+    </div>
+    <div class="row">
+      <label>Level <select id="level"></select></label>
+      <label><input type="checkbox" id="dots"> vertices</label>
+      <label><input type="checkbox" id="wire"> edges</label>
+    </div>
+    <div class="row" id="weightsRow">
+      <label>Joint <select id="joint"></select></label>
+      <span class="muted">Alt-click: the vertex's heaviest joint</span>
+    </div>
+
+    <h2>Paint</h2>
+    <div class="row" id="tools">
+      <button data-tool="brush" class="on">Brush</button><button data-tool="island">Fill island</button>
+      <button data-tool="same">Fill same colour</button><button data-tool="orbit">Orbit</button>
+    </div>
+    <div class="row">
+      <label>Radius <input id="radius" type="range" min="2" max="150" value="22"></label><span id="radiusv">22 px</span>
+    </div>
+    <div class="row">
+      <label><input type="checkbox" id="front" checked> front faces only</label>
+    </div>
+    <div class="row">
+      <button id="undo">Undo</button><button id="redo">Redo</button>
+    </div>
+
+    <h2>Parts</h2>
+    <div id="parts"></div>
+    <div class="row"><button id="add">+ Add part</button><span class="muted">at most 6</span></div>
+
+    <h2>Variant preview</h2>
+    <div class="row">
+      <select id="creature"></select>
+      <button id="next">Next variant</button><button id="random">Random</button>
+    </div>
+    <div id="variant"></div>
+    <div class="muted">Paste creatures.json (or one creature, or its colours list):</div>
+    <textarea id="paste" placeholder='{"colours": [{"part": "shirt", "from": "wool_green", "to": ["wool_red"]}]}'></textarea>
+    <div class="row"><button id="usepaste">Use pasted</button></div>
+
+    <h2>Export</h2>
+    <div class="row">
+      <button id="export">Download part map</button><button id="copy">Copy JSON</button>
+    </div>
+    <div id="exportmsg" class="muted"></div>
+  </div>
+  <div id="view">
+    <div id="brush"></div>
+    <div id="info">Load a model.</div>
+    <div id="drop">Drop to load</div>
+    <div id="help">Left-drag: paint (Orbit tool: rotate) · right-drag: rotate · middle or shift-drag: pan · wheel: zoom ·
+      [ ] brush size · 0–6 part (0 erases) · Ctrl+Z / Ctrl+Shift+Z undo, redo</div>
+  </div>
+</div>
+
+<script id="core">
+// The pure part of the page (no DOM, no three.js): run by shared/models/painter.test.mjs against
+// shared/models/parts.mjs. Keep it in step with parts.mjs and dwell_models::recolour.
+var PainterCore = (function () {
+  /** The most parts a model may have (parts.mjs MAX_PARTS, dwell_models::MAX_REMAP). */
+  var MAX_PARTS = 6;
+  /** Characters a row of `vertices` (parts.mjs ROW). */
+  var ROW = 100;
+  var RULE_KEYS = ["part", "near", "ramps", "joints", "weight", "y", "$comment"];
+  /** A part's display colour (sRGB bytes; parts.mjs PART_COLOURS): 0 grey, then distinct hues. */
+  var PART_COLOURS = [[90, 90, 96], [240, 190, 150], [120, 70, 30], [240, 200, 40], [60, 170, 70], [70, 110, 220], [210, 60, 160]];
+
+  function bytesOf(buf) {
+    if (buf instanceof Uint8Array) return buf;
+    return new Uint8Array(buf);
+  }
+  /** A GLB: its JSON, an accessor reader and its meshes by name. */
+  function parseGlb(buffer) {
+    var b = bytesOf(buffer);
+    var dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+    if (b.length < 20 || dv.getUint32(0, true) !== 0x46546c67) throw new Error("not a GLB");
+    var len = dv.getUint32(12, true);
+    if (dv.getUint32(16, true) !== 0x4e4f534a) throw new Error("GLB: first chunk is not JSON");
+    var json = JSON.parse(new TextDecoder().decode(b.subarray(20, 20 + len)));
+    var binAt = 20 + len + 8;
+    function accessor(index) {
+      var a = json.accessors[index];
+      var v = json.bufferViews[a.bufferView];
+      var width = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4 }[a.type];
+      var t = { 5126: [4, "getFloat32", 1], 5123: [2, "getUint16", 65535], 5121: [1, "getUint8", 255], 5125: [4, "getUint32", 1] }[a.componentType];
+      if (!t) throw new Error("GLB: accessor " + index + " has an unread component type " + a.componentType);
+      var size = t[0], fn = t[1], scale = a.normalized ? t[2] : 1;
+      var stride = v.byteStride || size * width;
+      var at = binAt + (v.byteOffset || 0) + (a.byteOffset || 0);
+      var out = new Float64Array(a.count * width);
+      for (var i = 0; i < a.count; i++)
+        for (var k = 0; k < width; k++) out[i * width + k] = dv[fn](at + i * stride + k * size, true) / scale;
+      return { values: out, width: width };
+    }
+    var meshNames = (json.meshes || []).map(function (m) { return m.name || ""; });
+    var skin = (json.skins || [])[0];
+    var jointNames = (skin ? skin.joints : []).map(function (j) { return (json.nodes[j] || {}).name; });
+    function mesh(name) {
+      var m = (json.meshes || []).find(function (x) { return x.name === name; });
+      if (!m) throw new Error("no mesh " + name);
+      var p = m.primitives[0];
+      var pos = accessor(p.attributes.POSITION).values;
+      var n = pos.length / 3;
+      var colour = new Float64Array(n * 3).fill(1);
+      if (p.attributes.COLOR_0 !== undefined) {
+        var c = accessor(p.attributes.COLOR_0);
+        for (var i = 0; i < n; i++) for (var k = 0; k < 3; k++) colour[i * 3 + k] = c.values[i * c.width + k];
+      }
+      var joints = p.attributes.JOINTS_0 === undefined ? new Float64Array(n * 4) : accessor(p.attributes.JOINTS_0).values;
+      var weights;
+      if (p.attributes.WEIGHTS_0 === undefined) {
+        weights = new Float64Array(n * 4);
+        for (var w = 0; w < n; w++) weights[w * 4] = 1;
+      } else weights = accessor(p.attributes.WEIGHTS_0).values;
+      var indices = p.indices === undefined ? Array.from({ length: n }, function (_, i) { return i; }) : Array.from(accessor(p.indices).values);
+      return { count: n, position: pos, colour: colour, joints: joints, weights: weights, indices: indices, jointNames: jointNames };
+    }
+    var levels = meshNames.filter(function (x) { return /^detail_\d+$/.test(x); })
+      .sort(function (a, c) { return Number(a.slice(7)) - Number(c.slice(7)); });
+    return { json: json, accessor: accessor, meshNames: meshNames, jointNames: jointNames, mesh: mesh, levels: levels.length ? levels : meshNames.slice(0, 1) };
+  }
+
+  function pos(m, i) { return [m.position[i * 3], m.position[i * 3 + 1], m.position[i * 3 + 2]]; }
+  function col(m, i) { return [m.colour[i * 3], m.colour[i * 3 + 1], m.colour[i * 3 + 2]]; }
+
+  /** Each vertex's island (parts.mjs islands): welded by position, joined by triangles. */
+  function islands(mesh) {
+    var parent = new Int32Array(mesh.count);
+    for (var i = 0; i < mesh.count; i++) parent[i] = i;
+    function find(a) { while (parent[a] !== a) a = parent[a] = parent[parent[a]]; return a; }
+    function join(a, b) { parent[find(a)] = find(b); }
+    var weld = new Map();
+    for (var v = 0; v < mesh.count; v++) {
+      var k = pos(mesh, v).map(function (x) { return x.toFixed(4); }).join(",");
+      if (weld.has(k)) join(v, weld.get(k)); else weld.set(k, v);
+    }
+    for (var t = 0; t < mesh.indices.length; t += 3) {
+      join(mesh.indices[t + 1], mesh.indices[t]);
+      join(mesh.indices[t + 2], mesh.indices[t]);
+    }
+    var out = new Int32Array(mesh.count);
+    for (var j = 0; j < mesh.count; j++) out[j] = find(j);
+    return out;
+  }
+
+  /** The part map's `vertices` rows for a list of parts (parts.mjs rows). */
+  function rows(parts) {
+    var s = Array.from(parts, function (p) { return String(p); }).join("");
+    var out = [];
+    for (var i = 0; i < s.length; i += ROW) out.push(s.slice(i, i + ROW));
+    return out;
+  }
+
+  /** Checks a part map file as parts.mjs validateParts does; returns its vertices as one string. */
+  function validateParts(file, at, count) {
+    at = at || "parts";
+    function fail(msg) { throw new Error(at + ": " + msg); }
+    if (!file || typeof file !== "object") fail("is an object");
+    Object.keys(file).forEach(function (k) { if (["parts", "seed", "vertices", "$comment"].indexOf(k) < 0) fail("unknown key " + k); });
+    var parts = file.parts;
+    if (!Array.isArray(parts) || !parts.length) fail("parts is a non-empty list of names");
+    if (parts.length > MAX_PARTS) fail(parts.length + " parts, at most " + MAX_PARTS);
+    var seen = {};
+    parts.forEach(function (p) {
+      if (typeof p !== "string" || !/^[a-z][a-z0-9_]*$/.test(p)) fail("part " + JSON.stringify(p) + " is not a lower_snake_case name");
+      if (seen[p]) fail("part " + p + " twice");
+      seen[p] = true;
+    });
+    (file.seed || []).forEach(function (r, i) {
+      Object.keys(r).forEach(function (k) { if (RULE_KEYS.indexOf(k) < 0) fail("seed[" + i + "]: unknown key " + k); });
+      if (parts.indexOf(r.part) < 0) fail("seed[" + i + "]: no part " + r.part);
+      if (!["near", "ramps", "joints", "y"].some(function (k) { return k in r; })) fail("seed[" + i + "]: no test (near, ramps, joints or y)");
+    });
+    if (!Array.isArray(file.vertices) || file.vertices.some(function (r) { return typeof r !== "string"; }))
+      fail("vertices is a list of strings (run node shared/models/parts.mjs --seed)");
+    var v = file.vertices.join("");
+    var bad = v.search(new RegExp("[^0-" + parts.length + "]"));
+    if (bad >= 0) fail("vertex " + bad + " is " + JSON.stringify(v[bad]) + ", not 0.." + parts.length);
+    if (count !== undefined && v.length !== count)
+      fail(v.length + " vertices, but the full mesh has " + count + ": re-seed or repaint it");
+    return v;
+  }
+
+  /** A part map file's text read and checked against a mesh of `count` vertices. */
+  function parseParts(text, count, at) {
+    var file = JSON.parse(text);
+    var v = validateParts(file, at, count);
+    return { file: file, names: file.parts.slice(), parts: Uint8Array.from(v, Number) };
+  }
+
+  /**
+   * The part map file's text, exactly as parts.mjs writes it (`{ ...file, vertices: rows(parts) }`,
+   * two-space JSON and a newline): `file` the loaded file (its keys, `$comment` and `seed` kept, in
+   * order), `names` the part names, `parts` a part a vertex (0 none, k the k-th part).
+   */
+  function exportParts(file, names, parts) {
+    var out = Object.assign({}, file || {}, { parts: names.slice(), vertices: rows(parts) });
+    if (out.seed) out.seed = out.seed.filter(function (r) { return names.indexOf(r.part) >= 0; });
+    validateParts(out, "export", parts.length);
+    return JSON.stringify(out, null, 2) + "\n";
+  }
+
+  function toSrgb(c) { return c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055; }
+  function hexRgb(hex) { return [1, 3, 5].map(function (i) { return parseInt(hex.slice(i, i + 2), 16) / 255; }); }
+  /** A palette colour's luminance (dwell_models::luma, sRGB 0..1, Rec. 709). */
+  function luma(c) { return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; }
+  /**
+   * A vertex colour (sRGB 0..1) recoloured by its part (dwell_models::recolour): `remap[k]` is part
+   * k+1's [from, to] base colours or null; a remapped part takes `to` at the vertex's shade of `from`
+   * (luminance over `from`'s), at most 1.
+   */
+  function recolour(c, part, remap) {
+    var r = part >= 1 ? remap[part - 1] : null;
+    if (!r) return c;
+    var shade = luma(c) / Math.max(luma(r[0]), 1e-3);
+    return r[1].map(function (t) { return Math.min(t * shade, 1); });
+  }
+  /** A ramp's base colour (sRGB 0..1), or null. */
+  function rampBase(palette, name) {
+    var r = palette && palette.ramps && palette.ramps[name];
+    return r && r.base ? hexRgb(r.base) : null;
+  }
+  /**
+   * A body's remap by part (dwell_models::part_remap): `colours` the creature's entries, `choice[i]`
+   * the index into entry i's `to`; a part the model lacks or a ramp the palette lacks is left out.
+   */
+  function partRemap(names, colours, choice, palette) {
+    var out = [];
+    for (var k = 0; k < MAX_PARTS; k++) out.push(null);
+    (colours || []).forEach(function (e, i) {
+      var n = names.indexOf(e.part) + 1;
+      if (n < 1 || n > MAX_PARTS) return;
+      var to = Array.isArray(e.to) ? e.to[(choice[i] || 0) % e.to.length] : e.to;
+      var f = rampBase(palette, e.from), t = rampBase(palette, to);
+      if (f && t) out[n - 1] = [f, t];
+    });
+    return out;
+  }
+  /** The palette ramp a linear colour is nearest a stop of (parts.mjs nearestRamp). */
+  function nearestRamp(palette, linear, exclude) {
+    exclude = exclude || [];
+    var s = linear.map(toSrgb);
+    var best = null, bd = Infinity;
+    Object.keys(palette.ramps).forEach(function (ramp) {
+      if (exclude.indexOf(ramp) >= 0) return;
+      var stops = palette.ramps[ramp];
+      Object.keys(stops).forEach(function (stop) {
+        var c = hexRgb(stops[stop]);
+        var d = c.reduce(function (a, v, k) { return a + (v - s[k]) * (v - s[k]); }, 0);
+        if (d < bd) { bd = d; best = ramp; }
+      });
+    });
+    return best;
+  }
+  /**
+   * A first painting from colours: each vertex the part of its nearest palette ramp (by exact colour
+   * without a palette), the MAX_PARTS commonest becoming the parts, the rest no part.
+   */
+  function seedFromColours(mesh, palette, exclude) {
+    var key = new Array(mesh.count);
+    var n = {};
+    for (var i = 0; i < mesh.count; i++) {
+      var c = col(mesh, i);
+      key[i] = palette ? nearestRamp(palette, c, exclude)
+        : "c" + c.map(function (v) { return Math.round(toSrgb(v) * 255).toString(16).padStart(2, "0"); }).join("");
+      n[key[i]] = (n[key[i]] || 0) + 1;
+    }
+    var names = Object.keys(n).sort(function (a, b) { return n[b] - n[a] || (a < b ? -1 : 1); }).slice(0, MAX_PARTS);
+    var parts = new Uint8Array(mesh.count);
+    for (var j = 0; j < mesh.count; j++) parts[j] = names.indexOf(key[j]) + 1;
+    return { names: names, parts: parts };
+  }
+  /** A detail level's parts from the full mesh's (parts.mjs levelParts). */
+  function levelParts(base, baseParts, mesh) {
+    var nearest = function (p, colour) {
+      var best = -1, bd = Infinity, any = -1, ad = Infinity;
+      for (var i = 0; i < base.count; i++) {
+        var dx = base.position[i * 3] - p[0], dy = base.position[i * 3 + 1] - p[1], dz = base.position[i * 3 + 2] - p[2];
+        var d = dx * dx + dy * dy + dz * dz;
+        if (d < ad) { ad = d; any = i; }
+        if (d < bd && Math.abs(base.colour[i * 3] - colour[0]) < 2 / 255 && Math.abs(base.colour[i * 3 + 1] - colour[1]) < 2 / 255 &&
+          Math.abs(base.colour[i * 3 + 2] - colour[2]) < 2 / 255) { bd = d; best = i; }
+      }
+      return baseParts[best >= 0 && bd < 0.05 * 0.05 ? best : any];
+    };
+    var out = new Uint8Array(mesh.count), done = new Uint8Array(mesh.count);
+    for (var t = 0; t < mesh.indices.length; t += 3) {
+      var vs = [mesh.indices[t], mesh.indices[t + 1], mesh.indices[t + 2]];
+      var ps = vs.map(function (v) { return pos(mesh, v); });
+      var colour = col(mesh, vs[0]);
+      var centre = [0, 1, 2].map(function (a) { return (ps[0][a] + ps[1][a] + ps[2][a]) / 3; });
+      var votes = [nearest(centre, colour)].concat(ps.map(function (p) { return nearest(p, colour); }));
+      var count = function (x) { return votes.filter(function (v) { return v === x; }).length; };
+      var pick = votes.reduce(function (a, v) { return count(v) > count(a) ? v : a; }, votes[0]);
+      vs.forEach(function (v) { if (!done[v]) { out[v] = pick; done[v] = 1; } });
+    }
+    return out;
+  }
+  /** A vertex's skin weight on joint `j`. */
+  function weightOn(mesh, i, j) {
+    var w = 0;
+    for (var k = 0; k < 4; k++) if (mesh.joints[i * 4 + k] === j) w += mesh.weights[i * 4 + k];
+    return w;
+  }
+  /** A heat colour (sRGB 0..1) for a weight 0..1: dark blue, through green and yellow, to red. */
+  function heat(w) {
+    if (w <= 0) return [0.12, 0.13, 0.28];
+    var h = (1 - Math.min(w, 1)) * 0.66, s = 1, l = 0.5;
+    var f = function (n) { var k = (n + h * 12) % 12; return l - s * Math.min(l, 1 - l) * Math.max(-1, Math.min(k - 3, 9 - k, 1)); };
+    return [f(0), f(8), f(4)];
+  }
+
+  return { MAX_PARTS: MAX_PARTS, ROW: ROW, PART_COLOURS: PART_COLOURS, parseGlb: parseGlb, islands: islands, rows: rows,
+    validateParts: validateParts, parseParts: parseParts, exportParts: exportParts, toSrgb: toSrgb, luma: luma,
+    recolour: recolour, rampBase: rampBase, partRemap: partRemap, nearestRamp: nearestRamp, seedFromColours: seedFromColours,
+    levelParts: levelParts, weightOn: weightOn, heat: heat };
+})();
+</script>
+
+<script>
+(function () {
+  var C = PainterCore;
+  var $ = function (id) { return document.getElementById(id); };
+  var REPO = "../../";
+
+  // ---- State ----
+  var S = {
+    glb: null, glbName: "", base: null, isl: null,      // the GLB, its detail_0 mesh and islands
+    file: null, fileName: "", names: [], parts: null,    // the part map being painted
+    pending: null,                                       // a part map waiting for its GLB
+    palette: null, creatures: null, models: null, exclude: [],
+    level: 0, view: null,                                // the level drawn: { mesh, parts }
+    mode: "parts", tool: "brush", radius: 22, front: true, joint: 0,
+    current: 1, colours: C.PART_COLOURS.map(function (c) { return c.slice(); }),
+    creature: -1, entries: [], choice: [],
+    undo: [], redo: [],
+  };
+
+  function status(msg, bad) {
+    var el = $("status");
+    el.textContent = msg || "";
+    el.className = bad ? "warn" : "";
+  }
+
+  // ---- three.js ----
+  var host = $("view");
+  var renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  host.insertBefore(renderer.domElement, host.firstChild);
+  var scene = new THREE.Scene();
+  var camera = new THREE.PerspectiveCamera(35, 1, 0.01, 1000);
+  scene.add(camera);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+  var sun = new THREE.DirectionalLight(0xffffff, 0.5);
+  sun.position.set(0.4, 0.6, 1);
+  camera.add(sun);
+  var meshObj = null, dotsObj = null, wireObj = null;
+  var orbit = { target: new THREE.Vector3(), theta: 0, phi: 0.1, r: 3, span: 1 };
+  var camDirty = true;
+
+  function bg() {
+    var c = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim() || "#e9eff6";
+    renderer.setClearColor(new THREE.Color(c));
+  }
+  bg();
+  if (window.matchMedia) window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function () { bg(); draw(); });
+
+  function placeCamera() {
+    var o = orbit;
+    o.phi = Math.max(-1.55, Math.min(1.55, o.phi));
+    camera.position.set(
+      o.target.x + o.r * Math.sin(o.theta) * Math.cos(o.phi),
+      o.target.y + o.r * Math.sin(o.phi),
+      o.target.z + o.r * Math.cos(o.theta) * Math.cos(o.phi));
+    camera.lookAt(o.target);
+    camera.near = o.r / 100; camera.far = o.r * 100;
+    camera.updateProjectionMatrix();
+    camera.updateMatrixWorld();
+    camDirty = true;
+    draw();
+  }
+  function resize() {
+    var w = host.clientWidth, h = host.clientHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / Math.max(h, 1);
+    placeCamera();
+  }
+  window.addEventListener("resize", resize);
+  var drawQueued = false;
+  function draw() {
+    if (drawQueued) return;
+    drawQueued = true;
+    requestAnimationFrame(function () { drawQueued = false; renderer.render(scene, camera); });
+  }
+  function setView(v) {
+    orbit.theta = { front: 0, side: Math.PI / 2, back: Math.PI, top: 0 }[v];
+    orbit.phi = v === "top" ? 1.5 : 0.08;
+    orbit.r = orbit.span * 2.1;
+    orbit.target.copy(orbit.centre || new THREE.Vector3());
+    placeCamera();
+  }
+
+  // ---- Geometry ----
+  function buildGeometry() {
+    [meshObj, dotsObj, wireObj].forEach(function (o) { if (o) { scene.remove(o); o.geometry.dispose(); } });
+    meshObj = dotsObj = wireObj = null;
+    var m = S.view && S.view.mesh;
+    if (!m) { draw(); return; }
+    var n = m.indices.length;
+    var p = new Float32Array(n * 3);
+    for (var c = 0; c < n; c++) for (var k = 0; k < 3; k++) p[c * 3 + k] = m.position[m.indices[c] * 3 + k];
+    var g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(p, 3));
+    g.setAttribute("color", new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+    g.computeVertexNormals();
+    meshObj = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide,
+      polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }));
+    scene.add(meshObj);
+    var dg = new THREE.BufferGeometry();
+    dg.setAttribute("position", new THREE.BufferAttribute(Float32Array.from(m.position), 3));
+    dg.setAttribute("color", new THREE.BufferAttribute(new Float32Array(m.count * 3), 3));
+    dotsObj = new THREE.Points(dg, new THREE.PointsMaterial({ size: 4, sizeAttenuation: false, vertexColors: true }));
+    dotsObj.visible = $("dots").checked;
+    scene.add(dotsObj);
+    wireObj = new THREE.LineSegments(new THREE.WireframeGeometry(g), new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.25 }));
+    wireObj.visible = $("wire").checked;
+    scene.add(wireObj);
+    // Bounds and the screen cache.
+    var lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+    for (var i = 0; i < m.count; i++) for (var a = 0; a < 3; a++) {
+      lo[a] = Math.min(lo[a], m.position[i * 3 + a]); hi[a] = Math.max(hi[a], m.position[i * 3 + a]);
+    }
+    orbit.span = Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) || 1;
+    orbit.centre = new THREE.Vector3((lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2);
+    camDirty = true;
+    recolourAll();
+  }
+  function vertexColour(i) {
+    var m = S.view.mesh, p = S.view.parts ? S.view.parts[i] : 0;
+    if (S.mode === "parts") return S.colours[p].map(function (x) { return x / 255; });
+    if (S.mode === "weights") return C.heat(C.weightOn(m, i, S.joint));
+    var c = [0, 1, 2].map(function (k) { return C.toSrgb(m.colour[i * 3 + k]); });
+    if (S.mode === "variant") return C.recolour(c, p, currentRemap());
+    return c;
+  }
+  var remapCache = null;
+  function currentRemap() {
+    if (!remapCache) remapCache = C.partRemap(S.names, S.entries, S.choice, S.palette);
+    return remapCache;
+  }
+  function recolourAll() {
+    remapCache = null;
+    if (!meshObj) { draw(); return; }
+    var m = S.view.mesh;
+    var per = new Array(m.count);
+    for (var i = 0; i < m.count; i++) per[i] = vertexColour(i);
+    var ca = meshObj.geometry.attributes.color;
+    for (var c = 0; c < m.indices.length; c++) {
+      var v = per[m.indices[c]];
+      ca.array[c * 3] = v[0]; ca.array[c * 3 + 1] = v[1]; ca.array[c * 3 + 2] = v[2];
+    }
+    ca.needsUpdate = true;
+    var da = dotsObj.geometry.attributes.color;
+    for (var j = 0; j < m.count; j++) {
+      var d = S.view.parts ? S.colours[S.view.parts[j]] : [255, 255, 255];
+      da.array[j * 3] = d[0] / 255; da.array[j * 3 + 1] = d[1] / 255; da.array[j * 3 + 2] = d[2] / 255;
+    }
+    da.needsUpdate = true;
+    draw();
+    renderParts();
+  }
+
+  // ---- The view's mesh (level 0 painted; others read-only, mapped as parts.mjs levelParts) ----
+  function setLevel(k) {
+    S.level = k;
+    if (!S.glb) { S.view = null; buildGeometry(); return; }
+    if (k === 0) S.view = { mesh: S.base, parts: S.parts };
+    else {
+      var mesh = S.glb.mesh(S.glb.levels[k]);
+      S.view = { mesh: mesh, parts: S.parts ? C.levelParts(S.base, S.parts, mesh) : null };
+    }
+    var keepCam = !!meshObj;
+    buildGeometry();
+    if (!keepCam) setView("front");
+    status(k === 0 ? "" : "Level " + S.glb.levels[k] + ": its parts are mapped from detail_0 (read-only; paint detail_0).");
+  }
+  function refreshLevels() {
+    var sel = $("level");
+    sel.innerHTML = "";
+    (S.glb ? S.glb.levels : []).forEach(function (n, i) {
+      var o = document.createElement("option"); o.value = i; o.textContent = n; sel.appendChild(o);
+    });
+    sel.value = String(S.level);
+  }
+  function refreshJoints() {
+    var sel = $("joint");
+    sel.innerHTML = "";
+    (S.glb ? S.glb.jointNames : []).forEach(function (n, i) {
+      var o = document.createElement("option"); o.value = i; o.textContent = i + " " + n; sel.appendChild(o);
+    });
+    sel.value = String(S.joint);
+  }
+
+  // ---- Loading ----
+  function loadedLine() {
+    var bits = [];
+    bits.push(S.glb ? "GLB " + S.glbName + " (detail_0: " + S.base.count + " vertices)" : "no GLB");
+    bits.push(S.parts ? "part map " + (S.fileName || "(new)") : S.pending ? "part map waiting for its GLB" : "no part map");
+    bits.push(S.palette ? "palette" : "no palette");
+    bits.push(S.creatures ? "creatures" : "no creatures");
+    $("loaded").textContent = bits.join(" · ");
+  }
+  function loadGlb(buffer, name) {
+    var glb = C.parseGlb(buffer);
+    var first = glb.meshNames.indexOf("detail_0") >= 0 ? "detail_0" : glb.meshNames[0];
+    S.glb = glb; S.glbName = name; S.base = glb.mesh(first); S.isl = C.islands(S.base);
+    S.joint = 0; S.level = 0; S.undo = []; S.redo = [];
+    var model = S.models && Object.keys(S.models.models || {}).find(function (k) { return (S.models.models[k].glb || "").split("/").pop() === name; });
+    S.exclude = (S.models && S.models.palette && S.models.palette.exclude) || [];
+    if (S.parts && S.parts.length !== S.base.count) { S.pending = { file: S.file, name: S.fileName, text: null }; S.parts = null; }
+    if (S.pending) {
+      var p = S.pending; S.pending = null;
+      applyPartMap(p.file, p.name);
+    }
+    if (!S.parts) newEmpty(true);
+    meshObj = null;
+    refreshLevels(); refreshJoints();
+    setLevel(0);
+    loadedLine();
+    if (model) status("Model " + model + " (models.json).");
+  }
+  function applyPartMap(file, name) {
+    if (!S.glb) { S.pending = { file: file, name: name }; loadedLine(); status("Part map read; load its GLB to paint it."); return; }
+    var v;
+    try { v = C.validateParts(file, name || "part map", S.base.count); }
+    catch (e) { status("Refused: " + e.message, true); return; }
+    pushUndo();
+    S.file = file; S.fileName = name; S.names = file.parts.slice(); S.parts = Uint8Array.from(v, Number);
+    S.current = Math.min(S.current, S.names.length) || (S.names.length ? 1 : 0);
+    afterEdit(true);
+    status("Part map " + name + ": " + S.names.length + " parts.");
+  }
+  function handleText(text, name) {
+    var j;
+    try { j = JSON.parse(text); } catch (e) { status(name + ": not JSON (" + e.message + ")", true); return; }
+    if (j && Array.isArray(j.vertices) && "parts" in j) applyPartMap(j, name);
+    else if (j && j.ramps) { S.palette = j; afterEdit(); status("Palette " + name + "."); }
+    else if (j && (Array.isArray(j.creatures) || Array.isArray(j.colours) || (j.npc && j.npc.colours) || Array.isArray(j))) { setCreatures(j); status("Creatures " + name + "."); }
+    else if (j && j.models) { S.models = j; S.exclude = (j.palette && j.palette.exclude) || []; status("models.json read (palette exclude: " + (S.exclude.join(", ") || "none") + ")."); }
+    else status(name + ": not a part map, palette, creatures.json or models.json", true);
+    loadedLine();
+  }
+  function handleFiles(list) {
+    var files = Array.from(list);
+    // JSON first (so models.json and the palette are in before the GLB), then GLBs.
+    files.sort(function (a, b) { return (/\.glb$/i.test(a.name) ? 1 : 0) - (/\.glb$/i.test(b.name) ? 1 : 0); });
+    var chain = Promise.resolve();
+    files.forEach(function (f) {
+      chain = chain.then(function () {
+        return f.arrayBuffer().then(function (buf) {
+          var head = new Uint8Array(buf, 0, Math.min(4, buf.byteLength));
+          if (head[0] === 0x67 && head[1] === 0x6c && head[2] === 0x54 && head[3] === 0x46) {
+            try { loadGlb(buf, f.name); } catch (e) { status(f.name + ": " + e.message, true); }
+          } else handleText(new TextDecoder().decode(buf), f.name);
+        });
+      });
+    });
+    return chain;
+  }
+  $("pick").onclick = function () { $("files").click(); };
+  $("files").onchange = function (e) { handleFiles(e.target.files); e.target.value = ""; };
+  var dragDepth = 0;
+  host.addEventListener("dragenter", function (e) { e.preventDefault(); dragDepth++; $("drop").style.display = "flex"; });
+  host.addEventListener("dragleave", function () { if (--dragDepth <= 0) { dragDepth = 0; $("drop").style.display = "none"; } });
+  document.addEventListener("dragover", function (e) { e.preventDefault(); });
+  document.addEventListener("drop", function (e) {
+    e.preventDefault(); dragDepth = 0; $("drop").style.display = "none";
+    if (e.dataTransfer && e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
+  });
+  $("peasant").onclick = function () {
+    var get = function (p, bin) {
+      return fetch(REPO + p).then(function (r) { if (!r.ok) throw new Error(p + ": " + r.status); return bin ? r.arrayBuffer() : r.text(); });
+    };
+    status("Fetching the Peasant…");
+    Promise.all([get("shared/models/models.json"), get("shared/textures/palette.json"), get("shared/creatures/creatures.json")])
+      .then(function (t) {
+        handleText(t[0], "models.json"); handleText(t[1], "palette.json"); handleText(t[2], "creatures.json");
+        var m = S.models.models.peasant;
+        return Promise.all([get("shared/models/" + m.glb, true), get("shared/models/" + m.parts)]);
+      })
+      .then(function (r) {
+        S.parts = null; S.file = null;
+        loadGlb(r[0], "peasant.glb");
+        S.undo = [];
+        handleText(r[1], "peasant.json");
+        S.undo = [];
+        var vi = (S.creatures.creatures || []).findIndex(function (c) { return c.model === "peasant"; });
+        if (vi >= 0) { $("creature").value = String(vi); pickCreature(vi); }
+        refreshUndo();
+      })
+      .catch(function (e) {
+        status("Couldn't fetch from the repo (" + e.message + "). Serve the repo's root (python3 -m http.server) and open " +
+          "/docs/prototypes/model-part-painter.html, or open shared/models/glb/peasant.glb and shared/models/parts/peasant.json with Open files.", true);
+      });
+  };
+  $("empty").onclick = function () { if (S.glb) newEmpty(false); };
+  function newEmpty(silent) {
+    pushUndo();
+    S.file = null; S.fileName = ""; S.names = ["skin"]; S.parts = new Uint8Array(S.base.count); S.current = 1;
+    afterEdit(true);
+    if (!silent) status("A new map: one part, no vertex painted.");
+  }
+  $("seedc").onclick = function () {
+    if (!S.glb) return;
+    pushUndo();
+    var s = C.seedFromColours(S.base, S.palette, S.exclude);
+    S.file = null; S.fileName = ""; S.names = s.names; S.parts = s.parts; S.current = 1;
+    afterEdit(true);
+    status(S.palette ? "Seeded: the " + s.names.length + " commonest palette ramps, a part each; rename them."
+      : "Seeded by exact colour (load palette.json to seed by ramp).");
+  };
+
+  // ---- Edits, undo ----
+  function snapshot() { return { names: S.names.slice(), parts: S.parts ? S.parts.slice() : null, file: S.file, fileName: S.fileName }; }
+  function restore(s) { S.names = s.names; S.parts = s.parts; S.file = s.file; S.fileName = s.fileName; S.current = Math.min(S.current, S.names.length); afterEdit(true); }
+  function pushUndo() { if (!S.glb) return; S.undo.push(snapshot()); if (S.undo.length > 200) S.undo.shift(); S.redo = []; refreshUndo(); }
+  function refreshUndo() { $("undo").disabled = !S.undo.length; $("redo").disabled = !S.redo.length; }
+  function doUndo() { if (!S.undo.length) return; S.redo.push(snapshot()); restore(S.undo.pop()); refreshUndo(); }
+  function doRedo() { if (!S.redo.length) return; S.undo.push(snapshot()); restore(S.redo.pop()); refreshUndo(); }
+  $("undo").onclick = doUndo; $("redo").onclick = doRedo;
+  function afterEdit(structure) {
+    if (S.glb) {
+      if (S.level === 0) S.view = { mesh: S.base, parts: S.parts };
+      else S.view.parts = S.parts ? C.levelParts(S.base, S.parts, S.view.mesh) : null;
+    }
+    if (structure) renderVariant();
+    recolourAll();
+    refreshUndo();
+    loadedLine();
+  }
+
+  // ---- Part list ----
+  function hex(c) { return "#" + c.map(function (x) { return x.toString(16).padStart(2, "0"); }).join(""); }
+  function renderParts() {
+    var box = $("parts");
+    var counts = new Array(S.names.length + 1).fill(0);
+    if (S.view && S.view.parts) for (var i = 0; i < S.view.parts.length; i++) counts[S.view.parts[i]]++;
+    if (box.dataset.sig === JSON.stringify([S.names, S.current, S.colours]) ) {
+      Array.from(box.querySelectorAll(".count")).forEach(function (el, k) { el.textContent = counts[k]; });
+      return;
+    }
+    box.dataset.sig = JSON.stringify([S.names, S.current, S.colours]);
+    box.innerHTML = "";
+    ["none"].concat(S.names).forEach(function (name, k) {
+      var row = document.createElement("div");
+      row.className = "part" + (k === S.current ? " sel" : "");
+      var sw = document.createElement("input"); sw.type = "color"; sw.value = hex(S.colours[k]);
+      sw.title = "display colour (the page only)";
+      sw.oninput = function () { S.colours[k] = [1, 3, 5].map(function (j) { return parseInt(sw.value.slice(j, j + 2), 16); }); recolourAll(); };
+      sw.onclick = function (e) { e.stopPropagation(); };
+      var nm;
+      if (k === 0) { nm = document.createElement("span"); nm.textContent = "none (erase)"; nm.className = "muted"; }
+      else {
+        nm = document.createElement("input"); nm.type = "text"; nm.value = name;
+        nm.onclick = function (e) { e.stopPropagation(); select(k); };
+        nm.onchange = function () { rename(k, nm.value.trim()); };
+      }
+      var ct = document.createElement("span"); ct.className = "count"; ct.textContent = counts[k];
+      var del = document.createElement("button"); del.textContent = "×"; del.title = "delete the part (its vertices: none)";
+      if (k === 0) del.style.visibility = "hidden";
+      del.onclick = function (e) { e.stopPropagation(); removePart(k); };
+      row.append(sw, nm, ct, del);
+      row.onclick = function () { select(k); };
+      box.appendChild(row);
+    });
+    $("add").disabled = !S.glb || S.names.length >= C.MAX_PARTS;
+  }
+  function select(k) { S.current = k; renderParts(); }
+  function rename(k, name) {
+    var old = S.names[k - 1];
+    if (name === old) return;
+    if (!/^[a-z][a-z0-9_]*$/.test(name)) { status("A part name is lower_snake_case: " + JSON.stringify(name), true); renderParts(); return forceParts(); }
+    if (S.names.indexOf(name) >= 0) { status("There is already a part " + name, true); return forceParts(); }
+    pushUndo();
+    S.names = S.names.slice(); S.names[k - 1] = name;
+    if (S.file && S.file.seed) S.file = Object.assign({}, S.file, { seed: S.file.seed.map(function (r) { return r.part === old ? Object.assign({}, r, { part: name }) : r; }) });
+    afterEdit(true); forceParts();
+    status("Renamed " + old + " to " + name + ".");
+  }
+  function forceParts() { $("parts").dataset.sig = ""; renderParts(); }
+  function removePart(k) {
+    pushUndo();
+    var gone = S.names[k - 1];
+    S.names = S.names.filter(function (_, i) { return i !== k - 1; });
+    var p = S.parts.slice();
+    for (var i = 0; i < p.length; i++) p[i] = p[i] === k ? 0 : p[i] > k ? p[i] - 1 : p[i];
+    S.parts = p;
+    S.colours.splice(k, 1); S.colours.push(C.PART_COLOURS[C.MAX_PARTS].slice());
+    if (S.file && S.file.seed) S.file = Object.assign({}, S.file, { seed: S.file.seed.filter(function (r) { return r.part !== gone; }) });
+    if (S.current >= k) S.current = Math.max(S.current - 1, S.names.length ? 1 : 0);
+    afterEdit(true); forceParts();
+  }
+  $("add").onclick = function () {
+    if (!S.glb || S.names.length >= C.MAX_PARTS) return;
+    var n = 1; while (S.names.indexOf("part_" + n) >= 0) n++;
+    pushUndo();
+    S.names = S.names.concat(["part_" + n]); S.current = S.names.length;
+    afterEdit(true); forceParts();
+  };
+
+  // ---- Variant preview ----
+  function setCreatures(j) {
+    var list = Array.isArray(j.creatures) ? j.creatures : Array.isArray(j) ? j : [j.colours ? { name: "pasted", colours: j.colours } : j];
+    S.creatures = { creatures: list };
+    var sel = $("creature");
+    sel.innerHTML = "";
+    var first = -1;
+    list.forEach(function (c, i) {
+      var cs = colsOf(c);
+      if (!cs) return;
+      if (first < 0) first = i;
+      var o = document.createElement("option"); o.value = i; o.textContent = (c.name || "creature " + i) + (c.model ? " (" + c.model + ")" : "");
+      sel.appendChild(o);
+    });
+    if (first < 0) { S.entries = []; renderVariant(); status("No creature with colours there.", true); return; }
+    sel.value = String(first);
+    pickCreature(first);
+  }
+  function colsOf(c) { return (c && c.npc && c.npc.colours) || (c && c.colours) || null; }
+  function pickCreature(i) {
+    S.creature = i;
+    S.entries = colsOf(S.creatures.creatures[i]) || [];
+    S.choice = S.entries.map(function () { return 0; });
+    renderVariant(); recolourAll();
+  }
+  $("creature").onchange = function () { pickCreature(Number($("creature").value)); };
+  $("next").onclick = function () {
+    var k = (S.variantStep = (S.variantStep || 0) + 1);
+    S.choice = S.entries.map(function (e) { return Array.isArray(e.to) ? k % e.to.length : 0; });
+    showVariant();
+  };
+  $("random").onclick = function () {
+    S.choice = S.entries.map(function (e) { return Array.isArray(e.to) ? Math.floor(Math.random() * e.to.length) : 0; });
+    showVariant();
+  };
+  function showVariant() { if (S.mode !== "variant") setMode("variant"); renderVariant(); recolourAll(); }
+  $("usepaste").onclick = function () {
+    try { setCreatures(JSON.parse($("paste").value)); status("Pasted colours in use."); loadedLine(); }
+    catch (e) { status("Pasted text: " + e.message, true); }
+  };
+  function renderVariant() {
+    var box = $("variant");
+    box.innerHTML = "";
+    if (!S.entries.length) { box.innerHTML = '<div class="muted">No creature colours loaded.</div>'; return; }
+    if (!S.palette) box.innerHTML = '<div class="warn">Load palette.json to recolour.</div>';
+    S.entries.forEach(function (e, i) {
+      var row = document.createElement("div"); row.className = "entry";
+      var lab = document.createElement("span"); lab.textContent = e.part;
+      var probs = [];
+      if (S.names.indexOf(e.part) < 0) probs.push("not a part of this map");
+      if (S.palette && !C.rampBase(S.palette, e.from)) probs.push("no ramp " + e.from);
+      if (probs.length) { lab.className = "warn"; lab.title = probs.join("; "); }
+      var sel = document.createElement("select");
+      (Array.isArray(e.to) ? e.to : [e.to]).forEach(function (t, k) {
+        var o = document.createElement("option"); o.value = k; o.textContent = e.from + " → " + t; sel.appendChild(o);
+      });
+      sel.value = String(S.choice[i] || 0);
+      sel.onchange = function () { S.choice[i] = Number(sel.value); showVariant(); };
+      row.append(lab, sel);
+      box.appendChild(row);
+    });
+  }
+
+  // ---- Modes, tools, views ----
+  function setMode(m) {
+    S.mode = m;
+    Array.from($("modes").children).forEach(function (b) { b.classList.toggle("on", b.dataset.mode === m); });
+    $("weightsRow").style.display = m === "weights" ? "flex" : "none";
+    recolourAll();
+  }
+  Array.from($("modes").children).forEach(function (b) { b.onclick = function () { setMode(b.dataset.mode); }; });
+  function setTool(t) {
+    S.tool = t;
+    Array.from($("tools").children).forEach(function (b) { b.classList.toggle("on", b.dataset.tool === t); });
+  }
+  Array.from($("tools").children).forEach(function (b) { b.onclick = function () { setTool(b.dataset.tool); }; });
+  Array.from($("views").children).forEach(function (b) { b.onclick = function () { setView(b.dataset.view); }; });
+  $("level").onchange = function () { setLevel(Number($("level").value)); };
+  $("joint").onchange = function () { S.joint = Number($("joint").value); recolourAll(); };
+  $("dots").onchange = function () { if (dotsObj) dotsObj.visible = $("dots").checked; draw(); };
+  $("wire").onchange = function () { if (wireObj) wireObj.visible = $("wire").checked; draw(); };
+  $("front").onchange = function () { S.front = $("front").checked; };
+  function setRadius(r) { S.radius = Math.max(2, Math.min(150, Math.round(r))); $("radius").value = S.radius; $("radiusv").textContent = S.radius + " px"; }
+  $("radius").oninput = function () { setRadius(Number($("radius").value)); };
+
+  // ---- Screen space: projections, visibility, picking ----
+  var screen = null; // { x, y: Float32Array per vertex; tri boxes; vis: Int8Array (-1 unknown) }
+  function ensureScreen() {
+    if (!camDirty && screen) return screen;
+    var m = S.view.mesh, w = host.clientWidth, h = host.clientHeight;
+    var x = new Float32Array(m.count), y = new Float32Array(m.count), z = new Float32Array(m.count);
+    var v = new THREE.Vector3();
+    for (var i = 0; i < m.count; i++) {
+      v.set(m.position[i * 3], m.position[i * 3 + 1], m.position[i * 3 + 2]).project(camera);
+      x[i] = (v.x + 1) / 2 * w; y[i] = (1 - v.y) / 2 * h; z[i] = v.z;
+    }
+    var nt = m.indices.length / 3, box = new Float32Array(nt * 4);
+    for (var t = 0; t < nt; t++) {
+      var a = m.indices[t * 3], b = m.indices[t * 3 + 1], c = m.indices[t * 3 + 2];
+      box[t * 4] = Math.min(x[a], x[b], x[c]); box[t * 4 + 1] = Math.max(x[a], x[b], x[c]);
+      box[t * 4 + 2] = Math.min(y[a], y[b], y[c]); box[t * 4 + 3] = Math.max(y[a], y[b], y[c]);
+    }
+    screen = { x: x, y: y, z: z, box: box, vis: new Int8Array(m.count).fill(-1) };
+    camDirty = false;
+    return screen;
+  }
+  /** Is vertex i unhidden from the camera: no triangle crosses the segment camera → vertex before it. */
+  function visible(i) {
+    var s = ensureScreen();
+    if (s.vis[i] >= 0) return s.vis[i] === 1;
+    var m = S.view.mesh, P = m.position, I = m.indices;
+    var o = camera.position;
+    var px = P[i * 3], py = P[i * 3 + 1], pz = P[i * 3 + 2];
+    var dx = px - o.x, dy = py - o.y, dz = pz - o.z;
+    var dist = Math.hypot(dx, dy, dz); dx /= dist; dy /= dist; dz /= dist;
+    var eps = orbit.span * 2e-3, sx = s.x[i], sy = s.y[i], ok = 1;
+    if (s.z[i] > 1 || s.z[i] < -1) ok = 0;
+    for (var t = 0; ok && t < I.length / 3; t++) {
+      if (sx < s.box[t * 4] || sx > s.box[t * 4 + 1] || sy < s.box[t * 4 + 2] || sy > s.box[t * 4 + 3]) continue;
+      var a = I[t * 3] * 3, b = I[t * 3 + 1] * 3, c = I[t * 3 + 2] * 3;
+      var e1x = P[b] - P[a], e1y = P[b + 1] - P[a + 1], e1z = P[b + 2] - P[a + 2];
+      var e2x = P[c] - P[a], e2y = P[c + 1] - P[a + 1], e2z = P[c + 2] - P[a + 2];
+      var hx = dy * e2z - dz * e2y, hy = dz * e2x - dx * e2z, hz = dx * e2y - dy * e2x;
+      var det = e1x * hx + e1y * hy + e1z * hz;
+      if (Math.abs(det) < 1e-12) continue;
+      var f = 1 / det, qx = o.x - P[a], qy = o.y - P[a + 1], qz = o.z - P[a + 2];
+      var u = f * (qx * hx + qy * hy + qz * hz);
+      if (u < -1e-6 || u > 1 + 1e-6) continue;
+      var rx = qy * e1z - qz * e1y, ry = qz * e1x - qx * e1z, rz = qx * e1y - qy * e1x;
+      var vv = f * (dx * rx + dy * ry + dz * rz);
+      if (vv < -1e-6 || u + vv > 1 + 1e-6) continue;
+      var tt = f * (e2x * rx + e2y * ry + e2z * rz);
+      if (tt > 0 && tt < dist - eps) ok = 0;
+    }
+    s.vis[i] = ok;
+    return ok === 1;
+  }
+  var ray = new THREE.Raycaster();
+  /** The vertex under a screen point: the nearest corner of the triangle hit, or -1. */
+  function pickVertex(px, py) {
+    if (!meshObj) return -1;
+    var w = host.clientWidth, h = host.clientHeight;
+    ray.setFromCamera(new THREE.Vector2(px / w * 2 - 1, 1 - py / h * 2), camera);
+    var hit = ray.intersectObject(meshObj, false)[0];
+    if (!hit) return -1;
+    var m = S.view.mesh, best = -1, bd = Infinity;
+    for (var k = 0; k < 3; k++) {
+      var v = m.indices[hit.faceIndex * 3 + k];
+      var d = hit.point.distanceToSquared(new THREE.Vector3(m.position[v * 3], m.position[v * 3 + 1], m.position[v * 3 + 2]));
+      if (d < bd) { bd = d; best = v; }
+    }
+    return best;
+  }
+  function inBrush(px, py, filter) {
+    var s = ensureScreen(), r2 = S.radius * S.radius, out = [];
+    for (var i = 0; i < s.x.length; i++) {
+      var dx = s.x[i] - px, dy = s.y[i] - py;
+      if (dx * dx + dy * dy > r2) continue;
+      if (filter && !filter(i)) continue;
+      if (S.front && !visible(i)) continue;
+      out.push(i);
+    }
+    return out;
+  }
+
+  // ---- Painting ----
+  var stroke = null; // { changed }
+  function canPaint() {
+    if (!S.glb || !S.parts) return false;
+    if (S.level !== 0) { status("Paint on detail_0: the other levels take their parts from it.", true); return false; }
+    if (S.current > S.names.length) return false;
+    return true;
+  }
+  function paintList(list) {
+    var changed = 0;
+    for (var k = 0; k < list.length; k++) if (S.parts[list[k]] !== S.current) { S.parts[list[k]] = S.current; changed++; }
+    if (changed) recolourAll();
+    return changed;
+  }
+  function beginStroke() { stroke = { before: snapshot(), changed: 0 }; }
+  function endStroke() {
+    if (stroke && stroke.changed) { S.undo.push(stroke.before); S.redo = []; refreshUndo(); }
+    stroke = null;
+  }
+  function brushAt(px, py) { stroke.changed += paintList(inBrush(px, py)); }
+  function fillIsland(px, py) {
+    var v = pickVertex(px, py);
+    if (v < 0) return;
+    var root = S.isl[v], list = [];
+    for (var i = 0; i < S.isl.length; i++) if (S.isl[i] === root) list.push(i);
+    beginStroke(); stroke.changed = paintList(list); endStroke();
+    status("Filled an island of " + list.length + " vertices with " + partName(S.current) + ".");
+  }
+  function fillSame(px, py) {
+    var v = pickVertex(px, py);
+    if (v < 0) return;
+    var m = S.base, c0 = [m.colour[v * 3], m.colour[v * 3 + 1], m.colour[v * 3 + 2]];
+    var list = inBrush(px, py, function (i) {
+      return Math.abs(m.colour[i * 3] - c0[0]) < 2 / 255 && Math.abs(m.colour[i * 3 + 1] - c0[1]) < 2 / 255 && Math.abs(m.colour[i * 3 + 2] - c0[2]) < 2 / 255;
+    });
+    beginStroke(); stroke.changed = paintList(list); endStroke();
+    status("Filled " + list.length + " vertices of that colour with " + partName(S.current) + ".");
+  }
+  function partName(k) { return k === 0 ? "none" : S.names[k - 1]; }
+
+  // ---- Pointer ----
+  var cv = renderer.domElement, drag = null;
+  cv.addEventListener("contextmenu", function (e) { e.preventDefault(); });
+  function local(e) { var r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
+  cv.addEventListener("pointerdown", function (e) {
+    var p = local(e);
+    cv.setPointerCapture(e.pointerId);
+    var orbitBtn = e.button === 2 || (e.button === 0 && S.tool === "orbit");
+    var pan = e.button === 1 || (e.shiftKey && (e.button === 0 || e.button === 2));
+    if (e.button === 0 && e.altKey && S.view) {
+      var v = pickVertex(p[0], p[1]);
+      if (v >= 0) {
+        var m = S.view.mesh, bj = 0, bw = -1;
+        for (var k = 0; k < 4; k++) if (m.weights[v * 4 + k] > bw) { bw = m.weights[v * 4 + k]; bj = m.joints[v * 4 + k]; }
+        S.joint = bj; $("joint").value = String(bj); setMode("weights");
+      }
+      return;
+    }
+    if (pan) drag = { kind: "pan", x: p[0], y: p[1] };
+    else if (orbitBtn) drag = { kind: "orbit", x: p[0], y: p[1] };
+    else if (e.button === 0) {
+      if (!canPaint()) return;
+      if (S.tool === "brush") { drag = { kind: "paint" }; beginStroke(); brushAt(p[0], p[1]); }
+      else if (S.tool === "island") fillIsland(p[0], p[1]);
+      else if (S.tool === "same") fillSame(p[0], p[1]);
+    }
+  });
+  cv.addEventListener("pointermove", function (e) {
+    var p = local(e);
+    var b = $("brush");
+    var showBrush = S.tool === "brush" || S.tool === "same";
+    b.style.display = showBrush && S.glb ? "block" : "none";
+    b.style.width = b.style.height = S.radius * 2 + "px";
+    b.style.left = p[0] - S.radius + "px"; b.style.top = p[1] - S.radius + "px";
+    if (drag && drag.kind === "orbit") {
+      orbit.theta -= (p[0] - drag.x) * 0.008; orbit.phi += (p[1] - drag.y) * 0.008;
+      drag.x = p[0]; drag.y = p[1]; placeCamera();
+    } else if (drag && drag.kind === "pan") {
+      var s = orbit.r * 0.0015;
+      var right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+      var up = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
+      orbit.target.addScaledVector(right, -(p[0] - drag.x) * s).addScaledVector(up, (p[1] - drag.y) * s);
+      drag.x = p[0]; drag.y = p[1]; placeCamera();
+    } else if (drag && drag.kind === "paint") brushAt(p[0], p[1]);
+    hover(p);
+  });
+  function up() { if (drag && drag.kind === "paint") endStroke(); drag = null; }
+  cv.addEventListener("pointerup", up);
+  cv.addEventListener("pointercancel", up);
+  cv.addEventListener("pointerleave", function () { $("brush").style.display = "none"; });
+  cv.addEventListener("wheel", function (e) {
+    e.preventDefault();
+    orbit.r *= Math.exp(e.deltaY * 0.0012);
+    orbit.r = Math.max(orbit.span * 0.1, Math.min(orbit.span * 20, orbit.r));
+    placeCamera();
+  }, { passive: false });
+  var hoverQueued = null;
+  function hover(p) {
+    if (hoverQueued) { hoverQueued = p; return; }
+    hoverQueued = p;
+    requestAnimationFrame(function () {
+      var q = hoverQueued; hoverQueued = null;
+      if (!S.view) return;
+      var v = pickVertex(q[0], q[1]);
+      if (v < 0) { $("info").textContent = "—"; return; }
+      var m = S.view.mesh, lin = [m.colour[v * 3], m.colour[v * 3 + 1], m.colour[v * 3 + 2]];
+      var srgb = lin.map(function (x) { return Math.round(C.toSrgb(x) * 255); });
+      var part = S.view.parts ? S.view.parts[v] : 0;
+      var ws = [];
+      for (var k = 0; k < 4; k++) if (m.weights[v * 4 + k] > 0.005) ws.push((S.glb.jointNames[m.joints[v * 4 + k]] || m.joints[v * 4 + k]) + " " + m.weights[v * 4 + k].toFixed(2));
+      $("info").textContent = S.glb.levels[S.level] + " vertex " + v + " · part " + partName(part) + " · island " + (S.level === 0 ? S.isl[v] : "-") + "\n" +
+        "colour " + hex(srgb) + (S.palette ? " (nearest ramp " + C.nearestRamp(S.palette, lin, S.exclude) + ")" : "") +
+        " · y " + m.position[v * 3 + 1].toFixed(3) + "\nweights " + ws.join(", ");
+    });
+  }
+  document.addEventListener("keydown", function (e) {
+    if (e.target && (e.target.tagName === "INPUT" && e.target.type === "text" || e.target.tagName === "TEXTAREA")) return;
+    var mod = e.ctrlKey || e.metaKey;
+    if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); if (e.shiftKey) doRedo(); else doUndo(); }
+    else if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); doRedo(); }
+    else if (e.key === "[") setRadius(S.radius / 1.2);
+    else if (e.key === "]") setRadius(S.radius * 1.2);
+    else if (/^[0-6]$/.test(e.key) && Number(e.key) <= S.names.length) select(Number(e.key));
+  });
+
+  // ---- Export ----
+  function exportText() {
+    if (!S.glb || !S.parts) throw new Error("load a GLB and paint a part map first");
+    if (S.parts.length !== S.base.count) throw new Error(S.parts.length + " vertices, but detail_0 has " + S.base.count);
+    return C.exportParts(S.file, S.names, S.parts);
+  }
+  function exportName() { return S.fileName || (S.glbName.replace(/\.glb$/i, "") || "model") + ".json"; }
+  $("export").onclick = function () {
+    try {
+      var text = exportText();
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+      a.download = exportName();
+      a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+      $("exportmsg").className = "muted";
+      $("exportmsg").textContent = "Saved " + exportName() + ": put it at shared/models/parts/ and run node shared/models/gen.mjs.";
+    } catch (e) { $("exportmsg").className = "warn"; $("exportmsg").textContent = e.message; }
+  };
+  $("copy").onclick = function () {
+    try {
+      var text = exportText();
+      navigator.clipboard.writeText(text).then(function () { $("exportmsg").className = "muted"; $("exportmsg").textContent = "Copied."; },
+        function () { $("exportmsg").className = "warn"; $("exportmsg").textContent = "The clipboard refused; use Download."; });
+    } catch (e) { $("exportmsg").className = "warn"; $("exportmsg").textContent = e.message; }
+  };
+
+  // A handle for scripts and screenshots.
+  window.painter = {
+    state: S, core: C, exportText: exportText, setView: setView, setMode: setMode, setTool: setTool, setLevel: setLevel,
+    loadGlb: loadGlb, handleText: handleText, select: select, undo: doUndo, redo: doRedo,
+    paintAt: function (x, y) { if (!canPaint()) return 0; beginStroke(); brushAt(x, y); var n = stroke.changed; endStroke(); return n; },
+    fillIsland: fillIsland, fillSame: fillSame, setRadius: setRadius,
+  };
+
+  setMode("parts");
+  refreshUndo();
+  renderParts();
+  renderVariant();
+  loadedLine();
+  resize();
+})();
+</script>
+</body>
+</html>

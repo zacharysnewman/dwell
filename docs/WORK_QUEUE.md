@@ -1708,7 +1708,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    NPC colour part a part of its model) and the game recolouring by part (CHARACTERS.md §11.11). Bug #96's owner
    follow-ups, 2026-11-12: "Oh maybe not all of them, but their hair and faces are really crazy looking." / "I think
    some of the clothes and hat vertices are being assigned incorrectly (like they should be face and hair)."
-   Left: the painter page.
+   **Built (the painter page):** `docs/prototypes/model-part-painter.html` (listed in docs/prototypes/README.md; the
+   orchestrator publishes it and adds the link): loads a GLB and a part map (file picker, drop, or the Peasant from
+   the repo), shows the parts flat-shaded in distinct colours, real colours, a creature's colour variants recoloured
+   by part (`dwell_models::recolour`'s rule) or a joint's skin weights; front/side/back/top, orbit; a brush (screen px,
+   front faces only), fill island, fill same colour within the brush; parts added and renamed (≤ 6), counts;
+   undo/redo; the other detail levels' mapped parts (read-only); exports the part map exactly as `parts.mjs` writes it
+   (refused when the vertex count isn't the GLB's `detail_0`). `node --test shared/models/painter.test.mjs` runs the
+   page's core against `parts.mjs` (the Peasant's export byte for byte). Left: the owner repaints the Peasant's face
+   and hair with it.
 
 ## Future (needs owner answers)
 

@@ -20,6 +20,7 @@ link). They are not part of any build; Prettier and CI ignore `docs/`.
 | Falling-sand water (3D) | [`fluid-ca-3d.html`](./fluid-ca-3d.html) | not published | The same rules in 3D (fall, diagonal, a per-layer distance field): basins, a spring filling a valley, tanks and a pipe ([evaluation](../proposals/WATER_MODEL_EVALUATION.md) §5) |
 | Leaf Lab | [`leaf-lab.html`](./leaf-lab.html) | https://claude.ai/artifact/FXhLL4srjPF1tzCts5m6cq | Ways to make 1 m leaf cells read better beside the octagonal trunks ([ADR 0072](../adr/0072-octagonal-logs.md)): canopy normals, chamfered exposed cells, painted leaf cards, their combinations and a smooth-blob reference, side by side, with a growth slider |
 | Voxel models | [`vox/`](./vox/README.md) | not published (open the `.vox` files in MagicaVoxel) | The player, the wolf and the deer from `shared/characters` voxelized at their rest pose, one named model per part in a group per bone, for artists to refine (C0 follow-up) |
+| Model Part Painter | [`model-part-painter.html`](./model-part-painter.html) | not published yet | Paint which part (skin, hair, hat, shirt, …) each vertex of a skinned model's full mesh belongs to, preview a creature's colour variants by part, export the part map (`shared/models/parts/<model>.json`; WORK_QUEUE item 43, [CHARACTERS.md §11.11](../CHARACTERS.md)) |
 
 The first two feed [`ADAPTIVE_BLOCKS.md`](../ADAPTIVE_BLOCKS.md) (Phase 18, formerly 9e) and
 [ADR 0024](../adr/0024-adaptive-natural-blocks.md); Tree Growth feeds
@@ -147,6 +148,33 @@ The first two feed [`ADAPTIVE_BLOCKS.md`](../ADAPTIVE_BLOCKS.md) (Phase 18, form
   generator's own validation message.
 - **Copy back**: one material, the whole `materials.json` or `palette.json`, ready to paste into
   `shared/textures/`. Edits are kept in the browser; **Reset** returns to the repo's data.
+
+## Model Part Painter
+
+- WORK_QUEUE item 43 (owner, 2026-11-12: "You should have tooling for debugging this and setting up a model so it
+  can be retextured."), after bug #96. Feeds [`CHARACTERS.md`](../CHARACTERS.md) §11.11's part maps.
+- **Loads** a GLB (Open files, drag-drop, or **Load the Peasant**, which fetches its GLB, part map, `models.json`,
+  the palette and `creatures.json` when the page is served from the repo's root: `python3 -m http.server`, then
+  `/docs/prototypes/model-part-painter.html`), a part map (refused with a message if its vertex count is not the
+  GLB's `detail_0`), `palette.json`, `creatures.json` and `models.json` (its `palette.exclude`), each recognised
+  by its content. Or starts a **new empty map** or one **seeded from colours** (each vertex its nearest palette
+  ramp, the six commonest ramps a part each).
+- **Views:** flat-shaded, orbit, pan and zoom, front, side, back and top; **Parts** (a colour a part), **Real
+  colours** (the GLB's), **Variant** (a creature's `colours` entries, each `from → to` picked or cycled, recoloured
+  by part with `dwell_models::recolour`'s luminance-ratio rule) and **Weights** (a joint's skin weight as heat;
+  Alt-click picks the vertex's heaviest joint). Vertex dots and edges. The **Level** select shows `detail_1…`
+  with their parts mapped from `detail_0` as `parts.mjs` `levelParts` does (read-only). Hovering shows the
+  vertex's index, part, island, colour and nearest ramp, height and weights.
+- **Paint:** a brush (radius in screen pixels, `[` `]`; **front faces only** skips vertices hidden behind the
+  mesh), **Fill island** (the welded, connected island under the cursor, as `parts.mjs` `islands`), **Fill same
+  colour** (the vertices in the brush of the colour under the cursor). The part list adds and renames up to six
+  parts (a rename or delete carries to the `seed` rules), shows vertex counts and a display colour; `0`–`6` pick
+  a part, `0` erases. Undo and redo.
+- **Export** downloads or copies the part map exactly as `parts.mjs` writes it (`$comment` and `seed` kept);
+  loading the exported file reproduces it. Put it at `shared/models/parts/` and run `node shared/models/gen.mjs`.
+- **Tested:** the page's pure core (`<script id="core">`: the GLB reader, islands, rows, the check, the export,
+  the level mapping, the recolour) is run by `node --test shared/models/painter.test.mjs` against `parts.mjs`
+  on the Peasant (the export byte for byte). `window.painter` drives it from a script.
 
 ## Updating them
 
