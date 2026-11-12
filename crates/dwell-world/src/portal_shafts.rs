@@ -13,8 +13,10 @@ use std::sync::Arc;
 use crate::Face;
 
 /// The exit push (`midplane.json` `portals.exit`): in a shaft's footprint, a body rising at least
-/// `min_rise` m/s with its feet within `depth` m under the opening is pushed along its facing at
-/// `push` m/s², like a steady crosswind across the shaft's top. A faster rise crosses the depth
+/// `min_rise` m/s with its feet within `depth` m over the opening is pushed along its facing at
+/// `push` m/s², like a steady crosswind across the shaft's mouth. Over the opening, not in the
+/// shaft: a body that rose against the shaft's wall (it walked in, BUGS.md #107) would be pushed
+/// into the wall there and get nothing; over the rim it is clear of every wall. A faster rise crosses the depth
 /// sooner (less push) and flies longer, so where it lands doesn't depend on how fast it rose:
 /// about `2 · push · depth / g` m beyond where it left the shaft. A jump (a few m/s) and a ladder
 /// climb are never pushed; a body swung up from the far face (tens of m/s) is.
@@ -22,7 +24,7 @@ use crate::Face;
 pub struct PortalExit {
     /// m/s² along the facing.
     pub push: f32,
-    /// m: how far under the opening (its rim's top) the push begins.
+    /// m: how far over the opening (its rim's top) the push acts.
     pub depth: f32,
     /// m/s: the least rising speed that is pushed.
     pub min_rise: f32,
@@ -85,18 +87,31 @@ impl PortalShafts {
 
     /// The exit push's speed gain this step (m/s along the facing, ≥ 0) for an airborne body on
     /// `face` at world column (`x`, `z`) with its feet at face-local height `feet` (`FaceFrame::y`),
-    /// rising at `rise` m/s: zero outside every shaft, below the push's depth, above the opening,
-    /// or rising slower than `min_rise`.
-    pub fn exit_push(&self, face: Face, [x, feet, z]: [f64; 3], rise: f32, dt: f32) -> f32 {
+    /// rising at `rise` m/s under `gravity` m/s²: zero outside every shaft, under the opening (in
+    /// the shaft), more than the push's depth over it, not rising, or slower than `min_rise` when
+    /// it passed the opening (`rise² + 2 g (feet − top)`, the speed it had there, with no state:
+    /// a jump from the rim would need its apex `min_rise² / 2g` over the opening, ~2.5 m).
+    pub fn exit_push(
+        &self,
+        face: Face,
+        [x, feet, z]: [f64; 3],
+        rise: f32,
+        gravity: f32,
+        dt: f32,
+    ) -> f32 {
         let e = self.exit;
-        if e.push <= 0.0 || rise < e.min_rise {
+        if e.push <= 0.0 || rise <= 0.0 {
             return 0.0;
         }
         let Some(s) = self.at(x, z) else {
             return 0.0;
         };
-        let top = s.top(face);
-        if feet < top - f64::from(e.depth) || feet > top {
+        let over = feet - s.top(face);
+        if over < 0.0 || over > f64::from(e.depth) {
+            return 0.0;
+        }
+        let at_opening = f64::from(rise).powi(2) + 2.0 * f64::from(gravity) * over;
+        if at_opening < f64::from(e.min_rise).powi(2) {
             return 0.0;
         }
         e.push * dt
@@ -109,7 +124,7 @@ mod tests {
 
     const EXIT: PortalExit = PortalExit {
         push: 30.0,
-        depth: 6.0,
+        depth: 2.0,
         min_rise: 10.0,
     };
 
@@ -128,18 +143,28 @@ mod tests {
     fn the_exit_push_acts_in_a_shafts_top_on_a_fast_rise_only() {
         // both-faces: the opening's height is each face's own.
         let s = shafts();
-        let dt = 1.0 / 60.0;
+        let (g, dt) = (20.0, 1.0 / 60.0);
         let full = 30.0 * dt;
-        assert_eq!(s.exit_push(Face::A, [10.5, 47.0, -4.5], 20.0, dt), full);
-        assert_eq!(s.exit_push(Face::B, [10.5, 37.0, -4.5], 20.0, dt), full);
-        // Face B's opening is lower: 47 m there is above it.
-        assert_eq!(s.exit_push(Face::B, [10.5, 47.0, -4.5], 20.0, dt), 0.0);
-        // Below the depth, too slow (a jump), outside the footprint: none.
-        assert_eq!(s.exit_push(Face::A, [10.5, 40.0, -4.5], 20.0, dt), 0.0);
-        assert_eq!(s.exit_push(Face::A, [10.5, 47.0, -4.5], 7.0, dt), 0.0);
-        assert_eq!(s.exit_push(Face::A, [13.5, 47.0, -4.5], 20.0, dt), 0.0);
+        assert_eq!(s.exit_push(Face::A, [10.5, 51.0, -4.5], 20.0, g, dt), full);
+        assert_eq!(s.exit_push(Face::B, [10.5, 41.0, -4.5], 20.0, g, dt), full);
+        // Face B's opening is lower: 51 m there is over its depth.
+        assert_eq!(s.exit_push(Face::B, [10.5, 51.0, -4.5], 20.0, g, dt), 0.0);
+        // In the shaft, under the opening (BUGS.md #107: a wall there takes the push), over the
+        // depth, outside the footprint: none.
+        assert_eq!(s.exit_push(Face::A, [10.5, 49.0, -4.5], 20.0, g, dt), 0.0);
+        assert_eq!(s.exit_push(Face::A, [10.5, 52.5, -4.5], 20.0, g, dt), 0.0);
+        assert_eq!(s.exit_push(Face::A, [13.5, 51.0, -4.5], 20.0, g, dt), 0.0);
+        // Slowed over the opening, it passed it fast: 8 m/s 1.5 m over it was ~11 m/s there.
+        assert_eq!(s.exit_push(Face::A, [10.5, 51.5, -4.5], 8.0, g, dt), full);
+        // A jump (5 m/s at the rim's top, ~0.6 m up) never was; nor is a fall.
+        assert_eq!(s.exit_push(Face::A, [10.5, 50.0, -4.5], 5.0, g, dt), 0.0);
+        assert_eq!(s.exit_push(Face::A, [10.5, 50.6, -4.5], 0.5, g, dt), 0.0);
+        assert_eq!(s.exit_push(Face::A, [10.5, 51.0, -4.5], -20.0, g, dt), 0.0);
         // A world without portals pushes nothing.
         let none = PortalShafts::default();
-        assert_eq!(none.exit_push(Face::A, [10.5, 47.0, -4.5], 20.0, dt), 0.0);
+        assert_eq!(
+            none.exit_push(Face::A, [10.5, 51.0, -4.5], 20.0, g, dt),
+            0.0
+        );
     }
 }

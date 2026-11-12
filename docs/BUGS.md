@@ -13,20 +13,6 @@ the build volume before sending it, testing `inside_build_volume`, the 1× build
 (`WorldBounds::volume`). In a 4×–10× world, where the spawn is often past 50 km, placing would do nothing while
 breaking works. Fix: give the block interaction the world's volume (`Game::set_world`), with a 4× test.
 
-### 107. In the browser a player dropped into a portal doesn't come out beside face B's hole (the exit push)
-
-Found recording showcase #1 v3 (2026-11-12, 0.54.205's tree). Seed 7's portal (`?fresh=1&seed=7&spawn=portal`,
-axis 1779.5, 20690.5; `top` A 51.0, B 44.5): walked in on the diagonal (yaw 45) and dropped, the player rises ~12 m
-out of face B's hole (feet to y −56.3), gets no sideways push, falls straight back and swings on; on the return the
-push **does** act on face A (lands ~6.7 m from the axis on face A's ground). 5 of 5 browser drops the same, with and
-without the theater camera, with the look held at yaw 45 or let go after the crossing, from yaw 45 or 135. Natively
-the same shaft works: `drop_in` (`crates/dwell-physics/tests/portal_exit.rs`) on seed 7's nearest shaft from face A
-lands on face B 5.96 m from the axis after one crossing. Suspects: something in the browser path on face B only —
-the look the client sends after the crossing (`look_yaw`), the client's prediction against the local server, or
-the input after the face change. Repro to start from: the take script
-`.claude/skills/record/paths/bifacial-v3/portaltake.js` (`{"noCam": true}` logs the drop, the apex and where it
-ends).
-
 ### 106. Trees look like sticks
 
 Owner, 2026-11-12 (on a release after the blocked stretch, ~60 versions newer than the last they played): "What
@@ -515,6 +501,33 @@ shallow ramp, maybe same problem with steep ramps too?" Not investigated yet: ta
 face, or the placement check against its shape.
 
 ## Fixed
+
+### 107. In the browser a player dropped into a portal doesn't come out beside face B's hole (fixed after 0.55.5)
+
+Found recording showcase #1 v3 (2026-11-12, 0.54.205's tree). Seed 7's portal (`?fresh=1&seed=7&spawn=portal`,
+axis 1779.5, 20690.5; `top` A 51.0, B 44.5): walked in on the diagonal (yaw 45) and dropped, the player rises ~12 m
+out of face B's hole (feet to y −56.3), gets no sideways push, falls straight back and swings on; on the return the
+push **does** act on face A (lands ~6.7 m from the axis on face A's ground). 5 of 5 browser drops the same, with and
+without the theater camera, with the look held at yaw 45 or let go after the crossing, from yaw 45 or 135. Natively
+the same shaft works: `drop_in` (`crates/dwell-physics/tests/portal_exit.rs`) on seed 7's nearest shaft from face A
+lands on face B 5.96 m from the axis after one crossing. Suspects: something in the browser path on face B only —
+the look the client sends after the crossing (`look_yaw`), the client's prediction against the local server, or
+the input after the face change. Repro to start from: the take script
+`.claude/skills/record/paths/bifacial-v3/portaltake.js` (`{"noCam": true}` logs the drop, the apex and where it
+ends).
+
+**Cause:** not the face or the look (the yaw crosses unchanged, the browser's local server and the prediction both
+hold the shafts). The take *walked* in: with the walk's momentum the body fell into the shaft wall's corner on the
+diagonal (1.29 m out on each axis) and rose against it, and the push acted only **under** the opening, inside the
+shaft, along the facing (yaw 45): straight into that wall, which took it all. `drop_in` starts on the axis, so it
+never met the wall. On face A's return the body had drifted where its facing had room. **Fix:** the push acts in the
+`exit.depth` m **over** the opening (clear of every wall), on a body that passed the opening at `minRise` or more
+(`rise² + 2g·(feet − top)`, stateless; a jump from the rim never qualifies). Tests, red before and green after:
+`bug_107_a_player_who_walks_into_a_portal_lands_beside_the_far_hole` (`crates/dwell-client/tests/game_local.rs`: the
+take's walk-in on seed 7 through `LocalCore`, the session and the game's prediction; the rig now calls
+`Game::set_world` for every size, as the web app does) and
+`a_player_who_falls_against_the_shafts_wall_still_lands_beside_the_far_hole` (`portal_exit.rs`, both faces). The
+browser check is left for the next video take.
 
 ### 108. Worlds bigger than 2× stop drawing terrain past a stepped edge (it's there to walk on) (fixed after 0.54.215)
 

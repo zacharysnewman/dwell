@@ -491,16 +491,21 @@ Before, a player who dropped in fell ~2.2 s to the midplane at ~40 m/s, passed t
 several metres out of the far opening, fell straight back in and swung between the faces for ever
 (the band's boost even adds a little each pass).
 
-- **Physics, not flight or a teleport:** a steady crosswind across the shaft's top. In a shaft's
+- **Physics, not flight or a teleport:** a steady crosswind across the shaft's mouth. In a shaft's
   footprint (its axis within `radius`), a body that is airborne (not climbing, flying or swimming),
-  rising at least `exit.minRise` m/s and with its feet within `exit.depth` m under the opening (the
-  rim's top) is pushed along its facing (the face-local heading) at `exit.push` m/s². A faster rise
-  crosses the depth sooner (less push) and flies longer, so where it lands doesn't depend on how fast
-  it rose: about `2 · push · depth / g` m out (30 × 2 × 2 / 20 = 6 m from the axis, 2–4 m past
-  the rim, inside the clear ground). The push is momentum (the horizontal layer's `external`, kept in
+  rising, with its feet within `exit.depth` m **over** the opening (the rim's top) and having passed
+  the opening at `exit.minRise` m/s or more (`rise² + 2g·(feet − top)`, no state kept) is pushed
+  along its facing (the face-local heading) at `exit.push` m/s². Over the opening, not in the shaft
+  (BUGS.md #107): a player who walked in falls with the walk's momentum into the shaft's wall and
+  rises against it, and a push under the opening along its facing went into that wall and it fell
+  straight back; over the rim no wall is in the way. A faster rise crosses the depth sooner (less
+  push) and flies longer, so where it lands doesn't depend on how fast it rose: about
+  `2 · push · depth / g` m out (30 × 2 × 2 / 20 = 6 m from the axis, 2–4 m past the rim, inside the
+  clear ground). The push is momentum (the horizontal layer's `external`, kept in
   the air), so the arc is the body's own. The player picks where it lands by facing; between the
   monument's pillars (the diagonals) the ground is clear.
-- **Never pushed:** a jump (a few m/s, under `minRise`; the data must keep `minRise` ≥ 8 m/s), a
+- **Never pushed:** a jump (a few m/s at the rim's top, under `minRise`: it would need its apex
+  `minRise² / 2g` ≈ 2.5 m over the opening; the data must keep `minRise` ≥ 8 m/s), a
   ladder climb (the climb layer), a fall (it isn't rising), flight.
 - **Data:** `midplane.json` `portals.exit` {`push` 30, `depth` 2, `minRise` 10}, validated by
   `shared/worldgen/gen.mjs` (ranges, unknown keys, `minRise`) into `PortalRules::exit`. It is
