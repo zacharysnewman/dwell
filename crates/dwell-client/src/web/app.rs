@@ -2840,6 +2840,13 @@ impl Client {
                 set(&r, "waitingInView", l.waiting[0] as u32);
                 set(&r, "waitingOffView", l.waiting[1] as u32);
                 set(&r, "waitingNearOffView", l.waiting[2] as u32);
+                // BUGS.md #108: what the view wants, holds meshed, draws as nothing, and what the
+                // budget dropped (with `drawn` per level and `errorScale`, raised over the budget).
+                set(&r, "wanted", l.wanted as u32);
+                set(&r, "built", l.built as u32);
+                set(&r, "drawnTotal", l.drawn.iter().sum::<usize>() as u32);
+                set(&r, "empty", l.empty as u32);
+                set(&r, "evicted", l.evicted as f64);
                 r.into()
             }),
         );

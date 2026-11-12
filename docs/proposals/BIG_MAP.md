@@ -281,6 +281,11 @@ world keeps its own; `tests/host.rs`). The LOD system's near-rim check and its i
   tunes a 1× disc (its map texel is the build's radius); the flat and sandbox worlds stay 1×;
   `portal_spawn_for` (`?spawn=portal`) and Realistic worlds' plates and climate are still 1×'s; a
   `?size=` link's world (like a spawn link's) has no menu record.
+- **Fix after M2b (BUGS.md #108, 2026-11-12):** past 2× the terrain stopped drawing at the 1× disc's 50 km
+  circle (and at 8×/10× round the spawn): the LOD's section classification (`lod::kind_from_bounds`, in
+  `LodSystem::classify` and `BifacialTerrain::generate_lod`) still tested the build's 1× disc. It now classifies in
+  the world's (`kind_from_bounds_of`); tests at 4×, 8× and 10× on both faces (`dwell-lod` big-world tests,
+  `dwell-worldgen` `tests/world_size.rs`). The block placement check is the next 1× reader (BUGS.md #109).
 - **M3 — audit the shaders** for absolute f32 world coordinates; a test that feeds one at 500 km
   (3.1 cm steps).
 - **M4 — slimmer grids.** f16 for the biome and drainage grids, one shared drainage height copy;
