@@ -443,6 +443,19 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 97. `dwell-mesh`'s face-parity test fails on face B at a leaf card's packed normal (fixed after 0.54.173)
+
+Owner's brief, 2026-11-12: "`cargo test -p dwell-mesh` a_chunk_meshes_the_same_face_local_on_either_face::b fails on
+main (\"cutout plants\"), reported by two sessions." Suspected: 6578783's Tall grass density (a per-cell hash not
+face-local) or the faded-plant drop. Cause: neither; the test fails the same at e9b27e2, before 6578783. The
+differing value is a leaf card's `plants.y`, its plane normal octahedral-packed (#78's far-side cull, `card_speed`).
+Two parts: the test's `local_mesh` turned positions and normals face-local but not the packed normal; and the
+packing's 2047-step grid is odd, so the octahedral fold falls between grid points and face B's mirror (unpack, flip
+y, re-pack in `flip_arrays_y`) drifted a step from face A's (-786733 vs -786734). Fixed: the grid is 2048 steps
+(`leaves::CARD_GRID`, radix 2049, the WGSL `card_normal` with it), the square's folded edges and corners packed one
+way, and `local_mesh` un-flips the packed normal. Tests: the parity test (red → green), and
+`a_leaf_cards_packed_normal_flips_exactly` (red on the old grid: a flip and back changed the bits).
+
 ### 94. Jumping into a tree's leaves rubber-bands you toward the ground until you back out (fixed after 0.54.14x)
 
 Owner, 2026-11-12: "A bug I just found seems to be a mismatch between server and client for leaves collision.

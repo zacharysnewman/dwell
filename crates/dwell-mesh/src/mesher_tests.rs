@@ -1422,6 +1422,13 @@ fn local_mesh(f: FaceFrame, mut m: MeshArrays) -> MeshArrays {
         for v in m.normals.iter_mut().skip(1).step_by(3) {
             *v = -*v;
         }
+        // A leaf card's packed plane normal (`leaves::card_speed`, negative) is a normal too.
+        for speed in m.plants.iter_mut().skip(1).step_by(4) {
+            if *speed < 0.0 {
+                let n = leaves::card_normal_of(*speed);
+                *speed = leaves::card_speed([n[0], -n[1], n[2]]);
+            }
+        }
         for t in m.indices.chunks_exact_mut(3) {
             t.swap(1, 2);
         }
@@ -2582,6 +2589,37 @@ dwell_world::both_faces!(
         assert!(without.plants.iter().all(|&v| v == 0.0));
     }
 );
+
+/// Face B's mirror re-packs a leaf card's packed normal y-flipped (`flip_arrays_y`); turning it
+/// back must give face A's bits, or a face-B card's normal drifts a grid step from its mirror's
+/// (`a_chunk_meshes_the_same_face_local_on_either_face`). Red before: on the odd 2047-step grid
+/// the octahedral fold falls between grid points.
+#[test]
+fn a_leaf_cards_packed_normal_flips_exactly() {
+    // both-faces: the packing's own y flip, the mirror between the faces.
+    let flip = |p: f32| {
+        let n = leaves::card_normal_of(p);
+        leaves::card_speed([n[0], -n[1], n[2]])
+    };
+    let mut checked = 0;
+    for i in 0..64 {
+        for j in 0..32 {
+            let (a, b) = (
+                f64::from(i) / 64.0 * std::f64::consts::TAU,
+                f64::from(j) / 31.0 * std::f64::consts::PI,
+            );
+            let n = [b.sin() * a.cos(), b.cos(), b.sin() * a.sin()];
+            let p = leaves::card_speed(n);
+            assert!(
+                p < 0.0 && (-p) < (1 << 24) as f32,
+                "{p} marks a card, exactly"
+            );
+            assert_eq!(flip(flip(p)), p, "{n:?} packs {p}, and back through a flip");
+            checked += 1;
+        }
+    }
+    assert_eq!(checked, 64 * 32);
+}
 
 dwell_world::both_faces!(
     /// BUGS.md #78: each leaf card carries its plane's normal packed in `plants.y` (negative: a

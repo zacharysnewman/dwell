@@ -915,17 +915,18 @@ fn tree_lean(rel: vec3f) -> vec3f {
     return frame.lean_hinge.xyz + d * c + cross(k, d) * s + k * dot(k, d) * (1.0 - c);
 }
 
-// A leaf card's `plant.y` is -(1 + its plane normal octahedral-packed in 11 + 11 bits)
-// (dwell-mesh leaves.rs `card_speed`): a plant's is its wind speed (>= 0), a card's 1.
+// A leaf card's `plant.y` is -(1 + its plane normal octahedral-packed on a 2048-step grid per
+// axis, u * 2049 + v) (dwell-mesh leaves.rs `card_speed`, `CARD_GRID`): a plant's is its wind
+// speed (>= 0), a card's 1.
 fn plant_speed(plant: vec4f) -> f32 {
     return select(plant.y, 1.0, plant.y < 0.0);
 }
 fn card_normal(packed: f32) -> vec3f {
     let q = -packed - 1.0;
-    let uq = floor(q / 2048.0);
-    let vq = q - uq * 2048.0;
-    let u = uq / 2047.0 * 2.0 - 1.0;
-    let v = vq / 2047.0 * 2.0 - 1.0;
+    let uq = floor(q / 2049.0);
+    let vq = q - uq * 2049.0;
+    let u = uq / 2048.0 * 2.0 - 1.0;
+    let v = vq / 2048.0 * 2.0 - 1.0;
     var n = vec3f(u, 1.0 - abs(u) - abs(v), v);
     if (n.y < 0.0) {
         // Octahedral decoding's quadrant sign (not a face sign): +1 where the coordinate is >= 0.
