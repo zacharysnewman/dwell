@@ -856,6 +856,11 @@ by default) and a combat hook; the combat AI waits for the sword mechanic.
   characters rig's clip for its role (`npc_rig_pose`: idle, walk, sprint; a role the rig has no clip
   for, `look` and `sit`, plays idle), looped at a phase of its own, its held item's hold on top, so the
   sword sits in its fist as in a player's.
+- **The remap matches linear colours** (round 2 fix): the GLBs' `COLOR_0` is linear (glTF), so the
+  remap compares the ramp bases through the sRGB curve (`dwell_models::srgb_to_linear`); in sRGB it
+  matched no vertex and every villager drew alike. Seen in game (5 spawned villagers): shirts,
+  trousers and skin vary; the `hair` part's `hair_brown` is mostly the **hat** (its 942 vertices), so
+  hats take hair colours: the part→ramp guess needs the owner's call (a hat part of its own).
 - **Dev**: `__dwell.spawnNpcs(n, radius?, variant?)` (a local world) puts `n` villagers (≤ 16) in a
   ring round the player, each its own variant (`Server::spawn_npcs_dev`).
 - **Not yet**: sit and look-around clips (the rig has none); the NPC's raised guard and swings drawn
