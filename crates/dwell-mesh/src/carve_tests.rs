@@ -7,6 +7,8 @@ const LOOK: CutLook = CutLook {
     tint: [255; 3],
     open: 2.5,
     kerf_width_m: 0.035,
+    bite: dwell_protocol::chopping::BITE_LOOK,
+    cracks: None,
 };
 
 /// The sum of the faces' area vectors (zero for a closed surface) and the enclosed volume.

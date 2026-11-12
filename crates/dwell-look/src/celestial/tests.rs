@@ -137,11 +137,15 @@ fn the_lit_share_grows_from_new_to_full_and_wanes_after() {
         assert!(l <= last + 1e-3, "waning at {k}: {l} after {last}");
         last = l;
     }
-    // Physical (owner: no dome bias): a flat disc is dark from last quarter to first and lit as
-    // a whole between, so a gibbous moon is part-lit.
-    assert!(lit(0.2) == 0.0 && lit(0.8) == 0.0);
-    let gibbous = lit(0.375);
-    assert!(gibbous > 0.5 && gibbous < 0.9, "{gibbous}");
+    // The domed disc (owner: "maybe do that"): a crescent is part-lit, a quarter about half, a
+    // gibbous most; the month is not half dark.
+    let (crescent, quarter, gibbous) = (lit(0.125), lit(0.25), lit(0.375));
+    // (Lambert: the lit share is the light the face sends home, a ball's ~1/π of full at a quarter.)
+    assert!(crescent > 0.0 && crescent < quarter, "{crescent}");
+    assert!(quarter > 0.1 && quarter < 0.6, "{quarter}");
+    assert!(gibbous > 0.5 && gibbous < 0.97, "{gibbous}");
+    assert!(lit(0.8) > 0.0);
+    eprintln!("lit share: crescent {crescent:.3}, quarter {quarter:.3}, gibbous {gibbous:.3}");
     // The geometric phase follows the month's count (within the inclination).
     for k in 0..64 {
         let p = f64::from(k) / 64.0;
@@ -322,4 +326,21 @@ fn an_orbit_from_data_alone_moves_the_moon() {
     }
     let full = c.view(at_phase(&c, 0.5, 0.0), [0.0; 3]);
     assert!(full.lit > 1.0 - 1e-9, "exactly opposite with no tilt");
+}
+
+#[test]
+fn the_disc_lit_share_spans_flat_to_ball() {
+    use super::disc_lit;
+    for c in [-1.0, -0.5, 0.0, 0.3, 0.7, 1.0] {
+        assert!(
+            (disc_lit(c, 0.0) - f64::max(c, 0.0)).abs() < 1e-9,
+            "flat at {c}"
+        );
+    }
+    // A ball's light: growing with the phase angle's cosine, a third of full at a quarter.
+    let ball = [-0.9, -0.5, 0.0, 0.5, 1.0].map(|c| disc_lit(c, 1.0));
+    assert!(ball.windows(2).all(|w| w[0] < w[1]), "{ball:?}");
+    assert!(ball[2] > 0.2 && ball[2] < 0.5, "{ball:?}");
+    assert_eq!(disc_lit(-1.0, 0.6), 0.0);
+    assert!((disc_lit(1.0, 0.6) - 1.0).abs() < 1e-9);
 }
