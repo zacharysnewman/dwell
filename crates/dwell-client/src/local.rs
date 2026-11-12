@@ -464,6 +464,25 @@ impl LocalCore {
                     Err(e) => format!(r#"{{"error":{e:?}}}"#),
                 }
             }
+            ("spawnNpcs", [n, radius, variant]) => {
+                // Not lava: the local server's dev ops share this channel. `n` villagers in a
+                // ring `radius` m round the local player's feet (DEV_TOOLS.md).
+                let Some(feet) = self
+                    .server
+                    .player_of_session(LOCAL_SESSION)
+                    .and_then(|p| self.server.feet_of(p))
+                else {
+                    return r#"{"error":"no local player"}"#.into();
+                };
+                let ids = self.server.spawn_npcs_dev(
+                    "dwell:villager",
+                    feet,
+                    (*n as usize).min(16),
+                    *radius,
+                    *variant as u32,
+                );
+                format!(r#"{{"ids":{ids:?}}}"#)
+            }
             _ => format!(
                 r#"{{"error":"unknown lava op {op:?} with {} args"}}"#,
                 args.len()

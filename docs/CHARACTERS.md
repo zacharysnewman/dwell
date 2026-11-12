@@ -693,6 +693,15 @@ characters' ramp from the vertex's palette colour, the same lights and shadow ma
   and dark tail tip, faces still flat-shaded. Colours are palette references mixed in sRGB, so a
   coat holds blends between palette stops.
 
+- **Idle poses** (WORK_QUEUE item 39): the animals' packs have only idle, walk and run clips, so a
+  pose (`graze`, `lookUp`, `earFlick`, `sit`, `lie`: the ecology's idle poses) is data on the model,
+  `models.json` `poses`: per pose the joints' turns (degrees, Euler XYZ in each joint's frame) put on
+  top of the idle clip, faded in and out over `poseBlendS` (`skinned::blend_pose`; the old pose fades
+  out before the next comes in). `gen.mjs` fails an unknown pose name or joint, a bad turn or blend;
+  the fixture's two-joint model lies down by data alone. The server sends each herd member's pose
+  (`IdlePose`) as the `creatures.poses` capability's part of `Creatures`, after the NPCs' part
+  (ARCHITECTURE.md §8); a creature left out stands, a moving one shows none, and older clients get
+  neither part. The deer's and the wolf's poses are first guesses tuned by eye.
 - **NPCs** (WORK_QUEUE item 38, §11.11): people drawn as the Peasant who wander among the animals.
 
 ### 11.7 What is left (next)
@@ -843,8 +852,12 @@ by default) and a combat hook; the combat AI waits for the sword mechanic.
   on it (`grips`). Animals, and NPCs from servers without the NPC part, draw as modelled.
   `an_npc_is_drawn_in_its_variants_colours_with_its_sword_in_its_fist` pins it (both faces).
   `__dwell.creatures()` marks NPCs (`npc`).
-- **Not yet**: the Peasant has no sit or look-around clip (the pack has only `idle` and `walk`), so
-  both play idle; NPCs play the Peasant's own clips (no rig pose), so the sword sits in the hand as
-  the idle clip holds it, not in the players' raised hold; the combat behaviour with the swords
-  (item 35).
+- **Posed from the rig** (round 2): an NPC is posed as other players are (§11.9), from the
+  characters rig's clip for its role (`npc_rig_pose`: idle, walk, sprint; a role the rig has no clip
+  for, `look` and `sit`, plays idle), looped at a phase of its own, its held item's hold on top, so the
+  sword sits in its fist as in a player's.
+- **Dev**: `__dwell.spawnNpcs(n, radius?, variant?)` (a local world) puts `n` villagers (≤ 16) in a
+  ring round the player, each its own variant (`Server::spawn_npcs_dev`).
+- **Not yet**: sit and look-around clips (the rig has none); the NPC's raised guard and swings drawn
+  from the server's fight (item 35).
 

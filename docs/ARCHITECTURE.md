@@ -4390,6 +4390,9 @@ S→C  Creatures       0x5e, world: u16 n (at most 512), each u32 id, str model 
                      every 6 ticks, and at a spawn; to a `creatures.npcs` client then u16 n, each
                      u32 id, str kind (≤ 64), u8 pose (0 stand, 1 look, 2 sit), u32 variant: the
                      NPCs among the message's creatures
+                     (written empty for a `creatures.poses` client); to a `creatures.poses`
+                     client then u16 n, each u32 id, u8 pose (1 graze, 2 lookUp, 3 earFlick, 4 sit,
+                     5 lie): the message's creatures not standing (WORK_QUEUE item 39)
 ```
 
 **Ground items: `InventoryAction` 3 and 4, `GroundGone` (reliable) [built, 0.50.68]** (ADR 0071).
@@ -4516,7 +4519,10 @@ above): the server sends `Swordplay` 0x6A (S→C, reliable, world: u8 kind; 0 a 
 fighter defender, str weapon, u8 outcome 0 blocked 1 glanced 2 connected, f32×3 point, u8 bits
 striker vertical 1 | defender vertical 2; 1 the guards: u16 count, each a fighter and u8 bits vertical
 1 | raised 2; a fighter is u8 0 + u16 player id or u8 1 + u32 creature id), and the client sends
-`Chop`'s action 4, `Guard` (u8 raised); neither goes to a peer without the capability.
+`Chop`'s action 4, `Guard` (u8 raised); neither goes to a peer without the capability. The sixth is
+`creatures.poses` (WORK_QUEUE item 39): `Creatures` ends, after the NPCs' part, with the animals' idle
+poses (above), drawn from `models.json` `poses` (CHARACTERS.md §11.6); without it the animals play
+their idle clip.
 ```
 S→C  WorldSettings field 0x85 (optional): u8 count (≤ 64), each str name (≤ 48 bytes, no repeat)
 C→S  Capabilities 0x69, control: the same form — the client's capabilities, once after Welcome,
