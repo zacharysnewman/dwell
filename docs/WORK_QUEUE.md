@@ -923,6 +923,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    reference"). Next (local): run `forest-perf` on the M1 Air for the first numbers, look at the stand, and
    tune the spots if a view misses the densest trees.
 
+   Owner, 2026-11-12, on the Realistic/forest video: **"The realistic forest video didn't show the forest for half of
+   it. And it was slow frame rate in the forest though it looks really pretty."** Next: the forest's frame rate at its
+   edge and inside (24.7 ms at the edge on the M1 at High; the near pass's cutout leaves and tall grass, sun
+   shadows), then the impostors (item 31); re-record the forest video after, with most of it in the forest, recorded
+   frame-exact (the screencast, not real time) so a slow page doesn't show as a slow video.
 33. **Licensed music replaces the generated music** (owner 2026-11-12: "I downloaded a big music set as a Unity
    asset, I'd like the casual game music setup in a prototype and make it play randomly in the game. Probably
    needs compression. It'll replace the current music which is AI generated."). The pack: *Andrew Sitkov Music*

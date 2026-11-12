@@ -134,3 +134,7 @@ preview and the driver, remove any `client/node_modules` symlink or built `clien
   it starts on bare LOD. `?at=` into a dense forest put the eye inside the ground or a crown; the world's own spawn
   (a beach at the forest's edge) gave the best walk-in (`d.press('KeyW', true)` with `d.look` easing the view). The
   screencast fell to ~15 fps on a high rise over the forest; with the theater HUD off no arms showed in first person.
+- 2026-11-12, Realistic world + forest (owner): "didn't show the forest for half of it. And it was slow frame rate in the
+  forest though it looks really pretty." Give the subject most of the video, not half; in a heavy scene (the forest)
+  the page runs under 60 fps, so record frame-exact (step the theater path per captured frame or slow the clock and
+  speed up in the splice) rather than real time, and check the clip's fps before splicing.
