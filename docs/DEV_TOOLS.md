@@ -1272,6 +1272,20 @@ changed by hand is pinned and reads **Custom** (ARCHITECTURE.md §5, the game me
 the exposure and the water's flow switches are outside the presets. `?preset=<id>` draws a visit at a preset
 (the bench's runs below), whatever is stored.
 
+**Every visual feature has a setting** (WORK_QUEUE item 30, owner 2026-11-12: "Ensure all of our graphics have
+settings in our graphics menu"). The Graphics page groups them as Display, Lighting, Sky & weather, Water,
+Terrain & trees, Effects and Distance. The features that had no switch before got one, set by every preset to
+what was drawn before (`client/src/ui/featureSettings.ts`, the `dwell.features` record): **Tall grass** (0–100 %
+of the grass and small plants, kept by cell hash so a lower share thins the same field evenly), **Far trees** (the
+LOD sections' trees), **Distant shadows** (the LOD shadows, at the Shadows tier; they followed Shadows alone
+before), **Hit shards** and **Particles** (0–100 % of a pickaxe hit's fragments, and of the chips, sparks, falling
+leaves and steam), and **Far herds**. Tall grass and Far trees apply to chunks and sections meshed after the
+change (as Leaf cards do), so a world reopened or streamed in shows them at once. To measure one, set it in a
+scratch preset or pin it in Settings before a `--compare` run. `client/src/ui/graphicsAudit.test.ts` is the
+list: every renderer tier function (`render/*_for`), look data file (`shared/look/*.json`), mesher switch
+(`dwell_mesh::ChunkFlags`' fields, the sections' trees) and CPU-tiered client effect (`src/*.rs` with
+`cpu: bool`) names its setting or a written reason it has none, and a new one fails CI until it does.
+
 | Preset | Render scale | Water | Sun & moon shadows | Torch shadows | Light shafts | Bloom | Clouds | Full detail | Distant detail | Distant memory |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Ultra | 100 % | Medium (High until 0.50.29) | High | High | High | High | High | 352 m | 2 px | 512 MB |

@@ -184,7 +184,9 @@ fn emit(
 
 #[cfg(test)]
 mod tests {
-    use crate::lod_mesher::{MeshSectionOptions, mesh_section, mesh_section_tinted};
+    use crate::lod_mesher::{
+        MeshSectionOptions, mesh_section, mesh_section_tinted, mesh_section_trees,
+    };
     use crate::mesher::{ChunkFlags, mesh_chunk_flags};
     use dwell_blocks::require;
     use dwell_world::FaceFrame;
@@ -227,6 +229,24 @@ mod tests {
     }
 
     dwell_world::both_faces!(
+        /// WORK_QUEUE item 30: Graphics → Far trees off meshes a section without its trees (no
+        /// log or leaf cell drawn, so a lone tree's section draws nothing); on, as before (red
+        /// before the switch: there was no way to leave them out).
+        fn far_trees_off_leaves_the_sections_trees_out(f: FaceFrame) {
+            let cells = tree();
+            let options = MeshSectionOptions {
+                mirror: f.is_b(),
+                ..Default::default()
+            };
+            let on = mesh_section_trees(&cells, &options, &[], true).expect("cells");
+            let off = mesh_section_trees(&cells, &options, &[], false).expect("cells");
+            assert_eq!(on, mesh_section(&cells, &options).expect("cells"));
+            assert!(!on.opaque.positions.is_empty(), "the tree is drawn");
+            assert!(off.opaque.positions.is_empty(), "no tree drawn");
+        }
+    );
+
+    dwell_world::both_faces!(
         /// At the LOD's finest cells a tree has the near tree's silhouette (its bounds, within
         /// 0.05 m: the chamfered crown, the octagon trunk), its leaf normals lean out of the crown,
         /// and its trunk has the octagon's diagonal sides, not a square's.
@@ -242,6 +262,7 @@ mod tests {
                 ChunkFlags {
                     water_tops: true,
                     cards: false,
+                    ..ChunkFlags::default()
                 },
             )
             .expect("padded");
@@ -342,6 +363,7 @@ mod tests {
             let flags = ChunkFlags {
                 water_tops: true,
                 cards: true,
+                ..ChunkFlags::default()
             };
             let near = |trees: &[TreeTint]| {
                 mesh_chunk_trees(&cells, &[], f.is_b(), origin, &[], None, flags, &[], trees)

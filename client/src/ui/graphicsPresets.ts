@@ -17,6 +17,7 @@ import { UPSCALE } from './renderScaleSettings';
 import { BLOOM_QUALITIES, CLOUD_QUALITIES, SHAFT_QUALITIES } from './viewSettings';
 import { SHADOW_QUALITIES } from './shadowSettings';
 import { WATER_QUALITIES } from './waterSettings';
+import type { FeatureSettings } from './featureSettings';
 
 export type PresetValue = string | number;
 
@@ -45,6 +46,31 @@ function inRange(r: { min: number; max: number }): (v: unknown) => string | null
 
 function clamp(v: number, r: { min: number; max: number }): number {
   return Math.min(r.max, Math.max(r.min, v));
+}
+
+const ON_OFF = oneOf(['on', 'off']);
+
+/** A 0–1 share of a feature (`Settings.features`, ui/featureSettings.ts). */
+function shareField(key: 'tallGrass' | 'hitShards' | 'particles'): PresetField {
+  return {
+    check: inRange({ min: 0, max: 1 }),
+    get: (s) => s.features[key],
+    with: (s, v) => ({
+      ...s,
+      features: { ...s.features, [key]: clamp(Number(v), { min: 0, max: 1 }) },
+    }),
+  };
+}
+
+/** A feature's on/off switch (`Settings.features`, ui/featureSettings.ts), as "on" or "off". */
+function switchField(
+  key: keyof FeatureSettings & ('farTrees' | 'distantShadows' | 'farHerds'),
+): PresetField {
+  return {
+    check: ON_OFF,
+    get: (s) => (s.features[key] ? 'on' : 'off'),
+    with: (s, v) => ({ ...s, features: { ...s.features, [key]: v === 'on' } }),
+  };
 }
 
 function detailField(key: 'distanceM' | 'pixelError' | 'memoryMb'): PresetField {
@@ -107,10 +133,16 @@ export const PRESET_FIELDS = {
     with: (s, v) => ({ ...s, clouds: v as Settings['clouds'] }),
   },
   leafCards: {
-    check: oneOf(['on', 'off']),
+    check: ON_OFF,
     get: (s) => (s.leafCards ? 'on' : 'off'),
     with: (s, v) => ({ ...s, leafCards: v === 'on' }),
   },
+  tallGrass: shareField('tallGrass'),
+  farTrees: switchField('farTrees'),
+  distantShadows: switchField('distantShadows'),
+  hitShards: shareField('hitShards'),
+  particles: shareField('particles'),
+  farHerds: switchField('farHerds'),
   distanceM: detailField('distanceM'),
   pixelError: detailField('pixelError'),
   memoryMb: detailField('memoryMb'),

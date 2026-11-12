@@ -368,6 +368,50 @@ fn tall_grass() -> u16 {
     require("dwell:tall_grass")
 }
 
+dwell_world::both_faces!(
+    /// WORK_QUEUE item 30 (owner: "Ensure all of our graphics have settings in our graphics
+    /// menu"): Graphics → Tall grass meshes `ChunkFlags::plants` percent of the cross plants: a
+    /// field of grass draws all of them at 100, none at 0, and about half at 50, the half kept being
+    /// the same cells whichever face it is on (red before the flag: every density drew them all).
+    fn the_tall_grass_density_thins_the_cross_plants(f: FaceFrame) {
+        let mut cells = Vec::new();
+        for x in 0..32 {
+            for z in 0..32 {
+                cells.push((x, 7, z, cube_block()));
+                cells.push((x, 8, z, tall_grass()));
+            }
+        }
+        let padded = voxels(&cells);
+        let quads_n = usize::from(
+            dwell_blocks::info(tall_grass())
+                .cross
+                .expect("a cross")
+                .quads,
+        );
+        let plants = |percent: u8| {
+            let m = super::mesh_chunk_flags(
+                &padded,
+                &[],
+                f.is_b(),
+                [0; 3],
+                &[],
+                None,
+                ChunkFlags {
+                    plants: percent,
+                    ..ChunkFlags::default()
+                },
+            )
+            .expect("padded");
+            m.cutout.positions.len() / 3 / 4 / quads_n
+        };
+        assert_eq!(plants(100), 32 * 32);
+        assert_eq!(plants(0), 0);
+        let half = plants(50);
+        assert!((400..=624).contains(&half), "about half kept: {half}");
+        assert!(plants(25) < half && half < plants(75));
+    }
+);
+
 #[test]
 fn draws_tall_grass_as_crossed_cutout_quads_from_its_data() {
     let info = dwell_blocks::info(tall_grass());
@@ -2512,6 +2556,7 @@ dwell_world::both_faces!(
                     ChunkFlags {
                         water_tops: true,
                         cards,
+                        ..ChunkFlags::default()
                     },
                 )
                 .expect("padded"),
@@ -2556,6 +2601,7 @@ dwell_world::both_faces!(
                 ChunkFlags {
                     water_tops: true,
                     cards: true,
+                    ..ChunkFlags::default()
                 },
             )
             .expect("padded"),
@@ -2632,6 +2678,7 @@ dwell_world::both_faces!(
                 ChunkFlags {
                     water_tops: true,
                     cards: true,
+                    ..ChunkFlags::default()
                 },
             )
             .expect("padded"),
@@ -2689,6 +2736,7 @@ dwell_world::both_faces!(
                 ChunkFlags {
                     water_tops: true,
                     cards: true,
+                    ..ChunkFlags::default()
                 },
             )
             .expect("padded"),

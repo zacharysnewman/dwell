@@ -405,6 +405,17 @@ pub fn mesh_section_tinted(
     options: &MeshSectionOptions<'_>,
     tints: &[(u32, Tint)],
 ) -> Result<SectionMeshes, LengthError> {
+    mesh_section_trees(cells, options, tints, true)
+}
+
+/// [`mesh_section_tinted`], with its tree cells (leaves and logs, `lod_trees`) drawn or not:
+/// Graphics → Far trees (WORK_QUEUE item 30). Without them the section draws its ground alone.
+pub fn mesh_section_trees(
+    cells: &[u16],
+    options: &MeshSectionOptions<'_>,
+    tints: &[(u32, Tint)],
+    trees: bool,
+) -> Result<SectionMeshes, LengthError> {
     let map: HashMap<u32, Tint> = tints.iter().copied().collect();
     let mirror = options.mirror;
     // Meshed face-local: a mirrored section's row y is the listed row N − 1 − y.
@@ -415,7 +426,7 @@ pub fn mesh_section_tinted(
             .unwrap_or(Tint::NONE)
     };
     let m = if options.mirror {
-        let m = mesh_section_above(&mirror_rows(cells), options, &tint)?;
+        let m = mesh_section_above(&mirror_rows(cells), options, &tint, trees)?;
         let [s0, s1, s2, s3, s4, s5] = m.skirts;
         let skirts = [s0, s1, s3, s2, s4, s5].map(flip_mesh_y);
         SectionMeshes {
@@ -424,7 +435,7 @@ pub fn mesh_section_tinted(
             skirts,
         }
     } else {
-        mesh_section_above(cells, options, &tint)?
+        mesh_section_above(cells, options, &tint, trees)?
     };
     Ok(SectionMeshes {
         opaque: mesh_to_metres(m.opaque),
@@ -443,6 +454,7 @@ fn mesh_section_above(
     cells: &[u16],
     options: &MeshSectionOptions<'_>,
     tint: &dyn Fn(i32, i32, i32) -> Tint,
+    trees: bool,
 ) -> Result<SectionMeshes, LengthError> {
     if cells.len() != LOD_VOLUME {
         return Err(LengthError {
@@ -622,13 +634,15 @@ fn mesh_section_above(
             }
         }
     }
-    crate::lod_trees::tree_cells(
-        cells,
-        |x, y, z| i32::from(special.y[col(x, z)]) == y,
-        lod_color,
-        &mut opaque.m,
-        tint,
-    );
+    if trees {
+        crate::lod_trees::tree_cells(
+            cells,
+            |x, y, z| i32::from(special.y[col(x, z)]) == y,
+            lod_color,
+            &mut opaque.m,
+            tint,
+        );
+    }
     emit_surfaces(
         cells,
         &special,

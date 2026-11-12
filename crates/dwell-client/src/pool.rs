@@ -136,6 +136,11 @@ pub struct Pool {
     pub water_tops: bool,
     /// Chunk meshes carry leaf cards (false on a CPU adapter, `Scene::draws_cards`).
     pub cards: bool,
+    /// The share of cross plants chunk meshes carry, percent (Graphics → Tall grass,
+    /// `Scene::plant_percent`).
+    pub plants: u8,
+    /// LOD sections draw their trees (Graphics → Far trees, `Scene::draws_far_trees`).
+    pub trees: bool,
     /// Where the player is (m; [`Self::set_focus`]): chunk jobs near it start first.
     focus: Option<[f64; 3]>,
     /// How many times the usual chunk meshes are in flight (`set_frame_ms`).
@@ -179,6 +184,8 @@ impl Pool {
             ready: Vec::new(),
             water_tops: true,
             cards: true,
+            plants: 100,
+            trees: true,
             focus: None,
             frame_scale: 1,
         }));
@@ -422,9 +429,9 @@ impl Mesher for MeshJobs {
         2 * pool.capacity(true) * pool.frame_scale
     }
     fn mesh(&mut self, job: MeshJob) {
-        let (water_tops, cards) = {
+        let (water_tops, cards, plants) = {
             let p = self.0.borrow();
-            (p.water_tops, p.cards)
+            (p.water_tops, p.cards, p.plants)
         };
         self.0.borrow_mut().submit(
             Purpose::ChunkMesh(job.coord, job.token),
@@ -438,6 +445,7 @@ impl Mesher for MeshJobs {
                 ground: job.ground.map(|(seed, gone)| (seed, gone, job.generated)),
                 water_tops,
                 cards,
+                plants,
             },
         );
     }
@@ -458,6 +466,7 @@ impl dwell_lod::SectionSource for ChunkJobs {
 
 impl dwell_lod::SectionMesher for MeshJobs {
     fn mesh_section(&mut self, job: dwell_lod::LodMeshJob, token: u64) {
+        let trees = self.0.borrow().trees;
         self.0.borrow_mut().submit(
             Purpose::SectionMesh(token),
             Job::MeshSection {
@@ -466,6 +475,7 @@ impl dwell_lod::SectionMesher for MeshJobs {
                 water_drop: job.water_drop,
                 mirror: job.mirror,
                 tints: job.tints,
+                trees,
             },
         );
     }

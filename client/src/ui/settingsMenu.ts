@@ -86,6 +86,13 @@ import {
   RANDOM_BACKGROUND,
   sanitizeMenuBackground,
 } from './menuBackground';
+import {
+  FEATURES_KEY,
+  defaultFeatures,
+  featureRecord,
+  sanitizeFeatures,
+  type FeatureSettings,
+} from './featureSettings';
 import { audio } from '../audio/engine';
 import { DEFAULT_VOLUMES, type Volumes } from '../audio/mixer';
 import { AUDIO_KEY, loadVolumes } from '../audio/settings';
@@ -177,6 +184,11 @@ export interface Settings {
    * tier decides (none on a phone or a CPU adapter). Chunks meshed from then on follow it.
    */
   leafCards: boolean;
+  /**
+   * The features with no tier of their own before WORK_QUEUE item 30 (ui/featureSettings.ts): tall
+   * grass, far trees, distant shadows, hit shards, particles, far herds.
+   */
+  features: FeatureSettings;
   /** What the on-screen interface shows (ui/hudSettings.ts, shared/ui/hud.json). */
   hud: HudSettings;
   /** Render scale and its upscaler (ui/renderScaleSettings.ts, shared/render/upscale.json). */
@@ -213,6 +225,7 @@ export function baseSettings(mobile: boolean, reducedMotion = false): Settings {
     fovDeg: DEFAULT_FOV,
     showArms: true,
     leafCards: true,
+    features: defaultFeatures(),
     hud: defaultHud(),
     renderScale: defaultRenderScale(),
     menuBackground: DEFAULT_MENU_BACKGROUND,
@@ -258,6 +271,12 @@ export function settingsJson(s: Settings): string {
     fovDeg: Math.round(s.fovDeg),
     showArms: s.showArms,
     leafCards: s.leafCards,
+    features: {
+      ...s.features,
+      tallGrass: Math.round(s.features.tallGrass * 100) / 100,
+      hitShards: Math.round(s.features.hitShards * 100) / 100,
+      particles: Math.round(s.features.particles * 100) / 100,
+    },
     hud: { shown: { ...s.hud.shown }, mapShading: s.hud.mapShading },
     renderScale: { ...s.renderScale },
     menuBackground: s.menuBackground,
@@ -354,6 +373,7 @@ export function storedSettings(mobile: boolean, defaults: Settings): Settings {
     fovDeg: sanitizeFovSetting(load(VIEW_KEY)),
     showArms: sanitizeShowArms(load(VIEW_KEY)),
     leafCards: sanitizeLeafCards(load(VIEW_KEY)),
+    features: sanitizeFeatures(load(FEATURES_KEY), defaults.features),
     hud: sanitizeHud(load(HUD_KEY)),
     renderScale: sanitizeRenderScale(load(RENDER_SCALE_KEY), UPSCALE, defaults.renderScale),
     menuBackground: sanitizeMenuBackground(load(MENU_KEY)),
@@ -417,6 +437,7 @@ function writeSettings(s: Settings, pins: ReadonlySet<string>): void {
     [SHADOWS_KEY, shadowRecord(load(SHADOWS_KEY), s.shadows)],
     [MOTION_KEY, motionRecord(load(MOTION_KEY), s.motion)],
     [VIEW_KEY, viewRecord(load(VIEW_KEY), s.fovDeg, s.showArms, s.leafCards)],
+    [FEATURES_KEY, featureRecord(load(FEATURES_KEY), s.features)],
     [HUD_KEY, hudRecord(load(HUD_KEY), s.hud)],
     [RENDER_SCALE_KEY, renderScaleRecord(load(RENDER_SCALE_KEY), s.renderScale)],
     [EXPLOSIONS_KEY, explosionRecord(load(EXPLOSIONS_KEY), s.explosions)],
@@ -642,21 +663,124 @@ function panes(mobile: boolean): Record<SettingsPane, Group[]> {
       with: (s, v) => ({ ...s, audio: { ...s.audio, [key]: v } }),
     },
   });
+  // A 0–1 share of a feature (ui/featureSettings.ts), as a percent slider.
+  const share = (
+    label: string,
+    key: 'tallGrass' | 'hitShards' | 'particles',
+    hint: string,
+  ): Row => ({
+    slider: {
+      label,
+      pin: `features.${key}`,
+      hint,
+      min: 0,
+      max: 1,
+      log: false,
+      format: (v) => `${String(Math.round(v * 100))}%`,
+      get: (s) => s.features[key],
+      with: (s, v) => ({ ...s, features: { ...s.features, [key]: v } }),
+    },
+  });
   const choice = <T extends string>(spec: ChoiceSpec<T>): Row => ({
     choice: spec as unknown as ChoiceSpec<string>,
   });
   return {
+    // WORK_QUEUE item 30 (owner, 2026-11-12: "Ensure all of our graphics have settings in our
+    // graphics menu"): every visual feature's setting, grouped; graphicsAudit.test.ts fails on a
+    // feature with none.
     graphics: [
       {
-        title: 'Quality',
+        title: 'Display',
         rows: [
           ...RENDER_SCALE_CHOICES.map(choice),
           ...ANTIALIAS_CHOICES.map(choice),
-          choice(WATER_CHOICE),
+          {
+            slider: {
+              label: 'Exposure',
+              pin: 'exposure',
+              hint: 'How bright the picture is after tone mapping',
+              ...EXPOSURE_LIMITS,
+              log: true,
+              format: (v) => `${v.toFixed(2)}×`,
+              get: (s) => s.exposure,
+              with: (s, v) => ({ ...s, exposure: v }),
+            },
+          },
+          // No Model detail slider (owner, 2026-11-10: "Keep the logic for changing the detail. But
+          // we can remove the slider and make 60% the default"): the level is models.json's
+          // `detail.default`, a pin stored before still applies, and ?modeldetail= overrides it.
+        ],
+      },
+      {
+        title: 'Lighting',
+        rows: [
           choice(SHADOW_CHOICE),
+          {
+            toggle: {
+              label: 'Distant shadows',
+              pin: 'features.distantShadows',
+              hint: 'Sun shadows on the distant terrain, at the Shadows quality; off is lighter on the GPU',
+              get: (s) => s.features.distantShadows,
+              with: (s, v) => ({ ...s, features: { ...s.features, distantShadows: v } }),
+            },
+          },
           choice(TORCH_SHADOW_CHOICE),
-          choice(CLOUD_CHOICE),
           ...CHOICES.map(choice),
+        ],
+      },
+      { title: 'Sky & weather', rows: [choice(CLOUD_CHOICE)] },
+      {
+        title: 'Water',
+        rows: [choice(WATER_CHOICE), ...WATER_FLOW_TOGGLES.map((toggle) => ({ toggle }))],
+      },
+      {
+        // BUGS.md #78 (owner: "I don't see 'tree' options in our settings for graphics").
+        title: 'Terrain & trees',
+        rows: [
+          {
+            toggle: {
+              label: 'Leaf cards',
+              pin: 'leafCards',
+              hint: 'Painted leaf clumps on near trees; off is lighter on the GPU (never drawn on phones)',
+              get: (s) => s.leafCards,
+              with: (s, v) => ({ ...s, leafCards: v }),
+            },
+          },
+          share(
+            'Tall grass',
+            'tallGrass',
+            'How much of the tall grass and small plants is drawn; less is lighter on the GPU',
+          ),
+          {
+            toggle: {
+              label: 'Far trees',
+              pin: 'features.farTrees',
+              hint: 'Trees on the distant terrain; off draws its ground alone',
+              get: (s) => s.features.farTrees,
+              with: (s, v) => ({ ...s, features: { ...s.features, farTrees: v } }),
+            },
+          },
+        ],
+      },
+      {
+        title: 'Effects',
+        rows: [
+          share('Hit shards', 'hitShards', 'How many stone fragments fly from a pickaxe hit'),
+          share('Particles', 'particles', 'How many chips, sparks, falling leaves and steam puffs'),
+          {
+            toggle: {
+              label: 'Far herds',
+              pin: 'features.farHerds',
+              hint: 'Herds of animals far off, past the ones near you',
+              get: (s) => s.features.farHerds,
+              with: (s, v) => ({ ...s, features: { ...s.features, farHerds: v } }),
+            },
+          },
+        ],
+      },
+      {
+        title: 'Distance',
+        rows: [
           {
             slider: {
               label: 'Full detail',
@@ -693,42 +817,6 @@ function panes(mobile: boolean): Record<SettingsPane, Group[]> {
               with: (s, v) => ({ ...s, detail: { ...s.detail, memoryMb: v } }),
             },
           },
-        ],
-      },
-      {
-        // BUGS.md #78 (owner: "I don't see 'tree' options in our settings for graphics").
-        title: 'Trees',
-        rows: [
-          {
-            toggle: {
-              label: 'Leaf cards',
-              pin: 'leafCards',
-              hint: 'Painted leaf clumps on near trees; off is lighter on the GPU (never drawn on phones)',
-              get: (s) => s.leafCards,
-              with: (s, v) => ({ ...s, leafCards: v }),
-            },
-          },
-        ],
-      },
-      {
-        title: 'Look',
-        rows: [
-          {
-            slider: {
-              label: 'Exposure',
-              pin: 'exposure',
-              hint: 'How bright the picture is after tone mapping',
-              ...EXPOSURE_LIMITS,
-              log: true,
-              format: (v) => `${v.toFixed(2)}×`,
-              get: (s) => s.exposure,
-              with: (s, v) => ({ ...s, exposure: v }),
-            },
-          },
-          // No Model detail slider (owner, 2026-11-10: "Keep the logic for changing the detail. But
-          // we can remove the slider and make 60% the default"): the level is models.json's
-          // `detail.default`, a pin stored before still applies, and ?modeldetail= overrides it.
-          ...WATER_FLOW_TOGGLES.map((toggle) => ({ toggle })),
         ],
       },
     ],
