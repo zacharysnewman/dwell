@@ -316,6 +316,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    at a mountain in the layer and the pass's timings.
    Next (local): the in-game look side by side with the old deck (sun high, low sun, from above, night) and the
    bench before/after at the §8.3 views; tune by the data.
+   Owner, 2026-11-12, after the lighting rework: **"The clouds have lighting but they don't follow cloud shapes at all,
+   do some research into cloud simulation. They look like white blobs."** Today's density is the 2D deck's coverage
+   cut by height and eroded by 3D value noise, so clouds have no real form. Next (cloud): research the
+   production cloud models (Horizon Zero Dawn / Nubis, Frostbite, Red Dead Redemption 2) into docs/CLOUDS.md and
+   build the shape model: tiling 3D Perlin–Worley base and Worley detail noise baked at load, a weather map
+   (coverage, cloud type, precipitation), height profiles per cloud type (flat-based cumulus with billowing tops,
+   stratus sheets, towering cumulonimbus with anvils), base-shape remapping and edge erosion with curl distortion,
+   wind and shear; within the High-on-M1 budget.
 14. **Tall grass grows and spreads** (owner 2026-11-11: "I want tall grass to steadily grow and spread. It
    should probably have a max depending on climate/biome."). **Built** (ADR 0075 T3c, docs/ECOLOGY.md §10):
    `shared/worldgen/grass.json` (the rule as data: the block, the ground, the decoration whose climate
