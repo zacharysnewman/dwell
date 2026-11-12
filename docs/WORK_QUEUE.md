@@ -16,6 +16,27 @@ Last updated: 2026-11-11 (0.52.108).
 
 ## Queued next, in order (2026-11-12)
 
+**State at 16:00 PST 2026-11-12 (orchestrator handover).** Owner: cloud sessions paused until 17:30 PST (the Mac's
+clock); locally **one feature at a time** ("Only run 1 task at a time locally", "Like work on one feature at a
+time"). Notes ride with real changes (no notes-only PRs; CI skips docs-only changes).
+- **In progress (local):** underwater look pass toward the owner's ABZÛ reference (item 40: the surface seen from
+  below first — "This is more what I want from the underwater surface" — then shafts, turquoise fog, caustics);
+  branch `claude/underwater-look`; the reference image at the session scratchpad `abzu-ref.jpg` (not in the repo).
+  Video 2 (water/underwater, plan in item 40) waits for the owner's look approval.
+- **Next, in order:** (1) PR #856 slopes show tool hits (`claude/ramp-hit-marks-eaj3ru`) — conflicts with main,
+  resolve and merge; (2) big-world terrain quick fix (item 51) — WIP on `claude/notes-batch-2` (also carries the
+  v5 approval and ABZÛ notes; the cloud session was stopped mid-work: read its status note on that branch); needs
+  the 0.56 line raised by the owner; (3) the moon's client side M-7c (item 27) — WIP on `claude/moon-m7c`;
+  (4) browser check of Realistic worlds (R6 merged #858: create, play, reload); (5) the forest edge (~9 ms over at
+  High on the M1; impostors save ~4 ms, #848); (6) the in-game cloud check (#822 shapes/colour, #790, #801, #823).
+- **Merged today (late):** #857 the axe like the other tools; #858 Realistic in New world; #854 hits at contact;
+  #852 sound placement; #853/#855 one-command video re-records (`take.mjs`); #851 big-world placing; #848 far-tree
+  impostors fixed (BUGS #106); #845 big-world LOD; #846 portal exit on face B; #847 leaves flush with logs; #841 the
+  0.55 line (tree pads, tall grass stages); #842 more animals; #833 grass sounds and leg cadence; #836 underwater
+  audio; #829 floating trees, leaves let water through; #832 deny sound; wind only when flying.
+- **Showcase videos (item 40):** video 1 (bifacial) approved at v5; its clips cleared. Tool: `take.mjs <video>
+  [--only sN]` (SKILL.md §0).
+
 **Current order (2026-11-12, evening; owner asked "What is the current priority of upcoming items"):**
 Releases were blocked ~18:45–21:40 (a test type error); unblocked, so everything merged since ships in the next
 releases (incl. the first-person body #791). Local (the Mac, one at a time): (1) bifacial video v3 (portal exit
