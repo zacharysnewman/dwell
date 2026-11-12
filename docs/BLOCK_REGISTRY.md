@@ -113,8 +113,9 @@ atlas tile in the shader's tile table (look tag `0x91`); `"fillProperty"` names 
 whole numbers, its first (default) the largest, whose value over that is how full its cell is
 (`StateInfo::fill`; water's `fill`, eighths, 0.44.0): the mesher draws its surface that far up and the
 water flow writes a basin's surface row at its level's fill (WATER_FLOW.md §15; look tag `0x92` where
-not full). `StateInfo::support_role`, `passable`,
-`axis`, `near_fade`.
+not full); `"leafFlush": true` lays leaves beside it flat against it, no chamfer on that side (the log;
+TREE_GROWTH.md §10, look tag `0x93`, no bytes, where set). `StateInfo::support_role`, `passable`,
+`axis`, `near_fade`, `leaf_flush`.
 
 **Light per block** (**built**, Phase 45; [`DAY_NIGHT.md`](./DAY_NIGHT.md) §11): `"lightFilter": 0–15`
 is how many levels a cell of the block takes off the flood light passing into it (15: none gets

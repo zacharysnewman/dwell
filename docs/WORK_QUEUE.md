@@ -1869,7 +1869,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    **"Flat leaf applied when a full Face touching and any new leaf touching leaf cases that need to be adjusted to fit
    together properly."** — a leaf block's side that shares a full face with a log is flat (no chamfer); and wherever
    that change leaves leaf-to-leaf seams that no longer meet (a flat side next to a chamfered neighbour), adjust them
-   so the crown fits together without gaps or overlaps.
+   so the crown fits together without gaps or overlaps. **Built (2026-11-12):** block data `leafFlush: true`
+   (the log; synced as look tag `0x93`) makes a leaf's face against it flush: drawn flat and whole, no chamfer
+   on that side, the edge cuts running into it squared off (`dwell-mesh` `mesher/leaves.rs` `flush_pieces`;
+   the far trees' `lod_trees.rs` alike; bodies mesh through the same path). Leaf-to-leaf seams stay closed by
+   the existing gap fill (a test sums the crown's area vectors to zero). Tests on both faces with `dwell:log`
+   and the fixture's `test:post` by data alone; a tree-dense chunk meshes no slower (≈196 vs ≈211 ms).
+   Docs: TREE_GROWTH.md §10, BLOCK_REGISTRY.md.
 
 ## Future (needs owner answers)
 

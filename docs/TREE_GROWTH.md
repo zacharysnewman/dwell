@@ -254,6 +254,19 @@ trees." Leaves stay blocks; the look is data (`shared/look/leaves.json`: the blo
   gaps are fixed**: where a neighbour leaf is cut and this one not (or less), the part of their
   shared face the neighbour's cut uncovers is drawn, by clipping this cell's face by each of the
   neighbour's planes in turn, lit from the faces the cut looks out of.
+- **Built: flat against logs** (WORK_QUEUE item 48; owner, 2026-11-12: "Flat leaf applied when a full
+  Face touching"). A leaf face shared with a full-shaped block whose data says `leafFlush: true` (the
+  log, every axis and width; the fixture's `test:post`) is **flush**: drawn whole, flat on the log's
+  face, and counted as covered for the cuts, so no edge or corner along it is cut and the cuts of the
+  edges running into it end square against it (`mesher/leaves.rs` `flush_pieces`). The log's
+  octagon stays inside its cell, so the flat face fills the octagon's corner gaps behind it; no card
+  stands off a flush face. Leaf-to-leaf seams need nothing new: a neighbour's exposure counts the
+  flush face as closed alike, so the gap fill clips the shared face by the planes the neighbour
+  really has. The far trees (`lod_trees.rs`) do the same where a leaf meets a `leafFlush` log; the
+  impostors bake no chamfer. Tests: `a_flush_face_is_drawn_flat_and_the_cuts_along_it_end_square`,
+  `leaves_lie_flat_against_a_trunk` and `…_a_log_like_block_added_by_data` (both faces: the inner
+  faces the whole square on the log, no chamfer leaning to the trunk, nothing inside it, the
+  crown's surface closed).
 - **Built: canopy normals.** Each vertex's normal leans 0.75 toward the crown's outward direction.
   **Deviation:** the Lab fits an ellipsoid to each tree's crown; the mesher has no tree record (the
   chunk's voxels and a one-cell apron only), so the outward direction is away from the centroid of

@@ -3154,3 +3154,122 @@ dwell_world::both_faces!(
         );
     }
 );
+
+/// A one-layer 3×3 crown round a trunk three logs tall: the leaves at y = 8 round the logs at
+/// (8, 7..=9, 8), chunk-local storage cells (symmetric in y, so the same cells on both faces).
+fn crown_round_a_trunk(leaf: u16, log: u16) -> Vec<(i32, i32, i32, u16)> {
+    let mut cells: Vec<(i32, i32, i32, u16)> = (7..=9).map(|y| (8, y, 8, log)).collect();
+    for z in 7..=9 {
+        for x in 7..=9 {
+            if (x, z) != (8, 8) {
+                cells.push((x, 8, z, leaf));
+            }
+        }
+    }
+    cells
+}
+
+/// WORK_QUEUE item 48's checks on a crown round a trunk at (8, _, 8) (cells): each leaf beside the
+/// log lies flat on the log's face (its inner face the whole 1×1 square there), no chamfer of
+/// those leaves leans toward the trunk, no leaf vertex lies inside a log's cell, and the leaves'
+/// surface is closed (its area vectors sum to zero: no gap or overlap at a seam).
+fn assert_flush_round_the_trunk(m: &ChunkMeshes) {
+    let c = &m.cutout;
+    // The leaf faces, not their cards (`bare` 1).
+    let tris: Vec<([[f64; 3]; 3], [f64; 3])> = c
+        .indices
+        .chunks_exact(3)
+        .filter(|t| c.bare.get(t[0] as usize).is_none_or(|&b| b < 0.5))
+        .map(|t| {
+            let p = [0, 1, 2].map(|k| vertex(&c.positions, t[k]));
+            (p, normal_of(&c.positions, t[0], t[1], t[2]))
+        })
+        .collect();
+    let len = |n: [f64; 3]| (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+    // Closed: Σ area · n = 0.
+    let mut sum = [0.0; 3];
+    for (_, n) in &tris {
+        for a in 0..3 {
+            sum[a] += n[a] / 2.0;
+        }
+    }
+    assert!(
+        len(sum) < 1e-4,
+        "the crown's surface is open: Σ area·n = {sum:?}"
+    );
+    for (x, z) in [(9, 8), (7, 8), (8, 9), (8, 7)] {
+        let toward = [f64::from(8 - x), 0.0, f64::from(8 - z)];
+        let a = if x != 8 { 0 } else { 2 };
+        let plane = if toward[a] < 0.0 { 9.0 } else { 8.0 };
+        let (lo, hi) = (
+            [f64::from(x), 8.0, f64::from(z)],
+            [f64::from(x) + 1.0, 9.0, f64::from(z) + 1.0],
+        );
+        let mine = |p: &[[f64; 3]; 3]| {
+            p.iter()
+                .all(|q| (0..3).all(|b| q[b] > lo[b] - 1e-6 && q[b] < hi[b] + 1e-6))
+        };
+        let flat: f64 = tris
+            .iter()
+            .filter(|(p, n)| {
+                mine(p) && p.iter().all(|q| (q[a] - plane).abs() < 1e-5) && n[a] * toward[a] > 0.0
+            })
+            .map(|(_, n)| len(*n) / 2.0)
+            .sum();
+        assert!(
+            (flat - 1.0).abs() < 1e-4,
+            "the leaf at ({x}, 8, {z}) lies {flat} m² flat on the log's face, not the whole square"
+        );
+        for (p, n) in tris.iter().filter(|(p, _)| mine(p)) {
+            let along = (n[0] * toward[0] + n[1] * toward[1] + n[2] * toward[2]) / len(*n);
+            let flat_face = (along - 1.0).abs() < 1e-6;
+            assert!(
+                along < 1e-6 || flat_face,
+                "the leaf at ({x}, 8, {z}) has a chamfer leaning to the trunk: {p:?}"
+            );
+        }
+    }
+    for y in 7..=9 {
+        let lo = [8.0, f64::from(y), 8.0];
+        for (p, _) in &tris {
+            for q in p {
+                let inside = (0..3).all(|b| q[b] > lo[b] + 1e-6 && q[b] < lo[b] + 1.0 - 1e-6);
+                assert!(!inside, "a leaf vertex inside the log at {lo:?}: {q:?}");
+            }
+        }
+    }
+    // The trunk's octagon stays inside its cells (its corners don't poke into the leaves).
+    let o = &m.opaque;
+    for i in 0..o.positions.len() / 3 {
+        let q = vertex(&o.positions, i as u32);
+        assert!(
+            q[0] > 8.0 - 1e-5 && q[0] < 9.0 + 1e-5 && q[2] > 8.0 - 1e-5 && q[2] < 9.0 + 1e-5,
+            "the trunk pokes out of its cells: {q:?}"
+        );
+    }
+}
+
+dwell_world::both_faces!(
+    /// WORK_QUEUE item 48 (owner, 2026-11-12: "can we make it so the inside leave edges make a
+    /// flat side against the logs, so it doesn't leave quite so much gapping where they connect to
+    /// the tree"; "Flat leaf applied when a full Face touching"): a crown round a trunk of
+    /// `dwell:log` (block data `leafFlush`) lies flat on it with its seams closed.
+    fn leaves_lie_flat_against_a_trunk(f: FaceFrame) {
+        let cells = crown_round_a_trunk(require("dwell:leaves"), require("dwell:log[axis=y]"));
+        assert_flush_round_the_trunk(&mesh(&cells, f.is_b()));
+    }
+);
+
+dwell_world::both_faces!(
+    /// The same by data alone: shared/blocks/fixtures/test.json's `test:post` (an octagonal post
+    /// with `leafFlush`) takes a crown flat against it.
+    fn leaves_lie_flat_against_a_log_like_block_added_by_data(f: FaceFrame) {
+        use dwell_blocks::fixture::{FLUIDS, STATES};
+        let id = |name: &str| STATES.iter().position(|s| s.name == name).expect(name) as u16;
+        let kinds = Kinds::new(&STATES, &FLUIDS, Some(id("dwell:water[fill=8]")));
+        assert!(STATES[usize::from(id("test:post[axis=y]"))].leaf_flush);
+        let cells = crown_round_a_trunk(id("dwell:leaves[flooded=false]"), id("test:post[axis=y]"));
+        let m = mesh_chunk_with(&kinds, &voxels(&cells), f.is_b(), [0; 3]).expect("padded");
+        assert_flush_round_the_trunk(&m);
+    }
+);
