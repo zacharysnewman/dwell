@@ -212,10 +212,17 @@ impl WhereRange {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Where {
     pub weight: f64,
+    /// The biome map's 0..1-ish temperature (the starter's and Chisel's tuning).
     pub temperature: WhereRange,
     pub wetness: WhereRange,
     pub elevation: WhereRange,
     pub coast: WhereRange,
+    /// °C (R4, the presets' climate envelope): the climate's in a world with one
+    /// (`tectonics.climate`), else the 0..1 temperature in °C by `vegetation.json` `climate`.
+    pub celsius: WhereRange,
+    /// Annual rain, mm (R4, Whittaker-style): read only in a world with a climate; fits
+    /// everywhere in a world without one.
+    pub rain: WhereRange,
 }
 
 /// The biome map's geography (`terrain.json` `biomeMap`; `biomemap.rs`).

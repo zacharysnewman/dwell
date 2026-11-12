@@ -4,17 +4,13 @@
   "description": "Groves on gentle hills, mild and wet near rivers and lakes (the pine groves stand in for broadleaf trees).",
   "where": {
     "weight": 1,
-    "temperature": {
-      "min": 0.3,
-      "max": 0.6,
-      "blend": 0.1
+    "celsius": {
+      "min": 5,
+      "max": 16,
+      "blend": 1.5
     },
-    "wetness": {
-      "min": 0.45,
-      "blend": 0.15
-    },
-    "elevation": {
-      "max": 900,
+    "rain": {
+      "min": 750,
       "blend": 150
     }
   },

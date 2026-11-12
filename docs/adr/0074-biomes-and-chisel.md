@@ -71,7 +71,12 @@
    across the island, along a seeded direction and bent by a noise, less `lapseRate` per 1,000 m of
    elevation: a warm biome's heights are cold), `wetness` (1 at a river or lake, 0 `wetReach` m away),
    `elevation` (m, the world height field's) and `coast` (m to the sea); `terrain.json` `biomeMap` holds
-   the world's parameters. Its weight in a column is `weight` × each range's fit; **the default biome is a fallback** (B3, 0.51.16): it takes only what is left of 1 after the others (× its own fit), so a biome that fits a place takes it at an ordinary weight of 1; the weights are then normalised. `bands` is
+   the world's parameters. Since REALISTIC_WORLD.md R4 (2026-11-12) also `celsius` (°C) and `rain` (annual
+   mm), the presets' climate envelope (Whittaker-style; the presets keep no 0..1 `temperature`): in a world
+   with a climate (`tectonics.climate`, the Realistic world) both are the climate's (°C from latitude and
+   height; the rain its wind marched again over the eroded map, `climate.json` `biomes`), and the 0..1
+   temperature and wetness follow from them; elsewhere `celsius` is the 0..1 temperature by
+   `vegetation.json` `climate` and `rain` is not read. Its weight in a column is `weight` × each range's fit; **the default biome is a fallback** (B3, 0.51.16): it takes only what is left of 1 after the others (× its own fit), so a biome that fits a place takes it at an ordinary weight of 1; the weights are then normalised. `bands` is
    a list of elevation bands (each its blocks by slope: `ground`, `under`, `rock`, `shoreBlock`; the
    lowest without a `from`), their edges moved by the biome's `shaping` noise and raised on slopes;
    `shaping` also holds the rock band (`rockSlope` easing to `rockSlopeHigh` at `rockHigh` m, today's

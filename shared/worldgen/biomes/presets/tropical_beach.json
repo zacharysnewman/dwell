@@ -4,9 +4,9 @@
   "description": "Warm low coasts and islands: wide sand beaches, gentle banks, shallow turquoise water.",
   "where": {
     "weight": 1,
-    "temperature": {
-      "min": 0.5,
-      "blend": 0.1
+    "celsius": {
+      "min": 18,
+      "blend": 2
     },
     "elevation": {
       "max": 50,

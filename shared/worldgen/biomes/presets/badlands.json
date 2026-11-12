@@ -4,9 +4,13 @@
   "description": "Eroded, barren dirt hills cut by gullies, bare stone wherever they steepen.",
   "where": {
     "weight": 1,
-    "temperature": {
-      "min": 0.5,
-      "blend": 0.1
+    "celsius": {
+      "min": 10,
+      "blend": 2
+    },
+    "rain": {
+      "max": 400,
+      "blend": 100
     },
     "wetness": {
       "max": 0.2,
