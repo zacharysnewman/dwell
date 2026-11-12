@@ -22,6 +22,18 @@
       ]
     },
     {
+      "name": "forest-edge",
+      "notes": "forest-perf's edge alone (WORK_QUEUE item 32), for quick A/Bs by --compare: forest:edge at ?preset=high, shot, 6 s recorded with the 16.7 ms budget (report only).",
+      "query": { "worldgen": "test:forest", "seed": "0", "fresh": "1", "preset": "high" },
+      "steps": [
+        { "do": "settle", "maxS": 120 },
+        { "do": "spot", "spot": "forest:edge", "name": "edge" },
+        { "do": "mark" },
+        { "do": "wait", "s": 6 },
+        { "do": "record", "name": "edge", "budget": { "gpu.frame.p95": 16.7 }, "reportOnly": true }
+      ]
+    },
+    {
       "name": "forest-edge-ablate",
       "notes": "What the forest edge's GPU frame is made of (WORK_QUEUE items 31/32): forest:edge at ?preset=high, 4 s records of the frame with each suspect off in turn and back on between: the cutout meshes (leaf cards and tall grass, `grass` false hides them), sun shadows, the full-detail distance 192 → 96 m.",
       "query": { "worldgen": "test:forest", "seed": "0", "fresh": "1", "preset": "high" },

@@ -6,6 +6,17 @@ pins it.
 
 ## Open
 
+### 95. Far trees seen from above have holes through to the sky below
+
+Owner, 2026-11-12 (screenshot at night, looking straight down from high up): "looking down at trees from high up,
+where you can first make out individual trees, they seem to have visible holes through them into the ground (sky on
+the other side). This is most obvious at night, so the day sky shines through the ground." In the shot each far
+tree (the LOD's crownless trees: dark crosses and squares on the grass) shows bright light-blue pixels at its
+centre — through the tree and the ground under it, the other face's (day) sky shows. Suspects: the LOD terrain
+leaves a hole (or an unfilled cell) under each far tree's trunk/column (the tree cells cut from the LOD's ground and
+not filled), or T-junction cracks where the far tree's mesh meets the LOD ground; at that distance the gap is a
+pixel or two and the sky behind the disc shows through.
+
 ### 92. Downhill water shows edge triangles and thin lines at its ½ m level steps
 
 Owner, 2026-11-12 (screenshot + block dump): "I'm seeing some edge triangles and thin lines at slope transitions on

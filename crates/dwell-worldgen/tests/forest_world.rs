@@ -135,6 +135,51 @@ dwell_world::both_faces!(
     }
 );
 
+dwell_world::both_faces!(
+    /// The far tree list (impostors' I-2): the stand's species trees, each once, and a split of the
+    /// square into four lists the same trees (no tree in two sections, none lost at a border).
+    fn the_far_tree_lists_hold_each_stand_tree_once(f: FaceFrame) {
+        let e = edit();
+        let g = generator(&e, f, SEED);
+        let (lo, hi) = (
+            (STAND.0 - HALF, STAND.1 - HALF),
+            (STAND.0 + HALF - 1, STAND.1 + HALF - 1),
+        );
+        let all = g.far_trees(lo, hi);
+        let placed = stand(&g);
+        assert_eq!(
+            all.len(),
+            placed.len(),
+            "every stand tree is a species tree"
+        );
+        let anchors: Vec<_> = all.iter().map(|t| t.anchor).collect();
+        let want: Vec<_> = placed.iter().map(|p| p.0).collect();
+        assert_eq!(anchors, want);
+        let (mx, mz) = STAND;
+        let mut parts: Vec<_> = [
+            (lo, (mx - 1, mz - 1)),
+            ((mx, lo.1), (hi.0, mz - 1)),
+            ((lo.0, mz), (mx - 1, hi.1)),
+            ((mx, mz), hi),
+        ]
+        .into_iter()
+        .flat_map(|(a, b)| g.far_trees(a, b))
+        .collect();
+        parts.sort_unstable();
+        assert_eq!(parts, all, "the four quarters' lists are the square's");
+        // Instances: one each, on the baked layers, at the tree's foot.
+        let c = dwell_worldgen::impostor::Config::get();
+        let inst = c.instances(&all);
+        let layers = c.layers_per_species() * dwell_worldgen::species::SPECIES.len() as u32;
+        assert_eq!(inst.len(), all.len());
+        for (t, i) in all.iter().zip(&inst) {
+            assert!(i.layer < layers, "{t:?}");
+            assert!(i.quarter_turns < 4);
+            assert_eq!(i.foot[0], t.anchor[0] as f32 + 0.5);
+        }
+    }
+);
+
 /// The bench spots' places (client/bench/spots.json `forest:*`): the spawn, the densest 40 m square
 /// near the centre and the highest ground in view of it, printed (`cargo test --release -p
 /// dwell-worldgen --test forest_world spots -- --ignored --nocapture`).

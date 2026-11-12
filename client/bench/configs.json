@@ -25,6 +25,20 @@
       }
     },
     {
+      "name": "grass-off",
+      "notes": "No tall grass or small plants (`?tallgrass=0`, the Tall grass setting at 0 %; WORK_QUEUE item 32): their cost against the default; with `cards-off` it splits the forest's cutout cost.",
+      "params": {
+        "tallgrass": "0"
+      }
+    },
+    {
+      "name": "scale-full",
+      "notes": "Render scale 1 (`?renderscale=1`; High draws at 0.5): four times the pixels, so a pass whose time grows with it is bound by its pixels, one that holds by its geometry (WORK_QUEUE item 32, the forest edge).",
+      "params": {
+        "renderscale": "1"
+      }
+    },
+    {
       "name": "raster",
       "notes": "The mesher at full resolution."
     },
