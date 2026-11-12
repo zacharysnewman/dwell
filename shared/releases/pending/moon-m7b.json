@@ -1,7 +1,0 @@
-{
-  "changes": [
-    "Flying to the moon: the server now carries you onto the moon when you get close, with its own lower gravity, and back home when you fly away",
-    "Blocks you break or place on the moon are saved with the world",
-    "Behind the scenes: the moon's ground is streamed to newer clients (the game's own view of the moon follows in a later update)"
-  ]
-}
