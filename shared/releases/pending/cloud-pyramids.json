@@ -1,7 +1,0 @@
-{
-  "changes": [
-    "Volumetric clouds are rounded cumulus again: flat bases and domed tops, not tall triangles",
-    "Fair-weather clouds read bright white on top and light grey underneath; only storm clouds are dark",
-    "Softer cloud edges, while a cloud still mostly hides the ones behind it"
-  ]
-}
