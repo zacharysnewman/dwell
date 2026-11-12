@@ -2000,7 +2000,7 @@ export function validateGrass(data, blocks, decorations) {
     throw new Error(`grass.json: ${m}`);
   };
   if (typeof data !== "object" || data === null) fail("must be an object");
-  const keys = ["$comment", "block", "on", "decoration", ...Object.keys(GRASS)];
+  const keys = ["$comment", "block", "on", "onRamps", "decoration", ...Object.keys(GRASS)];
   const extra = Object.keys(data).filter((k) => !keys.includes(k));
   if (extra.length) fail(`unknown ${extra.join(", ")}`);
   if (typeof data.block !== "string" || !blocks.has(data.block))
@@ -2011,6 +2011,18 @@ export function validateGrass(data, blocks, decorations) {
     const b = blocks.get(o);
     if (!b || (b.shape ?? "full") !== "full")
       fail(`on ${JSON.stringify(o)} is not a full block of the registry`);
+  }
+  if (data.onRamps !== undefined) {
+    if (typeof data.onRamps !== "boolean") fail("onRamps must be true or false");
+    // Over a ½ m ramp of its ground (HALF_HEIGHT_GRID.md §5), as decorations' `onRamps`: the
+    // ramp must exist and the block may stand on it.
+    const grown = blocks.get(data.block);
+    for (const o of data.onRamps ? data.on : []) {
+      const ramp = `${o}_ramp`;
+      if (!blocks.get(ramp)) fail(`onRamps: ${o} has no ramps (${ramp})`);
+      if (grown.placeOn && !grown.placeOn.includes(ramp))
+        fail(`onRamps: ${data.block} may not stand on ${ramp} (its placeOn)`);
+    }
   }
   const deco = decorations.find((d) => d.name === data.decoration);
   if (!deco)
@@ -2040,6 +2052,7 @@ export function grassRust(g) {
     "pub const GRASS: GrassData = GrassData {",
     `    block: ${JSON.stringify(g.block)},`,
     `    on: &[${g.on.map((o) => JSON.stringify(o)).join(", ")}],`,
+    `    on_ramps: ${g.onRamps === true},`,
     `    decoration: ${JSON.stringify(g.decoration)},`,
     `    max_density: ${f(g.maxDensity)},`,
     `    spread_per_day: ${f(g.spreadPerDay)},`,

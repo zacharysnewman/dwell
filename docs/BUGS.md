@@ -6,14 +6,6 @@ pins it.
 
 ## Open
 
-### 73. A felled trunk lying diagonally up a slope loses most of its cells when it settles
-
-Owner, 2026-11-12: "I've also seen big chunks of a tree disappear if it settled diagonal long ways up a high, it
-settles flat and most of the tree disappears into the ground." A felled trunk that comes to rest lying along a
-slope (tilted, its length up the hill) is settled back into the grid as flat cells, and the cells that land
-inside the ground are dropped, so most of the tree vanishes. Expected: the settled trunk follows the slope (or
-cells that would overlap the ground are lifted onto it, or the trunk stays a body), never losing wood.
-
 ### 69. A dark vertical column in the far terrain before the starter world's volcano
 
 Found 2026-11-11 (0.52.64) on the starter world's tour: `?worldgen=test:starter&fresh=1&at=8571.5,350,-4866.5`
@@ -153,6 +145,9 @@ the grounded controller cancels the downward part of the push each step, and the
 separation compounds sideways each step (16 → 48 m/s over 12 ticks). Later options: the tree's
 mass (a non-dominant piece), contact softness or a corrective-velocity limit for player–piece
 contacts, CCD so the overlap stays shallow, or the controller keeping the pinch's downward push.
+Measured again 2026-11-12 (WORK_QUEUE item 24): with the log's `fellWedgeTrunk` now `open` (the gash, the
+trunk's foot thin at the notch) the ignored repro flings the chopper ~155–160 m (face A 154.7 m, face B 160.0 m),
+up from ~104–108 m on the `matching` wedge (103.8 m, 107.8 m) just before; still open.
 
 ### 51. Reopening a world in the same tab stalls on CI: spawn's reload and settings' reload
 
@@ -269,6 +264,18 @@ face, or the placement check against its shape.
 
 
 ## Fixed
+
+### 73. A felled trunk lying diagonally up a slope loses most of its cells when it settles (fixed after 0.54.10)
+
+Owner, 2026-11-12: "I've also seen big chunks of a tree disappear if it settled diagonal long ways up a high, it
+settles flat and most of the tree disappears into the ground." The settle snapped the body's rotation to lying flat
+about its reference cell (its foot), so a trunk resting up a hill was laid level at its foot's height, inside the
+hill; lifting the whole piece one or two rows didn't free it, and every carrier whose cell was taken was dropped.
+Now a piece at rest tilted follows its pose column by column (`felling::follow_pose`), and a column whose carriers
+are blocked rises to the first free rows (or drops a row onto the ground under it): it steps along the hill, the log
+axis along the trunk, no wood lost (docs/FELLING.md §4). Pinned by `dwell-sim` `felling.rs`
+`a_trunk_at_rest_up_a_slope_settles_whole_along_the_hill` (both faces; an 8 m trunk on a 1:2 hillside): red before
+(3 of 16 logs settled), green with the fix.
 
 ### 72. ~23 fps on an iPhone at Low, and z-fighting where leaf cards meet tree trunks (fixed after 0.52.109; the frame rate partly)
 

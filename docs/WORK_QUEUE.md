@@ -218,6 +218,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    eaten grass regrows; the far forage's most is scaled by the same climate share. A per-world switch in an
    optional `grass_growth` table: on for new worlds, off for worlds saved before it (their meadows stay as
    they were). Not yet: a setting in the world menu.
+   Since 2026-11-12 (`claude/ramp-tufts-regrow`, the follow-up item 21 left): grass.json's `onRamps`
+   makes a ½ m ramp of its ground ground too (validated as decorations' `onRamps`: the ramp exists and
+   the tuft's `placeOn` allows it), so a tuft on a ramp that is eaten or cut regrows and spreading
+   reaches ramp cells, under the same climate cap; never a 1 m ramp's pieces (tests on both faces).
 
 15. **Realistic world** (owner 2026-11-11: "The realistic world should come from our systems (which may not be
    properly defined or built yet to support this) the seed should determine tectonic plates, rain shadow,
@@ -371,7 +375,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `undergrowth` 0.75 → 0.85 so it stays sparse; the starter's meadow spot went from 11 % to 33 % of
    its grass tops with tall grass, its steppe 8 %. The tuft's tile is painted in the grass top's
    colours, darker at the foot (no light-stop tips). Goldens and the starter pin regenerated.
-   Left: the owner's look in game; grass growth still regrows tufts on flat grass only.
+   Left: the owner's look in game. Grass growth regrowing and spreading tufts on ½ m ramps too: done
+   2026-11-12 (item 14, grass.json `onRamps`).
 22. **Settings and version buttons look like web links** (owner 2026-11-11: "I thought we had settings and
    version buttons changed queued, is that true?" — it wasn't recorded anywhere; then "The buttons should be
    aligned to match the design of the others instead of looking like web links"). Restyle them as the menu's
@@ -389,9 +394,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    have the big gash I was imagining 2 half blocks one upside down one right side up, both with the 'short
    side' facing the cut."). Restated to the owner: the stump an upright ramp low at the notch side, the trunk's
    new bottom an upside-down ramp thin at the notch side, opening a V gash toward the side chopped (the data's
-   `fellWedgeTrunk: open`, today `matching`), lined up with the notch and the fall. Waiting on the owner's
-   confirmation. Also BUGS.md #73: a trunk settled diagonally up a slope loses most of its cells into the ground.
-   Owner, 2026-11-12: **"Yes that was the shape I meant too."** In progress (cloud), with BUGS.md #73.
+   `fellWedgeTrunk: open`, today `matching`), lined up with the notch and the fall. Owner, 2026-11-12: "Yes that
+   was the shape I meant too." Also BUGS.md #73: a trunk settled diagonally up a slope loses most of its cells into the
+   ground. **Built 2026-11-12** (branch `claude/fell-gash`), waiting on the owner's look: the log's
+   `fellWedgeTrunk` is `open` (the notch's side from the deepest cut, any of the four, both faces;
+   `tests/chopping.rs` `felled_from_each_side_the_cut_opens_a_gash_toward_the_notch`, red on `matching`); a trunk
+   at rest tilted settles column by column along its pose, a blocked column rising to free rows, no wood lost
+   (BUGS.md #73 Fixed; docs/FELLING.md §4).
 25. **Marks appear at contact, not on click** (owner 2026-11-12: "the gashes in blocks from tools show up on
    click instead of when the animation lines up with the block. We want that timing."). Every tool's hit (axe
    chop, pickaxe, shovel; the carve, cracks, chips, drops and sound) lands when the swing's head reaches the

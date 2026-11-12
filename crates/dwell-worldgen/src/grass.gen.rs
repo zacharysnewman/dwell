@@ -4,6 +4,7 @@
 pub const GRASS: GrassData = GrassData {
     block: "dwell:tall_grass",
     on: &["dwell:grass"],
+    on_ramps: true,
     decoration: "meadow_grass",
     max_density: 0.8,
     spread_per_day: 0.15,
