@@ -645,10 +645,9 @@ export const SOUND_DATA: SoundData = {
         "gain": 0.3,
         "when": [
           {
-            "input": "altitude",
-            "from": 0,
-            "full": 60,
-            "floor": 0.2
+            "input": "height",
+            "from": 12,
+            "full": 60
           },
           {
             "input": "open",
