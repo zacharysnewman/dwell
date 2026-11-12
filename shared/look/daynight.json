@@ -34,7 +34,15 @@
     "glowDeg": 12,
     "glow": 0.14,
     "glowColor": "#c6d6ff",
-    "newMoonLight": 0.55
+    "newMoonLight": 0.55,
+    "nightFloor": 0.15
+  },
+  "moonOrbit": {
+    "$comment": "The celestial model (docs/proposals/MOON_WORLD.md \u00a76, M-4; dwell_look::celestial): the moon on a circle distanceM from the home disc's centre, inclined inclinationDeg to the sun's path, going round once a month (moon.cycleDays, new moon to new moon; moon.startPhase at day 0, or the world's own phase, WorldSettings tag MOON_PHASE) against the sky's daily turn, tidally locked (its face A toward home). Its ascending node sits nodeDeg along the sun's path from the sun at day 0 and turns once against the sun every nodeTurnDays (0: never), so eclipse seasons come round. distanceM keeps the moon grid's radius (shared/worldgen/grids.json) at moon.radiusDeg in the sky (checked to 1%). moon.nightFloor is the share of today's moonlight left on a moonless night (owner: \"A darker floor but a minimum still.\"). Not drawn yet: M-2 draws from it.",
+    "inclinationDeg": 5,
+    "nodeDeg": 90,
+    "nodeTurnDays": 96,
+    "distanceM": 596800
   },
   "stars": {
     "$comment": "Procedural stars on the turning sky: cells per radian, the share of cells with a star, size in pixels, peak brightness, twinkle depth (0\u20131) and rate, and how far up from the horizon (elevation sine) they fade in.",

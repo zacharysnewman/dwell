@@ -4,6 +4,7 @@
 
 pub mod auth;
 pub mod bytes;
+pub mod capabilities;
 pub mod chopping;
 pub mod damage;
 pub mod fragment;

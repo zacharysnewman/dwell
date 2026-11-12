@@ -201,6 +201,7 @@ pub enum MessageType {
     Ecology = 102,
     SteamHello = 103,
     Steam = 104,
+    Capabilities = 105,
 }
 
 impl MessageType {
@@ -265,6 +266,7 @@ impl MessageType {
             102 => Some(Self::Ecology),
             103 => Some(Self::SteamHello),
             104 => Some(Self::Steam),
+            105 => Some(Self::Capabilities),
             _ => None,
         }
     }
@@ -496,10 +498,11 @@ pub enum RegionEditOp {
     Replace = 2,
     Hollow = 3,
     Paste = 4,
+    Structure = 5,
 }
 
 impl RegionEditOp {
-    pub const MAX: u8 = 4;
+    pub const MAX: u8 = 5;
 
     pub const fn from_u8(v: u8) -> Option<Self> {
         match v {
@@ -507,6 +510,7 @@ impl RegionEditOp {
             2 => Some(Self::Replace),
             3 => Some(Self::Hollow),
             4 => Some(Self::Paste),
+            5 => Some(Self::Structure),
             _ => None,
         }
     }
@@ -642,4 +646,15 @@ pub mod vitals_flags {
     pub const STAMINA: u8 = 2;
     pub const OXYGEN: u8 = 4;
     pub const ALL: u8 = 7;
+}
+
+/// The capabilities (`shared/protocol/capabilities.json`, ARCHITECTURE.md §8.3): optional
+/// features named by string, announced at join (`dwell_protocol::capabilities`).
+pub mod capability_names {
+    pub const MAX_NAMES: usize = 64;
+    pub const MAX_NAME_BYTES: usize = 48;
+    /// A saved structure's placement goes as its own region-edit op (RegionEditOp::Structure, the Paste body), which the server refuses where the world's mode lacks the `structures` ability (shared/modes/modes.json; STRUCTURES.md §9). Without it a client sends plain pastes.
+    pub const STRUCTURES_PLACE: &str = "structures.place";
+    /// Every capability this build knows, in the table's order.
+    pub const ALL: &[&str] = &[STRUCTURES_PLACE];
 }

@@ -1,8 +1,8 @@
 # The moon as a real bifacial world (and grids with their own frames)
 
-**Status:** proposal, written 2026-11-12 (WORK_QUEUE item 27). Slice **M-1 built** (the grids'
+**Status:** proposal, written 2026-11-12 (WORK_QUEUE item 27). Slices **M-1 built** (the grids'
 data, the moon's generator, the far-body bake, the moon spawn search; native, not wired into the
-game). Slice **M-3 built** (the `GridFrame` abstraction, §2.1). Not architecture until an ADR adopts it; open questions in §12.
+game), **M-3 built** (the `GridFrame` abstraction, §2.1) and **M-4 built** (the celestial model, §6: logic and tests, not drawn yet). Not architecture until an ADR adopts it; open questions in §12.
 
 ## 1. Brief and the owner's answers (2026-11-12)
 
@@ -169,7 +169,11 @@ dwell-worldgen --example moon_bake -- 0 <dir>`):
 a disc quad in the grid's frame (its two faces back to back, `FaceFrame` choosing which one the
 viewer sees by the side of its midplane it is on), sampling the face's normal and albedo maps, lit
 by the **real sun direction** turned into the grid's frame (§6), plus today's glow and bloom from
-`daynight.json`'s `moon` (scaled by the lit share seen). Nearer than `farM` the grid is LOD terrain
+`daynight.json`'s `moon` (scaled by the lit share seen). Owner, 2026-11-12: **"If not already planned
+we want the same moon shine/glow effects we already had. So the moon should look bright."** So the
+drawn moon keeps today's halo and brightness: its lit part is as bright as today's moon (`moon.color`;
+the bake shapes the surface, not its overall brightness), and its bloom and glow are today's × the lit
+share (M-4's `Celestial::glow`, `MoonView::lit`). Nearer than `farM` the grid is LOD terrain
 (its own LOD tree, M-5), crossfading over a band. The bake is cached per world (the client's world
 store, keyed by grid, face, generator version and seed), baked in a worker on the first join.
 
@@ -181,7 +185,24 @@ over it: an estimate of tens of ms natively, 2 MiB for both faces at 512² (1 Mi
 phones). From the moon (~597 km) the home disc is ~4.8° in radius (four times the moon's look
 from home), so 512² is about a texel per screen pixel at 1080p's ~60° view.
 
-## 6. A celestial model: sun, home and moon as bodies
+## 6. A celestial model: sun, home and moon as bodies [built, M-4; not drawn yet]
+
+**As built (M-4)** (`dwell-look` `celestial.rs`, DAY_NIGHT.md §14): the orbit is data in
+`shared/look/daynight.json` — the month is `moon.cycleDays` (8, new to new) from `moon.startPhase` or
+the world's phase; `moonOrbit` holds `inclinationDeg` 5, `nodeDeg` 90 and `nodeTurnDays` 96 (the
+node turns against the sun, so eclipse seasons come round), `distanceM` 596 800 (checked by
+`daynight.mjs` to keep grids.json's 12.5 km at `moon.radiusDeg`); `moon.nightFloor` 0.15. The
+`Celestial` model gives, from the world clock: `sun_direction` (today's, golden-tested),
+`moon_position`/`moon_direction` (from the home disc's centre), `moon_axes` (tidally locked: the
+grid's up at home; M-3's grid frame), `view(t, viewer)` (the face seen, the lit share n·s, the phase,
+the direction), `moonlight(t, viewer, face)` (the floor + the rest × lit × the disc over the
+horizon) and `glow` (today's halo × lit). The world's month start is the optional `WorldSettings`
+tag `MOON_PHASE` (0x84); absent, the data's. The moon's orbit is placed in the sky frame (turning
+with the sun, as the stars do), so the phase runs evenly though the solar angle doesn't; with an
+integer month the full moon comes at the same clock time (face A's midnight for `startPhase` 0.5).
+New worlds don't draw their phase from the seed yet (none writes the tag): M-2's choice.
+
+The design as proposed:
 
 Today (DAY_NIGHT.md §3) the home disc is fixed, the **sun** circles it on a great circle tilted so
 it culminates 60° above face A's horizon, and since the circle passes under the disc, **face B gets
@@ -281,9 +302,9 @@ starts in the moon's frame with its gravity, and the home world streams in only 
 | Phase | What | Exit criteria |
 |---|---|---|
 | **M-1** [built] | Grids data (`grids.json`), the `cratered` generator on both faces, `moon_dust`, the generic far-body bake, the moon spawn search | `cargo test -p dwell-worldgen --test grids` (19 tests, both faces): crater floors under raised rims, density by data, flatter maria, bake deterministic/differing, normals out of crater walls, spawn flat |
-| M-2 | The sky draws the moon from its bake: today's motion, size, glow and light; the baked normals lit by the sun direction; the face from the orbit | the client bakes in a worker and caches per world; a screenshot per phase angle on both faces; CPU-adapter tier |
+| M-2 | The sky draws the moon from its bake at M-4's position: today's size, glow and brightness (owner: "the moon should look bright"); the baked normals lit by the sun direction; the face from the orbit; moonlight from M-4's `moonlight` | the client bakes in a worker and caches per world; a screenshot per phase angle on both faces; the lit part as bright as today's moon and its halo today's × the lit share (a full moon side by side with today's); CPU-adapter tier |
 | **M-3** [built] | `GridFrame`: the frame abstraction (world ↔ grid ↔ face) for rendering, collision, targeting and gravity; the home grid the identity | the identity frame changes no result (parity tests across physics, targeting, meshing); a moving test grid's points round-trip |
-| M-4 | The celestial model (§6): the moon's orbit as data, phases from geometry, moonlight by lit share; the orbit an optional world setting | geometry tests (full when opposite the sun, new when between, lit share); the clock and the sun unchanged (golden) |
+| **M-4** [built] | The celestial model (§6): the moon's orbit as data, phases from geometry, moonlight by lit share with a night floor; the orbit's phase an optional world setting | `cargo test -p dwell-look --lib celestial` (13 tests, both faces): full when opposite the sun, new when between, lit share monotonic; face A toward home at every phase; both faces' phases equal; the floor kept; the clock and the sun unchanged (golden); `MOON_PHASE` round-trips and is absent by default (`dwell-protocol`) |
 | M-5 | LOD per grid: the moon's LOD terrain inside `farM`, the far body beyond, crossfaded | the moon's LOD from its generator at 150 km; no seam at the switch (screenshot) |
 | M-6 | The home world's bake from its world map (water mask), drawn from far | bake tests on both faces; a screenshot from 600 km |
 | M-7 | Streaming the moon's chunks per grid; far flight; capture and release; gravity per grid; the grid id in snapshots (new line) | a scripted flight home → moon → home with no jump in position (≤ 1 cm) on both of the moon's faces; ⅙ g jump height |
@@ -292,9 +313,9 @@ starts in the moon's frame with its gravity, and the home world streams in only 
 ## 12. Open questions for the owner
 
 **Answered (owner, 2026-11-12):** Q2 **tidally locked** (home always sees face A; face B is the far side);
-Q3 **keep it physical** (no dome bias: the flat disc dims as a whole, crescents only in crater walls); Q4
+Q3 **keep it physical** at first, then (after M-4 showed half the month dark) **"You mentioned a dome something, maybe do that"**: blend a dome normal (`domeBias`); Q4
 **"A darker floor but a minimum still."** (new-moon nights darker than today's floor, but never black); Q7
-**about 1–1.5 minutes** to the moon (a faster far-flight speed away from ground). Still open: Q1, Q5, Q6, Q8
+**about 1–1.5 minutes** to the moon (a faster far-flight speed away from ground). Q5's month: "Not sure" (kept at 8 days; a fractional month recommended). Still open: Q1, Q6, Q8
 (the proposal's defaults until answered: darker maria by albedo, an 8-day month at 5°, home gravity until
 captured, 12.5 km at ~597 km).
 

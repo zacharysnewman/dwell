@@ -41,6 +41,16 @@ pub mod tag {
     /// so its fields and join are byte-identical to before. A build before it skips it (and would
     /// draw today's disc: such a build can't hold a bigger LOD root anyway, BIG_MAP.md M1).
     pub const WORLD_SIZE: u8 = 0x83;
+    /// The moon's phase at day 0 (`f32`, 0 new, 0.5 full; docs/proposals/MOON_WORLD.md §6, M-4):
+    /// where the world's month starts on its orbit. Optional: a world without it (every world
+    /// before it) takes the build's `daynight.json` `moon.startPhase`, and a world that sets none
+    /// writes none, so its fields and join are byte-identical to before.
+    pub const MOON_PHASE: u8 = 0x84;
+    /// The server's capabilities (`crate::capabilities`, ARCHITECTURE.md §8.3): its optional
+    /// features by name. Optional: a build before it skips it (and never sends `Capabilities`);
+    /// a client that sees it answers with its own after `Welcome`. The join's, never saved in
+    /// the world file (the server adds it to what it sends; [`SettingsFields::with`] drops it).
+    pub const CAPABILITIES: u8 = 0x85;
 }
 
 /// The most fields, and the longest field.
@@ -79,6 +89,8 @@ pub struct WorldSettings {
     pub mode: &'static str,
     /// The world's size (`tag::WORLD_SIZE`; the default, today's, when the tag is absent).
     pub size: crate::world_size::WorldSize,
+    /// The moon's phase at day 0 (`tag::MOON_PHASE`; None: the build's default).
+    pub moon_phase: Option<f32>,
 }
 
 impl WorldSettings {
@@ -199,6 +211,14 @@ impl SettingsFields {
                 .flatten()
                 .ok_or(SettingsError::Invalid(tag::WORLD_SIZE))?;
         }
+        if let Some(b) = self.get(tag::MOON_PHASE) {
+            let mut r = ByteReader::new(b);
+            let p = r.f32();
+            if !r.at_end() || !(0.0..1.0).contains(&p) {
+                return Err(SettingsError::Invalid(tag::MOON_PHASE));
+            }
+            s.moon_phase = Some(p);
+        }
         Ok(s)
     }
 
@@ -223,6 +243,26 @@ impl SettingsFields {
         Self(out)
     }
 
+    /// The server's capabilities (`tag::CAPABILITIES`), when it announced them (well formed).
+    pub fn capabilities(&self) -> Option<crate::capabilities::Capabilities> {
+        crate::capabilities::Capabilities::from_bytes(self.get(tag::CAPABILITIES)?)
+    }
+
+    /// These fields with `tag::CAPABILITIES` set to `caps` (the join's), or without it.
+    pub fn with_capabilities(&self, caps: Option<&crate::capabilities::Capabilities>) -> Self {
+        let mut out: Vec<(u8, Vec<u8>)> = self
+            .0
+            .iter()
+            .filter(|(t, _)| *t != tag::CAPABILITIES)
+            .cloned()
+            .collect();
+        if let Some(c) = caps {
+            out.push((tag::CAPABILITIES, c.to_bytes()));
+            out.sort_by_key(|(t, _)| *t);
+        }
+        Self(out)
+    }
+
     /// These fields with the known ones set to `s` (fields this build doesn't know kept).
     pub fn with(&self, s: WorldSettings) -> Self {
         let mut out: Vec<(u8, Vec<u8>)> = self
@@ -235,6 +275,8 @@ impl SettingsFields {
                     tag::MODE,
                     tag::WORLDGEN,
                     tag::WORLD_SIZE,
+                    tag::MOON_PHASE,
+                    tag::CAPABILITIES,
                 ]
                 .contains(t)
             })
@@ -261,6 +303,9 @@ impl SettingsFields {
                 field(&|w| w.u16(s.size.radius_scale as u16)),
             ));
         }
+        if let Some(p) = s.moon_phase {
+            out.push((tag::MOON_PHASE, field(&|w| w.f32(p))));
+        }
         out.sort_by_key(|(t, _)| *t);
         Self(out)
     }
@@ -279,7 +324,29 @@ mod tests {
         water_speed: 1.0,
         mode: "creative",
         size: crate::world_size::WorldSize::DEFAULT,
+        moon_phase: None,
     };
+
+    #[test]
+    fn capabilities_are_an_optional_join_field_never_saved() {
+        use crate::capabilities::Capabilities;
+        let saved = SettingsFields::default().with(D);
+        let join = saved.with_capabilities(Some(&Capabilities::this_build()));
+        assert_eq!(join.capabilities(), Some(Capabilities::this_build()));
+        // Optional: a build that doesn't know the tag reads the same settings.
+        assert_eq!(tag::CAPABILITIES & tag::OPTIONAL, tag::OPTIONAL);
+        assert_eq!(join.settings(D), saved.settings(D));
+        // The join's: rebuilding the fields to save them drops it, and without it nothing changes.
+        assert_eq!(join.with(D), saved);
+        assert_eq!(saved.with_capabilities(None), saved);
+        assert_eq!(join.with_capabilities(None), saved);
+        assert_eq!(saved.capabilities(), None);
+        let back = SettingsFields::from_bytes(&join.to_bytes()).expect("the tagged form");
+        assert!(
+            back.capabilities()
+                .is_some_and(|c| c.has(crate::capability_names::STRUCTURES_PLACE))
+        );
+    }
 
     #[test]
     fn settings_round_trip_through_their_fields() {
@@ -292,6 +359,7 @@ mod tests {
             water_speed: 4.0,
             mode: "adventure",
             size: crate::world_size::WorldSize::DEFAULT,
+            moon_phase: Some(0.25),
         };
         let f = SettingsFields::default().with(s);
         let back = SettingsFields::from_bytes(&f.to_bytes()).expect("the tagged form");
@@ -457,6 +525,45 @@ mod tests {
             let mut f = f.clone();
             f.0.push((tag::WORLD_SIZE, bad));
             assert_eq!(f.settings(D), Err(SettingsError::Invalid(tag::WORLD_SIZE)));
+        }
+    }
+
+    #[test]
+    fn the_moon_phase_is_an_optional_field_a_world_without_it_takes_the_default() {
+        // A world that sets none writes none: its fields are what they were before the moon's orbit.
+        let f = SettingsFields::default().with(D);
+        assert!(!f.0.iter().any(|(t, _)| *t == tag::MOON_PHASE));
+        assert_eq!(f.settings(D).map(|s| s.moon_phase), Ok(None));
+        assert_ne!(
+            tag::MOON_PHASE & tag::OPTIONAL,
+            0,
+            "optional: no new compatibility line"
+        );
+        let s = WorldSettings {
+            moon_phase: Some(0.625),
+            ..D
+        };
+        let back = SettingsFields::from_bytes(&SettingsFields::default().with(s).to_bytes())
+            .expect("the tagged form");
+        assert_eq!(back.settings(D), Ok(s));
+        // Setting the other fields keeps it; a field this build doesn't know is kept beside it.
+        let mut newer = back.clone();
+        newer.0.push((0x9e, vec![7]));
+        let again = newer.with(WorldSettings {
+            water_speed: 3.0,
+            ..s
+        });
+        assert_eq!(again.settings(D).map(|s| s.moon_phase), Ok(Some(0.625)));
+        assert!(again.0.contains(&(0x9e, vec![7])));
+        // Out of range or the wrong length is refused, not read as some other phase.
+        for bad in [
+            1.0f32.to_le_bytes().to_vec(),
+            (-0.1f32).to_le_bytes().to_vec(),
+            vec![0, 0],
+        ] {
+            let mut f = f.clone();
+            f.0.push((tag::MOON_PHASE, bad));
+            assert_eq!(f.settings(D), Err(SettingsError::Invalid(tag::MOON_PHASE)));
         }
     }
 }

@@ -151,7 +151,8 @@
     "EcologyHello": 101,
     "Ecology": 102,
     "SteamHello": 103,
-    "Steam": 104
+    "Steam": 104,
+    "Capabilities": 105
   },
   "rejectReasons": {
     "ProtocolVersion": 1,
@@ -279,7 +280,8 @@
     "Fill": 1,
     "Replace": 2,
     "Hollow": 3,
-    "Paste": 4
+    "Paste": 4,
+    "Structure": 5
   },
   "voxelModificationReasons": {
     "Edit": 1,
