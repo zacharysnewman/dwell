@@ -16,6 +16,16 @@ Last updated: 2026-11-11 (0.52.108).
 
 ## Queued next, in order (2026-11-12)
 
+**Current order (2026-11-12, evening; owner asked "What is the current priority of upcoming items"):**
+Releases were blocked ~18:45–21:40 (a test type error); unblocked, so everything merged since ships in the next
+releases (incl. the first-person body #791). Local (the Mac, one at a time): (1) bifacial video v3 (portal exit
+merged #824, upside-down camera #821); (2) the in-game check of the cloud rework (#822 shapes/colour, #790 sunsets,
+#801 dither, #798 deck, #823 rim) + the extinction A/B; (3) forest edge to 60 fps at High (~7 ms over); (4) next
+showcase videos, each with a shot plan first; (5) Realistic world R6 in New world. Cloud now: tall grass sounds
+and leg speed (#103), underwater/surface swim audio (#104), floating trees + leaves (item 45), tree pads (item 44,
+needs the owner's 0.55 line), tall grass height (item 14), far-sky rim/band (#823, conflicts). Then: the moon's
+client side (item 27), orbits O4–O5, big worlds memory (#76/#77).
+
 Owner, 2026-11-12: **"How are realistic worlds going? And forests? Those are the two I'm most interested in
 seeing."** → next on the Mac after the flying frame rate: a look at both (screenshots/video of a Realistic world —
 plates, ranges, rain shadow, biomes by climate — and the old-growth forest), then R6 (the Realistic world in New
