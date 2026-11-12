@@ -469,6 +469,7 @@ impl DayNight {
             moon_lit: view.lit,
             a: self.sample(solar_deg),
             b: self.sample(solar_deg + 180.0),
+            air: crate::atmosphere::Air::GROUND,
         }
     }
 }
@@ -492,6 +493,10 @@ pub struct DayState {
     /// Each face's look.
     pub a: Sample,
     pub b: Sample,
+    /// The viewer's air (docs/DAY_NIGHT.md §15): how far its sky has thinned toward space, in the
+    /// viewer's face's frame. [`Air::GROUND`](crate::atmosphere::Air::GROUND) from [`DayNight::state`];
+    /// [`DayState::at_altitude`] sets it.
+    pub air: crate::atmosphere::Air,
 }
 
 impl Default for DayState {
@@ -536,6 +541,19 @@ impl DayState {
             self.moon_phase,
             self.moon_lit * 100.0
         )
+    }
+
+    /// This moment for a viewer `altitude` m above sea level on its own face (face-local): the sky
+    /// thinned toward space above the atmosphere's base (docs/DAY_NIGHT.md §15).
+    pub fn at_altitude(mut self, altitude: f64) -> Self {
+        self.air = crate::atmosphere::ATMOSPHERE.air(altitude);
+        self
+    }
+
+    /// Face `face`'s fog density this moment in the viewer's air: [`fog_density`], thinned with
+    /// the air to none in space.
+    pub fn fog_density(&self, face: FaceFrame) -> f64 {
+        fog_density(self.of(face)) * self.air.fog()
     }
 
     /// Face `face`'s look.
@@ -584,7 +602,7 @@ impl DayState {
         put(with(v.band, v.band_strength));
         put(with(v.sun_disc, v.moon_glow * self.moon_lit));
         put([
-            v.stars,
+            self.air.stars(v.stars),
             seconds.rem_euclid(3600.0),
             pixel_angle,
             self.moon_lit,
@@ -602,7 +620,14 @@ impl DayState {
         put(with(o.glow, o.glow_strength));
         put(with(o.band, o.band_strength));
         put(with(o.sun_disc, o.moon_glow * self.moon_lit));
-        put([o.stars, fog_density(o), 0.0, 0.0]);
+        put([
+            self.air.stars(o.stars),
+            self.fog_density(face.other()),
+            0.0,
+            0.0,
+        ]);
+        // The viewer's air (docs/DAY_NIGHT.md §15): x the thinning, y the limb's elevation sine.
+        put([self.air.thin, self.air.limb, 0.0, 0.0]);
         u
     }
 }
@@ -638,7 +663,7 @@ impl EyeAdaptation {
 }
 
 /// Floats in the `DaySky` uniform block.
-pub const DAY_SKY_FLOATS: usize = 23 * 4;
+pub const DAY_SKY_FLOATS: usize = 24 * 4;
 
 /// The uniform block the renderer's frame carries (`frame.day`): the cycle's state for this frame.
 /// Sky colours are sRGB (the sky is drawn in output colour); lights are linear × intensity. Clouds
@@ -677,6 +702,9 @@ struct DaySky {
     other_band: vec4f,
     other_disc: vec4f,
     other_stars: vec4f,
+    // The viewer's air (docs/DAY_NIGHT.md §15): x how far the sky has thinned toward space (0 the
+    // ground's sky, exactly), y the limb's elevation sine in the viewer's face's frame.
+    space: vec4f,
 };
 ";
 
@@ -865,8 +893,9 @@ mod tests {
         let c = crate::celestial::Celestial::new(D, None);
         let t = (0.3 - D.clock.start_hour / 24.0) * D.day_length_s();
         let real = D.state(0.0, Some(0.3), None).moon;
-        for i in 0..3 {
-            near(real[i], c.view(t, [0.0; 3]).direction[i], 1e-9);
+        let want = c.view(t, [0.0; 3]).direction;
+        for (r, w) in real.iter().zip(want) {
+            near(*r, w, 1e-9);
         }
         // Face B's solar angle is face A's + 180°: its sky turns over when face A's does.
         assert_eq!(morning.b, D.sample(morning.solar_deg + 180.0));

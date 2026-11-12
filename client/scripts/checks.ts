@@ -30,6 +30,7 @@ const RENDER_LOOKS = [
   'shadows',
   'lodshadows',
   'fog',
+  'atmosphere',
   'lodblend',
   'lodcolour',
   'leaves',

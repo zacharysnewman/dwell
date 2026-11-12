@@ -76,6 +76,28 @@ test('bad entries fail with their path named', () => {
   }
 });
 
+test("no cloud reaches past the atmosphere's top (atmosphere.json)", () => {
+  const top = JSON.parse(readFileSync(join(here, 'atmosphere.json'), 'utf8')).topM;
+  const cases = [
+    [(d) => (d.deck.altitudeM = top + 1), /deck\.altitudeM .* must not be above the atmosphere's top/],
+    [(d) => (d.volume.topM = top + 1), /volume\.topM .* must not be above the atmosphere's top/],
+    [(d) => d.plumes.push({ ...ASH, topM: top + 1 }), /plumes\[0\]\.topM .* must not be above/],
+  ];
+  for (const [edit, message] of cases) {
+    const d = data();
+    edit(d);
+    assert.throws(() => validateClouds(d), message);
+  }
+  // A lower atmosphere, by data alone, rejects today's clouds.
+  assert.throws(
+    () => validateClouds(data(), { topM: data().volume.topM - 1 }),
+    /volume\.topM .* must not be above the atmosphere's top/,
+  );
+  // The checked-in clouds sit under it.
+  const d = validateClouds(data());
+  assert.ok(d.volume.topM <= top && d.deck.altitudeM <= top);
+});
+
 test('a plume and a tier added by data reach the Rust', () => {
   const d = data();
   d.plumes.push(ASH);
