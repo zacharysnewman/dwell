@@ -2,6 +2,14 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.54.0",
+      "changes": [
+        "Meadows grow much more tall grass, in wider patches, and on gentle slopes too: no more bare stripes",
+        "Tall grass is the green of the grass it grows on, a little darker at the roots, instead of pale",
+        "A new compatibility line: the terrain changed, so worlds from 0.53 open in their own version"
+      ]
+    },
+    {
       "version": "0.53.6",
       "changes": [
         "Digging and mining now carve real dents into blocks: round bowls in soil, angular facets in stone, seen from every side",
