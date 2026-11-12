@@ -146,6 +146,25 @@ pub trait Scene: TerrainRenderer {
     fn draws_far_trees(&self) -> bool {
         true
     }
+    /// How far (m) the far trees' impostors draw (render/impostors.rs): the game keeps their tiles
+    /// within it. `None` when they don't draw.
+    fn far_tree_reach(&mut self) -> Option<f32> {
+        None
+    }
+    /// Once, when the impostors first draw: (layers, texels a view) to bake in the workers.
+    fn impostor_bakes(&mut self) -> Option<(u32, u32)> {
+        None
+    }
+    /// A baked impostor layer (`Job::ImpostorBake`'s output).
+    fn impostor_layer(&mut self, _layer: u32, _centre_y: f32, _radius: f32, _a: &[u8], _n: &[u8]) {}
+    /// Whether far trees tile (face, i, k) is held.
+    fn far_tree_tile_held(&self, _key: (u8, i32, i32)) -> bool {
+        false
+    }
+    /// A far trees tile's trees (`Job::FarTrees`'s output).
+    fn far_tree_tile(&mut self, _key: (u8, i32, i32), _trees: &[dwell_worldgen::impostor::FarTree]) {}
+    /// Drops the far trees tiles `keep` doesn't hold.
+    fn retain_far_tree_tiles(&mut self, _keep: &dyn Fn(&(u8, i32, i32)) -> bool) {}
     /// How many bytes of finished chunk meshes a frame uploads (shared/render/streaming.json by
     /// tier; the first mesh of a frame always goes).
     fn upload_budget_bytes(&self) -> u64 {
