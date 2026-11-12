@@ -335,7 +335,7 @@ face, or the placement check against its shape.
 
 ## Fixed
 
-### 86. A sword clash's sparks show ~1.5 m beside the blades, in the air (fixed after 0.54.121)
+### 86. A sword clash's sparks show ~1.5 m beside the blades, in the air (fixed after 0.54.123)
 
 Owner's duel, filmed 2026-11-12 (WORK_QUEUE item 35, round 5): the villager blocks and strikes back,
 but the clash's sparks fly about 1.5 m to the side of the blades, in the air. Cause: the server's clash
