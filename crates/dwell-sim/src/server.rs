@@ -1292,6 +1292,9 @@ impl Server {
             lod_rebuild: false,
             config,
         };
+        // The world's disc and build volume bound its edits (`check_block_edit`,
+        // `check_region_edit`): its size's, not the 1× build's (BUGS.md #109).
+        server.world.bounds = server.bounds();
         // The portals' shafts for the player controller's exit push (BIFACIAL_WORLD.md §12.3):
         // from the generator and seed, as the client's prediction sets them (`Game::set_world`).
         if server.config.generator_override.is_none() {

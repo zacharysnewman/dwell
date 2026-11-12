@@ -9,7 +9,7 @@ use dwell_protocol::{RegionEdit, RegionEditOp, region_edit};
 use crate::edit::{
     EditCapsule, REACH_SLACK, flooded_for, medium_allows, overlaps_player, placeable, unbreakable,
 };
-use crate::{BUILD_VOLUME, CELL, M, Overlap, VoxelWorld, chunk_of, inside_world_disc, pos_of_cell};
+use crate::{CELL, M, Overlap, VoxelWorld, WorldBounds, chunk_of, pos_of_cell};
 
 /// How far the server lets a region edit's nearest cell be from the eye (m).
 pub const DEFAULT_REGION_REACH: f32 = region_edit::REACH + REACH_SLACK;
@@ -92,12 +92,12 @@ pub fn box_distance_sq(min: [i32; 3], size: [i32; 3], eye: [f64; 3]) -> f64 {
         .sum()
 }
 
-/// The whole box lies in the build volume (ADR 0025) and the world's disc.
-pub fn box_in_world(min: [i32; 3], size: [i32; 3]) -> bool {
+/// The whole box lies in the world's build volume (ADR 0025) and its disc.
+pub fn box_in_world_of(bounds: &WorldBounds, min: [i32; 3], size: [i32; 3]) -> bool {
     let lo = min.map(i64::from);
     let hi: [i64; 3] = std::array::from_fn(|i| lo[i] + i64::from(size[i]) - 1);
     // The disc is convex, so the four column corners inside means every column is.
-    BUILD_VOLUME.box_overlap(lo, hi.map(|v| v + 1)) == Overlap::Inside
+    bounds.volume().box_overlap(lo, hi.map(|v| v + 1)) == Overlap::Inside
         && [
             (lo[0], lo[2]),
             (lo[0], hi[2]),
@@ -105,7 +105,7 @@ pub fn box_in_world(min: [i32; 3], size: [i32; 3]) -> bool {
             (hi[0], hi[2]),
         ]
         .iter()
-        .all(|&(x, z)| inside_world_disc(x, z))
+        .all(|&(x, z)| bounds.inside_disc(x, z))
 }
 
 fn known(m: StateId) -> bool {
@@ -167,7 +167,7 @@ fn check_region_edit_with(
     if box_distance_sq(request.min, size, eye) > f64::from(reach) * f64::from(reach) {
         return RegionOutcome::fail(RegionCheck::OutOfReach);
     }
-    if !box_in_world(request.min, size) {
+    if !box_in_world_of(&world.bounds, request.min, size) {
         return RegionOutcome::fail(RegionCheck::OutOfWorld);
     }
     let mut out = RegionOutcome::fail(RegionCheck::Ok);
@@ -339,7 +339,7 @@ impl PasteTransform {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::empty_generator;
+    use crate::{BUILD_VOLUME, empty_generator};
     use dwell_blocks::{STATES, parse_state, require};
 
     fn world() -> VoxelWorld {

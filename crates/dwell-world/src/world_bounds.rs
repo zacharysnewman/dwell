@@ -52,6 +52,11 @@ impl WorldBounds {
     pub fn chunk_disc_overlap(&self, cx: i32, cz: i32) -> DiscOverlap {
         chunk_disc_overlap_of(self.radius, cx, cz)
     }
+    /// The cell is one an edit may write: inside the world's build volume and its disc.
+    pub fn contains_cell(&self, c: [i32; 3]) -> bool {
+        let [x, y, z] = c.map(i64::from);
+        self.volume.contains_voxel(x, y, z) && self.inside_disc(x, z)
+    }
     /// Whether any voxel of the chunk may be inside the world: its disc and its build volume.
     pub fn chunk_may_hold(&self, c: ChunkCoord) -> bool {
         self.chunk_disc_overlap(c.x, c.z) != DiscOverlap::Outside && self.volume.chunk_may_hold(c)

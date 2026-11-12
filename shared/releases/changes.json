@@ -2,6 +2,18 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.55.11",
+      "changes": [
+        "Behind the scenes: the bifacial showcase video now shows the player landing beside the far hole"
+      ]
+    },
+    {
+      "version": "0.55.10",
+      "changes": [
+        "In big worlds you can now place blocks more than 50 km from the centre, not only break them"
+      ]
+    },
+    {
       "version": "0.55.9",
       "changes": [
         "Behind the scenes: CI skips docs-only changes so releases ship faster"

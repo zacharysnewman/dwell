@@ -84,6 +84,10 @@ The running order across the items below; each line names its item, where the ow
    LOD classified sections by the 1× disc, so everything past 50 km read as empty space at every size; it now
    classifies in the world's own disc (`kind_from_bounds_of`), and `__dwell.debug().lod` counts what the view wants,
    has built, draws as nothing and the budget dropped. Next: the owner flies a 4× and spawns in an 8×/10× world.
+   **Placing past 50 km (BUGS.md #109, found 2026-11-12 fixing #108):** in a 4×–10× world a Place past the 1×
+   disc's 50 km did nothing (the client dropped it, and the server refused it as out of the world); breaking worked.
+   **Fixed (2026-11-12):** every edit check (the client's pre-checks and prediction, the server's block and region
+   checks) reads the world's own bounds (`VoxelWorld::bounds`).
 10. **Realistic R5–R6 (item 15)** — geology by plate history with today's blocks; the World option.
 
 ### Waiting on the owner (each with what it means and the default meanwhile)
@@ -1488,6 +1492,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    ends as the player falls back. Paths in `.claude/skills/record/paths/bifacial-v3/`.
    **#107 fixed 2026-11-12:** walking in, the player fell into the shaft's wall and the push (then under the opening,
    in the shaft) went into it; the push now acts in the 2 m over the opening. The browser check is for the next take.
+   **Video 1 v4 recorded 2026-11-12** (54.3 s, 6 clips, 18.8 MB, clouds off, no flight): v3's shots with the landing.
+   Browser check passed: 5 of 5 drops rose ~12 m out of face B's hole and landed 7.3 m from the axis on the first
+   swing. Shot (5) is a camera 14 m out and 13.5 m up on the landing diagonal (`"up": "a"`): the player rises
+   head-down, arcs out and stands on face B's ground overhead beside the hole; (6) the drone rise starts from that
+   camera. Paths in `.claude/skills/record/paths/bifacial-v4/`.
 41. **Theater mode** (owner 2026-11-12: "We should use full camera tools to do the things you were doing and expand
    this tool set as you go, we could call it theater mode. Even make it available ingame as a feature that could be
    toggled on for any world type."). Answers: **both** presets (pick a target and a move: orbit, dolly, track,
