@@ -2,6 +2,15 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.54.102",
+      "changes": [
+        "Hold Place with a sword to raise your block in its stance; a quick tap still turns the stance",
+        "Blades clash: a blocked strike rings out, throws sparks and knocks your swing back",
+        "Villagers with swords fight back: they block your wind-up and swing back while you recover (they can't hurt you)",
+        "Villagers are now full height, so a level slash no longer passes over them"
+      ]
+    },
+    {
       "version": "0.54.101",
       "changes": [
         "Behind the scenes: work queue notes"

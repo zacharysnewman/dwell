@@ -30,8 +30,15 @@ const AXE_FIELDS = ['biteM', 'bindM', 'across', 'along', 'sharpness', 'clears', 
 const WEAPON_FIELDS = ['damage', 'knockbackM', 'maxTargets', 'durability', 'guard'];
 /** A weapon's swordplay (owner, 2026-11-12: perpendicular blocks, parallel connects): each
  * stance's blade roll, the thresholds, a glance's damage share, a block's recoil, the guarded arc. */
-const GUARD_FIELDS = ['stances', 'blockWithinDeg', 'connectWithinDeg', 'glanceDamage', 'recoilS', 'frontDeg'];
-export const GUARD_DEFAULTS = { stances: { level: { rollDeg: 0 }, vertical: { rollDeg: 90 } }, blockWithinDeg: 45, connectWithinDeg: 45, glanceDamage: 0.5, recoilS: 0.3, frontDeg: 180 };
+const GUARD_FIELDS = ['stances', 'blockWithinDeg', 'connectWithinDeg', 'glanceDamage', 'recoilS', 'frontDeg', 'raiseAfterS', 'clash'];
+export const GUARD_DEFAULTS = { stances: { level: { rollDeg: 0 }, vertical: { rollDeg: 90 } }, blockWithinDeg: 45, connectWithinDeg: 45, glanceDamage: 0.5, recoilS: 0.3, frontDeg: 180, raiseAfterS: 0.15, clash: {} };
+/** A stance: its blade's roll and the first-person pose clip its raised block shows (round 2;
+ * none: the renderer's default hold). */
+const STANCE_FIELDS = ['rollDeg', 'raisedPose'];
+/** What clients show of a clash (round 2, the `weapons.clash` capability): the sound event, how far
+ * it is heard and sent (m), its sparks (chips), and a glance's share of the sparks and volume. */
+const CLASH_FIELDS = ['sound', 'hearM', 'sparks', 'glanceShare'];
+export const CLASH_DEFAULTS = { sound: null, hearM: 32, sparks: null, glanceShare: 0.5 };
 const SWING_FIELDS = ['windupS', 'activeS', 'hitStopS', 'recoverHitS', 'recoverMissS', 'reachM', 'arcDeg', 'samples', 'camera', 'staminaCost', 'swish', 'bounce', 'rustle', 'rustleLeaves'];
 /** A swing's defaults (a tool without `swing`): a short wind-up, a committed arc, a hit-stop. */
 export const SWING_DEFAULTS = { windupS: 0.12, activeS: 0.14, hitStopS: 0.07, recoverHitS: 0.22, recoverMissS: 0.36, reachM: 2.2, arcDeg: 110, samples: 12, camera: {}, staminaCost: 0, swish: null, bounce: null, rustle: null, rustleLeaves: 4 };
@@ -174,16 +181,25 @@ export function validateTools(data, items, blocks, heldItems = loadHeldItems(), 
       known(g.stances, ['level', 'vertical'], `${gat}.stances`);
       const stances = { ...GUARD_DEFAULTS.stances, ...g.stances };
       for (const k of ['level', 'vertical']) {
-        known(stances[k], ['rollDeg'], `${gat}.stances.${k}`);
+        known(stances[k], STANCE_FIELDS, `${gat}.stances.${k}`);
         inRange(stances[k], 'rollDeg', -180, 180, `${gat}.stances.${k}`);
+        const p = stances[k].raisedPose;
+        if (p !== undefined && (typeof p !== 'string' || !/^[a-z][a-z0-9_]*$/.test(p))) fail(`${gat}.stances.${k}.raisedPose must be a clip name (lowercase)`);
       }
+      inRange(g, 'raiseAfterS', 0, 1, gat);
+      known(g.clash, CLASH_FIELDS, `${gat}.clash`);
+      const c = { ...CLASH_DEFAULTS, ...g.clash };
+      event(c.sound, `${gat}.clash.sound`);
+      inRange(c, 'hearM', 0, 256, `${gat}.clash`, true);
+      inRange(c, 'glanceShare', 0, 1, `${gat}.clash`);
+      const sparks = c.sparks === null ? null : validateChips(c.sparks, `${gat}.clash.sparks`);
       inRange(g, 'blockWithinDeg', 0, 90, gat);
       inRange(g, 'connectWithinDeg', 0, 90, gat);
       if (g.blockWithinDeg + g.connectWithinDeg > 90) fail(`${gat}: blockWithinDeg + connectWithinDeg (${g.blockWithinDeg + g.connectWithinDeg}) must not be above 90 (a strike can't be both)`);
       inRange(g, 'glanceDamage', 0, 1, gat);
       inRange(g, 'recoilS', 0, 3, gat);
       inRange(g, 'frontDeg', 0, 360, gat, true);
-      const guard = { levelRollDeg: stances.level.rollDeg, verticalRollDeg: stances.vertical.rollDeg, blockWithinDeg: g.blockWithinDeg, connectWithinDeg: g.connectWithinDeg, glanceDamage: g.glanceDamage, recoilS: g.recoilS, frontDeg: g.frontDeg };
+      const guard = { levelRollDeg: stances.level.rollDeg, verticalRollDeg: stances.vertical.rollDeg, blockWithinDeg: g.blockWithinDeg, connectWithinDeg: g.connectWithinDeg, glanceDamage: g.glanceDamage, recoilS: g.recoilS, frontDeg: g.frontDeg, raiseAfterS: g.raiseAfterS, levelPose: stances.level.raisedPose ?? null, verticalPose: stances.vertical.raisedPose ?? null, clash: { sound: c.sound, hearM: c.hearM, sparks, glanceShare: c.glanceShare } };
       weapon = { damage: w.damage, knockbackM: w.knockbackM, maxTargets, durability, guard };
       Object.assign(t, { biteM: 0, bindM: 0, across: 0, along: 0, sharpness: 1 });
     } else {
@@ -580,6 +596,7 @@ export function loadNames(fixture = false) {
 const rgb = (c) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
 const f64 = (v) => (Number.isInteger(v) ? `${v}.0` : `${v}`);
 const optStr = (v) => (v === null ? 'None' : `Some("${v}")`);
+const chipsOpt = (c) => (c === null ? 'None' : `Some(Chips { count: ${c.count}, shards: ${c.shards}, color: [${rgb(c.color).join(', ')}], speed: ${f64(c.speed)}, size: ${f64(c.size)} })`);
 
 const offsetRust = (o) => `CameraOffset { yaw: ${f64(o.yaw)}, pitch: ${f64(o.pitch)}, roll: ${f64(o.roll)}, bob: [${o.bob.map(f64).join(', ')}] }`;
 const cameraRust = (c) =>
@@ -588,7 +605,7 @@ const swingRust = (s) =>
   `SwingDef { windup_s: ${f64(s.windupS)}, active_s: ${f64(s.activeS)}, hit_stop_s: ${f64(s.hitStopS)}, recover_hit_s: ${f64(s.recoverHitS)}, recover_miss_s: ${f64(s.recoverMissS)}, reach_m: ${f64(s.reachM)}, arc_deg: ${f64(s.arcDeg)}, samples: ${s.samples}, camera_level: ${cameraRust(s.camera.level)}, camera_vertical: ${cameraRust(s.camera.vertical)}, stamina_cost: ${f64(s.staminaCost)}, swish: ${optStr(s.swish)}, bounce: ${optStr(s.bounce)}, rustle: ${optStr(s.rustle)}, rustle_leaves: ${s.rustleLeaves} }`;
 
 export function toolsRust(d) {
-  const rs = [`// ${header}`, '', 'use crate::chopping::{BlockDamageDef, BreakTool, CameraKey, CameraKick, CameraOffset, CarveProfile, Cracks, DamageLook, DamageLookKind, Chips, CutLook, BiteLook, Leaves, Sway, SwingCamera, SwingDef, GuardDef, ToolDef, ToolKind, WeaponDef, WoodDef, Chop2Wood};', 'use crate::inventory::{DropChoice, DropRule};', ''];
+  const rs = [`// ${header}`, '', 'use crate::chopping::{BlockDamageDef, BreakTool, CameraKey, CameraKick, CameraOffset, CarveProfile, Cracks, DamageLook, DamageLookKind, Chips, CutLook, BiteLook, Leaves, Sway, SwingCamera, SwingDef, ClashLook, GuardDef, ToolDef, ToolKind, WeaponDef, WoodDef, Chop2Wood};', 'use crate::inventory::{DropChoice, DropRule};', ''];
   rs.push('/// Whether the chopping prototype (`chop2`, WORK_QUEUE item 7) is on by default.');
   rs.push(`pub const CHOP2_DEFAULT: bool = ${d.chop2.enabled};`);
   rs.push('');
@@ -597,7 +614,7 @@ export function toolsRust(d) {
   for (const t of d.tools) {
     const kind = t.kind[0].toUpperCase() + t.kind.slice(1);
     rs.push(
-      `    ToolDef { name: "${t.name}", kind: ToolKind::${kind}, held: ${t.held === null ? 'None' : `Some("${t.held}")`}, swing_seconds: ${f64(t.swingSeconds)}, bite_m: ${f64(t.biteM)}, bind_m: ${f64(t.bindM)}, across: ${f64(t.across)}, along: ${f64(t.along)}, sharpness: ${f64(t.sharpness)}, held_vertical: ${optStr(t.heldVertical)}, swing: ${swingRust(t.swing)}, clears: &[${t.clears.map((b) => `"${b}"`).join(', ')}], chop2_bite: ${f64(t.chop2.bite)}, weapon: ${t.weapon === null ? 'None' : `Some(WeaponDef { damage: ${f64(t.weapon.damage)}, knockback_m: ${f64(t.weapon.knockbackM)}, max_targets: ${t.weapon.maxTargets}, guard: GuardDef { level_roll_deg: ${f64(t.weapon.guard.levelRollDeg)}, vertical_roll_deg: ${f64(t.weapon.guard.verticalRollDeg)}, block_within_deg: ${f64(t.weapon.guard.blockWithinDeg)}, connect_within_deg: ${f64(t.weapon.guard.connectWithinDeg)}, glance_damage: ${f64(t.weapon.guard.glanceDamage)}, recoil_s: ${f64(t.weapon.guard.recoilS)}, front_deg: ${f64(t.weapon.guard.frontDeg)} } })`} },`,
+      `    ToolDef { name: "${t.name}", kind: ToolKind::${kind}, held: ${t.held === null ? 'None' : `Some("${t.held}")`}, swing_seconds: ${f64(t.swingSeconds)}, bite_m: ${f64(t.biteM)}, bind_m: ${f64(t.bindM)}, across: ${f64(t.across)}, along: ${f64(t.along)}, sharpness: ${f64(t.sharpness)}, held_vertical: ${optStr(t.heldVertical)}, swing: ${swingRust(t.swing)}, clears: &[${t.clears.map((b) => `"${b}"`).join(', ')}], chop2_bite: ${f64(t.chop2.bite)}, weapon: ${t.weapon === null ? 'None' : `Some(WeaponDef { damage: ${f64(t.weapon.damage)}, knockback_m: ${f64(t.weapon.knockbackM)}, max_targets: ${t.weapon.maxTargets}, guard: GuardDef { level_roll_deg: ${f64(t.weapon.guard.levelRollDeg)}, vertical_roll_deg: ${f64(t.weapon.guard.verticalRollDeg)}, block_within_deg: ${f64(t.weapon.guard.blockWithinDeg)}, connect_within_deg: ${f64(t.weapon.guard.connectWithinDeg)}, glance_damage: ${f64(t.weapon.guard.glanceDamage)}, recoil_s: ${f64(t.weapon.guard.recoilS)}, front_deg: ${f64(t.weapon.guard.frontDeg)}, raise_after_s: ${f64(t.weapon.guard.raiseAfterS)}, level_pose: ${optStr(t.weapon.guard.levelPose)}, vertical_pose: ${optStr(t.weapon.guard.verticalPose)}, clash: ClashLook { sound: ${optStr(t.weapon.guard.clash.sound)}, hear_m: ${f64(t.weapon.guard.clash.hearM)}, sparks: ${chipsOpt(t.weapon.guard.clash.sparks)}, glance_share: ${f64(t.weapon.guard.clash.glanceShare)} } } })`} },`,
     );
   }
   rs.push('];');

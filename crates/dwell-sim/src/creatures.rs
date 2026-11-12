@@ -62,6 +62,57 @@ pub enum Combat {
     FightBack,
 }
 
+/// The stance an NPC fighting with a weapon picks (`fight.stance`): the one that blocks its foe's
+/// swing, or either at random (picked anew each wind-up).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FightStance {
+    Counter,
+    Random,
+}
+
+/// How an NPC whose `fightBack` triggered fights with the weapon it holds (shared/creatures
+/// `npc.fight`; WORK_QUEUE items 35 and 38, round 2): its stance rule, whether it raises its block
+/// while its foe winds up, whether it strikes back while its foe recovers (within
+/// `strike_within_m`), the wait between its own swings (s), and how long without being struck it
+/// gives up (s).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FightDef {
+    pub stance: FightStance,
+    pub raise_on_windup: bool,
+    pub strike_back: bool,
+    pub strike_within_m: f64,
+    pub cooldown_s: f64,
+    pub give_up_s: f64,
+}
+
+/// Where a foe's weapon swing is, as an NPC reads it ([`Creatures::step_fights`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SwingPhase {
+    /// Winding up or on its arc, before its contact: the blade is coming.
+    Coming,
+    /// After its contact, recovering: an opening.
+    Recovering,
+}
+
+/// What an NPC reads of the player it fights: where it stands (world feet), its weapon swing (the
+/// phase, its plane, its weapon), if one is under way.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FoeView {
+    pub position: [f64; 3],
+    pub swing: Option<(SwingPhase, bool, &'static str)>,
+}
+
+/// An NPC's own swing landing this tick ([`Creatures::step_fights`]): the NPC, the player it
+/// swings at, its weapon and plane, and its eye (world) the strike comes from.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NpcSwing {
+    pub npc: u32,
+    pub player: u16,
+    pub weapon: &'static str,
+    pub vertical: bool,
+    pub eye: [f64; 3],
+}
+
 /// One of an NPC's idles: the pose, its weight among them, how long (s, [min, max]).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Idle {
@@ -89,6 +140,7 @@ pub struct NpcDef {
     pub held: Option<&'static str>,
     pub disposition: Disposition,
     pub combat: Combat,
+    pub fight: FightDef,
     pub idles: &'static [Idle],
     pub colours: &'static [ColourSlot],
 }
@@ -261,6 +313,11 @@ pub struct Creature {
     /// An NPC turned on its attacker (`Combat::FightBack`): where it is and ticks left.
     pub foe: Option<[f64; 3]>,
     foe_ticks: u32,
+    /// The player it fights (its fight rules read that player's swing), if a player struck it.
+    pub foe_player: Option<u16>,
+    /// Ticks until it may start its own swing, and its own swing's ticks to its contact.
+    fight_wait: u32,
+    own_swing: Option<u32>,
     rng: u64,
 }
 
@@ -501,8 +558,8 @@ impl Creature {
 /// How far (degrees) an NPC looking around turns either way, and the sweep's period (s).
 const LOOK_SWEEP_DEG: f64 = 60.0;
 const LOOK_PERIOD_S: f64 = 4.0;
-/// How long an NPC that fights back stays turned on its attacker (s).
-const FOE_SECONDS: f64 = 10.0;
+/// An NPC's eye above its feet, as a share of its height (`rows`): where its strikes come from.
+const NPC_EYE_SHARE: f64 = 0.9;
 /// Passes of [`Creatures::separate`] a tick: a crowd's overlaps settle in a few.
 const SEPARATE_PASSES: usize = 4;
 
@@ -585,6 +642,9 @@ impl Creatures {
             idle_len: 0,
             foe: None,
             foe_ticks: 0,
+            foe_player: None,
+            fight_wait: 0,
+            own_swing: None,
             rng,
         });
         Some(self.next_id)
@@ -739,6 +799,9 @@ impl Creatures {
                     idle_len: 0,
                     foe: None,
                     foe_ticks: 0,
+                    foe_player: None,
+                    fight_wait: 0,
+                    own_swing: None,
                     rng: mix(seed, [x + dx, yy, z + dz], 99),
                 };
                 c.look_base = c.yaw;
@@ -760,7 +823,8 @@ impl Creatures {
     }
 
     /// An NPC of `id` is attacked by something at `from` (world): with `Combat::FightBack` it
-    /// stops and turns on it for `FOE_SECONDS`. True when it fights back.
+    /// stops and turns on it for its `fight.giveUpS` (each new strike starts it again). True when
+    /// it fights back.
     pub fn attacked(&mut self, id: u32, from: [f64; 3]) -> bool {
         let table = self.table;
         let Some(c) = self.get_mut(id) else {
@@ -768,12 +832,138 @@ impl Creatures {
         };
         match table.creatures[c.kind].npc.map(|n| n.combat) {
             Some(Combat::FightBack) => {
+                let give_up = table.creatures[c.kind]
+                    .npc
+                    .map_or(0.0, |n| n.fight.give_up_s);
                 c.foe = Some(from);
-                c.foe_ticks = (FOE_SECONDS * f64::from(SIM_HZ)) as u32;
+                c.foe_ticks = ((give_up * f64::from(SIM_HZ)) as u32).max(1);
                 true
             }
             _ => false,
         }
+    }
+
+    /// The player who struck NPC `id` (after [`Self::strike`]): the one its fight rules watch.
+    pub fn set_foe_player(&mut self, id: u32, player: u16) {
+        if let Some(c) = self.get_mut(id)
+            && c.foe_ticks > 0
+        {
+            c.foe_player = Some(player);
+        }
+    }
+
+    /// The NPCs' fights, a tick (after [`Self::step_near`]; WORK_QUEUE items 35 and 38, round 2):
+    /// each NPC turned on a player (`foe_player`) and holding a weapon reads that player
+    /// (`foes`: None, gone) by its `fight` rules: while the player's blade is coming it raises its
+    /// block in its stance (`counter`: the one that blocks that swing; `random`), lowering it
+    /// otherwise; while the player recovers, within `strike_within_m`, its wait over, it swings
+    /// back (attacking drops its block); and it gives up `giveUpS` after it was last struck. Its
+    /// own swings landing this tick are returned for the server to resolve (an NPC's strike never
+    /// hurts a player). Face-local through `FaceFrame`.
+    pub fn step_fights(&mut self, foes: &dyn Fn(u16) -> Option<FoeView>) -> Vec<NpcSwing> {
+        let table = self.table;
+        let mut out = Vec::new();
+        for c in &mut self.list {
+            let Some(n) = table.creatures[c.kind].npc else {
+                continue;
+            };
+            let fight = n.fight;
+            c.fight_wait = c.fight_wait.saturating_sub(1);
+            let Some(mut g) = c.guard else {
+                continue;
+            };
+            let Some(t) = dwell_protocol::chopping::tool(g.weapon) else {
+                continue;
+            };
+            let Some(w) = t.weapon else {
+                continue;
+            };
+            let view = c.foe_player.filter(|_| c.foe_ticks > 0).and_then(foes);
+            let Some(view) = view else {
+                // Given up (or its foe gone): its block lowered, its swing dropped.
+                c.foe_player = None;
+                c.own_swing = None;
+                if g.raised {
+                    g.raised = false;
+                    c.guard = Some(g);
+                }
+                continue;
+            };
+            c.foe = Some(view.position);
+            let f = FaceFrame::at_height(c.position[1]);
+            let (me, them) = (f.point(c.position), f.point(view.position));
+            let dist = (them[0] - me[0]).hypot(them[2] - me[2]);
+            // Its own swing on its way to its contact.
+            if let Some(left) = c.own_swing {
+                if left <= 1 {
+                    c.own_swing = None;
+                    let up = f64::from(table.creatures[c.kind].rows) * dwell_world::CELL_H;
+                    let eye = f.point([me[0], me[1] + up * NPC_EYE_SHARE, me[2]]);
+                    out.push(NpcSwing {
+                        npc: c.id,
+                        player: c.foe_player.expect("a foe"),
+                        weapon: g.weapon,
+                        vertical: g.vertical,
+                        eye,
+                    });
+                } else {
+                    c.own_swing = Some(left - 1);
+                }
+                c.guard = Some(g);
+                continue;
+            }
+            match view.swing {
+                Some((SwingPhase::Coming, strike_vertical, weapon)) if fight.raise_on_windup => {
+                    if !g.raised {
+                        g.vertical = match fight.stance {
+                            FightStance::Counter => {
+                                let theirs = dwell_protocol::chopping::tool(weapon)
+                                    .and_then(|t| t.weapon)
+                                    .map_or(w.guard, |x| x.guard);
+                                w.guard.counter(strike_vertical, &theirs)
+                            }
+                            FightStance::Random => {
+                                c.rng = mix(c.rng, [0; 3], 7);
+                                unit(c.rng) < 0.5
+                            }
+                        };
+                        g.raised = true;
+                    }
+                }
+                Some((SwingPhase::Recovering, ..))
+                    if fight.strike_back && c.fight_wait == 0 && dist <= fight.strike_within_m =>
+                {
+                    // An opening: it swings back, its block dropped for the swing.
+                    let hz = f64::from(SIM_HZ);
+                    let contact = ((t.swing.centre_s() * hz).ceil() as u32).max(1);
+                    g.raised = false;
+                    g.attack((t.swing_seconds * hz).ceil() as u32);
+                    c.own_swing = Some(contact);
+                    c.fight_wait = ((fight.cooldown_s.max(t.swing_seconds)) * hz).ceil() as u32;
+                }
+                Some((SwingPhase::Coming, ..)) => {}
+                _ => g.raised = false,
+            }
+            c.guard = Some(g);
+        }
+        out
+    }
+
+    /// An NPC's swing was blocked: it may swing again only after `recoil_s`.
+    pub fn recoil(&mut self, id: u32, recoil_s: f64) {
+        if let Some(c) = self.get_mut(id) {
+            let ticks = (recoil_s * f64::from(SIM_HZ)).ceil() as u32;
+            c.fight_wait = c.fight_wait.max(ticks);
+        }
+    }
+
+    /// The fighters' guards as others see them: each creature holding a weapon, its stance and
+    /// whether its block is raised.
+    pub fn guards(&self) -> Vec<(u32, bool, bool)> {
+        self.list
+            .iter()
+            .filter_map(|c| c.guard.map(|g| (c.id, g.vertical, g.blocking())))
+            .collect()
     }
 
     /// One tick: each creature idles or walks a step; a step onto ground it can't stand on (water,

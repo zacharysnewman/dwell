@@ -710,6 +710,7 @@ impl Session {
                     | Message::HeldTools(_)
                     | Message::Steam(_)
                     | Message::Ecology(_)
+                    | Message::Swordplay(_)
             ) && (self.joined()
                 || self.worldgen_wait.is_some()
                 || matches!(self.state, SessionState::Confirming { .. }))
