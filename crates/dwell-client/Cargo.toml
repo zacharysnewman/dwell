@@ -27,6 +27,7 @@ dwell-physics = { path = "../dwell-physics" }
 dwell-protocol = { path = "../dwell-protocol" }
 dwell-sim = { path = "../dwell-sim" }
 dwell-storage = { path = "../dwell-storage" }
+dwell-theater = { path = "../dwell-theater" }
 dwell-world = { path = "../dwell-world" }
 dwell-worldgen = { path = "../dwell-worldgen" }
 

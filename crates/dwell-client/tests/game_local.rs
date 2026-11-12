@@ -1127,6 +1127,43 @@ fn the_whole_world_view_generates_and_meshes_sections() {
     assert!(stats.nodes > 0);
 }
 
+/// Theater mode (docs/THEATER_MODE.md): a camera path playing places the view, its field of view
+/// and the viewer's time of day by the frame clock; stopping returns to the player's eyes.
+#[test]
+fn a_theater_path_drives_the_view() {
+    let mut rig = Rig::new();
+    assert!(rig.run_until(60 * 30, |r| r.game.is_some()));
+    let feet = rig.game.as_ref().unwrap().debug_state().feet;
+    let at = |dx: f64| [feet[0] + dx, feet[1] + 10.0, feet[2]];
+    let path = dwell_theater::Path::parse(&serde_json::json!({
+        "formatVersion": 1,
+        "keyframes": [
+            { "t": 0, "position": at(0.0), "look": [90, -10], "fov": 50, "timeOfDay": 0.25 },
+            { "t": 2, "position": at(20.0), "timeOfDay": 0.75 }
+        ],
+        "segments": [{ "move": "linear" }]
+    }))
+    .unwrap();
+    let g = rig.game.as_mut().unwrap();
+    g.play_theater(path);
+    g.step_theater(1000.0);
+    g.step_theater(2000.0);
+    let v = g.view().unwrap();
+    assert!(
+        (v.eye[0] - at(10.0)[0]).abs() < 1e-6,
+        "half way at 1 s: {:?}",
+        v.eye
+    );
+    assert_eq!(v.fov_deg, Some(50.0));
+    assert!((v.yaw_deg - 90.0).abs() < 1e-6 && (v.pitch_deg + 10.0).abs() < 1e-6);
+    assert_eq!(g.theater_state(), Some((1.0, 2.0, false)));
+    g.step_theater(4000.0);
+    assert_eq!(g.theater_state(), Some((2.0, 2.0, true)), "held at the end");
+    g.stop_theater();
+    assert_eq!(g.view(), None);
+    assert_eq!(g.theater_state(), None);
+}
+
 #[test]
 fn a_placed_camera_views_the_world_from_there() {
     let mut rig = Rig::new();
@@ -1151,6 +1188,7 @@ fn a_placed_camera_views_the_world_from_there() {
         eye,
         yaw_deg: 0.0,
         pitch_deg: -60.0,
+        fov_deg: None,
     };
     rig.game.as_mut().unwrap().set_view(Some(view));
     let fine_below = |r: &Rig| {

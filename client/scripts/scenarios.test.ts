@@ -5,6 +5,7 @@ import {
   clipStripSheet,
   clipStripTimes,
   parseScenarios,
+  parseStep,
   overBudget,
   buildPage,
   scenarioUrl,
@@ -609,6 +610,31 @@ describe('buildPage', () => {
     );
     expect(buildPage('https://dropkickarcade.com/dwell/v/0.51.24')).toBe(
       'https://dropkickarcade.com/dwell/v/0.51.24/',
+    );
+  });
+
+  it('reads a theater step: a preset or a path, waiting and hiding the HUD by default', () => {
+    expect(parseStep('s', { do: 'theater', preset: 'orbit', params: { radiusM: 30 } })).toEqual({
+      do: 'theater',
+      preset: 'orbit',
+      params: { radiusM: 30 },
+      wait: true,
+      hud: false,
+    });
+    const path = { formatVersion: 1, keyframes: [] };
+    expect(parseStep('s', { do: 'theater', path, wait: false, subject: 'player' })).toEqual({
+      do: 'theater',
+      path,
+      subject: 'player',
+      wait: false,
+      hud: false,
+    });
+    expect(() => parseStep('s', { do: 'theater' })).toThrow(/a path or a preset/);
+    expect(() => parseStep('s', { do: 'theater', path, preset: 'orbit' })).toThrow(
+      /a path or a preset/,
+    );
+    expect(() => parseStep('s', { do: 'theater', preset: 'orbit', params: { r: 'x' } })).toThrow(
+      /params\.r/,
     );
   });
 });

@@ -74,6 +74,8 @@ and friend worlds), with a small master server for discovery; there are no offic
 - `docs/WATER_SURFACE_GRID.md` — design for Phase 53 (ADR 0060): water as a simulated surface grid in its own
   layer (sleeping chunks, pools, a held sea), generated water filled by it at world creation; replaces
   Phase 52's basins and pool graph when built.
+- `docs/THEATER_MODE.md` — theater mode (WORK_QUEUE item 41): camera paths as data (keyframes, moves, easings),
+  presets (`shared/theater/presets.json`), the engine `crates/dwell-theater`, recording, the creative viewpoint.
 - `docs/AGENT_QUICKSTART.md` — the one page an agent reads instead of this file for a typical task.
 - `docs/CLOUD_SESSIONS.md` — running Claude Code cloud sessions for parallel logic-only work: launching,
   follow-ups, the PR and merge flow, what suits the cloud, limits and timings.

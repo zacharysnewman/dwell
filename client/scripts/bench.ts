@@ -932,6 +932,21 @@ async function step(run: Run, s: Step): Promise<void> {
         `d.setTime(${String(s.t)}${s.moon === undefined ? '' : `, ${String(s.moon)}`})`,
       );
       return;
+    case 'theater': {
+      // Load (a path, or a preset expanded around its subject) and play; wait for the end.
+      const path =
+        s.path ??
+        (await call<unknown>(
+          page,
+          `d.theater('preset', ${JSON.stringify({ name: s.preset, params: s.params ?? {}, subject: s.subject ?? 'player' })})`,
+        ));
+      await call(page, `d.theater('hud', ${JSON.stringify({ shown: s.hud })})`);
+      await call(page, `d.theater('play', ${JSON.stringify({ path })})`);
+      if (s.wait) {
+        await until(page, `d.theater('state', {})?.finished === true`, 3_600_000);
+      }
+      return;
+    }
     case 'waterDebug':
       await call(page, `d.waterDebug(${JSON.stringify(s.names)})`);
       return;

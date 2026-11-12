@@ -570,12 +570,37 @@ pub struct ViewOverride {
     /// Degrees, as the player's look (yaw 0 = +Z; pitch toward the face's up).
     pub yaw_deg: f64,
     pub pitch_deg: f64,
+    /// The vertical field of view (degrees) instead of the setting's (theater mode's paths).
+    pub fov_deg: Option<f64>,
 }
 
 impl ViewOverride {
     /// The face the eye is over.
     fn face(&self) -> FaceFrame {
         FaceFrame::at_height(self.eye[1])
+    }
+}
+
+/// The targets a theater path names (docs/THEATER_MODE.md §3.1), as this client sees them.
+pub struct TheaterTargets<'a> {
+    player: [f64; 3],
+    creatures: &'a crate::creatures::ClientCreatures,
+}
+
+impl dwell_theater::Targets for TheaterTargets<'_> {
+    fn position(&self, t: &dwell_theater::TargetRef) -> Option<[f64; 3]> {
+        use dwell_theater::TargetRef;
+        match t {
+            TargetRef::Point(p) => Some(*p),
+            TargetRef::Player => Some(self.player),
+            TargetRef::Creature(id) | TargetRef::Npc(id) => {
+                let npc = matches!(t, TargetRef::Npc(_));
+                let (feet, is_npc) = self.creatures.feet_of(u32::try_from(*id).ok()?)?;
+                // A metre up from the feet: the body's middle, on its face.
+                let up = FaceFrame::at_height(feet[1]).up();
+                (is_npc == npc).then(|| std::array::from_fn(|k| feet[k] + up[k]))
+            }
+        }
     }
 }
 
@@ -853,6 +878,13 @@ pub struct Game<S: Scene> {
     /// The dev switches over the day/night cycle, and its state at the last frame (world time is
     /// `clock`'s).
     pub day_override: DayOverride,
+    /// Theater mode's camera path playing (docs/THEATER_MODE.md): it drives the placed view, the
+    /// field of view and the time of day this viewer sees while it plays.
+    theater: Option<dwell_theater::Player>,
+    /// The last frame `step_theater` ran (ms), for its frame time.
+    theater_ms: Option<f64>,
+    /// The time of day the theater shows (this viewer only), over the dev override.
+    theater_time: Option<f64>,
     /// The world's clock (the server's world settings; this build's until they arrive).
     /// The world's day/night cycle: its clock, its moon's phase and its orbit (ADR 0054;
     /// REALISTIC_WORLD.md §8), this build's looks.
@@ -1016,6 +1048,9 @@ impl<S: Scene> Game<S> {
             reduced_motion: false,
             lod_camera: None,
             day_override: DayOverride::default(),
+            theater: None,
+            theater_ms: None,
+            theater_time: None,
             world_day: DAY_NIGHT,
             day: DayState::default(),
             first_draw_ms: None,
@@ -1162,6 +1197,57 @@ impl<S: Scene> Game<S> {
             };
             (s, t.max(0.0) as f32)
         }));
+    }
+
+    /// Plays a camera path (theater mode, docs/THEATER_MODE.md) from its start: it drives the view
+    /// until [`Game::stop_theater`].
+    pub fn play_theater(&mut self, path: dwell_theater::Path) {
+        self.theater = Some(dwell_theater::Player::new(path));
+        self.theater_ms = None;
+    }
+    /// Stops the camera path: the view returns to the player's eyes, the time of day to the world's.
+    pub fn stop_theater(&mut self) {
+        if self.theater.take().is_some() {
+            self.view = None;
+        }
+        self.theater_time = None;
+        self.theater_ms = None;
+    }
+    /// The path playing: (its time, its length, finished).
+    pub fn theater_state(&self) -> Option<(f64, f64, bool)> {
+        self.theater
+            .as_ref()
+            .map(|p| (p.time, p.path.duration(), p.finished()))
+    }
+    /// Pauses or resumes the path.
+    pub fn pause_theater(&mut self, paused: bool) {
+        if let Some(p) = &mut self.theater {
+            p.playing = !paused;
+        }
+    }
+    /// Where the targets a path names are now: the player's centre, a creature's or NPC's by id.
+    pub fn theater_targets(&self) -> TheaterTargets<'_> {
+        TheaterTargets {
+            player: self.position(),
+            creatures: &self.creatures,
+        }
+    }
+    /// Steps the camera path to `now_ms` and places the view at its pose (before the frame).
+    pub fn step_theater(&mut self, now_ms: f64) {
+        let Some(mut player) = self.theater.take() else {
+            return;
+        };
+        let dt = self.theater_ms.map_or(0.0, |t| (now_ms - t) / 1000.0);
+        self.theater_ms = Some(now_ms);
+        let pose = player.step(dt, &self.theater_targets());
+        self.theater = Some(player);
+        self.view = Some(ViewOverride {
+            eye: pose.position,
+            yaw_deg: pose.yaw_deg,
+            pitch_deg: pose.pitch_deg,
+            fov_deg: pose.fov_deg,
+        });
+        self.theater_time = pose.time_of_day;
     }
 
     pub fn set_view(&mut self, view: Option<ViewOverride>) {
@@ -4192,7 +4278,9 @@ impl<S: Scene> Game<S> {
         let o = self.day_override;
         let world_s =
             self.clock.seconds(now_ms).unwrap_or(0.0) + (o.speed - 1.0) * (now_ms - first) / 1000.0;
-        self.day = self.world_day.state(world_s, o.time, o.moon);
+        self.day = self
+            .world_day
+            .state(world_s, self.theater_time.or(o.time), o.moon);
         self.scene
             .borrow_mut()
             .set_day(&self.day, (now_ms - first) / 1000.0);
@@ -4375,6 +4463,10 @@ impl<S: Scene> Game<S> {
             effective_fov(viewport.fov_y_deg, out.fov_boost_pct),
             self.spyglass_view.magnification,
         );
+        // A theater path's field of view replaces the setting's.
+        if let Some(f) = self.view.and_then(|v| v.fov_deg) {
+            self.frame_fov = f;
+        }
         let mut scene = self.scene.borrow_mut();
         scene.set_fov(Some(self.frame_fov));
         scene.set_magnification(self.spyglass_view.magnification);

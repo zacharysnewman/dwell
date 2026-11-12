@@ -397,6 +397,27 @@ first, each one's `tick` (the server's, 60 a second), `cell`, `from` and `to` (c
 strings) and `reason`. The local world's water report carries it as `edits`, so the block dump has
 it at `water.edits`: what was done near a reported spot, in order, to replay in a native probe.
 
+## Theater: camera paths (`__dwell.theater`, the `theater` step)
+
+Theater mode's camera engine ([`THEATER_MODE.md`](THEATER_MODE.md), `crates/dwell-theater`) plays camera
+paths — keyframes joined by moves (`cut`, `linear`, `ease`, `orbit`, `track`, `dolly`, `crane`, `pan`) with
+easings, a field of view, the viewer's time of day and a speed ramp — into the placed view, frame-rate
+independently. Use it for cinematic moves instead of per-frame `placeCamera` scripts.
+
+- `__dwell.theater('preset', { name, params, subject })` → a path (JSON object): a preset of
+  `shared/theater/presets.json` (`orbit`, `dolly`, `track`, `rise`, `pan`) expanded around `subject`
+  (`"player"`, `[x, y, z]`, `{creature: id}`, `{npc: id}`) from where the camera is now (the placed view, or the
+  player's eyes), with `params` over its defaults (clamped to the preset's ranges).
+- `__dwell.theater('play', { path })` plays a path from its start (a bad path throws the engine's message,
+  naming the entry); `'state'` → `{ time, duration, finished }`; `'pause', { paused }`; `'stop'` (or
+  `releaseCamera`) back to the player's eyes, the time of day to the world's.
+- `__dwell.theater('hud', { shown: false })` hides every element but the canvas (one CSS rule); `'stop'` shows
+  it again.
+- The bench's step: `{ "do": "theater", "preset": "orbit", "params": { "radiusM": 25, "heightM": 8,
+  "timeFrom": 0.7, "timeTo": 0.8 }, "subject": "player" }` or `{ "do": "theater", "path": { … } }`; it waits
+  for the path's end unless `"wait": false`, and hides the HUD unless `"hud": true`. Record around it with
+  the `record` step or the record skill's screencast.
+
 ## Finding places
 
 Tests and benchmarks find their scene by what is there, not by coordinates that go stale when the
