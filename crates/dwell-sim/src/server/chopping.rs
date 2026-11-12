@@ -495,6 +495,7 @@ impl Server {
             let along = share < 0.5 * (t.across + t.along);
             cut.chop2(t, wood, grain, side, along);
         } else {
+            let band = cut.open_band(side, band);
             cut.swing(t, grain, side, band, share);
         }
         let cut = *cut;
