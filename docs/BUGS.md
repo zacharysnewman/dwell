@@ -13,6 +13,8 @@ down-strokes (or a stroke, a snap back and a second stroke). Suspects: the verti
 second stroke; the swing restarted by a second trigger (the click and the hit event, or the server's echo of the
 swing re-starting the local one); the level/vertical choice flipping mid-swing. Check with `clip_probe` and the
 swing's trace, both faces.
+Owner, 2026-11-12, clarifying: **"The animation double swings"**: the vertical swing's animation itself (the arms and
+tool show two strokes per swing), not two hits.
 
 ### 92. Downhill water shows edge triangles and thin lines at its ½ m level steps
 

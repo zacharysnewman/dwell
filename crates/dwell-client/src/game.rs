@@ -3236,18 +3236,18 @@ impl<S: Scene> Game<S> {
         {
             self.chop.run = None;
             self.chop.cleared.clear();
-            self.bodies.drive_arms(None);
+            self.bodies.drive_arms(crate::chop::ArmsDrive::Release);
         }
         let Some(mut run) = self.chop.run else {
             return CameraOffset::ZERO;
         };
-        if run.done(now_ms) {
+        let drive = run.arms(now_ms);
+        self.bodies.drive_arms(drive);
+        if drive == crate::chop::ArmsDrive::Release {
             self.chop.run = None;
-            self.bodies.drive_arms(None);
             return CameraOffset::ZERO;
         }
         let t = run.elapsed(now_ms);
-        self.bodies.drive_arms(Some(run.clip_time(t)));
         if run.take_clear(now_ms) {
             self.swing_clear(run.tool, now_ms);
         }
