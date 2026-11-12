@@ -818,7 +818,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    biome/climate for performance reference on trees."). A biome preset (tall, closely spaced mature trees — an
    old-growth temperate rainforest of tall pines and broadleaf, thick undergrowth) placed by climate (cool and very
    wet), plus a fixed test world and bench spot that stand in the densest forest, so every tree/leaf/impostor change
-   is measured there at High on the M1 Air. In progress (cloud).
+   is measured there at High on the M1 Air. **Built (2026-11-12, cloud), the GPU run outstanding (local):** the
+   `preset:old_growth` biome (6–13 °C, 2200 mm and up; the old-growth species `dwell:old_pine` 18–26 m and
+   `dwell:old_oak` 9–14 m, mostly mature, ~220 a hectare by the `old_growth` placement, crowns interleaving
+   by a negative `spacing`; tall grass nearly everywhere), in the Realistic world by climate and the
+   starter's cool wet ground (3.5 % of its land; its terrain changed there, a new line for the owner to raise; the default unchanged); `test:forest`, old-growth
+   everywhere; the spots `forest:inside`, `forest:edge`, `forest:above` and the scenario `forest-perf` at
+   `?preset=high`, a 16.7 ms frame budget report-only until item 30 (docs/DEV_TOOLS.md "The tree performance
+   reference"). Next (local): run `forest-perf` on the M1 Air for the first numbers, look at the stand, and
+   tune the spots if a view misses the densest trees.
 
 33. **Licensed music replaces the generated music** (owner 2026-11-12: "I downloaded a big music set as a Unity
    asset, I'd like the casual game music setup in a prototype and make it play randomly in the game. Probably

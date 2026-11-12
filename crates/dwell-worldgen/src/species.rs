@@ -589,8 +589,15 @@ mod tests {
     #[test]
     fn every_species_names_its_sapling() {
         // face-a-only: names only.
+        // The old-growth species (WORK_QUEUE item 32) are wild only: no sapling of their own yet.
+        let wild: Vec<_> = SPECIES
+            .iter()
+            .filter(|s| s.sapling.is_none())
+            .map(|s| s.name)
+            .collect();
+        assert_eq!(wild, ["dwell:old_oak", "dwell:old_pine"]);
         for (i, s) in SPECIES.iter().enumerate() {
-            let p = s.sapling.expect(s.name);
+            let Some(p) = s.sapling else { continue };
             assert_eq!(of_sapling(p.item), Some(i), "{}", s.name);
             assert!(
                 dwell_blocks::find_block(p.item).is_some(),

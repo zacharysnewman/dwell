@@ -57,7 +57,7 @@ test('an entry added by data alone is emitted', () => {
     height: [0, 50],
   });
   const rs = decorationsRust(validateDecorations(d, blocks));
-  assert.match(rs, /DECORATIONS: \[Decoration; 2\]/);
+  assert.match(rs, /DECORATIONS: \[Decoration; 3\]/);
   assert.match(rs, /name: "dirt_tufts", block: "dwell:tall_grass", on: &\["dwell:dirt"\], density: 0\.1, patch_wavelength: 0, patch_coverage: 1\.0, max_slope: 2, min_height: 0, max_height: 50, on_ramps: false/);
 });
 
@@ -263,7 +263,7 @@ test('a bad placement fails with its name and the problem', () => {
     [(p) => (p.height = [500, 400]), /height must be \[min, max\]/],
     [(p) => (p.rise.full = 1900), /rise\.full must be a whole number of metres in \(height\[0\], height\[1\]\]/],
     [(p) => (p.maxSlopeDeg = 90), /maxSlopeDeg must be in \(0, 90\) degrees/],
-    [(p) => (p.spacing = -1), /spacing must be a whole number of blocks/],
+    [(p) => (p.spacing = -5), /spacing must be a whole number of blocks/],
     [(p) => (p.rotate = [0, 45]), /rotate must be distinct angles from 0, 90, 180, 270/],
     [(p) => (p.mirror = ['x']), /pine_groves: unknown mirror/],
     [(p) => (p.variants[0].replace = { 'dwell:leaves': 'dwell:moss' }), /variant snowy: replace names unknown block dwell:moss/],

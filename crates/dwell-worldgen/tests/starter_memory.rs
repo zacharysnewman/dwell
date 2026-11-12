@@ -85,8 +85,11 @@ fn fnv(h: &mut u64, bytes: &[u8]) {
 /// Re-pinned 2026-11-12 for the meadow grass (WORK_QUEUE item 21, the 0.54 line): tall grass over
 /// ½ m grass ramps, wider and denser patches (`decorations.json`), the steppe's `undergrowth`
 /// 0.75 → 0.85.
+/// Re-pinned 2026-11-12 for the old-growth forest (WORK_QUEUE item 32): `preset:old_growth` on the
+/// starter's cool, wet lowland (its old-growth species, the `old_growth` placement and undergrowth); a
+/// change of the starter's terrain, so the owner raises the next line (0.55).
 const STARTER_PIN: [(Face, &str); 2] =
-    [(Face::A, "1d90f0c347edcfc1"), (Face::B, "596e7d20e21c5136")];
+    [(Face::A, "685a878b62e525b0"), (Face::B, "096e6cf26b398d0f")];
 
 #[test]
 fn the_starter_worlds_terrain_is_unchanged() {

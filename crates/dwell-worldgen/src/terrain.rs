@@ -3927,7 +3927,11 @@ impl TerrainGenerator {
             .then(|| self.biomes.biome_of_palette(here.palette))
             .flatten()
             .map(|b| &self.biomes.list[b]);
-        let listed = biome.map(|b| b.decorations);
+        // A world of one biome takes that biome's list (its rules only: a rule another biome lists,
+        // e.g. the old-growth undergrowth, stays out of the default world).
+        let listed = biome
+            .or_else(|| self.biomes.list.first())
+            .map(|b| b.decorations);
         // T3b: a biome's `undergrowth` scales each rule a vegetation kind governs by the climate
         // (heights from this chunk's columns where they lie in it).
         let height = |hx: i64, hz: i64| {
