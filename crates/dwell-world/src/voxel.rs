@@ -527,6 +527,8 @@ pub struct VoxelWorld {
     /// The held chunks' placed light sources (docs/LIGHTS.md §4): the cells whose blocks give off a
     /// light source and block light (a torch's flame), kept with the flood light.
     sources: HashMap<ChunkCoord, Vec<[i32; 3]>>,
+    /// The chunk whose light is part way ([`Self::light_begin`]): its sources indexed once done.
+    light_pending: Option<ChunkCoord>,
     /// The water's currents (docs/WATER_SURFACE_GRID.md §2c): the server's water grid writes them,
     /// a client keeps the server's; swimmers and floating bodies read them.
     pub currents: crate::currents::Currents,
@@ -551,6 +553,7 @@ impl VoxelWorld {
             loaded_saved: 0,
             light: None,
             sources: HashMap::default(),
+            light_pending: None,
             currents: Default::default(),
         }
     }
@@ -578,9 +581,49 @@ impl VoxelWorld {
 
     /// The chunk is held (its voxels stored, or all air): lit, and its surroundings relit.
     pub fn light_load(&mut self, coord: ChunkCoord) {
+        self.settle_light();
         if let Some(l) = self.light.as_deref_mut() {
             l.load(&self.chunks, coord);
             self.index_sources(coord);
+        }
+    }
+
+    /// As [`Self::light_load`], lit a slice at a time by [`Self::light_resume`] (docs/BUGS.md #72:
+    /// one chunk's light was up to 20 ms of a frame on a phone's CPU). Any other light update
+    /// first finishes it.
+    pub fn light_begin(&mut self, coord: ChunkCoord) {
+        self.settle_light();
+        if let Some(l) = self.light.as_deref_mut() {
+            l.begin_load(&self.chunks, coord);
+            self.light_pending = Some(coord);
+        }
+    }
+
+    /// Goes on with the light part way for at most `steps` cells; whether it is done.
+    pub fn light_resume(&mut self, steps: usize) -> bool {
+        let Some(c) = self.light_pending else {
+            return true;
+        };
+        let done = self
+            .light
+            .as_deref_mut()
+            .is_none_or(|l| l.resume(&self.chunks, steps));
+        if done {
+            self.light_pending = None;
+            self.index_sources(c);
+        }
+        done
+    }
+
+    /// The chunk whose light is part way, if any.
+    pub fn light_pending(&self) -> Option<ChunkCoord> {
+        self.light_pending
+    }
+
+    /// Finishes a light part way, if any.
+    fn settle_light(&mut self) {
+        if self.light_pending.is_some() {
+            self.light_resume(usize::MAX);
         }
     }
 
@@ -649,6 +692,7 @@ impl VoxelWorld {
 
     /// The chunk is no longer held.
     pub fn light_unload(&mut self, coord: ChunkCoord) {
+        self.settle_light();
         if let Some(l) = self.light.as_deref_mut() {
             l.unload(&self.chunks, coord);
         }
@@ -657,6 +701,7 @@ impl VoxelWorld {
 
     /// The chunks are no longer held, relit in one update (`LightMap::unload_many`).
     pub fn light_unload_many(&mut self, coords: &[ChunkCoord]) {
+        self.settle_light();
         if let Some(l) = self.light.as_deref_mut() {
             l.unload_many(&self.chunks, coords);
         }
@@ -667,6 +712,7 @@ impl VoxelWorld {
 
     /// These world cells' blocks changed.
     pub fn light_edited(&mut self, cells: &[[i32; 3]]) {
+        self.settle_light();
         if let Some(l) = self.light.as_deref_mut() {
             l.edited(&self.chunks, cells);
             for &c in cells {
