@@ -124,6 +124,11 @@ pub trait Scene: TerrainRenderer {
     fn uploads_waiting(&self) -> bool {
         false
     }
+    /// Terrain collider cells a prediction tick puts in outside the player's reach
+    /// (shared/render/streaming.json `collisionCellsPerTick` by tier; BUGS.md #72).
+    fn collision_cells_per_tick(&self) -> usize {
+        dwell_physics::terrain::COLLISION_CELLS_PER_TICK
+    }
     /// Rewrites chunk `coord`'s heightfield tile alone (none: its water is gone), its meshes kept.
     fn set_water_tile(
         &mut self,
@@ -3295,6 +3300,8 @@ impl<S: Scene> Game<S> {
         self.last_frame_ms = Some(now_ms);
         self.accumulator =
             (self.accumulator + elapsed * self.tick_rate).min(MAX_TICKS_PER_FRAME * TICK_MS);
+        let cells = self.scene.borrow().collision_cells_per_tick();
+        self.predictor.set_collision_cells_per_tick(cells);
         let t0 = telemetry::now_ms();
         while self.accumulator >= TICK_MS {
             self.accumulator -= TICK_MS;

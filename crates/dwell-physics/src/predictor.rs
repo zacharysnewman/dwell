@@ -566,6 +566,12 @@ impl Predictor {
         self.players.set_vitals(rules);
     }
 
+    /// The most terrain collider cells a tick puts in outside the player's reach
+    /// (`Players::set_collision_cells_per_tick`; the phone's from shared/render/streaming.json).
+    pub fn set_collision_cells_per_tick(&mut self, cells: usize) {
+        self.players.set_collision_cells_per_tick(cells);
+    }
+
     /// The server's vitals as of input `seq` (`Message::Vitals`, ADR 0069 §7): where the
     /// prediction differs at that tick (a swing's cost, which isn't predicted, or a misprediction),
     /// the tick is patched and the inputs since replayed, as a knockback is.

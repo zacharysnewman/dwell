@@ -550,6 +550,9 @@ pub struct Players {
     terrain_boxes: Vec<(DVec3, DVec3)>,
     /// The most new terrain chunks built a tick for `terrain_boxes`.
     terrain_boxes_per_tick: usize,
+    /// The most cells a tick puts in the collider besides those in the players' and boxes'
+    /// reach (`TerrainCollision::catch_up`; `COLLISION_CELLS_PER_TICK` by default).
+    collision_cells_per_tick: usize,
     ticks: u32,
     /// This tick's pushes: each body a player pushed, and the velocity it gave it (world, m/s).
     pushes: Vec<(BodyHandle, DVec3)>,
@@ -566,6 +569,7 @@ impl Players {
             terrain: terrain.then(|| TerrainCollision::new(physics)),
             terrain_boxes: Vec::new(),
             terrain_boxes_per_tick: usize::MAX,
+            collision_cells_per_tick: crate::terrain::COLLISION_CELLS_PER_TICK,
             ticks: 0,
             pushes: Vec::new(),
             ring: ring(),
@@ -584,6 +588,14 @@ impl Players {
 
     pub fn terrain(&self) -> Option<&TerrainCollision> {
         self.terrain.as_ref()
+    }
+
+    /// The most cells a tick puts in the terrain collider outside every player's and box's reach
+    /// (docs/BUGS.md #72: the client's prediction on a phone, where the server's 8192 were 8–10 ms
+    /// of a tick at CPU 6×). The cells within reach go in at once whatever this is, so a player's
+    /// contacts are the same; the rest only wait longer.
+    pub fn set_collision_cells_per_tick(&mut self, cells: usize) {
+        self.collision_cells_per_tick = cells;
     }
 
     /// Spawns a player standing with its feet at `feet`, on the face that position lies on.
@@ -927,7 +939,7 @@ impl Players {
                 let reach = f64::from(3.0 + (speed * DT * 2.0).min(64.0));
                 near.push((pos - DVec3::splat(reach), pos + DVec3::splat(reach)));
             }
-            terrain.catch_up(physics, &near, crate::terrain::COLLISION_CELLS_PER_TICK);
+            terrain.catch_up(physics, &near, self.collision_cells_per_tick);
         }
     }
 

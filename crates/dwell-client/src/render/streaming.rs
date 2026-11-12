@@ -9,6 +9,8 @@ use std::sync::OnceLock;
 pub struct StreamingBudgets {
     pub upload_desktop: u64,
     pub upload_phone: u64,
+    pub collision_desktop: usize,
+    pub collision_phone: usize,
 }
 
 impl StreamingBudgets {
@@ -30,9 +32,22 @@ impl StreamingBudgets {
                 )),
             }
         };
+        let cells = v
+            .get("collisionCellsPerTick")
+            .ok_or("streaming.json: no collisionCellsPerTick")?;
+        let cells_of = |name: &str| -> Result<usize, String> {
+            match cells.get(name).and_then(serde_json::Value::as_u64) {
+                Some(n) if n >= 64 => Ok(n as usize),
+                _ => Err(format!(
+                    "streaming.json: collisionCellsPerTick.{name} must be a whole number, at least 64"
+                )),
+            }
+        };
         Ok(Self {
             upload_desktop: tier("desktop")?,
             upload_phone: tier("phone")?,
+            collision_desktop: cells_of("desktop")?,
+            collision_phone: cells_of("phone")?,
         })
     }
 
@@ -43,6 +58,15 @@ impl StreamingBudgets {
             Self::parse(include_str!("../../../../shared/render/streaming.json"))
                 .unwrap_or_else(|e| panic!("{e}"))
         })
+    }
+
+    /// The terrain collider cells a prediction tick puts in outside the player's reach.
+    pub fn collision_cells(&self, phone: bool) -> usize {
+        if phone {
+            self.collision_phone
+        } else {
+            self.collision_desktop
+        }
     }
 
     /// A frame's upload budget in bytes on a phone page or another.
@@ -68,18 +92,28 @@ mod tests {
     }
 
     #[test]
+    fn a_desktop_predicts_with_the_servers_collision_budget_and_a_phone_with_less() {
+        let b = StreamingBudgets::get();
+        assert_eq!(
+            b.collision_cells(false),
+            dwell_physics::terrain::COLLISION_CELLS_PER_TICK
+        );
+        assert!(b.collision_cells(true) < b.collision_cells(false));
+    }
+
+    #[test]
     fn a_bad_entry_fails_with_a_message() {
-        let e = StreamingBudgets::parse(r#"{"uploadBytesPerFrame": {"desktop": 4194304}}"#)
+        let e = StreamingBudgets::parse(r#"{"collisionCellsPerTick": {"desktop": 8192, "phone": 1024}, "uploadBytesPerFrame": {"desktop": 4194304}}"#)
             .unwrap_err();
         assert!(e.contains("uploadBytesPerFrame.phone"), "{e}");
         let e = StreamingBudgets::parse(
-            r#"{"uploadBytesPerFrame": {"desktop": 4194304, "phone": 100}}"#,
+            r#"{"collisionCellsPerTick": {"desktop": 8192, "phone": 1024}, "uploadBytesPerFrame": {"desktop": 4194304, "phone": 100}}"#,
         )
         .unwrap_err();
         assert!(e.contains("under 64 KiB"), "{e}");
         // A fixture tier by data alone.
         let b = StreamingBudgets::parse(
-            r#"{"uploadBytesPerFrame": {"desktop": 1048576, "phone": 262144}}"#,
+            r#"{"collisionCellsPerTick": {"desktop": 8192, "phone": 512}, "uploadBytesPerFrame": {"desktop": 1048576, "phone": 262144}}"#,
         )
         .unwrap();
         assert_eq!(b.upload_bytes(true), 262_144);
